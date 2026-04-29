@@ -1,0 +1,104 @@
+import json
+
+from arc.jsonio import format_file
+
+
+def _roundtrip(d):
+    """Format then re-parse with stdlib; should always succeed and equal."""
+    text = format_file(d)
+    return json.loads(text)
+
+
+def test_minimal():
+    d = {"id": "abc", "comment": "hi"}
+    text = format_file(d)
+    assert text == '{\n  "id": "abc",\n  "comment": "hi"\n}\n'
+    assert _roundtrip(d) == d
+
+
+def test_grid_layout():
+    d = {"grid": [[0, 1, 2], [3, 4, 5]]}
+    text = format_file(d)
+    expected = '\n'.join([
+        '{',
+        '  "grid": [',
+        '    [0,1,2],',
+        '    [3,4,5]',
+        '  ]',
+        '}',
+        '',
+    ])
+    assert text == expected
+
+
+def test_brace_up_examples():
+    d = {
+        "train": [
+            {"index": 0, "input": [[0, 0]]},
+            {"index": 1, "input": [[1, 1]]},
+        ]
+    }
+    text = format_file(d)
+    expected = '\n'.join([
+        '{',
+        '  "train": [{',
+        '    "index": 0,',
+        '    "input": [',
+        '      [0,0]',
+        '    ]',
+        '  }, {',
+        '    "index": 1,',
+        '    "input": [',
+        '      [1,1]',
+        '    ]',
+        '  }]',
+        '}',
+        '',
+    ])
+    assert text == expected
+    assert _roundtrip(d) == d
+
+
+def test_perm_compact():
+    d = {"perm": {"train": [1, 0, 2]}}
+    text = format_file(d)
+    # small dict gets compacted, list-of-int stays compact inside it
+    assert '"perm": { "train": [1,0,2] }' in text
+    assert _roundtrip(d) == d
+
+
+def test_full_task_file_roundtrips():
+    d = {
+        "id": "abc12345",
+        "source": [
+            {"dataset": "arc-agi-1", "split": "evaluation"},
+            {
+                "dataset": "arc-agi-2",
+                "split": "training",
+                "perm": {"train": [1, 0, 2]},
+            },
+        ],
+        "comment": "fix something",
+        "issue": "https://example.com/issues/1",
+        "train": [
+            {"index": 0, "input": [[0, 0, 0], [0, 1, 0]], "output": [[1]]},
+        ],
+        "test": [
+            {
+                "index": 0,
+                "input": [[0]],
+                "output": [[1]],
+                "alt": {"kind": "rule", "grid": [[2]]},
+            }
+        ],
+    }
+    text = format_file(d)
+    assert _roundtrip(d) == d
+    # spot-check: brace-up used for train
+    assert '"train": [{' in text
+    # spot-check: grid rows compact
+    assert "[0,0,0]" in text
+
+
+def test_empty_dict():
+    assert format_file({}) == "{}\n"
