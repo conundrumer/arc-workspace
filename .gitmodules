@@ -1,0 +1,6 @@
+[submodule "data/upstream/arc-agi-2"]
+	path = data/upstream/arc-agi-2
+	url = https://github.com/arcprize/ARC-AGI-2.git
+[submodule "data/upstream/arc-agi-1"]
+	path = data/upstream/arc-agi-1
+	url = https://github.com/fchollet/ARC-AGI.git
