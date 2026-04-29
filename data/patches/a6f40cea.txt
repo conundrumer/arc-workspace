@@ -1,0 +1,11 @@
+comment: Training example 3 has 4 possible outputs
+issue: https://github.com/arcprize/ARC-AGI-2/issues/63
+
+@diff train 2 output
+2   2   2   4   2   2   2   2
+2   2   2   5   2   2   2   2
+5   4   5   4   2   2   2   2
+2   2   2   2   2   2   2   2
+2   2   2   2   2   2   2   2
+2   8~9 9~8 8~9 9~8 8~9 9~8 8~9
+2   9~8 2   2   2   2   2   2

@@ -1,0 +1,14 @@
+comment: Example 2 is missing a rectangle
+issue: https://github.com/arcprize/ARC-AGI-2/issues/65
+
+@diff train 1 output
+0   5   5   5   5   0   0   5   0   5
+5   0   5   0~2 0~2 0~2 0~2 5   5   5
+5   5   5   5   5   0   5   0   0   5
+5   0   5   5   5   0   0   0   5   5
+5   5   5   5   0   0   5   0   5   5
+5   2   2   2   2   5   2   2   2   2
+0   5   5   5   5   5   5   0   5   5
+0   0   5   5   5   0   0   5   5   0
+5   0   5   5   0   5   0   5   0   5
+5   5   0   5   0   5   5   5   5   5

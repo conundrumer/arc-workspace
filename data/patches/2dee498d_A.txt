@@ -1,0 +1,7 @@
+comment: Error in input example
+issue: https://github.com/fchollet/ARC-AGI/issues/141
+
+@diff train 0 input
+4   5   1   1~4 5   4~1 4   5   1
+5   5   5   5   5   5   5   5   5
+1   5   4   4~1 5   1~4 1   5   4

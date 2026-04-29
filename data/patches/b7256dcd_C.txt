@@ -1,0 +1,17 @@
+comment: all shapes change color
+
+@diff train 1 input
+7   7   7   6
+3   7~2 6   6
+7   7   6   7
+7   7   7   7
+1   6   6   6
+7   7   6   7
+
+@diff train 1 output
+7   7   7   6~2
+7   7   6~2 6~2
+7   7   6~2 7
+7   7   7   7
+7   1   1   1
+7   7   1   7
