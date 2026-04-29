@@ -1,9 +1,10 @@
 import json
+from typing import Any
 
 from arc.jsonio import format_file
 
 
-def _roundtrip(d):
+def _roundtrip(d: dict[str, Any]) -> Any:
     """Format then re-parse with stdlib; should always succeed and equal."""
     text = format_file(d)
     return json.loads(text)

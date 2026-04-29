@@ -22,7 +22,7 @@ TASKS_DIR = Path(__file__).resolve().parents[1] / "data" / "tasks"
         "17829a00",  # v2-only, no variants
     ],
 )
-def test_default_matches_disk(task_id):
+def test_default_matches_disk(task_id: str) -> None:
     file_dict = materialize_default(task_id)
     on_disk = json.loads((TASKS_DIR / f"{task_id}.json").read_text())
     assert file_dict == on_disk

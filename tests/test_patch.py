@@ -220,5 +220,8 @@ comment: c
 """
     p = parse(text)
     assert len(p.sections) == 2
-    assert p.sections[0].rows == [[0, 0, 0], [0, 1, 0]]
-    assert p.sections[1].rows == [[0, 0]]
+    s0, s1 = p.sections
+    assert isinstance(s0, DiffSection)
+    assert isinstance(s1, DiffSection)
+    assert s0.rows == [[0, 0, 0], [0, 1, 0]]
+    assert s1.rows == [[0, 0]]

@@ -25,5 +25,5 @@ class Example:
 
 @dataclass
 class Task:
-    train: list[Example] = field(default_factory=list)
-    test: list[Example] = field(default_factory=list)
+    train: list[Example] = field(default_factory=list[Example])
+    test: list[Example] = field(default_factory=list[Example])

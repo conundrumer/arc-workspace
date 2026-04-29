@@ -108,7 +108,11 @@ def _example_perm(other: list[Example], canonical: list[Example]) -> list[int] |
     return [canonical_keys.index(k) for k in other_keys]
 
 
-def _ex_key(ex: Example) -> tuple:
+type _GridKey = tuple[tuple[int, ...], ...]
+type _ExKey = tuple[_GridKey, _GridKey]
+
+
+def _ex_key(ex: Example) -> _ExKey:
     return (
         tuple(tuple(r) for r in ex.input),
         tuple(tuple(r) for r in ex.output),

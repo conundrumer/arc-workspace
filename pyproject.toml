@@ -14,6 +14,7 @@ packages = ["src/arc"]
 
 [dependency-groups]
 dev = [
+  "pyright>=1.1.409",
   "pytest>=8",
   "ruff>=0.7",
 ]
@@ -28,3 +29,11 @@ select = ["E", "F", "I", "B", "UP", "SIM"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+
+[tool.pyright]
+include = ["src", "scripts", "tests"]
+exclude = ["**/__pycache__", ".venv", "data", "archive"]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+venvPath = "."
+venv = ".venv"

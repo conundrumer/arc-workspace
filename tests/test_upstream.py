@@ -16,7 +16,7 @@ from arc.upstream import find, load
         ("4a21e3da", "arc-agi-2", "evaluation"),
     ],
 )
-def test_resolution(task_id, expected_dataset, expected_split):
+def test_resolution(task_id: str, expected_dataset: str, expected_split: str) -> None:
     src = find(task_id)
     assert src is not None
     assert src.dataset == expected_dataset

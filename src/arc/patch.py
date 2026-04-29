@@ -73,8 +73,8 @@ type Section = DiffSection | ReplaceSection | DeleteSection | BranchSection
 
 @dataclass
 class Patch:
-    metadata: dict[str, str] = field(default_factory=dict)
-    sections: list[Section] = field(default_factory=list)
+    metadata: dict[str, str] = field(default_factory=dict[str, str])
+    sections: list[Section] = field(default_factory=list[Section])
 
 
 class PatchParseError(Exception):
@@ -214,19 +214,19 @@ def _assert_plain(rows: GridRows, ctx: str) -> list[list[int]]:
 
 def _set(s: str) -> SetT:
     if s in ("train", "test"):
-        return s  # type: ignore[return-value]
+        return s
     raise PatchParseError(f"expected 'train' or 'test'; got {s!r}")
 
 
 def _grid(s: str) -> GridT:
     if s in ("input", "output"):
-        return s  # type: ignore[return-value]
+        return s
     raise PatchParseError(f"expected 'input' or 'output'; got {s!r}")
 
 
 def _kind(s: str) -> KindT:
     if s in ("rule", "tiebreak"):
-        return s  # type: ignore[return-value]
+        return s
     raise PatchParseError(f"expected 'rule' or 'tiebreak'; got {s!r}")
 
 

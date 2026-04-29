@@ -12,14 +12,14 @@ Layout rules:
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, TypeGuard
 
 
 def format_file(d: dict[str, Any]) -> str:
     return _fmt_dict(d, 0) + "\n"
 
 
-def _fmt_dict(d: dict, depth: int) -> str:
+def _fmt_dict(d: dict[str, Any], depth: int) -> str:
     if not d:
         return "{}"
     if depth > 0:
@@ -28,7 +28,7 @@ def _fmt_dict(d: dict, depth: int) -> str:
             return one_line
     inner = "  " * (depth + 1)
     items = list(d.items())
-    parts = ["{"]
+    parts: list[str] = ["{"]
     for i, (k, v) in enumerate(items):
         sep = "," if i < len(items) - 1 else ""
         parts.append(f"{inner}{json.dumps(k)}: {_fmt_value(v, depth + 1)}{sep}")
@@ -36,16 +36,16 @@ def _fmt_dict(d: dict, depth: int) -> str:
     return "\n".join(parts)
 
 
-def _try_compact_dict(d: dict) -> str | None:
+def _try_compact_dict(d: dict[str, Any]) -> str | None:
     """Return one-line rendering if dict is small + simple; else None."""
     if len(d) > 2:
         return None
-    parts = []
+    parts: list[str] = []
     for k, v in d.items():
-        if isinstance(v, dict):
+        if _is_dict(v):
             return None
-        if isinstance(v, list):
-            if not all(isinstance(x, int) for x in v):
+        if _is_list(v):
+            if not _is_int_list(v):
                 return None
             v_str = "[" + ",".join(str(x) for x in v) + "]"
         else:
@@ -56,21 +56,21 @@ def _try_compact_dict(d: dict) -> str | None:
 
 
 def _fmt_value(v: Any, depth: int) -> str:
-    if isinstance(v, dict):
+    if _is_dict(v):
         return _fmt_dict(v, depth)
-    if isinstance(v, list):
+    if _is_list(v):
         return _fmt_list(v, depth)
     return json.dumps(v)
 
 
-def _fmt_list(lst: list, depth: int) -> str:
+def _fmt_list(lst: list[Any], depth: int) -> str:
     if not lst:
         return "[]"
-    if all(isinstance(r, list) and r and all(isinstance(c, int) for c in r) for r in lst):
+    if _is_int_grid(lst):
         return _fmt_grid(lst, depth)
     if all(isinstance(v, int) for v in lst):
         return "[" + ",".join(str(v) for v in lst) + "]"
-    if all(isinstance(v, dict) for v in lst):
+    if _is_list_of_dicts(lst):
         return _fmt_brace_up(lst, depth)
     raise NotImplementedError(f"unsupported list element types in {lst!r}")
 
@@ -82,7 +82,7 @@ def _fmt_grid(grid: list[list[int]], depth: int) -> str:
     return f"[\n{rows}\n{outer}]"
 
 
-def _fmt_brace_up(items: list[dict], depth: int) -> str:
+def _fmt_brace_up(items: list[dict[str, Any]], depth: int) -> str:
     """Brace-up list of dicts. Body lines sit at depth+1; the array's brackets
     ('[{', '}, {', '}]') align with the enclosing key at depth."""
     outer = "  " * depth
@@ -99,3 +99,23 @@ def _fmt_brace_up(items: list[dict], depth: int) -> str:
             parts.append(f"{inner}{json.dumps(k)}: {_fmt_value(v, depth + 1)}{sep}")
     parts.append(f"{outer}}}]")
     return "\n".join(parts)
+
+
+def _is_dict(v: Any) -> TypeGuard[dict[str, Any]]:
+    return isinstance(v, dict)
+
+
+def _is_list(v: Any) -> TypeGuard[list[Any]]:
+    return isinstance(v, list)
+
+
+def _is_int_list(v: Any) -> TypeGuard[list[int]]:
+    return _is_list(v) and all(isinstance(x, int) for x in v)
+
+
+def _is_int_grid(v: Any) -> TypeGuard[list[list[int]]]:
+    return _is_list(v) and all(_is_int_list(r) and len(r) > 0 for r in v)
+
+
+def _is_list_of_dicts(v: Any) -> TypeGuard[list[dict[str, Any]]]:
+    return _is_list(v) and all(_is_dict(x) for x in v)
