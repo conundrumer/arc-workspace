@@ -13,6 +13,7 @@ uv run pytest -q
 
 ```
 src/arc/         core library (patch DSL parser, task model, materializer)
+programs/        ARC solver work (relational Python, lifting toward Souffle)
 scripts/         CLI utilities
 data/upstream/   pinned arc-agi-1 + arc-agi-2 submodules
 data/patches/    .arcpatch corrections (canonical + variants A/B/C)
@@ -64,5 +65,5 @@ uv run python scripts/materialize.py
 ## Docs
 
 - [`docs/variants-and-alts.md`](docs/variants-and-alts.md) — variant A/B/C and alt rule/tiebreak semantics
-- [`docs/datalog-lite.md`](docs/datalog-lite.md) — Python style for relational derivations
+- [`docs/solvers.md`](docs/solvers.md) — solver work: relational Python style, principles, conventions
 - [`docs/hardware-probe.md`](docs/hardware-probe.md) — dev machine specs

@@ -7,11 +7,15 @@ ARC-AGI-2 work for the 2026 Kaggle competition. Python 3.12, `uv`.
 ```
 src/arc/
   patch.py       DSL parser (grammar in module docstring)
-  task.py        Task / Example / Alt
+  task.py        Task / Example / Alt; load(task_id) → materialized Task
   apply.py       apply_patch with assertions
   upstream.py    load v1-preferred upstream
   materialize.py compose upstream + patches → file dict
   jsonio.py      custom JSON formatter
+programs/
+  lib.py         types + primitives for solvers
+  solvers/<id>.py  per-task solver
+  run.py         run all solvers (or one) against materialized tasks
 scripts/
   materialize.py writes data/tasks/
 data/
@@ -19,6 +23,7 @@ data/
   patches/       <id>.arcpatch canonical; <id>_A.arcpatch, <id>_B.arcpatch, <id>_C.arcpatch variants
   tasks/         materialized JSON (build artifact)
 docs/
+  solvers.md     entry point for solver work — relational style, principles, conventions
   variants-and-alts.md   variant A/B/C and alt rule/tiebreak semantics
   hardware-probe.md      dev machine specs
 ```
@@ -28,6 +33,8 @@ docs/
 ```
 uv run pytest -q
 uv run python scripts/materialize.py
+uv run python programs/run.py             # run all solvers
+uv run python programs/run.py <task_id>   # run one
 ```
 
 ## Conventions
