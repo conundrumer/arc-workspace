@@ -47,6 +47,14 @@ Patch editing needs the upstream submodules — the materializer composes fixes 
 git submodule update --init
 ```
 
+To start a new patch, scaffold a stub from the upstream task:
+
+```sh
+uv run python scripts/patch_stub.py <task_id>
+```
+
+This writes `data/patches/<task_id>.arcpatch` containing every train/test grid in patch column form, ready to hand-edit into a real patch.
+
 After changing a patch, regenerate task JSON:
 
 ```sh
