@@ -1,0 +1,18 @@
+comment: rule suggests guessing, picking based on width parity doesn't seem right
+discord: https://discord.com/channels/1237180803335720961/1354130901843443762/1354130901843443762
+
+@branch train 0 tiebreak
+8~7 2~5
+4~8 7~0
+
+@branch train 1 tiebreak
+0~7 7~9
+5~6 6~5
+
+@branch train 2 tiebreak
+5~9 8~2
+8~6 0~5
+
+@branch test 0 tiebreak
+9~3 2~6
+3~6 4~7
