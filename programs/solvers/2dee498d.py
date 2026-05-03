@@ -1,30 +1,27 @@
 """Solver for ARC task 2dee498d — input is N identical tiles; output is the tile.
 
-Status: placeholder — raw Position destructure (no `untile_d4` primitive yet;
-see docs/solvers.md).
+Status: placeholder — symmetric N-fold collapse along both axes via
+        component-wise modulo on raw Position. Layout primitive cluster
+        pending (see docs/solvers.md).
 
-Conceptual rule: input == tile_d4(c.template, output). This solver inverts.
-
-Rule (Souffle form, valid for templates where every cell is IDENTITY):
+Rule (Souffle form):
     out(t mod inner_h, r mod inner_w, b mod inner_h, l mod inner_w, col)
         :- in(t, r, b, l, col).
 
-Each input cell projects to its position-within-the-tile via component-wise
-modulo against the inner dims. The N redundant copies (one per tile cell)
-collide on the same (small_p, col) tuple; set semantics keeps one (Pattern:
-set dedup as semantics).
+Each input cell projects to its canonical in-tile position via component-
+wise modulo against the inner dims. The N redundant copies (one per tile
+position) collide on the same (canonical_p, col) tuple; set semantics
+keeps one (Pattern: set dedup as semantics).
 
 == Notes ==
 
-- Modulo arithmetic is the inverse-of-combine from `tile_d4`. When
-  `untile_d4` lands as a primitive, the body collapses to one call.
-
-- Generalization to non-IDENTITY templates needs per-tile inverse-d4
-  application before mod'ing.
-
+- Symmetric collapse: all N tiles are IDENTITY copies of one inner. No
+  per-tile transform involved — uniform N-fold replication being inverted.
+- Modulo arithmetic does the inverse-of-combine from `tile_d4`. With the
+  layout primitive cluster lifted, the body collapses to one call against
+  a symmetric primitive parameterized by axis and N.
 - Consts: `template: D4Template` for symmetry with `tile_d4` solvers.
-  The template's dims drive output dims; d4 values are unused under the
-  IDENTITY-only assumption.
+  The template's dims drive output dims; d4 values are uniformly IDENTITY.
 """
 
 from dataclasses import dataclass

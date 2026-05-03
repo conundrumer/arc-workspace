@@ -7,14 +7,20 @@ so to/from JSON works.
 Position is 4 distances from edges: (top, right, bottom, left). Redundant
 with grid bounds; redundancy is load-bearing — no corner privileged.
 
-Grid is a set of (Position, Color) tuples. Unordered.
+Cells[*Xs] is a Position-keyed relation with any number of value columns.
+Grid is the Color-valued specialization (set of (Position, Color)) for
+solver in/out; D4Template is the D4-valued specialization. Other value-
+column shapes parameterize through *Xs without touching call sites.
 
 Spatial primitives appear here once they're load-bearing across solvers.
 D4 transforms entered immediately because encoding orientation in a
 function name (e.g. flip_h) bakes orientation into the solver body.
 """
 
+from collections.abc import Callable
 from enum import Enum
+
+type ChoiceFn = Callable[[frozenset], object]
 
 
 # ============================================================
@@ -36,7 +42,6 @@ class Color(Enum):
 
 
 type Position = tuple[int, int, int, int]
-type Grid = set[tuple[Position, Color]]
 
 
 class D4(Enum):
@@ -60,9 +65,6 @@ class D4(Enum):
     FLIP_ANTIDIAG = (1, 0, 3, 2)
 
 
-type D4Template = set[tuple[Position, D4]]
-
-
 class Dir(Enum):
     """One of the four edges. Values are indices into Position (top, right, bottom, left)."""
 
@@ -79,6 +81,26 @@ class Axis(Enum):
     VERTICAL = 1
 
 
+class DiagDir(Enum):
+    """One of the four corners. Values are (vertical, horizontal) Dir pairs.
+
+    The vertical Dir is TOP or BOTTOM; the horizontal is LEFT or RIGHT. Each
+    diag identifies a corner via the two edges it sits on — distances to those
+    two edges point at the corner, the other two point away from it. Value
+    carries structure so primitives consume the component Dirs directly.
+    """
+
+    TL = (Dir.TOP, Dir.LEFT)
+    TR = (Dir.TOP, Dir.RIGHT)
+    BL = (Dir.BOTTOM, Dir.LEFT)
+    BR = (Dir.BOTTOM, Dir.RIGHT)
+
+
+type Cells[*Xs] = set[tuple[Position, *Xs]]
+type Grid = Cells[Color]
+type D4Template = Cells[D4]
+
+
 # ============================================================
 # Core operations
 # ============================================================
@@ -92,6 +114,11 @@ def apply(d: D4, p: Position) -> Position:
 def dist(p: Position, d: Dir) -> int:
     """Distance from p to edge d."""
     return p[d.value]
+
+
+def opposite(d: Dir) -> Dir:
+    """The Dir on the opposing edge: TOP<->BOTTOM, LEFT<->RIGHT."""
+    return Dir((d.value + 2) % 4)
 
 
 def axis_of(d: Dir) -> Axis:
@@ -146,6 +173,32 @@ def tile_d4(template: D4Template, inner: Grid) -> Grid:
         for (p, col) in inner
         for (it, ir, ib, il) in [apply(d4, p)]
     }
+
+
+def corner_view[*Xs](cells: Cells[*Xs], diag: DiagDir, h: int, w: int) -> Cells[*Xs]:
+    """The h×w sub-grid whose contents match the `diag` corner of `cells`.
+
+    Anchor-side distances are kept; opposite-side distances are recomputed
+    against the new (h, w) bounds. Cells outside the corner region are
+    dropped. Non-Position columns flow through transparently — Cells[*Xs]
+    in, Cells[*Xs] out.
+    """
+    v_dir, h_dir = diag.value
+    v_opp = opposite(v_dir)
+    h_opp = opposite(h_dir)
+    out: set = set()
+    for (pos, *rest) in cells:
+        v_kept = pos[v_dir.value]
+        h_kept = pos[h_dir.value]
+        if v_kept >= h or h_kept >= w:
+            continue
+        new_p = [0, 0, 0, 0]
+        new_p[v_dir.value] = v_kept
+        new_p[h_dir.value] = h_kept
+        new_p[v_opp.value] = h - 1 - v_kept
+        new_p[h_opp.value] = w - 1 - h_kept
+        out.add(((new_p[0], new_p[1], new_p[2], new_p[3]), *rest))
+    return out
 
 
 # ============================================================

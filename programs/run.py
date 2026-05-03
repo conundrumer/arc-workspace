@@ -7,13 +7,22 @@ Usage:
 Loads programs/solvers/<task_id>.py via importlib (task IDs starting with
 digits aren't valid Python identifiers, so plain `import` is out). The
 solver module must expose `solve(grid, c)` and a module-level `CONSTS`.
+
+Tiebreak solvers take a third arg `choice: ChoiceFn` and call `choice(s)`
+on a frozenset of options. The framework discovers the choice points in
+one pass, then enumerates the cartesian product of branches; for examples
+with `kind: "tiebreak"` alts, the union of branch outputs must equal
+{base, alt} (set equality — full coverage required).
 """
 
 import importlib.util
+import inspect
+import itertools
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
+from typing import Any, Callable
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
@@ -62,6 +71,37 @@ def load_solver(task_id: str) -> ModuleType:
     return mod
 
 
+def _branches(solve_fn: Callable, grid: Any, c: Any) -> list[Any]:
+    """Run solve_fn over its choice domain.
+
+    Single-branch (no `choice` param) returns [solve(grid, c)]. Tiebreak
+    solvers (with `choice: ChoiceFn`) get a discovery run that records
+    every `choice(s)` call's set, then a replay run per element of the
+    cartesian product across choice points.
+    """
+    if "choice" not in inspect.signature(solve_fn).parameters:
+        return [solve_fn(grid, c)]
+
+    recorded: list[tuple] = []
+
+    def discover(s):
+        t = tuple(s)
+        recorded.append(t)
+        return t[0]
+
+    solve_fn(grid, c, choice=discover)
+
+    outs: list[Any] = []
+    for picks in itertools.product(*recorded):
+        it = iter(picks)
+        outs.append(solve_fn(grid, c, choice=lambda _s, _it=it: next(_it)))
+    return outs
+
+
+def _hashable(g: list[list[int]]) -> tuple:
+    return tuple(tuple(row) for row in g)
+
+
 def run_one(task_id: str) -> TaskResult:
     solver = load_solver(task_id)
     task = load_task(task_id)
@@ -69,9 +109,25 @@ def run_one(task_id: str) -> TaskResult:
     for kind, examples in (("train", task.train), ("test", task.test)):
         for idx, ex in enumerate(examples):
             try:
-                actual = from_relational(solver.solve(to_relational(ex.input), solver.CONSTS))
-                ok = actual == ex.output
-                detail = None if ok else f"expected {ex.output}\n      actual   {actual}"
+                grid = to_relational(ex.input)
+                actual_grids = [from_relational(g) for g in _branches(solver.solve, grid, solver.CONSTS)]
+
+                if ex.alt and ex.alt.kind == "tiebreak":
+                    actual_set = {_hashable(g) for g in actual_grids}
+                    expected_set = {_hashable(ex.output), _hashable(ex.alt.grid)}
+                    ok = actual_set == expected_set
+                    detail = (
+                        None if ok
+                        else f"expected branches {sorted(expected_set)}\n      actual branches  {sorted(actual_set)}"
+                    )
+                else:
+                    if len(actual_grids) != 1:
+                        ok = False
+                        detail = f"got {len(actual_grids)} branches but example has no tiebreak alt"
+                    else:
+                        actual = actual_grids[0]
+                        ok = actual == ex.output
+                        detail = None if ok else f"expected {ex.output}\n      actual   {actual}"
             except Exception as e:
                 ok = False
                 detail = f"{type(e).__name__}: {e}"

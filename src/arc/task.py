@@ -39,7 +39,12 @@ def load(task_id: str) -> Task:
     if not path.exists():
         raise FileNotFoundError(f"no materialized task at {path}")
     data = json.loads(path.read_text())
+
+    def to_example(e: dict) -> Example:
+        alt = Alt(kind=e["alt"]["kind"], grid=e["alt"]["grid"]) if "alt" in e else None
+        return Example(input=e["input"], output=e["output"], alt=alt)
+
     return Task(
-        train=[Example(input=e["input"], output=e["output"]) for e in data["train"]],
-        test=[Example(input=e["input"], output=e["output"]) for e in data["test"]],
+        train=[to_example(e) for e in data["train"]],
+        test=[to_example(e) for e in data["test"]],
     )
