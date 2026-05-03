@@ -16,7 +16,7 @@ scripts/
   materialize.py writes data/tasks/
 data/
   upstream/      arc-agi-1 + arc-agi-2 pinned submodules
-  patches/       <id>.txt canonical; <id>_A.txt, <id>_B.txt, <id>_C.txt variants
+  patches/       <id>.arcpatch canonical; <id>_A.arcpatch, <id>_B.arcpatch, <id>_C.arcpatch variants
   tasks/         materialized JSON (build artifact)
 docs/
   variants-and-alts.md   variant A/B/C and alt rule/tiebreak semantics

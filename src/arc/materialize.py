@@ -1,8 +1,8 @@
 """Materialize: load upstream + apply patches → in-memory dict for serialization.
 
 Materialize a task: load v1-preferred upstream, apply the canonical patch
-(<id>.txt) if present, then apply every variant patch (<id>_<X>.txt) in
-alphabetical order. The result reflects the highest variant level present
+(<id>.arcpatch) if present, then apply every variant patch (<id>_<X>.arcpatch)
+in alphabetical order. The result reflects the highest variant level present
 (else canonical).
 
 Source records are listed canonical-first; non-canonical sources include a
@@ -39,7 +39,7 @@ def materialize_default(task_id: str) -> dict[str, Any]:
 
     patches: list[dict[str, Any]] = []
 
-    canonical_path = PATCHES_DIR / f"{task_id}.txt"
+    canonical_path = PATCHES_DIR / f"{task_id}.arcpatch"
     if canonical_path.exists():
         patch = parse(canonical_path.read_text())
         patches.append({"level": "canonical", **patch.metadata})
@@ -47,7 +47,7 @@ def materialize_default(task_id: str) -> dict[str, Any]:
 
     applied_variants: list[str] = []
     for label in VARIANT_LABELS:
-        vpath = PATCHES_DIR / f"{task_id}_{label}.txt"
+        vpath = PATCHES_DIR / f"{task_id}_{label}.arcpatch"
         if not vpath.exists():
             continue
         vpatch = parse(vpath.read_text())
