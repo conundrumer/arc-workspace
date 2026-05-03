@@ -1,0 +1,64 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "ARC Patch",
+  "scopeName": "source.arc-patch",
+  "patterns": [
+    { "include": "#section-header" },
+    { "include": "#separator" },
+    { "include": "#metadata" },
+    { "include": "#change-cell" },
+    { "include": "#plain-cell" }
+  ],
+  "repository": {
+    "section-header": {
+      "match": "^(@)(diff|replace|delete|branch)\\b(?:\\s+(train|test))?(?:\\s+(\\d+))?(?:\\s+(input|output|rule|tiebreak))?\\s*$",
+      "captures": {
+        "1": { "name": "punctuation.definition.section.arc-patch" },
+        "2": { "name": "keyword.control.section.arc-patch" },
+        "3": { "name": "constant.language.set.arc-patch" },
+        "4": { "name": "constant.numeric.index.arc-patch" },
+        "5": { "name": "constant.language.kind.arc-patch" }
+      }
+    },
+    "separator": {
+      "match": "^---\\s*$",
+      "name": "punctuation.separator.section.arc-patch"
+    },
+    "metadata": {
+      "match": "^([a-zA-Z_][a-zA-Z0-9_]*)(:)\\s+(.*)$",
+      "captures": {
+        "1": { "name": "entity.name.tag.arc-patch" },
+        "2": { "name": "punctuation.separator.key-value.arc-patch" },
+        "3": { "name": "string.unquoted.arc-patch" }
+      }
+    },
+    "change-cell": {
+      "match": "(?<![\\d~])(\\d)(~)(\\d)(?![\\d~])",
+      "captures": {
+        "1": { "patterns": [{ "include": "#digit-scopes" }] },
+        "2": { "name": "keyword.operator.change.arc-patch" },
+        "3": { "patterns": [{ "include": "#digit-scopes" }] }
+      }
+    },
+    "plain-cell": {
+      "match": "(?<![\\d~])(\\d)(?![\\d~])",
+      "captures": {
+        "1": { "patterns": [{ "include": "#digit-scopes" }] }
+      }
+    },
+    "digit-scopes": {
+      "patterns": [
+        { "match": "0", "name": "constant.numeric.arc.0" },
+        { "match": "1", "name": "constant.numeric.arc.1" },
+        { "match": "2", "name": "constant.numeric.arc.2" },
+        { "match": "3", "name": "constant.numeric.arc.3" },
+        { "match": "4", "name": "constant.numeric.arc.4" },
+        { "match": "5", "name": "constant.numeric.arc.5" },
+        { "match": "6", "name": "constant.numeric.arc.6" },
+        { "match": "7", "name": "constant.numeric.arc.7" },
+        { "match": "8", "name": "constant.numeric.arc.8" },
+        { "match": "9", "name": "constant.numeric.arc.9" }
+      ]
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "ARC Task JSON",
+  "scopeName": "source.arc-task-json",
+  "patterns": [
+    { "include": "source.json" }
+  ]
+}

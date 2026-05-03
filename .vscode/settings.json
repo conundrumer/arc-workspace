@@ -1,0 +1,20 @@
+{
+  "files.associations": {
+    "**/data/tasks/*.json": "arc-task-json",
+    "*.arcpatch": "arc-patch"
+  },
+  "editor.tokenColorCustomizations": {
+    "textMateRules": [
+      { "scope": "constant.numeric.arc.0", "settings": { "foreground": "#6E6E6E", "fontStyle": "bold" } },
+      { "scope": "constant.numeric.arc.1", "settings": { "foreground": "#0074D9", "fontStyle": "bold" } },
+      { "scope": "constant.numeric.arc.2", "settings": { "foreground": "#FF4136", "fontStyle": "bold" } },
+      { "scope": "constant.numeric.arc.3", "settings": { "foreground": "#2ECC40", "fontStyle": "bold" } },
+      { "scope": "constant.numeric.arc.4", "settings": { "foreground": "#FFDC00", "fontStyle": "bold" } },
+      { "scope": "constant.numeric.arc.5", "settings": { "foreground": "#AAAAAA", "fontStyle": "bold" } },
+      { "scope": "constant.numeric.arc.6", "settings": { "foreground": "#F012BE", "fontStyle": "bold" } },
+      { "scope": "constant.numeric.arc.7", "settings": { "foreground": "#FF851B", "fontStyle": "bold" } },
+      { "scope": "constant.numeric.arc.8", "settings": { "foreground": "#7FDBFF", "fontStyle": "bold" } },
+      { "scope": "constant.numeric.arc.9", "settings": { "foreground": "#B85450", "fontStyle": "bold" } }
+    ]
+  }
+}

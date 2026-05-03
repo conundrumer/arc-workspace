@@ -1,0 +1,38 @@
+{
+  "name": "arc-grids",
+  "displayName": "ARC Grid Highlighting",
+  "description": "Color highlighting for ARC task grids and patch DSL.",
+  "version": "0.1.0",
+  "publisher": "local",
+  "engines": { "vscode": "^1.60.0" },
+  "categories": ["Programming Languages"],
+  "contributes": {
+    "languages": [
+      {
+        "id": "arc-patch",
+        "aliases": ["ARC Patch", "arc-patch"]
+      },
+      {
+        "id": "arc-task-json",
+        "aliases": ["ARC Task JSON", "arc-task-json"]
+      }
+    ],
+    "grammars": [
+      {
+        "language": "arc-patch",
+        "scopeName": "source.arc-patch",
+        "path": "./syntaxes/arc-patch.tmLanguage.json"
+      },
+      {
+        "language": "arc-task-json",
+        "scopeName": "source.arc-task-json",
+        "path": "./syntaxes/arc-task.tmLanguage.json"
+      },
+      {
+        "scopeName": "arc.task.digit-injection",
+        "path": "./syntaxes/arc-task-digits.tmLanguage.json",
+        "injectTo": ["source.arc-task-json"]
+      }
+    ]
+  }
+}
