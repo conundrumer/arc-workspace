@@ -4,27 +4,24 @@
   "scopeName": "arc.task.digit-injection",
   "injectionSelector": "L:source.arc-task-json",
   "patterns": [
-    { "include": "#arc-digit" }
+    { "include": "#arc-row" }
   ],
   "repository": {
-    "arc-digit": {
-      "match": "(?<=[\\[,])(\\d)(?=[,\\]])",
-      "captures": {
-        "1": {
-          "patterns": [
-            { "match": "0", "name": "constant.numeric.arc.0" },
-            { "match": "1", "name": "constant.numeric.arc.1" },
-            { "match": "2", "name": "constant.numeric.arc.2" },
-            { "match": "3", "name": "constant.numeric.arc.3" },
-            { "match": "4", "name": "constant.numeric.arc.4" },
-            { "match": "5", "name": "constant.numeric.arc.5" },
-            { "match": "6", "name": "constant.numeric.arc.6" },
-            { "match": "7", "name": "constant.numeric.arc.7" },
-            { "match": "8", "name": "constant.numeric.arc.8" },
-            { "match": "9", "name": "constant.numeric.arc.9" }
-          ]
-        }
-      }
+    "arc-row": {
+      "begin": "^\\s+\\[",
+      "end": "\\]",
+      "patterns": [
+        { "match": "0", "name": "constant.numeric.arc.0" },
+        { "match": "1", "name": "constant.numeric.arc.1" },
+        { "match": "2", "name": "constant.numeric.arc.2" },
+        { "match": "3", "name": "constant.numeric.arc.3" },
+        { "match": "4", "name": "constant.numeric.arc.4" },
+        { "match": "5", "name": "constant.numeric.arc.5" },
+        { "match": "6", "name": "constant.numeric.arc.6" },
+        { "match": "7", "name": "constant.numeric.arc.7" },
+        { "match": "8", "name": "constant.numeric.arc.8" },
+        { "match": "9", "name": "constant.numeric.arc.9" }
+      ]
     }
   }
 }
