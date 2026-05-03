@@ -64,6 +64,6 @@ uv run python scripts/materialize.py
 
 ## Docs
 
-- [`docs/variants-and-alts.md`](docs/variants-and-alts.md) — variant A/B/C and alt rule/tiebreak semantics
+- [`docs/arcpatches.md`](docs/arcpatches.md) — `.arcpatch` format: file layout, verbs, variants, alts
 - [`docs/solvers.md`](docs/solvers.md) — solver work: relational Python style, principles, conventions
 - [`docs/hardware-probe.md`](docs/hardware-probe.md) — dev machine specs

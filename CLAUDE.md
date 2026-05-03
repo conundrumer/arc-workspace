@@ -24,7 +24,7 @@ data/
   tasks/         materialized JSON (build artifact)
 docs/
   solvers.md     entry point for solver work — relational style, principles, conventions
-  variants-and-alts.md   variant A/B/C and alt rule/tiebreak semantics
+  arcpatches.md          .arcpatch format: file layout, verbs, variants, alts
   hardware-probe.md      dev machine specs
 ```
 
