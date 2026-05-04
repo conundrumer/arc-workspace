@@ -14,10 +14,9 @@ via `arc.task.load`. The materialized JSON is the source of truth;
 
 ### Cadence
 
-Translate solvers in ascending TS line-count
-(`wc -l ../arc-synth-bun/programs/solvers/*.ts | sort -n`). Skip any with
-an "incorrect" header tag — rule fits the data but isn't the conceptual
-rule; needs revision.
+`bash scripts/queue.sh` prints the next TS solver to port: shortest
+unported file with no `#incorrect` header tag. The tag means the rule
+fits the data but isn't the conceptual rule; needs revision.
 
 For each solver:
 
@@ -42,13 +41,21 @@ For each solver:
 
 ### Per-task drain
 
-Distill task observations into `docs/_session.md` (gitignored) before
-moving to the next solver. Session ending drains and deletes it.
+Distill task observations into `docs/_session_<id>.md` (gitignored)
+before moving to the next solver. `<id>` is the first solver's task ID,
+so parallel sessions don't collide. Session ending drains and deletes it.
 
 ### Session ending
 
 Handoff target: a new session bootstraps from this doc, `programs/lib.py`,
 and exemplar solvers.
+
+**Provisional structure.** This doc has accreted over many sessions; a
+major rewrite for clarity and findability may be due. If a cold-read
+surfaces persistent confusion (not just a single tweak — a pattern of
+misreads, principles that need restating to be applied, or sections
+fighting each other), prioritize structural reorganization over local
+polish.
 
 End-session work is multi-pass: drain, audit, polish. Three principles:
 
@@ -66,8 +73,8 @@ End-session work is multi-pass: drain, audit, polish. Three principles:
 
 Procedure:
 
-1. Drain `docs/_session.md` — distill new principles, patterns, and
-   deferred items into the appropriate sections of this doc.
+1. Drain `docs/_session_<id>.md` — distill new principles, patterns,
+   and deferred items into the appropriate sections of this doc.
 2. Lift any new primitives into `programs/lib.py`; update the deferred list.
 3. Audit per-task notes — strip session-order references, "we"-framing,
    anchored-in-time evaluations. A first-time reader should pick up any
@@ -77,7 +84,7 @@ Procedure:
    asides from what remains.
 6. Verify all solvers pass (`uv run python programs/run.py`); pytest green.
 7. Confirm exemplars (named below) are still representative.
-8. Delete `docs/_session.md`.
+8. Delete `docs/_session_<id>.md`.
 
 ## Principles
 
@@ -96,9 +103,12 @@ Procedure:
 
 4. **Position is 4 distances; no corner privileged.** The redundancy of
    `(top, right, bottom, left)` is load-bearing. Don't destructure Position
-   in solver bodies — use Dir-/Axis-parameterized primitives. Placeholder
-   destructure is allowed when no primitive yet captures the pattern; mark
-   it (see Conventions: Placeholder marker).
+   in solver bodies — use Dir-/Axis-parameterized primitives, with the
+   Dir/Axis argument sourced from `Consts`. A literal `Dir.TOP` in the body
+   (e.g. `dist(p, Dir.TOP)`) bakes orientation into the body the same way
+   raw destructure does. Placeholder destructure is allowed when no
+   primitive yet captures the pattern; mark it (see Conventions:
+   Placeholder marker).
 
 5. **Color is opaque.** Never compared by ordinal, never used in arithmetic,
    never iterated as `[C0, C1, ...]`. The int backing exists only for I/O.
@@ -113,11 +123,12 @@ Procedure:
    cross-entity, and higher arity (e.g., `set[tuple[Color, Color, Color]]`
    for a 2-input fold). Mirrors how Souffle would express it.
 
-8. **No corner privileging unless the rule has a corner.** "TL 2×2 crop"
-   picks a corner — TL-privilege is the rule. Comparing rows via
-   `dist(p, TOP)` arbitrarily picks TOP over BOTTOM — both define
-   same-row equally. Use `split(p, axis)`'s across-component, which
-   carries grid-bound info.
+8. **No TL bias.** Reference solvers iterate `input[r][c]`; the
+   4-distance Position is symmetric specifically to break that. Don't
+   reintroduce origin-thinking by destructuring to `(top, left)` and
+   discarding the rest, or by writing rules that read like row-major
+   loops. When the *rule* (not the iteration) picks a corner — "TL
+   2×2 crop" — express it as a `DiagDir` in `Consts` (Principle 6).
 
 9. **Stay close to ARC reality.** Mappings and relations key on actual ARC
    value types (Colors, Dirs, axes) rather than derived projections
@@ -159,6 +170,18 @@ Procedure:
 
 8. **Continuity through artifacts, not memory.** This doc + `lib.py` +
    exemplar solvers must be sufficient to bootstrap a new session.
+
+9. **Symptoms point upstream.** When derived work shows a defect — a
+   misread, a wrong solver, a confused review — the cause is usually
+   in the source it came from, not where it manifests. Patch the
+   source. Cold-reads are scheduled tests of the doc; in-session
+   misreads are unscheduled ones, same class.
+
+10. **Notice doc failures in real time.** Hedging, guessing, or making a
+    non-obvious call on a question the doc should have answered is a
+    doc-failure signal. Don't wait for the user to surface it; name the
+    gap and propose the fix in the same turn. (Meta 9 covers the
+    upstream patch; this is the noticing step that has to come first.)
 
 ## Datalog-lite Python style
 
@@ -211,6 +234,11 @@ primitives are documented in `programs/lib.py` — read it.
   optional `Status: placeholder` block, Souffle form, Datalog-lite Python
   form (when they differ), Notes section. Notes record primitives leaned
   on, friction, candidate primitives.
+- **Imports.** Solvers do `from programs.lib import *`. The lib is the
+  solver's vocabulary; per-name imports are scaffolding noise that churns
+  with every primitive added or color literal swapped. Bare color names
+  `C0..C9` come from the same import (lib re-exports the enum members);
+  `Color` (the class) is used only for type annotations.
 - **Two-form documentation when host adds rules.** When the Python rule has
   extra structure (projections, derived relations) that collapses on Souffle
   port, show both forms with a note explaining the collapse.
@@ -227,13 +255,30 @@ primitives are documented in `programs/lib.py` — read it.
   `body_start = 2`), the name should reflect that it's a placeholder, not
   a primitive concept. Don't pretend a single-int field captures a
   structural shape that's still missing.
-- **Orientation alert.** TOP/BOTTOM/TL/TR literals in solve bodies are
-  suspect. If the rule needs a specific Dir, put it in Consts; if the
-  literal hacks around a missing primitive, use raw Position destructure
-  with `Status: placeholder`. (Object Principle 4 in practice.)
+- **Orientation alert.** TOP/BOTTOM/TL/TR literals in solver bodies are
+  forbidden, whether as raw destructure or as arguments to Dir-/Axis-
+  parameterized primitives like `dist(p, Dir.TOP)`. Two valid placements:
+  put the Dir in Consts if the rule needs a specific one; raw-destructure
+  with `Status: placeholder` if the literal is hacking around a missing
+  primitive. (Object Principle 4 in practice.)
 - **Forbidden naming.** Orientation-named accessors like `grid_h` /
   `grid_w` (same hazard as `flip_h`). If a dim accessor ever lifts, it
   must be axis-parameterized.
+- **Per-task scalar alert.** Magic numbers in solver bodies are forbidden
+  when they parameterize the rule (output dims, fixed offsets, counts,
+  anchor coordinates). Lift to Consts under a role name (`out_h: int = 3`,
+  `body_start: int = 2`) even when no primitive captures the structural
+  shape — Const-name honesty governs the *name*, not whether to lift.
+  Same hazard as orientation literals: a per-task number in the body
+  bakes the task into the rule and silently survives a TS port.
+- **Consts test: family reusability, not intra-task variance.** Lift a
+  value to Consts when a sibling task in the same family (rotated,
+  mirrored, different stride, different bg) would swap that value and
+  reuse the body. The test is *what would change in a sibling task*,
+  not *what varies across this task's examples*. Pinning a Const to one
+  value is data, not a reason to inline — the Const is the explicit slot
+  for the family's degree of freedom. A task whose data only ever shows
+  the TL anchor still has `anchor: DiagDir = TL` in Consts.
 - **Lib docs are Python-only.** `programs/lib.py` documents primitives in
   Python terms. Relational/Souffle form notation lives in solver
   docstrings, not in primitive definitions.
@@ -270,6 +315,28 @@ Everything must be representable in Souffle.
   shared variable.
 - Non-determinism via Souffle's `choice-domain` is mirrored in Python by the
   injected `ChoiceFn` (see Patterns: choice injection).
+- **Boxed values for set-valued keys.** When a relation's key is itself a
+  set of tuples — a row's cells, a 3×3 marker shape, a shape vocabulary
+  entry — Souffle scalar columns can't hold the set. Standard encoding:
+  each declared box gets an opaque ID; its tuples live in a relation
+  indexed by that ID (`pattern(K, Al, Co)`). Equality between a runtime
+  set and a declared box is the **count-trick**, which solver docstrings
+  spell as `set_eq(runtime(Ac, _, _), pattern(K, _, _))`:
+
+  ```
+  pattern_size(K, N)    :- N = count : { pattern(K, _, _) }.
+  runtime_size(Ac, N)   :- N = count : { runtime(Ac, _, _) }.
+  match_count(Ac, K, N) :- N = count : { pattern(K, X, Y), runtime(Ac, X, Y) }.
+  set_eq(...)           :- match_count(Ac, K, N), pattern_size(K, N), runtime_size(Ac, N).
+  ```
+
+  Generic over the contained tuple type. Cost is bounded by
+  `|patterns| × |cells_per_pattern| × |runtime_groups|` plus aggregation —
+  fine at ARC scale; index the pattern relation on `(X, Y)` if a task
+  ever pushes it. Host-side (Python): `frozenset` construction + `==`
+  collapses the count-trick into one operator. The host typically needs
+  an extra rule to materialize per-group frozensets — Two-form
+  documentation applies.
 
 ## Patterns
 
@@ -295,6 +362,13 @@ Recognizable shapes that recur across solvers:
   fold. Keys are actual cell colors, not boolean projections — the fold
   pattern (XOR/OR/etc.) is implicit in the table's rows. Examples:
   34b99a2b (XOR), 5d2a5c43 (OR).
+- **Shape-keyed mapping.** Mapping from a set-valued key (a row's cells,
+  a marker shape, a shape vocabulary entry) to an output value. The whole
+  shape is the key — not a projection of one cell within it. Mapping
+  table holds boxed values (frozensets host-side; pattern relations
+  Souffle-side via set_eq). Stays close to ARC reality (Object Principle
+  9) by avoiding integer/boolean projections of the underlying cells.
+  Example: a85d4709 (row-as-key fill).
 - **Choice injection** (tiebreak meta-primitive). Tiebreak solvers take
   `choice: ChoiceFn` as a third arg; the body declares ambiguity via
   `choice(s)` over a candidate set. Framework discovers each call's set
@@ -317,7 +391,7 @@ Spatial structure of a grid along an axis. Two modes per axis:
 2D structure (e.g., `tile_d4`'s 2D template) is handled by composition
 of per-axis primitives — no separate 2D primitive needed.
 
-**Affected solvers** (12 total).
+**Affected solvers.**
 
 Using lifted layout primitives:
 - `d10ecb37` — `corner_view` (TL 2×2 crop).
@@ -334,6 +408,9 @@ Placeholder (no primitive lifted yet):
 - `34b99a2b` — split halves with margin (XOR fold).
 - `5d2a5c43` — split halves with margin (OR fold).
 - `bd4472b8` — header + body sections, body cycles header.
+- `7e4d4f7c` — TOP-anchored carry of input rows 0..H-2 into a fixed-height
+  output (corner_view kin) + header/body section split (bg read from
+  body's TL, à la `bd4472b8`'s body_start).
 
 Primitive shape pending more samples. Working sketch:
 `repeat_anchored(cells, dir, span, margin) -> Cells[*Xs, local, tile]`
@@ -381,10 +458,4 @@ Decisions held open until more data points land:
 
 ## Resume
 
-Refresh at session end. State as of last update: 22 solvers complete (all
-12 three-line, all 3 four-line, all 2 five-line, all 4 six-line; 1 of the
-4 seven-line). Next candidates in line-count order:
-
-- `7e4d4f7c` (7-line)
-- `a85d4709` (7-line)
-- `be03b35f` (7-line)
+`bash scripts/queue.sh` for the next solver.
