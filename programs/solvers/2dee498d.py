@@ -1,8 +1,7 @@
-"""Solver for ARC task 2dee498d — input is N identical tiles; output is the tile.
+"""Input is N identical tiles; output is the tile.
 
-Status: placeholder — symmetric N-fold collapse along both axes via
-        component-wise modulo on raw Position. Layout primitive cluster
-        pending (see docs/solvers.md).
+Placeholders:
+- position-destructure: component-wise modulo on raw Position for symmetric N-fold collapse along both axes.
 
 Rule (Souffle form):
     out(t mod inner_h, r mod inner_w, b mod inner_h, l mod inner_w, col)

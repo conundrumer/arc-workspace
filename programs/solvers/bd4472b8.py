@@ -1,10 +1,7 @@
-"""Solver for ARC task bd4472b8 — header section preserved, body section cycles header.
+"""Header section preserved, body section cycles header.
 
-Status: placeholder — non-uniform layout (two sections with different
-        roles) plus an anchored-tile cycle. Body destructures Position
-        for the section split, the grid width, and the cyclic source-col
-        index. Layout primitive cluster pending; the conceptual primitives
-        are non-uniform-section-split + anchored cyclic tile.
+Placeholders:
+- position-destructure: section split (`t < c.body_start`), grid width, and cyclic source-col index (`(t - body_start) % W`). Conceptual primitives are non-uniform-section-split (header/body sections with different roles) plus anchored cyclic tile (same family as ba26e723's stride).
 
 Rule (informal):
     The grid splits into two sections along the top axis: a header section
@@ -16,10 +13,6 @@ Rule (informal):
 
 == Notes ==
 
-- First draft: raw 4-tuple destructure throughout. Section split is the
-  non-uniform layout concept; the body's `(t - body_start) mod W` is a
-  cyclic anchored tile (same family as ba26e723's stride). Both
-  placeholders.
 - The const `body_start` is *not* a primitive — just the integer offset
   where the body section begins. Conceptual primitive is "section split,"
   with the integer derived from section sizes.

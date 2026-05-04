@@ -236,8 +236,7 @@ def pattern(rows: list[list[int]]) -> frozenset[tuple[Position, Color]]:
 
     Same Position math as to_relational; returns frozenset so the result
     can sit inside a tuple in a set (shape-keyed mapping). Souffle
-    counterpart: declared `pattern(K, Al, Co)` facts joined via set_eq
-    (see docs/solvers.md, Souffle alignment).
+    counterpart: declared `pattern(K, Al, Co)` facts joined via set_eq.
     """
     return frozenset(to_relational(rows))
 

@@ -1,11 +1,7 @@
-"""Solver for ARC task 8ee62060 — D4 transform on the 2×2 block-grid.
+"""D4 transform on the 2×2 block-grid.
 
-Status: placeholder — block-level D4 via raw Position destructure.
-        Conceptual primitive is "apply D4 at block granularity":
-        coarsen Position to its block, apply D4 in block-grid coords,
-        recombine with the per-block local. Layout primitive cluster
-        pending — `untile_d4`-then-retile would absorb this (see
-        docs/solvers.md Layout).
+Placeholders:
+- position-destructure: block-level D4. Conceptual primitive is "apply D4 at block granularity": coarsen Position to its block, apply D4 in block-grid coords, recombine with the per-block local. `untile_d4`-then-retile would absorb this.
 
 Rule (Souffle form):
     out((bt*K + t%K, br*K + r%K, bb*K + b%K, bl*K + l%K), col)
@@ -24,10 +20,9 @@ content is preserved — the inner is not transformed.
   reproduce all outputs. ROT_180 / FLIP_DIAG / FLIP_ANTIDIAG fix the
   diagonal pattern so they fail. CONSTS picks FLIP_TB; FLIP_LR is an
   equally valid alt the materialized data doesn't distinguish.
-  (Rule alts under `kind="rule"` are deferred — see solvers.md.)
+  (Rule alts under `kind="rule"` are deferred.)
 - Block dim is square in this task — `block_size` covers both axes.
-  Non-square blocks would force splitting into per-axis fields and
-  revisiting the h/w-naming question (Forbidden naming).
+  Non-square blocks would force splitting into per-axis fields.
 - Inner content preserved → the within-block local 4-tuple
   `(t%K, r%K, b%K, l%K)` passes through unchanged; only the block-grid
   position transforms.

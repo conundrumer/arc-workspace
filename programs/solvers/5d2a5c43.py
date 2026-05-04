@@ -1,9 +1,7 @@
-"""Solver for ARC task 5d2a5c43 — fold halves about a divider via color mapping.
+"""Fold halves about a divider via color mapping.
 
-Status: placeholder — same layout cluster as 34b99a2b (uniform split-in-
-        halves with margin). Body destructures Position to rebuild the
-        two halves' output positions; only `mapping` differs from 34b99a2b
-        (OR fold vs XOR fold — same body shape).
+Placeholders:
+- position-destructure: layout split. Same cluster as 34b99a2b (uniform split-in-halves with margin); only `mapping` differs (OR fold vs XOR fold — same body shape).
 
 Rule (Souffle form):
     left(p, c)  :- in(p, c), within `c.half_w` of one edge, repositioned.

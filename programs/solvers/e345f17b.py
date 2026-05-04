@@ -1,8 +1,7 @@
-"""Solver for ARC task e345f17b — fold halves via color mapping (no margin).
+"""Fold halves via color mapping (no margin).
 
-Status: placeholder — same body as 34b99a2b (canonical for this shape).
-        Layout split is raw Position destructure; layout primitive
-        cluster pending.
+Placeholders:
+- position-destructure: layout split. Same body as 34b99a2b (canonical for this shape).
 
 Rule form, two-form documentation, and layout notes: see
 `programs/solvers/34b99a2b.py`.

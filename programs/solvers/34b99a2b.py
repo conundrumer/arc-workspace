@@ -1,11 +1,7 @@
-"""Solver for ARC task 34b99a2b — fold halves about a divider via color mapping.
+"""Fold halves about a divider via color mapping.
 
-Status: placeholder — raw Position destructure for the layout split. The
-        conceptual primitive is "split into halves along an axis with a
-        margin (the divider)" — same layout family as corner_view (a
-        single-anchor variant) and slab/stride. Lift on a third layout
-        occurrence; until then, no orientation-baking primitive is reached
-        for and the body destructures honestly.
+Placeholders:
+- position-destructure: layout split. Conceptual primitive is "split into halves along an axis with a margin (the divider)" — same family as corner_view (a single-anchor variant) and slab/stride. Lift on a third layout occurrence.
 
 Rule (Souffle form):
     left(p, c)  :- in(p, c), within `c.half_w` of one edge, repositioned.

@@ -1,8 +1,7 @@
-"""Solver for ARC task f25ffba3 — stamp bottom half of input with D4 set.
+"""Stamp bottom half of input with D4 set.
 
-Status: placeholder — raw arithmetic on bottom-distance for the half
-        partition. Rule wants an edge-anchored half-extract; corner_view
-        is the wrong shape (see incidents_7e4d4f7c.md).
+Placeholders:
+- arithmetic-predicate: `dist(p, c.data_dir) < c.half_h` half-partition. Rule wants an edge-anchored half-extract; corner_view is the wrong shape.
 
 Rule (Souffle form):
     out(apply(D, P), col) :- in(P, col),

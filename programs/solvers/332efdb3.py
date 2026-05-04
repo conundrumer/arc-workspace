@@ -1,7 +1,7 @@
-"""Solver for ARC task 332efdb3 — checkerboard-of-dots pattern.
+"""Checkerboard-of-dots pattern.
 
-Status: placeholder — raw Position destructure with modulo predicate (no
-`wallpaper` primitive yet; see docs/solvers.md).
+Placeholders:
+- position-destructure: modulo predicate (`t % 2`, `l % 2`) on raw Position. No `wallpaper` primitive yet.
 
 Rule (Datalog form):
     out(p, c.dot) :- in(p, _), top(p) % 2 == 1, left(p) % 2 == 1.
@@ -13,8 +13,7 @@ colors are discarded (Pattern: "input as shape provider").
 == Notes ==
 
 - The output equals a 2×2 motif `[[bg, bg], [bg, dot]]` tiled and truncated
-  to input dims. A `wallpaper` primitive would express this relationally;
-  deferred (see docs/solvers.md).
+  to input dims. A `wallpaper` primitive would express this relationally; deferred.
 
 - TL-privilege caveat: the predicate uses `t` and `l` from the TL corner.
   This task's odd dimensions give the predicate 4-fold symmetry (any

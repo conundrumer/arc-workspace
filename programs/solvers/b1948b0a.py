@@ -21,8 +21,7 @@ collapses on a Souffle port.
   to multi-row or cross-entity substitution.
 
 - The body writes the rule pattern directly — no `recolor`-shaped helper.
-  Substitution is a rule pattern, not a primitive function (see
-  docs/solvers.md, Object Principle 7 and Souffle alignment).
+  Substitution is a rule pattern, not a primitive function.
 """
 
 from dataclasses import dataclass

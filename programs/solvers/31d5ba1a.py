@@ -1,10 +1,7 @@
-"""Solver for ARC task 31d5ba1a — VERTICAL XOR fold of input halves.
+"""VERTICAL XOR fold of input halves.
 
-Status: placeholder — raw Position destructure for the layout split.
-        Conceptual primitive is "split into halves along an axis (with
-        optional margin)" — same Layout family entry as 34b99a2b /
-        5d2a5c43 (HORIZONTAL fold *with* a divider). This is the first
-        VERTICAL non-margin sample.
+Placeholders:
+- position-destructure: layout split. Conceptual primitive is "split into halves along an axis (with optional margin)" — same family entry as 34b99a2b / 5d2a5c43 (HORIZONTAL fold *with* a divider). This is the first VERTICAL non-margin sample.
 
 Rule (Souffle form):
     top(P, C) :- in(P, C), within `c.half_h` of TOP edge, repositioned to
@@ -28,8 +25,7 @@ XOR pattern is implicit in the table's rows.
   embeds these directly; a sibling task with different colors but the
   same rule would just swap the relation's rows.
 
-- Position destructure throughout — placeholder marker. The lift
-  candidate is unchanged from 34b99a2b's docstring: an axis-parameterized
+- Lift candidate is unchanged from 34b99a2b's docstring: an axis-parameterized
   halves-fold with optional margin width.
 """
 

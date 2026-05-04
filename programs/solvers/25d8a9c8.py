@@ -1,10 +1,7 @@
-"""Solver for ARC task 25d8a9c8 — recolor rows by uniformity (uniform→C5, else→C0).
+"""Recolor rows by uniformity (uniform→C5, else→C0).
 
-Status: placeholder — pair-existence trick for "more than one distinct color
-        in a group". Special case of a count aggregator (Souffle: `n =
-        count : { body }`, filter `n > 1`). Lift to a `count_per` (or
-        equivalent) primitive when a task forces general count semantics
-        (==N, >K with K≥2, or filtering on the count value itself).
+Placeholders:
+- pair-existence-count: pair-existence trick for "more than one distinct color in a group". Special case of a count aggregator (Souffle: `n = count : { body }`, filter `n > 1`). Lift to a `count_per` (or equivalent) primitive when a task forces general count semantics (==N, >K with K≥2, or filtering on the count value itself).
 
 Rule (Souffle form):
     non_uniform(across) :- in(p1, x1), in(p2, x2),

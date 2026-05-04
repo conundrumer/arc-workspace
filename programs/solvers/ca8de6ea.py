@@ -1,8 +1,4 @@
-"""Solver for ARC task ca8de6ea — collapse 5×5 X-pattern to dense 3×3.
-
-Status: placeholder — hand-built Position remap table (9 entries),
-        declared via `position_mapping` (labeled grids whose matching
-        labels identify the pairs).
+"""Collapse 5×5 X-pattern to dense 3×3.
 
 Rule (Souffle form):
     out(P_out, col) :- in(P_in, col), mapping(P_in, P_out).
@@ -15,8 +11,7 @@ don't match any mapping key.
 
 - Mapping shape: `set[tuple[Position, Position]]` — input position to
   output position. Substitution-on-Position mirrors b1948b0a's
-  substitution-on-Color (Object Principle 7). Pure rule pattern, no
-  helper function.
+  substitution-on-Color. Pure rule pattern, no helper function.
 
 - The mapping is declared via `position_mapping(input_rows, output_rows)`
   — two labeled grids; matching non-zero labels identify the position

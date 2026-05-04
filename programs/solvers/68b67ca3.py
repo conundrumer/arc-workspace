@@ -1,11 +1,7 @@
-"""Solver for ARC task 68b67ca3 — extract data cells from a 2D anchored stride layout.
+"""Extract data cells from a 2D anchored stride layout.
 
-Status: placeholder — raw arithmetic stride and inline Position
-        construction. Layout-family entry; conceptual primitive
-        `repeat_anchored(cells, dir, span, margin) -> Cells[*Xs, local,
-        tile]` (Layout working sketch) would handle it. Second sample for
-        the anchored-stride family (after ba26e723's 1D recolor; this is
-        2D and an extract).
+Placeholders:
+- position-destructure: arithmetic stride (`(H + s - 1) // s`, `dist // s`, `dist % s`) and hand-built Position via index-into-list-by-Dir.value. Conceptual primitive `repeat_anchored(cells, dir, span, margin) -> Cells[*Xs, local, tile]` would handle it. Second sample for the anchored-stride family (after ba26e723's 1D recolor; this is 2D and an extract).
 
 Rule (Souffle form):
     in_h(H) :- in(P, _), H = dist(P, v_dir) + dist(P, v_opp) + 1.
@@ -29,8 +25,6 @@ tile index from the anchor side.
 - Consts: `anchor: DiagDir = TL` (family DOF — a TR/BR/BL-anchored
   sibling task reuses this body, swapping only the const) and
   `stride: int = 2` (= span 1 + margin 1; data on every other cell).
-  Anchor lifted per Conventions: Consts test (family reusability, not
-  intra-task variance).
 
 - Body uses `dist(p, dir)` for position access — Dir literals come from
   `c.anchor.value`, not inline. Position construction goes via
@@ -41,8 +35,7 @@ tile index from the anchor side.
   regardless of their color. A variant where margins carry non-bg cells
   would still extract the data correctly.
 
-- ceil(H/stride) computed as `(H + s - 1) // s` — the arithmetic stride
-  placeholder.
+- ceil(H/stride) computed as `(H + s - 1) // s`.
 """
 
 from dataclasses import dataclass

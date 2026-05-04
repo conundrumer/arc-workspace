@@ -18,8 +18,7 @@ across" = same column-component = same row.
   replacement). A rotated variant (anchor=TOP) reuses this body verbatim.
 
 - Replacement is *derived*, not a const — `in(p_anchor, repl)` joined via
-  shared across-component (the role Souffle's variable binding plays in
-  Python; see docs/solvers.md "Souffle alignment").
+  shared across-component.
 
 - Position access goes through `dist` and `split` — no raw destructure.
   Across-component equality carries grid-bound info, so positions from

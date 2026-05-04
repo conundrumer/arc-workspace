@@ -12,7 +12,7 @@ How a solver file looks. Souffle is the eventual target; the Python style mirror
 ## Docstring
 
 - Short description of the task's rule.
-- `Placeholders:` section for fallback patterns (e.g., raw Position destructure where a primitive would later sit). Each entry: `- <label>: <reason>`.
+- `Placeholders:` section for fallback patterns (e.g., raw Position destructure where a primitive would later sit). Each entry: `- <label>: <reason>` — `<label>` is the fallback technique (recurring across solvers; e.g., `position-destructure`); `<reason>` is the case-specific detail.
 
 ## Imports
 

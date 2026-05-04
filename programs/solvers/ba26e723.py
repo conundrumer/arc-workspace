@@ -1,9 +1,7 @@
-"""Solver for ARC task ba26e723 — recolor C4→C6 on every 3rd column from LEFT.
+"""Recolor C4→C6 on every 3rd column from LEFT.
 
-Status: placeholder — `%`-arithmetic stride predicate. Lives in the layout
-        concept cluster alongside anchored tiling and corner anchoring;
-        defer the primitive until the cluster's shape clarifies (see
-        docs/solvers.md Deferred / provisional).
+Placeholders:
+- arithmetic-predicate: `dist(p, c.anchor) % c.stride == 0` stride predicate. Lives in the layout concept cluster alongside anchored tiling and corner anchoring; defer the primitive until the cluster's shape clarifies.
 
 Rule (Souffle form — canonical):
     striped(p) :- in(p, _), dist(p, c.anchor) mod c.stride == 0.
@@ -27,10 +25,9 @@ Generalization of b1948b0a: substitution gated by a positional predicate
 - The `striped` predicate is `dist(p, c.anchor) mod c.stride == 0` — Dir-
   parameterized so a top-anchored or right-anchored variant swaps the const,
   not the body.
-- The `%` arithmetic is the placeholder hook. Conceptually adjacent to
-  anchored tiling (D4Template at stride) and corner-anchored crop
-  (single-position version of the same anchor idea). Awaiting more layout
-  data points before factoring.
+- The `%` arithmetic is conceptually adjacent to anchored tiling
+  (D4Template at stride) and corner-anchored crop (single-position version
+  of the same anchor idea). Awaiting more layout data points before factoring.
 """
 
 from dataclasses import dataclass

@@ -1,10 +1,7 @@
-"""Solver for ARC task 7e4d4f7c — top H-1 input rows kept; last row derived.
+"""Top H-1 input rows kept; last row derived.
 
-Status: placeholder — TOP-anchored row carry into a fixed-height output,
-        plus a row-recolor against a bg color read from the body's TL.
-        No anchored-carry / row-recolor primitives yet. Layout-family
-        cluster (corner_view kin + header/body section split, à la
-        `bd4472b8`'s body_start); see docs/solvers.md.
+Placeholders:
+- position-destructure: TOP-anchored row carry into a fixed-height output, row-recolor against bg color, inline (1,1) bg-anchor read. No anchored-carry / row-recolor primitives. Layout-family cluster (corner_view kin + header/body section split, à la `bd4472b8`'s body_start).
 
 Rule (Souffle form):
     in_w(W) :- in((_, R, _, L), _), W = R + L + 1.
@@ -36,12 +33,8 @@ Output dims: (out_h, in_w). Height is a per-task constant; width matches input.
   `{(bg, bg), (*, marker)}` doesn't fit because mapping keys must be
   enumerable Colors, not "anything else". Currently inlined.
 
-- Position destructure throughout — placeholder marker.
-
 - Consts: `out_h: int = 3` (the per-task output height; lifted from the
-  body so the rule isn't baked into magic numbers — see docs Conventions:
-  Per-task scalar alert), and `marker: Color = C6`. The (1, 1) bg-anchor
-  stays inline (still no honest name, still placeholder-class).
+  body so the rule isn't baked into magic numbers), and `marker: Color = C6`.
 """
 
 from dataclasses import dataclass
