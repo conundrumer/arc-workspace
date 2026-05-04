@@ -41,6 +41,11 @@ class Color(Enum):
     C9 = 9
 
 
+# Bare-name aliases for color literals — avoids `Color.` namespace noise in
+# mapping tables. `Color` is still used for type annotations.
+C0, C1, C2, C3, C4, C5, C6, C7, C8, C9 = Color
+
+
 type Position = tuple[int, int, int, int]
 
 
@@ -224,6 +229,48 @@ def to_relational(rows: list[list[int]]) -> Grid:
         for r in range(h)
         for c in range(w)
     }
+
+
+def pattern(rows: list[list[int]]) -> frozenset[tuple[Position, Color]]:
+    """Hashable Cells value for use as a relation key.
+
+    Same Position math as to_relational; returns frozenset so the result
+    can sit inside a tuple in a set (shape-keyed mapping). Souffle
+    counterpart: declared `pattern(K, Al, Co)` facts joined via set_eq
+    (see docs/solvers.md, Souffle alignment).
+    """
+    return frozenset(to_relational(rows))
+
+
+def position_mapping(
+    input_rows: list[list[int]],
+    output_rows: list[list[int]],
+) -> set[tuple[Position, Position]]:
+    """Pair positions in two labeled grids by matching label.
+
+    Each non-zero int in `input_rows` and `output_rows` is a label;
+    matching labels identify a position pair. Labels are arbitrary
+    positive ints — no Color cap. Zero is always treated as bg (no
+    pairing); convention is "don't use 0 as a label."
+
+    Used to declare a Position-keyed substitution table (the rule is
+    `out(P_out, col) :- in(P_in, col), mapping(P_in, P_out)`) where
+    the mapping's spatial structure is more readable as two labeled
+    grids than as a list of 4-tuple pairs.
+    """
+    def positions_by_label(rows: list[list[int]]) -> dict[int, Position]:
+        h = len(rows)
+        w = len(rows[0]) if rows else 0
+        return {
+            rows[r][c]: (r, w - 1 - c, h - 1 - r, c)
+            for r in range(h)
+            for c in range(w)
+            if rows[r][c] != 0
+        }
+
+    in_pos = positions_by_label(input_rows)
+    out_pos = positions_by_label(output_rows)
+    return {(in_pos[lbl], out_pos[lbl]) for lbl in in_pos if lbl in out_pos}
 
 
 def from_relational(g: Grid) -> list[list[int]]:
