@@ -23,7 +23,8 @@ data/
   patches/       <id>.arcpatch canonical; <id>_A.arcpatch, <id>_B.arcpatch, <id>_C.arcpatch variants
   tasks/         materialized JSON (build artifact)
 docs/
-  solvers.md     entry point for solver work — relational style, principles, conventions
+  solvers.md             entry point for solver work — relational style, principles, conventions
+  wf-solver/            workflow docs for solver and meta sessions; read at session start
   arcpatches.md          .arcpatch format: file layout, verbs, variants, alts
   hardware-probe.md      dev machine specs
 ```
@@ -36,6 +37,14 @@ uv run python scripts/materialize.py
 uv run python programs/run.py             # run all solvers
 uv run python programs/run.py <task_id>   # run one
 ```
+
+## Sessions
+
+Solver work session: user opens with `SOLVER START`.
+Meta session: user opens with `META SOLVER START` and closes with `META SOLVER END`.
+In both, bootstrap by `cat docs/wf-solver/*.md` to read the workflow docs in order.
+
+For meta sessions, `bash scripts/inspect-session.sh` renders previous sessions for inspection — pass a session-id to inspect one, no arg for the multi-session window since the previous meta session.
 
 ## Conventions
 
