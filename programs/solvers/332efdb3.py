@@ -27,7 +27,7 @@ colors are discarded (Pattern: "input as shape provider").
 
 from dataclasses import dataclass
 
-from programs.lib import Color, Grid
+from programs.lib import *
 
 
 @dataclass(frozen=True)
@@ -36,7 +36,7 @@ class Consts:
     dot: Color
 
 
-CONSTS = Consts(bg=Color.C1, dot=Color.C0)
+CONSTS = Consts(bg=C1, dot=C0)
 
 
 def solve(grid: Grid, c: Consts) -> Grid:

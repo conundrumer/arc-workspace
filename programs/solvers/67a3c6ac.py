@@ -13,7 +13,7 @@ Rule (Datalog form):
 
 from dataclasses import dataclass
 
-from programs.lib import D4, Grid, apply
+from programs.lib import *
 
 
 @dataclass(frozen=True)

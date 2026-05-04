@@ -9,7 +9,7 @@ to 6fa7a44f — two distinct task IDs share the same rule.
 
 from dataclasses import dataclass
 
-from programs.lib import D4, D4Template, Grid, d4_template_from_rows, tile_d4
+from programs.lib import *
 
 
 @dataclass(frozen=True)

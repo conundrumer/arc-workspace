@@ -26,7 +26,7 @@ keeps one (Pattern: set dedup as semantics).
 
 from dataclasses import dataclass
 
-from programs.lib import D4, D4Template, Grid, d4_template_from_rows
+from programs.lib import *
 
 
 @dataclass(frozen=True)

@@ -30,7 +30,7 @@ Rule (informal):
 
 from dataclasses import dataclass
 
-from programs.lib import Grid
+from programs.lib import *
 
 
 @dataclass(frozen=True)

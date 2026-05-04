@@ -8,7 +8,7 @@ substitution-as-rule-pattern.
 
 from dataclasses import dataclass
 
-from programs.lib import Color, Grid
+from programs.lib import *
 
 
 @dataclass(frozen=True)
@@ -16,7 +16,7 @@ class Consts:
     mapping: set[tuple[Color, Color]]
 
 
-CONSTS = Consts(mapping={(Color.C7, Color.C5)})
+CONSTS = Consts(mapping={(C7, C5)})
 
 
 def solve(grid: Grid, c: Consts) -> Grid:

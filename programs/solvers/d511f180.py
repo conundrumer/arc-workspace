@@ -9,7 +9,7 @@ See b1948b0a.py for the rule (Souffle + Python forms).
 
 from dataclasses import dataclass
 
-from programs.lib import Color, Grid
+from programs.lib import *
 
 
 @dataclass(frozen=True)
@@ -17,7 +17,7 @@ class Consts:
     mapping: set[tuple[Color, Color]]
 
 
-CONSTS = Consts(mapping={(Color.C5, Color.C8), (Color.C8, Color.C5)})
+CONSTS = Consts(mapping={(C5, C8), (C8, C5)})
 
 
 def solve(grid: Grid, c: Consts) -> Grid:

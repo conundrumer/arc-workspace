@@ -43,7 +43,7 @@ at least two distinct colors." Same shared-across-binding idiom as c7d4e6ad
 
 from dataclasses import dataclass
 
-from programs.lib import Axis, Color, Grid, split
+from programs.lib import *
 
 
 @dataclass(frozen=True)
@@ -55,8 +55,8 @@ class Consts:
 
 CONSTS = Consts(
     axis=Axis.HORIZONTAL,
-    uniform_color=Color.C5,
-    non_uniform_color=Color.C0,
+    uniform_color=C5,
+    non_uniform_color=C0,
 )
 
 

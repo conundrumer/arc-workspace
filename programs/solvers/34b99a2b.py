@@ -31,7 +31,7 @@ The XOR pattern of this task is implicit in the table's rows.
 
 from dataclasses import dataclass
 
-from programs.lib import Color, Grid
+from programs.lib import *
 
 
 @dataclass(frozen=True)
@@ -43,10 +43,10 @@ class Consts:
 CONSTS = Consts(
     half_w=4,
     mapping={
-        (Color.C0, Color.C0, Color.C0),  # both empty → C0
-        (Color.C0, Color.C5, Color.C2),  # right only → C2
-        (Color.C8, Color.C0, Color.C2),  # left only → C2
-        (Color.C8, Color.C5, Color.C0),  # both filled → C0
+        (C0, C0, C0),  # both empty → C0
+        (C0, C5, C2),  # right only → C2
+        (C8, C0, C2),  # left only → C2
+        (C8, C5, C0),  # both filled → C0
     },
 )
 

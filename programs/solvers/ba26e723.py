@@ -35,7 +35,7 @@ Generalization of b1948b0a: substitution gated by a positional predicate
 
 from dataclasses import dataclass
 
-from programs.lib import Color, Dir, Grid, dist
+from programs.lib import *
 
 
 @dataclass(frozen=True)
@@ -46,7 +46,7 @@ class Consts:
 
 
 CONSTS = Consts(
-    mapping={(Color.C4, Color.C6)},
+    mapping={(C4, C6)},
     anchor=Dir.LEFT,
     stride=3,
 )

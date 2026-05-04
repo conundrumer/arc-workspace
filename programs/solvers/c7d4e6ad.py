@@ -28,7 +28,7 @@ across" = same column-component = same row.
 
 from dataclasses import dataclass
 
-from programs.lib import Color, Dir, Grid, axis_of, dist, split
+from programs.lib import *
 
 
 @dataclass(frozen=True)
@@ -37,7 +37,7 @@ class Consts:
     anchor: Dir
 
 
-CONSTS = Consts(targets={Color.C5}, anchor=Dir.LEFT)
+CONSTS = Consts(targets={C5}, anchor=Dir.LEFT)
 
 
 def solve(grid: Grid, c: Consts) -> Grid:

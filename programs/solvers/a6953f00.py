@@ -22,7 +22,7 @@ example. The framework injects `choice`, runs the body once per element of
 
 from dataclasses import dataclass
 
-from programs.lib import ChoiceFn, DiagDir, Grid, corner_view
+from programs.lib import *
 
 
 @dataclass(frozen=True)

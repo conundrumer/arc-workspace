@@ -26,7 +26,7 @@ OR fold here: any cell C4 → C8, neither → C0.
 
 from dataclasses import dataclass
 
-from programs.lib import Color, Grid
+from programs.lib import *
 
 
 @dataclass(frozen=True)
@@ -38,10 +38,10 @@ class Consts:
 CONSTS = Consts(
     half_w=4,
     mapping={
-        (Color.C0, Color.C0, Color.C0),  # neither filled → C0
-        (Color.C0, Color.C4, Color.C8),  # right only → C8
-        (Color.C4, Color.C0, Color.C8),  # left only → C8
-        (Color.C4, Color.C4, Color.C8),  # both filled → C8
+        (C0, C0, C0),  # neither filled → C0
+        (C0, C4, C8),  # right only → C8
+        (C4, C0, C8),  # left only → C8
+        (C4, C4, C8),  # both filled → C8
     },
 )
 

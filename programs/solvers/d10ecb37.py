@@ -16,7 +16,7 @@ preserved, opposite distances recomputed against (c.h, c.w).
 
 from dataclasses import dataclass
 
-from programs.lib import DiagDir, Grid, corner_view
+from programs.lib import *
 
 
 @dataclass(frozen=True)

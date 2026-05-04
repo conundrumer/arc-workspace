@@ -27,7 +27,7 @@ collapses on a Souffle port.
 
 from dataclasses import dataclass
 
-from programs.lib import Color, Grid
+from programs.lib import *
 
 
 @dataclass(frozen=True)
@@ -35,7 +35,7 @@ class Consts:
     mapping: set[tuple[Color, Color]]
 
 
-CONSTS = Consts(mapping={(Color.C6, Color.C2)})
+CONSTS = Consts(mapping={(C6, C2)})
 
 
 def solve(grid: Grid, c: Consts) -> Grid:
