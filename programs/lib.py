@@ -19,6 +19,7 @@ function name (e.g. flip_h) bakes orientation into the solver body.
 
 from collections.abc import Callable
 from enum import Enum
+from typing import NamedTuple
 
 type ChoiceFn = Callable[[frozenset], object]
 
@@ -131,8 +132,13 @@ def axis_of(d: Dir) -> Axis:
     return Axis.HORIZONTAL if d in (Dir.LEFT, Dir.RIGHT) else Axis.VERTICAL
 
 
-def split(p: Position, axis: Axis) -> tuple[Position, Position]:
-    """Decompose p into (along-axis, across-axis) sub-positions.
+class Split(NamedTuple):
+    along: Position
+    across: Position
+
+
+def split(p: Position, axis: Axis) -> Split:
+    """Decompose p into along-axis and across-axis sub-positions.
 
     Each sub-position is itself a Position with the perpendicular distances
     zeroed — a 1xN row (HORIZONTAL) or Mx1 column (VERTICAL) in our 4-tuple
@@ -148,8 +154,8 @@ def split(p: Position, axis: Axis) -> tuple[Position, Position]:
     so cross-grid mismatches don't false-positive.
     """
     if axis == Axis.HORIZONTAL:
-        return ((0, p[1], 0, p[3]), (p[0], 0, p[2], 0))
-    return ((p[0], 0, p[2], 0), (0, p[1], 0, p[3]))
+        return Split(along=(0, p[1], 0, p[3]), across=(p[0], 0, p[2], 0))
+    return Split(along=(p[0], 0, p[2], 0), across=(0, p[1], 0, p[3]))
 
 
 def tile_d4(template: D4Template, inner: Grid) -> Grid:
