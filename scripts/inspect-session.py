@@ -64,8 +64,9 @@ def has_meta_end(records):
     for r in records:
         if r.get("type") == "user":
             content = r.get("message", {}).get("content")
-            if isinstance(content, str) and any(content.strip().startswith(k) for k in META_END_KEYWORDS):
-                return True
+            if isinstance(content, str):
+                if any(line.strip() in META_END_KEYWORDS for line in content.splitlines()):
+                    return True
     return False
 
 
