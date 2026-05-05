@@ -164,13 +164,8 @@ def cmd_all() -> int:
                 if not p.ok:
                     print(f"  {p.kind}[{p.idx}]: {p.detail}")
 
-    total_pass = sum(r.passes for r in results)
-    total_pairs = sum(r.total for r in results)
     print()
-    print(
-        f"summary: {len(results) - len(failed)}/{len(results)} solvers, "
-        f"{total_pass}/{total_pairs} pairs"
-    )
+    print(f"summary: {len(results) - len(failed)}/{len(results)} solvers")
     return 0 if not failed else 1
 
 
