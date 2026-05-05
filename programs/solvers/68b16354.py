@@ -8,8 +8,8 @@ selection step.
 
 == Notes ==
 
-- Body shape matches be03b35f's rotation step, minus the corner_view —
-  here the transform applies to the whole grid. Second occurrence of the
+- Body shape matches be03b35f's rotation step, minus the corner-anchored
+  filter — here the transform applies to the whole grid. Second occurrence of the
   per-cell `apply(d4, p)` over Cells. The lift candidate `transform(
   cells: Cells[*Xs], d: D4) -> Cells[*Xs]` is now at the
   resist-abstraction trigger; deferred for user direction.

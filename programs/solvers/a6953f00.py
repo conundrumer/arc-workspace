@@ -1,12 +1,12 @@
 """Solver for ARC task a6953f00 — 2×2 corner crop, TL or TR is valid (tiebreak).
 
-Rule (Datalog form):
-    out :- corner_view(diag, c.h, c.w)(in), choice(c.diags)(diag).
-
 Both TL-anchored and TR-anchored 2×2 crops are valid outputs for every
 example. The framework injects `choice`, runs the body once per element of
 `c.diags`, and verifies that the union of branch outputs covers
 {base, tiebreak alt}.
+
+Placeholders:
+- position-destructure: corner-anchored rebase; opposite-side distances recomputed by hand.
 
 == Notes ==
 
@@ -37,5 +37,13 @@ CONSTS = Consts(diags=frozenset({DiagDir.TL, DiagDir.TR}), h=2, w=2)
 
 def solve(grid: Grid, c: Consts, choice: ChoiceFn) -> Grid:
     diag = choice(c.diags)
-    # out :- corner_view(diag, c.h, c.w)(in).
-    return corner_view(grid, diag, c.h, c.w)
+    v_dir, h_dir = diag.value
+    v_opp, h_opp = opposite(v_dir), opposite(h_dir)
+    def anchored(p):
+        new_p = list(p)
+        new_p[v_opp.value] = c.h - 1 - p[v_dir.value]
+        new_p[h_opp.value] = c.w - 1 - p[h_dir.value]
+        return tuple(new_p)
+    # out(anchored(P), col) :- in(P, col), dist(P, v_dir) < c.h, dist(P, h_dir) < c.w.
+    return {(anchored(p), col) for (p, col) in grid
+            if dist(p, v_dir) < c.h and dist(p, h_dir) < c.w}

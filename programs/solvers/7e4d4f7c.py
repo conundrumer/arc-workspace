@@ -1,7 +1,7 @@
 """Top H-1 input rows kept; last row derived.
 
 Placeholders:
-- position-destructure: TOP-anchored row carry into a fixed-height output, row-recolor against bg color, inline (1,1) bg-anchor read. No anchored-carry / row-recolor primitives. Layout-family cluster (corner_view kin + header/body section split, à la `bd4472b8`'s body_start).
+- position-destructure: TOP-anchored row carry into a fixed-height output, row-recolor against bg color, inline (1,1) bg-anchor read. No anchored-carry / row-recolor primitives. Layout-family cluster (header/body section split, à la `bd4472b8`'s body_start).
 
 Rule (Souffle form):
     in_w(W) :- in((_, R, _, L), _), W = R + L + 1.

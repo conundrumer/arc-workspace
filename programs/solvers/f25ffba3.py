@@ -1,7 +1,7 @@
 """Stamp bottom half of input with D4 set.
 
 Placeholders:
-- arithmetic-predicate: `dist(p, c.data_dir) < c.half_h` half-partition. Rule wants an edge-anchored half-extract; corner_view is the wrong shape.
+- arithmetic-predicate: `dist(p, c.data_dir) < c.half_h` half-partition. Rule wants an edge-anchored half-extract.
 
 Rule (Souffle form):
     out(apply(D, P), col) :- in(P, col),

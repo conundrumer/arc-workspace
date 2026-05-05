@@ -28,7 +28,7 @@ tile index from the anchor side.
 
 - Body uses `dist(p, dir)` for position access — Dir literals come from
   `c.anchor.value`, not inline. Position construction goes via
-  index-into-list-by-Dir.value (same idiom as `corner_view`).
+  index-into-list-by-Dir.value.
 
 - bg color doesn't appear in the body — the rule is structural, not
   color-conditional. Margin cells are discarded by the stride filter
