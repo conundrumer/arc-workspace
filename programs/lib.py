@@ -241,6 +241,28 @@ def pattern(rows: list[list[int]]) -> frozenset[tuple[Position, Color]]:
     return frozenset(to_relational(rows))
 
 
+def shape(rows: list[list[int]]) -> frozenset[Position]:
+    """Hashable set of Positions from a labeled grid; non-zero cells are on.
+
+    Same Position math as to_relational / pattern, projected to positions
+    only with bg cells dropped. The 4-distance encoding ties each Position
+    to the row/col bounds, so shapes compare equal only if their source
+    grids had the same dimensions.
+
+    Distinct from pattern: pattern keeps the on-color in the key, so
+    differently-colored silhouettes compare unequal. shape is for tasks
+    where the bg/non-bg silhouette alone is load-bearing.
+    """
+    h = len(rows)
+    w = len(rows[0]) if h > 0 else 0
+    return frozenset(
+        (r, w - 1 - c, h - 1 - r, c)
+        for r in range(h)
+        for c in range(w)
+        if rows[r][c] != 0
+    )
+
+
 def position_mapping(
     input_rows: list[list[int]],
     output_rows: list[list[int]],
