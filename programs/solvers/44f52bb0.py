@@ -14,8 +14,8 @@ class Consts:
 
 CONSTS = Consts(
     syms=frozenset({D4.FLIP_LR, D4.FLIP_TB}),
-    sym_out=pattern([[1]]),
-    asym_out=pattern([[7]]),
+    sym_out=color_grid([[1]]),
+    asym_out=color_grid([[7]]),
 )
 
 

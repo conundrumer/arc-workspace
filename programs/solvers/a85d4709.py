@@ -3,7 +3,7 @@
 Rule (Souffle form):
     row_cell(Ac, Al, Co) :- in(P, Co), split(P, c.axis) = (Al, Ac).
     row_color(Ac, OutC)  :- mapping(K, OutC),
-                            set_eq(row_cell(Ac, _, _), pattern(K, _, _)).
+                            set_eq(row_cell(Ac, _, _), color_grid(K, _, _)).
     out(P, OutC)         :- in(P, _), split(P, c.axis) = (_, Ac),
                             row_color(Ac, OutC).
 
@@ -49,9 +49,9 @@ class Consts:
 CONSTS = Consts(
     axis=Axis.HORIZONTAL,
     mapping={
-        (pattern([[5, 0, 0]]), C2),  # marker at left
-        (pattern([[0, 5, 0]]), C4),  # marker at middle
-        (pattern([[0, 0, 5]]), C3),  # marker at right
+        (color_grid([[5, 0, 0]]), C2),  # marker at left
+        (color_grid([[0, 5, 0]]), C4),  # marker at middle
+        (color_grid([[0, 0, 5]]), C3),  # marker at right
     },
 )
 

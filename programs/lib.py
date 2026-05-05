@@ -180,34 +180,8 @@ def tile_d4(template: D4Template, inner: Grid) -> Grid:
     }
 
 
-def corner_view[*Xs](cells: Cells[*Xs], diag: DiagDir, h: int, w: int) -> Cells[*Xs]:
-    """The h×w sub-grid whose contents match the `diag` corner of `cells`.
-
-    Anchor-side distances are kept; opposite-side distances are recomputed
-    against the new (h, w) bounds. Cells outside the corner region are
-    dropped. Non-Position columns flow through transparently — Cells[*Xs]
-    in, Cells[*Xs] out.
-    """
-    v_dir, h_dir = diag.value
-    v_opp = opposite(v_dir)
-    h_opp = opposite(h_dir)
-    out: set = set()
-    for (pos, *rest) in cells:
-        v_kept = pos[v_dir.value]
-        h_kept = pos[h_dir.value]
-        if v_kept >= h or h_kept >= w:
-            continue
-        new_p = [0, 0, 0, 0]
-        new_p[v_dir.value] = v_kept
-        new_p[h_dir.value] = h_kept
-        new_p[v_opp.value] = h - 1 - v_kept
-        new_p[h_opp.value] = w - 1 - h_kept
-        out.add(((new_p[0], new_p[1], new_p[2], new_p[3]), *rest))
-    return out
-
-
 # ============================================================
-# Helpers — builders and JSON bridge
+# Helpers — builders
 # ============================================================
 
 
@@ -221,37 +195,33 @@ def d4_template_from_rows(rows: list[list[D4]]) -> D4Template:
     }
 
 
-def to_relational(rows: list[list[int]]) -> Grid:
+def color_grid(rows: list[list[int]]) -> frozenset[tuple[Position, Color]]:
+    """Color-valued cells from a labeled grid; hashable for use as a relation key.
+
+    Each cell becomes a (Position, Color) pair under 4-distance encoding
+    against the grid's bounds. Returns frozenset so the result can sit
+    inside a tuple in a set (shape-keyed mapping). Souffle counterpart:
+    declared `color_grid(K, P, Co)` facts joined via set_eq.
+    """
     h = len(rows)
     w = len(rows[0]) if h > 0 else 0
-    return {
+    return frozenset(
         ((r, w - 1 - c, h - 1 - r, c), Color(rows[r][c]))
         for r in range(h)
         for c in range(w)
-    }
+    )
 
 
-def pattern(rows: list[list[int]]) -> frozenset[tuple[Position, Color]]:
-    """Hashable Cells value for use as a relation key.
+def shape_grid(rows: list[list[int]]) -> frozenset[Position]:
+    """Set of on-positions from a labeled grid; hashable for use as a relation key.
 
-    Same Position math as to_relational; returns frozenset so the result
-    can sit inside a tuple in a set (shape-keyed mapping). Souffle
-    counterpart: declared `pattern(K, Al, Co)` facts joined via set_eq.
-    """
-    return frozenset(to_relational(rows))
+    Non-zero cells contribute their Positions in 4-distance encoding. The
+    encoding ties each Position to the row/col bounds, so shapes compare
+    equal only if their source grids had the same dimensions.
 
-
-def shape(rows: list[list[int]]) -> frozenset[Position]:
-    """Hashable set of Positions from a labeled grid; non-zero cells are on.
-
-    Same Position math as to_relational / pattern, projected to positions
-    only with bg cells dropped. The 4-distance encoding ties each Position
-    to the row/col bounds, so shapes compare equal only if their source
-    grids had the same dimensions.
-
-    Distinct from pattern: pattern keeps the on-color in the key, so
-    differently-colored silhouettes compare unequal. shape is for tasks
-    where the bg/non-bg silhouette alone is load-bearing.
+    Distinct from color_grid: color_grid keeps the on-color in the key, so
+    differently-colored silhouettes compare unequal. shape_grid is for
+    tasks where the bg/non-bg silhouette alone is load-bearing.
     """
     h = len(rows)
     w = len(rows[0]) if h > 0 else 0
@@ -292,28 +262,3 @@ def position_mapping(
     in_pos = positions_by_label(input_rows)
     out_pos = positions_by_label(output_rows)
     return {(in_pos[lbl], out_pos[lbl]) for lbl in in_pos if lbl in out_pos}
-
-
-def from_relational(g: Grid) -> list[list[int]]:
-    if not g:
-        return []
-    bounds = {(t + b + 1, l + r + 1) for ((t, r, b, l), _) in g}
-    if len(bounds) != 1:
-        raise ValueError(f"inconsistent grid bounds across positions: {bounds}")
-    h, w = next(iter(bounds))
-    by_cell: dict[tuple[int, int], int] = {}
-    for (t, r, b, l), col in g:
-        if t < 0 or r < 0 or b < 0 or l < 0:
-            raise ValueError(f"negative position component: ({t}, {r}, {b}, {l})")
-        if (t, l) in by_cell:
-            raise ValueError(
-                f"duplicate cell at (top={t}, left={l}): "
-                f"Color({by_cell[(t, l)]}) and Color({col.value})"
-            )
-        by_cell[(t, l)] = col.value
-    if len(by_cell) != h * w:
-        raise ValueError(f"coverage: {len(by_cell)} cells, expected {h * w} for {h}x{w}")
-    out = [[0] * w for _ in range(h)]
-    for (t, l), v in by_cell.items():
-        out[t][l] = v
-    return out

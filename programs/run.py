@@ -28,9 +28,44 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from arc.task import load as load_task  # noqa: E402
-from programs.lib import from_relational, to_relational  # noqa: E402
+from programs.lib import Color, Grid  # noqa: E402
 
 SOLVERS_DIR = REPO_ROOT / "programs" / "solvers"
+
+
+def to_relational(rows: list[list[int]]) -> Grid:
+    h = len(rows)
+    w = len(rows[0]) if h > 0 else 0
+    return {
+        ((r, w - 1 - c, h - 1 - r, c), Color(rows[r][c]))
+        for r in range(h)
+        for c in range(w)
+    }
+
+
+def from_relational(g: Grid) -> list[list[int]]:
+    if not g:
+        return []
+    bounds = {(t + b + 1, l + r + 1) for ((t, r, b, l), _) in g}
+    if len(bounds) != 1:
+        raise ValueError(f"inconsistent grid bounds across positions: {bounds}")
+    h, w = next(iter(bounds))
+    by_cell: dict[tuple[int, int], int] = {}
+    for (t, r, b, l), col in g:
+        if t < 0 or r < 0 or b < 0 or l < 0:
+            raise ValueError(f"negative position component: ({t}, {r}, {b}, {l})")
+        if (t, l) in by_cell:
+            raise ValueError(
+                f"duplicate cell at (top={t}, left={l}): "
+                f"Color({by_cell[(t, l)]}) and Color({col.value})"
+            )
+        by_cell[(t, l)] = col.value
+    if len(by_cell) != h * w:
+        raise ValueError(f"coverage: {len(by_cell)} cells, expected {h * w} for {h}x{w}")
+    out = [[0] * w for _ in range(h)]
+    for (t, l), v in by_cell.items():
+        out[t][l] = v
+    return out
 
 
 @dataclass
