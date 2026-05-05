@@ -39,11 +39,9 @@ uv run python programs/run.py <task_id>   # run one
 
 ## Sessions
 
-Solver work session: user opens with `SOLVER START`.
-Meta session: user opens with `META SOLVER START` and closes with `META SOLVER END`.
-In both, bootstrap by `cat docs/wf-solver/*.md` to read the workflow docs in order.
-
-For meta sessions, `uv run python scripts/inspect-session.py` renders previous sessions for inspection — pass a session-id to inspect one, no arg for the multi-session window since the oldest in-window meta session.
+Solver session: user opens with `SESSION START`.
+Meta session: user opens with `META SESSION START` and closes with `META SESSION END`.
+In both, bootstrap by `cat docs/wf-solver/*.md` to read the workflow docs in order. For meta sessions, also run `uv run python scripts/inspect-session.py` (no arg) to load the multi-session window — read the output in full, no truncation. Pass a session-id to inspect one specifically.
 
 ## Conventions
 

@@ -5,11 +5,11 @@ Usage:
     scripts/inspect-session.py <session-id>   # inspect one session
     scripts/inspect-session.py                # inspect multi-session window
 
-Multi-session window: the oldest session in the window is the most recent
-meta session that ended (identified by any user message containing META
-SOLVER END). All later sessions are included if their first user message
-contains SOLVER START — which also matches META SOLVER START, so later
-meta sessions are included too.
+Multi-session window: the boundary is the oldest meta session that ended
+(identified by any user message containing META SESSION END or legacy
+META SOLVER END). All later sessions are included if their first user
+message contains SESSION START or SOLVER START — both also match the
+META variants, so later meta sessions are included too.
 """
 
 import json
@@ -17,8 +17,8 @@ import sys
 from pathlib import Path
 
 PROJECT_DIR = Path.home() / ".claude/projects/-Users-davidlu-code-arc-workspace"
-SOLVER_KEYWORD = "SOLVER START"
-META_END_KEYWORD = "META SOLVER END"
+SESSION_KEYWORDS = ("SESSION START", "SOLVER START")
+META_END_KEYWORDS = ("META SESSION END", "META SOLVER END")
 
 
 def parse_session(file):
@@ -64,7 +64,7 @@ def has_meta_end(records):
     for r in records:
         if r.get("type") == "user":
             content = r.get("message", {}).get("content")
-            if isinstance(content, str) and META_END_KEYWORD in content:
+            if isinstance(content, str) and any(content.strip().startswith(k) for k in META_END_KEYWORDS):
                 return True
     return False
 
@@ -164,12 +164,13 @@ def main():
     if prev_meta_idx >= 0:
         start_idx = prev_meta_idx
     else:
-        print("(No previous META SOLVER END found; including all solver sessions.)", file=sys.stderr)
+        print("(No previous META SESSION END found; including all solver sessions.)", file=sys.stderr)
         start_idx = 0
 
     for i in range(start_idx, len(sessions)):
         _, file, records = sessions[i]
-        if i == prev_meta_idx or SOLVER_KEYWORD in first_user_string(records):
+        fus = first_user_string(records)
+        if i == prev_meta_idx or any(k in fus for k in SESSION_KEYWORDS):
             render(file.stem, records)
 
 
