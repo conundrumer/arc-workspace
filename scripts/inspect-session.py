@@ -3,12 +3,13 @@
 
 Usage:
     scripts/inspect-session.py <session-id>   # inspect one session
-    scripts/inspect-session.py                # inspect window since previous meta session
+    scripts/inspect-session.py                # inspect multi-session window
 
-Multi-session window: previous meta session (inclusive, identified by any
-user message containing META SOLVER END) + all solver sessions started
-after it (identified by SOLVER START in their first user message — which
-also matches META SOLVER START).
+Multi-session window: the oldest session in the window is the most recent
+meta session that ended (identified by any user message containing META
+SOLVER END). All later sessions are included if their first user message
+contains SOLVER START — which also matches META SOLVER START, so later
+meta sessions are included too.
 """
 
 import json
@@ -21,6 +22,11 @@ META_END_KEYWORD = "META SOLVER END"
 
 
 def parse_session(file):
+    """Parse JSONL and return only the canon branch.
+
+    Rewinds leave orphaned branches in the file. The canon branch is the chain
+    from the most recently written record back to the root via parentUuid.
+    """
     records = []
     for line in file.read_text().splitlines():
         if not line.strip():
@@ -29,7 +35,20 @@ def parse_session(file):
             records.append(json.loads(line))
         except json.JSONDecodeError:
             continue
-    return records
+    if not records:
+        return records
+    by_uuid = {r["uuid"]: r for r in records if "uuid" in r}
+    canon_leaf_uuid = next(
+        (r["uuid"] for r in reversed(records) if "uuid" in r), None
+    )
+    if canon_leaf_uuid is None:
+        return records
+    chain = set()
+    cur = canon_leaf_uuid
+    while cur is not None and cur in by_uuid:
+        chain.add(cur)
+        cur = by_uuid[cur].get("parentUuid")
+    return [r for r in records if r.get("uuid") in chain]
 
 
 def first_user_string(records):

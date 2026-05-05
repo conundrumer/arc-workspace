@@ -43,7 +43,7 @@ Solver work session: user opens with `SOLVER START`.
 Meta session: user opens with `META SOLVER START` and closes with `META SOLVER END`.
 In both, bootstrap by `cat docs/wf-solver/*.md` to read the workflow docs in order.
 
-For meta sessions, `uv run python scripts/inspect-session.py` renders previous sessions for inspection — pass a session-id to inspect one, no arg for the multi-session window since the previous meta session.
+For meta sessions, `uv run python scripts/inspect-session.py` renders previous sessions for inspection — pass a session-id to inspect one, no arg for the multi-session window since the oldest in-window meta session.
 
 ## Conventions
 
