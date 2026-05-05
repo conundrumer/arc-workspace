@@ -4,7 +4,7 @@ Guidelines for shaping solver code when a task fits a recurring form. Style.md i
 
 ## CONSTS holds output as grid data when expressible
 
-When the output can be represented as whole color grids — fixed grid data per input classification, or fixed regardless of input — declaring those grids in CONSTS lets the body read them via a relational join rather than build them from positions:
+When the output can be represented as whole color grids — e.g. fixed grid data per input classification — declaring those grids in CONSTS lets the body read them via a relational join rather than build them from positions:
 
 ```python
 output_for_shape: frozenset[tuple[
@@ -34,7 +34,7 @@ asym: Color
 
 ## Mappings over specialty ops
 
-When an operation per cell can be expressed as a learnable mapping, prefer the mapping over a relational op like symmetric difference, AND, OR, or other specialty operators:
+When an operation per cell can be expressed as a mapping directly learnable from the train examples, prefer the mapping over a relational op like symmetric difference, AND, OR, or other specialty operators:
 
 ```python
 combine: frozenset[tuple[Color, Color, Color]] = frozenset({
