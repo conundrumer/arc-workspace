@@ -66,8 +66,8 @@ def solve(grid: Grid, c: Consts) -> Grid:
         across1
         for (p1, x1) in grid
         for (p2, x2) in grid
-        for (_, across1) in [split(p1, c.axis)]
-        for (_, across2) in [split(p2, c.axis)]
+        for across1 in [split(p1, c.axis).across]
+        for across2 in [split(p2, c.axis).across]
         if across1 == across2 and x1 != x2
     }
 
@@ -75,16 +75,14 @@ def solve(grid: Grid, c: Consts) -> Grid:
     nonuniform = {
         (p, c.non_uniform_color)
         for (p, _) in grid
-        for (_, across) in [split(p, c.axis)]
-        if across in non_uniform
+        if split(p, c.axis).across in non_uniform
     }
 
     # out(p, c.uniform_color) :- in(p, _), split(p, c.axis) = (_, across), !non_uniform(across).
     uniform = {
         (p, c.uniform_color)
         for (p, _) in grid
-        for (_, across) in [split(p, c.axis)]
-        if across not in non_uniform
+        if split(p, c.axis).across not in non_uniform
     }
 
     return uniform | nonuniform

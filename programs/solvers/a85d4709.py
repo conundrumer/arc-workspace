@@ -77,7 +77,6 @@ def solve(grid: Grid, c: Consts) -> Grid:
     return {
         (p, oc)
         for (p, _) in grid
-        for (_, ac) in [split(p, c.axis)]
         for (ac2, oc) in row_color
-        if ac2 == ac
+        if ac2 == split(p, c.axis).across
     }

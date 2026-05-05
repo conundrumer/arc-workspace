@@ -45,10 +45,8 @@ def solve(grid: Grid, c: Consts) -> Grid:
     matched = {
         (p, repl)
         for (p, col) in grid if col in c.targets
-        for (_, across_p) in [split(p, a)]
         for (p_anchor, repl) in anchor_cells
-        for (_, across_a) in [split(p_anchor, a)]
-        if across_p == across_a
+        if split(p, a).across == split(p_anchor, a).across
     }
 
     # unmatched(p, col) :- in(p, col), !targets(col).
