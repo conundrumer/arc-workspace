@@ -36,24 +36,24 @@ CONSTS = Consts(body_start=2)
 
 def solve(grid: Grid, c: Consts) -> Grid:
     # Grid width via raw destructure.
-    (_, r0, _, l0), _ = next(iter(grid))
+    (_, _, l0, r0), _ = next(iter(grid))
     W = l0 + r0 + 1
 
-    # header_by_col(l, color) :- in((0, _, _, l), color).
-    header_by_col = {(l, col) for ((t, _, _, l), col) in grid if t == 0}
+    # header_by_col(l, color) :- in((0, _, l, _), color).
+    header_by_col = {(l, col) for ((t, _, l, _), col) in grid if t == 0}
 
     # header_section(p, col) :- in(p, col), p.t < c.body_start.
     header_section = {
-        ((t, r, b, l), col)
-        for ((t, r, b, l), col) in grid
+        ((t, b, l, r), col)
+        for ((t, b, l, r), col) in grid
         if t < c.body_start
     }
 
     # body_section(p, color) :- in(p, _), p.t >= c.body_start,
     #                           header_by_col((p.t - c.body_start) mod W, color).
     body_section = {
-        ((t, r, b, l), color)
-        for ((t, r, b, l), _) in grid
+        ((t, b, l, r), color)
+        for ((t, b, l, r), _) in grid
         if t >= c.body_start
         for (h_l, color) in header_by_col
         if h_l == (t - c.body_start) % W

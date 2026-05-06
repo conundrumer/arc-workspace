@@ -37,23 +37,23 @@ def to_relational(rows: list[list[int]]) -> Grid:
     h = len(rows)
     w = len(rows[0]) if h > 0 else 0
     return {
-        ((r, w - 1 - c, h - 1 - r, c), Color(rows[r][c]))
-        for r in range(h)
-        for c in range(w)
+        ((row, h - 1 - row, col, w - 1 - col), Color(rows[row][col]))
+        for row in range(h)
+        for col in range(w)
     }
 
 
 def from_relational(g: Grid) -> list[list[int]]:
     if not g:
         return []
-    bounds = {(t + b + 1, l + r + 1) for ((t, r, b, l), _) in g}
+    bounds = {(t + b + 1, l + r + 1) for ((t, b, l, r), _) in g}
     if len(bounds) != 1:
         raise ValueError(f"inconsistent grid bounds across positions: {bounds}")
     h, w = next(iter(bounds))
     by_cell: dict[tuple[int, int], int] = {}
-    for (t, r, b, l), col in g:
-        if t < 0 or r < 0 or b < 0 or l < 0:
-            raise ValueError(f"negative position component: ({t}, {r}, {b}, {l})")
+    for (t, b, l, r), col in g:
+        if t < 0 or b < 0 or l < 0 or r < 0:
+            raise ValueError(f"negative position component: ({t}, {b}, {l}, {r})")
         if (t, l) in by_cell:
             raise ValueError(
                 f"duplicate cell at (top={t}, left={l}): "

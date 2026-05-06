@@ -4,8 +4,13 @@ Solver bodies treat Color as opaque: never compared by ordinal, never used
 in arithmetic, never iterated as [C0, C1, ...]. The int backing exists only
 so to/from JSON works.
 
-Position is 4 distances from edges: (top, right, bottom, left). Redundant
-with grid bounds; redundancy is load-bearing — no corner privileged.
+Position is 4 distances from edges: (top, bottom, left, right). V-axis
+components (top, bottom) come first, then H-axis components (left, right);
+each pair sits at adjacent indices. Redundant with grid bounds; redundancy
+is load-bearing — no corner privileged.
+
+Dim is a (V-length, H-length) pair identifying a frame's dimensions.
+Treated as opaque like Position; primitives consume it via Axis.
 
 Cells[*Xs] is a Position-keyed relation with any number of value columns.
 Grid is the Color-valued specialization (set of (Position, Color)) for
@@ -50,8 +55,11 @@ C0, C1, C2, C3, C4, C5, C6, C7, C8, C9 = Color
 type Position = tuple[int, int, int, int]
 
 
+type Dim = tuple[int, int]
+
+
 class D4(Enum):
-    """Dihedral group of the square, expressed as permutations of (t, r, b, l).
+    """Dihedral group of the square, expressed as permutations of (t, b, l, r).
 
     Naming: *what swaps*, not axis of reflection. FLIP_LR swaps left/right
     distances (mirrors across the vertical axis); FLIP_TB swaps top/bottom.
@@ -61,30 +69,30 @@ class D4(Enum):
     — no arithmetic, no signs. apply(d, p) is a gather.
     """
 
-    IDENTITY = (0, 1, 2, 3)
-    FLIP_LR = (0, 3, 2, 1)
-    FLIP_TB = (2, 1, 0, 3)
-    ROT_180 = (2, 3, 0, 1)
-    ROT_CW = (3, 0, 1, 2)
-    ROT_CCW = (1, 2, 3, 0)
-    FLIP_DIAG = (3, 2, 1, 0)
-    FLIP_ANTIDIAG = (1, 0, 3, 2)
+    IDENTITY      = (0, 1, 2, 3)
+    FLIP_LR       = (0, 1, 3, 2)
+    FLIP_TB       = (1, 0, 2, 3)
+    ROT_180       = (1, 0, 3, 2)
+    ROT_CW        = (2, 3, 1, 0)
+    ROT_CCW       = (3, 2, 0, 1)
+    FLIP_DIAG     = (2, 3, 0, 1)
+    FLIP_ANTIDIAG = (3, 2, 1, 0)
 
 
 class Dir(Enum):
-    """One of the four edges. Values are indices into Position (top, right, bottom, left)."""
+    """One of the four edges. Values are indices into Position (top, bottom, left, right)."""
 
     TOP = 0
-    RIGHT = 1
-    BOTTOM = 2
-    LEFT = 3
+    BOTTOM = 1
+    LEFT = 2
+    RIGHT = 3
 
 
 class Axis(Enum):
-    """The two grid axes. HORIZONTAL spans LEFT<->RIGHT; VERTICAL spans TOP<->BOTTOM."""
+    """The two grid axes. VERTICAL spans TOP<->BOTTOM; HORIZONTAL spans LEFT<->RIGHT."""
 
-    HORIZONTAL = 0
-    VERTICAL = 1
+    VERTICAL = 0
+    HORIZONTAL = 1
 
 
 class DiagDir(Enum):
@@ -113,23 +121,36 @@ type D4Template = Cells[D4]
 
 
 def apply(d: D4, p: Position) -> Position:
+    """Apply a D4 transform to a Position.
+
+    Souffle: apply(d, p, p_out) inline.
+    """
     i0, i1, i2, i3 = d.value
     return (p[i0], p[i1], p[i2], p[i3])
 
 
 def dist(p: Position, d: Dir) -> int:
-    """Distance from p to edge d."""
+    """Distance from p to edge d.
+
+    Souffle: dist(p, d, k) inline.
+    """
     return p[d.value]
 
 
 def opposite(d: Dir) -> Dir:
-    """The Dir on the opposing edge: TOP<->BOTTOM, LEFT<->RIGHT."""
-    return Dir((d.value + 2) % 4)
+    """The Dir on the opposing edge: TOP<->BOTTOM, LEFT<->RIGHT.
+
+    Souffle: opposite(d, opp).
+    """
+    return Dir(d.value ^ 1)
 
 
 def axis_of(d: Dir) -> Axis:
-    """The axis edge d lies on."""
-    return Axis.HORIZONTAL if d in (Dir.LEFT, Dir.RIGHT) else Axis.VERTICAL
+    """The axis edge d lies on.
+
+    Souffle: axis_of(d, a).
+    """
+    return Axis(d.value // 2)
 
 
 class Split(NamedTuple):
@@ -144,18 +165,65 @@ def split(p: Position, axis: Axis) -> Split:
     zeroed — a 1xN row (HORIZONTAL) or Mx1 column (VERTICAL) in our 4-tuple
     encoding.
 
-    axis=HORIZONTAL: along = (0, r, 0, l)   — row-component, varies along H
-                    across = (t, 0, b, 0)  — column-component, identifies row
-    axis=VERTICAL:   along = (t, 0, b, 0)   — column-component, varies along V
-                    across = (0, r, 0, l)  — row-component, identifies column
+    axis=HORIZONTAL: along = (0, 0, l, r)   — row-component, varies along H
+                    across = (t, b, 0, 0)  — column-component, identifies row
+    axis=VERTICAL:   along = (t, b, 0, 0)   — column-component, varies along V
+                    across = (0, 0, l, r)  — row-component, identifies column
 
     Two cells share a slice along axis iff their across-components are equal.
     Equality on the across-component carries the grid-bound info (via t+b),
     so cross-grid mismatches don't false-positive.
+
+    Souffle: Python only — Souffle solvers express slice equality directly via
+    matching halves of the Position record.
     """
     if axis == Axis.HORIZONTAL:
-        return Split(along=(0, p[1], 0, p[3]), across=(p[0], 0, p[2], 0))
-    return Split(along=(p[0], 0, p[2], 0), across=(0, p[1], 0, p[3]))
+        return Split(along=(0, 0, p[2], p[3]), across=(p[0], p[1], 0, 0))
+    return Split(along=(p[0], p[1], 0, 0), across=(0, 0, p[2], p[3]))
+
+
+def compose(p1: Position, p2: Position) -> Position:
+    """Element-wise sum of two Positions.
+
+    Inverse of `split` when args are a V-half and an H-half: the halves
+    sum to a full Position whose frame is the V-half's height by the
+    H-half's width. Same operation handles margin shifts, displacements,
+    and point expansion when one operand carries signed-component deltas.
+
+    Souffle: compose(p1, p2, p3) inline.
+    """
+    return (p1[0] + p2[0], p1[1] + p2[1], p1[2] + p2[2], p1[3] + p2[3])
+
+
+def span(axis: Axis, length: int) -> set[Position]:
+    """Positions of a 1-strip of given length along axis.
+
+    axis=VERTICAL, length=H: H positions of an H×1 column — V-half-shaped,
+    populated in (t, b) (indices 0, 1).
+    axis=HORIZONTAL, length=W: W positions of a 1×W row — H-half-shaped,
+    populated in (l, r) (indices 2, 3).
+
+    Composing one of each via `compose` enumerates the cells of an H×W frame.
+
+    Souffle: Python only — Souffle solvers use frame_pos for grid construction.
+    """
+    if axis == Axis.VERTICAL:
+        return {(t, length - 1 - t, 0, 0) for t in range(length)}
+    return {(0, 0, l, length - 1 - l) for l in range(length)}
+
+
+def frame(dim: Dim) -> set[Position]:
+    """All positions of a frame with given dimensions.
+
+    Cartesian product of a V-span and an H-span composed element-wise.
+    Dim's first slot is V-length, second is H-length.
+
+    Souffle: frame_pos(v, h, p) inline (Consts helper).
+    """
+    v_length, h_length = dim
+    return {compose(v, h)
+            for v in span(Axis.VERTICAL, v_length)
+            for h in span(Axis.HORIZONTAL, h_length)}
 
 
 def tile_d4(template: D4Template, inner: Grid) -> Grid:
@@ -172,17 +240,17 @@ def tile_d4(template: D4Template, inner: Grid) -> Grid:
     """
     if not inner or not template:
         return set()
-    (it0, ir0, ib0, il0), _ = next(iter(inner))
+    (it0, ib0, il0, ir0), _ = next(iter(inner))
     hi = it0 + ib0 + 1
     wi = il0 + ir0 + 1
     return {
         (
-            (mt * hi + it, mr * wi + ir, mb * hi + ib, ml * wi + il),
+            (mt * hi + it, mb * hi + ib, ml * wi + il, mr * wi + ir),
             col,
         )
-        for ((mt, mr, mb, ml), d4) in template
+        for ((mt, mb, ml, mr), d4) in template
         for (p, col) in inner
-        for (it, ir, ib, il) in [apply(d4, p)]
+        for (it, ib, il, ir) in [apply(d4, p)]
     }
 
 
@@ -195,9 +263,9 @@ def d4_template_from_rows(rows: list[list[D4]]) -> D4Template:
     h = len(rows)
     w = len(rows[0]) if h > 0 else 0
     return {
-        ((r, w - 1 - c, h - 1 - r, c), rows[r][c])
-        for r in range(h)
-        for c in range(w)
+        ((row, h - 1 - row, col, w - 1 - col), rows[row][col])
+        for row in range(h)
+        for col in range(w)
     }
 
 
@@ -212,9 +280,9 @@ def color_grid(rows: list[list[int]]) -> frozenset[tuple[Position, Color]]:
     h = len(rows)
     w = len(rows[0]) if h > 0 else 0
     return frozenset(
-        ((r, w - 1 - c, h - 1 - r, c), Color(rows[r][c]))
-        for r in range(h)
-        for c in range(w)
+        ((row, h - 1 - row, col, w - 1 - col), Color(rows[row][col]))
+        for row in range(h)
+        for col in range(w)
     )
 
 
@@ -232,10 +300,10 @@ def shape_grid(rows: list[list[int]]) -> frozenset[Position]:
     h = len(rows)
     w = len(rows[0]) if h > 0 else 0
     return frozenset(
-        (r, w - 1 - c, h - 1 - r, c)
-        for r in range(h)
-        for c in range(w)
-        if rows[r][c] != 0
+        (row, h - 1 - row, col, w - 1 - col)
+        for row in range(h)
+        for col in range(w)
+        if rows[row][col] != 0
     )
 
 
@@ -259,10 +327,10 @@ def position_mapping(
         h = len(rows)
         w = len(rows[0]) if rows else 0
         return {
-            rows[r][c]: (r, w - 1 - c, h - 1 - r, c)
-            for r in range(h)
-            for c in range(w)
-            if rows[r][c] != 0
+            rows[row][col]: (row, h - 1 - row, col, w - 1 - col)
+            for row in range(h)
+            for col in range(w)
+            if rows[row][col] != 0
         }
 
     in_pos = positions_by_label(input_rows)

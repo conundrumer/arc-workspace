@@ -21,9 +21,9 @@ CONSTS = Consts(scale=3)
 def solve(grid: Grid, c: Consts) -> Grid:
     # Inner positions of the s × s block, in 4-distance.
     inner = shape_grid([[1] * c.scale for _ in range(c.scale)])
-    # out((s*t+it, s*r+ir, s*b+ib, s*l+il), col) :- in((t,r,b,l), col), inner((it,ir,ib,il)).
+    # out((s*t+it, s*b+ib, s*l+il, s*r+ir), col) :- in((t,b,l,r), col), inner((it,ib,il,ir)).
     return {
-        ((c.scale * t + it, c.scale * r + ir, c.scale * b + ib, c.scale * l + il), col)
-        for ((t, r, b, l), col) in grid
-        for (it, ir, ib, il) in inner
+        ((c.scale * t + it, c.scale * b + ib, c.scale * l + il, c.scale * r + ir), col)
+        for ((t, b, l, r), col) in grid
+        for (it, ib, il, ir) in inner
     }

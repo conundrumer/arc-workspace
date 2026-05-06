@@ -1,8 +1,4 @@
-"""Combine paired cells of an input's left and right halves via a fixed (left, right, out) color table.
-
-Placeholders:
-- position-destructure: deriving half-width and rebasing each half's coords to the output bounds.
-"""
+"""Combine paired cells of an input's left and right halves via a fixed (left, right, out) color table."""
 
 from dataclasses import dataclass
 
@@ -26,11 +22,13 @@ CONSTS = Consts(
 
 def solve(grid: Grid, c: Consts) -> Grid:
     # half_w = grid width / 2; output width = half_w.
-    (w,) = {l + r + 1 for ((_, r, _, l), _) in grid}
+    (w,) = {dist(p, Dir.LEFT) + dist(p, Dir.RIGHT) + 1 for (p, _) in grid}
     half_w = w // 2
-    # left, right = the two halves, rebased to the same h × half_w coord system.
-    left = {((t, half_w - 1 - l, b, l), col) for ((t, r, b, l), col) in grid if l < half_w}
-    right = {((t, r, b, l - half_w), col) for ((t, r, b, l), col) in grid if l >= half_w}
+    # left, right = the two halves, rebased into an h × half_w frame by chopping the opposite-side margin.
+    chop_right = (0, 0, 0, -half_w)
+    chop_left = (0, 0, -half_w, 0)
+    left = {(compose(p, chop_right), col) for (p, col) in grid if dist(p, Dir.LEFT) < half_w}
+    right = {(compose(p, chop_left), col) for (p, col) in grid if dist(p, Dir.LEFT) >= half_w}
     # out(p, c_out) :- left(p, c_l), right(p, c_r), combine(c_l, c_r, c_out).
     return {
         (p_l, c_out)

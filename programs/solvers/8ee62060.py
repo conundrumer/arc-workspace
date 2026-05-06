@@ -46,13 +46,13 @@ def solve(grid: Grid, c: Consts) -> Grid:
     k = c.block_size
 
     out: Grid = set()
-    for ((t, r, b, l), col) in grid:
+    for ((t, b, l, r), col) in grid:
         # block_pos: a Position in the (H/k × W/k) block-grid.
-        block_pos = (t // k, r // k, b // k, l // k)
+        block_pos = (t // k, b // k, l // k, r // k)
         # Apply D4 in block-grid coords.
-        (bt, br, bb, bl) = apply(c.block_d4, block_pos)
+        (bt, bb, bl, br) = apply(c.block_d4, block_pos)
         # Recombine block-grid coords with per-block local.
-        new_p = (bt * k + t % k, br * k + r % k,
-                 bb * k + b % k, bl * k + l % k)
+        new_p = (bt * k + t % k, bb * k + b % k,
+                 bl * k + l % k, br * k + r % k)
         out.add((new_p, col))
     return out

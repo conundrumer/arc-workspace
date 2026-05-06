@@ -46,16 +46,16 @@ def solve(grid: Grid, c: Consts) -> Grid:
     # Left half: input cells within `half` of one edge; output position
     # rebuilt against the smaller bound along that axis.
     left = {
-        ((t, half - 1 - l, b, l), col)
-        for ((t, _, b, l), col) in grid
+        ((t, b, l, half - 1 - l), col)
+        for ((t, b, l, _), col) in grid
         if l < half
     }
 
     # Right half: cells within `half` of the opposite edge; output
     # position rebuilt symmetrically so it aligns with `left` by Position.
     right = {
-        ((t, r, b, half - 1 - r), col)
-        for ((t, r, b, _), col) in grid
+        ((t, b, half - 1 - r, r), col)
+        for ((t, b, _, r), col) in grid
         if r < half
     }
 

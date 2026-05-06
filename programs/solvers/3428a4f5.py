@@ -30,8 +30,8 @@ def solve(grid: Grid, c: Consts) -> Grid:
     # div = divider row's t-index; output height = div.
     (div,) = {t for ((t, _, _, _), col) in grid if col == c.divider}
     # top, bot = the two halves, rebased to the same h_out × w coord system.
-    top = {((t, r, div - 1 - t, l), col) for ((t, r, b, l), col) in grid if t < div}
-    bot = {((t - div - 1, r, b, l), col) for ((t, r, b, l), col) in grid if t > div}
+    top = {((t, div - 1 - t, l, r), col) for ((t, b, l, r), col) in grid if t < div}
+    bot = {((t - div - 1, b, l, r), col) for ((t, b, l, r), col) in grid if t > div}
     # out(p, c_out) :- top(p, c_top), bot(p, c_bot), combine(c_top, c_bot, c_out).
     return {
         (p_t, c_out)

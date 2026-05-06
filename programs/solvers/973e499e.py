@@ -19,17 +19,17 @@ CONSTS = Consts(bg=C0)
 
 def solve(grid: Grid, c: Consts) -> Grid:
     # n = grid side length (input is square).
-    (n,) = {l + r + 1 for ((_, r, _, l), _) in grid}
-    # matched((n*mt+it, n*mr+ir, n*mb+ib, n*ml+il), col) :- in((mt,mr,mb,ml), col), in((it,ir,ib,il), col).
+    (n,) = {l + r + 1 for ((_, _, l, r), _) in grid}
+    # matched((n*mt+it, n*mb+ib, n*ml+il, n*mr+ir), col) :- in((mt,mb,ml,mr), col), in((it,ib,il,ir), col).
     matched = {
-        ((n * mt + it, n * mr + ir, n * mb + ib, n * ml + il), col)
-        for ((mt, mr, mb, ml), col) in grid
-        for ((it, ir, ib, il), col2) in grid if col2 == col
+        ((n * mt + it, n * mb + ib, n * ml + il, n * mr + ir), col)
+        for ((mt, mb, ml, mr), col) in grid
+        for ((it, ib, il, ir), col2) in grid if col2 == col
     }
-    # unmatched((n*mt+it, ..., ...), c.bg) :- in((mt,mr,mb,ml), col_m), in((it,ir,ib,il), col_i), col_m != col_i.
+    # unmatched((n*mt+it, ..., ...), c.bg) :- in((mt,mb,ml,mr), col_m), in((it,ib,il,ir), col_i), col_m != col_i.
     unmatched = {
-        ((n * mt + it, n * mr + ir, n * mb + ib, n * ml + il), c.bg)
-        for ((mt, mr, mb, ml), col_m) in grid
-        for ((it, ir, ib, il), col_i) in grid if col_m != col_i
+        ((n * mt + it, n * mb + ib, n * ml + il, n * mr + ir), c.bg)
+        for ((mt, mb, ml, mr), col_m) in grid
+        for ((it, ib, il, ir), col_i) in grid if col_m != col_i
     }
     return matched | unmatched

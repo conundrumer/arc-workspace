@@ -54,21 +54,21 @@ CONSTS = Consts(out_h=3, marker=C6)
 def solve(grid: Grid, c: Consts) -> Grid:
     H = c.out_h
 
-    # in_w(W) :- in((_, R, _, L), _), W = R + L + 1.
-    (W,) = {l + r + 1 for ((_, r, _, l), _) in grid}
+    # in_w(W) :- in((_, _, L, R), _), W = L + R + 1.
+    (W,) = {l + r + 1 for ((_, _, l, r), _) in grid}
 
-    # bg(C) :- in((1, _, _, 1), C).
-    (bg,) = {col for ((t, _, _, l), col) in grid if t == 1 and l == 1}
+    # bg(C) :- in((1, _, 1, _), C).
+    (bg,) = {col for ((t, _, l, _), col) in grid if t == 1 and l == 1}
 
-    # out((T, W-1-L, H-1-T, L), C) :- in((T, _, _, L), C), T < H-1.
-    keep = {((t, W - 1 - l, H - 1 - t, l), col) for ((t, _, _, l), col) in grid if t < H - 1}
+    # out((T, H-1-T, L, W-1-L), C) :- in((T, _, L, _), C), T < H-1.
+    keep = {((t, H - 1 - t, l, W - 1 - l), col) for ((t, _, l, _), col) in grid if t < H - 1}
 
     # bg_proj(C) :- bg(C).
-    # out((H-1, W-1-L, 0, L), C) :- in((0, _, _, L), C),  bg(C).
-    # out((H-1, W-1-L, 0, L), M) :- in((0, _, _, L), C), !bg_proj(C), marker(M).
+    # out((H-1, 0, L, W-1-L), C) :- in((0, _, L, _), C),  bg(C).
+    # out((H-1, 0, L, W-1-L), M) :- in((0, _, L, _), C), !bg_proj(C), marker(M).
     derived = {
-        ((H - 1, W - 1 - l, 0, l), col if col == bg else c.marker)
-        for ((t, _, _, l), col) in grid
+        ((H - 1, 0, l, W - 1 - l), col if col == bg else c.marker)
+        for ((t, _, l, _), col) in grid
         if t == 0
     }
 

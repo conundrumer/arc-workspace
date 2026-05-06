@@ -40,12 +40,12 @@ CONSTS = Consts(
 
 def solve(grid: Grid, c: Consts) -> Grid:
     # Template dims.
-    (mt0, mr0, mb0, ml0), _ = next(iter(c.template))
+    (mt0, mb0, ml0, mr0), _ = next(iter(c.template))
     template_h = mt0 + mb0 + 1
     template_w = ml0 + mr0 + 1
 
     # Input dims.
-    (t0, r0, b0, l0), _ = next(iter(grid))
+    (t0, b0, l0, r0), _ = next(iter(grid))
     full_h = t0 + b0 + 1
     full_w = l0 + r0 + 1
 
@@ -53,9 +53,9 @@ def solve(grid: Grid, c: Consts) -> Grid:
     inner_h = full_h // template_h
     inner_w = full_w // template_w
 
-    # out((t mod inner_h, r mod inner_w, b mod inner_h, l mod inner_w), col)
-    #     :- in((t, r, b, l), col).
+    # out((t mod inner_h, b mod inner_h, l mod inner_w, r mod inner_w), col)
+    #     :- in((t, b, l, r), col).
     return {
-        ((t % inner_h, r % inner_w, b % inner_h, l % inner_w), col)
-        for ((t, r, b, l), col) in grid
+        ((t % inner_h, b % inner_h, l % inner_w, r % inner_w), col)
+        for ((t, b, l, r), col) in grid
     }

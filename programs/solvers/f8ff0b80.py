@@ -1,8 +1,4 @@
-"""Output a column of non-bg colors ordered by descending count in the input.
-
-Placeholders:
-- position-construction: column anchored at Dir.TOP, width 1, indexed by rank — built as raw 4-distance tuple.
-"""
+"""Output a column of non-bg colors ordered by descending count in the input."""
 
 from dataclasses import dataclass
 
@@ -25,6 +21,9 @@ def solve(grid: Grid, c: Consts) -> Grid:
     ranks = {(col, sum(1 for (_, n2) in counts if n2 > n))
              for (col, n) in counts}
     # max_r :- max : { rank(_, R) }.
+    # TODO: get height via set size not max
     max_r = max(r for (_, r) in ranks)
-    # out((R, 0, max_r-R, 0), col) :- rank(col, R).
-    return {((r, 0, max_r - r, 0), col) for (col, r) in ranks}
+    # out(P, col) :- rank(col, R), span(VERTICAL, max_r+1, P), dist(P, TOP) = R.
+    return {(p, col)
+            for (col, r) in ranks
+            for p in span(Axis.VERTICAL, max_r + 1) if dist(p, Dir.TOP) == r}

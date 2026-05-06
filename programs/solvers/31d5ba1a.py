@@ -57,16 +57,16 @@ def solve(grid: Grid, c: Consts) -> Grid:
     # Top half: cells within `half` of the TOP edge; output bottom-distance
     # rebuilt against the smaller bound.
     top = {
-        ((t, r, half - 1 - t, l), col)
-        for ((t, r, _, l), col) in grid
+        ((t, half - 1 - t, l, r), col)
+        for ((t, _, l, r), col) in grid
         if t < half
     }
 
     # Bottom half: cells within `half` of the BOTTOM edge; output
     # top-distance rebuilt symmetrically so it aligns with `top` by Position.
     bot = {
-        ((half - 1 - b, r, b, l), col)
-        for ((_, r, b, l), col) in grid
+        ((half - 1 - b, b, l, r), col)
+        for ((_, b, l, r), col) in grid
         if b < half
     }
 

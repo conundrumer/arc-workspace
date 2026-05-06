@@ -28,10 +28,10 @@ CONSTS = Consts(
 
 def solve(grid: Grid, c: Consts) -> Grid:
     # div = divider col's l-index; output width = div.
-    (div,) = {l for ((_, _, _, l), col) in grid if col == c.divider}
+    (div,) = {l for ((_, _, l, _), col) in grid if col == c.divider}
     # left, right = the two halves, rebased to the same h × div coord system.
-    left = {((t, div - 1 - l, b, l), col) for ((t, r, b, l), col) in grid if l < div}
-    right = {((t, r, b, l - div - 1), col) for ((t, r, b, l), col) in grid if l > div}
+    left = {((t, b, l, div - 1 - l), col) for ((t, b, l, r), col) in grid if l < div}
+    right = {((t, b, l - div - 1, r), col) for ((t, b, l, r), col) in grid if l > div}
     # out(p, c_out) :- left(p, c_l), right(p, c_r), combine(c_l, c_r, c_out).
     return {
         (p_l, c_out)

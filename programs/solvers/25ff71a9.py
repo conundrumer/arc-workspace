@@ -18,8 +18,8 @@ CONSTS = Consts(bg=C0)
 
 
 def solve(grid: Grid, c: Consts) -> Grid:
-    # out((t+1, r, b-1, l), col) :- in((t, r, b, l), col), b > 0.
-    shifted = {((t+1, r, b-1, l), col) for ((t, r, b, l), col) in grid if b > 0}
-    # out((0, r, b, l), c.bg) :- in((0, r, b, l), _).
-    top = {((0, r, b, l), c.bg) for ((t, r, b, l), _) in grid if t == 0}
+    # out((t+1, b-1, l, r), col) :- in((t, b, l, r), col), b > 0.
+    shifted = {((t+1, b-1, l, r), col) for ((t, b, l, r), col) in grid if b > 0}
+    # out((0, b, l, r), c.bg) :- in((0, b, l, r), _).
+    top = {((0, b, l, r), c.bg) for ((t, b, l, r), _) in grid if t == 0}
     return shifted | top

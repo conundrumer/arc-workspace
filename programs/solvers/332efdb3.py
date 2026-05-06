@@ -42,6 +42,6 @@ def solve(grid: Grid, c: Consts) -> Grid:
     # out(p, c.dot) :- in(p, _), top(p) % 2 == 1, left(p) % 2 == 1.
     # out(p, c.bg)  :- in(p, _), not (top(p) % 2 == 1 and left(p) % 2 == 1).
     return {
-        ((t, r, b, l), c.dot if (t % 2 == 1 and l % 2 == 1) else c.bg)
-        for ((t, r, b, l), _) in grid
+        ((t, b, l, r), c.dot if (t % 2 == 1 and l % 2 == 1) else c.bg)
+        for ((t, b, l, r), _) in grid
     }

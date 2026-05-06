@@ -19,15 +19,15 @@ CONSTS = Consts(cycles=2)
 
 
 def solve(grid: Grid, c: Consts) -> Grid:
-    (H,) = {t + b + 1 for ((t, _, b, _), _) in grid}
+    (H,) = {t + b + 1 for ((t, b, _, _), _) in grid}
     period = 2 * (H - 1)
     out_h = c.cycles * period + 1
-    # out((T_out, R, out_h-1-T_out, L), col) :- in((T, R, B, L), col), T_out = K*period + T, 0 <= T_out < out_h.
-    # out((T_out, R, out_h-1-T_out, L), col) :- in((T, R, B, L), col), T_out = K*period - T, 0 <= T_out < out_h.
+    # out((T_out, out_h-1-T_out, L, R), col) :- in((T, B, L, R), col), T_out = K*period + T, 0 <= T_out < out_h.
+    # out((T_out, out_h-1-T_out, L, R), col) :- in((T, B, L, R), col), T_out = K*period - T, 0 <= T_out < out_h.
     # imperative-iteration: K enumerated via range().
     return {
-        ((t_out, r, out_h - 1 - t_out, l), col)
-        for ((t, r, b, l), col) in grid
+        ((t_out, out_h - 1 - t_out, l, r), col)
+        for ((t, b, l, r), col) in grid
         for t_out in (
             {k * period + t for k in range(c.cycles + 1)} |
             {k * period - t for k in range(1, c.cycles + 1)}
