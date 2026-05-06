@@ -1,5 +1,5 @@
-// Input is a 2×1 layout of 3×3 subgrids. For each output cell, pair the
-// two input cells aligned with it (one per subgrid). The pair {(p_outer, color), ...}
+// Input is a 2×1 layout of 3×3 subgrids. For each output cell, pair the two
+// input cells aligned with it (one per subgrid). The pair {(p_outer, color), ...}
 // looks up the output color via a fixed combine table keyed on outer pos + color.
 
 #include "../lib.dl"
@@ -10,10 +10,8 @@
 
     // Input pos → (subgrid pos in 2×1, cell pos in 3×3).
     .decl decompose(p: Position, p_outer: Position, p_inner: Position)
-    decompose(P, P_O, P_I) :- tile_pos([2, 1], [3, 3], P, P_O, P_I).
+    decompose(P, P_O, P_I) :- tile_pos([2, 1], [3, 3], [0, 0], P, P_O, P_I).
 
-    // Each combine entry: a set of (outer pos, color) members → out color.
-    // eid joins members to their out color.
     .decl combine_member(eid: number, p_outer: Position, c: Color)
     .decl combine_out(eid: number, c_out: Color)
 

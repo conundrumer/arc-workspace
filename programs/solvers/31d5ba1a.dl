@@ -1,0 +1,37 @@
+// Input is a 2×1 layout of 3×5 subgrids. For each output cell, pair the two
+// input cells aligned with it (one per subgrid) and look up the output color
+// via a fixed combine table keyed on outer pos + color.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl frame(p: Position)
+    frame(P) :- frame_pos([3, 5], P).
+
+    .decl decompose(p: Position, p_outer: Position, p_inner: Position)
+    decompose(P, P_O, P_I) :- tile_pos([2, 1], [3, 5], [0, 0], P, P_O, P_I).
+
+    .decl combine_member(eid: number, p_outer: Position, c: Color)
+    .decl combine_out(eid: number, c_out: Color)
+
+    combine_member(0, [0,1,0,0], 0). combine_member(0, [1,0,0,0], 0). combine_out(0, 0).
+    combine_member(1, [0,1,0,0], 9). combine_member(1, [1,0,0,0], 0). combine_out(1, 6).
+    combine_member(2, [0,1,0,0], 0). combine_member(2, [1,0,0,0], 4). combine_out(2, 6).
+    combine_member(3, [0,1,0,0], 9). combine_member(3, [1,0,0,0], 4). combine_out(3, 0).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl out(p: Position, col: Color)
+out(O, C_OUT) :-
+    c.frame(O),                                          // output cell
+    c.combine_out(EID, C_OUT),                            // candidate entry
+    SET_MATCH(N,                                          // every member matches input
+              c.combine_member(EID, P_OUTER, C),
+              c.decompose(P_IN, P_OUTER, O),
+              in(P_IN, C)).
+
+.output out(IO=stdout)
