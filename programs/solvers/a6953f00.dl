@@ -1,0 +1,33 @@
+// Output is a 2×2 corner crop. Both TL- and TR-anchored crops are valid;
+// Souffle's choice-domain picks one diag from the options. The runner
+// accepts either output (tiebreak alt) since which diag is chosen is
+// unspecified.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl diag_option(d: DiagDir)
+    diag_option(TOP_LEFT).
+    diag_option(TOP_RIGHT).
+
+    // Pick one diag from the options. Dummy group attribute makes the
+    // choice global (one tuple total).
+    .decl diag(d: DiagDir, g: number) choice-domain g
+    diag(D, 0) :- diag_option(D).
+
+    .decl frame(p: Position)
+    frame(P) :- frame_pos([2, 2], P).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl out(p: Position, col: Color)
+out(O, COL) :-
+    in(P, COL),                              // input cell
+    c.frame(O),                              // output position
+    c.diag(D, _), corner_anchor(D, O, P).    // chosen diag, corner-anchor match
+
+.output out(IO=stdout)

@@ -1,0 +1,34 @@
+// Three quadrant-witnesses (TL, TR, BL) collapse to one canonical 2×2.
+// Each template entry pairs a quadrant DiagDir with the D4 that takes that
+// quadrant's anchored cells to the canonical orientation. Set-dedup over
+// the union collapses the three witnesses; consistency falls out naturally
+// (overlap or missing cells would break the grid bounds).
+//
+// The marker quadrant (BR) is absent from the template.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl frame(p: Position)
+    frame(P) :- frame_pos([2, 2], P).
+
+    .decl template(diag: DiagDir, d4: D4)
+    template(TOP_LEFT,    ROT_CCW).
+    template(TOP_RIGHT,   ROT_180).
+    template(BOTTOM_LEFT, ROT_CW).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl out(p: Position, col: Color)
+out(O, COL) :-
+    in(P, COL),                              // input cell
+    c.template(DIAG, D),                     // (quadrant, canonicalizing D4)
+    c.frame(O_ANCHOR),                       // anchored 2×2 position
+    corner_anchor(DIAG, O_ANCHOR, P),        // O_ANCHOR matches P at quadrant corner
+    apply(D, O_ANCHOR, O).                   // O = D4 applied to O_ANCHOR
+
+.output out(IO=stdout)

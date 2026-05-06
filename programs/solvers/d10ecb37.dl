@@ -1,0 +1,25 @@
+// Output is the c.diag-anchored sub-frame of input. Input cells project
+// into the sub-frame by matching distances to the two corner edges.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl diag(d: DiagDir)
+    diag(TOP_LEFT).
+
+    .decl frame(p: Position)
+    frame(P) :- frame_pos([2, 2], P).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl out(p: Position, col: Color)
+out(O, COL) :-
+    in(P, COL),                          // input cell
+    c.frame(O),                          // output position
+    c.diag(D), corner_anchor(D, O, P).   // corner-anchor match
+
+.output out(IO=stdout)

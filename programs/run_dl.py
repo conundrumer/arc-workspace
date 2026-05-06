@@ -66,8 +66,8 @@ def parse_output(stdout: str) -> list[list[int]]:
     return out
 
 
-def run_dl(task_id: str, input_rows: list[list[int]]) -> list[list[int]]:
-    dl_path = SOLVERS_DIR / f"{task_id}.dl"
+def run_dl(task_id: str, input_rows: list[list[int]], stem: str | None = None) -> list[list[int]]:
+    dl_path = SOLVERS_DIR / f"{stem or task_id}.dl"
     if not dl_path.exists():
         raise FileNotFoundError(f"no .dl solver at {dl_path}")
     facts = grid_to_facts(input_rows)
@@ -90,15 +90,19 @@ class PairResult:
     detail: str | None
 
 
-def run_one(task_id: str) -> int:
+def run_one(stem: str) -> int:
+    task_id = stem.split("_", 1)[0]
     task = load_task(task_id)
     pairs: list[PairResult] = []
     for kind, examples in (("train", task.train), ("test", task.test)):
         for idx, ex in enumerate(examples):
             try:
-                actual = run_dl(task_id, ex.input)
-                ok = actual == ex.output
-                detail = None if ok else f"expected {ex.output}\n      actual   {actual}"
+                actual = run_dl(task_id, ex.input, stem=stem)
+                accepted = [ex.output]
+                if ex.alt is not None and ex.alt.kind == "tiebreak":
+                    accepted.append(ex.alt.grid)
+                ok = actual in accepted
+                detail = None if ok else f"expected one of {accepted}\n      actual   {actual}"
             except Exception as e:
                 ok = False
                 detail = f"{type(e).__name__}: {e}"
@@ -113,6 +117,6 @@ def run_one(task_id: str) -> int:
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print(f"usage: {sys.argv[0]} <task_id>", file=sys.stderr)
+        print(f"usage: {sys.argv[0]} <task_id_or_stem>", file=sys.stderr)
         sys.exit(2)
     sys.exit(run_one(sys.argv[1]))

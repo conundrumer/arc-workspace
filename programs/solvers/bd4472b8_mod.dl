@@ -1,0 +1,52 @@
+// Same task as bd4472b8.dl. Body cycling expressed via direct modulo
+// arithmetic instead of recursion.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl header_dir(d: Dir)
+    header_dir(TOP).
+
+    .decl across_dir(d: Dir)
+    across_dir(LEFT).
+
+    .decl body_start(n: number)
+    body_start(2).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// Width perpendicular to header_dir: count cells at the header edge.
+.decl header_cell(p: Position)
+header_cell(P) :- in(P, _), c.header_dir(D), dist(P, D, 0).
+
+.decl width(w: number)
+width(W) :- W = count : { header_cell(_) }.
+
+// Header cells indexed by their across-dir distance.
+.decl header_color(idx: number, col: Color)
+header_color(IDX, COL) :-
+    in(P, COL),                                  // input cell
+    c.header_dir(D), dist(P, D, 0),              // on the header edge
+    c.across_dir(A_DIR), dist(P, A_DIR, IDX).    // index = across distance
+
+// Filled body cells: input cell at distance T_IN >= body_start gets
+// header_color((T_IN - body_start) mod W, COL).
+.decl fill(p: Position, col: Color)
+fill(P_INPUT, COL) :-
+    in(P_INPUT, _),                              // input cell
+    c.header_dir(D), c.body_start(BS),           // header axis, base offset
+    dist(P_INPUT, D, T_IN), T_IN >= BS,          // in body region
+    width(W),                                    // cycle length
+    header_color((T_IN - BS) % W, COL).          // cyclic header lookup
+
+// Output: cells not in fill (header) pass through; cells in fill take the
+// filled color.
+.decl out(p: Position, col: Color)
+out(P, COL) :- in(P, COL), !fill(P, _).
+out(P, COL) :- fill(P, COL).
+
+.output out(IO=stdout)

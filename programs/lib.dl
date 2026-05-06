@@ -13,6 +13,7 @@
 .type Color <: number
 .type Dir <: number
 .type Axis <: number
+.type D4 <: number
 
 .type Position = [t: number, b: number, l: number, r: number]
 .type Dim = [v: number, h: number]
@@ -30,6 +31,17 @@
 #define TOP_RIGHT    [TOP,    RIGHT]
 #define BOTTOM_LEFT  [BOTTOM, LEFT]
 #define BOTTOM_RIGHT [BOTTOM, RIGHT]
+
+// D4 elements as gather permutations of (t, b, l, r). Naming: what swaps,
+// not the axis of reflection. Values follow lib.py.
+#define IDENTITY      0
+#define FLIP_LR       1
+#define FLIP_TB       2
+#define ROT_180       3
+#define ROT_CW        4
+#define ROT_CCW       5
+#define FLIP_DIAG     6
+#define FLIP_ANTIDIAG 7
 
 // ============================================================
 // Solver body primitives
@@ -67,6 +79,23 @@ edge_delta(BOTTOM, K, [0, K, 0, 0]) :- true.
 edge_delta(LEFT,   K, [0, 0, K, 0]) :- true.
 edge_delta(RIGHT,  K, [0, 0, 0, K]) :- true.
 
+// Decomposition of a Position by axis: along (the axis component, with
+// perpendicular zeroed) + across (perpendicular component, axis zeroed).
+.decl split(p: Position, a: Axis, along: Position, across: Position) inline
+split(P, VERTICAL,   [T, B, 0, 0], [0, 0, L, R]) :- P = [T, B, L, R].
+split(P, HORIZONTAL, [0, 0, L, R], [T, B, 0, 0]) :- P = [T, B, L, R].
+
+// Apply a D4 transform to a Position — a pure index permutation.
+.decl apply(d: D4, p: Position, p_out: Position) inline
+apply(IDENTITY,      [T, B, L, R], [T, B, L, R]) :- true.
+apply(FLIP_LR,       [T, B, L, R], [T, B, R, L]) :- true.
+apply(FLIP_TB,       [T, B, L, R], [B, T, L, R]) :- true.
+apply(ROT_180,       [T, B, L, R], [B, T, R, L]) :- true.
+apply(ROT_CW,        [T, B, L, R], [L, R, B, T]) :- true.
+apply(ROT_CCW,       [T, B, L, R], [R, L, T, B]) :- true.
+apply(FLIP_DIAG,     [T, B, L, R], [L, R, T, B]) :- true.
+apply(FLIP_ANTIDIAG, [T, B, L, R], [R, L, B, T]) :- true.
+
 // ------------------------------------------------------------
 // Patterns — recurring solver-body shapes built from primitives
 // ------------------------------------------------------------
@@ -75,8 +104,21 @@ edge_delta(RIGHT,  K, [0, 0, 0, K]) :- true.
 // edges of corner d. Used to project cells between frames sharing a corner.
 .decl corner_anchor(d: DiagDir, p1: Position, p2: Position) inline
 corner_anchor([V_DIR, H_DIR], P1, P2) :-
-    dist(P1, V_DIR, KV), dist(P2, V_DIR, KV),
-    dist(P1, H_DIR, KH), dist(P2, H_DIR, KH).
+    same_dist(V_DIR, P1, P2),
+    same_dist(H_DIR, P1, P2).
+
+// Same dist-to-edge D for two positions. Building block for anchor patterns.
+.decl same_dist(d: Dir, p1: Position, p2: Position) inline
+same_dist(D, P1, P2) :- dist(P1, D, K), dist(P2, D, K).
+
+// Slab-anchor match: two positions agree on dist-to-edge d (anchor) and on
+// the perpendicular extent (across-slice match). Used to project cells
+// between frames sharing one edge and the perpendicular axis's full extent.
+.decl slab_anchor(d: Dir, p1: Position, p2: Position) inline
+slab_anchor(D, P1, P2) :-
+    same_dist(D, P1, P2),
+    axis_of(D, A),
+    split(P1, A, _, AC), split(P2, A, _, AC).
 
 // Set-keyed match (count-trick). The member relation MEMBER carries the
 // entry's set-of-tuples; the body atoms in __VA_ARGS__ are conditions that
