@@ -8,7 +8,7 @@
     diag(TOP_RIGHT).
 
     .decl frame(p: Position)
-    frame(P) :- frame_pos(3, 3, P).
+    frame(P) :- frame_pos([3, 3], P).
 }
 
 .init c = Consts

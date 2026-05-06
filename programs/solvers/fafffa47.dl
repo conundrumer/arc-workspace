@@ -1,18 +1,26 @@
-// Combine paired cells of the input's two halves split along c.cut_dir,
-// via a fixed (near, far, out) color table.
-// TODO: needs layout primitives
+// Input is a 2×1 layout of 3×3 subgrids. For each output cell, pair the
+// two input cells aligned with it (one per subgrid). The pair {(p_outer, color), ...}
+// looks up the output color via a fixed combine table keyed on outer pos + color.
 
 #include "../lib.dl"
 
 .comp Consts {
-    .decl cut_dir(d: Dir)
-    cut_dir(TOP).
+    .decl frame(p: Position)
+    frame(P) :- frame_pos([3, 3], P).
 
-    .decl combine(c_near: Color, c_far: Color, c_out: Color)
-    combine(0, 0, 2).
-    combine(9, 0, 0).
-    combine(0, 1, 0).
-    combine(9, 1, 0).
+    // Input pos → (subgrid pos in 2×1, cell pos in 3×3).
+    .decl decompose(p: Position, p_outer: Position, p_inner: Position)
+    decompose(P, P_O, P_I) :- tile_pos([2, 1], [3, 3], P, P_O, P_I).
+
+    // Each combine entry: a set of (outer pos, color) members → out color.
+    // eid joins members to their out color.
+    .decl combine_member(eid: number, p_outer: Position, c: Color)
+    .decl combine_out(eid: number, c_out: Color)
+
+    combine_member(0, [0,1,0,0], 0). combine_member(0, [1,0,0,0], 0). combine_out(0, 2).
+    combine_member(1, [0,1,0,0], 9). combine_member(1, [1,0,0,0], 0). combine_out(1, 0).
+    combine_member(2, [0,1,0,0], 0). combine_member(2, [1,0,0,0], 1). combine_out(2, 0).
+    combine_member(3, [0,1,0,0], 9). combine_member(3, [1,0,0,0], 1). combine_out(3, 0).
 }
 
 .init c = Consts
@@ -20,34 +28,13 @@
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
-// Length along the cut_dir axis: K + K_OPP + 1, derived from any input cell.
-.decl axis_length(n: number)
-axis_length(K + K_OPP + 1) :-
-    in(P, _),                                  // any input cell
-    c.cut_dir(D), opposite(D, D_OPP),          // axis Dir pair
-    dist(P, D, K), dist(P, D_OPP, K_OPP).      // its two distances
-
-.decl half_length(n: number)
-half_length(N / 2) :- axis_length(N).
-
-// near, far: the two halves rebased into a half-frame by chopping the
-// opposite-side margin (near keeps the cut_dir edge; far keeps the opposite).
-.decl near(p: Position, col: Color)
-near(P_NEW, C) :-
-    in(P, C),                                                 // input cell
-    c.cut_dir(D), dist(P, D, K),                              // distance to cut edge
-    half_length(HL), K < HL,                                  // in the near half
-    opposite(D, D_OPP),                                       // chop opposite margin
-    edge_delta(D_OPP, -HL, DELTA), compose(P, DELTA, P_NEW).  // rebase
-
-.decl far(p: Position, col: Color)
-far(P_NEW, C) :-
-    in(P, C),                                             // input cell
-    c.cut_dir(D), dist(P, D, K),                          // distance to cut edge
-    half_length(HL), K >= HL,                             // in the far half
-    edge_delta(D, -HL, DELTA), compose(P, DELTA, P_NEW).  // rebase: chop cut-side margin
-
 .decl out(p: Position, col: Color)
-out(P, C_OUT) :- near(P, C_N), far(P, C_F), c.combine(C_N, C_F, C_OUT).
+out(O, C_OUT) :-
+    c.frame(O),                                          // output cell
+    c.combine_out(EID, C_OUT),                            // candidate entry
+    SET_MATCH(N,                                          // every member matches input
+              c.combine_member(EID, P_OUTER, C),
+              c.decompose(P_IN, P_OUTER, O),
+              in(P_IN, C)).
 
 .output out(IO=stdout)
