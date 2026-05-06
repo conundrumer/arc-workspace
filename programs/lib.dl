@@ -1,0 +1,88 @@
+// Shared types and primitives for ARC solvers in Souffle.
+//
+// Position: 4 distances from edges, ordered V-first then H — (top, bottom,
+// left, right). Dir constants index into Position. Redundant with grid bounds;
+// no corner privileged.
+//
+// Dim: (V-length, H-length) of a frame. Indexed by Axis.
+//
+// Color, Dir, Axis, DiagDir are subtypes of number — typed names with no
+// arithmetic intent. Constants are #define'd; solver bodies pull values
+// from a per-task Consts component rather than referencing constants directly.
+
+.type Color <: number
+.type Dir <: number
+.type Axis <: number
+
+.type Position = [t: number, b: number, l: number, r: number]
+.type Dim = [v: number, h: number]
+.type DiagDir = [v_dir: Dir, h_dir: Dir]
+
+#define TOP 0
+#define BOTTOM 1
+#define LEFT 2
+#define RIGHT 3
+
+#define VERTICAL 0
+#define HORIZONTAL 1
+
+#define TOP_LEFT     [TOP,    LEFT]
+#define TOP_RIGHT    [TOP,    RIGHT]
+#define BOTTOM_LEFT  [BOTTOM, LEFT]
+#define BOTTOM_RIGHT [BOTTOM, RIGHT]
+
+// ============================================================
+// Solver body primitives
+// ============================================================
+
+// Axis of a Dir.
+.decl axis_of(d: Dir, a: Axis)
+axis_of(TOP,    VERTICAL).
+axis_of(BOTTOM, VERTICAL).
+axis_of(LEFT,   HORIZONTAL).
+axis_of(RIGHT,  HORIZONTAL).
+
+// Opposite Dir on the same axis.
+.decl opposite(d: Dir, opp: Dir)
+opposite(TOP,    BOTTOM).
+opposite(BOTTOM, TOP).
+opposite(LEFT,   RIGHT).
+opposite(RIGHT,  LEFT).
+
+// Distance from p to edge d.
+.decl dist(p: Position, d: Dir, k: number) inline
+dist(P, TOP,    T) :- P = [T, _, _, _].
+dist(P, BOTTOM, B) :- P = [_, B, _, _].
+dist(P, LEFT,   L) :- P = [_, _, L, _].
+dist(P, RIGHT,  R) :- P = [_, _, _, R].
+
+// Element-wise sum of two Positions (signed; one operand may be a delta).
+.decl compose(p1: Position, p2: Position, p3: Position) inline
+compose([T1, B1, L1, R1], [T2, B2, L2, R2], [T1+T2, B1+B2, L1+L2, R1+R2]) :- true.
+
+// Edge delta: a Position carrying k at edge d, zero elsewhere.
+.decl edge_delta(d: Dir, k: number, p: Position) inline
+edge_delta(TOP,    K, [K, 0, 0, 0]) :- true.
+edge_delta(BOTTOM, K, [0, K, 0, 0]) :- true.
+edge_delta(LEFT,   K, [0, 0, K, 0]) :- true.
+edge_delta(RIGHT,  K, [0, 0, 0, K]) :- true.
+
+// ------------------------------------------------------------
+// Patterns — recurring solver-body shapes built from primitives
+// ------------------------------------------------------------
+
+// Corner-anchor match: two positions agree on the distances to the two
+// edges of corner d. Used to project cells between frames sharing a corner.
+.decl corner_anchor(d: DiagDir, p1: Position, p2: Position) inline
+corner_anchor([V_DIR, H_DIR], P1, P2) :-
+    dist(P1, V_DIR, KV), dist(P2, V_DIR, KV),
+    dist(P1, H_DIR, KH), dist(P2, H_DIR, KH).
+
+// ============================================================
+// Consts helpers — for declaring CONSTS data, not for solver bodies
+// ============================================================
+
+// All positions of a v × h frame. Use at call sites where v and h are
+// bound; range enumerates the cells.
+.decl frame_pos(v: number, h: number, p: Position) inline
+frame_pos(V, H, [T, V-1-T, L, H-1-L]) :- T = range(0, V), L = range(0, H).

@@ -1,0 +1,53 @@
+// Combine paired cells of the input's two halves split along c.cut_dir,
+// via a fixed (near, far, out) color table.
+// TODO: needs layout primitives
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl cut_dir(d: Dir)
+    cut_dir(TOP).
+
+    .decl combine(c_near: Color, c_far: Color, c_out: Color)
+    combine(0, 0, 2).
+    combine(9, 0, 0).
+    combine(0, 1, 0).
+    combine(9, 1, 0).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// Length along the cut_dir axis: K + K_OPP + 1, derived from any input cell.
+.decl axis_length(n: number)
+axis_length(K + K_OPP + 1) :-
+    in(P, _),                                  // any input cell
+    c.cut_dir(D), opposite(D, D_OPP),          // axis Dir pair
+    dist(P, D, K), dist(P, D_OPP, K_OPP).      // its two distances
+
+.decl half_length(n: number)
+half_length(N / 2) :- axis_length(N).
+
+// near, far: the two halves rebased into a half-frame by chopping the
+// opposite-side margin (near keeps the cut_dir edge; far keeps the opposite).
+.decl near(p: Position, col: Color)
+near(P_NEW, C) :-
+    in(P, C),                                                 // input cell
+    c.cut_dir(D), dist(P, D, K),                              // distance to cut edge
+    half_length(HL), K < HL,                                  // in the near half
+    opposite(D, D_OPP),                                       // chop opposite margin
+    edge_delta(D_OPP, -HL, DELTA), compose(P, DELTA, P_NEW).  // rebase
+
+.decl far(p: Position, col: Color)
+far(P_NEW, C) :-
+    in(P, C),                                             // input cell
+    c.cut_dir(D), dist(P, D, K),                          // distance to cut edge
+    half_length(HL), K >= HL,                             // in the far half
+    edge_delta(D, -HL, DELTA), compose(P, DELTA, P_NEW).  // rebase: chop cut-side margin
+
+.decl out(p: Position, col: Color)
+out(P, C_OUT) :- near(P, C_N), far(P, C_F), c.combine(C_N, C_F, C_OUT).
+
+.output out(IO=stdout)

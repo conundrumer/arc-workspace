@@ -1,0 +1,25 @@
+// Recolor cells through a fixed color involution.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl recolor(c1: Color, c2: Color)
+    recolor(1, 5).
+    recolor(5, 1).
+    recolor(2, 6).
+    recolor(6, 2).
+    recolor(3, 4).
+    recolor(4, 3).
+    recolor(8, 9).
+    recolor(9, 8).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl out(p: Position, col: Color)
+out(P, C2) :- in(P, C1), c.recolor(C1, C2).
+
+.output out(IO=stdout)
