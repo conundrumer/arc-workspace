@@ -1,16 +1,36 @@
-// Input is a 2×1 layout of 3×5 subgrids. For each output cell, pair the two
-// input cells aligned with it (one per subgrid) and look up the output color
-// via a fixed combine table keyed on outer pos + color.
+// Layout: 2×1 vertically-stacked 3×5 subgrids. Output is the per-cell pair-fold.
+//
+// Cartesian over (decompose, body) impls; out's choice column tags each:
+//
+//   decompose:
+//     $Tile() — pre-tabulated in Consts via tile_pos
+//     $Div()  — derived in body via the divide primitive (c.divide_axis, c.divisor)
+//
+//   body:
+//     $SetMatch(d) — combine table keyed on (outer pos, color); count-trick match
+//     $Xor(d)      — XOR via count: exactly one non-BG input contribution
 
 #include "../lib.dl"
+
+.type DecChoice = Tile {} | Div {}
+.type Choice = SetMatch { d: DecChoice } | Xor { d: DecChoice }
 
 .comp Consts {
     .decl frame(p: Position)
     frame(P) :- frame_pos([3, 5], P).
 
-    .decl decompose(p: Position, p_outer: Position, p_inner: Position)
-    decompose(P, P_O, P_I) :- tile_pos([2, 1], [3, 5], [0, 0], P, P_O, P_I).
+    // --- Tile decompose data ----------------------------------------------
+    .decl tile_decompose(p: Position, p_outer: Position, p_inner: Position)
+    tile_decompose(P, P_O, P_I) :- tile_pos([2, 1], [3, 5], [0, 0], P, P_O, P_I).
 
+    // --- Div decompose data -----------------------------------------------
+    .decl divisor(n: number)
+    divisor(2).
+
+    .decl divide_axis(a: Axis)
+    divide_axis(VERTICAL).
+
+    // --- SetMatch body data -----------------------------------------------
     .decl combine_member(eid: number, p_outer: Position, c: Color)
     .decl combine_out(eid: number, c_out: Color)
 
@@ -18,6 +38,10 @@
     combine_member(1, [0,1,0,0], 9). combine_member(1, [1,0,0,0], 0). combine_out(1, 6).
     combine_member(2, [0,1,0,0], 0). combine_member(2, [1,0,0,0], 4). combine_out(2, 6).
     combine_member(3, [0,1,0,0], 9). combine_member(3, [1,0,0,0], 4). combine_out(3, 0).
+
+    // --- Xor body data ----------------------------------------------------
+    .decl bg(c: Color)        bg(0).
+    .decl out_fill(c: Color)  out_fill(6).
 }
 
 .init c = Consts
@@ -25,13 +49,47 @@
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
-.decl out(p: Position, col: Color)
-out(O, C_OUT) :-
-    c.frame(O),                                          // output cell
-    c.combine_out(EID, C_OUT),                            // candidate entry
-    SET_MATCH(N,                                          // every member matches input
-              c.combine_member(EID, P_OUTER, C),
-              c.decompose(P_IN, P_OUTER, O),
-              in(P_IN, C)).
+// --- Decompose variants ----------------------------------------------------
+
+.decl dec_choice(dc: DecChoice)
+dec_choice($Tile()).
+dec_choice($Div()).
+
+.decl decompose(p: Position, p_outer: Position, p_inner: Position, dc: DecChoice)
+decompose(P, P_O, P_I, $Tile()) :- c.tile_decompose(P, P_O, P_I).
+decompose(P, P_O, P_I, $Div()) :-
+    in(P, _),                                       // input position
+    c.divide_axis(A), c.divisor(N),                 // params
+    divide(P, A, N, 0, P_O, P_I_AXIS),              // 1D divide
+    split(P, A, _, ACROSS),                         // perpendicular passes through
+    compose(P_I_AXIS, ACROSS, P_I).
+
+// --- Xor body: filled_count parameterized by decompose choice -------------
+
+.decl filled_count(o: Position, dc: DecChoice, n: number)
+filled_count(O, DC, N) :-
+    c.frame(O), dec_choice(DC),
+    N = count : { in(P_IN, COL), !c.bg(COL), decompose(P_IN, _, O, DC) }.
+
+// --- Output: cartesian over (DecChoice, body) ------------------------------
+
+.decl out(p: Position, col: Color, c: Choice)
+out(O, C_OUT, $SetMatch(DC)) :-
+    dec_choice(DC),
+    c.frame(O),
+    c.combine_out(EID, C_OUT),
+    N = count : { c.combine_member(EID, _, _) },              // members in entry
+    N = count : { c.combine_member(EID, P_OUTER, C),          // members matched
+                  decompose(P_IN, P_OUTER, O, DC),
+                  in(P_IN, C) }.
+
+out(O, COL, $Xor(DC)) :-
+    dec_choice(DC), c.frame(O),                 // choice × cell
+    filled_count(O, DC, 1),                     // XOR=1: exactly one contribution
+    c.out_fill(COL).
+out(O, COL, $Xor(DC)) :-
+    dec_choice(DC), c.frame(O),                 // choice × cell
+    filled_count(O, DC, N), N != 1,             // XOR=0: zero or two contributions
+    c.bg(COL).
 
 .output out(IO=stdout)

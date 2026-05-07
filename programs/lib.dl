@@ -96,6 +96,37 @@ apply(ROT_CCW,       [T, B, L, R], [R, L, T, B]) :- true.
 apply(FLIP_DIAG,     [T, B, L, R], [L, R, T, B]) :- true.
 apply(FLIP_ANTIDIAG, [T, B, L, R], [R, L, B, T]) :- true.
 
+// Divide p's axis-a extent into n equal parts. Both outputs are axis-only
+// (perpendicular zeroed): p_outer is the subgrid index in an n-strip frame
+// on axis a; p_inner is the cell within the subgrid on axis a. Cells in
+// gap rows/cols (when gap > 0) get no decomposition — rule does not fire.
+// Symmetric outputs compose cleanly: two divides on different axes can be
+// joined via compose for 2D decomposition.
+// Asserts: gap-adjusted extent divides evenly by n; cell is not in a gap.
+.decl divide(p: Position, a: Axis, n: number, gap: number, p_outer: Position, p_inner: Position) inline
+divide(P, VERTICAL, N, G,
+       [OT, N-1-OT, 0, 0],
+       [IT, SH-1-IT, 0, 0]) :-
+    P = [T, B, _, _],
+    H = T + B + 1,
+    (H - (N-1)*G) % N = 0,
+    SH = (H - (N-1)*G) / N,
+    K_CYC = T % (SH + G),
+    K_CYC < SH,
+    OT = T / (SH + G),
+    IT = K_CYC.
+divide(P, HORIZONTAL, N, G,
+       [0, 0, OL, N-1-OL],
+       [0, 0, IL, SH-1-IL]) :-
+    P = [_, _, L, R],
+    W = L + R + 1,
+    (W - (N-1)*G) % N = 0,
+    SH = (W - (N-1)*G) / N,
+    K_CYC = L % (SH + G),
+    K_CYC < SH,
+    OL = L / (SH + G),
+    IL = K_CYC.
+
 // ------------------------------------------------------------
 // Patterns — recurring solver-body shapes built from primitives
 // ------------------------------------------------------------
@@ -119,14 +150,6 @@ slab_anchor(D, P1, P2) :-
     same_dist(D, P1, P2),
     axis_of(D, A),
     split(P1, A, _, AC), split(P2, A, _, AC).
-
-// Set-keyed match (count-trick). The member relation MEMBER carries the
-// entry's set-of-tuples; the body atoms in __VA_ARGS__ are conditions that
-// each member must satisfy. Fires iff every member matches: |members| =
-// |members satisfying body|. N is the caller-named count variable.
-#define SET_MATCH(N, MEMBER, ...) \
-    N = count : { MEMBER }, \
-    N = count : { MEMBER, __VA_ARGS__ }
 
 // ============================================================
 // Consts helpers — for declaring CONSTS data, not for solver bodies
