@@ -1,17 +1,18 @@
-"""Run a Souffle solver against its task's train+test pairs.
+"""Run Souffle solvers against their tasks' train+test pairs.
 
 Usage:
-    uv run python programs/run_dl.py <task_id>
+    uv run python programs/run_dl.py            # run all .dl solvers
+    uv run python programs/run_dl.py <stem>     # run one
 
-Loads programs/solvers/<task_id>.dl, encodes each example's input grid as
-fact lines on stdin, invokes `souffle -D- <task.dl>`, reads the output
-relation from stdout, compares to expected output grid.
+For a single stem, encodes each example's input grid as fact lines on stdin,
+invokes `souffle -D- <stem>.dl`, reads the output relation from stdout,
+compares to expected output grid.
 """
 
 import re
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -37,36 +38,48 @@ def grid_to_facts(rows: list[list[int]]) -> str:
     return "\n".join(lines) + ("\n" if lines else "")
 
 
-def parse_output(stdout: str) -> list[list[int]]:
-    """Parse Souffle's default text output for the `out` relation."""
+def parse_output(stdout: str) -> list[list[list[int]]]:
+    """Parse Souffle's default text output for the `out` relation.
+
+    Returns a list of candidate grids. If `out` has an extra trailing
+    integer column (a choice id), cells are grouped by it and each group
+    becomes one candidate.
+    """
     parts = re.split(r"^={3,}$", stdout, flags=re.MULTILINE)
     if len(parts) < 3:
         raise ValueError(f"unexpected souffle output:\n{stdout}")
     data = parts[1].strip()
     if not data:
-        return []
+        return [[]]
 
-    cells = []
-    line_re = re.compile(r"\[(-?\d+), (-?\d+), (-?\d+), (-?\d+)\]\t(-?\d+)")
+    line_re = re.compile(r"\[(-?\d+), (-?\d+), (-?\d+), (-?\d+)\]\t(-?\d+)(?:\t(.+))?$")
+    grouped: dict[str, list] = {}
     for line in data.splitlines():
         m = line_re.match(line)
         if not m:
             raise ValueError(f"unexpected fact line: {line!r}")
-        cells.append(tuple(int(x) for x in m.groups()))
+        groups = m.groups()
+        cid = groups[5] if groups[5] is not None else ""
+        cells = grouped.setdefault(cid, [])
+        cells.append(tuple(int(x) for x in groups[:5]))
 
-    bounds = {(t + b + 1, l + r + 1) for (t, b, l, r, _) in cells}
-    if len(bounds) != 1:
-        raise ValueError(f"inconsistent grid bounds across cells: {bounds}")
-    h, w = next(iter(bounds))
-    out = [[0] * w for _ in range(h)]
-    for (t, b, l, r, color) in cells:
-        if t < 0 or l < 0 or t >= h or l >= w:
-            raise ValueError(f"cell out of derived bounds: ({t}, {l}) in {h}x{w}")
-        out[t][l] = color
-    return out
+    candidates: list[list[list[int]]] = []
+    for cid in sorted(grouped):
+        cells = grouped[cid]
+        bounds = {(t + b + 1, l + r + 1) for (t, b, l, r, _) in cells}
+        if len(bounds) != 1:
+            raise ValueError(f"inconsistent grid bounds in choice {cid}: {bounds}")
+        h, w = next(iter(bounds))
+        grid = [[0] * w for _ in range(h)]
+        for (t, b, l, r, color) in cells:
+            if t < 0 or l < 0 or t >= h or l >= w:
+                raise ValueError(f"cell out of derived bounds: ({t}, {l}) in {h}x{w}")
+            grid[t][l] = color
+        candidates.append(grid)
+    return candidates
 
 
-def run_dl(task_id: str, input_rows: list[list[int]], stem: str | None = None) -> list[list[int]]:
+def run_dl(task_id: str, input_rows: list[list[int]], stem: str | None = None) -> list[list[list[int]]]:
     dl_path = SOLVERS_DIR / f"{stem or task_id}.dl"
     if not dl_path.exists():
         raise FileNotFoundError(f"no .dl solver at {dl_path}")
@@ -90,33 +103,82 @@ class PairResult:
     detail: str | None
 
 
-def run_one(stem: str) -> int:
+@dataclass
+class TaskResult:
+    stem: str
+    pairs: list[PairResult] = field(default_factory=list)
+
+    @property
+    def total(self) -> int:
+        return len(self.pairs)
+
+    @property
+    def passes(self) -> int:
+        return sum(1 for p in self.pairs if p.ok)
+
+    @property
+    def all_pass(self) -> bool:
+        return all(p.ok for p in self.pairs)
+
+
+def run_task(stem: str) -> TaskResult:
     task_id = stem.split("_", 1)[0]
     task = load_task(task_id)
-    pairs: list[PairResult] = []
+    result = TaskResult(stem=stem)
     for kind, examples in (("train", task.train), ("test", task.test)):
         for idx, ex in enumerate(examples):
             try:
-                actual = run_dl(task_id, ex.input, stem=stem)
+                actuals = run_dl(task_id, ex.input, stem=stem)
                 accepted = [ex.output]
                 if ex.alt is not None and ex.alt.kind == "tiebreak":
                     accepted.append(ex.alt.grid)
-                ok = actual in accepted
-                detail = None if ok else f"expected one of {accepted}\n      actual   {actual}"
+                ok = bool(actuals) and all(a in accepted for a in actuals)
+                detail = None if ok else f"expected each in {accepted}\n      actuals  {actuals}"
             except Exception as e:
                 ok = False
                 detail = f"{type(e).__name__}: {e}"
-            pairs.append(PairResult(kind=kind, idx=idx, ok=ok, detail=detail))
+            result.pairs.append(PairResult(kind=kind, idx=idx, ok=ok, detail=detail))
+    return result
 
-    for p in pairs:
+
+def all_stems() -> list[str]:
+    return sorted(p.stem for p in SOLVERS_DIR.glob("*.dl"))
+
+
+def cmd_one(stem: str) -> int:
+    result = run_task(stem)
+    for p in result.pairs:
         print(f"{p.kind}[{p.idx}]: {'PASS' if p.ok else 'FAIL'}")
         if p.detail:
             print(f"  {p.detail}")
-    return 0 if all(p.ok for p in pairs) else 1
+    return 0 if result.all_pass else 1
+
+
+def cmd_all() -> int:
+    results = [run_task(stem) for stem in all_stems()]
+    for r in results:
+        marker = "PASS" if r.all_pass else "FAIL"
+        print(f"{r.stem}: {r.passes}/{r.total} {marker}")
+
+    failed = [r for r in results if not r.all_pass]
+    if failed:
+        print()
+        print(f"--- {len(failed)} failing solver(s) ---")
+        for r in failed:
+            print(f"\n{r.stem}:")
+            for p in r.pairs:
+                if not p.ok:
+                    print(f"  {p.kind}[{p.idx}]: {p.detail}")
+
+    print()
+    print(f"summary: {len(results) - len(failed)}/{len(results)} solvers")
+    return 0 if not failed else 1
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print(f"usage: {sys.argv[0]} <task_id_or_stem>", file=sys.stderr)
-        sys.exit(2)
-    sys.exit(run_one(sys.argv[1]))
+    if len(sys.argv) == 1:
+        sys.exit(cmd_all())
+    if len(sys.argv) == 2:
+        sys.exit(cmd_one(sys.argv[1]))
+    print(f"usage: {sys.argv[0]} [<task_id_or_stem>]", file=sys.stderr)
+    sys.exit(2)

@@ -1,19 +1,16 @@
 // Output is a 2×2 corner crop. Both TL- and TR-anchored crops are valid;
-// Souffle's choice-domain picks one diag from the options. The runner
-// accepts either output (tiebreak alt) since which diag is chosen is
-// unspecified.
+// the alternatives are enumerated as separate candidates via a choice_id
+// column on out. The runner accepts if any candidate matches the expected
+// output (or the task's tiebreak alt).
 
 #include "../lib.dl"
 
 .comp Consts {
-    .decl diag_option(d: DiagDir)
-    diag_option(TOP_LEFT).
-    diag_option(TOP_RIGHT).
-
-    // Pick one diag from the options. Dummy group attribute makes the
-    // choice global (one tuple total).
-    .decl diag(d: DiagDir, g: number) choice-domain g
-    diag(D, 0) :- diag_option(D).
+    // Each diag option carries its choice_id; out propagates the id so
+    // candidates are separable downstream.
+    .decl diag_option(d: DiagDir, choice_id: number)
+    diag_option(TOP_LEFT,  0).
+    diag_option(TOP_RIGHT, 1).
 
     .decl frame(p: Position)
     frame(P) :- frame_pos([2, 2], P).
@@ -24,10 +21,11 @@
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
-.decl out(p: Position, col: Color)
-out(O, COL) :-
-    in(P, COL),                              // input cell
-    c.frame(O),                              // output position
-    c.diag(D, _), corner_anchor(D, O, P).    // chosen diag, corner-anchor match
+.decl out(p: Position, col: Color, choice_id: number)
+out(O, COL, CID) :-
+    in(P, COL),                                  // input cell
+    c.frame(O),                                  // output position
+    c.diag_option(D, CID),                       // candidate diag + its id
+    corner_anchor(D, O, P).                      // corner-anchor match
 
 .output out(IO=stdout)

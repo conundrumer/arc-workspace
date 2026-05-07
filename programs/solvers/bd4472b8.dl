@@ -1,30 +1,30 @@
-// Header rows (along c.header_dir, depth body_start) pass through. Body
-// rows are filled per-row uniformly: row at distance T from header edge
-// gets header[(T - body_start) mod W], where W = grid extent perpendicular
-// to header_dir and header colors come from the row at distance 0, indexed
+// Header rows (depth body_start along c.header_dir) pass through. Body rows
+// are filled per-row uniformly: row at distance T from header edge gets
+// header[(T - body_start) mod W], where W = grid extent perpendicular to
+// header_dir and header colors come from the row at distance 0, indexed
 // by distance from c.across_dir.
 //
-// The mod W cycling is expressed via recursion: the placement offset is
-// shifted by W repeatedly, terminating when no input cell sits at the
-// shifted distance along header_dir.
+// Two body-cycling impls; out's choice column tags each:
+//
+//   $Recursive() — tile_offset shifts by W; compose-only
+//   $Mod()       — header_color((T_IN - body_start) % W)
 
 #include "../lib.dl"
 
+.type Choice = Recursive {} | Mod {}
+
 .comp Consts {
-    .decl header_dir(d: Dir)
-    header_dir(TOP).
-
-    .decl across_dir(d: Dir)
-    across_dir(LEFT).
-
-    .decl body_start(n: number)
-    body_start(2).
+    .decl header_dir(d: Dir)     header_dir(TOP).
+    .decl across_dir(d: Dir)     across_dir(LEFT).
+    .decl body_start(n: number)  body_start(2).
 }
 
 .init c = Consts
 
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
+
+// --- Shared derivations ---------------------------------------------------
 
 // Width perpendicular to header_dir: count cells at the header edge.
 .decl header_cell(p: Position)
@@ -40,8 +40,15 @@ header_color(IDX, COL) :-
     c.header_dir(D), dist(P, D, 0),              // on the header edge
     c.across_dir(A_DIR), dist(P, A_DIR, IDX).    // index = across distance
 
-// Tile placement offsets along header_dir. Base = body_start. Each step
-// shifts by W. Terminates when no input cell sits at the shifted distance.
+// --- Body fill, parameterized by impl choice ------------------------------
+
+.decl impl_choice(c: Choice)
+impl_choice($Recursive()).
+impl_choice($Mod()).
+
+.decl fill(p: Position, col: Color, c: Choice)
+
+// $Recursive: tile_offset shifts by W; compose-only.
 .decl tile_offset(off: Position)
 tile_offset(BASE) :-
     c.header_dir(D), c.body_start(BS),           // header axis, base offset
@@ -53,21 +60,26 @@ tile_offset(NEXT) :-
     compose(PREV, SHIFT, NEXT),                  // PREV + SHIFT
     in(P, _), same_dist(D, NEXT, P).             // termination: input at NEXT's dist
 
-// Filled body cells: input cell at dist (OFF + T) along header_dir gets
-// header_color(T, COL). Same color for the whole row (column unconstrained).
-.decl fill(p: Position, col: Color)
-fill(P_INPUT, COL) :-
+fill(P_INPUT, COL, $Recursive()) :-
     in(P_INPUT, _),                              // input cell
-    c.header_dir(D),                             // header axis
-    tile_offset(OFF), header_color(T, COL),      // (offset, header rank, color)
-    edge_delta(D, T, T_DELTA),                   // delta carrying T at edge D
-    compose(OFF, T_DELTA, FULL_OFF),             // OFF + T = full distance
-    same_dist(D, FULL_OFF, P_INPUT).             // input matches full distance
+    c.header_dir(D),                             // cycling axis
+    tile_offset(OFF), header_color(T, COL),      // a (cycle, header-index) pair
+    edge_delta(D, T, T_DELTA),                   // shift to header index
+    compose(OFF, T_DELTA, FULL_OFF),             // total offset
+    same_dist(D, FULL_OFF, P_INPUT).             // input cell at that dist
 
-// Output: cells not in fill (header) pass through; cells in fill take the
-// filled color.
-.decl out(p: Position, col: Color)
-out(P, COL) :- in(P, COL), !fill(P, _).
-out(P, COL) :- fill(P, COL).
+// $Mod: direct mod arithmetic.
+fill(P_INPUT, COL, $Mod()) :-
+    in(P_INPUT, _),                              // input cell
+    c.header_dir(D), c.body_start(BS),           // cycling axis, base offset
+    dist(P_INPUT, D, T_IN), T_IN >= BS,          // past the header
+    width(W),                                    // cycle length
+    header_color((T_IN - BS) % W, COL).          // mod into header
+
+// --- Output: candidate per impl -------------------------------------------
+
+.decl out(p: Position, col: Color, c: Choice)
+out(P, COL, IMPL) :- impl_choice(IMPL), in(P, COL), !fill(P, _, IMPL).
+out(P, COL, IMPL) :- fill(P, COL, IMPL).
 
 .output out(IO=stdout)
