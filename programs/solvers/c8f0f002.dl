@@ -1,0 +1,20 @@
+// Color substitution via a mapping relation. Same body as b1948b0a, different
+// mapping data.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl mapping(c_from: Color, c_to: Color)
+    mapping(7, 5).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl out(p: Position, col: Color)
+out(P, COL_OUT) :- in(P, COL_IN), c.mapping(COL_IN, COL_OUT).
+out(P, COL)     :- in(P, COL), !c.mapping(COL, _).
+
+.output out(IO=stdout)

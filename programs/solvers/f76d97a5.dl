@@ -1,0 +1,25 @@
+// Recolor a binary input: marker positions take the input's main color
+// (the unique non-marker color in the grid); the main color elsewhere
+// becomes background.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl marker(c: Color)  marker(5).
+    .decl bg(c: Color)      bg(0).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// main(col) :- in(_, col), col != c.marker.
+.decl main(col: Color)
+main(COL) :- in(_, COL), c.marker(MK), COL != MK.
+
+.decl out(p: Position, col: Color)
+out(P, MAIN) :- in(P, COL), c.marker(MK), COL = MK,  main(MAIN).
+out(P, BG)   :- in(P, COL), c.marker(MK), COL != MK, c.bg(BG).
+
+.output out(IO=stdout)

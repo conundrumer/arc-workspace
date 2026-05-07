@@ -1,0 +1,24 @@
+// Apply a fixed position permutation. Input is a 5×1 grid; cells move per
+// the perm relation declared in Consts.
+
+#include "../lib.dl"
+
+.comp Consts {
+    // perm(p_in, p_out): cell at p_in moves to p_out. Input/output dim is 5×1.
+    .decl perm(p_in: Position, p_out: Position)
+    perm([0,4,0,0], [1,3,0,0]).
+    perm([1,3,0,0], [0,4,0,0]).
+    perm([2,2,0,0], [2,2,0,0]).
+    perm([3,1,0,0], [4,0,0,0]).
+    perm([4,0,0,0], [3,1,0,0]).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl out(p: Position, col: Color)
+out(P_OUT, COL) :- in(P_IN, COL), c.perm(P_IN, P_OUT).
+
+.output out(IO=stdout)

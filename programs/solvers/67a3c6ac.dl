@@ -1,0 +1,18 @@
+// Apply a D4 transform to every cell.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl transform(d: D4)
+    transform(FLIP_LR).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl out(p: Position, col: Color)
+out(P_OUT, COL) :- in(P, COL), c.transform(D), apply(D, P, P_OUT).
+
+.output out(IO=stdout)

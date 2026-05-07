@@ -1,0 +1,21 @@
+// Color swap via a symmetric mapping relation. Same body as b1948b0a; the
+// mapping is declared one-direction and closed under symmetry by a rule.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl mapping(c_from: Color, c_to: Color)
+    mapping(B, A) :- mapping(A, B).   // symmetric closure
+    mapping(5, 8).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl out(p: Position, col: Color)
+out(P, COL_OUT) :- in(P, COL_IN), c.mapping(COL_IN, COL_OUT).
+out(P, COL)     :- in(P, COL), !c.mapping(COL, _).
+
+.output out(IO=stdout)

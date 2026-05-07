@@ -1,0 +1,32 @@
+// Recolor a binary input: bg cells take a fill color derived from the input's
+// fg via a fixed mapping; fg cells become bg.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl bg(c: Color)  bg(0).
+
+    .decl recolor(c_fg: Color, c_fill: Color)
+    recolor(3, 1).
+    recolor(5, 4).
+    recolor(8, 2).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// fg(col) :- in(_, col), col != c.bg.
+.decl fg(col: Color)
+fg(COL) :- in(_, COL), c.bg(BG), COL != BG.
+
+// fill(out) :- fg(col), c.recolor(col, out).
+.decl fill(c: Color)
+fill(OUT) :- fg(COL), c.recolor(COL, OUT).
+
+.decl out(p: Position, col: Color)
+out(P, FILL) :- in(P, COL), c.bg(BG), COL = BG,  fill(FILL).
+out(P, BG)   :- in(P, COL), c.bg(BG), COL != BG.
+
+.output out(IO=stdout)
