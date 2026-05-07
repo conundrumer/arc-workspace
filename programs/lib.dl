@@ -43,6 +43,9 @@
 #define FLIP_DIAG     6
 #define FLIP_ANTIDIAG 7
 
+// Origin: position with 0 distance to every edge.
+#define ORIGIN [0, 0, 0, 0]
+
 // ============================================================
 // Solver body primitives
 // ============================================================

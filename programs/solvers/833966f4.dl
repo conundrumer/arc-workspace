@@ -1,11 +1,17 @@
-// Apply a fixed position permutation. Input is a 5×1 grid; cells move per
-// the perm relation, derived by joining two label grids.
+// Layout: 5×1 cell permutation. Two pairs of adjacent rows swap around a
+// fixed center row.
+//
+// Cartesian over body impls; out's choice column tags each:
+//
+//   $LabeledGrids() — paired by shared non-zero label across in/out grids
+//   $Divide()       — divide V by 2 with gap 1; within each subgrid, swap rows
 
 #include "../lib.dl"
 
+.type Choice = LabeledGrids {} | Divide {}
+
 .comp Consts {
-    // Each cell's label, in two parallel 5×1 grids. Matching labels identify
-    // a (p_in, p_out) pair.
+    // --- LabeledGrids data ----------------------------------------------
     .decl in_label(p: Position, lbl: number)
     GRID_5x1(in_label,
         1,
@@ -22,8 +28,16 @@
         5,
         4)
 
-    .decl perm(p_in: Position, p_out: Position)
-    perm(P_IN, P_OUT) :- in_label(P_IN, LBL), out_label(P_OUT, LBL), LBL != 0.
+    // --- Divide params --------------------------------------------------
+    .decl divide_axis(a: Axis)      divide_axis(VERTICAL).
+    .decl divisor(n: number)        divisor(2).
+    .decl divide_gap(g: number)     divide_gap(1).
+
+    // Inner-keyed delta swapping the two cells of a 2×1 V-subgrid.
+    // TODO: replace with d4 flip
+    .decl inner_delta(p_inner: Position, delta: Position)
+    inner_delta([0, 1, 0, 0], [ 1, -1, 0, 0]).
+    inner_delta([1, 0, 0, 0], [-1,  1, 0, 0]).
 }
 
 .init c = Consts
@@ -31,7 +45,31 @@
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
-.decl out(p: Position, col: Color)
-out(P_OUT, COL) :- in(P_IN, COL), c.perm(P_IN, P_OUT).
+.decl impl_choice(c: Choice)
+impl_choice($LabeledGrids()).
+impl_choice($Divide()).
+
+.decl decomposable(p: Position)
+decomposable(P) :-
+    in(P, _),
+    c.divide_axis(A), c.divisor(N), c.divide_gap(G),
+    divide(P, A, N, G, _, _).
+
+.decl perm(p_in: Position, p_out: Position, c: Choice)
+perm(P_IN, P_OUT, $LabeledGrids()) :-
+    c.in_label(P_IN, LBL), c.out_label(P_OUT, LBL),    // shared label
+    LBL != 0.                                          // non-pairing sentinel
+
+perm(P_IN, P_OUT, $Divide()) :-
+    in(P_IN, _),                                       // input cell
+    c.divide_axis(A), c.divisor(N), c.divide_gap(G),   // params
+    divide(P_IN, A, N, G, _, P_IV),                    // 1D divide
+    c.inner_delta(P_IV, DELTA),                        // delta per inner row
+    compose(P_IN, DELTA, P_OUT).                       // apply delta in-frame
+perm(P_IN, P_IN, $Divide()) :-
+    in(P_IN, _), !decomposable(P_IN).                  // gap row passthrough
+
+.decl out(p: Position, col: Color, c: Choice)
+out(P_OUT, COL, IMPL) :- impl_choice(IMPL), in(P_IN, COL), perm(P_IN, P_OUT, IMPL).
 
 .output out(IO=stdout)
