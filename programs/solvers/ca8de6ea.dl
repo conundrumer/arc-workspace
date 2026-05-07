@@ -1,0 +1,35 @@
+// Collapse a 5×5 X-pattern to a dense 3×3. Each of the 9 non-bg input cells
+// maps to a unique output cell; bg cells (zeros around the X) drop out.
+
+#include "../lib.dl"
+
+.comp Consts {
+    // Each cell's label, in two parallel grids of different dims. Matching
+    // non-zero labels identify a (p_in, p_out) pair; zeros are unpaired.
+    .decl in_label(p: Position, lbl: number)
+    GRID_5x5(in_label,
+        1, 0, 0, 0, 3,
+        0, 2, 0, 4, 0,
+        0, 0, 9, 0, 0,
+        0, 8, 0, 6, 0,
+        7, 0, 0, 0, 5)
+
+    .decl out_label(p: Position, lbl: number)
+    GRID_3x3(out_label,
+        1, 2, 3,
+        8, 9, 4,
+        7, 6, 5)
+
+    .decl perm(p_in: Position, p_out: Position)
+    perm(P_IN, P_OUT) :- in_label(P_IN, LBL), out_label(P_OUT, LBL), LBL != 0.
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl out(p: Position, col: Color)
+out(P_OUT, COL) :- in(P_IN, COL), c.perm(P_IN, P_OUT).
+
+.output out(IO=stdout)

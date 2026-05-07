@@ -12,6 +12,7 @@ compares to expected output grid.
 import re
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -79,10 +80,58 @@ def parse_output(stdout: str) -> list[list[list[int]]]:
     return candidates
 
 
+GRID_MACRO_RE = re.compile(r"\bGRID_(\d+)x(\d+)\b")
+
+
+def gen_grid_macro(h: int, w: int) -> str:
+    """Emit `#define GRID_HxW(rel, V0, V1, ...) rel([t,b,l,r], Vk). ...`.
+
+    The macro expands to one fact per cell of an H×W frame, in row-major order
+    over Vk arg names. Position values are inlined per (H, W) pair.
+    """
+    args = ", ".join(f"V{i}" for i in range(h * w))
+    rows = []
+    for row in range(h):
+        cells = []
+        for col in range(w):
+            v = f"V{row * w + col}"
+            cells.append(f"rel([{row}, {h-1-row}, {col}, {w-1-col}], {v}).")
+        rows.append(" ".join(cells))
+    body = " \\\n    ".join(rows)
+    return f"#define GRID_{h}x{w}(rel, {args}) \\\n    {body}"
+
+
+def expand_grid_macros(source: str) -> tuple[str, bool]:
+    """Prepend `#define GRID_HxW` lines for every (H, W) used in source."""
+    dims = {(int(m.group(1)), int(m.group(2))) for m in GRID_MACRO_RE.finditer(source)}
+    if not dims:
+        return source, False
+    macros = "\n".join(gen_grid_macro(h, w) for (h, w) in sorted(dims))
+    return f"// Generated GRID_HxW expansions.\n{macros}\n\n{source}", True
+
+
 def run_dl(task_id: str, input_rows: list[list[int]], stem: str | None = None) -> list[list[list[int]]]:
     dl_path = SOLVERS_DIR / f"{stem or task_id}.dl"
     if not dl_path.exists():
         raise FileNotFoundError(f"no .dl solver at {dl_path}")
+
+    source = dl_path.read_text()
+    expanded, modified = expand_grid_macros(source)
+    if modified:
+        # Tempfile lives next to the original so `#include "../lib.dl"` resolves.
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".dl", dir=str(SOLVERS_DIR), delete=False
+        ) as tf:
+            tf.write(expanded)
+            run_path = Path(tf.name)
+        try:
+            return _invoke_souffle(run_path, input_rows)
+        finally:
+            run_path.unlink(missing_ok=True)
+    return _invoke_souffle(dl_path, input_rows)
+
+
+def _invoke_souffle(dl_path: Path, input_rows: list[list[int]]) -> list[list[list[int]]]:
     facts = grid_to_facts(input_rows)
     result = subprocess.run(
         ["souffle", "-D-", "-w", str(dl_path)],
