@@ -64,9 +64,7 @@ decompose(P_grid, P_tile, P_intile, $Tile()) :- c.tile_decompose(P_grid, P_tile,
 decompose(P_grid, P_tile, P_intile, $Div()) :-
     in(P_grid, _),                                       // input position
     c.divide_axis(A), c.divisor(N), c.divide_gap(G),     // params
-    divide(P_grid, A, N, G, P_tile, P_inner_axis),       // 1D divide
-    split(P_grid, A, _, Across),                         // perpendicular passes through
-    compose(P_inner_axis, Across, P_intile).
+    divide_slab(P_grid, A, N, G, P_tile, P_intile).
 
 // --- Xor body: filled_count parameterized by decompose choice -------------
 

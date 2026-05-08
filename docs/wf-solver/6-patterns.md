@@ -66,11 +66,3 @@ divide(P_grid, HORIZONTAL, Nh, Gh, P_outer_h, P_inner_h),
 compose(P_outer_v, P_outer_h, P_tile),
 compose(P_inner_v, P_inner_h, P_intile).
 ```
-
-For 1D use where the full 2D inner position is needed, the perpendicular component is recovered via `split + compose`:
-
-```
-divide(P_grid, A, N, 0, P_tile, P_inner_axis),
-split(P_grid, A, _, Across),
-compose(P_inner_axis, Across, P_intile).
-```

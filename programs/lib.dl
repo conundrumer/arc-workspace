@@ -154,6 +154,17 @@ slab_anchor(D, P1, P2) :-
     axis_of(D, A),
     split(P1, A, _, Ac), split(P2, A, _, Ac).
 
+// 1D divide along axis a with perpendicular passthrough. p_outer is the
+// axis-only slab outer (1D strip arrangement); p_inner is the full 2D
+// within-slab position, perpendicular carried from p. Asserts:
+// gap-adjusted extent divides evenly by n; cell is not in a gap.
+.decl divide_slab(p: Position, a: Axis, n: number, gap: number,
+                  p_outer: Position, p_inner: Position) inline
+divide_slab(P, A, N, G, P_outer, P_inner) :-
+    divide(P, A, N, G, P_outer, P_i_axis),
+    split(P, A, _, Across),
+    compose(P_i_axis, Across, P_inner).
+
 // ============================================================
 // Consts helpers — for declaring CONSTS data, not for solver bodies
 // ============================================================
