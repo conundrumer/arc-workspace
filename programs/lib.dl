@@ -6,42 +6,50 @@
 //
 // Dim: (V-length, H-length) of a frame. Indexed by Axis.
 //
-// Color, Dir, Axis, DiagDir are subtypes of number — typed names with no
-// arithmetic intent. Constants are #define'd; solver bodies pull values
-// from a per-task Consts component rather than referencing constants directly.
+// Color, Dir, Axis, DiagDir, DiagAxis, D4 are subtypes of number — typed
+// names with no arithmetic intent. Constants are #define'd in disjoint
+// ranges so a value identifies its namespace at a glance: Color 0–9, Dir
+// 10–13, Axis 20–21, DiagDir 30–33, DiagAxis 40–41, D4 50–57. Solver bodies
+// pull values from a per-task Consts component rather than referencing
+// constants directly.
 
 .type Color <: number
+
 .type Dir <: number
 .type Axis <: number
+.type DiagDir <: number
+.type DiagAxis <: number
 .type D4 <: number
 
 .type Position = [t: number, b: number, l: number, r: number]
 .type Dim = [v: number, h: number]
-.type DiagDir = [v_dir: Dir, h_dir: Dir]
 
-#define TOP 0
-#define BOTTOM 1
-#define LEFT 2
-#define RIGHT 3
+#define TOP    10
+#define BOTTOM 11
+#define LEFT   12
+#define RIGHT  13
 
-#define VERTICAL 0
-#define HORIZONTAL 1
+#define VERTICAL   20
+#define HORIZONTAL 21
 
-#define TOP_LEFT     [TOP,    LEFT]
-#define TOP_RIGHT    [TOP,    RIGHT]
-#define BOTTOM_LEFT  [BOTTOM, LEFT]
-#define BOTTOM_RIGHT [BOTTOM, RIGHT]
+#define TOP_LEFT     30
+#define TOP_RIGHT    31
+#define BOTTOM_LEFT  32
+#define BOTTOM_RIGHT 33
+
+#define DIAGONAL     40
+#define ANTIDIAGONAL 41
 
 // D4 elements as gather permutations of (t, b, l, r). Naming: what swaps,
-// not the axis of reflection. Values follow lib.py.
-#define IDENTITY      0
-#define FLIP_LR       1
-#define FLIP_TB       2
-#define ROT_180       3
-#define ROT_CW        4
-#define ROT_CCW       5
-#define FLIP_DIAG     6
-#define FLIP_ANTIDIAG 7
+// not the axis of reflection.
+#define IDENTITY      50
+#define ROT_CW        51
+#define ROT_180       52
+#define ROT_CCW       53
+#define FLIP_LR       54
+#define FLIP_TB       55
+#define FLIP_DIAG     56
+#define FLIP_ANTIDIAG 57
 
 // Origin: position with 0 distance to every edge.
 #define ORIGIN [0, 0, 0, 0]
@@ -56,6 +64,24 @@ axis_of(TOP,    VERTICAL).
 axis_of(BOTTOM, VERTICAL).
 axis_of(LEFT,   HORIZONTAL).
 axis_of(RIGHT,  HORIZONTAL).
+
+// Diagonal axis of a corner.
+.decl diag_axis_of(d: DiagDir, da: DiagAxis)
+diag_axis_of(TOP_LEFT,     DIAGONAL).
+diag_axis_of(BOTTOM_RIGHT, DIAGONAL).
+diag_axis_of(TOP_RIGHT,    ANTIDIAGONAL).
+diag_axis_of(BOTTOM_LEFT,  ANTIDIAGONAL).
+
+// Cardinal Dir of corner d on axis a.
+.decl dir_of(d: DiagDir, a: Axis, dir: Dir)
+dir_of(TOP_LEFT,     VERTICAL,   TOP).
+dir_of(TOP_LEFT,     HORIZONTAL, LEFT).
+dir_of(TOP_RIGHT,    VERTICAL,   TOP).
+dir_of(TOP_RIGHT,    HORIZONTAL, RIGHT).
+dir_of(BOTTOM_LEFT,  VERTICAL,   BOTTOM).
+dir_of(BOTTOM_LEFT,  HORIZONTAL, LEFT).
+dir_of(BOTTOM_RIGHT, VERTICAL,   BOTTOM).
+dir_of(BOTTOM_RIGHT, HORIZONTAL, RIGHT).
 
 // Opposite Dir on the same axis.
 .decl opposite(d: Dir, opp: Dir)
@@ -91,11 +117,11 @@ split(P, HORIZONTAL, [0, 0, L, R], [T, B, 0, 0]) :- P = [T, B, L, R].
 // Apply a D4 transform to a Position — a pure index permutation.
 .decl apply(d: D4, p: Position, p_out: Position) inline
 apply(IDENTITY,      [T, B, L, R], [T, B, L, R]) :- true.
+apply(ROT_CW,        [T, B, L, R], [L, R, B, T]) :- true.
+apply(ROT_180,       [T, B, L, R], [B, T, R, L]) :- true.
+apply(ROT_CCW,       [T, B, L, R], [R, L, T, B]) :- true.
 apply(FLIP_LR,       [T, B, L, R], [T, B, R, L]) :- true.
 apply(FLIP_TB,       [T, B, L, R], [B, T, L, R]) :- true.
-apply(ROT_180,       [T, B, L, R], [B, T, R, L]) :- true.
-apply(ROT_CW,        [T, B, L, R], [L, R, B, T]) :- true.
-apply(ROT_CCW,       [T, B, L, R], [R, L, T, B]) :- true.
 apply(FLIP_DIAG,     [T, B, L, R], [L, R, T, B]) :- true.
 apply(FLIP_ANTIDIAG, [T, B, L, R], [R, L, B, T]) :- true.
 
@@ -141,7 +167,9 @@ same_dist(D, P1, P2) :- dist(P1, D, K), dist(P2, D, K).
 // Corner-anchor match: two positions agree on the distances to the two
 // edges of corner d. Used to project cells between frames sharing a corner.
 .decl corner_anchor(d: DiagDir, p1: Position, p2: Position) inline
-corner_anchor([V_dir, H_dir], P1, P2) :-
+corner_anchor(Diag, P1, P2) :-
+    dir_of(Diag, VERTICAL,   V_dir),
+    dir_of(Diag, HORIZONTAL, H_dir),
     same_dist(V_dir, P1, P2),
     same_dist(H_dir, P1, P2).
 
