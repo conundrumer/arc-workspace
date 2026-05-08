@@ -17,9 +17,9 @@
 .input in(IO=stdin)
 
 .decl out(p: Position, col: Color)
-out(O, COL) :-
-    in(P, COL),                  // input cell
-    c.frame(O),                  // output position
-    c.diag(D), corner_anchor(D, O, P).  // corner-anchor match
+out(P_grid_out, Col) :-
+    in(P_grid_in, Col),                          // input cell
+    c.frame(P_grid_out),                         // output position
+    c.diag(D), corner_anchor(D, P_grid_out, P_grid_in).  // corner-anchor match
 
 .output out(IO=stdout)

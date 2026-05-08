@@ -19,14 +19,14 @@
 
 // fg(col) :- in(_, col), col != c.bg.
 .decl fg(col: Color)
-fg(COL) :- in(_, COL), c.bg(BG), COL != BG.
+fg(Col) :- in(_, Col), c.bg(Bg), Col != Bg.
 
 // fill(out) :- fg(col), c.recolor(col, out).
 .decl fill(c: Color)
-fill(OUT) :- fg(COL), c.recolor(COL, OUT).
+fill(Out) :- fg(Col), c.recolor(Col, Out).
 
 .decl out(p: Position, col: Color)
-out(P, FILL) :- in(P, COL), c.bg(BG), COL = BG,  fill(FILL).
-out(P, BG)   :- in(P, COL), c.bg(BG), COL != BG.
+out(P, Fill) :- in(P, Col), c.bg(Bg), Col = Bg,  fill(Fill).
+out(P, Bg)   :- in(P, Col), c.bg(Bg), Col != Bg.
 
 .output out(IO=stdout)

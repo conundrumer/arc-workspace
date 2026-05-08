@@ -14,7 +14,7 @@
 .input in(IO=stdin)
 
 .decl out(p: Position, col: Color)
-out(P, COL_OUT) :- in(P, COL_IN), c.mapping(COL_IN, COL_OUT).
-out(P, COL)     :- in(P, COL), !c.mapping(COL, _).
+out(P, Col_out) :- in(P, Col_in), c.mapping(Col_in, Col_out).
+out(P, Col)     :- in(P, Col), !c.mapping(Col, _).
 
 .output out(IO=stdout)

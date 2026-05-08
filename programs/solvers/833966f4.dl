@@ -50,26 +50,26 @@ impl_choice($LabeledGrids()).
 impl_choice($Divide()).
 
 .decl decomposable(p: Position)
-decomposable(P) :-
-    in(P, _),
+decomposable(P_grid) :-
+    in(P_grid, _),
     c.divide_axis(A), c.divisor(N), c.divide_gap(G),
-    divide(P, A, N, G, _, _).
+    divide(P_grid, A, N, G, _, _).
 
 .decl perm(p_in: Position, p_out: Position, c: Choice)
-perm(P_IN, P_OUT, $LabeledGrids()) :-
-    c.in_label(P_IN, LBL), c.out_label(P_OUT, LBL),    // shared label
-    LBL != 0.                                          // non-pairing sentinel
+perm(P_grid_in, P_grid_out, $LabeledGrids()) :-
+    c.in_label(P_grid_in, Lbl), c.out_label(P_grid_out, Lbl),  // shared label
+    Lbl != 0.                                                  // non-pairing sentinel
 
-perm(P_IN, P_OUT, $Divide()) :-
-    in(P_IN, _),                                       // input cell
-    c.divide_axis(A), c.divisor(N), c.divide_gap(G),   // params
-    divide(P_IN, A, N, G, _, P_IV),                    // 1D divide
-    c.inner_delta(P_IV, DELTA),                        // delta per inner row
-    compose(P_IN, DELTA, P_OUT).                       // apply delta in-frame
-perm(P_IN, P_IN, $Divide()) :-
-    in(P_IN, _), !decomposable(P_IN).                  // gap row passthrough
+perm(P_grid_in, P_grid_out, $Divide()) :-
+    in(P_grid_in, _),                                          // input cell
+    c.divide_axis(A), c.divisor(N), c.divide_gap(G),           // params
+    divide(P_grid_in, A, N, G, _, P_inner_axis),               // 1D divide
+    c.inner_delta(P_inner_axis, Delta),                        // delta per inner row
+    compose(P_grid_in, Delta, P_grid_out).                     // apply delta in-frame
+perm(P_grid_in, P_grid_in, $Divide()) :-
+    in(P_grid_in, _), !decomposable(P_grid_in).                // gap row passthrough
 
 .decl out(p: Position, col: Color, c: Choice)
-out(P_OUT, COL, IMPL) :- impl_choice(IMPL), in(P_IN, COL), perm(P_IN, P_OUT, IMPL).
+out(P_grid_out, Col, Impl) :- impl_choice(Impl), in(P_grid_in, Col), perm(P_grid_in, P_grid_out, Impl).
 
 .output out(IO=stdout)

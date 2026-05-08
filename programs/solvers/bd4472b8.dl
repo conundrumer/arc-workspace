@@ -7,7 +7,7 @@
 // Two body-cycling impls; out's choice column tags each:
 //
 //   $Recursive() — tile_offset shifts by W; compose-only
-//   $Mod()       — header_color((T_IN - body_start) % W)
+//   $Mod()       — header_color((T_in - body_start) % W)
 
 #include "../lib.dl"
 
@@ -35,10 +35,10 @@ width(W) :- W = count : { header_cell(_) }.
 
 // Header cells indexed by their across-dir distance.
 .decl header_color(idx: number, col: Color)
-header_color(IDX, COL) :-
-    in(P, COL),                                  // input cell
+header_color(Idx, Col) :-
+    in(P, Col),                                  // input cell
     c.header_dir(D), dist(P, D, 0),              // on the header edge
-    c.across_dir(A_DIR), dist(P, A_DIR, IDX).    // index = across distance
+    c.across_dir(A_dir), dist(P, A_dir, Idx).    // index = across distance
 
 // --- Body fill, parameterized by impl choice ------------------------------
 
@@ -50,36 +50,36 @@ impl_choice($Mod()).
 
 // $Recursive: tile_offset shifts by W; compose-only.
 .decl tile_offset(off: Position)
-tile_offset(BASE) :-
-    c.header_dir(D), c.body_start(BS),           // header axis, base offset
-    edge_delta(D, BS, BASE).                     // delta carrying BS at edge D
-tile_offset(NEXT) :-
-    tile_offset(PREV),                           // previous offset
+tile_offset(Base) :-
+    c.header_dir(D), c.body_start(Bs),           // header axis, base offset
+    edge_delta(D, Bs, Base).                     // delta carrying Bs at edge D
+tile_offset(Next) :-
+    tile_offset(Prev),                           // previous offset
     width(W), c.header_dir(D),                   // shift amount and axis
-    edge_delta(D, W, SHIFT),                     // shift = W along D
-    compose(PREV, SHIFT, NEXT),                  // PREV + SHIFT
-    in(P, _), same_dist(D, NEXT, P).             // termination: input at NEXT's dist
+    edge_delta(D, W, Shift),                     // shift = W along D
+    compose(Prev, Shift, Next),                  // Prev + Shift
+    in(P, _), same_dist(D, Next, P).             // termination: input at Next's dist
 
-fill(P_INPUT, COL, $Recursive()) :-
-    in(P_INPUT, _),                              // input cell
+fill(P_grid_in, Col, $Recursive()) :-
+    in(P_grid_in, _),                            // input cell
     c.header_dir(D),                             // cycling axis
-    tile_offset(OFF), header_color(T, COL),      // a (cycle, header-index) pair
-    edge_delta(D, T, T_DELTA),                   // shift to header index
-    compose(OFF, T_DELTA, FULL_OFF),             // total offset
-    same_dist(D, FULL_OFF, P_INPUT).             // input cell at that dist
+    tile_offset(Off), header_color(T, Col),      // a (cycle, header-index) pair
+    edge_delta(D, T, T_delta),                   // shift to header index
+    compose(Off, T_delta, Full_off),             // total offset
+    same_dist(D, Full_off, P_grid_in).           // input cell at that dist
 
 // $Mod: direct mod arithmetic.
-fill(P_INPUT, COL, $Mod()) :-
-    in(P_INPUT, _),                              // input cell
-    c.header_dir(D), c.body_start(BS),           // cycling axis, base offset
-    dist(P_INPUT, D, T_IN), T_IN >= BS,          // past the header
+fill(P_grid_in, Col, $Mod()) :-
+    in(P_grid_in, _),                            // input cell
+    c.header_dir(D), c.body_start(Bs),           // cycling axis, base offset
+    dist(P_grid_in, D, T_in), T_in >= Bs,        // past the header
     width(W),                                    // cycle length
-    header_color((T_IN - BS) % W, COL).          // mod into header
+    header_color((T_in - Bs) % W, Col).          // mod into header
 
 // --- Output: candidate per impl -------------------------------------------
 
 .decl out(p: Position, col: Color, c: Choice)
-out(P, COL, IMPL) :- impl_choice(IMPL), in(P, COL), !fill(P, _, IMPL).
-out(P, COL, IMPL) :- fill(P, COL, IMPL).
+out(P, Col, Impl) :- impl_choice(Impl), in(P, Col), !fill(P, _, Impl).
+out(P, Col, Impl) :- fill(P, Col, Impl).
 
 .output out(IO=stdout)

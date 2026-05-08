@@ -22,7 +22,7 @@
 
     // --- Tile decompose data ----------------------------------------------
     .decl tile_decompose(p: Position, p_outer: Position, p_inner: Position)
-    tile_decompose(P, P_O, P_I) :- tile_pos([1, 2], [5, 4], [0, 1], P, P_O, P_I).
+    tile_decompose(P_grid, P_tile, P_intile) :- tile_pos([1, 2], [5, 4], [0, 1], P_grid, P_tile, P_intile).
 
     // --- Div decompose data -----------------------------------------------
     .decl divisor(n: number)
@@ -60,40 +60,40 @@ dec_choice($Tile()).
 dec_choice($Div()).
 
 .decl decompose(p: Position, p_outer: Position, p_inner: Position, dc: DecChoice)
-decompose(P, P_O, P_I, $Tile()) :- c.tile_decompose(P, P_O, P_I).
-decompose(P, P_O, P_I, $Div()) :-
-    in(P, _),                                       // input position
-    c.divide_axis(A), c.divisor(N), c.divide_gap(G), // params
-    divide(P, A, N, G, P_O, P_I_AXIS),              // 1D divide
-    split(P, A, _, ACROSS),                         // perpendicular passes through
-    compose(P_I_AXIS, ACROSS, P_I).
+decompose(P_grid, P_tile, P_intile, $Tile()) :- c.tile_decompose(P_grid, P_tile, P_intile).
+decompose(P_grid, P_tile, P_intile, $Div()) :-
+    in(P_grid, _),                                       // input position
+    c.divide_axis(A), c.divisor(N), c.divide_gap(G),     // params
+    divide(P_grid, A, N, G, P_tile, P_inner_axis),       // 1D divide
+    split(P_grid, A, _, Across),                         // perpendicular passes through
+    compose(P_inner_axis, Across, P_intile).
 
 // --- Xor body: filled_count parameterized by decompose choice -------------
 
 .decl filled_count(o: Position, dc: DecChoice, n: number)
-filled_count(O, DC, N) :-
-    c.frame(O), dec_choice(DC),
-    N = count : { in(P_IN, COL), !c.bg(COL), decompose(P_IN, _, O, DC) }.
+filled_count(P_grid_out, Dc, N) :-
+    c.frame(P_grid_out), dec_choice(Dc),
+    N = count : { in(P_grid_in, Col), !c.bg(Col), decompose(P_grid_in, _, P_grid_out, Dc) }.
 
 // --- Output: cartesian over (DecChoice, body) ------------------------------
 
 .decl out(p: Position, col: Color, c: Choice)
-out(O, C_OUT, $SetMatch(DC)) :-
-    dec_choice(DC),
-    c.frame(O),
-    c.combine_out(EID, C_OUT),
-    N = count : { c.combine_member(EID, _, _) },              // members in entry
-    N = count : { c.combine_member(EID, P_OUTER, C),          // members matched
-                  decompose(P_IN, P_OUTER, O, DC),
-                  in(P_IN, C) }.
+out(P_grid_out, Col_out, $SetMatch(Dc)) :-
+    dec_choice(Dc),
+    c.frame(P_grid_out),
+    c.combine_out(Eid, Col_out),
+    N = count : { c.combine_member(Eid, _, _) },                  // members in entry
+    N = count : { c.combine_member(Eid, P_tile, C),               // members matched
+                  decompose(P_grid_in, P_tile, P_grid_out, Dc),
+                  in(P_grid_in, C) }.
 
-out(O, COL, $Xor(DC)) :-
-    dec_choice(DC), c.frame(O),                 // choice × cell
-    filled_count(O, DC, 1),                     // XOR=1: exactly one contribution
-    c.out_fill(COL).
-out(O, COL, $Xor(DC)) :-
-    dec_choice(DC), c.frame(O),                 // choice × cell
-    filled_count(O, DC, N), N != 1,             // XOR=0: zero or two contributions
-    c.bg(COL).
+out(P_grid_out, Col, $Xor(Dc)) :-
+    dec_choice(Dc), c.frame(P_grid_out),        // choice × cell
+    filled_count(P_grid_out, Dc, 1),            // XOR=1: exactly one contribution
+    c.out_fill(Col).
+out(P_grid_out, Col, $Xor(Dc)) :-
+    dec_choice(Dc), c.frame(P_grid_out),        // choice × cell
+    filled_count(P_grid_out, Dc, N), N != 1,    // XOR=0: zero or two contributions
+    c.bg(Col).
 
 .output out(IO=stdout)

@@ -43,20 +43,20 @@ impl_choice($LabeledGrids()).
 impl_choice($Stride()).
 
 .decl perm(p_in: Position, p_out: Position, c: Choice)
-perm(P_IN, P_OUT, $LabeledGrids()) :-
-    c.in_label(P_IN, LBL), c.out_label(P_OUT, LBL),    // shared label
-    LBL != 0.                                          // non-pairing sentinel
+perm(P_grid_in, P_grid_out, $LabeledGrids()) :-
+    c.in_label(P_grid_in, Lbl), c.out_label(P_grid_out, Lbl),       // shared label
+    Lbl != 0.                                                       // non-pairing sentinel
 
-perm(P_IN, P_OUT, $Stride()) :-
-    in(P_IN, _),                                       // input cell
-    c.anchor(D), c.divisor(N), c.divide_gap(G),        // params
-    divide(P_IN, VERTICAL,   N, G, P_OV, P_IV),        // V-axis divide
-    divide(P_IN, HORIZONTAL, N, G, P_OH, P_IH),        // H-axis divide
-    compose(P_IV, P_IH, P_INNER),                      // 2D inner
-    corner_anchor(D, P_INNER, ORIGIN),                 // inner at corner D
-    compose(P_OV, P_OH, P_OUT).                        // 2D outer
+perm(P_grid_in, P_grid_out, $Stride()) :-
+    in(P_grid_in, _),                                               // input cell
+    c.anchor(D), c.divisor(N), c.divide_gap(G),                     // params
+    divide(P_grid_in, VERTICAL,   N, G, P_outer_v, P_inner_v),      // V-axis divide
+    divide(P_grid_in, HORIZONTAL, N, G, P_outer_h, P_inner_h),      // H-axis divide
+    compose(P_inner_v, P_inner_h, P_intile),                        // 2D inner
+    corner_anchor(D, P_intile, ORIGIN),                             // inner at corner D
+    compose(P_outer_v, P_outer_h, P_grid_out).                      // 2D outer
 
 .decl out(p: Position, col: Color, c: Choice)
-out(P_OUT, COL, IMPL) :- impl_choice(IMPL), in(P_IN, COL), perm(P_IN, P_OUT, IMPL).
+out(P_grid_out, Col, Impl) :- impl_choice(Impl), in(P_grid_in, Col), perm(P_grid_in, P_grid_out, Impl).
 
 .output out(IO=stdout)

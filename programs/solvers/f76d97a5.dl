@@ -16,10 +16,10 @@
 
 // main(col) :- in(_, col), col != c.marker.
 .decl main(col: Color)
-main(COL) :- in(_, COL), c.marker(MK), COL != MK.
+main(Col) :- in(_, Col), c.marker(Mk), Col != Mk.
 
 .decl out(p: Position, col: Color)
-out(P, MAIN) :- in(P, COL), c.marker(MK), COL = MK,  main(MAIN).
-out(P, BG)   :- in(P, COL), c.marker(MK), COL != MK, c.bg(BG).
+out(P, Main) :- in(P, Col), c.marker(Mk), Col = Mk,  main(Main).
+out(P, Bg)   :- in(P, Col), c.marker(Mk), Col != Mk, c.bg(Bg).
 
 .output out(IO=stdout)

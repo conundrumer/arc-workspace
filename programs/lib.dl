@@ -108,42 +108,42 @@ apply(FLIP_ANTIDIAG, [T, B, L, R], [R, L, B, T]) :- true.
 // Asserts: gap-adjusted extent divides evenly by n; cell is not in a gap.
 .decl divide(p: Position, a: Axis, n: number, gap: number, p_outer: Position, p_inner: Position) inline
 divide(P, VERTICAL, N, G,
-       [OT, N-1-OT, 0, 0],
-       [IT, SH-1-IT, 0, 0]) :-
+       [Ot, N-1-Ot, 0, 0],
+       [It, Sh-1-It, 0, 0]) :-
     P = [T, B, _, _],
     H = T + B + 1,
     (H - (N-1)*G) % N = 0,
-    SH = (H - (N-1)*G) / N,
-    K_CYC = T % (SH + G),
-    K_CYC < SH,
-    OT = T / (SH + G),
-    IT = K_CYC.
+    Sh = (H - (N-1)*G) / N,
+    K_cyc = T % (Sh + G),
+    K_cyc < Sh,
+    Ot = T / (Sh + G),
+    It = K_cyc.
 divide(P, HORIZONTAL, N, G,
-       [0, 0, OL, N-1-OL],
-       [0, 0, IL, SH-1-IL]) :-
+       [0, 0, Ol, N-1-Ol],
+       [0, 0, Il, Sh-1-Il]) :-
     P = [_, _, L, R],
     W = L + R + 1,
     (W - (N-1)*G) % N = 0,
-    SH = (W - (N-1)*G) / N,
-    K_CYC = L % (SH + G),
-    K_CYC < SH,
-    OL = L / (SH + G),
-    IL = K_CYC.
+    Sh = (W - (N-1)*G) / N,
+    K_cyc = L % (Sh + G),
+    K_cyc < Sh,
+    Ol = L / (Sh + G),
+    Il = K_cyc.
 
 // ------------------------------------------------------------
 // Patterns — recurring solver-body shapes built from primitives
 // ------------------------------------------------------------
 
-// Corner-anchor match: two positions agree on the distances to the two
-// edges of corner d. Used to project cells between frames sharing a corner.
-.decl corner_anchor(d: DiagDir, p1: Position, p2: Position) inline
-corner_anchor([V_DIR, H_DIR], P1, P2) :-
-    same_dist(V_DIR, P1, P2),
-    same_dist(H_DIR, P1, P2).
-
 // Same dist-to-edge D for two positions. Building block for anchor patterns.
 .decl same_dist(d: Dir, p1: Position, p2: Position) inline
 same_dist(D, P1, P2) :- dist(P1, D, K), dist(P2, D, K).
+
+// Corner-anchor match: two positions agree on the distances to the two
+// edges of corner d. Used to project cells between frames sharing a corner.
+.decl corner_anchor(d: DiagDir, p1: Position, p2: Position) inline
+corner_anchor([V_dir, H_dir], P1, P2) :-
+    same_dist(V_dir, P1, P2),
+    same_dist(H_dir, P1, P2).
 
 // Slab-anchor match: two positions agree on dist-to-edge d (anchor) and on
 // the perpendicular extent (across-slice match). Used to project cells
@@ -152,7 +152,7 @@ same_dist(D, P1, P2) :- dist(P1, D, K), dist(P2, D, K).
 slab_anchor(D, P1, P2) :-
     same_dist(D, P1, P2),
     axis_of(D, A),
-    split(P1, A, _, AC), split(P2, A, _, AC).
+    split(P1, A, _, Ac), split(P2, A, _, Ac).
 
 // ============================================================
 // Consts helpers — for declaring CONSTS data, not for solver bodies
@@ -170,13 +170,13 @@ frame_pos([V, H], [T, V-1-T, L, H-1-L]) :- T = range(0, V), L = range(0, H).
 //                        outer.h*inner.h + (outer.h-1)*gap.h).
 .decl tile_pos(outer: Dim, inner: Dim, gap: Dim,
                p: Position, p_outer: Position, p_inner: Position) inline
-tile_pos([OV, OH], [IV, IH], [GV, GH],
+tile_pos([Ov, Oh], [Iv, Ih], [Gv, Gh],
          [T, B, L, R],
-         [MT, OV-1-MT, ML, OH-1-ML],
-         [IT, IV-1-IT, IL, IH-1-IL]) :-
-    MT = range(0, OV), ML = range(0, OH),
-    IT = range(0, IV), IL = range(0, IH),
-    T = MT*(IV+GV) + IT,
-    L = ML*(IH+GH) + IL,
-    B = OV*IV + (OV-1)*GV - 1 - T,
-    R = OH*IH + (OH-1)*GH - 1 - L.
+         [Mt, Ov-1-Mt, Ml, Oh-1-Ml],
+         [It, Iv-1-It, Il, Ih-1-Il]) :-
+    Mt = range(0, Ov), Ml = range(0, Oh),
+    It = range(0, Iv), Il = range(0, Ih),
+    T = Mt*(Iv+Gv) + It,
+    L = Ml*(Ih+Gh) + Il,
+    B = Ov*Iv + (Ov-1)*Gv - 1 - T,
+    R = Oh*Ih + (Oh-1)*Gh - 1 - L.

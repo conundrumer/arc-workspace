@@ -2,6 +2,24 @@
 
 How a `.dl` solver file looks.
 
+## Variables
+
+- Single letter (with optional digit suffix): `P`, `T`, `B`, `L`, `R`, `K`, `D`, `A`, `N`, `G`, `H`, `W`, `T1`, `C2`, etc.
+- Multi-character: leading-capital snake_case. `Col`, `Idx`, `Sh`, `K_cyc`, `P_grid_in`.
+- Macros: SCREAMING (constants register). `TOP`, `IDENTITY`, `ORIGIN`.
+- Types: PascalCase. `Position`, `Color`, `Choice`.
+- Relations: snake_case. `tile_pos`, `axis_of`.
+
+## Position frames
+
+Most rule bodies hold Positions in multiple frames at once. Name a Position by the frame it lives in.
+
+- **grid** — task input/output frame. `P_grid`, `P_grid_in`, `P_grid_out`; suffix when input/output both appear in one rule.
+- **tile** — tile-arrangement frame produced by `divide`. `P_tile`.
+- **intile** — within a single tile. `P_intile`.
+
+`divide` and `tile_pos` formal parameters stay `p_outer` / `p_inner` — they describe the decomposition. Solvers bind to `P_tile` / `P_intile` at call sites. For axis-only intermediates (e.g. `divide`'s inner before composing with the perpendicular axis), keep decomposition language: `P_inner_axis`, `P_outer_v`, `P_inner_h`.
+
 ## File structure
 
 - One file per task (`<task_id>.dl`); multi-impl variants live in the same file, distinguished by an ADT `Choice` column on `out`.
@@ -47,10 +65,10 @@ out(...) :- ...
 Head and `:-` on first line; body atoms on subsequent lines indented 4 spaces; related atoms grouped on one line; inline `// ` comment per line naming the group's role.
 
 ```
-header_color(IDX, COL) :-
-    in(P, COL),                                  // input cell
+header_color(Idx, Col) :-
+    in(P, Col),                                  // input cell
     c.header_dir(D), dist(P, D, 0),              // on the header edge
-    c.across_dir(A_DIR), dist(P, A_DIR, IDX).    // index = across distance
+    c.across_dir(A_dir), dist(P, A_dir, Idx).    // index = across distance
 ```
 
 Single-line form is fine for short rules (≤ ~80 chars).
