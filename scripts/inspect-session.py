@@ -4,12 +4,17 @@
 Usage:
     scripts/inspect-session.py <session-id>   # inspect one session
     scripts/inspect-session.py                # inspect multi-session window
+    scripts/inspect-session.py --solver-only  # window, omit meta sessions
 
 Multi-session window: the boundary is the oldest meta session that ended
 (identified by any user message containing META SESSION END or legacy
 META SOLVER END). All later sessions are included if their first user
 message contains SESSION START or SOLVER START — both also match the
 META variants, so later meta sessions are included too.
+
+--solver-only filters the window output to non-meta sessions. A
+session is meta if its first user message starts with META SESSION START
+or META SOLVER START. Ignored when a session-id is provided.
 """
 
 import json
@@ -18,6 +23,7 @@ from pathlib import Path
 
 PROJECT_DIR = Path.home() / ".claude/projects/-Users-davidlu-code-arc-workspace"
 SESSION_KEYWORDS = ("SESSION START", "SOLVER START")
+META_START_KEYWORDS = ("META SESSION START", "META SOLVER START")
 META_END_KEYWORDS = ("META SESSION END", "META SOLVER END")
 
 
@@ -68,6 +74,11 @@ def has_meta_end(records):
                 if any(line.strip() in META_END_KEYWORDS for line in content.splitlines()):
                     return True
     return False
+
+
+def is_meta_session(records):
+    fus = first_user_string(records)
+    return any(fus.startswith(k) for k in META_START_KEYWORDS)
 
 
 def first_timestamp(records):
@@ -142,8 +153,16 @@ def render(sid, records):
 
 
 def main():
-    if len(sys.argv) > 1:
-        sid = sys.argv[1]
+    args = sys.argv[1:]
+    solver_only = False
+    if "--solver-only" in args:
+        solver_only = True
+        args = [a for a in args if a != "--solver-only"]
+
+    if args:
+        if solver_only:
+            print("(--solver-only ignored when a session-id is provided.)", file=sys.stderr)
+        sid = args[0]
         file = PROJECT_DIR / f"{sid}.jsonl"
         render(file.stem, parse_session(file))
         return
@@ -171,8 +190,12 @@ def main():
     for i in range(start_idx, len(sessions)):
         _, file, records = sessions[i]
         fus = first_user_string(records)
-        if i == prev_meta_idx or any(k in fus for k in SESSION_KEYWORDS):
-            render(file.stem, records)
+        included = i == prev_meta_idx or any(k in fus for k in SESSION_KEYWORDS)
+        if not included:
+            continue
+        if solver_only and is_meta_session(records):
+            continue
+        render(file.stem, records)
 
 
 if __name__ == "__main__":
