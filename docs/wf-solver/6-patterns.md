@@ -1,62 +1,86 @@
 # Patterns
 
-Guidelines for shaping solver code when a task fits a recurring form. Style.md is for hard rules every solver follows; patterns.md is for recipes that depend on task shape.
+Patterns observed across `.dl` solvers. Distinct from `4-style.md` (rules every solver follows).
 
-## CONSTS holds output as grid data when expressible
+This list is descriptive, not prescriptive — the `.dl` files are the source of truth. It exists so future sessions can scan what's been used.
 
-When the output can be represented as whole color grids — e.g. fixed grid data per input classification — declaring those grids in CONSTS lets the body read them via a relational join rather than build them from positions:
+## Multiple modeling forms via ADT `Choice`
 
-```python
-output_for_shape: frozenset[tuple[
-    frozenset[Position],
-    frozenset[tuple[Position, Color]],
-]]
+Multiple models live in one solver file as variants of an ADT `Choice` column on `out`. Variants can be more than two, may carry their own per-variant data, and may nest (a variant's data can itself be an ADT). Each variant fires its own rules; the runner emits each as a candidate.
 
-return {(p, col)
-        for (sh, g) in c.output_for_shape if sh == s
-        for (p, col) in g}
+```
+.type Choice = VariantA {} | VariantB {}
+
+.decl out(p: Position, col: Color, c: Choice)
+out(P, COL, $VariantA()) :- ...
+out(P, COL, $VariantB()) :- ...
 ```
 
-The criterion is whether the output structure is grid data. Tasks where the output is a transformation of the input (recolor, shift) compute positions in the body. Tasks where the output is grid data per classification keep that data in CONSTS.
+See `fafffa47.dl`, `bd4472b8.dl`, `68b67ca3.dl`.
 
-## Direct expression over relation indirection
+## `GRID_HxW` for grid data
 
-A relation in CONSTS pays off when its keys carry structural content — shapes, color triples, mappings the body can't derive. When the keys collapse to a property the body already computes (a True/False, say), named scalar fields capture the same information more directly:
+Runner-side cpp codegen lets `.dl` files declare 2D grids of values literally; the macro emits position-keyed facts in row-major order. Color grids, label grids, transform grids — any per-cell data.
 
-```python
-# Less direct
-class_color: frozenset[tuple[bool, Color]]
-
-# More direct
-sym: Color
-asym: Color
+```
+.decl template(p: Position, col: Color)
+GRID_3x3(template,
+    1, 2, 1,
+    2, 0, 2,
+    1, 2, 1)
 ```
 
-## Mappings over specialty ops
+See `833966f4.dl`, `ca8de6ea.dl`, `e9afcf9a.dl`, `68b67ca3.dl`.
 
-When an operation per cell can be expressed as a mapping directly learnable from the train examples, prefer the mapping over a relational op like symmetric difference, AND, OR, or other specialty operators:
+## Set-keyed relations via parent/child tables
 
-```python
-combine: frozenset[tuple[Color, Color, Color]] = frozenset({
-    (C0, C0, C0), (C2, C2, C0),
-    (C0, C2, C3), (C2, C0, C3),
-})
+A relation keyed by a multiset of members declares as two tables glued by an `eid`: parent holds `(eid, out-fields)`, child holds `(eid, member-fields)`. The match uses the count-trick — an entry fires when the count of matched members equals the entry's total member count. Used for combine tables where member order doesn't matter.
 
-return {(p, c_out)
-        for (p_a, c_a) in left
-        for (p_b, c_b) in right if p_a == p_b
-        for (a, b, c_out) in combine if a == c_a and b == c_b}
+```
+.decl combine_member(eid: number, p_outer: Position, c: Color)
+.decl combine_out(eid: number, c_out: Color)
+
+combine_member(0, [0,1,0,0], 0). combine_member(0, [1,0,0,0], 0). combine_out(0, 2).
+combine_member(1, [0,1,0,0], 9). combine_member(1, [1,0,0,0], 0). combine_out(1, 0).
+
+out(O, C_OUT) :-
+    c.combine_out(EID, C_OUT),
+    N = count : { c.combine_member(EID, _, _) },
+    N = count : { c.combine_member(EID, P_O, C),
+                  decompose(P_IN, P_O, O), in(P_IN, C) }.
 ```
 
-The mapping carries the structure as data, parameterized per task. The body's primitive vocabulary stays bounded — adding XOR, AND, masked overlay, etc. as ops grows the surface without adding task-specific structure.
+See `fafffa47.dl`.
 
-## Set difference for redundant negation
+## Bidirectional mapping via positive recursion
 
-When two output rules differ only in a multi-conjunction predicate being negated, deriving the negated set via set arithmetic over already-computed positions can avoid restating the predicates:
+A symmetric relation declared one direction, plus `mapping(B, A) :- mapping(A, B)` for closure.
 
-```python
-changed = {p for (p, _) in cleared | landed}
-passthrough = {(p, col) for (p, col) in grid if p not in changed}
+```
+.decl mapping(c_from: Color, c_to: Color)
+mapping(5, 8).
+mapping(B, A) :- mapping(A, B).
 ```
 
-This applies most cleanly when the negated predicate has multiple conjoined parts. With single-predicate negation, direct conditional expression is sometimes clearer; predicate duplication isn't always wrong.
+See `d511f180.dl`.
+
+## 1D `divide` composed to 2D
+
+`divide` along V and H separately, composed via `compose`, gives 2D decomposition.
+
+```
+divide(P, VERTICAL,   NV, GV, P_OV, P_IV),
+divide(P, HORIZONTAL, NH, GH, P_OH, P_IH),
+compose(P_OV, P_OH, P_OUTER),
+compose(P_IV, P_IH, P_INNER).
+```
+
+For 1D use where the full 2D inner position is needed, the perpendicular component is recovered via `split + compose`:
+
+```
+divide(P, A, N, 0, P_O, P_I_AXIS),
+split(P, A, _, ACROSS),
+compose(P_I_AXIS, ACROSS, P_INNER).
+```
+
+See `fafffa47.dl`'s `$Div` decompose.

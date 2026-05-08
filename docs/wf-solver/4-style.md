@@ -1,68 +1,59 @@
 # Style
 
-How a solver file looks. Souffle is the eventual target; the Python style mirrors what would land there.
+How a `.dl` solver file looks.
 
-`programs/lib.py` is the body's vocabulary — primitives, types, naming patterns. Read it alongside.
+## File structure
 
-## Relations
+- One file per task (`<task_id>.dl`); multi-impl variants live in the same file, distinguished by an ADT `Choice` column on `out`.
+- `#include "../lib.dl"` at top.
+- `.comp Consts { ... }` declares task-wide data; `.init c = Consts` exposes it as `c.<rel>`.
+- All task-wide data lives in Consts, e.g. orientation (Dirs, Axes), dimensions, gaps, mappings, frame data.
 
-- Relations are `set`s of tuples. Dicts are forbidden.
-- Set-valued keys encode as `frozenset` + `==` (Souffle: count-trick).
+Skeleton:
 
-## Docstring
+```
+// Doc header — describe task; if multi-impl, name variants.
 
-- Short description of the task's rule.
-- `Placeholders:` section for fallback patterns (e.g., raw Position destructure where a primitive would later sit). Each entry: `- <label>: <reason>` — `<label>` is the fallback technique (recurring across solvers; e.g., `position-destructure`); `<reason>` is the case-specific operation in the body.
+#include "../lib.dl"
 
-## Imports
+.type Choice = VariantA {} | VariantB {}   // multi-impl only; omit for single-impl
 
-- `from programs.lib import *`.
+.comp Consts {
+    // task-wide data declarations and facts
+}
 
-## Consts
+.init c = Consts
 
-- Per-task `@dataclass(frozen=True)`, module-level `CONSTS` instance.
-- Fields named by role.
-- Mappings (and other values not covered by lib.py types) live here.
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// body rules
+
+.decl out(p: Position, col: Color, c: Choice)   // multi-impl only; omit `c` for single-impl
+out(...) :- ...
+
+.output out(IO=stdout)
+```
 
 ## Body
 
-- Signature: `def solve(grid: Grid, c: Consts) -> Grid:`. For tiebreak tasks (task JSON contains `tiebreak` alts), signature adds `choice: ChoiceFn` (Souffle: `choice-domain`).
-- References `c.<field>` for any family-parameterized value.
-- Color and orientation literals never appear inline.
-- Numbers that represent task structure (e.g. lengths, offsets, counts) belong in Consts.
-- Use Dir-/Axis-parameterized primitives over Position destructure. When no primitive captures the pattern, raw destructure is allowed; list under `Placeholders:`.
-- Each rule is one set comprehension. Comment with Datalog/Souffle form above.
-- Singleton extraction from a relation uses iterable unpacking: `(x,) = {col for ... if ...}` — raises if not singleton.
-- Python constructs without Souffle equivalents (e.g., `range`, `sorted`) get an inline `# <label>:` comment and a matching Placeholder entry.
-- Recursive rules use an inline fixpoint loop:
+- No literals — orientation (`TOP`, `LEFT`, `VERTICAL`, etc.), colors, or non-zero task-shape numbers (lengths, offsets, gaps). Body reads them from Consts via `c.<rel>(...)` and parameterizes. Hardcoded values fix the body to one variant of the task; pulling from Consts keeps it symmetric across the family.
+- No Position destructure (`P = [T, B, L, R]`, `P = [T, _, _, _]`). Use lib primitives instead. Position is opaque; destructure hardcodes edge indices and breaks orientation invariance.
+- Avoid arithmetic. If necessary, flag.
 
-  ```python
-  rel: set[tuple[...]] = {... base case ...}
-  while True:
-      grew = {... step ...}
-      if grew <= rel: break
-      rel |= grew
-  ```
+## Multi-atom rules
 
-## Example
+Head and `:-` on first line; body atoms on subsequent lines indented 4 spaces; related atoms grouped on one line; inline `// ` comment per line naming the group's role.
 
-```python
-"""Apply a D4 transform to every cell."""
-
-from dataclasses import dataclass
-
-from programs.lib import *
-
-
-@dataclass(frozen=True)
-class Consts:
-    flip: D4
-
-
-CONSTS = Consts(flip=D4.FLIP_LR)
-
-
-def solve(grid: Grid, c: Consts) -> Grid:
-    # out(p', col) :- in(p, col), p' = apply(c.flip, p).
-    return {(apply(c.flip, p), col) for (p, col) in grid}
 ```
+header_color(IDX, COL) :-
+    in(P, COL),                                  // input cell
+    c.header_dir(D), dist(P, D, 0),              // on the header edge
+    c.across_dir(A_DIR), dist(P, A_DIR, IDX).    // index = across distance
+```
+
+Single-line form is fine for short rules (≤ ~80 chars).
+
+## Alt Outputs
+
+If the task JSON contains alts, they need to be represented as a `Choice`.
