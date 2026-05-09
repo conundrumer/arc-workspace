@@ -4,8 +4,10 @@
 #include "../lib.dl"
 
 .comp Consts {
+    .init helpers = ConstsHelpers
+
     .decl tile(p: Position)
-    tile(P) :- frame_pos([1, 2], P).
+    tile(P) :- helpers.frame_pos([1, 2], P).
 
     .decl tile_axis(a: Axis)
     tile_axis(HORIZONTAL).

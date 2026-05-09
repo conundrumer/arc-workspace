@@ -4,11 +4,13 @@
 #include "../lib.dl"
 
 .comp Consts {
+    .init helpers = ConstsHelpers
+
     .decl diag(d: DiagDir)
     diag(TOP_LEFT).
 
     .decl frame(p: Position)
-    frame(P) :- frame_pos([2, 2], P).
+    frame(P) :- helpers.frame_pos([2, 2], P).
 }
 
 .init c = Consts

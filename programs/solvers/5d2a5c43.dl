@@ -17,12 +17,15 @@
 .type Choice = SetMatch { d: DecChoice } | Or { d: DecChoice }
 
 .comp Consts {
+    .init helpers = ConstsHelpers
+
     .decl frame(p: Position)
-    frame(P) :- frame_pos([6, 4], P).
+    frame(P) :- helpers.frame_pos([6, 4], P).
 
     // --- Tile decompose data ----------------------------------------------
     .decl tile_decompose(p: Position, p_outer: Position, p_inner: Position)
-    tile_decompose(P_grid, P_tile, P_intile) :- tile_pos([1, 2], [6, 4], [0, 1], P_grid, P_tile, P_intile).
+    tile_decompose(P_grid, P_tile, P_intile) :-
+        helpers.tile_pos([1, 2], [6, 4], [0, 1], P_grid, P_tile, P_intile).
 
     // --- Div decompose data -----------------------------------------------
     .decl divisor(n: number)

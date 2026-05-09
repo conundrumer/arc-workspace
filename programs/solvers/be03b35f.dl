@@ -9,8 +9,10 @@
 #include "../lib.dl"
 
 .comp Consts {
+    .init helpers = ConstsHelpers
+
     .decl frame(p: Position)
-    frame(P) :- frame_pos([2, 2], P).
+    frame(P) :- helpers.frame_pos([2, 2], P).
 
     .decl template(diag: DiagDir, d4: D4)
     template(TOP_LEFT,    ROT_CCW).

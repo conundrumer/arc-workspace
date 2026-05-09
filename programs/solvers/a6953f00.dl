@@ -6,6 +6,8 @@
 #include "../lib.dl"
 
 .comp Consts {
+    .init helpers = ConstsHelpers
+
     // Each diag option carries its choice_id; out propagates the id so
     // candidates are separable downstream.
     .decl diag_option(d: DiagDir, choice_id: number)
@@ -13,7 +15,7 @@
     diag_option(TOP_RIGHT, 1).
 
     .decl frame(p: Position)
-    frame(P) :- frame_pos([2, 2], P).
+    frame(P) :- helpers.frame_pos([2, 2], P).
 }
 
 .init c = Consts

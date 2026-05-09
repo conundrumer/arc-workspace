@@ -4,8 +4,10 @@
 #include "../lib.dl"
 
 .comp Consts {
+    .init helpers = ConstsHelpers
+
     .decl intile(p: Position)
-    intile(P) :- frame_pos([3, 3], P).
+    intile(P) :- helpers.frame_pos([3, 3], P).
 
     .decl tile_gap(g: Dim)
     tile_gap([0, 0]).
