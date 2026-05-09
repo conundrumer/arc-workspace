@@ -13,6 +13,8 @@ import re
 import subprocess
 import sys
 import tempfile
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -39,19 +41,19 @@ def grid_to_facts(rows: list[list[int]]) -> str:
     return "\n".join(lines) + ("\n" if lines else "")
 
 
-def parse_output(stdout: str) -> list[list[list[int]]]:
+def parse_output(stdout: str) -> list[tuple[str, list[list[int]]]]:
     """Parse Souffle's default text output for the `out` relation.
 
-    Returns a list of candidate grids. If `out` has an extra trailing
-    integer column (a choice id), cells are grouped by it and each group
-    becomes one candidate.
+    Returns a list of (variant, grid) pairs. Variant is the trailing column
+    value (e.g. '$FlipTB') from a Choice ADT, or '' when `out` has no
+    trailing column. Cells are grouped by variant; each group is one grid.
     """
     parts = re.split(r"^={3,}$", stdout, flags=re.MULTILINE)
     if len(parts) < 3:
         raise ValueError(f"unexpected souffle output:\n{stdout}")
     data = parts[1].strip()
     if not data:
-        return [[]]
+        return [("", [])]
 
     line_re = re.compile(r"\[(-?\d+), (-?\d+), (-?\d+), (-?\d+)\]\t(-?\d+)(?:\t(.+))?$")
     grouped: dict[str, list] = {}
@@ -60,23 +62,23 @@ def parse_output(stdout: str) -> list[list[list[int]]]:
         if not m:
             raise ValueError(f"unexpected fact line: {line!r}")
         groups = m.groups()
-        cid = groups[5] if groups[5] is not None else ""
-        cells = grouped.setdefault(cid, [])
+        variant = groups[5] if groups[5] is not None else ""
+        cells = grouped.setdefault(variant, [])
         cells.append(tuple(int(x) for x in groups[:5]))
 
-    candidates: list[list[list[int]]] = []
-    for cid in sorted(grouped):
-        cells = grouped[cid]
+    candidates: list[tuple[str, list[list[int]]]] = []
+    for variant in sorted(grouped):
+        cells = grouped[variant]
         bounds = {(t + b + 1, l + r + 1) for (t, b, l, r, _) in cells}
         if len(bounds) != 1:
-            raise ValueError(f"inconsistent grid bounds in choice {cid}: {bounds}")
+            raise ValueError(f"inconsistent grid bounds in {variant!r}: {bounds}")
         h, w = next(iter(bounds))
         grid = [[0] * w for _ in range(h)]
         for (t, b, l, r, color) in cells:
             if t < 0 or l < 0 or t >= h or l >= w:
                 raise ValueError(f"cell out of derived bounds: ({t}, {l}) in {h}x{w}")
             grid[t][l] = color
-        candidates.append(grid)
+        candidates.append((variant, grid))
     return candidates
 
 
@@ -110,7 +112,9 @@ def expand_grid_macros(source: str) -> tuple[str, bool]:
     return f"// Generated GRID_HxW expansions.\n{macros}\n\n{source}", True
 
 
-def run_dl(task_id: str, input_rows: list[list[int]], stem: str | None = None) -> list[list[list[int]]]:
+def run_dl(
+    task_id: str, input_rows: list[list[int]], stem: str | None = None
+) -> list[tuple[str, list[list[int]]]]:
     dl_path = SOLVERS_DIR / f"{stem or task_id}.dl"
     if not dl_path.exists():
         raise FileNotFoundError(f"no .dl solver at {dl_path}")
@@ -131,7 +135,9 @@ def run_dl(task_id: str, input_rows: list[list[int]], stem: str | None = None) -
     return _invoke_souffle(dl_path, input_rows)
 
 
-def _invoke_souffle(dl_path: Path, input_rows: list[list[int]]) -> list[list[list[int]]]:
+def _invoke_souffle(
+    dl_path: Path, input_rows: list[list[int]]
+) -> list[tuple[str, list[list[int]]]]:
     facts = grid_to_facts(input_rows)
     result = subprocess.run(
         ["souffle", "-D-", "-w", str(dl_path)],
@@ -145,11 +151,21 @@ def _invoke_souffle(dl_path: Path, input_rows: list[list[int]]) -> list[list[lis
 
 
 @dataclass
+class VariantResult:
+    name: str  # '' when out has no trailing column
+    ok: bool
+    actual: list[list[int]]
+
+
+@dataclass
 class PairResult:
     kind: str
     idx: int
     ok: bool
-    detail: str | None
+    error: str | None = None
+    expected: list[list[int]] | None = None
+    accepted: list[list[list[int]]] | None = None
+    variants: list[VariantResult] = field(default_factory=list)
 
 
 @dataclass
@@ -170,24 +186,119 @@ class TaskResult:
         return all(p.ok for p in self.pairs)
 
 
-def run_task(stem: str) -> TaskResult:
+def run_pair(stem: str, task_id: str, kind: str, idx: int, ex) -> PairResult:
+    try:
+        actuals = run_dl(task_id, ex.input, stem=stem)
+        accepted: list[list[list[int]]] = [ex.output]
+        if ex.alt is not None and ex.alt.kind == "tiebreak":
+            accepted.append(ex.alt.grid)
+        variants = [
+            VariantResult(name=v, ok=(g in accepted), actual=g) for v, g in actuals
+        ]
+        ok = bool(variants) and all(v.ok for v in variants)
+        return PairResult(
+            kind=kind,
+            idx=idx,
+            ok=ok,
+            expected=ex.output,
+            accepted=accepted,
+            variants=variants,
+        )
+    except Exception as e:
+        return PairResult(
+            kind=kind, idx=idx, ok=False, error=f"{type(e).__name__}: {e}"
+        )
+
+
+def _pair_work(stem: str) -> list[tuple]:
+    """Build (stem, task_id, kind, idx, ex) tuples for every pair of `stem`."""
     task_id = stem.split("_", 1)[0]
     task = load_task(task_id)
-    result = TaskResult(stem=stem)
+    work = []
     for kind, examples in (("train", task.train), ("test", task.test)):
         for idx, ex in enumerate(examples):
-            try:
-                actuals = run_dl(task_id, ex.input, stem=stem)
-                accepted = [ex.output]
-                if ex.alt is not None and ex.alt.kind == "tiebreak":
-                    accepted.append(ex.alt.grid)
-                ok = bool(actuals) and all(a in accepted for a in actuals)
-                detail = None if ok else f"expected each in {accepted}\n      actuals  {actuals}"
-            except Exception as e:
-                ok = False
-                detail = f"{type(e).__name__}: {e}"
-            result.pairs.append(PairResult(kind=kind, idx=idx, ok=ok, detail=detail))
-    return result
+            work.append((stem, task_id, kind, idx, ex))
+    return work
+
+
+def run_task(stem: str) -> TaskResult:
+    """Single-task entry: pairs run in parallel."""
+    work = _pair_work(stem)
+    with ThreadPoolExecutor() as executor:
+        pairs = list(executor.map(lambda w: run_pair(*w), work))
+    return TaskResult(stem=stem, pairs=pairs)
+
+
+def _grid_lines(grid: list[list[int]]) -> list[str]:
+    """One line per row; 0 rendered as '.' for readability."""
+    if not grid or not grid[0]:
+        return ["(empty)"]
+    return [" ".join("." if c == 0 else str(c) for c in row) for row in grid]
+
+
+def render_diff(expected: list[list[int]], actual: list[list[int]]) -> list[str]:
+    """Stacked expected then actual; mismatch count below."""
+    eh = len(expected) if expected else 0
+    ew = len(expected[0]) if eh else 0
+    ah = len(actual) if actual else 0
+    aw = len(actual[0]) if ah else 0
+
+    lines = ["expected:"]
+    lines.extend(_grid_lines(expected))
+    lines.append("actual:")
+    lines.extend(_grid_lines(actual))
+
+    if (eh, ew) == (ah, aw) and eh > 0:
+        n_diff = sum(
+            1 for r in range(eh) for c in range(ew) if expected[r][c] != actual[r][c]
+        )
+        if n_diff:
+            lines.append(f"{n_diff}/{eh*ew} cells differ")
+    elif (eh, ew) != (ah, aw):
+        lines.append(f"shape mismatch: {eh}x{ew} vs {ah}x{aw}")
+
+    return lines
+
+
+def render_pair_failure(p: PairResult) -> list[str]:
+    """Lines describing a failing pair: variant breakdown + diff per failing actual."""
+    lines = [f"{p.kind}[{p.idx}]: FAIL"]
+    if p.error:
+        lines.append(f"  {p.error}")
+        return lines
+    if not p.variants:
+        lines.append("  (no variants emitted)")
+        return lines
+
+    has_named = any(v.name for v in p.variants)
+    multi = len(p.variants) > 1
+
+    if has_named or multi:
+        pass_v = [v.name or "(out)" for v in p.variants if v.ok]
+        fail_v = [v.name or "(out)" for v in p.variants if not v.ok]
+        lines.append(f"  variants: {len(pass_v)} pass / {len(fail_v)} fail")
+        if pass_v:
+            lines.append(f"    pass: {', '.join(pass_v)}")
+        if fail_v:
+            lines.append(f"    fail: {', '.join(fail_v)}")
+
+    # Group failing variants by their actual output so duplicates share one diff.
+    groups: dict[tuple, list[str]] = defaultdict(list)
+    for v in p.variants:
+        if v.ok:
+            continue
+        key = tuple(tuple(r) for r in v.actual) if v.actual else ()
+        groups[key].append(v.name or "(out)")
+
+    for actual_key, names in groups.items():
+        actual = [list(r) for r in actual_key]
+        lines.append("")
+        if has_named or multi:
+            lines.append(f"  {', '.join(names)}:")
+        for dl in render_diff(p.expected or [], actual):
+            lines.append(f"    {dl}")
+
+    return lines
 
 
 def all_stems() -> list[str]:
@@ -197,14 +308,30 @@ def all_stems() -> list[str]:
 def cmd_one(stem: str) -> int:
     result = run_task(stem)
     for p in result.pairs:
-        print(f"{p.kind}[{p.idx}]: {'PASS' if p.ok else 'FAIL'}")
-        if p.detail:
-            print(f"  {p.detail}")
+        if p.ok:
+            print(f"{p.kind}[{p.idx}]: PASS")
+        else:
+            for line in render_pair_failure(p):
+                print(line)
     return 0 if result.all_pass else 1
 
 
 def cmd_all() -> int:
-    results = [run_task(stem) for stem in all_stems()]
+    stems = all_stems()
+
+    # Flatten all (stem, pair) work so the pool sees one big queue.
+    all_work: list[tuple] = []
+    for stem in stems:
+        all_work.extend(_pair_work(stem))
+
+    with ThreadPoolExecutor() as executor:
+        all_pairs = list(executor.map(lambda w: run_pair(*w), all_work))
+
+    by_stem: dict[str, list[PairResult]] = defaultdict(list)
+    for w, p in zip(all_work, all_pairs):
+        by_stem[w[0]].append(p)
+    results = [TaskResult(stem=stem, pairs=by_stem.get(stem, [])) for stem in stems]
+
     for r in results:
         marker = "PASS" if r.all_pass else "FAIL"
         print(f"{r.stem}: {r.passes}/{r.total} {marker}")
@@ -216,8 +343,10 @@ def cmd_all() -> int:
         for r in failed:
             print(f"\n{r.stem}:")
             for p in r.pairs:
-                if not p.ok:
-                    print(f"  {p.kind}[{p.idx}]: {p.detail}")
+                if p.ok:
+                    continue
+                for line in render_pair_failure(p):
+                    print(f"  {line}")
 
     print()
     print(f"summary: {len(results) - len(failed)}/{len(results)} solvers")
