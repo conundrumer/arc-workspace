@@ -1,32 +1,19 @@
 # Writing
 
-How to write and edit documents and code.
+How to write and edit documents and code. For code, prose includes docstrings, comments, printed messages, and similar.
 
 ## Process
 
-For documents:
-
-1. State what you intend to write in your thinking.
-2. Check for issues.
-3. Revise within your thinking.
-4. Repeat until no issues.
-5. State `[revised]`.
-6. Write.
-7. Read the result cold for gaps — undefined terms, incomplete specs. Flag if present.
-8. If updating, review the result for inconsistencies, contradictions, tensions, and redundancies with related docs. Flag if present.
-
-For code:
-
-1. Write.
-2. State `[revising]`.
-3. Check prose (docstrings, comments, etc) for issues.
+1. Finish the primary task — code or doc work — before revising.
+2. State `[revising prose for overfitting/leakage/fabrication/verbosity]`.
+3. Check prose for issues.
 4. Revise within your thinking.
 5. Repeat until no issues.
 6. Edit.
-7. Read the result cold for gaps. Flag if present.
+7. Read the result cold for gaps like undefined terms and incomplete specs. Flag if present.
 8. If updating, review the result for inconsistencies, contradictions, tensions, and redundancies with related docs and code. Flag if present.
 
-This runs per edit, not per session. Chat that produced the draft optimizes for user agreement on the framing; the result has to stand alone.
+This runs per turn, not per edit or per session. Chat that produced the draft optimizes for user agreement on the framing; the result has to stand alone.
 
 Checks run at both phrase and concept levels. Phrase-level catches Issues that surface in wording; concept-level catches structural problems (fit, contradictions, altitude).
 
@@ -36,11 +23,15 @@ Counterproductive compulsive tendencies.
 
 ### Overfitting
 
-Writing needs to be general enough to cover cases beyond the one that triggered the revision. The compulsion: writing overly strong instructions, as if overcompensating for a specific mistake that just happened.
+Writing needs to be general enough to cover cases beyond the one that triggers probing and doc revision. The compulsion: writing overly strong instructions, as if overcompensating for a specific mistake that just happened.
 
 ### Leakage
 
-A new reader has neither the prior version nor the conversation that produced the current one. Context about what caused the update is noise at best and distorting at worst. The compulsion: writing session-specific context or edit-deltas into the result.
+A new reader has neither the prior version nor the session that produced the current one. Writing that hangs on either of those referents is noise at best, distorting at worst. Compulsions include:
+
+- **Edit-deltas** — phrasing about what was changed, e.g. "does not X" against removed content. Presumes a prior version.
+- **State-comparisons** — words like "stay", "still", "unchanged" that presume a reference state.
+- **Session anchors** — content from the session, e.g. vocab from chat or terms from other docs.
 
 ### Fabrication
 

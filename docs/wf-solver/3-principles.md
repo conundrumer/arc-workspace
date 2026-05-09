@@ -8,7 +8,7 @@ The model is faithful to the concept of the task — the actual task, not an imp
 
 **Relational form.** ARC concepts are relations between cells, regions, and properties. Encoding as relations keeps the model faithful to the concept. Dictionaries or imperative loops carry structure the concept didn't have. Ordered iteration should only be used when the task has ordered structure.
 
-**ARC reality.** Same at the level of values. ARC concepts work in colors, directions, axes. Projecting these into bools, ints, or other derived types pulls the model away from what the task actually is. Arithmetic enters as fallback when no clean relational form exists; it doesn't carry conceptual weight.
+**ARC reality.** Same at the level of values. ARC concepts work in colors, directions, axes. Projecting these into bools, ints, or other derived types pulls the model away from what the task actually is. Arithmetic enters as fallback when no clean relational form exists. Numbers are one layer of indirection from the concept; arithmetic adds a second.
 
 ## Invariance
 

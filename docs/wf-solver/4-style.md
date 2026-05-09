@@ -18,13 +18,14 @@ Most rule bodies hold Positions in multiple frames at once. Name a Position by t
 - **tile** — tile-arrangement frame produced by `divide`. `P_tile`.
 - **intile** — within a single tile. `P_intile`.
 
-`divide` and `tile_pos` formal parameters stay `p_outer` / `p_inner` — they describe the decomposition. Solvers bind to `P_tile` / `P_intile` at call sites. For axis-only intermediates (e.g. `divide`'s inner before composing with the perpendicular axis), keep decomposition language: `P_inner_axis`, `P_outer_v`, `P_inner_h`.
+Formal parameters of `divide` and `tile_pos` are `p_outer` / `p_inner` — they describe the decomposition. Solvers bind to `P_tile` / `P_intile` at call sites. For axis-only intermediates (e.g. `divide`'s inner before composing with the perpendicular axis), use decomposition language: `P_inner_axis`, `P_outer_v`, `P_inner_h`.
 
 ## File structure
 
 - One file per task (`<task_id>.dl`); multi-impl variants live in the same file, distinguished by an ADT `Choice` column on `out`.
 - `#include "../lib.dl"` at top.
 - `.comp Consts { ... }` declares task-wide data; `.init c = Consts` exposes it as `c.<rel>`.
+- Inside Consts, `.init helpers = ConstsHelpers` makes shared helpers (`frame_pos`, `tile_pos`) available as `helpers.<rel>(...)` in data declarations. The body has no access.
 - All task-wide data lives in Consts, e.g. orientation (Dirs, Axes), dimensions, gaps, mappings, frame data.
 
 Skeleton:
