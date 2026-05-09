@@ -1,0 +1,18 @@
+// Per-cell d4 transform of input. Consts hold the d4 (FLIP_TB).
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl flip(d: D4)
+    flip(FLIP_TB).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl out(p: Position, col: Color)
+out(P_out, Col) :- in(P_in, Col), c.flip(D), apply(D, P_in, P_out).
+
+.output out(IO=stdout)

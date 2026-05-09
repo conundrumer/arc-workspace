@@ -1,0 +1,41 @@
+// Layout: d4 on the K×K block-grid. Each block stays as-is internally; the
+// d4 transform applies to the block-grid coordinates.
+//
+// Alts (d4 choice; data-equivalent on this task):
+//   $FlipTB() — FLIP_TB
+//   $FlipLR() — FLIP_LR
+//   $RotCW()  — ROT_CW
+//   $RotCCW() — ROT_CCW
+
+#include "../lib.dl"
+
+.type Choice = FlipTB {} | FlipLR {} | RotCW {} | RotCCW {}
+
+.comp Consts {
+    .decl block_d4(d: D4, c: Choice)
+    block_d4(FLIP_TB, $FlipTB()).
+    block_d4(FLIP_LR, $FlipLR()).
+    block_d4(ROT_CW,  $RotCW()).
+    block_d4(ROT_CCW, $RotCCW()).
+
+    .decl block_size(k: Dim)
+    block_size([2, 2]).
+
+    .decl block_gap(g: Dim)
+    block_gap([0, 0]).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl out(p: Position, col: Color, c: Choice)
+out(P_out, Col, Ch) :-
+    in(P_in, Col),                                                // input cell
+    c.block_d4(D, Ch), c.block_size(K), c.block_gap(G),           // params
+    divide_by_size_2d(P_in, K, G, P_block_in, P_local),           // forward decompose
+    apply(D, P_block_in, P_block_out),                            // d4 on block-grid
+    concat_2d(P_block_out, P_local, G, P_out).                    // recompose
+
+.output out(IO=stdout)

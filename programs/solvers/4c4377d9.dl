@@ -1,0 +1,32 @@
+// Layout: 2×1 vertical — top tile is the input FLIP_TB'd, bottom tile is
+// the input.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl tile(p: Position, d: D4)
+    GRID_2x1(tile,
+        FLIP_TB,
+        IDENTITY)
+
+    .decl tile_axis(a: Axis)
+    tile_axis(VERTICAL).
+
+    .decl tile_gap(g: number)
+    tile_gap(0).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl out(p: Position, col: Color)
+out(P_grid_out, Col) :-
+    in(P_in, Col),                                      // input cell
+    c.tile(P_tile, D),                                  // d4 at tile position
+    apply(D, P_in, P_intile),                           // d4 image of input pos
+    c.tile_axis(A), c.tile_gap(G),                      // tile params
+    concat_slab(P_tile, P_intile, A, G, P_grid_out).    // recompose with passthrough
+
+.output out(IO=stdout)

@@ -1,0 +1,28 @@
+// Layout: input is N identical tiles along the tile axis; output is one
+// tile. Set semantics dedupes the redundant copies.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl tile_axis(a: Axis)
+    tile_axis(HORIZONTAL).
+
+    .decl tile_count(n: number)
+    tile_count(3).
+
+    .decl tile_gap(g: number)
+    tile_gap(0).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl out(p: Position, col: Color)
+out(P_intile, Col) :-
+    in(P_in, Col),                                    // input cell
+    c.tile_axis(A), c.tile_count(N), c.tile_gap(G),   // tile params
+    divide_slab(P_in, A, N, G, _, P_intile).          // discard outer; intile is output
+
+.output out(IO=stdout)

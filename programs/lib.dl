@@ -97,7 +97,7 @@ dist(P, BOTTOM, B) :- P = [_, B, _, _].
 dist(P, LEFT,   L) :- P = [_, _, L, _].
 dist(P, RIGHT,  R) :- P = [_, _, _, R].
 
-// Element-wise sum of two Positions (signed; one operand may be a delta).
+// Element-wise sum of two Positions. One operand may be a signed delta.
 .decl compose(p1: Position, p2: Position, p3: Position) inline
 compose([T1, B1, L1, R1], [T2, B2, L2, R2], [T1+T2, B1+B2, L1+L2, R1+R2]) :- true.
 
@@ -108,8 +108,8 @@ edge_delta(BOTTOM, K, [0, K, 0, 0]) :- true.
 edge_delta(LEFT,   K, [0, 0, K, 0]) :- true.
 edge_delta(RIGHT,  K, [0, 0, 0, K]) :- true.
 
-// Decomposition of a Position by axis: along (the axis component, with
-// perpendicular zeroed) + across (perpendicular component, axis zeroed).
+// Decompose p by axis: along carries the axis component (perpendicular
+// zeroed); across carries the perpendicular (axis zeroed).
 .decl split(p: Position, a: Axis, along: Position, across: Position) inline
 split(P, VERTICAL,   [T, B, 0, 0], [0, 0, L, R]) :- P = [T, B, L, R].
 split(P, HORIZONTAL, [0, 0, L, R], [T, B, 0, 0]) :- P = [T, B, L, R].
@@ -125,13 +125,11 @@ apply(FLIP_TB,       [T, B, L, R], [B, T, L, R]) :- true.
 apply(FLIP_DIAG,     [T, B, L, R], [L, R, T, B]) :- true.
 apply(FLIP_ANTIDIAG, [T, B, L, R], [R, L, B, T]) :- true.
 
-// Divide p's axis-a extent into n equal parts. Both outputs are axis-only
-// (perpendicular zeroed): p_outer is the subgrid index in an n-strip frame
-// on axis a; p_inner is the cell within the subgrid on axis a. Cells in
-// gap rows/cols (when gap > 0) get no decomposition — rule does not fire.
-// Symmetric outputs compose cleanly: two divides on different axes can be
-// joined via compose for 2D decomposition.
-// Asserts: gap-adjusted extent divides evenly by n; cell is not in a gap.
+// Divide p's axis-a extent into n equal parts. p_outer is the tile
+// index in an n-strip frame; p_inner is the cell within the tile.
+// Both axis-only (perpendicular zeroed). Cells in gap rows/cols (gap > 0)
+// produce no decomposition. Two divides on different axes compose to 2D.
+// Asserts: gap-adjusted extent divides evenly by n.
 .decl divide(p: Position, a: Axis, n: number, gap: number, p_outer: Position, p_inner: Position) inline
 divide(P, VERTICAL, N, G,
        [Ot, N-1-Ot, 0, 0],
@@ -156,16 +154,58 @@ divide(P, HORIZONTAL, N, G,
     Ol = L / (Sh + G),
     Il = K_cyc.
 
+// Like divide, but parameterized by tile size k instead of tile count n.
+// Tile count is recovered from p's axis-a extent: n = (extent + gap) /
+// (k + gap).
+// Asserts: gap-adjusted extent is a multiple of (k + gap).
+.decl divide_by_size(p: Position, a: Axis, k: number, gap: number,
+                     p_outer: Position, p_inner: Position) inline
+divide_by_size(P, VERTICAL, K, G,
+       [Ot, N-1-Ot, 0, 0],
+       [It, K-1-It, 0, 0]) :-
+    P = [T, B, _, _],
+    H = T + B + 1,
+    (H + G) % (K + G) = 0,
+    N = (H + G) / (K + G),
+    K_cyc = T % (K + G),
+    K_cyc < K,
+    Ot = T / (K + G),
+    It = K_cyc.
+divide_by_size(P, HORIZONTAL, K, G,
+       [0, 0, Ol, N-1-Ol],
+       [0, 0, Il, K-1-Il]) :-
+    P = [_, _, L, R],
+    W = L + R + 1,
+    (W + G) % (K + G) = 0,
+    N = (W + G) / (K + G),
+    K_cyc = L % (K + G),
+    K_cyc < K,
+    Ol = L / (K + G),
+    Il = K_cyc.
+
+// Recompose axis-a tiles into a single extent — inverse of divide. p_outer
+// is the tile index in an n-strip frame; p_inner is the cell within the
+// tile. Both axis-only (perpendicular zeroed); p_grid is axis-only on the
+// same axis. With gap > 0, only filled tile cells appear in p_grid — gap
+// rows/cols are absent. Two concats on different axes compose to 2D.
+.decl concat(p_outer: Position, p_inner: Position, a: Axis, gap: number,
+             p_grid: Position) inline
+concat([Ot, Bo, 0, 0], [It, Bi, 0, 0], VERTICAL, G,
+       [Ot*(Iv+G) + It, Bo*(Iv+G) + Bi, 0, 0]) :-
+    Iv = It + Bi + 1.
+concat([0, 0, Ol, Ro], [0, 0, Il, Ri], HORIZONTAL, G,
+       [0, 0, Ol*(Ih+G) + Il, Ro*(Ih+G) + Ri]) :-
+    Ih = Il + Ri + 1.
+
 // ------------------------------------------------------------
 // Patterns — recurring solver-body shapes built from primitives
 // ------------------------------------------------------------
 
-// Same dist-to-edge D for two positions. Building block for anchor patterns.
+// Same dist-to-edge D for two positions.
 .decl same_dist(d: Dir, p1: Position, p2: Position) inline
 same_dist(D, P1, P2) :- dist(P1, D, K), dist(P2, D, K).
 
-// Corner-anchor match: two positions agree on the distances to the two
-// edges of corner d. Used to project cells between frames sharing a corner.
+// Two positions agree on the distances to the two edges of corner d.
 .decl corner_anchor(d: DiagDir, p1: Position, p2: Position) inline
 corner_anchor(Diag, P1, P2) :-
     dir_of(Diag, VERTICAL,   V_dir),
@@ -173,19 +213,17 @@ corner_anchor(Diag, P1, P2) :-
     same_dist(V_dir, P1, P2),
     same_dist(H_dir, P1, P2).
 
-// Slab-anchor match: two positions agree on dist-to-edge d (anchor) and on
-// the perpendicular extent (across-slice match). Used to project cells
-// between frames sharing one edge and the perpendicular axis's full extent.
+// Two positions agree on dist-to-edge d and on the perpendicular extent.
 .decl slab_anchor(d: Dir, p1: Position, p2: Position) inline
 slab_anchor(D, P1, P2) :-
     same_dist(D, P1, P2),
     axis_of(D, A),
     split(P1, A, _, Ac), split(P2, A, _, Ac).
 
-// 1D divide along axis a with perpendicular passthrough. p_outer is the
-// axis-only slab outer (1D strip arrangement); p_inner is the full 2D
-// within-slab position, perpendicular carried from p. Asserts:
-// gap-adjusted extent divides evenly by n; cell is not in a gap.
+// 1D divide along axis a with perpendicular passthrough. p_outer is
+// axis-only on a; p_inner is the full 2D within-slab position —
+// perpendicular carried from p.
+// Asserts: gap-adjusted extent divides evenly by n.
 .decl divide_slab(p: Position, a: Axis, n: number, gap: number,
                   p_outer: Position, p_inner: Position) inline
 divide_slab(P, A, N, G, P_outer, P_inner) :-
@@ -193,20 +231,61 @@ divide_slab(P, A, N, G, P_outer, P_inner) :-
     split(P, A, _, Across),
     compose(P_i_axis, Across, P_inner).
 
+// 2D divide on both axes. Tile count n and gap as Dim. Outputs are full
+// 2D: p_outer indexes an outer.v×outer.h tile arrangement; p_inner is
+// the cell within an inner.v×inner.h tile.
+.decl divide_2d(p: Position, n: Dim, gap: Dim,
+                p_outer: Position, p_inner: Position) inline
+divide_2d(P, [Nv, Nh], [Gv, Gh], P_outer, P_inner) :-
+    divide(P, VERTICAL,   Nv, Gv, P_ov, P_iv),
+    divide(P, HORIZONTAL, Nh, Gh, P_oh, P_ih),
+    compose(P_ov, P_oh, P_outer),
+    compose(P_iv, P_ih, P_inner).
+
+// Like divide_2d, but parameterized by tile size — k and gap as Dim.
+.decl divide_by_size_2d(p: Position, k: Dim, gap: Dim,
+                        p_outer: Position, p_inner: Position) inline
+divide_by_size_2d(P, [Kv, Kh], [Gv, Gh], P_outer, P_inner) :-
+    divide_by_size(P, VERTICAL,   Kv, Gv, P_ov, P_iv),
+    divide_by_size(P, HORIZONTAL, Kh, Gh, P_oh, P_ih),
+    compose(P_ov, P_oh, P_outer),
+    compose(P_iv, P_ih, P_inner).
+
+// 1D concat along axis a with perpendicular passthrough — inverse of
+// divide_slab. p_outer is axis-only on a; p_inner is full 2D
+// (within-slab); p_grid is the recomposed full 2D position.
+.decl concat_slab(p_outer: Position, p_inner: Position, a: Axis, gap: number,
+                  p_grid: Position) inline
+concat_slab(P_outer, P_inner, A, G, P_grid) :-
+    split(P_inner, A, P_i_axis, Across),
+    concat(P_outer, P_i_axis, A, G, P_along),
+    compose(P_along, Across, P_grid).
+
+// 2D concat on both axes — inverse of divide_2d / divide_by_size_2d.
+// p_outer and p_inner are full 2D; gap as Dim; p_grid is the recomposed
+// full 2D position.
+.decl concat_2d(p_outer: Position, p_inner: Position, gap: Dim,
+                p_grid: Position) inline
+concat_2d(P_outer, P_inner, [Gv, Gh], P_grid) :-
+    split(P_outer, VERTICAL, P_outer_v, P_outer_h),
+    split(P_inner, VERTICAL, P_inner_v, P_inner_h),
+    concat(P_outer_v, P_inner_v, VERTICAL,   Gv, P_grid_v),
+    concat(P_outer_h, P_inner_h, HORIZONTAL, Gh, P_grid_h),
+    compose(P_grid_v, P_grid_h, P_grid).
+
 // ============================================================
 // Consts helpers — for declaring CONSTS data, not for solver bodies
 // ============================================================
 
-// All positions of a frame of given Dim. Use at call sites where dim is
-// bound; range enumerates the cells.
+// All positions of a frame of given Dim.
 .decl frame_pos(dim: Dim, p: Position) inline
 frame_pos([V, H], [T, V-1-T, L, H-1-L]) :- T = range(0, V), L = range(0, H).
 
-// Decomposition of a position in an outer×inner tiled frame (with optional
-// gap rows/cols between tiles) into its outer position (which tile) and
-// inner position (which cell within the tile). Gap cells get no entry.
-// Combined-frame dim is (outer.v*inner.v + (outer.v-1)*gap.v,
-//                        outer.h*inner.h + (outer.h-1)*gap.h).
+// Decompose a position in an outer×inner tiled frame into outer (which
+// tile) and inner (cell within the tile). Gap rows/cols between tiles
+// produce no entry. Combined-frame dim is
+//   (outer.v*inner.v + (outer.v-1)*gap.v,
+//    outer.h*inner.h + (outer.h-1)*gap.h).
 .decl tile_pos(outer: Dim, inner: Dim, gap: Dim,
                p: Position, p_outer: Position, p_inner: Position) inline
 tile_pos([Ov, Oh], [Iv, Ih], [Gv, Gh],

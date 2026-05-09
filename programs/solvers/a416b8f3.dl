@@ -1,0 +1,29 @@
+// Layout: 1×2 horizontal duplication. Output is two copies of input placed
+// side by side along the tile axis.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl tile(p: Position)
+    tile(P) :- frame_pos([1, 2], P).
+
+    .decl tile_axis(a: Axis)
+    tile_axis(HORIZONTAL).
+
+    .decl tile_gap(g: number)
+    tile_gap(0).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl out(p: Position, col: Color)
+out(P_grid_out, Col) :-
+    in(P_in, Col),                                  // input cell
+    c.tile(P_tile),                                 // tile-frame pos (axis-only)
+    c.tile_axis(A), c.tile_gap(G),                  // tile params
+    concat_slab(P_tile, P_in, A, G, P_grid_out).    // recompose with passthrough
+
+.output out(IO=stdout)
