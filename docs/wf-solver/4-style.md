@@ -77,3 +77,7 @@ Single-line form is fine for short rules (≤ ~80 chars).
 ## Alt Outputs
 
 If the task JSON contains alts, they need to be represented as a `Choice`.
+
+## Further reading
+
+- `docs/souffle-undocumented.md` — Recent Souffle additions: user-defined aggregates and lattices. Consult when the built-in aggregators don't fit.
