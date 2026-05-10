@@ -1,19 +1,20 @@
 // Layout: 1×2 horizontally-side-by-side 3×3 subgrids. Output is the per-cell pair-fold.
 //
-// Cartesian over (decompose, body) impls; out's choice column tags each:
+// out's choice column = [d, b]:
 //
-//   decompose:
+//   d (decompose):
 //     $Tile() — pre-tabulated in Consts via tile_pos
 //     $Div()  — derived in body via the divide primitive (c.divide_axis, c.divisor)
 //
-//   body:
-//     $SetMatch(d) — combine table keyed on (outer pos, color); count-trick match
-//     $Or(d)       — OR via existence: any non-BG input contribution
+//   b (body):
+//     $SetMatch() — combine table keyed on (outer pos, color); count-trick match
+//     $Or()       — OR via existence: any non-BG input contribution
 
 #include "../lib.dl"
 
 .type DecChoice = Tile {} | Div {}
-.type Choice = SetMatch { d: DecChoice } | Or { d: DecChoice }
+.type Body      = SetMatch {} | Or {}
+.type Choice    = [d: DecChoice, b: Body]
 
 .comp Consts {
     .init helpers = ConstsHelpers
@@ -52,7 +53,7 @@
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
-// --- Decompose variants ----------------------------------------------------
+// --- Decompose cases -------------------------------------------------------
 
 .decl dec_choice(dc: DecChoice)
 dec_choice($Tile()).
@@ -72,10 +73,10 @@ filled(P_grid_out, Dc) :-
     in(P_grid_in, Col), !c.bg(Col),                 // non-bg input cell
     decompose(P_grid_in, _, P_grid_out, Dc).        // decomposes to output cell
 
-// --- Output: cartesian over (DecChoice, body) ------------------------------
+// --- Output ----------------------------------------------------------------
 
 .decl out(p: Position, col: Color, c: Choice)
-out(P_grid_out, Col_out, $SetMatch(Dc)) :-
+out(P_grid_out, Col_out, [Dc, $SetMatch()]) :-
     dec_choice(Dc),
     c.frame(P_grid_out),
     c.combine_out(Eid, Col_out),
@@ -84,11 +85,11 @@ out(P_grid_out, Col_out, $SetMatch(Dc)) :-
                   decompose(P_grid_in, P_tile, P_grid_out, Dc),
                   in(P_grid_in, C) }.
 
-out(P_grid_out, Col, $Or(Dc)) :-
+out(P_grid_out, Col, [Dc, $Or()]) :-
     dec_choice(Dc), c.frame(P_grid_out),        // choice × cell
     filled(P_grid_out, Dc),                     // OR=1: some contribution
     c.out_fill(Col).
-out(P_grid_out, Col, $Or(Dc)) :-
+out(P_grid_out, Col, [Dc, $Or()]) :-
     dec_choice(Dc), c.frame(P_grid_out),        // choice × cell
     !filled(P_grid_out, Dc),                    // OR=0: no contribution
     c.bg(Col).
