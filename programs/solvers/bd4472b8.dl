@@ -69,6 +69,7 @@ fill(P_grid_in, Col, $Recursive()) :-
     same_dist(D, Full_off, P_grid_in).           // input cell at that dist
 
 // $Mod: direct mod arithmetic.
+// TODO: find alternative with no arithmetic
 fill(P_grid_in, Col, $Mod()) :-
     in(P_grid_in, _),                            // input cell
     c.header_dir(D), c.body_start(Bs),           // cycling axis, base offset

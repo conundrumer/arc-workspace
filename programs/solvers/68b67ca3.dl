@@ -29,8 +29,8 @@
 
     // --- Stride params --------------------------------------------------
     .decl anchor(d: DiagDir)        anchor(TOP_LEFT).
-    .decl divisor(n: number)        divisor(3).
-    .decl divide_gap(g: number)     divide_gap(0).
+    .decl divisor(n: Dim)           divisor([3, 3]).
+    .decl divide_gap(g: Dim)        divide_gap([0, 0]).
 }
 
 .init c = Consts
@@ -50,11 +50,8 @@ perm(P_grid_in, P_grid_out, $LabeledGrids()) :-
 perm(P_grid_in, P_grid_out, $Stride()) :-
     in(P_grid_in, _),                                               // input cell
     c.anchor(D), c.divisor(N), c.divide_gap(G),                     // params
-    divide(P_grid_in, VERTICAL,   N, G, P_outer_v, P_inner_v),      // V-axis divide
-    divide(P_grid_in, HORIZONTAL, N, G, P_outer_h, P_inner_h),      // H-axis divide
-    compose(P_inner_v, P_inner_h, P_intile),                        // 2D inner
-    corner_anchor(D, P_intile, ORIGIN),                             // inner at corner D
-    compose(P_outer_v, P_outer_h, P_grid_out).                      // 2D outer
+    divide_2d(P_grid_in, N, G, P_grid_out, P_intile),               // 2D divide
+    corner_anchor(D, P_intile, ORIGIN).                             // inner at corner D
 
 .decl out(p: Position, col: Color, c: Choice)
 out(P_grid_out, Col, Impl) :- impl_choice(Impl), in(P_grid_in, Col), perm(P_grid_in, P_grid_out, Impl).
