@@ -4,7 +4,6 @@ A solver session writes a Souffle solver (`programs/solvers/<task_id>.dl`) model
 
 ## Entry
 
-- Read `programs/lib.dl` — self-explanatory.
 - If requested to continue from prior solver work, run `uv run python scripts/inspect-session.py --solver-only` and read the output in full.
 - `bash scripts/queue.sh` prints the next solver.
 

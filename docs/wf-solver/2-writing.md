@@ -7,13 +7,15 @@ Writing has two sides. Reader-side is what lands in the doc — calibrate to wha
 ## Process
 
 1. Finish the primary task — code or doc work — before revising.
-2. State `[revising prose for overfitting/leakage/fabrication/verbosity]`.
+2. Say `<revision>`.
 3. Check prose for issues.
 4. Revise within your thinking.
 5. Repeat until no issues.
 6. Edit.
 7. Read the result cold for gaps like undefined terms and incomplete specs. Flag if present.
 8. If updating, review the result for inconsistencies, contradictions, tensions, and redundancies with related docs and code. Flag if present.
+9. Say what was reviewed.
+10. Say `</revision>`.
 
 This runs per turn, not per edit or per session. Chat that produced the draft optimizes for user agreement on the framing; the result has to stand alone.
 

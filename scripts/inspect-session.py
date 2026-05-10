@@ -6,18 +6,20 @@ Usage:
     scripts/inspect-session.py                # inspect multi-session window
     scripts/inspect-session.py --solver-only  # window, omit meta sessions
 
-Multi-session window: the boundary is the oldest meta session that ended
-(identified by any user message containing META SESSION END or legacy
-META SOLVER END). All later sessions are included if their first user
-message contains SESSION START or SOLVER START — both also match the
-META variants, so later meta sessions are included too.
+Multi-session window: the boundary is the most recent meta session that
+ended (any user message containing META SESSION END, legacy META SOLVER
+END, or `/session meta end`). Later sessions are included if their first
+user message starts a session — legacy SESSION START / SOLVER START / META
+variants, or `/session ...` slash command.
 
---solver-only filters the window output to non-meta sessions. A
-session is meta if its first user message starts with META SESSION START
-or META SOLVER START. Ignored when a session-id is provided.
+--solver-only filters the window to non-meta sessions. A session is meta
+if its first user message starts with META SESSION START, META SOLVER
+START, or `/session meta` (excluding `/session meta end`). Ignored when a
+session-id is provided.
 """
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -25,6 +27,16 @@ PROJECT_DIR = Path.home() / ".claude/projects/-Users-davidlu-code-arc-workspace"
 SESSION_KEYWORDS = ("SESSION START", "SOLVER START")
 META_START_KEYWORDS = ("META SESSION START", "META SOLVER START")
 META_END_KEYWORDS = ("META SESSION END", "META SOLVER END")
+
+
+def session_command_args(content):
+    """Return `/session` args if `content` is a `/session ...` invocation, else None."""
+    if not isinstance(content, str):
+        return None
+    if "<command-name>/session</command-name>" not in content:
+        return None
+    m = re.search(r"<command-args>(.*?)</command-args>", content, re.DOTALL)
+    return m.group(1).strip() if m else ""
 
 
 def parse_session(file):
@@ -68,17 +80,30 @@ def first_user_string(records):
 
 def has_meta_end(records):
     for r in records:
-        if r.get("type") == "user":
-            content = r.get("message", {}).get("content")
-            if isinstance(content, str):
-                if any(line.strip() in META_END_KEYWORDS for line in content.splitlines()):
-                    return True
+        if r.get("type") != "user":
+            continue
+        content = r.get("message", {}).get("content")
+        if not isinstance(content, str):
+            continue
+        if any(line.strip() in META_END_KEYWORDS for line in content.splitlines()):
+            return True
+        args = session_command_args(content)
+        if args is not None:
+            first = args.splitlines()[0].strip() if args else ""
+            if first.startswith("meta end"):
+                return True
     return False
 
 
 def is_meta_session(records):
     fus = first_user_string(records)
-    return any(fus.startswith(k) for k in META_START_KEYWORDS)
+    if any(fus.startswith(k) for k in META_START_KEYWORDS):
+        return True
+    args = session_command_args(fus)
+    if args is None:
+        return False
+    first = args.splitlines()[0].strip() if args else ""
+    return first.startswith("meta") and not first.startswith("meta end")
 
 
 def first_timestamp(records):
@@ -190,7 +215,11 @@ def main():
     for i in range(start_idx, len(sessions)):
         _, file, records = sessions[i]
         fus = first_user_string(records)
-        included = i == prev_meta_idx or any(k in fus for k in SESSION_KEYWORDS)
+        included = (
+            i == prev_meta_idx
+            or any(k in fus for k in SESSION_KEYWORDS)
+            or session_command_args(fus) is not None
+        )
         if not included:
             continue
         if solver_only and is_meta_session(records):

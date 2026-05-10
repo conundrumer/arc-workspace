@@ -26,7 +26,7 @@ data/
   patches/       <id>.arcpatch canonical; <id>_A.arcpatch, <id>_B.arcpatch, <id>_C.arcpatch variants
   tasks/         materialized JSON (build artifact)
 docs/
-  wf-solver/            workflow docs for solver and meta sessions; read at session start
+  wf-solver/            workflow docs for solver and meta sessions
   arcpatches.md          .arcpatch format: file layout, verbs, variants, alts
   hardware-probe.md      dev machine specs
 ```
@@ -43,12 +43,6 @@ uv run python programs/run_dl.py <stem>   # run one
 ```
 
 Souffle binary required for `.dl` solvers (`brew install souffle`).
-
-## Sessions
-
-Solver session: user opens with `SESSION START`.
-Meta session: user opens with `META SESSION START` and closes with `META SESSION END`.
-In both, bootstrap by `cat docs/wf-solver/*.md` to read the workflow docs in order. For meta sessions, also run `uv run python scripts/inspect-session.py` (no arg) to load the multi-session window — read the output in full, no truncation. Pass a session-id to inspect one specifically.
 
 ## Conventions
 

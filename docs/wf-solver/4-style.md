@@ -2,6 +2,8 @@
 
 How a `.dl` solver file looks.
 
+`programs/lib.dl` defines shared types and primitives — self-explanatory.
+
 ## Variables
 
 - Single letter (with optional digit suffix): `P`, `T`, `B`, `L`, `R`, `K`, `D`, `A`, `N`, `G`, `H`, `W`, `T1`, `C2`, etc.
