@@ -90,6 +90,57 @@ def parse_output(stdout: str) -> list[tuple[str, list[list[int]], list[tuple[int
     return candidates
 
 
+ORIENTATION_LITERALS = {
+    # Dirs
+    "TOP", "BOTTOM", "LEFT", "RIGHT",
+    # Axes
+    "VERTICAL", "HORIZONTAL",
+    # DiagDirs
+    "TOP_LEFT", "TOP_RIGHT", "BOTTOM_LEFT", "BOTTOM_RIGHT",
+    # DiagAxes
+    "DIAGONAL", "ANTIDIAGONAL",
+    # D4
+    "IDENTITY", "ROT_CW", "ROT_180", "ROT_CCW",
+    "FLIP_LR", "FLIP_TB", "FLIP_DIAG", "FLIP_ANTIDIAG",
+}
+
+ORIENTATION_LITERAL_RE = re.compile(
+    r"\b(" + "|".join(sorted(ORIENTATION_LITERALS, key=len, reverse=True)) + r")\b"
+)
+COMMENT_RE = re.compile(r"//.*$")
+COMP_CONSTS_OPEN_RE = re.compile(r"\.comp\s+Consts\s*\{")
+
+
+def lint_orientation_literals(source: str) -> list[tuple[int, str, str]]:
+    """Flag orientation literals appearing in body code (outside Consts).
+
+    Per 4-style.md: body reads orientation values from Consts via c.<rel>(...);
+    hardcoding fixes the body to one task in the family.
+    """
+    findings: list[tuple[int, str, str]] = []
+    in_consts = False
+    consts_depth = 0
+
+    for lineno, raw_line in enumerate(source.splitlines(), start=1):
+        line = COMMENT_RE.sub("", raw_line)
+
+        if not in_consts and COMP_CONSTS_OPEN_RE.search(line):
+            in_consts = True
+            consts_depth = line.count("{") - line.count("}")
+            continue
+
+        if in_consts:
+            consts_depth += line.count("{") - line.count("}")
+            if consts_depth <= 0:
+                in_consts = False
+            continue
+
+        for m in ORIENTATION_LITERAL_RE.finditer(line):
+            findings.append((lineno, m.group(1), raw_line.rstrip()))
+
+    return findings
+
+
 GRID_MACRO_RE = re.compile(r"\bGRID_(\d+)x(\d+)\b")
 
 
@@ -335,6 +386,15 @@ def cmd_one(stem: str) -> int:
         else:
             for line in render_pair_failure(p):
                 print(line)
+
+    source = (SOLVERS_DIR / f"{stem}.dl").read_text()
+    findings = lint_orientation_literals(source)
+    if findings:
+        print()
+        print(f"--- {len(findings)} orientation-literal warning(s) in {stem}.dl ---")
+        for lineno, lit, line in findings:
+            print(f"  L{lineno}: {lit}  →  {line.strip()}")
+
     return 0 if result.all_pass else 1
 
 
@@ -369,6 +429,21 @@ def cmd_all() -> int:
                     continue
                 for line in render_pair_failure(p):
                     print(f"  {line}")
+
+    lint_findings: dict[str, list] = {}
+    for stem in stems:
+        source = (SOLVERS_DIR / f"{stem}.dl").read_text()
+        findings = lint_orientation_literals(source)
+        if findings:
+            lint_findings[stem] = findings
+
+    if lint_findings:
+        print()
+        total = sum(len(v) for v in lint_findings.values())
+        print(f"--- orientation-literal warnings: {total} across {len(lint_findings)} solver(s) ---")
+        for stem in sorted(lint_findings):
+            for lineno, lit, line in lint_findings[stem]:
+                print(f"  {stem}.dl:L{lineno}: {lit}  →  {line.strip()}")
 
     print()
     print(f"summary: {len(results) - len(failed)}/{len(results)} solvers")
