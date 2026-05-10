@@ -41,19 +41,22 @@ def grid_to_facts(rows: list[list[int]]) -> str:
     return "\n".join(lines) + ("\n" if lines else "")
 
 
-def parse_output(stdout: str) -> list[tuple[str, list[list[int]]]]:
+def parse_output(stdout: str) -> list[tuple[str, list[list[int]], list[tuple[int, int]]]]:
     """Parse Souffle's default text output for the `out` relation.
 
-    Returns a list of (variant, grid) pairs. Variant is the trailing column
-    value (e.g. '$FlipTB') from a Choice ADT, or '' when `out` has no
-    trailing column. Cells are grouped by variant; each group is one grid.
+    Returns a list of (variant, grid, conflicts) tuples. Variant is the
+    trailing column value (e.g. '$FlipTB') from a Choice ADT, or '' when
+    `out` has no trailing column. Cells are grouped by variant; each group
+    is one grid. `conflicts` is a sorted list of (t, l) cells that received
+    multiple distinct colors within the same variant — an ambiguous output
+    that the solver should treat as a failure.
     """
     parts = re.split(r"^={3,}$", stdout, flags=re.MULTILINE)
     if len(parts) < 3:
         raise ValueError(f"unexpected souffle output:\n{stdout}")
     data = parts[1].strip()
     if not data:
-        return [("", [])]
+        return [("", [], [])]
 
     line_re = re.compile(r"\[(-?\d+), (-?\d+), (-?\d+), (-?\d+)\]\t(-?\d+)(?:\t(.+))?$")
     grouped: dict[str, list] = {}
@@ -66,7 +69,7 @@ def parse_output(stdout: str) -> list[tuple[str, list[list[int]]]]:
         cells = grouped.setdefault(variant, [])
         cells.append(tuple(int(x) for x in groups[:5]))
 
-    candidates: list[tuple[str, list[list[int]]]] = []
+    candidates: list[tuple[str, list[list[int]], list[tuple[int, int]]]] = []
     for variant in sorted(grouped):
         cells = grouped[variant]
         bounds = {(t + b + 1, l + r + 1) for (t, b, l, r, _) in cells}
@@ -74,11 +77,16 @@ def parse_output(stdout: str) -> list[tuple[str, list[list[int]]]]:
             raise ValueError(f"inconsistent grid bounds in {variant!r}: {bounds}")
         h, w = next(iter(bounds))
         grid = [[0] * w for _ in range(h)]
+        seen: dict[tuple[int, int], int] = {}
+        conflicts: set[tuple[int, int]] = set()
         for (t, b, l, r, color) in cells:
             if t < 0 or l < 0 or t >= h or l >= w:
                 raise ValueError(f"cell out of derived bounds: ({t}, {l}) in {h}x{w}")
+            if (t, l) in seen and seen[(t, l)] != color:
+                conflicts.add((t, l))
+            seen[(t, l)] = color
             grid[t][l] = color
-        candidates.append((variant, grid))
+        candidates.append((variant, grid, sorted(conflicts)))
     return candidates
 
 
@@ -114,7 +122,7 @@ def expand_grid_macros(source: str) -> tuple[str, bool]:
 
 def run_dl(
     task_id: str, input_rows: list[list[int]], stem: str | None = None
-) -> list[tuple[str, list[list[int]]]]:
+) -> list[tuple[str, list[list[int]], list[tuple[int, int]]]]:
     dl_path = SOLVERS_DIR / f"{stem or task_id}.dl"
     if not dl_path.exists():
         raise FileNotFoundError(f"no .dl solver at {dl_path}")
@@ -137,7 +145,7 @@ def run_dl(
 
 def _invoke_souffle(
     dl_path: Path, input_rows: list[list[int]]
-) -> list[tuple[str, list[list[int]]]]:
+) -> list[tuple[str, list[list[int]], list[tuple[int, int]]]]:
     facts = grid_to_facts(input_rows)
     result = subprocess.run(
         ["souffle", "-D-", "-w", str(dl_path)],
@@ -155,6 +163,7 @@ class VariantResult:
     name: str  # '' when out has no trailing column
     ok: bool
     actual: list[list[int]]
+    conflicts: list[tuple[int, int]] = field(default_factory=list)
 
 
 @dataclass
@@ -193,7 +202,13 @@ def run_pair(stem: str, task_id: str, kind: str, idx: int, ex) -> PairResult:
         if ex.alt is not None and ex.alt.kind == "tiebreak":
             accepted.append(ex.alt.grid)
         variants = [
-            VariantResult(name=v, ok=(g in accepted), actual=g) for v, g in actuals
+            VariantResult(
+                name=v,
+                ok=(g in accepted) and not c,
+                actual=g,
+                conflicts=c,
+            )
+            for v, g, c in actuals
         ]
         ok = bool(variants) and all(v.ok for v in variants)
         return PairResult(
@@ -282,21 +297,28 @@ def render_pair_failure(p: PairResult) -> list[str]:
         if fail_v:
             lines.append(f"    fail: {', '.join(fail_v)}")
 
-    # Group failing variants by their actual output so duplicates share one diff.
+    # Group failing variants by (actual output, conflict cells) so duplicates
+    # share one diff block.
     groups: dict[tuple, list[str]] = defaultdict(list)
     for v in p.variants:
         if v.ok:
             continue
-        key = tuple(tuple(r) for r in v.actual) if v.actual else ()
+        key = (
+            tuple(tuple(r) for r in v.actual) if v.actual else (),
+            tuple(v.conflicts),
+        )
         groups[key].append(v.name or "(out)")
 
-    for actual_key, names in groups.items():
+    for (actual_key, conflicts_tup), names in groups.items():
         actual = [list(r) for r in actual_key]
         lines.append("")
         if has_named or multi:
             lines.append(f"  {', '.join(names)}:")
-        for dl in render_diff(p.expected or [], actual):
-            lines.append(f"    {dl}")
+        if conflicts_tup:
+            lines.append(f"    conflicts at: {list(conflicts_tup)}")
+        else:
+            for dl in render_diff(p.expected or [], actual):
+                lines.append(f"    {dl}")
 
     return lines
 
