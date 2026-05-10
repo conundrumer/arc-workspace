@@ -1,0 +1,103 @@
+// Each slice's cells are recolored uniformly: c.uniform_color if the
+// slice has a single color, else c.non_uniform_color. Slices run along
+// c.axis. Whole-slice replacement — input colors are discarded.
+//
+// Cartesian over (detect, stage); out's choice column is a record:
+//
+//   detect:
+//     $PairExist() — same-slice pair with distinct colors (relational)
+//     $Count()     — distinct-color count, mapped per-count via c.count_color
+//
+//   stage:
+//     $PerCell()  — slice classification → single replacement color
+//     $SliceMap() — slice classification → row template
+
+#include "../lib.dl"
+
+.type Detect = PairExist {} | Count {}
+.type Stage  = PerCell {} | SliceMap {}
+.type Choice = [detect: Detect, stage: Stage]
+
+.comp Consts {
+    .decl axis(a: Axis)                axis(HORIZONTAL).
+
+    // PerCell single-color replacements.
+    .decl uniform_color(c: Color)      uniform_color(5).
+    .decl non_uniform_color(c: Color)  non_uniform_color(0).
+
+    // Per-count → output color.
+    .decl count_color(n: number, col: Color)
+    count_color(1, 5).
+    count_color(2, 0).
+
+    // SliceMap row templates — whole-row replacement as data.
+    .decl uniform_template(p: Position, col: Color)
+    GRID_1x3(uniform_template, 5, 5, 5)
+
+    .decl non_uniform_template(p: Position, col: Color)
+    GRID_1x3(non_uniform_template, 0, 0, 0)
+
+    // Per-count row template — same rows as the PairExist templates here.
+    .decl count_template(n: number, p_inner: Position, col: Color)
+    count_template(1, P, Col) :- uniform_template(P, Col).
+    count_template(2, P, Col) :- non_uniform_template(P, Col).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// Cell decomposition along c.axis: each input cell as (p, col, p_inner, p_across).
+.decl cell_split(p: Position, col: Color, p_inner: Position, p_across: Position) inline
+cell_split(P, Col, P_inner, P_across) :-
+    in(P, Col), c.axis(A), split(P, A, P_inner, P_across).
+
+// --- Detect ---
+
+// $PairExist: same-slice pair with distinct colors.
+.decl non_uniform_pe(p_across: Position)
+non_uniform_pe(P_across) :-
+    cell_split(_, Col1, _, P_across), cell_split(_, Col2, _, P_across),
+    Col1 != Col2.
+
+// $Count: distinct-color count per slice.
+.decl colors_in_slice(p_across: Position, col: Color)
+colors_in_slice(P_across, Col) :- cell_split(_, Col, _, P_across).
+
+.decl distinct_count(p_across: Position, n: number)
+distinct_count(P_across, N) :-
+    colors_in_slice(P_across, _),
+    N = count : { colors_in_slice(P_across, _) }.
+
+// --- Output ---
+
+.decl out(p: Position, col: Color, c: Choice)
+
+// $PairExist + $PerCell
+out(P, Col, [$PairExist(), $PerCell()]) :-
+    cell_split(P, _, _, P_across),
+    !non_uniform_pe(P_across), c.uniform_color(Col).
+out(P, Col, [$PairExist(), $PerCell()]) :-
+    cell_split(P, _, _, P_across),
+    non_uniform_pe(P_across), c.non_uniform_color(Col).
+
+// $PairExist + $SliceMap
+out(P, Col, [$PairExist(), $SliceMap()]) :-
+    cell_split(P, _, P_inner, P_across),
+    !non_uniform_pe(P_across), c.uniform_template(P_inner, Col).
+out(P, Col, [$PairExist(), $SliceMap()]) :-
+    cell_split(P, _, P_inner, P_across),
+    non_uniform_pe(P_across), c.non_uniform_template(P_inner, Col).
+
+// $Count + $PerCell
+out(P, Col, [$Count(), $PerCell()]) :-
+    cell_split(P, _, _, P_across),
+    distinct_count(P_across, N), c.count_color(N, Col).
+
+// $Count + $SliceMap
+out(P, Col, [$Count(), $SliceMap()]) :-
+    cell_split(P, _, P_inner, P_across),
+    distinct_count(P_across, N), c.count_template(N, P_inner, Col).
+
+.output out(IO=stdout)

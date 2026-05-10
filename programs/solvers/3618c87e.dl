@@ -1,0 +1,86 @@
+// Each cell of color c.marker falls to the c.fall_to edge of its slice;
+// the original marker position clears to c.bg. Slices run along
+// axis_of(c.fall_to).
+//
+// Two impls; out's choice column tags each:
+//
+//   $PerCell()  — derive output via per-cell rules (clear marker;
+//                 fill fall-edge if slice has marker; else passthrough)
+//   $SliceMap() — slice substitution by lookup: a slice whose content
+//                 matches c.slice_in is replaced wholesale by c.slice_out;
+//                 unmatched slices passthrough
+
+#include "../lib.dl"
+
+.type Choice = PerCell {} | SliceMap {}
+
+.comp Consts {
+    .decl bg(c: Color)      bg(0).
+    .decl marker(c: Color)  marker(1).
+    .decl fall_to(d: Dir)   fall_to(BOTTOM).
+
+    // SliceMap: input slice → output slice (per-p_inner whole-slice replacement).
+    .decl slice_in(p: Position, col: Color)
+    GRID_5x1(slice_in, 0, 0, 1, 5, 5)
+
+    .decl slice_out(p: Position, col: Color)
+    GRID_5x1(slice_out, 0, 0, 0, 5, 1)
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// Cell decomposition along axis_of(c.fall_to).
+.decl cell_split(p: Position, col: Color, p_inner: Position, p_across: Position) inline
+cell_split(P, Col, P_inner, P_across) :-
+    in(P, Col), c.fall_to(D), axis_of(D, A),
+    split(P, A, P_inner, P_across).
+
+// Slice-cell projection.
+.decl slice_cell(p_across: Position, p_inner: Position, col: Color)
+slice_cell(P_across, P_inner, Col) :- cell_split(_, Col, P_inner, P_across).
+
+// --- $PerCell ---
+
+.decl marker_line(p_across: Position)
+marker_line(P_across) :- cell_split(_, Col, _, P_across), c.marker(Col).
+
+.decl cleared(p: Position)
+cleared(P) :- cell_split(P, Col, _, _), c.marker(Col).
+
+.decl landed(p: Position)
+landed(P) :-
+    cell_split(P, _, _, P_across),
+    c.fall_to(D), dist(P, D, 0),
+    marker_line(P_across).
+
+// --- $SliceMap ---
+
+// Slice content matches c.slice_in (set-keyed count trick).
+.decl matched_slice(p_across: Position)
+matched_slice(P_across) :-
+    cell_split(_, _, _, P_across),
+    N = count : { c.slice_in(_, _) },                          // total members
+    N = count : { c.slice_in(P_inner, Col),
+                  slice_cell(P_across, P_inner, Col) }.        // matched members
+
+// --- Output ---
+
+.decl out(p: Position, col: Color, c: Choice)
+
+// $PerCell
+out(P, Col, $PerCell()) :- cleared(P), c.bg(Col).
+out(P, Col, $PerCell()) :- landed(P), c.marker(Col).
+out(P, Col, $PerCell()) :- cell_split(P, Col, _, _), !cleared(P), !landed(P).
+
+// $SliceMap
+out(P, Col, $SliceMap()) :-
+    cell_split(P, _, P_inner, P_across),
+    matched_slice(P_across), c.slice_out(P_inner, Col).
+out(P, Col, $SliceMap()) :-
+    cell_split(P, Col, _, P_across),
+    !matched_slice(P_across).
+
+.output out(IO=stdout)

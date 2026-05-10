@@ -1,0 +1,35 @@
+// Shift the grid by c.shift_k toward c.shift_dir; fill the c.shift_k rows at
+// the opposite edge with c.bg.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl shift_dir(d: Dir)   shift_dir(BOTTOM).
+    .decl shift_k(k: number)  shift_k(1).
+    .decl bg(c: Color)        bg(0).
+
+    // Translation delta: -K at edge D, +K at edge D_opp.
+    .decl shift_delta(p: Position)
+    shift_delta(P) :-
+        shift_dir(D), shift_k(K), opposite(D, D_opp),
+        edge_delta(D, -K, A), edge_delta(D_opp, K, B),
+        compose(A, B, P).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// Image of the input under the shift, restricted to in-frame positions.
+.decl shift_image(p_out: Position, col: Color)
+shift_image(P_out, Col) :-
+    in(P_in, Col),
+    c.shift_delta(Delta), compose(P_in, Delta, P_out),
+    in(P_out, _).                                        // landed in the frame
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- shift_image(P, Col).
+out(P, Col) :- in(P, _), !shift_image(P, _), c.bg(Col).
+
+.output out(IO=stdout)
