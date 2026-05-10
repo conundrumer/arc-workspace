@@ -6,15 +6,29 @@ This list is descriptive, not prescriptive — the `.dl` files are the source of
 
 ## Multiple modeling forms via ADT `Choice`
 
-Multiple models live in one solver file as variants of an ADT `Choice` column on `out`. Variants can be more than two, may carry their own per-variant data, and may nest (a variant's data can itself be an ADT). Each variant fires its own rules; the runner emits each as a candidate.
+Multiple models live in one solver file as cases of an ADT `Choice` column on `out`. Cases can be more than two, may carry their own per-case data, and may nest (a case's data can itself be an ADT). Each case fires its own rules; the runner emits each as a candidate.
 
 ```
-.type Choice = VariantA {} | VariantB {}
+.type Choice = CaseA {} | CaseB {}
 
 .decl out(p: Position, col: Color, c: Choice)
-out(P, Col, $VariantA()) :- ...
-out(P, Col, $VariantB()) :- ...
+out(P, Col, $CaseA()) :- ...
+out(P, Col, $CaseB()) :- ...
 ```
+
+Use a record-typed `Choice` when cases compose from independent parts:
+
+```
+.type Detect = PairExist {} | Count {}
+.type Stage  = PerCell {} | SliceMap {}
+.type Choice = [detect: Detect, stage: Stage]
+
+.decl out(p: Position, col: Color, c: Choice)
+out(P, Col, [$PairExist(), $PerCell()]) :- ...
+out(P, Col, [$Count(),     $SliceMap()]) :- ...
+```
+
+Use a sum directly to enumerate cases when only specific combinations exist.
 
 ## `GRID_HxW` for grid data
 

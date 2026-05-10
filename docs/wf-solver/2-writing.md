@@ -2,6 +2,8 @@
 
 How to write and edit documents and code. For code, prose includes docstrings, comments, printed messages, and similar.
 
+Writing has two sides. Reader-side is what lands in the doc — calibrate to what the reader knows and needs. Writer-side is context for writing (your understanding, your reasoning, explanations from chat) — it stays out of the doc. Default reader is you.
+
 ## Process
 
 1. Finish the primary task — code or doc work — before revising.
@@ -36,6 +38,8 @@ A new reader has neither the prior version nor the session that produced the cur
 ### Fabrication
 
 Specifics make writing feel concrete, so when actual data is thin, plausible-looking material fills in automatically. The compulsion: invented imperatives, made-up examples, claims not actually observed.
+
+Inventing is warranted when the concept is genuinely abstract and the reader needs a concrete instance to grasp it. The compulsion: inventing for surface concreteness when the concept is already grounded.
 
 ### Verbosity
 

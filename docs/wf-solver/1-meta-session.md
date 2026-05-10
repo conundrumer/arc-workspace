@@ -10,7 +10,13 @@ A single mistake or friction is one datapoint — too thin to reliably abstract 
 
 ## `drain`
 
-User trigger to surface what should be addressed — tensions to resolve and defaults to codify. Look across all levels (user signals, claude behavior, conversation, artifacts, session rhythm, project, apparatus). Surface broadly; let the user decide. Default is to walk items as they come; `drain` fires when the user wants exhaustive coverage.
+User trigger to surface what should be addressed — interaction tensions between you and the user, defaults the user has had to ask for repeatedly, and explanations the user has had to give you. All target codification.
+
+Review across in-window sessions (including the current session and boundary session) at a conversation/meta level, not as item dumps. Surface anything unaddressed.
+
+Default is to walk items as they come; `drain` fires when the user wants exhaustive coverage.
+
+## Standing log
 
 A meta session ends by inlining a standing log — items raised in the session that aren't closed (whether engaged or still pending). Each entry has:
 

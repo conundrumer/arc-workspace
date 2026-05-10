@@ -12,7 +12,7 @@ The model is faithful to the concept of the task — the actual task, not an imp
 
 ## Invariance
 
-The body is symmetric under variations of the task that don't change its essential structure — rotations, mirrorings, recolorings. The Consts capture each variation as a value the body parameterizes over. The failure mode: tying the body to one specific variant when the task is symmetric across the family.
+The body is symmetric under variations of the task that don't change its essential structure — rotations, mirrorings, recolorings. The Consts capture each variation as a value the body parameterizes over. The failure mode: tying the body to one task in the family when the family is symmetric.
 
 **Color.** Colors in ARC have no intrinsic structure beyond identity. If the task has structure over colors — an ordering, a mapping, a partition — that structure lives in Consts. Body comparisons by enum ordinal or fixed-order iteration over C0..C9 invent structure that isn't in the task.
 
@@ -23,6 +23,8 @@ The body is symmetric under variations of the task that don't change its essenti
 A task can be modeled multiple ways — each model claims the task is an instance of some task family. Modeling the same task under several families gives coverage over its plausible identities. ARC training tasks are intended to teach core knowledge priors in pure form; coverage surfaces which prior the task could be teaching.
 
 Generalization happens at the family level. All tasks in a family share a body; the data that distinguishes a task within its family lives in Consts. The body parameterizes; Consts fills in.
+
+Sibling tasks under family F are other tasks in F. A solver may carry multiple model claims via cases of `Choice`; with multiple claims, sibling-talk specifies which family.
 
 Models are typically mixes of two kinds of content:
 

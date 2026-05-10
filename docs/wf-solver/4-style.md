@@ -22,20 +22,18 @@ Formal parameters of `divide` and `tile_pos` are `p_outer` / `p_inner` — they 
 
 ## File structure
 
-- One file per task (`<task_id>.dl`); multi-impl variants live in the same file, distinguished by an ADT `Choice` column on `out`.
+- One file per task (`<task_id>.dl`); multi-impl cases live in the same file, distinguished by an ADT `Choice` column on `out`.
 - `#include "../lib.dl"` at top.
 - `.comp Consts { ... }` declares task-wide data; `.init c = Consts` exposes it as `c.<rel>`.
 - Inside Consts, `.init helpers = ConstsHelpers` makes shared helpers (`frame_pos`, `tile_pos`) available as `helpers.<rel>(...)` in data declarations. The body has no access.
 - All task-wide data lives in Consts, e.g. orientation (Dirs, Axes), dimensions, gaps, mappings, frame data.
 
-Skeleton:
+Skeleton (single-impl):
 
 ```
-// Doc header — describe task; if multi-impl, name variants.
+// Doc header — describe task.
 
 #include "../lib.dl"
-
-.type Choice = VariantA {} | VariantB {}   // multi-impl only; omit for single-impl
 
 .comp Consts {
     // task-wide data declarations and facts
@@ -48,15 +46,55 @@ Skeleton:
 
 // body rules
 
-.decl out(p: Position, col: Color, c: Choice)   // multi-impl only; omit `c` for single-impl
+.decl out(p: Position, col: Color)
 out(...) :- ...
 
 .output out(IO=stdout)
 ```
 
+Skeleton (multi-impl):
+
+```
+// Doc header — describe task and name cases.
+
+#include "../lib.dl"
+
+.type Choice = CaseA {} | CaseB {}
+
+.comp Consts {
+    // --- shared ---
+    ...
+
+    // --- CaseA ---
+    ...
+
+    // --- CaseB ---
+    ...
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// shared body rules
+
+.decl out(p: Position, col: Color, c: Choice)
+
+// --- CaseA ---
+out(..., $CaseA()) :- ...
+
+// --- CaseB ---
+out(..., $CaseB()) :- ...
+
+.output out(IO=stdout)
+```
+
+Cases are grouped under `// --- <name> ---` markers in both Consts and body — no interleaving across cases.
+
 ## Body
 
-- No literals — orientation (`TOP`, `LEFT`, `VERTICAL`, etc.), colors, or non-zero task-shape numbers (lengths, offsets, gaps). Body reads them from Consts via `c.<rel>(...)` and parameterizes. Hardcoded values fix the body to one variant of the task; pulling from Consts keeps it symmetric across the family.
+- No literals — orientation (`TOP`, `LEFT`, `VERTICAL`, etc.), colors, or non-zero task-shape numbers (lengths, offsets, gaps). Body reads them from Consts via `c.<rel>(...)` and parameterizes. Hardcoded values fix the body to one task in the family; pulling from Consts keeps it symmetric across the family.
 - No Position destructure. Use lib primitives instead. Position is opaque; destructure hardcodes edge indices and breaks orientation invariance.
 - Avoid arithmetic. If necessary, flag.
 - Inline relations can't appear inside aggregators. Wrap in a non-inline relation when needed.
@@ -74,10 +112,11 @@ header_color(Idx, Col) :-
 
 Single-line form is fine for short rules (≤ ~80 chars).
 
-## Alt Outputs
+## Alt outputs
 
-If the task JSON contains alts, they need to be represented as a `Choice`.
+If the task JSON contains alts, encode them as cases of `Choice` — one case per alt output.
 
-## Further reading
+## Souffle version
 
+- Targets latest Souffle. All latest features are available.
 - `docs/souffle-undocumented.md` — Recent Souffle additions: user-defined aggregates and lattices. Consult when the built-in aggregators don't fit.

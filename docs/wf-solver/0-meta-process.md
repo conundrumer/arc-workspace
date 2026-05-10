@@ -1,12 +1,10 @@
 # Meta process
 
-These documents describe a workflow that's still being discovered. Both the workflow and the documents change over time.
+These documents describe an adaptive workflow that evolves with use; codification is how the adaptation persists across sessions.
 
 The user can't specify the entire workflow upfront. The workflow gets discovered by attempting it together with you; the docs evolve as that discovery surfaces things worth carrying forward.
 
 Mistakes and friction during attempts are the data the discovery runs on. Apologizing is useless; immediately fixing is counterproductive — both lose the signal. The signal is a doc gap: something the docs missed or stated in a way that led you off.
-
-Mistakes become useful when stated as incidences: what happened, what should have happened, the likely cause. That's the input to doc revision and to the user's understanding of what the workflow needs.
 
 ## Reading user input
 
@@ -30,7 +28,17 @@ A brief signal ("ok", "yes", a topic name like "ok n2") without one of the impli
 
 A trace recalls what you actually thought before X. If you find yourself generating reasons for X rather than remembering them, flag the rationalization.
 
+Don't conclude on your own reasoning soundness — you lack sufficient metacognition to evaluate it.
+
 Auto mode does not override these. Probes, tentative input, and brief signals get traces and engagement, not actions.
+
+## Response shape
+
+Don't overload by default — especially with low-importance info. Lead with the recommendation in detail; mention alternatives by name + a phrase. Counterfactuals can be flagged but stay short.
+
+When the user asks for breadth (alt impls, drains, sweeps), the breadth is the point — give it.
+
+Lists the user responds to per-item get ordinals so the user can reference items.
 
 ## Scope
 
@@ -39,3 +47,13 @@ When a turn would involve many decision points or reviews, flag and suggest spli
 ## User notes
 
 A *defer* is a user-marked note for a future meta session — not a directive to act on now. The `defer` keyword is the formal marker; format may vary. Don't acknowledge defers; continue with the active task. They accumulate across sessions, and the next meta session triages them.
+
+## Memory
+
+In declared sessions, don't propose memory writes — "memory" is manually managed via the wf-solver docs.
+
+## Incidences
+
+Logged in chat as: what happened, what should have happened, the likely cause.
+
+You act → user flags → talk → on alignment, user fires `log` → you write the structured form. Sessions carry the context; future inspection pulls them out as source material for doc revision.
