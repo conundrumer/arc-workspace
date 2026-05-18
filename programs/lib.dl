@@ -58,6 +58,32 @@
 // Solver body primitives
 // ============================================================
 
+.decl dir_elem(d: Dir)
+dir_elem(TOP).
+dir_elem(BOTTOM).
+dir_elem(LEFT).
+dir_elem(RIGHT).
+
+.decl axis_elem(a: Axis)
+axis_elem(VERTICAL).
+axis_elem(HORIZONTAL).
+
+.decl diag_dir_elem(d: DiagDir)
+diag_dir_elem(TOP_LEFT).
+diag_dir_elem(TOP_RIGHT).
+diag_dir_elem(BOTTOM_LEFT).
+diag_dir_elem(BOTTOM_RIGHT).
+
+.decl d4_elem(d: D4)
+d4_elem(IDENTITY).
+d4_elem(ROT_CW).
+d4_elem(ROT_180).
+d4_elem(ROT_CCW).
+d4_elem(FLIP_LR).
+d4_elem(FLIP_TB).
+d4_elem(FLIP_DIAG).
+d4_elem(FLIP_ANTIDIAG).
+
 // Axis of a Dir.
 .decl axis_of(d: Dir, a: Axis)
 axis_of(TOP,    VERTICAL).
@@ -125,17 +151,6 @@ apply(FLIP_TB,       [T, B, L, R], [B, T, L, R]) :- true.
 apply(FLIP_DIAG,     [T, B, L, R], [L, R, T, B]) :- true.
 apply(FLIP_ANTIDIAG, [T, B, L, R], [R, L, B, T]) :- true.
 
-// All D4 elements — for body code that enumerates the group.
-.decl d4_elem(d: D4)
-d4_elem(IDENTITY).
-d4_elem(ROT_CW).
-d4_elem(ROT_180).
-d4_elem(ROT_CCW).
-d4_elem(FLIP_LR).
-d4_elem(FLIP_TB).
-d4_elem(FLIP_DIAG).
-d4_elem(FLIP_ANTIDIAG).
-
 // Divide p's axis-a extent into n equal parts. p_outer is the tile
 // index in an n-strip frame; p_inner is the cell within the tile.
 // Both axis-only (perpendicular zeroed). Cells in gap rows/cols (gap > 0)
@@ -193,6 +208,16 @@ divide_by_size(P, HORIZONTAL, K, G,
     K_cyc < K,
     Ol = L / (K + G),
     Il = K_cyc.
+
+// Distance t along a period of w (with gap g between periods) decomposes
+// into period index n and within-period offset k. Per-cell scalar peer of
+// `divide_by_size`, without the divisibility assertion.
+.decl stride(t: number, w: number, g: number, n: number, k: number) inline
+stride(T, W, G, N, K) :-
+    T >= 0,
+    T_cyc = T % (W + G), T_cyc < W,
+    K = T_cyc,
+    N = T / (W + G).
 
 // Recompose axis-a tiles into a single extent — inverse of divide. p_outer
 // is the tile index in an n-strip frame; p_inner is the cell within the
