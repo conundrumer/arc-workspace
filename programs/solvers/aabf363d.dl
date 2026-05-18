@@ -1,0 +1,60 @@
+// One non-bg color (the marker) repaints every other non-bg color: target
+// cells take the marker color, marker cells become bg.
+//
+// Three impls for identifying the marker; out's choice column tags each:
+//
+//   $Anchor   — color of the cell at corner c.marker_corner.
+//   $ByCount  — non-bg color appearing in exactly c.marker_count cells.
+//   $Minority — rarest non-bg color.
+
+#include "../lib.dl"
+
+.type Choice = Anchor {} | ByCount {} | Minority {}
+
+.comp Consts {
+    // --- shared ---
+    .decl bg(c: Color)  bg(0).
+
+    // --- $Anchor ---
+    .decl marker_corner(d: DiagDir)  marker_corner(BOTTOM_LEFT).
+
+    // --- $ByCount ---
+    .decl marker_count(n: number)  marker_count(1).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// Cells carrying the marker color, per impl.
+.decl marker(p: Position, col: Color, c: Choice)
+
+// --- $Anchor ---
+marker(P, Col, $Anchor()) :-
+    in(P, Col),                                             // input cell
+    c.marker_corner(Diag), corner_anchor(Diag, P, ORIGIN).  // at marker corner
+
+// --- $ByCount, $Minority shared helper ---
+.decl color_count(col: Color, n: number)
+color_count(Col, N) :- in(_, Col), !c.bg(Col), N = count : { in(_, Col) }.
+
+// --- $ByCount ---
+marker(P, Col, $ByCount()) :-
+    in(P, Col),                                             // input cell
+    c.marker_count(K), color_count(Col, K).                 // color with count K
+
+// --- $Minority ---
+marker(P, Col, $Minority()) :-
+    in(P, Col), color_count(Col, N),                        // candidate non-bg color
+    N = min N2 : { color_count(_, N2) }.                    // min non-bg count
+
+// --- Output ---
+.decl out(p: Position, col: Color, c: Choice)
+out(P, BG, Impl) :- marker(P, _, Impl), c.bg(BG).
+out(P, BG, Impl) :- marker(_, _, Impl), in(P, BG), c.bg(BG).
+out(P, MarkerCol, Impl) :-
+    in(P, Col), !c.bg(Col), !marker(P, _, Impl),            // non-bg, non-marker cell
+    marker(_, MarkerCol, Impl).                             // marker color
+
+.output out(IO=stdout)

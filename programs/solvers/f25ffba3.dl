@@ -1,0 +1,77 @@
+// Input has a data slab anchored at one edge; the rest is empty. Output
+// is the data slab plus its images under a D4 set, filling the grid.
+// Three models:
+//
+//   $Stamp   — half-extract the data slab; stamp each cell under every
+//              D4 in c.stamps
+//   $Augment — stamp every non-bg input cell under every D4 in c.stamps;
+//              bg-fill unstamped positions
+//   $Tile    — divide input into c.n_tiles along axis_of(c.data_dir);
+//              each output tile applies c.tile_d4 to the input tile at c.data_dir
+//
+// Flagged ($Stamp): arithmetic predicate `K < Half_h` on dist. Rule wants
+// an edge-anchored half-extract primitive.
+
+#include "../lib.dl"
+
+.type Choice = Stamp {} | Augment {} | Tile {}
+
+.comp Consts {
+    .decl data_dir(d: Dir)        data_dir(BOTTOM).
+    .decl stamps(d: D4)
+    stamps(IDENTITY).
+    stamps(FLIP_TB).
+
+    // --- Stamp ---
+    .decl half_h(n: number)       half_h(5).
+
+    // --- Augment ---
+    .decl bg(c: Color)            bg(0).
+
+    // --- Tile ---
+    .decl n_tiles(n: number)      n_tiles(2).
+    .decl tile_gap(g: number)     tile_gap(0).
+    .decl tile_d4(p_tile: Position, d: D4)
+    GRID_2x1(tile_d4,
+        FLIP_TB,
+        IDENTITY)
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl out(p: Position, col: Color, c: Choice)
+
+// --- Stamp ---
+out(P_grid_out, Col, $Stamp()) :-
+    in(P_grid_in, Col),                                   // input cell
+    c.data_dir(D_data), dist(P_grid_in, D_data, K),       // distance from data edge
+    c.half_h(Half_h), K < Half_h,                         // within the data slab
+    c.stamps(D), apply(D, P_grid_in, P_grid_out).         // stamp under D4
+
+// --- Augment ---
+.decl augment_filled(p: Position)
+augment_filled(P_out) :-
+    in(P_in, Col), !c.bg(Col),                            // non-bg input cell
+    c.stamps(D), apply(D, P_in, P_out).                   // stamp under D4
+
+out(P_out, Col, $Augment()) :-
+    in(P_in, Col), !c.bg(Col),                            // non-bg input cell
+    c.stamps(D), apply(D, P_in, P_out).                   // stamp under D4
+out(P, Bg, $Augment()) :-
+    in(P, _), c.bg(Bg), !augment_filled(P).               // bg-fill unstamped positions
+
+// --- Tile ---
+out(P_grid_out, Col, $Tile()) :-
+    in(P_grid_in, Col),                                            // input cell
+    c.data_dir(D_data), axis_of(D_data, A_tile),                   // tile axis from data edge
+    c.n_tiles(N), c.tile_gap(G),                                   // tile params
+    divide_slab(P_grid_in, A_tile, N, G, P_in_outer, P_intile),    // divide input
+    dist(P_in_outer, D_data, 0),                                   // data tile at the data edge
+    c.tile_d4(P_out_outer, D),                                     // per-output-tile D4
+    apply(D, P_intile, P_out_intile),                              // inner under that D4
+    concat_slab(P_out_outer, P_out_intile, A_tile, G, P_grid_out). // recompose
+
+.output out(IO=stdout)

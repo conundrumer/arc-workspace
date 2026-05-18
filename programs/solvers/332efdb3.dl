@@ -1,0 +1,80 @@
+// Wallpaper: bg ground with a regular grid of interior dots. Three
+// divide-based models:
+//
+//   $Stripes() — divide_by_size on each axis with K=1, G=1. Cells on a
+//                tile row or col → bg; cells on neither → dot.
+//   $Motif()   — divide_by_size_2d with K=3, G=-1; adjacent tiles overlap
+//                by 1 row/col. The 3×3 motif has bg on its outer
+//                rows/cols and dot at its center. P_intile → motif color.
+//   $Inset()   — compose with inset_delta to shift to the interior frame;
+//                divide_by_size_2d with K=1, G=1 on the interior places
+//                tile cells at the dot positions. Border → bg, interior
+//                tile → dot, interior gap → bg.
+
+#include "../lib.dl"
+
+.type Choice = Stripes {} | Motif {} | Inset {}
+
+.comp Consts {
+    .decl bg(c: Color)              bg(1).
+    .decl dot(c: Color)             dot(0).
+
+    // --- $Stripes / $Inset shared params ---
+    .decl tile_size(k: number)      tile_size(1).
+    .decl tile_gap(g: number)       tile_gap(1).
+
+    // --- $Motif data ---
+    .decl motif_size(k: number)     motif_size(3).
+    .decl motif_overlap(g: number)  motif_overlap(-1).
+
+    .decl motif(p: Position, c: Color)
+    GRID_3x3(motif,
+        1, 1, 1,
+        1, 0, 1,
+        1, 1, 1)
+
+    // --- $Inset extra ---
+    .decl inset_delta(p: Position)  inset_delta([-1, -1, -1, -1]).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl out(p: Position, col: Color, c: Choice)
+
+// --- $Stripes ---
+.decl on_tile(p: Position, a: Axis)
+on_tile(P, A) :-
+    in(P, _),
+    axis_elem(A),                                       // enumerate axes
+    c.tile_size(K), c.tile_gap(G),
+    divide_by_size(P, A, K, G, _, _).                   // axis tile cell
+
+out(P, Col, $Stripes()) :- in(P, _), on_tile(P, _),  c.bg(Col).
+out(P, Col, $Stripes()) :- in(P, _), !on_tile(P, _), c.dot(Col).
+
+// --- $Motif ---
+out(P, Col, $Motif()) :-
+    in(P, _),
+    c.motif_size(K), c.motif_overlap(G),
+    divide_by_size_2d(P, [K, K], [G, G], _, P_intile),  // shared-boundary tile
+    c.motif(P_intile, Col).                             // motif lookup
+
+// --- $Inset ---
+.decl is_border(p: Position)
+is_border(P) :- in(P, _), dir_elem(D), dist(P, D, 0).   // any edge
+
+.decl interior_tile(p: Position)
+interior_tile(P) :-
+    in(P, _), !is_border(P),
+    c.inset_delta(Delta), compose(P, Delta, P_int),     // shift into interior frame
+    c.tile_size(K), c.tile_gap(G),
+    divide_by_size_2d(P_int, [K, K], [G, G], _, _).     // tile cell in interior
+
+out(P, Col, $Inset()) :- in(P, _), is_border(P),                       c.bg(Col).
+out(P, Col, $Inset()) :- in(P, _), interior_tile(P),                   c.dot(Col).
+out(P, Col, $Inset()) :- in(P, _), !is_border(P), !interior_tile(P),   c.bg(Col).
+
+.output out(IO=stdout)

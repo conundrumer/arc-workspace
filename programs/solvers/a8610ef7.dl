@@ -1,0 +1,58 @@
+// Recolor each non-bg cell by its image under c.mirror. Two impls; out's
+// choice column tags each:
+//
+//   $Direct() — case-split: bg passes through; non-bg → c.matched or
+//               c.unmatched per mirror color.
+//   $Lookup() — table on (self_color, mirror_color) → out_color.
+
+#include "../lib.dl"
+
+.type Choice = Direct {} | Lookup {}
+
+.comp Consts {
+    // --- shared ---
+    .decl mirror(d: D4)        mirror(FLIP_TB).
+
+    // --- Direct ---
+    .decl bg(c: Color)         bg(0).
+    .decl matched(c: Color)    matched(2).
+    .decl unmatched(c: Color)  unmatched(5).
+
+    // --- Lookup ---
+    .decl recolor(c_self: Color, c_mirror: Color, c_out: Color)
+    recolor(0, 0, 0).
+    recolor(0, 8, 0).
+    recolor(8, 0, 5).
+    recolor(8, 8, 2).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl out(p: Position, col: Color, c: Choice)
+
+// --- Direct ---
+
+.decl non_bg(p: Position)
+non_bg(P) :- in(P, Col), !c.bg(Col).
+
+out(P, Col, $Direct()) :- in(P, Col), c.bg(Col).
+out(P, Col_out, $Direct()) :-
+    non_bg(P),                                     // non-bg input cell
+    c.mirror(D), apply(D, P, P_m), non_bg(P_m),    // mirror image is also non-bg
+    c.matched(Col_out).
+out(P, Col_out, $Direct()) :-
+    non_bg(P),                                     // non-bg input cell
+    c.mirror(D), apply(D, P, P_m), !non_bg(P_m),   // mirror image is bg
+    c.unmatched(Col_out).
+
+// --- Lookup ---
+
+out(P, Col_out, $Lookup()) :-
+    in(P, C_self),                                       // input cell color
+    c.mirror(D), apply(D, P, P_m), in(P_m, C_mirror),    // mirror cell color
+    c.recolor(C_self, C_mirror, Col_out).
+
+.output out(IO=stdout)

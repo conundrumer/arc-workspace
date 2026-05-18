@@ -1,0 +1,71 @@
+// Each slice along c.axis is recolored by its content. Two impls for
+// choosing the recolor; out's choice column tags each:
+//
+//   $SetMatch()       — set-keyed slice template; matching entry's
+//                       c.mapping_out recolors the slice (count trick)
+//   $MarkerPosition() — c.marker cell's within-slice position keys
+//                       c.position_color for the recolor
+
+#include "../lib.dl"
+
+.type Choice = SetMatch {} | MarkerPosition {}
+
+.comp Consts {
+    .decl axis(a: Axis)  axis(HORIZONTAL).
+
+    // --- $SetMatch ---
+
+    .decl mapping_member(eid: number, p_inner: Position, c: Color)
+    .decl mapping_out(eid: number, c_out: Color)
+
+    .decl p0(p: Position, col: Color)
+    GRID_1x3(p0, 5, 0, 0)
+    .decl p1(p: Position, col: Color)
+    GRID_1x3(p1, 0, 5, 0)
+    .decl p2(p: Position, col: Color)
+    GRID_1x3(p2, 0, 0, 5)
+
+    mapping_member(0, P, C) :- p0(P, C).
+    mapping_member(1, P, C) :- p1(P, C).
+    mapping_member(2, P, C) :- p2(P, C).
+    mapping_out(0, 2). mapping_out(1, 4). mapping_out(2, 3).
+
+    // --- $MarkerPosition ---
+
+    .decl marker(c: Color)  marker(5).
+
+    .decl position_color(p: Position, col: Color)
+    GRID_1x3(position_color, 2, 4, 3)
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl cell_split(p: Position, p_inner: Position, p_across: Position) inline
+cell_split(P, P_inner, P_across) :- in(P, _), c.axis(A), split(P, A, P_inner, P_across).
+
+.decl out(p: Position, col: Color, c: Choice)
+
+// --- $SetMatch ---
+
+.decl slice_cell(p_across: Position, p_inner: Position, col: Color)
+slice_cell(P_across, P_inner, Col) :- in(P, Col), cell_split(P, P_inner, P_across).
+
+out(P, Out_C, $SetMatch()) :-
+    cell_split(P, _, P_across),
+    c.mapping_out(Eid, Out_C),
+    N = count : { c.mapping_member(Eid, _, _) },                  // template size
+    N = count : { c.mapping_member(Eid, P_inner, C),              // members matched
+                  slice_cell(P_across, P_inner, C) }.
+
+// --- $MarkerPosition ---
+
+out(P, Out_C, $MarkerPosition()) :-
+    cell_split(P, _, P_across),
+    in(P_mark, MC), c.marker(MC),
+    cell_split(P_mark, P_inner_mark, P_across),
+    c.position_color(P_inner_mark, Out_C).
+
+.output out(IO=stdout)

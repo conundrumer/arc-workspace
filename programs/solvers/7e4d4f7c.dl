@@ -1,0 +1,72 @@
+// WIP
+// Output has extent c.out_h along c.header_dir, perpendicular extent =
+// input. Cells at depth 0..out_h-2 from header_dir map into the output's
+// out_h frame with along-depth and across-axis position preserved. The
+// row at depth out_h-1 is derived from input depth 0 via tail_color:
+// bg passes through; non-bg becomes c.marker.
+//
+// Anchored cross-frame carry is inlined; no lib primitive lifts it yet.
+// Recolor uses a tail_color mapping (à la b1948b0a's idiom).
+// Layout-family cluster (header/body, à la bd4472b8).
+//
+// Flagged: ties on max color count produce multiple bg values, which
+// would conflict on the tail row.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl header_dir(d: Dir)  header_dir(TOP).
+    .decl out_h(n: number)    out_h(3).
+    .decl marker(col: Color)  marker(6).
+
+    // Along-axis frame for the output: extent out_h, indexed from header_dir.
+    .init out_along = DirFrame
+    out_along.dir(D)      :- header_dir(D).
+    out_along.dist_set(K) :- out_h(N), K = range(0, N).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// Background color: most-frequent color in the input.
+.decl color_count(c: Color, n: number)
+color_count(C, N) :- in(_, C), N = count : { in(_, C) }.
+
+.decl bg(c: Color)
+bg(C) :- color_count(C, N), N = max N2 : { color_count(_, N2) }.
+
+// Tail recolor: bg passes through; non-bg becomes c.marker.
+.decl tail_color(c_in: Color, c_out: Color)
+tail_color(C, C) :- bg(C).
+tail_color(C, M) :- in(_, C), !bg(C), c.marker(M).
+
+.decl out(p: Position, col: Color)
+
+// Keep: input cells whose along-depth maps into the out_h frame at a
+// non-tail row carry to the output. The across-axis part is preserved
+// from P_in via split; the along-axis part comes from out_along; compose
+// glues them.
+out(P_out, Col) :-
+    in(P_in, Col),                                        // input cell
+    c.header_dir(H_dir), opposite(H_dir, H_opp),          // along-axis dirs
+    axis_of(H_dir, H_axis),                               // along axis
+    dist(P_in, H_dir, T), c.out_along.pos(T, P_along),    // along-axis at depth T
+    dist(P_along, H_opp, K_opp), K_opp != 0,              // not the tail row
+    split(P_in, H_axis, _, P_across),                     // across-axis part of P_in
+    compose(P_along, P_across, P_out).                    // glue
+
+// Tail: input depth-0 cells map to the output's tail row (opp-edge
+// distance 0), recolored via tail_color.
+out(P_out, Col_out) :-
+    in(P_in, Col_in),                                     // input cell
+    c.header_dir(H_dir), opposite(H_dir, H_opp),          // along-axis dirs
+    axis_of(H_dir, H_axis),                               // along axis
+    dist(P_in, H_dir, 0),                                 // input row 0
+    tail_color(Col_in, Col_out),                          // recolor
+    c.out_along.pos(_, P_along), dist(P_along, H_opp, 0), // tail row
+    split(P_in, H_axis, _, P_across),                     // across-axis part of P_in
+    compose(P_along, P_across, P_out).                    // glue
+
+.output out(IO=stdout)

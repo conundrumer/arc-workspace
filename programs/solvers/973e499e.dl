@@ -1,0 +1,29 @@
+// Self-tile. Output decomposes into tiles laid out like the input; the
+// tile at P_tile is a copy of the input keeping cells of color
+// in(P_tile), others bg.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl bg(col: Color)        bg(0).
+    .decl tile_gap(g: Dim)      tile_gap([0, 0]).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl out(p: Position, col: Color)
+out(P_grid_out, Col) :-
+    in(P_tile, Col), in(P_intile, Col),                 // matched: tile & intile share Col
+    c.tile_gap(G),
+    concat_2d(P_tile, P_intile, G, P_grid_out).         // 2D recompose
+
+out(P_grid_out, BG) :-
+    in(P_tile, Col_m), in(P_intile, Col_i),             // mismatched: tile & intile distinct
+    Col_m != Col_i,
+    c.bg(BG), c.tile_gap(G),
+    concat_2d(P_tile, P_intile, G, P_grid_out).         // 2D recompose
+
+.output out(IO=stdout)

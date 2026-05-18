@@ -1,0 +1,103 @@
+// Silhouette → 1×1 output. Input is bg + one non-bg color over a 3×3
+// frame; non-bg cells form a shape. Two models:
+//
+//   $Lookup()   — full shape → output table; set-match via count-trick.
+//   $Classify() — extract (center lit, corner count) and branch.
+
+#include "../lib.dl"
+
+.type Choice = Lookup {} | Classify {}
+
+.comp Consts {
+    .init helpers = ConstsHelpers
+
+    .decl bg(c: Color)              bg(0).
+
+    // --- $Lookup data ----------------------------------------------------
+    .decl pattern_member(eid: number, p: Position)
+    .decl pattern_out(eid: number, c: Color)
+
+    .decl p0(p: Position, lit: number)
+    GRID_3x3(p0,
+        1, 1, 0,
+        1, 0, 1,
+        0, 1, 0)
+    pattern_member(0, P) :- p0(P, 1).
+    pattern_out(0, 1).
+
+    .decl p1(p: Position, lit: number)
+    GRID_3x3(p1,
+        1, 0, 1,
+        0, 1, 0,
+        1, 0, 1)
+    pattern_member(1, P) :- p1(P, 1).
+    pattern_out(1, 2).
+
+    .decl p2(p: Position, lit: number)
+    GRID_3x3(p2,
+        0, 1, 1,
+        0, 1, 1,
+        1, 0, 0)
+    pattern_member(2, P) :- p2(P, 1).
+    pattern_out(2, 3).
+
+    .decl p3(p: Position, lit: number)
+    GRID_3x3(p3,
+        0, 1, 0,
+        1, 1, 1,
+        0, 1, 0)
+    pattern_member(3, P) :- p3(P, 1).
+    pattern_out(3, 6).
+
+    // --- $Classify data --------------------------------------------------
+    .decl center_pos(p: Position)
+    center_pos([1, 1, 1, 1]).
+
+    .decl corner_pos(p: Position)
+    corner_pos(P) :-
+        diag_dir_elem(D),                       // enumerate the 4 corners
+        helpers.frame_pos([3, 3], P),           // P in the 3×3 frame
+        corner_anchor(D, P, ORIGIN).            // P at corner D
+
+    .decl center_off_out(c: Color)               center_off_out(1).
+    .decl center_on_out(n: number, c: Color)
+    center_on_out(0, 6).
+    center_on_out(1, 3).
+    center_on_out(2, 3).
+    center_on_out(3, 3).
+    center_on_out(4, 2).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl silhouette(p: Position)
+silhouette(P) :- in(P, Col), !c.bg(Col).
+
+.decl out(p: Position, col: Color, c: Choice)
+
+// --- $Lookup ---
+out(ORIGIN, Col_out, $Lookup()) :-
+    c.pattern_out(Eid, Col_out),
+    N = count : { c.pattern_member(Eid, _) },                   // pattern size
+    N = count : { c.pattern_member(Eid, P), silhouette(P) },    // pattern ⊆ silhouette
+    N = count : { silhouette(_) }.                              // sizes match
+
+// --- $Classify ---
+.decl center_silhouetted(p: Position)
+center_silhouetted(P) :- c.center_pos(P), silhouette(P).
+
+.decl corner_count(n: number)
+corner_count(N) :- N = count : { c.corner_pos(P), silhouette(P) }.
+
+out(ORIGIN, Col, $Classify()) :-
+    !center_silhouetted(_),                                     // center off
+    c.center_off_out(Col).
+
+out(ORIGIN, Col, $Classify()) :-
+    center_silhouetted(_), corner_count(N),                     // center on, count corners
+    c.center_on_out(N, Col).
+
+.output out(IO=stdout)
