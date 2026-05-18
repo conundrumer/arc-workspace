@@ -108,20 +108,111 @@ ORIENTATION_LITERAL_RE = re.compile(
     r"\b(" + "|".join(sorted(ORIENTATION_LITERALS, key=len, reverse=True)) + r")\b"
 )
 COMMENT_RE = re.compile(r"//.*$")
+BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", flags=re.DOTALL)
 COMP_CONSTS_OPEN_RE = re.compile(r"\.comp\s+Consts\s*\{")
+NUMERIC_LITERAL_RE = re.compile(r"(?<![A-Za-z_0-9.])\d+(?![A-Za-z_0-9.])")
+
+# Comparison-ops detector (<, <=, >, >=). Body comparisons are usually
+# legitimate, so this is opt-in.
+LINT_COMPARISON = False
 
 
-def lint_orientation_literals(source: str) -> list[tuple[int, str, str]]:
-    """Flag orientation literals appearing in body code (outside Consts).
+def _strip_block_comments(source: str) -> str:
+    """Blank out /* ... */ while preserving line count for accurate lineno."""
+    return BLOCK_COMMENT_RE.sub(
+        lambda m: re.sub(r"[^\n]", " ", m.group(0)), source
+    )
 
-    Per 4-style.md: body reads orientation values from Consts via c.<rel>(...);
-    hardcoding fixes the body to one task in the family.
+
+def _value_context(line: str, op_start: int, op_end: int) -> bool:
+    """True iff a value-shaped token sits on both sides of [op_start, op_end).
+
+    Value-shaped means: ends in alnum/`_`/`)`/`]` on the left, starts with
+    alnum/`_`/`(`/`[`/unary-`-` on the right (whitespace allowed). So `:-`
+    rule separators, `../` paths, and `=` adjacency don't qualify.
     """
-    findings: list[tuple[int, str, str]] = []
+    j = op_start - 1
+    while j >= 0 and line[j].isspace():
+        j -= 1
+    if j < 0:
+        return False
+    lc = line[j]
+    if not (lc.isalnum() or lc == "_" or lc in ")]"):
+        return False
+    k = op_end
+    while k < len(line) and line[k].isspace():
+        k += 1
+    if k >= len(line):
+        return False
+    rc = line[k]
+    return rc.isalnum() or rc == "_" or rc in "([-"
+
+
+def _find_arithmetic(line: str) -> list[tuple[int, str]]:
+    """Find binary arithmetic ops (+, -, *, /, %) with value-shaped operands."""
+    out: list[tuple[int, str]] = []
+    for m in re.finditer(r"[+\-*/%]", line):
+        i = m.start()
+        if _value_context(line, i, i + 1):
+            out.append((i, line[i]))
+    return out
+
+
+def _find_comparison(line: str) -> list[tuple[int, str]]:
+    """Find ordering comparison ops (<, <=, >, >=) with value-shaped operands.
+
+    Skips Souffle subtype `<:` and lattice arrow `<=>`.
+    """
+    out: list[tuple[int, str]] = []
+    i = 0
+    n = len(line)
+    while i < n:
+        c = line[i]
+        if c == "<":
+            if i + 1 < n and line[i + 1] == ":":
+                i += 2
+                continue
+            if i + 2 < n and line[i + 1] == "=" and line[i + 2] == ">":
+                i += 3
+                continue
+            if i + 1 < n and line[i + 1] == "=":
+                op, end = "<=", i + 2
+            else:
+                op, end = "<", i + 1
+            if _value_context(line, i, end):
+                out.append((i, op))
+            i = end
+        elif c == ">":
+            if i + 1 < n and line[i + 1] == "=":
+                op, end = ">=", i + 2
+            else:
+                op, end = ">", i + 1
+            if _value_context(line, i, end):
+                out.append((i, op))
+            i = end
+        else:
+            i += 1
+    return out
+
+
+def lint_body(source: str) -> list[tuple[str, int, str, str]]:
+    """Flag body code that violates 4-style.md.
+
+    Categories:
+      - 'orientation literal' — TOP, LEFT, etc. (must come from Consts)
+      - 'nonzero literal'     — bare integer != 0
+      - 'arithmetic'          — +, -, *, /, %
+      - 'comparison' (gated)  — <, <=, >, >=; enabled by LINT_COMPARISON
+
+    Returns (category, lineno, match, raw_line). Skips // and /* */
+    comments and `.comp Consts { ... }` blocks.
+    """
+    findings: list[tuple[str, int, str, str]] = []
+    src = _strip_block_comments(source)
     in_consts = False
     consts_depth = 0
 
-    for lineno, raw_line in enumerate(source.splitlines(), start=1):
+    for lineno, raw_line in enumerate(src.splitlines(), start=1):
         line = COMMENT_RE.sub("", raw_line)
 
         if not in_consts and COMP_CONSTS_OPEN_RE.search(line):
@@ -136,8 +227,17 @@ def lint_orientation_literals(source: str) -> list[tuple[int, str, str]]:
             continue
 
         for m in ORIENTATION_LITERAL_RE.finditer(line):
-            findings.append((lineno, m.group(1), raw_line.rstrip()))
+            findings.append(("orientation literal", lineno, m.group(1), raw_line.rstrip()))
+        for m in NUMERIC_LITERAL_RE.finditer(line):
+            if m.group(0) != "0":
+                findings.append(("nonzero literal", lineno, m.group(0), raw_line.rstrip()))
+        for _, op in _find_arithmetic(line):
+            findings.append(("arithmetic", lineno, op, raw_line.rstrip()))
+        if LINT_COMPARISON:
+            for _, op in _find_comparison(line):
+                findings.append(("comparison", lineno, op, raw_line.rstrip()))
 
+    findings.sort(key=lambda f: (f[1], f[0]))
     return findings
 
 
@@ -198,11 +298,14 @@ def _invoke_souffle(
     dl_path: Path, input_rows: list[list[int]]
 ) -> list[tuple[str, list[list[int]], list[tuple[int, int]]]]:
     facts = grid_to_facts(input_rows)
+    # Bound runaway souffle: some rule shapes can hang the evaluator
+    # and exhaust system memory.
     result = subprocess.run(
         ["souffle", "-D-", "-w", str(dl_path)],
         input=facts,
         capture_output=True,
         text=True,
+        timeout=5,
     )
     if result.returncode != 0:
         raise RuntimeError(f"souffle exited {result.returncode}:\n{result.stderr}")
@@ -388,12 +491,12 @@ def cmd_one(stem: str) -> int:
                 print(line)
 
     source = (SOLVERS_DIR / f"{stem}.dl").read_text()
-    findings = lint_orientation_literals(source)
+    findings = lint_body(source)
     if findings:
         print()
-        print(f"--- {len(findings)} orientation-literal warning(s) in {stem}.dl ---")
-        for lineno, lit, line in findings:
-            print(f"  L{lineno}: {lit}  →  {line.strip()}")
+        print(f"--- {len(findings)} lint finding(s) in {stem}.dl ---")
+        for cat, lineno, match, line in findings:
+            print(f"  L{lineno}: {cat} `{match}`  →  {line.strip()}")
 
     return 0 if result.all_pass else 1
 
@@ -433,17 +536,17 @@ def cmd_all() -> int:
     lint_findings: dict[str, list] = {}
     for stem in stems:
         source = (SOLVERS_DIR / f"{stem}.dl").read_text()
-        findings = lint_orientation_literals(source)
+        findings = lint_body(source)
         if findings:
             lint_findings[stem] = findings
 
     if lint_findings:
         print()
         total = sum(len(v) for v in lint_findings.values())
-        print(f"--- orientation-literal warnings: {total} across {len(lint_findings)} solver(s) ---")
+        print(f"--- lint findings: {total} across {len(lint_findings)} solver(s) ---")
         for stem in sorted(lint_findings):
-            for lineno, lit, line in lint_findings[stem]:
-                print(f"  {stem}.dl:L{lineno}: {lit}  →  {line.strip()}")
+            for cat, lineno, match, line in lint_findings[stem]:
+                print(f"  {stem}.dl:L{lineno}: {cat} `{match}`  →  {line.strip()}")
 
     print()
     print(f"summary: {len(results) - len(failed)}/{len(results)} solvers")
