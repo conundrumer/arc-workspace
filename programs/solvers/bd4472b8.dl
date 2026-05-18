@@ -17,6 +17,12 @@
     .decl header_dir(d: Dir)     header_dir(TOP).
     .decl across_dir(d: Dir)     across_dir(LEFT).
     .decl body_start(n: number)  body_start(2).
+
+    // Shift past the header: -body_start along header_dir.
+    .decl body_shift(p: Position)
+    body_shift(Delta) :-
+        header_dir(D), body_start(Bs),
+        edge_delta(D, -Bs, Delta).
 }
 
 .init c = Consts
@@ -68,14 +74,15 @@ fill(P_grid_in, Col, $Recursive()) :-
     compose(Off, T_delta, Full_off),             // total offset
     same_dist(D, Full_off, P_grid_in).           // input cell at that dist
 
-// $Mod: direct mod arithmetic.
-// TODO: find alternative with no arithmetic
-fill(P_grid_in, Col, $Mod()) :-
-    in(P_grid_in, _),                            // input cell
-    c.header_dir(D), c.body_start(Bs),           // cycling axis, base offset
-    dist(P_grid_in, D, T_in), T_in >= Bs,        // past the header
-    width(W),                                    // cycle length
-    header_color((T_in - Bs) % W, Col).          // mod into header
+// $Mod: stride decomposition into header_color, after shifting past the
+// header. Header cells produce negative dist after the shift; stride's
+// T >= 0 guard rejects them, so the rule doesn't fire.
+fill(P, Col, $Mod()) :-
+    in(P, _),                                          // input cell
+    c.body_shift(Delta), compose(P, Delta, P_local),   // shift past header
+    c.header_dir(D), dist(P_local, D, T),              // shifted dist
+    width(W), stride(T, W, 0, _, Idx),                 // cyclic inner offset
+    header_color(Idx, Col).                            // header at that index
 
 // --- Output: candidate per impl -------------------------------------------
 
