@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
-"""Stop hook for arc-workspace sessions.
+"""Stop / SubagentStop hook for arc-workspace sessions.
 
-Activation: scans transcript for `/session ...` invocations. Active unless the
-most recent is `/session meta end`.
+Activation: `/session ...` in the main session transcript, unless the most
+recent invocation is `/session meta end`. SubagentStop uses `transcript_path`
+for the activation check.
 
-Detection: edits since max(last fire, last user message). Capped at FIRE_CAP
-fires per turn. Set FIRE_CAP higher to allow loop-until-no-edits behavior.
+Detection: edits since max(last fire, last user message), capped at FIRE_CAP
+per turn. SubagentStop uses `agent_transcript_path` for fires and edits.
+
+Sounds fire only on Stop.
 """
 
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -22,12 +26,9 @@ Fix any overfitting, leakage, fabrication, verbosity. \
 Flag any gaps, inconsistencies, contradictions, tensions, redundancies."
 
 
-PROMPT += "\nIf nothing to fix, end with <!-- hero -->"
-
-
 def canon_records(transcript_path):
     records = []
-    for line in Path(transcript_path).read_text().splitlines():
+    for line in Path(transcript_path).expanduser().read_text().splitlines():
         if not line.strip():
             continue
         try:
@@ -98,22 +99,36 @@ def has_edits_after(records, window_ts):
     return False
 
 
+def play_sound(name):
+    path = Path(__file__).parent / "sounds" / f"{name}.wav"
+    subprocess.run(["afplay", str(path)], check=False)
+
+
 def main():
     event = json.load(sys.stdin)
-    path = event.get("transcript_path")
-    if not path:
+    is_subagent = event.get("hook_event_name") == "SubagentStop"
+    main_path = event.get("transcript_path")
+    detect_path = event.get("agent_transcript_path") if is_subagent else main_path
+    if not main_path or not detect_path:
         sys.exit(0)
-    records = canon_records(path)
-    if not session_active(records):
+    if not session_active(canon_records(main_path)):
         sys.exit(0)
-    fire_count, fire_ts, user_ts = fire_count_and_ts(records)
-    if fire_count >= FIRE_CAP:
-        sys.exit(0)
+    detect_records = canon_records(detect_path)
+    fire_count, fire_ts, user_ts = fire_count_and_ts(detect_records)
     ws = max(fire_ts, user_ts)
-    if not ws or not has_edits_after(records, ws):
+    edits_pending = bool(ws) and has_edits_after(detect_records, ws)
+    if edits_pending and fire_count >= FIRE_CAP:
+        if not is_subagent:
+            play_sound("gave_up")
         sys.exit(0)
-    print(PROMPT, file=sys.stderr)
-    sys.exit(2)
+    if edits_pending:
+        if not is_subagent:
+            play_sound("continue")
+        print(PROMPT, file=sys.stderr)
+        sys.exit(2)
+    if fire_count > 0 and not is_subagent:
+        play_sound("resolved")
+    sys.exit(0)
 
 
 if __name__ == "__main__":
