@@ -31,6 +31,18 @@ Models are typically mixes of two kinds of content:
 - *Data*: facts a program can derive from the train pairs. Flattens composition — represents a relationship as data with the structural decomposition hidden. The relationship can be at any level (cell mappings, shape symmetries, intermediate states).
 - *Ops*: composed primitives. The rule literally *is* composition. Makes the structure that's there visible.
 
-At any choice node, a choice can lean toward data (flatten) or toward ops (expose). Different op compositions of the same task are also distinct models — coverage extends within op-leaning territory.
+At any choice node, a choice can lean toward data (flatten) or toward ops (expose).
+
+**Alt model vs alt impl.** Two candidates are the same model iff (a) same Consts shape — same parameters, field types, relations — and (b) same outputs for every (input × Consts-value) in that shape. Different on either → different models. Output divergence on any single input (current Consts fixed) settles different-model when it fires; Consts-shape divergence catches the case where two candidates coincide on outputs for the current Consts but parameterize into different sibling families. Op compositions split the same way: re-decomposing the same property over the same Consts is an alt impl. Coverage extends within op-leaning territory only when an op composition commits to a different Consts shape.
+
+**Worked examples — alt models.**
+
+- *44f52bb0 `$Direct` vs `$GroupMatch`.* `$Direct` Consts: `syms` (one D4 subset), `sym_out`, `asym_out`. Body: input invariant under every D in `c.syms` → emit `sym_out`; else `asym_out`. `$GroupMatch` Consts: `mapping_id`, `mapping_sym` (id → sym set members), `mapping_out` (id → grid). Body: count-trick checks each group ⊆ input's invariance set; the largest matched group wins; emit that entry's grid. Outputs coincide on every input under this task's Consts. Sibling families diverge — `$Direct`'s siblings are binary symmetry-classification tasks (parameter: which sym set); `$GroupMatch`'s extend to multi-class symmetry-id tasks where ≥3 groups map to distinct outputs (parameter: the full mapping table).
+
+- *34b99a2b `$SetMatch` vs `$Xor`.* `$SetMatch` Consts: `combine_member` + `combine_out` — a pattern → output color table. Body: count-trick set-match against each pattern. `$Xor` Consts: `bg` + `out_fill` — two color sentinels. Body: count contributing non-bg cells per output position; emit `out_fill` iff exactly one. Different Consts shapes, different sibling families (pattern-substitution vs per-cell XOR-fold), different priors (lookup vs algebraic combination).
+
+**Worked example — alt impls.**
+
+- *Three alternative bodies for 44f52bb0 `$Direct`.* Orbit walks orbit equivalences via transitive closure; Closed computes the generated group closure explicitly then runs the invariance check over the closure; Patterns enumerates all symmetric grids in Consts and does membership lookup. All three would share `$Direct`'s Consts shape — single sym set + two output grids — and produce identical outputs on every input. Each is an alt impl of `$Direct`; adding any as a Choice case wouldn't extend coverage — same family, same prior, same generalization.
 
 Useful coverage gives one model per plausible family. The prior becomes visible from each plausible angle.
