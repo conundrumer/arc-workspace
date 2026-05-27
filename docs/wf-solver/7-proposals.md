@@ -53,11 +53,7 @@ Solver populates `tile_in` (dim info; values aren't read by the pipeline) and `g
 }
 ```
 
-Internals collapse via `Dir`:
-
-- **`axis_dim`** is one rule (down from two `row_height` / `col_width`). Keyed by `Dir`, indexed by tile-distance from that edge. Body uses `dist` + `opposite` so the axis identity falls out of the Dir.
-- **`edge_off`** is one rule (down from four `top_off` / `bot_off` / `left_off` / `right_off`). Same `J < I` filter on `axis_dim(D, ...)` for every edge.
-- **`tile_offset`** still has four lookups (Position has four slots), but they're calls into the same `edge_off` relation.
+Internals collapse via `Dir`: `axis_dim`, `edge_off`, and `tile_offset` each generalize across edges/axes in a single rule.
 
 Solver usage:
 
@@ -248,3 +244,28 @@ Position has fixed arity 4 and no recursive records appear in `lib.dl`.
 Composite primitives (`slab_anchor`, `corner_anchor`, `divide_slab`, `divide_2d`, `divide_by_size_2d`, `concat_slab`, `concat_2d`) inherit the fix via the same surface API; their bodies don't need rewriting.
 
 The "no Position destructure" rule in `4-style.md` continues to apply to solver bodies — destructure lives inside `lib.dl`'s wrappers only.
+
+### 3.8 Equivariance classification for primitives
+
+Primitives that use a specific Position slot (T, B, L, R) in their formula fall into two categories depending on whether the slot choice is observable in the relation's input-output behavior.
+
+**Equivariant.** The relation commutes with D4 transforms: `f(D4(P)) = D4(f(P))`. The formula may use a specific slot internally (e.g., `Ot = T / (Sh+G)`), but the slot choice washes out because the primitive's constraints force the algebra to be symmetric. `divide` and `divide_by_size` are equivariant — flipping the input gives a flipped output.
+
+**Non-equivariant.** The relation does NOT commute with D4. The slot choice produces observably different outputs under different transforms. `wallpaper` (removed) was non-equivariant — for non-divisible frame extents, `T mod period` and `B mod period` give different intile mappings for the same physical cell.
+
+**Diagnostic.** For a primitive `f(P, ...) → (P_out, ...)`: check whether `f(apply(D, P)) = apply(D, f(P))` for all D in D4 and all P in the input domain. Equality → equivariant. Inequality on any (D, P) → non-equivariant.
+
+**Implication for lib design.** Equivariant primitives are safe to use with the apply-sandwich pattern (`apply(D, P, P') → f(P') → apply(D_inv, ...)`) for orientation parameterization. Non-equivariant primitives need an explicit anchor parameter (e.g., `anchor: DiagDir`) or should be avoided in favor of equivariant alternatives.
+
+**Observed instance.** 332efdb3 models a period-2 pattern via `divide_by_size` with K=1 G=1 (equivariant). A non-equivariant `wallpaper` primitive using `T mod period` directly was considered and rejected.
+
+## 4. Process proposals
+
+### 4.1 Lib addition protocol
+
+New primitives follow: task-local → propose → lib.
+
+1. **Task-local.** Write the primitive directly in the solver's Consts or body. Run it; confirm it works in context.
+2. **Propose.** Surface the primitive to the user for review. Name it, describe the operation, show the solver-local version.
+3. **Lib (on approval).** Move to `programs/lib.dl`. Update callers.
+

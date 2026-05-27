@@ -42,9 +42,30 @@ GRID_3x3(template,
     1, 2, 1)
 ```
 
+## `GRID_HxW` with multi-pattern eid-keying
+
+Multiple visual patterns (each a distinct `GRID_HxW`) joined to a shared eid-keyed relation via derive rules.
+
+```
+.decl p0(p: Position, col: Color)
+GRID_3x3(p0, 0,1,0, 1,1,1, 0,1,0)
+
+.decl p1(p: Position, col: Color)
+GRID_3x3(p1, 1,0,1, 0,0,0, 1,0,1)
+
+.decl pattern_member(eid: number, p: Position, col: Color)
+pattern_member(0, P, C) :- p0(P, C), C != 0.
+pattern_member(1, P, C) :- p1(P, C), C != 0.
+
+.decl pattern_out(eid: number, col: Color)
+pattern_out(0, 3). pattern_out(1, 8).
+```
+
+The GRID gives visual shape; the derive rule filters (e.g., `C != 0` for non-bg members) and tags with the eid.
+
 ## Set-keyed relations via parent/child tables
 
-A relation keyed by a multiset of members declares as two tables glued by an `eid`: parent holds `(eid, out-fields)`, child holds `(eid, member-fields)`. The match uses the count-trick — an entry fires when the count of matched members equals the entry's total member count. Used for combine tables where member order doesn't matter.
+A relation keyed by a multiset of members declares as two tables glued by an `eid`: parent holds `(eid, out-fields)`, child holds `(eid, member-fields)`. The match uses the count-trick — an entry fires when the count of matched members equals the entry's total member count.
 
 ```
 .decl combine_member(eid: number, p_outer: Position, c: Color)
@@ -69,6 +90,24 @@ A symmetric relation declared one direction, plus `mapping(B, A) :- mapping(A, B
 mapping(5, 8).
 mapping(B, A) :- mapping(A, B).
 ```
+
+## `divide_by_size` (K, G) parameter space
+
+Step size between tile starts is `K + G`. Different (K, G) splits of the same step model the same spatial rhythm with different tile/gap semantics.
+
+For a frame extent H and effective step S = K + G, divisibility requires `(H + G) % S = 0`.
+
+Concrete: period-2 pattern over H=7.
+
+| K | G | Step | Divisibility | Tile semantics |
+|---|---|------|-------------|----------------|
+| 2 | 0 | 2 | `7 % 2 = 1` — fails | — |
+| 1 | 1 | 2 | `8 % 2 = 0` ✓ | bg cell = tile, dot cell = gap |
+| 3 | -1 | 2 | `6 % 2 = 0` ✓ | adjacent tiles overlap by 1 row |
+
+K=2 G=0 (the visual period) fails for odd H. K=1 G=1 reframes bg as tile and dot as gap. K=3 G=-1 uses shared-boundary overlap.
+
+Before adding a new primitive for a periodic pattern, check whether an existing divide/divide_by_size encoding covers it via a different (K, G) split.
 
 ## 1D `divide` composed to 2D
 
