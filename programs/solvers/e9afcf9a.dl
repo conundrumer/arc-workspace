@@ -1,3 +1,4 @@
+// e9afcf9a
 // Layout: 2×6 cell permutation. At odd column indices, rows 0 and 1 swap;
 // even columns are unchanged.
 //

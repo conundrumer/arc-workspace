@@ -1,3 +1,4 @@
+// c7d4e6ad
 // Cells of color in c.targets are substituted with a per-slice replacement
 // color. Slices run along c.axis. Two impls for choosing the
 // replacement; out's choice column tags each:

@@ -1,3 +1,4 @@
+// fafffa47
 // Layout: 2 vertically-stacked 3×3 subgrids. Output is the per-cell pair-fold.
 //
 // out's choice column = [d, b]:

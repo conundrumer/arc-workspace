@@ -1,3 +1,4 @@
+// a85d4709
 // Each slice along c.axis is recolored by its content. Two impls for
 // choosing the recolor; out's choice column tags each:
 //

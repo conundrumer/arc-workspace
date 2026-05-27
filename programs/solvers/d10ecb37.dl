@@ -1,3 +1,4 @@
+// d10ecb37
 // Output is the c.diag-anchored sub-frame of input. Input cells project
 // into the sub-frame by matching distances to the two corner edges.
 

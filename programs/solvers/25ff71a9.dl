@@ -1,3 +1,4 @@
+// 25ff71a9
 // Shift the grid by c.shift_k toward c.shift_dir; fill the c.shift_k rows at
 // the opposite edge with c.bg.
 

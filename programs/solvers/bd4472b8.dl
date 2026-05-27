@@ -1,3 +1,4 @@
+// bd4472b8
 // Header rows (depth body_start along c.header_dir) pass through. Body rows
 // are filled per-row uniformly: row at distance T from header edge gets
 // header[(T - body_start) mod W], where W = grid extent perpendicular to

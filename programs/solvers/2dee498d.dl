@@ -1,3 +1,4 @@
+// 2dee498d
 // Layout: input is N identical tiles along the tile axis; output is one
 // tile. Set semantics dedupes the redundant copies.
 

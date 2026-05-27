@@ -1,3 +1,4 @@
+// 68b16354
 // Per-cell d4 transform of input. Consts hold the d4 (FLIP_TB).
 
 #include "../lib.dl"

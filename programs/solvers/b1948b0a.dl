@@ -1,3 +1,4 @@
+// b1948b0a
 // Color substitution via a mapping relation. Cells whose color is a mapping
 // key get the mapped target color; others pass through.
 

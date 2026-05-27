@@ -1,3 +1,4 @@
+// 68b67ca3
 // Layout: 6×6 input collapsed to 3×3 by per-axis division; the anchor cell
 // of each inner subgrid is kept, others drop.
 //

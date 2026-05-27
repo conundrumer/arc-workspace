@@ -1,3 +1,4 @@
+// be03b35f
 // Three quadrant-witnesses (TL, TR, BL) collapse to one canonical 2×2.
 // Each template entry pairs a quadrant DiagDir with the D4 that takes that
 // quadrant's anchored cells to the canonical orientation. Set-dedup over

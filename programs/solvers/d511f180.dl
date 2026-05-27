@@ -1,3 +1,4 @@
+// d511f180
 // Color swap via a symmetric mapping relation. Same body as b1948b0a; the
 // mapping is declared one-direction and closed under symmetry by a rule.
 

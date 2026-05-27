@@ -1,3 +1,4 @@
+// e345f17b
 // Layout: 1×2 horizontally-side-by-side 4×4 subgrids. Output is the per-cell pair-fold.
 //
 // out's choice column = [d, b]:

@@ -1,3 +1,4 @@
+// a8610ef7
 // Recolor each non-bg cell by its image under c.mirror. Two impls; out's
 // choice column tags each:
 //

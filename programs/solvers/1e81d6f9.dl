@@ -1,3 +1,4 @@
+// 1e81d6f9
 // Marker cell at c.target_offset from c.target_corner identifies a target
 // color; cells of that color elsewhere in the grid are erased to c.bg. The
 // marker cell itself is kept.

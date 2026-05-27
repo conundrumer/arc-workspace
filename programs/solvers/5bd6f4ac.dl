@@ -1,3 +1,4 @@
+// 5bd6f4ac
 // Output is a sub-frame anchored at c.diag. Input cells project into the
 // sub-frame by matching distances to the two corner edges.
 

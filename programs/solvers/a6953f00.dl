@@ -1,3 +1,4 @@
+// a6953f00
 // Output is a 2×2 corner crop. Both TL- and TR-anchored crops are valid;
 // the alternatives are enumerated as separate candidates via a choice_id
 // column on out. The runner accepts if any candidate matches the expected

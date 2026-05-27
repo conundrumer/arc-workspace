@@ -1,3 +1,4 @@
+// eb281b96
 // Layout: 4×1 vertical fold. Alternating IDENTITY / FLIP_TB tiles
 // overlap by one row (gap=-1) so each boundary row is shared. Output
 // rows trace a triangle wave between the input's first and last rows.

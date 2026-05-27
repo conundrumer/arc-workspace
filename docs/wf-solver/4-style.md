@@ -25,6 +25,7 @@ Formal parameters of `divide` and `tile_pos` are `p_outer` / `p_inner` — they 
 ## File structure
 
 - One file per task (`<task_id>.dl`); multi-impl cases live in the same file, distinguished by an ADT `Choice` column on `out`.
+- First line: `// <task_id>`.
 - `#include "../lib.dl"` at top.
 - `.comp Consts { ... }` declares task-wide data; `.init c = Consts` exposes it as `c.<rel>`.
 - Inside Consts, `.init helpers = ConstsHelpers` makes shared helpers (`frame_pos`, `tile_pos`) available as `helpers.<rel>(...)` in data declarations. The body has no access.
@@ -33,6 +34,7 @@ Formal parameters of `divide` and `tile_pos` are `p_outer` / `p_inner` — they 
 Skeleton (single-impl):
 
 ```
+// <task_id>
 // Doc header — describe task.
 
 #include "../lib.dl"
