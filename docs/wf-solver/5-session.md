@@ -12,7 +12,9 @@ A solver session writes a Souffle solver (`programs/solvers/<task_id>.dl`) model
 - Analyze the task.
 - Draft from the reference.
 - Run against materialized train+test pairs (`uv run python programs/run_dl.py <task_id>`).
-- Once the primary impl works, propose alternative modeling forms.
+- Iterate until the impl works
+- Run `/revise` on the solver file.
+- Propose alternative modeling forms.
 - Iterate with the user.
 
 ## `next`
