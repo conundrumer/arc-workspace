@@ -7,14 +7,15 @@ Usage:
     scripts/inspect-session.py --solver-only  # window, omit meta sessions
 
 Multi-session window: the boundary is the most recent meta session that
-ended (any user message containing META SESSION END, legacy META SOLVER
-END, or `/session meta end`). Later sessions are included if their first
+ended (a user message with a line equal to META SESSION END or legacy
+META SOLVER END, or a `/session meta end` invocation — whether expanded
+into command tags or left as raw text). Later sessions are included if their first
 user message starts a session — legacy SESSION START / SOLVER START / META
 variants, or `/session ...` slash command.
 
 --solver-only filters the window to non-meta sessions. A session is meta
 if its first user message starts with META SESSION START, META SOLVER
-START, or `/session meta` (excluding `/session meta end`). Ignored when a
+START, or a command-form `/session meta` (excluding `/session meta end`). Ignored when a
 session-id is provided.
 """
 
@@ -85,8 +86,15 @@ def has_meta_end(records):
         content = r.get("message", {}).get("content")
         if not isinstance(content, str):
             continue
-        if any(line.strip() in META_END_KEYWORDS for line in content.splitlines()):
-            return True
+        for line in content.splitlines():
+            s = line.strip()
+            if s in META_END_KEYWORDS:
+                return True
+            # Inline `/session meta end` trailing other prose stays raw text —
+            # the harness only expands a slash command into command tags when it
+            # leads the message. Catch the unexpanded form here.
+            if s.startswith("/session meta end"):
+                return True
         args = session_command_args(content)
         if args is not None:
             first = args.splitlines()[0].strip() if args else ""
