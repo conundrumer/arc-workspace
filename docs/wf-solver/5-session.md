@@ -28,3 +28,11 @@ A solver session writes a Souffle solver (`programs/solvers/<task_id>.dl`) model
 ## Python as fallback
 
 Python is available as a fallback in special circumstances (`programs/solvers/<task_id>.py`, run via `programs/run.py`).
+
+## Lib addition protocol
+
+A new primitive earns its place in `programs/lib.dl` by working in a real task first, not by looking general. The order:
+
+1. **Task-local.** Write the primitive in the solver's Consts or body. Run it; confirm it works in context.
+2. **Propose.** Surface it to the user — name it, describe the operation, show the solver-local version.
+3. **Lib (on approval).** Move to `programs/lib.dl`. Update callers.

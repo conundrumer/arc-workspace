@@ -18,6 +18,12 @@ The body is symmetric under variations of the task that don't change its essenti
 
 **Orientation.** A task may privilege a specific direction, axis, or transformation; absent that, no choice is privileged. The 4-distance Position encodes this — no corner serves as origin. The primitive types Dir, Axis, DiagDir, DiagAxis, and D4 express orientation choices as values, so a sibling task with different orientation swaps a Consts value rather than restructuring the body.
 
+**Equivariance.** Whether a primitive is safe under orientation parameterization is a property of the primitive: does it commute with D4? A primitive `f(P, ...) → (P_out, ...)` is *equivariant* when `f(apply(D, P)) = apply(D, f(P))` for every D in D4 and every P in its domain. The formula may read a specific Position slot internally — `divide`'s `O = Near / (Sh+G)` works from the near edge — yet the slot choice washes out, because the primitive's constraints force the algebra to be symmetric: flip the input and the output flips with it. `divide` and `divide_by_size` are equivariant.
+
+A primitive is *non-equivariant* when the slot choice is observable — it yields different outputs under different transforms of the same physical cell. The diagnostic is the equality above: inequality on any (D, P) means non-equivariant. A primitive that computes its intile mapping as `T mod period` fails it — for a non-divisible frame extent, `T mod period` and `B mod period` give different mappings for one cell.
+
+Equivariant primitives are safe with the apply-sandwich (`apply(D, P, P') → f(P') → apply(D_inv, ...)`). A non-equivariant primitive needs an explicit anchor parameter (e.g. `anchor: DiagDir`), or should be replaced by an equivariant alternative: 332efdb3 models its period-2 pattern via `divide_by_size` with K=1 G=1 rather than a `T mod period` primitive.
+
 ## Coverage
 
 A task can be modeled multiple ways — each model claims the task is an instance of some task family. Modeling the same task under several families gives coverage over its plausible identities. ARC training tasks are intended to teach core knowledge priors in pure form; coverage surfaces which prior the task could be teaching.
