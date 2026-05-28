@@ -15,11 +15,14 @@ Souffle is required for the Datalog (`.dl`) solvers:
 brew install souffle    # macOS; see souffle-lang.github.io for other OSes
 ```
 
+The `.dl` solvers also need a C++ compiler; `run_dl.py` builds their functor
+library automatically.
+
 ## Layout
 
 ```
 src/arc/         core library (patch DSL parser, task model, materializer)
-programs/        ARC solver work — Souffle (.dl) and Python (.py) impls; lib + per-task solvers + runners
+programs/        Souffle (.dl) solvers — lib primitives + C++ functors + per-task solvers + runner
 scripts/         CLI utilities
 data/upstream/   pinned arc-agi-1 + arc-agi-2 submodules
 data/patches/    .arcpatch corrections (canonical + variants A/B/C)

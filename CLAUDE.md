@@ -13,12 +13,10 @@ src/arc/
   materialize.py compose upstream + patches → file dict
   jsonio.py      custom JSON formatter
 programs/
-  lib.py           Python primitives for solvers
   lib.dl           Souffle primitives (types, body relations, Consts helpers)
-  solvers/<id>.py  per-task Python solver
+  lib_functors.cpp C++ functors backing lib.dl's dispatch/projection primitives
   solvers/<id>.dl  per-task Souffle solver
-  run.py           run Python solvers (all or one)
-  run_dl.py        run Souffle solvers (all or one)
+  run_dl.py        run Souffle solvers (all or one); auto-builds lib_functors
 scripts/
   materialize.py writes data/tasks/
 data/
@@ -36,8 +34,6 @@ docs/
 ```
 uv run pytest -q
 uv run python scripts/materialize.py
-uv run python programs/run.py             # run all Python solvers
-uv run python programs/run.py <task_id>   # run one
 uv run python programs/run_dl.py          # run all Souffle solvers
 uv run python programs/run_dl.py <stem>   # run one
 ```
