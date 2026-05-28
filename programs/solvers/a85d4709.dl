@@ -2,19 +2,21 @@
 // Each slice along c.axis is recolored by its content. Two impls for
 // choosing the recolor; out's choice column tags each:
 //
-//   $SetMatch()       — set-keyed slice template; matching entry's
-//                       c.mapping_out recolors the slice (count trick)
+//   $Lookup()         — set-keyed slice template; matching entry's
+//                       c.mapping_out recolors the slice (by set-equality)
 //   $MarkerPosition() — c.marker cell's within-slice position keys
 //                       c.position_color for the recolor
 
 #include "../lib.dl"
 
-.type Choice = SetMatch {} | MarkerPosition {}
+.type Choice = Lookup {} | MarkerPosition {}
+
+.type SliceMember = [p: Position, col: Color]
 
 .comp Consts {
     .decl axis(a: Axis)  axis(HORIZONTAL).
 
-    // --- $SetMatch ---
+    // --- $Lookup ---
 
     .decl mapping_member(eid: number, p_inner: Position, c: Color)
     .decl mapping_out(eid: number, c_out: Color)
@@ -41,6 +43,10 @@
 
 .init c = Consts
 
+.init slice_match = KeyedSetCompare<Position, SliceMember>
+slice_match.pattern_member(Eid, [P_inner, C]) :- c.mapping_member(Eid, P_inner, C).
+slice_match.observed_member(P_across, [P_inner, C]) :- slice_cell(P_across, P_inner, C).
+
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
@@ -49,17 +55,15 @@ cell_split(P, P_inner, P_across) :- in(P, _), c.axis(A), split(P, A, P_inner, P_
 
 .decl out(p: Position, col: Color, c: Choice)
 
-// --- $SetMatch ---
+// --- $Lookup ---
 
 .decl slice_cell(p_across: Position, p_inner: Position, col: Color)
 slice_cell(P_across, P_inner, Col) :- in(P, Col), cell_split(P, P_inner, P_across).
 
-out(P, Out_C, $SetMatch()) :-
+out(P, Out_C, $Lookup()) :-
     cell_split(P, _, P_across),
-    c.mapping_out(Eid, Out_C),
-    N = count : { c.mapping_member(Eid, _, _) },                  // template size
-    N = count : { c.mapping_member(Eid, P_inner, C),              // members matched
-                  slice_cell(P_across, P_inner, C) }.
+    c.mapping_out(Eid, Out_C),                                    // entry's recolor
+    slice_match.equals(P_across, Eid).                            // slice content == entry's template
 
 // --- $MarkerPosition ---
 

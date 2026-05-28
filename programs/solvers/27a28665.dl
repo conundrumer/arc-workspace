@@ -2,7 +2,7 @@
 // Silhouette → 1×1 output. Input is bg + one non-bg color over a 3×3
 // frame; non-bg cells form a shape. Two models:
 //
-//   $Lookup()   — full shape → output table; set-match via count-trick.
+//   $Lookup()   — full shape → output table; silhouette == pattern.
 //   $Classify() — extract (center lit, corner count) and branch.
 
 #include "../lib.dl"
@@ -71,6 +71,10 @@
 
 .init c = Consts
 
+.init lookup_match = KeyedSetCompare<number, Position>
+lookup_match.pattern_member(Eid, P) :- c.pattern_member(Eid, P).
+lookup_match.observed_member(0, P)  :- silhouette(P).
+
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
@@ -81,10 +85,8 @@ silhouette(P) :- in(P, Col), !c.bg(Col).
 
 // --- $Lookup ---
 out(ORIGIN, Col_out, $Lookup()) :-
-    c.pattern_out(Eid, Col_out),
-    N = count : { c.pattern_member(Eid, _) },                   // pattern size
-    N = count : { c.pattern_member(Eid, P), silhouette(P) },    // pattern ⊆ silhouette
-    N = count : { silhouette(_) }.                              // sizes match
+    c.pattern_out(Eid, Col_out),                                // entry's output color
+    lookup_match.equals(0, Eid).                                // silhouette == entry's shape
 
 // --- $Classify ---
 .decl center_silhouetted(p: Position)

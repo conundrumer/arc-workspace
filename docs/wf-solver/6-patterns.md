@@ -65,7 +65,7 @@ The GRID gives visual shape; the derive rule filters (e.g., `C != 0` for non-bg 
 
 ## Set-keyed relations via parent/child tables
 
-A relation keyed by a multiset of members declares as two tables glued by an `eid`: parent holds `(eid, out-fields)`, child holds `(eid, member-fields)`. The match uses the count-trick — an entry fires when the count of matched members equals the entry's total member count.
+A relation keyed by a multiset of members declares as two tables glued by an `eid`: parent holds `(eid, out-fields)`, child holds `(eid, member-fields)`. The match runs through `KeyedSetCompare` (`lib.dl`) — the child table feeds `pattern_member`, the observed cells feed `observed_member`, and `covers` / `equals` test containment / equality. The parent table maps the matched `eid` to its output.
 
 ```
 .decl combine_member(eid: number, p_outer: Position, c: Color)
@@ -74,12 +74,18 @@ A relation keyed by a multiset of members declares as two tables glued by an `ei
 combine_member(0, [0,1,0,0], 0). combine_member(0, [1,0,0,0], 0). combine_out(0, 2).
 combine_member(1, [0,1,0,0], 9). combine_member(1, [1,0,0,0], 0). combine_out(1, 0).
 
+.type CombineMember = [p: Position, col: Color]
+.init combine_match = KeyedSetCompare<Position, CombineMember>
+combine_match.pattern_member(Eid, [P_outer, C]) :- c.combine_member(Eid, P_outer, C).
+combine_match.observed_member(P_grid_out, [P_tile, C]) :-
+    decompose(P_grid_in, P_tile, P_grid_out, _), in(P_grid_in, C).
+
 out(P_grid_out, Col_out) :-
     c.combine_out(Eid, Col_out),
-    N = count : { c.combine_member(Eid, _, _) },
-    N = count : { c.combine_member(Eid, P_tile, C),
-                  decompose(P_grid_in, P_tile, P_grid_out, _), in(P_grid_in, C) }.
+    combine_match.equals(P_grid_out, Eid).
 ```
+
+`equals` here because the observed tiles at a cell *are* exactly the entry's members; use `covers` where the observed set is a true superset of the pattern.
 
 ## Bidirectional mapping via positive recursion
 

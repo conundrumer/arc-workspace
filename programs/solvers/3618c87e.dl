@@ -15,6 +15,8 @@
 
 .type Choice = PerCell {} | SliceMap {}
 
+.type SliceMember = [p: Position, col: Color]
+
 .comp Consts {
     .decl bg(c: Color)      bg(0).
     .decl marker(c: Color)  marker(1).
@@ -29,6 +31,10 @@
 }
 
 .init c = Consts
+
+.init slice_match = KeyedSetCompare<Position, SliceMember>
+slice_match.pattern_member(0, [P, Col]) :- c.slice_in(P, Col).
+slice_match.observed_member(P_across, [P_inner, Col]) :- slice_cell(P_across, P_inner, Col).
 
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
@@ -59,13 +65,9 @@ landed(P) :-
 
 // --- $SliceMap ---
 
-// Slice content matches c.slice_in (set-keyed count trick).
+// Slice content equals c.slice_in.
 .decl matched_slice(p_across: Position)
-matched_slice(P_across) :-
-    cell_split(_, _, _, P_across),
-    N = count : { c.slice_in(_, _) },                          // total members
-    N = count : { c.slice_in(P_inner, Col),
-                  slice_cell(P_across, P_inner, Col) }.        // matched members
+matched_slice(P_across) :- slice_match.equals(P_across, _).
 
 // --- Output ---
 

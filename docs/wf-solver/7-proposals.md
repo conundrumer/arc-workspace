@@ -77,60 +77,28 @@ Uniform falls out: when all rows share `I_v`, the `sum` aggregations collapse to
 
 The convention name disappears from lib: solvers name their input relation freely (e.g., `tile_data` above), and connect it to the pipeline via `concat.tile_in(...) :- tile_data(...)`. Lib-side, only the component's internal relation names are fixed.
 
-### 3.5 `SetKeyMatch` — set-keyed pattern match
+### 3.5 `KeyedSetCompare` extensions — set-relationship lattice
 
-Pattern: the candidate set at some Key contains every member of pattern Eid (the count-trick from `6-patterns.md`). Inlined today at each use site as two `count : { ... }` clauses. Used by 31d5ba1a (multi-pattern, eid-keyed) and 3618c87e (single pattern, Eid=0). Lift into a component.
+`KeyedSetCompare<Key, Member>` (in `lib.dl`) exposes `covers` / `equals` / `pattern_size`.
+These extensions derive from the same three counts it already computes (`|pattern|`,
+`|observed|`, `overlap`); add one when a real task needs it, not preemptively
+(lib-addition protocol):
 
-```
-.comp SetKeyMatch<Key, Member> {
-    .decl pattern_member(eid: number, m: Member)
-    .decl candidate_member(key: Key, m: Member)
-    .decl matched(key: Key, eid: number)
-    matched(Key, Eid) :-
-        candidate_member(Key, _),
-        pattern_member(Eid, _),
-        N = count : { pattern_member(Eid, _) },
-        N = count : { pattern_member(Eid, M),
-                      candidate_member(Key, M) }.
-}
-```
+- `within(observed, pattern)` — observed ⊆ pattern (`overlap == observed_size`)
+- `disjoint(observed, pattern)` — `overlap == 0`
+- `intersects(observed, pattern)` — `overlap > 0`
+- `observed_size(observed, n)`, `overlap_size(observed, pattern, n)` — projections that
+  unlock nearest / best-overlap selection
 
-Solver wiring — 3618c87e (single pattern):
+**Scope.** The component owns set-relationship derivation. Ranking policy (`best_covered`,
+`nearest`) and approximate / multiset / payload matching sit at or past the edge —
+solver-local or a separate component. Current hints: 3618c87e → an `unmatched` negative,
+44f52bb0 → `best_covered`.
 
-```
-.type SliceMember = [p: Position, col: Color]
-.init slice_match = SetKeyMatch<Position, SliceMember>
-
-slice_match.pattern_member(0, [P, Col]) :- c.slice_in(P, Col).
-slice_match.candidate_member(P_across, [P_inner, Col]) :- slice_cell(P_across, P_inner, Col).
-
-out(P, Col, $SliceMap()) :-
-    cell_split(P, _, P_inner, P_across),
-    slice_match.matched(P_across, _), c.slice_out(P_inner, Col).
-```
-
-Solver wiring — 31d5ba1a (multi-pattern with per-eid output):
-
-```
-.type CombineMember = [p: Position, col: Color]
-.init combine_match = SetKeyMatch<Position, CombineMember>
-
-combine_match.pattern_member(Eid, [P_outer, C]) :- c.combine_member(Eid, P_outer, C).
-combine_match.candidate_member(P_grid_out, [P_tile, C]) :-
-    decompose(P_grid_in, P_tile, P_grid_out, _), in(P_grid_in, C).
-
-out(P_grid_out, Col_out) :-
-    combine_match.matched(P_grid_out, Eid),
-    c.combine_out(Eid, Col_out).
-```
-
-**Type parameters + records.** `.comp Foo<T1, T2>` parameterizes the component over Key and Member types. The Member field is record-typed; the schema lives at the type definition rather than in the component body.
-
-**Impedance — flat fact relations vs record-typed component.** Solver-side relations are typically flat (`slice_in(p: Position, col: Color)`); the component sees one Member field. Each connection rule packs flat values into records via the `[P, Col]` literal at the boundary. One extra rule per direction, typically 2-3 per use. Field ordering in the record matters (positional, not named) — definition is the single source of truth.
-
-**Net win.** 31d5ba1a-style multi-pattern absorbs more boilerplate than the boundary packing costs. Single-pattern (3618c87e) is roughly even — the wiring (pattern, candidate, matched-usage) is the same line count as the bare count-trick (cell_split, two `count : { ... }`).
-
-**Macro fallback.** `#define DEFINE_SET_KEY_MATCH(name, key_type, member_type) \ ...` generates per-use components with flat fields. Avoids records at the cost of Souffle's type-checking until expansion.
+**Global observed set.** When the observed set is global — one set, no
+meaningful key (44f52bb0's invariance set, 27a28665's silhouette) — the call passes a
+constant `0: number` key. A `.type Unit = U {}` singleton keyed on `$U()` would state
+"exactly one observed set" in the type instead of faking it with a dummy int.
 
 ### 3.6 `Ordinal` — sparse → dense rank
 

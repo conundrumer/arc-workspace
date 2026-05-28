@@ -30,10 +30,6 @@
     // against the input's invariance set; the largest matched group wins.
     // Every entry lists IDENTITY; the {IDENTITY}-only entry is the
     // always-matches fallback (size 1 → lowest priority).
-    .decl mapping_id(id: number)
-    mapping_id(0).
-    mapping_id(1).
-
     .decl mapping_sym(id: number, d: D4)
     mapping_sym(0, IDENTITY).
     mapping_sym(0, FLIP_LR).
@@ -47,6 +43,10 @@
 }
 
 .init c = Consts
+
+.init group_match = KeyedSetCompare<number, D4>
+group_match.pattern_member(Id, D) :- c.mapping_sym(Id, D).
+group_match.observed_member(0, D) :- input_inv(D).
 
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
@@ -69,20 +69,14 @@ syms_non_invariant(D) :- non_invariant(D), c.syms(D).
 .decl input_inv(d: D4)
 input_inv(D) :- d4_elem(D), !non_invariant(D).
 
-// Matched entries paired with their group size — set-keyed count trick:
-// present iff every member of the entry's group is in input's invariance set.
-.decl matched_size(id: number, n: number)
-matched_size(Id, N) :-
-    c.mapping_id(Id),
-    N = count : { c.mapping_sym(Id, _) },                       // group size
-    N = count : { c.mapping_sym(Id, D), input_inv(D) }.         // matched members
-
-// Pick the matched entry with the largest group (strictest invariance).
-// Assumes entry sizes are unique; a tie would emit conflicting cells.
+// Pick the largest group the input covers (strictest invariance). The input
+// may be invariant under more than a group requires, so this is containment,
+// not equality. Assumes group sizes are unique; a tie would emit conflicting cells.
 .decl best_id(id: number)
 best_id(Id) :-
-    matched_size(Id, N),
-    N = max N2 : { matched_size(_, N2) }.
+    group_match.covers(0, Id),                                  // group ⊆ invariance set
+    group_match.pattern_size(Id, N),                            // group size
+    N = max N2 : { group_match.covers(0, I2), group_match.pattern_size(I2, N2) }.
 
 // --- Output ---
 

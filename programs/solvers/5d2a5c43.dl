@@ -6,17 +6,20 @@
 //
 //   d (decompose):
 //     $Tile() — pre-tabulated in Consts via tile_pos
-//     $Div()  — derived in body via the divide primitive (c.divide_axis, c.divisor)
+//     $Div()  — derived in body via the divide primitive
 //
 //   b (body):
-//     $SetMatch() — combine table keyed on (outer pos, color); count-trick match
-//     $Or()       — OR via existence: any non-BG input contribution
+//     $Lookup() — combine table keyed on (outer pos, color); set-equality match
+//     $Or()     — OR via existence: any non-BG input contribution
 
 #include "../lib.dl"
 
 .type DecChoice = Tile {} | Div {}
-.type Body      = SetMatch {} | Or {}
+.type Body      = Lookup {} | Or {}
 .type Choice    = [d: DecChoice, b: Body]
+
+.type CombineMember = [p: Position, col: Color]
+.type CombineKey    = [p: Position, dc: DecChoice]
 
 .comp Consts {
     .init helpers = ConstsHelpers
@@ -39,7 +42,7 @@
     .decl divide_gap(g: number)
     divide_gap(1).
 
-    // --- SetMatch body data -----------------------------------------------
+    // --- Lookup body data -----------------------------------------------
     .decl combine_member(eid: number, p_outer: Position, c: Color)
     .decl combine_out(eid: number, c_out: Color)
 
@@ -54,6 +57,11 @@
 }
 
 .init c = Consts
+
+.init combine_match = KeyedSetCompare<CombineKey, CombineMember>
+combine_match.pattern_member(Eid, [P_outer, C]) :- c.combine_member(Eid, P_outer, C).
+combine_match.observed_member([P_grid_out, Dc], [P_tile, C]) :-
+    decompose(P_grid_in, P_tile, P_grid_out, Dc), in(P_grid_in, C).
 
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
@@ -81,14 +89,9 @@ filled(P_grid_out, Dc) :-
 // --- Output ----------------------------------------------------------------
 
 .decl out(p: Position, col: Color, c: Choice)
-out(P_grid_out, Col_out, [Dc, $SetMatch()]) :-
-    dec_choice(Dc),
-    c.frame(P_grid_out),
-    c.combine_out(Eid, Col_out),
-    N = count : { c.combine_member(Eid, _, _) },                  // members in entry
-    N = count : { c.combine_member(Eid, P_tile, C),               // members matched
-                  decompose(P_grid_in, P_tile, P_grid_out, Dc),
-                  in(P_grid_in, C) }.
+out(P_grid_out, Col_out, [Dc, $Lookup()]) :-
+    c.combine_out(Eid, Col_out),                                  // entry's output color
+    combine_match.equals([P_grid_out, Dc], Eid).                 // cell's tiles == entry's members
 
 out(P_grid_out, Col, [Dc, $Or()]) :-
     dec_choice(Dc), c.frame(P_grid_out),        // choice × cell

@@ -234,9 +234,9 @@ concat(P_outer, P_inner, A, G, P_grid) :-
     P_grid = [@keep_axis(A, VERTICAL, GNear), @keep_axis(A, VERTICAL, GFar),
               @keep_axis(A, HORIZONTAL, GNear), @keep_axis(A, HORIZONTAL, GFar)].
 
-// ------------------------------------------------------------
-// Patterns — recurring solver-body shapes built from primitives
-// ------------------------------------------------------------
+// ============================================================
+// Composites — recurring solver-body shapes built from primitives
+// ============================================================
 
 // Same dist-to-edge D for two positions.
 .decl same_dist(d: Dir, p1: Position, p2: Position) inline
@@ -335,6 +335,36 @@ concat_2d(P_outer, P_inner, [Gv, Gh], P_grid) :-
         dist_set(K), dir(D), opposite(D, D_opp), extent(N),
         edge_delta(D, K, P_d), edge_delta(D_opp, N-1-K, P_o),
         compose(P_d, P_o, P).
+}
+
+// Keyed set comparison via the count-trick. Solver populates pattern_member
+// (a catalog of known sets, enumerated by `pattern`) and observed_member (the
+// observed set at each `observed` key); the component exposes `covers`
+// (observed ⊇ pattern), `equals` (set equality), and `pattern_size` (members
+// per pattern, for size-ranked selection over matches). Member is a single
+// type param — a record for multi-field members,
+// a scalar for one-field. Single-pattern sites use pattern = 0; a global
+// observed set uses a constant key.
+.comp KeyedSetCompare<Key, Member> {
+    .decl pattern_member(pattern: number, m: Member)
+    .decl observed_member(observed: Key, m: Member)
+
+    .decl pattern_size(pattern: number, n: number)
+    pattern_size(Pat, N) :- pattern_member(Pat, _), N = count : { pattern_member(Pat, M) }.
+
+    // observed ⊇ pattern: every pattern member is present in the observed set
+    .decl covers(observed: Key, pattern: number)
+    covers(Obs, Pat) :-
+        observed_member(Obs, _),
+        pattern_size(Pat, N),
+        N = count : { pattern_member(Pat, M), observed_member(Obs, M) }.
+
+    // observed == pattern: covers, and the observed set carries no extra members
+    .decl equals(observed: Key, pattern: number)
+    equals(Obs, Pat) :-
+        covers(Obs, Pat),
+        pattern_size(Pat, N),
+        N = count : { observed_member(Obs, M) }.
 }
 
 // ============================================================
