@@ -12,8 +12,10 @@ hooks:
 
 Read `docs/wf-solver/*.md` in order.
 
-Then dispatch on `$ARGUMENTS`:
+Then dispatch on an exact keyword match for `$ARGUMENTS`:
 
 - `solver` — read `programs/lib.dl`.
 - `meta` — run `uv run python scripts/inspect-session.py` (no arg) and read output in full.
 - `meta end` — close the meta session per the protocol in the docs.
+
+Any other `$ARGUMENTS` is an ordinary working request — do not infer a session type and do not run any bootstrap. Proceed with the task using the docs above as context. A meta or solver session is something the user declares with a keyword, never inferred from prose.
