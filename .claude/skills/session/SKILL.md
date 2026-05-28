@@ -3,11 +3,6 @@ name: session
 description: Bootstrap a solver or meta session for arc-workspace.
 argument-hint: [solver|meta|meta end]
 disable-model-invocation: true
-hooks:
-  UserPromptSubmit:
-    - hooks:
-        - type: command
-          command: "echo 'Default to talk — act only on directive verbs.'"
 ---
 
 Read `docs/wf-solver/*.md` in order.
