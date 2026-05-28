@@ -9,4 +9,6 @@ build/
 dist/
 .DS_Store
 archive/
+*.dylib
+*.so
 docs/_session_*.md

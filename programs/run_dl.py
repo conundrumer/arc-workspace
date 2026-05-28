@@ -5,8 +5,8 @@ Usage:
     uv run python programs/run_dl.py <stem>     # run one
 
 For a single stem, encodes each example's input grid as fact lines on stdin,
-invokes `souffle -D- <stem>.dl`, reads the output relation from stdout,
-compares to expected output grid.
+invokes `souffle` on it (linking the functor library; see build_functors),
+reads the output relation from stdout, compares to expected output grid.
 """
 
 import re
@@ -23,7 +23,30 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from arc.task import load as load_task  # noqa: E402
 
-SOLVERS_DIR = REPO_ROOT / "programs" / "solvers"
+PROGRAMS_DIR = REPO_ROOT / "programs"
+SOLVERS_DIR = PROGRAMS_DIR / "solvers"
+FUNCTORS_SRC = PROGRAMS_DIR / "lib_functors.cpp"
+FUNCTORS_LIB = PROGRAMS_DIR / "libfunctors.dylib"
+
+
+def build_functors() -> None:
+    """Compile lib_functors.cpp to the shared library Souffle loads at runtime.
+
+    Skips when the artifact is newer than the source. Called once before the
+    pool spins up — never per-pair, which would race. Solvers can't run without
+    it (lib.dl's primitives call its functors), so a failure here is fatal.
+    """
+    if FUNCTORS_LIB.exists() and FUNCTORS_LIB.stat().st_mtime >= FUNCTORS_SRC.stat().st_mtime:
+        return
+    souffle_prefix = subprocess.run(
+        ["brew", "--prefix", "souffle"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+    subprocess.run(
+        ["clang++", "-std=c++17", "-shared", "-fPIC",
+         f"-I{souffle_prefix}/include",
+         "-o", str(FUNCTORS_LIB), str(FUNCTORS_SRC)],
+        check=True,
+    )
 
 
 def grid_to_facts(rows: list[list[int]]) -> str:
@@ -298,10 +321,11 @@ def _invoke_souffle(
     dl_path: Path, input_rows: list[list[int]]
 ) -> list[tuple[str, list[list[int]], list[tuple[int, int]]]]:
     facts = grid_to_facts(input_rows)
-    # Bound runaway souffle: some rule shapes can hang the evaluator
-    # and exhaust system memory.
+    # -L/-lfunctors load the functor shared library build_functors compiled —
+    # lib.dl's primitives call into it. timeout bounds runaway souffle: some
+    # rule shapes can hang the evaluator and exhaust system memory.
     result = subprocess.run(
-        ["souffle", "-D-", "-w", str(dl_path)],
+        ["souffle", "-D-", "-w", "-L", str(PROGRAMS_DIR), "-lfunctors", str(dl_path)],
         input=facts,
         capture_output=True,
         text=True,
@@ -482,6 +506,7 @@ def all_stems() -> list[str]:
 
 
 def cmd_one(stem: str) -> int:
+    build_functors()
     result = run_task(stem)
     for p in result.pairs:
         if p.ok:
@@ -502,6 +527,7 @@ def cmd_one(stem: str) -> int:
 
 
 def cmd_all() -> int:
+    build_functors()
     stems = all_stems()
 
     # Flatten all (stem, pair) work so the pool sees one big queue.

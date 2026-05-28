@@ -1,6 +1,6 @@
 # Proposals
 
-Forward-looking changes to `.dl` style and primitives. None applied yet — this doc is the working draft.
+Forward-looking changes to `.dl` style and primitives — a working draft.
 
 ## 3. Primitive proposals
 
@@ -165,107 +165,4 @@ out(P, ...) :- some_sparse_indices(K), o.rank(K, R), col.pos(R, P).
 **Ties.** `idx_set` is a set — duplicate K values dedupe. Distinct items mapping to the same K share that K's rank. Useful for grouping; if unique placement is needed, break ties upstream.
 
 **Naming.** "Rank" in pure math means matrix rank / set rank — different concepts. "Ordinal" sidesteps that misappropriation while naming the output (an ordinal position). The operation itself (count of strictly-less-than over a set) matches CS / stats / SQL "dense rank."
-
-### 3.7 Functor-wrapped multi-clause primitives
-
-Multi-clause inline primitives in `lib.dl` multiply Souffle's generated IR. Each call to a primitive with N clauses contributes ×N to the path count of every rule using it: `dist` (×4), `edge_delta` (×4), `apply` (×8), `split` / `divide` / `divide_by_size` / `concat` (×2 each). A rule with three `dist` calls and two `split` calls compiles to 4³ × 2² = 256 IR paths.
-
-Souffle can't prune impossible Dir / Axis / D4 combinations when the dispatch variable comes from a relation lookup (e.g., `c.header_dir(D)`) — the relation could in principle hold any value of its type, so the cross-product survives into IR. A `slab_anchor`-based keep rule with pattern matches on a free `P_out` reached 17,408 IR paths and timed out the interpreter past 60s; the equivalent compose-based rule with no pattern matches on the output record compiled to 1,536 paths and ran in under a second.
-
-The fix is to replace each multi-clause inline with a single-clause inline that destructures the Position and calls a C++ functor; the functor does the dispatch in C++:
-
-```
-.functor dist_proj(d: Dir, t: number, b: number, l: number, r: number) : number
-
-.decl dist(p: Position, d: Dir, k: number) inline
-dist(P, D, K) :- P = [T, B, L, R], K = @dist_proj(D, T, B, L, R).
-```
-
-```cpp
-extern "C" RamDomain dist_proj(RamDomain d, RamDomain t, RamDomain b, RamDomain l, RamDomain r) {
-    switch (d) {
-        case 10: return t;  case 11: return b;
-        case 12: return l;  case 13: return r;
-    }
-    return 0;
-}
-```
-
-Verified via `souffle --show=transformed-ram`: a rule with three `dist` calls drops from 64 IR paths (4-clause baseline) to 1 path (functor-wrapped). The wrap is fully pruned by Souffle's optimizer regardless of call count.
-
-#### 3.7.1 Branches for record-returning primitives
-
-`split`, `edge_delta`, `apply`, `divide`, `divide_by_size`, `concat` return Position records. Two implementation paths.
-
-**Branch A — stateful + record return.** One functor per primitive. C++ takes `SymbolTable*` + `RecordTable*` as the first two args and uses `pack` / `unpack` against the record table:
-
-```cpp
-extern "C" RamDomain flip_lr(SymbolTable*, RecordTable* rt, RamDomain p) {
-    const RamDomain* in = rt->unpack(p, 4);
-    RamDomain out[4] = {in[0], in[1], in[3], in[2]};
-    return rt->pack(out, 4);
-}
-```
-
-Mixed native-args + record-return sits in a thinly-tested corner of the Souffle FFI (discussion #2062).
-
-**Branch B — flatten + reassemble.** N functors per primitive (one per output slot), each returning a number; the record is reassembled on the Datalog side via a record literal:
-
-```
-.functor flip_lr_t(t: number, b: number, l: number, r: number) : number
-.functor flip_lr_b(t: number, b: number, l: number, r: number) : number
-.functor flip_lr_l(t: number, b: number, l: number, r: number) : number
-.functor flip_lr_r(t: number, b: number, l: number, r: number) : number
-
-.decl flip_lr(p: Position, p_out: Position) inline
-flip_lr(P, P_out) :- P = [T, B, L, R],
-                     P_out = [@flip_lr_t(T, B, L, R), @flip_lr_b(T, B, L, R),
-                              @flip_lr_l(T, B, L, R), @flip_lr_r(T, B, L, R)].
-```
-
-Pure naive ABI — no stateful, no record table, no `pack` / `unpack`.
-
-|                                  | Branch A     | Branch B             |
-|---                               |---           |---                   |
-| Functors per primitive           | 1            | N (= 4 for Position) |
-| Datalog wrapper verbosity        | Low          | Higher               |
-| FFI risk                         | Less-tested  | Most-tested          |
-| Generalizes to recursive records | Yes          | No                   |
-
-Position has fixed arity 4 and no recursive records appear in `lib.dl`.
-
-#### 3.7.2 Migration
-
-1. Add `programs/lib_functors.cpp` with branch-B implementations of `dist`, `edge_delta`, `split`, `apply`, `divide`, `divide_by_size`, `concat`.
-2. Build to a shared library; `programs/run_dl.py` links it via `-l`.
-3. Rewrite each multi-clause inline in `lib.dl` as a single-clause inline wrapping a functor.
-4. Solver `.dl` files unchanged — surface API (`dist(P, D, K)`, `split(P, A, _, _)`, etc.) preserved.
-
-Composite primitives (`slab_anchor`, `corner_anchor`, `divide_slab`, `divide_2d`, `divide_by_size_2d`, `concat_slab`, `concat_2d`) inherit the fix via the same surface API; their bodies don't need rewriting.
-
-The "no Position destructure" rule in `4-style.md` continues to apply to solver bodies — destructure lives inside `lib.dl`'s wrappers only.
-
-### 3.8 Equivariance classification for primitives
-
-Primitives that use a specific Position slot (T, B, L, R) in their formula fall into two categories depending on whether the slot choice is observable in the relation's input-output behavior.
-
-**Equivariant.** The relation commutes with D4 transforms: `f(D4(P)) = D4(f(P))`. The formula may use a specific slot internally (e.g., `Ot = T / (Sh+G)`), but the slot choice washes out because the primitive's constraints force the algebra to be symmetric. `divide` and `divide_by_size` are equivariant — flipping the input gives a flipped output.
-
-**Non-equivariant.** The relation does NOT commute with D4. The slot choice produces observably different outputs under different transforms. `wallpaper` (removed) was non-equivariant — for non-divisible frame extents, `T mod period` and `B mod period` give different intile mappings for the same physical cell.
-
-**Diagnostic.** For a primitive `f(P, ...) → (P_out, ...)`: check whether `f(apply(D, P)) = apply(D, f(P))` for all D in D4 and all P in the input domain. Equality → equivariant. Inequality on any (D, P) → non-equivariant.
-
-**Implication for lib design.** Equivariant primitives are safe to use with the apply-sandwich pattern (`apply(D, P, P') → f(P') → apply(D_inv, ...)`) for orientation parameterization. Non-equivariant primitives need an explicit anchor parameter (e.g., `anchor: DiagDir`) or should be avoided in favor of equivariant alternatives.
-
-**Observed instance.** 332efdb3 models a period-2 pattern via `divide_by_size` with K=1 G=1 (equivariant). A non-equivariant `wallpaper` primitive using `T mod period` directly was considered and rejected.
-
-## 4. Process proposals
-
-### 4.1 Lib addition protocol
-
-New primitives follow: task-local → propose → lib.
-
-1. **Task-local.** Write the primitive directly in the solver's Consts or body. Run it; confirm it works in context.
-2. **Propose.** Surface the primitive to the user for review. Name it, describe the operation, show the solver-local version.
-3. **Lib (on approval).** Move to `programs/lib.dl`. Update callers.
 

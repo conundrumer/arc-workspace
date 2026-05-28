@@ -58,6 +58,32 @@
 // Solver body primitives
 // ============================================================
 
+// Dispatch/projection functors (C++, in lib_functors.cpp).
+//
+// The primitives that dispatch on an orientation value (dist on Dir,
+// edge_delta on Dir, split/divide/divide_by_size/concat on Axis, apply on D4)
+// are single-clause inlines that call these functors. Keeping each to one
+// clause is what bounds IR path count: a multi-clause inline contributes xN to
+// every rule that calls it, because the dispatch value comes from a relation
+// and Souffle can't prune the impossible combinations. One clause -> one query
+// plan.
+//
+// Functors return `number`, never a Position record; each wrapper reassembles
+// its Position as a Datalog record literal, filling slots from number functors
+// (`@keep_dir` / `@keep_axis` for keep-when-selector-matches; `@axis_near` /
+// `@axis_far` for the two slots along an axis). Guards and arithmetic stay in
+// Datalog inside the single clause. lib_functors.cpp covers why functors return
+// numbers rather than records.
+.functor dist_proj(d: Dir, t: number, b: number, l: number, r: number): number
+.functor keep_dir(sel: Dir, target: number, v: number): number
+.functor keep_axis(sel: Axis, target: number, v: number): number
+.functor axis_near(a: Axis, t: number, b: number, l: number, r: number): number
+.functor axis_far(a: Axis, t: number, b: number, l: number, r: number): number
+.functor apply_t(d: D4, t: number, b: number, l: number, r: number): number
+.functor apply_b(d: D4, t: number, b: number, l: number, r: number): number
+.functor apply_l(d: D4, t: number, b: number, l: number, r: number): number
+.functor apply_r(d: D4, t: number, b: number, l: number, r: number): number
+
 .decl dir_elem(d: Dir)
 dir_elem(TOP).
 dir_elem(BOTTOM).
@@ -118,10 +144,7 @@ opposite(RIGHT,  LEFT).
 
 // Distance from p to edge d.
 .decl dist(p: Position, d: Dir, k: number) inline
-dist(P, TOP,    T) :- P = [T, _, _, _].
-dist(P, BOTTOM, B) :- P = [_, B, _, _].
-dist(P, LEFT,   L) :- P = [_, _, L, _].
-dist(P, RIGHT,  R) :- P = [_, _, _, R].
+dist(P, D, K) :- P = [T, B, L, R], K = @dist_proj(D, T, B, L, R).
 
 // Element-wise sum of two Positions. One operand may be a signed delta.
 .decl compose(p1: Position, p2: Position, p3: Position) inline
@@ -129,27 +152,20 @@ compose([T1, B1, L1, R1], [T2, B2, L2, R2], [T1+T2, B1+B2, L1+L2, R1+R2]) :- tru
 
 // Edge delta: a Position carrying k at edge d, zero elsewhere.
 .decl edge_delta(d: Dir, k: number, p: Position) inline
-edge_delta(TOP,    K, [K, 0, 0, 0]) :- true.
-edge_delta(BOTTOM, K, [0, K, 0, 0]) :- true.
-edge_delta(LEFT,   K, [0, 0, K, 0]) :- true.
-edge_delta(RIGHT,  K, [0, 0, 0, K]) :- true.
+edge_delta(D, K, [@keep_dir(D, TOP, K), @keep_dir(D, BOTTOM, K), @keep_dir(D, LEFT, K), @keep_dir(D, RIGHT, K)]) :- true.
 
 // Decompose p by axis: along carries the axis component (perpendicular
 // zeroed); across carries the perpendicular (axis zeroed).
 .decl split(p: Position, a: Axis, along: Position, across: Position) inline
-split(P, VERTICAL,   [T, B, 0, 0], [0, 0, L, R]) :- P = [T, B, L, R].
-split(P, HORIZONTAL, [0, 0, L, R], [T, B, 0, 0]) :- P = [T, B, L, R].
+split(P, A,
+      [@keep_axis(A, VERTICAL, T),   @keep_axis(A, VERTICAL, B),   @keep_axis(A, HORIZONTAL, L), @keep_axis(A, HORIZONTAL, R)],
+      [@keep_axis(A, HORIZONTAL, T), @keep_axis(A, HORIZONTAL, B), @keep_axis(A, VERTICAL, L),   @keep_axis(A, VERTICAL, R)]) :-
+    P = [T, B, L, R].
 
 // Apply a D4 transform to a Position — a pure index permutation.
 .decl apply(d: D4, p: Position, p_out: Position) inline
-apply(IDENTITY,      [T, B, L, R], [T, B, L, R]) :- true.
-apply(ROT_CW,        [T, B, L, R], [L, R, B, T]) :- true.
-apply(ROT_180,       [T, B, L, R], [B, T, R, L]) :- true.
-apply(ROT_CCW,       [T, B, L, R], [R, L, T, B]) :- true.
-apply(FLIP_LR,       [T, B, L, R], [T, B, R, L]) :- true.
-apply(FLIP_TB,       [T, B, L, R], [B, T, L, R]) :- true.
-apply(FLIP_DIAG,     [T, B, L, R], [L, R, T, B]) :- true.
-apply(FLIP_ANTIDIAG, [T, B, L, R], [R, L, B, T]) :- true.
+apply(D, P, [@apply_t(D, T, B, L, R), @apply_b(D, T, B, L, R),
+             @apply_l(D, T, B, L, R), @apply_r(D, T, B, L, R)]) :- P = [T, B, L, R].
 
 // Divide p's axis-a extent into n equal parts. p_outer is the tile
 // index in an n-strip frame; p_inner is the cell within the tile.
@@ -157,28 +173,19 @@ apply(FLIP_ANTIDIAG, [T, B, L, R], [R, L, B, T]) :- true.
 // produce no decomposition. Two divides on different axes compose to 2D.
 // Asserts: gap-adjusted extent divides evenly by n.
 .decl divide(p: Position, a: Axis, n: number, gap: number, p_outer: Position, p_inner: Position) inline
-divide(P, VERTICAL, N, G,
-       [Ot, N-1-Ot, 0, 0],
-       [It, Sh-1-It, 0, 0]) :-
-    P = [T, B, _, _],
-    H = T + B + 1,
-    (H - (N-1)*G) % N = 0,
-    Sh = (H - (N-1)*G) / N,
-    K_cyc = T % (Sh + G),
+divide(P, A, N, G, P_outer, P_inner) :-
+    P = [T, B, L, R],
+    Near = @axis_near(A, T, B, L, R), Far = @axis_far(A, T, B, L, R),
+    Ext = Near + Far + 1,
+    (Ext - (N-1)*G) % N = 0,
+    Sh = (Ext - (N-1)*G) / N,
+    K_cyc = Near % (Sh + G),
     K_cyc < Sh,
-    Ot = T / (Sh + G),
-    It = K_cyc.
-divide(P, HORIZONTAL, N, G,
-       [0, 0, Ol, N-1-Ol],
-       [0, 0, Il, Sh-1-Il]) :-
-    P = [_, _, L, R],
-    W = L + R + 1,
-    (W - (N-1)*G) % N = 0,
-    Sh = (W - (N-1)*G) / N,
-    K_cyc = L % (Sh + G),
-    K_cyc < Sh,
-    Ol = L / (Sh + G),
-    Il = K_cyc.
+    O = Near / (Sh + G),
+    P_outer = [@keep_axis(A, VERTICAL, O),     @keep_axis(A, VERTICAL, N-1-O),
+               @keep_axis(A, HORIZONTAL, O),   @keep_axis(A, HORIZONTAL, N-1-O)],
+    P_inner = [@keep_axis(A, VERTICAL, K_cyc), @keep_axis(A, VERTICAL, Sh-1-K_cyc),
+               @keep_axis(A, HORIZONTAL, K_cyc), @keep_axis(A, HORIZONTAL, Sh-1-K_cyc)].
 
 // Like divide, but parameterized by tile size k instead of tile count n.
 // Tile count is recovered from p's axis-a extent: n = (extent + gap) /
@@ -186,28 +193,19 @@ divide(P, HORIZONTAL, N, G,
 // Asserts: gap-adjusted extent is a multiple of (k + gap).
 .decl divide_by_size(p: Position, a: Axis, k: number, gap: number,
                      p_outer: Position, p_inner: Position) inline
-divide_by_size(P, VERTICAL, K, G,
-       [Ot, N-1-Ot, 0, 0],
-       [It, K-1-It, 0, 0]) :-
-    P = [T, B, _, _],
-    H = T + B + 1,
-    (H + G) % (K + G) = 0,
-    N = (H + G) / (K + G),
-    K_cyc = T % (K + G),
+divide_by_size(P, A, K, G, P_outer, P_inner) :-
+    P = [T, B, L, R],
+    Near = @axis_near(A, T, B, L, R), Far = @axis_far(A, T, B, L, R),
+    Ext = Near + Far + 1,
+    (Ext + G) % (K + G) = 0,
+    N = (Ext + G) / (K + G),
+    K_cyc = Near % (K + G),
     K_cyc < K,
-    Ot = T / (K + G),
-    It = K_cyc.
-divide_by_size(P, HORIZONTAL, K, G,
-       [0, 0, Ol, N-1-Ol],
-       [0, 0, Il, K-1-Il]) :-
-    P = [_, _, L, R],
-    W = L + R + 1,
-    (W + G) % (K + G) = 0,
-    N = (W + G) / (K + G),
-    K_cyc = L % (K + G),
-    K_cyc < K,
-    Ol = L / (K + G),
-    Il = K_cyc.
+    O = Near / (K + G),
+    P_outer = [@keep_axis(A, VERTICAL, O),     @keep_axis(A, VERTICAL, N-1-O),
+               @keep_axis(A, HORIZONTAL, O),   @keep_axis(A, HORIZONTAL, N-1-O)],
+    P_inner = [@keep_axis(A, VERTICAL, K_cyc), @keep_axis(A, VERTICAL, K-1-K_cyc),
+               @keep_axis(A, HORIZONTAL, K_cyc), @keep_axis(A, HORIZONTAL, K-1-K_cyc)].
 
 // Distance t along a period of w (with gap g between periods) decomposes
 // into period index n and within-period offset k. Per-cell scalar peer of
@@ -226,12 +224,15 @@ stride(T, W, G, N, K) :-
 // rows/cols are absent. Two concats on different axes compose to 2D.
 .decl concat(p_outer: Position, p_inner: Position, a: Axis, gap: number,
              p_grid: Position) inline
-concat([Ot, Bo, 0, 0], [It, Bi, 0, 0], VERTICAL, G,
-       [Ot*(Iv+G) + It, Bo*(Iv+G) + Bi, 0, 0]) :-
-    Iv = It + Bi + 1.
-concat([0, 0, Ol, Ro], [0, 0, Il, Ri], HORIZONTAL, G,
-       [0, 0, Ol*(Ih+G) + Il, Ro*(Ih+G) + Ri]) :-
-    Ih = Il + Ri + 1.
+concat(P_outer, P_inner, A, G, P_grid) :-
+    P_outer = [OT, OB, OL, OR], P_inner = [IT, IB, IL, IR],
+    ONear = @axis_near(A, OT, OB, OL, OR), OFar = @axis_far(A, OT, OB, OL, OR),
+    INear = @axis_near(A, IT, IB, IL, IR), IFar = @axis_far(A, IT, IB, IL, IR),
+    Span = INear + IFar + 1,
+    GNear = ONear*(Span+G) + INear,
+    GFar  = OFar*(Span+G) + IFar,
+    P_grid = [@keep_axis(A, VERTICAL, GNear), @keep_axis(A, VERTICAL, GFar),
+              @keep_axis(A, HORIZONTAL, GNear), @keep_axis(A, HORIZONTAL, GFar)].
 
 // ------------------------------------------------------------
 // Patterns — recurring solver-body shapes built from primitives
