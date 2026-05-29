@@ -238,6 +238,8 @@ concat(P_outer, P_inner, A, G, P_grid) :-
 // Composites — recurring solver-body shapes built from primitives
 // ============================================================
 
+// Anchors only work on grounded positions.
+
 // Same dist-to-edge D for two positions.
 .decl same_dist(d: Dir, p1: Position, p2: Position) inline
 same_dist(D, P1, P2) :- dist(P1, D, K), dist(P2, D, K).

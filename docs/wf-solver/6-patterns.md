@@ -125,3 +125,12 @@ divide(P_grid, HORIZONTAL, Nh, Gh, P_outer_h, P_inner_h),
 compose(P_outer_v, P_outer_h, P_tile),
 compose(P_inner_v, P_inner_h, P_intile).
 ```
+
+## `cell_split` — input cell with its axis decomposition
+
+Pairs an input cell with its along/across split on the task's axis.
+
+```
+.decl cell_split(p: Position, col: Color, p_inner: Position, p_across: Position)
+cell_split(P, Col, P_inner, P_across) :- in(P, Col), c.axis(A), split(P, A, P_inner, P_across).
+```

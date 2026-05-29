@@ -1,9 +1,10 @@
 # Session
 
-A solver session writes a Souffle solver (`programs/solvers/<task_id>.dl`) modeling an ARC task. Reference: the TS solver (`../arc-synth-bun/programs/solvers/`). When a Python solver exists for the task (`programs/solvers/<task_id>.py`), it's also reference.
+A solver session writes a Souffle solver (`programs/solvers/<task_id>.dl`) modeling an ARC task. Reference: the TS solver (`../arc-synth-bun/programs/solvers/`).
 
 ## Entry
 
+- Read `programs/lib.dl` in full before writing or editing a solver.
 - If requested to continue from prior solver work, run `uv run python scripts/inspect-session.py --solver-only` and read the output in full.
 - `bash scripts/queue.sh` prints the next solver.
 
@@ -25,13 +26,9 @@ A solver session writes a Souffle solver (`programs/solvers/<task_id>.dl`) model
 
 - User trigger to commit. No commit without it. Make multiple commits when changes split cleanly.
 
-## Python as fallback
-
-Python is available as a fallback in special circumstances (`programs/solvers/<task_id>.py`, run via `programs/run.py`).
-
 ## Lib addition protocol
 
-A new primitive earns its place in `programs/lib.dl` by working in a real task first, not by looking general. The order:
+A new primitive earns its place in `programs/lib.dl` through real use, not by looking general. The order:
 
 1. **Task-local.** Write the primitive in the solver's Consts or body. Run it; confirm it works in context.
 2. **Propose.** Surface it to the user — name it, describe the operation, show the solver-local version.

@@ -99,6 +99,7 @@ Cases are grouped under `// --- <name> ---` markers in both Consts and body — 
 ## Body
 
 - No literals — orientation (`TOP`, `LEFT`, `VERTICAL`, etc.), colors, or non-zero task-shape numbers (lengths, offsets, gaps). Body reads them from Consts via `c.<rel>(...)` and parameterizes. Hardcoded values fix the body to one task in the family; pulling from Consts keeps it symmetric across the family.
+    - Literals are fine inside a generic `.comp` written task-local — lib-shaped code, not body; mark the `.comp` `// lint-ok` to suppress the body lint over it.
 - No Position destructure. Use lib primitives instead. Position is opaque; destructure hardcodes edge indices and breaks orientation invariance.
 - Avoid arithmetic. If necessary, flag.
 - Inline relations can't appear inside aggregators. Wrap in a non-inline relation when needed.

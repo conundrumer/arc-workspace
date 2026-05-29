@@ -316,9 +316,3 @@ across a large fraction of ARC — these clear the lib bar on sight. `step` (uni
 4-adjacency) is the shared sub-primitive; an 8-adjacency variant, or a
 parameterized adjacency input to `Reach`, is the obvious extension when a task
 needs diagonal connectivity.
-
-**Linter note.** A generic component carries lib-shaped literals (`step` deltas,
-`Bbox`'s `TOP`/`LEFT`). A `// lint-ok` marker on the `.comp` header silences them
-— the comment-driven analog of how `.comp Consts` is skipped — and they're moot
-on promotion to `lib.dl` (which the linter doesn't scan). The flags mark generic
-code living in the solver, not a defect.
