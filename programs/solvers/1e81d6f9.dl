@@ -1,14 +1,62 @@
 // 1e81d6f9
-// Marker cell at c.target_offset from c.target_corner identifies a target
-// color; cells of that color elsewhere in the grid are erased to c.bg. The
-// marker cell itself is kept.
+// A marker cell at c.target_offset inside a corner-anchored L of c.mask_color
+// identifies a target color; that color is erased to c.bg everywhere else. Two
+// models of what survives the erase:
+//
+//   $Marker — only the marker cell is kept.
+//   $Bbox   — the whole region is kept: the connected component of mask cells at
+//             the corner (so a stray mask cell elsewhere can't inflate it),
+//             bounded to its bounding box.
 
 #include "../lib.dl"
+
+// Connected component: closure of 4-adjacency over a node set, from seeds.
+// Candidate lib component.
+.comp Reach {   // lint-ok — generic component, lib-shaped internals
+    .decl node(p: Position)
+    .decl seed(p: Position)
+
+    .decl step(delta: Position)
+    step([-1,  1,  0,  0]).   // toward TOP
+    step([ 1, -1,  0,  0]).   // toward BOTTOM
+    step([ 0,  0, -1,  1]).   // toward LEFT
+    step([ 0,  0,  1, -1]).   // toward RIGHT
+
+    .decl reach(p: Position)
+    reach(P)  :- seed(P).
+    reach(P2) :- reach(P1), step(D), compose(P1, D, P2), node(P2).
+}
+
+// Bounding box of a cell set, classified against a grid of positions.
+// Candidate lib component.
+.comp Bbox {   // lint-ok — generic component, lib-shaped internals
+    .decl cell(p: Position)
+    .decl grid(p: Position)
+
+    .decl cell_dist(p: Position, d: Dir, k: number)
+    cell_dist(P, D, K) :- cell(P), dir_elem(D), dist(P, D, K).
+
+    // Per-axis span of the cell set: min/max distance to a reference edge.
+    .decl extent(d: Dir, lo: number, hi: number)
+    extent(D, LO, HI) :-
+        dir_elem(D),
+        LO = min K : { cell_dist(_, D, K) },
+        HI = max K : { cell_dist(_, D, K) }.
+
+    .decl inside(p: Position)
+    inside(P) :-
+        grid(P),
+        dist(P, TOP,  T), extent(TOP,  Tlo, Thi), Tlo <= T, T <= Thi,
+        dist(P, LEFT, L), extent(LEFT, Llo, Lhi), Llo <= L, L <= Lhi.
+}
+
+.type Choice = Marker {} | Bbox {}
 
 .comp Consts {
     .decl target_corner(d: DiagDir)       target_corner(TOP_LEFT).
     .decl target_offset(off: Dim)         target_offset([1, 1]).
     .decl bg(c: Color)                    bg(0).
+    .decl mask_color(c: Color)            mask_color(5).
 
     // Anchor Position: target_offset on each cardinal Dir of target_corner.
     .decl target_anchor(p: Position)
@@ -25,7 +73,8 @@
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
-// Input cell at the marker position.
+// --- shared: the marker identifies the target color ---
+
 .decl target_pos(p: Position)
 target_pos(P) :-
     in(P, _),                                              // input cell
@@ -35,18 +84,32 @@ target_pos(P) :-
 .decl target_color(c: Color)
 target_color(Col) :- in(P, Col), target_pos(P).
 
-// Three cases: non-target color passes through; marker cell passes through;
-// target color elsewhere erases to bg.
-.decl out(p: Position, col: Color)
-out(P, Col) :- in(P, Col), !target_color(Col).
-out(P, Col) :- in(P, Col), target_pos(P).
-out(P, Bg) :- in(P, Col), target_color(Col), !target_pos(P), c.bg(Bg).
+// --- Bbox: the connected corner region of mask cells, bounded ---
+
+.decl mask(p: Position)
+mask(P) :- in(P, MaskCol), c.mask_color(MaskCol).
+
+// The frame's connected component, seeded from a mask cell on a corner edge —
+// a stray mask cell elsewhere doesn't touch those edges, so it stays out.
+.init region = Reach
+region.node(P) :- mask(P).
+region.seed(P) :- mask(P), c.target_corner(Diag), dir_of(Diag, _, D), dist(P, D, 0).
+
+// The region's bounding box over the input grid.
+.init box = Bbox
+box.cell(P) :- region.reach(P).
+box.grid(P) :- in(P, _).
+
+.decl out(p: Position, col: Color, c: Choice)
+
+// --- Marker --- only the marker cell survives the erase.
+out(P, Col, $Marker()) :- in(P, Col), !target_color(Col).                          // non-target passes
+out(P, Col, $Marker()) :- in(P, Col), target_pos(P).                               // marker kept
+out(P, Bg, $Marker()) :- in(P, Col), target_color(Col), !target_pos(P), c.bg(Bg).  // target elsewhere erased
+
+// --- Bbox --- the whole corner region survives the erase.
+out(P, Col, $Bbox()) :- in(P, Col), !target_color(Col).                            // non-target passes
+out(P, Col, $Bbox()) :- in(P, Col), box.inside(P).                                 // region kept
+out(P, Bg, $Bbox()) :- in(P, Col), target_color(Col), !box.inside(P), c.bg(Bg).    // target outside region erased
 
 .output out(IO=stdout)
-
-// TODO ($Bbox alt): add a model that keeps an entire corner-anchored
-// region intact (not just the marker cell), with the region derived from
-// mask_color cells in the input. Naive bbox of all mask cells fails on
-// train[2] — a stray 5 at (9, 6) inflates the bbox past the L. Needs
-// connected-component closure from a corner-edge mask cell to isolate the
-// L before taking bbox.
