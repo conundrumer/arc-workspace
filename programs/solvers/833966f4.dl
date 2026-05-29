@@ -34,11 +34,8 @@
     .decl divisor(n: number)        divisor(2).
     .decl divide_gap(g: number)     divide_gap(1).
 
-    // Inner-keyed delta swapping the two cells of a 2×1 V-subgrid.
-    // TODO: replace with d4 flip
-    .decl inner_delta(p_inner: Position, delta: Position)
-    inner_delta([0, 1, 0, 0], [ 1, -1, 0, 0]).
-    inner_delta([1, 0, 0, 0], [-1,  1, 0, 0]).
+    // Flip swapping the two cells of each 2×1 V-subgrid.
+    .decl flip(d: D4)               flip(FLIP_TB).
 }
 
 .init c = Consts
@@ -64,9 +61,9 @@ perm(P_grid_in, P_grid_out, $LabeledGrids()) :-
 perm(P_grid_in, P_grid_out, $Divide()) :-
     in(P_grid_in, _),                                          // input cell
     c.divide_axis(A), c.divisor(N), c.divide_gap(G),           // params
-    divide(P_grid_in, A, N, G, _, P_inner_axis),               // 1D divide
-    c.inner_delta(P_inner_axis, Delta),                        // delta per inner row
-    compose(P_grid_in, Delta, P_grid_out).                     // apply delta in-frame
+    divide(P_grid_in, A, N, G, P_outer, P_inner),              // 1D divide
+    c.flip(F), apply(F, P_inner, P_inner_out),                 // flip within subgrid
+    concat(P_outer, P_inner_out, A, G, P_grid_out).            // recompose
 perm(P_grid_in, P_grid_in, $Divide()) :-
     in(P_grid_in, _), !decomposable(P_grid_in).                // gap row passthrough
 

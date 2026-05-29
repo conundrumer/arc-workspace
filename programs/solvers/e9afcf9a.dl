@@ -28,11 +28,10 @@
     .decl divisor(n: number)        divisor(3).
     .decl divide_gap(g: number)     divide_gap(0).
 
-    // Per-inner-cell transform within a 1×2 subgrid.
-    // TODO: represent using grid of d4
+    // Per-inner-cell transform within a 1×2 subgrid, laid out as a grid of D4.
     .decl col_transform(p_inner: Position, d: D4)
-    col_transform([0, 0, 0, 1], IDENTITY).
-    col_transform([0, 0, 1, 0], FLIP_TB).
+    GRID_1x2(col_transform,
+        IDENTITY, FLIP_TB)
 }
 
 .init c = Consts
