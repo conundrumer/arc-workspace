@@ -3,8 +3,13 @@
 // colors, anchored at c.rank_dir, in descending count order. Extent =
 // number of distinct non-bg colors.
 //
-// Flagged: count-vs-count comparison `N2 > N` in `color_rank` — inherent
-// to ranking.
+// Ranking via the Ordinal comp (sparse count set → dense ordinal). Ordinal
+// ranks ascending; the descending layout falls out by placing from the edge
+// opposite c.rank_dir.
+//
+// Flagged: colors sharing a count map to one rank — colliding `out` facts at
+// the same Position. dist_set stays dense (ranks run over distinct counts),
+// so DirFrame's dense-input contract holds.
 
 #include "../lib.dl"
 
@@ -15,6 +20,17 @@
 
 .init c = Consts
 
+// Sparse numeric set → dense ordinal position: r = count of elements
+// strictly less than k. (The Ordinal proposal.)
+.comp Ordinal {
+    .decl idx_set(k: number)
+
+    .decl rank(k: number, r: number)
+    rank(K, R) :-
+        idx_set(K),
+        R = count : { idx_set(K2), K2 < K }.
+}
+
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
@@ -24,18 +40,17 @@ color_count(Col, N) :-
     in(_, Col), !c.bg(Col),
     N = count : { in(_, Col) }.
 
-// Descending-count rank: number of colors with strictly higher count.
-//
-// Flagged: ties in N produce duplicate ranks — colliding `out` facts at
-// the same Position, and a sparse `dist_set` that breaks DirFrame.
-.decl color_rank(col: Color, r: number)
-color_rank(Col, R) :-
-    color_count(Col, N),
-    R = count : { color_count(_, N2), N2 > N }.
+// Dense rank over the distinct counts, ascending (fewest first).
+.init o = Ordinal
+o.idx_set(N) :- color_count(_, N).
 
-// Output frame: 1D axis from c.rank_dir, indexed by rank.
+.decl color_rank(col: Color, r: number)
+color_rank(Col, R) :- color_count(Col, N), o.rank(N, R).
+
+// Output frame: 1D axis anchored at c.rank_dir. Placing ascending rank from
+// the opposite edge seats the largest count at the rank_dir edge.
 .init col = DirFrame
-col.dir(D) :- c.rank_dir(D).
+col.dir(D_opp) :- c.rank_dir(D), opposite(D, D_opp).
 col.dist_set(R) :- color_rank(_, R).
 
 .decl out(p: Position, col: Color)
