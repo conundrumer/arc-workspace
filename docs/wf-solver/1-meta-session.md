@@ -23,9 +23,9 @@ A meta session ends by inlining a standing log — items raised in the session t
 - **id**
 - **description**
 - **origin** — `marker` (user used `defer:`, `queue:`, or related markers), `flag` (user critiqued or articulated without keyword), or `observed` (claude observed and tracked)
-- **defer count** — extent of existence; sessions the item has been carried
+- **defer count** — meta sessions the item has been carried through, incremented once per meta session it survives unresolved.
 - **instance count** — occurrences, if applicable
-- **last seen** — this session, or N sessions back
+- **last seen** — this session, or N sessions back (working or meta)
 - **status** — free-form; reflects how the session engaged with the item
 
 Closed items are omitted. The log lives in the session's final messages; the next meta session picks it up via inspection. Items may persist across many sessions; they aren't dropped.
