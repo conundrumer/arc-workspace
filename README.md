@@ -18,21 +18,6 @@ brew install souffle    # macOS; see souffle-lang.github.io for other OSes
 The `.dl` solvers also need a C++ compiler; `run_dl.py` builds their functor
 library automatically.
 
-## Layout
-
-```
-src/arc/         core library (patch DSL parser, task model, materializer)
-programs/        Souffle (.dl) solvers — lib primitives + C++ functors + per-task solvers + runner
-scripts/         CLI utilities
-data/upstream/   pinned arc-agi-1 + arc-agi-2 submodules
-data/patches/    .arcpatch corrections (canonical + variants A/B/C)
-data/tasks/      materialized task JSON (build artifact, checked in)
-tools/           dev tooling (VSCode extension)
-docs/            design notes
-```
-
-Corrections live in `.arcpatch` files, never in `data/upstream/` — upstream stays pinned to the published datasets.
-
 ## Editor setup
 
 The VSCode extension at `tools/vscode/arc-grids/` highlights grid digits in materialized task JSON with the ARC palette (bold) and adds syntax highlighting for the patch DSL.
@@ -50,6 +35,8 @@ File associations and the digit color palette live in `.vscode/settings.json`. T
 If highlighting doesn't appear after reload, check the language mode in the status bar — it should read `ARC Patch` or `ARC Task JSON`.
 
 ## Editing patches
+
+Corrections live in `.arcpatch` files, never in `data/upstream/` — upstream stays pinned to the published datasets.
 
 Patch editing needs the upstream submodules — the materializer composes fixes against them:
 
