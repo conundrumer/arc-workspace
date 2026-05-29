@@ -1,17 +1,15 @@
 // 7e4d4f7c
-// WIP
 // Output has extent c.out_h along c.header_dir, perpendicular extent =
 // input. Cells at depth 0..out_h-2 from header_dir map into the output's
 // out_h frame with along-depth and across-axis position preserved. The
 // row at depth out_h-1 is derived from input depth 0 via tail_color:
 // bg passes through; non-bg becomes c.marker.
 //
-// Anchored cross-frame carry is inlined; no lib primitive lifts it yet.
-// Recolor uses a tail_color mapping (à la b1948b0a's idiom).
+// out_cell grounds the output positions (out_h along-frame × input
+// across); both rules join to it. Keep matches each non-tail cell to its
+// input slab via slab_anchor (depth-from-header + across). Tail joins by
+// column to input depth 0, recolored via tail_color (à la b1948b0a's idiom).
 // Layout-family cluster (header/body, à la bd4472b8).
-//
-// Flagged: ties on max color count produce multiple bg values, which
-// would conflict on the tail row.
 
 #include "../lib.dl"
 
@@ -43,31 +41,36 @@ bg(C) :- color_count(C, N), N = max N2 : { color_count(_, N2) }.
 tail_color(C, C) :- bg(C).
 tail_color(C, M) :- in(_, C), !bg(C), c.marker(M).
 
+// Output cells: the out_h along-frame crossed with the input's across
+// positions. Grounds the output grid so both rules can join to it.
+.decl out_cell(p: Position)
+out_cell(P) :-
+    c.out_along.pos(_, P_along),                          // along-axis frame cell
+    in(P_in, _), c.header_dir(H_dir), axis_of(H_dir, A),  // an input cell
+    split(P_in, A, _, P_across),                          // its across part
+    compose(P_along, P_across, P).                        // glue to a 2D out cell
+
 .decl out(p: Position, col: Color)
 
-// Keep: input cells whose along-depth maps into the out_h frame at a
-// non-tail row carry to the output. The across-axis part is preserved
-// from P_in via split; the along-axis part comes from out_along; compose
-// glues them.
+// Keep: each non-tail output cell takes the color of the input cell in
+// its slab — slab_anchor matches on depth-from-header + across.
 out(P_out, Col) :-
+    out_cell(P_out),                                      // grounded output cell
+    c.header_dir(H_dir), opposite(H_dir, H_opp),          // along-axis dirs
+    dist(P_out, H_opp, K_opp), K_opp != 0,                // not the tail row
     in(P_in, Col),                                        // input cell
-    c.header_dir(H_dir), opposite(H_dir, H_opp),          // along-axis dirs
-    axis_of(H_dir, H_axis),                               // along axis
-    dist(P_in, H_dir, T), c.out_along.pos(T, P_along),    // along-axis at depth T
-    dist(P_along, H_opp, K_opp), K_opp != 0,              // not the tail row
-    split(P_in, H_axis, _, P_across),                     // across-axis part of P_in
-    compose(P_along, P_across, P_out).                    // glue
+    slab_anchor(H_dir, P_in, P_out).                      // same slab as P_out
 
-// Tail: input depth-0 cells map to the output's tail row (opp-edge
-// distance 0), recolored via tail_color.
+// Tail: the output's tail row (opp-edge distance 0) takes input depth-0
+// cells by column — across-match only, since the tail row and input
+// row 0 don't share depth-from-header — recolored via tail_color.
 out(P_out, Col_out) :-
-    in(P_in, Col_in),                                     // input cell
+    out_cell(P_out),                                      // grounded output cell
     c.header_dir(H_dir), opposite(H_dir, H_opp),          // along-axis dirs
-    axis_of(H_dir, H_axis),                               // along axis
-    dist(P_in, H_dir, 0),                                 // input row 0
-    tail_color(Col_in, Col_out),                          // recolor
-    c.out_along.pos(_, P_along), dist(P_along, H_opp, 0), // tail row
-    split(P_in, H_axis, _, P_across),                     // across-axis part of P_in
-    compose(P_along, P_across, P_out).                    // glue
+    axis_of(H_dir, A),                                    // along axis
+    dist(P_out, H_opp, 0),                                // tail row
+    in(P_in, Col_in), dist(P_in, H_dir, 0),               // input depth 0
+    split(P_in, A, _, Ac), split(P_out, A, _, Ac),        // same column
+    tail_color(Col_in, Col_out).                          // recolor
 
 .output out(IO=stdout)
