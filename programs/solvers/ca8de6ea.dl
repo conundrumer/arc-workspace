@@ -1,15 +1,59 @@
 // ca8de6ea
-// Layout: 5×5 input X-pattern collapsed to dense 3×3. Three D4 orbits:
-// outer corners, inner X cells, center.
+// Layout: 5×5 input X-pattern collapsed to dense 3×3. The X has three rings
+// about the center: outer corners, inner X cells, center.
 //
 // Cartesian over body impls; out's choice column tags each:
 //
 //   $LabeledGrids() — paired by shared non-zero label across in/out grids
-//   $Orbit()        — pair input/output canonicals by orbit; same D4 rotation on both
+//   $Cycle()        — collapse onto the output's 8-cell ring, modeled as a CW
+//                     cycle (a local Cycle component). Each X-arm cell maps to
+//                     the ring cell at its own diagonal, advanced by a per-ring
+//                     cyclic shift (corner ring 0, inner ring +1 — the 45° twist
+//                     as one successor step).
 
 #include "../lib.dl"
 
-.type Choice = LabeledGrids {} | Orbit {}
+// A directed cycle (succ = edges, carrying no basepoint) with a gauge-free
+// rotation: walk advances a start cell by n successor steps. Candidate lib
+// component — see docs/wf-solver/7-proposals.md.
+.comp Cycle<T> {   // lint-ok — generic component, lib-shaped internals
+    .decl succ(p: T, p_next: T)
+    .decl step(n: number)               // advance counts in use (bounds the walk)
+
+    .decl walk(p0: T, n: number, p: T)  // p = p0 advanced n steps along succ
+    walk(P0, 0, P0) :- succ(P0, _).
+    walk(P0, N1, P2) :-
+        walk(P0, N, P1), succ(P1, P2),
+        step(N1), N1 = N + 1.           // N1 is the Z/n step count
+}
+
+// Diagonal placement: the quadrant a cell sits in, and its ring. Candidate lib
+// primitives — see docs/wf-solver/7-proposals.md ("Diagonal placement").
+.comp DiagPlacement {   // lint-ok — generic component, lib-shaped internals
+    .decl cell(p: Position)
+
+    // Strictly nearer edge d than its opposite — which side of the axis midline.
+    .decl nearer(p: Position, d: Dir)
+    nearer(P, D) :-
+        cell(P), dir_elem(D),
+        dist(P, D, K), opposite(D, Opp), dist(P, Opp, K2), K < K2.
+
+    // The diagonal quadrant a cell sits in: nearer on both of that corner's edges.
+    .decl quadrant(p: Position, diag: DiagDir)
+    quadrant(P, Diag) :-
+        dir_of(Diag, VERTICAL,   Dv), nearer(P, Dv),
+        dir_of(Diag, HORIZONTAL, Dh), nearer(P, Dh).
+
+    // On the diagonal of its quadrant, at ring K — the shared distance to both
+    // edges of that corner.
+    .decl diag_cell(p: Position, diag: DiagDir, ring: number)
+    diag_cell(P, Diag, K) :-
+        quadrant(P, Diag),
+        dir_of(Diag, VERTICAL,   Dv), dist(P, Dv, K),
+        dir_of(Diag, HORIZONTAL, Dh), dist(P, Dh, K).
+}
+
+.type Choice = LabeledGrids {} | Cycle {}
 
 .comp Consts {
     // --- LabeledGrids data ----------------------------------------------
@@ -27,24 +71,28 @@
         8, 9, 4,
         7, 6, 5)
 
-    // --- Orbit canonicals + rotation subgroup ---------------------------
-    // Orbits indexed by id; canonical input and output paired by orbit id.
-    // TODO: remove
-    .decl orbit_in(p: Position, orbit: number)
-    orbit_in([0, 4, 0, 4], 0).        // outer corner canonical
-    orbit_in([1, 3, 1, 3], 1).        // inner X canonical
-    orbit_in([2, 2, 2, 2], 2).        // center
+    // --- Cycle data -----------------------------------------------------
+    // Output ring as a CW cycle of 8 cells, declared by its edges. A cycle's
+    // edge set carries no basepoint, so no ring cell is privileged as a start.
+    .decl ring_succ(p: Position, p_next: Position)
+    ring_succ([0, 2, 0, 2], [0, 2, 1, 1]).   // NW corner -> N
+    ring_succ([0, 2, 1, 1], [0, 2, 2, 0]).   // N         -> NE corner
+    ring_succ([0, 2, 2, 0], [1, 1, 2, 0]).   // NE corner -> E
+    ring_succ([1, 1, 2, 0], [2, 0, 2, 0]).   // E         -> SE corner
+    ring_succ([2, 0, 2, 0], [2, 0, 1, 1]).   // SE corner -> S
+    ring_succ([2, 0, 1, 1], [2, 0, 0, 2]).   // S         -> SW corner
+    ring_succ([2, 0, 0, 2], [1, 1, 0, 2]).   // SW corner -> W
+    ring_succ([1, 1, 0, 2], [0, 2, 0, 2]).   // W         -> NW corner
 
-    .decl orbit_out(p: Position, orbit: number)
-    orbit_out([0, 2, 0, 2], 0).       // outer corner canonical
-    orbit_out([0, 2, 1, 1], 1).       // outer ring edge canonical
-    orbit_out([1, 1, 1, 1], 2).       // center
+    // Per-ring cyclic shift on the output ring, keyed by the input cell's ring
+    // (its distance to its nearest edge). The shift is a Z/n element.
+    .decl ring_shift(ring: number, shift: number)
+    ring_shift(0, 0).   // corner ring: aligned with output corners
+    ring_shift(1, 1).   // inner ring: advanced one step (the 45° twist)
 
-    .decl rotation(d: D4)
-    rotation(IDENTITY).
-    rotation(ROT_CW).
-    rotation(ROT_180).
-    rotation(ROT_CCW).
+    // The center is the rotation's fixed point; it maps to the output center.
+    .decl out_center(p: Position)
+    out_center([1, 1, 1, 1]).
 }
 
 .init c = Consts
@@ -52,18 +100,43 @@
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
+.init ring = Cycle<Position>
+ring.succ(P, P_next) :- c.ring_succ(P, P_next).   // the output ring cycle
+ring.step(N)         :- c.ring_shift(_, N).        // shifts the solver applies
+
 .decl impl_choice(c: Choice)
 impl_choice($LabeledGrids()).
-impl_choice($Orbit()).
+impl_choice($Cycle()).
 
 .decl perm(p_in: Position, p_out: Position, c: Choice)
+
+// --- LabeledGrids ---
 perm(P_grid_in, P_grid_out, $LabeledGrids()) :-
     c.in_label(P_grid_in, Lbl), c.out_label(P_grid_out, Lbl),  // shared label
     Lbl != 0.                                                  // non-pairing sentinel
-perm(P_grid_in, P_grid_out, $Orbit()) :-
-    c.rotation(D),                                                          // rotation
-    c.orbit_in(P_grid_in_c, O),   apply(D, P_grid_in_c, P_grid_in),         // input side
-    c.orbit_out(P_grid_out_c, O), apply(D, P_grid_out_c, P_grid_out).       // output side
+
+// --- Cycle ---
+// Cells across both frames, so one diagonal/ring geometry serves input arms and
+// output ring corners alike.
+.decl cell(p: Position)
+cell(P) :- in(P, _).
+cell(P) :- c.ring_succ(P, _).
+
+// Classify cells into diagonal quadrant + ring.
+.init dp = DiagPlacement
+dp.cell(P) :- cell(P).
+
+// The center is nearer to no edge (the rotation's fixed point).
+.decl in_center(p: Position)
+in_center(P) :- in(P, _), !dp.nearer(P, _).
+
+perm(P_in, P_out, $Cycle()) :-
+    in(P_in, _), dp.diag_cell(P_in, Diag, Ring),                // input arm: its diagonal + ring
+    c.ring_shift(Ring, Shift),                                  // ring -> cyclic shift
+    c.ring_succ(P_corner, _), dp.diag_cell(P_corner, Diag, 0),  // output corner at that diagonal
+    ring.walk(P_corner, Shift, P_out).                          // advanced by the shift
+perm(P_in, P_out, $Cycle()) :-
+    in_center(P_in), c.out_center(P_out).                    // center fixed point
 
 .decl out(p: Position, col: Color, c: Choice)
 out(P_grid_out, Col, Impl) :- impl_choice(Impl), in(P_grid_in, Col), perm(P_grid_in, P_grid_out, Impl).
