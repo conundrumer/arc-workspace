@@ -7,7 +7,7 @@ wc -l ../arc-synth-bun/programs/solvers/*.ts \
   | while read -r lines path; do
       [ "$path" = "total" ] && continue
       id=$(basename "$path" .ts)
-      [ -f "programs/solvers/$id.py" ] && continue
+      [ -f "programs/solvers/$id.dl" ] && continue
       head -10 "$path" | grep -q '#incorrect' && continue
       printf "%4s  %s\n" "$lines" "$id"
     done \

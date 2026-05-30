@@ -9,7 +9,7 @@ Read `docs/wf-solver/*.md` in order.
 
 Then dispatch on an exact keyword match for `$ARGUMENTS`:
 
-- `solver` — read `programs/lib.dl`.
+- `solver` — read `programs/lib.dl`, then run `bash scripts/queue.sh` to get the next queued solver and begin working it per the session cadence.
 - `meta` — run `uv run python scripts/inspect-session.py` (no arg) and read output in full.
 - `meta end` — close the meta session per the protocol in the docs.
 

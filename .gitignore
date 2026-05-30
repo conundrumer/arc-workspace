@@ -12,3 +12,5 @@ archive/
 *.dylib
 *.so
 docs/_session_*.md
+
+.claude/scheduled_tasks.lock
