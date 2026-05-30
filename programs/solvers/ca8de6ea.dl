@@ -16,7 +16,7 @@
 // A directed cycle (succ = edges, carrying no basepoint) with a gauge-free
 // rotation: walk advances a start cell by n successor steps. Candidate lib
 // component — see docs/wf-solver/7-proposals.md.
-.comp Cycle<T> {   // lint-ok — generic component, lib-shaped internals
+.comp Cycle<T> {
     .decl succ(p: T, p_next: T)
     .decl step(n: number)               // advance counts in use (bounds the walk)
 
@@ -29,7 +29,7 @@
 
 // Diagonal placement: the quadrant a cell sits in, and its ring. Candidate lib
 // primitives — see docs/wf-solver/7-proposals.md ("Diagonal placement").
-.comp DiagPlacement {   // lint-ok — generic component, lib-shaped internals
+.comp DiagPlacement {
     .decl cell(p: Position)
 
     // Strictly nearer edge d than its opposite — which side of the axis midline.

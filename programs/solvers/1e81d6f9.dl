@@ -12,7 +12,7 @@
 
 // Connected component: closure of 4-adjacency over a node set, from seeds.
 // Candidate lib component.
-.comp Reach {   // lint-ok — generic component, lib-shaped internals
+.comp Reach {
     .decl node(p: Position)
     .decl seed(p: Position)
 
@@ -29,7 +29,7 @@
 
 // Bounding box of a cell set, classified against a grid of positions.
 // Candidate lib component.
-.comp Bbox {   // lint-ok — generic component, lib-shaped internals
+.comp Bbox {
     .decl cell(p: Position)
     .decl grid(p: Position)
 

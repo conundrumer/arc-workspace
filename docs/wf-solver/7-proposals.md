@@ -225,7 +225,7 @@ cell extent, so the one subtraction both resizes and repositions — it moves a 
 between frames of different size, not just within one.
 
 ```
-.comp Reframe<Key> {           // lint-ok
+.comp Reframe<Key> {
     .decl outer(key: Key, p: Position)
     .decl cell(key: Key, p: Position)
 
@@ -276,7 +276,7 @@ obvious extension when a task needs diagonal connectivity.
 }
 
 // Every component, each labeled by an opaque id.
-.comp Components {              // lint-ok
+.comp Components {
     .decl node(p: Position)
 
     .decl step(delta: Position)
@@ -319,7 +319,7 @@ test. Keying lets one instance box many sets at once (per-component, per-placeme
 single-set sites pass a constant key.
 
 ```
-.comp Bbox<Key> {              // lint-ok
+.comp Bbox<Key> {
     .decl cell(key: Key, p: Position)
     .decl grid(key: Key, p: Position)
 
@@ -370,7 +370,7 @@ verified by viewing the cells from it (another `Reframe`) and testing the shape
 against that view (`KeyedSetCompare.covers`).
 
 ```
-.comp Occurrences {            // lint-ok
+.comp Occurrences {
     .decl cell(p: Position)
     .decl shape(p: Position)
 
@@ -422,7 +422,7 @@ edges; `DiagPlacement` gates and extends it.
 ```
 // Cells on the diagonal through a corner — equal distance to the corner's two
 // edges; ring is that shared distance. The ungated diagonal (center included).
-.comp Diagonal {               // lint-ok
+.comp Diagonal {
     .decl cell(p: Position)
     .decl corner(d: DiagDir)
 

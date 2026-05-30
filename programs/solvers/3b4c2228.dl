@@ -71,7 +71,7 @@ on(P) :- in(P, C), c.block_color(C).
 // Re-express keyed cells relative to a per-key outer origin: inner = cell minus
 // outer, the inverse of compose. Outer extent + inner extent = cell extent, so
 // one subtraction both resizes and positions across frames.
-.comp Reframe<Key> {           // lint-ok
+.comp Reframe<Key> {
     .decl outer(key: Key, p: Position)
     .decl cell(key: Key, p: Position)
 
@@ -84,7 +84,7 @@ on(P) :- in(P, C), c.block_color(C).
 
 // Bounding box of a keyed cell set, as the margin from each grid edge to the box
 // (min distance to that edge over the set) — feed to Reframe as the outer origin.
-.comp Bbox<Key> {              // lint-ok
+.comp Bbox<Key> {
     .decl cell(key: Key, p: Position)
 
     .decl cell_dist(key: Key, d: Dir, k: number)
@@ -100,7 +100,7 @@ on(P) :- in(P, C), c.block_color(C).
 }
 
 // Connected components of a node set (4-adjacency), each labeled by an opaque id.
-.comp Components {             // lint-ok
+.comp Components {
     .decl node(p: Position)
 
     .decl step(d: Position)
@@ -117,7 +117,7 @@ on(P) :- in(P, C), c.block_color(C).
 
 // Occurrences of a shape among cells: placements where its footprint lands fully
 // on. The ARC "find this shape" move.
-.comp Occurrences {            // lint-ok
+.comp Occurrences {
     .decl cell(p: Position)
     .decl shape(p: Position)
 
@@ -145,7 +145,7 @@ on(P) :- in(P, C), c.block_color(C).
 
 // Cells on the diagonal through a corner — equal distance to the corner's two
 // edges; ring is that shared distance.
-.comp Diagonal {               // lint-ok
+.comp Diagonal {
     .decl cell(p: Position)
     .decl corner(d: DiagDir)
 
