@@ -362,7 +362,9 @@ def cmd_one(stem: str) -> int:
     result = run_task(stem)
     for p in result.pairs:
         if p.ok:
-            print(f"{p.kind}[{p.idx}]: PASS")
+            n = len(p.variants)
+            suffix = f" ({n} variants)" if n > 1 else ""
+            print(f"{p.kind}[{p.idx}]: PASS{suffix}")
         else:
             for line in render_pair_failure(p):
                 print(line)
