@@ -1,0 +1,121 @@
+// 87ab05b8
+// Noise cells on a bg ground; one cell carries c.marker. The output erases
+// everything and fills the 2×2 region holding the marker. The 4×4 grids leave
+// both the region rule and the fill color underdetermined; Choice = [l, f]
+// crosses the claims:
+//
+//   l (locate the region):
+//     $Div()    — grid divided into a c.divisor arrangement; the marker's tile.
+//     $Block()  — grid tiled by c.tile_dim blocks; the marker's block.
+//     $Corner() — a c.block_dim block seated at the marker's nearest corner.
+//   f (fill color):
+//     $Marker() — the marker's own color propagates to the fill.
+//     $Fixed()  — an independent c.fill.
+
+#include "../lib.dl"
+
+.type Locate = Div {} | Block {} | Corner {}
+.type Fill   = Marker {} | Fixed {}
+.type Choice = [l: Locate, f: Fill]
+
+.comp Consts {
+    .decl marker(c: Color)    marker(2).
+    .decl bg(c: Color)        bg(6).
+
+    // --- $Fixed ---
+    .decl fill(c: Color)      fill(2).
+
+    // --- $Div ---
+    .decl divisor(n: Dim)     divisor([2, 2]).
+
+    // --- $Block ---
+    .decl tile_dim(k: Dim)    tile_dim([2, 2]).
+
+    // --- $Corner ---
+    .decl block_dim(k: Dim)   block_dim([2, 2]).
+}
+
+.init c = Consts
+
+// A dim-sized block seated at the corner the marker is strictly nearest.
+// Axis names live in the comp (the body can't name them); the quadrant test is
+// DiagPlacement's — see docs/wf-solver/7-proposals.md.
+.comp CornerBlock {
+    .decl marker(p: Position)
+    .decl cell(p: Position)
+    .decl dim(k: Dim)
+
+    // Strictly nearer edge d than its opposite.
+    .decl nearer(p: Position, d: Dir)
+    nearer(P, D) :-
+        marker(P), dir_elem(D),
+        dist(P, D, K), opposite(D, Opp), dist(P, Opp, K2), K < K2.
+
+    // The corner whose both edges the marker is nearer.
+    .decl corner(d: DiagDir)
+    corner(Diag) :-
+        marker(P),
+        dir_of(Diag, VERTICAL,   Dv), nearer(P, Dv),
+        dir_of(Diag, HORIZONTAL, Dh), nearer(P, Dh).
+
+    // Cells within dim of that corner.
+    .decl inside(p: Position)
+    inside(P) :-
+        cell(P), corner(Diag), dim([Nv, Nh]),
+        dir_of(Diag, VERTICAL,   Dv), dist(P, Dv, Kv), Kv < Nv,
+        dir_of(Diag, HORIZONTAL, Dh), dist(P, Dh, Kh), Kh < Nh.
+}
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// The marker cell.
+.decl marker(p: Position)
+marker(P) :- in(P, Col), c.marker(Col).
+
+// --- Locate cases: the region to fill ---------------------------------------
+
+.decl locate_choice(l: Locate)
+locate_choice($Div()).
+locate_choice($Block()).
+locate_choice($Corner()).
+
+.decl region(p: Position, l: Locate)
+
+// $Div — the marker's tile in a c.divisor arrangement.
+region(P, $Div()) :-
+    marker(P_m), c.divisor(N), divide_2d(P_m, N, [0, 0], P_tile, _),   // marker's tile
+    in(P, _),                  divide_2d(P,   N, [0, 0], P_tile, _).   // cell in the same tile
+
+// $Block — the marker's block in a c.tile_dim tiling.
+region(P, $Block()) :-
+    marker(P_m), c.tile_dim(K), divide_by_size_2d(P_m, K, [0, 0], P_tile, _),
+    in(P, _),                   divide_by_size_2d(P,   K, [0, 0], P_tile, _).
+
+// $Corner — the c.block_dim block at the marker's nearest corner.
+.init cb = CornerBlock
+cb.marker(P) :- marker(P).
+cb.cell(P)   :- in(P, _).
+cb.dim(K)    :- c.block_dim(K).
+
+region(P, $Corner()) :- cb.inside(P).
+
+// --- Fill cases: the region's color ------------------------------------------
+
+.decl fill_choice(f: Fill)
+fill_choice($Marker()).
+fill_choice($Fixed()).
+
+.decl fill_color(col: Color, f: Fill)
+fill_color(Col, $Marker()) :- c.marker(Col).
+fill_color(Col, $Fixed())  :- c.fill(Col).
+
+// --- Output ------------------------------------------------------------------
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, [L, F]) :- region(P, L), fill_color(Col, F).
+out(P, Col, [L, F]) :-
+    in(P, _), locate_choice(L), !region(P, L),    // cell outside the region
+    fill_choice(F), c.bg(Col).
+
+.output out(IO=stdout)
