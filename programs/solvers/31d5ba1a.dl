@@ -50,6 +50,7 @@
     // --- Xor body data ----------------------------------------------------
     .decl bg(c: Color)        bg(0).
     .decl out_fill(c: Color)  out_fill(6).
+    .decl fill_at(n: number)  fill_at(1).
 }
 
 .init c = Consts
@@ -91,11 +92,11 @@ out(P_grid_out, Col_out, [Dc, $Lookup()]) :-
 
 out(P_grid_out, Col, [Dc, $Xor()]) :-
     dec_choice(Dc), c.frame(P_grid_out),        // choice × cell
-    filled_count(P_grid_out, Dc, 1),            // XOR=1: exactly one contribution
+    c.fill_at(F), filled_count(P_grid_out, Dc, F),   // count hits the fill threshold
     c.out_fill(Col).
 out(P_grid_out, Col, [Dc, $Xor()]) :-
     dec_choice(Dc), c.frame(P_grid_out),        // choice × cell
-    filled_count(P_grid_out, Dc, N), N != 1,    // XOR=0: zero or two contributions
+    c.fill_at(F), filled_count(P_grid_out, Dc, N), N != F,   // count off the threshold
     c.bg(Col).
 
 .output out(IO=stdout)
