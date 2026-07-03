@@ -1,0 +1,121 @@
+// 66f2d22f
+// Input is two side-by-side halves; output is their per-cell fold — fill where
+// neither half is marked (NOR).
+//
+// out's choice column = [d, b]:
+//
+//   d (decompose) — the 2-tile split under two model shapes:
+//     $Tile() — tabulated in Consts via tile_pos (2D tiling: outer/inner Dims)
+//     $Div()  — derived in body via divide (1D axis split: axis + count)
+//
+//   b (body) — three model claims for the fold:
+//     $Nor()    — boolean negation: no half marks the cell
+//     $Count()  — count non-bg contributors, fill where count = fold_target (0)
+//     $Lookup() — (left, right) color pair through a combine table
+//
+//   $Nor and $Count coincide at target 0 but are distinct models:
+//   $Count carries the fold_target parameter (a k-of-n family — XOR at target 1),
+//   $Nor is the parameter-free boolean form.
+
+#include "../lib.dl"
+
+.type DecChoice = Tile {} | Div {}
+.type Body      = Nor {} | Count {} | Lookup {}
+.type Choice    = [d: DecChoice, b: Body]
+
+.type CombineMember = [p: Position, col: Color]
+.type CombineKey    = [p: Position, dc: DecChoice]
+
+.comp Consts {
+    .init helpers = ConstsHelpers
+
+    .decl frame(p: Position)
+    frame(P) :- helpers.frame_pos([4, 7], P).
+
+    // --- Tile decompose data ----------------------------------------------
+    .decl tile_decompose(p: Position, p_outer: Position, p_inner: Position)
+    tile_decompose(P_grid, P_tile, P_intile) :-
+        helpers.tile_pos([1, 2], [4, 7], [0, 0], P_grid, P_tile, P_intile).
+
+    // --- Div decompose data -----------------------------------------------
+    .decl divisor(n: number)     divisor(2).
+    .decl divide_axis(a: Axis)   divide_axis(HORIZONTAL).
+    .decl divide_gap(g: number)  divide_gap(0).
+
+    // --- shared body data -------------------------------------------------
+    .decl bg(c: Color)           bg(0).
+    .decl out_fill(c: Color)     out_fill(5).
+
+    // --- Count body data --------------------------------------------------
+    .decl fold_target(n: number) fold_target(0).
+
+    // --- Lookup body data: (left, right) color-pair table -----------------
+    .decl combine_member(eid: number, p_outer: Position, c: Color)
+    .decl combine_out(eid: number, c_out: Color)
+    combine_member(0, [0,0,0,1], 0). combine_member(0, [0,0,1,0], 0). combine_out(0, 5).
+    combine_member(1, [0,0,0,1], 3). combine_member(1, [0,0,1,0], 0). combine_out(1, 0).
+    combine_member(2, [0,0,0,1], 0). combine_member(2, [0,0,1,0], 2). combine_out(2, 0).
+    combine_member(3, [0,0,0,1], 3). combine_member(3, [0,0,1,0], 2). combine_out(3, 0).
+}
+
+.init c = Consts
+
+.init combine_match = KeyedSetCompare<CombineKey, CombineMember>
+combine_match.pattern_member(Eid, [P_outer, C]) :- c.combine_member(Eid, P_outer, C).
+combine_match.observed_member([P_intile, Dc], [P_tile, C]) :-
+    decompose(P_grid, P_tile, P_intile, Dc), in(P_grid, C).
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// --- Decompose cases -------------------------------------------------------
+
+.decl dec_choice(dc: DecChoice)
+dec_choice($Tile()).
+dec_choice($Div()).
+
+.decl decompose(p: Position, p_outer: Position, p_inner: Position, dc: DecChoice)
+decompose(P_grid, P_tile, P_intile, $Tile()) :- c.tile_decompose(P_grid, P_tile, P_intile).
+decompose(P_grid, P_tile, P_intile, $Div()) :-
+    in(P_grid, _),                                       // input position
+    c.divide_axis(A), c.divisor(N), c.divide_gap(G),     // params
+    divide_slab(P_grid, A, N, G, P_tile, P_intile).
+
+// --- Nor body: marked relation parameterized by decompose choice -----------
+
+// A half marks this intile cell — a non-bg input cell decomposes onto it.
+.decl marked(p_inner: Position, dc: DecChoice)
+marked(P_intile, Dc) :-
+    decompose(P_grid, _, P_intile, Dc), in(P_grid, Col), !c.bg(Col).
+
+// --- Count body: contributor count per intile cell -------------------------
+
+.decl contributors(o: Position, dc: DecChoice, n: number)
+contributors(P_intile, Dc, N) :-
+    c.frame(P_intile), dec_choice(Dc),
+    N = count : { decompose(P_grid, _, P_intile, Dc), in(P_grid, Col), !c.bg(Col) }.
+
+// --- Output ----------------------------------------------------------------
+
+.decl out(p: Position, col: Color, c: Choice)
+
+// --- Nor ---
+out(P_intile, Col, [Dc, $Nor()]) :-
+    dec_choice(Dc), c.frame(P_intile),          // choice × cell
+    !marked(P_intile, Dc), c.out_fill(Col).     // no half marks it → fill
+out(P_intile, Col, [Dc, $Nor()]) :-
+    dec_choice(Dc), c.frame(P_intile),          // choice × cell
+    marked(P_intile, Dc), c.bg(Col).            // some half marks it → bg
+
+// --- Count ---
+out(P_intile, Col, [Dc, $Count()]) :-
+    contributors(P_intile, Dc, N), c.fold_target(N), c.out_fill(Col).   // count == target → fill
+out(P_intile, Col, [Dc, $Count()]) :-
+    contributors(P_intile, Dc, N), !c.fold_target(N), c.bg(Col).        // count != target → bg
+
+// --- Lookup ---
+out(P_intile, Col_out, [Dc, $Lookup()]) :-
+    c.combine_out(Eid, Col_out),                    // entry's output color
+    combine_match.equals([P_intile, Dc], Eid).      // cell's tiles == entry's members
+
+.output out(IO=stdout)
