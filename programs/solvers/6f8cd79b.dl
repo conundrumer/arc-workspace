@@ -1,0 +1,38 @@
+// 6f8cd79b
+// Draw a border: cells on any edge become c.border. The all-bg input leaves
+// the interior underdetermined; two models, tagged on out's Choice:
+//
+//   $Passthrough() — interior keeps its input color; the border overwrites.
+//   $Repaint()     — border cells get c.border, interior gets c.bg; the
+//                    input only carries the frame size.
+
+#include "../lib.dl"
+
+.type Choice = Passthrough {} | Repaint {}
+
+.comp Consts {
+    .decl border(c: Color)  border(8).
+
+    // --- $Repaint ---
+    .decl bg(c: Color)      bg(0).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl is_border(p: Position)
+is_border(P) :- in(P, _), dir_elem(D), dist(P, D, 0).   // on any edge
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// --- $Passthrough ---
+out(P, Col, $Passthrough()) :- is_border(P), c.border(Col).
+out(P, Col, $Passthrough()) :- in(P, Col), !is_border(P).
+
+// --- $Repaint ---
+out(P, Col, $Repaint()) :- is_border(P), c.border(Col).
+out(P, Col, $Repaint()) :- in(P, _), !is_border(P), c.bg(Col).
+
+.output out(IO=stdout)
