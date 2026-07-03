@@ -1,6 +1,6 @@
 # Patterns
 
-Patterns observed across `.dl` solvers. Distinct from `4-style.md` (rules every solver follows).
+Patterns observed across `.dl` solvers. Distinct from `style.md` (rules every solver follows).
 
 This list is descriptive, not prescriptive — the `.dl` files are the source of truth. It exists so future sessions can scan what's been used.
 

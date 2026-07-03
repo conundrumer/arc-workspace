@@ -14,7 +14,7 @@
 
 // A directed cycle (succ = edges, carrying no basepoint) with a gauge-free
 // rotation: walk advances a start cell by n successor steps. Candidate lib
-// component — see docs/wf-solver/7-proposals.md.
+// component — see docs/wf-solver/proposals.md.
 .comp Cycle<T> {
     .decl succ(p: T, p_next: T)
     .decl step(n: number)               // advance counts in use (bounds the walk)

@@ -39,7 +39,7 @@
 
 // A dim-sized block seated at the corner the marker is strictly nearest.
 // Axis names live in the comp (the body can't name them); the quadrant test is
-// DiagPlacement's — see docs/wf-solver/7-proposals.md.
+// DiagPlacement's — see docs/wf-solver/proposals.md.
 .comp CornerBlock {
     .decl marker(p: Position)
     .decl cell(p: Position)
