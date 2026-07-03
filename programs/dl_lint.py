@@ -66,12 +66,35 @@ def _value_context(line: str, op_start: int, op_end: int) -> bool:
     return rc.isalnum() or rc == "_" or rc in "([-"
 
 
+def _is_unary_minus(line: str, i: int) -> bool:
+    """True iff the '-' at i negates a value (unary), not the rule turnstile.
+
+    Reached only when the left side isn't value-shaped (binary is handled by
+    `_value_context`). Excludes the `:-` turnstile and requires a value token on
+    the right, so `-M` / `-W` / `-5` flag while `:- in(P)` does not.
+    """
+    j = i - 1
+    while j >= 0 and line[j].isspace():
+        j -= 1
+    if j >= 0 and line[j] == ":":  # rule turnstile ':-'
+        return False
+    k = i + 1
+    while k < len(line) and line[k].isspace():
+        k += 1
+    if k >= len(line):
+        return False
+    rc = line[k]
+    return rc.isalnum() or rc == "_" or rc in "(["
+
+
 def _find_arithmetic(line: str) -> list[tuple[int, str]]:
-    """Find binary arithmetic ops (+, -, *, /, %) with value-shaped operands."""
+    """Find arithmetic ops with value operands: binary +, -, *, /, % and unary -."""
     out: list[tuple[int, str]] = []
     for m in re.finditer(r"[+\-*/%]", line):
         i = m.start()
         if _value_context(line, i, i + 1):
+            out.append((i, line[i]))
+        elif line[i] == "-" and _is_unary_minus(line, i):
             out.append((i, line[i]))
     return out
 
