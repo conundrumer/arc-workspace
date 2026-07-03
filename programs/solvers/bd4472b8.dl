@@ -1,29 +1,28 @@
 // bd4472b8
-// Header rows (depth body_start along c.header_dir) pass through. Body rows
-// are filled per-row uniformly: row at distance T from header edge gets
-// header[(T - body_start) mod W], where W = grid extent perpendicular to
-// header_dir and header colors come from the row at distance 0, indexed
-// by distance from c.across_dir.
+// A header row (W colors) and a separator row sit above an empty body of height
+// N·W. Each of the N blocks restacks the header as stripes — header color k
+// becomes the block's k-th row. Header and separator pass through.
 //
-// Two body-cycling impls; out's choice column tags each:
-//
-//   $Recursive() — tile_offset shifts by W; compose-only
-//   $Mod()       — header_color((T_in - body_start) % W)
+// Model: transpose the header into the blank with one D4 transform, tiled N
+// times. The transform swaps the header's strip coordinate onto the block's
+// stacking coordinate — a pure coordinate permutation, so it carries no order,
+// index, or origin, and the match is Position equality. The header's location
+// washes into the discarded perpendicular component: only "which cells are
+// blank" depends on where the header sits, not the layout. The header is one
+// cell thick and the fill broadcasts, so reflection (FLIP_DIAG) and rotation
+// (ROT_CW) are indistinguishable here — the chirality is the only learned bit.
 
 #include "../lib.dl"
 
-.type Choice = Recursive {} | Mod {}
-
 .comp Consts {
-    .decl header_dir(d: Dir)     header_dir(TOP).
-    .decl across_dir(d: Dir)     across_dir(LEFT).
-    .decl body_start(n: number)  body_start(2).
+    .decl header_dir(d: Dir)      header_dir(TOP).
+    .decl body_start(n: number)   body_start(2).
+    .decl copies(n: number)       copies(2).
+    .decl transform(d: D4)        transform(FLIP_DIAG).
 
-    // Shift past the header: -body_start along header_dir.
+    // Shift the blank to a top-aligned frame: -body_start along header_dir.
     .decl body_shift(p: Position)
-    body_shift(Delta) :-
-        header_dir(D), body_start(Bs),
-        edge_delta(D, -Bs, Delta).
+    body_shift(Delta) :- header_dir(D), body_start(Bs), edge_delta(D, -Bs, Delta).
 }
 
 .init c = Consts
@@ -31,64 +30,29 @@
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
-// --- Shared derivations ---------------------------------------------------
+// The header transposed into a block-tall column: the stacking-axis component
+// of each header cell after the transform. The transform sends the header's
+// width (W) onto the stacking axis, matching the block height (W).
+.decl stripe(p_stack: Position, col: Color)
+stripe(P_stack, Col) :-
+    in(P_h, Col),                                // header cell
+    c.header_dir(D), dist(P_h, D, 0),            // on the header edge
+    c.transform(T), apply(T, P_h, P_ht),         // transpose it
+    axis_of(D, A), split(P_ht, A, P_stack, _).   // keep the stacking component
 
-// Width perpendicular to header_dir: count cells at the header edge.
-.decl header_cell(p: Position)
-header_cell(P) :- in(P, _), c.header_dir(D), dist(P, D, 0).
+// Body fill. Reframe the blank top-aligned, split into N blocks, and match each
+// block cell to a transposed-header stripe by Position equality.
+.decl fill(p: Position, col: Color)
+fill(P_b, Col) :-
+    in(P_b, _),                                        // input cell
+    c.body_shift(Delta), compose(P_b, Delta, P_body),  // reframe blank top-aligned
+    c.header_dir(D), dist(P_body, D, K), K >= 0,        // blank cells only
+    axis_of(D, A), c.copies(N),
+    divide(P_body, A, N, 0, _, P_inner),               // split blank into N blocks
+    stripe(P_inner, Col).                              // match the transposed header
 
-.decl width(w: number)
-width(W) :- W = count : { header_cell(_) }.
-
-// Header cells indexed by their across-dir distance.
-.decl header_color(idx: number, col: Color)
-header_color(Idx, Col) :-
-    in(P, Col),                                  // input cell
-    c.header_dir(D), dist(P, D, 0),              // on the header edge
-    c.across_dir(A_dir), dist(P, A_dir, Idx).    // index = across distance
-
-// --- Body fill, parameterized by impl choice ------------------------------
-
-.decl impl_choice(c: Choice)
-impl_choice($Recursive()).
-impl_choice($Mod()).
-
-.decl fill(p: Position, col: Color, c: Choice)
-
-// $Recursive: tile_offset shifts by W; compose-only.
-.decl tile_offset(off: Position)
-tile_offset(Base) :-
-    c.header_dir(D), c.body_start(Bs),           // header axis, base offset
-    edge_delta(D, Bs, Base).                     // delta carrying Bs at edge D
-tile_offset(Next) :-
-    tile_offset(Prev),                           // previous offset
-    width(W), c.header_dir(D),                   // shift amount and axis
-    edge_delta(D, W, Shift),                     // shift = W along D
-    compose(Prev, Shift, Next),                  // Prev + Shift
-    in(P, _), same_dist(D, Next, P).             // termination: input at Next's dist
-
-fill(P_grid_in, Col, $Recursive()) :-
-    in(P_grid_in, _),                            // input cell
-    c.header_dir(D),                             // cycling axis
-    tile_offset(Off), header_color(T, Col),      // a (cycle, header-index) pair
-    edge_delta(D, T, T_delta),                   // shift to header index
-    compose(Off, T_delta, Full_off),             // total offset
-    same_dist(D, Full_off, P_grid_in).           // input cell at that dist
-
-// $Mod: stride decomposition into header_color, after shifting past the
-// header. Header cells produce negative dist after the shift; stride's
-// T >= 0 guard rejects them, so the rule doesn't fire.
-fill(P, Col, $Mod()) :-
-    in(P, _),                                          // input cell
-    c.body_shift(Delta), compose(P, Delta, P_local),   // shift past header
-    c.header_dir(D), dist(P_local, D, T),              // shifted dist
-    width(W), stride(T, W, 0, _, Idx),                 // cyclic inner offset
-    header_color(Idx, Col).                            // header at that index
-
-// --- Output: candidate per impl -------------------------------------------
-
-.decl out(p: Position, col: Color, c: Choice)
-out(P, Col, Impl) :- impl_choice(Impl), in(P, Col), !fill(P, _, Impl).
-out(P, Col, Impl) :- fill(P, Col, Impl).
+.decl out(p: Position, col: Color)
+out(P, Col) :- in(P, Col), !fill(P, _).          // header + separator pass through
+out(P, Col) :- fill(P, Col).                     // body filled
 
 .output out(IO=stdout)
