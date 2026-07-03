@@ -1,6 +1,7 @@
 # Proposals
 
-Forward-looking changes to `.dl` style and primitives — a working draft.
+For proposing and staging changes to `.dl` style and primitives. Not a changelog or general notes.
+If a proposal is implemented, it is removed from this doc.
 
 ## `ConcatPipeline` — unequal-sized rectilinear tiles
 
@@ -168,7 +169,8 @@ difference) is basepoint-free; the absolute position is not.
 the cycle length. `step` enumerates the advance counts the solver needs and caps
 the recursion. Alternative: have the component count cycle length L and expose
 the full Z/L (`walk` for n in 0..L-1) — more machinery, unneeded when a solver
-applies only a few shifts.
+applies only a few shifts. `DirCycle` (below) takes that alternative for a dense
+axis — it counts L from its nodes, so its caller hands it no step set.
 
 **Task-local home (protocol step 1).** ca8de6ea collapses a 5×5 X onto a dense
 3×3. The output's 8-cell ring is a CW `Cycle`; each X-arm cell maps to the ring
@@ -183,22 +185,70 @@ ring.step(N)         :- c.ring_shift(_, N).        // shifts in use
 out(P_out, ...) :- ..., ring.walk(P_corner, Shift, P_out).
 ```
 
-**Why a cycle, not `apply(D4)`.** D4 rotations move in 90° steps. A diagonal →
-adjacent-cardinal twist is 45°, outside D4, so it can't be an `apply`. Modeling
-the destinations as one 8-cycle makes that twist an ordinary single `succ` edge
-and keeps the rotation a step count rather than a chosen representative pairing.
+**Second home (protocol step 1).** 6d1d5c90's rows are a `Cycle` built by
+`DirCycle` (below). Where ca8de6ea enumerates an irregular ring as `succ` data,
+6d1d5c90 *derives* `succ` from axis adjacency — the abstraction's two ends.
 
-**Generalization.** The shift lives in Consts as a Z/n value, so spiral-collapse
-siblings (more rings, larger per-ring twist) are a Consts edit. And the cycle is
-combinatorial — `succ` follows cell order, not geometry — so an irregular loop (a
-closed circuit of arbitrary shape, length not a multiple of 8) flows through
-unchanged. A bigger or irregular loop is the honest test that the abstraction
-isn't pinned to Chebyshev radius. Dihedral (undirected loop — adjacency without
-direction) would be a sibling component if a task needs it.
+## `step_delta` — direction → unit displacement
 
-**Naming.** "Cycle" matches the Z/n cycle species; the sibling project's
-color-symmetry analysis uses the same name for the color analog. `walk` names the
-advance, `succ` the generating edge.
+`step_delta(d: Dir, delta: Position)` is the unit step toward `d`: −1 at edge `d`,
++1 at its opposite. It is the direction-keyed form of the four step deltas
+`Reach`/`Components` hardcode — `step([-1,1,0,0]). step([1,-1,0,0]). ...` collapse
+to `step(S) :- dir_elem(D), step_delta(D, S)` — connectivity rebuilds on it
+instead of recopying the deltas.
+
+```
+.decl step_delta(d: Dir, delta: Position) inline
+step_delta(D, Step) :-
+    opposite(D, O), edge_delta(D, -1, Sd), edge_delta(O, 1, So), compose(Sd, So, Step).
+```
+
+**Home.** In lib it is a free inline beside `edge_delta` — its ±1 are lib-internal
+literals. Task-local it can't sit in a solver body (the linter bars the unit
+literals), so 6d1d5c90 shelters it in a one-relation `UnitStep` comp (`.comp`
+blocks are skipped), used as `u.delta(D, S)`.
+
+**Task-local home (protocol step 1).** 6d1d5c90, as `DirCycle`'s linear successor
+(below).
+
+## `DirCycle` — a dense line closed into a cycle
+
+The 1D-cycle peer of `DirFrame`, same `dir(d: Dir)` parameter: where `DirFrame`
+seats an index in a line measured from an edge, `DirCycle` walks a line closed into
+a loop advancing toward an edge. Given a node set on an axis it builds the cyclic
+`succ` — linear step toward `dir`, plus a wrap from the `dir`-extreme back to the
+far extreme — counts its own length, and exposes `walk`.
+
+```
+.comp DirCycle {
+    .decl node(p: Position)
+    .decl dir(d: Dir)                    // advance direction
+
+    .init u = UnitStep
+    .decl succ(p: Position, q: Position)
+    succ(P, Q) :- node(P), dir(D), u.delta(D, S), compose(P, S, Q), node(Q).       // step toward dir
+    succ(P, Q) :- node(P), dir(D), dist(P, D, 0),                                  // wrap:
+                  node(Q), opposite(D, O), dist(Q, O, 0).                          //  dir extreme -> far extreme
+
+    .init cyc = Cycle<Position>
+    cyc.succ(P, Q) :- succ(P, Q).
+    cyc.step(N)    :- L = count : { node(_) }, N = range(0, L).   // every advance the cycle allows
+
+    .decl walk(p0: Position, n: number, p: Position)
+    walk(P0, N, P) :- cyc.walk(P0, N, P).
+}
+```
+
+**Composed, not new machinery.** `step_delta` (via `UnitStep`) supplies adjacency;
+`Cycle` supplies `walk`; `DirCycle` adds only the wrap edge and the length count.
+
+**Dense line.** Like `DirFrame`'s dense `dist_set`, `DirCycle` assumes the nodes
+form a contiguous line — the unit-step `succ` needs each interior node's neighbor
+present. A sparse set dead-ends mid-line (a covering-relation `succ` would be the
+sparse variant); a cyclic shift is dense, so this contract fits.
+
+**Task-local home (protocol step 1).** 6d1d5c90: `node` is each row (an `in` cell
+split onto the shift axis), `dir` the shift direction, `walk(row, M)` the rotation.
 
 ## Region & shape toolkit
 
