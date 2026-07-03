@@ -1,0 +1,62 @@
+// 695367ec
+// Input: a solid n×n block of color C. Output: a fixed 15×15 frame ruled into
+// n×n background cells by 1-wide lines of color C, grown from the top-left
+// corner — a line wherever the distance from an anchor edge is ≡ n (mod n+1).
+// The run length n and the ink C are read off the input block.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .init helpers = ConstsHelpers
+
+    // Fixed output frame.
+    .decl frame(p: Position)
+    frame(P) :- helpers.frame_pos([15, 15], P).
+
+    // Corner the ruling grows from.
+    .decl anchor(d: DiagDir)
+    anchor(TOP_LEFT).
+
+    // Width of a separating line.
+    .decl gap(g: number)
+    gap(1).
+
+    // Background fill between the lines.
+    .decl bg(col: Color)
+    bg(0).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// Ink, read off the input block.
+.decl ink(col: Color)
+ink(C) :- in(_, C).
+
+// Run length = block extent along each axis.
+.decl run(a: Axis, k: number)
+run(A, N) :- axis_elem(A), in(P, _), axis_dim(P, A, N).
+
+// Frame cell on a background tile along anchor edge D — within the run, not on
+// the trailing line.
+.decl on_tile(p: Position, d: Dir)
+on_tile(P, D) :-
+    c.frame(P),
+    c.anchor(Diag), dir_of(Diag, _, D),         // an anchor edge
+    axis_of(D, A), run(A, W), c.gap(G),         // period = block extent along D's axis
+    dist(P, D, T), stride(T, W, G, _, _).
+
+// On a line: a gap on at least one anchor edge.
+.decl ruled(p: Position)
+ruled(P) :-
+    c.frame(P),
+    c.anchor(Diag), dir_of(Diag, _, D),
+    !on_tile(P, D).
+
+.decl out(p: Position, col: Color)
+out(P, C)   :- ruled(P), ink(C).
+out(P, Bg)  :- c.frame(P), !ruled(P), c.bg(Bg).
+
+.output out(IO=stdout)
