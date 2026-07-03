@@ -1,0 +1,29 @@
+// 3cd86f4f
+// Shear: each cell slides along the c.shear_into axis by its distance
+// from the c.shear_from edge — the bottom row stays put, each row up steps one
+// column further, widening the frame by (rows - 1).
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl shear_from(d: Dir)   shear_from(BOTTOM).   // edge the shift is measured from
+    .decl shear_into(d: Dir)   shear_into(LEFT).      // edge-distance the shift grows
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// The near slot grows by the shear_from distance, the far slot by the opposite
+// distance — together they keep the widened frame consistent.
+.decl out(p: Position, col: Color)
+out(P_out, Col) :-
+    in(P_in, Col),
+    c.shear_from(M), opposite(M, M_opp),               // measure axis
+    c.shear_into(H), opposite(H, H_opp),               // displacement axis
+    dist(P_in, M, Kn), dist(P_in, M_opp, Kf),          // near/far shift magnitudes
+    edge_delta(H, Kn, D_near), edge_delta(H_opp, Kf, D_far),
+    compose(P_in, D_near, P_mid), compose(P_mid, D_far, P_out).
+
+.output out(IO=stdout)
