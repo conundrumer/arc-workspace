@@ -162,6 +162,11 @@ split(P, A,
       [@keep_axis(A, HORIZONTAL, T), @keep_axis(A, HORIZONTAL, B), @keep_axis(A, VERTICAL, L),   @keep_axis(A, VERTICAL, R)]) :-
     P = [T, B, L, R].
 
+// Extent of p's frame along axis a — read off any position in the frame.
+.decl axis_dim(p: Position, a: Axis, n: number) inline
+axis_dim(P, A, N) :- P = [T, B, L, R],
+    N = @axis_near(A, T, B, L, R) + @axis_far(A, T, B, L, R) + 1.
+
 // Apply a D4 transform to a Position — a pure index permutation.
 .decl apply(d: D4, p: Position, p_out: Position) inline
 apply(D, P, [@apply_t(D, T, B, L, R), @apply_b(D, T, B, L, R),
