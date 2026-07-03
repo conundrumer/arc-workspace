@@ -5,7 +5,14 @@ argument-hint: [solver|meta|meta end]
 disable-model-invocation: true
 ---
 
-Read `docs/wf-solver/*.md` in order.
+Read all the docs in `docs/wf-solver`:
+- `0-meta-process.md`
+- `1-meta-session.md`
+- `3-principles.md`
+- `4-style.md`
+- `5-session.md`
+- `6-patterns.md`
+- `7-proposals.md`
 
 Then dispatch on an exact keyword match for `$ARGUMENTS`:
 

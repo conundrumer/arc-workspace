@@ -101,7 +101,7 @@ Cases are grouped under `// --- <name> ---` markers in both Consts and body — 
 - No literals — orientation (`TOP`, `LEFT`, `VERTICAL`, etc.), colors, or non-zero task-shape numbers (lengths, offsets, gaps). Body reads them from Consts via `c.<rel>(...)` and parameterizes. Hardcoded values fix the body to one task in the family; pulling from Consts keeps it symmetric across the family.
     - Literals are fine inside a generic `.comp` written task-local — lib-shaped code, not body; the linter skips `.comp` blocks wholesale.
 - No Position destructure. Use lib primitives instead. Position is opaque; destructure hardcodes edge indices and breaks orientation invariance.
-- Avoid arithmetic. If necessary, flag.
+- Avoid arithmetic. If necessary, that's a sign the lib needs a new primitive. Create that instead of having arithmetic in the solver body.
 - Inline relations can't appear inside aggregators. Wrap in a non-inline relation when needed.
 
 ## Multi-atom rules
