@@ -45,6 +45,8 @@ A handful of train pairs underdetermines the family. Each model is a claim — t
 
 Different on either makes them different models; each earns a case. Same on both makes them alt impls of one model; a second impl adds nothing — same family, same prior, same generalization — so don't propose alt impls. Output divergence settles the question when it fires; Consts-shape divergence catches candidates that coincide on today's task but parameterize different families. Parameters that happen to share a value stay separate relations: one shared Consts slot across two claims asserts they are the same parameter (87ab05b8 keeps `divisor`, `tile_dim`, `block_dim` apart, all [2,2]).
 
+The criterion compares maps, not swept sets: a body that relabels its own coordinates — measuring from `opposite(D)` where another measures from `D` — sweeps the same tasks at different Consts values, so the checklist counts it as a different model. The relabeled twin adds no coverage; don't write one.
+
 **Claims are evidence-gated.** Claims the data cannot distinguish all stay — that is what coverage is for (a passthrough interior vs a repainted one, 6f8cd79b). A claim the data barely instantiates doesn't earn a case: a mapping table wants multiple entries exercised (44f52bb0's groups both fire; a one-entry ring table over a plain border sits unexercised), and an identification rule dies when some pair defeats it (87ab05b8 train 0 defeats count-based marker identification — every noise color is a singleton).
 
 ## Examples
