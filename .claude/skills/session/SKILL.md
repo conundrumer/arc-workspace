@@ -60,3 +60,5 @@ A new primitive earns its place in `programs/lib.dl` through real use, not by lo
 2. Surface it to the user — name it, describe the operation, show the solver-local version.
 3. On agreement, write the addition proposal to `docs/wf-solver/proposals.md`.
 4. On approval, move to `programs/lib.dl`. Update callers.
+
+Reusing a staged proposal is promotion evidence. When a solver copies a primitive that already has a `proposals.md` entry, surface the reuse directly — name the proposal and the new home, and ask whether it moves to lib — and record the home in the entry (the `Second home (protocol step 1)` convention).
