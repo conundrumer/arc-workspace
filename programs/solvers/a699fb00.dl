@@ -1,0 +1,53 @@
+// a699fb00
+// Dashed lines: c.dot cells alternating with bg along c.axis. The gaps fill
+// with c.fill. Two models of which bg cells are gaps, tagged on out's Choice:
+//
+//   $Flank — a bg cell with a dot on both along-axis neighbors.
+//   $Span  — a bg cell with a dot on both along-axis sides in its line.
+
+#include "../lib.dl"
+
+.type Choice = Flank {} | Span {}
+
+.comp Consts {
+    .decl axis(a: Axis)    axis(HORIZONTAL).   // lines run along this axis
+    .decl bg(c: Color)     bg(0).
+    .decl dot(c: Color)    dot(1).             // dash color
+    .decl fill(c: Color)   fill(2).            // gap color
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// --- Flank ---
+
+.decl flanked(p: Position)
+flanked(P) :-
+    in(P, Bg), c.bg(Bg), c.dot(Dot),                    // bg cell
+    c.axis(A), axis_of(D, A), opposite(D, D2),          // the two along-axis dirs
+    step_delta(D, S1), compose(P, S1, Q1), in(Q1, Dot),    // dot neighbor toward D
+    step_delta(D2, S2), compose(P, S2, Q2), in(Q2, Dot).   // dot neighbor toward D2
+
+out(P, F, $Flank())   :- flanked(P), c.fill(F).
+out(P, Col, $Flank()) :- in(P, Col), !flanked(P).
+
+// --- Span ---
+
+// A dot strictly past P toward edge d, in P's line.
+.decl dot_beyond(p: Position, d: Dir)
+dot_beyond(P, D) :-
+    in(P, Bg), c.bg(Bg), c.dot(Dot), in(Q, Dot),             // bg cell, dot cell
+    c.axis(A), split(P, A, _, Ac), split(Q, A, _, Ac),       // same line
+    axis_of(D, A), dist(P, D, K), dist(Q, D, Kq), Kq < K.    // dot nearer edge d
+
+.decl spanned(p: Position)
+spanned(P) :- dot_beyond(P, D), opposite(D, D2), dot_beyond(P, D2).
+
+out(P, F, $Span())   :- spanned(P), c.fill(F).
+out(P, Col, $Span()) :- in(P, Col), !spanned(P).
+
+.output out(IO=stdout)
