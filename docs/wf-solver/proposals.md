@@ -189,28 +189,6 @@ out(P_out, ...) :- ..., ring.walk(P_corner, Shift, P_out).
 `DirCycle` (below). Where ca8de6ea enumerates an irregular ring as `succ` data,
 6d1d5c90 *derives* `succ` from axis adjacency — the abstraction's two ends.
 
-## `step_delta` — direction → unit displacement
-
-`step_delta(d: Dir, delta: Position)` is the unit step toward `d`: −1 at edge `d`,
-+1 at its opposite. It is the direction-keyed form of the four step deltas
-`Reach`/`Components` hardcode — `step([-1,1,0,0]). step([1,-1,0,0]). ...` collapse
-to `step(S) :- dir_elem(D), step_delta(D, S)` — connectivity rebuilds on it
-instead of recopying the deltas.
-
-```
-.decl step_delta(d: Dir, delta: Position) inline
-step_delta(D, Step) :-
-    opposite(D, O), edge_delta(D, -1, Sd), edge_delta(O, 1, So), compose(Sd, So, Step).
-```
-
-**Home.** In lib it is a free inline beside `edge_delta` — its ±1 are lib-internal
-literals. Task-local it can't sit in a solver body (the linter bars the unit
-literals), so 6d1d5c90 shelters it in a one-relation `UnitStep` comp (`.comp`
-blocks are skipped), used as `u.delta(D, S)`.
-
-**Task-local home (protocol step 1).** 6d1d5c90, as `DirCycle`'s linear successor
-(below).
-
 ## `DirCycle` — a dense line closed into a cycle
 
 The 1D-cycle peer of `DirFrame`, same `dir(d: Dir)` parameter: where `DirFrame`
@@ -224,9 +202,8 @@ far extreme — counts its own length, and exposes `walk`.
     .decl node(p: Position)
     .decl dir(d: Dir)                    // advance direction
 
-    .init u = UnitStep
     .decl succ(p: Position, q: Position)
-    succ(P, Q) :- node(P), dir(D), u.delta(D, S), compose(P, S, Q), node(Q).       // step toward dir
+    succ(P, Q) :- node(P), dir(D), step_delta(D, S), compose(P, S, Q), node(Q).    // step toward dir
     succ(P, Q) :- node(P), dir(D), dist(P, D, 0),                                  // wrap:
                   node(Q), opposite(D, O), dist(Q, O, 0).                          //  dir extreme -> far extreme
 
@@ -239,7 +216,7 @@ far extreme — counts its own length, and exposes `walk`.
 }
 ```
 
-**Composed, not new machinery.** `step_delta` (via `UnitStep`) supplies adjacency;
+**Composed, not new machinery.** `step_delta` (lib) supplies adjacency;
 `Cycle` supplies `walk`; `DirCycle` adds only the wrap edge and the length count.
 
 **Dense line.** Like `DirFrame`'s dense `dist_set`, `DirCycle` assumes the nodes

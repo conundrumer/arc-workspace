@@ -26,15 +26,6 @@
         step(N1), N1 = N + 1.           // N1 is the Z/n step count
 }
 
-// Unit displacement toward d: -1 at edge d, +1 at its opposite — the direction-
-// keyed form of Reach/Components' hardcoded step deltas. Candidate lib primitive;
-// sheltered in a comp here so its unit literals stay out of the body.
-.comp UnitStep {
-    .decl delta(d: Dir, p: Position) inline
-    delta(D, Step) :-
-        opposite(D, O), edge_delta(D, -1, Sd), edge_delta(O, 1, So), compose(Sd, So, Step).
-}
-
 // A set of positions strung along a direction, closed into a cycle: linear
 // successor toward dir, with the dir-extreme wrapping back to the far extreme.
 // walk advances a node n steps, bounded by the cycle's own length. The 1D-cycle
@@ -43,9 +34,8 @@
     .decl node(p: Position)
     .decl dir(d: Dir)                    // advance direction
 
-    .init u = UnitStep
     .decl succ(p: Position, q: Position)
-    succ(P, Q) :- node(P), dir(D), u.delta(D, S), compose(P, S, Q), node(Q).       // step toward dir
+    succ(P, Q) :- node(P), dir(D), step_delta(D, S), compose(P, S, Q), node(Q).    // step toward dir
     succ(P, Q) :- node(P), dir(D), dist(P, D, 0),                                  // wrap:
                   node(Q), opposite(D, O), dist(Q, O, 0).                          //  dir extreme -> far extreme
 

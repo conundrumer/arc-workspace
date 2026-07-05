@@ -154,6 +154,11 @@ compose([T1, B1, L1, R1], [T2, B2, L2, R2], [T1+T2, B1+B2, L1+L2, R1+R2]) :- tru
 .decl edge_delta(d: Dir, k: number, p: Position) inline
 edge_delta(D, K, [@keep_dir(D, TOP, K), @keep_dir(D, BOTTOM, K), @keep_dir(D, LEFT, K), @keep_dir(D, RIGHT, K)]) :- true.
 
+// Unit step toward d: -1 at edge d, +1 at its opposite.
+.decl step_delta(d: Dir, delta: Position) inline
+step_delta(D, Step) :-
+    opposite(D, O), edge_delta(D, -1, Sd), edge_delta(O, 1, So), compose(Sd, So, Step).
+
 // Decompose p by axis: along carries the axis component (perpendicular
 // zeroed); across carries the perpendicular (axis zeroed).
 .decl split(p: Position, a: Axis, along: Position, across: Position) inline
