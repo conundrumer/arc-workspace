@@ -12,6 +12,7 @@ Both CLI paths also lint each solver body (see dl_lint) and print style findings
 """
 
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -174,15 +175,25 @@ def _invoke_souffle(
 ) -> list[tuple[str, list[list[int]], list[tuple[int, int]]]]:
     facts = grid_to_facts(input_rows)
     # -L/-lfunctors load the functor shared library build_functors compiled —
-    # lib.dl's primitives call into it. timeout bounds runaway souffle: some
-    # rule shapes can hang the evaluator and exhaust system memory.
+    # lib.dl's primitives call into it.
+    #
+    # Two bounds on runaway souffle (some rule shapes can hang the evaluator
+    # and exhaust system memory). The kernel CPU-time limit (`ulimit -t`, via
+    # a sh wrapper — preexec_fn is unsafe under threads) counts only souffle's
+    # own burn, so system load and EDR spawn stalls can't fake a failure. The
+    # wall timeout backstops hangs that block without spinning; it can be
+    # raised if it ever false-positives, but stays low so inefficient solvers
+    # surface.
+    cmd = ["souffle", "-D-", "-w", "-L", str(PROGRAMS_DIR), "-lfunctors", str(dl_path)]
     result = subprocess.run(
-        ["souffle", "-D-", "-w", "-L", str(PROGRAMS_DIR), "-lfunctors", str(dl_path)],
+        ["/bin/sh", "-c", 'ulimit -t 5; exec "$0" "$@"', *cmd],
         input=facts,
         capture_output=True,
         text=True,
-        timeout=5,
+        timeout=10,
     )
+    if result.returncode == -signal.SIGXCPU:
+        raise RuntimeError(f"souffle exceeded the 5s CPU limit on {dl_path.name}")
     if result.returncode != 0:
         raise RuntimeError(f"souffle exited {result.returncode}:\n{result.stderr}")
     return parse_output(result.stdout)
@@ -266,10 +277,27 @@ def _pair_work(stem: str) -> list[tuple]:
     return work
 
 
+def _pool_workers() -> int | None:
+    """Cap Souffle-spawning pools at the performance-core count.
+
+    A full sweep queues hundreds of CPU-bound Souffle processes; the default
+    pool size (cores + 4) oversubscribes onto efficiency cores and inflates
+    wall times.
+    """
+    try:
+        out = subprocess.run(
+            ["sysctl", "-n", "hw.perflevel0.logicalcpu"],
+            capture_output=True, text=True, check=True,
+        )
+        return int(out.stdout)
+    except (subprocess.CalledProcessError, FileNotFoundError, ValueError):
+        return None  # no asymmetric cores to avoid: default sizing
+
+
 def run_task(stem: str) -> TaskResult:
     """Single-task entry: pairs run in parallel."""
     work = _pair_work(stem)
-    with ThreadPoolExecutor() as executor:
+    with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
         pairs = list(executor.map(lambda w: run_pair(*w), work))
     return TaskResult(stem=stem, pairs=pairs)
 
@@ -389,7 +417,7 @@ def cmd_all() -> int:
     for stem in stems:
         all_work.extend(_pair_work(stem))
 
-    with ThreadPoolExecutor() as executor:
+    with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
         all_pairs = list(executor.map(lambda w: run_pair(*w), all_work))
 
     by_stem: dict[str, list[PairResult]] = defaultdict(list)
