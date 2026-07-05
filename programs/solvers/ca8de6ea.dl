@@ -27,32 +27,6 @@
         step(N1), N1 = N + 1.           // N1 is the Z/n step count
 }
 
-// Diagonal placement: the quadrant a cell sits in, and its ring. Candidate lib
-// primitives — see docs/wf-solver/proposals.md ("Diagonal placement").
-.comp DiagPlacement {
-    .decl cell(p: Position)
-
-    // Strictly nearer edge d than its opposite — which side of the axis midline.
-    .decl nearer(p: Position, d: Dir)
-    nearer(P, D) :-
-        cell(P), dir_elem(D),
-        dist(P, D, K), opposite(D, Opp), dist(P, Opp, K2), K < K2.
-
-    // The diagonal quadrant a cell sits in: nearer on both of that corner's edges.
-    .decl quadrant(p: Position, diag: DiagDir)
-    quadrant(P, Diag) :-
-        dir_of(Diag, VERTICAL,   Dv), nearer(P, Dv),
-        dir_of(Diag, HORIZONTAL, Dh), nearer(P, Dh).
-
-    // On the diagonal of its quadrant, at ring K — the shared distance to both
-    // edges of that corner.
-    .decl diag_cell(p: Position, diag: DiagDir, ring: number)
-    diag_cell(P, Diag, K) :-
-        quadrant(P, Diag),
-        dir_of(Diag, VERTICAL,   Dv), dist(P, Dv, K),
-        dir_of(Diag, HORIZONTAL, Dh), dist(P, Dh, K).
-}
-
 .type Choice = LabeledGrids {} | Cycle {}
 
 .comp Consts {

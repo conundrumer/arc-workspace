@@ -37,28 +37,14 @@
 
 .init c = Consts
 
-// A dim-sized block seated at the corner the marker is strictly nearest.
-// Axis names live in the comp (the body can't name them); the quadrant test is
-// DiagPlacement's — see docs/wf-solver/proposals.md.
+// A dim-sized block seated at a corner. Axis names live in the comp (the body
+// can't name them).
 .comp CornerBlock {
-    .decl marker(p: Position)
+    .decl corner(d: DiagDir)
     .decl cell(p: Position)
     .decl dim(k: Dim)
 
-    // Strictly nearer edge d than its opposite.
-    .decl nearer(p: Position, d: Dir)
-    nearer(P, D) :-
-        marker(P), dir_elem(D),
-        dist(P, D, K), opposite(D, Opp), dist(P, Opp, K2), K < K2.
-
-    // The corner whose both edges the marker is nearer.
-    .decl corner(d: DiagDir)
-    corner(Diag) :-
-        marker(P),
-        dir_of(Diag, VERTICAL,   Dv), nearer(P, Dv),
-        dir_of(Diag, HORIZONTAL, Dh), nearer(P, Dh).
-
-    // Cells within dim of that corner.
+    // Cells within dim of the corner.
     .decl inside(p: Position)
     inside(P) :-
         cell(P), corner(Diag), dim([Nv, Nh]),
@@ -93,8 +79,11 @@ region(P, $Block()) :-
     in(P, _),                   divide_by_size_2d(P,   K, [0, 0], P_tile, _).
 
 // $Corner — the c.block_dim block at the marker's nearest corner.
+.init dp = DiagPlacement
+dp.cell(P) :- marker(P).
+
 .init cb = CornerBlock
-cb.marker(P) :- marker(P).
+cb.corner(D) :- dp.quadrant(_, D).
 cb.cell(P)   :- in(P, _).
 cb.dim(K)    :- c.block_dim(K).
 

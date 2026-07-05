@@ -255,9 +255,8 @@ split onto the shift axis), `dir` the shift direction, `walk(row, M)` the rotati
 Five comps carried by 3b4c2228 compose into a shape-detection stack — `Reframe`
 (position algebra, the inverse of `compose`), `Components` and `Bbox` (find and
 frame regions), `Occurrences` (`Reframe` + `KeyedSetCompare`, "find this shape"),
-and `Diagonal` (a corner diagonal). They're grouped below with their siblings
-`Reach` (seeded connectivity) and `DiagPlacement` (quadrant geometry). The two
-3b4c2228 detectors show the wiring:
+and `Diagonal` (a corner diagonal). They're grouped below with their sibling
+`Reach` (seeded connectivity). The two 3b4c2228 detectors show the wiring:
 
 - `$Object` = `Components` → `Bbox.margin` → `Reframe` → `KeyedSetCompare.equals`
   (each connected component, reframed into its box, set-equal to the shape).
@@ -463,15 +462,12 @@ window-local variant, not this one, and `matcher` is the seam where it'd plug in
 2×2 block shape among the color's cells — a distinct model from a `Components`
 detector (they diverge on touching copies), not an alt impl.
 
-### Diagonal geometry — `Diagonal` / `DiagPlacement`
+### `Diagonal` — a corner diagonal
 
-Position predicates for diagonal/quadrant geometry, in components so they can name
-axes directly. `Diagonal` is the base — cells equidistant from a corner's two
-edges; `DiagPlacement` gates and extends it.
+Cells equidistant from a corner's two edges; ring is that shared distance. The
+ungated diagonal (center included). A component so it can name axes directly.
 
 ```
-// Cells on the diagonal through a corner — equal distance to the corner's two
-// edges; ring is that shared distance. The ungated diagonal (center included).
 .comp Diagonal {
     .decl cell(p: Position)
     .decl corner(d: DiagDir)
@@ -482,58 +478,15 @@ edges; `DiagPlacement` gates and extends it.
         dir_of(Diag, VERTICAL,   Dv), dist(P, Dv, K),
         dir_of(Diag, HORIZONTAL, Dh), dist(P, Dh, K).
 }
-
-.comp DiagPlacement {
-    .decl cell(p: Position)
-
-    // Strictly nearer edge d than its opposite — which side of the axis midline.
-    .decl nearer(p: Position, d: Dir)
-    nearer(P, D) :-
-        cell(P), dir_elem(D),
-        dist(P, D, K), opposite(D, Opp), dist(P, Opp, K2), K < K2.
-
-    // The diagonal quadrant a cell sits in: nearer on both of that corner's edges.
-    .decl quadrant(p: Position, diag: DiagDir)
-    quadrant(P, Diag) :-
-        dir_of(Diag, VERTICAL,   Dv), nearer(P, Dv),
-        dir_of(Diag, HORIZONTAL, Dh), nearer(P, Dh).
-
-    // On the diagonal of its quadrant, at ring K — the shared distance to both
-    // edges of that corner.
-    .decl diag_cell(p: Position, diag: DiagDir, ring: number)
-    diag_cell(P, Diag, K) :-
-        quadrant(P, Diag),
-        dir_of(Diag, VERTICAL,   Dv), dist(P, Dv, K),
-        dir_of(Diag, HORIZONTAL, Dh), dist(P, Dh, K).
-}
 ```
 
-**`Diagonal` is the base; `diag_cell` gates it.** `DiagPlacement.diag_cell` is
-`Diagonal.diagonal` ∩ `quadrant` — the corner→center *ray* (it drops equidistant
-cells, which sit in no quadrant). `Diagonal` alone is the full corner-to-corner
-diagonal. So the two diagonal uses across solvers are the gated ray (ca8de6ea's
-X-arms) and the ungated diagonal (3b4c2228's tally) — distinct relations, not one
-repeated.
+**Relation to lib's `DiagPlacement`.** `DiagPlacement.diag_cell` is `diagonal` ∩
+`quadrant` — the corner→center *ray* (it drops equidistant cells, which sit in no
+quadrant). `Diagonal` alone is the full corner-to-corner diagonal — a distinct
+relation, not a repeat. The equidistance test is also the fixed set of the
+corner's diagonal flip.
 
-**Why a component, not loose body relations.** Two body constraints push it into a
-`.comp`. A solver body can't name `VERTICAL`/`HORIZONTAL`, so reading a corner's
-two perpendicular components there needs two `dir_of` rows plus an `A1 != A2`
-disequality; inside a component (as `corner_anchor` does in lib) the axes are
-named directly and the disequality is gone. And `nearer` is used under negation
-(`in_center :- ..., !nearer(...)`), which Souffle can't do to an `inline`
-relation — but a component's non-inline relations negate fine. The component
-settles both at once.
-
-**Task-local homes (protocol step 1).** 3b4c2228 carries `Diagonal`, fed the 3×3
-output frame and the tally corner; `$Tally` reads `diagonal(P, ring)` and marks
-rings below the count. ca8de6ea carries `DiagPlacement`, fed input ∪ output-ring
-cells: `quadrant` keys each X-arm cell and ring corner to its diagonal, `diag_cell`
-adds the ring feeding the per-ring `Cycle` shift, and `in_center` negates `nearer`.
-
-**`nearer`** is the base of `DiagPlacement` — which side of the axis midline a cell
-sits on — and reusable past diagonals (half-plane tests, center detection).
-
-**Open.** `nearer`, `quadrant`, and `Diagonal` are unambiguously general (the
-equidistance test is also the fixed set of the corner's diagonal flip). `diag_cell`
-(the gated ray) still has one home — worth a second before a lib slot.
+**Task-local home (protocol step 1).** 3b4c2228, fed the 3×3 output frame and
+the tally corner; `$Tally` reads `diagonal(P, ring)` and marks rings below the
+count.
 
