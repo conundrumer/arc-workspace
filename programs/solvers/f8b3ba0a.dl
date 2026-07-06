@@ -19,7 +19,6 @@
 #include "../lib.dl"
 
 .type Choice = Cells {} | Blocks {} | Lattice {}
-.type CompId = Comp { tag: number }
 
 .comp Consts {
     .decl bg(c: Color)        bg(0).
@@ -32,22 +31,6 @@
 }
 
 .init c = Consts
-
-// Every component, each labeled by an opaque id. (The Components proposal.)
-.comp Components {
-    .decl node(p: Position)
-
-    .decl step(d: Position)
-    step([-1, 1, 0, 0]). step([1, -1, 0, 0]). step([0, 0, -1, 1]). step([0, 0, 1, -1]).
-
-    .decl conn(p: Position, q: Position)
-    conn(P, P)  :- node(P).
-    conn(P, Q2) :- conn(P, Q1), step(D), compose(Q1, D, Q2), node(Q2).
-
-    // Identity off the lowest-ord member cell — ord's order carries no geometry.
-    .decl label(p: Position, id: CompId)
-    label(P, $Comp(Min)) :- node(P), Min = min ord(Q) : { conn(P, Q) }.
-}
 
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)

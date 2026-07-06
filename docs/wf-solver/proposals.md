@@ -225,68 +225,16 @@ sparse variant); a cyclic shift is dense, so this contract fits.
 **Task-local home (protocol step 1).** 6d1d5c90: `node` is each row (an `in` cell
 split onto the shift axis), `dir` the shift direction, `walk(row, M)` the rotation.
 
-## Region & shape toolkit
+## `Reach` — seeded connectivity
 
-Five comps carried by 3b4c2228 compose into a shape-detection stack — `Reframe`
-(position algebra, the inverse of `compose`), `Components` and `Bbox` (find and
-frame regions), `Occurrences` (`Reframe` + `KeyedSetCompare`, "find this shape"),
-and `Diagonal` (a corner diagonal). They're grouped below with their sibling
-`Reach` (seeded connectivity). The two 3b4c2228 detectors show the wiring:
-
-- `$Object` = `Components` → `Bbox.margin` → `Reframe` → `KeyedSetCompare.equals`
-  (each connected component, reframed into its box, set-equal to the shape).
-- `$Placement` = `Occurrences` (every footprint placement covering the shape).
-
-They diverge on touching copies — `$Object` merges them into one component,
-`$Placement` counts placements separately — which is why both earn a model.
-
-### `Reframe<Key>` — keyed inverse of compose
-
-`compose(outer, inner, grid)` builds a grid position from an outer origin and an
-inner offset. `Reframe` runs it backward: per key, an `outer` origin and the
-`cell`s to view from it give `inner = cell − outer`. Outer extent + inner extent =
-cell extent, so the one subtraction both resizes and repositions — it moves a cell
-between frames of different size, not just within one.
+One component from a seed — the seeded readout of the 4-adjacency closure
+that lib's `Components` labels in full. The seed selects the component and is
+the closure's base case: `Reach` fits when there's a natural anchor and one
+component matters; `Components` fits when every component counts. An
+8-adjacency variant or a parameterized adjacency input is the obvious
+extension when a task needs diagonal connectivity.
 
 ```
-.comp Reframe<Key> {
-    .decl outer(key: Key, p: Position)
-    .decl cell(key: Key, p: Position)
-
-    .decl sub(p: Position, q: Position, d: Position) inline
-    sub([T1, B1, L1, R1], [T2, B2, L2, R2], [T1-T2, B1-B2, L1-L2, R1-R2]) :- true.
-
-    .decl inner(key: Key, p: Position)
-    inner(K, I) :- cell(K, P), outer(K, O), sub(P, O, I).
-}
-```
-
-**One origin per key.** `outer` is one position per key — the frame each key's
-cells are viewed from. Feeding several `outer`s under one key cross-products
-(every cell against every outer); the honest way to use that is to key by the
-thing varied so each key keeps one origin (see `Occurrences`' candidate-gen).
-
-**Encapsulates `sub`.** Position subtraction (compose's inverse) has no standalone
-meaning worth a solver-scope relation; `Reframe` is its home. Candidate-placement
-generation collapses to it too — keyed by shape cell, "align each shape cell to
-each cell" *is* a reframe, needing no comp of its own.
-
-**Composes with `Bbox`.** `Bbox.margin` is exactly an `outer` — feed it to express
-a cell set in its own bounding frame (3b4c2228 `$Object`).
-
-**Task-local home (protocol step 1).** 3b4c2228 — both detectors reframe:
-`$Object` views each component from its box margin; `$Placement` (via
-`Occurrences`) views cells from each candidate placement.
-
-### Connectivity — `Reach` / `Components`
-
-Two readouts of 4-adjacency closure over a node set. `Reach` returns one component
-from a seed; `Components` labels every component. Both share `step` (unit
-4-adjacency); an 8-adjacency variant or a parameterized adjacency input is the
-obvious extension when a task needs diagonal connectivity.
-
-```
-// One component: closure of 4-adjacency from seeds.
 .comp Reach {
     .decl node(p: Position)
     .decl seed(p: Position)
@@ -298,150 +246,13 @@ obvious extension when a task needs diagonal connectivity.
     reach(P)  :- seed(P).
     reach(P2) :- reach(P1), step(D), compose(P1, D, P2), node(P2).
 }
-
-// Every component, each labeled by an opaque id.
-.comp Components {
-    .decl node(p: Position)
-
-    .decl step(delta: Position)
-    step([-1, 1, 0, 0]). step([1, -1, 0, 0]). step([0, 0, -1, 1]). step([0, 0, 1, -1]).
-
-    .decl conn(p: Position, q: Position)
-    conn(P, P)  :- node(P).
-    conn(P, Q2) :- conn(P, Q1), step(D), compose(Q1, D, Q2), node(Q2).
-
-    .decl label(p: Position, id: CompId)
-    label(P, $Comp(Min)) :- node(P), Min = min ord(Q) : { conn(P, Q) }.
-}
 ```
 
-**Seeded vs labeled.** `Reach` fits when there's a natural anchor and one
-component matters — the seed selects it and is the closure's base case (1e81d6f9:
-a corner-edge seed picks the L frame, the stray mask cell stays unreachable, so a
-following `Bbox` doesn't inflate to span it). `Components` fits when every
-component counts (3b4c2228 `$Object`: each 2×2 is its own component); it is the
-"task wanting all components" the seeded form can't serve.
+**Task-local home (protocol step 1).** 1e81d6f9: a corner-edge seed picks the
+L frame — the stray mask cell stays unreachable, so the following `Bbox`
+doesn't inflate to span it.
 
-**Second home (protocol step 1).** f8b3ba0a labels the color blocks
-(`Components` over non-bg cells) and counts them per color — its `$Blocks`
-count model beside per-cell counting.
-
-**Opaque label.** A component's id is a sealed token, `.type CompId = Comp { tag:
-number }`, off the lowest-`ord` member cell. The type stops it being read as a
-`Position`, which would leak the (arbitrary) representative's coordinates in as
-orientation. `ord` gives an arbitrary but within-run-stable order, so the pick
-carries no geometry. Identity needs a *member cell* — distinct components have
-disjoint cells, so it's injective; the bounding box would alias two components
-sharing a box (interleaved diagonals under 8-adjacency), which is why
-`Bbox.margin` is placement, not identity.
-
-**The bar.** Connectivity recurs across a large fraction of ARC — clears the lib
-bar on sight.
-
-### `Bbox<Key>` — keyed bounding box
-
-Bounding box of a keyed cell set, with two readouts: `margin` (the box as a
-Position — min distance from each edge to the box) and `inside` (grid cells within
-the box). `margin` feeds `Reframe` as the outer origin; `inside` is the membership
-test. Keying lets one instance box many sets at once (per-component, per-placement);
-single-set sites pass a constant key.
-
-```
-.comp Bbox<Key> {
-    .decl cell(key: Key, p: Position)
-    .decl grid(key: Key, p: Position)
-
-    .decl cell_dist(key: Key, d: Dir, k: number)
-    cell_dist(K, D, Kd) :- cell(K, P), dir_elem(D), dist(P, D, Kd).
-
-    .decl edge_min(key: Key, d: Dir, m: number)
-    edge_min(K, D, M) :- cell_dist(K, D, _), M = min Kd : { cell_dist(K, D, Kd) }.
-
-    // The box as a Position — margin from each edge. Feed to Reframe as outer.
-    .decl margin(key: Key, p: Position)
-    margin(K, [Mt, Mb, Ml, Mr]) :-
-        edge_min(K, TOP, Mt), edge_min(K, BOTTOM, Mb),
-        edge_min(K, LEFT, Ml), edge_min(K, RIGHT, Mr).
-
-    // Grid cells inside the box — at least the margin from every edge.
-    .decl inside(key: Key, p: Position)
-    inside(K, P) :-
-        grid(K, P),
-        dist(P, TOP, T),    edge_min(K, TOP, Mt),    T >= Mt,
-        dist(P, BOTTOM, B), edge_min(K, BOTTOM, Mb), B >= Mb,
-        dist(P, LEFT, L),   edge_min(K, LEFT, Ml),   L >= Ml,
-        dist(P, RIGHT, R),  edge_min(K, RIGHT, Mr),  R >= Mr.
-}
-```
-
-**margin vs inside.** Both read the same four edge-mins. `margin` packs them into
-a Position — the box's placement, the `Reframe` origin (3b4c2228 `$Object`).
-`inside` tests grid cells against them — the erase-outside-box move (1e81d6f9).
-
-**Why min-per-edge, not min/max-per-axis.** min-dist-to-TOP and min-dist-to-BOTTOM
-pin the vertical band as tightly as min/max-dist-to-TOP would, and the four mins
-are already a Position — so `margin` falls out without a separate assembly, and
-`inside` is symmetric across the four edges. The edge choice washes out under D4
-(the box transforms with the grid); `step`'s unit deltas in Reach/Components are
-the same kind of internal literal.
-
-**Composition.** `inside` over `Reach`/`Components` isolates a blob and takes its
-extent; `margin` → `Reframe` expresses it in its own frame. Both are everyday ARC
-operations — lib-worthy alongside connectivity.
-
-### `Occurrences` — find a shape among cells
-
-Placements where a shape's footprint lands fully on a cell set — the ARC "find
-this shape" move, as a composition of `Reframe` and `KeyedSetCompare`. Candidate
-placements come from aligning each shape cell to each cell (a `Reframe`); each is
-verified by viewing the cells from it (another `Reframe`) and testing the shape
-against that view (`KeyedSetCompare.covers`).
-
-```
-.comp Occurrences {
-    .decl cell(p: Position)
-    .decl shape(p: Position)
-
-    // Candidate placements — align each shape cell (one origin per key) to every
-    // cell, union over the shape cells.
-    .init align = Reframe<Position>
-    align.cell(S, P)  :- shape(S), cell(P).
-    align.outer(S, S) :- shape(S).
-    .decl placement(p: Position)
-    placement(M) :- align.inner(_, M).
-
-    // View the cells from each placement and test the shape's footprint.
-    .init view = Reframe<Position>
-    view.outer(M, M) :- placement(M).
-    view.cell(M, P)  :- placement(M), cell(P).
-
-    .init matcher = KeyedSetCompare<Position, Position>
-    matcher.pattern_member(0, S)  :- shape(S).
-    matcher.observed_member(M, I) :- view.inner(M, I).
-
-    .decl occurrence(p: Position)
-    occurrence(M) :- matcher.covers(M, 0).
-}
-```
-
-**Backward, not forward.** Placements come from the data (`cell ⊖ shape-cell`),
-not from enumerating a placement frame. So `Occurrences` needs only `cell` +
-`shape`, never the grid bounds, and its work scales with the cells present, not
-the grid area. Off-grid candidates self-filter — their footprint cells aren't in
-`cell`, so `covers` fails. (Forward — slide a placement frame — is the same model,
-read with the bound supplied; the binding pattern is the only difference.)
-
-**Policy is `covers`, here.** The observed set per placement is *all* cells viewed
-from M, for which only `covers` (shape ⊆ footprint cells) is meaningful — extra
-viewed cells outside the footprint don't affect it. `within` / `equals` / overlap
-would need the observed set restricted to the footprint region; that's a
-window-local variant, not this one, and `matcher` is the seam where it'd plug in.
-
-**Task-local home (protocol step 1).** 3b4c2228 `$Placement`: occurrences of the
-2×2 block shape among the color's cells — a distinct model from a `Components`
-detector (they diverge on touching copies), not an alt impl.
-
-### `Diagonal` — a corner diagonal
+## `Diagonal` — a corner diagonal
 
 Cells equidistant from a corner's two edges; ring is that shared distance. The
 ungated diagonal (center included). A component so it can name axes directly.

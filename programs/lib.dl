@@ -420,6 +420,108 @@ concat_2d(P_outer, P_inner, [Gv, Gh], P_grid) :-
         N = count : { observed_member(Obs, M) }.
 }
 
+// Re-express keyed cells relative to a per-key outer origin: inner = cell
+// minus outer, the inverse of compose. Outer extent + inner extent = cell
+// extent, so one subtraction both resizes and positions across frames.
+// `outer` is one origin per key — several origins under one key
+// cross-product; key by the thing varied instead. Bbox's `margin` is an
+// `outer`: feeding it views a cell set from its own bounding frame.
+.comp Reframe<Key> {
+    .decl outer(key: Key, p: Position)
+    .decl cell(key: Key, p: Position)
+
+    .decl sub(p: Position, q: Position, d: Position) inline
+    sub([T1, B1, L1, R1], [T2, B2, L2, R2], [T1-T2, B1-B2, L1-L2, R1-R2]) :- true.
+
+    .decl inner(key: Key, p: Position)
+    inner(K, I) :- cell(K, P), outer(K, O), sub(P, O, I).
+}
+
+// Bounding box of a keyed cell set, from the min distance to each edge over
+// the set (min-per-edge rather than min/max-per-axis: the four mins are
+// already a Position, and the edge choice washes out under D4). Two readouts:
+// `margin` packs the mins into a Position — the box's placement, a Reframe
+// outer; `inside` tests `grid` cells against them. Single-set sites pass a
+// constant key.
+.comp Bbox<Key> {
+    .decl cell(key: Key, p: Position)
+    .decl grid(key: Key, p: Position)
+
+    .decl cell_dist(key: Key, d: Dir, k: number)
+    cell_dist(K, D, Kd) :- cell(K, P), dir_elem(D), dist(P, D, Kd).
+
+    .decl edge_min(key: Key, d: Dir, m: number)
+    edge_min(K, D, M) :- cell_dist(K, D, _), M = min Kd : { cell_dist(K, D, Kd) }.
+
+    // The box as a Position — margin from each edge.
+    .decl margin(key: Key, p: Position)
+    margin(K, [Mt, Mb, Ml, Mr]) :-
+        edge_min(K, TOP, Mt), edge_min(K, BOTTOM, Mb),
+        edge_min(K, LEFT, Ml), edge_min(K, RIGHT, Mr).
+
+    // Grid cells inside the box — at least the margin from every edge.
+    .decl inside(key: Key, p: Position)
+    inside(K, P) :-
+        grid(K, P),
+        dist(P, TOP, T),    edge_min(K, TOP, Mt),    T >= Mt,
+        dist(P, BOTTOM, B), edge_min(K, BOTTOM, Mb), B >= Mb,
+        dist(P, LEFT, L),   edge_min(K, LEFT, Ml),   L >= Ml,
+        dist(P, RIGHT, R),  edge_min(K, RIGHT, Mr),  R >= Mr.
+}
+
+// Opaque component id — sealed so it can't be read as a Position, which would
+// leak the representative cell's coordinates in as orientation.
+.type CompId = Comp { tag: number }
+
+// Connected components of a node set (4-adjacency), each labeled by an opaque
+// id off the lowest-ord member cell: ord is arbitrary but within-run stable,
+// so the pick carries no geometry. A member cell is injective identity —
+// distinct components have disjoint cells; a bounding box would alias two
+// components sharing one (interleaved diagonals under 8-adjacency).
+.comp Components {
+    .decl node(p: Position)
+
+    .decl step(delta: Position)
+    step([-1, 1, 0, 0]). step([1, -1, 0, 0]). step([0, 0, -1, 1]). step([0, 0, 1, -1]).
+
+    .decl conn(p: Position, q: Position)
+    conn(P, P)  :- node(P).
+    conn(P, Q2) :- conn(P, Q1), step(D), compose(Q1, D, Q2), node(Q2).
+
+    .decl label(p: Position, id: CompId)
+    label(P, $Comp(Min)) :- node(P), Min = min ord(Q) : { conn(P, Q) }.
+}
+
+// Occurrences of a shape among cells: placements where the shape's footprint
+// lands fully on the cell set — the ARC "find this shape" move. Placements
+// come backward from the data (cell minus shape-cell), so no grid bounds are
+// needed and off-grid candidates self-filter: their footprint cells aren't in
+// `cell`, so `covers` fails.
+.comp Occurrences {
+    .decl cell(p: Position)
+    .decl shape(p: Position)
+
+    // Candidate placements — align each shape cell (one origin per key) to
+    // every cell, union over the shape cells.
+    .init align = Reframe<Position>
+    align.cell(S, P)  :- shape(S), cell(P).
+    align.outer(S, S) :- shape(S).
+    .decl placement(p: Position)
+    placement(M) :- align.inner(_, M).
+
+    // View the cells from each placement and test the shape's footprint.
+    .init view = Reframe<Position>
+    view.outer(M, M) :- placement(M).
+    view.cell(M, P)  :- placement(M), cell(P).
+
+    .init matcher = KeyedSetCompare<Position, Position>
+    matcher.pattern_member(0, S)  :- shape(S).
+    matcher.observed_member(M, I) :- view.inner(M, I).
+
+    .decl occurrence(p: Position)
+    occurrence(M) :- matcher.covers(M, 0).
+}
+
 // ============================================================
 // Consts helpers — instantiated inside Consts; not reachable from body
 // ============================================================

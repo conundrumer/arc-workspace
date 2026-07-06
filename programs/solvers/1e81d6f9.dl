@@ -27,29 +27,6 @@
     reach(P2) :- reach(P1), step(D), compose(P1, D, P2), node(P2).
 }
 
-// Bounding box of a cell set, classified against a grid of positions.
-// Candidate lib component.
-.comp Bbox {
-    .decl cell(p: Position)
-    .decl grid(p: Position)
-
-    .decl cell_dist(p: Position, d: Dir, k: number)
-    cell_dist(P, D, K) :- cell(P), dir_elem(D), dist(P, D, K).
-
-    // Per-axis span of the cell set: min/max distance to a reference edge.
-    .decl extent(d: Dir, lo: number, hi: number)
-    extent(D, LO, HI) :-
-        dir_elem(D),
-        LO = min K : { cell_dist(_, D, K) },
-        HI = max K : { cell_dist(_, D, K) }.
-
-    .decl inside(p: Position)
-    inside(P) :-
-        grid(P),
-        dist(P, TOP,  T), extent(TOP,  Tlo, Thi), Tlo <= T, T <= Thi,
-        dist(P, LEFT, L), extent(LEFT, Llo, Lhi), Llo <= L, L <= Lhi.
-}
-
 .type Choice = Marker {} | Bbox {}
 
 .comp Consts {
@@ -96,9 +73,9 @@ region.node(P) :- mask(P).
 region.seed(P) :- mask(P), c.target_corner(Diag), dir_of(Diag, _, D), dist(P, D, 0).
 
 // The region's bounding box over the input grid.
-.init box = Bbox
-box.cell(P) :- region.reach(P).
-box.grid(P) :- in(P, _).
+.init box = Bbox<number>
+box.cell(0, P) :- region.reach(P).
+box.grid(0, P) :- in(P, _).
 
 .decl out(p: Position, col: Color, c: Choice)
 
@@ -109,7 +86,7 @@ out(P, Bg, $Marker()) :- in(P, Col), target_color(Col), !target_pos(P), c.bg(Bg)
 
 // --- Bbox --- the whole corner region survives the erase.
 out(P, Col, $Bbox()) :- in(P, Col), !target_color(Col).                            // non-target passes
-out(P, Col, $Bbox()) :- in(P, Col), box.inside(P).                                 // region kept
-out(P, Bg, $Bbox()) :- in(P, Col), target_color(Col), !box.inside(P), c.bg(Bg).    // target outside region erased
+out(P, Col, $Bbox()) :- in(P, Col), box.inside(0, P).                              // region kept
+out(P, Bg, $Bbox()) :- in(P, Col), target_color(Col), !box.inside(0, P), c.bg(Bg). // target outside region erased
 
 .output out(IO=stdout)
