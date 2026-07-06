@@ -1,0 +1,22 @@
+// ccd554ac
+// Self-tensor: output = input ⊗ input — one tile per input cell, each a full
+// copy of the input.
+
+#include "../lib.dl"
+
+.comp Consts {
+    // No task data — siblings vary only the input.
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl out(p: Position, col: Color)
+out(P_grid_out, Col) :-
+    in(P_tile, _),                                    // one tile per input cell
+    in(P_intile, Col),                                // tile content: the input
+    concat_2d(P_tile, P_intile, [0, 0], P_grid_out).  // tile ⊗ cell → grid
+
+.output out(IO=stdout)
