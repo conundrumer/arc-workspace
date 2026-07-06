@@ -440,6 +440,41 @@ flip_of(HORIZONTAL, FLIP_LR).
 `$Mirror` (per-axis mirror image) and `$Unfold` (reflection across a tile
 boundary) both flip through it.
 
+## `diag_step_delta` — unit step toward a corner
+
+The DiagDir peer of `step_delta`: the corner's two cardinal unit steps
+composed. Single-clause inline, per the lib's dispatch convention.
+
+```
+.decl diag_step_delta(diag: DiagDir, delta: Position) inline
+diag_step_delta(Diag, Delta) :-
+    dir_of(Diag, VERTICAL, Dv), dir_of(Diag, HORIZONTAL, Dh),
+    step_delta(Dv, Sv), step_delta(Dh, Sh),
+    compose(Sv, Sh, Delta).
+```
+
+**Task-local home (protocol step 1).** 05269061 carries it as a `DiagStep`
+comp: the along-stripe generator of its color-propagation closure is the
+delta toward each corner of `c.stripe_axis`.
+
+## `jump_delta` — K-cell displacement toward an edge
+
+Scaled `step_delta`: -K at edge d, +K at its opposite. `step_delta` is the
+K = 1 slice and can be redefined through it on promotion. Without it, a body
+needing a longer displacement negates K itself — arithmetic the primitive
+absorbs.
+
+```
+.decl jump_delta(d: Dir, k: number, delta: Position) inline
+jump_delta(D, K, Delta) :-
+    edge_delta(D, -K, Nd), opposite(D, O), edge_delta(O, K, No),
+    compose(Nd, No, Delta).
+```
+
+**Task-local home (protocol step 1).** 05269061 carries it as a `Jump` comp:
+the wallpaper's period-length translations are `jump_delta(D, period, _)` on
+the four cardinals, generating the color-propagation closure.
+
 ## `AxisChain` — fold of per-axis images over both axes
 
 Position factors by axis (`split`/`compose`); a per-axis map acts on its own

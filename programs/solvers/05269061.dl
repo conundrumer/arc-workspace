@@ -1,0 +1,80 @@
+// 05269061
+// Wallpaper of diagonal stripes: color is constant along c.stripe_axis and
+// repeats every `period` stripes. The input shows a patch; the output is the
+// full grid. Colors propagate from input cells through the wallpaper's
+// symmetries — unit steps along the stripe, period-length jumps on the four
+// cardinals. Two models of the period, tagged on out's Choice:
+//
+//   $Fixed   — period is task data in Consts.
+//   $Palette — period = palette size: stripes cycle the colors, each once.
+//
+// Coincide while the visible period equals the color count.
+
+#include "../lib.dl"
+
+.type Choice = Fixed {} | Palette {}
+
+.comp Consts {
+    .decl bg(c: Color)              bg(0).
+    .decl stripe_axis(da: DiagAxis) stripe_axis(ANTIDIAGONAL).
+
+    // --- $Fixed ---
+    .decl period(k: number)         period(3).
+}
+
+.init c = Consts
+
+.decl choice_elem(ch: Choice)
+choice_elem($Fixed()). choice_elem($Palette()).
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// Unit step toward a corner — the DiagDir peer of step_delta (protocol step 1).
+.comp DiagStep {
+    .decl delta(diag: DiagDir, p: Position) inline
+    delta(Diag, Delta) :-
+        dir_of(Diag, VERTICAL, Dv), dir_of(Diag, HORIZONTAL, Dh),
+        step_delta(Dv, Sv), step_delta(Dh, Sh),
+        compose(Sv, Sh, Delta).
+}
+.init diag_step = DiagStep
+
+// K-cell displacement toward d — scaled step_delta (protocol step 1).
+.comp Jump {
+    .decl delta(d: Dir, k: number, p: Position) inline
+    delta(D, K, Delta) :-
+        edge_delta(D, -K, Nd), opposite(D, O), edge_delta(O, K, No),
+        compose(Nd, No, Delta).
+}
+.init jump = Jump
+
+// Unit step along the stripe: toward each corner of the stripe axis.
+.decl stripe_step(delta: Position)
+stripe_step(Delta) :-
+    c.stripe_axis(Da), diag_axis_of(Diag, Da),          // the axis's two corners
+    diag_step.delta(Diag, Delta).
+
+// --- period per choice ---
+
+.decl palette(col: Color)
+palette(Col) :- in(_, Col), !c.bg(Col).
+
+.decl period(k: number, ch: Choice)
+period(K, $Fixed())   :- c.period(K).
+period(K, $Palette()) :- K = count : { palette(Col) }.
+
+.decl period_jump(delta: Position, ch: Choice)
+period_jump(Delta, Ch) :- period(K, Ch), dir_elem(D), jump.delta(D, K, Delta).
+
+// --- closure under the wallpaper symmetries ---
+
+.decl known(p: Position, col: Color, ch: Choice)
+known(P, Col, Ch) :- in(P, Col), !c.bg(Col), choice_elem(Ch).
+known(Q, Col, Ch) :- known(P, Col, Ch), stripe_step(D), compose(P, D, Q), in(Q, _).
+known(Q, Col, Ch) :- known(P, Col, Ch), period_jump(D, Ch), compose(P, D, Q), in(Q, _).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- known(P, Col, Ch).
+
+.output out(IO=stdout)
