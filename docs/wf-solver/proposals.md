@@ -276,6 +276,10 @@ following `Bbox` doesn't inflate to span it). `Components` fits when every
 component counts (3b4c2228 `$Object`: each 2×2 is its own component); it is the
 "task wanting all components" the seeded form can't serve.
 
+**Second home (protocol step 1).** f8b3ba0a labels the color blocks
+(`Components` over non-bg cells) and counts them per color — its `$Blocks`
+count model beside per-cell counting.
+
 **Opaque label.** A component's id is a sealed token, `.type CompId = Comp { tag:
 number }`, off the lowest-`ord` member cell. The type stops it being read as a
 `Position`, which would leak the (arbitrary) representative's coordinates in as

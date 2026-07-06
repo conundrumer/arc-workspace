@@ -1,0 +1,126 @@
+// f8b3ba0a
+// Color blocks on bg, one color dominant. Output is a 1D layout along
+// axis_of(c.rank_dir): the minority colors, anchored at c.rank_dir, in
+// descending count order; the dominant (max-count) color is dropped.
+// Extent = number of minority colors. Two models of what is counted,
+// tagged on out's Choice:
+//
+//   $Cells   — cells of each color.
+//   $Blocks  — connected components of each color.
+//   $Lattice — tiles of the separator lattice (inset past the border, then
+//              divide_by_size_2d) of each color.
+//
+// $Cells/$Blocks coincide while every block has one size; $Blocks/$Lattice
+// coincide while every block is a lattice tile.
+//
+// Flagged: minority colors sharing a count share a rank — colliding `out`
+// facts at one Position; a max-count tie drops every tied color.
+
+#include "../lib.dl"
+
+.type Choice = Cells {} | Blocks {} | Lattice {}
+.type CompId = Comp { tag: number }
+
+.comp Consts {
+    .decl bg(c: Color)        bg(0).
+    .decl rank_dir(d: Dir)    rank_dir(TOP).
+
+    // --- $Lattice ---
+    .decl tile_dim(k: Dim)          tile_dim([1, 2]).
+    .decl tile_gap(g: Dim)          tile_gap([1, 1]).
+    .decl inset_delta(p: Position)  inset_delta([-1, -1, -1, -1]).
+}
+
+.init c = Consts
+
+// Every component, each labeled by an opaque id. (The Components proposal.)
+.comp Components {
+    .decl node(p: Position)
+
+    .decl step(d: Position)
+    step([-1, 1, 0, 0]). step([1, -1, 0, 0]). step([0, 0, -1, 1]). step([0, 0, 1, -1]).
+
+    .decl conn(p: Position, q: Position)
+    conn(P, P)  :- node(P).
+    conn(P, Q2) :- conn(P, Q1), step(D), compose(Q1, D, Q2), node(Q2).
+
+    // Identity off the lowest-ord member cell — ord's order carries no geometry.
+    .decl label(p: Position, id: CompId)
+    label(P, $Comp(Min)) :- node(P), Min = min ord(Q) : { conn(P, Q) }.
+}
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// --- $Blocks: component detection ---
+
+.init comps = Components
+comps.node(P) :- in(P, Col), !c.bg(Col).
+
+.decl block_color(id: CompId, col: Color)
+block_color(Id, Col) :- comps.label(P, Id), in(P, Col).
+
+// --- $Lattice: tile detection ---
+
+// Non-bg cells never sit on the separator border, so the inset stays in frame.
+.decl tile_color(p_tile: Position, col: Color)
+tile_color(P_tile, Col) :-
+    in(P, Col), !c.bg(Col),                              // block cell
+    c.inset_delta(Delta), compose(P, Delta, P_int),      // interior frame
+    c.tile_dim(K), c.tile_gap(G),
+    divide_by_size_2d(P_int, K, G, P_tile, _).           // its lattice tile
+
+// --- counts per choice ---
+
+.decl count_of(col: Color, n: number, ch: Choice)
+count_of(Col, N, $Cells()) :-
+    in(_, Col), !c.bg(Col),
+    N = count : { in(_, Col) }.
+count_of(Col, N, $Blocks()) :-
+    block_color(_, Col),
+    N = count : { block_color(Id, Col) }.
+count_of(Col, N, $Lattice()) :-
+    tile_color(_, Col),
+    N = count : { tile_color(P_tile, Col) }.
+
+// --- drop dominant, rank, place ---
+
+.decl dominant(col: Color, ch: Choice)
+dominant(Col, Ch) :-
+    count_of(Col, N, Ch),
+    N = max N2 : { count_of(_, N2, Ch) }.
+
+.decl minority_count(col: Color, n: number, ch: Choice)
+minority_count(Col, N, Ch) :- count_of(Col, N, Ch), !dominant(Col, Ch).
+
+// Dense rank over the minority counts, ascending (fewest first), per choice.
+.init o_cells = Ordinal
+o_cells.idx_set(N) :- minority_count(_, N, $Cells()).
+.init o_blocks = Ordinal
+o_blocks.idx_set(N) :- minority_count(_, N, $Blocks()).
+.init o_lattice = Ordinal
+o_lattice.idx_set(N) :- minority_count(_, N, $Lattice()).
+
+.decl minority_rank(col: Color, r: number, ch: Choice)
+minority_rank(Col, R, $Cells())   :- minority_count(Col, N, $Cells()),   o_cells.rank(N, R).
+minority_rank(Col, R, $Blocks())  :- minority_count(Col, N, $Blocks()),  o_blocks.rank(N, R).
+minority_rank(Col, R, $Lattice()) :- minority_count(Col, N, $Lattice()), o_lattice.rank(N, R).
+
+// Output frame: 1D axis anchored at c.rank_dir, per choice. Placing ascending
+// rank from the opposite edge seats the largest count at the rank_dir edge.
+.init col_cells = DirFrame
+col_cells.dir(D_opp) :- c.rank_dir(D), opposite(D, D_opp).
+col_cells.dist_set(R) :- minority_rank(_, R, $Cells()).
+.init col_blocks = DirFrame
+col_blocks.dir(D_opp) :- c.rank_dir(D), opposite(D, D_opp).
+col_blocks.dist_set(R) :- minority_rank(_, R, $Blocks()).
+.init col_lattice = DirFrame
+col_lattice.dir(D_opp) :- c.rank_dir(D), opposite(D, D_opp).
+col_lattice.dist_set(R) :- minority_rank(_, R, $Lattice()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, $Cells())   :- minority_rank(Col, Rk, $Cells()),   col_cells.pos(Rk, P).
+out(P, Col, $Blocks())  :- minority_rank(Col, Rk, $Blocks()),  col_blocks.pos(Rk, P).
+out(P, Col, $Lattice()) :- minority_rank(Col, Rk, $Lattice()), col_lattice.pos(Rk, P).
+
+.output out(IO=stdout)
