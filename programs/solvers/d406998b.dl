@@ -1,0 +1,60 @@
+// d406998b
+// One c.dot cell per grid column. Alternate dots recolor to c.mark,
+// starting at c.anchor. Two models of what alternates, tagged on out's Choice:
+//
+//   $Stripes  — grid columns: a dot at even dist from the anchor edge recolors.
+//   $Sequence — the dot sequence: dots ranked by dist from the anchor edge;
+//               even ranks recolor.
+//
+// Coincide while every column holds a dot; diverge when a column is empty
+// (ranks compress past it, column parity doesn't).
+
+#include "../lib.dl"
+
+.type Choice = Stripes {} | Sequence {}
+
+.comp Consts {
+    .decl anchor(d: Dir)      anchor(RIGHT).   // alternation starts here
+    .decl dot(c: Color)       dot(5).
+    .decl mark(c: Color)      mark(3).         // recolor for alternate dots
+
+    // --- shared alternation rhythm: run of marked, run of kept ---
+    .decl mark_run(k: number) mark_run(1).
+    .decl keep_run(g: number) keep_run(1).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// Each dot cell with its dist from the anchor edge.
+.decl dot_dist(p: Position, k: number)
+dot_dist(P, K) :- in(P, Dot), c.dot(Dot), c.anchor(D), dist(P, D, K).
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// --- $Stripes ---
+
+.decl stripe_marked(p: Position)
+stripe_marked(P) :-
+    dot_dist(P, T),                                        // dot's column dist
+    c.mark_run(K), c.keep_run(G), stride(T, K, G, _, _).   // in a marked stripe
+
+out(P, M, $Stripes())   :- stripe_marked(P), c.mark(M).
+out(P, Col, $Stripes()) :- in(P, Col), !stripe_marked(P).
+
+// --- $Sequence ---
+
+.init o = Ordinal
+o.idx_set(K) :- dot_dist(_, K).
+
+.decl seq_marked(p: Position)
+seq_marked(P) :-
+    dot_dist(P, K), o.rank(K, R),                           // dot's rank from anchor
+    c.mark_run(Kr), c.keep_run(G), stride(R, Kr, G, _, _).  // in a marked run
+
+out(P, M, $Sequence())   :- seq_marked(P), c.mark(M).
+out(P, Col, $Sequence()) :- in(P, Col), !seq_marked(P).
+
+.output out(IO=stdout)
