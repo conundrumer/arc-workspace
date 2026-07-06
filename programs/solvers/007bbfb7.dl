@@ -1,0 +1,48 @@
+// 007bbfb7
+// The input tiled by itself: the output decomposes into an input-shaped
+// arrangement of input-shaped tiles, and a cell is filled iff its tile index
+// and its intile position are both active (non-bg) input cells. Two models
+// of the fill color, tagged on out's Choice:
+//
+//   $Stamp — the intile position's color: active tiles hold copies of the input.
+//   $Mask  — the tile index's color: the input scaled up, masked by the pattern.
+//
+// Coincide on monochrome inputs; diverge when colors vary.
+
+#include "../lib.dl"
+
+.type Choice = Stamp {} | Mask {}
+
+.comp Consts {
+    .decl bg(c: Color)    bg(0).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// Output decomposition: tile index × intile position, both input-frame cells.
+.decl cell(p_grid: Position, p_tile: Position, p_intile: Position)
+cell(P_grid_out, P_tile, P_intile) :-
+    in(P_tile, _), in(P_intile, _),
+    concat_2d(P_tile, P_intile, [0, 0], P_grid_out).
+
+.decl active(p: Position)
+active(P) :- in(P, Col), !c.bg(Col).
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// --- $Stamp ---
+out(P_grid_out, Col, $Stamp()) :-
+    cell(P_grid_out, P_tile, P_intile), active(P_tile), in(P_intile, Col).
+out(P_grid_out, Bg, $Stamp()) :-
+    cell(P_grid_out, P_tile, _), !active(P_tile), c.bg(Bg).
+
+// --- $Mask ---
+out(P_grid_out, Col, $Mask()) :-
+    cell(P_grid_out, P_tile, P_intile), active(P_intile), in(P_tile, Col).
+out(P_grid_out, Bg, $Mask()) :-
+    cell(P_grid_out, _, P_intile), !active(P_intile), c.bg(Bg).
+
+.output out(IO=stdout)
