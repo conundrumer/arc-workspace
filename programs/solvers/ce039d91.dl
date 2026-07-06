@@ -1,0 +1,27 @@
+// ce039d91
+// Symmetric-cell highlight: a c.mark cell whose whole-grid image under c.sym
+// is also marked recolors to c.fill; every other cell passes through.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl mark(c: Color)   mark(5).
+    .decl fill(c: Color)   fill(1).
+    .decl sym(d: D4)       sym(FLIP_LR).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl symmetric(p: Position)
+symmetric(P) :-
+    in(P, M), c.mark(M),                   // marked cell
+    c.sym(D), apply(D, P, Q), in(Q, M).    // image also marked
+
+.decl out(p: Position, col: Color)
+out(P, F)   :- symmetric(P), c.fill(F).
+out(P, Col) :- in(P, Col), !symmetric(P).
+
+.output out(IO=stdout)
