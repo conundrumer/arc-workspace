@@ -1,0 +1,106 @@
+// 1fad071e
+// Count the 2x2 squares of c.block_color (a second color's squares and
+// single-cell noise are distractors), then draw the count as a bar in a
+// fixed out_dim row: cells within count of c.bar_edge get the bar color,
+// the rest c.bg.
+//
+// The block shape is a position set. Two models detect its occurrences:
+//   $Object    — connected components equal to the shape.
+//   $Placement — placements whose footprint lands fully on the color; counts
+//                touching squares — which $Object merges — separately.
+//
+// The bar color is its own claim — a fixed color ($Fixed) or the counted
+// color ($Counted). Choice = [detect, mark] crosses the independent
+// decisions. A count->row lookup render is defeated: the test count never
+// occurs in train.
+
+#include "../lib.dl"
+
+.type Detect = Object {} | Placement {}
+.type Mark = Fixed {} | Counted {}
+.type Choice = [detect: Detect, mark: Mark]
+
+.comp Consts {
+    .init helpers = ConstsHelpers
+
+    .decl block_color(c: Color)  block_color(1).
+    .decl block_dim(d: Dim)      block_dim([2, 2]).
+
+    .decl block_shape(p: Position)
+    block_shape(P) :- block_dim(D), helpers.frame_pos(D, P).
+
+    .decl mark(c: Color)      mark(1).
+    .decl bg(c: Color)        bg(0).
+    .decl out_dim(d: Dim)     out_dim([1, 5]).
+    .decl bar_edge(d: Dir)    bar_edge(LEFT).
+
+    .decl out_pos(p: Position)
+    out_pos(P) :- out_dim(D), helpers.frame_pos(D, P).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// Cells carrying the counted color.
+.decl on(p: Position)
+on(P) :- in(P, C), c.block_color(C).
+
+// ============================================================
+// $Object: connected components equal to the shape
+// ============================================================
+
+.init comps = Components
+comps.node(P) :- on(P).
+
+.init object_box = Bbox<CompId>
+object_box.cell(Id, P) :- comps.label(P, Id).
+
+.init object_frame = Reframe<CompId>
+object_frame.cell(Id, P)  :- comps.label(P, Id).
+object_frame.outer(Id, M) :- object_box.margin(Id, M).
+
+.init object_match = KeyedSetCompare<CompId, Position>
+object_match.pattern_member(0, I)   :- c.block_shape(I).
+object_match.observed_member(Id, I) :- object_frame.inner(Id, I).
+
+.decl object_count(n: number)
+object_count(N) :- N = count : { object_match.equals(Id, 0) }.
+
+// ============================================================
+// $Placement: placements where the shape occurs (Occurrences)
+// ============================================================
+
+.init occ = Occurrences
+occ.cell(P)  :- on(P).
+occ.shape(P) :- c.block_shape(P).
+
+.decl placement_count(n: number)
+placement_count(N) :- N = count : { occ.occurrence(_) }.
+
+// ============================================================
+// Output
+// ============================================================
+
+.decl total(n: number, detect: Detect)
+total(N, $Object())    :- object_count(N).
+total(N, $Placement()) :- placement_count(N).
+
+.decl marked(p: Position, detect: Detect)
+marked(P, Det) :-
+    c.out_pos(P),
+    c.bar_edge(D), dist(P, D, K),    // distance from the bar edge
+    total(N, Det), K < N.            // within the count
+
+// The two claims on the bar's color.
+.decl bar_mark(col: Color, mark: Mark)
+bar_mark(Col, $Fixed())   :- c.mark(Col).
+bar_mark(Col, $Counted()) :- c.block_color(Col).
+
+.decl out(p: Position, col: Color, c: Choice)
+out(P, Col, [Det, M]) :- marked(P, Det), bar_mark(Col, M).
+out(P, BG,  [Det, M]) :-
+    c.out_pos(P), total(_, Det), !marked(P, Det), bar_mark(_, M), c.bg(BG).
+
+.output out(IO=stdout)
