@@ -20,17 +20,6 @@
 
 .init c = Consts
 
-// Sparse numeric set → dense ordinal position: r = count of elements
-// strictly less than k. (The Ordinal proposal.)
-.comp Ordinal {
-    .decl idx_set(k: number)
-
-    .decl rank(k: number, r: number)
-    rank(K, R) :-
-        idx_set(K),
-        R = count : { idx_set(K2), K2 < K }.
-}
-
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 

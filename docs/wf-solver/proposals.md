@@ -96,54 +96,6 @@ constant `0: number` key, which is what lib landed on. A `.type Unit = U {}` sin
 keyed on `$U()` remains a possible tightening — it would state "exactly one observed
 set" in the type instead of a dummy int.
 
-## `Ordinal` — sparse → dense rank
-
-Pattern: turn a sparse numeric set into a dense ordinal-position mapping. `rank(K, R)` where R is the count of elements strictly less than K. For input `{2, 5, 7}` → `{2→0, 5→1, 7→2}`.
-
-```
-.comp Ordinal {
-    .decl idx_set(k: number)
-
-    .decl rank(k: number, r: number)
-    rank(K, R) :-
-        idx_set(K),
-        R = count : { idx_set(K2), K2 < K }.
-}
-```
-
-**Task-local home (protocol step 1).** f8ff0b80 ranks non-bg colors by cell
-count and lays them out along an axis. Its `color_rank` is exactly this
-operation; it carries a solver-local `Ordinal` comp fed by the distinct color
-counts (`o.idx_set(N) :- color_count(_, N)`), with `color_rank` joining color →
-count → rank. Ranking the *distinct counts* (rather than competition-ranking the
-colors, which skips ranks on ties and drives DirFrame's opposite-edge distance
-negative) keeps `dist_set` dense.
-
-Composes with `DirFrame`: Ordinal does sparse → dense; DirFrame keeps its dense-input contract and places indices in axis-only Positions.
-
-```
-.init o = Ordinal
-.init col = DirFrame
-
-o.idx_set(K) :- some_sparse_indices(K).
-col.dir(TOP).
-col.dist_set(R) :- o.rank(_, R).
-
-out(P, ...) :- some_sparse_indices(K), o.rank(K, R), col.pos(R, P).
-```
-
-**Direction.** Default is ascending (`K2 < K`). When the rank is purely
-positional — it only feeds a frame placement — a descending layout falls out by
-placing from the opposite edge (flip `DirFrame.dir` to `opposite(anchor)`), no
-negation needed; f8ff0b80 does this to seat the largest count at its anchor
-edge while ranking ascending. Upstream negation is only needed when the rank
-*value* itself flows downstream (a color lookup, an arithmetic step), where the
-magnitude must invert.
-
-**Ties.** `idx_set` is a set — duplicate K values dedupe. Distinct items mapping to the same K share that K's rank. Useful for grouping; if unique placement is needed, break ties upstream. The dedupe keeps the output rank set dense even under ties, so a `DirFrame` fed from it stays valid; the collision is two items at one Position, not a sparse frame.
-
-**Naming.** "Rank" in pure math means matrix rank / set rank — different concepts. "Ordinal" sidesteps that misappropriation while naming the output (an ordinal position). The operation itself (count of strictly-less-than over a set) matches CS / stats / SQL "dense rank."
-
 ## `Cycle` — directed cycle with basepoint-free rotation
 
 The Z/n cycle species made first-class. `succ` declares a directed cycle by its
