@@ -38,6 +38,7 @@ Do each step individually; never batch them. Create a task per step.
     - Does it follow principles?
     - Is there anything awkward or roundabout, like code that reads as pure implementation details with no conceptual meaning, or reimplementing something existing?
     - Any potential alt models? Do not propose alt impls.
+    - The review is a reply to the user, and it ends the turn: finish all task updates first, then write it with no tool calls after it.
 
 For prune and `revise`, the reader and purpose: a future session who needs to understand the solver and its model claim.
 
