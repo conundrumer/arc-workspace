@@ -96,6 +96,52 @@ constant `0: number` key, which is what lib landed on. A `.type Unit = U {}` sin
 keyed on `$U()` remains a possible tightening — it would state "exactly one observed
 set" in the type instead of a dummy int.
 
+## Keyed `Ordinal` / `DirFrame` — rank-and-place across cases
+
+Both lib comps hold one relation set per instance, so a solver whose cases
+share the rank-and-place pipeline shatters at the comp boundary: per-case
+instances plus dispatch rules that differ only in the case name. f8b3ba0a
+carries three count models through one drop-dominant → rank → place pipeline;
+its choice-keyed relations (`count_of`, `minority_count`) flow through single
+rules, then `Ordinal` and `DirFrame` force three `.init`s each and rule
+triplets (`minority_rank`, `dist_set`, `out`), including three identical
+`dir` rules.
+
+A `Key` type param collapses each triplet to one instance and one rule,
+following `Bbox<Key>` / `KeyedSetCompare<Key, Member>`:
+
+```
+.comp Ordinal<Key> {
+    .decl idx_set(key: Key, k: number)
+
+    .decl rank(key: Key, k: number, r: number)
+    rank(Ky, K, R) :-
+        idx_set(Ky, K),
+        R = count : { idx_set(Ky, K2), K2 < K }.
+}
+
+.comp DirFrame<Key> {
+    .decl dir(d: Dir)
+    .decl dist_set(key: Key, k: number)
+
+    .decl extent(key: Key, n: number)
+    extent(Ky, N) :- dist_set(Ky, _), N = count : { dist_set(Ky, K) }.
+
+    .decl pos(key: Key, k: number, p: Position) inline
+    pos(Ky, K, P) :-
+        dist_set(Ky, K), dir(D), opposite(D, D_opp), extent(Ky, N),
+        edge_delta(D, K, P_d), edge_delta(D_opp, N-1-K, P_o),
+        compose(P_d, P_o, P).
+}
+```
+
+`dir` stays unkeyed — the frame direction is the instance's parameter; key it
+only when a task places per-key directions.
+
+Single-set callers pass a constant `0: number` key, the convention
+`KeyedSetCompare` landed on. Callers to update: f8ff0b80 (both), d406998b
+(`Ordinal`), f8b3ba0a (both, collapsing the triplets).
+
 ## `Cycle` — directed cycle with basepoint-free rotation
 
 The Z/n cycle species made first-class. `succ` declares a directed cycle by its
