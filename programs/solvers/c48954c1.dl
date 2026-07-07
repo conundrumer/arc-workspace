@@ -33,14 +33,6 @@
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
-// The D4 reflection inverting axis a. (The flip_of proposal.)
-.comp FlipOf {
-    .decl of(a: Axis, d: D4)
-    of(VERTICAL,   FLIP_TB).
-    of(HORIZONTAL, FLIP_LR).
-}
-.init flip = FlipOf
-
 // Tile centered / off-center along an axis.
 .decl axis_centered(p_tile: Position, a: Axis)
 axis_centered(T, A) :-
@@ -59,18 +51,10 @@ out(P_grid, Col, $Lookup()) :-
     concat_2d(P_tile, P_intile, [0, 0], P_grid).         // recompose
 
 // --- Mirror ---
-// Fold of per-axis images over both axes. (The AxisChain proposal.)
-.comp AxisChain<Key> {
-    .decl img(a: Axis, key: Key, p: Position, p_img: Position)
-
-    .decl both(key: Key, p: Position, p_img: Position)
-    both(K, P, P2) :- img(VERTICAL, K, P, P1), img(HORIZONTAL, K, P1, P2).
-}
-
 // Per-axis within-tile image: centered passes through, off-center flips.
 .init mirror = AxisChain<Position>
 mirror.img(A, T, P, P)     :- in(P, _), axis_centered(T, A).
-mirror.img(A, T, P, P_img) :- in(P, _), axis_off(T, A), flip.of(A, F), apply(F, P, P_img).
+mirror.img(A, T, P, P_img) :- in(P, _), axis_off(T, A), flip_of(A, F), apply(F, P, P_img).
 
 out(P_grid, Col, $Mirror()) :-
     in(P_in, Col),                                  // input cell
@@ -91,7 +75,7 @@ unfold_val(T, P, Col) :- in(P, Col), tile_center(T).
 unfold_val(T2, P_img, Col) :-
     unfold_val(T, P, Col),                                             // known tile
     axis_of(D, A), step_delta(D, S), compose(T, S, T2), c.arr_pos(T2), // neighbor toward d
-    flip.of(A, F), apply(F, P, P_img).                                 // reflect across the shared edge
+    flip_of(A, F), apply(F, P, P_img).                                 // reflect across the shared edge
 
 out(P_grid, Col, $Unfold()) :-
     unfold_val(T, P_intile, Col),

@@ -142,6 +142,11 @@ opposite(BOTTOM, TOP).
 opposite(LEFT,   RIGHT).
 opposite(RIGHT,  LEFT).
 
+// The D4 reflection inverting axis a.
+.decl flip_of(a: Axis, d: D4)
+flip_of(VERTICAL,   FLIP_TB).
+flip_of(HORIZONTAL, FLIP_LR).
+
 // Distance from p to edge d.
 .decl dist(p: Position, d: Dir, k: number) inline
 dist(P, D, K) :- P = [T, B, L, R], K = @dist_proj(D, T, B, L, R).
@@ -520,6 +525,20 @@ concat_2d(P_outer, P_inner, [Gv, Gh], P_grid) :-
 
     .decl occurrence(p: Position)
     occurrence(M) :- matcher.covers(M, 0).
+}
+
+// Fold of per-axis images over both axes. Position factors by axis; a
+// per-axis map acts on its own factor, so maps on different axes commute
+// and the internal axis order washes out. For a body-supplied per-axis map
+// — the body cannot name the axes to chain them itself. `img` must be
+// total over the fold's domain: a (key, p) missing either axis image drops
+// out of `both`. Per-axis flip-or-keep maps land in the Klein subgroup;
+// rotations mix the two factors and are out of reach.
+.comp AxisChain<Key> {
+    .decl img(a: Axis, key: Key, p: Position, p_img: Position)
+
+    .decl both(key: Key, p: Position, p_img: Position)
+    both(K, P, P2) :- img(VERTICAL, K, P, P1), img(HORIZONTAL, K, P1, P2).
 }
 
 // ============================================================

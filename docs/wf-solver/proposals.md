@@ -280,23 +280,6 @@ corner's diagonal flip.
 the tally corner; `$Tally` reads `diagonal(P, ring)` and marks rings below the
 count.
 
-## `flip_of` — the D4 reflection inverting an axis
-
-The Axis→D4 peer of `axis_of`: two facts naming which reflection inverts each
-axis. A body flipping along a data-supplied axis cannot name D4 constants, so
-it otherwise builds the swapped position from `dist`/`edge_delta`/`compose`
-(seven atoms); with `flip_of`, the flip is `flip_of(A, F), apply(F, P, P_img)`.
-
-```
-.decl flip_of(a: Axis, d: D4)
-flip_of(VERTICAL,   FLIP_TB).
-flip_of(HORIZONTAL, FLIP_LR).
-```
-
-**Task-local home (protocol step 1).** c48954c1 carries it as a `FlipOf` comp;
-`$Mirror` (per-axis mirror image) and `$Unfold` (reflection across a tile
-boundary) both flip through it.
-
 ## `diag_step_delta` — unit step toward a corner
 
 The DiagDir peer of `step_delta`: the corner's two cardinal unit steps
@@ -331,41 +314,3 @@ jump_delta(D, K, Delta) :-
 **Task-local home (protocol step 1).** 05269061 carries it as a `Jump` comp:
 the wallpaper's period-length translations are `jump_delta(D, period, _)` on
 the four cardinals, generating the color-propagation closure.
-
-## `AxisChain` — fold of per-axis images over both axes
-
-Position factors by axis (`split`/`compose`); a per-axis map acts on its own
-factor, so maps on different axes commute and their composite is a product
-map. `AxisChain` owns that fold for a body-supplied per-axis map — the body
-cannot name the axes to chain them itself. The internal axis order washes out
-by commutativity.
-
-```
-.comp AxisChain<Key> {
-    .decl img(a: Axis, key: Key, p: Position, p_img: Position)
-
-    .decl both(key: Key, p: Position, p_img: Position)
-    both(K, P, P2) :- img(VERTICAL, K, P, P1), img(HORIZONTAL, K, P1, P2).
-}
-```
-
-**Contract.** `img` must be total over the fold's domain — every (axis, key,
-p) the caller cares about needs an image, or `both` silently drops that
-tuple.
-
-**Scope.** Per-axis flip-or-keep maps land in the Klein subgroup {IDENTITY,
-FLIP_TB, FLIP_LR, ROT_180}; `AxisChain` composes those elements
-componentwise, with no Cayley table. Rotations mix the two factors and are
-out of reach — a per-tile ROT_CW needs a stored D4, not a fold.
-
-It is the fourth resolution of the both-axes fold, beside the three the
-corpus already uses: axes named in a single lib clause (`divide_2d` family),
-the pair keyed by a corner (`dir_of` in `quadrant` / `corner_anchor`), and
-the dir pair named by `opposite` (a699fb00). Those sites keep their forms;
-`AxisChain` covers the case they cannot — a per-axis map defined by solver
-rules.
-
-**Task-local home (protocol step 1).** c48954c1 `$Mirror`: `img` is
-keep-or-flip per tile axis; `both` is the tile's mirror-image map, fed to
-`concat_2d`.
-
