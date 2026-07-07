@@ -1,0 +1,60 @@
+// 22eb0ac0
+// Marker cells sit on the two c.axis edges; a line whose two edge cells hold
+// the same color fills with it, the rest passes through. Two claims of where
+// markers may sit and what fills, tagged on out's Choice:
+//
+//   $Flood — matching markers on a line's two edge cells flood the whole line.
+//   $Span  — any same-colored marker pair in a line paints the cells between.
+
+#include "../lib.dl"
+
+.type Choice = Flood {} | Span {}
+
+.comp Consts {
+    .decl axis(a: Axis) axis(HORIZONTAL).   // lines run along this axis
+    .decl bg(c: Color)  bg(0).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// --- Flood ---
+
+// Line (keyed by across component) whose two edge cells hold the same marker color.
+.decl edge_match(ac: Position, col: Color)
+edge_match(Ac, Col) :-
+    c.axis(A), axis_of(D, A), opposite(D, D2),            // the line's two edges
+    in(P1, Col), dist(P1, D, 0), split(P1, A, _, Ac),     // marker on edge d
+    in(P2, Col), dist(P2, D2, 0), split(P2, A, _, Ac),    // same color opposite, same line
+    c.bg(Bg), Col != Bg.                                  // markers are non-bg
+
+.decl matched(ac: Position)
+matched(Ac) :- edge_match(Ac, _).
+
+out(P, Col, $Flood()) :- in(P, _), c.axis(A), split(P, A, _, Ac), edge_match(Ac, Col).
+out(P, Col, $Flood()) :- in(P, Col), c.axis(A), split(P, A, _, Ac), !matched(Ac).
+
+// --- Span ---
+
+// A Col marker in P's line, strictly past P toward edge d.
+.decl bound(p: Position, d: Dir, col: Color)
+bound(P, D, Col) :-
+    in(P, _), in(Q, Col), c.bg(Bg), Col != Bg,               // cell; a marker
+    c.axis(A), split(P, A, _, Ac), split(Q, A, _, Ac),       // same line
+    axis_of(D, A), dist(P, D, K), dist(Q, D, Kq), Kq < K.    // marker past P, toward edge d
+
+// Strictly between two same-colored markers of its line.
+.decl span(p: Position, col: Color)
+span(P, Col) :- bound(P, D, Col), opposite(D, D2), bound(P, D2, Col).
+
+.decl spanned(p: Position)
+spanned(P) :- span(P, _).
+
+out(P, Col, $Span()) :- span(P, Col).
+out(P, Col, $Span()) :- in(P, Col), !spanned(P).
+
+.output out(IO=stdout)
