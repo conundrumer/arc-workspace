@@ -1,0 +1,106 @@
+// 99b1bc43
+// Layout: 2×1 vertically-stacked 4×4 subgrids with 1-row separator.
+// Output is the per-cell pair-fold.
+//
+// out's choice column = [d, b]:
+//
+//   d (decompose):
+//     $Tile() — pre-tabulated in Consts via tile_pos
+//     $Div()  — derived in body via the divide primitive
+//
+//   b (body):
+//     $Lookup() — combine table keyed on (outer pos, color); set-equality match
+//     $Xor()    — XOR via count: exactly one non-BG input contribution
+
+#include "../lib.dl"
+
+.type DecChoice = Tile {} | Div {}
+.type Body      = Lookup {} | Xor {}
+.type Choice    = [d: DecChoice, b: Body]
+
+.type CombineMember = [p: Position, col: Color]
+.type CombineKey    = [p: Position, dc: DecChoice]
+
+.comp Consts {
+    .init helpers = ConstsHelpers
+
+    .decl frame(p: Position)
+    frame(P) :- helpers.frame_pos([4, 4], P).
+
+    // --- Tile decompose data ---
+    .decl tile_decompose(p: Position, p_outer: Position, p_inner: Position)
+    tile_decompose(P_grid, P_tile, P_intile) :-
+        helpers.tile_pos([2, 1], [4, 4], [1, 0], P_grid, P_tile, P_intile).
+
+    // --- Div decompose data ---
+    .decl divisor(n: number)
+    divisor(2).
+
+    .decl divide_axis(a: Axis)
+    divide_axis(VERTICAL).
+
+    .decl divide_gap(g: number)
+    divide_gap(1).
+
+    // --- Lookup body data ---
+    .decl combine_member(eid: number, p_outer: Position, c: Color)
+    .decl combine_out(eid: number, c_out: Color)
+
+    combine_member(0, [0,1,0,0], 0). combine_member(0, [1,0,0,0], 0). combine_out(0, 0).
+    combine_member(1, [0,1,0,0], 1). combine_member(1, [1,0,0,0], 0). combine_out(1, 3).
+    combine_member(2, [0,1,0,0], 0). combine_member(2, [1,0,0,0], 2). combine_out(2, 3).
+    combine_member(3, [0,1,0,0], 1). combine_member(3, [1,0,0,0], 2). combine_out(3, 0).
+
+    // --- Xor body data ---
+    .decl bg(c: Color)        bg(0).
+    .decl out_fill(c: Color)  out_fill(3).
+    .decl fill_at(n: number)  fill_at(1).
+}
+
+.init c = Consts
+
+.init combine_match = KeyedSetCompare<CombineKey, CombineMember>
+combine_match.pattern_member(Eid, [P_outer, C]) :- c.combine_member(Eid, P_outer, C).
+combine_match.observed_member([P_grid_out, Dc], [P_tile, C]) :-
+    decompose(P_grid_in, P_tile, P_grid_out, Dc), in(P_grid_in, C).
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// --- Decompose cases ---
+
+.decl dec_choice(dc: DecChoice)
+dec_choice($Tile()).
+dec_choice($Div()).
+
+.decl decompose(p: Position, p_outer: Position, p_inner: Position, dc: DecChoice)
+decompose(P_grid, P_tile, P_intile, $Tile()) :- c.tile_decompose(P_grid, P_tile, P_intile).
+decompose(P_grid, P_tile, P_intile, $Div()) :-
+    in(P_grid, _),                                       // input position
+    c.divide_axis(A), c.divisor(N), c.divide_gap(G),     // params
+    divide_slab(P_grid, A, N, G, P_tile, P_intile).
+
+// --- Xor body: filled_count parameterized by decompose choice ---
+
+.decl filled_count(o: Position, dc: DecChoice, n: number)
+filled_count(P_grid_out, Dc, N) :-
+    c.frame(P_grid_out), dec_choice(Dc),
+    N = count : { in(P_grid_in, Col), !c.bg(Col), decompose(P_grid_in, _, P_grid_out, Dc) }.
+
+// --- Output ---
+
+.decl out(p: Position, col: Color, c: Choice)
+out(P_grid_out, Col_out, [Dc, $Lookup()]) :-
+    c.combine_out(Eid, Col_out),                                  // entry's output color
+    combine_match.equals([P_grid_out, Dc], Eid).                 // cell's tiles == entry's members
+
+out(P_grid_out, Col, [Dc, $Xor()]) :-
+    dec_choice(Dc), c.frame(P_grid_out),        // choice × cell
+    c.fill_at(F), filled_count(P_grid_out, Dc, F),   // count hits the fill threshold
+    c.out_fill(Col).
+out(P_grid_out, Col, [Dc, $Xor()]) :-
+    dec_choice(Dc), c.frame(P_grid_out),        // choice × cell
+    c.fill_at(F), filled_count(P_grid_out, Dc, N), N != F,   // count off the threshold
+    c.bg(Col).
+
+.output out(IO=stdout)
