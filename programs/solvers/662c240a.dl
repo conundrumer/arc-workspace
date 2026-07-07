@@ -1,0 +1,57 @@
+// 662c240a
+// Input stacks c.tile_count square tiles along c.tile_axis; output the one
+// tile that lacks the symmetry the others share.
+//
+// Cases (data-equivalent on this task):
+//   $Shared — the shared symmetry is task data: output the tile not fixed
+//             by c.sym.
+//   $Asym   — symmetric-vs-asymmetric is the concept: output the tile
+//             fixed by no nontrivial D4 element.
+
+#include "../lib.dl"
+
+.type Choice = Shared {} | Asym {}
+
+.comp Consts {
+    .decl tile_axis(a: Axis)    tile_axis(VERTICAL).
+    .decl tile_count(n: number) tile_count(3).
+
+    // --- $Shared ---
+    .decl sym(d: D4) sym(FLIP_DIAG).
+}
+
+.init c = Consts
+
+// Per-key D4 invariance of a valued cell set. `broken` witnesses a
+// violated transform; `has_sym` is invariance under some nontrivial element.
+.comp D4Invariance<Key, Val> {
+    .decl cell(key: Key, p: Position, v: Val)
+
+    .decl broken(key: Key, d: D4)
+    broken(K, D) :- cell(K, P, V), d4_elem(D), apply(D, P, P2), !cell(K, P2, V).
+
+    .decl has_sym(key: Key)
+    has_sym(K) :- cell(K, _, _), d4_elem(D), D != IDENTITY, !broken(K, D).
+}
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl tile_val(p_tile: Position, p_intile: Position, col: Color)
+tile_val(T, P, Col) :-
+    in(P_grid, Col),
+    c.tile_axis(A), c.tile_count(N),
+    divide_slab(P_grid, A, N, 0, T, P).
+
+.init inv = D4Invariance<Position, Color>
+inv.cell(T, P, Col) :- tile_val(T, P, Col).
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// --- $Shared ---
+out(P, Col, $Shared()) :- tile_val(T, P, Col), c.sym(F), inv.broken(T, F).
+
+// --- $Asym ---
+out(P, Col, $Asym()) :- tile_val(T, P, Col), !inv.has_sym(T).
+
+.output out(IO=stdout)

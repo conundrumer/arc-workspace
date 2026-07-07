@@ -289,6 +289,30 @@ diag_step_delta(Diag, Delta) :-
 comp: the along-stripe generator of its color-propagation closure is the
 delta toward each corner of `c.stripe_axis`.
 
+## `D4Invariance<Key, Val>` — per-key D4 invariance of a valued cell set
+
+Which D4 elements fix each keyed cell set. `broken` witnesses a violated
+transform — some cell whose image under d carries a different value;
+`has_sym` is invariance under some nontrivial element. `cell` must be total
+over each key's domain (the negation reads absence as difference). The keyed
+generalization of 44f52bb0's unkeyed `non_invariant` / `input_inv` body
+rules; that solver is a promotion-time caller (`Unit` key).
+
+```
+.comp D4Invariance<Key, Val> {
+    .decl cell(key: Key, p: Position, v: Val)
+
+    .decl broken(key: Key, d: D4)
+    broken(K, D) :- cell(K, P, V), d4_elem(D), apply(D, P, P2), !cell(K, P2, V).
+
+    .decl has_sym(key: Key)
+    has_sym(K) :- cell(K, _, _), d4_elem(D), D != IDENTITY, !broken(K, D).
+}
+```
+
+**Task-local home (protocol step 1).** 662c240a keys tiles by slab index:
+`$Shared` reads `broken` at `c.sym`; `$Asym` negates `has_sym`.
+
 ## `ReadOrder` — reading order over a cell set
 
 Scan-like-text order given a corner and a primary axis: `before` compares
