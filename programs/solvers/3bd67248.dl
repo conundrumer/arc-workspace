@@ -1,0 +1,134 @@
+// 3bd67248
+// A wall column sits against one side edge. The floor row (c.floor_dir edge)
+// paints c.floor_color; the corner diagonal rising from the wall's foot
+// paints c.diag_color. Painting spares non-bg cells. All grids are square,
+// hiding where the diagonal anchors:
+//
+//   $Anchored() — the diagonal's corner is task data (c.corner)
+//   $Foot()     — the corner is derived: where the wall meets the floor
+//   $WallEnd()  — wall side and floor end both derived; only a turn sense
+//                 (c.sense) is data — the floor sits at the wall's end
+//                 reached by turning its inward normal by the sense
+
+#include "../lib.dl"
+
+.type Choice = Anchored {} | Foot {} | WallEnd {}
+
+.comp Consts {
+    .decl bg(c: Color)          bg(0).
+    .decl floor_color(c: Color) floor_color(4).
+    .decl diag_color(c: Color)  diag_color(2).
+
+    // --- Anchored / Foot ---
+    .decl floor_dir(d: Dir)     floor_dir(BOTTOM).
+
+    // --- Anchored ---
+    .decl corner(d: DiagDir)    corner(BOTTOM_LEFT).
+
+    // --- WallEnd ---
+    .decl sense(s: Sense)       sense(CW).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// --- shared ---
+
+.decl bg_cell(p: Position)
+bg_cell(P) :- in(P, Col), c.bg(Col).
+
+.decl wall_cell(p: Position)
+wall_cell(P) :- in(P, Col), c.bg(Bg), Col != Bg.
+
+// --- Anchored / Foot ---
+
+.decl floor_paint(p: Position)
+floor_paint(P) :- bg_cell(P), c.floor_dir(D), dist(P, D, 0).
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// --- Anchored ---
+
+.init diag_anch = Diagonal
+diag_anch.cell(P) :- bg_cell(P).
+diag_anch.corner(Diag) :- c.corner(Diag).
+
+.decl paint_anch(p: Position, col: Color)
+paint_anch(P, Col) :- floor_paint(P), c.floor_color(Col).
+paint_anch(P, Col) :-
+    diag_anch.diagonal(P, _), c.diag_color(Col),    // diagonal cell
+    c.floor_dir(D), dist(P, D, K), K != 0.          // floor wins the floor row
+
+.decl painted_anch(p: Position)
+painted_anch(P) :- paint_anch(P, _).
+
+out(P, Col, $Anchored()) :- paint_anch(P, Col).
+out(P, Col, $Anchored()) :- in(P, Col), !painted_anch(P).
+
+// --- Foot ---
+
+// The wall cell on the floor row.
+.decl foot(p: Position)
+foot(P) :- wall_cell(P), c.floor_dir(D), dist(P, D, 0).
+
+// The side edge the foot touches.
+.decl wall_dir(d: Dir)
+wall_dir(D) :-
+    foot(P), dist(P, D, 0),                             // edge at the foot
+    c.floor_dir(Df), axis_of(Df, Af),
+    axis_of(D, A), A != Af.                             // perpendicular to the floor
+
+.decl foot_corner(diag: DiagDir)
+foot_corner(Diag) :-
+    c.floor_dir(Df), axis_of(Df, Af), dir_of(Diag, Af, Df),
+    wall_dir(Dw),    axis_of(Dw, Aw), dir_of(Diag, Aw, Dw).
+
+.init diag_foot = Diagonal
+diag_foot.cell(P) :- bg_cell(P).
+diag_foot.corner(Diag) :- foot_corner(Diag).
+
+.decl paint_foot(p: Position, col: Color)
+paint_foot(P, Col) :- floor_paint(P), c.floor_color(Col).
+paint_foot(P, Col) :- diag_foot.diagonal(P, _), c.diag_color(Col).
+
+.decl painted_foot(p: Position)
+painted_foot(P) :- paint_foot(P, _).
+
+out(P, Col, $Foot()) :- paint_foot(P, Col).
+out(P, Col, $Foot()) :- in(P, Col), !painted_foot(P).
+
+// --- WallEnd ---
+
+// The edge the wall sits against: every wall cell at distance 0.
+.decl off_edge(d: Dir)
+off_edge(D) :- wall_cell(P), dir_elem(D), dist(P, D, K), K != 0.
+
+.decl wall_side(d: Dir)
+wall_side(D) :- dir_elem(D), !off_edge(D).
+
+// The wall's end reached by turning its inward normal by c.sense.
+.decl floor_end(d: Dir)
+floor_end(D2) :- wall_side(Dw), opposite(Dw, Dn), c.sense(S), turn(S, Dn, D2).
+
+.decl we_corner(diag: DiagDir)
+we_corner(Diag) :-
+    floor_end(Df),  axis_of(Df, Af), dir_of(Diag, Af, Df),
+    wall_side(Dw),  axis_of(Dw, Aw), dir_of(Diag, Aw, Dw).
+
+.init diag_we = Diagonal
+diag_we.cell(P) :- bg_cell(P).
+diag_we.corner(Diag) :- we_corner(Diag).
+
+.decl paint_we(p: Position, col: Color)
+paint_we(P, Col) :- bg_cell(P), floor_end(D), dist(P, D, 0), c.floor_color(Col).
+paint_we(P, Col) :- diag_we.diagonal(P, _), c.diag_color(Col).
+
+.decl painted_we(p: Position)
+painted_we(P) :- paint_we(P, _).
+
+out(P, Col, $WallEnd()) :- paint_we(P, Col).
+out(P, Col, $WallEnd()) :- in(P, Col), !painted_we(P).
+
+.output out(IO=stdout)
