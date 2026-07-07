@@ -6,12 +6,12 @@
 //
 // Dim: (V-length, H-length) of a frame. Indexed by Axis.
 //
-// Color, Dir, Axis, DiagDir, DiagAxis, D4 are subtypes of number — typed
-// names with no arithmetic intent. Constants are #define'd in disjoint
+// Color, Dir, Axis, DiagDir, DiagAxis, D4, Sense are subtypes of number —
+// typed names with no arithmetic intent. Constants are #define'd in disjoint
 // ranges so a value identifies its namespace at a glance: Color 0–9, Dir
-// 10–13, Axis 20–21, DiagDir 30–33, DiagAxis 40–41, D4 50–57. Solver bodies
-// pull values from a per-task Consts component rather than referencing
-// constants directly.
+// 10–13, Axis 20–21, DiagDir 30–33, DiagAxis 40–41, D4 50–57, Sense 60–61.
+// Solver bodies pull values from a per-task Consts component rather than
+// referencing constants directly.
 
 .type Color <: number
 
@@ -20,6 +20,7 @@
 .type DiagDir <: number
 .type DiagAxis <: number
 .type D4 <: number
+.type Sense <: number
 
 .type Position = [t: number, b: number, l: number, r: number]
 .type Dim = [v: number, h: number]
@@ -50,6 +51,10 @@
 #define FLIP_TB       55
 #define FLIP_DIAG     56
 #define FLIP_ANTIDIAG 57
+
+// Sense of a turn.
+#define CW  60
+#define CCW 61
 
 // Origin: position with 0 distance to every edge.
 #define ORIGIN [0, 0, 0, 0]
@@ -146,6 +151,14 @@ opposite(RIGHT,  LEFT).
 .decl flip_of(a: Axis, d: D4)
 flip_of(VERTICAL,   FLIP_TB).
 flip_of(HORIZONTAL, FLIP_LR).
+
+// Dir reached by a quarter turn in sense s. opposite is the half turn.
+.decl turn(s: Sense, d: Dir, d_out: Dir)
+turn(CW, TOP,    RIGHT).
+turn(CW, RIGHT,  BOTTOM).
+turn(CW, BOTTOM, LEFT).
+turn(CW, LEFT,   TOP).
+turn(CCW, D2, D) :- turn(CW, D, D2).
 
 // Distance from p to edge d.
 .decl dist(p: Position, d: Dir, k: number) inline
