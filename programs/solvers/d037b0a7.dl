@@ -1,0 +1,51 @@
+// d037b0a7
+// Each mark's color fills the bg cells from it toward the c.dir edge in its
+// line. Two models of the fill, tagged on out's Choice:
+//
+//   $Flow — color flows stepwise through bg toward c.dir; a mark in the way
+//           occludes (nearest mark wins).
+//   $Ray  — a mark paints every bg cell from it to the edge.
+
+#include "../lib.dl"
+
+.type Choice = Flow {} | Ray {}
+
+.comp Consts {
+    .decl bg(c: Color)   bg(0).
+    .decl dir(d: Dir)    dir(BOTTOM).   // fill direction
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// --- Flow ---
+
+.decl flow(p: Position, col: Color)
+flow(P, Col) :- in(P, Col), !c.bg(Col).
+flow(P2, Col) :-
+    flow(P, Col),                                       // colored cell
+    c.dir(D), step_delta(D, S), compose(P, S, P2),      // neighbor toward c.dir
+    in(P2, Bg), c.bg(Bg).                               // still bg — a mark occludes
+
+out(P, Col, $Flow()) :- flow(P, Col).
+out(P, Col, $Flow()) :- in(P, Col), !flow(P, _).
+
+// --- Ray ---
+
+// Rays keyed by mark color, cast toward c.dir over the bg domain.
+.init rays = Ray<Color>
+rays.dir(D)       :- c.dir(D).
+rays.cell(P)      :- in(P, Bg), c.bg(Bg).
+rays.mark(Col, Q) :- in(Q, Col), !c.bg(Col).
+
+.decl rayed(p: Position, col: Color)
+rayed(P, Col) :- c.dir(D), rays.ray(Col, P, D).
+
+out(P, Col, $Ray()) :- rayed(P, Col).
+out(P, Col, $Ray()) :- in(P, Col), !rayed(P, _).
+
+.output out(IO=stdout)

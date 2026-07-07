@@ -1,0 +1,59 @@
+// bc4146bd
+// 1×5 tile arrangement of input copies: identity and FLIP_LR alternate,
+// the input at the anchor-end tile.
+//
+// Cases (data-equivalent on this task):
+//   $Lookup() — per-tile D4 table
+//   $Unfold() — reflection tiling: each tile reflects its neighbor across
+//               the shared boundary, seeded at the anchor tile
+//
+// 62c24649 carries these cases on a 2×2 arrangement; its $Mirror is
+// defeated here — tiles 2 and 4 are far from the anchor and stay identity.
+
+#include "../lib.dl"
+
+.type Choice = Lookup {} | Unfold {}
+
+.comp Consts {
+    .init helpers = ConstsHelpers
+
+    // --- Lookup ---
+    .decl tile_d4(p: Position, d: D4)
+    GRID_1x5(tile_d4, IDENTITY, FLIP_LR, IDENTITY, FLIP_LR, IDENTITY)
+
+    // --- Unfold ---
+    .decl arr_pos(p: Position)
+    arr_pos(P) :- helpers.frame_pos([1, 5], P).
+
+    .decl anchor(d: Dir)
+    anchor(LEFT).   // RIGHT fits too — identity at both strip ends
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl out(p: Position, col: Color, c: Choice)
+
+// --- Lookup ---
+out(P_grid, Col, $Lookup()) :-
+    in(P_in, Col),                                       // input cell
+    c.tile_d4(P_tile, D), apply(D, P_in, P_intile),      // d4 image at tile
+    concat_2d(P_tile, P_intile, [0, 0], P_grid).         // recompose
+
+// --- Unfold ---
+// Tile contents: the input seeds the anchor-end tile; each neighbor
+// reflects across the shared boundary.
+.decl unfold_val(p_tile: Position, p_intile: Position, col: Color)
+unfold_val(T, P, Col) :- in(P, Col), c.arr_pos(T), c.anchor(D), dist(T, D, 0).
+unfold_val(T2, P_img, Col) :-
+    unfold_val(T, P, Col),                                             // known tile
+    axis_of(D, A), step_delta(D, S), compose(T, S, T2), c.arr_pos(T2), // neighbor toward d
+    flip_of(A, F), apply(F, P, P_img).                                 // reflect across the shared edge
+
+out(P_grid, Col, $Unfold()) :-
+    unfold_val(T, P_intile, Col),
+    concat_2d(T, P_intile, [0, 0], P_grid).
+
+.output out(IO=stdout)

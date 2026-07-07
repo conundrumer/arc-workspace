@@ -1,0 +1,57 @@
+// aa18de87
+// Diagonal rays, one color per input. Bg cells between two ray cells on
+// their line fill with c.fill. Two models of which lines fill, tagged on
+// out's Choice:
+//
+//   $Axis — lines along c.axis only.
+//   $Iso  — lines along both axes; no orientation datum.
+
+#include "../lib.dl"
+
+.type Choice = Axis {} | Iso {}
+
+.comp Consts {
+    .decl bg(c: Color)     bg(0).
+    .decl fill(c: Color)   fill(2).
+
+    // --- Axis ---
+    .decl axis(a: Axis)    axis(HORIZONTAL).   // fill lines run along this axis
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// --- Axis ---
+
+// Bg cells between two marks on their c.axis line. Ray's inclusive reach
+// is strict on the bg-only domain.
+.init axis_rays = Ray<Unit>
+axis_rays.dir(D)        :- c.axis(A), axis_of(D, A).
+axis_rays.cell(P)       :- in(P, Bg), c.bg(Bg).
+axis_rays.mark($U(), Q) :- in(Q, Col), !c.bg(Col).
+
+.decl axis_spanned(p: Position)
+axis_spanned(P) :- axis_rays.ray($U(), P, D), opposite(D, O), axis_rays.ray($U(), P, O).
+
+out(P, F, $Axis())   :- axis_spanned(P), c.fill(F).
+out(P, Col, $Axis()) :- in(P, Col), !axis_spanned(P).
+
+// --- Iso ---
+
+// The same fill along every axis.
+.init iso_rays = Ray<Unit>
+iso_rays.dir(D)        :- dir_elem(D).
+iso_rays.cell(P)       :- in(P, Bg), c.bg(Bg).
+iso_rays.mark($U(), Q) :- in(Q, Col), !c.bg(Col).
+
+.decl iso_spanned(p: Position)
+iso_spanned(P) :- iso_rays.ray($U(), P, D), opposite(D, O), iso_rays.ray($U(), P, O).
+
+out(P, F, $Iso())   :- iso_spanned(P), c.fill(F).
+out(P, Col, $Iso()) :- in(P, Col), !iso_spanned(P).
+
+.output out(IO=stdout)
