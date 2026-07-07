@@ -1,0 +1,35 @@
+// 8eb1be9a
+// A band of patterned rows sits in an otherwise empty grid.
+// Output tiles the whole grid with the band along c.axis, phase preserved:
+// colors propagate from the band by jumps of the band's extent in both
+// directions.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl bg(col: Color)  bg(0).
+    .decl axis(a: Axis)   axis(VERTICAL).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// Band rows: the rows carrying pattern cells, as axis-only row positions.
+.decl band_row(al: Position)
+band_row(Al) :- in(P, Col), !c.bg(Col), c.axis(A), split(P, A, Al, _).
+
+.decl period(n: number)
+period(N) :- N = count : { band_row(_) }.
+
+// Closure under the tiling's translations: band-extent jumps along the axis.
+.decl out(p: Position, col: Color)
+out(P, Col) :- in(P, Col), c.axis(A), split(P, A, Al, _), band_row(Al).
+out(Q, Col) :-
+    out(P, Col),
+    c.axis(A), axis_of(D, A), period(N),    // the axis's two jump directions
+    jump_delta(D, N, Delta), compose(P, Delta, Q),
+    in(Q, _).
+
+.output out(IO=stdout)
