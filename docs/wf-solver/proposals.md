@@ -142,6 +142,29 @@ Single-set callers pass a constant `0: number` key, the convention
 `KeyedSetCompare` landed on. Callers to update: f8ff0b80 (both), d406998b
 (`Ordinal`), f8b3ba0a (both, collapsing the triplets).
 
+## `Ordinal.rev` — opposite-end pairing of an index set
+
+The order anti-isomorphism of `idx_set`: `rev(k, k2)` pairs each element
+with its opposite-end counterpart — as many elements below k as above k2.
+The descending complement of `rank` as a pairing rather than a rank value.
+The Ordinal doc's descending idiom (place ranks from the opposite edge)
+needs a physical frame to place into; `rev` covers reversal of an abstract
+index sequence.
+
+```
+.decl rev(k: number, k2: number)
+rev(K, K2) :-
+    idx_set(K),  R = count : { idx_set(Ka), Ka < K },
+    idx_set(K2), R = count : { idx_set(Kb), K2 < Kb }.
+```
+
+Home: `Ordinal` — it owns `idx_set`; `rev` is a second readout beside
+`rank`.
+
+**Task-local home (protocol step 1).** 85c4e7cd reverses its ring colors:
+`rev` over ring indices pairs ring K with the ring as deep from the center
+as K is from the border.
+
 ## `Cycle` — directed cycle with basepoint-free rotation
 
 The Z/n cycle species made first-class. `succ` declares a directed cycle by its
