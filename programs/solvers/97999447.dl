@@ -1,0 +1,88 @@
+// 97999447
+// Each non-bg dot emits a ray toward c.ray_dir, to the grid edge; cells off
+// every ray pass through. Two models of the ray's coloring, tagged on out's
+// Choice:
+//
+//   $Toggle — the ray walks the dot's two-color cycle: dot color and
+//             c.alt_color alternate, the dot itself on-color.
+//   $Mask   — the ray tiles a periodic mask: c.slot is the slot domain,
+//             c.mask its fixed-color overrides, unmarked slots echo the
+//             dot. The dot sits at slot 0.
+//
+// Coincide while the mask is a single override on period 2.
+
+#include "../lib.dl"
+
+.type Choice = Toggle {} | Mask {}
+
+.comp Consts {
+    // --- shared ---
+    .decl bg(c: Color)    bg(0).
+    .decl ray_dir(d: Dir) ray_dir(RIGHT).
+
+    // --- Toggle ---
+    .decl alt_color(c: Color) alt_color(5).
+
+    // --- Mask ---
+    .decl slot(k: number)             slot(0). slot(1).
+    .decl mask(k: number, col: Color) mask(1, 5).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// --- shared ---
+
+.decl mark(p: Position, col: Color)
+mark(P, Col) :- in(P, Col), !c.bg(Col).
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// --- Toggle ---
+
+// The two-color cycle of a ray with mark color M.
+.decl toggle(m: Color, c1: Color, c2: Color)
+toggle(M, M, Alt) :- mark(_, M), c.alt_color(Alt).
+toggle(M, A, B)   :- toggle(M, B, A).
+
+// From each mark, step toward ray_dir advancing the color cycle.
+.decl ray_toggle(m: Color, p: Position, col: Color)
+ray_toggle(Col, P, Col) :- mark(P, Col).
+ray_toggle(M, Q, C2) :-
+    ray_toggle(M, P, C1), toggle(M, C1, C2),              // next color in the cycle
+    c.ray_dir(D), step_delta(D, S), compose(P, S, Q),     // next cell toward the edge
+    in(Q, _).                                             // still on the grid
+
+out(P, Col, $Toggle()) :- ray_toggle(_, P, Col).
+out(P, Col, $Toggle()) :- in(P, Col), !ray_toggle(_, P, _).
+
+// --- Mask ---
+
+// Z/N successor over a dense 0-based index set. Candidate lib component —
+// see docs/wf-solver/proposals.md.
+.comp IndexCycle {
+    .decl idx(k: number)
+
+    .decl succ(k: number, k2: number)
+    succ(K, K+1) :- idx(K), idx(K+1).
+    succ(K, 0)   :- idx(K), !idx(K+1).   // wrap from the max
+}
+
+.init slots = IndexCycle
+slots.idx(K) :- c.slot(K).
+
+// From each mark, step toward ray_dir advancing the mask slot.
+.decl ray_mask(m: Color, p: Position, k: number)
+ray_mask(Col, P, 0) :- mark(P, Col).
+ray_mask(M, Q, K2) :-
+    ray_mask(M, P, K), slots.succ(K, K2),                 // next slot in the period
+    c.ray_dir(D), step_delta(D, S), compose(P, S, Q),     // next cell toward the edge
+    in(Q, _).                                             // still on the grid
+
+out(P, Col, $Mask()) :- ray_mask(_, P, K), c.mask(K, Col).    // overridden slot
+out(P, M,   $Mask()) :- ray_mask(M, P, K), !c.mask(K, _).     // unmarked slot echoes the dot
+out(P, Col, $Mask()) :- in(P, Col), !ray_mask(_, P, _).
+
+.output out(IO=stdout)
