@@ -59,23 +59,6 @@
 on(P) :- in(P, C), c.block_color(C).
 
 // ============================================================
-// Reusable comps (pre-lib)
-// ============================================================
-
-// Cells on the diagonal through a corner — equal distance to the corner's two
-// edges; ring is that shared distance.
-.comp Diagonal {
-    .decl cell(p: Position)
-    .decl corner(d: DiagDir)
-
-    .decl diagonal(p: Position, ring: number)
-    diagonal(P, K) :-
-        cell(P), corner(Diag),
-        dir_of(Diag, VERTICAL,   Dv), dist(P, Dv, K),
-        dir_of(Diag, HORIZONTAL, Dh), dist(P, Dh, K).
-}
-
-// ============================================================
 // $Object: connected components equal to the shape
 // ============================================================
 

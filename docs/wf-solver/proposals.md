@@ -252,37 +252,6 @@ extension when a task needs diagonal connectivity.
 L frame — the stray mask cell stays unreachable, so the following `Bbox`
 doesn't inflate to span it.
 
-## `Diagonal` — a corner diagonal
-
-Cells equidistant from a corner's two edges; ring is that shared distance. The
-ungated diagonal (center included). A component so it can name axes directly.
-
-```
-.comp Diagonal {
-    .decl cell(p: Position)
-    .decl corner(d: DiagDir)
-
-    .decl diagonal(p: Position, ring: number)
-    diagonal(P, K) :-
-        cell(P), corner(Diag),
-        dir_of(Diag, VERTICAL,   Dv), dist(P, Dv, K),
-        dir_of(Diag, HORIZONTAL, Dh), dist(P, Dh, K).
-}
-```
-
-**Relation to lib's `DiagPlacement`.** `DiagPlacement.diag_cell` is `diagonal` ∩
-`quadrant` — the corner→center *ray* (it drops equidistant cells, which sit in no
-quadrant). `Diagonal` alone is the full corner-to-corner diagonal — a distinct
-relation, not a repeat. The equidistance test is also the fixed set of the
-corner's diagonal flip.
-
-**Task-local home (protocol step 1).** 3b4c2228, fed the 3×3 output frame and
-the tally corner; `$Tally` reads `diagonal(P, ring)` and marks rings below the
-count.
-
-**Second home (protocol step 1).** ff28f65a, fed the output frame and all four
-corners; the union of the corner diagonals is its X of mark slots.
-
 ## `diag_step_delta` — unit step toward a corner
 
 The DiagDir peer of `step_delta`: the corner's two cardinal unit steps

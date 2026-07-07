@@ -354,6 +354,20 @@ concat_2d(P_outer, P_inner, [Gv, Gh], P_grid) :-
         compose(P_d, P_o, P).
 }
 
+// A corner diagonal — cells equidistant from the corner's two edges; ring is
+// that shared distance. The full corner-to-corner diagonal, center included.
+// DiagPlacement.diag_cell is this ∩ quadrant — the corner→center ray.
+.comp Diagonal {
+    .decl cell(p: Position)
+    .decl corner(d: DiagDir)
+
+    .decl diagonal(p: Position, ring: number)
+    diagonal(P, K) :-
+        cell(P), corner(Diag),
+        dir_of(Diag, VERTICAL,   Dv), dist(P, Dv, K),
+        dir_of(Diag, HORIZONTAL, Dh), dist(P, Dh, K).
+}
+
 // Diagonal placement — the quadrant a cell sits in, and its ring. Solver
 // populates `cell` (the position domain).
 .comp DiagPlacement {
