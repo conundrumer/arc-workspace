@@ -40,15 +40,6 @@ choice_elem($Fixed()). choice_elem($Palette()).
 }
 .init diag_step = DiagStep
 
-// K-cell displacement toward d — scaled step_delta (protocol step 1).
-.comp Jump {
-    .decl delta(d: Dir, k: number, p: Position) inline
-    delta(D, K, Delta) :-
-        edge_delta(D, -K, Nd), opposite(D, O), edge_delta(O, K, No),
-        compose(Nd, No, Delta).
-}
-.init jump = Jump
-
 // Unit step along the stripe: toward each corner of the stripe axis.
 .decl stripe_step(delta: Position)
 stripe_step(Delta) :-
@@ -65,7 +56,7 @@ period(K, $Fixed())   :- c.period(K).
 period(K, $Palette()) :- K = count : { palette(Col) }.
 
 .decl period_jump(delta: Position, ch: Choice)
-period_jump(Delta, Ch) :- period(K, Ch), dir_elem(D), jump.delta(D, K, Delta).
+period_jump(Delta, Ch) :- period(K, Ch), dir_elem(D), jump_delta(D, K, Delta).
 
 // --- closure under the wallpaper symmetries ---
 

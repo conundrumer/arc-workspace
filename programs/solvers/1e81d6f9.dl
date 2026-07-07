@@ -73,9 +73,9 @@ region.node(P) :- mask(P).
 region.seed(P) :- mask(P), c.target_corner(Diag), dir_of(Diag, _, D), dist(P, D, 0).
 
 // The region's bounding box over the input grid.
-.init box = Bbox<number>
-box.cell(0, P) :- region.reach(P).
-box.grid(0, P) :- in(P, _).
+.init box = Bbox<Unit>
+box.cell($U(), P) :- region.reach(P).
+box.grid($U(), P) :- in(P, _).
 
 .decl out(p: Position, col: Color, c: Choice)
 
@@ -86,7 +86,7 @@ out(P, Bg, $Marker()) :- in(P, Col), target_color(Col), !target_pos(P), c.bg(Bg)
 
 // --- Bbox --- the whole corner region survives the erase.
 out(P, Col, $Bbox()) :- in(P, Col), !target_color(Col).                            // non-target passes
-out(P, Col, $Bbox()) :- in(P, Col), box.inside(0, P).                              // region kept
-out(P, Bg, $Bbox()) :- in(P, Col), target_color(Col), !box.inside(0, P), c.bg(Bg). // target outside region erased
+out(P, Col, $Bbox()) :- in(P, Col), box.inside($U(), P).                              // region kept
+out(P, Bg, $Bbox()) :- in(P, Col), target_color(Col), !box.inside($U(), P), c.bg(Bg). // target outside region erased
 
 .output out(IO=stdout)

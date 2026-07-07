@@ -25,6 +25,10 @@
 .type Position = [t: number, b: number, l: number, r: number]
 .type Dim = [v: number, h: number]
 
+// Unit: singleton key for keyed components applied to a single set — states
+// "exactly one set" in the type instead of a dummy int.
+.type Unit = U {}
+
 #define TOP    10
 #define BOTTOM 11
 #define LEFT   12
@@ -172,10 +176,14 @@ compose([T1, B1, L1, R1], [T2, B2, L2, R2], [T1+T2, B1+B2, L1+L2, R1+R2]) :- tru
 .decl edge_delta(d: Dir, k: number, p: Position) inline
 edge_delta(D, K, [@keep_dir(D, TOP, K), @keep_dir(D, BOTTOM, K), @keep_dir(D, LEFT, K), @keep_dir(D, RIGHT, K)]) :- true.
 
-// Unit step toward d: -1 at edge d, +1 at its opposite.
+// K-cell displacement toward d: -k at edge d, +k at its opposite.
+.decl jump_delta(d: Dir, k: number, delta: Position) inline
+jump_delta(D, K, Delta) :-
+    opposite(D, O), edge_delta(D, -K, Sd), edge_delta(O, K, So), compose(Sd, So, Delta).
+
+// Unit step toward d — the k = 1 jump_delta.
 .decl step_delta(d: Dir, delta: Position) inline
-step_delta(D, Step) :-
-    opposite(D, O), edge_delta(D, -1, Sd), edge_delta(O, 1, So), compose(Sd, So, Step).
+step_delta(D, Step) :- jump_delta(D, 1, Step).
 
 // Decompose p by axis: along carries the axis component (perpendicular
 // zeroed); across carries the perpendicular (axis zeroed).
@@ -407,6 +415,29 @@ concat_2d(P_outer, P_inner, [Gv, Gh], P_grid) :-
         dir_of(Diag, HORIZONTAL, Dh), dist(P, Dh, K).
 }
 
+// Cell between two keyed marks on its line along `axis`. `mark_side` is the
+// one-sided reach; `between` folds the two sides. Reach is inclusive (`<=`),
+// so a mark is between under its own key; on a mark-free domain, inclusive
+// and strict reach coincide, so callers that exclude marks (a bg-only
+// domain) get the strict semantics for free. A domain and marks projected
+// to axis-only positions share one line, so `between` gives the marks'
+// span along the axis.
+.comp Between<Key> {
+    .decl axis(a: Axis)
+    .decl cell(p: Position)            // domain tested
+    .decl mark(key: Key, p: Position)
+
+    // A key-K mark at or beyond p toward edge d, in p's line.
+    .decl mark_side(key: Key, p: Position, d: Dir)
+    mark_side(K, P, D) :-
+        cell(P), mark(K, Q),
+        axis(A), split(P, A, _, Ac), split(Q, A, _, Ac),
+        axis_of(D, A), dist(P, D, Kp), dist(Q, D, Kq), Kq <= Kp.
+
+    .decl between(key: Key, p: Position)
+    between(K, P) :- mark_side(K, P, D), opposite(D, O), mark_side(K, P, O).
+}
+
 // Sparse numeric set → dense ordinal position. Solver populates `idx_set`;
 // `rank(k, r)` gives r = the count of elements strictly less than k, so ranks
 // run ascending from 0. A descending layout falls out by placing ranks from
@@ -429,7 +460,7 @@ concat_2d(P_outer, P_inner, [Gv, Gh], P_grid) :-
 // per pattern, for size-ranked selection over matches). Member is a single
 // type param — a record for multi-field members,
 // a scalar for one-field. Single-pattern sites use pattern = 0; a global
-// observed set uses a constant key.
+// observed set keys on Unit.
 .comp KeyedSetCompare<Key, Member> {
     .decl pattern_member(pattern: number, m: Member)
     .decl observed_member(observed: Key, m: Member)
@@ -473,8 +504,8 @@ concat_2d(P_outer, P_inner, [Gv, Gh], P_grid) :-
 // the set (min-per-edge rather than min/max-per-axis: the four mins are
 // already a Position, and the edge choice washes out under D4). Two readouts:
 // `margin` packs the mins into a Position — the box's placement, a Reframe
-// outer; `inside` tests `grid` cells against them. Single-set sites pass a
-// constant key.
+// outer; `inside` tests `grid` cells against them. Single-set sites key
+// on Unit.
 .comp Bbox<Key> {
     .decl cell(key: Key, p: Position)
     .decl grid(key: Key, p: Position)

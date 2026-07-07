@@ -71,9 +71,9 @@
 
 .init c = Consts
 
-.init lookup_match = KeyedSetCompare<number, Position>
+.init lookup_match = KeyedSetCompare<Unit, Position>
 lookup_match.pattern_member(Eid, P) :- c.pattern_member(Eid, P).
-lookup_match.observed_member(0, P)  :- silhouette(P).
+lookup_match.observed_member($U(), P)  :- silhouette(P).
 
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
@@ -86,7 +86,7 @@ silhouette(P) :- in(P, Col), !c.bg(Col).
 // --- $Lookup ---
 out(ORIGIN, Col_out, $Lookup()) :-
     c.pattern_out(Eid, Col_out),                                // entry's output color
-    lookup_match.equals(0, Eid).                                // silhouette == entry's shape
+    lookup_match.equals($U(), Eid).                                // silhouette == entry's shape
 
 // --- $Classify ---
 .decl center_silhouetted(p: Position)

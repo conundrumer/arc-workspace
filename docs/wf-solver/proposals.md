@@ -91,10 +91,8 @@ solver-local or a separate component. Current hints: 3618c87e → an `unmatched`
 44f52bb0 → `best_covered`.
 
 **Global observed set.** When the observed set is global — one set, no
-meaningful key (44f52bb0's invariance set, 27a28665's silhouette) — the call passes a
-constant `0: number` key, which is what lib landed on. A `.type Unit = U {}` singleton
-keyed on `$U()` remains a possible tightening — it would state "exactly one observed
-set" in the type instead of a dummy int.
+meaningful key (44f52bb0's invariance set, 27a28665's silhouette) — the call
+keys on `Unit` (`$U()`, in lib).
 
 ## Keyed `Ordinal` / `DirFrame` — rank-and-place across cases
 
@@ -138,8 +136,7 @@ following `Bbox<Key>` / `KeyedSetCompare<Key, Member>`:
 `dir` stays unkeyed — the frame direction is the instance's parameter; key it
 only when a task places per-key directions.
 
-Single-set callers pass a constant `0: number` key, the convention
-`KeyedSetCompare` landed on. Callers to update: f8ff0b80 (both), d406998b
+Single-set callers key on `Unit`. Callers to update: f8ff0b80 (both), d406998b
 (`Ordinal`), f8b3ba0a (both, collapsing the triplets).
 
 ## `Ordinal.rev` — opposite-end pairing of an index set
@@ -291,58 +288,6 @@ diag_step_delta(Diag, Delta) :-
 **Task-local home (protocol step 1).** 05269061 carries it as a `DiagStep`
 comp: the along-stripe generator of its color-propagation closure is the
 delta toward each corner of `c.stripe_axis`.
-
-## `jump_delta` — K-cell displacement toward an edge
-
-Scaled `step_delta`: -K at edge d, +K at its opposite. `step_delta` is the
-K = 1 slice and can be redefined through it on promotion. Without it, a body
-needing a longer displacement negates K itself — arithmetic the primitive
-absorbs.
-
-```
-.decl jump_delta(d: Dir, k: number, delta: Position) inline
-jump_delta(D, K, Delta) :-
-    edge_delta(D, -K, Nd), opposite(D, O), edge_delta(O, K, No),
-    compose(Nd, No, Delta).
-```
-
-**Task-local home (protocol step 1).** 05269061 carries it as a `Jump` comp:
-the wallpaper's period-length translations are `jump_delta(D, period, _)` on
-the four cardinals, generating the color-propagation closure.
-
-## `Between<Key>` — cell between two keyed marks on its line
-
-A cell with a mark of key K at or beyond it on both sides of its line along
-`axis`. `mark_side` is the one-sided reach; `between` folds the two sides.
-Reach is inclusive (`<=`), so a mark is between under its own key; on a
-mark-free domain, inclusive and strict reach coincide, so callers that exclude
-marks (a bg-only domain) get the strict semantics for free.
-
-```
-.comp Between<Key> {
-    .decl axis(a: Axis)
-    .decl cell(p: Position)            // domain tested
-    .decl mark(key: Key, p: Position)
-
-    // A key-K mark at or beyond p toward edge d, in p's line.
-    .decl mark_side(key: Key, p: Position, d: Dir)
-    mark_side(K, P, D) :-
-        cell(P), mark(K, Q),
-        axis(A), split(P, A, _, Ac), split(Q, A, _, Ac),
-        axis_of(D, A), dist(P, D, Kp), dist(Q, D, Kq), Kq <= Kp.
-
-    .decl between(key: Key, p: Position)
-    between(K, P) :- mark_side(K, P, D), opposite(D, O), mark_side(K, P, O).
-}
-```
-
-**Task-local home (protocol step 1).** 22168020 carries it as body rules
-(`mark_side`, `fill`), keyed by mark color: each color's span fills with that
-color.
-
-**Second home (protocol step 1).** a699fb00's `$Span` (`dot_beyond`,
-`spanned`): unit key (the one dot color), domain restricted to bg cells —
-the strict-reach caller.
 
 ## `ReadOrder` — reading order over a cell set
 

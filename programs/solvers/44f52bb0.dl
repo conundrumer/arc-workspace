@@ -44,9 +44,9 @@
 
 .init c = Consts
 
-.init group_match = KeyedSetCompare<number, D4>
+.init group_match = KeyedSetCompare<Unit, D4>
 group_match.pattern_member(Id, D) :- c.mapping_sym(Id, D).
-group_match.observed_member(0, D) :- input_inv(D).
+group_match.observed_member($U(), D) :- input_inv(D).
 
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
@@ -74,9 +74,9 @@ input_inv(D) :- d4_elem(D), !non_invariant(D).
 // not equality. Assumes group sizes are unique; a tie would emit conflicting cells.
 .decl best_id(id: number)
 best_id(Id) :-
-    group_match.covers(0, Id),                                  // group ⊆ invariance set
+    group_match.covers($U(), Id),                                  // group ⊆ invariance set
     group_match.pattern_size(Id, N),                            // group size
-    N = max N2 : { group_match.covers(0, I2), group_match.pattern_size(I2, N2) }.
+    N = max N2 : { group_match.covers($U(), I2), group_match.pattern_size(I2, N2) }.
 
 // --- Output ---
 
