@@ -53,7 +53,7 @@ When the user says `cleanup`, create tasks for Simplify and Prune and do them.
 
 ## `commit`
 
-- User trigger to commit. No commit without it. Make multiple commits when changes split cleanly.
+- User trigger to commit. No commit without it. Make multiple commits when changes split cleanly. This includes pre-existing session work. Batch solvers appropriately.
 
 ## Lib addition protocol
 
