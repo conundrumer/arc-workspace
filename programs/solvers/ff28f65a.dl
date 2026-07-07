@@ -1,0 +1,161 @@
+// ff28f65a
+// Count the 2x2 squares of c.block_color, then mark that many cells of a
+// fixed out_dim grid's X (both corner diagonals), filling in reading order.
+//
+// The block shape is a position set. Two models detect its occurrences:
+//   $Object    — connected components equal to the shape.
+//   $Placement — placements whose footprint lands fully on the color; counts
+//                touching squares — which $Object merges — separately.
+//
+// The count renders two ways — the output's data/ops choice:
+//   $Fill   — compose the marks along the X's reading order (ops).
+//   $Lookup — select the stored count->grid from a table (data).
+// Choice = [detect, render] crosses the two independent decisions.
+
+#include "../lib.dl"
+
+.type Detect = Object {} | Placement {}
+.type Render = Fill {} | Lookup {}
+.type Choice = [detect: Detect, render: Render]
+
+.comp Consts {
+    .init helpers = ConstsHelpers
+
+    .decl block_color(c: Color)  block_color(2).
+    .decl block_dim(d: Dim)      block_dim([2, 2]).
+
+    .decl block_shape(p: Position)
+    block_shape(P) :- block_dim(D), helpers.frame_pos(D, P).
+
+    .decl mark(c: Color)         mark(1).
+    .decl bg(c: Color)           bg(0).
+    .decl out_dim(d: Dim)        out_dim([3, 3]).
+    .decl read_corner(d: DiagDir)  read_corner(TOP_LEFT).
+    .decl read_axis(a: Axis)       read_axis(VERTICAL).
+
+    .decl out_pos(p: Position)
+    out_pos(P) :- out_dim(D), helpers.frame_pos(D, P).
+
+    // Lookup render: count -> output grid. Only the counts the task exhibits (1..5).
+    .decl lookup1(p: Position, col: Color)
+    GRID_3x3(lookup1, 1,0,0, 0,0,0, 0,0,0)
+    .decl lookup2(p: Position, col: Color)
+    GRID_3x3(lookup2, 1,0,1, 0,0,0, 0,0,0)
+    .decl lookup3(p: Position, col: Color)
+    GRID_3x3(lookup3, 1,0,1, 0,1,0, 0,0,0)
+    .decl lookup4(p: Position, col: Color)
+    GRID_3x3(lookup4, 1,0,1, 0,1,0, 1,0,0)
+    .decl lookup5(p: Position, col: Color)
+    GRID_3x3(lookup5, 1,0,1, 0,1,0, 1,0,1)
+    .decl lookup_grid(n: number, p: Position, col: Color)
+    lookup_grid(1, P, C) :- lookup1(P, C).
+    lookup_grid(2, P, C) :- lookup2(P, C).
+    lookup_grid(3, P, C) :- lookup3(P, C).
+    lookup_grid(4, P, C) :- lookup4(P, C).
+    lookup_grid(5, P, C) :- lookup5(P, C).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// Cells carrying the counted color.
+.decl on(p: Position)
+on(P) :- in(P, C), c.block_color(C).
+
+// ============================================================
+// Reusable comps (pre-lib)
+// ============================================================
+
+// Cells on the diagonal through a corner — equal distance to the corner's two
+// edges; ring is that shared distance.
+.comp Diagonal {
+    .decl cell(p: Position)
+    .decl corner(d: DiagDir)
+
+    .decl diagonal(p: Position, ring: number)
+    diagonal(P, K) :-
+        cell(P), corner(Diag),
+        dir_of(Diag, VERTICAL,   Dv), dist(P, Dv, K),
+        dir_of(Diag, HORIZONTAL, Dh), dist(P, Dh, K).
+}
+
+// ============================================================
+// $Object: connected components equal to the shape
+// ============================================================
+
+.init comps = Components
+comps.node(P) :- on(P).
+
+.init object_box = Bbox<CompId>
+object_box.cell(Id, P) :- comps.label(P, Id).
+
+.init object_frame = Reframe<CompId>
+object_frame.cell(Id, P)  :- comps.label(P, Id).
+object_frame.outer(Id, M) :- object_box.margin(Id, M).
+
+.init object_match = KeyedSetCompare<CompId, Position>
+object_match.pattern_member(0, I)   :- c.block_shape(I).
+object_match.observed_member(Id, I) :- object_frame.inner(Id, I).
+
+.decl object_count(n: number)
+object_count(N) :- N = count : { object_match.equals(Id, 0) }.
+
+// ============================================================
+// $Placement: placements where the shape occurs (Occurrences)
+// ============================================================
+
+.init occ = Occurrences
+occ.cell(P)  :- on(P).
+occ.shape(P) :- c.block_shape(P).
+
+.decl placement_count(n: number)
+placement_count(N) :- N = count : { occ.occurrence(_) }.
+
+// ============================================================
+// Output
+// ============================================================
+
+.decl total(n: number, detect: Detect)
+total(N, $Object())    :- object_count(N).
+total(N, $Placement()) :- placement_count(N).
+
+// The X: cells on either diagonal of the output frame.
+.init diag = Diagonal
+diag.cell(P)   :- c.out_pos(P).
+diag.corner(D) :- diag_dir_elem(D).
+
+.decl x_cell(p: Position)
+x_cell(P) :- diag.diagonal(P, _).
+
+// Reading order over the X: primary along read_axis from read_corner,
+// tie-break along the other axis.
+.decl read_before(q: Position, p: Position)
+read_before(Q, P) :-
+    x_cell(Q), x_cell(P),                                    // X cells
+    c.read_corner(Diag), c.read_axis(A), dir_of(Diag, A, D), // primary dir
+    dist(Q, D, K1), dist(P, D, K2), K1 < K2.                 // q strictly nearer
+read_before(Q, P) :-
+    x_cell(Q), x_cell(P),                                    // X cells
+    c.read_corner(Diag), c.read_axis(A), dir_of(Diag, A, D), // primary dir
+    same_dist(D, Q, P),                                      // primary tie
+    axis_elem(A2), A2 != A, dir_of(Diag, A2, D2),            // secondary dir
+    dist(Q, D2, K1), dist(P, D2, K2), K1 < K2.               // q strictly nearer
+
+.decl fill_rank(p: Position, r: number)
+fill_rank(P, R) :- x_cell(P), R = count : { read_before(Q, P) }.
+
+.decl marked(p: Position, detect: Detect)
+marked(P, Det) :- fill_rank(P, K), total(N, Det), K < N.
+
+.decl out(p: Position, col: Color, c: Choice)
+
+// Fill (ops) — compose the marks along the reading order.
+out(P, Mark, [Det, $Fill()]) :- marked(P, Det), c.mark(Mark).
+out(P, BG,   [Det, $Fill()]) :- c.out_pos(P), total(_, Det), !marked(P, Det), c.bg(BG).
+
+// Lookup (data) — select the stored grid for the count.
+out(P, Col, [Det, $Lookup()]) :- total(N, Det), c.lookup_grid(N, P, Col).
+
+.output out(IO=stdout)

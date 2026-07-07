@@ -280,6 +280,9 @@ corner's diagonal flip.
 the tally corner; `$Tally` reads `diagonal(P, ring)` and marks rings below the
 count.
 
+**Second home (protocol step 1).** ff28f65a, fed the output frame and all four
+corners; the union of the corner diagonals is its X of mark slots.
+
 ## `diag_step_delta` — unit step toward a corner
 
 The DiagDir peer of `step_delta`: the corner's two cardinal unit steps
@@ -314,3 +317,15 @@ jump_delta(D, K, Delta) :-
 **Task-local home (protocol step 1).** 05269061 carries it as a `Jump` comp:
 the wallpaper's period-length translations are `jump_delta(D, period, _)` on
 the four cardinals, generating the color-propagation closure.
+
+## `ReadOrder` — reading order over a cell set
+
+Scan-like-text order given a corner and a primary axis: `before` compares
+lexicographically (strictly nearer along the primary dir; or primary tie and
+strictly nearer along the secondary), `rank` counts predecessors. The
+primitive boundary is unsettled: one comp owning both, or a split — a
+rank-over-input-order comp (`RelOrdinal<T>`, subsuming `Ordinal` at `<` on
+numbers) fed by a lexicographic `before` supplier.
+
+**Task-local home (protocol step 1).** ff28f65a carries it as body rules
+(`read_before`, `fill_rank`); `$Fill` marks X cells with rank below the count.
