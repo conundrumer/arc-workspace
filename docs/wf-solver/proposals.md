@@ -85,7 +85,7 @@ These extensions derive from the same three counts it already computes (`|patter
 - `observed_size(observed, n)`, `overlap_size(observed, pattern, n)` — projections that
   unlock nearest / best-overlap selection
 
-**Scope.** The component owns set-relationship derivation. Ranking policy (`best_covered`,
+**Scope.** This component owns set-relationship derivation. Ranking policy (`best_covered`,
 `nearest`) and approximate / multiset / payload matching sit at or past the edge —
 solver-local or a separate component. Current hints: 3618c87e → an `unmatched` negative,
 44f52bb0 → `best_covered`.
@@ -93,6 +93,35 @@ solver-local or a separate component. Current hints: 3618c87e → an `unmatched`
 **Global observed set.** When the observed set is global — one set, no
 meaningful key (44f52bb0's invariance set, 27a28665's silhouette) — the call
 keys on `Unit` (`$U()`, in lib).
+
+## `Between<Key>` — cells between two keyed marks on a line
+
+The two-sided fold of `Ray` (`lib.dl`). Demoted from lib in the `Ray`
+factoring — the fold is one rule and lives solver-local until it re-earns
+comp form.
+
+```
+.comp Between<Key> {
+    .decl axis(a: Axis)
+    .decl cell(p: Position)            // domain tested
+    .decl mark(key: Key, p: Position)
+
+    .init rays = Ray<Key>
+    rays.dir(D)     :- axis(A), axis_of(D, A).   // cast both ways
+    rays.cell(P)    :- cell(P).
+    rays.mark(K, P) :- mark(K, P).
+
+    .decl between(key: Key, p: Position)
+    between(K, P) :- rays.ray(K, P, D), opposite(D, O), rays.ray(K, P, O).
+}
+```
+
+A mark is between under its own key — Ray's inclusive reach; 22168020
+paints mark cells through this.
+
+**Task-local homes (protocol step 1).** Solver-local folds: 22168020
+(Color key), a699fb00 $Span (Unit), aa18de87 $Axis and $Iso (Unit, $Iso
+casting all four dirs).
 
 ## Keyed `Ordinal` / `DirFrame` — rank-and-place across cases
 

@@ -415,27 +415,25 @@ concat_2d(P_outer, P_inner, [Gv, Gh], P_grid) :-
         dir_of(Diag, HORIZONTAL, Dh), dist(P, Dh, K).
 }
 
-// Cell between two keyed marks on its line along `axis`. `mark_side` is the
-// one-sided reach; `between` folds the two sides. Reach is inclusive (`<=`),
-// so a mark is between under its own key; on a mark-free domain, inclusive
-// and strict reach coincide, so callers that exclude marks (a bg-only
-// domain) get the strict semantics for free. A domain and marks projected
-// to axis-only positions share one line, so `between` gives the marks'
-// span along the axis.
-.comp Between<Key> {
-    .decl axis(a: Axis)
+// Keyed marks casting rays toward each `dir`. `ray(k, p, d)` — p is on a
+// key-k ray cast toward edge d: a mark on p's line at or beyond p on the
+// side away from d. Reach is inclusive — a mark is on its own ray; a
+// domain that excludes marks (bg-only) gets strict semantics for free.
+// Cells between two marks are the overlap of two opposite rays — cast
+// both dirs of an axis and fold caller-side. Extent only: a ray whose
+// content varies along its length is a lockstep step recursion, not this
+// comp.
+.comp Ray<Key> {
+    .decl dir(d: Dir)                  // cast directions in use
     .decl cell(p: Position)            // domain tested
     .decl mark(key: Key, p: Position)
 
-    // A key-K mark at or beyond p toward edge d, in p's line.
-    .decl mark_side(key: Key, p: Position, d: Dir)
-    mark_side(K, P, D) :-
-        cell(P), mark(K, Q),
-        axis(A), split(P, A, _, Ac), split(Q, A, _, Ac),
-        axis_of(D, A), dist(P, D, Kp), dist(Q, D, Kq), Kq <= Kp.
-
-    .decl between(key: Key, p: Position)
-    between(K, P) :- mark_side(K, P, D), opposite(D, O), mark_side(K, P, O).
+    // p on a key-k ray cast toward edge d, in p's line.
+    .decl ray(key: Key, p: Position, d: Dir)
+    ray(K, P, D) :-
+        cell(P), mark(K, Q), dir(D),
+        axis_of(D, A), split(P, A, _, Ac), split(Q, A, _, Ac),
+        dist(P, D, Kp), dist(Q, D, Kq), Kq >= Kp.
 }
 
 // Sparse numeric set → dense ordinal position. Solver populates `idx_set`;
