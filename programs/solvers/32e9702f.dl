@@ -1,0 +1,31 @@
+// 32e9702f
+// Every mark shifts one step toward c.dir; a mark pushed off the grid
+// vanishes. All other cells become c.fill.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl dir(d: Dir)     dir(LEFT).    // shift direction
+    .decl bg(c: Color)    bg(0).
+    .decl fill(c: Color)  fill(5).      // field color
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl moved(p: Position, col: Color)
+moved(Q, Col) :-
+    in(P, Col), c.bg(Bg), Col != Bg,                  // mark
+    c.dir(D), step_delta(D, S), compose(P, S, Q),     // one step toward dir
+    in(Q, _).                                         // lands on the grid
+
+.decl landed(p: Position)
+landed(P) :- moved(P, _).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- moved(P, Col).
+out(P, F)   :- in(P, _), !landed(P), c.fill(F).
+
+.output out(IO=stdout)
