@@ -6,7 +6,7 @@
 //
 //   $LabeledGrids() — paired by shared non-zero label across in/out grids
 //   $Cycle()        — collapse onto the output's 8-cell ring, modeled as a CW
-//                     cycle (a local Cycle component). Each X-arm cell maps to
+//                     cycle (a local CycleWalk component). Each X-arm cell maps to
 //                     the ring cell at its own diagonal, advanced by a per-ring
 //                     cyclic shift (corner ring 0, inner ring +1 — the 45° twist
 //                     as one successor step).
@@ -14,17 +14,21 @@
 #include "../lib.dl"
 
 // A directed cycle (succ = edges, carrying no basepoint) with a gauge-free
-// rotation: walk advances a start cell by n successor steps. Candidate lib
+// rotation: walk advances a start node by n successor steps. Candidate lib
 // component — see docs/wf-solver/proposals.md.
-.comp Cycle<T> {
+.comp CycleWalk<T> {
     .decl succ(p: T, p_next: T)
-    .decl step(n: number)               // advance counts in use (bounds the walk)
+    .decl step(n: number)               // advance counts in use
+
+    // Downward closure of step — the walk's recursion bound.
+    .decl bound(n: number)
+    bound(N) :- step(M), N = range(0, M+1).
 
     .decl walk(p0: T, n: number, p: T)  // p = p0 advanced n steps along succ
     walk(P0, 0, P0) :- succ(P0, _).
     walk(P0, N1, P2) :-
         walk(P0, N, P1), succ(P1, P2),
-        step(N1), N1 = N + 1.           // N1 is the Z/n step count
+        bound(N1), N1 = N + 1.          // N1 is the Z/n step count
 }
 
 .type Choice = LabeledGrids {} | Cycle {}
@@ -74,7 +78,7 @@
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
-.init ring = Cycle<Position>
+.init ring = CycleWalk<Position>
 ring.succ(P, P_next) :- c.ring_succ(P, P_next).   // the output ring cycle
 ring.step(N)         :- c.ring_shift(_, N).        // shifts the solver applies
 

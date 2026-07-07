@@ -162,88 +162,78 @@ Home: `Ordinal` — it owns `idx_set`; `rev` is a second readout beside
 `rev` over ring indices pairs ring K with the ring as deep from the center
 as K is from the border.
 
-## `Cycle` — directed cycle with basepoint-free rotation
+## `CycleWalk` — advance along a directed cycle by a count
 
-The Z/n cycle species made first-class. `succ` declares a directed cycle by its
-edges; `walk(p0, n, p)` advances a start cell n successor steps. The edge set
-carries no basepoint, so the cycle is recoverable content but any single
-position is an arbitrary reference — `walk` (a step count, the torsor
-difference) is basepoint-free; the absolute position is not.
+The walk readout of a Z/n cycle. `succ` takes the cycle's edges — explicit
+data, or a builder like `IndexCycle` (below); `walk(p0, n, p)` advances a
+start node n successor steps. The edge set carries no basepoint, so the cycle
+is recoverable content but any single node is an arbitrary reference — `walk`
+(a step count, the torsor difference) is basepoint-free; the absolute node is
+not. `step` declares the advance counts in use — raw solver data; the comp
+closes them downward into the recursion bound.
 
 ```
-.comp Cycle<T> {
+.comp CycleWalk<T> {
     .decl succ(p: T, p_next: T)
-    .decl step(n: number)               // advance counts in use (bounds the walk)
+    .decl step(n: number)               // advance counts in use
+
+    // Downward closure of step — the walk's recursion bound.
+    .decl bound(n: number)
+    bound(N) :- step(M), N = range(0, M+1).
 
     .decl walk(p0: T, n: number, p: T)  // p = p0 advanced n steps along succ
     walk(P0, 0, P0) :- succ(P0, _).
     walk(P0, N1, P2) :-
         walk(P0, N, P1), succ(P1, P2),
-        step(N1), N1 = N + 1.
+        bound(N1), N1 = N + 1.
 }
 ```
 
-**Bound.** `walk` over a finite cycle never terminates unbounded — n grows past
-the cycle length. `step` enumerates the advance counts the solver needs and caps
-the recursion. Alternative: have the component count cycle length L and expose
-the full Z/L (`walk` for n in 0..L-1) — more machinery, unneeded when a solver
-applies only a few shifts. `DirCycle` (below) takes that alternative for a dense
-axis — it counts L from its nodes, so its caller hands it no step set.
+**Consumer half only.** It walks a cycle; it never builds one. A solver whose
+advance is lockstep with another step (one slot per spatial cell) consumes
+`succ` directly and skips this comp.
 
-**Task-local home (protocol step 1).** ca8de6ea collapses a 5×5 X onto a dense
-3×3. The output's 8-cell ring is a CW `Cycle`; each X-arm cell maps to the ring
-cell at its own diagonal, advanced by a per-ring shift — corner ring 0, inner
-ring +1.
+**Task-local homes (protocol step 1).** ca8de6ea: the output's 8-cell ring,
+`succ` as explicit edge data — an irregular spatial cycle whose cyclic order
+is the data itself, so no builder applies; walked by per-ring shifts.
+6d1d5c90: row indices closed into a cycle by `IndexCycle`, walked by the
+marker's shift.
 
 ```
-.init ring = Cycle<Position>
+.init ring = CycleWalk<Position>
 ring.succ(P, P_next) :- c.ring_succ(P, P_next).   // the ring cycle
 ring.step(N)         :- c.ring_shift(_, N).        // shifts in use
 
 out(P_out, ...) :- ..., ring.walk(P_corner, Shift, P_out).
 ```
 
-**Second home (protocol step 1).** 6d1d5c90's rows are a `Cycle` built by
-`DirCycle` (below). Where ca8de6ea enumerates an irregular ring as `succ` data,
-6d1d5c90 *derives* `succ` from axis adjacency — the abstraction's two ends.
+## `IndexCycle` — Z/N successor over a dense index set
 
-## `DirCycle` — a dense line closed into a cycle
-
-The 1D-cycle peer of `DirFrame`, same `dir(d: Dir)` parameter: where `DirFrame`
-seats an index in a line measured from an edge, `DirCycle` walks a line closed into
-a loop advancing toward an edge. Given a node set on an axis it builds the cyclic
-`succ` — linear step toward `dir`, plus a wrap from the `dir`-extreme back to the
-far extreme — counts its own length, and exposes `walk`.
+The builder half: a dense 0-based index set closed into a cycle — increment,
+with the max wrapping to 0. Every dense cycle is Z/N up to relabeling, and
+spatial substrates conjugate through seating the lib already owns (`dist`
+reads an index off a position, `DirFrame.pos` seats one back), so no
+per-substrate cycle builder is needed: an earlier `DirCycle` staging (line of
+positions + a Dir) dissolved into this composition — 6d1d5c90 measures rows
+from `opposite(shift_dir)`, so ascending index runs toward the shift and the
+wrap lands on the shift edge.
 
 ```
-.comp DirCycle {
-    .decl node(p: Position)
-    .decl dir(d: Dir)                    // advance direction
+.comp IndexCycle {
+    .decl idx(k: number)
 
-    .decl succ(p: Position, q: Position)
-    succ(P, Q) :- node(P), dir(D), step_delta(D, S), compose(P, S, Q), node(Q).    // step toward dir
-    succ(P, Q) :- node(P), dir(D), dist(P, D, 0),                                  // wrap:
-                  node(Q), opposite(D, O), dist(Q, O, 0).                          //  dir extreme -> far extreme
-
-    .init cyc = Cycle<Position>
-    cyc.succ(P, Q) :- succ(P, Q).
-    cyc.step(N)    :- L = count : { node(_) }, N = range(0, L).   // every advance the cycle allows
-
-    .decl walk(p0: Position, n: number, p: Position)
-    walk(P0, N, P) :- cyc.walk(P0, N, P).
+    .decl succ(k: number, k2: number)
+    succ(K, K+1) :- idx(K), idx(K+1).
+    succ(K, 0)   :- idx(K), !idx(K+1).   // wrap from the max
 }
 ```
 
-**Composed, not new machinery.** `step_delta` (lib) supplies adjacency;
-`Cycle` supplies `walk`; `DirCycle` adds only the wrap edge and the length count.
+Consumers split by how they advance: a lockstep closure reads `succ` raw; a
+count advance feeds it to `CycleWalk`.
 
-**Dense line.** Like `DirFrame`'s dense `dist_set`, `DirCycle` assumes the nodes
-form a contiguous line — the unit-step `succ` needs each interior node's neighbor
-present. A sparse set dead-ends mid-line (a covering-relation `succ` would be the
-sparse variant); a cyclic shift is dense, so this contract fits.
-
-**Task-local home (protocol step 1).** 6d1d5c90: `node` is each row (an `in` cell
-split onto the shift axis), `dir` the shift direction, `walk(row, M)` the rotation.
+**Task-local homes (protocol step 1).** 97999447: the ray's mask-slot cycle,
+advanced one slot per spatial step (lockstep, no walk). 6d1d5c90: the row
+cycle, walked by count via `CycleWalk`.
 
 ## `Reach` — seeded connectivity
 

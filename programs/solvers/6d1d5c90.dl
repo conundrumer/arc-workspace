@@ -13,38 +13,31 @@
 #include "../lib.dl"
 
 // A directed cycle (succ = edges, carrying no basepoint) with a gauge-free
-// rotation: walk advances a start cell by n successor steps. Candidate lib
+// rotation: walk advances a start node by n successor steps. Candidate lib
 // component — see docs/wf-solver/proposals.md.
-.comp Cycle<T> {
+.comp CycleWalk<T> {
     .decl succ(p: T, p_next: T)
-    .decl step(n: number)               // advance counts in use (bounds the walk)
+    .decl step(n: number)               // advance counts in use
+
+    // Downward closure of step — the walk's recursion bound.
+    .decl bound(n: number)
+    bound(N) :- step(M), N = range(0, M+1).
 
     .decl walk(p0: T, n: number, p: T)  // p = p0 advanced n steps along succ
     walk(P0, 0, P0) :- succ(P0, _).
     walk(P0, N1, P2) :-
         walk(P0, N, P1), succ(P1, P2),
-        step(N1), N1 = N + 1.           // N1 is the Z/n step count
+        bound(N1), N1 = N + 1.          // N1 is the Z/n step count
 }
 
-// A set of positions strung along a direction, closed into a cycle: linear
-// successor toward dir, with the dir-extreme wrapping back to the far extreme.
-// walk advances a node n steps, bounded by the cycle's own length. The 1D-cycle
-// peer of DirFrame. Candidate lib component; assumes the nodes form a dense line.
-.comp DirCycle {
-    .decl node(p: Position)
-    .decl dir(d: Dir)                    // advance direction
+// Z/N successor over a dense 0-based index set. Candidate lib component —
+// see docs/wf-solver/proposals.md.
+.comp IndexCycle {
+    .decl idx(k: number)
 
-    .decl succ(p: Position, q: Position)
-    succ(P, Q) :- node(P), dir(D), step_delta(D, S), compose(P, S, Q), node(Q).    // step toward dir
-    succ(P, Q) :- node(P), dir(D), dist(P, D, 0),                                  // wrap:
-                  node(Q), opposite(D, O), dist(Q, O, 0).                          //  dir extreme -> far extreme
-
-    .init cyc = Cycle<Position>
-    cyc.succ(P, Q) :- succ(P, Q).
-    cyc.step(N)    :- L = count : { node(_) }, N = range(0, L).   // every advance the cycle allows
-
-    .decl walk(p0: Position, n: number, p: Position)   // p0 advanced n steps
-    walk(P0, N, P) :- cyc.walk(P0, N, P).
+    .decl succ(k: number, k2: number)
+    succ(K, K+1) :- idx(K), idx(K+1).
+    succ(K, 0)   :- idx(K), !idx(K+1).   // wrap from the max
 }
 
 .type Choice = Marked {} | Singleton {}
@@ -84,10 +77,23 @@ marker(P, $Singleton()) :-
 .decl shift_amt(m: number, ch: Choice)
 shift_amt(M, Ch) :- marker(P, Ch), c.shift_dir(SD), opposite(SD, FE), dist(P, FE, M).
 
-// Each row, as a position on the shift axis, is a node of the cycle.
-.init rows = DirCycle
-rows.node(P_v) :- in(P, _), c.shift_dir(SD), axis_of(SD, A), split(P, A, P_v, _).
-rows.dir(D)    :- c.shift_dir(D).
+// Each row, indexed by its distance from the edge opposite the shift, is a
+// node of the cycle. Ascending index runs toward shift_dir, so the wrap
+// (max -> 0) is the shift edge wrapping back to the far edge.
+.decl row_idx(k: number)
+row_idx(K) :- in(P, _), c.shift_dir(SD), opposite(SD, FE), dist(P, FE, K).
+
+.init row_cycle = IndexCycle
+row_cycle.idx(K) :- row_idx(K).
+
+.init rot = CycleWalk<number>
+rot.succ(K, K2) :- row_cycle.succ(K, K2).
+rot.step(M)     :- shift_amt(M, _).   // the shifts in use
+
+// Rows seated back on the shift axis by index.
+.init rows = DirFrame
+rows.dir(FE)     :- c.shift_dir(SD), opposite(SD, FE).
+rows.dist_set(K) :- row_idx(K).
 
 // Cells past the band — the ones that survive the drop.
 .decl kept(p: Position, col: Color)
@@ -103,8 +109,9 @@ cols.dist_set(K) :- kept(P, _), c.marker_edge(ME), opposite(ME, OE), dist(P, OE,
 .decl out(p: Position, col: Color, ch: Choice)
 out(P_out, Col, Ch) :-
     kept(P_in, Col),
-    c.shift_dir(SD), axis_of(SD, A), split(P_in, A, P_v_in, _),   // input row
-    shift_amt(M, Ch), rows.walk(P_v_in, M, P_v_out),              // rotated M steps along the cycle
+    c.shift_dir(SD), opposite(SD, FE), dist(P_in, FE, K_in),      // input row index
+    shift_amt(M, Ch), rot.walk(K_in, M, K_out),                   // rotated M steps along the cycle
+    rows.pos(K_out, P_v_out),                                     // seated back on the shift axis
     c.marker_edge(ME), opposite(ME, OE), dist(P_in, OE, K),       // far-edge column
     cols.pos(K, P_col),                                           // placed in the narrowed frame
     compose(P_v_out, P_col, P_out).
