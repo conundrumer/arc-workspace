@@ -1,0 +1,57 @@
+// d23f8c26
+// One column survives; every other cell becomes bg.
+//
+// Cases (data-equivalent on this task — odd widths, single middle gap):
+//   $Center() — the grid's center line on the task axis: cells equidistant
+//               from that axis's two edges
+//   $Gap()    — the separator of a uniform 2-split: cells the divide leaves
+//               undecomposed
+
+#include "../lib.dl"
+
+.type Choice = Center {} | Gap {}
+
+.comp Consts {
+    // --- shared ---
+    .decl bg(c: Color)
+    bg(0).
+
+    .decl axis(a: Axis)
+    axis(HORIZONTAL).
+
+    // --- Gap ---
+    .decl divisor(n: number)
+    divisor(2).
+
+    .decl divide_gap(g: number)
+    divide_gap(1).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl out(p: Position, col: Color, c: Choice)
+
+// --- Center ---
+.decl on_center(p: Position)
+on_center(P) :-
+    in(P, _),                                           // grid cell
+    c.axis(A), axis_of(D, A), opposite(D, O),           // the two edges
+    dist(P, D, K), dist(P, O, K).                       // equidistant
+
+out(P, Col, $Center()) :- in(P, Col), on_center(P).
+out(P, Col, $Center()) :- in(P, _), !on_center(P), c.bg(Col).
+
+// --- Gap ---
+.decl tile_cell(p: Position)
+tile_cell(P) :-
+    in(P, _),                                           // grid cell
+    c.axis(A), c.divisor(N), c.divide_gap(G),           // params
+    divide(P, A, N, G, _, _).                           // lands in a tile
+
+out(P, Col, $Gap()) :- in(P, Col), !tile_cell(P).
+out(P, Col, $Gap()) :- tile_cell(P), c.bg(Col).
+
+.output out(IO=stdout)
