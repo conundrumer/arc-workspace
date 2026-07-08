@@ -4,7 +4,6 @@ User-owned list of queued ideas. Sessions append on ask; one line per item.
 
 ## TODO
 
-- `diag_dirs(diag, a, d1, d2)` — a corner's two dirs, axis-tagged, through perp; corner-pair sites feca6190, a68b268e, ff28f65a, 66e6c45b. (2026-07-08)
 - `diag_opposite(diag, diag2)` — the DiagDir half-turn; 8618d23e spells it as a `diag_axis_of` self-join. (2026-07-08)
 - Retype perpendicular header pairs from Dir set to DiagDir: 2281f1f4 (`select_edge` then derives as the corner partner of `pattern_edge`), a406ac07. (2026-07-08)
 - `axis_dims(p, a, n1, n2)` — wide extent readout of Position: a line as (N, 1), a square as a repeated variable, long-axis by comparison (feca6190 `long_axis`). (2026-07-08)

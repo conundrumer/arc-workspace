@@ -71,9 +71,9 @@ scan_before(Q, P) :-
     dist(Q, D, K1), dist(P, D, K2), K1 < K2.            // q strictly nearer
 scan_before(Q, P) :-
     tile_ink(Q, _, _), tile_ink(P, _, _),
-    c.scan(Diag), c.scan_axis(A), dir_of(Diag, A, D),   // primary dir
+    c.scan(Diag), c.scan_axis(A),
+    diag_dirs(Diag, A, D, D2),                          // primary/secondary dirs
     same_dist(D, Q, P),                                 // primary tie
-    perp(A, A2), dir_of(Diag, A2, D2),                  // secondary dir
     dist(Q, D2, K1), dist(P, D2, K2), K1 < K2.          // q strictly nearer
 
 .decl scan_beaten(p_tile: Position, p: Position)

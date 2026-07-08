@@ -72,9 +72,8 @@ shape_edge(P, D) :- shape(P, _), dir_elem(D), dist(P, D, K), bb.edge_min($U(), D
 // Shape cell at bbox corner Diag — on both of the corner's edges.
 .decl shape_corner(p: Position, diag: DiagDir)
 shape_corner(P, Diag) :-
-    dir_of(Diag, _, D1), shape_edge(P, D1),
-    dir_of(Diag, _, D2), shape_edge(P, D2),
-    D1 != D2.
+    diag_dirs(Diag, _, D1, D2),
+    shape_edge(P, D1), shape_edge(P, D2).
 
 // --- Stretch ---
 

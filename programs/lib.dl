@@ -158,6 +158,10 @@ opposite(DIR_R, DIR_L).
 perp(AXIS_V, AXIS_H).
 perp(AXIS_H, AXIS_V).
 
+// A corner's two dirs, axis-tagged: d1 on axis a, d2 across.
+.decl diag_dirs(d: DiagDir, a: Axis, d1: Dir, d2: Dir)
+diag_dirs(Diag, A, D1, D2) :- dir_of(Diag, A, D1), perp(A, A2), dir_of(Diag, A2, D2).
+
 // The D4 reflection inverting axis a.
 .decl flip_of(a: Axis, d: D4)
 flip_of(AXIS_V, D4_TB).
