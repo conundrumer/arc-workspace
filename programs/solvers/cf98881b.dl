@@ -11,19 +11,9 @@
 //
 //   b (body, the priority claim):
 //     $Spatial() — pane order: the pane nearest c.stack_dir wins
-//     $Palette() — color order: the c.ink_succ priority chain
+//     $Palette() — color order: the c.ink_rank priority ranks
 
 #include "../lib.dl"
-
-// Strict order from a chain's successor edges.
-// Candidate lib component — see docs/wf-solver/proposals.md.
-.comp Chain<T> {
-    .decl succ(x: T, x_next: T)
-
-    .decl before(a: T, b: T)
-    before(A, B) :- succ(A, B).
-    before(A, C) :- before(A, B), succ(B, C).
-}
 
 .type DecChoice = Tile {} | Div {}
 .type Body      = Spatial {} | Palette {}
@@ -57,10 +47,9 @@
     stack_dir(LEFT).
 
     // --- Palette body data ------------------------------------------------
-    // The ink priority chain, highest first.
-    .decl ink_succ(c: Color, c_next: Color)
-    ink_succ(4, 9).
-    ink_succ(9, 1).
+    // Ink priority ranks, highest first.
+    .decl ink_rank(c: Color, r: number)
+    ink_rank(4, 0). ink_rank(9, 1). ink_rank(1, 2).
 }
 
 .init c = Consts
@@ -100,12 +89,10 @@ outranked(O, T, Dc, $Spatial()) :-
     cand(O, T, _, Dc), cand(O, T2, _, Dc),
     c.stack_dir(D), dist(T2, D, K2), dist(T, D, K), K2 < K.
 
-// --- Palette: a candidate of higher-chain color wins ---
-.init priority = Chain<Color>
-priority.succ(Hi, Lo) :- c.ink_succ(Hi, Lo).
-
+// --- Palette: a candidate of higher-ranked color wins ---
 outranked(O, T, Dc, $Palette()) :-
-    cand(O, T, Lo, Dc), cand(O, _, Hi, Dc), priority.before(Hi, Lo).
+    cand(O, T, Lo, Dc), cand(O, _, Hi, Dc),
+    c.ink_rank(Hi, R_hi), c.ink_rank(Lo, R_lo), R_hi < R_lo.
 
 // --- Output ----------------------------------------------------------------
 
