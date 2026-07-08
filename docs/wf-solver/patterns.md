@@ -166,6 +166,24 @@ compose(P_outer_v, P_outer_h, P_tile),
 compose(P_inner_v, P_inner_h, P_intile).
 ```
 
+## Wide and long layouts
+
+A relation lays co-occurring values out wide — columns of one atom — or long — one row per member. Multiplicity the concept fixes goes wide: the two axes, a corner's two dirs, the four edge distances (Position is the wide form of per-Dir distance data). Multiplicity the task varies stays long: markers, tiles, ink cells.
+
+Wide reads by unification; long reads by joins. A long spelling of a fixed co-occurrence makes every consumer reassemble it — a self-join with a distinctness guard, deriving each symmetric result twice:
+
+```
+edge(D1), edge(D2), D1 != D2, marked(P, D1), marked(P, D2).
+```
+
+The reassembly belongs in one place: the domain's pairing relation (`opposite` is the Dir form; each closed domain earns its own), or the defining rule of a wide relation. On a domain with identity only (colors), the distinctness join is the concept itself, not a shadow of one.
+
+Order inside a wide atom is a tag column or a repeated value, never slot position. A pairing relation carries all orders as rows (`opposite`, `turn`), so which member fills which slot is data. A record ordering members by positional convention is a wide form without that license — the convention crosses as data.
+
+A repeated variable in a wide atom states the diagonal case directly — equal extents (a square), equal distances (centered; on a corner's diagonal) — where the long spelling needs an agreement join.
+
+Derivation is long by nature: a rule quantifying over an index emits one row per index value, and aggregation computes per index (`Bbox` aggregates `edge_min` per Dir, then packs the four into `margin`'s Position). Widening derived data costs one pairing join at its defining rule; a readout of a value that already carries the co-occurrence widens for free.
+
 ## `cell_split` — input cell with its axis decomposition
 
 Pairs an input cell with its along/across split on the task's axis.
