@@ -1,0 +1,50 @@
+// feca6190
+// A single line of cells with scattered ink. The output is a square of
+// side (ink count) × (line length); the line seats flush at the corner
+// opposite c.sweep, and every seated cell casts a diagonal ray toward
+// c.sweep — the line sliding one step per row. Cells on no ray are bg.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl bg(col: Color)     bg(0).
+    .decl sweep(d: DiagDir)  sweep(TOP_RIGHT).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// The line's long axis — the input has no extension across it.
+.decl long_axis(a: Axis)
+long_axis(A) :- in(P, _), axis_elem(A), split(P, A, _, Ac), Ac = ORIGIN.
+
+// Output side: the line tiled once per ink cell — counted as ink × cell pairs.
+.decl side(n: number)
+side(N) :- N = count : { in(P, Col), !c.bg(Col), in(Q, _) }.
+
+.init frame = SquareFrame<Unit>
+frame.extent($U(), N) :- side(N).
+
+// The line seated in the output frame, flush at the corner opposite c.sweep.
+.decl seated(p: Position, col: Color)
+seated(P_out, Col) :-
+    in(P_in, Col),
+    frame.cell($U(), P_out),
+    c.sweep(Diag),
+    long_axis(A), dir_of(Diag, A, Dh), opposite(Dh, Dh0),          // along the line
+    dir_of(Diag, A2, Dv), A2 != A, opposite(Dv, Dv0),
+    dist(P_out, Dv0, 0),                                           // on the start edge
+    dist(P_in, Dh0, K), dist(P_out, Dh0, K).                       // same trailing offset
+
+.init rays = DiagRay<Position>
+rays.diag(D)    :- c.sweep(D).
+rays.cell(P)    :- frame.cell($U(), P).
+rays.mark(P, P) :- seated(P, _).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- seated(Q, Col), rays.ray(Q, P, _).
+out(P, Col) :- frame.cell($U(), P), !rays.ray(_, P, _), c.bg(Col).
+
+.output out(IO=stdout)

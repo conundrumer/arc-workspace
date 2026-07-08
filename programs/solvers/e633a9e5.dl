@@ -1,0 +1,141 @@
+// e633a9e5
+// Nonuniform scale-up: each input cell becomes a tile, and the tiles keep
+// the input's arrangement. Three models, tagged on out's Choice:
+//
+//   $Edge()  — a cell is c.fat wide along an axis where it touches a grid
+//              edge of that axis, and unit wide elsewhere.
+//   $Table() — per-index extents stored in c.ext, indexed from c.anchor.
+//   $Map()   — pure data: c.map stores the cell correspondence from input
+//              positions to output positions.
+
+#include "../lib.dl"
+
+.type Choice = Edge {} | Table {} | Map {}
+
+// Unequal-sized rectilinear tiles, one tiling per key: per-tile dims from
+// tile_in, per-edge cumulative offsets, recomposition via compose (staged
+// in docs/wf-solver/proposals.md).
+.comp ConcatPipeline<Key> {
+    .decl tile_in(key: Key, p_outer: Position, p_inner: Position)
+    .decl axis_gap(a: Axis, g: number)
+
+    // Tile dim along axis(D), indexed by tile's distance from edge D.
+    // Every cell in a rectilinear tile produces the same K — set semantics dedupes.
+    .decl axis_dim(key: Key, d: Dir, i: number, k: number)
+    axis_dim(Ky, D, I, K) :-
+        tile_in(Ky, P_outer, P_inner),
+        dist(P_outer, D, I),
+        opposite(D, D2),
+        dist(P_inner, D, Near), dist(P_inner, D2, Far),
+        K = Near + Far + 1.
+
+    // Cumulative offset from edge D for the tile at distance I from D.
+    .decl edge_off(key: Key, d: Dir, i: number, off: number)
+    edge_off(Ky, D, I, OFF) :-
+        axis_dim(Ky, D, I, _),
+        axis_of(D, A), axis_gap(A, G),
+        OFF = (sum K : { axis_dim(Ky, D, J, K), J < I }) + I*G.
+
+    // Tile bbox offset in grid units, assembled from the four edges.
+    .decl tile_offset(key: Key, p_outer: Position, p_off: Position)
+    tile_offset(Ky, [OT, BO, OL, RO], [T_off, B_off, L_off, R_off]) :-
+        edge_off(Ky, TOP,    OT, T_off),
+        edge_off(Ky, BOTTOM, BO, B_off),
+        edge_off(Ky, LEFT,   OL, L_off),
+        edge_off(Ky, RIGHT,  RO, R_off).
+
+    // Lookup + compose.
+    .decl concat(key: Key, p_outer: Position, p_inner: Position, p_grid: Position) inline
+    concat(Ky, P_outer, P_inner, P_grid) :-
+        tile_offset(Ky, P_outer, P_off),
+        compose(P_off, P_inner, P_grid).
+}
+
+.comp Consts {
+    .init helpers = ConstsHelpers
+
+    // --- $Edge ---
+    .decl fat(n: number)  fat(2).
+
+    // --- $Table ---
+    .decl anchor(d: Dir)  anchor(TOP). anchor(LEFT).
+    .decl ext(a: Axis, i: number, n: number)
+    ext(VERTICAL,   0, 2). ext(VERTICAL,   1, 1). ext(VERTICAL,   2, 2).
+    ext(HORIZONTAL, 0, 2). ext(HORIZONTAL, 1, 1). ext(HORIZONTAL, 2, 2).
+
+    // --- $Edge, $Table ---
+    // Axis-only intile positions of an extent-n tile, for the extents in use.
+    .decl ext_in_use(n: number)
+    ext_in_use(N) :- fat(N).
+    ext_in_use(N) :- ext(_, _, N).
+
+    .decl ext_pos(a: Axis, n: number, p: Position)
+    ext_pos(VERTICAL,   N, P) :- ext_in_use(N), helpers.frame_pos([N, 1], P).
+    ext_pos(HORIZONTAL, N, P) :- ext_in_use(N), helpers.frame_pos([1, N], P).
+
+    // --- $Map ---
+    // Cell correspondence as an id join: src labels the input cells, dst
+    // gives each output cell the id of its source.
+    .decl src(p: Position, id: number)
+    GRID_3x3(src,
+        0, 1, 2,
+        3, 4, 5,
+        6, 7, 8)
+
+    .decl dst(p: Position, id: number)
+    GRID_5x5(dst,
+        0, 0, 1, 2, 2,
+        0, 0, 1, 2, 2,
+        3, 3, 4, 5, 5,
+        6, 6, 7, 8, 8,
+        6, 6, 7, 8, 8)
+
+    .decl map(p_in: Position, p_out: Position)
+    map(P_in, P_out) :- src(P_in, Id), dst(P_out, Id).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// Per-case axis-only intile positions of a cell's tile.
+.decl ax_pos(ch: Choice, p_tile: Position, a: Axis, p_in_ax: Position)
+
+// --- $Edge ---
+ax_pos($Edge(), P, A, Pi) :-
+    in(P, _),
+    axis_of(D, A), dist(P, D, 0),      // touches an edge of axis a
+    c.fat(N), c.ext_pos(A, N, Pi).
+ax_pos($Edge(), P, A, ORIGIN) :-
+    in(P, _),
+    axis_of(D, A), opposite(D, O),
+    dist(P, D, K), K != 0, dist(P, O, K2), K2 != 0.   // off both edges of axis a
+
+// --- $Table ---
+ax_pos($Table(), P, A, Pi) :-
+    in(P, _),
+    c.anchor(D), axis_of(D, A), dist(P, D, I),   // index from the anchor edge
+    c.ext(A, I, N), c.ext_pos(A, N, Pi).
+
+// --- $Edge, $Table ---
+.decl tile(ch: Choice, p_tile: Position, p_intile: Position, col: Color)
+tile(Ch, P_tile, P_intile, Col) :-
+    in(P_tile, Col),
+    ax_pos(Ch, P_tile, A1, P1), ax_pos(Ch, P_tile, A2, P2), A1 != A2,
+    compose(P1, P2, P_intile).
+
+.init pipe = ConcatPipeline<Choice>
+pipe.tile_in(Ch, Pt, Pi) :- tile(Ch, Pt, Pi, _).
+pipe.axis_gap(A, 0) :- axis_elem(A).
+
+out(P_grid, Col, Ch) :-
+    tile(Ch, P_tile, P_intile, Col),
+    pipe.concat(Ch, P_tile, P_intile, P_grid).
+
+// --- $Map ---
+out(P_grid, Col, $Map()) :- in(P_in, Col), c.map(P_in, P_grid).
+
+.output out(IO=stdout)

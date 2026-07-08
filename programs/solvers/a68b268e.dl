@@ -1,0 +1,102 @@
+// a68b268e
+// A divider cross splits the grid into a tile arrangement, each tile drawn
+// in its own ink. The output overlays the tiles: the highest-precedence
+// ink present wins each cell, bg where every tile is empty. Each tile
+// keeps one ink in every pair, so spatial and chromatic precedence are
+// indistinguishable; the spatial read splits data/ops. Tagged on out's
+// Choice:
+//
+//   $Scan()  — tiles rank in reading order from c.scan along c.scan_axis.
+//   $Order() — per-tile ranks stored in c.prio.
+//   $Ink()   — per-ink ranks stored in c.ink_rank.
+
+#include "../lib.dl"
+
+.type Choice = Scan {} | Order {} | Ink {}
+
+.comp Consts {
+    .decl bg(col: Color)  bg(0).
+    .decl tiles(n: Dim)   tiles([2, 2]).
+    .decl gap(g: Dim)     gap([1, 1]).
+
+    // --- $Scan ---
+    .decl scan(d: DiagDir)     scan(TOP_LEFT).
+    .decl scan_axis(a: Axis)   scan_axis(VERTICAL).
+
+    // --- $Order ---
+    .decl prio(p: Position, r: number)
+    GRID_2x2(prio,
+        0, 1,
+        2, 3)
+
+    // --- $Ink ---
+    .decl ink_rank(c: Color, r: number)
+    ink_rank(7, 0). ink_rank(4, 1). ink_rank(8, 2). ink_rank(6, 3).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// Tile decomposition; the divider falls in the gap.
+.decl tile_cell(p_tile: Position, p_intile: Position, col: Color)
+tile_cell(P_tile, P_intile, Col) :-
+    in(P_grid, Col),
+    c.tiles(N), c.gap(G),
+    divide_2d(P_grid, N, G, P_tile, P_intile).
+
+// Ink at an output cell, keyed by its tile.
+.decl tile_ink(p_tile: Position, p: Position, col: Color)
+tile_ink(P_tile, P_intile, Col) :- tile_cell(P_tile, P_intile, Col), !c.bg(Col).
+
+.decl ink_at(p: Position, col: Color)
+ink_at(P, Col) :- tile_ink(_, P, Col).
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.decl impl_choice(ch: Choice)
+impl_choice($Scan()). impl_choice($Order()). impl_choice($Ink()).
+
+out(P, Col, Ch) :- impl_choice(Ch), tile_cell(_, P, _), !ink_at(P, _), c.bg(Col).
+
+// --- $Scan ---
+
+// Reading order over tiles: nearer along the primary dir; or tie and
+// nearer along the secondary.
+.decl scan_before(q: Position, p: Position)
+scan_before(Q, P) :-
+    tile_ink(Q, _, _), tile_ink(P, _, _),
+    c.scan(Diag), c.scan_axis(A), dir_of(Diag, A, D),   // primary dir
+    dist(Q, D, K1), dist(P, D, K2), K1 < K2.            // q strictly nearer
+scan_before(Q, P) :-
+    tile_ink(Q, _, _), tile_ink(P, _, _),
+    c.scan(Diag), c.scan_axis(A), dir_of(Diag, A, D),   // primary dir
+    same_dist(D, Q, P),                                 // primary tie
+    dir_of(Diag, A2, D2), A2 != A,                      // secondary dir
+    dist(Q, D2, K1), dist(P, D2, K2), K1 < K2.          // q strictly nearer
+
+.decl scan_beaten(p_tile: Position, p: Position)
+scan_beaten(T, P) :- tile_ink(T, P, _), tile_ink(T2, P, _), scan_before(T2, T).
+
+out(P, Col, $Scan()) :- tile_ink(T, P, Col), !scan_beaten(T, P).
+
+// --- $Order ---
+
+.decl order_beaten(p_tile: Position, p: Position)
+order_beaten(T, P) :-
+    tile_ink(T, P, _), tile_ink(T2, P, _),
+    c.prio(T2, R2), c.prio(T, R), R2 < R.
+
+out(P, Col, $Order()) :- tile_ink(T, P, Col), !order_beaten(T, P).
+
+// --- $Ink ---
+
+.decl ink_beaten(p: Position, col: Color)
+ink_beaten(P, Col) :-
+    ink_at(P, Col), ink_at(P, C2),
+    c.ink_rank(C2, R2), c.ink_rank(Col, R), R2 < R.
+
+out(P, Col, $Ink()) :- ink_at(P, Col), !ink_beaten(P, Col).
+
+.output out(IO=stdout)
