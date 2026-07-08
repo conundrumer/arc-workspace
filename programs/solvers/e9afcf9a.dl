@@ -26,7 +26,6 @@
     // --- Divide params --------------------------------------------------
     .decl divide_axis(a: Axis)      divide_axis(HORIZONTAL).
     .decl divisor(n: number)        divisor(3).
-    .decl divide_gap(g: number)     divide_gap(0).
 
     // Per-inner-cell transform within a 1×2 subgrid, laid out as a grid of D4.
     .decl col_transform(p_inner: Position, d: D4)
@@ -49,8 +48,8 @@ perm(P_grid_in, P_grid_out, $LabeledGrids()) :-
     Lbl != 0.                                                  // non-pairing sentinel
 perm(P_grid_in, P_grid_out, $Divide()) :-
     in(P_grid_in, _),                                          // input cell
-    c.divide_axis(A), c.divisor(N), c.divide_gap(G),           // params
-    divide(P_grid_in, A, N, G, _, P_inner_axis),               // 1D divide on H
+    c.divide_axis(A), c.divisor(N),                            // params
+    divide(P_grid_in, A, N, 0, _, P_inner_axis),               // 1D divide on H
     c.col_transform(P_inner_axis, T),                          // transform per inner col
     apply(T, P_grid_in, P_grid_out).                           // apply to input cell
 
