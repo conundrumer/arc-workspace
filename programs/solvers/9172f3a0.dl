@@ -9,9 +9,6 @@
 
     .decl intile(p: Position)
     intile(P) :- helpers.frame_pos([3, 3], P).
-
-    .decl tile_gap(g: Dim)
-    tile_gap([0, 0]).
 }
 
 .init c = Consts
@@ -23,7 +20,6 @@
 out(P_grid_out, Col) :-
     in(P_tile, Col),                                  // input cell as tile pos
     c.intile(P_intile),                               // intile pos (3×3 frame)
-    c.tile_gap(G),                                    // tile gap
-    concat_2d(P_tile, P_intile, G, P_grid_out).       // 2D recompose
+    concat_2d(P_tile, P_intile, [0, 0], P_grid_out).  // 2D recompose
 
 .output out(IO=stdout)

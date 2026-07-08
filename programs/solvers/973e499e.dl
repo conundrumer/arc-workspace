@@ -7,7 +7,6 @@
 
 .comp Consts {
     .decl bg(col: Color)        bg(0).
-    .decl tile_gap(g: Dim)      tile_gap([0, 0]).
 }
 
 .init c = Consts
@@ -18,13 +17,11 @@
 .decl out(p: Position, col: Color)
 out(P_grid_out, Col) :-
     in(P_tile, Col), in(P_intile, Col),                 // matched: tile & intile share Col
-    c.tile_gap(G),
-    concat_2d(P_tile, P_intile, G, P_grid_out).         // 2D recompose
+    concat_2d(P_tile, P_intile, [0, 0], P_grid_out).    // 2D recompose
 
 out(P_grid_out, BG) :-
     in(P_tile, Col_m), in(P_intile, Col_i),             // mismatched: tile & intile distinct
-    Col_m != Col_i,
-    c.bg(BG), c.tile_gap(G),
-    concat_2d(P_tile, P_intile, G, P_grid_out).         // 2D recompose
+    Col_m != Col_i, c.bg(BG),
+    concat_2d(P_tile, P_intile, [0, 0], P_grid_out).    // 2D recompose
 
 .output out(IO=stdout)
