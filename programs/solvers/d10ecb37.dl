@@ -1,17 +1,30 @@
 // d10ecb37
-// Output is the c.diag-anchored sub-frame of input. Input cells project
-// into the sub-frame by matching distances to the two corner edges.
+// Output is the 2×2 block at corner c.diag. The even-dimensioned inputs
+// leave the locate rule underdetermined:
+//
+//   $Corner() — a c.window block seated at the corner
+//   $Block()  — grid tiled by c.tile_dim blocks; the corner block
+//
+// A divisor arrangement is defeated: the 12×6 pair's corner tile is 6×3,
+// not 2×2.
 
 #include "../lib.dl"
+
+.type Choice = Corner {} | Block {}
 
 .comp Consts {
     .init helpers = ConstsHelpers
 
+    // --- shared ---
     .decl diag(d: DiagDir)
     diag(TOP_LEFT).
 
-    .decl frame(p: Position)
-    frame(P) :- helpers.frame_pos([2, 2], P).
+    // --- Corner ---
+    .decl window(p: Position)
+    window(P) :- helpers.frame_pos([2, 2], P).
+
+    // --- Block ---
+    .decl tile_dim(k: Dim)    tile_dim([2, 2]).
 }
 
 .init c = Consts
@@ -19,10 +32,18 @@
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
-.decl out(p: Position, col: Color)
-out(P_grid_out, Col) :-
-    in(P_grid_in, Col),                                  // input cell
-    c.frame(P_grid_out),                                 // output position
-    c.diag(D), corner_anchor(D, P_grid_out, P_grid_in).  // corner-anchor match
+.decl out(p: Position, col: Color, c: Choice)
+
+// --- Corner ---
+out(P_out, Col, $Corner()) :-
+    in(P_in, Col),                                // input cell
+    c.window(P_out),                              // output position
+    c.diag(D), corner_anchor(D, P_out, P_in).     // corner-anchor match
+
+// --- Block ---
+out(P_intile, Col, $Block()) :-
+    in(P_in, Col),                                                        // input cell
+    c.tile_dim(K), divide_by_size_2d(P_in, K, [0, 0], P_tile, P_intile),  // tiling
+    c.diag(D), corner_anchor(D, P_tile, ORIGIN).                          // corner block
 
 .output out(IO=stdout)

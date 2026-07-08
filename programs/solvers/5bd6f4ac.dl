@@ -1,17 +1,31 @@
 // 5bd6f4ac
-// Output is a sub-frame anchored at c.diag. Input cells project into the
-// sub-frame by matching distances to the two corner edges.
+// Output is the 3×3 block at corner c.diag of a noise grid. The 9×9 inputs
+// leave the locate rule underdetermined:
+//
+//   $Corner() — a c.window block seated at the corner
+//   $Div()    — grid divided into a c.divisor arrangement; the corner tile
+//   $Block()  — grid tiled by c.tile_dim blocks; the corner block
 
 #include "../lib.dl"
+
+.type Choice = Corner {} | Div {} | Block {}
 
 .comp Consts {
     .init helpers = ConstsHelpers
 
+    // --- shared ---
     .decl diag(d: DiagDir)
     diag(TOP_RIGHT).
 
-    .decl frame(p: Position)
-    frame(P) :- helpers.frame_pos([3, 3], P).
+    // --- Corner ---
+    .decl window(p: Position)
+    window(P) :- helpers.frame_pos([3, 3], P).
+
+    // --- Div ---
+    .decl divisor(n: Dim)     divisor([3, 3]).
+
+    // --- Block ---
+    .decl tile_dim(k: Dim)    tile_dim([3, 3]).
 }
 
 .init c = Consts
@@ -19,10 +33,24 @@
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
-.decl out(p: Position, col: Color)
-out(P_grid_out, Col) :-
-    in(P_grid_in, Col),                          // input cell
-    c.frame(P_grid_out),                         // output position
-    c.diag(D), corner_anchor(D, P_grid_out, P_grid_in).  // corner-anchor match
+.decl out(p: Position, col: Color, c: Choice)
+
+// --- Corner ---
+out(P_out, Col, $Corner()) :-
+    in(P_in, Col),                                // input cell
+    c.window(P_out),                              // output position
+    c.diag(D), corner_anchor(D, P_out, P_in).     // corner-anchor match
+
+// --- Div ---
+out(P_intile, Col, $Div()) :-
+    in(P_in, Col),                                                // input cell
+    c.divisor(N), divide_2d(P_in, N, [0, 0], P_tile, P_intile),   // arrangement
+    c.diag(D), corner_anchor(D, P_tile, ORIGIN).                  // corner tile
+
+// --- Block ---
+out(P_intile, Col, $Block()) :-
+    in(P_in, Col),                                                        // input cell
+    c.tile_dim(K), divide_by_size_2d(P_in, K, [0, 0], P_tile, P_intile),  // tiling
+    c.diag(D), corner_anchor(D, P_tile, ORIGIN).                          // corner block
 
 .output out(IO=stdout)
