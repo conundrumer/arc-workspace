@@ -168,6 +168,33 @@ only when a task places per-key directions.
 Single-set callers key on `Unit`. Callers to update: f8ff0b80 (both), d406998b
 (`Ordinal`), f8b3ba0a (both, collapsing the triplets).
 
+## `AxisFrame` — 1D frame from an axis and an extent
+
+Frame instantiation from dimensions. In the Position encoding a 1-cell-wide
+frame is the axis-only position set, so the across extent is structural —
+the inputs are an axis and one extent. The undirected peer of `DirFrame`:
+`DirFrame` maps a dense index set to positions measured from a chosen edge;
+`AxisFrame` exposes the unindexed cell set, so no end is privileged and no
+index map is exposed. A 2D frame of given dims composes two, per the lib's
+1D→2D convention.
+
+```
+.comp AxisFrame {
+    .decl axis(a: Axis)
+    .decl extent(n: number)
+
+    .decl cell(p: Position)
+    cell(P) :-
+        axis(A), axis_of(D, A), opposite(D, O),
+        extent(N), K = range(0, N),
+        edge_delta(D, K, P_d), edge_delta(O, N-1-K, P_o),
+        compose(P_d, P_o, P).
+}
+```
+
+**Task-local home (protocol step 1).** d631b094: the output bar — axis from
+Consts, extent = the cell count.
+
 ## `Ordinal.rev` — opposite-end pairing of an index set
 
 The order anti-isomorphism of `idx_set`: `rev(k, k2)` pairs each element

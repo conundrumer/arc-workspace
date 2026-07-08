@@ -1,0 +1,44 @@
+// d631b094
+// Cells of one color on bg. Output is a 1-cell-wide bar of that color
+// along c.bar_axis, extent = the cell count.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl bg(c: Color)        bg(0).
+    .decl bar_axis(a: Axis)   bar_axis(HORIZONTAL).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl on(p: Position, col: Color)
+on(P, Col) :- in(P, Col), !c.bg(Col).
+
+.decl total(n: number)
+total(N) :- N = count : { on(_, _) }.
+
+// 1D frame along an axis: extent n, cells as the n axis-only positions —
+// a 1-wide frame, no end privileged (both dirs derive the same set).
+.comp AxisFrame {
+    .decl axis(a: Axis)
+    .decl extent(n: number)
+
+    .decl cell(p: Position)
+    cell(P) :-
+        axis(A), axis_of(D, A), opposite(D, O),
+        extent(N), K = range(0, N),
+        edge_delta(D, K, P_d), edge_delta(O, N-1-K, P_o),
+        compose(P_d, P_o, P).
+}
+
+.init bar = AxisFrame
+bar.axis(A)   :- c.bar_axis(A).
+bar.extent(N) :- total(N).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- bar.cell(P), on(_, Col).
+
+.output out(IO=stdout)
