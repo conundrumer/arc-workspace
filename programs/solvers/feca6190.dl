@@ -16,9 +16,9 @@
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
-// The line's long axis — the input has no extension across it.
+// The line's long axis — the longer extent.
 .decl long_axis(a: Axis)
-long_axis(A) :- in(P, _), axis_elem(A), split(P, A, _, Ac), Ac = ORIGIN.
+long_axis(A) :- in(P, _), axis_dims(P, A, N1, N2), N1 > N2.
 
 // Output side: the line tiled once per ink cell — counted as ink × cell pairs.
 .decl side(n: number)
