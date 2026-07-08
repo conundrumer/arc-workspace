@@ -123,7 +123,7 @@ read_before(Q, P) :-
     x_cell(Q), x_cell(P),                                    // X cells
     c.read_corner(Diag), c.read_axis(A), dir_of(Diag, A, D), // primary dir
     same_dist(D, Q, P),                                      // primary tie
-    axis_elem(A2), A2 != A, dir_of(Diag, A2, D2),            // secondary dir
+    perp(A, A2), dir_of(Diag, A2, D2),                       // secondary dir
     dist(Q, D2, K1), dist(P, D2, K2), K1 < K2.               // q strictly nearer
 
 .decl fill_rank(p: Position, r: number)

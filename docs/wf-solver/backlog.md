@@ -4,7 +4,6 @@ User-owned list of queued ideas. Sessions append on ask; one line per item.
 
 ## TODO
 
-- `perp(a, a2)` — the Axis pairing beside `opposite`; rewrites the `A1 != A2` complement and fold sites (feca6190, a68b268e, ff28f65a, e1baa8a4, e633a9e5, a406ac07). (2026-07-08)
 - With perp: AxisGlue and AxisChain dissolve to body joins; SquareFrame dissolves into axis-tagged extents (AxisFrame with axis as a column + perp glue); update the staged AxisGlue and Frame2D proposals accordingly. (2026-07-08)
 - `diag_dirs(diag, a, d1, d2)` — a corner's two dirs, axis-tagged, through perp; corner-pair sites feca6190, a68b268e, ff28f65a, 66e6c45b. (2026-07-08)
 - `diag_opposite(diag, diag2)` — the DiagDir half-turn; 8618d23e spells it as a `diag_axis_of` self-join. (2026-07-08)

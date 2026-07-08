@@ -124,7 +124,8 @@ ax_pos($Table(), P, A, Pi) :-
 .decl tile(ch: Choice, p_tile: Position, p_intile: Position, col: Color)
 tile(Ch, P_tile, P_intile, Col) :-
     in(P_tile, Col),
-    ax_pos(Ch, P_tile, A1, P1), ax_pos(Ch, P_tile, A2, P2), A1 != A2,
+    perp(A1, A2),
+    ax_pos(Ch, P_tile, A1, P1), ax_pos(Ch, P_tile, A2, P2),
     compose(P1, P2, P_intile).
 
 .init pipe = ConcatPipeline<Choice>

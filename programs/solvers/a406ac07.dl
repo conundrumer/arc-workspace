@@ -67,7 +67,8 @@ line_ink(P, A, Col) :-
 .decl coincide(p: Position, col: Color)
 coincide(P, Col) :-
     in(P, C0), c.bg(C0),                                     // bg cell
-    line_ink(P, A1, Col), line_ink(P, A2, Col), A1 != A2.    // ink on both its lines
+    perp(A1, A2),
+    line_ink(P, A1, Col), line_ink(P, A2, Col).              // ink on both its lines
 
 out(P, Col, $Coincide()) :- coincide(P, Col).
 out(P, Col, $Coincide()) :- in(P, Col), !coincide(P, _).

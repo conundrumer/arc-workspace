@@ -153,6 +153,11 @@ opposite(DIR_B, DIR_T).
 opposite(DIR_L, DIR_R).
 opposite(DIR_R, DIR_L).
 
+// Perpendicular Axis.
+.decl perp(a: Axis, a2: Axis)
+perp(AXIS_V, AXIS_H).
+perp(AXIS_H, AXIS_V).
+
 // The D4 reflection inverting axis a.
 .decl flip_of(a: Axis, d: D4)
 flip_of(AXIS_V, D4_TB).

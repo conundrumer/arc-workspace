@@ -34,7 +34,7 @@ seated(P_out, Col) :-
     frame.cell($U(), P_out),
     c.sweep(Diag),
     long_axis(A), dir_of(Diag, A, Dh), opposite(Dh, Dh0),          // along the line
-    dir_of(Diag, A2, Dv), A2 != A, opposite(Dv, Dv0),
+    perp(A, A2), dir_of(Diag, A2, Dv), opposite(Dv, Dv0),
     dist(P_out, Dv0, 0),                                           // on the start edge
     dist(P_in, Dh0, K), dist(P_out, Dh0, K).                       // same trailing offset
 

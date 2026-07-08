@@ -37,8 +37,8 @@ axis_band(A, P, P_axis) :-
 .decl out(p: Position, col: Color)
 out(P_out, Col) :-
     in(P, Col),                                          // block cell
+    perp(A1, A2),
     axis_band(A1, P, Pa1), axis_band(A2, P, Pa2),        // both axis parts
-    A1 != A2,
     compose(Pa1, Pa2, P_out).                            // glue to 2D
 
 .output out(IO=stdout)
