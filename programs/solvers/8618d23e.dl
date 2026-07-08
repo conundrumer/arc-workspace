@@ -97,7 +97,7 @@ ded.arg(Diag, N) :- diag_dir_elem(Diag), growth(N, _).
 // the frame grows away from the seat.
 seated(P_out, Col, $Derive(Gr, S)) :-
     in(P, Col), seat(P, Diag, S),                            // half cell and its corner
-    diag_axis_of(Diag, DA), diag_axis_of(Diag2, DA), Diag2 != Diag,  // opposite corner
+    diag_opposite(Diag, Diag2),                              // opposite corner
     growth(N, Gr), ded.delta(Diag2, N, E),                   // grow delta toward it
     compose(P, E, P_out).                                    // displace
 

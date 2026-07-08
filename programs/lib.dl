@@ -153,6 +153,13 @@ opposite(DIR_B, DIR_T).
 opposite(DIR_L, DIR_R).
 opposite(DIR_R, DIR_L).
 
+// Opposite corner on the same diagonal — the DiagDir half-turn.
+.decl diag_opposite(d: DiagDir, opp: DiagDir)
+diag_opposite(DIAG_TL, DIAG_BR).
+diag_opposite(DIAG_BR, DIAG_TL).
+diag_opposite(DIAG_TR, DIAG_BL).
+diag_opposite(DIAG_BL, DIAG_TR).
+
 // Perpendicular Axis.
 .decl perp(a: Axis, a2: Axis)
 perp(AXIS_V, AXIS_H).
