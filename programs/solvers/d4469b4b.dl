@@ -1,0 +1,69 @@
+// d4469b4b
+// Noise in a single ink color keys a fixed 3x3 glyph — plus, T, or
+// corner-L. The noise pattern carries nothing; only its color selects.
+// Every glyph is a full row and column through one point, so the render
+// splits data/ops, tagged on out's Choice:
+//
+//   $Cross()  — the table stores the cross center; the glyph is the row
+//               and column through it, c.mark over c.bg.
+//   $Lookup() — the table stores the finished grid.
+
+#include "../lib.dl"
+
+.type Choice = Cross {} | Lookup {}
+
+.comp Consts {
+    .init helpers = ConstsHelpers
+
+    .decl bg(col: Color)  bg(0).
+
+    // --- $Cross ---
+    .decl mark(col: Color)  mark(5).
+    .decl out_dim(d: Dim)   out_dim([3, 3]).
+
+    .decl cross(key: Color, p: Position)
+    cross(1, [1, 1, 1, 1]).
+    cross(2, [0, 2, 1, 1]).
+    cross(3, [2, 0, 2, 0]).
+
+    .decl out_pos(p: Position)
+    out_pos(P) :- out_dim(D), helpers.frame_pos(D, P).
+
+    // --- $Lookup ---
+    .decl glyph1(p: Position, col: Color)
+    GRID_3x3(glyph1, 0,5,0, 5,5,5, 0,5,0)
+    .decl glyph2(p: Position, col: Color)
+    GRID_3x3(glyph2, 5,5,5, 0,5,0, 0,5,0)
+    .decl glyph3(p: Position, col: Color)
+    GRID_3x3(glyph3, 0,0,5, 0,0,5, 5,5,5)
+
+    .decl glyph(key: Color, p: Position, col: Color)
+    glyph(1, P, C) :- glyph1(P, C).
+    glyph(2, P, C) :- glyph2(P, C).
+    glyph(3, P, C) :- glyph3(P, C).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl ink(col: Color)
+ink(Col) :- in(_, Col), !c.bg(Col).
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// --- $Cross ---
+.decl cross_cell(p: Position)
+cross_cell(P) :-
+    ink(Key), c.cross(Key, Q),                             // stored center
+    c.out_pos(P),
+    axis_elem(A), split(P, A, _, Ac), split(Q, A, _, Ac).  // p on q's row or column
+
+out(P, Col, $Cross()) :- cross_cell(P), c.mark(Col).
+out(P, Col, $Cross()) :- c.out_pos(P), !cross_cell(P), c.bg(Col).
+
+// --- $Lookup ---
+out(P, Col, $Lookup()) :- ink(Key), c.glyph(Key, P, Col).
+
+.output out(IO=stdout)

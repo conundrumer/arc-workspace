@@ -1,0 +1,75 @@
+// a406ac07
+// A header line along each edge in c.header; each header cell colors the
+// grid line it heads. A cell whose two header colors agree is painted that
+// color. Three models, tagged on out's Choice — two read designated header
+// edges and differ on what the unmatched rest does; the third designates
+// nothing:
+//
+//   $Passthrough() — unmatched cells keep their input color.
+//   $Repaint()     — header edges keep their input; unmatched cells off
+//                    them get c.bg.
+//   $Coincide()    — no header edges: non-bg cells pass through, and a bg
+//                    cell is painted the color that appears on both its
+//                    row and its column.
+
+#include "../lib.dl"
+
+.type Choice = Passthrough {} | Repaint {} | Coincide {}
+
+.comp Consts {
+    // --- $Passthrough, $Repaint ---
+    .decl header(d: Dir)  header(RIGHT). header(BOTTOM).
+
+    // --- $Repaint, $Coincide ---
+    .decl bg(col: Color)  bg(0).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// --- $Passthrough, $Repaint ---
+
+// Color the edge-d header assigns to p's line along d's axis.
+.decl line_color(p: Position, d: Dir, col: Color)
+line_color(P, D, Col) :-
+    in(P, _),
+    c.header(D), in(Q, Col), dist(Q, D, 0),                  // header cell at edge d
+    axis_of(D, A), split(P, A, _, Ac), split(Q, A, _, Ac).   // p on q's line
+
+.decl agree(p: Position, col: Color)
+agree(P, Col) :- line_color(P, D1, Col), line_color(P, D2, Col), D1 != D2.
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// --- $Passthrough ---
+out(P, Col, $Passthrough()) :- agree(P, Col).
+out(P, Col, $Passthrough()) :- in(P, Col), !agree(P, _).
+
+// --- $Repaint ---
+.decl on_header(p: Position)
+on_header(P) :- in(P, _), c.header(D), dist(P, D, 0).
+
+out(P, Col, $Repaint()) :- in(P, Col), on_header(P).
+out(P, Col, $Repaint()) :- agree(P, Col), !on_header(P).
+out(P, Col, $Repaint()) :- in(P, _), !on_header(P), !agree(P, _), c.bg(Col).
+
+// --- $Coincide ---
+
+// Non-bg color col appears on p's line along axis a.
+.decl line_ink(p: Position, a: Axis, col: Color)
+line_ink(P, A, Col) :-
+    in(P, _),
+    in(Q, Col), !c.bg(Col),                                  // ink cell
+    axis_elem(A), split(P, A, _, Ac), split(Q, A, _, Ac).    // p on q's line
+
+.decl coincide(p: Position, col: Color)
+coincide(P, Col) :-
+    in(P, C0), c.bg(C0),                                     // bg cell
+    line_ink(P, A1, Col), line_ink(P, A2, Col), A1 != A2.    // ink on both its lines
+
+out(P, Col, $Coincide()) :- coincide(P, Col).
+out(P, Col, $Coincide()) :- in(P, Col), !coincide(P, _).
+
+.output out(IO=stdout)

@@ -1,0 +1,26 @@
+// fc754716
+// A single non-bg dot. The output paints the grid border with the dot's
+// color; every other cell is bg.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl bg(col: Color)  bg(0).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl ink(col: Color)
+ink(Col) :- in(_, Col), !c.bg(Col).
+
+.decl is_border(p: Position)
+is_border(P) :- in(P, _), dir_elem(D), dist(P, D, 0).   // on any edge
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- is_border(P), ink(Col).
+out(P, Col) :- in(P, _), !is_border(P), c.bg(Col).
+
+.output out(IO=stdout)
