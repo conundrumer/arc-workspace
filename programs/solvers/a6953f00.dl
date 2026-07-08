@@ -1,19 +1,18 @@
 // a6953f00
-// Output is a 2×2 corner crop. Both TL- and TR-anchored crops are valid;
-// the alternatives are enumerated as separate candidates via a choice_id
-// column on out. The runner accepts if any candidate matches the expected
-// output (or the task's tiebreak alt).
+// Output is the 2×2 crop at a top corner; either corner is a valid output.
+// One $Crop candidate per corner in c.crop_corner.
 
 #include "../lib.dl"
+
+.type Choice = Crop {d: DiagDir}
 
 .comp Consts {
     .init helpers = ConstsHelpers
 
-    // Each diag option carries its choice_id; out propagates the id so
-    // candidates are separable downstream.
-    .decl diag_option(d: DiagDir, choice_id: number)
-    diag_option(TOP_LEFT,  0).
-    diag_option(TOP_RIGHT, 1).
+    // Corners the crop may anchor at — the task pins neither.
+    .decl crop_corner(d: DiagDir)
+    crop_corner(TOP_LEFT).
+    crop_corner(TOP_RIGHT).
 
     .decl frame(p: Position)
     frame(P) :- helpers.frame_pos([2, 2], P).
@@ -24,11 +23,11 @@
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
-.decl out(p: Position, col: Color, choice_id: number)
-out(P_grid_out, Col, Cid) :-
+.decl out(p: Position, col: Color, c: Choice)
+out(P_grid_out, Col, $Crop(D)) :-
     in(P_grid_in, Col),                          // input cell
-    c.frame(P_grid_out),                         // output position
-    c.diag_option(D, Cid),                       // candidate diag + its id
-    corner_anchor(D, P_grid_out, P_grid_in).     // corner-anchor match
+    c.frame(P_grid_out),                         // output frame position
+    c.crop_corner(D),                            // candidate corner
+    corner_anchor(D, P_grid_out, P_grid_in).     // corner-anchored crop
 
 .output out(IO=stdout)
