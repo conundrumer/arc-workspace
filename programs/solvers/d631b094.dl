@@ -21,10 +21,9 @@ on(P, Col) :- in(P, Col), !c.bg(Col).
 total(N) :- N = count : { on(_, _) }.
 
 .init bar = AxisFrame<Unit>
-bar.axis(A)         :- c.bar_axis(A).
-bar.extent($U(), N) :- total(N).
+bar.extent($U(), A, N) :- c.bar_axis(A), total(N).
 
 .decl out(p: Position, col: Color)
-out(P, Col) :- bar.cell($U(), P), on(_, Col).
+out(P, Col) :- bar.cell($U(), _, P), on(_, Col).
 
 .output out(IO=stdout)

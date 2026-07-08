@@ -199,58 +199,6 @@ only when a task places per-key directions.
 Single-set callers key on `Unit`. Callers to update: f8ff0b80 (both), d406998b
 (`Ordinal`), f8b3ba0a (both, collapsing the triplets).
 
-## `AxisGlue<Key>` — glue per-axis position parts into 2D
-
-The data peer of `AxisChain` (lib): AxisChain folds per-axis maps;
-AxisGlue joins independent per-axis position parts under a shared key. A
-body can derive axis-tagged parts generically but cannot name the axes to
-pair them, so the pairing spells as an unordered two-atom join with
-`A1 != A2`, deriving each result twice. The comp owns the pairing.
-
-```
-.comp AxisGlue<Key> {
-    .decl part(a: Axis, key: Key, p_axis: Position)
-
-    .decl both(key: Key, p: Position)
-    both(K, P) :- part(AXIS_V, K, Pv), part(AXIS_H, K, Ph), compose(Pv, Ph, P).
-}
-```
-
-With `Key = Unit` the join is the V×H cross product. One-rule comp — the
-bar `Between` sits under; staged to collect callers.
-
-**Task-local homes (protocol step 1), in other spellings.** e1baa8a4
-`out` (Position key): the unordered-pair join over `axis_band`.
-`SquareFrame.cell` (Unit-key cross product of its two AxisFrames) —
-comp-internal, so the axes are nameable there and the glue is optional.
-
-## `Frame2D<Key>` — 2D frame from per-axis extents
-
-The rectangular generalization of `SquareFrame` (lib): extents given per
-axis, two AxisFrames composed, one frame per key. SquareFrame is the
-equal-extents special case — at promotion, either it dissolves into this
-or stays as the isotropic convenience.
-
-```
-.comp Frame2D<Key> {
-    .decl extent(key: Key, a: Axis, n: number)
-
-    .init v = AxisFrame<Key>
-    v.axis(AXIS_V).
-    v.extent(Ky, N) :- extent(Ky, AXIS_V, N).
-
-    .init h = AxisFrame<Key>
-    h.axis(AXIS_H).
-    h.extent(Ky, N) :- extent(Ky, AXIS_H, N).
-
-    .decl cell(key: Key, p: Position)
-    cell(Ky, P) :- v.cell(Ky, Pv), h.cell(Ky, Ph), compose(Pv, Ph, P).
-}
-```
-
-**Task-local home (protocol step 1).** 8618d23e: the output frame, keyed
-by Choice, extents read off the seated images.
-
 ## `Ordinal.rev` — opposite-end pairing of an index set
 
 The order anti-isomorphism of `idx_set`: `rev(k, k2)` pairs each element

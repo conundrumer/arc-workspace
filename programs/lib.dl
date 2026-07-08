@@ -382,40 +382,20 @@ concat_2d(P_outer, P_inner, [Gv, Gh], P_grid) :-
         compose(P_d, P_o, P).
 }
 
-// 1D frame from an axis and an extent — the n axis-only positions of a
-// 1-wide frame, one frame per key. The undirected peer of DirFrame: the
+// 1D frame from an axis-tagged extent — the n axis-only positions of a
+// 1-wide frame, per key and axis. The undirected peer of DirFrame: the
 // unindexed cell set, no end privileged (both dirs derive the same set),
-// no index map. A 2D frame of given dims composes two, per the lib's
-// 1D→2D convention. `axis` stays unkeyed — the axis is the instance's
-// parameter. Single-set sites key on Unit.
+// no index map. A 2D frame of given extents glues the two axes in the
+// body: perp-paired cells composed. Single-set sites key on Unit.
 .comp AxisFrame<Key> {
-    .decl axis(a: Axis)
-    .decl extent(key: Key, n: number)
+    .decl extent(key: Key, a: Axis, n: number)
 
-    .decl cell(key: Key, p: Position)
-    cell(Ky, P) :-
-        axis(A), axis_of(D, A), opposite(D, O),
-        extent(Ky, N), K = range(0, N),
+    .decl cell(key: Key, a: Axis, p: Position)
+    cell(Ky, A, P) :-
+        extent(Ky, A, N), axis_of(D, A), opposite(D, O),
+        K = range(0, N),
         edge_delta(D, K, P_d), edge_delta(O, N-1-K, P_o),
         compose(P_d, P_o, P).
-}
-
-// Square 2D frame: extent n on both axes — two AxisFrames composed. The
-// comp form keeps the axis pair out of solver bodies. Single-set sites
-// key on Unit.
-.comp SquareFrame<Key> {
-    .decl extent(key: Key, n: number)
-
-    .init v = AxisFrame<Key>
-    v.axis(AXIS_V).
-    v.extent(Ky, N) :- extent(Ky, N).
-
-    .init h = AxisFrame<Key>
-    h.axis(AXIS_H).
-    h.extent(Ky, N) :- extent(Ky, N).
-
-    .decl cell(key: Key, p: Position)
-    cell(Ky, P) :- v.cell(Ky, Pv), h.cell(Ky, Ph), compose(Pv, Ph, P).
 }
 
 // A corner diagonal — cells equidistant from the corner's two edges; ring is
@@ -641,20 +621,6 @@ concat_2d(P_outer, P_inner, [Gv, Gh], P_grid) :-
 
     .decl occurrence(p: Position)
     occurrence(M) :- matcher.covers(M, 0).
-}
-
-// Fold of per-axis images over both axes. Position factors by axis; a
-// per-axis map acts on its own factor, so maps on different axes commute
-// and the internal axis order washes out. For a body-supplied per-axis map
-// — the body cannot name the axes to chain them itself. `img` must be
-// total over the fold's domain: a (key, p) missing either axis image drops
-// out of `both`. Per-axis flip-or-keep maps land in the Klein subgroup;
-// rotations mix the two factors and are out of reach.
-.comp AxisChain<Key> {
-    .decl img(a: Axis, key: Key, p: Position, p_img: Position)
-
-    .decl both(key: Key, p: Position, p_img: Position)
-    both(K, P, P2) :- img(AXIS_V, K, P, P1), img(AXIS_H, K, P1, P2).
 }
 
 // ============================================================

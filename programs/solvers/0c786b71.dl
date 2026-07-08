@@ -56,14 +56,15 @@ far_side(T, A) :-
     c.arr_pos(T), c.anchor(Diag), dir_of(Diag, A, D), dist(T, D, K), K != 0.
 
 // Per-axis within-tile image: anchor side passes through, far side flips.
-.init mirror = AxisChain<Position>
-mirror.img(A, T, P, P)     :- in(P, _), anchor_side(T, A).
-mirror.img(A, T, P, P_img) :- in(P, _), far_side(T, A), flip_of(A, F), apply(F, P, P_img).
+.decl mirror(a: Axis, p_tile: Position, p: Position, p_img: Position)
+mirror(A, T, P, P)     :- in(P, _), anchor_side(T, A).
+mirror(A, T, P, P_img) :- in(P, _), far_side(T, A), flip_of(A, F), apply(F, P, P_img).
 
 out(P_grid, Col, $Mirror()) :-
-    in(P_in, Col),                                  // input cell
-    mirror.both(T, P_in, P_intile),                 // image through both axes
-    concat_2d(T, P_intile, [0, 0], P_grid).         // recompose
+    in(P_in, Col),                                          // input cell
+    perp(A1, A2),
+    mirror(A1, T, P_in, P1), mirror(A2, T, P1, P_intile),   // image through both axes
+    concat_2d(T, P_intile, [0, 0], P_grid).                 // recompose
 
 // --- Unfold ---
 .decl anchor_tile(p: Position)

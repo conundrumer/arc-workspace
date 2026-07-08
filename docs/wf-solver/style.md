@@ -109,7 +109,7 @@ Cases are grouped under `// --- <name> ---` markers in both Consts and body — 
 ## Components
 
 - A new comp takes a `Key` type param; single-set sites key on `Unit` (`$U()`, in lib). An unkeyed comp shatters at the case boundary when a solver's cases share its pipeline: per-case `.init`s and dispatch rules differing only in the case name.
-- Instance-level parameters stay unkeyed — a relation whose value is the instance's identity, not per-key data (`AxisFrame.axis`, `DirFrame.dir`, `Ray.dir`). Key one only when a task varies it per key.
+- Instance-level parameters stay unkeyed — a relation whose value is the instance's identity, not per-key data (`DirFrame.dir`, `Ray.dir`). Key one only when a task varies it per key.
 
 ## Multi-atom rules
 

@@ -24,14 +24,20 @@ long_axis(A) :- in(P, _), axis_elem(A), split(P, A, _, Ac), Ac = ORIGIN.
 .decl side(n: number)
 side(N) :- N = count : { in(P, Col), !c.bg(Col), in(Q, _) }.
 
-.init frame = SquareFrame<Unit>
-frame.extent($U(), N) :- side(N).
+.init frame = AxisFrame<Unit>
+frame.extent($U(), A, N) :- axis_elem(A), side(N).
+
+.decl frame_cell(p: Position)
+frame_cell(P) :-
+    perp(A1, A2),
+    frame.cell($U(), A1, Pa1), frame.cell($U(), A2, Pa2),
+    compose(Pa1, Pa2, P).
 
 // The line seated in the output frame, flush at the corner opposite c.sweep.
 .decl seated(p: Position, col: Color)
 seated(P_out, Col) :-
     in(P_in, Col),
-    frame.cell($U(), P_out),
+    frame_cell(P_out),
     c.sweep(Diag),
     long_axis(A), dir_of(Diag, A, Dh), opposite(Dh, Dh0),          // along the line
     perp(A, A2), dir_of(Diag, A2, Dv), opposite(Dv, Dv0),
@@ -40,11 +46,11 @@ seated(P_out, Col) :-
 
 .init rays = DiagRay<Position>
 rays.diag(D)    :- c.sweep(D).
-rays.cell(P)    :- frame.cell($U(), P).
+rays.cell(P)    :- frame_cell(P).
 rays.mark(P, P) :- seated(P, _).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- seated(Q, Col), rays.ray(Q, P, _).
-out(P, Col) :- frame.cell($U(), P), !rays.ray(_, P, _), c.bg(Col).
+out(P, Col) :- frame_cell(P), !rays.ray(_, P, _), c.bg(Col).
 
 .output out(IO=stdout)
