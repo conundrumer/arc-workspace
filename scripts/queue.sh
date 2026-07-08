@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
-# Next TS solver to port: smallest unported file without an #incorrect tag.
+# Next TS solvers to port: smallest unported files without an #incorrect tag.
 # Size = compressed bytes of the source with comments and blank lines stripped,
 # so boilerplate and repetitive code rank as simple.
+# Usage: queue.sh [-n COUNT]
 set -eu
+
+count=1
+while getopts n: opt; do
+  case $opt in
+    n) count=$OPTARG ;;
+    *) exit 2 ;;
+  esac
+done
 
 perl -MCompress::Zlib -e '
   my @ranked;
@@ -17,6 +26,6 @@ perl -MCompress::Zlib -e '
     $s =~ s{^[ \t]*\n}{}gm;
     push @ranked, [length(compress($s)), $id];
   }
-  my ($best) = sort { $a->[0] <=> $b->[0] } @ranked;
-  printf "%5d  %s\n", @$best if $best;
-'
+  my @sorted = sort { $a->[0] <=> $b->[0] } @ranked;
+  printf "%5d  %s\n", @$_ for @sorted[0 .. ($ARGV[0] < @sorted ? $ARGV[0] : @sorted) - 1];
+' "$count"
