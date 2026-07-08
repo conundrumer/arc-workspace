@@ -1,0 +1,69 @@
+// ea786f4a
+// A solid color field with one ink-colored dot. The output draws an X in
+// ink through it. Claims of where the X comes from, tagged on out's Choice:
+//
+//   $Dot  — diagonal rays cast from the dot toward each corner.
+//   $Grid — the grid's own corner-to-corner diagonals.
+
+#include "../lib.dl"
+
+// The DiagDir peer of Ray: keyed marks casting rays toward each corner in
+// `diag`. Inclusive reach, extent only, like Ray.
+// Candidate lib component — see docs/wf-solver/proposals.md.
+.comp DiagRay<Key> {
+    .decl diag(d: DiagDir)             // cast corners in use
+    .decl cell(p: Position)            // domain tested
+    .decl mark(key: Key, p: Position)
+
+    .decl ray(key: Key, p: Position, d: DiagDir)
+    ray(K, P, Diag) :-
+        cell(P), mark(K, Q), diag(Diag),
+        dir_of(Diag, VERTICAL,   Dv), dist(P, Dv, Pv), dist(Q, Dv, Qv),
+        dir_of(Diag, HORIZONTAL, Dh), dist(P, Dh, Ph), dist(Q, Dh, Qh),
+        Qv - Pv = Qh - Ph, Qv >= Pv.
+}
+
+.type Choice = Dot {} | Grid {}
+
+.comp Consts {
+    .decl ink(c: Color)   ink(0).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// The X per claim.
+.decl x_cell(p: Position, ch: Choice)
+
+// --- Dot ---
+
+.decl dot(p: Position)
+dot(P) :- in(P, Ink), c.ink(Ink).
+
+// Diagonal rays from the dot toward every corner.
+.init xrays = DiagRay<Unit>
+xrays.diag(D)        :- diag_dir_elem(D).
+xrays.cell(P)        :- in(P, _).
+xrays.mark($U(), Q)  :- dot(Q).
+
+x_cell(P, $Dot()) :- xrays.ray($U(), P, _).
+
+// --- Grid ---
+
+.init dg = Diagonal
+dg.cell(P)   :- in(P, _).
+dg.corner(D) :- diag_dir_elem(D).
+
+x_cell(P, $Grid()) :- dg.diagonal(P, _).
+
+// Draw the X in ink; pass the rest through.
+.decl choice_elem(ch: Choice)
+choice_elem($Dot()). choice_elem($Grid()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Ink, Ch) :- x_cell(P, Ch), c.ink(Ink).
+out(P, Col, Ch) :- choice_elem(Ch), in(P, Col), !x_cell(P, Ch).
+
+.output out(IO=stdout)

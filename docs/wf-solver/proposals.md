@@ -94,6 +94,30 @@ solver-local or a separate component. Current hints: 3618c87e → an `unmatched`
 meaningful key (44f52bb0's invariance set, 27a28665's silhouette) — the call
 keys on `Unit` (`$U()`, in lib).
 
+## `Bbox.corner` — set cell at a bbox corner
+
+A membership readout beside `inside`: the set's cell seated at corner `diag`
+of its own bounding box — on the box boundary toward both of the corner's
+edges. A tuple exists only where the set occupies that corner (an L-shape
+yields three). Derives from `cell` and `edge_min` only, so it lives in the
+comp:
+
+```
+// Set cell on the box's d-side boundary.
+.decl edge_cell(key: Key, p: Position, d: Dir)
+edge_cell(K, P, D) :- cell(K, P), dir_elem(D), dist(P, D, Kd), edge_min(K, D, Kd).
+
+.decl corner(key: Key, diag: DiagDir, p: Position)
+corner(K, Diag, P) :-
+    dir_of(Diag, _, D1), edge_cell(K, P, D1),
+    dir_of(Diag, _, D2), edge_cell(K, P, D2),
+    D1 != D2.
+```
+
+**Task-local home (protocol step 1).** 66e6c45b (`shape_edge` / `shape_corner`,
+Unit key): $Stretch maps the corner cells to grid corners; $Explode steps them
+outward.
+
 ## `Between<Key>` — cells between two keyed marks on a line
 
 The two-sided fold of `Ray` (`lib.dl`). Demoted from lib in the `Ray`
@@ -122,6 +146,31 @@ paints mark cells through this.
 **Task-local homes (protocol step 1).** Solver-local folds: 22168020
 (Color key), a699fb00 $Span (Unit), aa18de87 $Axis and $Iso (Unit, $Iso
 casting all four dirs).
+
+## `DiagRay<Key>` — the DiagDir peer of `Ray`
+
+Keyed marks casting rays toward each corner in `diag`. Stepping toward a
+corner drops the distance to both of its edges in lockstep, so ray
+membership is an equal, nonnegative drop on both. Same contract as `Ray`
+(`lib.dl`): inclusive reach, extent only.
+
+```
+.comp DiagRay<Key> {
+    .decl diag(d: DiagDir)             // cast corners in use
+    .decl cell(p: Position)            // domain tested
+    .decl mark(key: Key, p: Position)
+
+    .decl ray(key: Key, p: Position, d: DiagDir)
+    ray(K, P, Diag) :-
+        cell(P), mark(K, Q), diag(Diag),
+        dir_of(Diag, VERTICAL,   Dv), dist(P, Dv, Pv), dist(Q, Dv, Qv),
+        dir_of(Diag, HORIZONTAL, Dh), dist(P, Dh, Ph), dist(Q, Dh, Qh),
+        Qv - Pv = Qh - Ph, Qv >= Pv.
+}
+```
+
+**Task-local home (protocol step 1).** ea786f4a $Dot: the X through the
+hole, all four corners cast.
 
 ## Keyed `Ordinal` / `DirFrame` — rank-and-place across cases
 
@@ -263,6 +312,26 @@ ring.step(N)         :- c.ring_shift(_, N).        // shifts in use
 out(P_out, ...) :- ..., ring.walk(P_corner, Shift, P_out).
 ```
 
+## `Chain<T>` — strict order from successor edges
+
+`succ` takes the chain's covering edges as data; `before(a, b)` closes them
+into the strict total order. The linear peer of the cycle family: a chain
+is a cycle without the wrap. This comp owns only the order — a rank readout
+over `before` is `RelOrdinal` territory (see `ReadOrder`).
+
+```
+.comp Chain<T> {
+    .decl succ(x: T, x_next: T)
+
+    .decl before(a: T, b: T)
+    before(A, B) :- succ(A, B).
+    before(A, C) :- before(A, B), succ(B, C).
+}
+```
+
+**Task-local home (protocol step 1).** cf98881b $Palette: the ink priority
+chain (`c.ink_succ`).
+
 ## `IndexCycle` — Z/N successor over a dense index set
 
 The builder half: a dense 0-based index set closed into a cycle — increment,
@@ -331,9 +400,10 @@ diag_step_delta(Diag, Delta) :-
     compose(Sv, Sh, Delta).
 ```
 
-**Task-local home (protocol step 1).** 05269061 carries it as a `DiagStep`
+**Task-local homes (protocol step 1).** 05269061 carries it as a `DiagStep`
 comp: the along-stripe generator of its color-propagation closure is the
-delta toward each corner of `c.stripe_axis`.
+delta toward each corner of `c.stripe_axis`. 66e6c45b $Explode: the outward
+step of each shape-corner cell.
 
 ## `D4Invariance<Key, Val>` — per-key D4 invariance of a valued cell set
 

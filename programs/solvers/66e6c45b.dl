@@ -1,0 +1,105 @@
+// 66e6c45b
+// A 2×2 color block on bg explodes to the grid corners. Claims of the
+// motion, tagged on out's Choice:
+//
+//   $Quad    — each cell relocates to the corner of its grid quadrant.
+//   $Stretch — the shape stretches: bbox corners land on grid corners.
+//   $Explode — each cell takes one diagonal step away from the shape.
+//   $Table   — the position permutation as data: paired labeled grids.
+
+#include "../lib.dl"
+
+// Unit step toward a corner: the corner's two cardinal unit steps composed.
+// Candidate lib primitive — see docs/wf-solver/proposals.md.
+.comp DiagStep {
+    .decl delta(diag: DiagDir, p: Position) inline
+    delta(Diag, Delta) :-
+        dir_of(Diag, VERTICAL, Dv), dir_of(Diag, HORIZONTAL, Dh),
+        step_delta(Dv, Sv), step_delta(Dh, Sh),
+        compose(Sv, Sh, Delta).
+}
+.init diag_step = DiagStep
+
+.type Choice = Quad {} | Stretch {} | Explode {} | Table {}
+
+.comp Consts {
+    .decl bg(c: Color)   bg(0).
+
+    // --- Table ---
+    .decl in_label(p: Position, lbl: number)
+    GRID_4x4(in_label,
+        0, 0, 0, 0,
+        0, 1, 2, 0,
+        0, 3, 4, 0,
+        0, 0, 0, 0)
+
+    .decl out_label(p: Position, lbl: number)
+    GRID_4x4(out_label,
+        1, 0, 0, 2,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        3, 0, 0, 4)
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl shape(p: Position, col: Color)
+shape(P, Col) :- in(P, Col), !c.bg(Col).
+
+.init gdp = DiagPlacement
+gdp.cell(P) :- in(P, _).
+
+.decl target(p: Position, col: Color, ch: Choice)
+
+// --- Quad ---
+
+target(P_corner, Col, $Quad()) :-
+    shape(P, Col), gdp.quadrant(P, Diag),
+    gdp.diag_cell(P_corner, Diag, 0).    // grid corner at that diagonal
+
+// --- Stretch / Explode: the shape's own corner cells ---
+
+.init bb = Bbox<Unit>
+bb.cell($U(), P) :- shape(P, _).
+
+// Shape cell on the shape's D-most edge.
+.decl shape_edge(p: Position, d: Dir)
+shape_edge(P, D) :- shape(P, _), dir_elem(D), dist(P, D, K), bb.edge_min($U(), D, K).
+
+// Shape cell at bbox corner Diag — on both of the corner's edges.
+.decl shape_corner(p: Position, diag: DiagDir)
+shape_corner(P, Diag) :-
+    dir_of(Diag, _, D1), shape_edge(P, D1),
+    dir_of(Diag, _, D2), shape_edge(P, D2),
+    D1 != D2.
+
+// --- Stretch ---
+
+target(P_corner, Col, $Stretch()) :-
+    shape(P, Col), shape_corner(P, Diag),
+    gdp.diag_cell(P_corner, Diag, 0).    // grid corner at that diagonal
+
+// --- Explode ---
+
+target(P_out, Col, $Explode()) :-
+    shape(P, Col), shape_corner(P, Diag),
+    diag_step.delta(Diag, Delta), compose(P, Delta, P_out).
+
+// --- Table ---
+
+target(P_out, Col, $Table()) :-
+    in(P_in, Col),
+    c.in_label(P_in, Lbl), c.out_label(P_out, Lbl),  // shared label
+    Lbl != 0.                                        // non-pairing sentinel
+
+.decl choice_elem(ch: Choice)
+choice_elem($Quad()). choice_elem($Stretch()). choice_elem($Explode()). choice_elem($Table()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- target(P, Col, Ch).
+out(P, Bg, Ch)  :- choice_elem(Ch), in(P, _), c.bg(Bg), !target(P, _, Ch).
+
+.output out(IO=stdout)

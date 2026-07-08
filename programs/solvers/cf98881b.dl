@@ -1,0 +1,120 @@
+// cf98881b
+// Layout: 1×3 horizontally-side-by-side 4×4 ink panes with 1-col dividers.
+// Output is the per-cell overlay: the highest-priority inked pane wins;
+// no ink is bg. The divider color is never read.
+//
+// out's choice column = [d, b]:
+//
+//   d (decompose):
+//     $Tile() — pre-tabulated in Consts via tile_pos
+//     $Div()  — derived in body via the divide primitive
+//
+//   b (body, the priority claim):
+//     $Spatial() — pane order: the pane nearest c.stack_dir wins
+//     $Palette() — color order: the c.ink_succ priority chain
+
+#include "../lib.dl"
+
+// Strict order from a chain's successor edges.
+// Candidate lib component — see docs/wf-solver/proposals.md.
+.comp Chain<T> {
+    .decl succ(x: T, x_next: T)
+
+    .decl before(a: T, b: T)
+    before(A, B) :- succ(A, B).
+    before(A, C) :- before(A, B), succ(B, C).
+}
+
+.type DecChoice = Tile {} | Div {}
+.type Body      = Spatial {} | Palette {}
+.type Choice    = [d: DecChoice, b: Body]
+
+.comp Consts {
+    .init helpers = ConstsHelpers
+
+    .decl frame(p: Position)
+    frame(P) :- helpers.frame_pos([4, 4], P).
+
+    .decl bg(c: Color)   bg(0).
+
+    // --- Tile decompose data ----------------------------------------------
+    .decl tile_decompose(p: Position, p_outer: Position, p_inner: Position)
+    tile_decompose(P_grid, P_tile, P_intile) :-
+        helpers.tile_pos([1, 3], [4, 4], [0, 1], P_grid, P_tile, P_intile).
+
+    // --- Div decompose data -----------------------------------------------
+    .decl divisor(n: number)
+    divisor(3).
+
+    .decl divide_axis(a: Axis)
+    divide_axis(HORIZONTAL).
+
+    .decl divide_gap(g: number)
+    divide_gap(1).
+
+    // --- Spatial body data ------------------------------------------------
+    .decl stack_dir(d: Dir)
+    stack_dir(LEFT).
+
+    // --- Palette body data ------------------------------------------------
+    // The ink priority chain, highest first.
+    .decl ink_succ(c: Color, c_next: Color)
+    ink_succ(4, 9).
+    ink_succ(9, 1).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// --- Decompose cases -------------------------------------------------------
+
+.decl dec_choice(dc: DecChoice)
+dec_choice($Tile()).
+dec_choice($Div()).
+
+.decl decompose(p: Position, p_outer: Position, p_inner: Position, dc: DecChoice)
+decompose(P_grid, P_tile, P_intile, $Tile()) :- c.tile_decompose(P_grid, P_tile, P_intile).
+decompose(P_grid, P_tile, P_intile, $Div()) :-
+    in(P_grid, _),                                       // input position
+    c.divide_axis(A), c.divisor(N), c.divide_gap(G),     // params
+    divide_slab(P_grid, A, N, G, P_tile, P_intile).
+
+// --- Overlay ---------------------------------------------------------------
+
+// Inked pane cells competing at each output cell.
+.decl cand(o: Position, p_tile: Position, col: Color, dc: DecChoice)
+cand(P_grid_out, P_tile, Col, Dc) :-
+    in(P_grid_in, Col), !c.bg(Col),
+    decompose(P_grid_in, P_tile, P_grid_out, Dc).
+
+.decl body_choice(b: Body)
+body_choice($Spatial()).
+body_choice($Palette()).
+
+.decl outranked(o: Position, p_tile: Position, dc: DecChoice, b: Body)
+
+// --- Spatial: a candidate pane nearer the stack edge wins ---
+outranked(O, T, Dc, $Spatial()) :-
+    cand(O, T, _, Dc), cand(O, T2, _, Dc),
+    c.stack_dir(D), dist(T2, D, K2), dist(T, D, K), K2 < K.
+
+// --- Palette: a candidate of higher-chain color wins ---
+.init priority = Chain<Color>
+priority.succ(Hi, Lo) :- c.ink_succ(Hi, Lo).
+
+outranked(O, T, Dc, $Palette()) :-
+    cand(O, T, Lo, Dc), cand(O, _, Hi, Dc), priority.before(Hi, Lo).
+
+// --- Output ----------------------------------------------------------------
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(O, Col, [Dc, B]) :-
+    cand(O, T, Col, Dc), body_choice(B),
+    !outranked(O, T, Dc, B).
+out(O, Bg, [Dc, B]) :-
+    dec_choice(Dc), body_choice(B), c.frame(O),   // choice × cell
+    c.bg(Bg), !cand(O, _, _, Dc).
+
+.output out(IO=stdout)
