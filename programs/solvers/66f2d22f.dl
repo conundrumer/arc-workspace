@@ -72,11 +72,11 @@ decompose(P_grid, P_tile, P_intile, $Div()) :-
     c.divide_axis(A), c.divisor(N),                      // params
     divide_slab(P_grid, A, N, 0, P_tile, P_intile).
 
-// --- Nor body: marked relation parameterized by decompose choice -----------
+// --- Nor body: filled relation parameterized by decompose choice -----------
 
 // A half marks this intile cell — a non-bg input cell decomposes onto it.
-.decl marked(p_inner: Position, dc: DecChoice)
-marked(P_intile, Dc) :-
+.decl filled(p_inner: Position, dc: DecChoice)
+filled(P_intile, Dc) :-
     decompose(P_grid, _, P_intile, Dc), in(P_grid, Col), !c.bg(Col).
 
 // --- Output ----------------------------------------------------------------
@@ -86,10 +86,10 @@ marked(P_intile, Dc) :-
 // --- Nor ---
 out(P_intile, Col, [Dc, $Nor()]) :-
     dec_choice(Dc), c.frame(P_intile),          // choice × cell
-    !marked(P_intile, Dc), c.out_fill(Col).     // no half marks it → fill
+    !filled(P_intile, Dc), c.out_fill(Col).     // no half marks it → fill
 out(P_intile, Col, [Dc, $Nor()]) :-
     dec_choice(Dc), c.frame(P_intile),          // choice × cell
-    marked(P_intile, Dc), c.bg(Col).            // some half marks it → bg
+    filled(P_intile, Dc), c.bg(Col).            // some half marks it → bg
 
 // --- Lookup ---
 out(P_intile, Col_out, [Dc, $Lookup()]) :-

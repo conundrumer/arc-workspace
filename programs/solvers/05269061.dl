@@ -24,8 +24,8 @@
 
 .init c = Consts
 
-.decl choice_elem(ch: Choice)
-choice_elem($Fixed()). choice_elem($Palette()).
+.decl impl_choice(ch: Choice)
+impl_choice($Fixed()). impl_choice($Palette()).
 
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
@@ -61,7 +61,7 @@ period_jump(Delta, Ch) :- period(K, Ch), dir_elem(D), jump_delta(D, K, Delta).
 // --- closure under the wallpaper symmetries ---
 
 .decl known(p: Position, col: Color, ch: Choice)
-known(P, Col, Ch) :- in(P, Col), !c.bg(Col), choice_elem(Ch).
+known(P, Col, Ch) :- in(P, Col), !c.bg(Col), impl_choice(Ch).
 known(Q, Col, Ch) :- known(P, Col, Ch), stripe_step(D), compose(P, D, Q), in(Q, _).
 known(Q, Col, Ch) :- known(P, Col, Ch), period_jump(D, Ch), compose(P, D, Q), in(Q, _).
 

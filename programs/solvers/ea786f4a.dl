@@ -59,11 +59,11 @@ dg.corner(D) :- diag_dir_elem(D).
 x_cell(P, $Grid()) :- dg.diagonal(P, _).
 
 // Draw the X in ink; pass the rest through.
-.decl choice_elem(ch: Choice)
-choice_elem($Dot()). choice_elem($Grid()).
+.decl impl_choice(ch: Choice)
+impl_choice($Dot()). impl_choice($Grid()).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Ink, Ch) :- x_cell(P, Ch), c.ink(Ink).
-out(P, Col, Ch) :- choice_elem(Ch), in(P, Col), !x_cell(P, Ch).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !x_cell(P, Ch).
 
 .output out(IO=stdout)
