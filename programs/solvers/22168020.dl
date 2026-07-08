@@ -18,7 +18,7 @@
 .init rays = Ray<Color>
 rays.dir(D)       :- c.fill_axis(A), axis_of(D, A).
 rays.cell(P)      :- in(P, _).
-rays.mark(Col, Q) :- in(Q, Col), c.bg(Bg), Col != Bg.
+rays.mark(Col, Q) :- in(Q, Col), !c.bg(Col).
 
 .decl span(col: Color, p: Position)
 span(Col, P) :- rays.ray(Col, P, D), opposite(D, O), rays.ray(Col, P, O).

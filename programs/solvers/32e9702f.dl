@@ -17,7 +17,7 @@
 
 .decl moved(p: Position, col: Color)
 moved(Q, Col) :-
-    in(P, Col), c.bg(Bg), Col != Bg,                  // mark
+    in(P, Col), !c.bg(Col),                           // mark
     c.dir(D), step_delta(D, S), compose(P, S, Q),     // one step toward dir
     in(Q, _).                                         // lands on the grid
 

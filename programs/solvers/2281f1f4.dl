@@ -49,7 +49,7 @@ out(P, Col, $Cross()) :- in(P, Col), !cross(P).
 
 // Cells of selected lines, off the selector edge.
 .decl selected(p: Position)
-selected(P) :- c.select_edge(D), marked(P, D), dist(P, D, K), K > 0.
+selected(P) :- c.select_edge(D), marked(P, D), dist(P, D, K), K != 0.
 
 out(P, F, $Stamp())   :- selected(P), c.pattern_edge(Dp), marked(P, Dp), c.fill(F).
 out(P, Bg, $Stamp())  :- selected(P), c.pattern_edge(Dp), !marked(P, Dp), c.bg(Bg).

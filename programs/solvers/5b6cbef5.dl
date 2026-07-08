@@ -18,9 +18,8 @@
 
 .decl out(p: Position, col: Color)
 out(P_grid_out, Col) :-
-    c.bg(B),
-    in(P_tile, C_gate), C_gate != B,                  // gate: tile's input cell non-bg
-    in(P_intile, Col), Col != B,                      // tile content: a non-bg input cell
+    in(P_tile, C_gate), !c.bg(C_gate),                // gate: tile's input cell non-bg
+    in(P_intile, Col), !c.bg(Col),                    // tile content: a non-bg input cell
     concat_2d(P_tile, P_intile, [0, 0], P_grid_out).  // tile ⊗ cell → grid
 
 .output out(IO=stdout)

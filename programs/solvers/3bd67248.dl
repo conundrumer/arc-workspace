@@ -40,7 +40,7 @@
 bg_cell(P) :- in(P, Col), c.bg(Col).
 
 .decl wall_cell(p: Position)
-wall_cell(P) :- in(P, Col), c.bg(Bg), Col != Bg.
+wall_cell(P) :- in(P, Col), !c.bg(Col).
 
 // --- Anchored / Foot ---
 
