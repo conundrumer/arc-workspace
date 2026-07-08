@@ -186,6 +186,11 @@ turn(SENSE_CC, D2, D) :- turn(SENSE_CW, D, D2).
 .decl dist(p: Position, d: Dir, k: number) inline
 dist(P, D, K) :- P = [T, B, L, R], K = @dist_proj(D, T, B, L, R).
 
+// Distances to edge d and its opposite. Centered is a repeated variable;
+// the nearer half is by comparison.
+.decl dist_pair(p: Position, d: Dir, k: number, k2: number) inline
+dist_pair(P, D, K, K2) :- dist(P, D, K), opposite(D, O), dist(P, O, K2).
+
 // Element-wise sum of two Positions. One operand may be a signed delta.
 .decl compose(p1: Position, p2: Position, p3: Position) inline
 compose([T1, B1, L1, R1], [T2, B2, L2, R2], [T1+T2, B1+B2, L1+L2, R1+R2]) :- true.
@@ -449,9 +454,7 @@ concat_2d(P_outer, P_inner, [Gv, Gh], P_grid) :-
 
     // Strictly nearer edge d than its opposite — which side of the axis midline.
     .decl nearer(p: Position, d: Dir)
-    nearer(P, D) :-
-        cell(P), dir_elem(D),
-        dist(P, D, K), opposite(D, Opp), dist(P, Opp, K2), K < K2.
+    nearer(P, D) :- cell(P), dir_elem(D), dist_pair(P, D, K, K2), K < K2.
 
     // The diagonal quadrant a cell sits in: nearer on both of that corner's edges.
     .decl quadrant(p: Position, diag: DiagDir)
