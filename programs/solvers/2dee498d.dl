@@ -10,9 +10,6 @@
 
     .decl tile_count(n: number)
     tile_count(3).
-
-    .decl tile_gap(g: number)
-    tile_gap(0).
 }
 
 .init c = Consts
@@ -23,7 +20,7 @@
 .decl out(p: Position, col: Color)
 out(P_intile, Col) :-
     in(P_in, Col),                                    // input cell
-    c.tile_axis(A), c.tile_count(N), c.tile_gap(G),   // tile params
-    divide_slab(P_in, A, N, G, _, P_intile).          // discard outer; intile is output
+    c.tile_axis(A), c.tile_count(N),                  // tile params
+    divide_slab(P_in, A, N, 0, _, P_intile).          // discard outer; intile is output
 
 .output out(IO=stdout)
