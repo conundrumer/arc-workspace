@@ -63,6 +63,46 @@ pattern_out(0, 3). pattern_out(1, 8).
 
 The GRID gives visual shape; the derive rule filters (e.g., `C != 0` for non-bg members) and tags with the eid.
 
+## Position remapping via `GRID` id join
+
+A stored position correspondence spells as two GRIDs joined on an opaque id: `src` labels the domain cells, `dst` gives each target cell the id of its source. The correspondence is visible in layout; ids carry identity only. Raw Position-pair facts state the same data illegibly.
+
+```
+.decl src(p: Position, id: number)
+GRID_3x3(src,
+    0, 1, 2,
+    3, 4, 5,
+    6, 7, 8)
+
+.decl dst(p: Position, id: number)
+GRID_5x5(dst,
+    0, 0, 1, 2, 2,
+    0, 0, 1, 2, 2,
+    3, 3, 4, 5, 5,
+    6, 6, 7, 8, 8,
+    6, 6, 7, 8, 8)
+
+.decl map(p_in: Position, p_out: Position)
+map(P_in, P_out) :- src(P_in, Id), dst(P_out, Id).
+```
+
+(e633a9e5 $Map — a nonuniform scale-up as pure data.)
+
+## Stored total orders as dense ranks
+
+A total order in Consts spells as dense 0-based rank data, consumed by comparison only. Ranks state each element's place in the sequence; successor edges imply it through closure. Comparison-only consumption keeps the borrowed number structure inert; dense 0-based fills keep the encoding canonical — a gapped fill spells one order many ways.
+
+```
+.decl ink_rank(c: Color, r: number)
+ink_rank(7, 0). ink_rank(4, 1). ink_rank(8, 2). ink_rank(6, 3).
+
+beaten(P, Col) :-
+    ink_at(P, Col), ink_at(P, C2),
+    c.ink_rank(C2, R2), c.ink_rank(Col, R), R2 < R.
+```
+
+Over a spatial domain the ranks lay out as a GRID — a68b268e's `c.prio`, the precedence visible in the tile arrangement.
+
 ## Set-keyed relations via parent/child tables
 
 A relation keyed by a multiset of members declares as two tables glued by an `eid`: parent holds `(eid, out-fields)`, child holds `(eid, member-fields)`. The match runs through `KeyedSetCompare` (`lib.dl`) — the child table feeds `pattern_member`, the observed cells feed `observed_member`, and `covers` / `equals` test containment / equality. The parent table maps the matched `eid` to its output.

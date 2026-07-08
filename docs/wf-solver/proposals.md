@@ -14,43 +14,44 @@ derives per-tile dims and per-edge cumulative offsets, then recomposes via
 
 Solver populates `tile_in` (dim info; values aren't read by the pipeline) and
 `axis_gap`. The component derives per-row / per-col tile dims, cumulative
-per-edge offsets, assembles `tile_offset(p_outer, p_off)`, and exposes a
-one-liner `concat` (lookup + `compose`).
+per-edge offsets, assembles `tile_offset(key, p_outer, p_off)`, and exposes a
+one-liner `concat` (lookup + `compose`). One tiling per key; `axis_gap` stays
+unkeyed — the gap is the instance's parameter, per `DirFrame`'s unkeyed `dir`.
 
 ```
-.comp ConcatPipeline {
-    .decl tile_in(p_outer: Position, p_inner: Position)
+.comp ConcatPipeline<Key> {
+    .decl tile_in(key: Key, p_outer: Position, p_inner: Position)
     .decl axis_gap(a: Axis, g: number)
 
     // Tile dim along axis(D), indexed by tile's distance from edge D.
     // Every cell in a rectilinear tile produces the same K — set semantics dedupes.
-    .decl axis_dim(d: Dir, i: number, k: number)
-    axis_dim(D, I, K) :-
-        tile_in(P_outer, P_inner),
+    .decl axis_dim(key: Key, d: Dir, i: number, k: number)
+    axis_dim(Ky, D, I, K) :-
+        tile_in(Ky, P_outer, P_inner),
         dist(P_outer, D, I),
         opposite(D, D2),
         dist(P_inner, D, Near), dist(P_inner, D2, Far),
         K = Near + Far + 1.
 
     // Cumulative offset from edge D for the tile at distance I from D.
-    .decl edge_off(d: Dir, i: number, off: number)
-    edge_off(D, I, OFF) :-
-        axis_dim(D, _, _),
+    .decl edge_off(key: Key, d: Dir, i: number, off: number)
+    edge_off(Ky, D, I, OFF) :-
+        axis_dim(Ky, D, I, _),
         axis_of(D, A), axis_gap(A, G),
-        OFF = (sum K : { axis_dim(D, J, K), J < I }) + I*G.
+        OFF = (sum K : { axis_dim(Ky, D, J, K), J < I }) + I*G.
 
     // Tile bbox offset in grid units, assembled from the four edges.
-    .decl tile_offset(p_outer: Position, p_off: Position)
-    tile_offset([OT, BO, OL, RO], [T_off, B_off, L_off, R_off]) :-
-        edge_off(TOP,    OT, T_off),
-        edge_off(BOTTOM, BO, B_off),
-        edge_off(LEFT,   OL, L_off),
-        edge_off(RIGHT,  RO, R_off).
+    .decl tile_offset(key: Key, p_outer: Position, p_off: Position)
+    tile_offset(Ky, [OT, BO, OL, RO], [T_off, B_off, L_off, R_off]) :-
+        edge_off(Ky, TOP,    OT, T_off),
+        edge_off(Ky, BOTTOM, BO, B_off),
+        edge_off(Ky, LEFT,   OL, L_off),
+        edge_off(Ky, RIGHT,  RO, R_off).
 
     // Lookup + compose.
-    .decl concat(p_outer: Position, p_inner: Position, p_grid: Position) inline
-    concat(P_outer, P_inner, P_grid) :-
-        tile_offset(P_outer, P_off),
+    .decl concat(key: Key, p_outer: Position, p_inner: Position, p_grid: Position) inline
+    concat(Ky, P_outer, P_inner, P_grid) :-
+        tile_offset(Ky, P_outer, P_off),
         compose(P_off, P_inner, P_grid).
 }
 ```
@@ -63,14 +64,20 @@ so 2D and slab arrangements use the same rules.
 Solver usage:
 
 ```
-.init concat = ConcatPipeline
-concat.tile_in(P_outer, P_inner) :- tile_data(P_outer, P_inner, _).
-concat.axis_gap(VERTICAL, 0). concat.axis_gap(HORIZONTAL, 0).
+.init pipe = ConcatPipeline<Choice>
+pipe.tile_in(Ch, P_outer, P_inner) :- tile_data(Ch, P_outer, P_inner, _).
+pipe.axis_gap(A, 0) :- axis_elem(A).
 
-out(P_grid, V) :-
-    tile_data(P_outer, P_inner, V),
-    concat.concat(P_outer, P_inner, P_grid).
+out(P_grid, V, Ch) :-
+    tile_data(Ch, P_outer, P_inner, V),
+    pipe.concat(Ch, P_outer, P_inner, P_grid).
 ```
+
+An `.init` named `concat` clashes with lib's `concat` relation; pick another
+instance name.
+
+**Task-local home (protocol step 1).** e633a9e5: nonuniform scale-up, gap 0
+— the $Edge and $Table extent models share one Choice-keyed instance.
 
 ## `KeyedSetCompare` extensions — set-relationship lattice
 
@@ -147,31 +154,6 @@ paints mark cells through this.
 (Color key), 22eb0ac0 $Span (Color), a699fb00 $Span (Unit), aa18de87
 $Axis and $Iso (Unit, $Iso casting all four dirs).
 
-## `DiagRay<Key>` — the DiagDir peer of `Ray`
-
-Keyed marks casting rays toward each corner in `diag`. Stepping toward a
-corner drops the distance to both of its edges in lockstep, so ray
-membership is an equal, nonnegative drop on both. Same contract as `Ray`
-(`lib.dl`): inclusive reach, extent only.
-
-```
-.comp DiagRay<Key> {
-    .decl diag(d: DiagDir)             // cast corners in use
-    .decl cell(p: Position)            // domain tested
-    .decl mark(key: Key, p: Position)
-
-    .decl ray(key: Key, p: Position, d: DiagDir)
-    ray(K, P, Diag) :-
-        cell(P), mark(K, Q), diag(Diag),
-        dir_of(Diag, VERTICAL,   Dv), dist(P, Dv, Pv), dist(Q, Dv, Qv),
-        dir_of(Diag, HORIZONTAL, Dh), dist(P, Dh, Ph), dist(Q, Dh, Qh),
-        Qv - Pv = Qh - Ph, Qv >= Pv.
-}
-```
-
-**Task-local home (protocol step 1).** ea786f4a $Dot: the X through the
-hole, all four corners cast.
-
 ## Keyed `Ordinal` / `DirFrame` — rank-and-place across cases
 
 Both lib comps hold one relation set per instance, so a solver whose cases
@@ -217,32 +199,57 @@ only when a task places per-key directions.
 Single-set callers key on `Unit`. Callers to update: f8ff0b80 (both), d406998b
 (`Ordinal`), f8b3ba0a (both, collapsing the triplets).
 
-## `AxisFrame` — 1D frame from an axis and an extent
+## `AxisGlue<Key>` — glue per-axis position parts into 2D
 
-Frame instantiation from dimensions. In the Position encoding a 1-cell-wide
-frame is the axis-only position set, so the across extent is structural —
-the inputs are an axis and one extent. The undirected peer of `DirFrame`:
-`DirFrame` maps a dense index set to positions measured from a chosen edge;
-`AxisFrame` exposes the unindexed cell set, so no end is privileged and no
-index map is exposed. A 2D frame of given dims composes two, per the lib's
-1D→2D convention.
+The data peer of `AxisChain` (lib): AxisChain folds per-axis maps;
+AxisGlue joins independent per-axis position parts under a shared key. A
+body can derive axis-tagged parts generically but cannot name the axes to
+pair them, so the pairing spells as an unordered two-atom join with
+`A1 != A2`, deriving each result twice. The comp owns the pairing.
 
 ```
-.comp AxisFrame {
-    .decl axis(a: Axis)
-    .decl extent(n: number)
+.comp AxisGlue<Key> {
+    .decl part(a: Axis, key: Key, p_axis: Position)
 
-    .decl cell(p: Position)
-    cell(P) :-
-        axis(A), axis_of(D, A), opposite(D, O),
-        extent(N), K = range(0, N),
-        edge_delta(D, K, P_d), edge_delta(O, N-1-K, P_o),
-        compose(P_d, P_o, P).
+    .decl both(key: Key, p: Position)
+    both(K, P) :- part(VERTICAL, K, Pv), part(HORIZONTAL, K, Ph), compose(Pv, Ph, P).
 }
 ```
 
-**Task-local home (protocol step 1).** d631b094: the output bar — axis from
-Consts, extent = the cell count.
+With `Key = Unit` the join is the V×H cross product. One-rule comp — the
+bar `Between` sits under; staged to collect callers.
+
+**Task-local homes (protocol step 1), in other spellings.** e1baa8a4
+`out` (Position key): the unordered-pair join over `axis_band`.
+`SquareFrame.cell` (Unit-key cross product of its two AxisFrames) —
+comp-internal, so the axes are nameable there and the glue is optional.
+
+## `Frame2D<Key>` — 2D frame from per-axis extents
+
+The rectangular generalization of `SquareFrame` (lib): extents given per
+axis, two AxisFrames composed, one frame per key. SquareFrame is the
+equal-extents special case — at promotion, either it dissolves into this
+or stays as the isotropic convenience.
+
+```
+.comp Frame2D<Key> {
+    .decl extent(key: Key, a: Axis, n: number)
+
+    .init v = AxisFrame<Key>
+    v.axis(VERTICAL).
+    v.extent(Ky, N) :- extent(Ky, VERTICAL, N).
+
+    .init h = AxisFrame<Key>
+    h.axis(HORIZONTAL).
+    h.extent(Ky, N) :- extent(Ky, HORIZONTAL, N).
+
+    .decl cell(key: Key, p: Position)
+    cell(Ky, P) :- v.cell(Ky, Pv), h.cell(Ky, Ph), compose(Pv, Ph, P).
+}
+```
+
+**Task-local home (protocol step 1).** 8618d23e: the output frame, keyed
+by Choice, extents read off the seated images.
 
 ## `Ordinal.rev` — opposite-end pairing of an index set
 
@@ -311,26 +318,6 @@ ring.step(N)         :- c.ring_shift(_, N).        // shifts in use
 
 out(P_out, ...) :- ..., ring.walk(P_corner, Shift, P_out).
 ```
-
-## `Chain<T>` — strict order from successor edges
-
-`succ` takes the chain's covering edges as data; `before(a, b)` closes them
-into the strict total order. The linear peer of the cycle family: a chain
-is a cycle without the wrap. This comp owns only the order — a rank readout
-over `before` is `RelOrdinal` territory (see `ReadOrder`).
-
-```
-.comp Chain<T> {
-    .decl succ(x: T, x_next: T)
-
-    .decl before(a: T, b: T)
-    before(A, B) :- succ(A, B).
-    before(A, C) :- before(A, B), succ(B, C).
-}
-```
-
-**Task-local home (protocol step 1).** cf98881b $Palette: the ink priority
-chain (`c.ink_succ`).
 
 ## `IndexCycle` — Z/N successor over a dense index set
 
@@ -406,6 +393,39 @@ comp: the along-stripe generator of its color-propagation closure is the
 delta toward each corner of `c.stripe_axis`. 66e6c45b $Explode: the outward
 step of each shape-corner cell.
 
+## `diag_edge_delta` — edge delta at a corner
+
+The DiagDir peer of `edge_delta`: a Position carrying the Dim's extents
+at the two edges of corner `diag`. Grow-toward-a-corner, where
+`diag_step_delta` is move-toward-a-corner. Single-clause inline, per the
+lib's dispatch convention.
+
+```
+.decl diag_edge_delta(diag: DiagDir, k: Dim, p: Position) inline
+diag_edge_delta(Diag, [Kv, Kh], P) :-
+    dir_of(Diag, VERTICAL, Dv),   edge_delta(Dv, Kv, Pv),
+    dir_of(Diag, HORIZONTAL, Dh), edge_delta(Dh, Kh, Ph),
+    compose(Pv, Ph, P).
+```
+
+**Task-local home (protocol step 1).** 8618d23e (`DiagEdgeDelta` comp):
+$Derive's grow delta at the corner opposite the seat, Dim from the
+growth case.
+
+## `c4_elem` — the rotation subgroup enum
+
+The C4 subset of `d4_elem`: the four rotations. For closures that apply
+every rotation — where a reflection would be wrong, not merely unused.
+Lib target: a fact set beside `d4_elem`.
+
+```
+.decl c4_elem(d: D4)
+c4_elem(IDENTITY). c4_elem(ROT_CW). c4_elem(ROT_180). c4_elem(ROT_CCW).
+```
+
+**Task-local home (protocol step 1).** 46442a0e (`RotElems` comp): $Rot's
+quarter-turn closure, applied jointly to anchor tile position and content.
+
 ## `D4Invariance<Key, Val>` — per-key D4 invariance of a valued cell set
 
 Which D4 elements fix each keyed cell set. `broken` witnesses a violated
@@ -441,3 +461,6 @@ numbers) fed by a lexicographic `before` supplier.
 
 **Task-local home (protocol step 1).** ff28f65a carries it as body rules
 (`read_before`, `fill_rank`); `$Fill` marks X cells with rank below the count.
+
+**Second home (protocol step 1).** a68b268e $Scan carries `before` as body
+rules (`scan_before`) over tile positions; no rank readout.

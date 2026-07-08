@@ -18,6 +18,8 @@ The body is faithful to the concept of the task — the actual task, not an arti
 
 **ARC values.** Work in the task's own values — colors, directions, axes, D4 elements. Projecting them into bools or ints adds structure (ordering, arithmetic) they don't have. Numbers are one indirection from the concept; arithmetic on them is a second.
 
+**Indirection.** Data enters in the form its consumer reads, keyed by objects already in play. A layer that only re-spells content is structure the task doesn't claim: renaming keys into a second vocabulary (a 2×2 tile position as its corner name), factoring a flat correspondence through intermediate coordinates, stating an order as successor edges that closure must replay before a comparison can read it. Conversion earns its place when the two sides differ in content, as with a sparse set and its ranking (`Ordinal`); not when they differ in spelling. The test: a rule whose only function is converting one representation of a thing into another marks one of the two as unearned. The direct forms: a68b268e keys precedence by the tile positions its divide produces; e633a9e5 stores its correspondence flat, cell to cell.
+
 **Zero is absence.** In spatial data, zero means no gap, no offset, no distance — the lack of structure. It is never task data and earns no Consts slot; a body may say `0` directly.
 
 ## Invariance

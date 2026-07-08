@@ -106,6 +106,11 @@ Cases are grouped under `// --- <name> ---` markers in both Consts and body — 
 - Off-edge tests spell `dist(P, D, K), K != 0`, not `K > 0` — the zero case is refused by identity, not order. `!dist(P, D, 0)` is unavailable: Souffle can't negate an inline relation whose clause introduces variables.
 - Inline relations can't appear inside aggregators. Wrap in a non-inline relation when needed.
 
+## Components
+
+- A new comp takes a `Key` type param; single-set sites key on `Unit` (`$U()`, in lib). An unkeyed comp shatters at the case boundary when a solver's cases share its pipeline: per-case `.init`s and dispatch rules differing only in the case name.
+- Instance-level parameters stay unkeyed — a relation whose value is the instance's identity, not per-key data (`AxisFrame.axis`, `DirFrame.dir`, `Ray.dir`). Key one only when a task varies it per key.
+
 ## Multi-atom rules
 
 Head and `:-` on first line; body atoms on subsequent lines indented 4 spaces; related atoms grouped on one line; inline `// ` comment per line naming the group's role.
