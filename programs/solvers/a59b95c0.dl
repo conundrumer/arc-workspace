@@ -14,15 +14,13 @@
 .decl palette(col: Color)
 palette(Col) :- in(_, Col).
 
-.init arr = AxisFrame<Unit>
+.init arr = Frame2D<Unit>
 arr.extent($U(), A, N) :- axis_elem(A), N = count : { palette(_) }.
 
 .decl out(p: Position, col: Color)
 out(P_grid, Col) :-
-    in(P_intile, Col),                                  // input cell as intile pos
-    perp(A1, A2),                                       // tile pos (N×N arrangement):
-    arr.cell($U(), A1, Pa1), arr.cell($U(), A2, Pa2),
-    compose(Pa1, Pa2, P_tile),
-    concat_2d(P_tile, P_intile, [0, 0], P_grid).        // 2D recompose
+    in(P_intile, Col),                              // input cell as intile pos
+    arr.cell($U(), P_tile),                         // tile pos (N×N arrangement)
+    concat_2d(P_tile, P_intile, [0, 0], P_grid).    // 2D recompose
 
 .output out(IO=stdout)

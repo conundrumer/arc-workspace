@@ -19,7 +19,7 @@
 .decl on(p: Position, col: Color)
 on(P, Col) :- in(P, Col), !c.bg(Col).
 
-.init block = AxisFrame<Choice>
+.init block = Frame2D<Choice>
 
 // --- Cells ---
 block.extent($Cells(), A, N) :- axis_elem(A), N = count : { on(_, _) }.
@@ -32,10 +32,8 @@ block.extent($Colors(), A, N) :- axis_elem(A), N = count : { palette(_) }.
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P_grid_out, Col, Ch) :-
-    in(P_tile, Col),                                      // input cell as tile pos
-    perp(A1, A2),                                         // intile pos (N×N frame):
-    block.cell(Ch, A1, Pa1), block.cell(Ch, A2, Pa2),
-    compose(Pa1, Pa2, P_intile),
-    concat_2d(P_tile, P_intile, [0, 0], P_grid_out).      // 2D recompose
+    in(P_tile, Col),                                  // input cell as tile pos
+    block.cell(Ch, P_intile),                         // intile pos (N×N frame)
+    concat_2d(P_tile, P_intile, [0, 0], P_grid_out).  // 2D recompose
 
 .output out(IO=stdout)

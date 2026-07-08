@@ -385,8 +385,7 @@ concat_2d(P_outer, P_inner, [Gv, Gh], P_grid) :-
 // 1D frame from an axis-tagged extent — the n axis-only positions of a
 // 1-wide frame, per key and axis. The undirected peer of DirFrame: the
 // unindexed cell set, no end privileged (both dirs derive the same set),
-// no index map. A 2D frame of given extents glues the two axes in the
-// body: perp-paired cells composed. Single-set sites key on Unit.
+// no index map. Single-set sites key on Unit.
 .comp AxisFrame<Key> {
     .decl extent(key: Key, a: Axis, n: number)
 
@@ -396,6 +395,21 @@ concat_2d(P_outer, P_inner, [Gv, Gh], P_grid) :-
         K = range(0, N),
         edge_delta(D, K, P_d), edge_delta(O, N-1-K, P_o),
         compose(P_d, P_o, P).
+}
+
+// 2D frame from per-axis extents — AxisFrame cells perp-glued into full
+// 2D positions, one frame per key. A square frame spreads one extent
+// over axis_elem. Single-set sites key on Unit.
+.comp Frame2D<Key> {
+    .decl extent(key: Key, a: Axis, n: number)
+
+    .init ax = AxisFrame<Key>
+    ax.extent(Ky, A, N) :- extent(Ky, A, N).
+
+    .decl cell(key: Key, p: Position)
+    cell(Ky, P) :-
+        perp(A1, A2), ax.cell(Ky, A1, P1), ax.cell(Ky, A2, P2),
+        compose(P1, P2, P).
 }
 
 // A corner diagonal — cells equidistant from the corner's two edges; ring is

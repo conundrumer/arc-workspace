@@ -108,20 +108,14 @@ seated(P_out, Col, $Disp()) :-
     c.disp(P_tile, Delta), compose(P, Delta, P_out).  // displace by its vector
 
 // Output frame extents, read off the seated images.
-.init frame = AxisFrame<Choice>
+.init frame = Frame2D<Choice>
 frame.extent(Ch, A, N) :- seated(P, _, Ch), axis_elem(A), axis_dim(P, A, N).
-
-.decl frame_cell(p: Position, ch: Choice)
-frame_cell(P, Ch) :-
-    perp(A1, A2),
-    frame.cell(Ch, A1, Pa1), frame.cell(Ch, A2, Pa2),
-    compose(Pa1, Pa2, P).
 
 .decl covered(p: Position, ch: Choice)
 covered(P, Ch) :- seated(P, _, Ch).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- seated(P, Col, Ch).
-out(P, Col, Ch) :- frame_cell(P, Ch), !covered(P, Ch), c.filler(Col).
+out(P, Col, Ch) :- frame.cell(Ch, P), !covered(P, Ch), c.filler(Col).
 
 .output out(IO=stdout)
