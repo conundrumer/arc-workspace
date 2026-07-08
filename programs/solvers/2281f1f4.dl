@@ -1,11 +1,12 @@
 // 2281f1f4
-// Markers (c.marker) sit on two perpendicular header edges; each marks its
-// line. Cells where marked lines cross paint c.fill. Two claims of what a
-// marked line carries off the crossings, tagged on out's Choice:
+// Markers (c.marker) sit on the two header edges of corner c.header; each
+// marks its line. Cells where marked lines cross paint c.fill. Two claims
+// of what a marked line carries off the crossings, tagged on out's Choice:
 //
 //   $Cross — nothing: crossings paint, the rest passes through.
-//   $Stamp — lines marked from c.select_edge re-render as the c.pattern_edge
-//            header: marker cells c.fill, the rest c.bg.
+//   $Stamp — lines marked from the selector edge (the corner partner of
+//            c.pattern_edge) re-render as the c.pattern_edge header:
+//            marker cells c.fill, the rest c.bg.
 
 #include "../lib.dl"
 
@@ -13,13 +14,12 @@
 
 .comp Consts {
     // --- shared ---
-    .decl marker(c: Color) marker(5).
-    .decl fill(c: Color)   fill(2).
-    .decl header(d: Dir)   header(DIR_T). header(DIR_R).
+    .decl marker(c: Color)     marker(5).
+    .decl fill(c: Color)       fill(2).
+    .decl header(d: DiagDir)   header(DIAG_TR).
 
     // --- Stamp ---
     .decl pattern_edge(d: Dir) pattern_edge(DIR_T).
-    .decl select_edge(d: Dir)  select_edge(DIR_R).
     .decl bg(c: Color)         bg(0).
 }
 
@@ -31,7 +31,7 @@
 // Cell in the line of a marker on header edge d.
 .decl marked(p: Position, d: Dir)
 marked(P, D) :-
-    in(P, _), c.header(D),
+    in(P, _), c.header(Diag), dir_of(Diag, _, D),
     c.marker(M), in(Q, M), dist(Q, D, 0),                     // marker on edge d
     axis_of(D, A), split(P, A, _, Ac), split(Q, A, _, Ac).    // same line
 
@@ -40,16 +40,22 @@ marked(P, D) :-
 // --- Cross ---
 
 .decl cross(p: Position)
-cross(P) :- c.header(D1), c.header(D2), D1 != D2, marked(P, D1), marked(P, D2).
+cross(P) :- c.header(Diag), diag_dirs(Diag, _, D1, D2), marked(P, D1), marked(P, D2).
 
 out(P, F, $Cross())   :- cross(P), c.fill(F).
 out(P, Col, $Cross()) :- in(P, Col), !cross(P).
 
 // --- Stamp ---
 
+// Selector edge — the corner partner of pattern_edge.
+.decl select_edge(d: Dir)
+select_edge(Ds) :-
+    c.header(Diag), c.pattern_edge(Dp),
+    axis_of(Dp, A), diag_dirs(Diag, A, Dp, Ds).
+
 // Cells of selected lines, off the selector edge.
 .decl selected(p: Position)
-selected(P) :- c.select_edge(D), marked(P, D), dist(P, D, K), K != 0.
+selected(P) :- select_edge(D), marked(P, D), dist(P, D, K), K != 0.
 
 out(P, F, $Stamp())   :- selected(P), c.pattern_edge(Dp), marked(P, Dp), c.fill(F).
 out(P, Bg, $Stamp())  :- selected(P), c.pattern_edge(Dp), !marked(P, Dp), c.bg(Bg).

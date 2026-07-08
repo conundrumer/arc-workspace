@@ -1,9 +1,9 @@
 // a406ac07
-// A header line along each edge in c.header; each header cell colors the
-// grid line it heads. A cell whose two header colors agree is painted that
-// color. Three models, tagged on out's Choice — two read designated header
-// edges and differ on what the unmatched rest does; the third designates
-// nothing:
+// A header line along each edge of corner c.header; each header cell
+// colors the grid line it heads. A cell whose two header colors agree is
+// painted that color. Three models, tagged on out's Choice — two read a
+// designated header corner and differ on what the unmatched rest does;
+// the third designates nothing:
 //
 //   $Passthrough() — unmatched cells keep their input color.
 //   $Repaint()     — header edges keep their input; unmatched cells off
@@ -18,7 +18,7 @@
 
 .comp Consts {
     // --- $Passthrough, $Repaint ---
-    .decl header(d: Dir)  header(DIR_R). header(DIR_B).
+    .decl header(d: DiagDir)  header(DIAG_BR).
 
     // --- $Repaint, $Coincide ---
     .decl bg(col: Color)  bg(0).
@@ -35,11 +35,14 @@
 .decl line_color(p: Position, d: Dir, col: Color)
 line_color(P, D, Col) :-
     in(P, _),
-    c.header(D), in(Q, Col), dist(Q, D, 0),                  // header cell at edge d
+    c.header(Diag), dir_of(Diag, _, D),                      // header edge d
+    in(Q, Col), dist(Q, D, 0),                               // header cell at edge d
     axis_of(D, A), split(P, A, _, Ac), split(Q, A, _, Ac).   // p on q's line
 
 .decl agree(p: Position, col: Color)
-agree(P, Col) :- line_color(P, D1, Col), line_color(P, D2, Col), D1 != D2.
+agree(P, Col) :-
+    c.header(Diag), diag_dirs(Diag, _, D1, D2),
+    line_color(P, D1, Col), line_color(P, D2, Col).
 
 .decl out(p: Position, col: Color, ch: Choice)
 
@@ -49,7 +52,7 @@ out(P, Col, $Passthrough()) :- in(P, Col), !agree(P, _).
 
 // --- $Repaint ---
 .decl on_header(p: Position)
-on_header(P) :- in(P, _), c.header(D), dist(P, D, 0).
+on_header(P) :- in(P, _), c.header(Diag), dir_of(Diag, _, D), dist(P, D, 0).
 
 out(P, Col, $Repaint()) :- in(P, Col), on_header(P).
 out(P, Col, $Repaint()) :- agree(P, Col), !on_header(P).
