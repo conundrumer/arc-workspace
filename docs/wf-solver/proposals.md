@@ -144,8 +144,8 @@ A mark is between under its own key — Ray's inclusive reach; 22168020
 paints mark cells through this.
 
 **Task-local homes (protocol step 1).** Solver-local folds: 22168020
-(Color key), a699fb00 $Span (Unit), aa18de87 $Axis and $Iso (Unit, $Iso
-casting all four dirs).
+(Color key), 22eb0ac0 $Span (Color), a699fb00 $Span (Unit), aa18de87
+$Axis and $Iso (Unit, $Iso casting all four dirs).
 
 ## `DiagRay<Key>` — the DiagDir peer of `Ray`
 

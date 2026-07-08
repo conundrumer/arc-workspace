@@ -4,7 +4,8 @@
 // markers may sit and what fills, tagged on out's Choice:
 //
 //   $Flood — matching markers on a line's two edge cells flood the whole line.
-//   $Span  — any same-colored marker pair in a line paints the cells between.
+//   $Span  — any same-colored marker pair in a line paints the cells between,
+//            marks included.
 
 #include "../lib.dl"
 
@@ -30,7 +31,7 @@ edge_match(Ac, Col) :-
     c.axis(A), axis_of(D, A), opposite(D, D2),            // the line's two edges
     in(P1, Col), dist(P1, D, 0), split(P1, A, _, Ac),     // marker on edge d
     in(P2, Col), dist(P2, D2, 0), split(P2, A, _, Ac),    // same color opposite, same line
-    c.bg(Bg), Col != Bg.                                  // markers are non-bg
+    !c.bg(Col).                                           // markers are non-bg
 
 .decl matched(ac: Position)
 matched(Ac) :- edge_match(Ac, _).
@@ -40,16 +41,16 @@ out(P, Col, $Flood()) :- in(P, Col), c.axis(A), split(P, A, _, Ac), !matched(Ac)
 
 // --- Span ---
 
-// A Col marker in P's line, strictly past P toward edge d.
-.decl bound(p: Position, d: Dir, col: Color)
-bound(P, D, Col) :-
-    in(P, _), in(Q, Col), c.bg(Bg), Col != Bg,               // cell; a marker
-    c.axis(A), split(P, A, _, Ac), split(Q, A, _, Ac),       // same line
-    axis_of(D, A), dist(P, D, K), dist(Q, D, Kq), Kq < K.    // marker past P, toward edge d
+// Per-color rays from the markers, cast both ways along the axis.
+.init rays = Ray<Color>
+rays.dir(D)       :- c.axis(A), axis_of(D, A).
+rays.cell(P)      :- in(P, _).
+rays.mark(Col, Q) :- in(Q, Col), !c.bg(Col).
 
-// Strictly between two same-colored markers of its line.
+// Between two same-colored markers of its line — inclusive reach, so a
+// marker repaints its own color.
 .decl span(p: Position, col: Color)
-span(P, Col) :- bound(P, D, Col), opposite(D, D2), bound(P, D2, Col).
+span(P, Col) :- rays.ray(Col, P, D), opposite(D, D2), rays.ray(Col, P, D2).
 
 .decl spanned(p: Position)
 spanned(P) :- span(P, _).
