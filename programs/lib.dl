@@ -191,6 +191,12 @@ dist(P, D, K) :- P = [T, B, L, R], K = @dist_proj(D, T, B, L, R).
 .decl dist_pair(p: Position, d: Dir, k: number, k2: number) inline
 dist_pair(P, D, K, K2) :- dist(P, D, K), opposite(D, O), dist(P, O, K2).
 
+// Distances to the two edges of corner diag, axis-tagged: k1 to the edge
+// on axis a, k2 across. On-diagonal is a repeated variable.
+.decl diag_dist(p: Position, diag: DiagDir, a: Axis, k1: number, k2: number) inline
+diag_dist(P, Diag, A, K1, K2) :-
+    diag_dirs(Diag, A, D1, D2), dist(P, D1, K1), dist(P, D2, K2).
+
 // Element-wise sum of two Positions. One operand may be a signed delta.
 .decl compose(p1: Position, p2: Position, p3: Position) inline
 compose([T1, B1, L1, R1], [T2, B2, L2, R2], [T1+T2, B1+B2, L1+L2, R1+R2]) :- true.
@@ -311,10 +317,8 @@ same_dist(D, P1, P2) :- dist(P1, D, K), dist(P2, D, K).
 // Two positions agree on the distances to the two edges of corner d.
 .decl corner_anchor(d: DiagDir, p1: Position, p2: Position) inline
 corner_anchor(Diag, P1, P2) :-
-    dir_of(Diag, AXIS_V, V_dir),
-    dir_of(Diag, AXIS_H, H_dir),
-    same_dist(V_dir, P1, P2),
-    same_dist(H_dir, P1, P2).
+    diag_dist(P1, Diag, A, K1, K2),
+    diag_dist(P2, Diag, A, K1, K2).
 
 // Two positions agree on dist-to-edge d and on the perpendicular extent.
 .decl slab_anchor(d: Dir, p1: Position, p2: Position) inline
@@ -441,10 +445,7 @@ concat_2d(P_outer, P_inner, [Gv, Gh], P_grid) :-
     .decl corner(d: DiagDir)
 
     .decl diagonal(p: Position, ring: number)
-    diagonal(P, K) :-
-        cell(P), corner(Diag),
-        dir_of(Diag, AXIS_V, Dv), dist(P, Dv, K),
-        dir_of(Diag, AXIS_H, Dh), dist(P, Dh, K).
+    diagonal(P, K) :- cell(P), corner(Diag), diag_dist(P, Diag, _, K, K).
 }
 
 // Diagonal placement — the quadrant a cell sits in, and its ring. Solver
@@ -458,17 +459,12 @@ concat_2d(P_outer, P_inner, [Gv, Gh], P_grid) :-
 
     // The diagonal quadrant a cell sits in: nearer on both of that corner's edges.
     .decl quadrant(p: Position, diag: DiagDir)
-    quadrant(P, Diag) :-
-        dir_of(Diag, AXIS_V, Dv), nearer(P, Dv),
-        dir_of(Diag, AXIS_H, Dh), nearer(P, Dh).
+    quadrant(P, Diag) :- diag_dirs(Diag, _, D1, D2), nearer(P, D1), nearer(P, D2).
 
     // On the diagonal of its quadrant, at ring K — the shared distance to both
     // edges of that corner.
     .decl diag_cell(p: Position, diag: DiagDir, ring: number)
-    diag_cell(P, Diag, K) :-
-        quadrant(P, Diag),
-        dir_of(Diag, AXIS_V, Dv), dist(P, Dv, K),
-        dir_of(Diag, AXIS_H, Dh), dist(P, Dh, K).
+    diag_cell(P, Diag, K) :- quadrant(P, Diag), diag_dist(P, Diag, _, K, K).
 }
 
 // Keyed marks casting rays toward each `dir`. `ray(k, p, d)` — p is on a
@@ -504,9 +500,8 @@ concat_2d(P_outer, P_inner, [Gv, Gh], P_grid) :-
     .decl ray(key: Key, p: Position, d: DiagDir)
     ray(K, P, Diag) :-
         cell(P), mark(K, Q), diag(Diag),
-        dir_of(Diag, AXIS_V, Dv), dist(P, Dv, Pv), dist(Q, Dv, Qv),
-        dir_of(Diag, AXIS_H, Dh), dist(P, Dh, Ph), dist(Q, Dh, Qh),
-        Qv - Pv = Qh - Ph, Qv >= Pv.
+        diag_dist(P, Diag, A, Pa, Pb), diag_dist(Q, Diag, A, Qa, Qb),
+        Qa - Pa = Qb - Pb, Qa >= Pa.
 }
 
 // Sparse numeric set → dense ordinal position. Solver populates `idx_set`;
