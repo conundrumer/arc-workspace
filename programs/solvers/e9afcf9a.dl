@@ -1,11 +1,11 @@
 // e9afcf9a
-// Layout: 2×6 cell permutation. At odd column indices, rows 0 and 1 swap;
-// even columns are unchanged.
+// 2×6 cell permutation: at odd column indices, rows 0 and 1 swap; even
+// columns are unchanged. Two models:
 //
-// Cartesian over body impls; out's choice column tags each:
-//
-//   $LabeledGrids() — paired by shared non-zero label across in/out grids
-//   $Divide()       — divide H into 1×2 subgrids; inner-cell-keyed transform
+//   $LabeledGrids — the permutation as data: in/out label grids paired by
+//                   shared non-zero label
+//   $Divide       — the permutation composed: divide H into 1×2 subgrids;
+//                   per-inner-column D4 transform
 
 #include "../lib.dl"
 

@@ -1,11 +1,11 @@
 // a85d4709
-// Each slice along c.axis is recolored by its content. Two impls for
-// choosing the recolor; out's choice column tags each:
+// Each slice along c.axis is recolored by its content. Two models of the
+// recolor:
 //
-//   $Lookup()         — set-keyed slice template; matching entry's
-//                       c.mapping_out recolors the slice (by set-equality)
-//   $MarkerPosition() — c.marker cell's within-slice position keys
-//                       c.position_color for the recolor
+//   $Lookup         — set-keyed slice template; the matching entry's
+//                     c.mapping_out recolors the slice (by set-equality)
+//   $MarkerPosition — the c.marker cell's within-slice position keys
+//                     c.position_color
 
 #include "../lib.dl"
 

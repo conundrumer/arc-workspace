@@ -1,11 +1,11 @@
 // 833966f4
-// Layout: 5×1 cell permutation. Two pairs of adjacent rows swap around a
-// fixed center row.
+// 5×1 cell permutation: two pairs of adjacent rows swap around a fixed
+// center row. Two models:
 //
-// Cartesian over body impls; out's choice column tags each:
-//
-//   $LabeledGrids() — paired by shared non-zero label across in/out grids
-//   $Divide()       — divide V by 2 with gap 1; within each subgrid, swap rows
+//   $LabeledGrids — the permutation as data: in/out label grids paired by
+//                   shared non-zero label
+//   $Divide       — the permutation composed: divide V by 2 around the
+//                   center gap row; flip each pair
 
 #include "../lib.dl"
 

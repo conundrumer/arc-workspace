@@ -1,15 +1,13 @@
 // ca8de6ea
-// Layout: 5×5 input X-pattern collapsed to dense 3×3. The X has three rings
-// about the center: outer corners, inner X cells, center.
+// 5×5 X-pattern collapsed to dense 3×3. The X has three rings about the
+// center: outer corners, inner X cells, center. Two models:
 //
-// Cartesian over body impls; out's choice column tags each:
-//
-//   $LabeledGrids() — paired by shared non-zero label across in/out grids
-//   $Cycle()        — collapse onto the output's 8-cell ring, modeled as a CW
-//                     cycle (a local CycleWalk component). Each X-arm cell maps to
-//                     the ring cell at its own diagonal, advanced by a per-ring
-//                     cyclic shift (corner ring 0, inner ring +1 — the 45° twist
-//                     as one successor step).
+//   $LabeledGrids — the collapse as data: in/out label grids paired by
+//                   shared non-zero label
+//   $Cycle        — the collapse composed: each X-arm cell maps to the
+//                   ring cell at its own diagonal on the output's 8-cell
+//                   CW cycle, advanced by a per-ring shift (corner ring 0,
+//                   inner ring +1 — the 45° twist as one successor step)
 
 #include "../lib.dl"
 

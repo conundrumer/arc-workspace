@@ -3,13 +3,12 @@
 // the original marker position clears to c.bg. Slices run along
 // axis_of(c.fall_to).
 //
-// Two impls; out's choice column tags each:
+// Two models:
 //
-//   $PerCell()  — derive output via per-cell rules (clear marker;
-//                 fill fall-edge if slice has marker; else passthrough)
-//   $SliceMap() — slice substitution by lookup: a slice whose content
-//                 matches c.slice_in is replaced wholesale by c.slice_out;
-//                 unmatched slices passthrough
+//   $PerCell  — the fall composed: clear the marker; fill the fall edge
+//               of a marker slice; else passthrough
+//   $SliceMap — the fall as data: a slice matching c.slice_in is replaced
+//               wholesale by c.slice_out; unmatched slices pass through
 
 #include "../lib.dl"
 

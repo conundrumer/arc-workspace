@@ -1,10 +1,9 @@
 // c7d4e6ad
 // Cells of color in c.targets are substituted with a per-slice replacement
-// color. Slices run along c.axis. Two impls for choosing the
-// replacement; out's choice column tags each:
+// color. Slices run along c.axis. Two models of the replacement source:
 //
-//   $Anchor() — source cell at edge c.anchor (positional)
-//   $Unique() — slice's unique non-bg non-target color (content-defined)
+//   $Anchor — the cell at edge c.anchor (positional)
+//   $Unique — the slice's unique non-bg non-target color (content-defined)
 
 #include "../lib.dl"
 

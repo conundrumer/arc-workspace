@@ -2,11 +2,11 @@
 // One non-bg color (the marker) repaints every other non-bg color: target
 // cells take the marker color, marker cells become bg.
 //
-// Three impls for identifying the marker; out's choice column tags each:
+// Three models of marker identification:
 //
-//   $Anchor   — color of the cell at corner c.marker_corner.
-//   $ByCount  — non-bg color appearing in exactly c.marker_count cells.
-//   $Minority — rarest non-bg color.
+//   $Anchor   — the color at corner c.marker_corner (positional)
+//   $ByCount  — the non-bg color appearing in exactly c.marker_count cells
+//   $Minority — the rarest non-bg color
 
 #include "../lib.dl"
 
@@ -28,7 +28,7 @@
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
-// Cells carrying the marker color, per impl.
+// Cells carrying the marker color, per case.
 .decl marker(p: Position, col: Color, c: Choice)
 
 // --- $Anchor ---

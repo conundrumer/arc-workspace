@@ -1,15 +1,15 @@
 // 68b67ca3
-// Layout: 6×6 input collapsed to 3×3 by per-axis division; the anchor cell
-// of each inner subgrid is kept, others drop.
+// 6×6 input collapsed to 3×3 by per-axis division; the anchor-corner cell
+// of each subgrid is kept, others drop. Two models:
 //
-// Cartesian over body impls; out's choice column tags each:
-//
-//   $LabeledGrids() — paired by shared non-zero label across in/out grids
-//   $Stride()       — divide each axis, corner_anchor inner subgrid against ORIGIN
+//   $LabeledGrids — the collapse as data: in/out label grids paired by
+//                   shared non-zero label
+//   $Divide       — the collapse composed: 2D divide; keep the intile cell
+//                   at corner c.anchor
 
 #include "../lib.dl"
 
-.type Choice = LabeledGrids {} | Stride {}
+.type Choice = LabeledGrids {} | Divide {}
 
 .comp Consts {
     // --- LabeledGrids data ----------------------------------------------
@@ -28,7 +28,7 @@
         4, 5, 6,
         7, 8, 9)
 
-    // --- Stride params --------------------------------------------------
+    // --- Divide params --------------------------------------------------
     .decl anchor(d: DiagDir)        anchor(TOP_LEFT).
     .decl divisor(n: Dim)           divisor([3, 3]).
 }
@@ -40,14 +40,14 @@
 
 .decl impl_choice(c: Choice)
 impl_choice($LabeledGrids()).
-impl_choice($Stride()).
+impl_choice($Divide()).
 
 .decl perm(p_in: Position, p_out: Position, c: Choice)
 perm(P_grid_in, P_grid_out, $LabeledGrids()) :-
     c.in_label(P_grid_in, Lbl), c.out_label(P_grid_out, Lbl),       // shared label
     Lbl != 0.                                                       // non-pairing sentinel
 
-perm(P_grid_in, P_grid_out, $Stride()) :-
+perm(P_grid_in, P_grid_out, $Divide()) :-
     in(P_grid_in, _),                                               // input cell
     c.anchor(D), c.divisor(N),                                      // params
     divide_2d(P_grid_in, N, [0, 0], P_grid_out, P_intile),          // 2D divide

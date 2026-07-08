@@ -1,10 +1,9 @@
 // a8610ef7
-// Recolor each non-bg cell by its image under c.mirror. Two impls; out's
-// choice column tags each:
+// Recolor each non-bg cell by its image under c.mirror. Two models:
 //
-//   $Direct() — case-split: bg passes through; non-bg → c.matched or
-//               c.unmatched per mirror color.
-//   $Lookup() — table on (self_color, mirror_color) → out_color.
+//   $Direct — binary classification: bg passes through; non-bg → c.matched
+//             or c.unmatched by whether the mirror image is non-bg
+//   $Lookup — table on (self_color, mirror_color) → out_color
 
 #include "../lib.dl"
 
