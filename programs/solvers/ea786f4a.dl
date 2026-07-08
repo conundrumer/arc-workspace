@@ -7,22 +7,6 @@
 
 #include "../lib.dl"
 
-// The DiagDir peer of Ray: keyed marks casting rays toward each corner in
-// `diag`. Inclusive reach, extent only, like Ray.
-// Candidate lib component — see docs/wf-solver/proposals.md.
-.comp DiagRay<Key> {
-    .decl diag(d: DiagDir)             // cast corners in use
-    .decl cell(p: Position)            // domain tested
-    .decl mark(key: Key, p: Position)
-
-    .decl ray(key: Key, p: Position, d: DiagDir)
-    ray(K, P, Diag) :-
-        cell(P), mark(K, Q), diag(Diag),
-        dir_of(Diag, VERTICAL,   Dv), dist(P, Dv, Pv), dist(Q, Dv, Qv),
-        dir_of(Diag, HORIZONTAL, Dh), dist(P, Dh, Ph), dist(Q, Dh, Qh),
-        Qv - Pv = Qh - Ph, Qv >= Pv.
-}
-
 .type Choice = Dot {} | Grid {}
 
 .comp Consts {

@@ -375,6 +375,42 @@ concat_2d(P_outer, P_inner, [Gv, Gh], P_grid) :-
         compose(P_d, P_o, P).
 }
 
+// 1D frame from an axis and an extent — the n axis-only positions of a
+// 1-wide frame, one frame per key. The undirected peer of DirFrame: the
+// unindexed cell set, no end privileged (both dirs derive the same set),
+// no index map. A 2D frame of given dims composes two, per the lib's
+// 1D→2D convention. `axis` stays unkeyed — the axis is the instance's
+// parameter. Single-set sites key on Unit.
+.comp AxisFrame<Key> {
+    .decl axis(a: Axis)
+    .decl extent(key: Key, n: number)
+
+    .decl cell(key: Key, p: Position)
+    cell(Ky, P) :-
+        axis(A), axis_of(D, A), opposite(D, O),
+        extent(Ky, N), K = range(0, N),
+        edge_delta(D, K, P_d), edge_delta(O, N-1-K, P_o),
+        compose(P_d, P_o, P).
+}
+
+// Square 2D frame: extent n on both axes — two AxisFrames composed. The
+// comp form keeps the axis pair out of solver bodies. Single-set sites
+// key on Unit.
+.comp SquareFrame<Key> {
+    .decl extent(key: Key, n: number)
+
+    .init v = AxisFrame<Key>
+    v.axis(VERTICAL).
+    v.extent(Ky, N) :- extent(Ky, N).
+
+    .init h = AxisFrame<Key>
+    h.axis(HORIZONTAL).
+    h.extent(Ky, N) :- extent(Ky, N).
+
+    .decl cell(key: Key, p: Position)
+    cell(Ky, P) :- v.cell(Ky, Pv), h.cell(Ky, Ph), compose(Pv, Ph, P).
+}
+
 // A corner diagonal — cells equidistant from the corner's two edges; ring is
 // that shared distance. The full corner-to-corner diagonal, center included.
 // DiagPlacement.diag_cell is this ∩ quadrant — the corner→center ray.
@@ -434,6 +470,23 @@ concat_2d(P_outer, P_inner, [Gv, Gh], P_grid) :-
         cell(P), mark(K, Q), dir(D),
         axis_of(D, A), split(P, A, _, Ac), split(Q, A, _, Ac),
         dist(P, D, Kp), dist(Q, D, Kq), Kq >= Kp.
+}
+
+// The DiagDir peer of Ray: keyed marks casting rays toward each corner in
+// `diag`. Stepping toward a corner drops the distance to both of its edges
+// in lockstep, so ray membership is an equal, nonnegative drop on both.
+// Same contract as Ray: inclusive reach, extent only.
+.comp DiagRay<Key> {
+    .decl diag(d: DiagDir)             // cast corners in use
+    .decl cell(p: Position)            // domain tested
+    .decl mark(key: Key, p: Position)
+
+    .decl ray(key: Key, p: Position, d: DiagDir)
+    ray(K, P, Diag) :-
+        cell(P), mark(K, Q), diag(Diag),
+        dir_of(Diag, VERTICAL,   Dv), dist(P, Dv, Pv), dist(Q, Dv, Qv),
+        dir_of(Diag, HORIZONTAL, Dh), dist(P, Dh, Ph), dist(Q, Dh, Qh),
+        Qv - Pv = Qh - Ph, Qv >= Pv.
 }
 
 // Sparse numeric set → dense ordinal position. Solver populates `idx_set`;
