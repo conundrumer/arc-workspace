@@ -15,12 +15,11 @@
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
-// main(col) :- in(_, col), col != c.marker.
 .decl main(col: Color)
-main(Col) :- in(_, Col), c.marker(Mk), Col != Mk.
+main(Col) :- in(_, Col), !c.marker(Col).
 
 .decl out(p: Position, col: Color)
-out(P, Main) :- in(P, Col), c.marker(Mk), Col = Mk,  main(Main).
-out(P, Bg)   :- in(P, Col), c.marker(Mk), Col != Mk, c.bg(Bg).
+out(P, Main) :- in(P, Col), c.marker(Col), main(Main).
+out(P, Bg)   :- in(P, Col), !c.marker(Col), c.bg(Bg).
 
 .output out(IO=stdout)
