@@ -1,0 +1,138 @@
+// 8618d23e
+// The input's two halves along the stack axis pull apart diagonally:
+// each half reseats in a grown frame, and the vacated band fills with
+// c.filler. Choice cases, all data-equivalent here:
+//   $Derive(g, s) — displacement derived from a corner seat and growth:
+//     g $Iso()     — one width: separator and lateral shift are the same
+//                    parameter (c.sep)
+//     g $Aniso()   — per-axis widths (c.sep_dim)
+//     s $Derived() — each half seats at the c.diag corner on its own
+//                    side of the stack
+//     s $Table()   — explicit side → corner map (c.seat_of)
+//   $Disp() — data-leaning: 2×1 tile arrangement (c.arr), per-tile
+//             displacement vector (c.disp)
+
+#include "../lib.dl"
+
+.type Growth = Iso {} | Aniso {}
+.type Seats  = Derived {} | Table {}
+.type Choice = Derive { g: Growth, s: Seats } | Disp {}
+
+.comp Consts {
+    .decl axis(a: Axis)      axis(VERTICAL).      // stack axis
+    .decl filler(c: Color)   filler(9).
+
+    // --- Derive / Iso ---
+    .decl sep(g: number)     sep(1).
+
+    // --- Derive / Aniso ---
+    .decl sep_dim(n: Dim)   sep_dim([1, 1]).
+
+    // --- Derive / Derived ---
+    .decl diag(da: DiagAxis) diag(DIAGONAL).      // seating diagonal
+
+    // --- Derive / Table ---
+    .decl seat_of(d: Dir, diag: DiagDir)
+    seat_of(TOP, TOP_LEFT). seat_of(BOTTOM, BOTTOM_RIGHT).
+
+    // --- Disp ---
+    .decl arr(n: Dim)        arr([2, 1]).         // tile arrangement
+    .decl disp(p_tile: Position, delta: Position)
+    disp([0, 1, 0, 0], [0, 1, 0, 1]).
+    disp([1, 0, 0, 0], [1, 0, 1, 0]).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.init dp = DiagPlacement
+dp.cell(P) :- in(P, _).
+
+// The half a cell belongs to, named by its side of the stack axis.
+.decl side(p: Position, d: Dir)
+side(P, D) :- c.axis(A), axis_of(D, A), dp.nearer(P, D).
+
+.decl seat(p: Position, diag: DiagDir, s: Seats)
+
+// --- Derive / Derived ---
+seat(P, Diag, $Derived()) :-
+    side(P, D), axis_of(D, A),                   // cell's side of the stack
+    c.diag(DA), diag_axis_of(Diag, DA),          // corner on the seating diag
+    dir_of(Diag, A, D).                          // matching that side
+
+// --- Derive / Table ---
+seat(P, Diag, $Table()) :- side(P, D), c.seat_of(D, Diag).
+
+// Growth extents per axis.
+.decl growth(n: Dim, gr: Growth)
+
+// --- Derive / Iso ---
+growth([G, G], $Iso()) :- c.sep(G).
+
+// --- Derive / Aniso ---
+growth(N, $Aniso()) :- c.sep_dim(N).
+
+// Corner edge delta: a Position carrying the Dim's extents at the two
+// edges of corner diag — edge_delta's DiagDir peer. Lib-gap candidate.
+.comp DiagEdgeDelta {
+    .decl arg(diag: DiagDir, k: Dim)
+
+    .decl delta(diag: DiagDir, k: Dim, p: Position)
+    delta(Diag, [Kv, Kh], P) :-
+        arg(Diag, [Kv, Kh]),
+        dir_of(Diag, VERTICAL, Dv),   edge_delta(Dv, Kv, Pv),
+        dir_of(Diag, HORIZONTAL, Dh), edge_delta(Dh, Kh, Ph),
+        compose(Pv, Ph, P).
+}
+
+.init ded = DiagEdgeDelta
+ded.arg(Diag, N) :- diag_dir_elem(Diag), growth(N, _).
+
+.decl seated(p_out: Position, col: Color, ch: Choice)
+
+// --- Derive ---
+// Displaced by the growth extents at both edges of the opposite corner —
+// the frame grows away from the seat.
+seated(P_out, Col, $Derive(Gr, S)) :-
+    in(P, Col), seat(P, Diag, S),                            // half cell and its corner
+    diag_axis_of(Diag, DA), diag_axis_of(Diag2, DA), Diag2 != Diag,  // opposite corner
+    growth(N, Gr), ded.delta(Diag2, N, E),                   // grow delta toward it
+    compose(P, E, P_out).                                    // displace
+
+// --- Disp ---
+seated(P_out, Col, $Disp()) :-
+    in(P, Col),                                  // tile cell
+    c.arr(N), divide_2d(P, N, [0, 0], P_tile, _),  // its tile in the arrangement
+    c.disp(P_tile, Delta), compose(P, Delta, P_out).  // displace by its vector
+
+// 2D frame from per-axis extents — two AxisFrames composed, one frame
+// per key.
+.comp Frame2D<Key> {
+    .decl extent(key: Key, a: Axis, n: number)
+
+    .init v = AxisFrame<Key>
+    v.axis(VERTICAL).
+    v.extent(Ky, N) :- extent(Ky, VERTICAL, N).
+
+    .init h = AxisFrame<Key>
+    h.axis(HORIZONTAL).
+    h.extent(Ky, N) :- extent(Ky, HORIZONTAL, N).
+
+    .decl cell(key: Key, p: Position)
+    cell(Ky, P) :- v.cell(Ky, Pv), h.cell(Ky, Ph), compose(Pv, Ph, P).
+}
+
+// Output frame extents, read off the seated images.
+.init frame = Frame2D<Choice>
+frame.extent(Ch, A, N) :- seated(P, _, Ch), axis_elem(A), axis_dim(P, A, N).
+
+.decl covered(p: Position, ch: Choice)
+covered(P, Ch) :- seated(P, _, Ch).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- seated(P, Col, Ch).
+out(P, Col, Ch) :- frame.cell(Ch, P), !covered(P, Ch), c.filler(Col).
+
+.output out(IO=stdout)

@@ -1,0 +1,63 @@
+// 46442a0e
+// 2×2 tile arrangement of input copies — the rotation peer of the
+// 3af2c5a8 family: the anchor-corner tile is the input; the other tiles
+// are its quarter-turn images. Flip-based cases are defeated (train 2 /
+// test: the off-anchor tiles are rotations of an asymmetric input).
+//
+// Cases (data-equivalent on this task):
+//   $Lookup() — per-tile D4 table
+//   $Rot()    — rotational closure: each C4 element applied jointly to
+//               the anchor tile's position and content
+
+#include "../lib.dl"
+
+.type Choice = Lookup {} | Rot {}
+
+.comp Consts {
+    .init helpers = ConstsHelpers
+
+    // --- Rot ---
+    .decl arr_pos(p: Position)
+    arr_pos(P) :- helpers.frame_pos([2, 2], P).
+
+    .decl anchor(d: DiagDir)
+    anchor(TOP_LEFT).
+
+    // --- Lookup ---
+    .decl tile_d4(p: Position, d: D4)
+    GRID_2x2(tile_d4,
+        IDENTITY, ROT_CW,
+        ROT_CCW,  ROT_180)
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl out(p: Position, col: Color, c: Choice)
+
+// --- Lookup ---
+out(P_grid, Col, $Lookup()) :-
+    in(P_in, Col),                                       // input cell
+    c.tile_d4(P_tile, D), apply(D, P_in, P_intile),      // d4 image at tile
+    concat_2d(P_tile, P_intile, [0, 0], P_grid).         // recompose
+
+// --- Rot ---
+// C4 — the rotation subgroup of D4. Lib-gap peer of d4_elem.
+.comp RotElems {
+    .decl elem(d: D4)
+    elem(IDENTITY). elem(ROT_CW). elem(ROT_180). elem(ROT_CCW).
+}
+
+.init c4 = RotElems
+
+.decl anchor_tile(p: Position)
+anchor_tile(T) :- c.arr_pos(T), c.anchor(Diag), corner_anchor(Diag, T, ORIGIN).
+
+out(P_grid, Col, $Rot()) :-
+    anchor_tile(T), in(P, Col),                          // input seats the anchor tile
+    c4.elem(R), apply(R, T, T2), apply(R, P, P2),        // joint quarter-turn image
+    concat_2d(T2, P2, [0, 0], P_grid).                   // recompose
+
+.output out(IO=stdout)

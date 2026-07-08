@@ -1,0 +1,44 @@
+// e1baa8a4
+// Unequal rectilinear color blocks in a product arrangement (row bands ×
+// col bands). Output is one cell per block: consecutive identical grid
+// lines collapse, per axis. No task data — the family is fully structural.
+
+#include "../lib.dl"
+
+.comp Consts {}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// Boundary toward d at distance k: some cell on the line at k differs
+// from its neighbor one step toward d.
+.decl boundary(d: Dir, k: number)
+boundary(D, K) :-
+    in(P, C1), dir_elem(D), dist(P, D, K),     // cell on line k from d
+    step_delta(D, S), compose(P, S, P2),       // neighbor toward d
+    in(P2, C2), C1 != C2.                      // colors differ
+
+// Band index of a cell from edge d: boundaries at or nearer than the cell.
+.decl band_idx(p: Position, d: Dir, i: number)
+band_idx(P, D, I) :-
+    in(P, _), dir_elem(D), dist(P, D, K),
+    I = count : { boundary(D, K2), K2 <= K }.
+
+// Axis part of the output position: band indices from both edges of a.
+.decl axis_band(a: Axis, p: Position, p_axis: Position)
+axis_band(A, P, P_axis) :-
+    axis_of(D, A), opposite(D, O),             // the axis's edge pair
+    band_idx(P, D, I1), band_idx(P, O, I2),    // band index from each
+    edge_delta(D, I1, P1), edge_delta(O, I2, P2),
+    compose(P1, P2, P_axis).
+
+.decl out(p: Position, col: Color)
+out(P_out, Col) :-
+    in(P, Col),                                          // block cell
+    axis_band(A1, P, Pa1), axis_band(A2, P, Pa2),        // both axis parts
+    A1 != A2,
+    compose(Pa1, Pa2, P_out).                            // glue to 2D
+
+.output out(IO=stdout)

@@ -1,0 +1,39 @@
+// ac0a08a4
+// Layout: N× scale. Each input cell expands to an N×N block of the same
+// color in the output frame. N is counted from the input's non-bg cells:
+// $Cells counts the cells; $Colors counts the distinct colors.
+
+#include "../lib.dl"
+
+.type Choice = Cells {} | Colors {}
+
+.comp Consts {
+    .decl bg(c: Color)  bg(0).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl on(p: Position, col: Color)
+on(P, Col) :- in(P, Col), !c.bg(Col).
+
+.init block = SquareFrame<Choice>
+
+// --- Cells ---
+block.extent($Cells(), N) :- N = count : { on(_, _) }.
+
+// --- Colors ---
+.decl palette(col: Color)
+palette(Col) :- on(_, Col).
+
+block.extent($Colors(), N) :- N = count : { palette(_) }.
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_grid_out, Col, Ch) :-
+    in(P_tile, Col),                                  // input cell as tile pos
+    block.cell(Ch, P_intile),                         // intile pos (N×N frame)
+    concat_2d(P_tile, P_intile, [0, 0], P_grid_out).  // 2D recompose
+
+.output out(IO=stdout)
