@@ -302,7 +302,7 @@ advance is lockstep with another step (one slot per spatial cell) consumes
 `succ` as explicit edge data — an irregular spatial cycle whose cyclic order
 is the data itself, so no builder applies; walked by per-ring shifts.
 6d1d5c90: row indices closed into a cycle by `IndexCycle`, walked by the
-marker's shift.
+marker's shift. 25ff71a9 $Cycle: the row cycle, walked by c.shift_k.
 
 ```
 .init ring = CycleWalk<Position>
@@ -358,7 +358,8 @@ count advance feeds it to `CycleWalk`.
 
 **Task-local homes (protocol step 1).** 97999447: the ray's mask-slot cycle,
 advanced one slot per spatial step (lockstep, no walk). 6d1d5c90: the row
-cycle, walked by count via `CycleWalk`.
+cycle, walked by count via `CycleWalk`. 25ff71a9 $Cycle: the row cycle,
+walked by count via `CycleWalk`.
 
 ## `Reach` — seeded connectivity
 
