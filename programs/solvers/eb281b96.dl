@@ -1,11 +1,25 @@
 // eb281b96
-// Layout: 4×1 vertical fold. Alternating IDENTITY / FLIP_TB tiles
-// overlap by one row (gap=-1) so each boundary row is shared. Output
-// rows trace a triangle wave between the input's first and last rows.
+// 4×1 vertical fold: alternating IDENTITY / FLIP_TB tiles overlap by one
+// row (gap −1), so each boundary row is shared; output rows trace a
+// triangle wave between the input's first and last rows.
+//
+// Cases (data-equivalent on this task):
+//   $Lookup() — per-tile D4 table
+//   $Unfold() — reflection tiling: each tile reflects its neighbor across
+//               the shared boundary row, seeded at the anchor tile
 
 #include "../lib.dl"
 
+.type Choice = Lookup {} | Unfold {}
+
 .comp Consts {
+    .init helpers = ConstsHelpers
+
+    // --- shared ---
+    .decl tile_axis(a: Axis)        tile_axis(VERTICAL).
+    .decl tile_gap(g: number)       tile_gap(-1).
+
+    // --- Lookup ---
     .decl tile(p: Position, d: D4)
     GRID_4x1(tile,
         IDENTITY,
@@ -13,8 +27,12 @@
         IDENTITY,
         FLIP_TB)
 
-    .decl tile_axis(a: Axis)        tile_axis(VERTICAL).
-    .decl tile_gap(g: number)       tile_gap(-1).
+    // --- Unfold ---
+    .decl arr_pos(p: Position)
+    arr_pos(P) :- helpers.frame_pos([4, 1], P).
+
+    .decl anchor(d: Dir)
+    anchor(TOP).
 }
 
 .init c = Consts
@@ -22,12 +40,28 @@
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
-.decl out(p: Position, col: Color)
-out(P_grid_out, Col) :-
+.decl out(p: Position, col: Color, c: Choice)
+
+// --- Lookup ---
+out(P_grid, Col, $Lookup()) :-
     in(P_in, Col),                                      // input cell
-    c.tile(P_tile, D),                                  // d4 at tile position
-    apply(D, P_in, P_intile),                           // d4 image of input pos
+    c.tile(P_tile, D), apply(D, P_in, P_intile),        // d4 image at tile
     c.tile_axis(A), c.tile_gap(G),                      // tile params
-    concat_slab(P_tile, P_intile, A, G, P_grid_out).    // recompose with passthrough
+    concat_slab(P_tile, P_intile, A, G, P_grid).        // recompose with passthrough
+
+// --- Unfold ---
+// Tile contents: the input seeds the anchor-end tile; each neighbor
+// reflects across the shared boundary.
+.decl unfold_val(p_tile: Position, p_intile: Position, col: Color)
+unfold_val(T, P, Col) :- in(P, Col), c.arr_pos(T), c.anchor(D), dist(T, D, 0).
+unfold_val(T2, P_img, Col) :-
+    unfold_val(T, P, Col),                                             // known tile
+    axis_of(D, A), step_delta(D, S), compose(T, S, T2), c.arr_pos(T2), // neighbor toward d
+    flip_of(A, F), apply(F, P, P_img).                                 // reflect across the shared edge
+
+out(P_grid, Col, $Unfold()) :-
+    unfold_val(T, P_intile, Col),
+    c.tile_axis(A), c.tile_gap(G),
+    concat_slab(T, P_intile, A, G, P_grid).
 
 .output out(IO=stdout)
