@@ -8,7 +8,7 @@ How a `.dl` solver file looks.
 
 - Single letter (with optional digit suffix): `P`, `T`, `B`, `L`, `R`, `K`, `D`, `A`, `N`, `G`, `H`, `W`, `T1`, `C2`, etc.
 - Multi-character: leading-capital snake_case. `Col`, `Idx`, `Sh`, `K_cyc`, `P_grid_in`.
-- Macros: SCREAMING (constants register). `TOP`, `IDENTITY`, `ORIGIN`.
+- Macros: SCREAMING (constants register). `DIR_T`, `D4_ID`, `ORIGIN`.
 - Types: PascalCase. `Position`, `Color`, `Choice`.
 - Relations: snake_case. `tile_pos`, `axis_of`.
 
@@ -98,7 +98,7 @@ Cases are grouped under `// --- <name> ---` markers in both Consts and body — 
 
 ## Body
 
-- No literals — orientation (`TOP`, `LEFT`, `VERTICAL`, etc.), colors, or non-zero task-shape numbers (lengths, offsets, gaps). Body reads them from Consts via `c.<rel>(...)` and parameterizes. Hardcoded values fix the body to one task in the family; pulling from Consts keeps it symmetric across the family.
+- No literals — orientation (`DIR_T`, `DIR_L`, `AXIS_V`, etc.), colors, or non-zero task-shape numbers (lengths, offsets, gaps). Body reads them from Consts via `c.<rel>(...)` and parameterizes. Hardcoded values fix the body to one task in the family; pulling from Consts keeps it symmetric across the family.
     - Literals are fine inside a generic `.comp` written task-local — lib-shaped code, not body; the linter skips `.comp` blocks wholesale.
 - No Position destructure. Use lib primitives instead. Position is opaque; destructure hardcodes edge indices and breaks orientation invariance.
 - Avoid arithmetic. If necessary, that's a sign the lib needs a new primitive. Create that instead of having arithmetic in the solver body.

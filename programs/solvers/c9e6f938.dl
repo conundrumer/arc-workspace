@@ -16,14 +16,14 @@
 
     // --- Lookup ---
     .decl tile_d4(p: Position, d: D4)
-    GRID_1x2(tile_d4, IDENTITY, FLIP_LR)
+    GRID_1x2(tile_d4, D4_ID, D4_LR)
 
     // --- Unfold ---
     .decl arr_pos(p: Position)
     arr_pos(P) :- helpers.frame_pos([1, 2], P).
 
     .decl anchor(d: Dir)
-    anchor(LEFT).
+    anchor(DIR_L).
 }
 
 .init c = Consts

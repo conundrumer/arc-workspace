@@ -10,16 +10,16 @@ import re
 
 ORIENTATION_LITERALS = {
     # Dirs
-    "TOP", "BOTTOM", "LEFT", "RIGHT",
+    "DIR_T", "DIR_B", "DIR_L", "DIR_R",
     # Axes
-    "VERTICAL", "HORIZONTAL",
+    "AXIS_V", "AXIS_H",
     # DiagDirs
-    "TOP_LEFT", "TOP_RIGHT", "BOTTOM_LEFT", "BOTTOM_RIGHT",
+    "DIAG_TL", "DIAG_TR", "DIAG_BL", "DIAG_BR",
     # DiagAxes
-    "DIAGONAL", "ANTIDIAGONAL",
+    "DAXIS_DG", "DAXIS_AD",
     # D4
-    "IDENTITY", "ROT_CW", "ROT_180", "ROT_CCW",
-    "FLIP_LR", "FLIP_TB", "FLIP_DIAG", "FLIP_ANTIDIAG",
+    "D4_ID", "D4_CW", "D4_HT", "D4_CC",
+    "D4_LR", "D4_TB", "D4_DG", "D4_AD",
 }
 
 ORIENTATION_LITERAL_RE = re.compile(
@@ -140,7 +140,7 @@ def lint_body(source: str) -> list[tuple[str, int, str, str]]:
     """Flag body code that violates 4-style.md.
 
     Categories:
-      - 'orientation literal' — TOP, LEFT, etc. (must come from Consts)
+      - 'orientation literal' — DIR_T, DIR_L, etc. (must come from Consts)
       - 'nonzero literal'     — bare integer != 0
       - 'arithmetic'          — +, -, *, /, %
       - 'comparison' (gated)  — <, <=, >, >=; enabled by LINT_COMPARISON

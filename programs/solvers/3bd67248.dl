@@ -20,13 +20,13 @@
     .decl diag_color(c: Color)  diag_color(2).
 
     // --- Anchored / Foot ---
-    .decl floor_dir(d: Dir)     floor_dir(BOTTOM).
+    .decl floor_dir(d: Dir)     floor_dir(DIR_B).
 
     // --- Anchored ---
-    .decl corner(d: DiagDir)    corner(BOTTOM_LEFT).
+    .decl corner(d: DiagDir)    corner(DIAG_BL).
 
     // --- WallEnd ---
-    .decl sense(s: Sense)       sense(CW).
+    .decl sense(s: Sense)       sense(SENSE_CW).
 }
 
 .init c = Consts

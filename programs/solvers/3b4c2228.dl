@@ -31,7 +31,7 @@
     .decl mark(c: Color)        mark(1).
     .decl bg(c: Color)          bg(0).
     .decl out_dim(d: Dim)       out_dim([3, 3]).
-    .decl out_diag(d: DiagDir)  out_diag(TOP_LEFT).
+    .decl out_diag(d: DiagDir)  out_diag(DIAG_TL).
 
     .decl out_pos(p: Position)
     out_pos(P) :- out_dim(D), helpers.frame_pos(D, P).

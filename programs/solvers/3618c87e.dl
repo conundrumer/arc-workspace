@@ -19,7 +19,7 @@
 .comp Consts {
     .decl bg(c: Color)      bg(0).
     .decl marker(c: Color)  marker(1).
-    .decl fall_to(d: Dir)   fall_to(BOTTOM).
+    .decl fall_to(d: Dir)   fall_to(DIR_B).
 
     // SliceMap: input slice → output slice (per-p_inner whole-slice replacement).
     .decl slice_in(p: Position, col: Color)

@@ -30,12 +30,12 @@
         4)
 
     // --- Divide params --------------------------------------------------
-    .decl divide_axis(a: Axis)      divide_axis(VERTICAL).
+    .decl divide_axis(a: Axis)      divide_axis(AXIS_V).
     .decl divisor(n: number)        divisor(2).
     .decl divide_gap(g: number)     divide_gap(1).
 
     // Flip swapping the two cells of each 2×1 V-subgrid.
-    .decl flip(d: D4)               flip(FLIP_TB).
+    .decl flip(d: D4)               flip(D4_TB).
 }
 
 .init c = Consts

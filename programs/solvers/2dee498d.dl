@@ -6,7 +6,7 @@
 
 .comp Consts {
     .decl tile_axis(a: Axis)
-    tile_axis(HORIZONTAL).
+    tile_axis(AXIS_H).
 
     .decl tile_count(n: number)
     tile_count(3).

@@ -6,7 +6,7 @@
 
 .comp Consts {
     .decl bg(c: Color)        bg(0).
-    .decl bar_axis(a: Axis)   bar_axis(HORIZONTAL).
+    .decl bar_axis(a: Axis)   bar_axis(AXIS_H).
 }
 
 .init c = Consts

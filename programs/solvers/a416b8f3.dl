@@ -11,7 +11,7 @@
     tile(P) :- helpers.frame_pos([1, 2], P).
 
     .decl tile_axis(a: Axis)
-    tile_axis(HORIZONTAL).
+    tile_axis(AXIS_H).
 }
 
 .init c = Consts

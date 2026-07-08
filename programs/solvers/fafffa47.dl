@@ -36,7 +36,7 @@
     divisor(2).
 
     .decl divide_axis(a: Axis)
-    divide_axis(VERTICAL).
+    divide_axis(AXIS_V).
 
     // --- Lookup body data -----------------------------------------------
     .decl combine_member(eid: number, p_outer: Position, c: Color)

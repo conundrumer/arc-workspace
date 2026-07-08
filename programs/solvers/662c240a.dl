@@ -13,11 +13,11 @@
 .type Choice = Shared {} | Asym {}
 
 .comp Consts {
-    .decl tile_axis(a: Axis)    tile_axis(VERTICAL).
+    .decl tile_axis(a: Axis)    tile_axis(AXIS_V).
     .decl tile_count(n: number) tile_count(3).
 
     // --- $Shared ---
-    .decl sym(d: D4) sym(FLIP_DIAG).
+    .decl sym(d: D4) sym(D4_DG).
 }
 
 .init c = Consts
@@ -31,7 +31,7 @@
     broken(K, D) :- cell(K, P, V), d4_elem(D), apply(D, P, P2), !cell(K, P2, V).
 
     .decl has_sym(key: Key)
-    has_sym(K) :- cell(K, _, _), d4_elem(D), D != IDENTITY, !broken(K, D).
+    has_sym(K) :- cell(K, _, _), d4_elem(D), D != D4_ID, !broken(K, D).
 }
 
 .decl in(p: Position, col: Color)

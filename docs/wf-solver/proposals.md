@@ -43,10 +43,10 @@ unkeyed — the gap is the instance's parameter, per `DirFrame`'s unkeyed `dir`.
     // Tile bbox offset in grid units, assembled from the four edges.
     .decl tile_offset(key: Key, p_outer: Position, p_off: Position)
     tile_offset(Ky, [OT, BO, OL, RO], [T_off, B_off, L_off, R_off]) :-
-        edge_off(Ky, TOP,    OT, T_off),
-        edge_off(Ky, BOTTOM, BO, B_off),
-        edge_off(Ky, LEFT,   OL, L_off),
-        edge_off(Ky, RIGHT,  RO, R_off).
+        edge_off(Ky, DIR_T, OT, T_off),
+        edge_off(Ky, DIR_B, BO, B_off),
+        edge_off(Ky, DIR_L, OL, L_off),
+        edge_off(Ky, DIR_R, RO, R_off).
 
     // Lookup + compose.
     .decl concat(key: Key, p_outer: Position, p_inner: Position, p_grid: Position) inline
@@ -212,7 +212,7 @@ pair them, so the pairing spells as an unordered two-atom join with
     .decl part(a: Axis, key: Key, p_axis: Position)
 
     .decl both(key: Key, p: Position)
-    both(K, P) :- part(VERTICAL, K, Pv), part(HORIZONTAL, K, Ph), compose(Pv, Ph, P).
+    both(K, P) :- part(AXIS_V, K, Pv), part(AXIS_H, K, Ph), compose(Pv, Ph, P).
 }
 ```
 
@@ -236,12 +236,12 @@ or stays as the isotropic convenience.
     .decl extent(key: Key, a: Axis, n: number)
 
     .init v = AxisFrame<Key>
-    v.axis(VERTICAL).
-    v.extent(Ky, N) :- extent(Ky, VERTICAL, N).
+    v.axis(AXIS_V).
+    v.extent(Ky, N) :- extent(Ky, AXIS_V, N).
 
     .init h = AxisFrame<Key>
-    h.axis(HORIZONTAL).
-    h.extent(Ky, N) :- extent(Ky, HORIZONTAL, N).
+    h.axis(AXIS_H).
+    h.extent(Ky, N) :- extent(Ky, AXIS_H, N).
 
     .decl cell(key: Key, p: Position)
     cell(Ky, P) :- v.cell(Ky, Pv), h.cell(Ky, Ph), compose(Pv, Ph, P).
@@ -383,7 +383,7 @@ composed. Single-clause inline, per the lib's dispatch convention.
 ```
 .decl diag_step_delta(diag: DiagDir, delta: Position) inline
 diag_step_delta(Diag, Delta) :-
-    dir_of(Diag, VERTICAL, Dv), dir_of(Diag, HORIZONTAL, Dh),
+    dir_of(Diag, AXIS_V, Dv), dir_of(Diag, AXIS_H, Dh),
     step_delta(Dv, Sv), step_delta(Dh, Sh),
     compose(Sv, Sh, Delta).
 ```
@@ -403,8 +403,8 @@ lib's dispatch convention.
 ```
 .decl diag_edge_delta(diag: DiagDir, k: Dim, p: Position) inline
 diag_edge_delta(Diag, [Kv, Kh], P) :-
-    dir_of(Diag, VERTICAL, Dv),   edge_delta(Dv, Kv, Pv),
-    dir_of(Diag, HORIZONTAL, Dh), edge_delta(Dh, Kh, Ph),
+    dir_of(Diag, AXIS_V, Dv), edge_delta(Dv, Kv, Pv),
+    dir_of(Diag, AXIS_H, Dh), edge_delta(Dh, Kh, Ph),
     compose(Pv, Ph, P).
 ```
 
@@ -420,7 +420,7 @@ Lib target: a fact set beside `d4_elem`.
 
 ```
 .decl c4_elem(d: D4)
-c4_elem(IDENTITY). c4_elem(ROT_CW). c4_elem(ROT_180). c4_elem(ROT_CCW).
+c4_elem(D4_ID). c4_elem(D4_CW). c4_elem(D4_HT). c4_elem(D4_CC).
 ```
 
 **Task-local home (protocol step 1).** 46442a0e (`RotElems` comp): $Rot's
@@ -443,7 +443,7 @@ rules; that solver is a promotion-time caller (`Unit` key).
     broken(K, D) :- cell(K, P, V), d4_elem(D), apply(D, P, P2), !cell(K, P2, V).
 
     .decl has_sym(key: Key)
-    has_sym(K) :- cell(K, _, _), d4_elem(D), D != IDENTITY, !broken(K, D).
+    has_sym(K) :- cell(K, _, _), d4_elem(D), D != D4_ID, !broken(K, D).
 }
 ```
 

@@ -1,5 +1,5 @@
 // eb281b96
-// 4×1 vertical fold: alternating IDENTITY / FLIP_TB tiles overlap by one
+// 4×1 vertical fold: alternating D4_ID / D4_TB tiles overlap by one
 // row (gap −1), so each boundary row is shared; output rows trace a
 // triangle wave between the input's first and last rows.
 //
@@ -16,23 +16,23 @@
     .init helpers = ConstsHelpers
 
     // --- shared ---
-    .decl tile_axis(a: Axis)        tile_axis(VERTICAL).
+    .decl tile_axis(a: Axis)        tile_axis(AXIS_V).
     .decl tile_gap(g: number)       tile_gap(-1).
 
     // --- Lookup ---
     .decl tile(p: Position, d: D4)
     GRID_4x1(tile,
-        IDENTITY,
-        FLIP_TB,
-        IDENTITY,
-        FLIP_TB)
+        D4_ID,
+        D4_TB,
+        D4_ID,
+        D4_TB)
 
     // --- Unfold ---
     .decl arr_pos(p: Position)
     arr_pos(P) :- helpers.frame_pos([4, 1], P).
 
     .decl anchor(d: Dir)
-    anchor(TOP).
+    anchor(DIR_T).
 }
 
 .init c = Consts

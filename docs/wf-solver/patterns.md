@@ -160,8 +160,8 @@ Before adding a new primitive for a periodic pattern, check whether an existing 
 `divide` along V and H separately, composed via `compose`, gives 2D decomposition.
 
 ```
-divide(P_grid, VERTICAL,   Nv, Gv, P_outer_v, P_inner_v),
-divide(P_grid, HORIZONTAL, Nh, Gh, P_outer_h, P_inner_h),
+divide(P_grid, AXIS_V, Nv, Gv, P_outer_v, P_inner_v),
+divide(P_grid, AXIS_H, Nh, Gh, P_outer_h, P_inner_h),
 compose(P_outer_v, P_outer_h, P_tile),
 compose(P_inner_v, P_inner_h, P_intile).
 ```

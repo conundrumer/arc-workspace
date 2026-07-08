@@ -8,7 +8,7 @@
 
 .comp Consts {
     .decl bg(col: Color)  bg(0).
-    .decl axis(a: Axis)   axis(VERTICAL).
+    .decl axis(a: Axis)   axis(AXIS_V).
 }
 
 .init c = Consts

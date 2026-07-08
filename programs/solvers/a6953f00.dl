@@ -11,8 +11,8 @@
 
     // Corners the crop may anchor at — the task pins neither.
     .decl crop_corner(d: DiagDir)
-    crop_corner(TOP_LEFT).
-    crop_corner(TOP_RIGHT).
+    crop_corner(DIAG_TL).
+    crop_corner(DIAG_TR).
 
     .decl frame(p: Position)
     frame(P) :- helpers.frame_pos([2, 2], P).

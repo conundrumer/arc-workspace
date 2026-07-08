@@ -6,8 +6,8 @@
 #include "../lib.dl"
 
 .comp Consts {
-    .decl shear_from(d: Dir)   shear_from(BOTTOM).   // edge the shift is measured from
-    .decl shear_into(d: Dir)   shear_into(LEFT).      // edge-distance the shift grows
+    .decl shear_from(d: Dir)   shear_from(DIR_B).   // edge the shift is measured from
+    .decl shear_into(d: Dir)   shear_into(DIR_L).      // edge-distance the shift grows
 }
 
 .init c = Consts

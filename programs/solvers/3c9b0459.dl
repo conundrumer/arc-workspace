@@ -5,7 +5,7 @@
 
 .comp Consts {
     .decl transform(d: D4)
-    transform(ROT_180).
+    transform(D4_HT).
 }
 
 .init c = Consts

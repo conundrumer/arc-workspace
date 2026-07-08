@@ -39,7 +39,7 @@
 
 .comp Consts {
     // --- shared ---
-    .decl shift_dir(d: Dir)   shift_dir(BOTTOM).
+    .decl shift_dir(d: Dir)   shift_dir(DIR_B).
     .decl shift_k(k: number)  shift_k(1).
 
     // --- Shift ---

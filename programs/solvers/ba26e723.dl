@@ -6,7 +6,7 @@
 #include "../lib.dl"
 
 .comp Consts {
-    .decl anchor(d: Dir)           anchor(LEFT).
+    .decl anchor(d: Dir)           anchor(DIR_L).
     .decl period(n: number)        period(3).
     .decl phase(k: number)         phase(0).
 

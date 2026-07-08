@@ -14,7 +14,7 @@
 .comp DiagStep {
     .decl delta(diag: DiagDir, p: Position) inline
     delta(Diag, Delta) :-
-        dir_of(Diag, VERTICAL, Dv), dir_of(Diag, HORIZONTAL, Dh),
+        dir_of(Diag, AXIS_V, Dv), dir_of(Diag, AXIS_H, Dh),
         step_delta(Dv, Sv), step_delta(Dh, Sh),
         compose(Sv, Sh, Delta).
 }

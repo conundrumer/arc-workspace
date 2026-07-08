@@ -12,7 +12,7 @@
 
 .comp Consts {
     .decl bg(c: Color)   bg(0).
-    .decl dir(d: Dir)    dir(BOTTOM).   // fill direction
+    .decl dir(d: Dir)    dir(DIR_B).   // fill direction
 }
 
 .init c = Consts

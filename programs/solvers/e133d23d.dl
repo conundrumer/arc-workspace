@@ -37,7 +37,7 @@
     divisor(2).
 
     .decl divide_axis(a: Axis)
-    divide_axis(HORIZONTAL).
+    divide_axis(AXIS_H).
 
     .decl divide_gap(g: number)
     divide_gap(1).

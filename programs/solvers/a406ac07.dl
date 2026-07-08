@@ -18,7 +18,7 @@
 
 .comp Consts {
     // --- $Passthrough, $Repaint ---
-    .decl header(d: Dir)  header(RIGHT). header(BOTTOM).
+    .decl header(d: Dir)  header(DIR_R). header(DIR_B).
 
     // --- $Repaint, $Coincide ---
     .decl bg(col: Color)  bg(0).

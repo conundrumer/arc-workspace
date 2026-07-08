@@ -17,7 +17,7 @@
     .decl bg(c: Color)  bg(0).
 
     // --- $Anchor ---
-    .decl marker_corner(d: DiagDir)  marker_corner(BOTTOM_LEFT).
+    .decl marker_corner(d: DiagDir)  marker_corner(DIAG_BL).
 
     // --- $ByCount ---
     .decl marker_count(n: number)  marker_count(1).

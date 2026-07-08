@@ -19,7 +19,7 @@
 .type Choice = Derive { g: Growth, s: Seats } | Disp {}
 
 .comp Consts {
-    .decl axis(a: Axis)      axis(VERTICAL).      // stack axis
+    .decl axis(a: Axis)      axis(AXIS_V).      // stack axis
     .decl filler(c: Color)   filler(9).
 
     // --- Derive / Iso ---
@@ -29,11 +29,11 @@
     .decl sep_dim(n: Dim)   sep_dim([1, 1]).
 
     // --- Derive / Derived ---
-    .decl diag(da: DiagAxis) diag(DIAGONAL).      // seating diagonal
+    .decl diag(da: DiagAxis) diag(DAXIS_DG).      // seating diagonal
 
     // --- Derive / Table ---
     .decl seat_of(d: Dir, diag: DiagDir)
-    seat_of(TOP, TOP_LEFT). seat_of(BOTTOM, BOTTOM_RIGHT).
+    seat_of(DIR_T, DIAG_TL). seat_of(DIR_B, DIAG_BR).
 
     // --- Disp ---
     .decl arr(n: Dim)        arr([2, 1]).         // tile arrangement
@@ -82,8 +82,8 @@ growth(N, $Aniso()) :- c.sep_dim(N).
     .decl delta(diag: DiagDir, k: Dim, p: Position)
     delta(Diag, [Kv, Kh], P) :-
         arg(Diag, [Kv, Kh]),
-        dir_of(Diag, VERTICAL, Dv),   edge_delta(Dv, Kv, Pv),
-        dir_of(Diag, HORIZONTAL, Dh), edge_delta(Dh, Kh, Ph),
+        dir_of(Diag, AXIS_V, Dv), edge_delta(Dv, Kv, Pv),
+        dir_of(Diag, AXIS_H, Dh), edge_delta(Dh, Kh, Ph),
         compose(Pv, Ph, P).
 }
 
@@ -113,12 +113,12 @@ seated(P_out, Col, $Disp()) :-
     .decl extent(key: Key, a: Axis, n: number)
 
     .init v = AxisFrame<Key>
-    v.axis(VERTICAL).
-    v.extent(Ky, N) :- extent(Ky, VERTICAL, N).
+    v.axis(AXIS_V).
+    v.extent(Ky, N) :- extent(Ky, AXIS_V, N).
 
     .init h = AxisFrame<Key>
-    h.axis(HORIZONTAL).
-    h.extent(Ky, N) :- extent(Ky, HORIZONTAL, N).
+    h.axis(AXIS_H).
+    h.extent(Ky, N) :- extent(Ky, AXIS_H, N).
 
     .decl cell(key: Key, p: Position)
     cell(Ky, P) :- v.cell(Ky, Pv), h.cell(Ky, Ph), compose(Pv, Ph, P).

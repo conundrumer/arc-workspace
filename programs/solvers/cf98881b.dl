@@ -37,14 +37,14 @@
     divisor(3).
 
     .decl divide_axis(a: Axis)
-    divide_axis(HORIZONTAL).
+    divide_axis(AXIS_H).
 
     .decl divide_gap(g: number)
     divide_gap(1).
 
     // --- Spatial body data ------------------------------------------------
     .decl stack_dir(d: Dir)
-    stack_dir(LEFT).
+    stack_dir(DIR_L).
 
     // --- Palette body data ------------------------------------------------
     // Ink priority ranks, highest first.

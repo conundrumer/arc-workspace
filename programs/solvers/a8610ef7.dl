@@ -11,7 +11,7 @@
 
 .comp Consts {
     // --- shared ---
-    .decl mirror(d: D4)        mirror(FLIP_TB).
+    .decl mirror(d: D4)        mirror(D4_TB).
 
     // --- Direct ---
     .decl bg(c: Color)         bg(0).

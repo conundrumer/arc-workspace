@@ -21,32 +21,32 @@
 
 using souffle::RamDomain;
 
-#define TOP    10
-#define BOTTOM 11
-#define LEFT   12
-#define RIGHT  13
+#define DIR_T 10
+#define DIR_B 11
+#define DIR_L 12
+#define DIR_R 13
 
-#define VERTICAL   20
-#define HORIZONTAL 21
+#define AXIS_V 20
+#define AXIS_H 21
 
-#define IDENTITY      50
-#define ROT_CW        51
-#define ROT_180       52
-#define ROT_CCW       53
-#define FLIP_LR       54
-#define FLIP_TB       55
-#define FLIP_DIAG     56
-#define FLIP_ANTIDIAG 57
+#define D4_ID 50
+#define D4_CW 51
+#define D4_HT 52
+#define D4_CC 53
+#define D4_LR 54
+#define D4_TB 55
+#define D4_DG 56
+#define D4_AD 57
 
 extern "C" {
 
 // dist: distance from p to edge d — the slot named by Dir d.
 RamDomain dist_proj(RamDomain d, RamDomain t, RamDomain b, RamDomain l, RamDomain r) {
     switch (d) {
-        case TOP:    return t;
-        case BOTTOM: return b;
-        case LEFT:   return l;
-        case RIGHT:  return r;
+        case DIR_T: return t;
+        case DIR_B: return b;
+        case DIR_L: return l;
+        case DIR_R: return r;
     }
     return 0;
 }
@@ -65,65 +65,65 @@ RamDomain keep_axis(RamDomain sel, RamDomain target, RamDomain v) {
 }
 
 // Axis projection: the near (lower-index) and far (higher-index) slots along
-// axis a. VERTICAL → (t, b); HORIZONTAL → (l, r).
+// axis a. AXIS_V → (t, b); AXIS_H → (l, r).
 RamDomain axis_near(RamDomain a, RamDomain t, RamDomain b, RamDomain l, RamDomain r) {
-    return a == VERTICAL ? t : l;
+    return a == AXIS_V ? t : l;
 }
 RamDomain axis_far(RamDomain a, RamDomain t, RamDomain b, RamDomain l, RamDomain r) {
-    return a == VERTICAL ? b : r;
+    return a == AXIS_V ? b : r;
 }
 
 // apply: D4 transform of a Position, one functor per output slot — the
 // eight D4 gather permutations of (t, b, l, r).
 RamDomain apply_t(RamDomain d, RamDomain t, RamDomain b, RamDomain l, RamDomain r) {
     switch (d) {
-        case IDENTITY:      return t;
-        case ROT_CW:        return l;
-        case ROT_180:       return b;
-        case ROT_CCW:       return r;
-        case FLIP_LR:       return t;
-        case FLIP_TB:       return b;
-        case FLIP_DIAG:     return l;
-        case FLIP_ANTIDIAG: return r;
+        case D4_ID: return t;
+        case D4_CW: return l;
+        case D4_HT: return b;
+        case D4_CC: return r;
+        case D4_LR: return t;
+        case D4_TB: return b;
+        case D4_DG: return l;
+        case D4_AD: return r;
     }
     return 0;
 }
 RamDomain apply_b(RamDomain d, RamDomain t, RamDomain b, RamDomain l, RamDomain r) {
     switch (d) {
-        case IDENTITY:      return b;
-        case ROT_CW:        return r;
-        case ROT_180:       return t;
-        case ROT_CCW:       return l;
-        case FLIP_LR:       return b;
-        case FLIP_TB:       return t;
-        case FLIP_DIAG:     return r;
-        case FLIP_ANTIDIAG: return l;
+        case D4_ID: return b;
+        case D4_CW: return r;
+        case D4_HT: return t;
+        case D4_CC: return l;
+        case D4_LR: return b;
+        case D4_TB: return t;
+        case D4_DG: return r;
+        case D4_AD: return l;
     }
     return 0;
 }
 RamDomain apply_l(RamDomain d, RamDomain t, RamDomain b, RamDomain l, RamDomain r) {
     switch (d) {
-        case IDENTITY:      return l;
-        case ROT_CW:        return b;
-        case ROT_180:       return r;
-        case ROT_CCW:       return t;
-        case FLIP_LR:       return r;
-        case FLIP_TB:       return l;
-        case FLIP_DIAG:     return t;
-        case FLIP_ANTIDIAG: return b;
+        case D4_ID: return l;
+        case D4_CW: return b;
+        case D4_HT: return r;
+        case D4_CC: return t;
+        case D4_LR: return r;
+        case D4_TB: return l;
+        case D4_DG: return t;
+        case D4_AD: return b;
     }
     return 0;
 }
 RamDomain apply_r(RamDomain d, RamDomain t, RamDomain b, RamDomain l, RamDomain r) {
     switch (d) {
-        case IDENTITY:      return r;
-        case ROT_CW:        return t;
-        case ROT_180:       return l;
-        case ROT_CCW:       return b;
-        case FLIP_LR:       return l;
-        case FLIP_TB:       return r;
-        case FLIP_DIAG:     return b;
-        case FLIP_ANTIDIAG: return t;
+        case D4_ID: return r;
+        case D4_CW: return t;
+        case D4_HT: return l;
+        case D4_CC: return b;
+        case D4_LR: return l;
+        case D4_TB: return r;
+        case D4_DG: return b;
+        case D4_AD: return t;
     }
     return 0;
 }

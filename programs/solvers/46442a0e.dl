@@ -21,13 +21,13 @@
     arr_pos(P) :- helpers.frame_pos([2, 2], P).
 
     .decl anchor(d: DiagDir)
-    anchor(TOP_LEFT).
+    anchor(DIAG_TL).
 
     // --- Lookup ---
     .decl tile_d4(p: Position, d: D4)
     GRID_2x2(tile_d4,
-        IDENTITY, ROT_CW,
-        ROT_CCW,  ROT_180)
+        D4_ID, D4_CW,
+        D4_CC, D4_HT)
 }
 
 .init c = Consts
@@ -47,7 +47,7 @@ out(P_grid, Col, $Lookup()) :-
 // C4 — the rotation subgroup of D4. Lib-gap peer of d4_elem.
 .comp RotElems {
     .decl elem(d: D4)
-    elem(IDENTITY). elem(ROT_CW). elem(ROT_180). elem(ROT_CCW).
+    elem(D4_ID). elem(D4_CW). elem(D4_HT). elem(D4_CC).
 }
 
 .init c4 = RotElems

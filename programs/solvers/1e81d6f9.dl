@@ -17,10 +17,10 @@
     .decl seed(p: Position)
 
     .decl step(delta: Position)
-    step([-1,  1,  0,  0]).   // toward TOP
-    step([ 1, -1,  0,  0]).   // toward BOTTOM
-    step([ 0,  0, -1,  1]).   // toward LEFT
-    step([ 0,  0,  1, -1]).   // toward RIGHT
+    step([-1,  1,  0,  0]).   // toward DIR_T
+    step([ 1, -1,  0,  0]).   // toward DIR_B
+    step([ 0,  0, -1,  1]).   // toward DIR_L
+    step([ 0,  0,  1, -1]).   // toward DIR_R
 
     .decl reach(p: Position)
     reach(P)  :- seed(P).
@@ -30,7 +30,7 @@
 .type Choice = Marker {} | Bbox {}
 
 .comp Consts {
-    .decl target_corner(d: DiagDir)       target_corner(TOP_LEFT).
+    .decl target_corner(d: DiagDir)       target_corner(DIAG_TL).
     .decl target_offset(off: Dim)         target_offset([1, 1]).
     .decl bg(c: Color)                    bg(0).
     .decl mask_color(c: Color)            mask_color(5).
@@ -40,8 +40,8 @@
     target_anchor(P) :-
         target_corner(Diag),
         target_offset([V, H]),
-        dir_of(Diag, VERTICAL, D_v), edge_delta(D_v, V, P_v),
-        dir_of(Diag, HORIZONTAL, D_h), edge_delta(D_h, H, P_h),
+        dir_of(Diag, AXIS_V, D_v), edge_delta(D_v, V, P_v),
+        dir_of(Diag, AXIS_H, D_h), edge_delta(D_h, H, P_h),
         compose(P_v, P_h, P).
 }
 

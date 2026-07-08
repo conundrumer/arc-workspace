@@ -9,16 +9,16 @@
 // index, or origin, and the match is Position equality. The header's location
 // washes into the discarded perpendicular component: only "which cells are
 // blank" depends on where the header sits, not the layout. The header is one
-// cell thick and the fill broadcasts, so reflection (FLIP_DIAG) and rotation
-// (ROT_CW) are indistinguishable here — the chirality is the only learned bit.
+// cell thick and the fill broadcasts, so reflection (D4_DG) and rotation
+// (D4_CW) are indistinguishable here — the chirality is the only learned bit.
 
 #include "../lib.dl"
 
 .comp Consts {
-    .decl header_dir(d: Dir)      header_dir(TOP).
+    .decl header_dir(d: Dir)      header_dir(DIR_T).
     .decl body_start(n: number)   body_start(2).
     .decl copies(n: number)       copies(2).
-    .decl transform(d: D4)        transform(FLIP_DIAG).
+    .decl transform(d: D4)        transform(D4_DG).
 
     // Shift the blank to a top-aligned frame: -body_start along header_dir.
     .decl body_shift(p: Position)

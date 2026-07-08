@@ -34,7 +34,7 @@
 
     // --- Div decompose data -----------------------------------------------
     .decl divisor(n: number)     divisor(2).
-    .decl divide_axis(a: Axis)   divide_axis(HORIZONTAL).
+    .decl divide_axis(a: Axis)   divide_axis(AXIS_H).
 
     // --- shared body data -------------------------------------------------
     .decl bg(c: Color)           bg(0).

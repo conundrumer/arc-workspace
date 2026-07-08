@@ -10,6 +10,7 @@
 // typed names with no arithmetic intent. Constants are #define'd in disjoint
 // ranges so a value identifies its namespace at a glance: Color 0–9, Dir
 // 10–13, Axis 20–21, DiagDir 30–33, DiagAxis 40–41, D4 50–57, Sense 60–61.
+// Names are <TYPE>_<VAL>, with VAL abbreviated to one length per type.
 // Solver bodies pull values from a per-task Consts component rather than
 // referencing constants directly.
 
@@ -29,36 +30,37 @@
 // "exactly one set" in the type instead of a dummy int.
 .type Unit = U {}
 
-#define TOP    10
-#define BOTTOM 11
-#define LEFT   12
-#define RIGHT  13
+#define DIR_T 10
+#define DIR_B 11
+#define DIR_L 12
+#define DIR_R 13
 
-#define VERTICAL   20
-#define HORIZONTAL 21
+#define AXIS_V 20
+#define AXIS_H 21
 
-#define TOP_LEFT     30
-#define TOP_RIGHT    31
-#define BOTTOM_LEFT  32
-#define BOTTOM_RIGHT 33
+#define DIAG_TL 30
+#define DIAG_TR 31
+#define DIAG_BL 32
+#define DIAG_BR 33
 
-#define DIAGONAL     40
-#define ANTIDIAGONAL 41
+#define DAXIS_DG 40
+#define DAXIS_AD 41
 
-// D4 elements as gather permutations of (t, b, l, r). Naming: what swaps,
-// not the axis of reflection.
-#define IDENTITY      50
-#define ROT_CW        51
-#define ROT_180       52
-#define ROT_CCW       53
-#define FLIP_LR       54
-#define FLIP_TB       55
-#define FLIP_DIAG     56
-#define FLIP_ANTIDIAG 57
+// D4 elements as gather permutations of (t, b, l, r). Rotations: quarter CW,
+// half turn, quarter CCW. Flips are named by what swaps, not the axis of
+// reflection.
+#define D4_ID 50
+#define D4_CW 51
+#define D4_HT 52
+#define D4_CC 53
+#define D4_LR 54
+#define D4_TB 55
+#define D4_DG 56
+#define D4_AD 57
 
 // Sense of a turn.
-#define CW  60
-#define CCW 61
+#define SENSE_CW 60
+#define SENSE_CC 61
 
 // Origin: position with 0 distance to every edge.
 #define ORIGIN [0, 0, 0, 0]
@@ -94,75 +96,75 @@
 .functor apply_r(d: D4, t: number, b: number, l: number, r: number): number
 
 .decl dir_elem(d: Dir)
-dir_elem(TOP).
-dir_elem(BOTTOM).
-dir_elem(LEFT).
-dir_elem(RIGHT).
+dir_elem(DIR_T).
+dir_elem(DIR_B).
+dir_elem(DIR_L).
+dir_elem(DIR_R).
 
 .decl axis_elem(a: Axis)
-axis_elem(VERTICAL).
-axis_elem(HORIZONTAL).
+axis_elem(AXIS_V).
+axis_elem(AXIS_H).
 
 .decl diag_dir_elem(d: DiagDir)
-diag_dir_elem(TOP_LEFT).
-diag_dir_elem(TOP_RIGHT).
-diag_dir_elem(BOTTOM_LEFT).
-diag_dir_elem(BOTTOM_RIGHT).
+diag_dir_elem(DIAG_TL).
+diag_dir_elem(DIAG_TR).
+diag_dir_elem(DIAG_BL).
+diag_dir_elem(DIAG_BR).
 
 .decl d4_elem(d: D4)
-d4_elem(IDENTITY).
-d4_elem(ROT_CW).
-d4_elem(ROT_180).
-d4_elem(ROT_CCW).
-d4_elem(FLIP_LR).
-d4_elem(FLIP_TB).
-d4_elem(FLIP_DIAG).
-d4_elem(FLIP_ANTIDIAG).
+d4_elem(D4_ID).
+d4_elem(D4_CW).
+d4_elem(D4_HT).
+d4_elem(D4_CC).
+d4_elem(D4_LR).
+d4_elem(D4_TB).
+d4_elem(D4_DG).
+d4_elem(D4_AD).
 
 // Axis of a Dir.
 .decl axis_of(d: Dir, a: Axis)
-axis_of(TOP,    VERTICAL).
-axis_of(BOTTOM, VERTICAL).
-axis_of(LEFT,   HORIZONTAL).
-axis_of(RIGHT,  HORIZONTAL).
+axis_of(DIR_T, AXIS_V).
+axis_of(DIR_B, AXIS_V).
+axis_of(DIR_L, AXIS_H).
+axis_of(DIR_R, AXIS_H).
 
 // Diagonal axis of a corner.
 .decl diag_axis_of(d: DiagDir, da: DiagAxis)
-diag_axis_of(TOP_LEFT,     DIAGONAL).
-diag_axis_of(BOTTOM_RIGHT, DIAGONAL).
-diag_axis_of(TOP_RIGHT,    ANTIDIAGONAL).
-diag_axis_of(BOTTOM_LEFT,  ANTIDIAGONAL).
+diag_axis_of(DIAG_TL, DAXIS_DG).
+diag_axis_of(DIAG_BR, DAXIS_DG).
+diag_axis_of(DIAG_TR, DAXIS_AD).
+diag_axis_of(DIAG_BL, DAXIS_AD).
 
 // Cardinal Dir of corner d on axis a.
 .decl dir_of(d: DiagDir, a: Axis, dir: Dir)
-dir_of(TOP_LEFT,     VERTICAL,   TOP).
-dir_of(TOP_LEFT,     HORIZONTAL, LEFT).
-dir_of(TOP_RIGHT,    VERTICAL,   TOP).
-dir_of(TOP_RIGHT,    HORIZONTAL, RIGHT).
-dir_of(BOTTOM_LEFT,  VERTICAL,   BOTTOM).
-dir_of(BOTTOM_LEFT,  HORIZONTAL, LEFT).
-dir_of(BOTTOM_RIGHT, VERTICAL,   BOTTOM).
-dir_of(BOTTOM_RIGHT, HORIZONTAL, RIGHT).
+dir_of(DIAG_TL, AXIS_V, DIR_T).
+dir_of(DIAG_TL, AXIS_H, DIR_L).
+dir_of(DIAG_TR, AXIS_V, DIR_T).
+dir_of(DIAG_TR, AXIS_H, DIR_R).
+dir_of(DIAG_BL, AXIS_V, DIR_B).
+dir_of(DIAG_BL, AXIS_H, DIR_L).
+dir_of(DIAG_BR, AXIS_V, DIR_B).
+dir_of(DIAG_BR, AXIS_H, DIR_R).
 
 // Opposite Dir on the same axis.
 .decl opposite(d: Dir, opp: Dir)
-opposite(TOP,    BOTTOM).
-opposite(BOTTOM, TOP).
-opposite(LEFT,   RIGHT).
-opposite(RIGHT,  LEFT).
+opposite(DIR_T, DIR_B).
+opposite(DIR_B, DIR_T).
+opposite(DIR_L, DIR_R).
+opposite(DIR_R, DIR_L).
 
 // The D4 reflection inverting axis a.
 .decl flip_of(a: Axis, d: D4)
-flip_of(VERTICAL,   FLIP_TB).
-flip_of(HORIZONTAL, FLIP_LR).
+flip_of(AXIS_V, D4_TB).
+flip_of(AXIS_H, D4_LR).
 
 // Dir reached by a quarter turn in sense s. opposite is the half turn.
 .decl turn(s: Sense, d: Dir, d_out: Dir)
-turn(CW, TOP,    RIGHT).
-turn(CW, RIGHT,  BOTTOM).
-turn(CW, BOTTOM, LEFT).
-turn(CW, LEFT,   TOP).
-turn(CCW, D2, D) :- turn(CW, D, D2).
+turn(SENSE_CW, DIR_T, DIR_R).
+turn(SENSE_CW, DIR_R, DIR_B).
+turn(SENSE_CW, DIR_B, DIR_L).
+turn(SENSE_CW, DIR_L, DIR_T).
+turn(SENSE_CC, D2, D) :- turn(SENSE_CW, D, D2).
 
 // Distance from p to edge d.
 .decl dist(p: Position, d: Dir, k: number) inline
@@ -174,7 +176,7 @@ compose([T1, B1, L1, R1], [T2, B2, L2, R2], [T1+T2, B1+B2, L1+L2, R1+R2]) :- tru
 
 // Edge delta: a Position carrying k at edge d, zero elsewhere.
 .decl edge_delta(d: Dir, k: number, p: Position) inline
-edge_delta(D, K, [@keep_dir(D, TOP, K), @keep_dir(D, BOTTOM, K), @keep_dir(D, LEFT, K), @keep_dir(D, RIGHT, K)]) :- true.
+edge_delta(D, K, [@keep_dir(D, DIR_T, K), @keep_dir(D, DIR_B, K), @keep_dir(D, DIR_L, K), @keep_dir(D, DIR_R, K)]) :- true.
 
 // K-cell displacement toward d: -k at edge d, +k at its opposite.
 .decl jump_delta(d: Dir, k: number, delta: Position) inline
@@ -189,8 +191,8 @@ step_delta(D, Step) :- jump_delta(D, 1, Step).
 // zeroed); across carries the perpendicular (axis zeroed).
 .decl split(p: Position, a: Axis, along: Position, across: Position) inline
 split(P, A,
-      [@keep_axis(A, VERTICAL, T),   @keep_axis(A, VERTICAL, B),   @keep_axis(A, HORIZONTAL, L), @keep_axis(A, HORIZONTAL, R)],
-      [@keep_axis(A, HORIZONTAL, T), @keep_axis(A, HORIZONTAL, B), @keep_axis(A, VERTICAL, L),   @keep_axis(A, VERTICAL, R)]) :-
+      [@keep_axis(A, AXIS_V, T), @keep_axis(A, AXIS_V, B), @keep_axis(A, AXIS_H, L), @keep_axis(A, AXIS_H, R)],
+      [@keep_axis(A, AXIS_H, T), @keep_axis(A, AXIS_H, B), @keep_axis(A, AXIS_V, L), @keep_axis(A, AXIS_V, R)]) :-
     P = [T, B, L, R].
 
 // Extent of p's frame along axis a — read off any position in the frame.
@@ -218,10 +220,10 @@ divide(P, A, N, G, P_outer, P_inner) :-
     K_cyc = Near % (Sh + G),
     K_cyc < Sh,
     O = Near / (Sh + G),
-    P_outer = [@keep_axis(A, VERTICAL, O),     @keep_axis(A, VERTICAL, N-1-O),
-               @keep_axis(A, HORIZONTAL, O),   @keep_axis(A, HORIZONTAL, N-1-O)],
-    P_inner = [@keep_axis(A, VERTICAL, K_cyc), @keep_axis(A, VERTICAL, Sh-1-K_cyc),
-               @keep_axis(A, HORIZONTAL, K_cyc), @keep_axis(A, HORIZONTAL, Sh-1-K_cyc)].
+    P_outer = [@keep_axis(A, AXIS_V, O),     @keep_axis(A, AXIS_V, N-1-O),
+               @keep_axis(A, AXIS_H, O),     @keep_axis(A, AXIS_H, N-1-O)],
+    P_inner = [@keep_axis(A, AXIS_V, K_cyc), @keep_axis(A, AXIS_V, Sh-1-K_cyc),
+               @keep_axis(A, AXIS_H, K_cyc), @keep_axis(A, AXIS_H, Sh-1-K_cyc)].
 
 // Like divide, but parameterized by tile size k instead of tile count n.
 // Tile count is recovered from p's axis-a extent: n = (extent + gap) /
@@ -238,10 +240,10 @@ divide_by_size(P, A, K, G, P_outer, P_inner) :-
     K_cyc = Near % (K + G),
     K_cyc < K,
     O = Near / (K + G),
-    P_outer = [@keep_axis(A, VERTICAL, O),     @keep_axis(A, VERTICAL, N-1-O),
-               @keep_axis(A, HORIZONTAL, O),   @keep_axis(A, HORIZONTAL, N-1-O)],
-    P_inner = [@keep_axis(A, VERTICAL, K_cyc), @keep_axis(A, VERTICAL, K-1-K_cyc),
-               @keep_axis(A, HORIZONTAL, K_cyc), @keep_axis(A, HORIZONTAL, K-1-K_cyc)].
+    P_outer = [@keep_axis(A, AXIS_V, O),     @keep_axis(A, AXIS_V, N-1-O),
+               @keep_axis(A, AXIS_H, O),     @keep_axis(A, AXIS_H, N-1-O)],
+    P_inner = [@keep_axis(A, AXIS_V, K_cyc), @keep_axis(A, AXIS_V, K-1-K_cyc),
+               @keep_axis(A, AXIS_H, K_cyc), @keep_axis(A, AXIS_H, K-1-K_cyc)].
 
 // Distance t along a period of w (with gap g between periods) decomposes
 // into period index n and within-period offset k. Per-cell scalar peer of
@@ -267,8 +269,8 @@ concat(P_outer, P_inner, A, G, P_grid) :-
     Span = INear + IFar + 1,
     GNear = ONear*(Span+G) + INear,
     GFar  = OFar*(Span+G) + IFar,
-    P_grid = [@keep_axis(A, VERTICAL, GNear), @keep_axis(A, VERTICAL, GFar),
-              @keep_axis(A, HORIZONTAL, GNear), @keep_axis(A, HORIZONTAL, GFar)].
+    P_grid = [@keep_axis(A, AXIS_V, GNear), @keep_axis(A, AXIS_V, GFar),
+              @keep_axis(A, AXIS_H, GNear), @keep_axis(A, AXIS_H, GFar)].
 
 // ============================================================
 // Composites — recurring solver-body shapes built from primitives
@@ -283,8 +285,8 @@ same_dist(D, P1, P2) :- dist(P1, D, K), dist(P2, D, K).
 // Two positions agree on the distances to the two edges of corner d.
 .decl corner_anchor(d: DiagDir, p1: Position, p2: Position) inline
 corner_anchor(Diag, P1, P2) :-
-    dir_of(Diag, VERTICAL,   V_dir),
-    dir_of(Diag, HORIZONTAL, H_dir),
+    dir_of(Diag, AXIS_V, V_dir),
+    dir_of(Diag, AXIS_H, H_dir),
     same_dist(V_dir, P1, P2),
     same_dist(H_dir, P1, P2).
 
@@ -312,8 +314,8 @@ divide_slab(P, A, N, G, P_outer, P_inner) :-
 .decl divide_2d(p: Position, n: Dim, gap: Dim,
                 p_outer: Position, p_inner: Position) inline
 divide_2d(P, [Nv, Nh], [Gv, Gh], P_outer, P_inner) :-
-    divide(P, VERTICAL,   Nv, Gv, P_ov, P_iv),
-    divide(P, HORIZONTAL, Nh, Gh, P_oh, P_ih),
+    divide(P, AXIS_V, Nv, Gv, P_ov, P_iv),
+    divide(P, AXIS_H, Nh, Gh, P_oh, P_ih),
     compose(P_ov, P_oh, P_outer),
     compose(P_iv, P_ih, P_inner).
 
@@ -321,8 +323,8 @@ divide_2d(P, [Nv, Nh], [Gv, Gh], P_outer, P_inner) :-
 .decl divide_by_size_2d(p: Position, k: Dim, gap: Dim,
                         p_outer: Position, p_inner: Position) inline
 divide_by_size_2d(P, [Kv, Kh], [Gv, Gh], P_outer, P_inner) :-
-    divide_by_size(P, VERTICAL,   Kv, Gv, P_ov, P_iv),
-    divide_by_size(P, HORIZONTAL, Kh, Gh, P_oh, P_ih),
+    divide_by_size(P, AXIS_V, Kv, Gv, P_ov, P_iv),
+    divide_by_size(P, AXIS_H, Kh, Gh, P_oh, P_ih),
     compose(P_ov, P_oh, P_outer),
     compose(P_iv, P_ih, P_inner).
 
@@ -342,10 +344,10 @@ concat_slab(P_outer, P_inner, A, G, P_grid) :-
 .decl concat_2d(p_outer: Position, p_inner: Position, gap: Dim,
                 p_grid: Position) inline
 concat_2d(P_outer, P_inner, [Gv, Gh], P_grid) :-
-    split(P_outer, VERTICAL, P_outer_v, P_outer_h),
-    split(P_inner, VERTICAL, P_inner_v, P_inner_h),
-    concat(P_outer_v, P_inner_v, VERTICAL,   Gv, P_grid_v),
-    concat(P_outer_h, P_inner_h, HORIZONTAL, Gh, P_grid_h),
+    split(P_outer, AXIS_V, P_outer_v, P_outer_h),
+    split(P_inner, AXIS_V, P_inner_v, P_inner_h),
+    concat(P_outer_v, P_inner_v, AXIS_V, Gv, P_grid_v),
+    concat(P_outer_h, P_inner_h, AXIS_H, Gh, P_grid_h),
     compose(P_grid_v, P_grid_h, P_grid).
 
 // ============================================================
@@ -400,11 +402,11 @@ concat_2d(P_outer, P_inner, [Gv, Gh], P_grid) :-
     .decl extent(key: Key, n: number)
 
     .init v = AxisFrame<Key>
-    v.axis(VERTICAL).
+    v.axis(AXIS_V).
     v.extent(Ky, N) :- extent(Ky, N).
 
     .init h = AxisFrame<Key>
-    h.axis(HORIZONTAL).
+    h.axis(AXIS_H).
     h.extent(Ky, N) :- extent(Ky, N).
 
     .decl cell(key: Key, p: Position)
@@ -421,8 +423,8 @@ concat_2d(P_outer, P_inner, [Gv, Gh], P_grid) :-
     .decl diagonal(p: Position, ring: number)
     diagonal(P, K) :-
         cell(P), corner(Diag),
-        dir_of(Diag, VERTICAL,   Dv), dist(P, Dv, K),
-        dir_of(Diag, HORIZONTAL, Dh), dist(P, Dh, K).
+        dir_of(Diag, AXIS_V, Dv), dist(P, Dv, K),
+        dir_of(Diag, AXIS_H, Dh), dist(P, Dh, K).
 }
 
 // Diagonal placement — the quadrant a cell sits in, and its ring. Solver
@@ -439,16 +441,16 @@ concat_2d(P_outer, P_inner, [Gv, Gh], P_grid) :-
     // The diagonal quadrant a cell sits in: nearer on both of that corner's edges.
     .decl quadrant(p: Position, diag: DiagDir)
     quadrant(P, Diag) :-
-        dir_of(Diag, VERTICAL,   Dv), nearer(P, Dv),
-        dir_of(Diag, HORIZONTAL, Dh), nearer(P, Dh).
+        dir_of(Diag, AXIS_V, Dv), nearer(P, Dv),
+        dir_of(Diag, AXIS_H, Dh), nearer(P, Dh).
 
     // On the diagonal of its quadrant, at ring K — the shared distance to both
     // edges of that corner.
     .decl diag_cell(p: Position, diag: DiagDir, ring: number)
     diag_cell(P, Diag, K) :-
         quadrant(P, Diag),
-        dir_of(Diag, VERTICAL,   Dv), dist(P, Dv, K),
-        dir_of(Diag, HORIZONTAL, Dh), dist(P, Dh, K).
+        dir_of(Diag, AXIS_V, Dv), dist(P, Dv, K),
+        dir_of(Diag, AXIS_H, Dh), dist(P, Dh, K).
 }
 
 // Keyed marks casting rays toward each `dir`. `ray(k, p, d)` — p is on a
@@ -484,8 +486,8 @@ concat_2d(P_outer, P_inner, [Gv, Gh], P_grid) :-
     .decl ray(key: Key, p: Position, d: DiagDir)
     ray(K, P, Diag) :-
         cell(P), mark(K, Q), diag(Diag),
-        dir_of(Diag, VERTICAL,   Dv), dist(P, Dv, Pv), dist(Q, Dv, Qv),
-        dir_of(Diag, HORIZONTAL, Dh), dist(P, Dh, Ph), dist(Q, Dh, Qh),
+        dir_of(Diag, AXIS_V, Dv), dist(P, Dv, Pv), dist(Q, Dv, Qv),
+        dir_of(Diag, AXIS_H, Dh), dist(P, Dh, Ph), dist(Q, Dh, Qh),
         Qv - Pv = Qh - Ph, Qv >= Pv.
 }
 
@@ -570,17 +572,17 @@ concat_2d(P_outer, P_inner, [Gv, Gh], P_grid) :-
     // The box as a Position — margin from each edge.
     .decl margin(key: Key, p: Position)
     margin(K, [Mt, Mb, Ml, Mr]) :-
-        edge_min(K, TOP, Mt), edge_min(K, BOTTOM, Mb),
-        edge_min(K, LEFT, Ml), edge_min(K, RIGHT, Mr).
+        edge_min(K, DIR_T, Mt), edge_min(K, DIR_B, Mb),
+        edge_min(K, DIR_L, Ml), edge_min(K, DIR_R, Mr).
 
     // Grid cells inside the box — at least the margin from every edge.
     .decl inside(key: Key, p: Position)
     inside(K, P) :-
         grid(K, P),
-        dist(P, TOP, T),    edge_min(K, TOP, Mt),    T >= Mt,
-        dist(P, BOTTOM, B), edge_min(K, BOTTOM, Mb), B >= Mb,
-        dist(P, LEFT, L),   edge_min(K, LEFT, Ml),   L >= Ml,
-        dist(P, RIGHT, R),  edge_min(K, RIGHT, Mr),  R >= Mr.
+        dist(P, DIR_T, T), edge_min(K, DIR_T, Mt), T >= Mt,
+        dist(P, DIR_B, B), edge_min(K, DIR_B, Mb), B >= Mb,
+        dist(P, DIR_L, L), edge_min(K, DIR_L, Ml), L >= Ml,
+        dist(P, DIR_R, R), edge_min(K, DIR_R, Mr), R >= Mr.
 }
 
 // Opaque component id — sealed so it can't be read as a Position, which would
@@ -647,7 +649,7 @@ concat_2d(P_outer, P_inner, [Gv, Gh], P_grid) :-
     .decl img(a: Axis, key: Key, p: Position, p_img: Position)
 
     .decl both(key: Key, p: Position, p_img: Position)
-    both(K, P, P2) :- img(VERTICAL, K, P, P1), img(HORIZONTAL, K, P1, P2).
+    both(K, P, P2) :- img(AXIS_V, K, P, P1), img(AXIS_H, K, P1, P2).
 }
 
 // ============================================================

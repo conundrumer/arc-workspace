@@ -7,7 +7,7 @@
 .comp Consts {
     .decl mark(c: Color)   mark(5).
     .decl fill(c: Color)   fill(1).
-    .decl sym(d: D4)       sym(FLIP_LR).
+    .decl sym(d: D4)       sym(D4_LR).
 }
 
 .init c = Consts

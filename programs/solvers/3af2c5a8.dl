@@ -22,13 +22,13 @@
     arr_pos(P) :- helpers.frame_pos([2, 2], P).
 
     .decl anchor(d: DiagDir)
-    anchor(TOP_LEFT).
+    anchor(DIAG_TL).
 
     // --- Lookup ---
     .decl tile_d4(p: Position, d: D4)
     GRID_2x2(tile_d4,
-        IDENTITY, FLIP_LR,
-        FLIP_TB,  ROT_180)
+        D4_ID, D4_LR,
+        D4_TB, D4_HT)
 }
 
 .init c = Consts

@@ -1,5 +1,5 @@
 // bc4146bd
-// 1×5 tile arrangement of input copies: identity and FLIP_LR alternate,
+// 1×5 tile arrangement of input copies: identity and D4_LR alternate,
 // the input at the anchor-end tile.
 //
 // Cases (data-equivalent on this task):
@@ -19,14 +19,14 @@
 
     // --- Lookup ---
     .decl tile_d4(p: Position, d: D4)
-    GRID_1x5(tile_d4, IDENTITY, FLIP_LR, IDENTITY, FLIP_LR, IDENTITY)
+    GRID_1x5(tile_d4, D4_ID, D4_LR, D4_ID, D4_LR, D4_ID)
 
     // --- Unfold ---
     .decl arr_pos(p: Position)
     arr_pos(P) :- helpers.frame_pos([1, 5], P).
 
     .decl anchor(d: Dir)
-    anchor(LEFT).   // RIGHT fits too — identity at both strip ends
+    anchor(DIR_L).   // DIR_R fits too — identity at both strip ends
 }
 
 .init c = Consts

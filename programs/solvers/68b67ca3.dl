@@ -29,7 +29,7 @@
         7, 8, 9)
 
     // --- Divide params --------------------------------------------------
-    .decl anchor(d: DiagDir)        anchor(TOP_LEFT).
+    .decl anchor(d: DiagDir)        anchor(DIAG_TL).
     .decl divisor(n: Dim)           divisor([3, 3]).
 }
 

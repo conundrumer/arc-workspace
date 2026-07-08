@@ -14,7 +14,7 @@
 .type SliceMember = [p: Position, col: Color]
 
 .comp Consts {
-    .decl axis(a: Axis)  axis(HORIZONTAL).
+    .decl axis(a: Axis)  axis(AXIS_H).
 
     // --- $Lookup ---
 

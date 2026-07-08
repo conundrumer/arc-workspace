@@ -15,7 +15,7 @@
 
     // Corner the ruling grows from.
     .decl anchor(d: DiagDir)
-    anchor(TOP_LEFT).
+    anchor(DIAG_TL).
 
     // Width of a separating line.
     .decl gap(g: number)

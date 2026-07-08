@@ -15,7 +15,7 @@
 
     // --- shared ---
     .decl diag(d: DiagDir)
-    diag(TOP_RIGHT).
+    diag(DIAG_TR).
 
     // --- Corner ---
     .decl window(p: Position)

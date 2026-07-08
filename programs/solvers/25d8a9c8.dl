@@ -20,7 +20,7 @@
 .type Choice = [detect: Detect, stage: Stage]
 
 .comp Consts {
-    .decl axis(a: Axis)                axis(HORIZONTAL).
+    .decl axis(a: Axis)                axis(AXIS_H).
 
     // PerCell single-color replacements.
     .decl uniform_color(c: Color)      uniform_color(5).

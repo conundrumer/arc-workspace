@@ -11,12 +11,12 @@
 
 .comp Consts {
     // anchor
-    .decl anchor(d: Dir)     anchor(LEFT).
+    .decl anchor(d: Dir)     anchor(DIR_L).
 
     // unique
     .decl targets(c: Color)  targets(5).
     .decl bg(c: Color)       bg(0).
-    .decl axis(a: Axis)      axis(HORIZONTAL).
+    .decl axis(a: Axis)      axis(AXIS_H).
 }
 
 .init c = Consts

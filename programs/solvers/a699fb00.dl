@@ -10,7 +10,7 @@
 .type Choice = Flank {} | Span {}
 
 .comp Consts {
-    .decl axis(a: Axis)    axis(HORIZONTAL).   // lines run along this axis
+    .decl axis(a: Axis)    axis(AXIS_H).   // lines run along this axis
     .decl bg(c: Color)     bg(0).
     .decl dot(c: Color)    dot(1).             // dash color
     .decl fill(c: Color)   fill(2).            // gap color

@@ -16,8 +16,8 @@
 .comp Consts {
     // --- $Direct ---
     .decl syms(d: D4)
-    syms(FLIP_LR).
-    syms(FLIP_TB).
+    syms(D4_LR).
+    syms(D4_TB).
 
     .decl sym_out(p: Position, col: Color)
     GRID_1x1(sym_out, 1)
@@ -28,14 +28,14 @@
     // --- $GroupMatch ---
     // Each entry holds a sym group and an output grid. Entries are matched
     // against the input's invariance set; the largest matched group wins.
-    // Every entry lists IDENTITY; the {IDENTITY}-only entry is the
+    // Every entry lists D4_ID; the {D4_ID}-only entry is the
     // always-matches fallback (size 1 → lowest priority).
     .decl mapping_sym(id: number, d: D4)
-    mapping_sym(0, IDENTITY).
-    mapping_sym(0, FLIP_LR).
-    mapping_sym(0, FLIP_TB).
-    mapping_sym(0, ROT_180).
-    mapping_sym(1, IDENTITY).
+    mapping_sym(0, D4_ID).
+    mapping_sym(0, D4_LR).
+    mapping_sym(0, D4_TB).
+    mapping_sym(0, D4_HT).
+    mapping_sym(1, D4_ID).
 
     .decl mapping_out(id: number, p: Position, col: Color)
     mapping_out(0, ORIGIN, 1).

@@ -3,10 +3,10 @@
 // d4 transform applies to the block-grid coordinates.
 //
 // Alts (d4 choice; data-equivalent on this task):
-//   $FlipTB() — FLIP_TB
-//   $FlipLR() — FLIP_LR
-//   $RotCW()  — ROT_CW
-//   $RotCCW() — ROT_CCW
+//   $FlipTB() — D4_TB
+//   $FlipLR() — D4_LR
+//   $RotCW()  — D4_CW
+//   $RotCCW() — D4_CC
 
 #include "../lib.dl"
 
@@ -14,10 +14,10 @@
 
 .comp Consts {
     .decl block_d4(d: D4, c: Choice)
-    block_d4(FLIP_TB, $FlipTB()).
-    block_d4(FLIP_LR, $FlipLR()).
-    block_d4(ROT_CW,  $RotCW()).
-    block_d4(ROT_CCW, $RotCCW()).
+    block_d4(D4_TB, $FlipTB()).
+    block_d4(D4_LR, $FlipLR()).
+    block_d4(D4_CW, $RotCW()).
+    block_d4(D4_CC, $RotCCW()).
 
     .decl block_size(k: Dim)
     block_size([2, 2]).

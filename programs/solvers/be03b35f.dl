@@ -16,9 +16,9 @@
     frame(P) :- helpers.frame_pos([2, 2], P).
 
     .decl template(diag: DiagDir, d4: D4)
-    template(TOP_LEFT,    ROT_CCW).
-    template(TOP_RIGHT,   ROT_180).
-    template(BOTTOM_LEFT, ROT_CW).
+    template(DIAG_TL, D4_CC).
+    template(DIAG_TR, D4_HT).
+    template(DIAG_BL, D4_CW).
 }
 
 .init c = Consts

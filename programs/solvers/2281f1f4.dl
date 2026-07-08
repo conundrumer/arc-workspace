@@ -15,11 +15,11 @@
     // --- shared ---
     .decl marker(c: Color) marker(5).
     .decl fill(c: Color)   fill(2).
-    .decl header(d: Dir)   header(TOP). header(RIGHT).
+    .decl header(d: Dir)   header(DIR_T). header(DIR_R).
 
     // --- Stamp ---
-    .decl pattern_edge(d: Dir) pattern_edge(TOP).
-    .decl select_edge(d: Dir)  select_edge(RIGHT).
+    .decl pattern_edge(d: Dir) pattern_edge(DIR_T).
+    .decl select_edge(d: Dir)  select_edge(DIR_R).
     .decl bg(c: Color)         bg(0).
 }
 

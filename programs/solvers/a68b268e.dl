@@ -20,8 +20,8 @@
     .decl gap(g: Dim)     gap([1, 1]).
 
     // --- $Scan ---
-    .decl scan(d: DiagDir)     scan(TOP_LEFT).
-    .decl scan_axis(a: Axis)   scan_axis(VERTICAL).
+    .decl scan(d: DiagDir)     scan(DIAG_TL).
+    .decl scan_axis(a: Axis)   scan_axis(AXIS_V).
 
     // --- $Order ---
     .decl prio(p: Position, r: number)

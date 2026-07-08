@@ -6,7 +6,7 @@
 //                   shared non-zero label
 //   $Cycle        — the collapse composed: each X-arm cell maps to the
 //                   ring cell at its own diagonal on the output's 8-cell
-//                   CW cycle, advanced by a per-ring shift (corner ring 0,
+//                   SENSE_CW cycle, advanced by a per-ring shift (corner ring 0,
 //                   inner ring +1 — the 45° twist as one successor step)
 
 #include "../lib.dl"
@@ -48,7 +48,7 @@
         7, 6, 5)
 
     // --- Cycle data -----------------------------------------------------
-    // Output ring as a CW cycle of 8 cells, declared by its edges. A cycle's
+    // Output ring as a SENSE_CW cycle of 8 cells, declared by its edges. A cycle's
     // edge set carries no basepoint, so no ring cell is privileged as a start.
     .decl ring_succ(p: Position, p_next: Position)
     ring_succ([0, 2, 0, 2], [0, 2, 1, 1]).   // NW corner -> N

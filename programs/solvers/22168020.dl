@@ -5,7 +5,7 @@
 #include "../lib.dl"
 
 .comp Consts {
-    .decl fill_axis(a: Axis)   fill_axis(HORIZONTAL).   // spans run along this axis
+    .decl fill_axis(a: Axis)   fill_axis(AXIS_H).   // spans run along this axis
     .decl bg(c: Color)         bg(0).
 }
 

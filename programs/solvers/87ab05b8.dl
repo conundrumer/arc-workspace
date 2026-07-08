@@ -48,8 +48,8 @@
     .decl inside(p: Position)
     inside(P) :-
         cell(P), corner(Diag), dim([Nv, Nh]),
-        dir_of(Diag, VERTICAL,   Dv), dist(P, Dv, Kv), Kv < Nv,
-        dir_of(Diag, HORIZONTAL, Dh), dist(P, Dh, Kh), Kh < Nh.
+        dir_of(Diag, AXIS_V, Dv), dist(P, Dv, Kv), Kv < Nv,
+        dir_of(Diag, AXIS_H, Dh), dist(P, Dh, Kh), Kh < Nh.
 }
 
 .decl in(p: Position, col: Color)

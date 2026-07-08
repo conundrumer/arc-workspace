@@ -18,10 +18,10 @@
 .type Choice = Stamp {} | Augment {} | Tile {}
 
 .comp Consts {
-    .decl data_dir(d: Dir)        data_dir(BOTTOM).
+    .decl data_dir(d: Dir)        data_dir(DIR_B).
     .decl stamps(d: D4)
-    stamps(IDENTITY).
-    stamps(FLIP_TB).
+    stamps(D4_ID).
+    stamps(D4_TB).
 
     // --- Stamp ---
     .decl half_h(n: number)       half_h(5).
@@ -33,8 +33,8 @@
     .decl n_tiles(n: number)      n_tiles(2).
     .decl tile_d4(p_tile: Position, d: D4)
     GRID_2x1(tile_d4,
-        FLIP_TB,
-        IDENTITY)
+        D4_TB,
+        D4_ID)
 }
 
 .init c = Consts

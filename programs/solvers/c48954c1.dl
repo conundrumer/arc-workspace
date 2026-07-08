@@ -23,9 +23,9 @@
     // --- Lookup ---
     .decl tile_d4(p: Position, d: D4)
     GRID_3x3(tile_d4,
-        ROT_180, FLIP_TB,  ROT_180,
-        FLIP_LR, IDENTITY, FLIP_LR,
-        ROT_180, FLIP_TB,  ROT_180)
+        D4_HT, D4_TB, D4_HT,
+        D4_LR, D4_ID, D4_LR,
+        D4_HT, D4_TB, D4_HT)
 }
 
 .init c = Consts

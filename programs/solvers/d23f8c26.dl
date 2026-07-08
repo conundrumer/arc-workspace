@@ -17,7 +17,7 @@
     bg(0).
 
     .decl axis(a: Axis)
-    axis(HORIZONTAL).
+    axis(AXIS_H).
 
     // --- Gap ---
     .decl divisor(n: number)

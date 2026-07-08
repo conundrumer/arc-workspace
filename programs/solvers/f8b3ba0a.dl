@@ -22,7 +22,7 @@
 
 .comp Consts {
     .decl bg(c: Color)        bg(0).
-    .decl rank_dir(d: Dir)    rank_dir(TOP).
+    .decl rank_dir(d: Dir)    rank_dir(DIR_T).
 
     // --- $Lattice ---
     .decl tile_dim(k: Dim)          tile_dim([1, 2]).
