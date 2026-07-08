@@ -21,7 +21,7 @@ A solver session writes a Souffle solver (`programs/solvers/<task_id>.dl`) model
 
 - Read `programs/lib.dl` in full before writing or editing a solver.
 - If requested to continue from prior solver work, run `uv run python scripts/inspect-session.py --solver-only` and read the output in full.
-- `bash scripts/queue.sh` prints the next solver and its line count.
+- `bash scripts/queue.sh` prints the next solver and its estimated complexity.
 
 ## Cadence
 
@@ -33,8 +33,8 @@ Do each step individually; never batch them. Create a task per step.
     - Run against materialized train+test pairs (`uv run python programs/run_dl.py <task_id>`)
     - Iterate until it works
 2. Simplify if possible
-3. Prune everything that doesn't serve the reader — exhaustively, from unnecessary words to irrelevant ideas
-    - Copy from prior solvers may not have been pruned (much of the corpus was written by opus); prune it like new text
+3. Prune everything that doesn't serve the reader — exhaustively, from unnecessary words to irrelevant ideas. Necessity, as judged from the artifact alone, not from the session.
+    - Copy from prior solvers may not have been pruned; prune it like new text
 4. Review:
     - Does it follow principles?
     - Is there anything awkward or roundabout, like code that reads as pure implementation details with no conceptual meaning, or reimplementing something existing?
