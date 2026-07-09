@@ -49,16 +49,16 @@
 .decl shape(p: Position, col: Color)
 shape(P, Col) :- in(P, Col), !c.bg(Col).
 
-.init gdp = DiagPlacement
-gdp.cell(P) :- in(P, _).
+.init gdp = DiagPlacement<Unit>
+gdp.cell($U(), P) :- in(P, _).
 
 .decl target(p: Position, col: Color, ch: Choice)
 
 // --- Quad ---
 
 target(P_corner, Col, $Quad()) :-
-    shape(P, Col), gdp.quadrant(P, Diag),
-    gdp.diag_cell(P_corner, Diag, 0).    // grid corner at that diagonal
+    shape(P, Col), gdp.quadrant($U(), P, Diag),
+    gdp.diag_cell($U(), P_corner, Diag, 0).    // grid corner at that diagonal
 
 // --- Stretch / Explode: the shape's own corner cells ---
 
@@ -79,7 +79,7 @@ shape_corner(P, Diag) :-
 
 target(P_corner, Col, $Stretch()) :-
     shape(P, Col), shape_corner(P, Diag),
-    gdp.diag_cell(P_corner, Diag, 0).    // grid corner at that diagonal
+    gdp.diag_cell($U(), P_corner, Diag, 0).    // grid corner at that diagonal
 
 // --- Explode ---
 

@@ -36,11 +36,11 @@ x_cell(P, $Dot()) :- xrays.ray($U(), P, _).
 
 // --- Grid ---
 
-.init dg = Diagonal
-dg.cell(P)   :- in(P, _).
-dg.corner(D) :- diag_dir_elem(D).
+.init dg = Diagonal<Unit>
+dg.cell($U(), P)   :- in(P, _).
+dg.corner($U(), D) :- diag_dir_elem(D).
 
-x_cell(P, $Grid()) :- dg.diagonal(P, _).
+x_cell(P, $Grid()) :- dg.diagonal($U(), P, _).
 
 // Draw the X in ink; pass the rest through.
 .decl impl_choice(ch: Choice)

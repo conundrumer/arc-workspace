@@ -48,12 +48,12 @@
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
-.init dp = DiagPlacement
-dp.cell(P) :- in(P, _).
+.init dp = DiagPlacement<Unit>
+dp.cell($U(), P) :- in(P, _).
 
 // The half a cell belongs to, named by its side of the stack axis.
 .decl side(p: Position, d: Dir)
-side(P, D) :- c.axis(A), axis_of(D, A), dp.nearer(P, D).
+side(P, D) :- c.axis(A), axis_of(D, A), dp.nearer($U(), P, D).
 
 .decl seat(p: Position, diag: DiagDir, s: Seats)
 
@@ -77,19 +77,19 @@ growth(A, N1, N2, $Aniso()) :- c.sep_dim(A, N1), perp(A, A2), c.sep_dim(A2, N2).
 
 // Corner edge delta: a Position carrying extents at the two edges of
 // corner diag, axis-tagged — edge_delta's DiagDir peer. Lib-gap candidate.
-.comp DiagEdgeDelta {
-    .decl arg(diag: DiagDir, a: Axis, k1: number, k2: number)
+.comp DiagEdgeDelta<Key> {
+    .decl arg(key: Key, diag: DiagDir, a: Axis, k1: number, k2: number)
 
-    .decl delta(diag: DiagDir, a: Axis, k1: number, k2: number, p: Position)
-    delta(Diag, A, K1, K2, P) :-
-        arg(Diag, A, K1, K2),
+    .decl delta(key: Key, diag: DiagDir, a: Axis, k1: number, k2: number, p: Position)
+    delta(Ky, Diag, A, K1, K2, P) :-
+        arg(Ky, Diag, A, K1, K2),
         diag_dirs(Diag, A, D1, D2),
         edge_delta(D1, K1, P1), edge_delta(D2, K2, P2),
         compose(P1, P2, P).
 }
 
-.init ded = DiagEdgeDelta
-ded.arg(Diag, A, K1, K2) :- diag_dir_elem(Diag), growth(A, K1, K2, _).
+.init ded = DiagEdgeDelta<Growth>
+ded.arg(Gr, Diag, A, K1, K2) :- diag_dir_elem(Diag), growth(A, K1, K2, Gr).
 
 .decl seated(p_out: Position, col: Color, ch: Choice)
 
@@ -99,7 +99,7 @@ ded.arg(Diag, A, K1, K2) :- diag_dir_elem(Diag), growth(A, K1, K2, _).
 seated(P_out, Col, $Derive(Gr, S)) :-
     in(P, Col), seat(P, Diag, S),                            // half cell and its corner
     diag_opposite(Diag, Diag2),                              // opposite corner
-    growth(A, K1, K2, Gr), ded.delta(Diag2, A, K1, K2, E),   // grow delta toward it
+    growth(A, K1, K2, Gr), ded.delta(Gr, Diag2, A, K1, K2, E),   // grow delta toward it
     compose(P, E, P_out).                                    // displace
 
 // --- Disp ---

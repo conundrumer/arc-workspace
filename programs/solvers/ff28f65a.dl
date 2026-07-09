@@ -68,14 +68,14 @@ on(P) :- in(P, C), c.block_color(C).
 // $Object: connected components equal to the shape
 // ============================================================
 
-.init comps = Components
-comps.node(P) :- on(P).
+.init comps = Components<Unit>
+comps.node($U(), P) :- on(P).
 
 .init object_box = Bbox<CompId>
-object_box.cell(Id, P) :- comps.label(P, Id).
+object_box.cell(Id, P) :- comps.label($U(), P, Id).
 
 .init object_frame = Reframe<CompId>
-object_frame.cell(Id, P)  :- comps.label(P, Id).
+object_frame.cell(Id, P)  :- comps.label($U(), P, Id).
 object_frame.outer(Id, M) :- object_box.margin(Id, M).
 
 .init object_match = KeyedSetCompare<CompId, Position>
@@ -89,12 +89,12 @@ object_count(N) :- N = count : { object_match.equals(Id, 0) }.
 // $Placement: placements where the shape occurs (Occurrences)
 // ============================================================
 
-.init occ = Occurrences
-occ.cell(P)  :- on(P).
-occ.shape(P) :- c.block_shape(P).
+.init occ = Occurrences<Unit>
+occ.cell($U(), P)  :- on(P).
+occ.shape($U(), P) :- c.block_shape(P).
 
 .decl placement_count(n: number)
-placement_count(N) :- N = count : { occ.occurrence(_) }.
+placement_count(N) :- N = count : { occ.occurrence($U(), _) }.
 
 // ============================================================
 // Output
@@ -105,12 +105,12 @@ total(N, $Object())    :- object_count(N).
 total(N, $Placement()) :- placement_count(N).
 
 // The X: cells on either diagonal of the output frame.
-.init diag = Diagonal
-diag.cell(P)   :- c.out_pos(P).
-diag.corner(D) :- diag_dir_elem(D).
+.init diag = Diagonal<Unit>
+diag.cell($U(), P)   :- c.out_pos(P).
+diag.corner($U(), D) :- diag_dir_elem(D).
 
 .decl x_cell(p: Position)
-x_cell(P) :- diag.diagonal(P, _).
+x_cell(P) :- diag.diagonal($U(), P, _).
 
 // Reading order over the X: primary along read_axis from read_corner,
 // tie-break along the other axis.

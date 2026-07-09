@@ -64,11 +64,11 @@ region(P, $Block()) :-
     in(P, _),                   divide_by_size_2d(P,   K, 0, P_tile, _).
 
 // $Corner — the c.block_dim block at the marker's nearest corner.
-.init dp = DiagPlacement
-dp.cell(P) :- marker(P).
+.init dp = DiagPlacement<Unit>
+dp.cell($U(), P) :- marker(P).
 
 region(P, $Corner()) :-
-    in(P, _), dp.quadrant(_, Diag),                  // marker's corner
+    in(P, _), dp.quadrant($U(), _, Diag),            // marker's corner
     c.block_dim(N), diag_dist(P, Diag, _, K1, K2),   // within the block
     K1 < N, K2 < N.
 

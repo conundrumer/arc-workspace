@@ -19,9 +19,9 @@
     .decl marker(col: Color)  marker(6).
 
     // Along-axis frame for the output: extent out_h, indexed from header_dir.
-    .init out_along = DirFrame
-    out_along.dir(D)      :- header_dir(D).
-    out_along.dist_set(K) :- out_h(N), K = range(0, N).
+    .init out_along = DirFrame<Unit>
+    out_along.dir(D)            :- header_dir(D).
+    out_along.dist_set($U(), K) :- out_h(N), K = range(0, N).
 }
 
 .init c = Consts
@@ -45,7 +45,7 @@ tail_color(C, M) :- in(_, C), !bg(C), c.marker(M).
 // positions. Grounds the output grid so both rules can join to it.
 .decl out_cell(p: Position)
 out_cell(P) :-
-    c.out_along.pos(_, P_along),                          // along-axis frame cell
+    c.out_along.pos($U(), _, P_along),                    // along-axis frame cell
     in(P_in, _), c.header_dir(H_dir), axis_of(H_dir, A),  // an input cell
     split(P_in, A, _, P_across),                          // its across part
     compose(P_along, P_across, P).                        // glue to a 2D out cell

@@ -30,19 +30,19 @@ color_count(Col, N) :-
     N = count : { in(_, Col) }.
 
 // Dense rank over the distinct counts, ascending (fewest first).
-.init o = Ordinal
-o.idx_set(N) :- color_count(_, N).
+.init o = Ordinal<Unit>
+o.idx_set($U(), N) :- color_count(_, N).
 
 .decl color_rank(col: Color, r: number)
-color_rank(Col, R) :- color_count(Col, N), o.rank(N, R).
+color_rank(Col, R) :- color_count(Col, N), o.rank($U(), N, R).
 
 // Output frame: 1D axis anchored at c.rank_dir. Placing ascending rank from
 // the opposite edge seats the largest count at the rank_dir edge.
-.init col = DirFrame
+.init col = DirFrame<Unit>
 col.dir(D_opp) :- c.rank_dir(D), opposite(D, D_opp).
-col.dist_set(R) :- color_rank(_, R).
+col.dist_set($U(), R) :- color_rank(_, R).
 
 .decl out(p: Position, col: Color)
-out(P, Col) :- color_rank(Col, Rk), col.pos(Rk, P).
+out(P, Col) :- color_rank(Col, Rk), col.pos($U(), Rk, P).
 
 .output out(IO=stdout)

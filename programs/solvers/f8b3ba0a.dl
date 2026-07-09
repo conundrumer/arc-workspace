@@ -56,11 +56,11 @@
 
 // --- $Blocks: component detection ---
 
-.init comps = Components
-comps.node(P) :- in(P, Col), !c.bg(Col).
+.init comps = Components<Unit>
+comps.node($U(), P) :- in(P, Col), !c.bg(Col).
 
 .decl block_color(id: CompId, col: Color)
-block_color(Id, Col) :- comps.label(P, Id), in(P, Col).
+block_color(Id, Col) :- comps.label($U(), P, Id), in(P, Col).
 
 // --- $Lattice: tile detection ---
 
@@ -100,33 +100,19 @@ dominant(Col, Ch) :-
 minority_count(Col, N, Ch) :- count_of(Col, N, Ch), !dominant(Col, Ch).
 
 // Dense rank over the minority counts, ascending (fewest first), per choice.
-.init o_cells = Ordinal
-o_cells.idx_set(N) :- minority_count(_, N, $Cells()).
-.init o_blocks = Ordinal
-o_blocks.idx_set(N) :- minority_count(_, N, $Blocks()).
-.init o_lattice = Ordinal
-o_lattice.idx_set(N) :- minority_count(_, N, $Lattice()).
+.init o = Ordinal<Choice>
+o.idx_set(Ch, N) :- minority_count(_, N, Ch).
 
 .decl minority_rank(col: Color, r: number, ch: Choice)
-minority_rank(Col, R, $Cells())   :- minority_count(Col, N, $Cells()),   o_cells.rank(N, R).
-minority_rank(Col, R, $Blocks())  :- minority_count(Col, N, $Blocks()),  o_blocks.rank(N, R).
-minority_rank(Col, R, $Lattice()) :- minority_count(Col, N, $Lattice()), o_lattice.rank(N, R).
+minority_rank(Col, R, Ch) :- minority_count(Col, N, Ch), o.rank(Ch, N, R).
 
 // Output frame: 1D axis anchored at c.rank_dir, per choice. Placing ascending
 // rank from the opposite edge seats the largest count at the rank_dir edge.
-.init col_cells = DirFrame
-col_cells.dir(D_opp) :- c.rank_dir(D), opposite(D, D_opp).
-col_cells.dist_set(R) :- minority_rank(_, R, $Cells()).
-.init col_blocks = DirFrame
-col_blocks.dir(D_opp) :- c.rank_dir(D), opposite(D, D_opp).
-col_blocks.dist_set(R) :- minority_rank(_, R, $Blocks()).
-.init col_lattice = DirFrame
-col_lattice.dir(D_opp) :- c.rank_dir(D), opposite(D, D_opp).
-col_lattice.dist_set(R) :- minority_rank(_, R, $Lattice()).
+.init col = DirFrame<Choice>
+col.dir(D_opp) :- c.rank_dir(D), opposite(D, D_opp).
+col.dist_set(Ch, R) :- minority_rank(_, R, Ch).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, $Cells())   :- minority_rank(Col, Rk, $Cells()),   col_cells.pos(Rk, P).
-out(P, Col, $Blocks())  :- minority_rank(Col, Rk, $Blocks()),  col_blocks.pos(Rk, P).
-out(P, Col, $Lattice()) :- minority_rank(Col, Rk, $Lattice()), col_lattice.pos(Rk, P).
+out(P, Col, Ch) :- minority_rank(Col, Rk, Ch), col.pos(Ch, Rk, P).
 
 .output out(IO=stdout)

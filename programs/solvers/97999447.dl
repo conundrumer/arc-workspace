@@ -62,22 +62,22 @@ out(P, Col, $Toggle()) :- in(P, Col), !ray_toggle(_, P, _).
 
 // Z/N successor over a dense 0-based index set. Candidate lib component —
 // see docs/wf-solver/proposals.md.
-.comp IndexCycle {
-    .decl idx(k: number)
+.comp IndexCycle<Key> {
+    .decl idx(key: Key, k: number)
 
-    .decl succ(k: number, k2: number)
-    succ(K, K+1) :- idx(K), idx(K+1).
-    succ(K, 0)   :- idx(K), !idx(K+1).   // wrap from the max
+    .decl succ(key: Key, k: number, k2: number)
+    succ(Ky, K, K+1) :- idx(Ky, K), idx(Ky, K+1).
+    succ(Ky, K, 0)   :- idx(Ky, K), !idx(Ky, K+1).   // wrap from the max
 }
 
-.init slots = IndexCycle
-slots.idx(K) :- c.slot(K).
+.init slots = IndexCycle<Unit>
+slots.idx($U(), K) :- c.slot(K).
 
 // From each mark, step toward ray_dir advancing the mask slot.
 .decl ray_mask(m: Color, p: Position, k: number)
 ray_mask(Col, P, 0) :- mark(P, Col).
 ray_mask(M, Q, K2) :-
-    ray_mask(M, P, K), slots.succ(K, K2),                 // next slot in the period
+    ray_mask(M, P, K), slots.succ($U(), K, K2),           // next slot in the period
     c.ray_dir(D), step_delta(D, S), compose(P, S, Q),     // next cell toward the edge
     in(Q, _).                                             // still on the grid
 

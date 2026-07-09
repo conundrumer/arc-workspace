@@ -14,19 +14,19 @@
 // A directed cycle (succ = edges, carrying no basepoint) with a gauge-free
 // rotation: walk advances a start node by n successor steps. Candidate lib
 // component — see docs/wf-solver/proposals.md.
-.comp CycleWalk<T> {
-    .decl succ(p: T, p_next: T)
-    .decl step(n: number)               // advance counts in use
+.comp CycleWalk<Key, T> {
+    .decl succ(key: Key, p: T, p_next: T)
+    .decl step(key: Key, n: number)     // advance counts in use
 
     // Downward closure of step — the walk's recursion bound.
-    .decl bound(n: number)
-    bound(N) :- step(M), N = range(0, M+1).
+    .decl bound(key: Key, n: number)
+    bound(Ky, N) :- step(Ky, M), N = range(0, M+1).
 
-    .decl walk(p0: T, n: number, p: T)  // p = p0 advanced n steps along succ
-    walk(P0, 0, P0) :- succ(P0, _).
-    walk(P0, N1, P2) :-
-        walk(P0, N, P1), succ(P1, P2),
-        bound(N1), N1 = N + 1.          // N1 is the Z/n step count
+    .decl walk(key: Key, p0: T, n: number, p: T)  // p = p0 advanced n steps along succ
+    walk(Ky, P0, 0, P0) :- succ(Ky, P0, _).
+    walk(Ky, P0, N1, P2) :-
+        walk(Ky, P0, N, P1), succ(Ky, P1, P2),
+        bound(Ky, N1), N1 = N + 1.      // N1 is the Z/n step count
 }
 
 .type Choice = LabeledGrids {} | Cycle {}
@@ -76,9 +76,9 @@
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
-.init ring = CycleWalk<Position>
-ring.succ(P, P_next) :- c.ring_succ(P, P_next).   // the output ring cycle
-ring.step(N)         :- c.ring_shift(_, N).        // shifts the solver applies
+.init ring = CycleWalk<Unit, Position>
+ring.succ($U(), P, P_next) :- c.ring_succ(P, P_next).   // the output ring cycle
+ring.step($U(), N)         :- c.ring_shift(_, N).        // shifts the solver applies
 
 .decl impl_choice(c: Choice)
 impl_choice($LabeledGrids()).
@@ -99,18 +99,18 @@ cell(P) :- in(P, _).
 cell(P) :- c.ring_succ(P, _).
 
 // Classify cells into diagonal quadrant + ring.
-.init dp = DiagPlacement
-dp.cell(P) :- cell(P).
+.init dp = DiagPlacement<Unit>
+dp.cell($U(), P) :- cell(P).
 
 // The center is nearer to no edge (the rotation's fixed point).
 .decl in_center(p: Position)
-in_center(P) :- in(P, _), !dp.nearer(P, _).
+in_center(P) :- in(P, _), !dp.nearer($U(), P, _).
 
 perm(P_in, P_out, $Cycle()) :-
-    in(P_in, _), dp.diag_cell(P_in, Diag, Ring),                // input arm: its diagonal + ring
+    in(P_in, _), dp.diag_cell($U(), P_in, Diag, Ring),          // input arm: its diagonal + ring
     c.ring_shift(Ring, Shift),                                  // ring -> cyclic shift
-    c.ring_succ(P_corner, _), dp.diag_cell(P_corner, Diag, 0),  // output corner at that diagonal
-    ring.walk(P_corner, Shift, P_out).                          // advanced by the shift
+    c.ring_succ(P_corner, _), dp.diag_cell($U(), P_corner, Diag, 0),  // output corner at that diagonal
+    ring.walk($U(), P_corner, Shift, P_out).                    // advanced by the shift
 perm(P_in, P_out, $Cycle()) :-
     in_center(P_in), c.out_center(P_out).                    // center fixed point
 

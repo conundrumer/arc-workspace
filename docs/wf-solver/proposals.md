@@ -184,51 +184,6 @@ $Axis and $Iso (Unit, $Iso casting all four dirs).
 
 ## `Ordinal.rev` — opposite-end pairing of an index set
 
-## Keyed `Ordinal` / `DirFrame` — rank-and-place across cases
-
-Both lib comps hold one relation set per instance, so a solver whose cases
-share the rank-and-place pipeline shatters at the comp boundary: per-case
-instances plus dispatch rules that differ only in the case name. f8b3ba0a
-carries three count models through one drop-dominant → rank → place pipeline;
-its choice-keyed relations (`count_of`, `minority_count`) flow through single
-rules, then `Ordinal` and `DirFrame` force three `.init`s each and rule
-triplets (`minority_rank`, `dist_set`, `out`), including three identical
-`dir` rules.
-
-A `Key` type param collapses each triplet to one instance and one rule,
-following `Bbox<Key>` / `KeyedSetCompare<Key, Member>`:
-
-```
-.comp Ordinal<Key> {
-    .decl idx_set(key: Key, k: number)
-
-    .decl rank(key: Key, k: number, r: number)
-    rank(Ky, K, R) :-
-        idx_set(Ky, K),
-        R = count : { idx_set(Ky, K2), K2 < K }.
-}
-
-.comp DirFrame<Key> {
-    .decl dir(d: Dir)
-    .decl dist_set(key: Key, k: number)
-
-    .decl extent(key: Key, n: number)
-    extent(Ky, N) :- dist_set(Ky, _), N = count : { dist_set(Ky, K) }.
-
-    .decl pos(key: Key, k: number, p: Position) inline
-    pos(Ky, K, P) :-
-        dist_set(Ky, K), dir(D), opposite(D, D_opp), extent(Ky, N),
-        edge_delta(D, K, P_d), edge_delta(D_opp, N-1-K, P_o),
-        compose(P_d, P_o, P).
-}
-```
-
-`dir` stays unkeyed — the frame direction is the instance's parameter; key it
-only when a task places per-key directions.
-
-Single-set callers key on `Unit`. Callers to update: f8ff0b80 (both), d406998b
-(`Ordinal`), f8b3ba0a (both, collapsing the triplets).
-
 The order anti-isomorphism of `idx_set`: `rev(k, k2)` pairs each element
 with its opposite-end counterpart — as many elements below k as above k2.
 The descending complement of `rank` as a pairing rather than a rank value.
@@ -237,10 +192,10 @@ needs a physical frame to place into; `rev` covers reversal of an abstract
 index sequence.
 
 ```
-.decl rev(k: number, k2: number)
-rev(K, K2) :-
-    idx_set(K),  R = count : { idx_set(Ka), Ka < K },
-    idx_set(K2), R = count : { idx_set(Kb), K2 < Kb }.
+.decl rev(key: Key, k: number, k2: number)
+rev(Ky, K, K2) :-
+    idx_set(Ky, K),  R = count : { idx_set(Ky, Ka), Ka < K },
+    idx_set(Ky, K2), R = count : { idx_set(Ky, Kb), K2 < Kb }.
 ```
 
 Home: `Ordinal` — it owns `idx_set`; `rev` is a second readout beside
@@ -261,19 +216,19 @@ not. `step` declares the advance counts in use — raw solver data; the comp
 closes them downward into the recursion bound.
 
 ```
-.comp CycleWalk<T> {
-    .decl succ(p: T, p_next: T)
-    .decl step(n: number)               // advance counts in use
+.comp CycleWalk<Key, T> {
+    .decl succ(key: Key, p: T, p_next: T)
+    .decl step(key: Key, n: number)     // advance counts in use
 
     // Downward closure of step — the walk's recursion bound.
-    .decl bound(n: number)
-    bound(N) :- step(M), N = range(0, M+1).
+    .decl bound(key: Key, n: number)
+    bound(Ky, N) :- step(Ky, M), N = range(0, M+1).
 
-    .decl walk(p0: T, n: number, p: T)  // p = p0 advanced n steps along succ
-    walk(P0, 0, P0) :- succ(P0, _).
-    walk(P0, N1, P2) :-
-        walk(P0, N, P1), succ(P1, P2),
-        bound(N1), N1 = N + 1.
+    .decl walk(key: Key, p0: T, n: number, p: T)  // p = p0 advanced n steps along succ
+    walk(Ky, P0, 0, P0) :- succ(Ky, P0, _).
+    walk(Ky, P0, N1, P2) :-
+        walk(Ky, P0, N, P1), succ(Ky, P1, P2),
+        bound(Ky, N1), N1 = N + 1.
 }
 ```
 
@@ -288,11 +243,11 @@ is the data itself, so no builder applies; walked by per-ring shifts.
 marker's shift. 25ff71a9 $Cycle: the row cycle, walked by c.shift_k.
 
 ```
-.init ring = CycleWalk<Position>
-ring.succ(P, P_next) :- c.ring_succ(P, P_next).   // the ring cycle
-ring.step(N)         :- c.ring_shift(_, N).        // shifts in use
+.init ring = CycleWalk<Unit, Position>
+ring.succ($U(), P, P_next) :- c.ring_succ(P, P_next).   // the ring cycle
+ring.step($U(), N)         :- c.ring_shift(_, N).        // shifts in use
 
-out(P_out, ...) :- ..., ring.walk(P_corner, Shift, P_out).
+out(P_out, ...) :- ..., ring.walk($U(), P_corner, Shift, P_out).
 ```
 
 ## `IndexCycle` — Z/N successor over a dense index set
@@ -307,12 +262,12 @@ from `opposite(shift_dir)`, so ascending index runs toward the shift and the
 wrap lands on the shift edge.
 
 ```
-.comp IndexCycle {
-    .decl idx(k: number)
+.comp IndexCycle<Key> {
+    .decl idx(key: Key, k: number)
 
-    .decl succ(k: number, k2: number)
-    succ(K, K+1) :- idx(K), idx(K+1).
-    succ(K, 0)   :- idx(K), !idx(K+1).   // wrap from the max
+    .decl succ(key: Key, k: number, k2: number)
+    succ(Ky, K, K+1) :- idx(Ky, K), idx(Ky, K+1).
+    succ(Ky, K, 0)   :- idx(Ky, K), !idx(Ky, K+1).   // wrap from the max
 }
 ```
 
@@ -334,16 +289,16 @@ component matters; `Components` fits when every component counts. An
 extension when a task needs diagonal connectivity.
 
 ```
-.comp Reach {
-    .decl node(p: Position)
-    .decl seed(p: Position)
+.comp Reach<Key> {
+    .decl node(key: Key, p: Position)
+    .decl seed(key: Key, p: Position)
 
     .decl step(delta: Position)
     step([-1, 1, 0, 0]). step([1, -1, 0, 0]). step([0, 0, -1, 1]). step([0, 0, 1, -1]).
 
-    .decl reach(p: Position)
-    reach(P)  :- seed(P).
-    reach(P2) :- reach(P1), step(D), compose(P1, D, P2), node(P2).
+    .decl reach(key: Key, p: Position)
+    reach(Ky, P)  :- seed(Ky, P).
+    reach(Ky, P2) :- reach(Ky, P1), step(D), compose(P1, D, P2), node(Ky, P2).
 }
 ```
 

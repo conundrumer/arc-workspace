@@ -393,25 +393,28 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 // Body components — instantiated at solver-body scope
 // ============================================================
 
-// 1D frame defined by an index set and an edge. Solver populates `dir(d)`
-// (the edge distances are measured from) and `dist_set(k)` (the indices
-// that make up the frame). Component derives extent as the set's size and
-// exposes `pos(k, p)` mapping each index to its axis-only Position.
+// 1D frame defined by an index set and an edge, one frame per key. Solver
+// populates `dir(d)` (the edge distances are measured from — the instance's
+// parameter, unkeyed) and `dist_set(key, k)` (the indices that make up the
+// frame). Component derives extent as the set's size and exposes
+// `pos(key, k, p)` mapping each index to its axis-only Position. Single-set
+// sites key on Unit.
 //
-// Flagged: assumes dist_set is dense — {0, 1, ..., extent-1}. With a sparse
-// set, indices above |dist_set|-1 give invalid Positions (`pos` sets the
-// opposite-edge distance to |dist_set|-1-k, which goes negative).
-.comp DirFrame {
+// Flagged: assumes each key's dist_set is dense — {0, 1, ..., extent-1}.
+// With a sparse set, indices above |dist_set|-1 give invalid Positions
+// (`pos` sets the opposite-edge distance to |dist_set|-1-k, which goes
+// negative).
+.comp DirFrame<Key> {
     .decl dir(d: Dir)
-    .decl dist_set(k: number)
+    .decl dist_set(key: Key, k: number)
 
-    .decl extent(n: number)
-    extent(N) :- N = count : { dist_set(_) }.
+    .decl extent(key: Key, n: number)
+    extent(Ky, N) :- dist_set(Ky, _), N = count : { dist_set(Ky, K) }.
 
     // Position at distance k from edge dir, axis-only (perpendicular zeroed).
-    .decl pos(k: number, p: Position) inline
-    pos(K, P) :-
-        dist_set(K), dir(D), opposite(D, D_opp), extent(N),
+    .decl pos(key: Key, k: number, p: Position) inline
+    pos(Ky, K, P) :-
+        dist_set(Ky, K), dir(D), opposite(D, D_opp), extent(Ky, N),
         edge_delta(D, K, P_d), edge_delta(D_opp, N-1-K, P_o),
         compose(P_d, P_o, P).
 }
@@ -446,34 +449,36 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
         compose(P1, P2, P).
 }
 
-// A corner diagonal — cells equidistant from the corner's two edges; ring is
-// that shared distance. The full corner-to-corner diagonal, center included.
-// DiagPlacement.diag_cell is this ∩ quadrant — the corner→center ray.
-.comp Diagonal {
-    .decl cell(p: Position)
-    .decl corner(d: DiagDir)
+// A corner diagonal, per key — cells equidistant from the corner's two
+// edges; ring is that shared distance. The full corner-to-corner diagonal,
+// center included. DiagPlacement.diag_cell is this ∩ quadrant — the
+// corner→center ray. Single-set sites key on Unit.
+.comp Diagonal<Key> {
+    .decl cell(key: Key, p: Position)
+    .decl corner(key: Key, d: DiagDir)
 
-    .decl diagonal(p: Position, ring: number)
-    diagonal(P, K) :- cell(P), corner(Diag), diag_dist(P, Diag, _, K, K).
+    .decl diagonal(key: Key, p: Position, ring: number)
+    diagonal(Ky, P, K) :- cell(Ky, P), corner(Ky, Diag), diag_dist(P, Diag, _, K, K).
 }
 
 // Diagonal placement — the quadrant a cell sits in, and its ring. Solver
-// populates `cell` (the position domain).
-.comp DiagPlacement {
-    .decl cell(p: Position)
+// populates `cell` (the position domain, per key). Single-set sites key on
+// Unit.
+.comp DiagPlacement<Key> {
+    .decl cell(key: Key, p: Position)
 
     // Strictly nearer edge d than its opposite — which side of the axis midline.
-    .decl nearer(p: Position, d: Dir)
-    nearer(P, D) :- cell(P), dir_elem(D), dist_pair(P, D, K, K2), K < K2.
+    .decl nearer(key: Key, p: Position, d: Dir)
+    nearer(Ky, P, D) :- cell(Ky, P), dir_elem(D), dist_pair(P, D, K, K2), K < K2.
 
     // The diagonal quadrant a cell sits in: nearer on both of that corner's edges.
-    .decl quadrant(p: Position, diag: DiagDir)
-    quadrant(P, Diag) :- diag_dirs(Diag, _, D1, D2), nearer(P, D1), nearer(P, D2).
+    .decl quadrant(key: Key, p: Position, diag: DiagDir)
+    quadrant(Ky, P, Diag) :- diag_dirs(Diag, _, D1, D2), nearer(Ky, P, D1), nearer(Ky, P, D2).
 
     // On the diagonal of its quadrant, at ring K — the shared distance to both
     // edges of that corner.
-    .decl diag_cell(p: Position, diag: DiagDir, ring: number)
-    diag_cell(P, Diag, K) :- quadrant(P, Diag), diag_dist(P, Diag, _, K, K).
+    .decl diag_cell(key: Key, p: Position, diag: DiagDir, ring: number)
+    diag_cell(Ky, P, Diag, K) :- quadrant(Ky, P, Diag), diag_dist(P, Diag, _, K, K).
 }
 
 // Keyed marks casting rays toward each `dir`. `ray(k, p, d)` — p is on a
@@ -513,19 +518,20 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
         Qa - Pa = Qb - Pb, Qa >= Pa.
 }
 
-// Sparse numeric set → dense ordinal position. Solver populates `idx_set`;
-// `rank(k, r)` gives r = the count of elements strictly less than k, so ranks
-// run ascending from 0. A descending layout falls out by placing ranks from
-// the opposite edge; negate upstream only when the rank value itself flows
-// downstream. idx_set is a set — items sharing k share its rank, and the rank
-// set stays dense under ties.
-.comp Ordinal {
-    .decl idx_set(k: number)
+// Sparse numeric set → dense ordinal position, per key. Solver populates
+// `idx_set`; `rank(key, k, r)` gives r = the count of the key's elements
+// strictly less than k, so ranks run ascending from 0. A descending layout
+// falls out by placing ranks from the opposite edge; negate upstream only
+// when the rank value itself flows downstream. idx_set is a set — items
+// sharing k share its rank, and the rank set stays dense under ties.
+// Single-set sites key on Unit.
+.comp Ordinal<Key> {
+    .decl idx_set(key: Key, k: number)
 
-    .decl rank(k: number, r: number)
-    rank(K, R) :-
-        idx_set(K),
-        R = count : { idx_set(K2), K2 < K }.
+    .decl rank(key: Key, k: number, r: number)
+    rank(Ky, K, R) :-
+        idx_set(Ky, K),
+        R = count : { idx_set(Ky, K2), K2 < K }.
 }
 
 // Keyed set comparison via the count-trick. Solver populates pattern_member
@@ -606,53 +612,59 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 // leak the representative cell's coordinates in as orientation.
 .type CompId = Comp { tag: number }
 
-// Connected components of a node set (4-adjacency), each labeled by an opaque
-// id off the lowest-ord member cell: ord is arbitrary but within-run stable,
-// so the pick carries no geometry. A member cell is injective identity —
-// distinct components have disjoint cells; a bounding box would alias two
-// components sharing one (interleaved diagonals under 8-adjacency).
-.comp Components {
-    .decl node(p: Position)
+// Connected components of a node set (4-adjacency), per key, each labeled by
+// an opaque id off the lowest-ord member cell: ord is arbitrary but
+// within-run stable, so the pick carries no geometry. A member cell is
+// injective identity — distinct components have disjoint cells; a bounding
+// box would alias two components sharing one (interleaved diagonals under
+// 8-adjacency). Single-set sites key on Unit.
+.comp Components<Key> {
+    .decl node(key: Key, p: Position)
 
     .decl step(delta: Position)
     step([-1, 1, 0, 0]). step([1, -1, 0, 0]). step([0, 0, -1, 1]). step([0, 0, 1, -1]).
 
-    .decl conn(p: Position, q: Position)
-    conn(P, P)  :- node(P).
-    conn(P, Q2) :- conn(P, Q1), step(D), compose(Q1, D, Q2), node(Q2).
+    .decl conn(key: Key, p: Position, q: Position)
+    conn(Ky, P, P)  :- node(Ky, P).
+    conn(Ky, P, Q2) :- conn(Ky, P, Q1), step(D), compose(Q1, D, Q2), node(Ky, Q2).
 
-    .decl label(p: Position, id: CompId)
-    label(P, $Comp(Min)) :- node(P), Min = min ord(Q) : { conn(P, Q) }.
+    .decl label(key: Key, p: Position, id: CompId)
+    label(Ky, P, $Comp(Min)) :- node(Ky, P), Min = min ord(Q) : { conn(Ky, P, Q) }.
 }
 
-// Occurrences of a shape among cells: placements where the shape's footprint
-// lands fully on the cell set — the ARC "find this shape" move. Placements
-// come backward from the data (cell minus shape-cell), so no grid bounds are
-// needed and off-grid candidates self-filter: their footprint cells aren't in
-// `cell`, so `covers` fails.
-.comp Occurrences {
-    .decl cell(p: Position)
-    .decl shape(p: Position)
+// Occurrences of a shape among cells, per key: placements where the key's
+// shape footprint lands fully on the key's cell set — the ARC "find this
+// shape" move. Placements come backward from the data (cell minus
+// shape-cell), so no grid bounds are needed and off-grid candidates
+// self-filter: their footprint cells aren't in `cell`, so `covers` fails.
+// Single-set sites key on Unit.
+.comp Occurrences<Key> {
+    .decl cell(key: Key, p: Position)
+    .decl shape(key: Key, p: Position)
 
-    // Candidate placements — align each shape cell (one origin per key) to
+    // Internal keys pair the solver key with an anchor Position; the
+    // matcher's pattern id is ord(key) — opaque, one pattern per key.
+    .type KP = [key: Key, p: Position]
+
+    // Candidate placements — align each shape cell (one origin per pair) to
     // every cell, union over the shape cells.
-    .init align = Reframe<Position>
-    align.cell(S, P)  :- shape(S), cell(P).
-    align.outer(S, S) :- shape(S).
-    .decl placement(p: Position)
-    placement(M) :- align.inner(_, M).
+    .init align = Reframe<KP>
+    align.cell([Ky, S], P)  :- shape(Ky, S), cell(Ky, P).
+    align.outer([Ky, S], S) :- shape(Ky, S).
+    .decl placement(key: Key, p: Position)
+    placement(Ky, M) :- align.inner([Ky, _], M).
 
     // View the cells from each placement and test the shape's footprint.
-    .init view = Reframe<Position>
-    view.outer(M, M) :- placement(M).
-    view.cell(M, P)  :- placement(M), cell(P).
+    .init view = Reframe<KP>
+    view.outer([Ky, M], M) :- placement(Ky, M).
+    view.cell([Ky, M], P)  :- placement(Ky, M), cell(Ky, P).
 
-    .init matcher = KeyedSetCompare<Position, Position>
-    matcher.pattern_member(0, S)  :- shape(S).
-    matcher.observed_member(M, I) :- view.inner(M, I).
+    .init matcher = KeyedSetCompare<KP, Position>
+    matcher.pattern_member(ord(Ky), S) :- shape(Ky, S).
+    matcher.observed_member(Kp, I)     :- view.inner(Kp, I).
 
-    .decl occurrence(p: Position)
-    occurrence(M) :- matcher.covers(M, 0).
+    .decl occurrence(key: Key, p: Position)
+    occurrence(Ky, M) :- matcher.covers([Ky, M], ord(Ky)).
 }
 
 // ============================================================

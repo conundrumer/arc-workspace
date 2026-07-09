@@ -46,12 +46,12 @@ out(P, Col, $Stripes()) :- in(P, Col), !stripe_marked(P).
 
 // --- $Sequence ---
 
-.init o = Ordinal
-o.idx_set(K) :- dot_dist(_, K).
+.init o = Ordinal<Unit>
+o.idx_set($U(), K) :- dot_dist(_, K).
 
 .decl seq_marked(p: Position)
 seq_marked(P) :-
-    dot_dist(P, K), o.rank(K, R),                           // dot's rank from anchor
+    dot_dist(P, K), o.rank($U(), K, R),                     // dot's rank from anchor
     c.mark_run(Kr), c.keep_run(G), stride(R, Kr, G, _, _).  // in a marked run
 
 out(P, M, $Sequence())   :- seq_marked(P), c.mark(M).

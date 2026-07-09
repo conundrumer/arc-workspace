@@ -12,9 +12,9 @@
 
 // Connected component: closure of 4-adjacency over a node set, from seeds.
 // Candidate lib component.
-.comp Reach {
-    .decl node(p: Position)
-    .decl seed(p: Position)
+.comp Reach<Key> {
+    .decl node(key: Key, p: Position)
+    .decl seed(key: Key, p: Position)
 
     .decl step(delta: Position)
     step([-1,  1,  0,  0]).   // toward DIR_T
@@ -22,9 +22,9 @@
     step([ 0,  0, -1,  1]).   // toward DIR_L
     step([ 0,  0,  1, -1]).   // toward DIR_R
 
-    .decl reach(p: Position)
-    reach(P)  :- seed(P).
-    reach(P2) :- reach(P1), step(D), compose(P1, D, P2), node(P2).
+    .decl reach(key: Key, p: Position)
+    reach(Ky, P)  :- seed(Ky, P).
+    reach(Ky, P2) :- reach(Ky, P1), step(D), compose(P1, D, P2), node(Ky, P2).
 }
 
 .type Choice = Marker {} | Bbox {}
@@ -67,13 +67,13 @@ mask(P) :- in(P, MaskCol), c.mask_color(MaskCol).
 
 // The frame's connected component, seeded from a mask cell on a corner edge —
 // a stray mask cell elsewhere doesn't touch those edges, so it stays out.
-.init region = Reach
-region.node(P) :- mask(P).
-region.seed(P) :- mask(P), c.target_corner(Diag), dir_of(Diag, _, D), dist(P, D, 0).
+.init region = Reach<Unit>
+region.node($U(), P) :- mask(P).
+region.seed($U(), P) :- mask(P), c.target_corner(Diag), dir_of(Diag, _, D), dist(P, D, 0).
 
 // The region's bounding box over the input grid.
 .init box = Bbox<Unit>
-box.cell($U(), P) :- region.reach(P).
+box.cell($U(), P) :- region.reach($U(), P).
 box.grid($U(), P) :- in(P, _).
 
 .decl out(p: Position, col: Color, c: Choice)

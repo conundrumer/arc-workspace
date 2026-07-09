@@ -42,6 +42,13 @@ bg_cell(P) :- in(P, Col), c.bg(Col).
 .decl wall_cell(p: Position)
 wall_cell(P) :- in(P, Col), !c.bg(Col).
 
+.decl impl_choice(ch: Choice)
+impl_choice($Anchored()). impl_choice($Foot()). impl_choice($WallEnd()).
+
+// Corner diagonal per case, over bg cells; each case pins its corner.
+.init diag = Diagonal<Choice>
+diag.cell(Ch, P) :- impl_choice(Ch), bg_cell(P).
+
 // --- Anchored / Foot ---
 
 .decl floor_paint(p: Position)
@@ -51,15 +58,13 @@ floor_paint(P) :- bg_cell(P), c.floor_dir(D), dist(P, D, 0).
 
 // --- Anchored ---
 
-.init diag_anch = Diagonal
-diag_anch.cell(P) :- bg_cell(P).
-diag_anch.corner(Diag) :- c.corner(Diag).
+diag.corner($Anchored(), Diag) :- c.corner(Diag).
 
 .decl paint_anch(p: Position, col: Color)
 paint_anch(P, Col) :- floor_paint(P), c.floor_color(Col).
 paint_anch(P, Col) :-
-    diag_anch.diagonal(P, _), c.diag_color(Col),    // diagonal cell
-    c.floor_dir(D), dist(P, D, K), K != 0.          // floor wins the floor row
+    diag.diagonal($Anchored(), P, _), c.diag_color(Col),    // diagonal cell
+    c.floor_dir(D), dist(P, D, K), K != 0.                  // floor wins the floor row
 
 .decl painted_anch(p: Position)
 painted_anch(P) :- paint_anch(P, _).
@@ -83,13 +88,11 @@ wall_dir(D) :-
 .decl foot_corner(diag: DiagDir)
 foot_corner(Diag) :- c.floor_dir(Df), wall_dir(Dw), diag_dirs(Diag, _, Df, Dw).
 
-.init diag_foot = Diagonal
-diag_foot.cell(P) :- bg_cell(P).
-diag_foot.corner(Diag) :- foot_corner(Diag).
+diag.corner($Foot(), Diag) :- foot_corner(Diag).
 
 .decl paint_foot(p: Position, col: Color)
 paint_foot(P, Col) :- floor_paint(P), c.floor_color(Col).
-paint_foot(P, Col) :- diag_foot.diagonal(P, _), c.diag_color(Col).
+paint_foot(P, Col) :- diag.diagonal($Foot(), P, _), c.diag_color(Col).
 
 .decl painted_foot(p: Position)
 painted_foot(P) :- paint_foot(P, _).
@@ -113,13 +116,11 @@ floor_end(D2) :- wall_side(Dw), opposite(Dw, Dn), c.sense(S), turn(S, Dn, D2).
 .decl we_corner(diag: DiagDir)
 we_corner(Diag) :- floor_end(Df), wall_side(Dw), diag_dirs(Diag, _, Df, Dw).
 
-.init diag_we = Diagonal
-diag_we.cell(P) :- bg_cell(P).
-diag_we.corner(Diag) :- we_corner(Diag).
+diag.corner($WallEnd(), Diag) :- we_corner(Diag).
 
 .decl paint_we(p: Position, col: Color)
 paint_we(P, Col) :- bg_cell(P), floor_end(D), dist(P, D, 0), c.floor_color(Col).
-paint_we(P, Col) :- diag_we.diagonal(P, _), c.diag_color(Col).
+paint_we(P, Col) :- diag.diagonal($WallEnd(), P, _), c.diag_color(Col).
 
 .decl painted_we(p: Position)
 painted_we(P) :- paint_we(P, _).
