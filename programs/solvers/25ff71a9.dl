@@ -7,34 +7,6 @@
 
 #include "../lib.dl"
 
-// A directed cycle (succ = edges, carrying no basepoint) with a gauge-free
-// rotation: walk advances a start node by n successor steps. Candidate lib
-// component — see docs/wf-solver/proposals.md.
-.comp CycleWalk<Key, T> {
-    .decl succ(key: Key, p: T, p_next: T)
-    .decl step(key: Key, n: number)     // advance counts in use
-
-    // Downward closure of step — the walk's recursion bound.
-    .decl bound(key: Key, n: number)
-    bound(Ky, N) :- step(Ky, M), N = range(0, M+1).
-
-    .decl walk(key: Key, p0: T, n: number, p: T)  // p = p0 advanced n steps along succ
-    walk(Ky, P0, 0, P0) :- succ(Ky, P0, _).
-    walk(Ky, P0, N1, P2) :-
-        walk(Ky, P0, N, P1), succ(Ky, P1, P2),
-        bound(Ky, N1), N1 = N + 1.      // N1 is the Z/n step count
-}
-
-// Z/N successor over a dense 0-based index set. Candidate lib component —
-// see docs/wf-solver/proposals.md.
-.comp IndexCycle<Key> {
-    .decl idx(key: Key, k: number)
-
-    .decl succ(key: Key, k: number, k2: number)
-    succ(Ky, K, K+1) :- idx(Ky, K), idx(Ky, K+1).
-    succ(Ky, K, 0)   :- idx(Ky, K), !idx(Ky, K+1).   // wrap from the max
-}
-
 .type Choice = Shift {} | Cycle {}
 
 .comp Consts {

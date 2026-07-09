@@ -542,6 +542,42 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
         R = count : { idx_set(Ky, K2), K2 < K }.
 }
 
+// Z/N successor over a dense 0-based index set, per key — increment, with
+// the max wrapping to 0. Every dense cycle is Z/N up to relabeling; spatial
+// substrates conjugate through seating the lib already owns (dist reads an
+// index off a position, DirFrame.pos seats one back). Consumers split by
+// how they advance: a lockstep closure reads succ raw; a count advance
+// feeds it to CycleWalk. Single-set sites key on Unit.
+.comp IndexCycle<Key> {
+    .decl idx(key: Key, k: number)
+
+    .decl succ(key: Key, k: number, k2: number)
+    succ(Ky, K, K+1) :- idx(Ky, K), idx(Ky, K+1).
+    succ(Ky, K, 0)   :- idx(Ky, K), !idx(Ky, K+1).   // wrap from the max
+}
+
+// A directed cycle (succ = edges, carrying no basepoint) with a gauge-free
+// rotation: walk advances a start node by n successor steps. succ takes the
+// cycle's edges — explicit data, or a builder like IndexCycle; step declares
+// the advance counts in use — raw solver data; the comp closes them downward
+// into the recursion bound. Walks only, never builds: a solver whose advance
+// is lockstep with another step consumes succ directly and skips this comp.
+// Single-set sites key on Unit.
+.comp CycleWalk<Key, T> {
+    .decl succ(key: Key, p: T, p_next: T)
+    .decl step(key: Key, n: number)     // advance counts in use
+
+    // Downward closure of step — the walk's recursion bound.
+    .decl bound(key: Key, n: number)
+    bound(Ky, N) :- step(Ky, M), N = range(0, M+1).
+
+    .decl walk(key: Key, p0: T, n: number, p: T)  // p = p0 advanced n steps along succ
+    walk(Ky, P0, 0, P0) :- succ(Ky, P0, _).
+    walk(Ky, P0, N1, P2) :-
+        walk(Ky, P0, N, P1), succ(Ky, P1, P2),
+        bound(Ky, N1), N1 = N + 1.      // N1 is the Z/n step count
+}
+
 // Keyed set comparison via the count-trick. Solver populates pattern_member
 // (a catalog of known sets, enumerated by `pattern`) and observed_member (the
 // observed set at each `observed` key); the component exposes `covers`
