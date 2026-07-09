@@ -1,0 +1,40 @@
+// d13f3404
+// A 3×3 pattern on a larger square canvas: the pattern seats flush at the
+// corner opposite c.sweep, and every seated ink cell casts a diagonal ray
+// toward c.sweep — the pattern sliding one diagonal step per copy, trailing
+// its ink. Cells on no ray are bg.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl bg(col: Color)     bg(0).
+    .decl sweep(d: DiagDir)  sweep(DIAG_BR).
+    .decl side(n: number)    side(6).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.init frame = Frame2D<Unit>
+frame.extent($U(), A, N) :- axis_elem(A), c.side(N).
+
+// Ink seated in the output frame, flush at the corner opposite c.sweep.
+.decl seated(p: Position, col: Color)
+seated(P_out, Col) :-
+    in(P_in, Col), !c.bg(Col),                     // ink cell
+    frame.cell($U(), P_out),
+    c.sweep(Diag), diag_opposite(Diag, Anchor),    // seat corner
+    corner_anchor(Anchor, P_in, P_out).
+
+.init rays = DiagRay<Position>
+rays.diag(D)    :- c.sweep(D).
+rays.cell(P)    :- frame.cell($U(), P).
+rays.mark(P, P) :- seated(P, _).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- seated(Q, Col), rays.ray(Q, P, _).
+out(P, Col) :- frame.cell($U(), P), !rays.ray(_, P, _), c.bg(Col).
+
+.output out(IO=stdout)

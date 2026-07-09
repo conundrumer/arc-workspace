@@ -1,0 +1,38 @@
+// 0692e18c
+// The input tiled by its own inversion: each active (non-bg) input cell
+// hosts a stamp — the input with ink and bg swapped; inactive cells host
+// blank tiles. Stamp color is the host cell's: the input scaled up, masked
+// by the inverted pattern.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl bg(c: Color)    bg(0).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// Output decomposition: tile index × intile position, both input-frame cells.
+.decl cell(p_grid: Position, p_tile: Position, p_intile: Position)
+cell(P_grid_out, P_tile, P_intile) :-
+    in(P_tile, _), in(P_intile, _),
+    concat_2d(P_tile, P_intile, 0, P_grid_out).
+
+.decl active(p: Position)
+active(P) :- in(P, Col), !c.bg(Col).
+
+// Stamp cells: active tile, inverted intile.
+.decl stamped(p_grid: Position, p_tile: Position)
+stamped(P_grid_out, P_tile) :-
+    cell(P_grid_out, P_tile, P_intile), active(P_tile), !active(P_intile).
+
+.decl out(p: Position, col: Color)
+out(P_grid_out, Col) :- stamped(P_grid_out, P_tile), in(P_tile, Col).
+out(P_grid_out, Bg) :-
+    cell(P_grid_out, _, _), c.bg(Bg),
+    !stamped(P_grid_out, _).
+
+.output out(IO=stdout)

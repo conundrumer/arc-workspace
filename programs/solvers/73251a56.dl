@@ -1,0 +1,129 @@
+// 73251a56
+// A pattern symmetric under a D4 reflection, damaged by hole blobs. Under
+// $Slide and $Bg, holes repaint from their mirror cell, and the cases split
+// on the residual holes — the mirror is also a hole; fix-line cells are
+// their own mirror:
+//
+//   $Slide() — from the nearest intact cell along the symmetry's fix axis
+//   $Bg()    — fix-line holes from the line's own color, the rest from the
+//              dominant color
+//   $Label() — the pattern's color-class partition as data: a stored label
+//              grid; every hole repaints from its class's intact cells
+
+#include "../lib.dl"
+
+.type Choice = Slide {} | Bg {} | Label {}
+
+.comp Consts {
+    // --- shared ---
+    .decl hole(col: Color)   hole(0).
+
+    // --- Slide, Bg ---
+    .decl transform(d: D4)   transform(D4_DG).
+
+    // --- Label ---
+    .decl label(p: Position, lbl: number)
+    GRID_21x21(label,
+        0, 1, 0, 0, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9,10,
+        1, 0, 1, 1, 0, 0, 0, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6, 6,
+        0, 1, 0, 1, 1, 1, 0, 0, 0, 0, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4,
+        0, 1, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 3, 3, 3,
+        2, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2,
+        2, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 2, 2,
+        3, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
+        3, 2, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0,
+        4, 2, 0, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0,
+        4, 2, 0, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0,
+        5, 3, 2, 0, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        5, 3, 2, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        6, 3, 2, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1,
+        6, 4, 2, 2, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1,
+        7, 4, 3, 2, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1,
+        7, 4, 3, 2, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1,
+        8, 5, 3, 2, 2, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1,
+        8, 5, 3, 2, 2, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1,
+        9, 5, 4, 3, 2, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1,
+        9, 6, 4, 3, 2, 2, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1,
+       10, 6, 4, 3, 2, 2, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0)
+}
+
+.init c = Consts
+
+.decl impl_choice(ch: Choice)
+impl_choice($Slide()). impl_choice($Bg()). impl_choice($Label()).
+
+// The cases repainting through the mirror.
+.decl sym_choice(ch: Choice)
+sym_choice($Slide()). sym_choice($Bg()).
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl intact(p: Position, col: Color)
+intact(P, Col) :- in(P, Col), !c.hole(Col).
+
+.decl hole(p: Position)
+hole(P) :- in(P, Col), c.hole(Col).
+
+// --- Slide, Bg ---
+
+// Mirror image of each cell under the symmetry.
+.decl mirror(p: Position, q: Position)
+mirror(P, Q) :- in(P, _), c.transform(D), apply(D, P, Q).
+
+// Holes the mirror cannot repaint — the mirror is a hole too (a fix-line
+// cell is its own mirror).
+.decl residual(p: Position)
+residual(P) :- hole(P), mirror(P, Q), hole(Q).
+
+// The symmetry's fix line.
+.decl on_fix(p: Position)
+on_fix(P) :- in(P, _), mirror(P, P).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- impl_choice(Ch), intact(P, Col).
+out(P, Col, Ch) :- sym_choice(Ch), hole(P), mirror(P, Q), intact(Q, Col).
+
+// --- Slide ---
+
+// The fix axis's two ends: grid corners on the fix line.
+.decl fix_corner(diag: DiagDir)
+fix_corner(Diag) :- on_fix(P), diag_dist(P, Diag, _, 0, 0).
+
+// Nearest intact color toward a fix corner, holes skipped.
+.decl seek(p: Position, diag: DiagDir, col: Color)
+seek(P, Diag, Col) :-
+    hole(P), fix_corner(Diag),
+    diag_step_delta(Diag, S), compose(P, S, P2),
+    intact(P2, Col).
+seek(P, Diag, Col) :-
+    hole(P),
+    diag_step_delta(Diag, S), compose(P, S, P2),
+    seek(P2, Diag, Col).
+
+out(P, Col, $Slide()) :- residual(P), seek(P, _, Col).
+
+// --- Bg ---
+
+.decl fix_color(col: Color)
+fix_color(Col) :- intact(P, Col), on_fix(P).
+
+out(P, Col, $Bg()) :- residual(P), on_fix(P), fix_color(Col).
+
+.decl color_count(col: Color, n: number)
+color_count(Col, N) :- intact(_, Col), N = count : { intact(P, Col) }.
+
+.decl dominant(col: Color)
+dominant(Col) :- color_count(Col, N), N = max M : { color_count(_, M) }.
+
+out(P, Col, $Bg()) :- residual(P), !on_fix(P), dominant(Col).
+
+// --- Label ---
+
+// Each class's color, read off the pair's intact cells.
+.decl label_color(lbl: number, col: Color)
+label_color(Lbl, Col) :- c.label(P, Lbl), intact(P, Col).
+
+out(P, Col, $Label()) :- hole(P), c.label(P, Lbl), label_color(Lbl, Col).
+
+.output out(IO=stdout)
