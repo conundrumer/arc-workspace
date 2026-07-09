@@ -1,0 +1,98 @@
+// 79cce52d
+// A one-cell border sits on the two edges of c.corner; the rest is the
+// payload. Each border band holds one marker cell. Per axis, the payload's
+// lines rotate as a cycle so the line beside the corner lands on the
+// marker's line.
+//
+// Two models for which band cell is the marker, tagged on out's Choice:
+//   $Marked()    — the cell of the designated c.marker_col.
+//   $Singleton() — the band cell whose color appears c.marker_count times in
+//                  its band, the color itself unnamed.
+
+#include "../lib.dl"
+
+.type Choice = Marked {} | Singleton {}
+
+.comp Consts {
+    // --- shared ---
+    .decl corner(d: DiagDir)  corner(DIAG_TL).   // the border bands meet here
+
+    // --- Marked ---
+    .decl marker_col(c: Color)  marker_col(2).
+
+    // --- Singleton ---
+    .decl marker_count(k: number)  marker_count(1).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// Payload cells — off both border bands.
+.decl kept(p: Position, col: Color)
+kept(P, Col) :-
+    in(P, Col), c.corner(Diag),
+    diag_dist(P, Diag, _, K1, K2), K1 != 0, K2 != 0.
+
+// Line index along axis a: distance from the edge opposite the corner —
+// unchanged by the border drop, so input cells and output lines share it.
+.decl line_idx(a: Axis, p: Position, k: number) inline
+line_idx(A, P, K) :-
+    c.corner(Diag), dir_of(Diag, A, D), opposite(D, FE), dist(P, FE, K).
+
+// Each payload line, by index, is a node of the cycle.
+.decl line_set(a: Axis, k: number)
+line_set(A, K) :- kept(P, _), line_idx(A, P, K).
+
+.init line_cycle = IndexCycle<Axis>
+line_cycle.idx(A, K) :- line_set(A, K).
+
+// Marker band for axis a — the band running along a, its corner cell excluded.
+.decl band_cell(a: Axis, p: Position, col: Color)
+band_cell(A, P, Col) :-
+    in(P, Col), c.corner(Diag),
+    perp(A, A2), dir_of(Diag, A2, D2), dist(P, D2, 0),   // on the band running along a
+    dir_of(Diag, A, D), dist(P, D, K), K != 0.           // the corner cell excluded
+
+// The marker cell in each band, under each model.
+.decl marker(a: Axis, p: Position, ch: Choice)
+
+// --- Marked ---
+marker(A, P, $Marked()) :- band_cell(A, P, Col), c.marker_col(Col).
+
+// --- Singleton ---
+marker(A, P, $Singleton()) :-
+    band_cell(A, P, Col), c.marker_count(N), N = count : { band_cell(A, _, Col) }.
+
+// Rotation per axis: the map carrying the line beside the corner to the
+// marker's line — that pair, closed under lockstep succ.
+.decl rotation(a: Axis, k: number, k2: number, ch: Choice)
+rotation(A, K_ca, K_mk, Ch) :-
+    in(P_cn, _), c.corner(Diag), diag_dist(P_cn, Diag, _, 0, 0),   // the corner cell
+    dir_of(Diag, A, D), opposite(D, O), step_delta(O, S),
+    compose(P_cn, S, P_a), line_idx(A, P_a, K_ca),                 // the line beside it
+    marker(A, P_mk, Ch), line_idx(A, P_mk, K_mk).
+rotation(A, K1_next, K2_next, Ch) :-
+    rotation(A, K1, K2, Ch),
+    line_cycle.succ(A, K1, K1_next), line_cycle.succ(A, K2, K2_next).
+
+// The output frame — the payload's per-axis extents.
+.init frame = AxisFrame<Unit>
+frame.extent($U(), A, N) :- line_set(A, _), N = count : { line_set(A, K) }.
+
+// Along-axis output seat of each payload cell: its line, rotated.
+.decl out_along(a: Axis, p: Position, q: Position, ch: Choice)
+out_along(A, P, Q, Ch) :-
+    kept(P, _), line_idx(A, P, K_in),
+    rotation(A, K_in, K_out, Ch),
+    frame.cell($U(), A, Q), line_idx(A, Q, K_out).   // the output line at that index
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_out, Col, Ch) :-
+    kept(P, Col),
+    perp(A1, A2),
+    out_along(A1, P, Q1, Ch), out_along(A2, P, Q2, Ch),
+    compose(Q1, Q2, P_out).
+
+.output out(IO=stdout)
