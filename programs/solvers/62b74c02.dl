@@ -1,0 +1,78 @@
+// 62b74c02
+// An ink block anchored at one edge, the rest bg. The output stamps a copy
+// of the block flush at the empty edge and fills the span between, per
+// line, from a boundary column of the block. Two independent nodes:
+//
+//   dir:  the empty edge — $Dir: c.dir names it; $Edge: the edge no ink
+//         touches.
+//   fill: the boundary column copied — $Outer: at the anchor edge; $Inner:
+//         facing the gap.
+
+#include "../lib.dl"
+
+.type DirCh = Dir {} | Edge {}
+.type FillCh = Outer {} | Inner {}
+.type Choice = [dir: DirCh, fill: FillCh]
+
+.comp Consts {
+    .decl bg(c: Color)   bg(0).
+
+    // --- $Dir ---
+    .decl dir(d: Dir)    dir(DIR_R).   // the empty edge
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !c.bg(Col).
+
+.init box = Bbox<Unit>
+box.cell($U(), P) :- ink(P, _).
+
+// Block cell on the block's d-side boundary.
+.decl block_edge(p: Position, d: Dir)
+block_edge(P, D) :- ink(P, _), dist(P, D, K), box.edge_min($U(), D, K).
+
+.decl empty_dir(d: Dir, dc: DirCh)
+
+// --- $Dir ---
+empty_dir(D, $Dir()) :- c.dir(D).
+
+// --- $Edge ---
+empty_dir(D, $Edge()) :- box.edge_min($U(), D, M), M != 0.
+
+// Copy of the block flush at the empty edge.
+.decl copy(p: Position, col: Color, dc: DirCh)
+copy(P2, Col, Dc) :-
+    ink(P, Col),                                  // block cell
+    empty_dir(D, Dc), box.edge_min($U(), D, M),   // empty edge, block margin
+    jump_delta(D, M, S), compose(P, S, P2).       // jumped flush to it
+
+// The block boundary the fill copies from.
+.decl fill_edge(e: Dir, dc: DirCh, fc: FillCh)
+
+// --- $Outer ---
+fill_edge(E, Dc, $Outer()) :- empty_dir(D, Dc), opposite(D, E).
+
+// --- $Inner ---
+fill_edge(D, Dc, $Inner()) :- empty_dir(D, Dc).
+
+// Between block and copy, each line takes its fill-boundary cell's color.
+.decl fill(p: Position, col: Color, dc: DirCh, fc: FillCh)
+fill(P, Col, Dc, Fc) :-
+    in(P, Bg), c.bg(Bg), !copy(P, _, Dc),                   // empty cell, not under the copy
+    fill_edge(E, Dc, Fc), block_edge(Q, E), ink(Q, Col),    // fill-boundary cell
+    axis_of(E, A), split(P, A, _, Ac), split(Q, A, _, Ac).  // on p's line
+
+.decl fill_elem(fc: FillCh)
+fill_elem($Outer()). fill_elem($Inner()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, [Dc, Fc]) :- ink(P, Col), empty_dir(_, Dc), fill_elem(Fc).
+out(P, Col, [Dc, Fc]) :- copy(P, Col, Dc), fill_elem(Fc).
+out(P, Col, [Dc, Fc]) :- fill(P, Col, Dc, Fc).
+
+.output out(IO=stdout)

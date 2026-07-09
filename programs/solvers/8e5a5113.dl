@@ -1,0 +1,80 @@
+// 8e5a5113
+// Three full-height tiles split by separator columns; the pattern tile's
+// successive quarter-turn images fill the empty tiles. Flip readings are
+// defeated (train 1: the second tile matches no reflection of its pattern).
+//
+// Cases (data-equivalent on this task):
+//   $Step()   — each tile toward c.flow_dir carries its neighbor's c.rot image
+//   $Lookup() — per-tile D4 table applied to the pattern content
+
+#include "../lib.dl"
+
+.type Choice = Step {} | Lookup {}
+
+.comp Consts {
+    // --- shared ---
+    .decl bg(c: Color)
+    bg(0).
+
+    .decl axis(a: Axis)
+    axis(AXIS_H).
+
+    .decl tile_n(n: number)
+    tile_n(3).
+
+    .decl gap(g: number)
+    gap(1).
+
+    // --- Step ---
+    .decl flow_dir(d: Dir)
+    flow_dir(DIR_R).
+
+    .decl rot(d: D4)
+    rot(D4_CW).
+
+    // --- Lookup ---
+    .decl tile_d4(p: Position, d: D4)
+    GRID_1x3(tile_d4, D4_ID, D4_CW, D4_HT)
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl tile_cell(p_grid: Position, p_tile: Position, p_intile: Position)
+tile_cell(P_grid, P_tile, P_intile) :-
+    in(P_grid, _),                                       // grid cell
+    c.axis(A), c.tile_n(N), c.gap(G),                    // arrangement params
+    divide_slab(P_grid, A, N, G, P_tile, P_intile).
+
+.decl src(p_tile: Position, p_intile: Position, col: Color)
+src(P_tile, P_intile, Col) :-
+    tile_cell(P_grid, P_tile, P_intile), in(P_grid, Col), !c.bg(Col).
+
+.decl out(p: Position, col: Color, c: Choice)
+
+// Separator passthrough — cells the divide leaves undecomposed.
+out(P, Col, $Step())   :- in(P, Col), !tile_cell(P, _, _).
+out(P, Col, $Lookup()) :- in(P, Col), !tile_cell(P, _, _).
+
+// --- Step ---
+// The pattern seeds its own tile; each neighbor toward flow_dir carries
+// the rotated image.
+.decl content(p_tile: Position, p_intile: Position, col: Color)
+content(T, P, Col) :- src(T, P, Col).
+content(T2, P2, Col) :-
+    content(T1, P1, Col),                                // known tile
+    c.flow_dir(D), step_delta(D, S), compose(T1, S, T2), // neighbor toward flow
+    tile_cell(_, T2, _),                                 // stays in the arrangement
+    c.rot(R), apply(R, P1, P2).                          // rotated image
+
+out(P_grid, Col, $Step()) :- content(T, P_intile, Col), tile_cell(P_grid, T, P_intile).
+
+// --- Lookup ---
+out(P_grid, Col, $Lookup()) :-
+    src(_, P_src, Col),                                  // pattern cell
+    c.tile_d4(P_tile, D), apply(D, P_src, P_intile),     // d4 image at tile
+    tile_cell(P_grid, P_tile, P_intile).                 // recompose
+
+.output out(IO=stdout)

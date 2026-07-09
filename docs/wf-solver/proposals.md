@@ -153,6 +153,10 @@ corner(K, Diag, P) :-
 Unit key): $Stretch maps the corner cells to grid corners; $Explode steps them
 outward.
 
+**Second home (protocol step 1).** 62b74c02 (`block_edge`, Unit key):
+`edge_cell` alone, no corner readout — the boundary column the span fill
+copies from.
+
 ## `Between<Key>` — cells between two keyed marks on a line
 
 The two-sided fold of `Ray` (`lib.dl`). Demoted from lib in the `Ray`

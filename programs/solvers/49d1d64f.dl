@@ -1,0 +1,33 @@
+// 49d1d64f
+// Grow the grid by one ring: the input seats one cell in from every output
+// edge, each input edge cell replicates one step past its edge, and the
+// ring's corners get c.bg.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl seat_delta(p: Position)  seat_delta([1, 1, 1, 1]).
+    .decl bg(c: Color)             bg(0).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl seated(p_in: Position, p_out: Position)
+seated(P_in, P_out) :- in(P_in, _), c.seat_delta(Delta), compose(P_in, Delta, P_out).
+
+.decl out(p: Position, col: Color)
+out(P_out, Col) :- in(P_in, Col), seated(P_in, P_out).
+out(P_ring, Col) :-
+    in(P_in, Col), dir_elem(D), dist(P_in, D, 0),   // input cell on edge d
+    seated(P_in, P_out),
+    step_delta(D, S), compose(P_out, S, P_ring).    // one step past the edge
+out(P_corner, Col) :-
+    in(P_in, _), diag_dir_elem(Diag), diag_dist(P_in, Diag, _, 0, 0),   // input corner cell
+    seated(P_in, P_out),
+    diag_step_delta(Diag, S), compose(P_out, S, P_corner),              // one step past the corner
+    c.bg(Col).
+
+.output out(IO=stdout)
