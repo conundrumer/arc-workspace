@@ -343,21 +343,21 @@ step of each shape-corner cell.
 
 ## `diag_edge_delta` — edge delta at a corner
 
-The DiagDir peer of `edge_delta`: a Position carrying the Dim's extents
-at the two edges of corner `diag`. Grow-toward-a-corner, where
-`diag_step_delta` is move-toward-a-corner. Single-clause inline, per the
-lib's dispatch convention.
+The DiagDir peer of `edge_delta`: a Position carrying extents at the two
+edges of corner `diag`, axis-tagged — k1 at the edge on axis a, k2
+across. Grow-toward-a-corner, where `diag_step_delta` is
+move-toward-a-corner. The delta counterpart of the `diag_dist` readout.
 
 ```
-.decl diag_edge_delta(diag: DiagDir, k: Dim, p: Position) inline
-diag_edge_delta(Diag, [Kv, Kh], P) :-
-    dir_of(Diag, AXIS_V, Dv), edge_delta(Dv, Kv, Pv),
-    dir_of(Diag, AXIS_H, Dh), edge_delta(Dh, Kh, Ph),
-    compose(Pv, Ph, P).
+.decl diag_edge_delta(diag: DiagDir, a: Axis, k1: number, k2: number, p: Position) inline
+diag_edge_delta(Diag, A, K1, K2, P) :-
+    diag_dirs(Diag, A, D1, D2),
+    edge_delta(D1, K1, P1), edge_delta(D2, K2, P2),
+    compose(P1, P2, P).
 ```
 
 **Task-local home (protocol step 1).** 8618d23e (`DiagEdgeDelta` comp):
-$Derive's grow delta at the corner opposite the seat, Dim from the
+$Derive's grow delta at the corner opposite the seat, the pair from the
 growth case.
 
 ## `c4_elem` — the rotation subgroup enum

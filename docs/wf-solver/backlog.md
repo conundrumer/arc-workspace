@@ -4,7 +4,6 @@ User-owned list of queued ideas. Sessions append on ask; one line per item.
 
 ## TODO
 
-- `diag_edge_delta` proposal signature: the axis-tagged pair in place of Dim. (2026-07-08)
 
 ## Pending
 
