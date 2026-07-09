@@ -1,0 +1,84 @@
+// bbc9ae5d
+// Input is a single line: an ink run anchored at one end, bg beyond. The
+// output is line-length / c.divisor rows: the input, then each row
+// continuing the previous one toward c.diag.
+//
+//   $Grow  — the run grows: ink spreads a step per row down the stack and
+//            toward c.diag, gaining a cell at its open end.
+//   $Slide — the row slides: cells cast diagonal rays toward c.diag;
+//            vacated cells refill with the anchor-end color.
+
+#include "../lib.dl"
+
+.type Choice = Grow {} | Slide {}
+
+.comp Consts {
+    .decl bg(col: Color)      bg(0).
+    .decl diag(d: DiagDir)    diag(DIAG_BR).   // advance along the line, stack across
+    .decl divisor(n: number)  divisor(2).      // stacked rows = line length / divisor
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// The line's long axis — the longer extent.
+.decl long_axis(a: Axis)
+long_axis(A) :- in(P, _), axis_dims(P, A, N1, N2), N1 > N2.
+
+// Output frame: the line's extent along, line length / c.divisor across.
+.init frame = Frame2D<Unit>
+frame.extent($U(), A, N) :- long_axis(A), in(P, _), axis_dim(P, A, N).
+frame.extent($U(), A2, N) :-
+    long_axis(A), perp(A, A2),                                // across the line
+    in(P, _), c.divisor(K), divide(P, A, K, 0, _, P_part),    // line in K parts
+    axis_dim(P_part, A, N).                                   // a part's extent
+
+// The input line seated in the output frame at the edge the stacking leaves.
+.decl seated(p: Position, col: Color)
+seated(P_out, Col) :-
+    in(P_in, Col), frame.cell($U(), P_out),
+    c.diag(Diag), long_axis(A), diag_dirs(Diag, A, D_adv, D_stack),
+    same_dist(D_adv, P_in, P_out),                       // aligned along the line
+    opposite(D_stack, D_seed), dist(P_out, D_seed, 0).   // on the seed edge
+
+.decl out(p: Position, col: Color, c: Choice)
+
+// --- Grow --------------------------------------------------------------
+
+.decl grown(p: Position, col: Color)
+grown(P, Col) :- seated(P, Col), !c.bg(Col).
+grown(P2, Col) :-
+    grown(P1, Col),
+    c.diag(Diag), long_axis(A), diag_dirs(Diag, A, _, D_stack),
+    step_delta(D_stack, S), compose(P1, S, P2),          // step down the stack
+    frame.cell($U(), P2).
+grown(P2, Col) :-
+    grown(P1, Col),
+    c.diag(Diag), diag_step_delta(Diag, S), compose(P1, S, P2),   // step toward the corner
+    frame.cell($U(), P2).
+
+out(P, Col, $Grow()) :- grown(P, Col).
+out(P, Col, $Grow()) :- frame.cell($U(), P), !grown(P, _), c.bg(Col).
+
+// --- Slide -------------------------------------------------------------
+
+.init rays = DiagRay<Position>
+rays.diag(D)    :- c.diag(D).
+rays.cell(P)    :- frame.cell($U(), P).
+rays.mark(P, P) :- seated(P, _).
+
+.decl slid(p: Position, col: Color)
+slid(P, Col) :- seated(Q, Col), rays.ray(Q, P, _).
+
+// Color at the run's anchored end — the seated cell at the corner the slide leaves.
+.decl anchor_color(col: Color)
+anchor_color(Col) :-
+    seated(P, Col),
+    c.diag(Diag), diag_opposite(Diag, Anchor), diag_dist(P, Anchor, _, 0, 0).
+
+out(P, Col, $Slide()) :- slid(P, Col).
+out(P, Col, $Slide()) :- frame.cell($U(), P), !slid(P, _), anchor_color(Col).
+
+.output out(IO=stdout)
