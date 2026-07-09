@@ -30,21 +30,11 @@ impl_choice($Fixed()). impl_choice($Palette()).
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
-// Unit step toward a corner — the DiagDir peer of step_delta (protocol step 1).
-.comp DiagStep {
-    .decl delta(diag: DiagDir, p: Position) inline
-    delta(Diag, Delta) :-
-        dir_of(Diag, AXIS_V, Dv), dir_of(Diag, AXIS_H, Dh),
-        step_delta(Dv, Sv), step_delta(Dh, Sh),
-        compose(Sv, Sh, Delta).
-}
-.init diag_step = DiagStep
-
 // Unit step along the stripe: toward each corner of the stripe axis.
 .decl stripe_step(delta: Position)
 stripe_step(Delta) :-
     c.stripe_axis(Da), diag_axis_of(Diag, Da),          // the axis's two corners
-    diag_step.delta(Diag, Delta).
+    diag_step_delta(Diag, Delta).
 
 // --- period per choice ---
 

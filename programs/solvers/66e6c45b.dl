@@ -9,17 +9,6 @@
 
 #include "../lib.dl"
 
-// Unit step toward a corner: the corner's two cardinal unit steps composed.
-// Candidate lib primitive — see docs/wf-solver/proposals.md.
-.comp DiagStep {
-    .decl delta(diag: DiagDir, p: Position) inline
-    delta(Diag, Delta) :-
-        dir_of(Diag, AXIS_V, Dv), dir_of(Diag, AXIS_H, Dh),
-        step_delta(Dv, Sv), step_delta(Dh, Sh),
-        compose(Sv, Sh, Delta).
-}
-.init diag_step = DiagStep
-
 .type Choice = Quad {} | Stretch {} | Explode {} | Table {}
 
 .comp Consts {
@@ -85,7 +74,7 @@ target(P_corner, Col, $Stretch()) :-
 
 target(P_out, Col, $Explode()) :-
     shape(P, Col), shape_corner(P, Diag),
-    diag_step.delta(Diag, Delta), compose(P, Delta, P_out).
+    diag_step_delta(Diag, Delta), compose(P, Delta, P_out).
 
 // --- Table ---
 

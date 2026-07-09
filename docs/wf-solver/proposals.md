@@ -306,24 +306,6 @@ extension when a task needs diagonal connectivity.
 L frame — the stray mask cell stays unreachable, so the following `Bbox`
 doesn't inflate to span it.
 
-## `diag_step_delta` — unit step toward a corner
-
-The DiagDir peer of `step_delta`: the corner's two cardinal unit steps
-composed. Single-clause inline, per the lib's dispatch convention.
-
-```
-.decl diag_step_delta(diag: DiagDir, delta: Position) inline
-diag_step_delta(Diag, Delta) :-
-    dir_of(Diag, AXIS_V, Dv), dir_of(Diag, AXIS_H, Dh),
-    step_delta(Dv, Sv), step_delta(Dh, Sh),
-    compose(Sv, Sh, Delta).
-```
-
-**Task-local homes (protocol step 1).** 05269061 carries it as a `DiagStep`
-comp: the along-stripe generator of its color-propagation closure is the
-delta toward each corner of `c.stripe_axis`. 66e6c45b $Explode: the outward
-step of each shape-corner cell.
-
 ## `diag_edge_delta` — edge delta at a corner
 
 The DiagDir peer of `edge_delta`: a Position carrying extents at the two
