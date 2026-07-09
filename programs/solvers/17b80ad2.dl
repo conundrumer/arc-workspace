@@ -1,0 +1,62 @@
+// 17b80ad2
+// Lines flagged by a c.mark cell on the mark edge fill: each ink cell's
+// color flows stepwise through bg away from the edge, occluded by the next
+// ink; unflagged lines pass through. Two models of the mark edge:
+//
+//   $Dir  — c.dir names it.
+//   $Edge — the edge each mark sits on.
+//
+// Coincide here (every mark on the bottom edge); diverge when marks sit
+// on another edge.
+
+#include "../lib.dl"
+
+.type Choice = Dir {} | Edge {}
+
+.comp Consts {
+    .decl bg(c: Color)     bg(0).
+    .decl mark(c: Color)   mark(5).
+
+    // --- $Dir ---
+    .decl dir(d: Dir)      dir(DIR_B).   // mark edge; fill flows away from it
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// Lines flagged by a mark cell on the mark edge.
+.decl marked(p_across: Position, d: Dir, ch: Choice)
+
+// --- $Dir ---
+marked(P_across, D, $Dir()) :-
+    in(P, Col), c.mark(Col),                     // mark-colored cell
+    c.dir(D), dist(P, D, 0),                     // on the c.dir edge
+    axis_of(D, A), split(P, A, _, P_across).     // its line
+
+// --- $Edge ---
+marked(P_across, D, $Edge()) :-
+    in(P, Col), c.mark(Col),                     // mark-colored cell
+    dir_elem(D), dist(P, D, 0),                  // on some edge
+    axis_of(D, A), split(P, A, _, P_across).     // its line
+
+// Ink flows away from the mark edge through bg; ink occludes.
+.decl flow(p: Position, col: Color, d: Dir, ch: Choice)
+flow(P, Col, D, Ch) :-
+    in(P, Col), !c.bg(Col),                              // ink cell
+    marked(P_across, D, Ch),                             // a flagged line
+    axis_of(D, A), split(P, A, _, P_across).             // p on it
+flow(P2, Col, D, Ch) :-
+    flow(P, Col, D, Ch),                                 // colored cell
+    opposite(D, O), step_delta(O, S), compose(P, S, P2), // neighbor away from the mark edge
+    in(P2, Bg), c.bg(Bg).                                // still bg — ink occludes
+
+.decl choice_elem(ch: Choice)
+choice_elem($Dir()). choice_elem($Edge()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- flow(P, Col, _, Ch).
+out(P, Col, Ch) :- choice_elem(Ch), in(P, Col), !flow(P, _, _, Ch).
+
+.output out(IO=stdout)
