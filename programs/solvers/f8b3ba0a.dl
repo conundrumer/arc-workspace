@@ -19,8 +19,8 @@
 #include "../lib.dl"
 
 // 2D tiling from per-axis tile dims: per-axis divide_by_size, perp-glued —
-// the divide peer of Frame2D. Candidate lib comp. `gap` is the instance's
-// parameter; single-set sites key on Unit.
+// the divide peer of Frame2D. Candidate lib comp — see
+// docs/wf-solver/proposals.md. `gap` is the instance's parameter.
 .comp Tile2D<Key> {
     .decl cell(p: Position)
     .decl dim(key: Key, a: Axis, k: number)

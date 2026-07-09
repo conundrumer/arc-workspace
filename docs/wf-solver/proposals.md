@@ -79,6 +79,36 @@ instance name.
 **Task-local home (protocol step 1).** e633a9e5: nonuniform scale-up, gap 0
 — the $Edge and $Table extent models share one Choice-keyed instance.
 
+## `Tile2D<Key>` / `Divide2D<Key>` — 2D decomposition from per-axis dims
+
+The divide peers of `Frame2D`: per-axis parameters as axis-tagged rows,
+per-axis 1D decomposition, perp-glued. The `_2d` composites carry the
+square claim — one scalar, both axes; these carry the rectangular claim.
+Tile2D is size-parameterized (`divide_by_size`); Divide2D is
+count-parameterized (`divide`), the same shape with `divide(P, A, N, G, ..)`
+in its place. `gap` is the instance's parameter; single-set sites key on
+Unit.
+
+```
+.comp Tile2D<Key> {
+    .decl cell(p: Position)
+    .decl dim(key: Key, a: Axis, k: number)
+    .decl gap(g: number)
+
+    .decl tile(key: Key, p: Position, p_outer: Position, p_inner: Position)
+    tile(Ky, P, P_outer, P_inner) :-
+        cell(P), gap(G),
+        perp(A1, A2),
+        dim(Ky, A1, K1), divide_by_size(P, A1, K1, G, Po1, Pi1),
+        dim(Ky, A2, K2), divide_by_size(P, A2, K2, G, Po2, Pi2),
+        compose(Po1, Po2, P_outer), compose(Pi1, Pi2, P_inner).
+}
+```
+
+**Task-local home (protocol step 1).** Tile2D — f8b3ba0a (Unit key): the
+separator-lattice tiles, dims 1 (V) and 2 (H). Divide2D — no site yet;
+staged as the sibling.
+
 ## `KeyedSetCompare` extensions — set-relationship lattice
 
 `KeyedSetCompare<Key, Member>` (in `lib.dl`) exposes `covers` / `equals` / `pattern_size`.
