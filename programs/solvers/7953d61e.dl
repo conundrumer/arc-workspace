@@ -1,0 +1,24 @@
+// 7953d61e
+// 2×2 tile arrangement of input rotations — a per-tile D4 table.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl tile_d4(p: Position, d: D4)
+    GRID_2x2(tile_d4,
+        D4_ID, D4_CC,
+        D4_HT, D4_CW)
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl out(p: Position, col: Color)
+out(P_grid, Col) :-
+    in(P_in, Col),                                       // input cell
+    c.tile_d4(P_tile, D), apply(D, P_in, P_intile),      // d4 image at tile
+    concat_2d(P_tile, P_intile, 0, P_grid).              // recompose
+
+.output out(IO=stdout)

@@ -1,0 +1,60 @@
+// bbb1b8b6
+// A separator splits the grid into a base tile and a piece tile, each a
+// shape over bg. If the piece fits the base's bg holes, the output is the
+// base with the piece painted in; otherwise the base unchanged. Cases are
+// the fit criterion (data-equivalent here — every train piece is an exact
+// complement or collides):
+//   $Exact — piece == holes.
+//   $Fit   — collision-free: piece ⊆ holes.
+
+#include "../lib.dl"
+
+.type Choice = Exact {} | Fit {}
+
+.comp Consts {
+    .decl bg(c: Color)          bg(0).
+    .decl base_dir(d: Dir)      base_dir(DIR_L).   // edge the base tile sits toward
+    .decl tile_count(n: number) tile_count(2).
+    .decl gap(g: number)        gap(1).            // separator width
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl tile_val(p_tile: Position, p_intile: Position, col: Color)
+tile_val(T, P, Col) :-
+    in(P_grid, Col),
+    c.base_dir(D), axis_of(D, A),      // tile axis
+    c.tile_count(N), c.gap(G),
+    divide_slab(P_grid, A, N, G, T, P).
+
+.decl base(p: Position, col: Color)
+base(P, Col) :- tile_val(T, P, Col), c.base_dir(D), dist(T, D, 0).
+
+.decl piece(p: Position, col: Color)
+piece(P, Col) :-
+    tile_val(T, P, Col), !c.bg(Col),                 // ink cell
+    c.base_dir(D), opposite(D, O), dist(T, O, 0).    // in the far tile
+
+.decl hole(p: Position)
+hole(P) :- base(P, Col), c.bg(Col).
+
+.decl choice_elem(ch: Choice)
+choice_elem($Exact()). choice_elem($Fit()).
+
+// The case's fit criterion, violated. Both reject collision; $Exact also
+// rejects an unfilled hole.
+.decl unfit(ch: Choice)
+unfit(Ch) :- choice_elem(Ch), piece(P, _), !hole(P).
+
+// --- $Exact ---
+unfit($Exact()) :- hole(P), !piece(P, _).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- choice_elem(Ch), !unfit(Ch), piece(P, Col).
+out(P, Col, Ch) :- choice_elem(Ch), !unfit(Ch), base(P, Col), !piece(P, _).
+out(P, Col, Ch) :- choice_elem(Ch), unfit(Ch), base(P, Col).
+
+.output out(IO=stdout)

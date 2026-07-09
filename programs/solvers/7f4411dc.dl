@@ -1,0 +1,56 @@
+// 7f4411dc
+// Denoise: solid ink rectangles survive; scattered single cells clear to
+// bg. Ink color varies per pair. What survives:
+//
+//   $Square  — a cell under an occurrence of the solid square of side
+//              c.square_dim on the ink.
+//   $Support — a cell with ink neighbors in two distinct directions.
+
+#include "../lib.dl"
+
+.type Choice = Square {} | Support {}
+
+.comp Consts {
+    .decl bg(c: Color)  bg(0).
+
+    // --- $Square ---
+    .decl square_dim(k: number)  square_dim(2).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl ink_at(p: Position)
+ink_at(P) :- in(P, Col), !c.bg(Col).
+
+// --- $Square ---
+.init sq = Frame2D<Unit>
+sq.extent($U(), A, K) :- axis_elem(A), c.square_dim(K).
+
+.init occ = Occurrences<Unit>
+occ.cell($U(), P)  :- ink_at(P).
+occ.shape($U(), P) :- sq.cell($U(), P).
+
+.decl square_kept(p: Position)
+square_kept(P) :- occ.occurrence($U(), M), sq.cell($U(), S), compose(M, S, P).
+
+// --- $Support ---
+.decl support(p: Position, d: Dir)
+support(P, D) :-
+    ink_at(P), dir_elem(D),
+    step_delta(D, S), compose(P, S, P2), ink_at(P2).
+
+.decl support_kept(p: Position)
+support_kept(P) :- support(P, D1), support(P, D2), D1 != D2.
+
+.decl out(p: Position, col: Color, c: Choice)
+
+out(P, Col, $Square()) :- square_kept(P), in(P, Col).
+out(P, Col, $Square()) :- in(P, _), !square_kept(P), c.bg(Col).
+
+out(P, Col, $Support()) :- support_kept(P), in(P, Col).
+out(P, Col, $Support()) :- in(P, _), !support_kept(P), c.bg(Col).
+
+.output out(IO=stdout)
