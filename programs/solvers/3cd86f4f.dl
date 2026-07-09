@@ -1,13 +1,15 @@
 // 3cd86f4f
-// Shear: each cell slides along the c.shear_into axis by its distance
-// from the c.shear_from edge — the bottom row stays put, each row up steps one
-// column further, widening the frame by (rows - 1).
+// Shear: the grid's c.slide-lines slide against each other, one cell per
+// line — the across-lines rotate by c.sense onto a diagonal, widening the
+// frame by (lines - 1). Vacated cells are bg. Either cross dir spells the
+// same map; the rule derives it from both.
 
 #include "../lib.dl"
 
 .comp Consts {
-    .decl shear_from(d: Dir)   shear_from(DIR_B).   // edge the shift is measured from
-    .decl shear_into(d: Dir)   shear_into(DIR_L).      // edge-distance the shift grows
+    .decl slide(a: Axis)   slide(AXIS_H).    // axis the lines slide along
+    .decl sense(s: Sense)  sense(SENSE_CW).  // rotation of the across-lines
+    .decl bg(c: Color)     bg(0).
 }
 
 .init c = Consts
@@ -15,14 +17,30 @@
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
-// The near slot grows by the shear_from distance, the far slot by the opposite
-// distance — together they keep the widened frame consistent.
+// The push grows one slot of the slide axis; the complementary growth on
+// the other slot keeps the widened frame consistent.
+.decl shear(p_in: Position, p_out: Position)
+shear(P_in, P_out) :-
+    in(P_in, _),
+    c.slide(A), perp(A, A2), axis_of(D_m, A2),           // either cross dir
+    c.sense(S), turn(S, D_m, D_push),                    // going toward d_m, cells push toward its turn
+    opposite(D_m, M), dist_pair(P_in, M, Kn, Kf),        // near/far shift magnitudes
+    opposite(D_push, D_away),
+    edge_delta(D_away, Kn, Delta_n), edge_delta(D_push, Kf, Delta_f),
+    compose(P_in, Delta_n, P_mid), compose(P_mid, Delta_f, P_out).
+
+.decl image(p: Position)
+image(P_out) :- shear(_, P_out).
+
+// The sheared frame: image slide-parts crossed with image across-parts.
+.decl frame(p: Position)
+frame(P) :-
+    image(P1), image(P2),
+    c.slide(A), split(P1, A, Along, _), split(P2, A, _, Across),
+    compose(Along, Across, P).
+
 .decl out(p: Position, col: Color)
-out(P_out, Col) :-
-    in(P_in, Col),
-    c.shear_from(M), dist_pair(P_in, M, Kn, Kf),       // near/far shift magnitudes
-    c.shear_into(H), opposite(H, H_opp),               // displacement axis
-    edge_delta(H, Kn, D_near), edge_delta(H_opp, Kf, D_far),
-    compose(P_in, D_near, P_mid), compose(P_mid, D_far, P_out).
+out(P_out, Col) :- in(P_in, Col), shear(P_in, P_out).
+out(P, Col) :- frame(P), !image(P), c.bg(Col).
 
 .output out(IO=stdout)
