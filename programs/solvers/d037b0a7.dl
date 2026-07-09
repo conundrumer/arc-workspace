@@ -42,10 +42,7 @@ rays.dir(D)       :- c.dir(D).
 rays.cell(P)      :- in(P, Bg), c.bg(Bg).
 rays.mark(Col, Q) :- in(Q, Col), !c.bg(Col).
 
-.decl rayed(p: Position, col: Color)
-rayed(P, Col) :- c.dir(D), rays.ray(Col, P, D).
-
-out(P, Col, $Ray()) :- rayed(P, Col).
-out(P, Col, $Ray()) :- in(P, Col), !rayed(P, _).
+out(P, Col, $Ray()) :- rays.ray(Col, P, _).
+out(P, Col, $Ray()) :- in(P, Col), !rays.ray(_, P, _).
 
 .output out(IO=stdout)

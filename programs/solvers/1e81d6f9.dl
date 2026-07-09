@@ -39,9 +39,9 @@
     .decl target_anchor(p: Position)
     target_anchor(P) :-
         target_corner(Diag), target_offset(K),
-        dir_of(Diag, AXIS_V, D_v), edge_delta(D_v, K, P_v),
-        dir_of(Diag, AXIS_H, D_h), edge_delta(D_h, K, P_h),
-        compose(P_v, P_h, P).
+        diag_dirs(Diag, _, D1, D2),
+        edge_delta(D1, K, P1), edge_delta(D2, K, P2),
+        compose(P1, P2, P).
 }
 
 .init c = Consts

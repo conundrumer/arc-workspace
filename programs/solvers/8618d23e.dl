@@ -59,9 +59,9 @@ side(P, D) :- c.axis(A), axis_of(D, A), dp.nearer(P, D).
 
 // --- Derive / Derived ---
 seat(P, Diag, $Derived()) :-
-    side(P, D), axis_of(D, A),                   // cell's side of the stack
+    side(P, D),                                  // cell's side of the stack
     c.diag(DA), diag_axis_of(Diag, DA),          // corner on the seating diag
-    dir_of(Diag, A, D).                          // matching that side
+    dir_of(Diag, _, D).                          // matching that side
 
 // --- Derive / Table ---
 seat(P, Diag, $Table()) :- side(P, D), c.seat_of(D, Diag).

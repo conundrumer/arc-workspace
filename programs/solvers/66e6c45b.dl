@@ -67,7 +67,7 @@ bb.cell($U(), P) :- shape(P, _).
 
 // Shape cell on the shape's D-most edge.
 .decl shape_edge(p: Position, d: Dir)
-shape_edge(P, D) :- shape(P, _), dir_elem(D), dist(P, D, K), bb.edge_min($U(), D, K).
+shape_edge(P, D) :- shape(P, _), dist(P, D, K), bb.edge_min($U(), D, K).
 
 // Shape cell at bbox corner Diag — on both of the corner's edges.
 .decl shape_corner(p: Position, diag: DiagDir)

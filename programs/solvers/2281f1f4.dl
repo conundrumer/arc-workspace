@@ -31,9 +31,9 @@
 // Cell in the line of a marker on header edge d.
 .decl marked(p: Position, d: Dir)
 marked(P, D) :-
-    in(P, _), c.header(Diag), dir_of(Diag, _, D),
+    in(P, _), c.header(Diag), dir_of(Diag, A, D),
     c.marker(M), in(Q, M), dist(Q, D, 0),                     // marker on edge d
-    axis_of(D, A), split(P, A, _, Ac), split(Q, A, _, Ac).    // same line
+    split(P, A, _, Ac), split(Q, A, _, Ac).                   // same line
 
 .decl out(p: Position, col: Color, ch: Choice)
 
@@ -51,7 +51,7 @@ out(P, Col, $Cross()) :- in(P, Col), !cross(P).
 .decl select_edge(d: Dir)
 select_edge(Ds) :-
     c.header(Diag), c.pattern_edge(Dp),
-    axis_of(Dp, A), diag_dirs(Diag, A, Dp, Ds).
+    diag_dirs(Diag, _, Dp, Ds).
 
 // Cells of selected lines, off the selector edge.
 .decl selected(p: Position)

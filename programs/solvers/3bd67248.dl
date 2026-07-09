@@ -78,12 +78,10 @@ foot(P) :- wall_cell(P), c.floor_dir(D), dist(P, D, 0).
 wall_dir(D) :-
     foot(P), dist(P, D, 0),                             // edge at the foot
     c.floor_dir(Df), axis_of(Df, Af),
-    axis_of(D, A), A != Af.                             // perpendicular to the floor
+    perp(Af, A), axis_of(D, A).                         // perpendicular to the floor
 
 .decl foot_corner(diag: DiagDir)
-foot_corner(Diag) :-
-    c.floor_dir(Df), axis_of(Df, Af), dir_of(Diag, Af, Df),
-    wall_dir(Dw),    axis_of(Dw, Aw), dir_of(Diag, Aw, Dw).
+foot_corner(Diag) :- c.floor_dir(Df), wall_dir(Dw), diag_dirs(Diag, _, Df, Dw).
 
 .init diag_foot = Diagonal
 diag_foot.cell(P) :- bg_cell(P).
@@ -113,9 +111,7 @@ wall_side(D) :- dir_elem(D), !off_edge(D).
 floor_end(D2) :- wall_side(Dw), opposite(Dw, Dn), c.sense(S), turn(S, Dn, D2).
 
 .decl we_corner(diag: DiagDir)
-we_corner(Diag) :-
-    floor_end(Df),  axis_of(Df, Af), dir_of(Diag, Af, Df),
-    wall_side(Dw),  axis_of(Dw, Aw), dir_of(Diag, Aw, Dw).
+we_corner(Diag) :- floor_end(Df), wall_side(Dw), diag_dirs(Diag, _, Df, Dw).
 
 .init diag_we = Diagonal
 diag_we.cell(P) :- bg_cell(P).

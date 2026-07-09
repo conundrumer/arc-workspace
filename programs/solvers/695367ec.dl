@@ -44,8 +44,8 @@ run(A, N) :- axis_elem(A), in(P, _), axis_dim(P, A, N).
 .decl on_tile(p: Position, d: Dir)
 on_tile(P, D) :-
     c.frame(P),
-    c.anchor(Diag), dir_of(Diag, _, D),         // an anchor edge
-    axis_of(D, A), run(A, W), c.gap(G),         // period = block extent along D's axis
+    c.anchor(Diag), dir_of(Diag, A, D),         // an anchor edge, on axis a
+    run(A, W), c.gap(G),                        // period = block extent along that axis
     dist(P, D, T), stride(T, W, G, _, _).
 
 // On a line: a gap on at least one anchor edge.

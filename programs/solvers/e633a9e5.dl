@@ -21,20 +21,18 @@
 
     // Tile dim along axis(D), indexed by tile's distance from edge D.
     // Every cell in a rectilinear tile produces the same K — set semantics dedupes.
-    .decl axis_dim(key: Key, d: Dir, i: number, k: number)
-    axis_dim(Ky, D, I, K) :-
+    .decl tile_dim(key: Key, d: Dir, i: number, k: number)
+    tile_dim(Ky, D, I, K) :-
         tile_in(Ky, P_outer, P_inner),
         dist(P_outer, D, I),
-        opposite(D, D2),
-        dist(P_inner, D, Near), dist(P_inner, D2, Far),
-        K = Near + Far + 1.
+        axis_of(D, A), axis_dim(P_inner, A, K).
 
     // Cumulative offset from edge D for the tile at distance I from D.
     .decl edge_off(key: Key, d: Dir, i: number, off: number)
     edge_off(Ky, D, I, OFF) :-
-        axis_dim(Ky, D, I, _),
+        tile_dim(Ky, D, I, _),
         axis_of(D, A), axis_gap(A, G),
-        OFF = (sum K : { axis_dim(Ky, D, J, K), J < I }) + I*G.
+        OFF = (sum K : { tile_dim(Ky, D, J, K), J < I }) + I*G.
 
     // Tile bbox offset in grid units, assembled from the four edges.
     .decl tile_offset(key: Key, p_outer: Position, p_off: Position)
@@ -111,8 +109,8 @@ ax_pos($Edge(), P, A, Pi) :-
     c.fat(N), c.ext_pos(A, N, Pi).
 ax_pos($Edge(), P, A, ORIGIN) :-
     in(P, _),
-    axis_of(D, A), opposite(D, O),
-    dist(P, D, K), K != 0, dist(P, O, K2), K2 != 0.   // off both edges of axis a
+    axis_of(D, A), dist_pair(P, D, K, K2),
+    K != 0, K2 != 0.                                  // off both edges of axis a
 
 // --- $Table ---
 ax_pos($Table(), P, A, Pi) :-

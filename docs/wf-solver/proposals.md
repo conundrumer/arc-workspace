@@ -25,20 +25,18 @@ unkeyed — the gap is the instance's parameter, per `DirFrame`'s unkeyed `dir`.
 
     // Tile dim along axis(D), indexed by tile's distance from edge D.
     // Every cell in a rectilinear tile produces the same K — set semantics dedupes.
-    .decl axis_dim(key: Key, d: Dir, i: number, k: number)
-    axis_dim(Ky, D, I, K) :-
+    .decl tile_dim(key: Key, d: Dir, i: number, k: number)
+    tile_dim(Ky, D, I, K) :-
         tile_in(Ky, P_outer, P_inner),
         dist(P_outer, D, I),
-        opposite(D, D2),
-        dist(P_inner, D, Near), dist(P_inner, D2, Far),
-        K = Near + Far + 1.
+        axis_of(D, A), axis_dim(P_inner, A, K).
 
     // Cumulative offset from edge D for the tile at distance I from D.
     .decl edge_off(key: Key, d: Dir, i: number, off: number)
     edge_off(Ky, D, I, OFF) :-
-        axis_dim(Ky, D, I, _),
+        tile_dim(Ky, D, I, _),
         axis_of(D, A), axis_gap(A, G),
-        OFF = (sum K : { axis_dim(Ky, D, J, K), J < I }) + I*G.
+        OFF = (sum K : { tile_dim(Ky, D, J, K), J < I }) + I*G.
 
     // Tile bbox offset in grid units, assembled from the four edges.
     .decl tile_offset(key: Key, p_outer: Position, p_off: Position)
@@ -56,7 +54,7 @@ unkeyed — the gap is the instance's parameter, per `DirFrame`'s unkeyed `dir`.
 }
 ```
 
-Internals collapse via `Dir`: `axis_dim`, `edge_off`, and `tile_offset` each
+Internals collapse via `Dir`: `tile_dim`, `edge_off`, and `tile_offset` each
 generalize across edges/axes in a single rule. Like the uniform `concat` family,
 it's shape-agnostic — `P_outer` full-2D or axis-only both flow through `compose`,
 so 2D and slab arrangements use the same rules.
@@ -142,7 +140,7 @@ comp:
 ```
 // Set cell on the box's d-side boundary.
 .decl edge_cell(key: Key, p: Position, d: Dir)
-edge_cell(K, P, D) :- cell(K, P), dir_elem(D), dist(P, D, Kd), edge_min(K, D, Kd).
+edge_cell(K, P, D) :- cell(K, P), dist(P, D, Kd), edge_min(K, D, Kd).
 
 .decl corner(key: Key, diag: DiagDir, p: Position)
 corner(K, Diag, P) :-
@@ -183,6 +181,8 @@ paints mark cells through this.
 **Task-local homes (protocol step 1).** Solver-local folds: 22168020
 (Color key), 22eb0ac0 $Span (Color), a699fb00 $Span (Unit), aa18de87
 $Axis and $Iso (Unit, $Iso casting all four dirs).
+
+## `Ordinal.rev` — opposite-end pairing of an index set
 
 ## Keyed `Ordinal` / `DirFrame` — rank-and-place across cases
 
@@ -228,8 +228,6 @@ only when a task places per-key directions.
 
 Single-set callers key on `Unit`. Callers to update: f8ff0b80 (both), d406998b
 (`Ordinal`), f8b3ba0a (both, collapsing the triplets).
-
-## `Ordinal.rev` — opposite-end pairing of an index set
 
 The order anti-isomorphism of `idx_set`: `rev(k, k2)` pairs each element
 with its opposite-end counterpart — as many elements below k as above k2.

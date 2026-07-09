@@ -33,7 +33,7 @@
 
 .init slice_match = KeyedSetCompare<Position, SliceMember>
 slice_match.pattern_member(0, [P, Col]) :- c.slice_in(P, Col).
-slice_match.observed_member(P_across, [P_inner, Col]) :- slice_cell(P_across, P_inner, Col).
+slice_match.observed_member(P_across, [P_inner, Col]) :- cell_split(_, Col, P_inner, P_across).
 
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
@@ -43,10 +43,6 @@ slice_match.observed_member(P_across, [P_inner, Col]) :- slice_cell(P_across, P_
 cell_split(P, Col, P_inner, P_across) :-
     in(P, Col), c.fall_to(D), axis_of(D, A),
     split(P, A, P_inner, P_across).
-
-// Slice-cell projection.
-.decl slice_cell(p_across: Position, p_inner: Position, col: Color)
-slice_cell(P_across, P_inner, Col) :- cell_split(_, Col, P_inner, P_across).
 
 // --- $PerCell ---
 

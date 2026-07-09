@@ -20,9 +20,8 @@
 .decl out(p: Position, col: Color)
 out(P_out, Col) :-
     in(P_in, Col),
-    c.shear_from(M), opposite(M, M_opp),               // measure axis
+    c.shear_from(M), dist_pair(P_in, M, Kn, Kf),       // near/far shift magnitudes
     c.shear_into(H), opposite(H, H_opp),               // displacement axis
-    dist(P_in, M, Kn), dist(P_in, M_opp, Kf),          // near/far shift magnitudes
     edge_delta(H, Kn, D_near), edge_delta(H_opp, Kf, D_far),
     compose(P_in, D_near, P_mid), compose(P_mid, D_far, P_out).
 

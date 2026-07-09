@@ -35,9 +35,9 @@
 .decl line_color(p: Position, d: Dir, col: Color)
 line_color(P, D, Col) :-
     in(P, _),
-    c.header(Diag), dir_of(Diag, _, D),                      // header edge d
+    c.header(Diag), dir_of(Diag, A, D),                      // header edge d on axis a
     in(Q, Col), dist(Q, D, 0),                               // header cell at edge d
-    axis_of(D, A), split(P, A, _, Ac), split(Q, A, _, Ac).   // p on q's line
+    split(P, A, _, Ac), split(Q, A, _, Ac).                  // p on q's line
 
 .decl agree(p: Position, col: Color)
 agree(P, Col) :-

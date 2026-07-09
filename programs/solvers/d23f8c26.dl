@@ -38,8 +38,8 @@
 .decl on_center(p: Position)
 on_center(P) :-
     in(P, _),                                           // grid cell
-    c.axis(A), axis_of(D, A), opposite(D, O),           // the two edges
-    dist(P, D, K), dist(P, O, K).                       // equidistant
+    c.axis(A), axis_of(D, A),                           // the axis's edges
+    dist_pair(P, D, K, K).                              // equidistant
 
 out(P, Col, $Center()) :- in(P, Col), on_center(P).
 out(P, Col, $Center()) :- in(P, _), !on_center(P), c.bg(Col).
