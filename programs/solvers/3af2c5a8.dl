@@ -42,7 +42,7 @@
 out(P_grid, Col, $Lookup()) :-
     in(P_in, Col),                                       // input cell
     c.tile_d4(P_tile, D), apply(D, P_in, P_intile),      // d4 image at tile
-    concat_2d(P_tile, P_intile, [0, 0], P_grid).         // recompose
+    concat_2d(P_tile, P_intile, 0, P_grid).              // recompose
 
 // --- Mirror ---
 // Tile on the anchor side / far side of an axis.
@@ -63,7 +63,7 @@ out(P_grid, Col, $Mirror()) :-
     in(P_in, Col),                                          // input cell
     perp(A1, A2),
     mirror(A1, T, P_in, P1), mirror(A2, T, P1, P_intile),   // image through both axes
-    concat_2d(T, P_intile, [0, 0], P_grid).                 // recompose
+    concat_2d(T, P_intile, 0, P_grid).                      // recompose
 
 // --- Unfold ---
 .decl anchor_tile(p: Position)
@@ -80,6 +80,6 @@ unfold_val(T2, P_img, Col) :-
 
 out(P_grid, Col, $Unfold()) :-
     unfold_val(T, P_intile, Col),
-    concat_2d(T, P_intile, [0, 0], P_grid).
+    concat_2d(T, P_intile, 0, P_grid).
 
 .output out(IO=stdout)

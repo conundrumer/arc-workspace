@@ -18,6 +18,23 @@
 
 #include "../lib.dl"
 
+// 2D tiling from per-axis tile dims: per-axis divide_by_size, perp-glued —
+// the divide peer of Frame2D. Candidate lib comp. `gap` is the instance's
+// parameter; single-set sites key on Unit.
+.comp Tile2D<Key> {
+    .decl cell(p: Position)
+    .decl dim(key: Key, a: Axis, k: number)
+    .decl gap(g: number)
+
+    .decl tile(key: Key, p: Position, p_outer: Position, p_inner: Position)
+    tile(Ky, P, P_outer, P_inner) :-
+        cell(P), gap(G),
+        perp(A1, A2),
+        dim(Ky, A1, K1), divide_by_size(P, A1, K1, G, Po1, Pi1),
+        dim(Ky, A2, K2), divide_by_size(P, A2, K2, G, Po2, Pi2),
+        compose(Po1, Po2, P_outer), compose(Pi1, Pi2, P_inner).
+}
+
 .type Choice = Cells {} | Blocks {} | Lattice {}
 
 .comp Consts {
@@ -25,8 +42,10 @@
     .decl rank_dir(d: Dir)    rank_dir(DIR_T).
 
     // --- $Lattice ---
-    .decl tile_dim(k: Dim)          tile_dim([1, 2]).
-    .decl tile_gap(g: Dim)          tile_gap([1, 1]).
+    .decl tile_dim(a: Axis, k: number)
+    tile_dim(AXIS_V, 1). tile_dim(AXIS_H, 2).
+
+    .decl tile_gap(g: number)       tile_gap(1).
     .decl inset_delta(p: Position)  inset_delta([-1, -1, -1, -1]).
 }
 
@@ -46,12 +65,16 @@ block_color(Id, Col) :- comps.label(P, Id), in(P, Col).
 // --- $Lattice: tile detection ---
 
 // Non-bg cells never sit on the separator border, so the inset stays in frame.
+.init lattice = Tile2D<Unit>
+lattice.cell(P_int) :- in(P, Col), !c.bg(Col), c.inset_delta(D), compose(P, D, P_int).
+lattice.dim($U(), A, K) :- c.tile_dim(A, K).
+lattice.gap(G) :- c.tile_gap(G).
+
 .decl tile_color(p_tile: Position, col: Color)
 tile_color(P_tile, Col) :-
     in(P, Col), !c.bg(Col),                              // block cell
     c.inset_delta(Delta), compose(P, Delta, P_int),      // interior frame
-    c.tile_dim(K), c.tile_gap(G),
-    divide_by_size_2d(P_int, K, G, P_tile, _).           // its lattice tile
+    lattice.tile($U(), P_int, P_tile, _).                // its lattice tile
 
 // --- counts per choice ---
 

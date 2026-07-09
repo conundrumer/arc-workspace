@@ -34,6 +34,6 @@ block.extent($Colors(), A, N) :- axis_elem(A), N = count : { palette(_) }.
 out(P_grid_out, Col, Ch) :-
     in(P_tile, Col),                                  // input cell as tile pos
     block.cell(Ch, P_intile),                         // intile pos (N×N frame)
-    concat_2d(P_tile, P_intile, [0, 0], P_grid_out).  // 2D recompose
+    concat_2d(P_tile, P_intile, 0, P_grid_out).       // 2D recompose
 
 .output out(IO=stdout)

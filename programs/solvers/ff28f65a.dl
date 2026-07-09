@@ -22,19 +22,19 @@
     .init helpers = ConstsHelpers
 
     .decl block_color(c: Color)  block_color(2).
-    .decl block_dim(d: Dim)      block_dim([2, 2]).
+    .decl block_dim(k: number)   block_dim(2).
 
     .decl block_shape(p: Position)
-    block_shape(P) :- block_dim(D), helpers.frame_pos(D, P).
+    block_shape(P) :- block_dim(N), helpers.frame_pos([N, N], P).
 
     .decl mark(c: Color)         mark(1).
     .decl bg(c: Color)           bg(0).
-    .decl out_dim(d: Dim)        out_dim([3, 3]).
+    .decl out_dim(n: number)     out_dim(3).
     .decl read_corner(d: DiagDir)  read_corner(DIAG_TL).
     .decl read_axis(a: Axis)       read_axis(AXIS_V).
 
     .decl out_pos(p: Position)
-    out_pos(P) :- out_dim(D), helpers.frame_pos(D, P).
+    out_pos(P) :- out_dim(N), helpers.frame_pos([N, N], P).
 
     // Lookup render: count -> output grid. Only the counts the task exhibits (1..5).
     .decl lookup1(p: Position, col: Color)

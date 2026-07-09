@@ -24,18 +24,21 @@
     .init helpers = ConstsHelpers
 
     .decl block_color(c: Color)  block_color(1).
-    .decl block_dim(d: Dim)      block_dim([2, 2]).
+    .decl block_dim(k: number)   block_dim(2).
 
     .decl block_shape(p: Position)
-    block_shape(P) :- block_dim(D), helpers.frame_pos(D, P).
+    block_shape(P) :- block_dim(N), helpers.frame_pos([N, N], P).
 
     .decl mark(c: Color)      mark(1).
     .decl bg(c: Color)        bg(0).
-    .decl out_dim(d: Dim)     out_dim([1, 5]).
+
+    .decl out_dim(a: Axis, n: number)
+    out_dim(AXIS_V, 1). out_dim(AXIS_H, 5).
+
     .decl bar_edge(d: Dir)    bar_edge(DIR_L).
 
     .decl out_pos(p: Position)
-    out_pos(P) :- out_dim(D), helpers.frame_pos(D, P).
+    out_pos(P) :- out_dim(AXIS_V, V), out_dim(AXIS_H, H), helpers.frame_pos([V, H], P).
 }
 
 .init c = Consts

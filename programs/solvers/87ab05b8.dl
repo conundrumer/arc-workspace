@@ -26,31 +26,16 @@
     .decl fill(c: Color)      fill(2).
 
     // --- $Div ---
-    .decl divisor(n: Dim)     divisor([2, 2]).
+    .decl divisor(n: number)     divisor(2).
 
     // --- $Block ---
-    .decl tile_dim(k: Dim)    tile_dim([2, 2]).
+    .decl tile_dim(k: number)    tile_dim(2).
 
     // --- $Corner ---
-    .decl block_dim(k: Dim)   block_dim([2, 2]).
+    .decl block_dim(k: number)   block_dim(2).
 }
 
 .init c = Consts
-
-// A dim-sized block seated at a corner. Axis names live in the comp (the body
-// can't name them).
-.comp CornerBlock {
-    .decl corner(d: DiagDir)
-    .decl cell(p: Position)
-    .decl dim(k: Dim)
-
-    // Cells within dim of the corner.
-    .decl inside(p: Position)
-    inside(P) :-
-        cell(P), corner(Diag), dim([Nv, Nh]),
-        dir_of(Diag, AXIS_V, Dv), dist(P, Dv, Kv), Kv < Nv,
-        dir_of(Diag, AXIS_H, Dh), dist(P, Dh, Kh), Kh < Nh.
-}
 
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
@@ -70,24 +55,22 @@ locate_choice($Corner()).
 
 // $Div — the marker's tile in a c.divisor arrangement.
 region(P, $Div()) :-
-    marker(P_m), c.divisor(N), divide_2d(P_m, N, [0, 0], P_tile, _),   // marker's tile
-    in(P, _),                  divide_2d(P,   N, [0, 0], P_tile, _).   // cell in the same tile
+    marker(P_m), c.divisor(N), divide_2d(P_m, N, 0, P_tile, _),   // marker's tile
+    in(P, _),                  divide_2d(P,   N, 0, P_tile, _).   // cell in the same tile
 
 // $Block — the marker's block in a c.tile_dim tiling.
 region(P, $Block()) :-
-    marker(P_m), c.tile_dim(K), divide_by_size_2d(P_m, K, [0, 0], P_tile, _),
-    in(P, _),                   divide_by_size_2d(P,   K, [0, 0], P_tile, _).
+    marker(P_m), c.tile_dim(K), divide_by_size_2d(P_m, K, 0, P_tile, _),
+    in(P, _),                   divide_by_size_2d(P,   K, 0, P_tile, _).
 
 // $Corner — the c.block_dim block at the marker's nearest corner.
 .init dp = DiagPlacement
 dp.cell(P) :- marker(P).
 
-.init cb = CornerBlock
-cb.corner(D) :- dp.quadrant(_, D).
-cb.cell(P)   :- in(P, _).
-cb.dim(K)    :- c.block_dim(K).
-
-region(P, $Corner()) :- cb.inside(P).
+region(P, $Corner()) :-
+    in(P, _), dp.quadrant(_, Diag),                  // marker's corner
+    c.block_dim(N), diag_dist(P, Diag, _, K1, K2),   // within the block
+    K1 < N, K2 < N.
 
 // --- Fill cases: the region's color ------------------------------------------
 

@@ -18,8 +18,8 @@
     .decl bg(col: Color)  bg(0).
 
     // --- $Cross ---
-    .decl mark(col: Color)  mark(5).
-    .decl out_dim(d: Dim)   out_dim([3, 3]).
+    .decl mark(col: Color)    mark(5).
+    .decl out_dim(n: number)  out_dim(3).
 
     .decl cross(key: Color, p: Position)
     cross(1, [1, 1, 1, 1]).
@@ -27,7 +27,7 @@
     cross(3, [2, 0, 2, 0]).
 
     .decl out_pos(p: Position)
-    out_pos(P) :- out_dim(D), helpers.frame_pos(D, P).
+    out_pos(P) :- out_dim(N), helpers.frame_pos([N, N], P).
 
     // --- $Lookup ---
     .decl glyph1(p: Position, col: Color)

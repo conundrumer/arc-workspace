@@ -21,6 +21,6 @@ arr.extent($U(), A, N) :- axis_elem(A), N = count : { palette(_) }.
 out(P_grid, Col) :-
     in(P_intile, Col),                              // input cell as intile pos
     arr.cell($U(), P_tile),                         // tile pos (N×N arrangement)
-    concat_2d(P_tile, P_intile, [0, 0], P_grid).    // 2D recompose
+    concat_2d(P_tile, P_intile, 0, P_grid).         // 2D recompose
 
 .output out(IO=stdout)

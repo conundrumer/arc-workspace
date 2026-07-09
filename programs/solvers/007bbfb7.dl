@@ -26,7 +26,7 @@
 .decl cell(p_grid: Position, p_tile: Position, p_intile: Position)
 cell(P_grid_out, P_tile, P_intile) :-
     in(P_tile, _), in(P_intile, _),
-    concat_2d(P_tile, P_intile, [0, 0], P_grid_out).
+    concat_2d(P_tile, P_intile, 0, P_grid_out).
 
 .decl active(p: Position)
 active(P) :- in(P, Col), !c.bg(Col).

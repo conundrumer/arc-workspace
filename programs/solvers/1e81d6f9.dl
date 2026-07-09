@@ -31,17 +31,16 @@
 
 .comp Consts {
     .decl target_corner(d: DiagDir)       target_corner(DIAG_TL).
-    .decl target_offset(off: Dim)         target_offset([1, 1]).
+    .decl target_offset(off: number)      target_offset(1).
     .decl bg(c: Color)                    bg(0).
     .decl mask_color(c: Color)            mask_color(5).
 
     // Anchor Position: target_offset on each cardinal Dir of target_corner.
     .decl target_anchor(p: Position)
     target_anchor(P) :-
-        target_corner(Diag),
-        target_offset([V, H]),
-        dir_of(Diag, AXIS_V, D_v), edge_delta(D_v, V, P_v),
-        dir_of(Diag, AXIS_H, D_h), edge_delta(D_h, H, P_h),
+        target_corner(Diag), target_offset(K),
+        dir_of(Diag, AXIS_V, D_v), edge_delta(D_v, K, P_v),
+        dir_of(Diag, AXIS_H, D_h), edge_delta(D_h, K, P_h),
         compose(P_v, P_h, P).
 }
 

@@ -30,7 +30,7 @@
 
     // --- Divide params --------------------------------------------------
     .decl anchor(d: DiagDir)        anchor(DIAG_TL).
-    .decl divisor(n: Dim)           divisor([3, 3]).
+    .decl divisor(n: number)        divisor(3).
 }
 
 .init c = Consts
@@ -50,7 +50,7 @@ perm(P_grid_in, P_grid_out, $LabeledGrids()) :-
 perm(P_grid_in, P_grid_out, $Divide()) :-
     in(P_grid_in, _),                                               // input cell
     c.anchor(D), c.divisor(N),                                      // params
-    divide_2d(P_grid_in, N, [0, 0], P_grid_out, P_intile),          // 2D divide
+    divide_2d(P_grid_in, N, 0, P_grid_out, P_intile),               // 2D divide
     corner_anchor(D, P_intile, ORIGIN).                             // inner at corner D
 
 .decl out(p: Position, col: Color, c: Choice)

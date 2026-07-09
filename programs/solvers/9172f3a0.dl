@@ -20,6 +20,6 @@
 out(P_grid_out, Col) :-
     in(P_tile, Col),                                  // input cell as tile pos
     c.intile(P_intile),                               // intile pos (3×3 frame)
-    concat_2d(P_tile, P_intile, [0, 0], P_grid_out).  // 2D recompose
+    concat_2d(P_tile, P_intile, 0, P_grid_out).       // 2D recompose
 
 .output out(IO=stdout)

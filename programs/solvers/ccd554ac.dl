@@ -17,6 +17,6 @@
 out(P_grid_out, Col) :-
     in(P_tile, _),                                    // one tile per input cell
     in(P_intile, Col),                                // tile content: the input
-    concat_2d(P_tile, P_intile, [0, 0], P_grid_out).  // tile ⊗ cell → grid
+    concat_2d(P_tile, P_intile, 0, P_grid_out).       // tile ⊗ cell → grid
 
 .output out(IO=stdout)

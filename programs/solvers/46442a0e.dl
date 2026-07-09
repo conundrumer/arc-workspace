@@ -41,7 +41,7 @@
 out(P_grid, Col, $Lookup()) :-
     in(P_in, Col),                                       // input cell
     c.tile_d4(P_tile, D), apply(D, P_in, P_intile),      // d4 image at tile
-    concat_2d(P_tile, P_intile, [0, 0], P_grid).         // recompose
+    concat_2d(P_tile, P_intile, 0, P_grid).              // recompose
 
 // --- Rot ---
 // C4 — the rotation subgroup of D4. Lib-gap peer of d4_elem.
@@ -58,6 +58,6 @@ anchor_tile(T) :- c.arr_pos(T), c.anchor(Diag), corner_anchor(Diag, T, ORIGIN).
 out(P_grid, Col, $Rot()) :-
     anchor_tile(T), in(P, Col),                          // input seats the anchor tile
     c4.elem(R), apply(R, T, T2), apply(R, P, P2),        // joint quarter-turn image
-    concat_2d(T2, P2, [0, 0], P_grid).                   // recompose
+    concat_2d(T2, P2, 0, P_grid).                        // recompose
 
 .output out(IO=stdout)

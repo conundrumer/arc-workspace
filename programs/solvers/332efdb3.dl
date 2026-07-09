@@ -60,7 +60,7 @@ out(P, Col, $Stripes()) :- in(P, _), !on_tile(P, _), c.dot(Col).
 out(P, Col, $Motif()) :-
     in(P, _),
     c.motif_size(K), c.motif_overlap(G),
-    divide_by_size_2d(P, [K, K], [G, G], _, P_intile),  // shared-boundary tile
+    divide_by_size_2d(P, K, G, _, P_intile),            // shared-boundary tile
     c.motif(P_intile, Col).                             // motif lookup
 
 // --- $Inset ---
@@ -72,7 +72,7 @@ interior_tile(P) :-
     in(P, _), !is_border(P),
     c.inset_delta(Delta), compose(P, Delta, P_int),     // shift into interior frame
     c.tile_size(K), c.tile_gap(G),
-    divide_by_size_2d(P_int, [K, K], [G, G], _, _).     // tile cell in interior
+    divide_by_size_2d(P_int, K, G, _, _).               // tile cell in interior
 
 out(P, Col, $Inset()) :- in(P, _), is_border(P),                       c.bg(Col).
 out(P, Col, $Inset()) :- in(P, _), interior_tile(P),                   c.dot(Col).

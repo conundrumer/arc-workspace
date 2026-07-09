@@ -22,10 +22,10 @@
     window(P) :- helpers.frame_pos([3, 3], P).
 
     // --- Div ---
-    .decl divisor(n: Dim)     divisor([3, 3]).
+    .decl divisor(n: number)   divisor(3).
 
     // --- Block ---
-    .decl tile_dim(k: Dim)    tile_dim([3, 3]).
+    .decl tile_dim(k: number)  tile_dim(3).
 }
 
 .init c = Consts
@@ -44,13 +44,13 @@ out(P_out, Col, $Corner()) :-
 // --- Div ---
 out(P_intile, Col, $Div()) :-
     in(P_in, Col),                                                // input cell
-    c.divisor(N), divide_2d(P_in, N, [0, 0], P_tile, P_intile),   // arrangement
+    c.divisor(N), divide_2d(P_in, N, 0, P_tile, P_intile),        // arrangement
     c.diag(D), corner_anchor(D, P_tile, ORIGIN).                  // corner tile
 
 // --- Block ---
 out(P_intile, Col, $Block()) :-
     in(P_in, Col),                                                        // input cell
-    c.tile_dim(K), divide_by_size_2d(P_in, K, [0, 0], P_tile, P_intile),  // tiling
+    c.tile_dim(K), divide_by_size_2d(P_in, K, 0, P_tile, P_intile),       // tiling
     c.diag(D), corner_anchor(D, P_tile, ORIGIN).                          // corner block
 
 .output out(IO=stdout)

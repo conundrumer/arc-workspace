@@ -14,10 +14,10 @@
     .decl mark(c: Color)   mark(0).
 
     // --- Div ---
-    .decl divisor(n: Dim)  divisor([3, 3]).
+    .decl divisor(n: number)  divisor(3).
 
     // --- Size ---
-    .decl tile(k: Dim)     tile([5, 5]).
+    .decl tile(k: number)     tile(5).
 }
 
 .init c = Consts
@@ -35,10 +35,10 @@ canvas(C) :- color_count(C, N), N = max N2 : { color_count(_, N2) }.
 .decl tile_of(p_grid: Position, p_tile: Position, ch: Choice)
 
 // --- Div ---
-tile_of(P, T, $Div())  :- in(P, _), c.divisor(N), divide_2d(P, N, [0, 0], T, _).
+tile_of(P, T, $Div())  :- in(P, _), c.divisor(N), divide_2d(P, N, 0, T, _).
 
 // --- Size ---
-tile_of(P, T, $Size()) :- in(P, _), c.tile(K), divide_by_size_2d(P, K, [0, 0], T, _).
+tile_of(P, T, $Size()) :- in(P, _), c.tile(K), divide_by_size_2d(P, K, 0, T, _).
 
 // Tile holds a mark cell.
 .decl marked(p_tile: Position, ch: Choice)

@@ -4,7 +4,9 @@
 // left, right). Dir constants index into Position. Redundant with grid bounds;
 // no corner privileged.
 //
-// Dim: (V-length, H-length) of a frame. Indexed by Axis.
+// Dim: (V-length, H-length) of a frame — ConstsHelpers grouping notation
+// only. Task data is scalar (square claim) or axis-tagged rows
+// (rectangular claim).
 //
 // Color, Dir, Axis, DiagDir, DiagAxis, D4, Sense are subtypes of number —
 // typed names with no arithmetic intent. Constants are #define'd in disjoint
@@ -344,23 +346,24 @@ divide_slab(P, A, N, G, P_outer, P_inner) :-
     split(P, A, _, Across),
     compose(P_i_axis, Across, P_inner).
 
-// 2D divide on both axes. Tile count n and gap as Dim. Outputs are full
-// 2D: p_outer indexes an outer.v×outer.h tile arrangement; p_inner is
-// the cell within an inner.v×inner.h tile.
-.decl divide_2d(p: Position, n: Dim, gap: Dim,
+// 2D divide, one tile count and gap on both axes — the square claim as a
+// repeated scalar. A rectangular claim reads axis-tagged rows through
+// per-axis divide, perp-glued. Outputs are full 2D: p_outer indexes an
+// n×n tile arrangement; p_inner is the cell within a tile.
+.decl divide_2d(p: Position, n: number, gap: number,
                 p_outer: Position, p_inner: Position) inline
-divide_2d(P, [Nv, Nh], [Gv, Gh], P_outer, P_inner) :-
-    divide(P, AXIS_V, Nv, Gv, P_ov, P_iv),
-    divide(P, AXIS_H, Nh, Gh, P_oh, P_ih),
+divide_2d(P, N, G, P_outer, P_inner) :-
+    divide(P, AXIS_V, N, G, P_ov, P_iv),
+    divide(P, AXIS_H, N, G, P_oh, P_ih),
     compose(P_ov, P_oh, P_outer),
     compose(P_iv, P_ih, P_inner).
 
-// Like divide_2d, but parameterized by tile size — k and gap as Dim.
-.decl divide_by_size_2d(p: Position, k: Dim, gap: Dim,
+// Like divide_2d, but parameterized by tile size k.
+.decl divide_by_size_2d(p: Position, k: number, gap: number,
                         p_outer: Position, p_inner: Position) inline
-divide_by_size_2d(P, [Kv, Kh], [Gv, Gh], P_outer, P_inner) :-
-    divide_by_size(P, AXIS_V, Kv, Gv, P_ov, P_iv),
-    divide_by_size(P, AXIS_H, Kh, Gh, P_oh, P_ih),
+divide_by_size_2d(P, K, G, P_outer, P_inner) :-
+    divide_by_size(P, AXIS_V, K, G, P_ov, P_iv),
+    divide_by_size(P, AXIS_H, K, G, P_oh, P_ih),
     compose(P_ov, P_oh, P_outer),
     compose(P_iv, P_ih, P_inner).
 
@@ -375,15 +378,15 @@ concat_slab(P_outer, P_inner, A, G, P_grid) :-
     compose(P_along, Across, P_grid).
 
 // 2D concat on both axes — inverse of divide_2d / divide_by_size_2d.
-// p_outer and p_inner are full 2D; gap as Dim; p_grid is the recomposed
-// full 2D position.
-.decl concat_2d(p_outer: Position, p_inner: Position, gap: Dim,
+// p_outer and p_inner are full 2D; one gap on both axes; p_grid is the
+// recomposed full 2D position.
+.decl concat_2d(p_outer: Position, p_inner: Position, gap: number,
                 p_grid: Position) inline
-concat_2d(P_outer, P_inner, [Gv, Gh], P_grid) :-
+concat_2d(P_outer, P_inner, G, P_grid) :-
     split(P_outer, AXIS_V, P_outer_v, P_outer_h),
     split(P_inner, AXIS_V, P_inner_v, P_inner_h),
-    concat(P_outer_v, P_inner_v, AXIS_V, Gv, P_grid_v),
-    concat(P_outer_h, P_inner_h, AXIS_H, Gh, P_grid_h),
+    concat(P_outer_v, P_inner_v, AXIS_V, G, P_grid_v),
+    concat(P_outer_h, P_inner_h, AXIS_H, G, P_grid_h),
     compose(P_grid_v, P_grid_h, P_grid).
 
 // ============================================================

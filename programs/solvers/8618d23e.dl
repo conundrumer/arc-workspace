@@ -5,11 +5,11 @@
 //   $Derive(g, s) — displacement derived from a corner seat and growth:
 //     g $Iso()     — one width: separator and lateral shift are the same
 //                    parameter (c.sep)
-//     g $Aniso()   — per-axis widths (c.sep_dim)
+//     g $Aniso()   — per-axis widths (c.sep_dim rows)
 //     s $Derived() — each half seats at the c.diag corner on its own
 //                    side of the stack
 //     s $Table()   — explicit side → corner map (c.seat_of)
-//   $Disp() — data-leaning: 2×1 tile arrangement (c.arr), per-tile
+//   $Disp() — data-leaning: c.arr slabs along the stack axis, per-slab
 //             displacement vector (c.disp)
 
 #include "../lib.dl"
@@ -26,7 +26,8 @@
     .decl sep(g: number)     sep(1).
 
     // --- Derive / Aniso ---
-    .decl sep_dim(n: Dim)   sep_dim([1, 1]).
+    .decl sep_dim(a: Axis, n: number)
+    sep_dim(AXIS_V, 1). sep_dim(AXIS_H, 1).
 
     // --- Derive / Derived ---
     .decl diag(da: DiagAxis) diag(DAXIS_DG).      // seating diagonal
@@ -36,7 +37,7 @@
     seat_of(DIR_T, DIAG_TL). seat_of(DIR_B, DIAG_BR).
 
     // --- Disp ---
-    .decl arr(n: Dim)        arr([2, 1]).         // tile arrangement
+    .decl arr(n: number)     arr(2).              // slabs along the stack axis
     .decl disp(p_tile: Position, delta: Position)
     disp([0, 1, 0, 0], [0, 1, 0, 1]).
     disp([1, 0, 0, 0], [1, 0, 1, 0]).
@@ -65,30 +66,30 @@ seat(P, Diag, $Derived()) :-
 // --- Derive / Table ---
 seat(P, Diag, $Table()) :- side(P, D), c.seat_of(D, Diag).
 
-// Growth extents per axis.
-.decl growth(n: Dim, gr: Growth)
+// Growth extents, the wide axis-tagged pair: n1 along a, n2 across.
+.decl growth(a: Axis, n1: number, n2: number, gr: Growth)
 
 // --- Derive / Iso ---
-growth([G, G], $Iso()) :- c.sep(G).
+growth(A, G, G, $Iso()) :- axis_elem(A), c.sep(G).
 
 // --- Derive / Aniso ---
-growth(N, $Aniso()) :- c.sep_dim(N).
+growth(A, N1, N2, $Aniso()) :- c.sep_dim(A, N1), perp(A, A2), c.sep_dim(A2, N2).
 
-// Corner edge delta: a Position carrying the Dim's extents at the two
-// edges of corner diag — edge_delta's DiagDir peer. Lib-gap candidate.
+// Corner edge delta: a Position carrying extents at the two edges of
+// corner diag, axis-tagged — edge_delta's DiagDir peer. Lib-gap candidate.
 .comp DiagEdgeDelta {
-    .decl arg(diag: DiagDir, k: Dim)
+    .decl arg(diag: DiagDir, a: Axis, k1: number, k2: number)
 
-    .decl delta(diag: DiagDir, k: Dim, p: Position)
-    delta(Diag, [Kv, Kh], P) :-
-        arg(Diag, [Kv, Kh]),
-        dir_of(Diag, AXIS_V, Dv), edge_delta(Dv, Kv, Pv),
-        dir_of(Diag, AXIS_H, Dh), edge_delta(Dh, Kh, Ph),
-        compose(Pv, Ph, P).
+    .decl delta(diag: DiagDir, a: Axis, k1: number, k2: number, p: Position)
+    delta(Diag, A, K1, K2, P) :-
+        arg(Diag, A, K1, K2),
+        diag_dirs(Diag, A, D1, D2),
+        edge_delta(D1, K1, P1), edge_delta(D2, K2, P2),
+        compose(P1, P2, P).
 }
 
 .init ded = DiagEdgeDelta
-ded.arg(Diag, N) :- diag_dir_elem(Diag), growth(N, _).
+ded.arg(Diag, A, K1, K2) :- diag_dir_elem(Diag), growth(A, K1, K2, _).
 
 .decl seated(p_out: Position, col: Color, ch: Choice)
 
@@ -98,14 +99,14 @@ ded.arg(Diag, N) :- diag_dir_elem(Diag), growth(N, _).
 seated(P_out, Col, $Derive(Gr, S)) :-
     in(P, Col), seat(P, Diag, S),                            // half cell and its corner
     diag_opposite(Diag, Diag2),                              // opposite corner
-    growth(N, Gr), ded.delta(Diag2, N, E),                   // grow delta toward it
+    growth(A, K1, K2, Gr), ded.delta(Diag2, A, K1, K2, E),   // grow delta toward it
     compose(P, E, P_out).                                    // displace
 
 // --- Disp ---
 seated(P_out, Col, $Disp()) :-
-    in(P, Col),                                  // tile cell
-    c.arr(N), divide_2d(P, N, [0, 0], P_tile, _),  // its tile in the arrangement
-    c.disp(P_tile, Delta), compose(P, Delta, P_out).  // displace by its vector
+    in(P, Col),                                            // slab cell
+    c.axis(A), c.arr(N), divide_slab(P, A, N, 0, P_tile, _),  // its slab in the stack
+    c.disp(P_tile, Delta), compose(P, Delta, P_out).       // displace by its vector
 
 // Output frame extents, read off the seated images.
 .init frame = Frame2D<Choice>

@@ -19,8 +19,8 @@
     block_d4(D4_CW, $RotCW()).
     block_d4(D4_CC, $RotCCW()).
 
-    .decl block_size(k: Dim)
-    block_size([2, 2]).
+    .decl block_size(k: number)
+    block_size(2).
 }
 
 .init c = Consts
@@ -32,8 +32,8 @@
 out(P_out, Col, Ch) :-
     in(P_in, Col),                                                // input cell
     c.block_d4(D, Ch), c.block_size(K),                           // params
-    divide_by_size_2d(P_in, K, [0, 0], P_block_in, P_local),      // forward decompose
+    divide_by_size_2d(P_in, K, 0, P_block_in, P_local),           // forward decompose
     apply(D, P_block_in, P_block_out),                            // d4 on block-grid
-    concat_2d(P_block_out, P_local, [0, 0], P_out).               // recompose
+    concat_2d(P_block_out, P_local, 0, P_out).                    // recompose
 
 .output out(IO=stdout)
