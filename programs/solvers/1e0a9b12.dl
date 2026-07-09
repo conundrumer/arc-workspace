@@ -1,0 +1,40 @@
+// 1e0a9b12
+// Gravity: each line's ink packs against the c.grav edge, order kept;
+// elsewhere background.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl grav(d: Dir) grav(DIR_B).
+    .decl bg(c: Color) bg(0).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// Cell split on the gravity axis: across names its line, k places it
+// within the line as dist to the gravity edge.
+.decl place(p: Position, p_across: Position, k: number)
+place(P, P_across, K) :-
+    in(P, _), c.grav(D),
+    axis_of(D, A), split(P, A, _, P_across), dist(P, D, K).
+
+.decl ink(p_across: Position, k: number, col: Color)
+ink(P_across, K, Col) :- in(P, Col), !c.bg(Col), place(P, P_across, K).
+
+.init pack = Ordinal<Position>
+pack.idx_set(P_across, K) :- ink(P_across, K, _).
+
+// Ink at rank R among its line's ink lands R from the gravity edge.
+.decl fallen(p: Position, col: Color)
+fallen(Q, Col) :-
+    ink(P_across, K, Col), pack.rank(P_across, K, R),
+    place(Q, P_across, R).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- fallen(P, Col).
+out(P, Col) :- in(P, _), c.bg(Col), !fallen(P, _).
+
+.output out(IO=stdout)
