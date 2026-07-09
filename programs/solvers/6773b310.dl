@@ -1,0 +1,61 @@
+// 6773b310
+// Separator lines cut the grid into a 3×3 arrangement of 3×3 tiles.
+// Output is one cell per tile: c.mark where the tile holds a marker pair,
+// c.bg elsewhere. Two models:
+//
+//   $Pair  — two distinct marker cells exist in the tile.
+//   $Count — the marker count equals c.pair_count.
+//
+// A count→value table is defeated: the test exhibits a zero-marker tile,
+// absent from train.
+
+#include "../lib.dl"
+
+.type Choice = Pair {} | Count {}
+
+.comp Consts {
+    .decl marker(c: Color)      marker(6).
+    .decl mark(c: Color)        mark(1).
+    .decl bg(c: Color)          bg(0).
+
+    .decl divisor(n: number)    divisor(3).
+    .decl divide_gap(g: number) divide_gap(1).
+
+    // --- $Count ---
+    .decl pair_count(n: number) pair_count(2).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl tile_cell(p_tile: Position, p_intile: Position, col: Color)
+tile_cell(P_tile, P_intile, Col) :-
+    in(P_grid, Col),
+    c.divisor(N), c.divide_gap(G),
+    divide_2d(P_grid, N, G, P_tile, P_intile).
+
+.decl tile(p_tile: Position)
+tile(P_tile) :- tile_cell(P_tile, _, _).
+
+.decl tile_marker(p_tile: Position, p_intile: Position)
+tile_marker(P_tile, P_intile) :- tile_cell(P_tile, P_intile, Col), c.marker(Col).
+
+.decl out(p: Position, col: Color, c: Choice)
+
+// --- $Pair ---
+.decl paired(p_tile: Position)
+paired(P_tile) :- tile_marker(P_tile, P1), tile_marker(P_tile, P2), P1 != P2.
+
+out(P_tile, Col, $Pair()) :- paired(P_tile), c.mark(Col).
+out(P_tile, Col, $Pair()) :- tile(P_tile), !paired(P_tile), c.bg(Col).
+
+// --- $Count ---
+.decl marker_count(p_tile: Position, n: number)
+marker_count(P_tile, N) :- tile(P_tile), N = count : { tile_marker(P_tile, P) }.
+
+out(P_tile, Col, $Count()) :- marker_count(P_tile, N), c.pair_count(N), c.mark(Col).
+out(P_tile, Col, $Count()) :- marker_count(P_tile, N), !c.pair_count(N), c.bg(Col).
+
+.output out(IO=stdout)
