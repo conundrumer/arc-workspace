@@ -1,8 +1,8 @@
 // 5b6cbef5
 // Fractal self-tensor: output = input ⊗ input. The grid is an N×N arrangement of
 // N×N tiles (N = input extent); the input plays both roles — P_tile gates each
-// tile (present where the input cell is non-bg), P_intile fills it with a copy of
-// the input.
+// tile, P_intile addresses within it. A non-bg gate fills the tile with a copy
+// of the input; a bg gate fills it with bg.
 
 #include "../lib.dl"
 
@@ -19,7 +19,12 @@
 .decl out(p: Position, col: Color)
 out(P_grid_out, Col) :-
     in(P_tile, C_gate), !c.bg(C_gate),                // gate: tile's input cell non-bg
-    in(P_intile, Col), !c.bg(Col),                    // tile content: a non-bg input cell
+    in(P_intile, Col),                                // tile content: the input, copied
     concat_2d(P_tile, P_intile, 0, P_grid_out).       // tile ⊗ cell → grid
+out(P_grid_out, Col) :-
+    in(P_tile, C_gate), c.bg(C_gate),                 // gate: tile's input cell bg
+    in(P_intile, _),
+    concat_2d(P_tile, P_intile, 0, P_grid_out),       // tile ⊗ cell → grid
+    c.bg(Col).                                        // the whole tile bg
 
 .output out(IO=stdout)
