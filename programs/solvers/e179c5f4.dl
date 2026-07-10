@@ -1,0 +1,95 @@
+// e179c5f4
+// A lone mark in a corner launches a ball diagonally away from the corner;
+// it reflects off the walls beside the travel axis and exits at the far
+// edge. Path cells take the ball color, all others c.fill. Choice = [t, f]
+// crosses:
+//
+//   t (travel axis — the walls beside it reflect):
+//     $Axis() — c.axis names it.
+//     $Long() — the grid's long axis.
+//   f (ball color):
+//     $Mark() — the mark's own color.
+//     $Ink()  — an independent c.ink.
+//
+// Coincide here: every grid is longest along V, and the mark color equals
+// c.ink.
+
+#include "../lib.dl"
+
+.type Travel = Axis {} | Long {}
+.type Paint  = Mark {} | Ink {}
+.type Choice = [t: Travel, f: Paint]
+
+.comp Consts {
+    .decl bg(c: Color)    bg(0).
+    .decl fill(c: Color)  fill(8).    // off-path output color
+
+    // --- $Axis ---
+    .decl axis(a: Axis)   axis(AXIS_V).
+
+    // --- $Ink ---
+    .decl ink(c: Color)   ink(1).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// The mark — the ball's start.
+.decl mark(p: Position, col: Color)
+mark(P, Col) :- in(P, Col), !c.bg(Col).
+
+// --- Travel cases: the travel axis --------------------------------------------
+
+.decl travel_choice(t: Travel)
+travel_choice($Axis()). travel_choice($Long()).
+
+.decl travel_axis(t: Travel, a: Axis)
+travel_axis($Axis(), A) :- c.axis(A).
+travel_axis($Long(), A) :- mark(P, _), axis_dims(P, A, N1, N2), N1 > N2.
+
+// --- The ball's walk -----------------------------------------------------------
+
+// Launch: away from the two edges the mark's corner touches.
+.decl launch(t: Travel, p: Position, d_travel: Dir, d_bounce: Dir)
+launch(T, P, Dt, Db) :-
+    mark(P, _),
+    travel_axis(T, A), axis_of(Et, A), dist(P, Et, 0), opposite(Et, Dt),    // travel: away along the travel axis
+    perp(A, A2), axis_of(Eb, A2), dist(P, Eb, 0), opposite(Eb, Db).         // bounce: away from the touched side wall
+
+.decl travel(t: Travel, d: Dir)
+travel(T, D) :- launch(T, _, D, _).
+
+// One travel step per cell, side component toward d; the wall reflects it.
+.decl walk(t: Travel, p: Position, d: Dir)
+walk(T, P, D) :- launch(T, P, _, D).
+walk(T, P2, D) :-
+    walk(T, P, D), dist(P, D, K), K != 0,             // clear of the wall toward d
+    travel(T, Dt), step_delta(Dt, St),                // travel component
+    step_delta(D, Sd), compose(St, Sd, S),            // side component toward d
+    compose(P, S, P2), in(P2, _).                     // still on the grid
+walk(T, P2, D2) :-
+    walk(T, P, D), dist(P, D, 0), opposite(D, D2),    // at the wall — reflect
+    travel(T, Dt), step_delta(Dt, St),                // travel component
+    step_delta(D2, Sd), compose(St, Sd, S),           // side component, reflected
+    compose(P, S, P2), in(P2, _).                     // still on the grid
+
+// --- Paint cases: the ball color -----------------------------------------------
+
+.decl paint_choice(f: Paint)
+paint_choice($Mark()). paint_choice($Ink()).
+
+.decl paint(col: Color, f: Paint)
+paint(Col, $Mark()) :- mark(_, Col).
+paint(Col, $Ink())  :- c.ink(Col).
+
+// --- Output ---------------------------------------------------------------------
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, [T, F]) :- walk(T, P, _), paint(Col, F).
+out(P, Col, [T, F]) :-
+    in(P, _), travel_choice(T), !walk(T, P, _),    // off the path
+    paint_choice(F), c.fill(Col).
+
+.output out(IO=stdout)
