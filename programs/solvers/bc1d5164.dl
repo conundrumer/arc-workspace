@@ -1,0 +1,36 @@
+// bc1d5164
+// Four 3×3 blocks seated at the input's corners overlay into the 3×3
+// output: a cell shows ink where any block shows ink at that seat, bg
+// otherwise. The blocks share the input's middle row and skip its middle
+// column; both fall out of seating 3×3 blocks on a 5×7 grid.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .init helpers = ConstsHelpers
+
+    .decl bg(c: Color)
+    bg(0).
+
+    .decl frame(p: Position)
+    frame(P) :- helpers.frame_pos([3, 3], P).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// Ink seen from corner Diag lands on the frame cell at the same distances
+// to that corner's edges; the frame extent bounds each block.
+.decl contribution(p_out: Position, col: Color)
+contribution(P_out, Col) :-
+    in(P_in, Col), !c.bg(Col),               // ink cell
+    diag_dir_elem(Diag), c.frame(P_out),     // each corner's view of the frame
+    corner_anchor(Diag, P_in, P_out).        // same seat from that corner
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- contribution(P, Col).
+out(P, Col) :- c.frame(P), !contribution(P, _), c.bg(Col).
+
+.output out(IO=stdout)

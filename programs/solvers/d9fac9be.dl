@@ -1,0 +1,90 @@
+// d9fac9be
+// Two ink colors on a bg of noise; one ink draws a box around a single
+// cell of the other. Output is 1×1: the boxed cell's color.
+//
+// Cases (data-equivalent on this task):
+//   $Box()  — a c.dim square ring of one ink around a centered hole
+//   $Ring() — a cell whose surrounding cells all carry the other ink
+//   $Full() — a cell whose surrounding cells are all ink
+
+#include "../lib.dl"
+
+.type Choice = Box {} | Ring {} | Full {}
+
+.comp Consts {
+    .decl bg(c: Color)
+    bg(0).
+
+    // --- Box ---
+    .decl dim(k: number)
+    dim(3).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// The input's ink colors.
+.decl ink(c: Color)
+ink(Col) :- in(_, Col), !c.bg(Col).
+
+.decl out(p: Position, col: Color, c: Choice)
+
+// --- Box ---
+.init box = Frame2D<Unit>
+box.extent($U(), A, K) :- axis_elem(A), c.dim(K).
+
+// The box frame's centered cell and its outline.
+.decl hole(p: Position)
+hole(P) :-
+    box.cell($U(), P),
+    perp(A1, A2), axis_of(D1, A1), axis_of(D2, A2),
+    dist_pair(P, D1, K1, K1), dist_pair(P, D2, K2, K2).
+
+.decl ring(p: Position)
+ring(P) :- box.cell($U(), P), dir_elem(D), dist(P, D, 0).
+
+.init occ = Occurrences<Color>
+occ.cell(Col, P)  :- in(P, Col), ink(Col).
+occ.shape(Col, S) :- ink(Col), ring(S).
+
+out(ORIGIN, Col_hole, $Box()) :-
+    occ.occurrence(Col, M),                              // one ink's box
+    hole(C0), compose(M, C0, P_c),                       // its hole on the grid
+    in(P_c, Col_hole), !c.bg(Col_hole), Col_hole != Col. // the boxed cell's ink
+
+// --- Ring / Full ---
+// Unit step to one of the eight surrounding cells.
+.decl surround_step(s: Position)
+surround_step(S) :- dir_elem(D), step_delta(D, S).
+surround_step(S) :- diag_dir_elem(Dg), diag_step_delta(Dg, S).
+
+// --- Ring ---
+// Some surrounding cell of p does not carry ink a.
+.decl defect(p: Position, a: Color)
+defect(P, A) :-
+    in(P, _), ink(A),                        // candidate cell × ink
+    surround_step(S), compose(P, S, P2),     // a surrounding cell
+    !in(P2, A).                              // not that ink there
+
+out(ORIGIN, Col, $Ring()) :-
+    in(P, Col), !c.bg(Col),                  // ink cell
+    ink(A), A != Col,                        // the other ink
+    !defect(P, A).                           // surround solid in it
+
+// --- Full ---
+.decl inked(p: Position)
+inked(P) :- in(P, Col), !c.bg(Col).
+
+// Some surrounding cell of p is bg or off-grid.
+.decl gap(p: Position)
+gap(P) :-
+    in(P, _),                                // candidate cell
+    surround_step(S), compose(P, S, P2),     // a surrounding cell
+    !inked(P2).                              // no ink there
+
+out(ORIGIN, Col, $Full()) :-
+    in(P, Col), !c.bg(Col), !gap(P).         // ink cell, surround all ink
+
+.output out(IO=stdout)

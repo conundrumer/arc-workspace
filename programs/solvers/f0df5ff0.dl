@@ -1,0 +1,36 @@
+// f0df5ff0
+// Noise grid; every c.ink cell paints its surrounding bg cells c.ink.
+// Painting does not cascade from painted cells.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl bg(c: Color)
+    bg(0).
+
+    .decl ink(c: Color)
+    ink(1).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// Unit step to one of the eight surrounding cells.
+.decl surround_step(s: Position)
+surround_step(S) :- dir_elem(D), step_delta(D, S).
+surround_step(S) :- diag_dir_elem(Dg), diag_step_delta(Dg, S).
+
+// Bg cell beside an ink cell.
+.decl painted(p: Position)
+painted(P) :-
+    in(P, Col), c.bg(Col),                   // bg cell
+    surround_step(S), compose(P, S, P2),     // a surrounding cell
+    in(P2, Ink), c.ink(Ink).                 // ink there
+
+.decl out(p: Position, col: Color)
+out(P, Ink) :- painted(P), c.ink(Ink).
+out(P, Col) :- in(P, Col), !painted(P).
+
+.output out(IO=stdout)

@@ -1,0 +1,85 @@
+// 00576224
+// 3×3 tile arrangement of input copies: the outer bands of tiles show the
+// input, the middle band its left-right flip.
+//
+// Cases (data-equivalent on this task):
+//   $Lookup() — per-tile D4 table
+//   $Alt()    — bands alternate plain and flipped, plain at the anchor edge
+//   $Mid()    — the centered band flips, off-center bands pass through
+//
+// bc4146bd carries the alternating strip as $Lookup + $Unfold; $Unfold
+// (reflection tiling) is defeated here — a vertical stack reflects TB
+// across shared boundaries, but the middle band flips LR.
+
+#include "../lib.dl"
+
+.type Choice = Lookup {} | Alt {} | Mid {}
+
+.comp Consts {
+    .init helpers = ConstsHelpers
+
+    // --- Lookup ---
+    .decl tile_d4(p: Position, d: D4)
+    GRID_3x3(tile_d4,
+        D4_ID, D4_ID, D4_ID,
+        D4_LR, D4_LR, D4_LR,
+        D4_ID, D4_ID, D4_ID)
+
+    // --- Alt / Mid ---
+    .decl arr_pos(p: Position)
+    arr_pos(P) :- helpers.frame_pos([3, 3], P).
+
+    .decl anchor(d: Dir)
+    anchor(DIR_T).   // DIR_B fits too — plain bands at both stack ends
+
+    .decl tf(t: D4)
+    tf(D4_LR).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl out(p: Position, col: Color, c: Choice)
+
+// --- Lookup ---
+out(P_grid, Col, $Lookup()) :-
+    in(P_in, Col),                                       // input cell
+    c.tile_d4(P_tile, D), apply(D, P_in, P_intile),      // d4 image at tile
+    concat_2d(P_tile, P_intile, 0, P_grid).              // recompose
+
+// --- Alt ---
+// Step to the neighbor tile away from the anchor.
+.decl band_step(p_tile: Position, p_tile2: Position)
+band_step(T, T2) :-
+    c.anchor(D), opposite(D, O), step_delta(O, S),
+    c.arr_pos(T), compose(T, S, T2), c.arr_pos(T2).
+
+// Bands alternate plain and flipped, plain at the anchor edge.
+.decl plain_tile(p_tile: Position)
+.decl flip_tile(p_tile: Position)
+plain_tile(T)  :- c.arr_pos(T), c.anchor(D), dist(T, D, 0).
+flip_tile(T2)  :- plain_tile(T), band_step(T, T2).
+plain_tile(T2) :- flip_tile(T), band_step(T, T2).
+
+out(P_grid, Col, $Alt()) :-
+    in(P_in, Col), plain_tile(T),
+    concat_2d(T, P_in, 0, P_grid).
+out(P_grid, Col, $Alt()) :-
+    in(P_in, Col), flip_tile(T),
+    c.tf(F), apply(F, P_in, P_intile),
+    concat_2d(T, P_intile, 0, P_grid).
+
+// --- Mid ---
+out(P_grid, Col, $Mid()) :-
+    in(P_in, Col),
+    c.arr_pos(T), c.anchor(D), dist_pair(T, D, K, K),   // centered band
+    c.tf(F), apply(F, P_in, P_intile),
+    concat_2d(T, P_intile, 0, P_grid).
+out(P_grid, Col, $Mid()) :-
+    in(P_in, Col),
+    c.arr_pos(T), c.anchor(D), dist_pair(T, D, K1, K2), K1 != K2,   // off-center band
+    concat_2d(T, P_in, 0, P_grid).
+
+.output out(IO=stdout)
