@@ -1,0 +1,74 @@
+// 6a11f6da
+// Layout: 3 vertically-stacked 5×5 ink slabs. Output is the per-cell
+// overlay: the highest-priority candidate wins; no ink is bg.
+//
+//   $Palette() — color order: the c.ink_rank priority ranks
+//   $Stack()   — slab order: the c.slab_rank priority ranks
+
+#include "../lib.dl"
+
+.type Choice = Palette {} | Stack {}
+
+.comp Consts {
+    .decl bg(c: Color)   bg(0).
+
+    .decl tile_axis(a: Axis)     tile_axis(AXIS_V).
+    .decl tile_count(n: number)  tile_count(3).
+
+    // --- Palette ---
+    // Ink priority ranks, highest first.
+    .decl ink_rank(c: Color, r: number)
+    ink_rank(6, 0). ink_rank(1, 1). ink_rank(8, 2).
+
+    // --- Stack ---
+    // Slab priority ranks, highest first.
+    .decl slab_rank(p_tile: Position, r: number)
+    GRID_3x1(slab_rank,
+        1,
+        2,
+        0)
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl variant(ch: Choice)
+variant($Palette()).
+variant($Stack()).
+
+// Slab decomposition of each input cell.
+.decl decompose(p_grid: Position, p_tile: Position, p_out: Position)
+decompose(P_grid, P_tile, P_out) :-
+    in(P_grid, _),                                   // input position
+    c.tile_axis(A), c.tile_count(N),                 // slab params
+    divide_slab(P_grid, A, N, 0, P_tile, P_out).
+
+// Inked slab cells competing at each output cell.
+.decl cand(o: Position, p_tile: Position, col: Color)
+cand(P_out, P_tile, Col) :-
+    in(P_grid, Col), !c.bg(Col),                     // inked input cell
+    decompose(P_grid, P_tile, P_out).
+
+.decl outranked(o: Position, p_tile: Position, ch: Choice)
+
+// --- Palette: a candidate of higher-ranked color wins ---
+outranked(O, T, $Palette()) :-
+    cand(O, T, Lo), cand(O, _, Hi),
+    c.ink_rank(Hi, R_hi), c.ink_rank(Lo, R_lo), R_hi < R_lo.
+
+// --- Stack: a candidate from a higher-ranked slab wins ---
+outranked(O, T, $Stack()) :-
+    cand(O, T, _), cand(O, T2, _),
+    c.slab_rank(T2, R2), c.slab_rank(T, R), R2 < R.
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(O, Col, Ch) :-
+    cand(O, T, Col), variant(Ch),
+    !outranked(O, T, Ch).
+out(O, Bg, Ch) :-
+    variant(Ch), decompose(_, _, O),                 // choice × cell
+    c.bg(Bg), !cand(O, _, _).
+
+.output out(IO=stdout)
