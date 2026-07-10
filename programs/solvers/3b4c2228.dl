@@ -38,11 +38,20 @@
 
     // Lookup render: count -> output grid. Only the counts the task exhibits (1..3).
     .decl lookup1(p: Position, col: Color)
-    GRID_3x3(lookup1, 1,0,0, 0,0,0, 0,0,0)
+    GRID_3x3(lookup1,
+        1, 0, 0,
+        0, 0, 0,
+        0, 0, 0)
     .decl lookup2(p: Position, col: Color)
-    GRID_3x3(lookup2, 1,0,0, 0,1,0, 0,0,0)
+    GRID_3x3(lookup2,
+        1, 0, 0,
+        0, 1, 0,
+        0, 0, 0)
     .decl lookup3(p: Position, col: Color)
-    GRID_3x3(lookup3, 1,0,0, 0,1,0, 0,0,1)
+    GRID_3x3(lookup3,
+        1, 0, 0,
+        0, 1, 0,
+        0, 0, 1)
     .decl lookup_grid(n: number, p: Position, col: Color)
     lookup_grid(1, P, C) :- lookup1(P, C).
     lookup_grid(2, P, C) :- lookup2(P, C).

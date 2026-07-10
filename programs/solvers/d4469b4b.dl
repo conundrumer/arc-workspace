@@ -31,11 +31,20 @@
 
     // --- $Lookup ---
     .decl glyph1(p: Position, col: Color)
-    GRID_3x3(glyph1, 0,5,0, 5,5,5, 0,5,0)
+    GRID_3x3(glyph1,
+        0, 5, 0,
+        5, 5, 5,
+        0, 5, 0)
     .decl glyph2(p: Position, col: Color)
-    GRID_3x3(glyph2, 5,5,5, 0,5,0, 0,5,0)
+    GRID_3x3(glyph2,
+        5, 5, 5,
+        0, 5, 0,
+        0, 5, 0)
     .decl glyph3(p: Position, col: Color)
-    GRID_3x3(glyph3, 0,0,5, 0,0,5, 5,5,5)
+    GRID_3x3(glyph3,
+        0, 0, 5,
+        0, 0, 5,
+        5, 5, 5)
 
     .decl glyph(key: Color, p: Position, col: Color)
     glyph(1, P, C) :- glyph1(P, C).
