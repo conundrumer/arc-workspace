@@ -184,7 +184,8 @@ paints mark cells through this.
 
 **Task-local homes (protocol step 1).** Solver-local folds: 22168020
 (Color key), 22eb0ac0 $Span (Color), a699fb00 $Span (Unit), aa18de87
-$Axis and $Iso (Unit, $Iso casting all four dirs).
+$Axis and $Iso (Unit, $Iso casting all four dirs), 505fff84 $Set and
+$Sided (Color, strict via mark-free domain).
 
 ## `Ordinal.rev` — opposite-end pairing of an index set
 
@@ -208,6 +209,48 @@ Home: `Ordinal` — it owns `idx_set`; `rev` is a second readout beside
 **Task-local home (protocol step 1).** 85c4e7cd reverses its ring colors:
 `rev` over ring indices pairs ring K with the ring as deep from the center
 as K is from the border.
+
+## `OrderFrame<Key>` — the frame a sparse position set induces
+
+The order-canonical peer of `AxisFrame`: `AxisFrame` realizes a frame
+from its extent; `OrderFrame` realizes the dense frame a sparse set of
+axis-only positions induces, with each member's position in it. `pos`
+is Position-valued and privileges no end — the same
+directed/undirected split as `DirFrame`/`AxisFrame`, applied to order.
+Members order by comparing their coordinate; a member's distance toward
+each edge is the count of nearer members, so numbers stay inside
+`nearer`'s defining comparison. Parallel to `Ordinal`, not built on it:
+`Ordinal` is the directed, number-valued readout of an index set;
+`OrderFrame` is the undirected, Position-valued one of a member set.
+`axis` is the instance's parameter; single-set sites key on Unit.
+
+```
+.comp OrderFrame<Key> {
+    .decl axis(a: Axis)
+    .decl cell(key: Key, p: Position)
+
+    // Member p strictly nearer edge d than member q.
+    .decl nearer(key: Key, d: Dir, p: Position, q: Position)
+    nearer(Ky, D, P, Q) :-
+        cell(Ky, P), cell(Ky, Q),
+        axis(A), axis_of(D, A),
+        dist(P, D, K1), dist(Q, D, K2), K1 < K2.
+
+    // Position in the induced frame: distance toward each edge = count
+    // of nearer members.
+    .decl pos(key: Key, p: Position, p_pos: Position)
+    pos(Ky, P, P_pos) :-
+        cell(Ky, P), axis(A), axis_of(D, A), opposite(D, O),
+        R1 = count : { nearer(Ky, D, Q1, P) }, edge_delta(D, R1, P1),
+        R2 = count : { nearer(Ky, O, Q2, P) }, edge_delta(O, R2, P2),
+        compose(P1, P2, P_pos).
+}
+```
+
+**Task-local home (protocol step 1).** 505fff84: extraction placement —
+contributing rows keyed by Choice. (Its segments shift via Bbox +
+color-keyed Reframe instead: they are intervals, so their order frame is
+a translation, and the tighter unit won.)
 
 ## `Reach` — seeded connectivity
 

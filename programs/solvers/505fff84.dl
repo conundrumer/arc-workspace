@@ -1,0 +1,104 @@
+// 505fff84
+// Noise rows; the two marker colors bracket one segment per marked row.
+// The output stacks the strictly-between segments: contributing rows take
+// their order positions; each segment shifts flush to the edge.
+//
+// Cases (data-equivalent on this task — every marked row has 1 west of 8):
+//   $Set()   — the marker pair brackets a segment regardless of side
+//   $Sided() — each marker owns an end: c.side's color sits at its dir
+
+#include "../lib.dl"
+
+.type Choice = Set {} | Sided {}
+
+.comp Consts {
+    // --- shared ---
+    .decl axis(a: Axis)
+    axis(AXIS_H).            // marked lines run along this axis
+
+    .decl marker(c: Color)
+    marker(1). marker(8).
+
+    // --- Sided ---
+    .decl side(d: Dir, c: Color)
+    side(DIR_L, 1). side(DIR_R, 8).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// Marker cells cast rays along the line axis; the domain excludes marks,
+// so reach is strict.
+.init rays = Ray<Color>
+rays.dir(D)       :- c.axis(A), axis_of(D, A).
+rays.cell(P)      :- in(P, Col), !c.marker(Col).
+rays.mark(Col, P) :- in(P, Col), c.marker(Col).
+
+.decl seg(p: Position, ch: Choice)
+
+// --- Set ---
+// Some mark on each side.
+seg(P, $Set()) :- rays.ray(_, P, D), opposite(D, O), rays.ray(_, P, O).
+
+// --- Sided ---
+// The marks on their own ends. A ray toward d means its mark lies away
+// from d, so each end's color casts toward the opposite end.
+seg(P, $Sided()) :-
+    c.side(D, C1), opposite(D, O), c.side(O, C2),   // the ends' colors
+    rays.ray(C1, P, O), rays.ray(C2, P, D).         // each mark at its end
+
+// The order-canonical peer of AxisFrame: the dense frame a sparse set of
+// axis-only positions induces, with each member's position in it — members
+// order by coordinate, no end privileged. Single-set sites key on Unit.
+.comp OrderFrame<Key> {
+    .decl axis(a: Axis)
+    .decl cell(key: Key, p: Position)
+
+    // Member p strictly nearer edge d than member q.
+    .decl nearer(key: Key, d: Dir, p: Position, q: Position)
+    nearer(Ky, D, P, Q) :-
+        cell(Ky, P), cell(Ky, Q),
+        axis(A), axis_of(D, A),
+        dist(P, D, K1), dist(Q, D, K2), K1 < K2.
+
+    // Position in the induced frame: distance toward each edge = count
+    // of nearer members.
+    .decl pos(key: Key, p: Position, p_pos: Position)
+    pos(Ky, P, P_pos) :-
+        cell(Ky, P), axis(A), axis_of(D, A), opposite(D, O),
+        R1 = count : { nearer(Ky, D, Q1, P) }, edge_delta(D, R1, P1),
+        R2 = count : { nearer(Ky, O, Q2, P) }, edge_delta(O, R2, P2),
+        compose(P1, P2, P_pos).
+}
+
+// Segment cells split into their row and their position along it.
+.decl seg_split(p_along: Position, row: Position, col: Color, ch: Choice)
+seg_split(P_along, Row, Col, Ch) :-
+    seg(P, Ch), in(P, Col), c.axis(A), split(P, A, P_along, Row).
+
+// Out placement: contributing rows take their order positions.
+.init rows = OrderFrame<Choice>
+rows.axis(A2)      :- c.axis(A), perp(A, A2).
+rows.cell(Ch, Row) :- seg_split(_, Row, _, Ch).
+
+// Each segment shifts flush: its cells re-expressed from its own bounding
+// frame. The reframe keys on color to carry it across.
+.type SegKey   = [ch: Choice, row: Position]
+.type ShiftKey = [ch: Choice, row: Position, col: Color]
+
+.init seg_box = Bbox<SegKey>
+seg_box.cell([Ch, Row], P_along) :- seg_split(P_along, Row, _, Ch).
+
+.init shift = Reframe<ShiftKey>
+shift.outer([Ch, Row, Col], M)      :- seg_split(_, Row, Col, Ch), seg_box.margin([Ch, Row], M).
+shift.cell([Ch, Row, Col], P_along) :- seg_split(P_along, Row, Col, Ch).
+
+.decl out(p: Position, col: Color, c: Choice)
+out(P_out, Col, Ch) :-
+    rows.pos(Ch, Row, P_v),                // the row's out position
+    shift.inner([Ch, Row, Col], P_h),      // an out column of that color
+    compose(P_v, P_h, P_out).
+
+.output out(IO=stdout)
