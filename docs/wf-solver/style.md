@@ -30,6 +30,7 @@ Formal parameters of `divide` and `tile_pos` are `p_outer` / `p_inner` — they 
 - `.comp Consts { ... }` declares task-wide data; `.init c = Consts` exposes it as `c.<rel>`.
 - Inside Consts, `.init helpers = ConstsHelpers` makes shared helpers (`frame_pos`, `tile_pos`) available as `helpers.<rel>(...)` in data declarations. The body has no access.
 - All task-wide data lives in Consts, e.g. orientation (Dirs, Axes), dimensions, gaps, mappings, frame data.
+- An orientation datum constrained by another is a relative value (`Sense` via `turn`, `Axis` via `perp`). A second absolute slot admits fills the family does not have; the relative spelling has one fill per member.
 
 Skeleton (single-impl):
 
@@ -95,6 +96,12 @@ out(..., $CaseB()) :- ...
 ```
 
 Cases are grouped under `// --- <name> ---` markers in both Consts and body — no interleaving across cases.
+
+## Types
+
+A solver defines types only for model coverage (`Choice` and the ADTs its
+cases carry) and for comp instantiation (records that fill a generic comp's
+type params).
 
 ## Body
 
