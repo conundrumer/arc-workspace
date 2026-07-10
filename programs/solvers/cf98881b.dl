@@ -12,11 +12,12 @@
 //   b (body, the priority claim):
 //     $Spatial() — pane order: the pane nearest c.stack_dir wins
 //     $Palette() — color order: the c.ink_rank priority ranks
+//     $Stack()   — pane order: the c.pane_rank priority ranks
 
 #include "../lib.dl"
 
 .type DecChoice = Tile {} | Div {}
-.type Body      = Spatial {} | Palette {}
+.type Body      = Spatial {} | Palette {} | Stack {}
 .type Choice    = [d: DecChoice, b: Body]
 
 .comp Consts {
@@ -50,6 +51,12 @@
     // Ink priority ranks, highest first.
     .decl ink_rank(c: Color, r: number)
     ink_rank(4, 0). ink_rank(9, 1). ink_rank(1, 2).
+
+    // --- Stack body data --------------------------------------------------
+    // Pane priority ranks, highest first.
+    .decl pane_rank(p_tile: Position, r: number)
+    GRID_1x3(pane_rank,
+        0, 1, 2)
 }
 
 .init c = Consts
@@ -81,6 +88,7 @@ cand(P_grid_out, P_tile, Col, Dc) :-
 .decl body_choice(b: Body)
 body_choice($Spatial()).
 body_choice($Palette()).
+body_choice($Stack()).
 
 .decl outranked(o: Position, p_tile: Position, dc: DecChoice, b: Body)
 
@@ -93,6 +101,11 @@ outranked(O, T, Dc, $Spatial()) :-
 outranked(O, T, Dc, $Palette()) :-
     cand(O, T, Lo, Dc), cand(O, _, Hi, Dc),
     c.ink_rank(Hi, R_hi), c.ink_rank(Lo, R_lo), R_hi < R_lo.
+
+// --- Stack: a candidate from a higher-ranked pane wins ---
+outranked(O, T, Dc, $Stack()) :-
+    cand(O, T, _, Dc), cand(O, T2, _, Dc),
+    c.pane_rank(T2, R2), c.pane_rank(T, R), R2 < R.
 
 // --- Output ----------------------------------------------------------------
 
