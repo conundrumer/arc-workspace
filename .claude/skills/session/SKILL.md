@@ -36,10 +36,11 @@ Do each step individually; never batch them. Create a task per step.
 3. Prune everything that doesn't serve the reader — exhaustively, from unnecessary words to irrelevant ideas. Necessity, as judged from the artifact alone, not from the session.
     - Copy from prior solvers may not have been pruned; prune it like new text
 4. Review:
+    - The review is for the user to act on: keep or add cases, fix awkward code, promote primitives. Include only items the user can act on. An item included as mere context still makes the user verify it against the rules — the work the review is supposed to do for them.
     - Does it follow principles?
     - Is there anything awkward or roundabout, like code that reads as pure implementation details with no conceptual meaning, or reimplementing something existing?
-    - Any potential alt models? Do not propose alt impls.
-    - For each Choice case pair, and for each alt model considered and dropped: where the models diverge, as a concrete input fragment and each model's output on it. The fragment must witness a valid divergence: the diverging model's output on it is well-formed. Data-indistinguishable pairs state what the shared data hides. Exclude models the data defeats — they were never candidates.
+    - Any potential alt models? Alt impls are not models — do not propose them, and do not list them in the review.
+    - For each Choice case pair, and for each alt model considered and dropped: where the models diverge, as a concrete input fragment and each model's output on it. The fragment must witness a valid divergence: the diverging model's output on it is well-formed. Data-indistinguishable pairs state what the shared data hides. A model the data defeats was never a candidate: it does not appear in the review, not even as a note on why it is absent.
     - The review is a reply to the user, and it ends the turn: finish all task updates first, then write it with no tool calls after it.
 
 For prune and `revise`, the reader and purpose: a future session who needs to understand the solver and its model claim.
