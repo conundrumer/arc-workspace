@@ -88,6 +88,19 @@ map(P_in, P_out) :- src(P_in, Id), dst(P_out, Id).
 
 (e633a9e5 $Map — a nonuniform scale-up as pure data.)
 
+## Tabulated decomposition
+
+A constant layout stored as Consts data: one relation mapping each grid position to its decomposition, built with `helpers.tile_pos`, embedded behind a border with `compose`. The body joins `in` against it and works in decomposed coordinates. The body-derived peer is `divide` / `divide_by_size`; tabulation fits when the layout is the same in every pair.
+
+```
+.decl decompose(p_grid: Position, p_tile: Position, p_intile: Position)
+decompose(P_grid, P_tile, P_intile) :-
+    helpers.tile_pos([1, 2], [3, 3], [0, 1], P_frame, P_tile, P_intile),
+    compose(P_frame, [1, 1, 1, 1], P_grid).    // 1-cell border
+```
+
+(34b99a2b `tile_decompose` — gap only; ed74f2f2 `decompose` — gap and border.)
+
 ## Stored total orders as dense ranks
 
 A total order in Consts spells as dense 0-based rank data, consumed by comparison only. Ranks state each element's place in the sequence; successor edges imply it through closure. Comparison-only consumption keeps the borrowed number structure inert; dense 0-based fills keep the encoding canonical — a gapped fill spells one order many ways.

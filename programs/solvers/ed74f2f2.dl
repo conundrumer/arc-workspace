@@ -1,0 +1,73 @@
+// ed74f2f2
+// A 1×2 arrangement of 3×3 tiles, gap 1, behind a 1-cell bg border. The
+// c.key_tile selects a color from a stored tile table; the output is the
+// c.target_tile with its ink repainted that color, bg passed through.
+
+#include "../lib.dl"
+
+.type KeyCell = [p: Position, col: Color]
+
+.comp Consts {
+    .init helpers = ConstsHelpers
+
+    .decl bg(c: Color)          bg(0).
+    .decl key_tile(p: Position)     key_tile([0, 0, 0, 1]).
+    .decl target_tile(p: Position)  target_tile([0, 0, 1, 0]).
+
+    .decl decompose(p_grid: Position, p_tile: Position, p_intile: Position)
+    decompose(P_grid, P_tile, P_intile) :-
+        helpers.tile_pos([1, 2], [3, 3], [0, 1], P_frame, P_tile, P_intile),
+        compose(P_frame, [1, 1, 1, 1], P_grid).    // 1-cell border
+
+    // Key table: key tile content → output color.
+    .decl k0(p: Position, col: Color)
+    GRID_3x3(k0,
+        5, 5, 0,
+        0, 5, 0,
+        0, 5, 5)
+    .decl k1(p: Position, col: Color)
+    GRID_3x3(k1,
+        0, 5, 5,
+        0, 5, 0,
+        5, 5, 0)
+    .decl k2(p: Position, col: Color)
+    GRID_3x3(k2,
+        5, 5, 5,
+        0, 5, 0,
+        0, 5, 0)
+
+    .decl key_member(eid: number, m: KeyCell)
+    key_member(0, [P, C]) :- k0(P, C).
+    key_member(1, [P, C]) :- k1(P, C).
+    key_member(2, [P, C]) :- k2(P, C).
+
+    .decl key_color(eid: number, col: Color)
+    key_color(0, 2). key_color(1, 3). key_color(2, 1).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl slot(p_tile: Position, p_intile: Position, col: Color)
+slot(P_tile, P_intile, Col) :-
+    in(P_grid, Col), c.decompose(P_grid, P_tile, P_intile).
+
+// Key tile content → color.
+.init key_match = KeyedSetCompare<Unit, KeyCell>
+key_match.pattern_member(Eid, M) :- c.key_member(Eid, M).
+key_match.observed_member($U(), [P_intile, Col]) :-
+    slot(P_tile, P_intile, Col), c.key_tile(P_tile).
+
+.decl target_cell(p: Position, col: Color)
+target_cell(P_intile, Col) :-
+    slot(P_tile, P_intile, Col), c.target_tile(P_tile).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    target_cell(P, C), !c.bg(C),                           // target ink cell
+    key_match.equals($U(), Eid), c.key_color(Eid, Col).    // key's color
+out(P, C) :- target_cell(P, C), c.bg(C).                   // bg passes through
+
+.output out(IO=stdout)
