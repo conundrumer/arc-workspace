@@ -1,0 +1,90 @@
+// 6e02f1e3
+// Classify the input by its distinct color count and emit the class's
+// symbol: one color — the top edge row; two — the TL diagonal; three —
+// the TR diagonal.
+//
+// The render is the data/ops choice:
+//   $Lookup — select the stored count->grid from a table (data).
+//   $Figure — draw the count's figure spec (edge row or corner diagonal)
+//             in c.mark on c.bg (ops). The canvas is a second data/ops
+//             node: the input frame ($Input) or a stored dim ($Fixed).
+
+#include "../lib.dl"
+
+.type Canvas = Input {} | Fixed {}
+.type Choice = Lookup {} | Figure {canvas: Canvas}
+
+.comp Consts {
+    .init helpers = ConstsHelpers
+
+    // --- Lookup ---
+    .decl lookup1(p: Position, col: Color)
+    GRID_3x3(lookup1,
+        5, 5, 5,
+        0, 0, 0,
+        0, 0, 0)
+    .decl lookup2(p: Position, col: Color)
+    GRID_3x3(lookup2,
+        5, 0, 0,
+        0, 5, 0,
+        0, 0, 5)
+    .decl lookup3(p: Position, col: Color)
+    GRID_3x3(lookup3,
+        0, 0, 5,
+        0, 5, 0,
+        5, 0, 0)
+    .decl lookup_grid(n: number, p: Position, col: Color)
+    lookup_grid(1, P, C) :- lookup1(P, C).
+    lookup_grid(2, P, C) :- lookup2(P, C).
+    lookup_grid(3, P, C) :- lookup3(P, C).
+
+    // --- Figure ---
+    .decl fig_edge(n: number, d: Dir)
+    fig_edge(1, DIR_T).
+    .decl fig_diag(n: number, d: DiagDir)
+    fig_diag(2, DIAG_TL). fig_diag(3, DIAG_TR).
+
+    .decl mark(c: Color)  mark(5).
+    .decl bg(c: Color)    bg(0).
+
+    // --- Figure/$Fixed canvas ---
+    .decl out_dim(n: number)  out_dim(3).
+    .decl out_pos(p: Position)
+    out_pos(P) :- out_dim(N), helpers.frame_pos([N, N], P).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl palette(col: Color)
+palette(Col) :- in(_, Col).
+
+.decl ncolors(n: number)
+ncolors(N) :- N = count : { palette(_) }.
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// --- Lookup ---
+out(P, Col, $Lookup()) :- ncolors(N), c.lookup_grid(N, P, Col).
+
+// --- Figure ---
+.decl canvas(p: Position, cv: Canvas)
+canvas(P, $Input()) :- in(P, _).
+canvas(P, $Fixed()) :- c.out_pos(P).
+
+.decl figure_cell(p: Position, cv: Canvas)
+figure_cell(P, Cv) :-
+    canvas(P, Cv),                        // canvas cell
+    ncolors(N), c.fig_edge(N, D),         // class figure: edge row
+    dist(P, D, 0).                        // on that edge
+figure_cell(P, Cv) :-
+    canvas(P, Cv),                        // canvas cell
+    ncolors(N), c.fig_diag(N, Dg),        // class figure: corner diagonal
+    diag_dist(P, Dg, _, K, K).            // equidistant from its edges
+
+out(P, Mk, $Figure(Cv)) :- figure_cell(P, Cv), c.mark(Mk).
+out(P, Bg, $Figure(Cv)) :- canvas(P, Cv), !figure_cell(P, Cv), c.bg(Bg).
+
+.output out(IO=stdout)

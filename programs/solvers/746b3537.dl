@@ -1,0 +1,52 @@
+// 746b3537
+// Striped input: lines along one axis are uniform. Output is the stripe
+// color sequence across them with consecutive repeats collapsed — one
+// cell per run, order kept, 1 wide.
+
+#include "../lib.dl"
+
+.comp Consts {
+    // No task data — siblings vary only the input.
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// A line along axis a shows two colors.
+.decl broken(a: Axis)
+broken(A) :-
+    axis_elem(A),
+    in(P, Col), in(P2, Col2), Col != Col2,                // two colors
+    split(P, A, _, P_across), split(P2, A, _, P_across).  // one line
+
+// The color sequence runs across the axis whose lines are uniform.
+.decl seq_axis(a: Axis)
+seq_axis(A_seq) :- perp(A, A_seq), !broken(A).
+
+// A run's first stripe toward edge d: the neighbor toward d is off-grid
+// or a different color. col is the run's color.
+.decl run_start(d: Dir, k: number, col: Color)
+run_start(D, K, Col) :-
+    seq_axis(A), axis_of(D, A),             // dirs on the sequence axis
+    in(P, Col), dist(P, D, K),              // stripe cell
+    step_delta(D, S), compose(P, S, P2),    // neighbor toward d
+    !in(P2, Col).
+
+.init runs = Ordinal<Dir>
+runs.idx_set(D, K) :- run_start(D, K, _).
+
+// Output frame: one cell per run along the sequence axis.
+.init seq = AxisFrame<Unit>
+seq.extent($U(), A, N) :-
+    seq_axis(A), axis_of(D, A),
+    N = count : { run_start(D, _, _) }.
+
+.decl out(p: Position, col: Color)
+out(P_out, Col) :-
+    run_start(D, K, Col), runs.rank(D, K, R),    // run and its rank from d
+    axis_of(D, A), seq.cell($U(), A, P_out),     // output line cell
+    dist(P_out, D, R).                           // seated r from d
+
+.output out(IO=stdout)

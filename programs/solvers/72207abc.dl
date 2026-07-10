@@ -1,0 +1,54 @@
+// 72207abc
+// A row of seed marks. From the first seed, the sequence walks toward
+// the grow edge with gaps growing by one per step, cycling the seed
+// colors in order, until it leaves the grid.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl grow(d: Dir)  grow(DIR_R).
+    .decl bg(c: Color)  bg(0).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !c.bg(Col).
+
+.decl beyond(p1: Position, p2: Position)    // p2 farther along grow
+beyond(P1, P2) :-
+    ink(P1, _), ink(P2, _),
+    c.grow(D), dist(P1, D, K1), dist(P2, D, K2), K2 < K1.
+
+.decl mid(p1: Position, p2: Position)       // a seed strictly between
+mid(P1, P3) :- beyond(P1, P2), beyond(P2, P3).
+
+// Cyclic next seed: the one just beyond; the first again after the last.
+.decl seed_next(p1: Position, p2: Position)
+seed_next(P1, P2) :- beyond(P1, P2), !mid(P1, P2).
+seed_next(P1, P2) :- ink(P1, _), !beyond(P1, _), ink(P2, _), !beyond(_, P2).
+
+// A mark: its arriving jump and the seed whose color it carries. The
+// first seed arrives with no jump; each step lengthens the jump by one
+// cell and advances the color cursor.
+.decl grown(p: Position, delta: Position, q: Position)
+grown(P, ORIGIN, P) :- ink(P, _), !beyond(_, P).
+grown(P2, Delta2, Q2) :-
+    grown(P1, Delta1, Q1), seed_next(Q1, Q2),    // color cursor advances
+    c.grow(D), step_delta(D, S),
+    compose(Delta1, S, Delta2),                  // jump grows one cell
+    compose(P1, Delta2, P2),                     // next mark
+    in(P2, _).                                   // stays on grid
+
+.decl marked(p: Position, col: Color)
+marked(P, Col) :- ink(P, Col).
+marked(P, Col) :- grown(P, _, Q), ink(Q, Col).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- marked(P, Col).
+out(P, Col) :- in(P, _), c.bg(Col), !marked(P, _).
+
+.output out(IO=stdout)

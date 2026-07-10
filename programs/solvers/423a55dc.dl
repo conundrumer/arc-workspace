@@ -1,0 +1,42 @@
+// 423a55dc
+// One shape on c.bg, sheared: each ink cell slides by its distance from
+// the shape box's c.anchor edge, toward c.anchor turned c.sense. Cells
+// sliding off the grid clip away.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl bg(c: Color)     bg(0).
+    .decl anchor(d: Dir)   anchor(DIR_B).    // edge whose row stays seated
+    .decl sense(s: Sense)  sense(SENSE_CW).  // turn from anchor to the slide dir
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !c.bg(Col).
+
+.init box = Bbox<Unit>
+box.cell($U(), P) :- ink(P, _).
+
+// Each ink cell viewed from the shape box, keyed by the cell.
+.init boxframe = Reframe<Position>
+boxframe.outer(P, M) :- ink(P, _), box.margin($U(), M).
+boxframe.cell(P, P)  :- ink(P, _).
+
+.decl sheared(p: Position, p2: Position)
+sheared(P, P2) :-
+    boxframe.inner(P, I),                     // cell in the box frame
+    c.anchor(D_anc), dist(I, D_anc, K),       // distance from the anchor edge
+    c.sense(S), turn(S, D_anc, D_sh),         // slide dir: anchor turned by sense
+    jump_delta(D_sh, K, Delta),
+    compose(P, Delta, P2), in(P2, _).         // slide; clip off-grid
+
+.decl out(p: Position, col: Color)
+out(P2, Col) :- sheared(P, P2), ink(P, Col).
+out(P, Bg)   :- in(P, _), c.bg(Bg), !sheared(_, P).
+
+.output out(IO=stdout)
