@@ -1,0 +1,34 @@
+// cce03e0d
+// The input tiled by itself: the output decomposes into an input-shaped
+// arrangement of input-shaped tiles. Tiles at stamp-colored input cells
+// hold copies of the input; all other tiles are bg. The second non-bg
+// color is inert noise. 007bbfb7's $Stamp with a stored trigger color.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl bg(c: Color)       bg(0).
+    .decl stamp(c: Color)    stamp(2).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// Output decomposition: tile index × intile position, both input-frame cells.
+.decl cell(p_grid: Position, p_tile: Position, p_intile: Position)
+cell(P_grid_out, P_tile, P_intile) :-
+    in(P_tile, _), in(P_intile, _),
+    concat_2d(P_tile, P_intile, 0, P_grid_out).
+
+.decl active(p: Position)
+active(P) :- in(P, Col), c.stamp(Col).
+
+.decl out(p: Position, col: Color)
+out(P_grid_out, Col) :-
+    cell(P_grid_out, P_tile, P_intile), active(P_tile), in(P_intile, Col).
+out(P_grid_out, Bg) :-
+    cell(P_grid_out, P_tile, _), !active(P_tile), c.bg(Bg).
+
+.output out(IO=stdout)

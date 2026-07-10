@@ -1,0 +1,63 @@
+// 2de01db2
+// Each line (along c.axis) holds one main color plus scattered noise; the
+// output inverts the main mask: main cells -> c.bg, every other cell -> main.
+//
+// Two models identify a line's main color:
+//   $Palette — the line's color from the stored main-color set (data).
+//   $Owned   — the largest color confined to the line: noise crosses
+//              lines (ops).
+
+#include "../lib.dl"
+
+.type Choice = Palette {} | Owned {}
+
+.comp Consts {
+    .decl axis(a: Axis)  axis(AXIS_H).
+    .decl bg(c: Color)   bg(0).
+
+    // --- $Palette ---
+    .decl ink(c: Color)
+    ink(4). ink(6). ink(8).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// Cell with its line identity.
+.decl cell_line(p: Position, col: Color, p_line: Position)
+cell_line(P, Col, P_line) :- in(P, Col), c.axis(A), split(P, A, _, P_line).
+
+// Non-bg colors present per line.
+.decl line_ink(p_line: Position, col: Color)
+line_ink(P_line, Col) :- cell_line(_, Col, P_line), !c.bg(Col).
+
+.decl main(p_line: Position, col: Color, ch: Choice)
+
+// --- $Palette ---
+main(P_line, Col, $Palette()) :- line_ink(P_line, Col), c.ink(Col).
+
+// --- $Owned ---
+
+// Ink on more than one line — noise.
+.decl shared(col: Color)
+shared(Col) :- line_ink(L1, Col), line_ink(L2, Col), L1 != L2.
+
+// Cell count of each line-owned ink.
+.decl own_count(p_line: Position, col: Color, n: number)
+own_count(P_line, Col, N) :-
+    line_ink(P_line, Col), !shared(Col),
+    N = count : { cell_line(_, Col, P_line) }.
+
+main(P_line, Col, $Owned()) :-
+    own_count(P_line, Col, N),
+    N = max M : { own_count(P_line, _, M) }.
+
+// --- Output ---
+
+.decl out(p: Position, col: Color, c: Choice)
+out(P, Col, Ch) :- cell_line(P, C_in, P_line), main(P_line, Col, Ch), C_in != Col.
+out(P, Col, Ch) :- cell_line(P, C_in, P_line), main(P_line, C_in, Ch), c.bg(Col).
+
+.output out(IO=stdout)
