@@ -1,0 +1,36 @@
+// 5582e5ca
+// The input frame filled with one uniform color. Models of the fill
+// color, data-equivalent on this task — the winning color appears
+// exactly 3 times in every pair:
+//   $Mode  — the most frequent color
+//   $Count — the color with a stored occurrence count
+
+#include "../lib.dl"
+
+.type Choice = Mode {} | Count {}
+
+.comp Consts {
+    // --- Count ---
+    .decl target(n: number)    target(3).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl color_count(col: Color, n: number)
+color_count(Col, N) :- in(_, Col), N = count : { in(_, Col) }.
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// --- Mode ---
+.decl dominant(col: Color)
+dominant(Col) :- color_count(Col, N), N = max M : { color_count(_, M) }.
+
+out(P, Col, $Mode()) :- in(P, _), dominant(Col).
+
+// --- Count ---
+out(P, Col, $Count()) :- in(P, _), color_count(Col, N), c.target(N).
+
+.output out(IO=stdout)

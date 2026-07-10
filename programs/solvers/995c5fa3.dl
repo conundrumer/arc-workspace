@@ -1,0 +1,123 @@
+// 995c5fa3
+// Layout: gap-separated tiles along c.tile_axis; each tile shows a
+// catalog pattern. Output is a tile_count-sided square: the row at each
+// tile's index (c.tile_dir → c.row_dir) fills with the tile's class
+// color. Models of the classifier, data-equivalent on this task — every
+// tile matches a catalog entry:
+//   $Lookup  — tile content equals a catalog entry
+//   $HoleBox — the holes' bbox margin keys a color table; hole-free
+//              tiles take c.full_color
+
+#include "../lib.dl"
+
+.type Choice = Lookup {} | HoleBox {}
+
+.type TileMember = [p: Position, col: Color]
+
+.comp Consts {
+    .decl tile_axis(a: Axis)   tile_axis(AXIS_H).
+    .decl tile_count(n: number)  tile_count(3).
+    .decl tile_gap(g: number)  tile_gap(1).
+
+    // Tile index (from tile_dir) maps to output row index (from row_dir).
+    .decl tile_dir(d: Dir)     tile_dir(DIR_L).
+    .decl row_dir(d: Dir)      row_dir(DIR_T).
+
+    // --- $Lookup ---
+
+    .decl p0(p: Position, col: Color)
+    GRID_4x4(p0,
+        5, 5, 5, 5,
+        5, 5, 5, 5,
+        5, 5, 5, 5,
+        5, 5, 5, 5)
+    .decl p1(p: Position, col: Color)
+    GRID_4x4(p1,
+        5, 5, 5, 5,
+        5, 0, 0, 5,
+        5, 0, 0, 5,
+        5, 5, 5, 5)
+    .decl p2(p: Position, col: Color)
+    GRID_4x4(p2,
+        5, 5, 5, 5,
+        0, 5, 5, 0,
+        0, 5, 5, 0,
+        5, 5, 5, 5)
+    .decl p3(p: Position, col: Color)
+    GRID_4x4(p3,
+        5, 5, 5, 5,
+        5, 5, 5, 5,
+        5, 0, 0, 5,
+        5, 0, 0, 5)
+
+    .decl mapping_member(eid: number, p_intile: Position, c: Color)
+    mapping_member(0, P, C) :- p0(P, C).
+    mapping_member(1, P, C) :- p1(P, C).
+    mapping_member(2, P, C) :- p2(P, C).
+    mapping_member(3, P, C) :- p3(P, C).
+
+    .decl mapping_out(eid: number, c_out: Color)
+    mapping_out(0, 2). mapping_out(1, 8). mapping_out(2, 3). mapping_out(3, 4).
+
+    // --- $HoleBox ---
+
+    .decl bg(c: Color)  bg(0).
+
+    .decl box_color(margin: Position, col: Color)
+    box_color([1, 1, 1, 1], 8).
+    box_color([2, 0, 1, 1], 4).
+    box_color([1, 1, 0, 0], 3).
+
+    .decl full_color(col: Color)  full_color(2).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl tile_cell(p_tile: Position, p_intile: Position, col: Color)
+tile_cell(P_tile, P_intile, Col) :-
+    in(P, Col),
+    c.tile_axis(A), c.tile_count(N), c.tile_gap(G),
+    divide_slab(P, A, N, G, P_tile, P_intile).
+
+// Output frame: tile_count-sided square.
+.init frame = Frame2D<Unit>
+frame.extent($U(), A, N) :- axis_elem(A), c.tile_count(N).
+
+// Output cell ↔ the tile whose index matches its row index.
+.decl row_tile(p_out: Position, p_tile: Position)
+row_tile(P_out, P_tile) :-
+    frame.cell($U(), P_out), c.row_dir(D_row), dist(P_out, D_row, K),
+    tile_cell(P_tile, _, _), c.tile_dir(D_tile), dist(P_tile, D_tile, K).
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// --- $Lookup ---
+
+.init tile_match = KeyedSetCompare<Position, TileMember>
+tile_match.pattern_member(Eid, [P_intile, C]) :- c.mapping_member(Eid, P_intile, C).
+tile_match.observed_member(P_tile, [P_intile, C]) :- tile_cell(P_tile, P_intile, C).
+
+out(P_out, Col, $Lookup()) :-
+    row_tile(P_out, P_tile),
+    c.mapping_out(Eid, Col),                      // entry's color
+    tile_match.equals(P_tile, Eid).               // tile content == entry
+
+// --- $HoleBox ---
+
+.decl has_hole(p_tile: Position)
+has_hole(P_tile) :- tile_cell(P_tile, _, C), c.bg(C).
+
+.init hole_box = Bbox<Position>
+hole_box.cell(P_tile, P_intile) :- tile_cell(P_tile, P_intile, C), c.bg(C).
+
+out(P_out, Col, $HoleBox()) :-
+    row_tile(P_out, P_tile),
+    hole_box.margin(P_tile, M), c.box_color(M, Col).
+out(P_out, Col, $HoleBox()) :-
+    row_tile(P_out, P_tile),
+    !has_hole(P_tile), c.full_color(Col).
+
+.output out(IO=stdout)

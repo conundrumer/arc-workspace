@@ -1,0 +1,97 @@
+// 12422b43
+// A c.marker bar anchored at the edge opposite c.flow spans the unit lines;
+// ink (non-bg, non-marker) fills the leading lines. The unit lines' ink
+// repeats along c.flow over the bg remainder.
+//
+// Two models place the copies:
+//   $Stamp — seat the unit one pattern-length past itself, then step it one
+//            unit-length at a time while it stays on the grid.
+//   $Tile  — the remainder divides into unit-sized tiles; each tile takes
+//            the unit's ink.
+
+#include "../lib.dl"
+
+.type Choice = Stamp {} | Tile {}
+
+.comp Consts {
+    .decl bg(c: Color)      bg(0).
+    .decl marker(c: Color)  marker(5).
+    .decl flow(d: Dir)      flow(DIR_B).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// Cell with its line index from the anchor edge.
+.decl cell_line(p: Position, col: Color, r: number)
+cell_line(P, Col, R) :- in(P, Col), c.flow(D), opposite(D, O), dist(P, O, R).
+
+// Pattern ink.
+.decl ink(p: Position, col: Color, r: number)
+ink(P, Col, R) :- cell_line(P, Col, R), !c.bg(Col), !c.marker(Col).
+
+.decl ink_line(r: number)
+ink_line(R) :- ink(_, _, R).
+
+.decl marker_line(r: number)
+marker_line(R) :- cell_line(_, Col, R), c.marker(Col).
+
+// The unit: ink of the marker-spanned lines.
+.decl unit(p: Position, col: Color, r: number)
+unit(P, Col, R) :- ink(P, Col, R), marker_line(R).
+
+.decl pat_len(n: number)
+pat_len(N) :- N = count : { ink_line(R) }.
+
+.decl unit_len(n: number)
+unit_len(N) :- N = count : { marker_line(R) }.
+
+.decl copy(p: Position, col: Color, ch: Choice)
+
+// --- $Stamp ---
+
+copy(P2, Col, $Stamp()) :-
+    unit(P1, Col, _),
+    c.flow(D), pat_len(N), jump_delta(D, N, Dlt),    // one pattern-length on
+    compose(P1, Dlt, P2), in(P2, _).
+copy(P2, Col, $Stamp()) :-
+    copy(P1, Col, $Stamp()),
+    c.flow(D), unit_len(K), jump_delta(D, K, Dlt),   // one unit-length on
+    compose(P1, Dlt, P2), in(P2, _).
+
+// --- $Tile ---
+
+// The remainder: cells of the non-ink lines.
+.decl region(p: Position)
+region(P) :- cell_line(P, _, R), !ink_line(R).
+
+.init region_box = Bbox<Unit>
+region_box.cell($U(), P) :- region(P).
+
+// Each cell viewed from the remainder's own frame.
+.init region_frame = Reframe<Position>
+region_frame.outer(P, M) :- region(P), region_box.margin($U(), M).
+region_frame.cell(P, P)  :- region(P).
+
+copy(P, Col, $Tile()) :-
+    region_frame.inner(P, I),
+    c.flow(D), axis_of(D, A), opposite(D, O),
+    unit_len(K), divide_by_size(I, A, K, 0, _, P_intile),   // unit-sized tiles
+    dist(P_intile, O, R), unit(P_u, Col, R),                // unit line at the tile offset
+    split(P, A, _, Ac), split(P_u, A, _, Ac).               // across passthrough
+
+// --- Output ---
+
+.decl copied(p: Position, ch: Choice)
+copied(P, Ch) :- copy(P, _, Ch).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Stamp()). impl_choice($Tile()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- copy(P, Col, Ch).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !copied(P, Ch).
+
+.output out(IO=stdout)

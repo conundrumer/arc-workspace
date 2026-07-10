@@ -1,0 +1,61 @@
+// bb43febb
+// Solid c.ink rectangles; each keeps its outline and repaints its interior
+// to c.fill.
+//
+// Two models pick the interior:
+//   $Box   — cells strictly inside a component's bounding box.
+//   $Erode — ink cells whose four neighbors are all ink; off-grid is
+//            non-ink.
+
+#include "../lib.dl"
+
+.type Choice = Box {} | Erode {}
+
+.comp Consts {
+    .decl ink(c: Color)   ink(5).
+    .decl fill(c: Color)  fill(2).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl ink(p: Position)
+ink(P) :- in(P, Col), c.ink(Col).
+
+.decl interior(p: Position, ch: Choice)
+
+// --- $Box ---
+
+.init comps = Components<Unit>
+comps.node($U(), P) :- ink(P).
+
+.init box = Bbox<CompId>
+box.cell(Id, P) :- comps.label($U(), P, Id).
+box.grid(Id, P) :- in(P, _), comps.label($U(), _, Id).
+
+// Box cell on the box boundary.
+.decl box_rim(id: CompId, p: Position)
+box_rim(Id, P) :- box.inside(Id, P), dir_elem(D), dist(P, D, K), box.edge_min(Id, D, K).
+
+interior(P, $Box()) :- box.inside(Id, P), !box_rim(Id, P).
+
+// --- $Erode ---
+
+// Ink cell with a non-ink neighbor.
+.decl exposed(p: Position)
+exposed(P) :- ink(P), dir_elem(D), step_delta(D, S), compose(P, S, P2), !ink(P2).
+
+interior(P, $Erode()) :- ink(P), !exposed(P).
+
+// --- Output ---
+
+.decl impl_choice(ch: Choice)
+impl_choice($Box()). impl_choice($Erode()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- interior(P, Ch), c.fill(Col).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !interior(P, Ch).
+
+.output out(IO=stdout)
