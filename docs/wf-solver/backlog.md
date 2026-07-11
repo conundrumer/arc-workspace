@@ -5,6 +5,7 @@ User-owned list of queued ideas. Sessions append on ask; one line per item.
 ## TODO
 
 - Generalize `KeyedSetCompare<Key, Member>` to `KeyedSetCompare<Key, Pat, Member>`: pattern key as a type param removes the `ord` bridge (a87f7484 $Shape, `Occurrences`); stored-catalog callers instantiate `Pat = number` unchanged.
+- Remove "single-set sites key on Unit" from every comp doc (`lib.dl`, `proposals.md`, solver-local comps); instantiation sites already show the keying.
 
 
 ## Pending

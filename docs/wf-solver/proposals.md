@@ -353,3 +353,28 @@ rules (`scan_before`) over tile positions; no rank readout.
 
 **Third home (protocol step 1).** 6cf79266 carries `before` and the rank
 readout over candidate window anchors; $Greedy sweeps the ranks.
+
+## `Excess<Key, Member>` — count of pos members beyond neg members
+
+The negative-free difference of two member counts: `excess(key, n)` holds
+the positive difference, with no tuple at a tie or deficit, so no negative
+crosses the interface. Cancellation between two disjoint sets has no
+set-level witness — any member pairing invents an order — so the
+subtraction is irreducible; the comp owns it, and bodies consume the count
+by comparison.
+
+```
+.comp Excess<Key, Member> {
+    .decl pos(key: Key, m: Member)
+    .decl neg(key: Key, m: Member)
+
+    .decl excess(key: Key, n: number)
+    excess(Ky, N) :-
+        pos(Ky, _),
+        Np = count : { pos(Ky, M1) }, Nn = count : { neg(Ky, M2) },
+        Np > Nn, N = Np - Nn.
+}
+```
+
+**Task-local home (protocol step 1).** 37ce87bb (Unit key): the result
+bar's height — add-colored cells beyond sub-colored cells.

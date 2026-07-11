@@ -1,0 +1,93 @@
+// 37ce87bb
+// Bars stand on the base edge: add-colored bars contribute their height,
+// sub-colored bars cancel it. A result bar of the summed height is
+// appended in its own line. Two models of that line:
+//
+//   $Next — the bar rhythm continues one pitch past the bars.
+//   $Edge — the line at c.margin from a fixed across edge.
+//
+// Coincide here (every grid ends one pitch past the last bar); diverge
+// on a wider grid.
+
+#include "../lib.dl"
+
+.type Choice = Next {} | Edge {}
+
+.comp Consts {
+    // --- shared ---
+    .decl bg(c: Color)      bg(7).
+    .decl base(d: Dir)      base(DIR_B).   // edge the bars stand on
+    .decl add(c: Color)     add(8).        // bar color that adds its height
+    .decl sub(c: Color)     sub(2).        // bar color that cancels height
+    .decl result(c: Color)  result(5).     // the appended bar's color
+
+    // --- $Next ---
+    .decl pitch(k: number)  pitch(2).      // line step between adjacent bars
+
+    // --- $Edge ---
+    .decl sense(s: Sense)   sense(SENSE_CC). // base turned toward the result-line edge
+    .decl margin(k: number) margin(1).       // result line's distance from that edge
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// A cell's line — bars run along the base axis; the across component
+// identifies the line.
+.decl line_of(p: Position, p_line: Position)
+line_of(P, P_line) :- in(P, _), c.base(D), axis_of(D, A), split(P, A, _, P_line).
+
+// Lines holding a bar.
+.decl bar_line(p_line: Position)
+bar_line(P_line) :- in(P, Col), !c.bg(Col), line_of(P, P_line).
+
+// Count of pos members beyond neg members. no tuple at a tie or deficit.
+.comp Excess<Key, Member> {
+    .decl pos(key: Key, m: Member)
+    .decl neg(key: Key, m: Member)
+
+    .decl excess(key: Key, n: number)
+    excess(Ky, N) :-
+        pos(Ky, _),
+        Np = count : { pos(Ky, M1) }, Nn = count : { neg(Ky, M2) },
+        Np > Nn, N = Np - Nn.
+}
+
+// The summed height: add cells beyond sub cells.
+.init height = Excess<Unit, Position>
+height.pos($U(), P) :- in(P, Col), c.add(Col).
+height.neg($U(), P) :- in(P, Col), c.sub(Col).
+
+.decl result_line(p_line: Position, ch: Choice)
+
+// --- $Next ---
+// One pitch from a bar line, either way across, on a barless grid line.
+// Off-grid candidates self-filter; inward candidates hit a neighbor bar.
+result_line(P_line2, $Next()) :-
+    bar_line(P_line),
+    c.base(D), turn(_, D, D2),                                // either way across
+    c.pitch(K), jump_delta(D2, K, Jump), compose(P_line, Jump, P_line2),
+    line_of(_, P_line2), !bar_line(P_line2).
+
+// --- $Edge ---
+result_line(P_line, $Edge()) :-
+    line_of(_, P_line),
+    c.base(D), c.sense(S), turn(S, D, D2),   // the result-line edge
+    c.margin(K), dist(P_line, D2, K).
+
+// The result bar: height cells up the result line from the base edge.
+.decl result_cell(p: Position, ch: Choice)
+result_cell(P, Ch) :-
+    line_of(P, P_line), result_line(P_line, Ch),               // on the result line
+    c.base(D), dist(P, D, K), height.excess($U(), N), K < N.   // within the summed height
+
+.decl choice_elem(ch: Choice)
+choice_elem($Next()). choice_elem($Edge()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- result_cell(P, Ch), c.result(Col).
+out(P, Col, Ch) :- choice_elem(Ch), in(P, Col), !result_cell(P, Ch).
+
+.output out(IO=stdout)
