@@ -30,6 +30,19 @@ out(P, Col, [$Count(),     $SliceMap()]) :- ...
 
 Use a sum directly to enumerate cases when only specific combinations exist.
 
+## Choice grounding via `impl_choice`
+
+A rule shared by all cases needs a positive atom to bind its case variable when the case column otherwise appears only under negation or in an aggregate. An enumeration relation provides it, one fact per case.
+
+```
+.decl impl_choice(ch: Choice)
+impl_choice($CaseA()). impl_choice($CaseB()).
+
+out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !covered(Ch, P), c.bg(Col).
+```
+
+A minority of files name it `choice` or `variant`.
+
 ## `GRID_HxW` for grid data
 
 Runner-side cpp codegen lets `.dl` files declare 2D grids of values literally; the macro emits position-keyed facts in row-major order. Color grids, label grids, transform grids — any per-cell data.
