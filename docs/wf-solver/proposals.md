@@ -84,8 +84,7 @@ per-axis 1D decomposition, perp-glued. The `_2d` composites carry the
 square claim — one scalar, both axes; these carry the rectangular claim.
 Tile2D is size-parameterized (`divide_by_size`); Divide2D is
 count-parameterized (`divide`), the same shape with `divide(P, A, N, G, ..)`
-in its place. `gap` is the instance's parameter; single-set sites key on
-Unit.
+in its place. `gap` is the instance's parameter.
 
 ```
 .comp Tile2D<Key> {
@@ -124,10 +123,6 @@ These extensions derive from the same three counts it already computes (`|patter
 `nearest`) and approximate / multiset / payload matching sit at or past the edge —
 solver-local or a separate component. Current hints: 3618c87e → an `unmatched` negative,
 44f52bb0 → `best_covered`.
-
-**Global observed set.** When the observed set is global — one set, no
-meaningful key (44f52bb0's invariance set, 27a28665's silhouette) — the call
-keys on `Unit` (`$U()`, in lib).
 
 ## `Bbox.corner` — set cell at a bbox corner
 
@@ -222,7 +217,7 @@ each edge is the count of nearer members, so numbers stay inside
 `nearer`'s defining comparison. Parallel to `Ordinal`, not built on it:
 `Ordinal` is the directed, number-valued readout of an index set;
 `OrderFrame` is the undirected, Position-valued one of a member set.
-`axis` is the instance's parameter; single-set sites key on Unit.
+`axis` is the instance's parameter.
 
 ```
 .comp OrderFrame<Key> {

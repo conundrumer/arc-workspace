@@ -405,8 +405,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 // populates `dir(d)` (the edge distances are measured from — the instance's
 // parameter, unkeyed) and `dist_set(key, k)` (the indices that make up the
 // frame). Component derives extent as the set's size and exposes
-// `pos(key, k, p)` mapping each index to its axis-only Position. Single-set
-// sites key on Unit.
+// `pos(key, k, p)` mapping each index to its axis-only Position.
 //
 // Flagged: assumes each key's dist_set is dense — {0, 1, ..., extent-1}.
 // With a sparse set, indices above |dist_set|-1 give invalid Positions
@@ -430,7 +429,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 // 1D frame from an axis-tagged extent — the n axis-only positions of a
 // 1-wide frame, per key and axis. The undirected peer of DirFrame: the
 // unindexed cell set, no end privileged (both dirs derive the same set),
-// no index map. Single-set sites key on Unit.
+// no index map.
 .comp AxisFrame<Key> {
     .decl extent(key: Key, a: Axis, n: number)
 
@@ -444,7 +443,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 
 // 2D frame from per-axis extents — AxisFrame cells perp-glued into full
 // 2D positions, one frame per key. A square frame spreads one extent
-// over axis_elem. Single-set sites key on Unit.
+// over axis_elem.
 .comp Frame2D<Key> {
     .decl extent(key: Key, a: Axis, n: number)
 
@@ -460,7 +459,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 // A corner diagonal, per key — cells equidistant from the corner's two
 // edges; ring is that shared distance. The full corner-to-corner diagonal,
 // center included. DiagPlacement.diag_cell is this ∩ quadrant — the
-// corner→center ray. Single-set sites key on Unit.
+// corner→center ray.
 .comp Diagonal<Key> {
     .decl cell(key: Key, p: Position)
     .decl corner(key: Key, d: DiagDir)
@@ -470,8 +469,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 }
 
 // Diagonal placement — the quadrant a cell sits in, and its ring. Solver
-// populates `cell` (the position domain, per key). Single-set sites key on
-// Unit.
+// populates `cell` (the position domain, per key).
 .comp DiagPlacement<Key> {
     .decl cell(key: Key, p: Position)
 
@@ -532,7 +530,6 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 // falls out by placing ranks from the opposite edge; negate upstream only
 // when the rank value itself flows downstream. idx_set is a set — items
 // sharing k share its rank, and the rank set stays dense under ties.
-// Single-set sites key on Unit.
 .comp Ordinal<Key> {
     .decl idx_set(key: Key, k: number)
 
@@ -547,7 +544,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 // substrates conjugate through seating the lib already owns (dist reads an
 // index off a position, DirFrame.pos seats one back). Consumers split by
 // how they advance: a lockstep closure reads succ raw; a count advance
-// feeds it to CycleWalk. Single-set sites key on Unit.
+// feeds it to CycleWalk.
 .comp IndexCycle<Key> {
     .decl idx(key: Key, k: number)
 
@@ -562,7 +559,6 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 // the advance counts in use — raw solver data; the comp closes them downward
 // into the recursion bound. Walks only, never builds: a solver whose advance
 // is lockstep with another step consumes succ directly and skips this comp.
-// Single-set sites key on Unit.
 .comp CycleWalk<Key, T> {
     .decl succ(key: Key, p: T, p_next: T)
     .decl step(key: Key, n: number)     // advance counts in use
@@ -586,7 +582,6 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 // type param — a record for multi-field members, a scalar for one-field.
 // Stored catalogs enumerate patterns as numbers (Pat = number; single-pattern
 // sites use pattern = 0); a derived catalog keys patterns by its own objects.
-// A global observed set keys on Unit.
 .comp KeyedSetCompare<Key, Pat, Member> {
     .decl pattern_member(pattern: Pat, m: Member)
     .decl observed_member(observed: Key, m: Member)
@@ -631,8 +626,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 // the set (min-per-edge rather than min/max-per-axis: the four mins are
 // already a Position, and the edge choice washes out under D4). Two readouts:
 // `margin` packs the mins into a Position — the box's placement, a Reframe
-// outer; `inside` tests `grid` cells against them. Single-set sites key
-// on Unit.
+// outer; `inside` tests `grid` cells against them.
 .comp Bbox<Key> {
     .decl cell(key: Key, p: Position)
     .decl grid(key: Key, p: Position)
@@ -663,7 +657,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 // within-run stable, so the pick carries no geometry. A member cell is
 // injective identity — distinct components have disjoint cells; a bounding
 // box would alias two components sharing one (interleaved diagonals under
-// 8-adjacency). Single-set sites key on Unit.
+// 8-adjacency).
 .comp Components<Key> {
     .decl node(key: Key, p: Position)
 
@@ -683,7 +677,6 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 // shape" move. Placements come backward from the data (cell minus
 // shape-cell), so no grid bounds are needed and off-grid candidates
 // self-filter: their footprint cells aren't in `cell`, so `covers` fails.
-// Single-set sites key on Unit.
 .comp Occurrences<Key> {
     .decl cell(key: Key, p: Position)
     .decl shape(key: Key, p: Position)

@@ -51,7 +51,7 @@ seg(P, $Sided()) :-
 
 // The order-canonical peer of AxisFrame: the dense frame a sparse set of
 // axis-only positions induces, with each member's position in it — members
-// order by coordinate, no end privileged. Single-set sites key on Unit.
+// order by coordinate, no end privileged.
 .comp OrderFrame<Key> {
     .decl axis(a: Axis)
     .decl cell(key: Key, p: Position)
