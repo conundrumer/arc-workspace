@@ -8,9 +8,9 @@
 // only. Task data is scalar (square claim) or axis-tagged rows
 // (rectangular claim).
 //
-// Color, Dir, Axis, DiagDir, DiagAxis, D4, Sense are subtypes of number —
+// Color, Dir, Axis, DiagDir, DiagAxis, D4, Sense are subtypes of number:
 // typed names with no arithmetic intent. Constants are #define'd in disjoint
-// ranges so a value identifies its namespace at a glance: Color 0–9, Dir
+// ranges so a value's range identifies its namespace: Color 0–9, Dir
 // 10–13, Axis 20–21, DiagDir 30–33, DiagAxis 40–41, D4 50–57, Sense 60–61.
 // Names are <TYPE>_<VAL>, with VAL abbreviated to one length per type.
 // Solver bodies pull values from a per-task Consts component rather than
@@ -188,8 +188,8 @@ turn(SENSE_CC, D2, D) :- turn(SENSE_CW, D, D2).
 .decl dist(p: Position, d: Dir, k: number) inline
 dist(P, D, K) :- P = [T, B, L, R], K = @dist_proj(D, T, B, L, R).
 
-// Distances to edge d and its opposite. Centered is a repeated variable;
-// the nearer half is by comparison.
+// Distances to edge d and its opposite. A repeated variable states
+// centered; a comparison picks the nearer half.
 .decl dist_pair(p: Position, d: Dir, k: number, k2: number) inline
 dist_pair(P, D, K, K2) :- dist(P, D, K), opposite(D, O), dist(P, O, K2).
 
@@ -203,8 +203,8 @@ diag_dist(P, Diag, A, K1, K2) :-
 .decl compose(p1: Position, p2: Position, p3: Position) inline
 compose([T1, B1, L1, R1], [T2, B2, L2, R2], [T1+T2, B1+B2, L1+L2, R1+R2]) :- true.
 
-// Pointwise ≥ over edge distances: p at least q's distance from every
-// edge — p inside the box q describes as margins.
+// Pointwise ≥ over edge distances: p is at least q's distance from every
+// edge, i.e. p is inside the box that q describes as margins.
 .decl geq(p: Position, q: Position) inline
 geq([T1, B1, L1, R1], [T2, B2, L2, R2]) :-
     T1 >= T2, B1 >= B2, L1 >= L2, R1 >= R2.
@@ -244,7 +244,8 @@ axis_dim(P, A, N) :- P = [T, B, L, R],
     N = @axis_near(A, T, B, L, R) + @axis_far(A, T, B, L, R) + 1.
 
 // Wide extent readout of p's frame: n1 along axis a, n2 across. A line is
-// (N, 1); a square is a repeated variable; the long axis is by comparison.
+// (N, 1); a repeated variable states a square; a comparison finds the
+// long axis.
 .decl axis_dims(p: Position, a: Axis, n1: number, n2: number) inline
 axis_dims(P, A, N1, N2) :- axis_dim(P, A, N1), perp(A, A2), axis_dim(P, A2, N2).
 
@@ -401,11 +402,11 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 // Body components — instantiated at solver-body scope
 // ============================================================
 
-// 1D frame defined by an index set and an edge, one frame per key. Solver
-// populates `dir(d)` (the edge distances are measured from — the instance's
-// parameter, unkeyed) and `dist_set(key, k)` (the indices that make up the
-// frame). Component derives extent as the set's size and exposes
-// `pos(key, k, p)` mapping each index to its axis-only Position.
+// 1D frame defined by an index set and an edge, one frame per key. The
+// solver populates `dir(d)` (the edge distances are measured from; the
+// instance's parameter, unkeyed) and `dist_set(key, k)` (the indices that
+// make up the frame). The component derives extent as the set's size and
+// exposes `pos(key, k, p)`, mapping each index to its axis-only Position.
 //
 // Flagged: assumes each key's dist_set is dense — {0, 1, ..., extent-1}.
 // With a sparse set, indices above |dist_set|-1 give invalid Positions
@@ -487,14 +488,14 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     diag_cell(Ky, P, Diag, K) :- quadrant(Ky, P, Diag), diag_dist(P, Diag, _, K, K).
 }
 
-// Keyed marks casting rays toward each `dir`. `ray(k, p, d)` — p is on a
-// key-k ray cast toward edge d: a mark on p's line at or beyond p on the
-// side away from d. Reach is inclusive — a mark is on its own ray; a
-// domain that excludes marks (bg-only) gets strict semantics for free.
-// Cells between two marks are the overlap of two opposite rays — cast
-// both dirs of an axis and fold caller-side. Extent only: a ray whose
-// content varies along its length is a lockstep step recursion, not this
-// comp.
+// Keyed marks cast rays toward each `dir`. `ray(k, p, d)`: p is on a
+// key-k ray cast toward edge d, i.e. a mark on p's line lies at or beyond
+// p on the side away from d. Reach is inclusive: a mark is on its own
+// ray, and a domain that excludes marks (bg-only) gets strict semantics
+// with no extra rule. Cells between two marks are the overlap of two
+// opposite rays; cast both dirs of an axis and fold caller-side. Extent
+// only: a ray whose content varies along its length needs a lockstep step
+// recursion, not this comp.
 .comp Ray<Key> {
     .decl dir(d: Dir)                  // cast directions in use
     .decl cell(p: Position)            // domain tested
@@ -508,7 +509,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
         dist(P, D, Kp), dist(Q, D, Kq), Kq >= Kp.
 }
 
-// The DiagDir peer of Ray: keyed marks casting rays toward each corner in
+// The DiagDir peer of Ray: keyed marks cast rays toward each corner in
 // `diag`. Stepping toward a corner drops the distance to both of its edges
 // in lockstep, so ray membership is an equal, nonnegative drop on both.
 // Same contract as Ray: inclusive reach, extent only.
@@ -524,12 +525,12 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
         Qa - Pa = Qb - Pb, Qa >= Pa.
 }
 
-// Sparse numeric set → dense ordinal position, per key. Solver populates
-// `idx_set`; `rank(key, k, r)` gives r = the count of the key's elements
-// strictly less than k, so ranks run ascending from 0. A descending layout
-// falls out by placing ranks from the opposite edge; negate upstream only
-// when the rank value itself flows downstream. idx_set is a set — items
-// sharing k share its rank, and the rank set stays dense under ties.
+// Sparse numeric set → dense ordinal position, per key. The solver
+// populates `idx_set`; `rank(key, k, r)` gives r = the count of the key's
+// elements strictly less than k, so ranks run ascending from 0. For a
+// descending layout, place ranks from the opposite edge; negate upstream
+// only when the rank value itself flows downstream. idx_set is a set:
+// items sharing k share its rank, and the rank set stays dense under ties.
 .comp Ordinal<Key> {
     .decl idx_set(key: Key, k: number)
 
@@ -539,12 +540,12 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
         R = count : { idx_set(Ky, K2), K2 < K }.
 }
 
-// Z/N successor over a dense 0-based index set, per key — increment, with
-// the max wrapping to 0. Every dense cycle is Z/N up to relabeling; spatial
-// substrates conjugate through seating the lib already owns (dist reads an
-// index off a position, DirFrame.pos seats one back). Consumers split by
-// how they advance: a lockstep closure reads succ raw; a count advance
-// feeds it to CycleWalk.
+// Z/N successor over a dense 0-based index set, per key: increment, with
+// the max wrapping to 0. Every dense cycle is Z/N up to relabeling; a
+// spatial cycle converts through index maps the lib already owns (dist
+// reads an index off a position, DirFrame.pos places one back). Consumers
+// split by how they advance: a lockstep closure reads succ directly; a
+// count advance feeds it to CycleWalk.
 .comp IndexCycle<Key> {
     .decl idx(key: Key, k: number)
 
@@ -553,12 +554,13 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     succ(Ky, K, 0)   :- idx(Ky, K), !idx(Ky, K+1).   // wrap from the max
 }
 
-// A directed cycle (succ = edges, carrying no basepoint) with a gauge-free
-// rotation: walk advances a start node by n successor steps. succ takes the
-// cycle's edges — explicit data, or a builder like IndexCycle; step declares
-// the advance counts in use — raw solver data; the comp closes them downward
-// into the recursion bound. Walks only, never builds: a solver whose advance
-// is lockstep with another step consumes succ directly and skips this comp.
+// A directed cycle (succ = edges, with no basepoint) and rotation along
+// it: walk advances a start node by n successor steps. succ takes the
+// cycle's edges, as explicit data or from a builder like IndexCycle. step
+// declares the advance counts in use, as raw solver data; the comp closes
+// them downward into the recursion bound. The comp walks a cycle and never
+// builds one: a solver whose advance is lockstep with another step
+// consumes succ directly and skips this comp.
 .comp CycleWalk<Key, T> {
     .decl succ(key: Key, p: T, p_next: T)
     .decl step(key: Key, n: number)     // advance counts in use
@@ -574,14 +576,15 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
         bound(Ky, N1), N1 = N + 1.      // N1 is the Z/n step count
 }
 
-// Keyed set comparison via the count-trick. Solver populates pattern_member
-// (a catalog of known sets, enumerated by `pattern`) and observed_member (the
-// observed set at each `observed` key); the component exposes `covers`
-// (observed ⊇ pattern), `equals` (set equality), and `pattern_size` (members
-// per pattern, for size-ranked selection over matches). Member is a single
-// type param — a record for multi-field members, a scalar for one-field.
-// Stored catalogs enumerate patterns as numbers (Pat = number; single-pattern
-// sites use pattern = 0); a derived catalog keys patterns by its own objects.
+// Keyed set comparison via count equality. The solver populates
+// pattern_member (a catalog of known sets, enumerated by `pattern`) and
+// observed_member (the observed set at each `observed` key); the component
+// exposes `covers` (observed ⊇ pattern), `equals` (set equality), and
+// `pattern_size` (members per pattern, for size-ranked selection over
+// matches). Member is a single type param: a record for multi-field
+// members, a scalar for one-field. Stored catalogs enumerate patterns as
+// numbers (Pat = number; single-pattern sites use pattern = 0); a derived
+// catalog keys patterns by its own objects.
 .comp KeyedSetCompare<Key, Pat, Member> {
     .decl pattern_member(pattern: Pat, m: Member)
     .decl observed_member(observed: Key, m: Member)
@@ -607,9 +610,9 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 // Re-express keyed cells relative to a per-key outer origin: inner = cell
 // minus outer, the inverse of compose. Outer extent + inner extent = cell
 // extent, so one subtraction both resizes and positions across frames.
-// `outer` is one origin per key — several origins under one key
-// cross-product; key by the thing varied instead. Key by the cell to
-// read `inner` backward. Bbox's `margin` is an `outer`: feeding it
+// `outer` is one origin per key; several origins under one key
+// cross-product, so key by the varied thing instead. Key by the cell to
+// read `inner` backward. Bbox's `margin` is an `outer`: feeding it in
 // views a cell set from its own bounding frame.
 .comp Reframe<Key> {
     .decl outer(key: Key, p: Position)
@@ -624,9 +627,9 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 
 // Bounding box of a keyed cell set, from the min distance to each edge over
 // the set (min-per-edge rather than min/max-per-axis: the four mins are
-// already a Position, and the edge choice washes out under D4). Two readouts:
-// `margin` packs the mins into a Position — the box's placement, a Reframe
-// outer; `inside` tests `grid` cells against them.
+// already a Position, and the edge choice is unobservable under D4). Two
+// readouts: `margin` packs the mins into a Position (the box's placement, a
+// Reframe outer); `inside` tests `grid` cells against them.
 .comp Bbox<Key> {
     .decl cell(key: Key, p: Position)
     .decl grid(key: Key, p: Position)
@@ -648,16 +651,16 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     inside(K, P) :- grid(K, P), margin(K, M), geq(P, M).
 }
 
-// Opaque component id — sealed so it can't be read as a Position, which would
-// leak the representative cell's coordinates in as orientation.
+// Opaque component id, sealed so it cannot be read as a Position; that read
+// would leak the representative cell's coordinates in as orientation.
 .type CompId = Comp { tag: number }
 
 // Connected components of a node set (4-adjacency), per key, each labeled by
-// an opaque id off the lowest-ord member cell: ord is arbitrary but
-// within-run stable, so the pick carries no geometry. A member cell is
-// injective identity — distinct components have disjoint cells; a bounding
-// box would alias two components sharing one (interleaved diagonals under
-// 8-adjacency).
+// an opaque id from the lowest-ord member cell: ord is arbitrary but stable
+// within a run, so the pick carries no geometry. A member cell is an
+// injective identity, since distinct components have disjoint cells; a
+// bounding box would alias two components that share one (interleaved
+// diagonals under 8-adjacency).
 .comp Components<Key> {
     .decl node(key: Key, p: Position)
 
@@ -674,9 +677,10 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 
 // Occurrences of a shape among cells, per key: placements where the key's
 // shape footprint lands fully on the key's cell set — the ARC "find this
-// shape" move. Placements come backward from the data (cell minus
-// shape-cell), so no grid bounds are needed and off-grid candidates
-// self-filter: their footprint cells aren't in `cell`, so `covers` fails.
+// shape" operation. Placements derive backward from the data (cell minus
+// shape-cell), so no grid bounds are needed and off-grid candidates filter
+// themselves out: their footprint cells are not in `cell`, so `covers`
+// fails.
 .comp Occurrences<Key> {
     .decl cell(key: Key, p: Position)
     .decl shape(key: Key, p: Position)

@@ -2,7 +2,7 @@
 
 Patterns observed across `.dl` solvers. Distinct from `style.md` (rules every solver follows).
 
-This list is descriptive, not prescriptive — the `.dl` files are the source of truth. It exists so future sessions can scan what's been used.
+This list is descriptive, not prescriptive; the `.dl` files are the source of truth. It exists so future sessions can scan what has been used.
 
 ## Multiple modeling forms via ADT `Choice`
 
@@ -65,7 +65,7 @@ The GRID gives visual shape; the derive rule filters (e.g., `C != 0` for non-bg 
 
 ## Position remapping via `GRID` id join
 
-A stored position correspondence spells as two GRIDs joined on an opaque id: `src` labels the domain cells, `dst` gives each target cell the id of its source. The correspondence is visible in layout; ids carry identity only. Raw Position-pair facts state the same data illegibly.
+To store a position correspondence, join two GRIDs on an opaque id: `src` labels the domain cells; `dst` gives each target cell the id of its source. The correspondence is visible in the layout; ids carry identity only. Raw Position-pair facts hold the same data in an unreadable form.
 
 ```
 .decl src(p: Position, id: number)
@@ -90,7 +90,7 @@ map(P_in, P_out) :- src(P_in, Id), dst(P_out, Id).
 
 ## Tabulated decomposition
 
-A constant layout stored as Consts data: one relation mapping each grid position to its decomposition, built with `helpers.tile_pos`, embedded behind a border with `compose`. The body joins `in` against it and works in decomposed coordinates. The body-derived peer is `divide` / `divide_by_size`; tabulation fits when the layout is the same in every pair.
+A constant layout stored as Consts data: one relation maps each grid position to its decomposition, built with `helpers.tile_pos` and embedded behind a border with `compose`. The body joins `in` against it and works in decomposed coordinates. The body-derived peer is `divide` / `divide_by_size`; tabulation fits when the layout is the same in every pair.
 
 ```
 .decl decompose(p_grid: Position, p_tile: Position, p_intile: Position)
@@ -103,22 +103,18 @@ decompose(P_grid, P_tile, P_intile) :-
 
 ## Per-tile data keyed by tile position
 
-Consts data about one tile of a decomposition keys on the tile position the
-decomposition produces — the body joins its `p_outer` against the data
-directly. A second vocabulary for the same tiles (an edge Dir, a corner name)
-enters only through a conversion rule, which the Indirection test flags.
+Key Consts data about one tile of a decomposition by the tile position the decomposition produces; the body then joins its `p_outer` against the data directly. A second vocabulary for the same tiles (an edge Dir, a corner name) enters only through a conversion rule, which the Indirection test flags.
 
 ```
 .decl combine_member(eid: number, p_outer: Position, c: Color)
 combine_member(0, [0,0,0,1], 0). combine_member(0, [0,0,1,0], 0).
 ```
 
-(1b2d62fb, 34b99a2b, dae9d2b5 — per-panel colors in the combine tables, keyed
-on `p_outer` of the 1×2 divide.)
+(1b2d62fb, 34b99a2b, dae9d2b5 — per-panel colors in the combine tables, keyed on `p_outer` of the 1×2 divide.)
 
 ## Stored total orders as dense ranks
 
-A total order in Consts spells as dense 0-based rank data, consumed by comparison only. Ranks state each element's place in the sequence; successor edges imply it through closure. Comparison-only consumption keeps the borrowed number structure inert; dense 0-based fills keep the encoding canonical — a gapped fill spells one order many ways.
+Store a total order in Consts as dense 0-based rank data, and consume it by comparison only. Ranks state each element's place in the sequence directly; successor edges state it only through closure. Comparison-only consumption keeps the number structure unused beyond ordering; dense 0-based fills keep the encoding canonical, since a gapped fill encodes one order many ways.
 
 ```
 .decl ink_rank(c: Color, r: number)
@@ -129,11 +125,11 @@ beaten(P, Col) :-
     c.ink_rank(C2, R2), c.ink_rank(Col, R), R2 < R.
 ```
 
-Over a spatial domain the ranks lay out as a GRID — a68b268e's `c.prio`, the precedence visible in the tile arrangement.
+Over a spatial domain, the ranks can lay out as a GRID: a68b268e's `c.prio` shows the precedence in the tile arrangement.
 
 ## Stored symmetry sets as full subgroups
 
-A stored symmetry set is a stabilizer — the transforms that fix a grid — and a stabilizer is a subgroup. It spells as the subgroup's complete element list, identity included. Generating sets spell one subgroup many ways (`{LR, TB}`, `{LR, HT}`, `{TB, HT}` close to the same Klein group); the full list is one spelling per subgroup, and a fill is valid iff it is one of D4's ten subgroups.
+A stored symmetry set is a stabilizer (the transforms that fix a grid), and a stabilizer is a subgroup. Store it as the subgroup's complete element list, identity included. Generating sets encode one subgroup many ways (`{LR, TB}`, `{LR, HT}`, `{TB, HT}` close to the same Klein group); the full list gives one encoding per subgroup, and a fill is valid iff it is one of D4's ten subgroups.
 
 ```
 .decl sym(d: D4)
@@ -141,11 +137,11 @@ sym(D4_ID). sym(D4_CW). sym(D4_HT). sym(D4_CC).
 sym(D4_LR). sym(D4_TB). sym(D4_DG). sym(D4_AD).
 ```
 
-ID is inert at consumption: an application site skips it through its clean-source guard (b8825c91); an invariance test finds it vacuously unbroken (44f52bb0's `mapping_sym`).
+ID has no effect at consumption: an application site skips it through its clean-source guard (b8825c91); an invariance test finds it vacuously unbroken (44f52bb0's `mapping_sym`).
 
 ## Set-keyed relations via parent/child tables
 
-A relation keyed by a multiset of members declares as two tables glued by an `eid`: parent holds `(eid, out-fields)`, child holds `(eid, member-fields)`. The match runs through `KeyedSetCompare` (`lib.dl`) — the child table feeds `pattern_member`, the observed cells feed `observed_member`, and `covers` / `equals` test containment / equality. The parent table maps the matched `eid` to its output.
+Declare a relation keyed by a multiset of members as two tables joined by an `eid`: the parent holds `(eid, out-fields)`; the child holds `(eid, member-fields)`. The match runs through `KeyedSetCompare` (`lib.dl`): the child table feeds `pattern_member`, the observed cells feed `observed_member`, and `covers` / `equals` test containment / equality. The parent table maps the matched `eid` to its output.
 
 ```
 .decl combine_member(eid: number, p_outer: Position, c: Color)
@@ -165,7 +161,7 @@ out(P_grid_out, Col_out) :-
     combine_match.equals(P_grid_out, Eid).
 ```
 
-`equals` here because the observed tiles at a cell *are* exactly the entry's members; use `covers` where the observed set is a true superset of the pattern.
+This example uses `equals` because the observed tiles at a cell are exactly the entry's members; use `covers` where the observed set may have members beyond the pattern.
 
 ## Bidirectional mapping via positive recursion
 
@@ -179,7 +175,7 @@ mapping(B, A) :- mapping(A, B).
 
 ## `divide_by_size` (K, G) parameter space
 
-Step size between tile starts is `K + G`. Different (K, G) splits of the same step model the same spatial rhythm with different tile/gap semantics.
+Step size between tile starts is `K + G`. Different (K, G) splits of the same step model the same periodic layout with different tile/gap semantics.
 
 For a frame extent H and effective step S = K + G, divisibility requires `(H + G) % S = 0`.
 
@@ -208,21 +204,21 @@ compose(P_inner_v, P_inner_h, P_intile).
 
 ## Wide and long layouts
 
-A relation lays co-occurring values out wide — columns of one atom — or long — one row per member. Multiplicity the concept fixes goes wide: the two axes, a corner's two dirs, the four edge distances (Position is the wide form of per-Dir distance data). Multiplicity the task varies stays long: markers, tiles, ink cells.
+A relation can lay co-occurring values out wide (columns of one atom) or long (one row per member). Multiplicity that the concept fixes goes wide: the two axes, a corner's two dirs, the four edge distances (Position is the wide form of per-Dir distance data). Multiplicity that the task varies stays long: markers, tiles, ink cells.
 
-Wide reads by unification; long reads by joins. A long spelling of a fixed co-occurrence makes every consumer reassemble it — a self-join with a distinctness guard, deriving each symmetric result twice:
+Wide data reads by unification; long data reads by joins. A long encoding of a fixed co-occurrence makes every consumer reassemble it, as a self-join with a distinctness guard that derives each symmetric result twice:
 
 ```
 edge(D1), edge(D2), D1 != D2, marked(P, D1), marked(P, D2).
 ```
 
-The reassembly belongs in one place: the domain's pairing relation (`opposite` is the Dir form; each closed domain earns its own), or the defining rule of a wide relation. On a domain with identity only (colors), the distinctness join is the concept itself, not a shadow of one.
+The reassembly belongs in one place: the domain's pairing relation (`opposite` is the Dir form; each closed domain gets its own), or the defining rule of a wide relation. On a domain with identity only (colors), the distinctness join is the concept itself.
 
-Order inside a wide atom is a tag column or a repeated value, never slot position. A pairing relation carries all orders as rows (`opposite`, `turn`), so which member fills which slot is data. A record ordering members by positional convention is a wide form without that license — the convention crosses as data.
+Order inside a wide atom is a tag column or a repeated value, never slot position. A pairing relation holds all orders as rows (`opposite`, `turn`), so which member fills which slot is data. A record that orders members by positional convention lacks that property: the convention crosses the interface as unstated data.
 
-A repeated variable in a wide atom states the diagonal case directly — equal extents (a square), equal distances (centered; on a corner's diagonal) — where the long spelling needs an agreement join.
+A repeated variable in a wide atom states the diagonal case directly: equal extents (a square), equal distances (centered; on a corner's diagonal). The long encoding needs an agreement join for the same statement.
 
-Derivation is long by nature: a rule quantifying over an index emits one row per index value, and aggregation computes per index (`Bbox` aggregates `edge_min` per Dir, then packs the four into `margin`'s Position). Widening derived data costs one pairing join at its defining rule; a readout of a value that already carries the co-occurrence widens for free.
+Derivation is long by nature: a rule that quantifies over an index emits one row per index value, and aggregation computes per index (`Bbox` aggregates `edge_min` per Dir, then packs the four into `margin`'s Position). Widening derived data costs one pairing join at its defining rule. A readout of a value that already holds the co-occurrence widens at no cost.
 
 ## `cell_split` — input cell with its axis decomposition
 

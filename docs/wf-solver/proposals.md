@@ -1,22 +1,12 @@
 # Proposals
 
-For proposing and staging changes to `.dl` style and primitives. Not a changelog or general notes.
-If a proposal is implemented, it is removed from this doc.
+For proposing and staging changes to `.dl` style and primitives. Not a changelog or a notes file. If a proposal is implemented, it is removed from this doc.
 
 ## `ConcatPipeline` — unequal-sized rectilinear tiles
 
-`divide` / `divide_2d` / `divide_by_size_2d` (forward) and `concat` /
-`concat_slab` / `concat_2d` (inverse) cover uniform tiles: every tile shares a
-size, so the per-tile step is constant. Unequal-sized rectilinear tiles need
-cumulative offsets — each row/column carries its own extent. `ConcatPipeline`
-derives per-tile dims and per-edge cumulative offsets, then recomposes via
-`compose`.
+`divide` / `divide_2d` / `divide_by_size_2d` (forward) and `concat` / `concat_slab` / `concat_2d` (inverse) cover uniform tiles: every tile shares a size, so the per-tile step is constant. Unequal-sized rectilinear tiles need cumulative offsets, because each row/column has its own extent. `ConcatPipeline` derives per-tile dims and per-edge cumulative offsets, then recomposes via `compose`.
 
-Solver populates `tile_in` (dim info; values aren't read by the pipeline) and
-`axis_gap`. The component derives per-row / per-col tile dims, cumulative
-per-edge offsets, assembles `tile_offset(key, p_outer, p_off)`, and exposes a
-one-liner `concat` (lookup + `compose`). One tiling per key; `axis_gap` stays
-unkeyed — the gap is the instance's parameter, per `DirFrame`'s unkeyed `dir`.
+The solver populates `tile_in` (dim info; the pipeline does not read the values) and `axis_gap`. The component derives per-row / per-col tile dims and cumulative per-edge offsets, assembles `tile_offset(key, p_outer, p_off)`, and exposes a one-line `concat` (lookup + `compose`). One tiling per key. `axis_gap` stays unkeyed: the gap is the instance's parameter, like `DirFrame`'s unkeyed `dir`.
 
 ```
 .comp ConcatPipeline<Key> {
@@ -54,10 +44,7 @@ unkeyed — the gap is the instance's parameter, per `DirFrame`'s unkeyed `dir`.
 }
 ```
 
-Internals collapse via `Dir`: `tile_dim`, `edge_off`, and `tile_offset` each
-generalize across edges/axes in a single rule. Like the uniform `concat` family,
-it's shape-agnostic — `P_outer` full-2D or axis-only both flow through `compose`,
-so 2D and slab arrangements use the same rules.
+The internals generalize via `Dir`: `tile_dim`, `edge_off`, and `tile_offset` each cover all edges/axes in one rule. Like the uniform `concat` family, the comp is shape-agnostic: `P_outer` full-2D or axis-only both flow through `compose`, so 2D and slab arrangements use the same rules.
 
 Solver usage:
 
@@ -71,20 +58,13 @@ out(P_grid, V, Ch) :-
     pipe.concat(Ch, P_outer, P_inner, P_grid).
 ```
 
-An `.init` named `concat` clashes with lib's `concat` relation; pick another
-instance name.
+An `.init` named `concat` clashes with lib's `concat` relation; pick another instance name.
 
-**Task-local home (protocol step 1).** e633a9e5: nonuniform scale-up, gap 0
-— the $Edge and $Table extent models share one Choice-keyed instance.
+**Task-local home (protocol step 1).** e633a9e5: nonuniform scale-up, gap 0; the $Edge and $Table extent models share one Choice-keyed instance.
 
 ## `Tile2D<Key>` / `Divide2D<Key>` — 2D decomposition from per-axis dims
 
-The divide peers of `Frame2D`: per-axis parameters as axis-tagged rows,
-per-axis 1D decomposition, perp-glued. The `_2d` composites carry the
-square claim — one scalar, both axes; these carry the rectangular claim.
-Tile2D is size-parameterized (`divide_by_size`); Divide2D is
-count-parameterized (`divide`), the same shape with `divide(P, A, N, G, ..)`
-in its place. `gap` is the instance's parameter.
+The divide peers of `Frame2D`: per-axis parameters as axis-tagged rows, per-axis 1D decomposition, perp-glued. The `_2d` composites make the square claim (one scalar, both axes); these make the rectangular claim. Tile2D is size-parameterized (`divide_by_size`). Divide2D is count-parameterized: the same shape with `divide(P, A, N, G, ..)` in its place. `gap` is the instance's parameter.
 
 ```
 .comp Tile2D<Key> {
@@ -102,35 +82,22 @@ in its place. `gap` is the instance's parameter.
 }
 ```
 
-**Task-local home (protocol step 1).** Tile2D — f8b3ba0a (Unit key): the
-separator-lattice tiles, dims 1 (V) and 2 (H). Divide2D — no site yet;
-staged as the sibling.
+**Task-local home (protocol step 1).** Tile2D — f8b3ba0a (Unit key): the separator-lattice tiles, dims 1 (V) and 2 (H). Divide2D — no site yet; staged as the sibling.
 
 ## `KeyedSetCompare` extensions — set-relationship lattice
 
-`KeyedSetCompare<Key, Pat, Member>` (in `lib.dl`) exposes `covers` / `equals` / `pattern_size`.
-These extensions derive from the same three counts it already computes (`|pattern|`,
-`|observed|`, `overlap`); add one when a real task needs it, not preemptively
-(lib-addition protocol):
+`KeyedSetCompare<Key, Pat, Member>` (in `lib.dl`) exposes `covers` / `equals` / `pattern_size`. These extensions derive from the same three counts it already computes (`|pattern|`, `|observed|`, `overlap`). Add one when a real task needs it, not preemptively (lib-addition protocol):
 
 - `within(observed, pattern)` — observed ⊆ pattern (`overlap == observed_size`)
 - `disjoint(observed, pattern)` — `overlap == 0`
 - `intersects(observed, pattern)` — `overlap > 0`
-- `observed_size(observed, n)`, `overlap_size(observed, pattern, n)` — projections that
-  unlock nearest / best-overlap selection
+- `observed_size(observed, n)`, `overlap_size(observed, pattern, n)` — projections that unlock nearest / best-overlap selection
 
-**Scope.** This component owns set-relationship derivation. Ranking policy (`best_covered`,
-`nearest`) and approximate / multiset / payload matching sit at or past the edge —
-solver-local or a separate component. Current hints: 3618c87e → an `unmatched` negative,
-44f52bb0 → `best_covered`.
+**Scope.** This component owns set-relationship derivation. Ranking policy (`best_covered`, `nearest`) and approximate / multiset / payload matching sit outside it, solver-local or in a separate component. Current hints: 3618c87e → an `unmatched` negative; 44f52bb0 → `best_covered`.
 
 ## `Bbox.corner` — set cell at a bbox corner
 
-A membership readout beside `inside`: the set's cell seated at corner `diag`
-of its own bounding box — on the box boundary toward both of the corner's
-edges. A tuple exists only where the set occupies that corner (an L-shape
-yields three). Derives from `cell` and `edge_min` only, so it lives in the
-comp:
+A membership readout beside `inside`: the set's cell at corner `diag` of its own bounding box, on the box boundary toward both of the corner's edges. A tuple exists only where the set occupies that corner (an L-shape yields three). It derives from `cell` and `edge_min` only, so it lives in the comp:
 
 ```
 // Set cell on the box's d-side boundary.
@@ -144,19 +111,13 @@ corner(K, Diag, P) :-
     D1 != D2.
 ```
 
-**Task-local home (protocol step 1).** 66e6c45b (`shape_edge` / `shape_corner`,
-Unit key): $Stretch maps the corner cells to grid corners; $Explode steps them
-outward.
+**Task-local home (protocol step 1).** 66e6c45b (`shape_edge` / `shape_corner`, Unit key): $Stretch maps the corner cells to grid corners; $Explode steps them outward.
 
-**Second home (protocol step 1).** 62b74c02 (`block_edge`, Unit key):
-`edge_cell` alone, no corner readout — the boundary column the span fill
-copies from.
+**Second home (protocol step 1).** 62b74c02 (`block_edge`, Unit key): `edge_cell` alone, without the corner readout — the boundary column the span fill copies from.
 
 ## `Between<Key>` — cells between two keyed marks on a line
 
-The two-sided fold of `Ray` (`lib.dl`). Demoted from lib in the `Ray`
-factoring — the fold is one rule and lives solver-local until it re-earns
-comp form.
+The two-sided fold of `Ray` (`lib.dl`). Demoted from lib in the `Ray` factoring: the fold is one rule, and it stays solver-local until real use justifies comp form again.
 
 ```
 .comp Between<Key> {
@@ -174,22 +135,13 @@ comp form.
 }
 ```
 
-A mark is between under its own key — Ray's inclusive reach; 22168020
-paints mark cells through this.
+A mark is between under its own key (Ray's inclusive reach); 22168020 paints mark cells through this.
 
-**Task-local homes (protocol step 1).** Solver-local folds: 22168020
-(Color key), 22eb0ac0 $Span (Color), a699fb00 $Span (Unit), aa18de87
-$Axis and $Iso (Unit, $Iso casting all four dirs), 505fff84 $Set and
-$Sided (Color, strict via mark-free domain).
+**Task-local homes (protocol step 1).** Solver-local folds: 22168020 (Color key), 22eb0ac0 $Span (Color), a699fb00 $Span (Unit), aa18de87 $Axis and $Iso (Unit, $Iso casting all four dirs), 505fff84 $Set and $Sided (Color, strict via mark-free domain).
 
 ## `Ordinal.rev` — opposite-end pairing of an index set
 
-The order anti-isomorphism of `idx_set`: `rev(k, k2)` pairs each element
-with its opposite-end counterpart — as many elements below k as above k2.
-The descending complement of `rank` as a pairing rather than a rank value.
-The Ordinal doc's descending idiom (place ranks from the opposite edge)
-needs a physical frame to place into; `rev` covers reversal of an abstract
-index sequence.
+The order anti-isomorphism of `idx_set`: `rev(k, k2)` pairs each element with its opposite-end counterpart, with as many elements below k as above k2. It is the descending complement of `rank`, as a pairing rather than a rank value. The Ordinal doc's descending idiom (place ranks from the opposite edge) needs a physical frame to place into; `rev` covers reversal of an abstract index sequence.
 
 ```
 .decl rev(key: Key, k: number, k2: number)
@@ -198,26 +150,13 @@ rev(Ky, K, K2) :-
     idx_set(Ky, K2), R = count : { idx_set(Ky, Kb), K2 < Kb }.
 ```
 
-Home: `Ordinal` — it owns `idx_set`; `rev` is a second readout beside
-`rank`.
+Home: `Ordinal` — it owns `idx_set`; `rev` is a second readout beside `rank`.
 
-**Task-local home (protocol step 1).** 85c4e7cd reverses its ring colors:
-`rev` over ring indices pairs ring K with the ring as deep from the center
-as K is from the border.
+**Task-local home (protocol step 1).** 85c4e7cd reverses its ring colors: `rev` over ring indices pairs ring K with the ring as deep from the center as K is from the border.
 
 ## `OrderFrame<Key>` — the frame a sparse position set induces
 
-The order-canonical peer of `AxisFrame`: `AxisFrame` realizes a frame
-from its extent; `OrderFrame` realizes the dense frame a sparse set of
-axis-only positions induces, with each member's position in it. `pos`
-is Position-valued and privileges no end — the same
-directed/undirected split as `DirFrame`/`AxisFrame`, applied to order.
-Members order by comparing their coordinate; a member's distance toward
-each edge is the count of nearer members, so numbers stay inside
-`nearer`'s defining comparison. Parallel to `Ordinal`, not built on it:
-`Ordinal` is the directed, number-valued readout of an index set;
-`OrderFrame` is the undirected, Position-valued one of a member set.
-`axis` is the instance's parameter.
+The order-canonical peer of `AxisFrame`. `AxisFrame` realizes a frame from its extent; `OrderFrame` realizes the dense frame that a sparse set of axis-only positions induces, with each member's position in it. `pos` is Position-valued and privileges no end: the directed/undirected split of `DirFrame`/`AxisFrame`, applied to order. Members order by comparing their coordinate. A member's distance toward each edge is the count of nearer members, so numbers stay inside `nearer`'s defining comparison. The comp is parallel to `Ordinal`, not built on it: `Ordinal` is the directed, number-valued readout of an index set; `OrderFrame` is the undirected, Position-valued readout of a member set. `axis` is the instance's parameter.
 
 ```
 .comp OrderFrame<Key> {
@@ -242,19 +181,11 @@ each edge is the count of nearer members, so numbers stay inside
 }
 ```
 
-**Task-local home (protocol step 1).** 505fff84: extraction placement —
-contributing rows keyed by Choice. (Its segments shift via Bbox +
-color-keyed Reframe instead: they are intervals, so their order frame is
-a translation, and the tighter unit won.)
+**Task-local home (protocol step 1).** 505fff84: extraction placement — contributing rows keyed by Choice. (Its segments shift via Bbox + color-keyed Reframe instead: they are intervals, so their order frame is a translation, and the tighter unit was chosen.)
 
 ## `Reach` — seeded connectivity
 
-One component from a seed — the seeded readout of the 4-adjacency closure
-that lib's `Components` labels in full. The seed selects the component and is
-the closure's base case: `Reach` fits when there's a natural anchor and one
-component matters; `Components` fits when every component counts. An
-8-adjacency variant or a parameterized adjacency input is the obvious
-extension when a task needs diagonal connectivity.
+One component from a seed: the seeded readout of the 4-adjacency closure that lib's `Components` labels in full. The seed selects the component and is the closure's base case. `Reach` fits when there is a natural anchor and one component matters; `Components` fits when every component matters. An 8-adjacency variant or a parameterized adjacency input is the obvious extension when a task needs diagonal connectivity.
 
 ```
 .comp Reach<Key> {
@@ -270,16 +201,11 @@ extension when a task needs diagonal connectivity.
 }
 ```
 
-**Task-local home (protocol step 1).** 1e81d6f9: a corner-edge seed picks the
-L frame — the stray mask cell stays unreachable, so the following `Bbox`
-doesn't inflate to span it.
+**Task-local home (protocol step 1).** 1e81d6f9: a corner-edge seed picks the L frame. The stray mask cell stays unreachable, so the following `Bbox` does not grow to span it.
 
 ## `diag_edge_delta` — edge delta at a corner
 
-The DiagDir peer of `edge_delta`: a Position carrying extents at the two
-edges of corner `diag`, axis-tagged — k1 at the edge on axis a, k2
-across. Grow-toward-a-corner, where `diag_step_delta` is
-move-toward-a-corner. The delta counterpart of the `diag_dist` readout.
+The DiagDir peer of `edge_delta`: a Position holding extents at the two edges of corner `diag`, axis-tagged — k1 at the edge on axis a, k2 across. It grows toward a corner, where `diag_step_delta` moves toward a corner. It is the delta counterpart of the `diag_dist` readout.
 
 ```
 .decl diag_edge_delta(diag: DiagDir, a: Axis, k1: number, k2: number, p: Position) inline
@@ -289,32 +215,22 @@ diag_edge_delta(Diag, A, K1, K2, P) :-
     compose(P1, P2, P).
 ```
 
-**Task-local home (protocol step 1).** 8618d23e (`DiagEdgeDelta` comp):
-$Derive's grow delta at the corner opposite the seat, the pair from the
-growth case.
+**Task-local home (protocol step 1).** 8618d23e (`DiagEdgeDelta` comp): $Derive's grow delta at the corner opposite the seat, the pair from the growth case.
 
 ## `c4_elem` — the rotation subgroup enum
 
-The C4 subset of `d4_elem`: the four rotations. For closures that apply
-every rotation — where a reflection would be wrong, not merely unused.
-Lib target: a fact set beside `d4_elem`.
+The C4 subset of `d4_elem`: the four rotations. For closures that apply every rotation, where a reflection would be wrong rather than merely unused. Lib target: a fact set beside `d4_elem`.
 
 ```
 .decl c4_elem(d: D4)
 c4_elem(D4_ID). c4_elem(D4_CW). c4_elem(D4_HT). c4_elem(D4_CC).
 ```
 
-**Task-local home (protocol step 1).** 46442a0e (`RotElems` comp): $Rot's
-quarter-turn closure, applied jointly to anchor tile position and content.
+**Task-local home (protocol step 1).** 46442a0e (`RotElems` comp): $Rot's quarter-turn closure, applied jointly to anchor tile position and content.
 
 ## `D4Invariance<Key, Val>` — per-key D4 invariance of a valued cell set
 
-Which D4 elements fix each keyed cell set. `broken` witnesses a violated
-transform — some cell whose image under d carries a different value;
-`has_sym` is invariance under some nontrivial element. `cell` must be total
-over each key's domain (the negation reads absence as difference). The keyed
-generalization of 44f52bb0's unkeyed `non_invariant` / `input_inv` body
-rules; that solver is a promotion-time caller (`Unit` key).
+Which D4 elements fix each keyed cell set. `broken` witnesses a violated transform: some cell whose image under d holds a different value. `has_sym` is invariance under some nontrivial element. `cell` must be total over each key's domain (the negation reads absence as difference). This is the keyed generalization of 44f52bb0's unkeyed `non_invariant` / `input_inv` body rules; that solver is a promotion-time caller (`Unit` key).
 
 ```
 .comp D4Invariance<Key, Val> {
@@ -328,32 +244,19 @@ rules; that solver is a promotion-time caller (`Unit` key).
 }
 ```
 
-**Task-local home (protocol step 1).** 662c240a keys tiles by slab index:
-`$Shared` reads `broken` at `c.sym`; `$Asym` negates `has_sym`.
+**Task-local home (protocol step 1).** 662c240a keys tiles by slab index: `$Shared` reads `broken` at `c.sym`; `$Asym` negates `has_sym`.
 
 ## `ReadOrder` — reading order over a cell set
 
-Scan-like-text order given a corner and a primary axis: `before` compares
-lexicographically (strictly nearer along the primary dir; or primary tie and
-strictly nearer along the secondary), `rank` counts predecessors. The
-primitive boundary is unsettled: one comp owning both, or a split — a
-rank-over-input-order comp (`RelOrdinal<T>`, subsuming `Ordinal` at `<` on
-numbers) fed by a lexicographic `before` supplier.
+Reading order given a corner and a primary axis: `before` compares lexicographically (strictly nearer along the primary dir; or a primary tie and strictly nearer along the secondary); `rank` counts predecessors. The primitive boundary is unsettled: either one comp owns both, or they split into a rank-over-input-order comp (`RelOrdinal<T>`, subsuming `Ordinal` at `<` on numbers) fed by a lexicographic `before` supplier.
 
-**Task-local home (protocol step 1).** ff28f65a carries it as body rules
-(`read_before`, `fill_rank`); `$Fill` marks X cells with rank below the count.
+**Task-local home (protocol step 1).** ff28f65a carries it as body rules (`read_before`, `fill_rank`); `$Fill` marks X cells with rank below the count.
 
-**Second home (protocol step 1).** a68b268e $Scan carries `before` as body
-rules (`scan_before`) over tile positions; no rank readout.
+**Second home (protocol step 1).** a68b268e $Scan carries `before` as body rules (`scan_before`) over tile positions; no rank readout.
 
 ## `Excess<Key, Member>` — count of pos members beyond neg members
 
-The negative-free difference of two member counts: `excess(key, n)` holds
-the positive difference, with no tuple at a tie or deficit, so no negative
-crosses the interface. Cancellation between two disjoint sets has no
-set-level witness — any member pairing invents an order — so the
-subtraction is irreducible; the comp owns it, and bodies consume the count
-by comparison.
+The negative-free difference of two member counts: `excess(key, n)` holds the positive difference, with no tuple at a tie or deficit, so no negative number crosses the interface. Cancellation between two disjoint sets has no set-level witness (any member pairing invents an order), so the subtraction is irreducible; the comp owns it, and bodies consume the count by comparison.
 
 ```
 .comp Excess<Key, Member> {
@@ -368,5 +271,4 @@ by comparison.
 }
 ```
 
-**Task-local home (protocol step 1).** 37ce87bb (Unit key): the result
-bar's height — add-colored cells beyond sub-colored cells.
+**Task-local home (protocol step 1).** 37ce87bb (Unit key): the result bar's height — add-colored cells beyond sub-colored cells.

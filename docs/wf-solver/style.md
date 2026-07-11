@@ -20,7 +20,7 @@ Most rule bodies hold Positions in multiple frames at once. Name a Position by t
 - **tile** — tile-arrangement frame produced by `divide`. `P_tile`.
 - **intile** — within a single tile. `P_intile`.
 
-Formal parameters of `divide` and `tile_pos` are `p_outer` / `p_inner` — they describe the decomposition. Solvers bind to `P_tile` / `P_intile` at call sites. For axis-only intermediates (e.g. `divide`'s inner before composing with the perpendicular axis), use decomposition language: `P_inner_axis`, `P_outer_v`, `P_inner_h`.
+Formal parameters of `divide` and `tile_pos` are `p_outer` / `p_inner`; they describe the decomposition. Solvers bind to `P_tile` / `P_intile` at call sites. For axis-only intermediates (e.g. `divide`'s inner before composing with the perpendicular axis), use decomposition language: `P_inner_axis`, `P_outer_v`, `P_inner_h`.
 
 ## File structure
 
@@ -30,7 +30,7 @@ Formal parameters of `divide` and `tile_pos` are `p_outer` / `p_inner` — they 
 - `.comp Consts { ... }` declares task-wide data; `.init c = Consts` exposes it as `c.<rel>`.
 - Inside Consts, `.init helpers = ConstsHelpers` makes shared helpers (`frame_pos`, `tile_pos`) available as `helpers.<rel>(...)` in data declarations. The body has no access.
 - All task-wide data lives in Consts, e.g. orientation (Dirs, Axes), dimensions, gaps, mappings, frame data.
-- An orientation datum constrained by another is a relative value (`Sense` via `turn`, `Axis` via `perp`). A second absolute slot admits fills the family does not have; the relative spelling has one fill per member.
+- Store an orientation datum constrained by another as a relative value (`Sense` via `turn`, `Axis` via `perp`). A second absolute slot admits fills the family does not have; the relative form has one fill per member.
 
 Skeleton (single-impl):
 
@@ -99,29 +99,27 @@ Cases are grouped under `// --- <name> ---` markers in both Consts and body — 
 
 ## Types
 
-A solver defines types only for model coverage (`Choice` and the ADTs its
-cases carry) and for comp instantiation (records that fill a generic comp's
-type params).
+A solver defines types only for model coverage (`Choice` and the ADTs its cases carry) and for comp instantiation (records that fill a generic comp's type params).
 
 ## Body
 
-- No literals — orientation (`DIR_T`, `DIR_L`, `AXIS_V`, etc.), colors, or non-zero task-shape numbers (lengths, offsets, gaps). Body reads them from Consts via `c.<rel>(...)` and parameterizes. Hardcoded values fix the body to one task in the family; pulling from Consts keeps it symmetric across the family.
-    - Literals are fine inside a generic `.comp` written task-local — lib-shaped code, not body; the linter skips `.comp` blocks wholesale.
-- No Position destructure. Use lib primitives instead. Position is opaque; destructure hardcodes edge indices and breaks orientation invariance.
-- Avoid arithmetic. If necessary, that's a sign the lib needs a new primitive. Create that instead of having arithmetic in the solver body.
+- No literals: orientation (`DIR_T`, `DIR_L`, `AXIS_V`, etc.), colors, or non-zero task-shape numbers (lengths, offsets, gaps). The body reads them from Consts via `c.<rel>(...)` and parameterizes. Hardcoded values fix the body to one task in the family; values read from Consts keep it symmetric across the family.
+    - Literals are fine inside a generic `.comp` written task-local; that is lib-shaped code rather than body, and the linter skips `.comp` blocks entirely.
+- No Position destructure. Use lib primitives instead. Position is opaque; destructuring hardcodes edge indices and breaks orientation invariance.
+- Avoid arithmetic. When arithmetic seems necessary, the lib needs a new primitive. Create that instead of writing arithmetic in the solver body.
 - Complement tests negate the named case: `!c.bg(Col)` for non-bg.
-- Off-edge tests spell `dist(P, D, K), K != 0`, not `K > 0` — the zero case is refused by identity, not order. `!dist(P, D, 0)` is unavailable: Souffle can't negate an inline relation whose clause introduces variables.
-- Inline relations can't appear inside aggregators. Wrap in a non-inline relation when needed.
+- Write off-edge tests as `dist(P, D, K), K != 0`, not `K > 0`: the zero case is excluded by identity, not by order. `!dist(P, D, 0)` is unavailable: Souffle cannot negate an inline relation whose clause introduces variables.
+- Inline relations cannot appear inside aggregators. Wrap in a non-inline relation when needed.
 
 ## Components
 
 - Use a lib unit only when the task has its concept. Needing part of its computation is not a reason to use it. If only one step is needed, write it with primitives or a local rule.
-- A new comp takes a `Key` type param; single-set sites key on `Unit` (`$U()`, in lib). An unkeyed comp shatters at the case boundary when a solver's cases share its pipeline: per-case `.init`s and dispatch rules differing only in the case name.
-- Instance-level parameters stay unkeyed — a relation whose value is the instance's identity, not per-key data (`DirFrame.dir`, `Ray.dir`). Key one only when a task varies it per key.
+- A new comp takes a `Key` type param; single-set sites key on `Unit` (`$U()`, in lib). An unkeyed comp forces duplication at the case boundary when a solver's cases share its pipeline: per-case `.init`s and dispatch rules that differ only in the case name.
+- Instance-level parameters stay unkeyed: a relation whose value is part of the instance's identity, not per-key data (`DirFrame.dir`, `Ray.dir`). Key one only when a task varies it per key.
 
 ## Multi-atom rules
 
-Head and `:-` on first line; body atoms on subsequent lines indented 4 spaces; related atoms grouped on one line; inline `// ` comment per line naming the group's role.
+Head and `:-` on the first line; body atoms on subsequent lines indented 4 spaces; related atoms grouped on one line; an inline `// ` comment per line names the group's role.
 
 ```
 header_color(Idx, Col) :-
@@ -130,7 +128,7 @@ header_color(Idx, Col) :-
     c.across_dir(A_dir), dist(P, A_dir, Idx).    // index = across distance
 ```
 
-Single-line form is fine for short rules (≤ ~80 chars).
+The single-line form is fine for short rules (≤ ~80 chars).
 
 ## Inline cost
 
@@ -143,4 +141,4 @@ If the task JSON contains alts, encode them as cases of `Choice` — one case pe
 ## Souffle version
 
 - Targets latest Souffle. All latest features are available.
-- `docs/souffle-undocumented.md` — Recent Souffle additions: user-defined aggregates and lattices. Consult when the built-in aggregators don't fit.
+- `docs/souffle-undocumented.md` — consult when the built-in aggregators do not fit.
