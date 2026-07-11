@@ -75,8 +75,8 @@ growth(A, G, G, $Iso()) :- axis_elem(A), c.sep(G).
 // --- Derive / Aniso ---
 growth(A, N1, N2, $Aniso()) :- c.sep_dim(A, N1), perp(A, A2), c.sep_dim(A2, N2).
 
-// Corner edge delta: a Position carrying extents at the two edges of
-// corner diag, axis-tagged — edge_delta's DiagDir peer. Lib-gap candidate.
+// Corner edge delta: a Position holding extents at the two edges of
+// corner diag, axis-tagged — edge_delta's DiagDir peer. Lib candidate.
 .comp DiagEdgeDelta<Key> {
     .decl arg(key: Key, diag: DiagDir, a: Axis, k1: number, k2: number)
 

@@ -1,7 +1,7 @@
 // 46442a0e
 // 2×2 tile arrangement of input copies — the rotation peer of the
 // 3af2c5a8 family: the anchor-corner tile is the input; the other tiles
-// are its quarter-turn images. Flip-based cases are defeated (train 2 /
+// are its quarter-turn images. Flip-based cases are ruled out (train 2 /
 // test: the off-anchor tiles are rotations of an asymmetric input).
 //
 // Cases (data-equivalent on this task):
@@ -44,7 +44,7 @@ out(P_grid, Col, $Lookup()) :-
     concat_2d(P_tile, P_intile, 0, P_grid).              // recompose
 
 // --- Rot ---
-// C4 — the rotation subgroup of D4. Lib-gap peer of d4_elem.
+// C4 — the rotation subgroup of D4. Lib candidate beside d4_elem.
 .comp RotElems {
     .decl elem(d: D4)
     elem(D4_ID). elem(D4_CW). elem(D4_HT). elem(D4_CC).
@@ -56,7 +56,7 @@ out(P_grid, Col, $Lookup()) :-
 anchor_tile(T) :- c.arr_pos(T), c.anchor(Diag), corner_anchor(Diag, T, ORIGIN).
 
 out(P_grid, Col, $Rot()) :-
-    anchor_tile(T), in(P, Col),                          // input seats the anchor tile
+    anchor_tile(T), in(P, Col),                          // input fills the anchor tile
     c4.elem(R), apply(R, T, T2), apply(R, P, P2),        // joint quarter-turn image
     concat_2d(T2, P2, 0, P_grid).                        // recompose
 

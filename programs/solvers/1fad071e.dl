@@ -7,11 +7,11 @@
 // The block shape is a position set. Two models detect its occurrences:
 //   $Object    — connected components equal to the shape.
 //   $Placement — placements whose footprint lands fully on the color; counts
-//                touching squares — which $Object merges — separately.
+//                touching squares separately, where $Object merges them.
 //
-// The bar color is its own claim — a fixed color ($Fixed) or the counted
+// The bar color is its own claim: a fixed color ($Fixed) or the counted
 // color ($Counted). Choice = [detect, mark] crosses the independent
-// decisions. A count->row lookup render is defeated: the test count never
+// decisions. A count->row lookup render is ruled out: the test count never
 // occurs in train.
 
 #include "../lib.dl"
@@ -46,7 +46,7 @@
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
-// Cells carrying the counted color.
+// Cells of the counted color.
 .decl on(p: Position)
 on(P) :- in(P, C), c.block_color(C).
 

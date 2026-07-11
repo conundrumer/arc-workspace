@@ -10,8 +10,8 @@
 //   $Tile    — divide input into c.n_tiles along axis_of(c.data_dir);
 //              each output tile applies c.tile_d4 to the input tile at c.data_dir
 //
-// Flagged ($Stamp): arithmetic predicate `K < Half_h` on dist. Rule wants
-// an edge-anchored half-extract primitive.
+// Flagged ($Stamp): arithmetic predicate `K < Half_h` on dist. The rule
+// needs an edge-anchored half-extract primitive.
 
 #include "../lib.dl"
 

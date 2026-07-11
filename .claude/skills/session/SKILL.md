@@ -28,7 +28,7 @@ A solver session writes a Souffle solver (`programs/solvers/<task_id>.dl`) that 
 Do each step individually; never batch them. Create a task per step.
 
 1. Create the solver
-    - Analyze the task: `cat data/tasks/<task_id>.json` (already formatted, don't pipe into anything)
+    - Analyze the task: `cat data/tasks/<task_id>.json` (already formatted, do not pipe into anything)
     - Draft from the reference
     - Run against materialized train+test pairs (`uv run python programs/run_dl.py <task_id>`)
     - Iterate until it works

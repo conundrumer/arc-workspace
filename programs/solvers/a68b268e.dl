@@ -1,7 +1,7 @@
 // a68b268e
 // A divider cross splits the grid into a tile arrangement, each tile drawn
 // in its own ink. The output overlays the tiles: the highest-precedence
-// ink present wins each cell, bg where every tile is empty. Each tile
+// ink present fills each cell, bg where every tile is empty. Each tile
 // keeps one ink in every pair, so spatial and chromatic precedence are
 // indistinguishable; the spatial read splits data/ops. Tagged on out's
 // Choice:

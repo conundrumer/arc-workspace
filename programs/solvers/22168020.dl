@@ -1,5 +1,5 @@
 // 22168020
-// Per line along c.fill_axis, each color's span — between its extreme marks —
+// Per line along c.fill_axis, each color's span (between its extreme marks)
 // fills with that color.
 
 #include "../lib.dl"

@@ -1,5 +1,5 @@
 // d23f8c26
-// One column survives; every other cell becomes bg.
+// One column is kept; every other cell becomes bg.
 //
 // Cases (data-equivalent on this task — odd widths, single middle gap):
 //   $Center() — the grid's center line on the task axis: cells equidistant

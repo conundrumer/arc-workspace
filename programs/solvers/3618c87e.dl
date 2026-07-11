@@ -8,7 +8,7 @@
 //   $PerCell  — the fall composed: clear the marker; fill the fall edge
 //               of a marker slice; else passthrough
 //   $SliceMap — the fall as data: a slice matching c.slice_in is replaced
-//               wholesale by c.slice_out; unmatched slices pass through
+//               by c.slice_out as a whole; unmatched slices pass through
 
 #include "../lib.dl"
 

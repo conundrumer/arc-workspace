@@ -1,11 +1,11 @@
 // 1e81d6f9
 // A marker cell at c.target_offset inside a corner-anchored L of c.mask_color
 // identifies a target color; that color is erased to c.bg everywhere else. Two
-// models of what survives the erase:
+// models of what is kept:
 //
 //   $Marker — only the marker cell is kept.
 //   $Bbox   — the whole region is kept: the connected component of mask cells at
-//             the corner (so a stray mask cell elsewhere can't inflate it),
+//             the corner (so a stray mask cell elsewhere cannot extend it),
 //             bounded to its bounding box.
 
 #include "../lib.dl"
@@ -65,8 +65,8 @@ target_color(Col) :- in(P, Col), target_pos(P).
 .decl mask(p: Position)
 mask(P) :- in(P, MaskCol), c.mask_color(MaskCol).
 
-// The frame's connected component, seeded from a mask cell on a corner edge —
-// a stray mask cell elsewhere doesn't touch those edges, so it stays out.
+// The frame's connected component, seeded from a mask cell on a corner edge;
+// a stray mask cell elsewhere does not touch those edges, so it stays out.
 .init region = Reach<Unit>
 region.node($U(), P) :- mask(P).
 region.seed($U(), P) :- mask(P), c.target_corner(Diag), dir_of(Diag, _, D), dist(P, D, 0).
@@ -78,12 +78,12 @@ box.grid($U(), P) :- in(P, _).
 
 .decl out(p: Position, col: Color, c: Choice)
 
-// --- Marker --- only the marker cell survives the erase.
+// --- Marker --- only the marker cell is kept.
 out(P, Col, $Marker()) :- in(P, Col), !target_color(Col).                          // non-target passes
 out(P, Col, $Marker()) :- in(P, Col), target_pos(P).                               // marker kept
 out(P, Bg, $Marker()) :- in(P, Col), target_color(Col), !target_pos(P), c.bg(Bg).  // target elsewhere erased
 
-// --- Bbox --- the whole corner region survives the erase.
+// --- Bbox --- the whole corner region is kept.
 out(P, Col, $Bbox()) :- in(P, Col), !target_color(Col).                            // non-target passes
 out(P, Col, $Bbox()) :- in(P, Col), box.inside($U(), P).                              // region kept
 out(P, Bg, $Bbox()) :- in(P, Col), target_color(Col), !box.inside($U(), P), c.bg(Bg). // target outside region erased

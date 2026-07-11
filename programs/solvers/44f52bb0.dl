@@ -27,7 +27,7 @@
 
     // --- $GroupMatch ---
     // Each entry holds a sym group and an output grid. Entries are matched
-    // against the input's invariance set; the largest matched group wins.
+    // against the input's invariance set; the largest matched group is chosen.
     // Every entry lists D4_ID; the {D4_ID}-only entry is the
     // always-matches fallback (size 1 → lowest priority).
     .decl mapping_sym(id: number, d: D4)

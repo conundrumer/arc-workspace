@@ -5,7 +5,7 @@
 //
 // Cases (data-equivalent on this task — every marked row has 1 west of 8):
 //   $Set()   — the marker pair brackets a segment regardless of side
-//   $Sided() — each marker owns an end: c.side's color sits at its dir
+//   $Sided() — each marker has a fixed end: c.side's color sits at its dir
 
 #include "../lib.dl"
 
@@ -49,9 +49,9 @@ seg(P, $Sided()) :-
     c.side(D, C1), opposite(D, O), c.side(O, C2),   // the ends' colors
     rays.ray(C1, P, O), rays.ray(C2, P, D).         // each mark at its end
 
-// The order-canonical peer of AxisFrame: the dense frame a sparse set of
-// axis-only positions induces, with each member's position in it — members
-// order by coordinate, no end privileged.
+// The order-canonical peer of AxisFrame: the dense frame that a sparse set
+// of axis-only positions induces, with each member's position in it.
+// Members order by coordinate; no end is privileged.
 .comp OrderFrame<Key> {
     .decl axis(a: Axis)
     .decl cell(key: Key, p: Position)

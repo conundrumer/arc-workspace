@@ -6,8 +6,8 @@
 //   $Dir  — c.dir names it.
 //   $Edge — the edge each mark sits on.
 //
-// Coincide here (every mark on the bottom edge); diverge when marks sit
-// on another edge.
+// The models coincide here (every mark is on the bottom edge); they
+// diverge when marks sit on another edge.
 
 #include "../lib.dl"
 

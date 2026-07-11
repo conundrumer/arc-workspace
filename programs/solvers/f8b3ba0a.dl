@@ -107,7 +107,7 @@ o.idx_set(Ch, N) :- minority_count(_, N, Ch).
 minority_rank(Col, R, Ch) :- minority_count(Col, N, Ch), o.rank(Ch, N, R).
 
 // Output frame: 1D axis anchored at c.rank_dir, per choice. Placing ascending
-// rank from the opposite edge seats the largest count at the rank_dir edge.
+// rank from the opposite edge puts the largest count at the rank_dir edge.
 .init col = DirFrame<Choice>
 col.dir(D_opp) :- c.rank_dir(D), opposite(D, D_opp).
 col.dist_set(Ch, R) :- minority_rank(_, R, Ch).

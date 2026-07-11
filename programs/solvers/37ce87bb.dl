@@ -3,11 +3,11 @@
 // sub-colored bars cancel it. A result bar of the summed height is
 // appended in its own line. Two models of that line:
 //
-//   $Next — the bar rhythm continues one pitch past the bars.
+//   $Next — the bar spacing continues one pitch past the bars.
 //   $Edge — the line at c.margin from a fixed across edge.
 //
-// Coincide here (every grid ends one pitch past the last bar); diverge
-// on a wider grid.
+// The models coincide here (every grid ends one pitch past the last bar);
+// they diverge on a wider grid.
 
 #include "../lib.dl"
 
@@ -43,7 +43,7 @@ line_of(P, P_line) :- in(P, _), c.base(D), axis_of(D, A), split(P, A, _, P_line)
 .decl bar_line(p_line: Position)
 bar_line(P_line) :- in(P, Col), !c.bg(Col), line_of(P, P_line).
 
-// Count of pos members beyond neg members. no tuple at a tie or deficit.
+// Count of pos members beyond neg members. No tuple at a tie or deficit.
 .comp Excess<Key, Member> {
     .decl pos(key: Key, m: Member)
     .decl neg(key: Key, m: Member)
@@ -64,7 +64,8 @@ height.neg($U(), P) :- in(P, Col), c.sub(Col).
 
 // --- $Next ---
 // One pitch from a bar line, either way across, on a barless grid line.
-// Off-grid candidates self-filter; inward candidates hit a neighbor bar.
+// Off-grid candidates filter themselves out; inward candidates land on a
+// neighbor bar.
 result_line(P_line2, $Next()) :-
     bar_line(P_line),
     c.base(D), turn(_, D, D2),                                // either way across
