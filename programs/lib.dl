@@ -249,6 +249,11 @@ axis_dim(P, A, N) :- P = [T, B, L, R],
 .decl axis_dims(p: Position, a: Axis, n1: number, n2: number) inline
 axis_dims(P, A, N1, N2) :- axis_dim(P, A, N1), perp(A, A2), axis_dim(P, A2, N2).
 
+// Proper sub-extents of p's frame along a — the sizes a sweeping
+// decomposition ranges over: every k with 1 <= k < extent.
+.decl sub_extent(p: Position, a: Axis, k: number) inline
+sub_extent(P, A, K) :- axis_dim(P, A, N), K = range(1, N).
+
 // Apply a D4 transform to a Position — a pure index permutation.
 .decl apply(d: D4, p: Position, p_out: Position) inline
 apply(D, P, [@apply_t(D, T, B, L, R), @apply_b(D, T, B, L, R),
@@ -261,18 +266,10 @@ apply(D, P, [@apply_t(D, T, B, L, R), @apply_b(D, T, B, L, R),
 // Asserts: gap-adjusted extent divides evenly by n.
 .decl divide(p: Position, a: Axis, n: number, gap: number, p_outer: Position, p_inner: Position) inline
 divide(P, A, N, G, P_outer, P_inner) :-
-    P = [T, B, L, R],
-    Near = @axis_near(A, T, B, L, R), Far = @axis_far(A, T, B, L, R),
-    Ext = Near + Far + 1,
+    axis_dim(P, A, Ext),
     (Ext - (N-1)*G) % N = 0,
-    Sh = (Ext - (N-1)*G) / N,
-    K_cyc = Near % (Sh + G),
-    K_cyc < Sh,
-    O = Near / (Sh + G),
-    P_outer = [@keep_axis(A, AXIS_V, O),     @keep_axis(A, AXIS_V, N-1-O),
-               @keep_axis(A, AXIS_H, O),     @keep_axis(A, AXIS_H, N-1-O)],
-    P_inner = [@keep_axis(A, AXIS_V, K_cyc), @keep_axis(A, AXIS_V, Sh-1-K_cyc),
-               @keep_axis(A, AXIS_H, K_cyc), @keep_axis(A, AXIS_H, Sh-1-K_cyc)].
+    K = (Ext - (N-1)*G) / N,
+    divide_by_size(P, A, K, G, P_outer, P_inner).
 
 // Like divide, but parameterized by tile size k instead of tile count n.
 // Tile count is recovered from p's axis-a extent: n = (extent + gap) /
