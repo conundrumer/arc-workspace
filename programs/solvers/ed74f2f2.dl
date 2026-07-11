@@ -55,7 +55,7 @@ slot(P_tile, P_intile, Col) :-
     in(P_grid, Col), c.decompose(P_grid, P_tile, P_intile).
 
 // Key tile content → color.
-.init key_match = KeyedSetCompare<Unit, KeyCell>
+.init key_match = KeyedSetCompare<Unit, number, KeyCell>
 key_match.pattern_member(Eid, M) :- c.key_member(Eid, M).
 key_match.observed_member($U(), [P_intile, Col]) :-
     slot(P_tile, P_intile, Col), c.key_tile(P_tile).

@@ -41,7 +41,7 @@
 
 .init c = Consts
 
-.init slice_match = KeyedSetCompare<Position, SliceMember>
+.init slice_match = KeyedSetCompare<Position, number, SliceMember>
 slice_match.pattern_member(0, [P, Col]) :- c.slice_in(P, Col).
 slice_match.observed_member(P_across, [P_inner, Col]) :- cell_split(_, Col, P_inner, P_across).
 

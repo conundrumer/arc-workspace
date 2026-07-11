@@ -44,7 +44,7 @@
 
 .init c = Consts
 
-.init group_match = KeyedSetCompare<Unit, D4>
+.init group_match = KeyedSetCompare<Unit, number, D4>
 group_match.pattern_member(Id, D) :- c.mapping_sym(Id, D).
 group_match.observed_member($U(), D) :- input_inv(D).
 

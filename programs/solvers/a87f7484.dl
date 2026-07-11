@@ -41,13 +41,13 @@ densest(T) :- ink_count(T, N), N = max M : { ink_count(_, M) }.
 out(P, Col, $Count()) :- tile_val(T, P, Col), densest(T).
 
 // --- $Shape ---
-.init shape_cmp = KeyedSetCompare<Position, Position>
-shape_cmp.pattern_member(ord(T), P) :- ink(T, P).
-shape_cmp.observed_member(T, P)     :- ink(T, P).
+.init shape_cmp = KeyedSetCompare<Position, Position, Position>
+shape_cmp.pattern_member(T, P)  :- ink(T, P).
+shape_cmp.observed_member(T, P) :- ink(T, P).
 
 // T's mask equals some other tile's.
 .decl shared(p_tile: Position)
-shared(T) :- ink(T2, _), T != T2, shape_cmp.equals(T, ord(T2)).
+shared(T) :- ink(T2, _), T != T2, shape_cmp.equals(T, T2).
 
 out(P, Col, $Shape()) :- tile_val(T, P, Col), ink(T, _), !shared(T).
 

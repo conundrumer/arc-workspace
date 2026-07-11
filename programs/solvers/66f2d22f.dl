@@ -51,7 +51,7 @@
 
 .init c = Consts
 
-.init combine_match = KeyedSetCompare<CombineKey, CombineMember>
+.init combine_match = KeyedSetCompare<CombineKey, number, CombineMember>
 combine_match.pattern_member(Eid, [P_outer, C]) :- c.combine_member(Eid, P_outer, C).
 combine_match.observed_member([P_intile, Dc], [P_tile, C]) :-
     decompose(P_grid, P_tile, P_intile, Dc), in(P_grid, C).

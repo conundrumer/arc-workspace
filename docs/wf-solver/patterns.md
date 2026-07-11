@@ -155,7 +155,7 @@ combine_member(0, [0,1,0,0], 0). combine_member(0, [1,0,0,0], 0). combine_out(0,
 combine_member(1, [0,1,0,0], 9). combine_member(1, [1,0,0,0], 0). combine_out(1, 0).
 
 .type CombineMember = [p: Position, col: Color]
-.init combine_match = KeyedSetCompare<Position, CombineMember>
+.init combine_match = KeyedSetCompare<Position, number, CombineMember>
 combine_match.pattern_member(Eid, [P_outer, C]) :- c.combine_member(Eid, P_outer, C).
 combine_match.observed_member(P_grid_out, [P_tile, C]) :-
     decompose(P_grid_in, P_tile, P_grid_out, _), in(P_grid_in, C).

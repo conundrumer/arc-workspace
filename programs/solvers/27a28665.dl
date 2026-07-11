@@ -71,7 +71,7 @@
 
 .init c = Consts
 
-.init lookup_match = KeyedSetCompare<Unit, Position>
+.init lookup_match = KeyedSetCompare<Unit, number, Position>
 lookup_match.pattern_member(Eid, P) :- c.pattern_member(Eid, P).
 lookup_match.observed_member($U(), P)  :- silhouette(P).
 

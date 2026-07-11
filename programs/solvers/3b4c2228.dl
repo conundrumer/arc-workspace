@@ -81,7 +81,7 @@ object_box.cell(Id, P) :- comps.label($U(), P, Id).
 object_frame.cell(Id, P)  :- comps.label($U(), P, Id).
 object_frame.outer(Id, M) :- object_box.margin(Id, M).
 
-.init object_match = KeyedSetCompare<CompId, Position>
+.init object_match = KeyedSetCompare<CompId, number, Position>
 object_match.pattern_member(0, I)   :- c.block_shape(I).
 object_match.observed_member(Id, I) :- object_frame.inner(Id, I).
 

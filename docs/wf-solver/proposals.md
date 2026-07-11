@@ -109,7 +109,7 @@ staged as the sibling.
 
 ## `KeyedSetCompare` extensions — set-relationship lattice
 
-`KeyedSetCompare<Key, Member>` (in `lib.dl`) exposes `covers` / `equals` / `pattern_size`.
+`KeyedSetCompare<Key, Pat, Member>` (in `lib.dl`) exposes `covers` / `equals` / `pattern_size`.
 These extensions derive from the same three counts it already computes (`|pattern|`,
 `|observed|`, `overlap`); add one when a real task needs it, not preemptively
 (lib-addition protocol):

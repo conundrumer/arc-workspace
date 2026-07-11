@@ -96,7 +96,7 @@ row_tile(P_out, P_tile) :-
 
 // --- $Lookup ---
 
-.init tile_match = KeyedSetCompare<Position, TileMember>
+.init tile_match = KeyedSetCompare<Position, number, TileMember>
 tile_match.pattern_member(Eid, [P_intile, C]) :- c.mapping_member(Eid, P_intile, C).
 tile_match.observed_member(P_tile, [P_intile, C]) :- tile_cell(P_tile, P_intile, C).
 
