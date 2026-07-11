@@ -1,0 +1,54 @@
+// a87f7484
+// Input stacks square tiles along one axis; the axis varies per pair. Each
+// tile is one color's ink mask on bg. Output one tile.
+//
+// Cases (data-equivalent on this task):
+//   $Count — the tile with the most ink cells.
+//   $Shape — the tile whose ink mask no other tile has.
+
+#include "../lib.dl"
+
+.type Choice = Count {} | Shape {}
+
+.comp Consts {
+    .decl bg(c: Color)        bg(0).
+    .decl tile_dim(k: number) tile_dim(3).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl tile_val(p_tile: Position, p_intile: Position, col: Color)
+tile_val(T, P, Col) :-
+    in(P_grid, Col),
+    c.tile_dim(K),
+    divide_by_size_2d(P_grid, K, 0, T, P).
+
+.decl ink(p_tile: Position, p_intile: Position)
+ink(T, P) :- tile_val(T, P, Col), !c.bg(Col).
+
+.decl out(p: Position, col: Color, c: Choice)
+
+// --- $Count ---
+.decl ink_count(p_tile: Position, n: number)
+ink_count(T, N) :- ink(T, _), N = count : { ink(T, P) }.
+
+.decl densest(p_tile: Position)
+densest(T) :- ink_count(T, N), N = max M : { ink_count(_, M) }.
+
+out(P, Col, $Count()) :- tile_val(T, P, Col), densest(T).
+
+// --- $Shape ---
+.init shape_cmp = KeyedSetCompare<Position, Position>
+shape_cmp.pattern_member(ord(T), P) :- ink(T, P).
+shape_cmp.observed_member(T, P)     :- ink(T, P).
+
+// T's mask equals some other tile's.
+.decl shared(p_tile: Position)
+shared(T) :- ink(T2, _), T != T2, shape_cmp.equals(T, ord(T2)).
+
+out(P, Col, $Shape()) :- tile_val(T, P, Col), ink(T, _), !shared(T).
+
+.output out(IO=stdout)

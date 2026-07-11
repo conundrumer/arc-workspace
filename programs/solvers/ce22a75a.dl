@@ -1,0 +1,70 @@
+// ce22a75a
+// Marks on a 9×9 grid; each mark fills its 3×3 region, the rest is bg.
+// Every mark sits at the center of its arrangement tile, so three locate
+// priors coincide on the data; one case each, tagged on out's Choice:
+//
+//   $Tile()   — the arrangement tile containing a mark fills.
+//   $Center() — a tile fills iff a mark sits at its center: the input read
+//               as a stride-3 subsample, upscaled.
+//   $Grow()   — each mark grows one step in all eight directions.
+
+#include "../lib.dl"
+
+.type Choice = Tile {} | Center {} | Grow {}
+
+.comp Consts {
+    .decl bg(c: Color)        bg(0).
+    .decl out_fill(c: Color)  out_fill(1).
+
+    // --- $Tile / $Center ---
+    .decl tile_count(n: number)  tile_count(3).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl mark(p: Position)
+mark(P) :- in(P, Col), !c.bg(Col).
+
+// --- $Tile / $Center: shared 3×3 arrangement ---
+
+.decl decomp(p: Position, p_tile: Position, p_intile: Position)
+decomp(P_grid, P_tile, P_intile) :-
+    in(P_grid, _), c.tile_count(N),                 // input position, tile params
+    divide_2d(P_grid, N, 0, P_tile, P_intile).      // square arrangement
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// --- $Tile ---
+
+.decl mark_tile(p_tile: Position)
+mark_tile(P_tile) :- mark(P_grid), decomp(P_grid, P_tile, _).
+
+out(P, Col, $Tile()) :- decomp(P, P_tile, _), mark_tile(P_tile), c.out_fill(Col).
+out(P, Col, $Tile()) :- decomp(P, P_tile, _), !mark_tile(P_tile), c.bg(Col).
+
+// --- $Center ---
+
+.decl center_tile(p_tile: Position)
+center_tile(P_tile) :-
+    mark(P_grid), decomp(P_grid, P_tile, P_intile),    // mark's tile
+    axis_of(D1, A), perp(A, A2), axis_of(D2, A2),      // one dir per axis
+    dist_pair(P_intile, D1, K1, K1),                   // centered along
+    dist_pair(P_intile, D2, K2, K2).                   // centered across
+
+out(P, Col, $Center()) :- decomp(P, P_tile, _), center_tile(P_tile), c.out_fill(Col).
+out(P, Col, $Center()) :- decomp(P, P_tile, _), !center_tile(P_tile), c.bg(Col).
+
+// --- $Grow ---
+
+.decl grown(p: Position)
+grown(P) :- mark(P).
+grown(P) :- mark(M), dir_elem(D), step_delta(D, S), compose(M, S, P), in(P, _).
+grown(P) :- mark(M), diag_dir_elem(Dg), diag_step_delta(Dg, S), compose(M, S, P), in(P, _).
+
+out(P, Col, $Grow()) :- grown(P), c.out_fill(Col).
+out(P, Col, $Grow()) :- in(P, _), !grown(P), c.bg(Col).
+
+.output out(IO=stdout)

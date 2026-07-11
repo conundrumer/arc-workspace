@@ -1,0 +1,22 @@
+// 5783df64
+// The grid divides into a c.divisor × c.divisor tile arrangement, each tile
+// holding one ink cell. Output is the arrangement of the ink colors.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl bg(c: Color)       bg(0).
+    .decl divisor(n: number) divisor(3).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl out(p: Position, col: Color)
+out(P_tile, Col) :-
+    in(P_grid, Col), !c.bg(Col),
+    c.divisor(N), divide_2d(P_grid, N, 0, P_tile, _).
+
+.output out(IO=stdout)

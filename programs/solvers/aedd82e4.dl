@@ -1,0 +1,48 @@
+// aedd82e4
+// Isolated ink cells — no 4-neighbor ink — recolor to c.mark. The rest of
+// the grid is underdetermined (ink color equals c.ink in every pair); two
+// models:
+//
+//   $Passthrough — non-isolated cells keep their input color.
+//   $Repaint     — every cell paints by class: isolated c.mark, grouped
+//                  c.ink, bg c.bg.
+
+#include "../lib.dl"
+
+.type Choice = Passthrough {} | Repaint {}
+
+.comp Consts {
+    // --- shared ---
+    .decl bg(c: Color)   bg(0).
+    .decl mark(c: Color) mark(1).
+
+    // --- $Repaint ---
+    .decl ink(c: Color)  ink(2).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl ink_at(p: Position)
+ink_at(P) :- in(P, Col), !c.bg(Col).
+
+.decl grouped(p: Position)
+grouped(P) :- ink_at(P), dir_elem(D), step_delta(D, S), compose(P, S, P2), ink_at(P2).
+
+.decl isolated(p: Position)
+isolated(P) :- ink_at(P), !grouped(P).
+
+.decl out(p: Position, col: Color, c: Choice)
+
+// --- $Passthrough ---
+out(P, Col, $Passthrough()) :- isolated(P), c.mark(Col).
+out(P, Col, $Passthrough()) :- in(P, Col), !isolated(P).
+
+// --- $Repaint ---
+out(P, Col, $Repaint()) :- isolated(P), c.mark(Col).
+out(P, Col, $Repaint()) :- grouped(P), c.ink(Col).
+out(P, Col, $Repaint()) :- in(P, _), !ink_at(P), c.bg(Col).
+
+.output out(IO=stdout)

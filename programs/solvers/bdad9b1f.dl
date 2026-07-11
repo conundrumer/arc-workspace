@@ -1,0 +1,67 @@
+// bdad9b1f
+// Two 2-cell segments on bg, each seated on a grid edge. Each extends
+// into a full line; the cell where the lines cross gets c.cross. Three
+// models of the extension axis:
+//
+//   $Shape — the segment's own axis: its cells share an across position.
+//   $Role  — c.role names each color's axis.
+//   $Edge  — each ink cell on an edge casts its line away from it.
+//
+// Coincide here (each segment points along its color's role axis and
+// seats on an edge along it); diverge when shape, color, and seat
+// disagree.
+
+#include "../lib.dl"
+
+.type Choice = Shape {} | Role {} | Edge {}
+
+.comp Consts {
+    .decl bg(c: Color)      bg(0).
+    .decl cross(c: Color)   cross(4).
+
+    // --- $Role ---
+    .decl role(col: Color, a: Axis)
+    role(8, AXIS_V). role(2, AXIS_H).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !c.bg(Col).
+
+// The line color Col paints: extension axis, across position.
+.decl line(col: Color, a: Axis, p_across: Position, ch: Choice)
+
+// --- $Shape ---
+line(Col, A, Ac, $Shape()) :-
+    ink(P1, Col), ink(P2, Col), P1 != P2,                      // two segment cells
+    axis_elem(A), split(P1, A, _, Ac), split(P2, A, _, Ac).    // agree across
+
+// --- $Role ---
+line(Col, A, Ac, $Role()) :-
+    ink(P, Col), c.role(Col, A), split(P, A, _, Ac).
+
+// --- $Edge ---
+line(Col, A, Ac, $Edge()) :-
+    ink(P, Col), dir_elem(D), dist(P, D, 0),    // ink cell on an edge
+    axis_of(D, A), split(P, A, _, Ac).          // its line inward
+
+.decl on_line(p: Position, col: Color, ch: Choice)
+on_line(P, Col, Ch) :- in(P, _), line(Col, A, Ac, Ch), split(P, A, _, Ac).
+
+// Lines of two colors cross.
+.decl crossing(p: Position, ch: Choice)
+crossing(P, Ch) :- on_line(P, Col1, Ch), on_line(P, Col2, Ch), Col1 != Col2.
+
+.decl choice_elem(ch: Choice)
+choice_elem($Shape()). choice_elem($Role()). choice_elem($Edge()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Cx, Ch)  :- crossing(P, Ch), c.cross(Cx).
+out(P, Col, Ch) :- on_line(P, Col, Ch), !crossing(P, Ch).
+out(P, Col, Ch) :- choice_elem(Ch), in(P, Col), !on_line(P, _, Ch).
+
+.output out(IO=stdout)
