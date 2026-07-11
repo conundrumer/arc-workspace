@@ -1,0 +1,60 @@
+// d492a647
+// A noise-speckled bg grid with a single seed cell of a unique color. The
+// seed's color paints every bg cell offset from it by an even count on both
+// axes; noise cells stay. Two models of the lattice, tagged on out's Choice:
+//
+//   $Period — the lattice jump is task data in Consts.
+//   $Parity — every-other-cell alternation: two unit steps over a skipped
+//             cell, no datum.
+//
+// Coincide at period 2.
+
+#include "../lib.dl"
+
+.type Choice = Period {} | Parity {}
+
+.comp Consts {
+    .decl bg(c: Color)      bg(0).
+    .decl noise(c: Color)   noise(5).
+
+    // --- $Period ---
+    .decl period(k: number) period(2).
+}
+
+.init c = Consts
+
+.decl impl_choice(ch: Choice)
+impl_choice($Period()). impl_choice($Parity()).
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// The one cell neither bg nor noise.
+.decl seed(p: Position, col: Color)
+seed(P, Col) :- in(P, Col), !c.bg(Col), !c.noise(Col).
+
+// The lattice the seed anchors: closure under jumps on the four cardinals.
+.decl lattice(p: Position, ch: Choice)
+lattice(P, Ch) :- seed(P, _), impl_choice(Ch).
+
+// --- $Period ---
+lattice(Q, $Period()) :-
+    lattice(P, $Period()),
+    c.period(K), dir_elem(D), jump_delta(D, K, Delta),   // period jump, any cardinal
+    compose(P, Delta, Q), in(Q, _).
+
+// --- $Parity ---
+lattice(Q, $Parity()) :-
+    lattice(P, $Parity()),
+    dir_elem(D), step_delta(D, S),
+    compose(P, S, M), in(M, _),                          // the skipped cell
+    compose(M, S, Q), in(Q, _).
+
+.decl painted(p: Position, ch: Choice)
+painted(P, Ch) :- lattice(P, Ch), in(P, Col), c.bg(Col).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- painted(P, Ch), seed(_, Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !painted(P, Ch).
+
+.output out(IO=stdout)

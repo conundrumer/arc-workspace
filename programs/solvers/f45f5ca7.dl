@@ -1,0 +1,86 @@
+// f45f5ca7
+// Edge-column marks relocate along their lines: each color lands a fixed
+// distance from the edge (8→1, 2→2, 4→3, 3→4); the rest is bg.
+//
+// out's choice column = [e, m]:
+//
+//   e (edge):
+//     $Dir()  — c.dir names the edge
+//     $Edge() — the edge every mark sits on
+//
+//   m (move):
+//     $Jump() — displace the mark k cells away from the edge
+//     $Seat() — seat the mark's line cell at dist k from the edge
+//
+// Pairs coincide here — every mark sits on the edge at dist 0.
+
+#include "../lib.dl"
+
+.type EdgeSrc = Dir {} | Edge {}
+.type Move    = Jump {} | Seat {}
+.type Choice  = [e: EdgeSrc, m: Move]
+
+.comp Consts {
+    .decl bg(c: Color)  bg(0).
+
+    // Landing distance from the edge, per mark color.
+    .decl color_dist(c: Color, k: number)
+    color_dist(8, 1). color_dist(2, 2). color_dist(4, 3). color_dist(3, 4).
+
+    // --- $Dir ---
+    .decl dir(d: Dir)   dir(DIR_L).   // the mark edge
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !c.bg(Col).
+
+// --- Edge cases --------------------------------------------------------------
+
+.decl edge(d: Dir, e: EdgeSrc)
+
+// --- $Dir ---
+edge(D, $Dir()) :- c.dir(D).
+
+// --- $Edge ---
+.decl off_edge(d: Dir)
+off_edge(D) :- ink(P, _), dir_elem(D), dist(P, D, K), K != 0.
+
+edge(D, $Edge()) :- dir_elem(D), ink(_, _), !off_edge(D).
+
+// --- Move cases --------------------------------------------------------------
+
+.decl moved(p: Position, col: Color, ch: Choice)
+
+// --- $Jump ---
+moved(P2, Col, [E, $Jump()]) :-
+    ink(P, Col), edge(D, E),                     // mark, the edge
+    c.color_dist(Col, K),                        // its landing distance
+    opposite(D, O), jump_delta(O, K, Delta),     // k cells away from the edge
+    compose(P, Delta, P2).
+
+// --- $Seat ---
+moved(Q, Col, [E, $Seat()]) :-
+    ink(P, Col), edge(D, E),                     // mark, the edge
+    c.color_dist(Col, K),                        // its landing distance
+    in(Q, _), dist(Q, D, K),                     // grid cell at dist k from the edge
+    axis_of(D, A), split(P, A, _, Ac), split(Q, A, _, Ac).   // on the mark's line
+
+// --- Output ------------------------------------------------------------------
+
+.decl choice_elem(ch: Choice)
+choice_elem([$Dir(),  $Jump()]). choice_elem([$Dir(),  $Seat()]).
+choice_elem([$Edge(), $Jump()]). choice_elem([$Edge(), $Seat()]).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- moved(P, Col, Ch).
+out(P, Col, Ch) :-
+    choice_elem(Ch), in(P, _),      // choice × cell
+    !moved(P, _, Ch),               // no mark lands here
+    c.bg(Col).
+
+.output out(IO=stdout)

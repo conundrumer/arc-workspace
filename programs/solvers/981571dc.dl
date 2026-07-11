@@ -1,0 +1,42 @@
+// 981571dc
+// A symmetric wallpaper corrupted by noise patches; each noise cell
+// restores from a symmetric counterpart. The wallpaper's symmetry center
+// is offset from the grid center; its stabilizer is full D4.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl noise(col: Color)  noise(0).
+
+    // Wallpaper symmetry center, as its offset from the grid center.
+    .decl center(a: Position)  center([1, -1, 1, -1]).
+
+    .decl sym(d: D4)
+    sym(D4_ID). sym(D4_CW). sym(D4_HT). sym(D4_CC).
+    sym(D4_LR). sym(D4_TB). sym(D4_DG). sym(D4_AD).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl clean(p: Position, col: Color)
+clean(P, Col) :- in(P, Col), !c.noise(Col).
+
+// Grid cells viewed from the wallpaper center.
+.init view = Reframe<Position>
+view.outer(P, A) :- in(P, _), c.center(A).
+view.cell(P, P)  :- in(P, _).
+
+// Symmetric counterpart: cells whose center-frame views are apply-related.
+.decl counterpart(p: Position, q: Position)
+counterpart(P, Q) :- view.inner(P, P0), c.sym(D), apply(D, P0, Q0), view.inner(Q, Q0).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- clean(P, Col).
+out(P, Col) :-
+    in(P, N), c.noise(N),            // corrupted cell
+    counterpart(P, Q), clean(Q, Col).
+
+.output out(IO=stdout)

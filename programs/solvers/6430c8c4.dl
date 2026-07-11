@@ -1,0 +1,105 @@
+// 6430c8c4
+// Layout: 2×1 vertically-stacked 4×4 subgrids with 1-row gap.
+// Output is the per-cell pair-fold.
+//
+// out's choice column = [d, b]:
+//
+//   d (decompose):
+//     $Tile() — pre-tabulated in Consts via tile_pos
+//     $Div()  — derived in body via the divide primitive
+//
+//   b (body):
+//     $Lookup() — combine table keyed on (outer pos, color); set-equality match
+//     $Nor()    — NOR via negated existence: no non-BG input contribution
+
+#include "../lib.dl"
+
+.type DecChoice = Tile {} | Div {}
+.type Body      = Lookup {} | Nor {}
+.type Choice    = [d: DecChoice, b: Body]
+
+.type CombineMember = [p: Position, col: Color]
+.type CombineKey    = [p: Position, dc: DecChoice]
+
+.comp Consts {
+    .init helpers = ConstsHelpers
+
+    .decl frame(p: Position)
+    frame(P) :- helpers.frame_pos([4, 4], P).
+
+    // --- Tile decompose data ----------------------------------------------
+    .decl tile_decompose(p: Position, p_outer: Position, p_inner: Position)
+    tile_decompose(P_grid, P_tile, P_intile) :-
+        helpers.tile_pos([2, 1], [4, 4], [1, 0], P_grid, P_tile, P_intile).
+
+    // --- Div decompose data -----------------------------------------------
+    .decl divisor(n: number)
+    divisor(2).
+
+    .decl divide_axis(a: Axis)
+    divide_axis(AXIS_V).
+
+    .decl divide_gap(g: number)
+    divide_gap(1).
+
+    // --- Lookup body data -----------------------------------------------
+    .decl combine_member(eid: number, p_outer: Position, c: Color)
+    .decl combine_out(eid: number, c_out: Color)
+
+    combine_member(0, [0,1,0,0], 0). combine_member(0, [1,0,0,0], 0). combine_out(0, 3).
+    combine_member(1, [0,1,0,0], 7). combine_member(1, [1,0,0,0], 0). combine_out(1, 0).
+    combine_member(2, [0,1,0,0], 0). combine_member(2, [1,0,0,0], 2). combine_out(2, 0).
+    combine_member(3, [0,1,0,0], 7). combine_member(3, [1,0,0,0], 2). combine_out(3, 0).
+
+    // --- Nor body data -----------------------------------------------------
+    .decl bg(c: Color)        bg(0).
+    .decl out_fill(c: Color)  out_fill(3).
+}
+
+.init c = Consts
+
+.init combine_match = KeyedSetCompare<CombineKey, CombineMember>
+combine_match.pattern_member(Eid, [P_outer, C]) :- c.combine_member(Eid, P_outer, C).
+combine_match.observed_member([P_grid_out, Dc], [P_tile, C]) :-
+    decompose(P_grid_in, P_tile, P_grid_out, Dc), in(P_grid_in, C).
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// --- Decompose cases -------------------------------------------------------
+
+.decl dec_choice(dc: DecChoice)
+dec_choice($Tile()).
+dec_choice($Div()).
+
+.decl decompose(p: Position, p_outer: Position, p_inner: Position, dc: DecChoice)
+decompose(P_grid, P_tile, P_intile, $Tile()) :- c.tile_decompose(P_grid, P_tile, P_intile).
+decompose(P_grid, P_tile, P_intile, $Div()) :-
+    in(P_grid, _),                                       // input position
+    c.divide_axis(A), c.divisor(N), c.divide_gap(G),     // params
+    divide_slab(P_grid, A, N, G, P_tile, P_intile).
+
+// --- Nor body: filled relation parameterized by decompose choice ----------
+
+.decl filled(o: Position, dc: DecChoice)
+filled(P_grid_out, Dc) :-
+    in(P_grid_in, Col), !c.bg(Col),                 // non-bg input cell
+    decompose(P_grid_in, _, P_grid_out, Dc).        // decomposes to output cell
+
+// --- Output ----------------------------------------------------------------
+
+.decl out(p: Position, col: Color, c: Choice)
+out(P_grid_out, Col_out, [Dc, $Lookup()]) :-
+    c.combine_out(Eid, Col_out),                                  // entry's output color
+    combine_match.equals([P_grid_out, Dc], Eid).                 // cell's tiles == entry's members
+
+out(P_grid_out, Col, [Dc, $Nor()]) :-
+    dec_choice(Dc), c.frame(P_grid_out),        // choice × cell
+    !filled(P_grid_out, Dc),                    // NOR=1: no contribution
+    c.out_fill(Col).
+out(P_grid_out, Col, [Dc, $Nor()]) :-
+    dec_choice(Dc), c.frame(P_grid_out),        // choice × cell
+    filled(P_grid_out, Dc),                     // NOR=0: some contribution
+    c.bg(Col).
+
+.output out(IO=stdout)
