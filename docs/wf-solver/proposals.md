@@ -346,9 +346,6 @@ numbers) fed by a lexicographic `before` supplier.
 **Second home (protocol step 1).** a68b268e $Scan carries `before` as body
 rules (`scan_before`) over tile positions; no rank readout.
 
-**Third home (protocol step 1).** 6cf79266 carries `before` and the rank
-readout over candidate window anchors; $Greedy sweeps the ranks.
-
 ## `Excess<Key, Member>` — count of pos members beyond neg members
 
 The negative-free difference of two member counts: `excess(key, n)` holds
