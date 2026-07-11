@@ -1,0 +1,93 @@
+// 9c56f360
+// The mover-colored cells in each line pack toward the dir edge against
+// the nearest barrier, order kept; vacated cells become background.
+//   $Wall  — only the wall color blocks; other ink is passed over.
+//   $Solid — any other ink blocks.
+
+#include "../lib.dl"
+
+.type Choice = Wall {} | Solid {}
+.type StripKey = [ch: Choice, p_across: Position]
+
+.comp Consts {
+    // --- shared ---
+    .decl bg(c: Color) bg(0).
+    .decl mover(c: Color) mover(3).
+    .decl dir(d: Dir) dir(DIR_L).
+
+    // --- Wall ---
+    .decl wall(c: Color) wall(8).
+}
+
+.init c = Consts
+
+.decl impl_choice(ch: Choice)
+impl_choice($Wall()). impl_choice($Solid()).
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// Cell split on the slide axis: across names its line, k places it
+// within the line as dist to the dir edge.
+.decl place(p: Position, p_across: Position, k: number)
+place(P, P_across, K) :-
+    in(P, _), c.dir(D),
+    axis_of(D, A), split(P, A, _, P_across), dist(P, D, K).
+
+.decl mover(p: Position)
+mover(P) :- in(P, Col), c.mover(Col).
+
+// Movers cast along the slide axis, both ways.
+.init slide = Ray<Unit>
+slide.dir(D) :- c.dir(D).
+slide.dir(D) :- c.dir(D2), opposite(D2, D).
+slide.cell(P) :- in(P, _).
+slide.mark($U(), P) :- mover(P).
+
+// What blocks the pack.
+.decl blocker(ch: Choice, p: Position)
+// --- Wall ---
+blocker($Wall(), P) :- in(P, Col), c.wall(Col).
+// --- Solid ---
+blocker($Solid(), P) :- in(P, Col), !c.bg(Col), !c.mover(Col).
+
+// Blockers ahead of the movers cast back across the slide path.
+.init barrier = Ray<Choice>
+barrier.dir(D) :- c.dir(D).
+barrier.cell(P) :- in(P, _).
+barrier.mark(Ch, P) :- blocker(Ch, P), c.dir(D), slide.ray($U(), P, D).
+
+// The free run ahead of the whole group.
+.decl between(ch: Choice, p_across: Position, p: Position)
+between(Ch, P_across, P) :-
+    impl_choice(Ch), c.dir(D),
+    slide.ray($U(), P, D),                       // at or ahead of a mover
+    opposite(D, O), !slide.ray($U(), P, O),      // ahead of every mover
+    !barrier.ray(Ch, P, D),                      // short of every barrier
+    place(P, P_across, _).                       // keyed by its line
+
+// The landing strip: the free run plus the group itself.
+.decl strip(ch: Choice, p_across: Position, p: Position)
+strip(Ch, P_across, P) :- between(Ch, P_across, P).
+strip(Ch, P_across, P) :- impl_choice(Ch), mover(P), place(P, P_across, _).
+
+// Movers and strip cells ranked from the dir edge; movers re-seat onto
+// the strip by rank.
+.init order = Ordinal<Position>
+order.idx_set(P_across, K) :- mover(P), place(P, P_across, K).
+
+.init seat = Ordinal<StripKey>
+seat.idx_set([Ch, P_across], K) :- strip(Ch, P_across, P), place(P, P_across, K).
+
+.decl moved(ch: Choice, p: Position)
+moved(Ch, P2) :-
+    order.rank(P_across, _, R),                  // mover rank in its line
+    seat.rank([Ch, P_across], K2, R),            // strip cell at that rank
+    place(P2, P_across, K2).                     // its position
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- c.mover(Col), moved(Ch, P).
+out(P, Col, Ch) :- c.bg(Col), impl_choice(Ch), mover(P), !moved(Ch, P).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !mover(P), !moved(Ch, P).
+
+.output out(IO=stdout)

@@ -1,0 +1,61 @@
+// 2013d3e2
+// A figure sits on background. Output is the corner region of its
+// bounding box.
+//   $Half   — one quadrant of the box.
+//   $Window — the fixed-size window at the box corner.
+
+#include "../lib.dl"
+
+.type Choice = Half {} | Window {}
+
+.comp Consts {
+    // --- shared ---
+    .decl bg(c: Color) bg(0).
+
+    // --- Half ---
+    .decl divisor(n: number) divisor(2).
+    .decl out_tile(p_tile: Position) out_tile([0, 1, 0, 1]).
+
+    // --- Window ---
+    .decl win_dim(k: number) win_dim(3).
+    .decl corner(d: DiagDir) corner(DIAG_TL).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl ink(p: Position)
+ink(P) :- in(P, Col), !c.bg(Col).
+
+.init box = Bbox<Unit>
+box.cell($U(), P) :- ink(P).
+box.grid($U(), P) :- in(P, _).
+
+// Each box cell viewed from the box, keyed by the cell.
+.init boxframe = Reframe<Position>
+boxframe.outer(P, M) :- box.inside($U(), P), box.margin($U(), M).
+boxframe.cell(P, P)  :- box.inside($U(), P).
+
+.decl box_cell(p_box: Position, col: Color)
+box_cell(P_box, Col) :- in(P, Col), boxframe.inner(P, P_box).
+
+.decl out(p: Position, col: Color, c: Choice)
+
+// --- Half ---
+out(P_out, Col, $Half()) :-
+    box_cell(P_box, Col),
+    c.divisor(N), divide_2d(P_box, N, 0, P_tile, P_out),    // box divided NxN
+    c.out_tile(P_tile).                                     // the output tile
+
+// --- Window ---
+.init win = Frame2D<Unit>
+win.extent($U(), A, K) :- c.win_dim(K), axis_elem(A).
+
+out(P_out, Col, $Window()) :-
+    box_cell(P_box, Col),
+    win.cell($U(), P_out),
+    c.corner(Diag), corner_anchor(Diag, P_box, P_out).   // same dists to the corner
+
+.output out(IO=stdout)
