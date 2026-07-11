@@ -62,7 +62,7 @@ A new primitive qualifies for `programs/lib.dl` through real use, not by looking
 
 1. Write the primitive in the solver's Consts or body. Run it. Confirm it works in context.
 2. Surface it to the user: name it, describe the operation, show the solver-local version.
-3. On agreement, write the addition proposal to `docs/wf-solver/proposals.md`.
+3. On agreement, stage it: wrap the solver-local version in a task-local `.comp` named for the primitive, and write the addition proposal to `docs/wf-solver/proposals.md`. `stage` refers to this step and always includes the comp form.
 4. On approval, move to `programs/lib.dl`. Update callers.
 
 Reuse of a staged proposal is promotion evidence. When a solver copies a primitive that already has a `proposals.md` entry, surface the reuse directly: name the proposal and the new home, ask whether it moves to lib, and record the home in the entry (the `Second home (protocol step 1)` convention).
