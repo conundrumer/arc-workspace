@@ -203,6 +203,25 @@ One component from a seed: the seeded readout of the 4-adjacency closure that li
 
 **Task-local home (protocol step 1).** 1e81d6f9: a corner-edge seed picks the L frame. The stray mask cell stays unreachable, so the following `Bbox` does not grow to span it.
 
+## `Components8<Key>` — connected components under 8-adjacency
+
+The 8-adjacency variant of `Components`: the same closure and labels with the four diagonal steps added. Written as a wrapper that instantiates `Components` and extends its `step` set, so the closure rules stay in one place and the wrapper's name carries the adjacency claim. The `Reach` entry names the same axis for seeded connectivity; a lib move should settle both the same way — sibling comps or a parameterized adjacency input.
+
+```
+.comp Components8<Key> {
+    .init c4 = Components<Key>
+    c4.step(S) :- diag_dir_elem(Diag), diag_step_delta(Diag, S).
+
+    .decl node(key: Key, p: Position)
+    c4.node(K, P) :- node(K, P).
+
+    .decl label(key: Key, p: Position, id: CompId)
+    label(K, P, Id) :- c4.label(K, P, Id).
+}
+```
+
+**Task-local home (protocol step 1).** e7dd8335 (Unit key): $Each's objects — a ring whose cells touch only diagonally, plus a block touching it at a corner.
+
 ## `diag_edge_delta` — edge delta at a corner
 
 The DiagDir peer of `edge_delta`: a Position holding extents at the two edges of corner `diag`, axis-tagged — k1 at the edge on axis a, k2 across. It grows toward a corner, where `diag_step_delta` moves toward a corner. It is the delta counterpart of the `diag_dist` readout.
@@ -253,6 +272,24 @@ Reading order given a corner and a primary axis: `before` compares lexicographic
 **Task-local home (protocol step 1).** ff28f65a carries it as body rules (`read_before`, `fill_rank`); `$Fill` marks X cells with rank below the count.
 
 **Second home (protocol step 1).** a68b268e $Scan carries `before` as body rules (`scan_before`) over tile positions; no rank readout.
+
+## `divide_by_size_slab` — divide_by_size with perpendicular passthrough
+
+The `divide_by_size` peer of `divide_slab`. Fills the one empty cell of
+the {`divide`, `divide_by_size`} × {plain, slab, 2D} composite matrix.
+Lib target: composite beside `divide_slab`.
+
+```
+.decl divide_by_size_slab(p: Position, a: Axis, k: number, gap: number,
+                          p_outer: Position, p_inner: Position) inline
+divide_by_size_slab(P, A, K, G, P_outer, P_inner) :-
+    divide_by_size(P, A, K, G, P_outer, P_i_axis),
+    split(P, A, _, Across),
+    compose(P_i_axis, Across, P_inner).
+```
+
+**Task-local home (protocol step 1).** 7b7f7511 (`DivideBySizeSlab`
+comp): $Tile's swept tiling.
 
 ## `Excess<Key, Member>` — count of pos members beyond neg members
 

@@ -1,0 +1,105 @@
+// 77fdfe62
+// Corner colors sit in the grid's corner cells; separator lines fence an
+// ink-mask interior. The output is the interior alone, each ink cell
+// taking the corner color of its quadrant. Two independent nodes, tagged
+// on out's Choice:
+//
+//   interior — $Lines: cells fenced off by full separator lines on all
+//              four sides; $Margin: cells at least c.margin inside.
+//   blank    — non-ink interior cells: $Pass passes them through; $Bg
+//              writes c.bg.
+
+#include "../lib.dl"
+
+.type Interior = Lines {} | Margin {}
+.type Blank = Pass {} | Bg {}
+.type Choice = [interior: Interior, blank: Blank]
+
+.comp Consts {
+    // --- shared ---
+    .decl ink(c: Color)      ink(8).
+
+    // --- $Lines ---
+    .decl line(c: Color)     line(1).
+
+    // --- $Margin ---
+    .decl margin(p: Position)
+    margin([2, 2, 2, 2]).
+
+    // --- $Bg ---
+    .decl bg(c: Color)       bg(0).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// The four corner colors, keyed by their corner.
+.decl corner_color(diag: DiagDir, col: Color)
+corner_color(Diag, Col) :- in(P, Col), diag_dist(P, Diag, _, 0, 0).
+
+.decl interior(p: Position, ic: Interior)
+
+// Each interior cell viewed from the interior box, keyed by cell and
+// claim; each claim supplies its box as outer.
+.type FrameKey = [p: Position, ic: Interior]
+.init frame = Reframe<FrameKey>
+frame.cell([P, Ic], P) :- interior(P, Ic).
+
+// --- $Lines ---
+
+// Full lines of the separator color, along axis a.
+.decl off_line(a: Axis, p_across: Position)
+off_line(A, P_across) :- in(P, Col), !c.line(Col), axis_elem(A), split(P, A, _, P_across).
+
+.decl sep_line(a: Axis, p_across: Position)
+sep_line(A, P_across) :- in(P, _), axis_elem(A), split(P, A, _, P_across), !off_line(A, P_across).
+
+// A separator line stands between p and edge d.
+.decl screened(p: Position, d: Dir)
+screened(P, D) :-
+    in(P, _), sep_line(A, L_across),
+    perp(A, Av), axis_of(D, Av),
+    dist(L_across, D, Kl), dist(P, D, Kp), Kl < Kp.
+
+.decl unscreened(p: Position)
+unscreened(P) :- in(P, _), dir_elem(D), !screened(P, D).
+
+interior(P, $Lines()) :- in(P, _), !unscreened(P).
+
+.init box = Bbox<Unit>
+box.cell($U(), P) :- interior(P, $Lines()).
+
+frame.outer([P, $Lines()], M) :- interior(P, $Lines()), box.margin($U(), M).
+
+// --- $Margin ---
+
+interior(P, $Margin()) :- in(P, _), c.margin(M), geq(P, M).
+
+frame.outer([P, $Margin()], M) :- interior(P, $Margin()), c.margin(M).
+
+// Quadrants of the interior, in its own frame.
+.init quad = DiagPlacement<Interior>
+quad.cell(Ic, I) :- frame.inner([_, Ic], I).
+
+.decl blank_elem(b: Blank)
+blank_elem($Pass()). blank_elem($Bg()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// Ink takes the corner color of its quadrant.
+out(I, Col, [Ic, Bl]) :-
+    in(P, Ink), c.ink(Ink), frame.inner([P, Ic], I),   // interior ink cell
+    quad.quadrant(Ic, I, Diag), corner_color(Diag, Col),
+    blank_elem(Bl).
+
+// --- $Pass ---
+
+out(I, Col, [Ic, $Pass()]) :- in(P, Col), !c.ink(Col), frame.inner([P, Ic], I).
+
+// --- $Bg ---
+
+out(I, Col, [Ic, $Bg()]) :- in(P, C0), !c.ink(C0), frame.inner([P, Ic], I), c.bg(Col).
+
+.output out(IO=stdout)

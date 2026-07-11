@@ -1,0 +1,76 @@
+// 7b7f7511
+// The input is one pattern repeated along an axis; the output is the
+// pattern once. The repeat axis varies per pair; it is found as the
+// axis whose equal-size tiles all agree.
+//
+//   $Dup  — the repeat count is task data (c.copies).
+//   $Tile — the repeat count is free.
+
+#include "../lib.dl"
+
+.type Choice = Dup {} | Tile {}
+
+.comp Consts {
+    // --- Dup ---
+    .decl copies(n: number)
+    copies(2).
+}
+
+.init c = Consts
+
+// The divide_by_size peer of divide_slab. Lib candidate.
+.comp DivideBySizeSlab {
+    .decl divide_by_size_slab(p: Position, a: Axis, k: number, gap: number,
+                              p_outer: Position, p_inner: Position) inline
+    divide_by_size_slab(P, A, K, G, P_outer, P_inner) :-
+        divide_by_size(P, A, K, G, P_outer, P_i_axis),
+        split(P, A, _, Across),
+        compose(P_i_axis, Across, P_inner).
+}
+
+.init dbs = DivideBySizeSlab
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl out(p: Position, col: Color, c: Choice)
+
+// --- Dup ---
+
+// The grid as c.copies slabs along A, cellwise.
+.decl dup_split(a: Axis, p: Position, p_inner: Position)
+dup_split(A, P, P_inner) :-
+    in(P, _), axis_elem(A), c.copies(N),
+    divide_slab(P, A, N, 0, _, P_inner).
+
+// Two copies disagree at a within-slab cell.
+.decl dup_mismatch(a: Axis)
+dup_mismatch(A) :-
+    dup_split(A, P1, P_inner), in(P1, C1),    // cell in one copy
+    dup_split(A, P2, P_inner), in(P2, C2),    // same cell, another copy
+    C1 != C2.
+
+out(P_inner, Col, $Dup()) :-
+    dup_split(A, P, P_inner), !dup_mismatch(A),
+    in(P, Col).
+
+// --- Tile ---
+
+// The grid as K-sized slabs along A, cellwise, for every proper K.
+.decl tile_split(a: Axis, k: number, p: Position, p_inner: Position)
+tile_split(A, K, P, P_inner) :-
+    in(P, _), axis_elem(A), sub_extent(P, A, K),
+    dbs.divide_by_size_slab(P, A, K, 0, _, P_inner).
+
+// Two tiles disagree at a within-slab cell.
+.decl tile_mismatch(a: Axis, k: number)
+tile_mismatch(A, K) :-
+    tile_split(A, K, P1, P_inner), in(P1, C1),    // cell in one tile
+    tile_split(A, K, P2, P_inner), in(P2, C2),    // same cell, another tile
+    C1 != C2.
+
+out(P_inner, Col, $Tile()) :-
+    tile_split(A, K, P, P_inner), !tile_mismatch(A, K),
+    in(P, Col).
+
+.output out(IO=stdout)

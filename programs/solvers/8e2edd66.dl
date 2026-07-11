@@ -1,0 +1,42 @@
+// 8e2edd66
+// Fractal of the input's complement. The output is an input-shaped
+// arrangement of input-sized tiles: at each bg cell of the input the
+// tile is the input's complement, drawn in the input's ink color; at
+// each ink cell the tile is blank.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl bg(c: Color)
+    bg(0).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// The input's non-bg color.
+.decl ink(col: Color)
+ink(C) :- in(_, C), !c.bg(C).
+
+.decl bg_cell(p: Position)
+bg_cell(P) :- in(P, C), c.bg(C).
+
+// Output cells: every (tile, intile) pair of input positions.
+.decl out_cell(p: Position)
+out_cell(P_grid) :-
+    in(P_tile, _), in(P_intile, _),
+    concat_2d(P_tile, P_intile, 0, P_grid).
+
+// Ink cells: tile and intile coordinates both bg.
+.decl ink_at(p: Position)
+ink_at(P_grid) :-
+    bg_cell(P_tile), bg_cell(P_intile),
+    concat_2d(P_tile, P_intile, 0, P_grid).
+
+.decl out(p: Position, col: Color)
+out(P, C) :- ink_at(P), ink(C).
+out(P, C) :- out_cell(P), !ink_at(P), c.bg(C).
+
+.output out(IO=stdout)
