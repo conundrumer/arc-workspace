@@ -101,6 +101,21 @@ decompose(P_grid, P_tile, P_intile) :-
 
 (34b99a2b `tile_decompose` — gap only; ed74f2f2 `decompose` — gap and border.)
 
+## Per-tile data keyed by tile position
+
+Consts data about one tile of a decomposition keys on the tile position the
+decomposition produces — the body joins its `p_outer` against the data
+directly. A second vocabulary for the same tiles (an edge Dir, a corner name)
+enters only through a conversion rule, which the Indirection test flags.
+
+```
+.decl combine_member(eid: number, p_outer: Position, c: Color)
+combine_member(0, [0,0,0,1], 0). combine_member(0, [0,0,1,0], 0).
+```
+
+(1b2d62fb, 34b99a2b, dae9d2b5 — per-panel colors in the combine tables, keyed
+on `p_outer` of the 1×2 divide.)
+
 ## Stored total orders as dense ranks
 
 A total order in Consts spells as dense 0-based rank data, consumed by comparison only. Ranks state each element's place in the sequence; successor edges imply it through closure. Comparison-only consumption keeps the borrowed number structure inert; dense 0-based fills keep the encoding canonical — a gapped fill spells one order many ways.
