@@ -1,4 +1,5 @@
 // 67385a82
+// concept: objects
 // c.ink cells with an ink 4-neighbor become c.mark; lone ink and bg pass
 // through.
 

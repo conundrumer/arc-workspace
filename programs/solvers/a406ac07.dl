@@ -1,4 +1,5 @@
 // a406ac07
+// concept: lines markers border select cross
 // A header line along each edge of corner c.header; each header cell
 // colors the grid line it heads. A cell whose two header colors agree is
 // painted that color. Three models, tagged on out's Choice — two read a

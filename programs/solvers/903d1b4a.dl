@@ -1,9 +1,7 @@
 // 903d1b4a
+// family: b8825c91
 // A grid symmetric about its center, corrupted by a noise color; each
 // noise cell is restored from a symmetric counterpart.
-//
-//   $Stored — the symmetry group is task data (c.sym).
-//   $Detect — the group is detected: elements unbroken on clean cells.
 
 #include "../lib.dl"
 

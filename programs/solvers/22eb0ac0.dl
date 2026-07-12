@@ -1,4 +1,5 @@
 // 22eb0ac0
+// concept: lines markers span
 // Marker cells sit on the two c.axis edges; a line whose two edge cells hold
 // the same color fills with it, the rest passes through. Two claims of where
 // markers may sit and what fills, tagged on out's Choice:

@@ -1,4 +1,5 @@
 // f25ffba3
+// concept: tile-arrangement d4
 // Input has a data slab anchored at one edge; the rest is empty. Output
 // is the data slab plus its images under a D4 set, filling the grid.
 // Three models:

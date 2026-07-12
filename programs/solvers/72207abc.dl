@@ -1,4 +1,5 @@
 // 72207abc
+// concept: markers walk
 // A row of seed marks. From the first seed, the sequence walks toward
 // the grow edge with gaps growing by one per step, cycling the seed
 // colors in order, until it leaves the grid.

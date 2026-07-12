@@ -1,6 +1,6 @@
 // c8f0f002
-// Color substitution via a mapping relation. Same body as b1948b0a, different
-// mapping data.
+// family: 0d3d703e
+// Color substitution via a mapping relation.
 
 #include "../lib.dl"
 

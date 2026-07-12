@@ -1,4 +1,5 @@
 // ce22a75a
+// concept: scale decompose markers stamp
 // Marks on a 9×9 grid; each mark fills its 3×3 region, the rest is bg.
 // Every mark sits at the center of its arrangement tile, so three locate
 // priors coincide on the data; one case each, tagged on out's Choice:

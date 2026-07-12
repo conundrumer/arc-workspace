@@ -1,4 +1,5 @@
 // 5783df64
+// concept: decompose select
 // The grid divides into a c.divisor × c.divisor tile arrangement, each tile
 // holding one ink cell. Output is the arrangement of the ink colors.
 

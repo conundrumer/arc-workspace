@@ -1,4 +1,5 @@
 // a87f7484
+// concept: decompose count select
 // Input stacks square tiles along one axis; the axis varies per pair. Each
 // tile is one color's ink mask on bg. Output one tile.
 //

@@ -1,4 +1,5 @@
 // 1e81d6f9
+// concept: objects markers select
 // A marker cell at c.target_offset inside a corner-anchored L of c.mask_color
 // identifies a target color; that color is erased to c.bg everywhere else. Two
 // models of what is kept:

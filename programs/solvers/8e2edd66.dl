@@ -1,4 +1,5 @@
 // 8e2edd66
+// concept: self-tiling stamp
 // Fractal of the input's complement. The output is an input-shaped
 // arrangement of input-sized tiles: at each bg cell of the input the
 // tile is the input's complement, drawn in the input's ink color; at

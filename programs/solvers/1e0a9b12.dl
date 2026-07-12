@@ -1,4 +1,5 @@
 // 1e0a9b12
+// concept: lines move
 // Gravity: each line's ink packs against the c.grav edge, order kept;
 // elsewhere background.
 

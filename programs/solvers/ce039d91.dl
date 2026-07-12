@@ -1,4 +1,5 @@
 // ce039d91
+// concept: symmetry
 // Symmetric-cell highlight: a c.mark cell whose whole-grid image under c.sym
 // is also marked recolors to c.fill; every other cell passes through.
 

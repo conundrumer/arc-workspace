@@ -1,11 +1,7 @@
 // 8be77c9e
+// family: 4c4377d9
 // 2×1 tile arrangement of input copies: the input at the anchor-end tile,
 // its reflection at the other.
-//
-// Cases (data-equivalent on this task):
-//   $Lookup() — per-tile D4 table
-//   $Unfold() — reflection tiling: each tile reflects its neighbor across
-//               the shared boundary, seeded at the anchor tile
 
 #include "../lib.dl"
 

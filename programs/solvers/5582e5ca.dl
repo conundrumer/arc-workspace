@@ -1,4 +1,5 @@
 // 5582e5ca
+// concept: count rank
 // The input frame filled with one uniform color. Models of the fill
 // color, data-equivalent on this task — the winning color appears
 // exactly 3 times in every pair:

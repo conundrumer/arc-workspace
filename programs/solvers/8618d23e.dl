@@ -1,4 +1,5 @@
 // 8618d23e
+// concept: decompose grow lookup move
 // The input's two halves along the stack axis pull apart diagonally:
 // each half reseats in a grown frame, and the vacated band fills with
 // c.filler. Choice cases, all data-equivalent here:

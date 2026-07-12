@@ -1,4 +1,5 @@
 // 746b3537
+// concept: lines
 // Striped input: lines along one axis are uniform. Output is the stripe
 // color sequence across them with consecutive repeats collapsed — one
 // cell per run, order kept, 1 wide.

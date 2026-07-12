@@ -1,4 +1,5 @@
 // d037b0a7
+// concept: markers walk
 // Each mark's color fills the bg cells from it toward the c.dir edge in its
 // line: color flows stepwise through bg toward c.dir; a mark in the way
 // occludes.

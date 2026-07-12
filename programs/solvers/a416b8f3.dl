@@ -1,4 +1,5 @@
 // a416b8f3
+// concept: tile-arrangement
 // Layout: 1×2 horizontal duplication. Output is two copies of input placed
 // side by side along the tile axis.
 

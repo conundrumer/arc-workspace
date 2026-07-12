@@ -1,4 +1,5 @@
 // c7d4e6ad
+// concept: lines mapping
 // Cells of color in c.targets are substituted with a per-slice replacement
 // color. Slices run along c.axis. Two models of the replacement source:
 //

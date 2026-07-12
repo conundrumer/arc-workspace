@@ -1,4 +1,5 @@
 // d4b1c2b1
+// concept: scale count
 // Layout: N× scale — each input cell expands to an N×N block of its
 // color, N = the distinct color count. No task data — the family is
 // fully structural.

@@ -1,7 +1,7 @@
 // 0d3d703e
-// Color swap via a symmetric mapping relation. Same body as b1948b0a; the
-// mapping is declared one-direction per pair and closed under symmetry by
-// a rule.
+// concept: mapping
+// Color swap via a symmetric mapping relation. The mapping is declared
+// one-direction per pair and closed under symmetry by a rule.
 
 #include "../lib.dl"
 

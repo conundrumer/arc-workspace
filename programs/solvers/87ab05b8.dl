@@ -1,4 +1,5 @@
 // 87ab05b8
+// concept: decompose markers lookup select
 // Noise cells on a bg ground; one cell carries c.marker. The output erases
 // everything and fills the 2×2 region holding the marker. The 4×4 grids leave
 // both the region rule and the fill color underdetermined; Choice = [l, f]

@@ -1,4 +1,5 @@
 // 6f8cd79b
+// concept: border
 // Draw a border: cells on any edge become c.border. The all-bg input leaves
 // the interior underdetermined; two models, tagged on out's Choice:
 //

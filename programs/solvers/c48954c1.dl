@@ -1,4 +1,5 @@
 // c48954c1
+// concept: tile-arrangement lookup d4 unfold
 // Layout: 3×3 tile arrangement of input copies. The center tile is the
 // input; each off-center tile is the input flipped along every axis on
 // which it sits off-center.

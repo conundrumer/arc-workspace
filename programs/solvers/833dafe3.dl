@@ -1,15 +1,6 @@
 // 833dafe3
-// 2×2 tile arrangement of input copies. The anchor-corner tile is the
-// input; each other tile is the input flipped along every axis on which
-// it sits away from the anchor. Sibling of 62c24649, 67e8384a, and
-// 3af2c5a8.
-//
-// Cases (data-equivalent on this task):
-//   $Lookup() — per-tile D4 table
-//   $Mirror() — per-axis: the tile on the anchor side passes through, the
-//               far side flips
-//   $Unfold() — reflection tiling: each tile reflects its neighbor across
-//               the shared boundary, seeded at the anchor tile
+// family: 67e8384a
+// 2×2 tile arrangement of input copies.
 
 #include "../lib.dl"
 

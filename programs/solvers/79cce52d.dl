@@ -1,4 +1,5 @@
 // 79cce52d
+// concept: lines markers walk count border
 // A one-cell border sits on the two edges of c.corner; the rest is the
 // payload. Each border band holds one marker cell. Per axis, the payload's
 // lines rotate as a cycle so the line beside the corner lands on the

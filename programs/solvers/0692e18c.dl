@@ -1,4 +1,5 @@
 // 0692e18c
+// concept: self-tiling stamp
 // The input tiled by its own inversion: each active (non-bg) input cell
 // hosts a stamp — the input with ink and bg swapped; inactive cells host
 // blank tiles. Stamp color is the host cell's: the input scaled up, masked

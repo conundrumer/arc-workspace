@@ -1,4 +1,5 @@
 // 7953d61e
+// concept: tile-arrangement lookup d4
 // 2×2 tile arrangement of input rotations — a per-tile D4 table.
 
 #include "../lib.dl"

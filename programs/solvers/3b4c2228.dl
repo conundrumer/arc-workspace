@@ -1,4 +1,5 @@
 // 3b4c2228
+// concept: objects lookup count stamp
 // Count the 2x2 squares of c.block_color (a second color forms its own squares
 // as a distractor), then tally the count down the c.out_diag
 // diagonal of a fixed out_dim grid: ring i gets c.mark for i < count, else c.bg.

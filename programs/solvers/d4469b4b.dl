@@ -1,4 +1,5 @@
 // d4469b4b
+// concept: lookup classify cross
 // Noise in a single ink color keys a fixed 3x3 glyph — plus, T, or
 // corner-L. The noise pattern carries nothing; only its color selects.
 // Every glyph is a full row and column through one point, so the render

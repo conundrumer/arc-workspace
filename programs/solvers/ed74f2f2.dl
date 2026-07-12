@@ -1,4 +1,5 @@
 // ed74f2f2
+// concept: decompose crop lookup
 // A 1×2 arrangement of 3×3 tiles, gap 1, behind a 1-cell bg border. The
 // c.key_tile selects a color from a stored tile table; the output is the
 // c.target_tile with its ink repainted that color, bg passed through.

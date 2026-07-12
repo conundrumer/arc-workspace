@@ -1,4 +1,5 @@
 // 6d1d5c90
+// concept: markers walk count
 // The c.marker_edge column is a band holding one off-color cell. Drop the band,
 // then shift the rest toward c.shift_dir by that cell's distance from the
 // opposite edge. The rows form a cycle (adjacency runs toward shift_dir, and

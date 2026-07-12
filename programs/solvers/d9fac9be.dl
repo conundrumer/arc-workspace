@@ -1,4 +1,5 @@
 // d9fac9be
+// concept: select
 // Two ink colors on a bg of noise; one ink draws a box around a single
 // cell of the other. Output is 1×1: the boxed cell's color.
 //

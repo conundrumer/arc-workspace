@@ -1,4 +1,5 @@
 // b8825c91
+// concept: symmetry repair
 // A grid symmetric about its center, corrupted by a noise color; each
 // noise cell is restored from a symmetric counterpart.
 //

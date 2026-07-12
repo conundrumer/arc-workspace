@@ -1,4 +1,5 @@
 // 1cf80156
+// concept: crop
 // Output is the grid cropped to the ink's bounding box.
 
 #include "../lib.dl"

@@ -1,4 +1,5 @@
 // 695367ec
+// concept: wallpaper count
 // Input: a solid n×n block of color C. Output: a fixed 15×15 frame ruled into
 // n×n background cells by 1-wide lines of color C, grown from the top-left
 // corner — a line wherever the distance from an anchor edge is ≡ n (mod n+1).

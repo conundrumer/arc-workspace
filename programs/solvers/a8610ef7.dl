@@ -1,4 +1,5 @@
 // a8610ef7
+// concept: symmetry lookup classify
 // Recolor each non-bg cell by its image under c.mirror. Two models:
 //
 //   $Direct — binary classification: bg passes through; non-bg → c.matched

@@ -1,4 +1,5 @@
 // 77fdfe62
+// concept: decompose crop markers classify select
 // Corner colors sit in the grid's corner cells; separator lines fence an
 // ink-mask interior. The output is the interior alone, each ink cell
 // taking the corner color of its quadrant. Two independent nodes, tagged

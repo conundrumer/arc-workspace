@@ -1,8 +1,6 @@
 // cce03e0d
-// The input tiled by itself: the output decomposes into an input-shaped
-// arrangement of input-shaped tiles. Tiles at stamp-colored input cells
-// hold copies of the input; all other tiles are bg. The second non-bg
-// color is inert noise. 007bbfb7's $Stamp with a stored trigger color.
+// family: ad7e01d0
+// The second non-bg color is inert noise.
 
 #include "../lib.dl"
 

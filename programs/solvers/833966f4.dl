@@ -1,4 +1,5 @@
 // 833966f4
+// concept: permutation lookup d4
 // 5×1 cell permutation: two pairs of adjacent rows swap around a fixed
 // center row. Two models:
 //

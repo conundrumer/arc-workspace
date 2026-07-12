@@ -1,4 +1,5 @@
 // 496994bd
+// concept: d4 move
 // An ink block against one edge, bg elsewhere. The output adds the block's
 // reflected copy at the opposite edge.
 //

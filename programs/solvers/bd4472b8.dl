@@ -1,4 +1,5 @@
 // bd4472b8
+// concept: tile-arrangement decompose d4
 // A header row (W colors) and a separator row sit above an empty body of height
 // N·W. Each of the N blocks restacks the header as stripes — header color k
 // becomes the block's k-th row. Header and separator pass through.

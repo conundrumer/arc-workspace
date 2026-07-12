@@ -1,4 +1,5 @@
 // 3cd86f4f
+// concept: lines grow move
 // Shear: the grid's c.slide-lines slide against each other, one cell per
 // line — the across-lines rotate by c.sense onto a diagonal, widening the
 // frame by (lines - 1). Vacated cells are bg. Either cross dir spells the

@@ -1,4 +1,5 @@
 // 12422b43
+// concept: lines markers walk stamp
 // A c.marker bar anchored at the edge opposite c.flow spans the unit lines;
 // ink (non-bg, non-marker) fills the leading lines. The unit lines' ink
 // repeats along c.flow over the bg remainder.

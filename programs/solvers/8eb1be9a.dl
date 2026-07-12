@@ -1,4 +1,5 @@
 // 8eb1be9a
+// concept: wallpaper count
 // A band of patterned rows sits in an otherwise empty grid.
 // Output tiles the whole grid with the band along c.axis, phase preserved:
 // colors propagate from the band by jumps of the band's extent in both

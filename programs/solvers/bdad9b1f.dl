@@ -1,4 +1,5 @@
 // bdad9b1f
+// concept: lines lookup border
 // Two 2-cell segments on bg, each seated on a grid edge. Each extends
 // into a full line; the cell where the lines cross gets c.cross. Three
 // models of the extension axis:

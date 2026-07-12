@@ -1,4 +1,5 @@
 // 00576224
+// concept: tile-arrangement lookup d4
 // 3×3 tile arrangement of input copies: the outer bands of tiles show the
 // input, the middle band its left-right flip.
 //

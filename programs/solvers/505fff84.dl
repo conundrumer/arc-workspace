@@ -1,4 +1,5 @@
 // 505fff84
+// concept: lines markers span rank move
 // Noise rows; the two marker colors bracket one segment per marked row.
 // The output stacks the strictly-between segments: contributing rows take
 // their order positions; each segment shifts flush to the edge.

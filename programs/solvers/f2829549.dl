@@ -1,4 +1,5 @@
 // f2829549
+// concept: pair-fold lookup nor
 // Layout: 1×2 horizontally-side-by-side 4×3 subgrids with 1-col separator.
 // Output is the per-cell pair-fold.
 //

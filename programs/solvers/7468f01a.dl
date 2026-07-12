@@ -1,4 +1,5 @@
 // 7468f01a
+// concept: crop d4
 // A rectangle on bg, carrying a second color. Output is the rectangle
 // cut out, with c.transform applied.
 

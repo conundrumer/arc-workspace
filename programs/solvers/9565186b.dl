@@ -1,4 +1,5 @@
 // 9565186b
+// concept: objects count select
 // The dominant part of the grid keeps its cells; every other cell becomes
 // c.mark. Three claims on what dominates, tagged on out's Choice:
 //

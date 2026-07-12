@@ -1,4 +1,5 @@
 // ea786f4a
+// concept: markers walk
 // A solid color field with one ink-colored dot. The output draws an X in
 // ink through it. Claims of where the X comes from, tagged on out's Choice:
 //

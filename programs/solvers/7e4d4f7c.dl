@@ -1,4 +1,5 @@
 // 7e4d4f7c
+// concept: lines mapping
 // Output has extent c.out_h along c.header_dir, perpendicular extent =
 // input. Cells at depth 0..out_h-2 from header_dir map into the output's
 // out_h frame with along-depth and across-axis position preserved. The

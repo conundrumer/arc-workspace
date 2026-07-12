@@ -1,4 +1,5 @@
 // 66e6c45b
+// concept: lookup move
 // A 2×2 color block on bg explodes to the grid corners. Claims of the
 // motion, tagged on out's Choice:
 //

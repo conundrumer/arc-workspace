@@ -1,4 +1,5 @@
 // d364b489
+// concept: markers lookup stamp
 // Each marker cell paints a one-cell halo on its four sides; the rest of
 // the grid passes through. Halos clip at the grid edge.
 //

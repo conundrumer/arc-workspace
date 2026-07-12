@@ -1,4 +1,5 @@
 // a68b268e
+// concept: overlay decompose lookup rank
 // A divider cross splits the grid into a tile arrangement, each tile drawn
 // in its own ink. The output overlays the tiles: the highest-precedence
 // ink present fills each cell, bg where every tile is empty. Each tile

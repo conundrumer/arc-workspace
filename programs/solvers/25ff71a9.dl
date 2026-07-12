@@ -1,4 +1,5 @@
 // 25ff71a9
+// concept: walk move
 // Grid content moves by c.shift_k toward c.shift_dir. The edge behavior is
 // underdetermined — the departing rows are bg in every pair:
 //

@@ -1,4 +1,5 @@
 // e633a9e5
+// concept: scale lookup border
 // Nonuniform scale-up: each input cell becomes a tile, and the tiles keep
 // the input's arrangement. Three models, tagged on out's Choice:
 //

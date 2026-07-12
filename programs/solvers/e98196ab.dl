@@ -1,4 +1,5 @@
 // e98196ab
+// concept: overlay decompose lookup
 // Layout: 2×1 vertically-stacked 5×11 subgrids with 1-row gap.
 // Output is the per-cell overlay: each panel's ink passes through.
 //

@@ -1,4 +1,5 @@
 // 7f4411dc
+// concept: stamp select
 // Denoise: solid ink rectangles survive; scattered single cells clear to
 // bg. Ink color varies per pair. What survives:
 //

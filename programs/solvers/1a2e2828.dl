@@ -1,4 +1,5 @@
 // 1a2e2828
+// concept: lines select
 // Full-length stripes cross; at each crossing one stripe shows through.
 // The top stripe is covered by none, so its lines stay uniform. Output
 // 1×1: the top stripe's color.

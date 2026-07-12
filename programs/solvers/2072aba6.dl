@@ -1,4 +1,5 @@
 // 2072aba6
+// concept: scale wallpaper stamp
 // 2× scale-up: ink cells become checkered tiles, bg cells blank tiles.
 // Two models of the checker phase, tagged on out's Choice:
 //   $Tile    — each ink cell hosts a stored template.

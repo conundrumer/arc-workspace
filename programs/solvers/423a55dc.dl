@@ -1,4 +1,5 @@
 // 423a55dc
+// concept: move
 // One shape on c.bg, sheared: each ink cell slides by its distance from
 // the shape box's c.anchor edge, toward c.anchor turned c.sense. Cells
 // sliding off the grid clip away.

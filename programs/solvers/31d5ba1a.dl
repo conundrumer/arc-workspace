@@ -1,4 +1,5 @@
 // 31d5ba1a
+// concept: pair-fold decompose lookup xor
 // Layout: 2×1 vertically-stacked 3×5 subgrids. Output is the per-cell pair-fold.
 //
 // out's choice column = [d, b]:

@@ -1,16 +1,7 @@
 // 1b2d62fb
+// family: f2829549
 // Layout: 1×2 horizontally-side-by-side 5×3 subgrids with 1-col separator.
 // Output is the per-cell pair-fold.
-//
-// out's choice column = [d, b]:
-//
-//   d (decompose):
-//     $Tile() — pre-tabulated in Consts via tile_pos
-//     $Div()  — derived in body via the divide primitive
-//
-//   b (body):
-//     $Lookup() — combine table keyed on (outer pos, color); set-equality match
-//     $Nor()    — NOR via non-existence: no non-BG input contribution
 
 #include "../lib.dl"
 

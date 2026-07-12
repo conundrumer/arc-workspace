@@ -1,4 +1,5 @@
 // 5b6cbef5
+// concept: self-tiling
 // Fractal self-tensor: output = input ⊗ input. The grid is an N×N arrangement of
 // N×N tiles (N = input extent); the input plays both roles — P_tile gates each
 // tile, P_intile addresses within it. A non-bg gate fills the tile with a copy

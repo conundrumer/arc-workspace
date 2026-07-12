@@ -1,4 +1,5 @@
 // a6953f00
+// concept: crop
 // Output is the 2×2 crop at a top corner; either corner is a valid output.
 // One $Crop candidate per corner in c.crop_corner.
 

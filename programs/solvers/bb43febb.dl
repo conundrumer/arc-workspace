@@ -1,4 +1,5 @@
 // bb43febb
+// concept: objects border
 // Solid c.ink rectangles; each keeps its outline and repaints its interior
 // to c.fill.
 //

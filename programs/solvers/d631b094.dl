@@ -1,4 +1,5 @@
 // d631b094
+// concept: count
 // Cells of one color on bg. Output is a 1-cell-wide bar of that color
 // along c.bar_axis, extent = the cell count.
 

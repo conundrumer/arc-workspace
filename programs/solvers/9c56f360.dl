@@ -1,4 +1,5 @@
 // 9c56f360
+// concept: lines move
 // The mover-colored cells in each line pack toward the dir edge against
 // the nearest barrier, order kept; vacated cells become background.
 //   $Wall  — only the wall color blocks; other ink is passed over.

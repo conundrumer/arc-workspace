@@ -1,4 +1,5 @@
 // 68b67ca3
+// concept: decompose lookup select
 // 6×6 input collapsed to 3×3 by per-axis division; the anchor-corner cell
 // of each subgrid is kept, others drop. Two models:
 //

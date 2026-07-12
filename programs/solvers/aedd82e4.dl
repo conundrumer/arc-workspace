@@ -1,4 +1,5 @@
 // aedd82e4
+// concept: objects classify
 // Isolated ink cells — no 4-neighbor ink — recolor to c.mark. The rest of
 // the grid is underdetermined (ink color equals c.ink in every pair); two
 // models:

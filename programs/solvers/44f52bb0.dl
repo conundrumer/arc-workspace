@@ -1,4 +1,5 @@
 // 44f52bb0
+// concept: symmetry lookup classify
 // Classify input by D4-symmetry; emit a fixed output per class.
 //
 // Two impls; out's choice column tags each:

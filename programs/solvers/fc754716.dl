@@ -1,4 +1,5 @@
 // fc754716
+// concept: border
 // A single non-bg dot. The output paints the grid border with the dot's
 // color; every other cell is bg.
 

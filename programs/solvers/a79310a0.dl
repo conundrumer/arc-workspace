@@ -1,4 +1,5 @@
 // a79310a0
+// concept: move
 // The ink shape translates c.shift_k toward c.shift_dir and recolors to
 // c.mark; the rest of the grid is c.bg.
 

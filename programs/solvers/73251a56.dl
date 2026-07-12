@@ -1,4 +1,5 @@
 // 73251a56
+// concept: symmetry walk count repair classify
 // A pattern symmetric under a D4 reflection, damaged by hole blobs. Under
 // $Slide and $Bg, holes repaint from their mirror cell, and the cases split
 // on the residual holes — the mirror is also a hole; fix-line cells are

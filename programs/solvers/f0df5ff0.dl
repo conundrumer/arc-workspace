@@ -1,4 +1,5 @@
 // f0df5ff0
+// concept: markers stamp
 // Noise grid; every c.ink cell paints its surrounding bg cells c.ink.
 // Painting does not cascade from painted cells.
 

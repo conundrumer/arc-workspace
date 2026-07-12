@@ -1,4 +1,5 @@
 // f8ff0b80
+// concept: count rank
 // Output is a 1D layout along axis_of(c.rank_dir): the input's non-bg
 // colors, anchored at c.rank_dir, in descending count order. Extent =
 // number of distinct non-bg colors.

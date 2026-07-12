@@ -1,4 +1,5 @@
 // 3618c87e
+// concept: lines markers lookup move
 // Each cell of color c.marker falls to the c.fall_to edge of its slice;
 // the original marker position clears to c.bg. Slices run along
 // axis_of(c.fall_to).

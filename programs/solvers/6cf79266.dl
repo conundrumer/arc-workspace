@@ -1,4 +1,5 @@
 // 6cf79266
+// concept: stamp
 // Noise grid of one ink color on c.bg. Every all-bg square window of side
 // c.dim repaints to c.fill.
 

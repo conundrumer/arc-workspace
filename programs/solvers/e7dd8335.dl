@@ -1,4 +1,5 @@
 // e7dd8335
+// concept: objects
 // A shape of one color over bg; the half of it toward c.dir recolors
 // c.fill. Two claims of what owns a half, tagged on out's Choice:
 //

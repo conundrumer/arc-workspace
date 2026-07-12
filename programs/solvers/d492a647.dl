@@ -1,4 +1,5 @@
 // d492a647
+// concept: markers walk parity
 // A noise-speckled bg grid with a single seed cell of a unique color. The
 // seed's color paints every bg cell offset from it by an even count on both
 // axes; noise cells stay. Two models of the lattice, tagged on out's Choice:

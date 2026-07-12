@@ -1,4 +1,5 @@
 // 62b74c02
+// concept: lines span stamp select
 // An ink block anchored at one edge, the rest bg. The output stamps a copy
 // of the block flush at the empty edge and fills the span between, per
 // line, from a boundary column of the block. Two independent nodes:

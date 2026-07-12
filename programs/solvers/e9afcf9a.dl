@@ -1,4 +1,5 @@
 // e9afcf9a
+// concept: permutation lookup d4
 // 2×6 cell permutation: at odd column indices, rows 0 and 1 swap; even
 // columns are unchanged. Two models:
 //

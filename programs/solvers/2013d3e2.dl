@@ -1,4 +1,5 @@
 // 2013d3e2
+// concept: decompose crop
 // A figure sits on background. Output is the corner region of its
 // bounding box.
 //   $Half   — one quadrant of the box.

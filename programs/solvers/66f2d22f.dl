@@ -1,16 +1,7 @@
 // 66f2d22f
+// family: fafffa47
 // Input is two side-by-side halves; output is their per-cell fold — fill where
 // neither half is marked (NOR).
-//
-// out's choice column = [d, b]:
-//
-//   d (decompose) — the 2-tile split under two model shapes:
-//     $Tile() — tabulated in Consts via tile_pos (2D tiling: outer/inner Dims)
-//     $Div()  — derived in body via divide (1D axis split: axis + count)
-//
-//   b (body) — two model claims for the fold:
-//     $Nor()    — boolean negation: no half marks the cell
-//     $Lookup() — (left, right) color pair through a combine table
 
 #include "../lib.dl"
 

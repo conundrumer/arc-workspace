@@ -1,4 +1,5 @@
 // 8e5a5113
+// concept: tile-arrangement decompose lookup d4 walk
 // Three full-height tiles split by separator columns; the pattern tile's
 // successive quarter-turn images fill the empty tiles. Flip readings are
 // defeated (train 1: the second tile matches no reflection of its pattern).

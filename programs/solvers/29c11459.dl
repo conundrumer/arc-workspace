@@ -1,4 +1,5 @@
 // 29c11459
+// concept: lines markers walk
 // A mark at each end of a row; the row fills with the marks' colors, half
 // each, and the middle cell gets the clash color. Every mark sits on its
 // edge, so three fill priors coincide on the data; one case each, tagged

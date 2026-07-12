@@ -1,4 +1,5 @@
 // ff28f65a
+// concept: objects lookup count rank stamp
 // Count the 2x2 squares of c.block_color, then mark that many cells of a
 // fixed out_dim grid's X (both corner diagonals), filling in reading order.
 //

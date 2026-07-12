@@ -1,4 +1,5 @@
 // ba26e723
+// concept: lines mapping
 // Cells whose color is a c.mapping key are recolored to the mapped color,
 // but only at positions where (dist from c.anchor) mod c.period equals
 // c.phase. Other cells pass through.

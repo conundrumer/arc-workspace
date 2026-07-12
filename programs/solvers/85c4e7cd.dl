@@ -1,4 +1,5 @@
 // 85c4e7cd
+// concept: permutation
 // Concentric square rings, one color per ring. Output reverses the ring
 // colors: each ring takes the color of the ring as deep from the center
 // as it is from the border.

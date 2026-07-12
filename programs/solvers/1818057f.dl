@@ -1,4 +1,5 @@
 // 1818057f
+// concept: stamp
 // Wherever the 5-cell plus footprint lands fully on ink, those cells turn
 // c.mark; the rest passes through. A plus may sit inside a larger blob —
 // only footprint cells recolor. Two models:

@@ -1,11 +1,7 @@
 // 7e02026e
+// family: 1818057f
 // Wherever the plus footprint lands fully on blank, those cells turn
-// c.mark; the rest passes through. A plus may sit inside a larger blank
-// region — only footprint cells recolor. Two models:
-//
-//   $Shape — the plus is stored data; Occurrences finds its placements.
-//   $Flank — a blank cell with blank on all four sides; it and its
-//            neighbors recolor.
+// c.mark; the rest passes through.
 
 #include "../lib.dl"
 

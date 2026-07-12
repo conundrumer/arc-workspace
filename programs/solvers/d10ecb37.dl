@@ -1,4 +1,5 @@
 // d10ecb37
+// concept: decompose crop select
 // Output is the 2×2 block at corner c.diag. The even-dimensioned inputs
 // leave the locate rule underdetermined:
 //

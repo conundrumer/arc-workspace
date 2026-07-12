@@ -1,4 +1,5 @@
 // 48131b3c
+// concept: tile-arrangement mapping
 // Output arranges 2×2 copies of the input with its two colors swapped.
 
 #include "../lib.dl"

@@ -1,4 +1,5 @@
 // a85d4709
+// concept: lines markers lookup
 // Each slice along c.axis is recolored by its content. Two models of the
 // recolor:
 //

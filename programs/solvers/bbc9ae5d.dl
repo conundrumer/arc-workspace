@@ -1,4 +1,5 @@
 // bbc9ae5d
+// concept: grow walk move
 // Input is a single line: an ink run anchored at one end, bg beyond. The
 // output is line-length / c.divisor rows: the input, then each row
 // continuing the previous one toward c.diag.

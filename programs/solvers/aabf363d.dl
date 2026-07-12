@@ -1,4 +1,5 @@
 // aabf363d
+// concept: markers count rank
 // One non-bg color (the marker) repaints every other non-bg color: target
 // cells take the marker color, marker cells become bg.
 //

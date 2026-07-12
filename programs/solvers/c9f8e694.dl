@@ -1,9 +1,7 @@
 // c9f8e694
+// family: c7d4e6ad
 // Cells of color in c.targets are substituted with a per-slice replacement
-// color. Slices run along c.axis. Two models of the replacement source:
-//
-//   $Anchor — the cell at edge c.anchor (positional)
-//   $Unique — the slice's unique non-bg non-target color (content-defined)
+// color. Slices run along c.axis.
 
 #include "../lib.dl"
 

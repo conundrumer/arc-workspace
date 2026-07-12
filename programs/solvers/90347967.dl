@@ -1,4 +1,5 @@
 // 90347967
+// concept: markers d4
 // An ink object contains one c.marker cell. The object re-seats transformed
 // by c.transform about the marker; all other cells are bg.
 

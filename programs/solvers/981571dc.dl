@@ -1,4 +1,5 @@
 // 981571dc
+// concept: symmetry repair
 // A symmetric wallpaper corrupted by noise patches; each noise cell
 // restores from a symmetric counterpart. The wallpaper's symmetry center
 // is offset from the grid center; its stabilizer is full D4.

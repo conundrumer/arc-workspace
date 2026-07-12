@@ -1,4 +1,5 @@
 // 1c0d0a4b
+// concept: decompose wallpaper lines mapping
 // 3×3 tiles on a 1-wide bg separator lattice, borders included. Tile
 // content complements: non-bg → bg, bg → c.paint. Separator cells stay
 // bg. Separator identification (data-equivalent on this task):

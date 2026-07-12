@@ -1,14 +1,7 @@
 // bc4146bd
+// family: 4c4377d9
 // 1×5 tile arrangement of input copies: identity and D4_LR alternate,
 // the input at the anchor-end tile.
-//
-// Cases (data-equivalent on this task):
-//   $Lookup() — per-tile D4 table
-//   $Unfold() — reflection tiling: each tile reflects its neighbor across
-//               the shared boundary, seeded at the anchor tile
-//
-// 62c24649 carries these cases on a 2×2 arrangement; its $Mirror is
-// defeated here — tiles 2 and 4 are far from the anchor and stay identity.
 
 #include "../lib.dl"
 

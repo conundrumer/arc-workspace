@@ -1,4 +1,5 @@
 // 6a11f6da
+// concept: overlay decompose rank
 // Layout: 3 vertically-stacked 5×5 ink slabs. Output is the per-cell
 // overlay: the highest-priority candidate wins; no ink is bg.
 //

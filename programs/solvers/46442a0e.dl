@@ -1,4 +1,5 @@
 // 46442a0e
+// concept: tile-arrangement lookup d4
 // 2×2 tile arrangement of input copies — the rotation peer of the
 // 3af2c5a8 family: the anchor-corner tile is the input; the other tiles
 // are its quarter-turn images. Flip-based cases are ruled out (train 2 /

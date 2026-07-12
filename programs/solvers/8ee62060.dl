@@ -1,4 +1,5 @@
 // 8ee62060
+// concept: decompose d4
 // Layout: d4 on the K×K block-grid. Each block stays as-is internally; the
 // d4 transform applies to the block-grid coordinates.
 //

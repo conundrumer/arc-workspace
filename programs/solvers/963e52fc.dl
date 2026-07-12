@@ -1,4 +1,5 @@
 // 963e52fc
+// concept: wallpaper grow
 // The input continues periodically: the output is the grid extended to
 // c.scale times its extent along c.dir, each new cell repeating the
 // color one period back. A period is a shift along c.dir under which

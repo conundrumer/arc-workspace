@@ -1,4 +1,5 @@
 // ca8de6ea
+// concept: lookup walk
 // 5×5 X-pattern collapsed to dense 3×3. The X has three rings about the
 // center: outer corners, inner X cells, center. Two models:
 //

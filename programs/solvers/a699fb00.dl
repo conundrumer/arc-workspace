@@ -1,4 +1,5 @@
 // a699fb00
+// concept: lines span
 // Dashed lines: c.dot cells alternating with bg along c.axis. The gaps fill
 // with c.fill. Two models of which bg cells are gaps, tagged on out's Choice:
 //

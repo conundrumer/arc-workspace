@@ -1,4 +1,5 @@
 // cf98881b
+// concept: overlay decompose lookup rank
 // Layout: 1×3 horizontally-side-by-side 4×4 ink panes with 1-col dividers.
 // Output is the per-cell overlay: the highest-priority inked pane wins;
 // no ink is bg. The divider color is never read.

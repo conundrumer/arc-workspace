@@ -1,4 +1,5 @@
 // 2de01db2
+// concept: lines lookup count
 // Each line (along c.axis) holds one main color plus scattered noise; the
 // output inverts the main mask: main cells -> c.bg, every other cell -> main.
 //

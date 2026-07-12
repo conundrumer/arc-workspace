@@ -1,4 +1,5 @@
 // bbb1b8b6
+// concept: overlay decompose
 // A separator splits the grid into a base tile and a piece tile, each a
 // shape over bg. If the piece fits the base's bg holes, the output is the
 // base with the piece painted in; otherwise the base unchanged. Cases are

@@ -1,4 +1,5 @@
 // 995c5fa3
+// concept: decompose lookup classify
 // Layout: gap-separated tiles along c.tile_axis; each tile shows a
 // catalog pattern. Output is a tile_count-sided square: the row at each
 // tile's index (c.tile_dir → c.row_dir) fills with the tile's class

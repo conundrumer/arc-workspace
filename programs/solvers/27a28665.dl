@@ -1,4 +1,5 @@
 // 27a28665
+// concept: lookup count classify
 // Silhouette → 1×1 output. Input is bg + one non-bg color over a 3×3
 // frame; non-bg cells form a shape. Two models:
 //

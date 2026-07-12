@@ -1,15 +1,6 @@
 // d19f7514
+// family: dae9d2b5
 // Layout: 2×1 vertically-stacked 6×4 subgrids. Output is the per-cell pair-fold.
-//
-// out's choice column = [d, b]:
-//
-//   d (decompose):
-//     $Tile() — pre-tabulated in Consts via tile_pos
-//     $Div()  — derived in body via the divide primitive
-//
-//   b (body):
-//     $Lookup() — combine table keyed on (outer pos, color); set-equality match
-//     $Or()     — OR via existence: any non-BG input contribution
 
 #include "../lib.dl"
 

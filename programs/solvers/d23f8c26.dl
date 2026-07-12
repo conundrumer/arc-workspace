@@ -1,4 +1,5 @@
 // d23f8c26
+// concept: decompose select
 // One column is kept; every other cell becomes bg.
 //
 // Cases (data-equivalent on this task — odd widths, single middle gap):

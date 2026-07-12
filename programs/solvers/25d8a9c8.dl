@@ -1,4 +1,5 @@
 // 25d8a9c8
+// concept: lines lookup count classify
 // Each slice's cells are recolored uniformly: c.uniform_color if the
 // slice has a single color, else c.non_uniform_color. Slices run along
 // c.axis. Whole-slice replacement — input colors are discarded.

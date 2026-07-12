@@ -1,4 +1,5 @@
 // 50cb2852
+// concept: objects border
 // Solid one-color rectangles on c.bg; each keeps its outline and repaints
 // its interior to c.fill.
 //

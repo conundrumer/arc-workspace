@@ -1,4 +1,5 @@
 // ac0a08a4
+// concept: scale count
 // Layout: N× scale. Each input cell expands to an N×N block of the same
 // color in the output frame. N is counted from the input's non-bg cells:
 // $Cells counts the cells; $Colors counts the distinct colors.

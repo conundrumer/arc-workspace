@@ -1,4 +1,5 @@
 // 1fad071e
+// concept: objects count stamp
 // Count the 2x2 squares of c.block_color (a second color's squares and
 // single-cell noise are distractors), then draw the count as a bar in a
 // fixed out_dim row: cells within count of c.bar_edge get the bar color,

@@ -1,4 +1,5 @@
 // c1d99e64
+// concept: lines
 // One ink color over bg. Rows and columns free of ink repaint c.line;
 // the rest passes through.
 

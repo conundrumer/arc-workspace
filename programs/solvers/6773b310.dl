@@ -1,4 +1,5 @@
 // 6773b310
+// concept: decompose markers count
 // Separator lines cut the grid into a 3×3 arrangement of 3×3 tiles.
 // Output is one cell per tile: c.mark where the tile holds a marker pair,
 // c.bg elsewhere. Two models:

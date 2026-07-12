@@ -1,4 +1,5 @@
 // 6ea4a07e
+// concept: mapping
 // Recolor a binary input: bg cells take a fill color derived from the input's
 // fg via a fixed mapping; fg cells become bg.
 

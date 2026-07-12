@@ -1,4 +1,5 @@
 // 05269061
+// concept: wallpaper count
 // Wallpaper of diagonal stripes: color is constant along c.stripe_axis and
 // repeats every `period` stripes. The input shows a patch; the output is the
 // full grid. Colors propagate from input cells through the wallpaper's

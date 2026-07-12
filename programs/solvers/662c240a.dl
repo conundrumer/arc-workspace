@@ -1,4 +1,5 @@
 // 662c240a
+// concept: decompose symmetry select
 // Input stacks c.tile_count square tiles along c.tile_axis; output the one
 // tile that lacks the symmetry the others share.
 //

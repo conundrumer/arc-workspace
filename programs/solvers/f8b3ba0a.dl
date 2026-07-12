@@ -1,4 +1,5 @@
 // f8b3ba0a
+// concept: decompose objects count rank
 // Color blocks on bg, one color dominant. Output is a 1D layout along
 // axis_of(c.rank_dir): the minority colors, anchored at c.rank_dir, in
 // descending count order; the dominant (max-count) color is dropped.

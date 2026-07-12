@@ -1,4 +1,5 @@
 // 22168020
+// concept: lines span
 // Per line along c.fill_axis, each color's span (between its extreme marks)
 // fills with that color.
 

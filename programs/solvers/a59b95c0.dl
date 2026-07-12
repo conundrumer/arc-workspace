@@ -1,4 +1,5 @@
 // a59b95c0
+// concept: tile-arrangement count
 // Layout: N×N tiling of input copies, N = the distinct color count. No
 // task data — the family is fully structural.
 

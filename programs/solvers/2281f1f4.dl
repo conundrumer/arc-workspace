@@ -1,4 +1,5 @@
 // 2281f1f4
+// concept: lines markers stamp cross
 // Markers (c.marker) sit on the two header edges of corner c.header; each
 // marks its line. Cells where marked lines cross paint c.fill. Two claims
 // of what a marked line carries off the crossings, tagged on out's Choice:
