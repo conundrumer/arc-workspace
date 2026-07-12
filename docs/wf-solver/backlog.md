@@ -3,4 +3,6 @@
 List of queued ideas. Sessions append on ask; one line per item.
 
 1. Mutation lint over `.dl` solvers: delete each negated body atom (and each rule), then re-run all pairs. If a mutant survives, the data does not instantiate the deleted structure. Informational report; candidate home `run_dl.py --lint`.
-2. Program similarity analysis over `programs/solvers/` to find representative programs for reference. Candidate signals: Consts-shape signatures, body relation graphs. Be sure to consider programs split by Choice instead of as a whole.
+2. Neighbor/adjacency utility for solver sessions — rep-side rival-claim adjacency notes and on-demand review-time similarity against a fresh draft. Machinery: `/private/tmp/claude-501/-Users-davidlu-code-arc-workspace/20957eed-3b0d-4702-b912-7e36f41b2b64/scratchpad`.
+3. Further exploratory analysis of corpus structure (motif mining below hub level, walk super-family). Machinery: same scratchpad as item 2.
+4. Standardization sweeps over divergences the similarity analysis found: case-enum relation naming (`impl_choice` vs `choice`/`choice_elem`), role naming across the fold family (`P_grid_out` vs `P_intile`), Consts decl+fact layout. Pick a standard per divergence, apply corpus-wide. Machinery: same scratchpad as item 2.
