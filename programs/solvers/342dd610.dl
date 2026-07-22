@@ -1,0 +1,32 @@
+// 342dd610
+// concept: move
+// Each ink color carries a fixed displacement; every ink cell translates
+// by its color's jump. The rest of the grid is bg.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl bg(c: Color)  bg(8).
+
+    .decl move(c: Color, d: Dir, k: number)
+    move(7, DIR_T, 2).
+    move(9, DIR_B, 2).
+    move(2, DIR_L, 2).
+    move(1, DIR_R, 1).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl moved(p: Position, col: Color)
+moved(P_out, Col) :-
+    in(P_in, Col), c.move(Col, D, K),
+    jump_delta(D, K, Delta), compose(P_in, Delta, P_out).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- moved(P, Col).
+out(P, Col) :- in(P, _), !moved(P, _), c.bg(Col).
+
+.output out(IO=stdout)

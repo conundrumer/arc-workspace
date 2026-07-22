@@ -1,0 +1,67 @@
+// dc1df850
+// concept: markers lookup stamp
+// Each marker cell paints a one-cell halo on its eight neighbors; the rest
+// of the grid passes through. Halos clip at the grid edge and overwrite
+// what they cover; the data never shows a halo covering other ink. Two
+// footprint claims, data-equivalent on this task, tagged on out's Choice:
+//
+//   $Grow()  — markers grow one step in all eight directions.
+//   $Stamp() — a stored template, seated by its marker cell on each marker.
+
+#include "../lib.dl"
+
+.type Choice = Grow {} | Stamp {}
+
+.comp Consts {
+    // --- shared ---
+    .decl marker(c: Color)  marker(2).
+
+    // --- $Grow ---
+    .decl halo(c: Color)    halo(1).
+
+    // --- $Stamp ---
+    .decl template(p: Position, col: Color)
+    GRID_3x3(template,
+        1, 1, 1,
+        1, 2, 1,
+        1, 1, 1)
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl marker_at(p: Position)
+marker_at(P) :- in(P, Col), c.marker(Col).
+
+.decl halo(p: Position, col: Color, ch: Choice)
+
+// --- $Grow ---
+halo(P, Col, $Grow()) :-
+    marker_at(M), c.halo(Col),
+    dir_elem(D), step_delta(D, S),
+    compose(M, S, P), in(P, _).
+halo(P, Col, $Grow()) :-
+    marker_at(M), c.halo(Col),
+    diag_dir_elem(Dg), diag_step_delta(Dg, S),
+    compose(M, S, P), in(P, _).
+
+// --- $Stamp ---
+// Template ink viewed from the template's marker cell.
+.init tview = Reframe<Color>
+tview.cell(Col, Pt)  :- c.template(Pt, Col).
+tview.outer(Col, Pm) :- tview.cell(Col, _), c.template(Pm, M), c.marker(M).
+
+halo(P, Col, $Stamp()) :-
+    marker_at(Q), tview.inner(Col, Off),    // template offsets by color
+    compose(Q, Off, P), in(P, _).           // seat on the marker, on-grid
+
+.decl impl_choice(ch: Choice)
+impl_choice($Grow()). impl_choice($Stamp()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- halo(P, Col, Ch).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !halo(P, _, Ch).
+
+.output out(IO=stdout)

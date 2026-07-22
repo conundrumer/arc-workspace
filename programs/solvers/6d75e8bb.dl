@@ -1,0 +1,52 @@
+// 6d75e8bb
+// concept: objects
+// A shape over bg; bg cells inside its bounding box recolor c.fill. Two
+// claims of what owns a box, tagged on out's Choice:
+//
+//   $Whole — one box over all ink.
+//   $Each  — per 8-connected component: each component's own box.
+
+#include "../lib.dl"
+
+.type Choice = Whole {} | Each {}
+
+.comp Consts {
+    .decl bg(c: Color)   bg(0).
+    .decl fill(c: Color) fill(2).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl ink(p: Position)
+ink(P) :- in(P, Col), !c.bg(Col).
+
+.decl filled(p: Position, ch: Choice)
+
+// --- $Whole ---
+
+.init box = Bbox<Unit>
+box.cell($U(), P) :- ink(P).
+
+filled(P, $Whole()) :- in(P, Col), c.bg(Col), box.margin($U(), M), geq(P, M).
+
+// --- $Each ---
+
+.init comps = Components8<Unit>
+comps.node($U(), P) :- ink(P).
+
+.init comp_box = Bbox<CompId>
+comp_box.cell(Id, P) :- comps.label($U(), P, Id).
+
+filled(P, $Each()) :- in(P, Col), c.bg(Col), comp_box.margin(_, M), geq(P, M).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Whole()). impl_choice($Each()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, F, Ch)   :- filled(P, Ch), c.fill(F).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !filled(P, Ch).
+
+.output out(IO=stdout)

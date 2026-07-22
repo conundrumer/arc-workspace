@@ -1,0 +1,58 @@
+// 9caf5b84
+// concept: count rank select
+// Colors rank by cell count; the frequent colors keep their cells, and
+// every other cell becomes c.mark. Two claims on where the cut sits,
+// data-equivalent on this task — every pair has exactly five colors:
+//
+//   $Keep — the c.keep_n most frequent colors survive.
+//   $Drop — the c.drop_n least frequent colors repaint.
+
+#include "../lib.dl"
+
+.type Choice = Keep {} | Drop {}
+
+.comp Consts {
+    // --- shared ---
+    .decl mark(c: Color)      mark(7).
+
+    // --- Keep ---
+    .decl keep_n(n: number)   keep_n(2).
+
+    // --- Drop ---
+    .decl drop_n(n: number)   drop_n(3).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl color_count(col: Color, n: number)
+color_count(Col, N) :- in(_, Col), N = count : { in(P, Col) }.
+
+// Col2 strictly more frequent than Col.
+.decl beaten_by(col: Color, col2: Color)
+beaten_by(Col, Col2) :- color_count(Col, N), color_count(Col2, N2), N2 > N.
+
+.decl survives(col: Color, ch: Choice)
+
+// --- Keep ---
+survives(Col, $Keep()) :-
+    color_count(Col, _), c.keep_n(K),
+    R = count : { beaten_by(Col, _) }, R < K.
+
+// --- Drop ---
+survives(Col, $Drop()) :-
+    color_count(Col, _), c.drop_n(K),
+    R = count : { beaten_by(_, Col) }, R >= K.
+
+// --- Output ---
+
+.decl impl_choice(ch: Choice)
+impl_choice($Keep()). impl_choice($Drop()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- in(P, Col), survives(Col, Ch).
+out(P, Col, Ch) :- in(P, C0), impl_choice(Ch), !survives(C0, Ch), c.mark(Col).
+
+.output out(IO=stdout)
