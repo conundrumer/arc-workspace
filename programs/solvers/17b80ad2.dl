@@ -1,7 +1,7 @@
 // 17b80ad2
-// concept: lines markers walk
-// Lines flagged by a c.mark cell on the mark edge fill: each ink cell's
-// color flows stepwise through bg away from the edge, occluded by the next
+// concept: lines markers cast
+// Lines flagged by a c.mark cell on the mark edge fill: each ink cell
+// casts its color through bg away from the edge, stopped by the next
 // ink; unflagged lines pass through. Two models of the mark edge:
 //
 //   $Dir  — c.dir names it.

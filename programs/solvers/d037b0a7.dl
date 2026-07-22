@@ -1,8 +1,7 @@
 // d037b0a7
-// concept: markers walk
-// Each mark's color fills the bg cells from it toward the c.dir edge in its
-// line: color flows stepwise through bg toward c.dir; a mark in the way
-// occludes.
+// concept: markers cast
+// Each mark casts its color through bg toward the c.dir edge in its
+// line; a mark in the way stops the cast.
 
 #include "../lib.dl"
 

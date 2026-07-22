@@ -1,5 +1,5 @@
 // 97999447
-// concept: markers lookup walk
+// concept: markers lookup walk cast
 // Each non-bg dot emits a ray toward c.ray_dir, to the grid edge; cells off
 // every ray pass through. Two models of the ray's coloring, tagged on out's
 // Choice:

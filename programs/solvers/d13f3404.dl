@@ -1,5 +1,5 @@
 // d13f3404
-// concept: grow walk
+// concept: grow cast
 // A 3×3 pattern on a larger square canvas: the pattern seats flush at the
 // corner opposite c.sweep, and every seated ink cell casts a diagonal ray
 // toward c.sweep — the pattern sliding one diagonal step per copy, trailing

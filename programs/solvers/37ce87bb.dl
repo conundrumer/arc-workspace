@@ -1,5 +1,5 @@
 // 37ce87bb
-// concept: lines walk count border
+// concept: lines count border
 // Bars stand on the base edge: add-colored bars contribute their height,
 // sub-colored bars cancel it. A result bar of the summed height is
 // appended in its own line. Two models of that line:

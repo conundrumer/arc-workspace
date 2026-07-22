@@ -1,5 +1,5 @@
 // 3bd67248
-// concept: objects walk border
+// concept: objects cast border
 // A wall column sits against one side edge. The floor row (c.floor_dir edge)
 // paints c.floor_color; the corner diagonal rising from the wall's foot
 // paints c.diag_color. Painting spares non-bg cells. All grids are square,

@@ -1,5 +1,5 @@
 // feca6190
-// concept: lines walk count
+// concept: lines cast count
 // A single line of cells with scattered ink. The output is a square of
 // side (ink count) × (line length); the line seats flush at the corner
 // opposite c.sweep, and every seated cell casts a diagonal ray toward
