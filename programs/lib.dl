@@ -123,6 +123,12 @@ d4_elem(D4_TB).
 d4_elem(D4_DG).
 d4_elem(D4_AD).
 
+.decl c4_elem(d: D4)
+c4_elem(D4_ID).
+c4_elem(D4_CW).
+c4_elem(D4_HT).
+c4_elem(D4_CC).
+
 // Axis of a Dir.
 .decl axis_of(d: Dir, a: Axis)
 axis_of(DIR_T, AXIS_V).

@@ -217,17 +217,6 @@ diag_edge_delta(Diag, A, K1, K2, P) :-
 
 **Task-local home (protocol step 1).** 8618d23e (`DiagEdgeDelta` comp): $Derive's grow delta at the corner opposite the seat, the pair from the growth case.
 
-## `c4_elem` — the rotation subgroup enum
-
-The C4 subset of `d4_elem`: the four rotations. For closures that apply every rotation, where a reflection would be wrong rather than merely unused. Lib target: a fact set beside `d4_elem`.
-
-```
-.decl c4_elem(d: D4)
-c4_elem(D4_ID). c4_elem(D4_CW). c4_elem(D4_HT). c4_elem(D4_CC).
-```
-
-**Task-local home (protocol step 1).** 46442a0e (`RotElems` comp): $Rot's quarter-turn closure, applied jointly to anchor tile position and content.
-
 ## `D4Invariance<Key, Val>` — per-key D4 invariance of a valued cell set
 
 Which D4 elements fix each keyed cell set. `broken` witnesses a violated transform: some cell whose image under d holds a different value. `has_sym` is invariance under some nontrivial element. `cell` must be total over each key's domain (the negation reads absence as difference). This is the keyed generalization of 44f52bb0's unkeyed `non_invariant` / `input_inv` body rules; that solver is a promotion-time caller (`Unit` key).
