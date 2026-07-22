@@ -10,8 +10,7 @@
 //
 // Color, Dir, Axis, DiagDir, DiagAxis, D4, Sense are subtypes of number:
 // typed names with no arithmetic intent. Constants are #define'd in disjoint
-// ranges so a value's range identifies its namespace: Color 0–9, Dir
-// 10–13, Axis 20–21, DiagDir 30–33, DiagAxis 40–41, D4 50–57, Sense 60–61.
+// ranges so a value's range identifies its namespace.
 // Names are <TYPE>_<VAL>, with VAL abbreviated to one length per type.
 // Solver bodies pull values from a per-task Consts component rather than
 // referencing constants directly.
