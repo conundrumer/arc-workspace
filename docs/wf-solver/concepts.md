@@ -29,7 +29,8 @@ The transformation claim: which prior the task teaches. Rival cases of one file 
 - `lookup` — a stored table or grid supplies output content
 - `d4` — a D4 transform applies to content
 - `unfold` — reflection tiling seeded at an anchor
-- `walk` — stepwise propagation
+- `walk` — stepwise propagation; each step depends on the path or content so far
+- `cast` — content extends from a source along a line to a stopper
 - `span` — cells between marks act
 - `mapping` — a color-to-color relation recolors cells
 - `count` — a count determines output content or extent
