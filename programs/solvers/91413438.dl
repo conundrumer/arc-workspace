@@ -1,0 +1,46 @@
+// 91413438
+// concept: tile-arrangement count rank
+// The input's bg-cell count sets the side of a square tile arrangement;
+// its ink-cell count sets how many tiles carry a copy of the input,
+// filled in reading order. The remaining tiles are bg.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl bg(col: Color)         bg(0).
+    .decl lex_corner(d: DiagDir) lex_corner(DIAG_TL).
+    .decl lex_axis(a: Axis)      lex_axis(AXIS_V).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl copy_count(n: number)
+copy_count(N) :- N = count : { in(P, Col), !c.bg(Col) }.
+
+.decl side(n: number)
+side(S) :- S = count : { in(P, Col), c.bg(Col) }.
+
+.init tiles = Frame2D<Unit>
+tiles.extent($U(), A, S) :- axis_elem(A), side(S).
+
+.init lex = LexOrder<Unit>
+lex.corner(D)     :- c.lex_corner(D).
+lex.axis(A)       :- c.lex_axis(A).
+lex.cell($U(), P) :- tiles.cell($U(), P).
+
+.decl copy(p_tile: Position)
+copy(T) :- lex.rank($U(), T, R), copy_count(N), R < N.
+
+.decl out(p: Position, col: Color)
+out(P_grid, Col) :-
+    copy(P_tile), in(P_intile, Col),
+    concat_2d(P_tile, P_intile, 0, P_grid).
+out(P_grid, Col) :-
+    tiles.cell($U(), P_tile), !copy(P_tile),
+    in(P_intile, _), c.bg(Col),
+    concat_2d(P_tile, P_intile, 0, P_grid).
+
+.output out(IO=stdout)

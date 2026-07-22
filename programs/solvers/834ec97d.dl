@@ -1,0 +1,76 @@
+// 834ec97d
+// concept: markers walk parity
+// A single marker cell on bg. The marker steps one cell toward c.dir;
+// alternating columns anchored at the marker's column fill with c.fill from
+// the marker's row to the opposite edge. Two models of the alternation,
+// tagged on out's Choice:
+//
+//   $Period — the column jump is task data in Consts.
+//   $Parity — every-other-column alternation: two unit steps over a skipped
+//             column, no datum.
+//
+// Coincide at period 2.
+
+#include "../lib.dl"
+
+.type Choice = Period {} | Parity {}
+
+.comp Consts {
+    .decl bg(c: Color)   bg(0).
+    .decl dir(d: Dir)    dir(DIR_B).   // marker steps toward this edge
+    .decl fill(c: Color) fill(4).
+
+    // --- $Period ---
+    .decl period(k: number) period(2).
+}
+
+.init c = Consts
+
+.decl impl_choice(ch: Choice)
+impl_choice($Period()). impl_choice($Parity()).
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// The one non-bg cell.
+.decl marker(p: Position, col: Color)
+marker(P, Col) :- in(P, Col), !c.bg(Col).
+
+// Both dirs of the axis perpendicular to the move.
+.decl across(d: Dir)
+across(D2) :- c.dir(D), axis_of(D, A), perp(A, A2), axis_of(D2, A2).
+
+// Cells of the marker's row whose columns the alternation hits, walked
+// outward from the marker.
+.decl beam(p: Position, ch: Choice)
+beam(P, Ch) :- marker(P, _), impl_choice(Ch).
+
+// --- $Period ---
+beam(Q, $Period()) :-
+    beam(P, $Period()),
+    across(D2), c.period(K), jump_delta(D2, K, Delta),
+    compose(P, Delta, Q), in(Q, _).
+
+// --- $Parity ---
+beam(Q, $Parity()) :-
+    beam(P, $Parity()),
+    across(D2), step_delta(D2, S),
+    compose(P, S, M), in(M, _),        // the skipped cell
+    compose(M, S, Q), in(Q, _).
+
+// The filled region: each beam cell and its column toward the edge opposite
+// the move.
+.init rays = Ray<Choice>
+rays.dir(O)      :- c.dir(D), opposite(D, O).
+rays.cell(P)     :- in(P, _).
+rays.mark(Ch, P) :- beam(P, Ch).
+
+.decl moved(p: Position)
+moved(Q) :- marker(P, _), c.dir(D), step_delta(D, S), compose(P, S, Q).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- rays.ray(Ch, P, _), c.fill(Col).
+out(P, Col, Ch) :- impl_choice(Ch), moved(P), marker(_, Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !rays.ray(Ch, P, _), !moved(P), c.bg(Col).
+
+.output out(IO=stdout)

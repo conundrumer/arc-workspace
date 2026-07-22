@@ -237,14 +237,6 @@ Which D4 elements fix each keyed cell set. `broken` witnesses a violated transfo
 
 **Task-local home (protocol step 1).** 662c240a keys tiles by slab index: `$Shared` reads `broken` at `c.sym`; `$Asym` negates `has_sym`.
 
-## `ReadOrder` — reading order over a cell set
-
-Reading order given a corner and a primary axis: `before` compares lexicographically (strictly nearer along the primary dir; or a primary tie and strictly nearer along the secondary); `rank` counts predecessors. The primitive boundary is unsettled: either one comp owns both, or they split into a rank-over-input-order comp (`RelOrdinal<T>`, subsuming `Ordinal` at `<` on numbers) fed by a lexicographic `before` supplier.
-
-**Task-local home (protocol step 1).** ff28f65a carries it as body rules (`read_before`, `fill_rank`); `$Fill` marks X cells with rank below the count.
-
-**Second home (protocol step 1).** a68b268e $Scan carries `before` as body rules (`scan_before`) over tile positions; no rank readout.
-
 ## `divide_by_size_slab` — divide_by_size with perpendicular passthrough
 
 The `divide_by_size` peer of `divide_slab`. Fills the one empty cell of
