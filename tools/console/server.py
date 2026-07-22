@@ -499,6 +499,9 @@ def act_commit() -> dict:
         lib_msg = commit_promotion()
         if lib_msg:
             msgs.append(lib_msg)
+        solver_msg = commit_solvers()
+        if solver_msg:
+            msgs.append(solver_msg)
         msgs += commit_docs()
         for it in STATE["items"]:
             if it["id"] in ids:
@@ -527,6 +530,38 @@ def commit_promotion() -> str | None:
                 if "programs/lib.dl" in (it.get("turn_files") or {})), None)
     msg = "lib: " + (", ".join(dict.fromkeys(names)) or "promotion")
     msg += f" promoted from {src}" if src else " promoted"
+    subprocess.run(["git", "add", *left], cwd=ROOT, check=False)
+    out = subprocess.run(["git", "commit", "-m", msg + TRAILER],
+                         cwd=ROOT, capture_output=True, text=True)
+    return msg if out.returncode == 0 else None
+
+
+def commit_solvers() -> str | None:
+    """Modified tracked solvers left after the promotion stage: family or
+    retag fallout from a worker turn. One commit, named by the changed
+    concept-header terms. Caller holds LOCK."""
+    chk = subprocess.run(["git", "status", "--porcelain", "--", "programs/solvers"],
+                         cwd=ROOT, capture_output=True, text=True)
+    left = [l[3:] for l in chk.stdout.splitlines() if l[:2].strip() == "M"]
+    if not left:
+        return None
+    diff = subprocess.run(["git", "diff", "--", *left], cwd=ROOT,
+                          capture_output=True, text=True).stdout
+    plus = list(dict.fromkeys(
+        t for line in re.findall(r"^\+// (?:concept|family): (.+)$", diff, re.M)
+        for t in line.split()))
+    minus = list(dict.fromkeys(
+        t for line in re.findall(r"^-// (?:concept|family): (.+)$", diff, re.M)
+        for t in line.split()))
+    added = [t for t in plus if t not in minus]
+    removed = [t for t in minus if t not in plus]
+    parts = ", ".join(added[:6])
+    if removed:
+        rem = ", ".join("-" + t for t in removed[:4])
+        parts = f"{parts}; {rem}" if parts else rem
+    if not parts:
+        parts = f"{len(left)} updated"
+    msg = f"solvers: {parts}"
     subprocess.run(["git", "add", *left], cwd=ROOT, check=False)
     out = subprocess.run(["git", "commit", "-m", msg + TRAILER],
                          cwd=ROOT, capture_output=True, text=True)
