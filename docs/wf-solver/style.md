@@ -139,6 +139,10 @@ The single-line form is fine for short rules (≤ ~80 chars).
 
 Lib primitives are `inline`: each call expands into the calling rule, and Souffle evaluates the expansion once per tuple. Work that is the same for every tuple is not hoisted. A deep primitive chain inside a rule that ranges over many cells can exceed the runner's 5s CPU budget per pair. Compute tuple-independent values, such as deltas derived from Consts data, in their own relation and join them. When a derived per-cell position must also be read backward, materialize it in a comp relation keyed by the cell (`Reframe.inner`); the indexed join replaces the inline chain.
 
+## Runner contract
+
+`out` must be total over the expected output grid: a missing cell fails the variant.
+
 ## Alt outputs
 
 If the task JSON contains alts, encode them as cases of `Choice` — one case per alt output.
