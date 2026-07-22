@@ -1,0 +1,83 @@
+// 137eaa0f
+// concept: overlay objects markers move
+// Fragments scattered over bg, each holding one c.key cell. Fragments
+// overlay, aligned on their key cells. Two claims of what collects and of
+// the output frame:
+//
+//   $Frame  — cells within the c.frame stamp placed with its c.anchor on
+//             a key collect; output is the stamp.
+//   $Object — each key's 8-connected object collects; output is the
+//             overlay's bbox.
+
+#include "../lib.dl"
+
+.type Choice = Frame {} | Object {}
+.type KP = [a: Position, p: Position]
+
+.comp Consts {
+    .init helpers = ConstsHelpers
+
+    // --- shared ---
+    .decl bg(c: Color)  bg(0).
+    .decl key(c: Color) key(5).
+
+    // --- $Frame ---
+    .decl frame(p: Position)
+    frame(P) :- helpers.frame_pos([3, 3], P).
+
+    .decl anchor(p: Position)
+    anchor([1, 1, 1, 1]).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl mark(p: Position)
+mark(A) :- in(A, Col), c.key(Col).
+
+// Every cell viewed from every mark: inner([a, p]) = p - a.
+.init rel = Reframe<KP>
+rel.outer([A, P], A) :- mark(A), in(P, _).
+rel.cell([A, P], P)  :- mark(A), in(P, _).
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// --- $Frame ---
+
+.decl paint(p: Position, col: Color)
+paint(P_out, Col) :-
+    rel.inner([A, P], D), in(P, Col), !c.bg(Col),    // offset of an ink cell
+    c.anchor(Anc), compose(Anc, D, P_out),           // anchor-relative render
+    c.frame(P_out).                                  // within the stamp
+
+out(P, Col, $Frame()) :- paint(P, Col).
+out(P, Bg, $Frame())  :- c.frame(P), !paint(P, _), c.bg(Bg).
+
+// --- $Object ---
+
+.init comp8 = Components8<Unit>
+comp8.node($U(), P) :- in(P, Col), !c.bg(Col).
+
+// Offsets of cells sharing their mark's component.
+.decl obj_off(d: Position, col: Color)
+obj_off(D, Col) :-
+    mark(A), comp8.label($U(), A, Id),
+    in(P, Col), comp8.label($U(), P, Id),    // cell in the mark's object
+    rel.inner([A, P], D).
+
+// Bbox over offsets; all mark-cell offsets as the dense grid.
+.init obox = Bbox<Unit>
+obox.cell($U(), D) :- obj_off(D, _).
+obox.grid($U(), D) :- rel.inner([_, _], D).
+
+// Each box offset viewed from the box, keyed by the offset.
+.init oframe = Reframe<Position>
+oframe.outer(D, M) :- obox.inside($U(), D), obox.margin($U(), M).
+oframe.cell(D, D)  :- obox.inside($U(), D).
+
+out(P_out, Col, $Object()) :- obj_off(D, Col), oframe.inner(D, P_out).
+out(P_out, Bg, $Object())  :- oframe.inner(D, P_out), !obj_off(D, _), c.bg(Bg).
+
+.output out(IO=stdout)

@@ -1,0 +1,80 @@
+// ae4f1146
+// concept: objects crop count rank select
+// Solid blocks sit on bg. The block with the most mark-colored cells is
+// kept, cropped to its bounding box. Two models of a block:
+//
+//   $Object — a 4-adjacency component.
+//   $Window — an all-ink square window of side c.dim.
+//
+// The models coincide here (no blocks touch); they diverge when blocks
+// touch.
+
+#include "../lib.dl"
+
+.type Choice = Object {} | Window {}
+
+.comp Consts {
+    .decl bg(c: Color)    bg(0).
+    .decl mark(c: Color)  mark(1).
+
+    // --- $Window ---
+    .init helpers = ConstsHelpers
+
+    .decl dim(k: number)  dim(3).
+    .decl shape(p: Position)
+    shape(P) :- dim(K), helpers.frame_pos([K, K], P).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// --- $Object ---
+
+.init comps = Components<Unit>
+comps.node($U(), P) :- in(P, Col), !c.bg(Col).
+
+.decl comp_marks(id: CompId, n: number)
+comp_marks(Id, N) :-
+    comps.label($U(), _, Id),
+    N = count : { comps.label($U(), P, Id), in(P, Col), c.mark(Col) }.
+
+.decl comp_winner(id: CompId)
+comp_winner(Id) :- comp_marks(Id, N), N = max M : { comp_marks(_, M) }.
+
+// Crop to the winner's bounding box.
+.init box = Bbox<Unit>
+box.cell($U(), P) :- comp_winner(Id), comps.label($U(), P, Id).
+box.grid($U(), P) :- in(P, _).
+
+.init crop = Reframe<Position>
+crop.outer(P, M) :- box.inside($U(), P), box.margin($U(), M).
+crop.cell(P, P)  :- box.inside($U(), P).
+
+out(P_out, Col, $Object()) :- in(P, Col), crop.inner(P, P_out).
+
+// --- $Window ---
+
+// Placements where the square lands all-ink.
+.init occ = Occurrences<Unit>
+occ.cell($U(), P)  :- in(P, Col), !c.bg(Col).
+occ.shape($U(), P) :- c.shape(P).
+
+// Cells of each window, at their in-window positions.
+.decl window_cell(anchor: Position, p_inner: Position, p_grid: Position)
+window_cell(A, S, P) :- occ.occurrence($U(), A), c.shape(S), compose(A, S, P).
+
+.decl window_marks(anchor: Position, n: number)
+window_marks(A, N) :-
+    occ.occurrence($U(), A),
+    N = count : { window_cell(A, _, P), in(P, Col), c.mark(Col) }.
+
+.decl window_winner(anchor: Position)
+window_winner(A) :- window_marks(A, N), N = max M : { window_marks(_, M) }.
+
+out(P_out, Col, $Window()) :- window_winner(A), window_cell(A, P_out, P), in(P, Col).
+
+.output out(IO=stdout)

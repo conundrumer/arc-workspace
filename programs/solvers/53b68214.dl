@@ -1,0 +1,75 @@
+// 53b68214
+// concept: grow wallpaper walk
+// The input is periodic along c.growth: it agrees with itself under a
+// shift, and the smallest agreeing shift is the period. The output frame
+// extends the input toward c.growth, and the pattern continues period by
+// period into the new cells. Two models of the grown extent:
+//
+//   $Square() — it matches the perpendicular extent.
+//   $Canvas() — it is stored (c.out_dim); the perpendicular passes through.
+//
+// The models coincide here (width and canvas are both 10 in every pair);
+// they diverge when the input width differs from the canvas.
+
+#include "../lib.dl"
+
+.type Choice = Square {} | Canvas {}
+
+.comp Consts {
+    .decl growth(d: Dir)     growth(DIR_B).
+
+    // --- $Canvas ---
+    .decl out_dim(k: number) out_dim(10).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// Shifts along c.growth under which the input disagrees with itself
+// somewhere on the overlap.
+.decl shift_bad(k: number)
+shift_bad(K) :-
+    in(P, Col),
+    c.growth(D), axis_of(D, A), sub_extent(P, A, K),    // candidate shift
+    jump_delta(D, K, Delta), compose(P, Delta, P2),     // shifted cell
+    in(P2, Col2), Col2 != Col.                          // disagrees
+
+.decl shift_ok(k: number)
+shift_ok(K) :-
+    in(P, _), c.growth(D), axis_of(D, A), sub_extent(P, A, K),
+    !shift_bad(K).
+
+.decl period(k: number)
+period(K) :- shift_ok(K), K = min K2 : { shift_ok(K2) }.
+
+.decl width(w: number)
+width(W) :- in(P, _), c.growth(D), axis_of(D, A), perp(A, A2), axis_dim(P, A2, W).
+
+// Per-case output frame.
+.init frame = Frame2D<Choice>
+
+// --- $Square ---
+frame.extent($Square(), A, W) :- width(W), axis_elem(A).
+
+// --- $Canvas ---
+frame.extent($Canvas(), A, K)  :- c.growth(D), axis_of(D, A), c.out_dim(K).
+frame.extent($Canvas(), A2, W) :- width(W), c.growth(D), axis_of(D, A), perp(A, A2).
+
+// The input seated against the edge the growth flows away from.
+.decl placed(ch: Choice, p_grid: Position, p_in: Position)
+placed(Ch, P_grid, P_in) :-
+    frame.cell(Ch, P_grid), in(P_in, _),
+    c.growth(D), opposite(D, O), slab_anchor(O, P_in, P_grid).
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// The input in place; the pattern continues one period at a time.
+out(P_grid, Col, Ch) :- placed(Ch, P_grid, P_in), in(P_in, Col).
+out(P2, Col, Ch) :-
+    out(P1, Col, Ch),
+    period(K), c.growth(D), jump_delta(D, K, Delta), compose(P1, Delta, P2),
+    frame.cell(Ch, P2).
+
+.output out(IO=stdout)

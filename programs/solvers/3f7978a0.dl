@@ -1,0 +1,57 @@
+// 3f7978a0
+// concept: crop markers select
+// Two parallel c.bar lines over bg and noise, each end capped one step
+// beyond by a c.cap cell. Output is the spanned region cropped, content
+// passing through. Two claims of the region's along-axis extent:
+//
+//   $Cap  — the cap cells bound it: the region is the bbox of bars and caps.
+//   $Grow — the bar bbox grows one step along the axis; the caps are noise.
+
+#include "../lib.dl"
+
+.type Choice = Cap {} | Grow {}
+.type BoxKey = [ch: Choice, p: Position]
+
+.comp Consts {
+    // --- shared ---
+    .decl bar(c: Color)   bar(5).
+    .decl axis(a: Axis)   axis(AXIS_V).
+
+    // --- $Cap ---
+    .decl cap(c: Color)   cap(8).
+}
+
+.init c = Consts
+
+.decl impl_choice(ch: Choice)
+impl_choice($Cap()). impl_choice($Grow()).
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl bar(p: Position)
+bar(P) :- in(P, Col), c.bar(Col).
+
+// Cell one step beyond a bar cell along the axis.
+.decl stepped(p: Position)
+stepped(P2) :- bar(P), c.axis(A), axis_of(D, A), step_delta(D, S), compose(P, S, P2).
+
+.init box = Bbox<Choice>
+box.grid(Ch, P) :- impl_choice(Ch), in(P, _).
+box.cell(Ch, P) :- impl_choice(Ch), bar(P).
+
+// --- $Cap ---
+box.cell($Cap(), P) :- stepped(P), in(P, Col), c.cap(Col).
+
+// --- $Grow ---
+box.cell($Grow(), P) :- stepped(P).
+
+// Each box cell viewed from the box, keyed by choice and cell.
+.init boxframe = Reframe<BoxKey>
+boxframe.outer([Ch, P], M) :- box.inside(Ch, P), box.margin(Ch, M).
+boxframe.cell([Ch, P], P)  :- box.inside(Ch, P).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_out, Col, Ch) :- in(P, Col), boxframe.inner([Ch, P], P_out).
+
+.output out(IO=stdout)

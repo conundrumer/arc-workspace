@@ -1,0 +1,66 @@
+// d9f24cd1
+// concept: markers walk
+// Each mark walks away from the mark edge, painting the mark color; a
+// block-colored cell ahead deflects the walk one cell to the dodge side.
+// Two models of the mark edge:
+//
+//   $Dir  — c.dir names it.
+//   $Edge — the edge each mark sits on.
+//
+// The models coincide here (every mark is on the bottom edge); they
+// diverge when marks sit on another edge.
+
+#include "../lib.dl"
+
+.type Choice = Dir {} | Edge {}
+
+.comp Consts {
+    .decl mark(c: Color)    mark(2).
+    .decl block(c: Color)   block(5).
+
+    // Dodge side, as a turn from the walk direction.
+    .decl dodge(s: Sense)   dodge(SENSE_CW).
+
+    // --- $Dir ---
+    .decl dir(d: Dir)       dir(DIR_B).   // mark edge; walks flow away from it
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// The walk: starts at each mark, headed away from the mark edge; steps
+// ahead while clear; deflects one cell to the dodge side when blocked.
+.decl walk(p: Position, d: Dir, ch: Choice)
+
+// --- $Dir ---
+walk(P, W, $Dir()) :-
+    in(P, Col), c.mark(Col),       // mark cell
+    c.dir(D), opposite(D, W).      // away from the c.dir edge
+
+// --- $Edge ---
+walk(P, W, $Edge()) :-
+    in(P, Col), c.mark(Col),       // mark cell
+    dir_elem(D), dist(P, D, 0),    // on some edge
+    opposite(D, W).                // away from it
+
+walk(P2, W, Ch) :-
+    walk(P, W, Ch),
+    step_delta(W, S), compose(P, S, P2),    // cell ahead
+    in(P2, Col), !c.block(Col).             // on-grid and clear
+walk(P2, W, Ch) :-
+    walk(P, W, Ch),
+    step_delta(W, S), compose(P, S, Q),     // cell ahead
+    in(Q, Col), c.block(Col),               // holds the block color
+    c.dodge(Sn), turn(Sn, W, Dd),           // dodge direction
+    step_delta(Dd, S2), compose(P, S2, P2), in(P2, _).  // sidestep
+
+.decl impl_choice(ch: Choice)
+impl_choice($Dir()). impl_choice($Edge()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- walk(P, _, Ch), c.mark(Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !walk(P, _, Ch).
+
+.output out(IO=stdout)

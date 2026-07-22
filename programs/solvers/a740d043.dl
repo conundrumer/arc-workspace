@@ -1,0 +1,34 @@
+// a740d043
+// concept: crop mapping
+// Output is the grid cropped to the ink's bounding box; bg cells inside
+// repaint to c.hole.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl bg(c: Color)      bg(1).
+    .decl hole(c: Color)    hole(0).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !c.bg(Col).
+
+.init box = Bbox<Unit>
+box.cell($U(), P) :- ink(P, _).
+box.grid($U(), P) :- in(P, _).
+
+// Each box cell viewed from the box, keyed by the cell.
+.init boxframe = Reframe<Position>
+boxframe.outer(P, M) :- box.inside($U(), P), box.margin($U(), M).
+boxframe.cell(P, P)  :- box.inside($U(), P).
+
+.decl out(p: Position, col: Color)
+out(P_out, Col) :- ink(P, Col), boxframe.inner(P, P_out).
+out(P_out, Col) :- in(P, C), c.bg(C), c.hole(Col), boxframe.inner(P, P_out).
+
+.output out(IO=stdout)

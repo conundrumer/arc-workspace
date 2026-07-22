@@ -115,6 +115,8 @@ corner(K, Diag, P) :-
 
 **Second home (protocol step 1).** 62b74c02 (`block_edge`, Unit key): `edge_cell` alone, without the corner readout — the boundary column the span fill copies from.
 
+**Third home (protocol step 1).** 4522001f (`block_edge`, body rules): $Mark reads the mark cell's block corner through `diag_dirs`, then takes its opposite.
+
 ## `Between<Key>` — cells between two keyed marks on a line
 
 The two-sided fold of `Ray` (`lib.dl`). Demoted from lib in the `Ray` factoring: the fold is one rule, and it stays solver-local until real use justifies comp form again.

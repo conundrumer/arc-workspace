@@ -1,0 +1,61 @@
+// f4081712
+// family: 67b4a34d
+
+#include "../lib.dl"
+
+.type Choice = Stored {} | Detect {}
+
+.comp Consts {
+    // --- shared ---
+    .decl mask(col: Color)
+    mask(3).
+
+    // --- $Stored ---
+    .decl sym(d: D4)
+    sym(D4_ID). sym(D4_CW). sym(D4_HT). sym(D4_CC).
+    sym(D4_LR). sym(D4_TB). sym(D4_DG). sym(D4_AD).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl clean(p: Position, col: Color)
+clean(P, Col) :- in(P, Col), !c.mask(Col).
+
+.decl masked(p: Position)
+masked(P) :- in(P, Col), c.mask(Col).
+
+.init box = Bbox<Unit>
+box.cell($U(), P) :- masked(P).
+
+// Each masked cell viewed from the mask's box, keyed by the cell.
+.init boxframe = Reframe<Position>
+boxframe.outer(P, M) :- masked(P), box.margin($U(), M).
+boxframe.cell(P, P)  :- masked(P).
+
+.decl out(p: Position, col: Color, c: Choice)
+
+// --- $Stored ---
+
+out(P_out, Col, $Stored()) :-
+    boxframe.inner(P, P_out),      // masked cell in the box frame
+    c.sym(D), apply(D, P, P2),     // symmetric counterpart
+    clean(P2, Col).
+
+// --- $Detect ---
+
+// D maps some clean cell to a clean cell of a different color.
+.decl broken(d: D4)
+broken(D) :-
+    d4_elem(D),
+    clean(P, Col), apply(D, P, P2),
+    clean(P2, C2), Col != C2.
+
+out(P_out, Col, $Detect()) :-
+    boxframe.inner(P, P_out),                   // masked cell in the box frame
+    d4_elem(D), !broken(D), apply(D, P, P2),    // unbroken-symmetry image
+    clean(P2, Col).
+
+.output out(IO=stdout)

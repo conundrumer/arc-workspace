@@ -1,0 +1,66 @@
+// 75b8110e
+// family: ea9794b1
+
+#include "../lib.dl"
+
+.type Choice = Order {} | Ink {}
+
+.comp Consts {
+    .decl bg(col: Color)     bg(0).
+    .decl tiles(n: number)   tiles(2).
+
+    // --- $Order ---
+    .decl prio(p: Position, r: number)
+    GRID_2x2(prio,
+        3, 0,
+        1, 2)
+
+    // --- $Ink ---
+    .decl ink_rank(c: Color, r: number)
+    ink_rank(5, 0). ink_rank(6, 1). ink_rank(9, 2). ink_rank(4, 3).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl tile_cell(p_tile: Position, p_intile: Position, col: Color)
+tile_cell(P_tile, P_intile, Col) :-
+    in(P_grid, Col),
+    c.tiles(N),
+    divide_2d(P_grid, N, 0, P_tile, P_intile).
+
+// Ink at an output cell, keyed by its tile.
+.decl tile_ink(p_tile: Position, p: Position, col: Color)
+tile_ink(P_tile, P_intile, Col) :- tile_cell(P_tile, P_intile, Col), !c.bg(Col).
+
+.decl ink_at(p: Position, col: Color)
+ink_at(P, Col) :- tile_ink(_, P, Col).
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.decl impl_choice(ch: Choice)
+impl_choice($Order()). impl_choice($Ink()).
+
+out(P, Col, Ch) :- impl_choice(Ch), tile_cell(_, P, _), !ink_at(P, _), c.bg(Col).
+
+// --- $Order ---
+
+.decl order_beaten(p_tile: Position, p: Position)
+order_beaten(T, P) :-
+    tile_ink(T, P, _), tile_ink(T2, P, _),
+    c.prio(T2, R2), c.prio(T, R), R2 < R.
+
+out(P, Col, $Order()) :- tile_ink(T, P, Col), !order_beaten(T, P).
+
+// --- $Ink ---
+
+.decl ink_beaten(p: Position, col: Color)
+ink_beaten(P, Col) :-
+    ink_at(P, Col), ink_at(P, C2),
+    c.ink_rank(C2, R2), c.ink_rank(Col, R), R2 < R.
+
+out(P, Col, $Ink()) :- ink_at(P, Col), !ink_beaten(P, Col).
+
+.output out(IO=stdout)

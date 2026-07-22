@@ -1,0 +1,211 @@
+// 4522001f
+// concept: markers stamp walk lookup d4
+// A 2x2 block sits against a grid corner, its cell at the grid center
+// colored c.mark. On the c.canvas frame, the stored square c.box stamps
+// along the diagonal from that corner.
+// Choice = $Pair() | $Loc(l, r, f):
+//
+//   $Pair() — the task as one stored exemplar pair: the rotation matching
+//             c.pair_in onto the input applies to c.pair_out.
+//
+//   l (the squares' corner):
+//     $Corner() — the grid corner the block touches.
+//     $Mark()   — the block corner opposite the mark cell.
+//   r (the squares):
+//     $Grow()  — c.box and one diagonal step.
+//     $Fit()   — c.box chained while it fits whole.
+//     $Stamp() — c.mask, the whole output as one stored picture.
+//   f (square color):
+//     $Block() — the block's non-mark color.
+//     $Ink()   — an independent c.ink.
+//
+// Stored pictures (c.box, c.mask) are drawn at their own corner and
+// rotated to the located corner.
+//
+// Coincide here: the block touches the corner opposite the mark, the
+// stored square seats at that corner at twice the block's size, two
+// squares exactly fit the frame, the mask stores that same two-square
+// picture, every pair is a joint rotation of the stored exemplar, and
+// the block color equals c.ink.
+
+#include "../lib.dl"
+
+.type Locate = Corner {} | Mark {}
+.type Render = Grow {} | Fit {} | Stamp {}
+.type Paint  = Block {} | Ink {}
+.type Choice = Pair {} | Loc {l: Locate, r: Render, f: Paint}
+
+.comp Consts {
+    .init helpers = ConstsHelpers
+
+    // --- shared ---
+    .decl bg(c: Color)    bg(0).
+    .decl mark(c: Color)  mark(2).
+
+    .decl canvas(p: Position)
+    canvas(P) :- helpers.frame_pos([9, 9], P).
+
+    // --- $Ink ---
+    .decl ink(c: Color)   ink(3).
+
+    // --- $Grow / $Fit ---
+    .decl box_corner(d: DiagDir)  box_corner(DIAG_TL).   // the corner the square is drawn at
+    .decl box(m: Position)  box([0, 5, 0, 5]).           // the first square, as margins
+
+    // --- $Stamp ---
+    .decl mask_corner(d: DiagDir)  mask_corner(DIAG_TL).   // the corner the picture is drawn at
+
+    .decl mask(p: Position, v: number)   // output picture; non-zero cells take the paint
+    GRID_9x9(mask,
+        1, 1, 1, 1, 0, 0, 0, 0, 0,
+        1, 1, 1, 1, 0, 0, 0, 0, 0,
+        1, 1, 1, 1, 0, 0, 0, 0, 0,
+        1, 1, 1, 1, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 1, 1, 1, 1, 0,
+        0, 0, 0, 0, 1, 1, 1, 1, 0,
+        0, 0, 0, 0, 1, 1, 1, 1, 0,
+        0, 0, 0, 0, 1, 1, 1, 1, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0)
+
+    // --- $Pair ---
+    .decl pair_in(p: Position, col: Color)    // exemplar input
+    GRID_3x3(pair_in,
+        3, 3, 0,
+        3, 2, 0,
+        0, 0, 0)
+
+    .decl pair_out(p: Position, col: Color)   // exemplar output
+    GRID_9x9(pair_out,
+        3, 3, 3, 3, 0, 0, 0, 0, 0,
+        3, 3, 3, 3, 0, 0, 0, 0, 0,
+        3, 3, 3, 3, 0, 0, 0, 0, 0,
+        3, 3, 3, 3, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 3, 3, 3, 3, 0,
+        0, 0, 0, 0, 3, 3, 3, 3, 0,
+        0, 0, 0, 0, 3, 3, 3, 3, 0,
+        0, 0, 0, 0, 3, 3, 3, 3, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0)
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// --- shared ---
+
+// The block: the non-bg cells, mark included.
+.decl block(p: Position)
+block(P) :- in(P, Col), !c.bg(Col).
+
+.init bb = Bbox<Unit>
+bb.cell($U(), P) :- block(P).
+
+// --- Locate cases: the squares' corner --------------------------------------
+
+.decl locate_choice(l: Locate)
+locate_choice($Corner()). locate_choice($Mark()).
+
+.decl diag(l: Locate, d: DiagDir)
+
+// --- $Corner ---
+// The grid corner the block touches.
+diag($Corner(), Diag) :-
+    bb.margin($U(), M),
+    diag_dirs(Diag, _, D1, D2), dist(M, D1, 0), dist(M, D2, 0).
+
+// --- $Mark ---
+// The block corner opposite the mark cell (Bbox.corner staged form).
+.decl block_edge(p: Position, d: Dir)
+block_edge(P, D) :- block(P), dist(P, D, Kd), bb.edge_min($U(), D, Kd).
+
+diag($Mark(), Diag) :-
+    in(P, Col), c.mark(Col),                                // the mark cell
+    diag_dirs(D2, _, Da, Db), block_edge(P, Da), block_edge(P, Db),   // at a block corner
+    diag_opposite(D2, Diag).
+
+// --- Render cases: the squares along the diagonal ----------------------------
+
+// Renders on the c.canvas frame; $Stamp brings its own.
+.decl render_choice(r: Render)
+render_choice($Grow()). render_choice($Fit()).
+
+// The rotation carrying drawn corner Dm to the located corner.
+.decl rot_to(l: Locate, dm: DiagDir, r: D4)
+rot_to(L, Dm, R) :-
+    diag(L, Diag), diag_dir_elem(Dm), c4_elem(R),
+    diag_step_delta(Dm, S1), apply(R, S1, S2), diag_step_delta(Diag, S2).
+
+// The first square: the stored box, rotated to the located corner.
+.decl box0(l: Locate, m: Position)
+box0(L, M) :- c.box_corner(Db), rot_to(L, Db, R), c.box(Mb), apply(R, Mb, M).
+
+// Square cells in the square's own frame.
+.init sq = Reframe<Locate>
+sq.outer(L, M) :- box0(L, M).
+sq.cell(L, P)  :- box0(L, M), c.canvas(P), geq(P, M).
+
+// Box shift by one square: flush by the square's own extents.
+.decl sq_jump(l: Locate, j: Position)
+sq_jump(L, J) :-
+    diag(L, Diag), diag_opposite(Diag, Od), diag_dirs(Od, A, O1, O2),   // dirs away from the corner
+    sq.inner(L, P), axis_dims(P, A, K1, K2),
+    jump_delta(O1, K1, J1), jump_delta(O2, K2, J2), compose(J1, J2, J).
+
+// --- $Grow ---
+// The first square and one diagonal step.
+.decl grow_box(l: Locate, m: Position)
+grow_box(L, M)  :- box0(L, M).
+grow_box(L, M2) :- box0(L, M), sq_jump(L, J), compose(M, J, M2), geq(M2, ORIGIN).
+
+// --- $Fit ---
+// Boxes chain while they stay on the frame.
+.decl fit_box(l: Locate, m: Position)
+fit_box(L, M)  :- box0(L, M).
+fit_box(L, M2) :- fit_box(L, M), sq_jump(L, J), compose(M, J, M2), geq(M2, ORIGIN).
+
+// --- Paint cases: the square color --------------------------------------------
+
+.decl paint_choice(f: Paint)
+paint_choice($Block()). paint_choice($Ink()).
+
+.decl paint(col: Color, f: Paint)
+paint(Col, $Block()) :- in(_, Col), !c.bg(Col), !c.mark(Col).
+paint(Col, $Ink())   :- c.ink(Col).
+
+// --- Output --------------------------------------------------------------------
+
+.decl lit(p: Position, col: Color, ch: Choice)
+lit(P, Col, $Loc(L, $Grow(), F)) :- grow_box(L, M), c.canvas(P), geq(P, M), paint(Col, F).
+lit(P, Col, $Loc(L, $Fit(), F))  :- fit_box(L, M), c.canvas(P), geq(P, M), paint(Col, F).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Loc(L, R, F)) :- locate_choice(L), render_choice(R), paint_choice(F).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- lit(P, Col, Ch).
+out(P, Col, Ch) :- impl_choice(Ch), c.canvas(P), !lit(P, _, Ch), c.bg(Col).
+
+// --- $Stamp ---
+// Canvas is the mask frame; ink and bg both read the rotated mask.
+out(Q, Col, $Loc(L, $Stamp(), F)) :-
+    c.mask_corner(Dm), rot_to(L, Dm, R),         // the mask's rotation
+    c.mask(Pm, V), V != 0, apply(R, Pm, Q),      // ink cells, rotated
+    paint(Col, F).
+out(Q, Col, $Loc(L, $Stamp(), F)) :-
+    c.mask_corner(Dm), rot_to(L, Dm, R),
+    c.mask(Pm, 0), apply(R, Pm, Q),              // bg cells, rotated
+    paint_choice(F), c.bg(Col).
+
+// --- $Pair ---
+// Rotations matching the stored input onto the observed input.
+.decl pair_mismatch(r: D4)
+pair_mismatch(R) :- c4_elem(R), c.pair_in(Pk, Col), apply(R, Pk, P), !in(P, Col).
+
+.decl pair_rot(r: D4)
+pair_rot(R) :- c4_elem(R), !pair_mismatch(R).
+
+// Canvas and colors both come from the stored output.
+out(Q, Col, $Pair()) :- pair_rot(R), c.pair_out(Pm, Col), apply(R, Pm, Q).
+
+.output out(IO=stdout)
