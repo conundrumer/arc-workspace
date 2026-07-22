@@ -5,6 +5,7 @@ argument-hint: [solver|<task_id>]
 disable-model-invocation: true
 ---
 
+<!-- batch:skip -->
 Read all docs in `docs/wf-solver/`.
 
 Then dispatch on `$ARGUMENTS`:
@@ -12,16 +13,19 @@ Then dispatch on `$ARGUMENTS`:
 - `solver` — run `bash scripts/queue.sh` for the next queued solver and work it per the cadence below.
 - a task id — work that solver per the cadence below.
 - anything else — an ordinary working request; proceed with the docs as context. A solver session is declared by keyword, never inferred from prose.
+<!-- /batch:skip -->
 
 # Solver session
 
 A solver session writes a Souffle solver (`programs/solvers/<task_id>.dl`) that models an ARC task. Reference: the TS solver (`../arc-synth-bun/programs/solvers/`).
 
+<!-- batch:skip -->
 ## Entry
 
 - Read `programs/lib.dl` in full before writing or editing a solver.
 - If requested to continue from prior solver work, run `uv run python scripts/inspect-session.py --solver-only` and read the output in full.
 - `bash scripts/queue.sh` prints the next solver and its estimated complexity.
+<!-- /batch:skip -->
 
 ## Cadence
 
@@ -47,6 +51,7 @@ For prune and `revise`, the reader and purpose: a future session who needs to un
 
 When the user says `cleanup`, create tasks for Simplify and Prune and do them.
 
+<!-- batch:skip -->
 ## `next`
 
 - User trigger to advance to the next solver. No advance without it.
@@ -55,6 +60,7 @@ When the user says `cleanup`, create tasks for Simplify and Prune and do them.
 ## `commit`
 
 - User trigger to commit. No commit without it. Make multiple commits when changes split cleanly. This includes pre-existing session work. Batch solvers appropriately.
+<!-- /batch:skip -->
 
 ## Lib addition protocol
 
