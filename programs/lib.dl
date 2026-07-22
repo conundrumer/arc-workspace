@@ -672,6 +672,20 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     label(Ky, P, $Comp(Min)) :- node(Ky, P), Min = min ord(Q) : { conn(Ky, P, Q) }.
 }
 
+// Connected components under 8-adjacency — Components with the four
+// diagonal steps added. A wrapper extending Components' step set, so the
+// closure rules stay in one place and the name carries the adjacency claim.
+.comp Components8<Key> {
+    .init c4 = Components<Key>
+    c4.step(S) :- diag_dir_elem(Diag), diag_step_delta(Diag, S).
+
+    .decl node(key: Key, p: Position)
+    c4.node(K, P) :- node(K, P).
+
+    .decl label(key: Key, p: Position, id: CompId)
+    label(K, P, Id) :- c4.label(K, P, Id).
+}
+
 // Occurrences of a shape among cells, per key: placements where the key's
 // shape footprint lands fully on the key's cell set — the ARC "find this
 // shape" operation. Placements derive backward from the data (cell minus

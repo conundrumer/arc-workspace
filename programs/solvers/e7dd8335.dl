@@ -38,19 +38,6 @@ boxframe.outer([P, $Whole()], M) :- ink(P), box.margin($U(), M).
 
 // --- $Each ---
 
-// Connected components under 8-adjacency — lib Components plus the
-// diagonal steps. Lib candidate.
-.comp Components8<Key> {
-    .init c4 = Components<Key>
-    c4.step(S) :- diag_dir_elem(Diag), diag_step_delta(Diag, S).
-
-    .decl node(key: Key, p: Position)
-    c4.node(K, P) :- node(K, P).
-
-    .decl label(key: Key, p: Position, id: CompId)
-    label(K, P, Id) :- c4.label(K, P, Id).
-}
-
 .init comps = Components8<Unit>
 comps.node($U(), P) :- ink(P).
 

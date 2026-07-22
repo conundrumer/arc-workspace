@@ -203,25 +203,6 @@ One component from a seed: the seeded readout of the 4-adjacency closure that li
 
 **Task-local home (protocol step 1).** 1e81d6f9: a corner-edge seed picks the L frame. The stray mask cell stays unreachable, so the following `Bbox` does not grow to span it.
 
-## `Components8<Key>` — connected components under 8-adjacency
-
-The 8-adjacency variant of `Components`: the same closure and labels with the four diagonal steps added. Written as a wrapper that instantiates `Components` and extends its `step` set, so the closure rules stay in one place and the wrapper's name carries the adjacency claim. The `Reach` entry names the same axis for seeded connectivity; a lib move should settle both the same way — sibling comps or a parameterized adjacency input.
-
-```
-.comp Components8<Key> {
-    .init c4 = Components<Key>
-    c4.step(S) :- diag_dir_elem(Diag), diag_step_delta(Diag, S).
-
-    .decl node(key: Key, p: Position)
-    c4.node(K, P) :- node(K, P).
-
-    .decl label(key: Key, p: Position, id: CompId)
-    label(K, P, Id) :- c4.label(K, P, Id).
-}
-```
-
-**Task-local home (protocol step 1).** e7dd8335 (Unit key): $Each's objects — a ring whose cells touch only diagonally, plus a block touching it at a corner.
-
 ## `diag_edge_delta` — edge delta at a corner
 
 The DiagDir peer of `edge_delta`: a Position holding extents at the two edges of corner `diag`, axis-tagged — k1 at the edge on axis a, k2 across. It grows toward a corner, where `diag_step_delta` moves toward a corner. It is the delta counterpart of the `diag_dist` readout.
