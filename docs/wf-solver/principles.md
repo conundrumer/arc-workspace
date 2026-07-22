@@ -20,6 +20,8 @@ The body is faithful to the concept of the task: the actual task, not an artifac
 
 **Indirection.** Data enters in the form its consumer reads, keyed by objects already in play. A layer that only re-encodes content is structure the task does not claim. Examples: renaming keys into a second vocabulary (a 2×2 tile position as its corner name); routing a flat correspondence through intermediate coordinates; storing an order as successor edges, which closure must expand before a comparison can read it. Conversion is justified when the two sides differ in content, as with a sparse set and its ranking (`Ordinal`); it is not justified when they differ only in encoding. The test: when a rule's only function is to convert one representation of a thing into another, one of the two representations is unjustified. Direct forms: a68b268e keys precedence by the tile positions its divide produces; e633a9e5 stores its correspondence flat, cell to cell.
 
+**Derived vs stored.** A value the pairs exhibit directly is task data: store it in Consts. A body derivation instead claims that the value depends on its source, and the claim needs a witness: some pair varies the source and the value follows. A value that is the same in every pair has no witness; a derivation that reproduces it makes a claim the data does not support and leaves the datum unstored (4522001f stores its 9×9 canvas; N·N of the 3×3 input would reproduce it). A case node may carry an unwitnessed derivation as a rival beside the data case (3b4c2228's count render); setup has no case to carry one.
+
 **Zero is absence.** In spatial data, the number 0 means no gap, no offset, no distance: the lack of structure. It is never task data and needs no Consts slot; a body may write `0` directly.
 
 ## Invariance
