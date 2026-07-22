@@ -1,0 +1,61 @@
+// ded97339
+// concept: markers span
+// Marks connect: cells between two marks on their row or column
+// fill with the mark color. Two claims of what that color is, tagged on
+// out's Choice:
+//
+//   $Ink  — marks are c.ink cells; spans fill c.ink.
+//   $Self — marks are any non-bg cells; each color spans separately and
+//           fills with itself.
+
+#include "../lib.dl"
+
+.type Choice = Ink {} | Self {}
+
+.comp Consts {
+    .decl bg(c: Color)   bg(0).
+
+    // --- $Ink ---
+    .decl ink(c: Color)  ink(8).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// --- $Ink ---
+
+// Cells between two ink marks on their line, marks included (Ray's reach
+// is inclusive).
+.init ink_rays = Ray<Unit>
+ink_rays.dir(D)        :- dir_elem(D).
+ink_rays.cell(P)       :- in(P, _).
+ink_rays.mark($U(), Q) :- in(Q, Ink), c.ink(Ink).
+
+.decl ink_spanned(p: Position)
+ink_spanned(P) :- ink_rays.ray($U(), P, D), opposite(D, O), ink_rays.ray($U(), P, O).
+
+out(P, Ink, $Ink()) :- ink_spanned(P), c.ink(Ink).
+out(P, Col, $Ink()) :- in(P, Col), !ink_spanned(P).
+
+// --- $Self ---
+
+// Per-color spans: cells between two marks of one color on their line.
+.init self_rays = Ray<Color>
+self_rays.dir(D)       :- dir_elem(D).
+self_rays.cell(P)      :- in(P, _).
+self_rays.mark(Col, Q) :- in(Q, Col), !c.bg(Col).
+
+.decl self_span(p: Position, col: Color)
+self_span(P, Col) :- self_rays.ray(Col, P, D), opposite(D, O), self_rays.ray(Col, P, O).
+
+.decl self_spanned(p: Position)
+self_spanned(P) :- self_span(P, _).
+
+out(P, Col, $Self()) :- self_span(P, Col).
+out(P, Col, $Self()) :- in(P, Col), !self_spanned(P).
+
+.output out(IO=stdout)

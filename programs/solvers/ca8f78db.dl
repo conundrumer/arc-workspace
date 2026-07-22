@@ -1,0 +1,109 @@
+// ca8f78db
+// concept: wallpaper repair lines
+// A wallpaper — all-bg separator rows alternating with one repeating
+// pattern row — corrupted by noise patches; the output restores it.
+//
+//   $Shift  — translation repair, detected: a shift unbroken on clean
+//             cells maps each noise cell to a clean counterpart.
+//   $Period — translation repair, stored: cells a stored period apart
+//             along its axis are equal. Only the vertical period is task
+//             data (2 in every pair); the horizontal period varies per
+//             pair, so it has no row.
+//   $Rows   — line structure: rows with a clean non-bg cell are pattern
+//             rows and equal each other; the rest are separators, all bg.
+
+#include "../lib.dl"
+
+.type Choice = Shift {} | Period {} | Rows {}
+
+.comp Consts {
+    // --- shared ---
+    .decl noise(col: Color)  noise(0).
+
+    // --- $Period ---
+    .decl period(a: Axis, k: number)  period(AXIS_V, 2).
+
+    // --- $Rows ---
+    .decl bg(col: Color)     bg(1).
+    .decl axis(a: Axis)      axis(AXIS_H).   // lines run along H
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl clean(p: Position, col: Color)
+clean(P, Col) :- in(P, Col), !c.noise(Col).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Shift()). impl_choice($Period()). impl_choice($Rows()).
+
+.decl out(p: Position, col: Color, c: Choice)
+
+// Clean cells pass through under every case.
+out(P, Col, Ch) :- impl_choice(Ch), clean(P, Col).
+
+// --- $Shift ---
+
+// Candidate shifts: every axis-aligned delta within the frame,
+// materialized once (inline cost).
+.decl shift_delta(delta: Position)
+shift_delta(Delta) :-
+    in(P, _),
+    axis_of(D, A), sub_extent(P, A, K),                // each axis, each distance
+    jump_delta(D, K, Delta).
+
+// A shift disagrees on some clean pair.
+.decl shift_broken(delta: Position)
+shift_broken(Delta) :-
+    clean(P, Col),
+    shift_delta(Delta), compose(P, Delta, P2),         // shifted cell
+    clean(P2, C2), C2 != Col.                          // disagrees
+
+out(P, Col, $Shift()) :-
+    in(P, N), c.noise(N),                              // corrupted cell
+    shift_delta(Delta), !shift_broken(Delta),          // unbroken shift
+    compose(P, Delta, P2), clean(P2, Col).             // its image
+
+// --- $Period ---
+
+// One stored period as a delta, both dirs, materialized once (inline cost).
+.decl period_delta(delta: Position)
+period_delta(Delta) :-
+    c.period(A, K), axis_of(D, A), jump_delta(D, K, Delta).
+
+// Cells whole stored periods apart along the period's axis.
+.decl peer(p: Position, q: Position)
+peer(P, P) :- in(P, _).
+peer(P, Q2) :-
+    peer(P, Q),
+    period_delta(Delta), compose(Q, Delta, Q2),        // one period over
+    in(Q2, _).
+
+out(P, Col, $Period()) :-
+    in(P, N), c.noise(N),                              // corrupted cell
+    peer(P, Q), clean(Q, Col).                         // clean peer
+
+// --- $Rows ---
+
+// A row is identified by its across component; pattern rows have a clean
+// non-bg cell.
+.decl pattern_row(across: Position)
+pattern_row(Across) :-
+    clean(P, Col), !c.bg(Col),
+    c.axis(A), split(P, A, _, Across).
+
+out(P, Col, $Rows()) :-
+    in(P, N), c.noise(N),                              // corrupted cell
+    c.axis(A), split(P, A, _, Across),
+    !pattern_row(Across),                              // separator row
+    c.bg(Col).
+out(P, Col, $Rows()) :-
+    in(P, N), c.noise(N),                              // corrupted cell
+    c.axis(A), split(P, A, Along, Across),
+    pattern_row(Across),                               // pattern row
+    clean(Q, Col),                                     // clean source cell
+    split(Q, A, Along, Across2), pattern_row(Across2). // same column, pattern row
+
+.output out(IO=stdout)

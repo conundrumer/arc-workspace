@@ -1,0 +1,46 @@
+// 23581191
+// concept: markers cross
+// Each mark paints its full row and column in its color; a cell where
+// crosses meet gets c.cross_color. Cases differ on what counts as a meeting:
+//
+//   $Color() — lines of two distinct colors cover the cell.
+//   $Mark()  — crosses of two distinct marks cover the cell.
+
+#include "../lib.dl"
+
+.type Choice = Color {} | Mark {}
+
+.comp Consts {
+    .decl bg(c: Color)           bg(0).
+    .decl cross_color(c: Color)  cross_color(2).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// P lies on the cross of mark Q: shares Q's line on some axis.
+.decl cross(p: Position, q: Position, col: Color)
+cross(P, Q, Col) :-
+    in(Q, Col), !c.bg(Col),                                // a mark
+    in(P, _),                                              // any cell
+    axis_elem(A), split(P, A, _, Ac), split(Q, A, _, Ac).  // same line
+
+.decl collide(ch: Choice, p: Position)
+
+// --- $Color ---
+collide($Color(), P) :- cross(P, _, C1), cross(P, _, C2), C1 != C2.
+
+// --- $Mark ---
+collide($Mark(), P) :- cross(P, Q1, _), cross(P, Q2, _), Q1 != Q2.
+
+.decl impl_choice(ch: Choice)
+impl_choice($Color()). impl_choice($Mark()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- collide(Ch, P), c.cross_color(Col).
+out(P, Col, Ch) :- impl_choice(Ch), cross(P, _, Col), !collide(Ch, P).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !cross(P, _, _), c.bg(Col).
+
+.output out(IO=stdout)

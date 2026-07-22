@@ -139,7 +139,7 @@ The two-sided fold of `Ray` (`lib.dl`). Demoted from lib in the `Ray` factoring:
 
 A mark is between under its own key (Ray's inclusive reach); 22168020 paints mark cells through this.
 
-**Task-local homes (protocol step 1).** Solver-local folds: 22168020 (Color key), 22eb0ac0 $Span (Color), a699fb00 $Span (Unit), aa18de87 $Axis and $Iso (Unit, $Iso casting all four dirs), 505fff84 $Set and $Sided (Color, strict via mark-free domain).
+**Task-local homes (protocol step 1).** Solver-local folds: 22168020 (Color key), 22eb0ac0 $Span (Color), a699fb00 $Span (Unit), aa18de87 $Axis and $Iso (Unit, $Iso casting all four dirs), 505fff84 $Set and $Sided (Color, strict via mark-free domain), ded97339 $Ink and $Self (Unit and Color, both casting all four dirs).
 
 ## `Ordinal.rev` — opposite-end pairing of an index set
 
