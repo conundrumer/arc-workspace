@@ -1,5 +1,5 @@
 // 310f3251
-// concept: tile-arrangement walk
+// concept: tile-arrangement stamp
 // Output tiles the input scale×scale. Each ink cell casts a mark one
 // diagonal step toward c.mark_diag, wrapping at the frame edges (torus);
 // ink occludes marks.

@@ -14,7 +14,7 @@ The structure every candidate claim stands on: what the input is and how it deco
 - `scale` — each input cell expands to a block
 - `decompose` — a separator or division cuts the grid into tiles
 - `crop` — output is a subregion of the input
-- `wallpaper` — a periodic pattern covers the grid
+- `wallpaper` — a periodic pattern covers a region
 - `symmetry` — a symmetry of the grid carries the model
 - `lines` — per-line or per-slice structure carries the model
 - `objects` — connected components carry the model

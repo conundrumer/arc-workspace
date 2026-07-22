@@ -1,5 +1,5 @@
 // 53b68214
-// concept: grow wallpaper walk
+// concept: grow wallpaper
 // The input is periodic along c.growth: it agrees with itself under a
 // shift, and the smallest agreeing shift is the period. The output frame
 // extends the input toward c.growth, and the pattern continues period by

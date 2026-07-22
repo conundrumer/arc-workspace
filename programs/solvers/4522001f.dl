@@ -1,5 +1,5 @@
 // 4522001f
-// concept: markers stamp walk lookup d4
+// concept: markers stamp lookup d4
 // A 2x2 block sits against a grid corner, its cell at the grid center
 // colored c.mark. On the c.canvas frame, the stored square c.box stamps
 // along the diagonal from that corner.
