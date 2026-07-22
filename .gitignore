@@ -15,3 +15,5 @@ docs/_session_*.md
 
 .claude/scheduled_tasks.lock
 scripts/.queue-cache
+
+tools/console/state/

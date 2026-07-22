@@ -61,6 +61,14 @@ After changing a patch, regenerate task JSON:
 uv run python scripts/materialize.py
 ```
 
+## Solver console
+
+A local web console for batch solver work: launch `claude -p` workers in waves, review and commit their solvers.
+
+```sh
+uv run python tools/console/server.py
+```
+
 ## Docs
 
 - [`docs/arcpatches.md`](docs/arcpatches.md) — `.arcpatch` format: file layout, verbs, variants, alts

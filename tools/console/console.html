@@ -1,0 +1,692 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>solver console</title>
+<style>
+:root {
+  --bg:#F6F7F5; --panel:#FFFFFF; --panel2:#EFF1EE; --ink:#1A1D21; --muted:#67707C;
+  --border:#E2E5E1; --accent:#0F766E; --accent-ink:#FFFFFF;
+  --well:#14171B; --well-line:#2A2F36;
+  --st-review:#B45309; --st-review-bg:#FDF0DE;
+  --st-running:#2563EB; --st-running-bg:#E4EDFD;
+  --st-commented:#7C3AED; --st-commented-bg:#EFE8FD;
+  --st-approved:#15803D; --st-approved-bg:#E2F4E8;
+  --st-muted:#67707C; --st-muted-bg:#ECEEEA;
+  --ttl-ok:#15803D; --ttl-warn:#B45309; --ttl-hot:#B91C1C;
+  --sel:#0F766E14;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bg:#101418; --panel:#161B21; --panel2:#1C2229; --ink:#E6EAEE; --muted:#8B96A3;
+  --border:#232A32; --accent:#2DD4BF; --accent-ink:#0B1210;
+  --well:#0B0E11; --well-line:#242A31;
+  --st-review:#F5A623; --st-review-bg:#3A2C10;
+  --st-running:#60A5FA; --st-running-bg:#152B4A;
+  --st-commented:#A78BFA; --st-commented-bg:#2B2150;
+  --st-approved:#4ADE80; --st-approved-bg:#123A22;
+  --st-muted:#8B96A3; --st-muted-bg:#20262D;
+  --ttl-ok:#4ADE80; --ttl-warn:#F5A623; --ttl-hot:#F87171;
+  --sel:#2DD4BF1A;
+}}
+* { box-sizing:border-box; }
+html,body { height:100%; }
+body {
+  margin:0; background:var(--bg); color:var(--ink);
+  font:13px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  display:flex; flex-direction:column; overflow:hidden;
+}
+code, pre, .mono { font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+/* ---------- top bar ---------- */
+#topbar {
+  height:46px; flex:none; display:flex; align-items:center; gap:14px; padding:0 14px;
+  background:var(--panel); border-bottom:1px solid var(--border);
+}
+#topbar .wordmark { font-family:ui-monospace,Menlo,monospace; font-size:12px; letter-spacing:.08em; }
+#topbar .wordmark b { color:var(--accent); }
+#counts { display:flex; gap:6px; align-items:center; }
+.chip {
+  display:inline-flex; align-items:center; gap:5px; padding:1px 8px; border-radius:999px;
+  font-size:11px; font-family:ui-monospace,Menlo,monospace; white-space:nowrap;
+}
+.chip .dot { width:6px; height:6px; border-radius:50%; background:currentColor; }
+.chip.review    { color:var(--st-review);    background:var(--st-review-bg); }
+.chip.running   { color:var(--st-running);   background:var(--st-running-bg); }
+.chip.commented { color:var(--st-commented); background:var(--st-commented-bg); }
+.chip.approved  { color:var(--st-approved);  background:var(--st-approved-bg); }
+.chip.queued, .chip.committed { color:var(--st-muted); background:var(--st-muted-bg); }
+#topbar .spacer { flex:1; }
+#usage { display:flex; gap:12px; font-family:ui-monospace,Menlo,monospace; font-size:11px; white-space:nowrap; }
+#usage .uok { color:var(--ttl-ok); opacity:.75; }
+#usage .uwarn { color:var(--ttl-warn); }
+#usage .uhot { color:var(--ttl-hot); }
+.wavectl { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
+.wavectl input {
+  width:44px; padding:3px 6px; border:1px solid var(--border); border-radius:5px;
+  background:var(--bg); color:var(--ink); font-family:ui-monospace,Menlo,monospace; font-size:12px;
+}
+button {
+  font:12px system-ui,sans-serif; padding:5px 12px; border-radius:6px; cursor:pointer;
+  border:1px solid var(--border); background:var(--panel2); color:var(--ink);
+}
+button:hover { border-color:var(--muted); }
+button:focus-visible, textarea:focus-visible, input:focus-visible, .row:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+button.primary { background:var(--accent); color:var(--accent-ink); border-color:transparent; }
+button.primary:disabled { opacity:.45; cursor:default; }
+
+/* ---------- main ---------- */
+#main { flex:1; display:grid; grid-template-columns:250px minmax(400px,560px) 1fr; min-height:0; }
+
+/* left rail */
+#rail { border-right:1px solid var(--border); overflow-y:auto; background:var(--panel); }
+#rail .railhead {
+  padding:8px 12px 4px; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted);
+  display:flex; justify-content:space-between;
+}
+.row {
+  display:flex; align-items:center; gap:9px; padding:7px 10px; cursor:pointer;
+  border-left:3px solid transparent;
+}
+.row:hover { background:var(--sel); }
+.row.sel { background:var(--sel); border-left-color:var(--accent); }
+.row canvas, .row .thumb-ph { flex:none; border-radius:2px; background:var(--well); }
+.row .thumb-ph { width:30px; height:30px; }
+.row .meta { min-width:0; flex:1; }
+.row .tid { font-family:ui-monospace,Menlo,monospace; font-size:12px; }
+.row .sub { font-size:10.5px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.row .side { display:flex; flex-direction:column; align-items:flex-end; gap:3px; }
+.badge-upd {
+  font-size:9px; letter-spacing:.06em; padding:1px 5px; border-radius:3px;
+  background:var(--st-review); color:var(--bg); font-weight:600;
+}
+.badge-dirty {
+  font-size:9px; letter-spacing:.06em; padding:1px 5px; border-radius:3px;
+  background:var(--st-commented); color:var(--bg); font-weight:600;
+}
+.ttl { font-family:ui-monospace,Menlo,monospace; font-size:10.5px; display:inline-flex; align-items:center; gap:4px; }
+.ttl::before { content:""; width:6px; height:6px; border-radius:50%; background:currentColor; }
+.ttl.ok { color:var(--ttl-ok); }
+.ttl.warn { color:var(--ttl-warn); }
+.ttl.hot { color:var(--ttl-hot); }
+.ttl.cold, .ttl.none { color:var(--st-muted); }
+.ttl.cold::before { background:transparent; border:1px solid currentColor; }
+.ttl.none::before { display:none; }
+.ttl.active { color:var(--st-running); }
+
+/* middle: session feed */
+#judge { border-right:1px solid var(--border); overflow-y:auto; display:flex; flex-direction:column; min-height:0; background:var(--bg); }
+#judge-head { flex:none; padding:10px 16px 8px; border-bottom:1px solid var(--border); background:var(--panel); }
+#judge-head:empty { display:none; }
+#judge-scroll { flex:1; overflow-y:auto; padding:10px 16px 6px; }
+.dhead { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.dhead .tid { font-family:ui-monospace,Menlo,monospace; font-size:17px; font-weight:600; }
+.dhead .title { color:var(--muted); font-size:12.5px; }
+.sessline {
+  display:flex; align-items:center; gap:8px; margin-top:6px; font-size:11px; color:var(--muted);
+  font-family:ui-monospace,Menlo,monospace; flex-wrap:wrap;
+}
+.sessline .cmd { background:var(--panel2); border:1px solid var(--border); padding:1px 7px; border-radius:4px; }
+.copybtn { font-size:10px; padding:2px 8px; }
+
+/* feed */
+#feed { display:flex; flex-direction:column; gap:10px; }
+.report {
+  background:var(--panel); border:1px solid var(--border); border-radius:8px; overflow:hidden;
+}
+.report .body { padding:11px 13px; }
+.report .body > * { max-width:66ch; }
+.report .body p, .report .body ul, .report .body ol { margin:0 0 9px; }
+.report .body > :last-child { margin-bottom:0; }
+.report .body li { margin-bottom:4px; }
+.report .body h1, .report .body h2, .report .body h3, .report .body h4 { margin:10px 0 6px; font-size:12px; }
+.report code, .msg code { background:var(--panel2); border:1px solid var(--border); border-radius:3px; padding:0 3px; font-size:11.5px; }
+.report pre { background:var(--panel2); border:1px solid var(--border); border-radius:5px; padding:8px 10px; overflow-x:auto; font-size:11px; }
+.report pre code { background:none; border:none; padding:0; }
+.msg { max-width:56ch; padding:7px 11px; border-radius:8px; font-size:12.5px; }
+.msg p { margin:0 0 6px; }
+.msg > :last-child { margin-bottom:0; }
+.msg pre { background:var(--panel2); border:1px solid var(--border); border-radius:5px; padding:6px 8px; overflow-x:auto; font-size:11px; margin:0 0 6px; }
+.msg pre code { background:none; border:none; padding:0; }
+.msg ul, .msg ol { margin:0 0 6px; padding-left:18px; }
+.msg.you { align-self:flex-end; background:var(--accent); color:var(--accent-ink); }
+.msg.you code { background:transparent; border-color:transparent; color:inherit; }
+.msg.worker { align-self:flex-start; background:var(--panel2); border:1px solid var(--border); }
+.msg .who { font-size:9.5px; letter-spacing:.08em; text-transform:uppercase; opacity:.7; margin-bottom:2px; }
+.event { align-self:center; font-size:10.5px; color:var(--muted); font-family:ui-monospace,Menlo,monospace; }
+.tools {
+  align-self:flex-start; display:flex; flex-direction:column; gap:2px;
+  font-family:ui-monospace,Menlo,monospace; font-size:10.5px; color:var(--muted);
+  border-left:2px solid var(--border); padding:2px 0 2px 10px; margin-left:4px;
+  overflow-wrap:anywhere;
+}
+.tools .tl b { color:var(--ink); font-weight:600; }
+.placeholder { color:var(--muted); font-size:12.5px; font-style:italic; }
+.runpulse { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--st-running); margin-right:6px; animation:pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 0%,100%{opacity:.3} 50%{opacity:1} }
+@media (prefers-reduced-motion: reduce) { .runpulse { animation:none; } }
+
+/* comment box */
+#composer {
+  flex:none; border-top:1px solid var(--border); background:var(--panel); padding:10px 16px 8px;
+}
+#composer textarea {
+  width:100%; min-height:44px; max-height:140px; resize:vertical;
+  background:var(--bg); color:var(--ink); border:1px solid var(--border); border-radius:7px;
+  padding:8px 10px; font:12.5px system-ui,sans-serif;
+}
+#composer .hints { display:flex; justify-content:space-between; margin-top:5px; font-size:10.5px; color:var(--muted); }
+#composer .actions { display:flex; gap:8px; align-items:center; }
+#composer.disabled textarea { opacity:.5; }
+
+/* right: task + code column */
+#codecol { overflow:hidden; display:flex; flex-direction:column; min-height:0; background:var(--panel); }
+#taskstrip { flex:none; border-bottom:1px solid var(--border); }
+#taskstrip .taskhead {
+  display:flex; align-items:center; gap:10px; padding:7px 14px; cursor:pointer; user-select:none;
+  background:var(--panel2); font-family:ui-monospace,Menlo,monospace; font-size:11.5px; color:var(--muted);
+}
+#taskstrip .taskhead:hover { color:var(--ink); }
+#taskstrip .caret { display:inline-block; transition:transform .12s; }
+#taskstrip.open .caret { transform:rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { #taskstrip .caret { transition:none; } }
+#taskbody { display:none; max-height:38vh; overflow:auto; padding:10px 14px; }
+#taskstrip.open #taskbody { display:block; }
+.gridwell { background:var(--well); border-radius:6px; padding:10px; overflow-x:auto; }
+.pairrow { display:flex; gap:18px; flex-wrap:wrap; }
+.pair { display:flex; align-items:center; gap:8px; }
+.pair .arr { color:#5C6670; font-size:14px; }
+.gwrap { display:flex; flex-direction:column; gap:4px; }
+.glabel { font-size:9.5px; color:#7C8791; font-family:ui-monospace,Menlo,monospace; letter-spacing:.05em; }
+.agrid { display:grid; gap:1px; background:var(--well-line); width:max-content; border:1px solid var(--well-line); }
+.agrid div { width:var(--cell); height:var(--cell); }
+
+#codecol .codehead {
+  flex:none; display:flex; align-items:center; gap:10px; padding:7px 14px;
+  border-bottom:1px solid var(--border); background:var(--panel2);
+  font-family:ui-monospace,Menlo,monospace; font-size:11.5px; color:var(--muted);
+}
+#codecol .codehead .fname { color:var(--ink); }
+#codecol pre {
+  flex:1; overflow:auto; margin:0; padding:12px 16px; font-size:11.5px; line-height:1.55; tab-size:4;
+}
+#codecol pre .cm { color:var(--muted); }
+#codecol pre .add {
+  display:inline-block; min-width:calc(100% + 32px); box-sizing:border-box;
+  background:var(--st-approved-bg);
+  box-shadow:inset 2px 0 0 var(--st-approved);
+  margin:0 -16px; padding:0 16px;
+}
+#codecol pre mark.addw {
+  background:color-mix(in srgb, var(--st-approved) 30%, transparent);
+  color:inherit; border-radius:2px;
+}
+
+/* bottom keys bar */
+#keysbar {
+  height:26px; flex:none; display:flex; align-items:center; gap:16px; padding:0 14px;
+  background:var(--panel); border-top:1px solid var(--border);
+  font-family:ui-monospace,Menlo,monospace; font-size:10.5px; color:var(--muted); overflow-x:auto; white-space:nowrap;
+}
+#keysbar b { color:var(--ink); font-weight:600; }
+
+/* toast */
+#toast {
+  position:fixed; bottom:40px; left:50%; transform:translateX(-50%) translateY(20px);
+  background:var(--ink); color:var(--bg); padding:8px 16px; border-radius:7px; font-size:12px;
+  font-family:ui-monospace,Menlo,monospace; opacity:0; transition:all .15s ease; z-index:30;
+  max-width:80vw; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+#toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <span class="wordmark"><b>arc</b> · solver console</span>
+  <span class="chip queued mono" id="wavechip">wave —</span>
+  <span id="counts"></span>
+  <span class="spacer"></span>
+  <span id="usage"></span>
+  <span class="wavectl">next wave K <input id="waveK" type="number" value="6" min="1" max="20"> <button id="wavebtn">start</button></span>
+  <button id="commitbtn" class="primary">commit approved</button>
+</div>
+
+<div id="main">
+  <nav id="rail" aria-label="wave items"></nav>
+
+  <div id="judge">
+    <div id="judge-head"></div>
+    <div id="judge-scroll"></div>
+    <div id="composer">
+      <textarea id="cbox" placeholder="" aria-label="comment"></textarea>
+      <div class="hints">
+        <span id="chint"></span>
+        <span class="actions"><span>⏎ send · ⇧⏎ newline</span><button id="sendbtn" class="primary">send</button></span>
+      </div>
+    </div>
+  </div>
+
+  <div id="codecol">
+    <div id="taskstrip" class="open">
+      <div class="taskhead" id="taskhead"><span class="caret">▸</span><span id="tasklabel">task</span><span style="margin-left:auto">t</span></div>
+      <div id="taskbody"></div>
+    </div>
+    <div class="codehead"><span class="fname" id="fname">—</span><span id="flines"></span><span id="codebtns" style="margin-left:auto"></span></div>
+    <pre id="codepre"></pre>
+  </div>
+</div>
+
+<div id="keysbar">
+  <span><b>j/k</b> move</span><span><b>n</b> next review</span><span><b>a</b> approve</span>
+  <span><b>u</b> unapprove</span><span><b>c</b> comment</span><span><b>⏎</b> send</span><span><b>⇧⏎</b> newline</span>
+  <span><b>t</b> task</span><span><b>o</b> copy resume</span><span><b>esc</b> blur</span>
+</div>
+
+<div id="toast" role="status"></div>
+
+<script src="/vendor/marked.min.js"></script>
+<script src="/vendor/purify.min.js"></script>
+<script src="/vendor/diff.min.js"></script>
+<script>
+const ARC = ["#000000","#0074D9","#FF4136","#2ECC40","#FFDC00","#AAAAAA","#F012BE","#FF851B","#7FDBFF","#870C25"];
+const CHIPCLS = {"needs-review":"review","commented":"commented","running":"running","queued":"queued","approved":"approved","committed":"committed"};
+const TTL_MIN = 60;
+
+let seq = 0, wave = 0, items = [], selId = null, usage = [];
+const taskCache = {};   // id -> task json | "pending" | "missing"
+const itemCache = {};   // id -> {feed, code, ver}
+const taskOpen  = {};   // id -> bool (default open)
+
+/* ---------- helpers ---------- */
+const $ = id => document.getElementById(id);
+const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const render = (typeof marked!=="undefined" && typeof DOMPurify!=="undefined")
+  ? (t => DOMPurify.sanitize(marked.parse(t, {breaks:true})))
+  : (t => "<p>"+esc(t).replace(/\n/g,"<br>")+"</p>");
+const sel = () => items.find(it=>it.id===selId) || null;
+function toast(msg){ const t=$("toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("show"),2600); }
+function copy(s,label){ navigator.clipboard && navigator.clipboard.writeText(s).then(()=>toast("copied · "+label),()=>toast(s)); }
+
+async function post(route, body){
+  try {
+    const r = await fetch(route,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body||{})});
+    const j = await r.json();
+    if(j.error) toast(j.error);
+    return j;
+  } catch(e){ toast("console server unreachable"); return {error:String(e)}; }
+}
+
+/* code panel: current file with this turn's additions marked.
+   Line diff vs the turn-start snapshot; replaced hunks get word-level marks. */
+const cmify = s => esc(s).replace(/(\/\/[^\n]*)/g,'<span class="cm">$1</span>');
+function splitLines(v){ const ls=v.split("\n"); if(ls[ls.length-1]==="") ls.pop(); return ls; }
+function addBlock(v){
+  return splitLines(v).map(l=>'<span class="add">'+(esc(l)||" ")+'</span>\n').join("");
+}
+function wordDiff(rem, add){
+  const lines=[[]];
+  for(const p of Diff.diffWordsWithSpace(rem, add)){
+    if(p.removed) continue;
+    p.value.split("\n").forEach((s,si)=>{
+      if(si>0) lines.push([]);
+      if(s) lines[lines.length-1].push(p.added?'<mark class="addw">'+esc(s)+'</mark>':esc(s));
+    });
+  }
+  if(lines.length && !lines[lines.length-1].length) lines.pop();
+  return lines.map(seg=>'<span class="add">'+(seg.join("")||" ")+'</span>\n').join("");
+}
+function diffHtml(before, after){
+  const parts=Diff.diffLines(before, after);
+  let html="", count=0;
+  for(let k=0;k<parts.length;k++){
+    const p=parts[k];
+    if(p.removed){
+      const nxt=parts[k+1];
+      if(nxt && nxt.added){ html+=wordDiff(p.value, nxt.value); count+=splitLines(nxt.value).length; k++; }
+    } else if(p.added){
+      html+=addBlock(p.value); count+=splitLines(p.value).length;
+    } else {
+      html+=cmify(p.value);
+    }
+  }
+  return {html, count};
+}
+
+/* cache freshness: minutes remaining until the session's 1h prompt-cache TTL expires */
+function cacheInfo(it){
+  if(!it.session) return {cls:"none", txt:"—", sort:9e9};
+  if(it.busy||it.state==="running"||it.state==="commented") return {cls:"active", txt:"active", sort:5e8};
+  if(!it.lastActive) return {cls:"none", txt:"—", sort:9e9};
+  const rem = TTL_MIN - (Date.now()-it.lastActive)/60000;
+  if(rem<=0) return {cls:"cold", txt:"cold", sort:1e9};
+  const cls = rem<10?"hot":rem<30?"warn":"ok";
+  return {cls, txt:Math.ceil(rem)+"m", sort:rem};
+}
+function railOrder(){
+  return [...items].sort((a,b)=>cacheInfo(a).sort-cacheInfo(b).sort).map(it=>it.id);
+}
+
+function cellPx(w,h){ const m=Math.max(w,h); return m<=10?16:m<=15?12:m<=22?9:7; }
+function gridEl(g,label){
+  const w=g[0].length,h=g.length,px=cellPx(w,h);
+  const wrap=document.createElement("div"); wrap.className="gwrap";
+  if(label){ const l=document.createElement("div"); l.className="glabel"; l.textContent=label+" · "+h+"×"+w; wrap.appendChild(l); }
+  const el=document.createElement("div"); el.className="agrid";
+  el.style.setProperty("--cell",px+"px");
+  el.style.gridTemplateColumns=`repeat(${w},${px}px)`;
+  for(const row of g) for(const v of row){ const c=document.createElement("div"); c.style.background=ARC[v]; el.appendChild(c); }
+  wrap.appendChild(el); return wrap;
+}
+function thumb(id){
+  const task=taskCache[id];
+  if(!task || typeof task==="string"){ const d=document.createElement("div"); d.className="thumb-ph"; return d; }
+  const g=task.train[0].input;
+  const w=g[0].length,h=g.length,px=Math.max(1,Math.floor(30/Math.max(w,h)));
+  const cv=document.createElement("canvas"); cv.width=w*px; cv.height=h*px;
+  const ctx=cv.getContext("2d");
+  g.forEach((row,y)=>row.forEach((v,x)=>{ ctx.fillStyle=ARC[v]; ctx.fillRect(x*px,y*px,px,px); }));
+  return cv;
+}
+function ensureTask(id){
+  if(taskCache[id]) return;
+  taskCache[id]="pending";
+  fetch("/api/task/"+id).then(r=>r.ok?r.json():"missing").then(t=>{
+    taskCache[id]=t; renderRail(); if(selId===id) renderDetail();
+  }).catch(()=>{ taskCache[id]="missing"; });
+}
+function ensureItem(id, force){
+  const cached=itemCache[id], it=items.find(x=>x.id===id);
+  if(cached && it && cached.ver===it.ver && !force) return;
+  fetch("/api/item/"+id).then(r=>r.json()).then(d=>{
+    itemCache[id]=d; if(selId===id) renderDetail();
+  }).catch(()=>{});
+}
+
+/* ---------- rail + counts ---------- */
+function renderRail(){
+  const rail=$("rail"); rail.innerHTML="";
+  const head=document.createElement("div"); head.className="railhead";
+  head.innerHTML=`<span>wave ${String(wave).padStart(2,"0")} · ${items.length}</span><span>cache ↑expiring</span>`;
+  rail.appendChild(head);
+  for(const id of railOrder()){
+    const it=items.find(x=>x.id===id), ci=cacheInfo(it);
+    ensureTask(id);
+    const row=document.createElement("div"); row.className="row"+(id===selId?" sel":""); row.tabIndex=0;
+    row.appendChild(thumb(id));
+    const meta=document.createElement("div"); meta.className="meta";
+    const sub = it.title || (it.est ? "est "+it.est : "");
+    meta.innerHTML=`<div class="tid">${it.id} ${it.updated?'<span class="badge-upd">UPD</span>':""}${it.dirty?'<span class="badge-dirty">CLEANUP</span>':""}</div><div class="sub">${esc(sub)}</div>`;
+    row.appendChild(meta);
+    const side=document.createElement("div"); side.className="side";
+    const chip=document.createElement("span"); chip.className="chip "+CHIPCLS[it.state];
+    chip.innerHTML=`<span class="dot"></span>${it.state==="needs-review"?"review":it.state}`;
+    side.appendChild(chip);
+    const ttl=document.createElement("span"); ttl.className="ttl "+ci.cls; ttl.textContent=ci.txt;
+    side.appendChild(ttl);
+    row.appendChild(side);
+    row.onclick=()=>{ select(id); };
+    row.onkeydown=e=>{ if(e.key==="Enter") select(id); };
+    rail.appendChild(row);
+  }
+  const counts=$("counts"); counts.innerHTML="";
+  const tally={};
+  items.forEach(it=>tally[it.state]=(tally[it.state]||0)+1);
+  for(const st of ["needs-review","commented","running","queued","approved","committed"]) if(tally[st]){
+    const c=document.createElement("span"); c.className="chip "+CHIPCLS[st];
+    c.innerHTML=`<span class="dot"></span>${tally[st]} ${st==="needs-review"?"to review":st}`;
+    counts.appendChild(c);
+  }
+  $("wavechip").textContent="wave "+String(wave).padStart(2,"0");
+  $("commitbtn").disabled = !items.some(it=>it.state==="approved");
+  renderUsage();
+}
+
+/* account rate-limit windows, statusline style: 5h➞1pm 40%/62% */
+function resetLabel(epoch, weekly){
+  const d=new Date(Math.round(epoch/1800)*1800*1000);
+  const h=d.getHours(), m=d.getMinutes(), ap=h>=12?"pm":"am", h12=h%12||12;
+  const t=m ? h12+":"+String(m).padStart(2,"0")+ap : h12+ap;
+  return weekly ? ["sun","mon","tue","wed","thu","fri","sat"][d.getDay()]+","+t : t;
+}
+function renderUsage(){
+  const u=$("usage"); u.innerHTML="";
+  for(const w of usage){
+    const cls = w.pct>=70?"uhot":w.pct>=45?"uwarn":"uok";
+    let txt = w.label;
+    if(w.reset) txt += "➞"+resetLabel(w.reset, w.window>6*86400);
+    txt += " "+Math.floor(w.pct)+"%";
+    if(w.reset){
+      const target=Math.max(0,Math.min(100,Math.round(100*(1-(w.reset-Date.now()/1000)/w.window))));
+      txt += "/"+target+"%";
+    }
+    const s=document.createElement("span"); s.className=cls; s.textContent=txt;
+    u.appendChild(s);
+  }
+}
+
+/* ---------- detail ---------- */
+function renderDetail(){
+  const it=sel(), js=$("judge-scroll"), jh=$("judge-head");
+  const stick = js.scrollHeight - js.scrollTop - js.clientHeight < 60;
+  js.innerHTML=""; jh.innerHTML="";
+  if(!it){
+    const p=document.createElement("p"); p.className="placeholder";
+    p.textContent = items.length ? "select an item" : "no items — start a wave";
+    js.appendChild(p);
+    $("composer").classList.add("disabled"); $("cbox").disabled=true; $("sendbtn").disabled=true;
+    $("cbox").placeholder=""; $("chint").textContent="";
+    $("fname").textContent="—"; $("flines").textContent=""; $("codepre").textContent="";
+    $("tasklabel").textContent="task"; $("taskbody").innerHTML="";
+    return;
+  }
+  const ci=cacheInfo(it);
+  const cache=itemCache[it.id]||{feed:[],code:""};
+
+  const dh=document.createElement("div");
+  dh.innerHTML=`<div class="dhead"><span class="tid">${it.id}</span><span class="chip ${CHIPCLS[it.state]}"><span class="dot"></span>${it.state}</span>${it.updated?'<span class="badge-upd">UPDATED</span>':""}${it.dirty?'<span class="badge-dirty">CLEANUP PENDING</span>':""}<span class="title">${esc(it.title||"")}</span></div>`;
+  if(it.session){
+    const sl=document.createElement("div"); sl.className="sessline";
+    sl.innerHTML=`<span class="cmd">claude --resume ${it.session.slice(0,8)}…</span>`;
+    const b=document.createElement("button"); b.className="copybtn"; b.textContent="copy · o";
+    b.onclick=()=>copy("claude --resume "+it.session,"resume "+it.id);
+    sl.appendChild(b);
+    if(it.busy){
+      const kb=document.createElement("button"); kb.className="copybtn"; kb.textContent="stop";
+      kb.onclick=()=>post("/api/kill",{id:it.id});
+      sl.appendChild(kb);
+    }
+    dh.appendChild(sl);
+  }
+  jh.appendChild(dh);
+
+  const feed=document.createElement("div"); feed.id="feed";
+  let toolGroup=null;
+  for(const m of cache.feed){
+    if(m.kind==="tool"){
+      if(!toolGroup){ toolGroup=document.createElement("div"); toolGroup.className="tools"; feed.appendChild(toolGroup); }
+      const t=document.createElement("div"); t.className="tl";
+      const sp=m.text.indexOf(" ");
+      t.innerHTML= sp<0 ? "<b>"+esc(m.text)+"</b>" : "<b>"+esc(m.text.slice(0,sp))+"</b> "+esc(m.text.slice(sp+1));
+      toolGroup.appendChild(t);
+      continue;
+    }
+    toolGroup=null;
+    if(m.kind==="report"){
+      const r=document.createElement("section"); r.className="report";
+      r.innerHTML=`<div class="body">${render(m.text)}</div>`;
+      feed.appendChild(r);
+    } else if(m.kind==="event"){
+      const e=document.createElement("div"); e.className="event"; e.textContent="— "+m.text+" —";
+      feed.appendChild(e);
+    } else {
+      const d=document.createElement("div"); d.className="msg "+(m.kind==="you"?"you":"worker");
+      d.innerHTML=`<div class="who">${m.kind==="you"?"you":"worker"}</div>${render(m.text)}`;
+      feed.appendChild(d);
+    }
+  }
+  if(it.busy||it.state==="running"||it.state==="commented"){
+    const p=document.createElement("p"); p.className="placeholder";
+    p.innerHTML='<span class="runpulse"></span>worker running';
+    feed.appendChild(p);
+  } else if(!cache.feed.length){
+    const p=document.createElement("p"); p.className="placeholder"; p.textContent="queued";
+    feed.appendChild(p);
+  }
+  js.appendChild(feed);
+  if(stick) js.scrollTop = js.scrollHeight;
+
+  /* composer */
+  const canComment = it.session && !it.busy && (it.state==="needs-review"||it.state==="approved");
+  const composer=$("composer"), cbox=$("cbox");
+  composer.classList.toggle("disabled",!canComment);
+  cbox.disabled=!canComment;
+  $("sendbtn").disabled=!canComment;
+  cbox.placeholder = canComment ? "" :
+    (it.busy||it.state==="running"||it.state==="commented") ? "worker running" : "no session yet";
+  $("chint").textContent = it.state==="needs-review" && it.dirty ? "a sends cleanup first" : "";
+
+  /* task strip + code — open/closed remembered per task, default open */
+  $("taskstrip").classList.toggle("open", taskOpen[it.id]!==false);
+  const task=taskCache[it.id];
+  const tb=$("taskbody"); tb.innerHTML="";
+  if(task && typeof task!=="string"){
+    $("tasklabel").textContent = "task · "+task.train.length+" train / "+task.test.length+" test";
+    const tw=document.createElement("div"); tw.className="gridwell";
+    const pr=document.createElement("div"); pr.className="pairrow";
+    task.train.forEach((p,i)=>{
+      const pair=document.createElement("div"); pair.className="pair";
+      pair.appendChild(gridEl(p.input,"train "+i));
+      const a=document.createElement("span"); a.className="arr"; a.textContent="→"; pair.appendChild(a);
+      pair.appendChild(gridEl(p.output,"out"));
+      pr.appendChild(pair);
+    });
+    task.test.forEach((p,i)=>{
+      const pair=document.createElement("div"); pair.className="pair";
+      pair.appendChild(gridEl(p.input,"test "+i));
+      if(p.output){ const a=document.createElement("span"); a.className="arr"; a.textContent="→"; pair.appendChild(a); pair.appendChild(gridEl(p.output,"expected")); }
+      pr.appendChild(pair);
+    });
+    tw.appendChild(pr); tb.appendChild(tw);
+  } else {
+    $("tasklabel").textContent="task";
+  }
+
+  $("fname").textContent = cache.code ? "programs/solvers/"+it.id+".dl" : "—";
+  let codeHtml="", added=0;
+  if(cache.code){
+    if(cache.snap && cache.snap!==cache.code && window.Diff){
+      const r=diffHtml(cache.snap, cache.code); codeHtml=r.html; added=r.count;
+    } else {
+      codeHtml=cmify(cache.code);
+    }
+  }
+  $("flines").textContent = cache.code ?
+    cache.code.split("\n").length+" lines"+(added?" · +"+added+" this turn":"") : "";
+  $("codepre").innerHTML = cache.code ? codeHtml :
+    '<span class="cm">// '+(it.state==="queued"?"not started":"no file yet")+"</span>";
+  const cb=$("codebtns"); cb.innerHTML="";
+  if(cache.code && cache.snap && cache.snap!==cache.code && !it.busy){
+    const rb=document.createElement("button"); rb.className="copybtn"; rb.textContent="revert edits";
+    rb.onclick=()=>post("/api/revert",{id:it.id});
+    cb.appendChild(rb);
+  }
+}
+
+function select(id){
+  selId=id;
+  const it=sel();
+  if(it){ ensureItem(id, true); ensureTask(id); if(it.updated) post("/api/seen",{id}); }
+  renderRail(); renderDetail();
+}
+
+/* ---------- actions ---------- */
+function nextReview(){
+  const revs=railOrder().filter(id=>{ const it=items.find(x=>x.id===id); return it.state==="needs-review"&&id!==selId; });
+  if(revs.length) select(revs[0]); else toast("review queue empty");
+}
+async function approve(){
+  const it=sel();
+  if(!it||it.state!=="needs-review"){ toast("nothing to approve"); return; }
+  const r=await post("/api/approve",{id:it.id});
+  if(r.ok && r.cleanup) toast("cleanup sent");
+  else if(r.ok){ toast(it.id+" approved"); nextReview(); }
+}
+async function unapprove(){
+  const it=sel();
+  if(!it||it.state!=="approved"){ toast("not approved"); return; }
+  const r=await post("/api/unapprove",{id:it.id});
+  if(r.ok) toast(it.id+" back to review");
+}
+async function sendComment(){
+  const it=sel(), cbox=$("cbox"), text=cbox.value.trim();
+  if(!it||cbox.disabled||!text) return;
+  const low=text.toLowerCase();
+  if(low==="commit"){ toast("commit is a console action"); return; }
+  if(low==="next"){ toast("no next in batch mode"); return; }
+  const r=await post("/api/comment",{id:it.id,text});
+  if(r.ok){ cbox.value=""; toast("sent"); }
+}
+async function commitApproved(){
+  const r=await post("/api/commit");
+  if(r.ok) toast('git commit -m "'+r.msg+'"');
+}
+async function startWave(){
+  const k=parseInt($("waveK").value,10)||6;
+  const r=await post("/api/wave",{k});
+  if(r.ok) toast("wave started · "+r.ids.join(", "));
+}
+
+/* ---------- keys ---------- */
+document.addEventListener("keydown",e=>{
+  if(e.metaKey||e.ctrlKey||e.altKey) return;
+  const inBox = e.target===$("cbox") || e.target.tagName==="INPUT";
+  if(e.key==="Escape"){ if(inBox) e.target.blur(); return; }
+  if(inBox){
+    if(e.target===$("cbox") && e.key==="Enter" && !e.shiftKey){ e.preventDefault(); sendComment(); }
+    return;
+  }
+  const order=railOrder(), pos=order.indexOf(selId);
+  if(e.key==="j"){ if(order.length) select(order[Math.min(pos+1,order.length-1)]); }
+  else if(e.key==="k"){ if(order.length) select(order[Math.max(pos-1,0)]); }
+  else if(e.key==="n"){ nextReview(); }
+  else if(e.key==="a"){ approve(); }
+  else if(e.key==="u"){ unapprove(); }
+  else if(e.key==="c"){ if(!$("cbox").disabled){ e.preventDefault(); $("cbox").focus(); } }
+  else if(e.key==="o"){ const it=sel(); if(it&&it.session) copy("claude --resume "+it.session,"resume "+it.id); }
+  else if(e.key==="t"){ toggleTask(); }
+});
+function toggleTask(){
+  const it=sel(); if(!it) return;
+  taskOpen[it.id] = !(taskOpen[it.id]!==false);
+  $("taskstrip").classList.toggle("open", taskOpen[it.id]);
+}
+$("taskhead").onclick=toggleTask;
+$("sendbtn").onclick=sendComment;
+$("commitbtn").onclick=commitApproved;
+$("wavebtn").onclick=startWave;
+
+/* ---------- poll ---------- */
+async function poll(){
+  for(;;){
+    try {
+      const r=await fetch(`/api/state?since=${seq}&wait=25`);
+      const d=await r.json();
+      const changed = d.seq!==seq;
+      seq=d.seq; wave=d.wave; items=d.items; usage=d.usage||[];
+      if(selId && !items.find(x=>x.id===selId)) selId=null;
+      if(!selId && items.length) selId=railOrder()[0];
+      if(changed){
+        if(selId) ensureItem(selId);
+        renderRail(); renderDetail();
+      }
+    } catch(e){
+      await new Promise(res=>setTimeout(res,3000));
+    }
+  }
+}
+poll();
+/* live TTL countdown */
+setInterval(()=>{ renderRail(); },15000);
+</script>
+</body>
+</html>
