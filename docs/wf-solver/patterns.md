@@ -233,6 +233,10 @@ A repeated variable in a wide atom states the diagonal case directly: equal exte
 
 Derivation is long by nature: a rule that quantifies over an index emits one row per index value, and aggregation computes per index (`Bbox` aggregates `edge_min` per Dir, then packs the four into `margin`'s Position). Widening derived data costs one pairing join at its defining rule. A readout of a value that already holds the co-occurrence widens at no cost.
 
+## Boxes as margin Positions
+
+A rectangular region is one Position: its four edge margins. `geq(P, M)` expands a box to its cells (`Bbox.inside` in lib). A box stores as data (77fdfe62's `$Margin`; 4522001f's `c.box`, rotated to its corner by `apply`) and moves as a record: `compose` with a jump delta shifts it whole, `geq(M, ORIGIN)` tests that it still fits the frame, and a chain of placed regions recurses on the box, not its cells (4522001f's `grow_box` / `fit_box`).
+
 ## `cell_split` — input cell with its axis decomposition
 
 Pairs an input cell with its along/across split on the task's axis.
