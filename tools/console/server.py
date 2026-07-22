@@ -50,6 +50,7 @@ WORKER_FLAGS = [
     "--exclude-dynamic-system-prompt-sections",
 ]
 STAGGER_TIMEOUT = 120  # seconds to wait for the first worker's first API response
+TRAILER = "\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n"
 
 LOCK = threading.RLock()
 COND = threading.Condition(LOCK)
@@ -498,6 +499,7 @@ def act_commit() -> dict:
         lib_msg = commit_promotion()
         if lib_msg:
             msgs.append(lib_msg)
+        msgs += commit_docs()
         for it in STATE["items"]:
             if it["id"] in ids:
                 it["state"] = "committed"
@@ -526,11 +528,38 @@ def commit_promotion() -> str | None:
     msg = "lib: " + (", ".join(dict.fromkeys(names)) or "promotion")
     msg += f" promoted from {src}" if src else " promoted"
     subprocess.run(["git", "add", *left], cwd=ROOT, check=False)
-    out = subprocess.run(
-        ["git", "commit", "-m",
-         msg + "\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n"],
-        cwd=ROOT, capture_output=True, text=True)
+    out = subprocess.run(["git", "commit", "-m", msg + TRAILER],
+                         cwd=ROOT, capture_output=True, text=True)
     return msg if out.returncode == 0 else None
+
+
+def commit_docs() -> list[str]:
+    """Worker edits to wf-solver docs (proposals.md rides the Add commit):
+    one commit per file, named by the changed term names. Caller holds LOCK."""
+    chk = subprocess.run(["git", "status", "--porcelain", "--", "docs/wf-solver"],
+                         cwd=ROOT, capture_output=True, text=True)
+    msgs = []
+    for line in chk.stdout.splitlines():
+        if line[:2].strip() != "M":
+            continue
+        rel = line[3:]
+        stem = Path(rel).stem
+        if stem == "proposals" or not rel.endswith(".md"):
+            continue
+        diff = subprocess.run(["git", "diff", "--", rel], cwd=ROOT,
+                              capture_output=True, text=True).stdout
+        terms = list(dict.fromkeys(re.findall(r"^[+-].*?`([\w-]+)`", diff, re.M)))
+        if not terms:
+            added = [l[1:].strip() for l in diff.splitlines()
+                     if l.startswith("+") and not l.startswith("+++") and l[1:].strip()]
+            terms = [added[0][:50]] if added else ["updates"]
+        msg = f"{stem}: {', '.join(terms[:6])}"
+        subprocess.run(["git", "add", rel], cwd=ROOT, check=False)
+        out = subprocess.run(["git", "commit", "-m", msg + TRAILER],
+                             cwd=ROOT, capture_output=True, text=True)
+        if out.returncode == 0:
+            msgs.append(msg)
+    return msgs
 
 
 # ---------- http ----------
