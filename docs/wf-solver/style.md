@@ -110,6 +110,7 @@ A solver defines types only for model coverage (`Choice` and the ADTs its cases 
     - Literals are fine inside a generic `.comp` written task-local; that is lib-shaped code rather than body, and the linter skips `.comp` blocks entirely.
 - No Position destructure. Use lib primitives instead. Position is opaque; destructuring hardcodes edge indices and breaks orientation invariance.
 - Avoid arithmetic. When arithmetic seems necessary, the lib needs a new primitive. Create that instead of writing arithmetic in the solver body.
+- No `range`. It generates a number sequence; the body reads positions and extents through lib primitives.
 - Complement tests negate the named case: `!c.bg(Col)` for non-bg.
 - Write off-edge tests as `dist(P, D, K), K != 0`, not `K > 0`: the zero case is excluded by identity, not by order. `!dist(P, D, 0)` is unavailable: Souffle cannot negate an inline relation whose clause introduces variables.
 - Inline relations cannot appear inside aggregators. Wrap in a non-inline relation when needed.

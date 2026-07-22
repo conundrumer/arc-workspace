@@ -1,7 +1,7 @@
 """Lint .dl solver bodies against 4-style.md.
 
-Flags orientation literals, bare nonzero literals, and arithmetic in
-solver-body code. `.comp` blocks are skipped wholesale — components are
+Flags orientation literals, bare nonzero literals, arithmetic, and the
+`range` generator in solver-body code. `.comp` blocks are skipped wholesale — components are
 generic, lib-shaped code, not solver body. The public entry point is
 `lint_body`; run_dl.py calls it after running each solver.
 """
@@ -29,6 +29,7 @@ COMMENT_RE = re.compile(r"//.*$")
 BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", flags=re.DOTALL)
 COMP_OPEN_RE = re.compile(r"\.comp\s+\w+")
 NUMERIC_LITERAL_RE = re.compile(r"(?<![A-Za-z_0-9.])\d+(?![A-Za-z_0-9.])")
+RANGE_RE = re.compile(r"\brange\s*\(")
 
 # Comparison-ops detector (<, <=, >, >=). Body comparisons are usually
 # legitimate, so this is opt-in.
@@ -143,6 +144,7 @@ def lint_body(source: str) -> list[tuple[str, int, str, str]]:
       - 'orientation literal' — DIR_T, DIR_L, etc. (must come from Consts)
       - 'nonzero literal'     — bare integer != 0
       - 'arithmetic'          — +, -, *, /, %
+      - 'range'               — the `range` number generator
       - 'comparison' (gated)  — <, <=, >, >=; enabled by LINT_COMPARISON
 
     Returns (category, lineno, match, raw_line). Skips // and /* */
@@ -175,6 +177,8 @@ def lint_body(source: str) -> list[tuple[str, int, str, str]]:
                 findings.append(("nonzero literal", lineno, m.group(0), raw_line.rstrip()))
         for _, op in _find_arithmetic(line):
             findings.append(("arithmetic", lineno, op, raw_line.rstrip()))
+        for _ in RANGE_RE.finditer(line):
+            findings.append(("range", lineno, "range", raw_line.rstrip()))
         if LINT_COMPARISON:
             for _, op in _find_comparison(line):
                 findings.append(("comparison", lineno, op, raw_line.rstrip()))
