@@ -13,6 +13,7 @@ Env:
 """
 
 import argparse
+import fcntl
 import hashlib
 import json
 import os
@@ -147,6 +148,25 @@ def build_append(wave: int) -> Path:
 
 # ---------- workers ----------
 
+def record_edit(it: dict, fp: str) -> None:
+    """First edit of a file in a turn: keep its pre-edit content for the
+    per-file diff tabs. The tool_use event streams before the tool runs."""
+    try:
+        rel = str(Path(fp).resolve().relative_to(ROOT))
+    except ValueError:
+        return
+    tf = it.setdefault("turn_files", {})
+    if rel in tf:
+        return
+    if rel == f"programs/solvers/{it['id']}.dl":
+        tf[rel] = it.get("snap", "")
+    elif rel == "docs/wf-solver/proposals.md":
+        tf[rel] = it.get("snap_prop", "")
+    else:
+        p = ROOT / rel
+        tf[rel] = p.read_text() if p.exists() else ""
+
+
 def tool_label(name: str, inp: dict) -> str | None:
     if name in ("TodoWrite", "ToolSearch", "TaskUpdate", "TaskCreate"):
         return None
@@ -189,6 +209,7 @@ def launch(it: dict, message: str, trigger: str | None = None) -> None:
     it["snap"] = solver_text(it["id"])
     it["snap_prop"] = prop_text()
     it["dirty_before"] = it["dirty"]
+    it["turn_files"] = {}
     threading.Thread(target=reader, args=(it["id"], proc, trigger),
                      daemon=True).start()
 
@@ -224,7 +245,11 @@ def reader(item_id: str, proc: subprocess.Popen, trigger: str | None) -> None:
                         entry = {"kind": "worker", "text": block["text"]}
                         key = (mid, "text", block["text"])
                     elif block.get("type") == "tool_use":
-                        label = tool_label(block.get("name", "?"), block.get("input", {}))
+                        name = block.get("name", "?")
+                        inp = block.get("input", {}) or {}
+                        if name in ("Edit", "Write", "NotebookEdit") and inp.get("file_path"):
+                            record_edit(it, inp["file_path"])
+                        label = tool_label(name, inp)
                         if label:
                             entry = {"kind": "tool", "text": label}
                             key = (mid, "tool", block.get("id") or label)
@@ -469,13 +494,43 @@ def act_commit() -> dict:
                              capture_output=True, text=True)
         if out.returncode != 0:
             return {"error": "git commit failed: " + (out.stderr or out.stdout).strip()[-200:]}
+        msgs = ["Add " + ", ".join(sorted(ids))]
+        lib_msg = commit_promotion()
+        if lib_msg:
+            msgs.append(lib_msg)
         for it in STATE["items"]:
             if it["id"] in ids:
                 it["state"] = "committed"
                 it["feed"].append(event("committed"))
                 it["ver"] = it.get("ver", 0) + 1
     bump()
-    return {"ok": True, "msg": "Add " + ", ".join(sorted(ids))}
+    return {"ok": True, "msg": " + ".join(msgs)}
+
+
+def commit_promotion() -> str | None:
+    """After the wave commit: lib.dl plus caller edits left in the tree are
+    promotion fallout — commit them in the repo's `lib:` style. Caller holds
+    LOCK."""
+    chk = subprocess.run(["git", "status", "--porcelain", "--",
+                          "programs/lib.dl", "programs/solvers"],
+                         cwd=ROOT, capture_output=True, text=True)
+    left = [l[3:] for l in chk.stdout.splitlines() if l[:2].strip() == "M"]
+    if "programs/lib.dl" not in left:
+        return None
+    diff = subprocess.run(["git", "diff", "--", "programs/lib.dl"],
+                          cwd=ROOT, capture_output=True, text=True).stdout
+    names = (re.findall(r"^\+\.comp (\w+)", diff, re.M) or
+             re.findall(r"^\+\s*\.decl (\w+)", diff, re.M))
+    src = next((it["id"] for it in STATE["items"]
+                if "programs/lib.dl" in (it.get("turn_files") or {})), None)
+    msg = "lib: " + (", ".join(dict.fromkeys(names)) or "promotion")
+    msg += f" promoted from {src}" if src else " promoted"
+    subprocess.run(["git", "add", *left], cwd=ROOT, check=False)
+    out = subprocess.run(
+        ["git", "commit", "-m",
+         msg + "\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n"],
+        cwd=ROOT, capture_output=True, text=True)
+    return msg if out.returncode == 0 else None
 
 
 # ---------- http ----------
@@ -521,7 +576,9 @@ class Handler(BaseHTTPRequestHandler):
                 while STATE["seq"] <= since and time.time() < deadline:
                     COND.wait(deadline - time.time())
                 snap = {"seq": STATE["seq"], "wave": STATE["wave"],
-                        "items": light_items(), "usage": USAGE}
+                        "items": light_items(), "usage": USAGE,
+                        "solved": len(list(SOLVERS.glob("*.dl"))),
+                        "total": len(list(REF_DIR.glob("programs/solvers/*.ts")))}
             self.reply(snap)
         elif url.path.startswith("/api/item/"):
             item_id = url.path.rsplit("/", 1)[1]
@@ -529,8 +586,17 @@ class Handler(BaseHTTPRequestHandler):
                 it = find(item_id)
                 if it is None:
                     return self.reply({"error": "unknown item"}, 404)
-                self.reply({"feed": it["feed"], "code": solver_text(item_id),
-                            "snap": it.get("snap", ""),
+                solver_rel = f"programs/solvers/{item_id}.dl"
+                tf = it.get("turn_files") or {}
+                files = []
+                for rel in [solver_rel] + [p for p in tf if p != solver_rel]:
+                    p = ROOT / rel
+                    files.append({
+                        "path": rel,
+                        "snap": tf.get(rel, it.get("snap", "") if rel == solver_rel else ""),
+                        "code": p.read_text() if p.exists() else "",
+                    })
+                self.reply({"feed": it["feed"], "files": files,
                             "ver": it.get("ver", 0)})
         elif url.path.startswith("/api/task/"):
             item_id = url.path.rsplit("/", 1)[1]
@@ -630,6 +696,12 @@ def main() -> None:
     args = ap.parse_args()
     STATE_DIR.mkdir(exist_ok=True)
     LOG_DIR.mkdir(exist_ok=True)
+    global _state_lock
+    _state_lock = open(STATE_DIR / ".lock", "w")
+    try:
+        fcntl.flock(_state_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        sys.exit("another console server owns this state dir — refusing to start")
     load()
     save()
     threading.Thread(target=watch_reload, daemon=True).start()
