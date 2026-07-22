@@ -548,12 +548,18 @@ def commit_docs() -> list[str]:
             continue
         diff = subprocess.run(["git", "diff", "--", rel], cwd=ROOT,
                               capture_output=True, text=True).stdout
-        terms = list(dict.fromkeys(re.findall(r"^[+-].*?`([\w-]+)`", diff, re.M)))
-        if not terms:
+        plus = list(dict.fromkeys(re.findall(r"^\+.*?`([\w-]+)`", diff, re.M)))
+        minus = [t for t in dict.fromkeys(re.findall(r"^-.*?`([\w-]+)`", diff, re.M))
+                 if t not in plus]
+        parts = ", ".join(plus[:6])
+        if minus:
+            removed = ", ".join("-" + t for t in minus[:4])
+            parts = f"{parts}; {removed}" if parts else removed
+        if not parts:
             added = [l[1:].strip() for l in diff.splitlines()
                      if l.startswith("+") and not l.startswith("+++") and l[1:].strip()]
-            terms = [added[0][:50]] if added else ["updates"]
-        msg = f"{stem}: {', '.join(terms[:6])}"
+            parts = added[0][:50] if added else "updates"
+        msg = f"{stem}: {parts}"
         subprocess.run(["git", "add", rel], cwd=ROOT, check=False)
         out = subprocess.run(["git", "commit", "-m", msg + TRAILER],
                              cwd=ROOT, capture_output=True, text=True)
