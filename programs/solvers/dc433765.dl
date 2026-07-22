@@ -1,0 +1,47 @@
+// dc433765
+// concept: markers move
+// The mover cell steps one cell toward the target cell: per axis, one cell
+// toward the edge the target is strictly nearer. The target stays.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl bg(c: Color)      bg(0).
+    .decl mover(c: Color)   mover(3).
+    .decl target(c: Color)  target(4).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl mover_at(p: Position)
+mover_at(P) :- in(P, Col), c.mover(Col).
+
+.decl target_at(p: Position)
+target_at(P) :- in(P, Col), c.target(Col).
+
+.decl axis_step(a: Axis, s: Position)
+axis_step(A, S) :-
+    mover_at(Pm), target_at(Pt),
+    axis_of(D, A),
+    dist(Pm, D, Km), dist(Pt, D, Kt), Kt < Km,    // target strictly nearer edge D
+    step_delta(D, S).
+axis_step(A, ORIGIN) :-
+    mover_at(Pm), target_at(Pt),
+    axis_of(D, A),
+    dist(Pm, D, K), dist(Pt, D, K).               // aligned on the axis
+
+.decl moved(p: Position)
+moved(P) :-
+    mover_at(Pm),
+    perp(A1, A2), axis_step(A1, S1), axis_step(A2, S2),
+    compose(Pm, S1, P1), compose(P1, S2, P).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- target_at(P), c.target(Col).
+out(P, Col) :- moved(P), c.mover(Col).
+out(P, Col) :- in(P, _), !target_at(P), !moved(P), c.bg(Col).
+
+.output out(IO=stdout)

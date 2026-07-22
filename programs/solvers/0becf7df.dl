@@ -1,0 +1,82 @@
+// 0becf7df
+// concept: markers, mapping, lookup
+// A key block sits at a corner; its cells pair up and paired colors swap.
+// Cells outside the key recolor by the swap; the key and unmapped colors
+// pass through. $Line pairs the two cells on each key line along a
+// stored axis; $Map pairs cells by a stored position correspondence.
+
+#include "../lib.dl"
+
+.type Choice = Line {} | Map {}
+
+.comp Consts {
+    // --- shared ---
+    // Corner the key block sits at.
+    .decl corner(d: DiagDir)
+    corner(DIAG_TL).
+
+    // Key block extent per axis.
+    .decl key_dim(a: Axis, n: number)
+    key_dim(AXIS_V, 2).
+    key_dim(AXIS_H, 2).
+
+    // --- Line ---
+    // Axis along which a pair's two members lie.
+    .decl axis(a: Axis)
+    axis(AXIS_H).
+
+    // --- Map ---
+    // Pairing as an id join over the key frame: src labels the key cells,
+    // dst gives each cell the id of its partner.
+    .decl src(p: Position, id: number)
+    GRID_2x2(src,
+        0, 1,
+        2, 3)
+
+    .decl dst(p: Position, id: number)
+    GRID_2x2(dst,
+        1, 0,
+        3, 2)
+
+    .decl pair(p1: Position, p2: Position)
+    pair(P1, P2) :- src(P1, Id), dst(P2, Id).
+}
+
+.init c = Consts
+
+.decl impl_choice(ch: Choice)
+impl_choice($Line()). impl_choice($Map()).
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// Cells of the key block.
+.decl key_cell(p: Position)
+key_cell(P) :-
+    in(P, _),                                        // grid cell
+    c.corner(Diag), diag_dist(P, Diag, A, K1, K2),   // dists to corner edges
+    c.key_dim(A, N1), K1 < N1,                       // within extent on A
+    perp(A, A2), c.key_dim(A2, N2), K2 < N2.         // and across
+
+.decl mapping(c1: Color, c2: Color, ch: Choice)
+
+// --- Line ---
+// Two key cells on one line along the pair axis pair up, in both orders.
+mapping(C1, C2, $Line()) :-
+    key_cell(P1), in(P1, C1),                        // one key cell
+    key_cell(P2), in(P2, C2), P1 != P2,              // a distinct one
+    c.axis(A), split(P1, A, _, Ac), split(P2, A, _, Ac).  // same line
+
+// --- Map ---
+// The stored pairing, anchored at the key's corner.
+mapping(C1, C2, $Map()) :-
+    c.corner(Diag), c.pair(I1, I2),
+    corner_anchor(Diag, P1, I1), in(P1, C1),
+    corner_anchor(Diag, P2, I2), in(P2, C2).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch)     :- impl_choice(Ch), in(P, Col), key_cell(P).
+out(P, Col_out, Ch) :- in(P, Col_in), !key_cell(P), mapping(Col_in, Col_out, Ch).
+out(P, Col, Ch)     :- impl_choice(Ch), in(P, Col), !key_cell(P), !mapping(Col, _, Ch).
+
+.output out(IO=stdout)
