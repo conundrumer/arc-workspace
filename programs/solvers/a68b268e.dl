@@ -7,7 +7,8 @@
 // indistinguishable; the spatial read splits data/ops. Tagged on out's
 // Choice:
 //
-//   $Scan()  — tiles rank in reading order from c.scan along c.scan_axis.
+//   $Scan()  — tiles rank in reading order from c.lex_corner along
+//              c.lex_axis.
 //   $Order() — per-tile ranks stored in c.prio.
 //   $Ink()   — per-ink ranks stored in c.ink_rank.
 
@@ -21,8 +22,8 @@
     .decl gap(g: number)     gap(1).
 
     // --- $Scan ---
-    .decl scan(d: DiagDir)     scan(DIAG_TL).
-    .decl scan_axis(a: Axis)   scan_axis(AXIS_V).
+    .decl lex_corner(d: DiagDir)   lex_corner(DIAG_TL).
+    .decl lex_axis(a: Axis)        lex_axis(AXIS_V).
 
     // --- $Order ---
     .decl prio(p: Position, r: number)
@@ -63,22 +64,13 @@ out(P, Col, Ch) :- impl_choice(Ch), tile_cell(_, P, _), !ink_at(P, _), c.bg(Col)
 
 // --- $Scan ---
 
-// Reading order over tiles: nearer along the primary dir; or tie and
-// nearer along the secondary.
-.decl scan_before(q: Position, p: Position)
-scan_before(Q, P) :-
-    tile_ink(Q, _, _), tile_ink(P, _, _),
-    c.scan(Diag), c.scan_axis(A), dir_of(Diag, A, D),   // primary dir
-    dist(Q, D, K1), dist(P, D, K2), K1 < K2.            // q strictly nearer
-scan_before(Q, P) :-
-    tile_ink(Q, _, _), tile_ink(P, _, _),
-    c.scan(Diag), c.scan_axis(A),
-    diag_dirs(Diag, A, D, D2),                          // primary/secondary dirs
-    same_dist(D, Q, P),                                 // primary tie
-    dist(Q, D2, K1), dist(P, D2, K2), K1 < K2.          // q strictly nearer
+.init lex = LexOrder<Unit>
+lex.corner(D)     :- c.lex_corner(D).
+lex.axis(A)       :- c.lex_axis(A).
+lex.cell($U(), T) :- tile_ink(T, _, _).
 
 .decl scan_beaten(p_tile: Position, p: Position)
-scan_beaten(T, P) :- tile_ink(T, P, _), tile_ink(T2, P, _), scan_before(T2, T).
+scan_beaten(T, P) :- tile_ink(T, P, _), tile_ink(T2, P, _), lex.before($U(), T2, T).
 
 out(P, Col, $Scan()) :- tile_ink(T, P, Col), !scan_beaten(T, P).
 

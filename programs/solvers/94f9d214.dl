@@ -1,7 +1,6 @@
 // 94f9d214
 // family: fafffa47
-// Layout: 2×1 vertically-stacked 4×4 subgrids. Output is the per-cell pair-fold.
-
+// Layout: 2×1 vertically-stacked 4×4 subgrids.
 #include "../lib.dl"
 
 .type DecChoice = Tile {} | Div {}

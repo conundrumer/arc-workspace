@@ -1,7 +1,6 @@
 // 5d2a5c43
-// concept: pair-fold lookup or
+// concept: decompose lookup fold
 // Layout: 1×2 horizontally-side-by-side 6×4 subgrids with 1-col gap.
-// Output is the per-cell pair-fold.
 //
 // out's choice column = [d, b]:
 //

@@ -543,6 +543,32 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
         R = count : { idx_set(Ky, K2), K2 < K }.
 }
 
+// Lexicographic order over a keyed cell set, given a corner and a primary
+// axis (instance parameters, unkeyed); reading order is the top-left,
+// V-primary member. `before` compares: strictly nearer the corner's edge
+// along the primary axis; or a primary tie and strictly nearer along the
+// secondary. `rank` counts predecessors, ascending from 0 at the corner.
+.comp LexOrder<Key> {
+    .decl corner(d: DiagDir)
+    .decl axis(a: Axis)
+    .decl cell(key: Key, p: Position)
+
+    .decl before(key: Key, q: Position, p: Position)
+    before(Ky, Q, P) :-
+        cell(Ky, Q), cell(Ky, P),
+        corner(Diag), axis(A), dir_of(Diag, A, D),   // primary dir
+        dist(Q, D, K1), dist(P, D, K2), K1 < K2.     // q strictly nearer
+    before(Ky, Q, P) :-
+        cell(Ky, Q), cell(Ky, P),
+        corner(Diag), axis(A),
+        diag_dirs(Diag, A, D, D2),                   // primary/secondary dirs
+        same_dist(D, Q, P),                          // primary tie
+        dist(Q, D2, K1), dist(P, D2, K2), K1 < K2.   // q strictly nearer
+
+    .decl rank(key: Key, p: Position, r: number)
+    rank(Ky, P, R) :- cell(Ky, P), R = count : { before(Ky, Q, P) }.
+}
+
 // Z/N successor over a dense 0-based index set, per key: increment, with
 // the max wrapping to 0. Every dense cycle is Z/N up to relabeling; a
 // spatial cycle converts through index maps the lib already owns (dist

@@ -1,7 +1,6 @@
 // 1b2d62fb
 // family: f2829549
 // Layout: 1×2 horizontally-side-by-side 5×3 subgrids with 1-col separator.
-// Output is the per-cell pair-fold.
 
 #include "../lib.dl"
 

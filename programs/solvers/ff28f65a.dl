@@ -31,8 +31,8 @@
     .decl mark(c: Color)         mark(1).
     .decl bg(c: Color)           bg(0).
     .decl out_dim(n: number)     out_dim(3).
-    .decl read_corner(d: DiagDir)  read_corner(DIAG_TL).
-    .decl read_axis(a: Axis)       read_axis(AXIS_V).
+    .decl lex_corner(d: DiagDir)   lex_corner(DIAG_TL).
+    .decl lex_axis(a: Axis)        lex_axis(AXIS_V).
 
     .decl out_pos(p: Position)
     out_pos(P) :- out_dim(N), helpers.frame_pos([N, N], P).
@@ -128,25 +128,13 @@ diag.corner($U(), D) :- diag_dir_elem(D).
 .decl x_cell(p: Position)
 x_cell(P) :- diag.diagonal($U(), P, _).
 
-// Reading order over the X: primary along read_axis from read_corner,
-// tie-break along the other axis.
-.decl read_before(q: Position, p: Position)
-read_before(Q, P) :-
-    x_cell(Q), x_cell(P),                                    // X cells
-    c.read_corner(Diag), c.read_axis(A), dir_of(Diag, A, D), // primary dir
-    dist(Q, D, K1), dist(P, D, K2), K1 < K2.                 // q strictly nearer
-read_before(Q, P) :-
-    x_cell(Q), x_cell(P),                                    // X cells
-    c.read_corner(Diag), c.read_axis(A),
-    diag_dirs(Diag, A, D, D2),                               // primary/secondary dirs
-    same_dist(D, Q, P),                                      // primary tie
-    dist(Q, D2, K1), dist(P, D2, K2), K1 < K2.               // q strictly nearer
-
-.decl fill_rank(p: Position, r: number)
-fill_rank(P, R) :- x_cell(P), R = count : { read_before(Q, P) }.
+.init lex = LexOrder<Unit>
+lex.corner(D)     :- c.lex_corner(D).
+lex.axis(A)       :- c.lex_axis(A).
+lex.cell($U(), P) :- x_cell(P).
 
 .decl marked(p: Position, detect: Detect)
-marked(P, Det) :- fill_rank(P, K), total(N, Det), K < N.
+marked(P, Det) :- lex.rank($U(), P, K), total(N, Det), K < N.
 
 .decl out(p: Position, col: Color, c: Choice)
 

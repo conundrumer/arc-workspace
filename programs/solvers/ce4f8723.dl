@@ -1,7 +1,6 @@
 // ce4f8723
 // family: 5d2a5c43
 // Layout: 2×1 vertically-stacked 4×4 subgrids with 1-row gap.
-// Output is the per-cell pair-fold.
 
 #include "../lib.dl"
 

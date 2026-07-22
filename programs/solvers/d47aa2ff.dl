@@ -1,5 +1,5 @@
 // d47aa2ff
-// concept: pair-fold select or
+// concept: decompose select fold
 // Layout: 1×2 horizontally-side-by-side 10×10 panels with 1-col separator.
 // Output is one panel frame: ink present in both panels is kept; ink present
 // in one panel only becomes the mark color of its panel.

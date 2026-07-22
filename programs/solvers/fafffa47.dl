@@ -1,7 +1,6 @@
 // fafffa47
-// concept: pair-fold lookup nor
-// Layout: 2×1 vertically-stacked 3×3 subgrids. Output is the per-cell pair-fold.
-//
+// concept: decompose lookup fold
+// Layout: 2×1 vertically-stacked 3×3 subgrids.
 // out's choice column = [d, b]:
 //
 //   d (decompose):
