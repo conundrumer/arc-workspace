@@ -1,10 +1,11 @@
 #!/usr/bin/env bun
-// Next TS solvers to port: smallest unported files without an #incorrect tag.
+// Next TS solvers to port: unported files without an #incorrect tag,
+// smallest first (--order size, default) or in name order (--order name).
 // Size = gzipped bytes of the minified source, so comments, formatting,
 // identifier names, and type annotations don't affect rank. Sizes are
 // cached in scripts/.queue-cache keyed by mtime; only changed files are
 // re-minified.
-// Usage: queue.ts [-n COUNT]
+// Usage: queue.ts [-n COUNT] [--order name|size]
 
 import fs from "node:fs";
 import path from "node:path";
@@ -16,17 +17,19 @@ const dl = path.join(root, "programs", "solvers");
 const cachePath = path.join(import.meta.dir, ".queue-cache");
 
 let count = 1;
+let order = "size";
 const args = process.argv.slice(2);
 for (let i = 0; i < args.length; i++) {
   if (args[i] === "-n") count = Number(args[++i]);
   else if (args[i].startsWith("-n")) count = Number(args[i].slice(2));
+  else if (args[i] === "--order") order = args[++i];
   else {
-    console.error("usage: queue.sh [-n COUNT]");
+    console.error("usage: queue.sh [-n COUNT] [--order name|size]");
     process.exit(2);
   }
 }
-if (!Number.isInteger(count) || count < 1) {
-  console.error("usage: queue.sh [-n COUNT]");
+if (!Number.isInteger(count) || count < 1 || !["name", "size"].includes(order)) {
+  console.error("usage: queue.sh [-n COUNT] [--order name|size]");
   process.exit(2);
 }
 
@@ -90,6 +93,10 @@ if (staleMtime.size > 0) {
 ids
   .map((id) => ({ id, ...fresh.get(id)! }))
   .filter((e) => !e.incorrect && !fs.existsSync(path.join(dl, e.id + ".dl")))
-  .sort((a, b) => a.size - b.size || a.id.localeCompare(b.id))
+  .sort((a, b) =>
+    order === "name"
+      ? a.id.localeCompare(b.id)
+      : a.size - b.size || a.id.localeCompare(b.id),
+  )
   .slice(0, count)
   .forEach((e) => console.log(String(e.size).padStart(5) + "  " + e.id));
