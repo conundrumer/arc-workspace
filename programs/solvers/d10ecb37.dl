@@ -25,7 +25,7 @@
     window(P) :- helpers.frame_pos([2, 2], P).
 
     // --- Block ---
-    .decl tile_dim(k: number)  tile_dim(2).
+    .decl tile_dim(k: number) tile_dim(2).
 }
 
 .init c = Consts

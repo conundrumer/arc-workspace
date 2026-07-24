@@ -14,11 +14,11 @@
 
 .comp Consts {
     // --- shared ---
-    .decl bar(c: Color)   bar(5).
-    .decl axis(a: Axis)   axis(AXIS_V).
+    .decl bar(c: Color) bar(5).
+    .decl axis(a: Axis) axis(AXIS_V).
 
     // --- $Cap ---
-    .decl cap(c: Color)   cap(8).
+    .decl cap(c: Color) cap(8).
 }
 
 .init c = Consts

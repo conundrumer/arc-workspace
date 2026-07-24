@@ -13,10 +13,10 @@
 .type Choice = Exact {} | Fit {}
 
 .comp Consts {
-    .decl bg(c: Color)          bg(0).
-    .decl base_dir(d: Dir)      base_dir(DIR_L).   // edge the base tile sits toward
+    .decl bg(c: Color) bg(0).
+    .decl base_dir(d: Dir) base_dir(DIR_L).   // edge the base tile sits toward
     .decl tile_count(n: number) tile_count(2).
-    .decl gap(g: number)        gap(1).            // separator width
+    .decl gap(g: number) gap(1).            // separator width
 }
 
 .init c = Consts
@@ -42,20 +42,20 @@ piece(P, Col) :-
 .decl hole(p: Position)
 hole(P) :- base(P, Col), c.bg(Col).
 
-.decl choice_elem(ch: Choice)
-choice_elem($Exact()). choice_elem($Fit()).
+.decl impl_choice(ch: Choice)
+impl_choice($Exact()). impl_choice($Fit()).
 
 // The case's fit criterion, violated. Both reject collision; $Exact also
 // rejects an unfilled hole.
 .decl unfit(ch: Choice)
-unfit(Ch) :- choice_elem(Ch), piece(P, _), !hole(P).
+unfit(Ch) :- impl_choice(Ch), piece(P, _), !hole(P).
 
 // --- $Exact ---
 unfit($Exact()) :- hole(P), !piece(P, _).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, Ch) :- choice_elem(Ch), !unfit(Ch), piece(P, Col).
-out(P, Col, Ch) :- choice_elem(Ch), !unfit(Ch), base(P, Col), !piece(P, _).
-out(P, Col, Ch) :- choice_elem(Ch), unfit(Ch), base(P, Col).
+out(P, Col, Ch) :- impl_choice(Ch), !unfit(Ch), piece(P, Col).
+out(P, Col, Ch) :- impl_choice(Ch), !unfit(Ch), base(P, Col), !piece(P, _).
+out(P, Col, Ch) :- impl_choice(Ch), unfit(Ch), base(P, Col).
 
 .output out(IO=stdout)

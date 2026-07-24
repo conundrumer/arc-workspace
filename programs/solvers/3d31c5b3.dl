@@ -13,9 +13,9 @@
 .type Choice = Order {} | Ink {}
 
 .comp Consts {
-    .decl bg(col: Color)     bg(0).
-    .decl axis(a: Axis)      axis(AXIS_V).
-    .decl tiles(n: number)   tiles(4).
+    .decl bg(col: Color) bg(0).
+    .decl axis(a: Axis) axis(AXIS_V).
+    .decl tiles(n: number) tiles(4).
 
     // --- $Order ---
     .decl prio(p: Position, r: number)

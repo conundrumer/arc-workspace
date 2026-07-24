@@ -8,9 +8,9 @@
 #include "../lib.dl"
 
 .comp Consts {
-    .decl slide(a: Axis)   slide(AXIS_H).    // axis the lines slide along
-    .decl sense(s: Sense)  sense(SENSE_CW).  // rotation of the across-lines
-    .decl bg(c: Color)     bg(0).
+    .decl slide(a: Axis) slide(AXIS_H).     // axis the lines slide along
+    .decl sense(s: Sense) sense(SENSE_CW).  // rotation of the across-lines
+    .decl bg(c: Color) bg(0).
 }
 
 .init c = Consts

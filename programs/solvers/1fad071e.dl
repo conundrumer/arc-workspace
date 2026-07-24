@@ -24,19 +24,19 @@
 .comp Consts {
     .init helpers = ConstsHelpers
 
-    .decl block_color(c: Color)  block_color(1).
-    .decl block_dim(k: number)   block_dim(2).
+    .decl block_color(c: Color) block_color(1).
+    .decl block_dim(k: number) block_dim(2).
 
     .decl block_shape(p: Position)
     block_shape(P) :- block_dim(N), helpers.frame_pos([N, N], P).
 
-    .decl mark(c: Color)      mark(1).
-    .decl bg(c: Color)        bg(0).
+    .decl mark(c: Color) mark(1).
+    .decl bg(c: Color) bg(0).
 
     .decl out_dim(a: Axis, n: number)
     out_dim(AXIS_V, 1). out_dim(AXIS_H, 5).
 
-    .decl bar_edge(d: Dir)    bar_edge(DIR_L).
+    .decl bar_edge(d: Dir) bar_edge(DIR_L).
 
     .decl out_pos(p: Position)
     out_pos(P) :- out_dim(AXIS_V, V), out_dim(AXIS_H, H), helpers.frame_pos([V, H], P).
@@ -58,14 +58,14 @@ on(P) :- in(P, C), c.block_color(C).
 .init comps = Components<Unit>
 comps.node($U(), P) :- on(P).
 
-.init object_box = Bbox<CompId>
+.init object_box = Bbox<Ident>
 object_box.cell(Id, P) :- comps.label($U(), P, Id).
 
-.init object_frame = Reframe<CompId>
+.init object_frame = Reframe<Ident>
 object_frame.cell(Id, P)  :- comps.label($U(), P, Id).
 object_frame.outer(Id, M) :- object_box.margin(Id, M).
 
-.init object_match = KeyedSetCompare<CompId, number, Position>
+.init object_match = KeyedSetCompare<Ident, Ident, Position>
 object_match.pattern_member(0, I)   :- c.block_shape(I).
 object_match.observed_member(Id, I) :- object_frame.inner(Id, I).
 

@@ -12,10 +12,10 @@
 .type Choice = Passthrough {} | Repaint {}
 
 .comp Consts {
-    .decl border(c: Color)  border(8).
+    .decl border(c: Color) border(8).
 
     // --- $Repaint ---
-    .decl bg(c: Color)      bg(0).
+    .decl bg(c: Color) bg(0).
 }
 
 .init c = Consts

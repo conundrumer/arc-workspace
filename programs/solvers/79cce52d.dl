@@ -16,13 +16,13 @@
 
 .comp Consts {
     // --- shared ---
-    .decl corner(d: DiagDir)  corner(DIAG_TL).   // the border bands meet here
+    .decl corner(d: DiagDir) corner(DIAG_TL).   // the border bands meet here
 
     // --- Marked ---
-    .decl marker_col(c: Color)  marker_col(2).
+    .decl marker_col(c: Color) marker_col(2).
 
     // --- Singleton ---
-    .decl marker_count(k: number)  marker_count(1).
+    .decl marker_count(k: number) marker_count(1).
 }
 
 .init c = Consts

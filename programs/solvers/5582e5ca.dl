@@ -12,7 +12,7 @@
 
 .comp Consts {
     // --- Count ---
-    .decl target(n: number)    target(3).
+    .decl target(n: number) target(3).
 }
 
 .init c = Consts

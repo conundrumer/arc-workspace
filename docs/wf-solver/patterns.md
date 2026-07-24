@@ -41,7 +41,7 @@ impl_choice($CaseA()). impl_choice($CaseB()).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !covered(Ch, P), c.bg(Col).
 ```
 
-A minority of files name it `choice` or `variant`.
+The relation is `impl_choice`, the column `ch`, corpus-wide.
 
 ## `GRID_HxW` for grid data
 
@@ -55,9 +55,9 @@ GRID_3x3(template,
     1, 2, 1)
 ```
 
-## `GRID_HxW` with multi-pattern eid-keying
+## `GRID_HxW` with multi-pattern id-keying
 
-Multiple visual patterns (each a distinct `GRID_HxW`) joined to a shared eid-keyed relation via derive rules.
+Multiple visual patterns (each a distinct `GRID_HxW`) joined to a shared id-keyed relation via derive rules.
 
 ```
 .decl p0(p: Position, col: Color)
@@ -66,28 +66,28 @@ GRID_3x3(p0, 0,1,0, 1,1,1, 0,1,0)
 .decl p1(p: Position, col: Color)
 GRID_3x3(p1, 1,0,1, 0,0,0, 1,0,1)
 
-.decl pattern_member(eid: number, p: Position, col: Color)
+.decl pattern_member(id: Ident, p: Position, col: Color)
 pattern_member(0, P, C) :- p0(P, C), C != 0.
 pattern_member(1, P, C) :- p1(P, C), C != 0.
 
-.decl pattern_out(eid: number, col: Color)
+.decl pattern_out(id: Ident, col: Color)
 pattern_out(0, 3). pattern_out(1, 8).
 ```
 
-The GRID gives visual shape; the derive rule filters (e.g., `C != 0` for non-bg members) and tags with the eid.
+The GRID gives visual shape; the derive rule filters (e.g., `C != 0` for non-bg members) and tags with the id.
 
 ## Position remapping via `GRID` id join
 
 To store a position correspondence, join two GRIDs on an opaque id: `src` labels the domain cells; `dst` gives each target cell the id of its source. The correspondence is visible in the layout; ids carry identity only. Raw Position-pair facts hold the same data in an unreadable form.
 
 ```
-.decl src(p: Position, id: number)
+.decl src(p: Position, id: Ident)
 GRID_3x3(src,
     0, 1, 2,
     3, 4, 5,
     6, 7, 8)
 
-.decl dst(p: Position, id: number)
+.decl dst(p: Position, id: Ident)
 GRID_5x5(dst,
     0, 0, 1, 2, 2,
     0, 0, 1, 2, 2,
@@ -119,7 +119,7 @@ decompose(P_grid, P_tile, P_intile) :-
 Key Consts data about one tile of a decomposition by the tile position the decomposition produces; the body then joins its `p_outer` against the data directly. A second vocabulary for the same tiles (an edge Dir, a corner name) enters only through a conversion rule, which the Indirection test flags.
 
 ```
-.decl combine_member(eid: number, p_outer: Position, c: Color)
+.decl combine_member(id: Ident, p_outer: Position, c: Color)
 combine_member(0, [0,0,0,1], 0). combine_member(0, [0,0,1,0], 0).
 ```
 
@@ -154,24 +154,24 @@ ID has no effect at consumption: an application site skips it through its clean-
 
 ## Set-keyed relations via parent/child tables
 
-Declare a relation keyed by a multiset of members as two tables joined by an `eid`: the parent holds `(eid, out-fields)`; the child holds `(eid, member-fields)`. The match runs through `KeyedSetCompare` (`lib.dl`): the child table feeds `pattern_member`, the observed cells feed `observed_member`, and `covers` / `equals` test containment / equality. The parent table maps the matched `eid` to its output.
+Declare a relation keyed by a multiset of members as two tables joined by an `id`: the parent holds `(id, out-fields)`; the child holds `(id, member-fields)`. The match runs through `KeyedSetCompare` (`lib.dl`): the child table feeds `pattern_member`, the observed cells feed `observed_member`, and `covers` / `equals` test containment / equality. The parent table maps the matched `id` to its output.
 
 ```
-.decl combine_member(eid: number, p_outer: Position, c: Color)
-.decl combine_out(eid: number, c_out: Color)
+.decl combine_member(id: Ident, p_outer: Position, c: Color)
+.decl combine_out(id: Ident, c_out: Color)
 
 combine_member(0, [0,1,0,0], 0). combine_member(0, [1,0,0,0], 0). combine_out(0, 2).
 combine_member(1, [0,1,0,0], 9). combine_member(1, [1,0,0,0], 0). combine_out(1, 0).
 
 .type CombineMember = [p: Position, col: Color]
-.init combine_match = KeyedSetCompare<Position, number, CombineMember>
-combine_match.pattern_member(Eid, [P_outer, C]) :- c.combine_member(Eid, P_outer, C).
+.init combine_match = KeyedSetCompare<Position, Ident, CombineMember>
+combine_match.pattern_member(Id, [P_outer, C]) :- c.combine_member(Id, P_outer, C).
 combine_match.observed_member(P_grid_out, [P_tile, C]) :-
     decompose(P_grid_in, P_tile, P_grid_out, _), in(P_grid_in, C).
 
 out(P_grid_out, Col_out) :-
-    c.combine_out(Eid, Col_out),
-    combine_match.equals(P_grid_out, Eid).
+    c.combine_out(Id, Col_out),
+    combine_match.equals(P_grid_out, Id).
 ```
 
 This example uses `equals` because the observed tiles at a cell are exactly the entry's members; use `covers` where the observed set may have members beyond the pattern.

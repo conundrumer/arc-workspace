@@ -7,10 +7,10 @@
 #include "../lib.dl"
 
 .comp Consts {
-    .decl bg(c: Color)          bg(0).
-    .decl mark_color(c: Color)  mark_color(2).
+    .decl bg(c: Color) bg(0).
+    .decl mark_color(c: Color) mark_color(2).
     .decl mark_diag(d: DiagDir) mark_diag(DIAG_TL).
-    .decl scale(n: number)      scale(3).
+    .decl scale(n: number) scale(3).
 }
 
 .init c = Consts

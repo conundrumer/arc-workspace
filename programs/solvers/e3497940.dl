@@ -18,21 +18,21 @@
     .decl frame(p: Position)
     frame(P) :- helpers.frame_pos([10, 4], P).
 
-    // --- Tile decompose data ----------------------------------------------
+    // --- Tile decompose data ---
     .decl tile_decompose(p: Position, p_outer: Position, p_inner: Position)
     tile_decompose(P_grid, P_tile, P_intile) :-
         helpers.tile_pos([1, 2], [10, 4], [0, 1], P_grid, P_tile, P_intile).
 
-    // --- Div decompose data -----------------------------------------------
+    // --- Div decompose data ---
     .decl divisor(n: number)
     divisor(2).
 
     .decl divide_gap(g: number)
     divide_gap(1).
 
-    // --- Fold data ----------------------------------------------------------
-    .decl base(d: Dir)  base(DIR_L).   // side kept; the fold axis is its axis
-    .decl bg(c: Color)  bg(0).
+    // --- Fold data ---
+    .decl base(d: Dir) base(DIR_L).   // side kept; the fold axis is its axis
+    .decl bg(c: Color) bg(0).
 }
 
 .init c = Consts
@@ -40,7 +40,7 @@
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
-// --- Decompose cases -------------------------------------------------------
+// --- Decompose cases ---
 
 .decl dec_choice(ch: Choice)
 dec_choice($Tile()).
@@ -71,7 +71,7 @@ fold_ink(P_out, Col, Ch) :-
     axis_of(D, A), flip_of(A, F),                   // fold axis flip
     apply(F, P_intile, P_out).
 
-// --- Output ----------------------------------------------------------------
+// --- Output ---
 
 .decl out(p: Position, col: Color, c: Choice)
 out(P, Col, Ch) :- base_ink(P, Col, Ch).

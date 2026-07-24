@@ -16,8 +16,8 @@
     .init helpers = ConstsHelpers
 
     // --- shared ---
-    .decl bg(c: Color)   bg(0).
-    .decl ink(c: Color)  ink(5).
+    .decl bg(c: Color) bg(0).
+    .decl ink(c: Color) ink(5).
 
     .decl intile(p: Position)
     intile(P) :- helpers.frame_pos([2, 2], P).
@@ -29,8 +29,8 @@
         2, 1)
 
     // --- Checker ---
-    .decl corner(d: DiagDir)        corner(DIAG_TL).
-    .decl corner_color(col: Color)  corner_color(1).
+    .decl corner(d: DiagDir) corner(DIAG_TL).
+    .decl corner_color(col: Color) corner_color(1).
 
     .decl alt(c1: Color, c2: Color)
     alt(1, 2).
@@ -42,8 +42,8 @@
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
-.decl choice(ch: Choice)
-choice($Tile()). choice($Checker()).
+.decl impl_choice(ch: Choice)
+impl_choice($Tile()). impl_choice($Checker()).
 
 // Output decomposition: input cell as tile index × intile position.
 .decl cell(p_grid: Position, p_tile: Position, p_intile: Position)
@@ -61,7 +61,7 @@ inked(P_grid_out, P_intile) :-
 
 // Blank outside the silhouette — shared.
 out(P_grid_out, Bg, Ch) :-
-    choice(Ch), cell(P_grid_out, _, _),
+    impl_choice(Ch), cell(P_grid_out, _, _),
     !inked(P_grid_out, _), c.bg(Bg).
 
 // --- Tile ---

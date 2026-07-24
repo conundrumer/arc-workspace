@@ -18,10 +18,10 @@
 .type Choice = Meet {} | Near {} | Half {}
 
 .comp Consts {
-    .decl bg(c: Color)     bg(0).
-    .decl clash(c: Color)  clash(5).
+    .decl bg(c: Color) bg(0).
+    .decl clash(c: Color) clash(5).
 
-    .decl axis(a: Axis)    axis(AXIS_H).
+    .decl axis(a: Axis) axis(AXIS_H).
 }
 
 .init c = Consts
@@ -35,8 +35,8 @@ mark(P, Col) :- in(P, Col), !c.bg(Col).
 // Marks paired per row: m1 the mark nearer edge d, m2 its opponent.
 .decl pair(d: Dir, m1: Position, c1: Color, m2: Position, c2: Color)
 pair(D, M1, C1, M2, C2) :-
-    mark(M1, C1), mark(M2, C2),                              // two marks
-    c.axis(A), split(M1, A, _, Ac), split(M2, A, _, Ac),     // on one row
+    mark(M1, C1), mark(M2, C2),                                // two marks
+    c.axis(A), split(M1, A, _, Ac), split(M2, A, _, Ac),       // on one row
     axis_of(D, A), dist(M1, D, K1), dist(M2, D, K2), K1 < K2.  // m1 nearer d
 
 // --- $Meet / $Near: lockstep fronts ---

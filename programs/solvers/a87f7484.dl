@@ -12,7 +12,7 @@
 .type Choice = Count {} | Shape {}
 
 .comp Consts {
-    .decl bg(c: Color)        bg(0).
+    .decl bg(c: Color) bg(0).
     .decl tile_dim(k: number) tile_dim(3).
 }
 

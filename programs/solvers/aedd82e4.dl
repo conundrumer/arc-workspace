@@ -14,11 +14,11 @@
 
 .comp Consts {
     // --- shared ---
-    .decl bg(c: Color)   bg(0).
+    .decl bg(c: Color) bg(0).
     .decl mark(c: Color) mark(1).
 
     // --- $Repaint ---
-    .decl ink(c: Color)  ink(2).
+    .decl ink(c: Color) ink(2).
 }
 
 .init c = Consts

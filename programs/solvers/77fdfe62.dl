@@ -18,17 +18,17 @@
 
 .comp Consts {
     // --- shared ---
-    .decl ink(c: Color)      ink(8).
+    .decl ink(c: Color) ink(8).
 
     // --- $Lines ---
-    .decl line(c: Color)     line(1).
+    .decl line(c: Color) line(1).
 
     // --- $Margin ---
     .decl margin(p: Position)
     margin([2, 2, 2, 2]).
 
     // --- $Bg ---
-    .decl bg(c: Color)       bg(0).
+    .decl bg(c: Color) bg(0).
 }
 
 .init c = Consts

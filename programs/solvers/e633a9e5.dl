@@ -54,10 +54,11 @@
     .init helpers = ConstsHelpers
 
     // --- $Edge ---
-    .decl fat(n: number)  fat(2).
+    .decl fat(n: number) fat(2).
 
     // --- $Table ---
-    .decl anchor(d: Dir)  anchor(DIR_T). anchor(DIR_L).
+    .decl anchor(d: Dir)
+    anchor(DIR_T). anchor(DIR_L).
     .decl ext(a: Axis, i: number, n: number)
     ext(AXIS_V, 0, 2). ext(AXIS_V, 1, 1). ext(AXIS_V, 2, 2).
     ext(AXIS_H, 0, 2). ext(AXIS_H, 1, 1). ext(AXIS_H, 2, 2).
@@ -75,13 +76,13 @@
     // --- $Map ---
     // Cell correspondence as an id join: src labels the input cells, dst
     // gives each output cell the id of its source.
-    .decl src(p: Position, id: number)
+    .decl src(p: Position, id: Ident)
     GRID_3x3(src,
         0, 1, 2,
         3, 4, 5,
         6, 7, 8)
 
-    .decl dst(p: Position, id: number)
+    .decl dst(p: Position, id: Ident)
     GRID_5x5(dst,
         0, 0, 1, 2, 2,
         0, 0, 1, 2, 2,

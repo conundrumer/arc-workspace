@@ -8,9 +8,9 @@
 #include "../lib.dl"
 
 .comp Consts {
-    .decl bg(col: Color)     bg(0).
-    .decl sweep(d: DiagDir)  sweep(DIAG_BR).
-    .decl side(n: number)    side(6).
+    .decl bg(col: Color) bg(0).
+    .decl sweep(d: DiagDir) sweep(DIAG_BR).
+    .decl side(n: number) side(6).
 }
 
 .init c = Consts

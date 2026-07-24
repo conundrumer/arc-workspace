@@ -6,8 +6,8 @@
 #include "../lib.dl"
 
 .comp Consts {
-    .decl bg(c: Color)   bg(0).
-    .decl dir(d: Dir)    dir(DIR_B).   // fill direction
+    .decl bg(c: Color) bg(0).
+    .decl dir(d: Dir) dir(DIR_B).   // fill direction
 }
 
 .init c = Consts

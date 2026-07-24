@@ -15,14 +15,14 @@
 .type Choice = Dir {} | Edge {}
 
 .comp Consts {
-    .decl mark(c: Color)    mark(2).
-    .decl block(c: Color)   block(5).
+    .decl mark(c: Color) mark(2).
+    .decl block(c: Color) block(5).
 
     // Dodge side, as a turn from the walk direction.
-    .decl dodge(s: Sense)   dodge(SENSE_CW).
+    .decl dodge(s: Sense) dodge(SENSE_CW).
 
     // --- $Dir ---
-    .decl dir(d: Dir)       dir(DIR_B).   // mark edge; walks flow away from it
+    .decl dir(d: Dir) dir(DIR_B).   // mark edge; walks flow away from it
 }
 
 .init c = Consts
@@ -51,9 +51,9 @@ walk(P2, W, Ch) :-
     in(P2, Col), !c.block(Col).             // on-grid and clear
 walk(P2, W, Ch) :-
     walk(P, W, Ch),
-    step_delta(W, S), compose(P, S, Q),     // cell ahead
-    in(Q, Col), c.block(Col),               // holds the block color
-    c.dodge(Sn), turn(Sn, W, Dd),           // dodge direction
+    step_delta(W, S), compose(P, S, Q),                 // cell ahead
+    in(Q, Col), c.block(Col),                           // holds the block color
+    c.dodge(Sn), turn(Sn, W, Dd),                       // dodge direction
     step_delta(Dd, S2), compose(P, S2, P2), in(P2, _).  // sidestep
 
 .decl impl_choice(ch: Choice)

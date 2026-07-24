@@ -15,7 +15,7 @@
 .type Choice = Stamp {} | Mask {}
 
 .comp Consts {
-    .decl bg(c: Color)    bg(0).
+    .decl bg(c: Color) bg(0).
 }
 
 .init c = Consts

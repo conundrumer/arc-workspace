@@ -22,14 +22,14 @@
 .type Choice = [t: Travel, f: Paint]
 
 .comp Consts {
-    .decl bg(c: Color)    bg(0).
-    .decl fill(c: Color)  fill(8).    // off-path output color
+    .decl bg(c: Color) bg(0).
+    .decl fill(c: Color) fill(8).    // off-path output color
 
     // --- $Axis ---
-    .decl axis(a: Axis)   axis(AXIS_V).
+    .decl axis(a: Axis) axis(AXIS_V).
 
     // --- $Ink ---
-    .decl ink(c: Color)   ink(1).
+    .decl ink(c: Color) ink(1).
 }
 
 .init c = Consts
@@ -41,7 +41,7 @@
 .decl mark(p: Position, col: Color)
 mark(P, Col) :- in(P, Col), !c.bg(Col).
 
-// --- Travel cases: the travel axis --------------------------------------------
+// --- Travel cases: the travel axis ---
 
 .decl travel_choice(t: Travel)
 travel_choice($Axis()). travel_choice($Long()).
@@ -50,7 +50,7 @@ travel_choice($Axis()). travel_choice($Long()).
 travel_axis($Axis(), A) :- c.axis(A).
 travel_axis($Long(), A) :- mark(P, _), axis_dims(P, A, N1, N2), N1 > N2.
 
-// --- The ball's walk -----------------------------------------------------------
+// --- The ball's walk ---
 
 // Launch: away from the two edges the mark's corner touches.
 .decl launch(t: Travel, p: Position, d_travel: Dir, d_bounce: Dir)
@@ -76,7 +76,7 @@ walk(T, P2, D2) :-
     step_delta(D2, Sd), compose(St, Sd, S),           // side component, reflected
     compose(P, S, P2), in(P2, _).                     // still on the grid
 
-// --- Paint cases: the ball color -----------------------------------------------
+// --- Paint cases: the ball color ---
 
 .decl paint_choice(f: Paint)
 paint_choice($Mark()). paint_choice($Ink()).
@@ -85,7 +85,7 @@ paint_choice($Mark()). paint_choice($Ink()).
 paint(Col, $Mark()) :- mark(_, Col).
 paint(Col, $Ink())  :- c.ink(Col).
 
-// --- Output ---------------------------------------------------------------------
+// --- Output ---
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, [T, F]) :- walk(T, P, _), paint(Col, F).

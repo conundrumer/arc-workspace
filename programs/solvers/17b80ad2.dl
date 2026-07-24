@@ -15,11 +15,11 @@
 .type Choice = Dir {} | Edge {}
 
 .comp Consts {
-    .decl bg(c: Color)     bg(0).
-    .decl mark(c: Color)   mark(5).
+    .decl bg(c: Color) bg(0).
+    .decl mark(c: Color) mark(5).
 
     // --- $Dir ---
-    .decl dir(d: Dir)      dir(DIR_B).   // mark edge; fill flows away from it
+    .decl dir(d: Dir) dir(DIR_B).   // mark edge; fill flows away from it
 }
 
 .init c = Consts
@@ -53,11 +53,11 @@ flow(P2, Col, D, Ch) :-
     opposite(D, O), step_delta(O, S), compose(P, S, P2), // neighbor away from the mark edge
     in(P2, Bg), c.bg(Bg).                                // still bg — ink occludes
 
-.decl choice_elem(ch: Choice)
-choice_elem($Dir()). choice_elem($Edge()).
+.decl impl_choice(ch: Choice)
+impl_choice($Dir()). impl_choice($Edge()).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- flow(P, Col, _, Ch).
-out(P, Col, Ch) :- choice_elem(Ch), in(P, Col), !flow(P, _, _, Ch).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !flow(P, _, _, Ch).
 
 .output out(IO=stdout)

@@ -1,15 +1,15 @@
 // 7e02026e
 // family: 1818057f
-// Wherever the plus footprint lands fully on blank, those cells turn
-// c.mark; the rest passes through.
+// Wherever the plus footprint lands fully on the field color, those cells
+// turn c.mark; the rest passes through.
 
 #include "../lib.dl"
 
 .type Choice = Shape {} | Flank {}
 
 .comp Consts {
-    .decl blank(c: Color) blank(0).
-    .decl mark(c: Color)  mark(3).
+    .decl field(c: Color) field(0).
+    .decl mark(c: Color) mark(3).
 
     // --- $Shape ---
     .decl shape_grid(p: Position, lit: number)
@@ -27,12 +27,12 @@
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
-.decl blank_at(p: Position)
-blank_at(P) :- in(P, Col), c.blank(Col).
+.decl field_at(p: Position)
+field_at(P) :- in(P, Col), c.field(Col).
 
 // --- $Shape ---
 .init occ = Occurrences<Unit>
-occ.cell($U(), P)  :- blank_at(P).
+occ.cell($U(), P)  :- field_at(P).
 occ.shape($U(), P) :- c.shape(P).
 
 .decl shape_covered(p: Position)
@@ -40,10 +40,10 @@ shape_covered(P) :- occ.occurrence($U(), M), c.shape(S), compose(M, S, P).
 
 // --- $Flank ---
 .decl exposed(p: Position)
-exposed(P) :- blank_at(P), dir_elem(D), step_delta(D, S), compose(P, S, P2), !blank_at(P2).
+exposed(P) :- field_at(P), dir_elem(D), step_delta(D, S), compose(P, S, P2), !field_at(P2).
 
 .decl flanked(p: Position)
-flanked(P) :- blank_at(P), !exposed(P).
+flanked(P) :- field_at(P), !exposed(P).
 
 .decl flank_covered(p: Position)
 flank_covered(P) :- flanked(P).

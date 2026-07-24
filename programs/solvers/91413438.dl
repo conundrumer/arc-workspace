@@ -7,9 +7,9 @@
 #include "../lib.dl"
 
 .comp Consts {
-    .decl bg(col: Color)         bg(0).
+    .decl bg(col: Color) bg(0).
     .decl lex_corner(d: DiagDir) lex_corner(DIAG_TL).
-    .decl lex_axis(a: Axis)      lex_axis(AXIS_V).
+    .decl lex_axis(a: Axis) lex_axis(AXIS_V).
 }
 
 .init c = Consts

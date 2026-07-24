@@ -7,8 +7,8 @@
 #include "../lib.dl"
 
 .comp Consts {
-    .decl grav(d: Dir)   grav(DIR_T).
-    .decl bg(c: Color)   bg(0).
+    .decl grav(d: Dir) grav(DIR_T).
+    .decl bg(c: Color) bg(0).
     .decl mover(c: Color) mover(2).
 }
 

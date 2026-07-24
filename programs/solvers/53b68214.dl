@@ -16,7 +16,7 @@
 .type Choice = Square {} | Canvas {}
 
 .comp Consts {
-    .decl growth(d: Dir)     growth(DIR_B).
+    .decl growth(d: Dir) growth(DIR_B).
 
     // --- $Canvas ---
     .decl out_dim(k: number) out_dim(10).

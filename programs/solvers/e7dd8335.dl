@@ -11,9 +11,9 @@
 .type Choice = Whole {} | Each {}
 
 .comp Consts {
-    .decl bg(c: Color)   bg(0).
+    .decl bg(c: Color) bg(0).
     .decl fill(c: Color) fill(2).
-    .decl dir(d: Dir)    dir(DIR_B).   // the recolored half's edge
+    .decl dir(d: Dir) dir(DIR_B).   // the recolored half's edge
 }
 
 .init c = Consts
@@ -41,7 +41,7 @@ boxframe.outer([P, $Whole()], M) :- ink(P), box.margin($U(), M).
 .init comps = Components8<Unit>
 comps.node($U(), P) :- ink(P).
 
-.init comp_box = Bbox<CompId>
+.init comp_box = Bbox<Ident>
 comp_box.cell(Id, P) :- comps.label($U(), P, Id).
 
 boxframe.outer([P, $Each()], M) :- comps.label($U(), P, Id), comp_box.margin(Id, M).
@@ -50,11 +50,11 @@ boxframe.outer([P, $Each()], M) :- comps.label($U(), P, Id), comp_box.margin(Id,
 .decl half(p: Position, ch: Choice)
 half(P, Ch) :- boxframe.inner([P, Ch], I), c.dir(D), dist_pair(I, D, K, K2), K < K2.
 
-.decl choice_elem(ch: Choice)
-choice_elem($Whole()). choice_elem($Each()).
+.decl impl_choice(ch: Choice)
+impl_choice($Whole()). impl_choice($Each()).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, F, Ch)   :- half(P, Ch), c.fill(F).
-out(P, Col, Ch) :- in(P, Col), choice_elem(Ch), !half(P, Ch).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !half(P, Ch).
 
 .output out(IO=stdout)

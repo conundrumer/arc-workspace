@@ -18,11 +18,11 @@
 .type Choice = Match {} | Base {}
 
 .comp Consts {
-    .decl bg(c: Color)  bg(0).
+    .decl bg(c: Color) bg(0).
 
-    .decl panel_axis(a: Axis)     panel_axis(AXIS_H).
-    .decl panel_count(n: number)  panel_count(2).
-    .decl panel_gap(g: number)    panel_gap(1).
+    .decl panel_axis(a: Axis) panel_axis(AXIS_H).
+    .decl panel_count(n: number) panel_count(2).
+    .decl panel_gap(g: number) panel_gap(1).
 
     // Mark color for ink present only in the panel at p_panel.
     .decl only_fill(p_panel: Position, col: Color)
@@ -30,7 +30,7 @@
     only_fill([0, 0, 1, 0], 1).
 
     // --- $Base ---
-    .decl base_panel(p_panel: Position)  base_panel([0, 0, 0, 1]).
+    .decl base_panel(p_panel: Position) base_panel([0, 0, 0, 1]).
 }
 
 .init c = Consts
@@ -38,9 +38,9 @@
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
-.decl choice(ch: Choice)
-choice($Match()).
-choice($Base()).
+.decl impl_choice(ch: Choice)
+impl_choice($Match()).
+impl_choice($Base()).
 
 // Input cells decomposed into panel and in-panel position.
 .decl cell(p_panel: Position, p: Position, col: Color)
@@ -60,14 +60,14 @@ ink(P_panel, P, Col) :- cell(P_panel, P, Col), !c.bg(Col).
 // --- shared: one-sided ink is marked with its panel's color; blank is bg ---
 
 out(P, Col, Ch) :-
-    choice(Ch),
+    impl_choice(Ch),
     ink(P_panel, P, _),                                     // ink in one panel
     panel(P_panel2), P_panel2 != P_panel,                   // the other panel
     !ink(P_panel2, P, _),                                   // blank there
     c.only_fill(P_panel, Col).
 
 out(P, Col, Ch) :-
-    choice(Ch),
+    impl_choice(Ch),
     cell(_, P, _), !ink(_, P, _),                           // ink in neither panel
     c.bg(Col).
 

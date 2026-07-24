@@ -6,9 +6,9 @@
 #include "../lib.dl"
 
 .comp Consts {
-    .decl dir(d: Dir)     dir(DIR_L).    // shift direction
-    .decl bg(c: Color)    bg(0).
-    .decl fill(c: Color)  fill(5).      // field color
+    .decl dir(d: Dir) dir(DIR_L).    // shift direction
+    .decl bg(c: Color) bg(0).
+    .decl fill(c: Color) fill(5).      // field color
 }
 
 .init c = Consts

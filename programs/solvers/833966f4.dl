@@ -13,8 +13,8 @@
 .type Choice = LabeledGrids {} | Divide {}
 
 .comp Consts {
-    // --- LabeledGrids data ----------------------------------------------
-    .decl in_label(p: Position, lbl: number)
+    // --- LabeledGrids data ---
+    .decl in_label(p: Position, id: Ident)
     GRID_5x1(in_label,
         1,
         2,
@@ -22,7 +22,7 @@
         4,
         5)
 
-    .decl out_label(p: Position, lbl: number)
+    .decl out_label(p: Position, id: Ident)
     GRID_5x1(out_label,
         2,
         1,
@@ -30,13 +30,13 @@
         5,
         4)
 
-    // --- Divide params --------------------------------------------------
-    .decl divide_axis(a: Axis)      divide_axis(AXIS_V).
-    .decl divisor(n: number)        divisor(2).
-    .decl divide_gap(g: number)     divide_gap(1).
+    // --- Divide params ---
+    .decl divide_axis(a: Axis) divide_axis(AXIS_V).
+    .decl divisor(n: number) divisor(2).
+    .decl divide_gap(g: number) divide_gap(1).
 
     // Flip swapping the two cells of each 2×1 V-subgrid.
-    .decl flip(d: D4)               flip(D4_TB).
+    .decl flip(d: D4) flip(D4_TB).
 }
 
 .init c = Consts
@@ -44,7 +44,7 @@
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
-.decl impl_choice(c: Choice)
+.decl impl_choice(ch: Choice)
 impl_choice($LabeledGrids()).
 impl_choice($Divide()).
 
@@ -56,8 +56,8 @@ decomposable(P_grid) :-
 
 .decl perm(p_in: Position, p_out: Position, c: Choice)
 perm(P_grid_in, P_grid_out, $LabeledGrids()) :-
-    c.in_label(P_grid_in, Lbl), c.out_label(P_grid_out, Lbl),  // shared label
-    Lbl != 0.                                                  // non-pairing sentinel
+    c.in_label(P_grid_in, Id), c.out_label(P_grid_out, Id),   // shared label
+    Id != 0.                                                  // non-pairing sentinel
 
 perm(P_grid_in, P_grid_out, $Divide()) :-
     in(P_grid_in, _),                                          // input cell

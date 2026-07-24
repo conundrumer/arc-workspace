@@ -12,12 +12,12 @@
 
 .comp Consts {
     // --- shared ---
-    .decl mirror(d: D4)        mirror(D4_TB).
+    .decl mirror(d: D4) mirror(D4_TB).
 
     // --- Direct ---
-    .decl bg(c: Color)         bg(0).
-    .decl matched(c: Color)    matched(2).
-    .decl unmatched(c: Color)  unmatched(5).
+    .decl bg(c: Color) bg(0).
+    .decl matched(c: Color) matched(2).
+    .decl unmatched(c: Color) unmatched(5).
 
     // --- Lookup ---
     .decl recolor(c_self: Color, c_mirror: Color, c_out: Color)

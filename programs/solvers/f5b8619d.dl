@@ -9,9 +9,9 @@
 .comp Consts {
     .init helpers = ConstsHelpers
 
-    .decl bg(c: Color)     bg(0).
-    .decl shade(c: Color)  shade(8).
-    .decl axis(a: Axis)    axis(AXIS_V).
+    .decl bg(c: Color) bg(0).
+    .decl shade(c: Color) shade(8).
+    .decl axis(a: Axis) axis(AXIS_V).
 
     // 2×2 tile arrangement.
     .decl tile(p: Position)

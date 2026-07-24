@@ -19,19 +19,19 @@
 .type Choice = Stamp {} | Augment {} | Tile {}
 
 .comp Consts {
-    .decl data_dir(d: Dir)        data_dir(DIR_B).
+    .decl data_dir(d: Dir) data_dir(DIR_B).
     .decl stamps(d: D4)
     stamps(D4_ID).
     stamps(D4_TB).
 
     // --- Stamp ---
-    .decl half_h(n: number)       half_h(5).
+    .decl half_h(n: number) half_h(5).
 
     // --- Augment ---
-    .decl bg(c: Color)            bg(0).
+    .decl bg(c: Color) bg(0).
 
     // --- Tile ---
-    .decl n_tiles(n: number)      n_tiles(2).
+    .decl n_tiles(n: number) n_tiles(2).
     .decl tile_d4(p_tile: Position, d: D4)
     GRID_2x1(tile_d4,
         D4_TB,

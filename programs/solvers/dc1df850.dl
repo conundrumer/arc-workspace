@@ -14,10 +14,10 @@
 
 .comp Consts {
     // --- shared ---
-    .decl marker(c: Color)  marker(2).
+    .decl marker(c: Color) marker(2).
 
     // --- $Grow ---
-    .decl halo(c: Color)    halo(1).
+    .decl halo(c: Color) halo(1).
 
     // --- $Stamp ---
     .decl template(p: Position, col: Color)

@@ -11,12 +11,12 @@
 .type Choice = Period {} | Blank {}
 
 .comp Consts {
-    .decl bg(c: Color)       bg(0).
-    .decl paint(c: Color)    paint(2).
+    .decl bg(c: Color) bg(0).
+    .decl paint(c: Color) paint(2).
 
     // --- Period ---
-    .decl sep_w(k: number)   sep_w(1).
-    .decl tile_w(k: number)  tile_w(3).
+    .decl sep_w(k: number) sep_w(1).
+    .decl tile_w(k: number) tile_w(3).
 }
 
 .init c = Consts
@@ -24,8 +24,8 @@
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
-.decl choice(ch: Choice)
-choice($Period()). choice($Blank()).
+.decl impl_choice(ch: Choice)
+impl_choice($Period()). impl_choice($Blank()).
 
 .decl ink(p: Position)
 ink(P) :- in(P, Col), !c.bg(Col).
@@ -51,7 +51,7 @@ sep(P, $Blank()) :-
 // Separator stays bg; ink erases; tile bg complements to paint.
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Bg, Ch)    :- sep(P, Ch), c.bg(Bg).
-out(P, Bg, Ch)    :- ink(P), choice(Ch), c.bg(Bg).
-out(P, Paint, Ch) :- in(P, Col), c.bg(Col), choice(Ch), !sep(P, Ch), c.paint(Paint).
+out(P, Bg, Ch)    :- ink(P), impl_choice(Ch), c.bg(Bg).
+out(P, Paint, Ch) :- in(P, Col), c.bg(Col), impl_choice(Ch), !sep(P, Ch), c.paint(Paint).
 
 .output out(IO=stdout)

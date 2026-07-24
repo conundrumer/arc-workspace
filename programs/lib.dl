@@ -24,6 +24,11 @@
 .type D4 <: number
 .type Sense <: number
 
+// Ident: a label carrying identity and nothing else — entries of a stored
+// table, component labels, the endpoints of a correspondence. Numbering is
+// arbitrary, so consumers join on equality and never order or count with it.
+.type Ident <: number
+
 .type Position = [t: number, b: number, l: number, r: number]
 .type Dim = [v: number, h: number]
 
@@ -716,10 +721,6 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     inside(K, P) :- grid(K, P), margin(K, M), geq(P, M).
 }
 
-// Opaque component id, sealed so it cannot be read as a Position; that read
-// would leak the representative cell's coordinates in as orientation.
-.type CompId = Comp { tag: number }
-
 // Connected components of a node set (4-adjacency), per key, each labeled by
 // an opaque id from the lowest-ord member cell: ord is arbitrary but stable
 // within a run, so the pick carries no geometry. A member cell is an
@@ -736,8 +737,8 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     conn(Ky, P, P)  :- node(Ky, P).
     conn(Ky, P, Q2) :- conn(Ky, P, Q1), step(D), compose(Q1, D, Q2), node(Ky, Q2).
 
-    .decl label(key: Key, p: Position, id: CompId)
-    label(Ky, P, $Comp(Min)) :- node(Ky, P), Min = min ord(Q) : { conn(Ky, P, Q) }.
+    .decl label(key: Key, p: Position, id: Ident)
+    label(Ky, P, as(Min, Ident)) :- node(Ky, P), Min = min ord(Q) : { conn(Ky, P, Q) }.
 }
 
 // Connected components under 8-adjacency — Components with the four
@@ -750,7 +751,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     .decl node(key: Key, p: Position)
     c4.node(K, P) :- node(K, P).
 
-    .decl label(key: Key, p: Position, id: CompId)
+    .decl label(key: Key, p: Position, id: Ident)
     label(K, P, Id) :- c4.label(K, P, Id).
 }
 

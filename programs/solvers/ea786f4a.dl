@@ -11,7 +11,7 @@
 .type Choice = Dot {} | Grid {}
 
 .comp Consts {
-    .decl ink(c: Color)   ink(0).
+    .decl ink(c: Color) ink(0).
 }
 
 .init c = Consts

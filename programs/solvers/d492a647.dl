@@ -15,8 +15,8 @@
 .type Choice = Period {} | Parity {}
 
 .comp Consts {
-    .decl bg(c: Color)      bg(0).
-    .decl noise(c: Color)   noise(5).
+    .decl bg(c: Color) bg(0).
+    .decl noise(c: Color) noise(5).
 
     // --- $Period ---
     .decl period(k: number) period(2).

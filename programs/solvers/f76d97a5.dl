@@ -7,8 +7,8 @@
 #include "../lib.dl"
 
 .comp Consts {
-    .decl marker(c: Color)  marker(5).
-    .decl bg(c: Color)      bg(0).
+    .decl marker(c: Color) marker(5).
+    .decl bg(c: Color) bg(0).
 }
 
 .init c = Consts

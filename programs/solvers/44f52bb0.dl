@@ -31,21 +31,21 @@
     // against the input's invariance set; the largest matched group is chosen.
     // Every entry lists D4_ID; the {D4_ID}-only entry is the
     // always-matches fallback (size 1 → lowest priority).
-    .decl mapping_sym(id: number, d: D4)
+    .decl mapping_sym(id: Ident, d: D4)
     mapping_sym(0, D4_ID).
     mapping_sym(0, D4_LR).
     mapping_sym(0, D4_TB).
     mapping_sym(0, D4_HT).
     mapping_sym(1, D4_ID).
 
-    .decl mapping_out(id: number, p: Position, col: Color)
+    .decl mapping_out(id: Ident, p: Position, col: Color)
     mapping_out(0, ORIGIN, 1).
     mapping_out(1, ORIGIN, 7).
 }
 
 .init c = Consts
 
-.init group_match = KeyedSetCompare<Unit, number, D4>
+.init group_match = KeyedSetCompare<Unit, Ident, D4>
 group_match.pattern_member(Id, D) :- c.mapping_sym(Id, D).
 group_match.observed_member($U(), D) :- input_inv(D).
 
@@ -73,10 +73,10 @@ input_inv(D) :- d4_elem(D), !non_invariant(D).
 // Pick the largest group the input covers (strictest invariance). The input
 // may be invariant under more than a group requires, so this is containment,
 // not equality. Assumes group sizes are unique; a tie would emit conflicting cells.
-.decl best_id(id: number)
+.decl best_id(id: Ident)
 best_id(Id) :-
     group_match.covers($U(), Id),                                  // group ⊆ invariance set
-    group_match.pattern_size(Id, N),                            // group size
+    group_match.pattern_size(Id, N),                               // group size
     N = max N2 : { group_match.covers($U(), I2), group_match.pattern_size(I2, N2) }.
 
 // --- Output ---

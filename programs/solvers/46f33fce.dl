@@ -7,8 +7,8 @@
 #include "../lib.dl"
 
 .comp Consts {
-    .decl bg(c: Color)     bg(0).
-    .decl side(k: number)  side(2).
+    .decl bg(c: Color) bg(0).
+    .decl side(k: number) side(2).
     .decl scale(s: number) scale(2).
 }
 

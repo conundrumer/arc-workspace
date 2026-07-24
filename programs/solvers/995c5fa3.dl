@@ -16,13 +16,13 @@
 .type TileMember = [p: Position, col: Color]
 
 .comp Consts {
-    .decl tile_axis(a: Axis)   tile_axis(AXIS_H).
-    .decl tile_count(n: number)  tile_count(3).
-    .decl tile_gap(g: number)  tile_gap(1).
+    .decl tile_axis(a: Axis) tile_axis(AXIS_H).
+    .decl tile_count(n: number) tile_count(3).
+    .decl tile_gap(g: number) tile_gap(1).
 
     // Tile index (from tile_dir) maps to output row index (from row_dir).
-    .decl tile_dir(d: Dir)     tile_dir(DIR_L).
-    .decl row_dir(d: Dir)      row_dir(DIR_T).
+    .decl tile_dir(d: Dir) tile_dir(DIR_L).
+    .decl row_dir(d: Dir) row_dir(DIR_T).
 
     // --- $Lookup ---
 
@@ -51,25 +51,25 @@
         5, 0, 0, 5,
         5, 0, 0, 5)
 
-    .decl mapping_member(eid: number, p_intile: Position, c: Color)
+    .decl mapping_member(id: Ident, p_intile: Position, c: Color)
     mapping_member(0, P, C) :- p0(P, C).
     mapping_member(1, P, C) :- p1(P, C).
     mapping_member(2, P, C) :- p2(P, C).
     mapping_member(3, P, C) :- p3(P, C).
 
-    .decl mapping_out(eid: number, c_out: Color)
+    .decl mapping_out(id: Ident, c_out: Color)
     mapping_out(0, 2). mapping_out(1, 8). mapping_out(2, 3). mapping_out(3, 4).
 
     // --- $HoleBox ---
 
-    .decl bg(c: Color)  bg(0).
+    .decl bg(c: Color) bg(0).
 
     .decl box_color(margin: Position, col: Color)
     box_color([1, 1, 1, 1], 8).
     box_color([2, 0, 1, 1], 4).
     box_color([1, 1, 0, 0], 3).
 
-    .decl full_color(col: Color)  full_color(2).
+    .decl full_color(col: Color) full_color(2).
 }
 
 .init c = Consts
@@ -97,14 +97,14 @@ row_tile(P_out, P_tile) :-
 
 // --- $Lookup ---
 
-.init tile_match = KeyedSetCompare<Position, number, TileMember>
-tile_match.pattern_member(Eid, [P_intile, C]) :- c.mapping_member(Eid, P_intile, C).
+.init tile_match = KeyedSetCompare<Position, Ident, TileMember>
+tile_match.pattern_member(Id, [P_intile, C]) :- c.mapping_member(Id, P_intile, C).
 tile_match.observed_member(P_tile, [P_intile, C]) :- tile_cell(P_tile, P_intile, C).
 
 out(P_out, Col, $Lookup()) :-
     row_tile(P_out, P_tile),
-    c.mapping_out(Eid, Col),                      // entry's color
-    tile_match.equals(P_tile, Eid).               // tile content == entry
+    c.mapping_out(Id, Col),                      // entry's color
+    tile_match.equals(P_tile, Id).               // tile content == entry
 
 // --- $HoleBox ---
 

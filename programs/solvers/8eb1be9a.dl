@@ -8,8 +8,8 @@
 #include "../lib.dl"
 
 .comp Consts {
-    .decl bg(col: Color)  bg(0).
-    .decl axis(a: Axis)   axis(AXIS_V).
+    .decl bg(col: Color) bg(0).
+    .decl axis(a: Axis) axis(AXIS_V).
 }
 
 .init c = Consts

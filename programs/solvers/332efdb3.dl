@@ -18,16 +18,16 @@
 .type Choice = Stripes {} | Motif {} | Inset {}
 
 .comp Consts {
-    .decl bg(c: Color)              bg(1).
-    .decl dot(c: Color)             dot(0).
+    .decl bg(c: Color) bg(1).
+    .decl dot(c: Color) dot(0).
 
     // --- $Stripes / $Inset shared params ---
-    .decl tile_size(k: number)      tile_size(1).
-    .decl tile_gap(g: number)       tile_gap(1).
+    .decl tile_size(k: number) tile_size(1).
+    .decl tile_gap(g: number) tile_gap(1).
 
     // --- $Motif data ---
-    .decl motif_size(k: number)     motif_size(3).
-    .decl motif_overlap(g: number)  motif_overlap(-1).
+    .decl motif_size(k: number) motif_size(3).
+    .decl motif_overlap(g: number) motif_overlap(-1).
 
     .decl motif(p: Position, c: Color)
     GRID_3x3(motif,
@@ -36,7 +36,7 @@
         1, 1, 1)
 
     // --- $Inset extra ---
-    .decl inset_delta(p: Position)  inset_delta([-1, -1, -1, -1]).
+    .decl inset_delta(p: Position) inset_delta([-1, -1, -1, -1]).
 }
 
 .init c = Consts

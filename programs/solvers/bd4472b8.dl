@@ -16,10 +16,10 @@
 #include "../lib.dl"
 
 .comp Consts {
-    .decl header_dir(d: Dir)      header_dir(DIR_T).
-    .decl body_start(n: number)   body_start(2).
-    .decl copies(n: number)       copies(2).
-    .decl transform(d: D4)        transform(D4_DG).
+    .decl header_dir(d: Dir) header_dir(DIR_T).
+    .decl body_start(n: number) body_start(2).
+    .decl copies(n: number) copies(2).
+    .decl transform(d: D4) transform(D4_DG).
 
     // Shift the blank to a top-aligned frame: -body_start along header_dir.
     .decl body_shift(p: Position)
@@ -45,8 +45,8 @@ stripe(P_stack, Col) :-
 // block cell to a transposed-header stripe by Position equality.
 .decl fill(p: Position, col: Color)
 fill(P_b, Col) :-
-    in(P_b, _),                                        // input cell
-    c.body_shift(Delta), compose(P_b, Delta, P_body),  // reframe blank top-aligned
+    in(P_b, _),                                         // input cell
+    c.body_shift(Delta), compose(P_b, Delta, P_body),   // reframe blank top-aligned
     c.header_dir(D), dist(P_body, D, K), K >= 0,        // blank cells only
     axis_of(D, A), c.copies(N),
     divide(P_body, A, N, 0, _, P_inner),               // split blank into N blocks

@@ -11,7 +11,7 @@
 .type Choice = Whole {} | Each {}
 
 .comp Consts {
-    .decl bg(c: Color)   bg(0).
+    .decl bg(c: Color) bg(0).
     .decl fill(c: Color) fill(2).
 }
 
@@ -37,7 +37,7 @@ filled(P, $Whole()) :- in(P, Col), c.bg(Col), box.margin($U(), M), geq(P, M).
 .init comps = Components8<Unit>
 comps.node($U(), P) :- ink(P).
 
-.init comp_box = Bbox<CompId>
+.init comp_box = Bbox<Ident>
 comp_box.cell(Id, P) :- comps.label($U(), P, Id).
 
 filled(P, $Each()) :- in(P, Col), c.bg(Col), comp_box.margin(_, M), geq(P, M).

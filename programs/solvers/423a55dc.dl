@@ -7,9 +7,9 @@
 #include "../lib.dl"
 
 .comp Consts {
-    .decl bg(c: Color)     bg(0).
-    .decl anchor(d: Dir)   anchor(DIR_B).    // edge whose row stays seated
-    .decl sense(s: Sense)  sense(SENSE_CW).  // turn from anchor to the slide dir
+    .decl bg(c: Color) bg(0).
+    .decl anchor(d: Dir) anchor(DIR_B).     // edge whose row stays seated
+    .decl sense(s: Sense) sense(SENSE_CW).  // turn from anchor to the slide dir
 }
 
 .init c = Consts

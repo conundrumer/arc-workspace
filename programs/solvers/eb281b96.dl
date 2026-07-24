@@ -17,8 +17,8 @@
     .init helpers = ConstsHelpers
 
     // --- shared ---
-    .decl tile_axis(a: Axis)        tile_axis(AXIS_V).
-    .decl tile_gap(g: number)       tile_gap(-1).
+    .decl tile_axis(a: Axis) tile_axis(AXIS_V).
+    .decl tile_gap(g: number) tile_gap(-1).
 
     // --- Lookup ---
     .decl tile(p: Position, d: D4)

@@ -17,13 +17,13 @@
 .type Choice = Scan {} | Order {} | Ink {}
 
 .comp Consts {
-    .decl bg(col: Color)     bg(0).
-    .decl tiles(n: number)   tiles(2).
-    .decl gap(g: number)     gap(1).
+    .decl bg(col: Color) bg(0).
+    .decl tiles(n: number) tiles(2).
+    .decl gap(g: number) gap(1).
 
     // --- $Scan ---
-    .decl lex_corner(d: DiagDir)   lex_corner(DIAG_TL).
-    .decl lex_axis(a: Axis)        lex_axis(AXIS_V).
+    .decl lex_corner(d: DiagDir) lex_corner(DIAG_TL).
+    .decl lex_axis(a: Axis) lex_axis(AXIS_V).
 
     // --- $Order ---
     .decl prio(p: Position, r: number)

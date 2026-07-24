@@ -12,10 +12,10 @@
 .type Choice = Square {} | Support {}
 
 .comp Consts {
-    .decl bg(c: Color)  bg(0).
+    .decl bg(c: Color) bg(0).
 
     // --- $Square ---
-    .decl square_dim(k: number)  square_dim(2).
+    .decl square_dim(k: number) square_dim(2).
 }
 
 .init c = Consts

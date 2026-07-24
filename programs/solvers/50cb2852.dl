@@ -13,8 +13,8 @@
 .type Choice = Box {} | Erode {}
 
 .comp Consts {
-    .decl bg(c: Color)    bg(0).
-    .decl fill(c: Color)  fill(8).
+    .decl bg(c: Color) bg(0).
+    .decl fill(c: Color) fill(8).
 }
 
 .init c = Consts
@@ -32,12 +32,12 @@ ink(P) :- in(P, Col), !c.bg(Col).
 .init comps = Components<Unit>
 comps.node($U(), P) :- ink(P).
 
-.init box = Bbox<CompId>
+.init box = Bbox<Ident>
 box.cell(Id, P) :- comps.label($U(), P, Id).
 box.grid(Id, P) :- in(P, _), comps.label($U(), _, Id).
 
 // Box cell on the box boundary.
-.decl box_rim(id: CompId, p: Position)
+.decl box_rim(id: Ident, p: Position)
 box_rim(Id, P) :- box.inside(Id, P), dir_elem(D), dist(P, D, K), box.edge_min(Id, D, K).
 
 interior(P, $Box()) :- box.inside(Id, P), !box_rim(Id, P).

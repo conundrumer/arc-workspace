@@ -12,14 +12,14 @@
 
 .comp Consts {
     // --- shared ---
-    .decl marker(c: Color)    marker(8).
-    .decl to(c: Color)        to(3).
+    .decl marker(c: Color) marker(8).
+    .decl to(c: Color) to(3).
 
     // --- From ---
-    .decl from(c: Color)      from(1).
+    .decl from(c: Color) from(1).
 
     // --- Ink ---
-    .decl bg(c: Color)        bg(0).
+    .decl bg(c: Color) bg(0).
 }
 
 .init c = Consts

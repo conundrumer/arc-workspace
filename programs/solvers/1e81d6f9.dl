@@ -31,10 +31,10 @@
 .type Choice = Marker {} | Bbox {}
 
 .comp Consts {
-    .decl target_corner(d: DiagDir)       target_corner(DIAG_TL).
-    .decl target_offset(off: number)      target_offset(1).
-    .decl bg(c: Color)                    bg(0).
-    .decl mask_color(c: Color)            mask_color(5).
+    .decl target_corner(d: DiagDir) target_corner(DIAG_TL).
+    .decl target_offset(off: number) target_offset(1).
+    .decl bg(c: Color) bg(0).
+    .decl mask_color(c: Color) mask_color(5).
 
     // Anchor Position: target_offset on each cardinal Dir of target_corner.
     .decl target_anchor(p: Position)
@@ -85,7 +85,7 @@ out(P, Col, $Marker()) :- in(P, Col), target_pos(P).                            
 out(P, Bg, $Marker()) :- in(P, Col), target_color(Col), !target_pos(P), c.bg(Bg).  // target elsewhere erased
 
 // --- Bbox --- the whole corner region is kept.
-out(P, Col, $Bbox()) :- in(P, Col), !target_color(Col).                            // non-target passes
+out(P, Col, $Bbox()) :- in(P, Col), !target_color(Col).                               // non-target passes
 out(P, Col, $Bbox()) :- in(P, Col), box.inside($U(), P).                              // region kept
 out(P, Bg, $Bbox()) :- in(P, Col), target_color(Col), !box.inside($U(), P), c.bg(Bg). // target outside region erased
 

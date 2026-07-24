@@ -18,14 +18,14 @@
 
 .comp Consts {
     // --- shared ---
-    .decl noise(col: Color)  noise(0).
+    .decl noise(col: Color) noise(0).
 
     // --- $Period ---
-    .decl period(a: Axis, k: number)  period(AXIS_V, 2).
+    .decl period(a: Axis, k: number) period(AXIS_V, 2).
 
     // --- $Rows ---
-    .decl bg(col: Color)     bg(1).
-    .decl axis(a: Axis)      axis(AXIS_H).   // lines run along H
+    .decl bg(col: Color) bg(1).
+    .decl axis(a: Axis) axis(AXIS_H).   // lines run along H
 }
 
 .init c = Consts

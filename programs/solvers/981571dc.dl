@@ -7,10 +7,10 @@
 #include "../lib.dl"
 
 .comp Consts {
-    .decl noise(col: Color)  noise(0).
+    .decl noise(col: Color) noise(0).
 
     // Wallpaper symmetry center, as its offset from the grid center.
-    .decl center(a: Position)  center([1, -1, 1, -1]).
+    .decl center(a: Position) center([1, -1, 1, -1]).
 
     .decl sym(d: D4)
     sym(D4_ID). sym(D4_CW). sym(D4_HT). sym(D4_CC).

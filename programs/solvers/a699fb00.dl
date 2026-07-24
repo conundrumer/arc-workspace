@@ -11,10 +11,10 @@
 .type Choice = Flank {} | Span {}
 
 .comp Consts {
-    .decl axis(a: Axis)    axis(AXIS_H).   // lines run along this axis
-    .decl bg(c: Color)     bg(0).
-    .decl dot(c: Color)    dot(1).             // dash color
-    .decl fill(c: Color)   fill(2).            // gap color
+    .decl axis(a: Axis) axis(AXIS_H).   // lines run along this axis
+    .decl bg(c: Color) bg(0).
+    .decl dot(c: Color) dot(1).              // dash color
+    .decl fill(c: Color) fill(2).            // gap color
 }
 
 .init c = Consts
@@ -28,8 +28,8 @@
 
 .decl flanked(p: Position)
 flanked(P) :-
-    in(P, Bg), c.bg(Bg), c.dot(Dot),                    // bg cell
-    c.axis(A), axis_of(D, A), opposite(D, D2),          // the two along-axis dirs
+    in(P, Bg), c.bg(Bg), c.dot(Dot),                       // bg cell
+    c.axis(A), axis_of(D, A), opposite(D, D2),             // the two along-axis dirs
     step_delta(D, S1), compose(P, S1, Q1), in(Q1, Dot),    // dot neighbor toward D
     step_delta(D2, S2), compose(P, S2, Q2), in(Q2, Dot).   // dot neighbor toward D2
 

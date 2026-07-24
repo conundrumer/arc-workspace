@@ -7,8 +7,8 @@
 #include "../lib.dl"
 
 .comp Consts {
-    .decl grow(d: Dir)  grow(DIR_R).
-    .decl bg(c: Color)  bg(0).
+    .decl grow(d: Dir) grow(DIR_R).
+    .decl bg(c: Color) bg(0).
 }
 
 .init c = Consts

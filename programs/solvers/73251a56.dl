@@ -17,13 +17,13 @@
 
 .comp Consts {
     // --- shared ---
-    .decl hole(col: Color)   hole(0).
+    .decl hole(col: Color) hole(0).
 
     // --- Slide, Bg ---
-    .decl transform(d: D4)   transform(D4_DG).
+    .decl transform(d: D4) transform(D4_DG).
 
     // --- Label ---
-    .decl label(p: Position, lbl: number)
+    .decl label(p: Position, id: Ident)
     GRID_21x21(label,
         0, 1, 0, 0, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9,10,
         1, 0, 1, 1, 0, 0, 0, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6, 6,
@@ -122,9 +122,9 @@ out(P, Col, $Bg()) :- residual(P), !on_fix(P), dominant(Col).
 // --- Label ---
 
 // Each class's color, read off the pair's intact cells.
-.decl label_color(lbl: number, col: Color)
-label_color(Lbl, Col) :- c.label(P, Lbl), intact(P, Col).
+.decl label_color(id: Ident, col: Color)
+label_color(Id, Col) :- c.label(P, Id), intact(P, Col).
 
-out(P, Col, $Label()) :- hole(P), c.label(P, Lbl), label_color(Lbl, Col).
+out(P, Col, $Label()) :- hole(P), c.label(P, Id), label_color(Id, Col).
 
 .output out(IO=stdout)

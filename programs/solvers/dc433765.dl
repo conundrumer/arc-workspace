@@ -6,9 +6,9 @@
 #include "../lib.dl"
 
 .comp Consts {
-    .decl bg(c: Color)      bg(0).
-    .decl mover(c: Color)   mover(3).
-    .decl target(c: Color)  target(4).
+    .decl bg(c: Color) bg(0).
+    .decl mover(c: Color) mover(3).
+    .decl target(c: Color) target(4).
 }
 
 .init c = Consts

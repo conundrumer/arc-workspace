@@ -13,10 +13,10 @@
 .type Choice = Ink {} | Self {}
 
 .comp Consts {
-    .decl bg(c: Color)   bg(0).
+    .decl bg(c: Color) bg(0).
 
     // --- $Ink ---
-    .decl ink(c: Color)  ink(8).
+    .decl ink(c: Color) ink(8).
 }
 
 .init c = Consts

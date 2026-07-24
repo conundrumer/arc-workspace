@@ -14,12 +14,12 @@
 .comp Consts {
     .init helpers = ConstsHelpers
 
-    // --- Tile decompose data ----------------------------------------------
+    // --- Tile decompose data ---
     .decl tile_decompose(p: Position, p_outer: Position, p_inner: Position)
     tile_decompose(P_grid, P_tile, P_intile) :-
         helpers.tile_pos([2, 1], [5, 11], [1, 0], P_grid, P_tile, P_intile).
 
-    // --- Div decompose data -----------------------------------------------
+    // --- Div decompose data ---
     .decl divisor(n: number)
     divisor(2).
 
@@ -29,8 +29,8 @@
     .decl divide_gap(g: number)
     divide_gap(1).
 
-    // --- Overlay data ------------------------------------------------------
-    .decl bg(c: Color)  bg(0).
+    // --- Overlay data ---
+    .decl bg(c: Color) bg(0).
 }
 
 .init c = Consts
@@ -38,7 +38,7 @@
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
-// --- Decompose cases -------------------------------------------------------
+// --- Decompose cases ---
 
 .decl decompose(p: Position, p_outer: Position, p_inner: Position, dc: Choice)
 decompose(P_grid, P_tile, P_intile, $Tile()) :- c.tile_decompose(P_grid, P_tile, P_intile).
@@ -47,14 +47,14 @@ decompose(P_grid, P_tile, P_intile, $Div()) :-
     c.divide_axis(A), c.divisor(N), c.divide_gap(G),     // params
     divide_slab(P_grid, A, N, G, P_tile, P_intile).
 
-// --- Overlay body ------------------------------------------------------------
+// --- Overlay body ---
 
 .decl filled(o: Position, dc: Choice)
 filled(P_grid_out, Dc) :-
     in(P_grid_in, Col), !c.bg(Col),                 // non-bg input cell
     decompose(P_grid_in, _, P_grid_out, Dc).        // decomposes to output cell
 
-// --- Output ----------------------------------------------------------------
+// --- Output ---
 
 .decl out(p: Position, col: Color, c: Choice)
 out(P_grid_out, Col, Dc) :-

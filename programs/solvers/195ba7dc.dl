@@ -33,8 +33,8 @@
     divide_gap(1).
 
     // --- Lookup body data ---
-    .decl combine_member(eid: number, p_outer: Position, c: Color)
-    .decl combine_out(eid: number, c_out: Color)
+    .decl combine_member(id: Ident, p_outer: Position, c: Color)
+    .decl combine_out(id: Ident, c_out: Color)
 
     combine_member(0, [0,0,0,1], 0). combine_member(0, [0,0,1,0], 0). combine_out(0, 0).
     combine_member(1, [0,0,0,1], 7). combine_member(1, [0,0,1,0], 0). combine_out(1, 1).
@@ -42,14 +42,14 @@
     combine_member(3, [0,0,0,1], 7). combine_member(3, [0,0,1,0], 7). combine_out(3, 1).
 
     // --- Or body data ---
-    .decl bg(c: Color)        bg(0).
-    .decl out_fill(c: Color)  out_fill(1).
+    .decl bg(c: Color) bg(0).
+    .decl out_fill(c: Color) out_fill(1).
 }
 
 .init c = Consts
 
-.init combine_match = KeyedSetCompare<CombineKey, number, CombineMember>
-combine_match.pattern_member(Eid, [P_outer, C]) :- c.combine_member(Eid, P_outer, C).
+.init combine_match = KeyedSetCompare<CombineKey, Ident, CombineMember>
+combine_match.pattern_member(Id, [P_outer, C]) :- c.combine_member(Id, P_outer, C).
 combine_match.observed_member([P_grid_out, Dc], [P_tile, C]) :-
     decompose(P_grid_in, P_tile, P_grid_out, Dc), in(P_grid_in, C).
 
@@ -80,8 +80,8 @@ filled(P_grid_out, Dc) :-
 
 .decl out(p: Position, col: Color, c: Choice)
 out(P_grid_out, Col_out, [Dc, $Lookup()]) :-
-    c.combine_out(Eid, Col_out),                                  // entry's output color
-    combine_match.equals([P_grid_out, Dc], Eid).                  // cell's tiles == entry's members
+    c.combine_out(Id, Col_out),                                  // entry's output color
+    combine_match.equals([P_grid_out, Dc], Id).                  // cell's tiles == entry's members
 
 out(P_grid_out, Col, [Dc, $Or()]) :-
     dec_choice(Dc), c.frame(P_grid_out),        // choice × cell

@@ -11,8 +11,8 @@
 .type Choice = Color {} | Mark {}
 
 .comp Consts {
-    .decl bg(c: Color)           bg(0).
-    .decl cross_color(c: Color)  cross_color(2).
+    .decl bg(c: Color) bg(0).
+    .decl cross_color(c: Color) cross_color(2).
 }
 
 .init c = Consts

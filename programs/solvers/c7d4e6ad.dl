@@ -12,12 +12,12 @@
 
 .comp Consts {
     // anchor
-    .decl anchor(d: Dir)     anchor(DIR_L).
+    .decl anchor(d: Dir) anchor(DIR_L).
 
     // unique
-    .decl targets(c: Color)  targets(5).
-    .decl bg(c: Color)       bg(0).
-    .decl axis(a: Axis)      axis(AXIS_H).
+    .decl targets(c: Color) targets(5).
+    .decl bg(c: Color) bg(0).
+    .decl axis(a: Axis) axis(AXIS_H).
 }
 
 .init c = Consts
@@ -37,7 +37,7 @@ slice_repl(P_across, Col, $Unique()) :-
     in(P, Col), !c.targets(Col), !c.bg(Col),
     c.axis(A), split(P, A, _, P_across).
 
-.decl impl_choice(c: Choice)
+.decl impl_choice(ch: Choice)
 impl_choice($Anchor()).
 impl_choice($Unique()).
 

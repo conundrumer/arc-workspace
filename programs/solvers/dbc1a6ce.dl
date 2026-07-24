@@ -6,8 +6,8 @@
 #include "../lib.dl"
 
 .comp Consts {
-    .decl bg(c: Color)    bg(0).
-    .decl fill(c: Color)  fill(8).
+    .decl bg(c: Color) bg(0).
+    .decl fill(c: Color) fill(8).
 }
 
 .init c = Consts

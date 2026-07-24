@@ -16,8 +16,8 @@
 .type Choice = Period {} | Parity {}
 
 .comp Consts {
-    .decl bg(c: Color)   bg(0).
-    .decl dir(d: Dir)    dir(DIR_B).   // marker steps toward this edge
+    .decl bg(c: Color) bg(0).
+    .decl dir(d: Dir) dir(DIR_B).   // marker steps toward this edge
     .decl fill(c: Color) fill(4).
 
     // --- $Period ---

@@ -16,11 +16,11 @@
 .type Choice = Fixed {} | Palette {}
 
 .comp Consts {
-    .decl bg(c: Color)              bg(0).
+    .decl bg(c: Color) bg(0).
     .decl stripe_axis(da: DiagAxis) stripe_axis(DAXIS_AD).
 
     // --- $Fixed ---
-    .decl period(k: number)         period(3).
+    .decl period(k: number) period(3).
 }
 
 .init c = Consts

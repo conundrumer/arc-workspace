@@ -14,9 +14,9 @@
 .type Choice = Grow {} | Slide {}
 
 .comp Consts {
-    .decl bg(col: Color)      bg(0).
-    .decl diag(d: DiagDir)    diag(DIAG_BR).   // advance along the line, stack across
-    .decl divisor(n: number)  divisor(2).      // stacked rows = line length / divisor
+    .decl bg(col: Color) bg(0).
+    .decl diag(d: DiagDir) diag(DIAG_BR).     // advance along the line, stack across
+    .decl divisor(n: number) divisor(2).      // stacked rows = line length / divisor
 }
 
 .init c = Consts
@@ -46,7 +46,7 @@ seated(P_out, Col) :-
 
 .decl out(p: Position, col: Color, c: Choice)
 
-// --- Grow --------------------------------------------------------------
+// --- Grow ---
 
 .decl grown(p: Position, col: Color)
 grown(P, Col) :- seated(P, Col), !c.bg(Col).
@@ -63,7 +63,7 @@ grown(P2, Col) :-
 out(P, Col, $Grow()) :- grown(P, Col).
 out(P, Col, $Grow()) :- frame.cell($U(), P), !grown(P, _), c.bg(Col).
 
-// --- Slide -------------------------------------------------------------
+// --- Slide ---
 
 .init rays = DiagRay<Position>
 rays.diag(D)    :- c.diag(D).

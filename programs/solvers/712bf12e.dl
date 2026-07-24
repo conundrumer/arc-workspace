@@ -17,12 +17,12 @@
 
 .comp Consts {
     // --- shared ---
-    .decl bg(c: Color)    bg(0).
-    .decl mark(c: Color)  mark(2).          // marker and line color
+    .decl bg(c: Color) bg(0).
+    .decl mark(c: Color) mark(2).           // marker and line color
     .decl sense(s: Sense) sense(SENSE_CW).  // slide: quarter turn from the walk direction
 
     // --- $Dir ---
-    .decl dir(d: Dir)     dir(DIR_B).       // marker edge; lines walk away from it
+    .decl dir(d: Dir) dir(DIR_B).       // marker edge; lines walk away from it
 }
 
 .init c = Consts

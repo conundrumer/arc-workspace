@@ -14,7 +14,7 @@
 .type Choice = Shared {} | Asym {}
 
 .comp Consts {
-    .decl tile_axis(a: Axis)    tile_axis(AXIS_V).
+    .decl tile_axis(a: Axis) tile_axis(AXIS_V).
     .decl tile_count(n: number) tile_count(3).
 
     // --- $Shared ---

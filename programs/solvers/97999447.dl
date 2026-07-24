@@ -18,14 +18,15 @@
 
 .comp Consts {
     // --- shared ---
-    .decl bg(c: Color)    bg(0).
+    .decl bg(c: Color) bg(0).
     .decl ray_dir(d: Dir) ray_dir(DIR_R).
 
     // --- Toggle ---
     .decl alt_color(c: Color) alt_color(5).
 
     // --- Mask ---
-    .decl slot(k: number)             slot(0). slot(1).
+    .decl slot(k: number)
+    slot(0). slot(1).
     .decl mask(k: number, col: Color) mask(1, 5).
 }
 

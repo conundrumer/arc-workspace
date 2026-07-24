@@ -15,9 +15,9 @@
 .type Choice = Stamp {} | Tile {}
 
 .comp Consts {
-    .decl bg(c: Color)      bg(0).
-    .decl marker(c: Color)  marker(5).
-    .decl flow(d: Dir)      flow(DIR_B).
+    .decl bg(c: Color) bg(0).
+    .decl marker(c: Color) marker(5).
+    .decl flow(d: Dir) flow(DIR_B).
 }
 
 .init c = Consts

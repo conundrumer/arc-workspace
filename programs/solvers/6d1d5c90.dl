@@ -17,9 +17,9 @@
 
 .comp Consts {
     // --- shared ---
-    .decl marker_edge(d: Dir)    marker_edge(DIR_L).    // edge the band sits on
-    .decl shift_dir(d: Dir)      shift_dir(DIR_B).     // rows rotate toward this edge
-    .decl band_width(k: number)  band_width(1).         // the band is one column
+    .decl marker_edge(d: Dir) marker_edge(DIR_L).      // edge the band sits on
+    .decl shift_dir(d: Dir) shift_dir(DIR_B).          // rows rotate toward this edge
+    .decl band_width(k: number) band_width(1).         // the band is one column
 
     // --- Marked ---
     .decl marker_color(c: Color) marker_color(2).       // the marked cell's color

@@ -16,43 +16,43 @@
     .decl frame(p: Position)
     frame(P) :- helpers.frame_pos([6, 4], P).
 
-    // --- Tile decompose data ----------------------------------------------
+    // --- Tile decompose data ---
     .decl tile_decompose(p: Position, p_outer: Position, p_inner: Position)
     tile_decompose(P_grid, P_tile, P_intile) :-
         helpers.tile_pos([2, 1], [6, 4], [0, 0], P_grid, P_tile, P_intile).
 
-    // --- Div decompose data -----------------------------------------------
+    // --- Div decompose data ---
     .decl divisor(n: number)
     divisor(2).
 
     .decl divide_axis(a: Axis)
     divide_axis(AXIS_V).
 
-    // --- Lookup body data -----------------------------------------------
-    .decl combine_member(eid: number, p_outer: Position, c: Color)
-    .decl combine_out(eid: number, c_out: Color)
+    // --- Lookup body data ---
+    .decl combine_member(id: Ident, p_outer: Position, c: Color)
+    .decl combine_out(id: Ident, c_out: Color)
 
     combine_member(0, [0,1,0,0], 0). combine_member(0, [1,0,0,0], 0). combine_out(0, 0).
     combine_member(1, [0,1,0,0], 3). combine_member(1, [1,0,0,0], 0). combine_out(1, 4).
     combine_member(2, [0,1,0,0], 0). combine_member(2, [1,0,0,0], 5). combine_out(2, 4).
     combine_member(3, [0,1,0,0], 3). combine_member(3, [1,0,0,0], 5). combine_out(3, 4).
 
-    // --- Or body data -----------------------------------------------------
-    .decl bg(c: Color)        bg(0).
-    .decl out_fill(c: Color)  out_fill(4).
+    // --- Or body data ---
+    .decl bg(c: Color) bg(0).
+    .decl out_fill(c: Color) out_fill(4).
 }
 
 .init c = Consts
 
-.init combine_match = KeyedSetCompare<CombineKey, number, CombineMember>
-combine_match.pattern_member(Eid, [P_outer, C]) :- c.combine_member(Eid, P_outer, C).
+.init combine_match = KeyedSetCompare<CombineKey, Ident, CombineMember>
+combine_match.pattern_member(Id, [P_outer, C]) :- c.combine_member(Id, P_outer, C).
 combine_match.observed_member([P_grid_out, Dc], [P_tile, C]) :-
     decompose(P_grid_in, P_tile, P_grid_out, Dc), in(P_grid_in, C).
 
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
-// --- Decompose cases -------------------------------------------------------
+// --- Decompose cases ---
 
 .decl dec_choice(dc: DecChoice)
 dec_choice($Tile()).
@@ -65,19 +65,19 @@ decompose(P_grid, P_tile, P_intile, $Div()) :-
     c.divide_axis(A), c.divisor(N),                      // params
     divide_slab(P_grid, A, N, 0, P_tile, P_intile).
 
-// --- Or body: filled relation parameterized by decompose choice -----------
+// --- Or body: filled relation parameterized by decompose choice ---
 
 .decl filled(o: Position, dc: DecChoice)
 filled(P_grid_out, Dc) :-
     in(P_grid_in, Col), !c.bg(Col),                 // non-bg input cell
     decompose(P_grid_in, _, P_grid_out, Dc).        // decomposes to output cell
 
-// --- Output ----------------------------------------------------------------
+// --- Output ---
 
 .decl out(p: Position, col: Color, c: Choice)
 out(P_grid_out, Col_out, [Dc, $Lookup()]) :-
-    c.combine_out(Eid, Col_out),                                  // entry's output color
-    combine_match.equals([P_grid_out, Dc], Eid).                 // cell's tiles == entry's members
+    c.combine_out(Id, Col_out),                                  // entry's output color
+    combine_match.equals([P_grid_out, Dc], Id).                  // cell's tiles == entry's members
 
 out(P_grid_out, Col, [Dc, $Or()]) :-
     dec_choice(Dc), c.frame(P_grid_out),        // choice × cell

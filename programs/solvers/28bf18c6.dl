@@ -6,8 +6,8 @@
 #include "../lib.dl"
 
 .comp Consts {
-    .decl bg(c: Color)      bg(0).
-    .decl axis(a: Axis)     axis(AXIS_H).
+    .decl bg(c: Color) bg(0).
+    .decl axis(a: Axis) axis(AXIS_H).
     .decl copies(n: number) copies(2).
 }
 

@@ -5,8 +5,8 @@
 #include "../lib.dl"
 
 .comp Consts {
-    .decl bg(c: Color)       bg(0).
-    .decl stamp(c: Color)    stamp(2).
+    .decl bg(c: Color) bg(0).
+    .decl stamp(c: Color) stamp(2).
 }
 
 .init c = Consts

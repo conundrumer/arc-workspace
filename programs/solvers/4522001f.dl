@@ -39,21 +39,21 @@
     .init helpers = ConstsHelpers
 
     // --- shared ---
-    .decl bg(c: Color)    bg(0).
-    .decl mark(c: Color)  mark(2).
+    .decl bg(c: Color) bg(0).
+    .decl mark(c: Color) mark(2).
 
     .decl canvas(p: Position)
     canvas(P) :- helpers.frame_pos([9, 9], P).
 
     // --- $Ink ---
-    .decl ink(c: Color)   ink(3).
+    .decl ink(c: Color) ink(3).
 
     // --- $Grow / $Fit ---
-    .decl box_corner(d: DiagDir)  box_corner(DIAG_TL).   // the corner the square is drawn at
-    .decl box(m: Position)  box([0, 5, 0, 5]).           // the first square, as margins
+    .decl box_corner(d: DiagDir) box_corner(DIAG_TL).   // the corner the square is drawn at
+    .decl box(m: Position) box([0, 5, 0, 5]).           // the first square, as margins
 
     // --- $Stamp ---
-    .decl mask_corner(d: DiagDir)  mask_corner(DIAG_TL).   // the corner the picture is drawn at
+    .decl mask_corner(d: DiagDir) mask_corner(DIAG_TL).   // the corner the picture is drawn at
 
     .decl mask(p: Position, v: number)   // output picture; non-zero cells take the paint
     GRID_9x9(mask,
@@ -101,7 +101,7 @@ block(P) :- in(P, Col), !c.bg(Col).
 .init bb = Bbox<Unit>
 bb.cell($U(), P) :- block(P).
 
-// --- Locate cases: the squares' corner --------------------------------------
+// --- Locate cases: the squares' corner ---
 
 .decl locate_choice(l: Locate)
 locate_choice($Corner()). locate_choice($Mark()).
@@ -120,11 +120,11 @@ diag($Corner(), Diag) :-
 block_edge(P, D) :- block(P), dist(P, D, Kd), bb.edge_min($U(), D, Kd).
 
 diag($Mark(), Diag) :-
-    in(P, Col), c.mark(Col),                                // the mark cell
+    in(P, Col), c.mark(Col),                                          // the mark cell
     diag_dirs(D2, _, Da, Db), block_edge(P, Da), block_edge(P, Db),   // at a block corner
     diag_opposite(D2, Diag).
 
-// --- Render cases: the squares along the diagonal ----------------------------
+// --- Render cases: the squares along the diagonal ---
 
 // Renders on the c.canvas frame; $Stamp brings its own.
 .decl render_choice(r: Render)
@@ -164,7 +164,7 @@ grow_box(L, M2) :- box0(L, M), sq_jump(L, J), compose(M, J, M2), geq(M2, ORIGIN)
 fit_box(L, M)  :- box0(L, M).
 fit_box(L, M2) :- fit_box(L, M), sq_jump(L, J), compose(M, J, M2), geq(M2, ORIGIN).
 
-// --- Paint cases: the square color --------------------------------------------
+// --- Paint cases: the square color ---
 
 .decl paint_choice(f: Paint)
 paint_choice($Block()). paint_choice($Ink()).
@@ -173,7 +173,7 @@ paint_choice($Block()). paint_choice($Ink()).
 paint(Col, $Block()) :- in(_, Col), !c.bg(Col), !c.mark(Col).
 paint(Col, $Ink())   :- c.ink(Col).
 
-// --- Output --------------------------------------------------------------------
+// --- Output ---
 
 .decl lit(p: Position, col: Color, ch: Choice)
 lit(P, Col, $Loc(L, $Grow(), F)) :- grow_box(L, M), c.canvas(P), geq(P, M), paint(Col, F).

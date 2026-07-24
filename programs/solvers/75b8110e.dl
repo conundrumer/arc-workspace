@@ -6,8 +6,8 @@
 .type Choice = Order {} | Ink {}
 
 .comp Consts {
-    .decl bg(col: Color)     bg(0).
-    .decl tiles(n: number)   tiles(2).
+    .decl bg(col: Color) bg(0).
+    .decl tiles(n: number) tiles(2).
 
     // --- $Order ---
     .decl prio(p: Position, r: number)

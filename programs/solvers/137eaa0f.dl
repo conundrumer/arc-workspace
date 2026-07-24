@@ -18,7 +18,7 @@
     .init helpers = ConstsHelpers
 
     // --- shared ---
-    .decl bg(c: Color)  bg(0).
+    .decl bg(c: Color) bg(0).
     .decl key(c: Color) key(5).
 
     // --- $Frame ---

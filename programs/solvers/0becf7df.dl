@@ -28,12 +28,12 @@
     // --- Map ---
     // Pairing as an id join over the key frame: src labels the key cells,
     // dst gives each cell the id of its partner.
-    .decl src(p: Position, id: number)
+    .decl src(p: Position, id: Ident)
     GRID_2x2(src,
         0, 1,
         2, 3)
 
-    .decl dst(p: Position, id: number)
+    .decl dst(p: Position, id: Ident)
     GRID_2x2(dst,
         1, 0,
         3, 2)
@@ -63,8 +63,8 @@ key_cell(P) :-
 // --- Line ---
 // Two key cells on one line along the pair axis pair up, in both orders.
 mapping(C1, C2, $Line()) :-
-    key_cell(P1), in(P1, C1),                        // one key cell
-    key_cell(P2), in(P2, C2), P1 != P2,              // a distinct one
+    key_cell(P1), in(P1, C1),                             // one key cell
+    key_cell(P2), in(P2, C2), P1 != P2,                   // a distinct one
     c.axis(A), split(P1, A, _, Ac), split(P2, A, _, Ac).  // same line
 
 // --- Map ---

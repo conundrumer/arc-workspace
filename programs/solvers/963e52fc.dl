@@ -13,7 +13,7 @@
 .type Choice = Line {} | Grid {}
 
 .comp Consts {
-    .decl dir(d: Dir)      dir(DIR_R).    // growth direction
+    .decl dir(d: Dir) dir(DIR_R).         // growth direction
     .decl scale(n: number) scale(2).      // output extent multiplier
 }
 

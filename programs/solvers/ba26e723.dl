@@ -7,9 +7,9 @@
 #include "../lib.dl"
 
 .comp Consts {
-    .decl anchor(d: Dir)           anchor(DIR_L).
-    .decl period(n: number)        period(3).
-    .decl phase(k: number)         phase(0).
+    .decl anchor(d: Dir) anchor(DIR_L).
+    .decl period(n: number) period(3).
+    .decl phase(k: number) phase(0).
 
     .decl mapping(c_from: Color, c_to: Color)
     mapping(4, 6).

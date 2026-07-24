@@ -6,8 +6,8 @@
 #include "../lib.dl"
 
 .comp Consts {
-    .decl bg(c: Color)        bg(0).
-    .decl transform(d: D4)    transform(D4_LR).
+    .decl bg(c: Color) bg(0).
+    .decl transform(d: D4) transform(D4_LR).
 }
 
 .init c = Consts

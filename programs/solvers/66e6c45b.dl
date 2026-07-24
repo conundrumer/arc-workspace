@@ -13,17 +13,17 @@
 .type Choice = Quad {} | Stretch {} | Explode {} | Table {}
 
 .comp Consts {
-    .decl bg(c: Color)   bg(0).
+    .decl bg(c: Color) bg(0).
 
     // --- Table ---
-    .decl in_label(p: Position, lbl: number)
+    .decl in_label(p: Position, id: Ident)
     GRID_4x4(in_label,
         0, 0, 0, 0,
         0, 1, 2, 0,
         0, 3, 4, 0,
         0, 0, 0, 0)
 
-    .decl out_label(p: Position, lbl: number)
+    .decl out_label(p: Position, id: Ident)
     GRID_4x4(out_label,
         1, 0, 0, 2,
         0, 0, 0, 0,
@@ -81,14 +81,14 @@ target(P_out, Col, $Explode()) :-
 
 target(P_out, Col, $Table()) :-
     in(P_in, Col),
-    c.in_label(P_in, Lbl), c.out_label(P_out, Lbl),  // shared label
-    Lbl != 0.                                        // non-pairing sentinel
+    c.in_label(P_in, Id), c.out_label(P_out, Id),   // shared label
+    Id != 0.                                        // non-pairing sentinel
 
-.decl choice_elem(ch: Choice)
-choice_elem($Quad()). choice_elem($Stretch()). choice_elem($Explode()). choice_elem($Table()).
+.decl impl_choice(ch: Choice)
+impl_choice($Quad()). impl_choice($Stretch()). impl_choice($Explode()). impl_choice($Table()).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- target(P, Col, Ch).
-out(P, Bg, Ch)  :- choice_elem(Ch), in(P, _), c.bg(Bg), !target(P, _, Ch).
+out(P, Bg, Ch)  :- impl_choice(Ch), in(P, _), c.bg(Bg), !target(P, _, Ch).
 
 .output out(IO=stdout)

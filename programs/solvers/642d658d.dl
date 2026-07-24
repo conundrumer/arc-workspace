@@ -20,10 +20,10 @@
 
 .comp Consts {
     // --- $Center ---
-    .decl center(c: Color)    center(4).
+    .decl center(c: Color) center(4).
 
     // --- $Count ---
-    .decl target(n: number)   target(2).
+    .decl target(n: number) target(2).
 
     // --- $Footprint ---
     .decl footprint(p: Position, lit: number)

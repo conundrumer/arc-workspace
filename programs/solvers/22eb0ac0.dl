@@ -14,7 +14,7 @@
 
 .comp Consts {
     .decl axis(a: Axis) axis(AXIS_H).   // lines run along this axis
-    .decl bg(c: Color)  bg(0).
+    .decl bg(c: Color) bg(0).
 }
 
 .init c = Consts

@@ -23,10 +23,10 @@
     window(P) :- helpers.frame_pos([3, 3], P).
 
     // --- Div ---
-    .decl divisor(n: number)   divisor(3).
+    .decl divisor(n: number) divisor(3).
 
     // --- Block ---
-    .decl tile_dim(k: number)  tile_dim(3).
+    .decl tile_dim(k: number) tile_dim(3).
 }
 
 .init c = Consts

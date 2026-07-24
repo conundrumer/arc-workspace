@@ -20,20 +20,20 @@
 .type Choice = [l: Locate, f: Fill]
 
 .comp Consts {
-    .decl marker(c: Color)    marker(2).
-    .decl bg(c: Color)        bg(6).
+    .decl marker(c: Color) marker(2).
+    .decl bg(c: Color) bg(6).
 
     // --- $Fixed ---
-    .decl fill(c: Color)      fill(2).
+    .decl fill(c: Color) fill(2).
 
     // --- $Div ---
-    .decl divisor(n: number)     divisor(2).
+    .decl divisor(n: number) divisor(2).
 
     // --- $Block ---
-    .decl tile_dim(k: number)    tile_dim(2).
+    .decl tile_dim(k: number) tile_dim(2).
 
     // --- $Corner ---
-    .decl block_dim(k: number)   block_dim(2).
+    .decl block_dim(k: number) block_dim(2).
 }
 
 .init c = Consts
@@ -45,7 +45,7 @@
 .decl marker(p: Position)
 marker(P) :- in(P, Col), c.marker(Col).
 
-// --- Locate cases: the region to fill ---------------------------------------
+// --- Locate cases: the region to fill ---
 
 .decl locate_choice(l: Locate)
 locate_choice($Div()).
@@ -73,7 +73,7 @@ region(P, $Corner()) :-
     c.block_dim(N), diag_dist(P, Diag, _, K1, K2),   // within the block
     K1 < N, K2 < N.
 
-// --- Fill cases: the region's color ------------------------------------------
+// --- Fill cases: the region's color ---
 
 .decl fill_choice(f: Fill)
 fill_choice($Marker()).
@@ -83,7 +83,7 @@ fill_choice($Fixed()).
 fill_color(Col, $Marker()) :- c.marker(Col).
 fill_color(Col, $Fixed())  :- c.fill(Col).
 
-// --- Output ------------------------------------------------------------------
+// --- Output ---
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, [L, F]) :- region(P, L), fill_color(Col, F).

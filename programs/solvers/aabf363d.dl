@@ -15,13 +15,13 @@
 
 .comp Consts {
     // --- shared ---
-    .decl bg(c: Color)  bg(0).
+    .decl bg(c: Color) bg(0).
 
     // --- $Anchor ---
-    .decl marker_corner(d: DiagDir)  marker_corner(DIAG_BL).
+    .decl marker_corner(d: DiagDir) marker_corner(DIAG_BL).
 
     // --- $ByCount ---
-    .decl marker_count(n: number)  marker_count(1).
+    .decl marker_count(n: number) marker_count(1).
 }
 
 .init c = Consts

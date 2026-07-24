@@ -8,11 +8,11 @@
 .comp Consts {
     .init helpers = ConstsHelpers
 
-    .decl bg(c: Color)    bg(0).
-    .decl fill(c: Color)  fill(1).
+    .decl bg(c: Color) bg(0).
+    .decl fill(c: Color) fill(1).
 
     // Window: side-c.dim square.
-    .decl dim(k: number)  dim(3).
+    .decl dim(k: number) dim(3).
     .decl shape(p: Position)
     shape(P) :- dim(K), helpers.frame_pos([K, K], P).
 }

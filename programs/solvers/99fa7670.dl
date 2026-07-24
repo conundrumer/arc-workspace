@@ -7,9 +7,9 @@
 #include "../lib.dl"
 
 .comp Consts {
-    .decl bg(c: Color)      bg(0).
-    .decl dir(d: Dir)       dir(DIR_R).       // fill direction
-    .decl sense(s: Sense)   sense(SENSE_CW).  // bend at the edge
+    .decl bg(c: Color) bg(0).
+    .decl dir(d: Dir) dir(DIR_R).           // fill direction
+    .decl sense(s: Sense) sense(SENSE_CW).  // bend at the edge
 }
 
 .init c = Consts

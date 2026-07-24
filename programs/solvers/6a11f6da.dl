@@ -11,10 +11,10 @@
 .type Choice = Palette {} | Stack {}
 
 .comp Consts {
-    .decl bg(c: Color)   bg(0).
+    .decl bg(c: Color) bg(0).
 
-    .decl tile_axis(a: Axis)     tile_axis(AXIS_V).
-    .decl tile_count(n: number)  tile_count(3).
+    .decl tile_axis(a: Axis) tile_axis(AXIS_V).
+    .decl tile_count(n: number) tile_count(3).
 
     // --- Palette ---
     // Ink priority ranks, highest first.
@@ -35,9 +35,9 @@
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
-.decl variant(ch: Choice)
-variant($Palette()).
-variant($Stack()).
+.decl impl_choice(ch: Choice)
+impl_choice($Palette()).
+impl_choice($Stack()).
 
 // Slab decomposition of each input cell.
 .decl decompose(p_grid: Position, p_tile: Position, p_out: Position)
@@ -66,10 +66,10 @@ outranked(O, T, $Stack()) :-
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(O, Col, Ch) :-
-    cand(O, T, Col), variant(Ch),
+    cand(O, T, Col), impl_choice(Ch),
     !outranked(O, T, Ch).
 out(O, Bg, Ch) :-
-    variant(Ch), decompose(_, _, O),                 // choice × cell
+    impl_choice(Ch), decompose(_, _, O),                 // choice × cell
     c.bg(Bg), !cand(O, _, _).
 
 .output out(IO=stdout)

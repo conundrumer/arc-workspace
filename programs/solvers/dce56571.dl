@@ -7,8 +7,8 @@
 #include "../lib.dl"
 
 .comp Consts {
-    .decl bg(c: Color)   bg(8).
-    .decl axis(a: Axis)  axis(AXIS_H).   // the line runs along this axis
+    .decl bg(c: Color) bg(8).
+    .decl axis(a: Axis) axis(AXIS_H).   // the line runs along this axis
 }
 
 .init c = Consts

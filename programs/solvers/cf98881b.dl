@@ -27,14 +27,14 @@
     .decl frame(p: Position)
     frame(P) :- helpers.frame_pos([4, 4], P).
 
-    .decl bg(c: Color)   bg(0).
+    .decl bg(c: Color) bg(0).
 
-    // --- Tile decompose data ----------------------------------------------
+    // --- Tile decompose data ---
     .decl tile_decompose(p: Position, p_outer: Position, p_inner: Position)
     tile_decompose(P_grid, P_tile, P_intile) :-
         helpers.tile_pos([1, 3], [4, 4], [0, 1], P_grid, P_tile, P_intile).
 
-    // --- Div decompose data -----------------------------------------------
+    // --- Div decompose data ---
     .decl divisor(n: number)
     divisor(3).
 
@@ -44,16 +44,16 @@
     .decl divide_gap(g: number)
     divide_gap(1).
 
-    // --- Spatial body data ------------------------------------------------
+    // --- Spatial body data ---
     .decl stack_dir(d: Dir)
     stack_dir(DIR_L).
 
-    // --- Palette body data ------------------------------------------------
+    // --- Palette body data ---
     // Ink priority ranks, highest first.
     .decl ink_rank(c: Color, r: number)
     ink_rank(4, 0). ink_rank(9, 1). ink_rank(1, 2).
 
-    // --- Stack body data --------------------------------------------------
+    // --- Stack body data ---
     // Pane priority ranks, highest first.
     .decl pane_rank(p_tile: Position, r: number)
     GRID_1x3(pane_rank,
@@ -65,7 +65,7 @@
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
-// --- Decompose cases -------------------------------------------------------
+// --- Decompose cases ---
 
 .decl dec_choice(dc: DecChoice)
 dec_choice($Tile()).
@@ -78,7 +78,7 @@ decompose(P_grid, P_tile, P_intile, $Div()) :-
     c.divide_axis(A), c.divisor(N), c.divide_gap(G),     // params
     divide_slab(P_grid, A, N, G, P_tile, P_intile).
 
-// --- Overlay ---------------------------------------------------------------
+// --- Overlay ---
 
 // Inked pane cells competing at each output cell.
 .decl cand(o: Position, p_tile: Position, col: Color, dc: DecChoice)
@@ -108,7 +108,7 @@ outranked(O, T, Dc, $Stack()) :-
     cand(O, T, _, Dc), cand(O, T2, _, Dc),
     c.pane_rank(T2, R2), c.pane_rank(T, R), R2 < R.
 
-// --- Output ----------------------------------------------------------------
+// --- Output ---
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(O, Col, [Dc, B]) :-

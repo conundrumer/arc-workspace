@@ -20,11 +20,11 @@
 .type Choice = Derive { g: Growth, s: Seats } | Disp {}
 
 .comp Consts {
-    .decl axis(a: Axis)      axis(AXIS_V).      // stack axis
-    .decl filler(c: Color)   filler(9).
+    .decl axis(a: Axis) axis(AXIS_V).      // stack axis
+    .decl filler(c: Color) filler(9).
 
     // --- Derive / Iso ---
-    .decl sep(g: number)     sep(1).
+    .decl sep(g: number) sep(1).
 
     // --- Derive / Aniso ---
     .decl sep_dim(a: Axis, n: number)
@@ -38,7 +38,7 @@
     seat_of(DIR_T, DIAG_TL). seat_of(DIR_B, DIAG_BR).
 
     // --- Disp ---
-    .decl arr(n: number)     arr(2).              // slabs along the stack axis
+    .decl arr(n: number) arr(2).              // slabs along the stack axis
     .decl disp(p_tile: Position, delta: Position)
     disp([0, 1, 0, 0], [0, 1, 0, 1]).
     disp([1, 0, 0, 0], [1, 0, 1, 0]).
@@ -98,16 +98,16 @@ ded.arg(Gr, Diag, A, K1, K2) :- diag_dir_elem(Diag), growth(A, K1, K2, Gr).
 // Displaced by the growth extents at both edges of the opposite corner —
 // the frame grows away from the seat.
 seated(P_out, Col, $Derive(Gr, S)) :-
-    in(P, Col), seat(P, Diag, S),                            // half cell and its corner
-    diag_opposite(Diag, Diag2),                              // opposite corner
+    in(P, Col), seat(P, Diag, S),                                // half cell and its corner
+    diag_opposite(Diag, Diag2),                                  // opposite corner
     growth(A, K1, K2, Gr), ded.delta(Gr, Diag2, A, K1, K2, E),   // grow delta toward it
-    compose(P, E, P_out).                                    // displace
+    compose(P, E, P_out).                                        // displace
 
 // --- Disp ---
 seated(P_out, Col, $Disp()) :-
-    in(P, Col),                                            // slab cell
+    in(P, Col),                                               // slab cell
     c.axis(A), c.arr(N), divide_slab(P, A, N, 0, P_tile, _),  // its slab in the stack
-    c.disp(P_tile, Delta), compose(P, Delta, P_out).       // displace by its vector
+    c.disp(P_tile, Delta), compose(P, Delta, P_out).          // displace by its vector
 
 // Output frame extents, read off the seated images.
 .init frame = Frame2D<Choice>

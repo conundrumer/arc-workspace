@@ -15,9 +15,9 @@
 #include "../lib.dl"
 
 .comp Consts {
-    .decl header_dir(d: Dir)  header_dir(DIR_T).
-    .decl out_h(n: number)    out_h(3).
-    .decl marker(col: Color)  marker(6).
+    .decl header_dir(d: Dir) header_dir(DIR_T).
+    .decl out_h(n: number) out_h(3).
+    .decl marker(col: Color) marker(6).
 
     // Along-axis frame for the output: extent out_h, indexed from header_dir.
     .init out_along = DirFrame<Unit>

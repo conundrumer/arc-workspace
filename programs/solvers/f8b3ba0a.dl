@@ -39,15 +39,15 @@
 .type Choice = Cells {} | Blocks {} | Lattice {}
 
 .comp Consts {
-    .decl bg(c: Color)        bg(0).
-    .decl rank_dir(d: Dir)    rank_dir(DIR_T).
+    .decl bg(c: Color) bg(0).
+    .decl rank_dir(d: Dir) rank_dir(DIR_T).
 
     // --- $Lattice ---
     .decl tile_dim(a: Axis, k: number)
     tile_dim(AXIS_V, 1). tile_dim(AXIS_H, 2).
 
-    .decl tile_gap(g: number)       tile_gap(1).
-    .decl inset_delta(p: Position)  inset_delta([-1, -1, -1, -1]).
+    .decl tile_gap(g: number) tile_gap(1).
+    .decl inset_delta(p: Position) inset_delta([-1, -1, -1, -1]).
 }
 
 .init c = Consts
@@ -60,7 +60,7 @@
 .init comps = Components<Unit>
 comps.node($U(), P) :- in(P, Col), !c.bg(Col).
 
-.decl block_color(id: CompId, col: Color)
+.decl block_color(id: Ident, col: Color)
 block_color(Id, Col) :- comps.label($U(), P, Id), in(P, Col).
 
 // --- $Lattice: tile detection ---

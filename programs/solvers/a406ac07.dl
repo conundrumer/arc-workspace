@@ -19,10 +19,10 @@
 
 .comp Consts {
     // --- $Passthrough, $Repaint ---
-    .decl header(d: DiagDir)  header(DIAG_BR).
+    .decl header(d: DiagDir) header(DIAG_BR).
 
     // --- $Repaint, $Coincide ---
-    .decl bg(col: Color)  bg(0).
+    .decl bg(col: Color) bg(0).
 }
 
 .init c = Consts

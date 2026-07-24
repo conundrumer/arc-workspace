@@ -22,19 +22,19 @@
 
 .comp Consts {
     // --- shared ---
-    .decl bg(col: Color)            bg(0).
-    .decl grow(d: Dir)              grow(DIR_B).
-    .decl echo_axis(da: DiagAxis)   echo_axis(DAXIS_DG).
-    .decl echo(col: Color)          echo(1).
+    .decl bg(col: Color) bg(0).
+    .decl grow(d: Dir) grow(DIR_B).
+    .decl echo_axis(da: DiagAxis) echo_axis(DAXIS_DG).
+    .decl echo(col: Color) echo(1).
 
     // --- $VFixed ---
-    .decl v_color(col: Color)       v_color(2).
+    .decl v_color(col: Color) v_color(2).
 
     // --- $Emit ---
-    .decl spacing(k: number)        spacing(2).
+    .decl spacing(k: number) spacing(2).
 
     // --- $Stripe ---
-    .decl period(k: number)         period(4).
+    .decl period(k: number) period(4).
 }
 
 .init c = Consts
@@ -92,7 +92,7 @@ inside(P) :-
     cast_corner(CD),   cd.corner_dist(P, CD, K1), cd.corner_dist(S, CD, N1), K1 < N1,
     mirror_corner(MD), cd.corner_dist(P, MD, K2), cd.corner_dist(S, MD, N2), K2 < N2.
 
-// --- Echo cases: the echoed cells --------------------------------------------
+// --- Echo cases: the echoed cells ---
 
 .decl echo_choice(e: Echo)
 echo_choice($Emit()).
@@ -129,7 +129,7 @@ echo(P, $Stripe()) :-
     mirror_corner(MD), cd.corner_dist(P, MD, Kp), cd.corner_dist(S, MD, Ks),
     c.period(Per), stride(Kp, Per, 0, _, R), stride(Ks, Per, 0, _, R).
 
-// --- V color cases ------------------------------------------------------------
+// --- V color cases ---
 
 .decl v_choice(v: VSrc)
 v_choice($VSeed()).
@@ -139,7 +139,7 @@ v_choice($VFixed()).
 v_color(Col, $VSeed())  :- seed(_, Col).
 v_color(Col, $VFixed()) :- c.v_color(Col).
 
-// --- Output -------------------------------------------------------------------
+// --- Output ---
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, [V, E]) :- arm(P), v_color(Col, V), echo_choice(E).

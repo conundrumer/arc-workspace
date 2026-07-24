@@ -15,8 +15,8 @@
 #include "../lib.dl"
 
 .comp Consts {
-    .decl bg(c: Color)        bg(0).
-    .decl rank_dir(d: Dir)    rank_dir(DIR_T).
+    .decl bg(c: Color) bg(0).
+    .decl rank_dir(d: Dir) rank_dir(DIR_T).
 }
 
 .init c = Consts

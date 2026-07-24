@@ -17,8 +17,8 @@
 .type Choice = Shape {} | Role {} | Edge {}
 
 .comp Consts {
-    .decl bg(c: Color)      bg(0).
-    .decl cross(c: Color)   cross(4).
+    .decl bg(c: Color) bg(0).
+    .decl cross(c: Color) cross(4).
 
     // --- $Role ---
     .decl role(col: Color, a: Axis)
@@ -57,12 +57,12 @@ on_line(P, Col, Ch) :- in(P, _), line(Col, A, Ac, Ch), split(P, A, _, Ac).
 .decl crossing(p: Position, ch: Choice)
 crossing(P, Ch) :- on_line(P, Col1, Ch), on_line(P, Col2, Ch), Col1 != Col2.
 
-.decl choice_elem(ch: Choice)
-choice_elem($Shape()). choice_elem($Role()). choice_elem($Edge()).
+.decl impl_choice(ch: Choice)
+impl_choice($Shape()). impl_choice($Role()). impl_choice($Edge()).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Cx, Ch)  :- crossing(P, Ch), c.cross(Cx).
 out(P, Col, Ch) :- on_line(P, Col, Ch), !crossing(P, Ch).
-out(P, Col, Ch) :- choice_elem(Ch), in(P, Col), !on_line(P, _, Ch).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !on_line(P, _, Ch).
 
 .output out(IO=stdout)

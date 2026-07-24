@@ -16,17 +16,17 @@
 
 .comp Consts {
     // --- shared ---
-    .decl bg(c: Color)      bg(7).
-    .decl base(d: Dir)      base(DIR_B).   // edge the bars stand on
-    .decl add(c: Color)     add(8).        // bar color that adds its height
-    .decl sub(c: Color)     sub(2).        // bar color that cancels height
-    .decl result(c: Color)  result(5).     // the appended bar's color
+    .decl bg(c: Color) bg(7).
+    .decl base(d: Dir) base(DIR_B).       // edge the bars stand on
+    .decl add(c: Color) add(8).           // bar color that adds its height
+    .decl sub(c: Color) sub(2).           // bar color that cancels height
+    .decl result(c: Color) result(5).     // the appended bar's color
 
     // --- $Next ---
-    .decl pitch(k: number)  pitch(2).      // line step between adjacent bars
+    .decl pitch(k: number) pitch(2).      // line step between adjacent bars
 
     // --- $Edge ---
-    .decl sense(s: Sense)   sense(SENSE_CC). // base turned toward the result-line edge
+    .decl sense(s: Sense) sense(SENSE_CC). // base turned toward the result-line edge
     .decl margin(k: number) margin(1).       // result line's distance from that edge
 }
 
@@ -73,11 +73,11 @@ result_cell(P, Ch) :-
     line_of(P, P_line), result_line(P_line, Ch),               // on the result line
     c.base(D), dist(P, D, K), height.excess($U(), N), K < N.   // within the summed height
 
-.decl choice_elem(ch: Choice)
-choice_elem($Next()). choice_elem($Edge()).
+.decl impl_choice(ch: Choice)
+impl_choice($Next()). impl_choice($Edge()).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- result_cell(P, Ch), c.result(Col).
-out(P, Col, Ch) :- choice_elem(Ch), in(P, Col), !result_cell(P, Ch).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !result_cell(P, Ch).
 
 .output out(IO=stdout)

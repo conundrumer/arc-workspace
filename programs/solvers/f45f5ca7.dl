@@ -22,14 +22,14 @@
 .type Choice  = [e: EdgeSrc, m: Move]
 
 .comp Consts {
-    .decl bg(c: Color)  bg(0).
+    .decl bg(c: Color) bg(0).
 
     // Landing distance from the edge, per mark color.
     .decl color_dist(c: Color, k: number)
     color_dist(8, 1). color_dist(2, 2). color_dist(4, 3). color_dist(3, 4).
 
     // --- $Dir ---
-    .decl dir(d: Dir)   dir(DIR_L).   // the mark edge
+    .decl dir(d: Dir) dir(DIR_L).   // the mark edge
 }
 
 .init c = Consts
@@ -40,7 +40,7 @@
 .decl ink(p: Position, col: Color)
 ink(P, Col) :- in(P, Col), !c.bg(Col).
 
-// --- Edge cases --------------------------------------------------------------
+// --- Edge cases ---
 
 .decl edge(d: Dir, e: EdgeSrc)
 
@@ -53,7 +53,7 @@ off_edge(D) :- ink(P, _), dir_elem(D), dist(P, D, K), K != 0.
 
 edge(D, $Edge()) :- dir_elem(D), ink(_, _), !off_edge(D).
 
-// --- Move cases --------------------------------------------------------------
+// --- Move cases ---
 
 .decl moved(p: Position, col: Color, ch: Choice)
 
@@ -66,21 +66,21 @@ moved(P2, Col, [E, $Jump()]) :-
 
 // --- $Seat ---
 moved(Q, Col, [E, $Seat()]) :-
-    ink(P, Col), edge(D, E),                     // mark, the edge
-    c.color_dist(Col, K),                        // its landing distance
-    in(Q, _), dist(Q, D, K),                     // grid cell at dist k from the edge
+    ink(P, Col), edge(D, E),                                 // mark, the edge
+    c.color_dist(Col, K),                                    // its landing distance
+    in(Q, _), dist(Q, D, K),                                 // grid cell at dist k from the edge
     axis_of(D, A), split(P, A, _, Ac), split(Q, A, _, Ac).   // on the mark's line
 
-// --- Output ------------------------------------------------------------------
+// --- Output ---
 
-.decl choice_elem(ch: Choice)
-choice_elem([$Dir(),  $Jump()]). choice_elem([$Dir(),  $Seat()]).
-choice_elem([$Edge(), $Jump()]). choice_elem([$Edge(), $Seat()]).
+.decl impl_choice(ch: Choice)
+impl_choice([$Dir(),  $Jump()]). impl_choice([$Dir(),  $Seat()]).
+impl_choice([$Edge(), $Jump()]). impl_choice([$Edge(), $Seat()]).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- moved(P, Col, Ch).
 out(P, Col, Ch) :-
-    choice_elem(Ch), in(P, _),      // choice × cell
+    impl_choice(Ch), in(P, _),      // choice × cell
     !moved(P, _, Ch),               // no mark lands here
     c.bg(Col).
 

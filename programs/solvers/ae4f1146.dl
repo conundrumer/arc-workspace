@@ -14,13 +14,13 @@
 .type Choice = Object {} | Window {}
 
 .comp Consts {
-    .decl bg(c: Color)    bg(0).
-    .decl mark(c: Color)  mark(1).
+    .decl bg(c: Color) bg(0).
+    .decl mark(c: Color) mark(1).
 
     // --- $Window ---
     .init helpers = ConstsHelpers
 
-    .decl dim(k: number)  dim(3).
+    .decl dim(k: number) dim(3).
     .decl shape(p: Position)
     shape(P) :- dim(K), helpers.frame_pos([K, K], P).
 }
@@ -37,12 +37,12 @@
 .init comps = Components<Unit>
 comps.node($U(), P) :- in(P, Col), !c.bg(Col).
 
-.decl comp_marks(id: CompId, n: number)
+.decl comp_marks(id: Ident, n: number)
 comp_marks(Id, N) :-
     comps.label($U(), _, Id),
     N = count : { comps.label($U(), P, Id), in(P, Col), c.mark(Col) }.
 
-.decl comp_winner(id: CompId)
+.decl comp_winner(id: Ident)
 comp_winner(Id) :- comp_marks(Id, N), N = max M : { comp_marks(_, M) }.
 
 // Crop to the winner's bounding box.

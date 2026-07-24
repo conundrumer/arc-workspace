@@ -13,20 +13,20 @@
 .type Choice = LabeledGrids {} | Divide {}
 
 .comp Consts {
-    // --- LabeledGrids data ----------------------------------------------
-    .decl in_label(p: Position, lbl: number)
+    // --- LabeledGrids data ---
+    .decl in_label(p: Position, id: Ident)
     GRID_2x6(in_label,
         1, 2, 3,  4,  5,  6,
         7, 8, 9, 10, 11, 12)
 
-    .decl out_label(p: Position, lbl: number)
+    .decl out_label(p: Position, id: Ident)
     GRID_2x6(out_label,
         1, 8, 3, 10, 5, 12,
         7, 2, 9,  4, 11, 6)
 
-    // --- Divide params --------------------------------------------------
-    .decl divide_axis(a: Axis)      divide_axis(AXIS_H).
-    .decl divisor(n: number)        divisor(3).
+    // --- Divide params ---
+    .decl divide_axis(a: Axis) divide_axis(AXIS_H).
+    .decl divisor(n: number) divisor(3).
 
     // Per-inner-cell transform within a 1×2 subgrid, laid out as a grid of D4.
     .decl col_transform(p_inner: Position, d: D4)
@@ -39,14 +39,14 @@
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
-.decl impl_choice(c: Choice)
+.decl impl_choice(ch: Choice)
 impl_choice($LabeledGrids()).
 impl_choice($Divide()).
 
 .decl perm(p_in: Position, p_out: Position, c: Choice)
 perm(P_grid_in, P_grid_out, $LabeledGrids()) :-
-    c.in_label(P_grid_in, Lbl), c.out_label(P_grid_out, Lbl),  // shared label
-    Lbl != 0.                                                  // non-pairing sentinel
+    c.in_label(P_grid_in, Id), c.out_label(P_grid_out, Id),   // shared label
+    Id != 0.                                                  // non-pairing sentinel
 perm(P_grid_in, P_grid_out, $Divide()) :-
     in(P_grid_in, _),                                          // input cell
     c.divide_axis(A), c.divisor(N),                            // params

@@ -12,11 +12,11 @@
 .type Choice = Axis {} | Iso {}
 
 .comp Consts {
-    .decl bg(c: Color)     bg(0).
-    .decl fill(c: Color)   fill(2).
+    .decl bg(c: Color) bg(0).
+    .decl fill(c: Color) fill(2).
 
     // --- Axis ---
-    .decl axis(a: Axis)    axis(AXIS_H).   // fill lines run along this axis
+    .decl axis(a: Axis) axis(AXIS_H).   // fill lines run along this axis
 }
 
 .init c = Consts

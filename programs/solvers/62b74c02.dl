@@ -16,10 +16,10 @@
 .type Choice = [dir: DirCh, fill: FillCh]
 
 .comp Consts {
-    .decl bg(c: Color)   bg(0).
+    .decl bg(c: Color) bg(0).
 
     // --- $Dir ---
-    .decl dir(d: Dir)    dir(DIR_R).   // the empty edge
+    .decl dir(d: Dir) dir(DIR_R).   // the empty edge
 }
 
 .init c = Consts

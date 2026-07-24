@@ -15,13 +15,13 @@
 
 .comp Consts {
     // --- shared ---
-    .decl marker(c: Color)     marker(5).
-    .decl fill(c: Color)       fill(2).
-    .decl header(d: DiagDir)   header(DIAG_TR).
+    .decl marker(c: Color) marker(5).
+    .decl fill(c: Color) fill(2).
+    .decl header(d: DiagDir) header(DIAG_TR).
 
     // --- Stamp ---
     .decl pattern_edge(d: Dir) pattern_edge(DIR_T).
-    .decl bg(c: Color)         bg(0).
+    .decl bg(c: Color) bg(0).
 }
 
 .init c = Consts

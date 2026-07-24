@@ -6,7 +6,7 @@
 #include "../lib.dl"
 
 .comp Consts {
-    .decl bg(c: Color)  bg(8).
+    .decl bg(c: Color) bg(8).
 
     .decl move(c: Color, d: Dir, k: number)
     move(7, DIR_T, 2).

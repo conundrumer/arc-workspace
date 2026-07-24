@@ -21,11 +21,11 @@
 .type Choice = [detect: Detect, stage: Stage]
 
 .comp Consts {
-    .decl axis(a: Axis)                axis(AXIS_H).
+    .decl axis(a: Axis) axis(AXIS_H).
 
     // PerCell single-color replacements.
-    .decl uniform_color(c: Color)      uniform_color(5).
-    .decl non_uniform_color(c: Color)  non_uniform_color(0).
+    .decl uniform_color(c: Color) uniform_color(5).
+    .decl non_uniform_color(c: Color) non_uniform_color(0).
 
     // Per-count → output color.
     .decl count_color(n: number, col: Color)

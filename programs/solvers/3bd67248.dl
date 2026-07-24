@@ -16,18 +16,18 @@
 .type Choice = Anchored {} | Foot {} | WallEnd {}
 
 .comp Consts {
-    .decl bg(c: Color)          bg(0).
+    .decl bg(c: Color) bg(0).
     .decl floor_color(c: Color) floor_color(4).
-    .decl diag_color(c: Color)  diag_color(2).
+    .decl diag_color(c: Color) diag_color(2).
 
     // --- Anchored / Foot ---
-    .decl floor_dir(d: Dir)     floor_dir(DIR_B).
+    .decl floor_dir(d: Dir) floor_dir(DIR_B).
 
     // --- Anchored ---
-    .decl corner(d: DiagDir)    corner(DIAG_BL).
+    .decl corner(d: DiagDir) corner(DIAG_BL).
 
     // --- WallEnd ---
-    .decl sense(s: Sense)       sense(SENSE_CW).
+    .decl sense(s: Sense) sense(SENSE_CW).
 }
 
 .init c = Consts

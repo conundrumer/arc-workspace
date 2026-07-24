@@ -13,8 +13,8 @@
 .type Choice = Palette {} | Owned {}
 
 .comp Consts {
-    .decl axis(a: Axis)  axis(AXIS_H).
-    .decl bg(c: Color)   bg(0).
+    .decl axis(a: Axis) axis(AXIS_H).
+    .decl bg(c: Color) bg(0).
 
     // --- $Palette ---
     .decl ink(c: Color)

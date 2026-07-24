@@ -15,6 +15,6 @@
 .input in(IO=stdin)
 
 .decl out(p: Position, col: Color)
-out(P_out, Col) :- in(P_in, Col), c.transform(D), apply(D, P_in, P_out).
+out(P_grid_out, Col) :- in(P_grid_in, Col), c.transform(D), apply(D, P_grid_in, P_grid_out).
 
 .output out(IO=stdout)

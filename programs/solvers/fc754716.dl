@@ -6,7 +6,7 @@
 #include "../lib.dl"
 
 .comp Consts {
-    .decl bg(col: Color)  bg(0).
+    .decl bg(col: Color) bg(0).
 }
 
 .init c = Consts

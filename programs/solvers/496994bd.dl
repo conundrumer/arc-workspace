@@ -13,13 +13,13 @@
 
 .comp Consts {
     // --- shared ---
-    .decl bg(col: Color)  bg(0).
+    .decl bg(col: Color) bg(0).
 
     // --- Mirror ---
-    .decl transform(d: D4)  transform(D4_TB).
+    .decl transform(d: D4) transform(D4_TB).
 
     // --- Seat ---
-    .decl dir(d: Dir)  dir(DIR_T).
+    .decl dir(d: Dir) dir(DIR_T).
 }
 
 .init c = Consts
@@ -27,9 +27,9 @@
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
-.decl choice(ch: Choice)
-choice($Mirror()).
-choice($Seat()).
+.decl impl_choice(ch: Choice)
+impl_choice($Mirror()).
+impl_choice($Seat()).
 
 .decl ink(p: Position, col: Color)
 ink(P, Col) :- in(P, Col), !c.bg(Col).
@@ -52,8 +52,8 @@ img(P2, Col, $Seat()) :-
 // --- Output ---
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, Ch) :- choice(Ch), ink(P, Col).
+out(P, Col, Ch) :- impl_choice(Ch), ink(P, Col).
 out(P, Col, Ch) :- img(P, Col, Ch).
-out(P, Col, Ch) :- choice(Ch), in(P, _), !ink(P, _), !img(P, _, Ch), c.bg(Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !ink(P, _), !img(P, _, Ch), c.bg(Col).
 
 .output out(IO=stdout)

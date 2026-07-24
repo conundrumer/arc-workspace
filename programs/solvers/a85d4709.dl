@@ -15,12 +15,12 @@
 .type SliceMember = [p: Position, col: Color]
 
 .comp Consts {
-    .decl axis(a: Axis)  axis(AXIS_H).
+    .decl axis(a: Axis) axis(AXIS_H).
 
     // --- $Lookup ---
 
-    .decl mapping_member(eid: number, p_inner: Position, c: Color)
-    .decl mapping_out(eid: number, c_out: Color)
+    .decl mapping_member(id: Ident, p_inner: Position, c: Color)
+    .decl mapping_out(id: Ident, c_out: Color)
 
     .decl p0(p: Position, col: Color)
     GRID_1x3(p0, 5, 0, 0)
@@ -36,7 +36,7 @@
 
     // --- $MarkerPosition ---
 
-    .decl marker(c: Color)  marker(5).
+    .decl marker(c: Color) marker(5).
 
     .decl position_color(p: Position, col: Color)
     GRID_1x3(position_color, 2, 4, 3)
@@ -44,8 +44,8 @@
 
 .init c = Consts
 
-.init slice_match = KeyedSetCompare<Position, number, SliceMember>
-slice_match.pattern_member(Eid, [P_inner, C]) :- c.mapping_member(Eid, P_inner, C).
+.init slice_match = KeyedSetCompare<Position, Ident, SliceMember>
+slice_match.pattern_member(Id, [P_inner, C]) :- c.mapping_member(Id, P_inner, C).
 slice_match.observed_member(P_across, [P_inner, C]) :- slice_cell(P_across, P_inner, C).
 
 .decl in(p: Position, col: Color)
@@ -63,8 +63,8 @@ slice_cell(P_across, P_inner, Col) :- in(P, Col), cell_split(P, P_inner, P_acros
 
 out(P, Out_C, $Lookup()) :-
     cell_split(P, _, P_across),
-    c.mapping_out(Eid, Out_C),                                    // entry's recolor
-    slice_match.equals(P_across, Eid).                            // slice content == entry's template
+    c.mapping_out(Id, Out_C),                                    // entry's recolor
+    slice_match.equals(P_across, Id).                            // slice content == entry's template
 
 // --- $MarkerPosition ---
 
