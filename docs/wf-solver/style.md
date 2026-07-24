@@ -143,6 +143,8 @@ Lib primitives are `inline`: each call expands into the calling rule, and Souffl
 
 `out` must be total over the expected output grid: a missing cell fails the variant.
 
+Lint findings are violations: a solver with findings is not done.
+
 ## Alt outputs
 
 If the task JSON contains alts, encode them as cases of `Choice` — one case per alt output.
