@@ -50,7 +50,18 @@ WORKER_FLAGS = [
     "--exclude-dynamic-system-prompt-sections",
 ]
 STAGGER_TIMEOUT = 120  # seconds to wait for the first worker's first API response
-TRAILER = "\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n"
+COMMIT_BRIEF = """Commit the changes that solver workers left in the working tree.
+
+Scope: files git already tracks, under programs/ and docs/wf-solver/. Never stage untracked files, and leave changes outside that scope alone.
+
+Read git status and the diffs, and recent git log for message style. Group the changes into clean commits the way the log does; write each message from what the diff shows."""
+COMMITTER_FLAGS = [
+    "--output-format", "json",
+    "--allowedTools", "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)",
+    "Bash(git show:*)", "Bash(git add:*)", "Bash(git commit:*)",
+    "--add-dir", str(REF_DIR),
+    "--exclude-dynamic-system-prompt-sections",
+]
 
 LOCK = threading.RLock()
 COND = threading.Condition(LOCK)
@@ -58,6 +69,7 @@ STATE = {"seq": 0, "wave": 0, "items": []}
 PROCS: dict[str, subprocess.Popen] = {}
 KILLED: set[str] = set()  # items whose running turn the user stopped
 USAGE: list[dict] = []  # account rate-limit windows, refreshed in background
+COMMITTER = {"running": False, "note": None}
 
 
 # ---------- state ----------
@@ -240,6 +252,7 @@ def reader(item_id: str, proc: subprocess.Popen, trigger: str | None) -> None:
                     first_response.set()
                 msg = ev.get("message", {})
                 mid = msg.get("id") or ""
+                sub = bool(ev.get("parent_tool_use_id"))
                 for block in msg.get("content", []):
                     entry, key = None, None
                     if block.get("type") == "text" and block.get("text", "").strip():
@@ -256,6 +269,8 @@ def reader(item_id: str, proc: subprocess.Popen, trigger: str | None) -> None:
                             key = (mid, "tool", block.get("id") or label)
                     if entry and key not in seen:
                         seen.add(key)
+                        if sub:
+                            entry["sub"] = True
                         it["feed"].append(entry)
             elif kind == "result":
                 got_result = True
@@ -289,10 +304,21 @@ def reader(item_id: str, proc: subprocess.Popen, trigger: str | None) -> None:
 def finish_turn(it: dict, ev: dict, trigger: str | None, started: float) -> None:
     it["rev"] = it.get("rev", 0) + 1
     text = (ev.get("result") or "").strip()
-    if it["feed"] and it["feed"][-1]["kind"] == "worker" and it["feed"][-1]["text"].strip() == text:
-        it["feed"][-1] = {"kind": "report", "rev": it["rev"], "text": text}
-    elif text:
-        it["feed"].append({"kind": "report", "rev": it["rev"], "text": text})
+    if text:
+        # the result event can arrive well after the turn's messages (e.g. a
+        # background subagent turn), so look back through the current turn
+        match = None
+        for m in reversed(it["feed"]):
+            if m["kind"] in ("report", "you"):
+                break
+            if m["kind"] == "worker" and not m.get("sub") and m["text"].strip() == text:
+                match = m
+                break
+        if match:
+            match.clear()
+            match.update(kind="report", rev=it["rev"], text=text)
+        else:
+            it["feed"].append({"kind": "report", "rev": it["rev"], "text": text})
     cost = ev.get("total_cost_usd")
     mins = (time.time() - started) / 60
     note = f"turn done · {mins:.0f}m" if mins >= 1 else "turn done · <1m"
@@ -313,13 +339,16 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float) -> None
 FIRST_RESPONSE: dict[str, threading.Event] = {}
 
 
-def start_wave(k: int) -> dict:
+def start_wave(k: int, order: str = "name") -> dict:
     with LOCK:
         if any(it["state"] in ("running", "queued") for it in STATE["items"]):
             return {"error": "a wave is still launching or running"}
         STATE["items"] = [it for it in STATE["items"] if it["state"] != "committed"]
         existing = {it["id"] for it in STATE["items"]}
-        out = subprocess.run(["bash", "scripts/queue.sh", "-n", str(k + len(existing))],
+        if order not in ("name", "size"):
+            return {"error": f"unknown order: {order}"}
+        out = subprocess.run(["bash", "scripts/queue.sh", "-n", str(k + len(existing)),
+                              "--order", order],
                              cwd=ROOT, capture_output=True, text=True)
         if out.returncode != 0:
             return {"error": "queue.sh failed: " + out.stderr.strip()[-200:]}
@@ -388,7 +417,7 @@ def act_comment(item_id: str, text: str) -> dict:
         it["feed"].append({"kind": "you", "text": text})
         it["state"] = "commented"
         it["updated"] = False
-        trigger = "cleanup" if text.lower() == "cleanup" else None
+        trigger = "cleanup" if text.lower().split()[:1] == ["cleanup"] else None
         launch(it, text, trigger)
     bump()
     return {"ok": True}
@@ -401,20 +430,11 @@ def act_approve(item_id: str) -> dict:
             return {"error": "nothing to approve"}
         if item_id in PROCS:
             return {"error": "worker busy"}
-        if it["dirty"]:
-            it["feed"].append(event("auto cleanup"))
-            it["feed"].append({"kind": "you", "text": "cleanup"})
-            it["state"] = "commented"
-            it["updated"] = False
-            launch(it, "cleanup", "cleanup")
-            res = {"ok": True, "cleanup": True}
-        else:
-            it["state"] = "approved"
-            it["updated"] = False
-            it["feed"].append(event("approved"))
-            res = {"ok": True}
+        it["state"] = "approved"
+        it["updated"] = False
+        it["feed"].append(event("approved"))
     bump()
-    return res
+    return {"ok": True}
 
 
 def act_unapprove(item_id: str) -> dict:
@@ -480,6 +500,8 @@ def act_revert(item_id: str) -> dict:
 
 def act_commit() -> dict:
     with LOCK:
+        if COMMITTER["running"]:
+            return {"error": "committer session still running"}
         ids = [it["id"] for it in STATE["items"] if it["state"] == "approved"]
         if not ids:
             return {"error": "nothing approved"}
@@ -489,118 +511,55 @@ def act_commit() -> dict:
                           cwd=ROOT).returncode != 0:
             paths.append(proposals)
         subprocess.run(["git", "add", *paths], cwd=ROOT, check=False)
-        msg = ("Add " + ", ".join(sorted(ids)) +
-               "\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n")
+        msg = "Add " + ", ".join(sorted(ids))
         out = subprocess.run(["git", "commit", "-m", msg], cwd=ROOT,
                              capture_output=True, text=True)
         if out.returncode != 0:
             return {"error": "git commit failed: " + (out.stderr or out.stdout).strip()[-200:]}
         msgs = ["Add " + ", ".join(sorted(ids))]
-        lib_msg = commit_promotion()
-        if lib_msg:
-            msgs.append(lib_msg)
-        solver_msg = commit_solvers()
-        if solver_msg:
-            msgs.append(solver_msg)
-        msgs += commit_docs()
         for it in STATE["items"]:
             if it["id"] in ids:
                 it["state"] = "committed"
                 it["feed"].append(event("committed"))
                 it["ver"] = it.get("ver", 0) + 1
+        chk = subprocess.run(["git", "status", "--porcelain", "--",
+                              "programs", "docs/wf-solver"],
+                             cwd=ROOT, capture_output=True, text=True)
+        leftovers = any(not l.startswith("??") for l in chk.stdout.splitlines())
+        if leftovers and not FAKE:
+            COMMITTER["running"] = True
+            COMMITTER["note"] = None
+            append = STATE_DIR / f"wave-{STATE['wave']:02d}-append.md"
+            threading.Thread(target=run_committer, args=(append,),
+                             daemon=True).start()
+            msgs.append("committer running…")
     bump()
     return {"ok": True, "msg": " + ".join(msgs)}
 
 
-def commit_promotion() -> str | None:
-    """After the wave commit: lib.dl plus caller edits left in the tree are
-    promotion fallout — commit them in the repo's `lib:` style. Caller holds
-    LOCK."""
-    chk = subprocess.run(["git", "status", "--porcelain", "--",
-                          "programs/lib.dl", "programs/solvers"],
-                         cwd=ROOT, capture_output=True, text=True)
-    left = [l[3:] for l in chk.stdout.splitlines() if l[:2].strip() == "M"]
-    if "programs/lib.dl" not in left:
-        return None
-    diff = subprocess.run(["git", "diff", "--", "programs/lib.dl"],
-                          cwd=ROOT, capture_output=True, text=True).stdout
-    names = (re.findall(r"^\+\.comp (\w+)", diff, re.M) or
-             re.findall(r"^\+\s*\.decl (\w+)", diff, re.M))
-    src = next((it["id"] for it in STATE["items"]
-                if "programs/lib.dl" in (it.get("turn_files") or {})), None)
-    msg = "lib: " + (", ".join(dict.fromkeys(names)) or "promotion")
-    msg += f" promoted from {src}" if src else " promoted"
-    subprocess.run(["git", "add", *left], cwd=ROOT, check=False)
-    out = subprocess.run(["git", "commit", "-m", msg + TRAILER],
-                         cwd=ROOT, capture_output=True, text=True)
-    return msg if out.returncode == 0 else None
-
-
-def commit_solvers() -> str | None:
-    """Modified tracked solvers left after the promotion stage: family or
-    retag fallout from a worker turn. One commit, named by the changed
-    concept-header terms. Caller holds LOCK."""
-    chk = subprocess.run(["git", "status", "--porcelain", "--", "programs/solvers"],
-                         cwd=ROOT, capture_output=True, text=True)
-    left = [l[3:] for l in chk.stdout.splitlines() if l[:2].strip() == "M"]
-    if not left:
-        return None
-    diff = subprocess.run(["git", "diff", "--", *left], cwd=ROOT,
-                          capture_output=True, text=True).stdout
-    plus = list(dict.fromkeys(
-        t for line in re.findall(r"^\+// (?:concept|family): (.+)$", diff, re.M)
-        for t in line.split()))
-    minus = list(dict.fromkeys(
-        t for line in re.findall(r"^-// (?:concept|family): (.+)$", diff, re.M)
-        for t in line.split()))
-    added = [t for t in plus if t not in minus]
-    removed = [t for t in minus if t not in plus]
-    parts = ", ".join(added[:6])
-    if removed:
-        rem = ", ".join("-" + t for t in removed[:4])
-        parts = f"{parts}; {rem}" if parts else rem
-    if not parts:
-        parts = f"{len(left)} updated"
-    msg = f"solvers: {parts}"
-    subprocess.run(["git", "add", *left], cwd=ROOT, check=False)
-    out = subprocess.run(["git", "commit", "-m", msg + TRAILER],
-                         cwd=ROOT, capture_output=True, text=True)
-    return msg if out.returncode == 0 else None
-
-
-def commit_docs() -> list[str]:
-    """Worker edits to wf-solver docs (proposals.md rides the Add commit):
-    one commit per file, named by the changed term names. Caller holds LOCK."""
-    chk = subprocess.run(["git", "status", "--porcelain", "--", "docs/wf-solver"],
-                         cwd=ROOT, capture_output=True, text=True)
-    msgs = []
-    for line in chk.stdout.splitlines():
-        if line[:2].strip() != "M":
-            continue
-        rel = line[3:]
-        stem = Path(rel).stem
-        if stem == "proposals" or not rel.endswith(".md"):
-            continue
-        diff = subprocess.run(["git", "diff", "--", rel], cwd=ROOT,
-                              capture_output=True, text=True).stdout
-        plus = list(dict.fromkeys(re.findall(r"^\+.*?`([\w-]+)`", diff, re.M)))
-        minus = [t for t in dict.fromkeys(re.findall(r"^-.*?`([\w-]+)`", diff, re.M))
-                 if t not in plus]
-        parts = ", ".join(plus[:6])
-        if minus:
-            removed = ", ".join("-" + t for t in minus[:4])
-            parts = f"{parts}; {removed}" if parts else removed
-        if not parts:
-            added = [l[1:].strip() for l in diff.splitlines()
-                     if l.startswith("+") and not l.startswith("+++") and l[1:].strip()]
-            parts = added[0][:50] if added else "updates"
-        msg = f"{stem}: {parts}"
-        subprocess.run(["git", "add", rel], cwd=ROOT, check=False)
-        out = subprocess.run(["git", "commit", "-m", msg + TRAILER],
-                             cwd=ROOT, capture_output=True, text=True)
-        if out.returncode == 0:
-            msgs.append(msg)
-    return msgs
+def run_committer(append: Path) -> None:
+    """One-shot session that commits worker fallout with judged messages."""
+    before = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT,
+                            capture_output=True, text=True).stdout.strip()
+    cmd = [CLAUDE, "-p", COMMIT_BRIEF, *COMMITTER_FLAGS]
+    if append.exists():
+        cmd += ["--append-system-prompt", append.read_text()]
+    if MODEL:
+        cmd += ["--model", MODEL]
+    with open(LOG_DIR / "committer.log", "ab") as log:
+        try:
+            subprocess.run(cmd, cwd=ROOT, stdout=log, stderr=log, timeout=900)
+        except subprocess.TimeoutExpired:
+            pass
+    out = subprocess.run(["git", "log", "--format=%s", f"{before}..HEAD"],
+                         cwd=ROOT, capture_output=True, text=True).stdout
+    subjects = [s for s in out.splitlines() if s]
+    with LOCK:
+        COMMITTER["running"] = False
+        COMMITTER["note"] = ("committer: " + "; ".join(reversed(subjects))
+                             if subjects else
+                             "committer made no commits — see state/logs/committer.log")
+    bump()
 
 
 # ---------- http ----------
@@ -608,7 +567,7 @@ def commit_docs() -> list[str]:
 def light_items() -> list[dict]:
     return [{k: it.get(k) for k in
              ("id", "state", "dirty", "updated", "session", "lastActive",
-              "wave", "rev", "title", "est", "ver")} |
+              "wave", "rev", "title", "est", "ver", "append")} |
             {"busy": it["id"] in PROCS}
             for it in STATE["items"]]
 
@@ -647,6 +606,8 @@ class Handler(BaseHTTPRequestHandler):
                     COND.wait(deadline - time.time())
                 snap = {"seq": STATE["seq"], "wave": STATE["wave"],
                         "items": light_items(), "usage": USAGE,
+                        "cli": {"addDir": str(REF_DIR)},
+                        "committer": dict(COMMITTER),
                         "solved": len(list(SOLVERS.glob("*.dl"))),
                         "total": len(list(REF_DIR.glob("programs/solvers/*.ts")))}
             self.reply(snap)
@@ -682,7 +643,7 @@ class Handler(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(n) or b"{}")
         route = urlparse(self.path).path
         if route == "/api/wave":
-            res = start_wave(int(body.get("k", 6)))
+            res = start_wave(int(body.get("k", 6)), body.get("order", "name"))
         elif route == "/api/comment":
             res = act_comment(body.get("id", ""), body.get("text", ""))
         elif route == "/api/approve":

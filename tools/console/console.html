@@ -29,6 +29,7 @@
   --sel:#2DD4BF1A;
 }}
 * { box-sizing:border-box; }
+[hidden] { display:none !important; }
 html,body { height:100%; }
 body {
   margin:0; background:var(--bg); color:var(--ink);
@@ -61,10 +62,11 @@ code, pre, .mono { font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, mo
 #usage .uwarn { color:var(--ttl-warn); }
 #usage .uhot { color:var(--ttl-hot); }
 .wavectl { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
-.wavectl input {
-  width:44px; padding:3px 6px; border:1px solid var(--border); border-radius:5px;
+.wavectl input, .wavectl select {
+  padding:3px 6px; border:1px solid var(--border); border-radius:5px;
   background:var(--bg); color:var(--ink); font-family:ui-monospace,Menlo,monospace; font-size:12px;
 }
+.wavectl input { width:44px; }
 button {
   font:12px system-ui,sans-serif; padding:5px 12px; border-radius:6px; cursor:pointer;
   border:1px solid var(--border); background:var(--panel2); color:var(--ink);
@@ -151,7 +153,6 @@ button.primary:disabled { opacity:.45; cursor:default; }
 .msg.you { align-self:flex-end; background:var(--accent); color:var(--accent-ink); }
 .msg.you code { background:transparent; border-color:transparent; color:inherit; }
 .msg.worker { align-self:flex-start; background:var(--panel2); border:1px solid var(--border); }
-.msg .who { font-size:9.5px; letter-spacing:.08em; text-transform:uppercase; opacity:.7; margin-bottom:2px; }
 .event { align-self:center; font-size:10.5px; color:var(--muted); font-family:ui-monospace,Menlo,monospace; }
 .tools {
   align-self:flex-start; display:flex; flex-direction:column; gap:2px;
@@ -160,6 +161,12 @@ button.primary:disabled { opacity:.45; cursor:default; }
   overflow-wrap:anywhere;
 }
 .tools .tl b { color:var(--ink); font-weight:600; }
+.msg.worker.sub { margin-left:22px; opacity:.75; }
+.msg.worker.sub::before {
+  content:"subagent"; display:block; font-family:ui-monospace,Menlo,monospace;
+  font-size:9.5px; color:var(--muted); margin-bottom:3px;
+}
+.tools .tl.sub { opacity:.65; padding-left:12px; }
 .placeholder { color:var(--muted); font-size:12.5px; font-style:italic; }
 .runpulse { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--st-running); margin-right:6px; animation:pulse 1.2s ease-in-out infinite; }
 @keyframes pulse { 0%,100%{opacity:.3} 50%{opacity:1} }
@@ -257,7 +264,8 @@ button.primary:disabled { opacity:.45; cursor:default; }
   <span id="counts"></span>
   <span class="spacer"></span>
   <span id="usage"></span>
-  <span class="wavectl">next wave K <input id="waveK" type="number" value="6" min="1" max="20"> <button id="wavebtn">start</button></span>
+  <span class="wavectl">next wave K <input id="waveK" type="number" value="10" min="1" max="20"> <select id="waveOrder" aria-label="wave order"><option value="name" selected>name order</option><option value="size">simplest</option></select> <button id="wavebtn">start</button></span>
+  <span class="chip commented mono" id="committerchip" hidden>committing…</span>
   <button id="commitbtn" class="primary">commit approved</button>
 </div>
 
@@ -302,11 +310,17 @@ const ARC = ["#000000","#0074D9","#FF4136","#2ECC40","#FFDC00","#AAAAAA","#F012B
 const CHIPCLS = {"needs-review":"review","commented":"commented","running":"running","queued":"queued","approved":"approved","committed":"committed"};
 const TTL_MIN = 60;
 
-let seq = 0, wave = 0, items = [], selId = null, usage = [], progress = null;
+let seq = 0, wave = 0, items = [], selId = null, usage = [], progress = null, cli = {}, committerWas = false;
+
+/* interactive commands that reproduce the workers' prompt bytes (cache reuse) */
+const takeoverCmd = it => "claude --resume "+it.session
+  +` --append-system-prompt "$(cat ${it.append})" --add-dir ${cli.addDir} --exclude-dynamic-system-prompt-sections`;
 const taskCache = {};   // id -> task json | "pending" | "missing"
 const itemCache = {};   // id -> {feed, code, ver}
 const taskOpen  = {};   // id -> bool (default open)
 const tabSel    = {};   // id -> path of the active code tab
+let cboxFor = null;     // id whose draft the composer holds
+const draftKey = id => "draft:"+id;
 
 /* ---------- helpers ---------- */
 const $ = id => document.getElementById(id);
@@ -488,7 +502,7 @@ function renderDetail(){
     p.textContent = items.length ? "select an item" : "no items — start a wave";
     js.appendChild(p);
     $("composer").classList.add("disabled"); $("cbox").disabled=true; $("sendbtn").disabled=true;
-    $("cbox").placeholder=""; $("chint").textContent="";
+    $("cbox").placeholder=""; $("cbox").value=""; cboxFor=null; $("chint").textContent="";
     $("fname").textContent="—"; $("flines").textContent=""; $("codepre").textContent="";
     $("tasklabel").textContent="task"; $("taskbody").innerHTML="";
     return;
@@ -502,7 +516,7 @@ function renderDetail(){
     const sl=document.createElement("div"); sl.className="sessline";
     sl.innerHTML=`<span class="cmd">claude --resume ${it.session.slice(0,8)}…</span>`;
     const b=document.createElement("button"); b.className="copybtn"; b.textContent="copy · o";
-    b.onclick=()=>copy("claude --resume "+it.session,"resume "+it.id);
+    b.onclick=()=>copy(takeoverCmd(it),"takeover "+it.id);
     sl.appendChild(b);
     if(it.busy){
       const kb=document.createElement("button"); kb.className="copybtn"; kb.textContent="stop";
@@ -518,7 +532,7 @@ function renderDetail(){
   for(const m of cache.feed){
     if(m.kind==="tool"){
       if(!toolGroup){ toolGroup=document.createElement("div"); toolGroup.className="tools"; feed.appendChild(toolGroup); }
-      const t=document.createElement("div"); t.className="tl";
+      const t=document.createElement("div"); t.className="tl"+(m.sub?" sub":"");
       const sp=m.text.indexOf(" ");
       t.innerHTML= sp<0 ? "<b>"+esc(m.text)+"</b>" : "<b>"+esc(m.text.slice(0,sp))+"</b> "+esc(m.text.slice(sp+1));
       toolGroup.appendChild(t);
@@ -533,8 +547,8 @@ function renderDetail(){
       const e=document.createElement("div"); e.className="event"; e.textContent="— "+m.text+" —";
       feed.appendChild(e);
     } else {
-      const d=document.createElement("div"); d.className="msg "+(m.kind==="you"?"you":"worker");
-      d.innerHTML=`<div class="who">${m.kind==="you"?"you":"worker"}</div>${render(m.text)}`;
+      const d=document.createElement("div"); d.className="msg "+(m.kind==="you"?"you":"worker")+(m.sub?" sub":"");
+      d.innerHTML=render(m.text);
       feed.appendChild(d);
     }
   }
@@ -550,14 +564,18 @@ function renderDetail(){
   if(stick) js.scrollTop = js.scrollHeight;
 
   /* composer */
-  const canComment = it.session && !it.busy && (it.state==="needs-review"||it.state==="approved");
+  const canSend = it.session && !it.busy && (it.state==="needs-review"||it.state==="approved");
   const composer=$("composer"), cbox=$("cbox");
-  composer.classList.toggle("disabled",!canComment);
-  cbox.disabled=!canComment;
-  $("sendbtn").disabled=!canComment;
-  cbox.placeholder = canComment ? "" :
-    (it.busy||it.state==="running"||it.state==="commented") ? "worker running" : "no session yet";
-  $("chint").textContent = it.state==="needs-review" && it.dirty ? "a sends cleanup first" : "";
+  composer.classList.remove("disabled");
+  cbox.disabled=false;
+  $("sendbtn").disabled=!canSend;
+  cbox.placeholder = canSend ? "" :
+    (it.busy||it.state==="running"||it.state==="commented") ? "worker running — draft freely" : "no session yet";
+  if(cboxFor!==it.id){
+    cboxFor=it.id;
+    cbox.value = localStorage.getItem(draftKey(it.id)) || "";
+  }
+  $("chint").textContent = it.state==="needs-review" && it.dirty ? "cleanup pending" : "";
 
   /* task strip + code — open/closed remembered per task, default open */
   $("taskstrip").classList.toggle("open", taskOpen[it.id]!==false);
@@ -636,8 +654,7 @@ async function approve(){
   const it=sel();
   if(!it||it.state!=="needs-review"){ toast("nothing to approve"); return; }
   const r=await post("/api/approve",{id:it.id});
-  if(r.ok && r.cleanup) toast("cleanup sent");
-  else if(r.ok){ toast(it.id+" approved"); nextReview(); }
+  if(r.ok){ toast(it.id+" approved"); nextReview(); }
 }
 async function unapprove(){
   const it=sel();
@@ -647,12 +664,16 @@ async function unapprove(){
 }
 async function sendComment(){
   const it=sel(), cbox=$("cbox"), text=cbox.value.trim();
-  if(!it||cbox.disabled||!text) return;
+  if(!it||!text) return;
+  if($("sendbtn").disabled){
+    toast((it.busy||it.state==="running"||it.state==="commented") ? "worker running — draft kept" : "no session yet — draft kept");
+    return;
+  }
   const low=text.toLowerCase();
   if(low==="commit"){ toast("commit is a console action"); return; }
   if(low==="next"){ toast("no next in batch mode"); return; }
   const r=await post("/api/comment",{id:it.id,text});
-  if(r.ok){ cbox.value=""; toast("sent"); }
+  if(r.ok){ cbox.value=""; localStorage.removeItem(draftKey(it.id)); toast("sent"); }
 }
 async function commitApproved(){
   const r=await post("/api/commit");
@@ -660,7 +681,7 @@ async function commitApproved(){
 }
 async function startWave(){
   const k=parseInt($("waveK").value,10)||6;
-  const r=await post("/api/wave",{k});
+  const r=await post("/api/wave",{k,order:$("waveOrder").value});
   if(r.ok) toast("wave started · "+r.ids.join(", "));
 }
 
@@ -680,7 +701,7 @@ document.addEventListener("keydown",e=>{
   else if(e.key==="a"){ approve(); }
   else if(e.key==="u"){ unapprove(); }
   else if(e.key==="c"){ if(!$("cbox").disabled){ e.preventDefault(); $("cbox").focus(); } }
-  else if(e.key==="o"){ const it=sel(); if(it&&it.session) copy("claude --resume "+it.session,"resume "+it.id); }
+  else if(e.key==="o"){ const it=sel(); if(it&&it.session) copy(takeoverCmd(it),"takeover "+it.id); }
   else if(e.key==="t"){ toggleTask(); }
 });
 function toggleTask(){
@@ -689,6 +710,12 @@ function toggleTask(){
   $("taskstrip").classList.toggle("open", taskOpen[it.id]);
 }
 $("taskhead").onclick=toggleTask;
+$("cbox").oninput=()=>{
+  if(!cboxFor) return;
+  const v=$("cbox").value;
+  if(v) localStorage.setItem(draftKey(cboxFor), v);
+  else localStorage.removeItem(draftKey(cboxFor));
+};
 $("sendbtn").onclick=sendComment;
 $("commitbtn").onclick=commitApproved;
 $("wavebtn").onclick=startWave;
@@ -702,6 +729,11 @@ async function poll(){
       const changed = d.seq!==seq;
       seq=d.seq; wave=d.wave; items=d.items; usage=d.usage||[];
       progress = d.total ? {solved:d.solved, total:d.total} : null;
+      cli = d.cli||{};
+      const cm = d.committer||{};
+      if(committerWas && !cm.running && cm.note) toast(cm.note);
+      committerWas = !!cm.running;
+      $("committerchip").hidden = !cm.running;
       if(selId && !items.find(x=>x.id===selId)) selId=null;
       if(!selId && items.length) selId=railOrder()[0];
       if(changed){
