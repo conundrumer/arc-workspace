@@ -1,0 +1,151 @@
+// c1990cce
+// concept: grow markers cast wallpaper
+// A 1×W row, bg except one ink cell. The output grows the row into a W×W
+// square: the ink casts two diagonal rays toward the far edge (a V), and
+// echo diagonals of c.echo on c.echo_axis fill the open cone between them.
+// Choice = [v, e] crosses the claims:
+//
+//   v (V color):
+//     $VSeed()  — the ink's own color propagates to the V.
+//     $VFixed() — an independent c.v_color.
+//   e (echo placement):
+//     $Emit()   — every c.spacing-th cell along the mirror arm's line
+//                 casts an echo ray.
+//     $Stripe() — echoes at every c.period-th diagonal offset from the
+//                 echo-axis arm.
+
+#include "../lib.dl"
+
+.type VSrc   = VSeed {} | VFixed {}
+.type Echo   = Emit {} | Stripe {}
+.type Choice = [v: VSrc, e: Echo]
+
+.comp Consts {
+    // --- shared ---
+    .decl bg(col: Color)            bg(0).
+    .decl grow(d: Dir)              grow(DIR_B).
+    .decl echo_axis(da: DiagAxis)   echo_axis(DAXIS_DG).
+    .decl echo(col: Color)          echo(1).
+
+    // --- $VFixed ---
+    .decl v_color(col: Color)       v_color(2).
+
+    // --- $Emit ---
+    .decl spacing(k: number)        spacing(2).
+
+    // --- $Stripe ---
+    .decl period(k: number)         period(4).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// The DiagDir peer of dist: taxicab distance to corner diag, the sum of
+// its two edge distances. Its level sets are the diagonals on the other
+// diagonal axis. Lib candidate.
+.comp CornerDist {
+    .decl corner_dist(p: Position, diag: DiagDir, k: number) inline
+    corner_dist(P, Diag, K) :- diag_dist(P, Diag, _, K1, K2), K = K1 + K2.
+}
+
+.init cd = CornerDist
+
+// Output frame: square on the input's long extent.
+.decl side(n: number)
+side(N) :- in(P, _), axis_dims(P, _, N, K), N > K.
+
+.init frame = Frame2D<Unit>
+frame.extent($U(), A, N) :- axis_elem(A), side(N).
+
+// The ink cell, seated in the output frame on the edge opposite c.grow.
+.decl seed(p: Position, col: Color)
+seed(P_out, Col) :-
+    in(P_in, Col), !c.bg(Col),                   // ink cell
+    frame.cell($U(), P_out),
+    c.grow(D), opposite(D, D0),                  // seat edge
+    slab_anchor(D0, P_in, P_out).
+
+// The two cone corners on the c.grow side; the one on the echo axis, and
+// the mirror arm's.
+.decl corner(diag: DiagDir)
+corner(Diag) :- c.grow(D), axis_of(D, A), dir_of(Diag, A, D).
+
+.decl cast_corner(diag: DiagDir)
+cast_corner(Diag) :- corner(Diag), diag_axis_of(Diag, DA), c.echo_axis(DA).
+
+.decl mirror_corner(diag: DiagDir)
+mirror_corner(Diag) :- corner(Diag), !cast_corner(Diag).
+
+// The V: cells level with the seed toward some cone corner.
+.decl arm(p: Position)
+arm(P) :-
+    frame.cell($U(), P), seed(S, _),
+    corner(Diag), cd.corner_dist(P, Diag, K), cd.corner_dist(S, Diag, K).
+
+// Strictly inside the V's cone: strictly nearer each cone corner than the
+// seed.
+.decl inside(p: Position)
+inside(P) :-
+    frame.cell($U(), P), seed(S, _),
+    cast_corner(CD),   cd.corner_dist(P, CD, K1), cd.corner_dist(S, CD, N1), K1 < N1,
+    mirror_corner(MD), cd.corner_dist(P, MD, K2), cd.corner_dist(S, MD, N2), K2 < N2.
+
+// --- Echo cases: the echoed cells --------------------------------------------
+
+.decl echo_choice(e: Echo)
+echo_choice($Emit()).
+echo_choice($Stripe()).
+
+.decl echo(p: Position, e: Echo)
+
+// $Emit — emitters march along the mirror arm's line, every c.spacing-th
+// cell from the seed, continuing past the grid edge while rows remain;
+// each casts an echo ray.
+.decl march_jump(delta: Position)
+march_jump(J) :-
+    mirror_corner(MD),
+    c.spacing(S), diag_dirs(MD, _, D1, D2),      // jump S cells toward it
+    jump_delta(D1, S, J1), jump_delta(D2, S, J2), compose(J1, J2, J).
+
+.decl emitter(p: Position)
+emitter(P) :- seed(P, _).
+emitter(P2) :-
+    emitter(P1), march_jump(J), compose(P1, J, P2),
+    c.grow(D), dist(P2, D, K), K >= 0.           // rows remain
+
+.init rays = DiagRay<Unit>
+rays.diag(Diag)    :- cast_corner(Diag).
+rays.cell(P)       :- frame.cell($U(), P).
+rays.mark($U(), P) :- emitter(P).
+
+echo(P, $Emit()) :- rays.ray($U(), P, _), !arm(P).
+
+// $Stripe — diagonal offset from the echo-axis arm is a multiple of
+// c.period: the same corner_dist class from the mirror corner as the seed.
+echo(P, $Stripe()) :-
+    inside(P), seed(S, _),
+    mirror_corner(MD), cd.corner_dist(P, MD, Kp), cd.corner_dist(S, MD, Ks),
+    c.period(Per), stride(Kp, Per, 0, _, R), stride(Ks, Per, 0, _, R).
+
+// --- V color cases ------------------------------------------------------------
+
+.decl v_choice(v: VSrc)
+v_choice($VSeed()).
+v_choice($VFixed()).
+
+.decl v_color(col: Color, v: VSrc)
+v_color(Col, $VSeed())  :- seed(_, Col).
+v_color(Col, $VFixed()) :- c.v_color(Col).
+
+// --- Output -------------------------------------------------------------------
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, [V, E]) :- arm(P), v_color(Col, V), echo_choice(E).
+out(P, Col, [V, E]) :- echo(P, E), c.echo(Col), v_choice(V).
+out(P, Col, [V, E]) :-
+    frame.cell($U(), P), !arm(P), !echo(P, E),   // cell outside V and echoes
+    echo_choice(E), v_choice(V), c.bg(Col).
+
+.output out(IO=stdout)

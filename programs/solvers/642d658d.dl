@@ -1,0 +1,97 @@
+// 642d658d
+// concept: markers count rank
+// Noise grid with plus shapes: four same-colored arms around a center
+// cell. Detect × select models of the 1×1 output color, data-equivalent
+// on this task — the winning arm color has exactly two pluses in every
+// pair under every detect:
+//   detect $Center — pluses sit on cells of a stored center color
+//   detect $Halo   — any cell ringed by one non-bg color; bg is the
+//                    pair's dominant color (bg varies across pairs)
+//   detect $Footprint — arms at a stored mask's offsets around its
+//                    anchor, on cells of the center color
+//   select $Mode   — the arm color with the most pluses
+//   select $Count  — the arm color with a stored plus count
+
+#include "../lib.dl"
+
+.type Detect = Center {} | Halo {} | Footprint {}
+.type Select = Mode {} | Count {}
+.type Choice = [detect: Detect, select: Select]
+
+.comp Consts {
+    // --- $Center ---
+    .decl center(c: Color)    center(4).
+
+    // --- $Count ---
+    .decl target(n: number)   target(2).
+
+    // --- $Footprint ---
+    .decl footprint(p: Position, lit: number)
+    GRID_3x3(footprint,
+        0, 1, 0,
+        1, 0, 1,
+        0, 1, 0)
+    .decl fp_cell(p: Position)
+    fp_cell(P) :- footprint(P, 1).
+
+    .decl anchor(p: Position)
+    anchor([1, 1, 1, 1]).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl arm(p: Position, d: Dir, col: Color)
+arm(P, D, Col) :-
+    in(P, _), dir_elem(D),                             // each dir of a cell
+    step_delta(D, S), compose(P, S, P2), in(P2, Col).
+
+// Some dir lacks a Col arm — a differing or missing neighbor.
+.decl broken(p: Position, col: Color)
+broken(P, Col) :- arm(P, _, Col), dir_elem(D), !arm(P, D, Col).
+
+// P's four neighbors all exist and share color Col.
+.decl ring(p: Position, col: Color)
+ring(P, Col) :- arm(P, _, Col), !broken(P, Col).
+
+// --- $Halo bg: the pair's dominant color ---
+.decl color_count(col: Color, n: number)
+color_count(Col, N) :- in(_, Col), N = count : { in(_, Col) }.
+
+.decl grid_bg(col: Color)
+grid_bg(Col) :- color_count(Col, N), N = max M : { color_count(_, M) }.
+
+.decl plus(dt: Detect, p: Position, col: Color)
+plus($Center(), P, Col) :- ring(P, Col), in(P, Cc), c.center(Cc).
+plus($Halo(),   P, Col) :- ring(P, Col), !grid_bg(Col).
+
+// --- $Footprint ---
+.init fp = Reframe<Unit>
+fp.outer($U(), A) :- c.anchor(A).
+fp.cell($U(), S)  :- c.fp_cell(S).
+
+.decl fp_arm(p: Position, d: Position, col: Color)
+fp_arm(P, D, Col) :-
+    in(P, Cc), c.center(Cc),                          // candidate anchor cell
+    fp.inner($U(), D), compose(P, D, P2), in(P2, Col).
+
+.decl fp_broken(p: Position, col: Color)
+fp_broken(P, Col) :- fp_arm(P, _, Col), fp.inner($U(), D), !fp_arm(P, D, Col).
+
+plus($Footprint(), P, Col) :- fp_arm(P, _, Col), !fp_broken(P, Col).
+
+.decl plus_count(dt: Detect, col: Color, n: number)
+plus_count(Dt, Col, N) :- plus(Dt, _, Col), N = count : { plus(Dt, P, Col) }.
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// --- $Mode ---
+out(ORIGIN, Col, [Dt, $Mode()]) :-
+    plus_count(Dt, Col, N), N = max M : { plus_count(Dt, _, M) }.
+
+// --- $Count ---
+out(ORIGIN, Col, [Dt, $Count()]) :- plus_count(Dt, Col, N), c.target(N).
+
+.output out(IO=stdout)

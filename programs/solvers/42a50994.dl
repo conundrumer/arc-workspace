@@ -1,0 +1,47 @@
+// 42a50994
+// concept: objects select
+// Noise dots; a dot with a companion among its eight surrounding cells
+// stays; a lone dot becomes bg. Each pair's dots share one color, which
+// hides what counts as a companion; two models, tagged on out's Choice:
+//
+//   $Ink  — any non-bg cell.
+//   $Self — a cell of the dot's own color.
+
+#include "../lib.dl"
+
+.type Choice = Ink {} | Self {}
+
+.comp Consts {
+    .decl bg(c: Color)
+    bg(0).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !c.bg(Col).
+
+// Unit step to one of the eight surrounding cells.
+.decl surround_step(s: Position)
+surround_step(S) :- dir_elem(D), step_delta(D, S).
+surround_step(S) :- diag_dir_elem(Dg), diag_step_delta(Dg, S).
+
+.decl grouped(p: Position, ch: Choice)
+
+// --- $Ink ---
+grouped(P, $Ink()) :- ink(P, _), surround_step(S), compose(P, S, P2), ink(P2, _).
+
+// --- $Self ---
+grouped(P, $Self()) :- ink(P, Col), surround_step(S), compose(P, S, P2), ink(P2, Col).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Ink()). impl_choice($Self()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- grouped(P, Ch), in(P, Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !grouped(P, Ch), c.bg(Col).
+
+.output out(IO=stdout)

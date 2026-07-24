@@ -1,0 +1,90 @@
+// 8597cfd7
+// concept: decompose count span rank
+// A separator line splits the grid into a before and an after panel; each
+// panel holds one bar per ink color. The output is a block of the color
+// whose bar grew more across the separator. Two measures of bar length:
+//
+//   $Count — cells of the color in the panel.
+//   $Span  — slices the color's cells span in the panel.
+//
+// The measures coincide here (every bar is solid); they diverge on a bar
+// with a hole.
+
+#include "../lib.dl"
+
+.type Choice = Count {} | Span {}
+
+.comp Consts {
+    .decl bg(c: Color)       bg(0).
+    .decl sep(c: Color)      sep(5).
+    .decl side(d: Dir)       side(DIR_T).  // edge toward the before panel
+    .decl out_dim(n: number) out_dim(2).   // output extent, both axes
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// Bar cells.
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !c.bg(Col), !c.sep(Col).
+
+// The separator's distance from each stacking-axis edge — the panels
+// stack along c.side's axis.
+.decl sep_dist(s: Dir, k: number)
+sep_dist(S, K) :-
+    in(P, Col), c.sep(Col),                    // separator cell
+    c.side(D), axis_of(D, A), axis_of(S, A),   // stacking-axis edges
+    dist(P, S, K).
+
+// Panel of a cell: the stacking-axis edge it is strictly nearer than the
+// separator.
+.decl side_of(p: Position, s: Dir)
+side_of(P, S) :- in(P, _), sep_dist(S, Ks), dist(P, S, K), K < Ks.
+
+// A bar's length per measure: the count of its members.
+.decl measure_member(col: Color, ch: Choice, s: Dir, m: Position)
+
+// --- $Count ---
+measure_member(Col, $Count(), S, P) :- ink(P, Col), side_of(P, S).
+
+// --- $Span ---
+// A cell's slice across the stacking axis.
+.decl slice_of(p: Position, r: Position)
+slice_of(P, R) :- in(P, _), c.side(D), axis_of(D, A), split(P, A, R, _).
+
+// Slices holding the color in the panel.
+.decl ink_slice(col: Color, s: Dir, r: Position)
+ink_slice(Col, S, R) :- ink(P, Col), side_of(P, S), slice_of(P, R).
+
+.type SKey = [col: Color, s: Dir]
+.init spans = Between<SKey>
+spans.axis(A)           :- c.side(D), axis_of(D, A).
+spans.cell(R)           :- slice_of(_, R).
+spans.mark([Col, S], R) :- ink_slice(Col, S, R).
+
+measure_member(Col, $Span(), S, R) :- spans.between([Col, S], R).
+
+// Bar growth per color and measure: after-panel members beyond
+// before-panel members.
+.type CKey = [col: Color, ch: Choice]
+.init growth = Excess<CKey, Position>
+
+growth.pos([Col, Ch], M) :- measure_member(Col, Ch, S, M), c.side(D), opposite(D, S).
+growth.neg([Col, Ch], M) :- measure_member(Col, Ch, D, M), c.side(D).
+
+// The winner: the color no rival outgrows.
+.decl beaten(col: Color, ch: Choice)
+beaten(Col, Ch) :- growth.excess([Col, Ch], N), growth.excess([C2, Ch], N2), N2 > N.
+
+.decl winner(col: Color, ch: Choice)
+winner(Col, Ch) :- growth.excess([Col, Ch], _), !beaten(Col, Ch).
+
+.init frame = Frame2D<Unit>
+frame.extent($U(), A, N) :- axis_elem(A), c.out_dim(N).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- frame.cell($U(), P), winner(Col, Ch).
+
+.output out(IO=stdout)

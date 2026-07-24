@@ -117,30 +117,6 @@ corner(K, Diag, P) :-
 
 **Third home (protocol step 1).** 4522001f (`block_edge`, body rules): $Mark reads the mark cell's block corner through `diag_dirs`, then takes its opposite.
 
-## `Between<Key>` — cells between two keyed marks on a line
-
-The two-sided fold of `Ray` (`lib.dl`). Demoted from lib in the `Ray` factoring: the fold is one rule, and it stays solver-local until real use justifies comp form again.
-
-```
-.comp Between<Key> {
-    .decl axis(a: Axis)
-    .decl cell(p: Position)            // domain tested
-    .decl mark(key: Key, p: Position)
-
-    .init rays = Ray<Key>
-    rays.dir(D)     :- axis(A), axis_of(D, A).   // cast both ways
-    rays.cell(P)    :- cell(P).
-    rays.mark(K, P) :- mark(K, P).
-
-    .decl between(key: Key, p: Position)
-    between(K, P) :- rays.ray(K, P, D), opposite(D, O), rays.ray(K, P, O).
-}
-```
-
-A mark is between under its own key (Ray's inclusive reach); 22168020 paints mark cells through this.
-
-**Task-local homes (protocol step 1).** Solver-local folds: 22168020 (Color key), 22eb0ac0 $Span (Color), a699fb00 $Span (Unit), aa18de87 $Axis and $Iso (Unit, $Iso casting all four dirs), 505fff84 $Set and $Sided (Color, strict via mark-free domain), ded97339 $Ink and $Self (Unit and Color, both casting all four dirs).
-
 ## `Ordinal.rev` — opposite-end pairing of an index set
 
 The order anti-isomorphism of `idx_set`: `rev(k, k2)` pairs each element with its opposite-end counterpart, with as many elements below k as above k2. It is the descending complement of `rank`, as a pairing rather than a rank value. The Ordinal doc's descending idiom (place ranks from the opposite edge) needs a physical frame to place into; `rev` covers reversal of an abstract index sequence.
@@ -255,21 +231,21 @@ divide_by_size_slab(P, A, K, G, P_outer, P_inner) :-
 **Task-local home (protocol step 1).** 7b7f7511 (`DivideBySizeSlab`
 comp): $Tile's swept tiling.
 
-## `Excess<Key, Member>` — count of pos members beyond neg members
+## `corner_dist` — taxicab distance to a corner
 
-The negative-free difference of two member counts: `excess(key, n)` holds the positive difference, with no tuple at a tie or deficit, so no negative number crosses the interface. Cancellation between two disjoint sets has no set-level witness (any member pairing invents an order), so the subtraction is irreducible; the comp owns it, and bodies consume the count by comparison.
+The DiagDir peer of `dist`: L1 distance to corner `diag`, the sum of its
+two edge distances. Its level sets are the diagonals on the other
+diagonal axis, so it reads a cell's diagonal index with no sign or
+subtraction: equality against a reference cell tests same-diagonal,
+comparison tests sidedness, and a shared `stride` class tests periodic
+diagonal offset. Lib target: primitive beside `diag_dist`.
 
 ```
-.comp Excess<Key, Member> {
-    .decl pos(key: Key, m: Member)
-    .decl neg(key: Key, m: Member)
-
-    .decl excess(key: Key, n: number)
-    excess(Ky, N) :-
-        pos(Ky, _),
-        Np = count : { pos(Ky, M1) }, Nn = count : { neg(Ky, M2) },
-        Np > Nn, N = Np - Nn.
-}
+.decl corner_dist(p: Position, diag: DiagDir, k: number) inline
+corner_dist(P, Diag, K) :- diag_dist(P, Diag, _, K1, K2), K = K1 + K2.
 ```
 
-**Task-local home (protocol step 1).** 37ce87bb (Unit key): the result bar's height — add-colored cells beyond sub-colored cells.
+**Task-local home (protocol step 1).** c1990cce (`CornerDist` comp): the
+V (level with the seed toward a cone corner), the open cone (strictly
+nearer both cone corners than the seed), and $Stripe's period (the
+seed's stride class from the mirror corner).

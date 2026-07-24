@@ -1,0 +1,37 @@
+// 28bf18c6
+// concept: crop tile-arrangement
+// One shape on bg. The output arranges c.copies copies of the shape's
+// bounding-box crop along c.axis.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl bg(c: Color)      bg(0).
+    .decl axis(a: Axis)     axis(AXIS_H).
+    .decl copies(n: number) copies(2).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+.init box = Bbox<Unit>
+box.cell($U(), P) :- in(P, Col), !c.bg(Col).
+box.grid($U(), P) :- in(P, _).
+
+// Each box cell viewed from the box, keyed by the cell.
+.init boxframe = Reframe<Position>
+boxframe.outer(P, M) :- box.inside($U(), P), box.margin($U(), M).
+boxframe.cell(P, P)  :- box.inside($U(), P).
+
+.init strip = AxisFrame<Unit>
+strip.extent($U(), A, N) :- c.axis(A), c.copies(N).
+
+.decl out(p: Position, col: Color)
+out(P_grid, Col) :-
+    in(P, Col), boxframe.inner(P, P_crop),      // crop cell
+    strip.cell($U(), A, P_copy),                // copy index
+    concat_slab(P_copy, P_crop, A, 0, P_grid).  // place within the copy
+
+.output out(IO=stdout)

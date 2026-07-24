@@ -1,0 +1,64 @@
+// 15696249
+// concept: self-tiling lines markers stamp
+// The output is an input-shaped arrangement of input-sized tiles: tiles at
+// gate cells hold copies of the input; the rest are bg. Two models of the
+// gate, tagged on out's Choice:
+//
+//   $Line  — cells of the input's monochrome line (row or column).
+//   $Color — cells holding the monochrome line's color.
+//
+// Coincide while that color stays on its line; diverge on a stray cell of it.
+
+#include "../lib.dl"
+
+.type Choice = Line {} | Color {}
+
+.comp Consts {
+    .decl bg(c: Color)
+    bg(0).
+}
+
+.init c = Consts
+
+.decl in(p: Position, col: Color)
+.input in(IO=stdin)
+
+// Two cells of one axis-A line differ.
+.decl line_diff(a: Axis, across: Position)
+line_diff(A, Across) :-
+    in(P, C1), in(Q, C2), C1 != C2,
+    axis_elem(A),
+    split(P, A, _, Across), split(Q, A, _, Across).    // same line
+
+// Cells of a monochrome line.
+.decl line_cell(p: Position)
+line_cell(P) :-
+    in(P, _), axis_elem(A),
+    split(P, A, _, Across), !line_diff(A, Across).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Line()). impl_choice($Color()).
+
+.decl gate(p: Position, ch: Choice)
+
+// --- $Line ---
+gate(P, $Line()) :- line_cell(P).
+
+// --- $Color ---
+.decl line_color(col: Color)
+line_color(Col) :- line_cell(P), in(P, Col).
+
+gate(P, $Color()) :- in(P, Col), line_color(Col).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_grid_out, Col, Ch) :-
+    gate(P_tile, Ch),                              // gate: tile stamped
+    in(P_intile, Col),                             // tile content: the input, copied
+    concat_2d(P_tile, P_intile, 0, P_grid_out).    // tile ⊗ cell → grid
+out(P_grid_out, Col, Ch) :-
+    impl_choice(Ch), in(P_tile, _), !gate(P_tile, Ch),
+    in(P_intile, _),
+    concat_2d(P_tile, P_intile, 0, P_grid_out),    // tile ⊗ cell → grid
+    c.bg(Col).                                     // the whole tile bg
+
+.output out(IO=stdout)
