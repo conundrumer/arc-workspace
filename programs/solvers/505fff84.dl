@@ -30,25 +30,27 @@
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
-// Marker cells cast rays along the line axis; the domain excludes marks,
-// so reach is strict.
-.init rays = Ray<Color>
-rays.dir(D)       :- c.axis(A), axis_of(D, A).
-rays.cell(P)      :- in(P, Col), !c.marker(Col).
-rays.mark(Col, P) :- in(P, Col), c.marker(Col).
-
 .decl seg(p: Position, ch: Choice)
 
 // --- Set ---
-// Some mark on each side.
-seg(P, $Set()) :- rays.ray(_, P, D), opposite(D, O), rays.ray(_, P, O).
+.init set_spans = Between<Unit>
+set_spans.axis(A)       :- c.axis(A).
+set_spans.cell(P)       :- in(P, Col), !c.marker(Col).
+set_spans.mark($U(), P) :- in(P, Col), c.marker(Col).
+
+seg(P, $Set()) :- set_spans.between($U(), P).
 
 // --- Sided ---
+.init sided_rays = Ray<Color>
+sided_rays.dir(D)       :- c.axis(A), axis_of(D, A).
+sided_rays.cell(P)      :- in(P, Col), !c.marker(Col).
+sided_rays.mark(Col, P) :- in(P, Col), c.marker(Col).
+
 // The marks on their own ends. A ray toward d means its mark lies away
 // from d, so each end's color casts toward the opposite end.
 seg(P, $Sided()) :-
-    c.side(D, C1), opposite(D, O), c.side(O, C2),   // the ends' colors
-    rays.ray(C1, P, O), rays.ray(C2, P, D).         // each mark at its end
+    c.side(D, C1), opposite(D, O), c.side(O, C2),         // the ends' colors
+    sided_rays.ray(C1, P, O), sided_rays.ray(C2, P, D).   // each mark at its end
 
 // The order-canonical peer of AxisFrame: the dense frame that a sparse set
 // of axis-only positions induces, with each member's position in it.

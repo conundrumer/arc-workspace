@@ -42,21 +42,15 @@ out(P, Col, $Flood()) :- in(P, Col), c.axis(A), split(P, A, _, Ac), !matched(Ac)
 
 // --- Span ---
 
-// Per-color rays from the markers, cast both ways along the axis.
-.init rays = Ray<Color>
-rays.dir(D)       :- c.axis(A), axis_of(D, A).
-rays.cell(P)      :- in(P, _).
-rays.mark(Col, Q) :- in(Q, Col), !c.bg(Col).
-
-// Between two same-colored markers of its line — inclusive reach, so a
-// marker repaints its own color.
-.decl span(p: Position, col: Color)
-span(P, Col) :- rays.ray(Col, P, D), opposite(D, D2), rays.ray(Col, P, D2).
+.init spans = Between<Color>
+spans.axis(A)      :- c.axis(A).
+spans.cell(P)      :- in(P, _).
+spans.mark(Col, Q) :- in(Q, Col), !c.bg(Col).
 
 .decl spanned(p: Position)
-spanned(P) :- span(P, _).
+spanned(P) :- spans.between(_, P).
 
-out(P, Col, $Span()) :- span(P, Col).
+out(P, Col, $Span()) :- spans.between(Col, P).
 out(P, Col, $Span()) :- in(P, Col), !spanned(P).
 
 .output out(IO=stdout)

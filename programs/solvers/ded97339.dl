@@ -28,34 +28,25 @@
 
 // --- $Ink ---
 
-// Cells between two ink marks on their line, marks included (Ray's reach
-// is inclusive).
-.init ink_rays = Ray<Unit>
-ink_rays.dir(D)        :- dir_elem(D).
-ink_rays.cell(P)       :- in(P, _).
-ink_rays.mark($U(), Q) :- in(Q, Ink), c.ink(Ink).
+.init ink_spans = Between<Unit>
+ink_spans.axis(A)       :- axis_elem(A).
+ink_spans.cell(P)       :- in(P, _).
+ink_spans.mark($U(), Q) :- in(Q, Ink), c.ink(Ink).
 
-.decl ink_spanned(p: Position)
-ink_spanned(P) :- ink_rays.ray($U(), P, D), opposite(D, O), ink_rays.ray($U(), P, O).
-
-out(P, Ink, $Ink()) :- ink_spanned(P), c.ink(Ink).
-out(P, Col, $Ink()) :- in(P, Col), !ink_spanned(P).
+out(P, Ink, $Ink()) :- ink_spans.between($U(), P), c.ink(Ink).
+out(P, Col, $Ink()) :- in(P, Col), !ink_spans.between($U(), P).
 
 // --- $Self ---
 
-// Per-color spans: cells between two marks of one color on their line.
-.init self_rays = Ray<Color>
-self_rays.dir(D)       :- dir_elem(D).
-self_rays.cell(P)      :- in(P, _).
-self_rays.mark(Col, Q) :- in(Q, Col), !c.bg(Col).
-
-.decl self_span(p: Position, col: Color)
-self_span(P, Col) :- self_rays.ray(Col, P, D), opposite(D, O), self_rays.ray(Col, P, O).
+.init self_spans = Between<Color>
+self_spans.axis(A)      :- axis_elem(A).
+self_spans.cell(P)      :- in(P, _).
+self_spans.mark(Col, Q) :- in(Q, Col), !c.bg(Col).
 
 .decl self_spanned(p: Position)
-self_spanned(P) :- self_span(P, _).
+self_spanned(P) :- self_spans.between(_, P).
 
-out(P, Col, $Self()) :- self_span(P, Col).
+out(P, Col, $Self()) :- self_spans.between(Col, P).
 out(P, Col, $Self()) :- in(P, Col), !self_spanned(P).
 
 .output out(IO=stdout)

@@ -15,20 +15,16 @@
 .decl in(p: Position, col: Color)
 .input in(IO=stdin)
 
-// Each color's span: cells between two marks of that color on their line.
-.init rays = Ray<Color>
-rays.dir(D)       :- c.fill_axis(A), axis_of(D, A).
-rays.cell(P)      :- in(P, _).
-rays.mark(Col, Q) :- in(Q, Col), !c.bg(Col).
-
-.decl span(col: Color, p: Position)
-span(Col, P) :- rays.ray(Col, P, D), opposite(D, O), rays.ray(Col, P, O).
+.init spans = Between<Color>
+spans.axis(A)      :- c.fill_axis(A).
+spans.cell(P)      :- in(P, _).
+spans.mark(Col, Q) :- in(Q, Col), !c.bg(Col).
 
 .decl filled(p: Position)
-filled(P) :- span(_, P).
+filled(P) :- spans.between(_, P).
 
 .decl out(p: Position, col: Color)
-out(P, Col) :- span(Col, P).
+out(P, Col) :- spans.between(Col, P).
 out(P, Col) :- in(P, Col), !filled(P).
 
 .output out(IO=stdout)

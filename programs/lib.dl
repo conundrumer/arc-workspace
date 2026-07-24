@@ -527,6 +527,26 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
         Qa - Pa = Qb - Pb, Qa >= Pa.
 }
 
+// The two-sided fold of Ray: between(k, p) holds when key-k marks lie on
+// both sides of p in its line, along a fed axis. `axis` is the instance's
+// cast set — feed one axis for single-axis spans, both for row-and-column
+// spans. Reach is inclusive: a mark is between under its own key (from
+// Ray's inclusive reach), and a mark-free domain (e.g. a bg-only `cell`)
+// gives strict semantics with no extra rule.
+.comp Between<Key> {
+    .decl axis(a: Axis)
+    .decl cell(p: Position)            // domain tested
+    .decl mark(key: Key, p: Position)
+
+    .init rays = Ray<Key>
+    rays.dir(D)     :- axis(A), axis_of(D, A).   // cast both ways
+    rays.cell(P)    :- cell(P).
+    rays.mark(K, P) :- mark(K, P).
+
+    .decl between(key: Key, p: Position)
+    between(K, P) :- rays.ray(K, P, D), opposite(D, O), rays.ray(K, P, O).
+}
+
 // Sparse numeric set → dense ordinal position, per key. The solver
 // populates `idx_set`; `rank(key, k, r)` gives r = the count of the key's
 // elements strictly less than k, so ranks run ascending from 0. For a

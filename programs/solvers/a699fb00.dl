@@ -38,17 +38,12 @@ out(P, Col, $Flank()) :- in(P, Col), !flanked(P).
 
 // --- Span ---
 
-// Bg cells between two dots on their line. Ray's inclusive reach is
-// strict on the bg-only domain.
-.init rays = Ray<Unit>
-rays.dir(D)        :- c.axis(A), axis_of(D, A).
-rays.cell(P)       :- in(P, Bg), c.bg(Bg).
-rays.mark($U(), Q) :- in(Q, Dot), c.dot(Dot).
+.init spans = Between<Unit>
+spans.axis(A)       :- c.axis(A).
+spans.cell(P)       :- in(P, Bg), c.bg(Bg).
+spans.mark($U(), Q) :- in(Q, Dot), c.dot(Dot).
 
-.decl spanned(p: Position)
-spanned(P) :- rays.ray($U(), P, D), opposite(D, O), rays.ray($U(), P, O).
-
-out(P, F, $Span())   :- spanned(P), c.fill(F).
-out(P, Col, $Span()) :- in(P, Col), !spanned(P).
+out(P, F, $Span())   :- spans.between($U(), P), c.fill(F).
+out(P, Col, $Span()) :- in(P, Col), !spans.between($U(), P).
 
 .output out(IO=stdout)

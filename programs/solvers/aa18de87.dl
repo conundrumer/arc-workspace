@@ -28,31 +28,22 @@
 
 // --- Axis ---
 
-// Bg cells between two marks on their c.axis line. Ray's inclusive reach
-// is strict on the bg-only domain.
-.init axis_rays = Ray<Unit>
-axis_rays.dir(D)        :- c.axis(A), axis_of(D, A).
-axis_rays.cell(P)       :- in(P, Bg), c.bg(Bg).
-axis_rays.mark($U(), Q) :- in(Q, Col), !c.bg(Col).
+.init axis_spans = Between<Unit>
+axis_spans.axis(A)       :- c.axis(A).
+axis_spans.cell(P)       :- in(P, Bg), c.bg(Bg).
+axis_spans.mark($U(), Q) :- in(Q, Col), !c.bg(Col).
 
-.decl axis_spanned(p: Position)
-axis_spanned(P) :- axis_rays.ray($U(), P, D), opposite(D, O), axis_rays.ray($U(), P, O).
-
-out(P, F, $Axis())   :- axis_spanned(P), c.fill(F).
-out(P, Col, $Axis()) :- in(P, Col), !axis_spanned(P).
+out(P, F, $Axis())   :- axis_spans.between($U(), P), c.fill(F).
+out(P, Col, $Axis()) :- in(P, Col), !axis_spans.between($U(), P).
 
 // --- Iso ---
 
-// The same fill along every axis.
-.init iso_rays = Ray<Unit>
-iso_rays.dir(D)        :- dir_elem(D).
-iso_rays.cell(P)       :- in(P, Bg), c.bg(Bg).
-iso_rays.mark($U(), Q) :- in(Q, Col), !c.bg(Col).
+.init iso_spans = Between<Unit>
+iso_spans.axis(A)       :- axis_elem(A).
+iso_spans.cell(P)       :- in(P, Bg), c.bg(Bg).
+iso_spans.mark($U(), Q) :- in(Q, Col), !c.bg(Col).
 
-.decl iso_spanned(p: Position)
-iso_spanned(P) :- iso_rays.ray($U(), P, D), opposite(D, O), iso_rays.ray($U(), P, O).
-
-out(P, F, $Iso())   :- iso_spanned(P), c.fill(F).
-out(P, Col, $Iso()) :- in(P, Col), !iso_spanned(P).
+out(P, F, $Iso())   :- iso_spans.between($U(), P), c.fill(F).
+out(P, Col, $Iso()) :- in(P, Col), !iso_spans.between($U(), P).
 
 .output out(IO=stdout)
