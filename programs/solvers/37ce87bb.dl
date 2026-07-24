@@ -44,18 +44,6 @@ line_of(P, P_line) :- in(P, _), c.base(D), axis_of(D, A), split(P, A, _, P_line)
 .decl bar_line(p_line: Position)
 bar_line(P_line) :- in(P, Col), !c.bg(Col), line_of(P, P_line).
 
-// Count of pos members beyond neg members. No tuple at a tie or deficit.
-.comp Excess<Key, Member> {
-    .decl pos(key: Key, m: Member)
-    .decl neg(key: Key, m: Member)
-
-    .decl excess(key: Key, n: number)
-    excess(Ky, N) :-
-        pos(Ky, _),
-        Np = count : { pos(Ky, M1) }, Nn = count : { neg(Ky, M2) },
-        Np > Nn, N = Np - Nn.
-}
-
 // The summed height: add cells beyond sub cells.
 .init height = Excess<Unit, Position>
 height.pos($U(), P) :- in(P, Col), c.add(Col).
