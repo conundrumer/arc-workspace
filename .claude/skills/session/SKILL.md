@@ -66,7 +66,7 @@ When the user says `cleanup`, create tasks for Simplify and Prune and do them.
 
 A new primitive qualifies for `programs/lib.dl` through real use, not by looking general. The order:
 
-1. Write the primitive in the solver's Consts or body. Run it. Confirm it works in context.
+1. Write the primitive in the solver. If the linter would flag it, write it as a task-local `.comp`. Run it. Confirm it works in context.
 2. Surface it to the user: name it, describe the operation, show the solver-local version.
 3. On agreement, stage it: wrap the solver-local version in a task-local `.comp` named for the primitive, and write the addition proposal to `docs/wf-solver/proposals.md`. `stage` refers to this step and always includes the comp form.
 4. On approval, move to `programs/lib.dl`. Update callers.
