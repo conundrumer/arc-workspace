@@ -45,7 +45,7 @@ A minority of files name it `choice` or `variant`.
 
 ## `GRID_HxW` for grid data
 
-Runner-side cpp codegen lets `.dl` files declare 2D grids of values literally; the macro emits position-keyed facts in row-major order. Color grids, label grids, transform grids — any per-cell data.
+Runner-side cpp codegen lets `.dl` files declare 2D grids of values literally; the macro emits position-keyed facts in row-major order. Color grids, label grids, transform grids — any per-cell data. A distinguished cell is a Position fact, not a cell value (27a28665 `center_pos`).
 
 ```
 .decl template(p: Position, col: Color)
@@ -217,7 +217,7 @@ compose(P_inner_v, P_inner_h, P_intile).
 
 ## Wide and long layouts
 
-A relation can lay co-occurring values out wide (columns of one atom) or long (one row per member). Multiplicity that the concept fixes goes wide: the two axes, a corner's two dirs, the four edge distances (Position is the wide form of per-Dir distance data). Multiplicity that the task varies stays long: markers, tiles, ink cells.
+A relation can lay co-occurring values out wide (columns of one atom) or long (one row per member). Multiplicity that the concept fixes goes wide: the two axes, a corner's two dirs, the four edge distances (Position is the wide form of per-Dir distance data). Multiplicity that the task varies stays long: markers, tiles, ink cells. Wide is a single atom: a rule that repeats an atom once per member is not a wide layout, and when the members are a closed domain in one shared role, it is a universal written out by hand (see Universals via defect negation).
 
 Wide data reads by unification; long data reads by joins. A long encoding of a fixed co-occurrence makes every consumer reassemble it, as a self-join with a distinctness guard that derives each symmetric result twice:
 
@@ -232,6 +232,17 @@ Order inside a wide atom is a tag column or a repeated value, never slot positio
 A repeated variable in a wide atom states the diagonal case directly: equal extents (a square), equal distances (centered; on a corner's diagonal). The long encoding needs an agreement join for the same statement.
 
 Derivation is long by nature: a rule that quantifies over an index emits one row per index value, and aggregation computes per index (`Bbox` aggregates `edge_min` per Dir, then packs the four into `margin`'s Position). Widening derived data costs one pairing join at its defining rule. A readout of a value that already holds the co-occurrence widens at no cost.
+
+## Universals via defect negation
+
+Datalog has no forall. "Every member of a closed domain satisfies R" is stated through a defect witness: one rule derives the keys where some member fails; the universal is its negation. A member missing from the tested relation is a defect, so existence and agreement are one test.
+
+```
+broken(P, Col) :- arm(P, _, Col), dir_elem(D), !arm(P, D, Col).
+ring(P, Col)   :- arm(P, _, Col), !broken(P, Col).
+```
+
+The enum relation (`dir_elem`, `d4_elem`, `axis_elem`) supplies the domain. Repeating the tested atom once per member states the same universal by hand: the members become variable positions, and an assembly join must bind one variable per member.
 
 ## Boxes as margin Positions
 
