@@ -22,6 +22,8 @@ Most rule bodies hold Positions in multiple frames at once. Name a Position by t
 
 Formal parameters of `divide` and `tile_pos` are `p_outer` / `p_inner`; they describe the decomposition. Solvers bind to `P_tile` / `P_intile` at call sites. For axis-only intermediates (e.g. `divide`'s inner before composing with the perpendicular axis), use decomposition language: `P_inner_axis`, `P_outer_v`, `P_inner_h`.
 
+When a decomposition's inner coordinate is also the output cell, name it by the setup. A decompose-fold names the output cell `P_grid_out` in the consuming rules, and keeps `P_intile` in the production rules that decompose the input. A select or crop names it `P_intile`: the cell is the extracted tile's interior. An overlay names the frame cell it stacks onto — bare `P`, or `P_frame` when another frame shares the rule.
+
 ## File structure
 
 - One file per task (`<task_id>.dl`); multi-impl cases live in the same file, distinguished by an ADT `Choice` column on `out`.
@@ -33,6 +35,7 @@ Formal parameters of `divide` and `tile_pos` are `p_outer` / `p_inner`; they des
 - `.comp Consts { ... }` declares task-wide data; `.init c = Consts` exposes it as `c.<rel>`.
 - Inside Consts, `.init helpers = ConstsHelpers` makes shared helpers (`frame_pos`, `tile_pos`) available as `helpers.<rel>(...)` in data declarations. The body has no access.
 - All task-wide data lives in Consts, e.g. orientation (Dirs, Axes), dimensions, gaps, mappings, frame data.
+- A single-fact data declaration puts the fact on the decl line, one space after it. A multi-fact declaration puts the facts on the next line at the decl's indent. Facts are not column-aligned across a block.
 - Store an orientation datum constrained by another as a relative value (`Sense` via `turn`, `Axis` via `perp`). A second absolute slot admits fills the family does not have; the relative form has one fill per member.
 
 Skeleton (single-impl):
