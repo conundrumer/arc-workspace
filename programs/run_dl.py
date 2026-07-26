@@ -1,8 +1,11 @@
 """Run Souffle solvers against their tasks' train+test pairs.
 
 Usage:
-    uv run python programs/run_dl.py            # run all .dl solvers
-    uv run python programs/run_dl.py <stem>     # run one
+    uv run python programs/run_dl.py                    # run all .dl solvers
+    uv run python programs/run_dl.py <stem>             # run one
+    uv run python programs/run_dl.py --audit <stem>     # fill sweep + mutation report
+    uv run python programs/run_dl.py --sweep <stem> [cap]   # conditional fill sweep
+    uv run python programs/run_dl.py --mutate <stem>    # structural mutation report
 
 For a single stem, encodes each example's input grid as fact lines on stdin,
 invokes `souffle` on it (linking the functor library; see build_functors),
@@ -304,15 +307,26 @@ def _color_domain(task) -> list[int]:
     return sorted(colors)
 
 
-def _consts_span(source: str) -> tuple[int, int]:
-    """[start, end) line indices of the Consts block interior."""
+def _number_domain(task) -> list[int]:
+    """0..max train grid dimension — the range of task-shape numbers."""
+    dims = [
+        d
+        for ex in task.train
+        for grid in (ex.input, ex.output)
+        for d in (len(grid), len(grid[0]) if grid else 0)
+    ]
+    return list(range(max(dims) + 1))
+
+
+def _comp_span(source: str, comp_name: str) -> tuple[int, int]:
+    """[start, end) line indices of comp `comp_name`'s interior; (0, 0) when absent."""
     lines = source.splitlines()
     depth = 0
     start = None
     for i, raw in enumerate(lines):
         code = raw.split("//")[0]
         if start is None:
-            if re.search(r"\.comp\s+Consts\b", code) and "{" in code:
+            if re.search(rf"\.comp\s+{comp_name}\b", code) and "{" in code:
                 depth = code.count("{") - code.count("}")
                 start = i + 1
             continue
@@ -322,34 +336,61 @@ def _consts_span(source: str) -> tuple[int, int]:
     return (0, 0)
 
 
+def _consts_fact_lines(source: str) -> list[int]:
+    """Line indices inside Consts outside any rule statement.
+
+    A slot atom can also close a Consts rule (`x(N) :- fat(N).`), where it
+    reads like a fact; fact matching stays off rule lines.
+    """
+    lines = source.splitlines()
+    s, e = _comp_span(source, "Consts")
+    idxs = []
+    in_rule = False
+    for i in range(s, e):
+        code = lines[i].split("//")[0]
+        if not in_rule and ":-" in code:
+            in_rule = True
+        if in_rule:
+            if code.rstrip().endswith("."):
+                in_rule = False
+            continue
+        idxs.append(i)
+    return idxs
+
+
 def _slot_facts(source: str, slot: str) -> list[str]:
     """Fact atoms for `slot` inside the Consts block."""
-    s, e = _consts_span(source)
-    text = "\n".join(source.splitlines()[s:e])
-    return re.findall(rf"\b{slot}\s*\([^)]*\)\s*\.", text)
+    lines = source.splitlines()
+    pat = re.compile(rf"\b{slot}\s*\([^)]*\)\s*\.")
+    return [
+        m.group(0)
+        for i in _consts_fact_lines(source)
+        for m in pat.finditer(lines[i].split("//")[0])
+    ]
 
 
 def swap_fact(source: str, slot: str, values: tuple) -> str:
     """Replace `slot`'s Consts facts with a single fact holding `values`."""
     lines = source.splitlines()
-    s, e = _consts_span(source)
+    _, e = _comp_span(source, "Consts")
     pat = re.compile(rf"\b{slot}\s*\([^)]*\)\s*\.")
-    for i in range(s, e):
-        lines[i] = pat.sub("", lines[i])
+    for i in _consts_fact_lines(source):
+        code, sep, comment = lines[i].partition("//")
+        lines[i] = pat.sub("", code) + sep + comment
     args = ", ".join(str(v) for v in values)
     lines.insert(e, f"    {slot}({args}).")
     return "\n".join(lines) + "\n"
 
 
-def _train_profile(mod_source: str, task) -> list[frozenset[str]] | None:
-    """Per-train-pair variant-name sets under this source; None on any failure.
+def _profile(mod_source: str, examples: list) -> list[frozenset[str]] | None:
+    """Per-pair variant-name sets under this source; None on any failure.
 
-    A candidate fill must reproduce the stored fill's profile, not merely
-    pass: a wrong value can silence a Choice case, and a vanished variant
-    is never checked.
+    A modified source must reproduce the original's profile, not merely
+    pass: a wrong fill or a deleted rule can silence a Choice case, and a
+    vanished variant is never checked.
     """
     profile = []
-    for ex in task.train:
+    for ex in examples:
         try:
             actuals = parse_output(
                 _run_source(build_source(mod_source), grid_to_facts(ex.input))
@@ -377,16 +418,24 @@ def sweep_report(
     candidate survives when it reproduces the stored fill's variant profile
     on every train pair. A slot's fill may be a set (a symmetric member
     stores every fitting value), so the check is survivors == stored facts.
+
+    Survivors beyond the stored facts are re-run against the test pairs:
+    a producer holding only the train pairs could pick any survivor, so an
+    extra that fails test is a would-be wrong prediction, and one that
+    passes is gauge for this task instance.
+
     Returns (slot, status, detail): status 'swept' carries
-    (survivors, stored), 'skip' carries the reason.
+    (survivors, stored, types, verdicts) — verdicts maps each extra
+    survivor to its test-pass bool — 'skip' carries the reason.
     """
     source = (SOLVERS_DIR / f"{stem}.dl").read_text()
     task = load_task(stem.split("_", 1)[0])
     defines = _lib_defines()
-    s, e = _consts_span(source)
+    s, e = _comp_span(source, "Consts")
     consts_text = "\n".join(source.splitlines()[s:e])
 
     reference: list[frozenset[str]] | None = None
+    test_reference: list[frozenset[str]] | None = None
     results: list[tuple[str, str, object]] = []
     for slot, types in comp_decls(source, "Consts").items():
         if re.search(rf"\b{slot}\s*\([^)]*\)\s*:-", consts_text):
@@ -402,15 +451,13 @@ def sweep_report(
                 domains.append(_enum_domain(t, defines))
             elif t == "Color":
                 domains.append(_color_domain(task))
+            elif t == "number":
+                domains.append(_number_domain(task))
             else:
                 domains = None
                 break
         if domains is None:
             results.append((slot, "skip", f"non-enumerable ({', '.join(types)})"))
-            continue
-        candidates = list(itertools.product(*domains))
-        if len(candidates) > max_candidates:
-            results.append((slot, "skip", f"{len(candidates)} candidates"))
             continue
 
         stored = []
@@ -421,51 +468,205 @@ def sweep_report(
                 for a in args.split(",")
             ))
 
+        # Stored values join the candidate set, so a stored value outside
+        # the domain (a count above the dims, say) still reads as stored
+        # rather than as a holistic table.
+        candidates = sorted(set(itertools.product(*domains)) | set(stored))
+        if len(candidates) > max_candidates:
+            results.append((slot, "skip", f"{len(candidates)} candidates"))
+            continue
+
         if reference is None:
-            reference = _train_profile(source, task)
+            reference = _profile(source, task.train)
             if reference is None:
                 results.append((slot, "skip", "stored fill fails train"))
                 continue
 
         def test(vals, slot=slot):
-            profile = _train_profile(swap_fact(source, slot, vals), task)
+            profile = _profile(swap_fact(source, slot, vals), task.train)
             return vals if profile == reference else None
 
         with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
             survivors = [v for v in executor.map(test, candidates) if v]
-        results.append((slot, "swept", (survivors, stored)))
+
+        verdicts: dict[tuple, bool] = {}
+        extras = sorted(set(survivors) - set(stored))
+        if extras and set(stored) <= set(survivors):
+            if test_reference is None:
+                test_reference = _profile(source, task.test)
+            if test_reference is None:
+                verdicts = {e: False for e in extras}
+            else:
+                def test_check(vals, slot=slot):
+                    profile = _profile(swap_fact(source, slot, vals), task.test)
+                    return profile == test_reference
+
+                with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
+                    verdicts = dict(zip(extras, executor.map(test_check, extras)))
+        results.append((slot, "swept", (survivors, stored, types, verdicts)))
     return results
+
+
+def _num_peer(e: tuple, s: tuple, types: list[str]) -> bool:
+    """e differs from s only in number args — a rival magnitude, not a
+    rival identity. Nominal args (enums, Color, Ident) must match."""
+    return all(e[i] == s[i] for i, t in enumerate(types) if t != "number")
+
+
+def _num_below(e: tuple, s: tuple, types: list[str]) -> bool:
+    """e is a smaller magnitude reading of s: nominal args equal, number
+    args no larger, at least one strictly smaller."""
+    nums = [i for i, t in enumerate(types) if t == "number"]
+    return (_num_peer(e, s, types)
+            and all(e[i] <= s[i] for i in nums)
+            and any(e[i] < s[i] for i in nums))
 
 
 def render_sweep(results: list[tuple[str, str, object]]) -> list[str]:
     defines = _lib_defines()
     names = {v: k for k, v in defines.items()}
 
-    def show(vals: tuple) -> str:
-        return "(" + ", ".join(names.get(v, str(v)) for v in vals) + ")"
+    def show(vals: tuple, types: list[str]) -> str:
+        return "(" + ", ".join(
+            names.get(v, str(v)) if t in ENUM_TYPES else str(v)
+            for v, t in zip(vals, types)
+        ) + ")"
 
     lines = []
     for slot, status, detail in results:
         if status == "skip":
             lines.append(f"{slot}: skipped — {detail}")
             continue
-        survivors, stored = detail
+        survivors, stored, types, verdicts = detail
         vset, sset = set(survivors), set(stored)
-        shown_s = ", ".join(show(v) for v in stored)
+        shown_s = ", ".join(show(v, types) for v in stored)
         if vset == sset:
             if len(sset) == 1:
                 lines.append(f"{slot}: unique = {shown_s} ✓")
             else:
                 lines.append(f"{slot}: set of {len(sset)} = [{shown_s}] ✓")
         elif sset <= vset:
-            extra = ", ".join(show(v) for v in sorted(vset - sset))
-            lines.append(
-                f"{slot}: UNDERDETERMINED — beyond stored [{shown_s}]: [{extra}]"
-            )
+            extras = sorted(vset - sset)
+            shown_e = ", ".join(show(v, types) for v in extras)
+            falsified = [e for e in extras if not verdicts.get(e, False)]
+            if falsified:
+                shown_f = ", ".join(show(v, types) for v in falsified)
+                lines.append(
+                    f"{slot}: TEST-FALSIFIED — train admits [{shown_f}] "
+                    f"beyond stored [{shown_s}], test refutes"
+                )
+            elif not all(any(_num_peer(e, s, types) for s in sset)
+                         for e in extras):
+                lines.append(
+                    f"{slot}: UNDERDETERMINED — beyond stored [{shown_s}]: [{shown_e}]"
+                )
+            elif any(_num_below(e, s, types) for e in extras for s in sset):
+                below = sorted(
+                    e for e in extras if any(_num_below(e, s, types) for s in sset)
+                )
+                shown_b = ", ".join(show(v, types) for v in below)
+                lines.append(
+                    f"{slot}: STORED NOT LEAST — smaller fitting: [{shown_b}]"
+                )
+            else:
+                lines.append(f"{slot}: stored {shown_s} ✓ — gauge [{shown_e}]")
         else:
             # Some stored value no singleton run reproduces.
             lines.append(f"{slot}: holistic table — singleton sweep n/a")
     return lines
+
+
+# ---------------------------------------------------------------- mutate
+
+NEG_ATOM_RE = re.compile(r"(?<![=!])!(?!=)\s*[\w.]+\s*\(")
+
+
+def _rule_spans(source: str) -> list[tuple[int, int]]:
+    """Inclusive line spans of rules, Fit comp excluded.
+
+    Style-parsed: head and `:-` share the first line; `.` ends the statement.
+    """
+    lines = source.splitlines()
+    fs, fe = _comp_span(source, "Fit")
+    fit = set(range(fs - 1, fe + 1)) if (fs, fe) != (0, 0) else set()
+    spans = []
+    i = 0
+    while i < len(lines):
+        code = lines[i].split("//")[0]
+        if i in fit or ":-" not in code or code.lstrip().startswith("."):
+            i += 1
+            continue
+        j = i
+        while j < len(lines) and not lines[j].split("//")[0].rstrip().endswith("."):
+            j += 1
+        if j == len(lines):
+            break
+        spans.append((i, j))
+        i = j + 1
+    return spans
+
+
+def _drop_atom(code: str, start: int, end: int) -> str:
+    """Remove code[start:end] plus one adjoining comma separator."""
+    after = code[end:].lstrip()
+    if after.startswith(","):
+        return code[:start] + after[1:].lstrip()
+    before = code[:start].rstrip()
+    if before.endswith(","):
+        return before[:-1] + code[end:]
+    return code[:start] + code[end:]
+
+
+def mutants(source: str):
+    """Yield (lineno, kind, text, mutated_source) structural mutants.
+
+    Kinds: 'rule' deletes the whole rule; 'negation' deletes one negated
+    body atom (the mutated rule collapses to one line). The Fit comp does
+    not run in solve mode, so it is not mutated.
+    """
+    lines = source.splitlines()
+    for a, b in _rule_spans(source):
+        rule = " ".join(ln.split("//")[0].strip() for ln in lines[a:b + 1])
+        head = rule.split(":-")[0].strip()
+        yield (a + 1, "rule", head, "\n".join(lines[:a] + lines[b + 1:]) + "\n")
+        for m in NEG_ATOM_RE.finditer(rule):
+            depth, k = 0, m.end() - 1
+            while k < len(rule):
+                if rule[k] == "(":
+                    depth += 1
+                elif rule[k] == ")":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                k += 1
+            atom = rule[m.start():k + 1]
+            mutated = lines[:a] + [_drop_atom(rule, m.start(), k + 1)] + lines[b + 1:]
+            yield (a + 1, "negation", atom, "\n".join(mutated) + "\n")
+
+
+def mutation_report(stem: str) -> tuple[int, list[tuple[int, str, str]]] | None:
+    """Structural mutants that survive every train+test pair.
+
+    A surviving mutant keeps the full variant profile without the deleted
+    structure: the pairs never instantiate it. Informational — a survivor
+    points at an unwitnessed guard or rule, not a violation. None when the
+    stored source itself fails.
+    """
+    source = (SOLVERS_DIR / f"{stem}.dl").read_text()
+    task = load_task(stem.split("_", 1)[0])
+    examples = list(task.train) + list(task.test)
+    reference = _profile(source, examples)
+    if reference is None:
+        return None
+    muts = list(mutants(source))
+
+    def test(m):
+        lineno, kind, text, mod = m
+        return (lineno, kind, text) if _profile(mod, examples) == reference else None
+
+    with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
+        survivors = [r for r in executor.map(test, muts) if r]
+    return (len(muts), sorted(survivors))
 
 
 def train_facts(task) -> dict[str, str]:
@@ -859,11 +1060,42 @@ def cmd_all() -> int:
     return 0 if not failed else 1
 
 
-def cmd_sweep(stem: str) -> int:
+def cmd_sweep(stem: str, max_candidates: int = 64) -> int:
     build_functors()
-    for line in render_sweep(sweep_report(stem)):
+    for line in render_sweep(sweep_report(stem, max_candidates)):
         print(line)
     return 0
+
+
+def _print_mutation(stem: str) -> int:
+    report = mutation_report(stem)
+    if report is None:
+        print("baseline fails: stored source does not pass train+test")
+        return 1
+    total, survivors = report
+    if not survivors:
+        print(f"no surviving mutants ({total} tested)")
+    else:
+        print(f"{len(survivors)}/{total} mutants survive:")
+        for lineno, kind, text in survivors:
+            print(f"  L{lineno}: {kind} `{text}`")
+    return 0
+
+
+def cmd_mutate(stem: str) -> int:
+    build_functors()
+    return _print_mutation(stem)
+
+
+def cmd_audit(stem: str) -> int:
+    """Both evidence audits of a finished solver: fill sweep + mutation."""
+    build_functors()
+    print("--- sweep ---")
+    for line in render_sweep(sweep_report(stem)):
+        print(line)
+    print()
+    print("--- mutation ---")
+    return _print_mutation(stem)
 
 
 if __name__ == "__main__":
@@ -873,5 +1105,15 @@ if __name__ == "__main__":
         sys.exit(cmd_one(sys.argv[1]))
     if len(sys.argv) == 3 and sys.argv[1] == "--sweep":
         sys.exit(cmd_sweep(sys.argv[2]))
-    print(f"usage: {sys.argv[0]} [--sweep] [<task_id_or_stem>]", file=sys.stderr)
+    if len(sys.argv) == 4 and sys.argv[1] == "--sweep":
+        sys.exit(cmd_sweep(sys.argv[2], int(sys.argv[3])))
+    if len(sys.argv) == 3 and sys.argv[1] == "--mutate":
+        sys.exit(cmd_mutate(sys.argv[2]))
+    if len(sys.argv) == 3 and sys.argv[1] == "--audit":
+        sys.exit(cmd_audit(sys.argv[2]))
+    print(
+        f"usage: {sys.argv[0]} "
+        "[--audit <stem> | --sweep <stem> [cap] | --mutate <stem> | <stem>]",
+        file=sys.stderr,
+    )
     sys.exit(2)
