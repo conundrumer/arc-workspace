@@ -318,6 +318,53 @@ def _number_domain(task) -> list[int]:
     return list(range(max(dims) + 1))
 
 
+POSITION_TYPES = {"Position", "Shift", "Inset"}
+MAG_POSITION_TYPES = {"Shift", "Inset"}
+
+
+def _move_domain(vals: list[tuple]) -> set[tuple]:
+    """Positions with a stored value's edge-pair sums (t+b, l+r): the
+    other cells of its frame."""
+    out = set()
+    sums = {(v[0] + v[1], v[2] + v[3]) for v in vals}
+    for sv, sh in sums:
+        group = [v for v in vals if (v[0] + v[1], v[2] + v[3]) == (sv, sh)]
+        ts = [0, sv] + [v[0] for v in group] + [v[1] for v in group]
+        ls = [0, sh] + [v[2] for v in group] + [v[3] for v in group]
+        for t in range(min(ts), max(ts) + 1):
+            for l in range(min(ls), max(ls) + 1):
+                out.add((t, sv - t, l, sh - l))
+    return out
+
+
+def _position_domain(
+    type_name: str, vals: list[tuple], nums: list[int]
+) -> list[tuple]:
+    """Candidate values for a Position-record slot, by declared nature.
+
+    Position (frame cell) — moves: the other cells of the stored frame.
+
+    Shift (translation) — the antisymmetric grid: both free components
+    ranged over `nums` and negations.
+
+    Inset (independent edge depths) — moves (redistributions of a depth
+    across an edge pair) plus per-component lines over `nums` and
+    negations with the other three pinned at stored.
+    """
+    line = sorted(set(nums) | {-n for n in nums})
+    if type_name == "Shift":
+        comps = {c for v in vals for c in v}
+        span = sorted(set(line) | comps | {-c for c in comps})
+        return sorted((t, -t, l, -l) for t in span for l in span)
+    out = _move_domain(vals)
+    if type_name == "Inset":
+        for v in vals:
+            for i in range(4):
+                for n in line:
+                    out.add(v[:i] + (n,) + v[i + 1:])
+    return sorted(out)
+
+
 def _comp_span(source: str, comp_name: str) -> tuple[int, int]:
     """[start, end) line indices of comp `comp_name`'s interior; (0, 0) when absent."""
     lines = source.splitlines()
@@ -358,26 +405,65 @@ def _consts_fact_lines(source: str) -> list[int]:
     return idxs
 
 
-def _slot_facts(source: str, slot: str) -> list[str]:
-    """Fact atoms for `slot` inside the Consts block."""
+def _split_args(s: str) -> list[str]:
+    """Split an argument string at top-level commas."""
+    parts, depth, cur = [], 0, []
+    for ch in s:
+        if ch in "([":
+            depth += 1
+        elif ch in ")]":
+            depth -= 1
+        if ch == "," and depth == 0:
+            parts.append("".join(cur).strip())
+            cur = []
+        else:
+            cur.append(ch)
+    parts.append("".join(cur).strip())
+    return parts
+
+
+def _slot_atoms(code: str, slot: str) -> list[tuple[int, int, str]]:
+    """(start, end, args) for each `slot(...).` fact atom in `code`."""
+    spans = []
+    for m in re.finditer(rf"\b{slot}\s*\(", code):
+        depth, i = 1, m.end()
+        while i < len(code) and depth:
+            if code[i] == "(":
+                depth += 1
+            elif code[i] == ")":
+                depth -= 1
+            i += 1
+        rest = code[i:].lstrip()
+        if depth == 0 and rest.startswith("."):
+            end = len(code) - len(rest) + 1
+            spans.append((m.start(), end, code[m.end():i - 1]))
+    return spans
+
+
+def _slot_facts(source: str, slot: str) -> list[list[str]]:
+    """Argument lists of `slot`'s Consts facts."""
     lines = source.splitlines()
-    pat = re.compile(rf"\b{slot}\s*\([^)]*\)\s*\.")
     return [
-        m.group(0)
+        _split_args(args)
         for i in _consts_fact_lines(source)
-        for m in pat.finditer(lines[i].split("//")[0])
+        for (_, _, args) in _slot_atoms(lines[i].split("//")[0], slot)
     ]
+
+
+def _render_arg(v) -> str:
+    return f"[{', '.join(str(x) for x in v)}]" if isinstance(v, tuple) else str(v)
 
 
 def swap_fact(source: str, slot: str, values: tuple) -> str:
     """Replace `slot`'s Consts facts with a single fact holding `values`."""
     lines = source.splitlines()
     _, e = _comp_span(source, "Consts")
-    pat = re.compile(rf"\b{slot}\s*\([^)]*\)\s*\.")
     for i in _consts_fact_lines(source):
         code, sep, comment = lines[i].partition("//")
-        lines[i] = pat.sub("", code) + sep + comment
-    args = ", ".join(str(v) for v in values)
+        for start, end, _ in reversed(_slot_atoms(code, slot)):
+            code = code[:start] + code[end:]
+        lines[i] = code + sep + comment
+    args = ", ".join(_render_arg(v) for v in values)
     lines.insert(e, f"    {slot}({args}).")
     return "\n".join(lines) + "\n"
 
@@ -445,8 +531,25 @@ def sweep_report(
         if not facts:
             results.append((slot, "skip", "0 facts"))
             continue
+        if not all(t in ENUM_TYPES or t in ("Color", "number")
+                   or t in POSITION_TYPES for t in types):
+            results.append((slot, "skip", f"non-enumerable ({', '.join(types)})"))
+            continue
+
+        stored = []
+        for args in facts:
+            vals = []
+            for a, t in zip(args, types):
+                if t in POSITION_TYPES:
+                    vals.append(tuple(int(x) for x in _split_args(a[1:-1])))
+                elif a.lstrip("-").isdigit():
+                    vals.append(int(a))
+                else:
+                    vals.append(defines[a])
+            stored.append(tuple(vals))
+
         domains = []
-        for t in types:
+        for i, t in enumerate(types):
             if t in ENUM_TYPES:
                 domains.append(_enum_domain(t, defines))
             elif t == "Color":
@@ -454,19 +557,9 @@ def sweep_report(
             elif t == "number":
                 domains.append(_number_domain(task))
             else:
-                domains = None
-                break
-        if domains is None:
-            results.append((slot, "skip", f"non-enumerable ({', '.join(types)})"))
-            continue
-
-        stored = []
-        for fact in facts:
-            args = re.match(rf"{slot}\s*\(([^)]*)\)", fact).group(1)
-            stored.append(tuple(
-                int(a) if a.strip().lstrip("-").isdigit() else defines[a.strip()]
-                for a in args.split(",")
-            ))
+                domains.append(
+                    _position_domain(t, [s[i] for s in stored], _number_domain(task))
+                )
 
         # Stored values join the candidate set, so a stored value outside
         # the domain (a count above the dims, say) still reads as stored
@@ -507,19 +600,33 @@ def sweep_report(
     return results
 
 
+def _mag_vec(vals: tuple, types: list[str]) -> list[int]:
+    """Magnitude components of a value tuple: number args as-is, the
+    absolute components of Shift/Inset args."""
+    out: list[int] = []
+    for v, t in zip(vals, types):
+        if t == "number":
+            out.append(v)
+        elif t in MAG_POSITION_TYPES:
+            out.extend(abs(x) for x in v)
+    return out
+
+
 def _num_peer(e: tuple, s: tuple, types: list[str]) -> bool:
-    """e differs from s only in number args — a rival magnitude, not a
-    rival identity. Nominal args (enums, Color, Ident) must match."""
-    return all(e[i] == s[i] for i, t in enumerate(types) if t != "number")
+    """e differs from s only in magnitude args — number, Shift, Inset — a
+    rival magnitude, not a rival identity. Nominal args (enums, Color,
+    Ident, cell Positions) must match."""
+    mag = {"number"} | MAG_POSITION_TYPES
+    return all(e[i] == s[i] for i, t in enumerate(types) if t not in mag)
 
 
 def _num_below(e: tuple, s: tuple, types: list[str]) -> bool:
-    """e is a smaller magnitude reading of s: nominal args equal, number
-    args no larger, at least one strictly smaller."""
-    nums = [i for i, t in enumerate(types) if t == "number"]
+    """e is a smaller magnitude reading of s: nominal args equal, magnitude
+    components no larger, at least one strictly smaller."""
+    em, sm = _mag_vec(e, types), _mag_vec(s, types)
     return (_num_peer(e, s, types)
-            and all(e[i] <= s[i] for i in nums)
-            and any(e[i] < s[i] for i in nums))
+            and all(a <= b for a, b in zip(em, sm))
+            and any(a < b for a, b in zip(em, sm)))
 
 
 def render_sweep(results: list[tuple[str, str, object]]) -> list[str]:
@@ -528,7 +635,7 @@ def render_sweep(results: list[tuple[str, str, object]]) -> list[str]:
 
     def show(vals: tuple, types: list[str]) -> str:
         return "(" + ", ".join(
-            names.get(v, str(v)) if t in ENUM_TYPES else str(v)
+            names.get(v, str(v)) if t in ENUM_TYPES else _render_arg(v)
             for v, t in zip(vals, types)
         ) + ")"
 
