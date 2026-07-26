@@ -146,13 +146,18 @@ def gen_grid_macro(h: int, w: int) -> str:
     return f"#define GRID_{h}x{w}(rel, {args}) \\\n    {body}"
 
 
-def expand_grid_macros(source: str) -> tuple[str, bool]:
+def expand_grid_macros(source: str) -> str:
     """Prepend `#define GRID_HxW` lines for every (H, W) used in source."""
     dims = {(int(m.group(1)), int(m.group(2))) for m in GRID_MACRO_RE.finditer(source)}
     if not dims:
-        return source, False
+        return source
     macros = "\n".join(gen_grid_macro(h, w) for (h, w) in sorted(dims))
-    return f"// Generated GRID_HxW expansions.\n{macros}\n\n{source}", True
+    return f"// Generated GRID_HxW expansions.\n{macros}\n\n{source}"
+
+
+def build_source(source: str) -> str:
+    """Assemble the program Souffle runs from a solver file's source."""
+    return expand_grid_macros(source)
 
 
 def run_dl(
@@ -162,20 +167,16 @@ def run_dl(
     if not dl_path.exists():
         raise FileNotFoundError(f"no .dl solver at {dl_path}")
 
-    source = dl_path.read_text()
-    expanded, modified = expand_grid_macros(source)
-    if modified:
-        # Tempfile lives next to the original so `#include "../lib.dl"` resolves.
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".dl", dir=str(SOLVERS_DIR), delete=False
-        ) as tf:
-            tf.write(expanded)
-            run_path = Path(tf.name)
-        try:
-            return _invoke_souffle(run_path, input_rows)
-        finally:
-            run_path.unlink(missing_ok=True)
-    return _invoke_souffle(dl_path, input_rows)
+    # Tempfile lives next to the original so `#include "../lib.dl"` resolves.
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".dl", dir=str(SOLVERS_DIR), delete=False
+    ) as tf:
+        tf.write(build_source(dl_path.read_text()))
+        run_path = Path(tf.name)
+    try:
+        return _invoke_souffle(run_path, input_rows)
+    finally:
+        run_path.unlink(missing_ok=True)
 
 
 def _invoke_souffle(
