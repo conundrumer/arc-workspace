@@ -30,8 +30,9 @@
     .decl arr_pos(p: Position)
     arr_pos(P) :- helpers.frame_pos([3, 3], P).
 
+    // Plain bands at both stack ends.
     .decl anchor(d: Dir)
-    anchor(DIR_T).   // DIR_B fits too — plain bands at both stack ends
+    anchor(DIR_T). anchor(DIR_B).
 
     .decl tf(t: D4)
     tf(D4_LR).

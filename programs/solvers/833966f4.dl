@@ -34,9 +34,6 @@
     .decl divide_axis(a: Axis) divide_axis(AXIS_V).
     .decl divisor(n: number) divisor(2).
     .decl divide_gap(g: number) divide_gap(1).
-
-    // Flip swapping the two cells of each 2×1 V-subgrid.
-    .decl flip(d: D4) flip(D4_TB).
 }
 
 .init c = Consts
@@ -60,7 +57,7 @@ perm(P_grid_in, P_grid_out, $Divide()) :-
     in(P_grid_in, _),                                          // input cell
     c.divide_axis(A), c.divisor(N), c.divide_gap(G),           // params
     divide(P_grid_in, A, N, G, P_outer, P_inner),              // 1D divide
-    c.flip(F), apply(F, P_inner, P_inner_out),                 // flip within subgrid
+    flip_of(A, F), apply(F, P_inner, P_inner_out),             // swap the pair
     concat(P_outer, P_inner_out, A, G, P_grid_out).            // recompose
 perm(P_grid_in, P_grid_in, $Divide()) :-
     in(P_grid_in, _), !decomposable(P_grid_in).                // gap row passthrough

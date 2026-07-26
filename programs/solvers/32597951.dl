@@ -4,7 +4,7 @@
 // everything else passes through. Two claims of which cells qualify:
 //
 //   $From — cells of the stored color c.from.
-//   $Ink  — every cell that is neither c.bg nor c.marker.
+//   $Ink  — every non-marker cell.
 
 #include "../lib.dl"
 
@@ -17,9 +17,6 @@
 
     // --- From ---
     .decl from(c: Color) from(1).
-
-    // --- Ink ---
-    .decl bg(c: Color) bg(0).
 }
 
 .init c = Consts
@@ -37,7 +34,7 @@ impl_choice($From()). impl_choice($Ink()).
 recolor(P, $From()) :- box.inside($U(), P), in(P, Col), c.from(Col).
 
 // --- Ink ---
-recolor(P, $Ink()) :- box.inside($U(), P), in(P, Col), !c.bg(Col), !c.marker(Col).
+recolor(P, $Ink()) :- box.inside($U(), P), in(P, Col), !c.marker(Col).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- recolor(P, Ch), c.to(Col).

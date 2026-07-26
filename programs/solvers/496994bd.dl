@@ -4,7 +4,7 @@
 // reflected copy at the opposite edge.
 //
 // Cases (data-equivalent — the block is flush at its edge in every pair):
-//   $Mirror() — grid reflection: ink unioned with its whole-grid D4 image
+//   $Mirror() — ink unioned with its whole-grid reflection
 //   $Seat()   — block reflection seated flush at the opposite edge
 
 #include "../lib.dl"
@@ -16,7 +16,7 @@
     .decl bg(col: Color) bg(0).
 
     // --- Mirror ---
-    .decl transform(d: D4) transform(D4_TB).
+    .decl axis(a: Axis) axis(AXIS_V).   // the axis the reflection inverts
 
     // --- Seat ---
     .decl dir(d: Dir) dir(DIR_T).
@@ -34,7 +34,7 @@ ink(P, Col) :- in(P, Col), !c.bg(Col).
 .decl img(p: Position, col: Color, ch: Choice)
 
 // --- Mirror ---
-img(P2, Col, $Mirror()) :- ink(P, Col), c.transform(D), apply(D, P, P2).
+img(P2, Col, $Mirror()) :- ink(P, Col), c.axis(A), flip_of(A, F), apply(F, P, P2).
 
 // --- Seat ---
 .init block = Bbox<Unit>

@@ -15,7 +15,6 @@
 .type Choice = Count {} | Span {}
 
 .comp Consts {
-    .decl bg(c: Color) bg(0).
     .decl sep(c: Color) sep(5).
     .decl side(d: Dir) side(DIR_T).        // edge toward the before panel
     .decl out_dim(n: number) out_dim(2).   // output extent, both axes
@@ -25,7 +24,7 @@
 
 // Bar cells.
 .decl ink(p: Position, col: Color)
-ink(P, Col) :- in(P, Col), !c.bg(Col), !c.sep(Col).
+ink(P, Col) :- in(P, Col), !c.sep(Col).
 
 // The separator's distance from each stacking-axis edge — the panels
 // stack along c.side's axis.

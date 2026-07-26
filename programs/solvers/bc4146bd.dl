@@ -18,8 +18,9 @@
     .decl arr_pos(p: Position)
     arr_pos(P) :- helpers.frame_pos([1, 5], P).
 
+    // Identity at both strip ends.
     .decl anchor(d: Dir)
-    anchor(DIR_L).   // DIR_R fits too — identity at both strip ends
+    anchor(DIR_L). anchor(DIR_R).
 }
 
 .init c = Consts

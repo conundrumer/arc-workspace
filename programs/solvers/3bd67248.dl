@@ -24,7 +24,9 @@
     .decl floor_dir(d: Dir) floor_dir(DIR_B).
 
     // --- Anchored ---
-    .decl corner(d: DiagDir) corner(DIAG_BL).
+    // Square grids: both corners give the diagonal.
+    .decl corner(d: DiagDir)
+    corner(DIAG_BL). corner(DIAG_TR).
 
     // --- WallEnd ---
     .decl sense(s: Sense) sense(SENSE_CW).

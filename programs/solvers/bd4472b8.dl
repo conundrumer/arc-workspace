@@ -10,8 +10,8 @@
 // index, or origin, and the match is Position equality. The header's location
 // washes into the discarded perpendicular component: only "which cells are
 // blank" depends on where the header sits, not the layout. The header is one
-// cell thick and the fill broadcasts, so reflection (D4_DG) and rotation
-// (D4_CW) are indistinguishable here — the chirality is the only learned bit.
+// cell thick and the fill broadcasts, so reflection and rotation coincide —
+// the diagonal axis is the only learned bit.
 
 #include "../lib.dl"
 
@@ -19,7 +19,7 @@
     .decl header_dir(d: Dir) header_dir(DIR_T).
     .decl body_start(n: number) body_start(2).
     .decl copies(n: number) copies(2).
-    .decl transform(d: D4) transform(D4_DG).
+    .decl diag(da: DiagAxis) diag(DAXIS_DG).
 
     // Shift the blank to a top-aligned frame: -body_start along header_dir.
     .decl body_shift(p: Position)
@@ -35,7 +35,7 @@
 stripe(P_stack, Col) :-
     in(P_h, Col),                                // header cell
     c.header_dir(D), dist(P_h, D, 0),            // on the header edge
-    c.transform(T), apply(T, P_h, P_ht),         // transpose it
+    c.diag(Da), diag_flip_of(Da, T), apply(T, P_h, P_ht),   // transpose it
     axis_of(D, A), split(P_ht, A, P_stack, _).   // keep the stacking component
 
 // Body fill. Reframe the blank top-aligned, split into N blocks, and match each

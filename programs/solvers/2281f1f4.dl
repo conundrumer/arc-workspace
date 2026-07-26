@@ -5,9 +5,9 @@
 // of what a marked line carries off the crossings, tagged on out's Choice:
 //
 //   $Cross — nothing: crossings paint, the rest passes through.
-//   $Stamp — lines marked from the selector edge (the corner partner of
-//            c.pattern_edge) re-render as the c.pattern_edge header:
-//            marker cells c.fill, the rest c.bg.
+//   $Stamp — lines marked from the selector edge re-render as the pattern
+//            header (the c.pattern_axis edge of the corner): marker cells
+//            c.fill, the rest c.bg.
 
 #include "../lib.dl"
 
@@ -20,7 +20,9 @@
     .decl header(d: DiagDir) header(DIAG_TR).
 
     // --- Stamp ---
-    .decl pattern_edge(d: Dir) pattern_edge(DIR_T).
+    // The marker pattern is symmetric across the header corner.
+    .decl pattern_axis(a: Axis)
+    pattern_axis(AXIS_V). pattern_axis(AXIS_H).
     .decl bg(c: Color) bg(0).
 }
 
@@ -45,16 +47,17 @@ out(P, Col, $Cross()) :- in(P, Col), !cross(P).
 
 // --- Stamp ---
 
-// Selector edge — the corner partner of pattern_edge.
-.decl select_edge(d: Dir)
-select_edge(Ds) :-
-    c.header(Diag), c.pattern_edge(Dp),
-    diag_dirs(Diag, _, Dp, Ds).
+// Cells of selected lines, keyed by the pattern edge whose partner
+// selected them.
+.decl selected(p: Position, dp: Dir)
+selected(P, Dp) :-
+    c.header(Diag), c.pattern_axis(A),
+    diag_dirs(Diag, A, Dp, Ds),                 // pattern edge, selector edge
+    marked(P, Ds), dist(P, Ds, K), K != 0.      // marked from the selector, off it
 
-// Cells of selected lines, off the selector edge.
-.decl selected(p: Position)
-selected(P) :- select_edge(D), marked(P, D), dist(P, D, K), K != 0.
+.decl is_selected(p: Position)
+is_selected(P) :- selected(P, _).
 
-out(P, F, $Stamp())   :- selected(P), c.pattern_edge(Dp), marked(P, Dp), c.fill(F).
-out(P, Bg, $Stamp())  :- selected(P), c.pattern_edge(Dp), !marked(P, Dp), c.bg(Bg).
-out(P, Col, $Stamp()) :- in(P, Col), !selected(P).
+out(P, F, $Stamp())   :- selected(P, Dp), marked(P, Dp), c.fill(F).
+out(P, Bg, $Stamp())  :- selected(P, Dp), !marked(P, Dp), c.bg(Bg).
+out(P, Col, $Stamp()) :- in(P, Col), !is_selected(P).
