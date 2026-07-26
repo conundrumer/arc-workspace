@@ -24,7 +24,7 @@
     .decl line(c: Color) line(1).
 
     // --- $Margin ---
-    .decl margin(p: Position)
+    .decl margin(p: Inset)
     margin([2, 2, 2, 2]).
 
     // --- $Bg ---

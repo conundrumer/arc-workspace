@@ -35,6 +35,11 @@
 .type Position = [t: number, b: number, l: number, r: number]
 .type Dim = [v: number, h: number]
 
+// A Position slot's nature: a frame cell (bare), a translation (Shift), or
+// independent signed edge depths (Inset).
+.type Shift = Position
+.type Inset = Position
+
 // Unit: singleton key for keyed components applied to a single set — states
 // "exactly one set" in the type instead of a dummy int.
 .type Unit = U {}

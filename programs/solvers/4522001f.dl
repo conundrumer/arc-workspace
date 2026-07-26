@@ -50,7 +50,7 @@
 
     // --- $Grow / $Fit ---
     .decl box_corner(d: DiagDir) box_corner(DIAG_TL).   // the corner the square is drawn at
-    .decl box(m: Position) box([0, 5, 0, 5]).           // the first square, as margins
+    .decl box(m: Inset) box([0, 5, 0, 5]).           // the first square, as margins
 
     // --- $Stamp ---
     .decl mask_corner(d: DiagDir) mask_corner(DIAG_TL).   // the corner the picture is drawn at

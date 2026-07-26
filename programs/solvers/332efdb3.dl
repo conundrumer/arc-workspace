@@ -36,7 +36,7 @@
         1, 1, 1)
 
     // --- $Inset extra ---
-    .decl inset_delta(p: Position) inset_delta([-1, -1, -1, -1]).
+    .decl inset_delta(p: Inset) inset_delta([-1, -1, -1, -1]).
 }
 
 .init c = Consts

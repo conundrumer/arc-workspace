@@ -7,7 +7,7 @@
 #include "../lib.dl"
 
 .comp Consts {
-    .decl seat_delta(p: Position) seat_delta([1, 1, 1, 1]).
+    .decl seat_delta(p: Inset) seat_delta([1, 1, 1, 1]).
     .decl bg(c: Color) bg(0).
 }
 
