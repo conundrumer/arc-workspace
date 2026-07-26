@@ -132,6 +132,14 @@ The single-line form is fine for short rules (≤ ~80 chars).
 
 Lib primitives are `inline`: each call expands into the calling rule, and Souffle evaluates the expansion once per tuple. Work that is the same for every tuple is not hoisted. A deep primitive chain inside a rule that ranges over many cells can exceed the runner's 5s CPU budget per pair. Compute tuple-independent values, such as deltas derived from Consts data, in their own relation and join them. When a derived per-cell position must also be read backward, materialize it in a comp relation keyed by the cell (`Reframe.inner`); the indexed join replaces the inline chain.
 
+## Fit
+
+A solver that fits its Consts carries a `.comp Fit` after the body, under a `// --- fit ---` marker: one relation per fitted slot, with the slot's name and schema, derived from `train_in` / `train_out`. Fit relations that mirror no slot are helpers.
+
+The runner checks each fitted slot against its Consts fill; a nonempty `fit_diff` is a violation.
+
+Fit rules are body code: body style and the linter apply.
+
 ## Runner contract
 
 `in` is declared in `lib.dl`, and the runner appends the IO directives; of the IO surface, a solver declares only `out`.

@@ -1,8 +1,9 @@
 """Lint .dl solver bodies against 4-style.md.
 
 Flags orientation literals, bare nonzero literals, arithmetic, and the
-`range` generator in solver-body code. `.comp` blocks are skipped wholesale — components are
-generic, lib-shaped code, not solver body. The public entry point is
+`range` generator in solver-body code. `.comp` blocks are skipped wholesale —
+components are generic, lib-shaped code, not solver body — except `Fit`,
+whose rules are model claims and lint as body. The public entry point is
 `lint_body`; run_dl.py calls it after running each solver.
 """
 
@@ -27,7 +28,7 @@ ORIENTATION_LITERAL_RE = re.compile(
 )
 COMMENT_RE = re.compile(r"//.*$")
 BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", flags=re.DOTALL)
-COMP_OPEN_RE = re.compile(r"\.comp\s+\w+")
+COMP_OPEN_RE = re.compile(r"\.comp\s+(\w+)")
 NUMERIC_LITERAL_RE = re.compile(r"(?<![A-Za-z_0-9.])\d+(?![A-Za-z_0-9.])")
 RANGE_RE = re.compile(r"\brange\s*\(")
 
@@ -149,7 +150,8 @@ def lint_body(source: str) -> list[tuple[str, int, str, str]]:
 
     Returns (category, lineno, match, raw_line). Skips // and /* */
     comments and `.comp` blocks (detected by `.comp Name {` with the opening
-    brace on the header line, then balanced to the closing brace).
+    brace on the header line, then balanced to the closing brace), except
+    `Fit`, which lints as body.
     """
     findings: list[tuple[str, int, str, str]] = []
     src = _strip_block_comments(source)
@@ -159,9 +161,10 @@ def lint_body(source: str) -> list[tuple[str, int, str, str]]:
     for lineno, raw_line in enumerate(src.splitlines(), start=1):
         line = COMMENT_RE.sub("", raw_line)
 
-        if not in_comp and COMP_OPEN_RE.search(line) and "{" in line:
-            comp_depth = line.count("{") - line.count("}")
-            in_comp = comp_depth > 0
+        if not in_comp and (m := COMP_OPEN_RE.search(line)) and "{" in line:
+            if m.group(1) != "Fit":
+                comp_depth = line.count("{") - line.count("}")
+                in_comp = comp_depth > 0
             continue
 
         if in_comp:

@@ -14,3 +14,11 @@
 .decl out(p: Position, col: Color)
 out(P, Col_out) :- in(P, Col_in), c.mapping(Col_in, Col_out).
 out(P, Col)     :- in(P, Col), !c.mapping(Col, _).
+
+// --- fit ---
+
+.comp Fit {
+    .decl mapping(c_from: Color, c_to: Color)
+    mapping(C_from, C_to) :-
+        train_in(E, P, C_from), train_out(E, P, C_to), C_from != C_to.
+}

@@ -8,7 +8,8 @@ For a single stem, encodes each example's input grid as fact lines on stdin,
 invokes `souffle` on it (linking the functor library; see build_functors),
 reads the output relation from stdout, compares to expected output grid.
 
-Both CLI paths also lint each solver body (see dl_lint) and print style findings.
+Both CLI paths also lint each solver body (see dl_lint) and print style
+findings, and fit-check each solver carrying a `Fit` comp (see run_fit).
 """
 
 import re
@@ -155,14 +156,60 @@ def expand_grid_macros(source: str) -> str:
     return f"// Generated GRID_HxW expansions.\n{macros}\n\n{source}"
 
 
-# Per-mode IO directives, appended to every solver source. Solve is the
-# only mode; `in` is declared in lib.dl, `out` in the solver file.
+# Per-mode IO directives, appended to the built source.
 SOLVE_DIRECTIVES = ".input in(IO=stdin)\n.output out(IO=stdout)\n"
+FIT_DIRECTIVES = ".input train_in\n.input train_out\n.output fit_diff(IO=stdout)\n"
+
+COMP_HEADER_RE = re.compile(r"\.comp\s+(\w+)")
+DECL_RE = re.compile(r"\.decl\s+(\w+)\s*\(([^)]*)\)")
+
+
+def comp_decls(source: str, comp_name: str) -> dict[str, int]:
+    """Map relation name -> arity for `.decl`s directly inside comp `comp_name`."""
+    decls: dict[str, int] = {}
+    in_comp = False
+    depth = 0
+    for line in source.splitlines():
+        line = line.split("//")[0]
+        if not in_comp:
+            m = COMP_HEADER_RE.search(line)
+            if m and m.group(1) == comp_name and "{" in line:
+                in_comp = True
+                depth = line.count("{") - line.count("}")
+            continue
+        depth += line.count("{") - line.count("}")
+        if depth <= 0:
+            break
+        m = DECL_RE.search(line)
+        if m:
+            args = m.group(2).strip()
+            decls[m.group(1)] = len(args.split(",")) if args else 0
+    return decls
+
+
+def fit_slots(source: str) -> dict[str, int] | None:
+    """Fitted slots: Fit decls that mirror a Consts decl. None when no Fit comp."""
+    fit = comp_decls(source, "Fit")
+    if not fit:
+        return None
+    consts = comp_decls(source, "Consts")
+    return {name: arity for name, arity in fit.items() if name in consts}
 
 
 def build_source(source: str) -> str:
-    """Assemble the program Souffle runs from a solver file's source."""
+    """Assemble the solve-mode program from a solver file's source."""
     return f"{expand_grid_macros(source)}\n{SOLVE_DIRECTIVES}"
+
+
+def build_fit_source(source: str, slots: dict[str, int]) -> str:
+    """Assemble the fit-mode program: Fit instance, per-slot diffs, directives."""
+    lines = [".init fit = Fit"]
+    for name, arity in sorted(slots.items()):
+        args = ", ".join(f"A{i}" for i in range(arity))
+        lines.append(f'fit_diff("{name}") :- fit.{name}({args}), !c.{name}({args}).')
+        lines.append(f'fit_diff("{name}") :- c.{name}({args}), !fit.{name}({args}).')
+    appended = "\n".join(lines)
+    return f"{expand_grid_macros(source)}\n{appended}\n{FIT_DIRECTIVES}"
 
 
 def run_dl(
@@ -172,22 +219,32 @@ def run_dl(
     if not dl_path.exists():
         raise FileNotFoundError(f"no .dl solver at {dl_path}")
 
-    # Tempfile lives next to the original so `#include "../lib.dl"` resolves.
+    return parse_output(
+        _run_source(build_source(dl_path.read_text()), grid_to_facts(input_rows))
+    )
+
+
+def _run_source(
+    built: str, stdin_text: str, extra_args: list[str] | None = None
+) -> str:
+    """Write built source to a tempfile and run Souffle on it.
+
+    Tempfile lives next to the originals so `#include "../lib.dl"` resolves.
+    """
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".dl", dir=str(SOLVERS_DIR), delete=False
     ) as tf:
-        tf.write(build_source(dl_path.read_text()))
+        tf.write(built)
         run_path = Path(tf.name)
     try:
-        return _invoke_souffle(run_path, input_rows)
+        return _souffle(run_path, stdin_text, extra_args)
     finally:
         run_path.unlink(missing_ok=True)
 
 
-def _invoke_souffle(
-    dl_path: Path, input_rows: list[list[int]]
-) -> list[tuple[str, list[list[int]], list[tuple[int, int]], list[tuple[int, int]]]]:
-    facts = grid_to_facts(input_rows)
+def _souffle(
+    dl_path: Path, stdin_text: str, extra_args: list[str] | None = None
+) -> str:
     # -L/-lfunctors load the functor shared library build_functors compiled —
     # lib.dl's primitives call into it.
     #
@@ -198,10 +255,11 @@ def _invoke_souffle(
     # wall timeout backstops hangs that block without spinning; it can be
     # raised if it ever false-positives, but stays low so inefficient solvers
     # surface.
-    cmd = ["souffle", "-D-", "-w", "-L", str(PROGRAMS_DIR), "-lfunctors", str(dl_path)]
+    cmd = ["souffle", "-D-", "-w", "-L", str(PROGRAMS_DIR), "-lfunctors",
+           *(extra_args or []), str(dl_path)]
     result = subprocess.run(
         ["/bin/sh", "-c", 'ulimit -t 5; exec "$0" "$@"', *cmd],
-        input=facts,
+        input=stdin_text,
         capture_output=True,
         text=True,
         timeout=10,
@@ -210,7 +268,74 @@ def _invoke_souffle(
         raise RuntimeError(f"souffle exceeded the 5s CPU limit on {dl_path.name}")
     if result.returncode != 0:
         raise RuntimeError(f"souffle exited {result.returncode}:\n{result.stderr}")
-    return parse_output(result.stdout)
+    return result.stdout
+
+
+def train_facts(task) -> dict[str, str]:
+    """Fact-file contents for a task's train pairs, example-keyed."""
+    def emit(grids: list[list[list[int]]]) -> str:
+        return "".join(
+            f"{e}\t{line}\n"
+            for e, rows in enumerate(grids)
+            for line in grid_to_facts(rows).splitlines()
+        )
+    return {
+        "train_in.facts": emit([ex.input for ex in task.train]),
+        "train_out.facts": emit([ex.output for ex in task.train]),
+    }
+
+
+def _parse_block(stdout: str) -> list[str]:
+    """Rows of the single relation block in Souffle's -D- output."""
+    parts = re.split(r"^={3,}$", stdout, flags=re.MULTILINE)
+    if len(parts) < 3:
+        raise ValueError(f"unexpected souffle output:\n{stdout}")
+    data = parts[1].strip()
+    return [line for line in data.splitlines() if line] if data else []
+
+
+@dataclass
+class FitResult:
+    slots: list[str]        # fitted (Consts-mirrored) Fit relations
+    unfitted: list[str]     # Consts slots with no Fit mirror
+    diff: list[str]         # slots where fit and fill disagree
+    error: str | None = None
+
+
+def run_fit(stem: str) -> FitResult | None:
+    """Fit check for one solver; None when the file has no Fit comp."""
+    source = (SOLVERS_DIR / f"{stem}.dl").read_text()
+    slots = fit_slots(source)
+    if slots is None:
+        return None
+    unfitted = sorted(set(comp_decls(source, "Consts")) - set(slots))
+    task = load_task(stem.split("_", 1)[0])
+    try:
+        with tempfile.TemporaryDirectory() as facts_dir:
+            for name, text in train_facts(task).items():
+                (Path(facts_dir) / name).write_text(text)
+            stdout = _run_source(
+                build_fit_source(source, slots), "", ["-F", facts_dir]
+            )
+        diff = sorted({row.strip() for row in _parse_block(stdout)})
+        return FitResult(slots=sorted(slots), unfitted=unfitted, diff=diff)
+    except Exception as e:
+        return FitResult(
+            slots=sorted(slots), unfitted=unfitted, diff=[],
+            error=f"{type(e).__name__}: {e}",
+        )
+
+
+def render_fit(fit: FitResult) -> list[str]:
+    if fit.error:
+        lines = [f"fit: ERROR {fit.error}"]
+    elif fit.diff:
+        lines = [f"fit: DIFF on {', '.join(fit.diff)}"]
+    else:
+        lines = [f"fit: ok ({', '.join(fit.slots)})"]
+    if fit.unfitted:
+        lines.append(f"fit: unfitted slots: {', '.join(fit.unfitted)}")
+    return lines
 
 
 @dataclass
@@ -424,6 +549,12 @@ def cmd_one(stem: str) -> int:
         for cat, lineno, match, line in findings:
             print(f"  L{lineno}: {cat} `{match}`  →  {line.strip()}")
 
+    fit = run_fit(stem)
+    if fit is not None:
+        print()
+        for line in render_fit(fit):
+            print(line)
+
     return 0 if result.all_pass else 1
 
 
@@ -474,6 +605,22 @@ def cmd_all() -> int:
         for stem in sorted(lint_findings):
             for cat, lineno, match, line in lint_findings[stem]:
                 print(f"  {stem}.dl:L{lineno}: {cat} `{match}`  →  {line.strip()}")
+
+    fit_results: dict[str, FitResult] = {}
+    for stem in stems:
+        r = run_fit(stem)
+        if r is not None:
+            fit_results[stem] = r
+    if fit_results:
+        problems = {
+            s: r for s, r in fit_results.items() if r.diff or r.error or r.unfitted
+        }
+        print()
+        ok = len(fit_results) - len(problems)
+        print(f"--- fit checks: {ok}/{len(fit_results)} ok ---")
+        for s in sorted(problems):
+            for line in render_fit(problems[s]):
+                print(f"  {s}.dl: {line}")
 
     print()
     print(f"summary: {len(results) - len(failed)}/{len(results)} solvers")
