@@ -12,6 +12,7 @@ Both CLI paths also lint each solver body (see dl_lint) and print style
 findings, and fit-check each solver carrying a `Fit` comp (see run_fit).
 """
 
+import itertools
 import re
 import signal
 import subprocess
@@ -164,9 +165,9 @@ COMP_HEADER_RE = re.compile(r"\.comp\s+(\w+)")
 DECL_RE = re.compile(r"\.decl\s+(\w+)\s*\(([^)]*)\)")
 
 
-def comp_decls(source: str, comp_name: str) -> dict[str, int]:
-    """Map relation name -> arity for `.decl`s directly inside comp `comp_name`."""
-    decls: dict[str, int] = {}
+def comp_decls(source: str, comp_name: str) -> dict[str, list[str]]:
+    """Map relation name -> argument types for `.decl`s directly inside comp `comp_name`."""
+    decls: dict[str, list[str]] = {}
     in_comp = False
     depth = 0
     for line in source.splitlines():
@@ -183,7 +184,9 @@ def comp_decls(source: str, comp_name: str) -> dict[str, int]:
         m = DECL_RE.search(line)
         if m:
             args = m.group(2).strip()
-            decls[m.group(1)] = len(args.split(",")) if args else 0
+            decls[m.group(1)] = [
+                a.split(":")[1].strip() for a in args.split(",") if ":" in a
+            ]
     return decls
 
 
@@ -193,7 +196,7 @@ def fit_slots(source: str) -> dict[str, int] | None:
     if not fit:
         return None
     consts = comp_decls(source, "Consts")
-    return {name: arity for name, arity in fit.items() if name in consts}
+    return {name: len(types) for name, types in fit.items() if name in consts}
 
 
 def build_source(source: str) -> str:
@@ -269,6 +272,200 @@ def _souffle(
     if result.returncode != 0:
         raise RuntimeError(f"souffle exited {result.returncode}:\n{result.stderr}")
     return result.stdout
+
+
+# ---------------------------------------------------------------- sweep
+
+def _lib_defines() -> dict[str, int]:
+    """Constant-name -> value from lib.dl's #define table."""
+    text = (PROGRAMS_DIR / "lib.dl").read_text()
+    return {m.group(1): int(m.group(2))
+            for m in re.finditer(r"^#define (\w+) (\d+)", text, flags=re.MULTILINE)}
+
+
+ENUM_TYPES = {
+    "Dir": "DIR_", "Axis": "AXIS_", "DiagDir": "DIAG_",
+    "DiagAxis": "DAXIS_", "D4": "D4_", "Sense": "SENSE_",
+}
+
+
+def _enum_domain(type_name: str, defines: dict[str, int]) -> list[int]:
+    prefix = ENUM_TYPES[type_name]
+    return sorted(v for k, v in defines.items() if k.startswith(prefix))
+
+
+def _color_domain(task) -> list[int]:
+    """Colors present in the train pairs."""
+    colors: set[int] = set()
+    for ex in task.train:
+        for grid in (ex.input, ex.output):
+            for row in grid:
+                colors.update(row)
+    return sorted(colors)
+
+
+def _consts_span(source: str) -> tuple[int, int]:
+    """[start, end) line indices of the Consts block interior."""
+    lines = source.splitlines()
+    depth = 0
+    start = None
+    for i, raw in enumerate(lines):
+        code = raw.split("//")[0]
+        if start is None:
+            if re.search(r"\.comp\s+Consts\b", code) and "{" in code:
+                depth = code.count("{") - code.count("}")
+                start = i + 1
+            continue
+        depth += code.count("{") - code.count("}")
+        if depth <= 0:
+            return (start, i)
+    return (0, 0)
+
+
+def _slot_facts(source: str, slot: str) -> list[str]:
+    """Fact atoms for `slot` inside the Consts block."""
+    s, e = _consts_span(source)
+    text = "\n".join(source.splitlines()[s:e])
+    return re.findall(rf"\b{slot}\s*\([^)]*\)\s*\.", text)
+
+
+def swap_fact(source: str, slot: str, values: tuple) -> str:
+    """Replace `slot`'s Consts facts with a single fact holding `values`."""
+    lines = source.splitlines()
+    s, e = _consts_span(source)
+    pat = re.compile(rf"\b{slot}\s*\([^)]*\)\s*\.")
+    for i in range(s, e):
+        lines[i] = pat.sub("", lines[i])
+    args = ", ".join(str(v) for v in values)
+    lines.insert(e, f"    {slot}({args}).")
+    return "\n".join(lines) + "\n"
+
+
+def _train_profile(mod_source: str, task) -> list[frozenset[str]] | None:
+    """Per-train-pair variant-name sets under this source; None on any failure.
+
+    A candidate fill must reproduce the stored fill's profile, not merely
+    pass: a wrong value can silence a Choice case, and a vanished variant
+    is never checked.
+    """
+    profile = []
+    for ex in task.train:
+        try:
+            actuals = parse_output(
+                _run_source(build_source(mod_source), grid_to_facts(ex.input))
+            )
+        except Exception:
+            return None
+        accepted = [ex.output]
+        if ex.alt is not None and ex.alt.kind == "tiebreak":
+            accepted.append(ex.alt.grid)
+        names = set()
+        for variant, grid, conflicts, missing in actuals:
+            if grid not in accepted or conflicts or missing:
+                return None
+            names.add(variant)
+        profile.append(frozenset(names))
+    return profile
+
+
+def sweep_report(
+    stem: str, max_candidates: int = 64
+) -> list[tuple[str, str, object]]:
+    """Conditional sweep of each enumerable Consts slot.
+
+    Sweeps one slot at a time with the others at their stored values; a
+    candidate survives when it reproduces the stored fill's variant profile
+    on every train pair. A slot's fill may be a set (a symmetric member
+    stores every fitting value), so the check is survivors == stored facts.
+    Returns (slot, status, detail): status 'swept' carries
+    (survivors, stored), 'skip' carries the reason.
+    """
+    source = (SOLVERS_DIR / f"{stem}.dl").read_text()
+    task = load_task(stem.split("_", 1)[0])
+    defines = _lib_defines()
+    s, e = _consts_span(source)
+    consts_text = "\n".join(source.splitlines()[s:e])
+
+    reference: list[frozenset[str]] | None = None
+    results: list[tuple[str, str, object]] = []
+    for slot, types in comp_decls(source, "Consts").items():
+        if re.search(rf"\b{slot}\s*\([^)]*\)\s*:-", consts_text):
+            results.append((slot, "skip", "derived"))
+            continue
+        facts = _slot_facts(source, slot)
+        if not facts:
+            results.append((slot, "skip", "0 facts"))
+            continue
+        domains = []
+        for t in types:
+            if t in ENUM_TYPES:
+                domains.append(_enum_domain(t, defines))
+            elif t == "Color":
+                domains.append(_color_domain(task))
+            else:
+                domains = None
+                break
+        if domains is None:
+            results.append((slot, "skip", f"non-enumerable ({', '.join(types)})"))
+            continue
+        candidates = list(itertools.product(*domains))
+        if len(candidates) > max_candidates:
+            results.append((slot, "skip", f"{len(candidates)} candidates"))
+            continue
+
+        stored = []
+        for fact in facts:
+            args = re.match(rf"{slot}\s*\(([^)]*)\)", fact).group(1)
+            stored.append(tuple(
+                int(a) if a.strip().lstrip("-").isdigit() else defines[a.strip()]
+                for a in args.split(",")
+            ))
+
+        if reference is None:
+            reference = _train_profile(source, task)
+            if reference is None:
+                results.append((slot, "skip", "stored fill fails train"))
+                continue
+
+        def test(vals, slot=slot):
+            profile = _train_profile(swap_fact(source, slot, vals), task)
+            return vals if profile == reference else None
+
+        with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
+            survivors = [v for v in executor.map(test, candidates) if v]
+        results.append((slot, "swept", (survivors, stored)))
+    return results
+
+
+def render_sweep(results: list[tuple[str, str, object]]) -> list[str]:
+    defines = _lib_defines()
+    names = {v: k for k, v in defines.items()}
+
+    def show(vals: tuple) -> str:
+        return "(" + ", ".join(names.get(v, str(v)) for v in vals) + ")"
+
+    lines = []
+    for slot, status, detail in results:
+        if status == "skip":
+            lines.append(f"{slot}: skipped — {detail}")
+            continue
+        survivors, stored = detail
+        vset, sset = set(survivors), set(stored)
+        shown_s = ", ".join(show(v) for v in stored)
+        if vset == sset:
+            if len(sset) == 1:
+                lines.append(f"{slot}: unique = {shown_s} ✓")
+            else:
+                lines.append(f"{slot}: set of {len(sset)} = [{shown_s}] ✓")
+        elif sset <= vset:
+            extra = ", ".join(show(v) for v in sorted(vset - sset))
+            lines.append(
+                f"{slot}: UNDERDETERMINED — beyond stored [{shown_s}]: [{extra}]"
+            )
+        else:
+            # Some stored value no singleton run reproduces.
+            lines.append(f"{slot}: holistic table — singleton sweep n/a")
+    return lines
 
 
 def train_facts(task) -> dict[str, str]:
@@ -374,6 +571,22 @@ class TaskResult:
     @property
     def all_pass(self) -> bool:
         return all(p.ok for p in self.pairs)
+
+
+def case_coverage(pairs: list[PairResult]) -> list[str]:
+    """Cases silent on some pair. A case is a complete model, so the
+    emitted variant set must be the same across all pairs."""
+    sets: dict[str, set[str]] = {}
+    for p in pairs:
+        if p.error or not p.variants:
+            return []  # pair-level failure already reported
+        sets[f"{p.kind}[{p.idx}]"] = {v.name for v in p.variants}
+    union = set().union(*sets.values())
+    return [
+        f"case {name or '(out)'} silent on {pair}"
+        for pair, s in sorted(sets.items())
+        for name in sorted(union - s)
+    ]
 
 
 def run_pair(stem: str, task_id: str, kind: str, idx: int, ex) -> PairResult:
@@ -541,6 +754,13 @@ def cmd_one(stem: str) -> int:
             for line in render_pair_failure(p):
                 print(line)
 
+    coverage = case_coverage(result.pairs)
+    if coverage:
+        print()
+        print(f"--- {len(coverage)} case-coverage finding(s) in {stem}.dl ---")
+        for line in coverage:
+            print(f"  {line}")
+
     source = (SOLVERS_DIR / f"{stem}.dl").read_text()
     findings = lint_body(source)
     if findings:
@@ -591,6 +811,18 @@ def cmd_all() -> int:
                 for line in render_pair_failure(p):
                     print(f"  {line}")
 
+    coverage_findings = {
+        r.stem: cov for r in results if (cov := case_coverage(r.pairs))
+    }
+    if coverage_findings:
+        print()
+        total = sum(len(v) for v in coverage_findings.values())
+        print(f"--- case-coverage findings: {total} across "
+              f"{len(coverage_findings)} solver(s) ---")
+        for stem in sorted(coverage_findings):
+            for line in coverage_findings[stem]:
+                print(f"  {stem}.dl: {line}")
+
     lint_findings: dict[str, list] = {}
     for stem in stems:
         source = (SOLVERS_DIR / f"{stem}.dl").read_text()
@@ -627,10 +859,19 @@ def cmd_all() -> int:
     return 0 if not failed else 1
 
 
+def cmd_sweep(stem: str) -> int:
+    build_functors()
+    for line in render_sweep(sweep_report(stem)):
+        print(line)
+    return 0
+
+
 if __name__ == "__main__":
     if len(sys.argv) == 1:
         sys.exit(cmd_all())
     if len(sys.argv) == 2:
         sys.exit(cmd_one(sys.argv[1]))
-    print(f"usage: {sys.argv[0]} [<task_id_or_stem>]", file=sys.stderr)
+    if len(sys.argv) == 3 and sys.argv[1] == "--sweep":
+        sys.exit(cmd_sweep(sys.argv[2]))
+    print(f"usage: {sys.argv[0]} [--sweep] [<task_id_or_stem>]", file=sys.stderr)
     sys.exit(2)
