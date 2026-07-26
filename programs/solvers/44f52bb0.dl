@@ -16,9 +16,12 @@
 
 .comp Consts {
     // --- $Direct ---
+    // The non-identity members of the symmetry class's group; each alone
+    // splits the classes, and the group closes over any two.
     .decl syms(d: D4)
     syms(D4_LR).
     syms(D4_TB).
+    syms(D4_HT).
 
     .decl sym_out(p: Position, col: Color)
     GRID_1x1(sym_out, 1)
