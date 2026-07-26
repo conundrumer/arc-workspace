@@ -1,7 +1,8 @@
 // 90347967
 // concept: markers d4
-// An ink object contains one c.marker cell. The object re-seats transformed
-// by c.transform about the marker; all other cells are bg.
+// The grid re-seats transformed by c.transform about its c.marker cell;
+// uncovered cells are bg. Seating the grid equals seating the ink object:
+// transforms are injective, so bg images land clear of the object's.
 
 #include "../lib.dl"
 
@@ -13,20 +14,17 @@
 
 .init c = Consts
 
-.decl ink(p: Position, col: Color)
-ink(P, Col) :- in(P, Col), !c.bg(Col).
-
 .decl mark(p: Position)
-mark(P) :- ink(P, Col), c.marker(Col).
+mark(P) :- in(P, Col), c.marker(Col).
 
-// Each ink cell viewed from the marker, keyed by the cell.
+// Each cell viewed from the marker, keyed by the cell.
 .init markframe = Reframe<Position>
-markframe.outer(P, M) :- ink(P, _), mark(M).
-markframe.cell(P, P)  :- ink(P, _).
+markframe.outer(P, M) :- in(P, _), mark(M).
+markframe.cell(P, P)  :- in(P, _).
 
 .decl moved(p: Position, col: Color)
 moved(P_out, Col) :-
-    ink(P, Col), markframe.inner(P, I),       // cell in the marker frame
+    in(P, Col), markframe.inner(P, I),        // cell in the marker frame
     c.transform(D), apply(D, I, I2),          // transformed offset
     mark(M), compose(M, I2, P_out).           // seated back at the marker
 

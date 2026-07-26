@@ -27,25 +27,25 @@
 .decl cell_line(p: Position, col: Color, p_line: Position)
 cell_line(P, Col, P_line) :- in(P, Col), c.axis(A), split(P, A, _, P_line).
 
-// Non-bg colors present per line.
-.decl line_ink(p_line: Position, col: Color)
-line_ink(P_line, Col) :- cell_line(_, Col, P_line), !c.bg(Col).
+// Colors present per line.
+.decl line_color(p_line: Position, col: Color)
+line_color(P_line, Col) :- cell_line(_, Col, P_line).
 
 .decl main(p_line: Position, col: Color, ch: Choice)
 
 // --- $Palette ---
-main(P_line, Col, $Palette()) :- line_ink(P_line, Col), c.ink(Col).
+main(P_line, Col, $Palette()) :- line_color(P_line, Col), c.ink(Col).
 
 // --- $Owned ---
 
-// Ink on more than one line — noise.
+// Color on more than one line — noise.
 .decl shared(col: Color)
-shared(Col) :- line_ink(L1, Col), line_ink(L2, Col), L1 != L2.
+shared(Col) :- line_color(L1, Col), line_color(L2, Col), L1 != L2.
 
 // Cell count of each line-owned ink.
 .decl own_count(p_line: Position, col: Color, n: number)
 own_count(P_line, Col, N) :-
-    line_ink(P_line, Col), !shared(Col),
+    line_color(P_line, Col), !shared(Col),
     N = count : { cell_line(_, Col, P_line) }.
 
 main(P_line, Col, $Owned()) :-

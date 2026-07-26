@@ -16,11 +16,8 @@
 
 .init c = Consts
 
-.decl fg(col: Color)
-fg(Col) :- in(_, Col), !c.bg(Col).
-
 .decl fill(c: Color)
-fill(Out) :- fg(Col), c.recolor(Col, Out).
+fill(Out) :- in(_, Col), c.recolor(Col, Out).
 
 .decl out(p: Position, col: Color)
 out(P, Fill) :- in(P, Col), c.bg(Col), fill(Fill).

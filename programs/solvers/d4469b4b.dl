@@ -55,15 +55,12 @@
 
 .init c = Consts
 
-.decl ink(col: Color)
-ink(Col) :- in(_, Col), !c.bg(Col).
-
 .decl out(p: Position, col: Color, ch: Choice)
 
 // --- $Cross ---
 .decl cross_cell(p: Position)
 cross_cell(P) :-
-    ink(Key), c.cross(Key, Q),                             // stored center
+    in(_, Key), c.cross(Key, Q),                           // stored center
     c.out_pos(P),
     axis_elem(A), split(P, A, _, Ac), split(Q, A, _, Ac).  // p on q's row or column
 
@@ -71,4 +68,4 @@ out(P, Col, $Cross()) :- cross_cell(P), c.mark(Col).
 out(P, Col, $Cross()) :- c.out_pos(P), !cross_cell(P), c.bg(Col).
 
 // --- $Lookup ---
-out(P, Col, $Lookup()) :- ink(Key), c.glyph(Key, P, Col).
+out(P, Col, $Lookup()) :- in(_, Key), c.glyph(Key, P, Col).

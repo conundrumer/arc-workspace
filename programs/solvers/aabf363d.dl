@@ -6,8 +6,8 @@
 // Three models of marker identification:
 //
 //   $Anchor   — the color at corner c.marker_corner (positional)
-//   $ByCount  — the non-bg color appearing in exactly c.marker_count cells
-//   $Minority — the rarest non-bg color
+//   $ByCount  — the color appearing in exactly c.marker_count cells
+//   $Minority — the rarest color
 
 #include "../lib.dl"
 
@@ -36,7 +36,7 @@ marker(P, Col, $Anchor()) :-
 
 // --- $ByCount, $Minority shared helper ---
 .decl color_count(col: Color, n: number)
-color_count(Col, N) :- in(_, Col), !c.bg(Col), N = count : { in(_, Col) }.
+color_count(Col, N) :- in(_, Col), N = count : { in(_, Col) }.
 
 // --- $ByCount ---
 marker(P, Col, $ByCount()) :-

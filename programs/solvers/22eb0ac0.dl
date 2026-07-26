@@ -28,8 +28,7 @@
 edge_match(Ac, Col) :-
     c.axis(A), axis_of(D, A), opposite(D, D2),            // the line's two edges
     in(P1, Col), dist(P1, D, 0), split(P1, A, _, Ac),     // marker on edge d
-    in(P2, Col), dist(P2, D2, 0), split(P2, A, _, Ac),    // same color opposite, same line
-    !c.bg(Col).                                           // markers are non-bg
+    in(P2, Col), dist(P2, D2, 0), split(P2, A, _, Ac).    // same color opposite, same line
 
 .decl matched(ac: Position)
 matched(Ac) :- edge_match(Ac, _).

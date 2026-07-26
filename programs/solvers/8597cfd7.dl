@@ -22,10 +22,6 @@
 
 .init c = Consts
 
-// Bar cells.
-.decl ink(p: Position, col: Color)
-ink(P, Col) :- in(P, Col), !c.sep(Col).
-
 // The separator's distance from each stacking-axis edge — the panels
 // stack along c.side's axis.
 .decl sep_dist(s: Dir, k: number)
@@ -43,7 +39,7 @@ side_of(P, S) :- in(P, _), sep_dist(S, Ks), dist(P, S, K), K < Ks.
 .decl measure_member(col: Color, ch: Choice, s: Dir, m: Position)
 
 // --- $Count ---
-measure_member(Col, $Count(), S, P) :- ink(P, Col), side_of(P, S).
+measure_member(Col, $Count(), S, P) :- in(P, Col), side_of(P, S).
 
 // --- $Span ---
 // A cell's slice across the stacking axis.
@@ -52,7 +48,7 @@ slice_of(P, R) :- in(P, _), c.side(D), axis_of(D, A), split(P, A, R, _).
 
 // Slices holding the color in the panel.
 .decl ink_slice(col: Color, s: Dir, r: Position)
-ink_slice(Col, S, R) :- ink(P, Col), side_of(P, S), slice_of(P, R).
+ink_slice(Col, S, R) :- in(P, Col), side_of(P, S), slice_of(P, R).
 
 .type SKey = [col: Color, s: Dir]
 .init spans = Between<SKey>

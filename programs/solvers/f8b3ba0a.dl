@@ -70,7 +70,7 @@ lattice.gap(G) :- c.tile_gap(G).
 
 .decl tile_color(p_tile: Position, col: Color)
 tile_color(P_tile, Col) :-
-    in(P, Col), !c.bg(Col),                              // block cell
+    in(P, Col),                                          // input cell
     c.inset_delta(Delta), compose(P, Delta, P_int),      // interior frame
     lattice.tile($U(), P_int, P_tile, _).                // its lattice tile
 
