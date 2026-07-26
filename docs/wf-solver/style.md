@@ -37,7 +37,6 @@ When a decomposition's inner coordinate is also the output cell, name it by the 
 - All task-wide data lives in Consts, e.g. orientation (Dirs, Axes), dimensions, gaps, mappings, frame data.
 - A single-fact data declaration puts the fact on the decl line, one space after it. A multi-fact declaration puts the facts on the next line at the decl's indent. Facts are not column-aligned across a block.
 - Store an orientation datum constrained by another as a relative value (`Sense` via `turn`, `Axis` via `perp`). A second absolute slot admits fills the family does not have; the relative form has one fill per member.
-- A member symmetric in a slot stores every fitting value; solve mode's conflict check enforces their agreement. A table's facts are one holistic value, not such a set.
 
 Skeleton (single-impl):
 
@@ -147,7 +146,7 @@ Fit rules are body code: body style and the linter apply.
 
 `out` must be total over the expected output grid: a missing cell fails the variant.
 
-Lint findings are violations: a solver with findings is not done.
+In the audit (`--audit`), the sweep lists each fill beyond the stored one that the train pairs accept, with its test verdict. The mutation report lists each deletion that changes no pair's output.
 
 ## Alt outputs
 

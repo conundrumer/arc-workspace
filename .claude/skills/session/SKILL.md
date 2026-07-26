@@ -35,7 +35,8 @@ Do each step individually; never batch them. Create a task per step.
     - Analyze the task: `cat data/tasks/<task_id>.json` (already formatted, do not pipe into anything)
     - Draft from the reference
     - Run against materialized train+test pairs (`uv run python programs/run_dl.py <task_id>`)
-    - Iterate until it works
+    - Iterate until it works and passes lint.
+    - Run the audit (`run_dl.py --audit <task_id>`) and resolve the findings. Raise judgment calls in the review.
 2. Simplify if possible
 3. Prune everything that does not serve the reader — exhaustively, from unnecessary words to irrelevant ideas. Judge necessity from the artifact alone, not from the session.
     - Text copied from prior solvers may not have been pruned; prune it like new text
