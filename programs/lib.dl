@@ -204,6 +204,11 @@ diag_dirs(Diag, A, D1, D2) :- dir_of(Diag, A, D1), perp(A, A2), dir_of(Diag, A2,
 flip_of(AXIS_V, D4_TB).
 flip_of(AXIS_H, D4_LR).
 
+// The D4 reflection across diagonal axis da.
+.decl diag_flip_of(da: DiagAxis, d: D4)
+diag_flip_of(DAXIS_DG, D4_DG).
+diag_flip_of(DAXIS_AD, D4_AD).
+
 // Dir reached by a quarter turn in sense s. opposite is the half turn.
 .decl turn(s: Sense, d: Dir, d_out: Dir)
 turn(SENSE_CW, DIR_T, DIR_R).
