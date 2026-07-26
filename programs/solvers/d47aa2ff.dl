@@ -30,7 +30,8 @@
     only_fill([0, 0, 1, 0], 1).
 
     // --- $Base ---
-    .decl base_panel(p_panel: Position) base_panel([0, 0, 0, 1]).
+    .decl base_panel(p_panel: Position)
+    base_panel([0, 0, 0, 1]). base_panel([0, 0, 1, 0]).
 }
 
 .init c = Consts
