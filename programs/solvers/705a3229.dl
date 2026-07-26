@@ -11,9 +11,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl mark(col: Color, p: Position)
 mark(Col, P) :- in(P, Col), !c.bg(Col).
 
@@ -32,5 +29,3 @@ arm(P, Col) :- rays.ray(Col, P, D), cast(Col, D).
 .decl out(p: Position, col: Color)
 out(P, Col) :- arm(P, Col).
 out(P, Col) :- in(P, Col), !arm(P, _).
-
-.output out(IO=stdout)

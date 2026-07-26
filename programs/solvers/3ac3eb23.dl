@@ -52,9 +52,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // --- shared ---
 
 .decl marker(p: Position, col: Color)
@@ -153,5 +150,3 @@ impl_choice($Stamp()).
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- lit(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !lit(P, _, Ch), c.bg(Col).
-
-.output out(IO=stdout)

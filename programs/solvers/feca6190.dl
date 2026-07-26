@@ -14,9 +14,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // The line's long axis — the longer extent.
 .decl long_axis(a: Axis)
 long_axis(A) :- in(P, _), axis_dims(P, A, N1, N2), N1 > N2.
@@ -47,5 +44,3 @@ rays.mark(P, P) :- seated(P, _).
 .decl out(p: Position, col: Color)
 out(P, Col) :- seated(Q, Col), rays.ray(Q, P, _).
 out(P, Col) :- frame.cell($U(), P), !rays.ray(_, P, _), c.bg(Col).
-
-.output out(IO=stdout)

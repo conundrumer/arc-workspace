@@ -20,9 +20,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // Two cells of one axis-A line differ.
 .decl line_diff(a: Axis, across: Position)
 line_diff(A, Across) :-
@@ -60,5 +57,3 @@ out(P_grid_out, Col, Ch) :-
     in(P_intile, _),
     concat_2d(P_tile, P_intile, 0, P_grid_out),    // tile ⊗ cell → grid
     c.bg(Col).                                     // the whole tile bg
-
-.output out(IO=stdout)

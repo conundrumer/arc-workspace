@@ -23,9 +23,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl mark(p: Position)
 mark(P) :- in(P, Col), !c.bg(Col).
 
@@ -67,5 +64,3 @@ grown(P) :- mark(M), diag_dir_elem(Dg), diag_step_delta(Dg, S), compose(M, S, P)
 
 out(P, Col, $Grow()) :- grown(P), c.out_fill(Col).
 out(P, Col, $Grow()) :- in(P, _), !grown(P), c.bg(Col).
-
-.output out(IO=stdout)

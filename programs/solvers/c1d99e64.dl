@@ -12,9 +12,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // Line along axis a holding ink.
 .decl has_ink(a: Axis, p_across: Position)
 has_ink(A, P_across) :- in(P, Col), !c.bg(Col), axis_elem(A), split(P, A, _, P_across).
@@ -26,5 +23,3 @@ on_bg_line(P) :- in(P, _), axis_elem(A), split(P, A, _, P_across), !has_ink(A, P
 .decl out(p: Position, col: Color)
 out(P, C)   :- on_bg_line(P), c.line(C).
 out(P, Col) :- in(P, Col), !on_bg_line(P).
-
-.output out(IO=stdout)

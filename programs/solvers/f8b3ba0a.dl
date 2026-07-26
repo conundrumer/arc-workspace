@@ -52,9 +52,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // --- $Blocks: component detection ---
 
 .init comps = Components<Unit>
@@ -115,5 +112,3 @@ col.dist_set(Ch, R) :- minority_rank(_, R, Ch).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- minority_rank(Col, Rk, Ch), col.pos(Ch, Rk, P).
-
-.output out(IO=stdout)

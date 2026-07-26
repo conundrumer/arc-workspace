@@ -14,13 +14,8 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl out(p: Position, col: Color)
 out(P_grid_out, Col) :-
     in(P_tile, Col),                                  // input cell as tile pos
     c.intile(P_intile),                               // intile pos (2×2 frame)
     concat_2d(P_tile, P_intile, 0, P_grid_out).       // 2D recompose
-
-.output out(IO=stdout)

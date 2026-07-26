@@ -13,9 +13,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl seated(p_in: Position, p_out: Position)
 seated(P_in, P_out) :- in(P_in, _), c.seat_delta(Delta), compose(P_in, Delta, P_out).
 
@@ -30,5 +27,3 @@ out(P_corner, Col) :-
     seated(P_in, P_out),
     diag_step_delta(Diag, S), compose(P_out, S, P_corner),              // one step past the corner
     c.bg(Col).
-
-.output out(IO=stdout)

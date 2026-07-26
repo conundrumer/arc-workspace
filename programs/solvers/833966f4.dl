@@ -41,9 +41,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl impl_choice(ch: Choice)
 impl_choice($LabeledGrids()).
 impl_choice($Divide()).
@@ -70,5 +67,3 @@ perm(P_grid_in, P_grid_in, $Divide()) :-
 
 .decl out(p: Position, col: Color, c: Choice)
 out(P_grid_out, Col, Impl) :- impl_choice(Impl), in(P_grid_in, Col), perm(P_grid_in, P_grid_out, Impl).
-
-.output out(IO=stdout)

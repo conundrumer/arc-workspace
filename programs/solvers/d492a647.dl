@@ -27,9 +27,6 @@
 .decl impl_choice(ch: Choice)
 impl_choice($Period()). impl_choice($Parity()).
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // The one cell neither bg nor noise.
 .decl seed(p: Position, col: Color)
 seed(P, Col) :- in(P, Col), !c.bg(Col), !c.noise(Col).
@@ -57,5 +54,3 @@ painted(P, Ch) :- lattice(P, Ch), in(P, Col), c.bg(Col).
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- painted(P, Ch), seed(_, Col).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !painted(P, Ch).
-
-.output out(IO=stdout)

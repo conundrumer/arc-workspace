@@ -20,9 +20,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl ink_at(p: Position)
 ink_at(P) :- in(P, Col), !c.bg(Col).
 
@@ -53,5 +50,3 @@ out(P, Col, $Square()) :- in(P, _), !square_kept(P), c.bg(Col).
 
 out(P, Col, $Support()) :- support_kept(P), in(P, Col).
 out(P, Col, $Support()) :- in(P, _), !support_kept(P), c.bg(Col).
-
-.output out(IO=stdout)

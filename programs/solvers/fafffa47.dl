@@ -59,9 +59,6 @@ combine_match.pattern_member(Id, [P_outer, C]) :- c.combine_member(Id, P_outer, 
 combine_match.observed_member([P_grid_out, Dc], [P_tile, C]) :-
     decompose(P_grid_in, P_tile, P_grid_out, Dc), in(P_grid_in, C).
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // --- Decompose cases ---
 
 .decl dec_choice(dc: DecChoice)
@@ -97,5 +94,3 @@ out(P_grid_out, Col, [Dc, $Nor()]) :-
     dec_choice(Dc), c.frame(P_grid_out),        // choice × cell
     filled(P_grid_out, Dc),                     // NOR=0: some contribution
     c.bg(Col).
-
-.output out(IO=stdout)

@@ -24,9 +24,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // Lines flagged by a mark cell on the mark edge.
 .decl marked(p_across: Position, d: Dir, ch: Choice)
 
@@ -59,5 +56,3 @@ impl_choice($Dir()). impl_choice($Edge()).
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- flow(P, Col, _, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !flow(P, _, _, Ch).
-
-.output out(IO=stdout)

@@ -19,9 +19,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // Windows: placements where the shape lands all-bg.
 .init occ = Occurrences<Unit>
 occ.cell($U(), P)  :- in(P, Col), c.bg(Col).
@@ -33,5 +30,3 @@ painted(P) :- occ.occurrence($U(), M), c.shape(S), compose(M, S, P).
 .decl out(p: Position, col: Color)
 out(P, Col) :- painted(P), c.fill(Col).
 out(P, Col) :- in(P, Col), !painted(P).
-
-.output out(IO=stdout)

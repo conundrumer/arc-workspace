@@ -32,9 +32,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl marker_at(p: Position)
 marker_at(P) :- in(P, Col), c.marker(Col).
 
@@ -62,5 +59,3 @@ stamp_halo(P, Col) :-
 
 out(P, Col, $Stamp()) :- stamp_halo(P, Col).
 out(P, Col, $Stamp()) :- in(P, Col), !stamp_halo(P, _).
-
-.output out(IO=stdout)

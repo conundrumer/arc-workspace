@@ -13,9 +13,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .init box = Bbox<Unit>
 box.cell($U(), P) :- in(P, Col), !c.bg(Col).
 box.grid($U(), P) :- in(P, _).
@@ -33,5 +30,3 @@ out(P_grid, Col) :-
     in(P, Col), boxframe.inner(P, P_crop),      // crop cell
     strip.cell($U(), A, P_copy),                // copy index
     concat_slab(P_copy, P_crop, A, 0, P_grid).  // place within the copy
-
-.output out(IO=stdout)

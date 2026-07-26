@@ -35,9 +35,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl impl_choice(ch: Choice)
 impl_choice($Match()).
 impl_choice($Base()).
@@ -86,5 +83,3 @@ out(P, Col, $Match()) :-
 out(P, Col, $Base()) :-
     c.base_panel(P_base), ink(P_base, P, Col),              // base panel ink
     ink(P_panel2, P, _), P_panel2 != P_base.                // backed by the other panel
-
-.output out(IO=stdout)

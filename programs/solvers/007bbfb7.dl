@@ -20,9 +20,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // Output decomposition: tile index × intile position, both input-frame cells.
 .decl cell(p_grid: Position, p_tile: Position, p_intile: Position)
 cell(P_grid_out, P_tile, P_intile) :-
@@ -45,5 +42,3 @@ out(P_grid_out, Col, $Mask()) :-
     cell(P_grid_out, P_tile, P_intile), active(P_intile), in(P_tile, Col).
 out(P_grid_out, Bg, $Mask()) :-
     cell(P_grid_out, _, P_intile), !active(P_intile), c.bg(Bg).
-
-.output out(IO=stdout)

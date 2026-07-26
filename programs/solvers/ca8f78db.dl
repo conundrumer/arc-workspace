@@ -30,9 +30,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl clean(p: Position, col: Color)
 clean(P, Col) :- in(P, Col), !c.noise(Col).
 
@@ -105,5 +102,3 @@ out(P, Col, $Rows()) :-
     pattern_row(Across),                               // pattern row
     clean(Q, Col),                                     // clean source cell
     split(Q, A, Along, Across2), pattern_row(Across2). // same column, pattern row
-
-.output out(IO=stdout)

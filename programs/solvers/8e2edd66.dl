@@ -14,9 +14,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // The input's non-bg color.
 .decl ink(col: Color)
 ink(C) :- in(_, C), !c.bg(C).
@@ -39,5 +36,3 @@ ink_at(P_grid) :-
 .decl out(p: Position, col: Color)
 out(P, C) :- ink_at(P), ink(C).
 out(P, C) :- out_cell(P), !ink_at(P), c.bg(C).
-
-.output out(IO=stdout)

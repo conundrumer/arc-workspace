@@ -29,9 +29,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl out(p: Position, col: Color, c: Choice)
 
 // --- Direct ---
@@ -55,5 +52,3 @@ out(P, Col_out, $Lookup()) :-
     in(P, C_self),                                       // input cell color
     c.mirror(D), apply(D, P, P_m), in(P_m, C_mirror),    // mirror cell color
     c.recolor(C_self, C_mirror, Col_out).
-
-.output out(IO=stdout)

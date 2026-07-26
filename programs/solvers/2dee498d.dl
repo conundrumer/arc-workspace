@@ -15,13 +15,8 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl out(p: Position, col: Color)
 out(P_intile, Col) :-
     in(P_in, Col),                                    // input cell
     c.tile_axis(A), c.tile_count(N),                  // tile params
     divide_slab(P_in, A, N, 0, _, P_intile).          // discard outer; intile is output
-
-.output out(IO=stdout)

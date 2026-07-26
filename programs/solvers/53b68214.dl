@@ -24,9 +24,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // Shifts along c.growth under which the input disagrees with itself
 // somewhere on the overlap.
 .decl shift_bad(k: number)
@@ -71,5 +68,3 @@ out(P2, Col, Ch) :-
     out(P1, Col, Ch),
     period(K), c.growth(D), jump_delta(D, K, Delta), compose(P1, Delta, P2),
     frame.cell(Ch, P2).
-
-.output out(IO=stdout)

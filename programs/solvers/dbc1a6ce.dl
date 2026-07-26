@@ -12,9 +12,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .init spans = Between<Unit>
 spans.axis(A)       :- axis_elem(A).
 spans.cell(P)       :- in(P, Bg), c.bg(Bg).
@@ -23,5 +20,3 @@ spans.mark($U(), Q) :- in(Q, Col), !c.bg(Col).
 .decl out(p: Position, col: Color)
 out(P, F)   :- spans.between($U(), P), c.fill(F).
 out(P, Col) :- in(P, Col), !spans.between($U(), P).
-
-.output out(IO=stdout)

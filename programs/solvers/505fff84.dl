@@ -27,9 +27,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl seg(p: Position, ch: Choice)
 
 // --- Set ---
@@ -103,5 +100,3 @@ out(P_out, Col, Ch) :-
     rows.pos(Ch, Row, P_v),                // the row's out position
     shift.inner([Ch, Row, Col], P_h),      // an out column of that color
     compose(P_v, P_h, P_out).
-
-.output out(IO=stdout)

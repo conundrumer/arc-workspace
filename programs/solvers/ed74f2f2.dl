@@ -48,9 +48,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl slot(p_tile: Position, p_intile: Position, col: Color)
 slot(P_tile, P_intile, Col) :-
     in(P_grid, Col), c.decompose(P_grid, P_tile, P_intile).
@@ -70,5 +67,3 @@ out(P, Col) :-
     target_cell(P, C), !c.bg(C),                           // target ink cell
     key_match.equals($U(), Id), c.key_color(Id, Col).      // key's color
 out(P, C) :- target_cell(P, C), c.bg(C).                   // bg passes through
-
-.output out(IO=stdout)

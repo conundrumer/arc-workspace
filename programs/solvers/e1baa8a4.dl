@@ -10,9 +10,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // Boundary toward d at distance k: some cell on the line at k differs
 // from its neighbor one step toward d.
 .decl boundary(d: Dir, k: number)
@@ -41,5 +38,3 @@ out(P_out, Col) :-
     perp(A1, A2),
     axis_band(A1, P, Pa1), axis_band(A2, P, Pa2),        // both axis parts
     compose(Pa1, Pa2, P_out).                            // glue to 2D
-
-.output out(IO=stdout)

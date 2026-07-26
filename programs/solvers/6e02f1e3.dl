@@ -56,9 +56,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl palette(col: Color)
 palette(Col) :- in(_, Col).
 
@@ -87,5 +84,3 @@ figure_cell(P, Cv) :-
 
 out(P, Mk, $Figure(Cv)) :- figure_cell(P, Cv), c.mark(Mk).
 out(P, Bg, $Figure(Cv)) :- canvas(P, Cv), !figure_cell(P, Cv), c.bg(Bg).
-
-.output out(IO=stdout)

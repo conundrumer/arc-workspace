@@ -25,9 +25,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl out(p: Position, col: Color, c: Choice)
 
 // --- Lookup ---
@@ -73,5 +70,3 @@ unfold_val(T2, P_img, Col) :-
 out(P_grid, Col, $Unfold()) :-
     unfold_val(T, P_intile, Col),
     concat_2d(T, P_intile, 0, P_grid).
-
-.output out(IO=stdout)

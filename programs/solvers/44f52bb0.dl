@@ -49,9 +49,6 @@
 group_match.pattern_member(Id, D) :- c.mapping_sym(Id, D).
 group_match.observed_member($U(), D) :- input_inv(D).
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // D maps some input cell to a position whose color differs.
 .decl non_invariant(d: D4)
 non_invariant(D) :-
@@ -89,5 +86,3 @@ out(P, Col, $Direct()) :- c.asym_out(P, Col),  syms_non_invariant(_).
 
 // $GroupMatch
 out(P, Col, $GroupMatch()) :- best_id(Id), c.mapping_out(Id, P, Col).
-
-.output out(IO=stdout)

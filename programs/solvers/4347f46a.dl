@@ -18,9 +18,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl ink(p: Position)
 ink(P) :- in(P, Col), !c.bg(Col).
 
@@ -57,5 +54,3 @@ impl_choice($Box()). impl_choice($Erode()).
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- interior(P, Ch), c.bg(Col).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !interior(P, Ch).
-
-.output out(IO=stdout)

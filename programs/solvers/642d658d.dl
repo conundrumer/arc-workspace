@@ -40,9 +40,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl arm(p: Position, d: Dir, col: Color)
 arm(P, D, Col) :-
     in(P, _), dir_elem(D),                             // each dir of a cell
@@ -93,5 +90,3 @@ out(ORIGIN, Col, [Dt, $Mode()]) :-
 
 // --- $Count ---
 out(ORIGIN, Col, [Dt, $Count()]) :- plus_count(Dt, Col, N), c.target(N).
-
-.output out(IO=stdout)

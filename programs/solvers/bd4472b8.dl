@@ -28,9 +28,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // The header transposed into a block-tall column: the stacking-axis component
 // of each header cell after the transform. The transform sends the header's
 // width (W) onto the stacking axis, matching the block height (W).
@@ -55,5 +52,3 @@ fill(P_b, Col) :-
 .decl out(p: Position, col: Color)
 out(P, Col) :- in(P, Col), !fill(P, _).          // header + separator pass through
 out(P, Col) :- fill(P, Col).                     // body filled
-
-.output out(IO=stdout)

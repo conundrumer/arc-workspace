@@ -13,9 +13,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl mover_at(p: Position)
 mover_at(P) :- in(P, Col), c.mover(Col).
 
@@ -43,5 +40,3 @@ moved(P) :-
 out(P, Col) :- target_at(P), c.target(Col).
 out(P, Col) :- moved(P), c.mover(Col).
 out(P, Col) :- in(P, _), !target_at(P), !moved(P), c.bg(Col).
-
-.output out(IO=stdout)

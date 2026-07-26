@@ -12,9 +12,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl out(p: Position, col: Color)
 out(P_grid_out, Col) :-
     in(P_tile, Col), in(P_intile, Col),                 // matched: tile & intile share Col
@@ -24,5 +21,3 @@ out(P_grid_out, BG) :-
     in(P_tile, Col_m), in(P_intile, Col_i),             // mismatched: tile & intile distinct
     Col_m != Col_i, c.bg(BG),
     concat_2d(P_tile, P_intile, 0, P_grid_out).         // 2D recompose
-
-.output out(IO=stdout)

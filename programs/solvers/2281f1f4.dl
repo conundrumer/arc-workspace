@@ -26,9 +26,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // Cell in the line of a marker on header edge d.
 .decl marked(p: Position, d: Dir)
 marked(P, D) :-
@@ -61,5 +58,3 @@ selected(P) :- select_edge(D), marked(P, D), dist(P, D, K), K != 0.
 out(P, F, $Stamp())   :- selected(P), c.pattern_edge(Dp), marked(P, Dp), c.fill(F).
 out(P, Bg, $Stamp())  :- selected(P), c.pattern_edge(Dp), !marked(P, Dp), c.bg(Bg).
 out(P, Col, $Stamp()) :- in(P, Col), !selected(P).
-
-.output out(IO=stdout)

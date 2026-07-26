@@ -14,9 +14,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl out(p: Position, col: Color)
 out(P_grid_out, Col) :-
     in(P_tile, C_gate), !c.bg(C_gate),                // gate: tile's input cell non-bg
@@ -27,5 +24,3 @@ out(P_grid_out, Col) :-
     in(P_intile, _),
     concat_2d(P_tile, P_intile, 0, P_grid_out),       // tile ⊗ cell → grid
     c.bg(Col).                                        // the whole tile bg
-
-.output out(IO=stdout)

@@ -13,9 +13,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // Output decomposition: tile index × intile position, both input-frame cells.
 .decl cell(p_grid: Position, p_tile: Position, p_intile: Position)
 cell(P_grid_out, P_tile, P_intile) :-
@@ -35,5 +32,3 @@ out(P_grid_out, Col) :- stamped(P_grid_out, P_tile), in(P_tile, Col).
 out(P_grid_out, Bg) :-
     cell(P_grid_out, _, _), c.bg(Bg),
     !stamped(P_grid_out, _).
-
-.output out(IO=stdout)

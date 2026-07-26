@@ -52,15 +52,10 @@ Skeleton (single-impl):
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // body rules
 
 .decl out(p: Position, col: Color)
 out(...) :- ...
-
-.output out(IO=stdout)
 ```
 
 Skeleton (multi-impl):
@@ -85,9 +80,6 @@ Skeleton (multi-impl):
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // shared body rules
 
 .decl out(p: Position, col: Color, c: Choice)
@@ -97,8 +89,6 @@ out(..., $CaseA()) :- ...
 
 // --- CaseB ---
 out(..., $CaseB()) :- ...
-
-.output out(IO=stdout)
 ```
 
 Cases are grouped under `// --- <name> ---` markers in both Consts and body — no interleaving across cases.
@@ -143,6 +133,8 @@ The single-line form is fine for short rules (≤ ~80 chars).
 Lib primitives are `inline`: each call expands into the calling rule, and Souffle evaluates the expansion once per tuple. Work that is the same for every tuple is not hoisted. A deep primitive chain inside a rule that ranges over many cells can exceed the runner's 5s CPU budget per pair. Compute tuple-independent values, such as deltas derived from Consts data, in their own relation and join them. When a derived per-cell position must also be read backward, materialize it in a comp relation keyed by the cell (`Reframe.inner`); the indexed join replaces the inline chain.
 
 ## Runner contract
+
+`in` is declared in `lib.dl`, and the runner appends the IO directives; of the IO surface, a solver declares only `out`.
 
 `out` must be total over the expected output grid: a missing cell fails the variant.
 

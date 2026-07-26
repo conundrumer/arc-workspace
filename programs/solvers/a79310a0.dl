@@ -16,9 +16,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // Image of the ink under the shift, restricted to in-frame positions.
 .decl shift_image(p: Position)
 shift_image(P_out) :-
@@ -30,5 +27,3 @@ shift_image(P_out) :-
 .decl out(p: Position, col: Color)
 out(P, Col) :- shift_image(P), c.mark(Col).
 out(P, Col) :- in(P, _), !shift_image(P), c.bg(Col).
-
-.output out(IO=stdout)

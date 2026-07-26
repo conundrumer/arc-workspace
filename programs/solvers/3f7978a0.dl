@@ -26,9 +26,6 @@
 .decl impl_choice(ch: Choice)
 impl_choice($Cap()). impl_choice($Grow()).
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl bar(p: Position)
 bar(P) :- in(P, Col), c.bar(Col).
 
@@ -53,5 +50,3 @@ boxframe.cell([Ch, P], P)  :- box.inside(Ch, P).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P_out, Col, Ch) :- in(P, Col), boxframe.inner([Ch, P], P_out).
-
-.output out(IO=stdout)

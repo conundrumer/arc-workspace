@@ -21,9 +21,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // Cell count per non-bg color.
 .decl color_count(col: Color, n: number)
 color_count(Col, N) :-
@@ -45,5 +42,3 @@ col.dist_set($U(), R) :- color_rank(_, R).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- color_rank(Col, Rk), col.pos($U(), Rk, P).
-
-.output out(IO=stdout)

@@ -57,9 +57,6 @@ impl_choice($Slide()). impl_choice($Bg()). impl_choice($Label()).
 .decl sym_choice(ch: Choice)
 sym_choice($Slide()). sym_choice($Bg()).
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl intact(p: Position, col: Color)
 intact(P, Col) :- in(P, Col), !c.hole(Col).
 
@@ -126,5 +123,3 @@ out(P, Col, $Bg()) :- residual(P), !on_fix(P), dominant(Col).
 label_color(Id, Col) :- c.label(P, Id), intact(P, Col).
 
 out(P, Col, $Label()) :- hole(P), c.label(P, Id), label_color(Id, Col).
-
-.output out(IO=stdout)

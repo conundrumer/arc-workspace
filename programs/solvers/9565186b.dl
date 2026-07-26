@@ -18,9 +18,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl keep(p: Position, ch: Choice)
 
 // --- $Count ---
@@ -59,5 +56,3 @@ impl_choice($Count()). impl_choice($BlobColor()). impl_choice($Blob()).
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- keep(P, Ch), in(P, Col).
 out(P, Col, Ch) :- in(P, _), impl_choice(Ch), !keep(P, Ch), c.mark(Col).
-
-.output out(IO=stdout)

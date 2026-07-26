@@ -12,9 +12,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // Ring index: distance to the nearest edge.
 .decl cell_dist(p: Position, d: Dir, k: number)
 cell_dist(P, D, K) :- in(P, _), dir_elem(D), dist(P, D, K).
@@ -36,5 +33,3 @@ rev(K, K2) :-
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- ring(P, K), rev(K, K2), ring_color(K2, Col).
-
-.output out(IO=stdout)

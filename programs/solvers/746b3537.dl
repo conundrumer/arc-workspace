@@ -12,9 +12,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // A line along axis a shows two colors.
 .decl broken(a: Axis)
 broken(A) :-
@@ -49,5 +46,3 @@ out(P_out, Col) :-
     run_start(D, K, Col), runs.rank(D, K, R),    // run and its rank from d
     axis_of(D, A), seq.cell($U(), A, P_out),     // output line cell
     dist(P_out, D, R).                           // seated r from d
-
-.output out(IO=stdout)

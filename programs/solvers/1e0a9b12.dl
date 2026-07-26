@@ -12,9 +12,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // Cell split on the gravity axis: across names its line, k places it
 // within the line as dist to the gravity edge.
 .decl place(p: Position, p_across: Position, k: number)
@@ -37,5 +34,3 @@ fallen(Q, Col) :-
 .decl out(p: Position, col: Color)
 out(P, Col) :- fallen(P, Col).
 out(P, Col) :- in(P, _), c.bg(Col), !fallen(P, _).
-
-.output out(IO=stdout)

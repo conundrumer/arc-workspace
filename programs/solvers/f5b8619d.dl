@@ -20,9 +20,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // Bg cell on a marker's line.
 .decl marked(p: Position)
 marked(P) :-
@@ -39,5 +36,3 @@ out(P_grid_out, Col) :-
     repainted(P_in, Col),                      // repainted-input cell
     c.tile(P_tile),                            // tile-frame pos
     concat_2d(P_tile, P_in, 0, P_grid_out).    // recompose
-
-.output out(IO=stdout)

@@ -19,9 +19,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl out(p: Position, col: Color, ch: Choice)
 
 // --- Flank ---
@@ -45,5 +42,3 @@ spans.mark($U(), Q) :- in(Q, Dot), c.dot(Dot).
 
 out(P, F, $Span())   :- spans.between($U(), P), c.fill(F).
 out(P, Col, $Span()) :- in(P, Col), !spans.between($U(), P).
-
-.output out(IO=stdout)

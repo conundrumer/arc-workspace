@@ -22,9 +22,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // Cell with its line index from the anchor edge.
 .decl cell_line(p: Position, col: Color, r: number)
 cell_line(P, Col, R) :- in(P, Col), c.flow(D), opposite(D, O), dist(P, O, R).
@@ -94,5 +91,3 @@ impl_choice($Stamp()). impl_choice($Tile()).
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- copy(P, Col, Ch).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !copied(P, Ch).
-
-.output out(IO=stdout)

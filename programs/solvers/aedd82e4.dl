@@ -23,9 +23,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl ink_at(p: Position)
 ink_at(P) :- in(P, Col), !c.bg(Col).
 
@@ -45,5 +42,3 @@ out(P, Col, $Passthrough()) :- in(P, Col), !isolated(P).
 out(P, Col, $Repaint()) :- isolated(P), c.mark(Col).
 out(P, Col, $Repaint()) :- grouped(P), c.ink(Col).
 out(P, Col, $Repaint()) :- in(P, _), !ink_at(P), c.bg(Col).
-
-.output out(IO=stdout)

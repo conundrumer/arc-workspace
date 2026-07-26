@@ -21,9 +21,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl out(p: Position, col: Color, ch: Choice)
 
 // --- $Ink ---
@@ -48,5 +45,3 @@ self_spanned(P) :- self_spans.between(_, P).
 
 out(P, Col, $Self()) :- self_spans.between(Col, P).
 out(P, Col, $Self()) :- in(P, Col), !self_spanned(P).
-
-.output out(IO=stdout)

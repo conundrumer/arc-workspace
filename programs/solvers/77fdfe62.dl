@@ -33,9 +33,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // The four corner colors, keyed by their corner.
 .decl corner_color(diag: DiagDir, col: Color)
 corner_color(Diag, Col) :- in(P, Col), diag_dist(P, Diag, _, 0, 0).
@@ -102,5 +99,3 @@ out(I, Col, [Ic, $Pass()]) :- in(P, Col), !c.ink(Col), frame.inner([P, Ic], I).
 // --- $Bg ---
 
 out(I, Col, [Ic, $Bg()]) :- in(P, C0), !c.ink(C0), frame.inner([P, Ic], I), c.bg(Col).
-
-.output out(IO=stdout)

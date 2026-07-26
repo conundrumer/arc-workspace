@@ -47,9 +47,6 @@
 .decl impl_choice(ch: Choice)
 impl_choice($Line()). impl_choice($Map()).
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // Cells of the key block.
 .decl key_cell(p: Position)
 key_cell(P) :-
@@ -78,5 +75,3 @@ mapping(C1, C2, $Map()) :-
 out(P, Col, Ch)     :- impl_choice(Ch), in(P, Col), key_cell(P).
 out(P, Col_out, Ch) :- in(P, Col_in), !key_cell(P), mapping(Col_in, Col_out, Ch).
 out(P, Col, Ch)     :- impl_choice(Ch), in(P, Col), !key_cell(P), !mapping(Col, _, Ch).
-
-.output out(IO=stdout)

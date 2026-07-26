@@ -30,9 +30,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl out(p: Position, col: Color, c: Choice)
 
 // --- Center ---
@@ -54,5 +51,3 @@ tile_cell(P) :-
 
 out(P, Col, $Gap()) :- in(P, Col), !tile_cell(P).
 out(P, Col, $Gap()) :- tile_cell(P), c.bg(Col).
-
-.output out(IO=stdout)

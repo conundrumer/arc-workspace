@@ -11,9 +11,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // Colors on the line along axis a at p_across.
 .decl line_color(a: Axis, p_across: Position, col: Color)
 line_color(A, P_across, Col) :- in(P, Col), axis_elem(A), split(P, A, _, P_across).
@@ -24,5 +21,3 @@ broken(A, P_across) :- line_color(A, P_across, C1), line_color(A, P_across, C2),
 
 .decl out(p: Position, col: Color)
 out(ORIGIN, Col) :- line_color(A, P_across, Col), !broken(A, P_across).
-
-.output out(IO=stdout)

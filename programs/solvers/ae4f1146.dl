@@ -27,9 +27,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl out(p: Position, col: Color, ch: Choice)
 
 // --- $Object ---
@@ -76,5 +73,3 @@ window_marks(A, N) :-
 window_winner(A) :- window_marks(A, N), N = max M : { window_marks(_, M) }.
 
 out(P_out, Col, $Window()) :- window_winner(A), window_cell(A, P_out, P), in(P, Col).
-
-.output out(IO=stdout)

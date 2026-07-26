@@ -22,9 +22,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // Per-slice replacement color, parameterized by impl choice.
 .decl slice_repl(p_across: Position, col: Color, c: Choice)
 
@@ -48,5 +45,3 @@ out(P, Repl, Impl) :-
     c.axis(A), split(P, A, _, P_across),
     slice_repl(P_across, Repl, Impl).
 out(P, Col, Impl) :- impl_choice(Impl), in(P, Col), !c.targets(Col).
-
-.output out(IO=stdout)

@@ -14,9 +14,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl copy_count(n: number)
 copy_count(N) :- N = count : { in(P, Col), !c.bg(Col) }.
 
@@ -42,5 +39,3 @@ out(P_grid, Col) :-
     tiles.cell($U(), P_tile), !copy(P_tile),
     in(P_intile, _), c.bg(Col),
     concat_2d(P_tile, P_intile, 0, P_grid).
-
-.output out(IO=stdout)

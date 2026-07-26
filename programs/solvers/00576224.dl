@@ -39,9 +39,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl out(p: Position, col: Color, c: Choice)
 
 // --- Lookup ---
@@ -82,5 +79,3 @@ out(P_grid, Col, $Mid()) :-
     in(P_in, Col),
     c.arr_pos(T), c.anchor(D), dist_pair(T, D, K1, K2), K1 != K2,   // off-center band
     concat_2d(T, P_in, 0, P_grid).
-
-.output out(IO=stdout)

@@ -9,9 +9,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl palette(col: Color)
 palette(Col) :- in(_, Col).
 
@@ -23,5 +20,3 @@ out(P_grid, Col) :-
     in(P_intile, Col),                              // input cell as intile pos
     arr.cell($U(), P_tile),                         // tile pos (N×N arrangement)
     concat_2d(P_tile, P_intile, 0, P_grid).         // 2D recompose
-
-.output out(IO=stdout)

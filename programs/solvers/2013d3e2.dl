@@ -24,9 +24,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl ink(p: Position)
 ink(P) :- in(P, Col), !c.bg(Col).
 
@@ -58,5 +55,3 @@ out(P_out, Col, $Window()) :-
     box_cell(P_box, Col),
     win.cell($U(), P_out),
     c.corner(Diag), corner_anchor(Diag, P_box, P_out).   // same dists to the corner
-
-.output out(IO=stdout)

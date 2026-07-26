@@ -62,9 +62,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // --- Decompose cases ---
 
 .decl dec_choice(dc: DecChoice)
@@ -117,5 +114,3 @@ out(O, Col, [Dc, B]) :-
 out(O, Bg, [Dc, B]) :-
     dec_choice(Dc), body_choice(B), c.frame(O),   // choice × cell
     c.bg(Bg), !cand(O, _, _, Dc).
-
-.output out(IO=stdout)

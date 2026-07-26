@@ -38,9 +38,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl out(p: Position, col: Color, c: Choice)
 
 // --- Lookup ---
@@ -64,5 +61,3 @@ out(P_grid, Col, $Unfold()) :-
     unfold_val(T, P_intile, Col),
     c.tile_axis(A), c.tile_gap(G),
     concat_slab(T, P_intile, A, G, P_grid).
-
-.output out(IO=stdout)

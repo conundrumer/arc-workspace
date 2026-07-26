@@ -89,9 +89,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // --- shared ---
 
 // The block: the non-bg cells, mark included.
@@ -207,5 +204,3 @@ pair_rot(R) :- c4_elem(R), !pair_mismatch(R).
 
 // Canvas and colors both come from the stored output.
 out(Q, Col, $Pair()) :- pair_rot(R), c.pair_out(Pm, Col), apply(R, Pm, Q).
-
-.output out(IO=stdout)

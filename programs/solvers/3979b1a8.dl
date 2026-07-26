@@ -27,9 +27,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // Per-case output frame and input placement.
 .decl frame_cell(c: Choice, p_grid: Position)
 .decl placed(c: Choice, p_grid: Position, p_in: Position)
@@ -93,5 +90,3 @@ out(P, Col, Ch) :-
     frame_cell(Ch, P), !in_region(Ch, P),                           // outside the input
     axis_of(D1, A), split(P, A, Along, _), split(M, A, Along, _),   // in the stepped line
     opposite(D2, O), dist(P, O, Kp), dist(M, O, Km), Kp <= Km.      // at or back across
-
-.output out(IO=stdout)

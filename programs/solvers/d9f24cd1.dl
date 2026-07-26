@@ -27,9 +27,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // The walk: starts at each mark, headed away from the mark edge; steps
 // ahead while clear; deflects one cell to the dodge side when blocked.
 .decl walk(p: Position, d: Dir, ch: Choice)
@@ -62,5 +59,3 @@ impl_choice($Dir()). impl_choice($Edge()).
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- walk(P, _, Ch), c.mark(Col).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !walk(P, _, Ch).
-
-.output out(IO=stdout)

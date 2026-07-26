@@ -15,9 +15,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl ink(p: Position, col: Color)
 ink(P, Col) :- in(P, Col), !c.bg(Col).
 
@@ -50,5 +47,3 @@ out(P_grid, Col) :-
     tile_content(P_intile, Col),
     arr.cell($U(), P_tile),
     concat_2d(P_tile, P_intile, 0, P_grid).
-
-.output out(IO=stdout)

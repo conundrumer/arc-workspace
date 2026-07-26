@@ -46,9 +46,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .init dp = DiagPlacement<Unit>
 dp.cell($U(), P) :- in(P, _).
 
@@ -119,5 +116,3 @@ covered(P, Ch) :- seated(P, _, Ch).
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- seated(P, Col, Ch).
 out(P, Col, Ch) :- frame.cell(Ch, P), !covered(P, Ch), c.filler(Col).
-
-.output out(IO=stdout)

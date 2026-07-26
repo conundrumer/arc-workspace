@@ -26,9 +26,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl mark(p: Position, col: Color)
 mark(P, Col) :- in(P, Col), !c.bg(Col).
 
@@ -104,5 +101,3 @@ out(P, Col, $Half()) :-
     in(P, _),                                           // grid cell
     c.axis(A), split(P, A, _, Ac), !owner(Ac, _, _),    // markless row
     c.bg(Col).
-
-.output out(IO=stdout)

@@ -15,9 +15,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // The push grows one slot of the slide axis; the complementary growth on
 // the other slot keeps the widened frame consistent.
 .decl shear(p_in: Position, p_out: Position)
@@ -43,5 +40,3 @@ frame(P) :-
 .decl out(p: Position, col: Color)
 out(P_out, Col) :- in(P_in, Col), shear(P_in, P_out).
 out(P, Col) :- frame(P), !image(P), c.bg(Col).
-
-.output out(IO=stdout)

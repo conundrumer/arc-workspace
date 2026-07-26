@@ -24,9 +24,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl out(p: Position, col: Color)
 out(P_grid_out, Col) :-
     in(P_grid_in, Col),                          // input cell
@@ -34,5 +31,3 @@ out(P_grid_out, Col) :-
     c.frame(P_anchor),                           // anchored 2×2 position
     corner_anchor(Diag, P_anchor, P_grid_in),    // P_anchor matches input at quadrant corner
     apply(D, P_anchor, P_grid_out).              // P_grid_out = D4 applied to P_anchor
-
-.output out(IO=stdout)

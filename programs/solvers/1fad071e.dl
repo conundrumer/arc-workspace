@@ -44,9 +44,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // Cells of the counted color.
 .decl on(p: Position)
 on(P) :- in(P, C), c.block_color(C).
@@ -106,5 +103,3 @@ bar_mark(Col, $Counted()) :- c.block_color(Col).
 out(P, Col, [Det, M]) :- marked(P, Det), bar_mark(Col, M).
 out(P, BG,  [Det, M]) :-
     c.out_pos(P), total(_, Det), !marked(P, Det), bar_mark(_, M), c.bg(BG).
-
-.output out(IO=stdout)

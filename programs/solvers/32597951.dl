@@ -24,9 +24,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .init box = Bbox<Unit>
 box.cell($U(), P) :- in(P, Col), c.marker(Col).
 box.grid($U(), P) :- in(P, _).
@@ -45,5 +42,3 @@ recolor(P, $Ink()) :- box.inside($U(), P), in(P, Col), !c.bg(Col), !c.marker(Col
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- recolor(P, Ch), c.to(Col).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !recolor(P, Ch).
-
-.output out(IO=stdout)

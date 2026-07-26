@@ -19,9 +19,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // Ink seen from corner Diag lands on the frame cell at the same distances
 // to that corner's edges; the frame extent bounds each block.
 .decl contribution(p_out: Position, col: Color)
@@ -33,5 +30,3 @@ contribution(P_out, Col) :-
 .decl out(p: Position, col: Color)
 out(P, Col) :- contribution(P, Col).
 out(P, Col) :- c.frame(P), !contribution(P, _), c.bg(Col).
-
-.output out(IO=stdout)

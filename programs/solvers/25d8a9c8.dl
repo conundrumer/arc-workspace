@@ -47,9 +47,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // Cell decomposition along c.axis: each input cell as (p, col, p_inner, p_across).
 .decl cell_split(p: Position, col: Color, p_inner: Position, p_across: Position) inline
 cell_split(P, Col, P_inner, P_across) :-
@@ -101,5 +98,3 @@ out(P, Col, [$Count(), $PerCell()]) :-
 out(P, Col, [$Count(), $SliceMap()]) :-
     cell_split(P, _, P_inner, P_across),
     distinct_count(P_across, N), c.count_template(N, P_inner, Col).
-
-.output out(IO=stdout)

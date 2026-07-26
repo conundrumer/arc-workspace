@@ -26,9 +26,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // Each dot cell with its dist from the anchor edge.
 .decl dot_dist(p: Position, k: number)
 dot_dist(P, K) :- in(P, Dot), c.dot(Dot), c.anchor(D), dist(P, D, K).
@@ -57,5 +54,3 @@ seq_marked(P) :-
 
 out(P, M, $Sequence())   :- seq_marked(P), c.mark(M).
 out(P, Col, $Sequence()) :- in(P, Col), !seq_marked(P).
-
-.output out(IO=stdout)

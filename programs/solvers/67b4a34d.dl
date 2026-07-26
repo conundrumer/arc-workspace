@@ -23,9 +23,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl clean(p: Position, col: Color)
 clean(P, Col) :- in(P, Col), !c.mask(Col).
 
@@ -62,5 +59,3 @@ out(P_out, Col, $Detect()) :-
     boxframe.inner(P, P_out),                   // masked cell in the box frame
     d4_elem(D), !broken(D), apply(D, P, P2),    // unbroken-symmetry image
     clean(P2, Col).
-
-.output out(IO=stdout)

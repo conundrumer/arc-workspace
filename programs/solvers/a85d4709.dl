@@ -48,9 +48,6 @@
 slice_match.pattern_member(Id, [P_inner, C]) :- c.mapping_member(Id, P_inner, C).
 slice_match.observed_member(P_across, [P_inner, C]) :- slice_cell(P_across, P_inner, C).
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl cell_split(p: Position, p_inner: Position, p_across: Position) inline
 cell_split(P, P_inner, P_across) :- in(P, _), c.axis(A), split(P, A, P_inner, P_across).
 
@@ -73,5 +70,3 @@ out(P, Out_C, $MarkerPosition()) :-
     in(P_mark, MC), c.marker(MC),
     cell_split(P_mark, P_inner_mark, P_across),
     c.position_color(P_inner_mark, Out_C).
-
-.output out(IO=stdout)

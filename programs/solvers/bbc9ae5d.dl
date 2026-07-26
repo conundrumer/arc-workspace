@@ -21,9 +21,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // The line's long axis — the longer extent.
 .decl long_axis(a: Axis)
 long_axis(A) :- in(P, _), axis_dims(P, A, N1, N2), N1 > N2.
@@ -81,5 +78,3 @@ anchor_color(Col) :-
 
 out(P, Col, $Slide()) :- slid(P, Col).
 out(P, Col, $Slide()) :- frame.cell($U(), P), !slid(P, _), anchor_color(Col).
-
-.output out(IO=stdout)

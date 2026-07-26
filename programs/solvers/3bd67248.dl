@@ -32,9 +32,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // --- shared ---
 
 .decl bg_cell(p: Position)
@@ -128,5 +125,3 @@ painted_we(P) :- paint_we(P, _).
 
 out(P, Col, $WallEnd()) :- paint_we(P, Col).
 out(P, Col, $WallEnd()) :- in(P, Col), !painted_we(P).
-
-.output out(IO=stdout)

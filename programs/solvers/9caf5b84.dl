@@ -24,9 +24,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl color_count(col: Color, n: number)
 color_count(Col, N) :- in(_, Col), N = count : { in(P, Col) }.
 
@@ -54,5 +51,3 @@ impl_choice($Keep()). impl_choice($Drop()).
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- in(P, Col), survives(Col, Ch).
 out(P, Col, Ch) :- in(P, C0), impl_choice(Ch), !survives(C0, Ch), c.mark(Col).
-
-.output out(IO=stdout)

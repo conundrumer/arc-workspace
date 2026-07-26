@@ -47,9 +47,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // --- shared: the marker identifies the target color ---
 
 .decl target_pos(p: Position)
@@ -88,5 +85,3 @@ out(P, Bg, $Marker()) :- in(P, Col), target_color(Col), !target_pos(P), c.bg(Bg)
 out(P, Col, $Bbox()) :- in(P, Col), !target_color(Col).                               // non-target passes
 out(P, Col, $Bbox()) :- in(P, Col), box.inside($U(), P).                              // region kept
 out(P, Bg, $Bbox()) :- in(P, Col), target_color(Col), !box.inside($U(), P), c.bg(Bg). // target outside region erased
-
-.output out(IO=stdout)

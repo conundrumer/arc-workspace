@@ -12,9 +12,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl ink(p: Position, col: Color)
 ink(P, Col) :- in(P, Col), !c.bg(Col).
 
@@ -30,5 +27,3 @@ boxframe.cell(P, P)  :- box.inside($U(), P).
 .decl out(p: Position, col: Color)
 out(P_out, Col) :- ink(P, Col), boxframe.inner(P, P_out).
 out(P_out, Col) :- in(P, C), c.bg(C), c.hole(Col), boxframe.inner(P, P_out).
-
-.output out(IO=stdout)

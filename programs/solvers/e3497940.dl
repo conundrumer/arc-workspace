@@ -37,9 +37,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // --- Decompose cases ---
 
 .decl dec_choice(ch: Choice)
@@ -79,5 +76,3 @@ out(P, Col, Ch) :- fold_ink(P, Col, Ch).
 out(P, Col, Ch) :-
     dec_choice(Ch), c.frame(P), c.bg(Col),
     !base_ink(P, _, Ch), !fold_ink(P, _, Ch).
-
-.output out(IO=stdout)

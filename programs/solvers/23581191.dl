@@ -17,9 +17,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // P lies on the cross of mark Q: shares Q's line on some axis.
 .decl cross(p: Position, q: Position, col: Color)
 cross(P, Q, Col) :-
@@ -42,5 +39,3 @@ impl_choice($Color()). impl_choice($Mark()).
 out(P, Col, Ch) :- collide(Ch, P), c.cross_color(Col).
 out(P, Col, Ch) :- impl_choice(Ch), cross(P, _, Col), !collide(Ch, P).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !cross(P, _, _), c.bg(Col).
-
-.output out(IO=stdout)

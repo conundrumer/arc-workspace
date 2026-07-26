@@ -28,9 +28,6 @@
 .decl impl_choice(ch: Choice)
 impl_choice($Fixed()). impl_choice($Palette()).
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // Unit step along the stripe: toward each corner of the stripe axis.
 .decl stripe_step(delta: Position)
 stripe_step(Delta) :-
@@ -58,5 +55,3 @@ known(Q, Col, Ch) :- known(P, Col, Ch), period_jump(D, Ch), compose(P, D, Q), in
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- known(P, Col, Ch).
-
-.output out(IO=stdout)

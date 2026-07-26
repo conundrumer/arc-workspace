@@ -32,9 +32,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // --- shared ---
 
 .decl mark(p: Position, col: Color)
@@ -76,5 +73,3 @@ ray_mask(M, Q, K2) :-
 out(P, Col, $Mask()) :- ray_mask(_, P, K), c.mask(K, Col).    // overridden slot
 out(P, M,   $Mask()) :- ray_mask(M, P, K), !c.mask(K, _).     // unmarked slot echoes the dot
 out(P, Col, $Mask()) :- in(P, Col), !ray_mask(_, P, _).
-
-.output out(IO=stdout)

@@ -41,9 +41,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl out(p: Position, col: Color, c: Choice)
 
 // --- $Stripes ---
@@ -78,5 +75,3 @@ interior_tile(P) :-
 out(P, Col, $Inset()) :- in(P, _), is_border(P),                       c.bg(Col).
 out(P, Col, $Inset()) :- in(P, _), interior_tile(P),                   c.dot(Col).
 out(P, Col, $Inset()) :- in(P, _), !is_border(P), !interior_tile(P),   c.bg(Col).
-
-.output out(IO=stdout)

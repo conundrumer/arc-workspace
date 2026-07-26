@@ -35,9 +35,6 @@
     has_sym(K) :- cell(K, _, _), d4_elem(D), D != D4_ID, !broken(K, D).
 }
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl tile_val(p_tile: Position, p_intile: Position, col: Color)
 tile_val(T, P, Col) :-
     in(P_grid, Col),
@@ -54,5 +51,3 @@ out(P, Col, $Shared()) :- tile_val(T, P, Col), c.sym(F), inv.broken(T, F).
 
 // --- $Asym ---
 out(P, Col, $Asym()) :- tile_val(T, P, Col), !inv.has_sym(T).
-
-.output out(IO=stdout)

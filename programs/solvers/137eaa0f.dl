@@ -31,9 +31,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl mark(p: Position)
 mark(A) :- in(A, Col), c.key(Col).
 
@@ -79,5 +76,3 @@ oframe.cell(D, D)  :- obox.inside($U(), D).
 
 out(P_out, Col, $Object()) :- obj_off(D, Col), oframe.inner(D, P_out).
 out(P_out, Bg, $Object())  :- oframe.inner(D, P_out), !obj_off(D, _), c.bg(Bg).
-
-.output out(IO=stdout)

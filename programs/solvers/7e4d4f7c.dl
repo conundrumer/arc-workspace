@@ -27,9 +27,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // Background color: most-frequent color in the input.
 .decl color_count(c: Color, n: number)
 color_count(C, N) :- in(_, C), N = count : { in(_, C) }.
@@ -73,5 +70,3 @@ out(P_out, Col_out) :-
     in(P_in, Col_in), dist(P_in, H_dir, 0),               // input depth 0
     split(P_in, A, _, Ac), split(P_out, A, _, Ac),        // same column
     tail_color(Col_in, Col_out).                          // recolor
-
-.output out(IO=stdout)

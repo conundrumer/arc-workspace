@@ -14,9 +14,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl tile_ink(p_tile: Position, col: Color)
 tile_ink(P_tile, Col) :-
     in(P, Col), !c.bg(Col),
@@ -39,5 +36,3 @@ subf.extent($U(), A, S) :- axis_elem(A), c.scale(S).
 out(P_out, Col) :-
     render(P_in, Col),
     subf.cell($U(), P_sub), concat_2d(P_in, P_sub, 0, P_out).
-
-.output out(IO=stdout)

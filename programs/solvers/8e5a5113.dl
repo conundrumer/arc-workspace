@@ -40,9 +40,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl tile_cell(p_grid: Position, p_tile: Position, p_intile: Position)
 tile_cell(P_grid, P_tile, P_intile) :-
     in(P_grid, _),                                       // grid cell
@@ -77,5 +74,3 @@ out(P_grid, Col, $Lookup()) :-
     src(_, P_src, Col),                                  // pattern cell
     c.tile_d4(P_tile, D), apply(D, P_src, P_intile),     // d4 image at tile
     tile_cell(P_grid, P_tile, P_intile).                 // recompose
-
-.output out(IO=stdout)

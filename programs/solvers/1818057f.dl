@@ -29,9 +29,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl field_at(p: Position)
 field_at(P) :- in(P, Col), c.field(Col).
 
@@ -61,5 +58,3 @@ out(P, Col, $Shape()) :- in(P, Col), !shape_covered(P).
 
 out(P, Col, $Flank()) :- flank_covered(P), c.mark(Col).
 out(P, Col, $Flank()) :- in(P, Col), !flank_covered(P).
-
-.output out(IO=stdout)

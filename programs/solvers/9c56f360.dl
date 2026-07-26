@@ -25,9 +25,6 @@
 .decl impl_choice(ch: Choice)
 impl_choice($Wall()). impl_choice($Solid()).
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // Cell split on the slide axis: across names its line, k places it
 // within the line as dist to the dir edge.
 .decl place(p: Position, p_across: Position, k: number)
@@ -90,5 +87,3 @@ moved(Ch, P2) :-
 out(P, Col, Ch) :- c.mover(Col), moved(Ch, P).
 out(P, Col, Ch) :- c.bg(Col), impl_choice(Ch), mover(P), !moved(Ch, P).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !mover(P), !moved(Ch, P).
-
-.output out(IO=stdout)

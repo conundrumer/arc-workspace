@@ -21,9 +21,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl out(p: Position, col: Color, ch: Choice)
 
 // --- Axis ---
@@ -45,5 +42,3 @@ iso_spans.mark($U(), Q) :- in(Q, Col), !c.bg(Col).
 
 out(P, F, $Iso())   :- iso_spans.between($U(), P), c.fill(F).
 out(P, Col, $Iso()) :- in(P, Col), !iso_spans.between($U(), P).
-
-.output out(IO=stdout)

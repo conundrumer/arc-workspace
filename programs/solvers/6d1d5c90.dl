@@ -30,9 +30,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // The marker cell in the band, under each model.
 .decl marker(p: Position, ch: Choice)
 
@@ -88,5 +85,3 @@ out(P_out, Col, Ch) :-
     c.marker_edge(ME), opposite(ME, OE), dist(P_in, OE, K),       // far-edge column
     cols.pos($U(), K, P_col),                                     // placed in the narrowed frame
     compose(P_v_out, P_col, P_out).
-
-.output out(IO=stdout)

@@ -39,9 +39,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl impl_choice(ch: Choice)
 impl_choice($Tile()). impl_choice($Checker()).
 
@@ -82,5 +79,3 @@ checker(P2, Col2) :-
 
 out(P_grid_out, Col, $Checker()) :-
     inked(P_grid_out, _), checker(P_grid_out, Col).
-
-.output out(IO=stdout)

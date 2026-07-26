@@ -33,9 +33,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl shape(p: Position, col: Color)
 shape(P, Col) :- in(P, Col), !c.bg(Col).
 
@@ -90,5 +87,3 @@ impl_choice($Quad()). impl_choice($Stretch()). impl_choice($Explode()). impl_cho
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- target(P, Col, Ch).
 out(P, Bg, Ch)  :- impl_choice(Ch), in(P, _), c.bg(Bg), !target(P, _, Ch).
-
-.output out(IO=stdout)

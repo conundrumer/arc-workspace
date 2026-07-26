@@ -23,9 +23,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // Canvas color: most-frequent color in the input.
 .decl color_count(c: Color, n: number)
 color_count(C, N) :- in(_, C), N = count : { in(_, C) }.
@@ -48,5 +45,3 @@ marked(T, Ch) :- in(P, Col), c.mark(Col), tile_of(P, T, Ch).
 .decl out(p: Position, col: Color, ch: Choice)
 out(T, Col, Ch) :- marked(T, Ch), c.mark(Col).
 out(T, Col, Ch) :- tile_of(_, T, Ch), !marked(T, Ch), canvas(Col).
-
-.output out(IO=stdout)

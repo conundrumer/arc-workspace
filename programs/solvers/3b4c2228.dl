@@ -61,9 +61,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // Cells of the counted color.
 .decl on(p: Position)
 on(P) :- in(P, C), c.block_color(C).
@@ -123,5 +120,3 @@ out(P, BG,   [Det, $Tally()]) :- c.out_pos(P), total(_, Det), !marked(P, Det), c
 
 // Lookup (data) — select the stored grid for the count.
 out(P, Col, [Det, $Lookup()]) :- total(N, Det), c.lookup_grid(N, P, Col).
-
-.output out(IO=stdout)

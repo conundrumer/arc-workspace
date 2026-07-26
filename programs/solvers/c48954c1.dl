@@ -31,9 +31,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // Tile centered / off-center along an axis.
 .decl axis_centered(p_tile: Position, a: Axis)
 axis_centered(T, A) :- c.arr_pos(T), axis_of(D, A), dist_pair(T, D, K, K).
@@ -80,5 +77,3 @@ unfold_val(T2, P_img, Col) :-
 out(P_grid, Col, $Unfold()) :-
     unfold_val(T, P_intile, Col),
     concat_2d(T, P_intile, 0, P_grid).
-
-.output out(IO=stdout)

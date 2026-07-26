@@ -46,9 +46,6 @@
 slice_match.pattern_member(0, [P, Col]) :- c.slice_in(P, Col).
 slice_match.observed_member(P_across, [P_inner, Col]) :- cell_split(_, Col, P_inner, P_across).
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // Cell decomposition along axis_of(c.fall_to).
 .decl cell_split(p: Position, col: Color, p_inner: Position, p_across: Position) inline
 cell_split(P, Col, P_inner, P_across) :-
@@ -91,5 +88,3 @@ out(P, Col, $SliceMap()) :-
 out(P, Col, $SliceMap()) :-
     cell_split(P, Col, _, P_across),
     !matched_slice(P_across).
-
-.output out(IO=stdout)

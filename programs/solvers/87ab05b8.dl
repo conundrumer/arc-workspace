@@ -38,9 +38,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // The marker cell.
 .decl marker(p: Position)
 marker(P) :- in(P, Col), c.marker(Col).
@@ -90,5 +87,3 @@ out(P, Col, [L, F]) :- region(P, L), fill_color(Col, F).
 out(P, Col, [L, F]) :-
     in(P, _), locate_choice(L), !region(P, L),    // cell outside the region
     fill_choice(F), c.bg(Col).
-
-.output out(IO=stdout)

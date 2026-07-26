@@ -155,9 +155,14 @@ def expand_grid_macros(source: str) -> str:
     return f"// Generated GRID_HxW expansions.\n{macros}\n\n{source}"
 
 
+# Per-mode IO directives, appended to every solver source. Solve is the
+# only mode; `in` is declared in lib.dl, `out` in the solver file.
+SOLVE_DIRECTIVES = ".input in(IO=stdin)\n.output out(IO=stdout)\n"
+
+
 def build_source(source: str) -> str:
     """Assemble the program Souffle runs from a solver file's source."""
-    return expand_grid_macros(source)
+    return f"{expand_grid_macros(source)}\n{SOLVE_DIRECTIVES}"
 
 
 def run_dl(

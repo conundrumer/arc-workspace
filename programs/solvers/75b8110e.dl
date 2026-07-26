@@ -22,9 +22,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl tile_cell(p_tile: Position, p_intile: Position, col: Color)
 tile_cell(P_tile, P_intile, Col) :-
     in(P_grid, Col),
@@ -62,5 +59,3 @@ ink_beaten(P, Col) :-
     c.ink_rank(C2, R2), c.ink_rank(Col, R), R2 < R.
 
 out(P, Col, $Ink()) :- ink_at(P, Col), !ink_beaten(P, Col).
-
-.output out(IO=stdout)

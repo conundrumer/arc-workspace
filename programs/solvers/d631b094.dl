@@ -12,9 +12,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl on(p: Position, col: Color)
 on(P, Col) :- in(P, Col), !c.bg(Col).
 
@@ -26,5 +23,3 @@ bar.extent($U(), A, N) :- c.bar_axis(A), total(N).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- bar.cell($U(), _, P), on(_, Col).
-
-.output out(IO=stdout)

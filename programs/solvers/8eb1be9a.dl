@@ -14,9 +14,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // Band rows: the rows carrying pattern cells, as axis-only row positions.
 .decl band_row(al: Position)
 band_row(Al) :- in(P, Col), !c.bg(Col), c.axis(A), split(P, A, Al, _).
@@ -32,5 +29,3 @@ out(Q, Col) :-
     c.axis(A), axis_of(D, A), period(N),    // the axis's two jump directions
     jump_delta(D, N, Delta), compose(P, Delta, Q),
     in(Q, _).
-
-.output out(IO=stdout)

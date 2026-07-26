@@ -39,9 +39,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // The DiagDir peer of dist: taxicab distance to corner diag, the sum of
 // its two edge distances. Its level sets are the diagonals on the other
 // diagonal axis. Lib candidate.
@@ -147,5 +144,3 @@ out(P, Col, [V, E]) :- echo(P, E), c.echo(Col), v_choice(V).
 out(P, Col, [V, E]) :-
     frame.cell($U(), P), !arm(P), !echo(P, E),   // cell outside V and echoes
     echo_choice(E), v_choice(V), c.bg(Col).
-
-.output out(IO=stdout)

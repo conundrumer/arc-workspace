@@ -32,9 +32,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // A cell's line — bars run along the base axis; the across component
 // identifies the line.
 .decl line_of(p: Position, p_line: Position)
@@ -79,5 +76,3 @@ impl_choice($Next()). impl_choice($Edge()).
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- result_cell(P, Ch), c.result(Col).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !result_cell(P, Ch).
-
-.output out(IO=stdout)

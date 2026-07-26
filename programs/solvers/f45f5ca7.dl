@@ -34,9 +34,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl ink(p: Position, col: Color)
 ink(P, Col) :- in(P, Col), !c.bg(Col).
 
@@ -83,5 +80,3 @@ out(P, Col, Ch) :-
     impl_choice(Ch), in(P, _),      // choice × cell
     !moved(P, _, Ch),               // no mark lands here
     c.bg(Col).
-
-.output out(IO=stdout)

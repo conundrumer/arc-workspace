@@ -19,9 +19,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl out(p: Position, col: Color, ch: Choice)
 
 // --- Flood ---
@@ -52,5 +49,3 @@ spanned(P) :- spans.between(_, P).
 
 out(P, Col, $Span()) :- spans.between(Col, P).
 out(P, Col, $Span()) :- in(P, Col), !spanned(P).
-
-.output out(IO=stdout)

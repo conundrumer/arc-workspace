@@ -35,9 +35,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // --- Decompose cases ---
 
 .decl decompose(p: Position, p_outer: Position, p_inner: Position, dc: Choice)
@@ -64,5 +61,3 @@ out(P_grid_out, Col, Dc) :-
     decompose(_, _, P_grid_out, Dc),                // output cell
     !filled(P_grid_out, Dc),                        // no contribution
     c.bg(Col).
-
-.output out(IO=stdout)

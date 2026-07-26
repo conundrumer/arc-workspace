@@ -96,9 +96,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl out(p: Position, col: Color, ch: Choice)
 
 // Per-case axis-only intile positions of a cell's tile.
@@ -138,5 +135,3 @@ out(P_grid, Col, Ch) :-
 
 // --- $Map ---
 out(P_grid, Col, $Map()) :- in(P_in, Col), c.map(P_in, P_grid).
-
-.output out(IO=stdout)

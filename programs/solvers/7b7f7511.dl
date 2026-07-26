@@ -31,9 +31,6 @@
 
 .init dbs = DivideBySizeSlab
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl out(p: Position, col: Color, c: Choice)
 
 // --- Dup ---
@@ -73,5 +70,3 @@ tile_mismatch(A, K) :-
 out(P_inner, Col, $Tile()) :-
     tile_split(A, K, P, P_inner), !tile_mismatch(A, K),
     in(P, Col).
-
-.output out(IO=stdout)

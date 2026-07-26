@@ -28,9 +28,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl tile_cell(p_tile: Position, p_intile: Position, col: Color)
 tile_cell(P_tile, P_intile, Col) :-
     in(P_grid, Col),
@@ -58,5 +55,3 @@ marker_count(P_tile, N) :- tile(P_tile), N = count : { tile_marker(P_tile, P) }.
 
 out(P_tile, Col, $Count()) :- marker_count(P_tile, N), c.pair_count(N), c.mark(Col).
 out(P_tile, Col, $Count()) :- marker_count(P_tile, N), !c.pair_count(N), c.bg(Col).
-
-.output out(IO=stdout)

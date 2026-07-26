@@ -21,9 +21,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl tile_val(p_tile: Position, p_intile: Position, col: Color)
 tile_val(T, P, Col) :-
     in(P_grid, Col),
@@ -57,5 +54,3 @@ unfit($Exact()) :- hole(P), !piece(P, _).
 out(P, Col, Ch) :- impl_choice(Ch), !unfit(Ch), piece(P, Col).
 out(P, Col, Ch) :- impl_choice(Ch), !unfit(Ch), base(P, Col), !piece(P, _).
 out(P, Col, Ch) :- impl_choice(Ch), unfit(Ch), base(P, Col).
-
-.output out(IO=stdout)

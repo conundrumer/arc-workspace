@@ -27,9 +27,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // Payload cells — off both border bands.
 .decl kept(p: Position, col: Color)
 kept(P, Col) :-
@@ -95,5 +92,3 @@ out(P_out, Col, Ch) :-
     perp(A1, A2),
     out_along(A1, P, Q1, Ch), out_along(A2, P, Q2, Ch),
     compose(Q1, Q2, P_out).
-
-.output out(IO=stdout)

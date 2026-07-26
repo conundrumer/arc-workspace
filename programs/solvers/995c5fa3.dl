@@ -74,9 +74,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl tile_cell(p_tile: Position, p_intile: Position, col: Color)
 tile_cell(P_tile, P_intile, Col) :-
     in(P, Col),
@@ -120,5 +117,3 @@ out(P_out, Col, $HoleBox()) :-
 out(P_out, Col, $HoleBox()) :-
     row_tile(P_out, P_tile),
     !has_hole(P_tile), c.full_color(Col).
-
-.output out(IO=stdout)

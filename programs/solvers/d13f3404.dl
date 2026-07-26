@@ -15,9 +15,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .init frame = Frame2D<Unit>
 frame.extent($U(), A, N) :- axis_elem(A), c.side(N).
 
@@ -37,5 +34,3 @@ rays.mark(P, P) :- seated(P, _).
 .decl out(p: Position, col: Color)
 out(P, Col) :- seated(Q, Col), rays.ray(Q, P, _).
 out(P, Col) :- frame.cell($U(), P), !rays.ray(_, P, _), c.bg(Col).
-
-.output out(IO=stdout)

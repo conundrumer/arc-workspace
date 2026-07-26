@@ -21,9 +21,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl out(p: Position, col: Color, ch: Choice)
 
 // --- Shift ---
@@ -66,5 +63,3 @@ out(P_out, Col, $Cycle()) :-
     rows.pos($U(), K_out, P_row),                              // seated back on the shift axis
     axis_of(SD, A), split(P_in, A, _, P_across),               // across passthrough
     compose(P_row, P_across, P_out).
-
-.output out(IO=stdout)

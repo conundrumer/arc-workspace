@@ -76,9 +76,6 @@
 lookup_match.pattern_member(Id, P) :- c.pattern_member(Id, P).
 lookup_match.observed_member($U(), P)  :- silhouette(P).
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl silhouette(p: Position)
 silhouette(P) :- in(P, Col), !c.bg(Col).
 
@@ -103,5 +100,3 @@ out(ORIGIN, Col, $Classify()) :-
 out(ORIGIN, Col, $Classify()) :-
     center_silhouetted(_), corner_count(N),                     // center on, count corners
     c.center_on_out(N, Col).
-
-.output out(IO=stdout)

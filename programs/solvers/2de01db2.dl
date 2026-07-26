@@ -23,9 +23,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // Cell with its line identity.
 .decl cell_line(p: Position, col: Color, p_line: Position)
 cell_line(P, Col, P_line) :- in(P, Col), c.axis(A), split(P, A, _, P_line).
@@ -60,5 +57,3 @@ main(P_line, Col, $Owned()) :-
 .decl out(p: Position, col: Color, c: Choice)
 out(P, Col, Ch) :- cell_line(P, C_in, P_line), main(P_line, Col, Ch), C_in != Col.
 out(P, Col, Ch) :- cell_line(P, C_in, P_line), main(P_line, C_in, Ch), c.bg(Col).
-
-.output out(IO=stdout)

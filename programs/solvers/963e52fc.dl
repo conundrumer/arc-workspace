@@ -19,9 +19,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // Output frame: c.scale copies of the input frame along c.dir.
 .init copies = AxisFrame<Unit>
 copies.extent($U(), A, N) :- c.dir(D), axis_of(D, A), c.scale(N).
@@ -91,5 +88,3 @@ grid_color(P_grid_out, Col) :-
     out_cell(P_grid_out).
 
 out(P, Col, $Grid()) :- grid_color(P, Col).
-
-.output out(IO=stdout)

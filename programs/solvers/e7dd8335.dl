@@ -18,9 +18,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl ink(p: Position)
 ink(P) :- in(P, Col), !c.bg(Col).
 
@@ -56,5 +53,3 @@ impl_choice($Whole()). impl_choice($Each()).
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, F, Ch)   :- half(P, Ch), c.fill(F).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !half(P, Ch).
-
-.output out(IO=stdout)

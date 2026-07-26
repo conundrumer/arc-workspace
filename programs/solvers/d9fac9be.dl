@@ -23,9 +23,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // The input's ink colors.
 .decl ink(c: Color)
 ink(Col) :- in(_, Col), !c.bg(Col).
@@ -87,5 +84,3 @@ gap(P) :-
 
 out(ORIGIN, Col, $Full()) :-
     in(P, Col), !c.bg(Col), !gap(P).         // ink cell, surround all ink
-
-.output out(IO=stdout)

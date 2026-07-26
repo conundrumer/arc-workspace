@@ -17,9 +17,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl color_count(col: Color, n: number)
 color_count(Col, N) :- in(_, Col), N = count : { in(_, Col) }.
 
@@ -33,5 +30,3 @@ out(P, Col, $Mode()) :- in(P, _), dominant(Col).
 
 // --- Count ---
 out(P, Col, $Count()) :- in(P, _), color_count(Col, N), c.target(N).
-
-.output out(IO=stdout)

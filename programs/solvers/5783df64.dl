@@ -12,12 +12,7 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl out(p: Position, col: Color)
 out(P_tile, Col) :-
     in(P_grid, Col), !c.bg(Col),
     c.divisor(N), divide_2d(P_grid, N, 0, P_tile, _).
-
-.output out(IO=stdout)

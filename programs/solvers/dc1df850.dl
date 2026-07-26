@@ -29,9 +29,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl marker_at(p: Position)
 marker_at(P) :- in(P, Col), c.marker(Col).
 
@@ -63,5 +60,3 @@ impl_choice($Grow()). impl_choice($Stamp()).
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- halo(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !halo(P, _, Ch).
-
-.output out(IO=stdout)

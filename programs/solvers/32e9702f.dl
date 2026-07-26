@@ -13,9 +13,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 .decl moved(p: Position, col: Color)
 moved(Q, Col) :-
     in(P, Col), !c.bg(Col),                           // mark
@@ -28,5 +25,3 @@ landed(P) :- moved(P, _).
 .decl out(p: Position, col: Color)
 out(P, Col) :- moved(P, Col).
 out(P, F)   :- in(P, _), !landed(P), c.fill(F).
-
-.output out(IO=stdout)

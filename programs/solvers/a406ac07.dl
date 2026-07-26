@@ -27,9 +27,6 @@
 
 .init c = Consts
 
-.decl in(p: Position, col: Color)
-.input in(IO=stdin)
-
 // --- $Passthrough, $Repaint ---
 
 // Color the edge-d header assigns to p's line along d's axis.
@@ -76,5 +73,3 @@ coincide(P, Col) :-
 
 out(P, Col, $Coincide()) :- coincide(P, Col).
 out(P, Col, $Coincide()) :- in(P, Col), !coincide(P, _).
-
-.output out(IO=stdout)
