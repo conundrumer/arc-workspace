@@ -130,34 +130,60 @@ def parse_output(
     return candidates
 
 
-GRID_MACRO_RE = re.compile(r"\bGRID_(\d+)x(\d+)\b")
+GRID_CALL_RE = re.compile(r"\bGRID_(MASK_|SPARSE_)?(\d+)x(\d+)\s*\(")
 
 
-def gen_grid_macro(h: int, w: int) -> str:
-    """Emit `#define GRID_HxW(rel, V0, V1, ...) rel([t,b,l,r], Vk). ...`.
+def _grid_call_facts(policy: str, h: int, w: int, args: list[str]) -> list[str]:
+    """Fact lines for one GRID call, one line per grid row.
 
-    The macro expands to one fact per cell of an H×W frame, in row-major order
-    over Vk arg names. Position values are inlined per (H, W) pair.
+    Dense (no policy) emits `rel(p, v).` for every cell. `MASK_` emits
+    `rel(p).` for nonzero cells; `SPARSE_` emits `rel(p, v).` for nonzero
+    cells. Args between the relation name and the h*w cell values pass
+    through as leading columns.
     """
-    args = ", ".join(f"V{i}" for i in range(h * w))
+    rel, keys, cells = args[0], args[1:len(args) - h * w], args[len(args) - h * w:]
+    lead = "".join(f"{k}, " for k in keys)
     rows = []
     for row in range(h):
-        cells = []
+        facts = []
         for col in range(w):
-            v = f"V{row * w + col}"
-            cells.append(f"rel([{row}, {h-1-row}, {col}, {w-1-col}], {v}).")
-        rows.append(" ".join(cells))
-    body = " \\\n    ".join(rows)
-    return f"#define GRID_{h}x{w}(rel, {args}) \\\n    {body}"
+            v = cells[row * w + col]
+            if policy and v == "0":
+                continue
+            p = f"[{row}, {h - 1 - row}, {col}, {w - 1 - col}]"
+            val = "" if policy == "MASK_" else f", {v}"
+            facts.append(f"{rel}({lead}{p}{val}).")
+        if facts:
+            rows.append(" ".join(facts))
+    return rows
 
 
 def expand_grid_macros(source: str) -> str:
-    """Prepend `#define GRID_HxW` lines for every (H, W) used in source."""
-    dims = {(int(m.group(1)), int(m.group(2))) for m in GRID_MACRO_RE.finditer(source)}
-    if not dims:
-        return source
-    macros = "\n".join(gen_grid_macro(h, w) for (h, w) in sorted(dims))
-    return f"// Generated GRID_HxW expansions.\n{macros}\n\n{source}"
+    """Replace each GRID call site with the facts it denotes."""
+    out, pos = [], 0
+    for m in GRID_CALL_RE.finditer(source):
+        if m.start() < pos:
+            continue
+        policy, h, w = m.group(1) or "", int(m.group(2)), int(m.group(3))
+        depth, i = 1, m.end()
+        while i < len(source) and depth:
+            if source[i] == "(":
+                depth += 1
+            elif source[i] == ")":
+                depth -= 1
+            i += 1
+        args = _split_args(source[m.end():i - 1])
+        if len(args) < 1 + h * w:
+            raise ValueError(f"GRID call needs rel + {h * w} cells: {source[m.start():i]!r}")
+        line_start = source.rfind("\n", 0, m.start()) + 1
+        prefix = source[line_start:m.start()]
+        indent = prefix if not prefix.strip() else ""
+        rows = _grid_call_facts(policy, h, w, args)
+        out.append(source[pos:m.start()])
+        out.append(f"\n{indent}".join(rows))
+        pos = i
+    out.append(source[pos:])
+    return "".join(out)
 
 
 # Per-mode IO directives, appended to the built source.
@@ -237,8 +263,9 @@ def _run_source(
 
     Tempfile lives next to the originals so `#include "../lib.dl"` resolves.
     """
+    # The dot prefix keeps built tempfiles out of the `*.dl` solver glob.
     with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".dl", dir=str(SOLVERS_DIR), delete=False
+        mode="w", prefix=".tmp", suffix=".dl", dir=str(SOLVERS_DIR), delete=False
     ) as tf:
         tf.write(built)
         run_path = Path(tf.name)
@@ -514,7 +541,9 @@ def sweep_report(
     (survivors, stored, types, verdicts) — verdicts maps each extra
     survivor to its test-pass bool — 'skip' carries the reason.
     """
-    source = (SOLVERS_DIR / f"{stem}.dl").read_text()
+    # GRID calls expand first, so a GRID-fed slot reads as ordinary facts;
+    # re-expansion at build time is a no-op.
+    source = expand_grid_macros((SOLVERS_DIR / f"{stem}.dl").read_text())
     task = load_task(stem.split("_", 1)[0])
     defines = _lib_defines()
     s, e = _comp_span(source, "Consts")
