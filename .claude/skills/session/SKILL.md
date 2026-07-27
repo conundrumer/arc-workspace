@@ -34,7 +34,7 @@ Do each step individually; never batch them. Create a task per step.
 1. Create the solver
     - Analyze the task: `cat data/tasks/<task_id>.json` (already formatted, do not pipe into anything)
     - Draft from the reference
-    - Run against materialized train+test pairs (`uv run python programs/run_dl.py <task_id>`)
+    - Run against materialized train+test pairs (`uv run python scripts/run_dl.py <task_id>`)
     - Iterate until it works and passes lint.
     - Run the audit (`run_dl.py --audit <task_id>`) and resolve the findings. Raise judgment calls in the review.
 2. Simplify if possible

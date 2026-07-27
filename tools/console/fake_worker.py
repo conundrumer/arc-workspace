@@ -26,7 +26,7 @@ time.sleep(1)
 if msg.strip().lower() == "cleanup":
     tool("Edit", file_path=f"programs/solvers/{tid}.dl")
     time.sleep(1)
-    tool("Bash", command=f"uv run python programs/run_dl.py {tid}")
+    tool("Bash", command=f"uv run python scripts/run_dl.py {tid}")
     time.sleep(1)
     text = "(fake) Cleanup done. Simplify: none. Prune: two cuts. All pairs still pass."
 else:
@@ -36,7 +36,7 @@ else:
     time.sleep(1)
     tool("Write", file_path=f"programs/solvers/{tid}.dl")
     time.sleep(1)
-    tool("Bash", command=f"uv run python programs/run_dl.py {tid}")
+    tool("Bash", command=f"uv run python scripts/run_dl.py {tid}")
     time.sleep(1.5)
     text = (f"(fake) Solver for `{tid}` passes all pairs.\n\n"
             "1. Model: `divide` splits the grid; per-tile recolor by rank.\n"
