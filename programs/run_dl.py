@@ -484,6 +484,11 @@ def _render_arg(v) -> str:
 
 def swap_fact(source: str, slot: str, values: tuple) -> str:
     """Replace `slot`'s Consts facts with a single fact holding `values`."""
+    return swap_facts(source, slot, [values])
+
+
+def swap_facts(source: str, slot: str, rows: list[tuple]) -> str:
+    """Replace `slot`'s Consts facts with one fact per row."""
     lines = source.splitlines()
     _, e = _comp_span(source, "Consts")
     for i in _consts_fact_lines(source):
@@ -491,8 +496,9 @@ def swap_fact(source: str, slot: str, values: tuple) -> str:
         for start, end, _ in reversed(_slot_atoms(code, slot)):
             code = code[:start] + code[end:]
         lines[i] = code + sep + comment
-    args = ", ".join(_render_arg(v) for v in values)
-    lines.insert(e, f"    {slot}({args}).")
+    for row in rows:
+        args = ", ".join(_render_arg(v) for v in row)
+        lines.insert(e, f"    {slot}({args}).")
     return "\n".join(lines) + "\n"
 
 
@@ -865,14 +871,18 @@ PROPOSERS_SRC = PROGRAMS_DIR / "proposers.dl"
 
 
 def proposer_decls() -> dict[str, list[str]]:
-    """Map proposer comp name -> propose argument types."""
+    """Map proposer comp name -> propose argument types.
+
+    A comp without a propose relation is a helper, not a proposer.
+    """
     source = PROPOSERS_SRC.read_text()
     names = [
         m.group(1)
         for line in source.splitlines()
         if (m := COMP_HEADER_RE.search(line.split("//")[0]))
     ]
-    return {n: comp_decls(source, n)["propose"] for n in names}
+    decls = {n: comp_decls(source, n) for n in names}
+    return {n: d["propose"] for n, d in decls.items() if "propose" in d}
 
 
 def build_probe_source() -> str:
@@ -902,6 +912,13 @@ def _parse_relations(stdout: str) -> dict[str, list[str]]:
     return rels
 
 
+def _parse_value(text: str):
+    """One output column: a Position record as an int tuple, else an int."""
+    if text.startswith("["):
+        return tuple(int(x) for x in _split_args(text[1:-1]))
+    return int(text)
+
+
 def run_propose(task) -> dict[str, set[tuple]]:
     """Run the probe on a task's train pairs: proposer -> candidate set."""
     with tempfile.TemporaryDirectory() as facts_dir:
@@ -910,48 +927,110 @@ def run_propose(task) -> dict[str, set[tuple]]:
         stdout = _run_source(build_probe_source(), "", ["-F", facts_dir])
     return {
         name.removeprefix("propose_"): {
-            tuple(int(x) for x in row.split("\t")) for row in rows
+            tuple(_parse_value(x) for x in row.split("\t")) for row in rows
         }
         for name, rows in _parse_relations(stdout).items()
     }
 
 
 def propose_report(stem: str) -> list[tuple[str, dict[str, str]]]:
-    """Compare each single-Color slot's stored fill with every proposer.
+    """Compare each Color/number slot's stored fill with each proposer of
+    the slot's value type.
 
     Returns (slot, {proposer: verdict}): 'pinned' — candidate set equals
     the stored set; 'narrowed(n)' — stored inside a set of n smaller than
-    the palette; 'open' — stored inside a set no smaller than the palette;
-    'missed' — stored outside the set.
+    the enumeration domain; 'open' — stored inside a set no smaller than
+    the domain; 'missed' — stored outside the set.
     """
     source = expand_grid_macros((SOLVERS_DIR / f"{stem}.dl").read_text())
     task = load_task(stem.split("_", 1)[0])
+    defines = _lib_defines()
     s, e = _comp_span(source, "Consts")
     consts_text = "\n".join(source.splitlines()[s:e])
-    palette = len(_color_domain(task))
+    domains = {
+        "Color": len(_color_domain(task)),
+        "number": len(_number_domain(task)),
+        **{t: len(_enum_domain(t, defines)) for t in ENUM_TYPES},
+    }
+    ptypes = proposer_decls()
     proposals = run_propose(task)
 
+    def stored_value(a: str, t: str):
+        if t in POSITION_TYPES:
+            return tuple(int(x) for x in _split_args(a[1:-1]))
+        return int(a) if a.lstrip("-").isdigit() else defines[a]
+
+    supported = set(ENUM_TYPES) | POSITION_TYPES | {"Color", "number"}
     results = []
     for slot, types in comp_decls(source, "Consts").items():
-        if types != ["Color"]:
+        if not types or any(t not in supported for t in types):
             continue
         if re.search(rf"\b{slot}\s*\([^)]*\)\s*:-", consts_text):
             continue
-        stored = {(int(a[0]),) for a in _slot_facts(source, slot)}
+        stored = {
+            tuple(stored_value(a, t) for a, t in zip(args, types))
+            for args in _slot_facts(source, slot)
+        }
         if not stored:
             continue
         verdicts = {}
         for name, cand in sorted(proposals.items()):
-            if not stored <= cand:
-                verdicts[name] = "missed"
-            elif cand == stored:
-                verdicts[name] = "pinned"
-            elif len(cand) < palette:
-                verdicts[name] = f"narrowed({len(cand)})"
+            if ptypes[name] != types:
+                continue
+            if len(types) == 1:
+                # Single-column: cand is a set of rival candidates.
+                if not stored <= cand:
+                    verdicts[name] = "missed"
+                elif cand == stored:
+                    verdicts[name] = "pinned"
+                elif len(cand) < domains[types[0]]:
+                    verdicts[name] = f"narrowed({len(cand)})"
+                else:
+                    verdicts[name] = "open"
             else:
-                verdicts[name] = "open"
+                verdicts[name] = _table_verdict(cand, stored)
         results.append((slot, verdicts))
+
+    combo = _combine_triples(source)
+    if combo is not None and "PanelCombine" in proposals:
+        results.append((
+            "combine_member+combine_out",
+            {"PanelCombine": _table_verdict(proposals["PanelCombine"], combo)},
+        ))
     return results
+
+
+def _table_verdict(cand: set, stored: set) -> str:
+    """A multi-column proposal is one table, compared whole."""
+    if cand == stored:
+        return "exact"
+    if not cand:
+        return "empty"
+    if stored < cand:
+        return f"superset(+{len(cand - stored)})"
+    if cand & stored:
+        return "partial"
+    return "missed"
+
+
+def _combine_triples(source: str) -> set[tuple] | None:
+    """The 2-panel combine table as (c_first, c_second, c_out) triples,
+    id-invariant; None when the solver has no such table."""
+    members = _slot_facts(source, "combine_member")
+    outs = {a[0]: int(a[1]) for a in _slot_facts(source, "combine_out")}
+    if not members or not outs:
+        return None
+    by_id: dict[str, list] = {}
+    for id_, pos, col in members:
+        t, _, l, _ = (int(x) for x in _split_args(pos[1:-1]))
+        by_id.setdefault(id_, []).append(((t, l), int(col)))
+    triples = set()
+    for id_, cells in by_id.items():
+        if id_ not in outs or len(cells) != 2:
+            return None
+        cells.sort()
+        triples.add((cells[0][1], cells[1][1], outs[id_]))
+    return triples
 
 
 def render_propose(results: list[tuple[str, dict[str, str]]]) -> list[str]:
