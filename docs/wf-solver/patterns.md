@@ -45,7 +45,7 @@ The relation is `impl_choice`, the column `ch`, corpus-wide.
 
 ## `GRID_HxW` for grid data
 
-Runner-side cpp codegen lets `.dl` files declare 2D grids of values literally; the macro emits position-keyed facts in row-major order. Color grids, label grids, transform grids — any per-cell data. A distinguished cell is a Position fact, not a cell value (27a28665 `center_pos`).
+A `GRID_HxW` call emits one position-keyed fact per cell, in row-major order. Cells can hold any per-cell data: colors, labels, transforms. A distinguished cell is a Position fact, not a cell value (27a28665 `center_pos`).
 
 ```
 .decl template(p: Position, col: Color)
@@ -55,26 +55,35 @@ GRID_3x3(template,
     1, 2, 1)
 ```
 
-## `GRID_HxW` with multi-pattern id-keying
+Arguments between the relation name and the cell values pass through as leading columns, so one relation can hold several grids keyed by id (995c5fa3 `mapping_member`).
 
-Multiple visual patterns (each a distinct `GRID_HxW`) joined to a shared id-keyed relation via derive rules.
+A variant that reads the cell values states a modeling claim: the grid's zeros are absence, not data.
+
+- `GRID_MASK_HxW(rel, ...)` emits `rel(p)` for each nonzero cell — membership grids (1818057f `shape`).
+- `GRID_SPARSE_HxW(rel, ...)` emits `rel(p, v)` for each nonzero cell — ink templates (d364b489 `template`).
+
+## `GRID_HxW` catalogs
+
+A catalog stores several patterns in one id-keyed relation. Each entry is a keyed GRID call, with the entry's output fact beside its grid.
 
 ```
-.decl p0(p: Position, col: Color)
-GRID_3x3(p0, 0,1,0, 1,1,1, 0,1,0)
-
-.decl p1(p: Position, col: Color)
-GRID_3x3(p1, 1,0,1, 0,0,0, 1,0,1)
-
-.decl pattern_member(id: Ident, p: Position, col: Color)
-pattern_member(0, P, C) :- p0(P, C), C != 0.
-pattern_member(1, P, C) :- p1(P, C), C != 0.
-
+.decl pattern_member(id: Ident, p: Position)
 .decl pattern_out(id: Ident, col: Color)
-pattern_out(0, 3). pattern_out(1, 8).
+
+GRID_MASK_3x3(pattern_member, 0,
+    0, 1, 0,
+    1, 1, 1,
+    0, 1, 0)
+pattern_out(0, 3).
+
+GRID_MASK_3x3(pattern_member, 1,
+    1, 0, 1,
+    0, 0, 0,
+    1, 0, 1)
+pattern_out(1, 8).
 ```
 
-The GRID gives visual shape; the derive rule filters (e.g., `C != 0` for non-bg members) and tags with the id.
+Per-entry relations with derive rules hold the same data, but a new entry is then new program text rather than new facts.
 
 ## Position remapping via `GRID` id join
 
