@@ -7,6 +7,25 @@
 // solver's stored fills (`run_dl.py --propose`); a proposer claims no
 // slot itself.
 
+// Per-pair grid extents and coordinate tables. Materialized once so
+// joins index on coordinates instead of re-deriving them inline per
+// tuple. A helper: no propose relation, so the runner does not probe it.
+.comp PairDims {
+    .decl in_dim(e: Example, a: Axis, n: number)
+    in_dim(E, AXIS_V, T + B + 1) :- train_in(E, P, _), dist(P, DIR_T, T), dist(P, DIR_B, B).
+    in_dim(E, AXIS_H, L + R + 1) :- train_in(E, P, _), dist(P, DIR_L, L), dist(P, DIR_R, R).
+
+    .decl out_dim(e: Example, a: Axis, n: number)
+    out_dim(E, AXIS_V, T + B + 1) :- train_out(E, P, _), dist(P, DIR_T, T), dist(P, DIR_B, B).
+    out_dim(E, AXIS_H, L + R + 1) :- train_out(E, P, _), dist(P, DIR_L, L), dist(P, DIR_R, R).
+
+    .decl in_at(e: Example, t: number, l: number, c: Color)
+    in_at(E, T, L, C) :- train_in(E, P, C), dist(P, DIR_T, T), dist(P, DIR_L, L).
+
+    .decl out_at(e: Example, t: number, l: number, c: Color)
+    out_at(E, T, L, C) :- train_out(E, P, C), dist(P, DIR_T, T), dist(P, DIR_L, L).
+}
+
 // A color present in every train input.
 .comp SharedColor {
     .decl missing_somewhere(c: Color)
@@ -90,4 +109,297 @@
 
     .decl propose(c: Color)
     propose(C) :- train_in(_, _, C), !lost(C).
+}
+
+// The color mapping read off aligned cells that change.
+.comp ChangedPairs {
+    .decl propose(c_from: Color, c_to: Color)
+    propose(C1, C2) :- train_in(E, P, C1), train_out(E, P, C2), C1 != C2.
+}
+
+// The factor from input dims to output dims on an axis, uniform across
+// pairs.
+.comp ScaleRatio {
+    .init dims = PairDims
+
+    .decl pair_k(e: Example, a: Axis, k: number)
+    pair_k(E, A, No / Ni) :- dims.in_dim(E, A, Ni), dims.out_dim(E, A, No), No % Ni = 0.
+
+    .decl broken(a: Axis, k: number)
+    broken(A, K) :- pair_k(_, A, K), train_in(E, _, _), !pair_k(E, A, K).
+
+    .decl propose(k: number)
+    propose(K) :- pair_k(_, A, K), !broken(A, K).
+}
+
+// The factor from output dims to input dims on an axis, uniform across
+// pairs. Decomposes and crops.
+.comp DivisorRatio {
+    .init dims = PairDims
+
+    .decl pair_k(e: Example, a: Axis, k: number)
+    pair_k(E, A, Ni / No) :- dims.in_dim(E, A, Ni), dims.out_dim(E, A, No), Ni % No = 0.
+
+    .decl broken(a: Axis, k: number)
+    broken(A, K) :- pair_k(_, A, K), train_in(E, _, _), !pair_k(E, A, K).
+
+    .decl propose(k: number)
+    propose(K) :- pair_k(_, A, K), !broken(A, K).
+}
+
+// The dimension change from input to output on an axis, uniform across
+// pairs. Proposed as a magnitude.
+.comp DimDiff {
+    .init dims = PairDims
+
+    .decl pair_d(e: Example, a: Axis, d: number)
+    pair_d(E, A, Ni - No) :- dims.in_dim(E, A, Ni), dims.out_dim(E, A, No), Ni > No.
+    pair_d(E, A, No - Ni) :- dims.in_dim(E, A, Ni), dims.out_dim(E, A, No), No > Ni.
+
+    .decl broken(a: Axis, d: number)
+    broken(A, D) :- pair_d(_, A, D), train_in(E, _, _), !pair_d(E, A, D).
+
+    .decl propose(d: number)
+    propose(D) :- pair_d(_, A, D), !broken(A, D).
+}
+
+// An input dimension constant across pairs.
+.comp ConstInDim {
+    .init dims = PairDims
+
+    .decl varies(a: Axis, n: number)
+    varies(A, N) :- dims.in_dim(_, A, N), train_in(E, _, _), !dims.in_dim(E, A, N).
+
+    .decl propose(n: number)
+    propose(N) :- dims.in_dim(_, A, N), !varies(A, N).
+}
+
+// An output dimension constant across pairs.
+.comp ConstOutDim {
+    .init dims = PairDims
+
+    .decl varies(a: Axis, n: number)
+    varies(A, N) :- dims.out_dim(_, A, N), train_out(E, _, _), !dims.out_dim(E, A, N).
+
+    .decl propose(n: number)
+    propose(N) :- dims.out_dim(_, A, N), !varies(A, N).
+}
+
+// Tile counts n with dim = n*d + (n-1)*g fitting an input axis of every
+// pair, over gaps 0..3.
+.comp TileCount {
+    .init dims = PairDims
+
+    .decl fit(e: Example, a: Axis, n: number)
+    fit(E, A, N) :- dims.in_dim(E, A, Dim), N = range(2, 9), G = range(0, 4),
+        Rem = Dim - (N - 1) * G, Rem > 0, Rem % N = 0.
+
+    .decl broken(a: Axis, n: number)
+    broken(A, N) :- fit(_, A, N), train_in(E, _, _), !fit(E, A, N).
+
+    .decl propose(n: number)
+    propose(N) :- fit(_, A, N), !broken(A, N).
+}
+
+// Tile dims d with dim = n*d + (n-1)*g fitting an input axis of every
+// pair, over gaps 0..3.
+.comp TileDim {
+    .init dims = PairDims
+
+    .decl fit(e: Example, a: Axis, d: number)
+    fit(E, A, Rem / N) :- dims.in_dim(E, A, Dim), N = range(2, 9), G = range(0, 4),
+        Rem = Dim - (N - 1) * G, Rem > 0, Rem % N = 0.
+
+    .decl broken(a: Axis, d: number)
+    broken(A, D) :- fit(_, A, D), train_in(E, _, _), !fit(E, A, D).
+
+    .decl propose(d: number)
+    propose(D) :- fit(_, A, D), !broken(A, D).
+}
+
+// The least positive shift under which every input repeats along an
+// axis, where both cells exist.
+.comp Period {
+    .init dims = PairDims
+
+    .decl mismatch(e: Example, a: Axis, k: number)
+    mismatch(E, AXIS_H, L2 - L1) :-
+        dims.in_at(E, T, L1, C1), dims.in_at(E, T, L2, C2), C1 != C2, L2 > L1.
+    mismatch(E, AXIS_V, T2 - T1) :-
+        dims.in_at(E, T1, L, C1), dims.in_at(E, T2, L, C2), C1 != C2, T2 > T1.
+
+    .decl ok(e: Example, a: Axis, k: number)
+    ok(E, A, K) :- dims.in_dim(E, A, Dim), K = range(1, Dim), !mismatch(E, A, K).
+
+    .decl broken(a: Axis, k: number)
+    broken(A, K) :- ok(_, A, K), train_in(E, _, _), !ok(E, A, K).
+
+    .decl all_ok(a: Axis, k: number)
+    all_ok(A, K) :- ok(_, A, K), !broken(A, K).
+
+    .decl propose(k: number)
+    propose(K) :- all_ok(A, K), K = min K2 : { all_ok(A, K2) }.
+}
+
+// Lattice fits whose separator lines are witnessed: (n, d, g) with
+// dim = n*d + (n-1)*g on an input axis and every separator line uniform.
+// A helper: no propose relation.
+.comp SepFits {
+    .init dims = PairDims
+
+    // Line at index i along axis a carries more than one color.
+    .decl line_multi(e: Example, a: Axis, i: number)
+    line_multi(E, AXIS_H, I) :- dims.in_at(E, _, I, C1), dims.in_at(E, _, I, C2), C1 != C2.
+    line_multi(E, AXIS_V, I) :- dims.in_at(E, I, _, C1), dims.in_at(E, I, _, C2), C1 != C2.
+
+    .decl broken_fit(e: Example, a: Axis, n: number, g: number)
+    broken_fit(E, A, N, G) :- dims.in_dim(E, A, Dim), N = range(2, 9), G = range(1, 4),
+        Rem = Dim - (N - 1) * G, Rem > 0, Rem % N = 0, D = Rem / N,
+        K = range(1, N), I = range(K * D + (K - 1) * G, K * (D + G)),
+        line_multi(E, A, I).
+
+    .decl fits(e: Example, a: Axis, n: number, d: number, g: number)
+    fits(E, A, N, Rem / N, G) :- dims.in_dim(E, A, Dim), N = range(2, 9), G = range(1, 4),
+        Rem = Dim - (N - 1) * G, Rem > 0, Rem % N = 0,
+        !broken_fit(E, A, N, G).
+}
+
+// Segment counts of a witnessed separator lattice on every input.
+.comp SepTileCount {
+    .init sep = SepFits
+
+    .decl holds(e: Example, a: Axis, n: number)
+    holds(E, A, N) :- sep.fits(E, A, N, _, _).
+
+    .decl broken(a: Axis, n: number)
+    broken(A, N) :- holds(_, A, N), train_in(E, _, _), !holds(E, A, N).
+
+    .decl propose(n: number)
+    propose(N) :- holds(_, A, N), !broken(A, N).
+}
+
+// Segment dims of a witnessed separator lattice on every input.
+.comp SepTileDim {
+    .init sep = SepFits
+
+    .decl holds(e: Example, a: Axis, d: number)
+    holds(E, A, D) :- sep.fits(E, A, _, D, _).
+
+    .decl broken(a: Axis, d: number)
+    broken(A, D) :- holds(_, A, D), train_in(E, _, _), !holds(E, A, D).
+
+    .decl propose(d: number)
+    propose(D) :- holds(_, A, D), !broken(A, D).
+}
+
+// Separator thicknesses of a witnessed lattice on every input.
+.comp SepThickness {
+    .init sep = SepFits
+
+    .decl holds(e: Example, a: Axis, g: number)
+    holds(E, A, G) :- sep.fits(E, A, _, _, G).
+
+    .decl broken(a: Axis, g: number)
+    broken(A, G) :- holds(_, A, G), train_in(E, _, _), !holds(E, A, G).
+
+    .decl propose(g: number)
+    propose(G) :- holds(_, A, G), !broken(A, G).
+}
+
+// Colors ranked by input cell count, uniform across pairs. Rank 0 is the
+// rarest; ties share a rank.
+.comp CountRankAsc {
+    .decl color_count(e: Example, c: Color, n: number)
+    color_count(E, C, N) :- train_in(E, _, C), N = count : { train_in(E, _, C) }.
+
+    .decl pair_rank(e: Example, c: Color, r: number)
+    pair_rank(E, C, R) :- color_count(E, C, N),
+        R = count : { color_count(E, C2, N2), N2 < N, C2 != C }.
+
+    .decl broken(c: Color, r: number)
+    broken(C, R) :- pair_rank(_, C, R), train_in(E, _, _), !pair_rank(E, C, R).
+
+    .decl propose(c: Color, r: number)
+    propose(C, R) :- pair_rank(_, C, R), !broken(C, R).
+}
+
+// Colors ranked by input cell count, uniform across pairs. Rank 0 is the
+// commonest; ties share a rank.
+.comp CountRankDesc {
+    .decl color_count(e: Example, c: Color, n: number)
+    color_count(E, C, N) :- train_in(E, _, C), N = count : { train_in(E, _, C) }.
+
+    .decl pair_rank(e: Example, c: Color, r: number)
+    pair_rank(E, C, R) :- color_count(E, C, N),
+        R = count : { color_count(E, C2, N2), N2 > N, C2 != C }.
+
+    .decl broken(c: Color, r: number)
+    broken(C, R) :- pair_rank(_, C, R), train_in(E, _, _), !pair_rank(E, C, R).
+
+    .decl propose(c: Color, r: number)
+    propose(C, R) :- pair_rank(_, C, R), !broken(C, R).
+}
+
+// The D4 seating each output tile from the whole input, for outputs that
+// are an arrangement of transformed input copies.
+.comp TileD4 {
+    .init dims = PairDims
+
+    .decl swaps(t: D4)
+    swaps(D4_CW). swaps(D4_CC). swaps(D4_DG). swaps(D4_AD).
+
+    .decl counts(e: Example, nv: number, nh: number, hi: number, wi: number)
+    counts(E, Ho / Hi, Wo / Wi, Hi, Wi) :-
+        dims.in_dim(E, AXIS_V, Hi), dims.in_dim(E, AXIS_H, Wi),
+        dims.out_dim(E, AXIS_V, Ho), dims.out_dim(E, AXIS_H, Wo),
+        Ho % Hi = 0, Wo % Wi = 0, Ho * Wo != Hi * Wi.
+
+    // Output cell as arrangement tile x in-frame inner position.
+    .decl tile_cell(e: Example, pt: Position, pi: Position, c: Color)
+    tile_cell(E, [Tv, Nv - 1 - Tv, Th, Nh - 1 - Th], [Ti, Hi - 1 - Ti, Li, Wi - 1 - Li], C) :-
+        counts(E, Nv, Nh, Hi, Wi),
+        dims.out_at(E, T, L, C),
+        Tv = T / Hi, Ti = T % Hi, Th = L / Wi, Li = L % Wi.
+
+    // A transform whose image frame fits the tile frame.
+    .decl shape_ok(e: Example, t: D4)
+    shape_ok(E, T) :- counts(E, _, _, Hi, Hi), d4_elem(T).
+    shape_ok(E, T) :- counts(E, _, _, _, _), d4_elem(T), !swaps(T).
+
+    .decl mismatch(e: Example, pt: Position, t: D4)
+    mismatch(E, Pt, T) :- train_in(E, P, C), shape_ok(E, T), apply(T, P, Pi),
+        tile_cell(E, Pt, Pi, C2), C != C2.
+
+    .decl cand(e: Example, pt: Position, t: D4)
+    cand(E, Pt, T) :- tile_cell(E, Pt, _, _), shape_ok(E, T), !mismatch(E, Pt, T).
+
+    .decl broken(pt: Position, t: D4)
+    broken(Pt, T) :- cand(_, Pt, T), train_in(E, _, _), !cand(E, Pt, T).
+
+    .decl propose(pt: Position, t: D4)
+    propose(Pt, T) :- cand(_, Pt, T), !broken(Pt, T).
+}
+
+// The 2-panel combine table: input splits into two panels along an axis,
+// each panel the output's frame; rows map aligned panel color pairs to
+// the output color. c1 is the top or left panel.
+.comp PanelCombine {
+    .init dims = PairDims
+
+    .decl setup(e: Example, a: Axis, d: number, g: number)
+    setup(E, A, D, G) :-
+        dims.in_dim(E, A, Di), dims.out_dim(E, A, D),
+        perp(A, A2), dims.in_dim(E, A2, W), dims.out_dim(E, A2, W),
+        G = Di - 2 * D, G >= 0.
+
+    .decl pair_at(e: Example, t: number, l: number, c1: Color, c2: Color)
+    pair_at(E, T, L, C1, C2) :-
+        setup(E, AXIS_H, D, G),
+        dims.in_at(E, T, L, C1), L < D, dims.in_at(E, T, L + D + G, C2).
+    pair_at(E, T, L, C1, C2) :-
+        setup(E, AXIS_V, D, G),
+        dims.in_at(E, T, L, C1), T < D, dims.in_at(E, T + D + G, L, C2).
+
+    .decl propose(c1: Color, c2: Color, c_out: Color)
+    propose(C1, C2, Co) :- pair_at(E, T, L, C1, C2), dims.out_at(E, T, L, Co).
 }
