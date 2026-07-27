@@ -22,17 +22,12 @@
     .decl mapping_member(id: Ident, p_inner: Position, c: Color)
     .decl mapping_out(id: Ident, c_out: Color)
 
-    .decl p0(p: Position, col: Color)
-    GRID_1x3(p0, 5, 0, 0)
-    .decl p1(p: Position, col: Color)
-    GRID_1x3(p1, 0, 5, 0)
-    .decl p2(p: Position, col: Color)
-    GRID_1x3(p2, 0, 0, 5)
-
-    mapping_member(0, P, C) :- p0(P, C).
-    mapping_member(1, P, C) :- p1(P, C).
-    mapping_member(2, P, C) :- p2(P, C).
-    mapping_out(0, 2). mapping_out(1, 4). mapping_out(2, 3).
+    GRID_1x3(mapping_member, 0, 5, 0, 0)
+    mapping_out(0, 2).
+    GRID_1x3(mapping_member, 1, 0, 5, 0)
+    mapping_out(1, 4).
+    GRID_1x3(mapping_member, 2, 0, 0, 5)
+    mapping_out(2, 3).
 
     // --- $MarkerPosition ---
 

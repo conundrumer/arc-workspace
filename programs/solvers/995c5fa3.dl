@@ -26,39 +26,36 @@
 
     // --- $Lookup ---
 
-    .decl p0(p: Position, col: Color)
-    GRID_4x4(p0,
+    .decl mapping_member(id: Ident, p_intile: Position, c: Color)
+    .decl mapping_out(id: Ident, c_out: Color)
+
+    GRID_4x4(mapping_member, 0,
         5, 5, 5, 5,
         5, 5, 5, 5,
         5, 5, 5, 5,
         5, 5, 5, 5)
-    .decl p1(p: Position, col: Color)
-    GRID_4x4(p1,
+    mapping_out(0, 2).
+
+    GRID_4x4(mapping_member, 1,
         5, 5, 5, 5,
         5, 0, 0, 5,
         5, 0, 0, 5,
         5, 5, 5, 5)
-    .decl p2(p: Position, col: Color)
-    GRID_4x4(p2,
+    mapping_out(1, 8).
+
+    GRID_4x4(mapping_member, 2,
         5, 5, 5, 5,
         0, 5, 5, 0,
         0, 5, 5, 0,
         5, 5, 5, 5)
-    .decl p3(p: Position, col: Color)
-    GRID_4x4(p3,
+    mapping_out(2, 3).
+
+    GRID_4x4(mapping_member, 3,
         5, 5, 5, 5,
         5, 5, 5, 5,
         5, 0, 0, 5,
         5, 0, 0, 5)
-
-    .decl mapping_member(id: Ident, p_intile: Position, c: Color)
-    mapping_member(0, P, C) :- p0(P, C).
-    mapping_member(1, P, C) :- p1(P, C).
-    mapping_member(2, P, C) :- p2(P, C).
-    mapping_member(3, P, C) :- p3(P, C).
-
-    .decl mapping_out(id: Ident, c_out: Color)
-    mapping_out(0, 2). mapping_out(1, 8). mapping_out(2, 3). mapping_out(3, 4).
+    mapping_out(3, 4).
 
     // --- $HoleBox ---
 
