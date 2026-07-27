@@ -1,0 +1,93 @@
+// Proposers: candidate fill values derived from train pairs.
+//
+// A proposer comp reads train_in / train_out (lib.dl's runner contract)
+// and emits `propose` — the candidate set for a slot value. The final
+// column(s) of `propose` are the proposed value; leading columns are
+// proposer parameters. The runner probes every proposer against every
+// solver's stored fills (`run_dl.py --propose`); a proposer claims no
+// slot itself.
+
+// A color present in every train input.
+.comp SharedColor {
+    .decl missing_somewhere(c: Color)
+    missing_somewhere(C) :- train_in(_, _, C), train_in(E, _, _), !train_in(E, _, C).
+
+    .decl propose(c: Color)
+    propose(C) :- train_in(_, _, C), !missing_somewhere(C).
+}
+
+// The most frequent color of every train input.
+.comp DominantColor {
+    .decl color_count(e: Example, c: Color, n: number)
+    color_count(E, C, N) :- train_in(E, _, C), N = count : { train_in(E, _, C) }.
+
+    .decl pair_dominant(e: Example, c: Color)
+    pair_dominant(E, C) :- color_count(E, C, N), N = max M : { color_count(E, _, M) }.
+
+    .decl beaten_somewhere(c: Color)
+    beaten_somewhere(C) :- pair_dominant(_, C), train_in(E, _, _), !pair_dominant(E, C).
+
+    .decl propose(c: Color)
+    propose(C) :- pair_dominant(_, C), !beaten_somewhere(C).
+}
+
+// The rarest color of every train input.
+.comp RarestColor {
+    .decl color_count(e: Example, c: Color, n: number)
+    color_count(E, C, N) :- train_in(E, _, C), N = count : { train_in(E, _, C) }.
+
+    .decl pair_rarest(e: Example, c: Color)
+    pair_rarest(E, C) :- color_count(E, C, N), N = min M : { color_count(E, _, M) }.
+
+    .decl outnumbered_somewhere(c: Color)
+    outnumbered_somewhere(C) :- pair_rarest(_, C), train_in(E, _, _), !pair_rarest(E, C).
+
+    .decl propose(c: Color)
+    propose(C) :- pair_rarest(_, C), !outnumbered_somewhere(C).
+}
+
+// A color in every train output and no train input.
+.comp OutNewColor {
+    .decl missing_somewhere(c: Color)
+    missing_somewhere(C) :- train_out(_, _, C), train_out(E, _, _), !train_out(E, _, C).
+
+    .decl propose(c: Color)
+    propose(C) :- train_out(_, _, C), !missing_somewhere(C), !train_in(_, _, C).
+}
+
+// A color in some train output and no train input. The lax form of
+// OutNewColor: a paint color triggered conditionally can miss a pair's
+// output.
+.comp AnyOutNewColor {
+    .decl propose(c: Color)
+    propose(C) :- train_out(_, _, C), !train_in(_, _, C).
+}
+
+// A color in every train input and no train output.
+.comp VanishedColor {
+    .decl missing_somewhere(c: Color)
+    missing_somewhere(C) :- train_in(_, _, C), train_in(E, _, _), !train_in(E, _, C).
+
+    .decl propose(c: Color)
+    propose(C) :- train_in(_, _, C), !missing_somewhere(C), !train_out(_, _, C).
+}
+
+// A color none of whose cells keeps it in the output. Reads position
+// alignment, so it says nothing on shape-changing tasks.
+.comp ChangedColor {
+    .decl kept(c: Color)
+    kept(C) :- train_in(E, P, C), train_out(E, P, C).
+
+    .decl propose(c: Color)
+    propose(C) :- train_in(_, _, C), !kept(C).
+}
+
+// A color all of whose cells keep it in the output. Reads position
+// alignment, so it says nothing on shape-changing tasks.
+.comp UnchangedColor {
+    .decl lost(c: Color)
+    lost(C) :- train_in(E, P, C), !train_out(E, P, C).
+
+    .decl propose(c: Color)
+    propose(C) :- train_in(_, _, C), !lost(C).
+}

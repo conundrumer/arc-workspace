@@ -6,6 +6,7 @@ Usage:
     uv run python programs/run_dl.py --audit <stem>     # fill sweep + mutation report
     uv run python programs/run_dl.py --sweep <stem> [cap]   # conditional fill sweep
     uv run python programs/run_dl.py --mutate <stem>    # structural mutation report
+    uv run python programs/run_dl.py --propose <stem>   # proposers vs stored Color fills
 
 For a single stem, encodes each example's input grid as fact lines on stdin,
 invokes `souffle` on it (linking the functor library; see build_functors),
@@ -860,6 +861,107 @@ def run_fit(stem: str) -> FitResult | None:
         )
 
 
+PROPOSERS_SRC = PROGRAMS_DIR / "proposers.dl"
+
+
+def proposer_decls() -> dict[str, list[str]]:
+    """Map proposer comp name -> propose argument types."""
+    source = PROPOSERS_SRC.read_text()
+    names = [
+        m.group(1)
+        for line in source.splitlines()
+        if (m := COMP_HEADER_RE.search(line.split("//")[0]))
+    ]
+    return {n: comp_decls(source, n)["propose"] for n in names}
+
+
+def build_probe_source() -> str:
+    """Assemble the proposer probe: every proposer inited, propose relayed."""
+    lines = ['#include "../lib.dl"', '#include "../proposers.dl"',
+             ".input train_in", ".input train_out"]
+    for name, types in sorted(proposer_decls().items()):
+        inst = name.lower()
+        args = ", ".join(f"A{i}" for i in range(len(types)))
+        typed = ", ".join(f"a{i}: {t}" for i, t in enumerate(types))
+        lines += [
+            f".init {inst} = {name}",
+            f".decl propose_{name}({typed})",
+            f"propose_{name}({args}) :- {inst}.propose({args}).",
+            f".output propose_{name}(IO=stdout)",
+        ]
+    return "\n".join(lines) + "\n"
+
+
+def _parse_relations(stdout: str) -> dict[str, list[str]]:
+    """Rows per relation block in Souffle's -D- output."""
+    rels = {}
+    for m in re.finditer(
+        r"^-+\n(\S+)\n.*?\n=+\n(.*?)=+\n", stdout, flags=re.MULTILINE | re.DOTALL
+    ):
+        rels[m.group(1)] = [line for line in m.group(2).splitlines() if line]
+    return rels
+
+
+def run_propose(task) -> dict[str, set[tuple]]:
+    """Run the probe on a task's train pairs: proposer -> candidate set."""
+    with tempfile.TemporaryDirectory() as facts_dir:
+        for name, text in train_facts(task).items():
+            (Path(facts_dir) / name).write_text(text)
+        stdout = _run_source(build_probe_source(), "", ["-F", facts_dir])
+    return {
+        name.removeprefix("propose_"): {
+            tuple(int(x) for x in row.split("\t")) for row in rows
+        }
+        for name, rows in _parse_relations(stdout).items()
+    }
+
+
+def propose_report(stem: str) -> list[tuple[str, dict[str, str]]]:
+    """Compare each single-Color slot's stored fill with every proposer.
+
+    Returns (slot, {proposer: verdict}): 'pinned' — candidate set equals
+    the stored set; 'narrowed(n)' — stored inside a set of n smaller than
+    the palette; 'open' — stored inside a set no smaller than the palette;
+    'missed' — stored outside the set.
+    """
+    source = expand_grid_macros((SOLVERS_DIR / f"{stem}.dl").read_text())
+    task = load_task(stem.split("_", 1)[0])
+    s, e = _comp_span(source, "Consts")
+    consts_text = "\n".join(source.splitlines()[s:e])
+    palette = len(_color_domain(task))
+    proposals = run_propose(task)
+
+    results = []
+    for slot, types in comp_decls(source, "Consts").items():
+        if types != ["Color"]:
+            continue
+        if re.search(rf"\b{slot}\s*\([^)]*\)\s*:-", consts_text):
+            continue
+        stored = {(int(a[0]),) for a in _slot_facts(source, slot)}
+        if not stored:
+            continue
+        verdicts = {}
+        for name, cand in sorted(proposals.items()):
+            if not stored <= cand:
+                verdicts[name] = "missed"
+            elif cand == stored:
+                verdicts[name] = "pinned"
+            elif len(cand) < palette:
+                verdicts[name] = f"narrowed({len(cand)})"
+            else:
+                verdicts[name] = "open"
+        results.append((slot, verdicts))
+    return results
+
+
+def render_propose(results: list[tuple[str, dict[str, str]]]) -> list[str]:
+    lines = []
+    for slot, verdicts in results:
+        marks = ", ".join(f"{n} {v}" for n, v in verdicts.items())
+        lines.append(f"{slot}: {marks}")
+    return lines
+
+
 def render_fit(fit: FitResult) -> list[str]:
     if fit.error:
         lines = [f"fit: ERROR {fit.error}"]
@@ -1234,6 +1336,14 @@ def cmd_audit(stem: str) -> int:
     return _print_mutation(stem)
 
 
+def cmd_propose(stem: str) -> int:
+    """Probe every proposer against the solver's stored Color fills."""
+    build_functors()
+    for line in render_propose(propose_report(stem)):
+        print(line)
+    return 0
+
+
 if __name__ == "__main__":
     if len(sys.argv) == 1:
         sys.exit(cmd_all())
@@ -1247,9 +1357,12 @@ if __name__ == "__main__":
         sys.exit(cmd_mutate(sys.argv[2]))
     if len(sys.argv) == 3 and sys.argv[1] == "--audit":
         sys.exit(cmd_audit(sys.argv[2]))
+    if len(sys.argv) == 3 and sys.argv[1] == "--propose":
+        sys.exit(cmd_propose(sys.argv[2]))
     print(
         f"usage: {sys.argv[0]} "
-        "[--audit <stem> | --sweep <stem> [cap] | --mutate <stem> | <stem>]",
+        "[--audit <stem> | --sweep <stem> [cap] | --mutate <stem> | "
+        "--propose <stem> | <stem>]",
         file=sys.stderr,
     )
     sys.exit(2)
