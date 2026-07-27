@@ -19,36 +19,28 @@
     .decl pattern_member(id: Ident, p: Position)
     .decl pattern_out(id: Ident, c: Color)
 
-    .decl p0(p: Position, lit: number)
-    GRID_3x3(p0,
+    GRID_MASK_3x3(pattern_member, 0,
         1, 1, 0,
         1, 0, 1,
         0, 1, 0)
-    pattern_member(0, P) :- p0(P, 1).
     pattern_out(0, 1).
 
-    .decl p1(p: Position, lit: number)
-    GRID_3x3(p1,
+    GRID_MASK_3x3(pattern_member, 1,
         1, 0, 1,
         0, 1, 0,
         1, 0, 1)
-    pattern_member(1, P) :- p1(P, 1).
     pattern_out(1, 2).
 
-    .decl p2(p: Position, lit: number)
-    GRID_3x3(p2,
+    GRID_MASK_3x3(pattern_member, 2,
         0, 1, 1,
         0, 1, 1,
         1, 0, 0)
-    pattern_member(2, P) :- p2(P, 1).
     pattern_out(2, 3).
 
-    .decl p3(p: Position, lit: number)
-    GRID_3x3(p3,
+    GRID_MASK_3x3(pattern_member, 3,
         0, 1, 0,
         1, 1, 1,
         0, 1, 0)
-    pattern_member(3, P) :- p3(P, 1).
     pattern_out(3, 6).
 
     // --- $Classify data ---

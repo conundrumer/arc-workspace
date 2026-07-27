@@ -26,13 +26,11 @@
     .decl target(n: number) target(2).
 
     // --- $Footprint ---
-    .decl footprint(p: Position, lit: number)
-    GRID_3x3(footprint,
+    .decl fp_cell(p: Position)
+    GRID_MASK_3x3(fp_cell,
         0, 1, 0,
         1, 0, 1,
         0, 1, 0)
-    .decl fp_cell(p: Position)
-    fp_cell(P) :- footprint(P, 1).
 
     .decl anchor(p: Position)
     anchor([1, 1, 1, 1]).

@@ -5,8 +5,7 @@
 //
 // Cases (data-equivalent on this task):
 //   $Arms  — per-direction: the neighbor toward d paints c.arm(d).
-//   $Stamp — a stored template, seated by its marker cell on each marker;
-//            non-bg entries paint.
+//   $Stamp — a stored template, seated by its marker cell on each marker.
 
 #include "../lib.dl"
 
@@ -21,10 +20,8 @@
     arm(DIR_T, 2). arm(DIR_B, 8). arm(DIR_L, 7). arm(DIR_R, 6).
 
     // --- Stamp ---
-    .decl bg(c: Color) bg(0).
-
     .decl template(p: Position, col: Color)
-    GRID_3x3(template,
+    GRID_SPARSE_3x3(template,
         0, 2, 0,
         7, 1, 6,
         0, 8, 0)
@@ -49,7 +46,7 @@ out(P, Col, $Arms()) :- in(P, Col), !arm_halo(P, _).
 // --- Stamp ---
 // Template ink viewed from the template's marker cell.
 .init tview = Reframe<Color>
-tview.cell(Col, Pt)  :- c.template(Pt, Col), !c.bg(Col).
+tview.cell(Col, Pt)  :- c.template(Pt, Col).
 tview.outer(Col, Pc) :- tview.cell(Col, _), c.template(Pc, M), c.marker(M).
 
 .decl stamp_halo(p: Position, col: Color)
