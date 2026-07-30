@@ -14,10 +14,9 @@
 .type Choice = Lookup {} | Unfold {}
 
 .comp Consts {
-    .init helpers = ConstsHelpers
-
     // --- shared ---
     .decl tile_axis(a: Axis) tile_axis(AXIS_V).
+    .decl tile_count(n: number) tile_count(4).
     .decl tile_gap(g: number) tile_gap(-1).
 
     // --- Lookup ---
@@ -29,14 +28,15 @@
         D4_TB)
 
     // --- Unfold ---
-    .decl arr_pos(p: Position)
-    arr_pos(P) :- helpers.frame_pos([4, 1], P).
-
-    .decl anchor(d: Dir)
-    anchor(DIR_T).
+    .decl anchor(d: Dir) anchor(DIR_T).
 }
 
 .init c = Consts
+
+// The tile arrangement. $Lookup keys its table by these positions;
+// $Unfold walks them.
+.init arr = AxisFrame<Unit>
+arr.extent($U(), A, N) :- c.tile_axis(A), c.tile_count(N).
 
 .decl out(p: Position, col: Color, c: Choice)
 
@@ -51,13 +51,66 @@ out(P_grid, Col, $Lookup()) :-
 // Tile contents: the input seeds the anchor-end tile; each neighbor
 // reflects across the shared boundary.
 .decl unfold_val(p_tile: Position, p_intile: Position, col: Color)
-unfold_val(T, P, Col) :- in(P, Col), c.arr_pos(T), c.anchor(D), dist(T, D, 0).
+unfold_val(T, P, Col) :- in(P, Col), arr.cell($U(), _, T), c.anchor(D), dist(T, D, 0).
 unfold_val(T2, P_img, Col) :-
-    unfold_val(T, P, Col),                                             // known tile
-    axis_of(D, A), step_delta(D, S), compose(T, S, T2), c.arr_pos(T2), // neighbor toward d
-    flip_of(A, F), apply(F, P, P_img).                                 // reflect across the shared edge
+    unfold_val(T, P, Col),                                      // known tile
+    axis_of(D, A), step_delta(D, S), compose(T, S, T2),         // neighbor toward d
+    arr.cell($U(), A, T2),                                      // still on the arrangement
+    flip_of(A, F), apply(F, P, P_img).                          // reflect across the shared edge
 
 out(P_grid, Col, $Unfold()) :-
     unfold_val(T, P_intile, Col),
     c.tile_axis(A), c.tile_gap(G),
     concat_slab(T, P_intile, A, G, P_grid).
+
+// --- fit ---
+
+.comp Fit {
+    // The gap that packs n tiles of size k into p's axis-a extent.
+    .comp DivideGap {
+        .decl divide_gap(p: Position, a: Axis, n: number, k: number, g: number) inline
+        divide_gap(P, A, N, K, G) :-
+            axis_dim(P, A, Ext), N > 1,
+            (Ext - N*K) % (N-1) = 0,
+            G = (Ext - N*K) / (N-1).
+    }
+    .init dg = DivideGap
+
+    .decl tile_size(e: Example, k: number)
+    tile_size(E, K) :- ex_in(E, P, _), c.tile_axis(A), axis_dim(P, A, K).
+
+    .decl tile_gap(g: number)
+    tile_gap(G) :-
+        c.tile_axis(A), c.tile_count(N),        // arrangement
+        ex_out(E, P_out, _), tile_size(E, K),   // output frame, and the tile extent
+        dg.divide_gap(P_out, A, N, K, G).
+
+    // A 1-D arrangement folds within its own axis, so a tile's transform is
+    // one that leaves every cell's across coordinate alone.
+    .decl across_moved(d: D4)
+    across_moved(D) :-
+        d4_elem(D), ex_in(_, P, _), c.tile_axis(A),
+        apply(D, P, P_img),                                          // the cell's image
+        split(P, A, _, P_across), split(P_img, A, _, P_across2),     // across coordinates
+        P_across != P_across2.
+
+    .decl axial(d: D4)
+    axial(D) :- d4_elem(D), !across_moved(D).
+
+    .decl paired(e: Example)
+    paired(E) :- ex_out(E, _, _).
+
+    .decl placed(e: Example, p_tile: Position, d: D4, p_grid: Position, col: Color)
+    placed(E, P_tile, D, P_grid, Col) :-
+        ex_in(E, P, Col), paired(E),                    // cell of a train input
+        axial(D), apply(D, P, P_intile),                // its image under an axial transform
+        arr.cell($U(), A, P_tile), tile_gap(G),         // tile position and gap
+        concat_slab(P_tile, P_intile, A, G, P_grid).    // recompose with passthrough
+
+    // A transform that lands some cell of its tile off the output's color.
+    .decl broken(p_tile: Position, d: D4)
+    broken(P_tile, D) :- placed(E, P_tile, D, P_grid, Col), !ex_out(E, P_grid, Col).
+
+    .decl tile(p: Position, d: D4)
+    tile(P_tile, D) :- arr.cell($U(), _, P_tile), axial(D), !broken(P_tile, D).
+}

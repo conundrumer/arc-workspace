@@ -19,25 +19,19 @@
     .init helpers = ConstsHelpers
 
     // --- Lookup ---
-    .decl lookup1(p: Position, col: Color)
-    GRID_3x3(lookup1,
+    .decl lookup_grid(n: number, p: Position, col: Color)
+    GRID_3x3(lookup_grid, 1,
         5, 5, 5,
         0, 0, 0,
         0, 0, 0)
-    .decl lookup2(p: Position, col: Color)
-    GRID_3x3(lookup2,
+    GRID_3x3(lookup_grid, 2,
         5, 0, 0,
         0, 5, 0,
         0, 0, 5)
-    .decl lookup3(p: Position, col: Color)
-    GRID_3x3(lookup3,
+    GRID_3x3(lookup_grid, 3,
         0, 0, 5,
         0, 5, 0,
         5, 0, 0)
-    .decl lookup_grid(n: number, p: Position, col: Color)
-    lookup_grid(1, P, C) :- lookup1(P, C).
-    lookup_grid(2, P, C) :- lookup2(P, C).
-    lookup_grid(3, P, C) :- lookup3(P, C).
 
     // --- Figure ---
     .decl fig_edge(n: number, d: Dir)
@@ -56,16 +50,25 @@
 
 .init c = Consts
 
-.decl palette(col: Color)
-palette(Col) :- in(_, Col).
+// --- parse ---
 
-.decl ncolors(n: number)
-ncolors(N) :- N = count : { palette(_) }.
+.comp Parse<Key> {
+    .decl cell(k: Key, p: Position, col: Color)
+
+    .decl palette(k: Key, col: Color)
+    palette(K, Col) :- cell(K, _, Col).
+
+    .decl ncolors(k: Key, n: number)
+    ncolors(K, N) :- cell(K, _, _), N = count : { palette(K, _) }.
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
 
 .decl out(p: Position, col: Color, ch: Choice)
 
 // --- Lookup ---
-out(P, Col, $Lookup()) :- ncolors(N), c.lookup_grid(N, P, Col).
+out(P, Col, $Lookup()) :- parse.ncolors($U(), N), c.lookup_grid(N, P, Col).
 
 // --- Figure ---
 .decl canvas(p: Position, cv: Canvas)
@@ -74,13 +77,24 @@ canvas(P, $Fixed()) :- c.out_pos(P).
 
 .decl figure_cell(p: Position, cv: Canvas)
 figure_cell(P, Cv) :-
-    canvas(P, Cv),                        // canvas cell
-    ncolors(N), c.fig_edge(N, D),         // class figure: edge row
-    dist(P, D, 0).                        // on that edge
+    canvas(P, Cv),                              // canvas cell
+    parse.ncolors($U(), N), c.fig_edge(N, D),   // class figure: edge row
+    dist(P, D, 0).                              // on that edge
 figure_cell(P, Cv) :-
-    canvas(P, Cv),                        // canvas cell
-    ncolors(N), c.fig_diag(N, Dg),        // class figure: corner diagonal
-    diag_dist(P, Dg, _, K, K).            // equidistant from its edges
+    canvas(P, Cv),                              // canvas cell
+    parse.ncolors($U(), N), c.fig_diag(N, Dg),  // class figure: corner diagonal
+    diag_dist(P, Dg, _, K, K).                  // equidistant from its edges
 
 out(P, Mk, $Figure(Cv)) :- figure_cell(P, Cv), c.mark(Mk).
 out(P, Bg, $Figure(Cv)) :- canvas(P, Cv), !figure_cell(P, Cv), c.bg(Bg).
+
+// --- fit ---
+
+.comp Fit {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // A class's grid is its example's whole output.
+    .decl lookup_grid(n: number, p: Position, col: Color)
+    lookup_grid(N, P, Col) :- parse.ncolors(E, N), ex_out(E, P, Col).
+}

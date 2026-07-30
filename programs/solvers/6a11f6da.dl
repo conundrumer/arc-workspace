@@ -68,3 +68,27 @@ out(O, Col, Ch) :-
 out(O, Bg, Ch) :-
     impl_choice(Ch), decompose(_, _, O),                 // choice × cell
     c.bg(Bg), !cand(O, _, _).
+
+// --- fit ---
+
+.comp Fit {
+    .decl cand(e: Example, o: Position, p_tile: Position, col: Color)
+    cand(E, P_out, P_tile, Col) :-
+        ex_in(E, P_grid, Col), !c.bg(Col),               // inked input cell
+        c.tile_axis(A), c.tile_count(N),                 // slab params
+        divide_slab(P_grid, A, N, 0, P_tile, P_out).
+
+    // Closed transitively: a slab pair need not overlap directly.
+    .decl beats(p_tile: Position, p_tile2: Position)
+    beats(T, T2) :-
+        cand(E, O, T, Col), cand(E, O, T2, Col2), Col != Col2,
+        ex_out(E, O, Col).
+    beats(T, T3) :- beats(T, T2), beats(T2, T3).
+
+    .decl slab_rank(p_tile: Position, r: number)
+    slab_rank(T, R) :- cand(_, _, T, _), R = count : { beats(T2, T) }.
+
+    // Each slab keeps one ink, so a slab's rank is its ink's rank.
+    .decl ink_rank(c: Color, r: number)
+    ink_rank(Col, R) :- cand(_, _, T, Col), slab_rank(T, R).
+}

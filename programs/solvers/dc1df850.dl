@@ -60,3 +60,44 @@ impl_choice($Grow()). impl_choice($Stamp()).
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- halo(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !halo(P, _, Ch).
+
+// --- fit ---
+
+.type Cell = [e: Example, p: Position]
+
+.comp Fit {
+    .decl marker_at(e: Example, p: Position)
+    marker_at(E, P) :- ex_in(E, P, Col), c.marker(Col).
+
+    // A second marker in the pair leaves a repainted cell no unique source.
+    .decl ambiguous(e: Example)
+    ambiguous(E) :- marker_at(E, M), marker_at(E, M2), M != M2.
+
+    .decl lone(e: Example, p: Position)
+    lone(E, M) :- marker_at(E, M), !ambiguous(E).
+
+    .decl footprint(e: Example, m: Position, p: Position, col: Color)
+    footprint(E, M, M, Col) :- lone(E, M), ex_out(E, M, Col).
+    footprint(E, M, P, Col) :-
+        lone(E, M),
+        ex_in(E, P, Col_in), ex_out(E, P, Col), Col_in != Col.    // repainted
+
+    // Footprint cells as offsets from their marker.
+    .init seat = Reframe<Cell>
+    seat.cell([E, P], P)  :- footprint(E, _, P, _).
+    seat.outer([E, P], M) :- footprint(E, M, P, _).
+
+    .decl offset(off: Shift, col: Color)
+    offset(Off, Col) :- footprint(E, _, P, Col), seat.inner([E, P], Off).
+
+    // The offsets laid out in the frame they span.
+    .init box = Bbox<Unit>
+    box.cell($U(), Off) :- offset(Off, _).
+
+    .init frame = Reframe<Shift>
+    frame.cell(Off, Off) :- offset(Off, _).
+    frame.outer(Off, M)  :- offset(Off, _), box.margin($U(), M).
+
+    .decl template(p: Position, col: Color)
+    template(Pt, Col) :- offset(Off, Col), frame.inner(Off, Pt).
+}

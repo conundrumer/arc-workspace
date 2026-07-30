@@ -1,8 +1,8 @@
 // 3b4c2228
 // concept: objects lookup count stamp
 // Count the 2x2 squares of c.block_color (a second color forms its own squares
-// as a distractor), then tally the count down the c.out_diag
-// diagonal of a fixed out_dim grid: ring i gets c.mark for i < count, else c.bg.
+// as a distractor), then tally the count down the c.out_diag diagonal of a
+// fixed out_dim grid: ring i gets c.mark for i < count, else c.bg.
 //
 // The block shape is a position set. Two models detect its occurrences:
 //   $Object    — connected components equal to the shape.
@@ -38,60 +38,63 @@
     out_pos(P) :- out_dim(N), helpers.frame_pos([N, N], P).
 
     // Lookup render: count -> output grid. Only the counts the task exhibits (1..3).
-    .decl lookup1(p: Position, col: Color)
-    GRID_3x3(lookup1,
+    .decl lookup_grid(n: number, p: Position, col: Color)
+    GRID_3x3(lookup_grid, 1,
         1, 0, 0,
         0, 0, 0,
         0, 0, 0)
-    .decl lookup2(p: Position, col: Color)
-    GRID_3x3(lookup2,
+    GRID_3x3(lookup_grid, 2,
         1, 0, 0,
         0, 1, 0,
         0, 0, 0)
-    .decl lookup3(p: Position, col: Color)
-    GRID_3x3(lookup3,
+    GRID_3x3(lookup_grid, 3,
         1, 0, 0,
         0, 1, 0,
         0, 0, 1)
-    .decl lookup_grid(n: number, p: Position, col: Color)
-    lookup_grid(1, P, C) :- lookup1(P, C).
-    lookup_grid(2, P, C) :- lookup2(P, C).
-    lookup_grid(3, P, C) :- lookup3(P, C).
 }
 
 .init c = Consts
 
-// Cells of the counted color.
-.decl on(p: Position)
-on(P) :- in(P, C), c.block_color(C).
+// --- parse ---
 
-// ============================================================
-// $Object: connected components equal to the shape
-// ============================================================
+.comp Parse<Key> {
+    .type Obj = [k: Key, id: Ident]
 
-.init comps = Components<Unit>
-comps.node($U(), P) :- on(P).
+    .decl cell(k: Key, p: Position, col: Color)
 
-.init object_box = Bbox<Ident>
-object_box.cell(Id, P) :- comps.label($U(), P, Id).
+    .decl on(k: Key, p: Position)
+    on(K, P) :- cell(K, P, C), c.block_color(C).
 
-.init object_frame = Reframe<Ident>
-object_frame.cell(Id, P)  :- comps.label($U(), P, Id).
-object_frame.outer(Id, M) :- object_box.margin(Id, M).
+    .init comps = Components<Key>
+    comps.node(K, P) :- on(K, P).
 
-.init object_match = KeyedSetCompare<Ident, Ident, Position>
-object_match.pattern_member(0, I)   :- c.block_shape(I).
-object_match.observed_member(Id, I) :- object_frame.inner(Id, I).
+    .init box = Bbox<Obj>
+    box.cell([K, Id], P) :- comps.label(K, P, Id).
 
-.decl object_count(n: number)
-object_count(N) :- N = count : { object_match.equals(Id, 0) }.
+    .init frame = Reframe<Obj>
+    frame.cell([K, Id], P)  :- comps.label(K, P, Id).
+    frame.outer([K, Id], M) :- box.margin([K, Id], M).
+
+    .init same = KeyedSetCompare<Obj, Unit, Position>
+    same.pattern_member($U(), P) :- c.block_shape(P).
+    same.observed_member(O, P)   :- frame.inner(O, P).
+
+    .decl block(k: Key, id: Ident)
+    block(K, Id) :- same.equals([K, Id], $U()).
+
+    .decl block_count(k: Key, n: number)
+    block_count(K, N) :- cell(K, _, _), N = count : { block(K, Id) }.
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, C) :- in(P, C).
 
 // ============================================================
 // $Placement: placements where the shape occurs (Occurrences)
 // ============================================================
 
 .init occ = Occurrences<Unit>
-occ.cell($U(), P)  :- on(P).
+occ.cell($U(), P)  :- parse.on($U(), P).
 occ.shape($U(), P) :- c.block_shape(P).
 
 .decl placement_count(n: number)
@@ -102,7 +105,7 @@ placement_count(N) :- N = count : { occ.occurrence($U(), _) }.
 // ============================================================
 
 .decl total(n: number, detect: Detect)
-total(N, $Object())    :- object_count(N).
+total(N, $Object())    :- parse.block_count($U(), N).
 total(N, $Placement()) :- placement_count(N).
 
 .init diag = Diagonal<Unit>
@@ -120,3 +123,14 @@ out(P, BG,   [Det, $Tally()]) :- c.out_pos(P), total(_, Det), !marked(P, Det), c
 
 // Lookup (data) — select the stored grid for the count.
 out(P, Col, [Det, $Lookup()]) :- total(N, Det), c.lookup_grid(N, P, Col).
+
+// --- fit ---
+
+.comp Fit {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // A count's grid is its example's whole output.
+    .decl lookup_grid(n: number, p: Position, col: Color)
+    lookup_grid(N, P, Col) :- parse.block_count(E, N), ex_out(E, P, Col).
+}

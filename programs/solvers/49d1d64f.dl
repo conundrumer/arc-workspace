@@ -27,3 +27,25 @@ out(P_corner, Col) :-
     seated(P_in, P_out),
     diag_step_delta(Diag, S), compose(P_out, S, P_corner),              // one step past the corner
     c.bg(Col).
+
+// --- fit ---
+
+.type CellKey = [e: Example, p: Position]
+
+.comp Fit {
+    // Candidate deltas: every alignment of an input cell onto an output cell.
+    .init align = Reframe<CellKey>
+    align.outer([E, P_in], P_in) :- ex_in(E, P_in, _).
+    align.cell([E, P_in], P_out) :- ex_in(E, P_in, _), ex_out(E, P_out, _).
+
+    .decl cand(p: Inset)
+    cand(Delta) :- align.inner(_, Delta).
+
+    .decl broken(p: Inset)
+    broken(Delta) :-
+        cand(Delta), ex_out(E, _, _), ex_in(E, P_in, Col),
+        compose(P_in, Delta, P_out), !ex_out(E, P_out, Col).
+
+    .decl seat_delta(p: Inset)
+    seat_delta(Delta) :- cand(Delta), !broken(Delta).
+}
