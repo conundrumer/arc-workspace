@@ -99,3 +99,34 @@ out(I, Col, [Ic, $Pass()]) :- in(P, Col), !c.ink(Col), frame.inner([P, Ic], I).
 // --- $Bg ---
 
 out(I, Col, [Ic, $Bg()]) :- in(P, C0), !c.ink(C0), frame.inner([P, Ic], I), c.bg(Col).
+
+// --- fit ---
+
+.comp Fit {
+    // The line-fenced interior — the boundary both interior claims read.
+    .decl off_line(e: Example, a: Axis, p_across: Position)
+    off_line(E, A, P_across) :-
+        ex_in(E, P, Col), !c.line(Col), axis_elem(A), split(P, A, _, P_across).
+
+    .decl sep_line(e: Example, a: Axis, p_across: Position)
+    sep_line(E, A, P_across) :-
+        ex_in(E, P, _), axis_elem(A), split(P, A, _, P_across), !off_line(E, A, P_across).
+
+    .decl screened(e: Example, p: Position, d: Dir)
+    screened(E, P, D) :-
+        ex_in(E, P, _), sep_line(E, A, L_across),
+        perp(A, Av), axis_of(D, Av),
+        dist(L_across, D, Kl), dist(P, D, Kp), Kl < Kp.
+
+    .decl unscreened(e: Example, p: Position)
+    unscreened(E, P) :- ex_in(E, P, _), dir_elem(D), !screened(E, P, D).
+
+    .decl interior(e: Example, p: Position)
+    interior(E, P) :- ex_in(E, P, _), !unscreened(E, P).
+
+    .init box = Bbox<Example>
+    box.cell(E, P) :- interior(E, P).
+
+    .decl margin(p: Inset)
+    margin(M) :- box.margin(_, M).
+}

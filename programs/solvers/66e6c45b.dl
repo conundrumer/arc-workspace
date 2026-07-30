@@ -17,14 +17,14 @@
 
     // --- Table ---
     .decl in_label(p: Position, id: Ident)
-    GRID_4x4(in_label,
+    GRID_SPARSE_4x4(in_label,
         0, 0, 0, 0,
         0, 1, 2, 0,
         0, 3, 4, 0,
         0, 0, 0, 0)
 
     .decl out_label(p: Position, id: Ident)
-    GRID_4x4(out_label,
+    GRID_SPARSE_4x4(out_label,
         1, 0, 0, 2,
         0, 0, 0, 0,
         0, 0, 0, 0,
@@ -78,8 +78,7 @@ target(P_out, Col, $Explode()) :-
 
 target(P_out, Col, $Table()) :-
     in(P_in, Col),
-    c.in_label(P_in, Id), c.out_label(P_out, Id),   // shared label
-    Id != 0.                                        // non-pairing sentinel
+    c.in_label(P_in, Id), c.out_label(P_out, Id).   // shared label
 
 .decl impl_choice(ch: Choice)
 impl_choice($Quad()). impl_choice($Stretch()). impl_choice($Explode()). impl_choice($Table()).
@@ -87,3 +86,26 @@ impl_choice($Quad()). impl_choice($Stretch()). impl_choice($Explode()). impl_cho
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- target(P, Col, Ch).
 out(P, Bg, Ch)  :- impl_choice(Ch), in(P, _), c.bg(Bg), !target(P, _, Ch).
+
+// --- fit ---
+
+.comp Fit {
+    // Ink correspondence candidates: same color in and out.
+    .decl cand(e: Example, p_in: Position, p_out: Position)
+    cand(E, P_in, P_out) :-
+        ex_in(E, P_in, C), !c.bg(C), ex_out(E, P_out, C).
+
+    // A within-example color coincidence breaks in some other example.
+    .decl broken(p_in: Position, p_out: Position)
+    broken(P_in, P_out) :-
+        cand(_, P_in, P_out), ex_out(E, _, _), !cand(E, P_in, P_out).
+
+    .decl pair(p_in: Position, p_out: Position)
+    pair(P_in, P_out) :- cand(_, P_in, P_out), !broken(P_in, P_out).
+
+    .decl in_label(p: Position, id: Ident)
+    in_label(P_in, as(ord(P_in), Ident)) :- pair(P_in, _).
+
+    .decl out_label(p: Position, id: Ident)
+    out_label(P_out, as(ord(P_in), Ident)) :- pair(P_in, P_out).
+}

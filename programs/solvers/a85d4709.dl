@@ -65,3 +65,31 @@ out(P, Out_C, $MarkerPosition()) :-
     in(P_mark, MC), c.marker(MC),
     cell_split(P_mark, P_inner_mark, P_across),
     c.position_color(P_inner_mark, Out_C).
+
+// --- fit ---
+
+.type SliceKey = [e: Example, p_across: Position]
+
+.comp Fit {
+    .decl fslice(s: SliceKey, p_inner: Position, col: Color)
+    fslice([E, P_across], P_inner, Col) :-
+        ex_in(E, P, Col), c.axis(A), split(P, A, P_inner, P_across).
+
+    // Slices with equal content share an entry.
+    .init same = KeyedSetCompare<SliceKey, SliceKey, SliceMember>
+    same.pattern_member(S, [P_inner, C]) :- fslice(S, P_inner, C).
+    same.observed_member(S, [P_inner, C]) :- fslice(S, P_inner, C).
+
+    // Entry id: the class's least member.
+    .decl entry(s: SliceKey, id: Ident)
+    entry(S, as(Min, Ident)) :-
+        fslice(S, _, _), Min = min ord(S2) : { same.equals(S, S2) }.
+
+    .decl mapping_member(id: Ident, p_inner: Position, c: Color)
+    mapping_member(Id, P_inner, C) :- entry(S, Id), fslice(S, P_inner, C).
+
+    .decl mapping_out(id: Ident, c_out: Color)
+    mapping_out(Id, C_out) :-
+        entry([E, P_across], Id),
+        ex_out(E, P, C_out), c.axis(A), split(P, A, _, P_across).
+}
