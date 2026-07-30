@@ -117,9 +117,7 @@ def cmd_all() -> int:
         if r is not None:
             fit_results[stem] = r
     if fit_results:
-        problems = {
-            s: r for s, r in fit_results.items() if r.diff or r.error or r.unfitted
-        }
+        problems = {s: r for s, r in fit_results.items() if r.diff or r.error}
         print()
         ok = len(fit_results) - len(problems)
         print(f"--- fit checks: {ok}/{len(fit_results)} ok ---")

@@ -20,17 +20,19 @@ def grid_to_facts(rows: list[list[int]]) -> str:
     return "\n".join(lines) + ("\n" if lines else "")
 
 
-def train_facts(task) -> dict[str, str]:
-    """Fact-file contents for a task's train pairs, example-keyed."""
+def example_facts(task) -> dict[str, str]:
+    """Fact-file contents for a task's examples: inputs for train then
+    test, outputs for train only."""
     def emit(grids: list[list[list[int]]]) -> str:
         return "".join(
             f"{e}\t{line}\n"
             for e, rows in enumerate(grids)
             for line in grid_to_facts(rows).splitlines()
         )
+    inputs = [ex.input for ex in task.train] + [ex.input for ex in task.test]
     return {
-        "train_in.facts": emit([ex.input for ex in task.train]),
-        "train_out.facts": emit([ex.output for ex in task.train]),
+        "ex_in.facts": emit(inputs),
+        "ex_out.facts": emit([ex.output for ex in task.train]),
     }
 
 

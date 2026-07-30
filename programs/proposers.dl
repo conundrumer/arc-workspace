@@ -1,120 +1,123 @@
-// Proposers: candidate fill values derived from train pairs.
+// Proposers: candidate fill values derived from a task's examples.
 //
-// A proposer comp reads train_in / train_out (lib.dl's runner contract)
+// A proposer comp reads ex_in / ex_out (lib.dl's runner contract)
 // and emits `propose` — the candidate set for a slot value. The final
 // column(s) of `propose` are the proposed value; leading columns are
 // proposer parameters. The runner probes every proposer against every
 // solver's stored fills (`run_dl.py --propose`); a proposer claims no
 // slot itself.
+//
+// A claim about inputs alone ranges over every example; a claim about
+// the in->out transformation scopes its examples through ex_out.
 
-// Per-pair grid extents and coordinate tables. Materialized once so
+// Per-example grid extents and coordinate tables. Materialized once so
 // joins index on coordinates instead of re-deriving them inline per
 // tuple. A helper: no propose relation, so the runner does not probe it.
 .comp PairDims {
     .decl in_dim(e: Example, a: Axis, n: number)
-    in_dim(E, AXIS_V, T + B + 1) :- train_in(E, P, _), dist(P, DIR_T, T), dist(P, DIR_B, B).
-    in_dim(E, AXIS_H, L + R + 1) :- train_in(E, P, _), dist(P, DIR_L, L), dist(P, DIR_R, R).
+    in_dim(E, AXIS_V, T + B + 1) :- ex_in(E, P, _), dist(P, DIR_T, T), dist(P, DIR_B, B).
+    in_dim(E, AXIS_H, L + R + 1) :- ex_in(E, P, _), dist(P, DIR_L, L), dist(P, DIR_R, R).
 
     .decl out_dim(e: Example, a: Axis, n: number)
-    out_dim(E, AXIS_V, T + B + 1) :- train_out(E, P, _), dist(P, DIR_T, T), dist(P, DIR_B, B).
-    out_dim(E, AXIS_H, L + R + 1) :- train_out(E, P, _), dist(P, DIR_L, L), dist(P, DIR_R, R).
+    out_dim(E, AXIS_V, T + B + 1) :- ex_out(E, P, _), dist(P, DIR_T, T), dist(P, DIR_B, B).
+    out_dim(E, AXIS_H, L + R + 1) :- ex_out(E, P, _), dist(P, DIR_L, L), dist(P, DIR_R, R).
 
     .decl in_at(e: Example, t: number, l: number, c: Color)
-    in_at(E, T, L, C) :- train_in(E, P, C), dist(P, DIR_T, T), dist(P, DIR_L, L).
+    in_at(E, T, L, C) :- ex_in(E, P, C), dist(P, DIR_T, T), dist(P, DIR_L, L).
 
     .decl out_at(e: Example, t: number, l: number, c: Color)
-    out_at(E, T, L, C) :- train_out(E, P, C), dist(P, DIR_T, T), dist(P, DIR_L, L).
+    out_at(E, T, L, C) :- ex_out(E, P, C), dist(P, DIR_T, T), dist(P, DIR_L, L).
 }
 
-// A color present in every train input.
+// A color present in every input.
 .comp SharedColor {
     .decl missing_somewhere(c: Color)
-    missing_somewhere(C) :- train_in(_, _, C), train_in(E, _, _), !train_in(E, _, C).
+    missing_somewhere(C) :- ex_in(_, _, C), ex_in(E, _, _), !ex_in(E, _, C).
 
     .decl propose(c: Color)
-    propose(C) :- train_in(_, _, C), !missing_somewhere(C).
+    propose(C) :- ex_in(_, _, C), !missing_somewhere(C).
 }
 
-// The most frequent color of every train input.
+// The most frequent color of every input.
 .comp DominantColor {
     .decl color_count(e: Example, c: Color, n: number)
-    color_count(E, C, N) :- train_in(E, _, C), N = count : { train_in(E, _, C) }.
+    color_count(E, C, N) :- ex_in(E, _, C), N = count : { ex_in(E, _, C) }.
 
     .decl pair_dominant(e: Example, c: Color)
     pair_dominant(E, C) :- color_count(E, C, N), N = max M : { color_count(E, _, M) }.
 
     .decl beaten_somewhere(c: Color)
-    beaten_somewhere(C) :- pair_dominant(_, C), train_in(E, _, _), !pair_dominant(E, C).
+    beaten_somewhere(C) :- pair_dominant(_, C), ex_in(E, _, _), !pair_dominant(E, C).
 
     .decl propose(c: Color)
     propose(C) :- pair_dominant(_, C), !beaten_somewhere(C).
 }
 
-// The rarest color of every train input.
+// The rarest color of every input.
 .comp RarestColor {
     .decl color_count(e: Example, c: Color, n: number)
-    color_count(E, C, N) :- train_in(E, _, C), N = count : { train_in(E, _, C) }.
+    color_count(E, C, N) :- ex_in(E, _, C), N = count : { ex_in(E, _, C) }.
 
     .decl pair_rarest(e: Example, c: Color)
     pair_rarest(E, C) :- color_count(E, C, N), N = min M : { color_count(E, _, M) }.
 
     .decl outnumbered_somewhere(c: Color)
-    outnumbered_somewhere(C) :- pair_rarest(_, C), train_in(E, _, _), !pair_rarest(E, C).
+    outnumbered_somewhere(C) :- pair_rarest(_, C), ex_in(E, _, _), !pair_rarest(E, C).
 
     .decl propose(c: Color)
     propose(C) :- pair_rarest(_, C), !outnumbered_somewhere(C).
 }
 
-// A color in every train output and no train input.
+// A color in every train output and no input.
 .comp OutNewColor {
     .decl missing_somewhere(c: Color)
-    missing_somewhere(C) :- train_out(_, _, C), train_out(E, _, _), !train_out(E, _, C).
+    missing_somewhere(C) :- ex_out(_, _, C), ex_out(E, _, _), !ex_out(E, _, C).
 
     .decl propose(c: Color)
-    propose(C) :- train_out(_, _, C), !missing_somewhere(C), !train_in(_, _, C).
+    propose(C) :- ex_out(_, _, C), !missing_somewhere(C), !ex_in(_, _, C).
 }
 
-// A color in some train output and no train input. The lax form of
+// A color in some train output and no input. The lax form of
 // OutNewColor: a paint color triggered conditionally can miss a pair's
 // output.
 .comp AnyOutNewColor {
     .decl propose(c: Color)
-    propose(C) :- train_out(_, _, C), !train_in(_, _, C).
+    propose(C) :- ex_out(_, _, C), !ex_in(_, _, C).
 }
 
-// A color in every train input and no train output.
+// A color in every input and no train output.
 .comp VanishedColor {
     .decl missing_somewhere(c: Color)
-    missing_somewhere(C) :- train_in(_, _, C), train_in(E, _, _), !train_in(E, _, C).
+    missing_somewhere(C) :- ex_in(_, _, C), ex_in(E, _, _), !ex_in(E, _, C).
 
     .decl propose(c: Color)
-    propose(C) :- train_in(_, _, C), !missing_somewhere(C), !train_out(_, _, C).
+    propose(C) :- ex_in(_, _, C), !missing_somewhere(C), !ex_out(_, _, C).
 }
 
 // A color none of whose cells keeps it in the output. Reads position
 // alignment, so it says nothing on shape-changing tasks.
 .comp ChangedColor {
     .decl kept(c: Color)
-    kept(C) :- train_in(E, P, C), train_out(E, P, C).
+    kept(C) :- ex_in(E, P, C), ex_out(E, P, C).
 
     .decl propose(c: Color)
-    propose(C) :- train_in(_, _, C), !kept(C).
+    propose(C) :- ex_in(E, _, C), ex_out(E, _, _), !kept(C).
 }
 
 // A color all of whose cells keep it in the output. Reads position
 // alignment, so it says nothing on shape-changing tasks.
 .comp UnchangedColor {
     .decl lost(c: Color)
-    lost(C) :- train_in(E, P, C), !train_out(E, P, C).
+    lost(C) :- ex_in(E, P, C), ex_out(E, _, _), !ex_out(E, P, C).
 
     .decl propose(c: Color)
-    propose(C) :- train_in(_, _, C), !lost(C).
+    propose(C) :- ex_in(E, _, C), ex_out(E, _, _), !lost(C).
 }
 
 // The color mapping read off aligned cells that change.
 .comp ChangedPairs {
     .decl propose(c_from: Color, c_to: Color)
-    propose(C1, C2) :- train_in(E, P, C1), train_out(E, P, C2), C1 != C2.
+    propose(C1, C2) :- ex_in(E, P, C1), ex_out(E, P, C2), C1 != C2.
 }
 
 // The factor from input dims to output dims on an axis, uniform across
@@ -126,7 +129,7 @@
     pair_k(E, A, No / Ni) :- dims.in_dim(E, A, Ni), dims.out_dim(E, A, No), No % Ni = 0.
 
     .decl broken(a: Axis, k: number)
-    broken(A, K) :- pair_k(_, A, K), train_in(E, _, _), !pair_k(E, A, K).
+    broken(A, K) :- pair_k(_, A, K), ex_out(E, _, _), !pair_k(E, A, K).
 
     .decl propose(k: number)
     propose(K) :- pair_k(_, A, K), !broken(A, K).
@@ -141,7 +144,7 @@
     pair_k(E, A, Ni / No) :- dims.in_dim(E, A, Ni), dims.out_dim(E, A, No), Ni % No = 0.
 
     .decl broken(a: Axis, k: number)
-    broken(A, K) :- pair_k(_, A, K), train_in(E, _, _), !pair_k(E, A, K).
+    broken(A, K) :- pair_k(_, A, K), ex_out(E, _, _), !pair_k(E, A, K).
 
     .decl propose(k: number)
     propose(K) :- pair_k(_, A, K), !broken(A, K).
@@ -157,18 +160,18 @@
     pair_d(E, A, No - Ni) :- dims.in_dim(E, A, Ni), dims.out_dim(E, A, No), No > Ni.
 
     .decl broken(a: Axis, d: number)
-    broken(A, D) :- pair_d(_, A, D), train_in(E, _, _), !pair_d(E, A, D).
+    broken(A, D) :- pair_d(_, A, D), ex_out(E, _, _), !pair_d(E, A, D).
 
     .decl propose(d: number)
     propose(D) :- pair_d(_, A, D), !broken(A, D).
 }
 
-// An input dimension constant across pairs.
+// An input dimension constant across examples.
 .comp ConstInDim {
     .init dims = PairDims
 
     .decl varies(a: Axis, n: number)
-    varies(A, N) :- dims.in_dim(_, A, N), train_in(E, _, _), !dims.in_dim(E, A, N).
+    varies(A, N) :- dims.in_dim(_, A, N), ex_in(E, _, _), !dims.in_dim(E, A, N).
 
     .decl propose(n: number)
     propose(N) :- dims.in_dim(_, A, N), !varies(A, N).
@@ -179,14 +182,14 @@
     .init dims = PairDims
 
     .decl varies(a: Axis, n: number)
-    varies(A, N) :- dims.out_dim(_, A, N), train_out(E, _, _), !dims.out_dim(E, A, N).
+    varies(A, N) :- dims.out_dim(_, A, N), ex_out(E, _, _), !dims.out_dim(E, A, N).
 
     .decl propose(n: number)
     propose(N) :- dims.out_dim(_, A, N), !varies(A, N).
 }
 
 // Tile counts n with dim = n*d + (n-1)*g fitting an input axis of every
-// pair, over gaps 0..3.
+// example, over gaps 0..3.
 .comp TileCount {
     .init dims = PairDims
 
@@ -195,14 +198,14 @@
         Rem = Dim - (N - 1) * G, Rem > 0, Rem % N = 0.
 
     .decl broken(a: Axis, n: number)
-    broken(A, N) :- fit(_, A, N), train_in(E, _, _), !fit(E, A, N).
+    broken(A, N) :- fit(_, A, N), ex_in(E, _, _), !fit(E, A, N).
 
     .decl propose(n: number)
     propose(N) :- fit(_, A, N), !broken(A, N).
 }
 
 // Tile dims d with dim = n*d + (n-1)*g fitting an input axis of every
-// pair, over gaps 0..3.
+// example, over gaps 0..3.
 .comp TileDim {
     .init dims = PairDims
 
@@ -211,7 +214,7 @@
         Rem = Dim - (N - 1) * G, Rem > 0, Rem % N = 0.
 
     .decl broken(a: Axis, d: number)
-    broken(A, D) :- fit(_, A, D), train_in(E, _, _), !fit(E, A, D).
+    broken(A, D) :- fit(_, A, D), ex_in(E, _, _), !fit(E, A, D).
 
     .decl propose(d: number)
     propose(D) :- fit(_, A, D), !broken(A, D).
@@ -232,7 +235,7 @@
     ok(E, A, K) :- dims.in_dim(E, A, Dim), K = range(1, Dim), !mismatch(E, A, K).
 
     .decl broken(a: Axis, k: number)
-    broken(A, K) :- ok(_, A, K), train_in(E, _, _), !ok(E, A, K).
+    broken(A, K) :- ok(_, A, K), ex_in(E, _, _), !ok(E, A, K).
 
     .decl all_ok(a: Axis, k: number)
     all_ok(A, K) :- ok(_, A, K), !broken(A, K).
@@ -272,7 +275,7 @@
     holds(E, A, N) :- sep.fits(E, A, N, _, _).
 
     .decl broken(a: Axis, n: number)
-    broken(A, N) :- holds(_, A, N), train_in(E, _, _), !holds(E, A, N).
+    broken(A, N) :- holds(_, A, N), ex_in(E, _, _), !holds(E, A, N).
 
     .decl propose(n: number)
     propose(N) :- holds(_, A, N), !broken(A, N).
@@ -286,7 +289,7 @@
     holds(E, A, D) :- sep.fits(E, A, _, D, _).
 
     .decl broken(a: Axis, d: number)
-    broken(A, D) :- holds(_, A, D), train_in(E, _, _), !holds(E, A, D).
+    broken(A, D) :- holds(_, A, D), ex_in(E, _, _), !holds(E, A, D).
 
     .decl propose(d: number)
     propose(D) :- holds(_, A, D), !broken(A, D).
@@ -300,41 +303,41 @@
     holds(E, A, G) :- sep.fits(E, A, _, _, G).
 
     .decl broken(a: Axis, g: number)
-    broken(A, G) :- holds(_, A, G), train_in(E, _, _), !holds(E, A, G).
+    broken(A, G) :- holds(_, A, G), ex_in(E, _, _), !holds(E, A, G).
 
     .decl propose(g: number)
     propose(G) :- holds(_, A, G), !broken(A, G).
 }
 
-// Colors ranked by input cell count, uniform across pairs. Rank 0 is the
-// rarest; ties share a rank.
+// Colors ranked by input cell count, uniform across examples. Rank 0 is
+// the rarest; ties share a rank.
 .comp CountRankAsc {
     .decl color_count(e: Example, c: Color, n: number)
-    color_count(E, C, N) :- train_in(E, _, C), N = count : { train_in(E, _, C) }.
+    color_count(E, C, N) :- ex_in(E, _, C), N = count : { ex_in(E, _, C) }.
 
     .decl pair_rank(e: Example, c: Color, r: number)
     pair_rank(E, C, R) :- color_count(E, C, N),
         R = count : { color_count(E, C2, N2), N2 < N, C2 != C }.
 
     .decl broken(c: Color, r: number)
-    broken(C, R) :- pair_rank(_, C, R), train_in(E, _, _), !pair_rank(E, C, R).
+    broken(C, R) :- pair_rank(_, C, R), ex_in(E, _, _), !pair_rank(E, C, R).
 
     .decl propose(c: Color, r: number)
     propose(C, R) :- pair_rank(_, C, R), !broken(C, R).
 }
 
-// Colors ranked by input cell count, uniform across pairs. Rank 0 is the
-// commonest; ties share a rank.
+// Colors ranked by input cell count, uniform across examples. Rank 0 is
+// the commonest; ties share a rank.
 .comp CountRankDesc {
     .decl color_count(e: Example, c: Color, n: number)
-    color_count(E, C, N) :- train_in(E, _, C), N = count : { train_in(E, _, C) }.
+    color_count(E, C, N) :- ex_in(E, _, C), N = count : { ex_in(E, _, C) }.
 
     .decl pair_rank(e: Example, c: Color, r: number)
     pair_rank(E, C, R) :- color_count(E, C, N),
         R = count : { color_count(E, C2, N2), N2 > N, C2 != C }.
 
     .decl broken(c: Color, r: number)
-    broken(C, R) :- pair_rank(_, C, R), train_in(E, _, _), !pair_rank(E, C, R).
+    broken(C, R) :- pair_rank(_, C, R), ex_in(E, _, _), !pair_rank(E, C, R).
 
     .decl propose(c: Color, r: number)
     propose(C, R) :- pair_rank(_, C, R), !broken(C, R).
@@ -367,14 +370,14 @@
     shape_ok(E, T) :- counts(E, _, _, _, _), d4_elem(T), !swaps(T).
 
     .decl mismatch(e: Example, pt: Position, t: D4)
-    mismatch(E, Pt, T) :- train_in(E, P, C), shape_ok(E, T), apply(T, P, Pi),
+    mismatch(E, Pt, T) :- ex_in(E, P, C), shape_ok(E, T), apply(T, P, Pi),
         tile_cell(E, Pt, Pi, C2), C != C2.
 
     .decl cand(e: Example, pt: Position, t: D4)
     cand(E, Pt, T) :- tile_cell(E, Pt, _, _), shape_ok(E, T), !mismatch(E, Pt, T).
 
     .decl broken(pt: Position, t: D4)
-    broken(Pt, T) :- cand(_, Pt, T), train_in(E, _, _), !cand(E, Pt, T).
+    broken(Pt, T) :- cand(_, Pt, T), ex_out(E, _, _), !cand(E, Pt, T).
 
     .decl propose(pt: Position, t: D4)
     propose(Pt, T) :- cand(_, Pt, T), !broken(Pt, T).

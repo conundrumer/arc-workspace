@@ -8,7 +8,7 @@ import re
 
 # Per-mode IO directives, appended to the built source.
 SOLVE_DIRECTIVES = ".input in(IO=stdin)\n.output out(IO=stdout)\n"
-FIT_DIRECTIVES = ".input train_in\n.input train_out\n.output fit_diff(IO=stdout)\n"
+FIT_DIRECTIVES = ".input ex_in\n.input ex_out\n.output fit_diff(IO=stdout)\n"
 
 COMP_HEADER_RE = re.compile(r"\.comp\s+(\w+)")
 DECL_RE = re.compile(r"\.decl\s+(\w+)\s*\(([^)]*)\)")
@@ -110,13 +110,14 @@ def comp_decls(source: str, comp_name: str) -> dict[str, list[str]]:
     return decls
 
 
-def fit_slots(source: str) -> dict[str, int] | None:
-    """Fitted slots: Fit decls that mirror a Consts decl. None when no Fit comp."""
+def fit_slots(source: str) -> dict[str, list[str]] | None:
+    """Fitted slots (name -> Consts arg types): Fit decls that mirror a
+    Consts decl. None when no Fit comp."""
     fit = comp_decls(source, "Fit")
     if not fit:
         return None
     consts = comp_decls(source, "Consts")
-    return {name: len(types) for name, types in fit.items() if name in consts}
+    return {name: consts[name] for name in fit if name in consts}
 
 
 def _comp_span(source: str, comp_name: str) -> tuple[int, int]:
@@ -216,12 +217,26 @@ def build_source(source: str) -> str:
     return f"{expand_grid_macros(source)}\n{SOLVE_DIRECTIVES}"
 
 
-def build_fit_source(source: str, slots: dict[str, int]) -> str:
-    """Assemble the fit-mode program: Fit instance, per-slot diffs, directives."""
+def build_fit_source(source: str, slots: dict[str, list[str]]) -> str:
+    """Assemble the fit-mode program: Fit instance, per-slot diffs, directives.
+
+    A slot with an Ident column gets no diff rules — its ids are arbitrary,
+    so both sides relay to output relations and the runner compares them
+    modulo id renaming.
+    """
     lines = [".init fit = Fit"]
-    for name, arity in sorted(slots.items()):
-        args = ", ".join(f"A{i}" for i in range(arity))
-        lines.append(f'fit_diff("{name}") :- fit.{name}({args}), !c.{name}({args}).')
-        lines.append(f'fit_diff("{name}") :- c.{name}({args}), !fit.{name}({args}).')
+    for name, types in sorted(slots.items()):
+        args = ", ".join(f"A{i}" for i in range(len(types)))
+        if "Ident" in types:
+            typed = ", ".join(f"a{i}: {t}" for i, t in enumerate(types))
+            for side in ("fit", "c"):
+                lines += [
+                    f".decl {side}_ident_{name}({typed})",
+                    f"{side}_ident_{name}({args}) :- {side}.{name}({args}).",
+                    f".output {side}_ident_{name}(IO=stdout)",
+                ]
+        else:
+            lines.append(f'fit_diff("{name}") :- fit.{name}({args}), !c.{name}({args}).')
+            lines.append(f'fit_diff("{name}") :- c.{name}({args}), !fit.{name}({args}).')
     appended = "\n".join(lines)
     return f"{expand_grid_macros(source)}\n{appended}\n{FIT_DIRECTIVES}"

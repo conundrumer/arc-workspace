@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from arc.task import load as load_task
-from dl.facts import _parse_block, train_facts
+from dl.facts import _parse_relations, _parse_value, example_facts
 from dl.paths import SOLVERS_DIR
 from dl.souffle import _run_source
 from dl.source import build_fit_source, comp_decls, fit_slots
@@ -29,18 +29,42 @@ def run_fit(stem: str) -> FitResult | None:
     task = load_task(stem.split("_", 1)[0])
     try:
         with tempfile.TemporaryDirectory() as facts_dir:
-            for name, text in train_facts(task).items():
+            for name, text in example_facts(task).items():
                 (Path(facts_dir) / name).write_text(text)
             stdout = _run_source(
                 build_fit_source(source, slots), "", ["-F", facts_dir]
             )
-        diff = sorted({row.strip() for row in _parse_block(stdout)})
+        rels = _parse_relations(stdout)
+        diff = sorted({row.strip() for row in rels.get("fit_diff", [])})
+        ident_slots = {n: t for n, t in slots.items() if "Ident" in t}
+        if ident_slots and not _ident_match(ident_slots, rels):
+            diff.append("+".join(sorted(ident_slots)) + " (ids)")
         return FitResult(slots=sorted(slots), unfitted=unfitted, diff=diff)
     except Exception as e:
         return FitResult(
             slots=sorted(slots), unfitted=unfitted, diff=[],
             error=f"{type(e).__name__}: {e}",
         )
+
+
+def _ident_match(slots: dict[str, list[str]], rels: dict[str, list[str]]) -> bool:
+    """Compare Ident-carrying slots modulo id renaming.
+
+    A slot's Ident column is a join key shared across the solver's Ident
+    slots, so each side reduces to a multiset of per-id signatures — the
+    id's rows across all slots, id elided — and the sides must agree.
+    """
+    def signatures(side: str):
+        by_id: dict = {}
+        for name, types in slots.items():
+            idx = types.index("Ident")
+            for row in rels.get(f"{side}_ident_{name}", []):
+                vals = [_parse_value(x) for x in row.split("\t")]
+                rest = tuple(v for i, v in enumerate(vals) if i != idx)
+                by_id.setdefault(vals[idx], []).append((name, rest))
+        return sorted(tuple(sorted(rows)) for rows in by_id.values())
+
+    return signatures("fit") == signatures("c")
 
 
 def render_fit(fit: FitResult) -> list[str]:

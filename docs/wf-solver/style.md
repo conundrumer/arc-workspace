@@ -134,7 +134,7 @@ Lib primitives are `inline`: each call expands into the calling rule, and Souffl
 
 ## Fit
 
-A solver that fits its Consts carries a `.comp Fit` after the body, under a `// --- fit ---` marker: one relation per fitted slot, with the slot's name and schema, derived from `train_in` / `train_out`. Fit relations that mirror no slot are helpers.
+A solver that fits its Consts carries a `.comp Fit` after the body, under a `// --- fit ---` marker: one relation per fitted slot, with the slot's name and schema, derived from `ex_in` / `ex_out`. Fit relations that mirror no slot are helpers.
 
 The runner checks each fitted slot against its Consts fill; a nonempty `fit_diff` is a violation.
 

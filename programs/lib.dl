@@ -29,7 +29,7 @@
 // arbitrary, so consumers join on equality and never order or count with it.
 .type Ident <: number
 
-// Example: index of a train pair.
+// Example: index of a task example.
 .type Example <: number
 
 .type Position = [t: number, b: number, l: number, r: number]
@@ -86,9 +86,9 @@
 // The task input grid.
 .decl in(p: Position, col: Color)
 
-// Train pairs, fed in fit mode.
-.decl train_in(e: Example, p: Position, col: Color)
-.decl train_out(e: Example, p: Position, col: Color)
+// Train and test inputs and train outputs, fed in fit mode.
+.decl ex_in(e: Example, p: Position, col: Color)
+.decl ex_out(e: Example, p: Position, col: Color)
 
 // Per-slot diff between fit.<slot> and c.<slot>; the runner synthesizes
 // the rules.

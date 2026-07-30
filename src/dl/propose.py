@@ -13,7 +13,7 @@ from dl.domains import (
     _lib_defines,
     _number_domain,
 )
-from dl.facts import _parse_relations, _parse_value, train_facts
+from dl.facts import _parse_relations, _parse_value, example_facts
 from dl.paths import PROPOSERS_SRC, SOLVERS_DIR
 from dl.souffle import _run_source
 from dl.source import (
@@ -44,7 +44,7 @@ def proposer_decls() -> dict[str, list[str]]:
 def build_probe_source() -> str:
     """Assemble the proposer probe: every proposer inited, propose relayed."""
     lines = ['#include "../lib.dl"', '#include "../proposers.dl"',
-             ".input train_in", ".input train_out"]
+             ".input ex_in", ".input ex_out"]
     for name, types in sorted(proposer_decls().items()):
         inst = name.lower()
         args = ", ".join(f"A{i}" for i in range(len(types)))
@@ -59,9 +59,9 @@ def build_probe_source() -> str:
 
 
 def run_propose(task) -> dict[str, set[tuple]]:
-    """Run the probe on a task's train pairs: proposer -> candidate set."""
+    """Run the probe on a task's examples: proposer -> candidate set."""
     with tempfile.TemporaryDirectory() as facts_dir:
-        for name, text in train_facts(task).items():
+        for name, text in example_facts(task).items():
             (Path(facts_dir) / name).write_text(text)
         stdout = _run_source(build_probe_source(), "", ["-F", facts_dir])
     return {

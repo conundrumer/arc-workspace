@@ -25,22 +25,27 @@ def _enum_domain(type_name: str, defines: dict[str, int]) -> list[int]:
     return sorted(v for k, v in defines.items() if k.startswith(prefix))
 
 
+def _known_grids(task) -> list[list[list[int]]]:
+    """The grids known at produce time: train pairs and test inputs."""
+    return [g for ex in task.train for g in (ex.input, ex.output)] + [
+        ex.input for ex in task.test
+    ]
+
+
 def _color_domain(task) -> list[int]:
-    """Colors present in the train pairs."""
+    """Colors present in the known grids."""
     colors: set[int] = set()
-    for ex in task.train:
-        for grid in (ex.input, ex.output):
-            for row in grid:
-                colors.update(row)
+    for grid in _known_grids(task):
+        for row in grid:
+            colors.update(row)
     return sorted(colors)
 
 
 def _number_domain(task) -> list[int]:
-    """0..max train grid dimension — the range of task-shape numbers."""
+    """0..max known grid dimension — the range of task-shape numbers."""
     dims = [
         d
-        for ex in task.train
-        for grid in (ex.input, ex.output)
+        for grid in _known_grids(task)
         for d in (len(grid), len(grid[0]) if grid else 0)
     ]
     return list(range(max(dims) + 1))
