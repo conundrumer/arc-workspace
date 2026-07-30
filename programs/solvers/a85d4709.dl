@@ -80,7 +80,6 @@ out(P, Out_C, $MarkerPosition()) :-
     same.pattern_member(S, [P_inner, C]) :- fslice(S, P_inner, C).
     same.observed_member(S, [P_inner, C]) :- fslice(S, P_inner, C).
 
-    // Entry id: the class's least member.
     .decl entry(s: SliceKey, id: Ident)
     entry(S, as(Min, Ident)) :-
         fslice(S, _, _), Min = min ord(S2) : { same.equals(S, S2) }.

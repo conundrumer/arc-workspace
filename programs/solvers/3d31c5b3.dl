@@ -73,25 +73,22 @@ out(P, Col, $Ink()) :- ink_at(P, Col), !ink_beaten(P, Col).
 // --- fit ---
 
 .comp Fit {
-    // Tile ink at each output cell.
     .decl tile_ink(e: Example, p_tile: Position, p: Position, col: Color)
     tile_ink(E, P_tile, P_intile, Col) :-
         ex_in(E, P_grid, Col), !c.bg(Col),
         c.axis(A), c.tiles(N),
         divide_slab(P_grid, A, N, 0, P_tile, P_intile).
 
-    // Closed transitively: not every tile pair overlaps directly.
+    // Closed transitively: a tile pair need not overlap directly.
     .decl beats(p_tile: Position, p_tile2: Position)
     beats(T, T2) :-
         tile_ink(E, T, P, Col), tile_ink(E, T2, P, Col2), Col != Col2,
         ex_out(E, P, Col).
     beats(T, T3) :- beats(T, T2), beats(T2, T3).
 
-    // A tile's rank is how many tiles beat it.
     .decl prio(p: Position, r: number)
     prio(T, R) :- tile_ink(_, T, _, _), R = count : { beats(T2, T) }.
 
-    // The same order keyed by each tile's ink.
     .decl ink_rank(c: Color, r: number)
     ink_rank(Col, R) :- tile_ink(_, T, _, Col), prio(T, R).
 }
