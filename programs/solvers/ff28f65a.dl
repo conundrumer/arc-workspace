@@ -73,37 +73,46 @@
 
 .init c = Consts
 
-// Cells of the counted color.
-.decl on(p: Position)
-on(P) :- in(P, C), c.block_color(C).
+// --- parse ---
 
-// ============================================================
-// $Object: connected components equal to the shape
-// ============================================================
+.comp Parse<Key> {
+    .type Obj = [k: Key, id: Ident]
 
-.init comps = Components<Unit>
-comps.node($U(), P) :- on(P).
+    .decl cell(k: Key, p: Position, col: Color)
 
-.init object_box = Bbox<Ident>
-object_box.cell(Id, P) :- comps.label($U(), P, Id).
+    .decl on(k: Key, p: Position)
+    on(K, P) :- cell(K, P, C), c.block_color(C).
 
-.init object_frame = Reframe<Ident>
-object_frame.cell(Id, P)  :- comps.label($U(), P, Id).
-object_frame.outer(Id, M) :- object_box.margin(Id, M).
+    .init comps = Components<Key>
+    comps.node(K, P) :- on(K, P).
 
-.init object_match = KeyedSetCompare<Ident, Ident, Position>
-object_match.pattern_member(0, I)   :- c.block_shape(I).
-object_match.observed_member(Id, I) :- object_frame.inner(Id, I).
+    .init box = Bbox<Obj>
+    box.cell([K, Id], P) :- comps.label(K, P, Id).
 
-.decl object_count(n: number)
-object_count(N) :- N = count : { object_match.equals(Id, 0) }.
+    .init frame = Reframe<Obj>
+    frame.cell([K, Id], P)  :- comps.label(K, P, Id).
+    frame.outer([K, Id], M) :- box.margin([K, Id], M).
+
+    .init same = KeyedSetCompare<Obj, Unit, Position>
+    same.pattern_member($U(), P) :- c.block_shape(P).
+    same.observed_member(O, P)   :- frame.inner(O, P).
+
+    .decl block(k: Key, id: Ident)
+    block(K, Id) :- same.equals([K, Id], $U()).
+
+    .decl block_count(k: Key, n: number)
+    block_count(K, N) :- cell(K, _, _), N = count : { block(K, Id) }.
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, C) :- in(P, C).
 
 // ============================================================
 // $Placement: placements where the shape occurs (Occurrences)
 // ============================================================
 
 .init occ = Occurrences<Unit>
-occ.cell($U(), P)  :- on(P).
+occ.cell($U(), P)  :- parse.on($U(), P).
 occ.shape($U(), P) :- c.block_shape(P).
 
 .decl placement_count(n: number)
@@ -114,7 +123,7 @@ placement_count(N) :- N = count : { occ.occurrence($U(), _) }.
 // ============================================================
 
 .decl total(n: number, detect: Detect)
-total(N, $Object())    :- object_count(N).
+total(N, $Object())    :- parse.block_count($U(), N).
 total(N, $Placement()) :- placement_count(N).
 
 // The X: cells on either diagonal of the output frame.
@@ -141,3 +150,14 @@ out(P, BG,   [Det, $Fill()]) :- c.out_pos(P), total(_, Det), !marked(P, Det), c.
 
 // Lookup (data) — select the stored grid for the count.
 out(P, Col, [Det, $Lookup()]) :- total(N, Det), c.lookup_grid(N, P, Col).
+
+// --- fit ---
+
+.comp Fit {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // A count's grid is its example's whole output.
+    .decl lookup_grid(n: number, p: Position, col: Color)
+    lookup_grid(N, P, Col) :- parse.block_count(E, N), ex_out(E, P, Col).
+}
