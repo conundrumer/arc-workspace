@@ -30,11 +30,12 @@ When a decomposition's inner coordinate is also the output cell, name it by the 
 - First line: `// <task_id>`.
 - Second line, exactly one of:
     - `// concept: <terms>` — family representative. Terms from `concepts.md`, the union over cases: setup terms plus each case's prior term.
-    - `// family: <task_id>` — family sibling: same body, fills differ. Points at the representative, the family's first-solved member. A sibling's header keeps only task-specific content.
+    - `// family: <task_id>` — family sibling: same body and Fit comp, fills differ. Points at the representative, the family's first-solved member. A sibling's header keeps only task-specific content.
 - `#include "../lib.dl"` at top.
 - `.comp Consts { ... }` declares task-wide data; `.init c = Consts` exposes it as `c.<rel>`.
 - Inside Consts, `.init helpers = ConstsHelpers` makes shared helpers (`frame_pos`, `tile_pos`) available as `helpers.<rel>(...)` in data declarations. The body has no access.
 - All task-wide data lives in Consts, e.g. orientation (Dirs, Axes), dimensions, gaps, mappings, frame data.
+- A datum lives in a shared slot when more than one case reads it.
 - A single-fact data declaration puts the fact on the decl line, one space after it. A multi-fact declaration puts the facts on the next line at the decl's indent. Facts are not column-aligned across a block.
 - Store an orientation datum constrained by another as a relative value (`Sense` via `turn`, `Axis` via `perp`). A second absolute slot admits fills the family does not have; the relative form has one fill per member.
 
@@ -136,9 +137,15 @@ Lib primitives are `inline`: each call expands into the calling rule, and Souffl
 
 A solver that fits its Consts carries a `.comp Fit` after the body, under a `// --- fit ---` marker: one relation per fitted slot, with the slot's name and schema, derived from `ex_in` / `ex_out`. Fit relations that mirror no slot are helpers.
 
-The runner checks each fitted slot against its Consts fill; a nonempty `fit_diff` is a violation.
+The runner checks each fitted slot against its Consts fill; `fit_diff` collects the rows the two sides do not share, and a nonempty `fit_diff` is a violation. Derived ids need only be stable across the solver's Ident slots, not equal to the stored ones.
 
 Fit rules are body code: body style and the linter apply.
+
+## Parse
+
+A `.comp Parse<Key>` holds a derivation the body and the Fit comp share; it sits before the body rules, under a `// --- parse ---` marker.
+
+Parse rules are body code: body style and the linter apply.
 
 ## Runner contract
 
@@ -146,7 +153,7 @@ Fit rules are body code: body style and the linter apply.
 
 `out` must be total over the expected output grid: a missing cell fails the variant.
 
-In the audit (`--audit`), the sweep lists each fill beyond the stored one that the train pairs accept, with its test verdict. The mutation report lists each deletion that changes no pair's output.
+In the audit (`--audit`), the sweep lists each fill beyond the stored one that the train pairs accept, with its test verdict. The deletion report lists each rule or negated atom whose deletion changes no pair's output or derived fill.
 
 ## Alt outputs
 

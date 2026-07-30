@@ -249,3 +249,19 @@ corner_dist(P, Diag, K) :- diag_dist(P, Diag, _, K1, K2), K = K1 + K2.
 V (level with the seed toward a cone corner), the open cone (strictly
 nearer both cone corners than the seed), and $Stripe's period (the
 seed's stride class from the mirror corner).
+
+## `divide_gap` — the divide family's gap reading
+
+The gap reading of the divide family: `divide` reads `(extent, n, gap) -> k`, `divide_by_size` reads `(extent, k, gap) -> n`, `divide_gap` reads `(extent, n, k) -> gap`. A fitter derives a stored gap from the observed count and tile size, a direction no forward member expresses. Lib target: primitive beside `divide`.
+
+```
+.comp DivideGap {
+    .decl divide_gap(p: Position, a: Axis, n: number, k: number, g: number) inline
+    divide_gap(P, A, N, K, G) :-
+        axis_dim(P, A, Ext), N > 1,
+        (Ext - N*K) % (N-1) = 0,
+        G = (Ext - N*K) / (N-1).
+}
+```
+
+**Task-local home (protocol step 1).** eb281b96 (`DivideGap` comp): the Fit's `tile_gap` from the observed tile size and count.

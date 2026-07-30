@@ -1,6 +1,6 @@
 # Backlog
 
-List of queued ideas. Sessions append on ask; one line per item.
+List of queued ideas. One line per item. Only append when the user asks to add something to the backlog.
 
 2. Neighbor/adjacency utility for solver sessions — rep-side rival-claim adjacency notes and on-demand review-time similarity against a fresh draft. Machinery: `archive/corpus-analysis`.
 3. Further exploratory analysis of corpus structure (motif mining below hub level, walk super-family). Machinery: same as item 2.
