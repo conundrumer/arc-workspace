@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from dl.fit import FitResult, render_fit, run_fit
 from dl.lint import lint_body
-from dl.mutate import mutation_report
+from dl.deletions import deletion_report
 from dl.paths import SOLVERS_DIR, all_stems
 from dl.propose import propose_report, render_propose
 from dl.render import render_pair_failure
@@ -137,35 +137,35 @@ def cmd_sweep(stem: str, max_candidates: int = 64) -> int:
     return 0
 
 
-def _print_mutation(stem: str) -> int:
-    report = mutation_report(stem)
+def _print_deletions(stem: str) -> int:
+    report = deletion_report(stem)
     if report is None:
         print("baseline fails: stored source does not pass train+test")
         return 1
-    total, survivors = report
-    if not survivors:
-        print(f"no surviving mutants ({total} tested)")
+    total, unchanged = report
+    if not unchanged:
+        print(f"every deletion changes the result ({total} tested)")
     else:
-        print(f"{len(survivors)}/{total} mutants survive:")
-        for lineno, kind, text in survivors:
+        print(f"{len(unchanged)}/{total} deletions change nothing:")
+        for lineno, kind, text in unchanged:
             print(f"  L{lineno}: {kind} `{text}`")
     return 0
 
 
-def cmd_mutate(stem: str) -> int:
+def cmd_deletions(stem: str) -> int:
     build_functors()
-    return _print_mutation(stem)
+    return _print_deletions(stem)
 
 
 def cmd_audit(stem: str) -> int:
-    """Both evidence audits of a finished solver: fill sweep + mutation."""
+    """Both evidence audits of a finished solver: fill sweep + deletions."""
     build_functors()
     print("--- sweep ---")
     for line in render_sweep(sweep_report(stem)):
         print(line)
     print()
-    print("--- mutation ---")
-    return _print_mutation(stem)
+    print("--- deletions ---")
+    return _print_deletions(stem)
 
 
 def cmd_propose(stem: str) -> int:
@@ -185,15 +185,15 @@ def main(argv: list[str]) -> int:
         return cmd_sweep(argv[1])
     if len(argv) == 3 and argv[0] == "--sweep":
         return cmd_sweep(argv[1], int(argv[2]))
-    if len(argv) == 2 and argv[0] == "--mutate":
-        return cmd_mutate(argv[1])
+    if len(argv) == 2 and argv[0] == "--deletions":
+        return cmd_deletions(argv[1])
     if len(argv) == 2 and argv[0] == "--audit":
         return cmd_audit(argv[1])
     if len(argv) == 2 and argv[0] == "--propose":
         return cmd_propose(argv[1])
     print(
         f"usage: {sys.argv[0]} "
-        "[--audit <stem> | --sweep <stem> [cap] | --mutate <stem> | "
+        "[--audit <stem> | --sweep <stem> [cap] | --deletions <stem> | "
         "--propose <stem> | <stem>]",
         file=sys.stderr,
     )

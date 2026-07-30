@@ -34,19 +34,20 @@ def sweep_report(
 ) -> list[tuple[str, str, object]]:
     """Conditional sweep of each enumerable Consts slot.
 
-    Sweeps one slot at a time with the others at their stored values; a
-    candidate survives when it reproduces the stored fill's variant profile
-    on every train pair. A slot's fill may be a set (a symmetric member
-    stores every fitting value), so the check is survivors == stored facts.
+    Sweeps one slot at a time with the others at their stored values; an
+    alternative fill fits when it reproduces the stored fill's variant
+    profile on every train pair. A slot's fill may be a set (a symmetric
+    member stores every fitting value), so the check is fitting == stored
+    facts.
 
-    Survivors beyond the stored facts are re-run against the test pairs:
-    a producer holding only the train pairs could pick any survivor, so an
-    extra that fails test is a would-be wrong prediction, and one that
-    passes is gauge for this task instance.
+    Fitting values beyond the stored facts are re-run against the test
+    pairs: a producer holding only the train pairs could pick any of them,
+    so an extra that fails test is a would-be wrong prediction, and one
+    that passes is gauge for this task instance.
 
     Returns (slot, status, detail): status 'swept' carries
-    (survivors, stored, types, verdicts) — verdicts maps each extra
-    survivor to its test-pass bool — 'skip' carries the reason.
+    (fitting, stored, types, verdicts) — verdicts maps each extra fitting
+    value to its test-pass bool — 'skip' carries the reason.
     """
     # GRID calls expand first, so a GRID-fed slot reads as ordinary facts;
     # re-expansion at build time is a no-op.
@@ -102,7 +103,9 @@ def sweep_report(
         # rather than as a holistic table.
         candidates = sorted(set(itertools.product(*domains)) | set(stored))
         if len(candidates) > max_candidates:
-            results.append((slot, "skip", f"{len(candidates)} candidates"))
+            results.append(
+                (slot, "skip", f"{len(candidates)} alternative fills, cap {max_candidates}")
+            )
             continue
 
         if reference is None:
@@ -116,11 +119,11 @@ def sweep_report(
             return vals if profile == reference else None
 
         with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
-            survivors = [v for v in executor.map(test, candidates) if v]
+            fitting = [v for v in executor.map(test, candidates) if v]
 
         verdicts: dict[tuple, bool] = {}
-        extras = sorted(set(survivors) - set(stored))
-        if extras and set(stored) <= set(survivors):
+        extras = sorted(set(fitting) - set(stored))
+        if extras and set(stored) <= set(fitting):
             if test_reference is None:
                 test_reference = _profile(source, task.test)
             if test_reference is None:
@@ -132,7 +135,7 @@ def sweep_report(
 
                 with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
                     verdicts = dict(zip(extras, executor.map(test_check, extras)))
-        results.append((slot, "swept", (survivors, stored, types, verdicts)))
+        results.append((slot, "swept", (fitting, stored, types, verdicts)))
     return results
 
 
@@ -178,10 +181,10 @@ def render_sweep(results: list[tuple[str, str, object]]) -> list[str]:
     lines = []
     for slot, status, detail in results:
         if status == "skip":
-            lines.append(f"{slot}: skipped — {detail}")
+            lines.append(f"{slot}: not swept — {detail}")
             continue
-        survivors, stored, types, verdicts = detail
-        vset, sset = set(survivors), set(stored)
+        fitting, stored, types, verdicts = detail
+        vset, sset = set(fitting), set(stored)
         shown_s = ", ".join(show(v, types) for v in stored)
         if vset == sset:
             if len(sset) == 1:

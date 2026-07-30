@@ -3,9 +3,9 @@
 Usage:
     uv run python scripts/run_dl.py                    # run all .dl solvers
     uv run python scripts/run_dl.py <stem>             # run one
-    uv run python scripts/run_dl.py --audit <stem>     # fill sweep + mutation report
+    uv run python scripts/run_dl.py --audit <stem>     # fill sweep + deletion report
     uv run python scripts/run_dl.py --sweep <stem> [cap]   # conditional fill sweep
-    uv run python scripts/run_dl.py --mutate <stem>    # structural mutation report
+    uv run python scripts/run_dl.py --deletions <stem> # structural deletion report
     uv run python scripts/run_dl.py --propose <stem>   # proposers vs stored Color fills
 
 For a single stem, encodes each example's input grid as fact lines on stdin,
