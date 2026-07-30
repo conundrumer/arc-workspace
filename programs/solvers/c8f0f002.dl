@@ -3,7 +3,6 @@
 // Color substitution via a mapping relation.
 
 #include "../lib.dl"
-#include "../proposers.dl"
 
 .comp Consts {
     .decl mapping(c_from: Color, c_to: Color)
@@ -15,12 +14,3 @@
 .decl out(p: Position, col: Color)
 out(P, Col_out) :- in(P, Col_in), c.mapping(Col_in, Col_out).
 out(P, Col)     :- in(P, Col), !c.mapping(Col, _).
-
-// --- fit ---
-
-.comp Fit {
-    .init changed = ChangedPairs
-
-    .decl mapping(c_from: Color, c_to: Color)
-    mapping(C_from, C_to) :- changed.propose(C_from, C_to).
-}
