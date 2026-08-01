@@ -52,3 +52,30 @@ out(P, Col_out, $Lookup()) :-
     in(P, C_self),                                       // input cell color
     c.mirror(D), apply(D, P, P_m), in(P_m, C_mirror),    // mirror cell color
     c.recolor(C_self, C_mirror, Col_out).
+
+// --- fit ---
+
+.comp Fit {
+    // A cell's color, its image's color under a transform, and the color the output paints it.
+    .decl pair_color(d: D4, c_self: Color, c_mirror: Color, col: Color)
+    pair_color(D, C, C_m, Col) :-
+        d4_elem(D),
+        ex_in(E, P, C), apply(D, P, P_m), ex_in(E, P_m, C_m),   // cell and its image
+        ex_out(E, P, Col).
+
+    // A transform that paints one color pair two ways.
+    .decl broken(d: D4)
+    broken(D) :- pair_color(D, C, C_m, Col), pair_color(D, C, C_m, Col2), Col != Col2.
+
+    .decl mirror(d: D4)
+    mirror(D) :- d4_elem(D), !broken(D).
+
+    .decl recolor(c_self: Color, c_mirror: Color, c_out: Color)
+    recolor(C, C_m, Col) :- c.mirror(D), pair_color(D, C, C_m, Col).
+
+    .decl matched(c: Color)
+    matched(Col) :- c.mirror(D), pair_color(D, C, C_m, Col), !c.bg(C), !c.bg(C_m).
+
+    .decl unmatched(c: Color)
+    unmatched(Col) :- c.mirror(D), pair_color(D, C, C_m, Col), !c.bg(C), c.bg(C_m).
+}

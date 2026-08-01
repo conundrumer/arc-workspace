@@ -73,3 +73,51 @@ ray_mask(M, Q, K2) :-
 out(P, Col, $Mask()) :- ray_mask(_, P, K), c.mask(K, Col).    // overridden slot
 out(P, M,   $Mask()) :- ray_mask(M, P, K), !c.mask(K, _).     // unmarked slot echoes the dot
 out(P, Col, $Mask()) :- in(P, Col), !ray_mask(_, P, _).
+
+// --- fit ---
+
+.type MarkKey = [e: Example, p: Position]
+
+.comp Fit {
+    // Dots of the train inputs; the ex_out atom holds the test input out.
+    .decl fmark(k: MarkKey, col: Color)
+    fmark([E, P], Col) :- ex_in(E, P, Col), !c.bg(Col), ex_out(E, _, _).
+
+    // Each cell of an example as an offset from each of its dots.
+    .init offset = Reframe<MarkKey>
+    offset.outer([E, P], P) :- fmark([E, P], _).
+    offset.cell([E, P], Q)  :- fmark([E, P], _), ex_in(E, Q, _).
+
+    // The color the pair paints i steps along a dot's ray.
+    .decl ray_col(k: MarkKey, i: number, col: Color)
+    ray_col([E, M], I, Col) :-
+        offset.inner([E, M], Delta),                        // cell relative to its dot
+        c.ray_dir(D), opposite(D, O), dist(Delta, O, I),    // steps toward ray_dir
+        I >= 0, jump_delta(D, I, Delta),                    // straight along the ray
+        compose(M, Delta, P), ex_out(E, P, Col).            // the painted cell
+
+    // Two steps of one ray that carry different colors — never one slot.
+    .decl differ(i: number, i2: number)
+    differ(I, I2) :- ray_col(Ky, I, Col), ray_col(Ky, I2, Col2), Col != Col2.
+
+    // Candidate periods: the step counts the rays reach.
+    .decl cand(w: number)
+    cand(W) :- ray_col(_, W, _), W != 0.
+
+    // A period that folds two differing steps onto one slot.
+    .decl broken(w: number)
+    broken(W) :- cand(W), differ(I, I2), stride(I, W, 0, _, K), stride(I2, W, 0, _, K).
+
+    // The shortest period no ray breaks.
+    .decl period(n: number)
+    period(N) :- cand(N), N = min W : { cand(W), !broken(W) }.
+
+    .decl slot(k: number)
+    slot(K) :- ray_col(_, K, _), period(N), K < N.
+
+    // A step that does not echo its dot, folded into its slot.
+    .decl mask(k: number, col: Color)
+    mask(K, Col) :-
+        ray_col(Ky, I, Col), fmark(Ky, Mc), Col != Mc,
+        period(N), stride(I, N, 0, _, K).
+}

@@ -144,3 +144,46 @@ out(P, Col, [V, E]) :- echo(P, E), c.echo(Col), v_choice(V).
 out(P, Col, [V, E]) :-
     frame.cell($U(), P), !arm(P), !echo(P, E),   // cell outside V and echoes
     echo_choice(E), v_choice(V), c.bg(Col).
+
+// --- fit ---
+
+.comp Fit {
+    // The ink cell, seated in the output frame.
+    .decl seed(e: Example, p: Position)
+    seed(E, P_out) :-
+        ex_in(E, P_in, Col), !c.bg(Col),             // ink cell
+        ex_out(E, P_out, _),
+        c.grow(D), opposite(D, D0),                  // seat edge
+        slab_anchor(D0, P_in, P_out).
+
+    // The echoed cells an output shows.
+    .decl echoed(e: Example, p: Position)
+    echoed(E, P) :- ex_out(E, P, Col), c.echo(Col).
+
+    // Strictly inside the V's cone.
+    .decl inside(e: Example, p: Position)
+    inside(E, P) :-
+        ex_out(E, P, _), seed(E, S),
+        cast_corner(CD),   cd.corner_dist(P, CD, K1), cd.corner_dist(S, CD, N1), K1 < N1,
+        mirror_corner(MD), cd.corner_dist(P, MD, K2), cd.corner_dist(S, MD, N2), K2 < N2.
+
+    .decl cand(k: number)
+    cand(K) :-
+        ex_out(_, P, _),
+        mirror_corner(MD), cd.corner_dist(P, MD, K), K != 0.
+
+    // The cells a candidate period echoes.
+    .decl striped(e: Example, p: Position, k: number)
+    striped(E, P, Per) :-
+        cand(Per), inside(E, P), seed(E, S),
+        mirror_corner(MD), cd.corner_dist(P, MD, Kp), cd.corner_dist(S, MD, Ks),
+        stride(Kp, Per, 0, _, R), stride(Ks, Per, 0, _, R).
+
+    // A candidate that echoes a cell the pair does not, or misses one it does.
+    .decl broken(k: number)
+    broken(Per) :- striped(E, P, Per), !echoed(E, P).
+    broken(Per) :- cand(Per), echoed(E, P), !striped(E, P, Per).
+
+    .decl period(k: number)
+    period(Per) :- cand(Per), !broken(Per).
+}

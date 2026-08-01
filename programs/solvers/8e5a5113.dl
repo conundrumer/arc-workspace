@@ -74,3 +74,30 @@ out(P_grid, Col, $Lookup()) :-
     src(_, P_src, Col),                                  // pattern cell
     c.tile_d4(P_tile, D), apply(D, P_src, P_intile),     // d4 image at tile
     tile_cell(P_grid, P_tile, P_intile).                 // recompose
+
+// --- fit ---
+
+.comp Fit {
+    // The pattern: an input tile's non-bg content.
+    .decl src(e: Example, p_intile: Position, col: Color)
+    src(E, P_intile, Col) :-
+        ex_in(E, P_grid, Col), !c.bg(Col),
+        c.axis(A), c.tile_n(N), c.gap(G),
+        divide_slab(P_grid, A, N, G, _, P_intile).
+
+    .decl out_cell(e: Example, p_tile: Position, p_intile: Position, col: Color)
+    out_cell(E, P_tile, P_intile, Col) :-
+        ex_out(E, P_grid, Col),
+        c.axis(A), c.tile_n(N), c.gap(G),
+        divide_slab(P_grid, A, N, G, P_tile, P_intile).
+
+    // A transform that lands some pattern cell off the output tile's color.
+    .decl broken(p_tile: Position, d: D4)
+    broken(P_tile, D) :-
+        src(E, P_src, Col), out_cell(E, P_tile, _, _),
+        d4_elem(D), apply(D, P_src, P_intile),
+        !out_cell(E, P_tile, P_intile, Col).
+
+    .decl tile_d4(p: Position, d: D4)
+    tile_d4(P_tile, D) :- out_cell(_, P_tile, _, _), d4_elem(D), !broken(P_tile, D).
+}

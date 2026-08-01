@@ -53,3 +53,56 @@ perm(P_grid_in, P_grid_out, $Divide()) :-
 
 .decl out(p: Position, col: Color, c: Choice)
 out(P_grid_out, Col, Impl) :- impl_choice(Impl), in(P_grid_in, Col), perm(P_grid_in, P_grid_out, Impl).
+
+// --- fit ---
+
+.comp Fit {
+    .decl cand(a: Axis, p_in: Position, p_out: Position)
+    cand(A, P_in, P_out) :-
+        ex_in(E, P_in, Col), ex_out(E, P_out, Col),                            // shared color
+        axis_elem(A), split(P_in, A, P_along, _), split(P_out, A, P_along, _). // same coordinate on a
+
+    // Two candidates for one cell — the axis leaves the pairing open.
+    .decl ambiguous(a: Axis)
+    ambiguous(A) :- cand(A, P_in, P1), cand(A, P_in, P2), P1 != P2.
+
+    .decl divide_axis(a: Axis)
+    divide_axis(A) :- cand(A, _, _), !ambiguous(A).
+
+    .decl pair(p_in: Position, p_out: Position)
+    pair(P_in, P_out) :- divide_axis(A), cand(A, P_in, P_out).
+
+    .decl in_label(p: Position, id: Ident)
+    in_label(P_in, as(ord(P_in), Ident)) :- pair(P_in, _).
+
+    .decl out_label(p: Position, id: Ident)
+    out_label(P_out, as(ord(P_in), Ident)) :- pair(P_in, P_out).
+
+    .decl cell_transform(p_in: Position, d: D4)
+    cell_transform(P_in, D) :- pair(P_in, P_out), d4_elem(D), apply(D, P_in, P_out).
+
+    // Swept tiling of the divide axis, by tile size.
+    .decl tiled(k: number, p_in: Position, p_outer_axis: Position, p_inner_axis: Position)
+    tiled(K, P_in, P_outer_axis, P_inner_axis) :-
+        pair(P_in, _), divide_axis(A),
+        sub_extent(P_in, A, K), divide_by_size(P_in, A, K, 0, P_outer_axis, P_inner_axis).
+
+    // A tile size whose inner position does not fix the transform.
+    .decl mixed(k: number)
+    mixed(K) :-
+        tiled(K, P1, _, P_inner_axis), cell_transform(P1, D1),
+        tiled(K, P2, _, P_inner_axis), cell_transform(P2, D2),
+        D1 != D2.
+
+    .decl tiling(k: number)
+    tiling(K) :- tiled(K, _, _, _), !mixed(K).
+
+    .decl divisor(n: number)
+    divisor(N) :-
+        tiling(K), tiled(K, _, P_outer_axis, _),
+        divide_axis(A), axis_dim(P_outer_axis, A, N).
+
+    .decl col_transform(p_inner: Position, d: D4)
+    col_transform(P_inner_axis, D) :-
+        tiling(K), tiled(K, P_in, _, P_inner_axis), cell_transform(P_in, D).
+}

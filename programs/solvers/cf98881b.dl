@@ -114,3 +114,26 @@ out(O, Col, [Dc, B]) :-
 out(O, Bg, [Dc, B]) :-
     dec_choice(Dc), body_choice(B), c.frame(O),   // choice × cell
     c.bg(Bg), !cand(O, _, _, Dc).
+
+// --- fit ---
+
+.comp Fit {
+    .decl cand(e: Example, o: Position, p_tile: Position, col: Color)
+    cand(E, P_grid_out, P_tile, Col) :-
+        ex_in(E, P_grid_in, Col), !c.bg(Col),                // inked input cell
+        c.divide_axis(A), c.divisor(N), c.divide_gap(G),     // params
+        divide_slab(P_grid_in, A, N, G, P_tile, P_grid_out).
+
+    // Every pane pair overlaps somewhere, so direct wins order the panes.
+    .decl beats(p_tile: Position, p_tile2: Position)
+    beats(T, T2) :-
+        cand(E, O, T, Col), cand(E, O, T2, Col2), Col != Col2,
+        ex_out(E, O, Col).
+
+    .decl pane_rank(p_tile: Position, r: number)
+    pane_rank(T, R) :- cand(_, _, T, _), R = count : { beats(T2, T) }.
+
+    // Each pane keeps one ink, so a pane's rank is its ink's rank.
+    .decl ink_rank(c: Color, r: number)
+    ink_rank(Col, R) :- cand(_, _, T, Col), pane_rank(T, R).
+}

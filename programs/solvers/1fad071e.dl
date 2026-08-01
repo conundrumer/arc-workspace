@@ -44,37 +44,50 @@
 
 .init c = Consts
 
-// Cells of the counted color.
-.decl on(p: Position)
-on(P) :- in(P, C), c.block_color(C).
+// --- parse ---
 
-// ============================================================
-// $Object: connected components equal to the shape
-// ============================================================
+.comp Parse<Key> {
+    .type Obj = [k: Key, id: Ident]
 
-.init comps = Components<Unit>
-comps.node($U(), P) :- on(P).
+    .decl cell(k: Key, p: Position, col: Color)
+    .decl color(k: Key, col: Color)
+    .decl shape(k: Key, p: Position)    // the block's cells in its own frame
 
-.init object_box = Bbox<Ident>
-object_box.cell(Id, P) :- comps.label($U(), P, Id).
+    .decl on(k: Key, p: Position)
+    on(K, P) :- cell(K, P, Col), color(K, Col).
 
-.init object_frame = Reframe<Ident>
-object_frame.cell(Id, P)  :- comps.label($U(), P, Id).
-object_frame.outer(Id, M) :- object_box.margin(Id, M).
+    .init comps = Components<Key>
+    comps.node(K, P) :- on(K, P).
 
-.init object_match = KeyedSetCompare<Ident, Ident, Position>
-object_match.pattern_member(0, I)   :- c.block_shape(I).
-object_match.observed_member(Id, I) :- object_frame.inner(Id, I).
+    .init box = Bbox<Obj>
+    box.cell([K, Id], P) :- comps.label(K, P, Id).
 
-.decl object_count(n: number)
-object_count(N) :- N = count : { object_match.equals(Id, 0) }.
+    .init frame = Reframe<Obj>
+    frame.cell([K, Id], P)  :- comps.label(K, P, Id).
+    frame.outer([K, Id], M) :- box.margin([K, Id], M).
+
+    .init same = KeyedSetCompare<Obj, Key, Position>
+    same.pattern_member(K, P)  :- shape(K, P).
+    same.observed_member(O, P) :- frame.inner(O, P).
+
+    .decl block(k: Key, id: Ident)
+    block(K, Id) :- same.equals([K, Id], K).
+
+    .decl block_count(k: Key, n: number)
+    block_count(K, N) :- cell(K, _, _), N = count : { block(K, Id) }.
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+parse.color($U(), Col)   :- c.block_color(Col).
+parse.shape($U(), P)     :- c.block_shape(P).
 
 // ============================================================
 // $Placement: placements where the shape occurs (Occurrences)
 // ============================================================
 
 .init occ = Occurrences<Unit>
-occ.cell($U(), P)  :- on(P).
+occ.cell($U(), P)  :- parse.on($U(), P).
 occ.shape($U(), P) :- c.block_shape(P).
 
 .decl placement_count(n: number)
@@ -85,7 +98,7 @@ placement_count(N) :- N = count : { occ.occurrence($U(), _) }.
 // ============================================================
 
 .decl total(n: number, detect: Detect)
-total(N, $Object())    :- object_count(N).
+total(N, $Object())    :- parse.block_count($U(), N).
 total(N, $Placement()) :- placement_count(N).
 
 .decl marked(p: Position, detect: Detect)
@@ -103,3 +116,71 @@ bar_mark(Col, $Counted()) :- c.block_color(Col).
 out(P, Col, [Det, M]) :- marked(P, Det), bar_mark(Col, M).
 out(P, BG,  [Det, M]) :-
     c.out_pos(P), total(_, Det), !marked(P, Det), bar_mark(_, M), c.bg(BG).
+
+// --- fit ---
+
+.type Cand = [e: Example, col: Color, k: number]
+
+.comp Fit {
+    // The bar an output draws: its non-bg cells, and its length.
+    .decl bar(e: Example, p: Position, col: Color)
+    bar(E, P, Col) :- ex_out(E, P, Col), !c.bg(Col).
+
+    .decl bar_len(e: Example, n: number)
+    bar_len(E, N) :- bar(E, _, _), N = count : { bar(E, P, _) }.
+
+    .decl mark(c: Color)
+    mark(Col) :- bar(_, _, Col).
+
+    .decl out_dim(a: Axis, n: number)
+    out_dim(A, N) :- ex_out(_, P, _), axis_elem(A), axis_dim(P, A, N).
+
+    // An edge the bar does not run from.
+    .decl broken_edge(d: Dir)
+    broken_edge(D) :-
+        dir_elem(D), bar_len(E, N),
+        ex_out(E, P, _), dist(P, D, K), K < N,   // cell within the bar's length
+        !bar(E, P, _).                           // that the bar misses
+
+    .decl bar_edge(d: Dir)
+    bar_edge(D) :- dir_elem(D), !broken_edge(D).
+
+    // Input cells of the train pairs; the test input is held out.
+    .decl train_in(e: Example, p: Position, col: Color)
+    train_in(E, P, Col) :- ex_in(E, P, Col), ex_out(E, _, _).
+
+    // Candidate block sizes: every size an input frame admits.
+    .decl cand_dim(k: number)
+    cand_dim(K) :- train_in(_, P, _), axis_elem(A), sub_extent(P, A, K).
+
+    // Candidate blocks: a color a train input shows, at a candidate size.
+    .decl cand(col: Color, k: number)
+    cand(Col, K) :- train_in(_, _, Col), cand_dim(K).
+
+    // The k x k block shape of each candidate size.
+    .init block_frame = Frame2D<number>
+    block_frame.extent(K, A, K) :- cand_dim(K), axis_elem(A).
+
+    // Each candidate counted on each train pair.
+    .decl trial(e: Example, col: Color, k: number)
+    trial(E, Col, K) :- cand(Col, K), ex_out(E, _, _).
+
+    .init parse = Parse<Cand>
+    parse.cell([E, Col, K], P, C) :- trial(E, Col, K), ex_in(E, P, C).
+    parse.color([E, Col, K], Col) :- trial(E, Col, K).
+    parse.shape([E, Col, K], P)   :- trial(E, Col, K), block_frame.cell(K, P).
+
+    // A candidate whose count misses some bar's length.
+    .decl broken(col: Color, k: number)
+    broken(Col, K) :- parse.block_count([E, Col, K], N), bar_len(E, M), N != M.
+
+    // The block the bars count.
+    .decl block(col: Color, k: number)
+    block(Col, K) :- cand(Col, K), !broken(Col, K).
+
+    .decl block_color(c: Color)
+    block_color(Col) :- block(Col, _).
+
+    .decl block_dim(k: number)
+    block_dim(K) :- block(_, K).
+}

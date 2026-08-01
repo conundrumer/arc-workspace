@@ -36,3 +36,60 @@ out(P, Col) :- clean(P, Col).
 out(P, Col) :-
     in(P, N), c.noise(N),            // corrupted cell
     counterpart(P, Q), clean(Q, Col).
+
+// --- fit ---
+
+.type CellKey = [e: Example, p: Position]
+
+.comp Fit {
+    // Candidate mirror lines on one axis, as offsets from the grid center.
+    .decl cand(a: Axis, delta: Shift)
+    cand(A, Delta) :-
+        ex_out(_, P, _),
+        axis_of(D, A), sub_extent(P, A, K),   // each axis, each distance
+        jump_delta(D, K, Delta).
+
+    // Where a candidate's mirror carries each cell: the grid-center flip of
+    // the axis, then twice the candidate's offset.
+    .decl mirrored(e: Example, a: Axis, delta: Shift, p: Position, q: Position)
+    mirrored(E, A, Delta, P, Q) :-
+        ex_out(E, P, _), cand(A, Delta),
+        flip_of(A, D), apply(D, P, P1),
+        compose(Delta, Delta, Twice), compose(P1, Twice, Q).
+
+    // A candidate whose mirror carries some cell onto a different color.
+    .decl mirror_broken(a: Axis, delta: Shift)
+    mirror_broken(A, Delta) :-
+        mirrored(E, A, Delta, P, Q),
+        ex_out(E, P, Col), ex_out(E, Q, C2), C2 != Col.
+
+    // A candidate that mirrors some cell onto another: an offset past the
+    // frame pairs nothing and would pass unbroken.
+    .decl mirror_pairs(a: Axis, delta: Shift)
+    mirror_pairs(A, Delta) :- mirrored(E, A, Delta, _, Q), ex_out(E, Q, _).
+
+    .decl axis_center(a: Axis, delta: Shift)
+    axis_center(A, Delta) :- mirror_pairs(A, Delta), !mirror_broken(A, Delta).
+
+    // The symmetry center: the mirror line of each axis, crossed.
+    .decl center(a: Shift)
+    center(A) :-
+        perp(A1, A2),
+        axis_center(A1, D1), axis_center(A2, D2), compose(D1, D2, A).
+
+    // Restored cells viewed from the center.
+    .init view = Reframe<CellKey>
+    view.outer([E, P], A) :- ex_out(E, P, _), center(A).
+    view.cell([E, P], P)  :- ex_out(E, P, _).
+
+    // A transform carrying some cell onto a different color.
+    .decl sym_broken(d: D4)
+    sym_broken(D) :-
+        d4_elem(D), center(A),
+        view.inner([E, P], P0),                        // cell in the center frame
+        apply(D, P0, Q0), compose(Q0, A, Q),           // its image, back in the grid
+        ex_out(E, P, Col), ex_out(E, Q, C2), C2 != Col.
+
+    .decl sym(d: D4)
+    sym(D) :- d4_elem(D), !sym_broken(D).
+}

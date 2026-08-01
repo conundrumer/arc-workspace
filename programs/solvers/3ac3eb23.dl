@@ -38,8 +38,8 @@
     .decl banner(k: number, r: number) banner(0, 0). banner(1, 1).   // lit radius per slot
 
     // --- $Stamp ---
-    .decl template(p: Position, v: number)   // non-zero cells echo the marker
-    GRID_6x3(template,
+    .decl template(p: Position)   // member cells echo the marker
+    GRID_MASK_6x3(template,
         0, 1, 0,
         1, 0, 1,
         0, 1, 0,
@@ -130,7 +130,7 @@ lit(Q, Col, $Banner(S)) :-
 
 // Template footprint viewed from its dot cell.
 .init tview = Reframe<Unit>
-tview.cell($U(), Pt)  :- c.template(Pt, V), V != 0.
+tview.cell($U(), Pt)  :- c.template(Pt).
 tview.outer($U(), Ps) :- c.dot(Ps).
 
 // Stamp the template on each marker.
@@ -150,3 +150,66 @@ impl_choice($Stamp()).
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- lit(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !lit(P, _, Ch), c.bg(Col).
+
+// --- fit ---
+
+.type MarkKey = [e: Example, p: Position]
+
+.comp Fit {
+    // Markers of the train inputs; the ex_out atom holds the test input out.
+    .decl fmark(k: MarkKey, col: Color)
+    fmark([E, P], Col) :- ex_in(E, P, Col), !c.bg(Col), ex_out(E, _, _).
+
+    // Each cell the pair paints in a marker's color, as an offset from it.
+    .init offset = Reframe<MarkKey>
+    offset.outer([E, P], P) :- fmark([E, P], _).
+    offset.cell([E, P], Q)  :- fmark([E, P], Col), ex_out(E, Q, Col).
+
+    // An edge some marker sits off.
+    .decl off_edge(d: Dir)
+    off_edge(D) :- fmark([_, P], _), dir_elem(D), dist(P, D, K), K != 0.
+
+    .decl dir(d: Dir)
+    dir(D) :- dir_elem(D), !off_edge(D).
+
+    .decl radius(k: MarkKey, i: number, r: number)
+    radius(Ky, I, R) :-
+        offset.inner(Ky, Delta),
+        c.dir(E), dist(Delta, E, I),                                 // steps away from the marker edge
+        side(E, Ds), opposite(Ds, Do), dist(Delta, Do, R), R >= 0.   // steps to a side
+
+    // Two steps of one trail whose lit radii differ — never one slot.
+    .decl differ(i: number, i2: number)
+    differ(I, I2) :- radius(Ky, I, R), radius(Ky, I2, _), !radius(Ky, I2, R).
+
+    // Candidate periods: the step counts the trails reach.
+    .decl cand(w: number)
+    cand(W) :- radius(_, W, _), W != 0.
+
+    .decl broken(w: number)
+    broken(W) :- cand(W), differ(I, I2), stride(I, W, 0, _, K), stride(I2, W, 0, _, K).
+
+    // The shortest period no trail breaks.
+    .decl period(n: number)
+    period(N) :- cand(N), N = min W : { cand(W), !broken(W) }.
+
+    .decl slot(k: number)
+    slot(K) :- radius(_, K, _), period(N), K < N.
+
+    .decl banner(k: number, r: number)
+    banner(K, R) :- radius(_, I, R), period(N), stride(I, N, 0, _, K).
+
+    // The trail in the frame it spans, with the marker at the zero offset.
+    .init tbox = Bbox<Unit>
+    tbox.cell($U(), Delta) :- offset.inner(_, Delta).
+
+    .init tframe = Reframe<Position>
+    tframe.outer(Delta, M)    :- offset.inner(_, Delta), tbox.margin($U(), M).
+    tframe.cell(Delta, Delta) :- offset.inner(_, Delta).
+
+    .decl dot(p: Position)
+    dot(P) :- tframe.inner(ORIGIN, P).
+
+    .decl template(p: Position)
+    template(P) :- tframe.inner(_, P).
+}

@@ -71,3 +71,70 @@ out(P_grid_out, Col, $Tile()) :-
     c.tile_d4(P_out_outer, D),                                     // per-output-tile D4
     apply(D, P_intile, P_out_intile),                              // inner under that D4
     concat_slab(P_out_outer, P_out_intile, A_tile, 0, P_grid_out). // recompose
+
+// --- fit ---
+
+.comp Fit {
+    // Input cells of the train pairs; a test input has no output to read.
+    .decl pair_cell(e: Example, p: Position, col: Color)
+    pair_cell(E, P, Col) :- ex_in(E, P, Col), ex_out(E, _, _).
+
+    .decl ink(e: Example, p: Position, col: Color)
+    ink(E, P, Col) :- pair_cell(E, P, Col), !c.bg(Col).
+
+    .init box = Bbox<Example>
+    box.cell(E, P) :- ink(E, P, _).
+
+    // The data slab hugs one edge and stops short of the opposite one.
+    .decl data_dir(d: Dir)
+    data_dir(D) :- box.margin(_, M), dir_elem(D), dist_pair(M, D, K, K2), K < K2.
+
+    // The slab in its own frame, so its extent along the data axis is the
+    // slab's own depth.
+    .init slab = Reframe<Example>
+    slab.cell(E, P)  :- ink(E, P, _).
+    slab.outer(E, M) :- box.margin(E, M).
+
+    .decl half_h(n: number)
+    half_h(N) :- slab.inner(E, P), data_dir(D), axis_of(D, A), axis_dim(P, A, N).
+
+    // Tiles of the slab's depth fill the grid.
+    .decl n_tiles(n: number)
+    n_tiles(N) :-
+        pair_cell(_, P_grid, _), half_h(K),
+        data_dir(D), axis_of(D, A),
+        divide_by_size(P_grid, A, K, 0, P_outer, _),
+        axis_dim(P_outer, A, N).            // tile count, off the arrangement's extent
+
+    // A stamp that lands some ink cell off the output's color.
+    .decl stamp_broken(d: D4)
+    stamp_broken(D) :-
+        ink(E, P, Col), d4_elem(D), apply(D, P, P_img), !ex_out(E, P_img, Col).
+
+    .decl stamps(d: D4)
+    stamps(D) :- d4_elem(D), !stamp_broken(D).
+
+    // The data tile: the input tile at the data edge.
+    .decl data_cell(e: Example, p_intile: Position, col: Color)
+    data_cell(E, P_intile, Col) :-
+        pair_cell(E, P_grid, Col),
+        data_dir(D), axis_of(D, A), n_tiles(N),
+        divide_slab(P_grid, A, N, 0, P_tile, P_intile),
+        dist(P_tile, D, 0).
+
+    .decl out_cell(e: Example, p_tile: Position, p_intile: Position, col: Color)
+    out_cell(E, P_tile, P_intile, Col) :-
+        ex_out(E, P_grid, Col),
+        data_dir(D), axis_of(D, A), n_tiles(N),
+        divide_slab(P_grid, A, N, 0, P_tile, P_intile).
+
+    // A transform that lands some data cell off the output tile's color.
+    .decl tile_broken(p_tile: Position, d: D4)
+    tile_broken(P_tile, D) :-
+        data_cell(E, P_intile, Col), out_cell(E, P_tile, _, _),
+        d4_elem(D), apply(D, P_intile, P_img),
+        !out_cell(E, P_tile, P_img, Col).
+
+    .decl tile_d4(p_tile: Position, d: D4)
+    tile_d4(P_tile, D) :- out_cell(_, P_tile, _, _), d4_elem(D), !tile_broken(P_tile, D).
+}

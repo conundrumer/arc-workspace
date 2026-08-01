@@ -88,3 +88,42 @@ ink_beaten(P, Col) :-
     c.ink_rank(C2, R2), c.ink_rank(Col, R), R2 < R.
 
 out(P, Col, $Ink()) :- ink_at(P, Col), !ink_beaten(P, Col).
+
+// --- fit ---
+
+.comp Fit {
+    .decl tile_ink(e: Example, p_tile: Position, p: Position, col: Color)
+    tile_ink(E, P_tile, P_intile, Col) :-
+        ex_in(E, P_grid, Col), !c.bg(Col),
+        c.tiles(N), c.gap(G),
+        divide_2d(P_grid, N, G, P_tile, P_intile).
+
+    // Closed transitively: a tile pair need not overlap directly.
+    .decl beats(p_tile: Position, p_tile2: Position)
+    beats(T, T2) :-
+        tile_ink(E, T, P, Col), tile_ink(E, T2, P, Col2), Col != Col2,
+        ex_out(E, P, Col).
+    beats(T, T3) :- beats(T, T2), beats(T2, T3).
+
+    // The scan starts at the corner the unbeaten tile occupies.
+    .decl lex_corner(d: DiagDir)
+    lex_corner(Diag) :-
+        tile_ink(_, T, _, _), !beats(_, T),
+        diag_dist(T, Diag, _, 0, 0).
+
+    // The primary axis decides alone: nearer the corner's edge on it wins,
+    // whatever the across coordinate does.
+    .decl axis_broken(a: Axis)
+    axis_broken(A) :-
+        lex_corner(Diag), dir_of(Diag, A, D),
+        beats(T, T2), dist(T, D, K), dist(T2, D, K2), K2 < K.
+
+    .decl lex_axis(a: Axis)
+    lex_axis(A) :- axis_elem(A), !axis_broken(A).
+
+    .decl prio(p: Position, r: number)
+    prio(T, R) :- tile_ink(_, T, _, _), R = count : { beats(T2, T) }.
+
+    .decl ink_rank(c: Color, r: number)
+    ink_rank(Col, R) :- tile_ink(_, T, _, Col), prio(T, R).
+}

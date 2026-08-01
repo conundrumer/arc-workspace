@@ -88,3 +88,30 @@ out(P, Col, $SliceMap()) :-
 out(P, Col, $SliceMap()) :-
     cell_split(P, Col, _, P_across),
     !matched_slice(P_across).
+
+// --- fit ---
+
+.comp Fit {
+    // Train cells in slice coordinates; the test input is held out.
+    .decl in_slice(e: Example, p_across: Position, p_inner: Position, col: Color)
+    in_slice(E, P_across, P_inner, Col) :-
+        ex_in(E, P, Col), ex_out(E, _, _),
+        c.fall_to(D), axis_of(D, A), split(P, A, P_inner, P_across).
+
+    .decl out_slice(e: Example, p_across: Position, p_inner: Position, col: Color)
+    out_slice(E, P_across, P_inner, Col) :-
+        ex_out(E, P, Col),
+        c.fall_to(D), axis_of(D, A), split(P, A, P_inner, P_across).
+
+    // A slice whose content the pair replaces.
+    .decl replaced(e: Example, p_across: Position)
+    replaced(E, P_across) :-
+        in_slice(E, P_across, P_inner, Col),
+        !out_slice(E, P_across, P_inner, Col).
+
+    .decl slice_in(p: Position, col: Color)
+    slice_in(P_inner, Col) :- replaced(E, P_across), in_slice(E, P_across, P_inner, Col).
+
+    .decl slice_out(p: Position, col: Color)
+    slice_out(P_inner, Col) :- replaced(E, P_across), out_slice(E, P_across, P_inner, Col).
+}

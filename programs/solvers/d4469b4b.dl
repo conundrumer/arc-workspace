@@ -69,3 +69,20 @@ out(P, Col, $Cross()) :- c.out_pos(P), !cross_cell(P), c.bg(Col).
 
 // --- $Lookup ---
 out(P, Col, $Lookup()) :- in(_, Key), c.glyph(Key, P, Col).
+
+// --- fit ---
+
+.comp Fit {
+    .decl glyph(key: Color, p: Position, col: Color)
+    glyph(Key, P, Col) :-
+        ex_in(E, _, Key), !c.bg(Key),    // the example's ink
+        ex_out(E, P, Col).               // its whole output
+
+    .decl broken(key: Color, p: Position)
+    broken(Key, P) :-
+        glyph(Key, P, _), glyph(Key, Q, Col), !c.mark(Col),    // a non-mark cell
+        axis_elem(A), split(P, A, _, Ac), split(Q, A, _, Ac).  // on p's row or column
+
+    .decl cross(key: Color, p: Position)
+    cross(Key, P) :- glyph(Key, P, _), !broken(Key, P).
+}

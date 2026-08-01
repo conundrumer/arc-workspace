@@ -90,3 +90,68 @@ out(P, Col, Ch) :-
     frame_cell(Ch, P), !in_region(Ch, P),                           // outside the input
     axis_of(D1, A), split(P, A, Along, _), split(M, A, Along, _),   // in the stepped line
     opposite(D2, O), dist(P, O, Kp), dist(M, O, Km), Kp <= Km.      // at or back across
+
+// --- fit ---
+
+.comp Fit {
+    // Each train input seated at each corner of its output.
+    .decl anchored(e: Example, diag: DiagDir, p_in: Position, p_grid: Position)
+    anchored(E, Diag, P_in, P_grid) :-
+        ex_in(E, P_in, _), ex_out(E, P_grid, _),
+        diag_dir_elem(Diag), corner_anchor(Diag, P_in, P_grid).
+
+    // A corner seating some input cell on a different color.
+    .decl anchor_broken(diag: DiagDir)
+    anchor_broken(Diag) :-
+        anchored(E, Diag, P_in, P_grid),
+        ex_in(E, P_in, Col), !ex_out(E, P_grid, Col).
+
+    .decl anchor(d: DiagDir)
+    anchor(Diag) :- diag_dir_elem(Diag), !anchor_broken(Diag).
+
+    // The output region the input covers.
+    .decl in_region(e: Example, p_grid: Position)
+    in_region(E, P_grid) :- anchor(Diag), anchored(E, Diag, _, P_grid).
+
+    // A corner the input reaches an edge of.
+    .decl growth_broken(diag: DiagDir)
+    growth_broken(Diag) :- in_region(_, P), dir_of(Diag, _, D), dist(P, D, 0).
+
+    // The frame grows toward the corner the input stays clear of.
+    .decl growth(d: DiagDir)
+    growth(Diag) :- diag_dir_elem(Diag), !growth_broken(Diag).
+
+    .decl diag_cell(e: Example, p: Position)
+    diag_cell(E, P) :- ex_out(E, P, _), growth(Diag), diag_dist(P, Diag, _, K, K).
+
+    // Candidate periods, as the diagonal jump back toward the input.
+    .decl cand(n: number, delta: Shift)
+    cand(N, Delta) :-
+        ex_out(_, P, _), axis_elem(A), sub_extent(P, A, N),
+        growth(Diag), diag_opposite(Diag, Back), diag_dirs(Back, _, D1, D2),
+        jump_delta(D1, N, J1), jump_delta(D2, N, J2), compose(J1, J2, Delta).
+
+    // A period whose continued cell and its source disagree.
+    .decl broken(n: number)
+    broken(N) :-
+        cand(N, Delta), diag_cell(E, P), !in_region(E, P),   // continued diagonal cell
+        compose(P, Delta, P2),                               // one period back
+        ex_out(E, P, Col), ex_out(E, P2, C2), C2 != Col.
+
+    .decl period(n: number)
+    period(N) :- cand(N, _), !broken(N).
+
+    // Tiles of the scale arrangement.
+    .init tiles = Frame2D<Unit>
+    tiles.extent($U(), A, S) :- c.scale(S), axis_elem(A).
+
+    // A tile placing some input cell on a different color.
+    .decl tile_broken(p_tile: Position)
+    tile_broken(P_tile) :-
+        tiles.cell($U(), P_tile),
+        ex_in(E, P_in, Col), ex_out(E, _, _),
+        concat_2d(P_tile, P_in, 0, P_grid), !ex_out(E, P_grid, Col).
+
+    .decl in_tile(p_tile: Position)
+    in_tile(P_tile) :- tiles.cell($U(), P_tile), !tile_broken(P_tile).
+}

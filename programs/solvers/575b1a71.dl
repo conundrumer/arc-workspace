@@ -19,12 +19,34 @@
 
 .init c = Consts
 
-.decl mark_dist(p: Position, k: number)
-mark_dist(P, K) :- in(P, M), c.mark(M), c.rank_dir(D), dist(P, D, K).
+// --- parse ---
 
-.init o = Ordinal<Unit>
-o.idx_set($U(), K) :- mark_dist(_, K).
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)
+
+    .decl mark_dist(key: Key, p: Position, k: number)
+    mark_dist(Ky, P, K) :- cell(Ky, P, M), c.mark(M), c.rank_dir(D), dist(P, D, K).
+
+    .init o = Ordinal<Key>
+    o.idx_set(Ky, K) :- mark_dist(Ky, _, K).
+
+    .decl rank(key: Key, p: Position, r: number)
+    rank(Ky, P, R) :- mark_dist(Ky, P, K), o.rank(Ky, K, R).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
 
 .decl out(p: Position, col: Color)
-out(P, Col) :- mark_dist(P, K), o.rank($U(), K, R), c.rank_color(R, Col).
-out(P, Col) :- in(P, Col), !mark_dist(P, _).
+out(P, Col) :- parse.rank($U(), P, R), c.rank_color(R, Col).
+out(P, Col) :- in(P, Col), !parse.mark_dist($U(), P, _).
+
+// --- fit ---
+
+.comp Fit {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    .decl rank_color(r: number, c: Color)
+    rank_color(R, Col) :- parse.rank(E, P, R), ex_out(E, P, Col).
+}

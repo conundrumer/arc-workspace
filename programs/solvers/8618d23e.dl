@@ -116,3 +116,60 @@ covered(P, Ch) :- seated(P, _, Ch).
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- seated(P, Col, Ch).
 out(P, Col, Ch) :- frame.cell(Ch, P), !covered(P, Ch), c.filler(Col).
+
+// --- fit ---
+
+.type CellKey = [e: Example, p: Position]
+
+.comp Fit {
+    // Train input cells in the slabs of each candidate stack axis.
+    .decl slab_cell(e: Example, a: Axis, p_tile: Position, p: Position, col: Color)
+    slab_cell(E, A, P_tile, P, Col) :-
+        ex_in(E, P, Col), ex_out(E, _, _),
+        axis_elem(A), c.arr(N), divide_slab(P, A, N, 0, P_tile, _).
+
+    // Candidate displacements: every alignment of an input cell onto an
+    // output cell of its color.
+    .init align = Reframe<CellKey>
+    align.outer([E, P], P)    :- ex_in(E, P, _).
+    align.cell([E, P], P_out) :- ex_in(E, P, Col), ex_out(E, P_out, Col).
+
+    .decl cand(a: Axis, p_tile: Position, delta: Inset)
+    cand(A, P_tile, Delta) :- slab_cell(E, A, P_tile, P, _), align.inner([E, P], Delta).
+
+    // A displacement carrying some cell of its slab off the output or onto a
+    // different color.
+    .decl broken(a: Axis, p_tile: Position, delta: Inset)
+    broken(A, P_tile, Delta) :-
+        cand(A, P_tile, Delta), slab_cell(E, A, P_tile, P, Col),
+        compose(P, Delta, P_out), !ex_out(E, P_out, Col).
+
+    .decl slab_disp(a: Axis, p_tile: Position, delta: Inset)
+    slab_disp(A, P_tile, Delta) :- cand(A, P_tile, Delta), !broken(A, P_tile, Delta).
+
+    // A candidate axis with a slab that no displacement places.
+    .decl axis_broken(a: Axis)
+    axis_broken(A) :- slab_cell(_, A, P_tile, _, _), !slab_disp(A, P_tile, _).
+
+    .decl axis(a: Axis)
+    axis(A) :- axis_elem(A), !axis_broken(A).
+
+    .decl disp(p_tile: Position, delta: Position)
+    disp(P_tile, Delta) :- axis(A), slab_disp(A, P_tile, Delta).
+
+    // The frame grows at the edges a displacement moves away from.
+    .decl sep_dim(a: Axis, n: number)
+    sep_dim(A, N) :- disp(_, Delta), axis_of(D, A), dist(Delta, D, N), N != 0.
+
+    // A slab seats at the corner whose two edges its displacement leaves alone.
+    .decl seat(p_tile: Position, diag: DiagDir)
+    seat(P_tile, Diag) :- disp(P_tile, Delta), diag_dist(Delta, Diag, _, 0, 0).
+
+    .decl seat_of(d: Dir, diag: DiagDir)
+    seat_of(D, Diag) :-
+        seat(P_tile, Diag),
+        axis(A), axis_of(D, A), dist(P_tile, D, 0).   // the slab's side of the stack
+
+    .decl diag(da: DiagAxis)
+    diag(DA) :- seat(_, Diag), diag_axis_of(Diag, DA).
+}

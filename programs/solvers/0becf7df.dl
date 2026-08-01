@@ -75,3 +75,54 @@ mapping(C1, C2, $Map()) :-
 out(P, Col, Ch)     :- impl_choice(Ch), in(P, Col), key_cell(P).
 out(P, Col_out, Ch) :- in(P, Col_in), !key_cell(P), mapping(Col_in, Col_out, Ch).
 out(P, Col, Ch)     :- impl_choice(Ch), in(P, Col), !key_cell(P), !mapping(Col, _, Ch).
+
+// --- fit ---
+
+.comp Fit {
+    .decl mapping(e: Example, c1: Color, c2: Color)
+    mapping(E, C1, C2) :- ex_in(E, P, C1), ex_out(E, P, C2), C1 != C2.
+
+    // A key cell keeps a color the rest of the grid recolors.
+    .decl key_cell(e: Example, p: Position)
+    key_cell(E, P) :- ex_in(E, P, Col), ex_out(E, P, Col), mapping(E, Col, _).
+
+    .decl corner(d: DiagDir)
+    corner(Diag) :- key_cell(_, P), diag_dist(P, Diag, _, 0, 0).
+
+    // Distances from the corner's edges that key cells take, per axis.
+    .decl key_dist(a: Axis, k: number)
+    key_dist(A, K) :- key_cell(_, P), corner(Diag), diag_dist(P, Diag, A, K, _).
+
+    .decl key_dim(a: Axis, n: number)
+    key_dim(A, N) :- key_dist(A, _), N = count : { key_dist(A, K) }.
+
+    .decl grid_partner(p1: Position, p2: Position)
+    grid_partner(P1, P2) :-
+        key_cell(E, P1), ex_in(E, P1, C1),    // one key cell
+        key_cell(E, P2), ex_in(E, P2, C2),    // another
+        mapping(E, C1, C2).                   // their colors swap
+
+    .decl axis(a: Axis)
+    axis(A) :-
+        grid_partner(P1, P2),
+        axis_elem(A), split(P1, A, _, Ac), split(P2, A, _, Ac).    // one line along a
+
+    .init frame = Frame2D<Unit>
+    frame.extent($U(), A, N) :- key_dim(A, N).
+
+    .decl key_pos(p_grid: Position, p_key: Position)
+    key_pos(P_grid, P_key) :-
+        key_cell(_, P_grid), corner(Diag), frame.cell($U(), P_key),    // key cell, key frame cell
+        corner_anchor(Diag, P_grid, P_key).                            // same dists to the corner's edges
+
+    .decl partner(p1: Position, p2: Position)
+    partner(P1, P2) :-
+        grid_partner(P_grid1, P_grid2),
+        key_pos(P_grid1, P1), key_pos(P_grid2, P2).
+
+    .decl src(p: Position, id: Ident)
+    src(P1, as(ord(P1), Ident)) :- partner(P1, _).
+
+    .decl dst(p: Position, id: Ident)
+    dst(P2, as(ord(P1), Ident)) :- partner(P1, P2).
+}

@@ -48,27 +48,19 @@
 
 .init c = Consts
 
+.init d4 = D4Invariance<Unit, Color>
+d4.cell($U(), P, Col) :- in(P, Col).
+
 .init group_match = KeyedSetCompare<Unit, Ident, D4>
 group_match.pattern_member(Id, D) :- c.mapping_sym(Id, D).
-group_match.observed_member($U(), D) :- input_inv(D).
-
-// D maps some input cell to a position whose color differs.
-.decl non_invariant(d: D4)
-non_invariant(D) :-
-    d4_elem(D),
-    in(P, Col), apply(D, P, P_image),
-    !in(P_image, Col).
+group_match.observed_member($U(), D) :- d4.inv($U(), D).
 
 // --- $Direct ---
 
 .decl syms_non_invariant(d: D4)
-syms_non_invariant(D) :- non_invariant(D), c.syms(D).
+syms_non_invariant(D) :- d4.broken($U(), D), c.syms(D).
 
 // --- $GroupMatch ---
-
-// D under which the input is invariant.
-.decl input_inv(d: D4)
-input_inv(D) :- d4_elem(D), !non_invariant(D).
 
 // Pick the largest group the input covers (strictest invariance). The input
 // may be invariant under more than a group requires, so this is containment,
@@ -89,3 +81,56 @@ out(P, Col, $Direct()) :- c.asym_out(P, Col),  syms_non_invariant(_).
 
 // $GroupMatch
 out(P, Col, $GroupMatch()) :- best_id(Id), c.mapping_out(Id, P, Col).
+
+// --- fit ---
+
+.comp Fit {
+    .init d4 = D4Invariance<Example, Color>
+    d4.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    .decl paired(e: Example)
+    paired(E) :- ex_out(E, _, _).
+
+    // Two train pairs whose outputs disagree. An output is total over its
+    // frame and a Position carries its frame, so one direction settles it.
+    .decl differs(e1: Example, e2: Example)
+    differs(E1, E2) :- ex_out(E1, P, Col), ex_out(E2, _, _), !ex_out(E2, P, Col).
+
+    // A transform that puts two disagreeing pairs on the same side of its
+    // invariance test, so that test does not carry the classification.
+    .decl split_broken(d: D4)
+    split_broken(D) :- d4.inv(E1, D), d4.inv(E2, D), differs(E1, E2).
+    split_broken(D) :- d4.broken(E1, D), d4.broken(E2, D), differs(E1, E2).
+
+    .decl syms(d: D4)
+    syms(D) :- d4_elem(D), !split_broken(D).
+
+    .decl sym_broken(e: Example)
+    sym_broken(E) :- syms(D), d4.broken(E, D).
+
+    .decl sym_out(p: Position, col: Color)
+    sym_out(P, Col) :- ex_out(E, P, Col), !sym_broken(E).
+
+    .decl asym_out(p: Position, col: Color)
+    asym_out(P, Col) :- ex_out(E, P, Col), sym_broken(E).
+
+    // Train pairs that answer alike.
+    .decl same_out(e1: Example, e2: Example)
+    same_out(E1, E2) :- paired(E1), paired(E2), !differs(E1, E2).
+
+    // One table entry per class of alike pairs, labelled by its lowest
+    // member; the label carries identity only.
+    .decl class(e: Example, id: Ident)
+    class(E, as(Min, Ident)) :- paired(E), Min = min E2 : { same_out(E, E2) }.
+
+    // A transform some member of the class breaks.
+    .decl group_broken(id: Ident, d: D4)
+    group_broken(Id, D) :- class(E, Id), d4.broken(E, D).
+
+    // The class's group: the transforms every member of it is invariant under.
+    .decl mapping_sym(id: Ident, d: D4)
+    mapping_sym(Id, D) :- class(_, Id), d4_elem(D), !group_broken(Id, D).
+
+    .decl mapping_out(id: Ident, p: Position, col: Color)
+    mapping_out(Id, P, Col) :- class(E, Id), ex_out(E, P, Col).
+}

@@ -47,27 +47,34 @@
 
 .init c = Consts
 
-// Cell decomposition along c.axis: each input cell as (p, col, p_inner, p_across).
-.decl cell_split(p: Position, col: Color, p_inner: Position, p_across: Position) inline
-cell_split(P, Col, P_inner, P_across) :-
-    in(P, Col), c.axis(A), split(P, A, P_inner, P_across).
+// --- parse ---
 
-// --- Detect ---
+.comp Parse<Key> {
+    .decl cell(k: Key, p: Position, col: Color)
 
-// $PairExist: same-slice pair with distinct colors.
-.decl non_uniform_pe(p_across: Position)
-non_uniform_pe(P_across) :-
-    cell_split(_, Col1, _, P_across), cell_split(_, Col2, _, P_across),
-    Col1 != Col2.
+    // Each cell paired with its along/across split on c.axis.
+    .decl cell_split(k: Key, p: Position, col: Color, p_inner: Position, p_across: Position)
+    cell_split(K, P, Col, P_inner, P_across) :-
+        cell(K, P, Col), c.axis(A), split(P, A, P_inner, P_across).
 
-// $Count: distinct-color count per slice.
-.decl colors_in_slice(p_across: Position, col: Color)
-colors_in_slice(P_across, Col) :- cell_split(_, Col, _, P_across).
+    // $PairExist: same-slice pair with distinct colors.
+    .decl differing_pair(k: Key, p_across: Position)
+    differing_pair(K, P_across) :-
+        cell_split(K, _, Col1, _, P_across), cell_split(K, _, Col2, _, P_across),
+        Col1 != Col2.
 
-.decl distinct_count(p_across: Position, n: number)
-distinct_count(P_across, N) :-
-    colors_in_slice(P_across, _),
-    N = count : { colors_in_slice(P_across, _) }.
+    // $Count: distinct-color count per slice.
+    .decl slice_color(k: Key, p_across: Position, col: Color)
+    slice_color(K, P_across, Col) :- cell_split(K, _, Col, _, P_across).
+
+    .decl ncolors(k: Key, p_across: Position, n: number)
+    ncolors(K, P_across, N) :-
+        slice_color(K, P_across, _),
+        N = count : { slice_color(K, P_across, _) }.
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
 
 // --- Output ---
 
@@ -75,26 +82,50 @@ distinct_count(P_across, N) :-
 
 // $PairExist + $PerCell
 out(P, Col, [$PairExist(), $PerCell()]) :-
-    cell_split(P, _, _, P_across),
-    !non_uniform_pe(P_across), c.uniform_color(Col).
+    parse.cell_split($U(), P, _, _, P_across),
+    !parse.differing_pair($U(), P_across), c.uniform_color(Col).
 out(P, Col, [$PairExist(), $PerCell()]) :-
-    cell_split(P, _, _, P_across),
-    non_uniform_pe(P_across), c.non_uniform_color(Col).
+    parse.cell_split($U(), P, _, _, P_across),
+    parse.differing_pair($U(), P_across), c.non_uniform_color(Col).
 
 // $PairExist + $SliceMap
 out(P, Col, [$PairExist(), $SliceMap()]) :-
-    cell_split(P, _, P_inner, P_across),
-    !non_uniform_pe(P_across), c.uniform_template(P_inner, Col).
+    parse.cell_split($U(), P, _, P_inner, P_across),
+    !parse.differing_pair($U(), P_across), c.uniform_template(P_inner, Col).
 out(P, Col, [$PairExist(), $SliceMap()]) :-
-    cell_split(P, _, P_inner, P_across),
-    non_uniform_pe(P_across), c.non_uniform_template(P_inner, Col).
+    parse.cell_split($U(), P, _, P_inner, P_across),
+    parse.differing_pair($U(), P_across), c.non_uniform_template(P_inner, Col).
 
 // $Count + $PerCell
 out(P, Col, [$Count(), $PerCell()]) :-
-    cell_split(P, _, _, P_across),
-    distinct_count(P_across, N), c.count_color(N, Col).
+    parse.cell_split($U(), P, _, _, P_across),
+    parse.ncolors($U(), P_across, N), c.count_color(N, Col).
 
 // $Count + $SliceMap
 out(P, Col, [$Count(), $SliceMap()]) :-
-    cell_split(P, _, P_inner, P_across),
-    distinct_count(P_across, N), c.count_template(N, P_inner, Col).
+    parse.cell_split($U(), P, _, P_inner, P_across),
+    parse.ncolors($U(), P_across, N), c.count_template(N, P_inner, Col).
+
+// --- fit ---
+
+.comp Fit {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // The output color at each input cell, in slice coordinates.
+    .decl slice_out(e: Example, p_across: Position, p_inner: Position, col: Color)
+    slice_out(E, P_across, P_inner, Col) :-
+        parse.cell_split(E, P, _, P_inner, P_across),    // input cell's slice
+        ex_out(E, P, Col).                               // its output color
+
+    .decl count_color(n: number, col: Color)
+    count_color(N, Col) :- parse.ncolors(E, P_across, N), slice_out(E, P_across, _, Col).
+
+    .decl uniform_template(p: Position, col: Color)
+    uniform_template(P_inner, Col) :-
+        slice_out(E, P_across, P_inner, Col), !parse.differing_pair(E, P_across).
+
+    .decl non_uniform_template(p: Position, col: Color)
+    non_uniform_template(P_inner, Col) :-
+        slice_out(E, P_across, P_inner, Col), parse.differing_pair(E, P_across).
+}

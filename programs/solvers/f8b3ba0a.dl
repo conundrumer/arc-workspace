@@ -3,8 +3,8 @@
 // Color blocks on bg, one color dominant. Output is a 1D layout along
 // axis_of(c.rank_dir): the minority colors, anchored at c.rank_dir, in
 // descending count order; the dominant (max-count) color is dropped.
-// Extent = number of minority colors. Two models of what is counted,
-// tagged on out's Choice:
+// Extent = number of minority colors. Models of what is counted, tagged on
+// out's Choice:
 //
 //   $Cells   — cells of each color.
 //   $Blocks  — connected components of each color.
@@ -52,6 +52,26 @@
 
 .init c = Consts
 
+// --- parse ---
+
+// Ranked colors: the max-count color is dominant and drops out; the rest
+// take dense ranks over their counts, fewest first.
+.comp Parse<Key> {
+    .decl count_of(key: Key, col: Color, n: number)
+
+    .decl dominant(key: Key, col: Color)
+    dominant(Ky, Col) :- count_of(Ky, Col, N), N = max N2 : { count_of(Ky, _, N2) }.
+
+    .decl minority_count(key: Key, col: Color, n: number)
+    minority_count(Ky, Col, N) :- count_of(Ky, Col, N), !dominant(Ky, Col).
+
+    .init o = Ordinal<Key>
+    o.idx_set(Ky, N) :- minority_count(Ky, _, N).
+
+    .decl minority_rank(key: Key, col: Color, r: number)
+    minority_rank(Ky, Col, R) :- minority_count(Ky, Col, N), o.rank(Ky, N, R).
+}
+
 // --- $Blocks: component detection ---
 
 .init comps = Components<Unit>
@@ -76,39 +96,93 @@ tile_color(P_tile, Col) :-
 
 // --- counts per choice ---
 
-.decl count_of(col: Color, n: number, ch: Choice)
-count_of(Col, N, $Cells()) :-
+.init parse = Parse<Choice>
+parse.count_of($Cells(), Col, N) :-
     in(_, Col), !c.bg(Col),
     N = count : { in(_, Col) }.
-count_of(Col, N, $Blocks()) :-
+parse.count_of($Blocks(), Col, N) :-
     block_color(_, Col),
     N = count : { block_color(Id, Col) }.
-count_of(Col, N, $Lattice()) :-
+parse.count_of($Lattice(), Col, N) :-
     tile_color(_, Col),
     N = count : { tile_color(P_tile, Col) }.
 
-// --- drop dominant, rank, place ---
-
-.decl dominant(col: Color, ch: Choice)
-dominant(Col, Ch) :-
-    count_of(Col, N, Ch),
-    N = max N2 : { count_of(_, N2, Ch) }.
-
-.decl minority_count(col: Color, n: number, ch: Choice)
-minority_count(Col, N, Ch) :- count_of(Col, N, Ch), !dominant(Col, Ch).
-
-// Dense rank over the minority counts, ascending (fewest first), per choice.
-.init o = Ordinal<Choice>
-o.idx_set(Ch, N) :- minority_count(_, N, Ch).
-
-.decl minority_rank(col: Color, r: number, ch: Choice)
-minority_rank(Col, R, Ch) :- minority_count(Col, N, Ch), o.rank(Ch, N, R).
+// --- place ---
 
 // Output frame: 1D axis anchored at c.rank_dir, per choice. Placing ascending
 // rank from the opposite edge puts the largest count at the rank_dir edge.
 .init col = DirFrame<Choice>
 col.dir(D_opp) :- c.rank_dir(D), opposite(D, D_opp).
-col.dist_set(Ch, R) :- minority_rank(_, R, Ch).
+col.dist_set(Ch, R) :- parse.minority_rank(Ch, _, R).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, Ch) :- minority_rank(Col, Rk, Ch), col.pos(Ch, Rk, P).
+out(P, Col, Ch) :- parse.minority_rank(Ch, Col, Rk), col.pos(Ch, Rk, P).
+
+// --- fit ---
+
+.type Block = [e: Example, id: Ident]
+
+.comp Fit {
+    // Non-bg cells of a train input — a test input has no output to read.
+    .decl ink(e: Example, p: Position, col: Color)
+    ink(E, P, Col) :- ex_in(E, P, Col), !c.bg(Col), ex_out(E, _, _).
+
+    // The frame the non-bg cells span: the grid inside the separator border.
+    .init span = Bbox<Example>
+    span.cell(E, P) :- ink(E, P, _).
+
+    .init inset = Reframe<Example>
+    inset.outer(E, M)     :- span.margin(E, M).
+    inset.cell(E, ORIGIN) :- span.margin(E, _).
+
+    .decl inset_delta(p: Inset)
+    inset_delta(Delta) :- inset.inner(_, Delta).
+
+    // Ink cells in the interior frame the lattice divides.
+    .decl interior(e: Example, p: Position)
+    interior(E, P_int) :- ink(E, P, _), inset_delta(Delta), compose(P, Delta, P_int).
+
+    .init blocks = Components<Example>
+    blocks.node(E, P) :- ink(E, P, _).
+
+    .init box = Bbox<Block>
+    box.cell([E, Id], P) :- blocks.label(E, P, Id).
+
+    // Each block's cells viewed from its own box, so the block's extents
+    // are the tile's.
+    .init local = Reframe<Block>
+    local.outer([E, Id], M) :- box.margin([E, Id], M).
+    local.cell([E, Id], P)  :- blocks.label(E, P, Id).
+
+    .decl tile_dim(a: Axis, k: number)
+    tile_dim(A, K) :- local.inner(_, P), axis_elem(A), axis_dim(P, A, K).
+
+    // Blocks along an axis: the distinct offsets their boxes sit at.
+    .decl tile_line(e: Example, d: Dir, k: number)
+    tile_line(E, D, K) :- box.edge_min([E, Id], D, K).
+
+    .decl tile_count(e: Example, a: Axis, n: number)
+    tile_count(E, A, N) :-
+        tile_line(E, D, _), axis_of(D, A),
+        N = count : { tile_line(E, D, K) }.
+
+    .decl tile_gap(g: number)
+    tile_gap(G) :-
+        interior(E, P_int), axis_elem(A),
+        tile_count(E, A, N), tile_dim(A, K),
+        divide_gap(P_int, A, N, K, G).
+
+    .init parse = Parse<Example>
+    parse.count_of(E, Col, N) :- ink(E, _, Col), N = count : { ink(E, P, Col) }.
+
+    // A dir whose opposite edge does not measure out the ranks: some output
+    // cell sits at a distance other than its color's rank.
+    .decl rank_broken(d: Dir)
+    rank_broken(D) :-
+        dir_elem(D), opposite(D, O),
+        ex_out(E, P, Col), parse.minority_rank(E, Col, R),
+        dist(P, O, K), K != R.
+
+    .decl rank_dir(d: Dir)
+    rank_dir(D) :- dir_elem(D), !rank_broken(D).
+}

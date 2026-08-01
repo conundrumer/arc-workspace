@@ -34,8 +34,23 @@
 
 .init c = Consts
 
-.decl ink(p: Position, col: Color)
-ink(P, Col) :- in(P, Col), !c.bg(Col).
+// --- parse ---
+
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)
+
+    .decl ink(key: Key, p: Position, col: Color)
+    ink(Ky, P, Col) :- cell(Ky, P, Col), !c.bg(Col).
+
+    .decl off_edge(key: Key, d: Dir)
+    off_edge(Ky, D) :- ink(Ky, P, _), dir_elem(D), dist(P, D, K), K != 0.
+
+    .decl mark_edge(key: Key, d: Dir)
+    mark_edge(Ky, D) :- ink(Ky, _, _), dir_elem(D), !off_edge(Ky, D).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
 
 // --- Edge cases ---
 
@@ -45,10 +60,7 @@ ink(P, Col) :- in(P, Col), !c.bg(Col).
 edge(D, $Dir()) :- c.dir(D).
 
 // --- $Edge ---
-.decl off_edge(d: Dir)
-off_edge(D) :- ink(P, _), dir_elem(D), dist(P, D, K), K != 0.
-
-edge(D, $Edge()) :- dir_elem(D), ink(_, _), !off_edge(D).
+edge(D, $Edge()) :- parse.mark_edge($U(), D).
 
 // --- Move cases ---
 
@@ -56,14 +68,14 @@ edge(D, $Edge()) :- dir_elem(D), ink(_, _), !off_edge(D).
 
 // --- $Jump ---
 moved(P2, Col, [E, $Jump()]) :-
-    ink(P, Col), edge(D, E),                     // mark, the edge
+    parse.ink($U(), P, Col), edge(D, E),         // mark, the edge
     c.color_dist(Col, K),                        // its landing distance
     opposite(D, O), jump_delta(O, K, Delta),     // k cells away from the edge
     compose(P, Delta, P2).
 
 // --- $Seat ---
 moved(Q, Col, [E, $Seat()]) :-
-    ink(P, Col), edge(D, E),                                 // mark, the edge
+    parse.ink($U(), P, Col), edge(D, E),                     // mark, the edge
     c.color_dist(Col, K),                                    // its landing distance
     in(Q, _), dist(Q, D, K),                                 // grid cell at dist k from the edge
     axis_of(D, A), split(P, A, _, Ac), split(Q, A, _, Ac).   // on the mark's line
@@ -80,3 +92,19 @@ out(P, Col, Ch) :-
     impl_choice(Ch), in(P, _),      // choice × cell
     !moved(P, _, Ch),               // no mark lands here
     c.bg(Col).
+
+// --- fit ---
+
+.comp Fit {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    .decl dir(d: Dir)
+    dir(D) :- parse.mark_edge(_, D).
+
+    .decl color_dist(c: Color, k: number)
+    color_dist(Col, K) :-
+        parse.ink(E, P, Col), dir(D),                            // mark, the edge
+        ex_out(E, Q, Col), dist(Q, D, K),                        // its landing cell
+        axis_of(D, A), split(P, A, _, Ac), split(Q, A, _, Ac).   // on the mark's line
+}

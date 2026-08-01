@@ -33,6 +33,32 @@
 .decl clean(p: Position, col: Color)
 clean(P, Col) :- in(P, Col), !c.noise(Col).
 
+// --- parse ---
+
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)
+
+    // Candidate shifts: every axis-aligned delta the frame admits.
+    .decl cand(key: Key, a: Axis, k: number, delta: Shift)
+    cand(Ky, A, K, Delta) :-
+        cell(Ky, P, _),
+        axis_of(D, A), sub_extent(P, A, K),      // each axis, each distance
+        jump_delta(D, K, Delta).
+
+    // Where a candidate carries each cell's color; materialized to keep
+    // the disagreement test an indexed join.
+    .decl shifted(key: Key, a: Axis, k: number, p: Position, col: Color)
+    shifted(Ky, A, K, P2, Col) :-
+        cell(Ky, P, Col), cand(Ky, A, K, Delta), compose(P, Delta, P2).
+
+    // A candidate carrying some cell onto a different color.
+    .decl broken(key: Key, a: Axis, k: number)
+    broken(Ky, A, K) :- shifted(Ky, A, K, P, Col), cell(Ky, P, C2), C2 != Col.
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- clean(P, Col).
+
 .decl impl_choice(ch: Choice)
 impl_choice($Shift()). impl_choice($Period()). impl_choice($Rows()).
 
@@ -43,24 +69,10 @@ out(P, Col, Ch) :- impl_choice(Ch), clean(P, Col).
 
 // --- $Shift ---
 
-// Candidate shifts: every axis-aligned delta within the frame,
-// materialized once (inline cost).
-.decl shift_delta(delta: Position)
-shift_delta(Delta) :-
-    in(P, _),
-    axis_of(D, A), sub_extent(P, A, K),                // each axis, each distance
-    jump_delta(D, K, Delta).
-
-// A shift disagrees on some clean pair.
-.decl shift_broken(delta: Position)
-shift_broken(Delta) :-
-    clean(P, Col),
-    shift_delta(Delta), compose(P, Delta, P2),         // shifted cell
-    clean(P2, C2), C2 != Col.                          // disagrees
-
 out(P, Col, $Shift()) :-
     in(P, N), c.noise(N),                              // corrupted cell
-    shift_delta(Delta), !shift_broken(Delta),          // unbroken shift
+    parse.cand($U(), A, K, Delta),                     // candidate shift
+    !parse.broken($U(), A, K),                         // unbroken on clean cells
     compose(P, Delta, P2), clean(P2, Col).             // its image
 
 // --- $Period ---
@@ -102,3 +114,38 @@ out(P, Col, $Rows()) :-
     pattern_row(Across),                               // pattern row
     clean(Q, Col),                                     // clean source cell
     split(Q, A, Along, Across2), pattern_row(Across2). // same column, pattern row
+
+// --- fit ---
+
+.comp Fit {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_out(E, P, Col).
+
+    .decl unbroken(a: Axis, k: number)
+    unbroken(A, K) :- parse.cand(_, A, K, _), !parse.broken(_, A, K).
+
+    // The period is the smallest shift the wallpaper repeats under.
+    .decl period(a: Axis, k: number)
+    period(A, K) :- unbroken(A, _), K = min K2 : { unbroken(A, K2) }.
+
+    // Restored cells in line coordinates, on each axis.
+    .decl line_cell(e: Example, a: Axis, across: Position, along: Position, col: Color)
+    line_cell(E, A, Across, Along, Col) :-
+        ex_out(E, P, Col), axis_elem(A), split(P, A, Along, Across).
+
+    .decl pattern_line(e: Example, a: Axis, across: Position)
+    pattern_line(E, A, Across) :- line_cell(E, A, Across, _, Col), !c.bg(Col).
+
+    // The colors the pattern lines carry at each position along the line.
+    .decl pattern_at(e: Example, a: Axis, along: Position, col: Color)
+    pattern_at(E, A, Along, Col) :-
+        line_cell(E, A, Across, Along, Col), pattern_line(E, A, Across).
+
+    // Pattern lines of one grid disagreeing at a shared position.
+    .decl axis_broken(a: Axis)
+    axis_broken(A) :- pattern_at(E, A, Along, Col), pattern_at(E, A, Along, C2), C2 != Col.
+
+    // Lines run along the axis whose pattern lines all agree.
+    .decl axis(a: Axis)
+    axis(A) :- axis_elem(A), !axis_broken(A).
+}

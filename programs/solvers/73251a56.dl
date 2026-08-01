@@ -123,3 +123,18 @@ out(P, Col, $Bg()) :- residual(P), !on_fix(P), dominant(Col).
 label_color(Id, Col) :- c.label(P, Id), intact(P, Col).
 
 out(P, Col, $Label()) :- hole(P), c.label(P, Id), label_color(Id, Col).
+
+// --- fit ---
+
+.comp Fit {
+    // Two cells some example colors differently.
+    .decl differ(p: Position, q: Position)
+    differ(P, Q) :- ex_out(E, P, Col), ex_out(E, Q, Col2), Col != Col2.
+
+    // One class: the examples never separate the two cells.
+    .decl same(p: Position, q: Position)
+    same(P, Q) :- ex_out(_, P, _), ex_out(_, Q, _), !differ(P, Q).
+
+    .decl label(p: Position, id: Ident)
+    label(P, as(Min, Ident)) :- same(P, _), Min = min ord(Q) : { same(P, Q) }.
+}

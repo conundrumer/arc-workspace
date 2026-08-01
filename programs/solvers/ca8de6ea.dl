@@ -4,7 +4,7 @@
 // center: outer corners, inner X cells, center. Two models:
 //
 //   $LabeledGrids — the collapse as data: in/out label grids paired by
-//                   shared non-zero label
+//                   shared label
 //   $Cycle        — the collapse composed: each X-arm cell maps to the
 //                   ring cell at its own diagonal on the output's 8-cell
 //                   SENSE_CW cycle, advanced by a per-ring shift (corner ring 0,
@@ -17,7 +17,7 @@
 .comp Consts {
     // --- LabeledGrids data ---
     .decl in_label(p: Position, id: Ident)
-    GRID_5x5(in_label,
+    GRID_SPARSE_5x5(in_label,
         1, 0, 0, 0, 3,
         0, 2, 0, 4, 0,
         0, 0, 9, 0, 0,
@@ -68,8 +68,7 @@ impl_choice($Cycle()).
 
 // --- LabeledGrids ---
 perm(P_grid_in, P_grid_out, $LabeledGrids()) :-
-    c.in_label(P_grid_in, Id), c.out_label(P_grid_out, Id),   // shared label
-    Id != 0.                                                  // non-pairing sentinel
+    c.in_label(P_grid_in, Id), c.out_label(P_grid_out, Id).   // shared label
 
 // --- Cycle ---
 // Cells across both frames, so one diagonal/ring geometry serves input arms and
@@ -96,3 +95,79 @@ perm(P_in, P_out, $Cycle()) :-
 
 .decl out(p: Position, col: Color, c: Choice)
 out(P_grid_out, Col, Impl) :- impl_choice(Impl), in(P_grid_in, Col), perm(P_grid_in, P_grid_out, Impl).
+
+// --- fit ---
+
+.comp Fit {
+    // Correspondence candidates: same color at both cells. Each arm color
+    // repeats across the center, so a cell has candidates in both halves.
+    .decl cand(p_in: Position, p_out: Position)
+    cand(P_in, P_out) :- ex_in(E, P_in, Col), ex_out(E, P_out, Col).
+
+    // Cells of both frames, so one diagonal geometry serves input arms and
+    // output ring alike.
+    .init dp = DiagPlacement<Unit>
+    dp.cell($U(), P) :- ex_in(_, P, _).
+    dp.cell($U(), P) :- ex_out(_, P, _).
+
+    // Candidate whose cells lie on opposite sides of a midline.
+    .decl crossing(p_in: Position, p_out: Position)
+    crossing(P_in, P_out) :-
+        cand(P_in, P_out),
+        dp.nearer($U(), P_in, D), opposite(D, O), dp.nearer($U(), P_out, O).
+
+    .decl pair(p_in: Position, p_out: Position)
+    pair(P_in, P_out) :- cand(P_in, P_out), !crossing(P_in, P_out).
+
+    .decl in_label(p: Position, id: Ident)
+    in_label(P_in, as(ord(P_in), Ident)) :- pair(P_in, _).
+
+    .decl out_label(p: Position, id: Ident)
+    out_label(P_out, as(ord(P_in), Ident)) :- pair(P_in, P_out).
+
+    // The input center is nearer to no edge; its pair is the output center.
+    .decl out_center(p: Position)
+    out_center(P_out) :- pair(P_in, P_out), !dp.nearer($U(), P_in, _).
+
+    // The output ring: the output frame's border cells.
+    .decl ring_cell(p: Position)
+    ring_cell(P) :- ex_out(_, P, _), dir_elem(D), dist(P, D, 0).
+
+    .decl ring_corner(diag: DiagDir, p: Position)
+    ring_corner(Diag, P) :- ring_cell(P), corner_anchor(Diag, P, ORIGIN).
+
+    // One step from a ring cell in sense s, along an edge the cell sits on.
+    .decl border_step(p: Position, s: Sense, p_next: Position)
+    border_step(P, S, P_next) :-
+        ring_cell(P),
+        turn(S, D, D_step), dist(P, D, 0),
+        step_delta(D_step, Delta), compose(P, Delta, P_next).
+
+    // The sense the ring runs in: its step carries each corner to the cell
+    // paired with the arm on that corner's diagonal.
+    .decl sense(s: Sense)
+    sense(S) :-
+        pair(P_in, P_out), dp.diag_cell($U(), P_in, Diag, _),   // arm's diagonal
+        ring_corner(Diag, P_corner),
+        border_step(P_corner, S, P_out).
+
+    .decl ring_succ(p: Position, p_next: Position)
+    ring_succ(P, P_next) :-
+        sense(S), border_step(P, S, P_next),
+        ring_cell(P_next).                          // the step stays on the ring
+
+    .init ring = CycleWalk<Unit, Position>
+    ring.succ($U(), P, P_next) :- ring_succ(P, P_next).
+    ring.step($U(), N) :- ring_cell(_), N = count : { ring_cell(P) }.   // once around
+
+    // Steps around the ring from the arm's own corner to the arm's paired cell.
+    .decl advance(ring: number, n: number)
+    advance(Ring, N) :-
+        pair(P_in, P_out), dp.diag_cell($U(), P_in, Diag, Ring),
+        ring_corner(Diag, P_corner),
+        ring.walk($U(), P_corner, N, P_out).
+
+    // A full turn returns to the start, so the shift is the least advance.
+    .decl ring_shift(ring: number, shift: number)
+    ring_shift(Ring, N) :- advance(Ring, _), N = min K : { advance(Ring, K) }.
+}

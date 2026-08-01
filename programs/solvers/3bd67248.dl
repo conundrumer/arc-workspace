@@ -127,3 +127,64 @@ painted_we(P) :- paint_we(P, _).
 
 out(P, Col, $WallEnd()) :- paint_we(P, Col).
 out(P, Col, $WallEnd()) :- in(P, Col), !painted_we(P).
+
+// --- fit ---
+
+.comp Fit {
+    // Train cells, split by the wall.
+    .decl bg_cell(e: Example, p: Position)
+    bg_cell(E, P) :- ex_in(E, P, Col), c.bg(Col), ex_out(E, _, _).
+
+    .decl wall_cell(e: Example, p: Position)
+    wall_cell(E, P) :- ex_in(E, P, Col), !c.bg(Col), ex_out(E, _, _).
+
+    // The colors the painting puts down.
+    .decl paint_color(col: Color)
+    paint_color(Col) :- ex_out(E, P, Col), ex_in(E, P, C0), C0 != Col.
+
+    // A candidate floor whose color some bg cell of its edge does not carry.
+    .decl floor_broken(d: Dir, col: Color)
+    floor_broken(D, Col) :-
+        dir_elem(D), paint_color(Col),
+        bg_cell(E, P), dist(P, D, 0), !ex_out(E, P, Col).
+
+    // An edge the bg reaches; the wall's own edge carries no bg cell.
+    .decl edge_bg(d: Dir)
+    edge_bg(D) :- dir_elem(D), bg_cell(_, P), dist(P, D, 0).
+
+    .decl floor(d: Dir, col: Color)
+    floor(D, Col) :- edge_bg(D), paint_color(Col), !floor_broken(D, Col).
+
+    .decl floor_dir(d: Dir)
+    floor_dir(D) :- floor(D, _).
+
+    .decl floor_color(c: Color)
+    floor_color(Col) :- floor(_, Col).
+
+    // Bg cells on each corner's diagonal.
+    .decl diag_cell(e: Example, diag: DiagDir, p: Position)
+    diag_cell(E, Diag, P) :- bg_cell(E, P), diag_dir_elem(Diag), diag_dist(P, Diag, _, K, K).
+
+    .decl diag_broken(diag: DiagDir, col: Color)
+    diag_broken(Diag, Col) :- diag_cell(E, Diag, P), paint_color(Col), !ex_out(E, P, Col).
+
+    .decl diag_paint(diag: DiagDir, col: Color)
+    diag_paint(Diag, Col) :- diag_dir_elem(Diag), paint_color(Col), !diag_broken(Diag, Col).
+
+    .decl corner(d: DiagDir)
+    corner(Diag) :- diag_paint(Diag, _).
+
+    .decl diag_color(c: Color)
+    diag_color(Col) :- diag_paint(_, Col).
+
+    // The edge the wall sits against: the one no wall cell stands off.
+    .decl off_edge(d: Dir)
+    off_edge(D) :- wall_cell(_, P), dir_elem(D), dist(P, D, K), K != 0.
+
+    .decl wall_side(d: Dir)
+    wall_side(D) :- dir_elem(D), !off_edge(D).
+
+    // The turn carrying the wall's inward normal to the floor.
+    .decl sense(s: Sense)
+    sense(S) :- wall_side(Dw), opposite(Dw, Dn), floor_dir(Df), turn(S, Dn, Df).
+}
