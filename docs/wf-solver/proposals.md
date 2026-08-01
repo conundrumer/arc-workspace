@@ -195,24 +195,6 @@ diag_edge_delta(Diag, A, K1, K2, P) :-
 
 **Task-local home (protocol step 1).** 8618d23e (`DiagEdgeDelta` comp): $Derive's grow delta at the corner opposite the seat, the pair from the growth case.
 
-## `D4Invariance<Key, Val>` — per-key D4 invariance of a valued cell set
-
-Which D4 elements fix each keyed cell set. `broken` witnesses a violated transform: some cell whose image under d holds a different value. `has_sym` is invariance under some nontrivial element. `cell` must be total over each key's domain (the negation reads absence as difference). This is the keyed generalization of 44f52bb0's unkeyed `non_invariant` / `input_inv` body rules; that solver is a promotion-time caller (`Unit` key).
-
-```
-.comp D4Invariance<Key, Val> {
-    .decl cell(key: Key, p: Position, v: Val)
-
-    .decl broken(key: Key, d: D4)
-    broken(K, D) :- cell(K, P, V), d4_elem(D), apply(D, P, P2), !cell(K, P2, V).
-
-    .decl has_sym(key: Key)
-    has_sym(K) :- cell(K, _, _), d4_elem(D), D != D4_ID, !broken(K, D).
-}
-```
-
-**Task-local home (protocol step 1).** 662c240a keys tiles by slab index: `$Shared` reads `broken` at `c.sym`; `$Asym` negates `has_sym`.
-
 ## `divide_by_size_slab` — divide_by_size with perpendicular passthrough
 
 The `divide_by_size` peer of `divide_slab`. Fills the one empty cell of
@@ -250,18 +232,32 @@ V (level with the seed toward a cone corner), the open cone (strictly
 nearer both cone corners than the seed), and $Stripe's period (the
 seed's stride class from the mirror corner).
 
-## `divide_gap` — the divide family's gap reading
+## `ShiftInvariance<Key, Val>` — per-key shift invariance of a valued cell set
 
-The gap reading of the divide family: `divide` reads `(extent, n, gap) -> k`, `divide_by_size` reads `(extent, k, gap) -> n`, `divide_gap` reads `(extent, n, k) -> gap`. A fitter derives a stored gap from the observed count and tile size, a direction no forward member expresses. Lib target: primitive beside `divide`.
+The translation peer of `D4Invariance`: which axis-aligned shifts fix each keyed cell set. `cand` enumerates the shifts the key's frame admits, tagged `(axis, k)` with both directions of a magnitude sharing a tag; `broken` witnesses a violated shift — some cell whose image holds a different value. Unlike `D4Invariance`, absence is silent: an image off the frame tests nothing, so `broken` compares only where both cells exist. A fitter reads a stored period as the smallest unbroken shift; the `Period` proposer is the produce-time sibling (with one semantic difference: the proposer counts an example too small to admit a shift as breaking it).
 
 ```
-.comp DivideGap {
-    .decl divide_gap(p: Position, a: Axis, n: number, k: number, g: number) inline
-    divide_gap(P, A, N, K, G) :-
-        axis_dim(P, A, Ext), N > 1,
-        (Ext - N*K) % (N-1) = 0,
-        G = (Ext - N*K) / (N-1).
+.comp ShiftInvariance<Key, Val> {
+    .decl cell(key: Key, p: Position, v: Val)
+
+    // Candidate shifts: every axis-aligned delta the frame admits.
+    .decl cand(key: Key, a: Axis, k: number, delta: Shift)
+    cand(Ky, A, K, Delta) :-
+        cell(Ky, P, _),
+        axis_of(D, A), sub_extent(P, A, K),
+        jump_delta(D, K, Delta).
+
+    // Where a candidate carries each cell's value; materialized to keep
+    // the disagreement test an indexed join.
+    .decl shifted(key: Key, a: Axis, k: number, p: Position, v: Val)
+    shifted(Ky, A, K, P2, V) :-
+        cell(Ky, P, V), cand(Ky, A, K, Delta), compose(P, Delta, P2).
+
+    .decl broken(key: Key, a: Axis, k: number)
+    broken(Ky, A, K) :- shifted(Ky, A, K, P, V), cell(Ky, P, V2), V2 != V.
 }
 ```
 
-**Task-local home (protocol step 1).** eb281b96 (`DivideGap` comp): the Fit's `tile_gap` from the observed tile size and count.
+**Task-local home (protocol step 1).** ca8f78db (`Parse<Key>` comp, this shape): the body's $Shift repairs through unbroken shifts (`Unit` over clean cells); the Fit reads the stored period as the smallest unbroken shift per axis (`Example` over restored outputs).
+
+**Second home (protocol step 1).** 332efdb3 (fit rules, this shape unkeyed): the stored lattice generators are the smallest unbroken shift per axis, read as deltas.
