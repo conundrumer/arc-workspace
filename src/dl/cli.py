@@ -43,8 +43,10 @@ def cmd_one(stem: str) -> int:
             print(f"  L{lineno}: {cat} `{match}`  →  {line.strip()}")
 
     fit = run_fit(stem)
+    print()
+    if not findings:
+        print("lint: ok")
     if fit is not None:
-        print()
         for line in render_fit(fit):
             print(line)
 
@@ -176,9 +178,20 @@ def cmd_propose(stem: str) -> int:
     return 0
 
 
+def _usage() -> str:
+    return (
+        f"usage: {sys.argv[0]} "
+        "[--audit <stem> | --sweep <stem> [cap] | --deletions <stem> | "
+        "--propose <stem> | <stem>]"
+    )
+
+
 def main(argv: list[str]) -> int:
     if len(argv) == 0:
         return cmd_all()
+    if argv in (["-h"], ["--help"]):
+        print(_usage())
+        return 0
     if len(argv) == 1:
         return cmd_one(argv[0])
     if len(argv) == 2 and argv[0] == "--sweep":
@@ -191,10 +204,5 @@ def main(argv: list[str]) -> int:
         return cmd_audit(argv[1])
     if len(argv) == 2 and argv[0] == "--propose":
         return cmd_propose(argv[1])
-    print(
-        f"usage: {sys.argv[0]} "
-        "[--audit <stem> | --sweep <stem> [cap] | --deletions <stem> | "
-        "--propose <stem> | <stem>]",
-        file=sys.stderr,
-    )
+    print(_usage(), file=sys.stderr)
     return 2
