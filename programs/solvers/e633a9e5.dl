@@ -5,7 +5,7 @@
 //
 //   $Edge()  — a cell is c.fat wide along an axis where it touches a grid
 //              edge of that axis, and unit wide elsewhere.
-//   $Table() — per-index extents stored in c.ext, indexed from c.anchor.
+//   $Table() — per-line extents stored in c.ext, keyed by the line's position.
 //   $Map()   — pure data: c.map stores the cell correspondence from input
 //              positions to output positions.
 
@@ -57,11 +57,9 @@
     .decl fat(n: number) fat(2).
 
     // --- $Table ---
-    .decl anchor(d: Dir)
-    anchor(DIR_T). anchor(DIR_L).
-    .decl ext(a: Axis, i: number, n: number)
-    ext(AXIS_V, 0, 2). ext(AXIS_V, 1, 1). ext(AXIS_V, 2, 2).
-    ext(AXIS_H, 0, 2). ext(AXIS_H, 1, 1). ext(AXIS_H, 2, 2).
+    .decl ext(a: Axis, p: Position, n: number)
+    ext(AXIS_V, [0, 2, 0, 0], 2). ext(AXIS_V, [1, 1, 0, 0], 1). ext(AXIS_V, [2, 0, 0, 0], 2).
+    ext(AXIS_H, [0, 0, 0, 2], 2). ext(AXIS_H, [0, 0, 1, 1], 1). ext(AXIS_H, [0, 0, 2, 0], 2).
 
     // --- $Edge, $Table ---
     // Axis-only intile positions of an extent-n tile, for the extents in use.
@@ -114,8 +112,8 @@ ax_pos($Edge(), P, A, ORIGIN) :-
 // --- $Table ---
 ax_pos($Table(), P, A, Pi) :-
     in(P, _),
-    c.anchor(D), axis_of(D, A), dist(P, D, I),   // index from the anchor edge
-    c.ext(A, I, N), c.ext_pos(A, N, Pi).
+    split(P, A, P_along, _),           // the cell's line
+    c.ext(A, P_along, N), c.ext_pos(A, N, Pi).
 
 // --- $Edge, $Table ---
 .decl tile(ch: Choice, p_tile: Position, p_intile: Position, col: Color)
@@ -135,3 +133,36 @@ out(P_grid, Col, Ch) :-
 
 // --- $Map ---
 out(P_grid, Col, $Map()) :- in(P_in, Col), c.map(P_in, P_grid).
+
+// --- fit ---
+
+.comp Fit {
+    // Correspondence candidates: same color at both cells.
+    .decl cand(e: Example, p_in: Position, p_out: Position)
+    cand(E, P_in, P_out) :- ex_in(E, P_in, C), ex_out(E, P_out, C).
+
+    // A within-example color coincidence breaks in some other example.
+    .decl broken(p_in: Position, p_out: Position)
+    broken(P_in, P_out) :-
+        cand(_, P_in, P_out), ex_out(E, _, _), !cand(E, P_in, P_out).
+
+    .decl pair(p_in: Position, p_out: Position)
+    pair(P_in, P_out) :- cand(_, P_in, P_out), !broken(P_in, P_out).
+
+    .decl src(p: Position, id: Ident)
+    src(P_in, as(ord(P_in), Ident)) :- pair(P_in, _).
+
+    .decl dst(p: Position, id: Ident)
+    dst(P_out, as(ord(P_in), Ident)) :- pair(P_in, P_out).
+
+    // The output lines a cell's tile occupies, per axis.
+    .decl tile_line(p_in: Position, a: Axis, p_along: Position)
+    tile_line(P_in, A, P_along) :-
+        pair(P_in, P_out), axis_elem(A), split(P_out, A, P_along, _).
+
+    .decl tile_dim(p_in: Position, a: Axis, n: number)
+    tile_dim(P_in, A, N) :- tile_line(P_in, A, _), N = count : { tile_line(P_in, A, P) }.
+
+    .decl ext(a: Axis, p: Position, n: number)
+    ext(A, P_along, N) :- tile_dim(P_in, A, N), split(P_in, A, P_along, _).
+}
