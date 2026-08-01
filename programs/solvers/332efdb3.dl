@@ -5,9 +5,9 @@
 //
 //   $Stripes() — divide_by_size on each axis with K=1, G=1. Cells on a
 //                tile row or col → bg; cells on neither → dot.
-//   $Motif()   — divide_by_size_2d with K=3, G=-1; adjacent tiles overlap
-//                by 1 row/col. The 3×3 motif has bg on its outer
-//                rows/cols and dot at its center. P_intile → motif color.
+//   $Motif()   — the stored 3×3 motif seats at each grid corner and
+//                extends by the lattice generators c.period; overlapping
+//                stamps agree on their shared rows/cols.
 //   $Inset()   — compose with inset_delta to shift to the interior frame;
 //                divide_by_size_2d with K=1, G=1 on the interior places
 //                tile cells at the dot positions. Border → bg, interior
@@ -26,8 +26,10 @@
     .decl tile_gap(g: number) tile_gap(1).
 
     // --- $Motif data ---
-    .decl motif_size(k: number) motif_size(3).
-    .decl motif_overlap(g: number) motif_overlap(-1).
+    // The wallpaper lattice's generators, every direction.
+    .decl period(delta: Shift)
+    period([2, -2, 0, 0]). period([-2, 2, 0, 0]).
+    period([0, 0, 2, -2]). period([0, 0, -2, 2]).
 
     .decl motif(p: Position, c: Color)
     GRID_3x3(motif,
@@ -55,11 +57,12 @@ out(P, Col, $Stripes()) :- in(P, _), on_tile(P, _),  c.bg(Col).
 out(P, Col, $Stripes()) :- in(P, _), !on_tile(P, _), c.dot(Col).
 
 // --- $Motif ---
-out(P, Col, $Motif()) :-
-    in(P, _),
-    c.motif_size(K), c.motif_overlap(G),
-    divide_by_size_2d(P, K, G, _, P_intile),            // shared-boundary tile
-    c.motif(P_intile, Col).                             // motif lookup
+out(Q, Col, $Motif()) :-
+    in(Q, _), c.motif(Pm, Col),
+    diag_dir_elem(Dg), corner_anchor(Dg, Pm, Q).        // seated at each corner
+out(Q2, Col, $Motif()) :-
+    out(Q, Col, $Motif()),
+    c.period(J), compose(Q, J, Q2), in(Q2, _).          // extended by the lattice
 
 // --- $Inset ---
 .decl is_border(p: Position)
@@ -75,3 +78,70 @@ interior_tile(P) :-
 out(P, Col, $Inset()) :- in(P, _), is_border(P),                       c.bg(Col).
 out(P, Col, $Inset()) :- in(P, _), interior_tile(P),                   c.dot(Col).
 out(P, Col, $Inset()) :- in(P, _), !is_border(P), !interior_tile(P),   c.bg(Col).
+
+// --- fit ---
+
+.type Window  = [e: Example, diag: DiagDir]
+.type WinCell = [e: Example, diag: DiagDir, q: Position]
+
+.comp Fit {
+    // Candidate shifts: every axis-aligned delta the frame admits.
+    .decl cand(a: Axis, k: number, delta: Shift)
+    cand(A, K, Delta) :-
+        ex_out(_, P, _),
+        axis_of(D, A), sub_extent(P, A, K),
+        jump_delta(D, K, Delta).
+
+    // Where a candidate carries each cell's color; materialized to keep
+    // the disagreement test an indexed join.
+    .decl shifted(e: Example, a: Axis, k: number, p: Position, col: Color)
+    shifted(E, A, K, P2, Col) :-
+        ex_out(E, P, Col), cand(A, K, Delta), compose(P, Delta, P2).
+
+    // A candidate carrying some cell onto a different color.
+    .decl broken(a: Axis, k: number)
+    broken(A, K) :- shifted(E, A, K, P, Col), ex_out(E, P, C2), C2 != Col.
+
+    .decl unbroken(a: Axis, k: number)
+    unbroken(A, K) :- cand(A, K, _), !broken(A, K).
+
+    // The lattice generators: the smallest repeating shift on each axis,
+    // in each direction.
+    .decl period(delta: Shift)
+    period(Delta) :- cand(A, K, Delta), K = min K2 : { unbroken(A, K2) }.
+
+    .decl span(a: Axis, k: number)
+    span(A, K) :- period(Delta), cand(A, K, Delta).
+
+    // The closed unit cell: cells within one generator of a corner,
+    // boundary included.
+    .decl window(w: Window, q: Position)
+    window([E, Dg], Q) :-
+        ex_out(E, Q, _), diag_dir_elem(Dg),
+        diag_dist(Q, Dg, A, K1, K2),
+        span(A, S1), K1 <= S1,
+        perp(A, A2), span(A2, S2), K2 <= S2.
+
+    .init wbox = Bbox<Window>
+    wbox.cell(W, Q) :- window(W, Q).
+
+    // Each window's cells in the motif's own frame.
+    .init wframe = Reframe<WinCell>
+    wframe.outer([E, Dg, Q], M) :- window([E, Dg], Q), wbox.margin([E, Dg], M).
+    wframe.cell([E, Dg, Q], Q)  :- window([E, Dg], Q).
+
+    .decl motif(p: Position, c: Color)
+    motif(Pm, Col) :- wframe.inner([E, Dg, Q], Pm), ex_out(E, Q, Col).
+
+    // The dots span the interior frame; the inset carries a grid position
+    // into it.
+    .init box = Bbox<Example>
+    box.cell(E, P) :- ex_out(E, P, Col), c.dot(Col).
+
+    .init inset = Reframe<Example>
+    inset.outer(E, M)     :- box.margin(E, M).
+    inset.cell(E, ORIGIN) :- box.margin(E, _).
+
+    .decl inset_delta(p: Inset)
+    inset_delta(Delta) :- inset.inner(_, Delta).
+}
