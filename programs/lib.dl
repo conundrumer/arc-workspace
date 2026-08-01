@@ -329,6 +329,16 @@ divide_by_size(P, A, K, G, P_outer, P_inner) :-
     P_inner = [@keep_axis(A, AXIS_V, K_cyc), @keep_axis(A, AXIS_V, K-1-K_cyc),
                @keep_axis(A, AXIS_H, K_cyc), @keep_axis(A, AXIS_H, K-1-K_cyc)].
 
+// The divide family's gap reading: divide reads (extent, n, gap) -> k,
+// divide_by_size reads (extent, k, gap) -> n, divide_gap reads
+// (extent, n, k) -> gap.
+// Asserts: the leftover extent divides evenly by the n-1 gaps.
+.decl divide_gap(p: Position, a: Axis, n: number, k: number, g: number) inline
+divide_gap(P, A, N, K, G) :-
+    axis_dim(P, A, Ext), N > 1,
+    (Ext - N*K) % (N-1) = 0,
+    G = (Ext - N*K) / (N-1).
+
 // Distance t along a period of w (with gap g between periods) decomposes
 // into period index n and within-period offset k. Per-cell scalar peer of
 // `divide_by_size`, without the divisibility assertion.
@@ -703,6 +713,24 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
         covers(Obs, Pat),
         pattern_size(Pat, N),
         N = count : { observed_member(Obs, M) }.
+}
+
+// Per-key D4 invariance of a valued cell set. `broken` witnesses a
+// violated transform: some cell whose image under d holds a different
+// value; `inv` is its negation; `has_sym` is invariance under some
+// nontrivial element. `cell` must be total over each key's domain — the
+// negation reads absence as difference.
+.comp D4Invariance<Key, Val> {
+    .decl cell(key: Key, p: Position, v: Val)
+
+    .decl broken(key: Key, d: D4)
+    broken(K, D) :- cell(K, P, V), d4_elem(D), apply(D, P, P2), !cell(K, P2, V).
+
+    .decl inv(key: Key, d: D4)
+    inv(K, D) :- cell(K, _, _), d4_elem(D), !broken(K, D).
+
+    .decl has_sym(key: Key)
+    has_sym(K) :- inv(K, D), D != D4_ID.
 }
 
 // Re-express keyed cells relative to a per-key outer origin: inner = cell

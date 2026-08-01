@@ -66,16 +66,6 @@ out(P_grid, Col, $Unfold()) :-
 // --- fit ---
 
 .comp Fit {
-    // The gap that packs n tiles of size k into p's axis-a extent.
-    .comp DivideGap {
-        .decl divide_gap(p: Position, a: Axis, n: number, k: number, g: number) inline
-        divide_gap(P, A, N, K, G) :-
-            axis_dim(P, A, Ext), N > 1,
-            (Ext - N*K) % (N-1) = 0,
-            G = (Ext - N*K) / (N-1).
-    }
-    .init dg = DivideGap
-
     .decl tile_size(e: Example, k: number)
     tile_size(E, K) :- ex_in(E, P, _), c.tile_axis(A), axis_dim(P, A, K).
 
@@ -83,7 +73,7 @@ out(P_grid, Col, $Unfold()) :-
     tile_gap(G) :-
         c.tile_axis(A), c.tile_count(N),        // arrangement
         ex_out(E, P_out, _), tile_size(E, K),   // output frame, and the tile extent
-        dg.divide_gap(P_out, A, N, K, G).
+        divide_gap(P_out, A, N, K, G).
 
     // A 1-D arrangement folds within its own axis, so a tile's transform is
     // one that leaves every cell's across coordinate alone.

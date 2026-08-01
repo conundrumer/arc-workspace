@@ -23,18 +23,6 @@
 
 .init c = Consts
 
-// Per-key D4 invariance of a valued cell set. `broken` witnesses a
-// violated transform; `has_sym` is invariance under some nontrivial element.
-.comp D4Invariance<Key, Val> {
-    .decl cell(key: Key, p: Position, v: Val)
-
-    .decl broken(key: Key, d: D4)
-    broken(K, D) :- cell(K, P, V), d4_elem(D), apply(D, P, P2), !cell(K, P2, V).
-
-    .decl has_sym(key: Key)
-    has_sym(K) :- cell(K, _, _), d4_elem(D), D != D4_ID, !broken(K, D).
-}
-
 .decl tile_val(p_tile: Position, p_intile: Position, col: Color)
 tile_val(T, P, Col) :-
     in(P_grid, Col),
