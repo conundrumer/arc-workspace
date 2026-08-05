@@ -47,10 +47,11 @@
     .decl center_pos(p: Position)
     center_pos([1, 1, 1, 1]).
 
+    .decl in_dim(n: number) in_dim(3).
     .decl corner_pos(p: Position)
     corner_pos(P) :-
         diag_dir_elem(D),                       // enumerate the 4 corners
-        helpers.frame_pos([3, 3], P),           // P in the 3×3 frame
+        in_dim(N), helpers.frame_pos([N, N], P),    // P in the input frame
         corner_anchor(D, P, ORIGIN).            // P at corner D
 
     .decl center_off_out(c: Color) center_off_out(1).

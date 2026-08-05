@@ -19,8 +19,9 @@
     .init helpers = ConstsHelpers
 
     // --- Mirror / Unfold ---
+    .decl arr_dim(k: number) arr_dim(2).
     .decl arr_pos(p: Position)
-    arr_pos(P) :- helpers.frame_pos([2, 2], P).
+    arr_pos(P) :- arr_dim(K), helpers.frame_pos([K, K], P).
 
     .decl anchor(d: DiagDir)
     anchor(DIAG_TL).

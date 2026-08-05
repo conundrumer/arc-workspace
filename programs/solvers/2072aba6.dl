@@ -19,8 +19,9 @@
     .decl bg(c: Color) bg(0).
     .decl ink(c: Color) ink(5).
 
+    .decl scale(k: number) scale(2).
     .decl intile(p: Position)
-    intile(P) :- helpers.frame_pos([2, 2], P).
+    intile(P) :- scale(K), helpers.frame_pos([K, K], P).
 
     // --- Tile ---
     .decl template(p: Position, col: Color)

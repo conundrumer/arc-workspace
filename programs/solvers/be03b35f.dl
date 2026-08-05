@@ -13,8 +13,9 @@
 .comp Consts {
     .init helpers = ConstsHelpers
 
+    .decl frame_dim(k: number) frame_dim(2).
     .decl frame(p: Position)
-    frame(P) :- helpers.frame_pos([2, 2], P).
+    frame(P) :- frame_dim(K), helpers.frame_pos([K, K], P).
 
     .decl template(diag: DiagDir, d4: D4)
     template(DIAG_TL, D4_CC).

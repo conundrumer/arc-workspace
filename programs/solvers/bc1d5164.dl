@@ -13,8 +13,9 @@
     .decl bg(c: Color)
     bg(0).
 
+    .decl frame_dim(k: number) frame_dim(3).
     .decl frame(p: Position)
-    frame(P) :- helpers.frame_pos([3, 3], P).
+    frame(P) :- frame_dim(K), helpers.frame_pos([K, K], P).
 }
 
 .init c = Consts

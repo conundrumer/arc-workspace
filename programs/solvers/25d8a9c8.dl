@@ -41,8 +41,8 @@
 
     // Per-count row template — same rows as the PairExist templates here.
     .decl count_template(n: number, p_inner: Position, col: Color)
-    count_template(1, P, Col) :- uniform_template(P, Col).
-    count_template(2, P, Col) :- non_uniform_template(P, Col).
+    GRID_1x3(count_template, 1, 5, 5, 5)
+    GRID_1x3(count_template, 2, 0, 0, 0)
 }
 
 .init c = Consts
@@ -120,6 +120,10 @@ out(P, Col, [$Count(), $SliceMap()]) :-
 
     .decl count_color(n: number, col: Color)
     count_color(N, Col) :- parse.ncolors(E, P_across, N), slice_out(E, P_across, _, Col).
+
+    .decl count_template(n: number, p_inner: Position, col: Color)
+    count_template(N, P_inner, Col) :-
+        parse.ncolors(E, P_across, N), slice_out(E, P_across, P_inner, Col).
 
     .decl uniform_template(p: Position, col: Color)
     uniform_template(P_inner, Col) :-

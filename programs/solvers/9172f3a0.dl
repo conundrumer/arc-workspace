@@ -7,8 +7,9 @@
 .comp Consts {
     .init helpers = ConstsHelpers
 
+    .decl scale(k: number) scale(3).
     .decl intile(p: Position)
-    intile(P) :- helpers.frame_pos([3, 3], P).
+    intile(P) :- scale(K), helpers.frame_pos([K, K], P).
 }
 
 .init c = Consts

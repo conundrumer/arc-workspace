@@ -22,8 +22,10 @@
         D4_ID)
 
     // --- Unfold ---
+    .decl arr_dim(a: Axis, n: number)
+    arr_dim(AXIS_V, 2). arr_dim(AXIS_H, 1).
     .decl arr_pos(p: Position)
-    arr_pos(P) :- helpers.frame_pos([2, 1], P).
+    arr_pos(P) :- arr_dim(AXIS_V, V), arr_dim(AXIS_H, H), helpers.frame_pos([V, H], P).
 
     .decl anchor(d: Dir)
     anchor(DIR_B).

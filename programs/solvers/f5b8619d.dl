@@ -14,8 +14,9 @@
     .decl axis(a: Axis) axis(AXIS_V).
 
     // 2×2 tile arrangement.
+    .decl tile_dim(k: number) tile_dim(2).
     .decl tile(p: Position)
-    tile(P) :- helpers.frame_pos([2, 2], P).
+    tile(P) :- tile_dim(K), helpers.frame_pos([K, K], P).
 }
 
 .init c = Consts

@@ -68,8 +68,8 @@
     ext_in_use(N) :- ext(_, _, N).
 
     .decl ext_pos(a: Axis, n: number, p: Position)
-    ext_pos(AXIS_V, N, P) :- ext_in_use(N), helpers.frame_pos([N, 1], P).
-    ext_pos(AXIS_H, N, P) :- ext_in_use(N), helpers.frame_pos([1, N], P).
+    ext_pos(AXIS_V, N, P) :- ext_in_use(N), helpers.frame_pos([N, 1], P).  // @structural: a strip is one cell wide
+    ext_pos(AXIS_H, N, P) :- ext_in_use(N), helpers.frame_pos([1, N], P).  // @structural
 
     // --- $Map ---
     // Cell correspondence as an id join: src labels the input cells, dst

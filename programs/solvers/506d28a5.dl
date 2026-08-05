@@ -14,13 +14,20 @@
 .comp Consts {
     .init helpers = ConstsHelpers
 
+    .decl frame_dim(a: Axis, n: number)
+    frame_dim(AXIS_V, 4). frame_dim(AXIS_H, 5).
     .decl frame(p: Position)
-    frame(P) :- helpers.frame_pos([4, 5], P).
+    frame(P) :- frame_dim(AXIS_V, Fv), frame_dim(AXIS_H, Fh), helpers.frame_pos([Fv, Fh], P).
 
     // --- Tile decompose data ---
+    .decl arr_dim(a: Axis, n: number)
+    arr_dim(AXIS_V, 2). arr_dim(AXIS_H, 1).
+    .decl gap(g: number) gap(1).
     .decl tile_decompose(p: Position, p_outer: Position, p_inner: Position)
     tile_decompose(P_grid, P_tile, P_intile) :-
-        helpers.tile_pos([2, 1], [4, 5], [1, 0], P_grid, P_tile, P_intile).
+        arr_dim(AXIS_V, Av), arr_dim(AXIS_H, Ah),
+        frame_dim(AXIS_V, Fv), frame_dim(AXIS_H, Fh), gap(G),
+        helpers.tile_pos([Av, Ah], [Fv, Fh], [G, 0], P_grid, P_tile, P_intile).
 
     // --- Div decompose data ---
     .decl divisor(n: number)

@@ -15,8 +15,9 @@
     crop_corner(DIAG_TL).
     crop_corner(DIAG_TR).
 
+    .decl frame_dim(k: number) frame_dim(2).
     .decl frame(p: Position)
-    frame(P) :- helpers.frame_pos([2, 2], P).
+    frame(P) :- frame_dim(K), helpers.frame_pos([K, K], P).
 }
 
 .init c = Consts

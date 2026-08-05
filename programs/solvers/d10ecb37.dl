@@ -21,8 +21,9 @@
     diag(DIAG_TL).
 
     // --- Corner ---
+    .decl window_dim(k: number) window_dim(2).
     .decl window(p: Position)
-    window(P) :- helpers.frame_pos([2, 2], P).
+    window(P) :- window_dim(K), helpers.frame_pos([K, K], P).
 
     // --- Block ---
     .decl tile_dim(k: number) tile_dim(2).

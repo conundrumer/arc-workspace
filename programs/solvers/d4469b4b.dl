@@ -31,26 +31,19 @@
     out_pos(P) :- out_dim(N), helpers.frame_pos([N, N], P).
 
     // --- $Lookup ---
-    .decl glyph1(p: Position, col: Color)
-    GRID_3x3(glyph1,
+    .decl glyph(key: Color, p: Position, col: Color)
+    GRID_3x3(glyph, 1,
         0, 5, 0,
         5, 5, 5,
         0, 5, 0)
-    .decl glyph2(p: Position, col: Color)
-    GRID_3x3(glyph2,
+    GRID_3x3(glyph, 2,
         5, 5, 5,
         0, 5, 0,
         0, 5, 0)
-    .decl glyph3(p: Position, col: Color)
-    GRID_3x3(glyph3,
+    GRID_3x3(glyph, 3,
         0, 0, 5,
         0, 0, 5,
         5, 5, 5)
-
-    .decl glyph(key: Color, p: Position, col: Color)
-    glyph(1, P, C) :- glyph1(P, C).
-    glyph(2, P, C) :- glyph2(P, C).
-    glyph(3, P, C) :- glyph3(P, C).
 }
 
 .init c = Consts

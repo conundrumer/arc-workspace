@@ -11,8 +11,9 @@
     .init helpers = ConstsHelpers
 
     // Fixed output frame.
+    .decl frame_dim(k: number) frame_dim(15).
     .decl frame(p: Position)
-    frame(P) :- helpers.frame_pos([15, 15], P).
+    frame(P) :- frame_dim(K), helpers.frame_pos([K, K], P).
 
     // Corner the ruling grows from.
     .decl anchor(d: DiagDir)

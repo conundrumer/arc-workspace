@@ -19,8 +19,9 @@
     diag(DIAG_TR).
 
     // --- Corner ---
+    .decl window_dim(k: number) window_dim(3).
     .decl window(p: Position)
-    window(P) :- helpers.frame_pos([3, 3], P).
+    window(P) :- window_dim(K), helpers.frame_pos([K, K], P).
 
     // --- Div ---
     .decl divisor(n: number) divisor(3).

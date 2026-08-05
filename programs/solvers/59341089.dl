@@ -15,8 +15,10 @@
     GRID_1x4(tile_d4, D4_LR, D4_ID, D4_LR, D4_ID)
 
     // --- Unfold ---
+    .decl arr_dim(a: Axis, n: number)
+    arr_dim(AXIS_V, 1). arr_dim(AXIS_H, 4).
     .decl arr_pos(p: Position)
-    arr_pos(P) :- helpers.frame_pos([1, 4], P).
+    arr_pos(P) :- arr_dim(AXIS_V, V), arr_dim(AXIS_H, H), helpers.frame_pos([V, H], P).
 
     .decl anchor(d: Dir)
     anchor(DIR_R).   // the only identity end — the left end is a flip
