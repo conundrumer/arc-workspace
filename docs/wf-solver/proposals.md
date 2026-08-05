@@ -84,6 +84,8 @@ The divide peers of `Frame2D`: per-axis parameters as axis-tagged rows, per-axis
 
 **Task-local home (protocol step 1).** Tile2D — f8b3ba0a (Unit key): the separator-lattice tiles, dims 1 (V) and 2 (H). Divide2D — no site yet; staged as the sibling.
 
+**Proposer tie-in.** The `TileD4` proposer decomposes gaplessly and reads `empty` on separator arrangements (8e5a5113); rebuilt on this decomposition plus `D4Map`, it would cover them.
+
 ## `KeyedSetCompare` extensions — set-relationship lattice
 
 `KeyedSetCompare<Key, Pat, Member>` (in `lib.dl`) exposes `covers` / `equals` / `pattern_size`. These extensions derive from the same three counts it already computes (`|pattern|`, `|observed|`, `overlap`). Add one when a real task needs it, not preemptively (lib-addition protocol):
@@ -234,7 +236,7 @@ seed's stride class from the mirror corner).
 
 ## `ShiftInvariance<Key, Val>` — per-key shift invariance of a valued cell set
 
-The translation peer of `D4Invariance`: which axis-aligned shifts fix each keyed cell set. `cand` enumerates the shifts the key's frame admits, tagged `(axis, k)` with both directions of a magnitude sharing a tag; `broken` witnesses a violated shift — some cell whose image holds a different value. Unlike `D4Invariance`, absence is silent: an image off the frame tests nothing, so `broken` compares only where both cells exist. A fitter reads a stored period as the smallest unbroken shift; the `Period` proposer is the produce-time sibling (with one semantic difference: the proposer counts an example too small to admit a shift as breaking it).
+The translation peer of `D4Map` (dst = src): which axis-aligned shifts fix each keyed cell set. `cand` enumerates the shifts the key's frame admits, tagged `(axis, k)` with both directions of a magnitude sharing a tag; `broken` witnesses a violated shift — some cell whose image holds a different value. Unlike `D4Map`, absence is silent: an image off the frame tests nothing, so `broken` compares only where both cells exist. A fitter reads a stored period as the smallest unbroken shift; the `Period` proposer is the produce-time sibling (with one semantic difference: the proposer counts an example too small to admit a shift as breaking it).
 
 ```
 .comp ShiftInvariance<Key, Val> {

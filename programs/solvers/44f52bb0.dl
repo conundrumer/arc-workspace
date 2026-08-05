@@ -48,12 +48,13 @@
 
 .init c = Consts
 
-.init d4 = D4Invariance<Unit, Color>
-d4.cell($U(), P, Col) :- in(P, Col).
+.init d4 = D4Map<Unit, Color>
+d4.src($U(), P, Col) :- in(P, Col).
+d4.dst($U(), P, Col) :- in(P, Col).
 
 .init group_match = KeyedSetCompare<Unit, Ident, D4>
 group_match.pattern_member(Id, D) :- c.mapping_sym(Id, D).
-group_match.observed_member($U(), D) :- d4.inv($U(), D).
+group_match.observed_member($U(), D) :- d4.map($U(), D).
 
 // --- $Direct ---
 
@@ -85,8 +86,9 @@ out(P, Col, $GroupMatch()) :- best_id(Id), c.mapping_out(Id, P, Col).
 // --- fit ---
 
 .comp Fit {
-    .init d4 = D4Invariance<Example, Color>
-    d4.cell(E, P, Col) :- ex_in(E, P, Col).
+    .init d4 = D4Map<Example, Color>
+    d4.src(E, P, Col) :- ex_in(E, P, Col).
+    d4.dst(E, P, Col) :- ex_in(E, P, Col).
 
     .decl paired(e: Example)
     paired(E) :- ex_out(E, _, _).
@@ -99,7 +101,7 @@ out(P, Col, $GroupMatch()) :- best_id(Id), c.mapping_out(Id, P, Col).
     // A transform that puts two disagreeing pairs on the same side of its
     // invariance test, so that test does not carry the classification.
     .decl split_broken(d: D4)
-    split_broken(D) :- d4.inv(E1, D), d4.inv(E2, D), differs(E1, E2).
+    split_broken(D) :- d4.map(E1, D), d4.map(E2, D), differs(E1, E2).
     split_broken(D) :- d4.broken(E1, D), d4.broken(E2, D), differs(E1, E2).
 
     .decl syms(d: D4)

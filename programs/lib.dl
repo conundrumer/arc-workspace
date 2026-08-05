@@ -719,22 +719,24 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
         N = count : { observed_member(Obs, M) }.
 }
 
-// Per-key D4 invariance of a valued cell set. `broken` witnesses a
-// violated transform: some cell whose image under d holds a different
-// value; `inv` is its negation; `has_sym` is invariance under some
-// nontrivial element. `cell` must be total over each key's domain — the
+// Per-key D4 ops taking one valued cell set onto another. `broken`
+// witnesses a violated op: some src cell whose image under d holds a
+// different dst value; `map` is its negation. With dst = src the maps are
+// the set's symmetries; `has_sym` reads that case as invariance under some
+// nontrivial element. `dst` must be total over each key's domain — the
 // negation reads absence as difference.
-.comp D4Invariance<Key, Val> {
-    .decl cell(key: Key, p: Position, v: Val)
+.comp D4Map<Key, Val> {
+    .decl src(key: Key, p: Position, v: Val)
+    .decl dst(key: Key, p: Position, v: Val)
 
     .decl broken(key: Key, d: D4)
-    broken(K, D) :- cell(K, P, V), d4_elem(D), apply(D, P, P2), !cell(K, P2, V).
+    broken(K, D) :- src(K, P, V), d4_elem(D), apply(D, P, P2), !dst(K, P2, V).
 
-    .decl inv(key: Key, d: D4)
-    inv(K, D) :- cell(K, _, _), d4_elem(D), !broken(K, D).
+    .decl map(key: Key, d: D4)
+    map(K, D) :- src(K, _, _), d4_elem(D), !broken(K, D).
 
     .decl has_sym(key: Key)
-    has_sym(K) :- inv(K, D), D != D4_ID.
+    has_sym(K) :- map(K, D), D != D4_ID.
 }
 
 // Re-express keyed cells relative to a per-key outer origin: inner = cell

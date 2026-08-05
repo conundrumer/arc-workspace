@@ -29,8 +29,9 @@ tile_val(T, P, Col) :-
     c.tile_axis(A), c.tile_count(N),
     divide_slab(P_grid, A, N, 0, T, P).
 
-.init inv = D4Invariance<Position, Color>
-inv.cell(T, P, Col) :- tile_val(T, P, Col).
+.init inv = D4Map<Position, Color>
+inv.src(T, P, Col) :- tile_val(T, P, Col).
+inv.dst(T, P, Col) :- tile_val(T, P, Col).
 
 .decl out(p: Position, col: Color, ch: Choice)
 
