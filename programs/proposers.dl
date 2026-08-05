@@ -120,6 +120,16 @@
     propose(C1, C2) :- ex_in(E, P, C1), ex_out(E, P, C2), C1 != C2.
 }
 
+// The color mapping read off whole examples: each example's vanished
+// input color pairs with its new output color. The position-free form of
+// ChangedPairs for mappings that recolor by presence, not by cell.
+.comp VanishedNewPairs {
+    .decl propose(c_from: Color, c_to: Color)
+    propose(C1, C2) :-
+        ex_in(E, _, C1), !ex_out(E, _, C1),
+        ex_out(E, _, C2), !ex_in(E, _, C2).
+}
+
 // The factor from input dims to output dims on an axis, uniform across
 // pairs.
 .comp ScaleRatio {
