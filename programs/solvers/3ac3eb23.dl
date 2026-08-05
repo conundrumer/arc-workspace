@@ -200,16 +200,12 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !lit(P, _, Ch), c.bg(Col).
     banner(K, R) :- radius(_, I, R), period(N), stride(I, N, 0, _, K).
 
     // The trail in the frame it spans, with the marker at the zero offset.
-    .init tbox = Bbox<Unit>
-    tbox.cell($U(), Delta) :- offset.inner(_, Delta).
-
-    .init tframe = Reframe<Position>
-    tframe.outer(Delta, M)    :- offset.inner(_, Delta), tbox.margin($U(), M).
-    tframe.cell(Delta, Delta) :- offset.inner(_, Delta).
+    .init tframe = BoxFrame<Unit>
+    tframe.cell($U(), Delta) :- offset.inner(_, Delta).
 
     .decl dot(p: Position)
-    dot(P) :- tframe.inner(ORIGIN, P).
+    dot(P) :- tframe.inner($U(), ORIGIN, P).
 
     .decl template(p: Position)
-    template(P) :- tframe.inner(_, P).
+    template(P) :- tframe.inner($U(), _, P).
 }

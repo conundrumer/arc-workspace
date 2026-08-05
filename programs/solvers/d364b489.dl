@@ -85,14 +85,9 @@ out(P, Col, $Stamp()) :- in(P, Col), !stamp_halo(P, _).
     .decl arm(d: Dir, col: Color)
     arm(D, Col) :- offset(Off, Col), dir_elem(D), step_delta(D, Off).
 
-    // The offsets laid out in the frame they span.
-    .init box = Bbox<Unit>
-    box.cell($U(), Off) :- offset(Off, _).
-
-    .init frame = Reframe<Shift>
-    frame.cell(Off, Off) :- offset(Off, _).
-    frame.outer(Off, M)  :- offset(Off, _), box.margin($U(), M).
+    .init frame = BoxFrame<Unit>
+    frame.cell($U(), Off) :- offset(Off, _).
 
     .decl template(p: Position, col: Color)
-    template(Pt, Col) :- offset(Off, Col), frame.inner(Off, Pt).
+    template(Pt, Col) :- offset(Off, Col), frame.inner($U(), Off, Pt).
 }

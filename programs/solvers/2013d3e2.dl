@@ -27,17 +27,12 @@
 .decl ink(p: Position)
 ink(P) :- in(P, Col), !c.bg(Col).
 
-.init box = Bbox<Unit>
-box.cell($U(), P) :- ink(P).
-box.grid($U(), P) :- in(P, _).
-
-// Each box cell viewed from the box, keyed by the cell.
-.init boxframe = Reframe<Position>
-boxframe.outer(P, M) :- box.inside($U(), P), box.margin($U(), M).
-boxframe.cell(P, P)  :- box.inside($U(), P).
+.init boxframe = BoxFrame<Unit>
+boxframe.cell($U(), P) :- ink(P).
+boxframe.grid($U(), P) :- in(P, _).
 
 .decl box_cell(p_box: Position, col: Color)
-box_cell(P_box, Col) :- in(P, Col), boxframe.inner(P, P_box).
+box_cell(P_box, Col) :- in(P, Col), boxframe.inner($U(), P, P_box).
 
 .decl out(p: Position, col: Color, c: Choice)
 

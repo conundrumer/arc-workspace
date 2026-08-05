@@ -21,31 +21,29 @@
 .decl ink(p: Position)
 ink(P) :- in(P, Col), !c.bg(Col).
 
-// Each ink cell viewed from its owning box, keyed by cell and claim.
-.type FrameKey = [p: Position, ch: Choice]
-.init boxframe = Reframe<FrameKey>
-boxframe.cell([P, Ch], P) :- boxframe.outer([P, Ch], _).
+// Each ink cell viewed from its owning box.
+.decl framed(p: Position, ch: Choice, p_inner: Position)
 
 // --- $Whole ---
 
-.init box = Bbox<Unit>
+.init box = BoxFrame<Unit>
 box.cell($U(), P) :- ink(P).
 
-boxframe.outer([P, $Whole()], M) :- ink(P), box.margin($U(), M).
+framed(P, $Whole(), I) :- box.inner($U(), P, I).
 
 // --- $Each ---
 
 .init comps = Components8<Unit>
 comps.node($U(), P) :- ink(P).
 
-.init comp_box = Bbox<Ident>
+.init comp_box = BoxFrame<Ident>
 comp_box.cell(Id, P) :- comps.label($U(), P, Id).
 
-boxframe.outer([P, $Each()], M) :- comps.label($U(), P, Id), comp_box.margin(Id, M).
+framed(P, $Each(), I) :- comp_box.inner(_, P, I).
 
 // Ink strictly in the box half toward c.dir.
 .decl half(p: Position, ch: Choice)
-half(P, Ch) :- boxframe.inner([P, Ch], I), c.dir(D), dist_pair(I, D, K, K2), K < K2.
+half(P, Ch) :- framed(P, Ch, I), c.dir(D), dist_pair(I, D, K, K2), K < K2.
 
 .decl impl_choice(ch: Choice)
 impl_choice($Whole()). impl_choice($Each()).

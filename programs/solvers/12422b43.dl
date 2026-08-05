@@ -65,16 +65,11 @@ copy(P2, Col, $Stamp()) :-
 .decl region(p: Position)
 region(P) :- cell_line(P, _, R), !ink_line(R).
 
-.init region_box = Bbox<Unit>
-region_box.cell($U(), P) :- region(P).
-
-// Each cell viewed from the remainder's own frame.
-.init region_frame = Reframe<Position>
-region_frame.outer(P, M) :- region(P), region_box.margin($U(), M).
-region_frame.cell(P, P)  :- region(P).
+.init region_frame = BoxFrame<Unit>
+region_frame.cell($U(), P) :- region(P).
 
 copy(P, Col, $Tile()) :-
-    region_frame.inner(P, I),
+    region_frame.inner($U(), P, I),
     c.flow(D), axis_of(D, A), opposite(D, O),
     unit_len(K), divide_by_size(I, A, K, 0, _, P_intile),   // unit-sized tiles
     dist(P_intile, O, R), unit(P_u, Col, R),                // unit line at the tile offset

@@ -127,20 +127,15 @@ out(ORIGIN, Col, [Dt, $Count()]) :- plus_count(Dt, Col, N), c.target(N).
     .decl arm_off(off: Shift)
     arm_off(Off) :- agree_count(Off, N), N = max M : { agree_count(_, M) }.
 
-    // Offsets and anchor laid out in the frame the offsets span.
-    .init box = Bbox<Unit>
-    box.cell($U(), Off) :- arm_off(Off).
-
-    .init frame = Reframe<Shift>
-    frame.cell(Off, Off)       :- arm_off(Off).
-    frame.cell(ORIGIN, ORIGIN) :- arm_off(_).      // the anchor sits at zero offset
-    frame.outer(Off, M)        :- frame.cell(Off, _), box.margin($U(), M).
+    .init frame = BoxFrame<Unit>
+    frame.cell($U(), Off)    :- arm_off(Off).
+    frame.grid($U(), ORIGIN) :- arm_off(_).    // the anchor sits at zero offset
 
     .decl fp_cell(p: Position)
-    fp_cell(P) :- arm_off(Off), frame.inner(Off, P).
+    fp_cell(P) :- arm_off(Off), frame.inner($U(), Off, P).
 
     .decl anchor(p: Position)
-    anchor(P) :- frame.inner(ORIGIN, P).
+    anchor(P) :- frame.inner($U(), ORIGIN, P).
 
     .decl winner(e: Example, p: Position)
     winner(E, P) :-

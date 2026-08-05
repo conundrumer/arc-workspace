@@ -10,7 +10,6 @@
 #include "../lib.dl"
 
 .type Choice = Cap {} | Grow {}
-.type BoxKey = [ch: Choice, p: Position]
 
 .comp Consts {
     // --- shared ---
@@ -33,7 +32,7 @@ bar(P) :- in(P, Col), c.bar(Col).
 .decl stepped(p: Position)
 stepped(P2) :- bar(P), c.axis(A), axis_of(D, A), step_delta(D, S), compose(P, S, P2).
 
-.init box = Bbox<Choice>
+.init box = BoxFrame<Choice>
 box.grid(Ch, P) :- impl_choice(Ch), in(P, _).
 box.cell(Ch, P) :- impl_choice(Ch), bar(P).
 
@@ -43,10 +42,5 @@ box.cell($Cap(), P) :- stepped(P), in(P, Col), c.cap(Col).
 // --- $Grow ---
 box.cell($Grow(), P) :- stepped(P).
 
-// Each box cell viewed from the box, keyed by choice and cell.
-.init boxframe = Reframe<BoxKey>
-boxframe.outer([Ch, P], M) :- box.inside(Ch, P), box.margin(Ch, M).
-boxframe.cell([Ch, P], P)  :- box.inside(Ch, P).
-
 .decl out(p: Position, col: Color, ch: Choice)
-out(P_out, Col, Ch) :- in(P, Col), boxframe.inner([Ch, P], P_out).
+out(P_out, Col, Ch) :- in(P, Col), box.inner(Ch, P, P_out).

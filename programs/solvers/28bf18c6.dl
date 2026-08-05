@@ -13,20 +13,15 @@
 
 .init c = Consts
 
-.init box = Bbox<Unit>
-box.cell($U(), P) :- in(P, Col), !c.bg(Col).
-box.grid($U(), P) :- in(P, _).
-
-// Each box cell viewed from the box, keyed by the cell.
-.init boxframe = Reframe<Position>
-boxframe.outer(P, M) :- box.inside($U(), P), box.margin($U(), M).
-boxframe.cell(P, P)  :- box.inside($U(), P).
+.init boxframe = BoxFrame<Unit>
+boxframe.cell($U(), P) :- in(P, Col), !c.bg(Col).
+boxframe.grid($U(), P) :- in(P, _).
 
 .init strip = AxisFrame<Unit>
 strip.extent($U(), A, N) :- c.axis(A), c.copies(N).
 
 .decl out(p: Position, col: Color)
 out(P_grid, Col) :-
-    in(P, Col), boxframe.inner(P, P_crop),      // crop cell
-    strip.cell($U(), A, P_copy),                // copy index
-    concat_slab(P_copy, P_crop, A, 0, P_grid).  // place within the copy
+    in(P, Col), boxframe.inner($U(), P, P_crop),  // crop cell
+    strip.cell($U(), A, P_copy),                  // copy index
+    concat_slab(P_copy, P_crop, A, 0, P_grid).    // place within the copy

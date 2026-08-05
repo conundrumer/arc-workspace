@@ -757,6 +757,39 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     inner(K, I) :- cell(K, P), outer(K, O), sub(P, O, I).
 }
 
+// Keyed cells viewed from their own bounding box. `cell` defines the box
+// and is viewed; feeding `grid` also views the box's inside, which is what
+// a crop reads. `inner` carries the cell alongside the inner position, so
+// one key serves the whole set.
+.comp BoxFrame<Key> {
+    .decl cell(key: Key, p: Position)
+    .decl grid(key: Key, p: Position)
+
+    .init box = Bbox<Key>
+    box.cell(K, P) :- cell(K, P).
+    box.grid(K, P) :- grid(K, P).
+
+    // Internal keys pair the solver key with the viewed cell; the origin is
+    // the key's box, so each pair has one outer.
+    .type KP = [key: Key, p: Position]
+
+    .init rf = Reframe<KP>
+    rf.outer([K, P], M) :- viewed(K, P), box.margin(K, M).
+    rf.cell([K, P], P)  :- viewed(K, P).
+
+    // Cells the frame covers — the box's own cells plus the grid cells it
+    // encloses.
+    .decl viewed(key: Key, p: Position)
+    viewed(K, P) :- cell(K, P).
+    viewed(K, P) :- box.inside(K, P).
+
+    .decl margin(key: Key, p: Position)
+    margin(K, M) :- box.margin(K, M).
+
+    .decl inner(key: Key, p: Position, p_inner: Position)
+    inner(K, P, I) :- viewed(K, P), rf.inner([K, P], I).
+}
+
 // Bounding box of a keyed cell set, from the min distance to each edge over
 // the set (min-per-edge rather than min/max-per-axis: the four mins are
 // already a Position, and the edge choice is unobservable under D4). Two

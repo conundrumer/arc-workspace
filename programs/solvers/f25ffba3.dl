@@ -82,21 +82,17 @@ out(P_grid_out, Col, $Tile()) :-
     .decl ink(e: Example, p: Position, col: Color)
     ink(E, P, Col) :- pair_cell(E, P, Col), !c.bg(Col).
 
-    .init box = Bbox<Example>
-    box.cell(E, P) :- ink(E, P, _).
+    // The slab in its own frame, so its extent along the data axis is the
+    // slab's own depth.
+    .init slab = BoxFrame<Example>
+    slab.cell(E, P) :- ink(E, P, _).
 
     // The data slab hugs one edge and stops short of the opposite one.
     .decl data_dir(d: Dir)
-    data_dir(D) :- box.margin(_, M), dir_elem(D), dist_pair(M, D, K, K2), K < K2.
-
-    // The slab in its own frame, so its extent along the data axis is the
-    // slab's own depth.
-    .init slab = Reframe<Example>
-    slab.cell(E, P)  :- ink(E, P, _).
-    slab.outer(E, M) :- box.margin(E, M).
+    data_dir(D) :- slab.margin(_, M), dir_elem(D), dist_pair(M, D, K, K2), K < K2.
 
     .decl half_h(n: number)
-    half_h(N) :- slab.inner(E, P), data_dir(D), axis_of(D, A), axis_dim(P, A, N).
+    half_h(N) :- slab.inner(E, _, P), data_dir(D), axis_of(D, A), axis_dim(P, A, N).
 
     // Tiles of the slab's depth fill the grid.
     .decl n_tiles(n: number)

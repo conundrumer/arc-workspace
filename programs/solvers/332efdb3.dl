@@ -81,8 +81,7 @@ out(P, Col, $Inset()) :- in(P, _), !is_border(P), !interior_tile(P),   c.bg(Col)
 
 // --- fit ---
 
-.type Window  = [e: Example, diag: DiagDir]
-.type WinCell = [e: Example, diag: DiagDir, q: Position]
+.type Window = [e: Example, diag: DiagDir]
 
 .comp Fit {
     // Candidate shifts: every axis-aligned delta the frame admits.
@@ -122,16 +121,12 @@ out(P, Col, $Inset()) :- in(P, _), !is_border(P), !interior_tile(P),   c.bg(Col)
         span(A, S1), K1 <= S1,
         perp(A, A2), span(A2, S2), K2 <= S2.
 
-    .init wbox = Bbox<Window>
-    wbox.cell(W, Q) :- window(W, Q).
-
     // Each window's cells in the motif's own frame.
-    .init wframe = Reframe<WinCell>
-    wframe.outer([E, Dg, Q], M) :- window([E, Dg], Q), wbox.margin([E, Dg], M).
-    wframe.cell([E, Dg, Q], Q)  :- window([E, Dg], Q).
+    .init wframe = BoxFrame<Window>
+    wframe.cell(W, Q) :- window(W, Q).
 
     .decl motif(p: Position, c: Color)
-    motif(Pm, Col) :- wframe.inner([E, Dg, Q], Pm), ex_out(E, Q, Col).
+    motif(Pm, Col) :- wframe.inner([E, Dg], Q, Pm), ex_out(E, Q, Col).
 
     // The dots span the interior frame; the inset carries a grid position
     // into it.

@@ -65,15 +65,10 @@ obj_off(D, Col) :-
     in(P, Col), comp8.label($U(), P, Id),    // cell in the mark's object
     rel.inner([A, P], D).
 
-// Bbox over offsets; all mark-cell offsets as the dense grid.
-.init obox = Bbox<Unit>
-obox.cell($U(), D) :- obj_off(D, _).
-obox.grid($U(), D) :- rel.inner([_, _], D).
+// All mark-cell offsets as the dense grid.
+.init oframe = BoxFrame<Unit>
+oframe.cell($U(), D) :- obj_off(D, _).
+oframe.grid($U(), D) :- rel.inner([_, _], D).
 
-// Each box offset viewed from the box, keyed by the offset.
-.init oframe = Reframe<Position>
-oframe.outer(D, M) :- obox.inside($U(), D), obox.margin($U(), M).
-oframe.cell(D, D)  :- obox.inside($U(), D).
-
-out(P_out, Col, $Object()) :- obj_off(D, Col), oframe.inner(D, P_out).
-out(P_out, Bg, $Object())  :- oframe.inner(D, P_out), !obj_off(D, _), c.bg(Bg).
+out(P_out, Col, $Object()) :- obj_off(D, Col), oframe.inner($U(), D, P_out).
+out(P_out, Bg, $Object())  :- oframe.inner($U(), D, P_out), !obj_off(D, _), c.bg(Bg).

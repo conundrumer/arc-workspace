@@ -15,15 +15,10 @@
 .decl ink(p: Position, col: Color)
 ink(P, Col) :- in(P, Col), !c.bg(Col).
 
-.init box = Bbox<Unit>
-box.cell($U(), P) :- ink(P, _).
-
-// Each ink cell viewed from the ink's box, keyed by the cell.
-.init boxframe = Reframe<Position>
-boxframe.outer(P, M) :- ink(P, _), box.margin($U(), M).
-boxframe.cell(P, P)  :- ink(P, _).
+.init boxframe = BoxFrame<Unit>
+boxframe.cell($U(), P) :- ink(P, _).
 
 .decl out(p: Position, col: Color)
 out(P_out, Col) :-
-    ink(P, Col), boxframe.inner(P, I),        // cell in the box frame
+    ink(P, Col), boxframe.inner($U(), P, I),    // cell in the box frame
     c.transform(D), apply(D, I, P_out).

@@ -43,15 +43,11 @@ comp_marks(Id, N) :-
 comp_winner(Id) :- comp_marks(Id, N), N = max M : { comp_marks(_, M) }.
 
 // Crop to the winner's bounding box.
-.init box = Bbox<Unit>
-box.cell($U(), P) :- comp_winner(Id), comps.label($U(), P, Id).
-box.grid($U(), P) :- in(P, _).
+.init crop = BoxFrame<Unit>
+crop.cell($U(), P) :- comp_winner(Id), comps.label($U(), P, Id).
+crop.grid($U(), P) :- in(P, _).
 
-.init crop = Reframe<Position>
-crop.outer(P, M) :- box.inside($U(), P), box.margin($U(), M).
-crop.cell(P, P)  :- box.inside($U(), P).
-
-out(P_out, Col, $Object()) :- in(P, Col), crop.inner(P, P_out).
+out(P_out, Col, $Object()) :- in(P, Col), crop.inner($U(), P, P_out).
 
 // --- $Window ---
 
