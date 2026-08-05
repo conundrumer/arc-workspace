@@ -1,4 +1,4 @@
-"""Probe the proposers against a solver's stored fills."""
+"""The fit plan: which Consts slots need Fit relations, from the proposer probe."""
 
 import re
 import tempfile
@@ -58,7 +58,7 @@ def build_probe_source() -> str:
     return "\n".join(lines) + "\n"
 
 
-def run_propose(task) -> dict[str, set[tuple]]:
+def run_probe(task) -> dict[str, set[tuple]]:
     """Run the probe on a task's examples: proposer -> candidate set."""
     with tempfile.TemporaryDirectory() as facts_dir:
         for name, text in example_facts(task).items():
@@ -72,14 +72,23 @@ def run_propose(task) -> dict[str, set[tuple]]:
     }
 
 
-def propose_report(stem: str) -> list[tuple[str, dict[str, str]]]:
-    """Compare each Color/number slot's stored fill with each proposer of
-    the slot's value type.
+# Joint candidate product a produce run may enumerate to settle narrowed
+# slots by verification; beyond it, the largest slots go to the fit list.
+JOINT_BUDGET = 100
 
-    Returns (slot, {proposer: verdict}): 'pinned' — candidate set equals
-    the stored set; 'narrowed(n)' — stored inside a set of n smaller than
-    the enumeration domain; 'open' — stored inside a set no smaller than
-    the domain; 'missed' — stored outside the set.
+
+def probe_report(
+    stem: str,
+) -> tuple[list[tuple[str, dict[str, str]]], list[str]]:
+    """Compare each fact slot's stored fill with each proposer of the
+    slot's value type. Slots outside the probe's types carry no verdicts.
+
+    Returns (results, embedded). results is (slot, {proposer: verdict}):
+    'pinned' — candidate set equals the stored set; 'narrowed(n)' — stored
+    inside a set of n smaller than the enumeration domain; 'open' — stored
+    inside a set no smaller than the domain; 'missed' — stored outside the
+    set. embedded lists rule-derived Consts relations whose rules carry
+    nonzero number literals; a rule commented `@structural` is exempt.
     """
     source = expand_grid_macros((SOLVERS_DIR / f"{stem}.dl").read_text())
     task = load_task(stem.split("_", 1)[0])
@@ -92,7 +101,7 @@ def propose_report(stem: str) -> list[tuple[str, dict[str, str]]]:
         **{t: len(_enum_domain(t, defines)) for t in ENUM_TYPES},
     }
     ptypes = proposer_decls()
-    proposals = run_propose(task)
+    proposals = run_probe(task)
 
     def stored_value(a: str, t: str):
         if t in POSITION_TYPES:
@@ -101,17 +110,27 @@ def propose_report(stem: str) -> list[tuple[str, dict[str, str]]]:
 
     supported = set(ENUM_TYPES) | POSITION_TYPES | {"Color", "number"}
     results = []
+    embedded = []
     for slot, types in comp_decls(source, "Consts").items():
-        if not types or any(t not in supported for t in types):
+        if not types:
             continue
-        if re.search(rf"\b{slot}\s*\([^)]*\)\s*:-", consts_text):
+        rules = _rules(consts_text, slot)
+        if rules:
+            if any(
+                re.search(r"\b[1-9]\d*\b", text) and not structural
+                for text, structural in rules
+            ):
+                embedded.append(slot)
+            continue
+        if not _slot_facts(source, slot):
+            continue
+        if any(t not in supported for t in types):
+            results.append((slot, {}))
             continue
         stored = {
             tuple(stored_value(a, t) for a, t in zip(args, types))
             for args in _slot_facts(source, slot)
         }
-        if not stored:
-            continue
         verdicts = {}
         for name, cand in sorted(proposals.items()):
             if ptypes[name] != types:
@@ -136,7 +155,27 @@ def propose_report(stem: str) -> list[tuple[str, dict[str, str]]]:
             "combine_member+combine_out",
             {"PanelCombine": _table_verdict(proposals["PanelCombine"], combo)},
         ))
-    return results
+    return results, sorted(embedded)
+
+
+def _rules(consts_text: str, slot: str) -> list[tuple[str, bool]]:
+    """The slot's rules, each as (comment-stripped text, carries the
+    `@structural` marker); empty for fact slots."""
+    rules = []
+    cur: list[str] = []
+    structural = False
+    in_rule = False
+    for line in consts_text.splitlines():
+        code, _, comment = line.partition("//")
+        if not in_rule and re.search(rf"\b{slot}\s*\([^)]*\)\s*:-", code):
+            in_rule = True
+        if in_rule:
+            cur.append(code)
+            structural = structural or "@structural" in comment
+            if code.rstrip().endswith("."):
+                rules.append(("\n".join(cur), structural))
+                cur, structural, in_rule = [], False, False
+    return rules
 
 
 def _table_verdict(cand: set, stored: set) -> str:
@@ -172,9 +211,77 @@ def _combine_triples(source: str) -> set[tuple] | None:
     return triples
 
 
-def render_propose(results: list[tuple[str, dict[str, str]]]) -> list[str]:
-    lines = []
+def fit_plan(
+    results: list[tuple[str, dict[str, str]]],
+) -> tuple[list[str], list[tuple[str, int]], list[str]]:
+    """Classify slots: (fit, settle, pinned).
+
+    A slot is pinned when some proposer reads it off exactly; it settles
+    when some proposer narrows it to candidates and the joint product over
+    settling slots stays within JOINT_BUDGET; it needs a Fit relation
+    otherwise. A paired-table row ('a+b') pins both slots on 'exact'.
+    """
+    fit, settle, pinned = [], [], []
     for slot, verdicts in results:
-        marks = ", ".join(f"{n} {v}" for n, v in verdicts.items())
-        lines.append(f"{slot}: {marks}")
+        if "+" in slot:
+            continue
+        vals = set(verdicts.values())
+        if "pinned" in vals or "exact" in vals:
+            pinned.append(slot)
+            continue
+        ns = [
+            int(m.group(1))
+            for v in vals
+            if (m := re.fullmatch(r"narrowed\((\d+)\)", v))
+        ]
+        if ns:
+            settle.append((slot, min(ns)))
+        else:
+            fit.append(slot)
+    for slot, verdicts in results:
+        if "+" in slot and set(verdicts.values()) == {"exact"}:
+            for part in slot.split("+"):
+                if part in fit:
+                    fit.remove(part)
+                    pinned.append(part)
+
+    settle.sort(key=lambda sn: sn[1])
+    joint = 1
+    kept = []
+    for slot, n in settle:
+        if joint * n <= JOINT_BUDGET:
+            joint *= n
+            kept.append((slot, n))
+        else:
+            fit.append(slot)
+    return sorted(fit), kept, sorted(pinned)
+
+
+def render_fit_plan(
+    report: tuple[list[tuple[str, dict[str, str]]], list[str]],
+) -> list[str]:
+    results, embedded = report
+    fit, settle, pinned = fit_plan(results)
+    covered = sorted(pinned + [slot for slot, _ in settle])
+    lines: list[str] = []
+
+    def section(header: str, slots: list[str]) -> None:
+        if not slots:
+            return
+        if lines:
+            lines.append("")
+        lines.append(f"{header}:")
+        lines.extend(f"  {slot}" for slot in slots)
+
+    section("write a Fit relation", fit)
+    section("no Fit relation", covered)
+    section("move data from rules to fact slots", embedded)
+
+    detail = [
+        f"{slot}: " + ", ".join(f"{n} {v}" for n, v in verdicts.items())
+        for slot, verdicts in results
+        if verdicts
+    ]
+    if detail:
+        lines += [""] + detail
     return lines

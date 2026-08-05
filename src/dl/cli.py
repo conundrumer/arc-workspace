@@ -8,7 +8,7 @@ from dl.fit import FitResult, render_fit, run_fit
 from dl.lint import lint_body
 from dl.deletions import deletion_report
 from dl.paths import SOLVERS_DIR, all_stems
-from dl.propose import propose_report, render_propose
+from dl.fit_plan import probe_report, render_fit_plan
 from dl.render import render_pair_failure
 from dl.solve import PairResult, TaskResult, _pair_work, case_coverage, run_pair, run_task
 from dl.souffle import _pool_workers, build_functors
@@ -170,20 +170,27 @@ def cmd_audit(stem: str) -> int:
     return _print_deletions(stem)
 
 
-def cmd_propose(stem: str) -> int:
-    """Probe every proposer against the solver's stored Color fills."""
+def cmd_fit_plan(stem: str) -> int:
+    """Which Consts slots need Fit relations, from the proposer probe."""
     build_functors()
-    for line in render_propose(propose_report(stem)):
+    for line in render_fit_plan(probe_report(stem)):
         print(line)
     return 0
 
 
 def _usage() -> str:
-    return (
+    return "\n".join([
         f"usage: {sys.argv[0]} "
         "[--audit <stem> | --sweep <stem> [cap] | --deletions <stem> | "
-        "--propose <stem> | <stem>]"
-    )
+        "--fit-plan <stem> | <stem>]",
+        "",
+        "  (none)                run every solver: pairs, lint, fit checks",
+        "  <stem>                run one solver: pairs, lint, fit check",
+        "  --audit <stem>        fill sweep + deletion report",
+        "  --sweep <stem> [cap]  fill sweep only; cap = max candidates per slot",
+        "  --deletions <stem>    deletion report only",
+        "  --fit-plan <stem>     which Consts slots need Fit relations",
+    ])
 
 
 def main(argv: list[str]) -> int:
@@ -202,7 +209,7 @@ def main(argv: list[str]) -> int:
         return cmd_deletions(argv[1])
     if len(argv) == 2 and argv[0] == "--audit":
         return cmd_audit(argv[1])
-    if len(argv) == 2 and argv[0] == "--propose":
-        return cmd_propose(argv[1])
+    if len(argv) == 2 and argv[0] == "--fit-plan":
+        return cmd_fit_plan(argv[1])
     print(_usage(), file=sys.stderr)
     return 2

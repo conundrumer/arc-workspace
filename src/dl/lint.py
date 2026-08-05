@@ -146,17 +146,33 @@ def lint_body(source: str) -> list[tuple[str, int, str, str]]:
       - 'nonzero literal'     — bare integer != 0
       - 'arithmetic'          — +, -, *, /, %
       - 'range'               — the `range` number generator
+      - 'consts data'         — nonzero literal in a Consts rule; a rule
+                                line commented `@structural` exempts the rule
       - 'comparison' (gated)  — <, <=, >, >=; enabled by LINT_COMPARISON
 
     Returns (category, lineno, match, raw_line). Skips // and /* */
     comments and `.comp` blocks (detected by `.comp Name {` with the opening
     brace on the header line, then balanced to the closing brace), except
-    `Fit` and `Parse`, which lint as body.
+    `Fit` and `Parse`, which lint as body, and `Consts`, whose rules take
+    the 'consts data' check.
     """
     findings: list[tuple[str, int, str, str]] = []
     src = _strip_block_comments(source)
     in_comp = False
+    in_consts = False
     comp_depth = 0
+    rule_lines: list[tuple[int, str, str]] = []
+    rule_structural = False
+    in_rule = False
+
+    def flush_rule() -> None:
+        nonlocal rule_lines, rule_structural
+        if not rule_structural:
+            for ln, code, raw in rule_lines:
+                for m in NUMERIC_LITERAL_RE.finditer(code):
+                    if m.group(0) != "0":
+                        findings.append(("consts data", ln, m.group(0), raw.rstrip()))
+        rule_lines, rule_structural = [], False
 
     for lineno, raw_line in enumerate(src.splitlines(), start=1):
         line = COMMENT_RE.sub("", raw_line)
@@ -165,12 +181,24 @@ def lint_body(source: str) -> list[tuple[str, int, str, str]]:
             if m.group(1) not in ("Fit", "Parse"):
                 comp_depth = line.count("{") - line.count("}")
                 in_comp = comp_depth > 0
+                in_consts = in_comp and m.group(1) == "Consts"
             continue
 
         if in_comp:
             comp_depth += line.count("{") - line.count("}")
             if comp_depth <= 0:
                 in_comp = False
+                in_consts = False
+            if in_consts:
+                if not in_rule and ":-" in line:
+                    in_rule = True
+                if in_rule:
+                    rule_lines.append((lineno, line, raw_line))
+                    if "@structural" in raw_line:
+                        rule_structural = True
+                    if line.rstrip().endswith("."):
+                        in_rule = False
+                        flush_rule()
             continue
 
         for m in ORIENTATION_LITERAL_RE.finditer(line):
