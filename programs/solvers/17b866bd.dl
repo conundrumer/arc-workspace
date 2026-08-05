@@ -1,0 +1,150 @@
+// 17b866bd
+// concept: decompose markers stamp
+// A lattice of c.line-wide lines cuts the grid into c.block-square blocks;
+// line crossings are c.node-colored junctions. A junction holding any other
+// color is a mark: it restores to c.node, and its color paints the block
+// toward c.corner of it. Two claims on what the paint covers:
+//   $Holes — the block's c.hole cells recolor.
+//   $Stamp — a stored footprint stamps over the block.
+
+#include "../lib.dl"
+
+.type Choice = Holes {} | Stamp {}
+
+.comp Consts {
+    .decl line(k: number) line(1).
+    .decl block(k: number) block(4).
+    .decl node(col: Color) node(0).
+    .decl corner(d: DiagDir) corner(DIAG_BR).
+
+    // --- $Holes ---
+    .decl hole(col: Color) hole(0).
+
+    // --- $Stamp ---
+    .decl stamp(p: Position)
+    GRID_MASK_4x4(stamp,
+        0, 1, 1, 0,
+        1, 1, 1, 1,
+        1, 1, 1, 1,
+        0, 1, 1, 0)
+}
+
+.init c = Consts
+
+.decl impl_choice(ch: Choice)
+impl_choice($Holes()). impl_choice($Stamp()).
+
+// --- parse ---
+
+.comp Parse<Key> {
+    .type Blk = [key: Key, id: Ident]
+
+    .decl cell(key: Key, p: Position, col: Color)
+    .decl line(k: number)
+    .decl gap(k: number)
+    .decl node(col: Color)
+
+    // Cells on a lattice line dividing axis a.
+    .decl lattice(key: Key, p: Position, a: Axis)
+    lattice(K, P, A) :-
+        cell(K, P, _), axis_elem(A),
+        line(W), gap(G), divide_by_size(P, A, W, G, _, _).
+
+    .decl junction(key: Key, p: Position)
+    junction(K, P) :- lattice(K, P, A), perp(A, A2), lattice(K, P, A2).
+
+    .decl mark(key: Key, p: Position, col: Color)
+    mark(K, P, Col) :- junction(K, P), cell(K, P, Col), !node(Col).
+
+    // Blocks: connected components of off-lattice cells.
+    .init blocks = Components<Key>
+    blocks.node(K, P) :- cell(K, P, _), !lattice(K, P, _).
+
+    .decl label(key: Key, p: Position, id: Ident)
+    label(K, P, Id) :- blocks.label(K, P, Id).
+
+    // The block toward corner diag of the mark: a line-width diagonal jump
+    // lands in it.
+    .decl mark_block(key: Key, p: Position, diag: DiagDir, id: Ident)
+    mark_block(K, P, Diag, Id) :-
+        mark(K, P, _),
+        diag_dir_elem(Diag), line(W), diag_jump_delta(Diag, W, J),
+        compose(P, J, P0),
+        label(K, P0, Id).
+
+    .init box = Bbox<Blk>
+    box.cell([K, Id], P) :- label(K, P, Id).
+
+    .decl margin(key: Key, id: Ident, p: Position)
+    margin(K, Id, M) :- box.margin([K, Id], M).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+parse.line(W) :- c.line(W).
+parse.gap(G) :- c.block(G).
+parse.node(Col) :- c.node(Col).
+
+// The marked block: the one toward c.corner, with its paint color.
+.decl painted(id: Ident, col: Color)
+painted(Id, Col) :-
+    parse.mark($U(), P, Col),
+    c.corner(Diag), parse.mark_block($U(), P, Diag, Id).
+
+.decl fill(p: Position, col: Color, ch: Choice)
+
+// --- $Holes ---
+fill(Q, Col, $Holes()) :-
+    painted(Id, Col), parse.label($U(), Q, Id),
+    in(Q, Hole), c.hole(Hole).
+
+// --- $Stamp ---
+fill(Q, Col, $Stamp()) :-
+    painted(Id, Col), parse.margin($U(), Id, M),
+    c.stamp(F), compose(M, F, Q).
+
+.decl out(p: Position, col: Color, c: Choice)
+out(P, Col, Ch) :- fill(P, Col, Ch).
+out(P, Col, Ch) :- impl_choice(Ch), parse.mark($U(), P, _), c.node(Col).
+out(P, Col, Ch) :-
+    impl_choice(Ch), in(P, Col), !parse.mark($U(), P, _), !fill(P, _, Ch).
+
+// --- fit ---
+
+.comp Fit {
+    .type EI = [e: Example, id: Ident]
+
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+    parse.line(W) :- c.line(W).
+    parse.gap(G) :- c.block(G).
+    parse.node(Col) :- c.node(Col).
+
+    // Cells a train pair repaints, with the block each sits in.
+    .decl repaint(e: Example, p: Position, id: Ident)
+    repaint(E, P, Id) :-
+        ex_out(E, P, Col), ex_in(E, P, Col2), Col != Col2,
+        parse.label(E, P, Id).
+
+    .decl repainted(e: Example, id: Ident)
+    repainted(E, Id) :- repaint(E, _, Id).
+
+    // A block some mark seats toward diag.
+    .decl seated(e: Example, id: Ident, diag: DiagDir)
+    seated(E, Id, Diag) :- parse.mark_block(E, _, Diag, Id).
+
+    // A corner refuted by a repainted block no mark seats toward it.
+    .decl stray(diag: DiagDir)
+    stray(Diag) :- repainted(E, Id), diag_dir_elem(Diag), !seated(E, Id, Diag).
+
+    .decl corner(d: DiagDir)
+    corner(Diag) :- diag_dir_elem(Diag), !stray(Diag).
+
+    // Repainted cells in their block's frame.
+    .init view = Reframe<EI>
+    view.outer([E, Id], M) :- repainted(E, Id), parse.margin(E, Id, M).
+    view.cell([E, Id], P)  :- repaint(E, P, Id).
+
+    .decl stamp(p: Position)
+    stamp(F) :- view.inner(_, F).
+}
