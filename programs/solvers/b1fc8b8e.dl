@@ -1,0 +1,193 @@
+// b1fc8b8e
+// concept: classify lookup count
+// Classify the ink: made of whole copies of the unit or not. Emit a fixed
+// 5x5 pattern per class — four copies of the class's 2x2 tile behind a bg
+// cross.
+//
+// Cartesian over (detect, render); out's choice column is a record:
+//
+//   detect:
+//     $Shape — every ink cell lies inside some placement of c.unit fully on
+//              ink; outcome picks c.covered_class / c.broken_class.
+//     $Count — ink count, mapped per-count via c.class_count.
+//
+//   render:
+//     $Grid    — stored grid per class.
+//     $Arrange — stored tile per class, laid out by c.arrange; gap cells get
+//                c.bg.
+//     $Corner  — stored tile anchored at each corner of c.canvas; uncovered
+//                cells get c.bg.
+
+#include "../lib.dl"
+
+.type Detect = Shape {} | Count {}
+.type Render = Grid {} | Arrange {} | Corner {}
+.type Choice = [detect: Detect, render: Render]
+
+.comp Consts {
+    .init helpers = ConstsHelpers
+
+    // --- shared ---
+    .decl ink(c: Color) ink(8).
+
+    // --- $Shape ---
+    // The unit whose placements must cover the ink.
+    .decl unit(p: Position)
+    GRID_MASK_2x2(unit,
+        1, 1,
+        1, 1)
+
+    .decl covered_class(id: Ident) covered_class(1).
+    .decl broken_class(id: Ident) broken_class(0).
+
+    // --- $Count ---
+    .decl class_count(id: Ident, n: number)
+    class_count(0, 12). class_count(1, 16).
+
+    // --- $Grid ---
+    .decl class_grid(id: Ident, p: Position, col: Color)
+    GRID_5x5(class_grid, 0,
+        0, 8, 0, 0, 8,
+        8, 8, 0, 8, 8,
+        0, 0, 0, 0, 0,
+        0, 8, 0, 0, 8,
+        8, 8, 0, 8, 8)
+    GRID_5x5(class_grid, 1,
+        8, 8, 0, 8, 8,
+        8, 8, 0, 8, 8,
+        0, 0, 0, 0, 0,
+        8, 8, 0, 8, 8,
+        8, 8, 0, 8, 8)
+
+    // --- $Arrange / $Corner ---
+    .decl class_tile(id: Ident, p_intile: Position, col: Color)
+    GRID_2x2(class_tile, 0,
+        0, 8,
+        8, 8)
+    GRID_2x2(class_tile, 1,
+        8, 8,
+        8, 8)
+
+    .decl canvas_dim(n: number) canvas_dim(5).
+    .decl canvas(p: Position)
+    canvas(P) :- canvas_dim(N), helpers.frame_pos([N, N], P).
+
+    .decl bg(c: Color) bg(0).
+
+    // --- $Arrange ---
+    .decl arr_dim(n: number) arr_dim(2).
+    .decl tile_dim(n: number) tile_dim(2).
+    .decl gap(n: number) gap(1).
+
+    .decl arrange(p_grid: Position, p_intile: Position)
+    arrange(P_grid, P_intile) :-
+        arr_dim(A), tile_dim(K), gap(G),
+        helpers.tile_pos([A, A], [K, K], [G, G], P_grid, _, P_intile).
+}
+
+.init c = Consts
+
+// --- parse ---
+
+.comp Parse<Key> {
+    .decl cell(k: Key, p: Position, col: Color)
+
+    .decl ink_at(k: Key, p: Position)
+    ink_at(K, P) :- cell(K, P, Col), c.ink(Col).
+
+    // $Count: ink cell count per key.
+    .decl ink_count(k: Key, n: number)
+    ink_count(K, N) :- ink_at(K, _), N = count : { ink_at(K, P) }.
+
+    // $Shape: placements where the unit lands fully on ink.
+    .init occ = Occurrences<Key>
+    occ.cell(K, P)  :- ink_at(K, P).
+    occ.shape(K, S) :- ink_at(K, _), c.unit(S).
+
+    .decl covered(k: Key, p: Position)
+    covered(K, P) :- occ.occurrence(K, M), c.unit(S), compose(M, S, P).
+
+    .decl uncovered(k: Key)
+    uncovered(K) :- ink_at(K, P), !covered(K, P).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// --- body ---
+
+.decl class(id: Ident, d: Detect)
+
+// --- $Shape ---
+class(Id, $Shape()) :- parse.uncovered($U()), c.broken_class(Id).
+class(Id, $Shape()) :- parse.ink_at($U(), _), !parse.uncovered($U()), c.covered_class(Id).
+
+// --- $Count ---
+class(Id, $Count()) :- parse.ink_count($U(), N), c.class_count(Id, N).
+
+.decl out(p: Position, col: Color, c: Choice)
+
+// --- $Grid ---
+out(P, Col, [D, $Grid()]) :- class(Id, D), c.class_grid(Id, P, Col).
+
+// --- $Arrange ---
+out(P_grid, Col, [D, $Arrange()]) :-
+    class(Id, D), c.arrange(P_grid, P_intile), c.class_tile(Id, P_intile, Col).
+out(P_grid, Col, [D, $Arrange()]) :-
+    class(_, D), c.canvas(P_grid), !c.arrange(P_grid, _), c.bg(Col).
+
+// --- $Corner ---
+
+// Each canvas corner's copy of the tile frame, same orientation at every corner.
+.decl corner_map(p_intile: Position, p_grid: Position)
+corner_map(P_intile, P_grid) :-
+    c.class_tile(_, P_intile, _), c.canvas(P_grid),
+    diag_dir_elem(Diag), corner_anchor(Diag, P_intile, P_grid).
+
+out(P_grid, Col, [D, $Corner()]) :-
+    class(Id, D), corner_map(P_intile, P_grid), c.class_tile(Id, P_intile, Col).
+out(P_grid, Col, [D, $Corner()]) :-
+    class(_, D), c.canvas(P_grid), !corner_map(_, P_grid), c.bg(Col).
+
+// --- fit ---
+
+.comp Fit {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    .decl paired(e: Example)
+    paired(E) :- ex_out(E, _, _).
+
+    // Two train pairs whose outputs disagree. An output is total over its
+    // frame and a Position carries its frame, so one direction settles it.
+    .decl differs(e1: Example, e2: Example)
+    differs(E1, E2) :- ex_out(E1, P, Col), ex_out(E2, _, _), !ex_out(E2, P, Col).
+
+    .decl same_out(e1: Example, e2: Example)
+    same_out(E1, E2) :- paired(E1), paired(E2), !differs(E1, E2).
+
+    // One class per set of alike pairs, labelled by its lowest member; the
+    // label carries identity only.
+    .decl class(e: Example, id: Ident)
+    class(E, as(Min, Ident)) :- paired(E), Min = min E2 : { same_out(E, E2) }.
+
+    .decl class_grid(id: Ident, p: Position, col: Color)
+    class_grid(Id, P, Col) :- class(E, Id), ex_out(E, P, Col).
+
+    .decl class_tile(id: Ident, p_intile: Position, col: Color)
+    class_tile(Id, P_intile, Col) :-
+        class(E, Id), ex_out(E, P_grid, Col), c.arrange(P_grid, P_intile).
+
+    .decl class_count(id: Ident, n: number)
+    class_count(Id, N) :- class(E, Id), parse.ink_count(E, N).
+
+    .decl covered_class(id: Ident)
+    covered_class(Id) :- class(E, Id), parse.ink_at(E, _), !parse.uncovered(E).
+
+    .decl broken_class(id: Ident)
+    broken_class(Id) :- class(E, Id), parse.uncovered(E).
+
+    // The covered class's tile displays the unit.
+    .decl unit(p: Position)
+    unit(P) :- covered_class(Id), class_tile(Id, P, Col), c.ink(Col).
+}
