@@ -36,8 +36,8 @@
     // --- Figure ---
     .decl fig_edge(n: number, d: Dir)
     fig_edge(1, DIR_T).
-    .decl fig_diag(n: number, d: DiagDir)
-    fig_diag(2, DIAG_TL). fig_diag(3, DIAG_TR).
+    .decl fig_diag(n: number, da: DiagAxis)
+    fig_diag(2, DAXIS_DG). fig_diag(3, DAXIS_AD).
 
     .decl mark(c: Color) mark(5).
     .decl bg(c: Color) bg(0).
@@ -82,7 +82,8 @@ figure_cell(P, Cv) :-
     dist(P, D, 0).                              // on that edge
 figure_cell(P, Cv) :-
     canvas(P, Cv),                              // canvas cell
-    parse.ncolors($U(), N), c.fig_diag(N, Dg),  // class figure: corner diagonal
+    parse.ncolors($U(), N), c.fig_diag(N, DA),  // class figure: diagonal
+    diag_axis_of(Dg, DA),                       // either corner of the axis
     diag_dist(P, Dg, _, K, K).                  // equidistant from its edges
 
 out(P, Mk, $Figure(Cv)) :- figure_cell(P, Cv), c.mark(Mk).
@@ -97,4 +98,21 @@ out(P, Bg, $Figure(Cv)) :- canvas(P, Cv), !figure_cell(P, Cv), c.bg(Bg).
     // A class's grid is its example's whole output.
     .decl lookup_grid(n: number, p: Position, col: Color)
     lookup_grid(N, P, Col) :- parse.ncolors(E, N), ex_out(E, P, Col).
+
+    .decl mark_cell(e: Example, p: Position)
+    mark_cell(E, P) :- ex_out(E, P, Col), c.mark(Col).
+
+    // A corner diagonal that is exactly the output's mark cells.
+    .decl broken(e: Example, dg: DiagDir)
+    broken(E, Dg) :-
+        diag_dir_elem(Dg), mark_cell(E, P),
+        diag_dist(P, Dg, _, K1, K2), K1 != K2.
+    broken(E, Dg) :-
+        diag_dir_elem(Dg), ex_out(E, P, _),
+        diag_dist(P, Dg, _, K, K), !mark_cell(E, P).
+
+    .decl fig_diag(n: number, da: DiagAxis)
+    fig_diag(N, DA) :-
+        parse.ncolors(E, N), ex_out(E, _, _),    // train pairs only
+        diag_dir_elem(Dg), !broken(E, Dg), diag_axis_of(Dg, DA).
 }

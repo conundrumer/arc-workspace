@@ -91,4 +91,10 @@ out(P, Out_C, $MarkerPosition()) :-
     mapping_out(Id, C_out) :-
         entry([E, P_across], Id),
         ex_out(E, P, C_out), c.axis(A), split(P, A, _, P_across).
+
+    // The marker's within-slice position keys the slice's output color.
+    .decl position_color(p: Position, col: Color)
+    position_color(P_inner, C_out) :-
+        fslice([E, P_across], P_inner, MC), c.marker(MC),
+        ex_out(E, P, C_out), c.axis(A), split(P, A, _, P_across).
 }

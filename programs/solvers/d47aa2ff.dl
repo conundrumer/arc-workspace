@@ -40,18 +40,27 @@
 impl_choice($Match()).
 impl_choice($Base()).
 
-// Input cells decomposed into panel and in-panel position.
-.decl cell(p_panel: Position, p: Position, col: Color)
-cell(P_panel, P_inpanel, Col) :-
-    in(P_grid, Col),                                        // input cell
-    c.panel_axis(A), c.panel_count(N), c.panel_gap(G),      // layout params
-    divide_slab(P_grid, A, N, G, P_panel, P_inpanel).       // split into panels
+// --- parse ---
+
+.comp Parse<Key> {
+    .decl grid(k: Key, p: Position, col: Color)
+
+    // Grid cells decomposed into panel and in-panel position.
+    .decl cell(k: Key, p_panel: Position, p: Position, col: Color)
+    cell(K, P_panel, P_inpanel, Col) :-
+        grid(K, P_grid, Col),
+        c.panel_axis(A), c.panel_count(N), c.panel_gap(G),      // layout params
+        divide_slab(P_grid, A, N, G, P_panel, P_inpanel).       // split into panels
+
+    .decl ink(k: Key, p_panel: Position, p: Position, col: Color)
+    ink(K, P_panel, P, Col) :- cell(K, P_panel, P, Col), !c.bg(Col).
+}
+
+.init parse = Parse<Unit>
+parse.grid($U(), P, Col) :- in(P, Col).
 
 .decl panel(p_panel: Position)
-panel(P_panel) :- cell(P_panel, _, _).
-
-.decl ink(p_panel: Position, p: Position, col: Color)
-ink(P_panel, P, Col) :- cell(P_panel, P, Col), !c.bg(Col).
+panel(P_panel) :- parse.cell($U(), P_panel, _, _).
 
 .decl out(p: Position, col: Color, ch: Choice)
 
@@ -59,28 +68,52 @@ ink(P_panel, P, Col) :- cell(P_panel, P, Col), !c.bg(Col).
 
 out(P, Col, Ch) :-
     impl_choice(Ch),
-    ink(P_panel, P, _),                                     // ink in one panel
+    parse.ink($U(), P_panel, P, _),                         // ink in one panel
     panel(P_panel2), P_panel2 != P_panel,                   // the other panel
-    !ink(P_panel2, P, _),                                   // blank there
+    !parse.ink($U(), P_panel2, P, _),                       // blank there
     c.only_fill(P_panel, Col).
 
 out(P, Col, Ch) :-
     impl_choice(Ch),
-    cell(_, P, _), !ink(_, P, _),                           // ink in neither panel
+    parse.cell($U(), _, P, _), !parse.ink($U(), _, P, _),   // ink in neither panel
     c.bg(Col).
 
 // --- $Match ---
 
 out(P, Col, $Match()) :-
-    ink(P_panel, P, Col), ink(P_panel2, P, Col),            // panels agree
+    parse.ink($U(), P_panel, P, Col),                       // panels agree
+    parse.ink($U(), P_panel2, P, Col),
     P_panel != P_panel2.
 
 out(P, Col, $Match()) :-
-    ink(_, P, C1), ink(_, P, C2), C1 != C2,                 // both-ink, no agreement
-    c.bg(Col).
+    parse.ink($U(), _, P, C1), parse.ink($U(), _, P, C2),   // both-ink, no agreement
+    C1 != C2, c.bg(Col).
 
 // --- $Base ---
 
 out(P, Col, $Base()) :-
-    c.base_panel(P_base), ink(P_base, P, Col),              // base panel ink
-    ink(P_panel2, P, _), P_panel2 != P_base.                // backed by the other panel
+    c.base_panel(P_base), parse.ink($U(), P_base, P, Col),  // base panel ink
+    parse.ink($U(), P_panel2, P, _), P_panel2 != P_base.    // backed by the other panel
+
+// --- fit ---
+
+.comp Fit {
+    .init parse = Parse<Example>
+    parse.grid(E, P, Col) :- ex_in(E, P, Col).
+
+    // One-sided ink reads its mark color off the output.
+    .decl only_fill(p_panel: Position, col: Color)
+    only_fill(Pp, Col) :-
+        parse.ink(E, Pp, P, _),
+        parse.cell(E, Pp2, P, _), Pp2 != Pp, !parse.ink(E, Pp2, P, _),
+        ex_out(E, P, Col).
+
+    // A base panel: no both-ink cell's output contradicts its ink.
+    .decl broken(p_panel: Position)
+    broken(Pb) :-
+        parse.ink(E, Pb, P, Col), parse.ink(E, Pp2, P, _), Pp2 != Pb,
+        ex_out(E, P, Col2), Col2 != Col.
+
+    .decl base_panel(p_panel: Position)
+    base_panel(Pb) :- parse.cell(E, Pb, _, _), ex_out(E, _, _), !broken(Pb).
+}

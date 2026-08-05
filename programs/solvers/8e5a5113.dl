@@ -91,13 +91,33 @@ out(P_grid, Col, $Lookup()) :-
         c.axis(A), c.tile_n(N), c.gap(G),
         divide_slab(P_grid, A, N, G, P_tile, P_intile).
 
-    // A transform that lands some pattern cell off the output tile's color.
+    .type TileK = [e: Example, p_tile: Position]
+
+    // The pattern must map onto each tile's content.
+    .init lookup = D4Map<TileK, Color>
+    lookup.src([E, P_tile], P_src, Col) :- src(E, P_src, Col), out_cell(E, P_tile, _, _).
+    lookup.dst([E, P_tile], P, Col)     :- out_cell(E, P_tile, P, Col).
+
     .decl broken(p_tile: Position, d: D4)
-    broken(P_tile, D) :-
-        src(E, P_src, Col), out_cell(E, P_tile, _, _),
-        d4_elem(D), apply(D, P_src, P_intile),
-        !out_cell(E, P_tile, P_intile, Col).
+    broken(P_tile, D) :- lookup.broken([E, P_tile], D), out_cell(E, P_tile, _, _).
 
     .decl tile_d4(p: Position, d: D4)
     tile_d4(P_tile, D) :- out_cell(_, P_tile, _, _), d4_elem(D), !broken(P_tile, D).
+
+    // Each tile's content must map onto its flow-neighbor's.
+    .init step = D4Map<TileK, Color>
+    step.src([E, T1], P, Col) :-
+        out_cell(E, T1, P, Col),
+        c.flow_dir(D), step_delta(D, S), compose(T1, S, T2),
+        out_cell(E, T2, _, _).                       // neighbor in the arrangement
+    step.dst([E, T1], P, Col) :-
+        out_cell(E, T1, _, _),
+        c.flow_dir(D), step_delta(D, S), compose(T1, S, T2),
+        out_cell(E, T2, P, Col).
+
+    .decl step_broken(d: D4)
+    step_broken(R) :- step.broken([E, T], R), out_cell(E, T, _, _).
+
+    .decl rot(d: D4)
+    rot(R) :- out_cell(_, _, _, _), d4_elem(R), !step_broken(R).
 }

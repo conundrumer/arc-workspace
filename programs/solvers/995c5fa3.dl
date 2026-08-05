@@ -143,4 +143,14 @@ out(P_out, Col, $HoleBox()) :-
         entry([E, P_tile], Id),
         c.tile_dir(D_tile), dist(P_tile, D_tile, K),
         ex_out(E, P_out, C_out), c.row_dir(D_row), dist(P_out, D_row, K).
+
+    // A holed tile's hole-bbox margin keys its row's class color.
+    .init fhole = Bbox<TileKey>
+    fhole.cell(T, P_intile) :- ftile(T, P_intile, C), c.bg(C).
+
+    .decl box_color(margin: Position, col: Color)
+    box_color(M, Col) :-
+        fhole.margin([E, P_tile], M),
+        c.tile_dir(D_tile), dist(P_tile, D_tile, K),
+        ex_out(E, P_out, Col), c.row_dir(D_row), dist(P_out, D_row, K).
 }

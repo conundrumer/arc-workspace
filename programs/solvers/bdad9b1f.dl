@@ -61,3 +61,14 @@ impl_choice($Shape()). impl_choice($Role()). impl_choice($Edge()).
 out(P, Cx, Ch)  :- crossing(P, Ch), c.cross(Cx).
 out(P, Col, Ch) :- on_line(P, Col, Ch), !crossing(P, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !on_line(P, _, Ch).
+
+// --- fit ---
+
+.comp Fit {
+    // A color's segment cells agree across only on its own axis.
+    .decl role(col: Color, a: Axis)
+    role(Col, A) :-
+        ex_in(E, P1, Col), !c.bg(Col),
+        ex_in(E, P2, Col), P1 != P2,
+        axis_elem(A), split(P1, A, _, Ac), split(P2, A, _, Ac).
+}

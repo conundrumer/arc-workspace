@@ -55,3 +55,32 @@ out(P, Col, $Shape()) :- in(P, Col), !shape_covered(P).
 
 out(P, Col, $Flank()) :- flank_covered(P), c.mark(Col).
 out(P, Col, $Flank()) :- in(P, Col), !flank_covered(P).
+
+// --- fit ---
+
+.comp Fit {
+    // Cells the stamp recolored.
+    .decl changed(e: Example, p: Position)
+    changed(E, P) :- ex_in(E, P, C1), c.field(C1), ex_out(E, P, C2), c.mark(C2).
+
+    .type EI = [e: Example, id: Ident]
+
+    .init comps = Components<Example>
+    comps.node(E, P) :- changed(E, P).
+
+    .decl comp_cell(k: EI, p: Position)
+    comp_cell([E, Id], P) :- comps.label(E, P, Id).
+
+    .decl comp_size(k: EI, n: number)
+    comp_size(K, N) :- comp_cell(K, _), N = count : { comp_cell(K, _) }.
+
+    // The smallest changed component is a single stamp.
+    .decl stamp(k: EI)
+    stamp(K) :- comp_size(K, N), N = min M : { comp_size(_, M) }.
+
+    .init frame = BoxFrame<EI>
+    frame.cell(K, P) :- stamp(K), comp_cell(K, P).
+
+    .decl shape(p: Position)
+    shape(S) :- frame.inner(_, _, S).
+}

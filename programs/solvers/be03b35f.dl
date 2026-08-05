@@ -32,3 +32,24 @@ out(P_grid_out, Col) :-
     c.frame(P_anchor),                           // anchored 2×2 position
     corner_anchor(Diag, P_anchor, P_grid_in),    // P_anchor matches input at quadrant corner
     apply(D, P_anchor, P_grid_out).              // P_grid_out = D4 applied to P_anchor
+
+// --- fit ---
+
+.comp Fit {
+    .type Quad = [e: Example, diag: DiagDir]
+
+    // Each quadrant's anchored cells must map onto the whole output.
+    .init d4m = D4Map<Quad, Color>
+    d4m.src([E, Diag], P_anchor, Col) :-
+        diag_dir_elem(Diag), ex_in(E, P_in, Col), ex_out(E, _, _),
+        c.frame(P_anchor), corner_anchor(Diag, P_anchor, P_in).
+    d4m.dst([E, Diag], P, Col) :- diag_dir_elem(Diag), ex_out(E, P, Col).
+
+    .decl broken(diag: DiagDir, d4: D4)
+    broken(Diag, D) :- d4m.broken([E, Diag], D), ex_out(E, _, _).
+
+    .decl template(diag: DiagDir, d4: D4)
+    template(Diag, D) :-
+        diag_dir_elem(Diag), d4_elem(D),
+        ex_out(_, _, _), !broken(Diag, D).
+}
