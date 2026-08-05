@@ -144,6 +144,8 @@ The runner checks each fitted slot against its Consts fill; `fit_diff` collects 
 
 Fit rules are body code: body style and the linter apply.
 
+`ex_in` also carries the test inputs. A rule that keeps the candidates no example contradicts must range over examples with `ex_out` rows: the test example has no outputs, so it contradicts nothing.
+
 ## Parse
 
 A `.comp Parse<Key>` holds a derivation the body and the Fit comp share; it sits before the body rules, under a `// --- parse ---` marker.
