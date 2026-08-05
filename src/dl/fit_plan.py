@@ -12,6 +12,7 @@ from dl.domains import (
     _enum_domain,
     _lib_defines,
     _number_domain,
+    _position_domain,
 )
 from dl.facts import _parse_relations, _parse_value, example_facts
 from dl.paths import PROPOSERS_SRC, SOLVERS_DIR
@@ -87,17 +88,20 @@ def probe_report(
     'pinned' — candidate set equals the stored set; 'narrowed(n)' — stored
     inside a set of n smaller than the enumeration domain; 'open' — stored
     inside a set no smaller than the domain; 'missed' — stored outside the
-    set. embedded lists rule-derived Consts relations whose rules carry
-    nonzero number literals; a rule commented `@structural` is exempt.
+    set. A single-fact slot also carries a 'domain' entry, 'enumerable(n)':
+    the size of its value domain, a proposer-free candidate set. embedded
+    lists rule-derived Consts relations whose rules carry nonzero number
+    literals; a rule commented `@structural` is exempt.
     """
     source = expand_grid_macros((SOLVERS_DIR / f"{stem}.dl").read_text())
     task = load_task(stem.split("_", 1)[0])
     defines = _lib_defines()
     s, e = _comp_span(source, "Consts")
     consts_text = "\n".join(source.splitlines()[s:e])
+    nums = _number_domain(task)
     domains = {
         "Color": len(_color_domain(task)),
-        "number": len(_number_domain(task)),
+        "number": len(nums),
         **{t: len(_enum_domain(t, defines)) for t in ENUM_TYPES},
     }
     ptypes = proposer_decls()
@@ -147,6 +151,14 @@ def probe_report(
                     verdicts[name] = "open"
             else:
                 verdicts[name] = _table_verdict(cand, stored)
+        if len(stored) == 1:
+            n = 1
+            for i, t in enumerate(types):
+                if t in POSITION_TYPES:
+                    n *= len(_position_domain(t, [s[i] for s in stored], nums))
+                else:
+                    n *= domains[t]
+            verdicts["domain"] = f"enumerable({n})"
         results.append((slot, verdicts))
 
     combo = _combine_triples(source)
@@ -217,9 +229,10 @@ def fit_plan(
     """Classify slots: (fit, settle, pinned).
 
     A slot is pinned when some proposer reads it off exactly; it settles
-    when some proposer narrows it to candidates and the joint product over
-    settling slots stays within JOINT_BUDGET; it needs a Fit relation
-    otherwise. A paired-table row ('a+b') pins both slots on 'exact'.
+    when a candidate set — a proposer's narrowed set or the slot's own
+    value domain — keeps the joint product over settling slots within
+    JOINT_BUDGET; it needs a Fit relation otherwise. A paired-table row
+    ('a+b') pins both slots on 'exact'.
     """
     fit, settle, pinned = [], [], []
     for slot, verdicts in results:
@@ -232,7 +245,7 @@ def fit_plan(
         ns = [
             int(m.group(1))
             for v in vals
-            if (m := re.fullmatch(r"narrowed\((\d+)\)", v))
+            if (m := re.fullmatch(r"(?:narrowed|enumerable)\((\d+)\)", v))
         ]
         if ns:
             settle.append((slot, min(ns)))
