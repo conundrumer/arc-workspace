@@ -260,13 +260,17 @@ jump_delta(D, K, Delta) :-
 .decl step_delta(d: Dir, delta: Position) inline
 step_delta(D, Step) :- jump_delta(D, 1, Step).
 
-// Unit step toward a corner — the DiagDir peer of step_delta: the corner's
-// two cardinal unit steps composed.
-.decl diag_step_delta(diag: DiagDir, delta: Position) inline
-diag_step_delta(Diag, Delta) :-
+// K-cell displacement toward a corner — the DiagDir peer of jump_delta:
+// the corner's two cardinal jumps composed.
+.decl diag_jump_delta(diag: DiagDir, k: number, delta: Position) inline
+diag_jump_delta(Diag, K, Delta) :-
     dir_of(Diag, AXIS_V, Dv), dir_of(Diag, AXIS_H, Dh),
-    step_delta(Dv, Sv), step_delta(Dh, Sh),
+    jump_delta(Dv, K, Sv), jump_delta(Dh, K, Sh),
     compose(Sv, Sh, Delta).
+
+// Unit step toward a corner — the k = 1 diag_jump_delta.
+.decl diag_step_delta(diag: DiagDir, delta: Position) inline
+diag_step_delta(Diag, Delta) :- diag_jump_delta(Diag, 1, Delta).
 
 // Decompose p by axis: along carries the axis component (perpendicular
 // zeroed); across carries the perpendicular (axis zeroed).
