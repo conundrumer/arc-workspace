@@ -20,9 +20,6 @@
     .decl header(d: DiagDir) header(DIAG_TR).
 
     // --- Stamp ---
-    // The marker pattern is symmetric across the header corner.
-    .decl pattern_axis(a: Axis)
-    pattern_axis(AXIS_V). pattern_axis(AXIS_H).
     .decl bg(c: Color) bg(0).
 }
 
@@ -48,11 +45,12 @@ out(P, Col, $Cross()) :- in(P, Col), !cross(P).
 // --- Stamp ---
 
 // Cells of selected lines, keyed by the pattern edge whose partner
-// selected them.
+// selected them. The marker pattern is symmetric across the header
+// corner, so both its edges carry it.
 .decl selected(p: Position, dp: Dir)
 selected(P, Dp) :-
-    c.header(Diag), c.pattern_axis(A),
-    diag_dirs(Diag, A, Dp, Ds),                 // pattern edge, selector edge
+    c.header(Diag),
+    diag_dirs(Diag, _, Dp, Ds),                 // pattern edge, selector edge
     marked(P, Ds), dist(P, Ds, K), K != 0.      // marked from the selector, off it
 
 .decl is_selected(p: Position)

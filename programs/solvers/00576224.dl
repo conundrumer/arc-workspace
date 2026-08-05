@@ -31,9 +31,10 @@
     .decl arr_pos(p: Position)
     arr_pos(P) :- arr_dim(K), helpers.frame_pos([K, K], P).
 
-    // Plain bands at both stack ends.
+    // Bands stack along band_axis; plain bands at both stack ends.
+    .decl band_axis(a: Axis) band_axis(AXIS_V).
     .decl anchor(d: Dir)
-    anchor(DIR_T). anchor(DIR_B).
+    anchor(D) :- band_axis(A), axis_of(D, A).
 
     .decl tf(t: D4)
     tf(D4_LR).

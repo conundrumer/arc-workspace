@@ -30,9 +30,10 @@
         2, 1)
 
     // --- Checker ---
-    // Even frame dims: both corners seed the same phase.
+    // Even frame dims: both corners of seed_diag seed the same phase.
+    .decl seed_diag(da: DiagAxis) seed_diag(DAXIS_DG).
     .decl corner(d: DiagDir)
-    corner(DIAG_TL). corner(DIAG_BR).
+    corner(D) :- seed_diag(DA), diag_axis_of(D, DA).
     .decl corner_color(col: Color) corner_color(1).
 
     .decl alt(c1: Color, c2: Color)

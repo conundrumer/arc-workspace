@@ -5,17 +5,12 @@
 
 #include "../lib.dl"
 
-.type Choice = Stored {} | Detect {}
+.type Choice = Full {} | Detect {}
 
 .comp Consts {
     // --- shared ---
     .decl noise(col: Color)
     noise(3).
-
-    // --- $Stored ---
-    .decl sym(d: D4)
-    sym(D4_ID). sym(D4_CW). sym(D4_HT). sym(D4_CC).
-    sym(D4_LR). sym(D4_TB). sym(D4_DG). sym(D4_AD).
 }
 
 .init c = Consts
@@ -25,12 +20,12 @@ clean(P, Col) :- in(P, Col), !c.noise(Col).
 
 .decl out(p: Position, col: Color, c: Choice)
 
-// --- $Stored ---
+// --- $Full ---
 
-out(P, Col, $Stored()) :- clean(P, Col).
-out(P, Col, $Stored()) :-
-    in(P, N), c.noise(N),          // corrupted cell
-    c.sym(D), apply(D, P, P2),     // symmetric counterpart
+out(P, Col, $Full()) :- clean(P, Col).
+out(P, Col, $Full()) :-
+    in(P, N), c.noise(N),           // corrupted cell
+    d4_elem(D), apply(D, P, P2),    // symmetric counterpart
     clean(P2, Col).
 
 // --- $Detect ---

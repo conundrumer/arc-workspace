@@ -20,9 +20,10 @@
     .decl arr_pos(p: Position)
     arr_pos(P) :- arr_dim(AXIS_V, V), arr_dim(AXIS_H, H), helpers.frame_pos([V, H], P).
 
-    // Identity at both strip ends.
+    // The strip runs along strip_axis; identity at both strip ends.
+    .decl strip_axis(a: Axis) strip_axis(AXIS_H).
     .decl anchor(d: Dir)
-    anchor(DIR_L). anchor(DIR_R).
+    anchor(D) :- strip_axis(A), axis_of(D, A).
 }
 
 .init c = Consts

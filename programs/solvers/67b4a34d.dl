@@ -3,22 +3,17 @@
 // A grid symmetric about its center, occluded by a solid mask-color patch;
 // the output is the occluded content, restored from symmetric counterparts.
 //
-//   $Stored — the symmetry group is task data (c.sym).
+//   $Full   — every element applies: the grid is fully symmetric.
 //   $Detect — the group is detected: elements unbroken on clean cells.
 
 #include "../lib.dl"
 
-.type Choice = Stored {} | Detect {}
+.type Choice = Full {} | Detect {}
 
 .comp Consts {
     // --- shared ---
     .decl mask(col: Color)
     mask(3).
-
-    // --- $Stored ---
-    .decl sym(d: D4)
-    sym(D4_ID). sym(D4_CW). sym(D4_HT). sym(D4_CC).
-    sym(D4_LR). sym(D4_TB). sym(D4_DG). sym(D4_AD).
 }
 
 .init c = Consts
@@ -29,21 +24,16 @@ clean(P, Col) :- in(P, Col), !c.mask(Col).
 .decl masked(p: Position)
 masked(P) :- in(P, Col), c.mask(Col).
 
-.init box = Bbox<Unit>
-box.cell($U(), P) :- masked(P).
-
-// Each masked cell viewed from the mask's box, keyed by the cell.
-.init boxframe = Reframe<Position>
-boxframe.outer(P, M) :- masked(P), box.margin($U(), M).
-boxframe.cell(P, P)  :- masked(P).
+.init boxframe = BoxFrame<Unit>
+boxframe.cell($U(), P) :- masked(P).
 
 .decl out(p: Position, col: Color, c: Choice)
 
-// --- $Stored ---
+// --- $Full ---
 
-out(P_out, Col, $Stored()) :-
-    boxframe.inner(P, P_out),      // masked cell in the box frame
-    c.sym(D), apply(D, P, P2),     // symmetric counterpart
+out(P_out, Col, $Full()) :-
+    boxframe.inner($U(), P, P_out),    // masked cell in the box frame
+    d4_elem(D), apply(D, P, P2),       // symmetric counterpart
     clean(P2, Col).
 
 // --- $Detect ---
@@ -56,6 +46,6 @@ broken(D) :-
     clean(P2, C2), Col != C2.
 
 out(P_out, Col, $Detect()) :-
-    boxframe.inner(P, P_out),                   // masked cell in the box frame
+    boxframe.inner($U(), P, P_out),             // masked cell in the box frame
     d4_elem(D), !broken(D), apply(D, P, P2),    // unbroken-symmetry image
     clean(P2, Col).
