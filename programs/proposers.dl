@@ -4,7 +4,7 @@
 // and emits `propose` — the candidate set for a slot value. The final
 // column(s) of `propose` are the proposed value; leading columns are
 // proposer parameters. The runner probes every proposer against every
-// solver's stored fills (`run_dl.py --propose`); a proposer claims no
+// solver's stored fills (`run_dl.py --fit-plan`); a proposer claims no
 // slot itself.
 //
 // A claim about inputs alone ranges over every example; a claim about
@@ -135,6 +135,21 @@
     propose(K) :- pair_k(_, A, K), !broken(A, K).
 }
 
+// The factor from input dims to output dims per axis, uniform across
+// pairs. Stack-ups and mirrors: the factor is the arrangement.
+.comp ScaleRatioAxis {
+    .init dims = PairDims
+
+    .decl pair_k(e: Example, a: Axis, k: number)
+    pair_k(E, A, No / Ni) :- dims.in_dim(E, A, Ni), dims.out_dim(E, A, No), No % Ni = 0.
+
+    .decl broken(a: Axis, k: number)
+    broken(A, K) :- pair_k(_, A, K), ex_out(E, _, _), !pair_k(E, A, K).
+
+    .decl propose(a: Axis, k: number)
+    propose(A, K) :- pair_k(_, A, K), !broken(A, K).
+}
+
 // The factor from output dims to input dims on an axis, uniform across
 // pairs. Decomposes and crops.
 .comp DivisorRatio {
@@ -148,6 +163,21 @@
 
     .decl propose(k: number)
     propose(K) :- pair_k(_, A, K), !broken(A, K).
+}
+
+// The factor from output dims to input dims per axis, uniform across
+// pairs. Gap-0 panel decomposes: the factor is the arrangement.
+.comp DivisorRatioAxis {
+    .init dims = PairDims
+
+    .decl pair_k(e: Example, a: Axis, k: number)
+    pair_k(E, A, Ni / No) :- dims.in_dim(E, A, Ni), dims.out_dim(E, A, No), Ni % No = 0.
+
+    .decl broken(a: Axis, k: number)
+    broken(A, K) :- pair_k(_, A, K), ex_out(E, _, _), !pair_k(E, A, K).
+
+    .decl propose(a: Axis, k: number)
+    propose(A, K) :- pair_k(_, A, K), !broken(A, K).
 }
 
 // The dimension change from input to output on an axis, uniform across
@@ -177,6 +207,17 @@
     propose(N) :- dims.in_dim(_, A, N), !varies(A, N).
 }
 
+// An input dimension constant across pairs, tagged by its axis.
+.comp ConstInDimAxis {
+    .init dims = PairDims
+
+    .decl varies(a: Axis, n: number)
+    varies(A, N) :- dims.in_dim(_, A, N), ex_in(E, _, _), !dims.in_dim(E, A, N).
+
+    .decl propose(a: Axis, n: number)
+    propose(A, N) :- dims.in_dim(_, A, N), !varies(A, N).
+}
+
 // An output dimension constant across pairs.
 .comp ConstOutDim {
     .init dims = PairDims
@@ -186,6 +227,17 @@
 
     .decl propose(n: number)
     propose(N) :- dims.out_dim(_, A, N), !varies(A, N).
+}
+
+// An output dimension constant across pairs, tagged by its axis.
+.comp ConstOutDimAxis {
+    .init dims = PairDims
+
+    .decl varies(a: Axis, n: number)
+    varies(A, N) :- dims.out_dim(_, A, N), ex_out(E, _, _), !dims.out_dim(E, A, N).
+
+    .decl propose(a: Axis, n: number)
+    propose(A, N) :- dims.out_dim(_, A, N), !varies(A, N).
 }
 
 // Tile counts n with dim = n*d + (n-1)*g fitting an input axis of every
@@ -279,6 +331,22 @@
 
     .decl propose(n: number)
     propose(N) :- holds(_, A, N), !broken(A, N).
+}
+
+// Segment counts of a witnessed separator lattice on every input, tagged
+// by axis. An axis with no lattice beside a witnessed one counts 1.
+.comp SepTileCountAxis {
+    .init sep = SepFits
+
+    .decl holds(e: Example, a: Axis, n: number)
+    holds(E, A, N) :- sep.fits(E, A, N, _, _).
+
+    .decl broken(a: Axis, n: number)
+    broken(A, N) :- holds(_, A, N), ex_in(E, _, _), !holds(E, A, N).
+
+    .decl propose(a: Axis, n: number)
+    propose(A, N) :- holds(_, A, N), !broken(A, N).
+    propose(A2, 1) :- propose(A, _), perp(A, A2), !holds(_, A2, _).
 }
 
 // Segment dims of a witnessed separator lattice on every input.
