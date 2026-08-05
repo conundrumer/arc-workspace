@@ -261,3 +261,34 @@ The translation peer of `D4Invariance`: which axis-aligned shifts fix each keyed
 **Task-local home (protocol step 1).** ca8f78db (`Parse<Key>` comp, this shape): the body's $Shift repairs through unbroken shifts (`Unit` over clean cells); the Fit reads the stored period as the smallest unbroken shift per axis (`Example` over restored outputs).
 
 **Second home (protocol step 1).** 332efdb3 (fit rules, this shape unkeyed): the stored lattice generators are the smallest unbroken shift per axis, read as deltas.
+
+## `Partition<Key>` — a cell set decomposes into unit copies
+
+Whether a keyed cell set partitions into disjoint translated copies of a
+footprint. Strictly stronger than `Occurrences` coverage: a 2×3 rectangle is
+covered by 2×2 placements but admits no partition.
+
+In any partition, the copy covering the reading-order-first unpeeled cell
+places its own reading-order-first cell there — any other alignment needs a
+cell already peeled or off the set — so a greedy reading-order peel is
+canonical and correct for any single footprint under translation. With D4
+variants of the unit the step is not forced; out of scope.
+
+The peel is staged deletion — each stage's remaining set negates the
+previous stage's chosen copy — which Souffle's predicate-level
+stratification rejects. It goes in a functor (`lib_functors.cpp`).
+
+```
+.comp Partition<Key> {
+    .decl cell(key: Key, p: Position)
+    .decl unit(p: Position)
+
+    .decl partitions(key: Key)
+    // functor-backed greedy reading-order peel
+}
+```
+
+Open: functors take scalars, so the sets cross the interface serialized — an
+ordered string fold, or a tooling convention for set-valued functor inputs.
+
+**Motivating site.** b1fc8b8e: a $Partition detect case beside $Shape.

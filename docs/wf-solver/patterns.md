@@ -45,7 +45,7 @@ The relation is `impl_choice`, the column `ch`, corpus-wide.
 
 ## `GRID_HxW` for grid data
 
-A `GRID_HxW` call emits one position-keyed fact per cell, in row-major order. Cells can hold any per-cell data: colors, labels, transforms. A distinguished cell is a Position fact, not a cell value (27a28665 `center_pos`).
+A `GRID_HxW` call emits one position-keyed fact per cell, in row-major order. The runner expands the call before Souffle sees the file; GRID is not defined in `lib.dl`. H and W are the grid's dims and take any size, so a call carries H·W cell values. Cells can hold any per-cell data: colors, labels, transforms. A distinguished cell is a Position fact, not a cell value (27a28665 `center_pos`).
 
 ```
 .decl template(p: Position, col: Color)
@@ -112,13 +112,20 @@ map(P_in, P_out) :- src(P_in, Id), dst(P_out, Id).
 
 ## Tabulated decomposition
 
-A constant layout stored as Consts data: one relation maps each grid position to its decomposition, built with `helpers.tile_pos` and embedded behind a border with `compose`. The body joins `in` against it and works in decomposed coordinates. The body-derived peer is `divide` / `divide_by_size`; tabulation fits when the layout is the same in every pair.
+A constant layout stored as Consts data: the layout's dims sit in fact slots, and one relation maps each grid position to its decomposition, built with `helpers.tile_pos` and embedded behind a border with `compose`. The body joins `in` against it and works in decomposed coordinates. The body-derived peer is `divide` / `divide_by_size`; tabulation fits when the layout is the same in every pair.
 
 ```
+.decl arr_dim(a: Axis, n: number)
+arr_dim(AXIS_V, 1). arr_dim(AXIS_H, 2).
+.decl tile_dim(n: number) tile_dim(3).
+.decl gap(n: number) gap(1).
+.decl border(n: number) border(1).
+
 .decl decompose(p_grid: Position, p_tile: Position, p_intile: Position)
 decompose(P_grid, P_tile, P_intile) :-
-    helpers.tile_pos([1, 2], [3, 3], [0, 1], P_frame, P_tile, P_intile),
-    compose(P_frame, [1, 1, 1, 1], P_grid).    // 1-cell border
+    arr_dim(AXIS_V, Ov), arr_dim(AXIS_H, Oh), tile_dim(K), gap(G), border(B),
+    helpers.tile_pos([Ov, Oh], [K, K], [0, G], P_frame, P_tile, P_intile),
+    compose(P_frame, [B, B, B, B], P_grid).
 ```
 
 (34b99a2b `tile_decompose` — gap only; ed74f2f2 `decompose` — gap and border.)

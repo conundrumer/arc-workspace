@@ -29,14 +29,16 @@ A solver session writes a Souffle solver (`programs/solvers/<task_id>.dl`) that 
 
 ## Cadence
 
-Do each step individually; never batch them. Create a task per step.
+For each pass: Do each step individually. Do not batch them. Create a task per step.
+
+Creation pass, do this first:
 
 1. Create the solver
-    - Analyze the task: `cat data/tasks/<task_id>.json` (already formatted, do not pipe into anything)
-    - Draft from the reference
-    - Run against materialized train+test pairs (`uv run python scripts/run_dl.py <task_id>`)
-    - Iterate until it works and passes lint.
-    - Run the audit (`run_dl.py --audit <task_id>`) and resolve the findings. Raise judgment calls in the review.
+    1. Analyze the task: `cat data/tasks/<task_id>.json` (already formatted, do not pipe into anything)
+    2. Draft from the reference. Do not write the `Fit` comp yet.
+    3. Run against materialized train+test pairs (`uv run python scripts/run_dl.py <task_id>`)
+    4. Iterate until it works and passes lint.
+    5. Run the audit (`run_dl.py --audit <task_id>`) and resolve the findings. Raise judgment calls in the review.
 2. Simplify if possible
 3. Prune everything that does not serve the reader — exhaustively, from unnecessary words to irrelevant ideas. Judge necessity from the artifact alone, not from the session.
     - Text copied from prior solvers may not have been pruned; prune it like new text
@@ -48,9 +50,20 @@ Do each step individually; never batch them. Create a task per step.
     - For each Choice case pair, and for each alt model considered and dropped: show where the models diverge, as a concrete input fragment and each model's output on it. The fragment must witness a valid divergence: the diverging model's output on it is well-formed. For data-indistinguishable pairs, state what the shared data hides. A model the data rules out was never a candidate: it does not appear in the review, not even as a note on why it is absent.
     - The review is a reply to the user, and it ends the turn: finish all task updates first, then write it with no tool calls after it.
 
-For prune and `revise`, the reader and purpose: a future session who needs to understand the solver and its model claim.
+Fit pass, triggered when the user says `fit`:
+
+1. Run `--fit-plan`. If it lists no slots to fit, you are done.
+2. Create relations for the listed slots in the `Fit` comp.
+3. Simplify
+4. Prune
+5. Review as before as applicable, with these additions:
+    - Given you could modify the model (i.e. changing consts shape), is there any simpler or more principled alternative?
+
+For `prune` and `revise`, the reader and purpose: a future session who needs to understand the solver and its model claim.
 
 When the user says `cleanup`, create tasks for Simplify and Prune and do them.
+
+Do not read `src/dl/` during the cadence. The docs and the run output should have all the information you need. You should not need to anticipate or confirm anything by reading the source. If you choose to read the source, report to the user why, as that indicates there is a gap or error in the docs or runner.
 
 <!-- batch:skip -->
 ## `next`

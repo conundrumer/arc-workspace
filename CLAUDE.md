@@ -7,7 +7,7 @@ ARC-AGI-2 work for the 2026 Kaggle competition. Python 3.12, `uv`.
 ```
 uv run pytest -q
 uv run python scripts/materialize.py
-uv run python scripts/run_dl.py          # run all Souffle solvers
+uv run python scripts/run_dl.py          # run all Souffle solvers; --help for per-solver tooling
 uv run python scripts/run_dl.py <stem>   # run one
 ```
 
