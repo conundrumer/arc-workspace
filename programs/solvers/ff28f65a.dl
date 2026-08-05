@@ -38,37 +38,27 @@
     out_pos(P) :- out_dim(N), helpers.frame_pos([N, N], P).
 
     // Lookup render: count -> output grid. Only the counts the task exhibits (1..5).
-    .decl lookup1(p: Position, col: Color)
-    GRID_3x3(lookup1,
+    .decl lookup_grid(n: number, p: Position, col: Color)
+    GRID_3x3(lookup_grid, 1,
         1, 0, 0,
         0, 0, 0,
         0, 0, 0)
-    .decl lookup2(p: Position, col: Color)
-    GRID_3x3(lookup2,
+    GRID_3x3(lookup_grid, 2,
         1, 0, 1,
         0, 0, 0,
         0, 0, 0)
-    .decl lookup3(p: Position, col: Color)
-    GRID_3x3(lookup3,
+    GRID_3x3(lookup_grid, 3,
         1, 0, 1,
         0, 1, 0,
         0, 0, 0)
-    .decl lookup4(p: Position, col: Color)
-    GRID_3x3(lookup4,
+    GRID_3x3(lookup_grid, 4,
         1, 0, 1,
         0, 1, 0,
         1, 0, 0)
-    .decl lookup5(p: Position, col: Color)
-    GRID_3x3(lookup5,
+    GRID_3x3(lookup_grid, 5,
         1, 0, 1,
         0, 1, 0,
         1, 0, 1)
-    .decl lookup_grid(n: number, p: Position, col: Color)
-    lookup_grid(1, P, C) :- lookup1(P, C).
-    lookup_grid(2, P, C) :- lookup2(P, C).
-    lookup_grid(3, P, C) :- lookup3(P, C).
-    lookup_grid(4, P, C) :- lookup4(P, C).
-    lookup_grid(5, P, C) :- lookup5(P, C).
 }
 
 .init c = Consts
