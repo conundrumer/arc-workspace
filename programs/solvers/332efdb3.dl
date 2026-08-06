@@ -84,33 +84,19 @@ out(P, Col, $Inset()) :- in(P, _), !is_border(P), !interior_tile(P),   c.bg(Col)
 .type Window = [e: Example, diag: DiagDir]
 
 .comp Fit {
-    // Candidate shifts: every axis-aligned delta the frame admits.
-    .decl cand(a: Axis, k: number, delta: Shift)
-    cand(A, K, Delta) :-
-        ex_out(_, P, _),
-        axis_of(D, A), sub_extent(P, A, K),
-        jump_delta(D, K, Delta).
-
-    // Where a candidate carries each cell's color; materialized to keep
-    // the disagreement test an indexed join.
-    .decl shifted(e: Example, a: Axis, k: number, p: Position, col: Color)
-    shifted(E, A, K, P2, Col) :-
-        ex_out(E, P, Col), cand(A, K, Delta), compose(P, Delta, P2).
-
-    // A candidate carrying some cell onto a different color.
-    .decl broken(a: Axis, k: number)
-    broken(A, K) :- shifted(E, A, K, P, Col), ex_out(E, P, C2), C2 != Col.
+    .init parse = ShiftInvariance<Example, Color>
+    parse.cell(E, P, Col) :- ex_out(E, P, Col).
 
     .decl unbroken(a: Axis, k: number)
-    unbroken(A, K) :- cand(A, K, _), !broken(A, K).
+    unbroken(A, K) :- parse.cand(_, A, K, _), !parse.broken(_, A, K).
 
     // The lattice generators: the smallest repeating shift on each axis,
     // in each direction.
     .decl period(delta: Shift)
-    period(Delta) :- cand(A, K, Delta), K = min K2 : { unbroken(A, K2) }.
+    period(Delta) :- parse.cand(_, A, K, Delta), K = min K2 : { unbroken(A, K2) }.
 
     .decl span(a: Axis, k: number)
-    span(A, K) :- period(Delta), cand(A, K, Delta).
+    span(A, K) :- period(Delta), parse.cand(_, A, K, Delta).
 
     // The closed unit cell: cells within one generator of a corner,
     // boundary included.

@@ -739,6 +739,36 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     has_sym(K) :- map(K, D), D != D4_ID.
 }
 
+// Per-key shift invariance of a valued cell set — the translation peer of
+// D4Map (dst = src): which axis-aligned shifts fix each keyed cell set.
+// `cand` enumerates the shifts the key's frame admits, tagged (axis, k)
+// with both directions of a magnitude sharing a tag; `broken` witnesses a
+// violated shift — some cell whose image holds a different value. Unlike
+// D4Map, absence is silent: an image off the frame tests nothing, so
+// `broken` compares only where both cells exist. A fitter reads a stored
+// period as the smallest unbroken shift; the `Period` proposer is the
+// produce-time sibling (with one semantic difference: the proposer counts
+// an example too small to admit a shift as breaking it).
+.comp ShiftInvariance<Key, Val> {
+    .decl cell(key: Key, p: Position, v: Val)
+
+    // Candidate shifts: every axis-aligned delta the frame admits.
+    .decl cand(key: Key, a: Axis, k: number, delta: Shift)
+    cand(Ky, A, K, Delta) :-
+        cell(Ky, P, _),
+        axis_of(D, A), sub_extent(P, A, K),
+        jump_delta(D, K, Delta).
+
+    // Where a candidate carries each cell's value; materialized to keep
+    // the disagreement test an indexed join.
+    .decl shifted(key: Key, a: Axis, k: number, p: Position, v: Val)
+    shifted(Ky, A, K, P2, V) :-
+        cell(Ky, P, V), cand(Ky, A, K, Delta), compose(P, Delta, P2).
+
+    .decl broken(key: Key, a: Axis, k: number)
+    broken(Ky, A, K) :- shifted(Ky, A, K, P, V), cell(Ky, P, V2), V2 != V.
+}
+
 // Re-express keyed cells relative to a per-key outer origin: inner = cell
 // minus outer, the inverse of compose. Outer extent + inner extent = cell
 // extent, so one subtraction both resizes and positions across frames.

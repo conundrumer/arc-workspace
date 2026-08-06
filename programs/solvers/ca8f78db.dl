@@ -33,30 +33,7 @@
 .decl clean(p: Position, col: Color)
 clean(P, Col) :- in(P, Col), !c.noise(Col).
 
-// --- parse ---
-
-.comp Parse<Key> {
-    .decl cell(key: Key, p: Position, col: Color)
-
-    // Candidate shifts: every axis-aligned delta the frame admits.
-    .decl cand(key: Key, a: Axis, k: number, delta: Shift)
-    cand(Ky, A, K, Delta) :-
-        cell(Ky, P, _),
-        axis_of(D, A), sub_extent(P, A, K),      // each axis, each distance
-        jump_delta(D, K, Delta).
-
-    // Where a candidate carries each cell's color; materialized to keep
-    // the disagreement test an indexed join.
-    .decl shifted(key: Key, a: Axis, k: number, p: Position, col: Color)
-    shifted(Ky, A, K, P2, Col) :-
-        cell(Ky, P, Col), cand(Ky, A, K, Delta), compose(P, Delta, P2).
-
-    // A candidate carrying some cell onto a different color.
-    .decl broken(key: Key, a: Axis, k: number)
-    broken(Ky, A, K) :- shifted(Ky, A, K, P, Col), cell(Ky, P, C2), C2 != Col.
-}
-
-.init parse = Parse<Unit>
+.init parse = ShiftInvariance<Unit, Color>
 parse.cell($U(), P, Col) :- clean(P, Col).
 
 .decl impl_choice(ch: Choice)
@@ -118,7 +95,7 @@ out(P, Col, $Rows()) :-
 // --- fit ---
 
 .comp Fit {
-    .init parse = Parse<Example>
+    .init parse = ShiftInvariance<Example, Color>
     parse.cell(E, P, Col) :- ex_out(E, P, Col).
 
     .decl unbroken(a: Axis, k: number)
