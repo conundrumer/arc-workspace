@@ -1,0 +1,49 @@
+// 2a28add5
+// concept: lines markers move
+// Each line holding a marker cell packs its ink against the marker: the
+// marker stays put, each side's ink slides inward, order kept, and
+// packed cells draw in c.fill. Everything else clears to bg.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl bg(c: Color) bg(7).
+    .decl marker(c: Color) marker(6).
+    .decl fill(c: Color) fill(8).
+    .decl axis(a: Axis) axis(AXIS_H).
+}
+
+.init c = Consts
+
+// Line-keyed marker and ink cells; across names the line.
+.decl marker_at(p_across: Position, m: Position)
+marker_at(Across, M) :-
+    in(M, Col), c.marker(Col),
+    c.axis(A), split(M, A, _, Across).
+
+.decl ink_at(p_across: Position, p: Position)
+ink_at(Across, P) :-
+    in(P, Col), !c.bg(Col),
+    c.axis(A), split(P, A, _, Across).
+
+// Marker-side sequences: per dir on the packing axis, the line's ink from
+// the marker out toward edge d, indexed by dist from the opposite edge;
+// the marker is rank 0.
+.type Side = [p_across: Position, d: Dir]
+
+.init seq = Ordinal<Side>
+seq.idx_set([Across, D], K) :-
+    marker_at(Across, M), ink_at(Across, Q),      // marker and ink in one line
+    c.axis(A), axis_of(D, A), opposite(D, O),
+    dist(M, O, Km), dist(Q, O, K), K >= Km.       // at or beyond the marker toward d
+
+// Ink at rank r from the marker packs r cells out from it toward edge d.
+.decl packed(p: Position)
+packed(P) :-
+    seq.rank([Across, D], _, R),
+    marker_at(Across, M),
+    jump_delta(D, R, Delta), compose(M, Delta, P).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- packed(P), c.fill(Col).
+out(P, Col) :- in(P, _), !packed(P), c.bg(Col).

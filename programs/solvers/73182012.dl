@@ -1,0 +1,49 @@
+// 73182012
+// family: 2013d3e2
+// 8×8 figure; output is its 4×4 top-left region.
+
+#include "../lib.dl"
+
+.type Choice = Half {} | Window {}
+
+.comp Consts {
+    // --- shared ---
+    .decl bg(c: Color) bg(0).
+
+    // --- Half ---
+    .decl divisor(n: number) divisor(2).
+    .decl out_tile(p_tile: Position) out_tile([0, 1, 0, 1]).
+
+    // --- Window ---
+    .decl win_dim(k: number) win_dim(4).
+    .decl corner(d: DiagDir) corner(DIAG_TL).
+}
+
+.init c = Consts
+
+.decl ink(p: Position)
+ink(P) :- in(P, Col), !c.bg(Col).
+
+.init boxframe = BoxFrame<Unit>
+boxframe.cell($U(), P) :- ink(P).
+boxframe.grid($U(), P) :- in(P, _).
+
+.decl box_cell(p_box: Position, col: Color)
+box_cell(P_box, Col) :- in(P, Col), boxframe.inner($U(), P, P_box).
+
+.decl out(p: Position, col: Color, c: Choice)
+
+// --- Half ---
+out(P_out, Col, $Half()) :-
+    box_cell(P_box, Col),
+    c.divisor(N), divide_2d(P_box, N, 0, P_tile, P_out),    // box divided NxN
+    c.out_tile(P_tile).                                     // the output tile
+
+// --- Window ---
+.init win = Frame2D<Unit>
+win.extent($U(), A, K) :- c.win_dim(K), axis_elem(A).
+
+out(P_out, Col, $Window()) :-
+    box_cell(P_box, Col),
+    win.cell($U(), P_out),
+    c.corner(Diag), corner_anchor(Diag, P_box, P_out).   // same dists to the corner

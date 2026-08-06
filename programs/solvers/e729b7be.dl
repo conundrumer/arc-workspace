@@ -1,0 +1,79 @@
+// e729b7be
+// concept: symmetry markers repair d4
+//
+// A full-height line, interrupted by a marker where the marker row
+// crosses it; markers also end that row at both edges. The shape beside
+// the line reappears half-turned on the far side. $Sym completes the
+// grid's half-turn symmetry about the frame center; $Marker completes
+// it about the marked crossing.
+
+#include "../lib.dl"
+
+.type Choice = Sym {} | Marker {}
+
+.comp Consts {
+    // --- shared ---
+    .decl bg(c: Color) bg(7).
+
+    // --- Sym ---
+    // Stabilizer of the completed grid.
+    .decl sym(d: D4)
+    sym(D4_ID). sym(D4_HT).
+
+    // --- Marker ---
+    .decl line(c: Color) line(4).
+    .decl marker(c: Color) marker(8).
+    // The transform completing the grid about the crossing.
+    .decl transform(d: D4) transform(D4_HT).
+}
+
+.init c = Consts
+
+.decl impl_choice(ch: Choice)
+impl_choice($Sym()). impl_choice($Marker()).
+
+// Each cell's counterpart value, per case; painted onto bg cells.
+.decl image(p: Position, col: Color, ch: Choice)
+
+// --- Sym ---
+image(P, Col, $Sym()) :-
+    in(P2, Col), !c.bg(Col),         // ink cell
+    c.sym(D), apply(D, P2, P).       // its symmetric counterpart
+
+// --- Marker ---
+// The crossing: the marker colinear with a line cell — the line is
+// interrupted only there, so edge markers align with no line cell.
+.decl center(p: Position)
+center(C) :-
+    in(C, Colm), c.marker(Colm),          // a marker
+    in(Q, Coll), c.line(Coll),            // a line cell
+    axis_elem(A),
+    split(C, A, _, Ac), split(Q, A, _, Ac).   // colinear on some axis
+
+// Input cells viewed from the crossing.
+.init rf = Reframe<Position>
+rf.outer(P, C) :- in(P, _), center(C).
+rf.cell(P, P) :- in(P, _).
+
+// Image = crossing + the transform's linear action on the offset.
+image(P2, Col, $Marker()) :-
+    in(P, Col), rf.inner(P, Dlt),        // offset from the crossing
+    c.transform(D), apply(D, Dlt, Dlt2),
+    center(C), compose(C, Dlt2, P2).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !c.bg(Col).
+out(P, Col, Ch) :- in(P, C0), c.bg(C0), image(P, Col, Ch).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), c.bg(Col), !image(P, _, Ch).
+
+// --- fit ---
+
+.comp Fit {
+    .init d4m = D4Map<Example, Color>
+    d4m.src(E, P, Col) :- ex_out(E, P, Col).
+    d4m.dst(E, P, Col) :- ex_out(E, P, Col).
+
+    // The stabilizer: what every train output is invariant under.
+    .decl sym(d: D4)
+    sym(D) :- d4_elem(D), !d4m.broken(_, D).
+}

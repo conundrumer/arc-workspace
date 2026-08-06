@@ -1,0 +1,72 @@
+// af902bf9
+// concept: markers span
+// Marker cells sit at the corners of axis-aligned rectangles; each
+// rectangle's strict interior fills with c.fill. Two models of what
+// delimits an interior cell, tagged on out's Choice:
+//
+//   $Rect — a marker pair in opposite quadrants of the cell whose two
+//           mixed corners are also markers.
+//   $Quad — a marker strictly inside each of the cell's four quadrants.
+
+#include "../lib.dl"
+
+.type Choice = Rect {} | Quad {}
+
+.comp Consts {
+    .decl marker(c: Color) marker(4).
+    .decl fill(c: Color) fill(2).
+    .decl bg(c: Color) bg(0).
+}
+
+.init c = Consts
+
+.decl mark(p: Position)
+mark(P) :- in(P, Col), c.marker(Col).
+
+.decl empty(p: Position)
+empty(P) :- in(P, Col), c.bg(Col).
+
+// A marker strictly inside quadrant Diag of a bg cell: strictly nearer
+// both of the corner's edges.
+.decl quad_mark(p: Position, diag: DiagDir, q: Position)
+quad_mark(P, Diag, Q) :-
+    empty(P), mark(Q),
+    diag_dist(P, Diag, A, K1, K2),
+    diag_dist(Q, Diag, A, J1, J2),
+    J1 < K1, J2 < K2.
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// --- Rect ---
+
+// Markers in opposite quadrants of the cell.
+.decl opp_pair(p: Position, a: Position, d: Position)
+opp_pair(P, A, D) :-
+    quad_mark(P, Diag, A),                             // marker toward one corner
+    diag_opposite(Diag, Dg2), quad_mark(P, Dg2, D).    // marker toward the opposite
+
+// Some axis's mixed corner of the pair (a's along-axis component with
+// d's across) is not a marker.
+.decl open_pair(a: Position, d: Position)
+open_pair(A, D) :-
+    opp_pair(_, A, D), axis_elem(Ax),
+    split(A, Ax, A1, _), split(D, Ax, _, D1),
+    compose(A1, D1, Q), !mark(Q).                      // mixed corner unmarked
+
+.decl rect_interior(p: Position)
+rect_interior(P) :- opp_pair(P, A, D), !open_pair(A, D).
+
+out(P, F, $Rect())   :- rect_interior(P), c.fill(F).
+out(P, Col, $Rect()) :- in(P, Col), !rect_interior(P).
+
+// --- Quad ---
+
+// Some quadrant of the bg cell holds no marker.
+.decl open_quad(p: Position, diag: DiagDir)
+open_quad(P, Diag) :- empty(P), diag_dir_elem(Diag), !quad_mark(P, Diag, _).
+
+.decl quad_interior(p: Position)
+quad_interior(P) :- empty(P), !open_quad(P, _).
+
+out(P, F, $Quad())   :- quad_interior(P), c.fill(F).
+out(P, Col, $Quad()) :- in(P, Col), !quad_interior(P).

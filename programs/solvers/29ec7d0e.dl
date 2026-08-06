@@ -1,0 +1,59 @@
+// 29ec7d0e
+// concept: wallpaper repair count
+// A wallpaper — one square tile repeating on both axes — corrupted by
+// noise patches; the output restores it. The period varies per pair, so
+// no case stores one. Propagation composes across axes, reaching holes
+// with no clean mate on either of their own lines.
+//
+//   $Shift — translation repair, detected: values propagate along shifts
+//            unbroken on clean cells.
+//   $Count — the clean color count is the period: values propagate along
+//            jumps of that length.
+
+#include "../lib.dl"
+
+.type Choice = Shift {} | Count {}
+
+.comp Consts {
+    .decl noise(col: Color) noise(0).
+}
+
+.init c = Consts
+
+.decl clean(p: Position, col: Color)
+clean(P, Col) :- in(P, Col), !c.noise(Col).
+
+.init parse = ShiftInvariance<Unit, Color>
+parse.cell($U(), P, Col) :- clean(P, Col).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Shift()). impl_choice($Count()).
+
+// Each case's period-preserving shifts.
+.decl shift(ch: Choice, delta: Shift)
+
+// Values propagate from clean cells along each case's shifts.
+.decl restored(ch: Choice, p: Position, col: Color)
+restored(Ch, P, Col) :- impl_choice(Ch), clean(P, Col).
+restored(Ch, P2, Col) :-
+    restored(Ch, P, Col), shift(Ch, Delta),
+    compose(P, Delta, P2), in(P2, _).
+
+.decl out(p: Position, col: Color, c: Choice)
+out(P, Col, Ch) :- restored(Ch, P, Col).
+
+// --- $Shift ---
+
+shift($Shift(), Delta) :-
+    parse.cand($U(), A, K, Delta), !parse.broken($U(), A, K).
+
+// --- $Count ---
+
+.decl clean_color(col: Color)
+clean_color(Col) :- clean(_, Col).
+
+.decl period(n: number)
+period(N) :- N = count : { clean_color(Col) }.
+
+shift($Count(), Delta) :-
+    period(N), dir_elem(D), jump_delta(D, N, Delta).

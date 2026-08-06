@@ -1,0 +1,70 @@
+// a3df8b1e
+// concept: markers, walk
+//
+// A lone marker sits in a corner. A diagonal ray leaves it,
+// reflecting off the side walls, and stops at the far edge. The output
+// draws the ray's trace on the background.
+//
+// Direction cases: $Stored reads the advance dir and turn sense
+// from Consts; $Seat derives both from the corner the marker sits in.
+// Ink cases: $Prop draws in the marker's color; $Fixed in a stored color.
+
+#include "../lib.dl"
+
+.type DirCase = Stored {} | Seat {}
+.type InkCase = Prop {} | Fixed {}
+.type Choice = [dir: DirCase, ink: InkCase]
+
+.comp Consts {
+    .decl bg(col: Color) bg(0).
+
+    // --- $Stored ---
+    .decl dir(d: Dir) dir(DIR_T).
+    .decl sense(s: Sense) sense(SENSE_CW).
+
+    // --- $Seat ---
+    .decl axis(a: Axis) axis(AXIS_V).
+
+    // --- $Fixed ---
+    .decl ink(col: Color) ink(1).
+}
+
+.init c = Consts
+
+.decl impl_choice(ch: Choice)
+impl_choice([$Stored(), $Prop()]). impl_choice([$Stored(), $Fixed()]).
+impl_choice([$Seat(), $Prop()]).   impl_choice([$Seat(), $Fixed()]).
+
+// The marker: the lone non-bg cell.
+.decl seed(p: Position, col: Color)
+seed(P, Col) :- in(P, Col), !c.bg(Col).
+
+// Advance dir and initial heading per direction case.
+.decl setup(dc: DirCase, u: Dir, h: Dir)
+setup($Stored(), U, H) :- c.dir(U), c.sense(S), turn(S, U, H).
+setup($Seat(), U, H) :-
+    seed(P, _), diag_dist(P, Diag, _, 0, 0),   // the corner the marker sits in
+    diag_opposite(Diag, Opp),                  // ray leaves toward the opposite corner
+    c.axis(A), dir_of(Opp, A, U),
+    perp(A, A2), dir_of(Opp, A2, H).
+
+// The bouncing walk: state = (cell, heading across the advance axis). At a
+// side wall the heading flips; with room, the ray steps one cell diagonally.
+// It stops at the advance edge.
+.decl trace(dc: DirCase, p: Position, h: Dir)
+trace(DC, P, H) :- setup(DC, _, H), seed(P, _).
+trace(DC, P, H2) :- trace(DC, P, H), dist(P, H, 0), opposite(H, H2).   // reflect
+trace(DC, P2, H) :-
+    trace(DC, P, H), setup(DC, U, _),
+    dist(P, H, Kh), Kh != 0,                   // room toward the heading
+    dist(P, U, Ku), Ku != 0,                   // room toward the advance edge
+    step_delta(U, Su), step_delta(H, Sh),
+    compose(Su, Sh, S), compose(P, S, P2).
+
+.decl traced(dc: DirCase, p: Position)
+traced(DC, P) :- trace(DC, P, _).
+
+.decl out(p: Position, col: Color, c: Choice)
+out(P, Col, [DC, $Prop()])  :- traced(DC, P), seed(_, Col).
+out(P, Col, [DC, $Fixed()]) :- traced(DC, P), c.ink(Col).
+out(P, Col, [DC, IC]) :- impl_choice([DC, IC]), in(P, _), !traced(DC, P), c.bg(Col).

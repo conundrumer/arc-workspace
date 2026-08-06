@@ -234,35 +234,28 @@ V (level with the seed toward a cone corner), the open cone (strictly
 nearer both cone corners than the seed), and $Stripe's period (the
 seed's stride class from the mirror corner).
 
-## `ShiftInvariance<Key, Val>` — per-key shift invariance of a valued cell set
+## `same_diag` — same diagonal line
 
-The translation peer of `D4Map` (dst = src): which axis-aligned shifts fix each keyed cell set. `cand` enumerates the shifts the key's frame admits, tagged `(axis, k)` with both directions of a magnitude sharing a tag; `broken` witnesses a violated shift — some cell whose image holds a different value. Unlike `D4Map`, absence is silent: an image off the frame tests nothing, so `broken` compares only where both cells exist. A fitter reads a stored period as the smallest unbroken shift; the `Period` proposer is the produce-time sibling (with one semantic difference: the proposer counts an example too small to admit a shift as breaking it).
+The DiagAxis peer of `same_dist`: p and q lie on one diagonal line of
+axis da. Stepping toward a corner of the axis drops the distance to both
+of its edges in lockstep, so collinearity is an equal drop on both;
+either corner of the axis derives the same relation, so no corner is
+privileged. It is the undirected form of `DiagRay`'s membership test —
+`DiagRay` adds the side test and the mark/domain split. `corner_dist`
+equality states the same relation from a corner of the perpendicular
+axis; `same_diag` names the relation itself and keys it by the line's
+own axis. Lib target: composite beside `same_dist`.
 
 ```
-.comp ShiftInvariance<Key, Val> {
-    .decl cell(key: Key, p: Position, v: Val)
-
-    // Candidate shifts: every axis-aligned delta the frame admits.
-    .decl cand(key: Key, a: Axis, k: number, delta: Shift)
-    cand(Ky, A, K, Delta) :-
-        cell(Ky, P, _),
-        axis_of(D, A), sub_extent(P, A, K),
-        jump_delta(D, K, Delta).
-
-    // Where a candidate carries each cell's value; materialized to keep
-    // the disagreement test an indexed join.
-    .decl shifted(key: Key, a: Axis, k: number, p: Position, v: Val)
-    shifted(Ky, A, K, P2, V) :-
-        cell(Ky, P, V), cand(Ky, A, K, Delta), compose(P, Delta, P2).
-
-    .decl broken(key: Key, a: Axis, k: number)
-    broken(Ky, A, K) :- shifted(Ky, A, K, P, V), cell(Ky, P, V2), V2 != V.
-}
+.decl same_diag(da: DiagAxis, p: Position, q: Position) inline
+same_diag(DA, P, Q) :-
+    diag_axis_of(Diag, DA),
+    diag_dist(P, Diag, A, Pa, Pb), diag_dist(Q, Diag, A, Qa, Qb),
+    Qa - Pa = Qb - Pb.
 ```
 
-**Task-local home (protocol step 1).** ca8f78db (`Parse<Key>` comp, this shape): the body's $Shift repairs through unbroken shifts (`Unit` over clean cells); the Fit reads the stored period as the smallest unbroken shift per axis (`Example` over restored outputs).
-
-**Second home (protocol step 1).** 332efdb3 (fit rules, this shape unkeyed): the stored lattice generators are the smallest unbroken shift per axis, read as deltas.
+**Task-local home (protocol step 1).** c3f564a4 (`SameDiag` comp): $Diag
+fills a noise cell from a clean cell on its stripe.
 
 ## `Partition<Key>` — a cell set decomposes into unit copies
 

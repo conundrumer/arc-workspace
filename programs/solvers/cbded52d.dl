@@ -1,0 +1,60 @@
+// cbded52d
+// concept: decompose markers span cast
+// A separator lattice cuts the grid into a 3x3 tile arrangement over a base
+// color. Two same-color marks (non-base cells) at one intile position,
+// aligned along a tile row or column, act on their line: $Span fills the
+// tiles between them; $Line fills the whole line.
+
+#include "../lib.dl"
+
+.type Choice = Span {} | Line {}
+
+.comp Consts {
+    .decl arr(n: number) arr(3).
+    .decl gap(g: number) gap(1).
+    .decl base(col: Color) base(1).
+}
+
+.init c = Consts
+
+// Grid cell within the tile arrangement.
+.decl tile(p_grid: Position, p_tile: Position, p_intile: Position)
+tile(P_grid, P_tile, P_intile) :-
+    in(P_grid, _), c.arr(N), c.gap(G),
+    divide_2d(P_grid, N, G, P_tile, P_intile).
+
+.type Mark = [col: Color, p_intile: Position]
+
+.decl mark(m: Mark, p_tile: Position)
+mark([Col, P_intile], P_tile) :-
+    in(P_grid, Col), !c.base(Col),
+    tile(P_grid, P_tile, P_intile).
+
+.init btw = Between<Mark>
+btw.axis(A) :- axis_elem(A).
+btw.cell(P_tile) :- tile(_, P_tile, _).
+btw.mark(M, P_tile) :- mark(M, P_tile).
+
+.decl fill(ch: Choice, p_tile: Position, m: Mark)
+
+// --- Span ---
+fill($Span(), P_tile, M) :- btw.between(M, P_tile).
+
+// --- Line ---
+fill($Line(), P_tile, M) :-
+    tile(_, P_tile, _),
+    mark(M, Q1), mark(M, Q2), Q1 != Q2,        // two distinct marks
+    axis_elem(A),
+    split(P_tile, A, _, Ac), split(Q1, A, _, Ac), split(Q2, A, _, Ac).    // sharing P's line
+
+.decl impl_choice(ch: Choice)
+impl_choice($Span()). impl_choice($Line()).
+
+.decl filled(ch: Choice, p_grid: Position, col: Color)
+filled(Ch, P_grid, Col) :-
+    fill(Ch, P_tile, [Col, P_intile]),
+    tile(P_grid, P_tile, P_intile).
+
+.decl out(p: Position, col: Color, c: Choice)
+out(P, Col, Ch) :- filled(Ch, P, Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !filled(Ch, P, _).

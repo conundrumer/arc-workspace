@@ -1,0 +1,48 @@
+// 9ecd008a
+// concept: symmetry crop repair
+// A grid symmetric about its center, occluded by a solid block of a mask
+// color; the output is the block's content, restored from symmetric
+// counterparts.
+//
+//   $Full   — every element applies: the grid is fully symmetric.
+//   $Detect — the group is detected: elements unbroken on clean cells.
+
+#include "../lib.dl"
+
+.type Choice = Full {} | Detect {}
+
+.comp Consts {
+    .decl mask(col: Color) mask(0).
+}
+
+.init c = Consts
+
+.decl clean(p: Position, col: Color)
+clean(P, Col) :- in(P, Col), !c.mask(Col).
+
+// The hole: the masked cells.
+.init box = BoxFrame<Unit>
+box.cell($U(), P) :- in(P, Col), c.mask(Col).
+
+.decl out(p: Position, col: Color, c: Choice)
+
+// --- $Full ---
+
+out(P_out, Col, $Full()) :-
+    box.inner($U(), P, P_out),      // hole cell, in the crop frame
+    d4_elem(D), apply(D, P, P2),    // symmetric counterpart
+    clean(P2, Col).
+
+// --- $Detect ---
+
+// D maps some clean cell to a clean cell of a different color.
+.decl broken(d: D4)
+broken(D) :-
+    d4_elem(D),
+    clean(P, Col), apply(D, P, P2),
+    clean(P2, C2), Col != C2.
+
+out(P_out, Col, $Detect()) :-
+    box.inner($U(), P, P_out),                  // hole cell, in the crop frame
+    d4_elem(D), !broken(D), apply(D, P, P2),    // unbroken-symmetry image
+    clean(P2, Col).

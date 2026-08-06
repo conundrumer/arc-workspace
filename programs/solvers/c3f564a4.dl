@@ -1,0 +1,67 @@
+// c3f564a4
+// concept: wallpaper repair lines
+// A diagonal-stripe wallpaper — one color per stripe, the stripe sequence
+// periodic — corrupted by noise patches; the output restores it. The
+// period varies per pair, so no case stores one.
+//
+//   $Shift — translation repair, detected: a shift unbroken on clean
+//            cells maps each noise cell to a clean counterpart.
+//   $Diag  — line structure: each stripe is one color; a noise cell
+//            copies from a clean cell on its own stripe.
+
+#include "../lib.dl"
+
+.type Choice = Shift {} | Diag {}
+
+.comp Consts {
+    // --- shared ---
+    .decl noise(col: Color) noise(0).
+
+    // --- $Diag ---
+    .decl diag(da: DiagAxis) diag(DAXIS_AD).   // stripes run TR-BL
+}
+
+.init c = Consts
+
+.decl clean(p: Position, col: Color)
+clean(P, Col) :- in(P, Col), !c.noise(Col).
+
+.init parse = ShiftInvariance<Unit, Color>
+parse.cell($U(), P, Col) :- clean(P, Col).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Shift()). impl_choice($Diag()).
+
+.decl out(p: Position, col: Color, c: Choice)
+
+// Clean cells pass through under every case.
+out(P, Col, Ch) :- impl_choice(Ch), clean(P, Col).
+
+// --- $Shift ---
+
+out(P, Col, $Shift()) :-
+    in(P, N), c.noise(N),                              // corrupted cell
+    parse.cand($U(), A, K, Delta),                     // candidate shift
+    !parse.broken($U(), A, K),                         // unbroken on clean cells
+    compose(P, Delta, P2), clean(P2, Col).             // its image
+
+// --- $Diag ---
+
+.comp SameDiag {
+    // p and q on the same diagonal line of axis da. Stepping toward a
+    // corner of the axis drops the distance to both of its edges in
+    // lockstep, so collinearity is an equal drop on both; either corner
+    // derives the same relation.
+    .decl same_diag(da: DiagAxis, p: Position, q: Position) inline
+    same_diag(DA, P, Q) :-
+        diag_axis_of(Diag, DA),
+        diag_dist(P, Diag, A, Pa, Pb), diag_dist(Q, Diag, A, Qa, Qb),
+        Qa - Pa = Qb - Pb.
+}
+
+.init sd = SameDiag
+
+out(P, Col, $Diag()) :-
+    in(P, N), c.noise(N),                              // corrupted cell
+    c.diag(DA), sd.same_diag(DA, P, Q),                // its stripe
+    clean(Q, Col).                                     // clean stripe-mate

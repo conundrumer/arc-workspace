@@ -1,0 +1,89 @@
+// 22a4bbc2
+// concept: lines objects rank
+// A stack of one-color bars fills the grid; every third bar down the
+// stack, the first included, recolors to the mark color. Cases differ in
+// what a bar is:
+//
+//   $Run()    — a maximal band of same-color rows
+//   $Object() — a connected component of one color
+
+#include "../lib.dl"
+
+.type Choice = Run {} | Object {}
+
+.comp Consts {
+    .decl bg(col: Color) bg(0).
+    .decl mark(col: Color) mark(2).
+
+    // Counting edge: ranks run from this edge; its axis stacks the bars.
+    .decl dir(d: Dir) dir(DIR_T).
+
+    // The mark pattern along the bar sequence: mark_len marked bars,
+    // then mark_gap unmarked, repeating.
+    .decl mark_len(n: number) mark_len(1).
+    .decl mark_gap(n: number) mark_gap(2).
+}
+
+.init c = Consts
+
+.decl impl_choice(ch: Choice)
+impl_choice($Run()). impl_choice($Object()).
+
+// --- $Run segmentation ---
+
+// Ink cells by their row — the axis-only position along the stacking axis.
+.decl row_cell(r: Position, p: Position)
+row_cell(R, P) :-
+    in(P, Col), !c.bg(Col),                          // ink cell
+    c.dir(D), axis_of(D, A), split(P, A, R, _).      // its row
+
+.decl row_color(r: Position, col: Color)
+row_color(R, Col) :- row_cell(R, P), in(P, Col).
+
+// A run's top row: no same-colored row toward the counting edge.
+.decl boundary(r: Position)
+boundary(R) :-
+    row_color(R, Col),
+    c.dir(D), step_delta(D, S), compose(R, S, R2),   // row toward the edge
+    !row_color(R2, Col).
+
+// Rows of the run each boundary starts.
+.decl run_of(r: Position, b: Position)
+run_of(B, B) :- boundary(B).
+run_of(R2, B) :-
+    run_of(R, B),
+    c.dir(D), opposite(D, O), step_delta(O, S), compose(R, S, R2),  // row away from the edge
+    row_cell(R2, _), !boundary(R2).
+
+// --- $Object segmentation ---
+
+.init comps = Components<Color>
+comps.node(Col, P) :- in(P, Col), !c.bg(Col).
+
+.decl obj_dist(id: Ident, k: number)
+obj_dist(Id, K) :- comps.label(_, P, Id), c.dir(D), dist(P, D, K).
+
+.decl obj_top(id: Ident, k: number)
+obj_top(Id, K) :- obj_dist(Id, _), K = min K2 : { obj_dist(Id, K2) }.
+
+// --- shared: rank the bars, select marked ranks ---
+
+.init seq = Ordinal<Choice>
+seq.idx_set($Run(), K)    :- boundary(B), c.dir(D), dist(B, D, K).
+seq.idx_set($Object(), K) :- obj_top(_, K).
+
+.decl mark_top(ch: Choice, k: number)
+mark_top(Ch, K) :-
+    seq.rank(Ch, K, R),
+    c.mark_len(N), c.mark_gap(G), stride(R, N, G, _, _).  // in a marked block
+
+.decl mark_cell(ch: Choice, p: Position)
+mark_cell($Run(), P) :-
+    mark_top($Run(), K), c.dir(D), boundary(B), dist(B, D, K),  // marked run
+    run_of(R, B), row_cell(R, P).
+mark_cell($Object(), P) :-
+    mark_top($Object(), K), obj_top(Id, K), comps.label(_, P, Id).
+
+.decl out(p: Position, col: Color, c: Choice)
+out(P, Col, Ch) :- mark_cell(Ch, P), c.mark(Col).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !mark_cell(Ch, P).
