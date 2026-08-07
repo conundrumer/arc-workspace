@@ -74,7 +74,8 @@ button {
 button:hover { border-color:var(--muted); }
 button:focus-visible, textarea:focus-visible, input:focus-visible, .row:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
 button.primary { background:var(--accent); color:var(--accent-ink); border-color:transparent; }
-button.primary:disabled { opacity:.45; cursor:default; }
+button:disabled { opacity:.45; cursor:default; }
+button:disabled:hover { border-color:var(--border); }
 
 /* ---------- main ---------- */
 #main { flex:1; display:grid; grid-template-columns:250px minmax(400px,560px) 1fr; min-height:0; }
@@ -377,10 +378,21 @@ function diffHtml(before, after){
   return {html, count};
 }
 
+/* A long file's edits are rarely at the top, so bring the first marked line
+   into view. Only when the pane switches to a different file: re-running this
+   as a turn streams would drag the pane away from whoever is reading it. */
+let codeAt = null;
+function jumpToFirstAdd(){
+  const pre=$("codepre"), first=pre.querySelector(".add");
+  if(!first){ pre.scrollTop=0; return; }
+  const lead=(parseFloat(getComputedStyle(pre).lineHeight)||0)*3;  // lines of lead-in
+  pre.scrollTop += first.getBoundingClientRect().top - pre.getBoundingClientRect().top - lead;
+}
+
 /* cache freshness: minutes remaining until the session's 1h prompt-cache TTL expires */
 function cacheInfo(it){
   if(!it.session) return {cls:"none", txt:"—", sort:9e9};
-  if(it.busy||it.state==="running"||it.state==="commented") return {cls:"active", txt:"active", sort:5e8};
+  if(it.active) return {cls:"active", txt:"active", sort:5e8};
   if(!it.lastActive) return {cls:"none", txt:"—", sort:9e9};
   const rem = TTL_MIN - (Date.now()-it.lastActive)/60000;
   if(rem<=0) return {cls:"cold", txt:"cold", sort:1e9};
@@ -504,7 +516,7 @@ function renderDetail(){
     $("composer").classList.add("disabled"); $("cbox").disabled=true; $("sendbtn").disabled=true;
     $("cbox").placeholder=""; $("cbox").value=""; cboxFor=null; $("chint").textContent="";
     $("fname").textContent="—"; $("flines").textContent=""; $("codepre").textContent="";
-    $("tasklabel").textContent="task"; $("taskbody").innerHTML="";
+    $("tasklabel").textContent="task"; $("taskbody").innerHTML=""; codeAt=null;
     return;
   }
   const ci=cacheInfo(it);
@@ -518,7 +530,7 @@ function renderDetail(){
     const b=document.createElement("button"); b.className="copybtn"; b.textContent="copy · o";
     b.onclick=()=>copy(takeoverCmd(it),"takeover "+it.id);
     sl.appendChild(b);
-    if(it.busy){
+    if(it.active){
       const kb=document.createElement("button"); kb.className="copybtn"; kb.textContent="stop";
       kb.onclick=()=>post("/api/kill",{id:it.id});
       sl.appendChild(kb);
@@ -552,7 +564,7 @@ function renderDetail(){
       feed.appendChild(d);
     }
   }
-  if(it.busy||it.state==="running"||it.state==="commented"){
+  if(it.active){
     const p=document.createElement("p"); p.className="placeholder";
     p.innerHTML='<span class="runpulse"></span>worker running';
     feed.appendChild(p);
@@ -564,13 +576,13 @@ function renderDetail(){
   if(stick) js.scrollTop = js.scrollHeight;
 
   /* composer */
-  const canSend = it.session && !it.busy && (it.state==="needs-review"||it.state==="approved");
+  const canSend = it.session && !it.active && (it.state==="needs-review"||it.state==="approved");
   const composer=$("composer"), cbox=$("cbox");
   composer.classList.remove("disabled");
   cbox.disabled=false;
   $("sendbtn").disabled=!canSend;
   cbox.placeholder = canSend ? "" :
-    (it.busy||it.state==="running"||it.state==="commented") ? "worker running — draft freely" : "no session yet";
+    it.active ? "worker running — draft freely" : "no session yet";
   if(cboxFor!==it.id){
     cboxFor=it.id;
     cbox.value = localStorage.getItem(draftKey(it.id)) || "";
@@ -629,9 +641,11 @@ function renderDetail(){
     f.code.split("\n").length+" lines"+(added?" · +"+added+" this turn":"") : "";
   $("codepre").innerHTML = f.code ? codeHtml :
     '<span class="cm">// '+(it.state==="queued"?"not started":"no file yet")+"</span>";
+  const codeKey = it.id+"|"+f.path;
+  if(codeAt!==codeKey){ codeAt=codeKey; jumpToFirstAdd(); }
   const cb=$("codebtns"); cb.innerHTML="";
   const solver = files[0]||{};
-  if(f.path===solver.path && solver.code && solver.snap && solver.snap!==solver.code && !it.busy){
+  if(f.path===solver.path && solver.code && solver.snap && solver.snap!==solver.code && !it.active){
     const rb=document.createElement("button"); rb.className="copybtn"; rb.textContent="revert edits";
     rb.onclick=()=>post("/api/revert",{id:it.id});
     cb.appendChild(rb);
@@ -666,7 +680,7 @@ async function sendComment(){
   const it=sel(), cbox=$("cbox"), text=cbox.value.trim();
   if(!it||!text) return;
   if($("sendbtn").disabled){
-    toast((it.busy||it.state==="running"||it.state==="commented") ? "worker running — draft kept" : "no session yet — draft kept");
+    toast(it.active ? "worker running — draft kept" : "no session yet — draft kept");
     return;
   }
   const low=text.toLowerCase();
@@ -680,9 +694,14 @@ async function commitApproved(){
   if(r.ok) toast('git commit -m "'+r.msg+'"');
 }
 async function startWave(){
-  const k=parseInt($("waveK").value,10)||6;
-  const r=await post("/api/wave",{k,order:$("waveOrder").value});
-  if(r.ok) toast("wave started · "+r.ids.join(", "));
+  const b=$("wavebtn");
+  if(b.disabled) return;
+  b.disabled=true;
+  try {
+    const k=parseInt($("waveK").value,10)||6;
+    const r=await post("/api/wave",{k,order:$("waveOrder").value});
+    if(r.ok) toast("wave started · "+r.ids.join(", "));
+  } finally { setTimeout(()=>{ b.disabled=false; }, 5000); }  // matches WAVE_DEBOUNCE
 }
 
 /* ---------- keys ---------- */

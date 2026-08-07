@@ -14,6 +14,7 @@ Env:
 
 import argparse
 import fcntl
+import functools
 import hashlib
 import json
 import os
@@ -72,6 +73,59 @@ USAGE: list[dict] = []  # account rate-limit windows, refreshed in background
 COMMITTER = {"running": False, "note": None}
 
 
+# ---------- item lifecycle ----------
+#
+# A turn ends in NEEDS_REVIEW, whether it reported a result or died mid-flight;
+# a worker that never reported a session falls back to QUEUED instead. `load`
+# applies that same fallback to turns a console restart cut short, so no ACTIVE
+# state survives a restart. Comments relaunch from NEEDS_REVIEW or APPROVED,
+# approval moves between those two, and a commit ends at COMMITTED.
+# console.html renders the same six names — keep the two in step.
+
+QUEUED = "queued"              # picked for a wave, worker not started
+RUNNING = "running"            # the item's first turn is in flight
+COMMENTED = "commented"        # a follow-up turn from a review comment is in flight
+NEEDS_REVIEW = "needs-review"  # a turn landed; the user has not ruled on it
+APPROVED = "approved"          # ready for the next commit
+COMMITTED = "committed"        # committed; dropped when the next wave starts
+
+ACTIVE = (RUNNING, COMMENTED)
+
+
+def active(it: dict) -> bool:
+    """Whether a worker turn is in flight. The state alone is not enough: the
+    result event flips the item to NEEDS_REVIEW while its reader is still
+    draining stdout, and the process stays in PROCS until that finishes."""
+    return it["state"] in ACTIVE or it["id"] in PROCS
+
+
+class Reject(Exception):
+    """An action refused for a reason worth showing the user."""
+
+
+def action(fn):
+    """Wrap an `act_*` body that takes the resolved item: hold LOCK, resolve
+    the id, turn Reject into an error reply, and bump only when it lands."""
+    @functools.wraps(fn)
+    def wrapped(item_id: str, *args, **kw) -> dict:
+        with LOCK:
+            it = find(item_id)
+            if it is None:
+                return {"error": "unknown item"}
+            try:
+                res = fn(it, *args, **kw)
+            except Reject as e:
+                return {"error": str(e)}
+        bump()
+        return res or {"ok": True}
+    return wrapped
+
+
+def require_idle(it: dict) -> None:
+    if it["id"] in PROCS:
+        raise Reject("worker busy — wait for the turn to land")
+
+
 # ---------- state ----------
 
 def bump() -> None:
@@ -92,9 +146,21 @@ def load() -> None:
         return
     STATE.update(json.loads(STATE_FILE.read_text()))
     for it in STATE["items"]:
-        if it["state"] in ("running", "commented"):
-            it["state"] = "needs-review" if it.get("session") else "queued"
-            it["feed"].append(event("interrupted by console restart"))
+        migrate(it)
+        if it["state"] in ACTIVE:
+            it["state"] = NEEDS_REVIEW if it.get("session") else QUEUED
+            say(it, event("interrupted by console restart"))
+
+
+def migrate(it: dict) -> None:
+    """Fold an item written before `pre` into the grouped snapshot."""
+    if "pre" in it:
+        return
+    it["pre"] = {"hash": it.pop("hash_before", ""),
+                 "solver": it.pop("snap", ""),
+                 "proposals": it.pop("snap_prop", ""),
+                 "dirty": it.pop("dirty_before", False),
+                 "files": it.pop("turn_files", None) or {}}
 
 
 def find(item_id: str) -> dict | None:
@@ -104,8 +170,25 @@ def find(item_id: str) -> dict | None:
     return None
 
 
+def touch(it: dict) -> None:
+    """Mark the item's /api/item payload — feed and files — as changed, so a
+    polling console refetches it."""
+    it["ver"] = it.get("ver", 0) + 1
+
+
+def say(it: dict, entry: dict) -> None:
+    it["feed"].append(entry)
+    touch(it)
+
+
 def event(text: str) -> dict:
     return {"kind": "event", "text": text}
+
+
+def pre(it: dict) -> dict:
+    """The item's pre-turn snapshot, empty before its first turn."""
+    return it.setdefault("pre", {"hash": "", "solver": "", "proposals": "",
+                                 "dirty": False, "files": {}})
 
 
 def solver_path(item_id: str) -> Path:
@@ -168,16 +251,16 @@ def record_edit(it: dict, fp: str) -> None:
         rel = str(Path(fp).resolve().relative_to(ROOT))
     except ValueError:
         return
-    tf = it.setdefault("turn_files", {})
-    if rel in tf:
+    p_ = pre(it)
+    if rel in p_["files"]:
         return
     if rel == f"programs/solvers/{it['id']}.dl":
-        tf[rel] = it.get("snap", "")
+        p_["files"][rel] = p_["solver"]
     elif rel == "docs/wf-solver/proposals.md":
-        tf[rel] = it.get("snap_prop", "")
+        p_["files"][rel] = p_["proposals"]
     else:
         p = ROOT / rel
-        tf[rel] = p.read_text() if p.exists() else ""
+        p_["files"][rel] = p.read_text() if p.exists() else ""
 
 
 def tool_label(name: str, inp: dict) -> str | None:
@@ -218,11 +301,8 @@ def launch(it: dict, message: str, trigger: str | None = None) -> None:
                             stderr=log, text=True)
     log.close()
     PROCS[it["id"]] = proc
-    it["hash_before"] = solver_hash(it["id"])
-    it["snap"] = solver_text(it["id"])
-    it["snap_prop"] = prop_text()
-    it["dirty_before"] = it["dirty"]
-    it["turn_files"] = {}
+    it["pre"] = {"hash": solver_hash(it["id"]), "solver": solver_text(it["id"]),
+                 "proposals": prop_text(), "dirty": it["dirty"], "files": {}}
     threading.Thread(target=reader, args=(it["id"], proc, trigger),
                      daemon=True).start()
 
@@ -271,13 +351,10 @@ def reader(item_id: str, proc: subprocess.Popen, trigger: str | None) -> None:
                         seen.add(key)
                         if sub:
                             entry["sub"] = True
-                        it["feed"].append(entry)
+                        say(it, entry)
             elif kind == "result":
                 got_result = True
                 finish_turn(it, ev, trigger, started)
-            else:
-                continue
-            it["ver"] = it.get("ver", 0) + 1
         bump()
     proc.wait()
     with LOCK:
@@ -286,16 +363,15 @@ def reader(item_id: str, proc: subprocess.Popen, trigger: str | None) -> None:
         if it and not got_result:
             if item_id in KILLED:
                 KILLED.discard(item_id)
-                it["feed"].append(event("stopped"))
+                say(it, event("stopped"))
             else:
                 tail = ""
                 log = LOG_DIR / f"{item_id}.log"
                 if log.exists():
                     tail = log.read_text(errors="replace")[-400:].strip()
-                it["feed"].append(event(f"worker exited without result (code {proc.returncode}) — {tail}"))
-            it["state"] = "needs-review" if it.get("session") else "queued"
+                say(it, event(f"worker exited without result (code {proc.returncode}) — {tail}"))
+            it["state"] = NEEDS_REVIEW if it.get("session") else QUEUED
             it["updated"] = True
-            it["ver"] = it.get("ver", 0) + 1
     if first_response:
         first_response.set()
     bump()
@@ -317,19 +393,20 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float) -> None
         if match:
             match.clear()
             match.update(kind="report", rev=it["rev"], text=text)
+            touch(it)
         else:
-            it["feed"].append({"kind": "report", "rev": it["rev"], "text": text})
+            say(it, {"kind": "report", "rev": it["rev"], "text": text})
     cost = ev.get("total_cost_usd")
     mins = (time.time() - started) / 60
     note = f"turn done · {mins:.0f}m" if mins >= 1 else "turn done · <1m"
     if isinstance(cost, (int, float)):
         note += f" · ${cost:.2f}"
-    it["feed"].append(event(note))
+    say(it, event(note))
     if trigger == "cleanup" or it["rev"] == 1:
         it["dirty"] = False
-    elif solver_hash(it["id"]) != it.get("hash_before", ""):
+    elif solver_hash(it["id"]) != pre(it)["hash"]:
         it["dirty"] = True
-    it["state"] = "needs-review"
+    it["state"] = NEEDS_REVIEW
     it["updated"] = True
     it["lastActive"] = int(time.time() * 1000)
     it["title"] = title_of(it["id"]) or it.get("title", "")
@@ -338,33 +415,46 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float) -> None
 
 FIRST_RESPONSE: dict[str, threading.Event] = {}
 
+WAVE_DEBOUNCE = 5  # seconds; a fumbled double-click, not a deliberate second wave
+LAST_WAVE_AT = 0.0
+
+
+def queue_pick(n: int, order: str) -> list[tuple[str, int]]:
+    """Top `n` unsolved tasks from scripts/queue.sh, as (id, size estimate)."""
+    out = subprocess.run(["bash", "scripts/queue.sh", "-n", str(n), "--order", order],
+                         cwd=ROOT, capture_output=True, text=True)
+    if out.returncode != 0:
+        raise Reject("queue.sh failed: " + out.stderr.strip()[-200:])
+    picked = []
+    for line in out.stdout.splitlines():
+        m = re.match(r"\s*(\d+)\s+(\S+)", line)
+        if m:
+            picked.append((m.group(2), int(m.group(1))))
+    return picked
+
 
 def start_wave(k: int, order: str = "name") -> dict:
+    global LAST_WAVE_AT
     with LOCK:
-        if any(it["state"] in ("running", "queued") for it in STATE["items"]):
-            return {"error": "a wave is still launching or running"}
-        STATE["items"] = [it for it in STATE["items"] if it["state"] != "committed"]
-        existing = {it["id"] for it in STATE["items"]}
+        if time.time() - LAST_WAVE_AT < WAVE_DEBOUNCE:
+            return {"error": "a wave just started — wait a moment to start another"}
         if order not in ("name", "size"):
             return {"error": f"unknown order: {order}"}
-        out = subprocess.run(["bash", "scripts/queue.sh", "-n", str(k + len(existing)),
-                              "--order", order],
-                             cwd=ROOT, capture_output=True, text=True)
-        if out.returncode != 0:
-            return {"error": "queue.sh failed: " + out.stderr.strip()[-200:]}
-        picked = []
-        for line in out.stdout.splitlines():
-            m = re.match(r"\s*(\d+)\s+(\S+)", line)
-            if m and m.group(2) not in existing:
-                picked.append((m.group(2), int(m.group(1))))
-        picked = picked[:k]
+        STATE["items"] = [it for it in STATE["items"] if it["state"] != COMMITTED]
+        existing = {it["id"] for it in STATE["items"]}
+        try:
+            picked = [p for p in queue_pick(k + len(existing), order)
+                      if p[0] not in existing][:k]
+        except Reject as e:
+            return {"error": str(e)}
         if not picked:
             return {"error": "queue is empty"}
+        LAST_WAVE_AT = time.time()
         STATE["wave"] += 1
         append = str(build_append(STATE["wave"]))
         for tid, est in picked:
             STATE["items"].append({
-                "id": tid, "est": est, "wave": STATE["wave"], "state": "queued",
+                "id": tid, "est": est, "wave": STATE["wave"], "state": QUEUED,
                 "session": None, "dirty": False, "updated": False, "rev": 0,
                 "lastActive": None, "title": "", "feed": [], "append": append,
                 "ver": 0,
@@ -381,8 +471,8 @@ def stagger_launch(ids: list[str]) -> None:
     first = FIRST_RESPONSE[ids[0]] = threading.Event()
     with LOCK:
         it = find(ids[0])
-        it["state"] = "running"
-        it["feed"].append(event("launched (cache seeder)"))
+        it["state"] = RUNNING
+        say(it, event("launched (cache seeder)"))
         launch(it, first_message(ids[0]))
     bump()
     first.wait(timeout=STAGGER_TIMEOUT)
@@ -390,8 +480,8 @@ def stagger_launch(ids: list[str]) -> None:
     with LOCK:
         for tid in ids[1:]:
             it = find(tid)
-            it["state"] = "running"
-            it["feed"].append(event("launched"))
+            it["state"] = RUNNING
+            say(it, event("launched"))
             launch(it, first_message(tid))
     bump()
 
@@ -402,59 +492,42 @@ def first_message(tid: str) -> str:
 
 # ---------- actions ----------
 
-def act_comment(item_id: str, text: str) -> dict:
+@action
+def act_comment(it: dict, text: str) -> None:
     text = text.strip()
     if text.lower() in ("commit", "next"):
-        return {"error": f"`{text}` is a console action, not a worker message"}
-    with LOCK:
-        it = find(item_id)
-        if it is None:
-            return {"error": "unknown item"}
-        if item_id in PROCS:
-            return {"error": "worker busy — wait for the turn to land"}
-        if not it.get("session"):
-            return {"error": "no session yet"}
-        it["feed"].append({"kind": "you", "text": text})
-        it["state"] = "commented"
-        it["updated"] = False
-        trigger = "cleanup" if text.lower().split()[:1] == ["cleanup"] else None
-        launch(it, text, trigger)
-    bump()
-    return {"ok": True}
+        raise Reject(f"`{text}` is a console action, not a worker message")
+    require_idle(it)
+    if not it.get("session"):
+        raise Reject("no session yet")
+    say(it, {"kind": "you", "text": text})
+    it["state"] = COMMENTED
+    it["updated"] = False
+    trigger = "cleanup" if text.lower().split()[:1] == ["cleanup"] else None
+    launch(it, text, trigger)
 
 
-def act_approve(item_id: str) -> dict:
-    with LOCK:
-        it = find(item_id)
-        if it is None or it["state"] != "needs-review":
-            return {"error": "nothing to approve"}
-        if item_id in PROCS:
-            return {"error": "worker busy"}
-        it["state"] = "approved"
-        it["updated"] = False
-        it["feed"].append(event("approved"))
-    bump()
-    return {"ok": True}
+@action
+def act_approve(it: dict) -> None:
+    if it["state"] != NEEDS_REVIEW:
+        raise Reject("nothing to approve")
+    require_idle(it)
+    it["state"] = APPROVED
+    it["updated"] = False
+    say(it, event("approved"))
 
 
-def act_unapprove(item_id: str) -> dict:
-    with LOCK:
-        it = find(item_id)
-        if it is None or it["state"] != "approved":
-            return {"error": "not approved"}
-        it["state"] = "needs-review"
-        it["feed"].append(event("approval withdrawn"))
-    bump()
-    return {"ok": True}
+@action
+def act_unapprove(it: dict) -> None:
+    if it["state"] != APPROVED:
+        raise Reject("not approved")
+    it["state"] = NEEDS_REVIEW
+    say(it, event("approval withdrawn"))
 
 
-def act_seen(item_id: str) -> dict:
-    with LOCK:
-        it = find(item_id)
-        if it:
-            it["updated"] = False
-    bump()
-    return {"ok": True}
+@action
+def act_seen(it: dict) -> None:
+    it["updated"] = False
 
 
 def act_kill(item_id: str) -> dict:
@@ -472,37 +545,31 @@ def act_kill(item_id: str) -> dict:
     return {"ok": True}
 
 
-def act_revert(item_id: str) -> dict:
-    with LOCK:
-        it = find(item_id)
-        if it is None:
-            return {"error": "unknown item"}
-        if item_id in PROCS:
-            return {"error": "worker busy"}
-        snap = it.get("snap", "")
-        if not snap or snap == solver_text(item_id):
-            return {"error": "nothing to revert"}
-        solver_path(item_id).write_text(snap)
-        reverted = [f"programs/solvers/{item_id}.dl"]
-        # proposals.md is shared across workers: restore only if this turn
-        # changed it and nothing touched it since the turn landed
-        sp, pa = it.get("snap_prop"), it.get("prop_after")
-        if sp is not None and pa is not None and sp != pa and prop_text() == pa:
-            (DOCS / "proposals.md").write_text(sp)
-            reverted.append("docs/wf-solver/proposals.md")
-        it["dirty"] = it.get("dirty_before", False)
-        it["reverted"] = reverted
-        it["feed"].append(event("edits reverted"))
-        it["ver"] = it.get("ver", 0) + 1
-    bump()
-    return {"ok": True}
+@action
+def act_revert(it: dict) -> None:
+    require_idle(it)
+    item_id = it["id"]
+    snap = pre(it)["solver"]
+    if not snap or snap == solver_text(item_id):
+        raise Reject("nothing to revert")
+    solver_path(item_id).write_text(snap)
+    reverted = [f"programs/solvers/{item_id}.dl"]
+    # proposals.md is shared across workers: restore only if this turn
+    # changed it and nothing touched it since the turn landed
+    sp, pa = pre(it)["proposals"], it.get("prop_after")
+    if pa is not None and sp != pa and prop_text() == pa:
+        (DOCS / "proposals.md").write_text(sp)
+        reverted.append("docs/wf-solver/proposals.md")
+    it["dirty"] = pre(it)["dirty"]
+    it["reverted"] = reverted
+    say(it, event("edits reverted"))
 
 
 def act_commit() -> dict:
     with LOCK:
         if COMMITTER["running"]:
             return {"error": "committer session still running"}
-        ids = [it["id"] for it in STATE["items"] if it["state"] == "approved"]
+        ids = [it["id"] for it in STATE["items"] if it["state"] == APPROVED]
         if not ids:
             return {"error": "nothing approved"}
         paths = [str(solver_path(i).relative_to(ROOT)) for i in ids]
@@ -519,9 +586,8 @@ def act_commit() -> dict:
         msgs = ["Add " + ", ".join(sorted(ids))]
         for it in STATE["items"]:
             if it["id"] in ids:
-                it["state"] = "committed"
-                it["feed"].append(event("committed"))
-                it["ver"] = it.get("ver", 0) + 1
+                it["state"] = COMMITTED
+                say(it, event("committed"))
         chk = subprocess.run(["git", "status", "--porcelain", "--",
                               "programs", "docs/wf-solver"],
                              cwd=ROOT, capture_output=True, text=True)
@@ -568,7 +634,7 @@ def light_items() -> list[dict]:
     return [{k: it.get(k) for k in
              ("id", "state", "dirty", "updated", "session", "lastActive",
               "wave", "rev", "title", "est", "ver", "append")} |
-            {"busy": it["id"] in PROCS}
+            {"active": active(it)}
             for it in STATE["items"]]
 
 
@@ -618,13 +684,13 @@ class Handler(BaseHTTPRequestHandler):
                 if it is None:
                     return self.reply({"error": "unknown item"}, 404)
                 solver_rel = f"programs/solvers/{item_id}.dl"
-                tf = it.get("turn_files") or {}
+                edited = pre(it)["files"]
                 files = []
-                for rel in [solver_rel] + [p for p in tf if p != solver_rel]:
+                for rel in [solver_rel] + [r for r in edited if r != solver_rel]:
                     p = ROOT / rel
                     files.append({
                         "path": rel,
-                        "snap": tf.get(rel, it.get("snap", "") if rel == solver_rel else ""),
+                        "snap": edited.get(rel, pre(it)["solver"] if rel == solver_rel else ""),
                         "code": p.read_text() if p.exists() else "",
                     })
                 self.reply({"feed": it["feed"], "files": files,
