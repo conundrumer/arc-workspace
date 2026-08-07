@@ -1,0 +1,113 @@
+// 045e512c
+// concept: objects markers cast
+// One template shape on c.bg, with fragments of it elsewhere. Each fragment
+// lies inside a copy of the template one step away; the output marches copies
+// along that step, in the fragment's color, until they leave the grid.
+//
+// The cases differ in what fixes the step's length:
+//   $Reach  — the farthest copy the fragment still fits inside.
+//   $Stride — a stored pitch.
+//   $Abut   — the template's extent plus a stored gap.
+
+#include "../lib.dl"
+
+// Staged lib type and primitive (proposals.md).
+.type Dir8 = Dir | DiagDir
+
+.decl dir8_jump_delta(d: Dir8, k: number, delta: Shift) inline
+dir8_jump_delta(D, K, Delta) :- dir_elem(D), jump_delta(D, K, Delta).
+dir8_jump_delta(D, K, Delta) :- diag_dir_elem(D), diag_jump_delta(D, K, Delta).
+
+.type Choice = Reach {} | Stride {} | Abut {}
+
+.comp Consts {
+    // --- shared ---
+    .decl bg(col: Color) bg(0).
+
+    // --- Stride ---
+    .decl stride(k: number) stride(4).
+
+    // --- Abut ---
+    .decl gap(g: number) gap(1).
+}
+
+.init c = Consts
+
+// --- objects ---
+
+.init objs = Components8<Color>
+objs.node(Col, P) :- in(P, Col), !c.bg(Col).
+
+.decl object(id: Ident, col: Color, p: Position)
+object(Id, Col, P) :- objs.label(Col, P, Id).
+
+.decl object_size(id: Ident, n: number)
+object_size(Id, N) :- object(Id, _, _), N = count : { object(Id, _, _) }.
+
+// The template is the largest object.
+.decl template(id: Ident)
+template(Id) :- object_size(Id, N), N = max M : { object_size(_, M) }.
+
+.decl shape(p: Position)
+shape(P) :- object(Id, _, P), template(Id).
+
+// --- steps ---
+
+// Step lengths the grid admits.
+.decl span(k: number)
+span(K) :- in(P, _), axis_elem(A), sub_extent(P, A, K).
+
+.decl toward(d: Dir8, k: number, delta: Shift)
+toward(D, K, Delta) :- span(K), dir8_jump_delta(D, K, Delta).
+
+// The template displaced by one step.
+.decl placed(delta: Shift, p: Position)
+placed(Delta, P2) :- toward(_, _, Delta), shape(P), compose(P, Delta, P2).
+
+// A step whose copy misses some cell of the object.
+.decl misfit(id: Ident, delta: Shift)
+misfit(Id, Delta) :- object(Id, _, P), placed(Delta, _), !placed(Delta, P).
+
+// Steps whose copy holds the whole object. No step holds the template
+// itself, so only the fragments march.
+.decl fits(id: Ident, delta: Shift, k: number)
+fits(Id, Delta, K) :- object(Id, _, _), toward(_, K, Delta), !misfit(Id, Delta).
+
+.decl step(id: Ident, delta: Shift, ch: Choice)
+
+// --- Reach ---
+
+step(Id, Delta, $Reach()) :- fits(Id, Delta, K), K = max K2 : { fits(Id, _, K2) }.
+
+// --- Stride ---
+
+step(Id, Delta, $Stride()) :- fits(Id, Delta, K), c.stride(K).
+
+// --- Abut ---
+
+.init sbox = BoxFrame<Unit>
+sbox.cell($U(), P) :- shape(P).
+
+// The template's box is square.
+.decl shape_extent(n: number)
+shape_extent(N) :- sbox.extents($U(), _, N, N).
+
+step(Id, Delta, $Abut()) :-
+    fits(Id, Delta, _),
+    shape_extent(N), toward(D, N, S1),        // clear the template's extent
+    c.gap(G), toward(D, G, S2),               // then the gap
+    compose(S1, S2, Delta).
+
+// --- output ---
+
+// Copies march from the template until they leave the grid.
+.decl copy(id: Ident, p: Position, ch: Choice)
+copy(Id, P, Ch)  :- step(Id, Delta, Ch), placed(Delta, P), in(P, _).
+copy(Id, P2, Ch) :- copy(Id, P, Ch), step(Id, Delta, Ch), compose(P, Delta, P2), in(P2, _).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Reach()). impl_choice($Stride()). impl_choice($Abut()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- copy(Id, P, Ch), object(Id, Col, _).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !copy(_, P, Ch).

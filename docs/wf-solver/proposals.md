@@ -202,9 +202,11 @@ divide_by_size_slab(P, A, K, G, P_outer, P_inner) :-
 **Task-local home (protocol step 1).** 7b7f7511 (`DivideBySizeSlab`
 comp): $Tile's swept tiling.
 
-## `Dir8` — the eight directions as one domain
+## `Dir8` — direction as one type, with `Dir` and `DiagDir` as its branches
 
-Lib names the four edges (`Dir`) and the four corners (`DiagDir`) but not their union, so a relation whose column holds a direction that may be either has no type to declare. Sites that want all eight rebuild the set, and the corpus holds three unrelated encodings of it: guarded twin rules over a locally declared union (045e512c), a `surround_step` delta set repeated verbatim (42a50994, d9fac9be, f0df5ff0, and inlined at the use site in ce22a75a and dc1df850), and step-set extension (`Components8`). All but the first erase the direction's identity down to a delta at the point of construction, because there is no column type to carry it.
+Lib's two direction families are not parallel. `diag_dist` is `dist` applied twice through `diag_dirs`; `diag_jump_delta` is two `jump_delta`s composed. A corner is a pair of edges, one per axis, so the `diag_*` names package the `Dir` layer rather than forming a second primitive layer. The missing type sits above both branches rather than beside them.
+
+Without it, a column holding a direction that may be either kind has no type to declare, and every site that wants all eight rebuilds the set. The corpus holds three unrelated encodings: guarded twin rules over a locally declared union (045e512c), a `surround_step` delta set repeated verbatim (42a50994, d9fac9be, f0df5ff0, and inlined at the use site in ce22a75a and dc1df850), and step-set extension (`Components8`). All but the first erase the direction's identity down to a delta at the point of construction.
 
 Lib target: type beside `Dir` and `DiagDir`, deltas beside `jump_delta` and `diag_jump_delta`.
 
@@ -221,9 +223,29 @@ dir8_step_delta(D, Delta) :- dir8_jump_delta(D, 1, Delta).
 
 The union type works because lib's constants sit in disjoint ranges: a value's range identifies its branch, which is what each clause's `dir_elem` / `diag_dir_elem` guard tests.
 
-Those guards also make the deltas unlike the rest of the family. `jump_delta` is one clause of functors that binds nothing, so callers pair it with `dir_elem`; `dir8_jump_delta` grounds its own direction, so a caller supplies only `k`. The `surround_step` sites then collapse to `surround_step(S) :- dir8_step_delta(_, S).`, and `Components8` to `c4.step(S) :- dir8_step_delta(_, S).`, one rule stating the whole adjacency instead of the diagonal half added onto the cardinal one. b60334d2 and 49d1d64f keep their split: their cardinal and diagonal arms supply different colors, so the two families are load-bearing there.
+### What collapses
+
+Whether a pair collapses turns on the codomain. Three pairs are `Shift`-valued and become one relation each: `opposite` / `diag_opposite`, `jump_delta` / `diag_jump_delta`, `step_delta` / `diag_step_delta`.
+
+Where the arity differs there is nothing to write. `dist` yields one number and `diag_dist` yields two, because an edge has one edge and a corner has two. The proposed `diag_edge_delta` stays for the same reason at the input end: it takes a length per axis where `edge_delta` takes one. That is the type's limit — `Dir8` with a scalar `k` describes king moves only, and a displacement with unequal per-axis steps has no `Dir8` form.
+
+`Ray` and `DiagRay` collapse only at a cost. Both are collinearity plus a side test in two coordinate idioms; the uniform form is "q is p displaced n steps toward d, n at least 0", which needs a length domain to enumerate where the comparison forms need none.
+
+### Where discrimination lives
+
+Souffle has no match construct, so any consumer that tells the branches apart re-guards with `dir_elem` / `diag_dir_elem`. Keep that in one place, the delta primitive, and let everything downstream carry `Dir8` opaquely — 045e512c's `toward` holds the column and never inspects it.
+
+The guards also change the call convention. `jump_delta` is one clause of functors that binds nothing, so callers pair it with `dir_elem`; `dir8_jump_delta` grounds its own direction, so a caller supplies only `k`. The `surround_step` sites collapse to `surround_step(S) :- dir8_step_delta(_, S).`, and `Components8` to `c4.step(S) :- dir8_step_delta(_, S).`, one rule stating the whole adjacency instead of the diagonal half added onto the cardinal one. b60334d2 and 49d1d64f keep their split: their cardinal and diagonal arms supply different colors, so the two families are load-bearing there.
 
 A `dir8_elem` enum, the peer of `dir_elem` and `d4_elem`, has no site. Nothing calling the deltas needs it, and the use it would have — a universal over the eight directions by defect negation — has not come up.
+
+### The undirected peer
+
+The same union recurs on the undirected half. `Axis` and `DiagAxis` together are the four lines through a cell, and `same_dist` and the proposed `same_diag` are two branches of one relation: p and q lie on a common line of that kind. Accepting the union for directions and refusing it for lines leaves the same gap one level down, so the two want deciding together.
+
+Name: `Axis4`, following `Dir8` in naming the branch union by its element count, as `c4_elem` does for the rotation subgroup. `Line` collides with the `lines` concept term, which means ink along a row or column rather than the geometric line.
+
+Keying is open. `same_diag` is keyed by the line's own axis; `same_dist` is keyed by a `Dir` and states equal distance to that edge, which is collinearity along the *perpendicular* axis. A unified relation keys by the line's own axis throughout, so `same_dist`'s convention changes and its callers move with it.
 
 **Task-local home (protocol step 1).** 045e512c: `toward` maps each of the eight directions and each admissible length to a displacement, which the fragment's fit selects from and $Abut composes two lengths of.
 
