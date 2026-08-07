@@ -1,0 +1,55 @@
+// 070dd51e
+// concept: markers span
+// Non-bg marks come in same-colored pairs sharing a row or column; a span
+// of the pair's color connects them. Where spans cross, the span along the
+// over axis wins. Cases split what a span may paint: $PaintAll paints every
+// cell it covers; $PaintBg paints only bg cells, so marks persist.
+
+#include "../lib.dl"
+
+.type Choice = PaintAll {} | PaintBg {}
+
+.comp Consts {
+    .decl bg(col: Color) bg(0).
+    .decl over_axis(a: Axis) over_axis(AXIS_V).
+}
+
+.init c = Consts
+
+.decl mark(col: Color, p: Position)
+mark(Col, P) :- in(P, Col), !c.bg(Col).
+
+.init bet = Between<Color>
+bet.axis(A) :- axis_elem(A).
+bet.cell(P) :- in(P, _).
+bet.mark(Col, P) :- mark(Col, P).
+
+// The axis a color's line runs along: its marks share the across component.
+.decl line_axis(col: Color, a: Axis)
+line_axis(Col, A) :-
+    mark(Col, P), mark(Col, Q), P != Q,
+    axis_elem(A), split(P, A, _, Ac), split(Q, A, _, Ac).
+
+// Span cells tagged with their line's axis.
+.decl span(p: Position, col: Color, a: Axis)
+span(P, Col, A) :- bet.between(Col, P), line_axis(Col, A).
+
+// A cell some over-axis span covers.
+.decl over_span(p: Position)
+over_span(P) :- span(P, _, A), c.over_axis(A).
+
+// The winning span color at each covered cell: over axis beats the other.
+.decl top_span(p: Position, col: Color)
+top_span(P, Col) :- span(P, Col, A), c.over_axis(A).
+top_span(P, Col) :- span(P, Col, _), !over_span(P).
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// --- PaintAll ---
+out(P, Col, $PaintAll()) :- top_span(P, Col).
+out(P, Col, $PaintAll()) :- in(P, Col), !top_span(P, _).
+
+// --- PaintBg ---
+out(P, Col, $PaintBg()) :- top_span(P, Col), in(P, B), c.bg(B).
+out(P, Col, $PaintBg()) :- in(P, Col), !c.bg(Col).
+out(P, Col, $PaintBg()) :- in(P, Col), c.bg(Col), !top_span(P, _).

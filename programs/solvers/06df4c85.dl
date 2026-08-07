@@ -1,0 +1,67 @@
+// 06df4c85
+// concept: decompose span walk
+// A separator lattice cuts the grid into tiles; non-bg tiles are marks.
+// Tiles between two same-colored marks in a tile row or column fill with
+// that color. Every train span crosses only bg tiles; the cases claim what
+// an intervening foreign mark would do: $Over — the fill overwrites it;
+// $Around — it keeps its color and the bg tiles around it still fill;
+// $Block — it cancels the span, which propagates only through bg.
+
+#include "../lib.dl"
+
+.type Choice = Over {} | Around {} | Block {}
+
+.comp Consts {
+    .decl bg(col: Color) bg(0).
+    .decl tile_dim(k: number) tile_dim(2).
+    .decl gap(g: number) gap(1).
+}
+
+.init c = Consts
+
+.decl impl_choice(ch: Choice)
+impl_choice($Over()). impl_choice($Around()). impl_choice($Block()).
+
+.decl tile(p_grid: Position, p_tile: Position)
+tile(P_grid, P_tile) :-
+    in(P_grid, _), c.tile_dim(K), c.gap(G),
+    divide_by_size_2d(P_grid, K, G, P_tile, _).
+
+.decl mark(p_tile: Position, col: Color)
+mark(T, Col) :- in(P_grid, Col), tile(P_grid, T), !c.bg(Col).
+
+.decl bg_tile(p_tile: Position)
+bg_tile(T) :- tile(_, T), !mark(T, _).
+
+.init bet = Between<Color>
+bet.axis(A) :- axis_elem(A).
+bet.cell(T) :- tile(_, T).
+bet.mark(Col, T) :- mark(T, Col).
+
+.decl fill(ch: Choice, p_tile: Position, col: Color)
+
+// --- Over ---
+fill($Over(), T, Col) :- bet.between(Col, T), !mark(T, Col).
+
+// --- Around ---
+fill($Around(), T, Col) :- bet.between(Col, T), !mark(T, _).
+
+// --- Block ---
+// A bg tile whose run of bg tiles toward d ends at a Col mark.
+.decl reach(col: Color, d: Dir, p_tile: Position)
+reach(Col, D, T) :-
+    bg_tile(T), dir_elem(D), step_delta(D, S), compose(T, S, T2),
+    mark(T2, Col).
+reach(Col, D, T) :-
+    bg_tile(T), reach(Col, D, T2),
+    step_delta(D, S), compose(T, S, T2).
+
+fill($Block(), T, Col) :- reach(Col, D, T), opposite(D, O), reach(Col, O, T).
+
+// --- output ---
+.decl covered(ch: Choice, p_grid: Position)
+covered(Ch, P_grid) :- fill(Ch, T, _), tile(P_grid, T).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_grid, Col, Ch) :- fill(Ch, T, Col), tile(P_grid, T).
+out(P_grid, Col, Ch) :- in(P_grid, Col), impl_choice(Ch), !covered(Ch, P_grid).
