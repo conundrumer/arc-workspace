@@ -97,44 +97,9 @@ The divide peers of `Frame2D`: per-axis parameters as axis-tagged rows, per-axis
 
 **Scope.** This component owns set-relationship derivation. Ranking policy (`best_covered`, `nearest`) and approximate / multiset / payload matching sit outside it, solver-local or in a separate component. Current hints: 3618c87e → an `unmatched` negative; 44f52bb0 → `best_covered`.
 
-## `Bbox.corner` — set cell at a bbox corner
+## `Reframe.extents` — how big the outer is
 
-A membership readout beside `inside`: the set's cell at corner `diag` of its own bounding box, on the box boundary toward both of the corner's edges. A tuple exists only where the set occupies that corner (an L-shape yields three). It derives from `cell` and `edge_min` only, so it lives in the comp:
-
-```
-// Set cell on the box's d-side boundary.
-.decl edge_cell(key: Key, p: Position, d: Dir)
-edge_cell(K, P, D) :- cell(K, P), dist(P, D, Kd), edge_min(K, D, Kd).
-
-.decl corner(key: Key, diag: DiagDir, p: Position)
-corner(K, Diag, P) :-
-    dir_of(Diag, _, D1), edge_cell(K, P, D1),
-    dir_of(Diag, _, D2), edge_cell(K, P, D2),
-    D1 != D2.
-```
-
-**Task-local home (protocol step 1).** 66e6c45b (`shape_edge` / `shape_corner`, Unit key): $Stretch maps the corner cells to grid corners; $Explode steps them outward.
-
-**Second home (protocol step 1).** 62b74c02 (`block_edge`, Unit key): `edge_cell` alone, without the corner readout — the boundary column the span fill copies from.
-
-**Third home (protocol step 1).** 4522001f (`block_edge`, body rules): $Mark reads the mark cell's block corner through `diag_dirs`, then takes its opposite.
-
-## `BoxFrame.extents` — how big the box is
-
-A size readout beside `margin` and `inner`: the extents of the keyed set's own bounding box, wide — n1 along axis a, n2 across. `margin` gives the box's placement, this gives its size. The wide form is what the sites want: a repeated variable states a square, a comparison finds the long axis. Every cell of a box shares its frame, so any inner position serves.
-
-```
-.decl extents(key: Key, a: Axis, n1: number, n2: number)
-extents(Ky, A, N1, N2) :- inner(Ky, _, I), axis_dims(I, A, N1, N2).
-```
-
-Without it a caller reads `inner` and drops the cell, which is a position map read for one of its values.
-
-`Bbox` cannot carry it: its four edge minima give the size only after subtracting them from the grid extent, so the arithmetic-free form needs the box frame.
-
-**Task-local home (protocol step 1).** 00dbd492 (`BoxFrameExtents` comp): the empty region's extent, which $Size keys the color table by.
-
-The same shape occurs on `Reframe` at 4522001f (`sq.inner(L, P), axis_dims(P, A, K1, K2)`), whose outer is a stored box rather than a derived one. A `Reframe.extents` peer would cover it, and waits for its own second site.
+The `BoxFrame.extents` shape on an outer that is a stored box rather than a derived one: 4522001f reads `sq.inner(L, P), axis_dims(P, A, K1, K2)`. A `Reframe.extents` peer would cover it, and waits for a second site.
 
 ## `Ordinal.rev` — opposite-end pairing of an index set
 
@@ -236,6 +201,35 @@ divide_by_size_slab(P, A, K, G, P_outer, P_inner) :-
 
 **Task-local home (protocol step 1).** 7b7f7511 (`DivideBySizeSlab`
 comp): $Tile's swept tiling.
+
+## `Dir8` — the eight directions as one domain
+
+Lib names the four edges (`Dir`) and the four corners (`DiagDir`) but not their union, so a relation whose column holds a direction that may be either has no type to declare. Sites that want all eight rebuild the set, and the corpus holds three unrelated encodings of it: guarded twin rules over a locally declared union (045e512c), a `surround_step` delta set repeated verbatim (42a50994, d9fac9be, f0df5ff0, and inlined at the use site in ce22a75a and dc1df850), and step-set extension (`Components8`). All but the first erase the direction's identity down to a delta at the point of construction, because there is no column type to carry it.
+
+Lib target: type beside `Dir` and `DiagDir`, deltas beside `jump_delta` and `diag_jump_delta`.
+
+```
+.type Dir8 = Dir | DiagDir
+
+.decl dir8_jump_delta(d: Dir8, k: number, delta: Shift) inline
+dir8_jump_delta(D, K, Delta) :- dir_elem(D), jump_delta(D, K, Delta).
+dir8_jump_delta(D, K, Delta) :- diag_dir_elem(D), diag_jump_delta(D, K, Delta).
+
+.decl dir8_step_delta(d: Dir8, delta: Shift) inline
+dir8_step_delta(D, Delta) :- dir8_jump_delta(D, 1, Delta).
+```
+
+The union type works because lib's constants sit in disjoint ranges: a value's range identifies its branch, which is what each clause's `dir_elem` / `diag_dir_elem` guard tests.
+
+Those guards also make the deltas unlike the rest of the family. `jump_delta` is one clause of functors that binds nothing, so callers pair it with `dir_elem`; `dir8_jump_delta` grounds its own direction, so a caller supplies only `k`. The `surround_step` sites then collapse to `surround_step(S) :- dir8_step_delta(_, S).`, and `Components8` to `c4.step(S) :- dir8_step_delta(_, S).`, one rule stating the whole adjacency instead of the diagonal half added onto the cardinal one. b60334d2 and 49d1d64f keep their split: their cardinal and diagonal arms supply different colors, so the two families are load-bearing there.
+
+A `dir8_elem` enum, the peer of `dir_elem` and `d4_elem`, has no site. Nothing calling the deltas needs it, and the use it would have — a universal over the eight directions by defect negation — has not come up.
+
+**Task-local home (protocol step 1).** 045e512c: `toward` maps each of the eight directions and each admissible length to a displacement, which the fragment's fit selects from and $Abut composes two lengths of.
+
+**Protocol note.** A `.type` cannot live in a `.comp`, so the task-local form is a solver-scope type, which style otherwise reserves for coverage and comp instantiation.
+
+**Open.** `dir8_jump_delta` needs two clauses, since the domain is a disjoint union, and lib's functor note says a multi-clause inline multiplies IR path count in every calling rule. A non-inline form would need both a caller-supplied length domain, which is what 045e512c's `toward` already is, and `dir8_elem` back to supply the direction.
 
 ## `corner_dist` — taxicab distance to a corner
 
