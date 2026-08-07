@@ -1,0 +1,89 @@
+// 0607ce86
+// concept: objects repair select
+// The grid holds an arrangement of identical solid rectangles under noise:
+// single cells painted over the bg, and cells inside the rectangles
+// repainted. The output stamps one undamaged copy at every rectangle and
+// clears the rest of the grid.
+//
+//   $Vote — each cell of the copy frame takes the color most copies carry.
+//   $Copy — the copy the others confirm most is undamaged; it stamps whole.
+
+#include "../lib.dl"
+
+.type Choice = Vote {} | Copy {}
+
+.comp Consts {
+    .init helpers = ConstsHelpers
+
+    .decl bg(c: Color) bg(0).
+    .decl block_dim(k: number) block_dim(3).
+
+    .decl block_shape(p: Position)
+    block_shape(P) :- block_dim(N), helpers.frame_pos([N, N], P).
+}
+
+.init c = Consts
+
+// --- mode ---
+
+// The commonest member per key: the witness column supplies multiplicity, and
+// ties keep every member at the max.
+.comp Mode<Key, Member, Witness> {
+    .decl item(key: Key, m: Member, w: Witness)
+
+    .decl tally(key: Key, m: Member, n: number)
+    tally(Ky, M, N) :- item(Ky, M, _), N = count : { item(Ky, M, W) }.
+
+    .decl mode(key: Key, m: Member)
+    mode(Ky, M) :- tally(Ky, M, N), N = max N2 : { tally(Ky, _, N2) }.
+}
+
+.decl impl_choice(ch: Choice)
+impl_choice($Vote()). impl_choice($Copy()).
+
+.decl ink(p: Position)
+ink(P) :- in(P, Col), !c.bg(Col).
+
+// A copy is what a solid c.block_dim block covers; noise sits too thin to
+// carry one.
+.init occ = Occurrences<Unit>
+occ.cell($U(), P)  :- ink(P).
+occ.shape($U(), P) :- c.block_shape(P).
+
+.decl solid(p: Position)
+solid(P) :- occ.occurrence($U(), M), c.block_shape(S), compose(M, S, P).
+
+.init comps = Components<Unit>
+comps.node($U(), P) :- solid(P).
+
+.init frame = BoxFrame<Ident>
+frame.cell(Id, P) :- comps.label($U(), P, Id).
+
+// Each copy's color at each cell of the shared copy frame.
+.decl copy_color(id: Ident, p_intile: Position, col: Color)
+copy_color(Id, P_intile, Col) :- frame.inner(Id, P, P_intile), in(P, Col).
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !solid(P), c.bg(Col).
+
+// --- Vote ---
+
+.init template = Mode<Position, Color, Ident>
+template.item(P_intile, Col, Id) :- copy_color(Id, P_intile, Col).
+
+out(P, Col, $Vote()) :- frame.inner(_, P, P_intile), template.mode(P_intile, Col).
+
+// --- Copy ---
+
+.type Agreement = [id2: Ident, p_intile: Position]
+
+.init intact = Mode<Unit, Ident, Agreement>
+intact.item($U(), Id, [Id2, P_intile]) :-
+    copy_color(Id, P_intile, Col),
+    copy_color(Id2, P_intile, Col),
+    Id != Id2.
+
+out(P, Col, $Copy()) :-
+    frame.inner(_, P, P_intile),
+    intact.mode($U(), Id), copy_color(Id, P_intile, Col).

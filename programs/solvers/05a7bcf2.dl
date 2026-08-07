@@ -1,0 +1,108 @@
+// 05a7bcf2
+// concept: lines cast move
+// Two full lines cross the grid: a bare wall line of c.wall, and a line of
+// c.push carrying a ragged profile on its wall-facing side. Shapes of c.shape
+// sit on the wall's other side. Every line running across the walls that holds
+// a shape cell is rebuilt: the shape's cells take c.mark, c.shape casts from
+// there to the wall, and c.wall fills on to the far edge, with the push
+// structure resting against that edge. Two models of how it gets there:
+//
+//   $Slide — it moves as one body.
+//   $Pack  — each line's push cells fall and stack.
+
+#include "../lib.dl"
+
+.type Choice = Slide {} | Pack {}
+
+.comp Consts {
+    .decl wall(col: Color) wall(8).
+    .decl push(col: Color) push(2).
+    .decl shape(col: Color) shape(4).
+    .decl mark(col: Color) mark(3).
+}
+
+.init c = Consts
+
+.decl impl_choice(ch: Choice)
+impl_choice($Slide()). impl_choice($Pack()).
+
+// --- shared ---
+
+.decl wall_cell(p: Position)
+wall_cell(P) :- in(P, Col), c.wall(Col).
+
+.decl push_cell(p: Position)
+push_cell(P) :- in(P, Col), c.push(Col).
+
+.decl shape_cell(p: Position)
+shape_cell(P) :- in(P, Col), c.shape(Col).
+
+// The wall line spans one axis, so its cells spread across that axis alone.
+.decl wall_spread(a: Axis)
+wall_spread(A) :-
+    wall_cell(P), wall_cell(Q),
+    axis_of(D, A), dist(P, D, K1), dist(Q, D, K2), K1 != K2.
+
+// From the wall toward the push structure, and on to the far edge.
+.decl dir(d: Dir)
+dir(D) :-
+    axis_of(D, A), !wall_spread(A),           // faces the wall line
+    wall_cell(W), dist(W, D, K1),
+    push_cell(P), dist(P, D, K2), K2 < K1.    // the push structure lies that way
+
+// The shape casts toward the wall; the wall's fill reaches on past it.
+.init cast = Ray<Unit>
+cast.dir(D)        :- dir(D).
+cast.cell(P)       :- in(P, _).
+cast.mark($U(), P) :- shape_cell(P).
+
+.init reach = Ray<Unit>
+reach.dir(D)        :- dir(D).
+reach.cell(P)       :- in(P, _).
+reach.mark($U(), P) :- wall_cell(P).
+
+// Short of the shape, or in a line no shape claims — content stands.
+.decl short(p: Position)
+short(P) :- in(P, _), dir(D), !cast.ray($U(), P, D).
+
+// Between the shape and the wall.
+.decl gap(p: Position)
+gap(P) :- cast.ray($U(), P, D), !reach.ray($U(), P, D), !shape_cell(P).
+
+// At or past the wall, in a line a shape claims.
+.decl through(p: Position)
+through(P) :- reach.ray($U(), P, D), dir(D), !short(P).
+
+// --- Slide: the push structure moves as one body ---
+
+.init push_box = Bbox<Unit>
+push_box.cell($U(), P) :- push_cell(P).
+
+// It travels its own margin from the far edge.
+.decl push_shift(delta: Shift)
+push_shift(Delta) :- dir(D), push_box.edge_min($U(), D, K), jump_delta(D, K, Delta).
+
+.decl placed(p: Position, c: Choice)
+placed(P2, $Slide()) :- push_cell(P), push_shift(Delta), compose(P, Delta, P2).
+
+// --- Pack: each line's push cells fall and stack ---
+
+// Cell split on the model's axis: p_line names its line, k places it within
+// the line as dist to the far edge.
+.decl place(p: Position, p_line: Position, k: number)
+place(P, P_line, K) :-
+    in(P, _), dir(D),
+    axis_of(D, A), split(P, A, _, P_line), dist(P, D, K).
+
+.init fall = Ordinal<Position>
+fall.idx_set(P_line, K) :- push_cell(P), place(P, P_line, K).
+
+// A push cell with R of its line's push cells nearer the edge lands R from it.
+placed(P2, $Pack()) :- fall.rank(P_line, K, R), place(P2, P_line, R).
+
+.decl out(p: Position, col: Color, c: Choice)
+out(P, Col, Ch) :- in(P, Col), short(P), impl_choice(Ch).
+out(P, Col, Ch) :- shape_cell(P), c.mark(Col), impl_choice(Ch).
+out(P, Col, Ch) :- gap(P), c.shape(Col), impl_choice(Ch).
+out(P, Col, Ch) :- through(P), placed(P, Ch), c.push(Col).
+out(P, Col, Ch) :- through(P), !placed(P, Ch), c.wall(Col), impl_choice(Ch).

@@ -325,3 +325,35 @@ Open: functors take scalars, so the sets cross the interface serialized — an
 ordered string fold, or a tooling convention for set-valued functor inputs.
 
 **Motivating site.** b1fc8b8e: a $Partition detect case beside $Shape.
+
+## `Mode<Key, Member, Witness>` — the commonest member per key
+
+Count-and-argmax: tally the witnesses carrying each member, then keep the
+members no other member outnumbers. The witness is its own column, so
+multiplicity comes from a set-valued relation with no multiset encoding.
+Ties keep every member at the max; a consumer needing one member either has a
+task where the max is unique, or reads the tie as data.
+
+```
+.comp Mode<Key, Member, Witness> {
+    .decl item(key: Key, m: Member, w: Witness)
+
+    .decl tally(key: Key, m: Member, n: number)
+    tally(Ky, M, N) :- item(Ky, M, _), N = count : { item(Ky, M, W) }.
+
+    .decl mode(key: Key, m: Member)
+    mode(Ky, M) :- tally(Ky, M, N), N = max N2 : { tally(Ky, _, N2) }.
+}
+```
+
+Lib target: body component, beside `Ordinal` and `Excess`.
+
+Sites already written as plain body relations. Commonest color over a cell
+set: 73251a56 `dominant`, 7e4d4f7c `bg`, e57337a4 `canvas`, 642d658d
+`grid_bg`. Argmax over a derived count: 642d658d `arm_off`, ae4f1146
+`comp_winner` and `window_winner`, a87f7484 `densest`.
+
+**Task-local home (protocol step 1).** 0607ce86: `template`, the per-cell
+color vote across the copies (key = intile position, member = color, witness
+= copy); and `intact`, the copy the others confirm most (member = copy,
+witness = the confirming copy-and-cell pair).

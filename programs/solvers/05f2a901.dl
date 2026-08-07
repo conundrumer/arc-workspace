@@ -1,0 +1,119 @@
+// 05f2a901
+// concept: objects move
+// Two objects lie along one axis: the c.mover one and the c.anchor one. The
+// mover slides toward the anchor and stops on contact; the anchor stays.
+//
+// The cases differ in what counts as contact:
+//   $Block  — head-on: the next step would put a mover cell on an anchor cell.
+//   $Touch  — any side: a mover cell comes to rest beside an anchor cell.
+//   $Extent — head-on between the two bounding boxes.
+
+#include "../lib.dl"
+
+.type Choice = Block {} | Touch {} | Extent {}
+
+.comp Consts {
+    .decl bg(col: Color) bg(0).
+    .decl mover(col: Color) mover(2).
+    .decl anchor(col: Color) anchor(8).
+}
+
+.init c = Consts
+
+// --- objects ---
+
+.decl mover_cell(p: Position)
+mover_cell(P) :- in(P, Col), c.mover(Col).
+
+.decl anchor_cell(p: Position)
+anchor_cell(P) :- in(P, Col), c.anchor(Col).
+
+.init box = Bbox<Color>
+box.cell(Col, P) :- mover_cell(P), c.mover(Col).
+box.cell(Col, P) :- anchor_cell(P), c.anchor(Col).
+box.grid(Col, P) :- box.cell(Col, _), in(P, _).
+
+// --- direction of travel ---
+
+// The anchor lies toward one edge from the mover, on a shared line.
+.init cast = Ray<Unit>
+cast.dir(D)        :- dir_elem(D).
+cast.cell(P)       :- anchor_cell(P).
+cast.mark($U(), P) :- mover_cell(P).
+
+.decl move_dir(d: Dir)
+move_dir(D) :- cast.ray($U(), _, D).
+
+// One step back along the travel.
+.decl approach(s: Shift)
+approach(S) :- move_dir(D), opposite(D, O), step_delta(O, S).
+
+// --- the slide ---
+
+// The footprint that travels.
+.decl shape(ch: Choice, p: Position)
+
+// The slide ends where the footprint first covers one of these.
+.decl stopper(ch: Choice, p: Position)
+
+// --- Block ---
+
+shape($Block(), P) :- mover_cell(P).
+
+stopper($Block(), P2) :- anchor_cell(P), approach(S), compose(P, S, P2).
+
+// --- Touch ---
+
+shape($Touch(), P) :- mover_cell(P).
+
+stopper($Touch(), P2) :-
+    anchor_cell(P),
+    dir_elem(D), step_delta(D, S),     // one step to any side
+    compose(P, S, P2).
+
+// --- Extent ---
+
+shape($Extent(), P) :- c.mover(Col), box.inside(Col, P).
+
+stopper($Extent(), P2) :-
+    c.anchor(Col), box.inside(Col, P),
+    approach(S), compose(P, S, P2).
+
+// --- the walk ---
+
+// Displacements toward the anchor the frame admits.
+.decl shift(delta: Shift)
+shift(ORIGIN).
+shift(Delta) :-
+    in(P, _), move_dir(D),
+    axis_of(D, A), sub_extent(P, A, K), jump_delta(D, K, Delta).
+
+.decl halted(ch: Choice, delta: Shift)
+halted(Ch, Delta) :- shift(Delta), shape(Ch, P), compose(P, Delta, P2), stopper(Ch, P2).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Block()). impl_choice($Touch()). impl_choice($Extent()).
+
+// The slide advances one step at a time until something halts it.
+.decl reach(ch: Choice, delta: Shift)
+reach(Ch, ORIGIN) :- impl_choice(Ch).
+reach(Ch, Delta2) :-
+    reach(Ch, Delta), !halted(Ch, Delta),
+    move_dir(D), step_delta(D, S), compose(Delta, S, Delta2), shift(Delta2).
+
+.decl rest(ch: Choice, delta: Shift)
+rest(Ch, Delta) :- reach(Ch, Delta), halted(Ch, Delta).
+
+// --- output ---
+
+.decl landed(ch: Choice, p: Position)
+landed(Ch, P2) :- rest(Ch, Delta), mover_cell(P), compose(P, Delta, P2).
+
+// The grid with the mover lifted off.
+.decl cleared(p: Position, col: Color)
+cleared(P, Col) :- in(P, Col), !mover_cell(P).
+cleared(P, Col) :- mover_cell(P), c.bg(Col).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- landed(Ch, P), c.mover(Col).
+out(P, Col, Ch) :- rest(Ch, _), cleared(P, Col), !landed(Ch, P).
