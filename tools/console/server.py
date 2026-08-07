@@ -9,7 +9,8 @@ with review comments, and commits approved solvers.
 Env:
     CONSOLE_FAKE=1     use fake_worker.py instead of claude (UI demo)
     CONSOLE_CLAUDE     claude binary (default: claude)
-    CONSOLE_MODEL      worker model override (default: CLI default)
+    CONSOLE_MODEL      worker model (default: claude-fable-5)
+    CONSOLE_COMMIT_MODEL   committer model (default: claude-opus-5)
 """
 
 import argparse
@@ -40,7 +41,8 @@ REF_DIR = (ROOT.parent / "arc-synth-bun").resolve()
 
 FAKE = os.environ.get("CONSOLE_FAKE") == "1"
 CLAUDE = os.environ.get("CONSOLE_CLAUDE", "claude")
-MODEL = os.environ.get("CONSOLE_MODEL")
+MODEL = os.environ.get("CONSOLE_MODEL", "claude-fable-5")
+COMMIT_MODEL = os.environ.get("CONSOLE_COMMIT_MODEL", "claude-opus-5")
 
 WORKER_FLAGS = [
     "--output-format", "stream-json", "--verbose",
@@ -643,8 +645,8 @@ def run_committer(append: Path) -> None:
     cmd = [CLAUDE, "-p", COMMIT_BRIEF, *COMMITTER_FLAGS]
     if append.exists():
         cmd += ["--append-system-prompt", append.read_text()]
-    if MODEL:
-        cmd += ["--model", MODEL]
+    if COMMIT_MODEL:
+        cmd += ["--model", COMMIT_MODEL]
     with open(LOG_DIR / "committer.log", "ab") as log:
         try:
             subprocess.run(cmd, cwd=ROOT, stdout=log, stderr=log, timeout=900)
@@ -705,7 +707,7 @@ class Handler(BaseHTTPRequestHandler):
                     COND.wait(deadline - time.time())
                 snap = {"seq": STATE["seq"], "wave": STATE["wave"],
                         "items": light_items(), "usage": USAGE,
-                        "cli": {"addDir": str(REF_DIR)},
+                        "cli": {"addDir": str(REF_DIR), "model": MODEL},
                         "committer": dict(COMMITTER),
                         "solved": len(list(SOLVERS.glob("*.dl"))),
                         "total": len(list(REF_DIR.glob("programs/solvers/*.ts")))}

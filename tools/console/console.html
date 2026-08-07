@@ -318,8 +318,10 @@ const TTL_MIN = 60;
 
 let seq = 0, wave = 0, items = [], selId = null, usage = [], progress = null, cli = {}, committerWas = false;
 
-/* interactive commands that reproduce the workers' prompt bytes (cache reuse) */
+/* interactive commands that reproduce the workers' prompt bytes (cache reuse),
+   on the model the worker ran so the resumed session keeps its cache */
 const takeoverCmd = it => "claude --resume "+it.session
+  +(cli.model?" --model "+cli.model:"")
   +` --append-system-prompt "$(cat ${it.append})" --add-dir ${cli.addDir} --exclude-dynamic-system-prompt-sections`;
 const taskCache = {};   // id -> task json | "pending" | "missing"
 const itemCache = {};   // id -> {feed, code, ver}
