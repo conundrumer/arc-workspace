@@ -1,5 +1,5 @@
 // a3df8b1e
-// concept: markers, walk
+// concept: markers walk
 //
 // A lone marker sits in a corner. A diagonal ray leaves it,
 // reflecting off the side walls, and stops at the far edge. The output

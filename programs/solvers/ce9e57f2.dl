@@ -1,5 +1,5 @@
 // ce9e57f2
-// concept: lines, rank
+// concept: lines rank
 // Bars of bar color stand on the base edge, one per line. In each bar, the
 // cells strictly nearer the base end than the far end recolor to mark.
 

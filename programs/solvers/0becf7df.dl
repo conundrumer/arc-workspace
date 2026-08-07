@@ -1,5 +1,5 @@
 // 0becf7df
-// concept: markers, mapping, lookup
+// concept: markers mapping lookup
 // A key block sits at a corner; its cells pair up and paired colors swap.
 // Cells outside the key recolor by the swap; the key and unmapped colors
 // pass through. $Line pairs the two cells on each key line along a
