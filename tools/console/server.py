@@ -583,6 +583,15 @@ def act_revert(it: dict) -> None:
     say(it, event("edits reverted"))
 
 
+def commit_subject(added: list[str], changed: list[str]) -> str:
+    parts = []
+    if added:
+        parts.append("Add " + ", ".join(added))
+    if changed:
+        parts.append(("update " if parts else "Update ") + ", ".join(changed))
+    return "; ".join(parts)
+
+
 def act_commit() -> dict:
     with LOCK:
         if COMMITTER["running"]:
@@ -590,18 +599,24 @@ def act_commit() -> dict:
         ids = [it["id"] for it in STATE["items"] if it["state"] == APPROVED]
         if not ids:
             return {"error": "nothing approved"}
-        paths = [str(solver_path(i).relative_to(ROOT)) for i in ids]
+        rels = {i: str(solver_path(i).relative_to(ROOT)) for i in ids}
+        # HEAD, not the index: a solver staged by something else is still new
+        in_head = set(subprocess.run(["git", "ls-tree", "-r", "--name-only", "HEAD",
+                                      "--", *rels.values()],
+                                     cwd=ROOT, capture_output=True, text=True).stdout.split())
+        msg = commit_subject(sorted(i for i in ids if rels[i] not in in_head),
+                             sorted(i for i in ids if rels[i] in in_head))
+        paths = list(rels.values())
         proposals = "docs/wf-solver/proposals.md"
         if subprocess.run(["git", "diff", "--quiet", "--", proposals],
                           cwd=ROOT).returncode != 0:
             paths.append(proposals)
         subprocess.run(["git", "add", *paths], cwd=ROOT, check=False)
-        msg = "Add " + ", ".join(sorted(ids))
         out = subprocess.run(["git", "commit", "-m", msg], cwd=ROOT,
                              capture_output=True, text=True)
         if out.returncode != 0:
             return {"error": "git commit failed: " + (out.stderr or out.stdout).strip()[-200:]}
-        msgs = ["Add " + ", ".join(sorted(ids))]
+        msgs = [msg]
         for it in STATE["items"]:
             if it["id"] in ids:
                 it["state"] = COMMITTED

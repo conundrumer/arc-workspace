@@ -161,6 +161,12 @@ def test_task_ask_carries_the_subagent_brief(srv):
     assert srv.task_ask({"prompt": "Look in programs/."}) == "Look in programs/."
 
 
+def test_commit_subject_names_added_and_changed_solvers(srv):
+    assert srv.commit_subject(["a", "b"], []) == "Add a, b"
+    assert srv.commit_subject([], ["a"]) == "Update a"
+    assert srv.commit_subject(["a"], ["b", "c"]) == "Add a; update b, c"
+
+
 def test_seen_clears_the_updated_badge(srv):
     it = item(srv, "a", srv.NEEDS_REVIEW, updated=True)
     srv.act_seen("a")
