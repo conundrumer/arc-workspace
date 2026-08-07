@@ -23,12 +23,8 @@
 
 .init c = Consts
 
-// Canvas color: most-frequent color in the input.
-.decl color_count(c: Color, n: number)
-color_count(C, N) :- in(_, C), N = count : { in(_, C) }.
-
-.decl canvas(c: Color)
-canvas(C) :- color_count(C, N), N = max N2 : { color_count(_, N2) }.
+.init canvas = Mode<Unit, Color, Position>
+canvas.item($U(), C, P) :- in(P, C).
 
 .decl tile_of(p_grid: Position, p_tile: Position, ch: Choice)
 
@@ -44,4 +40,4 @@ marked(T, Ch) :- in(P, Col), c.mark(Col), tile_of(P, T, Ch).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(T, Col, Ch) :- marked(T, Ch), c.mark(Col).
-out(T, Col, Ch) :- tile_of(_, T, Ch), !marked(T, Ch), canvas(Col).
+out(T, Col, Ch) :- tile_of(_, T, Ch), !marked(T, Ch), canvas.mode($U(), Col).

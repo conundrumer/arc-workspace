@@ -34,17 +34,12 @@
 .init comps = Components<Unit>
 comps.node($U(), P) :- in(P, Col), !c.bg(Col).
 
-.decl comp_marks(id: Ident, n: number)
-comp_marks(Id, N) :-
-    comps.label($U(), _, Id),
-    N = count : { comps.label($U(), P, Id), in(P, Col), c.mark(Col) }.
-
-.decl comp_winner(id: Ident)
-comp_winner(Id) :- comp_marks(Id, N), N = max M : { comp_marks(_, M) }.
+.init comp_winner = Mode<Unit, Ident, Position>
+comp_winner.item($U(), Id, P) :- comps.label($U(), P, Id), in(P, Col), c.mark(Col).
 
 // Crop to the winner's bounding box.
 .init crop = BoxFrame<Unit>
-crop.cell($U(), P) :- comp_winner(Id), comps.label($U(), P, Id).
+crop.cell($U(), P) :- comp_winner.mode($U(), Id), comps.label($U(), P, Id).
 crop.grid($U(), P) :- in(P, _).
 
 out(P_out, Col, $Object()) :- in(P, Col), crop.inner($U(), P, P_out).
@@ -60,12 +55,7 @@ occ.shape($U(), P) :- c.shape(P).
 .decl window_cell(anchor: Position, p_inner: Position, p_grid: Position)
 window_cell(A, S, P) :- occ.occurrence($U(), A), c.shape(S), compose(A, S, P).
 
-.decl window_marks(anchor: Position, n: number)
-window_marks(A, N) :-
-    occ.occurrence($U(), A),
-    N = count : { window_cell(A, _, P), in(P, Col), c.mark(Col) }.
+.init window_winner = Mode<Unit, Position, Position>
+window_winner.item($U(), A, P) :- window_cell(A, _, P), in(P, Col), c.mark(Col).
 
-.decl window_winner(anchor: Position)
-window_winner(A) :- window_marks(A, N), N = max M : { window_marks(_, M) }.
-
-out(P_out, Col, $Window()) :- window_winner(A), window_cell(A, P_out, P), in(P, Col).
+out(P_out, Col, $Window()) :- window_winner.mode($U(), A), window_cell(A, P_out, P), in(P, Col).

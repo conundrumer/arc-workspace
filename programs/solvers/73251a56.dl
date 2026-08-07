@@ -108,13 +108,10 @@ fix_color(Col) :- intact(P, Col), on_fix(P).
 
 out(P, Col, $Bg()) :- residual(P), on_fix(P), fix_color(Col).
 
-.decl color_count(col: Color, n: number)
-color_count(Col, N) :- intact(_, Col), N = count : { intact(P, Col) }.
+.init dominant = Mode<Unit, Color, Position>
+dominant.item($U(), Col, P) :- intact(P, Col).
 
-.decl dominant(col: Color)
-dominant(Col) :- color_count(Col, N), N = max M : { color_count(_, M) }.
-
-out(P, Col, $Bg()) :- residual(P), !on_fix(P), dominant(Col).
+out(P, Col, $Bg()) :- residual(P), !on_fix(P), dominant.mode($U(), Col).
 
 // --- Label ---
 

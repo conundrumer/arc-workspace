@@ -27,17 +27,13 @@
 
 .init c = Consts
 
-// Background color: most-frequent color in the input.
-.decl color_count(c: Color, n: number)
-color_count(C, N) :- in(_, C), N = count : { in(_, C) }.
-
-.decl bg(c: Color)
-bg(C) :- color_count(C, N), N = max N2 : { color_count(_, N2) }.
+.init bg = Mode<Unit, Color, Position>
+bg.item($U(), C, P) :- in(P, C).
 
 // Tail recolor: bg passes through; non-bg becomes c.marker.
 .decl tail_color(c_in: Color, c_out: Color)
-tail_color(C, C) :- bg(C).
-tail_color(C, M) :- in(_, C), !bg(C), c.marker(M).
+tail_color(C, C) :- bg.mode($U(), C).
+tail_color(C, M) :- in(_, C), !bg.mode($U(), C), c.marker(M).
 
 // Output cells: the out_h along-frame crossed with the input's across
 // positions. Grounds the output grid so both rules can join to it.

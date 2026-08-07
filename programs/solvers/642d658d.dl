@@ -52,15 +52,12 @@ broken(P, Col) :- arm(P, _, Col), dir_elem(D), !arm(P, D, Col).
 ring(P, Col) :- arm(P, _, Col), !broken(P, Col).
 
 // --- $Halo bg: the pair's dominant color ---
-.decl color_count(col: Color, n: number)
-color_count(Col, N) :- in(_, Col), N = count : { in(_, Col) }.
-
-.decl grid_bg(col: Color)
-grid_bg(Col) :- color_count(Col, N), N = max M : { color_count(_, M) }.
+.init grid_bg = Mode<Unit, Color, Position>
+grid_bg.item($U(), Col, P) :- in(P, Col).
 
 .decl plus(dt: Detect, p: Position, col: Color)
 plus($Center(), P, Col) :- ring(P, Col), in(P, Cc), c.center(Cc).
-plus($Halo(),   P, Col) :- ring(P, Col), !grid_bg(Col).
+plus($Halo(),   P, Col) :- ring(P, Col), !grid_bg.mode($U(), Col).
 
 // --- $Footprint ---
 .init fp = Reframe<Unit>
@@ -121,18 +118,15 @@ out(ORIGIN, Col, [Dt, $Count()]) :- plus_count(Dt, Col, N), c.target(N).
 
     // A plus's arms hold one color, so the footprint is the largest set of
     // offsets that agree in color at every center.
-    .decl agree_count(off: Shift, n: number)
-    agree_count(Off, N) :- on_grid(Off), N = count : { on_grid(Off2), !differ(Off, Off2) }.
-
-    .decl arm_off(off: Shift)
-    arm_off(Off) :- agree_count(Off, N), N = max M : { agree_count(_, M) }.
+    .init arm_off = Mode<Unit, Shift, Shift>
+    arm_off.item($U(), Off, Off2) :- on_grid(Off), on_grid(Off2), !differ(Off, Off2).
 
     .init frame = BoxFrame<Unit>
-    frame.cell($U(), Off)    :- arm_off(Off).
-    frame.grid($U(), ORIGIN) :- arm_off(_).    // the anchor sits at zero offset
+    frame.cell($U(), Off)    :- arm_off.mode($U(), Off).
+    frame.grid($U(), ORIGIN) :- arm_off.mode($U(), _).    // the anchor sits at zero offset
 
     .decl fp_cell(p: Position)
-    fp_cell(P) :- arm_off(Off), frame.inner($U(), Off, P).
+    fp_cell(P) :- arm_off.mode($U(), Off), frame.inner($U(), Off, P).
 
     .decl anchor(p: Position)
     anchor(P) :- frame.inner($U(), ORIGIN, P).
@@ -140,7 +134,7 @@ out(ORIGIN, Col, [Dt, $Count()]) :- plus_count(Dt, Col, N), c.target(N).
     .decl winner(e: Example, p: Position)
     winner(E, P) :-
         ex_out(E, _, Col), center_at(E, P),                      // pair's output color
-        arm_off(Off), compose(P, Off, P2), ex_in(E, P2, Col).    // an arm holds it
+        arm_off.mode($U(), Off), compose(P, Off, P2), ex_in(E, P2, Col).    // an arm holds it
 
     .decl target(n: number)
     target(N) :- ex_out(E, _, _), N = count : { winner(E, P) }.

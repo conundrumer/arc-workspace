@@ -592,6 +592,19 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
         Np > Nn, N = Np - Nn.
 }
 
+// The commonest member per key: tally the witnesses carrying each member,
+// then keep the members no other member outnumbers. The witness column
+// supplies multiplicity; ties keep every member at the max.
+.comp Mode<Key, Member, Witness> {
+    .decl item(key: Key, m: Member, w: Witness)
+
+    .decl tally(key: Key, m: Member, n: number)
+    tally(Ky, M, N) :- item(Ky, M, _), N = count : { item(Ky, M, W) }.
+
+    .decl mode(key: Key, m: Member)
+    mode(Ky, M) :- tally(Ky, M, N), N = max N2 : { tally(Ky, _, N2) }.
+}
+
 // Lexicographic order over a keyed cell set, given a corner and a primary
 // axis (instance parameters, unkeyed); reading order is the top-left,
 // V-primary member. `rank` counts predecessors, ascending from 0 at the

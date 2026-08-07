@@ -30,13 +30,10 @@ ink(T, P) :- tile_val(T, P, Col), !c.bg(Col).
 .decl out(p: Position, col: Color, c: Choice)
 
 // --- $Count ---
-.decl ink_count(p_tile: Position, n: number)
-ink_count(T, N) :- ink(T, _), N = count : { ink(T, P) }.
+.init densest = Mode<Unit, Position, Position>
+densest.item($U(), T, P) :- ink(T, P).
 
-.decl densest(p_tile: Position)
-densest(T) :- ink_count(T, N), N = max M : { ink_count(_, M) }.
-
-out(P, Col, $Count()) :- tile_val(T, P, Col), densest(T).
+out(P, Col, $Count()) :- tile_val(T, P, Col), densest.mode($U(), T).
 
 // --- $Shape ---
 .init shape_cmp = KeyedSetCompare<Position, Position, Position>

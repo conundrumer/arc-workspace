@@ -24,20 +24,6 @@
 
 .init c = Consts
 
-// --- mode ---
-
-// The commonest member per key: the witness column supplies multiplicity, and
-// ties keep every member at the max.
-.comp Mode<Key, Member, Witness> {
-    .decl item(key: Key, m: Member, w: Witness)
-
-    .decl tally(key: Key, m: Member, n: number)
-    tally(Ky, M, N) :- item(Ky, M, _), N = count : { item(Ky, M, W) }.
-
-    .decl mode(key: Key, m: Member)
-    mode(Ky, M) :- tally(Ky, M, N), N = max N2 : { tally(Ky, _, N2) }.
-}
-
 .decl impl_choice(ch: Choice)
 impl_choice($Vote()). impl_choice($Copy()).
 
