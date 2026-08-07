@@ -17,7 +17,7 @@ Then dispatch on `$ARGUMENTS`:
 
 # Solver session
 
-A solver session writes a Souffle solver (`programs/solvers/<task_id>.dl`) that models an ARC task. Reference: the TS solver (`../arc-synth-bun/programs/solvers/`).
+A solver session writes a Souffle solver (`programs/solvers/<task_id>.dl`) that models an ARC task.
 
 <!-- batch:skip -->
 ## Entry
@@ -35,14 +35,17 @@ Creation pass, do this first:
 
 1. Create the solver
     1. Analyze the task: `cat data/tasks/<task_id>.json` (already formatted, do not pipe into anything)
-    2. Draft from the reference. Do not write the `Fit` comp yet.
-    3. Run against materialized train+test pairs (`uv run python scripts/run_dl.py <task_id>`)
-    4. Iterate until it works and passes lint.
-    5. Run the audit (`run_dl.py --audit <task_id>`) and resolve the findings. Raise judgment calls in the review.
+    2. Read the TS solver for the same task: `../arc-synth-bun/programs/solvers/<task_id>.ts`.
+        - The TS solver solves the task but might not encode a good model.
+    3. Draft the solver. Do not write the `Fit` comp yet.
+    4. Run against materialized train+test pairs (`uv run python scripts/run_dl.py <task_id>`)
+    5. Iterate until it works and passes lint.
+    6. Run the audit (`run_dl.py --audit <task_id>`) and resolve the findings. Raise judgment calls in the review.
 2. Simplify if possible
 3. Prune everything that does not serve the reader — exhaustively, from unnecessary words to irrelevant ideas. Judge necessity from the artifact alone, not from the session.
     - Text copied from prior solvers may not have been pruned; prune it like new text
-4. Review:
+4. Run `--fit-plan` and report very briefly if there needs to be a fit pass.
+5. Review:
     - The review is for the user to act on: keep or add cases, fix awkward code, promote primitives. Include only items the user can act on. An item included only as context still makes the user verify it against the rules, which is the work the review should do for them.
     - Does it follow principles?
     - Is there anything awkward or roundabout, like code that reads as pure implementation details with no conceptual meaning, or code that reimplements something existing, or repetitive code that might have a more principled form?
@@ -52,8 +55,8 @@ Creation pass, do this first:
 
 Fit pass, triggered when the user says `fit`:
 
-1. Run `--fit-plan`. If there are no unpinned slots, you are done.
-2. Create relations for the unpinned slots in the `Fit` comp.
+1. Run `--fit-plan`. If there are no actions to take, you are done.
+2. Do the fit-plan actions.
 3. Simplify
 4. Prune
 5. Review as before as applicable, keeping in mind "The review is for the user to act on", with these additions:
