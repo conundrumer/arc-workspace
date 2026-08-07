@@ -1,5 +1,6 @@
 """The fit plan: which Consts slots need Fit relations, from the proposer probe."""
 
+import math
 import re
 import tempfile
 from pathlib import Path
@@ -24,6 +25,7 @@ from dl.source import (
     _split_args,
     comp_decls,
     expand_grid_macros,
+    fit_slots,
 )
 
 
@@ -74,17 +76,19 @@ def run_probe(task) -> dict[str, set[tuple]]:
 
 
 # Joint candidate product a produce run may enumerate to settle narrowed
-# slots by verification; beyond it, the largest slots go to the fit list.
+# slots by verification; over it, settling slots must move under Fit — the
+# session's choice which — until the rest go under.
 JOINT_BUDGET = 100
 
 
 def probe_report(
     stem: str,
-) -> tuple[list[tuple[str, dict[str, str]]], list[str]]:
+) -> tuple[list[tuple[str, dict[str, str]]], list[str], set[str]]:
     """Compare each fact slot's stored fill with each proposer of the
     slot's value type. Slots outside the probe's types carry no verdicts.
 
-    Returns (results, embedded). results is (slot, {proposer: verdict}):
+    Returns (results, embedded, fitted). fitted names the slots whose Fit
+    relation already exists. results is (slot, {proposer: verdict}):
     'pinned' — candidate set equals the stored set; 'narrowed(n)' — stored
     inside a set of n smaller than the enumeration domain; 'open' — stored
     inside a set no smaller than the domain; 'missed' — stored outside the
@@ -167,7 +171,7 @@ def probe_report(
             "combine_member+combine_out",
             {"PanelCombine": _table_verdict(proposals["PanelCombine"], combo)},
         ))
-    return results, sorted(embedded)
+    return results, sorted(embedded), set(fit_slots(source) or {})
 
 
 def _rules(consts_text: str, slot: str) -> list[tuple[str, bool]]:
@@ -225,18 +229,26 @@ def _combine_triples(source: str) -> set[tuple] | None:
 
 def fit_plan(
     results: list[tuple[str, dict[str, str]]],
-) -> tuple[list[str], list[tuple[str, int]], list[str]]:
-    """Classify slots: (fit, settle, pinned).
+    fitted: set[str] = frozenset(),
+) -> tuple[list[str], list[tuple[str, int]], list[str], list[str]]:
+    """Classify slots: (fit, settle, done, pinned).
 
     A slot is pinned when some proposer reads it off exactly; it settles
     when a candidate set — a proposer's narrowed set or the slot's own
-    value domain — keeps the joint product over settling slots within
-    JOINT_BUDGET; it needs a Fit relation otherwise. A paired-table row
-    ('a+b') pins both slots on 'exact'.
+    value domain — gives a produce run something to enumerate; it needs a
+    Fit relation when it has neither. Settling is bounded: when the
+    settling slots' joint product is over JOINT_BUDGET, some must move
+    under Fit — which ones is the session's choice — until the rest go
+    under. Slots in `fitted` already carry a Fit relation; they are done
+    and leave the product. A paired-table row ('a+b') pins both slots on
+    'exact'.
     """
-    fit, settle, pinned = [], [], []
+    fit, settle, done, pinned = [], [], [], []
     for slot, verdicts in results:
         if "+" in slot:
+            continue
+        if slot in fitted:
+            done.append(slot)
             continue
         vals = set(verdicts.values())
         if "pinned" in vals or "exact" in vals:
@@ -258,24 +270,18 @@ def fit_plan(
                     fit.remove(part)
                     pinned.append(part)
 
-    settle.sort(key=lambda sn: sn[1])
-    joint = 1
-    kept = []
-    for slot, n in settle:
-        if joint * n <= JOINT_BUDGET:
-            joint *= n
-            kept.append((slot, n))
-        else:
-            fit.append(slot)
-    return sorted(fit), kept, sorted(pinned)
+    settle.sort(key=lambda sn: (-sn[1], sn[0]))
+    return sorted(fit), settle, sorted(done), sorted(pinned)
 
 
 def render_fit_plan(
-    report: tuple[list[tuple[str, dict[str, str]]], list[str]],
+    report: tuple[list[tuple[str, dict[str, str]]], list[str], set[str]],
 ) -> list[str]:
-    results, embedded = report
-    fit, settle, pinned = fit_plan(results)
-    covered = sorted(pinned + [slot for slot, _ in settle])
+    results, embedded, fitted = report
+    fit, settle, done, pinned = fit_plan(results, fitted)
+    joint = math.prod(n for _, n in settle)
+    over = joint > JOINT_BUDGET
+    covered = sorted(pinned + ([] if over else [slot for slot, _ in settle]))
     lines: list[str] = []
 
     def section(header: str, slots: list[str]) -> None:
@@ -287,6 +293,13 @@ def render_fit_plan(
         lines.extend(f"  {slot}" for slot in slots)
 
     section("write a Fit relation", fit)
+    if over:
+        section(
+            f"over the settle budget ({joint} > {JOINT_BUDGET}) — "
+            "choose Fit relations until the rest go under",
+            [f"{slot}({n})" for slot, n in settle],
+        )
+    section("fitted", done)
     section("no Fit relation", covered)
     section("move data from rules to fact slots", embedded)
 
