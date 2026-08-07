@@ -34,13 +34,15 @@ For each pass: Do each step individually. Do not batch them. Create a task per s
 Creation pass, do this first:
 
 1. Create the solver
-    1. Analyze the task: `cat data/tasks/<task_id>.json` (already formatted, do not pipe into anything)
-    2. Read the TS solver for the same task: `../arc-synth-bun/programs/solvers/<task_id>.ts`.
-        - The TS solver solves the task but might not encode a good model.
-    3. Draft the solver. Do not write the `Fit` comp yet.
-    4. Run against materialized train+test pairs (`uv run python scripts/run_dl.py <task_id>`)
-    5. Iterate until it works and passes lint.
-    6. Run the audit (`run_dl.py --audit <task_id>`) and resolve the findings. Raise judgment calls in the review.
+    1. Read and analyze:
+        - The task: `cat data/tasks/<task_id>.json`
+            - This is already formatted, do not pipe into anything.
+        - The reference TS solver: `cat ../arc-synth-bun/programs/solvers/<task_id>.ts`
+            - This solves the task but might not encode a good model.
+    2. Draft the solver. Do not write the `Fit` comp yet.
+    3. Run against materialized train+test pairs (`uv run python scripts/run_dl.py <task_id>`)
+    4. Iterate until it works and passes lint.
+    5. Run the audit (`run_dl.py --audit <task_id>`) and resolve the findings. Raise judgment calls in the review.
 2. Simplify if possible
 3. Prune everything that does not serve the reader — exhaustively, from unnecessary words to irrelevant ideas. Judge necessity from the artifact alone, not from the session.
     - Text copied from prior solvers may not have been pruned; prune it like new text
@@ -88,6 +90,8 @@ A new primitive qualifies for `programs/lib.dl` through real use, not by looking
 3. On agreement, stage it: wrap the solver-local version in a task-local `.comp` named for the primitive, and write the addition proposal to `docs/wf-solver/proposals.md`. `stage` refers to this step and always includes the comp form.
 4. On approval, move to `programs/lib.dl`. Update callers.
 
-On veto, dissolve any task-local comp into plain body relations where the linter allows, and remove the primitive's proposals.md entry.
+Task-local comps are a staging form that lives only while the proposal is open.
+
+On veto, rewrite any task-local comp into plain body relations, and remove the primitive's proposals.md entry.
 
 Reuse of a staged proposal is promotion evidence. When a solver copies a primitive that already has a `proposals.md` entry, surface the reuse directly: name the proposal and the new home, ask whether it moves to lib, and record the home in the entry (the `Second home (protocol step 1)` convention).
