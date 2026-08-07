@@ -111,13 +111,10 @@ locate_choice($Corner()). locate_choice($Mark()).
 diag($Corner(), Diag) :- bb.margin($U(), M), corner_anchor(Diag, M, ORIGIN).
 
 // --- $Mark ---
-// The block corner opposite the mark cell (Bbox.corner staged form).
-.decl block_edge(p: Position, d: Dir)
-block_edge(P, D) :- block(P), dist(P, D, Kd), bb.edge_min($U(), D, Kd).
-
+// The block corner opposite the mark cell.
 diag($Mark(), Diag) :-
-    in(P, Col), c.mark(Col),                                          // the mark cell
-    diag_dirs(D2, _, Da, Db), block_edge(P, Da), block_edge(P, Db),   // at a block corner
+    in(P, Col), c.mark(Col),        // the mark cell
+    bb.corner($U(), P, D2),         // at a block corner
     diag_opposite(D2, Diag).
 
 // --- Render cases: the squares along the diagonal ---

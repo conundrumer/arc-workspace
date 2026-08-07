@@ -52,26 +52,16 @@ target(P_corner, Col, $Quad()) :-
 .init bb = Bbox<Unit>
 bb.cell($U(), P) :- shape(P, _).
 
-// Shape cell on the shape's D-most edge.
-.decl shape_edge(p: Position, d: Dir)
-shape_edge(P, D) :- shape(P, _), dist(P, D, K), bb.edge_min($U(), D, K).
-
-// Shape cell at bbox corner Diag — on both of the corner's edges.
-.decl shape_corner(p: Position, diag: DiagDir)
-shape_corner(P, Diag) :-
-    diag_dirs(Diag, _, D1, D2),
-    shape_edge(P, D1), shape_edge(P, D2).
-
 // --- Stretch ---
 
 target(P_corner, Col, $Stretch()) :-
-    shape(P, Col), shape_corner(P, Diag),
+    shape(P, Col), bb.corner($U(), P, Diag),
     gdp.diag_cell($U(), P_corner, Diag, 0).    // grid corner at that diagonal
 
 // --- Explode ---
 
 target(P_out, Col, $Explode()) :-
-    shape(P, Col), shape_corner(P, Diag),
+    shape(P, Col), bb.corner($U(), P, Diag),
     diag_step_delta(Diag, Delta), compose(P, Delta, P_out).
 
 // --- Table ---

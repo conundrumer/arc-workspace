@@ -822,9 +822,10 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 
 // Bounding box of a keyed cell set, from the min distance to each edge over
 // the set (min-per-edge rather than min/max-per-axis: the four mins are
-// already a Position, and the edge choice is unobservable under D4). Two
-// readouts: `margin` packs the mins into a Position (the box's placement, a
-// Reframe outer); `inside` tests `grid` cells against them.
+// already a Position, and the edge choice is unobservable under D4).
+// Readouts: `margin` packs the mins into a Position (the box's placement, a
+// Reframe outer); `inside` tests `grid` cells against them; `edge_cell` and
+// `corner` name the set's own cells on the box boundary.
 .comp Bbox<Key> {
     .decl cell(key: Key, p: Position)
     .decl grid(key: Key, p: Position)
@@ -844,6 +845,16 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     // Grid cells inside the box — at least the margin from every edge.
     .decl inside(key: Key, p: Position)
     inside(K, P) :- grid(K, P), margin(K, M), geq(P, M).
+
+    // Set cell on the box's d-side boundary.
+    .decl edge_cell(key: Key, p: Position, d: Dir)
+    edge_cell(K, P, D) :- cell(K, P), dist(P, D, Kd), edge_min(K, D, Kd).
+
+    // Set cell at box corner diag — on both of the corner's edges. A tuple
+    // exists only where the set occupies that corner; an L-shape yields three.
+    .decl corner(key: Key, p: Position, diag: DiagDir)
+    corner(K, P, Diag) :-
+        diag_dirs(Diag, _, D1, D2), edge_cell(K, P, D1), edge_cell(K, P, D2).
 }
 
 // Connected components of a node set (4-adjacency), per key, each labeled by
