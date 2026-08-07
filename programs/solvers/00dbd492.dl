@@ -27,18 +27,6 @@
         node(Ky, P2).
 }
 
-// The extents of a keyed cell set's own bounding box, wide: n1 along axis
-// a, n2 across. Staged lib readout on BoxFrame (proposals.md).
-.comp BoxFrameExtents<Key> {
-    .decl cell(key: Key, p: Position)
-
-    .init frame = BoxFrame<Key>
-    frame.cell(Ky, P) :- cell(Ky, P).
-
-    .decl extents(key: Key, a: Axis, n1: number, n2: number)
-    extents(Ky, A, N1, N2) :- frame.inner(Ky, _, P_inner), axis_dims(P_inner, A, N1, N2).
-}
-
 .type Region = Box {} | Enclose {}
 .type Key    = Size {} | Count {}
 .type Choice = Recolor {r: Region, k: Key} | Replace {}
@@ -168,7 +156,7 @@ region($Enclose(), Id, P) :- holes.label($U(), P, Id).
 
 // --- Key cases ---
 
-.init rbox = BoxFrameExtents<RegionKey>
+.init rbox = BoxFrame<RegionKey>
 rbox.cell([R, Id], P) :- region(R, Id, P).
 
 .decl fill(r: Region, id: Ident, col: Color, k: Key)
@@ -228,7 +216,7 @@ out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !painted(P, _, Ch).
     .decl region(h: Hole, p: Position, col: Color)
     region([E, Id], P, Col) :- regions.label(E, P, Id), changed(E, P, Col).
 
-    .init rbox = BoxFrameExtents<Hole>
+    .init rbox = BoxFrame<Hole>
     rbox.cell(H, P) :- region(H, P, _).
 
     .decl size_fill(n: number, col: Color)
