@@ -31,7 +31,6 @@
     .decl ink(c: Color) ink(8).
 
     // --- $Shape ---
-    // The unit whose placements must cover the ink.
     .decl unit(p: Position)
     GRID_MASK_2x2(unit,
         1, 1,
@@ -95,7 +94,6 @@
     .decl ink_at(k: Key, p: Position)
     ink_at(K, P) :- cell(K, P, Col), c.ink(Col).
 
-    // $Count: ink cell count per key.
     .decl ink_count(k: Key, n: number)
     ink_count(K, N) :- ink_at(K, _), N = count : { ink_at(K, P) }.
 
@@ -187,7 +185,10 @@ out(P_grid, Col, [D, $Corner()]) :-
     .decl broken_class(id: Ident)
     broken_class(Id) :- class(E, Id), parse.uncovered(E).
 
-    // The covered class's tile displays the unit.
+    // Each tile displays a copy of the unit: intact for the covered class,
+    // damaged — cells removed — for the broken class. The displays jointly
+    // exhibit the unit. Reading it off c.covered_class's tile instead would
+    // be circular: that slot's fit runs through placements of c.unit.
     .decl unit(p: Position)
-    unit(P) :- covered_class(Id), class_tile(Id, P, Col), c.ink(Col).
+    unit(P) :- class_tile(_, P, Col), c.ink(Col).
 }
