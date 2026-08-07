@@ -154,6 +154,13 @@ def test_fit_is_a_clean_trigger(srv, monkeypatch):
     assert sent == [("fit the consts", "fit"), ("benefit from this", None)]
 
 
+def test_task_ask_carries_the_subagent_brief(srv):
+    assert srv.task_ask({"subagent_type": "Explore", "description": "find lib uses",
+                         "prompt": "Look in programs/."}) == \
+        "**Explore · find lib uses**\n\nLook in programs/."
+    assert srv.task_ask({"prompt": "Look in programs/."}) == "Look in programs/."
+
+
 def test_seen_clears_the_updated_badge(srv):
     it = item(srv, "a", srv.NEEDS_REVIEW, updated=True)
     srv.act_seen("a")

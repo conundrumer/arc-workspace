@@ -263,6 +263,14 @@ def record_edit(it: dict, fp: str) -> None:
         p_["files"][rel] = p.read_text() if p.exists() else ""
 
 
+def task_ask(inp: dict) -> str:
+    """The brief a Task call gives its subagent, as feed markdown."""
+    head = " · ".join(x for x in (str(inp.get("subagent_type") or "").strip(),
+                                  str(inp.get("description") or "").strip()) if x)
+    prompt = str(inp.get("prompt") or "").strip()
+    return f"**{head}**\n\n{prompt}" if head else prompt
+
+
 def tool_label(name: str, inp: dict) -> str | None:
     if name in ("TodoWrite", "ToolSearch", "TaskUpdate", "TaskCreate"):
         return None
@@ -348,13 +356,17 @@ def reader(item_id: str, proc: subprocess.Popen, trigger: str | None) -> None:
                         inp = block.get("input", {}) or {}
                         if name in ("Edit", "Write", "NotebookEdit") and inp.get("file_path"):
                             record_edit(it, inp["file_path"])
-                        label = tool_label(name, inp)
-                        if label:
-                            entry = {"kind": "tool", "text": label}
-                            key = (mid, "tool", block.get("id") or label)
+                        if name == "Task":
+                            entry = {"kind": "ask", "text": task_ask(inp)}
+                            key = (mid, "task", block.get("id") or entry["text"])
+                        else:
+                            label = tool_label(name, inp)
+                            if label:
+                                entry = {"kind": "tool", "text": label}
+                                key = (mid, "tool", block.get("id") or label)
                     if entry and key not in seen:
                         seen.add(key)
-                        if sub:
+                        if sub or entry["kind"] == "ask":
                             entry["sub"] = True
                         say(it, entry)
             elif kind == "result":

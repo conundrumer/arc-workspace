@@ -163,10 +163,15 @@ button:disabled:hover { border-color:var(--border); }
 }
 .tools .tl b { color:var(--ink); font-weight:600; }
 .msg.worker.sub { margin-left:22px; opacity:.75; }
-.msg.worker.sub::before {
+.msg.ask {
+  align-self:flex-start; margin-left:22px; opacity:.75;
+  background:var(--panel); border:1px dashed var(--border);
+}
+.msg.worker.sub::before, .msg.ask::before {
   content:"subagent"; display:block; font-family:ui-monospace,Menlo,monospace;
   font-size:9.5px; color:var(--muted); margin-bottom:3px;
 }
+.msg.ask::before { content:"subagent brief"; }
 .tools .tl.sub { opacity:.65; padding-left:12px; }
 .placeholder { color:var(--muted); font-size:12.5px; font-style:italic; }
 .runpulse { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--st-running); margin-right:6px; animation:pulse 1.2s ease-in-out infinite; }
@@ -562,6 +567,9 @@ function feedNodes(feed, m){
     el.innerHTML=`<div class="body">${render(m.text)}</div>`;
   } else if(m.kind==="event"){
     el=document.createElement("div"); el.className="event"; el.textContent="— "+m.text+" —";
+  } else if(m.kind==="ask"){
+    el=document.createElement("div"); el.className="msg ask";
+    el.innerHTML=render(m.text);
   } else {
     el=document.createElement("div"); el.className="msg "+(m.kind==="you"?"you":"worker")+(m.sub?" sub":"");
     el.innerHTML=render(m.text);
