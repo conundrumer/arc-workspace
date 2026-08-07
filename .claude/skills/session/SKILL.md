@@ -45,18 +45,18 @@ Creation pass, do this first:
 4. Review:
     - The review is for the user to act on: keep or add cases, fix awkward code, promote primitives. Include only items the user can act on. An item included only as context still makes the user verify it against the rules, which is the work the review should do for them.
     - Does it follow principles?
-    - Is there anything awkward or roundabout, like code that reads as pure implementation details with no conceptual meaning, or code that reimplements something existing?
+    - Is there anything awkward or roundabout, like code that reads as pure implementation details with no conceptual meaning, or code that reimplements something existing, or repetitive code that might have a more principled form?
     - Any potential alt models? Alt impls are not models — do not propose them, and do not list them in the review.
     - For each Choice case pair, and for each alt model considered and dropped: show where the models diverge, as a concrete input fragment and each model's output on it. The fragment must witness a valid divergence: the diverging model's output on it is well-formed. For data-indistinguishable pairs, state what the shared data hides. A model the data rules out was never a candidate: it does not appear in the review, not even as a note on why it is absent.
     - The review is a reply to the user, and it ends the turn: finish all task updates first, then write it with no tool calls after it.
 
 Fit pass, triggered when the user says `fit`:
 
-1. Run `--fit-plan`. If it lists no slots to fit, you are done.
-2. Create relations for the listed slots in the `Fit` comp.
+1. Run `--fit-plan`. If there are no unpinned slots, you are done.
+2. Create relations for the unpinned slots in the `Fit` comp.
 3. Simplify
 4. Prune
-5. Review as before as applicable, with these additions:
+5. Review as before as applicable, keeping in mind "The review is for the user to act on", with these additions:
     - Given you could modify the model (i.e. changing consts shape), is there any simpler or more principled alternative?
 
 For `prune` and `revise`, the reader and purpose: a future session who needs to understand the solver and its model claim.
@@ -80,9 +80,11 @@ Do not read `src/dl/` during the cadence. The docs and the run output should hav
 
 A new primitive qualifies for `programs/lib.dl` through real use, not by looking general. The order:
 
-1. Write the primitive in the solver. If the linter would flag it, write it as a task-local `.comp`. Run it. Confirm it works in context.
+1. Write the primitive as plain body relations, keyed when cases share it. If the linter would flag it, write it as a task-local `.comp`. Run it. Confirm it works in context.
 2. Surface it to the user: name it, describe the operation, show the solver-local version.
 3. On agreement, stage it: wrap the solver-local version in a task-local `.comp` named for the primitive, and write the addition proposal to `docs/wf-solver/proposals.md`. `stage` refers to this step and always includes the comp form.
 4. On approval, move to `programs/lib.dl`. Update callers.
+
+On veto, dissolve any task-local comp into plain body relations where the linter allows, and remove the primitive's proposals.md entry.
 
 Reuse of a staged proposal is promotion evidence. When a solver copies a primitive that already has a `proposals.md` entry, surface the reuse directly: name the proposal and the new home, ask whether it moves to lib, and record the home in the entry (the `Second home (protocol step 1)` convention).
