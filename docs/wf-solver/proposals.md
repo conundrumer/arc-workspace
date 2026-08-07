@@ -119,6 +119,23 @@ corner(K, Diag, P) :-
 
 **Third home (protocol step 1).** 4522001f (`block_edge`, body rules): $Mark reads the mark cell's block corner through `diag_dirs`, then takes its opposite.
 
+## `BoxFrame.extents` — how big the box is
+
+A size readout beside `margin` and `inner`: the extents of the keyed set's own bounding box, wide — n1 along axis a, n2 across. `margin` gives the box's placement, this gives its size. The wide form is what the sites want: a repeated variable states a square, a comparison finds the long axis. Every cell of a box shares its frame, so any inner position serves.
+
+```
+.decl extents(key: Key, a: Axis, n1: number, n2: number)
+extents(Ky, A, N1, N2) :- inner(Ky, _, I), axis_dims(I, A, N1, N2).
+```
+
+Without it a caller reads `inner` and drops the cell, which is a position map read for one of its values.
+
+`Bbox` cannot carry it: its four edge minima give the size only after subtracting them from the grid extent, so the arithmetic-free form needs the box frame.
+
+**Task-local home (protocol step 1).** 00dbd492 (`BoxFrameExtents` comp): the empty region's extent, which $Size keys the color table by.
+
+The same shape occurs on `Reframe` at 4522001f (`sq.inner(L, P), axis_dims(P, A, K1, K2)`), whose outer is a stored box rather than a derived one. A `Reframe.extents` peer would cover it, and waits for its own second site.
+
 ## `Ordinal.rev` — opposite-end pairing of an index set
 
 The order anti-isomorphism of `idx_set`: `rev(k, k2)` pairs each element with its opposite-end counterpart, with as many elements below k as above k2. It is the descending complement of `rank`, as a pairing rather than a rank value. The Ordinal doc's descending idiom (place ranks from the opposite edge) needs a physical frame to place into; `rev` covers reversal of an abstract index sequence.
@@ -172,16 +189,21 @@ One component from a seed: the seeded readout of the 4-adjacency closure that li
     .decl node(key: Key, p: Position)
     .decl seed(key: Key, p: Position)
 
-    .decl step(delta: Position)
-    step([-1, 1, 0, 0]). step([1, -1, 0, 0]). step([0, 0, -1, 1]). step([0, 0, 1, -1]).
-
     .decl reach(key: Key, p: Position)
     reach(Ky, P)  :- seed(Ky, P).
-    reach(Ky, P2) :- reach(Ky, P1), step(D), compose(P1, D, P2), node(Ky, P2).
+    reach(Ky, P2) :-
+        reach(Ky, P), dir_elem(D), step_delta(D, S), compose(P, S, P2),
+        node(Ky, P2).
 }
 ```
 
 **Task-local home (protocol step 1).** 1e81d6f9: a corner-edge seed picks the L frame. The stray mask cell stays unreachable, so the following `Bbox` does not grow to span it.
+
+**Second home (protocol step 1).** 00d62c1b: the outside — bg seeded from the grid edge, with the enclosed cells its complement.
+
+**Third home (protocol step 1).** 00dbd492: 00d62c1b's grid-edge seed again, under $Enclose — the enclosed cells are the region the fill covers.
+
+1e81d6f9's copy builds its step set from a `step` relation of Position literals; at promotion it takes the form above.
 
 ## `diag_edge_delta` — edge delta at a corner
 

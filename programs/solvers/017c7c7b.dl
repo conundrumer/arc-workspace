@@ -1,0 +1,95 @@
+// 017c7c7b
+// concept: wallpaper grow
+// The input continues periodically: the output is the grid extended to
+// c.extent along c.dir with the ink recolored, each new cell repeating
+// the color one period back. A period is a shift along c.dir the input
+// agrees with itself under; the smallest one is used.
+//
+//   $Line — one period per across-line.
+//   $Grid — one period for the whole grid.
+
+#include "../lib.dl"
+
+.type Choice = Line {} | Grid {}
+
+.comp Consts {
+    .decl dir(d: Dir) dir(DIR_B).        // growth direction
+    .decl extent(n: number) extent(9).   // output extent along it
+
+    .decl bg(col: Color) bg(0).
+    .decl ink(col: Color) ink(2).        // output ink
+}
+
+.init c = Consts
+
+.decl impl_choice(ch: Choice)
+impl_choice($Line()). impl_choice($Grid()).
+
+// Input cell with the across-line it sits on.
+.decl cell_line(p: Position, line: Position, col: Color)
+cell_line(P, Line, Col) :-
+    in(P, Col), c.dir(D), axis_of(D, A), split(P, A, _, Line).
+
+// Output frame: c.extent cells along c.dir's axis, the input's lines
+// across.
+.init frame = AxisFrame<Unit>
+frame.extent($U(), A, N) :- c.dir(D), axis_of(D, A), c.extent(N).
+
+.decl out_cell(p: Position)
+out_cell(P_grid_out) :-
+    c.dir(D), axis_of(D, A), frame.cell($U(), A, P_along),   // step along the axis
+    cell_line(_, Line, _), compose(P_along, Line, P_grid_out).
+
+// Input embedded at the edge the growth moves away from.
+.decl base(p: Position, col: Color)
+base(P_grid_out, Col) :-
+    out_cell(P_grid_out), in(P_grid_in, Col),
+    c.dir(D), opposite(D, O),
+    slab_anchor(O, P_grid_in, P_grid_out).
+
+// Shifts along c.dir the input agrees with itself under, per line.
+.init parse = ShiftInvariance<Position, Color>
+parse.cell(Line, P, Col) :- cell_line(P, Line, Col).
+
+.decl line_ok(line: Position, k: number)
+line_ok(Line, K) :-
+    c.dir(D), axis_of(D, A),
+    parse.cand(Line, A, K, _), !parse.broken(Line, A, K).
+
+// Each case supplies its candidate periods; the smallest one drives the
+// continuation.
+.decl period_cand(ch: Choice, line: Position, k: number)
+
+.decl period(ch: Choice, line: Position, k: number)
+period(Ch, Line, K) :-
+    period_cand(Ch, Line, K), K = min K2 : { period_cand(Ch, Line, K2) }.
+
+// Colors over the output frame: the input, then each cell repeating the
+// one a period back.
+.decl fill(ch: Choice, p: Position, col: Color)
+fill(Ch, P, Col) :- impl_choice(Ch), base(P, Col).
+fill(Ch, P_grid_out, Col) :-
+    fill(Ch, P, Col),
+    c.dir(D), axis_of(D, A), split(P, A, _, Line),   // the cell's line
+    period(Ch, Line, K), jump_delta(D, K, Delta),    // its period, as a step
+    compose(P, Delta, P_grid_out), out_cell(P_grid_out).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- fill(Ch, P, C), !c.bg(C), c.ink(Col).
+out(P, Col, Ch) :- fill(Ch, P, Col), c.bg(Col).
+
+// --- $Line ---
+
+period_cand($Line(), Line, K) :- line_ok(Line, K).
+
+// --- $Grid ---
+
+// A shift some line breaks.
+.decl broken(k: number)
+broken(K) :- c.dir(D), axis_of(D, A), parse.broken(_, A, K).
+
+// A shift no line breaks holds for the whole grid, so every line takes it.
+.decl grid_ok(k: number)
+grid_ok(K) :- line_ok(_, K), !broken(K).
+
+period_cand($Grid(), Line, K) :- cell_line(_, Line, _), grid_ok(K).

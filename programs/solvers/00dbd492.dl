@@ -1,0 +1,264 @@
+// 00dbd492
+// concept: objects enclose lookup count
+// Hollow squares on c.bg, each with a lone cell inside; the empty cells a
+// square holds take on a color the square selects.
+//
+// $Recolor delimits the empty region and colors it from a table, crossing
+// two independent nodes:
+//   region — $Box:     bg cells inside an object's bounding box.
+//            $Enclose: bg cells that cannot reach the grid edge.
+//   key    — $Size:    the region's extent.
+//            $Count:   the region's cell count.
+// $Replace makes the whole object the key: its cell set selects a stored
+// patch, which overwrites the object's window.
+
+#include "../lib.dl"
+
+// Seeded connectivity: the 4-adjacency closure of the node set from the seeds.
+// Staged lib component (proposals.md).
+.comp Reach<Key> {
+    .decl node(key: Key, p: Position)
+    .decl seed(key: Key, p: Position)
+
+    .decl reach(key: Key, p: Position)
+    reach(Ky, P)  :- seed(Ky, P).
+    reach(Ky, P2) :-
+        reach(Ky, P), dir_elem(D), step_delta(D, S), compose(P, S, P2),
+        node(Ky, P2).
+}
+
+// The extents of a keyed cell set's own bounding box, wide: n1 along axis
+// a, n2 across. Staged lib readout on BoxFrame (proposals.md).
+.comp BoxFrameExtents<Key> {
+    .decl cell(key: Key, p: Position)
+
+    .init frame = BoxFrame<Key>
+    frame.cell(Ky, P) :- cell(Ky, P).
+
+    .decl extents(key: Key, a: Axis, n1: number, n2: number)
+    extents(Ky, A, N1, N2) :- frame.inner(Ky, _, P_inner), axis_dims(P_inner, A, N1, N2).
+}
+
+.type Region = Box {} | Enclose {}
+.type Key    = Size {} | Count {}
+.type Choice = Recolor {r: Region, k: Key} | Replace {}
+
+.type RegionKey = [r: Region, id: Ident]
+
+.comp Consts {
+    // --- shared ---
+    .decl bg(c: Color) bg(0).
+
+    // --- $Size ---
+    .decl size_fill(n: number, col: Color)
+    size_fill(3, 8). size_fill(5, 4). size_fill(7, 3).
+
+    // --- $Count ---
+    .decl count_fill(n: number, col: Color)
+    count_fill(8, 8). count_fill(24, 4). count_fill(48, 3).
+
+    // --- $Replace ---
+    .decl patch_member(id: Ident, p: Position)
+    .decl patch_out(id: Ident, p: Position, col: Color)
+
+    GRID_MASK_5x5(patch_member, 0,
+        1, 1, 1, 1, 1,
+        1, 0, 0, 0, 1,
+        1, 0, 1, 0, 1,
+        1, 0, 0, 0, 1,
+        1, 1, 1, 1, 1)
+    GRID_5x5(patch_out, 0,
+        2, 2, 2, 2, 2,
+        2, 8, 8, 8, 2,
+        2, 8, 2, 8, 2,
+        2, 8, 8, 8, 2,
+        2, 2, 2, 2, 2)
+
+    GRID_MASK_7x7(patch_member, 1,
+        1, 1, 1, 1, 1, 1, 1,
+        1, 0, 0, 0, 0, 0, 1,
+        1, 0, 0, 0, 0, 0, 1,
+        1, 0, 0, 1, 0, 0, 1,
+        1, 0, 0, 0, 0, 0, 1,
+        1, 0, 0, 0, 0, 0, 1,
+        1, 1, 1, 1, 1, 1, 1)
+    GRID_7x7(patch_out, 1,
+        2, 2, 2, 2, 2, 2, 2,
+        2, 4, 4, 4, 4, 4, 2,
+        2, 4, 4, 4, 4, 4, 2,
+        2, 4, 4, 2, 4, 4, 2,
+        2, 4, 4, 4, 4, 4, 2,
+        2, 4, 4, 4, 4, 4, 2,
+        2, 2, 2, 2, 2, 2, 2)
+
+    GRID_MASK_9x9(patch_member, 2,
+        1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 0, 0, 0, 0, 0, 0, 0, 1,
+        1, 0, 0, 0, 0, 0, 0, 0, 1,
+        1, 0, 0, 0, 0, 0, 0, 0, 1,
+        1, 0, 0, 0, 1, 0, 0, 0, 1,
+        1, 0, 0, 0, 0, 0, 0, 0, 1,
+        1, 0, 0, 0, 0, 0, 0, 0, 1,
+        1, 0, 0, 0, 0, 0, 0, 0, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1)
+    GRID_9x9(patch_out, 2,
+        2, 2, 2, 2, 2, 2, 2, 2, 2,
+        2, 3, 3, 3, 3, 3, 3, 3, 2,
+        2, 3, 3, 3, 3, 3, 3, 3, 2,
+        2, 3, 3, 3, 3, 3, 3, 3, 2,
+        2, 3, 3, 3, 2, 3, 3, 3, 2,
+        2, 3, 3, 3, 3, 3, 3, 3, 2,
+        2, 3, 3, 3, 3, 3, 3, 3, 2,
+        2, 3, 3, 3, 3, 3, 3, 3, 2,
+        2, 2, 2, 2, 2, 2, 2, 2, 2)
+}
+
+.init c = Consts
+
+// --- parse ---
+
+// The ink objects, each viewed from its own box.
+.comp Parse<Key> {
+    .type Obj = [k: Key, id: Ident]
+
+    .decl cell(k: Key, p: Position, col: Color)
+
+    .decl ink(k: Key, p: Position)
+    ink(K, P) :- cell(K, P, Col), !c.bg(Col).
+
+    // The square's wall is one ink component, so its box is the square.
+    .init comps = Components<Key>
+    comps.node(K, P) :- ink(K, P).
+
+    .init box = BoxFrame<Obj>
+    box.cell([K, Id], P) :- comps.label(K, P, Id).
+    box.grid([K, Id], P) :- cell(K, P, _), comps.label(K, _, Id).
+
+    .decl viewed(k: Key, id: Ident, p: Position)
+    viewed(K, Id, P) :- box.viewed([K, Id], P).
+
+    .decl inner(k: Key, id: Ident, p: Position, p_inner: Position)
+    inner(K, Id, P, I) :- box.inner([K, Id], P, I).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+.decl bg_cell(p: Position)
+bg_cell(P) :- in(P, Col), c.bg(Col).
+
+// --- Region cases ---
+
+.decl region(r: Region, id: Ident, p: Position)
+
+region($Box(), Id, P) :- parse.viewed($U(), Id, P), bg_cell(P).
+
+// $Enclose: the components of the bg that no grid edge reaches.
+.init outside = Reach<Unit>
+outside.node($U(), P) :- bg_cell(P).
+outside.seed($U(), P) :- bg_cell(P), dir_elem(D), dist(P, D, 0).   // on a grid edge
+
+.decl enclosed(p: Position)
+enclosed(P) :- bg_cell(P), !outside.reach($U(), P).
+
+.init holes = Components<Unit>
+holes.node($U(), P) :- enclosed(P).
+
+region($Enclose(), Id, P) :- holes.label($U(), P, Id).
+
+// --- Key cases ---
+
+.init rbox = BoxFrameExtents<RegionKey>
+rbox.cell([R, Id], P) :- region(R, Id, P).
+
+.decl fill(r: Region, id: Ident, col: Color, k: Key)
+
+// The region's box, which is square.
+fill(R, Id, Col, $Size()) :- rbox.extents([R, Id], _, N, N), c.size_fill(N, Col).
+
+fill(R, Id, Col, $Count()) :-
+    region(R, Id, _), N = count : { region(R, Id, P) },
+    c.count_fill(N, Col).
+
+// --- $Recolor ---
+
+.decl painted(p: Position, col: Color, ch: Choice)
+painted(P, Col, $Recolor(R, K)) :- region(R, Id, P), fill(R, Id, Col, K).
+
+// --- $Replace ---
+
+.init same = KeyedSetCompare<Ident, Ident, Position>
+same.pattern_member(Pat, P)       :- c.patch_member(Pat, P).
+same.observed_member(Id, P_inner) :- parse.inner($U(), Id, P, P_inner), parse.ink($U(), P).
+
+painted(P, Col, $Replace()) :-
+    same.equals(Id, Pat),                                   // a stored object
+    c.patch_out(Pat, P_inner, Col),
+    parse.inner($U(), Id, P, P_inner).                      // its patch, in place
+
+// --- output ---
+
+.decl impl_choice(ch: Choice)
+impl_choice($Recolor($Box(), $Size())).
+impl_choice($Recolor($Box(), $Count())).
+impl_choice($Recolor($Enclose(), $Size())).
+impl_choice($Recolor($Enclose(), $Count())).
+impl_choice($Replace()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- painted(P, Col, Ch).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !painted(P, _, Ch).
+
+// --- fit ---
+
+.comp Fit {
+    .type Hole = [e: Example, id: Ident]   // a repainted region
+    .type Obj  = [e: Example, id: Ident]   // an ink object
+
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // The cells the output repaints — one square's empty region each.
+    .decl changed(e: Example, p: Position, col: Color)
+    changed(E, P, Col) :- ex_in(E, P, C_in), ex_out(E, P, Col), Col != C_in.
+
+    .init regions = Components<Example>
+    regions.node(E, P) :- changed(E, P, _).
+
+    .decl region(h: Hole, p: Position, col: Color)
+    region([E, Id], P, Col) :- regions.label(E, P, Id), changed(E, P, Col).
+
+    .init rbox = BoxFrameExtents<Hole>
+    rbox.cell(H, P) :- region(H, P, _).
+
+    .decl size_fill(n: number, col: Color)
+    size_fill(N, Col) :- rbox.extents(H, _, N, N), region(H, _, Col).
+
+    .decl count_fill(n: number, col: Color)
+    count_fill(N, Col) :- region(H, _, Col), N = count : { region(H, P, _) }.
+
+    // The object's cells, and its box's output, in the box's own frame.
+    .decl obj_member(o: Obj, p_inner: Position)
+    obj_member([E, Id], P_inner) :- parse.inner(E, Id, P, P_inner), parse.ink(E, P).
+
+    .decl obj_out(o: Obj, p_inner: Position, col: Color)
+    obj_out([E, Id], P_inner, Col) :- parse.inner(E, Id, P, P_inner), ex_out(E, P, Col).
+
+    // An entry exists for each object whose box the output rewrites.
+    .decl rewritten(o: Obj)
+    rewritten([E, Id]) :- parse.inner(E, Id, P, _), changed(E, P, _).
+
+    // One id per distinct object.
+    .init same = KeyedSetCompare<Obj, Obj, Position>
+    same.pattern_member(O, P_inner)  :- rewritten(O), obj_member(O, P_inner).
+    same.observed_member(O, P_inner) :- rewritten(O), obj_member(O, P_inner).
+
+    .decl entry(o: Obj, id: Ident)
+    entry(O, as(Min, Ident)) :- rewritten(O), Min = min ord(O2) : { same.equals(O, O2) }.
+
+    .decl patch_member(id: Ident, p: Position)
+    patch_member(Id, P_inner) :- entry(O, Id), obj_member(O, P_inner).
+
+    .decl patch_out(id: Ident, p: Position, col: Color)
+    patch_out(Id, P_inner, Col) :- entry(O, Id), obj_out(O, P_inner, Col).
+}
