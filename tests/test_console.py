@@ -145,6 +145,15 @@ def test_comment_launches_a_follow_up_turn(srv, monkeypatch):
     assert it["feed"][-1] == {"kind": "you", "text": "cleanup please"}
 
 
+def test_fit_is_a_clean_trigger(srv, monkeypatch):
+    sent = []
+    monkeypatch.setattr(srv, "launch", lambda it, msg, trig=None: sent.append((msg, trig)))
+    item(srv, "a", srv.NEEDS_REVIEW)
+    srv.act_comment("a", "fit the consts")
+    srv.act_comment("a", "benefit from this")
+    assert sent == [("fit the consts", "fit"), ("benefit from this", None)]
+
+
 def test_seen_clears_the_updated_badge(srv):
     it = item(srv, "a", srv.NEEDS_REVIEW, updated=True)
     srv.act_seen("a")

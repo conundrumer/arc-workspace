@@ -278,6 +278,11 @@ def tool_label(name: str, inp: dict) -> str | None:
     return name
 
 
+# Leading words of a message whose cadence ends in Simplify and Prune, so the
+# turn's edits land already clean.
+CLEAN_TRIGGERS = ("cleanup", "fit")
+
+
 def launch(it: dict, message: str, trigger: str | None = None) -> None:
     """Start a worker turn for `it`. Caller holds LOCK and has set state."""
     reverted = it.pop("reverted", None)
@@ -402,7 +407,7 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float) -> None
     if isinstance(cost, (int, float)):
         note += f" · ${cost:.2f}"
     say(it, event(note))
-    if trigger == "cleanup" or it["rev"] == 1:
+    if trigger in CLEAN_TRIGGERS or it["rev"] == 1:
         it["dirty"] = False
     elif solver_hash(it["id"]) != pre(it)["hash"]:
         it["dirty"] = True
@@ -503,7 +508,8 @@ def act_comment(it: dict, text: str) -> None:
     say(it, {"kind": "you", "text": text})
     it["state"] = COMMENTED
     it["updated"] = False
-    trigger = "cleanup" if text.lower().split()[:1] == ["cleanup"] else None
+    head = text.lower().split()[:1]
+    trigger = head[0] if head and head[0] in CLEAN_TRIGGERS else None
     launch(it, text, trigger)
 
 
