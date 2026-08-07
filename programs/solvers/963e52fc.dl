@@ -19,6 +19,14 @@
 
 .init c = Consts
 
+.decl impl_choice(ch: Choice)
+impl_choice($Line()). impl_choice($Grid()).
+
+// Input cell with the across-line it sits on.
+.decl cell_line(p: Position, line: Position, col: Color)
+cell_line(P, Line, Col) :-
+    in(P, Col), c.dir(D), axis_of(D, A), split(P, A, _, Line).
+
 // Output frame: c.scale copies of the input frame along c.dir.
 .init copies = AxisFrame<Unit>
 copies.extent($U(), A, N) :- c.dir(D), axis_of(D, A), c.scale(N).
@@ -28,63 +36,51 @@ out_cell(P_grid_out) :-
     copies.cell($U(), A, P_outer), in(P_grid_in, _),
     concat_slab(P_outer, P_grid_in, A, 0, P_grid_out).
 
-// Input embedded: same distance to the anchor edge, same across-line.
+// Input embedded at the edge the growth moves away from.
 .decl base(p: Position, col: Color)
 base(P_grid_out, Col) :-
     out_cell(P_grid_out), in(P_grid_in, Col),
     c.dir(D), opposite(D, O),
     slab_anchor(O, P_grid_in, P_grid_out).
 
-// Candidate periods: proper sub-extents along c.dir.
-.decl period_cand(k: number)
-period_cand(K) :- in(P, _), c.dir(D), axis_of(D, A), sub_extent(P, A, K).
-
-// An input cell pair K apart along c.dir disagrees, on this across-line.
-.decl disagree(line: Position, k: number)
-disagree(Line, K) :-
-    period_cand(K),
-    c.dir(D), jump_delta(D, K, Delta),               // K-shift along dir
-    in(P1, C1), compose(P1, Delta, P2), in(P2, C2),  // shifted pair
-    C1 != C2,
-    axis_of(D, A), split(P1, A, _, Line).            // pair's line
-
-.decl out(p: Position, col: Color, ch: Choice)
-
-// --- Line ---
-
-.decl line(p: Position)
-line(Line) :- in(P, _), c.dir(D), axis_of(D, A), split(P, A, _, Line).
+// Shifts along c.dir the input agrees with itself under, per line.
+.init parse = ShiftInvariance<Position, Color>
+parse.cell(Line, P, Col) :- cell_line(P, Line, Col).
 
 .decl line_ok(line: Position, k: number)
-line_ok(Line, K) :- line(Line), period_cand(K), !disagree(Line, K).
+line_ok(Line, K) :-
+    c.dir(D), axis_of(D, A),
+    parse.cand(Line, A, K, _), !parse.broken(Line, A, K).
 
-.decl line_period(line: Position, k: number)
-line_period(Line, K) :- line_ok(Line, K), K = min K2 : { line_ok(Line, K2) }.
+// Each case supplies its candidate periods; the smallest one drives the
+// continuation.
+.decl period_cand(ch: Choice, line: Position, k: number)
 
-.decl line_color(p: Position, col: Color)
-line_color(P, Col) :- base(P, Col).
-line_color(P_grid_out, Col) :-
-    line_color(P1, Col),                              // one period back
-    c.dir(D), axis_of(D, A), split(P1, A, _, Line),
-    line_period(Line, K),
-    jump_delta(D, K, Delta), compose(P1, Delta, P_grid_out),
-    out_cell(P_grid_out).
+.decl period(ch: Choice, line: Position, k: number)
+period(Ch, Line, K) :-
+    period_cand(Ch, Line, K), K = min K2 : { period_cand(Ch, Line, K2) }.
 
-out(P, Col, $Line()) :- line_color(P, Col).
+// The input, then each cell repeating the one a period back.
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- impl_choice(Ch), base(P, Col).
+out(P_grid_out, Col, Ch) :-
+    out(P, Col, Ch),
+    c.dir(D), axis_of(D, A), split(P, A, _, Line),   // the cell's line
+    period(Ch, Line, K), jump_delta(D, K, Delta),    // its period, as a step
+    compose(P, Delta, P_grid_out), out_cell(P_grid_out).
 
-// --- Grid ---
+// --- $Line ---
 
+period_cand($Line(), Line, K) :- line_ok(Line, K).
+
+// --- $Grid ---
+
+// A shift some line breaks.
+.decl broken(k: number)
+broken(K) :- c.dir(D), axis_of(D, A), parse.broken(_, A, K).
+
+// A shift no line breaks holds for the whole grid, so every line takes it.
 .decl grid_ok(k: number)
-grid_ok(K) :- period_cand(K), !disagree(_, K).
+grid_ok(K) :- line_ok(_, K), !broken(K).
 
-.decl grid_period(k: number)
-grid_period(K) :- grid_ok(K), K = min K2 : { grid_ok(K2) }.
-
-.decl grid_color(p: Position, col: Color)
-grid_color(P, Col) :- base(P, Col).
-grid_color(P_grid_out, Col) :-
-    grid_color(P1, Col), grid_period(K),              // one period back
-    c.dir(D), jump_delta(D, K, Delta), compose(P1, Delta, P_grid_out),
-    out_cell(P_grid_out).
-
-out(P, Col, $Grid()) :- grid_color(P, Col).
+period_cand($Grid(), Line, K) :- cell_line(_, Line, _), grid_ok(K).
