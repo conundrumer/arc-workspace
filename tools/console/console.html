@@ -13,6 +13,7 @@
   --st-commented:#7C3AED; --st-commented-bg:#EFE8FD;
   --st-approved:#15803D; --st-approved-bg:#E2F4E8;
   --st-muted:#67707C; --st-muted-bg:#ECEEEA;
+  --st-removed:#B91C1C; --st-removed-bg:#FBE6E6;
   --ttl-ok:#15803D; --ttl-warn:#B45309; --ttl-hot:#B91C1C;
   --sel:#0F766E14;
 }
@@ -25,6 +26,7 @@
   --st-commented:#A78BFA; --st-commented-bg:#2B2150;
   --st-approved:#4ADE80; --st-approved-bg:#123A22;
   --st-muted:#8B96A3; --st-muted-bg:#20262D;
+  --st-removed:#F87171; --st-removed-bg:#3B1618;
   --ttl-ok:#4ADE80; --ttl-warn:#F5A623; --ttl-hot:#F87171;
   --sel:#2DD4BF1A;
 }}
@@ -242,6 +244,16 @@ button:disabled:hover { border-color:var(--border); }
   background:color-mix(in srgb, var(--st-approved) 30%, transparent);
   color:inherit; border-radius:2px;
 }
+#codecol pre .del {
+  display:inline-block; min-width:calc(100% + 32px); box-sizing:border-box;
+  background:var(--st-removed-bg);
+  box-shadow:inset 2px 0 0 var(--st-removed);
+  margin:0 -16px; padding:0 16px;
+}
+#codecol pre mark.delw {
+  background:color-mix(in srgb, var(--st-removed) 30%, transparent);
+  color:inherit; border-radius:2px;
+}
 
 /* bottom keys bar */
 #keysbar {
@@ -349,48 +361,74 @@ async function post(route, body){
   } catch(e){ toast("console server unreachable"); return {error:String(e)}; }
 }
 
-/* code panel: current file with this turn's additions marked.
+/* code panel: the file with this turn's edits marked, removed lines included.
    Line diff vs the turn-start snapshot; replaced hunks get word-level marks. */
 const cmify = s => esc(s).replace(/(\/\/[^\n]*)/g,'<span class="cm">$1</span>');
 function splitLines(v){ const ls=v.split("\n"); if(ls[ls.length-1]==="") ls.pop(); return ls; }
-function addBlock(v){
-  return splitLines(v).map(l=>'<span class="add">'+(esc(l)||" ")+'</span>\n').join("");
+function markBlock(v, cls){
+  return splitLines(v).map(l=>`<span class="${cls}">`+(esc(l)||" ")+"</span>\n").join("");
 }
-function wordDiff(rem, add){
+/* One side of a replaced hunk: its own lines, with the words that differ from
+   the other side marked. `side` picks which of the two the caller wants. */
+function wordSide(rem, add, side){
+  const [cls, markCls] = side==="removed" ? ["del","delw"] : ["add","addw"];
   const lines=[[]];
   for(const p of Diff.diffWordsWithSpace(rem, add)){
-    if(p.removed) continue;
+    if(p.removed && side!=="removed") continue;
+    if(p.added && side!=="added") continue;
+    const marked = side==="removed" ? !!p.removed : !!p.added;
     p.value.split("\n").forEach((s,si)=>{
       if(si>0) lines.push([]);
-      if(s) lines[lines.length-1].push(p.added?'<mark class="addw">'+esc(s)+'</mark>':esc(s));
+      if(s) lines[lines.length-1].push({s, marked});
     });
   }
   if(lines.length && !lines[lines.length-1].length) lines.pop();
-  return lines.map(seg=>'<span class="add">'+(seg.join("")||" ")+'</span>\n').join("");
+  return lines.map(segs=>{
+    // whitespace between two changed runs joins them, so a highlight covering
+    // several words reads as one and does not break at the spaces
+    for(let i=1;i<segs.length-1;i++)
+      if(!segs[i].marked && !segs[i].s.trim() && segs[i-1].marked && segs[i+1].marked)
+        segs[i].marked=true;
+    let body="";
+    for(let i=0;i<segs.length;){
+      let j=i;
+      while(j<segs.length && segs[j].marked===segs[i].marked) j++;
+      const text=esc(segs.slice(i,j).map(g=>g.s).join(""));
+      body += segs[i].marked ? `<mark class="${markCls}">`+text+"</mark>" : text;
+      i=j;
+    }
+    return `<span class="${cls}">`+(body||" ")+"</span>\n";
+  }).join("");
 }
 function diffHtml(before, after){
   const parts=Diff.diffLines(before, after);
-  let html="", count=0;
+  let html="", added=0, removed=0;
   for(let k=0;k<parts.length;k++){
     const p=parts[k];
     if(p.removed){
       const nxt=parts[k+1];
-      if(nxt && nxt.added){ html+=wordDiff(p.value, nxt.value); count+=splitLines(nxt.value).length; k++; }
+      removed+=splitLines(p.value).length;
+      if(nxt && nxt.added){
+        html+=wordSide(p.value, nxt.value, "removed")+wordSide(p.value, nxt.value, "added");
+        added+=splitLines(nxt.value).length; k++;
+      } else {
+        html+=markBlock(p.value,"del");
+      }
     } else if(p.added){
-      html+=addBlock(p.value); count+=splitLines(p.value).length;
+      html+=markBlock(p.value,"add"); added+=splitLines(p.value).length;
     } else {
       html+=cmify(p.value);
     }
   }
-  return {html, count};
+  return {html, added, removed};
 }
 
 /* A long file's edits are rarely at the top, so bring the first marked line
    into view. Only when the pane switches to a different file: re-running this
    as a turn streams would drag the pane away from whoever is reading it. */
 let codeAt = null;
-function jumpToFirstAdd(){
-  const pre=$("codepre"), first=pre.querySelector(".add");
+function jumpToFirstMark(){
+  const pre=$("codepre"), first=pre.querySelector(".add, .del");
   if(!first){ pre.scrollTop=0; return; }
   const lead=(parseFloat(getComputedStyle(pre).lineHeight)||0)*3;  // lines of lead-in
   pre.scrollTop += first.getBoundingClientRect().top - pre.getBoundingClientRect().top - lead;
@@ -724,21 +762,22 @@ function renderDetail(){
       fn.textContent = f.code ? f.path : "—";
     }
   }
-  let codeHtml="", added=0;
+  let codeHtml="", added=0, removed=0;
   if(f.code){
     if(f.snap && f.snap!==f.code && window.Diff){
-      const r=diffHtml(f.snap, f.code); codeHtml=r.html; added=r.count;
+      const r=diffHtml(f.snap, f.code); codeHtml=r.html; added=r.added; removed=r.removed;
     } else {
       codeHtml=cmify(f.code);
     }
   }
+  const turn = [added?"+"+added:"", removed?"−"+removed:""].filter(Boolean).join(" ");
   $("flines").textContent = f.code ?
-    f.code.split("\n").length+" lines"+(added?" · +"+added+" this turn":"") : "";
+    f.code.split("\n").length+" lines"+(turn?" · "+turn+" this turn":"") : "";
   const pane = f.code ? codeHtml :
     '<span class="cm">// '+(it.state==="queued"?"not started":"no file yet")+"</span>";
   if(codeWas!==pane){ codeWas=pane; $("codepre").innerHTML=pane; }
   const codeKey = it.id+"|"+f.path;
-  if(codeAt!==codeKey){ codeAt=codeKey; jumpToFirstAdd(); }
+  if(codeAt!==codeKey){ codeAt=codeKey; jumpToFirstMark(); }
   const solver = files[0]||{};
   const canRevert = f.path===solver.path && solver.code && solver.snap
     && solver.snap!==solver.code && !it.active;
