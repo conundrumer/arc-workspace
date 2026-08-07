@@ -101,20 +101,27 @@ The divide peers of `Frame2D`: per-axis parameters as axis-tagged rows, per-axis
 
 The `BoxFrame.extents` shape on an outer that is a stored box rather than a derived one: 4522001f reads `sq.inner(L, P), axis_dims(P, A, K1, K2)`. A `Reframe.extents` peer would cover it, and waits for a second site.
 
-## `Ordinal.rev` — opposite-end pairing of an index set
+## `Ordinal.rev` / `Ordinal.rank_desc` — opposite-end readouts of an index set
 
-The order anti-isomorphism of `idx_set`: `rev(k, k2)` pairs each element with its opposite-end counterpart, with as many elements below k as above k2. It is the descending complement of `rank`, as a pairing rather than a rank value. The Ordinal doc's descending idiom (place ranks from the opposite edge) needs a physical frame to place into; `rev` covers reversal of an abstract index sequence.
+The opposite end of `idx_set`'s order, in two consumption forms. `rev(k, k2)` is element-valued: the order anti-isomorphism, pairing each element with its opposite-end counterpart, with as many elements below k as above k2. `rank_desc(k, r)` is number-valued: the dense rank counted from the top end. The two are interderivable — `rank_desc(k) = rank(rev(k))` — so they are one concept, and a site picks the form its consumer reads: `rev` where consumption stays in the element domain (each element takes its counterpart's property, and no rank number crosses the interface); `rank_desc` where the rank value flows downstream into a table join or comparison anchored at the top end, and `rev` would route through a phantom counterpart. Layout sites use neither: placing ascending ranks from the opposite edge stays the one encoding of a descending layout.
 
 ```
 .decl rev(key: Key, k: number, k2: number)
 rev(Ky, K, K2) :-
     idx_set(Ky, K),  R = count : { idx_set(Ky, Ka), Ka < K },
     idx_set(Ky, K2), R = count : { idx_set(Ky, Kb), K2 < Kb }.
+
+.decl rank_desc(key: Key, k: number, r: number)
+rank_desc(Ky, K, R) :-
+    idx_set(Ky, K),
+    R = count : { idx_set(Ky, K2), K2 > K }.
 ```
 
-Home: `Ordinal` — it owns `idx_set`; `rev` is a second readout beside `rank`.
+Home: `Ordinal` — it owns `idx_set`; both are readouts beside `rank`.
 
-**Task-local home (protocol step 1).** 85c4e7cd reverses its ring colors: `rev` over ring indices pairs ring K with the ring as deep from the center as K is from the border.
+**Task-local home (protocol step 1).** `rev` — 85c4e7cd reverses its ring colors: `rev` over ring indices pairs ring K with the ring as deep from the center as K is from the border.
+
+**Task-local home (protocol step 1).** `rank_desc` — 08ed6ac7 (`RankDesc` comp): $Tall reads the stored color sequence at each bar size's rank from the top; $Short reads `Ordinal.rank` beside it.
 
 ## `OrderFrame<Key>` — the frame a sparse position set induces
 
@@ -251,7 +258,7 @@ Keying is open. `same_diag` is keyed by the line's own axis; `same_dist` is keye
 
 **Protocol note.** A `.type` cannot live in a `.comp`, so the task-local form is a solver-scope type, which style otherwise reserves for coverage and comp instantiation.
 
-**Open.** `dir8_jump_delta` needs two clauses, since the domain is a disjoint union, and lib's functor note says a multi-clause inline multiplies IR path count in every calling rule. A non-inline form would need both a caller-supplied length domain, which is what 045e512c's `toward` already is, and `dir8_elem` back to supply the direction.
+**Open.** `dir8_jump_delta` needs two clauses, since the domain is a disjoint union, and lib_functors.cpp's header says a multi-clause inline multiplies IR path count in every calling rule. A non-inline form would need both a caller-supplied length domain, which is what 045e512c's `toward` already is, and `dir8_elem` back to supply the direction.
 
 ## `corner_dist` — taxicab distance to a corner
 
@@ -326,34 +333,53 @@ ordered string fold, or a tooling convention for set-valued functor inputs.
 
 **Motivating site.** b1fc8b8e: a $Partition detect case beside $Shape.
 
-## `Mode<Key, Member, Witness>` — the commonest member per key
+## `Sym` — D4 subgroups as a value type
 
-Count-and-argmax: tally the witnesses carrying each member, then keep the
-members no other member outnumbers. The witness is its own column, so
-multiplicity comes from a set-valued relation with no multiset encoding.
-Ties keep every member at the max; a consumer needing one member either has a
-task where the max is unique, or reads the tie as data.
+D4 has exactly ten subgroups, so a symmetry group is a closed value like a
+`Dir` or a `D4` element, not an open set. The type names the ten;
+`sym_member` fixes each one's elements as lib data; `sym_elem` enumerates
+them for universals. A stored group is then one value in a fact or GRID
+cell, and fill validity is structural: only the ten have names. Lib
+target: type beside `D4`, constants in a fresh range, both relations
+beside `d4_elem`.
 
 ```
-.comp Mode<Key, Member, Witness> {
-    .decl item(key: Key, m: Member, w: Witness)
+.type Sym <: number
 
-    .decl tally(key: Key, m: Member, n: number)
-    tally(Ky, M, N) :- item(Ky, M, _), N = count : { item(Ky, M, W) }.
+#define SYM_1   70
+#define SYM_LR  71
+#define SYM_TB  72
+#define SYM_HT  73
+#define SYM_DG  74
+#define SYM_AD  75
+#define SYM_BOX 76
+#define SYM_X   77
+#define SYM_C4  78
+#define SYM_D4  79
 
-    .decl mode(key: Key, m: Member)
-    mode(Ky, M) :- tally(Ky, M, N), N = max N2 : { tally(Ky, _, N2) }.
-}
+.decl sym_elem(s: Sym)
+.decl sym_member(s: Sym, d: D4)
 ```
 
-Lib target: body component, beside `Ordinal` and `Excess`.
+- Order-2 groups are named by their non-identity element. `SYM_BOX` is
+  the axis-aligned Klein group, `SYM_X` the diagonal one, `SYM_C4` the
+  rotations; these three names are open.
+- Under grid relabeling, values conjugate the way directions rotate: a
+  mirrored sibling edits `SYM_LR` to `SYM_TB`; `SYM_BOX`, `SYM_X`,
+  `SYM_C4`, `SYM_D4` are normal subgroups and stay fixed.
+- `c4_elem` is the `SYM_C4` rows and can become
+  `c4_elem(D) :- sym_member(SYM_C4, D).`
+- The patterns.md section "Stored symmetry sets as full subgroups"
+  describes the element-list encoding this type replaces.
+- Fitting a stored group: `KeyedSetCompare<Key, Sym, D4>` with
+  `sym_member` as the pattern catalog; `equals` names the observed set.
+- A containment readout (`sym_leq`) is derivable from `sym_member` by
+  defect negation; add on first need.
 
-Sites already written as plain body relations. Commonest color over a cell
-set: 73251a56 `dominant`, 7e4d4f7c `bg`, e57337a4 `canvas`, 642d658d
-`grid_bg`. Argmax over a derived count: 642d658d `arm_off`, ae4f1146
-`comp_winner` and `window_winner`, a87f7484 `densest`.
+**Task-local home (protocol step 1).** 0934a4d8 (`SymTable` comp):
+per-tile mosaic symmetry as GRID values; its Fit names each tile's
+unbroken set via `equals`.
 
-**Task-local home (protocol step 1).** 0607ce86: `template`, the per-cell
-color vote across the copies (key = intile position, member = color, witness
-= copy); and `intact`, the copy the others confirm most (member = copy,
-witness = the confirming copy-and-cell pair).
+**Second home (protocol step 1).** 44f52bb0: `syms` and the
+`mapping_sym` entries store subgroups as element lists; each collapses to
+one `Sym` value.

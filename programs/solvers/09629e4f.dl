@@ -1,0 +1,61 @@
+// 09629e4f
+// concept: decompose select scale rank
+// A separator lattice cuts the grid into a 3×3 arrangement of 3×3 tiles. One
+// tile is a template: its cell at position q gives the uniform fill color
+// for the tile at arrangement position q — the template scaled up onto
+// the arrangement, separators kept. Cases claim what tells the template
+// apart:
+//   $Sparse — the tile with the most bg cells.
+//   $Marker — the tile with no cell of c.marker; the marker color tags
+//             every other tile.
+
+#include "../lib.dl"
+
+.type Choice = Sparse {} | Marker {}
+
+.comp Consts {
+    .decl tile_dim(k: number) tile_dim(3).
+    .decl gap(g: number) gap(1).
+
+    // --- $Sparse ---
+    .decl bg(col: Color) bg(0).
+
+    // --- $Marker ---
+    .decl marker(col: Color) marker(8).
+}
+
+.init c = Consts
+
+.decl impl_choice(ch: Choice)
+impl_choice($Sparse()). impl_choice($Marker()).
+
+.decl tile(p_grid: Position, p_tile: Position, p_intile: Position)
+tile(P_grid, P_tile, P_intile) :-
+    in(P_grid, _), c.tile_dim(K), c.gap(G),
+    divide_by_size_2d(P_grid, K, G, P_tile, P_intile).
+
+.decl template(ch: Choice, p_tile: Position)
+
+// --- $Sparse ---
+.init sparse = Mode<Unit, Position, Position>
+sparse.item($U(), T, P) :- tile(P, T, _), in(P, Col), c.bg(Col).
+
+template($Sparse(), T) :- sparse.mode($U(), T).
+
+// --- $Marker ---
+.decl has_marker(p_tile: Position)
+has_marker(T) :- tile(P, T, _), in(P, Col), c.marker(Col).
+
+template($Marker(), T) :- tile(_, T, _), !has_marker(T).
+
+// --- output ---
+.decl in_tile(p: Position)
+in_tile(P) :- tile(P, _, _).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_grid, Col, Ch) :-
+    tile(P_grid, P_tile, _),      // output cell's tile
+    template(Ch, Q),
+    tile(P_src, Q, P_tile),       // template cell at intile = the cell's tile index
+    in(P_src, Col).
+out(P_grid, Col, Ch) :- in(P_grid, Col), impl_choice(Ch), !in_tile(P_grid).

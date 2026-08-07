@@ -1,0 +1,119 @@
+// 08ed6ac7
+// concept: lines objects rank
+// Ink bars recolor by size order: the r-th bar takes the r-th color of a
+// stored sequence; all other cells pass through. Choice = [s, a]:
+//
+//   s (what a bar is):
+//     $Object() — a connected component of ink
+//     $Line()   — a grid line along c.axis holding ink
+//   a (which end of the size order is rank 0):
+//     $Tall()  — the biggest bar
+//     $Short() — the smallest bar
+
+#include "../lib.dl"
+
+.type Seg    = Object {} | Line {}
+.type Anchor = Tall {} | Short {}
+.type Choice = [s: Seg, a: Anchor]
+
+.comp Consts {
+    .decl ink(col: Color) ink(5).
+
+    // --- $Line ---
+    .decl axis(a: Axis) axis(AXIS_V).
+
+    // --- $Tall ---
+    .decl tall_color(r: number, col: Color)
+    tall_color(0, 1). tall_color(1, 2). tall_color(2, 3). tall_color(3, 4).
+
+    // --- $Short ---
+    .decl short_color(r: number, col: Color)
+    short_color(0, 4). short_color(1, 3). short_color(2, 2). short_color(3, 1).
+}
+
+.init c = Consts
+
+.decl ink(p: Position)
+ink(P) :- in(P, Col), c.ink(Col).
+
+// --- $Object segmentation ---
+
+.init objs = Components<Unit>
+objs.node($U(), P) :- ink(P).
+
+.decl obj_size(id: Ident, n: number)
+obj_size(Id, N) :- objs.label($U(), _, Id), N = count : { objs.label($U(), P, Id) }.
+
+// --- $Line segmentation ---
+
+.decl line_cell(b: Position, p: Position)
+line_cell(B, P) :- ink(P), c.axis(A), split(P, A, _, B).
+
+.decl line_size(b: Position, n: number)
+line_size(B, N) :- line_cell(B, _), N = count : { line_cell(B, P) }.
+
+// --- shared: rank the sizes per anchor ---
+
+.decl bar_size(s: Seg, n: number)
+bar_size($Object(), N) :- obj_size(_, N).
+bar_size($Line(), N)   :- line_size(_, N).
+
+// Staged Ordinal.rank_desc (proposals.md): dense rank from the top end.
+.comp RankDesc<Key> {
+    .decl idx_set(key: Key, k: number)
+
+    .decl rank_desc(key: Key, k: number, r: number)
+    rank_desc(Ky, K, R) :-
+        idx_set(Ky, K),
+        R = count : { idx_set(Ky, K2), K2 > K }.
+}
+
+.init seq = Ordinal<Seg>
+seq.idx_set(S, N) :- bar_size(S, N).
+
+.init seq_desc = RankDesc<Seg>
+seq_desc.idx_set(S, N) :- bar_size(S, N).
+
+.decl size_color(s: Seg, a: Anchor, n: number, col: Color)
+size_color(S, $Tall(),  N, Col) :- seq_desc.rank_desc(S, N, R), c.tall_color(R, Col).
+size_color(S, $Short(), N, Col) :- seq.rank(S, N, R), c.short_color(R, Col).
+
+// --- output ---
+
+.decl seg_choice(s: Seg)
+seg_choice($Object()). seg_choice($Line()).
+
+.decl anchor_choice(a: Anchor)
+anchor_choice($Tall()). anchor_choice($Short()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, [$Object(), A]) :-
+    objs.label($U(), P, Id), obj_size(Id, N), size_color($Object(), A, N, Col).
+out(P, Col, [$Line(), A]) :-
+    line_cell(B, P), line_size(B, N), size_color($Line(), A, N, Col).
+out(P, Col, [S, A]) :- in(P, Col), !c.ink(Col), seg_choice(S), anchor_choice(A).
+
+// --- fit ---
+
+.comp Fit {
+    .decl line_cell(e: Example, b: Position, p: Position)
+    line_cell(E, B, P) :- ex_in(E, P, Col), c.ink(Col), c.axis(A), split(P, A, _, B).
+
+    .decl line_size(e: Example, b: Position, n: number)
+    line_size(E, B, N) :- line_cell(E, B, _), N = count : { line_cell(E, B, P) }.
+
+    .decl bar_color(e: Example, n: number, col: Color)
+    bar_color(E, N, Col) :- line_size(E, B, N), line_cell(E, B, P), ex_out(E, P, Col).
+
+    .init seq = Ordinal<Example>
+    seq.idx_set(E, N) :- line_size(E, _, N).
+
+    .init seq_desc = RankDesc<Example>
+    seq_desc.idx_set(E, N) :- line_size(E, _, N).
+
+    .decl tall_color(r: number, col: Color)
+    tall_color(R, Col) :- seq_desc.rank_desc(E, N, R), bar_color(E, N, Col).
+
+    .decl short_color(r: number, col: Color)
+    short_color(R, Col) :- seq.rank(E, N, R), bar_color(E, N, Col).
+}
