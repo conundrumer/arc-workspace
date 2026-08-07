@@ -29,7 +29,7 @@ bb.cell(Id, P) :- block(Id, P).
 
 // The two corners the chain runs through.
 .decl near(id: Ident, p: Position)
-near(Id, P) :- c.corner(Diag), diag_opposite(Diag, N), bb.corner(Id, P, N).
+near(Id, P) :- c.corner(Diag), diag_opposite(Diag, Start), bb.corner(Id, P, Start).
 
 .decl far(id: Ident, p: Position)
 far(Id, P) :- c.corner(Diag), bb.corner(Id, P, Diag).
