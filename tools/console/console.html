@@ -439,31 +439,61 @@ function ensureItem(id, force){
   }).catch(()=>{});
 }
 
-/* ---------- rail + counts ---------- */
+/* ---------- rail + counts ----------
+   Rows outlive the render that created them. A browser only fires click when
+   mousedown and mouseup land on the same element, and the rail redraws on
+   every poll tick and every countdown tick, so replacing a row swallows the
+   click the reader was in the middle of making. */
+const railRows = {};   // item id -> row element
+
+function railRow(id){
+  const row=document.createElement("div"); row.className="row"; row.tabIndex=0;
+  row.appendChild(thumb(id));
+  const meta=document.createElement("div"); meta.className="meta";
+  const side=document.createElement("div"); side.className="side";
+  side.appendChild(document.createElement("span"));   // state chip
+  side.appendChild(document.createElement("span"));   // cache ttl
+  row.appendChild(meta); row.appendChild(side);
+  row.onclick=()=>{ select(id); };
+  row.onkeydown=e=>{ if(e.key==="Enter") select(id); };
+  return row;
+}
+
+function railRowUpdate(row, it, ci){
+  const th=row.children[0], meta=row.children[1], side=row.children[2];
+  if(th.className==="thumb-ph"){
+    const loaded=thumb(it.id);
+    if(loaded.tagName==="CANVAS") th.replaceWith(loaded);
+  }
+  row.classList.toggle("sel", it.id===selId);
+  const sub = it.title || (it.est ? "est "+it.est : "");
+  const metaHtml=`<div class="tid">${it.id} ${it.updated?'<span class="badge-upd">UPD</span>':""}${it.dirty?'<span class="badge-dirty">CLEANUP</span>':""}</div><div class="sub">${esc(sub)}</div>`;
+  if(row._meta!==metaHtml){ row._meta=metaHtml; meta.innerHTML=metaHtml; }
+  const chip=side.children[0], ttl=side.children[1];
+  chip.className="chip "+CHIPCLS[it.state];
+  const chipHtml=`<span class="dot"></span>${it.state==="needs-review"?"review":it.state}`;
+  if(row._chip!==chipHtml){ row._chip=chipHtml; chip.innerHTML=chipHtml; }
+  ttl.className="ttl "+ci.cls;
+  ttl.textContent=ci.txt;
+}
+
 function renderRail(){
-  const rail=$("rail"); rail.innerHTML="";
-  const head=document.createElement("div"); head.className="railhead";
+  const rail=$("rail");
+  let head=rail.firstElementChild;
+  if(!head){ head=document.createElement("div"); head.className="railhead"; rail.appendChild(head); }
   head.innerHTML=`<span>wave ${String(wave).padStart(2,"0")} · ${items.length}</span><span>cache ↑expiring</span>`;
-  rail.appendChild(head);
-  for(const id of railOrder()){
-    const it=items.find(x=>x.id===id), ci=cacheInfo(it);
+  const order=railOrder();
+  for(const id of Object.keys(railRows)) if(!order.includes(id)){
+    railRows[id].remove(); delete railRows[id];
+  }
+  let prev=head;
+  for(const id of order){
+    const it=items.find(x=>x.id===id);
     ensureTask(id);
-    const row=document.createElement("div"); row.className="row"+(id===selId?" sel":""); row.tabIndex=0;
-    row.appendChild(thumb(id));
-    const meta=document.createElement("div"); meta.className="meta";
-    const sub = it.title || (it.est ? "est "+it.est : "");
-    meta.innerHTML=`<div class="tid">${it.id} ${it.updated?'<span class="badge-upd">UPD</span>':""}${it.dirty?'<span class="badge-dirty">CLEANUP</span>':""}</div><div class="sub">${esc(sub)}</div>`;
-    row.appendChild(meta);
-    const side=document.createElement("div"); side.className="side";
-    const chip=document.createElement("span"); chip.className="chip "+CHIPCLS[it.state];
-    chip.innerHTML=`<span class="dot"></span>${it.state==="needs-review"?"review":it.state}`;
-    side.appendChild(chip);
-    const ttl=document.createElement("span"); ttl.className="ttl "+ci.cls; ttl.textContent=ci.txt;
-    side.appendChild(ttl);
-    row.appendChild(side);
-    row.onclick=()=>{ select(id); };
-    row.onkeydown=e=>{ if(e.key==="Enter") select(id); };
-    rail.appendChild(row);
+    const row = railRows[id] || (railRows[id]=railRow(id));
+    railRowUpdate(row, it, cacheInfo(it));
+    if(prev.nextElementSibling!==row) prev.after(row);
+    prev=row;
   }
   const counts=$("counts"); counts.innerHTML="";
   const tally={};
@@ -504,12 +534,84 @@ function renderUsage(){
   }
 }
 
-/* ---------- detail ---------- */
+/* ---------- feed ----------
+   The feed only grows, apart from the report that replaces a worker message at
+   turn end. Redraw the entries that changed and leave the rest in place, so a
+   streaming turn does not drag away the scroll position or drop a selection. */
+let feedAt=null;   // item id the drawn nodes belong to
+let drawn=[];      // one {sig, nodes} per feed entry, in feed order
+const feedSig = m => JSON.stringify([m.kind, !!m.sub, m.text]);
+
+function feedNodes(feed, m){
+  if(m.kind==="tool"){
+    const nodes=[];
+    let group=feed.lastElementChild;
+    if(!group || !group.classList.contains("tools")){
+      group=document.createElement("div"); group.className="tools";
+      feed.appendChild(group); nodes.push(group);
+    }
+    const t=document.createElement("div"); t.className="tl"+(m.sub?" sub":"");
+    const sp=m.text.indexOf(" ");
+    t.innerHTML= sp<0 ? "<b>"+esc(m.text)+"</b>" : "<b>"+esc(m.text.slice(0,sp))+"</b> "+esc(m.text.slice(sp+1));
+    group.appendChild(t); nodes.push(t);
+    return nodes;
+  }
+  let el;
+  if(m.kind==="report"){
+    el=document.createElement("section"); el.className="report";
+    el.innerHTML=`<div class="body">${render(m.text)}</div>`;
+  } else if(m.kind==="event"){
+    el=document.createElement("div"); el.className="event"; el.textContent="— "+m.text+" —";
+  } else {
+    el=document.createElement("div"); el.className="msg "+(m.kind==="you"?"you":"worker")+(m.sub?" sub":"");
+    el.innerHTML=render(m.text);
+  }
+  feed.appendChild(el);
+  return [el];
+}
+
+function renderFeed(js, it, entries){
+  let feed=$("feed");
+  if(!feed || feedAt!==it.id){
+    js.innerHTML="";
+    feed=document.createElement("div"); feed.id="feed"; js.appendChild(feed);
+    feedAt=it.id; drawn=[];
+  }
+  const stick = js.scrollHeight - js.scrollTop - js.clientHeight < 60;
+  const ph=feed.querySelector(":scope > .placeholder");
+  if(ph) ph.remove();
+  let k=0;
+  while(k<drawn.length && k<entries.length && drawn[k].sig===feedSig(entries[k])) k++;
+  // a tools group belongs to the entry that opened it, so dropping that entry
+  // takes the later entries nested inside it too
+  for(let i=drawn.length-1;i>=k;i--) for(const n of drawn[i].nodes) n.remove();
+  drawn.length=k;
+  for(let i=k;i<entries.length;i++)
+    drawn.push({sig:feedSig(entries[i]), nodes:feedNodes(feed, entries[i])});
+  if(it.active){
+    const p=document.createElement("p"); p.className="placeholder";
+    p.innerHTML='<span class="runpulse"></span>worker running';
+    feed.appendChild(p);
+  } else if(!entries.length){
+    const p=document.createElement("p"); p.className="placeholder"; p.textContent="queued";
+    feed.appendChild(p);
+  }
+  if(stick) js.scrollTop = js.scrollHeight;
+}
+
+/* ---------- detail ----------
+   Each pane redraws only when its own inputs change. The panes carry buttons
+   and tabs, and a rebuild between mousedown and mouseup swallows the click. */
+let headAt=null;   // signature of the header the detail pane shows
+let taskAt=null;   // item id the task strip was built for
+let codeWas=null;  // markup last written to the code pane
+let tabAt=null;    // signature of the file tabs
+let btnAt=null;    // signature of the code-pane buttons
 function renderDetail(){
   const it=sel(), js=$("judge-scroll"), jh=$("judge-head");
-  const stick = js.scrollHeight - js.scrollTop - js.clientHeight < 60;
-  js.innerHTML=""; jh.innerHTML="";
   if(!it){
+    jh.innerHTML=""; headAt=null; tabAt=null; btnAt=null;
+    js.innerHTML=""; feedAt=null; drawn=[]; taskAt=null; codeWas=null;
     const p=document.createElement("p"); p.className="placeholder";
     p.textContent = items.length ? "select an item" : "no items — start a wave";
     js.appendChild(p);
@@ -522,58 +624,29 @@ function renderDetail(){
   const ci=cacheInfo(it);
   const cache=itemCache[it.id]||{feed:[],code:""};
 
-  const dh=document.createElement("div");
-  dh.innerHTML=`<div class="dhead"><span class="tid">${it.id}</span><span class="chip ${CHIPCLS[it.state]}"><span class="dot"></span>${it.state}</span>${it.updated?'<span class="badge-upd">UPDATED</span>':""}${it.dirty?'<span class="badge-dirty">CLEANUP PENDING</span>':""}<span class="title">${esc(it.title||"")}</span></div>`;
-  if(it.session){
-    const sl=document.createElement("div"); sl.className="sessline";
-    sl.innerHTML=`<span class="cmd">claude --resume ${it.session.slice(0,8)}…</span>`;
-    const b=document.createElement("button"); b.className="copybtn"; b.textContent="copy · o";
-    b.onclick=()=>copy(takeoverCmd(it),"takeover "+it.id);
-    sl.appendChild(b);
-    if(it.active){
-      const kb=document.createElement("button"); kb.className="copybtn"; kb.textContent="stop";
-      kb.onclick=()=>post("/api/kill",{id:it.id});
-      sl.appendChild(kb);
+  const headSig=JSON.stringify([it.id,it.state,it.updated,it.dirty,it.title,it.session,it.active]);
+  if(headAt!==headSig){
+    headAt=headSig;
+    jh.innerHTML="";
+    const dh=document.createElement("div");
+    dh.innerHTML=`<div class="dhead"><span class="tid">${it.id}</span><span class="chip ${CHIPCLS[it.state]}"><span class="dot"></span>${it.state}</span>${it.updated?'<span class="badge-upd">UPDATED</span>':""}${it.dirty?'<span class="badge-dirty">CLEANUP PENDING</span>':""}<span class="title">${esc(it.title||"")}</span></div>`;
+    if(it.session){
+      const sl=document.createElement("div"); sl.className="sessline";
+      sl.innerHTML=`<span class="cmd">claude --resume ${it.session.slice(0,8)}…</span>`;
+      const b=document.createElement("button"); b.className="copybtn"; b.textContent="copy · o";
+      b.onclick=()=>copy(takeoverCmd(it),"takeover "+it.id);
+      sl.appendChild(b);
+      if(it.active){
+        const kb=document.createElement("button"); kb.className="copybtn"; kb.textContent="stop";
+        kb.onclick=()=>post("/api/kill",{id:it.id});
+        sl.appendChild(kb);
+      }
+      dh.appendChild(sl);
     }
-    dh.appendChild(sl);
+    jh.appendChild(dh);
   }
-  jh.appendChild(dh);
 
-  const feed=document.createElement("div"); feed.id="feed";
-  let toolGroup=null;
-  for(const m of cache.feed){
-    if(m.kind==="tool"){
-      if(!toolGroup){ toolGroup=document.createElement("div"); toolGroup.className="tools"; feed.appendChild(toolGroup); }
-      const t=document.createElement("div"); t.className="tl"+(m.sub?" sub":"");
-      const sp=m.text.indexOf(" ");
-      t.innerHTML= sp<0 ? "<b>"+esc(m.text)+"</b>" : "<b>"+esc(m.text.slice(0,sp))+"</b> "+esc(m.text.slice(sp+1));
-      toolGroup.appendChild(t);
-      continue;
-    }
-    toolGroup=null;
-    if(m.kind==="report"){
-      const r=document.createElement("section"); r.className="report";
-      r.innerHTML=`<div class="body">${render(m.text)}</div>`;
-      feed.appendChild(r);
-    } else if(m.kind==="event"){
-      const e=document.createElement("div"); e.className="event"; e.textContent="— "+m.text+" —";
-      feed.appendChild(e);
-    } else {
-      const d=document.createElement("div"); d.className="msg "+(m.kind==="you"?"you":"worker")+(m.sub?" sub":"");
-      d.innerHTML=render(m.text);
-      feed.appendChild(d);
-    }
-  }
-  if(it.active){
-    const p=document.createElement("p"); p.className="placeholder";
-    p.innerHTML='<span class="runpulse"></span>worker running';
-    feed.appendChild(p);
-  } else if(!cache.feed.length){
-    const p=document.createElement("p"); p.className="placeholder"; p.textContent="queued";
-    feed.appendChild(p);
-  }
-  js.appendChild(feed);
-  if(stick) js.scrollTop = js.scrollHeight;
+  renderFeed(js, it, cache.feed);
 
   /* composer */
   const canSend = it.session && !it.active && (it.state==="needs-review"||it.state==="approved");
@@ -592,42 +665,50 @@ function renderDetail(){
   /* task strip + code — open/closed remembered per task, default open */
   $("taskstrip").classList.toggle("open", taskOpen[it.id]!==false);
   const task=taskCache[it.id];
-  const tb=$("taskbody"); tb.innerHTML="";
-  if(task && typeof task!=="string"){
-    $("tasklabel").textContent = "task · "+task.train.length+" train / "+task.test.length+" test";
-    const tw=document.createElement("div"); tw.className="gridwell";
-    const pr=document.createElement("div"); pr.className="pairrow";
-    task.train.forEach((p,i)=>{
-      const pair=document.createElement("div"); pair.className="pair";
-      pair.appendChild(gridEl(p.input,"train "+i));
-      const a=document.createElement("span"); a.className="arr"; a.textContent="→"; pair.appendChild(a);
-      pair.appendChild(gridEl(p.output,"out"));
-      pr.appendChild(pair);
-    });
-    task.test.forEach((p,i)=>{
-      const pair=document.createElement("div"); pair.className="pair";
-      pair.appendChild(gridEl(p.input,"test "+i));
-      if(p.output){ const a=document.createElement("span"); a.className="arr"; a.textContent="→"; pair.appendChild(a); pair.appendChild(gridEl(p.output,"expected")); }
-      pr.appendChild(pair);
-    });
-    tw.appendChild(pr); tb.appendChild(tw);
-  } else {
-    $("tasklabel").textContent="task";
+  const taskKey = it.id+"|"+(task && typeof task!=="string" ? "loaded" : "waiting");
+  if(taskAt!==taskKey){
+    taskAt=taskKey;
+    const tb=$("taskbody"); tb.innerHTML="";
+    if(task && typeof task!=="string"){
+      $("tasklabel").textContent = "task · "+task.train.length+" train / "+task.test.length+" test";
+      const tw=document.createElement("div"); tw.className="gridwell";
+      const pr=document.createElement("div"); pr.className="pairrow";
+      task.train.forEach((p,i)=>{
+        const pair=document.createElement("div"); pair.className="pair";
+        pair.appendChild(gridEl(p.input,"train "+i));
+        const a=document.createElement("span"); a.className="arr"; a.textContent="→"; pair.appendChild(a);
+        pair.appendChild(gridEl(p.output,"out"));
+        pr.appendChild(pair);
+      });
+      task.test.forEach((p,i)=>{
+        const pair=document.createElement("div"); pair.className="pair";
+        pair.appendChild(gridEl(p.input,"test "+i));
+        if(p.output){ const a=document.createElement("span"); a.className="arr"; a.textContent="→"; pair.appendChild(a); pair.appendChild(gridEl(p.output,"expected")); }
+        pr.appendChild(pair);
+      });
+      tw.appendChild(pr); tb.appendChild(tw);
+    } else {
+      $("tasklabel").textContent="task";
+    }
   }
 
   const files = cache.files || [];
   const f = files.find(x=>x.path===tabSel[it.id]) || files[0] || {path:"", snap:"", code:""};
-  const fn=$("fname"); fn.innerHTML="";
-  if(files.length>1){
-    for(const x of files){
-      const t=document.createElement("span");
-      t.className="ftab"+(x.path===f.path?" on":"");
-      t.textContent=x.path.split("/").pop();
-      t.onclick=()=>{ tabSel[it.id]=x.path; renderDetail(); };
-      fn.appendChild(t);
+  const tabSig=JSON.stringify([it.id,files.map(x=>x.path),f.path,!!f.code]);
+  if(tabAt!==tabSig){
+    tabAt=tabSig;
+    const fn=$("fname"); fn.innerHTML="";
+    if(files.length>1){
+      for(const x of files){
+        const t=document.createElement("span");
+        t.className="ftab"+(x.path===f.path?" on":"");
+        t.textContent=x.path.split("/").pop();
+        t.onclick=()=>{ tabSel[it.id]=x.path; renderDetail(); };
+        fn.appendChild(t);
+      }
+    } else {
+      fn.textContent = f.code ? f.path : "—";
     }
-  } else {
-    fn.textContent = f.code ? f.path : "—";
   }
   let codeHtml="", added=0;
   if(f.code){
@@ -639,16 +720,23 @@ function renderDetail(){
   }
   $("flines").textContent = f.code ?
     f.code.split("\n").length+" lines"+(added?" · +"+added+" this turn":"") : "";
-  $("codepre").innerHTML = f.code ? codeHtml :
+  const pane = f.code ? codeHtml :
     '<span class="cm">// '+(it.state==="queued"?"not started":"no file yet")+"</span>";
+  if(codeWas!==pane){ codeWas=pane; $("codepre").innerHTML=pane; }
   const codeKey = it.id+"|"+f.path;
   if(codeAt!==codeKey){ codeAt=codeKey; jumpToFirstAdd(); }
-  const cb=$("codebtns"); cb.innerHTML="";
   const solver = files[0]||{};
-  if(f.path===solver.path && solver.code && solver.snap && solver.snap!==solver.code && !it.active){
-    const rb=document.createElement("button"); rb.className="copybtn"; rb.textContent="revert edits";
-    rb.onclick=()=>post("/api/revert",{id:it.id});
-    cb.appendChild(rb);
+  const canRevert = f.path===solver.path && solver.code && solver.snap
+    && solver.snap!==solver.code && !it.active;
+  const btnSig = it.id+"|"+(canRevert?"revert":"");
+  if(btnAt!==btnSig){
+    btnAt=btnSig;
+    const cb=$("codebtns"); cb.innerHTML="";
+    if(canRevert){
+      const rb=document.createElement("button"); rb.className="copybtn"; rb.textContent="revert edits";
+      rb.onclick=()=>post("/api/revert",{id:it.id});
+      cb.appendChild(rb);
+    }
   }
 }
 
