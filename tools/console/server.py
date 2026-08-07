@@ -550,6 +550,13 @@ def act_seen(it: dict) -> None:
     it["updated"] = False
 
 
+@action
+def act_drop(it: dict) -> None:
+    """Forget an item and its feed. The solver file on disk is left alone."""
+    require_idle(it)
+    STATE["items"] = [x for x in STATE["items"] if x["id"] != it["id"]]
+
+
 def act_kill(item_id: str) -> dict:
     proc = PROCS.get(item_id)
     if proc is None:
@@ -755,6 +762,8 @@ class Handler(BaseHTTPRequestHandler):
             res = act_seen(body.get("id", ""))
         elif route == "/api/kill":
             res = act_kill(body.get("id", ""))
+        elif route == "/api/drop":
+            res = act_drop(body.get("id", ""))
         elif route == "/api/revert":
             res = act_revert(body.get("id", ""))
         elif route == "/api/commit":

@@ -650,6 +650,10 @@ function renderDetail(){
         const kb=document.createElement("button"); kb.className="copybtn"; kb.textContent="stop";
         kb.onclick=()=>post("/api/kill",{id:it.id});
         sl.appendChild(kb);
+      } else {
+        const db=document.createElement("button"); db.className="copybtn"; db.textContent="drop";
+        db.onclick=()=>{ if(confirm("Drop "+it.id+" from the console?")) post("/api/drop",{id:it.id}); };
+        sl.appendChild(db);
       }
       dh.appendChild(sl);
     }
