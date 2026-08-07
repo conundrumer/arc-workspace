@@ -53,9 +53,12 @@ WORKER_FLAGS = [
     "--exclude-dynamic-system-prompt-sections",
 ]
 STAGGER_TIMEOUT = 120  # seconds to wait for the first worker's first API response
-COMMIT_BRIEF = """Commit the changes that solver workers left in the working tree.
+# What a worker session is allowed to leave behind. The brief and the
+# leftovers check read the same list, so widening it moves both.
+COMMIT_SCOPE = ["programs", "docs/wf-solver", "src/dl", "scripts", "tests"]
+COMMIT_BRIEF = f"""Commit the changes that solver workers left in the working tree.
 
-Scope: files git already tracks, under programs/ and docs/wf-solver/. Never stage untracked files, and leave changes outside that scope alone.
+Scope: files git already tracks, under {", ".join(p + "/" for p in COMMIT_SCOPE)}. A session that hits a gap in the runner fixes it there, so those changes belong in the same sweep. Never stage untracked files, and leave changes outside that scope alone.
 
 Read git status and the diffs, and recent git log for message style. Group the changes into clean commits the way the log does; write each message from what the diff shows."""
 COMMITTER_FLAGS = [
@@ -630,8 +633,7 @@ def act_commit() -> dict:
             if it["id"] in ids:
                 it["state"] = COMMITTED
                 say(it, event("committed"))
-        chk = subprocess.run(["git", "status", "--porcelain", "--",
-                              "programs", "docs/wf-solver"],
+        chk = subprocess.run(["git", "status", "--porcelain", "--", *COMMIT_SCOPE],
                              cwd=ROOT, capture_output=True, text=True)
         leftovers = any(not l.startswith("??") for l in chk.stdout.splitlines())
         if leftovers and not FAKE:
