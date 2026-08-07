@@ -1,8 +1,10 @@
 // C++ functors backing the dispatch/projection primitives in lib.dl.
 //
 // Each performs the orientation dispatch (Dir / Axis / D4) in C++, letting its
-// lib.dl wrapper be a single clause; lib.dl covers why that matters (it bounds
-// the generated IR path count).
+// lib.dl wrapper be a single clause. One clause bounds the generated IR path
+// count: a multi-clause inline contributes xN to every rule that calls it,
+// because the dispatch value comes from a relation and Souffle can't prune the
+// impossible combinations.
 //
 // All functors return plain `number` and are stateless (no SymbolTable* /
 // RecordTable* args). A functor that *returned a Position record* would be
@@ -10,7 +12,8 @@
 // functor cannot be destructured downstream after inline substitution — the
 // grounding analysis can't unify a record pattern against an opaque functor
 // call. So the wrappers reassemble Positions as Datalog record literals
-// `[@f(...), @f(...), ...]`, filling each slot from a number functor.
+// `[@f(...), @f(...), ...]`, filling each slot from a number functor. Guards
+// and arithmetic stay in Datalog inside the single clause.
 //
 // Constants mirror lib.dl's disjoint #define ranges (Dir 10-13, Axis 20-21,
 // D4 50-57).
