@@ -37,18 +37,14 @@ push_cell(P) :- in(P, Col), c.push(Col).
 .decl shape_cell(p: Position)
 shape_cell(P) :- in(P, Col), c.shape(Col).
 
-// The wall line spans one axis, so its cells spread across that axis alone.
-.decl wall_spread(a: Axis)
-wall_spread(A) :-
-    wall_cell(P), wall_cell(Q),
-    axis_of(D, A), dist(P, D, K1), dist(Q, D, K2), K1 != K2.
-
 // From the wall toward the push structure, and on to the far edge.
+.init wall_cast = Ray<Unit>
+wall_cast.dir(D)        :- dir_elem(D).
+wall_cast.cell(P)       :- push_cell(P).
+wall_cast.mark($U(), P) :- wall_cell(P).
+
 .decl dir(d: Dir)
-dir(D) :-
-    axis_of(D, A), !wall_spread(A),           // faces the wall line
-    wall_cell(W), dist(W, D, K1),
-    push_cell(P), dist(P, D, K2), K2 < K1.    // the push structure lies that way
+dir(D) :- wall_cast.ray($U(), _, D).
 
 // The shape casts toward the wall; the wall's fill reaches on past it.
 .init cast = Ray<Unit>
@@ -71,7 +67,7 @@ gap(P) :- cast.ray($U(), P, D), !reach.ray($U(), P, D), !shape_cell(P).
 
 // At or past the wall, in a line a shape claims.
 .decl through(p: Position)
-through(P) :- reach.ray($U(), P, D), dir(D), !short(P).
+through(P) :- reach.ray($U(), P, D), cast.ray($U(), P, D).
 
 // --- Slide: the push structure moves as one body ---
 
