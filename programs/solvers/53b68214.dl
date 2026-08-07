@@ -24,19 +24,14 @@
 
 .init c = Consts
 
-// Shifts along c.growth under which the input disagrees with itself
-// somewhere on the overlap.
-.decl shift_bad(k: number)
-shift_bad(K) :-
-    in(P, Col),
-    c.growth(D), axis_of(D, A), sub_extent(P, A, K),    // candidate shift
-    jump_delta(D, K, Delta), compose(P, Delta, P2),     // shifted cell
-    in(P2, Col2), Col2 != Col.                          // disagrees
+// Shifts along c.growth the input agrees with itself under.
+.init parse = ShiftInvariance<Unit, Color>
+parse.cell($U(), P, Col) :- in(P, Col).
 
 .decl shift_ok(k: number)
 shift_ok(K) :-
-    in(P, _), c.growth(D), axis_of(D, A), sub_extent(P, A, K),
-    !shift_bad(K).
+    c.growth(D), axis_of(D, A),
+    parse.cand($U(), A, K, _), !parse.broken($U(), A, K).
 
 .decl period(k: number)
 period(K) :- shift_ok(K), K = min K2 : { shift_ok(K2) }.
