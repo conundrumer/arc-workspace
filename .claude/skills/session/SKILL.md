@@ -38,7 +38,7 @@ Creation pass, do this first:
         - The task: `cat data/tasks/<task_id>.json`
             - This is already formatted, do not pipe into anything.
         - The reference TS solver: `cat ../arc-synth-bun/programs/solvers/<task_id>.ts`
-            - This solves the task but might not encode a good model.
+            - This solves the task but might not encode the best model.
     2. Draft the solver. Do not write the `Fit` comp yet.
     3. Run against materialized train+test pairs (`uv run python scripts/run_dl.py <task_id>`)
     4. Iterate until it works and passes lint.
