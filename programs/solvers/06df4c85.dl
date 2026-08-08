@@ -50,11 +50,10 @@ fill($Around(), T, Col) :- bet.between(Col, T), !mark(T, _).
 // A bg tile whose run of bg tiles toward d ends at a Col mark.
 .decl reach(col: Color, d: Dir, p_tile: Position)
 reach(Col, D, T) :-
-    bg_tile(T), dir_elem(D), step_delta(D, S), compose(T, S, T2),
-    mark(T2, Col).
-reach(Col, D, T) :-
-    bg_tile(T), reach(Col, D, T2),
-    step_delta(D, S), compose(T, S, T2).
+    bg_tile(T), dir_elem(D), step_delta(D, S), compose(T, S, T2),   // tile one step toward d
+    ( mark(T2, Col)         // it holds the mark
+    ; reach(Col, D, T2)     // it reaches the mark
+    ).
 
 fill($Block(), T, Col) :- reach(Col, D, T), opposite(D, O), reach(Col, O, T).
 

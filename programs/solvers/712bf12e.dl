@@ -37,9 +37,10 @@ line(P, D, $Dir()) :- in(P, Col), c.mark(Col), c.dir(D).
 line(P, D, $Edge()) :- in(P, Col), c.mark(Col), dir_elem(D), dist(P, D, 0).
 
 line(P2, D, Ch) :-
-    line(P, D, Ch), opposite(D, W), step_delta(W, S),       // the step away from d
-    ( compose(P, S, P2)                                     // step into the cell ahead
-    ; compose(P, S, P_a), in(P_a, Blk), !c.bg(Blk),         // ink ahead — blocked
+    line(P, D, Ch), opposite(D, W),                         // the walk away from d
+    step_delta(W, S), compose(P, S, P_a),                   // the cell ahead
+    ( P2 = P_a                                              // step into it
+    ; in(P_a, Blk), !c.bg(Blk),                             // ink ahead — blocked
       c.sense(Sn), turn(Sn, W, SD),
       step_delta(SD, S2), compose(P, S2, P2)                // slide sideways instead
     ),

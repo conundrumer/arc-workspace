@@ -77,14 +77,11 @@ canvas(P, $Fixed()) :- c.out_pos(P).
 
 .decl figure_cell(p: Position, cv: Canvas)
 figure_cell(P, Cv) :-
-    canvas(P, Cv),                              // canvas cell
-    parse.ncolors($U(), N), c.fig_edge(N, D),   // class figure: edge row
-    dist(P, D, 0).                              // on that edge
-figure_cell(P, Cv) :-
-    canvas(P, Cv),                              // canvas cell
-    parse.ncolors($U(), N), c.fig_diag(N, DA),  // class figure: diagonal
-    diag_axis_of(Dg, DA),                       // either corner of the axis
-    diag_dist(P, Dg, _, K, K).                  // equidistant from its edges
+    canvas(P, Cv), parse.ncolors($U(), N),       // canvas cell, its class
+    ( c.fig_edge(N, D), dist(P, D, 0)            // class figure: on an edge row
+    ; c.fig_diag(N, DA), diag_axis_of(Dg, DA),   // class figure: on a diagonal
+      diag_dist(P, Dg, _, K, K)                  // equidistant from its edges
+    ).
 
 out(P, Mk, $Figure(Cv)) :- figure_cell(P, Cv), c.mark(Mk).
 out(P, Bg, $Figure(Cv)) :- canvas(P, Cv), !figure_cell(P, Cv), c.bg(Bg).

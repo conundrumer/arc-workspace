@@ -87,9 +87,6 @@ out(P_grid_out, Col_out, [Dc, $Lookup()]) :-
 
 out(P_grid_out, Col, [Dc, $Nor()]) :-
     dec_choice(Dc), c.frame(P_grid_out),        // choice × cell
-    !filled(P_grid_out, Dc),                    // NOR=1: no contribution
-    c.out_fill(Col).
-out(P_grid_out, Col, [Dc, $Nor()]) :-
-    dec_choice(Dc), c.frame(P_grid_out),        // choice × cell
-    filled(P_grid_out, Dc),                     // NOR=0: some contribution
-    c.bg(Col).
+    ( !filled(P_grid_out, Dc), c.out_fill(Col)    // NOR=1: no contribution
+    ; filled(P_grid_out, Dc), c.bg(Col)           // NOR=0: some contribution
+    ).

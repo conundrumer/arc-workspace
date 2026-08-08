@@ -50,8 +50,12 @@ period_jump(Delta, Ch) :- period(K, Ch), dir_elem(D), jump_delta(D, K, Delta).
 
 .decl known(p: Position, col: Color, ch: Choice)
 known(P, Col, Ch) :- in(P, Col), !c.bg(Col), impl_choice(Ch).
-known(Q, Col, Ch) :- known(P, Col, Ch), stripe_step(D), compose(P, D, Q), in(Q, _).
-known(Q, Col, Ch) :- known(P, Col, Ch), period_jump(D, Ch), compose(P, D, Q), in(Q, _).
+known(Q, Col, Ch) :-
+    known(P, Col, Ch),
+    ( stripe_step(D)        // one step along the stripe
+    ; period_jump(D, Ch)    // one period on
+    ),
+    compose(P, D, Q), in(Q, _).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- known(P, Col, Ch).

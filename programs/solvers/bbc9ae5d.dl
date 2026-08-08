@@ -48,14 +48,12 @@ seated(P_out, Col) :-
 .decl grown(p: Position, col: Color)
 grown(P, Col) :- seated(P, Col), !c.bg(Col).
 grown(P2, Col) :-
-    grown(P1, Col),
-    c.diag(Diag), long_axis(A), diag_dirs(Diag, A, _, D_stack),
-    step_delta(D_stack, S), compose(P1, S, P2),          // step down the stack
-    frame.cell($U(), P2).
-grown(P2, Col) :-
-    grown(P1, Col),
-    c.diag(Diag), diag_step_delta(Diag, S), compose(P1, S, P2),   // step toward the corner
-    frame.cell($U(), P2).
+    grown(P1, Col), c.diag(Diag),
+    ( long_axis(A), diag_dirs(Diag, A, _, D_stack),
+      step_delta(D_stack, S)                          // step down the stack
+    ; diag_step_delta(Diag, S)                        // step toward the corner
+    ),
+    compose(P1, S, P2), frame.cell($U(), P2).
 
 out(P, Col, $Grow()) :- grown(P, Col).
 out(P, Col, $Grow()) :- frame.cell($U(), P), !grown(P, _), c.bg(Col).

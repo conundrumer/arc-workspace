@@ -97,9 +97,6 @@ out(P_grid_out, Col_out, [Dc, $Lookup()]) :-
 
 out(P_grid_out, Col, [Dc, $And()]) :-
     dec_choice(Dc), c.frame(P_grid_out),        // choice × cell
-    !unfilled(P_grid_out, Dc),                  // AND=1: no bg contribution
-    c.out_fill(Col).
-out(P_grid_out, Col, [Dc, $And()]) :-
-    dec_choice(Dc), c.frame(P_grid_out),        // choice × cell
-    unfilled(P_grid_out, Dc),                   // AND=0: some bg contribution
-    c.bg(Col).
+    ( !unfilled(P_grid_out, Dc), c.out_fill(Col)    // AND=1: no bg contribution
+    ; unfilled(P_grid_out, Dc), c.bg(Col)           // AND=0: some bg contribution
+    ).

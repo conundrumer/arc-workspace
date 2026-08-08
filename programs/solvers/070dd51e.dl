@@ -50,6 +50,9 @@ out(P, Col, $PaintAll()) :- top_span(P, Col).
 out(P, Col, $PaintAll()) :- in(P, Col), !top_span(P, _).
 
 // --- PaintBg ---
-out(P, Col, $PaintBg()) :- top_span(P, Col), in(P, B), c.bg(B).
+out(P, Col, $PaintBg()) :-
+    in(P, Bg), c.bg(Bg),             // a bg cell
+    ( top_span(P, Col)               // a span above paints it
+    ; !top_span(P, _), Col = Bg      // no span — stays bg
+    ).
 out(P, Col, $PaintBg()) :- in(P, Col), !c.bg(Col).
-out(P, Col, $PaintBg()) :- in(P, Col), c.bg(Col), !top_span(P, _).

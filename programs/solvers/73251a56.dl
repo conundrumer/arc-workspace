@@ -91,13 +91,10 @@ fix_corner(Diag) :- on_fix(P), diag_dist(P, Diag, _, 0, 0).
 // Nearest intact color toward a fix corner, holes skipped.
 .decl seek(p: Position, diag: DiagDir, col: Color)
 seek(P, Diag, Col) :-
-    hole(P), fix_corner(Diag),
-    diag_step_delta(Diag, S), compose(P, S, P2),
-    intact(P2, Col).
-seek(P, Diag, Col) :-
-    hole(P),
-    diag_step_delta(Diag, S), compose(P, S, P2),
-    seek(P2, Diag, Col).
+    hole(P), diag_step_delta(Diag, S), compose(P, S, P2),   // cell one step toward the corner
+    ( fix_corner(Diag), intact(P2, Col)                     // it is intact
+    ; seek(P2, Diag, Col)                                   // it seeks on
+    ).
 
 out(P, Col, $Slide()) :- residual(P), seek(P, _, Col).
 

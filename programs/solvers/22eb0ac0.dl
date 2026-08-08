@@ -30,8 +30,11 @@ edge_match(Ac, Col) :-
     in(P1, Col), dist(P1, D, 0), split(P1, A, _, Ac),     // marker on edge d
     in(P2, Col), dist(P2, D2, 0), split(P2, A, _, Ac).    // same color opposite, same line
 
-out(P, Col, $Flood()) :- in(P, _), c.axis(A), split(P, A, _, Ac), edge_match(Ac, Col).
-out(P, Col, $Flood()) :- in(P, Col), c.axis(A), split(P, A, _, Ac), !edge_match(Ac, _).
+out(P, Col_out, $Flood()) :-
+    in(P, Col), c.axis(A), split(P, A, _, Ac),   // grid cell, its line
+    ( edge_match(Ac, Col_out)                    // the line's two edges agree — flood
+    ; !edge_match(Ac, _), Col_out = Col          // no match — cell as-is
+    ).
 
 // --- Span ---
 

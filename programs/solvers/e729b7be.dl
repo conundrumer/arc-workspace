@@ -62,9 +62,12 @@ image(P2, Col, $Marker()) :-
     center(C), compose(C, Dlt2, P2).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !c.bg(Col).
-out(P, Col, Ch) :- in(P, C0), c.bg(C0), image(P, Col, Ch).
-out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), c.bg(Col), !image(P, _, Ch).
+out(P, Col_out, Ch) :-
+    impl_choice(Ch), in(P, Col),
+    ( !c.bg(Col), Col_out = Col                     // non-bg — kept
+    ; c.bg(Col), image(P, Col_out, Ch)              // bg — the image paints it
+    ; c.bg(Col), !image(P, _, Ch), Col_out = Col    // bg, untouched — stays bg
+    ).
 
 // --- fit ---
 

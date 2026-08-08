@@ -69,20 +69,19 @@ period_jump(Delta) :-
 // The input in place.
 out(P_grid, Col, Ch) :- placed(Ch, P_grid, P_in), in(P_in, Col).
 
-// The diagonal continues with the period.
-out(P2, Col, Ch) :-
-    out(P1, Col, Ch), on_diag(Ch, P1),               // diagonal source
-    period_jump(Delta), compose(P1, Delta, P2),      // one period out
-    on_diag(Ch, P2), !placed(Ch, P2, _).             // lands outside the input
-
-// Each diagonal cell paints two arms one shell out.
+// From a diagonal cell the growth continues two ways: the diagonal itself
+// carries on one period out, and each diagonal cell paints two arms one
+// shell out. Both only reach outside the input.
 out(P, Col, Ch) :-
-    out(Q, Col, Ch), on_diag(Ch, Q),                                // diagonal source
-    c.growth(Diag), diag_dirs(Diag, _, D1, D2),                     // the corner's dir pair
-    step_delta(D1, S), compose(Q, S, M),                            // step off the diagonal
-    frame_cell(Ch, P), !placed(Ch, P, _),                           // outside the input
-    axis_of(D1, A), split(P, A, Along, _), split(M, A, Along, _),   // in the stepped line
-    opposite(D2, O), dist(P, O, Kp), dist(M, O, Km), Kp <= Km.      // at or back across
+    out(Q, Col, Ch), on_diag(Ch, Q),                                  // diagonal source
+    ( period_jump(Delta), compose(Q, Delta, P), on_diag(Ch, P)        // one period out
+    ; c.growth(Diag), diag_dirs(Diag, _, D1, D2),                     // the corner's dir pair
+      step_delta(D1, S), compose(Q, S, M),                            // step off the diagonal
+      frame_cell(Ch, P),                                              // an arm cell
+      axis_of(D1, A), split(P, A, Along, _), split(M, A, Along, _),   // in the stepped line
+      opposite(D2, O), dist(P, O, Kp), dist(M, O, Km), Kp <= Km       // at or back across
+    ),
+    !placed(Ch, P, _).                                                // outside the input
 
 // --- fit ---
 

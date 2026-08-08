@@ -101,13 +101,10 @@
 
 // --- $Edge ---
 ax_pos($Edge(), P, A, Pi) :-
-    in(P, _),
-    axis_of(D, A), dist(P, D, 0),      // touches an edge of axis a
-    c.fat(N), c.ext_pos(A, N, Pi).
-ax_pos($Edge(), P, A, ORIGIN) :-
-    in(P, _),
-    axis_of(D, A), dist_pair(P, D, K, K2),
-    K != 0, K2 != 0.                                  // off both edges of axis a
+    in(P, _), axis_of(D, A),
+    ( dist(P, D, 0), c.fat(N), c.ext_pos(A, N, Pi)            // touches an edge of axis a
+    ; dist_pair(P, D, K, K2), K != 0, K2 != 0, Pi = ORIGIN    // off both edges of axis a
+    ).
 
 // --- $Table ---
 ax_pos($Table(), P, A, Pi) :-

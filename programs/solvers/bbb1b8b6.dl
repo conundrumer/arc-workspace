@@ -51,6 +51,9 @@ unfit(Ch) :- impl_choice(Ch), piece(P, _), !hole(P).
 unfit($Exact()) :- hole(P), !piece(P, _).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, Ch) :- impl_choice(Ch), !unfit(Ch), piece(P, Col).
-out(P, Col, Ch) :- impl_choice(Ch), !unfit(Ch), base(P, Col), !piece(P, _).
+out(P, Col, Ch) :-
+    impl_choice(Ch), !unfit(Ch),    // the piece fits
+    ( piece(P, Col)                 // the piece itself
+    ; base(P, Col), !piece(P, _)    // the base elsewhere
+    ).
 out(P, Col, Ch) :- impl_choice(Ch), unfit(Ch), base(P, Col).

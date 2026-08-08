@@ -76,14 +76,12 @@ impl_choice($Ray()). impl_choice($Lookup()).
 .decl paint(p: Position, col: Color, ch: Choice)
 
 // --- Ray ---
-paint(P2, Ca, $Ray()) :-
-    parse.marker($U(), P, _, Ca), c.reach(K),
-    dir_elem(D), jump_delta(D, K, S), compose(P, S, P2),
-    in(P2, _).                                   // clip to the grid
-paint(P2, Cc, $Ray()) :-
-    parse.marker($U(), P, Cc, _), c.reach(K),
-    diag_dir_elem(Dg), diag_jump_delta(Dg, K, S), compose(P, S, P2),
-    in(P2, _).                                   // clip to the grid
+paint(P2, Col, $Ray()) :-
+    parse.marker($U(), P, Cc, Ca), c.reach(K),
+    ( dir_elem(D), jump_delta(D, K, S), Col = Ca                 // cardinal ray — arm color
+    ; diag_dir_elem(Dg), diag_jump_delta(Dg, K, S), Col = Cc     // diagonal ray — center color
+    ),
+    compose(P, S, P2), in(P2, _).                                // clip to the grid
 
 // --- Lookup ---
 
