@@ -18,6 +18,9 @@
 .type D4 <: number
 .type Sense <: number
 
+// Dir8: a direction of either kind — cardinal or diagonal.
+.type Dir8 = Dir | DiagDir
+
 // Ident: a label carrying identity and nothing else — entries of a stored
 // table, component labels, the endpoints of a correspondence. Numbering is
 // arbitrary, so consumers join on equality and never order or count with it.
@@ -250,6 +253,16 @@ diag_jump_delta(Diag, K, Delta) :-
 // Unit step toward a corner — the k = 1 diag_jump_delta.
 .decl diag_step_delta(diag: DiagDir, delta: Position) inline
 diag_step_delta(Diag, Delta) :- diag_jump_delta(Diag, 1, Delta).
+
+// K-cell displacement toward a Dir8 — jump_delta and diag_jump_delta as
+// one relation, grounding its own direction; a caller supplies only k.
+.decl dir8_jump_delta(d: Dir8, k: number, delta: Shift) inline
+dir8_jump_delta(D, K, Delta) :- dir_elem(D), jump_delta(D, K, Delta).
+dir8_jump_delta(D, K, Delta) :- diag_dir_elem(D), diag_jump_delta(D, K, Delta).
+
+// Unit step toward a Dir8 — the k = 1 dir8_jump_delta.
+.decl dir8_step_delta(d: Dir8, delta: Shift) inline
+dir8_step_delta(D, Delta) :- dir8_jump_delta(D, 1, Delta).
 
 // Decompose p by axis: along carries the axis component (perpendicular
 // zeroed); across carries the perpendicular (axis zeroed).
@@ -847,11 +860,11 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     label(Ky, P, as(Min, Ident)) :- node(Ky, P), Min = min ord(Q) : { conn(Ky, P, Q) }.
 }
 
-// Connected components under 8-adjacency — Components with the four
-// diagonal steps added.
+// Connected components under 8-adjacency — Components over the full
+// Dir8 step set.
 .comp Components8<Key> {
     .init c4 = Components<Key>
-    c4.step(S) :- diag_dir_elem(Diag), diag_step_delta(Diag, S).
+    c4.step(S) :- dir8_step_delta(_, S).
 
     .decl node(key: Key, p: Position)
     c4.node(K, P) :- node(K, P).

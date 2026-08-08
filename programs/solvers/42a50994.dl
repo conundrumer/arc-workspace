@@ -21,10 +21,8 @@
 .decl ink(p: Position, col: Color)
 ink(P, Col) :- in(P, Col), !c.bg(Col).
 
-// Unit step to one of the eight surrounding cells.
-.decl surround_step(s: Position)
-surround_step(S) :- dir_elem(D), step_delta(D, S).
-surround_step(S) :- diag_dir_elem(Dg), diag_step_delta(Dg, S).
+.decl surround_step(s: Shift)
+surround_step(S) :- dir8_step_delta(_, S).
 
 .decl grouped(p: Position, ch: Choice)
 

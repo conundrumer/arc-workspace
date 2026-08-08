@@ -11,13 +11,6 @@
 
 #include "../lib.dl"
 
-// Staged lib type and primitive (proposals.md).
-.type Dir8 = Dir | DiagDir
-
-.decl dir8_jump_delta(d: Dir8, k: number, delta: Shift) inline
-dir8_jump_delta(D, K, Delta) :- dir_elem(D), jump_delta(D, K, Delta).
-dir8_jump_delta(D, K, Delta) :- diag_dir_elem(D), diag_jump_delta(D, K, Delta).
-
 .type Choice = Reach {} | Stride {} | Abut {}
 
 .comp Consts {

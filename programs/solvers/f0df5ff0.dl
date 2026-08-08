@@ -15,17 +15,12 @@
 
 .init c = Consts
 
-// Unit step to one of the eight surrounding cells.
-.decl surround_step(s: Position)
-surround_step(S) :- dir_elem(D), step_delta(D, S).
-surround_step(S) :- diag_dir_elem(Dg), diag_step_delta(Dg, S).
-
 // Bg cell beside an ink cell.
 .decl painted(p: Position)
 painted(P) :-
-    in(P, Col), c.bg(Col),                   // bg cell
-    surround_step(S), compose(P, S, P2),     // a surrounding cell
-    in(P2, Ink), c.ink(Ink).                 // ink there
+    in(P, Col), c.bg(Col),                       // bg cell
+    dir8_step_delta(_, S), compose(P, S, P2),    // a surrounding cell
+    in(P2, Ink), c.ink(Ink).                     // ink there
 
 .decl out(p: Position, col: Color)
 out(P, Ink) :- painted(P), c.ink(Ink).
