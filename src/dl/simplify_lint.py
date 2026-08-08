@@ -54,7 +54,7 @@ from dl.dlparse import (
     term_vars,
 )
 
-LINE_LIMIT = 100
+LINE_LIMIT = 100   # code only; a trailing comment does not count
 BODY_SCOPES = (TOP, "Fit", "Parse", "Consts")
 COMMON_SUBEXPR_MIN = 3   # literals a shared window must span
 
@@ -247,18 +247,41 @@ class _Lint:
         defs = self.defs(key)
         if not defs or any(not self._projection(d) for d in defs):
             return
-        self.claim("negated-use", key, self.decl_of(key).line, key[1])
+        self.claim("negated-use", key, self.decl_of(key).line,
+                   self._neg_rewrite(key, defs))
+
+    def _neg_rewrite(self, key: RelKey, defs: list[Rule]) -> str:
+        """The negation, then its inlined form: each def's body atom with
+        the head variables carried through and the dropped columns
+        wildcarded. The first def's head names are the canonical ones."""
+        canon = [_term_str(a) for a in defs[0].head.args]
+        parts = []
+        for d in defs:
+            names = {
+                a.name: canon[i]
+                for i, a in enumerate(d.head.args) if isinstance(a, Var)
+            }
+            atom = d.body[0]
+            assert isinstance(atom, Atom)
+            parts.append(f"!{_atom_str(atom, names)}")
+        return f"!{key[1]}({', '.join(canon)}) ⇒ {', '.join(parts)}"
 
     def _projection(self, d: Rule) -> bool:
         """The rule projects a single positive atom: negating the head is
-        negating the atom with the dropped columns wildcarded."""
+        negating the atom with the dropped columns wildcarded. A dropped
+        variable used twice constrains the atom, so it blocks the rewrite."""
         if d.body is None or len(d.body) != 1 or not isinstance(d.body[0], Atom):
             return False
-        bound: set[str] = set()
+        counts: dict[str, int] = {}
         for arg in d.body[0].args:
-            bound |= term_vars(arg)
-        return all(
-            isinstance(a, Var) and a.name in bound for a in d.head.args
+            for v in term_vars(arg):
+                counts[v] = counts.get(v, 0) + 1
+        head_ok = all(
+            isinstance(a, Var) and a.name in counts for a in d.head.args
+        )
+        head_vars = {a.name for a in d.head.args if isinstance(a, Var)}
+        return head_ok and all(
+            n == 1 for v, n in counts.items() if v not in head_vars
         )
 
     def pass_through(self, key: RelKey) -> None:
@@ -287,7 +310,7 @@ class _Lint:
                     - set(head_vars):
                 return  # drops a column: a named projection, not a forward
         self.claim("pass-through", key, self.decl_of(key).line,
-                   f"{key[1]} → {consumer[1]}")
+                   f"{key[1]} only feeds {consumer[1]}")
 
     def single_consumer(self, key: RelKey) -> None:
         """Advisory: one rule, one positive use, a two-literal body. The
@@ -304,7 +327,8 @@ class _Lint:
         uses = self.uses(key)
         if len(uses) != 1 or uses[0].role not in ("pos", "agg"):
             return
-        self.claim("single-consumer", key, self.decl_of(key).line, key[1])
+        self.claim("single-consumer", key, self.decl_of(key).line,
+                   f"{key[1]}: one rule, one use")
 
     def chain_join(self, key: RelKey) -> None:
         """A column that, at every use, only keys a join against one other
@@ -396,8 +420,11 @@ class _Lint:
             tags = [r.head.args[diff[0]] for r in (rule, o)] if len(diff) == 1 \
                 else []
             if tags and all(isinstance(t, Ctor) and not t.args for t in tags):
-                self.add("choice-tag", rule.line,
-                         f"{rule.head.name} differs only in the tag")
+                self.add(
+                    "choice-tag", rule.line,
+                    f"{rule.head.name}: same body under {_term_str(tags[1])} "
+                    f"and {_term_str(tags[0])} — one rule ranging over the tags",
+                )
                 return
 
     def subsumed_atoms(self, info: RuleInfo) -> None:
@@ -448,12 +475,26 @@ class _Lint:
             if v in literal_vars(rule.head) or len(others) != 1:
                 continue
             cmp = others[0]
-            if isinstance(cmp, Cmp) and cmp.op == "!=" and (
-                (isinstance(cmp.lhs, Var) and cmp.lhs.name == v)
-                or (isinstance(cmp.rhs, Var) and cmp.rhs.name == v)
-            ):
-                self.add("named-complement", atom.line,
-                         f"{_atom_str(atom)}, != — write !{atom.name}(...)")
+            if not (isinstance(cmp, Cmp) and cmp.op == "!="):
+                continue
+            if isinstance(cmp.lhs, Var) and cmp.lhs.name == v:
+                other = cmp.rhs
+            elif isinstance(cmp.rhs, Var) and cmp.rhs.name == v:
+                other = cmp.lhs
+            else:
+                continue
+            bound: set[str] = set()
+            for lit in rule.body:
+                if isinstance(lit, Atom) and lit is not atom:
+                    bound |= literal_vars(lit)
+            if term_vars(other) - bound:
+                continue  # the negation would leave the value unbound
+            qual = f"{atom.qual}." if atom.qual else ""
+            self.add(
+                "named-complement", atom.line,
+                f"{_atom_str(atom)}, {_lit_str(cmp)} ⇒ "
+                f"!{qual}{atom.name}({_term_str(other)})",
+            )
 
     def decl_placement(self) -> None:
         """Every reference inside one section or comp the declaration is
@@ -475,9 +516,10 @@ class _Lint:
         rule = info.rule
         if rule.body is None or rule.line != rule.end_line:
             return
-        text = self.lines[rule.line - 1].rstrip() if rule.line <= len(self.lines) else ""
-        if len(text) > LINE_LIMIT:
-            self.add("long-rule", rule.line, f"{len(text)} chars")
+        text = self.lines[rule.line - 1] if rule.line <= len(self.lines) else ""
+        code = text.split("//")[0].rstrip()
+        if len(code) > LINE_LIMIT:
+            self.add("long-rule", rule.line, f"{len(code)} chars")
 
     # --- advisory rules ---
 
@@ -494,13 +536,16 @@ class _Lint:
             if not isinstance(atom.args[0], Var):
                 continue
             v = atom.args[0].name
-            if any(
-                o is not atom and not o.name.endswith("_elem")
-                and v in literal_vars(o)
-                and self.ix.resolve(info.scope, o.qual, o.name)[0] != EXTERN
-                for o in pos
-            ):
-                self.add("domain-enumerator", atom.line, _atom_str(atom))
+            binder = next(
+                (o for o in pos
+                 if o is not atom and not o.name.endswith("_elem")
+                 and v in literal_vars(o)
+                 and self.ix.resolve(info.scope, o.qual, o.name)[0] != EXTERN),
+                None,
+            )
+            if binder is not None:
+                self.add("domain-enumerator", atom.line,
+                         f"{_atom_str(atom)}: {v} already bound by {binder.name}")
 
     def argmax(self, idx: int, info: RuleInfo) -> None:
         """`beaten(X) :- score(X, N), score(_, N2), N2 > N`, read only
@@ -560,15 +605,20 @@ class _Lint:
             if comp.name in ("Consts", "Fit", "Parse"):
                 continue
             if len(inits.get(comp.name, [])) == 1:
-                self.add("single-init-comp", comp.line, comp.name)
+                self.add("single-init-comp", comp.line,
+                         f"{comp.name}: instantiated once — could be plain relations")
 
 
 # --- literal rendering (line-blind, for structural comparison) ---
 
-def _term_str(t: Term) -> str:
+def _term_str(t: Term, names: dict[str, str] | None = None) -> str:
+    """Render a term. With `names`, variables substitute through it and
+    absent ones render as `_` — the negation-inlining view."""
+    def sub(x: Term) -> str:
+        return _term_str(x, names)
     match t:
         case Var(name):
-            return name
+            return name if names is None else names.get(name, "_")
         case Wild():
             return "_"
         case Num(text):
@@ -578,26 +628,26 @@ def _term_str(t: Term) -> str:
         case MacroConst(name):
             return name
         case Ctor(name, args):
-            return f"${name}({', '.join(map(_term_str, args))})"
+            return f"${name}({', '.join(map(sub, args))})"
         case Rec(args):
-            return f"[{', '.join(map(_term_str, args))}]"
+            return f"[{', '.join(map(sub, args))}]"
         case Call(name, args, functor):
             at = "@" if functor else ""
-            return f"{at}{name}({', '.join(map(_term_str, args))})"
+            return f"{at}{name}({', '.join(map(sub, args))})"
         case UnOp(op, arg):
-            return f"{op}{_term_str(arg)}"
+            return f"{op}{sub(arg)}"
         case BinOp(op, lhs, rhs):
-            return f"({_term_str(lhs)} {op} {_term_str(rhs)})"
+            return f"({sub(lhs)} {op} {sub(rhs)})"
         case Agg(op, expr, body):
-            e = f" {_term_str(expr)}" if expr is not None else ""
+            e = f" {sub(expr)}" if expr is not None else ""
             inner = ", ".join(map(_lit_str, body))
             return f"{op}{e} : {{ {inner} }}"
     return repr(t)
 
 
-def _atom_str(a: Atom) -> str:
+def _atom_str(a: Atom, names: dict[str, str] | None = None) -> str:
     qual = f"{a.qual}." if a.qual else ""
-    return f"{qual}{a.name}({', '.join(map(_term_str, a.args))})"
+    return f"{qual}{a.name}({', '.join(_term_str(x, names) for x in a.args)})"
 
 
 def _lit_str(lit: Lit) -> str:
