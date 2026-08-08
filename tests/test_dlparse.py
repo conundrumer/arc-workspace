@@ -8,6 +8,7 @@ from dl.dlparse import (
     EXTERN,
     TOP,
     Agg,
+    Atom,
     Bool,
     Cmp,
     Ctor,
@@ -103,6 +104,15 @@ out(P, Col) :- g(P), (tile(P, Col) ; !tile(P, _), bg(Col)).
 def test_paren_expr_is_not_a_disjunction():
     p = parse("out(X) :- (X + Y) != Z, g(X, Y, Z).\n")
     assert isinstance(p.items[0].body[0], Cmp)
+
+
+def test_subsumptive_clause():
+    p = parse("high(K, S) <= high(K, S2) :- S < S2.\n")
+    rule = p.items[0]
+    assert isinstance(rule, Rule) and rule.sub
+    assert rule.head.name == "high"
+    assert isinstance(rule.body[0], Atom) and rule.body[0].name == "high"
+    assert isinstance(rule.body[1], Cmp)
 
 
 def test_comments_kept():

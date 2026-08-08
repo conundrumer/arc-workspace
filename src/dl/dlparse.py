@@ -300,6 +300,7 @@ class Rule:
     line: int
     end_line: int
     grid: bool = False  # GRID macro fact
+    sub: bool = False   # subsumptive clause; the dominant atom leads the body
 
 
 @dataclass
@@ -472,6 +473,13 @@ class _Parser:
         if self.at("."):
             end = self.next().line
             return Rule(head, None, head.line, end)
+        if self.at("<="):
+            self.next()
+            dominant = self.atom()
+            self.expect(":-")
+            body = self.conj()
+            end = self.expect(".").line
+            return Rule(head, [dominant, *body], head.line, end, sub=True)
         self.expect(":-")
         body = self.conj()
         end = self.expect(".").line
