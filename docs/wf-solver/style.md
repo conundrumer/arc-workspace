@@ -158,10 +158,6 @@ Parse rules are body code: body style and the linter apply.
 
 `out` must be total over the expected output grid: a missing cell fails the variant.
 
-In the audit (`--audit`), the sweep lists each fill beyond the stored one that the train pairs accept, with its test verdict. The deletion report lists each rule or negated atom whose deletion changes no pair's output or derived fill.
-
-The fit plan (`--fit-plan`) prints its slots in sections: `write a Fit relation` (slots with no candidate set), an over-budget section when the settling slots' joint candidate product exceeds the settle budget — it shows the product and the budget, lists each settling slot with its candidate count, and leaves the choice of which to fit to the session — `fitted` (slots whose Fit relation exists), `no Fit relation`, `move data from rules to fact slots`. Detail lines follow, one per probed slot, with the relation of each proposer's candidate set to the stored fill: `pinned` / `narrowed(n)` / `open` / `missed` for single-column slots; `exact` / `superset(+n)` / `partial` / `missed` / `empty` for whole tables.
-
 ## Alt outputs
 
 If the task JSON contains alts, encode them as cases of `Choice` — one case per alt output.

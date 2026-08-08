@@ -4,7 +4,7 @@ For proposing and staging changes to `.dl` style and primitives. Not a changelog
 
 ## `ConcatPipeline` — unequal-sized rectilinear tiles
 
-`divide` / `divide_2d` / `divide_by_size_2d` (forward) and `concat` / `concat_slab` / `concat_2d` (inverse) cover uniform tiles: every tile shares a size, so the per-tile step is constant. Unequal-sized rectilinear tiles need cumulative offsets, because each row/column has its own extent. `ConcatPipeline` derives per-tile dims and per-edge cumulative offsets, then recomposes via `compose`.
+`ConcatPipeline` derives per-tile dims and per-edge cumulative offsets, then composes via `compose`. Cumulative offsets are what unequal tiles need, because each row/column has its own extent. The uniform family — `divide` / `divide_2d` / `divide_by_size_2d` forward, `concat` / `concat_slab` / `concat_2d` inverse — takes one tile size, so its per-tile step is constant.
 
 The solver populates `tile_in` (dim info; the pipeline does not read the values) and `axis_gap`. The component derives per-row / per-col tile dims and cumulative per-edge offsets, assembles `tile_offset(key, p_outer, p_off)`, and exposes a one-line `concat` (lookup + `compose`). One tiling per key. `axis_gap` stays unkeyed: the gap is the instance's parameter, like `DirFrame`'s unkeyed `dir`.
 
