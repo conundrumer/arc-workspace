@@ -168,7 +168,7 @@ out(P, Col, Ch) :- parse.minority_rank(Ch, Col, Rk), col.pos(Ch, Rk, P).
 
     .decl tile_gap(g: number)
     tile_gap(G) :-
-        interior(E, P_int), axis_elem(A),
+        interior(E, P_int),
         tile_count(E, A, N), tile_dim(A, K),
         divide_gap(P_int, A, N, K, G).
 

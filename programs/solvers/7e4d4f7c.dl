@@ -46,23 +46,19 @@ out_cell(P) :-
 
 .decl out(p: Position, col: Color)
 
-// Keep: each non-tail output cell takes the color of the input cell in
-// its slab — slab_anchor matches on depth-from-header + across.
-out(P_out, Col) :-
-    out_cell(P_out),                                      // grounded output cell
-    c.header_dir(H_dir), opposite(H_dir, H_opp),          // along-axis dirs
-    dist(P_out, H_opp, K_opp), K_opp != 0,                // not the tail row
-    in(P_in, Col),                                        // input cell
-    slab_anchor(H_dir, P_in, P_out).                      // same slab as P_out
-
-// Tail: the output's tail row (opp-edge distance 0) takes input depth-0
-// cells by column — across-match only, since the tail row and input
-// row 0 don't share depth-from-header — recolored via tail_color.
+// Each output cell takes an input cell's color. A non-tail cell takes it
+// from its own slab, matched on depth-from-header and across. The tail row
+// (opp-edge distance 0) takes it from the input's depth-0 cells, matched on
+// across alone — the tail row and input row 0 do not share
+// depth-from-header — and recolored via tail_color.
 out(P_out, Col_out) :-
     out_cell(P_out),                                      // grounded output cell
     c.header_dir(H_dir), opposite(H_dir, H_opp),          // along-axis dirs
-    axis_of(H_dir, A),                                    // along axis
-    dist(P_out, H_opp, 0),                                // tail row
-    in(P_in, Col_in), dist(P_in, H_dir, 0),               // input depth 0
-    split(P_in, A, _, Ac), split(P_out, A, _, Ac),        // same column
-    tail_color(Col_in, Col_out).                          // recolor
+    ( dist(P_out, H_opp, K_opp), K_opp != 0,              // not the tail row
+      in(P_in, Col_out),                                  // input cell
+      slab_anchor(H_dir, P_in, P_out)                     // same slab as P_out
+    ; dist(P_out, H_opp, 0), axis_of(H_dir, A),           // tail row, along axis
+      in(P_in, Col_in), dist(P_in, H_dir, 0),             // input depth 0
+      split(P_in, A, _, Ac), split(P_out, A, _, Ac),      // same column
+      tail_color(Col_in, Col_out)                         // recolor
+    ).

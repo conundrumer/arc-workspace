@@ -103,12 +103,9 @@ paint(P_grid, Cc, $Lookup()) :-
 
 // --- out ---
 
-.decl painted(ch: Choice, p: Position)
-painted(Ch, P) :- paint(P, _, Ch).
-
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- paint(P, Col, Ch).
-out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !painted(Ch, P).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !paint(P, _, Ch).
 
 // --- fit ---
 

@@ -60,11 +60,8 @@ out(P_grid, Col, $Mirror()) :-
     concat_2d(T, P_intile, 0, P_grid).                      // recompose
 
 // --- Unfold ---
-.decl off_center(p: Position)
-off_center(T) :- axis_off(T, _).
-
 .decl tile_center(p: Position)
-tile_center(T) :- c.arr_pos(T), !off_center(T).
+tile_center(T) :- c.arr_pos(T), !axis_off(T, _).
 
 // Tile contents: the input seeds the center; each neighbor reflects across
 // the shared boundary.

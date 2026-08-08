@@ -25,10 +25,9 @@
 .decl color_count(col: Color, n: number)
 color_count(Col, N) :- in(_, Col), N = count : { in(P, Col) }.
 
-.decl count_beaten(col: Color)
-count_beaten(Col) :- color_count(Col, N), color_count(_, N2), N2 > N.
-
-keep(P, $Count()) :- in(P, Col), !count_beaten(Col).
+keep(P, $Count()) :-
+    in(P, Col), color_count(Col, N),
+    N = max N2 : { color_count(_, N2) }.   // the commonest color
 
 // --- $BlobColor / $Blob ---
 
@@ -38,11 +37,11 @@ comps.node(Col, P) :- in(P, Col).
 .decl comp_size(col: Color, id: Ident, n: number)
 comp_size(Col, Id, N) :- comps.label(Col, _, Id), N = count : { comps.label(Col, P, Id) }.
 
-.decl comp_beaten(col: Color, id: Ident)
-comp_beaten(Col, Id) :- comp_size(Col, Id, N), comp_size(_, _, N2), N2 > N.
-
+// The largest component.
 .decl comp_wins(col: Color, id: Ident)
-comp_wins(Col, Id) :- comp_size(Col, Id, _), !comp_beaten(Col, Id).
+comp_wins(Col, Id) :-
+    comp_size(Col, Id, N),
+    N = max N2 : { comp_size(_, _, N2) }.
 
 keep(P, $BlobColor()) :- in(P, Col), comp_wins(Col, _).
 

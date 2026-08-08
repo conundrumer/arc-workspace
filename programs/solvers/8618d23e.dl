@@ -110,12 +110,9 @@ seated(P_out, Col, $Disp()) :-
 .init frame = Frame2D<Choice>
 frame.extent(Ch, A, N) :- seated(P, _, Ch), axis_elem(A), axis_dim(P, A, N).
 
-.decl covered(p: Position, ch: Choice)
-covered(P, Ch) :- seated(P, _, Ch).
-
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- seated(P, Col, Ch).
-out(P, Col, Ch) :- frame.cell(Ch, P), !covered(P, Ch), c.filler(Col).
+out(P, Col, Ch) :- frame.cell(Ch, P), !seated(P, _, Ch), c.filler(Col).
 
 // --- fit ---
 

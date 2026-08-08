@@ -40,8 +40,5 @@ self_spans.axis(A)      :- axis_elem(A).
 self_spans.cell(P)      :- in(P, _).
 self_spans.mark(Col, Q) :- in(Q, Col), !c.bg(Col).
 
-.decl self_spanned(p: Position)
-self_spanned(P) :- self_spans.between(_, P).
-
 out(P, Col, $Self()) :- self_spans.between(Col, P).
-out(P, Col, $Self()) :- in(P, Col), !self_spanned(P).
+out(P, Col, $Self()) :- in(P, Col), !self_spans.between(_, P).

@@ -87,17 +87,8 @@ owner(Ac, D, Col) :-
     axis_of(D, A), dist_pair(M, D, K1, K2), K1 < K2.    // its half
 
 out(P, Col, $Half()) :-
-    in(P, _),                                           // grid cell
-    c.axis(A), split(P, A, _, Ac), owner(Ac, D, Col),   // row's d-half owner
-    dist_pair(P, D, K1, K2), K1 < K2.                   // cell in the d half
-
-out(P, Col, $Half()) :-
-    in(P, _),                                           // grid cell
-    c.axis(A), split(P, A, _, Ac), owner(Ac, _, _),     // row with owners
-    axis_of(D, A), dist_pair(P, D, K, K),               // centered on the axis
-    c.clash(Col).
-
-out(P, Col, $Half()) :-
-    in(P, _),                                           // grid cell
-    c.axis(A), split(P, A, _, Ac), !owner(Ac, _, _),    // markless row
-    c.bg(Col).
+    in(P, _), c.axis(A), split(P, A, _, Ac),                                // grid cell, its row
+    ( owner(Ac, D, Col), dist_pair(P, D, K1, K2), K1 < K2                   // cell in an owner's half
+    ; owner(Ac, _, _), axis_of(D, A), dist_pair(P, D, K, K), c.clash(Col)   // centered between owners
+    ; !owner(Ac, _, _), c.bg(Col)                                           // markless row
+    ).

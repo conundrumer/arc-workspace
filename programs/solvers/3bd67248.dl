@@ -66,11 +66,8 @@ paint_anch(P, Col) :-
     diag.diagonal($Anchored(), P, _), c.diag_color(Col),    // diagonal cell
     c.floor_dir(D), dist(P, D, K), K != 0.                  // floor wins the floor row
 
-.decl painted_anch(p: Position)
-painted_anch(P) :- paint_anch(P, _).
-
 out(P, Col, $Anchored()) :- paint_anch(P, Col).
-out(P, Col, $Anchored()) :- in(P, Col), !painted_anch(P).
+out(P, Col, $Anchored()) :- in(P, Col), !paint_anch(P, _).
 
 // --- Foot ---
 
@@ -94,11 +91,8 @@ diag.corner($Foot(), Diag) :- foot_corner(Diag).
 paint_foot(P, Col) :- floor_paint(P), c.floor_color(Col).
 paint_foot(P, Col) :- diag.diagonal($Foot(), P, _), c.diag_color(Col).
 
-.decl painted_foot(p: Position)
-painted_foot(P) :- paint_foot(P, _).
-
 out(P, Col, $Foot()) :- paint_foot(P, Col).
-out(P, Col, $Foot()) :- in(P, Col), !painted_foot(P).
+out(P, Col, $Foot()) :- in(P, Col), !paint_foot(P, _).
 
 // --- WallEnd ---
 
@@ -122,11 +116,8 @@ diag.corner($WallEnd(), Diag) :- we_corner(Diag).
 paint_we(P, Col) :- bg_cell(P), floor_end(D), dist(P, D, 0), c.floor_color(Col).
 paint_we(P, Col) :- diag.diagonal($WallEnd(), P, _), c.diag_color(Col).
 
-.decl painted_we(p: Position)
-painted_we(P) :- paint_we(P, _).
-
 out(P, Col, $WallEnd()) :- paint_we(P, Col).
-out(P, Col, $WallEnd()) :- in(P, Col), !painted_we(P).
+out(P, Col, $WallEnd()) :- in(P, Col), !paint_we(P, _).
 
 // --- fit ---
 

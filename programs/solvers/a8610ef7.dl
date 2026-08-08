@@ -38,13 +38,10 @@ non_bg(P) :- in(P, Col), !c.bg(Col).
 
 out(P, Col, $Direct()) :- in(P, Col), c.bg(Col).
 out(P, Col_out, $Direct()) :-
-    non_bg(P),                                     // non-bg input cell
-    c.mirror(D), apply(D, P, P_m), non_bg(P_m),    // mirror image is also non-bg
-    c.matched(Col_out).
-out(P, Col_out, $Direct()) :-
-    non_bg(P),                                     // non-bg input cell
-    c.mirror(D), apply(D, P, P_m), !non_bg(P_m),   // mirror image is bg
-    c.unmatched(Col_out).
+    non_bg(P), c.mirror(D), apply(D, P, P_m),   // non-bg cell, its mirror image
+    ( non_bg(P_m), c.matched(Col_out)           // image is also non-bg
+    ; !non_bg(P_m), c.unmatched(Col_out)        // image is bg
+    ).
 
 // --- Lookup ---
 

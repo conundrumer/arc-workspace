@@ -19,9 +19,6 @@ moved(Q, Col) :-
     c.dir(D), step_delta(D, S), compose(P, S, Q),     // one step toward dir
     in(Q, _).                                         // lands on the grid
 
-.decl landed(p: Position)
-landed(P) :- moved(P, _).
-
 .decl out(p: Position, col: Color)
 out(P, Col) :- moved(P, Col).
-out(P, F)   :- in(P, _), !landed(P), c.fill(F).
+out(P, F)   :- in(P, _), !moved(P, _), c.fill(F).

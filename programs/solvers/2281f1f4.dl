@@ -53,9 +53,6 @@ selected(P, Dp) :-
     diag_dirs(Diag, _, Dp, Ds),                 // pattern edge, selector edge
     marked(P, Ds), dist(P, Ds, K), K != 0.      // marked from the selector, off it
 
-.decl is_selected(p: Position)
-is_selected(P) :- selected(P, _).
-
 out(P, F, $Stamp())   :- selected(P, Dp), marked(P, Dp), c.fill(F).
 out(P, Bg, $Stamp())  :- selected(P, Dp), !marked(P, Dp), c.bg(Bg).
-out(P, Col, $Stamp()) :- in(P, Col), !is_selected(P).
+out(P, Col, $Stamp()) :- in(P, Col), !selected(P, _).

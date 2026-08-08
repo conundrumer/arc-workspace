@@ -74,11 +74,10 @@ out(P_grid, Col, $Alt()) :-
 
 // --- Mid ---
 out(P_grid, Col, $Mid()) :-
-    in(P_in, Col),
-    c.arr_pos(T), c.anchor(D), dist_pair(T, D, K, K),   // centered band
-    c.tf(F), apply(F, P_in, P_intile),
-    concat_2d(T, P_intile, 0, P_grid).
-out(P_grid, Col, $Mid()) :-
-    in(P_in, Col),
-    c.arr_pos(T), c.anchor(D), dist_pair(T, D, K1, K2), K1 != K2,   // off-center band
-    concat_2d(T, P_in, 0, P_grid).
+    in(P_in, Col), c.arr_pos(T), c.anchor(D),        // input cell, its tile
+    ( dist_pair(T, D, K, K),                         // centered band — transformed
+      c.tf(F), apply(F, P_in, P_intile),
+      concat_2d(T, P_intile, 0, P_grid)
+    ; dist_pair(T, D, K1, K2), K1 != K2,             // off-center band — as-is
+      concat_2d(T, P_in, 0, P_grid)
+    ).

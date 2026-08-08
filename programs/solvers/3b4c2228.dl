@@ -93,16 +93,13 @@ parse.cell($U(), P, C) :- in(P, C).
 occ.cell($U(), P)  :- parse.on($U(), P).
 occ.shape($U(), P) :- c.block_shape(P).
 
-.decl placement_count(n: number)
-placement_count(N) :- N = count : { occ.occurrence($U(), _) }.
-
 // ============================================================
 // Output
 // ============================================================
 
 .decl total(n: number, detect: Detect)
 total(N, $Object())    :- parse.block_count($U(), N).
-total(N, $Placement()) :- placement_count(N).
+total(N, $Placement()) :- N = count : { occ.occurrence($U(), _) }.
 
 .init diag = Diagonal<Unit>
 diag.cell($U(), P)   :- c.out_pos(P).

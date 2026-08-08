@@ -129,13 +129,11 @@ out(P, Col, Ch) :-
     .decl repainted(e: Example, id: Ident)
     repainted(E, Id) :- repaint(E, _, Id).
 
-    // A block some mark seats toward diag.
-    .decl seated(e: Example, id: Ident, diag: DiagDir)
-    seated(E, Id, Diag) :- parse.mark_block(E, _, Diag, Id).
-
     // A corner refuted by a repainted block no mark seats toward it.
     .decl stray(diag: DiagDir)
-    stray(Diag) :- repainted(E, Id), diag_dir_elem(Diag), !seated(E, Id, Diag).
+    stray(Diag) :-
+        repainted(E, Id), diag_dir_elem(Diag),
+        !parse.mark_block(E, _, Diag, Id).
 
     .decl corner(d: DiagDir)
     corner(Diag) :- diag_dir_elem(Diag), !stray(Diag).

@@ -49,13 +49,10 @@ has_marker(T) :- tile(P, T, _), in(P, Col), c.marker(Col).
 template($Marker(), T) :- tile(_, T, _), !has_marker(T).
 
 // --- output ---
-.decl in_tile(p: Position)
-in_tile(P) :- tile(P, _, _).
-
 .decl out(p: Position, col: Color, ch: Choice)
 out(P_grid, Col, Ch) :-
     tile(P_grid, P_tile, _),      // output cell's tile
     template(Ch, Q),
     tile(P_src, Q, P_tile),       // template cell at intile = the cell's tile index
     in(P_src, Col).
-out(P_grid, Col, Ch) :- in(P_grid, Col), impl_choice(Ch), !in_tile(P_grid).
+out(P_grid, Col, Ch) :- in(P_grid, Col), impl_choice(Ch), !tile(P_grid, _, _).

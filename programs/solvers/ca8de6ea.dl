@@ -94,7 +94,9 @@ perm(P_in, P_out, $Cycle()) :-
     in_center(P_in), c.out_center(P_out).                    // center fixed point
 
 .decl out(p: Position, col: Color, c: Choice)
-out(P_grid_out, Col, Impl) :- impl_choice(Impl), in(P_grid_in, Col), perm(P_grid_in, P_grid_out, Impl).
+out(P_grid_out, Col, Impl) :-
+    impl_choice(Impl), in(P_grid_in, Col),   // choice × input cell
+    perm(P_grid_in, P_grid_out, Impl).       // the cell's image
 
 // --- fit ---
 

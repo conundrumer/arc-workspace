@@ -81,16 +81,13 @@ pattern_row(Across) :-
     c.axis(A), split(P, A, _, Across).
 
 out(P, Col, $Rows()) :-
-    in(P, N), c.noise(N),                              // corrupted cell
-    c.axis(A), split(P, A, _, Across),
-    !pattern_row(Across),                              // separator row
-    c.bg(Col).
-out(P, Col, $Rows()) :-
-    in(P, N), c.noise(N),                              // corrupted cell
-    c.axis(A), split(P, A, Along, Across),
-    pattern_row(Across),                               // pattern row
-    clean(Q, Col),                                     // clean source cell
-    split(Q, A, Along, Across2), pattern_row(Across2). // same column, pattern row
+    in(P, N), c.noise(N),                                  // corrupted cell
+    c.axis(A), split(P, A, Along, Across),                 // its row and column
+    ( !pattern_row(Across), c.bg(Col)                      // separator row — bg
+    ; pattern_row(Across),                                 // pattern row
+      clean(Q, Col),                                       // clean source cell
+      split(Q, A, Along, Across2), pattern_row(Across2)    // same column, pattern row
+    ).
 
 // --- fit ---
 

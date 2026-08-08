@@ -17,9 +17,6 @@ spans.axis(A)      :- c.fill_axis(A).
 spans.cell(P)      :- in(P, _).
 spans.mark(Col, Q) :- in(Q, Col), !c.bg(Col).
 
-.decl filled(p: Position)
-filled(P) :- spans.between(_, P).
-
 .decl out(p: Position, col: Color)
 out(P, Col) :- spans.between(Col, P).
-out(P, Col) :- in(P, Col), !filled(P).
+out(P, Col) :- in(P, Col), !spans.between(_, P).

@@ -66,12 +66,12 @@ measure_member(Col, $Span(), S, R) :- spans.between([Col, S], R).
 growth.pos([Col, Ch], M) :- measure_member(Col, Ch, S, M), c.side(D), opposite(D, S).
 growth.neg([Col, Ch], M) :- measure_member(Col, Ch, D, M), c.side(D).
 
-// The winner: the color no rival outgrows.
-.decl beaten(col: Color, ch: Choice)
-beaten(Col, Ch) :- growth.excess([Col, Ch], N), growth.excess([C2, Ch], N2), N2 > N.
+.decl excess(col: Color, ch: Choice, n: number)
+excess(Col, Ch, N) :- growth.excess([Col, Ch], N).
 
+// The winner: the color that grows the most.
 .decl winner(col: Color, ch: Choice)
-winner(Col, Ch) :- growth.excess([Col, Ch], _), !beaten(Col, Ch).
+winner(Col, Ch) :- excess(Col, Ch, N), N = max N2 : { excess(_, Ch, N2) }.
 
 .init frame = Frame2D<Unit>
 frame.extent($U(), A, N) :- axis_elem(A), c.out_dim(N).

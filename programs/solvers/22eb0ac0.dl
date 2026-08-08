@@ -30,11 +30,8 @@ edge_match(Ac, Col) :-
     in(P1, Col), dist(P1, D, 0), split(P1, A, _, Ac),     // marker on edge d
     in(P2, Col), dist(P2, D2, 0), split(P2, A, _, Ac).    // same color opposite, same line
 
-.decl matched(ac: Position)
-matched(Ac) :- edge_match(Ac, _).
-
 out(P, Col, $Flood()) :- in(P, _), c.axis(A), split(P, A, _, Ac), edge_match(Ac, Col).
-out(P, Col, $Flood()) :- in(P, Col), c.axis(A), split(P, A, _, Ac), !matched(Ac).
+out(P, Col, $Flood()) :- in(P, Col), c.axis(A), split(P, A, _, Ac), !edge_match(Ac, _).
 
 // --- Span ---
 
@@ -43,8 +40,5 @@ spans.axis(A)      :- c.axis(A).
 spans.cell(P)      :- in(P, _).
 spans.mark(Col, Q) :- in(Q, Col), !c.bg(Col).
 
-.decl spanned(p: Position)
-spanned(P) :- spans.between(_, P).
-
 out(P, Col, $Span()) :- spans.between(Col, P).
-out(P, Col, $Span()) :- in(P, Col), !spanned(P).
+out(P, Col, $Span()) :- in(P, Col), !spans.between(_, P).

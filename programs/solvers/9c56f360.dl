@@ -55,18 +55,15 @@ barrier.dir(D) :- c.dir(D).
 barrier.cell(P) :- in(P, _).
 barrier.mark(Ch, P) :- blocker(Ch, P), c.dir(D), slide.ray($U(), P, D).
 
-// The free run ahead of the whole group.
-.decl between(ch: Choice, p_across: Position, p: Position)
-between(Ch, P_across, P) :-
+// The landing strip: the free run ahead of the whole group, plus the
+// group itself.
+.decl strip(ch: Choice, p_across: Position, p: Position)
+strip(Ch, P_across, P) :-
     impl_choice(Ch), c.dir(D),
     slide.ray($U(), P, D),                       // at or ahead of a mover
     opposite(D, O), !slide.ray($U(), P, O),      // ahead of every mover
     !barrier.ray(Ch, P, D),                      // short of every barrier
     place(P, P_across, _).                       // keyed by its line
-
-// The landing strip: the free run plus the group itself.
-.decl strip(ch: Choice, p_across: Position, p: Position)
-strip(Ch, P_across, P) :- between(Ch, P_across, P).
 strip(Ch, P_across, P) :- impl_choice(Ch), mover(P), place(P, P_across, _).
 
 // Movers and strip cells ranked from the dir edge; movers re-seat onto

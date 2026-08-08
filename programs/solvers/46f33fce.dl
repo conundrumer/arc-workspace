@@ -23,10 +23,9 @@ tile_ink(P_tile, Col) :-
 .decl render(p: Position, col: Color)
 render(P, Col) :-
     in(P, _), c.side(K), divide_by_size_2d(P, K, 0, P_tile, _),
-    tile_ink(P_tile, Col).
-render(P, Bg) :-
-    in(P, _), c.side(K), divide_by_size_2d(P, K, 0, P_tile, _),
-    !tile_ink(P_tile, _), c.bg(Bg).
+    ( tile_ink(P_tile, Col)              // inked tile
+    ; !tile_ink(P_tile, _), c.bg(Col)    // blank tile
+    ).
 
 // Scale: each input cell becomes a c.scale block of the rendered color.
 .init subf = Frame2D<Unit>
