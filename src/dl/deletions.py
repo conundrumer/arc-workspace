@@ -4,6 +4,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 
 from arc.task import load as load_task
+from dl.dlparse import TOP, Index, ParseError, parse
 from dl.fit import fit_check
 from dl.paths import SOLVERS_DIR
 from dl.solve import _profile
@@ -110,6 +111,60 @@ def deletions(source: str, fit: bool = False):
                        "\n".join(modified) + "\n")
 
 
+def _split_top_args(text: str) -> list[str]:
+    args, depth, cur = [], 0, []
+    for c in text:
+        depth += c in "(["
+        depth -= c in ")]"
+        if c == "," and depth == 0:
+            args.append("".join(cur))
+            cur = []
+        else:
+            cur.append(c)
+    if cur:
+        args.append("".join(cur))
+    return args
+
+
+def _drop_column(source: str, name: str, col: int) -> str | None:
+    """Remove argument `col` from every `name(...)` — the decl field
+    list included, since it matches the same shape."""
+    out, i = [], 0
+    pat = re.compile(rf"(?<![\w.]){name}\s*\(")
+    while (m := pat.search(source, i)) is not None:
+        depth, j = 1, m.end()
+        while j < len(source) and depth:
+            depth += source[j] == "("
+            depth -= source[j] == ")"
+            j += 1
+        args = _split_top_args(source[m.end():j - 1])
+        if col >= len(args):
+            return None
+        del args[col]
+        out.append(source[i:m.end()] + ", ".join(a.strip() for a in args) + ")")
+        i = j
+    out.append(source[i:])
+    return "".join(out)
+
+
+def column_deletions(source: str):
+    """Yield (lineno, 'column', 'name.field', modified_source): one
+    column dropped from a top-level relation, everywhere it appears. A
+    drop that breaks the program reads as a change, so only a column no
+    result depends on survives the report."""
+    try:
+        ix = Index(parse(source))
+    except ParseError:
+        return
+    for name, decl in ix.decls[TOP].items():
+        if name == "out" or len(decl.fields) < 2:
+            continue
+        for col, field in enumerate(decl.fields):
+            mod = _drop_column(source, name, col)
+            if mod is not None:
+                yield (decl.line, "column", f"{name}.{field.name}", mod)
+
+
 def deletion_report(stem: str) -> tuple[int, list[tuple[int, str, str]]] | None:
     """Structural deletions that change no pair's output or derived fill.
 
@@ -131,6 +186,7 @@ def deletion_report(stem: str) -> tuple[int, list[tuple[int, str, str]]] | None:
         return r is not None and not r.error and not r.diff
 
     dels = [("solve", d) for d in deletions(source)]
+    dels += [("solve", d) for d in column_deletions(source)]
     if fit_ok(source):
         dels += [("fit", d) for d in deletions(source, fit=True)]
 

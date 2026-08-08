@@ -58,7 +58,7 @@ from dl.dlparse import (
 
 LINE_LIMIT = 100   # code only; a trailing comment does not count
 BODY_SCOPES = (TOP, "Fit", "Parse", "Consts")
-COMMON_SUBEXPR_MIN = 3   # literals a shared window must span
+COMMON_SUBEXPR_MIN = 2   # literals a shared window must span
 
 # Categories of the hint tier, for callers that render the tiers apart.
 HINTS = frozenset({
@@ -703,7 +703,8 @@ class _Lint:
     def _subexpr_msg(self, width: int, prev: RuleInfo, cur: RuleInfo) -> str | None:
         """The finding message, or None when the pair spans choices.
         Same-shaped heads make the pair a disjunction merge; the message
-        says so."""
+        says so. A different-head pair must share more to be worth a
+        look, so it keeps a higher bar."""
         if prev.section != cur.section:
             return None
         ph, ch = prev.rule.head, cur.rule.head
@@ -712,8 +713,8 @@ class _Lint:
             return None
         msg = f"{width} literals shared with `{ph.name}` (line {prev.rule.line})"
         if _canon_window([ph]) == _canon_window([ch]):
-            msg += "; merge the tails into a disjunction"
-        return msg
+            return msg + "; merge the tails into a disjunction"
+        return msg if width >= 3 else None
 
 
 # --- literal rendering (line-blind, for structural comparison) ---

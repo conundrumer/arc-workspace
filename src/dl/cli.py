@@ -21,14 +21,14 @@ type Findings = list[tuple[str, int, str, str]]
 LINT_TIERS = ("lint", "rewrite", "hint")
 
 
-def _lint_tiers(source: str, rewrites: bool, hints: bool) -> list[Findings]:
-    """Findings per tier, in LINT_TIERS order; disabled tiers come back empty."""
+def _lint_tiers(source: str, hints: bool) -> list[Findings]:
+    """Findings per tier, in LINT_TIERS order; the hint tier is empty
+    unless enabled."""
     style: Findings = lint_body(source)
     dec: Findings = []
     adv: Findings = []
-    if rewrites or hints:
-        for f in lint_rewrites(source, hints):
-            (adv if f[0] in HINTS else dec).append(f)
+    for f in lint_rewrites(source, hints):
+        (adv if f[0] in HINTS else dec).append(f)
     return [style, dec, adv]
 
 
@@ -38,12 +38,12 @@ def _finding_line(stem: str, tier: str, cat: str, lineno: int, match: str) -> st
     return f"{stem}.dl:{lineno}: {cat}: {match}"
 
 
-def _print_findings(stems: list[str], rewrites: bool, hints: bool) -> int:
+def _print_findings(stems: list[str], hints: bool) -> int:
     """Print the tier sections for `stems`; return the finding count."""
     by_tier: list[dict[str, Findings]] = [{}, {}, {}]
     for stem in stems:
         source = (SOLVERS_DIR / f"{stem}.dl").read_text()
-        for held, tier in zip(by_tier, _lint_tiers(source, rewrites, hints),
+        for held, tier in zip(by_tier, _lint_tiers(source, hints),
                               strict=True):
             if tier:
                 held[stem] = tier
@@ -63,12 +63,12 @@ def _print_findings(stems: list[str], rewrites: bool, hints: bool) -> int:
 
 
 def cmd_lint(
-    stem: str | None, rewrites: bool = False, hints: bool = False,
+    stem: str | None, hints: bool = False,
 ) -> int:
     """Lint only: no solver runs, no fit checks, no Souffle needed."""
     if stem is not None and _missing(stem):
         return 2
-    total = _print_findings([stem] if stem else all_stems(), rewrites, hints)
+    total = _print_findings([stem] if stem else all_stems(), hints)
     if total == 0:
         print("lint: ok")
         return 0
@@ -82,7 +82,7 @@ def _missing(stem: str) -> bool:
     return True
 
 
-def cmd_one(stem: str, rewrites: bool = False, hints: bool = False) -> int:
+def cmd_one(stem: str, hints: bool = False) -> int:
     if _missing(stem):
         return 2
     build_functors()
@@ -104,7 +104,7 @@ def cmd_one(stem: str, rewrites: bool = False, hints: bool = False) -> int:
             print(f"  {line}")
 
     source = (SOLVERS_DIR / f"{stem}.dl").read_text()
-    tiers = _lint_tiers(source, rewrites, hints)
+    tiers = _lint_tiers(source, hints)
     for label, findings in zip(LINT_TIERS, tiers, strict=True):
         if not findings:
             continue
@@ -124,7 +124,7 @@ def cmd_one(stem: str, rewrites: bool = False, hints: bool = False) -> int:
     return 0 if result.all_pass else 1
 
 
-def cmd_all(rewrites: bool = False, hints: bool = False) -> int:
+def cmd_all(hints: bool = False) -> int:
     build_functors()
     stems = all_stems()
 
@@ -169,7 +169,7 @@ def cmd_all(rewrites: bool = False, hints: bool = False) -> int:
             for line in coverage_findings[stem]:
                 print(f"  {stem}.dl: {line}")
 
-    _print_findings(stems, rewrites, hints)
+    _print_findings(stems, hints)
 
     fit_results: dict[str, FitResult] = {}
     for stem in stems:
@@ -260,10 +260,8 @@ def _parser() -> argparse.ArgumentParser:
     for p in (run, lint):
         p.add_argument("stem", nargs="?",
                        help="one solver; all of them when omitted")
-        p.add_argument("--rewrites", action="store_true",
-                       help="also print rewrite findings; each carries its fix")
-        p.add_argument("--hints", action="store_true",
-                       help="rewrite findings plus the hint tier")
+        p.add_argument("--hints", action=argparse.BooleanOptionalAction,
+                       default=True, help="include the hint tier")
 
     sweep = sub.add_parser("sweep", help="fill sweep only")
     sweep.add_argument("stem")
@@ -284,7 +282,7 @@ def main(argv: list[str]) -> int:
     args = _parser().parse_args(argv)
     match args.cmd:
         case "lint":
-            return cmd_lint(args.stem, args.rewrites, args.hints)
+            return cmd_lint(args.stem, args.hints)
         case "sweep":
             return cmd_sweep(args.stem, args.cap)
         case "deletions":
@@ -295,5 +293,5 @@ def main(argv: list[str]) -> int:
             return cmd_fit_plan(args.stem)
         case _:
             if args.stem:
-                return cmd_one(args.stem, args.rewrites, args.hints)
-            return cmd_all(args.rewrites, args.hints)
+                return cmd_one(args.stem, args.hints)
+            return cmd_all(args.hints)
