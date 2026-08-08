@@ -155,7 +155,7 @@ def lint_body(source: str) -> list[tuple[str, int, str, str]]:
     comments and `.comp` blocks (spans from the parsed source) — except
     `Fit` and `Parse`, which lint as body, and `Consts`, whose rules take
     the 'consts data' check. A source that does not parse returns no
-    findings; the simplify lint reports the parse error.
+    findings; the rewrite lint reports the parse error.
     """
     try:
         program = parse(source)

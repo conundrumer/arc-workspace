@@ -182,7 +182,7 @@ def _first_reach(graph: Graph, start: Node, target: Node) -> tuple[str, int] | N
 def render_cycles(cycles: list[list[Step]]) -> list[str]:
     return [
         "circular fit: " + ", ".join(
-            f"{slot} reads c.{cycle[(i + 1) % len(cycle)][0]} ({comp} L{lineno})"
+            f"{slot} reads c.{cycle[(i + 1) % len(cycle)][0]} ({comp} line {lineno})"
             for i, (slot, comp, lineno) in enumerate(cycle)
         )
         for cycle in cycles

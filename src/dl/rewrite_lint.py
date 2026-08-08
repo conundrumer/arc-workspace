@@ -1,19 +1,19 @@
-"""Flag patterns the simplify pass usually rewrites.
+"""Flag patterns that usually get rewritten away.
 
-Each rule mirrors an edit family from the simplify corpus: relations that
-restate another relation, references reachable only through negation,
-dead declarations, mergeable Choice-tagged rules, and so on. Findings are
-diagnostics only — the rewrite stays with the author.
+Each rule mirrors an edit family observed across the solver corpus:
+relations that restate another relation, references reachable only
+through negation, dead declarations, mergeable Choice-tagged rules, and
+so on. Findings are diagnostics only — the rewrite stays with the author.
 
-The decidable set is on by default. The advisory set — patterns with real
+A rewrite finding carries its fix. A hint — a pattern with real
 counterexamples in the corpus, worth a look rather than a rewrite — is
-behind the `advisory` flag.
+behind the `hints` flag.
 
 Relation-level rules run over the scopes that hold body code: top level,
 `Fit`, `Parse`, and `Consts`. Other `.comp` interiors are lib-shaped code
 and stay out, matching `lint.py`.
 
-The public entry point is `lint_simplify`; findings share `lint_body`'s
+The public entry point is `lint_rewrites`; findings share `lint_body`'s
 tuple shape.
 """
 
@@ -33,6 +33,7 @@ from dl.dlparse import (
     Cmp,
     Ctor,
     Decl,
+    Disj,
     Index,
     Lit,
     MacroConst,
@@ -46,6 +47,7 @@ from dl.dlparse import (
     RuleInfo,
     Str,
     Term,
+    TypeDecl,
     UnOp,
     Var,
     Wild,
@@ -58,10 +60,16 @@ LINE_LIMIT = 100   # code only; a trailing comment does not count
 BODY_SCOPES = (TOP, "Fit", "Parse", "Consts")
 COMMON_SUBEXPR_MIN = 3   # literals a shared window must span
 
+# Categories of the hint tier, for callers that render the tiers apart.
+HINTS = frozenset({
+    "pass-through", "chain-join", "single-consumer", "domain-enumerator",
+    "argmax", "common-subexpr",
+})
+
 type Finding = tuple[str, int, str, str]
 
 
-def lint_simplify(source: str, advisory: bool = False) -> list[Finding]:
+def lint_rewrites(source: str, hints: bool = False) -> list[Finding]:
     lines = source.splitlines()
 
     def raw(lineno: int) -> str:
@@ -74,7 +82,7 @@ def lint_simplify(source: str, advisory: bool = False) -> list[Finding]:
 
     ix = Index(program)
     lint = _Lint(ix, lines)
-    findings = lint.run(advisory)
+    findings = lint.run(hints)
     findings.sort(key=lambda f: (f[1], f[0]))
     return [(cat, ln, match, raw(ln)) for cat, ln, match, _ in findings]
 
@@ -85,6 +93,13 @@ class _Lint:
         self.lines = lines
         self.findings: list[Finding] = []
         self.claimed: set[RelKey] = set()  # relations an earlier rule flagged
+        # Choice tags: branch names of the ADTs the file declares.
+        self.choice_tags = {
+            b
+            for it in ix.program.items
+            if isinstance(it, TypeDecl)
+            for b in it.branches
+        }
 
     def add(self, cat: str, line: int, match: str) -> None:
         self.findings.append((cat, line, match, ""))
@@ -93,7 +108,7 @@ class _Lint:
         self.claimed.add(key)
         self.add(cat, line, match)
 
-    def run(self, advisory: bool) -> list[Finding]:
+    def run(self, hints: bool) -> list[Finding]:
         # Relation-level rules, strongest claim first.
         self.dead_relations()
         for key in self.body_keys():
@@ -105,11 +120,12 @@ class _Lint:
         # Rule-level and lexical rules.
         for idx, info in self.body_rules():
             self.choice_tag(idx, info)
+            self.cross_choice(info)
             self.subsumed_atoms(info)
             self.named_complement(info)
             self.long_rule(info)
         self.decl_placement()
-        if advisory:
+        if hints:
             for key in self.body_keys():
                 if key not in self.claimed:
                     self.pass_through(key)
@@ -123,7 +139,6 @@ class _Lint:
                 self.domain_enumerator(info)
                 self.argmax(idx, info)
             self.common_subexpr()
-            self.single_init_comps()
         return self.findings
 
     # --- shared views ---
@@ -208,7 +223,8 @@ class _Lint:
                     dead.add(key)
                     changed = True
         for key in sorted(dead, key=lambda k: self.decl_of(k).line):
-            self.claim("dead", key, self.decl_of(key).line, key[1])
+            self.claim("dead", key, self.decl_of(key).line,
+                       f"`{key[1]}` has no uses")
 
     def rule_head_key(self, rule_idx: int) -> RelKey:
         info = self.ix.rules[rule_idx]
@@ -235,7 +251,7 @@ class _Lint:
                 set(head_vars) != set(atom_vars):
             return
         self.claim("alias-inline", key, self.decl_of(key).line,
-                   f"{key[1]} = {_atom_str(atom)}")
+                   f"`{_atom_str(defs[0].head)}` is `{_atom_str(atom)}` renamed")
 
     def negated_use(self, key: RelKey) -> None:
         """Referenced only under negation, every rule a single-atom body."""
@@ -255,16 +271,16 @@ class _Lint:
         the head variables carried through and the dropped columns
         wildcarded. The first def's head names are the canonical ones."""
         canon = [_term_str(a) for a in defs[0].head.args]
-        parts = []
+        parts: list[str] = []
         for d in defs:
             names = {
                 a.name: canon[i]
                 for i, a in enumerate(d.head.args) if isinstance(a, Var)
             }
-            atom = d.body[0]
-            assert isinstance(atom, Atom)
+            atom = d.body[0] if d.body else None
+            assert isinstance(atom, Atom)  # _projection admitted this def
             parts.append(f"!{_atom_str(atom, names)}")
-        return f"!{key[1]}({', '.join(canon)}) ⇒ {', '.join(parts)}"
+        return f"`!{key[1]}({', '.join(canon)})` ⇒ `{', '.join(parts)}`"
 
     def _projection(self, d: Rule) -> bool:
         """The rule projects a single positive atom: negating the head is
@@ -285,10 +301,10 @@ class _Lint:
         )
 
     def pass_through(self, key: RelKey) -> None:
-        """Advisory: consumed only by pure forwarding rules of one relation.
+        """Hint: consumed only by pure forwarding rules of one relation.
         The corpus keeps this shape as a named union member; flag it for
         the call."""
-        if not self.inlinable(key):
+        if not self.inlinable(key) or self.recursive(key):
             return
         uses = self.uses(key)
         ext = [u for u in uses if self.rule_head_key(u.rule) != key]
@@ -310,10 +326,10 @@ class _Lint:
                     - set(head_vars):
                 return  # drops a column: a named projection, not a forward
         self.claim("pass-through", key, self.decl_of(key).line,
-                   f"{key[1]} only feeds {consumer[1]}")
+                   f"`{key[1]}` only feeds `{consumer[1]}`")
 
     def single_consumer(self, key: RelKey) -> None:
-        """Advisory: one rule, one positive use, a two-literal body. The
+        """Hint: one rule, one positive use, a two-literal body. The
         corpus both inlines and keeps this shape — the name's value is the
         call."""
         if not self.inlinable(key):
@@ -327,14 +343,31 @@ class _Lint:
         uses = self.uses(key)
         if len(uses) != 1 or uses[0].role not in ("pos", "agg"):
             return
+        if uses[0].role == "agg" and self._agg_op(uses[0]) in ("count", "sum") \
+                and _drops_columns(defs[0]):
+            return  # a projection deduplicates; inlining changes the count
         self.claim("single-consumer", key, self.decl_of(key).line,
-                   f"{key[1]}: one rule, one use")
+                   f"`{key[1]}` has one rule and one use (line {uses[0].line})")
+
+    def _agg_op(self, use: Ref) -> str | None:
+        """The aggregate operator whose body holds this use, if any."""
+        rule = self.ix.rules[use.rule].rule
+        if rule.body is None:
+            return None
+        for lit in rule.body:
+            if isinstance(lit, Cmp):
+                for side in (lit.lhs, lit.rhs):
+                    if isinstance(side, Agg) \
+                            and any(b is use.atom for b in side.body):
+                        return side.op
+        return None
 
     def chain_join(self, key: RelKey) -> None:
         """A column that, at every use, only keys a join against one other
-        relation: fuse and project the column out. Restricted to plumbing —
-        every rule of the relation a single-atom body — so named stages
-        stay."""
+        relation the join fully absorbs: fuse and project the column out.
+        Restricted to plumbing — every rule of the relation a single-atom
+        body — so named stages stay. A partner with a life of its own
+        (other readers, or a lib relation) is factoring, not a chain."""
         if key[0] != TOP or not self.inlinable(key):
             return
         if any(
@@ -348,24 +381,37 @@ class _Lint:
             return
         for col in range(len(decl.fields)):
             partners: set[tuple[RelKey, int]] = set()
+            joined: list[Atom] = []
             ok = True
             for u in uses:
                 partner = self._join_partner(u, col)
                 if partner is None:
                     ok = False
                     break
-                partners.add(partner)
-            if ok and len(partners) == 1:
-                q, _ = partners.pop()
-                self.claim(
-                    "chain-join", key, decl.line,
-                    f"{key[1]}.{decl.fields[col].name} only joins {q[1]}",
-                )
-                return
+                pkey, pcol, patom = partner
+                partners.add((pkey, pcol))
+                joined.append(patom)
+            if not (ok and len(partners) == 1):
+                continue
+            q, _ = partners.pop()
+            if q[0] == EXTERN or not self._absorbable(q, joined):
+                continue
+            self.claim(
+                "chain-join", key, decl.line,
+                f"`{key[1]}.{decl.fields[col].name}` only joins `{q[1]}`",
+            )
+            return
 
-    def _join_partner(self, use: Ref, col: int) -> tuple[RelKey, int] | None:
-        """The (relation, column) the key var at `col` of this use joins,
-        when the var appears exactly there and nowhere else."""
+    def _absorbable(self, q: RelKey, joined: list[Atom]) -> bool:
+        """Fusing deletes `q` only when these joins are all `q` does."""
+        ids = {id(a) for a in joined}
+        return all(
+            r.role == "head" or id(r.atom) in ids for r in self.ix.refs_of(q)
+        )
+
+    def _join_partner(self, use: Ref, col: int) -> tuple[RelKey, int, Atom] | None:
+        """The (relation, column, atom) the key var at `col` of this use
+        joins, when the var appears exactly there and nowhere else."""
         atom = use.atom
         if col >= len(atom.args):
             return None
@@ -378,7 +424,7 @@ class _Lint:
             return None
         if sum(1 for a in atom.args if v in term_vars(a)) != 1:
             return None
-        partner: tuple[RelKey, int] | None = None
+        partner: tuple[RelKey, int, Atom] | None = None
         for lit in rule.body:
             if isinstance(lit, Atom) and lit is not atom:
                 hits = [i for i, a in enumerate(lit.args) if v in term_vars(a)]
@@ -388,14 +434,16 @@ class _Lint:
                     if not isinstance(lit.args[hits[0]], Var):
                         return None
                     pkey = self.ix.resolve(use.scope, lit.qual, lit.name)
-                    partner = (pkey, hits[0])
+                    partner = (pkey, hits[0], lit)
             elif lit is not atom and v in literal_vars(lit):
                 return None
         return partner
 
     def choice_tag(self, idx: int, info: RuleInfo) -> None:
         """Rules identical but for a distinct nullary constructor in one
-        head argument: merge on a Choice variable."""
+        head argument: merge on a Choice variable. Fires only when some
+        relation's facts already enumerate both tags — without one, the
+        merge must add an enumerator and comes out larger."""
         rule = info.rule
         if rule.body is None:
             return
@@ -419,13 +467,49 @@ class _Lint:
             ]
             tags = [r.head.args[diff[0]] for r in (rule, o)] if len(diff) == 1 \
                 else []
-            if tags and all(isinstance(t, Ctor) and not t.args for t in tags):
+            names = [t.name for t in tags if isinstance(t, Ctor) and not t.args]
+            if len(names) == len(tags) == 2 and self._tags_enumerated(names):
                 self.add(
                     "choice-tag", rule.line,
-                    f"{rule.head.name}: same body under {_term_str(tags[1])} "
-                    f"and {_term_str(tags[0])} — one rule ranging over the tags",
+                    f"same body under `{_term_str(tags[1])}` and "
+                    f"`{_term_str(tags[0])}`; one rule ranges over the tags",
                 )
                 return
+
+    def _tags_enumerated(self, names: list[str]) -> bool:
+        """Whether some relation's facts range over all of `names`."""
+        have: dict[RelKey, set[str]] = {}
+        for info in self.ix.rules:
+            r = info.rule
+            if r.body is not None:
+                continue
+            key = self.ix.resolve(info.scope, r.head.qual, r.head.name)
+            for a in r.head.args:
+                if isinstance(a, Ctor) and not a.args:
+                    have.setdefault(key, set()).add(a.name)
+        return any(set(names) <= s for s in have.values())
+
+    def cross_choice(self, info: RuleInfo) -> None:
+        """A disjunction whose branches bind different choice tags. A
+        disjunction is a case split inside one choice's derivation;
+        choices stay separate rules."""
+        for disj in _disjs_in(info.rule):
+            binds = [
+                _tags(" ".join(_lit_str(lit) for lit in branch))
+                & self.choice_tags
+                for branch in disj.branches
+            ]
+            named = [b for b in binds if b]
+            if len(named) >= 2 and any(b != named[0] for b in named):
+                tags: set[str] = set()
+                for b in named:
+                    tags |= b
+                self.add(
+                    "cross-choice", disj.line,
+                    f"branches bind "
+                    f"{', '.join(f'`${t}()`' for t in sorted(tags))}; "
+                    f"choices stay separate rules",
+                )
 
     def subsumed_atoms(self, info: RuleInfo) -> None:
         """R(X, _) next to R(X, Y) in one body: the wildcard atom adds
@@ -442,13 +526,16 @@ class _Lint:
                     if all(_term_str(x) == _term_str(y) for x, y in pairs):
                         if i < j:
                             self.add("subsumed-atom", b.line,
-                                     f"duplicate {_atom_str(b)}")
+                                     f"`{_atom_str(b)}` appears twice in the body")
                     elif all(
                         isinstance(x, Wild) or _term_str(x) == _term_str(y)
                         for x, y in pairs
                     ):
-                        self.add("subsumed-atom", a.line,
-                                 f"{_atom_str(a)} subsumed by {_atom_str(b)}")
+                        self.add(
+                            "subsumed-atom", a.line,
+                            f"`{_atom_str(a)}` adds nothing next to "
+                            f"`{_atom_str(b)}`",
+                        )
 
     def named_complement(self, info: RuleInfo) -> None:
         """`R(V), X != V` against a singleton fact: `!R(X)` says it
@@ -492,8 +579,8 @@ class _Lint:
             qual = f"{atom.qual}." if atom.qual else ""
             self.add(
                 "named-complement", atom.line,
-                f"{_atom_str(atom)}, {_lit_str(cmp)} ⇒ "
-                f"!{qual}{atom.name}({_term_str(other)})",
+                f"`{_atom_str(atom)}, {_lit_str(cmp)}` ⇒ "
+                f"`!{qual}{atom.name}({_term_str(other)})`",
             )
 
     def decl_placement(self) -> None:
@@ -510,7 +597,8 @@ class _Lint:
             spot = spots.pop()
             if spot is None or spot == self.ix.section_at(decl.line):
                 continue
-            self.add("decl-placement", decl.line, f"{name}: all uses in {spot}")
+            self.add("decl-placement", decl.line,
+                 f"all uses of `{name}` are in {spot}")
 
     def long_rule(self, info: RuleInfo) -> None:
         rule = info.rule
@@ -519,13 +607,15 @@ class _Lint:
         text = self.lines[rule.line - 1] if rule.line <= len(self.lines) else ""
         code = text.split("//")[0].rstrip()
         if len(code) > LINE_LIMIT:
-            self.add("long-rule", rule.line, f"{len(code)} chars")
+            self.add("long-rule", rule.line,
+                     f"{len(code)} > {LINE_LIMIT} chars of code; wrap the body")
 
-    # --- advisory rules ---
+    # --- hint rules ---
 
     def domain_enumerator(self, info: RuleInfo) -> None:
         """An `*_elem` atom whose variable another positive atom already
-        binds."""
+        binds. An `inline` relation does not count as a binder: it
+        substitutes away, so its arguments stay ungrounded."""
         rule = info.rule
         if rule.body is None:
             return
@@ -540,12 +630,24 @@ class _Lint:
                 (o for o in pos
                  if o is not atom and not o.name.endswith("_elem")
                  and v in literal_vars(o)
-                 and self.ix.resolve(info.scope, o.qual, o.name)[0] != EXTERN),
+                 and self._grounds(info.scope, o)),
                 None,
             )
             if binder is not None:
-                self.add("domain-enumerator", atom.line,
-                         f"{_atom_str(atom)}: {v} already bound by {binder.name}")
+                self.add(
+                    "domain-enumerator", atom.line,
+                    f"`{_atom_str(atom)}`; `{v}` is already bound by "
+                    f"`{binder.name}`",
+                )
+
+    def _grounds(self, scope: str, atom: Atom) -> bool:
+        """Whether this atom grounds its variables: a local, non-inline
+        relation."""
+        key = self.ix.resolve(scope, atom.qual, atom.name)
+        if key[0] == EXTERN:
+            return False
+        decl = self.ix.decls.get(key[0], {}).get(key[1])
+        return decl is not None and "inline" not in decl.qualifiers
 
     def argmax(self, idx: int, info: RuleInfo) -> None:
         """`beaten(X) :- score(X, N), score(_, N2), N2 > N`, read only
@@ -565,48 +667,53 @@ class _Lint:
         key = self.rule_head_key(idx)
         uses = self.uses(key)
         if uses and all(u.role == "neg" for u in uses):
-            self.add("argmax", rule.line, f"{rule.head.name}: max/min as self-join")
+            self.add("argmax", rule.line,
+                     f"`{rule.head.name}` reads as max/min via self-join")
 
     def common_subexpr(self) -> None:
-        """The same literal run, up to renaming, in two bodies."""
-        seen: dict[tuple[str, ...], tuple[int, str]] = {}
+        """The same literal run, up to renaming, in two bodies of one
+        scope. A cross-scope repeat is the fit architecture re-deriving a
+        solve rule over the examples — the comp boundary blocks sharing.
+        A pair that spans choices — different sections, or heads bound to
+        different choice tags — stays quiet: sharing across choices is
+        not a simplification of either choice."""
+        seen: dict[tuple[str, ...], RuleInfo] = {}
         reported: set[tuple[int, int]] = set()
-        rules = self.body_rules()
-        for _, info in rules:
+        for _, info in self.body_rules():
             body = info.rule.body or []
             n = len(body)
             for width in range(n, COMMON_SUBEXPR_MIN - 1, -1):
                 for start in range(0, n - width + 1):
                     window = body[start:start + width]
-                    sig = _canon_window(window)
-                    if sig is None:
+                    canon = _canon_window(window)
+                    if canon is None:
                         continue
-                    at = (info.rule.line, info.rule.head.name)
-                    if sig in seen and seen[sig][0] != info.rule.line:
-                        pair = (seen[sig][0], info.rule.line)
+                    sig = (info.scope, *canon)
+                    if sig in seen and seen[sig].rule.line != info.rule.line:
+                        prev = seen[sig]
+                        pair = (prev.rule.line, info.rule.line)
                         if pair not in reported:
                             reported.add(pair)
-                            self.add(
-                                "common-subexpr", info.rule.line,
-                                f"{width} literals shared with "
-                                f"{seen[sig][1]} (L{seen[sig][0]})",
-                            )
+                            msg = self._subexpr_msg(width, prev, info)
+                            if msg is not None:
+                                self.add("common-subexpr", info.rule.line, msg)
                     else:
-                        seen.setdefault(sig, at)
+                        seen.setdefault(sig, info)
 
-    def single_init_comps(self) -> None:
-        """A task-local comp with a single instantiation: possibly plain
-        relations staged early."""
-        inits: dict[str, list[int]] = {}
-        for scope in self.ix.inits.values():
-            for init in scope.values():
-                inits.setdefault(init.comp, []).append(init.line)
-        for comp in self.ix.program.comps().values():
-            if comp.name in ("Consts", "Fit", "Parse"):
-                continue
-            if len(inits.get(comp.name, [])) == 1:
-                self.add("single-init-comp", comp.line,
-                         f"{comp.name}: instantiated once — could be plain relations")
+    def _subexpr_msg(self, width: int, prev: RuleInfo, cur: RuleInfo) -> str | None:
+        """The finding message, or None when the pair spans choices.
+        Same-shaped heads make the pair a disjunction merge; the message
+        says so."""
+        if prev.section != cur.section:
+            return None
+        ph, ch = prev.rule.head, cur.rule.head
+        if _tags(_atom_str(ph)) & self.choice_tags \
+                != _tags(_atom_str(ch)) & self.choice_tags:
+            return None
+        msg = f"{width} literals shared with `{ph.name}` (line {prev.rule.line})"
+        if _canon_window([ph]) == _canon_window([ch]):
+            msg += "; merge the tails into a disjunction"
+        return msg
 
 
 # --- literal rendering (line-blind, for structural comparison) ---
@@ -660,20 +767,71 @@ def _lit_str(lit: Lit) -> str:
             return f"{_term_str(lhs)} {op} {_term_str(rhs)}"
         case Bool(value):
             return "true" if value else "false"
+        case Disj(branches, _):
+            inner = " ; ".join(
+                ", ".join(_lit_str(sub) for sub in b) for b in branches
+            )
+            return f"({inner})"
     return repr(lit)
 
 
+def _tags(text: str) -> set[str]:
+    """Nullary constructor names a rendered literal mentions."""
+    return set(re.findall(r"\$(\w+)\(\)", text))
+
+
+def _disjs_in(rule: Rule) -> Iterator[Disj]:
+    stack: list[Lit] = list(rule.body or ())
+    while stack:
+        lit = stack.pop()
+        if isinstance(lit, Disj):
+            yield lit
+            for branch in lit.branches:
+                stack.extend(branch)
+
+
+def _atoms_in(lit: Lit) -> Iterator[Atom]:
+    if isinstance(lit, Atom):
+        yield lit
+    elif isinstance(lit, Disj):
+        for branch in lit.branches:
+            for sub in branch:
+                yield from _atoms_in(sub)
+
+
+def _drops_columns(d: Rule) -> bool:
+    """Whether the head loses information from the body: a body variable
+    or wildcard no head column carries."""
+    if d.body is None:
+        return False
+    head = literal_vars(d.head)
+    if any(literal_vars(lit) - head for lit in d.body):
+        return True
+    return any(
+        isinstance(a, Wild)
+        for lit in d.body
+        for atom in _atoms_in(lit)
+        for a in atom.args
+    )
+
+
 def _conjunctions(rule: Rule) -> Iterator[list[Lit]]:
-    """The rule body plus each aggregate body: the scopes subsumption
-    reasons over."""
+    """The rule body, each aggregate body, and each disjunct: the scopes
+    subsumption reasons over."""
     if rule.body is None:
         return
     yield rule.body
-    for lit in rule.body:
+    stack: list[Lit] = list(rule.body)
+    while stack:
+        lit = stack.pop()
         if isinstance(lit, Cmp):
             for side in (lit.lhs, lit.rhs):
                 if isinstance(side, Agg):
                     yield list(side.body)
+        elif isinstance(lit, Disj):
+            for branch in lit.branches:
+                yield list(branch)
+                stack.extend(branch)
 
 
 def _canon_window(window: list[Lit]) -> tuple[str, ...] | None:

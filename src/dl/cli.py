@@ -1,5 +1,6 @@
 """Commands the runner exposes, and the argv dispatch over them."""
 
+import argparse
 import sys
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
@@ -10,28 +11,80 @@ from dl.fit_plan import probe_report, render_fit_plan
 from dl.lint import lint_body
 from dl.paths import SOLVERS_DIR, all_stems
 from dl.render import render_pair_failure
-from dl.simplify_lint import lint_simplify
+from dl.rewrite_lint import HINTS, lint_rewrites
 from dl.solve import PairResult, TaskResult, _pair_work, case_coverage, run_pair, run_task
 from dl.souffle import _pool_workers, build_functors
 from dl.sweep import render_sweep, sweep_report
 
+type Findings = list[tuple[str, int, str, str]]
 
-def _lint_all(source: str, simplify: bool, advisory: bool) -> list[tuple[str, int, str, str]]:
-    findings = lint_body(source)
-    if simplify or advisory:
-        findings = findings + lint_simplify(source, advisory)
-    findings.sort(key=lambda f: (f[1], f[0]))
-    return findings
+LINT_TIERS = ("lint", "rewrite", "hint")
 
 
-def _finding_line(cat: str, lineno: int, match: str, line: str, code: bool) -> str:
-    tail = f"  →  {line.strip()}" if code else ""
-    return f"L{lineno}: {cat} `{match}`{tail}"
+def _lint_tiers(source: str, rewrites: bool, hints: bool) -> list[Findings]:
+    """Findings per tier, in LINT_TIERS order; disabled tiers come back empty."""
+    style: Findings = lint_body(source)
+    dec: Findings = []
+    adv: Findings = []
+    if rewrites or hints:
+        for f in lint_rewrites(source, hints):
+            (adv if f[0] in HINTS else dec).append(f)
+    return [style, dec, adv]
 
 
-def cmd_one(
-    stem: str, simplify: bool = False, advisory: bool = False, code: bool = False,
+def _finding_line(stem: str, tier: str, cat: str, lineno: int, match: str) -> str:
+    if tier == "lint":
+        match = f"`{match}`"  # style matches are bare code fragments
+    return f"{stem}.dl:{lineno}: {cat}: {match}"
+
+
+def _print_findings(stems: list[str], rewrites: bool, hints: bool) -> int:
+    """Print the tier sections for `stems`; return the finding count."""
+    by_tier: list[dict[str, Findings]] = [{}, {}, {}]
+    for stem in stems:
+        source = (SOLVERS_DIR / f"{stem}.dl").read_text()
+        for held, tier in zip(by_tier, _lint_tiers(source, rewrites, hints),
+                              strict=True):
+            if tier:
+                held[stem] = tier
+
+    total = 0
+    for label, held in zip(LINT_TIERS, by_tier, strict=True):
+        if not held:
+            continue
+        print()
+        count = sum(len(v) for v in held.values())
+        total += count
+        print(f"--- {label} findings: {count} across {len(held)} solver(s) ---")
+        for stem in sorted(held):
+            for cat, lineno, match, _ in held[stem]:
+                print(f"  {_finding_line(stem, label, cat, lineno, match)}")
+    return total
+
+
+def cmd_lint(
+    stem: str | None, rewrites: bool = False, hints: bool = False,
 ) -> int:
+    """Lint only: no solver runs, no fit checks, no Souffle needed."""
+    if stem is not None and _missing(stem):
+        return 2
+    total = _print_findings([stem] if stem else all_stems(), rewrites, hints)
+    if total == 0:
+        print("lint: ok")
+        return 0
+    return 1
+
+
+def _missing(stem: str) -> bool:
+    if (SOLVERS_DIR / f"{stem}.dl").exists():
+        return False
+    print(f"no solver at {SOLVERS_DIR / f'{stem}.dl'}", file=sys.stderr)
+    return True
+
+
+def cmd_one(stem: str, rewrites: bool = False, hints: bool = False) -> int:
+    if _missing(stem):
+        return 2
     build_functors()
     result = run_task(stem)
     for p in result.pairs:
@@ -51,16 +104,18 @@ def cmd_one(
             print(f"  {line}")
 
     source = (SOLVERS_DIR / f"{stem}.dl").read_text()
-    findings = _lint_all(source, simplify, advisory)
-    if findings:
+    tiers = _lint_tiers(source, rewrites, hints)
+    for label, findings in zip(LINT_TIERS, tiers, strict=True):
+        if not findings:
+            continue
         print()
-        print(f"--- {len(findings)} lint finding(s) in {stem}.dl ---")
-        for cat, lineno, match, line in findings:
-            print(f"  {_finding_line(cat, lineno, match, line, code)}")
+        print(f"--- {len(findings)} {label} finding(s) ---")
+        for cat, lineno, match, _ in findings:
+            print(f"  {_finding_line(stem, label, cat, lineno, match)}")
 
     fit = run_fit(stem)
     print()
-    if not findings:
+    if not any(tiers):
         print("lint: ok")
     if fit is not None:
         for line in render_fit(fit):
@@ -69,9 +124,7 @@ def cmd_one(
     return 0 if result.all_pass else 1
 
 
-def cmd_all(
-    simplify: bool = False, advisory: bool = False, code: bool = False,
-) -> int:
+def cmd_all(rewrites: bool = False, hints: bool = False) -> int:
     build_functors()
     stems = all_stems()
 
@@ -116,20 +169,7 @@ def cmd_all(
             for line in coverage_findings[stem]:
                 print(f"  {stem}.dl: {line}")
 
-    lint_findings: dict[str, list] = {}
-    for stem in stems:
-        source = (SOLVERS_DIR / f"{stem}.dl").read_text()
-        findings = _lint_all(source, simplify, advisory)
-        if findings:
-            lint_findings[stem] = findings
-
-    if lint_findings:
-        print()
-        total = sum(len(v) for v in lint_findings.values())
-        print(f"--- lint findings: {total} across {len(lint_findings)} solver(s) ---")
-        for stem in sorted(lint_findings):
-            for cat, lineno, match, line in lint_findings[stem]:
-                print(f"  {stem}.dl:{_finding_line(cat, lineno, match, line, code)}")
+    _print_findings(stems, rewrites, hints)
 
     fit_results: dict[str, FitResult] = {}
     for stem in stems:
@@ -153,6 +193,8 @@ def cmd_all(
 
 
 def cmd_sweep(stem: str, max_candidates: int = 64) -> int:
+    if _missing(stem):
+        return 2
     build_functors()
     for line in render_sweep(sweep_report(stem, max_candidates)):
         print(line)
@@ -170,17 +212,21 @@ def _print_deletions(stem: str) -> int:
     else:
         print(f"{len(unchanged)}/{total} deletions change nothing:")
         for lineno, kind, text in unchanged:
-            print(f"  L{lineno}: {kind} `{text}`")
+            print(f"  {stem}.dl:{lineno}: {kind} `{text}`")
     return 0
 
 
 def cmd_deletions(stem: str) -> int:
+    if _missing(stem):
+        return 2
     build_functors()
     return _print_deletions(stem)
 
 
 def cmd_audit(stem: str) -> int:
     """Both evidence audits of a finished solver: fill sweep + deletions."""
+    if _missing(stem):
+        return 2
     build_functors()
     print("--- sweep ---")
     for line in render_sweep(sweep_report(stem)):
@@ -192,51 +238,62 @@ def cmd_audit(stem: str) -> int:
 
 def cmd_fit_plan(stem: str) -> int:
     """Which Consts slots need Fit relations, from the proposer probe."""
+    if _missing(stem):
+        return 2
     build_functors()
     for line in render_fit_plan(probe_report(stem)):
         print(line)
     return 0
 
 
-def _usage() -> str:
-    return "\n".join([
-        f"usage: {sys.argv[0]} "
-        "[--simplify | --advisory] [--code] [--audit <stem> | --sweep <stem> [cap] | "
-        "--deletions <stem> | --fit-plan <stem> | <stem>]",
-        "",
-        "  (none)                run every solver: pairs, lint, fit checks",
-        "  <stem>                run one solver: pairs, lint, fit check",
-        "  --simplify            also print simplify findings",
-        "  --advisory            simplify findings plus the advisory tier",
-        "  --code                echo the source line with each lint finding",
-        "  --audit <stem>        fill sweep + deletion report",
-        "  --sweep <stem> [cap]  fill sweep only; cap = max candidates per slot",
-        "  --deletions <stem>    deletion report only",
-        "  --fit-plan <stem>     which Consts slots need Fit relations",
-    ])
+COMMANDS = ("run", "lint", "sweep", "deletions", "audit", "fit-plan")
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Run Souffle solvers and their checks.")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    run = sub.add_parser(
+        "run", help="pairs, lint, fit checks; the default when no command is named",
+    )
+    lint = sub.add_parser("lint", help="lint only, no solver runs")
+    for p in (run, lint):
+        p.add_argument("stem", nargs="?",
+                       help="one solver; all of them when omitted")
+        p.add_argument("--rewrites", action="store_true",
+                       help="also print rewrite findings; each carries its fix")
+        p.add_argument("--hints", action="store_true",
+                       help="rewrite findings plus the hint tier")
+
+    sweep = sub.add_parser("sweep", help="fill sweep only")
+    sweep.add_argument("stem")
+    sweep.add_argument("cap", nargs="?", type=int, default=64,
+                       help="max candidates per slot")
+
+    sub.add_parser("deletions", help="deletion report only").add_argument("stem")
+    sub.add_parser("audit", help="fill sweep + deletion report").add_argument("stem")
+    sub.add_parser(
+        "fit-plan", help="which Consts slots need Fit relations",
+    ).add_argument("stem")
+    return parser
 
 
 def main(argv: list[str]) -> int:
-    simplify = "--simplify" in argv
-    advisory = "--advisory" in argv
-    code = "--code" in argv
-    argv = [a for a in argv if a not in ("--simplify", "--advisory", "--code")]
-    if len(argv) == 0:
-        return cmd_all(simplify, advisory, code)
-    if argv in (["-h"], ["--help"]):
-        print(_usage())
-        return 0
-    if len(argv) == 1:
-        return cmd_one(argv[0], simplify, advisory, code)
-    if len(argv) == 2 and argv[0] == "--sweep":
-        return cmd_sweep(argv[1])
-    if len(argv) == 3 and argv[0] == "--sweep":
-        return cmd_sweep(argv[1], int(argv[2]))
-    if len(argv) == 2 and argv[0] == "--deletions":
-        return cmd_deletions(argv[1])
-    if len(argv) == 2 and argv[0] == "--audit":
-        return cmd_audit(argv[1])
-    if len(argv) == 2 and argv[0] == "--fit-plan":
-        return cmd_fit_plan(argv[1])
-    print(_usage(), file=sys.stderr)
-    return 2
+    if not argv or argv[0] not in (*COMMANDS, "-h", "--help"):
+        argv = ["run", *argv]
+    args = _parser().parse_args(argv)
+    match args.cmd:
+        case "lint":
+            return cmd_lint(args.stem, args.rewrites, args.hints)
+        case "sweep":
+            return cmd_sweep(args.stem, args.cap)
+        case "deletions":
+            return cmd_deletions(args.stem)
+        case "audit":
+            return cmd_audit(args.stem)
+        case "fit-plan":
+            return cmd_fit_plan(args.stem)
+        case _:
+            if args.stem:
+                return cmd_one(args.stem, args.rewrites, args.hints)
+            return cmd_all(args.rewrites, args.hints)
