@@ -34,11 +34,9 @@ For each pass: Do each step individually. Do not batch them. Create a task per s
 Creation pass, do this first:
 
 1. Create the solver
-    1. Read and analyze:
-        - The task: `cat data/tasks/<task_id>.json`
-            - This is already formatted, do not pipe into anything.
-        - The reference TS solver: `cat ../arc-synth-bun/programs/solvers/<task_id>.ts`
-            - This solves the task but might not encode the best model.
+    1. Analyze the task and the reference TS solver: `cat data/tasks/<task_id>.json ../arc-synth-bun/programs/solvers/<task_id>.ts`
+        - The task is already formatted, do not pipe into anything.
+        - The reference TS solver solves the task but might not encode the best model.
     2. Draft the solver. Do not write the `Fit` comp yet.
     3. Run against materialized train+test pairs (`uv run python scripts/run_dl.py <task_id>`)
     4. Iterate until it works and passes lint.
@@ -46,7 +44,7 @@ Creation pass, do this first:
 2. Simplify if possible
 3. Prune everything that does not serve the reader — exhaustively, from unnecessary words to irrelevant ideas. Judge necessity from the artifact alone, not from the session.
     - Text copied from prior solvers may not have been pruned; prune it like new text
-4. Run `--fit-plan` and report very briefly if there needs to be a fit pass.
+4. Run `--fit-plan` and report the verdict (bold it) on if there needs to be a fit pass.
 5. Review:
     - The review is for the user to act on: keep or add cases, fix awkward code, promote primitives. Include only items the user can act on. An item included only as context still makes the user verify it against the rules, which is the work the review should do for them.
     - Does it follow principles?
