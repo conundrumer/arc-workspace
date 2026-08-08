@@ -209,56 +209,20 @@ divide_by_size_slab(P, A, K, G, P_outer, P_inner) :-
 **Task-local home (protocol step 1).** 7b7f7511 (`DivideBySizeSlab`
 comp): $Tile's swept tiling.
 
-## `Dir8` — direction as one type, with `Dir` and `DiagDir` as its branches
+## Dir8-wide primitives — widen the base relations, retire the twins
 
-Lib's two direction families are not parallel. `diag_dist` is `dist` applied twice through `diag_dirs`; `diag_jump_delta` is two `jump_delta`s composed. A corner is a pair of edges, one per axis, so the `diag_*` names package the `Dir` layer rather than forming a second primitive layer. The missing type sits above both branches rather than beside them.
+`dir8_jump_delta` / `dir8_step_delta` (in lib) are a third parallel family: the `diag_*` relations twin the cardinal ones, and the `dir8_*` pair twins both again. Widening the base relations to `Dir8` retires the twins: a corner is its two cardinal edges, so a functor that lets a `DiagDir` match either of its corner's dirs makes the existing single clauses compute the diagonal cases unchanged.
 
-Without it, a column holding a direction that may be either kind has no type to declare, and every site that wants all eight rebuilds the set. The corpus holds three unrelated encodings: guarded twin rules over a locally declared union (045e512c), a `surround_step` delta set repeated verbatim (42a50994, d9fac9be, f0df5ff0, and inlined at the use site in ce22a75a and dc1df850), and step-set extension (`Components8`). All but the first erase the direction's identity down to a delta at the point of construction.
+- `@keep_dir(sel, target, v)`: a `DiagDir` sel matches both of its corner's cardinal targets. `edge_delta(d: Dir8, k, p)` then carries k at a corner's two edges — the equal-k case of the proposed `diag_edge_delta`.
+- `opposite(d: Dir8, opp: Dir8)` gains the four corner rows; `diag_opposite` folds in.
+- `jump_delta` and `step_delta` widen with their clauses unchanged: for `DIAG_TL`, `edge_delta(DIAG_TL, -K)` composed with `edge_delta(DIAG_BR, K)` is the diagonal jump. `diag_jump_delta`, `diag_step_delta`, `dir8_jump_delta`, and `dir8_step_delta` retire.
+- The widened relations stay single functor clauses that bind nothing, so sites that enumerate all eight — `dir8_step_delta(_, S)` today — ground through a `dir8_elem` enum: `dir8_elem(D), step_delta(D, S)`.
 
-Lib target: type beside `Dir` and `DiagDir`, deltas beside `jump_delta` and `diag_jump_delta`.
+Discrimination sits in the functor layer, so no calling rule multiplies IR paths — the cost the two-clause `dir8_*` form carries.
 
-```
-.type Dir8 = Dir | DiagDir
+Bounds: `dist` / `diag_dist` and the unequal-k `diag_edge_delta` differ in arity across the branches and stay per-branch; `Ray` / `DiagRay` collapse only at the cost of a length domain. `turn` widens the same way — rotation carries corners to corners — but has no site.
 
-.decl dir8_jump_delta(d: Dir8, k: number, delta: Shift) inline
-dir8_jump_delta(D, K, Delta) :- dir_elem(D), jump_delta(D, K, Delta).
-dir8_jump_delta(D, K, Delta) :- diag_dir_elem(D), diag_jump_delta(D, K, Delta).
-
-.decl dir8_step_delta(d: Dir8, delta: Shift) inline
-dir8_step_delta(D, Delta) :- dir8_jump_delta(D, 1, Delta).
-```
-
-The union type works because lib's constants sit in disjoint ranges: a value's range identifies its branch, which is what each clause's `dir_elem` / `diag_dir_elem` guard tests.
-
-### What collapses
-
-Whether a pair collapses turns on the codomain. Three pairs are `Shift`-valued and become one relation each: `opposite` / `diag_opposite`, `jump_delta` / `diag_jump_delta`, `step_delta` / `diag_step_delta`.
-
-Where the arity differs there is nothing to write. `dist` yields one number and `diag_dist` yields two, because an edge has one edge and a corner has two. The proposed `diag_edge_delta` stays for the same reason at the input end: it takes a length per axis where `edge_delta` takes one. That is the type's limit — `Dir8` with a scalar `k` describes king moves only, and a displacement with unequal per-axis steps has no `Dir8` form.
-
-`Ray` and `DiagRay` collapse only at a cost. Both are collinearity plus a side test in two coordinate idioms; the uniform form is "q is p displaced n steps toward d, n at least 0", which needs a length domain to enumerate where the comparison forms need none.
-
-### Where discrimination lives
-
-Souffle has no match construct, so any consumer that tells the branches apart re-guards with `dir_elem` / `diag_dir_elem`. Keep that in one place, the delta primitive, and let everything downstream carry `Dir8` opaquely — 045e512c's `toward` holds the column and never inspects it.
-
-The guards also change the call convention. `jump_delta` is one clause of functors that binds nothing, so callers pair it with `dir_elem`; `dir8_jump_delta` grounds its own direction, so a caller supplies only `k`. The `surround_step` sites collapse to `surround_step(S) :- dir8_step_delta(_, S).`, and `Components8` to `c4.step(S) :- dir8_step_delta(_, S).`, one rule stating the whole adjacency instead of the diagonal half added onto the cardinal one. b60334d2 and 49d1d64f keep their split: their cardinal and diagonal arms supply different colors, so the two families are load-bearing there.
-
-A `dir8_elem` enum, the peer of `dir_elem` and `d4_elem`, has no site. Nothing calling the deltas needs it, and the use it would have — a universal over the eight directions by defect negation — has not come up.
-
-### The undirected peer
-
-The same union recurs on the undirected half. `Axis` and `DiagAxis` together are the four lines through a cell, and `same_dist` and the proposed `same_diag` are two branches of one relation: p and q lie on a common line of that kind. Accepting the union for directions and refusing it for lines leaves the same gap one level down, so the two want deciding together.
-
-Name: `Axis4`, following `Dir8` in naming the branch union by its element count, as `c4_elem` does for the rotation subgroup. `Line` collides with the `lines` concept term, which means ink along a row or column rather than the geometric line.
-
-Keying is open. `same_diag` is keyed by the line's own axis; `same_dist` is keyed by a `Dir` and states equal distance to that edge, which is collinearity along the *perpendicular* axis. A unified relation keys by the line's own axis throughout, so `same_dist`'s convention changes and its callers move with it.
-
-**Task-local home (protocol step 1).** 045e512c: `toward` maps each of the eight directions and each admissible length to a displacement, which the fragment's fit selects from and $Abut composes two lengths of.
-
-**Protocol note.** A `.type` cannot live in a `.comp`, so the task-local form is a solver-scope type, which style otherwise reserves for coverage and comp instantiation.
-
-**Open.** `dir8_jump_delta` needs two clauses, since the domain is a disjoint union, and lib_functors.cpp's header says a multi-clause inline multiplies IR path count in every calling rule. A non-inline form would need both a caller-supplied length domain, which is what 045e512c's `toward` already is, and `dir8_elem` back to supply the direction.
+Caveat: Souffle's union typing is static, with no runtime filtering, so a caller that grounds its direction from the widened `opposite` instead of feeding one in enumerates eight rows. Implementation sweeps `opposite`'s callers for unbound-d use.
 
 ## `corner_dist` — taxicab distance to a corner
 
@@ -301,6 +265,16 @@ same_diag(DA, P, Q) :-
 
 **Task-local home (protocol step 1).** c3f564a4 (`SameDiag` comp): $Diag
 fills a noise cell from a clean cell on its stripe.
+
+**The `Axis4` union.** Lib's `Dir8` recurs on the undirected half:
+`Axis` and `DiagAxis` together are the four lines through a cell, and
+`same_dist` and `same_diag` are two branches of one relation — p and q
+on a common line of that kind. The name follows `Dir8` in counting the
+branch union's elements; `Line` collides with the `lines` concept term.
+Keying is open: a unified relation keys by the line's own axis
+throughout, while `same_dist` keys by a `Dir` and states collinearity
+along the *perpendicular* axis, so its convention and its callers move
+with the merge.
 
 ## `Partition<Key>` — a cell set decomposes into unit copies
 

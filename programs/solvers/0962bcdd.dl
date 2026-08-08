@@ -1,0 +1,149 @@
+// 0962bcdd
+// concept: markers, stamp, lookup
+// Plus-shaped marks — a center cell whose four cardinal neighbors share
+// one arm color — grow: cardinal rays extend in the arm color, diagonal
+// rays in the center color, the rest passes through. $Ray composes the
+// rays from jumps up to a stored radius; $Lookup stamps stored role
+// masks anchored on the marker.
+
+#include "../lib.dl"
+
+.type Choice = Ray {} | Lookup {}
+
+.comp Consts {
+    // --- shared ---
+    .decl bg(col: Color) bg(0).
+
+    // --- Ray ---
+    .decl radius(k: number) radius(2).
+
+    .decl reach(k: number)
+    reach(K) :- radius(R), K = range(1, R+1).   // @structural: a ray is at least one step
+
+    // --- Lookup ---
+    // Role masks over the stamp frame; center_pos anchors the stamp on
+    // the marker.
+    .decl template_arm(p: Position)
+    GRID_MASK_5x5(template_arm,
+        0, 0, 1, 0, 0,
+        0, 0, 1, 0, 0,
+        1, 1, 0, 1, 1,
+        0, 0, 1, 0, 0,
+        0, 0, 1, 0, 0)
+
+    .decl template_center(p: Position)
+    GRID_MASK_5x5(template_center,
+        1, 0, 0, 0, 1,
+        0, 1, 0, 1, 0,
+        0, 0, 1, 0, 0,
+        0, 1, 0, 1, 0,
+        1, 0, 0, 0, 1)
+
+    .decl center_pos(p: Position) center_pos([2, 2, 2, 2]).
+}
+
+.init c = Consts
+
+// --- parse ---
+
+.comp Parse<Key> {
+    .decl grid(key: Key, p: Position, col: Color)
+
+    // The neighbor toward D holds candidate arm color Col.
+    .decl arm(key: Key, p: Position, d: Dir, col: Color)
+    arm(Ky, P, D, Col) :-
+        grid(Ky, P, _), dir_elem(D),                 // candidate center
+        step_delta(D, S), compose(P, S, Q),          // neighbor toward D
+        grid(Ky, Q, Col), !c.bg(Col).                // holds a non-bg color
+
+    // Some direction lacks the same arm color.
+    .decl broken(key: Key, p: Position, col: Color)
+    broken(Ky, P, Col) :- arm(Ky, P, _, Col), dir_elem(D), !arm(Ky, P, D, Col).
+
+    // Plus center with its center and arm colors.
+    .decl marker(key: Key, p: Position, c_center: Color, c_arm: Color)
+    marker(Ky, P, Cc, Ca) :- grid(Ky, P, Cc), arm(Ky, P, _, Ca), !broken(Ky, P, Ca).
+}
+
+.init parse = Parse<Unit>
+parse.grid($U(), P, Col) :- in(P, Col).
+
+// --- body ---
+
+.decl impl_choice(ch: Choice)
+impl_choice($Ray()). impl_choice($Lookup()).
+
+.decl paint(p: Position, col: Color, ch: Choice)
+
+// --- Ray ---
+paint(P2, Ca, $Ray()) :-
+    parse.marker($U(), P, _, Ca), c.reach(K),
+    dir_elem(D), jump_delta(D, K, S), compose(P, S, P2),
+    in(P2, _).                                   // clip to the grid
+paint(P2, Cc, $Ray()) :-
+    parse.marker($U(), P, Cc, _), c.reach(K),
+    diag_dir_elem(Dg), diag_jump_delta(Dg, K, S), compose(P, S, P2),
+    in(P2, _).                                   // clip to the grid
+
+// --- Lookup ---
+
+// The stamp box's margin at each marker: the marker minus the anchor.
+.init stamp = Reframe<Position>
+stamp.outer(P, C0) :- parse.marker($U(), P, _, _), c.center_pos(C0).
+stamp.cell(P, P) :- parse.marker($U(), P, _, _).
+
+paint(P_grid, Ca, $Lookup()) :-
+    parse.marker($U(), C, _, Ca), stamp.inner(C, M),
+    c.template_arm(T), compose(T, M, P_grid),    // embed the template cell
+    in(P_grid, _).                               // clip to the grid
+paint(P_grid, Cc, $Lookup()) :-
+    parse.marker($U(), C, Cc, _), stamp.inner(C, M),
+    c.template_center(T), compose(T, M, P_grid), // embed the template cell
+    in(P_grid, _).                               // clip to the grid
+
+// --- out ---
+
+.decl painted(ch: Choice, p: Position)
+painted(Ch, P) :- paint(P, _, Ch).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- paint(P, Col, Ch).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !painted(Ch, P).
+
+// --- fit ---
+
+.type StarKey = [e: Example, id: Ident]
+
+.comp Fit {
+    .init ex = Parse<Example>
+    ex.grid(E, P, Col) :- ex_in(E, P, Col).
+
+    // Grown stars: the non-bg output cells.
+    .decl star(e: Example, p: Position, col: Color)
+    star(E, P, Col) :- ex_out(E, P, Col), !c.bg(Col).
+
+    .init comps = Components8<Example>
+    comps.node(E, P) :- star(E, P, _).
+
+    // Each star viewed from its own box — the stamp frame.
+    .init box = BoxFrame<StarKey>
+    box.cell([E, Id], P) :- comps.label(E, P, Id).
+
+    // The marker inside each star.
+    .decl star_marker(e: Example, id: Ident, c_center: Color, c_arm: Color)
+    star_marker(E, Id, Cc, Ca) :-
+        ex.marker(E, Pm, Cc, Ca),                // input mark
+        comps.label(E, Pm, Id).                  // its star
+
+    .decl template_arm(p: Position)
+    template_arm(P_t) :-
+        star_marker(E, Id, _, Ca),
+        comps.label(E, P, Id), star(E, P, Ca),   // star cell in the arm color
+        box.inner([E, Id], P, P_t).
+
+    .decl template_center(p: Position)
+    template_center(P_t) :-
+        star_marker(E, Id, Cc, _),
+        comps.label(E, P, Id), star(E, P, Cc),   // star cell in the center color
+        box.inner([E, Id], P, P_t).
+}
