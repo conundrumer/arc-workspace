@@ -143,7 +143,7 @@ render(P, Col) :-
     ).
 ```
 
-Each branch must ground the head's variables on its own. Rules that share a head and a frame belong in one rule.
+Each branch must ground the head's variables on its own. A branch that takes a value the frame already derives binds it with `=` (`P_img = P`). Rules that share a head and a frame belong in one rule.
 
 Branches are never choices: a rule does not range over choice tags through a disjunction.
 
