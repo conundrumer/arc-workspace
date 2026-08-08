@@ -4,18 +4,27 @@ import sys
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 
-from dl.fit import FitResult, render_fit, run_fit
-from dl.lint import lint_body
 from dl.deletions import deletion_report
-from dl.paths import SOLVERS_DIR, all_stems
+from dl.fit import FitResult, render_fit, run_fit
 from dl.fit_plan import probe_report, render_fit_plan
+from dl.lint import lint_body
+from dl.paths import SOLVERS_DIR, all_stems
 from dl.render import render_pair_failure
+from dl.simplify_lint import lint_simplify
 from dl.solve import PairResult, TaskResult, _pair_work, case_coverage, run_pair, run_task
 from dl.souffle import _pool_workers, build_functors
 from dl.sweep import render_sweep, sweep_report
 
 
-def cmd_one(stem: str) -> int:
+def _lint_all(source: str, simplify: bool, advisory: bool) -> list[tuple[str, int, str, str]]:
+    findings = lint_body(source)
+    if simplify or advisory:
+        findings = findings + lint_simplify(source, advisory)
+    findings.sort(key=lambda f: (f[1], f[0]))
+    return findings
+
+
+def cmd_one(stem: str, simplify: bool = False, advisory: bool = False) -> int:
     build_functors()
     result = run_task(stem)
     for p in result.pairs:
@@ -35,7 +44,7 @@ def cmd_one(stem: str) -> int:
             print(f"  {line}")
 
     source = (SOLVERS_DIR / f"{stem}.dl").read_text()
-    findings = lint_body(source)
+    findings = _lint_all(source, simplify, advisory)
     if findings:
         print()
         print(f"--- {len(findings)} lint finding(s) in {stem}.dl ---")
@@ -53,7 +62,7 @@ def cmd_one(stem: str) -> int:
     return 0 if result.all_pass else 1
 
 
-def cmd_all() -> int:
+def cmd_all(simplify: bool = False, advisory: bool = False) -> int:
     build_functors()
     stems = all_stems()
 
@@ -101,7 +110,7 @@ def cmd_all() -> int:
     lint_findings: dict[str, list] = {}
     for stem in stems:
         source = (SOLVERS_DIR / f"{stem}.dl").read_text()
-        findings = lint_body(source)
+        findings = _lint_all(source, simplify, advisory)
         if findings:
             lint_findings[stem] = findings
 
@@ -183,11 +192,13 @@ def cmd_fit_plan(stem: str) -> int:
 def _usage() -> str:
     return "\n".join([
         f"usage: {sys.argv[0]} "
-        "[--audit <stem> | --sweep <stem> [cap] | --deletions <stem> | "
-        "--fit-plan <stem> | <stem>]",
+        "[--simplify | --advisory] [--audit <stem> | --sweep <stem> [cap] | "
+        "--deletions <stem> | --fit-plan <stem> | <stem>]",
         "",
         "  (none)                run every solver: pairs, lint, fit checks",
         "  <stem>                run one solver: pairs, lint, fit check",
+        "  --simplify            also print simplify findings",
+        "  --advisory            simplify findings plus the advisory tier",
         "  --audit <stem>        fill sweep + deletion report",
         "  --sweep <stem> [cap]  fill sweep only; cap = max candidates per slot",
         "  --deletions <stem>    deletion report only",
@@ -196,13 +207,16 @@ def _usage() -> str:
 
 
 def main(argv: list[str]) -> int:
+    simplify = "--simplify" in argv
+    advisory = "--advisory" in argv
+    argv = [a for a in argv if a not in ("--simplify", "--advisory")]
     if len(argv) == 0:
-        return cmd_all()
+        return cmd_all(simplify, advisory)
     if argv in (["-h"], ["--help"]):
         print(_usage())
         return 0
     if len(argv) == 1:
-        return cmd_one(argv[0])
+        return cmd_one(argv[0], simplify, advisory)
     if len(argv) == 2 and argv[0] == "--sweep":
         return cmd_sweep(argv[1])
     if len(argv) == 3 and argv[0] == "--sweep":
