@@ -6,6 +6,8 @@ rewriting, and the per-mode IO directives Souffle needs.
 
 import re
 
+from dl.dlparse import Comp, Decl, parse
+
 # Per-mode IO directives, appended to the built source.
 SOLVE_DIRECTIVES = ".input in(IO=stdin)\n.output out(IO=stdout)\n"
 FIT_DIRECTIVES = ".input ex_in\n.input ex_out\n.output fit_diff(IO=stdout)\n"
@@ -85,29 +87,20 @@ def expand_grid_macros(source: str) -> str:
     return "".join(out)
 
 
+def _comp(source: str, comp_name: str) -> Comp | None:
+    return parse(source).comps().get(comp_name)
+
+
 def comp_decls(source: str, comp_name: str) -> dict[str, list[str]]:
     """Map relation name -> argument types for `.decl`s directly inside comp `comp_name`."""
-    decls: dict[str, list[str]] = {}
-    in_comp = False
-    depth = 0
-    for line in source.splitlines():
-        line = line.split("//")[0]
-        if not in_comp:
-            m = COMP_HEADER_RE.search(line)
-            if m and m.group(1) == comp_name and "{" in line:
-                in_comp = True
-                depth = line.count("{") - line.count("}")
-            continue
-        depth += line.count("{") - line.count("}")
-        if depth <= 0:
-            break
-        m = DECL_RE.search(line)
-        if m:
-            args = m.group(2).strip()
-            decls[m.group(1)] = [
-                a.split(":")[1].strip() for a in args.split(",") if ":" in a
-            ]
-    return decls
+    comp = _comp(source, comp_name)
+    if comp is None:
+        return {}
+    return {
+        it.name: [f.type for f in it.fields]
+        for it in comp.items
+        if isinstance(it, Decl)
+    }
 
 
 def fit_slots(source: str) -> dict[str, list[str]] | None:
@@ -122,20 +115,10 @@ def fit_slots(source: str) -> dict[str, list[str]] | None:
 
 def _comp_span(source: str, comp_name: str) -> tuple[int, int]:
     """[start, end) line indices of comp `comp_name`'s interior; (0, 0) when absent."""
-    lines = source.splitlines()
-    depth = 0
-    start = None
-    for i, raw in enumerate(lines):
-        code = raw.split("//")[0]
-        if start is None:
-            if re.search(rf"\.comp\s+{comp_name}\b", code) and "{" in code:
-                depth = code.count("{") - code.count("}")
-                start = i + 1
-            continue
-        depth += code.count("{") - code.count("}")
-        if depth <= 0:
-            return (start, i)
-    return (0, 0)
+    comp = _comp(source, comp_name)
+    if comp is None:
+        return (0, 0)
+    return (comp.line, max(comp.line, comp.end_line - 1))
 
 
 def _consts_fact_lines(source: str) -> list[int]:

@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from dl.dlparse import Comp, Decl, Define, Init, Item, Rule, TypeDecl, parse
 from dl.paths import PROGRAMS_DIR, REPO_ROOT
 
 DOCS_DIR = REPO_ROOT / "docs" / "wf-solver"
@@ -25,8 +26,6 @@ SKIP = {"backlog.md"}
 # carries the index and the session reads the entry it needs.
 INDEX = {"patterns.md", "proposals.md"}
 
-DECL_HEAD = (".type", ".decl", ".comp", ".init", "#define", "}")
-
 LIB_PREAMBLE = """\
 // Signatures only: rule bodies are dropped, and the facts of a top-level
 // lookup relation stand described by its comment. Inside a component, a
@@ -38,40 +37,58 @@ LIB_PREAMBLE = """\
 
 def lib_signatures(text: str) -> str:
     """lib.dl as its interface: comments, types, macros, .decl signatures,
-    component structure, and the default fills components carry."""
+    component structure, and the default fills components carry.
+
+    A `.decl` directly followed by rules or facts derives; one followed by
+    a boundary — blank line, comment, the next declaration — is marked
+    `// input`, the lib convention for a relation the caller populates.
+    Rules are dropped everywhere; facts are kept only inside a component,
+    where the default fill is part of the interface.
+    """
+    program = parse(text)
+    lines = text.splitlines()
+    keep: set[int] = set()
+    stmt_lines: set[int] = set()   # lines of rules and facts
+    decls: list[Decl] = []
+
+    def walk(items: list[Item], in_comp: bool) -> None:
+        for it in items:
+            if isinstance(it, (Define, TypeDecl, Init)):
+                keep.add(it.line)
+            elif isinstance(it, Decl):
+                keep.update(range(it.line, it.end_line + 1))
+                decls.append(it)
+            elif isinstance(it, Comp):
+                keep.add(it.line)
+                keep.add(it.end_line)
+                walk(it.items, True)
+            elif isinstance(it, Rule):
+                stmt_lines.update(range(it.line, it.end_line + 1))
+                if in_comp and it.body is None:
+                    keep.update(range(it.line, it.end_line + 1))
+    walk(program.items, False)
+    keep.update(c.line for c in program.comments if c.own_line)
+
+    inputs: set[int] = set()   # decl start lines to mark // input
+    for decl in decls:
+        probe = decl.end_line + 1
+        derived = False
+        while probe <= len(lines):
+            if probe in stmt_lines:
+                derived = True
+                break
+            if not lines[probe - 1].strip() or probe in keep:
+                break
+            probe += 1
+        if not derived:
+            inputs.add(decl.line)
+
     out: list[str] = []
-    stmt: list[str] = []   # body lines of the .decl still open
-    decl_at = -1           # index in `out` of that .decl
-    in_comp = False
-    open_parens = 0        # unclosed parens of a wrapped .decl
-
-    def flush() -> None:
-        nonlocal stmt, decl_at
-        if decl_at >= 0 and not stmt:
-            out[decl_at] += "  // input"
-        if in_comp and stmt and not any(":-" in s for s in stmt):
-            out.extend(stmt)   # a component's default fill is its data
-        stmt, decl_at = [], -1
-
-    for line in text.splitlines():
-        s = line.strip()
-        if open_parens:
+    for i, line in enumerate(lines, start=1):
+        if not line.strip():
             out.append(line)
-            open_parens += s.count("(") - s.count(")")
-            continue
-        if not s or s.startswith("//") or s.startswith(DECL_HEAD):
-            flush()
-            if s.startswith(".comp"):
-                in_comp = True
-            elif s == "}":
-                in_comp = False
-            out.append(line)
-            if s.startswith(".decl"):
-                open_parens = s.count("(") - s.count(")")
-                decl_at = len(out) - 1
-            continue
-        stmt.append(line)
-    flush()
+        elif i in keep:
+            out.append(line + ("  // input" if i in inputs else ""))
     return LIB_PREAMBLE + re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip() + "\n"
 
 

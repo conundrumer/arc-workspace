@@ -9,6 +9,8 @@ point is `lint_body`; run_dl.py calls it after running each solver.
 
 import re
 
+from dl.dlparse import Comp, ParseError, Rule, parse
+
 ORIENTATION_LITERALS = {
     # Dirs
     "DIR_T", "DIR_B", "DIR_L", "DIR_R",
@@ -28,7 +30,6 @@ ORIENTATION_LITERAL_RE = re.compile(
 )
 COMMENT_RE = re.compile(r"//.*$")
 BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", flags=re.DOTALL)
-COMP_OPEN_RE = re.compile(r"\.comp\s+(\w+)")
 NUMERIC_LITERAL_RE = re.compile(r"(?<![A-Za-z_0-9.])\d+(?![A-Za-z_0-9.])")
 RANGE_RE = re.compile(r"\brange\s*\(")
 
@@ -151,56 +152,35 @@ def lint_body(source: str) -> list[tuple[str, int, str, str]]:
       - 'comparison' (gated)  — <, <=, >, >=; enabled by LINT_COMPARISON
 
     Returns (category, lineno, match, raw_line). Skips // and /* */
-    comments and `.comp` blocks (detected by `.comp Name {` with the opening
-    brace on the header line, then balanced to the closing brace), except
+    comments and `.comp` blocks (spans from the parsed source) — except
     `Fit` and `Parse`, which lint as body, and `Consts`, whose rules take
-    the 'consts data' check.
+    the 'consts data' check. A source that does not parse returns no
+    findings; the simplify lint reports the parse error.
     """
+    try:
+        program = parse(source)
+    except ParseError:
+        return []
+
     findings: list[tuple[str, int, str, str]] = []
     src = _strip_block_comments(source)
-    in_comp = False
-    in_consts = False
-    comp_depth = 0
-    rule_lines: list[tuple[int, str, str]] = []
-    rule_structural = False
-    in_rule = False
+    raw_lines = src.splitlines()
 
-    def flush_rule() -> None:
-        nonlocal rule_lines, rule_structural
-        if not rule_structural:
-            for ln, code, raw in rule_lines:
-                for m in NUMERIC_LITERAL_RE.finditer(code):
-                    if m.group(0) != "0":
-                        findings.append(("consts data", ln, m.group(0), raw.rstrip()))
-        rule_lines, rule_structural = [], False
+    def code(lineno: int) -> str:
+        return COMMENT_RE.sub("", raw_lines[lineno - 1])
 
-    for lineno, raw_line in enumerate(src.splitlines(), start=1):
-        line = COMMENT_RE.sub("", raw_line)
+    skip: set[int] = set()
+    for comp in program.comps().values():
+        if comp.name in ("Fit", "Parse"):
+            skip.add(comp.line)
+        else:
+            skip.update(range(comp.line, comp.end_line + 1))
 
-        if not in_comp and (m := COMP_OPEN_RE.search(line)) and "{" in line:
-            if m.group(1) not in ("Fit", "Parse"):
-                comp_depth = line.count("{") - line.count("}")
-                in_comp = comp_depth > 0
-                in_consts = in_comp and m.group(1) == "Consts"
+    for lineno in range(1, len(raw_lines) + 1):
+        if lineno in skip:
             continue
-
-        if in_comp:
-            comp_depth += line.count("{") - line.count("}")
-            if comp_depth <= 0:
-                in_comp = False
-                in_consts = False
-            if in_consts:
-                if not in_rule and ":-" in line:
-                    in_rule = True
-                if in_rule:
-                    rule_lines.append((lineno, line, raw_line))
-                    if "@structural" in raw_line:
-                        rule_structural = True
-                    if line.rstrip().endswith("."):
-                        in_rule = False
-                        flush_rule()
-            continue
-
+        raw_line = raw_lines[lineno - 1]
+        line = code(lineno)
         for m in ORIENTATION_LITERAL_RE.finditer(line):
             findings.append(("orientation literal", lineno, m.group(1), raw_line.rstrip()))
         for m in NUMERIC_LITERAL_RE.finditer(line):
@@ -214,5 +194,28 @@ def lint_body(source: str) -> list[tuple[str, int, str, str]]:
             for _, op in _find_comparison(line):
                 findings.append(("comparison", lineno, op, raw_line.rstrip()))
 
+    findings.extend(_consts_data(program.comps().get("Consts"), raw_lines, code))
     findings.sort(key=lambda f: (f[1], f[0]))
+    return findings
+
+
+def _consts_data(
+    comp: Comp | None, raw_lines: list[str], code,
+) -> list[tuple[str, int, str, str]]:
+    """Nonzero literals in Consts rules, minus `@structural`-marked rules."""
+    findings: list[tuple[str, int, str, str]] = []
+    if comp is None:
+        return findings
+    for it in comp.items:
+        if not isinstance(it, Rule) or it.body is None:
+            continue
+        span = range(it.line, it.end_line + 1)
+        if any("@structural" in raw_lines[ln - 1] for ln in span):
+            continue
+        for ln in span:
+            for m in NUMERIC_LITERAL_RE.finditer(code(ln)):
+                if m.group(0) != "0":
+                    findings.append(
+                        ("consts data", ln, m.group(0), raw_lines[ln - 1].rstrip())
+                    )
     return findings

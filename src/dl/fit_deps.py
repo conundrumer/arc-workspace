@@ -18,12 +18,10 @@ for any jointly consistent pair of fills, and longer cycles the same way.
 
 import re
 
-from dl.source import _comp_span, comp_decls, fit_slots
+from dl.dlparse import Index, parse
+from dl.source import fit_slots
 
-COMP_DEF_RE = re.compile(r"\.comp\s+(\w+)")
-INIT_RE = re.compile(r"\.init\s+(\w+)\s*=\s*(\w+)")
 CONSTS_INIT_RE = re.compile(r"\.init\s+(\w+)\s*=\s*Consts\b")
-ATOM_RE = re.compile(r"(?:\b(\w+)\.)?\b(\w+)\s*\(")
 
 # Pseudo-comps: the Consts instance's fills, and names from lib or outside
 # every comp. Both sort outside the file's comp names, which are identifiers.
@@ -106,11 +104,15 @@ def _graph(source: str, cname: str) -> Graph:
     Rules outside a comp stay out: a Fit relation derives from `ex_in` / `ex_out`
     and the comps Fit instantiates, not from the body.
     """
-    lines = source.splitlines()
-    local = set(COMP_DEF_RE.findall(source))
-    spans = {c: _comp_span(source, c) for c in local}
-    decls = {c: set(comp_decls(source, c)) for c in local}
-    insts = {c: _insts(lines, spans[c]) for c in local}
+    ix = Index(parse(source))
+    local = set(ix.program.comps())
+    decls = {c: set(ix.decls.get(c, {})) for c in local}
+    insts = {
+        c: {i.inst: i.comp for i in ix.inits.get(c, {}).values()} for c in local
+    }
+    by_rule: dict[int, list] = {}
+    for r in ix.refs:
+        by_rule.setdefault(r.rule, []).append(r)
 
     graph: Graph = {}
     seen: set[str] = set()
@@ -121,12 +123,25 @@ def _graph(source: str, cname: str) -> Graph:
             continue
         seen.add(comp)
         work += [t for t in insts[comp].values() if t in local]
-        for head, body in _chunks(lines, spans[comp]):
-            src = _node(comp, *head[:2], cname, local, decls, insts)
-            for qual, name, lineno in body:
-                dst = _node(comp, qual, name, cname, local, decls, insts)
-                graph.setdefault(src, set()).add((dst, lineno))
+        for idx, info in enumerate(ix.rules):
+            if info.scope != comp:
+                continue
+            head = info.rule.head
+            src = _node(comp, _last_qual(head.qual), head.name,
+                        cname, local, decls, insts)
+            for r in by_rule.get(idx, ()):
+                if r.role == "head":
+                    continue
+                a = r.atom
+                dst = _node(comp, _last_qual(a.qual), a.name,
+                            cname, local, decls, insts)
+                graph.setdefault(src, set()).add((dst, a.line))
     return graph
+
+
+def _last_qual(qual: str | None) -> str | None:
+    """The instance an atom reads directly: the last hop of a dotted path."""
+    return qual.split(".")[-1] if qual else None
 
 
 def _node(
@@ -147,41 +162,6 @@ def _node(
     if target in local:
         return (target, name)
     return (comp, qual)
-
-
-def _insts(lines: list[str], span: tuple[int, int]) -> dict[str, str]:
-    """Instance name -> comp name, for the `.init`s directly inside a span."""
-    out = {}
-    for i in range(*span):
-        for inst, comp in INIT_RE.findall(lines[i].split("//")[0]):
-            out[inst] = comp
-    return out
-
-
-def _chunks(
-    lines: list[str], span: tuple[int, int]
-) -> list[tuple[tuple[str | None, str, int], list[tuple[str | None, str, int]]]]:
-    """The span's rules as (head atom, body atoms), each atom (qual, name, line).
-
-    A chunk runs to the terminating period. Its first atom is the head; the
-    rest are body atoms, aggregate subgoals included. A fact has no body.
-    """
-    out = []
-    atoms: list[tuple[str | None, str, int]] = []
-    text: list[str] = []
-    for i in range(*span):
-        code = lines[i].split("//")[0]
-        stripped = code.strip()
-        if not stripped or (not atoms and stripped.startswith(".")):
-            continue
-        text.append(code)
-        atoms += [(m.group(1), m.group(2), i + 1) for m in ATOM_RE.finditer(code)]
-        if stripped.endswith("."):
-            if atoms:
-                body = atoms[1:] if ":-" in "".join(text) else []
-                out.append((atoms[0], body))
-            atoms, text = [], []
-    return out
 
 
 def _first_reach(graph: Graph, start: Node, target: Node) -> tuple[str, int] | None:
