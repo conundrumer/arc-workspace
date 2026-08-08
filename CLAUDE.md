@@ -9,6 +9,7 @@ uv run pytest -q
 uv run python scripts/materialize.py
 uv run python scripts/run_dl.py          # run all Souffle solvers; --help for per-solver tooling
 uv run python scripts/run_dl.py <stem>   # run one
+uv run python scripts/context.py         # solver docs + lib.dl, in the projection a session reads
 ```
 
 Souffle binary required for `.dl` solvers (`brew install souffle`).
