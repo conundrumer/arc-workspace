@@ -6,7 +6,7 @@ disable-model-invocation: true
 ---
 
 <!-- batch:skip -->
-Read all docs in `docs/wf-solver/`.
+Read the docs in `docs/wf-solver/` in this order: principles, style, patterns, concepts, proposals. For plain solver work, read the output of `uv run python scripts/context.py` instead — those docs and `programs/lib.dl` in the same order and in a shorter form, with `patterns.md` and `proposals.md` as one line per entry and `lib.dl` as signatures. It points back at each file for an entry or a body.
 
 Then dispatch on `$ARGUMENTS`:
 
@@ -22,7 +22,7 @@ A solver session writes a Souffle solver (`programs/solvers/<task_id>.dl`) that 
 <!-- batch:skip -->
 ## Entry
 
-- Read `programs/lib.dl` in full before writing or editing a solver.
+- Read `programs/lib.dl` before writing or editing a solver, in full or as signatures. Read a primitive's body when its signature and comment leave the semantics open.
 - If requested to continue from prior solver work, run `uv run python scripts/inspect-session.py --solver-only` and read the output in full.
 - `bash scripts/queue.sh` prints the next solver and its estimated complexity.
 <!-- /batch:skip -->
