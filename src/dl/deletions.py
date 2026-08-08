@@ -38,6 +38,29 @@ def _rule_spans(source: str, fit: bool = False) -> list[tuple[int, int]]:
     return spans
 
 
+def _disjunctions(rule: str) -> list[tuple[int, int, list[tuple[int, int]]]]:
+    """Parenthesized groups holding `;` branches, as (open, close,
+    branch spans). A `;` belongs to the innermost open paren."""
+    out: list[tuple[int, int, list[tuple[int, int]]]] = []
+    stack: list[int] = []
+    seps: dict[int, list[int]] = {}
+    for i, ch in enumerate(rule):
+        if ch == "(":
+            stack.append(i)
+            seps[i] = []
+        elif ch == ";" and stack:
+            seps[stack[-1]].append(i)
+        elif ch == ")" and stack:
+            start = stack.pop()
+            if seps[start]:
+                cuts = [start, *seps[start], i]
+                spans = [
+                    (cuts[k] + 1, cuts[k + 1]) for k in range(len(cuts) - 1)
+                ]
+                out.append((start, i, spans))
+    return out
+
+
 def _drop_atom(code: str, start: int, end: int) -> str:
     """Remove code[start:end] plus one adjoining comma separator."""
     after = code[end:].lstrip()
@@ -53,7 +76,8 @@ def deletions(source: str, fit: bool = False):
     """Yield (lineno, kind, text, modified_source) structural deletions.
 
     Kinds: 'rule' deletes the whole rule; 'negation' deletes one negated
-    body atom (the modified rule collapses to one line). With `fit`, the
+    body atom; 'disjunct' deletes one branch of a disjunction (either
+    way the modified rule collapses to one line). With `fit`, the
     deletions come from the Fit comp's rules; otherwise from the rest.
     """
     lines = source.splitlines()
@@ -74,6 +98,16 @@ def deletions(source: str, fit: bool = False):
             atom = rule[m.start():k + 1]
             modified = lines[:a] + [_drop_atom(rule, m.start(), k + 1)] + lines[b + 1:]
             yield (a + 1, "negation", atom, "\n".join(modified) + "\n")
+        for _, _, spans in _disjunctions(rule):
+            for k, (s, e) in enumerate(spans):
+                if k + 1 < len(spans):
+                    cut = (s, spans[k + 1][0])  # branch plus trailing ';'
+                else:
+                    cut = (spans[k - 1][1], e)  # leading ';' plus branch
+                shrunk = rule[:cut[0]] + rule[cut[1]:]
+                modified = lines[:a] + [shrunk] + lines[b + 1:]
+                yield (a + 1, "disjunct", rule[s:e].strip(),
+                       "\n".join(modified) + "\n")
 
 
 def deletion_report(stem: str) -> tuple[int, list[tuple[int, str, str]]] | None:

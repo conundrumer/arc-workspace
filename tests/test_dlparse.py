@@ -11,6 +11,7 @@ from dl.dlparse import (
     Bool,
     Cmp,
     Ctor,
+    Disj,
     Index,
     MacroConst,
     Neg,
@@ -25,7 +26,8 @@ LIB = Path(__file__).parent.parent / "programs" / "lib.dl"
 
 
 def test_corpus_parses():
-    for f in sorted(SOLVERS.glob("*.dl")) + [LIB]:
+    solvers = [f for f in sorted(SOLVERS.glob("*.dl")) if not f.name.startswith(".")]
+    for f in solvers + [LIB]:
         Index(parse(f.read_text()))
 
 
@@ -72,6 +74,35 @@ def test_ctor_record_wildcard():
     args = p.items[0].body[0].args
     assert isinstance(args[0], Ctor) and args[0].name == "U"
     assert isinstance(args[2], Wild)
+
+
+def test_disjunction():
+    p = parse(
+        "out(P, Col) :- in(P, _),\n"
+        "    ( tile(P, Col)\n"
+        "    ; !tile(P, _), c.bg(Col)\n"
+        "    ).\n"
+    )
+    disj = p.items[0].body[1]
+    assert isinstance(disj, Disj) and len(disj.branches) == 2
+    assert isinstance(disj.branches[1][0], Neg)
+
+
+def test_disjunction_index_roles():
+    src = """\
+.decl tile(p: number, c: number)
+tile(1, 2).
+.decl out(p: number, c: number)
+out(P, Col) :- g(P), (tile(P, Col) ; !tile(P, _), bg(Col)).
+"""
+    ix = Index(parse(src))
+    roles = [r.role for r in ix.refs_of((TOP, "tile"))]
+    assert roles == ["head", "pos", "neg"]
+
+
+def test_paren_expr_is_not_a_disjunction():
+    p = parse("out(X) :- (X + Y) != Z, g(X, Y, Z).\n")
+    assert isinstance(p.items[0].body[0], Cmp)
 
 
 def test_comments_kept():

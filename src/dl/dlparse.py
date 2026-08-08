@@ -2,9 +2,9 @@
 
 The grammar covers the dialect the solvers and lib.dl use: `#include`,
 `#define`, `.functor`, `.type`, single-level `.comp`, `.init`, `.decl`
-(with `inline` and same-line facts), facts, rules with negation and
-aggregates, constructors, records, functor calls, and GRID macro facts
-(which take no terminating period). Anything outside that raises
+(with `inline` and same-line facts), facts, rules with negation,
+aggregates, and parenthesized disjunctions, constructors, records,
+functor calls, and GRID macro facts (which take no terminating period). Anything outside that raises
 `ParseError` — Souffle itself owns the real semantics, so the parser can
 be strict and fail loudly.
 
@@ -13,7 +13,7 @@ own-line flags, so renderers can reattach them.
 
 `Index` resolves every atom to the relation it names — through comp
 instantiations, negation, and aggregate bodies — and records the role of
-each reference. It is the shared layer the simplify lint queries.
+each reference. It is the shared layer the lints query.
 """
 
 from __future__ import annotations
@@ -236,6 +236,12 @@ class Cmp:
     line: int
 
 
+@dataclass(frozen=True)
+class Disj:
+    branches: tuple[tuple[Lit, ...], ...]
+    line: int
+
+
 @dataclass
 class Include:
     path: str
@@ -315,7 +321,7 @@ class Program:
 
 
 type Term = Var | Wild | Num | Str | MacroConst | Ctor | Rec | Call | UnOp | BinOp | Agg
-type Lit = Atom | Neg | Cmp | Bool
+type Lit = Atom | Neg | Cmp | Bool | Disj
 type Item = Include | Define | Functor | TypeDecl | Decl | Init | Rule | Comp
 
 
@@ -467,12 +473,16 @@ class _Parser:
             end = self.next().line
             return Rule(head, None, head.line, end)
         self.expect(":-")
+        body = self.conj()
+        end = self.expect(".").line
+        return Rule(head, body, head.line, end)
+
+    def conj(self) -> list[Lit]:
         body: list[Lit] = [self.literal()]
         while self.at(","):
             self.next()
             body.append(self.literal())
-        end = self.expect(".").line
-        return Rule(head, body, head.line, end)
+        return body
 
     # body literals
 
@@ -485,6 +495,11 @@ class _Parser:
         return self.at("(", k)
 
     def literal(self) -> Lit:
+        if self.at("("):
+            # A parenthesized `;`-list is a disjunction; anything else
+            # backtracks into the expression path below.
+            if (disj := self.disjunction()) is not None:
+                return disj
         if self.at("!"):
             self.next()
             return Neg(self.atom())
@@ -506,6 +521,23 @@ class _Parser:
         if op.text not in CMP_OPS:
             raise ParseError(op.line, f"expected comparison, got {op.text!r}")
         return Cmp(op.text, lhs, self.expr(), op.line)
+
+    def disjunction(self) -> Disj | None:
+        mark = self.pos
+        line = self.next().line  # '('
+        try:
+            branches = [self.conj()]
+            while self.at(";"):
+                self.next()
+                branches.append(self.conj())
+            self.expect(")")
+        except ParseError:
+            self.pos = mark
+            return None
+        if len(branches) < 2:
+            self.pos = mark
+            return None
+        return Disj(tuple(tuple(b) for b in branches), line)
 
     def atom(self) -> Atom:
         t = self.next()
@@ -581,10 +613,7 @@ class _Parser:
             expr = self.expr()
         self.expect(":")
         self.expect("{")
-        body: list[Lit] = [self.literal()]
-        while self.at(","):
-            self.next()
-            body.append(self.literal())
+        body = self.conj()
         self.expect("}")
         return Agg(t.text, expr, tuple(body))
 
@@ -726,8 +755,7 @@ class Index:
             key = self.resolve(info.scope, atom.qual, atom.name)
             self.refs.append(Ref(info.scope, key, role, idx, atom.line, atom))
 
-        add(info.rule.head, "head")
-        for lit in info.rule.body or ():
+        def walk(lit: Lit) -> None:
             if isinstance(lit, Atom):
                 add(lit, "pos")
                 for agg in _aggs_in_terms(lit.args):
@@ -739,6 +767,14 @@ class Index:
                 for agg in _aggs_in_terms((lit.lhs, lit.rhs)):
                     for sub in agg.body:
                         _add_agg(sub, add)
+            elif isinstance(lit, Disj):
+                for branch in lit.branches:
+                    for sub in branch:
+                        walk(sub)
+
+        add(info.rule.head, "head")
+        for lit in info.rule.body or ():
+            walk(lit)
 
     def refs_of(self, key: RelKey) -> list[Ref]:
         return self._by_key.get(key, [])
@@ -756,6 +792,10 @@ def _add_agg(lit: Lit, add: Callable[[Atom, str], None]) -> None:
         add(lit, "agg")
     elif isinstance(lit, Neg):
         add(lit.atom, "neg")
+    elif isinstance(lit, Disj):
+        for branch in lit.branches:
+            for sub in branch:
+                _add_agg(sub, add)
 
 
 def _aggs_in_terms(terms: Iterable[Term]) -> list[Agg]:
@@ -792,12 +832,7 @@ def term_vars(term: Term) -> set[str]:
             if t.expr is not None:
                 stack.append(t.expr)
             for lit in t.body:
-                if isinstance(lit, Atom):
-                    stack.extend(lit.args)
-                elif isinstance(lit, Neg):
-                    stack.extend(lit.atom.args)
-                elif isinstance(lit, Cmp):
-                    stack.extend((lit.lhs, lit.rhs))
+                out |= literal_vars(lit)
     return out
 
 
@@ -811,6 +846,12 @@ def literal_vars(lit: Lit) -> set[str]:
         return literal_vars(lit.atom)
     if isinstance(lit, Cmp):
         return term_vars(lit.lhs) | term_vars(lit.rhs)
+    if isinstance(lit, Disj):
+        out = set()
+        for branch in lit.branches:
+            for sub in branch:
+                out |= literal_vars(sub)
+        return out
     return set()  # Bool
 
 

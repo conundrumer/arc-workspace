@@ -11,4 +11,8 @@ PROPOSERS_SRC = PROGRAMS_DIR / "proposers.dl"
 
 
 def all_stems() -> list[str]:
-    return sorted(p.stem for p in SOLVERS_DIR.glob("*.dl"))
+    """Solver stems, skipping dotfiles: a concurrent run materializes
+    `.tmp*.dl` scratch files into the solvers directory."""
+    return sorted(
+        p.stem for p in SOLVERS_DIR.glob("*.dl") if not p.name.startswith(".")
+    )
