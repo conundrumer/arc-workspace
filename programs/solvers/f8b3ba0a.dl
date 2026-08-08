@@ -59,11 +59,11 @@
 .comp Parse<Key> {
     .decl count_of(key: Key, col: Color, n: number)
 
-    .decl dominant(key: Key, col: Color)
-    dominant(Ky, Col) :- count_of(Ky, Col, N), N = max N2 : { count_of(Ky, _, N2) }.
+    .init dominant = ArgExtremes<Key, Color>
+    dominant.cand(Ky, Col, N) :- count_of(Ky, Col, N).
 
     .decl minority_count(key: Key, col: Color, n: number)
-    minority_count(Ky, Col, N) :- count_of(Ky, Col, N), !dominant(Ky, Col).
+    minority_count(Ky, Col, N) :- count_of(Ky, Col, N), !dominant.high(Ky, Col, _).
 
     .init o = Ordinal<Key>
     o.idx_set(Ky, N) :- minority_count(Ky, _, N).
@@ -77,8 +77,8 @@
 .init comps = Components<Unit>
 comps.node($U(), P) :- in(P, Col), !c.bg(Col).
 
-.decl block_color(id: Ident, col: Color)
-block_color(Id, Col) :- comps.label($U(), P, Id), in(P, Col).
+.init block_count = Tally<Color, Ident>
+block_count.item(Col, Id) :- comps.label($U(), P, Id), in(P, Col).
 
 // --- $Lattice: tile detection ---
 
@@ -96,16 +96,16 @@ tile_color(P_tile, Col) :-
 
 // --- counts per choice ---
 
+.init cell_count = Tally<Color, Position>
+cell_count.item(Col, P) :- in(P, Col), !c.bg(Col).
+
+.init tile_count = Tally<Color, Position>
+tile_count.item(Col, P_tile) :- tile_color(P_tile, Col).
+
 .init parse = Parse<Choice>
-parse.count_of($Cells(), Col, N) :-
-    in(_, Col), !c.bg(Col),
-    N = count : { in(_, Col) }.
-parse.count_of($Blocks(), Col, N) :-
-    block_color(_, Col),
-    N = count : { block_color(Id, Col) }.
-parse.count_of($Lattice(), Col, N) :-
-    tile_color(_, Col),
-    N = count : { tile_color(P_tile, Col) }.
+parse.count_of($Cells(), Col, N)   :- cell_count.tally(Col, N).
+parse.count_of($Blocks(), Col, N)  :- block_count.tally(Col, N).
+parse.count_of($Lattice(), Col, N) :- tile_count.tally(Col, N).
 
 // --- place ---
 
@@ -157,23 +157,25 @@ out(P, Col, Ch) :- parse.minority_rank(Ch, Col, Rk), col.pos(Ch, Rk, P).
     .decl tile_dim(a: Axis, k: number)
     tile_dim(A, K) :- local.inner(_, P), axis_elem(A), axis_dim(P, A, K).
 
-    // Blocks along an axis: the distinct offsets their boxes sit at.
-    .decl tile_line(e: Example, d: Dir, k: number)
-    tile_line(E, D, K) :- box.edge_min([E, Id], D, K).
+    .type ED = [e: Example, d: Dir]
 
-    .decl tile_count(e: Example, a: Axis, n: number)
-    tile_count(E, A, N) :-
-        tile_line(E, D, _), axis_of(D, A),
-        N = count : { tile_line(E, D, K) }.
+    // Blocks along an axis: the distinct offsets their boxes sit at.
+    .init tile_count = Tally<ED, number>
+    tile_count.item([E, D], K) :- box.edge_min([E, Id], D, K).
 
     .decl tile_gap(g: number)
     tile_gap(G) :-
         interior(E, P_int),
-        tile_count(E, A, N), tile_dim(A, K),
+        tile_count.tally([E, D], N), axis_of(D, A), tile_dim(A, K),
         divide_gap(P_int, A, N, K, G).
 
+    .type EC = [e: Example, col: Color]
+
+    .init ink_count = Tally<EC, Position>
+    ink_count.item([E, Col], P) :- ink(E, P, Col).
+
     .init parse = Parse<Example>
-    parse.count_of(E, Col, N) :- ink(E, _, Col), N = count : { ink(E, P, Col) }.
+    parse.count_of(E, Col, N) :- ink_count.tally([E, Col], N).
 
     // A dir whose opposite edge does not measure out the ranks: some output
     // cell sits at a distance other than its color's rank.

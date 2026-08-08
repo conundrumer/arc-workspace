@@ -14,14 +14,14 @@
 
 .init c = Consts
 
-.decl copy_count(n: number)
-copy_count(N) :- N = count : { in(P, Col), !c.bg(Col) }.
+.init copy_count = Tally<Unit, Position>
+copy_count.item($U(), P) :- in(P, Col), !c.bg(Col).
 
-.decl side(n: number)
-side(S) :- S = count : { in(P, Col), c.bg(Col) }.
+.init side = Tally<Unit, Position>
+side.item($U(), P) :- in(P, Col), c.bg(Col).
 
 .init tiles = Frame2D<Unit>
-tiles.extent($U(), A, S) :- axis_elem(A), side(S).
+tiles.extent($U(), A, S) :- axis_elem(A), side.tally($U(), S).
 
 .init lex = LexOrder<Unit>
 lex.corner(D)     :- c.lex_corner(D).
@@ -29,7 +29,7 @@ lex.axis(A)       :- c.lex_axis(A).
 lex.cell($U(), P) :- tiles.cell($U(), P).
 
 .decl copy(p_tile: Position)
-copy(T) :- lex.rank($U(), T, R), copy_count(N), R < N.
+copy(T) :- lex.rank($U(), T, R), copy_count.tally($U(), N), R < N.
 
 .decl out(p: Position, col: Color)
 out(P_grid, Col) :-

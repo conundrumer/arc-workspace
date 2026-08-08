@@ -131,6 +131,9 @@ out(P, Col, $Label()) :- hole(P), c.label(P, Id), label_color(Id, Col).
     .decl same(p: Position, q: Position)
     same(P, Q) :- ex_out(_, P, _), ex_out(_, Q, _), !differ(P, Q).
 
+    .init canon = Canon<Position>
+    canon.equals(P, Q) :- same(P, Q).
+
     .decl label(p: Position, id: Ident)
-    label(P, as(Min, Ident)) :- same(P, _), Min = min ord(Q) : { same(P, Q) }.
+    label(P, Id) :- canon.id(P, Id).
 }

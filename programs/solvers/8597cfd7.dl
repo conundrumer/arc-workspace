@@ -66,15 +66,12 @@ measure_member(Col, $Span(), S, R) :- spans.between([Col, S], R).
 growth.pos([Col, Ch], M) :- measure_member(Col, Ch, S, M), c.side(D), opposite(D, S).
 growth.neg([Col, Ch], M) :- measure_member(Col, Ch, D, M), c.side(D).
 
-.decl excess(col: Color, ch: Choice, n: number)
-excess(Col, Ch, N) :- growth.excess([Col, Ch], N).
-
 // The winner: the color that grows the most.
-.decl winner(col: Color, ch: Choice)
-winner(Col, Ch) :- excess(Col, Ch, N), N = max N2 : { excess(_, Ch, N2) }.
+.init winner = ArgExtremes<Choice, Color>
+winner.cand(Ch, Col, N) :- growth.excess([Col, Ch], N).
 
 .init frame = Frame2D<Unit>
 frame.extent($U(), A, N) :- axis_elem(A), c.out_dim(N).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, Ch) :- frame.cell($U(), P), winner(Col, Ch).
+out(P, Col, Ch) :- frame.cell($U(), P), winner.high(Ch, Col, _).

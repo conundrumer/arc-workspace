@@ -157,9 +157,11 @@ out(P_grid, Col, $Map()) :- in(P_in, Col), c.map(P_in, P_grid).
     tile_line(P_in, A, P_along) :-
         pair(P_in, P_out), axis_elem(A), split(P_out, A, P_along, _).
 
-    .decl tile_dim(p_in: Position, a: Axis, n: number)
-    tile_dim(P_in, A, N) :- tile_line(P_in, A, _), N = count : { tile_line(P_in, A, P) }.
+    .type CellAxis = [p_in: Position, a: Axis]
+
+    .init tile_dim = Tally<CellAxis, Position>
+    tile_dim.item([P_in, A], P_along) :- tile_line(P_in, A, P_along).
 
     .decl ext(a: Axis, p: Position, n: number)
-    ext(A, P_along, N) :- tile_dim(P_in, A, N), split(P_in, A, P_along, _).
+    ext(A, P_along, N) :- tile_dim.tally([P_in, A], N), split(P_in, A, P_along, _).
 }

@@ -73,14 +73,13 @@ out(P, Col) :- in(P, _), !ink_cell(P), c.bg(Col).
     same.pattern_member(E, P_inkey) :- parse.key_shape(E, P_inkey).
     same.observed_member(E, P_inkey) :- parse.key_shape(E, P_inkey).
 
-    .decl entry(e: Example, id: Ident)
-    entry(E, as(Min, Ident)) :-
-        parse.key_shape(E, _), Min = min ord(E2) : { same.equals(E, E2) }.
+    .init entry = Canon<Example>
+    entry.equals(E, E2) :- same.equals(E, E2).
 
     .decl key_member(id: Ident, p: Position)
-    key_member(Id, P_inkey) :- entry(E, Id), parse.key_shape(E, P_inkey).
+    key_member(Id, P_inkey) :- entry.id(E, Id), parse.key_shape(E, P_inkey).
 
     // The entry's color is the one color the output paints.
     .decl key_out(id: Ident, c: Color)
-    key_out(Id, Col) :- entry(E, Id), ex_out(E, _, Col), !c.bg(Col).
+    key_out(Id, Col) :- entry.id(E, Id), ex_out(E, _, Col), !c.bg(Col).
 }

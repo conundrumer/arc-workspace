@@ -50,8 +50,12 @@ out(P_tile, Col, $Pair()) :- paired(P_tile), c.mark(Col).
 out(P_tile, Col, $Pair()) :- tile(P_tile), !paired(P_tile), c.bg(Col).
 
 // --- $Count ---
+.init markers = Tally<Position, Position>
+markers.item(P_tile, P_intile) :- tile_marker(P_tile, P_intile).
+markers.domain(P_tile) :- tile(P_tile).
+
 .decl marker_count(p_tile: Position, n: number)
-marker_count(P_tile, N) :- tile(P_tile), N = count : { tile_marker(P_tile, P) }.
+marker_count(P_tile, N) :- markers.tally(P_tile, N).
 
 out(P_tile, Col, $Count()) :-
     marker_count(P_tile, N),              // the tile's marker count

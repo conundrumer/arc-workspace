@@ -49,11 +49,8 @@ shift($Shift(), Delta) :-
 
 // --- $Count ---
 
-.decl clean_color(col: Color)
-clean_color(Col) :- clean(_, Col).
-
-.decl period(n: number)
-period(N) :- N = count : { clean_color(Col) }.
+.init period = Tally<Unit, Color>
+period.item($U(), Col) :- clean(_, Col).
 
 shift($Count(), Delta) :-
-    period(N), dir_elem(D), jump_delta(D, N, Delta).
+    period.tally($U(), N), dir_elem(D), jump_delta(D, N, Delta).

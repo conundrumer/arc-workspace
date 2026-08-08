@@ -36,12 +36,12 @@ stripe_step(Delta) :-
 
 // --- period per choice ---
 
-.decl palette(col: Color)
-palette(Col) :- in(_, Col), !c.bg(Col).
+.init palette = Tally<Unit, Color>
+palette.item($U(), Col) :- in(_, Col), !c.bg(Col).
 
 .decl period(k: number, ch: Choice)
 period(K, $Fixed())   :- c.period(K).
-period(K, $Palette()) :- K = count : { palette(Col) }.
+period(K, $Palette()) :- palette.tally($U(), K).
 
 .decl period_jump(delta: Position, ch: Choice)
 period_jump(Delta, Ch) :- period(K, Ch), dir_elem(D), jump_delta(D, K, Delta).

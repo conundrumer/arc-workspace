@@ -60,8 +60,13 @@ band_cell(A, P, Col) :-
 marker(A, P, $Marked()) :- band_cell(A, P, Col), c.marker_col(Col).
 
 // --- Singleton ---
+.type BandColor = [a: Axis, col: Color]
+
+.init band_count = Tally<BandColor, Position>
+band_count.item([A, Col], P) :- band_cell(A, P, Col).
+
 marker(A, P, $Singleton()) :-
-    band_cell(A, P, Col), c.marker_count(N), N = count : { band_cell(A, _, Col) }.
+    band_cell(A, P, Col), c.marker_count(N), band_count.tally([A, Col], N).
 
 // Rotation per axis: the map carrying the line beside the corner to the
 // marker's line — that pair, closed under lockstep succ.
@@ -76,8 +81,11 @@ rotation(A, K1_next, K2_next, Ch) :-
     line_cycle.succ(A, K1, K1_next), line_cycle.succ(A, K2, K2_next).
 
 // The output frame — the payload's per-axis extents.
+.init line_count = Tally<Axis, number>
+line_count.item(A, K) :- line_set(A, K).
+
 .init frame = AxisFrame<Unit>
-frame.extent($U(), A, N) :- line_set(A, _), N = count : { line_set(A, K) }.
+frame.extent($U(), A, N) :- line_count.tally(A, N).
 
 // Along-axis output seat of each payload cell: its line, rotated.
 .decl out_along(a: Axis, p: Position, q: Position, ch: Choice)

@@ -76,8 +76,12 @@ out(P, Col, $Ink()) :- ink_at(P, Col), !ink_beaten(P, Col).
         ex_out(E, P, Col).
     beats(T, T3) :- beats(T, T2), beats(T2, T3).
 
+    .init order = Order<Unit, Position>
+    order.elem($U(), T) :- tile_ink(_, T, _, _).
+    order.before($U(), T, T2) :- beats(T, T2).
+
     .decl prio(p: Position, r: number)
-    prio(T, R) :- tile_ink(_, T, _, _), R = count : { beats(T2, T) }.
+    prio(T, R) :- order.rank($U(), T, R).
 
     .decl ink_rank(c: Color, r: number)
     ink_rank(Col, R) :- tile_ink(_, T, _, Col), prio(T, R).

@@ -66,11 +66,10 @@ syms_non_invariant(D) :- d4.broken($U(), D), c.syms(D).
 // Pick the largest group the input covers (strictest invariance). The input
 // may be invariant under more than a group requires, so this is containment,
 // not equality. Assumes group sizes are unique; a tie would emit conflicting cells.
-.decl best_id(id: Ident)
-best_id(Id) :-
-    group_match.covers($U(), Id),                                  // group ⊆ invariance set
-    group_match.pattern_size(Id, N),                               // group size
-    N = max N2 : { group_match.covers($U(), I2), group_match.pattern_size(I2, N2) }.
+.init best_id = ArgExtremes<Unit, Ident>
+best_id.cand($U(), Id, N) :-
+    group_match.covers($U(), Id),        // group ⊆ invariance set
+    group_match.pattern_size(Id, N).     // group size
 
 // --- Output ---
 
@@ -81,7 +80,7 @@ out(P, Col, $Direct()) :- c.sym_out(P, Col),  !syms_non_invariant(_).
 out(P, Col, $Direct()) :- c.asym_out(P, Col),  syms_non_invariant(_).
 
 // $GroupMatch
-out(P, Col, $GroupMatch()) :- best_id(Id), c.mapping_out(Id, P, Col).
+out(P, Col, $GroupMatch()) :- best_id.high($U(), Id, _), c.mapping_out(Id, P, Col).
 
 // --- fit ---
 
@@ -122,17 +121,17 @@ out(P, Col, $GroupMatch()) :- best_id(Id), c.mapping_out(Id, P, Col).
 
     // One table entry per class of alike pairs, labelled by its lowest
     // member; the label carries identity only.
-    .decl class(e: Example, id: Ident)
-    class(E, as(Min, Ident)) :- paired(E), Min = min E2 : { same_out(E, E2) }.
+    .init class = Canon<Example>
+    class.equals(E, E2) :- same_out(E, E2).
 
     // A transform some member of the class breaks.
     .decl group_broken(id: Ident, d: D4)
-    group_broken(Id, D) :- class(E, Id), d4.broken(E, D).
+    group_broken(Id, D) :- class.id(E, Id), d4.broken(E, D).
 
     // The class's group: the transforms every member of it is invariant under.
     .decl mapping_sym(id: Ident, d: D4)
-    mapping_sym(Id, D) :- class(_, Id), d4_elem(D), !group_broken(Id, D).
+    mapping_sym(Id, D) :- class.id(_, Id), d4_elem(D), !group_broken(Id, D).
 
     .decl mapping_out(id: Ident, p: Position, col: Color)
-    mapping_out(Id, P, Col) :- class(E, Id), ex_out(E, P, Col).
+    mapping_out(Id, P, Col) :- class.id(E, Id), ex_out(E, P, Col).
 }

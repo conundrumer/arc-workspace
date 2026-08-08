@@ -36,10 +36,11 @@ run_start(D, K, Col) :-
 runs.idx_set(D, K) :- run_start(D, K, _).
 
 // Output frame: one cell per run along the sequence axis.
+.init run_count = Tally<Dir, number>
+run_count.item(D, K) :- run_start(D, K, _).
+
 .init seq = AxisFrame<Unit>
-seq.extent($U(), A, N) :-
-    seq_axis(A), axis_of(D, A),
-    N = count : { run_start(D, _, _) }.
+seq.extent($U(), A, N) :- seq_axis(A), axis_of(D, A), run_count.tally(D, N).
 
 .decl out(p: Position, col: Color)
 out(P_out, Col) :-

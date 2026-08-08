@@ -54,11 +54,12 @@ line_ok(Line, K) :-
 
 // Each case supplies its candidate periods; the smallest one drives the
 // continuation.
-.decl period_cand(ch: Choice, line: Position, k: number)
+.type CaseLine = [ch: Choice, line: Position]
+
+.init period_cand = Extremes<CaseLine>
 
 .decl period(ch: Choice, line: Position, k: number)
-period(Ch, Line, K) :-
-    period_cand(Ch, Line, K), K = min K2 : { period_cand(Ch, Line, K2) }.
+period(Ch, Line, K) :- period_cand.low([Ch, Line], K).
 
 // The input, then each cell repeating the one a period back.
 .decl out(p: Position, col: Color, ch: Choice)
@@ -71,7 +72,7 @@ out(P_grid_out, Col, Ch) :-
 
 // --- $Line ---
 
-period_cand($Line(), Line, K) :- line_ok(Line, K).
+period_cand.cand([$Line(), Line], K) :- line_ok(Line, K).
 
 // --- $Grid ---
 
@@ -83,4 +84,4 @@ broken(K) :- c.dir(D), axis_of(D, A), parse.broken(_, A, K).
 .decl grid_ok(k: number)
 grid_ok(K) :- line_ok(_, K), !broken(K).
 
-period_cand($Grid(), Line, K) :- cell_line(_, Line, _), grid_ok(K).
+period_cand.cand([$Grid(), Line], K) :- cell_line(_, Line, _), grid_ok(K).

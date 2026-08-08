@@ -35,18 +35,19 @@ marker(P, Col, $Anchor()) :-
     c.marker_corner(Diag), corner_anchor(Diag, P, ORIGIN).  // at marker corner
 
 // --- $ByCount, $Minority shared helper ---
-.decl color_count(col: Color, n: number)
-color_count(Col, N) :- in(_, Col), N = count : { in(_, Col) }.
+.init color_count = Tally<Color, Position>
+color_count.item(Col, P) :- in(P, Col).
 
 // --- $ByCount ---
 marker(P, Col, $ByCount()) :-
     in(P, Col),                                             // input cell
-    c.marker_count(K), color_count(Col, K).                 // color with count K
+    c.marker_count(K), color_count.tally(Col, K).           // color with count K
 
 // --- $Minority ---
-marker(P, Col, $Minority()) :-
-    in(P, Col), color_count(Col, N),                        // candidate non-bg color
-    N = min N2 : { color_count(_, N2) }.                    // min non-bg count
+.init rarest = ArgExtremes<Unit, Color>
+rarest.cand($U(), Col, N) :- color_count.tally(Col, N).
+
+marker(P, Col, $Minority()) :- in(P, Col), rarest.low($U(), Col, _).
 
 // --- Output ---
 .decl out(p: Position, col: Color, c: Choice)

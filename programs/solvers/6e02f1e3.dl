@@ -55,11 +55,11 @@
 .comp Parse<Key> {
     .decl cell(k: Key, p: Position, col: Color)
 
-    .decl palette(k: Key, col: Color)
-    palette(K, Col) :- cell(K, _, Col).
+    .init palette = Tally<Key, Color>
+    palette.item(K, Col) :- cell(K, _, Col).
 
     .decl ncolors(k: Key, n: number)
-    ncolors(K, N) :- cell(K, _, _), N = count : { palette(K, _) }.
+    ncolors(K, N) :- palette.tally(K, N).
 }
 
 .init parse = Parse<Unit>

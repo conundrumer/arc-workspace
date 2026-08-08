@@ -76,10 +76,12 @@
     .decl center_on(k: Key)
     center_on(K) :- c.center_pos(P), silhouette(K, P).
 
+    .init corners = Tally<Key, Position>
+    corners.item(K, P) :- c.corner_pos(P), silhouette(K, P).
+    corners.domain(K) :- cell(K, _, _).
+
     .decl corner_count(k: Key, n: number)
-    corner_count(K, N) :-
-        cell(K, _, _),
-        N = count : { c.corner_pos(P), silhouette(K, P) }.
+    corner_count(K, N) :- corners.tally(K, N).
 }
 
 .init parse = Parse<Unit>
@@ -117,15 +119,14 @@ out(ORIGIN, Col, $Classify()) :-
     same.pattern_member(E, P)  :- parse.silhouette(E, P).
     same.observed_member(E, P) :- parse.silhouette(E, P).
 
-    .decl entry(e: Example, id: Ident)
-    entry(E, as(Min, Ident)) :-
-        parse.silhouette(E, _), Min = min ord(E2) : { same.equals(E, E2) }.
+    .init entry = Canon<Example>
+    entry.equals(E, E2) :- same.equals(E, E2).
 
     .decl pattern_member(id: Ident, p: Position)
-    pattern_member(Id, P) :- entry(E, Id), parse.silhouette(E, P).
+    pattern_member(Id, P) :- entry.id(E, Id), parse.silhouette(E, P).
 
     .decl pattern_out(id: Ident, c: Color)
-    pattern_out(Id, Col) :- entry(E, Id), ex_out(E, _, Col).
+    pattern_out(Id, Col) :- entry.id(E, Id), ex_out(E, _, Col).
 
     // A cell off the midline of some axis.
     .decl off_center(p: Position)

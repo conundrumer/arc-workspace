@@ -135,8 +135,12 @@ out(O, Bg, [Dc, B]) :-
         cand(E, O, T, Col), cand(E, O, T2, Col2), Col != Col2,
         ex_out(E, O, Col).
 
+    .init order = Order<Unit, Position>
+    order.elem($U(), T) :- cand(_, _, T, _).
+    order.before($U(), T, T2) :- beats(T, T2).
+
     .decl pane_rank(p_tile: Position, r: number)
-    pane_rank(T, R) :- cand(_, _, T, _), R = count : { beats(T2, T) }.
+    pane_rank(T, R) :- order.rank($U(), T, R).
 
     // Each pane keeps one ink, so a pane's rank is its ink's rank.
     .decl ink_rank(c: Color, r: number)

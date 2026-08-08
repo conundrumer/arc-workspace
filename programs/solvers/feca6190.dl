@@ -19,11 +19,13 @@
 long_axis(A) :- in(P, _), axis_dims(P, A, N1, N2), N1 > N2.
 
 // Output side: the line tiled once per ink cell — counted as ink × cell pairs.
-.decl side(n: number)
-side(N) :- N = count : { in(P, Col), !c.bg(Col), in(Q, _) }.
+.type InkCell = [ink: Position, cell: Position]
+
+.init side = Tally<Unit, InkCell>
+side.item($U(), [P, Q]) :- in(P, Col), !c.bg(Col), in(Q, _).
 
 .init frame = Frame2D<Unit>
-frame.extent($U(), A, N) :- axis_elem(A), side(N).
+frame.extent($U(), A, N) :- axis_elem(A), side.tally($U(), N).
 
 // The line seated in the output frame, flush at the corner opposite c.sweep.
 .decl seated(p: Position, col: Color)

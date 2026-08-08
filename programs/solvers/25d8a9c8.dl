@@ -64,13 +64,13 @@
         Col1 != Col2.
 
     // $Count: distinct-color count per slice.
-    .decl slice_color(k: Key, p_across: Position, col: Color)
-    slice_color(K, P_across, Col) :- cell_split(K, _, Col, _, P_across).
+    .type KA = [k: Key, across: Position]
+
+    .init slice_palette = Tally<KA, Color>
+    slice_palette.item([K, P_across], Col) :- cell_split(K, _, Col, _, P_across).
 
     .decl ncolors(k: Key, p_across: Position, n: number)
-    ncolors(K, P_across, N) :-
-        slice_color(K, P_across, _),
-        N = count : { slice_color(K, P_across, _) }.
+    ncolors(K, P_across, N) :- slice_palette.tally([K, P_across], N).
 }
 
 .init parse = Parse<Unit>

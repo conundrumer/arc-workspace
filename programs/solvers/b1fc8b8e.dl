@@ -94,8 +94,11 @@
     .decl ink_at(k: Key, p: Position)
     ink_at(K, P) :- cell(K, P, Col), c.ink(Col).
 
+    .init ink_tally = Tally<Key, Position>
+    ink_tally.item(K, P) :- ink_at(K, P).
+
     .decl ink_count(k: Key, n: number)
-    ink_count(K, N) :- ink_at(K, _), N = count : { ink_at(K, P) }.
+    ink_count(K, N) :- ink_tally.tally(K, N).
 
     // $Shape: placements where the unit lands fully on ink.
     .init occ = Occurrences<Key>
@@ -166,24 +169,24 @@ out(P_grid, Col, [D, $Corner()]) :-
 
     // One class per set of alike pairs, labelled by its lowest member; the
     // label carries identity only.
-    .decl class(e: Example, id: Ident)
-    class(E, as(Min, Ident)) :- paired(E), Min = min E2 : { same_out(E, E2) }.
+    .init class = Canon<Example>
+    class.equals(E, E2) :- same_out(E, E2).
 
     .decl class_grid(id: Ident, p: Position, col: Color)
-    class_grid(Id, P, Col) :- class(E, Id), ex_out(E, P, Col).
+    class_grid(Id, P, Col) :- class.id(E, Id), ex_out(E, P, Col).
 
     .decl class_tile(id: Ident, p_intile: Position, col: Color)
     class_tile(Id, P_intile, Col) :-
-        class(E, Id), ex_out(E, P_grid, Col), c.arrange(P_grid, P_intile).
+        class.id(E, Id), ex_out(E, P_grid, Col), c.arrange(P_grid, P_intile).
 
     .decl class_count(id: Ident, n: number)
-    class_count(Id, N) :- class(E, Id), parse.ink_count(E, N).
+    class_count(Id, N) :- class.id(E, Id), parse.ink_count(E, N).
 
     .decl covered_class(id: Ident)
-    covered_class(Id) :- class(E, Id), parse.ink_at(E, _), !parse.uncovered(E).
+    covered_class(Id) :- class.id(E, Id), parse.ink_at(E, _), !parse.uncovered(E).
 
     .decl broken_class(id: Ident)
-    broken_class(Id) :- class(E, Id), parse.uncovered(E).
+    broken_class(Id) :- class.id(E, Id), parse.uncovered(E).
 
     // Each tile displays a copy of the unit: intact for the covered class,
     // damaged — cells removed — for the broken class. The displays jointly

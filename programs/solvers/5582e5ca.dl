@@ -17,16 +17,13 @@
 
 .init c = Consts
 
-.decl color_count(col: Color, n: number)
-color_count(Col, N) :- in(_, Col), N = count : { in(_, Col) }.
+.init tally = Mode<Unit, Color, Position>
+tally.item($U(), Col, P) :- in(P, Col).
 
 .decl out(p: Position, col: Color, ch: Choice)
 
 // --- Mode ---
-.decl dominant(col: Color)
-dominant(Col) :- color_count(Col, N), N = max M : { color_count(_, M) }.
-
-out(P, Col, $Mode()) :- in(P, _), dominant(Col).
+out(P, Col, $Mode()) :- in(P, _), tally.mode($U(), Col).
 
 // --- Count ---
-out(P, Col, $Count()) :- in(P, _), color_count(Col, N), c.target(N).
+out(P, Col, $Count()) :- in(P, _), tally.tally($U(), Col, N), c.target(N).

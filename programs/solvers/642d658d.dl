@@ -74,17 +74,16 @@ fp_broken(P, Col) :- fp_arm(P, _, Col), fp.inner($U(), D), !fp_arm(P, D, Col).
 
 plus($Footprint(), P, Col) :- fp_arm(P, _, Col), !fp_broken(P, Col).
 
-.decl plus_count(dt: Detect, col: Color, n: number)
-plus_count(Dt, Col, N) :- plus(Dt, _, Col), N = count : { plus(Dt, P, Col) }.
+.init plus_count = Mode<Detect, Color, Position>
+plus_count.item(Dt, Col, P) :- plus(Dt, P, Col).
 
 .decl out(p: Position, col: Color, ch: Choice)
 
 // --- $Mode ---
-out(ORIGIN, Col, [Dt, $Mode()]) :-
-    plus_count(Dt, Col, N), N = max M : { plus_count(Dt, _, M) }.
+out(ORIGIN, Col, [Dt, $Mode()]) :- plus_count.mode(Dt, Col).
 
 // --- $Count ---
-out(ORIGIN, Col, [Dt, $Count()]) :- plus_count(Dt, Col, N), c.target(N).
+out(ORIGIN, Col, [Dt, $Count()]) :- plus_count.tally(Dt, Col, N), c.target(N).
 
 // --- fit ---
 
@@ -136,6 +135,9 @@ out(ORIGIN, Col, [Dt, $Count()]) :- plus_count(Dt, Col, N), c.target(N).
         ex_out(E, _, Col), center_at(E, P),                      // pair's output color
         arm_off.mode($U(), Off), compose(P, Off, P2), ex_in(E, P2, Col).    // an arm holds it
 
+    .init win_count = Tally<Example, Position>
+    win_count.item(E, P) :- winner(E, P).
+
     .decl target(n: number)
-    target(N) :- ex_out(E, _, _), N = count : { winner(E, P) }.
+    target(N) :- win_count.tally(_, N).
 }

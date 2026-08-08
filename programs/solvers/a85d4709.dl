@@ -80,16 +80,15 @@ out(P, Out_C, $MarkerPosition()) :-
     same.pattern_member(S, [P_inner, C]) :- fslice(S, P_inner, C).
     same.observed_member(S, [P_inner, C]) :- fslice(S, P_inner, C).
 
-    .decl entry(s: SliceKey, id: Ident)
-    entry(S, as(Min, Ident)) :-
-        fslice(S, _, _), Min = min ord(S2) : { same.equals(S, S2) }.
+    .init entry = Canon<SliceKey>
+    entry.equals(S, S2) :- same.equals(S, S2).
 
     .decl mapping_member(id: Ident, p_inner: Position, c: Color)
-    mapping_member(Id, P_inner, C) :- entry(S, Id), fslice(S, P_inner, C).
+    mapping_member(Id, P_inner, C) :- entry.id(S, Id), fslice(S, P_inner, C).
 
     .decl mapping_out(id: Ident, c_out: Color)
     mapping_out(Id, C_out) :-
-        entry([E, P_across], Id),
+        entry.id([E, P_across], Id),
         ex_out(E, P, C_out), c.axis(A), split(P, A, _, P_across).
 
     // The marker's within-slice position keys the slice's output color.

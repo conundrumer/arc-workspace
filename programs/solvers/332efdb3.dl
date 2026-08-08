@@ -93,13 +93,13 @@ out(P, Col, $Inset()) :-
     .init parse = ShiftInvariance<Example, Color>
     parse.cell(E, P, Col) :- ex_out(E, P, Col).
 
-    .decl unbroken(a: Axis, k: number)
-    unbroken(A, K) :- parse.cand(_, A, K, _), !parse.broken(_, A, K).
+    .init unbroken = Extremes<Axis>
+    unbroken.cand(A, K) :- parse.cand(_, A, K, _), !parse.broken(_, A, K).
 
     // The lattice generators: the smallest repeating shift on each axis,
     // in each direction.
     .decl period(delta: Shift)
-    period(Delta) :- parse.cand(_, A, K, Delta), K = min K2 : { unbroken(A, K2) }.
+    period(Delta) :- parse.cand(_, A, K, Delta), unbroken.low(A, K).
 
     .decl span(a: Axis, k: number)
     span(A, K) :- period(Delta), parse.cand(_, A, K, Delta).

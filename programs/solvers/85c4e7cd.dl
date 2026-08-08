@@ -13,23 +13,21 @@
 .init c = Consts
 
 // Ring index: distance to the nearest edge.
-.decl cell_dist(p: Position, k: number)
-cell_dist(P, K) :- in(P, _), dir_elem(D), dist(P, D, K).
+.init edge_dist = Extremes<Position>
+edge_dist.cand(P, K) :- in(P, _), dir_elem(D), dist(P, D, K).
 
 .decl ring(p: Position, k: number)
-ring(P, K) :- in(P, _), K = min Kd : { cell_dist(P, Kd) }.
+ring(P, K) :- edge_dist.low(P, K).
 
-.decl ring_idx(k: number)
-ring_idx(K) :- ring(_, K).
+.init rings = Ordinal<Unit>
+rings.idx_set($U(), K) :- ring(_, K).
 
 .decl ring_color(k: number, col: Color)
 ring_color(K, Col) :- ring(P, K), in(P, Col).
 
 // Opposite-end pairing: as many rings outside K as inside K2.
-.decl rev(k: number, k2: number)
-rev(K, K2) :-
-    ring_idx(K),  R = count : { ring_idx(Ka), Ka < K },
-    ring_idx(K2), R = count : { ring_idx(Kb), K2 < Kb }.
-
 .decl out(p: Position, col: Color)
-out(P, Col) :- ring(P, K), rev(K, K2), ring_color(K2, Col).
+out(P, Col) :-
+    ring(P, K), rings.rank($U(), K, R),   // rings outside this one
+    rings.rank_desc($U(), K2, R),         // the ring as deep from the centre
+    ring_color(K2, Col).

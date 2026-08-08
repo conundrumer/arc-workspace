@@ -160,16 +160,18 @@ out(P_grid_out, Col, Impl) :-
 
     .init ring = CycleWalk<Unit, Position>
     ring.succ($U(), P, P_next) :- ring_succ(P, P_next).
-    ring.step($U(), N) :- ring_cell(_), N = count : { ring_cell(P) }.   // once around
+    .init ring_size = Tally<Unit, Position>
+    ring_size.item($U(), P) :- ring_cell(P).
+    ring.step($U(), N) :- ring_size.tally($U(), N).   // once around
 
     // Steps around the ring from the arm's own corner to the arm's paired cell.
-    .decl advance(ring: number, n: number)
-    advance(Ring, N) :-
+    .init advance = Extremes<number>
+    advance.cand(Ring, N) :-
         pair(P_in, P_out), dp.diag_cell($U(), P_in, Diag, Ring),
         ring_corner(Diag, P_corner),
         ring.walk($U(), P_corner, N, P_out).
 
     // A full turn returns to the start, so the shift is the least advance.
     .decl ring_shift(ring: number, shift: number)
-    ring_shift(Ring, N) :- advance(Ring, _), N = min K : { advance(Ring, K) }.
+    ring_shift(Ring, N) :- advance.low(Ring, N).
 }

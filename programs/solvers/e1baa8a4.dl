@@ -18,17 +18,18 @@ boundary(D, K) :-
     step_delta(D, S), compose(P, S, P2),       // neighbor toward d
     in(P2, C2), C1 != C2.                      // colors differ
 
-// Band index of a cell from edge d: boundaries at or nearer than the cell.
-.decl band_idx(p: Position, d: Dir, i: number)
-band_idx(P, D, I) :-
-    in(P, _), dir_elem(D), dist(P, D, K),
-    I = count : { boundary(D, K2), K2 <= K }.
+// Band index of a distance from edge d: the boundaries at or inside it.
+.type EdgeDist = [d: Dir, k: number]
+.init bands = Tally<EdgeDist, number>
+bands.item([D, K], K2) :- bands.domain([D, K]), boundary(D, K2), K2 <= K.
+bands.domain([D, K]) :- in(P, _), dir_elem(D), dist(P, D, K).
 
 // Axis part of the output position: band indices from both edges of a.
 .decl axis_band(a: Axis, p: Position, p_axis: Position)
 axis_band(A, P, P_axis) :-
-    axis_of(D, A), opposite(D, O),             // the axis's edge pair
-    band_idx(P, D, I1), band_idx(P, O, I2),    // band index from each
+    in(P, _), axis_of(D, A), opposite(D, O),           // the axis's edge pair
+    dist(P, D, K1), bands.tally([D, K1], I1),          // band index from each
+    dist(P, O, K2), bands.tally([O, K2], I2),
     edge_delta(D, I1, P1), edge_delta(O, I2, P2),
     compose(P1, P2, P_axis).
 

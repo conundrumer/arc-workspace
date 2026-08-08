@@ -160,11 +160,11 @@ out(P_out, Col) :-
     symk(K, T, D) :- tposk(K, _, T), d4_elem(D), !brokenk(K, T, D).
 
     // Tile extent: the coarsest decomposition whose tile labels differ.
-    .decl nonuniform(k: number)
-    nonuniform(K) :- symk(K, T1, D), tposk(K, _, T2), !symk(K, T2, D).
+    .init nonuniform = Extremes<Unit>
+    nonuniform.cand($U(), K) :- symk(K, T1, D), tposk(K, _, T2), !symk(K, T2, D).
 
     .decl tile_dim(k: number)
-    tile_dim(K) :- nonuniform(K), K = max K2 : { nonuniform(K2) }.
+    tile_dim(K) :- nonuniform.high($U(), K).
 
     // Each tile's group is the named subgroup matching its unbroken set.
     .decl symt(p_tile: Position, d: D4)

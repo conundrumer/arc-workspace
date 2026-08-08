@@ -60,11 +60,11 @@ run_of(R2, B) :-
 .init comps = Components<Color>
 comps.node(Col, P) :- in(P, Col), !c.bg(Col).
 
-.decl obj_dist(id: Ident, k: number)
-obj_dist(Id, K) :- comps.label(_, P, Id), c.dir(D), dist(P, D, K).
+.init obj_dist = Extremes<Ident>
+obj_dist.cand(Id, K) :- comps.label(_, P, Id), c.dir(D), dist(P, D, K).
 
 .decl obj_top(id: Ident, k: number)
-obj_top(Id, K) :- obj_dist(Id, _), K = min K2 : { obj_dist(Id, K2) }.
+obj_top(Id, K) :- obj_dist.low(Id, K).
 
 // --- shared: rank the bars, select marked ranks ---
 

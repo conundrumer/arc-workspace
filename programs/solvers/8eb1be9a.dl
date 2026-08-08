@@ -18,14 +18,14 @@
 .decl band_row(al: Position)
 band_row(Al) :- in(P, Col), !c.bg(Col), c.axis(A), split(P, A, Al, _).
 
-.decl period(n: number)
-period(N) :- N = count : { band_row(_) }.
+.init period = Tally<Unit, Position>
+period.item($U(), Al) :- band_row(Al).
 
 // Closure under the tiling's translations: band-extent jumps along the axis.
 .decl out(p: Position, col: Color)
 out(P, Col) :- in(P, Col), c.axis(A), split(P, A, Al, _), band_row(Al).
 out(Q, Col) :-
     out(P, Col),
-    c.axis(A), axis_of(D, A), period(N),    // the axis's two jump directions
+    c.axis(A), axis_of(D, A), period.tally($U(), N),   // the axis's two jump directions
     jump_delta(D, N, Delta), compose(P, Delta, Q),
     in(Q, _).

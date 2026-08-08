@@ -15,11 +15,11 @@
 .decl on(p: Position, col: Color)
 on(P, Col) :- in(P, Col), !c.bg(Col).
 
-.decl total(n: number)
-total(N) :- N = count : { on(_, _) }.
+.init total = Tally<Unit, Position>
+total.item($U(), P) :- on(P, _).
 
 .init bar = AxisFrame<Unit>
-bar.extent($U(), A, N) :- c.bar_axis(A), total(N).
+bar.extent($U(), A, N) :- c.bar_axis(A), total.tally($U(), N).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- bar.cell($U(), _, P), on(_, Col).

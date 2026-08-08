@@ -40,8 +40,12 @@ marker(P, $Marked()) :-
 // --- Singleton ---
 .decl band_cell(p: Position, col: Color)
 band_cell(P, Col) :- in(P, Col), c.marker_edge(D), dist(P, D, 0).
+
+.init band_count = Tally<Color, Position>
+band_count.item(Col, P) :- band_cell(P, Col).
+
 marker(P, $Singleton()) :-
-    band_cell(P, Col), c.marker_count(N), N = count : { band_cell(_, Col) }.
+    band_cell(P, Col), c.marker_count(N), band_count.tally(Col, N).
 
 // The edges the two indices are measured from: rows from the edge opposite
 // the shift, columns from the edge opposite the band.

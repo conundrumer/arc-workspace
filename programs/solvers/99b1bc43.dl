@@ -74,10 +74,13 @@ decompose(P_grid, P_tile, P_intile, $Div()) :-
 
 // --- Xor body: filled_count parameterized by decompose choice ---
 
+.init filled = Tally<CombineKey, Position>
+filled.item([P_grid_out, Dc], P_grid_in) :-
+    in(P_grid_in, Col), !c.bg(Col), decompose(P_grid_in, _, P_grid_out, Dc).
+filled.domain([P_grid_out, Dc]) :- c.frame(P_grid_out), dec_choice(Dc).
+
 .decl filled_count(o: Position, dc: DecChoice, n: number)
-filled_count(P_grid_out, Dc, N) :-
-    c.frame(P_grid_out), dec_choice(Dc),
-    N = count : { in(P_grid_in, Col), !c.bg(Col), decompose(P_grid_in, _, P_grid_out, Dc) }.
+filled_count(P_grid_out, Dc, N) :- filled.tally([P_grid_out, Dc], N).
 
 // --- Output ---
 

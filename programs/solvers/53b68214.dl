@@ -28,13 +28,13 @@
 .init parse = ShiftInvariance<Unit, Color>
 parse.cell($U(), P, Col) :- in(P, Col).
 
-.decl shift_ok(k: number)
-shift_ok(K) :-
+.init shift_ok = Extremes<Unit>
+shift_ok.cand($U(), K) :-
     c.growth(D), axis_of(D, A),
     parse.cand($U(), A, K, _), !parse.broken($U(), A, K).
 
 .decl period(k: number)
-period(K) :- shift_ok(K), K = min K2 : { shift_ok(K2) }.
+period(K) :- shift_ok.low($U(), K).
 
 .decl width(w: number)
 width(W) :- in(P, _), c.growth(D), axis_of(D, A), perp(A, A2), axis_dim(P, A2, W).

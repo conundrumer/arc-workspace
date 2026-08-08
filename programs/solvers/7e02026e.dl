@@ -66,12 +66,15 @@ out(P, Col, $Flank()) :- in(P, Col), !flank_covered(P).
     .decl comp_cell(k: EI, p: Position)
     comp_cell([E, Id], P) :- comps.label(E, P, Id).
 
-    .decl comp_size(k: EI, n: number)
-    comp_size(K, N) :- comp_cell(K, _), N = count : { comp_cell(K, _) }.
+    .init comp_size = Tally<EI, Position>
+    comp_size.item(K, P) :- comp_cell(K, P).
 
     // The smallest changed component is a single stamp.
+    .init smallest = ArgExtremes<Unit, EI>
+    smallest.cand($U(), K, N) :- comp_size.tally(K, N).
+
     .decl stamp(k: EI)
-    stamp(K) :- comp_size(K, N), N = min M : { comp_size(_, M) }.
+    stamp(K) :- smallest.low($U(), K, _).
 
     .init frame = BoxFrame<EI>
     frame.cell(K, P) :- stamp(K), comp_cell(K, P).

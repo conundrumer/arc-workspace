@@ -197,8 +197,11 @@ out(Q, Col, $Pair()) :- pair_rot(R), c.pair_out(Pm, Col), apply(R, Pm, Q).
 
 .comp Fit {
     // The stored pictures all come from one train pair.
+    .init first = Canon<Example>
+    first.equals(E, E2) :- ex_out(E, _, _), ex_out(E2, _, _).
+
     .decl fex(e: Example)
-    fex(E) :- ex_out(E, _, _), Min = min ord(E2) : { ex_out(E2, _, _) }, ord(E) = Min.
+    fex(E) :- first.rep(E, E).
 
     .decl pair_in(p: Position, col: Color)
     pair_in(P, Col) :- fex(E), ex_in(E, P, Col).

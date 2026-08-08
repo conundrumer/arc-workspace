@@ -10,11 +10,11 @@
 
 .init c = Consts
 
-.decl palette(col: Color)
-palette(Col) :- in(_, Col).
+.init palette = Tally<Unit, Color>
+palette.item($U(), Col) :- in(_, Col).
 
 .init block = Frame2D<Unit>
-block.extent($U(), A, N) :- axis_elem(A), N = count : { palette(_) }.
+block.extent($U(), A, N) :- axis_elem(A), palette.tally($U(), N).
 
 .decl out(p: Position, col: Color)
 out(P_grid_out, Col) :-

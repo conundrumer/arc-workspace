@@ -93,11 +93,11 @@ out(P, Col_out, Ch) :-
     corner(Diag) :- key_cell(_, P), diag_dist(P, Diag, _, 0, 0).
 
     // Distances from the corner's edges that key cells take, per axis.
-    .decl key_dist(a: Axis, k: number)
-    key_dist(A, K) :- key_cell(_, P), corner(Diag), diag_dist(P, Diag, A, K, _).
+    .init key_dist = Tally<Axis, number>
+    key_dist.item(A, K) :- key_cell(_, P), corner(Diag), diag_dist(P, Diag, A, K, _).
 
     .decl key_dim(a: Axis, n: number)
-    key_dim(A, N) :- key_dist(A, _), N = count : { key_dist(A, K) }.
+    key_dim(A, N) :- key_dist.tally(A, N).
 
     .decl grid_partner(p1: Position, p2: Position)
     grid_partner(P1, P2) :-

@@ -78,8 +78,12 @@
     .decl block(k: Key, id: Ident)
     block(K, Id) :- same.equals([K, Id], $U()).
 
+    .init blocks = Tally<Key, Ident>
+    blocks.item(K, Id) :- block(K, Id).
+    blocks.domain(K) :- cell(K, _, _).
+
     .decl block_count(k: Key, n: number)
-    block_count(K, N) :- cell(K, _, _), N = count : { block(K, Id) }.
+    block_count(K, N) :- blocks.tally(K, N).
 }
 
 .init parse = Parse<Unit>
@@ -99,7 +103,10 @@ occ.shape($U(), P) :- c.block_shape(P).
 
 .decl total(n: number, detect: Detect)
 total(N, $Object())    :- parse.block_count($U(), N).
-total(N, $Placement()) :- N = count : { occ.occurrence($U(), _) }.
+.init placements = Tally<Unit, Position>
+placements.item($U(), P) :- occ.occurrence($U(), P).
+
+total(N, $Placement()) :- placements.tally($U(), N).
 
 .init diag = Diagonal<Unit>
 diag.cell($U(), P)   :- c.out_pos(P).

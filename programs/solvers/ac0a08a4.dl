@@ -20,13 +20,16 @@ on(P, Col) :- in(P, Col), !c.bg(Col).
 .init block = Frame2D<Choice>
 
 // --- Cells ---
-block.extent($Cells(), A, N) :- axis_elem(A), N = count : { on(_, _) }.
+.init cell_count = Tally<Unit, Position>
+cell_count.item($U(), P) :- on(P, _).
+
+block.extent($Cells(), A, N) :- axis_elem(A), cell_count.tally($U(), N).
 
 // --- Colors ---
-.decl palette(col: Color)
-palette(Col) :- on(_, Col).
+.init palette = Tally<Unit, Color>
+palette.item($U(), Col) :- on(_, Col).
 
-block.extent($Colors(), A, N) :- axis_elem(A), N = count : { palette(_) }.
+block.extent($Colors(), A, N) :- axis_elem(A), palette.tally($U(), N).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P_grid_out, Col, Ch) :-

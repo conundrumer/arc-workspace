@@ -69,8 +69,12 @@
     .decl block(k: Key, id: Ident)
     block(K, Id) :- same.equals([K, Id], K).
 
+    .init blocks = Tally<Key, Ident>
+    blocks.item(K, Id) :- block(K, Id).
+    blocks.domain(K) :- cell(K, _, _).
+
     .decl block_count(k: Key, n: number)
-    block_count(K, N) :- cell(K, _, _), N = count : { block(K, Id) }.
+    block_count(K, N) :- blocks.tally(K, N).
 }
 
 .init parse = Parse<Unit>
@@ -92,7 +96,10 @@ occ.shape($U(), P) :- c.block_shape(P).
 
 .decl total(n: number, detect: Detect)
 total(N, $Object())    :- parse.block_count($U(), N).
-total(N, $Placement()) :- N = count : { occ.occurrence($U(), _) }.
+.init placements = Tally<Unit, Position>
+placements.item($U(), P) :- occ.occurrence($U(), P).
+
+total(N, $Placement()) :- placements.tally($U(), N).
 
 .decl marked(p: Position, detect: Detect)
 marked(P, Det) :-
@@ -119,8 +126,8 @@ out(P, BG,  [Det, M]) :-
     .decl bar(e: Example, p: Position, col: Color)
     bar(E, P, Col) :- ex_out(E, P, Col), !c.bg(Col).
 
-    .decl bar_len(e: Example, n: number)
-    bar_len(E, N) :- bar(E, _, _), N = count : { bar(E, P, _) }.
+    .init bar_len = Tally<Example, Position>
+    bar_len.item(E, P) :- bar(E, P, _).
 
     .decl mark(c: Color)
     mark(Col) :- bar(_, _, Col).
@@ -131,7 +138,7 @@ out(P, BG,  [Det, M]) :-
     // An edge the bar does not run from.
     .decl broken_edge(d: Dir)
     broken_edge(D) :-
-        dir_elem(D), bar_len(E, N),
+        dir_elem(D), bar_len.tally(E, N),
         ex_out(E, P, _), dist(P, D, K), K < N,   // cell within the bar's length
         !bar(E, P, _).                           // that the bar misses
 
@@ -165,7 +172,7 @@ out(P, BG,  [Det, M]) :-
 
     // A candidate whose count misses some bar's length.
     .decl broken(col: Color, k: number)
-    broken(Col, K) :- parse.block_count([E, Col, K], N), bar_len(E, M), N != M.
+    broken(Col, K) :- parse.block_count([E, Col, K], N), bar_len.tally(E, M), N != M.
 
     // The block the bars count.
     .decl block(col: Color, k: number)

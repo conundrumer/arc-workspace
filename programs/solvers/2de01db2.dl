@@ -42,15 +42,11 @@ main(P_line, Col, $Palette()) :- line_color(P_line, Col), c.ink(Col).
 .decl shared(col: Color)
 shared(Col) :- line_color(L1, Col), line_color(L2, Col), L1 != L2.
 
-// Cell count of each line-owned ink.
-.decl own_count(p_line: Position, col: Color, n: number)
-own_count(P_line, Col, N) :-
-    line_color(P_line, Col), !shared(Col),
-    N = count : { cell_line(_, Col, P_line) }.
+// The line's owned inks, by cell count.
+.init own_count = Mode<Position, Color, Position>
+own_count.item(P_line, Col, P) :- cell_line(P, Col, P_line), !shared(Col).
 
-main(P_line, Col, $Owned()) :-
-    own_count(P_line, Col, N),
-    N = max M : { own_count(P_line, _, M) }.
+main(P_line, Col, $Owned()) :- own_count.mode(P_line, Col).
 
 // --- Output ---
 

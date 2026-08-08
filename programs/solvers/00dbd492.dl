@@ -164,9 +164,10 @@ rbox.cell([R, Id], P) :- region(R, Id, P).
 // The region's box, which is square.
 fill(R, Id, Col, $Size()) :- rbox.extents([R, Id], _, N, N), c.size_fill(N, Col).
 
-fill(R, Id, Col, $Count()) :-
-    region(R, Id, _), N = count : { region(R, Id, P) },
-    c.count_fill(N, Col).
+.init region_size = Tally<RegionKey, Position>
+region_size.item([R, Id], P) :- region(R, Id, P).
+
+fill(R, Id, Col, $Count()) :- region_size.tally([R, Id], N), c.count_fill(N, Col).
 
 // --- $Recolor ---
 
@@ -222,8 +223,11 @@ out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !painted(P, _, Ch).
     .decl size_fill(n: number, col: Color)
     size_fill(N, Col) :- rbox.extents(H, _, N, N), region(H, _, Col).
 
+    .init region_size = Tally<Hole, Position>
+    region_size.item(H, P) :- region(H, P, _).
+
     .decl count_fill(n: number, col: Color)
-    count_fill(N, Col) :- region(H, _, Col), N = count : { region(H, P, _) }.
+    count_fill(N, Col) :- region_size.tally(H, N), region(H, _, Col).
 
     // The object's cells, and its box's output, in the box's own frame.
     .decl obj_member(o: Obj, p_inner: Position)
@@ -241,12 +245,12 @@ out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !painted(P, _, Ch).
     same.pattern_member(O, P_inner)  :- rewritten(O), obj_member(O, P_inner).
     same.observed_member(O, P_inner) :- rewritten(O), obj_member(O, P_inner).
 
-    .decl entry(o: Obj, id: Ident)
-    entry(O, as(Min, Ident)) :- rewritten(O), Min = min ord(O2) : { same.equals(O, O2) }.
+    .init entry = Canon<Obj>
+    entry.equals(O, O2) :- same.equals(O, O2).
 
     .decl patch_member(id: Ident, p: Position)
-    patch_member(Id, P_inner) :- entry(O, Id), obj_member(O, P_inner).
+    patch_member(Id, P_inner) :- entry.id(O, Id), obj_member(O, P_inner).
 
     .decl patch_out(id: Ident, p: Position, col: Color)
-    patch_out(Id, P_inner, Col) :- entry(O, Id), obj_out(O, P_inner, Col).
+    patch_out(Id, P_inner, Col) :- entry.id(O, Id), obj_out(O, P_inner, Col).
 }

@@ -95,12 +95,12 @@ out(P, Col, $Rows()) :-
     .init parse = ShiftInvariance<Example, Color>
     parse.cell(E, P, Col) :- ex_out(E, P, Col).
 
-    .decl unbroken(a: Axis, k: number)
-    unbroken(A, K) :- parse.cand(_, A, K, _), !parse.broken(_, A, K).
+    .init unbroken = Extremes<Axis>
+    unbroken.cand(A, K) :- parse.cand(_, A, K, _), !parse.broken(_, A, K).
 
     // The period is the smallest shift the wallpaper repeats under.
     .decl period(a: Axis, k: number)
-    period(A, K) :- unbroken(A, _), K = min K2 : { unbroken(A, K2) }.
+    period(A, K) :- unbroken.low(A, K).
 
     // Restored cells in line coordinates, on each axis.
     .decl line_cell(e: Example, a: Axis, across: Position, along: Position, col: Color)

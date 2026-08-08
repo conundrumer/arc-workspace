@@ -40,19 +40,19 @@ marker_line(R) :- cell_line(_, Col, R), c.marker(Col).
 .decl unit(p: Position, col: Color, r: number)
 unit(P, Col, R) :- ink(P, Col, R), marker_line(R).
 
-.decl pat_len(n: number)
-pat_len(N) :- N = count : { ink_line(R) }.
+.init pat_len = Tally<Unit, number>
+pat_len.item($U(), R) :- ink_line(R).
 
-.decl unit_len(n: number)
-unit_len(N) :- N = count : { marker_line(R) }.
+.init unit_len = Tally<Unit, number>
+unit_len.item($U(), R) :- marker_line(R).
 
 .decl copy(p: Position, col: Color, ch: Choice)
 
 // --- $Stamp ---
 
 copy(P2, Col, $Stamp()) :-
-    ( unit(P1, Col, _), pat_len(N)              // seed: one pattern-length on
-    ; copy(P1, Col, $Stamp()), unit_len(N)      // grow: one unit-length on
+    ( unit(P1, Col, _), pat_len.tally($U(), N)          // seed: one pattern-length on
+    ; copy(P1, Col, $Stamp()), unit_len.tally($U(), N)  // grow: one unit-length on
     ),
     c.flow(D), jump_delta(D, N, Dlt),           // the jump along the flow
     compose(P1, Dlt, P2), in(P2, _).            // lands on the grid
@@ -69,7 +69,7 @@ region_frame.cell($U(), P) :- region(P).
 copy(P, Col, $Tile()) :-
     region_frame.inner($U(), P, I),
     c.flow(D), axis_of(D, A), opposite(D, O),
-    unit_len(K), divide_by_size(I, A, K, 0, _, P_intile),   // unit-sized tiles
+    unit_len.tally($U(), K), divide_by_size(I, A, K, 0, _, P_intile),   // unit-sized tiles
     dist(P_intile, O, R), unit(P_u, Col, R),                // unit line at the tile offset
     split(P, A, _, Ac), split(P_u, A, _, Ac).               // across passthrough
 

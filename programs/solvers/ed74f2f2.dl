@@ -86,14 +86,13 @@ out(P, C) :- target_cell(P, C), c.bg(C).                   // bg passes through
     same.pattern_member(E, [P_intile, Col])  :- fkey(E, P_intile, Col).
     same.observed_member(E, [P_intile, Col]) :- fkey(E, P_intile, Col).
 
-    .decl entry(e: Example, id: Ident)
-    entry(E, as(Min, Ident)) :-
-        fkey(E, _, _), Min = min ord(E2) : { same.equals(E, E2) }.
+    .init entry = Canon<Example>
+    entry.equals(E, E2) :- same.equals(E, E2).
 
     .decl key_member(id: Ident, p_intile: Position, col: Color)
-    key_member(Id, P_intile, Col) :- entry(E, Id), fkey(E, P_intile, Col).
+    key_member(Id, P_intile, Col) :- entry.id(E, Id), fkey(E, P_intile, Col).
 
     // The entry's color is the ink the example's output carries.
     .decl key_color(id: Ident, col: Color)
-    key_color(Id, Col) :- entry(E, Id), ex_out(E, _, Col), !c.bg(Col).
+    key_color(Id, Col) :- entry.id(E, Id), ex_out(E, _, Col), !c.bg(Col).
 }

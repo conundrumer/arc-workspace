@@ -22,26 +22,27 @@
 
 // --- $Count ---
 
-.decl color_count(col: Color, n: number)
-color_count(Col, N) :- in(_, Col), N = count : { in(P, Col) }.
+.init color_tally = Mode<Unit, Color, Position>
+color_tally.item($U(), Col, P) :- in(P, Col).
 
-keep(P, $Count()) :-
-    in(P, Col), color_count(Col, N),
-    N = max N2 : { color_count(_, N2) }.   // the commonest color
+keep(P, $Count()) :- in(P, Col), color_tally.mode($U(), Col).   // the commonest color
 
 // --- $BlobColor / $Blob ---
+
+.type Comp = [col: Color, id: Ident]
 
 .init comps = Components<Color>
 comps.node(Col, P) :- in(P, Col).
 
-.decl comp_size(col: Color, id: Ident, n: number)
-comp_size(Col, Id, N) :- comps.label(Col, _, Id), N = count : { comps.label(Col, P, Id) }.
+.init comp_size = Tally<Comp, Position>
+comp_size.item([Col, Id], P) :- comps.label(Col, P, Id).
 
 // The largest component.
+.init biggest = ArgExtremes<Unit, Comp>
+biggest.cand($U(), K, N) :- comp_size.tally(K, N).
+
 .decl comp_wins(col: Color, id: Ident)
-comp_wins(Col, Id) :-
-    comp_size(Col, Id, N),
-    N = max N2 : { comp_size(_, _, N2) }.
+comp_wins(Col, Id) :- biggest.high($U(), [Col, Id], _).
 
 keep(P, $BlobColor()) :- in(P, Col), comp_wins(Col, _).
 

@@ -22,17 +22,15 @@
 .init c = Consts
 
 // Cell count per non-bg color.
-.decl color_count(col: Color, n: number)
-color_count(Col, N) :-
-    in(_, Col), !c.bg(Col),
-    N = count : { in(_, Col) }.
+.init color_count = Tally<Color, Position>
+color_count.item(Col, P) :- in(P, Col), !c.bg(Col).
 
 // Dense rank over the distinct counts, ascending (fewest first).
 .init o = Ordinal<Unit>
-o.idx_set($U(), N) :- color_count(_, N).
+o.idx_set($U(), N) :- color_count.tally(_, N).
 
 .decl color_rank(col: Color, r: number)
-color_rank(Col, R) :- color_count(Col, N), o.rank($U(), N, R).
+color_rank(Col, R) :- color_count.tally(Col, N), o.rank($U(), N, R).
 
 // Output frame: 1D axis anchored at c.rank_dir. Placing ascending rank from
 // the opposite edge seats the largest count at the rank_dir edge.

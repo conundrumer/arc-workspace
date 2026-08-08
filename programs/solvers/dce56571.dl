@@ -16,8 +16,8 @@
 .decl ink(p: Position, col: Color)
 ink(P, Col) :- in(P, Col), !c.bg(Col).
 
-.decl ink_count(n: number)
-ink_count(N) :- ink(_, _), N = count : { ink(P2, C2) }.
+.init ink_count = Tally<Unit, Position>
+ink_count.item($U(), P) :- ink(P, _).
 
 // Cells of the across-centered line, with the distance to the nearer
 // axis edge — the cell's centrality along the line.
@@ -27,12 +27,15 @@ center_line(P, K) :-
     perp(A, A2), axis_of(D2, A2), dist_pair(P, D2, Kc, Kc),   // centered across
     axis_of(D, A), dist_pair(P, D, K, K2), K <= K2.           // nearer axis edge
 
+// Centrality order over the line's cells, from the centre outward.
+.init centrality = Order<Unit, Position>
+centrality.elem($U(), P) :- center_line(P, _).
+centrality.before($U(), Q, P) :- center_line(Q, Kq), center_line(P, K), Kq > K.
+
 // The line: the ink-count most-central cells — the centered band of
 // that extent.
 .decl line_cell(p: Position)
-line_cell(P) :-
-    ink_count(N), center_line(P, K),
-    M = count : { center_line(Q, Kq), Kq >= K }, M <= N.
+line_cell(P) :- ink_count.tally($U(), N), centrality.rank($U(), P, M), M < N.
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- line_cell(P), ink(_, Col).

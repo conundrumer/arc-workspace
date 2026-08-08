@@ -34,12 +34,15 @@ objs.node(Col, P) :- in(P, Col), !c.bg(Col).
 .decl object(id: Ident, col: Color, p: Position)
 object(Id, Col, P) :- objs.label(Col, P, Id).
 
-.decl object_size(id: Ident, n: number)
-object_size(Id, N) :- object(Id, _, _), N = count : { object(Id, _, _) }.
+.init object_size = Tally<Ident, Position>
+object_size.item(Id, P) :- object(Id, _, P).
 
 // The template is the largest object.
+.init biggest = ArgExtremes<Unit, Ident>
+biggest.cand($U(), Id, N) :- object_size.tally(Id, N).
+
 .decl template(id: Ident)
-template(Id) :- object_size(Id, N), N = max M : { object_size(_, M) }.
+template(Id) :- biggest.high($U(), Id, _).
 
 .decl shape(p: Position)
 shape(P) :- object(Id, _, P), template(Id).
@@ -70,7 +73,10 @@ fits(Id, Delta, K) :- object(Id, _, _), toward(_, K, Delta), !misfit(Id, Delta).
 
 // --- Reach ---
 
-step(Id, Delta, $Reach()) :- fits(Id, Delta, K), K = max K2 : { fits(Id, _, K2) }.
+.init reach = ArgExtremes<Ident, Shift>
+reach.cand(Id, Delta, K) :- fits(Id, Delta, K).
+
+step(Id, Delta, $Reach()) :- reach.high(Id, Delta, _).
 
 // --- Stride ---
 
