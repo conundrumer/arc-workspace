@@ -29,6 +29,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from dl.context import appendix
+
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 STATE_DIR = Path(os.environ.get("CONSOLE_STATE_DIR", HERE / "state"))
@@ -237,13 +239,10 @@ def skill_body() -> str:
 
 
 def build_append(wave: int) -> Path:
-    parts = [skill_body() + "\n"]
-    for doc in sorted(DOCS.glob("*.md")):
-        parts.append(f"\n---\n\n# docs/wf-solver/{doc.name}\n\n{doc.read_text()}")
-    lib = (ROOT / "programs" / "lib.dl").read_text()
-    parts.append(f"\n---\n\n# programs/lib.dl\n\n```\n{lib}\n```\n")
+    """The worker's system-prompt appendix: the skill body plus the docs and
+    lib.dl, in the projection dl.context renders."""
     path = STATE_DIR / f"wave-{wave:02d}-append.md"
-    path.write_text("".join(parts))
+    path.write_text(skill_body() + "\n" + appendix(DOCS))
     return path
 
 

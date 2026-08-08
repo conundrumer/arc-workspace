@@ -28,7 +28,6 @@ def srv(tmp_path, monkeypatch):
         monkeypatch.setattr(s, name, d)
     monkeypatch.setattr(s, "queue_pick",
                         lambda n, order: [(f"t{i:02d}", 10 + i) for i in range(n)])
-    monkeypatch.setattr(s, "build_append", lambda wave: s.STATE_DIR / "append.md")
     monkeypatch.setattr(s, "stagger_launch", lambda ids: None)
     return s
 
@@ -159,6 +158,13 @@ def test_task_ask_carries_the_subagent_brief(srv):
                          "prompt": "Look in programs/."}) == \
         "**Explore · find lib uses**\n\nLook in programs/."
     assert srv.task_ask({"prompt": "Look in programs/."}) == "Look in programs/."
+
+
+def test_append_carries_the_skill_body_and_the_docs(srv):
+    (srv.DOCS / "style.md").write_text("# Style\n\nEvery word of it.\n")
+    out = srv.build_append(1).read_text()
+    assert out.startswith("# Solver session")
+    assert "# docs/wf-solver/style.md\n\n# Style\n\nEvery word of it.\n" in out
 
 
 def test_commit_subject_names_added_and_changed_solvers(srv):
