@@ -1,12 +1,11 @@
 ---
 name: session
-description: Bootstrap a solver session for arc-workspace.
+description: On user ask, bootstrap a solver session for arc-workspace.
 argument-hint: [solver|<task_id>]
-disable-model-invocation: true
 ---
 
 <!-- batch:skip -->
-Read the docs in `docs/wf-solver/` in this order: principles, style, patterns, concepts, proposals. For plain solver work, read the output of `uv run python scripts/context.py` instead — those docs and `programs/lib.dl` in the same order and in a shorter form, with `patterns.md` and `proposals.md` as one line per entry and `lib.dl` as signatures. It points back at each file for an entry or a body.
+Read the docs in `docs/wf-solver/` in this order: principles, style, patterns, concepts, proposals. For plain solver work, read the full output of `uv run python scripts/context.py` instead — those docs and `programs/lib.dl` in the same order and in a shorter form, with `patterns.md` and `proposals.md` as one line per entry and `lib.dl` as signatures. It points back at each file for an entry or a body.
 
 Then dispatch on `$ARGUMENTS`:
 
@@ -40,11 +39,11 @@ Creation pass, do this first:
     2. Draft the solver. Do not write the `Fit` comp yet.
     3. Run against materialized train+test pairs (`uv run python scripts/run_dl.py <task_id>`)
     4. Iterate until it works and passes lint.
-    5. Run the audit (`run_dl.py --audit <task_id>`) and resolve the findings. Raise judgment calls in the review.
+    5. Run the audit (`run_dl.py audit <task_id>`) and resolve the findings. Raise judgment calls in the review.
 2. Simplify if possible
 3. Prune everything that does not serve the reader — exhaustively, from unnecessary words to irrelevant ideas. Judge necessity from the artifact alone, not from the session.
     - Text copied from prior solvers may not have been pruned; prune it like new text
-4. Run `--fit-plan` and report the verdict (bold it) on if there needs to be a fit pass.
+4. Run `fit-plan` and report the verdict (bold it) on if there needs to be a fit pass.
 5. Review:
     - The review is for the user to act on: keep or add cases, fix awkward code, promote primitives. Include only items the user can act on. An item included only as context still makes the user verify it against the rules, which is the work the review should do for them.
     - Does it follow principles?
@@ -55,7 +54,7 @@ Creation pass, do this first:
 
 Fit pass, triggered when the user says `fit`:
 
-1. Run `--fit-plan`. If there are no actions to take, you are done.
+1. Run `fit-plan`. If there are no actions to take, you are done.
 2. Do the fit-plan actions.
 3. Simplify
 4. Prune

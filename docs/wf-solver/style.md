@@ -109,6 +109,7 @@ A solver defines types only for model coverage (`Choice` and the ADTs its cases 
 - Complement tests negate the named case: `!c.bg(Col)` for non-bg.
 - Write off-edge tests as `dist(P, D, K), K != 0`, not `K > 0`: the zero case is excluded by identity, not by order. `!dist(P, D, 0)` is unavailable: Souffle cannot negate an inline relation whose clause introduces variables.
 - Inline relations cannot appear inside aggregators. Wrap in a non-inline relation when needed.
+- An aggregate body cannot ground a variable that appears only inside a record constructor: `N = max N2 : { m.excess([Col, Ch], N2) }` fails. Read the record-keyed relation out flat (`excess(Col, Ch, N) :- m.excess([Col, Ch], N).`) and aggregate over that.
 
 ## Components
 
@@ -130,6 +131,22 @@ header_color(Idx, Col) :-
 
 The single-line form is fine for short rules (≤ ~80 chars).
 
+## Disjunction
+
+A disjunction is conditional branching inside one derivation: the shared frame stated once, then branches split on a test.
+
+```
+render(P, Col) :-
+    in(P, _), c.side(K), divide_by_size_2d(P, K, 0, P_tile, _),
+    ( tile_ink(P_tile, Col)            // inked tile
+    ; !tile_ink(P_tile, _), c.bg(Col)  // blank tile
+    ).
+```
+
+Each branch must ground the head's variables on its own. Rules that share a head and a frame belong in one rule.
+
+Branches are never choices: a rule does not range over choice tags through a disjunction.
+
 ## Inline cost
 
 Lib primitives are `inline`: each call expands into the calling rule, and Souffle evaluates the expansion once per tuple. Work that is the same for every tuple is not hoisted. A deep primitive chain inside a rule that ranges over many cells can exceed the runner's 5s CPU budget per pair. Compute tuple-independent values, such as deltas derived from Consts data, in their own relation and join them. When a derived per-cell position must also be read backward, materialize it in a comp relation keyed by the cell (`Reframe.inner`); the indexed join replaces the inline chain.
@@ -138,7 +155,7 @@ Lib primitives are `inline`: each call expands into the calling rule, and Souffl
 
 A solver that fits its Consts carries a `.comp Fit` after the body, under a `// --- fit ---` marker: one relation per fitted slot, with the slot's name and schema, derived from `ex_in` / `ex_out`. Fit relations that mirror no slot are helpers.
 
-A slot gets a Fit relation when the fit plan (`--fit-plan`) lists it under `write a Fit relation`, or by choice from the plan's over-budget section: there, pick whichever settling slots are simplest to fit until the product of the rest goes under the budget.
+A slot gets a Fit relation when the fit plan (`fit-plan`) lists it under `write a Fit relation`, or by choice from the plan's over-budget section: there, pick whichever settling slots are simplest to fit until the product of the rest goes under the budget.
 
 The runner checks each fitted slot against its Consts fill; `fit_diff` collects the rows the two sides do not share, and a nonempty `fit_diff` is a violation. Derived ids need only be stable across the solver's Ident slots, not equal to the stored ones.
 
