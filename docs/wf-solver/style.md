@@ -104,12 +104,11 @@ A solver defines types only for model coverage (`Choice` and the ADTs its cases 
 - No literals: orientation (`DIR_T`, `DIR_L`, `AXIS_V`, etc.), colors, or non-zero task-shape numbers (lengths, offsets, gaps). The body reads them from Consts via `c.<rel>(...)` and parameterizes. Hardcoded values fix the body to one task in the family; values read from Consts keep it symmetric across the family.
     - Literals are fine inside a generic `.comp` written task-local; that is lib-shaped code rather than body, and the linter skips `.comp` blocks — except `Fit` and `Parse`, whose rules lint as body.
 - No Position destructure. Use lib primitives instead. Position is opaque; destructuring hardcodes edge indices and breaks orientation invariance.
-- Avoid arithmetic. When arithmetic seems necessary, the lib needs a new primitive. Create that instead of writing arithmetic in the solver body.
+- Avoid arithmetic and raw aggregates. When they seem necessary, the lib needs a new primitive. Create that instead of writing them in the solver body.
 - No `range`. It generates a number sequence; the body reads positions and extents through lib primitives.
 - Complement tests negate the named case: `!c.bg(Col)` for non-bg.
 - Write off-edge tests as `dist(P, D, K), K != 0`, not `K > 0`: the zero case is excluded by identity, not by order. `!dist(P, D, 0)` is unavailable: Souffle cannot negate an inline relation whose clause introduces variables.
 - Inline relations cannot appear inside aggregators. Wrap in a non-inline relation when needed.
-- An aggregate body cannot ground a variable that appears only inside a record constructor: `N = max N2 : { m.excess([Col, Ch], N2) }` fails. Read the record-keyed relation out flat (`excess(Col, Ch, N) :- m.excess([Col, Ch], N).`) and aggregate over that.
 
 ## Components
 

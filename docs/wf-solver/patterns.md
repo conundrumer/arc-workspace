@@ -32,7 +32,7 @@ Use a sum directly to enumerate cases when only specific combinations exist.
 
 ## Choice grounding via `impl_choice`
 
-A rule shared by all cases needs a positive atom to bind its case variable when the case column otherwise appears only under negation or in an aggregate. An enumeration relation provides it, one fact per case.
+A rule shared by all cases needs a positive atom to bind its case variable when the case column otherwise appears only under negation. An enumeration relation provides it, one fact per case.
 
 ```
 .decl impl_choice(ch: Choice)

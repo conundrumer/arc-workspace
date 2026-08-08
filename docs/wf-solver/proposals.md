@@ -101,27 +101,18 @@ The divide peers of `Frame2D`: per-axis parameters as axis-tagged rows, per-axis
 
 The `BoxFrame.extents` shape on an outer that is a stored box rather than a derived one: 4522001f reads `sq.inner(L, P), axis_dims(P, A, K1, K2)`. A `Reframe.extents` peer would cover it, and waits for a second site.
 
-## `Ordinal.rev` / `Ordinal.rank_desc` — opposite-end readouts of an index set
+## `Ordinal.rev` — opposite-end readout of an index set
 
-The opposite end of `idx_set`'s order, in two consumption forms. `rev(k, k2)` is element-valued: the order anti-isomorphism, pairing each element with its opposite-end counterpart, with as many elements below k as above k2. `rank_desc(k, r)` is number-valued: the dense rank counted from the top end. The two are interderivable — `rank_desc(k) = rank(rev(k))` — so they are one concept, and a site picks the form its consumer reads: `rev` where consumption stays in the element domain (each element takes its counterpart's property, and no rank number crosses the interface); `rank_desc` where the rank value flows downstream into a table join or comparison anchored at the top end, and `rev` would route through a phantom counterpart. Layout sites use neither: placing ascending ranks from the opposite edge stays the one encoding of a descending layout.
+The order anti-isomorphism of `idx_set`: element-valued, pairing each element with its opposite-end counterpart, with as many elements below k as above k2. A site picks between it and `rank_desc` by what the consumer reads: `rev` where consumption stays in the element domain (each element takes its counterpart's property, and no rank number crosses the interface); `rank_desc` where the rank value flows downstream into a table join or comparison anchored at the top end, and `rev` would route through a phantom counterpart. Layout sites use neither: placing ascending ranks from the opposite edge stays the one encoding of a descending layout.
 
 ```
 .decl rev(key: Key, k: number, k2: number)
-rev(Ky, K, K2) :-
-    idx_set(Ky, K),  R = count : { idx_set(Ky, Ka), Ka < K },
-    idx_set(Ky, K2), R = count : { idx_set(Ky, Kb), K2 < Kb }.
-
-.decl rank_desc(key: Key, k: number, r: number)
-rank_desc(Ky, K, R) :-
-    idx_set(Ky, K),
-    R = count : { idx_set(Ky, K2), K2 > K }.
+rev(Ky, K, K2) :- rank(Ky, K, R), rank_desc(Ky, K2, R).
 ```
 
-Home: `Ordinal` — it owns `idx_set`; both are readouts beside `rank`.
+Home: `Ordinal` — it owns `idx_set`; a readout beside `rank` and `rank_desc`.
 
 **Task-local home (protocol step 1).** `rev` — 85c4e7cd reverses its ring colors: `rev` over ring indices pairs ring K with the ring as deep from the center as K is from the border.
-
-**Task-local home (protocol step 1).** `rank_desc` — 08ed6ac7 (`RankDesc` comp): $Tall reads the stored color sequence at each bar size's rank from the top; $Short reads `Ordinal.rank` beside it.
 
 ## `OrderFrame<Key>` — the frame a sparse position set induces
 
@@ -139,14 +130,8 @@ The order-canonical peer of `AxisFrame`. `AxisFrame` realizes a frame from its e
         axis(A), axis_of(D, A),
         dist(P, D, K1), dist(Q, D, K2), K1 < K2.
 
-    // Position in the induced frame: distance toward each edge = count
-    // of nearer members.
+    // Position in the induced frame.
     .decl pos(key: Key, p: Position, p_pos: Position)
-    pos(Ky, P, P_pos) :-
-        cell(Ky, P), axis(A), axis_of(D, A), opposite(D, O),
-        R1 = count : { nearer(Ky, D, Q1, P) }, edge_delta(D, R1, P1),
-        R2 = count : { nearer(Ky, O, Q2, P) }, edge_delta(O, R2, P2),
-        compose(P1, P2, P_pos).
 }
 ```
 
