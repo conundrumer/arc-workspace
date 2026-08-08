@@ -62,11 +62,11 @@ out(P, Col, $Rect()) :- in(P, Col), !rect_interior(P).
 // --- Quad ---
 
 // Some quadrant of the bg cell holds no marker.
-.decl open_quad(p: Position, diag: DiagDir)
-open_quad(P, Diag) :- empty(P), diag_dir_elem(Diag), !quad_mark(P, Diag, _).
+.decl open_quad(p: Position)
+open_quad(P) :- empty(P), diag_dir_elem(Diag), !quad_mark(P, Diag, _).
 
 .decl quad_interior(p: Position)
-quad_interior(P) :- empty(P), !open_quad(P, _).
+quad_interior(P) :- empty(P), !open_quad(P).
 
 out(P, F, $Quad())   :- quad_interior(P), c.fill(F).
 out(P, Col, $Quad()) :- in(P, Col), !quad_interior(P).

@@ -65,11 +65,10 @@ flip_tile(T2)  :- plain_tile(T), band_step(T, T2).
 plain_tile(T2) :- flip_tile(T), band_step(T, T2).
 
 out(P_grid, Col, $Alt()) :-
-    in(P_in, Col), plain_tile(T),
-    concat_2d(T, P_in, 0, P_grid).
-out(P_grid, Col, $Alt()) :-
-    in(P_in, Col), flip_tile(T),
-    c.tf(F), apply(F, P_in, P_intile),
+    in(P_in, Col),                                      // input cell
+    ( plain_tile(T), P_intile = P_in                    // plain band — as-is
+    ; flip_tile(T), c.tf(F), apply(F, P_in, P_intile)   // flipped band — transformed
+    ),
     concat_2d(T, P_intile, 0, P_grid).
 
 // --- Mid ---

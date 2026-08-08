@@ -29,5 +29,8 @@ moved(P_out, Col) :-
     mark(M), compose(M, I2, P_out).           // seated back at the marker
 
 .decl out(p: Position, col: Color)
-out(P, Col) :- in(P, _), moved(P, Col).
-out(P, Col) :- in(P, _), !moved(P, _), c.bg(Col).
+out(P, Col) :-
+    in(P, _),                          // grid cell
+    ( moved(P, Col)                    // content lands here
+    ; !moved(P, _), c.bg(Col)          // nothing lands — bg
+    ).

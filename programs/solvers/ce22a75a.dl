@@ -40,8 +40,11 @@ decomp(P_grid, P_tile, P_intile) :-
 .decl mark_tile(p_tile: Position)
 mark_tile(P_tile) :- mark(P_grid), decomp(P_grid, P_tile, _).
 
-out(P, Col, $Tile()) :- decomp(P, P_tile, _), mark_tile(P_tile), c.out_fill(Col).
-out(P, Col, $Tile()) :- decomp(P, P_tile, _), !mark_tile(P_tile), c.bg(Col).
+out(P, Col, $Tile()) :-
+    decomp(P, P_tile, _),                          // grid cell, its tile
+    ( mark_tile(P_tile), c.out_fill(Col)           // the mark's tile — filled
+    ; !mark_tile(P_tile), c.bg(Col)                // any other tile — bg
+    ).
 
 // --- $Center ---
 
@@ -52,8 +55,11 @@ center_tile(P_tile) :-
     dist_pair(P_intile, D1, K1, K1),                   // centered along
     dist_pair(P_intile, D2, K2, K2).                   // centered across
 
-out(P, Col, $Center()) :- decomp(P, P_tile, _), center_tile(P_tile), c.out_fill(Col).
-out(P, Col, $Center()) :- decomp(P, P_tile, _), !center_tile(P_tile), c.bg(Col).
+out(P, Col, $Center()) :-
+    decomp(P, P_tile, _),                          // grid cell, its tile
+    ( center_tile(P_tile), c.out_fill(Col)         // the centered mark's tile — filled
+    ; !center_tile(P_tile), c.bg(Col)              // any other tile — bg
+    ).
 
 // --- $Grow ---
 

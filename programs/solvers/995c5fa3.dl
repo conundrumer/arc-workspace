@@ -109,11 +109,10 @@ has_hole(P_tile) :- tile_cell(P_tile, _, C), c.bg(C).
 hole_box.cell(P_tile, P_intile) :- tile_cell(P_tile, P_intile, C), c.bg(C).
 
 out(P_out, Col, $HoleBox()) :-
-    row_tile(P_out, P_tile),
-    hole_box.margin(P_tile, M), c.box_color(M, Col).
-out(P_out, Col, $HoleBox()) :-
-    row_tile(P_out, P_tile),
-    !has_hole(P_tile), c.full_color(Col).
+    row_tile(P_out, P_tile),                              // output cell, its tile
+    ( hole_box.margin(P_tile, M), c.box_color(M, Col)     // the hole's box → its color
+    ; !has_hole(P_tile), c.full_color(Col)                // no hole — the full color
+    ).
 
 // --- fit ---
 

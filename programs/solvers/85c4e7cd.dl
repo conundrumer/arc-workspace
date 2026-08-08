@@ -13,11 +13,11 @@
 .init c = Consts
 
 // Ring index: distance to the nearest edge.
-.decl cell_dist(p: Position, d: Dir, k: number)
-cell_dist(P, D, K) :- in(P, _), dir_elem(D), dist(P, D, K).
+.decl cell_dist(p: Position, k: number)
+cell_dist(P, K) :- in(P, _), dir_elem(D), dist(P, D, K).
 
 .decl ring(p: Position, k: number)
-ring(P, K) :- in(P, _), K = min Kd : { cell_dist(P, _, Kd) }.
+ring(P, K) :- in(P, _), K = min Kd : { cell_dist(P, Kd) }.
 
 .decl ring_idx(k: number)
 ring_idx(K) :- ring(_, K).

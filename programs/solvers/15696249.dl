@@ -49,11 +49,8 @@ gate(P, $Color()) :- in(P, Col), line_color(Col).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P_grid_out, Col, Ch) :-
-    gate(P_tile, Ch),                              // gate: tile stamped
-    in(P_intile, Col),                             // tile content: the input, copied
-    concat_2d(P_tile, P_intile, 0, P_grid_out).    // tile ⊗ cell → grid
-out(P_grid_out, Col, Ch) :-
-    impl_choice(Ch), in(P_tile, _), !gate(P_tile, Ch),
-    in(P_intile, _),
-    concat_2d(P_tile, P_intile, 0, P_grid_out),    // tile ⊗ cell → grid
-    c.bg(Col).                                     // the whole tile bg
+    impl_choice(Ch), in(P_tile, _), in(P_intile, Col_in),   // tile slot, tile content
+    ( gate(P_tile, Ch), Col = Col_in                        // gate open — the input, copied
+    ; !gate(P_tile, Ch), c.bg(Col)                          // gate shut — the whole tile bg
+    ),
+    concat_2d(P_tile, P_intile, 0, P_grid_out).             // tile ⊗ cell → grid

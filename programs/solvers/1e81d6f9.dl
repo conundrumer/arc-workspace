@@ -77,11 +77,17 @@ box.grid($U(), P) :- in(P, _).
 .decl out(p: Position, col: Color, c: Choice)
 
 // --- Marker --- only the marker cell is kept.
-out(P, Col, $Marker()) :- in(P, Col), !target_color(Col).                          // non-target passes
-out(P, Col, $Marker()) :- in(P, Col), target_pos(P).                               // marker kept
-out(P, Bg, $Marker()) :- in(P, Col), target_color(Col), !target_pos(P), c.bg(Bg).  // target elsewhere erased
+out(P, Col_out, $Marker()) :-
+    in(P, Col),                                              // grid cell
+    ( !target_color(Col), Col_out = Col                      // non-target — passes
+    ; target_pos(P), Col_out = Col                           // the marker — kept
+    ; target_color(Col), !target_pos(P), c.bg(Col_out)       // target elsewhere — erased
+    ).
 
 // --- Bbox --- the whole corner region is kept.
-out(P, Col, $Bbox()) :- in(P, Col), !target_color(Col).                               // non-target passes
-out(P, Col, $Bbox()) :- in(P, Col), box.inside($U(), P).                              // region kept
-out(P, Bg, $Bbox()) :- in(P, Col), target_color(Col), !box.inside($U(), P), c.bg(Bg). // target outside region erased
+out(P, Col_out, $Bbox()) :-
+    in(P, Col),                                                    // grid cell
+    ( !target_color(Col), Col_out = Col                            // non-target — passes
+    ; box.inside($U(), P), Col_out = Col                           // in the region — kept
+    ; target_color(Col), !box.inside($U(), P), c.bg(Col_out)       // target outside — erased
+    ).

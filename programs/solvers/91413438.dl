@@ -33,9 +33,8 @@ copy(T) :- lex.rank($U(), T, R), copy_count(N), R < N.
 
 .decl out(p: Position, col: Color)
 out(P_grid, Col) :-
-    copy(P_tile), in(P_intile, Col),
-    concat_2d(P_tile, P_intile, 0, P_grid).
-out(P_grid, Col) :-
-    tiles.cell($U(), P_tile), !copy(P_tile),
-    in(P_intile, _), c.bg(Col),
-    concat_2d(P_tile, P_intile, 0, P_grid).
+    tiles.cell($U(), P_tile), in(P_intile, Col_in),   // tile slot, tile content
+    ( copy(P_tile), Col = Col_in                      // a copy — the input
+    ; !copy(P_tile), c.bg(Col)                        // past the count — bg
+    ),
+    concat_2d(P_tile, P_intile, 0, P_grid).           // tile ⊗ cell → grid

@@ -67,8 +67,11 @@ out(P, Col, $Stamp()) :- in(P, Col), !stamp_halo(P, _).
 
     // What a stamp writes: the marker's own cell, and every repainted cell.
     .decl painted(e: Example, p: Position, col: Color)
-    painted(E, P, Col) :- marker_at(E, P), ex_out(E, P, Col).
-    painted(E, P, Col) :- ex_in(E, P, Col_in), ex_out(E, P, Col), Col_in != Col.
+    painted(E, P, Col) :-
+        ex_out(E, P, Col),                             // an output cell
+        ( marker_at(E, P)                              // the marker's own cell
+        ; ex_in(E, P, Col_in), Col_in != Col           // repainted
+        ).
 
     // A painted cell belongs to the marker in its 4-connected blob.
     .init blob = Components<Example>

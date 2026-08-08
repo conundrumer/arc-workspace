@@ -100,5 +100,8 @@ placed(P2, $Pack()) :- fall.rank(P_line, K, R), place(P2, P_line, R).
 out(P, Col, Ch) :- in(P, Col), short(P), impl_choice(Ch).
 out(P, Col, Ch) :- shape_cell(P), c.mark(Col), impl_choice(Ch).
 out(P, Col, Ch) :- gap(P), c.shape(Col), impl_choice(Ch).
-out(P, Col, Ch) :- through(P), placed(P, Ch), c.push(Col).
-out(P, Col, Ch) :- through(P), !placed(P, Ch), c.wall(Col), impl_choice(Ch).
+out(P, Col, Ch) :-
+    impl_choice(Ch), through(P),      // a cell the shape sweeps
+    ( placed(P, Ch), c.push(Col)      // the shape lands here
+    ; !placed(P, Ch), c.wall(Col)     // vacated — the wall shows
+    ).

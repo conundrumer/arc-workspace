@@ -15,11 +15,11 @@
 
 .init c = Consts
 
-.decl ink(p: Position, col: Color)
-ink(P, Col) :- in(P, Col), !c.bg(Col).
+.decl ink(p: Position)
+ink(P) :- in(P, Col), !c.bg(Col).
 
 .init blocks = Components<Unit>
-blocks.node($U(), P) :- ink(P, _).
+blocks.node($U(), P) :- ink(P).
 
 .decl block(id: Ident, p: Position)
 block(Id, P) :- blocks.label($U(), P, Id).

@@ -46,15 +46,18 @@
 .decl out(p: Position, col: Color, c: Choice)
 
 // --- $Stripes ---
-.decl on_tile(p: Position, a: Axis)
-on_tile(P, A) :-
+.decl on_tile(p: Position)
+on_tile(P) :-
     in(P, _),
     axis_elem(A),                                       // enumerate axes
     c.tile_size(K), c.tile_gap(G),
     divide_by_size(P, A, K, G, _, _).                   // axis tile cell
 
-out(P, Col, $Stripes()) :- in(P, _), on_tile(P, _),  c.bg(Col).
-out(P, Col, $Stripes()) :- in(P, _), !on_tile(P, _), c.dot(Col).
+out(P, Col, $Stripes()) :-
+    in(P, _),                             // grid cell
+    ( on_tile(P), c.bg(Col)               // on a stripe — bg
+    ; !on_tile(P), c.dot(Col)             // off every stripe — the dot color
+    ).
 
 // --- $Motif ---
 out(Q, Col, $Motif()) :-
@@ -75,9 +78,12 @@ interior_tile(P) :-
     c.tile_size(K), c.tile_gap(G),
     divide_by_size_2d(P_int, K, G, _, _).               // tile cell in interior
 
-out(P, Col, $Inset()) :- in(P, _), is_border(P),                       c.bg(Col).
-out(P, Col, $Inset()) :- in(P, _), interior_tile(P),                   c.dot(Col).
-out(P, Col, $Inset()) :- in(P, _), !is_border(P), !interior_tile(P),   c.bg(Col).
+out(P, Col, $Inset()) :-
+    in(P, _),                                            // grid cell
+    ( is_border(P), c.bg(Col)                            // the border — bg
+    ; interior_tile(P), c.dot(Col)                       // on an interior tile — the dot color
+    ; !is_border(P), !interior_tile(P), c.bg(Col)        // interior, off every tile — bg
+    ).
 
 // --- fit ---
 

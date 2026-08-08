@@ -53,5 +53,8 @@ out(P_tile, Col, $Pair()) :- tile(P_tile), !paired(P_tile), c.bg(Col).
 .decl marker_count(p_tile: Position, n: number)
 marker_count(P_tile, N) :- tile(P_tile), N = count : { tile_marker(P_tile, P) }.
 
-out(P_tile, Col, $Count()) :- marker_count(P_tile, N), c.pair_count(N), c.mark(Col).
-out(P_tile, Col, $Count()) :- marker_count(P_tile, N), !c.pair_count(N), c.bg(Col).
+out(P_tile, Col, $Count()) :-
+    marker_count(P_tile, N),              // the tile's marker count
+    ( c.pair_count(N), c.mark(Col)        // count hits the pair count — marked
+    ; !c.pair_count(N), c.bg(Col)         // off it — bg
+    ).

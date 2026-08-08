@@ -55,5 +55,8 @@ main(P_line, Col, $Owned()) :-
 // --- Output ---
 
 .decl out(p: Position, col: Color, c: Choice)
-out(P, Col, Ch) :- cell_line(P, C_in, P_line), main(P_line, Col, Ch), C_in != Col.
-out(P, Col, Ch) :- cell_line(P, C_in, P_line), main(P_line, C_in, Ch), c.bg(Col).
+out(P, Col, Ch) :-
+    cell_line(P, C_in, P_line),                       // cell, its color, its line
+    ( main(P_line, Col, Ch), C_in != Col              // off the line's main color — takes it
+    ; main(P_line, C_in, Ch), c.bg(Col)               // on it — erased
+    ).

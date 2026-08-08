@@ -20,5 +20,8 @@ boxframe.cell($U(), P) :- ink(P, _).
 boxframe.grid($U(), P) :- in(P, _).
 
 .decl out(p: Position, col: Color)
-out(P_out, Col) :- ink(P, Col), boxframe.inner($U(), P, P_out).
-out(P_out, Col) :- in(P, C), c.bg(C), c.hole(Col), boxframe.inner($U(), P, P_out).
+out(P_out, Col) :-
+    ( ink(P, Col)                              // ink — carried in
+    ; in(P, C), c.bg(C), c.hole(Col)           // bg — the hole color
+    ),
+    boxframe.inner($U(), P, P_out).            // viewed from the ink's box

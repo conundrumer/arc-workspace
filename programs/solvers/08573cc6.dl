@@ -88,8 +88,11 @@ out(P, Col, Ch) :-
     ( corner_axis(A, Ch), corner_color(Col)                 // on the corner's axis
     ; corner_axis(A2, Ch), perp(A, A2), other_color(Col)    // across it
     ).
-out(P, Col, Ch) :- impl_choice(Ch), seed(P), in(P, Col).
-out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !arm_cell(P, _), !seed(P), c.bg(Col).
+out(P, Col_out, Ch) :-
+    impl_choice(Ch), in(P, Col),                            // grid cell
+    ( seed(P), Col_out = Col                                // the seed — kept
+    ; !arm_cell(P, _), !seed(P), c.bg(Col_out)              // off the walk — bg
+    ).
 
 // --- fit ---
 

@@ -59,12 +59,12 @@ barrier.mark(Ch, P) :- blocker(Ch, P), c.dir(D), slide.ray($U(), P, D).
 // group itself.
 .decl strip(ch: Choice, p_across: Position, p: Position)
 strip(Ch, P_across, P) :-
-    impl_choice(Ch), c.dir(D),
-    slide.ray($U(), P, D),                       // at or ahead of a mover
-    opposite(D, O), !slide.ray($U(), P, O),      // ahead of every mover
-    !barrier.ray(Ch, P, D),                      // short of every barrier
-    place(P, P_across, _).                       // keyed by its line
-strip(Ch, P_across, P) :- impl_choice(Ch), mover(P), place(P, P_across, _).
+    impl_choice(Ch), place(P, P_across, _),          // a cell, keyed by its line
+    ( mover(P)                                       // the group itself
+    ; c.dir(D), slide.ray($U(), P, D),               // at or ahead of a mover
+      opposite(D, O), !slide.ray($U(), P, O),        // ahead of every mover
+      !barrier.ray(Ch, P, D)                         // short of every barrier
+    ).
 
 // Movers and strip cells ranked from the dir edge; movers re-seat onto
 // the strip by rank.

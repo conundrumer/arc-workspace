@@ -103,12 +103,14 @@ out(P, Col, $Slide()) :- residual(P), seek(P, _, Col).
 .decl fix_color(col: Color)
 fix_color(Col) :- intact(P, Col), on_fix(P).
 
-out(P, Col, $Bg()) :- residual(P), on_fix(P), fix_color(Col).
-
 .init dominant = Mode<Unit, Color, Position>
 dominant.item($U(), Col, P) :- intact(P, Col).
 
-out(P, Col, $Bg()) :- residual(P), !on_fix(P), dominant.mode($U(), Col).
+out(P, Col, $Bg()) :-
+    residual(P),                                // a cell the slide left behind
+    ( on_fix(P), fix_color(Col)                 // on the fix — its color
+    ; !on_fix(P), dominant.mode($U(), Col)      // elsewhere — the dominant color
+    ).
 
 // --- Label ---
 
