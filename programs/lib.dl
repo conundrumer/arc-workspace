@@ -577,10 +577,11 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 
 // Sparse numeric set → dense ordinal position, per key. The solver
 // populates `idx_set`; `rank(key, k, r)` gives r = the count of the key's
-// elements strictly less than k, so ranks run ascending from 0. For a
-// descending layout, place ranks from the opposite edge; negate upstream
-// only when the rank value itself flows downstream. idx_set is a set:
-// items sharing k share its rank, and the rank set stays dense under ties.
+// elements strictly less than k, so ranks run ascending from 0;
+// `rank_desc` counts strictly greater. For a descending layout, place
+// ranks from the opposite edge; `rank_desc` is for when the rank value
+// itself flows downstream. idx_set is a set: items sharing k share its
+// rank, and the rank set stays dense under ties.
 .comp Ordinal<Key> {
     .decl idx_set(key: Key, k: number)
 
@@ -588,6 +589,11 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     rank(Ky, K, R) :-
         idx_set(Ky, K),
         R = count : { idx_set(Ky, K2), K2 < K }.
+
+    .decl rank_desc(key: Key, k: number, r: number)
+    rank_desc(Ky, K, R) :-
+        idx_set(Ky, K),
+        R = count : { idx_set(Ky, K2), K2 > K }.
 }
 
 // Negative-free difference of two keyed member counts: excess(key, n) is the
@@ -616,6 +622,70 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 
     .decl mode(key: Key, m: Member)
     mode(Ky, M) :- tally(Ky, M, N), N = max N2 : { tally(Ky, _, N2) }.
+}
+
+// The extremum score per key, each direction a readout.
+.comp Extremes<Key> {
+    .decl cand(key: Key, s: number)
+
+    .decl high(key: Key, s: number)
+    high(Ky, S) :- cand(Ky, S).
+    high(Ky, S) <= high(Ky, S2) :- S < S2.
+
+    .decl low(key: Key, s: number)
+    low(Ky, S) :- cand(Ky, S).
+    low(Ky, S) <= low(Ky, S2) :- S > S2.
+}
+
+// The rows carrying each key's extremum score, each direction a readout;
+// ties keep every row at the extremum.
+.comp ArgExtremes<Key, Val> {
+    .decl cand(key: Key, v: Val, s: number)
+
+    .decl high(key: Key, v: Val, s: number)
+    high(Ky, V, S) :- cand(Ky, V, S).
+    high(Ky, V, S) <= high(Ky, _, S2) :- S < S2.
+
+    .decl low(key: Key, v: Val, s: number)
+    low(Ky, V, S) :- cand(Ky, V, S).
+    low(Ky, V, S) <= low(Ky, _, S2) :- S > S2.
+}
+
+// The cardinality of each key's member set. `domain` makes the count
+// total: a domain key with no items counts 0.
+.comp Tally<Key, Member> {
+    .decl item(key: Key, m: Member)
+    .decl domain(key: Key)
+
+    .decl tally(key: Key, n: number)
+    tally(Ky, N) :- item(Ky, _), N = count : { item(Ky, M) }.
+    tally(Ky, 0) :- domain(Ky), !item(Ky, _).
+}
+
+// Rank by a caller-supplied strict order: the rank of t counts the
+// members before it, ascending from 0. LexOrder is the geometric
+// special case.
+.comp Order<Key, T> {
+    .decl elem(key: Key, t: T)
+    .decl before(key: Key, a: T, b: T)
+
+    .decl rank(key: Key, t: T, r: number)
+    rank(Ky, T, R) :- elem(Ky, T), R = count : { before(Ky, A, T) }.
+}
+
+// One id per class of an equivalence relation; the representative is
+// arbitrary but deterministic. A self-paired `rep` member is the class
+// representative — with a total equivalence, an arbitrary pick of one
+// element of a set.
+.comp Canon<T> {
+    .decl equals(a: T, b: T)    // an equivalence, reflexive over the domain
+
+    .decl rep(a: T, b: T)
+    rep(A, B) :- equals(A, B).
+    rep(A, B) <= rep(A, B2) :- ord(B) > ord(B2).
+
+    .decl id(a: T, id: Ident)
+    id(A, as(ord(B), Ident)) :- rep(A, B).
 }
 
 // Lexicographic order over a keyed cell set, given a corner and a primary
