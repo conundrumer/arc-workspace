@@ -29,12 +29,19 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from dl.context import appendix
+# Run as a script, but loaded by file path in tests, where this directory is
+# not on the import path.
+sys.path.append(str(Path(__file__).resolve().parent))
+
+import quota  # noqa: E402
+
+from dl.context import appendix  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 STATE_DIR = Path(os.environ.get("CONSOLE_STATE_DIR", HERE / "state"))
 STATE_FILE = STATE_DIR / "state.json"
+SAMPLE_FILE = STATE_DIR / "usage-samples.jsonl"
 LOG_DIR = STATE_DIR / "logs"
 SOLVERS = ROOT / "programs" / "solvers"
 DOCS = ROOT / "docs" / "wf-solver"
@@ -398,6 +405,30 @@ def reader(item_id: str, proc: subprocess.Popen, trigger: str | None) -> None:
     bump()
 
 
+# Dollars of list-price usage per 1% of each rate-limit window. Nothing
+# publishes what a window holds, so these come from measurement: price every
+# assistant message in ~/.claude/projects that falls inside a window at list
+# rates, then divide by that window's utilization from the OAuth usage API.
+# Re-measure when the plan changes; a stale figure scales every readout.
+QUOTA_RATE = {"5h": 4.44, "wk": 19.58, "fbl": 6.91}
+
+
+def quota_note(ev: dict) -> str:
+    """A turn's cost as a share of each window it draws down."""
+    total = ev.get("total_cost_usd")
+    if not isinstance(total, (int, float)):
+        return ""
+    # The Fable weekly window counts Fable usage alone, so it gets its own sum.
+    fable = sum(u.get("costUSD") or 0
+                for m, u in (ev.get("modelUsage") or {}).items()
+                if isinstance(u, dict) and m.startswith(("claude-fable", "claude-mythos")))
+    parts = [f"5h {total / QUOTA_RATE['5h']:.1f}%",
+             f"wk {total / QUOTA_RATE['wk']:.1f}%"]
+    if fable:
+        parts.append(f"fbl {fable / QUOTA_RATE['fbl']:.1f}%")
+    return " · " + " · ".join(parts)
+
+
 def finish_turn(it: dict, ev: dict, trigger: str | None, started: float) -> None:
     it["rev"] = it.get("rev", 0) + 1
     text = (ev.get("result") or "").strip()
@@ -417,12 +448,9 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float) -> None
             touch(it)
         else:
             say(it, {"kind": "report", "rev": it["rev"], "text": text})
-    cost = ev.get("total_cost_usd")
     mins = (time.time() - started) / 60
     note = f"turn done · {mins:.0f}m" if mins >= 1 else "turn done · <1m"
-    if isinstance(cost, (int, float)):
-        note += f" · ${cost:.2f}"
-    say(it, event(note))
+    say(it, event(note + quota_note(ev)))
     if trigger in CLEAN_TRIGGERS or it["rev"] == 1:
         it["dirty"] = False
     elif solver_hash(it["id"]) != pre(it)["hash"]:
@@ -806,10 +834,18 @@ def read_usage() -> list[dict]:
 def usage_loop() -> None:
     global USAGE
     script = Path.home() / ".claude" / "scripts" / "fetch-usage-api.sh"
+    sampler = quota.Sampler()
     while True:
         if script.exists():
             subprocess.run(["bash", str(script)], capture_output=True, timeout=30)
         USAGE = read_usage()
+        # Pairs each window's utilization with the tokens spent inside it, so
+        # the QUOTA_RATE figures can be refit from observation rather than
+        # measured by hand. Never worth failing the poll over.
+        try:
+            sampler.record(SAMPLE_FILE)
+        except Exception:
+            pass
         time.sleep(60)
 
 
