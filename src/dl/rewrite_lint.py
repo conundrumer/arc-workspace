@@ -121,6 +121,7 @@ class _Lint:
         for idx, info in self.body_rules():
             self.choice_tag(idx, info)
             self.cross_choice(info)
+            self.raw_aggregate(info)
             self.subsumed_atoms(info)
             self.named_complement(info)
             self.long_rule(info)
@@ -155,6 +156,7 @@ class _Lint:
             (i, info)
             for i, info in enumerate(self.ix.rules)
             if info.scope in BODY_SCOPES and not info.rule.grid
+            and not info.rule.sub
         ]
 
     def decl_of(self, key: RelKey) -> Decl:
@@ -510,6 +512,20 @@ class _Lint:
                     f"{', '.join(f'`${t}()`' for t in sorted(tags))}; "
                     f"choices stay separate rules",
                 )
+
+    def raw_aggregate(self, info: RuleInfo) -> None:
+        """An aggregate in a body rule: read it through a lib comp."""
+        for body in _conjunctions(info.rule):
+            for lit in body:
+                if not isinstance(lit, Cmp):
+                    continue
+                for side in (lit.lhs, lit.rhs):
+                    if isinstance(side, Agg):
+                        self.add(
+                            "raw-aggregate", lit.line,
+                            f"`{side.op}` in the body; read it through "
+                            f"a lib comp",
+                        )
 
     def subsumed_atoms(self, info: RuleInfo) -> None:
         """R(X, _) next to R(X, Y) in one body: the wildcard atom adds

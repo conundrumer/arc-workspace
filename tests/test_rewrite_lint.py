@@ -328,3 +328,30 @@ out(X) :- score(X, _), !beaten(X).
 """
     assert "argmax" in cats(src, hints=True)
     assert "argmax" not in cats(src)
+
+
+def test_raw_aggregate_fires():
+    src = """\
+.decl s(x: number, n: number)
+s(1, 2).
+.decl big(x: number)
+big(X) :- s(X, N), N = max M : { s(_, M) }.
+.decl out(x: number)
+out(X) :- big(X).
+"""
+    assert "raw-aggregate" in cats(src)
+
+
+def test_raw_aggregate_local_comp_kept():
+    src = """\
+.comp Helper {
+    .decl item(x: number)
+    .decl size(n: number)
+    size(N) :- N = count : { item(X) }.
+}
+.init h = Helper
+h.item(1).
+.decl out(n: number)
+out(N) :- h.size(N).
+"""
+    assert "raw-aggregate" not in cats(src)
