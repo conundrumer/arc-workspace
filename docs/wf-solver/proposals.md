@@ -137,31 +137,6 @@ The order-canonical peer of `AxisFrame`. `AxisFrame` realizes a frame from its e
 
 **Task-local home (protocol step 1).** 505fff84: extraction placement — contributing rows keyed by Choice. (Its segments shift via Bbox + color-keyed Reframe instead: they are intervals, so their order frame is a translation, and the tighter unit was chosen.)
 
-## `Reach` — seeded connectivity
-
-One component from a seed: the seeded readout of the 4-adjacency closure that lib's `Components` labels in full. The seed selects the component and is the closure's base case. `Reach` fits when there is a natural anchor and one component matters; `Components` fits when every component matters. An 8-adjacency variant or a parameterized adjacency input is the obvious extension when a task needs diagonal connectivity.
-
-```
-.comp Reach<Key> {
-    .decl node(key: Key, p: Position)
-    .decl seed(key: Key, p: Position)
-
-    .decl reach(key: Key, p: Position)
-    reach(Ky, P)  :- seed(Ky, P).
-    reach(Ky, P2) :-
-        reach(Ky, P), dir_elem(D), step_delta(D, S), compose(P, S, P2),
-        node(Ky, P2).
-}
-```
-
-**Task-local home (protocol step 1).** 1e81d6f9: a corner-edge seed picks the L frame. The stray mask cell stays unreachable, so the following `Bbox` does not grow to span it.
-
-**Second home (protocol step 1).** 00d62c1b: the outside — bg seeded from the grid edge, with the enclosed cells its complement.
-
-**Third home (protocol step 1).** 00dbd492: 00d62c1b's grid-edge seed again, under $Enclose — the enclosed cells are the region the fill covers.
-
-1e81d6f9's copy builds its step set from a `step` relation of Position literals; at promotion it takes the form above.
-
 ## `diag_edge_delta` — edge delta at a corner
 
 The DiagDir peer of `edge_delta`: a Position holding extents at the two edges of corner `diag`, axis-tagged — k1 at the edge on axis a, k2 across. It grows toward a corner, where `diag_step_delta` moves toward a corner. It is the delta counterpart of the `diag_dist` readout.

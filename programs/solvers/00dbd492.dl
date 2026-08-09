@@ -14,19 +14,6 @@
 
 #include "../lib.dl"
 
-// Seeded connectivity: the 4-adjacency closure of the node set from the seeds.
-// Staged lib component (proposals.md).
-.comp Reach<Key> {
-    .decl node(key: Key, p: Position)
-    .decl seed(key: Key, p: Position)
-
-    .decl reach(key: Key, p: Position)
-    reach(Ky, P)  :- seed(Ky, P).
-    reach(Ky, P2) :-
-        reach(Ky, P), dir_elem(D), step_delta(D, S), compose(P, S, P2),
-        node(Ky, P2).
-}
-
 .type Region = Box {} | Enclose {}
 .type Key    = Size {} | Count {}
 .type Choice = Recolor {r: Region, k: Key} | Replace {}

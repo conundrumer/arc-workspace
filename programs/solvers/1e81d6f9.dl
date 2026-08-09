@@ -11,23 +11,6 @@
 
 #include "../lib.dl"
 
-// Connected component: closure of 4-adjacency over a node set, from seeds.
-// Candidate lib component.
-.comp Reach<Key> {
-    .decl node(key: Key, p: Position)
-    .decl seed(key: Key, p: Position)
-
-    .decl step(delta: Position)
-    step([-1,  1,  0,  0]).   // toward DIR_T
-    step([ 1, -1,  0,  0]).   // toward DIR_B
-    step([ 0,  0, -1,  1]).   // toward DIR_L
-    step([ 0,  0,  1, -1]).   // toward DIR_R
-
-    .decl reach(key: Key, p: Position)
-    reach(Ky, P)  :- seed(Ky, P).
-    reach(Ky, P2) :- reach(Ky, P1), step(D), compose(P1, D, P2), node(Ky, P2).
-}
-
 .type Choice = Marker {} | Bbox {}
 
 .comp Consts {
