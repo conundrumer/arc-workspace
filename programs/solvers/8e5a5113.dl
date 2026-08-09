@@ -99,7 +99,7 @@ out(P_grid, Col, $Lookup()) :-
     lookup.dst([E, P_tile], P, Col)     :- out_cell(E, P_tile, P, Col).
 
     .decl broken(p_tile: Position, d: D4)
-    broken(P_tile, D) :- lookup.broken([E, P_tile], D), out_cell(E, P_tile, _, _).
+    broken(P_tile, D) :- lookup.mismatch([E, P_tile], D), out_cell(E, P_tile, _, _).
 
     .decl tile_d4(p: Position, d: D4)
     tile_d4(P_tile, D) :- out_cell(_, P_tile, _, _), d4_elem(D), !broken(P_tile, D).
@@ -116,7 +116,7 @@ out(P_grid, Col, $Lookup()) :-
         out_cell(E, T2, P, Col).
 
     .decl step_broken(d: D4)
-    step_broken(R) :- step.broken([E, T], R), out_cell(E, T, _, _).
+    step_broken(R) :- step.mismatch([E, T], R), out_cell(E, T, _, _).
 
     .decl rot(d: D4)
     rot(R) :- out_cell(_, _, _, _), d4_elem(R), !step_broken(R).

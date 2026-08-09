@@ -46,7 +46,7 @@ out(P_grid_out, Col) :-
     d4m.dst([E, Diag], P, Col) :- diag_dir_elem(Diag), ex_out(E, P, Col).
 
     .decl broken(diag: DiagDir, d4: D4)
-    broken(Diag, D) :- d4m.broken([E, Diag], D), ex_out(E, _, _).
+    broken(Diag, D) :- d4m.mismatch([E, Diag], D), ex_out(E, _, _).
 
     .decl template(diag: DiagDir, d4: D4)
     template(Diag, D) :-

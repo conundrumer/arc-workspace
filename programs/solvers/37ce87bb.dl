@@ -43,8 +43,8 @@ bar_line(P_line) :- in(P, Col), !c.bg(Col), line_of(P, P_line).
 
 // The summed height: add cells beyond sub cells.
 .init height = Excess<Unit, Position>
-height.pos($U(), P) :- in(P, Col), c.add(Col).
-height.neg($U(), P) :- in(P, Col), c.sub(Col).
+height.plus($U(), P) :- in(P, Col), c.add(Col).
+height.minus($U(), P) :- in(P, Col), c.sub(Col).
 
 .decl result_line(p_line: Position, ch: Choice)
 

@@ -132,7 +132,7 @@ out(P, Col, $Label()) :- hole(P), c.label(P, Id), label_color(Id, Col).
     same(P, Q) :- ex_out(_, P, _), ex_out(_, Q, _), !differ(P, Q).
 
     .init canon = Canon<Position>
-    canon.equals(P, Q) :- same(P, Q).
+    canon.equiv(P, Q) :- same(P, Q).
 
     .decl label(p: Position, id: Ident)
     label(P, Id) :- canon.id(P, Id).

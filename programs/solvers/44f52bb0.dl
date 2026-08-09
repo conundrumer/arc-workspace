@@ -59,7 +59,7 @@ group_match.observed_member($U(), D) :- d4.map($U(), D).
 // --- $Direct ---
 
 .decl syms_non_invariant(d: D4)
-syms_non_invariant(D) :- d4.broken($U(), D), c.syms(D).
+syms_non_invariant(D) :- d4.mismatch($U(), D), c.syms(D).
 
 // --- $GroupMatch ---
 
@@ -101,13 +101,13 @@ out(P, Col, $GroupMatch()) :- best_id.high($U(), Id, _), c.mapping_out(Id, P, Co
     // invariance test, so that test does not carry the classification.
     .decl split_broken(d: D4)
     split_broken(D) :- d4.map(E1, D), d4.map(E2, D), differs(E1, E2).
-    split_broken(D) :- d4.broken(E1, D), d4.broken(E2, D), differs(E1, E2).
+    split_broken(D) :- d4.mismatch(E1, D), d4.mismatch(E2, D), differs(E1, E2).
 
     .decl syms(d: D4)
     syms(D) :- d4_elem(D), !split_broken(D).
 
     .decl sym_broken(e: Example)
-    sym_broken(E) :- syms(D), d4.broken(E, D).
+    sym_broken(E) :- syms(D), d4.mismatch(E, D).
 
     .decl sym_out(p: Position, col: Color)
     sym_out(P, Col) :- ex_out(E, P, Col), !sym_broken(E).
@@ -122,11 +122,11 @@ out(P, Col, $GroupMatch()) :- best_id.high($U(), Id, _), c.mapping_out(Id, P, Co
     // One table entry per class of alike pairs, labelled by its lowest
     // member; the label carries identity only.
     .init class = Canon<Example>
-    class.equals(E, E2) :- same_out(E, E2).
+    class.equiv(E, E2) :- same_out(E, E2).
 
     // A transform some member of the class breaks.
     .decl group_broken(id: Ident, d: D4)
-    group_broken(Id, D) :- class.id(E, Id), d4.broken(E, D).
+    group_broken(Id, D) :- class.id(E, Id), d4.mismatch(E, D).
 
     // The class's group: the transforms every member of it is invariant under.
     .decl mapping_sym(id: Ident, d: D4)

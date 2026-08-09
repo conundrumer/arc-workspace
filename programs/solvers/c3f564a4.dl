@@ -42,7 +42,7 @@ out(P, Col, Ch) :- impl_choice(Ch), clean(P, Col).
 out(P, Col, $Shift()) :-
     in(P, N), c.noise(N),                              // corrupted cell
     parse.cand($U(), A, K, Delta),                     // candidate shift
-    !parse.broken($U(), A, K),                         // unbroken on clean cells
+    !parse.mismatch($U(), A, K),                         // unbroken on clean cells
     compose(P, Delta, P2), clean(P2, Col).             // its image
 
 // --- $Diag ---

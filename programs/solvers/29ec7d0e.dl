@@ -45,7 +45,7 @@ out(P, Col, Ch) :- restored(Ch, P, Col).
 // --- $Shift ---
 
 shift($Shift(), Delta) :-
-    parse.cand($U(), A, K, Delta), !parse.broken($U(), A, K).
+    parse.cand($U(), A, K, Delta), !parse.mismatch($U(), A, K).
 
 // --- $Count ---
 

@@ -49,7 +49,7 @@ out(P, Col, Ch) :- impl_choice(Ch), clean(P, Col).
 out(P, Col, $Shift()) :-
     in(P, N), c.noise(N),                              // corrupted cell
     parse.cand($U(), A, K, Delta),                     // candidate shift
-    !parse.broken($U(), A, K),                         // unbroken on clean cells
+    !parse.mismatch($U(), A, K),                         // unbroken on clean cells
     compose(P, Delta, P2), clean(P2, Col).             // its image
 
 // --- $Period ---
@@ -96,7 +96,7 @@ out(P, Col, $Rows()) :-
     parse.cell(E, P, Col) :- ex_out(E, P, Col).
 
     .init unbroken = Extremes<Axis>
-    unbroken.cand(A, K) :- parse.cand(_, A, K, _), !parse.broken(_, A, K).
+    unbroken.cand(A, K) :- parse.cand(_, A, K, _), !parse.mismatch(_, A, K).
 
     // The period is the smallest shift the wallpaper repeats under.
     .decl period(a: Axis, k: number)
@@ -116,10 +116,10 @@ out(P, Col, $Rows()) :-
         line_cell(E, A, Across, Along, Col), pattern_line(E, A, Across).
 
     // Pattern lines of one grid disagreeing at a shared position.
-    .decl axis_broken(a: Axis)
-    axis_broken(A) :- pattern_at(E, A, Along, Col), pattern_at(E, A, Along, C2), C2 != Col.
+    .decl axis_mismatch(a: Axis)
+    axis_mismatch(A) :- pattern_at(E, A, Along, Col), pattern_at(E, A, Along, C2), C2 != Col.
 
     // Lines run along the axis whose pattern lines all agree.
     .decl axis(a: Axis)
-    axis(A) :- axis_elem(A), !axis_broken(A).
+    axis(A) :- axis_elem(A), !axis_mismatch(A).
 }

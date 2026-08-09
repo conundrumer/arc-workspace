@@ -170,7 +170,7 @@ out(P_grid, Col, [D, $Corner()]) :-
     // One class per set of alike pairs, labelled by its lowest member; the
     // label carries identity only.
     .init class = Canon<Example>
-    class.equals(E, E2) :- same_out(E, E2).
+    class.equiv(E, E2) :- same_out(E, E2).
 
     .decl class_grid(id: Ident, p: Position, col: Color)
     class_grid(Id, P, Col) :- class.id(E, Id), ex_out(E, P, Col).

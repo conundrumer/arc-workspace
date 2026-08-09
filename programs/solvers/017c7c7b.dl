@@ -54,7 +54,7 @@ parse.cell(Line, P, Col) :- cell_line(P, Line, Col).
 .decl line_ok(line: Position, k: number)
 line_ok(Line, K) :-
     c.dir(D), axis_of(D, A),
-    parse.cand(Line, A, K, _), !parse.broken(Line, A, K).
+    parse.cand(Line, A, K, _), !parse.mismatch(Line, A, K).
 
 // Each case supplies its candidate periods; the smallest one drives the
 // continuation.
@@ -87,7 +87,7 @@ period_cand.cand([$Line(), Line], K) :- line_ok(Line, K).
 
 // A shift some line breaks.
 .decl broken(k: number)
-broken(K) :- c.dir(D), axis_of(D, A), parse.broken(_, A, K).
+broken(K) :- c.dir(D), axis_of(D, A), parse.mismatch(_, A, K).
 
 // A shift no line breaks holds for the whole grid, so every line takes it.
 .decl grid_ok(k: number)

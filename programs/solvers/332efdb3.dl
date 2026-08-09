@@ -94,7 +94,7 @@ out(P, Col, $Inset()) :-
     parse.cell(E, P, Col) :- ex_out(E, P, Col).
 
     .init unbroken = Extremes<Axis>
-    unbroken.cand(A, K) :- parse.cand(_, A, K, _), !parse.broken(_, A, K).
+    unbroken.cand(A, K) :- parse.cand(_, A, K, _), !parse.mismatch(_, A, K).
 
     // The lattice generators: the smallest repeating shift on each axis,
     // in each direction.

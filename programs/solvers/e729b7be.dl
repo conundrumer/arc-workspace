@@ -78,5 +78,5 @@ out(P, Col_out, Ch) :-
 
     // The stabilizer: what every train output is invariant under.
     .decl sym(d: D4)
-    sym(D) :- d4_elem(D), !d4m.broken(_, D).
+    sym(D) :- d4_elem(D), !d4m.mismatch(_, D).
 }

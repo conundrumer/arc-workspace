@@ -301,8 +301,8 @@
     line_multi(E, AXIS_H, I) :- dims.in_at(E, _, I, C1), dims.in_at(E, _, I, C2), C1 != C2.
     line_multi(E, AXIS_V, I) :- dims.in_at(E, I, _, C1), dims.in_at(E, I, _, C2), C1 != C2.
 
-    .decl broken_fit(e: Example, a: Axis, n: number, g: number)
-    broken_fit(E, A, N, G) :- dims.in_dim(E, A, Dim), N = range(2, 9), G = range(1, 4),
+    .decl mismatch(e: Example, a: Axis, n: number, g: number)
+    mismatch(E, A, N, G) :- dims.in_dim(E, A, Dim), N = range(2, 9), G = range(1, 4),
         Rem = Dim - (N - 1) * G, Rem > 0, Rem % N = 0, D = Rem / N,
         K = range(1, N), I = range(K * D + (K - 1) * G, K * (D + G)),
         line_multi(E, A, I).
@@ -310,7 +310,7 @@
     .decl fits(e: Example, a: Axis, n: number, d: number, g: number)
     fits(E, A, N, Rem / N, G) :- dims.in_dim(E, A, Dim), N = range(2, 9), G = range(1, 4),
         Rem = Dim - (N - 1) * G, Rem > 0, Rem % N = 0,
-        !broken_fit(E, A, N, G).
+        !mismatch(E, A, N, G).
 }
 
 // Segment counts of a witnessed separator lattice on every input.

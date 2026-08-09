@@ -120,7 +120,7 @@ out(ORIGIN, Col, $Classify()) :-
     same.observed_member(E, P) :- parse.silhouette(E, P).
 
     .init entry = Canon<Example>
-    entry.equals(E, E2) :- same.equals(E, E2).
+    entry.equiv(E, E2) :- same.equals(E, E2).
 
     .decl pattern_member(id: Ident, p: Position)
     pattern_member(Id, P) :- entry.id(E, Id), parse.silhouette(E, P).

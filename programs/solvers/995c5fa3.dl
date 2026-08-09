@@ -131,7 +131,7 @@ out(P_out, Col, $HoleBox()) :-
     same.observed_member(T, [P_intile, C]) :- ftile(T, P_intile, C).
 
     .init entry = Canon<TileKey>
-    entry.equals(T, T2) :- same.equals(T, T2).
+    entry.equiv(T, T2) :- same.equals(T, T2).
 
     .decl mapping_member(id: Ident, p_intile: Position, c: Color)
     mapping_member(Id, P_intile, C) :- entry.id(T, Id), ftile(T, P_intile, C).

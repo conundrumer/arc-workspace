@@ -36,7 +36,7 @@ inv.dst(T, P, Col) :- tile_val(T, P, Col).
 .decl out(p: Position, col: Color, ch: Choice)
 
 // --- $Shared ---
-out(P, Col, $Shared()) :- tile_val(T, P, Col), c.sym(F), inv.broken(T, F).
+out(P, Col, $Shared()) :- tile_val(T, P, Col), c.sym(F), inv.mismatch(T, F).
 
 // --- $Asym ---
 out(P, Col, $Asym()) :- tile_val(T, P, Col), !inv.has_sym(T).

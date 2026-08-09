@@ -233,7 +233,7 @@ out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !painted(P, _, Ch).
     same.observed_member(O, P_inner) :- rewritten(O), obj_member(O, P_inner).
 
     .init entry = Canon<Obj>
-    entry.equals(O, O2) :- same.equals(O, O2).
+    entry.equiv(O, O2) :- same.equals(O, O2).
 
     .decl patch_member(id: Ident, p: Position)
     patch_member(Id, P_inner) :- entry.id(O, Id), obj_member(O, P_inner).

@@ -63,8 +63,8 @@ measure_member(Col, $Span(), S, R) :- spans.between([Col, S], R).
 .type CKey = [col: Color, ch: Choice]
 .init growth = Excess<CKey, Position>
 
-growth.pos([Col, Ch], M) :- measure_member(Col, Ch, S, M), c.side(D), opposite(D, S).
-growth.neg([Col, Ch], M) :- measure_member(Col, Ch, D, M), c.side(D).
+growth.plus([Col, Ch], M) :- measure_member(Col, Ch, S, M), c.side(D), opposite(D, S).
+growth.minus([Col, Ch], M) :- measure_member(Col, Ch, D, M), c.side(D).
 
 // The winner: the color that grows the most.
 .init winner = ArgExtremes<Choice, Color>

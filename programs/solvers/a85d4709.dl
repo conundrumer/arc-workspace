@@ -81,7 +81,7 @@ out(P, Out_C, $MarkerPosition()) :-
     same.observed_member(S, [P_inner, C]) :- fslice(S, P_inner, C).
 
     .init entry = Canon<SliceKey>
-    entry.equals(S, S2) :- same.equals(S, S2).
+    entry.equiv(S, S2) :- same.equals(S, S2).
 
     .decl mapping_member(id: Ident, p_inner: Position, c: Color)
     mapping_member(Id, P_inner, C) :- entry.id(S, Id), fslice(S, P_inner, C).
