@@ -115,6 +115,30 @@ def test_subsumptive_clause():
     assert isinstance(rule.body[1], Cmp)
 
 
+def test_comp_inheritance():
+    src = """\
+.comp Base<K> {
+    .decl node(k: K)
+    .decl out(k: K)
+    out(X) :- node(X).
+}
+.comp Derived<K> : Base<K> {
+    .decl extra(k: K)
+    extra(X) :- node(X).
+}
+.init d = Derived<number>
+top(X) :- d.out(X), d.extra(X).
+"""
+    p = parse(src)
+    comp = p.comps()["Derived"]
+    assert comp.base == "Base" and comp.base_targs == ["K"]
+    ix = Index(p)
+    assert ix.resolve("Derived", None, "node") == ("Base", "node")
+    assert ix.resolve(TOP, None, "out") == (EXTERN, "out")
+    assert ix.resolve(TOP, "d", "out") == ("Base", "out")
+    assert ix.resolve(TOP, "d", "extra") == ("Derived", "extra")
+
+
 def test_comments_kept():
     p = parse("// header\nink(P) :- in(P, C).  // trailing\n")
     own = [c for c in p.comments if c.own_line]

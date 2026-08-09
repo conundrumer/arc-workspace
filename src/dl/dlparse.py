@@ -1,7 +1,8 @@
 """Parse solver .dl source into an AST, plus a reference index over it.
 
 The grammar covers the dialect the solvers and lib.dl use: `#include`,
-`#define`, `.functor`, `.type`, single-level `.comp`, `.init`, `.decl`
+`#define`, `.functor`, `.type`, single-level `.comp` with single
+inheritance, `.init`, `.decl`
 (with `inline` and same-line facts), facts, rules with negation,
 aggregates, and parenthesized disjunctions, constructors, records,
 functor calls, and GRID macro facts (which take no terminating period). Anything outside that raises
@@ -12,15 +13,16 @@ Comments are kept on the program (`Program.comments`) with position and
 own-line flags, so renderers can reattach them.
 
 `Index` resolves every atom to the relation it names — through comp
-instantiations, negation, and aggregate bodies — and records the role of
-each reference. It is the shared layer the lints query.
+instantiations, inheritance, negation, and aggregate bodies — and
+records the role of each reference. It is the shared layer the lints
+query.
 """
 
 from __future__ import annotations
 
 import re
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 AGG_OPS = {"count", "sum", "max", "min", "mean"}
 WORD_OPS = {"band", "bor", "bxor", "bshl", "bshr", "land", "lor", "lxor"}
@@ -310,6 +312,8 @@ class Comp:
     items: list[Item]
     line: int
     end_line: int
+    base: str | None = None      # inherited comp, single inheritance
+    base_targs: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -390,6 +394,11 @@ class _Parser:
         self.expect("comp")
         name = self.ident("comp name")
         params = self.targ_list()
+        base, base_targs = None, []
+        if self.at(":"):
+            self.next()
+            base = self.ident("base comp name")
+            base_targs = self.targ_list()
         self.expect("{")
         items: list[Item] = []
         while not self.at("}"):
@@ -397,7 +406,7 @@ class _Parser:
                 raise ParseError(line, f"unterminated comp {name}")
             items.append(self.item(top=False))
         end = self.next().line  # '}'
-        return Comp(name, params, items, line, end)
+        return Comp(name, params, items, line, end, base, base_targs)
 
     def decl(self) -> Decl:
         line = self.next().line
@@ -701,6 +710,9 @@ class Index:
 
     def __init__(self, program: Program):
         self.program = program
+        self.bases: dict[str, str] = {
+            c.name: c.base for c in program.comps().values() if c.base
+        }
         self.decls: dict[str, dict[str, Decl]] = {TOP: {}}
         self.inits: dict[str, dict[str, Init]] = {TOP: {}}
         self.rules: list[RuleInfo] = []
@@ -743,19 +755,33 @@ class Index:
         """The `// --- <name> ---` section a top-level line falls in."""
         return self._section(line, TOP)
 
+    def chain(self, scope: str) -> list[str]:
+        """The scope and its base comps, derived first."""
+        out: list[str] = []
+        cur: str | None = scope
+        while cur is not None and cur not in out:
+            out.append(cur)
+            cur = self.bases.get(cur)
+        return out
+
     def resolve(self, scope: str, qual: str | None, name: str) -> RelKey:
         if qual is None:
-            for s in (scope, TOP):
+            for s in (*self.chain(scope), TOP):
                 if name in self.decls.get(s, {}):
                     return (s, name)
             return (EXTERN, name)
         for hop in qual.split("."):
-            init = self.inits.get(scope, {}).get(hop) or self.inits[TOP].get(hop)
+            init = next(
+                (i for s in (*self.chain(scope), TOP)
+                 if (i := self.inits.get(s, {}).get(hop))),
+                None,
+            )
             if init is None or init.comp not in self.decls:
                 return (EXTERN, f"{qual}.{name}")
             scope = init.comp
-        if name in self.decls[scope]:
-            return (scope, name)
+        for s in self.chain(scope):
+            if name in self.decls.get(s, {}):
+                return (s, name)
         return (EXTERN, f"{qual}.{name}")
 
     def _index_rule(self, idx: int, info: RuleInfo) -> None:
