@@ -30,6 +30,9 @@
         8, 9, 4,
         7, 6, 5)
 
+    .decl map(p_in: Position, p_out: Position)
+    map(P_in, P_out) :- in_label(P_in, Id), out_label(P_out, Id).
+
     // --- Cycle data ---
     // Output ring as a SENSE_CW cycle of 8 cells, declared by its edges. A cycle's
     // edge set carries no basepoint, so no ring cell is privileged as a start.
@@ -67,8 +70,7 @@ impl_choice($Cycle()).
 .decl perm(p_in: Position, p_out: Position, c: Choice)
 
 // --- LabeledGrids ---
-perm(P_grid_in, P_grid_out, $LabeledGrids()) :-
-    c.in_label(P_grid_in, Id), c.out_label(P_grid_out, Id).   // shared label
+perm(P_grid_in, P_grid_out, $LabeledGrids()) :- c.map(P_grid_in, P_grid_out).
 
 // --- Cycle ---
 // Cells across both frames, so one diagonal/ring geometry serves input arms and

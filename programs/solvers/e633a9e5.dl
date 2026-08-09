@@ -56,10 +56,18 @@
     // --- $Edge ---
     .decl fat(n: number) fat(2).
 
+    // Axis-only intile positions of the fat tile.
+    .decl fat_pos(a: Axis, p_in_ax: Position)
+    fat_pos(A, Pi) :- fat(N), ext_pos(A, N, Pi).
+
     // --- $Table ---
     .decl ext(a: Axis, p: Position, n: number)
     ext(AXIS_V, [0, 2, 0, 0], 2). ext(AXIS_V, [1, 1, 0, 0], 1). ext(AXIS_V, [2, 0, 0, 0], 2).
     ext(AXIS_H, [0, 0, 0, 2], 2). ext(AXIS_H, [0, 0, 1, 1], 1). ext(AXIS_H, [0, 0, 2, 0], 2).
+
+    // Axis-only intile positions of each line's tile.
+    .decl line_pos(a: Axis, p_along: Position, p_in_ax: Position)
+    line_pos(A, P_along, Pi) :- ext(A, P_along, N), ext_pos(A, N, Pi).
 
     // --- $Edge, $Table ---
     // Axis-only intile positions of an extent-n tile, for the extents in use.
@@ -102,7 +110,7 @@
 // --- $Edge ---
 ax_pos($Edge(), P, A, Pi) :-
     in(P, _), axis_of(D, A),
-    ( dist(P, D, 0), c.fat(N), c.ext_pos(A, N, Pi)            // touches an edge of axis a
+    ( dist(P, D, 0), c.fat_pos(A, Pi)                         // touches an edge of axis a
     ; dist_pair(P, D, K, K2), K != 0, K2 != 0, Pi = ORIGIN    // off both edges of axis a
     ).
 
@@ -110,7 +118,7 @@ ax_pos($Edge(), P, A, Pi) :-
 ax_pos($Table(), P, A, Pi) :-
     in(P, _),
     split(P, A, P_along, _),           // the cell's line
-    c.ext(A, P_along, N), c.ext_pos(A, N, Pi).
+    c.line_pos(A, P_along, Pi).        // that line's tile
 
 // --- $Edge, $Table ---
 .decl tile(ch: Choice, p_tile: Position, p_intile: Position, col: Color)

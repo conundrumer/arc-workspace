@@ -29,6 +29,9 @@
         4, 5, 6,
         7, 8, 9)
 
+    .decl map(p_in: Position, p_out: Position)
+    map(P_in, P_out) :- in_label(P_in, Id), out_label(P_out, Id).
+
     // --- Divide params ---
     .decl anchor(d: DiagDir) anchor(DIAG_TL).
     .decl divisor(n: number) divisor(3).
@@ -41,8 +44,7 @@ impl_choice($LabeledGrids()).
 impl_choice($Divide()).
 
 .decl perm(p_in: Position, p_out: Position, c: Choice)
-perm(P_grid_in, P_grid_out, $LabeledGrids()) :-
-    c.in_label(P_grid_in, Id), c.out_label(P_grid_out, Id). // shared label
+perm(P_grid_in, P_grid_out, $LabeledGrids()) :- c.map(P_grid_in, P_grid_out).
 
 perm(P_grid_in, P_grid_out, $Divide()) :-
     in(P_grid_in, _),                                       // input cell

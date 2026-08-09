@@ -29,6 +29,9 @@
         0, 0, 0, 0,
         0, 0, 0, 0,
         3, 0, 0, 4)
+
+    .decl map(p_in: Position, p_out: Position)
+    map(P_in, P_out) :- in_label(P_in, Id), out_label(P_out, Id).
 }
 
 .init c = Consts
@@ -66,9 +69,7 @@ target(P_out, Col, $Explode()) :-
 
 // --- Table ---
 
-target(P_out, Col, $Table()) :-
-    in(P_in, Col),
-    c.in_label(P_in, Id), c.out_label(P_out, Id).   // shared label
+target(P_out, Col, $Table()) :- in(P_in, Col), c.map(P_in, P_out).
 
 .decl impl_choice(ch: Choice)
 impl_choice($Quad()). impl_choice($Stretch()). impl_choice($Explode()). impl_choice($Table()).

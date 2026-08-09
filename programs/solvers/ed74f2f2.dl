@@ -27,6 +27,15 @@
         helpers.tile_pos([Av, Ah], [K, K], [0, G], P_frame, P_tile, P_intile),
         border(B), compose(P_frame, [B, B, B, B], P_grid).
 
+    // Grid cells of the key and target tiles, with their intile positions.
+    .decl key_cell(p_grid: Position, p_intile: Position)
+    key_cell(P_grid, P_intile) :-
+        decompose(P_grid, P_tile, P_intile), key_tile(P_tile).
+
+    .decl target_cell(p_grid: Position, p_intile: Position)
+    target_cell(P_grid, P_intile) :-
+        decompose(P_grid, P_tile, P_intile), target_tile(P_tile).
+
     // Key table: key tile content → output color.
     .decl key_member(id: Ident, p_intile: Position, col: Color)
     .decl key_color(id: Ident, col: Color)
@@ -52,25 +61,21 @@
 
 .init c = Consts
 
-.decl slot(p_tile: Position, p_intile: Position, col: Color)
-slot(P_tile, P_intile, Col) :-
-    in(P_grid, Col), c.decompose(P_grid, P_tile, P_intile).
-
 // Key tile content → color.
 .init key_match = KeyedSetCompare<Unit, Ident, KeyCell>
 key_match.pattern_member(Id, [P_intile, Col]) :- c.key_member(Id, P_intile, Col).
 key_match.observed_member($U(), [P_intile, Col]) :-
-    slot(P_tile, P_intile, Col), c.key_tile(P_tile).
+    in(P_grid, Col), c.key_cell(P_grid, P_intile).
 
-.decl target_cell(p: Position, col: Color)
-target_cell(P_intile, Col) :-
-    slot(P_tile, P_intile, Col), c.target_tile(P_tile).
+// The target tile's content.
+.decl target(p_intile: Position, col: Color)
+target(P_intile, Col) :- in(P_grid, Col), c.target_cell(P_grid, P_intile).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :-
-    target_cell(P, C), !c.bg(C),                           // target ink cell
+    target(P, C), !c.bg(C),                                // target ink cell
     key_match.equals($U(), Id), c.key_color(Id, Col).      // key's color
-out(P, C) :- target_cell(P, C), c.bg(C).                   // bg passes through
+out(P, C) :- target(P, C), c.bg(C).                        // bg passes through
 
 // --- fit ---
 
@@ -78,8 +83,7 @@ out(P, C) :- target_cell(P, C), c.bg(C).                   // bg passes through
     // The key tile's content, per example.
     .decl fkey(e: Example, p_intile: Position, col: Color)
     fkey(E, P_intile, Col) :-
-        ex_in(E, P_grid, Col),
-        c.decompose(P_grid, P_tile, P_intile), c.key_tile(P_tile).
+        ex_in(E, P_grid, Col), c.key_cell(P_grid, P_intile).
 
     // Examples whose key tiles agree share an entry.
     .init same = KeyedSetCompare<Example, Example, KeyCell>

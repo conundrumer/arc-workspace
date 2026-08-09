@@ -29,6 +29,9 @@
         5,
         4)
 
+    .decl map(p_in: Position, p_out: Position)
+    map(P_in, P_out) :- in_label(P_in, Id), out_label(P_out, Id).
+
     // --- Divide params ---
     .decl divide_axis(a: Axis) divide_axis(AXIS_V).
     .decl divisor(n: number) divisor(2).
@@ -48,8 +51,7 @@ decomposable(P_grid) :-
     divide(P_grid, A, N, G, _, _).
 
 .decl perm(p_in: Position, p_out: Position, c: Choice)
-perm(P_grid_in, P_grid_out, $LabeledGrids()) :-
-    c.in_label(P_grid_in, Id), c.out_label(P_grid_out, Id).   // shared label
+perm(P_grid_in, P_grid_out, $LabeledGrids()) :- c.map(P_grid_in, P_grid_out).
 
 perm(P_grid_in, P_grid_out, $Divide()) :-
     in(P_grid_in, _),                                          // input cell

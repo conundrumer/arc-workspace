@@ -82,6 +82,11 @@
     arrange(P_grid, P_intile) :-
         arr_dim(A), tile_dim(K), gap(G),
         helpers.tile_pos([A, A], [K, K], [G, G], P_grid, _, P_intile).
+
+    // Each class's tile under the arrangement.
+    .decl arrange_grid(id: Ident, p_grid: Position, col: Color)
+    arrange_grid(Id, P_grid, Col) :-
+        arrange(P_grid, P_intile), class_tile(Id, P_intile, Col).
 }
 
 .init c = Consts
@@ -132,8 +137,7 @@ class(Id, $Count()) :- parse.ink_count($U(), N), c.class_count(Id, N).
 out(P, Col, [D, $Grid()]) :- class(Id, D), c.class_grid(Id, P, Col).
 
 // --- $Arrange ---
-out(P_grid, Col, [D, $Arrange()]) :-
-    class(Id, D), c.arrange(P_grid, P_intile), c.class_tile(Id, P_intile, Col).
+out(P_grid, Col, [D, $Arrange()]) :- class(Id, D), c.arrange_grid(Id, P_grid, Col).
 out(P_grid, Col, [D, $Arrange()]) :-
     class(_, D), c.canvas(P_grid), !c.arrange(P_grid, _), c.bg(Col).
 
