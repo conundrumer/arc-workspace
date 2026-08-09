@@ -46,8 +46,12 @@
 
 // Per-example color cell counts. A helper: no propose relation.
 .comp ColorCounts {
+    .type EC = [e: Example, c: Color]
+    .init counts = Tally<EC, Position>
+    counts.item([E, C], P) :- ex_in(E, P, C).
+
     .decl color_count(e: Example, c: Color, n: number)
-    color_count(E, C, N) :- ex_in(E, _, C), N = count : { ex_in(E, _, C) }.
+    color_count(E, C, N) :- counts.tally([E, C], N).
 }
 
 // A color present in every input.
@@ -62,8 +66,9 @@
 // The most frequent color of every input.
 .comp DominantColor : Uniform<Unit, Color> {
     .init counts = ColorCounts
-    holds(E, $U(), C) :- counts.color_count(E, C, N),
-        N = max M : { counts.color_count(E, _, M) }.
+    .init pick = ArgExtremes<Example, Color>
+    pick.cand(E, C, N) :- counts.color_count(E, C, N).
+    holds(E, $U(), C) :- pick.high(E, C, _).
     scope(E) :- ex_in(E, _, _).
 
     .decl propose(c: Color)
@@ -73,8 +78,9 @@
 // The rarest color of every input.
 .comp RarestColor : Uniform<Unit, Color> {
     .init counts = ColorCounts
-    holds(E, $U(), C) :- counts.color_count(E, C, N),
-        N = min M : { counts.color_count(E, _, M) }.
+    .init pick = ArgExtremes<Example, Color>
+    pick.cand(E, C, N) :- counts.color_count(E, C, N).
+    holds(E, $U(), C) :- pick.low(E, C, _).
     scope(E) :- ex_in(E, _, _).
 
     .decl propose(c: Color)
@@ -277,8 +283,11 @@
     holds(E, A, K) :- dims.in_dim(E, A, Dim), K = range(1, Dim), !mismatch(E, A, K).
     scope(E) :- ex_in(E, _, _).
 
+    .init best = Extremes<Axis>
+    best.cand(A, K) :- uniform(A, K).
+
     .decl propose(k: number)
-    propose(K) :- uniform(A, K), K = min K2 : { uniform(A, K2) }.
+    propose(K) :- best.low(_, K).
 }
 
 // Lattice fits whose separator lines are witnessed: (n, d, g) with
@@ -350,8 +359,11 @@
 // the rarest; ties share a rank.
 .comp CountRankAsc : Uniform<Color, number> {
     .init counts = ColorCounts
-    holds(E, C, R) :- counts.color_count(E, C, N),
-        R = count : { counts.color_count(E, C2, N2), N2 < N, C2 != C }.
+    .init ranks = Order<Example, Color>
+    ranks.elem(E, C) :- counts.color_count(E, C, _).
+    ranks.before(E, C2, C) :-
+        counts.color_count(E, C2, N2), counts.color_count(E, C, N), N2 < N.
+    holds(E, C, R) :- ranks.rank(E, C, R).
     scope(E) :- ex_in(E, _, _).
 
     .decl propose(c: Color, r: number)
@@ -362,8 +374,11 @@
 // the commonest; ties share a rank.
 .comp CountRankDesc : Uniform<Color, number> {
     .init counts = ColorCounts
-    holds(E, C, R) :- counts.color_count(E, C, N),
-        R = count : { counts.color_count(E, C2, N2), N2 > N, C2 != C }.
+    .init ranks = Order<Example, Color>
+    ranks.elem(E, C) :- counts.color_count(E, C, _).
+    ranks.before(E, C2, C) :-
+        counts.color_count(E, C2, N2), counts.color_count(E, C, N), N2 > N.
+    holds(E, C, R) :- ranks.rank(E, C, R).
     scope(E) :- ex_in(E, _, _).
 
     .decl propose(c: Color, r: number)
