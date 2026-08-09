@@ -355,3 +355,60 @@ h.item(1).
 out(N) :- h.size(N).
 """
     assert "raw-aggregate" not in cats(src)
+
+
+CONSTS = """\
+.comp Consts {
+    .decl template(p: number, col: number)
+    template(1, 2).
+    .decl marker(col: number)
+    marker(2).
+}
+.init c = Consts
+"""
+
+
+def test_hint_const_join_fires():
+    src = CONSTS + """\
+.decl out(p: number)
+out(P) :- in(P, _), c.template(P, M), c.marker(M).
+"""
+    assert "const-join" in cats(src, hints=True)
+    assert "const-join" not in cats(src)
+
+
+def test_const_join_lookup_kept():
+    src = CONSTS + """\
+.decl out(p: number)
+out(P) :- in(P, M), c.template(P, M), c.marker(M).
+"""
+    assert "const-join" not in cats(src, hints=True)
+
+
+def test_const_join_named_constant_kept():
+    src = CONSTS + """\
+.decl marks(p: number)
+marks(P) :- c.template(P, M), c.marker(M).
+.decl out(p: number)
+out(P) :- in(P, _), marks(P).
+"""
+    assert "const-join" not in cats(src, hints=True)
+
+
+def test_const_join_constant_instance_kept():
+    src = CONSTS + """\
+.init tview = Reframe<number>
+tview.cell(P, M) :- c.template(P, M).
+tview.outer(P) :- tview.cell(P, M), c.marker(M).
+.decl out(p: number)
+out(P) :- in(P, _), tview.outer(P).
+"""
+    assert "const-join" not in cats(src, hints=True)
+
+
+def test_const_join_in_disjunction_fires():
+    src = CONSTS + """\
+.decl out(p: number)
+out(P) :- in(P, _), ( c.template(P, M), c.marker(M) ; c.template(P, 0) ).
+"""
+    assert "const-join" in cats(src, hints=True)

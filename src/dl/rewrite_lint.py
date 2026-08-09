@@ -20,7 +20,7 @@ tuple shape.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 
 from dl.dlparse import (
     EXTERN,
@@ -63,8 +63,12 @@ COMMON_SUBEXPR_MIN = 2   # literals a shared window must span
 # Categories of the hint tier, for callers that render the tiers apart.
 HINTS = frozenset({
     "pass-through", "chain-join", "single-consumer", "domain-enumerator",
-    "argmax", "common-subexpr",
+    "argmax", "common-subexpr", "const-join",
 })
+
+# Relations the runner fills per example; everything else at lib's top
+# level is record arithmetic, independent of the task's grids.
+EXAMPLE_SRC = frozenset({"in", "ex_in", "ex_out"})
 
 type Finding = tuple[str, int, str, str]
 
@@ -93,6 +97,7 @@ class _Lint:
         self.lines = lines
         self.findings: list[Finding] = []
         self.claimed: set[RelKey] = set()  # relations an earlier rule flagged
+        self._const_targets: set[tuple[str, str]] | None = None
         # Choice tags: branch names of the ADTs the file declares.
         self.choice_tags = {
             b
@@ -139,6 +144,7 @@ class _Lint:
             for idx, info in self.body_rules():
                 self.domain_enumerator(info)
                 self.argmax(idx, info)
+                self.const_join(info)
             self.common_subexpr()
         return self.findings
 
@@ -559,10 +565,10 @@ class _Lint:
         rule = info.rule
         if rule.body is None:
             return
-        for atom in rule.body:
-            if not isinstance(atom, Atom) or len(atom.args) != 1:
-                continue
-            if not isinstance(atom.args[0], Var):
+        flats = list(_flatten(rule.body))
+        for atom in {id(l): l for f in flats for l in f
+                     if isinstance(l, Atom)}.values():
+            if len(atom.args) != 1 or not isinstance(atom.args[0], Var):
                 continue
             key = self.ix.resolve(info.scope, atom.qual, atom.name)
             if key[0] == EXTERN:
@@ -571,27 +577,48 @@ class _Lint:
             if len(defs) != 1 or defs[0].body is not None:
                 continue
             v = atom.args[0].name
-            others = [
-                lit for lit in rule.body
-                if lit is not atom and v in literal_vars(lit)
-            ]
-            if v in literal_vars(rule.head) or len(others) != 1:
+            if v in literal_vars(rule.head):
                 continue
-            cmp = others[0]
-            if not (isinstance(cmp, Cmp) and cmp.op == "!="):
+            # The rewrite must hold, with one shared `!=`, in every
+            # expansion the atom is in.
+            found: tuple[Cmp, Term] | None = None
+            ok = True
+            for flat in flats:
+                if not any(l is atom for l in flat):
+                    continue
+                others = [
+                    lit for lit in flat
+                    if lit is not atom and v in literal_vars(lit)
+                ]
+                if len(others) != 1:
+                    ok = False
+                    break
+                cmp = others[0]
+                if not (isinstance(cmp, Cmp) and cmp.op == "!="):
+                    ok = False
+                    break
+                if isinstance(cmp.lhs, Var) and cmp.lhs.name == v:
+                    other = cmp.rhs
+                elif isinstance(cmp.rhs, Var) and cmp.rhs.name == v:
+                    other = cmp.lhs
+                else:
+                    ok = False
+                    break
+                bound: set[str] = set()
+                for lit in flat:
+                    if isinstance(lit, Atom) and lit is not atom:
+                        bound |= literal_vars(lit)
+                if term_vars(other) - bound:
+                    ok = False  # the negation would leave the value unbound
+                    break
+                if found is None:
+                    found = (cmp, other)
+                elif found[0] is not cmp:
+                    ok = False
+                    break
+            if not ok or found is None:
                 continue
-            if isinstance(cmp.lhs, Var) and cmp.lhs.name == v:
-                other = cmp.rhs
-            elif isinstance(cmp.rhs, Var) and cmp.rhs.name == v:
-                other = cmp.lhs
-            else:
-                continue
-            bound: set[str] = set()
-            for lit in rule.body:
-                if isinstance(lit, Atom) and lit is not atom:
-                    bound |= literal_vars(lit)
-            if term_vars(other) - bound:
-                continue  # the negation would leave the value unbound
+            cmp, other = found
             qual = f"{atom.qual}." if atom.qual else ""
             self.add(
                 "named-complement", atom.line,
@@ -635,20 +662,29 @@ class _Lint:
         rule = info.rule
         if rule.body is None:
             return
-        pos = [lit for lit in rule.body if isinstance(lit, Atom)]
-        for atom in pos:
+        flats = list(_flatten(rule.body))
+        for atom in {id(l): l for f in flats for l in f
+                     if isinstance(l, Atom)}.values():
             if not atom.name.endswith("_elem") or len(atom.args) != 1:
                 continue
             if not isinstance(atom.args[0], Var):
                 continue
             v = atom.args[0].name
-            binder = next(
-                (o for o in pos
-                 if o is not atom and not o.name.endswith("_elem")
-                 and v in literal_vars(o)
-                 and self._grounds(info.scope, o)),
-                None,
-            )
+            # Redundant only when every expansion the atom is in binds it.
+            binder: Atom | None = None
+            for flat in flats:
+                if not any(l is atom for l in flat):
+                    continue
+                binder = next(
+                    (o for o in flat
+                     if isinstance(o, Atom) and o is not atom
+                     and not o.name.endswith("_elem")
+                     and v in literal_vars(o)
+                     and self._grounds(info.scope, o)),
+                    None,
+                )
+                if binder is None:
+                    break
             if binder is not None:
                 self.add(
                     "domain-enumerator", atom.line,
@@ -669,22 +705,128 @@ class _Lint:
         """`beaten(X) :- score(X, N), score(_, N2), N2 > N`, read only
         negated: an aggregate in disguise."""
         rule = info.rule
-        if rule.body is None or len(rule.body) != 3:
+        if rule.body is None:
             return
-        atoms = [lit for lit in rule.body if isinstance(lit, Atom)]
-        cmps = [lit for lit in rule.body if isinstance(lit, Cmp)]
-        if len(atoms) != 2 or len(cmps) != 1 or cmps[0].op not in ("<", ">"):
-            return
-        if (atoms[0].qual, atoms[0].name) != (atoms[1].qual, atoms[1].name):
-            return
-        cvars = literal_vars(cmps[0])
-        if not (cvars & literal_vars(atoms[0])) or not (cvars & literal_vars(atoms[1])):
-            return
+        for body in _flatten(rule.body):
+            if len(body) != 3:
+                return
+            atoms = [lit for lit in body if isinstance(lit, Atom)]
+            cmps = [lit for lit in body if isinstance(lit, Cmp)]
+            if len(atoms) != 2 or len(cmps) != 1 or cmps[0].op not in ("<", ">"):
+                return
+            if (atoms[0].qual, atoms[0].name) != (atoms[1].qual, atoms[1].name):
+                return
+            cvars = literal_vars(cmps[0])
+            if not (cvars & literal_vars(atoms[0])) \
+                    or not (cvars & literal_vars(atoms[1])):
+                return
         key = self.rule_head_key(idx)
         uses = self.uses(key)
         if uses and all(u.role == "neg" for u in uses):
             self.add("argmax", rule.line,
-                     f"`{rule.head.name}` reads as max/min via self-join")
+                     f"`{rule.head.name}` is max/min via self-join; "
+                     f"read it through a lib comp")
+
+    def const_join(self, info: RuleInfo) -> None:
+        """Hint: a variable internal to a rule's Consts reads. The join
+        states no per-example thing — it derives a task constant, which
+        the corpus names in its own relation. Quiet inside Consts and
+        under a head that is itself task-constant: those are the named
+        forms."""
+        rule = info.rule
+        if rule.body is None or info.scope == "Consts":
+            return
+        head = self._target(info.scope, rule.head)
+        if isinstance(head, tuple) and head in self.const_targets():
+            return
+        seen: set[str] = set()
+        for body in _flatten(rule.body):
+            creads = [
+                lit for lit in body
+                if isinstance(lit, (Atom, Neg))
+                and (a := lit.atom if isinstance(lit, Neg) else lit).qual
+                is not None
+                and self._target(info.scope, a) == "const"
+            ]
+            if len(creads) < 2:
+                continue
+            cvars: set[str] = set()
+            for lit in creads:
+                cvars |= literal_vars(lit)
+            ids = {id(lit) for lit in creads}
+            others = literal_vars(rule.head)
+            for lit in body:
+                if id(lit) not in ids:
+                    others |= literal_vars(lit)
+            internal = cvars - others
+            if not internal:
+                continue
+            rels: list[str] = []
+            for lit in creads:
+                a = lit.atom if isinstance(lit, Neg) else lit
+                s = f"{a.qual}.{a.name}"
+                if s not in rels:
+                    rels.append(s)
+            msg = (f"`{'`, `'.join(rels)}` join on `{', '.join(sorted(internal))}`; "
+                   f"name the derived constant in Consts")
+            if msg in seen:
+                continue
+            seen.add(msg)
+            a0 = creads[0].atom if isinstance(creads[0], Neg) else creads[0]
+            self.add("const-join", a0.line, msg)
+
+    def const_targets(self) -> set[tuple[str, str]]:
+        """Relations and comp instances whose derivations never reach a
+        per-example source: named task constants."""
+        if self._const_targets is not None:
+            return self._const_targets
+        heads: dict[tuple[str, str], list[tuple[str, Rule]]] = {}
+        for info in self.ix.rules:
+            t = self._target(info.scope, info.rule.head)
+            if isinstance(t, tuple):
+                heads.setdefault(t, []).append((info.scope, info.rule))
+        tainted: set[tuple[str, str]] = set()
+        changed = True
+        while changed:
+            changed = False
+            for t, rules in heads.items():
+                if t in tainted:
+                    continue
+                for scope, rule in rules:
+                    if rule.body is None:
+                        continue
+                    for atom in _all_atoms(rule.body):
+                        b = self._target(scope, atom)
+                        if b == "example" or \
+                                (isinstance(b, tuple) and b in tainted):
+                            tainted.add(t)
+                            changed = True
+                            break
+                    if t in tainted:
+                        break
+        self._const_targets = set(heads) - tainted
+        return self._const_targets
+
+    def _target(self, scope: str, atom: Atom) -> tuple[str, str] | str:
+        """Where an atom's derivation comes from: 'const' for Consts data
+        and grid-free lib relations, 'example' for the runner's per-example
+        fills, else the (scope, name) node the taint runs through — the
+        instance for qualified atoms, the declaring scope for bare ones."""
+        if atom.qual is not None:
+            hop = atom.qual.split(".")[0]
+            for s in (*self.ix.chain(scope), TOP):
+                init = self.ix.inits.get(s, {}).get(hop)
+                if init is not None:
+                    if init.comp == "Consts":
+                        return "const"
+                    return (s, hop)
+            return "example"
+        key = self.ix.resolve(scope, None, atom.name)
+        if key[0] == EXTERN:
+            return "example" if atom.name in EXAMPLE_SRC else "const"
+        if key[0] == "Consts":
+            return "const"
+        return key
 
     def common_subexpr(self) -> None:
         """The same literal run, up to renaming, in two bodies of one
@@ -816,6 +958,23 @@ def _atoms_in(lit: Lit) -> Iterator[Atom]:
                 yield from _atoms_in(sub)
 
 
+def _all_atoms(lits: Iterable[Lit]) -> Iterator[Atom]:
+    """Every atom a body derives through: positive, negated, in aggregate
+    bodies, and in disjunction branches."""
+    for lit in lits:
+        if isinstance(lit, Atom):
+            yield lit
+        elif isinstance(lit, Neg):
+            yield lit.atom
+        elif isinstance(lit, Cmp):
+            for side in (lit.lhs, lit.rhs):
+                if isinstance(side, Agg):
+                    yield from _all_atoms(side.body)
+        elif isinstance(lit, Disj):
+            for branch in lit.branches:
+                yield from _all_atoms(branch)
+
+
 def _drops_columns(d: Rule) -> bool:
     """Whether the head loses information from the body: a body variable
     or wildcard no head column carries."""
@@ -830,6 +989,18 @@ def _drops_columns(d: Rule) -> bool:
         for atom in _atoms_in(lit)
         for a in atom.args
     )
+
+
+def _flatten(body: list[Lit]) -> Iterator[list[Lit]]:
+    """The conjunctions a body's disjunctions expand into: one per branch
+    choice, with the enclosing literals kept."""
+    for i, lit in enumerate(body):
+        if isinstance(lit, Disj):
+            rest = [*body[:i], *body[i + 1:]]
+            for branch in lit.branches:
+                yield from _flatten([*rest, *branch])
+            return
+    yield body
 
 
 def _conjunctions(rule: Rule) -> Iterator[list[Lit]]:
