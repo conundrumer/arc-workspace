@@ -29,52 +29,65 @@
     out_at(E, T, L, C) :- ex_out(E, P, C), dist(P, DIR_T, T), dist(P, DIR_L, L).
 }
 
+// A per-example claim uniform across a scope. Children feed holds and
+// scope and declare their own propose over uniform. p is a claim
+// parameter propose keeps or drops; Unit when the claim has none. A
+// helper: no propose relation.
+.comp Uniform<Par, Val> {
+    .decl holds(e: Example, p: Par, v: Val)
+    .decl scope(e: Example)
+
+    .decl broken(p: Par, v: Val)
+    broken(P, V) :- holds(_, P, V), scope(E), !holds(E, P, V).
+
+    .decl uniform(p: Par, v: Val)
+    uniform(P, V) :- holds(_, P, V), !broken(P, V).
+}
+
+// Per-example color cell counts. A helper: no propose relation.
+.comp ColorCounts {
+    .decl color_count(e: Example, c: Color, n: number)
+    color_count(E, C, N) :- ex_in(E, _, C), N = count : { ex_in(E, _, C) }.
+}
+
 // A color present in every input.
-.comp SharedColor {
-    .decl missing_somewhere(c: Color)
-    missing_somewhere(C) :- ex_in(_, _, C), ex_in(E, _, _), !ex_in(E, _, C).
+.comp SharedColor : Uniform<Unit, Color> {
+    holds(E, $U(), C) :- ex_in(E, _, C).
+    scope(E) :- ex_in(E, _, _).
 
     .decl propose(c: Color)
-    propose(C) :- ex_in(_, _, C), !missing_somewhere(C).
+    propose(C) :- uniform(_, C).
 }
 
 // The most frequent color of every input.
-.comp DominantColor {
-    .decl color_count(e: Example, c: Color, n: number)
-    color_count(E, C, N) :- ex_in(E, _, C), N = count : { ex_in(E, _, C) }.
-
-    .decl pair_dominant(e: Example, c: Color)
-    pair_dominant(E, C) :- color_count(E, C, N), N = max M : { color_count(E, _, M) }.
-
-    .decl beaten_somewhere(c: Color)
-    beaten_somewhere(C) :- pair_dominant(_, C), ex_in(E, _, _), !pair_dominant(E, C).
+.comp DominantColor : Uniform<Unit, Color> {
+    .init counts = ColorCounts
+    holds(E, $U(), C) :- counts.color_count(E, C, N),
+        N = max M : { counts.color_count(E, _, M) }.
+    scope(E) :- ex_in(E, _, _).
 
     .decl propose(c: Color)
-    propose(C) :- pair_dominant(_, C), !beaten_somewhere(C).
+    propose(C) :- uniform(_, C).
 }
 
 // The rarest color of every input.
-.comp RarestColor {
-    .decl color_count(e: Example, c: Color, n: number)
-    color_count(E, C, N) :- ex_in(E, _, C), N = count : { ex_in(E, _, C) }.
-
-    .decl pair_rarest(e: Example, c: Color)
-    pair_rarest(E, C) :- color_count(E, C, N), N = min M : { color_count(E, _, M) }.
-
-    .decl outnumbered_somewhere(c: Color)
-    outnumbered_somewhere(C) :- pair_rarest(_, C), ex_in(E, _, _), !pair_rarest(E, C).
+.comp RarestColor : Uniform<Unit, Color> {
+    .init counts = ColorCounts
+    holds(E, $U(), C) :- counts.color_count(E, C, N),
+        N = min M : { counts.color_count(E, _, M) }.
+    scope(E) :- ex_in(E, _, _).
 
     .decl propose(c: Color)
-    propose(C) :- pair_rarest(_, C), !outnumbered_somewhere(C).
+    propose(C) :- uniform(_, C).
 }
 
 // A color in every train output and no input.
-.comp OutNewColor {
-    .decl missing_somewhere(c: Color)
-    missing_somewhere(C) :- ex_out(_, _, C), ex_out(E, _, _), !ex_out(E, _, C).
+.comp OutNewColor : Uniform<Unit, Color> {
+    holds(E, $U(), C) :- ex_out(E, _, C).
+    scope(E) :- ex_out(E, _, _).
 
     .decl propose(c: Color)
-    propose(C) :- ex_out(_, _, C), !missing_somewhere(C), !ex_in(_, _, C).
+    propose(C) :- uniform(_, C), !ex_in(_, _, C).
 }
 
 // A color in some train output and no input. The lax form of
@@ -86,12 +99,12 @@
 }
 
 // A color in every input and no train output.
-.comp VanishedColor {
-    .decl missing_somewhere(c: Color)
-    missing_somewhere(C) :- ex_in(_, _, C), ex_in(E, _, _), !ex_in(E, _, C).
+.comp VanishedColor : Uniform<Unit, Color> {
+    holds(E, $U(), C) :- ex_in(E, _, C).
+    scope(E) :- ex_in(E, _, _).
 
     .decl propose(c: Color)
-    propose(C) :- ex_in(_, _, C), !missing_somewhere(C), !ex_out(_, _, C).
+    propose(C) :- uniform(_, C), !ex_out(_, _, C).
 }
 
 // A color none of whose cells keeps it in the output. Reads position
@@ -132,159 +145,127 @@
 
 // The factor from input dims to output dims on an axis, uniform across
 // pairs.
-.comp ScaleRatio {
+.comp ScaleRatio : Uniform<Axis, number> {
     .init dims = PairDims
-
-    .decl pair_k(e: Example, a: Axis, k: number)
-    pair_k(E, A, No / Ni) :- dims.in_dim(E, A, Ni), dims.out_dim(E, A, No), No % Ni = 0.
-
-    .decl broken(a: Axis, k: number)
-    broken(A, K) :- pair_k(_, A, K), ex_out(E, _, _), !pair_k(E, A, K).
+    holds(E, A, No / Ni) :- dims.in_dim(E, A, Ni), dims.out_dim(E, A, No), No % Ni = 0.
+    scope(E) :- ex_out(E, _, _).
 
     .decl propose(k: number)
-    propose(K) :- pair_k(_, A, K), !broken(A, K).
+    propose(K) :- uniform(_, K).
 }
 
 // The factor from input dims to output dims per axis, uniform across
 // pairs. Stack-ups and mirrors: the factor is the arrangement.
-.comp ScaleRatioAxis {
+.comp ScaleRatioAxis : Uniform<Axis, number> {
     .init dims = PairDims
-
-    .decl pair_k(e: Example, a: Axis, k: number)
-    pair_k(E, A, No / Ni) :- dims.in_dim(E, A, Ni), dims.out_dim(E, A, No), No % Ni = 0.
-
-    .decl broken(a: Axis, k: number)
-    broken(A, K) :- pair_k(_, A, K), ex_out(E, _, _), !pair_k(E, A, K).
+    holds(E, A, No / Ni) :- dims.in_dim(E, A, Ni), dims.out_dim(E, A, No), No % Ni = 0.
+    scope(E) :- ex_out(E, _, _).
 
     .decl propose(a: Axis, k: number)
-    propose(A, K) :- pair_k(_, A, K), !broken(A, K).
+    propose(A, K) :- uniform(A, K).
 }
 
 // The factor from output dims to input dims on an axis, uniform across
 // pairs. Decomposes and crops.
-.comp DivisorRatio {
+.comp DivisorRatio : Uniform<Axis, number> {
     .init dims = PairDims
-
-    .decl pair_k(e: Example, a: Axis, k: number)
-    pair_k(E, A, Ni / No) :- dims.in_dim(E, A, Ni), dims.out_dim(E, A, No), Ni % No = 0.
-
-    .decl broken(a: Axis, k: number)
-    broken(A, K) :- pair_k(_, A, K), ex_out(E, _, _), !pair_k(E, A, K).
+    holds(E, A, Ni / No) :- dims.in_dim(E, A, Ni), dims.out_dim(E, A, No), Ni % No = 0.
+    scope(E) :- ex_out(E, _, _).
 
     .decl propose(k: number)
-    propose(K) :- pair_k(_, A, K), !broken(A, K).
+    propose(K) :- uniform(_, K).
 }
 
 // The factor from output dims to input dims per axis, uniform across
 // pairs. Gap-0 panel decomposes: the factor is the arrangement.
-.comp DivisorRatioAxis {
+.comp DivisorRatioAxis : Uniform<Axis, number> {
     .init dims = PairDims
-
-    .decl pair_k(e: Example, a: Axis, k: number)
-    pair_k(E, A, Ni / No) :- dims.in_dim(E, A, Ni), dims.out_dim(E, A, No), Ni % No = 0.
-
-    .decl broken(a: Axis, k: number)
-    broken(A, K) :- pair_k(_, A, K), ex_out(E, _, _), !pair_k(E, A, K).
+    holds(E, A, Ni / No) :- dims.in_dim(E, A, Ni), dims.out_dim(E, A, No), Ni % No = 0.
+    scope(E) :- ex_out(E, _, _).
 
     .decl propose(a: Axis, k: number)
-    propose(A, K) :- pair_k(_, A, K), !broken(A, K).
+    propose(A, K) :- uniform(A, K).
 }
 
 // The dimension change from input to output on an axis, uniform across
 // pairs. Proposed as a magnitude.
-.comp DimDiff {
+.comp DimDiff : Uniform<Axis, number> {
     .init dims = PairDims
-
-    .decl pair_d(e: Example, a: Axis, d: number)
-    pair_d(E, A, Ni - No) :- dims.in_dim(E, A, Ni), dims.out_dim(E, A, No), Ni > No.
-    pair_d(E, A, No - Ni) :- dims.in_dim(E, A, Ni), dims.out_dim(E, A, No), No > Ni.
-
-    .decl broken(a: Axis, d: number)
-    broken(A, D) :- pair_d(_, A, D), ex_out(E, _, _), !pair_d(E, A, D).
+    holds(E, A, Ni - No) :- dims.in_dim(E, A, Ni), dims.out_dim(E, A, No), Ni > No.
+    holds(E, A, No - Ni) :- dims.in_dim(E, A, Ni), dims.out_dim(E, A, No), No > Ni.
+    scope(E) :- ex_out(E, _, _).
 
     .decl propose(d: number)
-    propose(D) :- pair_d(_, A, D), !broken(A, D).
+    propose(D) :- uniform(_, D).
 }
 
 // An input dimension constant across examples.
-.comp ConstInDim {
+.comp ConstInDim : Uniform<Axis, number> {
     .init dims = PairDims
-
-    .decl varies(a: Axis, n: number)
-    varies(A, N) :- dims.in_dim(_, A, N), ex_in(E, _, _), !dims.in_dim(E, A, N).
+    holds(E, A, N) :- dims.in_dim(E, A, N).
+    scope(E) :- ex_in(E, _, _).
 
     .decl propose(n: number)
-    propose(N) :- dims.in_dim(_, A, N), !varies(A, N).
+    propose(N) :- uniform(_, N).
 }
 
 // An input dimension constant across pairs, tagged by its axis.
-.comp ConstInDimAxis {
+.comp ConstInDimAxis : Uniform<Axis, number> {
     .init dims = PairDims
-
-    .decl varies(a: Axis, n: number)
-    varies(A, N) :- dims.in_dim(_, A, N), ex_in(E, _, _), !dims.in_dim(E, A, N).
+    holds(E, A, N) :- dims.in_dim(E, A, N).
+    scope(E) :- ex_in(E, _, _).
 
     .decl propose(a: Axis, n: number)
-    propose(A, N) :- dims.in_dim(_, A, N), !varies(A, N).
+    propose(A, N) :- uniform(A, N).
 }
 
 // An output dimension constant across pairs.
-.comp ConstOutDim {
+.comp ConstOutDim : Uniform<Axis, number> {
     .init dims = PairDims
-
-    .decl varies(a: Axis, n: number)
-    varies(A, N) :- dims.out_dim(_, A, N), ex_out(E, _, _), !dims.out_dim(E, A, N).
+    holds(E, A, N) :- dims.out_dim(E, A, N).
+    scope(E) :- ex_out(E, _, _).
 
     .decl propose(n: number)
-    propose(N) :- dims.out_dim(_, A, N), !varies(A, N).
+    propose(N) :- uniform(_, N).
 }
 
 // An output dimension constant across pairs, tagged by its axis.
-.comp ConstOutDimAxis {
+.comp ConstOutDimAxis : Uniform<Axis, number> {
     .init dims = PairDims
-
-    .decl varies(a: Axis, n: number)
-    varies(A, N) :- dims.out_dim(_, A, N), ex_out(E, _, _), !dims.out_dim(E, A, N).
+    holds(E, A, N) :- dims.out_dim(E, A, N).
+    scope(E) :- ex_out(E, _, _).
 
     .decl propose(a: Axis, n: number)
-    propose(A, N) :- dims.out_dim(_, A, N), !varies(A, N).
+    propose(A, N) :- uniform(A, N).
 }
 
 // Tile counts n with dim = n*d + (n-1)*g fitting an input axis of every
 // example, over gaps 0..3.
-.comp TileCount {
+.comp TileCount : Uniform<Axis, number> {
     .init dims = PairDims
-
-    .decl fit(e: Example, a: Axis, n: number)
-    fit(E, A, N) :- dims.in_dim(E, A, Dim), N = range(2, 9), G = range(0, 4),
+    holds(E, A, N) :- dims.in_dim(E, A, Dim), N = range(2, 9), G = range(0, 4),
         Rem = Dim - (N - 1) * G, Rem > 0, Rem % N = 0.
-
-    .decl broken(a: Axis, n: number)
-    broken(A, N) :- fit(_, A, N), ex_in(E, _, _), !fit(E, A, N).
+    scope(E) :- ex_in(E, _, _).
 
     .decl propose(n: number)
-    propose(N) :- fit(_, A, N), !broken(A, N).
+    propose(N) :- uniform(_, N).
 }
 
 // Tile dims d with dim = n*d + (n-1)*g fitting an input axis of every
 // example, over gaps 0..3.
-.comp TileDim {
+.comp TileDim : Uniform<Axis, number> {
     .init dims = PairDims
-
-    .decl fit(e: Example, a: Axis, d: number)
-    fit(E, A, Rem / N) :- dims.in_dim(E, A, Dim), N = range(2, 9), G = range(0, 4),
+    holds(E, A, Rem / N) :- dims.in_dim(E, A, Dim), N = range(2, 9), G = range(0, 4),
         Rem = Dim - (N - 1) * G, Rem > 0, Rem % N = 0.
-
-    .decl broken(a: Axis, d: number)
-    broken(A, D) :- fit(_, A, D), ex_in(E, _, _), !fit(E, A, D).
+    scope(E) :- ex_in(E, _, _).
 
     .decl propose(d: number)
-    propose(D) :- fit(_, A, D), !broken(A, D).
+    propose(D) :- uniform(_, D).
 }
 
 // The least positive shift under which every input repeats along an
 // axis, where both cells exist.
-.comp Period {
+.comp Period : Uniform<Axis, number> {
     .init dims = PairDims
 
     .decl mismatch(e: Example, a: Axis, k: number)
@@ -293,17 +274,11 @@
     mismatch(E, AXIS_V, T2 - T1) :-
         dims.in_at(E, T1, L, C1), dims.in_at(E, T2, L, C2), C1 != C2, T2 > T1.
 
-    .decl ok(e: Example, a: Axis, k: number)
-    ok(E, A, K) :- dims.in_dim(E, A, Dim), K = range(1, Dim), !mismatch(E, A, K).
-
-    .decl broken(a: Axis, k: number)
-    broken(A, K) :- ok(_, A, K), ex_in(E, _, _), !ok(E, A, K).
-
-    .decl all_ok(a: Axis, k: number)
-    all_ok(A, K) :- ok(_, A, K), !broken(A, K).
+    holds(E, A, K) :- dims.in_dim(E, A, Dim), K = range(1, Dim), !mismatch(E, A, K).
+    scope(E) :- ex_in(E, _, _).
 
     .decl propose(k: number)
-    propose(K) :- all_ok(A, K), K = min K2 : { all_ok(A, K2) }.
+    propose(K) :- uniform(A, K), K = min K2 : { uniform(A, K2) }.
 }
 
 // Lattice fits whose separator lines are witnessed: (n, d, g) with
@@ -330,100 +305,74 @@
 }
 
 // Segment counts of a witnessed separator lattice on every input.
-.comp SepTileCount {
+.comp SepTileCount : Uniform<Axis, number> {
     .init sep = SepFits
-
-    .decl holds(e: Example, a: Axis, n: number)
     holds(E, A, N) :- sep.fits(E, A, N, _, _).
-
-    .decl broken(a: Axis, n: number)
-    broken(A, N) :- holds(_, A, N), ex_in(E, _, _), !holds(E, A, N).
+    scope(E) :- ex_in(E, _, _).
 
     .decl propose(n: number)
-    propose(N) :- holds(_, A, N), !broken(A, N).
+    propose(N) :- uniform(_, N).
 }
 
 // Segment counts of a witnessed separator lattice on every input, tagged
 // by axis. An axis with no lattice beside a witnessed one counts 1.
-.comp SepTileCountAxis {
+.comp SepTileCountAxis : Uniform<Axis, number> {
     .init sep = SepFits
-
-    .decl holds(e: Example, a: Axis, n: number)
     holds(E, A, N) :- sep.fits(E, A, N, _, _).
-
-    .decl broken(a: Axis, n: number)
-    broken(A, N) :- holds(_, A, N), ex_in(E, _, _), !holds(E, A, N).
+    scope(E) :- ex_in(E, _, _).
 
     .decl propose(a: Axis, n: number)
-    propose(A, N) :- holds(_, A, N), !broken(A, N).
+    propose(A, N) :- uniform(A, N).
     propose(A2, 1) :- propose(A, _), perp(A, A2), !holds(_, A2, _).
 }
 
 // Segment dims of a witnessed separator lattice on every input.
-.comp SepTileDim {
+.comp SepTileDim : Uniform<Axis, number> {
     .init sep = SepFits
-
-    .decl holds(e: Example, a: Axis, d: number)
     holds(E, A, D) :- sep.fits(E, A, _, D, _).
-
-    .decl broken(a: Axis, d: number)
-    broken(A, D) :- holds(_, A, D), ex_in(E, _, _), !holds(E, A, D).
+    scope(E) :- ex_in(E, _, _).
 
     .decl propose(d: number)
-    propose(D) :- holds(_, A, D), !broken(A, D).
+    propose(D) :- uniform(_, D).
 }
 
 // Separator thicknesses of a witnessed lattice on every input.
-.comp SepThickness {
+.comp SepThickness : Uniform<Axis, number> {
     .init sep = SepFits
-
-    .decl holds(e: Example, a: Axis, g: number)
     holds(E, A, G) :- sep.fits(E, A, _, _, G).
-
-    .decl broken(a: Axis, g: number)
-    broken(A, G) :- holds(_, A, G), ex_in(E, _, _), !holds(E, A, G).
+    scope(E) :- ex_in(E, _, _).
 
     .decl propose(g: number)
-    propose(G) :- holds(_, A, G), !broken(A, G).
+    propose(G) :- uniform(_, G).
 }
 
 // Colors ranked by input cell count, uniform across examples. Rank 0 is
 // the rarest; ties share a rank.
-.comp CountRankAsc {
-    .decl color_count(e: Example, c: Color, n: number)
-    color_count(E, C, N) :- ex_in(E, _, C), N = count : { ex_in(E, _, C) }.
-
-    .decl pair_rank(e: Example, c: Color, r: number)
-    pair_rank(E, C, R) :- color_count(E, C, N),
-        R = count : { color_count(E, C2, N2), N2 < N, C2 != C }.
-
-    .decl broken(c: Color, r: number)
-    broken(C, R) :- pair_rank(_, C, R), ex_in(E, _, _), !pair_rank(E, C, R).
+.comp CountRankAsc : Uniform<Color, number> {
+    .init counts = ColorCounts
+    holds(E, C, R) :- counts.color_count(E, C, N),
+        R = count : { counts.color_count(E, C2, N2), N2 < N, C2 != C }.
+    scope(E) :- ex_in(E, _, _).
 
     .decl propose(c: Color, r: number)
-    propose(C, R) :- pair_rank(_, C, R), !broken(C, R).
+    propose(C, R) :- uniform(C, R).
 }
 
 // Colors ranked by input cell count, uniform across examples. Rank 0 is
 // the commonest; ties share a rank.
-.comp CountRankDesc {
-    .decl color_count(e: Example, c: Color, n: number)
-    color_count(E, C, N) :- ex_in(E, _, C), N = count : { ex_in(E, _, C) }.
-
-    .decl pair_rank(e: Example, c: Color, r: number)
-    pair_rank(E, C, R) :- color_count(E, C, N),
-        R = count : { color_count(E, C2, N2), N2 > N, C2 != C }.
-
-    .decl broken(c: Color, r: number)
-    broken(C, R) :- pair_rank(_, C, R), ex_in(E, _, _), !pair_rank(E, C, R).
+.comp CountRankDesc : Uniform<Color, number> {
+    .init counts = ColorCounts
+    holds(E, C, R) :- counts.color_count(E, C, N),
+        R = count : { counts.color_count(E, C2, N2), N2 > N, C2 != C }.
+    scope(E) :- ex_in(E, _, _).
 
     .decl propose(c: Color, r: number)
-    propose(C, R) :- pair_rank(_, C, R), !broken(C, R).
+    propose(C, R) :- uniform(C, R).
 }
 
 // The D4 seating each output tile from the whole input, for outputs that
 // are an arrangement of transformed input copies.
-.comp TileD4 {
+.comp TileD4 : Uniform<Position, D4> {
     .init dims = PairDims
 
     .decl swaps(t: D4)
@@ -451,14 +400,11 @@
     mismatch(E, Pt, T) :- ex_in(E, P, C), shape_ok(E, T), apply(T, P, Pi),
         tile_cell(E, Pt, Pi, C2), C != C2.
 
-    .decl cand(e: Example, pt: Position, t: D4)
-    cand(E, Pt, T) :- tile_cell(E, Pt, _, _), shape_ok(E, T), !mismatch(E, Pt, T).
-
-    .decl broken(pt: Position, t: D4)
-    broken(Pt, T) :- cand(_, Pt, T), ex_out(E, _, _), !cand(E, Pt, T).
+    holds(E, Pt, T) :- tile_cell(E, Pt, _, _), shape_ok(E, T), !mismatch(E, Pt, T).
+    scope(E) :- ex_out(E, _, _).
 
     .decl propose(pt: Position, t: D4)
-    propose(Pt, T) :- cand(_, Pt, T), !broken(Pt, T).
+    propose(Pt, T) :- uniform(Pt, T).
 }
 
 // The 2-panel combine table: input splits into two panels along an axis,
