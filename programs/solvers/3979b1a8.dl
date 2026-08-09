@@ -93,25 +93,25 @@ out(P, Col, Ch) :-
         diag_dir_elem(Diag), corner_anchor(Diag, P_in, P_grid).
 
     // A corner seating some input cell on a different color.
-    .decl anchor_broken(diag: DiagDir)
-    anchor_broken(Diag) :-
+    .decl anchor_mismatch(diag: DiagDir)
+    anchor_mismatch(Diag) :-
         anchored(E, Diag, P_in, P_grid),
         ex_in(E, P_in, Col), !ex_out(E, P_grid, Col).
 
     .decl anchor(d: DiagDir)
-    anchor(Diag) :- diag_dir_elem(Diag), !anchor_broken(Diag).
+    anchor(Diag) :- diag_dir_elem(Diag), !anchor_mismatch(Diag).
 
     // The output region the input covers.
     .decl in_region(e: Example, p_grid: Position)
     in_region(E, P_grid) :- anchor(Diag), anchored(E, Diag, _, P_grid).
 
     // A corner the input reaches an edge of.
-    .decl growth_broken(diag: DiagDir)
-    growth_broken(Diag) :- in_region(_, P), dir_of(Diag, _, D), dist(P, D, 0).
+    .decl growth_mismatch(diag: DiagDir)
+    growth_mismatch(Diag) :- in_region(_, P), dir_of(Diag, _, D), dist(P, D, 0).
 
     // The frame grows toward the corner the input stays clear of.
     .decl growth(d: DiagDir)
-    growth(Diag) :- diag_dir_elem(Diag), !growth_broken(Diag).
+    growth(Diag) :- diag_dir_elem(Diag), !growth_mismatch(Diag).
 
     .decl diag_cell(e: Example, p: Position)
     diag_cell(E, P) :- ex_out(E, P, _), growth(Diag), diag_dist(P, Diag, _, K, K).
@@ -123,26 +123,26 @@ out(P, Col, Ch) :-
         growth(Diag), diag_opposite(Diag, Back), diag_jump_delta(Back, N, Delta).
 
     // A period whose continued cell and its source disagree.
-    .decl broken(n: number)
-    broken(N) :-
+    .decl mismatch(n: number)
+    mismatch(N) :-
         cand(N, Delta), diag_cell(E, P), !in_region(E, P),   // continued diagonal cell
         compose(P, Delta, P2),                               // one period back
         ex_out(E, P, Col), ex_out(E, P2, C2), C2 != Col.
 
     .decl period(n: number)
-    period(N) :- cand(N, _), !broken(N).
+    period(N) :- cand(N, _), !mismatch(N).
 
     // Tiles of the scale arrangement.
     .init tiles = Frame2D<Unit>
     tiles.extent($U(), A, S) :- c.scale(S), axis_elem(A).
 
     // A tile placing some input cell on a different color.
-    .decl tile_broken(p_tile: Position)
-    tile_broken(P_tile) :-
+    .decl tile_mismatch(p_tile: Position)
+    tile_mismatch(P_tile) :-
         tiles.cell($U(), P_tile),
         ex_in(E, P_in, Col), ex_out(E, _, _),
         concat_2d(P_tile, P_in, 0, P_grid), !ex_out(E, P_grid, Col).
 
     .decl in_tile(p_tile: Position)
-    in_tile(P_tile) :- tiles.cell($U(), P_tile), !tile_broken(P_tile).
+    in_tile(P_tile) :- tiles.cell($U(), P_tile), !tile_mismatch(P_tile).
 }

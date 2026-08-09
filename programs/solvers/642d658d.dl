@@ -44,12 +44,12 @@ arm(P, D, Col) :-
     step_delta(D, S), compose(P, S, P2), in(P2, Col).
 
 // Some dir lacks a Col arm — a differing or missing neighbor.
-.decl broken(p: Position, col: Color)
-broken(P, Col) :- arm(P, _, Col), dir_elem(D), !arm(P, D, Col).
+.decl mismatch(p: Position, col: Color)
+mismatch(P, Col) :- arm(P, _, Col), dir_elem(D), !arm(P, D, Col).
 
 // P's four neighbors all exist and share color Col.
 .decl ring(p: Position, col: Color)
-ring(P, Col) :- arm(P, _, Col), !broken(P, Col).
+ring(P, Col) :- arm(P, _, Col), !mismatch(P, Col).
 
 // --- $Halo bg: the pair's dominant color ---
 .init grid_bg = Mode<Unit, Color, Position>
@@ -69,10 +69,10 @@ fp_arm(P, D, Col) :-
     in(P, Cc), c.center(Cc),                          // candidate anchor cell
     fp.inner($U(), D), compose(P, D, P2), in(P2, Col).
 
-.decl fp_broken(p: Position, col: Color)
-fp_broken(P, Col) :- fp_arm(P, _, Col), fp.inner($U(), D), !fp_arm(P, D, Col).
+.decl fp_mismatch(p: Position, col: Color)
+fp_mismatch(P, Col) :- fp_arm(P, _, Col), fp.inner($U(), D), !fp_arm(P, D, Col).
 
-plus($Footprint(), P, Col) :- fp_arm(P, _, Col), !fp_broken(P, Col).
+plus($Footprint(), P, Col) :- fp_arm(P, _, Col), !fp_mismatch(P, Col).
 
 .init plus_count = Mode<Detect, Color, Position>
 plus_count.item(Dt, Col, P) :- plus(Dt, P, Col).

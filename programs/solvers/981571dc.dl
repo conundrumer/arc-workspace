@@ -58,8 +58,8 @@ out(P, Col) :-
         compose(Delta, Delta, Twice), compose(P1, Twice, Q).
 
     // A candidate whose mirror carries some cell onto a different color.
-    .decl mirror_broken(a: Axis, delta: Shift)
-    mirror_broken(A, Delta) :-
+    .decl mirror_mismatch(a: Axis, delta: Shift)
+    mirror_mismatch(A, Delta) :-
         mirrored(E, A, Delta, P, Q),
         ex_out(E, P, Col), ex_out(E, Q, C2), C2 != Col.
 
@@ -69,7 +69,7 @@ out(P, Col) :-
     mirror_pairs(A, Delta) :- mirrored(E, A, Delta, _, Q), ex_out(E, Q, _).
 
     .decl axis_center(a: Axis, delta: Shift)
-    axis_center(A, Delta) :- mirror_pairs(A, Delta), !mirror_broken(A, Delta).
+    axis_center(A, Delta) :- mirror_pairs(A, Delta), !mirror_mismatch(A, Delta).
 
     // The symmetry center: the mirror line of each axis, crossed.
     .decl center(a: Shift)
@@ -83,13 +83,13 @@ out(P, Col) :-
     view.cell([E, P], P)  :- ex_out(E, P, _).
 
     // A transform carrying some cell onto a different color.
-    .decl sym_broken(d: D4)
-    sym_broken(D) :-
+    .decl sym_mismatch(d: D4)
+    sym_mismatch(D) :-
         d4_elem(D), center(A),
         view.inner([E, P], P0),                        // cell in the center frame
         apply(D, P0, Q0), compose(Q0, A, Q),           // its image, back in the grid
         ex_out(E, P, Col), ex_out(E, Q, C2), C2 != Col.
 
     .decl sym(d: D4)
-    sym(D) :- d4_elem(D), !sym_broken(D).
+    sym(D) :- d4_elem(D), !sym_mismatch(D).
 }

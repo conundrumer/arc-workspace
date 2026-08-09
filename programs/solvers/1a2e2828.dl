@@ -16,8 +16,8 @@
 line_color(A, P_across, Col) :- in(P, Col), axis_elem(A), split(P, A, _, P_across).
 
 // The line shows more than one color.
-.decl broken(a: Axis, p_across: Position)
-broken(A, P_across) :- line_color(A, P_across, C1), line_color(A, P_across, C2), C1 != C2.
+.decl mismatch(a: Axis, p_across: Position)
+mismatch(A, P_across) :- line_color(A, P_across, C1), line_color(A, P_across, C2), C1 != C2.
 
 .decl out(p: Position, col: Color)
-out(ORIGIN, Col) :- line_color(A, P_across, Col), !broken(A, P_across).
+out(ORIGIN, Col) :- line_color(A, P_across, Col), !mismatch(A, P_across).

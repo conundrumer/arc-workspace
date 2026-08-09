@@ -109,11 +109,11 @@ out(P, Col, $Base()) :-
         ex_out(E, P, Col).
 
     // A base panel: no both-ink cell's output contradicts its ink.
-    .decl broken(p_panel: Position)
-    broken(Pb) :-
+    .decl mismatch(p_panel: Position)
+    mismatch(Pb) :-
         parse.ink(E, Pb, P, Col), parse.ink(E, Pp2, P, _), Pp2 != Pb,
         ex_out(E, P, Col2), Col2 != Col.
 
     .decl base_panel(p_panel: Position)
-    base_panel(Pb) :- parse.cell(E, Pb, _, _), ex_out(E, _, _), !broken(Pb).
+    base_panel(Pb) :- parse.cell(E, Pb, _, _), ex_out(E, _, _), !mismatch(Pb).
 }

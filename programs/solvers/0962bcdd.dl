@@ -57,12 +57,12 @@
         grid(Ky, Q, Col), !c.bg(Col).                // holds a non-bg color
 
     // Some direction lacks the same arm color.
-    .decl broken(key: Key, p: Position, col: Color)
-    broken(Ky, P, Col) :- arm(Ky, P, _, Col), dir_elem(D), !arm(Ky, P, D, Col).
+    .decl mismatch(key: Key, p: Position, col: Color)
+    mismatch(Ky, P, Col) :- arm(Ky, P, _, Col), dir_elem(D), !arm(Ky, P, D, Col).
 
     // Plus center with its center and arm colors.
     .decl marker(key: Key, p: Position, c_center: Color, c_arm: Color)
-    marker(Ky, P, Cc, Ca) :- grid(Ky, P, Cc), arm(Ky, P, _, Ca), !broken(Ky, P, Ca).
+    marker(Ky, P, Cc, Ca) :- grid(Ky, P, Cc), arm(Ky, P, _, Ca), !mismatch(Ky, P, Ca).
 }
 
 .init parse = Parse<Unit>

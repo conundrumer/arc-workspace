@@ -136,13 +136,13 @@ out(P, Col, Ch) :- frame.cell(Ch, P), !seated(P, _, Ch), c.filler(Col).
 
     // A displacement carrying some cell of its slab off the output or onto a
     // different color.
-    .decl broken(a: Axis, p_tile: Position, delta: Inset)
-    broken(A, P_tile, Delta) :-
+    .decl mismatch(a: Axis, p_tile: Position, delta: Inset)
+    mismatch(A, P_tile, Delta) :-
         cand(A, P_tile, Delta), slab_cell(E, A, P_tile, P, Col),
         compose(P, Delta, P_out), !ex_out(E, P_out, Col).
 
     .decl slab_disp(a: Axis, p_tile: Position, delta: Inset)
-    slab_disp(A, P_tile, Delta) :- cand(A, P_tile, Delta), !broken(A, P_tile, Delta).
+    slab_disp(A, P_tile, Delta) :- cand(A, P_tile, Delta), !mismatch(A, P_tile, Delta).
 
     // A candidate axis with a slab that no displacement places.
     .decl axis_broken(a: Axis)

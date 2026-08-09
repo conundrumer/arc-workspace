@@ -31,8 +31,8 @@ out(P, Col, $Full()) :-
 // --- $Detect ---
 
 // D maps some clean cell to a clean cell of a different color.
-.decl broken(d: D4)
-broken(D) :-
+.decl mismatch(d: D4)
+mismatch(D) :-
     d4_elem(D),
     clean(P, Col), apply(D, P, P2),
     clean(P2, C2), Col != C2.
@@ -40,5 +40,5 @@ broken(D) :-
 out(P, Col, $Detect()) :- clean(P, Col).
 out(P, Col, $Detect()) :-
     in(P, N), c.noise(N),                       // corrupted cell
-    d4_elem(D), !broken(D), apply(D, P, P2),    // unbroken-symmetry image
+    d4_elem(D), !mismatch(D), apply(D, P, P2),    // unbroken-symmetry image
     clean(P2, Col).

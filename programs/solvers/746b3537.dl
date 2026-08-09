@@ -13,15 +13,15 @@
 .init c = Consts
 
 // A line along axis a shows two colors.
-.decl broken(a: Axis)
-broken(A) :-
+.decl mismatch(a: Axis)
+mismatch(A) :-
     axis_elem(A),
     in(P, Col), in(P2, Col2), Col != Col2,                // two colors
     split(P, A, _, P_across), split(P2, A, _, P_across).  // one line
 
 // The color sequence runs across the axis whose lines are uniform.
 .decl seq_axis(a: Axis)
-seq_axis(A_seq) :- perp(A, A_seq), !broken(A).
+seq_axis(A_seq) :- perp(A, A_seq), !mismatch(A).
 
 // A run's first stripe toward edge d: the neighbor toward d is off-grid
 // or a different color. col is the run's color.

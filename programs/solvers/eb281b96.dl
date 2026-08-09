@@ -98,9 +98,9 @@ out(P_grid, Col, $Unfold()) :-
         concat_slab(P_tile, P_intile, A, G, P_grid).    // recompose with passthrough
 
     // A transform that lands some cell of its tile off the output's color.
-    .decl broken(p_tile: Position, d: D4)
-    broken(P_tile, D) :- placed(E, P_tile, D, P_grid, Col), !ex_out(E, P_grid, Col).
+    .decl mismatch(p_tile: Position, d: D4)
+    mismatch(P_tile, D) :- placed(E, P_tile, D, P_grid, Col), !ex_out(E, P_grid, Col).
 
     .decl tile(p: Position, d: D4)
-    tile(P_tile, D) :- arr.cell($U(), _, P_tile), axial(D), !broken(P_tile, D).
+    tile(P_tile, D) :- arr.cell($U(), _, P_tile), axial(D), !mismatch(P_tile, D).
 }

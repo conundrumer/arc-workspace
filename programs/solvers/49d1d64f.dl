@@ -41,11 +41,11 @@ out(P_corner, Col) :-
     .decl cand(p: Inset)
     cand(Delta) :- align.inner(_, Delta).
 
-    .decl broken(p: Inset)
-    broken(Delta) :-
+    .decl mismatch(p: Inset)
+    mismatch(Delta) :-
         cand(Delta), ex_out(E, _, _), ex_in(E, P_in, Col),
         compose(P_in, Delta, P_out), !ex_out(E, P_out, Col).
 
     .decl seat_delta(p: Inset)
-    seat_delta(Delta) :- cand(Delta), !broken(Delta).
+    seat_delta(Delta) :- cand(Delta), !mismatch(Delta).
 }

@@ -103,12 +103,12 @@ out(P_grid_out, Col, $Tile()) :-
         axis_dim(P_outer, A, N).            // tile count, off the arrangement's extent
 
     // A stamp that lands some ink cell off the output's color.
-    .decl stamp_broken(d: D4)
-    stamp_broken(D) :-
+    .decl stamp_mismatch(d: D4)
+    stamp_mismatch(D) :-
         ink(E, P, Col), d4_elem(D), apply(D, P, P_img), !ex_out(E, P_img, Col).
 
     .decl stamps(d: D4)
-    stamps(D) :- d4_elem(D), !stamp_broken(D).
+    stamps(D) :- d4_elem(D), !stamp_mismatch(D).
 
     // The data tile: the input tile at the data edge.
     .decl data_cell(e: Example, p_intile: Position, col: Color)
@@ -125,12 +125,12 @@ out(P_grid_out, Col, $Tile()) :-
         divide_slab(P_grid, A, N, 0, P_tile, P_intile).
 
     // A transform that lands some data cell off the output tile's color.
-    .decl tile_broken(p_tile: Position, d: D4)
-    tile_broken(P_tile, D) :-
+    .decl tile_mismatch(p_tile: Position, d: D4)
+    tile_mismatch(P_tile, D) :-
         data_cell(E, P_intile, Col), out_cell(E, P_tile, _, _),
         d4_elem(D), apply(D, P_intile, P_img),
         !out_cell(E, P_tile, P_img, Col).
 
     .decl tile_d4(p_tile: Position, d: D4)
-    tile_d4(P_tile, D) :- out_cell(_, P_tile, _, _), d4_elem(D), !tile_broken(P_tile, D).
+    tile_d4(P_tile, D) :- out_cell(_, P_tile, _, _), d4_elem(D), !tile_mismatch(P_tile, D).
 }

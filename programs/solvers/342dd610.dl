@@ -44,14 +44,14 @@ out(P, Col) :- in(P, _), !moved(P, _), c.bg(Col).
     .decl cand(c: Color, delta: Shift)
     cand(Col, Delta) :- ink(E, P_in, Col), align.inner([E, P_in], Delta).
 
-    .decl broken(c: Color, delta: Shift)
-    broken(Col, Delta) :-
+    .decl mismatch(c: Color, delta: Shift)
+    mismatch(Col, Delta) :-
         cand(Col, Delta), ex_out(E, _, _), ink(E, P_in, Col),   // ink cell of a train pair
         compose(P_in, Delta, P_out), !ex_out(E, P_out, Col).
 
     .decl move(c: Color, d: Dir, k: number)
     move(Col, D, K) :-
-        cand(Col, Delta), !broken(Col, Delta),
+        cand(Col, Delta), !mismatch(Col, Delta),
         dir_elem(D), dist_pair(Delta, D, K1, K), K1 < K,   // the delta leans toward edge d
         jump_delta(D, K, Delta).                           // by k cells
 }

@@ -179,12 +179,12 @@ out(P, Col, Ch) :- parse.minority_rank(Ch, Col, Rk), col.pos(Ch, Rk, P).
 
     // A dir whose opposite edge does not measure out the ranks: some output
     // cell sits at a distance other than its color's rank.
-    .decl rank_broken(d: Dir)
-    rank_broken(D) :-
+    .decl rank_mismatch(d: Dir)
+    rank_mismatch(D) :-
         dir_elem(D), opposite(D, O),
         ex_out(E, P, Col), parse.minority_rank(E, Col, R),
         dist(P, O, K), K != R.
 
     .decl rank_dir(d: Dir)
-    rank_dir(D) :- dir_elem(D), !rank_broken(D).
+    rank_dir(D) :- dir_elem(D), !rank_mismatch(D).
 }

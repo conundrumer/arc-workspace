@@ -36,8 +36,8 @@ out(P_out, Col, $Blocks(D)) :-
 
 .comp Fit {
     // A transform that lands some input cell off the output's color.
-    .decl broken(d: D4)
-    broken(D) :-
+    .decl mismatch(d: D4)
+    mismatch(D) :-
         ex_in(E, P_in, Col), ex_out(E, _, _),                       // cell of a train input
         c.block_size(K),
         divide_by_size_2d(P_in, K, 0, P_block_in, P_local),         // forward decompose
@@ -46,5 +46,5 @@ out(P_out, Col, $Blocks(D)) :-
         !ex_out(E, P_out, Col).
 
     .decl block_d4(d: D4)
-    block_d4(D) :- d4_elem(D), !broken(D).
+    block_d4(D) :- d4_elem(D), !mismatch(D).
 }

@@ -136,14 +136,14 @@ out(P, BG,  [Det, M]) :-
     out_dim(A, N) :- ex_out(_, P, _), axis_elem(A), axis_dim(P, A, N).
 
     // An edge the bar does not run from.
-    .decl broken_edge(d: Dir)
-    broken_edge(D) :-
+    .decl mismatch_edge(d: Dir)
+    mismatch_edge(D) :-
         dir_elem(D), bar_len.tally(E, N),
         ex_out(E, P, _), dist(P, D, K), K < N,   // cell within the bar's length
         !bar(E, P, _).                           // that the bar misses
 
     .decl bar_edge(d: Dir)
-    bar_edge(D) :- dir_elem(D), !broken_edge(D).
+    bar_edge(D) :- dir_elem(D), !mismatch_edge(D).
 
     // Input cells of the train pairs; the test input is held out.
     .decl train_in(e: Example, p: Position, col: Color)
@@ -171,12 +171,12 @@ out(P, BG,  [Det, M]) :-
     parse.shape([E, Col, K], P)   :- trial(E, Col, K), block_frame.cell(K, P).
 
     // A candidate whose count misses some bar's length.
-    .decl broken(col: Color, k: number)
-    broken(Col, K) :- parse.block_count([E, Col, K], N), bar_len.tally(E, M), N != M.
+    .decl mismatch(col: Color, k: number)
+    mismatch(Col, K) :- parse.block_count([E, Col, K], N), bar_len.tally(E, M), N != M.
 
     // The block the bars count.
     .decl block(col: Color, k: number)
-    block(Col, K) :- cand(Col, K), !broken(Col, K).
+    block(Col, K) :- cand(Col, K), !mismatch(Col, K).
 
     .decl block_color(c: Color)
     block_color(Col) :- block(Col, _).

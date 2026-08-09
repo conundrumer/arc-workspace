@@ -100,16 +100,16 @@ out(P, Bg, $Figure(Cv)) :- canvas(P, Cv), !figure_cell(P, Cv), c.bg(Bg).
     mark_cell(E, P) :- ex_out(E, P, Col), c.mark(Col).
 
     // A corner diagonal that is exactly the output's mark cells.
-    .decl broken(e: Example, dg: DiagDir)
-    broken(E, Dg) :-
+    .decl mismatch(e: Example, dg: DiagDir)
+    mismatch(E, Dg) :-
         diag_dir_elem(Dg), mark_cell(E, P),
         diag_dist(P, Dg, _, K1, K2), K1 != K2.
-    broken(E, Dg) :-
+    mismatch(E, Dg) :-
         diag_dir_elem(Dg), ex_out(E, P, _),
         diag_dist(P, Dg, _, K, K), !mark_cell(E, P).
 
     .decl fig_diag(n: number, da: DiagAxis)
     fig_diag(N, DA) :-
         parse.ncolors(E, N), ex_out(E, _, _),    // train pairs only
-        diag_dir_elem(Dg), !broken(E, Dg), diag_axis_of(Dg, DA).
+        diag_dir_elem(Dg), !mismatch(E, Dg), diag_axis_of(Dg, DA).
 }

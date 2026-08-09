@@ -105,12 +105,12 @@ out(P, Col, $Mask()) :- in(P, Col), !ray_mask(_, P, _).
     cand(W) :- ray_col(_, W, _), W != 0.
 
     // A period that folds two differing steps onto one slot.
-    .decl broken(w: number)
-    broken(W) :- cand(W), differ(I, I2), stride(I, W, 0, _, K), stride(I2, W, 0, _, K).
+    .decl mismatch(w: number)
+    mismatch(W) :- cand(W), differ(I, I2), stride(I, W, 0, _, K), stride(I2, W, 0, _, K).
 
     // The shortest period no ray breaks.
     .init unbroken = Extremes<Unit>
-    unbroken.cand($U(), W) :- cand(W), !broken(W).
+    unbroken.cand($U(), W) :- cand(W), !mismatch(W).
 
     .decl period(n: number)
     period(N) :- unbroken.low($U(), N).

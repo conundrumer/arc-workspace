@@ -113,13 +113,13 @@ out(P, Col, $Ink()) :- ink_at(P, Col), !ink_beaten(P, Col).
 
     // The primary axis decides alone: nearer the corner's edge on it wins,
     // whatever the across coordinate does.
-    .decl axis_broken(a: Axis)
-    axis_broken(A) :-
+    .decl axis_mismatch(a: Axis)
+    axis_mismatch(A) :-
         lex_corner(Diag), dir_of(Diag, A, D),
         beats(T, T2), dist(T, D, K), dist(T2, D, K2), K2 < K.
 
     .decl lex_axis(a: Axis)
-    lex_axis(A) :- axis_elem(A), !axis_broken(A).
+    lex_axis(A) :- axis_elem(A), !axis_mismatch(A).
 
     .init order = Order<Unit, Position>
     order.elem($U(), T) :- tile_ink(_, T, _, _).

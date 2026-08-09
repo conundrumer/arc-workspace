@@ -113,8 +113,8 @@ out(P_out, Col) :-
         apos(A, L2), compose(L2, M, L_img).         // back in-grid
 
     // The extension's mirror maps a clean pair to different colors...
-    .decl ext_broken(a: Axis, m: Inset)
-    ext_broken(A, M) :-
+    .decl ext_mismatch(a: Axis, m: Inset)
+    ext_mismatch(A, M) :-
         ext_map(A, M, L1, L2),
         cell_split(E, A, L1, X, C1),
         cell_split(E, A, L2, X, C2), C2 != C1.
@@ -129,7 +129,7 @@ out(P_out, Col) :-
     // Per axis, the witnessed unbroken extension; the margin composes the
     // two axes.
     .decl axis_ext(a: Axis, m: Inset)
-    axis_ext(A, M) :- ext_pair(A, M), !ext_broken(A, M).
+    axis_ext(A, M) :- ext_pair(A, M), !ext_mismatch(A, M).
 
     .decl mosaic_margin(p: Inset)
     mosaic_margin(M) :- axis_ext(A1, M1), perp(A1, A2), axis_ext(A2, M2), compose(M1, M2, M).
@@ -153,11 +153,11 @@ out(P_out, Col) :-
     .decl tposk(k: number, p: Position, p_tile: Position)
     tposk(K, Pm, T) :- mcell(_, Pm, _), kcand(K), divide_by_size_2d(Pm, K, 0, T, _).
 
-    .decl brokenk(k: number, p_tile: Position, d: D4)
-    brokenk(K, T, D) :- tposk(K, Pm, T), viol(Pm, D).
+    .decl mismatchk(k: number, p_tile: Position, d: D4)
+    mismatchk(K, T, D) :- tposk(K, Pm, T), viol(Pm, D).
 
     .decl symk(k: number, p_tile: Position, d: D4)
-    symk(K, T, D) :- tposk(K, _, T), d4_elem(D), !brokenk(K, T, D).
+    symk(K, T, D) :- tposk(K, _, T), d4_elem(D), !mismatchk(K, T, D).
 
     // Tile extent: the coarsest decomposition whose tile labels differ.
     .init nonuniform = Extremes<Unit>
