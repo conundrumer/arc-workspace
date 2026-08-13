@@ -70,11 +70,10 @@
 #define D4_DG 56
 #define D4_AD 57
 
-// Sense of a turn.
 #define SENSE_CW 60
 #define SENSE_CC 61
 
-// The ten subgroups of D4 — a symmetry group as a closed value. Order-2
+// The subgroups of D4 — a symmetry group as a closed value. Order-2
 // groups are named by their non-identity element; SYM_BOX is the
 // axis-aligned Klein group, SYM_X the diagonal one, SYM_C4 the rotations.
 #define SYM_1   70
@@ -185,7 +184,6 @@ axis_of(DIR_B, AXIS_V).
 axis_of(DIR_L, AXIS_H).
 axis_of(DIR_R, AXIS_H).
 
-// Diagonal axis of a corner.
 .decl diag_axis_of(d: DiagDir, da: DiagAxis)
 diag_axis_of(DIAG_TL, DAXIS_DG).
 diag_axis_of(DIAG_BR, DAXIS_DG).
@@ -217,7 +215,6 @@ diag_opposite(DIAG_BR, DIAG_TL).
 diag_opposite(DIAG_TR, DIAG_BL).
 diag_opposite(DIAG_BL, DIAG_TR).
 
-// Perpendicular Axis.
 .decl perp(a: Axis, a2: Axis)
 perp(AXIS_V, AXIS_H).
 perp(AXIS_H, AXIS_V).
@@ -244,7 +241,6 @@ turn(SENSE_CW, DIR_B, DIR_L).
 turn(SENSE_CW, DIR_L, DIR_T).
 turn(SENSE_CC, D2, D) :- turn(SENSE_CW, D, D2).
 
-// Distance from p to edge d.
 .decl dist(p: Position, d: Dir, k: number) inline
 dist(P, D, K) :- P = [T, B, L, R], K = @dist_proj(D, T, B, L, R).
 
@@ -345,8 +341,7 @@ divide(P, A, N, G, P_outer, P_inner) :-
     divide_by_size(P, A, K, G, P_outer, P_inner).
 
 // Like divide, but parameterized by tile size k instead of tile count n.
-// Tile count is recovered from p's axis-a extent: n = (extent + gap) /
-// (k + gap).
+// Tile count is recovered from p's axis-a extent.
 // Asserts: gap-adjusted extent is a multiple of (k + gap).
 .decl divide_by_size(p: Position, a: Axis, k: number, gap: number,
                      p_outer: Position, p_inner: Position) inline
@@ -406,7 +401,6 @@ concat(P_outer, P_inner, A, G, P_grid) :-
 
 // Anchors only work on grounded positions.
 
-// Same dist-to-edge D for two positions.
 .decl same_dist(d: Dir, p1: Position, p2: Position) inline
 same_dist(D, P1, P2) :- dist(P1, D, K), dist(P2, D, K).
 
@@ -466,8 +460,8 @@ concat_slab(P_outer, P_inner, A, G, P_grid) :-
     compose(P_along, Across, P_grid).
 
 // 2D concat on both axes — the inverse of divide_2d and divide_by_size_2d,
-// over the same p_outer and p_inner. One gap on both axes; p_grid is the
-// recomposed full 2D position.
+// over the same p_outer and p_inner. p_grid is the recomposed full 2D
+// position.
 .decl concat_2d(p_outer: Position, p_inner: Position, gap: number,
                 p_grid: Position) inline
 concat_2d(P_outer, P_inner, G, P_grid) :-
@@ -640,14 +634,13 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
         R = count : { idx_set(Ky, K2), K2 > K }.
 }
 
-// Negative-free difference of two keyed member counts: excess(key, n) is the
-// amount by which the `plus` set outnumbers the `minus` set, with no tuple at a
-// tie or deficit, so no negative number crosses the interface. Bodies consume
-// the count by comparison.
+// Negative-free difference of two keyed member counts: no tuple at a tie or
+// deficit, so no negative number crosses the interface.
 .comp Excess<Key, Member> {
     .decl plus(key: Key, m: Member)
     .decl minus(key: Key, m: Member)
 
+    // The amount by which the plus set outnumbers the minus set.
     .decl excess(key: Key, n: number)
     excess(Ky, N) :-
         plus(Ky, _),
@@ -695,10 +688,12 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     low(Ky, V, S) <= low(Ky, _, S2) :- S > S2.
 }
 
-// The cardinality of each key's member set. `domain` makes the count
-// total: a domain key with no items counts 0.
+// The cardinality of each key's member set.
 .comp Tally<Key, Member> {
     .decl item(key: Key, m: Member)
+
+    // The keys to count over — feeding it makes the count total, so a key
+    // with no items counts 0.
     .decl domain(key: Key)
 
     .decl tally(key: Key, n: number)
@@ -768,8 +763,8 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     id(A, as(ord(B), Ident)) :- rep(A, B).
 }
 
-// Lexicographic order over a keyed cell set — the geometric special case of
-// Order. Reading order is the top-left, V-primary member.
+// Lexicographic order over a keyed cell set. Reading order is the top-left,
+// V-primary member.
 .comp LexOrder<Key> {
     // The corner the order runs from — the instance's parameter, unkeyed.
     .decl corner(d: DiagDir)
@@ -900,8 +895,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
         axis_of(D, A), sub_extent(P, A, K),
         jump_delta(D, K, Delta).
 
-    // Where a candidate carries each cell's value; materialized to keep
-    // the disagreement test an indexed join.
+    // Where a candidate carries each cell's value.
     .decl shifted(key: Key, a: Axis, k: number, p: Position, v: Val)
     shifted(Ky, A, K, P2, V) :-
         cell(Ky, P, V), cand(Ky, A, K, Delta), compose(P, Delta, P2).
@@ -965,7 +959,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     // The set the box bounds, per key.
     .decl cell(key: Key, p: Position)
 
-    // The grid the box sits in, per key — read by `inside` alone.
+    // The grid the box sits in, per key.
     .decl grid(key: Key, p: Position)
 
     .decl cell_dist(key: Key, d: Dir, k: number)

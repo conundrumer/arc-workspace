@@ -11,7 +11,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from dl.dlparse import Comp, Decl, Define, Init, Item, Rule, TypeDecl, parse
+from dl.dlparse import (Comp, Decl, Define, Functor, Init, Item, Rule,
+                        TypeDecl, parse)
 from dl.paths import PROGRAMS_DIR, REPO_ROOT
 
 DOCS_DIR = REPO_ROOT / "docs" / "wf-solver"
@@ -36,8 +37,8 @@ LIB_PREAMBLE = """\
 
 
 def lib_signatures(text: str) -> str:
-    """lib.dl as its interface: comments, types, macros, .decl signatures,
-    component structure, and the default fills components carry.
+    """lib.dl as its interface: comments, types, macros, .functor and .decl
+    signatures, component structure, and the default fills components carry.
 
     A `.decl` directly followed by rules or facts derives; one followed by
     a boundary — blank line, comment, the next declaration — is marked
@@ -53,7 +54,7 @@ def lib_signatures(text: str) -> str:
 
     def walk(items: list[Item], in_comp: bool) -> None:
         for it in items:
-            if isinstance(it, (Define, TypeDecl, Init)):
+            if isinstance(it, (Define, Functor, TypeDecl, Init)):
                 keep.add(it.line)
             elif isinstance(it, Decl):
                 keep.update(range(it.line, it.end_line + 1))
