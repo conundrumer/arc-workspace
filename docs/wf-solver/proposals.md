@@ -86,6 +86,47 @@ The divide peers of `Frame2D`: per-axis parameters as axis-tagged rows, per-axis
 
 **Proposer tie-in.** The `TileD4` proposer decomposes gaplessly and reads `empty` on separator arrangements (8e5a5113); rebuilt on this decomposition plus `D4Map`, it would cover them.
 
+## `DividerFrame<Key>` — nonuniform tiles from divider lines
+
+The tile arrangement a divider set induces — the divider-driven cell of the decomposition matrix, beside dim-driven `Tile2D`/`Divide2D` and the uniform `divide` family, which all need equal tiles. A cell's tile position holds, toward each edge, the count of dividers between the cell and that edge — `OrderFrame.pos`'s construction, applied to cells counting dividers. The wide two-dir form keeps the part frame consistent with no arithmetic and no stored part count; divider cells get no tile; an axis with no dividers is one part. `divider` takes axis-tagged divider lines, as detection output or stored data. Exposes `part_of` (axis-only part) and `tile_of` (parts perp-glued); a within-tile position is a `Reframe` from the tile's box when a site needs it. Lib target: body comp beside `OrderFrame`.
+
+```
+.comp DividerFrame<Key> {
+    .decl cell(key: Key, p: Position)              // input
+    .decl divider(key: Key, a: Axis, l: Position)  // input
+
+    // Divider distances, materialized for the counts below.
+    .decl div_dist(key: Key, a: Axis, d: Dir, k: number)
+    div_dist(K, A, D, K1) :- divider(K, A, L), axis_of(D, A), dist(L, D, K1).
+
+    // p's line on axis a holds a divider.
+    .decl on_divider(key: Key, p: Position, a: Axis)
+    on_divider(K, P, A) :- cell(K, P), div_dist(K, A, D, K1), dist(P, D, K1).
+
+    // p's tile index from edge d — the dividers between p and edge d.
+    .decl part_idx(key: Key, p: Position, d: Dir, n: number)
+    part_idx(K, P, D, N) :-
+        cell(K, P), axis_of(D, A), !on_divider(K, P, A), dist(P, D, K1),
+        N = count : { div_dist(K, A, D, K2), K2 < K1 }.
+
+    // The part of axis a that p sits in, as an axis-only position: p's
+    // tile index from each edge of the axis.
+    .decl part_of(key: Key, p: Position, a: Axis, p_part: Position)
+    part_of(K, P, A, P_part) :-
+        axis_of(D, A), opposite(D, D2),
+        part_idx(K, P, D, N1), part_idx(K, P, D2, N2),
+        edge_delta(D, N1, Q1), edge_delta(D2, N2, Q2), compose(Q1, Q2, P_part).
+
+    // P's tile, parts on both axes glued.
+    .decl tile_of(key: Key, p: Position, p_tile: Position)
+    tile_of(K, P, P_tile) :-
+        part_of(K, P, A, P1), perp(A, A2), part_of(K, P, A2, P2),
+        compose(P1, P2, P_tile).
+}
+```
+
+**Task-local home (protocol step 1).** 0bb8deee (`DividerFrame` comp): the cross's four quadrants, one instance in `Parse<Key>` serving the body (Unit) and the Fit (Example).
+
 ## `KeyedSetCompare` extensions — set-relationship lattice
 
 `KeyedSetCompare<Key, Pat, Member>` (in `lib.dl`) exposes `covers` / `equals` / `pattern_size`. These extensions derive from the same three counts it already computes (`|pattern|`, `|observed|`, `overlap`). Add one when a real task needs it, not preemptively (lib-addition protocol):
@@ -113,29 +154,6 @@ rev(Ky, K, K2) :- rank(Ky, K, R), rank_desc(Ky, K2, R).
 Home: `Ordinal` — it owns `idx_set`; a readout beside `rank` and `rank_desc`.
 
 **Task-local home (protocol step 1).** `rev` — 85c4e7cd reverses its ring colors: `rev` over ring indices pairs ring K with the ring as deep from the center as K is from the border.
-
-## `OrderFrame<Key>` — the frame a sparse position set induces
-
-The order-canonical peer of `AxisFrame`. `AxisFrame` realizes a frame from its extent; `OrderFrame` realizes the dense frame that a sparse set of axis-only positions induces, with each member's position in it. `pos` is Position-valued and privileges no end: the directed/undirected split of `DirFrame`/`AxisFrame`, applied to order. Members order by comparing their coordinate. A member's distance toward each edge is the count of nearer members, so numbers stay inside `nearer`'s defining comparison. The comp is parallel to `Ordinal`, not built on it: `Ordinal` is the directed, number-valued readout of an index set; `OrderFrame` is the undirected, Position-valued readout of a member set. `axis` is the instance's parameter.
-
-```
-.comp OrderFrame<Key> {
-    .decl axis(a: Axis)
-    .decl cell(key: Key, p: Position)
-
-    // Member p strictly nearer edge d than member q.
-    .decl nearer(key: Key, d: Dir, p: Position, q: Position)
-    nearer(Ky, D, P, Q) :-
-        cell(Ky, P), cell(Ky, Q),
-        axis(A), axis_of(D, A),
-        dist(P, D, K1), dist(Q, D, K2), K1 < K2.
-
-    // Position in the induced frame.
-    .decl pos(key: Key, p: Position, p_pos: Position)
-}
-```
-
-**Task-local home (protocol step 1).** 505fff84: extraction placement — contributing rows keyed by Choice. (Its segments shift via Bbox + color-keyed Reframe instead: they are intervals, so their order frame is a translation, and the tighter unit was chosen.)
 
 ## `diag_edge_delta` — edge delta at a corner
 
@@ -180,7 +198,7 @@ comp): $Tile's swept tiling.
 
 Discrimination sits in the functor layer, so no calling rule multiplies IR paths — the cost the two-clause `dir8_*` form carries.
 
-Bounds: `dist` / `diag_dist` and the unequal-k `diag_edge_delta` differ in arity across the branches and stay per-branch; `Ray` / `DiagRay` collapse only at the cost of a length domain. `turn` widens the same way — rotation carries corners to corners — but has no site.
+Bounds: `dist` / `diag_dist` and the unequal-k `diag_edge_delta` differ in arity across the branches and stay per-branch. `turn` widens the same way — rotation carries corners to corners — but has no site.
 
 Caveat: Souffle's union typing is static, with no runtime filtering, so a caller that grounds its direction from the widened `opposite` instead of feeding one in enumerates eight rows. Implementation sweeps `opposite`'s callers for unbound-d use.
 
@@ -267,53 +285,82 @@ ordered string fold, or a tooling convention for set-valued functor inputs.
 
 **Motivating site.** b1fc8b8e: a $Partition detect case beside $Shape.
 
-## `Sym` — D4 subgroups as a value type
+## `Wallpaper<Key, Val>` — lattice-quotiented isometry detection
 
-D4 has exactly ten subgroups, so a symmetry group is a closed value like a
-`Dir` or a `D4` element, not an open set. The type names the ten;
-`sym_member` fixes each one's elements as lib data; `sym_elem` enumerates
-them for universals. A stored group is then one value in a fact or GRID
-cell, and fill validity is structural: only the ten have names. Lib
-target: type beside `D4`, constants in a fresh range, both relations
-beside `d4_elem`.
+The isometry peer of `ShiftInvariance`: which isometries of the frame — a
+D4 element composed with a shift — fix a keyed valued cell set, given the
+set's per-axis periods. Candidates are quotiented by the translation
+lattice: one representative per coset, its shift drawn from the lattice's
+fundamental domain, and square-checked against the lattice where the kind
+squares to the identity (a symmetry's square is a translation, and the
+group's translations are the lattice). Lib target: body comp beside
+`ShiftInvariance`; `Gen` moves beside it.
 
 ```
-.type Sym <: number
+.type Gen = [d: D4, delta: Shift]
 
-#define SYM_1   70
-#define SYM_LR  71
-#define SYM_TB  72
-#define SYM_HT  73
-#define SYM_DG  74
-#define SYM_AD  75
-#define SYM_BOX 76
-#define SYM_X   77
-#define SYM_C4  78
-#define SYM_D4  79
+.comp Wallpaper<Key, Val> {
+    .decl kind(d: D4)                           // input
+    .decl cell(key: Key, p: Position, v: Val)   // input
+    .decl grid(key: Key, p: Position)           // input
+    .decl period(key: Key, a: Axis, k: number)  // input
 
-.decl sym_elem(s: Sym)
-.decl sym_member(s: Sym, d: D4)
+    // Witnessed, uncontradicted coset representatives.
+    .decl sym(key: Key, g: Gen)
+
+    // Kinds with an admitted representative; the identity kind whenever a
+    // lattice exists. A Sym-naming Fit reads this.
+    .decl kind_used(key: Key, d: D4)
+
+    // One step along an admitted isometry or a lattice shift, over the
+    // full grid — the map an orbit closure walks.
+    .decl step(key: Key, p: Position, q: Position)
+}
 ```
 
-- Order-2 groups are named by their non-identity element. `SYM_BOX` is
-  the axis-aligned Klein group, `SYM_X` the diagonal one, `SYM_C4` the
-  rotations; these three names are open.
-- Under grid relabeling, values conjugate the way directions rotate: a
-  mirrored sibling edits `SYM_LR` to `SYM_TB`; `SYM_BOX`, `SYM_X`,
-  `SYM_C4`, `SYM_D4` are normal subgroups and stay fixed.
-- `c4_elem` is the `SYM_C4` rows and can become
-  `c4_elem(D) :- sym_member(SYM_C4, D).`
-- The patterns.md section "Stored symmetry sets as full subgroups"
-  describes the element-list encoding this type replaces.
-- Fitting a stored group: `KeyedSetCompare<Key, Sym, D4>` with
-  `sym_member` as the pattern catalog; `equals` names the observed set.
-- A containment readout (`sym_leq`) is derivable from `sym_member` by
-  defect negation; add on first need.
+- A representative needs a witness — some cell pair it maps one onto the
+  other; vacuous overlap is no evidence. The rest of its coset arrives by
+  composition with the lattice in the caller's closure.
+- The internal canonical corner for fundamental-domain shifts is
+  unobservable: every corner yields the same cosets and maps.
+- An axis without a period contributes only the zero shift, so an
+  aperiodic grid degrades to center-anchored D4 detection.
 
-**Task-local home (protocol step 1).** 0934a4d8 (`SymTable` comp):
-per-tile mosaic symmetry as GRID values; its Fit names each tile's
-unbroken set via `equals`.
+**Task-local home (protocol step 1).** 0dfd9992: wallpaper repair —
+`Parse` feeds detected per-axis periods and the stored point group's
+kinds; `out` closes survivor colors over `step`; its Fit names the
+kinds every example uses as a `point_group` Sym value.
 
-**Second home (protocol step 1).** 44f52bb0: `syms` and the
-`mapping_sym` entries store subgroups as element lists; each collapses to
-one `Sym` value.
+## `Closed<Key>` — the regions a cell set closes off from the edge
+
+The regions of a keyed cell set that the grid edge cannot reach — the
+entity-level half of the `enclose` prior. Enclosure is a cell property and
+floods linearly (`Reach` seeded on the edge); individuation pays
+`Components`' pairwise closure, so it runs over only the closed cells —
+the regions the model claims. `Reach` stays the unit for cell-level
+enclosure and seeded selection (00d62c1b, 1e81d6f9). Lib target: body
+comp beside `Reach`.
+
+```
+.comp Closed<Key> {
+    .decl cell(key: Key, p: Position)  // input
+
+    .init flood = Reach<Key>
+    flood.node(Ky, P) :- cell(Ky, P).
+    flood.seed(Ky, P) :- cell(Ky, P), dir_elem(D), dist(P, D, 0).
+
+    .init regions = Components<Key>
+    regions.node(Ky, P) :- cell(Ky, P), !flood.reach(Ky, P).
+
+    .decl region(key: Key, p: Position, id: Ident)
+    region(Ky, P, Id) :- regions.label(Ky, P, Id).
+}
+```
+
+**Task-local home (protocol step 1).** 0a2355a6 (`Closed` comp): both hole
+frames — the bg with all ink solid (grid key), everything-but-O with one
+object solid (object key).
+
+**Second home (protocol step 1).** 00dbd492: $Enclose writes the same
+composition inline — `Reach` from the grid edge, then `Components` over
+the enclosed cells.

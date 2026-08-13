@@ -1,0 +1,97 @@
+// 0e206a2e
+// concept: objects markers d4 move
+// Loose single cells mark where the grid's objects belong. Every object
+// carries anchor cells that some set of markers repeats color for color; the
+// object moves onto that set under the D4 transform which makes every anchor
+// meet its own color, and its original cells go to bg. Choice = [a, m]
+// crosses two underdetermined claims:
+//
+//   a (which object cells are anchors):
+//     $Minority() — the cells whose color is not the object's commonest.
+//     $Marked()   — the cells whose color also occurs on a loose marker.
+//   m (a marker no object lands on):
+//     $Consumed() — goes to bg: markers are seats the move consumes.
+//     $Kept()     — persists: markers are paint the objects land on.
+
+#include "../lib.dl"
+
+.type Anchors = Minority {} | Marked {}
+.type Markers = Consumed {} | Kept {}
+.type Choice  = [a: Anchors, m: Markers]
+
+.comp Consts {
+    .decl bg(col: Color) bg(0).
+}
+
+.init c = Consts
+
+.decl anchors_choice(ch: Anchors)
+anchors_choice($Minority()). anchors_choice($Marked()).
+
+.decl markers_choice(m: Markers)
+markers_choice($Consumed()). markers_choice($Kept()).
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !c.bg(Col).
+
+.init parts = Components<Unit>
+parts.node($U(), P) :- ink(P, _).
+
+// An object is a part with more than one cell; a lone cell is a marker.
+.decl object(id: Ident)
+object(Id) :- parts.label($U(), P, Id), parts.label($U(), Q, Id), P != Q.
+
+.decl object_cell(id: Ident, p: Position, col: Color)
+object_cell(Id, P, Col) :- parts.label($U(), P, Id), object(Id), ink(P, Col).
+
+.decl marker(p: Position, col: Color)
+marker(P, Col) :- parts.label($U(), P, Id), !object(Id), ink(P, Col).
+
+.decl anchor(id: Ident, p: Position, col: Color, ch: Anchors)
+
+// --- $Minority ---
+
+.init common = Mode<Ident, Color, Position>
+common.item(Id, Col, P) :- object_cell(Id, P, Col).
+
+anchor(Id, P, Col, $Minority()) :-
+    object_cell(Id, P, Col), !common.mode(Id, Col).
+
+// --- $Marked ---
+
+anchor(Id, P, Col, $Marked()) :- object_cell(Id, P, Col), marker(_, Col).
+
+// --- shared ---
+
+// A pose: one object's anchor pattern in one D4 image, per anchor case.
+.type Pose = [id: Ident, d: D4, ch: Anchors]
+
+// Seek each pose among the markers, color for color; an occurrence is a
+// seating of the object.
+.init seat = Occurrences<Pose, Color>
+seat.shape([Id, D, Ch], P_img, Col) :-
+    anchor(Id, P, Col, Ch), d4_elem(D), apply(D, P, P_img).
+seat.cell([Id, D, Ch], M, Col) :-
+    anchor(Id, _, _, Ch), d4_elem(D), marker(M, Col).
+
+.decl placed(p: Position, col: Color, ch: Anchors)
+placed(P_out, Col, Ch) :-
+    seat.occurrence([Id, D, Ch], Sh),             // a seating of the object
+    object_cell(Id, P, Col), apply(D, P, P_img),  // each cell, transformed
+    compose(Sh, P_img, P_out).                    // and carried to its seat
+
+.decl out(p: Position, col: Color, c: Choice)
+out(P, Col, [Ch, M]) :- placed(P, Col, Ch), markers_choice(M).
+
+// --- $Consumed ---
+
+out(P, Col, [Ch, $Consumed()]) :-
+    in(P, _), anchors_choice(Ch), c.bg(Col), !placed(P, _, Ch).
+
+// --- $Kept ---
+
+out(P, Col, [Ch, $Kept()]) :-
+    in(P, _), anchors_choice(Ch), !placed(P, _, Ch),
+    ( marker(P, Col)             // a marker persists
+    ; !marker(P, _), c.bg(Col)   // all else to bg
+    ).

@@ -1,0 +1,149 @@
+// 0ca9ddb6
+// concept: markers lookup stamp
+// Lone dots sit on an empty grid. A marked dot grows a one-step star in
+// its paired color — cardinal arms for 1, diagonal arms for 2; dots of
+// any other color are inert, and the rest of the input is kept. Stars
+// clip at the grid edge and overwrite what they cover; the data never
+// shows a star covering other ink. Cases (data-equivalent on this task):
+//
+//   $Ray    — arms by kind, colored per mark: c.arm_paint cardinal,
+//             c.diag_paint diagonal; arms reach c.radius cells.
+//   $Lookup — a stored mask per mark, seated on the mark by c.center_pos.
+
+#include "../lib.dl"
+
+.type Choice = Ray {} | Lookup {}
+
+.comp Consts {
+    // --- $Ray ---
+    .decl radius(k: number) radius(1).
+
+    // Per-mark arm colors, by kind; a kind with no row does not paint.
+    .decl arm_paint(mark: Color, col: Color)
+    arm_paint(1, 7).
+
+    .decl diag_paint(mark: Color, col: Color)
+    diag_paint(2, 4).
+
+    // --- $Lookup ---
+    // The mark colors, and what each one paints.
+    .decl paint(mark: Color, col: Color)
+    paint(1, 7).
+    paint(2, 4).
+
+    // Footprint masks over the stamp frame; center_pos seats the mask on
+    // the mark.
+    .decl template(mark: Color, p: Position)
+    GRID_MASK_3x3(template, 1,
+        0, 1, 0,
+        1, 0, 1,
+        0, 1, 0)
+    GRID_MASK_3x3(template, 2,
+        1, 0, 1,
+        0, 0, 0,
+        1, 0, 1)
+
+    .decl center_pos(p: Position) center_pos([1, 1, 1, 1]).
+}
+
+.init c = Consts
+
+.decl impl_choice(ch: Choice)
+impl_choice($Ray()). impl_choice($Lookup()).
+
+.decl painted(p: Position, col: Color, ch: Choice)
+
+// --- $Ray ---
+// One cast per kind: each roster's marks cast that kind's directions.
+.init arm = Ray<Color>
+arm.dir(D) :- dir_elem(D).
+arm.cell(M, P) :- c.arm_paint(M, _), in(P, _).
+arm.mark(M, P) :- in(P, M), c.arm_paint(M, _).
+
+.init diag = Ray<Color>
+diag.dir(D) :- diag_dir_elem(D).
+diag.cell(M, P) :- c.diag_paint(M, _), in(P, _).
+diag.mark(M, P) :- in(P, M), c.diag_paint(M, _).
+
+painted(P, Col, $Ray()) :-
+    c.radius(R),
+    ( arm.ray(M, P, _, K), c.arm_paint(M, Col)      // on a cardinal arm
+    ; diag.ray(M, P, _, K), c.diag_paint(M, Col)    // on a diagonal arm
+    ),
+    K != 0, K <= R.                                 // within reach, not the mark
+
+// --- $Lookup ---
+// The mask box's margin at each mark: the mark minus the seat.
+.init stamp = Reframe<Position>
+stamp.outer(P, C0) :- in(P, M), c.paint(M, _), c.center_pos(C0).
+stamp.cell(P, P) :- in(P, M), c.paint(M, _).
+
+painted(P_grid, Col, $Lookup()) :-
+    in(P, M), c.paint(M, Col), stamp.inner(P, Mg),   // a mark and its stamp margin
+    c.template(M, T), compose(T, Mg, P_grid),        // embed the mask cell
+    in(P_grid, _).                                   // clip to the grid
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- painted(P, Col, Ch).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !painted(P, _, Ch).
+
+// --- fit ---
+
+.type Cell = [e: Example, p: Position]
+.type StarKey = [e: Example, id: Ident]
+
+.comp Fit {
+    // The grids' ground color; dots are the exception to it.
+    .init ground = Mode<Unit, Color, Cell>
+    ground.item($U(), Col, [E, P]) :- ex_in(E, P, Col).
+
+    .decl dot(e: Example, p: Position, m: Color)
+    dot(E, P, M) :- ex_in(E, P, M), !ground.mode($U(), M).
+
+    // Painted cells: output differs from input.
+    .decl star(e: Example, p: Position, col: Color)
+    star(E, P, Col) :- ex_out(E, P, Col), ex_in(E, P, Col2), Col2 != Col.
+
+    // Each star with its dot, one 8-connected blob; inert dots blob alone.
+    .init blob = Components8<Example>
+    blob.node(E, P) :- star(E, P, _).
+    blob.node(E, P) :- dot(E, P, _).
+
+    // A blob's painted cell, attributed to the blob's mark.
+    .decl star_cell(e: Example, id: Ident, m: Color, p: Position, col: Color)
+    star_cell(E, Id, M, P, Col) :-
+        dot(E, Q, M), blob.label(E, Q, Id),       // the blob's mark
+        blob.label(E, P, Id), star(E, P, Col).    // its painted cell
+
+    .decl paint(mark: Color, col: Color)
+    paint(M, Col) :- star_cell(_, _, M, _, Col).
+
+    // Casts from each blob's dot, one instance per kind, classify the
+    // blob's painted cells.
+    .init arms = Ray<StarKey>
+    arms.dir(D) :- dir_elem(D).
+    arms.cell([E, Id], P) :- arms.mark([E, Id], _), ex_in(E, P, _).
+    arms.mark([E, Id], P) :- dot(E, P, _), blob.label(E, P, Id).
+
+    .init diags = Ray<StarKey>
+    diags.dir(D) :- diag_dir_elem(D).
+    diags.cell([E, Id], P) :- diags.mark([E, Id], _), ex_in(E, P, _).
+    diags.mark([E, Id], P) :- dot(E, P, _), blob.label(E, P, Id).
+
+    .decl arm_paint(mark: Color, col: Color)
+    arm_paint(M, Col) :-
+        star_cell(E, Id, M, P, Col),
+        arms.ray([E, Id], P, _, K), K != 0.       // on a cardinal cast from its dot
+
+    .decl diag_paint(mark: Color, col: Color)
+    diag_paint(M, Col) :-
+        star_cell(E, Id, M, P, Col),
+        diags.ray([E, Id], P, _, K), K != 0.      // on a diagonal cast from its dot
+
+    // Each blob viewed from its own box — the mask frame.
+    .init box = BoxFrame<StarKey>
+    box.cell([E, Id], P) :- blob.label(E, P, Id).
+
+    .decl template(mark: Color, p: Position)
+    template(M, T) :- star_cell(E, Id, M, P, _), box.inner([E, Id], P, T).
+}

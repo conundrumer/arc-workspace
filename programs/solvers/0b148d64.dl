@@ -1,0 +1,71 @@
+// 0b148d64
+// concept: decompose crop select
+// An ink-free band of rows and one of columns cut the grid into four panels.
+// Each panel is drawn in a single ink color; three panels share one color and
+// the fourth has its own. The output is that fourth panel.
+//
+// $Panel — the whole rectangle the cut gives that panel.
+// $Ink   — the bounding box of that panel's ink.
+
+#include "../lib.dl"
+
+.type Choice = Panel {} | Ink {}
+
+.comp Consts {
+    .decl bg(col: Color) bg(0).
+}
+
+.init c = Consts
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !c.bg(Col).
+
+// --- the cut ---
+
+.decl ink_slice(along: Position)
+ink_slice(Along) :- ink(P, _), axis_elem(A), split(P, A, Along, _).
+
+.decl sep_cell(p: Position)                                        // cell of an ink-free slice
+sep_cell(P) :- in(P, _), axis_elem(A), split(P, A, Along, _), !ink_slice(Along).
+
+.init sep = Ray<Unit>
+sep.dir(D) :- dir_elem(D).
+sep.cell($U(), P) :- in(P, _).
+sep.mark($U(), P) :- sep_cell(P).
+
+// No band lies D-ward of P. A band cell is on its own ray in every direction,
+// so it takes no side.
+.decl side(p: Position, d: Dir)
+side(P, D) :- in(P, _), opposite(D, Opp), !sep.ray($U(), P, Opp, _).
+
+.decl panel(p: Position, q: DiagDir)
+panel(P, Q) :-
+    diag_dirs(Q, _, D1, D2),     // the corner the panel occupies
+    side(P, D1), side(P, D2).    // on that corner's side of both bands
+
+// --- the odd panel ---
+
+.decl panel_color(q: DiagDir, col: Color)
+panel_color(Q, Col) :- panel(P, Q), ink(P, Col).
+
+.decl shared_color(col: Color)
+shared_color(Col) :- panel_color(Q, Col), panel_color(Q2, Col), Q != Q2.
+
+.decl odd_panel(q: DiagDir)
+odd_panel(Q) :- panel_color(Q, Col), !shared_color(Col).
+
+// --- the crop ---
+
+.init crop = BoxFrame<Choice>
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_inner, Col, Ch) :- crop.inner(Ch, P, P_inner), in(P, Col).
+
+// --- Panel ---
+
+crop.cell($Panel(), P) :- odd_panel(Q), panel(P, Q).
+
+// --- Ink ---
+
+crop.cell($Ink(), P) :- odd_panel(Q), panel(P, Q), ink(P, _).
+crop.grid($Ink(), P) :- in(P, _).                                  // bg cells inside the box

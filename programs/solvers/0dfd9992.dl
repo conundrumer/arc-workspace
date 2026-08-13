@@ -1,0 +1,190 @@
+// 0dfd9992
+// concept: wallpaper symmetry repair
+// A wallpaper pattern damaged by holes of one color; the output restores
+// it. The task fixes the point group its patterns share (Consts); each
+// input's survivors identify the rest: first the translation lattice —
+// per axis, the shortest witnessed shift no surviving pair contradicts —
+// then the group as lattice-reduced representatives: isometries of the
+// point group's kinds, composed with a fundamental-domain shift,
+// witnessed by some surviving pair and contradicted by none. Each coset
+// is admitted through its representative; the rest arrives by composition
+// with the lattice in the closure. Colors propagate from survivors along
+// the symmetries, so each cell takes its orbit's color.
+
+#include "../lib.dl"
+
+.type Gen = [d: D4, delta: Shift]
+
+.comp Consts {
+    .decl hole(col: Color) hole(0).
+
+    // The point group shared by the task's patterns.
+    .decl point_group(s: Sym) point_group(SYM_D4).
+}
+
+.init c = Consts
+
+// --- wallpaper comp ---
+
+// Task-local staging comp: the isometry peer of ShiftInvariance,
+// quotiented by a translation lattice. Given a keyed valued cell set, its
+// per-axis periods, and the isometry kinds in play, candidates are the
+// isometries of the frame — a kind composed with a shift from the
+// lattice's fundamental domain, one representative per coset. `sym` holds
+// the candidates witnessed by some pair of cells (vacuous overlap is no
+// evidence) and contradicted by none; `step` maps each grid position one
+// step along an admitted isometry or a lattice shift.
+.comp Wallpaper<Key, Val> {
+    .decl kind(d: D4)                           // input
+    .decl cell(key: Key, p: Position, v: Val)   // input
+    .decl grid(key: Key, p: Position)           // input
+    .decl period(key: Key, a: Axis, k: number)  // input
+
+    // Internal canonical corner for fundamental-domain shifts; the choice
+    // is unobservable — every corner yields the same cosets and maps.
+    .decl canon(a: Axis, d: Dir)
+    canon(AXIS_V, DIR_B). canon(AXIS_H, DIR_R).
+
+    // Fundamental-domain shifts per axis: zero, and 0 < k < period toward
+    // the canonical corner.
+    .decl axis_rep(key: Key, a: Axis, delta: Shift)
+    axis_rep(Key, A, ORIGIN) :- grid(Key, _), axis_elem(A).
+    axis_rep(Key, A, Delta) :-
+        grid(Key, P), sub_extent(P, A, K),
+        period(Key, A, Kp), K < Kp,
+        canon(A, D), jump_delta(D, K, Delta).
+
+    .decl dom(key: Key, delta: Shift)
+    dom(Key, Delta) :-
+        axis_rep(Key, A, D1), axis_rep(Key, A2, D2), perp(A, A2),
+        compose(D1, D2, Delta).
+
+    // Kinds squaring to the identity; their candidates' squares are
+    // translations, and a symmetry's square must land in the lattice.
+    .decl sq_id(d: D4)
+    sq_id(D4_ID). sq_id(D4_HT). sq_id(D4_LR).
+    sq_id(D4_TB). sq_id(D4_DG). sq_id(D4_AD).
+
+    // Lattice elements a candidate's square can reach: zero and one
+    // period per axis, toward the canonical corner.
+    .decl lat_ax(key: Key, a: Axis, delta: Shift)
+    lat_ax(Key, A, ORIGIN) :- grid(Key, _), axis_elem(A).
+    lat_ax(Key, A, Delta) :- period(Key, A, K), canon(A, D), jump_delta(D, K, Delta).
+
+    .decl lat0(key: Key, delta: Shift)
+    lat0(Key, Delta) :-
+        lat_ax(Key, A, D1), lat_ax(Key, A2, D2), perp(A, A2),
+        compose(D1, D2, Delta).
+
+    // Candidates per kind: fundamental-domain shifts, square-checked
+    // where the kind squares to the identity.
+    .decl cand(key: Key, d: D4, delta: Shift)
+    cand(Key, D, Delta) :- kind(D), !sq_id(D), dom(Key, Delta).
+    cand(Key, D, Delta) :-
+        kind(D), sq_id(D), dom(Key, Delta),
+        apply(D, Delta, DD), compose(Delta, DD, S), lat0(Key, S).
+
+    // Cell images under the kinds, materialized so the shift join starts
+    // ground.
+    .decl rot_cell(key: Key, d: D4, p: Position, v: Val, p1: Position)
+    rot_cell(Key, D, P, V, P1) :- cell(Key, P, V), kind(D), apply(D, P, P1).
+
+    // Valued cell pairs under each candidate isometry.
+    .decl pair(key: Key, g: Gen, p: Position, q: Position, v1: Val, v2: Val)
+    pair(Key, [D, Delta], P, Q, V1, V2) :-
+        rot_cell(Key, D, P, V1, P1), cand(Key, D, Delta),
+        compose(P1, Delta, Q), cell(Key, Q, V2).
+
+    .decl mismatch(key: Key, g: Gen)
+    mismatch(Key, G) :- pair(Key, G, _, _, V1, V2), V1 != V2.
+
+    .decl witnessed(key: Key, g: Gen)
+    witnessed(Key, G) :- pair(Key, G, P, Q, _, _), P != Q.
+
+    .decl sym(key: Key, g: Gen)
+    sym(Key, G) :- witnessed(Key, G), !mismatch(Key, G).
+
+    // Kinds the key's pattern uses: kinds with an admitted representative;
+    // the identity kind is used by any pattern with a lattice.
+    .decl kind_used(key: Key, d: D4)
+    kind_used(Key, D) :- sym(Key, [D, _]).
+    kind_used(Key, D4_ID) :- period(Key, _, _).
+
+    // One step along an admitted isometry or a lattice shift, over the
+    // full grid.
+    .decl rot_grid(key: Key, d: D4, p: Position, p1: Position)
+    rot_grid(Key, D, P, P1) :- grid(Key, P), kind(D), apply(D, P, P1).
+
+    .decl step(key: Key, p: Position, q: Position)
+    step(Key, P, Q) :-
+        sym(Key, [D, Delta]), rot_grid(Key, D, P, P1),
+        compose(P1, Delta, Q), grid(Key, Q).
+    step(Key, P, Q) :-
+        period(Key, A, K), axis_of(D, A), jump_delta(D, K, Delta),
+        grid(Key, P), compose(P, Delta, Q), grid(Key, Q).
+}
+
+// --- parse ---
+
+.comp Parse<Key> {
+    .decl in_cell(key: Key, p: Position, col: Color)  // input
+    .decl kind(d: D4)                                 // input
+
+    .decl intact(key: Key, p: Position, col: Color)
+    intact(Key, P, Col) :- in_cell(Key, P, Col), !c.hole(Col).
+
+    .init si = ShiftInvariance<Key, Color>
+    si.cell(Key, P, Col) :- intact(Key, P, Col).
+
+    // A shift witnessed: it maps some survivor onto another.
+    .decl t_witnessed(key: Key, a: Axis, k: number)
+    t_witnessed(Key, A, K) :-
+        si.cand(Key, A, K, Delta),
+        intact(Key, P, _), compose(P, Delta, Q), intact(Key, Q, _).
+
+    // The pattern's period per axis: the shortest witnessed unbroken shift.
+    .type KA = [key: Key, a: Axis]
+    .init period = Extremes<KA>
+    period.cand([Key, A], K) :- t_witnessed(Key, A, K), !si.mismatch(Key, A, K).
+
+    .init wp = Wallpaper<Key, Color>
+    wp.kind(D) :- kind(D).
+    wp.cell(Key, P, Col) :- intact(Key, P, Col).
+    wp.grid(Key, P) :- in_cell(Key, P, _).
+    wp.period(Key, A, K) :- period.low([Key, A], K).
+
+    .decl step(key: Key, p: Position, q: Position)
+    step(Key, P, Q) :- wp.step(Key, P, Q).
+
+    .decl kind_used(key: Key, d: D4)
+    kind_used(Key, D) :- wp.kind_used(Key, D).
+}
+
+.init parse = Parse<Unit>
+parse.in_cell($U(), P, Col) :- in(P, Col).
+parse.kind(D) :- c.point_group(S), sym_member(S, D).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- parse.intact($U(), P, Col).
+out(Q, Col) :- out(P, Col), parse.step($U(), P, Q).
+
+// --- fit ---
+
+.comp Fit {
+    // Detection per example, over every kind.
+    .init parse = Parse<Example>
+    parse.in_cell(E, P, Col) :- ex_in(E, P, Col).
+    parse.kind(D) :- d4_elem(D).
+
+    // A kind some example does not admit at any offset.
+    .decl missing(d: D4)
+    missing(D) :- ex_in(E, _, _), d4_elem(D), !parse.kind_used(E, D).
+
+    // Name the shared kind set as a subgroup value.
+    .init named = KeyedSetCompare<Unit, Sym, D4>
+    named.pattern_member(S, D) :- sym_member(S, D).
+    named.observed_member($U(), D) :- d4_elem(D), !missing(D).
+
+    .decl point_group(s: Sym)
+    point_group(S) :- named.equals($U(), S).
+}

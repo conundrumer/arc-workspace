@@ -1,0 +1,45 @@
+// 0d87d2a6
+// concept: markers objects cast span
+// Objects of c.body sit in the grid, and c.mark cells sit on its edges. A
+// marker sends a line across the grid along its edge's axis; the lines and
+// every object they touch turn c.paint. Every line here carries a marker at
+// each end, which leaves open how much marking a line needs:
+//
+//   $Cast() — a marker at one end draws the whole line.
+//   $Span() — a line needs a marker at each end.
+
+#include "../lib.dl"
+
+.type Choice = Cast {} | Span {}
+
+.comp Consts {
+    .decl mark(col: Color) mark(1).
+    .decl body(col: Color) body(2).
+    .decl paint(col: Color) paint(1).
+}
+
+.init c = Consts
+
+.decl impl_choice(k: Choice)
+impl_choice($Cast()).
+impl_choice($Span()).
+
+.decl mark_line(p: Position, d: Dir)
+mark_line(P, D) :-
+    in(M, Col), c.mark(Col), dist(M, D, 0),                // marker on edge D
+    axis_of(D, A), split(M, A, _, Across),                 // its line runs along A
+    in(P, _), split(P, A, _, Across).                      // P in that line
+
+.decl line(p: Position, k: Choice)
+line(P, $Cast()) :- mark_line(P, _).
+line(P, $Span()) :- mark_line(P, D), mark_line(P, D_opp), opposite(D, D_opp).
+
+// The lines and the objects touching them form one connected region.
+.init reach = Reach<Choice>
+reach.node(K, P) :- impl_choice(K), in(P, Col), c.body(Col).
+reach.node(K, P) :- line(P, K).
+reach.seed(K, P) :- line(P, K).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, K) :- reach.reach(K, P), c.paint(Col).
+out(P, Col, K) :- in(P, Col), impl_choice(K), !reach.reach(K, P).

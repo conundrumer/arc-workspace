@@ -1,0 +1,91 @@
+// 0a1d4ef5
+// concept: objects rank
+// Solid one-color rectangles sit on a field of noise, laid out in a grid:
+// on each axis the rectangles group into bands, and the output is that
+// layout — one cell per rectangle, holding its color, at its band's rank
+// on each axis. The cases contest what makes a band: $Runs groups spans
+// into runs of adjacent occupied lines, so a gap of empty lines separates
+// bands; $Overlap groups spans that share a line, closed transitively.
+
+#include "../lib.dl"
+
+.type Choice = Runs {} | Overlap {}
+.type RegionAxis = [id: Ident, a: Axis]
+.type ChoiceAxis = [c: Choice, a: Axis]
+
+.comp Consts {
+    .decl min_side(k: number) min_side(3).
+}
+
+.init c = Consts
+
+// --- rectangles ---
+
+// Touching cells of one color.
+.init region = Components<Color>
+region.node(Col, P) :- in(P, Col).
+
+.decl region_cell(id: Ident, p: Position)
+region_cell(Id, P) :- region.label(_, P, Id).
+
+// The lines a region spans, per axis.
+.decl region_line(id: Ident, a: Axis, p_line: Position)
+region_line(Id, A, P_line) :- region_cell(Id, P), axis_elem(A), split(P, A, P_line, _).
+
+// The region does not fill the rectangle its lines span.
+.decl hole(id: Ident)
+hole(Id) :-
+    region_line(Id, A, P_line), region_line(Id, A2, P_line2), perp(A, A2),   // a crossing of its lines
+    compose(P_line, P_line2, P), !region_cell(Id, P).                        // holding no cell of it
+
+// Side length on each axis: how many lines it spans.
+.init side = Tally<RegionAxis, Position>
+side.item([Id, A], P_line) :- region_line(Id, A, P_line).
+
+// Too short on one axis to tell it from noise.
+.decl short(id: Ident)
+short(Id) :- side.tally([Id, _], N), c.min_side(K), N < K.
+
+.decl block(id: Ident)
+block(Id) :- side.tally([Id, _], _), !hole(Id), !short(Id).
+
+// The band a rectangle belongs to on each axis.
+.decl block_band(c: Choice, a: Axis, id: Ident, b: Ident)
+
+// --- Runs ---
+
+// A band is a run of adjacent occupied lines.
+.init runs = Components<Axis>
+runs.node(A, P_line) :- block(Id), region_line(Id, A, P_line).
+
+block_band($Runs(), A, Id, B) :- block(Id), region_line(Id, A, P_line), runs.label(A, P_line, B).
+
+// --- Overlap ---
+
+// Two rectangles align when their spans share a line; a band is a class
+// of the alignment's transitive closure.
+.decl overlap(x: RegionAxis, y: RegionAxis)
+overlap([Id, A], [Id2, A]) :-
+    block(Id), block(Id2), region_line(Id, A, P_line), region_line(Id2, A, P_line).
+
+.init cls = Canon<RegionAxis>
+cls.equiv(X, Y) :- overlap(X, Y).
+cls.equiv(X, Z) :- cls.equiv(X, Y), overlap(Y, Z).
+
+block_band($Overlap(), A, Id, B) :- cls.id([Id, A], B).
+
+// --- arrangement ---
+
+// One output line per band: the frame the bands induce on each axis. A
+// band's line set is the union of its rectangles' spans; band line sets
+// are disjoint intervals, as OrderFrame assumes.
+.init layout = OrderFrame<ChoiceAxis, Ident>
+layout.axis([C, A], A) :- block_band(C, A, _, _).
+layout.member([C, A], B, P_line) :- block_band(C, A, Id, B), region_line(Id, A, P_line).
+
+.decl out(p: Position, col: Color, c: Choice)
+out(P, Col, C) :-
+    region.label(Col, _, Id),                                          // the rectangle's color
+    block_band(C, A, Id, B), block_band(C, A2, Id, B2), perp(A, A2),   // its band on each axis
+    layout.pos([C, A], B, P_line), layout.pos([C, A2], B2, P_line2),   // the bands' output lines
+    compose(P_line, P_line2, P).                                       // where the two lines cross

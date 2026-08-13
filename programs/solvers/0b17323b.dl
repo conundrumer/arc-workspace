@@ -1,0 +1,68 @@
+// 0b17323b
+// concept: markers walk
+// Marks of c.mark_color sit on one diagonal, evenly spaced. The output
+// keeps the input and continues the sequence in c.new_color, stepping by
+// the mark spacing until it leaves the grid.
+//
+//   $Ray  — the sequence runs toward c.dir, and continues past that end.
+//   $Line — the diagonal has no privileged end; the sequence continues
+//           past both.
+
+#include "../lib.dl"
+
+.type Choice = Ray {} | Line {}
+
+.comp Consts {
+    // --- shared ---
+    .decl mark_color(col: Color) mark_color(1).
+    .decl new_color(col: Color) new_color(2).
+
+    // --- $Ray ---
+    .decl dir(d: DiagDir) dir(DIAG_BR).
+}
+
+.init c = Consts
+
+.decl impl_choice(ch: Choice)
+impl_choice($Ray()). impl_choice($Line()).
+
+.decl mark(p: Position)
+mark(P) :- in(P, Col), c.mark_color(Col).
+
+// Two marks a K-cell step toward corner D apart.
+.decl sep(d: DiagDir, k: number)
+sep(D, K) :-
+    mark(P), mark(P2),                                     // two marks
+    diag_dir_elem(D), axis_elem(A), sub_extent(P, A, K),   // a corner, and a step the frame admits
+    diag_jump_delta(D, K, Delta), compose(P, Delta, P2).   // P2 is P stepped
+
+// The marks are evenly spaced, so the closest pair gives the spacing.
+.init spacing = Extremes<Unit>
+spacing.cand($U(), K) :- sep(_, K).
+
+// The corners each case continues toward.
+.decl walk_dir(ch: Choice, d: DiagDir)
+
+// The sequence: the marks, and every further step of it on the grid.
+.decl walk(ch: Choice, p: Position)
+walk(Ch, P) :- mark(P), impl_choice(Ch).
+walk(Ch, P_next) :-
+    walk(Ch, P), walk_dir(Ch, D), spacing.low($U(), K),     // a cell of it, and the step
+    diag_jump_delta(D, K, Delta), compose(P, Delta, P_next),
+    in(P_next, _).                                          // the next one, still on the grid
+
+.decl added(ch: Choice, p: Position)
+added(Ch, P) :- walk(Ch, P), !mark(P).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- added(Ch, P), c.new_color(Col).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !added(Ch, P).
+
+// --- $Ray ---
+
+walk_dir($Ray(), D) :- c.dir(D).
+
+// --- $Line ---
+
+// A mark pair gives both directions of its diagonal.
+walk_dir($Line(), D) :- sep(D, _).

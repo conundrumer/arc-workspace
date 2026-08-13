@@ -1,0 +1,88 @@
+// 0a938d79
+// concept: markers lines walk
+// Two marks sit on edges of one axis, and each casts a line across the
+// grid. The lines then repeat by the step from one mark to the other,
+// colors alternating, until the walk leaves the grid; the strip before
+// the leading line stays bg. Two models of which mark leads:
+//
+//   $Corner — the mark nearer the c.origin side.
+//   $Margin — the mark whose side holds the narrower empty strip, so the
+//             pattern fills the wider one.
+//
+// They coincide here — the marks huddle at the c.origin side in every
+// pair — and diverge when the marks huddle at the opposite side.
+
+#include "../lib.dl"
+
+.type Choice = Corner {} | Margin {}
+
+.comp Consts {
+    // --- shared ---
+    .decl bg(col: Color) bg(0).
+
+    // --- Corner ---
+    .decl origin(d: DiagDir) origin(DIAG_TL).   // the corner the walk starts from
+}
+
+.init c = Consts
+
+.decl mark(p: Position, col: Color)
+mark(P, Col) :- in(P, Col), !c.bg(Col).
+
+.decl on_axis_edge(p: Position, a: Axis)
+on_axis_edge(P, A) :- mark(P, _), dir_elem(D), axis_of(D, A), dist(P, D, 0).
+
+.decl off_axis_edge(a: Axis)
+off_axis_edge(A) :- axis_elem(A), mark(P, _), !on_axis_edge(P, A).
+
+// The lines repeat along this axis. Every mark sits on an edge of the
+// perpendicular axis, and its line spans that one.
+.decl step_axis(a: Axis)
+step_axis(A2) :- axis_elem(A), !off_axis_edge(A), perp(A, A2).
+
+// Each cell with the line it lies on — the line's position on the step axis.
+.decl cell_line(p: Position, p_line: Position)
+cell_line(P, P_line) :- in(P, _), step_axis(A2), split(P, A2, P_line, _).
+
+.decl mark_line(p: Position, col: Color)
+mark_line(P_line, Col) :- mark(P, Col), cell_line(P, P_line).
+
+// The line the walk starts from.
+.decl lead(p: Position, ch: Choice)
+
+// --- Corner ---
+lead(P_line, $Corner()) :-
+    mark_line(P_line, _), mark_line(Q, _),               // the two mark lines
+    c.origin(Dg), step_axis(A2), dir_of(Dg, A2, D),      // the origin side
+    dist(P_line, D, K), dist(Q, D, K2), K < K2.          // p_line is the nearer one
+
+// --- Margin ---
+lead(P_line, $Margin()) :-
+    mark_line(P_line, _), mark_line(Q, _),               // the two mark lines
+    step_axis(A2), dir_elem(D), axis_of(D, A2),          // a side
+    dist(P_line, D, K), dist_pair(Q, D, K2, K2_opp),     // distances from it
+    K < K2, K < K2_opp.                                  // the empty strip at that side is the narrower
+
+// One step of the walk: the lead line to the other one.
+.init step = Reframe<Choice>
+step.outer(Ch, P) :- lead(P, Ch).
+step.cell(Ch, Q) :- lead(P, Ch), mark_line(Q, _), Q != P.
+
+// Each mark color paired with the other one.
+.decl other_col(col: Color, col2: Color)
+other_col(Col, Col2) :- mark_line(_, Col), mark_line(_, Col2), Col != Col2.
+
+.decl impl_choice(ch: Choice)
+impl_choice($Corner()). impl_choice($Margin()).
+
+.decl line(p: Position, col: Color, ch: Choice)
+line(P_line, Col, Ch) :- mark_line(P_line, Col), impl_choice(Ch).
+line(P2, Col2, Ch) :-
+    line(P, Col, Ch), step.inner(Ch, Delta),    // one step along the repetition
+    compose(P, Delta, P2), cell_line(_, P2),    // still a line of the grid
+    other_col(Col, Col2).                       // the colors alternate
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- cell_line(P, P_line), line(P_line, Col, Ch).
+out(P, Col, Ch) :-
+    impl_choice(Ch), cell_line(P, P_line), !line(P_line, _, Ch), c.bg(Col).
