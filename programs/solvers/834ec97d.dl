@@ -59,13 +59,13 @@ beam(Q, $Parity()) :-
 // the move.
 .init rays = Ray<Choice>
 rays.dir(O)      :- c.dir(D), opposite(D, O).
-rays.cell(P)     :- in(P, _).
+rays.cell(Ch, P) :- beam(_, Ch), in(P, _).
 rays.mark(Ch, P) :- beam(P, Ch).
 
 .decl moved(p: Position)
 moved(Q) :- marker(P, _), c.dir(D), step_delta(D, S), compose(P, S, Q).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, Ch) :- rays.ray(Ch, P, _), c.fill(Col).
+out(P, Col, Ch) :- rays.ray(Ch, P, _, _), c.fill(Col).
 out(P, Col, Ch) :- impl_choice(Ch), moved(P), marker(_, Col).
-out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !rays.ray(Ch, P, _), !moved(P), c.bg(Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !rays.ray(Ch, P, _, _), !moved(P), c.bg(Col).

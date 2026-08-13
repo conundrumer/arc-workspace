@@ -32,7 +32,7 @@ mark([Col, P_intile], P_tile) :-
 
 .init btw = Between<Mark>
 btw.axis(A) :- axis_elem(A).
-btw.cell(P_tile) :- tile(_, P_tile, _).
+btw.cell(M, P_tile) :- mark(M, _), tile(_, P_tile, _).
 btw.mark(M, P_tile) :- mark(M, P_tile).
 
 .decl fill(ch: Choice, p_tile: Position, m: Mark)

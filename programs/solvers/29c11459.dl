@@ -66,13 +66,13 @@ out(P, Col, $Meet()) :- in(P, _), !front(P, _), !clash_cell(P), c.bg(Col).
 
 .init rays = Ray<Color>
 rays.dir(D)         :- c.axis(A), axis_of(D, A).
-rays.cell(P)        :- in(P, _).
+rays.cell(Col, P)   :- mark(_, Col), in(P, _).
 rays.mark(Col, P)   :- mark(P, Col).
 
 // Front cells, plus the cells behind the near mark.
 .decl territory(p: Position, col: Color)
 territory(P, Col) :- front(P, Col).
-territory(P, Col) :- pair(D, _, Col, _, _), rays.ray(Col, P, D).
+territory(P, Col) :- pair(D, _, Col, _, _), rays.ray(Col, P, D, _).
 
 out(P, Col, $Near()) :- territory(P, Col).
 out(P, Col, $Near()) :- clash_cell(P), c.clash(Col).

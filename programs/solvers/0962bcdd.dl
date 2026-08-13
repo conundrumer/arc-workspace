@@ -1,10 +1,10 @@
 // 0962bcdd
-// concept: markers, stamp, lookup
+// concept: markers lookup stamp
 // Plus-shaped marks — a center cell whose four cardinal neighbors share
 // one arm color — grow: cardinal rays extend in the arm color, diagonal
-// rays in the center color, the rest passes through. $Ray composes the
-// rays from jumps up to a stored radius; $Lookup stamps stored role
-// masks anchored on the marker.
+// rays in the center color, the rest passes through. $Ray casts the rays
+// to a stored radius; $Lookup stamps stored role masks anchored on the
+// marker.
 
 #include "../lib.dl"
 
@@ -16,9 +16,6 @@
 
     // --- Ray ---
     .decl radius(k: number) radius(2).
-
-    .decl reach(k: number)
-    reach(K) :- radius(R), K = range(1, R+1).   // @structural: a ray is at least one step
 
     // --- Lookup ---
     // Role masks over the stamp frame; center_pos anchors the stamp on
@@ -76,12 +73,23 @@ impl_choice($Ray()). impl_choice($Lookup()).
 .decl paint(p: Position, col: Color, ch: Choice)
 
 // --- Ray ---
+// One cast per kind, keyed by the marker cell.
+.init arm = Ray<Position>
+arm.dir(D) :- dir_elem(D).
+arm.cell(Pm, P) :- parse.marker($U(), Pm, _, _), in(P, _).
+arm.mark(Pm, Pm) :- parse.marker($U(), Pm, _, _).
+
+.init diag = Ray<Position>
+diag.dir(D) :- diag_dir_elem(D).
+diag.cell(Pm, P) :- parse.marker($U(), Pm, _, _), in(P, _).
+diag.mark(Pm, Pm) :- parse.marker($U(), Pm, _, _).
+
 paint(P2, Col, $Ray()) :-
-    parse.marker($U(), P, Cc, Ca), c.reach(K),
-    ( dir_elem(D), jump_delta(D, K, S), Col = Ca                 // cardinal ray — arm color
-    ; diag_dir_elem(Dg), diag_jump_delta(Dg, K, S), Col = Cc     // diagonal ray — center color
+    c.radius(R),
+    ( arm.ray(Pm, P2, _, K), parse.marker($U(), Pm, _, Col)     // cardinal ray — arm color
+    ; diag.ray(Pm, P2, _, K), parse.marker($U(), Pm, Col, _)    // diagonal ray — center color
     ),
-    compose(P, S, P2), in(P2, _).                                // clip to the grid
+    K != 0, K <= R.                                             // within reach, not the marker
 
 // --- Lookup ---
 
@@ -90,13 +98,11 @@ paint(P2, Col, $Ray()) :-
 stamp.outer(P, C0) :- parse.marker($U(), P, _, _), c.center_pos(C0).
 stamp.cell(P, P) :- parse.marker($U(), P, _, _).
 
-paint(P_grid, Ca, $Lookup()) :-
-    parse.marker($U(), C, _, Ca), stamp.inner(C, M),
-    c.template_arm(T), compose(T, M, P_grid),    // embed the template cell
-    in(P_grid, _).                               // clip to the grid
-paint(P_grid, Cc, $Lookup()) :-
-    parse.marker($U(), C, Cc, _), stamp.inner(C, M),
-    c.template_center(T), compose(T, M, P_grid), // embed the template cell
+paint(P_grid, Col, $Lookup()) :-
+    parse.marker($U(), C, Cc, Ca), stamp.inner(C, M),
+    ( c.template_arm(T), Col = Ca                // arm-role cell
+    ; c.template_center(T), Col = Cc ),          // center-role cell
+    compose(T, M, P_grid),                       // embed the template cell
     in(P_grid, _).                               // clip to the grid
 
 // --- out ---
@@ -130,15 +136,17 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !paint(P, _, Ch).
         ex.marker(E, Pm, Cc, Ca),                // input mark
         comps.label(E, Pm, Id).                  // its star
 
+    // A star's cell at its position in the star's box, with its color.
+    .decl star_cell(e: Example, id: Ident, p_t: Position, col: Color)
+    star_cell(E, Id, P_t, Col) :-
+        comps.label(E, P, Id), star(E, P, Col),
+        box.inner([E, Id], P, P_t).
+
     .decl template_arm(p: Position)
     template_arm(P_t) :-
-        star_marker(E, Id, _, Ca),
-        comps.label(E, P, Id), star(E, P, Ca),   // star cell in the arm color
-        box.inner([E, Id], P, P_t).
+        star_marker(E, Id, _, Ca), star_cell(E, Id, P_t, Ca).
 
     .decl template_center(p: Position)
     template_center(P_t) :-
-        star_marker(E, Id, Cc, _),
-        comps.label(E, P, Id), star(E, P, Cc),   // star cell in the center color
-        box.inner([E, Id], P, P_t).
+        star_marker(E, Id, Cc, _), star_cell(E, Id, P_t, Cc).
 }

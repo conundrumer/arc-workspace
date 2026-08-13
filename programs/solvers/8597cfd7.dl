@@ -53,7 +53,7 @@ ink_slice(Col, S, R) :- in(P, Col), side_of(P, S), slice_of(P, R).
 .type SKey = [col: Color, s: Dir]
 .init spans = Between<SKey>
 spans.axis(A)           :- c.side(D), axis_of(D, A).
-spans.cell(R)           :- slice_of(_, R).
+spans.cell([Col, S], R) :- ink_slice(Col, S, _), slice_of(_, R).
 spans.mark([Col, S], R) :- ink_slice(Col, S, R).
 
 measure_member(Col, $Span(), S, R) :- spans.between([Col, S], R).

@@ -564,66 +564,72 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     diag_cell(Ky, P, Diag, K) :- quadrant(Ky, P, Diag), diag_dist(P, Diag, _, K, K).
 }
 
-// Keyed marks cast rays toward each `dir`. `ray(k, p, d)`: p is on a key-k ray
-// cast toward edge d, i.e. a mark on p's line lies at or beyond p on the side
-// away from d. Reach is inclusive: a mark is on its own ray, and a domain that
-// excludes marks (bg-only) gets strict semantics with no extra rule. Extent
-// only: a ray whose content varies along its length needs a lockstep step
-// recursion, not this comp.
+// Keyed marks cast rays toward each direction in use, cardinal or diagonal
+// alike. Reach is inclusive: a mark is on its own ray, and a domain that
+// excludes marks (bg-only) gets strict semantics with no extra rule. The cast
+// crosses the whole frame; the domain decides what is reported, not what the
+// ray passes over.
 .comp Ray<Key> {
-    .decl dir(d: Dir)                  // cast directions in use
-    .decl cell(p: Position)            // domain tested
+    // The cast directions — the instance's parameter, unkeyed.
+    .decl dir(d: Dir8)
+
+    // The position domain tested, per key.
+    .decl cell(key: Key, p: Position)
+
+    // The casting positions, per key.
     .decl mark(key: Key, p: Position)
 
-    // p on a key-k ray cast toward edge d, in p's line.
-    .decl ray(key: Key, p: Position, d: Dir)
-    ray(K, P, D) :-
-        cell(P), mark(K, Q), dir(D),
-        axis_of(D, A), split(P, A, _, Ac), split(Q, A, _, Ac),
-        dist(P, D, Kp), dist(Q, D, Kq), Kq >= Kp.
-}
+    // Short of the far edge: every edge the cast toward d approaches still
+    // lies ahead. A position off the frame across d passes, so a cast that
+    // starts outside still walks in.
+    .decl onward(p: Position, d: Dir8) inline
+    onward(P, D) :- dir_elem(D), dist(P, D, K), K >= 0.
+    onward(P, D) :- diag_dir_elem(D), diag_dist(P, D, _, K1, K2), K1 >= 0, K2 >= 0.
 
-// The DiagDir peer of Ray: keyed marks cast rays toward each corner in
-// `diag`. Same contract as Ray — inclusive reach, extent only.
-.comp DiagRay<Key> {
-    .decl diag(d: DiagDir)             // cast corners in use
-    .decl cell(p: Position)            // domain tested
-    .decl mark(key: Key, p: Position)
+    // Frame-wide cast: one cell per step from each mark, marks included.
+    .decl cast(key: Key, p: Position, d: Dir8, k: number)
+    cast(Ky, P, D, 0) :- mark(Ky, P), dir(D).
+    cast(Ky, P2, D, K+1) :-
+        cast(Ky, P, D, K), dir8_step_delta(D, S), compose(P, S, P2), onward(P2, D).
 
-    .decl ray(key: Key, p: Position, d: DiagDir)
-    ray(K, P, Diag) :-
-        cell(P), mark(K, Q), diag(Diag),
-        diag_dist(P, Diag, A, Pa, Pb), diag_dist(Q, Diag, A, Qa, Qb),
-        Qa - Pa = Qb - Pb, Qa >= Pa.
+    // p on a key-k ray cast toward d, k cells from the casting mark. Rows are
+    // per witness: a cell with two marks on its line toward d gets one row per
+    // mark, each carrying that mark's distance. k = 0 at the mark itself, and
+    // `ray(Ky, P, D, _)` is membership alone.
+    .decl ray(key: Key, p: Position, d: Dir8, k: number)
+    ray(Ky, P, D, K) :- cast(Ky, P, D, K), cell(Ky, P).
 }
 
 // The two-sided fold of Ray: between(k, p) holds when key-k marks lie on
-// both sides of p in its line, along a fed axis. `axis` is the instance's
-// cast set — feed one axis for single-axis spans, both for row-and-column
-// spans. Reach is inclusive, as in Ray.
+// both sides of p in its line, along a fed axis. Reach is inclusive, as in
+// Ray.
 .comp Between<Key> : Ray<Key> {
+    // The cast set — one axis for single-axis spans, both for row-and-column
+    // spans. The instance's parameter, unkeyed.
     .decl axis(a: Axis)
+
     dir(D) :- axis(A), axis_of(D, A).   // cast both ways
 
     .decl between(key: Key, p: Position)
-    between(K, P) :- ray(K, P, D), opposite(D, O), ray(K, P, O).
+    between(K, P) :- ray(K, P, D, _), opposite(D, O), ray(K, P, O, _).
 }
 
-// Sparse numeric set → dense ordinal position, per key. The solver
-// populates `idx_set`; `rank(key, k, r)` gives r = the count of the key's
-// elements strictly less than k, so ranks run ascending from 0;
-// `rank_desc` counts strictly greater. For a descending layout, place
-// ranks from the opposite edge; `rank_desc` is for when the rank value
-// itself flows downstream. idx_set is a set: items sharing k share its
-// rank, and the rank set stays dense under ties.
+// Sparse numeric set → dense ordinal position, per key.
 .comp Ordinal<Key> {
+    // The numbers to rank, per key. A set: items sharing k share its rank,
+    // and the rank set stays dense under ties.
     .decl idx_set(key: Key, k: number)
 
+    // r = the count of the key's elements strictly less than k, so ranks run
+    // ascending from 0.
     .decl rank(key: Key, k: number, r: number)
     rank(Ky, K, R) :-
         idx_set(Ky, K),
         R = count : { idx_set(Ky, K2), K2 < K }.
 
+    // The same count, strictly greater. For a descending layout, place ranks
+    // from the opposite edge; this is for when the rank value itself flows
+    // downstream.
     .decl rank_desc(key: Key, k: number, r: number)
     rank_desc(Ky, K, R) :-
         idx_set(Ky, K),

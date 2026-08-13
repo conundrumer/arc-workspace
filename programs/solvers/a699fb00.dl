@@ -37,7 +37,7 @@ out(P, Col, $Flank()) :- in(P, Col), !flanked(P).
 
 .init spans = Between<Unit>
 spans.axis(A)       :- c.axis(A).
-spans.cell(P)       :- in(P, Bg), c.bg(Bg).
+spans.cell($U(), P) :- in(P, Bg), c.bg(Bg).
 spans.mark($U(), Q) :- in(Q, Dot), c.dot(Dot).
 
 out(P, F, $Span())   :- spans.between($U(), P), c.fill(F).

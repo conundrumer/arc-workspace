@@ -109,12 +109,12 @@ emitter(P2) :-
     emitter(P1), march_jump(J), compose(P1, J, P2),
     c.grow(D), dist(P2, D, K), K >= 0.           // rows remain
 
-.init rays = DiagRay<Unit>
-rays.diag(Diag)    :- cast_corner(Diag).
-rays.cell(P)       :- frame.cell($U(), P).
+.init rays = Ray<Unit>
+rays.dir(Diag)     :- cast_corner(Diag).
+rays.cell($U(), P) :- frame.cell($U(), P).
 rays.mark($U(), P) :- emitter(P).
 
-echo(P, $Emit()) :- rays.ray($U(), P, _), !arm(P).
+echo(P, $Emit()) :- rays.ray($U(), P, _, _), !arm(P).
 
 // $Stripe — diagonal offset from the echo-axis arm is a multiple of
 // c.period: the same corner_dist class from the mirror corner as the seed.

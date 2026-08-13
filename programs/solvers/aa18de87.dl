@@ -27,7 +27,7 @@
 
 .init axis_spans = Between<Unit>
 axis_spans.axis(A)       :- c.axis(A).
-axis_spans.cell(P)       :- in(P, Bg), c.bg(Bg).
+axis_spans.cell($U(), P) :- in(P, Bg), c.bg(Bg).
 axis_spans.mark($U(), Q) :- in(Q, Col), !c.bg(Col).
 
 out(P, F, $Axis())   :- axis_spans.between($U(), P), c.fill(F).
@@ -37,7 +37,7 @@ out(P, Col, $Axis()) :- in(P, Col), !axis_spans.between($U(), P).
 
 .init iso_spans = Between<Unit>
 iso_spans.axis(A)       :- axis_elem(A).
-iso_spans.cell(P)       :- in(P, Bg), c.bg(Bg).
+iso_spans.cell($U(), P) :- in(P, Bg), c.bg(Bg).
 iso_spans.mark($U(), Q) :- in(Q, Col), !c.bg(Col).
 
 out(P, F, $Iso())   :- iso_spans.between($U(), P), c.fill(F).

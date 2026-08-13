@@ -35,7 +35,7 @@ bg_tile(T) :- tile(_, T), !mark(T, _).
 
 .init bet = Between<Color>
 bet.axis(A) :- axis_elem(A).
-bet.cell(T) :- tile(_, T).
+bet.cell(Col, T) :- mark(_, Col), tile(_, T).
 bet.mark(Col, T) :- mark(T, Col).
 
 .decl fill(ch: Choice, p_tile: Position, col: Color)

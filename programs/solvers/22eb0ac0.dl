@@ -40,7 +40,7 @@ out(P, Col_out, $Flood()) :-
 
 .init spans = Between<Color>
 spans.axis(A)      :- c.axis(A).
-spans.cell(P)      :- in(P, _).
+spans.cell(Col, P) :- spans.mark(Col, _), in(P, _).
 spans.mark(Col, Q) :- in(Q, Col), !c.bg(Col).
 
 out(P, Col, $Span()) :- spans.between(Col, P).

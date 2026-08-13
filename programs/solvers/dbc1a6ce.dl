@@ -14,7 +14,7 @@
 
 .init spans = Between<Unit>
 spans.axis(A)       :- axis_elem(A).
-spans.cell(P)       :- in(P, Bg), c.bg(Bg).
+spans.cell($U(), P) :- in(P, Bg), c.bg(Bg).
 spans.mark($U(), Q) :- in(Q, Col), !c.bg(Col).
 
 .decl out(p: Position, col: Color)

@@ -14,7 +14,7 @@
 
 .init spans = Between<Color>
 spans.axis(A)      :- c.fill_axis(A).
-spans.cell(P)      :- in(P, _).
+spans.cell(Col, P) :- spans.mark(Col, _), in(P, _).
 spans.mark(Col, Q) :- in(Q, Col), !c.bg(Col).
 
 .decl out(p: Position, col: Color)

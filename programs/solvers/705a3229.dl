@@ -20,11 +20,11 @@ cast(Col, D) :- mark(Col, P), dir_elem(D), dist_pair(P, D, K, K2), K < K2.
 
 .init rays = Ray<Color>
 rays.dir(D)       :- dir_elem(D).
-rays.cell(P)      :- in(P, _).
+rays.cell(Col, P) :- mark(Col, _), in(P, _).
 rays.mark(Col, P) :- mark(Col, P).
 
 .decl arm(p: Position, col: Color)
-arm(P, Col) :- rays.ray(Col, P, D), cast(Col, D).
+arm(P, Col) :- rays.ray(Col, P, D, _), cast(Col, D).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- arm(P, Col).

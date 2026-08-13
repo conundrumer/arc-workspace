@@ -27,7 +27,7 @@
 
 .init ink_spans = Between<Unit>
 ink_spans.axis(A)       :- axis_elem(A).
-ink_spans.cell(P)       :- in(P, _).
+ink_spans.cell($U(), P) :- in(P, _).
 ink_spans.mark($U(), Q) :- in(Q, Ink), c.ink(Ink).
 
 out(P, Ink, $Ink()) :- ink_spans.between($U(), P), c.ink(Ink).
@@ -37,7 +37,7 @@ out(P, Col, $Ink()) :- in(P, Col), !ink_spans.between($U(), P).
 
 .init self_spans = Between<Color>
 self_spans.axis(A)      :- axis_elem(A).
-self_spans.cell(P)      :- in(P, _).
+self_spans.cell(Col, P) :- self_spans.mark(Col, _), in(P, _).
 self_spans.mark(Col, Q) :- in(Q, Col), !c.bg(Col).
 
 out(P, Col, $Self()) :- self_spans.between(Col, P).
