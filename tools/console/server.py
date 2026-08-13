@@ -9,7 +9,8 @@ with review comments, and commits approved solvers.
 Env:
     CONSOLE_FAKE=1     use fake_worker.py instead of claude (UI demo)
     CONSOLE_CLAUDE     claude binary (default: claude)
-    CONSOLE_MODEL      worker model (default: claude-fable-5)
+    CONSOLE_CREATE_MODEL   create-phase model (default: claude-opus-5)
+    CONSOLE_REFINE_MODEL   refine-phase model (default: claude-fable-5)
     CONSOLE_COMMIT_MODEL   committer model (default: claude-opus-5)
 """
 
@@ -50,7 +51,8 @@ REF_DIR = (ROOT.parent / "arc-synth-bun").resolve()
 
 FAKE = os.environ.get("CONSOLE_FAKE") == "1"
 CLAUDE = os.environ.get("CONSOLE_CLAUDE", "claude")
-MODEL = os.environ.get("CONSOLE_MODEL", "claude-fable-5")
+MODELS = {"create": os.environ.get("CONSOLE_CREATE_MODEL", "claude-opus-5"),
+          "refine": os.environ.get("CONSOLE_REFINE_MODEL", "claude-fable-5")}
 COMMIT_MODEL = os.environ.get("CONSOLE_COMMIT_MODEL", "claude-opus-5")
 
 WORKER_FLAGS = [
@@ -88,6 +90,14 @@ COMMITTER = {"running": False, "note": None}
 
 
 # ---------- item lifecycle ----------
+#
+# An item runs as two linked sessions: `create` writes the solver and ends its
+# pass with a handoff report, `refine` takes over from that report. `phase`
+# names the session that owns the item; the handoff flips it once, and only
+# from a turn launched with the handoff flag — the wave's first create turn,
+# or a `handoff` comment that asks for a fresh report. A stopped or dead turn
+# never hands off. Comments target either session; a debug turn to `create`
+# after the handoff does not hand off again.
 #
 # A turn ends in NEEDS_REVIEW, whether it reported a result or died mid-flight;
 # a worker that never reported a session falls back to QUEUED instead. `load`
@@ -162,12 +172,23 @@ def load() -> None:
     for it in STATE["items"]:
         migrate(it)
         if it["state"] in ACTIVE:
-            it["state"] = NEEDS_REVIEW if it.get("session") else QUEUED
+            it.pop("pending_handoff", None)
             say(it, event("interrupted by console restart"))
+            turn_died(it, it.get("last_turn_phase") or it["phase"])
 
 
 def migrate(it: dict) -> None:
-    """Fold an item written before `pre` into the grouped snapshot."""
+    """Fold state written by earlier console versions forward."""
+    if "sessions" not in it:
+        old = it.pop("session", None)
+        it["sessions"] = {"create": None, "refine": old}
+        it["phase"] = "refine" if old else "create"
+        it["refined"] = bool(old)
+        it["lastActive"] = {"create": None, "refine": it.get("lastActive")}
+        for m in it.get("feed", []):
+            m.setdefault("sess", "refine")
+        if isinstance(it.get("reverted"), list):
+            it["reverted"] = {"files": it["reverted"], "phase": "refine"}
     if "pre" in it:
         return
     it["pre"] = {"hash": it.pop("hash_before", ""),
@@ -190,7 +211,8 @@ def touch(it: dict) -> None:
     it["ver"] = it.get("ver", 0) + 1
 
 
-def say(it: dict, entry: dict) -> None:
+def say(it: dict, entry: dict, sess: str | None = None) -> None:
+    entry.setdefault("sess", sess or it.get("phase", "refine"))
     it["feed"].append(entry)
     touch(it)
 
@@ -247,10 +269,49 @@ def skill_body() -> str:
 
 def build_append(wave: int) -> Path:
     """The worker's system-prompt appendix: the skill body plus the docs and
-    lib.dl, in the projection dl.context renders."""
+    lib.dl, in the projection dl.context renders. Byte-identical for both
+    phases, so the two sessions share the longest possible prompt prefix."""
     path = STATE_DIR / f"wave-{wave:02d}-append.md"
     path.write_text(skill_body() + "\n" + appendix(DOCS))
     return path
+
+
+# ---------- first messages ----------
+#
+# Both phases open with the same task block, so the messages share a prefix
+# beyond the appendix; only the tail after it diverges.
+
+CREATE_BRIEF = """You are the create phase of a two-session flow: you create the solver, then a separate refine session takes over.
+
+Do steps 1-3 of the creation pass with the data above; do not re-read the data. Skip steps 4-5. In place of the review, end your turn with a handoff report addressed to the refine session: the model claim, each choice point with the alternatives you considered and why you discarded them, and the audit findings and judgment calls. Make it complete enough that the refine session rederives nothing."""
+
+HANDOFF_BRIEF = """Write the handoff report for the refine session that takes over from you: the model claim, each choice point with the alternatives you considered and why you discarded them, and the audit findings and judgment calls. Cover the whole session, including turns after any earlier report. Make it complete enough that the refine session rederives nothing."""
+
+REFINE_BRIEF = """You are the refine phase of a two-session flow: a create session did steps 1-3 of the creation pass and left the handoff report above.
+
+Read programs/solvers/{tid}.dl first — the report describes it, but you edit the file itself. Then refine the solver: judge the model and the code yourself, and edit what falls short. Then do steps 2-5 of the creation pass, so your own edits get the simplify and prune treatment too. Trust the report for what was already tried; do not rederive discarded alternatives."""
+
+
+def task_block(tid: str) -> str:
+    p = TASKS / f"{tid}.json"
+    task = p.read_text().rstrip() if p.exists() else "(missing)"
+    return f"Task: {tid}\n\n## data/tasks/{tid}.json\n\n```json\n{task}\n```"
+
+
+def create_message(tid: str) -> str:
+    p = REF_DIR / "programs" / "solvers" / f"{tid}.ts"
+    ref = p.read_text().rstrip() if p.exists() else "(missing)"
+    return (task_block(tid)
+            + f"\n\n## ../arc-synth-bun/programs/solvers/{tid}.ts (reference)\n\n"
+            + f"```ts\n{ref}\n```\n\n" + CREATE_BRIEF)
+
+
+def refine_message(it: dict) -> str:
+    report = (it.get("handoff_report") or "").strip() \
+        or "(the create session left no report)"
+    return (task_block(it["id"])
+            + "\n\n## handoff report from the create session\n\n" + report
+            + "\n\n" + REFINE_BRIEF.format(tid=it["id"]))
 
 
 # ---------- workers ----------
@@ -302,24 +363,35 @@ def tool_label(name: str, inp: dict) -> str | None:
 CLEAN_TRIGGERS = ("cleanup", "fit")
 
 
-def launch(it: dict, message: str, trigger: str | None = None) -> None:
-    """Start a worker turn for `it`. Caller holds LOCK and has set state."""
-    reverted = it.pop("reverted", None)
-    if reverted:
+def launch(it: dict, message: str, phase: str, trigger: str | None = None,
+           handoff: bool = False) -> None:
+    """Start a worker turn for `it` in the given phase's session. Caller holds
+    LOCK and has set state. `handoff` marks the turn whose clean landing hands
+    the item to the refine phase."""
+    rv = it.get("reverted")
+    if rv and rv.get("phase") == phase:
+        it.pop("reverted")
         message = ("<system-reminder>The user reverted the file edits from your "
-                   f"previous turn; {', '.join(reverted)} on disk is back to its "
+                   f"previous turn; {', '.join(rv['files'])} on disk is back to its "
                    "pre-turn state. Re-read before editing.</system-reminder>\n\n"
                    + message)
+    else:
+        seen = it.get("seen_hash", {}).get(phase)
+        if seen is not None and seen != solver_hash(it["id"]):
+            message = ("<system-reminder>programs/solvers/"
+                       f"{it['id']}.dl changed on disk since your last turn. "
+                       "Re-read before editing.</system-reminder>\n\n" + message)
+    it["last_turn_phase"] = phase
     if FAKE:
-        cmd = [sys.executable, str(HERE / "fake_worker.py"), it["id"], message]
+        cmd = [sys.executable, str(HERE / "fake_worker.py"), it["id"], message, phase]
     else:
         cmd = [CLAUDE, "-p", message,
                "--append-system-prompt", Path(it["append"]).read_text(),
                *WORKER_FLAGS]
-        if MODEL:
-            cmd += ["--model", MODEL]
-        if it.get("session"):
-            cmd += ["--resume", it["session"]]
+        if MODELS[phase]:
+            cmd += ["--model", MODELS[phase]]
+        if it["sessions"].get(phase):
+            cmd += ["--resume", it["sessions"][phase]]
     log = open(LOG_DIR / f"{it['id']}.log", "ab")
     proc = subprocess.Popen(cmd, cwd=ROOT, stdout=subprocess.PIPE,
                             stderr=log, text=True)
@@ -327,11 +399,12 @@ def launch(it: dict, message: str, trigger: str | None = None) -> None:
     PROCS[it["id"]] = proc
     it["pre"] = {"hash": solver_hash(it["id"]), "solver": solver_text(it["id"]),
                  "proposals": prop_text(), "dirty": it["dirty"], "files": {}}
-    threading.Thread(target=reader, args=(it["id"], proc, trigger),
+    threading.Thread(target=reader, args=(it["id"], proc, trigger, phase, handoff),
                      daemon=True).start()
 
 
-def reader(item_id: str, proc: subprocess.Popen, trigger: str | None) -> None:
+def reader(item_id: str, proc: subprocess.Popen, trigger: str | None,
+           phase: str, handoff: bool) -> None:
     started = time.time()
     got_result = False
     seen: set = set()  # stream-json emits one event per content block, same message id
@@ -350,7 +423,7 @@ def reader(item_id: str, proc: subprocess.Popen, trigger: str | None) -> None:
                 break
             kind = ev.get("type")
             if kind == "system" and ev.get("subtype") == "init":
-                it["session"] = ev.get("session_id") or it.get("session")
+                it["sessions"][phase] = ev.get("session_id") or it["sessions"].get(phase)
             elif kind == "assistant":
                 if first_response:
                     first_response.set()
@@ -379,10 +452,10 @@ def reader(item_id: str, proc: subprocess.Popen, trigger: str | None) -> None:
                         seen.add(key)
                         if sub or entry["kind"] == "ask":
                             entry["sub"] = True
-                        say(it, entry)
+                        say(it, entry, sess=phase)
             elif kind == "result":
                 got_result = True
-                finish_turn(it, ev, trigger, started)
+                finish_turn(it, ev, trigger, started, phase, handoff)
         bump()
     proc.wait()
     with LOCK:
@@ -391,18 +464,39 @@ def reader(item_id: str, proc: subprocess.Popen, trigger: str | None) -> None:
         if it and not got_result:
             if item_id in KILLED:
                 KILLED.discard(item_id)
-                say(it, event("stopped"))
+                say(it, event("stopped"), sess=phase)
             else:
                 tail = ""
                 log = LOG_DIR / f"{item_id}.log"
                 if log.exists():
                     tail = log.read_text(errors="replace")[-400:].strip()
-                say(it, event(f"worker exited without result (code {proc.returncode}) — {tail}"))
-            it["state"] = NEEDS_REVIEW if it.get("session") else QUEUED
-            it["updated"] = True
+                say(it, event(f"worker exited without result (code {proc.returncode}) — {tail}"),
+                    sess=phase)
+            turn_died(it, phase)
+        elif it and it.pop("pending_handoff", False):
+            complete_handoff(it)
     if first_response:
         first_response.set()
     bump()
+
+
+def turn_died(it: dict, phase: str) -> None:
+    """End-of-turn fallback when no result landed. A refine turn that died
+    before reporting a session puts the item back in the create phase, where
+    `handoff` can retry."""
+    if phase == "refine" and not it["sessions"]["refine"]:
+        it["phase"] = "create"
+    it["state"] = NEEDS_REVIEW if it["sessions"][it["phase"]] else QUEUED
+    it["updated"] = True
+
+
+def complete_handoff(it: dict) -> None:
+    """Flip the item to the refine phase and launch its first turn. Caller
+    holds LOCK; the create turn's process has fully drained."""
+    it["phase"] = "refine"
+    it["state"] = RUNNING
+    say(it, event("handoff — refine session starting"))
+    launch(it, refine_message(it), "refine")
 
 
 # Dollars of list-price usage per 1% of each rate-limit window. Nothing
@@ -429,7 +523,8 @@ def quota_note(ev: dict) -> str:
     return " · " + " · ".join(parts)
 
 
-def finish_turn(it: dict, ev: dict, trigger: str | None, started: float) -> None:
+def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
+                phase: str, handoff: bool) -> None:
     it["rev"] = it.get("rev", 0) + 1
     text = (ev.get("result") or "").strip()
     if text:
@@ -444,22 +539,34 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float) -> None
                 break
         if match:
             match.clear()
-            match.update(kind="report", rev=it["rev"], text=text)
+            match.update(kind="report", rev=it["rev"], text=text, sess=phase)
             touch(it)
         else:
-            say(it, {"kind": "report", "rev": it["rev"], "text": text})
+            say(it, {"kind": "report", "rev": it["rev"], "text": text}, sess=phase)
     mins = (time.time() - started) / 60
     note = f"turn done · {mins:.0f}m" if mins >= 1 else "turn done · <1m"
-    say(it, event(note + quota_note(ev)))
-    if trigger in CLEAN_TRIGGERS or it["rev"] == 1:
+    say(it, event(note + quota_note(ev)), sess=phase)
+    # the create pass ends in prune, and the refine pass is itself the quality
+    # pass, so each phase's first landing is clean by cadence
+    first_refine = phase == "refine" and not it.get("refined")
+    if phase == "refine":
+        it["refined"] = True
+    if trigger in CLEAN_TRIGGERS or first_refine or (phase == "create" and it["rev"] == 1):
         it["dirty"] = False
     elif solver_hash(it["id"]) != pre(it)["hash"]:
         it["dirty"] = True
-    it["state"] = NEEDS_REVIEW
-    it["updated"] = True
-    it["lastActive"] = int(time.time() * 1000)
+    it.setdefault("seen_hash", {})[phase] = solver_hash(it["id"])
+    it["lastActive"][phase] = int(time.time() * 1000)
     it["title"] = title_of(it["id"]) or it.get("title", "")
     it["prop_after"] = prop_text()
+    if handoff and phase == "create":
+        # hand off after this reader drains, so the refine turn's process
+        # never collides with this one's PROCS slot
+        it["handoff_report"] = text
+        it["pending_handoff"] = True
+    else:
+        it["state"] = NEEDS_REVIEW
+        it["updated"] = True
 
 
 FIRST_RESPONSE: dict[str, threading.Event] = {}
@@ -504,9 +611,10 @@ def start_wave(k: int, order: str = "name") -> dict:
         for tid, est in picked:
             STATE["items"].append({
                 "id": tid, "est": est, "wave": STATE["wave"], "state": QUEUED,
-                "session": None, "dirty": False, "updated": False, "rev": 0,
-                "lastActive": None, "title": "", "feed": [], "append": append,
-                "ver": 0,
+                "sessions": {"create": None, "refine": None}, "phase": "create",
+                "refined": False, "dirty": False, "updated": False, "rev": 0,
+                "lastActive": {"create": None, "refine": None},
+                "title": "", "feed": [], "append": append, "ver": 0,
             })
     bump()
     threading.Thread(target=stagger_launch,
@@ -522,7 +630,7 @@ def stagger_launch(ids: list[str]) -> None:
         it = find(ids[0])
         it["state"] = RUNNING
         say(it, event("launched (cache seeder)"))
-        launch(it, first_message(ids[0]))
+        launch(it, create_message(ids[0]), "create", handoff=True)
     bump()
     first.wait(timeout=STAGGER_TIMEOUT)
     FIRST_RESPONSE.pop(ids[0], None)
@@ -531,30 +639,38 @@ def stagger_launch(ids: list[str]) -> None:
             it = find(tid)
             it["state"] = RUNNING
             say(it, event("launched"))
-            launch(it, first_message(tid))
+            launch(it, create_message(tid), "create", handoff=True)
     bump()
-
-
-def first_message(tid: str) -> str:
-    return f"Task: {tid}. Work this solver per the cadence."
 
 
 # ---------- actions ----------
 
 @action
-def act_comment(it: dict, text: str) -> None:
+def act_comment(it: dict, text: str, sess: str | None = None) -> None:
     text = text.strip()
-    if text.lower() in ("commit", "next"):
+    low = text.lower()
+    if low in ("commit", "next"):
         raise Reject(f"`{text}` is a console action, not a worker message")
     require_idle(it)
-    if not it.get("session"):
+    if low == "handoff":
+        if it["phase"] != "create":
+            raise Reject("already handed off")
+        if not it["sessions"]["create"]:
+            raise Reject("no session yet")
+        say(it, {"kind": "you", "text": text}, sess="create")
+        it["state"] = COMMENTED
+        it["updated"] = False
+        launch(it, HANDOFF_BRIEF, "create", handoff=True)
+        return
+    sess = sess if sess in ("create", "refine") else it["phase"]
+    if not it["sessions"].get(sess):
         raise Reject("no session yet")
-    say(it, {"kind": "you", "text": text})
+    say(it, {"kind": "you", "text": text}, sess=sess)
     it["state"] = COMMENTED
     it["updated"] = False
-    head = text.lower().split()[:1]
+    head = low.split()[:1]
     trigger = head[0] if head and head[0] in CLEAN_TRIGGERS else None
-    launch(it, text, trigger)
+    launch(it, text, sess, trigger=trigger)
 
 
 @action
@@ -618,7 +734,8 @@ def act_revert(it: dict) -> None:
         (DOCS / "proposals.md").write_text(sp)
         reverted.append("docs/wf-solver/proposals.md")
     it["dirty"] = pre(it)["dirty"]
-    it["reverted"] = reverted
+    it["reverted"] = {"files": reverted,
+                      "phase": it.get("last_turn_phase") or it["phase"]}
     say(it, event("edits reverted"))
 
 
@@ -703,9 +820,9 @@ def run_committer(append: Path) -> None:
 
 def light_items() -> list[dict]:
     return [{k: it.get(k) for k in
-             ("id", "state", "dirty", "updated", "session", "lastActive",
-              "wave", "rev", "title", "est", "ver", "append")} |
-            {"active": active(it)}
+             ("id", "state", "dirty", "updated", "sessions", "phase",
+              "lastActive", "wave", "rev", "title", "est", "ver", "append")} |
+            {"active": active(it), "turnPhase": it.get("last_turn_phase")}
             for it in STATE["items"]]
 
 
@@ -743,7 +860,7 @@ class Handler(BaseHTTPRequestHandler):
                     COND.wait(deadline - time.time())
                 snap = {"seq": STATE["seq"], "wave": STATE["wave"],
                         "items": light_items(), "usage": USAGE,
-                        "cli": {"addDir": str(REF_DIR), "model": MODEL},
+                        "cli": {"addDir": str(REF_DIR), "models": MODELS},
                         "committer": dict(COMMITTER),
                         "solved": len(list(SOLVERS.glob("*.dl"))),
                         "total": len(list(REF_DIR.glob("programs/solvers/*.ts")))}
@@ -782,7 +899,8 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/wave":
             res = start_wave(int(body.get("k", 6)), body.get("order", "name"))
         elif route == "/api/comment":
-            res = act_comment(body.get("id", ""), body.get("text", ""))
+            res = act_comment(body.get("id", ""), body.get("text", ""),
+                              body.get("sess"))
         elif route == "/api/approve":
             res = act_approve(body.get("id", ""))
         elif route == "/api/unapprove":

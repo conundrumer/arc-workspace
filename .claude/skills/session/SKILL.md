@@ -33,7 +33,7 @@ For each pass: Do each step individually. Do not batch them. Create a task per s
 Creation pass, do this first:
 
 1. Create the solver
-    1. Analyze the task and the reference TS solver: `cat data/tasks/<task_id>.json ../arc-synth-bun/programs/solvers/<task_id>.ts`
+    1. Analyze the task and the reference TS solver. When they are not in the message, read them: `cat data/tasks/<task_id>.json ../arc-synth-bun/programs/solvers/<task_id>.ts`
         - The task is already formatted, do not pipe into anything.
         - The reference TS solver solves the task but might not encode the best model.
     2. Draft the solver. Do not write the `Fit` comp yet.

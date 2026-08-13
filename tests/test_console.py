@@ -6,6 +6,7 @@ tmp dir, so its module-level state and paths never touch the real workspace.
 
 import importlib.util
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -34,8 +35,11 @@ def srv(tmp_path, monkeypatch):
 
 def item(s, item_id, state, **kw):
     """Append an item the way start_wave does, then override for the test."""
-    it = {"id": item_id, "est": 10, "wave": 1, "state": state, "session": "sess-" + item_id,
-          "dirty": False, "updated": False, "rev": 1, "lastActive": None, "title": "",
+    it = {"id": item_id, "est": 10, "wave": 1, "state": state,
+          "sessions": {"create": None, "refine": "sess-" + item_id},
+          "phase": "refine", "refined": True,
+          "lastActive": {"create": None, "refine": None},
+          "dirty": False, "updated": False, "rev": 1, "title": "",
           "feed": [], "append": "", "ver": 0}
     it.update(kw)
     s.STATE["items"].append(it)
@@ -125,7 +129,7 @@ def test_actions_refuse_while_a_turn_is_in_flight(srv):
 
 
 def test_comment_needs_a_session(srv):
-    item(srv, "a", srv.NEEDS_REVIEW, session=None)
+    item(srv, "a", srv.NEEDS_REVIEW, sessions={"create": None, "refine": None})
     assert srv.act_comment("a", "hi")["error"] == "no session yet"
 
 
@@ -136,21 +140,108 @@ def test_console_actions_are_not_worker_messages(srv):
 
 def test_comment_launches_a_follow_up_turn(srv, monkeypatch):
     sent = []
-    monkeypatch.setattr(srv, "launch", lambda it, msg, trig=None: sent.append((msg, trig)))
+    monkeypatch.setattr(srv, "launch",
+                        lambda it, msg, phase, trigger=None, handoff=False:
+                        sent.append((msg, phase, trigger)))
     it = item(srv, "a", srv.NEEDS_REVIEW)
     assert srv.act_comment("a", "cleanup please") == {"ok": True}
-    assert sent == [("cleanup please", "cleanup")]
+    assert sent == [("cleanup please", "refine", "cleanup")]
     assert it["state"] == srv.COMMENTED
-    assert it["feed"][-1] == {"kind": "you", "text": "cleanup please"}
+    assert it["feed"][-1] == {"kind": "you", "text": "cleanup please", "sess": "refine"}
 
 
 def test_fit_is_a_clean_trigger(srv, monkeypatch):
     sent = []
-    monkeypatch.setattr(srv, "launch", lambda it, msg, trig=None: sent.append((msg, trig)))
+    monkeypatch.setattr(srv, "launch",
+                        lambda it, msg, phase, trigger=None, handoff=False:
+                        sent.append((msg, trigger)))
     item(srv, "a", srv.NEEDS_REVIEW)
     srv.act_comment("a", "fit the consts")
     srv.act_comment("a", "benefit from this")
     assert sent == [("fit the consts", "fit"), ("benefit from this", None)]
+
+
+def test_comment_routes_to_the_chosen_session(srv, monkeypatch):
+    sent = []
+    monkeypatch.setattr(srv, "launch",
+                        lambda it, msg, phase, trigger=None, handoff=False:
+                        sent.append(phase))
+    item(srv, "a", srv.NEEDS_REVIEW, sessions={"create": "cs", "refine": "rs"})
+    srv.act_comment("a", "why rank over area?", "create")
+    assert sent == ["create"]
+
+
+# ---------- handoff ----------
+
+def test_handoff_is_a_worker_turn_that_reports(srv, monkeypatch):
+    sent = []
+    monkeypatch.setattr(srv, "launch",
+                        lambda it, msg, phase, trigger=None, handoff=False:
+                        sent.append((msg, phase, handoff)))
+    it = item(srv, "a", srv.NEEDS_REVIEW, phase="create",
+              sessions={"create": "cs", "refine": None})
+    assert srv.act_comment("a", "handoff") == {"ok": True}
+    assert sent == [(srv.HANDOFF_BRIEF, "create", True)]
+    assert it["state"] == srv.COMMENTED
+
+
+def test_handoff_refused_outside_the_create_phase(srv):
+    item(srv, "a", srv.NEEDS_REVIEW)
+    assert srv.act_comment("a", "handoff")["error"] == "already handed off"
+
+
+def test_create_landing_defers_the_handoff(srv):
+    it = item(srv, "a", srv.RUNNING, phase="create", refined=False, rev=0,
+              sessions={"create": "cs", "refine": None})
+    srv.finish_turn(it, {"result": "the report"}, None, time.time(), "create", True)
+    assert it["pending_handoff"] is True
+    assert it["handoff_report"] == "the report"
+    assert it["state"] == srv.RUNNING
+    assert it["dirty"] is False
+
+
+def test_complete_handoff_launches_refine_with_the_report(srv, monkeypatch):
+    sent = []
+    monkeypatch.setattr(srv, "launch",
+                        lambda it, msg, phase, trigger=None, handoff=False:
+                        sent.append((msg, phase)))
+    it = item(srv, "a", srv.RUNNING, phase="create",
+              sessions={"create": "cs", "refine": None},
+              handoff_report="tried X, discarded Y")
+    srv.complete_handoff(it)
+    assert it["phase"] == "refine"
+    assert it["state"] == srv.RUNNING
+    (msg, phase), = sent
+    assert phase == "refine"
+    assert "tried X, discarded Y" in msg
+
+
+def test_refine_first_landing_clears_dirty(srv):
+    it = item(srv, "a", srv.RUNNING, dirty=True, refined=False)
+    srv.finish_turn(it, {"result": "review"}, None, time.time(), "refine", False)
+    assert it["dirty"] is False
+    assert it["refined"] is True
+    assert it["state"] == srv.NEEDS_REVIEW
+
+
+def test_dead_refine_turn_falls_back_to_create(srv):
+    it = item(srv, "a", srv.RUNNING, phase="refine",
+              sessions={"create": "cs", "refine": None})
+    srv.turn_died(it, "refine")
+    assert it["phase"] == "create"
+    assert it["state"] == srv.NEEDS_REVIEW
+
+
+def test_messages_share_the_task_prefix(srv, monkeypatch, tmp_path):
+    tasks = tmp_path / "tasks"
+    tasks.mkdir()
+    (tasks / "a.json").write_text('{"train": []}\n')
+    monkeypatch.setattr(srv, "TASKS", tasks)
+    cm = srv.create_message("a")
+    rm = srv.refine_message({"id": "a", "handoff_report": "the report"})
+    prefix = srv.task_block("a")
+    assert cm.startswith(prefix) and rm.startswith(prefix)
+    assert "the report" in rm
 
 
 def test_task_ask_carries_the_subagent_brief(srv):
@@ -193,7 +284,7 @@ def test_revert_restores_the_pre_turn_solver(srv):
     assert srv.act_revert("a") == {"ok": True}
     assert srv.solver_text("a") == "// before\n"
     assert it["dirty"] is False
-    assert it["reverted"] == ["programs/solvers/a.dl"]
+    assert it["reverted"] == {"files": ["programs/solvers/a.dl"], "phase": "refine"}
 
 
 def test_revert_needs_a_change_to_undo(srv):
@@ -212,7 +303,7 @@ def test_revert_restores_proposals_this_turn_wrote(srv):
     write_solver(srv, "a", "// after\n")
     srv.act_revert("a")
     assert srv.prop_text() == "A\n"
-    assert "docs/wf-solver/proposals.md" in it["reverted"]
+    assert "docs/wf-solver/proposals.md" in it["reverted"]["files"]
 
 
 def test_revert_leaves_proposals_another_worker_touched(srv):
@@ -223,7 +314,7 @@ def test_revert_leaves_proposals_another_worker_touched(srv):
     write_solver(srv, "a", "// after\n")
     srv.act_revert("a")
     assert srv.prop_text() == "A\nB\nC\n"
-    assert it["reverted"] == ["programs/solvers/a.dl"]
+    assert it["reverted"]["files"] == ["programs/solvers/a.dl"]
 
 
 # ---------- loading ----------
@@ -242,6 +333,24 @@ def test_load_folds_legacy_snapshot_keys_into_pre(srv):
                          "dirty": False,
                          "files": {"docs/wf-solver/proposals.md": "A\n"}}
     assert not {"hash_before", "snap", "snap_prop", "dirty_before", "turn_files"} & set(it)
+
+
+def test_load_folds_a_single_session_item(srv):
+    legacy = {"seq": 1, "wave": 1, "items": [{
+        "id": "a", "state": srv.NEEDS_REVIEW, "session": "s", "dirty": False,
+        "updated": False, "rev": 2, "lastActive": 123, "title": "",
+        "feed": [{"kind": "worker", "text": "x"}], "ver": 0,
+        "pre": {"hash": "", "solver": "", "proposals": "", "dirty": False, "files": {}},
+        "reverted": ["programs/solvers/a.dl"],
+    }]}
+    srv.STATE_FILE.write_text(json.dumps(legacy))
+    srv.load()
+    it = srv.STATE["items"][0]
+    assert it["sessions"] == {"create": None, "refine": "s"}
+    assert it["phase"] == "refine" and it["refined"] is True
+    assert it["lastActive"] == {"create": None, "refine": 123}
+    assert it["feed"][0]["sess"] == "refine"
+    assert it["reverted"] == {"files": ["programs/solvers/a.dl"], "phase": "refine"}
 
 
 def test_load_ends_turns_a_restart_cut_short(srv):

@@ -132,6 +132,17 @@ button:disabled:hover { border-color:var(--border); }
 }
 .sessline .cmd { background:var(--panel2); border:1px solid var(--border); padding:1px 7px; border-radius:4px; }
 .copybtn { font-size:10px; padding:2px 8px; }
+.stabs {
+  display:flex; gap:16px; margin-top:7px;
+  font-family:ui-monospace,Menlo,monospace; font-size:11.5px;
+}
+.stab { cursor:pointer; color:var(--muted); }
+.stab:hover { color:var(--ink); }
+.stab.on { color:var(--ink); text-decoration:underline; text-underline-offset:4px; }
+.stab .bdg {
+  display:inline-block; width:7px; height:7px; border-radius:50%;
+  background:var(--st-review); margin-left:5px;
+}
 
 /* feed */
 #feed { display:flex; flex-direction:column; gap:10px; }
@@ -315,7 +326,7 @@ button:disabled:hover { border-color:var(--border); }
 <div id="keysbar">
   <span><b>j/k</b> move</span><span><b>n</b> next review</span><span><b>a</b> approve</span>
   <span><b>u</b> unapprove</span><span><b>c</b> comment</span><span><b>⏎</b> send</span><span><b>⇧⏎</b> newline</span>
-  <span><b>t</b> task</span><span><b>o</b> copy resume</span><span><b>esc</b> blur</span>
+  <span><b>s</b> session</span><span><b>t</b> task</span><span><b>o</b> copy resume</span><span><b>esc</b> blur</span>
 </div>
 
 <div id="toast" role="status"></div>
@@ -332,15 +343,27 @@ let seq = 0, wave = 0, items = [], selId = null, usage = [], progress = null, cl
 
 /* interactive commands that reproduce the workers' prompt bytes (cache reuse),
    on the model the worker ran so the resumed session keeps its cache */
-const takeoverCmd = it => "claude --resume "+it.session
-  +(cli.model?" --model "+cli.model:"")
+const takeoverCmd = (it,s) => "claude --resume "+it.sessions[s]
+  +(((cli.models||{})[s])?" --model "+cli.models[s]:"")
   +` --append-system-prompt "$(cat ${it.append})" --add-dir ${cli.addDir} --exclude-dynamic-system-prompt-sections`;
+const modelShort = s => ((cli.models||{})[s]||"").replace(/^claude-/,"").split("-")[0]||"?";
 const taskCache = {};   // id -> task json | "pending" | "missing"
 const itemCache = {};   // id -> {feed, code, ver}
 const taskOpen  = {};   // id -> bool (default open)
 const tabSel    = {};   // id -> path of the active code tab
+const sessTab   = {};   // id -> session tab the user pinned
+const lastPhase = {};   // id -> phase last seen; a flip unpins the tab
+const seenN     = {};   // id|sess -> feed length when that tab was last shown
 let cboxFor = null;     // id whose draft the composer holds
 const draftKey = id => "draft:"+id;
+
+/* the session tab in view: the user's pin while it holds, else the phase */
+function tabOf(it){
+  if(lastPhase[it.id]!==it.phase){ delete sessTab[it.id]; lastPhase[it.id]=it.phase; }
+  const t=sessTab[it.id];
+  return t && (it.sessions[t]||it.phase===t) ? t : it.phase;
+}
+const hasTab = (it,s) => !!(it.sessions[s]) || it.phase===s;
 
 /* ---------- helpers ---------- */
 const $ = id => document.getElementById(id);
@@ -434,12 +457,14 @@ function jumpToFirstMark(){
   pre.scrollTop += first.getBoundingClientRect().top - pre.getBoundingClientRect().top - lead;
 }
 
-/* cache freshness: minutes remaining until the session's 1h prompt-cache TTL expires */
+/* cache freshness of the phase-owning session: minutes until its 1h
+   prompt-cache TTL expires */
 function cacheInfo(it){
-  if(!it.session) return {cls:"none", txt:"—", sort:9e9};
+  const la = it.lastActive && it.lastActive[it.phase];
+  if(!it.sessions || !it.sessions[it.phase]) return {cls:"none", txt:"—", sort:9e9};
   if(it.active) return {cls:"active", txt:"active", sort:5e8};
-  if(!it.lastActive) return {cls:"none", txt:"—", sort:9e9};
-  const rem = TTL_MIN - (Date.now()-it.lastActive)/60000;
+  if(!la) return {cls:"none", txt:"—", sort:9e9};
+  const rem = TTL_MIN - (Date.now()-la)/60000;
   if(rem<=0) return {cls:"cold", txt:"cold", sort:1e9};
   const cls = rem<10?"hot":rem<30?"warn":"ok";
   return {cls, txt:Math.ceil(rem)+"m", sort:rem};
@@ -583,7 +608,7 @@ function renderUsage(){
    The feed only grows, apart from the report that replaces a worker message at
    turn end. Redraw the entries that changed and leave the rest in place, so a
    streaming turn does not drag away the scroll position or drop a selection. */
-let feedAt=null;   // item id the drawn nodes belong to
+let feedAt=null;   // item id + session tab the drawn nodes belong to
 let drawn=[];      // one {sig, nodes} per feed entry, in feed order
 const feedSig = m => JSON.stringify([m.kind, !!m.sub, m.text]);
 
@@ -618,12 +643,12 @@ function feedNodes(feed, m){
   return [el];
 }
 
-function renderFeed(js, it, entries){
+function renderFeed(js, it, entries, key, showRun){
   let feed=$("feed");
-  if(!feed || feedAt!==it.id){
+  if(!feed || feedAt!==key){
     js.innerHTML="";
     feed=document.createElement("div"); feed.id="feed"; js.appendChild(feed);
-    feedAt=it.id; drawn=[];
+    feedAt=key; drawn=[];
   }
   const stick = js.scrollHeight - js.scrollTop - js.clientHeight < 60;
   const ph=feed.querySelector(":scope > .placeholder");
@@ -636,12 +661,13 @@ function renderFeed(js, it, entries){
   drawn.length=k;
   for(let i=k;i<entries.length;i++)
     drawn.push({sig:feedSig(entries[i]), nodes:feedNodes(feed, entries[i])});
-  if(it.active){
+  if(showRun){
     const p=document.createElement("p"); p.className="placeholder";
     p.innerHTML='<span class="runpulse"></span>worker running';
     feed.appendChild(p);
   } else if(!entries.length){
-    const p=document.createElement("p"); p.className="placeholder"; p.textContent="queued";
+    const p=document.createElement("p"); p.className="placeholder";
+    p.textContent = it.state==="queued" ? "queued" : "no messages yet";
     feed.appendChild(p);
   }
   if(stick) js.scrollTop = js.scrollHeight;
@@ -671,18 +697,37 @@ function renderDetail(){
   }
   const ci=cacheInfo(it);
   const cache=itemCache[it.id]||{feed:[],code:""};
+  const tab=tabOf(it);
+  const feedFor = s => (cache.feed||[]).filter(m=>(m.sess||"refine")===s);
+  const entries=feedFor(tab);
+  seenN[it.id+"|"+tab]=entries.length;
+  const other = tab==="create"?"refine":"create";
+  const badge = hasTab(it,other) && feedFor(other).length>(seenN[it.id+"|"+other]||0);
 
-  const headSig=JSON.stringify([it.id,it.state,it.updated,it.dirty,it.title,it.session,it.active]);
+  const headSig=JSON.stringify([it.id,it.state,it.updated,it.dirty,it.title,it.sessions,it.phase,it.active,tab,badge]);
   if(headAt!==headSig){
     headAt=headSig;
     jh.innerHTML="";
     const dh=document.createElement("div");
-    dh.innerHTML=`<div class="dhead"><span class="tid">${it.id}</span><span class="chip ${CHIPCLS[it.state]}"><span class="dot"></span>${it.state}</span>${it.updated?'<span class="badge-upd">UPDATED</span>':""}${it.dirty?'<span class="badge-dirty">CLEANUP PENDING</span>':""}<span class="title">${esc(it.title||"")}</span></div>`;
-    if(it.session){
+    dh.innerHTML=`<div class="dhead"><span class="tid">${it.id}</span><span class="chip ${CHIPCLS[it.state]}"><span class="dot"></span>${it.state}</span><span class="chip queued"><span class="dot"></span>${it.phase} phase</span>${it.updated?'<span class="badge-upd">UPDATED</span>':""}${it.dirty?'<span class="badge-dirty">CLEANUP PENDING</span>':""}<span class="title">${esc(it.title||"")}</span></div>`;
+    const tr=document.createElement("div"); tr.className="stabs";
+    for(const s of ["create","refine"]) if(hasTab(it,s)){
+      const t=document.createElement("span");
+      t.className="stab"+(s===tab?" on":"");
+      t.textContent=s+" · "+modelShort(s);
+      if(s!==tab && feedFor(s).length>(seenN[it.id+"|"+s]||0)){
+        const b=document.createElement("span"); b.className="bdg"; t.appendChild(b);
+      }
+      t.onclick=()=>{ sessTab[it.id]=s; renderDetail(); };
+      tr.appendChild(t);
+    }
+    dh.appendChild(tr);
+    const sid=it.sessions[tab];
+    if(sid){
       const sl=document.createElement("div"); sl.className="sessline";
-      sl.innerHTML=`<span class="cmd">claude --resume ${it.session.slice(0,8)}…</span>`;
+      sl.innerHTML=`<span class="cmd">claude --resume ${sid.slice(0,8)}…</span>`;
       const b=document.createElement("button"); b.className="copybtn"; b.textContent="copy · o";
-      b.onclick=()=>copy(takeoverCmd(it),"takeover "+it.id);
+      b.onclick=()=>copy(takeoverCmd(it,tab),"takeover "+it.id);
       sl.appendChild(b);
       if(it.active){
         const kb=document.createElement("button"); kb.className="copybtn"; kb.textContent="stop";
@@ -698,10 +743,11 @@ function renderDetail(){
     jh.appendChild(dh);
   }
 
-  renderFeed(js, it, cache.feed);
+  renderFeed(js, it, entries, it.id+"|"+tab,
+             it.active && (!it.turnPhase || it.turnPhase===tab));
 
-  /* composer */
-  const canSend = it.session && !it.active && (it.state==="needs-review"||it.state==="approved");
+  /* composer — sends to the session tab in view */
+  const canSend = it.sessions[tab] && !it.active && (it.state==="needs-review"||it.state==="approved");
   const composer=$("composer"), cbox=$("cbox");
   composer.classList.remove("disabled");
   cbox.disabled=false;
@@ -712,7 +758,10 @@ function renderDetail(){
     cboxFor=it.id;
     cbox.value = localStorage.getItem(draftKey(it.id)) || "";
   }
-  $("chint").textContent = it.state==="needs-review" && it.dirty ? "cleanup pending" : "";
+  let hint = it.state==="needs-review" && it.dirty ? "cleanup pending" : "";
+  if(it.phase==="create" && it.state==="needs-review" && it.sessions.create)
+    hint = "create phase — `handoff` when ready"+(hint?" · "+hint:"");
+  $("chint").textContent=hint;
 
   /* task strip + code — open/closed remembered per task, default open */
   $("taskstrip").classList.toggle("open", taskOpen[it.id]!==false);
@@ -827,7 +876,7 @@ async function sendComment(){
   const low=text.toLowerCase();
   if(low==="commit"){ toast("commit is a console action"); return; }
   if(low==="next"){ toast("no next in batch mode"); return; }
-  const r=await post("/api/comment",{id:it.id,text});
+  const r=await post("/api/comment",{id:it.id,text,sess:tabOf(it)});
   if(r.ok){ cbox.value=""; localStorage.removeItem(draftKey(it.id)); toast("sent"); }
 }
 async function commitApproved(){
@@ -861,7 +910,8 @@ document.addEventListener("keydown",e=>{
   else if(e.key==="a"){ approve(); }
   else if(e.key==="u"){ unapprove(); }
   else if(e.key==="c"){ if(!$("cbox").disabled){ e.preventDefault(); $("cbox").focus(); } }
-  else if(e.key==="o"){ const it=sel(); if(it&&it.session) copy(takeoverCmd(it),"takeover "+it.id); }
+  else if(e.key==="o"){ const it=sel(); if(it){ const s=tabOf(it); if(it.sessions[s]) copy(takeoverCmd(it,s),"takeover "+it.id); } }
+  else if(e.key==="s"){ const it=sel(); if(it){ const o=tabOf(it)==="create"?"refine":"create"; if(hasTab(it,o)){ sessTab[it.id]=o; renderDetail(); } } }
   else if(e.key==="t"){ toggleTask(); }
 });
 function toggleTask(){

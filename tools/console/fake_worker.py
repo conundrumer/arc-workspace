@@ -8,7 +8,8 @@ import uuid
 
 tid = sys.argv[1]
 msg = sys.argv[2] if len(sys.argv) > 2 else ""
-sid = str(uuid.uuid5(uuid.NAMESPACE_URL, "fake-worker/" + tid))
+phase = sys.argv[3] if len(sys.argv) > 3 else "refine"
+sid = str(uuid.uuid5(uuid.NAMESPACE_URL, f"fake-worker/{tid}/{phase}"))
 
 
 def emit(obj):
@@ -29,18 +30,27 @@ if msg.strip().lower() == "cleanup":
     tool("Bash", command=f"uv run python scripts/run_dl.py {tid}")
     time.sleep(1)
     text = "(fake) Cleanup done. Simplify: none. Prune: two cuts. All pairs still pass."
-else:
-    tool("Bash", command=f"cat data/tasks/{tid}.json")
-    time.sleep(1.5)
-    tool("Read", file_path=f"../arc-synth-bun/programs/solvers/{tid}.ts")
-    time.sleep(1)
+elif phase == "create":
     tool("Write", file_path=f"programs/solvers/{tid}.dl")
+    time.sleep(1.5)
+    tool("Bash", command=f"uv run python scripts/run_dl.py {tid}")
+    time.sleep(1)
+    tool("Bash", command=f"uv run python scripts/run_dl.py audit {tid}")
+    time.sleep(1)
+    text = (f"(fake) Handoff report for `{tid}`.\n\n"
+            "1. Model claim: `divide` splits the grid; per-tile recolor by rank.\n"
+            "2. Discarded: global recolor — breaks train 2 (tile order flips).\n"
+            "3. Audit: clean. Judgment call: rank ties broken by position.")
+else:
+    tool("Read", file_path=f"programs/solvers/{tid}.dl")
+    time.sleep(1)
+    tool("Edit", file_path=f"programs/solvers/{tid}.dl")
     time.sleep(1)
     tool("Bash", command=f"uv run python scripts/run_dl.py {tid}")
     time.sleep(1.5)
-    text = (f"(fake) Solver for `{tid}` passes all pairs.\n\n"
-            "1. Model: `divide` splits the grid; per-tile recolor by rank.\n"
-            "2. Awkward: the rank join reads roundabout — see `header_color`.\n"
+    text = (f"(fake) Refined `{tid}`; all pairs still pass.\n\n"
+            "1. Kept the model; renamed `header_color` for the concept.\n"
+            "2. **No fit pass needed.**\n"
             "3. Lib: `rank_of` is solver-local and worked in context; "
             "candidate for staging.")
 
