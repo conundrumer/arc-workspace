@@ -5,9 +5,9 @@
 //
 // Dim: (V-length, H-length) of a frame — ConstsHelpers grouping notation only.
 //
-// Color, Dir, Axis, DiagDir, DiagAxis, D4, Sense are subtypes of number:
-// typed names with no arithmetic intent. Constants are #define'd in disjoint
-// ranges so a value's range identifies its namespace.
+// The subtypes of number are typed names with no arithmetic intent. Their
+// constants are #define'd in disjoint ranges, so a value's range identifies
+// its namespace.
 
 .type Color <: number
 
@@ -38,7 +38,7 @@
 .type Shift = Position
 .type Inset = Position
 
-// Unit: singleton key for keyed components applied to a single set — states
+// Singleton key for keyed components applied to a single set — states
 // "exactly one set" in the type.
 .type Unit = U {}
 
@@ -364,9 +364,9 @@ divide_by_size(P, A, K, G, P_outer, P_inner) :-
     P_inner = [@keep_axis(A, AXIS_V, K_cyc), @keep_axis(A, AXIS_V, K-1-K_cyc),
                @keep_axis(A, AXIS_H, K_cyc), @keep_axis(A, AXIS_H, K-1-K_cyc)].
 
-// The divide family's gap reading: divide reads (extent, n, gap) -> k,
-// divide_by_size reads (extent, k, gap) -> n, divide_gap reads
-// (extent, n, k) -> gap.
+// Gap from tile count and tile size — the divide family's third reading,
+// beside divide, which solves for tile size, and divide_by_size, which solves
+// for tile count.
 // Asserts: the leftover extent divides evenly by the n-1 gaps.
 .decl divide_gap(p: Position, a: Axis, n: number, k: number, g: number) inline
 divide_gap(P, A, N, K, G) :-
@@ -384,11 +384,10 @@ stride(T, W, G, N, K) :-
     K = T_cyc,
     N = T / (W + G).
 
-// Recompose axis-a tiles into a single extent — inverse of divide. p_outer
-// is the tile index in an n-strip frame; p_inner is the cell within the
-// tile. Both axis-only (perpendicular zeroed); p_grid is axis-only on the
-// same axis. With gap > 0, only filled tile cells appear in p_grid — gap
-// rows/cols are absent. Two concats on different axes compose to 2D.
+// Recompose axis-a tiles into a single extent — the inverse of divide, over
+// the same p_outer and p_inner. p_grid is axis-only on the same axis. With
+// gap > 0, only filled tile cells appear in p_grid — gap rows/cols are
+// absent. Two concats on different axes compose to 2D.
 .decl concat(p_outer: Position, p_inner: Position, a: Axis, gap: number,
              p_grid: Position) inline
 concat(P_outer, P_inner, A, G, P_grid) :-
@@ -435,10 +434,10 @@ divide_slab(P, A, N, G, P_outer, P_inner) :-
     split(P, A, _, Across),
     compose(P_i_axis, Across, P_inner).
 
-// 2D divide, one tile count and gap on both axes — the square claim as a
-// repeated scalar. A rectangular claim reads axis-tagged rows through
-// per-axis divide, perp-glued. Outputs are full 2D: p_outer indexes an
-// n×n tile arrangement; p_inner is the cell within a tile.
+// 2D divide, one tile count and gap on both axes. Outputs are full 2D:
+// p_outer indexes an n×n tile arrangement; p_inner is the cell within a tile.
+// One scalar over both axes states the square claim; a rectangular claim
+// reads axis-tagged rows through per-axis divide, perp-glued.
 .decl divide_2d(p: Position, n: number, gap: number,
                 p_outer: Position, p_inner: Position) inline
 divide_2d(P, N, G, P_outer, P_inner) :-
@@ -456,9 +455,9 @@ divide_by_size_2d(P, K, G, P_outer, P_inner) :-
     compose(P_ov, P_oh, P_outer),
     compose(P_iv, P_ih, P_inner).
 
-// 1D concat along axis a with perpendicular passthrough — inverse of
-// divide_slab. p_outer is axis-only on a; p_inner is full 2D
-// (within-slab); p_grid is the recomposed full 2D position.
+// 1D concat along axis a with perpendicular passthrough — the inverse of
+// divide_slab, over the same p_outer and p_inner. p_grid is the recomposed
+// full 2D position.
 .decl concat_slab(p_outer: Position, p_inner: Position, a: Axis, gap: number,
                   p_grid: Position) inline
 concat_slab(P_outer, P_inner, A, G, P_grid) :-
@@ -466,8 +465,8 @@ concat_slab(P_outer, P_inner, A, G, P_grid) :-
     concat(P_outer, P_i_axis, A, G, P_along),
     compose(P_along, Across, P_grid).
 
-// 2D concat on both axes — inverse of divide_2d / divide_by_size_2d.
-// p_outer and p_inner are full 2D; one gap on both axes; p_grid is the
+// 2D concat on both axes — the inverse of divide_2d and divide_by_size_2d,
+// over the same p_outer and p_inner. One gap on both axes; p_grid is the
 // recomposed full 2D position.
 .decl concat_2d(p_outer: Position, p_inner: Position, gap: number,
                 p_grid: Position) inline
@@ -482,17 +481,18 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 // Body components — instantiated at solver-body scope
 // ============================================================
 
-// 1D frame defined by an index set and an edge, one frame per key. The solver
-// populates `dir` (the edge distances are measured from; the instance's
-// parameter, unkeyed) and `dist_set` (the frame's indices); extent is the
-// set's size.
+// 1D frame defined by an index set and an edge, one frame per key.
 //
 // Flagged: assumes each key's dist_set is dense — {0, 1, ..., extent-1}. With
 // a sparse set, indices above |dist_set|-1 give invalid Positions.
 .comp DirFrame<Key> {
+    // The edge distances are measured from — the instance's parameter, unkeyed.
     .decl dir(d: Dir)
+
+    // The frame's indices, per key.
     .decl dist_set(key: Key, k: number)
 
+    // The index set's size.
     .decl extent(key: Key, n: number)
     extent(Ky, N) :- dist_set(Ky, _), N = count : { dist_set(Ky, K) }.
 
@@ -533,21 +533,25 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
         compose(P1, P2, P).
 }
 
-// A corner diagonal, per key — cells equidistant from the corner's two
-// edges; ring is that shared distance. The full corner-to-corner diagonal,
-// center included. DiagPlacement.diag_cell is this ∩ quadrant — the
-// corner→center ray.
+// A corner diagonal, per key — the full corner-to-corner run of cells
+// equidistant from the corner's two edges, center included.
+// DiagPlacement.diag_cell is this ∩ quadrant — the corner→center ray.
 .comp Diagonal<Key> {
+    // The position domain, per key.
     .decl cell(key: Key, p: Position)
+
+    // The corner the diagonal runs from, per key.
     .decl corner(key: Key, d: DiagDir)
 
+    // A domain cell on the diagonal, at ring — its shared distance to both
+    // edges of the corner.
     .decl diagonal(key: Key, p: Position, ring: number)
     diagonal(Ky, P, K) :- cell(Ky, P), corner(Ky, Diag), diag_dist(P, Diag, _, K, K).
 }
 
-// Diagonal placement — the quadrant a cell sits in, and its ring. Solver
-// populates `cell` (the position domain, per key).
+// Diagonal placement — the quadrant a cell sits in, and its ring.
 .comp DiagPlacement<Key> {
+    // The position domain, per key.
     .decl cell(key: Key, p: Position)
 
     // Strictly nearer edge d than its opposite — which side of the axis midline.
@@ -764,13 +768,16 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     id(A, as(ord(B), Ident)) :- rep(A, B).
 }
 
-// Lexicographic order over a keyed cell set, given a corner and a primary
-// axis (instance parameters, unkeyed); reading order is the top-left,
-// V-primary member. `rank` counts predecessors, ascending from 0 at the
-// corner.
+// Lexicographic order over a keyed cell set — the geometric special case of
+// Order. Reading order is the top-left, V-primary member.
 .comp LexOrder<Key> {
+    // The corner the order runs from — the instance's parameter, unkeyed.
     .decl corner(d: DiagDir)
+
+    // The primary axis — the instance's parameter, unkeyed.
     .decl axis(a: Axis)
+
+    // The cells to order, per key.
     .decl cell(key: Key, p: Position)
 
     .decl before(key: Key, q: Position, p: Position)
@@ -785,6 +792,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
         same_dist(D, Q, P),                          // primary tie
         dist(Q, D2, K1), dist(P, D2, K2), K1 < K2.   // q strictly nearer
 
+    // Predecessor count, ascending from 0 at the corner.
     .decl rank(key: Key, p: Position, r: number)
     rank(Ky, P, R) :- cell(Ky, P), R = count : { before(Ky, Q, P) }.
 }
@@ -802,35 +810,37 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     succ(Ky, K, 0)   :- idx(Ky, K), !idx(Ky, K+1).   // wrap from the max
 }
 
-// A directed cycle (succ = edges, with no basepoint) and rotation along
-// it: walk advances a start node by n successor steps. succ takes the
-// cycle's edges, as explicit data or from a builder like IndexCycle. step
-// declares the advance counts in use, as raw solver data; the comp closes
-// them downward into the recursion bound.
+// A directed cycle (edges, with no basepoint) and rotation along it: walk
+// advances a start node by n successor steps.
 .comp CycleWalk<Key, T> {
+    // The cycle's edges, as explicit data or from a builder like IndexCycle.
     .decl succ(key: Key, p: T, p_next: T)
-    .decl step(key: Key, n: number)     // advance counts in use
+
+    // The advance counts in use, as raw solver data; the comp closes them
+    // downward into the recursion bound.
+    .decl step(key: Key, n: number)
 
     // Downward closure of step — the walk's recursion bound.
     .decl bound(key: Key, n: number)
     bound(Ky, N) :- step(Ky, M), N = range(0, M+1).
 
-    .decl walk(key: Key, p0: T, n: number, p: T)  // p = p0 advanced n steps along succ
+    // p = p0 advanced n steps along succ.
+    .decl walk(key: Key, p0: T, n: number, p: T)
     walk(Ky, P0, 0, P0) :- succ(Ky, P0, _).
     walk(Ky, P0, N1, P2) :-
         walk(Ky, P0, N, P1), succ(Ky, P1, P2),
         bound(Ky, N1), N1 = N + 1.      // N1 is the Z/n step count
 }
 
-// Keyed set comparison via count equality. The solver populates
-// pattern_member (a catalog of known sets, enumerated by `pattern`) and
-// observed_member (the observed set at each `observed` key). Member is a
-// single type param: a record for multi-field members, a scalar for
-// one-field. Stored catalogs enumerate patterns as numbers (Pat = number;
-// single-pattern sites use pattern = 0); a derived catalog keys patterns by
-// its own objects.
+// Keyed set comparison via count equality. Member is a single type param: a
+// record for multi-field members, a scalar for one-field. Stored catalogs
+// enumerate patterns as numbers (Pat = number; single-pattern sites use
+// pattern = 0); a derived catalog keys patterns by its own objects.
 .comp KeyedSetCompare<Key, Pat, Member> {
+    // A catalog of known sets, enumerated by `pattern`.
     .decl pattern_member(pattern: Pat, m: Member)
+
+    // The observed set at each `observed` key.
     .decl observed_member(observed: Key, m: Member)
 
     .decl pattern_size(pattern: Pat, n: number)
@@ -851,38 +861,39 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
         N = count : { observed_member(Obs, M) }.
 }
 
-// Per-key D4 ops taking one valued cell set onto another. `mismatch`
-// witnesses a violated op: some src cell whose image under d holds a
-// different dst value; `map` is its negation. With dst = src the maps are
-// the set's symmetries; `has_sym` reads that case as invariance under some
-// nontrivial element. `dst` must be total over each key's domain — the
-// negation reads absence as difference.
+// Per-key D4 ops taking one valued cell set onto another. With dst = src the
+// maps are the set's symmetries.
+//
+// Flagged: assumes `dst` is total over each key's domain — the negation reads
+// absence as difference.
 .comp D4Map<Key, Val> {
     .decl src(key: Key, p: Position, v: Val)
     .decl dst(key: Key, p: Position, v: Val)
 
+    // A violated op: some src cell whose image under d holds a different dst
+    // value.
     .decl mismatch(key: Key, d: D4)
     mismatch(K, D) :- src(K, P, V), d4_elem(D), apply(D, P, P2), !dst(K, P2, V).
 
+    // The ops that hold — the negation of mismatch.
     .decl map(key: Key, d: D4)
     map(K, D) :- src(K, _, _), d4_elem(D), !mismatch(K, D).
 
+    // Invariance under some nontrivial element — the dst = src reading.
     .decl has_sym(key: Key)
     has_sym(K) :- map(K, D), D != D4_ID.
 }
 
 // Per-key shift invariance of a valued cell set — the translation peer of
 // D4Map (dst = src): which axis-aligned shifts fix each keyed cell set.
-// `cand` enumerates the shifts the key's frame admits, tagged (axis, k)
-// with both directions of a magnitude sharing a tag; `mismatch` witnesses
-// a violated shift — some cell whose image holds a different value. Unlike
-// D4Map, absence is silent: an image off the frame tests nothing, so
-// `mismatch` compares only where both cells exist. A stored period is the
+// Unlike D4Map, absence is silent: an image off the frame tests nothing, so a
+// shift is compared only where both cells exist. A stored period is the
 // smallest unbroken shift.
 .comp ShiftInvariance<Key, Val> {
     .decl cell(key: Key, p: Position, v: Val)
 
-    // Candidate shifts: every axis-aligned delta the frame admits.
+    // Candidate shifts: every axis-aligned delta the frame admits, tagged
+    // (axis, k), with both directions of a magnitude sharing a tag.
     .decl cand(key: Key, a: Axis, k: number, delta: Shift)
     cand(Ky, A, K, Delta) :-
         cell(Ky, P, _),
@@ -895,16 +906,18 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     shifted(Ky, A, K, P2, V) :-
         cell(Ky, P, V), cand(Ky, A, K, Delta), compose(P, Delta, P2).
 
+    // A violated shift: some cell whose image holds a different value.
     .decl mismatch(key: Key, a: Axis, k: number)
     mismatch(Ky, A, K) :- shifted(Ky, A, K, P, V), cell(Ky, P, V2), V2 != V.
 }
 
 // Re-express keyed cells relative to a per-key outer origin: inner = cell
 // minus outer, the inverse of compose. Outer extent + inner extent = cell
-// extent, so one subtraction both resizes and positions across frames.
-// `outer` is one origin per key; several origins under one key
-// cross-product, so key by the varied thing instead. Key by the cell to
-// read `inner` backward.
+// extent, so one subtraction both resizes and positions across frames. Key by
+// the cell to read `inner` backward.
+//
+// Flagged: assumes one origin per key — several origins under one key
+// cross-product, so key by the varied thing instead.
 .comp Reframe<Key> {
     .decl outer(key: Key, p: Position)
     .decl cell(key: Key, p: Position)
@@ -949,7 +962,10 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 // the set. `margin` packs the mins into a Position — the box's placement, and
 // a Reframe outer.
 .comp Bbox<Key> {
+    // The set the box bounds, per key.
     .decl cell(key: Key, p: Position)
+
+    // The grid the box sits in, per key — read by `inside` alone.
     .decl grid(key: Key, p: Position)
 
     .decl cell_dist(key: Key, d: Dir, k: number)
