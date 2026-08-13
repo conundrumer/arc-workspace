@@ -30,22 +30,19 @@ out(P_corner, Col) :-
 
 // --- fit ---
 
-.type CellKey = [e: Example, p: Position]
-
 .comp Fit {
-    // Candidate deltas: every alignment of an input cell onto an output cell.
-    .init align = Reframe<CellKey>
-    align.outer([E, P_in], P_in) :- ex_in(E, P_in, _).
-    align.cell([E, P_in], P_out) :- ex_in(E, P_in, _), ex_out(E, P_out, _).
+    // Seat each train input among its output's cells, color for color.
+    .init occ = Occurrences<Example, Color>
+    occ.shape(E, P_in, Col)  :- ex_in(E, P_in, Col).
+    occ.cell(E, P_out, Col)  :- ex_out(E, P_out, Col).
 
-    .decl cand(p: Inset)
-    cand(Delta) :- align.inner(_, Delta).
-
-    .decl mismatch(p: Inset)
-    mismatch(Delta) :-
-        cand(Delta), ex_out(E, _, _), ex_in(E, P_in, Col),
-        compose(P_in, Delta, P_out), !ex_out(E, P_out, Col).
+    // A delta some train pair does not seat.
+    .decl broken(p: Inset)
+    broken(Delta) :-
+        occ.occurrence(_, Delta),     // seats one pair
+        ex_out(E, _, _),              // and a train pair
+        !occ.occurrence(E, Delta).    // it misses
 
     .decl seat_delta(p: Inset)
-    seat_delta(Delta) :- cand(Delta), !mismatch(Delta).
+    seat_delta(Delta) :- occ.occurrence(_, Delta), !broken(Delta).
 }

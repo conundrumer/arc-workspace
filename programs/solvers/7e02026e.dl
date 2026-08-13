@@ -25,9 +25,9 @@
 field_at(P) :- in(P, Col), c.field(Col).
 
 // --- $Shape ---
-.init occ = Occurrences<Unit>
-occ.cell($U(), P)  :- field_at(P).
-occ.shape($U(), P) :- c.shape(P).
+.init occ = Occurrences<Unit, Unit>
+occ.cell($U(), P, $U())  :- field_at(P).
+occ.shape($U(), P, $U()) :- c.shape(P).
 
 .decl shape_covered(p: Position)
 shape_covered(P) :- occ.occurrence($U(), M), c.shape(S), compose(M, S, P).

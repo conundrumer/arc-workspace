@@ -116,8 +116,6 @@ out(P, Col, Ch) :- frame.cell(Ch, P), !seated(P, _, Ch), c.filler(Col).
 
 // --- fit ---
 
-.type CellKey = [e: Example, p: Position]
-
 .comp Fit {
     // Train input cells in the slabs of each candidate stack axis.
     .decl slab_cell(e: Example, a: Axis, p_tile: Position, p: Position, col: Color)
@@ -125,24 +123,25 @@ out(P, Col, Ch) :- frame.cell(Ch, P), !seated(P, _, Ch), c.filler(Col).
         ex_in(E, P, Col), ex_out(E, _, _),
         axis_elem(A), c.arr(N), divide_slab(P, A, N, 0, P_tile, _).
 
-    // Candidate displacements: every alignment of an input cell onto an
-    // output cell of its color.
-    .init align = Reframe<CellKey>
-    align.outer([E, P], P)    :- ex_in(E, P, _).
-    align.cell([E, P], P_out) :- ex_in(E, P, Col), ex_out(E, P_out, Col).
+    // One train pair's slab, on one candidate stack axis.
+    .type SlabKey = [e: Example, a: Axis, p_tile: Position]
 
-    .decl cand(a: Axis, p_tile: Position, delta: Inset)
-    cand(A, P_tile, Delta) :- slab_cell(E, A, P_tile, P, _), align.inner([E, P], Delta).
+    // Seat each slab among its output's cells, color for color.
+    .init occ = Occurrences<SlabKey, Color>
+    occ.shape([E, A, P_tile], P, Col) :- slab_cell(E, A, P_tile, P, Col).
+    occ.cell([E, A, P_tile], P_out, Col) :-
+        slab_cell(E, A, P_tile, _, _), ex_out(E, P_out, Col).
 
-    // A displacement carrying some cell of its slab off the output or onto a
-    // different color.
-    .decl mismatch(a: Axis, p_tile: Position, delta: Inset)
-    mismatch(A, P_tile, Delta) :-
-        cand(A, P_tile, Delta), slab_cell(E, A, P_tile, P, Col),
-        compose(P, Delta, P_out), !ex_out(E, P_out, Col).
+    // A displacement some train pair's slab does not seat.
+    .decl broken(a: Axis, p_tile: Position, delta: Inset)
+    broken(A, P_tile, Delta) :-
+        occ.occurrence([_, A, P_tile], Delta),    // seats one pair's slab
+        slab_cell(E, A, P_tile, _, _),            // and a train pair's slab
+        !occ.occurrence([E, A, P_tile], Delta).   // it misses
 
     .decl slab_disp(a: Axis, p_tile: Position, delta: Inset)
-    slab_disp(A, P_tile, Delta) :- cand(A, P_tile, Delta), !mismatch(A, P_tile, Delta).
+    slab_disp(A, P_tile, Delta) :-
+        occ.occurrence([_, A, P_tile], Delta), !broken(A, P_tile, Delta).
 
     // A candidate axis with a slab that no displacement places.
     .decl axis_broken(a: Axis)

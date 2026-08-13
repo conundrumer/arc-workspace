@@ -975,34 +975,44 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     reach(Ky, P) :- seed(Ky, S), conn(Ky, S, P).
 }
 
-// Occurrences of a shape among cells, per key: placements where the key's
-// shape footprint lands fully on the key's cell set — the ARC "find this
-// shape" operation. Placements derive backward from the data, so no grid
-// bounds are needed and off-grid candidates filter themselves out.
-.comp Occurrences<Key> {
-    .decl cell(key: Key, p: Position)
-    .decl shape(key: Key, p: Position)
+// Occurrences of a shape among cells, per key: cells and shape members are
+// valued, and a placement occurs where every shape member lands on a cell
+// carrying that member's value — the ARC "find this shape" operation.
+// Positional matching is the unit-valued instantiation. Placements derive
+// backward from the data, so no grid bounds are needed and off-grid
+// candidates filter themselves out.
+.comp Occurrences<Key, Val> {
+    .decl cell(key: Key, p: Position, v: Val)
+    .decl shape(key: Key, p: Position, v: Val)
 
     // Internal keys pair the solver key with an anchor Position; the
     // matcher's patterns key on the solver key — one pattern per key.
     .type KP = [key: Key, p: Position]
 
+    // A member as the matcher compares it — a position with its value.
+    .type PV = [p: Position, v: Val]
+
     // Candidate placements — align each shape cell (one origin per pair) to
-    // every cell, union over the shape cells.
+    // every cell of the same value, union over the shape cells. A true
+    // occurrence aligns every member to a same-valued cell, so the
+    // restriction loses no placement.
     .init align = Reframe<KP>
-    align.cell([Ky, S], P)  :- shape(Ky, S), cell(Ky, P).
-    align.outer([Ky, S], S) :- shape(Ky, S).
+    align.cell([Ky, S], P)  :- shape(Ky, S, V), cell(Ky, P, V).
+    align.outer([Ky, S], S) :- shape(Ky, S, _).
     .decl placement(key: Key, p: Position)
     placement(Ky, M) :- align.inner([Ky, _], M).
 
     // View the cells from each placement and test the shape's footprint.
     .init view = Reframe<KP>
     view.outer([Ky, M], M) :- placement(Ky, M).
-    view.cell([Ky, M], P)  :- placement(Ky, M), cell(Ky, P).
+    view.cell([Ky, M], P)  :- placement(Ky, M), cell(Ky, P, _).
 
-    .init matcher = KeyedSetCompare<KP, Key, Position>
-    matcher.pattern_member(Ky, S)  :- shape(Ky, S).
-    matcher.observed_member(Kp, I) :- view.inner(Kp, I).
+    // `inner` carries the viewed position alone, so recompose the source
+    // cell to read its value.
+    .init matcher = KeyedSetCompare<KP, Key, PV>
+    matcher.pattern_member(Ky, [S, V]) :- shape(Ky, S, V).
+    matcher.observed_member([Ky, M], [I, V]) :-
+        view.inner([Ky, M], I), compose(M, I, P), cell(Ky, P, V).
 
     .decl occurrence(key: Key, p: Position)
     occurrence(Ky, M) :- matcher.covers([Ky, M], Ky).

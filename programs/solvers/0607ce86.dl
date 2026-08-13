@@ -32,9 +32,9 @@ ink(P) :- in(P, Col), !c.bg(Col).
 
 // A copy is what a solid c.block_dim block covers; noise sits too thin to
 // carry one.
-.init occ = Occurrences<Unit>
-occ.cell($U(), P)  :- ink(P).
-occ.shape($U(), P) :- c.block_shape(P).
+.init occ = Occurrences<Unit, Unit>
+occ.cell($U(), P, $U())  :- ink(P).
+occ.shape($U(), P, $U()) :- c.block_shape(P).
 
 .decl solid(p: Position)
 solid(P) :- occ.occurrence($U(), M), c.block_shape(S), compose(M, S, P).

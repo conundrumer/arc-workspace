@@ -43,9 +43,9 @@ hole(P) :-
 .decl ring(p: Position)
 ring(P) :- box.cell($U(), P), dir_elem(D), dist(P, D, 0).
 
-.init occ = Occurrences<Color>
-occ.cell(Col, P)  :- in(P, Col), ink(Col).
-occ.shape(Col, S) :- ink(Col), ring(S).
+.init occ = Occurrences<Color, Unit>
+occ.cell(Col, P, $U())  :- in(P, Col), ink(Col).
+occ.shape(Col, S, $U()) :- ink(Col), ring(S).
 
 out(ORIGIN, Col_hole, $Box()) :-
     occ.occurrence(Col, M),                              // one ink's box

@@ -106,9 +106,9 @@
     ink_count(K, N) :- ink_tally.tally(K, N).
 
     // $Shape: placements where the unit lands fully on ink.
-    .init occ = Occurrences<Key>
-    occ.cell(K, P)  :- ink_at(K, P).
-    occ.shape(K, S) :- ink_at(K, _), c.unit(S).
+    .init occ = Occurrences<Key, Unit>
+    occ.cell(K, P, $U())  :- ink_at(K, P).
+    occ.shape(K, S, $U()) :- ink_at(K, _), c.unit(S).
 
     .decl covered(k: Key, p: Position)
     covered(K, P) :- occ.occurrence(K, M), c.unit(S), compose(M, S, P).

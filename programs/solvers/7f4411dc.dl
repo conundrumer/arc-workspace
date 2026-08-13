@@ -27,9 +27,9 @@ ink_at(P) :- in(P, Col), !c.bg(Col).
 .init sq = Frame2D<Unit>
 sq.extent($U(), A, K) :- axis_elem(A), c.square_dim(K).
 
-.init occ = Occurrences<Unit>
-occ.cell($U(), P)  :- ink_at(P).
-occ.shape($U(), P) :- sq.cell($U(), P).
+.init occ = Occurrences<Unit, Unit>
+occ.cell($U(), P, $U())  :- ink_at(P).
+occ.shape($U(), P, $U()) :- sq.cell($U(), P).
 
 .decl square_kept(p: Position)
 square_kept(P) :- occ.occurrence($U(), M), sq.cell($U(), S), compose(M, S, P).

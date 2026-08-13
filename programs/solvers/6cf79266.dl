@@ -20,9 +20,9 @@
 .init c = Consts
 
 // Windows: placements where the shape lands all-bg.
-.init occ = Occurrences<Unit>
-occ.cell($U(), P)  :- in(P, Col), c.bg(Col).
-occ.shape($U(), P) :- c.shape(P).
+.init occ = Occurrences<Unit, Unit>
+occ.cell($U(), P, $U())  :- in(P, Col), c.bg(Col).
+occ.shape($U(), P, $U()) :- c.shape(P).
 
 .decl painted(p: Position)
 painted(P) :- occ.occurrence($U(), M), c.shape(S), compose(M, S, P).
