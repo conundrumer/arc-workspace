@@ -36,7 +36,7 @@ When a decomposition's inner coordinate is also the output cell, name it by the 
 - Inside Consts, `.init helpers = ConstsHelpers` makes shared helpers (`frame_pos`, `tile_pos`) available as `helpers.<rel>(...)` in data declarations. The body has no access.
 - All task-wide data lives in Consts, e.g. orientation (Dirs, Axes), dimensions, gaps, mappings, frame data.
 - A rule inside Consts derives from fact slots; a datum never sits as a literal in a rule body. A number that is structure of the concept rather than task data stays in the rule, under an `// @structural: <why>` comment on the rule's line. A derived relation carries no Fit relation.
-- A datum lives in a shared slot when more than one case reads it.
+- A datum lives in a shared slot when more than one case reads it and every task those cases both fit fills it the same under each; a fill some such task pulls apart is per-case data.
 - A single-fact data declaration puts the fact on the decl line, one space after it. A multi-fact declaration puts the facts on the next line at the decl's indent. Facts are not column-aligned across a block.
 - Store an orientation datum constrained by another as a relative value (`Sense` via `turn`, `Axis` via `perp`). A second absolute slot admits fills the family does not have; the relative form has one fill per member.
 
