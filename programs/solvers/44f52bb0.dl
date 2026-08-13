@@ -4,7 +4,7 @@
 //
 // Two impls; out's choice column tags each:
 //
-//   $Direct     — emit c.sym_out if input is invariant under every D in c.syms;
+//   $Direct     — emit c.sym_out if input is invariant under c.sym_group;
 //                 c.asym_out otherwise.
 //   $GroupMatch — c.mapping_sym lists candidate sym groups; pick the largest
 //                 group that leaves the input invariant; emit that entry's
@@ -16,12 +16,8 @@
 
 .comp Consts {
     // --- $Direct ---
-    // The non-identity members of the symmetry class's group; each alone
-    // splits the classes, and the group closes over any two.
-    .decl syms(d: D4)
-    syms(D4_LR).
-    syms(D4_TB).
-    syms(D4_HT).
+    // The group whose invariance defines the symmetric class.
+    .decl sym_group(s: Sym) sym_group(SYM_BOX).
 
     .decl sym_out(p: Position, col: Color)
     GRID_1x1(sym_out, 1)
@@ -31,15 +27,12 @@
 
     // --- $GroupMatch ---
     // Each entry holds a sym group and an output grid. Entries are matched
-    // against the input's invariance set; the largest matched group is chosen.
-    // Every entry lists D4_ID; the {D4_ID}-only entry is the
-    // always-matches fallback (size 1 → lowest priority).
-    .decl mapping_sym(id: Ident, d: D4)
-    mapping_sym(0, D4_ID).
-    mapping_sym(0, D4_LR).
-    mapping_sym(0, D4_TB).
-    mapping_sym(0, D4_HT).
-    mapping_sym(1, D4_ID).
+    // against the input's invariance set; the largest matched group is
+    // chosen. The trivial-group entry is the always-matches fallback
+    // (size 1 → lowest priority).
+    .decl mapping_sym(id: Ident, s: Sym)
+    mapping_sym(0, SYM_BOX).
+    mapping_sym(1, SYM_1).
 
     .decl mapping_out(id: Ident, p: Position, col: Color)
     mapping_out(0, ORIGIN, 1).
@@ -53,13 +46,13 @@ d4.src($U(), P, Col) :- in(P, Col).
 d4.dst($U(), P, Col) :- in(P, Col).
 
 .init group_match = KeyedSetCompare<Unit, Ident, D4>
-group_match.pattern_member(Id, D) :- c.mapping_sym(Id, D).
+group_match.pattern_member(Id, D) :- c.mapping_sym(Id, S), sym_member(S, D).
 group_match.observed_member($U(), D) :- d4.map($U(), D).
 
 // --- $Direct ---
 
 .decl syms_non_invariant(d: D4)
-syms_non_invariant(D) :- d4.mismatch($U(), D), c.syms(D).
+syms_non_invariant(D) :- d4.mismatch($U(), D), c.sym_group(S), sym_member(S, D).
 
 // --- $GroupMatch ---
 
@@ -103,17 +96,27 @@ out(P, Col, $GroupMatch()) :- best_id.high($U(), Id, _), c.mapping_out(Id, P, Co
     split_broken(D) :- d4.map(E1, D), d4.map(E2, D), differs(E1, E2).
     split_broken(D) :- d4.mismatch(E1, D), d4.mismatch(E2, D), differs(E1, E2).
 
-    .decl syms(d: D4)
-    syms(D) :- d4_elem(D), !split_broken(D).
-
+    // An example broken under a transform whose invariance test carries
+    // the classification.
     .decl sym_broken(e: Example)
-    sym_broken(E) :- syms(D), d4.mismatch(E, D).
+    sym_broken(E) :- d4_elem(D), !split_broken(D), d4.mismatch(E, D).
 
     .decl sym_out(p: Position, col: Color)
     sym_out(P, Col) :- ex_out(E, P, Col), !sym_broken(E).
 
     .decl asym_out(p: Position, col: Color)
     asym_out(P, Col) :- ex_out(E, P, Col), sym_broken(E).
+
+    // The symmetric class's invariance set, named as a subgroup.
+    .decl inv_broken(d: D4)
+    inv_broken(D) :- paired(E), !sym_broken(E), d4.mismatch(E, D).
+
+    .init named = KeyedSetCompare<Unit, Sym, D4>
+    named.pattern_member(S, D) :- sym_member(S, D).
+    named.observed_member($U(), D) :- d4_elem(D), !inv_broken(D).
+
+    .decl sym_group(s: Sym)
+    sym_group(S) :- named.equals($U(), S).
 
     // Train pairs that answer alike.
     .decl same_out(e1: Example, e2: Example)
@@ -128,9 +131,14 @@ out(P, Col, $GroupMatch()) :- best_id.high($U(), Id, _), c.mapping_out(Id, P, Co
     .decl group_broken(id: Ident, d: D4)
     group_broken(Id, D) :- class.id(E, Id), d4.mismatch(E, D).
 
-    // The class's group: the transforms every member of it is invariant under.
-    .decl mapping_sym(id: Ident, d: D4)
-    mapping_sym(Id, D) :- class.id(_, Id), d4_elem(D), !group_broken(Id, D).
+    // The class's group: the transforms every member of it is invariant
+    // under, named as a subgroup.
+    .init named_class = KeyedSetCompare<Ident, Sym, D4>
+    named_class.pattern_member(S, D) :- sym_member(S, D).
+    named_class.observed_member(Id, D) :- class.id(_, Id), d4_elem(D), !group_broken(Id, D).
+
+    .decl mapping_sym(id: Ident, s: Sym)
+    mapping_sym(Id, S) :- named_class.equals(Id, S).
 
     .decl mapping_out(id: Ident, p: Position, col: Color)
     mapping_out(Id, P, Col) :- class.id(E, Id), ex_out(E, P, Col).

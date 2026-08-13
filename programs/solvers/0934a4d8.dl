@@ -8,44 +8,6 @@
 
 #include "../lib.dl"
 
-// Staged: `Sym` (proposals.md) — D4 subgroups as a value type.
-.type Sym <: number
-
-.comp SymTable {
-    #define SYM_1   70
-    #define SYM_LR  71
-    #define SYM_TB  72
-    #define SYM_HT  73
-    #define SYM_DG  74
-    #define SYM_AD  75
-    #define SYM_BOX 76
-    #define SYM_X   77
-    #define SYM_C4  78
-    #define SYM_D4  79
-
-    .decl sym_elem(s: Sym)
-    sym_elem(SYM_1). sym_elem(SYM_LR). sym_elem(SYM_TB). sym_elem(SYM_HT).
-    sym_elem(SYM_DG). sym_elem(SYM_AD). sym_elem(SYM_BOX). sym_elem(SYM_X).
-    sym_elem(SYM_C4). sym_elem(SYM_D4).
-
-    .decl sym_member(s: Sym, d: D4)
-    sym_member(SYM_1, D4_ID).
-    sym_member(SYM_LR, D4_ID). sym_member(SYM_LR, D4_LR).
-    sym_member(SYM_TB, D4_ID). sym_member(SYM_TB, D4_TB).
-    sym_member(SYM_HT, D4_ID). sym_member(SYM_HT, D4_HT).
-    sym_member(SYM_DG, D4_ID). sym_member(SYM_DG, D4_DG).
-    sym_member(SYM_AD, D4_ID). sym_member(SYM_AD, D4_AD).
-    sym_member(SYM_BOX, D4_ID). sym_member(SYM_BOX, D4_LR).
-    sym_member(SYM_BOX, D4_TB). sym_member(SYM_BOX, D4_HT).
-    sym_member(SYM_X, D4_ID). sym_member(SYM_X, D4_HT).
-    sym_member(SYM_X, D4_DG). sym_member(SYM_X, D4_AD).
-    sym_member(SYM_C4, D4_ID). sym_member(SYM_C4, D4_CW).
-    sym_member(SYM_C4, D4_HT). sym_member(SYM_C4, D4_CC).
-    sym_member(SYM_D4, D) :- d4_elem(D).
-}
-
-.init symtbl = SymTable
-
 .comp Consts {
     .decl mask(col: Color) mask(8).
 
@@ -81,7 +43,7 @@ out(P_out, Col) :-
     box.inner($U(), P, P_out),                        // hole cell, in the crop frame
     mosaic(P, Pm),
     c.tile_dim(K), divide_by_size_2d(Pm, K, 0, T, _), // its tile
-    c.tile_sym(T, S), symtbl.sym_member(S, D),        // a transform holding there
+    c.tile_sym(T, S), sym_member(S, D),               // a transform holding there
     apply(D, Pm, P2m),                                // image in the mosaic
     mosaic(P2, P2m), clean(P2, Col).                  // visible grid cell there
 
@@ -171,7 +133,7 @@ out(P_out, Col) :-
     symt(T, D) :- tile_dim(K), symk(K, T, D).
 
     .init symid = KeyedSetCompare<Position, Sym, D4>
-    symid.pattern_member(S, D) :- symtbl.sym_member(S, D).
+    symid.pattern_member(S, D) :- sym_member(S, D).
     symid.observed_member(T, D) :- symt(T, D).
 
     .decl tile_sym(p_tile: Position, s: Sym)

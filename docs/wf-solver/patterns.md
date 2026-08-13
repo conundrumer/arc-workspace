@@ -156,18 +156,6 @@ beaten(P, Col) :-
 
 Over a spatial domain, the ranks can lay out as a GRID: a68b268e's `c.prio` shows the precedence in the tile arrangement.
 
-## Stored symmetry sets as full subgroups
-
-A stored symmetry set is a stabilizer (the transforms that fix a grid), and a stabilizer is a subgroup. Store it as the subgroup's complete element list, identity included. Generating sets encode one subgroup many ways (`{LR, TB}`, `{LR, HT}`, `{TB, HT}` close to the same Klein group); the full list gives one encoding per subgroup, and a fill is valid iff it is one of D4's ten subgroups.
-
-```
-.decl sym(d: D4)
-sym(D4_ID). sym(D4_CW). sym(D4_HT). sym(D4_CC).
-sym(D4_LR). sym(D4_TB). sym(D4_DG). sym(D4_AD).
-```
-
-ID has no effect at consumption: an application site skips it through its clean-source guard (b8825c91); an invariance test finds it vacuously unbroken (44f52bb0's `mapping_sym`).
-
 ## Set-keyed relations via parent/child tables
 
 Declare a relation keyed by a multiset of members as two tables joined by an `id`: the parent holds `(id, out-fields)`; the child holds `(id, member-fields)`. The match runs through `KeyedSetCompare` (`lib.dl`): the child table feeds `pattern_member`, the observed cells feed `observed_member`, and `covers` / `equals` test containment / equality. The parent table maps the matched `id` to its output.

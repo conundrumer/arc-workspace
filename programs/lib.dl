@@ -16,17 +16,18 @@
 .type DiagDir <: number
 .type DiagAxis <: number
 .type D4 <: number
+.type Sym <: number
 .type Sense <: number
 
-// Dir8: a direction of either kind — cardinal or diagonal.
+// A direction of either kind — cardinal or diagonal.
 .type Dir8 = Dir | DiagDir
 
-// Ident: a label carrying identity and nothing else — entries of a stored
-// table, component labels, the endpoints of a correspondence. Numbering is
+// A label carrying identity and nothing else — entries of a stored table,
+// component labels, the endpoints of a correspondence. Numbering is
 // arbitrary, so consumers join on equality and never order or count with it.
 .type Ident <: number
 
-// Example: index of a task example.
+// Index of a task example.
 .type Example <: number
 
 .type Position = [t: number, b: number, l: number, r: number]
@@ -73,7 +74,21 @@
 #define SENSE_CW 60
 #define SENSE_CC 61
 
-// Origin: position with 0 distance to every edge.
+// The ten subgroups of D4 — a symmetry group as a closed value. Order-2
+// groups are named by their non-identity element; SYM_BOX is the
+// axis-aligned Klein group, SYM_X the diagonal one, SYM_C4 the rotations.
+#define SYM_1   70
+#define SYM_LR  71
+#define SYM_TB  72
+#define SYM_HT  73
+#define SYM_DG  74
+#define SYM_AD  75
+#define SYM_BOX 76
+#define SYM_X   77
+#define SYM_C4  78
+#define SYM_D4  79
+
+// Position with 0 distance to every edge.
 #define ORIGIN [0, 0, 0, 0]
 
 // ============================================================
@@ -132,11 +147,36 @@ d4_elem(D4_TB).
 d4_elem(D4_DG).
 d4_elem(D4_AD).
 
+.decl sym_elem(s: Sym)
+sym_elem(SYM_1).
+sym_elem(SYM_LR).
+sym_elem(SYM_TB).
+sym_elem(SYM_HT).
+sym_elem(SYM_DG).
+sym_elem(SYM_AD).
+sym_elem(SYM_BOX).
+sym_elem(SYM_X).
+sym_elem(SYM_C4).
+sym_elem(SYM_D4).
+
+// Each subgroup's element list.
+.decl sym_member(s: Sym, d: D4)
+sym_member(SYM_1, D4_ID).
+sym_member(SYM_LR, D4_ID). sym_member(SYM_LR, D4_LR).
+sym_member(SYM_TB, D4_ID). sym_member(SYM_TB, D4_TB).
+sym_member(SYM_HT, D4_ID). sym_member(SYM_HT, D4_HT).
+sym_member(SYM_DG, D4_ID). sym_member(SYM_DG, D4_DG).
+sym_member(SYM_AD, D4_ID). sym_member(SYM_AD, D4_AD).
+sym_member(SYM_BOX, D4_ID). sym_member(SYM_BOX, D4_LR).
+sym_member(SYM_BOX, D4_TB). sym_member(SYM_BOX, D4_HT).
+sym_member(SYM_X, D4_ID). sym_member(SYM_X, D4_DG).
+sym_member(SYM_X, D4_AD). sym_member(SYM_X, D4_HT).
+sym_member(SYM_C4, D4_ID). sym_member(SYM_C4, D4_CW).
+sym_member(SYM_C4, D4_HT). sym_member(SYM_C4, D4_CC).
+sym_member(SYM_D4, D) :- d4_elem(D).
+
 .decl c4_elem(d: D4)
-c4_elem(D4_ID).
-c4_elem(D4_CW).
-c4_elem(D4_HT).
-c4_elem(D4_CC).
+c4_elem(D) :- sym_member(SYM_C4, D).
 
 // Axis of a Dir.
 .decl axis_of(d: Dir, a: Axis)
