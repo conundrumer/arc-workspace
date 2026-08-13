@@ -1003,12 +1003,14 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 }
 
 // Seeded connectivity: reach is the union of the components the seeds
-// select. A seed outside the node set selects nothing.
+// select. A seed outside the node set selects nothing. reach floods
+// directly from the seeds, so reach-only consumers never pay for conn.
 .comp Reach<Key> : Components<Key> {
     .decl seed(key: Key, p: Position)
 
     .decl reach(key: Key, p: Position)
-    reach(Ky, P) :- seed(Ky, S), conn(Ky, S, P).
+    reach(Ky, P) :- seed(Ky, P), node(Ky, P).
+    reach(Ky, Q) :- reach(Ky, P), step(D), compose(P, D, Q), node(Ky, Q).
 }
 
 // Occurrences of a shape among cells, per key: cells and shape members are
