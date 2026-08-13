@@ -713,12 +713,48 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     rank(Ky, T, R) :- elem(Ky, T), R = count : { before(Ky, A, T) }.
 }
 
+// The dense frame a sparse member set induces along an axis, with each
+// member's line in it — the order-canonical peer of AxisFrame, which
+// realizes a frame from its extent alone. Members are opaque and may span
+// several lines.
+//
+// Flagged: assumes each key's member line sets separate cleanly along the
+// axis — no shared line, no interleaving. A pair that mixes breaks the
+// order and doubles `pos`.
+.comp OrderFrame<Key, T> {
+    // The axis the frame runs along, per key.
+    .decl axis(key: Key, a: Axis)
+
+    // Each member's lines, axis-only on the key's axis.
+    .decl member(key: Key, m: T, p: Position)
+
+    // Member m strictly nearer edge d than member m2 — some line of each.
+    .decl nearer(key: Key, d: Dir, m: T, m2: T)
+    nearer(Ky, D, M, M2) :-
+        member(Ky, M, P), member(Ky, M2, Q), M != M2,
+        axis(Ky, A), axis_of(D, A),
+        dist(P, D, K1), dist(Q, D, K2), K1 < K2.
+
+    .decl mem(key: Key, m: T)
+    mem(Ky, M) :- member(Ky, M, _).
+
+    // The member's place in the frame, privileging no end: its distance
+    // toward each edge is the count of members nearer that edge.
+    .decl pos(key: Key, m: T, p_pos: Position)
+    pos(Ky, M, P_pos) :-
+        mem(Ky, M), axis(Ky, A), axis_of(D, A), opposite(D, O),
+        R1 = count : { nearer(Ky, D, M1, M) }, edge_delta(D, R1, P1),
+        R2 = count : { nearer(Ky, O, M2, M) }, edge_delta(O, R2, P2),
+        compose(P1, P2, P_pos).
+}
+
 // One id per class of an equivalence relation; the representative is
 // arbitrary but deterministic. A self-paired `rep` member is the class
 // representative — with a total equivalence, an arbitrary pick of one
 // element of a set.
 .comp Canon<T> {
-    .decl equiv(a: T, b: T)     // an equivalence, reflexive over the domain
+    // An equivalence, reflexive over the domain.
+    .decl equiv(a: T, b: T)
 
     .decl rep(a: T, b: T)
     rep(A, B) :- equiv(A, B).

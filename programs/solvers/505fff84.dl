@@ -49,39 +49,15 @@ seg(P, $Sided()) :-
     c.side(D, C1), opposite(D, O), c.side(O, C2),         // the ends' colors
     sided_rays.ray(C1, P, O, _), sided_rays.ray(C2, P, D, _).   // each mark at its end
 
-// The order-canonical peer of AxisFrame: the dense frame that a sparse set
-// of axis-only positions induces, with each member's position in it.
-// Members order by coordinate; no end is privileged.
-.comp OrderFrame<Key> {
-    .decl axis(a: Axis)
-    .decl cell(key: Key, p: Position)
-
-    // Member p strictly nearer edge d than member q.
-    .decl nearer(key: Key, d: Dir, p: Position, q: Position)
-    nearer(Ky, D, P, Q) :-
-        cell(Ky, P), cell(Ky, Q),
-        axis(A), axis_of(D, A),
-        dist(P, D, K1), dist(Q, D, K2), K1 < K2.
-
-    // Position in the induced frame: distance toward each edge = count
-    // of nearer members.
-    .decl pos(key: Key, p: Position, p_pos: Position)
-    pos(Ky, P, P_pos) :-
-        cell(Ky, P), axis(A), axis_of(D, A), opposite(D, O),
-        R1 = count : { nearer(Ky, D, Q1, P) }, edge_delta(D, R1, P1),
-        R2 = count : { nearer(Ky, O, Q2, P) }, edge_delta(O, R2, P2),
-        compose(P1, P2, P_pos).
-}
-
 // Segment cells split into their row and their position along it.
 .decl seg_split(p_along: Position, row: Position, col: Color, ch: Choice)
 seg_split(P_along, Row, Col, Ch) :-
     seg(P, Ch), in(P, Col), c.axis(A), split(P, A, P_along, Row).
 
 // Out placement: contributing rows take their order positions.
-.init rows = OrderFrame<Choice>
-rows.axis(A2)      :- c.axis(A), perp(A, A2).
-rows.cell(Ch, Row) :- seg_split(_, Row, _, Ch).
+.init rows = OrderFrame<Choice, Position>
+rows.axis(Ch, A2)         :- seg_split(_, _, _, Ch), c.axis(A), perp(A, A2).
+rows.member(Ch, Row, Row) :- seg_split(_, Row, _, Ch).
 
 // Each segment shifts flush: its cells re-expressed from its own bounding
 // frame.

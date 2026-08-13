@@ -23,27 +23,14 @@ mismatch(A) :-
 .decl seq_axis(a: Axis)
 seq_axis(A_seq) :- perp(A, A_seq), !mismatch(A).
 
-// A run's first stripe toward edge d: the neighbor toward d is off-grid
-// or a different color. col is the run's color.
-.decl run_start(d: Dir, k: number, col: Color)
-run_start(D, K, Col) :-
-    seq_axis(A), axis_of(D, A),             // dirs on the sequence axis
-    in(P, Col), dist(P, D, K),              // stripe cell
-    step_delta(D, S), compose(P, S, P2),    // neighbor toward d
-    !in(P2, Col).
+// A run: adjacent sequence lines of one color.
+.init runs = Components<Color>
+runs.node(Col, P_line) :- seq_axis(A), in(P, Col), split(P, A, P_line, _).
 
-.init runs = Ordinal<Dir>
-runs.idx_set(D, K) :- run_start(D, K, _).
-
-// Output frame: one cell per run along the sequence axis.
-.init run_count = Tally<Dir, number>
-run_count.item(D, K) :- run_start(D, K, _).
-
-.init seq = AxisFrame<Unit>
-seq.extent($U(), A, N) :- seq_axis(A), axis_of(D, A), run_count.tally(D, N).
+// One output cell per run — the frame the runs induce.
+.init seq = OrderFrame<Unit, Ident>
+seq.axis($U(), A) :- seq_axis(A).
+seq.member($U(), Id, P_line) :- runs.label(_, P_line, Id).
 
 .decl out(p: Position, col: Color)
-out(P_out, Col) :-
-    run_start(D, K, Col), runs.rank(D, K, R),    // run and its rank from d
-    axis_of(D, A), seq.cell($U(), A, P_out),     // output line cell
-    dist(P_out, D, R).                           // seated r from d
+out(P_out, Col) :- runs.label(Col, _, Id), seq.pos($U(), Id, P_out).
