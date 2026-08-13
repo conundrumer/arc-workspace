@@ -292,6 +292,8 @@ def render_fit_plan(
         lines.append(f"{header}:")
         lines.extend(f"  {slot}" for slot in slots)
 
+    if not fit and not over and not embedded:
+        lines.append("no actions")
     section("write a Fit relation", fit)
     if over:
         section(
@@ -300,7 +302,7 @@ def render_fit_plan(
             [f"{slot}({n})" for slot, n in settle],
         )
     section("fitted", done)
-    section("no Fit relation", covered)
+    section("no Fit relation needed", covered)
     section("move data from rules to fact slots", embedded)
 
     detail = [
