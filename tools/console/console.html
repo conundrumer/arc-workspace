@@ -704,7 +704,7 @@ function renderDetail(){
   const other = tab==="create"?"refine":"create";
   const badge = hasTab(it,other) && feedFor(other).length>(seenN[it.id+"|"+other]||0);
 
-  const headSig=JSON.stringify([it.id,it.state,it.updated,it.dirty,it.title,it.sessions,it.phase,it.active,tab,badge]);
+  const headSig=JSON.stringify([it.id,it.state,it.updated,it.dirty,it.title,it.sessions,it.phase,it.active,it.workerLive,it.context,tab,badge]);
   if(headAt!==headSig){
     headAt=headSig;
     jh.innerHTML="";
@@ -726,9 +726,20 @@ function renderDetail(){
     if(sid){
       const sl=document.createElement("div"); sl.className="sessline";
       sl.innerHTML=`<span class="cmd">claude --resume ${sid.slice(0,8)}…</span>`;
-      const b=document.createElement("button"); b.className="copybtn"; b.textContent="copy · o";
-      b.onclick=()=>copy(takeoverCmd(it,tab),"takeover "+it.id);
-      sl.appendChild(b);
+      const context=(it.context||{})[tab];
+      if(context){
+        const pct=document.createElement("span"); pct.textContent=`context ${context.percent.toFixed(1)}%`;
+        sl.appendChild(pct);
+        const cb=document.createElement("button"); cb.className="copybtn";
+        cb.textContent="compact · "+(context.compactCost==null?`${Math.round(context.used/1000)}k rewrite`:`~$${context.compactCost.toFixed(2)}`);
+        cb.disabled=it.active; cb.onclick=()=>post("/api/compact",{id:it.id,sess:tab});
+        sl.appendChild(cb);
+      }
+      if(!(it.workerLive||{})[tab]){
+        const b=document.createElement("button"); b.className="copybtn"; b.textContent="copy · o";
+        b.onclick=()=>copy(takeoverCmd(it,tab),"takeover "+it.id);
+        sl.appendChild(b);
+      }
       if(it.active){
         const kb=document.createElement("button"); kb.className="copybtn"; kb.textContent="stop";
         kb.onclick=()=>post("/api/kill",{id:it.id});
@@ -910,7 +921,7 @@ document.addEventListener("keydown",e=>{
   else if(e.key==="a"){ approve(); }
   else if(e.key==="u"){ unapprove(); }
   else if(e.key==="c"){ if(!$("cbox").disabled){ e.preventDefault(); $("cbox").focus(); } }
-  else if(e.key==="o"){ const it=sel(); if(it){ const s=tabOf(it); if(it.sessions[s]) copy(takeoverCmd(it,s),"takeover "+it.id); } }
+  else if(e.key==="o"){ const it=sel(); if(it){ const s=tabOf(it); if(it.sessions[s]&&!(it.workerLive||{})[s]) copy(takeoverCmd(it,s),"takeover "+it.id); } }
   else if(e.key==="s"){ const it=sel(); if(it){ const o=tabOf(it)==="create"?"refine":"create"; if(hasTab(it,o)){ sessTab[it.id]=o; renderDetail(); } } }
   else if(e.key==="t"){ toggleTask(); }
 });

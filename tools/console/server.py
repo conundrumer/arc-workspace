@@ -20,7 +20,10 @@ import functools
 import hashlib
 import json
 import os
+import queue
 import re
+import signal
+import stat
 import subprocess
 import sys
 import threading
@@ -35,6 +38,7 @@ from urllib.parse import parse_qs, urlparse
 sys.path.append(str(Path(__file__).resolve().parent))
 
 import quota  # noqa: E402
+from calibrate import PRICES  # noqa: E402
 
 from dl.context import appendix  # noqa: E402
 
@@ -56,7 +60,7 @@ MODELS = {"create": os.environ.get("CONSOLE_CREATE_MODEL", "claude-opus-5"),
 COMMIT_MODEL = os.environ.get("CONSOLE_COMMIT_MODEL", "claude-opus-5")
 
 WORKER_FLAGS = [
-    "--output-format", "stream-json", "--verbose",
+    "--output-format", "stream-json", "--input-format", "stream-json", "--verbose",
     "--permission-mode", "acceptEdits",
     "--allowedTools",
     "Bash(uv run:*)", "Bash(cat:*)", "Bash(ls:*)", "Bash(souffle:*)",
@@ -83,10 +87,16 @@ COMMITTER_FLAGS = [
 LOCK = threading.RLock()
 COND = threading.Condition(LOCK)
 STATE = {"seq": 0, "wave": 0, "items": []}
-PROCS: dict[str, subprocess.Popen] = {}
-KILLED: set[str] = set()  # items whose running turn the user stopped
+PROCS: dict[tuple[str, str], dict] = {}
+DEFERRED = queue.Queue()
+DEFERRED_THREAD = None
+STOP = object()
+SHUTTING_DOWN = False
+RELOADING = False
 USAGE: list[dict] = []  # account rate-limit windows, refreshed in background
 COMMITTER = {"running": False, "note": None}
+WORKER_HANDOFF_ENV = "CONSOLE_WORKER_HANDOFF"
+RELOAD_QUIESCE_TIMEOUT = 30
 
 
 # ---------- item lifecycle ----------
@@ -117,10 +127,10 @@ ACTIVE = (RUNNING, COMMENTED)
 
 
 def active(it: dict) -> bool:
-    """Whether a worker turn is in flight. The state alone is not enough: the
-    result event flips the item to NEEDS_REVIEW while its reader is still
-    draining stdout, and the process stays in PROCS until that finishes."""
-    return it["state"] in ACTIVE or it["id"] in PROCS
+    """Whether an item has a turn or handoff in flight."""
+    return (it.get("handoff_pending", False) or
+            any(w["state"] in ("spawning", "sending", "running")
+                for (item_id, _), w in PROCS.items() if item_id == it["id"]))
 
 
 class Reject(Exception):
@@ -146,7 +156,9 @@ def action(fn):
 
 
 def require_idle(it: dict) -> None:
-    if it["id"] in PROCS:
+    if RELOADING:
+        raise Reject("server reload in progress — wait for it to finish")
+    if active(it):
         raise Reject("worker busy — wait for the turn to land")
 
 
@@ -173,6 +185,7 @@ def load() -> None:
         migrate(it)
         if it["state"] in ACTIVE:
             it.pop("pending_handoff", None)
+            it.pop("handoff_pending", None)
             say(it, event("interrupted by console restart"))
             turn_died(it, it.get("last_turn_phase") or it["phase"])
 
@@ -316,6 +329,171 @@ def refine_message(it: dict) -> str:
 
 # ---------- workers ----------
 
+class AdoptedProcess:
+    """The small Popen surface used by worker lifecycle code after exec."""
+
+    def __init__(self, pid: int, stdin, stdout):
+        self.pid = pid
+        self.stdin = stdin
+        self.stdout = stdout
+        self.returncode = None
+        self._wait_lock = threading.Lock()
+
+    def _record(self, status: int) -> int:
+        self.returncode = os.waitstatus_to_exitcode(status)
+        return self.returncode
+
+    def poll(self):
+        with self._wait_lock:
+            if self.returncode is not None:
+                return self.returncode
+            try:
+                pid, status = os.waitpid(self.pid, os.WNOHANG)
+            except ChildProcessError:
+                return self.returncode
+            return self._record(status) if pid else None
+
+    def wait(self, timeout=None):
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while True:
+            with self._wait_lock:
+                if self.returncode is not None:
+                    return self.returncode
+                flags = 0 if deadline is None else os.WNOHANG
+                try:
+                    pid, status = os.waitpid(self.pid, flags)
+                except ChildProcessError:
+                    if self.returncode is not None:
+                        return self.returncode
+                    raise
+                if pid:
+                    return self._record(status)
+            if deadline is not None and time.monotonic() >= deadline:
+                raise subprocess.TimeoutExpired(str(self.pid), timeout)
+            time.sleep(.01)
+
+    def terminate(self):
+        os.kill(self.pid, signal.SIGTERM)
+
+    def kill(self):
+        os.kill(self.pid, signal.SIGKILL)
+
+
+def start_worker_threads(worker: dict) -> None:
+    worker["writer"] = threading.Thread(target=writer, args=(worker,), daemon=True)
+    worker["reader"] = threading.Thread(target=reader, args=(worker,), daemon=True)
+    worker["writer"].start()
+    worker["reader"].start()
+
+
+def worker_manifest() -> dict:
+    workers = []
+    inheritable = []
+    try:
+        for (item_id, phase), worker in PROCS.items():
+            proc = worker["proc"]
+            stdin_fd, stdout_fd = proc.stdin.fileno(), proc.stdout.fileno()
+            for fd in (stdin_fd, stdout_fd):
+                os.set_inheritable(fd, True)
+                inheritable.append(fd)
+            it = find(item_id)
+            workers.append({"item": item_id, "phase": phase, "pid": proc.pid,
+                             "stdin_fd": stdin_fd, "stdout_fd": stdout_fd,
+                             "session": it["sessions"].get(phase) if it else None,
+                             "turn_seq": worker["turn_seq"], "state": worker["state"],
+                             "started": worker["started"]})
+        return {"server_pid": os.getpid(), "workers": workers}
+    except Exception:
+        # A failed handoff must not leak descriptors into later child processes.
+        for fd in inheritable:
+            try:
+                os.set_inheritable(fd, False)
+            except OSError:
+                pass
+        raise
+
+
+def read_worker_handoff() -> dict:
+    raw = os.environ.pop(WORKER_HANDOFF_ENV, None)
+    if not raw:
+        return {}
+    try:
+        value = json.loads(raw)
+        return value if isinstance(value, dict) else {}
+    except (TypeError, ValueError):
+        return {}
+
+
+def _handoff_child(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        waited, _ = os.waitpid(pid, os.WNOHANG)
+        return waited == 0
+    except (ChildProcessError, OSError):
+        return False
+
+
+def adopt_workers(manifest: dict) -> None:
+    entries = manifest.get("workers", []) if isinstance(manifest, dict) else []
+    valid_source = (manifest.get("server_pid") == os.getpid()
+                    if isinstance(manifest, dict) else False)
+    for entry in entries:
+        proc = None
+        fds = []
+        child = False
+        try:
+            item_id, phase = entry["item"], entry["phase"]
+            if not valid_source:
+                raise ValueError("manifest came from a different server process")
+            pid = int(entry["pid"])
+            fds = [int(entry["stdin_fd"]), int(entry["stdout_fd"])]
+            it = find(item_id)
+            if not it or phase not in ("create", "refine") or \
+                    entry.get("state") != "idle" or entry.get("started") is not None or \
+                    it["sessions"].get(phase) != entry.get("session"):
+                raise ValueError("manifest does not match idle state")
+            if not _handoff_child(pid):
+                raise ValueError("worker is not a live child")
+            child = True
+            modes = [fcntl.fcntl(fd, fcntl.F_GETFL) & os.O_ACCMODE for fd in fds]
+            if not all(stat.S_ISFIFO(os.fstat(fd).st_mode) for fd in fds) or \
+                    modes != [os.O_WRONLY, os.O_RDONLY]:
+                raise ValueError("worker pipe is not a FIFO")
+            for fd in fds:
+                os.set_inheritable(fd, False)
+            stdin = os.fdopen(fds[0], "w", buffering=1)
+            stdout = os.fdopen(fds[1], "r", buffering=1)
+            proc = AdoptedProcess(pid, stdin, stdout)
+            worker = {"item_id": item_id, "phase": phase, "proc": proc,
+                      "outbound": queue.Queue(), "state": "idle",
+                      "turn_seq": int(entry.get("turn_seq", 0)), "started": None,
+                      "trigger": None, "handoff": False, "seen": set(),
+                      "got_result": False, "session_seen": bool(entry.get("session"))}
+            PROCS[(item_id, phase)] = worker
+            start_worker_threads(worker)
+        except (KeyError, TypeError, ValueError, OSError) as exc:
+            print(f"worker handoff rejected: {exc}", file=sys.stderr)
+            if isinstance(entry, dict):
+                it = find(entry.get("item"))
+                phase = entry.get("phase")
+                if it is not None and phase in ("create", "refine"):
+                    lost_session = it["sessions"].get(phase)
+                    it["sessions"][phase] = None
+                    say(it, event(f"{phase} session lost on reload: {lost_session}"), sess=phase)
+            for fd in fds:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+            if proc is not None and proc.poll() is None:
+                proc.terminate()
+            elif child:
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                    os.waitpid(pid, 0)
+                except (ChildProcessError, OSError):
+                    pass
+
 def record_edit(it: dict, fp: str) -> None:
     """First edit of a file in a turn: keep its pre-edit content for the
     per-file diff tabs. The tool_use event streams before the tool runs."""
@@ -364,10 +542,10 @@ CLEAN_TRIGGERS = ("cleanup", "fit")
 
 
 def launch(it: dict, message: str, phase: str, trigger: str | None = None,
-           handoff: bool = False) -> None:
-    """Start a worker turn for `it` in the given phase's session. Caller holds
-    LOCK and has set state. `handoff` marks the turn whose clean landing hands
-    the item to the refine phase."""
+           handoff: bool = False, admitted: bool = False) -> None:
+    """Spawn the phase worker if needed, then enqueue one turn."""
+    if RELOADING and not admitted:
+        raise Reject("server reload in progress — wait for it to finish")
     rv = it.get("reverted")
     if rv and rv.get("phase") == phase:
         it.pop("reverted")
@@ -382,32 +560,65 @@ def launch(it: dict, message: str, phase: str, trigger: str | None = None,
                        f"{it['id']}.dl changed on disk since your last turn. "
                        "Re-read before editing.</system-reminder>\n\n" + message)
     it["last_turn_phase"] = phase
-    if FAKE:
-        cmd = [sys.executable, str(HERE / "fake_worker.py"), it["id"], message, phase]
-    else:
-        cmd = [CLAUDE, "-p", message,
-               "--append-system-prompt", Path(it["append"]).read_text(),
-               *WORKER_FLAGS]
-        if MODELS[phase]:
-            cmd += ["--model", MODELS[phase]]
+    key = (it["id"], phase)
+    worker = PROCS.get(key)
+    if worker is None:
+        worker = spawn_worker(it, phase)
         if it["sessions"].get(phase):
-            cmd += ["--resume", it["sessions"][phase]]
-    log = open(LOG_DIR / f"{it['id']}.log", "ab")
-    proc = subprocess.Popen(cmd, cwd=ROOT, stdout=subprocess.PIPE,
-                            stderr=log, text=True)
-    log.close()
-    PROCS[it["id"]] = proc
+            say(it, event(f"{phase} worker starting a new session"), sess=phase)
     it["pre"] = {"hash": solver_hash(it["id"]), "solver": solver_text(it["id"]),
                  "proposals": prop_text(), "dirty": it["dirty"], "files": {}}
-    threading.Thread(target=reader, args=(it["id"], proc, trigger, phase, handoff),
-                     daemon=True).start()
+    worker["turn_seq"] += 1
+    worker.update(state="sending", started=time.time(), trigger=trigger,
+                  handoff=handoff, seen=set(), got_result=False)
+    worker["outbound"].put_nowait({"type": "user",
+        "message": {"role": "user", "content": message}})
 
 
-def reader(item_id: str, proc: subprocess.Popen, trigger: str | None,
-           phase: str, handoff: bool) -> None:
-    started = time.time()
-    got_result = False
-    seen: set = set()  # stream-json emits one event per content block, same message id
+def spawn_worker(it: dict, phase: str) -> dict:
+    item_id = it["id"]
+    cmd = ([sys.executable, str(HERE / "fake_worker.py"), item_id, phase]
+           if FAKE else [CLAUDE, "--append-system-prompt", Path(it["append"]).read_text(),
+                         *WORKER_FLAGS])
+    if not FAKE and MODELS[phase]:
+        cmd += ["--model", MODELS[phase]]
+    log = open(LOG_DIR / f"{item_id}.log", "ab")
+    proc = subprocess.Popen(cmd, cwd=ROOT, stdin=subprocess.PIPE,
+                            stdout=subprocess.PIPE, stderr=log, text=True)
+    log.close()
+    worker = {"item_id": item_id, "phase": phase, "proc": proc,
+              "outbound": queue.Queue(), "state": "spawning", "turn_seq": 0,
+              "started": None, "trigger": None, "handoff": False,
+              "seen": set(), "got_result": False, "session_seen": False}
+    PROCS[(item_id, phase)] = worker
+    start_worker_threads(worker)
+    worker["state"] = "idle"
+    return worker
+
+
+def writer(worker: dict) -> None:
+    proc = worker["proc"]
+    while True:
+        event = worker["outbound"].get()
+        if event is STOP:
+            return
+        try:
+            data = json.dumps(event) + "\n"
+            written = proc.stdin.write(data)
+            proc.stdin.flush()
+            if written != len(data):
+                proc.terminate()
+                return
+        except (BrokenPipeError, OSError, ValueError):
+            try:
+                proc.terminate()
+            except OSError:
+                pass
+            return
+
+
+def reader(worker: dict) -> None:
+    item_id, phase, proc = worker["item_id"], worker["phase"], worker["proc"]
     first_response = FIRST_RESPONSE.get(item_id)
     for line in proc.stdout:
         line = line.strip()
@@ -419,14 +630,17 @@ def reader(item_id: str, proc: subprocess.Popen, trigger: str | None,
             continue
         with LOCK:
             it = find(item_id)
-            if it is None:
-                break
             kind = ev.get("type")
             if kind == "system" and ev.get("subtype") == "init":
-                it["sessions"][phase] = ev.get("session_id") or it["sessions"].get(phase)
+                if it and not worker["session_seen"]:
+                    it["sessions"][phase] = ev.get("session_id") or it["sessions"].get(phase)
+                    worker["session_seen"] = True
+                worker["state"] = "running"
             elif kind == "assistant":
                 if first_response:
                     first_response.set()
+                if not it:
+                    continue
                 msg = ev.get("message", {})
                 mid = msg.get("id") or ""
                 sub = bool(ev.get("parent_tool_use_id"))
@@ -448,33 +662,50 @@ def reader(item_id: str, proc: subprocess.Popen, trigger: str | None,
                             if label:
                                 entry = {"kind": "tool", "text": label}
                                 key = (mid, "tool", block.get("id") or label)
-                    if entry and key not in seen:
-                        seen.add(key)
+                    if entry and key not in worker["seen"]:
+                        worker["seen"].add(key)
                         if sub or entry["kind"] == "ask":
                             entry["sub"] = True
                         say(it, entry, sess=phase)
+            elif kind == "system" and ev.get("subtype") == "compact_boundary":
+                if not it:
+                    continue
+                meta = ev.get("compact_metadata") or {}
+                say(it, event("compacted · pre {pre:,} · post {post:,} · dropped {drop:,}".format(
+                    pre=meta.get("pre_tokens", 0), post=meta.get("post_tokens", 0),
+                    drop=meta.get("cumulative_dropped_tokens", 0))), sess=phase)
             elif kind == "result":
-                got_result = True
-                finish_turn(it, ev, trigger, started, phase, handoff)
+                if not it or worker["state"] not in ("sending", "running"):
+                    continue
+                worker["got_result"] = True
+                reason = ev.get("terminal_reason", "completed")
+                if reason == "completed":
+                    finish_turn(it, ev, worker["trigger"], worker["started"],
+                                phase, worker["handoff"])
+                elif reason == "aborted_streaming":
+                    say(it, event("stopped"), sess=phase)
+                    turn_died(it, phase)
+                else:
+                    say(it, event(f"turn failed ({reason})"), sess=phase)
+                    turn_died(it, phase)
+                worker.update(state="idle", started=None, trigger=None,
+                              handoff=False, seen=set(), got_result=False)
         bump()
     proc.wait()
     with LOCK:
-        PROCS.pop(item_id, None)
+        worker["outbound"].put_nowait(STOP)
+        if PROCS.get((item_id, phase)) is worker:
+            PROCS.pop((item_id, phase), None)
+        worker["state"] = "dead"
         it = find(item_id)
-        if it and not got_result:
-            if item_id in KILLED:
-                KILLED.discard(item_id)
-                say(it, event("stopped"), sess=phase)
-            else:
-                tail = ""
-                log = LOG_DIR / f"{item_id}.log"
-                if log.exists():
-                    tail = log.read_text(errors="replace")[-400:].strip()
-                say(it, event(f"worker exited without result (code {proc.returncode}) — {tail}"),
-                    sess=phase)
+        if it and worker["started"] is not None:
+            tail = ""
+            log = LOG_DIR / f"{item_id}.log"
+            if log.exists():
+                tail = log.read_text(errors="replace")[-400:].strip()
+            say(it, event(f"worker exited without result (code {proc.returncode}) — {tail}"),
+                sess=phase)
             turn_died(it, phase)
-        elif it and it.pop("pending_handoff", False):
-            complete_handoff(it)
     if first_response:
         first_response.set()
     bump()
@@ -491,8 +722,12 @@ def turn_died(it: dict, phase: str) -> None:
 
 
 def complete_handoff(it: dict) -> None:
-    """Flip the item to the refine phase and launch its first turn. Caller
-    holds LOCK; the create turn's process has fully drained."""
+    """Flip the item to the refine phase and enqueue its first turn."""
+    if RELOADING:
+        it["state"] = NEEDS_REVIEW
+        it["updated"] = True
+        say(it, event("handoff paused for server reload"), sess="create")
+        return
     it["phase"] = "refine"
     it["state"] = RUNNING
     say(it, event("handoff — refine session starting"))
@@ -523,6 +758,52 @@ def quota_note(ev: dict) -> str:
     return " · " + " · ".join(parts)
 
 
+def turn_usage(it: dict, ev: dict, phase: str) -> str:
+    """Record the request-level cache and context facts used by the UI."""
+    iterations = (ev.get("usage") or {}).get("iterations") or []
+    requests = [x for x in iterations if isinstance(x, dict)]
+    total = ev.get("total_cost_usd")
+    parts = [f"${total:.3f}" if isinstance(total, (int, float)) else "$?"]
+    if not requests:
+        return " · ".join(parts)
+
+    previous = it.setdefault("cache_read", {}).get(phase)
+    drops = []
+    for request in requests:
+        cache_read = request.get("cache_read_input_tokens")
+        if isinstance(cache_read, (int, float)):
+            if isinstance(previous, (int, float)) and cache_read < previous:
+                drops.append((previous, cache_read))
+            previous = cache_read
+    it["cache_read"][phase] = previous
+    last = requests[-1]
+    cache_read = last.get("cache_read_input_tokens") or 0
+    cache_write = last.get("cache_creation_input_tokens") or 0
+    uncached = last.get("input_tokens") or 0
+    parts.append(f"cache r {cache_read:,} w {cache_write:,} in {uncached:,}")
+    if drops:
+        before, after = drops[-1]
+        parts.append(f"⚠ DROP {before:,}→{after:,}")
+
+    used = cache_read + cache_write + uncached
+    candidates = [(name, usage) for name, usage in (ev.get("modelUsage") or {}).items()
+                  if isinstance(usage, dict) and usage.get("contextWindow")]
+    if candidates:
+        model, model_usage = max(candidates, key=lambda pair:
+            pair[1].get("cacheReadInputTokens", 0) +
+            pair[1].get("cacheCreationInputTokens", 0) +
+            pair[1].get("inputTokens", 0))
+        window = model_usage["contextWindow"]
+        canonical = model_usage.get("canonicalModel") or model
+        price = PRICES.get(canonical)
+        it.setdefault("context", {})[phase] = {
+            "used": used, "window": window,
+            "percent": used / window * 100,
+            "compactCost": used * price[0] * 2 / 1_000_000 if price else None,
+        }
+    return " · ".join(parts)
+
+
 def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
                 phase: str, handoff: bool) -> None:
     it["rev"] = it.get("rev", 0) + 1
@@ -545,7 +826,7 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
             say(it, {"kind": "report", "rev": it["rev"], "text": text}, sess=phase)
     mins = (time.time() - started) / 60
     note = f"turn done · {mins:.0f}m" if mins >= 1 else "turn done · <1m"
-    say(it, event(note + quota_note(ev)), sess=phase)
+    say(it, event(note + " · " + turn_usage(it, ev, phase) + quota_note(ev)), sess=phase)
     # the create pass ends in prune, and the refine pass is itself the quality
     # pass, so each phase's first landing is clean by cadence
     first_refine = phase == "refine" and not it.get("refined")
@@ -560,13 +841,87 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
     it["title"] = title_of(it["id"]) or it.get("title", "")
     it["prop_after"] = prop_text()
     if handoff and phase == "create":
-        # hand off after this reader drains, so the refine turn's process
-        # never collides with this one's PROCS slot
         it["handoff_report"] = text
-        it["pending_handoff"] = True
+        it["handoff_pending"] = True
+        worker = PROCS.get((it["id"], phase))
+        if worker:
+            DEFERRED.put_nowait(("handoff", it["id"], phase, worker["turn_seq"]))
+            ensure_drain()
     else:
         it["state"] = NEEDS_REVIEW
         it["updated"] = True
+
+
+def ensure_drain() -> None:
+    global DEFERRED_THREAD
+    if DEFERRED_THREAD is None or not DEFERRED_THREAD.is_alive():
+        DEFERRED_THREAD = threading.Thread(target=drain_deferred, daemon=True)
+        DEFERRED_THREAD.start()
+
+
+def drain_deferred() -> None:
+    while True:
+        job = DEFERRED.get()
+        if job is STOP:
+            return
+        try:
+            if job[0] == "reap":
+                reap(job[1])
+                continue
+            _, item_id, phase, turn_seq = job
+            with LOCK:
+                it = find(item_id)
+                worker = PROCS.get((item_id, phase))
+                if not it or not it.get("handoff_pending") or not worker or \
+                        worker["turn_seq"] != turn_seq:
+                    if it:
+                        it.pop("handoff_pending", None)
+                    continue
+                it.pop("handoff_pending", None)
+                complete_handoff(it)
+            bump()
+        except Exception as exc:
+            print(f"deferred {job[0]} failed: {exc}", file=sys.stderr)
+
+
+def detach_workers(item_id: str) -> list[dict]:
+    workers = []
+    for key, worker in list(PROCS.items()):
+        if key[0] == item_id and PROCS.get(key) is worker:
+            PROCS.pop(key)
+            worker["state"] = "dying"
+            worker["outbound"].put_nowait(STOP)
+            workers.append(worker)
+    return workers
+
+
+def queue_reap(worker: dict) -> None:
+    DEFERRED.put_nowait(("reap", worker))
+    ensure_drain()
+
+
+def reap(worker: dict) -> None:
+    proc = worker["proc"]
+    if proc.poll() is None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            try:
+                proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                print(f"worker {worker['item_id']} did not exit after kill",
+                      file=sys.stderr)
+    for pipe in (proc.stdin, proc.stdout):
+        if pipe:
+            try:
+                pipe.close()
+            except OSError:
+                pass
+    worker["reader"].join(timeout=3)
+    worker["writer"].join(timeout=3)
+    worker["state"] = "dead"
 
 
 FIRST_RESPONSE: dict[str, threading.Event] = {}
@@ -592,10 +947,16 @@ def queue_pick(n: int, order: str) -> list[tuple[str, int]]:
 def start_wave(k: int, order: str = "name") -> dict:
     global LAST_WAVE_AT
     with LOCK:
+        if RELOADING:
+            return {"error": "server reload in progress — wait for it to finish"}
         if time.time() - LAST_WAVE_AT < WAVE_DEBOUNCE:
             return {"error": "a wave just started — wait a moment to start another"}
         if order not in ("name", "size"):
             return {"error": f"unknown order: {order}"}
+        committed = [it for it in STATE["items"] if it["state"] == COMMITTED]
+        for old in committed:
+            for worker in detach_workers(old["id"]):
+                queue_reap(worker)
         STATE["items"] = [it for it in STATE["items"] if it["state"] != COMMITTED]
         existing = {it["id"] for it in STATE["items"]}
         try:
@@ -625,28 +986,45 @@ def start_wave(k: int, order: str = "name") -> dict:
 def stagger_launch(ids: list[str]) -> None:
     """Launch the first worker alone so it writes the shared prompt-cache
     prefix, then fan the rest out once its first API response arrives."""
-    first = FIRST_RESPONSE[ids[0]] = threading.Event()
+    first = threading.Event()
+    seeded = False
     with LOCK:
         it = find(ids[0])
-        it["state"] = RUNNING
-        say(it, event("launched (cache seeder)"))
-        launch(it, create_message(ids[0]), "create", handoff=True)
+        if it is not None and it["state"] == QUEUED and not active(it):
+            FIRST_RESPONSE[ids[0]] = first
+            it["state"] = RUNNING
+            say(it, event("launched (cache seeder)"))
+            launch(it, create_message(ids[0]), "create", handoff=True, admitted=True)
+            seeded = True
     bump()
-    first.wait(timeout=STAGGER_TIMEOUT)
-    FIRST_RESPONSE.pop(ids[0], None)
+    if seeded:
+        first.wait(timeout=STAGGER_TIMEOUT)
+        with LOCK:
+            if FIRST_RESPONSE.get(ids[0]) is first:
+                FIRST_RESPONSE.pop(ids[0], None)
     with LOCK:
         for tid in ids[1:]:
             it = find(tid)
+            if it is None or it["state"] != QUEUED or active(it):
+                continue
             it["state"] = RUNNING
             say(it, event("launched"))
-            launch(it, create_message(tid), "create", handoff=True)
+            launch(it, create_message(tid), "create", handoff=True, admitted=True)
     bump()
+
+
+def resume_queued_wave() -> None:
+    """Give persisted admissions an owner after an exec or failed reload."""
+    with LOCK:
+        ids = [it["id"] for it in STATE["items"] if it["state"] == QUEUED and
+               not any(item_id == it["id"] for item_id, _ in PROCS)]
+    if ids:
+        threading.Thread(target=stagger_launch, args=(ids,), daemon=True).start()
 
 
 # ---------- actions ----------
 
-@action
-def act_comment(it: dict, text: str, sess: str | None = None) -> None:
+def submit_comment(it: dict, text: str, sess: str | None = None) -> None:
     text = text.strip()
     low = text.lower()
     if low in ("commit", "next"):
@@ -657,6 +1035,8 @@ def act_comment(it: dict, text: str, sess: str | None = None) -> None:
             raise Reject("already handed off")
         if not it["sessions"]["create"]:
             raise Reject("no session yet")
+        if (it["id"], "create") not in PROCS:
+            raise Reject("session worker is no longer live — restart the wave")
         say(it, {"kind": "you", "text": text}, sess="create")
         it["state"] = COMMENTED
         it["updated"] = False
@@ -665,12 +1045,22 @@ def act_comment(it: dict, text: str, sess: str | None = None) -> None:
     sess = sess if sess in ("create", "refine") else it["phase"]
     if not it["sessions"].get(sess):
         raise Reject("no session yet")
+    if (it["id"], sess) not in PROCS:
+        raise Reject("session worker is no longer live — restart the wave")
     say(it, {"kind": "you", "text": text}, sess=sess)
     it["state"] = COMMENTED
     it["updated"] = False
     head = low.split()[:1]
     trigger = head[0] if head and head[0] in CLEAN_TRIGGERS else None
     launch(it, text, sess, trigger=trigger)
+
+
+act_comment = action(submit_comment)
+
+
+@action
+def act_compact(it: dict, sess: str | None = None) -> None:
+    submit_comment(it, "/compact", sess)
 
 
 @action
@@ -700,20 +1090,31 @@ def act_seen(it: dict) -> None:
 def act_drop(it: dict) -> None:
     """Forget an item and its feed. The solver file on disk is left alone."""
     require_idle(it)
+    for worker in detach_workers(it["id"]):
+        queue_reap(worker)
     STATE["items"] = [x for x in STATE["items"] if x["id"] != it["id"]]
 
 
 def act_kill(item_id: str) -> dict:
-    proc = PROCS.get(item_id)
-    if proc is None:
-        return {"error": "no worker running"}
-    KILLED.add(item_id)
-    proc.terminate()
+    with LOCK:
+        running = [w for (tid, _), w in PROCS.items()
+                   if tid == item_id and w["state"] in ("sending", "running")]
+        if not running:
+            return {"error": "no worker running"}
+        worker, turn_seq = running[0], running[0]["turn_seq"]
+        worker["outbound"].put_nowait({"type": "control_request",
+            "request_id": str(uuid.uuid4()), "request": {"subtype": "interrupt"}})
 
     def force():
         time.sleep(10)
-        if proc.poll() is None:
-            proc.kill()
+        with LOCK:
+            current = PROCS.get((worker["item_id"], worker["phase"]))
+            if current is not worker or worker["turn_seq"] != turn_seq or \
+                    worker["state"] not in ("sending", "running"):
+                return
+            proc = worker["proc"]
+            if proc.poll() is None:
+                proc.terminate()
     threading.Thread(target=force, daemon=True).start()
     return {"ok": True}
 
@@ -777,6 +1178,8 @@ def act_commit() -> dict:
             if it["id"] in ids:
                 it["state"] = COMMITTED
                 say(it, event("committed"))
+                for worker in detach_workers(it["id"]):
+                    queue_reap(worker)
         chk = subprocess.run(["git", "status", "--porcelain", "--", *COMMIT_SCOPE],
                              cwd=ROOT, capture_output=True, text=True)
         leftovers = any(not l.startswith("??") for l in chk.stdout.splitlines())
@@ -819,11 +1222,19 @@ def run_committer(append: Path) -> None:
 # ---------- http ----------
 
 def light_items() -> list[dict]:
-    return [{k: it.get(k) for k in
-             ("id", "state", "dirty", "updated", "sessions", "phase",
-              "lastActive", "wave", "rev", "title", "est", "ver", "append")} |
-            {"active": active(it), "turnPhase": it.get("last_turn_phase")}
-            for it in STATE["items"]]
+    out = []
+    for it in STATE["items"]:
+        live = {phase: (worker := PROCS.get((it["id"], phase))) is not None and
+                       worker["state"] != "dead"
+                for phase in ("create", "refine")}
+        running = next((phase for phase in ("create", "refine")
+                        if (worker := PROCS.get((it["id"], phase))) and
+                        worker["state"] in ("sending", "running")), None)
+        out.append({k: it.get(k) for k in
+                    ("id", "state", "dirty", "updated", "sessions", "phase", "context",
+                     "lastActive", "wave", "rev", "title", "est", "ver", "append")} |
+                   {"active": active(it), "turnPhase": running, "workerLive": live})
+    return out
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -901,6 +1312,8 @@ class Handler(BaseHTTPRequestHandler):
         elif route == "/api/comment":
             res = act_comment(body.get("id", ""), body.get("text", ""),
                               body.get("sess"))
+        elif route == "/api/compact":
+            res = act_compact(body.get("id", ""), body.get("sess"))
         elif route == "/api/approve":
             res = act_approve(body.get("id", ""))
         elif route == "/api/unapprove":
@@ -968,7 +1381,7 @@ def usage_loop() -> None:
 
 
 def watch_reload() -> None:
-    """Re-exec when server.py changes, once no worker is mid-turn."""
+    """Quiesce turns and re-exec on a server.py change, or restart cold on timeout."""
     src = Path(__file__)
     mtime = src.stat().st_mtime
     while True:
@@ -978,12 +1391,96 @@ def watch_reload() -> None:
                 continue
         except OSError:
             continue
-        with LOCK:
-            if PROCS:
-                continue
-            save()
         print("server.py changed — restarting")
-        os.execv(sys.executable, [sys.executable] + sys.argv)
+        reload_server()
+
+
+def quiesce_workers(timeout: float = RELOAD_QUIESCE_TIMEOUT) -> bool:
+    global RELOADING
+    deadline = time.monotonic() + timeout
+    with COND:
+        RELOADING = True
+        while any(active(it) or it["state"] == QUEUED for it in STATE["items"]):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            COND.wait(timeout=remaining)
+        # A reader's TextIOWrapper may read ahead and lose buffered output at
+        # exec. Idle workers have no pending turn output, which makes this cut safe.
+        return True
+
+
+def reload_server(timeout: float = RELOAD_QUIESCE_TIMEOUT) -> None:
+    global RELOADING
+    manifest = None
+    try:
+        quiesced = quiesce_workers(timeout)
+        with LOCK:
+            if not quiesced:
+                for it in STATE["items"]:
+                    say(it, event("reload timed out waiting for turns — restarting without handoff"))
+                save()
+            elif any(active(it) or it["state"] == QUEUED for it in STATE["items"]):
+                for it in STATE["items"]:
+                    say(it, event("reload aborted because a new turn started"))
+                RELOADING = False
+                save()
+                return
+            else:
+                manifest = worker_manifest()
+                os.environ[WORKER_HANDOFF_ENV] = json.dumps(manifest)
+                save()
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+    except Exception as exc:
+        if manifest is not None:
+            for entry in manifest["workers"]:
+                for name in ("stdin_fd", "stdout_fd"):
+                    try:
+                        os.set_inheritable(entry[name], False)
+                    except OSError:
+                        pass
+        os.environ.pop(WORKER_HANDOFF_ENV, None)
+        RELOADING = False
+        with LOCK:
+            for it in STATE["items"]:
+                say(it, event(f"reload failed — server still running: {exc}"))
+            save()
+        resume_queued_wave()
+
+
+def shutdown_workers() -> None:
+    global SHUTTING_DOWN
+    with LOCK:
+        if SHUTTING_DOWN:
+            return
+        SHUTTING_DOWN = True
+        workers = list(PROCS.values())
+        PROCS.clear()
+        for worker in workers:
+            worker["state"] = "dying"
+            worker["outbound"].put_nowait(STOP)
+    DEFERRED.put_nowait(STOP)
+    for worker in workers:
+        proc = worker["proc"]
+        if proc.poll() is None:
+            proc.terminate()
+    for worker in workers:
+        proc = worker["proc"]
+        try:
+            proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=3)
+        for pipe in (proc.stdin, proc.stdout):
+            if pipe:
+                try:
+                    pipe.close()
+                except OSError:
+                    pass
+        worker["reader"].join(timeout=3)
+        worker["writer"].join(timeout=3)
+    if DEFERRED_THREAD:
+        DEFERRED_THREAD.join(timeout=4)
 
 
 def main() -> None:
@@ -998,14 +1495,28 @@ def main() -> None:
         fcntl.flock(_state_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
         sys.exit("another console server owns this state dir — refusing to start")
+    handoff = read_worker_handoff()
     load()
+    adopt_workers(handoff)
     save()
+    resume_queued_wave()
     threading.Thread(target=watch_reload, daemon=True).start()
     threading.Thread(target=usage_loop, daemon=True).start()
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+    stopping = threading.Event()
+    def request_stop(signum, frame):
+        if not stopping.is_set():
+            stopping.set()
+            threading.Thread(target=server.shutdown, daemon=True).start()
+    signal.signal(signal.SIGINT, request_stop)
+    signal.signal(signal.SIGTERM, request_stop)
     mode = " (FAKE workers)" if FAKE else ""
     print(f"solver console · http://127.0.0.1:{args.port}{mode}")
-    server.serve_forever()
+    try:
+        server.serve_forever()
+    finally:
+        server.server_close()
+        shutdown_workers()
 
 
 if __name__ == "__main__":
