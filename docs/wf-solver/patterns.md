@@ -260,3 +260,28 @@ Pairs an input cell with its along/across split on the task's axis.
 .decl cell_split(p: Position, col: Color, p_inner: Position, p_across: Position)
 cell_split(P, Col, P_inner, P_across) :- in(P, Col), c.axis(A), split(P, A, P_inner, P_across).
 ```
+
+## Slide until halted
+
+A mover's translation found by walking: enumerate the displacements the frame admits, then advance one step at a time until the moved footprint covers a stopper. The rest displacement is the first halted reach. The stopper set carries the contact semantics — cells one step back from the obstacle's cells, or from its box — so contact variants differ only in their stoppers.
+
+```
+.decl shift(delta: Shift)
+shift(ORIGIN).
+shift(Delta) :-
+    in(P, _), move_dir(D),
+    axis_of(D, A), sub_extent(P, A, K), jump_delta(D, K, Delta).
+
+.decl halted(delta: Shift)
+halted(Delta) :- shift(Delta), shape(P), compose(P, Delta, P2), stopper(P2).
+
+.decl reach(delta: Shift)
+reach(ORIGIN).
+reach(Delta2) :-
+    reach(Delta), !halted(Delta),
+    move_dir(D), step_delta(D, S), compose(Delta, S, Delta2), shift(Delta2).
+```
+
+The names are corpus-wide: `move_dir`, `stopper`, `shift`, `halted`, `reach`.
+
+(05f2a901 — three contact cases as per-case stoppers; 11dc524f — box-flush dock.)
