@@ -527,6 +527,39 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
         compose(P1, P2, P).
 }
 
+// 2D decomposition from per-axis tile counts — the divide peer of Frame2D:
+// per-axis 1D divide, perp-glued. This makes the rectangular claim; the _2d
+// composites make the square claim (one scalar, both axes). `cell` and `gap`
+// are the instance's parameters.
+.comp Divide2D<Key> {
+    .decl cell(p: Position)
+    .decl dim(key: Key, a: Axis, n: number)
+    .decl gap(g: number)
+
+    .decl tile(key: Key, p: Position, p_outer: Position, p_inner: Position)
+    tile(Ky, P, P_outer, P_inner) :-
+        cell(P), gap(G),
+        perp(A1, A2),
+        dim(Ky, A1, N1), divide(P, A1, N1, G, Po1, Pi1),
+        dim(Ky, A2, N2), divide(P, A2, N2, G, Po2, Pi2),
+        compose(Po1, Po2, P_outer), compose(Pi1, Pi2, P_inner).
+}
+
+// Like Divide2D, but parameterized by per-axis tile sizes.
+.comp Tile2D<Key> {
+    .decl cell(p: Position)
+    .decl dim(key: Key, a: Axis, k: number)
+    .decl gap(g: number)
+
+    .decl tile(key: Key, p: Position, p_outer: Position, p_inner: Position)
+    tile(Ky, P, P_outer, P_inner) :-
+        cell(P), gap(G),
+        perp(A1, A2),
+        dim(Ky, A1, K1), divide_by_size(P, A1, K1, G, Po1, Pi1),
+        dim(Ky, A2, K2), divide_by_size(P, A2, K2, G, Po2, Pi2),
+        compose(Po1, Po2, P_outer), compose(Pi1, Pi2, P_inner).
+}
+
 // A corner diagonal, per key — the full corner-to-corner run of cells
 // equidistant from the corner's two edges, center included.
 // DiagPlacement.diag_cell is this ∩ quadrant — the corner→center ray.

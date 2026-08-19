@@ -19,23 +19,6 @@
 
 #include "../lib.dl"
 
-// 2D tiling from per-axis tile dims: per-axis divide_by_size, perp-glued —
-// the divide peer of Frame2D. Candidate lib comp — see
-// docs/wf-solver/proposals.md. `gap` is the instance's parameter.
-.comp Tile2D<Key> {
-    .decl cell(p: Position)
-    .decl dim(key: Key, a: Axis, k: number)
-    .decl gap(g: number)
-
-    .decl tile(key: Key, p: Position, p_outer: Position, p_inner: Position)
-    tile(Ky, P, P_outer, P_inner) :-
-        cell(P), gap(G),
-        perp(A1, A2),
-        dim(Ky, A1, K1), divide_by_size(P, A1, K1, G, Po1, Pi1),
-        dim(Ky, A2, K2), divide_by_size(P, A2, K2, G, Po2, Pi2),
-        compose(Po1, Po2, P_outer), compose(Pi1, Pi2, P_inner).
-}
-
 .type Choice = Cells {} | Blocks {} | Lattice {}
 
 .comp Consts {
