@@ -252,8 +252,9 @@ def test_refine_first_landing_clears_dirty(srv):
     assert it["state"] == srv.NEEDS_REVIEW
 
 
-def usage_result(cache_read, cache_write=200, input_tokens=10, window=200000):
-    return {"result": "", "total_cost_usd": .125,
+def usage_result(cache_read, cache_write=200, input_tokens=10, window=200000,
+                 total=.125):
+    return {"result": "", "total_cost_usd": total,
             "usage": {"cache_read_input_tokens": 999999, "iterations": [{
                 "input_tokens": input_tokens, "output_tokens": 5,
                 "cache_read_input_tokens": cache_read,
@@ -261,7 +262,7 @@ def usage_result(cache_read, cache_write=200, input_tokens=10, window=200000):
                 "cache_creation": {"ephemeral_1h_input_tokens": cache_write}}]},
             "modelUsage": {"claude-fable-5": {
                 "inputTokens": input_tokens, "cacheReadInputTokens": cache_read,
-                "cacheCreationInputTokens": cache_write, "costUSD": .125,
+                "cacheCreationInputTokens": cache_write, "costUSD": total,
                 "contextWindow": window, "canonicalModel": "claude-fable-5"}}}
 
 
@@ -277,7 +278,36 @@ def test_turn_whose_cache_read_grows_is_not_marked_anomalous(srv):
     srv.finish_turn(it, usage_result(21000), None, time.time(), "refine", False)
     srv.finish_turn(it, usage_result(22000), None, time.time(), "refine", False)
     assert "DROP" not in it["feed"][-1]["text"]
-    assert "cache r 22,000 w 200 in 10" in it["feed"][-1]["text"]
+    assert "cache r 22,000 w 200" in it["feed"][-1]["text"]
+
+
+def test_turn_note_reports_the_turn_share_not_the_session_total(srv):
+    it = item(srv, "a", srv.NEEDS_REVIEW)
+    srv.finish_turn(it, usage_result(21000, total=4.44), None, time.time(),
+                    "refine", False)
+    srv.finish_turn(it, usage_result(22000, total=8.88), None, time.time(),
+                    "refine", False)
+    assert "5h 1.00%" in it["feed"][-1]["text"]
+    assert "$" not in it["feed"][-1]["text"]
+
+
+def test_cost_baseline_resets_when_the_running_total_restarts(srv):
+    it = item(srv, "a", srv.NEEDS_REVIEW)
+    srv.finish_turn(it, usage_result(21000, total=8.88), None, time.time(),
+                    "refine", False)
+    srv.finish_turn(it, usage_result(22000, total=4.44), None, time.time(),
+                    "refine", False)
+    assert "5h 1.00%" in it["feed"][-1]["text"]
+
+
+def test_cache_write_sums_the_turn_requests(srv):
+    it = item(srv, "a", srv.NEEDS_REVIEW)
+    ev = usage_result(26343, 437)
+    ev["usage"]["iterations"].insert(0, {
+        "input_tokens": 1, "cache_read_input_tokens": 100,
+        "cache_creation_input_tokens": 20000})
+    srv.finish_turn(it, ev, None, time.time(), "refine", False)
+    assert "cache r 26,343 w 20,437" in it["feed"][-1]["text"]
 
 
 def test_context_percentage_uses_last_iteration_and_reported_window(srv):
@@ -300,6 +330,53 @@ def test_compact_uses_normal_user_message_path(srv, monkeypatch):
     assert srv.act_compact("a", "refine") == {"ok": True}
     assert sent == [("/compact", "refine")]
     assert it["feed"][-1]["text"] == "/compact"
+
+
+def test_runaway_first_nudges_then_bails_to_handoff(srv, monkeypatch):
+    sent = []
+    monkeypatch.setattr(srv, "launch",
+                        lambda it, msg, phase, trigger=None, handoff=False,
+                        admitted=False: sent.append((msg, phase, handoff)))
+    it = item(srv, "a", srv.RUNNING, phase="create",
+              sessions={"create": "cs", "refine": None})
+    w = worker(srv, it, phase="create", state="running")
+    srv.runaway_detected(it, w)
+    assert w["escalate"] == "nudge"
+    assert it["runaway"]["create"] == 1
+    interrupt = w["outbound"].get_nowait()
+    assert interrupt["request"]["subtype"] == "interrupt"
+    assert "⚠" in it["feed"][-1]["text"]
+    srv.escalate_turn(it, "create", "nudge", True)
+    assert sent[-1] == (srv.NUDGE_BRIEF, "create", True)
+    srv.runaway_detected(it, w)
+    assert w["escalate"] == "bail"
+    srv.escalate_turn(it, "create", "bail", True)
+    assert sent[-1] == (srv.BAIL_BRIEF, "create", True)
+
+
+def test_refine_runaway_bail_lands_for_review(srv):
+    it = item(srv, "a", srv.COMMENTED)
+    srv.escalate_turn(it, "refine", "bail", False)
+    assert it["state"] == srv.NEEDS_REVIEW
+
+
+def test_runaway_turn_is_nudged_and_lands(srv, monkeypatch):
+    monkeypatch.setattr(srv, "FAKE", True)
+    it = item(srv, "rw", srv.COMMENTED,
+              sessions={"create": None, "refine": None})
+    with srv.LOCK:
+        srv.launch(it, "runaway", "refine")
+    deadline = time.time() + 8
+    while it["state"] != srv.NEEDS_REVIEW and time.time() < deadline:
+        time.sleep(.02)
+    try:
+        assert it["state"] == srv.NEEDS_REVIEW
+        assert any("runaway" in m.get("text", "") for m in it["feed"]
+                   if m["kind"] == "event")
+        assert it["runaway"]["refine"] == 1
+        assert any(m["kind"] == "report" for m in it["feed"])
+    finally:
+        srv.shutdown_workers()
 
 
 def test_dead_refine_turn_falls_back_to_create(srv):
@@ -726,7 +803,7 @@ def test_quiesce_handoff_adopt_keeps_pid_and_sends(srv):
     it, old = idle_fake(srv, "handoff")
     pid = old["proc"].pid
     try:
-        assert srv.quiesce_workers(.1)
+        srv.quiesce_workers()
         manifest = srv.worker_manifest()
         srv.save()
         os.environ[srv.WORKER_HANDOFF_ENV] = json.dumps(manifest)
@@ -794,7 +871,7 @@ def test_adoption_validation_failure_drops_only_bad_worker(srv, tmp_path):
 def test_quiesce_rejects_new_turns(srv):
     it = item(srv, "a", srv.NEEDS_REVIEW)
     worker(srv, it)
-    assert srv.quiesce_workers(.1)
+    srv.quiesce_workers()
     assert srv.act_comment("a", "one more")["error"] == \
         "server reload in progress — wait for it to finish"
 
@@ -856,18 +933,27 @@ def test_stagger_launch_skips_item_changed_while_waiting(srv, monkeypatch, chang
     assert launched == ["a"]
 
 
-def test_wave_committed_just_before_reload_still_launches(srv, monkeypatch):
-    it = item(srv, "pending", srv.QUEUED, phase="create")
-    launched = threading.Event()
-    monkeypatch.setattr(srv, "launch", lambda *args, **kwargs: launched.set())
-    monkeypatch.setattr(srv, "STAGGER_TIMEOUT", 0)
-    monkeypatch.setattr(srv, "stagger_launch", srv._test_stagger_launch)
-    monkeypatch.setattr(srv.os, "execv",
-                        lambda exe, argv: (_ for _ in ()).throw(OSError("no exec")))
-    srv.reload_server(timeout=0)
-    assert launched.wait(1)
-    assert it["state"] == srv.RUNNING
+def test_reload_waits_for_running_turn(srv, monkeypatch):
+    it = item(srv, "a", srv.COMMENTED)
+    w = worker(srv, it, state="running")
+    execed = threading.Event()
+
+    def fail_exec(exe, argv):
+        execed.set()
+        raise OSError("no exec")
+
+    monkeypatch.setattr(srv.os, "execv", fail_exec)
+    thread = threading.Thread(target=srv.reload_server, daemon=True)
+    thread.start()
+    assert not execed.wait(.2)  # holds while the turn is in flight
+    with srv.COND:
+        w["state"] = "idle"
+        srv.PROCS.clear()
+        srv.COND.notify_all()
+    assert execed.wait(2)
+    thread.join(timeout=2)
     assert not srv.RELOADING
+    assert "server still running" in it["feed"][-1]["text"]
 
 
 def test_execv_failure_restores_handoff_and_server(srv, monkeypatch):
@@ -876,7 +962,7 @@ def test_execv_failure_restores_handoff_and_server(srv, monkeypatch):
     monkeypatch.setattr(srv.os, "execv",
                         lambda exe, argv: (_ for _ in ()).throw(OSError("no exec")))
     try:
-        srv.reload_server(timeout=.1)
+        srv.reload_server()
         assert not srv.RELOADING
         assert srv.WORKER_HANDOFF_ENV not in os.environ
         assert all(not os.get_inheritable(fd) for fd in fds)
@@ -902,7 +988,7 @@ def test_manifest_build_failure_rolls_back_reload_and_descriptors(srv, monkeypat
 
     monkeypatch.setattr(srv, "find", fail_on_second)
     try:
-        srv.reload_server(timeout=.1)
+        srv.reload_server()
         assert not srv.RELOADING
         assert srv.WORKER_HANDOFF_ENV not in os.environ
         assert all(not os.get_inheritable(fd) for fd in fds)
@@ -942,17 +1028,3 @@ def test_rejected_worker_clears_session_and_posts_feed(srv, tmp_path):
         regular.close()
 
 
-def test_reload_timeout_exec_failure_keeps_workers_operational(srv, monkeypatch):
-    it = item(srv, "a", srv.COMMENTED)
-    worker(srv, it, state="running")
-    calls = []
-    monkeypatch.setattr(srv, "shutdown_workers", lambda: calls.append("shutdown"))
-    def fail_exec(exe, argv):
-        calls.append("execv")
-        raise OSError("no exec")
-    monkeypatch.setattr(srv.os, "execv", fail_exec)
-    srv.reload_server(timeout=0)
-    assert calls == ["execv"]
-    assert not srv.RELOADING
-    assert (it["id"], "refine") in srv.PROCS
-    assert "server still running" in it["feed"][-1]["text"]

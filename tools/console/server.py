@@ -96,7 +96,6 @@ RELOADING = False
 USAGE: list[dict] = []  # account rate-limit windows, refreshed in background
 COMMITTER = {"running": False, "note": None}
 WORKER_HANDOFF_ENV = "CONSOLE_WORKER_HANDOFF"
-RELOAD_QUIESCE_TIMEOUT = 30
 
 
 # ---------- item lifecycle ----------
@@ -299,6 +298,12 @@ CREATE_BRIEF = """You are the create phase of a two-session flow: you create the
 Do steps 1-3 of the creation pass with the data above; do not re-read the data. Skip steps 4-5. In place of the review, end your turn with a handoff report addressed to the refine session: the model claim, each choice point with the alternatives you considered and why you discarded them, and the audit findings and judgment calls. Make it complete enough that the refine session rederives nothing."""
 
 HANDOFF_BRIEF = """Write the handoff report for the refine session that takes over from you: the model claim, each choice point with the alternatives you considered and why you discarded them, and the audit findings and judgment calls. Cover the whole session, including turns after any earlier report. Make it complete enough that the refine session rederives nothing."""
+
+NUDGE_BRIEF = """You hit the output-token cap thinking, with no tool calls and no text. Stop deliberating and act: take the next concrete step with tool calls, test hypotheses in the runner instead of resolving them in your head, and land what you have."""
+
+BAIL_BRIEF = ("You hit the output-token cap thinking twice, so the task moves to the "
+              "refine session now — stop solving. " + HANDOFF_BRIEF +
+              " State plainly how far you got and where you got stuck.")
 
 REFINE_BRIEF = """You are the refine phase of a two-session flow: a create session did steps 1-3 of the creation pass and left the handoff report above.
 
@@ -590,6 +595,10 @@ def spawn_worker(it: dict, phase: str) -> dict:
               "outbound": queue.Queue(), "state": "spawning", "turn_seq": 0,
               "started": None, "trigger": None, "handoff": False,
               "seen": set(), "got_result": False, "session_seen": False}
+    # A new process restarts the session's running totals.
+    it.setdefault("cost_seen", {})[phase] = {"total": 0, "fable": 0}
+    it.setdefault("cache_read", {}).pop(phase, None)
+    it.setdefault("runaway", {}).pop(phase, None)
     PROCS[(item_id, phase)] = worker
     start_worker_threads(worker)
     worker["state"] = "idle"
@@ -667,6 +676,14 @@ def reader(worker: dict) -> None:
                         if sub or entry["kind"] == "ask":
                             entry["sub"] = True
                         say(it, entry, sess=phase)
+                blocks = msg.get("content") or []
+                if (msg.get("stop_reason") == "max_tokens" and blocks and
+                        all(b.get("type") == "thinking" for b in blocks) and
+                        worker["state"] in ("sending", "running") and
+                        not worker.get("escalate") and
+                        (mid, "runaway") not in worker["seen"]):
+                    worker["seen"].add((mid, "runaway"))
+                    runaway_detected(it, worker)
             elif kind == "system" and ev.get("subtype") == "compact_boundary":
                 if not it:
                     continue
@@ -679,9 +696,13 @@ def reader(worker: dict) -> None:
                     continue
                 worker["got_result"] = True
                 reason = ev.get("terminal_reason", "completed")
+                escalate = worker.pop("escalate", None)
+                handoff = worker["handoff"]
                 if reason == "completed":
                     finish_turn(it, ev, worker["trigger"], worker["started"],
-                                phase, worker["handoff"])
+                                phase, handoff)
+                elif escalate:
+                    pass  # the interrupt we sent landed; relaunched below
                 elif reason == "aborted_streaming":
                     say(it, event("stopped"), sess=phase)
                     turn_died(it, phase)
@@ -690,6 +711,8 @@ def reader(worker: dict) -> None:
                     turn_died(it, phase)
                 worker.update(state="idle", started=None, trigger=None,
                               handoff=False, seen=set(), got_result=False)
+                if escalate and reason != "completed":
+                    escalate_turn(it, phase, escalate, handoff)
         bump()
     proc.wait()
     with LOCK:
@@ -721,6 +744,33 @@ def turn_died(it: dict, phase: str) -> None:
     it["updated"] = True
 
 
+def runaway_detected(it: dict, worker: dict) -> None:
+    """A generation ran to the output cap producing only thinking: spend with
+    no work landed. Interrupt it; the result handler relaunches per stage.
+    Caller holds LOCK."""
+    phase = worker["phase"]
+    count = it.setdefault("runaway", {}).get(phase, 0) + 1
+    it["runaway"][phase] = count
+    worker["escalate"] = "nudge" if count == 1 else "bail"
+    say(it, event(f"⚠ runaway thinking — hit the output cap with no actions "
+                  f"({count}× this session) — {worker['escalate']}"), sess=phase)
+    worker["outbound"].put_nowait({"type": "control_request",
+        "request_id": str(uuid.uuid4()), "request": {"subtype": "interrupt"}})
+
+
+def escalate_turn(it: dict, phase: str, stage: str, handoff: bool) -> None:
+    """Relaunch after a runaway interrupt lands. Caller holds LOCK and has
+    reset the worker. The nudge keeps the turn's own handoff flag. A create
+    bail asks for the report whose landing hands off; a refine bail has no
+    stronger session to receive it, so the item lands for review."""
+    if stage == "nudge":
+        launch(it, NUDGE_BRIEF, phase, handoff=handoff, admitted=True)
+    elif phase == "create":
+        launch(it, BAIL_BRIEF, phase, handoff=True, admitted=True)
+    else:
+        turn_died(it, phase)
+
+
 def complete_handoff(it: dict) -> None:
     """Flip the item to the refine phase and enqueue its first turn."""
     if RELOADING:
@@ -742,8 +792,9 @@ def complete_handoff(it: dict) -> None:
 QUOTA_RATE = {"5h": 4.44, "wk": 19.58, "fbl": 6.91}
 
 
-def quota_note(ev: dict) -> str:
-    """A turn's cost as a share of each window it draws down."""
+def quota_note(it: dict, ev: dict, phase: str) -> str:
+    """A turn's quota draw, per window. The result event's figures run over
+    the whole session, so the turn is the step since the last landing."""
     total = ev.get("total_cost_usd")
     if not isinstance(total, (int, float)):
         return ""
@@ -751,21 +802,35 @@ def quota_note(ev: dict) -> str:
     fable = sum(u.get("costUSD") or 0
                 for m, u in (ev.get("modelUsage") or {}).items()
                 if isinstance(u, dict) and m.startswith(("claude-fable", "claude-mythos")))
-    parts = [f"5h {total / QUOTA_RATE['5h']:.1f}%",
-             f"wk {total / QUOTA_RATE['wk']:.1f}%"]
-    if fable:
-        parts.append(f"fbl {fable / QUOTA_RATE['fbl']:.1f}%")
+    seen = it.setdefault("cost_seen", {}).get(phase) or {"total": 0, "fable": 0}
+    if total < seen["total"]:  # a fresh session restarted the running totals
+        seen = {"total": 0, "fable": 0}
+    d_total, d_fable = total - seen["total"], fable - seen["fable"]
+    it["cost_seen"][phase] = {"total": total, "fable": fable}
+    parts = [f"5h {d_total / QUOTA_RATE['5h']:.2f}%",
+             f"wk {d_total / QUOTA_RATE['wk']:.2f}%"]
+    if d_fable:
+        parts.append(f"fbl {d_fable / QUOTA_RATE['fbl']:.2f}%")
     return " · " + " · ".join(parts)
+
+
+def limiting_window(model: str) -> str | None:
+    """The window a spend by `model` would hit first: the most-used one among
+    those the model draws down."""
+    fable = model.startswith(("claude-fable", "claude-mythos"))
+    rows = [u for u in USAGE
+            if u["label"] in QUOTA_RATE and (u["label"] != "fbl" or fable)]
+    if not rows:
+        return None
+    return max(rows, key=lambda u: u["pct"])["label"]
 
 
 def turn_usage(it: dict, ev: dict, phase: str) -> str:
     """Record the request-level cache and context facts used by the UI."""
     iterations = (ev.get("usage") or {}).get("iterations") or []
     requests = [x for x in iterations if isinstance(x, dict)]
-    total = ev.get("total_cost_usd")
-    parts = [f"${total:.3f}" if isinstance(total, (int, float)) else "$?"]
     if not requests:
-        return " · ".join(parts)
+        return ""
 
     previous = it.setdefault("cache_read", {}).get(phase)
     drops = []
@@ -778,14 +843,15 @@ def turn_usage(it: dict, ev: dict, phase: str) -> str:
     it["cache_read"][phase] = previous
     last = requests[-1]
     cache_read = last.get("cache_read_input_tokens") or 0
-    cache_write = last.get("cache_creation_input_tokens") or 0
-    uncached = last.get("input_tokens") or 0
-    parts.append(f"cache r {cache_read:,} w {cache_write:,} in {uncached:,}")
+    written = sum(r.get("cache_creation_input_tokens") or 0 for r in requests)
+    parts = [f"cache r {cache_read:,} w {written:,}"]
     if drops:
         before, after = drops[-1]
         parts.append(f"⚠ DROP {before:,}→{after:,}")
 
-    used = cache_read + cache_write + uncached
+    # The final prompt size is the last request's, not the turn's write sum.
+    used = (cache_read + (last.get("cache_creation_input_tokens") or 0)
+            + (last.get("input_tokens") or 0))
     candidates = [(name, usage) for name, usage in (ev.get("modelUsage") or {}).items()
                   if isinstance(usage, dict) and usage.get("contextWindow")]
     if candidates:
@@ -796,10 +862,14 @@ def turn_usage(it: dict, ev: dict, phase: str) -> str:
         window = model_usage["contextWindow"]
         canonical = model_usage.get("canonicalModel") or model
         price = PRICES.get(canonical)
+        cost = used * price[0] * 2 / 1_000_000 if price else None
+        limiting = limiting_window(canonical)
         it.setdefault("context", {})[phase] = {
             "used": used, "window": window,
             "percent": used / window * 100,
-            "compactCost": used * price[0] * 2 / 1_000_000 if price else None,
+            "limiting": limiting,
+            "compactPct": (cost / QUOTA_RATE[limiting]
+                           if cost is not None and limiting else None),
         }
     return " · ".join(parts)
 
@@ -826,7 +896,9 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
             say(it, {"kind": "report", "rev": it["rev"], "text": text}, sess=phase)
     mins = (time.time() - started) / 60
     note = f"turn done · {mins:.0f}m" if mins >= 1 else "turn done · <1m"
-    say(it, event(note + " · " + turn_usage(it, ev, phase) + quota_note(ev)), sess=phase)
+    note += quota_note(it, ev, phase)
+    usage = turn_usage(it, ev, phase)
+    say(it, event(note + (" · " + usage if usage else "")), sess=phase)
     # the create pass ends in prune, and the refine pass is itself the quality
     # pass, so each phase's first landing is clean by cadence
     first_refine = phase == "refine" and not it.get("refined")
@@ -1102,6 +1174,7 @@ def act_kill(item_id: str) -> dict:
         if not running:
             return {"error": "no worker running"}
         worker, turn_seq = running[0], running[0]["turn_seq"]
+        worker.pop("escalate", None)  # the user's stop outranks a relaunch
         worker["outbound"].put_nowait({"type": "control_request",
             "request_id": str(uuid.uuid4()), "request": {"subtype": "interrupt"}})
 
@@ -1381,7 +1454,7 @@ def usage_loop() -> None:
 
 
 def watch_reload() -> None:
-    """Quiesce turns and re-exec on a server.py change, or restart cold on timeout."""
+    """Quiesce turns and re-exec on a server.py change."""
     src = Path(__file__)
     mtime = src.stat().st_mtime
     while True:
@@ -1395,41 +1468,33 @@ def watch_reload() -> None:
         reload_server()
 
 
-def quiesce_workers(timeout: float = RELOAD_QUIESCE_TIMEOUT) -> bool:
+def quiesce_workers() -> None:
+    """Block new turns and wait for the in-flight ones to land, however long
+    they take. A turn is never cut for a reload."""
     global RELOADING
-    deadline = time.monotonic() + timeout
     with COND:
         RELOADING = True
         while any(active(it) or it["state"] == QUEUED for it in STATE["items"]):
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                return False
-            COND.wait(timeout=remaining)
+            COND.wait()
         # A reader's TextIOWrapper may read ahead and lose buffered output at
         # exec. Idle workers have no pending turn output, which makes this cut safe.
-        return True
 
 
-def reload_server(timeout: float = RELOAD_QUIESCE_TIMEOUT) -> None:
+def reload_server() -> None:
     global RELOADING
     manifest = None
     try:
-        quiesced = quiesce_workers(timeout)
+        quiesce_workers()
         with LOCK:
-            if not quiesced:
-                for it in STATE["items"]:
-                    say(it, event("reload timed out waiting for turns — restarting without handoff"))
-                save()
-            elif any(active(it) or it["state"] == QUEUED for it in STATE["items"]):
+            if any(active(it) or it["state"] == QUEUED for it in STATE["items"]):
                 for it in STATE["items"]:
                     say(it, event("reload aborted because a new turn started"))
                 RELOADING = False
                 save()
                 return
-            else:
-                manifest = worker_manifest()
-                os.environ[WORKER_HANDOFF_ENV] = json.dumps(manifest)
-                save()
+            manifest = worker_manifest()
+            os.environ[WORKER_HANDOFF_ENV] = json.dumps(manifest)
+            save()
             os.execv(sys.executable, [sys.executable] + sys.argv)
     except Exception as exc:
         if manifest is not None:

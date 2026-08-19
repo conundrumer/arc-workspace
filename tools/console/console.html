@@ -731,7 +731,7 @@ function renderDetail(){
         const pct=document.createElement("span"); pct.textContent=`context ${context.percent.toFixed(1)}%`;
         sl.appendChild(pct);
         const cb=document.createElement("button"); cb.className="copybtn";
-        cb.textContent="compact · "+(context.compactCost==null?`${Math.round(context.used/1000)}k rewrite`:`~$${context.compactCost.toFixed(2)}`);
+        cb.textContent="compact · "+(context.compactPct==null?`${Math.round(context.used/1000)}k rewrite`:`~${context.compactPct.toFixed(2)}% ${context.limiting}`);
         cb.disabled=it.active; cb.onclick=()=>post("/api/compact",{id:it.id,sess:tab});
         sl.appendChild(cb);
       }

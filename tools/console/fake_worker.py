@@ -31,7 +31,7 @@ def result(text, reason="completed"):
         cache_read = max(0, 27000 + (turn - 1) * 1000)
         cache_write = 27000 if turn == 1 else 250
         emit({"type": "result", "subtype": "success", "terminal_reason": reason,
-              "result": text, "is_error": False, "total_cost_usd": 0.12,
+              "result": text, "is_error": False, "total_cost_usd": round(turn * .12, 2),
               "duration_ms": 6000, "session_id": sid,
               "usage": {"iterations": [{"input_tokens": 10,
                   "output_tokens": 100, "cache_read_input_tokens": cache_read,
@@ -101,6 +101,17 @@ def run_turn(message):
               "modelUsage": {"claude-fable-5": {"contextWindow": 200000,
                   "canonicalModel": "claude-fable-5", "costUSD": .12}}})
         return None
+    if mode == "runaway":
+        emit({"type": "assistant", "message": {"id": f"msg-runaway-{turn}",
+              "stop_reason": "max_tokens",
+              "content": [{"type": "thinking", "thinking": ""}]}})
+        while True:
+            stopped = pause(60)
+            if stopped == "interrupt":
+                result("", "aborted_streaming")
+                return None
+            if stopped == "eof":
+                return "eof"
     steps = []
     if mode == "cleanup":
         steps = [("Edit", {"file_path": f"programs/solvers/{tid}.dl"}),
