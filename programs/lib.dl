@@ -889,11 +889,11 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
         N = count : { observed_member(Obs, M) }.
 }
 
-// Per-key D4 ops taking one valued cell set onto another. With dst = src the
+// Per-key D4 ops taking one valued cell set onto another, in two readings of
+// absence: `mismatch`/`map` read a missing image cell as difference, so `dst`
+// must be total over each key's domain; `conflict`/`compatible` compare only
+// where both cells exist, so a partial dst keeps its ops. With dst = src the
 // maps are the set's symmetries.
-//
-// Flagged: assumes `dst` is total over each key's domain — the negation reads
-// absence as difference.
 .comp D4Map<Key, Val> {
     .decl src(key: Key, p: Position, v: Val)
     .decl dst(key: Key, p: Position, v: Val)
@@ -907,6 +907,15 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     .decl map(key: Key, d: D4)
     map(K, D) :- src(K, _, _), d4_elem(D), !mismatch(K, D).
 
+    // A contradicted op: some src cell whose image holds a different dst
+    // value where both cells exist.
+    .decl conflict(key: Key, d: D4)
+    conflict(K, D) :- src(K, P, V), d4_elem(D), apply(D, P, P2), dst(K, P2, V2), V2 != V.
+
+    // The ops dst never contradicts — the negation of conflict.
+    .decl compatible(key: Key, d: D4)
+    compatible(K, D) :- src(K, _, _), d4_elem(D), !conflict(K, D).
+
     // Invariance under some nontrivial element — the dst = src reading.
     .decl has_sym(key: Key)
     has_sym(K) :- map(K, D), D != D4_ID.
@@ -914,9 +923,9 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 
 // Per-key shift invariance of a valued cell set — the translation peer of
 // D4Map (dst = src): which axis-aligned shifts fix each keyed cell set.
-// Unlike D4Map, absence is silent: an image off the frame tests nothing, so a
-// shift is compared only where both cells exist. A stored period is the
-// smallest unbroken shift.
+// Absence is silent, as in D4Map's `compatible` reading: an image off the
+// frame tests nothing, so a shift is compared only where both cells exist.
+// A stored period is the smallest unbroken shift.
 .comp ShiftInvariance<Key, Val> {
     .decl cell(key: Key, p: Position, v: Val)
 
