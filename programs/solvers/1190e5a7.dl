@@ -1,0 +1,42 @@
+// 1190e5a7
+// concept: decompose rank
+// Full lines of one color divide the rest of the grid into rectangular
+// regions. The output is the region layout: one cell per region, holding its
+// color, at its band's rank on each axis. No task data — the family is fully
+// structural.
+
+#include "../lib.dl"
+
+.comp Consts {}
+
+.init c = Consts
+
+.decl line_color(a: Axis, p_line: Position, col: Color)
+line_color(A, P_line, Col) :- in(P, Col), axis_elem(A), split(P, A, P_line, _).
+
+.decl line_mixed(a: Axis, p_line: Position)
+line_mixed(A, P_line) :-
+    line_color(A, P_line, Col), line_color(A, P_line, Col2), Col != Col2.
+
+// The divider color fills whole lines.
+.decl divider_color(col: Color)
+divider_color(Col) :- line_color(A, P_line, Col), !line_mixed(A, P_line).
+
+// A band is a run of adjacent non-divider lines — one row or column of
+// regions.
+.init bands = Components<Axis>
+bands.node(A, P_line) :- line_color(A, P_line, Col), !divider_color(Col).
+
+// One output line per band. Band line sets are disjoint runs, as OrderFrame
+// assumes.
+.init layout = OrderFrame<Axis, Ident>
+layout.axis(A, A) :- axis_elem(A).
+layout.member(A, B, P_line) :- bands.label(A, P_line, B).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P_in, Col),                                               // an input cell
+    axis_elem(A), perp(A, A2), split(P_in, A, P_line, P_line2),  // its two lines
+    bands.label(A, P_line, B), bands.label(A2, P_line2, B2),     // its band on each axis; divider cells have none
+    layout.pos(A, B, P_pos), layout.pos(A2, B2, P_pos2),         // the bands' output lines
+    compose(P_pos, P_pos2, P).                                   // where they cross

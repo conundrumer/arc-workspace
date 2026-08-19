@@ -1,0 +1,74 @@
+// 12997ef3
+// concept: markers, crop, tile-arrangement, rank, stamp, mapping
+// A stencil shape in one color sits on a blank grid beside a line of
+// single-cell markers. The output lays out one tile per marker along the
+// marker line's axis, in marker order; each tile is the stencil's bounding
+// box carrying that marker's color.
+//
+//   $Stamp()   — the footprint alone in the marker's color; the rest of the
+//                box is background.
+//   $Recolor() — the box copied, with the stencil color mapped to the
+//                marker's.
+//
+// Every pair's box holds stencil and background only, which hides whether a
+// tile reproduces what else the box covers.
+
+#include "../lib.dl"
+
+.type Choice = Stamp {} | Recolor {}
+
+.comp Consts {
+    .decl bg(col: Color) bg(0).
+    .decl stencil(col: Color) stencil(1).
+}
+
+.init c = Consts
+
+.decl stencil_cell(p: Position)
+stencil_cell(P) :- in(P, Col), c.stencil(Col).
+
+.decl mark(p: Position, col: Color)
+mark(P, Col) :- in(P, Col), !c.bg(Col), !c.stencil(Col).
+
+// The markers share one line; its axis is the one they spread along.
+.decl off_axis(a: Axis)
+off_axis(A) :-
+    axis_elem(A), mark(P1, _), mark(P2, _),          // two markers
+    split(P1, A, _, X1), split(P2, A, _, X2),        // their across components
+    X1 != X2.                                        // off the same line of axis A
+
+.decl layout_axis(a: Axis)
+layout_axis(A) :- axis_elem(A), !off_axis(A).
+
+.init order = OrderFrame<Unit, Position>
+order.axis($U(), A) :- layout_axis(A).
+order.member($U(), P, P_along) :- mark(P, _), layout_axis(A), split(P, A, P_along, _).
+
+.init box = BoxFrame<Unit>
+box.cell($U(), P) :- stencil_cell(P).
+box.grid($U(), P) :- in(P, _).
+
+// One tile per marker, at the marker's place along the line, in its color.
+.decl place(p_grid_out: Position, p_grid_in: Position, col_mark: Color)
+place(P_grid_out, P_grid_in, Col) :-
+    layout_axis(A),                                  // the tiles run along it
+    mark(P_mark, Col),                               // the tile's marker
+    order.pos($U(), P_mark, P_tile),                 // tile index = marker order
+    box.inner($U(), P_grid_in, P_intile),            // box cell in the tile frame
+    concat_slab(P_tile, P_intile, A, 0, P_grid_out).
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// --- $Stamp ---
+out(P_grid_out, Col, $Stamp()) :-
+    place(P_grid_out, P_grid_in, Col_mark),
+    ( stencil_cell(P_grid_in), Col = Col_mark        // footprint in the marker's color
+    ; !stencil_cell(P_grid_in), c.bg(Col)            // rest of the box blank
+    ).
+
+// --- $Recolor ---
+out(P_grid_out, Col, $Recolor()) :-
+    place(P_grid_out, P_grid_in, Col_mark),
+    ( stencil_cell(P_grid_in), Col = Col_mark        // stencil color takes the marker's
+    ; !stencil_cell(P_grid_in), in(P_grid_in, Col)   // rest of the box copied
+    ).

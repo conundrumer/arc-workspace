@@ -62,30 +62,6 @@ An `.init` named `concat` clashes with lib's `concat` relation; pick another ins
 
 **Task-local home (protocol step 1).** e633a9e5: nonuniform scale-up, gap 0; the $Edge and $Table extent models share one Choice-keyed instance.
 
-## `Tile2D<Key>` / `Divide2D<Key>` — 2D decomposition from per-axis dims
-
-The divide peers of `Frame2D`: per-axis parameters as axis-tagged rows, per-axis 1D decomposition, perp-glued. The `_2d` composites make the square claim (one scalar, both axes); these make the rectangular claim. Tile2D is size-parameterized (`divide_by_size`). Divide2D is count-parameterized: the same shape with `divide(P, A, N, G, ..)` in its place. `gap` is the instance's parameter.
-
-```
-.comp Tile2D<Key> {
-    .decl cell(p: Position)
-    .decl dim(key: Key, a: Axis, k: number)
-    .decl gap(g: number)
-
-    .decl tile(key: Key, p: Position, p_outer: Position, p_inner: Position)
-    tile(Ky, P, P_outer, P_inner) :-
-        cell(P), gap(G),
-        perp(A1, A2),
-        dim(Ky, A1, K1), divide_by_size(P, A1, K1, G, Po1, Pi1),
-        dim(Ky, A2, K2), divide_by_size(P, A2, K2, G, Po2, Pi2),
-        compose(Po1, Po2, P_outer), compose(Pi1, Pi2, P_inner).
-}
-```
-
-**Task-local home (protocol step 1).** Tile2D — f8b3ba0a (Unit key): the separator-lattice tiles, dims 1 (V) and 2 (H). Divide2D — no site yet; staged as the sibling.
-
-**Proposer tie-in.** The `TileD4` proposer decomposes gaplessly and reads `empty` on separator arrangements (8e5a5113); rebuilt on this decomposition plus `D4Map`, it would cover them.
-
 ## `DividerFrame<Key>` — nonuniform tiles from divider lines
 
 The tile arrangement a divider set induces — the divider-driven cell of the decomposition matrix, beside dim-driven `Tile2D`/`Divide2D` and the uniform `divide` family, which all need equal tiles. A cell's tile position holds, toward each edge, the count of dividers between the cell and that edge — `OrderFrame.pos`'s construction, applied to cells counting dividers. The wide two-dir form keeps the part frame consistent with no arithmetic and no stored part count; divider cells get no tile; an axis with no dividers is one part. `divider` takes axis-tagged divider lines, as detection output or stored data. Exposes `part_of` (axis-only part) and `tile_of` (parts perp-glued); a within-tile position is a `Reframe` from the tile's box when a site needs it. Lib target: body comp beside `OrderFrame`.

@@ -1,0 +1,123 @@
+// 10fcaaa3
+// concept: tile-arrangement stamp lookup
+// A few marks sit on a bg ground. The output is a c.copies×c.copies
+// arrangement of the input, with a halo stamped around every mark of the
+// arrangement; the halo fills bg cells only. Cases claim its footprint:
+//
+//   $Corners() — one step toward each corner, painted c.paint.
+//   $Table()   — a stored c.footprint grid, seated on the mark by c.seat.
+
+#include "../lib.dl"
+
+.type Choice = Corners {} | Table {}
+
+.comp Consts {
+    // --- shared ---
+    .decl bg(col: Color) bg(0).
+    .decl copies(n: number) copies(2).
+
+    // --- Corners ---
+    .decl paint(col: Color) paint(8).
+
+    // --- Table ---
+    .decl footprint(p: Position, col: Color)
+    GRID_SPARSE_3x3(footprint,
+        8, 0, 8,
+        0, 0, 0,
+        8, 0, 8)
+    .decl seat(p: Position) seat([1, 1, 1, 1]).
+}
+
+.init c = Consts
+
+// --- parse ---
+
+// copies×copies arrangement of a grid.
+.comp Parse<Key> {
+    .decl grid(key: Key, p: Position, col: Color)  // input
+
+    .init arrangement = Frame2D<Unit>
+    arrangement.extent($U(), A, N) :- axis_elem(A), c.copies(N).
+
+    .decl tiled(key: Key, p: Position, col: Color)
+    tiled(K, P_grid_out, Col) :-
+        arrangement.cell($U(), P_tile),                 // tile pos in the arrangement
+        grid(K, P_intile, Col),                         // intile pos
+        concat_2d(P_tile, P_intile, 0, P_grid_out).     // 2D recompose
+}
+
+.init parse = Parse<Unit>
+parse.grid($U(), P, Col) :- in(P, Col).
+
+// The halo as offsets from the mark.
+.decl stamp(off: Shift, col: Color, ch: Choice)
+
+// --- Corners ---
+
+// One step toward each corner.
+stamp(Off, Col, $Corners()) :-
+    diag_dir_elem(Diag), diag_step_delta(Diag, Off), c.paint(Col).
+
+// --- Table ---
+
+// The stored grid's ink, viewed from the seat cell.
+.init fview = Reframe<Color>
+fview.cell(Col, Pf)  :- c.footprint(Pf, Col).
+fview.outer(Col, Ps) :- fview.cell(Col, _), c.seat(Ps).
+
+stamp(Off, Col, $Table()) :- fview.inner(Col, Off).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Corners()). impl_choice($Table()).
+
+.decl halo(p: Position, col: Color, ch: Choice)
+halo(P, Col, Ch) :-
+    parse.tiled($U(), Q, Col_m), !c.bg(Col_m),  // a mark of the arrangement
+    stamp(Off, Col, Ch), compose(Q, Off, P),    // the stamp seated on it
+    parse.tiled($U(), P, Col_p), c.bg(Col_p).   // its target: an on-grid bg cell
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- halo(P, Col, Ch).
+out(P, Col, Ch) :- parse.tiled($U(), P, Col), impl_choice(Ch), !halo(P, _, Ch).
+
+// --- fit ---
+
+.comp Fit {
+    .init parse = Parse<Example>
+    parse.grid(E, P, Col) :- ex_in(E, P, Col).
+
+    // Cells the stamp painted: output ink where the arrangement holds bg.
+    .decl painted(e: Example, p: Position, col: Color)
+    painted(E, P, Col) :-
+        ex_out(E, P, Col), !c.bg(Col),
+        parse.tiled(E, P, Cb), c.bg(Cb).
+
+    // Candidate footprint cells: the seat's frame, as offsets from the seat.
+    .init frame = Frame2D<Unit>
+    frame.extent($U(), A, N) :- axis_elem(A), c.seat(Ps), axis_dim(Ps, A, N).
+
+    .init off = Reframe<Position>
+    off.cell(Pf, Pf)  :- frame.cell($U(), Pf).
+    off.outer(Pf, Ps) :- frame.cell($U(), Pf), c.seat(Ps).
+
+    // Each candidate's targets: its offset seated on every mark.
+    .decl target(pf: Position, e: Example, p: Position)
+    target(Pf, E, P) :-
+        off.inner(Pf, Off),
+        parse.tiled(E, M, Cm), !c.bg(Cm),  // a mark of the arrangement
+        compose(M, Off, P).
+
+    // A candidate's target painted from some mark...
+    .decl witness(pf: Position, col: Color)
+    witness(Pf, Col) :- target(Pf, E, P), painted(E, P, Col).
+
+    // ...and no bg target of it that the output contradicts.
+    .decl mismatch(pf: Position, col: Color)
+    mismatch(Pf, Col) :-
+        witness(Pf, Col), target(Pf, E, P),
+        parse.tiled(E, P, Cb), c.bg(Cb),  // on-grid bg target
+        ex_out(E, P, C2), C2 != Col.      // the output holds something else
+
+    .decl footprint(p: Position, col: Color)
+    footprint(Pf, Col) :- witness(Pf, Col), !mismatch(Pf, Col).
+}

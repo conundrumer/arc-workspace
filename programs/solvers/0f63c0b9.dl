@@ -1,0 +1,54 @@
+// 0f63c0b9
+// concept: markers lines cast border
+// Marks, each on its own line. Every cell belongs to the nearest
+// mark's line and takes that mark's color; at an equal distance the reach
+// travelling toward c.tie_dir wins. A cell shows its color where it lies on
+// the grid border or on a mark's line, and is background elsewhere.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl bg(col: Color) bg(0).
+
+    // The marks spread along this Dir's axis and their lines run across it.
+    // A tie-winning reach travels toward tie_dir.
+    .decl tie_dir(d: Dir) tie_dir(DIR_B).
+}
+
+.init c = Consts
+
+.decl mark(p: Position, col: Color)
+mark(P, Col) :- in(P, Col), !c.bg(Col).
+
+.decl mark_line(p_mark: Position, p: Position)
+mark_line(P_mark, P) :-
+    mark(P_mark, _), in(P, _),                // a mark and a grid cell
+    c.tie_dir(D), same_dist(D, P, P_mark).    // the cell is on the mark's line
+
+// Each line reaches across the marks' axis, one cell per step.
+.init reach = Ray<Position>
+reach.dir(D)          :- c.tie_dir(D_tie), axis_of(D_tie, A), axis_of(D, A).
+reach.cell(P_mark, P) :- mark(P_mark, _), in(P, _).
+reach.mark(P_mark, P) :- mark_line(P_mark, P).
+
+.decl beaten(p: Position, p_mark: Position)
+beaten(P, M) :-
+    reach.ray(M, P, _, K),                 // this line's reach
+    reach.ray(M2, P, D2, K2), M2 != M,     // a rival line's
+    ( K2 < K                               // nearer
+    ; K2 = K, c.tie_dir(D2)                // as near, and travelling toward tie_dir
+    ).
+
+.decl territory(p: Position, col: Color)
+territory(P, Col) :- reach.ray(M, P, _, _), !beaten(P, M), mark(M, Col).
+
+.decl paint(p: Position, col: Color)
+paint(P, Col) :-
+    territory(P, Col),                // the cell's own band
+    ( dir_elem(D), dist(P, D, 0)      // on the grid border
+    ; mark_line(_, P)                 // on a mark's line
+    ).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- paint(P, Col).
+out(P, Col) :- in(P, _), !paint(P, _), c.bg(Col).

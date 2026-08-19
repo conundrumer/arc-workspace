@@ -1,0 +1,102 @@
+// 11852cab
+// concept: symmetry d4 repair
+// A partial symmetric figure sits on a bg field. Its bounding box is the
+// frame the symmetry acts in, and the output adds each figure cell's images
+// under the transforms the case admits. Cases:
+//
+//   $Stored()  — c.sym names the group.
+//   $Derived() — the transforms the figure itself never contradicts.
+//
+// Coincide here: every figure is consistent with all of D4, so both cases
+// apply the full group.
+
+#include "../lib.dl"
+
+.type Choice = Stored {} | Derived {}
+
+.comp Consts {
+    // --- shared ---
+    .decl bg(col: Color) bg(0).
+
+    // --- $Stored ---
+    .decl sym(s: Sym) sym(SYM_D4).
+}
+
+.init c = Consts
+
+// --- parse ---
+
+// The figure — the non-bg cells, in their bounding-box frame — and its
+// self-maps under D4.
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)  // input
+
+    .init box = BoxFrame<Key>
+    box.cell(K, P) :- cell(K, P, Col), !c.bg(Col).
+    box.grid(K, P) :- cell(K, P, _).
+
+    .decl figure(key: Key, p_inner: Position, col: Color)
+    figure(K, P_inner, Col) :- cell(K, P, Col), !c.bg(Col), box.inner(K, P, P_inner).
+
+    .decl inner(key: Key, p: Position, p_inner: Position)
+    inner(K, P, P_inner) :- box.inner(K, P, P_inner).
+
+    .init sym4 = D4Map<Key, Color>
+    sym4.src(K, P, Col) :- figure(K, P, Col).
+    sym4.dst(K, P, Col) :- figure(K, P, Col).
+
+    .decl map(key: Key, d: D4)
+    map(K, D) :- sym4.map(K, D).
+
+    .decl compatible(key: Key, d: D4)
+    compatible(K, D) :- sym4.compatible(K, D).
+}
+
+// --- shared ---
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// The transforms each case applies to the figure.
+.decl transform(d: D4, ch: Choice)
+
+.decl paint(p_grid: Position, col: Color, ch: Choice)
+paint(P_grid, Col, Ch) :-
+    parse.figure($U(), P_inner, Col), transform(D, Ch),
+    apply(D, P_inner, P_inner2),          // image in the box frame
+    parse.inner($U(), P_grid, P_inner2).  // back in the grid
+
+.decl impl_choice(ch: Choice)
+impl_choice($Stored()). impl_choice($Derived()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- paint(P, Col, Ch).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(P, _, Ch).
+
+// --- $Stored ---
+
+transform(D, $Stored()) :- c.sym(S), sym_member(S, D).
+
+// --- $Derived ---
+
+transform(D, $Derived()) :- parse.compatible($U(), D).
+
+// --- fit ---
+
+.comp Fit {
+    // The completed figure of each train output.
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_out(E, P, Col).
+
+    // A transform some output figure lacks.
+    .decl missing(d: D4)
+    missing(D) :- ex_out(E, _, _), d4_elem(D), !parse.map(E, D).
+
+    // Name the shared set as a subgroup value.
+    .init named = KeyedSetCompare<Unit, Sym, D4>
+    named.pattern_member(S, D) :- sym_member(S, D).
+    named.observed_member($U(), D) :- d4_elem(D), !missing(D).
+
+    .decl sym(s: Sym)
+    sym(S) :- named.equals($U(), S).
+}
