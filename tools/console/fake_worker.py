@@ -102,11 +102,16 @@ def run_turn(message):
                   "canonicalModel": "claude-fable-5", "costUSD": .12}}})
         return None
     if mode == "runaway":
+        # The live stream never carries stop_reason; a runaway shows up as
+        # thinking_tokens progress with no tool_use or text between.
         emit({"type": "assistant", "message": {"id": f"msg-runaway-{turn}",
-              "stop_reason": "max_tokens",
               "content": [{"type": "thinking", "thinking": ""}]}})
+        thought = 0
         while True:
-            stopped = pause(60)
+            thought += 25000
+            emit({"type": "system", "subtype": "thinking_tokens", "session_id": sid,
+                  "estimated_tokens": thought, "estimated_tokens_delta": 25000})
+            stopped = pause(.2)
             if stopped == "interrupt":
                 result("", "aborted_streaming")
                 return None

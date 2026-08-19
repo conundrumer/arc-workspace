@@ -242,24 +242,24 @@ button:disabled:hover { border-color:var(--border); }
 .ftab.on { color:var(--ink); text-decoration:underline; text-underline-offset:4px; }
 #codecol pre {
   flex:1; overflow:auto; margin:0; padding:12px 16px; font-size:11.5px; line-height:1.55; tab-size:4;
-  white-space:pre-wrap; overflow-wrap:break-word;
+  white-space:pre-wrap; overflow-wrap:break-word; counter-reset:ln;
 }
 #codecol pre .cm { color:var(--muted); }
-#codecol pre .add {
-  display:inline-block; min-width:calc(100% + 32px); box-sizing:border-box;
-  background:var(--st-approved-bg);
-  box-shadow:inset 2px 0 0 var(--st-approved);
-  margin:0 -16px; padding:0 16px;
+#codecol pre .L {
+  display:block; position:relative; box-sizing:border-box;
+  margin:0 -16px; padding:0 16px 0 calc(16px + 5.5ch);
 }
+#codecol pre .L::before {
+  counter-increment:ln; content:counter(ln);
+  position:absolute; left:0; width:calc(16px + 4ch); text-align:right;
+  color:var(--muted); opacity:.55; user-select:none;
+}
+#codecol pre .L.del::before { counter-increment:none; content:""; }
+#codecol pre .L.add { background:var(--st-approved-bg); box-shadow:inset 2px 0 0 var(--st-approved); }
+#codecol pre .L.del { background:var(--st-removed-bg); box-shadow:inset 2px 0 0 var(--st-removed); }
 #codecol pre mark.addw {
   background:color-mix(in srgb, var(--st-approved) 30%, transparent);
   color:inherit; border-radius:2px;
-}
-#codecol pre .del {
-  display:inline-block; min-width:calc(100% + 32px); box-sizing:border-box;
-  background:var(--st-removed-bg);
-  box-shadow:inset 2px 0 0 var(--st-removed);
-  margin:0 -16px; padding:0 16px;
 }
 #codecol pre mark.delw {
   background:color-mix(in srgb, var(--st-removed) 30%, transparent);
@@ -372,6 +372,8 @@ const render = (typeof marked!=="undefined" && typeof DOMPurify!=="undefined")
   ? (t => DOMPurify.sanitize(marked.parse(t, {breaks:true})))
   : (t => "<p>"+esc(t).replace(/\n/g,"<br>")+"</p>");
 const sel = () => items.find(it=>it.id===selId) || null;
+const fmtDur = s => { s=Math.max(0,Math.floor(s)); const h=Math.floor(s/3600), m=Math.floor((s%3600)/60);
+  return h ? h+"h "+m+"m" : m ? m+"m "+String(s%60).padStart(2,"0")+"s" : s+"s"; };
 function toast(msg){ const t=$("toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("show"),2600); }
 function copy(s,label){ navigator.clipboard && navigator.clipboard.writeText(s).then(()=>toast("copied · "+label),()=>toast(s)); }
 
@@ -385,11 +387,14 @@ async function post(route, body){
 }
 
 /* code panel: the file with this turn's edits marked, removed lines included.
+   Every line renders as an .L block whose CSS counter numbers it; removed
+   lines are skipped so the gutter tracks the file on disk.
    Line diff vs the turn-start snapshot; replaced hunks get word-level marks. */
-const cmify = s => esc(s).replace(/(\/\/[^\n]*)/g,'<span class="cm">$1</span>');
+const cmline = l => esc(l).replace(/(\/\/.*)/,'<span class="cm">$1</span>');
+const cmify = s => splitLines(s).map(l=>'<span class="L">'+(cmline(l)||" ")+"</span>").join("");
 function splitLines(v){ const ls=v.split("\n"); if(ls[ls.length-1]==="") ls.pop(); return ls; }
 function markBlock(v, cls){
-  return splitLines(v).map(l=>`<span class="${cls}">`+(esc(l)||" ")+"</span>\n").join("");
+  return splitLines(v).map(l=>`<span class="L ${cls}">`+(esc(l)||" ")+"</span>").join("");
 }
 /* One side of a replaced hunk: its own lines, with the words that differ from
    the other side marked. `side` picks which of the two the caller wants. */
@@ -420,7 +425,7 @@ function wordSide(rem, add, side){
       body += segs[i].marked ? `<mark class="${markCls}">`+text+"</mark>" : text;
       i=j;
     }
-    return `<span class="${cls}">`+(body||" ")+"</span>\n";
+    return `<span class="L ${cls}">`+(body||" ")+"</span>";
   }).join("");
 }
 function diffHtml(before, after){
@@ -462,7 +467,8 @@ function jumpToFirstMark(){
 function cacheInfo(it){
   const la = it.lastActive && it.lastActive[it.phase];
   if(!it.sessions || !it.sessions[it.phase]) return {cls:"none", txt:"—", sort:9e9};
-  if(it.active) return {cls:"active", txt:"active", sort:5e8};
+  if(it.active) return {cls:"active", sort:5e8,
+    txt: it.turnStarted ? fmtDur(Date.now()/1000-it.turnStarted) : "active"};
   if(!la) return {cls:"none", txt:"—", sort:9e9};
   const rem = TTL_MIN - (Date.now()-la)/60000;
   if(rem<=0) return {cls:"cold", txt:"cold", sort:1e9};
@@ -663,7 +669,8 @@ function renderFeed(js, it, entries, key, showRun){
     drawn.push({sig:feedSig(entries[i]), nodes:feedNodes(feed, entries[i])});
   if(showRun){
     const p=document.createElement("p"); p.className="placeholder";
-    p.innerHTML='<span class="runpulse"></span>worker running';
+    p.innerHTML='<span class="runpulse"></span>worker running'
+      +(it.turnStarted?' · <span data-t0="'+it.turnStarted+'">'+fmtDur(Date.now()/1000-it.turnStarted)+'</span>':"");
     feed.appendChild(p);
   } else if(!entries.length){
     const p=document.createElement("p"); p.className="placeholder";
@@ -888,7 +895,7 @@ async function sendComment(){
   if(low==="commit"){ toast("commit is a console action"); return; }
   if(low==="next"){ toast("no next in batch mode"); return; }
   const r=await post("/api/comment",{id:it.id,text,sess:tabOf(it)});
-  if(r.ok){ cbox.value=""; localStorage.removeItem(draftKey(it.id)); toast("sent"); }
+  if(r.ok){ cbox.value=""; localStorage.removeItem(draftKey(it.id)); cbox.blur(); toast("sent"); }
 }
 async function commitApproved(){
   const r=await post("/api/commit");
@@ -967,8 +974,13 @@ async function poll(){
   }
 }
 poll();
-/* live TTL countdown */
-setInterval(()=>{ renderRail(); },15000);
+/* live TTL countdown + turn timers */
+setInterval(()=>{
+  document.querySelectorAll("[data-t0]").forEach(el=>{
+    el.textContent=fmtDur(Date.now()/1000-parseFloat(el.dataset.t0));
+  });
+  renderRail();
+},1000);
 </script>
 </body>
 </html>

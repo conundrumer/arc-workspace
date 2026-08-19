@@ -56,7 +56,9 @@ def item(s, item_id, state, **kw):
 
 def worker(s, it, phase="refine", state="idle", turn_seq=1):
     w = {"item_id": it["id"], "phase": phase, "state": state,
-         "turn_seq": turn_seq, "outbound": queue.Queue()}
+         "turn_seq": turn_seq, "outbound": queue.Queue(), "seen": set(),
+         "session_seen": True, "handoff": False, "got_result": False,
+         "started": None, "trigger": None, "think_run": 0}
     s.PROCS[(it["id"], phase)] = w
     return w
 
@@ -321,6 +323,32 @@ def test_context_percentage_uses_last_iteration_and_reported_window(srv):
     assert it["context"]["refine"]["percent"] == pytest.approx(13.394)
 
 
+def test_model_usage_with_null_counters_still_lands(srv):
+    it = item(srv, "a", srv.NEEDS_REVIEW)
+    ev = usage_result(21000)
+    ev["modelUsage"]["claude-opus-5"] = {
+        "inputTokens": None, "cacheReadInputTokens": None,
+        "cacheCreationInputTokens": None, "costUSD": 0,
+        "contextWindow": 200000, "canonicalModel": "claude-opus-5"}
+    srv.finish_turn(it, ev, None, time.time(), "refine", False)
+    assert "cache r 21,000" in it["feed"][-1]["text"]
+
+
+def test_result_crash_still_frees_the_worker(srv, monkeypatch):
+    def boom(*args, **kwargs):
+        raise RuntimeError("landing bug")
+
+    monkeypatch.setattr(srv, "finish_turn", boom)
+    it = item(srv, "a", srv.COMMENTED)
+    w = worker(srv, it, state="running")
+    w["started"] = time.time()
+    with pytest.raises(RuntimeError):
+        srv.handle_event(w, {"type": "result", "terminal_reason": "completed",
+                             "result": ""}, None)
+    assert w["state"] == "idle"
+    assert not srv.active(it)
+
+
 def test_compact_uses_normal_user_message_path(srv, monkeypatch):
     sent = []
     monkeypatch.setattr(srv, "launch", lambda it, msg, phase, **kw:
@@ -340,7 +368,7 @@ def test_runaway_first_nudges_then_bails_to_handoff(srv, monkeypatch):
     it = item(srv, "a", srv.RUNNING, phase="create",
               sessions={"create": "cs", "refine": None})
     w = worker(srv, it, phase="create", state="running")
-    srv.runaway_detected(it, w)
+    srv.runaway_detected(it, w, "40k thinking tokens with no actions")
     assert w["escalate"] == "nudge"
     assert it["runaway"]["create"] == 1
     interrupt = w["outbound"].get_nowait()
@@ -348,7 +376,7 @@ def test_runaway_first_nudges_then_bails_to_handoff(srv, monkeypatch):
     assert "⚠" in it["feed"][-1]["text"]
     srv.escalate_turn(it, "create", "nudge", True)
     assert sent[-1] == (srv.NUDGE_BRIEF, "create", True)
-    srv.runaway_detected(it, w)
+    srv.runaway_detected(it, w, "40k thinking tokens with no actions")
     assert w["escalate"] == "bail"
     srv.escalate_turn(it, "create", "bail", True)
     assert sent[-1] == (srv.BAIL_BRIEF, "create", True)
@@ -377,6 +405,77 @@ def test_runaway_turn_is_nudged_and_lands(srv, monkeypatch):
         assert any(m["kind"] == "report" for m in it["feed"])
     finally:
         srv.shutdown_workers()
+
+
+def think(delta):
+    return {"type": "system", "subtype": "thinking_tokens",
+            "estimated_tokens_delta": delta}
+
+
+def test_long_thinking_with_no_actions_is_a_runaway(srv):
+    it = item(srv, "a", srv.RUNNING)
+    w = worker(srv, it, state="running")
+    srv.handle_event(w, think(25000), None)
+    assert "escalate" not in w
+    srv.handle_event(w, think(25000), None)
+    assert w["escalate"] == "nudge"
+    assert it["runaway"]["refine"] == 1
+    assert w["outbound"].get_nowait()["request"]["subtype"] == "interrupt"
+    assert "⚠ runaway thinking" in it["feed"][-1]["text"]
+
+
+def test_action_blocks_reset_the_thinking_run(srv):
+    it = item(srv, "a", srv.RUNNING)
+    w = worker(srv, it, state="running")
+    srv.handle_event(w, think(25000), None)
+    srv.handle_event(w, {"type": "assistant", "message": {"id": "m1", "content":
+        [{"type": "tool_use", "name": "Bash", "input": {"command": "x"}}]}}, None)
+    srv.handle_event(w, think(25000), None)
+    assert "escalate" not in w
+    assert it.get("runaway") in (None, {})
+
+
+def test_self_invoked_turn_does_not_mark_a_turn_running(srv):
+    it = item(srv, "a", srv.NEEDS_REVIEW)
+    w = worker(srv, it, state="idle")
+    srv.handle_event(w, {"type": "system", "subtype": "init",
+                         "session_id": "s2"}, None)
+    assert w["state"] == "idle"
+    assert not srv.active(it)
+    srv.handle_event(w, {"type": "result", "terminal_reason": "completed",
+                         "result": "self talk"}, None)
+    assert w["state"] == "idle"
+    assert it["state"] == srv.NEEDS_REVIEW
+    w["state"] = "sending"
+    srv.handle_event(w, {"type": "system", "subtype": "init",
+                         "session_id": "s2"}, None)
+    assert w["state"] == "running"
+
+
+def test_reader_survives_a_bad_event(srv, monkeypatch):
+    it = item(srv, "a", srv.RUNNING)
+
+    class Proc:
+        stdout = iter([
+            '{"type": "result", "terminal_reason": "completed", "result": "hi"}\n',
+            '{"type": "assistant", "message": {"id": "m", "content":'
+            ' [{"type": "text", "text": "after"}]}}\n'])
+        returncode = 0
+
+        def wait(self):
+            return 0
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("render bug")
+
+    monkeypatch.setattr(srv, "finish_turn", boom)
+    w = worker(srv, it, state="running")
+    w.update(proc=Proc(), started=time.time())
+    srv.reader(w)
+    events = [m["text"] for m in it["feed"] if m["kind"] == "event"]
+    assert any("reader error" in t for t in events)
+    assert any(m["kind"] == "worker" and m["text"] == "after" for m in it["feed"])
+    assert it["state"] == srv.NEEDS_REVIEW  # the cut turn still landed for review
 
 
 def test_dead_refine_turn_falls_back_to_create(srv):
@@ -636,9 +735,41 @@ def test_fake_worker_emits_compact_boundary():
         proc.wait(timeout=2)
 
 
-def test_post_restart_session_is_not_sendable(srv):
+def test_post_restart_comment_respawns_into_the_session(srv, monkeypatch):
+    sent = []
+    monkeypatch.setattr(srv, "launch",
+                        lambda it, msg, phase, trigger=None, handoff=False:
+                        sent.append((msg, phase)))
     item(srv, "a", srv.NEEDS_REVIEW)
-    assert "no longer live" in srv.act_comment("a", "continue")["error"]
+    assert srv.act_comment("a", "continue") == {"ok": True}
+    assert sent == [("continue", "refine")]
+
+
+def test_worker_cmd_resumes_a_recorded_session(srv, tmp_path, monkeypatch):
+    monkeypatch.setattr(srv, "FAKE", False)
+    append = tmp_path / "append.md"
+    append.write_text("brief")
+    it = item(srv, "a", srv.NEEDS_REVIEW, append=str(append))
+    cmd = srv.worker_cmd(it, "refine")
+    assert cmd[cmd.index("--resume") + 1] == "sess-a"
+    it["sessions"]["refine"] = None
+    assert "--resume" not in srv.worker_cmd(it, "refine")
+
+
+def test_dead_worker_relaunch_resumes_and_lands(srv, monkeypatch):
+    monkeypatch.setattr(srv, "FAKE", True)
+    it = item(srv, "rs", srv.NEEDS_REVIEW)
+    assert srv.act_comment("rs", "carry on") == {"ok": True}
+    deadline = time.time() + 8
+    while it["state"] != srv.NEEDS_REVIEW and time.time() < deadline:
+        time.sleep(.02)
+    try:
+        assert it["state"] == srv.NEEDS_REVIEW
+        assert any("resuming its session" in m.get("text", "")
+                   for m in it["feed"] if m["kind"] == "event")
+        assert any(m["kind"] == "report" for m in it["feed"])
+    finally:
+        srv.shutdown_workers()
 
 
 def test_other_phase_cannot_run_while_item_has_a_turn(srv):

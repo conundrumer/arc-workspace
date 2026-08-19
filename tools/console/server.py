@@ -299,11 +299,16 @@ Do steps 1-3 of the creation pass with the data above; do not re-read the data. 
 
 HANDOFF_BRIEF = """Write the handoff report for the refine session that takes over from you: the model claim, each choice point with the alternatives you considered and why you discarded them, and the audit findings and judgment calls. Cover the whole session, including turns after any earlier report. Make it complete enough that the refine session rederives nothing."""
 
-NUDGE_BRIEF = """You hit the output-token cap thinking, with no tool calls and no text. Stop deliberating and act: take the next concrete step with tool calls, test hypotheses in the runner instead of resolving them in your head, and land what you have."""
+NUDGE_BRIEF = """You spent a very long thinking stretch with no tool calls and no text. Stop deliberating and act: take the next concrete step with tool calls, test hypotheses in the runner instead of resolving them in your head, and land what you have."""
 
-BAIL_BRIEF = ("You hit the output-token cap thinking twice, so the task moves to the "
-              "refine session now — stop solving. " + HANDOFF_BRIEF +
+BAIL_BRIEF = ("You spent two very long thinking stretches with no actions, so the task "
+              "moves to the refine session now — stop solving. " + HANDOFF_BRIEF +
               " State plainly how far you got and where you got stuck.")
+
+# Thinking tokens with no tool call or text before the turn is interrupted.
+# The output cap is 64k; a runaway burns all of it per generation, so this
+# cuts each cycle short while staying far above a working turn's bursts.
+RUNAWAY_THINK = 40_000
 
 REFINE_BRIEF = """You are the refine phase of a two-session flow: a create session did steps 1-3 of the creation pass and left the handoff report above.
 
@@ -473,7 +478,8 @@ def adopt_workers(manifest: dict) -> None:
                       "outbound": queue.Queue(), "state": "idle",
                       "turn_seq": int(entry.get("turn_seq", 0)), "started": None,
                       "trigger": None, "handoff": False, "seen": set(),
-                      "got_result": False, "session_seen": bool(entry.get("session"))}
+                      "got_result": False, "think_run": 0,
+                      "session_seen": bool(entry.get("session"))}
             PROCS[(item_id, phase)] = worker
             start_worker_threads(worker)
         except (KeyError, TypeError, ValueError, OSError) as exc:
@@ -568,33 +574,42 @@ def launch(it: dict, message: str, phase: str, trigger: str | None = None,
     key = (it["id"], phase)
     worker = PROCS.get(key)
     if worker is None:
-        worker = spawn_worker(it, phase)
         if it["sessions"].get(phase):
-            say(it, event(f"{phase} worker starting a new session"), sess=phase)
+            say(it, event(f"{phase} worker restarting — resuming its session"),
+                sess=phase)
+        worker = spawn_worker(it, phase)
     it["pre"] = {"hash": solver_hash(it["id"]), "solver": solver_text(it["id"]),
                  "proposals": prop_text(), "dirty": it["dirty"], "files": {}}
     worker["turn_seq"] += 1
     worker.update(state="sending", started=time.time(), trigger=trigger,
-                  handoff=handoff, seen=set(), got_result=False)
+                  handoff=handoff, seen=set(), got_result=False, think_run=0)
     worker["outbound"].put_nowait({"type": "user",
         "message": {"role": "user", "content": message}})
 
 
+def worker_cmd(it: dict, phase: str) -> list[str]:
+    if FAKE:
+        return [sys.executable, str(HERE / "fake_worker.py"), it["id"], phase]
+    cmd = [CLAUDE, "--append-system-prompt", Path(it["append"]).read_text(),
+           *WORKER_FLAGS]
+    if MODELS[phase]:
+        cmd += ["--model", MODELS[phase]]
+    if it["sessions"].get(phase):
+        cmd += ["--resume", it["sessions"][phase]]
+    return cmd
+
+
 def spawn_worker(it: dict, phase: str) -> dict:
     item_id = it["id"]
-    cmd = ([sys.executable, str(HERE / "fake_worker.py"), item_id, phase]
-           if FAKE else [CLAUDE, "--append-system-prompt", Path(it["append"]).read_text(),
-                         *WORKER_FLAGS])
-    if not FAKE and MODELS[phase]:
-        cmd += ["--model", MODELS[phase]]
+    cmd = worker_cmd(it, phase)
     log = open(LOG_DIR / f"{item_id}.log", "ab")
     proc = subprocess.Popen(cmd, cwd=ROOT, stdin=subprocess.PIPE,
                             stdout=subprocess.PIPE, stderr=log, text=True)
     log.close()
     worker = {"item_id": item_id, "phase": phase, "proc": proc,
               "outbound": queue.Queue(), "state": "spawning", "turn_seq": 0,
-              "started": None, "trigger": None, "handoff": False,
-              "seen": set(), "got_result": False, "session_seen": False}
+              "started": None, "trigger": None, "handoff": False, "seen": set(),
+              "got_result": False, "session_seen": False, "think_run": 0}
     # A new process restarts the session's running totals.
     it.setdefault("cost_seen", {})[phase] = {"total": 0, "fable": 0}
     it.setdefault("cache_read", {}).pop(phase, None)
@@ -637,82 +652,17 @@ def reader(worker: dict) -> None:
             ev = json.loads(line)
         except ValueError:
             continue
-        with LOCK:
-            it = find(item_id)
-            kind = ev.get("type")
-            if kind == "system" and ev.get("subtype") == "init":
-                if it and not worker["session_seen"]:
-                    it["sessions"][phase] = ev.get("session_id") or it["sessions"].get(phase)
-                    worker["session_seen"] = True
-                worker["state"] = "running"
-            elif kind == "assistant":
-                if first_response:
-                    first_response.set()
-                if not it:
-                    continue
-                msg = ev.get("message", {})
-                mid = msg.get("id") or ""
-                sub = bool(ev.get("parent_tool_use_id"))
-                for block in msg.get("content", []):
-                    entry, key = None, None
-                    if block.get("type") == "text" and block.get("text", "").strip():
-                        entry = {"kind": "worker", "text": block["text"]}
-                        key = (mid, "text", block["text"])
-                    elif block.get("type") == "tool_use":
-                        name = block.get("name", "?")
-                        inp = block.get("input", {}) or {}
-                        if name in ("Edit", "Write", "NotebookEdit") and inp.get("file_path"):
-                            record_edit(it, inp["file_path"])
-                        if name == "Task":
-                            entry = {"kind": "ask", "text": task_ask(inp)}
-                            key = (mid, "task", block.get("id") or entry["text"])
-                        else:
-                            label = tool_label(name, inp)
-                            if label:
-                                entry = {"kind": "tool", "text": label}
-                                key = (mid, "tool", block.get("id") or label)
-                    if entry and key not in worker["seen"]:
-                        worker["seen"].add(key)
-                        if sub or entry["kind"] == "ask":
-                            entry["sub"] = True
-                        say(it, entry, sess=phase)
-                blocks = msg.get("content") or []
-                if (msg.get("stop_reason") == "max_tokens" and blocks and
-                        all(b.get("type") == "thinking" for b in blocks) and
-                        worker["state"] in ("sending", "running") and
-                        not worker.get("escalate") and
-                        (mid, "runaway") not in worker["seen"]):
-                    worker["seen"].add((mid, "runaway"))
-                    runaway_detected(it, worker)
-            elif kind == "system" and ev.get("subtype") == "compact_boundary":
-                if not it:
-                    continue
-                meta = ev.get("compact_metadata") or {}
-                say(it, event("compacted · pre {pre:,} · post {post:,} · dropped {drop:,}".format(
-                    pre=meta.get("pre_tokens", 0), post=meta.get("post_tokens", 0),
-                    drop=meta.get("cumulative_dropped_tokens", 0))), sess=phase)
-            elif kind == "result":
-                if not it or worker["state"] not in ("sending", "running"):
-                    continue
-                worker["got_result"] = True
-                reason = ev.get("terminal_reason", "completed")
-                escalate = worker.pop("escalate", None)
-                handoff = worker["handoff"]
-                if reason == "completed":
-                    finish_turn(it, ev, worker["trigger"], worker["started"],
-                                phase, handoff)
-                elif escalate:
-                    pass  # the interrupt we sent landed; relaunched below
-                elif reason == "aborted_streaming":
-                    say(it, event("stopped"), sess=phase)
-                    turn_died(it, phase)
-                else:
-                    say(it, event(f"turn failed ({reason})"), sess=phase)
-                    turn_died(it, phase)
-                worker.update(state="idle", started=None, trigger=None,
-                              handoff=False, seen=set(), got_result=False)
-                if escalate and reason != "completed":
-                    escalate_turn(it, phase, escalate, handoff)
+        try:
+            handle_event(worker, ev, first_response)
+        except Exception as exc:  # a bad event must not wedge the turn
+            with LOCK:
+                it = find(item_id)
+                if it:
+                    say(it, event(f"⚠ reader error, event skipped: {exc!r}"),
+                        sess=phase)
+                    if worker["state"] not in ("sending", "running") and \
+                            it["state"] in (RUNNING, COMMENTED):
+                        turn_died(it, phase)  # the crash cut the turn's landing
         bump()
     proc.wait()
     with LOCK:
@@ -734,6 +684,106 @@ def reader(worker: dict) -> None:
     bump()
 
 
+def handle_event(worker: dict, ev: dict, first_response) -> None:
+    """One stream event from a worker. Runs on the worker's reader thread."""
+    item_id, phase = worker["item_id"], worker["phase"]
+    with LOCK:
+        it = find(item_id)
+        kind = ev.get("type")
+        if kind == "system" and ev.get("subtype") == "init":
+            if it and not worker["session_seen"]:
+                it["sessions"][phase] = ev.get("session_id") or it["sessions"].get(phase)
+                worker["session_seen"] = True
+            # A worker can start a turn on its own (a background-task
+            # notification, for one); init marks only a turn the console sent.
+            if worker["state"] == "sending":
+                worker["state"] = "running"
+        elif kind == "system" and ev.get("subtype") == "thinking_tokens":
+            if (it and worker["state"] in ("sending", "running") and
+                    not worker.get("escalate")):
+                worker["think_run"] = (worker.get("think_run", 0)
+                                       + (ev.get("estimated_tokens_delta") or 0))
+                if worker["think_run"] >= RUNAWAY_THINK:
+                    worker["think_run"] = 0
+                    runaway_detected(it, worker, f"{RUNAWAY_THINK // 1000}k "
+                                     "thinking tokens with no actions")
+        elif kind == "assistant":
+            if first_response:
+                first_response.set()
+            if not it:
+                return
+            msg = ev.get("message", {})
+            mid = msg.get("id") or ""
+            sub = bool(ev.get("parent_tool_use_id"))
+            for block in msg.get("content", []):
+                entry, key = None, None
+                if block.get("type") == "text" and block.get("text", "").strip():
+                    entry = {"kind": "worker", "text": block["text"]}
+                    key = (mid, "text", block["text"])
+                elif block.get("type") == "tool_use":
+                    name = block.get("name", "?")
+                    inp = block.get("input", {}) or {}
+                    if name in ("Edit", "Write", "NotebookEdit") and inp.get("file_path"):
+                        record_edit(it, inp["file_path"])
+                    if name == "Task":
+                        entry = {"kind": "ask", "text": task_ask(inp)}
+                        key = (mid, "task", block.get("id") or entry["text"])
+                    else:
+                        label = tool_label(name, inp)
+                        if label:
+                            entry = {"kind": "tool", "text": label}
+                            key = (mid, "tool", block.get("id") or label)
+                if entry and key not in worker["seen"]:
+                    worker["seen"].add(key)
+                    if sub or entry["kind"] == "ask":
+                        entry["sub"] = True
+                    say(it, entry, sess=phase)
+            blocks = msg.get("content") or []
+            if any(b.get("type") != "thinking" for b in blocks):
+                worker["think_run"] = 0
+            if (msg.get("stop_reason") == "max_tokens" and blocks and
+                    all(b.get("type") == "thinking" for b in blocks) and
+                    worker["state"] in ("sending", "running") and
+                    not worker.get("escalate") and
+                    (mid, "runaway") not in worker["seen"]):
+                worker["seen"].add((mid, "runaway"))
+                runaway_detected(it, worker, "hit the output cap with no actions")
+        elif kind == "system" and ev.get("subtype") == "compact_boundary":
+            if not it:
+                return
+            meta = ev.get("compact_metadata") or {}
+            say(it, event("compacted · pre {pre:,} · post {post:,} · dropped {drop:,}".format(
+                pre=meta.get("pre_tokens", 0), post=meta.get("post_tokens", 0),
+                drop=meta.get("cumulative_dropped_tokens", 0))), sess=phase)
+        elif kind == "result":
+            if not it or worker["state"] not in ("sending", "running"):
+                return
+            worker["got_result"] = True
+            reason = ev.get("terminal_reason", "completed")
+            escalate = worker.pop("escalate", None)
+            handoff = worker["handoff"]
+            try:
+                if reason == "completed":
+                    finish_turn(it, ev, worker["trigger"], worker["started"],
+                                phase, handoff)
+                elif escalate:
+                    pass  # the interrupt we sent landed; relaunched below
+                elif reason == "aborted_streaming":
+                    say(it, event("stopped"), sess=phase)
+                    turn_died(it, phase)
+                else:
+                    say(it, event(f"turn failed ({reason})"), sess=phase)
+                    turn_died(it, phase)
+            finally:
+                # The worker goes idle even if landing the turn blew up;
+                # a wedged "running" state would block sends and reloads.
+                worker.update(state="idle", started=None, trigger=None,
+                              handoff=False, seen=set(), got_result=False,
+                              think_run=0)
+            if escalate and reason != "completed":
+                escalate_turn(it, phase, escalate, handoff)
+
+
 def turn_died(it: dict, phase: str) -> None:
     """End-of-turn fallback when no result landed. A refine turn that died
     before reporting a session puts the item back in the create phase, where
@@ -744,15 +794,14 @@ def turn_died(it: dict, phase: str) -> None:
     it["updated"] = True
 
 
-def runaway_detected(it: dict, worker: dict) -> None:
-    """A generation ran to the output cap producing only thinking: spend with
-    no work landed. Interrupt it; the result handler relaunches per stage.
-    Caller holds LOCK."""
+def runaway_detected(it: dict, worker: dict, note: str) -> None:
+    """A generation is thinking at length with no work landing. Interrupt it;
+    the result handler relaunches per stage. Caller holds LOCK."""
     phase = worker["phase"]
     count = it.setdefault("runaway", {}).get(phase, 0) + 1
     it["runaway"][phase] = count
     worker["escalate"] = "nudge" if count == 1 else "bail"
-    say(it, event(f"⚠ runaway thinking — hit the output cap with no actions "
+    say(it, event(f"⚠ runaway thinking — {note} "
                   f"({count}× this session) — {worker['escalate']}"), sess=phase)
     worker["outbound"].put_nowait({"type": "control_request",
         "request_id": str(uuid.uuid4()), "request": {"subtype": "interrupt"}})
@@ -856,9 +905,9 @@ def turn_usage(it: dict, ev: dict, phase: str) -> str:
                   if isinstance(usage, dict) and usage.get("contextWindow")]
     if candidates:
         model, model_usage = max(candidates, key=lambda pair:
-            pair[1].get("cacheReadInputTokens", 0) +
-            pair[1].get("cacheCreationInputTokens", 0) +
-            pair[1].get("inputTokens", 0))
+            (pair[1].get("cacheReadInputTokens") or 0) +
+            (pair[1].get("cacheCreationInputTokens") or 0) +
+            (pair[1].get("inputTokens") or 0))
         window = model_usage["contextWindow"]
         canonical = model_usage.get("canonicalModel") or model
         price = PRICES.get(canonical)
@@ -1107,8 +1156,6 @@ def submit_comment(it: dict, text: str, sess: str | None = None) -> None:
             raise Reject("already handed off")
         if not it["sessions"]["create"]:
             raise Reject("no session yet")
-        if (it["id"], "create") not in PROCS:
-            raise Reject("session worker is no longer live — restart the wave")
         say(it, {"kind": "you", "text": text}, sess="create")
         it["state"] = COMMENTED
         it["updated"] = False
@@ -1117,8 +1164,6 @@ def submit_comment(it: dict, text: str, sess: str | None = None) -> None:
     sess = sess if sess in ("create", "refine") else it["phase"]
     if not it["sessions"].get(sess):
         raise Reject("no session yet")
-    if (it["id"], sess) not in PROCS:
-        raise Reject("session worker is no longer live — restart the wave")
     say(it, {"kind": "you", "text": text}, sess=sess)
     it["state"] = COMMENTED
     it["updated"] = False
@@ -1303,10 +1348,13 @@ def light_items() -> list[dict]:
         running = next((phase for phase in ("create", "refine")
                         if (worker := PROCS.get((it["id"], phase))) and
                         worker["state"] in ("sending", "running")), None)
+        turn = PROCS.get((it["id"], running)) if running else None
         out.append({k: it.get(k) for k in
                     ("id", "state", "dirty", "updated", "sessions", "phase", "context",
                      "lastActive", "wave", "rev", "title", "est", "ver", "append")} |
-                   {"active": active(it), "turnPhase": running, "workerLive": live})
+                   {"active": active(it), "turnPhase": running,
+                    "turnStarted": turn["started"] if turn else None,
+                    "workerLive": live})
     return out
 
 
