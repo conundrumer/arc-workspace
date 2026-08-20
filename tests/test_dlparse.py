@@ -106,6 +106,18 @@ def test_paren_expr_is_not_a_disjunction():
     assert isinstance(p.items[0].body[0], Cmp)
 
 
+def test_single_branch_group():
+    p = parse("out(P, Col) :- ( tile(P, Col), P = Col ), g(P).\n")
+    group = p.items[0].body[0]
+    assert isinstance(group, Disj) and len(group.branches) == 1
+    assert isinstance(group.branches[0][1], Cmp)
+
+
+def test_paren_call_before_comparison_is_not_a_group():
+    p = parse("out(X) :- (max Y : { g(Y) }) > X, g(X).\n")
+    assert isinstance(p.items[0].body[0], Cmp)
+
+
 def test_subsumptive_clause():
     p = parse("high(K, S) <= high(K, S2) :- S < S2.\n")
     rule = p.items[0]

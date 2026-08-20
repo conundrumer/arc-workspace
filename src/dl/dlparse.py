@@ -4,7 +4,7 @@ The grammar covers the dialect the solvers and lib.dl use: `#include`,
 `#define`, `.functor`, `.type`, single-level `.comp` with single
 inheritance, `.init`, `.decl`
 (with `inline` and same-line facts), facts, rules with negation,
-aggregates, and parenthesized disjunctions, constructors, records,
+aggregates, and parenthesized body groups, constructors, records,
 functor calls, and GRID macro facts (which take no terminating period). Anything outside that raises
 `ParseError` — Souffle itself owns the real semantics, so the parser can
 be strict and fail loudly.
@@ -511,10 +511,17 @@ class _Parser:
             k += 2
         return self.at("(", k)
 
+    def _op_ahead(self) -> bool:
+        """Whether the next token continues an expression or a constraint."""
+        t = self.peek()
+        return t.text in CMP_OPS or t.text in ARITH_OPS or (
+            t.kind == "ident" and t.text in WORD_OPS
+        )
+
     def literal(self) -> Lit:
         if self.at("("):
-            # A parenthesized `;`-list is a disjunction; anything else
-            # backtracks into the expression path below.
+            # A parenthesized body group; anything else backtracks into
+            # the expression path below.
             if (disj := self.disjunction()) is not None:
                 return disj
         if self.at("!"):
@@ -528,8 +535,7 @@ class _Parser:
             # so decide by what follows the closing paren.
             mark = self.pos
             atom = self.atom()
-            if self.peek().text in CMP_OPS or self.peek().text in ARITH_OPS \
-                    or self.peek().text in WORD_OPS:
+            if self._op_ahead():
                 self.pos = mark
             else:
                 return atom
@@ -540,6 +546,12 @@ class _Parser:
         return Cmp(op.text, lhs, self.expr(), op.line)
 
     def disjunction(self) -> Disj | None:
+        """A parenthesized body group, one branch per `;`.
+
+        A single branch is a plain conjunction group, which reads the same
+        as a parenthesized term, so it only counts as a group when no
+        operator follows the closing paren.
+        """
         mark = self.pos
         line = self.next().line  # '('
         try:
@@ -551,7 +563,7 @@ class _Parser:
         except ParseError:
             self.pos = mark
             return None
-        if len(branches) < 2:
+        if len(branches) < 2 and self._op_ahead():
             self.pos = mark
             return None
         return Disj(tuple(tuple(b) for b in branches), line)
