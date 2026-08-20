@@ -780,6 +780,48 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
         compose(P1, P2, P_pos).
 }
 
+// The nonuniform tile arrangement a divider set induces — the divider-driven
+// peer of Divide2D/Tile2D, which need equal tiles: a cell's tile position
+// holds, toward each edge, the count of dividers between the cell and that
+// edge — OrderFrame's construction, applied to cells counting dividers.
+// Divider cells get no tile; an axis with no dividers is one part. A
+// within-tile position is a Reframe from the tile's box.
+.comp DividerFrame<Key> {
+    // The position domain, per key.
+    .decl cell(key: Key, p: Position)
+
+    // The cutting lines, axis-only on a — detection output or stored data.
+    .decl divider(key: Key, a: Axis, l: Position)
+
+    // Divider distances, materialized for the counts below.
+    .decl div_dist(key: Key, a: Axis, d: Dir, k: number)
+    div_dist(K, A, D, K1) :- divider(K, A, L), axis_of(D, A), dist(L, D, K1).
+
+    // p's line on axis a holds a divider.
+    .decl on_divider(key: Key, p: Position, a: Axis)
+    on_divider(K, P, A) :- cell(K, P), div_dist(K, A, D, K1), dist(P, D, K1).
+
+    // p's tile index from edge d — the dividers between p and edge d.
+    .decl part_idx(key: Key, p: Position, d: Dir, n: number)
+    part_idx(K, P, D, N) :-
+        cell(K, P), axis_of(D, A), !on_divider(K, P, A), dist(P, D, K1),
+        N = count : { div_dist(K, A, D, K2), K2 < K1 }.
+
+    // The part of axis a that p sits in, as an axis-only position: p's
+    // tile index from each edge of the axis.
+    .decl part_of(key: Key, p: Position, a: Axis, p_part: Position)
+    part_of(K, P, A, P_part) :-
+        axis_of(D, A), opposite(D, D2),                 // the axis's two dirs
+        part_idx(K, P, D, N1), part_idx(K, P, D2, N2),  // index from each
+        edge_delta(D, N1, Q1), edge_delta(D2, N2, Q2), compose(Q1, Q2, P_part).
+
+    // P's tile, parts on both axes glued.
+    .decl tile_of(key: Key, p: Position, p_tile: Position)
+    tile_of(K, P, P_tile) :-
+        part_of(K, P, A, P1), perp(A, A2), part_of(K, P, A2, P2),  // part on each axis
+        compose(P1, P2, P_tile).                                   // glued
+}
+
 // One id per class of an equivalence relation; the representative is
 // arbitrary but deterministic. A self-paired `rep` member is the class
 // representative — with a total equivalence, an arbitrary pick of one
