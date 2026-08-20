@@ -925,9 +925,14 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 // D4Map (dst = src): which axis-aligned shifts fix each keyed cell set.
 // Absence is silent, as in D4Map's `compatible` reading: an image off the
 // frame tests nothing, so a shift is compared only where both cells exist.
-// A stored period is the smallest unbroken shift.
+// Two readings: `mismatch` is exact — a stored period is the smallest
+// unbroken shift; `period` reads through sparse damage in ordinary colors.
 .comp ShiftInvariance<Key, Val> {
     .decl cell(key: Key, p: Position, v: Val)
+
+    // Internal keys tag a candidate shift; members are its line pairs.
+    .type SK = [key: Key, a: Axis, k: number]
+    .type LP = [l: Position, l2: Position]
 
     // Candidate shifts: every axis-aligned delta the frame admits, tagged
     // (axis, k), with both directions of a magnitude sharing a tag.
@@ -937,14 +942,35 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
         axis_of(D, A), sub_extent(P, A, K),
         jump_delta(D, K, Delta).
 
-    // Where a candidate carries each cell's value.
-    .decl shifted(key: Key, a: Axis, k: number, p: Position, v: Val)
-    shifted(Ky, A, K, P2, V) :-
-        cell(Ky, P, V), cand(Ky, A, K, Delta), compose(P, Delta, P2).
+    // A candidate's cell pairings: q is p's image, both in the set.
+    .decl pair(key: Key, a: Axis, k: number, p: Position, q: Position)
+    pair(Ky, A, K, P, Q) :-
+        cell(Ky, P, _), cand(Ky, A, K, Delta), compose(P, Delta, Q), cell(Ky, Q, _).
 
     // A violated shift: some cell whose image holds a different value.
     .decl mismatch(key: Key, a: Axis, k: number)
-    mismatch(Ky, A, K) :- shifted(Ky, A, K, P, V), cell(Ky, P, V2), V2 != V.
+    mismatch(Ky, A, K) :-
+        pair(Ky, A, K, P, Q), cell(Ky, P, V), cell(Ky, Q, V2), V != V2.
+
+    // A broken line pair: the shift carries some cell of the line at l
+    // onto a differently-valued cell of the line at l2.
+    .decl line_mismatch(key: Key, a: Axis, k: number, l: Position, l2: Position)
+    line_mismatch(Ky, A, K, L, L2) :-
+        pair(Ky, A, K, P, Q), cell(Ky, P, V), cell(Ky, Q, V2), V != V2,
+        split(P, A, L, _), split(Q, A, L2, _).
+
+    // Broken line pairs against whole ones.
+    .init breaks = Excess<SK, LP>
+    breaks.plus([Ky, A, K], [L, L2]) :- line_mismatch(Ky, A, K, L, L2).
+    breaks.minus([Ky, A, K], [L, L2]) :-
+        pair(Ky, A, K, P, Q), split(P, A, L, _), split(Q, A, L2, _),
+        !line_mismatch(Ky, A, K, L, L2).
+
+    // A period of the set's pattern, read through damage: broken line
+    // pairs do not outnumber whole ones. Every multiple of a period is a
+    // period, and a pair-less candidate is vacuously one.
+    .decl period(key: Key, a: Axis, k: number)
+    period(Ky, A, K) :- cand(Ky, A, K, _), !breaks.excess([Ky, A, K], _).
 }
 
 // Re-express keyed cells relative to a per-key outer origin: inner = cell
