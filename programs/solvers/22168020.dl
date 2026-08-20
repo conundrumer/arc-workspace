@@ -13,7 +13,7 @@
 .init c = Consts
 
 .init spans = Between<Color>
-spans.axis(A)      :- c.fill_axis(A).
+spans.axis(Col, A) :- spans.mark(Col, _), c.fill_axis(A).
 spans.cell(Col, P) :- spans.mark(Col, _), in(P, _).
 spans.mark(Col, Q) :- in(Q, Col), !c.bg(Col).
 

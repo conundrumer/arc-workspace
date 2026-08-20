@@ -20,7 +20,7 @@
 mark(Col, P) :- in(P, Col), !c.bg(Col).
 
 .init bet = Between<Color>
-bet.axis(A) :- axis_elem(A).
+bet.axis(Col, A) :- mark(Col, _), axis_elem(A).
 bet.cell(Col, P) :- mark(Col, _), in(P, _).
 bet.mark(Col, P) :- mark(Col, P).
 

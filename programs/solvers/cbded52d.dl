@@ -31,7 +31,7 @@ mark([Col, P_intile], P_tile) :-
     tile(P_grid, P_tile, P_intile).
 
 .init btw = Between<Mark>
-btw.axis(A) :- axis_elem(A).
+btw.axis(M, A) :- mark(M, _), axis_elem(A).
 btw.cell(M, P_tile) :- mark(M, _), tile(_, P_tile, _).
 btw.mark(M, P_tile) :- mark(M, P_tile).
 

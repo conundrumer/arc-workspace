@@ -31,7 +31,7 @@
 
 // --- Set ---
 .init set_spans = Between<Unit>
-set_spans.axis(A)       :- c.axis(A).
+set_spans.axis($U(), A) :- c.axis(A).
 set_spans.cell($U(), P) :- in(P, Col), !c.marker(Col).
 set_spans.mark($U(), P) :- in(P, Col), c.marker(Col).
 

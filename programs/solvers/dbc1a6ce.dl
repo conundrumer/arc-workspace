@@ -13,7 +13,7 @@
 .init c = Consts
 
 .init spans = Between<Unit>
-spans.axis(A)       :- axis_elem(A).
+spans.axis($U(), A) :- axis_elem(A).
 spans.cell($U(), P) :- in(P, Bg), c.bg(Bg).
 spans.mark($U(), Q) :- in(Q, Col), !c.bg(Col).
 
