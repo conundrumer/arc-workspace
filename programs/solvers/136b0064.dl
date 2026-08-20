@@ -1,0 +1,347 @@
+// 136b0064
+// concept: decompose markers walk lookup count
+// A divider splits the input into a legend panel of glyphs and a blank canvas
+// panel holding one marker cell. The output is the canvas: a pen starts at the
+// marker and draws one stroke per glyph, in reading order from c.order_corner
+// with c.order_axis primary. A stroke steps one cell toward c.advance, then
+// runs k more cells toward the glyph's direction in the glyph's color; the pen
+// ends where the run ends.
+//
+// Cases name what identifies a glyph:
+//   $Count() — the glyph's cell count keys the move table
+//   $Glyph() — the glyph's footprint matches a stored catalog
+//   $Color() — the glyph's color keys the move table
+
+#include "../lib.dl"
+
+.type Choice = Count {} | Glyph {} | Color {}
+.type Stroke = [t: Position, ch: Choice]
+
+.comp Consts {
+    // --- shared ---
+    .decl bg(c: Color) bg(0).
+    .decl marker(c: Color) marker(5).
+
+    // The divider is the gap between the two panels.
+    .decl divisor(n: number) divisor(2).
+    .decl divide_gap(g: number) divide_gap(1).
+    .decl legend_dir(d: Dir) legend_dir(DIR_L).
+
+    .decl glyph_size(k: number) glyph_size(3).
+    .decl glyph_gap(g: number) glyph_gap(1).
+
+    .decl order_corner(d: DiagDir) order_corner(DIAG_TL).
+    .decl order_axis(a: Axis) order_axis(AXIS_H).
+
+    .decl advance(d: Dir) advance(DIR_B).
+
+    // --- Count ---
+    .decl count_move(n: number, d: Dir, k: number)
+    count_move(4, DIR_B, 1).
+    count_move(5, DIR_R, 2).
+    count_move(6, DIR_L, 3).
+    count_move(7, DIR_L, 1).
+
+    // --- Glyph ---
+    .decl glyph_member(id: Ident, p: Position)
+    .decl glyph_move(id: Ident, d: Dir, k: number)
+
+    GRID_MASK_3x3(glyph_member, 0,
+        1, 1, 0,
+        1, 0, 1,
+        0, 1, 0)
+    glyph_move(0, DIR_R, 2).
+
+    GRID_MASK_3x3(glyph_member, 1,
+        1, 0, 1,
+        1, 0, 1,
+        1, 1, 1)
+    glyph_move(1, DIR_L, 1).
+
+    GRID_MASK_3x3(glyph_member, 2,
+        1, 0, 1,
+        0, 1, 0,
+        0, 1, 0)
+    glyph_move(2, DIR_B, 1).
+
+    GRID_MASK_3x3(glyph_member, 3,
+        1, 1, 1,
+        0, 1, 0,
+        1, 0, 1)
+    glyph_move(3, DIR_L, 3).
+
+    // --- Color ---
+    .decl color_move(col: Color, d: Dir, k: number)
+    color_move(1, DIR_R, 2).
+    color_move(2, DIR_L, 1).
+    color_move(6, DIR_B, 1).
+    color_move(3, DIR_L, 3).
+}
+
+.init c = Consts
+
+// --- parse ---
+
+.comp Parse<Key> {
+    .type KT = [k: Key, t: Position]
+
+    .decl cell(k: Key, p: Position, col: Color)
+
+    .decl panel(k: Key, p_grid: Position, p_outer: Position, p_panel: Position)
+    panel(K, P, P_outer, P_panel) :-
+        cell(K, P, _),                               // input cell
+        c.legend_dir(D), axis_of(D, A),              // the panels lie along this axis
+        c.divisor(N), c.divide_gap(G),               // panel count, divider width
+        divide_slab(P, A, N, G, P_outer, P_panel).
+
+    .decl legend(k: Key, p_grid: Position, p_panel: Position)
+    legend(K, P, P_panel) :- panel(K, P, P_outer, P_panel), c.legend_dir(D), dist(P_outer, D, 0).
+
+    .decl canvas(k: Key, p_grid: Position, p_canvas: Position)
+    canvas(K, P, P_canvas) :-
+        panel(K, P, P_outer, P_canvas),              // panel cell
+        c.legend_dir(D), opposite(D, D_out),         // the panel away from the legend
+        dist(P_outer, D_out, 0).
+
+    .decl glyph_cell(k: Key, p_tile: Position, p_intile: Position, col: Color)
+    glyph_cell(K, T, P_intile, Col) :-
+        legend(K, P, P_panel), cell(K, P, Col), !c.bg(Col),  // inked legend cell
+        c.glyph_size(Sz), c.glyph_gap(G),                    // glyph size, gap between glyphs
+        divide_by_size_2d(P_panel, Sz, G, T, P_intile).
+
+    .decl glyph(k: Key, t: Position)
+    glyph(K, T) :- glyph_cell(K, T, _, _).
+
+    .decl glyph_color(k: Key, t: Position, col: Color)
+    glyph_color(K, T, Col) :- glyph_cell(K, T, _, Col).
+
+    .init tally = Tally<KT, Position>
+    tally.item([K, T], P_intile) :- glyph_cell(K, T, P_intile, _).
+
+    .decl glyph_count(k: Key, t: Position, n: number)
+    glyph_count(K, T, N) :- tally.tally([K, T], N).
+
+    .init order = LexOrder<Key>
+    order.corner(D) :- c.order_corner(D).
+    order.axis(A) :- c.order_axis(A).
+    order.cell(K, T) :- glyph(K, T).
+
+    .decl straddled(k: Key, t1: Position, t2: Position)
+    straddled(K, T1, T2) :- order.before(K, T1, T), order.before(K, T, T2).
+
+    .decl next_glyph(k: Key, t1: Position, t2: Position)
+    next_glyph(K, T1, T2) :- order.before(K, T1, T2), !straddled(K, T1, T2).
+
+    .decl first_glyph(k: Key, t: Position)
+    first_glyph(K, T) :- glyph(K, T), !order.before(K, _, T).
+
+    .decl last_glyph(k: Key, t: Position)
+    last_glyph(K, T) :- glyph(K, T), !order.before(K, T, _).
+
+    .decl marker_cell(k: Key, p_canvas: Position)
+    marker_cell(K, P_canvas) :- canvas(K, P, P_canvas), cell(K, P, Col), c.marker(Col).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// --- the move a glyph names ---
+
+.decl impl_choice(ch: Choice)
+impl_choice($Count()).
+impl_choice($Glyph()).
+impl_choice($Color()).
+
+.decl move(t: Position, d: Dir, k: number, ch: Choice)
+
+// --- Count ---
+
+move(T, D, K, $Count()) :- parse.glyph_count($U(), T, N), c.count_move(N, D, K).
+
+// --- Glyph ---
+
+.init glyph_match = KeyedSetCompare<Position, Ident, Position>
+glyph_match.pattern_member(Id, P_intile) :- c.glyph_member(Id, P_intile).
+glyph_match.observed_member(T, P_intile) :- parse.glyph_cell($U(), T, P_intile, _).
+
+move(T, D, K, $Glyph()) :- glyph_match.equals(T, Id), c.glyph_move(Id, D, K).
+
+// --- Color ---
+
+move(T, D, K, $Color()) :- parse.glyph_color($U(), T, Col), c.color_move(Col, D, K).
+
+// --- the walk ---
+
+// Where the pen stands before glyph T's stroke.
+.decl pen(t: Position, p: Position, ch: Choice)
+pen(T, P, Ch) :- parse.first_glyph($U(), T), parse.marker_cell($U(), P), impl_choice(Ch).
+pen(T2, P2, Ch) :- parse.next_glyph($U(), T1, T2), stroke_end(T1, P2, Ch).
+
+.decl stroke_start(t: Position, p: Position, ch: Choice)
+stroke_start(T, P2, Ch) :-
+    pen(T, P, Ch), c.advance(D), step_delta(D, S), compose(P, S, P2).
+
+.decl stroke_end(t: Position, p: Position, ch: Choice)
+stroke_end(T, P2, Ch) :-
+    stroke_start(T, P, Ch),                          // where the run begins
+    move(T, D, K, Ch), jump_delta(D, K, S),          // the glyph's run
+    compose(P, S, P2).
+
+.init stroke = Between<Stroke>
+stroke.axis([T, Ch], A) :- move(T, D, _, Ch), axis_of(D, A).
+stroke.cell([T, Ch], P) :- stroke_end(T, _, Ch), parse.canvas($U(), _, P).
+stroke.mark([T, Ch], P) :- stroke_start(T, P, Ch).
+stroke.mark([T, Ch], P) :- stroke_end(T, P, Ch).
+
+// --- output ---
+
+.decl ink(p: Position, col: Color, ch: Choice)
+ink(P, Col, Ch) :- stroke.between([T, Ch], P), parse.glyph_color($U(), T, Col).
+ink(P, Col, Ch) :- parse.marker_cell($U(), P), c.marker(Col), impl_choice(Ch).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    parse.canvas($U(), _, P), impl_choice(Ch),
+    ( ink(P, Col, Ch)                    // painted cell
+    ; !ink(P, _, Ch), c.bg(Col)          // untouched canvas
+    ).
+
+// --- fit ---
+
+.type GT = [e: Example, t: Position]
+
+// The walk replays over each train output. Pens branch: every contiguous run
+// of the glyph's color counts as drawn when the next stroke can start at its
+// end (the last glyph's run must be maximal instead). A table entry survives
+// when every occurrence of its key drew it; a wrong branch dies at a later
+// glyph or falls to an occurrence that pins the key.
+.comp Fit {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    .decl drawn(e: Example)
+    drawn(E) :- ex_out(E, _, _).
+
+    // --- legend_dir: the marker's panel is the canvas ---
+
+    .decl side_ok(e: Example, d: Dir)
+    side_ok(E, D) :-
+        ex_in(E, P, M), c.marker(M),                 // the marker cell
+        dir_elem(D), axis_of(D, A),                  // candidate legend side
+        c.divisor(N), c.divide_gap(G), divide_slab(P, A, N, G, P_outer, P_canvas),
+        opposite(D, D2), dist(P_outer, D2, 0),       // marker in the far panel
+        ex_out(E, P_canvas, M).                      // the output holds it there
+
+    .decl side_defect(d: Dir)
+    side_defect(D) :- dir_elem(D), drawn(E), !side_ok(E, D).
+
+    .decl legend_dir(d: Dir)
+    legend_dir(D) :- dir_elem(D), !side_defect(D).
+
+    // --- advance: the marker's inked neighbor ---
+
+    .decl step_ok(e: Example, d: Dir)
+    step_ok(E, D) :-
+        parse.marker_cell(E, P), dir_elem(D),        // marker, candidate step
+        step_delta(D, S), compose(P, S, P2),
+        ex_out(E, P2, Col), !c.bg(Col).              // its neighbor is inked
+
+    .decl step_defect(d: Dir)
+    step_defect(D) :- dir_elem(D), drawn(E), !step_ok(E, D).
+
+    .decl advance(d: Dir)
+    advance(D) :- dir_elem(D), !step_defect(D).
+
+    // --- the walk, replayed ---
+
+    // Output cells holding glyph T's color.
+    .decl stroke_cell(e: Example, t: Position, p: Position)
+    stroke_cell(E, T, P) :- parse.glyph_color(E, T, Col), ex_out(E, P, Col).
+
+    .decl pen(e: Example, t: Position, p: Position)
+    pen(E, T, P) :- drawn(E), parse.first_glyph(E, T), parse.marker_cell(E, P).
+    pen(E, T2, P) :- parse.next_glyph(E, T1, T2), drew(E, T1, _, _, P).
+
+    .decl start(e: Example, t: Position, p: Position)
+    start(E, T, P2) :- pen(E, T, P), c.advance(D), step_delta(D, S), compose(P, S, P2).
+
+    // Contiguous advance through the glyph's color, from each start.
+    .decl run(e: Example, t: Position, p0: Position, d: Dir, p: Position)
+    run(E, T, P0, D, P2) :-
+        ( start(E, T, P0), stroke_cell(E, T, P0), dir_elem(D), P = P0  // inked start
+        ; run(E, T, P0, D, P)                                          // or grow the run
+        ),
+        step_delta(D, S), compose(P, S, P2), stroke_cell(E, T, P2).
+
+    // A run cell with its step count from the start.
+    .decl run_len(e: Example, t: Position, d: Dir, k: number, p: Position)
+    run_len(E, T, D, K, P) :-
+        run(E, T, P0, D, P),
+        axis_of(D, A), sub_extent(P0, A, K), jump_delta(D, K, S), compose(P0, S, P).
+
+    .decl drew(e: Example, t: Position, d: Dir, k: number, p: Position)
+    drew(E, T, D, K, P) :-
+        run_len(E, T, D, K, P),
+        ( parse.next_glyph(E, T, T2),                     // the successor stroke
+          c.advance(Da), step_delta(Da, S), compose(P, S, P2),
+          stroke_cell(E, T2, P2)                          // can start at this end
+        ; parse.last_glyph(E, T),                         // no successor
+          step_delta(D, S), compose(P, S, P2),
+          !stroke_cell(E, T, P2)                          // the run is maximal
+        ).
+
+    .decl occurrence(e: Example, t: Position)
+    occurrence(E, T) :- drawn(E), parse.glyph(E, T).
+
+    // --- Count ---
+
+    .decl count_cand(n: number, d: Dir, k: number)
+    count_cand(N, D, K) :- parse.glyph_count(E, T, N), drew(E, T, D, K, _).
+
+    .decl count_defect(n: number, d: Dir, k: number)
+    count_defect(N, D, K) :-
+        count_cand(N, D, K),
+        occurrence(E, T), parse.glyph_count(E, T, N), !drew(E, T, D, K, _).
+
+    .decl count_move(n: number, d: Dir, k: number)
+    count_move(N, D, K) :- count_cand(N, D, K), !count_defect(N, D, K).
+
+    // --- Glyph ---
+
+    .decl footprint(g: GT, p: Position)
+    footprint([E, T], P) :- occurrence(E, T), parse.glyph_cell(E, T, P, _).
+
+    .init same = KeyedSetCompare<GT, GT, Position>
+    same.pattern_member(G, P)  :- footprint(G, P).
+    same.observed_member(G, P) :- footprint(G, P).
+
+    .init shape = Canon<GT>
+    shape.equiv(G, G2) :- same.equals(G, G2).
+
+    .decl glyph_member(id: Ident, p: Position)
+    glyph_member(Id, P) :- shape.id(G, Id), footprint(G, P).
+
+    .decl glyph_cand(id: Ident, d: Dir, k: number)
+    glyph_cand(Id, D, K) :- shape.id([E, T], Id), drew(E, T, D, K, _).
+
+    .decl glyph_defect(id: Ident, d: Dir, k: number)
+    glyph_defect(Id, D, K) :-
+        glyph_cand(Id, D, K),
+        shape.id([E, T], Id), !drew(E, T, D, K, _).
+
+    .decl glyph_move(id: Ident, d: Dir, k: number)
+    glyph_move(Id, D, K) :- glyph_cand(Id, D, K), !glyph_defect(Id, D, K).
+
+    // --- Color ---
+
+    .decl color_cand(col: Color, d: Dir, k: number)
+    color_cand(Col, D, K) :- parse.glyph_color(E, T, Col), drew(E, T, D, K, _).
+
+    .decl color_defect(col: Color, d: Dir, k: number)
+    color_defect(Col, D, K) :-
+        color_cand(Col, D, K),
+        occurrence(E, T), parse.glyph_color(E, T, Col), !drew(E, T, D, K, _).
+
+    .decl color_move(col: Color, d: Dir, k: number)
+    color_move(Col, D, K) :- color_cand(Col, D, K), !color_defect(Col, D, K).
+}

@@ -1,0 +1,134 @@
+// 13e47133
+// concept: objects markers walk cast
+// Wall lines cut the grid into regions. Depth runs inward from a region's
+// boundary: each marker cell colors its own depth, an unmarked depth takes
+// the background, and that palette — depth 0 through the deepest marked
+// depth — repeats over the deeper cells. The cases differ on the depth
+// metric: $Peel peels (ring 0 is the cells the boundary touches, and each
+// next ring is what peeling the previous one exposes); $Sight casts (a
+// cell's depth is the fewest cells between it and the outside along a
+// straight ray, over the eight directions). Every wall here is a straight
+// run, which makes the two metrics agree on every pair; a lone wall cell
+// would split them.
+// No task data — the family is fully structural.
+
+#include "../lib.dl"
+
+.type Choice = Peel {} | Sight {}
+
+.comp Consts {}
+
+.init c = Consts
+
+// Chebyshev erosion depth of a keyed cell set: ring 0 is the cells with a
+// neighbor outside the set, and each step inward is one ring deeper.
+.comp Peel<Key> {
+    .decl cell(key: Key, p: Position)  // input
+
+    // Some 8-neighbor lies outside the set — off-frame counts as outside.
+    .decl edge(key: Key, p: Position)
+    edge(Ky, P) :-
+        cell(Ky, P),
+        dir8_step_delta(_, S), compose(P, S, Q), !cell(Ky, Q).
+
+    // The shortest inward walk from the boundary.
+    .decl ring(key: Key, p: Position, k: number)
+    ring(Ky, P, 0) :- edge(Ky, P).
+    ring(Ky, P, K2) :-
+        ring(Ky, Q, K), K2 = K + 1,
+        dir8_step_delta(_, S), compose(Q, S, P), cell(Ky, P).
+    ring(Ky, P, K) <= ring(Ky, P, K2) :- K2 < K.
+}
+
+.decl impl_choice(c: Choice)
+impl_choice($Peel()). impl_choice($Sight()).
+
+// The two colors that cover the grid: the background, and the wall drawn on
+// it.
+.init bg_mode = Mode<Unit, Color, Position>
+bg_mode.item($U(), Col, P) :- in(P, Col).
+
+.decl bg(col: Color)
+bg(Col) :- bg_mode.mode($U(), Col).
+
+.init wall_mode = Mode<Unit, Color, Position>
+wall_mode.item($U(), Col, P) :- in(P, Col), !bg(Col).
+
+.decl wall(col: Color)
+wall(Col) :- wall_mode.mode($U(), Col).
+
+// What the walls leave.
+.decl open(p: Position)
+open(P) :- in(P, Col), !wall(Col).
+
+.init comps = Components<Unit>
+comps.node($U(), P) :- open(P).
+
+.decl region(p: Position, id: Ident)
+region(P, Id) :- comps.label($U(), P, Id).
+
+// How deep each open cell sits, under each case's metric.
+.decl depth(p: Position, k: number, c: Choice)
+
+// --- Peel ---
+
+.init peel = Peel<Unit>
+peel.cell($U(), P) :- open(P).
+
+depth(P, K, $Peel()) :- peel.ring($U(), P, K).
+
+// --- Sight ---
+
+// Opposite Dir8 — opposite and diag_opposite as one relation.
+.decl dir8_opposite(d: Dir8, d2: Dir8)
+dir8_opposite(D, D2) :- opposite(D, D2).
+dir8_opposite(D, D2) :- diag_opposite(D, D2).
+
+// A rim cell — the outside starts directly beyond it — casts back over the
+// cells that face the outside through it; the key is the cast direction, so
+// a cell reads only casts matching its view line.
+.init sray = Ray<Dir8>
+sray.dir(D) :- dir_elem(D).
+sray.dir(D) :- diag_dir_elem(D).
+sray.cell(D, P) :- open(P), dir_elem(D).
+sray.cell(D, P) :- open(P), diag_dir_elem(D).
+sray.mark(D, P) :-
+    open(P), dir8_step_delta(D2, S), compose(P, S, Q), !open(Q),  // outside beyond P toward d2
+    dir8_opposite(D2, D).                                         // cast back into the set
+
+// A cell's sight depth: the fewest steps to a rim cell over the eight view
+// lines — how many open cells remain before the ray exits.
+.init sight = Extremes<Position>
+sight.cand(P, K) :- sray.ray(D, P, D, K).
+
+depth(P, K, $Sight()) :- sight.low(P, K).
+
+// --- shared ---
+
+// A marker is a region cell that is not background; its depth is where its
+// color sits in the region's palette.
+.decl mark(id: Ident, k: number, col: Color, c: Choice)
+mark(Id, K, Col, C) :-
+    in(M, Col), !bg(Col),           // a marker cell
+    region(M, Id), depth(M, K, C).  // its region and depth
+
+// The palette spans depth 0 through the deepest marked depth.
+.type IdC = [id: Ident, c: Choice]
+.init pal_len = Tally<IdC, number>
+pal_len.item([Id, C], K) :- region(P, Id), depth(P, K, C), mark(Id, K_mark, _, C), K <= K_mark.
+
+.decl out(p: Position, col: Color, c: Choice)
+
+// The walls keep their color.
+out(P, Col, C) :- in(P, Col), wall(Col), impl_choice(C).
+
+// A marked region fills with its palette, repeating over the depths.
+out(P, Col, C) :-
+    region(P, Id), depth(P, K, C),                      // a region cell and its depth
+    pal_len.tally([Id, C], W), stride(K, W, 0, _, Idx), // its entry in the repeating palette
+    ( mark(Id, Idx, Col, C)                             // that entry's marker color
+    ; !mark(Id, Idx, _, C), bg(Col)                     // background at an unmarked entry
+    ).
+
+// An unmarked region stays background.
+out(P, Col, C) :- region(P, Id), !mark(Id, _, _, C), bg(Col), impl_choice(C).

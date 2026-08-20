@@ -62,47 +62,6 @@ An `.init` named `concat` clashes with lib's `concat` relation; pick another ins
 
 **Task-local home (protocol step 1).** e633a9e5: nonuniform scale-up, gap 0; the $Edge and $Table extent models share one Choice-keyed instance.
 
-## `DividerFrame<Key>` — nonuniform tiles from divider lines
-
-The tile arrangement a divider set induces — the divider-driven cell of the decomposition matrix, beside dim-driven `Tile2D`/`Divide2D` and the uniform `divide` family, which all need equal tiles. A cell's tile position holds, toward each edge, the count of dividers between the cell and that edge — `OrderFrame.pos`'s construction, applied to cells counting dividers. The wide two-dir form keeps the part frame consistent with no arithmetic and no stored part count; divider cells get no tile; an axis with no dividers is one part. `divider` takes axis-tagged divider lines, as detection output or stored data. Exposes `part_of` (axis-only part) and `tile_of` (parts perp-glued); a within-tile position is a `Reframe` from the tile's box when a site needs it. Lib target: body comp beside `OrderFrame`.
-
-```
-.comp DividerFrame<Key> {
-    .decl cell(key: Key, p: Position)              // input
-    .decl divider(key: Key, a: Axis, l: Position)  // input
-
-    // Divider distances, materialized for the counts below.
-    .decl div_dist(key: Key, a: Axis, d: Dir, k: number)
-    div_dist(K, A, D, K1) :- divider(K, A, L), axis_of(D, A), dist(L, D, K1).
-
-    // p's line on axis a holds a divider.
-    .decl on_divider(key: Key, p: Position, a: Axis)
-    on_divider(K, P, A) :- cell(K, P), div_dist(K, A, D, K1), dist(P, D, K1).
-
-    // p's tile index from edge d — the dividers between p and edge d.
-    .decl part_idx(key: Key, p: Position, d: Dir, n: number)
-    part_idx(K, P, D, N) :-
-        cell(K, P), axis_of(D, A), !on_divider(K, P, A), dist(P, D, K1),
-        N = count : { div_dist(K, A, D, K2), K2 < K1 }.
-
-    // The part of axis a that p sits in, as an axis-only position: p's
-    // tile index from each edge of the axis.
-    .decl part_of(key: Key, p: Position, a: Axis, p_part: Position)
-    part_of(K, P, A, P_part) :-
-        axis_of(D, A), opposite(D, D2),
-        part_idx(K, P, D, N1), part_idx(K, P, D2, N2),
-        edge_delta(D, N1, Q1), edge_delta(D2, N2, Q2), compose(Q1, Q2, P_part).
-
-    // P's tile, parts on both axes glued.
-    .decl tile_of(key: Key, p: Position, p_tile: Position)
-    tile_of(K, P, P_tile) :-
-        part_of(K, P, A, P1), perp(A, A2), part_of(K, P, A2, P2),
-        compose(P1, P2, P_tile).
-}
-```
-
-**Task-local home (protocol step 1).** 0bb8deee (`DividerFrame` comp): the cross's four quadrants, one instance in `Parse<Key>` serving the body (Unit) and the Fit (Example).
-
 ## `KeyedSetCompare` extensions — set-relationship lattice
 
 `KeyedSetCompare<Key, Pat, Member>` (in `lib.dl`) exposes `covers` / `equals` / `pattern_size`. These extensions derive from the same three counts it already computes (`|pattern|`, `|observed|`, `overlap`). Add one when a real task needs it, not preemptively (lib-addition protocol):
@@ -177,6 +136,8 @@ Discrimination sits in the functor layer, so no calling rule multiplies IR paths
 Bounds: `dist` / `diag_dist` and the unequal-k `diag_edge_delta` differ in arity across the branches and stay per-branch. `turn` widens the same way — rotation carries corners to corners — but has no site.
 
 Caveat: Souffle's union typing is static, with no runtime filtering, so a caller that grounds its direction from the widened `opposite` instead of feeding one in enumerates eight rows. Implementation sweeps `opposite`'s callers for unbound-d use.
+
+**Task-local home (protocol step 1).** 13e47133 (`dir8_opposite`): `opposite` and `diag_opposite` unioned as a plain relation, pairing $Sight's rim directions with their casts — static union typing bars a `Dir8` variable from `opposite`'s `Dir` slot.
 
 ## `corner_dist` — taxicab distance to a corner
 
@@ -269,8 +230,9 @@ set's per-axis periods. Candidates are quotiented by the translation
 lattice: one representative per coset, its shift drawn from the lattice's
 fundamental domain, and square-checked against the lattice where the kind
 squares to the identity (a symmetry's square is a translation, and the
-group's translations are the lattice). Lib target: body comp beside
-`ShiftInvariance`; `Gen` moves beside it.
+group's translations are the lattice). `ShiftInvariance.period` feeds the
+`period` input directly. Lib target: body comp beside `ShiftInvariance`;
+`Gen` moves beside it.
 
 ```
 .type Gen = [d: D4, delta: Shift]
@@ -340,3 +302,43 @@ object solid (object key).
 **Second home (protocol step 1).** 00dbd492: $Enclose writes the same
 composition inline — `Reach` from the grid edge, then `Components` over
 the enclosed cells.
+
+## `Peel<Key>` — erosion depth of a keyed cell set
+
+Ring 0 is the cells with an 8-neighbor outside the set, off-frame counting
+as outside; each step inward is one ring deeper. It equals the Chebyshev
+distance to the set's complement minus one, and is the depth peer of
+`Reach`'s membership. Non-convex depth has no counter-free encoding, so
+the arithmetic sits behind the comp boundary. Lib target: body comp beside
+`Reach`.
+
+```
+.comp Peel<Key> {
+    .decl cell(key: Key, p: Position)  // input
+
+    // Some 8-neighbor lies outside the set — off-frame counts as outside.
+    .decl edge(key: Key, p: Position)
+    edge(Ky, P) :-
+        cell(Ky, P),
+        dir8_step_delta(_, S), compose(P, S, Q), !cell(Ky, Q).
+
+    // The shortest inward walk from the boundary.
+    .decl ring(key: Key, p: Position, k: number)
+    ring(Ky, P, 0) :- edge(Ky, P).
+    ring(Ky, P, K2) :-
+        ring(Ky, Q, K), K2 = K + 1,
+        dir8_step_delta(_, S), compose(Q, S, P), cell(Ky, P).
+    ring(Ky, P, K) <= ring(Ky, P, K2) :- K2 < K.
+}
+```
+
+**Task-local home (protocol step 1).** 13e47133 (`Peel` comp): region
+rings that a repeating marker palette paints. The solver pairs it against a
+$Sight rival — depth as the min ray-cast distance to the outside (`Ray` +
+`Extremes`). The two metrics agree wherever every wall is a straight run; a
+lone wall cell splits them (its knight's-move cells read deeper under
+sight).
+
+Prior special cases the comp would cover: 85c4e7cd's ring (min edge
+distance — the convex-frame case) and 135a2760's panel frame (ring 0 of a
+rectangular panel).

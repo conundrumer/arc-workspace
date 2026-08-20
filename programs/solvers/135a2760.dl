@@ -1,0 +1,64 @@
+// 135a2760
+// concept: decompose wallpaper repair
+// Uniform lines cut the grid into framed panels, and each panel's
+// interior is a wallpaper damaged in a few cells. Each axis takes the
+// interior's shortest period; each interior cell takes the modal color
+// of its orbit under the lattice.
+
+#include "../lib.dl"
+
+.type PanelAxis = [t: Position, a: Axis]
+
+.comp Consts {
+}
+
+.init c = Consts
+
+// --- panels ---
+
+// Color present on the line at l along axis a.
+.decl line_color(a: Axis, l: Position, col: Color)
+line_color(A, L, Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
+
+.decl line_mixed(a: Axis, l: Position)
+line_mixed(A, L) :- line_color(A, L, Col), line_color(A, L, Col2), Col != Col2.
+
+// A uniform line spans the grid, so it divides panels rather than sit in one.
+.init panels = DividerFrame<Unit>
+panels.cell($U(), P) :- in(P, _).
+panels.divider($U(), A, L) :- line_color(A, L, _), !line_mixed(A, L).
+
+// A panel's frame — the ring of cells with a neighbor outside it.
+.decl frame(p: Position)
+frame(P) :-
+    panels.tile_of($U(), P, T), dir_elem(D), step_delta(D, Delta),  // step off the cell
+    compose(P, Delta, Q), !panels.tile_of($U(), Q, T).              // landing outside
+
+.decl interior(t: Position, p: Position)
+interior(T, P) :- panels.tile_of($U(), P, T), !frame(P).
+
+// --- lattice ---
+
+.init si = ShiftInvariance<Position, Color>
+si.cell(T, P, Col) :- interior(T, P), in(P, Col).
+
+// The interior's period per axis: the shortest. On an axis with no true
+// period the shortest is pair-less, so it generates nothing.
+.init period = Extremes<PanelAxis>
+period.cand([T, A], K) :- si.period(T, A, K).
+
+// --- repair ---
+
+// Orbits of the lattice: the cells a run of periods reaches.
+.init orbit = Canon<Position>
+orbit.equiv(P, P) :- interior(_, P).
+orbit.equiv(P, Q) :-
+    orbit.equiv(P, R),                              // reached so far
+    si.pair(T, A, K, R, Q), period.low([T, A], K).  // one period on
+
+.init pattern = Mode<Ident, Color, Position>
+pattern.item(Cls, Col, P) :- orbit.id(P, Cls), in(P, Col).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- orbit.id(P, Cls), pattern.mode(Cls, Col).
+out(P, Col) :- in(P, Col), !interior(_, P).

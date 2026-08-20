@@ -1,0 +1,98 @@
+// 13f06aa5
+// concept: markers, objects, cast, parity, border
+// Each shape is drawn in one ink color and carries a single odd-colored
+// marker cell on one of its sides. The marker fires in the direction that
+// side faces: a trail of dots runs from it across the grid at a fixed
+// spacing, and the far edge takes its color whole. Where two fired edges
+// meet, the corner takes c.corner_color. Every other cell passes through.
+//
+// Cases claim how a marker's direction is read:
+//   $Open — the side of the marker that faces background.
+//   $Side — the side of its shape's bounding box the marker lies on.
+
+#include "../lib.dl"
+
+.type Choice = Open {} | Side {}
+
+.comp Consts {
+    // Distance between trail dots.
+    .decl spacing(w: number) spacing(2).
+
+    // Where two fired edges meet.
+    .decl corner_color(col: Color) corner_color(0).
+}
+
+.init c = Consts
+
+.decl impl_choice(ch: Choice)
+impl_choice($Open()). impl_choice($Side()).
+
+// --- shared ---
+
+.init bg_mode = Mode<Unit, Color, Position>
+bg_mode.item($U(), Col, P) :- in(P, Col).
+
+.decl bg(col: Color)
+bg(Col) :- bg_mode.mode($U(), Col).
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !bg(Col).
+
+// The shapes' own color — the commonest ink.
+.init ink_mode = Mode<Unit, Color, Position>
+ink_mode.item($U(), Col, P) :- ink(P, Col).
+
+.decl mark(p: Position, col: Color)
+mark(P, Col) :- ink(P, Col), !ink_mode.mode($U(), Col).
+
+.decl mark_dir(p: Position, d: Dir, ch: Choice)
+
+// --- Open ---
+
+mark_dir(P, D, $Open()) :-
+    mark(P, _),                                       // the marker
+    dir_elem(D), step_delta(D, S), compose(P, S, Q),  // its neighbor toward D
+    in(Q, Col), bg(Col).                              // background there
+
+// --- Side ---
+
+.init comps = Components<Unit>
+comps.node($U(), P) :- ink(P, _).
+
+.init box = Bbox<Ident>
+box.cell(Id, P) :- comps.label($U(), P, Id).
+
+mark_dir(P, D, $Side()) :-
+    mark(P, _), comps.label($U(), P, Id),   // the marker's shape
+    box.edge_cell(Id, P, D).                // the box side it lies on
+
+// --- output ---
+
+.decl fired(d: Dir, col: Color, ch: Choice)
+fired(D, Col, Ch) :- mark(P, Col), mark_dir(P, D, Ch).
+
+.init ray = Ray<Position>
+ray.dir(D) :- dir_elem(D).
+ray.cell(M, P) :- mark(M, _), in(P, _).
+ray.mark(M, M) :- mark(M, _).
+
+.decl paint(p: Position, col: Color, ch: Choice)
+paint(P, Col, Ch) :- fired(D, Col, Ch), in(P, _), dist(P, D, 0).   // the fired edge
+paint(P, Col, Ch) :-
+    mark(M, Col), mark_dir(M, D, Ch),      // marker and its direction
+    ray.ray(M, P, D, K),                   // a cell of its ray
+    c.spacing(W), stride(K, W, 0, _, 0).   // one dot per spacing
+
+.decl corner(p: Position, ch: Choice)
+corner(P, Ch) :-
+    diag_dirs(_, _, D1, D2),                    // the two sides of a corner
+    fired(D1, _, Ch), fired(D2, _, Ch),         // both fired
+    in(P, _), dist(P, D1, 0), dist(P, D2, 0).   // the cell where they meet
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    in(P, Col_in), impl_choice(Ch),
+    ( corner(P, Ch), c.corner_color(Col)               // corner of two fired edges
+    ; !corner(P, Ch), paint(P, Col, Ch)                // fired edge or trail dot
+    ; !paint(P, _, Ch), Col = Col_in                   // untouched
+    ).

@@ -1,0 +1,46 @@
+// 13713586
+// concept: objects cast rank
+// A wall of one color lines a whole edge of the grid, and colored bars sit in
+// the field. Each bar casts its cells toward the wall, painting the background
+// the cast crosses; where two casts overlap, the bar nearer the wall paints.
+// Input cells keep their own color.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl bg(col: Color) bg(0).
+    .decl wall(col: Color) wall(5).
+}
+
+.init c = Consts
+
+// The wall edge — the one edge whose whole line is wall-colored.
+.decl wall_defect(d: Dir)
+wall_defect(D) :- dir_elem(D), in(P, Col), dist(P, D, 0), !c.wall(Col).
+
+.decl wall_dir(d: Dir)
+wall_dir(D) :- dir_elem(D), !wall_defect(D).
+
+.type Bar = [col: Color, id: Ident]
+
+.init bars = Components<Color>
+bars.node(Col, P) :- in(P, Col), !c.bg(Col), !c.wall(Col).
+
+.decl bar_cell(b: Bar, p: Position)
+bar_cell([Col, Id], P) :- bars.label(Col, P, Id).
+
+// How near a bar comes to the wall.
+.init near = Extremes<Bar>
+near.cand(B, K) :- bar_cell(B, P), wall_dir(D), dist(P, D, K).
+
+.init shadow = Ray<Bar>
+shadow.dir(D) :- wall_dir(D).
+shadow.mark(B, P) :- bar_cell(B, P).
+shadow.cell(B, P) :- bar_cell(B, _), in(P, Col), c.bg(Col).
+
+.init paint = ArgExtremes<Position, Color>
+paint.cand(P, Col, K) :- shadow.ray([Col, Id], P, _, _), near.low([Col, Id], K).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- in(P, Col), !paint.low(P, _, _).
+out(P, Col) :- paint.low(P, Col, _).

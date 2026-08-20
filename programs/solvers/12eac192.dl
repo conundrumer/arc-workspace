@@ -1,0 +1,91 @@
+// 12eac192
+// concept: objects count lookup
+// Ink of several colors sits on a background as same-color 4-components.
+// Small components are repainted and the rest pass through. Two claims on
+// what makes a component small:
+//
+//   $Threshold — its cell count is at most c.max_size.
+//   $Lookup    — a stored table keyed by cell count gives the color a
+//                component of that count takes; an omitted count passes
+//                through.
+
+#include "../lib.dl"
+
+.type Choice = Threshold {} | Lookup {}
+
+.comp Consts {
+    // --- shared ---
+
+    .decl bg(col: Color) bg(0).
+
+    // --- Threshold ---
+
+    .decl max_size(n: number) max_size(2).
+    .decl paint(col: Color) paint(3).
+
+    // --- Lookup ---
+
+    .decl size_paint(n: number, col: Color)
+    size_paint(1, 3). size_paint(2, 3).
+}
+
+.init c = Consts
+
+// --- parse ---
+
+// The ink components with their sizes.
+.comp Parse<Key> {
+    .type KC = [k: Key, col: Color]
+    .type KI = [k: Key, id: Ident]
+
+    .decl cell(k: Key, p: Position, col: Color)
+
+    // Touching cells of one ink color. A cell holds one color, so the color
+    // keys nothing downstream: the label alone names the component.
+    .init comps = Components<KC>
+    comps.node([K, Col], P) :- cell(K, P, Col), !c.bg(Col).
+
+    .decl comp_cell(k: KI, p: Position)
+    comp_cell([K, Id], P) :- comps.label([K, _], P, Id).
+
+    .init comp_size = Tally<KI, Position>
+    comp_size.item(K, P) :- comp_cell(K, P).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// The cells a case repaints, with their new color.
+.decl repaint(p: Position, col: Color, ch: Choice)
+
+.decl impl_choice(ch: Choice)
+impl_choice($Threshold()). impl_choice($Lookup()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- repaint(P, Col, Ch).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !repaint(P, _, Ch).
+
+// --- Threshold ---
+
+repaint(P, Col, $Threshold()) :-
+    parse.comp_cell(K, P), parse.comp_size.tally(K, N),   // component cell with its size
+    c.max_size(Max), N <= Max,                            // small enough to act
+    c.paint(Col).
+
+// --- Lookup ---
+
+repaint(P, Col, $Lookup()) :-
+    parse.comp_cell(K, P), parse.comp_size.tally(K, N),   // component cell with its size
+    c.size_paint(N, Col).                                 // the color its size selects
+
+// --- fit ---
+
+.comp Fit {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    .decl size_paint(n: number, col: Color)
+    size_paint(N, Col) :-
+        parse.comp_cell([E, Id], P), parse.comp_size.tally([E, Id], N),   // component cell with its size
+        ex_in(E, P, C_in), ex_out(E, P, Col), Col != C_in.                // the cell repainted to Col
+}
