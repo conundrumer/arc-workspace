@@ -58,7 +58,7 @@ def worker(s, it, phase="refine", state="idle", turn_seq=1):
     w = {"item_id": it["id"], "phase": phase, "state": state,
          "turn_seq": turn_seq, "outbound": queue.Queue(), "seen": set(),
          "session_seen": True, "handoff": False, "got_result": False,
-         "started": None, "trigger": None, "think_run": 0}
+         "started": None, "trigger": None, "think_run": 0, "reqs": {}}
     s.PROCS[(it["id"], phase)] = w
     return w
 
@@ -302,14 +302,14 @@ def test_cost_baseline_resets_when_the_running_total_restarts(srv):
     assert "5h 1.00%" in it["feed"][-1]["text"]
 
 
-def test_cache_write_sums_the_turn_requests(srv):
+def test_cache_figures_sum_the_turn_requests(srv):
     it = item(srv, "a", srv.NEEDS_REVIEW)
     ev = usage_result(26343, 437)
     ev["usage"]["iterations"].insert(0, {
         "input_tokens": 1, "cache_read_input_tokens": 100,
         "cache_creation_input_tokens": 20000})
     srv.finish_turn(it, ev, None, time.time(), "refine", False)
-    assert "cache r 26,343 w 20,437" in it["feed"][-1]["text"]
+    assert "cache r 26,443 w 20,437" in it["feed"][-1]["text"]
 
 
 def test_context_percentage_uses_last_iteration_and_reported_window(srv):
@@ -332,6 +332,58 @@ def test_model_usage_with_null_counters_still_lands(srv):
         "contextWindow": 200000, "canonicalModel": "claude-opus-5"}
     srv.finish_turn(it, ev, None, time.time(), "refine", False)
     assert "cache r 21,000" in it["feed"][-1]["text"]
+
+
+def assist_usage(mid, read, write, sub=False):
+    ev = {"type": "assistant", "message": {"id": mid,
+          "usage": {"input_tokens": 10, "cache_read_input_tokens": read,
+                    "cache_creation_input_tokens": write},
+          "content": [{"type": "tool_use", "name": "Bash",
+                       "input": {"command": "true"}, "id": "tu-" + mid}]}}
+    if sub:
+        ev["parent_tool_use_id"] = "parent"
+    return ev
+
+
+def test_turn_figures_come_from_the_stream_not_the_result_event(srv):
+    it = item(srv, "a", srv.COMMENTED)
+    w = worker(srv, it, state="running")
+    w["started"] = time.time()
+    srv.handle_event(w, assist_usage("m1", 0, 30000), None)
+    srv.handle_event(w, assist_usage("m1", 0, 30000), None)  # block repeat
+    srv.handle_event(w, assist_usage("m2", 30000, 500), None)
+    srv.handle_event(w, assist_usage("m3", 999999, 999999, sub=True), None)
+    ev = dict(usage_result(30500, 500), type="result",
+              terminal_reason="completed")
+    srv.handle_event(w, ev, None)
+    assert "cache r 30,000 w 30,500" in it["feed"][-1]["text"]
+    assert w["reqs"] == {}
+
+
+def test_cold_resume_first_request_is_a_drop(srv):
+    it = item(srv, "a", srv.COMMENTED, cache_read={"refine": 211844})
+    w = worker(srv, it, state="running")
+    w["started"] = time.time()
+    srv.handle_event(w, assist_usage("m1", 0, 214044), None)
+    srv.handle_event(w, assist_usage("m2", 214044, 145), None)
+    ev = dict(usage_result(214189, 145), type="result",
+              terminal_reason="completed")
+    srv.handle_event(w, ev, None)
+    assert "⚠ DROP 211,844→0" in it["feed"][-1]["text"]
+
+
+def test_respawn_keeps_the_cache_baseline_for_a_resumed_session(srv, monkeypatch):
+    import types
+    monkeypatch.setattr(srv, "FAKE", True)
+    monkeypatch.setattr(srv, "start_worker_threads", lambda w: None)
+    monkeypatch.setattr(srv.subprocess, "Popen",
+                        lambda *a, **k: types.SimpleNamespace())
+    it = item(srv, "a", srv.NEEDS_REVIEW,
+              cache_read={"refine": 1000, "create": 500})
+    srv.spawn_worker(it, "refine")  # sessions["refine"] is recorded
+    assert it["cache_read"]["refine"] == 1000
+    srv.spawn_worker(it, "create")  # no create session to resume
+    assert "create" not in it["cache_read"]
 
 
 def test_result_crash_still_frees_the_worker(srv, monkeypatch):

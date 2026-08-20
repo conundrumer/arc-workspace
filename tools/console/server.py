@@ -478,7 +478,7 @@ def adopt_workers(manifest: dict) -> None:
                       "outbound": queue.Queue(), "state": "idle",
                       "turn_seq": int(entry.get("turn_seq", 0)), "started": None,
                       "trigger": None, "handoff": False, "seen": set(),
-                      "got_result": False, "think_run": 0,
+                      "got_result": False, "think_run": 0, "reqs": {},
                       "session_seen": bool(entry.get("session"))}
             PROCS[(item_id, phase)] = worker
             start_worker_threads(worker)
@@ -582,7 +582,8 @@ def launch(it: dict, message: str, phase: str, trigger: str | None = None,
                  "proposals": prop_text(), "dirty": it["dirty"], "files": {}}
     worker["turn_seq"] += 1
     worker.update(state="sending", started=time.time(), trigger=trigger,
-                  handoff=handoff, seen=set(), got_result=False, think_run=0)
+                  handoff=handoff, seen=set(), got_result=False, think_run=0,
+                  reqs={})
     worker["outbound"].put_nowait({"type": "user",
         "message": {"role": "user", "content": message}})
 
@@ -609,10 +610,14 @@ def spawn_worker(it: dict, phase: str) -> dict:
     worker = {"item_id": item_id, "phase": phase, "proc": proc,
               "outbound": queue.Queue(), "state": "spawning", "turn_seq": 0,
               "started": None, "trigger": None, "handoff": False, "seen": set(),
-              "got_result": False, "session_seen": False, "think_run": 0}
+              "got_result": False, "session_seen": False, "think_run": 0,
+              "reqs": {}}
     # A new process restarts the session's running totals.
     it.setdefault("cost_seen", {})[phase] = {"total": 0, "fable": 0}
-    it.setdefault("cache_read", {}).pop(phase, None)
+    # A resumed session keeps its context, so its cache baseline stands and
+    # a cold resume shows up as a DROP.
+    if not it["sessions"].get(phase):
+        it.setdefault("cache_read", {}).pop(phase, None)
     it.setdefault("runaway", {}).pop(phase, None)
     PROCS[(item_id, phase)] = worker
     start_worker_threads(worker)
@@ -715,6 +720,12 @@ def handle_event(worker: dict, ev: dict, first_response) -> None:
             msg = ev.get("message", {})
             mid = msg.get("id") or ""
             sub = bool(ev.get("parent_tool_use_id"))
+            usage = msg.get("usage")
+            if usage and mid and not sub and \
+                    worker["state"] in ("sending", "running"):
+                # One entry per request; a request's block events repeat the
+                # same usage. Subagent requests run their own context.
+                worker.setdefault("reqs", {})[mid] = usage
             for block in msg.get("content", []):
                 entry, key = None, None
                 if block.get("type") == "text" and block.get("text", "").strip():
@@ -765,7 +776,8 @@ def handle_event(worker: dict, ev: dict, first_response) -> None:
             try:
                 if reason == "completed":
                     finish_turn(it, ev, worker["trigger"], worker["started"],
-                                phase, handoff)
+                                phase, handoff,
+                                list(worker.get("reqs", {}).values()))
                 elif escalate:
                     pass  # the interrupt we sent landed; relaunched below
                 elif reason == "aborted_streaming":
@@ -779,7 +791,7 @@ def handle_event(worker: dict, ev: dict, first_response) -> None:
                 # a wedged "running" state would block sends and reloads.
                 worker.update(state="idle", started=None, trigger=None,
                               handoff=False, seen=set(), got_result=False,
-                              think_run=0)
+                              think_run=0, reqs={})
             if escalate and reason != "completed":
                 escalate_turn(it, phase, escalate, handoff)
 
@@ -874,10 +886,15 @@ def limiting_window(model: str) -> str | None:
     return max(rows, key=lambda u: u["pct"])["label"]
 
 
-def turn_usage(it: dict, ev: dict, phase: str) -> str:
-    """Record the request-level cache and context facts used by the UI."""
-    iterations = (ev.get("usage") or {}).get("iterations") or []
-    requests = [x for x in iterations if isinstance(x, dict)]
+def turn_usage(it: dict, ev: dict, phase: str,
+               reqs: list | None = None) -> str:
+    """Record the request-level cache and context facts used by the UI.
+    `reqs` holds the per-request usage collected from the turn's stream
+    events; the result event's iterations carry only the final request."""
+    requests = [u for u in (reqs or []) if isinstance(u, dict)]
+    if not requests:
+        iterations = (ev.get("usage") or {}).get("iterations") or []
+        requests = [x for x in iterations if isinstance(x, dict)]
     if not requests:
         return ""
 
@@ -891,15 +908,16 @@ def turn_usage(it: dict, ev: dict, phase: str) -> str:
             previous = cache_read
     it["cache_read"][phase] = previous
     last = requests[-1]
-    cache_read = last.get("cache_read_input_tokens") or 0
+    cache_read = sum(r.get("cache_read_input_tokens") or 0 for r in requests)
     written = sum(r.get("cache_creation_input_tokens") or 0 for r in requests)
     parts = [f"cache r {cache_read:,} w {written:,}"]
     if drops:
         before, after = drops[-1]
         parts.append(f"⚠ DROP {before:,}→{after:,}")
 
-    # The final prompt size is the last request's, not the turn's write sum.
-    used = (cache_read + (last.get("cache_creation_input_tokens") or 0)
+    # The final prompt size is the last request's, not the turn's sums.
+    used = ((last.get("cache_read_input_tokens") or 0)
+            + (last.get("cache_creation_input_tokens") or 0)
             + (last.get("input_tokens") or 0))
     candidates = [(name, usage) for name, usage in (ev.get("modelUsage") or {}).items()
                   if isinstance(usage, dict) and usage.get("contextWindow")]
@@ -924,7 +942,8 @@ def turn_usage(it: dict, ev: dict, phase: str) -> str:
 
 
 def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
-                phase: str, handoff: bool) -> None:
+                phase: str, handoff: bool,
+                reqs: list | None = None) -> None:
     it["rev"] = it.get("rev", 0) + 1
     text = (ev.get("result") or "").strip()
     if text:
@@ -946,7 +965,7 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
     mins = (time.time() - started) / 60
     note = f"turn done · {mins:.0f}m" if mins >= 1 else "turn done · <1m"
     note += quota_note(it, ev, phase)
-    usage = turn_usage(it, ev, phase)
+    usage = turn_usage(it, ev, phase, reqs)
     say(it, event(note + (" · " + usage if usage else "")), sess=phase)
     # the create pass ends in prune, and the refine pass is itself the quality
     # pass, so each phase's first landing is clean by cadence

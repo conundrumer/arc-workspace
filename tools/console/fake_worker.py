@@ -16,30 +16,49 @@ pending = deque()
 turn = 0
 
 
+reqno = 0
+cached = 0
+
+
 def emit(obj):
     print(json.dumps(obj), flush=True)
 
 
+def usage_for():
+    """One request's usage; the stream repeats it on the request's block events."""
+    global reqno, cached
+    reqno += 1
+    delta = 27000 if cached == 0 else 250
+    usage = {"input_tokens": 10, "output_tokens": 100,
+             "cache_read_input_tokens": cached,
+             "cache_creation_input_tokens": delta,
+             "cache_creation": {"ephemeral_1h_input_tokens": delta}}
+    cached += delta
+    return usage
+
+
 def tool(name, **inp):
+    usage = usage_for()
     emit({"type": "assistant",
-          "message": {"content": [{"type": "tool_use", "name": name, "input": inp}]}})
+          "message": {"id": f"msg-{reqno}", "usage": usage,
+                      "content": [{"type": "tool_use", "name": name, "input": inp}]}})
 
 
 def result(text, reason="completed"):
     if reason == "completed":
-        emit({"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}})
-        cache_read = max(0, 27000 + (turn - 1) * 1000)
-        cache_write = 27000 if turn == 1 else 250
+        usage = usage_for()
+        emit({"type": "assistant", "message": {"id": f"msg-{reqno}", "usage": usage,
+              "content": [{"type": "text", "text": text}]}})
         emit({"type": "result", "subtype": "success", "terminal_reason": reason,
               "result": text, "is_error": False, "total_cost_usd": round(turn * .12, 2),
               "duration_ms": 6000, "session_id": sid,
-              "usage": {"iterations": [{"input_tokens": 10,
-                  "output_tokens": 100, "cache_read_input_tokens": cache_read,
-                  "cache_creation_input_tokens": cache_write,
-                  "cache_creation": {"ephemeral_1h_input_tokens": cache_write}}]},
+              # the CLI's result event carries only the final request
+              "usage": {"iterations": [usage]},
               "modelUsage": {"claude-fable-5": {"inputTokens": turn * 10,
-                  "outputTokens": turn * 100, "cacheReadInputTokens": cache_read,
-                  "cacheCreationInputTokens": cache_write, "costUSD": turn * .12,
+                  "outputTokens": turn * 100,
+                  "cacheReadInputTokens": usage["cache_read_input_tokens"],
+                  "cacheCreationInputTokens": usage["cache_creation_input_tokens"],
+                  "costUSD": turn * .12,
                   "contextWindow": 200000, "canonicalModel": "claude-fable-5"}}})
     else:
         emit({"type": "result", "subtype": "error_during_execution",
@@ -105,6 +124,7 @@ def run_turn(message):
         # The live stream never carries stop_reason; a runaway shows up as
         # thinking_tokens progress with no tool_use or text between.
         emit({"type": "assistant", "message": {"id": f"msg-runaway-{turn}",
+              "usage": usage_for(),
               "content": [{"type": "thinking", "thinking": ""}]}})
         thought = 0
         while True:
