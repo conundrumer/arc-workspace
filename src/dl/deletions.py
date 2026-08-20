@@ -1,6 +1,7 @@
 """Delete structure from a solver and report what the pairs still accept."""
 
 import re
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 
 from arc.task import load as load_task
@@ -12,6 +13,8 @@ from dl.souffle import _pool_workers
 from dl.source import _comp_span
 
 NEG_ATOM_RE = re.compile(r"(?<![=!])!(?!=)\s*[\w.]+\s*\(")
+
+type Deletion = tuple[int, str, str, str]  # lineno, kind, text, modified source
 
 
 def _rule_spans(source: str, fit: bool = False) -> list[tuple[int, int]]:
@@ -73,14 +76,32 @@ def _drop_atom(code: str, start: int, end: int) -> str:
     return code[:start] + code[end:]
 
 
-def deletions(source: str, fit: bool = False):
+def _parses(source: str) -> bool:
+    try:
+        parse(source)
+    except ParseError:
+        return False
+    return True
+
+
+def deletions(source: str, fit: bool = False) -> Iterator[Deletion]:
     """Yield (lineno, kind, text, modified_source) structural deletions.
 
     Kinds: 'rule' deletes the whole rule; 'negation' deletes one negated
     body atom; 'disjunct' deletes one branch of a disjunction (either
     way the modified rule collapses to one line). With `fit`, the
     deletions come from the Fit comp's rules; otherwise from the rest.
+
+    A deletion with no syntactic form — a negation that is the whole of
+    a disjunct, say — is skipped rather than yielded malformed.
     """
+    strict = _parses(source)
+    for item in _variants(source, fit):
+        if not strict or _parses(item[3]):
+            yield item
+
+
+def _variants(source: str, fit: bool) -> Iterator[Deletion]:
     lines = source.splitlines()
     for a, b in _rule_spans(source, fit):
         rule = " ".join(ln.split("//")[0].strip() for ln in lines[a:b + 1])
@@ -147,7 +168,7 @@ def _drop_column(source: str, name: str, col: int) -> str | None:
     return "".join(out)
 
 
-def column_deletions(source: str):
+def column_deletions(source: str) -> Iterator[Deletion]:
     """Yield (lineno, 'column', 'name.field', modified_source): one
     column dropped from a top-level relation, everywhere it appears. A
     drop that breaks the program reads as a change, so only a column no
@@ -169,10 +190,11 @@ def deletion_report(stem: str) -> tuple[int, list[tuple[int, str, str]]] | None:
     """Structural deletions that change no pair's output or derived fill.
 
     A deletion that changes nothing removed structure the pairs never
-    instantiate. Fit deletions are judged by the fit check instead of the
-    variant profile. Informational — such a deletion points at an
-    unwitnessed guard or rule, not a violation. None when the stored
-    source itself fails.
+    instantiate. Deletions from the Fit comp are judged by the fit check;
+    the rest must hold the variant profile and, where the solver fits,
+    the fit check too — body and Parse rules feed both. Informational —
+    such a deletion points at an unwitnessed guard or rule, not a
+    violation. None when the stored source itself fails.
     """
     source = (SOLVERS_DIR / f"{stem}.dl").read_text()
     task = load_task(stem.split("_", 1)[0])
@@ -181,20 +203,24 @@ def deletion_report(stem: str) -> tuple[int, list[tuple[int, str, str]]] | None:
     if reference is None:
         return None
 
-    def fit_ok(src):
+    def fit_ok(src: str) -> bool:
         r = fit_check(src, task)
         return r is not None and not r.error and not r.diff
 
+    fits = fit_ok(source)
     dels = [("solve", d) for d in deletions(source)]
     dels += [("solve", d) for d in column_deletions(source)]
-    if fit_ok(source):
+    if fits:
         dels += [("fit", d) for d in deletions(source, fit=True)]
 
-    def test(tagged):
+    def test(tagged: tuple[str, Deletion]) -> tuple[int, str, str] | None:
         mode, (lineno, kind, text, mod) = tagged
         if mode == "solve":
-            no_change = _profile(mod, examples) == reference
-            return (lineno, kind, text) if no_change else None
+            # The fit check is the expensive one, so it waits on the
+            # profile, which most deletions already fail.
+            if _profile(mod, examples) != reference:
+                return None
+            return (lineno, kind, text) if not fits or fit_ok(mod) else None
         return (lineno, f"fit {kind}", text) if fit_ok(mod) else None
 
     with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
