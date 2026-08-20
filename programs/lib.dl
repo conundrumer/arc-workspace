@@ -1040,12 +1040,15 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     .decl step(delta: Position)
     step([-1, 1, 0, 0]). step([1, -1, 0, 0]). step([0, 0, -1, 1]). step([0, 0, 1, -1]).
 
-    .decl conn(key: Key, p: Position, q: Position)
-    conn(Ky, P, P)  :- node(Ky, P).
-    conn(Ky, P, Q2) :- conn(Ky, P, Q1), step(D), compose(Q1, D, Q2), node(Ky, Q2).
-
+    // Min-label propagation: every node proposes its own id, and
+    // subsumption keeps each component's minimum.
     .decl label(key: Key, p: Position, id: Ident)
-    label(Ky, P, as(Min, Ident)) :- node(Ky, P), Min = min ord(Q) : { conn(Ky, P, Q) }.
+    label(Ky, P, as(ord(P), Ident)) :- node(Ky, P).
+    label(Ky, Q, Id) :- label(Ky, P, Id), step(D), compose(P, D, Q), node(Ky, Q).
+    label(Ky, P, Id) <= label(Ky, P, Id2) :- Id2 < Id.
+
+    .decl conn(key: Key, p: Position, q: Position)
+    conn(Ky, P, Q) :- label(Ky, P, Id), label(Ky, Q, Id).
 }
 
 // Connected components under 8-adjacency — Components over the full
