@@ -2,6 +2,7 @@
 
 import argparse
 import sys
+import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 
@@ -82,11 +83,13 @@ def _missing(stem: str) -> bool:
     return True
 
 
-def cmd_one(stem: str, hints: bool = False) -> int:
+def cmd_one(stem: str, hints: bool = False, timed: bool = False) -> int:
     if _missing(stem):
         return 2
     build_functors()
+    t0 = time.perf_counter()
     result = run_task(stem)
+    pair_secs = time.perf_counter() - t0
     for p in result.pairs:
         if p.ok:
             n = len(p.variants)
@@ -113,7 +116,9 @@ def cmd_one(stem: str, hints: bool = False) -> int:
         for cat, lineno, match, _ in findings:
             print(f"  {_finding_line(stem, label, cat, lineno, match)}")
 
+    t0 = time.perf_counter()
     fit = run_fit(stem)
+    fit_secs = time.perf_counter() - t0
     print()
     if not any(tiers):
         print("lint: ok")
@@ -121,10 +126,17 @@ def cmd_one(stem: str, hints: bool = False) -> int:
         for line in render_fit(fit):
             print(line)
 
+    if timed:
+        parts = [f"pairs {pair_secs:.1f}s"]
+        if fit is not None:
+            parts.append(f"fit {fit_secs:.1f}s")
+        print()
+        print(f"time: {', '.join(parts)}")
+
     return 0 if result.all_pass else 1
 
 
-def cmd_all(hints: bool = False) -> int:
+def cmd_all(hints: bool = False, timed: bool = False) -> int:
     build_functors()
     stems = all_stems()
 
@@ -133,12 +145,18 @@ def cmd_all(hints: bool = False) -> int:
     for stem in stems:
         all_work.extend(_pair_work(stem))
 
+    def timed_pair(w) -> tuple[PairResult, float]:
+        t0 = time.perf_counter()
+        return run_pair(*w), time.perf_counter() - t0
+
     with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
-        all_pairs = list(executor.map(lambda w: run_pair(*w), all_work))
+        outcomes = list(executor.map(timed_pair, all_work))
 
     by_stem: dict[str, list[PairResult]] = defaultdict(list)
-    for w, p in zip(all_work, all_pairs, strict=True):
+    pair_secs: dict[str, float] = defaultdict(float)
+    for w, (p, dt) in zip(all_work, outcomes, strict=True):
         by_stem[w[0]].append(p)
+        pair_secs[w[0]] += dt
     results = [TaskResult(stem=stem, pairs=by_stem.get(stem, [])) for stem in stems]
 
     for r in results:
@@ -172,10 +190,13 @@ def cmd_all(hints: bool = False) -> int:
     _print_findings(stems, hints)
 
     fit_results: dict[str, FitResult] = {}
+    fit_secs: dict[str, float] = {}
     for stem in stems:
+        t0 = time.perf_counter()
         r = run_fit(stem)
         if r is not None:
             fit_results[stem] = r
+            fit_secs[stem] = time.perf_counter() - t0
     if fit_results:
         problems = {
             s: r for s, r in fit_results.items() if r.diff or r.error or r.circular
@@ -186,6 +207,17 @@ def cmd_all(hints: bool = False) -> int:
         for s in sorted(problems):
             for line in render_fit(problems[s]):
                 print(f"  {s}.dl: {line}")
+
+    if timed:
+        ranked = sorted(
+            ((pair_secs[s] + fit_secs.get(s, 0.0), s) for s in stems),
+            reverse=True,
+        )
+        print()
+        print("--- times: slowest 15 (wall seconds) ---")
+        for total, s in ranked[:15]:
+            fit_part = (f", fit {fit_secs[s]:.1f}" if s in fit_secs else "")
+            print(f"  {total:5.1f}  {s}  (pairs {pair_secs[s]:.1f}{fit_part})")
 
     print()
     print(f"summary: {len(results) - len(failed)}/{len(results)} solvers")
@@ -262,6 +294,9 @@ def _parser() -> argparse.ArgumentParser:
                        help="one solver; all of them when omitted")
         p.add_argument("--hints", action=argparse.BooleanOptionalAction,
                        default=True, help="include the hint tier")
+    run.add_argument("--time", action="store_true", dest="timed",
+                     help="print wall times: per phase for one solver, "
+                          "slowest 15 for a full run")
 
     sweep = sub.add_parser("sweep", help="fill sweep only")
     sweep.add_argument("stem")
@@ -293,5 +328,5 @@ def main(argv: list[str]) -> int:
             return cmd_fit_plan(args.stem)
         case _:
             if args.stem:
-                return cmd_one(args.stem, args.hints)
-            return cmd_all(args.hints)
+                return cmd_one(args.stem, args.hints, args.timed)
+            return cmd_all(args.hints, args.timed)
