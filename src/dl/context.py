@@ -112,17 +112,10 @@ def lib_signatures(text: str) -> str:
     return LIB_PREAMBLE + re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip() + "\n"
 
 
-def gist(para: str, floor: int = 130, cap: int = 2) -> str:
-    """An entry's opening sentences, to the first one that both carries the
-    claim and closes it. One sentence carries an entry when it is long enough
-    to state the whole claim; past `cap` the detail belongs to the entry."""
-    said: list[str] = []
-    for sentence in re.split(r"(?<=\.)\s+(?=[A-Z`\"(])", para):
-        said.append(sentence)
-        text = " ".join(said)
-        if (len(text) >= floor or len(said) >= cap) and not text.endswith(":"):
-            return text
-    return " ".join(said)
+def gist(para: str) -> str:
+    """An entry's first sentence — the catalog docs' convention is that it
+    stands alone under its title."""
+    return re.split(r"(?<=\.)\s+(?=[A-Z`\"(])", para, maxsplit=1)[0]
 
 
 def entry_index(text: str, source: str) -> str:

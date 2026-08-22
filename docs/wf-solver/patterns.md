@@ -4,6 +4,8 @@ Patterns observed across `.dl` solvers. Distinct from `style.md` (rules every so
 
 This list is descriptive, not prescriptive; the `.dl` files are the source of truth. It exists so future sessions can scan what has been used.
 
+An entry's first sentence is its index line, read under the entry's title: it stands alone, and criteria and guards start after it.
+
 ## Multiple modeling forms via ADT `Choice`
 
 Multiple models live in one solver file as cases of an ADT `Choice` column on `out`. Cases can be more than two, may carry their own per-case data, and may nest (a case's data can itself be an ADT). Each case fires its own rules; the runner emits each as a candidate.
@@ -45,7 +47,7 @@ The relation is `impl_choice`, the column `ch`, corpus-wide.
 
 ## `GRID_HxW` for grid data
 
-A `GRID_HxW` call emits one position-keyed fact per cell, in row-major order. The runner expands the call before Souffle sees the file; GRID is not defined in `lib.dl`. H and W are the grid's dims and take any size, so a call carries H·W cell values. Cells can hold any per-cell data: colors, labels, transforms. A distinguished cell is a Position fact, not a cell value (27a28665 `center_pos`).
+A GRID call stores a grid as a literal layout, one fact per cell in row-major order: `GRID_HxW` emits every cell with its value; `GRID_MASK_HxW` and `GRID_SPARSE_HxW` emit only the nonzero cells. The runner expands the call before Souffle sees the file; GRID is not defined in `lib.dl`. H and W are the grid's dims and take any size, so a call carries H·W cell values. Cells can hold any per-cell data: colors, labels, transforms. A distinguished cell is a Position fact, not a cell value (27a28665 `center_pos`).
 
 ```
 .decl template(p: Position, col: Color)
@@ -192,7 +194,7 @@ mapping(B, A) :- mapping(A, B).
 
 ## `divide_by_size` (K, G) parameter space
 
-Step size between tile starts is `K + G`. Different (K, G) splits of the same step model the same periodic layout with different tile/gap semantics.
+Different (K, G) splits of one step size model the same periodic layout with different tile/gap semantics. The step between tile starts is `K + G`.
 
 For a frame extent H and effective step S = K + G, divisibility requires `(H + G) % S = 0`.
 
@@ -239,7 +241,7 @@ Derivation is long by nature: a rule that quantifies over an index emits one row
 
 ## Universals via defect negation
 
-Datalog has no forall. "Every member of a closed domain satisfies R" is stated through a defect witness: one rule derives the keys where some member fails; the universal is its negation. A member missing from the tested relation is a defect, so existence and agreement are one test.
+"Every member of a closed domain satisfies R" is stated through a defect witness, since Datalog has no forall: one rule derives the keys where some member fails; the universal is its negation. A member missing from the tested relation is a defect, so existence and agreement are one test.
 
 ```
 broken(P, Col) :- arm(P, _, Col), dir_elem(D), !arm(P, D, Col).

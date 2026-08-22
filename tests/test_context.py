@@ -64,7 +64,7 @@ Pairs an input cell with its axis split.
         "What the doc is.\n\n"
         "One line per entry. Read docs/wf-solver/patterns.md for the entries you need.\n\n"
         "- **Boxes as margin Positions** — A rectangular region is one Position:"
-        " its four edge margins. `geq(P, M)` expands a box to its cells.\n"
+        " its four edge margins.\n"
         "- **`cell_split`** — Pairs an input cell with its axis split.\n")
 
 
