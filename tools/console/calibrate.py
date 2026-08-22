@@ -45,12 +45,17 @@ CACHE_WRITE_1H = 2.0
 CACHE_READ = 0.1
 
 
+def rates(model: str) -> tuple[float, float] | None:
+    """The (input, output) rates for a model id, which may carry a date suffix."""
+    return next((v for k, v in PRICES.items() if model.startswith(k)), None)
+
+
 def price(model: str, usage: dict) -> float | None:
     """Cost of one assistant message, matching what the CLI reports."""
-    rates = next((v for k, v in PRICES.items() if model.startswith(k)), None)
-    if rates is None:
+    pair = rates(model)
+    if pair is None:
         return None
-    p_in, p_out = rates
+    p_in, p_out = pair
     t = quota.tally(usage)
     return (
         t["in"] * p_in
