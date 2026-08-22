@@ -124,9 +124,7 @@ render_choice($Grow()). render_choice($Fit()). render_choice($Stamp()).
 
 // The rotation carrying drawn corner Dm to the located corner.
 .decl rot_to(l: Locate, dm: DiagDir, r: D4)
-rot_to(L, Dm, R) :-
-    diag(L, Diag), diag_dir_elem(Dm), c4_elem(R),
-    diag_step_delta(Dm, S1), apply(R, S1, S2), diag_step_delta(Diag, S2).
+rot_to(L, Dm, R) :- diag(L, Diag), c4_elem(R), apply_diag_dir(R, Dm, Diag).
 
 // The first square: the stored box, rotated to the located corner.
 .decl box0(l: Locate, m: Position)

@@ -150,6 +150,17 @@ d4_elem(D4_TB).
 d4_elem(D4_DG).
 d4_elem(D4_AD).
 
+// Group inverse.
+.decl d4_inverse(d: D4, d_inv: D4)
+d4_inverse(D4_ID, D4_ID).
+d4_inverse(D4_CW, D4_CC).
+d4_inverse(D4_HT, D4_HT).
+d4_inverse(D4_CC, D4_CW).
+d4_inverse(D4_LR, D4_LR).
+d4_inverse(D4_TB, D4_TB).
+d4_inverse(D4_DG, D4_DG).
+d4_inverse(D4_AD, D4_AD).
+
 .decl sym_elem(s: Sym)
 sym_elem(SYM_1).
 sym_elem(SYM_LR).
@@ -318,6 +329,23 @@ sub_extent(P, A, K) :- axis_dim(P, A, N), K = range(1, N).
 .decl apply(d: D4, p: Position, p_out: Position) inline
 apply(D, P, [@apply_t(D, T, B, L, R), @apply_b(D, T, B, L, R),
              @apply_l(D, T, B, L, R), @apply_r(D, T, B, L, R)]) :- P = [T, B, L, R].
+
+// The D4 action on directions — the direction peer of apply. One relation
+// per direction type; a site takes the one its directions are typed in.
+.decl apply_dir(d: D4, dir: Dir, dir_out: Dir)
+apply_dir(D, Dir, Dir_out) :-
+    d4_elem(D), dir_elem(Dir), dir_elem(Dir_out),
+    step_delta(Dir, S), apply(D, S, S2), step_delta(Dir_out, S2).
+
+.decl apply_diag_dir(d: D4, dir: DiagDir, dir_out: DiagDir)
+apply_diag_dir(D, Dir, Dir_out) :-
+    d4_elem(D), diag_dir_elem(Dir), diag_dir_elem(Dir_out),
+    step_delta(Dir, S), apply(D, S, S2), step_delta(Dir_out, S2).
+
+.decl apply_dir8(d: D4, dir: Dir8, dir_out: Dir8)
+apply_dir8(D, Dir, Dir_out) :-
+    d4_elem(D), dir8_elem(Dir), dir8_elem(Dir_out),
+    step_delta(Dir, S), apply(D, S, S2), step_delta(Dir_out, S2).
 
 // Divide p's axis-a extent into n equal parts. p_outer is the tile
 // index in an n-strip frame; p_inner is the cell within the tile.
