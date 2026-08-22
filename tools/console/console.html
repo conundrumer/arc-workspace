@@ -338,6 +338,7 @@ button:disabled:hover { border-color:var(--border); }
 const ARC = ["#000000","#0074D9","#FF4136","#2ECC40","#FFDC00","#AAAAAA","#F012BE","#FF851B","#7FDBFF","#870C25"];
 const CHIPCLS = {"needs-review":"review","commented":"commented","running":"running","queued":"queued","approved":"approved","committed":"committed"};
 const TTL_MIN = 60;
+const TTL_ALERT = 10;   // minutes left when a cache goes hot and rings
 
 let seq = 0, wave = 0, items = [], selId = null, usage = [], progress = null, cli = {}, committerWas = false;
 
@@ -472,9 +473,54 @@ function cacheInfo(it){
   if(!la) return {cls:"none", txt:"—", sort:9e9};
   const rem = TTL_MIN - (Date.now()-la)/60000;
   if(rem<=0) return {cls:"cold", txt:"cold", sort:1e9};
-  const cls = rem<10?"hot":rem<30?"warn":"ok";
+  const cls = rem<TTL_ALERT?"hot":rem<30?"warn":"ok";
   return {cls, txt:Math.ceil(rem)+"m", sort:rem};
 }
+/* A cache crossing TTL_ALERT rings once. An item is armed while its
+   countdown sits above the threshold, so one first seen below it stays
+   silent and a reload does not replay crossings already past. A finished
+   turn moves lastActive forward, which arms the next cycle. */
+const ttlArmed = new Map();   // item id -> the lastActive it was armed for
+const TTL_QUIET = new Set(["approved","committed"]);   // settled, let them go cold
+
+function ttlWatch(){
+  for(const it of items){
+    if(it.active || TTL_QUIET.has(it.state) ||
+       !it.sessions || !it.sessions[it.phase]) continue;
+    const la = it.lastActive && it.lastActive[it.phase];
+    if(!la) continue;
+    const rem = TTL_MIN - (Date.now()-la)/60000;
+    if(rem>=TTL_ALERT) ttlArmed.set(it.id, la);
+    else if(rem>0 && ttlArmed.get(it.id)===la){ ttlArmed.delete(it.id); ding(); }
+  }
+}
+
+/* Two-tone chime. WebAudio opens suspended until the page has seen a
+   gesture, so the first click or keypress in the console unlocks it. */
+let actx = null;
+function audio(){
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if(!actx && Ctx) actx = new Ctx();
+  return actx;
+}
+function ding(){
+  const ac = audio();
+  if(!ac || ac.state!=="running") return;
+  const t0 = ac.currentTime;
+  [880, 1320].forEach((hz,i)=>{
+    const at = t0 + i*0.14;
+    const osc = ac.createOscillator(), gain = ac.createGain();
+    osc.type="sine"; osc.frequency.value=hz;
+    gain.gain.setValueAtTime(0.0001, at);
+    gain.gain.exponentialRampToValueAtTime(0.2, at+0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, at+0.3);
+    osc.connect(gain).connect(ac.destination);
+    osc.start(at); osc.stop(at+0.32);
+  });
+}
+for(const ev of ["pointerdown","keydown"])
+  addEventListener(ev, ()=>{ const ac=audio(); if(ac) ac.resume(); }, {once:true});
+
 function railOrder(){
   return [...items].sort((a,b)=>cacheInfo(a).sort-cacheInfo(b).sort).map(it=>it.id);
 }
@@ -980,6 +1026,7 @@ setInterval(()=>{
     el.textContent=fmtDur(Date.now()/1000-parseFloat(el.dataset.t0));
   });
   renderRail();
+  ttlWatch();
 },1000);
 </script>
 </body>
