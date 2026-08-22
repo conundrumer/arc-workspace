@@ -31,6 +31,7 @@ LIB_PREAMBLE = """\
 // Signatures only: rule bodies are dropped, and the facts of a top-level
 // lookup relation stand described by its comment. Inside a component, a
 // `.decl` marked `// input` is one the solver populates; the rest derive.
+// Names with a leading underscore are comp-internal and omitted here.
 // Read programs/lib.dl for a body.
 
 """
@@ -44,19 +45,29 @@ def lib_signatures(text: str) -> str:
     a boundary — blank line, comment, the next declaration — is marked
     `// input`, the lib convention for a relation the caller populates.
     Rules are dropped everywhere; facts are kept only inside a component,
-    where the default fill is part of the interface.
+    where the default fill is part of the interface. An underscore-named
+    item is comp-internal: dropped, with the comment block above it.
     """
     program = parse(text)
     lines = text.splitlines()
     keep: set[int] = set()
+    hidden: set[int] = set()       # underscore-named internals
     stmt_lines: set[int] = set()   # lines of rules and facts
     decls: list[Decl] = []
 
     def walk(items: list[Item], in_comp: bool) -> None:
         for it in items:
             if isinstance(it, (Define, Functor, TypeDecl, Init)):
+                name = (it.name if isinstance(it, TypeDecl)
+                        else it.inst if isinstance(it, Init) else "")
+                if name.startswith("_"):
+                    hidden.add(it.line)
+                    continue
                 keep.add(it.line)
             elif isinstance(it, Decl):
+                if it.name.startswith("_"):
+                    hidden.update(range(it.line, it.end_line + 1))
+                    continue
                 keep.update(range(it.line, it.end_line + 1))
                 decls.append(it)
             elif isinstance(it, Comp):
@@ -69,6 +80,14 @@ def lib_signatures(text: str) -> str:
                     keep.update(range(it.line, it.end_line + 1))
     walk(program.items, False)
     keep.update(c.line for c in program.comments if c.own_line)
+
+    comment_lines = {c.line for c in program.comments if c.own_line}
+    for ln in sorted(hidden):
+        probe = ln - 1
+        while probe in comment_lines and probe not in hidden:
+            hidden.add(probe)
+            probe -= 1
+    keep -= hidden
 
     inputs: set[int] = set()   # decl start lines to mark // input
     for decl in decls:

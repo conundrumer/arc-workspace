@@ -994,8 +994,8 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     .decl cell(key: Key, p: Position, v: Val)
 
     // Internal keys tag a candidate shift; members are its line pairs.
-    .type SK = [key: Key, a: Axis, k: number]
-    .type LP = [l: Position, l2: Position]
+    .type _SK = [key: Key, a: Axis, k: number]
+    .type _LP = [l: Position, l2: Position]
 
     // Candidate shifts: every axis-aligned delta the frame admits, tagged
     // (axis, k), with both directions of a magnitude sharing a tag.
@@ -1005,35 +1005,53 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
         axis_of(D, A), sub_extent(P, A, K),
         jump_delta(D, K, Delta).
 
+    // One delta per magnitude: the other direction pairs the same cells
+    // transposed, so the public readouts rebuild symmetric rows by transpose
+    // at half the join work. The corner read is unobservable — no readout
+    // distinguishes a magnitude's directions.
+    .decl _cand(key: Key, a: Axis, k: number, delta: Shift)
+    _cand(Ky, A, K, Delta) :-
+        cell(Ky, P, _),
+        dir_of(DIAG_BR, A, D), sub_extent(P, A, K),
+        jump_delta(D, K, Delta).
+
+    .decl _pair(key: Key, a: Axis, k: number, p: Position, q: Position)
+    _pair(Ky, A, K, P, Q) :-
+        cell(Ky, P, _), _cand(Ky, A, K, Delta), compose(P, Delta, Q), cell(Ky, Q, _).
+
     // A candidate's cell pairings: q is p's image, both in the set.
     .decl pair(key: Key, a: Axis, k: number, p: Position, q: Position)
-    pair(Ky, A, K, P, Q) :-
-        cell(Ky, P, _), cand(Ky, A, K, Delta), compose(P, Delta, Q), cell(Ky, Q, _).
+    pair(Ky, A, K, P, Q) :- _pair(Ky, A, K, P, Q).
+    pair(Ky, A, K, Q, P) :- _pair(Ky, A, K, P, Q).
 
     // A violated shift: some cell whose image holds a different value.
     .decl mismatch(key: Key, a: Axis, k: number)
     mismatch(Ky, A, K) :-
-        pair(Ky, A, K, P, Q), cell(Ky, P, V), cell(Ky, Q, V2), V != V2.
+        _pair(Ky, A, K, P, Q), cell(Ky, P, V), cell(Ky, Q, V2), V != V2.
+
+    .decl _line_mismatch(key: Key, a: Axis, k: number, l: Position, l2: Position)
+    _line_mismatch(Ky, A, K, L, L2) :-
+        _pair(Ky, A, K, P, Q), cell(Ky, P, V), cell(Ky, Q, V2), V != V2,
+        split(P, A, L, _), split(Q, A, L2, _).
 
     // A broken line pair: the shift carries some cell of the line at l
     // onto a differently-valued cell of the line at l2.
     .decl line_mismatch(key: Key, a: Axis, k: number, l: Position, l2: Position)
-    line_mismatch(Ky, A, K, L, L2) :-
-        pair(Ky, A, K, P, Q), cell(Ky, P, V), cell(Ky, Q, V2), V != V2,
-        split(P, A, L, _), split(Q, A, L2, _).
+    line_mismatch(Ky, A, K, L, L2) :- _line_mismatch(Ky, A, K, L, L2).
+    line_mismatch(Ky, A, K, L2, L) :- _line_mismatch(Ky, A, K, L, L2).
 
     // Broken line pairs against whole ones.
-    .init breaks = Excess<SK, LP>
-    breaks.plus([Ky, A, K], [L, L2]) :- line_mismatch(Ky, A, K, L, L2).
-    breaks.minus([Ky, A, K], [L, L2]) :-
-        pair(Ky, A, K, P, Q), split(P, A, L, _), split(Q, A, L2, _),
-        !line_mismatch(Ky, A, K, L, L2).
+    .init _breaks = Excess<_SK, _LP>
+    _breaks.plus([Ky, A, K], [L, L2]) :- _line_mismatch(Ky, A, K, L, L2).
+    _breaks.minus([Ky, A, K], [L, L2]) :-
+        _pair(Ky, A, K, P, Q), split(P, A, L, _), split(Q, A, L2, _),
+        !_line_mismatch(Ky, A, K, L, L2).
 
     // A period of the set's pattern, read through damage: broken line
     // pairs do not outnumber whole ones. Every multiple of a period is a
     // period, and a pair-less candidate is vacuously one.
     .decl period(key: Key, a: Axis, k: number)
-    period(Ky, A, K) :- cand(Ky, A, K, _), !breaks.excess([Ky, A, K], _).
+    period(Ky, A, K) :- cand(Ky, A, K, _), !_breaks.excess([Ky, A, K], _).
 }
 
 // Re-express keyed cells relative to a per-key outer origin: inner = cell
