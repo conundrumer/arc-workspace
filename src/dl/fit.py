@@ -38,8 +38,11 @@ def fit_check(source: str, task) -> FitResult | None:
         with tempfile.TemporaryDirectory() as facts_dir:
             for name, text in example_facts(task).items():
                 (Path(facts_dir) / name).write_text(text)
+            # One process carries every example, so the per-grid CPU budget
+            # scales by example count.
             stdout = _run_source(
-                build_fit_source(source, slots), "", ["-F", facts_dir]
+                build_fit_source(source, slots), "", ["-F", facts_dir],
+                cpu_limit=5 * (len(task.train) + len(task.test)),
             )
         rels = _parse_relations(stdout)
         diff = sorted({row.strip() for row in rels.get("fit_diff", [])})

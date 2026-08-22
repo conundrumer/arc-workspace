@@ -29,7 +29,8 @@ def build_functors() -> None:
 
 
 def _run_source(
-    built: str, stdin_text: str, extra_args: list[str] | None = None
+    built: str, stdin_text: str, extra_args: list[str] | None = None,
+    cpu_limit: int = 5,
 ) -> str:
     """Write built source to a tempfile and run Souffle on it.
 
@@ -42,13 +43,14 @@ def _run_source(
         tf.write(built)
         run_path = Path(tf.name)
     try:
-        return _souffle(run_path, stdin_text, extra_args)
+        return _souffle(run_path, stdin_text, extra_args, cpu_limit)
     finally:
         run_path.unlink(missing_ok=True)
 
 
 def _souffle(
-    dl_path: Path, stdin_text: str, extra_args: list[str] | None = None
+    dl_path: Path, stdin_text: str, extra_args: list[str] | None = None,
+    cpu_limit: int = 5,
 ) -> str:
     # -L/-lfunctors load the functor shared library build_functors compiled —
     # lib.dl's primitives call into it.
@@ -57,20 +59,21 @@ def _souffle(
     # and exhaust system memory). The kernel CPU-time limit (`ulimit -t`, via
     # a sh wrapper — preexec_fn is unsafe under threads) counts only souffle's
     # own burn, so system load and EDR spawn stalls can't fake a failure. The
-    # wall timeout backstops hangs that block without spinning; it can be
-    # raised if it ever false-positives, but stays low so inefficient solvers
-    # surface.
+    # wall timeout backstops hangs that block without spinning; it stays low
+    # so inefficient solvers surface. The default budgets one grid; a run fed
+    # every example at once (fit) passes a limit scaled to what it carries.
     cmd = ["souffle", "-D-", "-w", "-L", str(PROGRAMS_DIR), "-lfunctors",
            *(extra_args or []), str(dl_path)]
     result = subprocess.run(
-        ["/bin/sh", "-c", 'ulimit -t 5; exec "$0" "$@"', *cmd],
+        ["/bin/sh", "-c", f'ulimit -t {cpu_limit}; exec "$0" "$@"', *cmd],
         input=stdin_text,
         capture_output=True,
         text=True,
-        timeout=10,
+        timeout=2 * cpu_limit,
     )
     if result.returncode == -signal.SIGXCPU:
-        raise RuntimeError(f"souffle exceeded the 5s CPU limit on {dl_path.name}")
+        raise RuntimeError(
+            f"souffle exceeded the {cpu_limit}s CPU limit on {dl_path.name}")
     if result.returncode != 0:
         raise RuntimeError(f"souffle exited {result.returncode}:\n{result.stderr}")
     return result.stdout
