@@ -38,7 +38,7 @@ from urllib.parse import parse_qs, urlparse
 sys.path.append(str(Path(__file__).resolve().parent))
 
 import quota  # noqa: E402
-from calibrate import PRICES  # noqa: E402
+from calibrate import CACHE_READ, rates  # noqa: E402
 
 from dl.context import appendix  # noqa: E402
 
@@ -295,20 +295,34 @@ def build_append(wave: int) -> Path:
 
 CREATE_BRIEF = """You are the create phase of a two-session flow: you create the solver, then a separate refine session takes over.
 
-Do steps 1-3 of the creation pass with the data above; do not re-read the data. Skip steps 4-5. In place of the review, end your turn with a handoff report addressed to the refine session: the model claim, each choice point with the alternatives you considered and why you discarded them, and the audit findings and judgment calls. Make it complete enough that the refine session rederives nothing."""
+Do steps 1-3 of the creation pass with the data above; do not re-read the data. Skip steps 4-5. When a question about the data comes up, run something that answers it rather than settling it in your head. In place of the review, end your turn with a handoff report addressed to the refine session: the model claim, each choice point with the alternatives you considered and why you discarded them, and the audit findings and judgment calls. Make it complete enough that the refine session rederives nothing."""
 
 HANDOFF_BRIEF = """Write the handoff report for the refine session that takes over from you: the model claim, each choice point with the alternatives you considered and why you discarded them, and the audit findings and judgment calls. Cover the whole session, including turns after any earlier report. Make it complete enough that the refine session rederives nothing."""
 
-NUDGE_BRIEF = """You spent a very long thinking stretch with no tool calls and no text. Stop deliberating and act: take the next concrete step with tool calls, test hypotheses in the runner instead of resolving them in your head, and land what you have."""
+NUDGE_BRIEF = """Your last turn was cut off at the output limit while it was still thinking.
 
-BAIL_BRIEF = ("You spent two very long thinking stretches with no actions, so the task "
-              "moves to the refine session now — stop solving. " + HANDOFF_BRIEF +
-              " State plainly how far you got and where you got stuck.")
+Stop trying to settle the task in your head. Take the smallest thing you are still unsure about and run something that answers it. Partial and wrong is fine.
 
-# Thinking tokens with no tool call or text before the turn is interrupted.
-# The output cap is 64k; a runaway burns all of it per generation, so this
-# cuts each cycle short while staying far above a working turn's bursts.
+Do not spend the whole next turn thinking. If you do, it will be your final turn."""
+
+BAIL_BRIEF = """Two turns went entirely to thinking, so the task moves to the refine session now. Stop solving.
+
+Write a short state of play from what is already in front of you, without working anything out again:
+
+- how you read the task
+- what you ran, and what came back
+- where you got stuck, and what you would try next
+
+Keep it brief and factual. The refine session needs your dead ends and your open question, not a full account."""
+
+# Thinking tokens with no tool call or text before the feed says so. Well
+# above a working turn's bursts, and far enough below the 64k output cap that
+# the warning still arrives with the generation in progress.
 RUNAWAY_THINK = 40_000
+# Seconds between transcript reads. The CLI resubmits a capped generation on
+# its own and the retry carries none of the thinking, so every poll of delay
+# risks another full output budget spent on the same dead end.
+CAP_POLL = 5
 
 REFINE_BRIEF = """You are the refine phase of a two-session flow: a create session did steps 1-3 of the creation pass and left the handoff report above.
 
@@ -553,12 +567,23 @@ CLEAN_TRIGGERS = ("cleanup", "fit")
 
 
 def launch(it: dict, message: str, phase: str, trigger: str | None = None,
-           handoff: bool = False, admitted: bool = False) -> None:
-    """Spawn the phase worker if needed, then enqueue one turn."""
+           handoff: bool = False, admitted: bool = False,
+           escalated: bool = False) -> None:
+    """Spawn the phase worker if needed, then enqueue one turn. The nudge and
+    the bail are turns of one chain and keep its count; every other turn starts
+    its own, so a turn asked to think hard is judged on its own stretches."""
     if RELOADING and not admitted:
         raise Reject("server reload in progress — wait for it to finish")
+    if not escalated:
+        it.setdefault("runaway", {}).pop(phase, None)
+    # The CLI reads a slash command only when it opens the message, so a turn
+    # carrying one skips the notices below and leaves them, and the watermarks
+    # behind them, for the next real turn to deliver.
+    slash = message.startswith("/")
     rv = it.get("reverted")
-    if rv and rv.get("phase") == phase:
+    if slash:
+        pass
+    elif rv and rv.get("phase") == phase:
         it.pop("reverted")
         message = ("<system-reminder>The user reverted the file edits from your "
                    f"previous turn; {', '.join(rv['files'])} on disk is back to its "
@@ -579,7 +604,8 @@ def launch(it: dict, message: str, phase: str, trigger: str | None = None,
                 sess=phase)
         worker = spawn_worker(it, phase)
     it["pre"] = {"hash": solver_hash(it["id"]), "solver": solver_text(it["id"]),
-                 "proposals": prop_text(), "dirty": it["dirty"], "files": {}}
+                 "proposals": prop_text(), "dirty": it["dirty"], "files": {},
+                 "slash": slash}
     worker["turn_seq"] += 1
     worker.update(state="sending", started=time.time(), trigger=trigger,
                   handoff=handoff, seen=set(), got_result=False, think_run=0,
@@ -618,7 +644,6 @@ def spawn_worker(it: dict, phase: str) -> dict:
     # a cold resume shows up as a DROP.
     if not it["sessions"].get(phase):
         it.setdefault("cache_read", {}).pop(phase, None)
-    it.setdefault("runaway", {}).pop(phase, None)
     PROCS[(item_id, phase)] = worker
     start_worker_threads(worker)
     worker["state"] = "idle"
@@ -649,26 +674,31 @@ def writer(worker: dict) -> None:
 def reader(worker: dict) -> None:
     item_id, phase, proc = worker["item_id"], worker["phase"], worker["proc"]
     first_response = FIRST_RESPONSE.get(item_id)
-    for line in proc.stdout:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            ev = json.loads(line)
-        except ValueError:
-            continue
-        try:
-            handle_event(worker, ev, first_response)
-        except Exception as exc:  # a bad event must not wedge the turn
-            with LOCK:
-                it = find(item_id)
-                if it:
-                    say(it, event(f"⚠ reader error, event skipped: {exc!r}"),
-                        sess=phase)
-                    if worker["state"] not in ("sending", "running") and \
-                            it["state"] in (RUNNING, COMMENTED):
-                        turn_died(it, phase)  # the crash cut the turn's landing
-        bump()
+    try:
+        for line in proc.stdout:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                ev = json.loads(line)
+            except ValueError:
+                continue
+            try:
+                handle_event(worker, ev, first_response)
+            except Exception as exc:  # a bad event must not wedge the turn
+                with LOCK:
+                    it = find(item_id)
+                    if it:
+                        say(it, event(f"⚠ reader error, event skipped: {exc!r}"),
+                            sess=phase)
+                        if worker["state"] not in ("sending", "running") and \
+                                it["state"] in (RUNNING, COMMENTED):
+                            turn_died(it, phase)  # the crash cut the turn's landing
+            bump()
+    except (OSError, ValueError):
+        # Shutdown closes the pipe out from under a blocked read. There is
+        # nothing left to drain either way, so fall through to the cleanup.
+        pass
     proc.wait()
     with LOCK:
         worker["outbound"].put_nowait(STOP)
@@ -704,14 +734,20 @@ def handle_event(worker: dict, ev: dict, first_response) -> None:
             if worker["state"] == "sending":
                 worker["state"] = "running"
         elif kind == "system" and ev.get("subtype") == "thinking_tokens":
-            if (it and worker["state"] in ("sending", "running") and
-                    not worker.get("escalate")):
+            if it and worker["state"] in ("sending", "running"):
                 worker["think_run"] = (worker.get("think_run", 0)
                                        + (ev.get("estimated_tokens_delta") or 0))
-                if worker["think_run"] >= RUNAWAY_THINK:
+                if (worker["think_run"] >= RUNAWAY_THINK
+                        and not worker.get("escalate")):
+                    # Warn only. An interrupt here aborts the generation, and
+                    # an aborted generation writes nothing — the reasoning is
+                    # gone. A generation that runs to the cap lands in the
+                    # transcript with its signature, which patch_capped turns
+                    # into context the relaunch keeps. So the cap is the
+                    # cheaper exit, at the cost of the rest of the budget.
                     worker["think_run"] = 0
-                    runaway_detected(it, worker, f"{RUNAWAY_THINK // 1000}k "
-                                     "thinking tokens with no actions")
+                    say(it, event(f"long thinking — {RUNAWAY_THINK // 1000}k "
+                                  "tokens with no actions yet"), sess=phase)
         elif kind == "assistant":
             if first_response:
                 first_response.set()
@@ -752,6 +788,10 @@ def handle_event(worker: dict, ev: dict, first_response) -> None:
             blocks = msg.get("content") or []
             if any(b.get("type") != "thinking" for b in blocks):
                 worker["think_run"] = 0
+            # The live CLI streams stop_reason as null on every assistant
+            # event, so today this fires only for a stream that does report
+            # the cap — the fake worker, or a CLI that starts filling the
+            # field in. The transcript tail is the detector that works now.
             if (msg.get("stop_reason") == "max_tokens" and blocks and
                     all(b.get("type") == "thinking" for b in blocks) and
                     worker["state"] in ("sending", "running") and
@@ -766,6 +806,15 @@ def handle_event(worker: dict, ev: dict, first_response) -> None:
             say(it, event("compacted · pre {pre:,} · post {post:,} · dropped {drop:,}".format(
                 pre=meta.get("pre_tokens", 0), post=meta.get("post_tokens", 0),
                 drop=meta.get("cumulative_dropped_tokens", 0))), sess=phase)
+            # A compact turn reports no per-request usage, so this event is the
+            # only word on the new context size until the next turn lands.
+            post = meta.get("post_tokens")
+            ctx = it.get("context", {}).get(phase)
+            if ctx and isinstance(post, (int, float)) and post > 0:
+                ctx["used"] = post
+                ctx["percent"] = post / ctx["window"] * 100
+                ctx["compactPct"] = compact_pct(post, ctx.get("model")
+                                                or MODELS[phase], ctx.get("limiting"))
         elif kind == "result":
             if not it or worker["state"] not in ("sending", "running"):
                 return
@@ -774,18 +823,35 @@ def handle_event(worker: dict, ev: dict, first_response) -> None:
             escalate = worker.pop("escalate", None)
             handoff = worker["handoff"]
             try:
+                # The last messages may not have reached the tail's poll, and
+                # leaving them unread would carry them into the next turn.
+                if it["sessions"].get(phase):
+                    try:
+                        tail_turn(worker, it["sessions"][phase])
+                    except OSError:
+                        pass
+                reqs = list(worker.get("reqs", {}).values())
+                # A generation that reached the cap is recorded with its
+                # thinking; one the interrupt caught in flight is not, so an
+                # unfinished run is what the turn lost.
+                lost = 0 if reason == "completed" else worker.get("think_run", 0)
                 if reason == "completed":
                     finish_turn(it, ev, worker["trigger"], worker["started"],
-                                phase, handoff,
-                                list(worker.get("reqs", {}).values()))
-                elif escalate:
-                    pass  # the interrupt we sent landed; relaunched below
-                elif reason == "aborted_streaming":
-                    say(it, event("stopped"), sess=phase)
-                    turn_died(it, phase)
+                                phase, handoff, reqs)
                 else:
-                    say(it, event(f"turn failed ({reason})"), sess=phase)
-                    turn_died(it, phase)
+                    if escalate:
+                        pass  # the interrupt we sent landed; relaunched below
+                    elif reason == "aborted_streaming":
+                        say(it, event("stopped"), sess=phase)
+                    else:
+                        say(it, event(f"turn failed ({reason})"), sess=phase)
+                    # A segment that never lands still spent quota, and this
+                    # line is the only place it is ever counted.
+                    say(it, event(turn_note(it, ev, phase, worker["started"],
+                                            reqs, lost, done=False)),
+                        sess=phase)
+                    if not escalate:
+                        turn_died(it, phase)
             finally:
                 # The worker goes idle even if landing the turn blew up;
                 # a wedged "running" state would block sends and reloads.
@@ -793,7 +859,16 @@ def handle_event(worker: dict, ev: dict, first_response) -> None:
                               handoff=False, seen=set(), got_result=False,
                               think_run=0, reqs={})
             if escalate and reason != "completed":
-                escalate_turn(it, phase, escalate, handoff)
+                # The relaunch must come from a fresh process: the live one
+                # holds the turn's history in memory, where the capped
+                # thinking is already gone. A respawn rebuilds from the
+                # transcript, which patch_capped repairs first.
+                if PROCS.get((item_id, phase)) is worker:
+                    PROCS.pop((item_id, phase))
+                    worker["state"] = "dying"
+                    worker["outbound"].put_nowait(STOP)
+                DEFERRED.put_nowait(("revive", worker, escalate, handoff))
+                ensure_drain()
 
 
 def turn_died(it: dict, phase: str) -> None:
@@ -806,9 +881,128 @@ def turn_died(it: dict, phase: str) -> None:
     it["updated"] = True
 
 
+def transcript_of(session: str) -> Path | None:
+    """The CLI's own record of a session."""
+    return next(iter(quota.PROJECTS.glob(f"*/{session}.jsonl")), None)
+
+
+def tail_rows(worker: dict, session: str) -> list[dict]:
+    """Assistant messages the transcript gained since the last read. The first
+    read only marks the position, so a resumed session's history stays behind
+    us. Subagent rows belong to their own context and are skipped."""
+    path = worker.get("tail_path")
+    if path is None or path.name != f"{session}.jsonl":
+        path = transcript_of(session)
+        if path is None:
+            return []
+        worker["tail_path"] = path
+        worker["tail_at"] = path.stat().st_size
+        return []
+    at = worker.get("tail_at", 0)
+    with path.open("rb") as fh:
+        fh.seek(at)
+        chunk = fh.read()
+    # A row still being written has no newline yet; leave it for the next read.
+    cut = chunk.rfind(b"\n") + 1
+    if not cut:
+        return []
+    worker["tail_at"] = at + cut
+    rows = []
+    for line in chunk[:cut].splitlines():
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if row.get("type") == "assistant" and not row.get("isSidechain"):
+            rows.append(row.get("message") or {})
+    return rows
+
+
+def tail_turn(worker: dict, session: str) -> str | None:
+    """Report a generation that spent its whole output budget on thinking.
+
+    The stream reports `stop_reason: null` on every assistant message, so a
+    capped generation is legible only in the file."""
+    capped = None
+    for msg in tail_rows(worker, session):
+        out = (msg.get("usage") or {}).get("output_tokens")
+        blocks = msg.get("content") or []
+        if (msg.get("stop_reason") == "max_tokens" and blocks
+                and all(b.get("type") == "thinking" for b in blocks)):
+            capped = f"spent {out or 0:,} output tokens on thinking alone"
+    return capped
+
+
+def patch_capped(path: Path) -> int:
+    """Rewrite capped thinking-only rows so a resumed session keeps them.
+
+    The CLI's history builder drops an assistant message that is nothing but
+    thinking cut off at the output cap, and with it the signature that holds
+    the only copy of the reasoning. Marked as a completed turn with a text
+    block after the untouched thinking block, the message survives the
+    builder, and the API decrypts the signature and restores the reasoning
+    to the context. Call only with the worker process dead; the rewrite must
+    not race the CLI's own appends."""
+    patched, out = 0, []
+    for line in path.read_text().splitlines(True):
+        try:
+            row = json.loads(line)
+        except ValueError:
+            out.append(line)
+            continue
+        msg = row.get("message") or {}
+        blocks = msg.get("content") or []
+        if (row.get("type") == "assistant" and not row.get("isSidechain")
+                and msg.get("stop_reason") == "max_tokens"
+                and isinstance(blocks, list) and blocks
+                and all(b.get("type") == "thinking" for b in blocks)):
+            msg["stop_reason"] = "end_turn"
+            msg["content"] = blocks + [
+                {"type": "text", "text": "[cut off at the output limit]"}]
+            line = json.dumps(row) + "\n"
+            patched += 1
+        out.append(line)
+    if patched:
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text("".join(out))
+        tmp.replace(path)
+    return patched
+
+
+def check_caps() -> None:
+    """Read every running worker's transcript and interrupt a generation that
+    hit the output cap while thinking.
+
+    The CLI resubmits such a generation on its own, and the retry carries none
+    of the thinking forward, so an uncaught cap buys another full budget spent
+    on the same dead end."""
+    with LOCK:
+        for worker in list(PROCS.values()):
+            if (worker["state"] not in ("sending", "running")
+                    or worker.get("escalate")):
+                continue
+            it = find(worker["item_id"])
+            session = (it or {}).get("sessions", {}).get(worker["phase"])
+            if not it or not session:
+                continue
+            try:
+                capped = tail_turn(worker, session)
+            except OSError:
+                continue
+            if capped:
+                runaway_detected(it, worker, capped)
+
+
+def watch_caps() -> None:
+    while True:
+        time.sleep(CAP_POLL)
+        check_caps()
+
+
 def runaway_detected(it: dict, worker: dict, note: str) -> None:
-    """A generation is thinking at length with no work landing. Interrupt it;
-    the result handler relaunches per stage. Caller holds LOCK."""
+    """A generation is thinking at length with no work landing. Interrupt it,
+    which also cancels the CLI's own retry of the capped generation; the
+    result handler hands the worker to revive. Caller holds LOCK."""
     phase = worker["phase"]
     count = it.setdefault("runaway", {}).get(phase, 0) + 1
     it["runaway"][phase] = count
@@ -819,15 +1013,46 @@ def runaway_detected(it: dict, worker: dict, note: str) -> None:
         "request_id": str(uuid.uuid4()), "request": {"subtype": "interrupt"}})
 
 
+def revive(worker: dict, stage: str, handoff: bool) -> None:
+    """Preserve a capped generation's thinking, then relaunch its turn.
+
+    Runs on the drain thread with the worker already detached: the process
+    dies first, the transcript patch lands while nothing else writes the
+    file, and the relaunch spawns a fresh process whose resume reads the
+    repaired history."""
+    if worker.get("proc") is not None:
+        reap(worker)
+    with LOCK:
+        it = find(worker["item_id"])
+        if not it:
+            return
+        phase = worker["phase"]
+        session = it["sessions"].get(phase)
+        path = transcript_of(session) if session else None
+        if path is not None:
+            try:
+                if patch_capped(path):
+                    say(it, event("capped thinking preserved for the resume"),
+                        sess=phase)
+            except OSError as exc:
+                say(it, event(f"transcript patch failed: {exc}"), sess=phase)
+        escalate_turn(it, phase, stage, handoff)
+    bump()
+
+
 def escalate_turn(it: dict, phase: str, stage: str, handoff: bool) -> None:
     """Relaunch after a runaway interrupt lands. Caller holds LOCK and has
     reset the worker. The nudge keeps the turn's own handoff flag. A create
     bail asks for the report whose landing hands off; a refine bail has no
-    stronger session to receive it, so the item lands for review."""
+    stronger session to receive it, so the item lands for review. A bail that
+    itself runs away has said its piece twice, so the item lands either way."""
+    count = it.get("runaway", {}).get(phase, 0)
     if stage == "nudge":
-        launch(it, NUDGE_BRIEF, phase, handoff=handoff, admitted=True)
-    elif phase == "create":
-        launch(it, BAIL_BRIEF, phase, handoff=True, admitted=True)
+        launch(it, NUDGE_BRIEF, phase, handoff=handoff, admitted=True,
+               escalated=True)
+    elif phase == "create" and count <= 2:
+        launch(it, BAIL_BRIEF, phase, handoff=True, admitted=True,
+               escalated=True)
     else:
         turn_died(it, phase)
 
@@ -886,6 +1111,35 @@ def limiting_window(model: str) -> str | None:
     return max(rows, key=lambda u: u["pct"])["label"]
 
 
+# What pressing compact costs: one call that reads the session's context and
+# writes a summary of it. A working session's context is cached, so the read
+# bills at the cache-read fraction; the TTL beside the button is what says
+# whether that still holds. The next turn's cache write is that turn's cost,
+# not this one's. No compaction has been sampled, so the summary size is a
+# stand-in — measure one and correct it here.
+COMPACT_SUMMARY = 3_000
+
+
+def compact_pct(used: int, model: str, limiting: str | None) -> float | None:
+    """What compacting a context of `used` tokens would draw from its window."""
+    pair = rates(model)
+    if pair is None or not limiting:
+        return None
+    cost = (used * pair[0] * CACHE_READ + COMPACT_SUMMARY * pair[1]) / 1_000_000
+    return cost / QUOTA_RATE[limiting]
+
+
+def out_tokens(ev: dict) -> int:
+    """What the model generated this segment. The stream's per-message counts
+    are placeholders, and the result event is the first true figure — it
+    carries one for a segment the interrupt cut short as well."""
+    usage = ev.get("usage") or {}
+    if isinstance(usage.get("output_tokens"), int):
+        return usage["output_tokens"]
+    return sum(x.get("output_tokens") or 0
+               for x in (usage.get("iterations") or []) if isinstance(x, dict))
+
+
 def turn_usage(it: dict, ev: dict, phase: str,
                reqs: list | None = None) -> str:
     """Record the request-level cache and context facts used by the UI.
@@ -895,8 +1149,11 @@ def turn_usage(it: dict, ev: dict, phase: str,
     if not requests:
         iterations = (ev.get("usage") or {}).get("iterations") or []
         requests = [x for x in iterations if isinstance(x, dict)]
+
+    spent = out_tokens(ev)
+    # A segment cut before any request usage arrived still generated tokens.
     if not requests:
-        return ""
+        return f"out {spent:,}" if spent else ""
 
     previous = it.setdefault("cache_read", {}).get(phase)
     drops = []
@@ -911,6 +1168,8 @@ def turn_usage(it: dict, ev: dict, phase: str,
     cache_read = sum(r.get("cache_read_input_tokens") or 0 for r in requests)
     written = sum(r.get("cache_creation_input_tokens") or 0 for r in requests)
     parts = [f"cache r {cache_read:,} w {written:,}"]
+    if spent:
+        parts.append(f"out {spent:,}")
     if drops:
         before, after = drops[-1]
         parts.append(f"⚠ DROP {before:,}→{after:,}")
@@ -928,17 +1187,44 @@ def turn_usage(it: dict, ev: dict, phase: str,
             (pair[1].get("inputTokens") or 0))
         window = model_usage["contextWindow"]
         canonical = model_usage.get("canonicalModel") or model
-        price = PRICES.get(canonical)
-        cost = used * price[0] * 2 / 1_000_000 if price else None
         limiting = limiting_window(canonical)
         it.setdefault("context", {})[phase] = {
             "used": used, "window": window,
             "percent": used / window * 100,
-            "limiting": limiting,
-            "compactPct": (cost / QUOTA_RATE[limiting]
-                           if cost is not None and limiting else None),
+            "limiting": limiting, "model": canonical,
+            "compactPct": compact_pct(used, canonical, limiting),
         }
     return " · ".join(parts)
+
+
+def think_note(tokens: int, phase: str) -> str:
+    """Discarded thinking never reaches the CLI's cost accounting, so price
+    the estimate at the phase model's output rate. It is measured differently
+    from the dollars beside it, so it reads as its own term."""
+    pair = rates(MODELS[phase])
+    note = f" · lost ~{tokens // 1000}k think"
+    if pair is None:
+        return note
+    cost = tokens * pair[1] / 1_000_000
+    return note + f" ≈ {cost / QUOTA_RATE['5h']:.2f}% 5h"
+
+
+def turn_note(it: dict, ev: dict, phase: str, started: float | None,
+              reqs: list | None, lost: int = 0,
+              done: bool = True) -> str:
+    """One turn segment's draw, for the feed."""
+    head = "turn done" if done else "turn cut"
+    mins = (time.time() - started) / 60 if started else 0
+    note = f"{head} · {mins:.0f}m" if mins >= 1 else f"{head} · <1m"
+    # A cut result carries no cost figure. Reading one anyway would reset the
+    # session baseline to zero and bill the whole session to the next landing;
+    # leaving it be lets that landing's step cover this segment too.
+    if ev.get("total_cost_usd"):
+        note += quota_note(it, ev, phase)
+    if lost:
+        note += think_note(lost, phase)
+    usage = turn_usage(it, ev, phase, reqs)
+    return note + (" · " + usage if usage else "")
 
 
 def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
@@ -962,11 +1248,7 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
             touch(it)
         else:
             say(it, {"kind": "report", "rev": it["rev"], "text": text}, sess=phase)
-    mins = (time.time() - started) / 60
-    note = f"turn done · {mins:.0f}m" if mins >= 1 else "turn done · <1m"
-    note += quota_note(it, ev, phase)
-    usage = turn_usage(it, ev, phase, reqs)
-    say(it, event(note + (" · " + usage if usage else "")), sess=phase)
+    say(it, event(turn_note(it, ev, phase, started, reqs)), sess=phase)
     # the create pass ends in prune, and the refine pass is itself the quality
     # pass, so each phase's first landing is clean by cadence
     first_refine = phase == "refine" and not it.get("refined")
@@ -976,7 +1258,8 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
         it["dirty"] = False
     elif solver_hash(it["id"]) != pre(it)["hash"]:
         it["dirty"] = True
-    it.setdefault("seen_hash", {})[phase] = solver_hash(it["id"])
+    if not pre(it).get("slash"):
+        it.setdefault("seen_hash", {})[phase] = solver_hash(it["id"])
     it["lastActive"][phase] = int(time.time() * 1000)
     it["title"] = title_of(it["id"]) or it.get("title", "")
     it["prop_after"] = prop_text()
@@ -987,7 +1270,7 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
         if worker:
             DEFERRED.put_nowait(("handoff", it["id"], phase, worker["turn_seq"]))
             ensure_drain()
-    else:
+    elif not pre(it).get("slash"):
         it["state"] = NEEDS_REVIEW
         it["updated"] = True
 
@@ -1007,6 +1290,9 @@ def drain_deferred() -> None:
         try:
             if job[0] == "reap":
                 reap(job[1])
+                continue
+            if job[0] == "revive":
+                revive(*job[1:])
                 continue
             _, item_id, phase, turn_seq = job
             with LOCK:
@@ -1184,8 +1470,9 @@ def submit_comment(it: dict, text: str, sess: str | None = None) -> None:
     if not it["sessions"].get(sess):
         raise Reject("no session yet")
     say(it, {"kind": "you", "text": text}, sess=sess)
-    it["state"] = COMMENTED
-    it["updated"] = False
+    if not text.startswith("/"):
+        it["state"] = COMMENTED
+        it["updated"] = False
     head = low.split()[:1]
     trigger = head[0] if head and head[0] in CLEAN_TRIGGERS else None
     launch(it, text, sess, trigger=trigger)
@@ -1634,6 +1921,7 @@ def main() -> None:
     resume_queued_wave()
     threading.Thread(target=watch_reload, daemon=True).start()
     threading.Thread(target=usage_loop, daemon=True).start()
+    threading.Thread(target=watch_caps, daemon=True).start()
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     stopping = threading.Event()
     def request_stop(signum, frame):

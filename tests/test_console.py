@@ -38,7 +38,24 @@ def srv(tmp_path, monkeypatch):
                         lambda n, order: [(f"t{i:02d}", 10 + i) for i in range(n)])
     s._test_stagger_launch = s.stagger_launch
     monkeypatch.setattr(s, "stagger_launch", lambda ids: None)
-    return s
+    # A worker thread outliving its test closes pipes on its way out, and the
+    # next test's subprocess is handed those same descriptor numbers. Join them
+    # before the test ends so the numbers stay claimed.
+    threads = []
+    start = s.start_worker_threads
+
+    def start_and_track(worker):
+        start(worker)
+        threads.extend([worker["writer"], worker["reader"]])
+
+    monkeypatch.setattr(s, "start_worker_threads", start_and_track)
+    yield s
+    for worker in list(s.PROCS.values()):
+        proc = worker.get("proc")           # some tests stand in a stub here
+        if callable(getattr(proc, "poll", None)) and proc.poll() is None:
+            proc.terminate()
+    for thread in threads:
+        thread.join(timeout=3)
 
 
 def item(s, item_id, state, **kw):
@@ -323,6 +340,67 @@ def test_context_percentage_uses_last_iteration_and_reported_window(srv):
     assert it["context"]["refine"]["percent"] == pytest.approx(13.394)
 
 
+def test_compact_estimate_prices_the_context_as_a_cache_read(srv, monkeypatch):
+    monkeypatch.setattr(srv, "USAGE", [{"label": "5h", "pct": 40},
+                                       {"label": "wk", "pct": 10}])
+    it = item(srv, "a", srv.NEEDS_REVIEW)
+    srv.finish_turn(it, usage_result(100000, 0, 0), None, time.time(),
+                    "refine", False)
+    # fable-5 reads at a tenth of $10/M, and the summary bills at $50/M
+    dollars = 100000 * 10 * srv.CACHE_READ / 1e6 + srv.COMPACT_SUMMARY * 50 / 1e6
+    assert it["context"]["refine"]["compactPct"] == pytest.approx(
+        dollars / srv.QUOTA_RATE[it["context"]["refine"]["limiting"]])
+
+
+def test_a_dated_model_id_still_prices(srv, monkeypatch):
+    monkeypatch.setattr(srv, "USAGE", [{"label": "fbl", "pct": 40}])
+    it = item(srv, "a", srv.NEEDS_REVIEW)
+    ev = usage_result(1000)
+    ev["modelUsage"]["claude-fable-5"]["canonicalModel"] = "claude-fable-5-20260214"
+    srv.finish_turn(it, ev, None, time.time(), "refine", False)
+    assert it["context"]["refine"]["compactPct"] is not None
+
+
+def test_a_slash_command_reaches_the_worker_as_the_first_bytes(srv):
+    it = item(srv, "a", srv.NEEDS_REVIEW)
+    w = worker(srv, it)
+    it["seen_hash"] = {"refine": "hash-from-an-earlier-turn"}
+    it["reverted"] = {"phase": "refine", "files": ["programs/solvers/a.dl"]}
+    srv.act_compact("a", "refine")
+    assert w["outbound"].get_nowait()["message"]["content"] == "/compact"
+    # both notices wait for a turn that can carry them
+    assert it["reverted"]["phase"] == "refine"
+    srv.finish_turn(it, usage_result(1000), None, time.time(), "refine", False)
+    assert it["seen_hash"]["refine"] == "hash-from-an-earlier-turn"
+
+
+def test_a_slash_turn_leaves_the_items_state_alone(srv):
+    it = item(srv, "a", srv.APPROVED)
+    worker(srv, it)
+    srv.act_compact("a", "refine")
+    assert it["state"] == srv.APPROVED
+    srv.finish_turn(it, usage_result(1000), None, time.time(), "refine", False)
+    assert it["state"] == srv.APPROVED
+
+
+def test_compact_boundary_reprices_the_button(srv, monkeypatch):
+    monkeypatch.setattr(srv, "USAGE", [{"label": "5h", "pct": 40}])
+    it = item(srv, "a", srv.NEEDS_REVIEW)
+    srv.finish_turn(it, usage_result(120000), None, time.time(), "refine", False)
+    before = dict(it["context"]["refine"])
+    w = worker(srv, it, state="running")
+    srv.handle_event(w, {"type": "system", "subtype": "compact_boundary",
+                         "compact_metadata": {"pre_tokens": before["used"],
+                                              "post_tokens": 9000,
+                                              "cumulative_dropped_tokens": 111000}}, None)
+    after = it["context"]["refine"]
+    assert after["used"] == 9000
+    assert after["percent"] == pytest.approx(9000 / before["window"] * 100)
+    assert after["compactPct"] == pytest.approx(
+        srv.compact_pct(9000, before["model"], before["limiting"]))
+    assert after["compactPct"] < before["compactPct"]
+
+
 def test_model_usage_with_null_counters_still_lands(srv):
     it = item(srv, "a", srv.NEEDS_REVIEW)
     ev = usage_result(21000)
@@ -416,7 +494,8 @@ def test_runaway_first_nudges_then_bails_to_handoff(srv, monkeypatch):
     sent = []
     monkeypatch.setattr(srv, "launch",
                         lambda it, msg, phase, trigger=None, handoff=False,
-                        admitted=False: sent.append((msg, phase, handoff)))
+                        admitted=False, escalated=False:
+                        sent.append((msg, phase, handoff, escalated)))
     it = item(srv, "a", srv.RUNNING, phase="create",
               sessions={"create": "cs", "refine": None})
     w = worker(srv, it, phase="create", state="running")
@@ -427,11 +506,11 @@ def test_runaway_first_nudges_then_bails_to_handoff(srv, monkeypatch):
     assert interrupt["request"]["subtype"] == "interrupt"
     assert "⚠" in it["feed"][-1]["text"]
     srv.escalate_turn(it, "create", "nudge", True)
-    assert sent[-1] == (srv.NUDGE_BRIEF, "create", True)
+    assert sent[-1] == (srv.NUDGE_BRIEF, "create", True, True)
     srv.runaway_detected(it, w, "40k thinking tokens with no actions")
     assert w["escalate"] == "bail"
     srv.escalate_turn(it, "create", "bail", True)
-    assert sent[-1] == (srv.BAIL_BRIEF, "create", True)
+    assert sent[-1] == (srv.BAIL_BRIEF, "create", True, True)
 
 
 def test_refine_runaway_bail_lands_for_review(srv):
@@ -464,12 +543,23 @@ def think(delta):
             "estimated_tokens_delta": delta}
 
 
-def test_long_thinking_with_no_actions_is_a_runaway(srv):
+def capped():
+    """A generation that spent the whole output budget on thinking."""
+    return {"type": "assistant", "message": {"id": "cap", "usage": {},
+            "stop_reason": "max_tokens",
+            "content": [{"type": "thinking", "thinking": ""}]}}
+
+
+def test_long_thinking_warns_and_the_cap_escalates(srv):
     it = item(srv, "a", srv.RUNNING)
     w = worker(srv, it, state="running")
     srv.handle_event(w, think(25000), None)
-    assert "escalate" not in w
+    assert it["feed"] == []
     srv.handle_event(w, think(25000), None)
+    # only reported: an interrupt here would throw the reasoning away unrecorded
+    assert "escalate" not in w
+    assert "long thinking" in it["feed"][-1]["text"]
+    srv.handle_event(w, capped(), None)
     assert w["escalate"] == "nudge"
     assert it["runaway"]["refine"] == 1
     assert w["outbound"].get_nowait()["request"]["subtype"] == "interrupt"
@@ -485,6 +575,190 @@ def test_action_blocks_reset_the_thinking_run(srv):
     srv.handle_event(w, think(25000), None)
     assert "escalate" not in w
     assert it.get("runaway") in (None, {})
+
+
+def test_a_cut_segment_reports_the_run_the_interrupt_destroyed(srv, monkeypatch):
+    monkeypatch.setattr(srv, "launch", lambda *a, **kw: None)
+    it = item(srv, "a", srv.RUNNING)
+    w = worker(srv, it, state="running")
+    w["started"] = time.time()
+    srv.handle_event(w, capped(), None)
+    assert w["escalate"] == "nudge"
+    srv.handle_event(w, think(9000), None)   # in flight when the interrupt lands
+    srv.handle_event(w, {"type": "result", "terminal_reason": "aborted_streaming"},
+                     None)
+    note = it["feed"][-1]["text"]
+    assert note.startswith("turn cut")
+    assert "lost ~9k think" in note
+    assert w["think_run"] == 0
+
+
+def test_a_third_runaway_lands_the_item_instead_of_bailing_again(srv, monkeypatch):
+    sent = []
+    monkeypatch.setattr(srv, "launch", lambda *a, **kw: sent.append(a[1]))
+    it = item(srv, "a", srv.RUNNING, phase="create",
+              sessions={"create": "cs", "refine": None})
+    it["runaway"] = {"create": 3}
+    srv.escalate_turn(it, "create", "bail", True)
+    assert sent == []
+    assert it["state"] == srv.NEEDS_REVIEW
+
+
+# ---------- the transcript tail ----------
+
+def transcript(srv, monkeypatch, tmp_path, session, rows=()):
+    """Stand in for the CLI's record of a session."""
+    home = tmp_path / "projects"
+    (home / "proj").mkdir(parents=True, exist_ok=True)
+    path = home / "proj" / f"{session}.jsonl"
+    path.write_text("".join(json.dumps(r) + "\n" for r in rows))
+    monkeypatch.setattr(srv.quota, "PROJECTS", home)
+    return path
+
+
+def cap_row(out=64000, **kw):
+    """A transcript row for a generation the output cap cut off mid-thought."""
+    row = {"type": "assistant",
+           "message": {"id": "cap", "stop_reason": "max_tokens",
+                       "usage": {"output_tokens": out},
+                       "content": [{"type": "thinking", "thinking": ""}]}}
+    row.update(kw)
+    return row
+
+
+def test_the_tail_catches_a_cap_the_stream_never_reports(srv, monkeypatch, tmp_path):
+    it = item(srv, "a", srv.RUNNING)
+    w = worker(srv, it, state="running")
+    path = transcript(srv, monkeypatch, tmp_path, "sess-a")
+    assert srv.tail_turn(w, "sess-a") is None      # first read marks the position
+    with path.open("a") as fh:
+        fh.write(json.dumps(cap_row()) + "\n")
+    srv.check_caps()
+    assert w["escalate"] == "nudge"
+    assert it["runaway"]["refine"] == 1
+    assert w["outbound"].get_nowait()["request"]["subtype"] == "interrupt"
+    assert "64,000 output tokens" in it["feed"][-1]["text"]
+
+
+def test_a_resumed_sessions_old_cap_stays_behind_the_tail(srv, monkeypatch, tmp_path):
+    it = item(srv, "a", srv.RUNNING)
+    w = worker(srv, it, state="running")
+    transcript(srv, monkeypatch, tmp_path, "sess-a", [cap_row()])
+    srv.check_caps()
+    assert "escalate" not in w
+    assert it["feed"] == []
+
+
+def test_the_tail_leaves_a_half_written_row_for_the_next_read(srv, monkeypatch,
+                                                              tmp_path):
+    it = item(srv, "a", srv.RUNNING)
+    w = worker(srv, it, state="running")
+    path = transcript(srv, monkeypatch, tmp_path, "sess-a")
+    srv.tail_turn(w, "sess-a")
+    line = json.dumps(cap_row()) + "\n"
+    with path.open("a") as fh:
+        fh.write(line[:40])
+    assert srv.tail_turn(w, "sess-a") is None
+    with path.open("a") as fh:
+        fh.write(line[40:])
+    assert "64,000" in srv.tail_turn(w, "sess-a")
+
+
+def test_patch_capped_turns_the_row_into_a_kept_message(srv, monkeypatch,
+                                                        tmp_path):
+    normal = {"type": "assistant", "message": {"id": "m1", "stop_reason":
+              "end_turn", "content": [{"type": "text", "text": "hi"}]}}
+    path = transcript(srv, monkeypatch, tmp_path, "sess-a",
+                      [normal, cap_row(), cap_row(isSidechain=True)])
+    assert srv.patch_capped(path) == 1
+    rows = [json.loads(line) for line in path.read_text().splitlines()]
+    assert rows[0]["message"]["content"] == normal["message"]["content"]
+    patched = rows[1]["message"]
+    assert patched["stop_reason"] == "end_turn"
+    assert [b["type"] for b in patched["content"]] == ["thinking", "text"]
+    assert rows[2]["message"]["stop_reason"] == "max_tokens"  # subagent's own
+    assert srv.patch_capped(path) == 0
+
+
+def test_revive_repairs_the_transcript_then_relaunches(srv, monkeypatch,
+                                                       tmp_path):
+    sent = []
+    monkeypatch.setattr(srv, "launch", lambda it, msg, phase, **kw:
+                        sent.append((msg, phase)))
+    it = item(srv, "a", srv.RUNNING)
+    it["runaway"] = {"refine": 1}
+    w = worker(srv, it, state="dying")
+    path = transcript(srv, monkeypatch, tmp_path, "sess-a", [cap_row()])
+    srv.PROCS.pop(("a", "refine"))
+    srv.revive(w, "nudge", False)
+    assert json.loads(path.read_text())["message"]["stop_reason"] == "end_turn"
+    assert any("preserved" in m.get("text", "") for m in it["feed"])
+    assert sent == [(srv.NUDGE_BRIEF, "refine")]
+
+
+def test_a_runaway_result_hands_the_worker_to_revive(srv, monkeypatch):
+    monkeypatch.setattr(srv, "ensure_drain", lambda: None)
+    it = item(srv, "a", srv.RUNNING)
+    w = worker(srv, it, state="running")
+    w["started"] = time.time()
+    w["escalate"] = "nudge"
+    srv.handle_event(w, {"type": "result",
+                         "terminal_reason": "aborted_streaming"}, None)
+    assert srv.PROCS.get(("a", "refine")) is None
+    assert w["state"] == "dying"
+    assert srv.DEFERRED.get_nowait() == ("revive", w, "nudge", False)
+
+
+def test_a_subagents_cap_is_not_the_turns(srv, monkeypatch, tmp_path):
+    it = item(srv, "a", srv.RUNNING)
+    w = worker(srv, it, state="running")
+    path = transcript(srv, monkeypatch, tmp_path, "sess-a")
+    srv.tail_turn(w, "sess-a")
+    with path.open("a") as fh:
+        fh.write(json.dumps(cap_row(isSidechain=True)) + "\n")
+    assert srv.tail_turn(w, "sess-a") is None
+
+
+def test_a_turn_reports_what_the_model_generated(srv):
+    it = item(srv, "a", srv.RUNNING)
+    w = worker(srv, it, state="running")
+    w["started"] = time.time()
+    srv.handle_event(w, {"type": "result", "terminal_reason": "completed",
+                         "usage": {"output_tokens": 8194,
+                                   "iterations": [{"cache_read_input_tokens": 100}]}},
+                     None)
+    assert "out 8,194" in it["feed"][-1]["text"]
+
+
+def test_a_cut_segment_still_reports_its_output(srv):
+    it = item(srv, "a", srv.RUNNING)
+    w = worker(srv, it, state="running")
+    w["started"] = time.time()
+    srv.handle_event(w, {"type": "result", "terminal_reason": "aborted_streaming",
+                         "usage": {"iterations": [{"output_tokens": 8373}]}}, None)
+    assert "out 8,373" in it["feed"][-1]["text"]
+
+
+def test_cut_segment_does_not_clobber_the_cost_baseline(srv):
+    it = item(srv, "a", srv.RUNNING)
+    it["cost_seen"] = {"refine": {"total": 4.0, "fable": 0}}
+    w = worker(srv, it, state="running")
+    w["started"] = time.time()
+    srv.handle_event(w, {"type": "result", "terminal_reason": "aborted_streaming",
+                         "total_cost_usd": 0}, None)
+    assert it["cost_seen"]["refine"]["total"] == 4.0
+
+
+def test_a_fresh_turn_starts_its_own_runaway_count(srv):
+    it = item(srv, "a", srv.NEEDS_REVIEW)
+    worker(srv, it)
+    it["runaway"] = {"refine": 2}
+    with srv.LOCK:
+        srv.launch(it, "keep going", "refine", escalated=True)
+    assert it["runaway"]["refine"] == 2
+    with srv.LOCK:
+        srv.launch(it, "new work", "refine")
+    assert it["runaway"].get("refine") is None
 
 
 def test_self_invoked_turn_does_not_mark_a_turn_running(srv):

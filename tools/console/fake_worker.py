@@ -121,16 +121,25 @@ def run_turn(message):
                   "canonicalModel": "claude-fable-5", "costUSD": .12}}})
         return None
     if mode == "runaway":
-        # The live stream never carries stop_reason; a runaway shows up as
-        # thinking_tokens progress with no tool_use or text between.
-        emit({"type": "assistant", "message": {"id": f"msg-runaway-{turn}",
-              "usage": usage_for(),
-              "content": [{"type": "thinking", "thinking": ""}]}})
+        # Thinking runs with no tool_use or text between. The live stream
+        # carries no stop_reason until the generation ends, so the run shows
+        # up as thinking_tokens progress and then a message truncated at the
+        # output cap with nothing but thinking in it.
         thought = 0
-        while True:
+        while thought < 3 * 25000:
             thought += 25000
             emit({"type": "system", "subtype": "thinking_tokens", "session_id": sid,
                   "estimated_tokens": thought, "estimated_tokens_delta": 25000})
+            stopped = pause(.2)
+            if stopped == "interrupt":
+                result("", "aborted_streaming")
+                return None
+            if stopped == "eof":
+                return "eof"
+        emit({"type": "assistant", "message": {"id": f"msg-runaway-{turn}",
+              "usage": usage_for(), "stop_reason": "max_tokens",
+              "content": [{"type": "thinking", "thinking": ""}]}})
+        while True:
             stopped = pause(.2)
             if stopped == "interrupt":
                 result("", "aborted_streaming")
