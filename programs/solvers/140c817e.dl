@@ -1,0 +1,74 @@
+// 140c817e
+// concept: markers cast stamp
+// Marks sit on a plain field. Each mark draws its whole row and column
+// in the line color and carries a decoration: the center color on the
+// mark cell, the corner color on its four diagonal neighbors, clipped
+// to the grid. The center covers the lines, witnessed at each mark,
+// where its own row and column cross. No pair puts a corner on another
+// mark's line, so the corner's layer is a choice: CornerOver paints the
+// whole decoration over the lines; CornerUnder lets a crossing line
+// cover the corners. The rest of the field passes through.
+
+#include "../lib.dl"
+
+.type Choice = CornerOver {} | CornerUnder {}
+
+.comp Consts {
+    // The row and column drawn through each mark.
+    .decl line(col: Color) line(1).
+
+    // The mark cell itself.
+    .decl center(col: Color) center(2).
+
+    // The mark's four diagonal neighbors.
+    .decl corner(col: Color) corner(3).
+}
+
+.init c = Consts
+
+// The field is the commonest color; the marks are the cells that differ.
+.init field = Mode<Unit, Color, Position>
+field.item($U(), Col, P) :- in(P, Col).
+
+.decl mark(p: Position)
+mark(P) :- in(P, Col), !field.mode($U(), Col).
+
+// A cell agreeing with a mark along one axis lies on that mark's row or
+// column.
+.decl crossed(p: Position)
+crossed(P) :-
+    in(P, _), mark(M),                                    // cell and mark
+    axis_elem(A), split(P, A, Along, _), split(M, A, Along, _).  // agree on A
+
+// A mark's diagonal neighbor, clipped to the grid.
+.decl corner_cell(p: Position)
+corner_cell(P) :-
+    mark(M), diag_dir_elem(D), step_delta(D, Delta), compose(M, Delta, P),  // diagonal neighbor
+    in(P, _).                                                              // clipped to the grid
+
+.decl out(p: Position, col: Color, c: Choice)
+
+// --- CornerOver ---
+
+// The decoration as one layer.
+.decl decor(p: Position, col: Color)
+decor(P, Col) :- mark(P), c.center(Col).
+decor(P, Col) :- corner_cell(P), c.corner(Col).
+
+out(P, Col, $CornerOver()) :-
+    in(P, Col_in),
+    ( decor(P, Col)                             // decoration on top
+    ; !decor(P, _), crossed(P), c.line(Col)     // the marks' rows and columns
+    ; !decor(P, _), !crossed(P), Col = Col_in   // untouched field
+    ).
+
+// --- CornerUnder ---
+
+// !crossed excludes marks: every mark is crossed by its own lines.
+out(P, Col, $CornerUnder()) :-
+    in(P, Col_in),
+    ( mark(P), c.center(Col)                        // center on top
+    ; !mark(P), crossed(P), c.line(Col)             // lines cover corners
+    ; !crossed(P), corner_cell(P), c.corner(Col)    // corners under the lines
+    ; !crossed(P), !corner_cell(P), Col = Col_in    // untouched field
+    ).

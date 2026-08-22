@@ -2,9 +2,11 @@
 
 For proposing and staging changes to `.dl` style and primitives. Not a changelog or a notes file. If a proposal is implemented, it is removed from this doc.
 
+An entry's first sentence is its index line, read under the entry's title: it stands alone, and criteria and guards start after it.
+
 ## `ConcatPipeline` — unequal-sized rectilinear tiles
 
-`ConcatPipeline` derives per-tile dims and per-edge cumulative offsets, then composes via `compose`. Cumulative offsets are what unequal tiles need, because each row/column has its own extent. The uniform family — `divide` / `divide_2d` / `divide_by_size_2d` forward, `concat` / `concat_slab` / `concat_2d` inverse — takes one tile size, so its per-tile step is constant.
+`ConcatPipeline` derives per-tile dims and per-edge cumulative offsets, then composes via `compose`; cumulative offsets are what unequal tiles need, because each row/column has its own extent. The uniform family — `divide` / `divide_2d` / `divide_by_size_2d` forward, `concat` / `concat_slab` / `concat_2d` inverse — takes one tile size, so its per-tile step is constant.
 
 The solver populates `tile_in` (dim info; the pipeline does not read the values) and `axis_gap`. The component derives per-row / per-col tile dims and cumulative per-edge offsets, assembles `tile_offset(key, p_outer, p_off)`, and exposes a one-line `concat` (lookup + `compose`). One tiling per key. `axis_gap` stays unkeyed: the gap is the instance's parameter, like `DirFrame`'s unkeyed `dir`.
 
@@ -64,7 +66,7 @@ An `.init` named `concat` clashes with lib's `concat` relation; pick another ins
 
 ## `KeyedSetCompare` extensions — set-relationship lattice
 
-`KeyedSetCompare<Key, Pat, Member>` (in `lib.dl`) exposes `covers` / `equals` / `pattern_size`. These extensions derive from the same three counts it already computes (`|pattern|`, `|observed|`, `overlap`). Add one when a real task needs it, not preemptively (lib-addition protocol):
+Extensions of `KeyedSetCompare<Key, Pat, Member>` beyond its `covers` / `equals` / `pattern_size`, each derived from the three counts it already computes (`|pattern|`, `|observed|`, `overlap`). Add one when a real task needs it, not preemptively (lib-addition protocol):
 
 - `within(observed, pattern)` — observed ⊆ pattern (`overlap == observed_size`)
 - `disjoint(observed, pattern)` — `overlap == 0`
@@ -92,7 +94,7 @@ Home: `Ordinal` — it owns `idx_set`; a readout beside `rank` and `rank_desc`.
 
 ## `diag_edge_delta` — edge delta at a corner
 
-The DiagDir peer of `edge_delta`: a Position holding extents at the two edges of corner `diag`, axis-tagged — k1 at the edge on axis a, k2 across. It grows toward a corner, where `diag_step_delta` moves toward a corner. It is the delta counterpart of the `diag_dist` readout.
+The DiagDir peer of `edge_delta`: a Position holding extents at the two edges of corner `diag`, axis-tagged — k1 at the edge on axis a, k2 across. It grows toward a corner, where `step_delta` at the same corner moves toward it. It is the delta counterpart of the `diag_dist` readout.
 
 ```
 .decl diag_edge_delta(diag: DiagDir, a: Axis, k1: number, k2: number, p: Position) inline
@@ -121,23 +123,6 @@ divide_by_size_slab(P, A, K, G, P_outer, P_inner) :-
 
 **Task-local home (protocol step 1).** 7b7f7511 (`DivideBySizeSlab`
 comp): $Tile's swept tiling.
-
-## Dir8-wide primitives — widen the base relations, retire the twins
-
-`dir8_jump_delta` / `dir8_step_delta` (in lib) are a third parallel family: the `diag_*` relations twin the cardinal ones, and the `dir8_*` pair twins both again. Widening the base relations to `Dir8` retires the twins: a corner is its two cardinal edges, so a functor that lets a `DiagDir` match either of its corner's dirs makes the existing single clauses compute the diagonal cases unchanged.
-
-- `@keep_dir(sel, target, v)`: a `DiagDir` sel matches both of its corner's cardinal targets. `edge_delta(d: Dir8, k, p)` then carries k at a corner's two edges — the equal-k case of the proposed `diag_edge_delta`.
-- `opposite(d: Dir8, opp: Dir8)` gains the four corner rows; `diag_opposite` folds in.
-- `jump_delta` and `step_delta` widen with their clauses unchanged: for `DIAG_TL`, `edge_delta(DIAG_TL, -K)` composed with `edge_delta(DIAG_BR, K)` is the diagonal jump. `diag_jump_delta`, `diag_step_delta`, `dir8_jump_delta`, and `dir8_step_delta` retire.
-- The widened relations stay single functor clauses that bind nothing, so sites that enumerate all eight — `dir8_step_delta(_, S)` today — ground through a `dir8_elem` enum: `dir8_elem(D), step_delta(D, S)`.
-
-Discrimination sits in the functor layer, so no calling rule multiplies IR paths — the cost the two-clause `dir8_*` form carries.
-
-Bounds: `dist` / `diag_dist` and the unequal-k `diag_edge_delta` differ in arity across the branches and stay per-branch. `turn` widens the same way — rotation carries corners to corners — but has no site.
-
-Caveat: Souffle's union typing is static, with no runtime filtering, so a caller that grounds its direction from the widened `opposite` instead of feeding one in enumerates eight rows. Implementation sweeps `opposite`'s callers for unbound-d use.
-
-**Task-local home (protocol step 1).** 13e47133 (`dir8_opposite`): `opposite` and `diag_opposite` unioned as a plain relation, pairing $Sight's rim directions with their casts — static union typing bars a `Dir8` variable from `opposite`'s `Dir` slot.
 
 ## `corner_dist` — taxicab distance to a corner
 
@@ -305,12 +290,7 @@ the enclosed cells.
 
 ## `Peel<Key>` — erosion depth of a keyed cell set
 
-Ring 0 is the cells with an 8-neighbor outside the set, off-frame counting
-as outside; each step inward is one ring deeper. It equals the Chebyshev
-distance to the set's complement minus one, and is the depth peer of
-`Reach`'s membership. Non-convex depth has no counter-free encoding, so
-the arithmetic sits behind the comp boundary. Lib target: body comp beside
-`Reach`.
+The depth peer of `Reach`'s membership: ring 0 is the cells with an 8-neighbor outside the set, off-frame counting as outside, and each step inward is one ring deeper. It equals the Chebyshev distance to the set's complement minus one. Non-convex depth has no counter-free encoding, so the arithmetic sits behind the comp boundary. Lib target: body comp beside `Reach`.
 
 ```
 .comp Peel<Key> {
@@ -320,14 +300,14 @@ the arithmetic sits behind the comp boundary. Lib target: body comp beside
     .decl edge(key: Key, p: Position)
     edge(Ky, P) :-
         cell(Ky, P),
-        dir8_step_delta(_, S), compose(P, S, Q), !cell(Ky, Q).
+        dir8_elem(D), step_delta(D, S), compose(P, S, Q), !cell(Ky, Q).
 
     // The shortest inward walk from the boundary.
     .decl ring(key: Key, p: Position, k: number)
     ring(Ky, P, 0) :- edge(Ky, P).
     ring(Ky, P, K2) :-
         ring(Ky, Q, K), K2 = K + 1,
-        dir8_step_delta(_, S), compose(Q, S, P), cell(Ky, P).
+        dir8_elem(D), step_delta(D, S), compose(Q, S, P), cell(Ky, P).
     ring(Ky, P, K) <= ring(Ky, P, K2) :- K2 < K.
 }
 ```
@@ -342,3 +322,32 @@ sight).
 Prior special cases the comp would cover: 85c4e7cd's ring (min edge
 distance — the convex-frame case) and 135a2760's panel frame (ring 0 of a
 rectangular panel).
+
+## `RIGID` — Consts relations coupled as a rigid assembly
+
+A `RIGID` block groups Consts relations — properties of any arity and type, stated in one shared intrinsic frame — and exposes them only as D4 placements that transform them together, so the stored pose is unobservable. Each property reappears with a D4 element as a leading key column and every column transformed by that element; consumers join properties on the key, which is what "the same oriented instance" means. This cannot be a comp: comps cannot abstract over column counts and types, and the closure is type-directed — `Position` and `Shift` via `apply` (the type vocabulary already separates cell from delta, which is the distinction the actions need), `Dir` and `DiagDir` via the direction action, `Axis` via the induced swap, `Color` / `number` / `Ident` by identity.
+
+```
+RIGID(marker,
+    .decl glyph(p: Position)
+    GRID_MASK_2x2(glyph, 1, 1, 1, 0)
+    .decl launch(p: Position) launch([0, 1, 0, 1]).
+    .decl aim(d: DiagDir) aim(DIAG_TL).
+)
+```
+
+expands to the chart under generated names, plus the placed forms the solver reads:
+
+```
+marker_glyph(d4: D4, p: Position)
+marker_launch(d4: D4, p: Position)
+marker_aim(d4: D4, d: DiagDir)
+```
+
+The expansion knows each column's type statically, so it emits the branch-correct action and static union typing never bites (contrast 142ca369's `apply_diag_dir` reads, pinned to the DiagDir branch). A lint rule makes chart names unreadable outside the expansion, turning pose-unobservability from a discipline into a checked property.
+
+Scope is orientation only. Translation freedom stays with `Occurrences` (placement anchors) and color freedom with instantiation keying; a later freedom extends the placement key, not the syntax. The fit seam is untouched: a chart must still be written and row-compared, so orbit checking remains anchored projection or a canonical pose.
+
+Runner target: macro expansion beside `GRID`, lint rule beside it.
+
+**Motivating site.** 142ca369: $Glyph and its Fit hand-inline the closure at four sites (`occ.shape`, `mark`, the seed, `Fit.orient`); migration retires all of them into placed reads.

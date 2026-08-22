@@ -1,0 +1,141 @@
+// 14754a24
+// concept: objects markers stamp lookup
+// Plus pentominoes drawn partly in c.mark over c.fill. Each plus is
+// completed: its footprint cells still holding c.fill become c.paint.
+// A footprint is clipped at the frame edge, and a placement acts only
+// where its footprint lies wholly on mark or fill, which is what fixes a
+// plus's placement. Choice = [fp, a] crosses the claims:
+//
+//   fp (the footprint):
+//     $Plus()  — structure: the cell and its four cardinal neighbors.
+//     $Shape() — data: the c.shape cells.
+//   a (which placements act):
+//     $Fragment() — the marks are objects, one per plus; the placement
+//                   whose footprint holds exactly one whole object acts.
+//     $Maximal()  — a placement acts unless some other placement's marks
+//                   strictly contain its own.
+
+#include "../lib.dl"
+
+.type Footprint = Plus {} | Shape {}
+.type Act = Fragment {} | Maximal {}
+.type Choice = [fp: Footprint, a: Act]
+
+.comp Consts {
+    .decl mark(col: Color) mark(4).
+    .decl fill(col: Color) fill(5).
+    .decl paint(col: Color) paint(2).
+
+    // --- $Shape ---
+    // The footprint's cells, in its own frame.
+    .decl shape(p: Position)
+    GRID_MASK_3x3(shape,
+        0, 1, 0,
+        1, 1, 1,
+        0, 1, 0)
+}
+
+.init c = Consts
+
+.decl mark_cell(p: Position)
+mark_cell(P) :- in(P, Col), c.mark(Col).
+
+.decl fill_cell(p: Position)
+fill_cell(P) :- in(P, Col), c.fill(Col).
+
+// --- Footprint cases: the stamp at each placement ---
+
+.decl footprint_choice(fp: Footprint)
+footprint_choice($Plus()). footprint_choice($Shape()).
+
+// The footprint's cells, cut off by the frame edge.
+.decl footprint(p_place: Position, p: Position, fp: Footprint)
+
+// $Plus — the cell and its four cardinal neighbors.
+footprint(P, P, $Plus()) :- in(P, _).
+footprint(P, Q, $Plus()) :-
+    in(P, _), dir_elem(D), step_delta(D, Delta),    // step off the center
+    compose(P, Delta, Q), in(Q, _).                 // neighbor in frame
+
+// $Shape — the stored cells, at every box seat that meets the frame. A
+// seat is found backward: each grid cell, viewed as each shape cell,
+// fixes the box it would sit in.
+.type QS = [q: Position, s: Position]
+.init seat = Reframe<QS>
+seat.outer([Q, S], S) :- in(Q, _), c.shape(S).
+seat.cell([Q, S], Q) :- in(Q, _), c.shape(S).
+
+footprint(M, Q, $Shape()) :-
+    seat.inner(_, M), c.shape(S),      // box seat, shape cell
+    compose(M, S, Q), in(Q, _).        // laid onto the frame
+
+// Held back by a footprint cell that is neither mark nor fill.
+.decl blocked(p_place: Position, fp: Footprint)
+blocked(P, Fp) :- footprint(P, Q, Fp), !mark_cell(Q), !fill_cell(Q).
+
+// Marks in the footprint of an unblocked placement.
+.decl cand_mark(p_place: Position, p: Position, fp: Footprint)
+cand_mark(P, Q, Fp) :- footprint(P, Q, Fp), mark_cell(Q), !blocked(P, Fp).
+
+// --- Act cases: which placements act ---
+
+.decl act_choice(a: Act)
+act_choice($Fragment()). act_choice($Maximal()).
+
+.type KP = [fp: Footprint, p: Position]
+
+.decl placement(p_place: Position, ch: Choice)
+
+// $Fragment — footprint marks equal to one whole object.
+
+.init obj = Components8<Unit>
+obj.node($U(), P) :- mark_cell(P).
+
+.init fragment = KeyedSetCompare<KP, Ident, Position>
+fragment.pattern_member(Id, P) :- obj.label($U(), P, Id).
+fragment.observed_member([Fp, P], Q) :- cand_mark(P, Q, Fp).
+
+placement(P, [Fp, $Fragment()]) :- fragment.equals([Fp, P], _).
+
+// $Maximal — no other placement's marks strictly contain this one's.
+
+.init dom = KeyedSetCompare<KP, KP, Position>
+dom.pattern_member([Fp, P], Q) :- cand_mark(P, Q, Fp).
+dom.observed_member([Fp, P], Q) :- cand_mark(P, Q, Fp).
+
+.decl dominated(p_place: Position, fp: Footprint)
+dominated(P, Fp) :- dom.covers([Fp, P2], [Fp, P]), !dom.equals([Fp, P2], [Fp, P]).
+
+placement(P, [Fp, $Maximal()]) :- cand_mark(P, _, Fp), !dominated(P, Fp).
+
+// --- output ---
+
+.decl painted(p: Position, ch: Choice)
+painted(Q, [Fp, A]) :- placement(P, [Fp, A]), footprint(P, Q, Fp), fill_cell(Q).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- painted(P, Ch), c.paint(Col).
+out(P, Col, [Fp, A]) :-
+    in(P, Col), footprint_choice(Fp), act_choice(A),    // each claim pair
+    !painted(P, [Fp, A]).
+
+// --- fit ---
+
+.comp Fit {
+    // A completed instance's cells: its marks and its painted cells.
+    .decl inst_cell(e: Example, p: Position)
+    inst_cell(E, P) :- ex_in(E, P, Col), c.mark(Col), ex_out(E, _, _).
+    inst_cell(E, P) :- ex_in(E, P, C1), ex_out(E, P, C2), C1 != C2.
+
+    .init inst = Components<Example>
+    inst.node(E, P) :- inst_cell(E, P).
+
+    .type EI = [e: Example, id: Ident]
+    .init box = BoxFrame<EI>
+    box.cell([E, Id], P) :- inst.label(E, P, Id).
+
+    // An instance on the frame edge may be clipped; the interior ones
+    // show the whole shape.
+    .decl shape(p: Position)
+    shape(S) :- box.inner([E, Id], _, S), !box.edge_min([E, Id], _, 0).
+}
