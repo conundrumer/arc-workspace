@@ -46,7 +46,7 @@ Creation pass, do this first:
 4. Run `fit-plan` and report the verdict (bold it) on if there needs to be a fit pass.
 5. Review:
     - The review is for the user to act on: keep or add cases, fix awkward code, promote primitives. Include only items the user can act on. An item included only as context still makes the user verify it against the rules, which is the work the review should do for them.
-    - Does it follow principles?
+    - Does it follow principles? The review does not rest on lint or passing pairs.
     - Is there anything awkward or roundabout, like code that reads as pure implementation details with no conceptual meaning, or code that reimplements something existing, or repetitive code that might have a more principled form?
     - Any potential alt models? Alt impls are not models — do not propose them, and do not list them in the review.
     - For each Choice case pair, and for each alt model considered and dropped: show where the models diverge, as a concrete input fragment and each model's output on it. The fragment must witness a valid divergence: the diverging model's output on it is well-formed. For data-indistinguishable pairs, state what the shared data hides. A model the data rules out was never a candidate: it does not appear in the review, not even as a note on why it is absent.
