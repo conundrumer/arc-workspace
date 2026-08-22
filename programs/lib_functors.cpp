@@ -16,7 +16,7 @@
 // and arithmetic stay in Datalog inside the single clause.
 //
 // Constants mirror lib.dl's disjoint #define ranges (Dir 10-13, Axis 20-21,
-// D4 50-57).
+// DiagDir 30-33, D4 50-57).
 //
 // Build: see build_functors() in run_dl.py (auto-built; artifact gitignored).
 
@@ -31,6 +31,11 @@ using souffle::RamDomain;
 
 #define AXIS_V 20
 #define AXIS_H 21
+
+#define DIAG_TL 30
+#define DIAG_TR 31
+#define DIAG_BL 32
+#define DIAG_BR 33
 
 #define D4_ID 50
 #define D4_CW 51
@@ -60,7 +65,16 @@ RamDomain dist_proj(RamDomain d, RamDomain t, RamDomain b, RamDomain l, RamDomai
 // the typed selector variable (Dir / Axis) as plain `number`, breaking the
 // wrapper head's declared type. keep_dir assembles edge_delta; keep_axis assembles
 // split and the outer/inner records of divide / divide_by_size / concat.
+//
+// keep_dir's selector is a Dir8: a corner is its two cardinal edges, so a
+// DiagDir sel matches either of those targets and edge_delta places v at both.
 RamDomain keep_dir(RamDomain sel, RamDomain target, RamDomain v) {
+    switch (sel) {
+        case DIAG_TL: return (target == DIR_T || target == DIR_L) ? v : 0;
+        case DIAG_TR: return (target == DIR_T || target == DIR_R) ? v : 0;
+        case DIAG_BL: return (target == DIR_B || target == DIR_L) ? v : 0;
+        case DIAG_BR: return (target == DIR_B || target == DIR_R) ? v : 0;
+    }
     return sel == target ? v : 0;
 }
 RamDomain keep_axis(RamDomain sel, RamDomain target, RamDomain v) {

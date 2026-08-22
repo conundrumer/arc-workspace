@@ -56,7 +56,7 @@ parse.grid($U(), P, Col) :- in(P, Col).
 
 // One step toward each corner.
 stamp(Off, Col, $Corners()) :-
-    diag_dir_elem(Diag), diag_step_delta(Diag, Off), c.paint(Col).
+    diag_dir_elem(Diag), step_delta(Diag, Off), c.paint(Col).
 
 // --- Table ---
 

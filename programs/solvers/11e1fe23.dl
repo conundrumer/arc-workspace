@@ -48,7 +48,7 @@ mini(P, Col, $Shrink()) :-
     center(C),
     ( c.center_paint(Col), P = C                              // the center
     ; box.corner($U(), P_mark, Diag), mark(P_mark, Col),      // a mark at its box corner
-      diag_step_delta(Diag, Delta), compose(C, Delta, P)      // one step out that way
+      step_delta(Diag, Delta), compose(C, Delta, P)           // one step out that way
     ).
 
 // --- Converge ---
@@ -61,7 +61,7 @@ mini(P, Col, $Converge()) :-
     ( c.center_paint(Col), P = C                              // the center
     ; mark(P_mark, Col), box.inner($U(), P_mark, P_in),       // a mark in the box's frame
       place.quadrant($U(), P_in, Diag),                       // the quadrant it lies in
-      diag_step_delta(Diag, Delta), compose(C, Delta, P)      // one step out that way
+      step_delta(Diag, Delta), compose(C, Delta, P)           // one step out that way
     ).
 
 // --- Cross ---
@@ -86,7 +86,7 @@ mini(P, Col, $Cross()) :-
     meet(C),
     ( c.center_paint(Col), P = C                              // the meeting cell
     ; sees(M, C, D), mark(M, Col),                            // a ray that reached it
-      diag_opposite(D, D_back), diag_step_delta(D_back, Delta),
+      diag_opposite(D, D_back), step_delta(D_back, Delta),
       compose(C, Delta, P)                                    // one step back toward its mark
     ).
 

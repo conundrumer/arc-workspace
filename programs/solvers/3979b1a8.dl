@@ -62,7 +62,7 @@ on_diag(Ch, P) :- frame_cell(Ch, P), c.growth(Diag), diag_dist(P, Diag, _, K, K)
 // The diagonal advance of one period.
 .decl period_jump(delta: Position)
 period_jump(Delta) :-
-    c.growth(Diag), c.period(N), diag_jump_delta(Diag, N, Delta).
+    c.growth(Diag), c.period(N), jump_delta(Diag, N, Delta).
 
 .decl out(p: Position, col: Color, c: Choice)
 
@@ -120,7 +120,7 @@ out(P, Col, Ch) :-
     .decl cand(n: number, delta: Shift)
     cand(N, Delta) :-
         ex_out(_, P, _), axis_elem(A), sub_extent(P, A, N),
-        growth(Diag), diag_opposite(Diag, Back), diag_jump_delta(Back, N, Delta).
+        growth(Diag), diag_opposite(Diag, Back), jump_delta(Back, N, Delta).
 
     // A period whose continued cell and its source disagree.
     .decl mismatch(n: number)

@@ -91,7 +91,7 @@ lit(P, Col, $Parity(S)) :- center(S, Col, _, P).
 lit(Q, Col, $Parity(S)) :-
     center(S, Col, E, P),
     opposite(E, D), axis_of(D, A), diag_dirs(Diag, A, D, _),   // corners away from the edge
-    diag_step_delta(Diag, Sd), compose(P, Sd, Q), in(Q, _).
+    step_delta(Diag, Sd), compose(P, Sd, Q), in(Q, _).
 
 // --- $Walk ---
 

@@ -19,14 +19,13 @@ seated(P_in, P_out) :- in(P_in, _), c.seat_delta(Delta), compose(P_in, Delta, P_
 .decl out(p: Position, col: Color)
 out(P_out, Col) :- in(P_in, Col), seated(P_in, P_out).
 out(P_ring, Col) :-
-    in(P_in, Col), dir_elem(D), dist(P_in, D, 0),   // input cell on edge d
-    seated(P_in, P_out),
-    step_delta(D, S), compose(P_out, S, P_ring).    // one step past the edge
-out(P_corner, Col) :-
-    in(P_in, _), diag_dir_elem(Diag), diag_dist(P_in, Diag, _, 0, 0),   // input corner cell
-    seated(P_in, P_out),
-    diag_step_delta(Diag, S), compose(P_out, S, P_corner),              // one step past the corner
-    c.bg(Col).
+    in(P_in, Col_in),                                         // input cell
+    ( dir_elem(D), dist(P_in, D, 0),                          // on edge d
+      step_delta(D, S), Col = Col_in                          // steps out carrying its color
+    ; diag_dir_elem(Diag), diag_dist(P_in, Diag, _, 0, 0),    // at corner diag
+      step_delta(Diag, S), c.bg(Col)                          // steps out as bg
+    ),
+    seated(P_in, P_out), compose(P_out, S, P_ring).           // the cell past its seat
 
 // --- fit ---
 

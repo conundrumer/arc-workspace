@@ -51,7 +51,7 @@ grown(P2, Col) :-
     grown(P1, Col), c.diag(Diag),
     ( long_axis(A), diag_dirs(Diag, A, _, D_stack),
       step_delta(D_stack, S)                          // step down the stack
-    ; diag_step_delta(Diag, S)                        // step toward the corner
+    ; step_delta(Diag, S)                             // step toward the corner
     ),
     compose(P1, S, P2), frame.cell($U(), P2).
 

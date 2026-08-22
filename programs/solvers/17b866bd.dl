@@ -68,7 +68,7 @@ impl_choice($Holes()). impl_choice($Stamp()).
     .decl mark_block(key: Key, p: Position, diag: DiagDir, id: Ident)
     mark_block(K, P, Diag, Id) :-
         mark(K, P, _),
-        diag_dir_elem(Diag), line(W), diag_jump_delta(Diag, W, J),
+        diag_dir_elem(Diag), line(W), jump_delta(Diag, W, J),
         compose(P, J, P0),
         label(K, P0, Id).
 

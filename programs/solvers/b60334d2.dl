@@ -51,12 +51,12 @@ halo(P, Col, $Halo(Cr)) :-
 
 halo(P, Col, $Halo($Fixed())) :-
     marker_at(Q, _), c.corner_col(Col),              // marker, corner color
-    diag_dir_elem(Dg), diag_step_delta(Dg, S),       // one step to a corner
+    diag_dir_elem(Dg), step_delta(Dg, S),            // one step to a corner
     compose(Q, S, P), in(P, _).                      // neighbor, on-grid
 
 halo(P, Col, $Halo($Prop())) :-
     marker_at(Q, Col),                               // marker supplies the color
-    diag_dir_elem(Dg), diag_step_delta(Dg, S),       // one step to a corner
+    diag_dir_elem(Dg), step_delta(Dg, S),            // one step to a corner
     compose(Q, S, P), in(P, _).                      // neighbor, on-grid
 
 // --- Stamp ---

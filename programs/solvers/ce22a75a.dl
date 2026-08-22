@@ -65,7 +65,7 @@ out(P, Col, $Center()) :-
 
 .decl grown(p: Position)
 grown(P) :- mark(P).
-grown(P) :- mark(M), dir8_step_delta(_, S), compose(M, S, P), in(P, _).
+grown(P) :- mark(M), dir8_elem(D), step_delta(D, S), compose(M, S, P), in(P, _).
 
 out(P, Col, $Grow()) :- grown(P), c.out_fill(Col).
 out(P, Col, $Grow()) :- in(P, _), !grown(P), c.bg(Col).

@@ -56,9 +56,9 @@ out(ORIGIN, Col_hole, $Box()) :-
 // Some surrounding cell of p does not carry ink a.
 .decl defect(p: Position, a: Color)
 defect(P, A) :-
-    in(P, _), ink(A),                            // candidate cell × ink
-    dir8_step_delta(_, S), compose(P, S, P2),    // a surrounding cell
-    !in(P2, A).                                  // not that ink there
+    in(P, _), ink(A),                                   // candidate cell × ink
+    dir8_elem(D), step_delta(D, S), compose(P, S, P2),  // a surrounding cell
+    !in(P2, A).                                         // not that ink there
 
 out(ORIGIN, Col, $Ring()) :-
     in(P, Col),                              // candidate cell
@@ -72,9 +72,9 @@ inked(P) :- in(P, Col), !c.bg(Col).
 // Some surrounding cell of p is bg or off-grid.
 .decl gap(p: Position)
 gap(P) :-
-    in(P, _),                                    // candidate cell
-    dir8_step_delta(_, S), compose(P, S, P2),    // a surrounding cell
-    !inked(P2).                                  // no ink there
+    in(P, _),                                           // candidate cell
+    dir8_elem(D), step_delta(D, S), compose(P, S, P2),  // a surrounding cell
+    !inked(P2).                                         // no ink there
 
 out(ORIGIN, Col, $Full()) :-
     in(P, Col), !gap(P).                     // cell with surround all ink

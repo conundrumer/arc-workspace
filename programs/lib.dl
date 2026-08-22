@@ -111,7 +111,7 @@
 
 // Dispatch/projection functors (C++, in lib_functors.cpp).
 .functor dist_proj(d: Dir, t: number, b: number, l: number, r: number): number
-.functor keep_dir(sel: Dir, target: number, v: number): number
+.functor keep_dir(sel: Dir8, target: number, v: number): number
 .functor keep_axis(sel: Axis, target: number, v: number): number
 .functor axis_near(a: Axis, t: number, b: number, l: number, r: number): number
 .functor axis_far(a: Axis, t: number, b: number, l: number, r: number): number
@@ -135,6 +135,10 @@ diag_dir_elem(DIAG_TL).
 diag_dir_elem(DIAG_TR).
 diag_dir_elem(DIAG_BL).
 diag_dir_elem(DIAG_BR).
+
+.decl dir8_elem(d: Dir8)
+dir8_elem(D) :- dir_elem(D).
+dir8_elem(D) :- diag_dir_elem(D).
 
 .decl d4_elem(d: D4)
 d4_elem(D4_ID).
@@ -215,6 +219,11 @@ diag_opposite(DIAG_BR, DIAG_TL).
 diag_opposite(DIAG_TR, DIAG_BL).
 diag_opposite(DIAG_BL, DIAG_TR).
 
+// Opposite direction of either kind.
+.decl dir8_opposite(d: Dir8, d2: Dir8)
+dir8_opposite(D, D2) :- opposite(D, D2).
+dir8_opposite(D, D2) :- diag_opposite(D, D2).
+
 .decl perp(a: Axis, a2: Axis)
 perp(AXIS_V, AXIS_H).
 perp(AXIS_H, AXIS_V).
@@ -265,40 +274,22 @@ compose([T1, B1, L1, R1], [T2, B2, L2, R2], [T1+T2, B1+B2, L1+L2, R1+R2]) :- tru
 geq([T1, B1, L1, R1], [T2, B2, L2, R2]) :-
     T1 >= T2, B1 >= B2, L1 >= L2, R1 >= R2.
 
-// Edge delta: a Position carrying k at edge d, zero elsewhere.
-.decl edge_delta(d: Dir, k: number, p: Position) inline
+// The delta relations below bind none of their direction: the caller
+// supplies d, from dir_elem, diag_dir_elem, or dir8_elem when it ranges
+// over a set.
+
+// Edge delta: a Position carrying k at edge d, zero elsewhere. At a corner,
+// k sits at both of the corner's edges.
+.decl edge_delta(d: Dir8, k: number, p: Shift) inline
 edge_delta(D, K, [@keep_dir(D, DIR_T, K), @keep_dir(D, DIR_B, K), @keep_dir(D, DIR_L, K), @keep_dir(D, DIR_R, K)]) :- true.
 
-// K-cell displacement toward d: -k at edge d, +k at its opposite.
-.decl jump_delta(d: Dir, k: number, delta: Position) inline
-jump_delta(D, K, Delta) :-
-    opposite(D, O), edge_delta(D, -K, Sd), edge_delta(O, K, So), compose(Sd, So, Delta).
+// K-cell displacement toward d: -k at each edge of d, +k at each opposite.
+.decl jump_delta(d: Dir8, k: number, delta: Shift) inline
+jump_delta(D, K, [B - T, T - B, R - L, L - R]) :- edge_delta(D, K, [T, B, L, R]).
 
 // Unit step toward d — the k = 1 jump_delta.
-.decl step_delta(d: Dir, delta: Position) inline
+.decl step_delta(d: Dir8, delta: Shift) inline
 step_delta(D, Step) :- jump_delta(D, 1, Step).
-
-// K-cell displacement toward a corner — the DiagDir peer of jump_delta:
-// the corner's two cardinal jumps composed.
-.decl diag_jump_delta(diag: DiagDir, k: number, delta: Position) inline
-diag_jump_delta(Diag, K, Delta) :-
-    dir_of(Diag, AXIS_V, Dv), dir_of(Diag, AXIS_H, Dh),
-    jump_delta(Dv, K, Sv), jump_delta(Dh, K, Sh),
-    compose(Sv, Sh, Delta).
-
-// Unit step toward a corner — the k = 1 diag_jump_delta.
-.decl diag_step_delta(diag: DiagDir, delta: Position) inline
-diag_step_delta(Diag, Delta) :- diag_jump_delta(Diag, 1, Delta).
-
-// K-cell displacement toward a Dir8 — jump_delta and diag_jump_delta as
-// one relation, grounding its own direction; a caller supplies only k.
-.decl dir8_jump_delta(d: Dir8, k: number, delta: Shift) inline
-dir8_jump_delta(D, K, Delta) :- dir_elem(D), jump_delta(D, K, Delta).
-dir8_jump_delta(D, K, Delta) :- diag_dir_elem(D), diag_jump_delta(D, K, Delta).
-
-// Unit step toward a Dir8 — the k = 1 dir8_jump_delta.
-.decl dir8_step_delta(d: Dir8, delta: Shift) inline
-dir8_step_delta(D, Delta) :- dir8_jump_delta(D, 1, Delta).
 
 // Decompose p by axis: along carries the axis component (perpendicular
 // zeroed); across carries the perpendicular (axis zeroed).
@@ -621,7 +612,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     .decl cast(key: Key, p: Position, d: Dir8, k: number)
     cast(Ky, P, D, 0) :- mark(Ky, P), dir(D).
     cast(Ky, P2, D, K+1) :-
-        cast(Ky, P, D, K), dir8_step_delta(D, S), compose(P, S, P2), onward(P2, D).
+        cast(Ky, P, D, K), step_delta(D, S), compose(P, S, P2), onward(P2, D).
 
     // p on a key-k ray cast toward d, k cells from the casting mark. Rows are
     // per witness: a cell with two marks on its line toward d gets one row per
@@ -1124,7 +1115,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 // Connected components under 8-adjacency — Components over the full
 // Dir8 step set.
 .comp Components8<Key> : Components<Key> {
-    step(S) :- dir8_step_delta(_, S).
+    step(S) :- dir8_elem(D), step_delta(D, S).
 }
 
 // Seeded connectivity: reach is the union of the components the seeds

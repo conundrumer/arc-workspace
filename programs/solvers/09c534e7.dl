@@ -21,7 +21,7 @@ comp.node($U(), P) :- ink(P).
 
 // Ink cell with a neighbor off the ink — the network's outline.
 .decl border(p: Position)
-border(P) :- ink(P), dir8_step_delta(_, S), compose(P, S, P2), !ink(P2).
+border(P) :- ink(P), dir8_elem(D), step_delta(D, S), compose(P, S, P2), !ink(P2).
 
 .decl interior(p: Position)
 interior(P) :- ink(P), !border(P).

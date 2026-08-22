@@ -29,14 +29,14 @@
     .decl edge(key: Key, p: Position)
     edge(Ky, P) :-
         cell(Ky, P),
-        dir8_step_delta(_, S), compose(P, S, Q), !cell(Ky, Q).
+        dir8_elem(D), step_delta(D, S), compose(P, S, Q), !cell(Ky, Q).
 
     // The shortest inward walk from the boundary.
     .decl ring(key: Key, p: Position, k: number)
     ring(Ky, P, 0) :- edge(Ky, P).
     ring(Ky, P, K2) :-
         ring(Ky, Q, K), K2 = K + 1,
-        dir8_step_delta(_, S), compose(Q, S, P), cell(Ky, P).
+        dir8_elem(D), step_delta(D, S), compose(Q, S, P), cell(Ky, P).
     ring(Ky, P, K) <= ring(Ky, P, K2) :- K2 < K.
 }
 
@@ -79,22 +79,15 @@ depth(P, K, $Peel()) :- peel.ring($U(), P, K).
 
 // --- Sight ---
 
-// Opposite Dir8 — opposite and diag_opposite as one relation.
-.decl dir8_opposite(d: Dir8, d2: Dir8)
-dir8_opposite(D, D2) :- opposite(D, D2).
-dir8_opposite(D, D2) :- diag_opposite(D, D2).
-
 // A rim cell — the outside starts directly beyond it — casts back over the
 // cells that face the outside through it; the key is the cast direction, so
 // a cell reads only casts matching its view line.
 .init sray = Ray<Dir8>
-sray.dir(D) :- dir_elem(D).
-sray.dir(D) :- diag_dir_elem(D).
-sray.cell(D, P) :- open(P), dir_elem(D).
-sray.cell(D, P) :- open(P), diag_dir_elem(D).
+sray.dir(D) :- dir8_elem(D).
+sray.cell(D, P) :- open(P), dir8_elem(D).
 sray.mark(D, P) :-
-    open(P), dir8_step_delta(D2, S), compose(P, S, Q), !open(Q),  // outside beyond P toward d2
-    dir8_opposite(D2, D).                                         // cast back into the set
+    open(P), dir8_opposite(D2, D),                           // a direction and the cast back
+    step_delta(D2, S), compose(P, S, Q), !open(Q).           // outside beyond P toward d2
 
 // A cell's sight depth: the fewest steps to a rim cell over the eight view
 // lines — how many open cells remain before the ray exits.
