@@ -167,7 +167,9 @@ def lint_body(source: str) -> list[tuple[str, int, str, str]]:
     raw_lines = src.splitlines()
 
     def code(lineno: int) -> str:
-        return COMMENT_RE.sub("", raw_lines[lineno - 1])
+        line = COMMENT_RE.sub("", raw_lines[lineno - 1])
+        # Souffle's choice-domain qualifier is not arithmetic.
+        return line.replace("choice-domain", " " * len("choice-domain"))
 
     skip: set[int] = set()
     for comp in program.comps().values():

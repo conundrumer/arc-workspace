@@ -285,6 +285,9 @@ class Decl:
     qualifiers: list[str]
     line: int
     end_line: int
+    # Souffle choice-domain specs: each entry an attribute name or a
+    # parenthesized attribute tuple, e.g. ["b", "(a, c)"].
+    choice_domain: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -424,7 +427,36 @@ class _Parser:
         quals: list[str] = []
         while self.peek().kind == "ident" and self.peek().text in DECL_QUALIFIERS:
             quals.append(self.next().text)
-        return Decl(name, fields, quals, line, self.toks[self.pos - 1].line)
+        choice_dom = self.choice_domain()
+        return Decl(name, fields, quals, line, self.toks[self.pos - 1].line,
+                    choice_dom)
+
+    def choice_domain(self) -> list[str]:
+        """Souffle `choice-domain d1, d2` on a decl; each d an attribute or
+        a parenthesized attribute tuple."""
+        if not (self.peek().kind == "ident" and self.peek().text == "choice"
+                and self.at("-", 1)):
+            return []
+        self.next()
+        self.next()
+        if not (self.peek().kind == "ident" and self.peek().text == "domain"):
+            raise ParseError(self.peek().line, "expected 'domain' after 'choice-'")
+        self.next()
+        specs: list[str] = []
+        while True:
+            if self.at("("):
+                self.next()
+                parts = [self.ident("choice-domain attribute")]
+                while self.at(","):
+                    self.next()
+                    parts.append(self.ident("choice-domain attribute"))
+                self.expect(")")
+                specs.append("(" + ", ".join(parts) + ")")
+            else:
+                specs.append(self.ident("choice-domain attribute"))
+            if not self.at(","):
+                return specs
+            self.next()
 
     def init(self) -> Init:
         line = self.next().line

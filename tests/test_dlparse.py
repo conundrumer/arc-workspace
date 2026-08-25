@@ -189,3 +189,18 @@ a(X) :- g(X).
 """
     ix = Index(parse(src))
     assert ix.rules[0].section == "CaseA"
+
+
+def test_choice_domain():
+    src = """\
+.decl seat(b: number, pc: number) choice-domain b, pc
+seat(B, P) :- cand(B, P).
+.decl one(x: number, y: number, z: number) choice-domain (x, y), z
+.decl plain(x: number)
+"""
+    from dl.dlparse import Decl
+
+    decls = {d.name: d for d in parse(src).items if isinstance(d, Decl)}
+    assert decls["seat"].choice_domain == ["b", "pc"]
+    assert decls["one"].choice_domain == ["(x, y)", "z"]
+    assert decls["plain"].choice_domain == []

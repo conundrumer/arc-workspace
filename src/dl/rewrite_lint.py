@@ -201,6 +201,9 @@ class _Lint:
             return False
         if scope in ("Fit", "Consts") and name in self.fitted_slots():
             return False
+        decl = self.decl_of(key)
+        if decl is not None and decl.choice_domain:
+            return False  # the pick lives on the decl; substitution loses it
         defs = self.defs(key)
         if not any(d.body is not None for d in defs):
             return False
