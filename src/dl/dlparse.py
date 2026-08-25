@@ -309,6 +309,17 @@ class Rule:
 
 
 @dataclass
+class Rigid:
+    """A RIGID block: chart decls and facts stated in one intrinsic frame,
+    exposed only as D4 placements (`<block>_<rel>` with a leading d4
+    column). The chart itself is unreadable outside the expansion."""
+    name: str
+    items: list[Item]   # chart Decls and fact Rules
+    line: int
+    end_line: int
+
+
+@dataclass
 class Comp:
     name: str
     params: list[str]
@@ -330,7 +341,7 @@ class Program:
 
 type Term = Var | Wild | Num | Str | MacroConst | Ctor | Rec | Call | UnOp | BinOp | Agg
 type Lit = Atom | Neg | Cmp | Bool | Disj
-type Item = Include | Define | Functor | TypeDecl | Decl | Init | Rule | Comp
+type Item = Include | Define | Functor | TypeDecl | Decl | Init | Rule | Comp | Rigid
 
 
 # --- parser ---
@@ -382,7 +393,25 @@ class _Parser:
             if word == "functor":
                 return self.functor()
             raise ParseError(t.line, f"unknown directive .{word}")
+        if t.kind == "ident" and t.text == "RIGID" and self.at("(", 1):
+            return self.rigid()
         return self.clause()
+
+    def rigid(self) -> Rigid:
+        line = self.next().line  # RIGID
+        self.expect("(")
+        name = self.ident("rigid block name")
+        self.expect(",")
+        items: list[Item] = []
+        while not self.at(")"):
+            if self.peek().kind == "eof":
+                raise ParseError(line, f"unterminated RIGID {name}")
+            it = self.item(top=False)
+            if not (isinstance(it, Decl) or (isinstance(it, Rule) and it.body is None)):
+                raise ParseError(line, f"RIGID {name} holds decls and facts only")
+            items.append(it)
+        end = self.next().line  # ')'
+        return Rigid(name, items, line, end)
 
     def hash_directive(self) -> Include | Define:
         t = self.next()
@@ -785,6 +814,17 @@ class Index:
                 self._collect(it.items, it.name)
             elif isinstance(it, Rule):
                 self.rules.append(RuleInfo(scope, it, self._section(it.line, scope)))
+            elif isinstance(it, Rigid):
+                # The block indexes as its placed forms; the chart and its
+                # facts stay opaque, as GRID cell values do.
+                for sub in it.items:
+                    if isinstance(sub, Decl):
+                        placed = Decl(
+                            f"{it.name}_{sub.name}",
+                            [Field("d4", "D4"), *sub.fields],
+                            [], sub.line, sub.end_line,
+                        )
+                        self.decls[scope][placed.name] = placed
 
     def _section(self, line: int, scope: str) -> str | None:
         if scope != TOP:

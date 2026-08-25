@@ -24,8 +24,9 @@ from dl.source import (
     _slot_facts,
     _split_args,
     comp_decls,
-    expand_grid_macros,
+    expand_macros,
     fit_slots,
+    public_slot,
 )
 
 
@@ -97,7 +98,7 @@ def probe_report(
     lists rule-derived Consts relations whose rules carry nonzero number
     literals; a rule commented `@structural` is exempt.
     """
-    source = expand_grid_macros((SOLVERS_DIR / f"{stem}.dl").read_text())
+    source = expand_macros((SOLVERS_DIR / f"{stem}.dl").read_text())
     task = load_task(stem.split("_", 1)[0])
     defines = _lib_defines()
     s, e = _comp_span(source, "Consts")
@@ -133,7 +134,7 @@ def probe_report(
         if not _slot_facts(source, slot):
             continue
         if any(t not in supported for t in types):
-            results.append((slot, {}))
+            results.append((public_slot(slot), {}))
             continue
         stored = {
             tuple(stored_value(a, t) for a, t in zip(args, types))
@@ -163,7 +164,7 @@ def probe_report(
                 else:
                     n *= domains[t]
             verdicts["domain"] = f"enumerable({n})"
-        results.append((slot, verdicts))
+        results.append((public_slot(slot), verdicts))
 
     combo = _combine_triples(source)
     if combo is not None and "PanelCombine" in proposals:

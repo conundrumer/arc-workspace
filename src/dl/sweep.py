@@ -19,12 +19,14 @@ from dl.paths import SOLVERS_DIR
 from dl.solve import _profile
 from dl.souffle import _pool_workers
 from dl.source import (
+    RIGID_CHART_PREFIX,
     _comp_span,
     _render_arg,
     _slot_facts,
     _split_args,
     comp_decls,
-    expand_grid_macros,
+    expand_macros,
+    public_slot,
     swap_fact,
 )
 
@@ -49,9 +51,11 @@ def sweep_report(
     (fitting, stored, types, verdicts) — verdicts maps each extra fitting
     value to its test-pass bool — 'skip' carries the reason.
     """
-    # GRID calls expand first, so a GRID-fed slot reads as ordinary facts;
-    # re-expansion at build time is a no-op.
-    source = expand_grid_macros((SOLVERS_DIR / f"{stem}.dl").read_text())
+    # Macros expand first, so a GRID-fed slot reads as ordinary facts and a
+    # RIGID chart as an ordinary generated-name slot; re-expansion at build
+    # time is a no-op. Chart slots report under their public names, and
+    # their derived placed forms are elided rather than reported.
+    source = expand_macros((SOLVERS_DIR / f"{stem}.dl").read_text())
     task = load_task(stem.split("_", 1)[0])
     defines = _lib_defines()
     s, e = _comp_span(source, "Consts")
@@ -60,17 +64,23 @@ def sweep_report(
     reference: list[frozenset[str]] | None = None
     test_reference: list[frozenset[str]] | None = None
     results: list[tuple[str, str, object]] = []
-    for slot, types in comp_decls(source, "Consts").items():
+    slots = comp_decls(source, "Consts")
+    placed = {public_slot(n) for n in slots if n.startswith(RIGID_CHART_PREFIX)}
+    for slot, types in slots.items():
+        if slot in placed:
+            continue
         if re.search(rf"\b{slot}\s*\([^)]*\)\s*:-", consts_text):
-            results.append((slot, "skip", "derived"))
+            results.append((public_slot(slot), "skip", "derived"))
             continue
         facts = _slot_facts(source, slot)
         if not facts:
-            results.append((slot, "skip", "0 facts"))
+            results.append((public_slot(slot), "skip", "0 facts"))
             continue
         if not all(t in ENUM_TYPES or t in ("Color", "number")
                    or t in POSITION_TYPES for t in types):
-            results.append((slot, "skip", f"non-enumerable ({', '.join(types)})"))
+            results.append(
+                (public_slot(slot), "skip", f"non-enumerable ({', '.join(types)})")
+            )
             continue
 
         stored = []
@@ -104,14 +114,15 @@ def sweep_report(
         candidates = sorted(set(itertools.product(*domains)) | set(stored))
         if len(candidates) > max_candidates:
             results.append(
-                (slot, "skip", f"{len(candidates)} alternative fills, cap {max_candidates}")
+                (public_slot(slot), "skip",
+                 f"{len(candidates)} alternative fills, cap {max_candidates}")
             )
             continue
 
         if reference is None:
             reference = _profile(source, task.train)
             if reference is None:
-                results.append((slot, "skip", "stored fill fails train"))
+                results.append((public_slot(slot), "skip", "stored fill fails train"))
                 continue
 
         def test(vals, slot=slot):
@@ -135,7 +146,7 @@ def sweep_report(
 
                 with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
                     verdicts = dict(zip(extras, executor.map(test_check, extras)))
-        results.append((slot, "swept", (fitting, stored, types, verdicts)))
+        results.append((public_slot(slot), "swept", (fitting, stored, types, verdicts)))
     return results
 
 

@@ -6,7 +6,7 @@ rewriting, and the per-mode IO directives Souffle needs.
 
 import re
 
-from dl.dlparse import Comp, Decl, parse
+from dl.dlparse import Comp, Decl, ParseError, Rigid, parse
 
 # Per-mode IO directives, appended to the built source.
 SOLVE_DIRECTIVES = ".input in(IO=stdin)\n.output out(IO=stdout)\n"
@@ -87,6 +87,110 @@ def expand_grid_macros(source: str) -> str:
     return "".join(out)
 
 
+RIGID_CALL_RE = re.compile(r"\bRIGID\s*\(")
+RIGID_CHART_PREFIX = "_rigid_"
+
+# The D4 action per RIGID column type. Spatial columns act through their
+# type's action relation; Axis kinds act through the induced swap on a
+# member direction; the rest pass through by identity.
+_RIGID_ACTIONS = {
+    "Position": "apply", "Shift": "apply", "Inset": "apply",
+    "Dir": "apply_dir", "DiagDir": "apply_diag_dir", "Dir8": "apply_dir8",
+}
+_RIGID_AXIS_ACTIONS = {
+    "Axis": ("axis_of", "apply_dir"),
+    "DiagAxis": ("diag_axis_of", "apply_diag_dir"),
+}
+_RIGID_IDENTITY = {"Color", "number", "Ident", "symbol", "Example"}
+
+
+def _rigid_rule(head: str, src: str, types: list[str]) -> str:
+    """The closure rule deriving `head` — D4 placements of chart `src`."""
+    heads, srcs, atoms = [], [], []
+    for i, t in enumerate(types):
+        if t in _RIGID_ACTIONS:
+            heads.append(f"A{i}")
+            srcs.append(f"B{i}")
+            atoms.append(f"{_RIGID_ACTIONS[t]}(D4, B{i}, A{i})")
+        elif t in _RIGID_AXIS_ACTIONS:
+            member, act = _RIGID_AXIS_ACTIONS[t]
+            heads.append(f"A{i}")
+            srcs.append(f"B{i}")
+            atoms.append(f"{member}(Bd{i}, B{i}), {act}(D4, Bd{i}, Ad{i}), "
+                         f"{member}(Ad{i}, A{i})")
+        elif t in _RIGID_IDENTITY:
+            heads.append(f"A{i}")
+            srcs.append(f"A{i}")
+        else:
+            raise ValueError(f"RIGID column type {t!r} has no D4 action")
+    body = ", ".join([f"{src}({', '.join(srcs)})", "d4_elem(D4)", *atoms])
+    return f"{head}(D4, {', '.join(heads)}) :- {body}."
+
+
+def expand_rigid_macros(source: str) -> str:
+    """Replace each RIGID block with its chart under generated names and
+    the placed forms the solver reads."""
+    out, pos = [], 0
+    for m in RIGID_CALL_RE.finditer(source):
+        if m.start() < pos:
+            continue
+        depth, i = 1, m.end()
+        while i < len(source) and depth:
+            depth += source[i] == "("
+            depth -= source[i] == ")"
+            i += 1
+        inner = source[m.end():i - 1]
+        block, _, body = inner.partition(",")
+        block = block.strip()
+        line_start = source.rfind("\n", 0, m.start()) + 1
+        indent = source[line_start:m.start()]
+        indent = indent if not indent.strip() else ""
+        generated = []
+        for dm in DECL_RE.finditer(body):
+            rel, fields = dm.group(1), dm.group(2).strip()
+            types = [a.split(":")[1].strip() for a in _split_args(fields)]
+            body = re.sub(rf"\b{rel}\b", f"{RIGID_CHART_PREFIX}{block}_{rel}", body)
+            generated += [
+                f".decl {block}_{rel}(d4: D4, {fields})",
+                _rigid_rule(f"{block}_{rel}",
+                            f"{RIGID_CHART_PREFIX}{block}_{rel}", types),
+            ]
+        out.append(source[pos:m.start()])
+        out.append(body.strip())
+        out.append("\n" + "\n".join(f"{indent}{g}" for g in generated))
+        pos = i
+    out.append(source[pos:])
+    return "".join(out)
+
+
+def expand_macros(source: str) -> str:
+    """Both macro expansions; RIGID first, so its inner GRID calls expand."""
+    return expand_grid_macros(expand_rigid_macros(source))
+
+
+def public_slot(name: str) -> str:
+    """The placed name of a RIGID chart relation; other names pass through."""
+    return name.removeprefix(RIGID_CHART_PREFIX)
+
+
+def rigid_decls(source: str) -> dict[str, tuple[str, list[str]]]:
+    """Placed-name -> (block, chart column types) for each RIGID chart
+    relation of Consts, from raw (unexpanded) source."""
+    try:
+        comp = parse(source).comps().get("Consts")
+    except ParseError:
+        return {}
+    out: dict[str, tuple[str, list[str]]] = {}
+    for it in comp.items if comp else []:
+        if isinstance(it, Rigid):
+            for sub in it.items:
+                if isinstance(sub, Decl):
+                    out[f"{it.name}_{sub.name}"] = (
+                        it.name, [f.type for f in sub.fields]
+                    )
+    return out
+
+
 def _comp(source: str, comp_name: str) -> Comp | None:
     return parse(source).comps().get(comp_name)
 
@@ -105,11 +209,14 @@ def comp_decls(source: str, comp_name: str) -> dict[str, list[str]]:
 
 def fit_slots(source: str) -> dict[str, list[str]] | None:
     """Fitted slots (name -> Consts arg types): Fit decls that mirror a
-    Consts decl. None when no Fit comp."""
+    Consts decl. None when no Fit comp. A RIGID chart relation mirrors
+    under its placed name, with the chart's types — the Fit derives the
+    chart in a pose of its own, and the runner compares up to pose."""
     fit = comp_decls(source, "Fit")
     if not fit:
         return None
     consts = comp_decls(source, "Consts")
+    consts |= {name: types for name, (_, types) in rigid_decls(source).items()}
     return {name: consts[name] for name in fit if name in consts}
 
 
@@ -197,7 +304,7 @@ def swap_facts(source: str, slot: str, rows: list[tuple]) -> str:
 
 def build_source(source: str) -> str:
     """Assemble the solve-mode program from a solver file's source."""
-    return f"{expand_grid_macros(source)}\n{SOLVE_DIRECTIVES}"
+    return f"{expand_macros(source)}\n{SOLVE_DIRECTIVES}"
 
 
 def build_fit_source(source: str, slots: dict[str, list[str]]) -> str:
@@ -205,12 +312,25 @@ def build_fit_source(source: str, slots: dict[str, list[str]]) -> str:
 
     A slot with an Ident column gets no diff rules — its ids are arbitrary,
     so both sides relay to output relations and the runner compares them
-    modulo id renaming.
+    modulo id renaming. A RIGID slot gets no diff rules either: both sides
+    relay as placed forms — the stored side is already placed; the Fit's
+    chart closes through the same rule — and the runner compares orbits.
     """
+    rigid = rigid_decls(source)
     lines = [".init fit = Fit"]
     for name, types in sorted(slots.items()):
         args = ", ".join(f"A{i}" for i in range(len(types)))
-        if "Ident" in types:
+        if name in rigid:
+            typed = "d4: D4, " + ", ".join(f"a{i}: {t}" for i, t in enumerate(types))
+            lines += [
+                f".decl fit_rigid_{name}({typed})",
+                _rigid_rule(f"fit_rigid_{name}", f"fit.{name}", types),
+                f".output fit_rigid_{name}(IO=stdout)",
+                f".decl c_rigid_{name}({typed})",
+                f"c_rigid_{name}(D4, {args}) :- c.{name}(D4, {args}).",
+                f".output c_rigid_{name}(IO=stdout)",
+            ]
+        elif "Ident" in types:
             typed = ", ".join(f"a{i}: {t}" for i, t in enumerate(types))
             for side in ("fit", "c"):
                 lines += [
@@ -222,4 +342,4 @@ def build_fit_source(source: str, slots: dict[str, list[str]]) -> str:
             lines.append(f'fit_diff("{name}") :- fit.{name}({args}), !c.{name}({args}).')
             lines.append(f'fit_diff("{name}") :- c.{name}({args}), !fit.{name}({args}).')
     appended = "\n".join(lines)
-    return f"{expand_grid_macros(source)}\n{appended}\n{FIT_DIRECTIVES}"
+    return f"{expand_macros(source)}\n{appended}\n{FIT_DIRECTIVES}"

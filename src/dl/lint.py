@@ -32,6 +32,9 @@ COMMENT_RE = re.compile(r"//.*$")
 BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", flags=re.DOTALL)
 NUMERIC_LITERAL_RE = re.compile(r"(?<![A-Za-z_0-9.])\d+(?![A-Za-z_0-9.])")
 RANGE_RE = re.compile(r"\brange\s*\(")
+# RIGID chart names exist only in the macro expansion; any appearance in
+# solver source reads a stored pose the model claims unobservable.
+RIGID_CHART_RE = re.compile(r"\b_rigid_\w+")
 
 # Comparison-ops detector (<, <=, >, >=). Body comparisons are usually
 # legitimate, so this is opt-in.
@@ -149,6 +152,8 @@ def lint_body(source: str) -> list[tuple[str, int, str, str]]:
       - 'range'               — the `range` number generator
       - 'consts data'         — nonzero literal in a Consts rule; a rule
                                 line commented `@structural` exempts the rule
+      - 'rigid chart'         — a `_rigid_` name, anywhere: RIGID charts
+                                are readable only through their placed forms
       - 'comparison' (gated)  — <, <=, >, >=; enabled by LINT_COMPARISON
 
     Returns (category, lineno, match, raw_line). Skips // and /* */
@@ -179,6 +184,9 @@ def lint_body(source: str) -> list[tuple[str, int, str, str]]:
             skip.update(range(comp.line, comp.end_line + 1))
 
     for lineno in range(1, len(raw_lines) + 1):
+        for m in RIGID_CHART_RE.finditer(code(lineno)):
+            findings.append(("rigid chart", lineno, m.group(0),
+                             raw_lines[lineno - 1].rstrip()))
         if lineno in skip:
             continue
         raw_line = raw_lines[lineno - 1]

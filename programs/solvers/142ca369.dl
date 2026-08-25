@@ -20,14 +20,15 @@
     bg(0).
 
     // --- Glyph ---
-    // The marker shape, one orientation; the body closes over D4.
-    .decl glyph(p: Position)
-    GRID_MASK_2x2(glyph,
-        1, 1,
-        1, 0)
-    // The cell a ray leaves from, and where it heads.
-    .decl launch(p: Position) launch([0, 1, 0, 1]).
-    .decl aim(d: DiagDir) aim(DIAG_TL).
+    // The marker: its shape, the cell a ray leaves from, and where it heads.
+    RIGID(marker,
+        .decl glyph(p: Position)
+        GRID_MASK_2x2(glyph,
+            1, 1,
+            1, 0)
+        .decl launch(p: Position) launch([0, 1, 0, 1]).
+        .decl aim(d: DiagDir) aim(DIAG_TL).
+    )
 }
 
 .init c = Consts
@@ -79,17 +80,17 @@ enter(P, D, Col, $Gap()) :- elbow(P, Col, G), diag_opposite(G, D).
 .init occ = Occurrences<OC, Unit>
 occ.cell([D, Col], P, $U()) :- d4_elem(D), in(P, Col), !c.bg(Col).
 occ.shape([D, Col], P2, $U()) :-
-    in(_, Col), !c.bg(Col),                       // the color domain
-    d4_elem(D), c.glyph(P_m), apply(D, P_m, P2).  // the transformed shape
+    in(_, Col), !c.bg(Col),      // the color domain
+    c.marker_glyph(D, P2).       // the placed shape
 
 mark(P_grid, $Glyph()) :-
     occ.occurrence([D, Col], A),                  // a placed glyph
     occ.shape([D, Col], P_m2, $U()), compose(A, P_m2, P_grid).
 
 enter(P, D_aim, Col, $Glyph()) :-
-    occ.occurrence([D, Col], A),                  // a placed glyph
-    c.launch(P_l), apply(D, P_l, P_l2), compose(A, P_l2, P),   // its launch cell
-    c.aim(Dg), apply_diag_dir(D, Dg, D_aim).                   // its aim, rotated with it
+    occ.occurrence([D, Col], A),                     // a placed glyph
+    c.marker_launch(D, P_l), compose(A, P_l, P),     // its launch cell
+    c.marker_aim(D, D_aim).                          // its aim, placed with it
 
 // --- rays ---
 
@@ -161,28 +162,26 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !paint(P, _, Ch).
         diag_opposite(D, D_back), step_delta(D_back, S), compose(Q, S, P_l),
         ex_in(E, P_l, Col).                                                // the ink behind it
 
-    // The launching marker: the launch cell's same-color component, boxed.
+    // The launching marker: the launch cell's same-color component. One
+    // witness marker serves as the chart, in its own pose.
     .type EP = [e: Example, p: Position]
     .init flood = Reach<EP>
     flood.node([E, P_l], P) :- launch_cell(E, P_l, _, Col), ex_in(E, P, Col).
     flood.seed([E, P_l], P_l) :- launch_cell(E, P_l, _, _).
 
+    .init pick = Canon<EP>
+    pick.equiv([E, P_l], [E2, P_l2]) :-
+        launch_cell(E, P_l, _, _), launch_cell(E2, P_l2, _, _).
+
     .init box = BoxFrame<EP>
-    box.cell(K, P) :- flood.reach(K, P).
+    box.cell(K, P) :- pick.rep(K, K), flood.reach(K, P).
 
-    // The D4 element placing the stored orientation onto this marker: it
-    // carries the stored aim to the observed one, and the stored launch to
-    // the launch cell's place in the box.
-    .decl orient(e: Example, p_l: Position, d4: D4)
-    orient(E, P_l, D4) :-
-        launch_cell(E, P_l, D_obs, _), d4_elem(D4),
-        c.aim(Dg), apply_diag_dir(D4, Dg, D_obs),
-        c.launch(P_ls), apply(D4, P_ls, P_ll), box.inner([E, P_l], P_l, P_ll).
+    .decl marker_glyph(p: Position)
+    marker_glyph(S) :- box.inner(_, _, S).
 
-    // The marker's cells, carried back to the stored orientation.
-    .decl glyph(p: Position)
-    glyph(P_g) :-
-        orient(E, P_l, D4), d4_inverse(D4, D4i),
-        box.inner([E, P_l], _, P_inner),              // a marker cell, boxed
-        apply(D4i, P_inner, P_g).                     // carried back
+    .decl marker_launch(p: Position)
+    marker_launch(S) :- box.inner([E, P_l], P_l, S).
+
+    .decl marker_aim(d: DiagDir)
+    marker_aim(D) :- pick.rep([E, P_l], [E, P_l]), launch_cell(E, P_l, D, _).
 }

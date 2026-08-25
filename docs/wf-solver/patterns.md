@@ -87,6 +87,27 @@ pattern_out(1, 8).
 
 Per-entry relations with derive rules hold the same data, but a new entry is then new program text rather than new facts.
 
+## `RIGID` — Consts relations coupled as a rigid assembly
+
+A `RIGID` block groups Consts relations stated in one shared intrinsic frame and exposes them only as D4 placements that transform them together, so the stored pose is unobservable. Each relation reappears as `<block>_<rel>` with a leading D4 column and every column transformed by that element; consumers join relations on the element, which is what "the same oriented instance" means. The runner expands the block before Souffle sees the file, like GRID; the chart's generated names are unreadable outside the expansion (lint category 'rigid chart').
+
+```
+RIGID(marker,
+    .decl glyph(p: Position)
+    GRID_MASK_2x2(glyph,
+        1, 1,
+        1, 0)
+    .decl launch(p: Position) launch([0, 1, 0, 1]).
+    .decl aim(d: DiagDir) aim(DIAG_TL).
+)
+```
+
+The body reads `c.marker_glyph(D, P)`, `c.marker_launch(D, P_l)`, `c.marker_aim(D, D_aim)`, joined on D (142ca369). An id-keyed chart holds one independent assembly per id, the id passing through by identity (150deff5 `piece_member`).
+
+The closure is type-directed: `Position`, `Shift`, and `Inset` via `apply`; `Dir`, `DiagDir`, and `Dir8` via the direction actions; `Axis` and `DiagAxis` via the induced swap; `Color`, `number`, and `Ident` by identity. Scope is orientation only: translation freedom stays with `Occurrences` placement anchors, color freedom with instantiation keying.
+
+The Fit writes the chart under its placed name, in a pose of its own, and the runner compares up to pose: an ident-free block must be one joint D4 image of the stored assembly, and an id-keyed chart is compared per id, composed with id renaming.
+
 ## Position remapping via `GRID` id join
 
 To store a position correspondence, join two GRIDs on an opaque id: `src` labels the domain cells; `dst` gives each target cell the id of its source. The correspondence is visible in the layout; ids carry identity only. Raw Position-pair facts hold the same data in an unreadable form.
