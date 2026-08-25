@@ -31,23 +31,6 @@
 
 .init c = Consts
 
-// The regions of a keyed cell set that the grid edge cannot reach.
-.comp Closed<Key> {
-    .decl cell(key: Key, p: Position)  // input
-
-    // The edge-connected part of the set.
-    .init flood = Reach<Key>
-    flood.node(Ky, P) :- cell(Ky, P).
-    flood.seed(Ky, P) :- cell(Ky, P), dir_elem(D), dist(P, D, 0).  // on a grid edge
-
-    // Individuate only the closed cells.
-    .init regions = Components<Key>
-    regions.node(Ky, P) :- cell(Ky, P), !flood.reach(Ky, P).
-
-    .decl region(key: Key, p: Position, id: Ident)
-    region(Ky, P, Id) :- regions.label(Ky, P, Id).
-}
-
 // --- parse ---
 
 .comp Parse<Key> {

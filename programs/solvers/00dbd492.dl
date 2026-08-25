@@ -128,18 +128,11 @@ bg_cell(P) :- in(P, Col), c.bg(Col).
 
 region($Box(), Id, P) :- parse.viewed($U(), Id, P), bg_cell(P).
 
-// $Enclose: the components of the bg that no grid edge reaches.
-.init outside = Reach<Unit>
-outside.node($U(), P) :- bg_cell(P).
-outside.seed($U(), P) :- bg_cell(P), dir_elem(D), dist(P, D, 0).   // on a grid edge
+// $Enclose: the bg regions closed off from the grid edge.
+.init closed = Closed<Unit>
+closed.cell($U(), P) :- bg_cell(P).
 
-.decl enclosed(p: Position)
-enclosed(P) :- bg_cell(P), !outside.reach($U(), P).
-
-.init holes = Components<Unit>
-holes.node($U(), P) :- enclosed(P).
-
-region($Enclose(), Id, P) :- holes.label($U(), P, Id).
+region($Enclose(), Id, P) :- closed.region($U(), P, Id).
 
 // --- Key cases ---
 

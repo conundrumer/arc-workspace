@@ -1200,6 +1200,27 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     reach(Ky, Q) :- reach(Ky, P), step(D), compose(P, D, Q), node(Ky, Q).
 }
 
+// The regions a keyed cell set closes off from the grid edge — the
+// entity-level half of the enclose prior. Enclosure floods linearly (Reach
+// seeded on the edge); Components' pairwise closure runs over only the
+// closed cells. Reach stays the unit for cell-level enclosure and seeded
+// selection.
+.comp Closed<Key> {
+    .decl cell(key: Key, p: Position)  // input
+
+    // The edge-connected part of the set.
+    .init flood = Reach<Key>
+    flood.node(Ky, P) :- cell(Ky, P).
+    flood.seed(Ky, P) :- cell(Ky, P), dir_elem(D), dist(P, D, 0).
+
+    // Individuate only the closed cells.
+    .init regions = Components<Key>
+    regions.node(Ky, P) :- cell(Ky, P), !flood.reach(Ky, P).
+
+    .decl region(key: Key, p: Position, id: Ident)
+    region(Ky, P, Id) :- regions.label(Ky, P, Id).
+}
+
 // Occurrences of a shape among cells, per key: cells and shape members are
 // valued, and a placement occurs where every shape member lands on a cell
 // carrying that member's value — the ARC "find this shape" operation.
