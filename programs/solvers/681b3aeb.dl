@@ -1,0 +1,47 @@
+// 681b3aeb
+// concept: objects, pack
+// The input scatters colored shapes. They translate into a square that they
+// pack exactly one way, and every cell takes the color of the shape covering
+// it.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl bg(col: Color) bg(0).
+
+    // The square the shapes fill.
+    .decl side(n: number) side(3).
+}
+
+.init c = Consts
+
+// --- the candidate placements ---
+
+// Each color's cells, viewed from their own box.
+.init box = BoxFrame<Color>
+box.cell(Col, P) :- in(P, Col), !c.bg(Col).
+
+.init frame = Frame2D<Unit>
+frame.extent($U(), A, N) :- axis_elem(A), c.side(N).
+
+// A placement lands every cell of the shape in the square.
+.init occ = Occurrences<Color, Unit>
+occ.shape(Col, S, $U()) :- box.inner(Col, _, S).
+occ.cell(Col, P, $U()) :- box.cell(Col, _), frame.cell($U(), P).
+
+// A piece: one color's shape at one placement, named by its margins in the
+// square.
+.type Piece = [col: Color, b: Position]
+
+.decl covers(piece: Piece, p: Position)
+covers([Col, B], P) :-
+    occ.occurrence(Col, B),                     // a placement of the shape
+    occ.shape(Col, S, $U()), compose(B, S, P).  // the rect cells it takes
+
+// --- the forced packing ---
+
+.init pack = Packing<Unit, Piece>
+pack.covers($U(), Pc, P) :- covers(Pc, P).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- pack.forced($U(), [Col, B]), covers([Col, B], P).

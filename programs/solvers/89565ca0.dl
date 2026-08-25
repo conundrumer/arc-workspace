@@ -1,0 +1,113 @@
+// 89565ca0
+// concept: objects cast enclose count rank
+// Frames of distinct colors lie stacked on the background, and specks of one
+// further color litter the grid. A frame's lines run on under whatever hides
+// them — a speck, or a frame lying over it: a hidden cell carries the line when
+// the two cells behind it on that line already do, and only background stops a
+// line. Each frame closes off some number of compartments from the grid edge.
+// The output is a bar chart, one row per frame from c.rank_dir in ascending
+// compartment count, each row that many cells of the frame's color from the
+// c.bar_sense side and specks for the rest.
+//
+// Frames of equal compartment count can take either row; each assignment of
+// frames to rows is a resolution.
+
+#include "../lib.dl"
+
+.type TiebreakResolution =
+    End {} | Sit {row: number, f: Color, rest: TiebreakResolution}
+
+.comp Consts {
+    .decl bg(col: Color) bg(0).
+
+    // The chart's layout: rows counted from rank_dir, bars growing from the
+    // edge a quarter turn away.
+    .decl rank_dir(d: Dir) rank_dir(DIR_T).
+    .decl bar_sense(s: Sense) bar_sense(SENSE_CC).
+}
+
+.init c = Consts
+
+// --- the specks and the frames ---
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !c.bg(Col).
+
+.init piece = Components<Color>
+piece.node(Col, P) :- ink(P, Col).
+
+.init pieces = Tally<Color, Ident>
+pieces.item(Col, Id) :- piece.label(Col, _, Id).
+
+// The specks are the color that lies in the most pieces.
+.init scattered = ArgExtremes<Unit, Color>
+scattered.cand($U(), Col, N) :- pieces.tally(Col, N).
+
+.decl speck(col: Color)
+speck(Col) :- scattered.high($U(), Col, _).
+
+.decl frame(col: Color)
+frame(Col) :- ink(_, Col), !speck(Col).
+
+// --- each frame's lines, read through what hides them ---
+
+.decl line(f: Color, p: Position)
+line(F, P) :- frame(F), ink(P, F).
+line(F, P) :-
+    frame(F), ink(P, _),                     // a cell something hides
+    dir_elem(D), step_delta(D, S),
+    compose(P, S, Q), line(F, Q),            // the cell behind it on the line
+    compose(Q, S, Q2), line(F, Q2).          // and the one behind that
+
+// --- the compartments a frame closes off ---
+
+// The space a frame's lines leave.
+.init closed = Closed<Color>
+closed.cell(F, P) :- frame(F), in(P, _), !line(F, P).
+
+.init size = Tally<Color, Ident>
+size.item(F, Id) :- closed.region(F, _, Id).
+size.domain(F) :- frame(F).
+
+// --- the chart ---
+
+.decl bar_dir(d: Dir)
+bar_dir(D2) :- c.rank_dir(D), c.bar_sense(S), turn(S, D, D2).
+
+.init frames = Tally<Unit, Color>
+frames.item($U(), F) :- frame(F).
+
+.init widest = Extremes<Unit>
+widest.cand($U(), N) :- size.tally(_, N).
+
+.init chart = Frame2D<Unit>
+chart.extent($U(), A, N) :- c.rank_dir(D), axis_of(D, A), frames.tally($U(), N).
+chart.extent($U(), A, N) :- bar_dir(D), axis_of(D, A), widest.high($U(), N).
+
+// A row of the chart, by its distance from the rank edge.
+.decl row(k: number)
+row(K) :- chart.cell($U(), P), c.rank_dir(D), dist(P, D, K).
+
+// --- which row a frame may take ---
+
+.init fewer = Order<Unit, Color>
+fewer.elem($U(), F) :- frame(F).
+fewer.before($U(), F1, F2) :- size.tally(F1, N1), size.tally(F2, N2), N1 < N2.
+
+// Every frame of fewer compartments lies between this one and the rank edge,
+// so a frame sits no nearer that edge than their number; seating them all
+// leaves each the rows of its own tie.
+.decl seat(f: Color, k: number)
+seat(F, K) :- row(K), fewer.rank($U(), F, R), R <= K.
+
+.init ties = TiebreakResolutions<Unit, number, Color>
+ties.cand($U(), K, F) :- seat(F, K).
+
+.decl out(p: Position, col: Color, res: TiebreakResolution)
+out(P, Col, Res) :-
+    chart.cell($U(), P), c.rank_dir(D), dist(P, D, K),
+    ties.assign($U(), Res, K, F), size.tally(F, N),   // the frame seated in this row
+    bar_dir(Db), dist(P, Db, K2),
+    ( K2 < N, Col = F        // the bar
+    ; K2 >= N, speck(Col)    // past its end
+    ).
