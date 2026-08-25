@@ -49,7 +49,7 @@ walk.cell($U(), P) :- obj.label($U(), P, Id), seq(Id, _, _).
 walk.mark($U(), P) :- seq(_, _, P).
 
 .decl seq_idx(p: Position, k: number)
-seq_idx(P, K) :- walk.ray($U(), P, _, K).
+seq_idx(P, K) :- walk.ray($U(), P, _, K, _).
 
 // --- the rays ---
 
@@ -61,13 +61,13 @@ arm.mark(K, P) :- seq_idx(P, K).
 // A ray stops at the first cell a nearer sequence cell already lit.
 .decl blocked(k: number, p: Position, d: Dir8)
 blocked(K, P, D) :-
-    arm.ray(K, P, D, N),
-    arm.ray(K, Q, D, N2), N2 < N,   // a cell the ray passed first
-    arm.ray(J, Q, _, _), J < K.     // that a nearer sequence cell lit
+    arm.ray(K, P, D, N, _),
+    arm.ray(K, Q, D, N2, _), N2 < N,   // a cell the ray passed first
+    arm.ray(J, Q, _, _, _), J < K.     // that a nearer sequence cell lit
 
 // Where the lit rays overlap, the nearest sequence cell wins.
 .init nearest = Extremes<Position>
-nearest.cand(P, K) :- arm.ray(K, P, D, _), !blocked(K, P, D).
+nearest.cand(P, K) :- arm.ray(K, P, D, _, _), !blocked(K, P, D).
 
 .decl paint(p: Position, k: number)
 paint(P, K) :- nearest.low(P, K).
@@ -80,7 +80,7 @@ paint(P, K) :- nearest.low(P, K).
 
 // The anchor's own diagonals, which the sectors lie between.
 .decl cross(p: Position)
-cross(P) :- seq(_, _, A), seq_idx(A, K), arm.ray(K, P, _, _).
+cross(P) :- seq(_, _, A), seq_idx(A, K), arm.ray(K, P, _, _, _).
 
 area.node($Sector(), P) :- in(P, _), !cross(P).
 

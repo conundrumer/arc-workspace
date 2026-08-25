@@ -33,14 +33,14 @@ reach.mark(P_mark, P) :- mark_line(P_mark, P).
 
 .decl beaten(p: Position, p_mark: Position)
 beaten(P, M) :-
-    reach.ray(M, P, _, K),                 // this line's reach
-    reach.ray(M2, P, D2, K2), M2 != M,     // a rival line's
+    reach.ray(M, P, _, K, _),              // this line's reach
+    reach.ray(M2, P, D2, K2, _), M2 != M,  // a rival line's
     ( K2 < K                               // nearer
     ; K2 = K, c.tie_dir(D2)                // as near, and travelling toward tie_dir
     ).
 
 .decl territory(p: Position, col: Color)
-territory(P, Col) :- reach.ray(M, P, _, _), !beaten(P, M), mark(M, Col).
+territory(P, Col) :- reach.ray(M, P, _, _, _), !beaten(P, M), mark(M, Col).
 
 .decl paint(p: Position, col: Color)
 paint(P, Col) :-

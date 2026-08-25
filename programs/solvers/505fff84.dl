@@ -47,7 +47,7 @@ sided_rays.mark(Col, P) :- in(P, Col), c.marker(Col).
 // from d, so each end's color casts toward the opposite end.
 seg(P, $Sided()) :-
     c.side(D, C1), opposite(D, O), c.side(O, C2),         // the ends' colors
-    sided_rays.ray(C1, P, O, _), sided_rays.ray(C2, P, D, _).   // each mark at its end
+    sided_rays.ray(C1, P, O, _, _), sided_rays.ray(C2, P, D, _, _).   // each mark at its end
 
 // Segment cells split into their row and their position along it.
 .decl seg_split(p_along: Position, row: Position, col: Color, ch: Choice)

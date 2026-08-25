@@ -637,17 +637,15 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     onward(P, D) :- diag_dir_elem(D), diag_dist(P, D, _, K1, K2), K1 >= 0, K2 >= 0.
 
     // Frame-wide cast: one cell per step from each mark, marks included.
-    .decl cast(key: Key, p: Position, d: Dir8, k: number)
-    cast(Ky, P, D, 0) :- mark(Ky, P), dir(D).
-    cast(Ky, P2, D, K+1) :-
-        cast(Ky, P, D, K), step_delta(D, S), compose(P, S, P2), onward(P2, D).
+    .decl cast(key: Key, p: Position, d: Dir8, k: number, src: Position)
+    cast(Ky, P, D, 0, P) :- mark(Ky, P), dir(D).
+    cast(Ky, P2, D, K+1, Src) :-
+        cast(Ky, P, D, K, Src), step_delta(D, S), compose(P, S, P2), onward(P2, D).
 
-    // p on a key-k ray cast toward d, k cells from the casting mark. Rows are
-    // per witness: a cell with two marks on its line toward d gets one row per
-    // mark, each carrying that mark's distance. k = 0 at the mark itself, and
-    // `ray(Ky, P, D, _)` is membership alone.
-    .decl ray(key: Key, p: Position, d: Dir8, k: number)
-    ray(Ky, P, D, K) :- cast(Ky, P, D, K), cell(Ky, P).
+    // p on a key-k ray cast toward d, k cells from the casting mark src.
+    // k = 0 at the mark itself, and `ray(Ky, P, D, _, _)` is membership alone.
+    .decl ray(key: Key, p: Position, d: Dir8, k: number, src: Position)
+    ray(Ky, P, D, K, Src) :- cast(Ky, P, D, K, Src), cell(Ky, P).
 }
 
 // The two-sided fold of Ray: between(k, p) holds when key-k marks lie on
@@ -663,7 +661,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     .decl between(key: Key, p: Position)
     between(K, P) :-
         axis(K, A), axis_of(D, A), opposite(D, O),
-        ray(K, P, D, _), ray(K, P, O, _).
+        ray(K, P, D, _, _), ray(K, P, O, _, _).
 }
 
 // Sparse numeric set → dense ordinal position, per key.

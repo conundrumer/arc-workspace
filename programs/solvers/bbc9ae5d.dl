@@ -60,13 +60,13 @@ out(P, Col, $Grow()) :- frame.cell($U(), P), !grown(P, _), c.bg(Col).
 
 // --- Slide ---
 
-.init rays = Ray<Position>
-rays.dir(D)     :- c.diag(D).
-rays.cell(Q, P) :- seated(Q, _), frame.cell($U(), P).
-rays.mark(P, P) :- seated(P, _).
+.init rays = Ray<Unit>
+rays.dir(D)        :- c.diag(D).
+rays.cell($U(), P) :- frame.cell($U(), P).
+rays.mark($U(), P) :- seated(P, _).
 
 .decl slid(p: Position, col: Color)
-slid(P, Col) :- seated(Q, Col), rays.ray(Q, P, _, _).
+slid(P, Col) :- rays.ray($U(), P, _, _, Q), seated(Q, Col).
 
 // Color at the run's anchored end — the seated cell at the corner the slide leaves.
 .decl anchor_color(col: Color)

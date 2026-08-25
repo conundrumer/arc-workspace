@@ -92,7 +92,7 @@ sray.mark(D, P) :-
 // A cell's sight depth: the fewest steps to a rim cell over the eight view
 // lines — how many open cells remain before the ray exits.
 .init sight = Extremes<Position>
-sight.cand(P, K) :- sray.ray(D, P, D, K).
+sight.cand(P, K) :- sray.ray(D, P, D, K, _).
 
 depth(P, K, $Sight()) :- sight.low(P, K).
 

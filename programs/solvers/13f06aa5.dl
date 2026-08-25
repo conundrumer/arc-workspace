@@ -80,7 +80,7 @@ ray.mark(M, M) :- mark(M, _).
 paint(P, Col, Ch) :- fired(D, Col, Ch), in(P, _), dist(P, D, 0).   // the fired edge
 paint(P, Col, Ch) :-
     mark(M, Col), mark_dir(M, D, Ch),      // marker and its direction
-    ray.ray(M, P, D, K),                   // a cell of its ray
+    ray.ray(M, P, D, K, _),                // a cell of its ray
     c.spacing(W), stride(K, W, 0, _, 0).   // one dot per spacing
 
 .decl corner(p: Position, ch: Choice)

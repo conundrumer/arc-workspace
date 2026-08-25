@@ -30,7 +30,7 @@ xrays.dir(D)         :- diag_dir_elem(D).
 xrays.cell($U(), P)  :- in(P, _).
 xrays.mark($U(), Q)  :- dot(Q).
 
-x_cell(P, $Dot()) :- xrays.ray($U(), P, _, _).
+x_cell(P, $Dot()) :- xrays.ray($U(), P, _, _, _).
 
 // --- Grid ---
 

@@ -39,7 +39,7 @@ shadow.mark(B, P) :- bar_cell(B, P).
 shadow.cell(B, P) :- bar_cell(B, _), in(P, Col), c.bg(Col).
 
 .init paint = ArgExtremes<Position, Color>
-paint.cand(P, Col, K) :- shadow.ray([Col, Id], P, _, _), near.low([Col, Id], K).
+paint.cand(P, Col, K) :- shadow.ray([Col, Id], P, _, _, _), near.low([Col, Id], K).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- in(P, Col), !paint.low(P, _, _).

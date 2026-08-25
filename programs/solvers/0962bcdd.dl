@@ -86,10 +86,10 @@ diag.mark(Pm, Pm) :- parse.marker($U(), Pm, _, _).
 
 paint(P2, Col, $Ray()) :-
     c.radius(R),
-    ( arm.ray(Pm, P2, _, K), parse.marker($U(), Pm, _, Col)     // cardinal ray — arm color
-    ; diag.ray(Pm, P2, _, K), parse.marker($U(), Pm, Col, _)    // diagonal ray — center color
+    ( arm.ray(Pm, P2, _, K, _), parse.marker($U(), Pm, _, Col)     // cardinal ray — arm color
+    ; diag.ray(Pm, P2, _, K, _), parse.marker($U(), Pm, Col, _)    // diagonal ray — center color
     ),
-    K != 0, K <= R.                                             // within reach, not the marker
+    K != 0, K <= R.                                                // within reach, not the marker
 
 // --- Lookup ---
 

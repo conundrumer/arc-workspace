@@ -72,7 +72,7 @@ rays.mark(Col, P)   :- mark(P, Col).
 // Front cells, plus the cells behind the near mark.
 .decl territory(p: Position, col: Color)
 territory(P, Col) :- front(P, Col).
-territory(P, Col) :- pair(D, _, Col, _, _), rays.ray(Col, P, D, _).
+territory(P, Col) :- pair(D, _, Col, _, _), rays.ray(Col, P, D, _, _).
 
 out(P, Col, $Near()) :- territory(P, Col).
 out(P, Col, $Near()) :- clash_cell(P), c.clash(Col).

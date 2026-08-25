@@ -67,10 +67,10 @@ diag.mark(M, P) :- in(P, M), c.diag_paint(M, _).
 
 painted(P, Col, $Ray()) :-
     c.radius(R),
-    ( arm.ray(M, P, _, K), c.arm_paint(M, Col)      // on a cardinal arm
-    ; diag.ray(M, P, _, K), c.diag_paint(M, Col)    // on a diagonal arm
+    ( arm.ray(M, P, _, K, _), c.arm_paint(M, Col)      // on a cardinal arm
+    ; diag.ray(M, P, _, K, _), c.diag_paint(M, Col)    // on a diagonal arm
     ),
-    K != 0, K <= R.                                 // within reach, not the mark
+    K != 0, K <= R.                                    // within reach, not the mark
 
 // --- $Lookup ---
 // The mask box's margin at each mark: the mark minus the seat.
@@ -133,12 +133,12 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !painted(P, _, Ch).
     .decl arm_paint(mark: Color, col: Color)
     arm_paint(M, Col) :-
         star_cell(E, Id, M, P, Col),
-        arms.ray([E, Id], P, _, K), K != 0.       // on a cardinal cast from its dot
+        arms.ray([E, Id], P, _, K, _), K != 0.       // on a cardinal cast from its dot
 
     .decl diag_paint(mark: Color, col: Color)
     diag_paint(M, Col) :-
         star_cell(E, Id, M, P, Col),
-        diags.ray([E, Id], P, _, K), K != 0.      // on a diagonal cast from its dot
+        diags.ray([E, Id], P, _, K, _), K != 0.      // on a diagonal cast from its dot
 
     // Each blob viewed from its own box — the mask frame.
     .init box = BoxFrame<StarKey>

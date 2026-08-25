@@ -114,7 +114,7 @@ rays.dir(Diag)     :- cast_corner(Diag).
 rays.cell($U(), P) :- frame.cell($U(), P).
 rays.mark($U(), P) :- emitter(P).
 
-echo(P, $Emit()) :- rays.ray($U(), P, _, _), !arm(P).
+echo(P, $Emit()) :- rays.ray($U(), P, _, _, _), !arm(P).
 
 // $Stripe — diagonal offset from the echo-axis arm is a multiple of
 // c.period: the same corner_dist class from the mirror corner as the seed.

@@ -66,6 +66,6 @@ rays.mark(Ch, P) :- beam(P, Ch).
 moved(Q) :- marker(P, _), c.dir(D), step_delta(D, S), compose(P, S, Q).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, Ch) :- rays.ray(Ch, P, _, _), c.fill(Col).
+out(P, Col, Ch) :- rays.ray(Ch, P, _, _, _), c.fill(Col).
 out(P, Col, Ch) :- impl_choice(Ch), moved(P), marker(_, Col).
-out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !rays.ray(Ch, P, _, _), !moved(P), c.bg(Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !rays.ray(Ch, P, _, _, _), !moved(P), c.bg(Col).

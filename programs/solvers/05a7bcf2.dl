@@ -44,7 +44,7 @@ wall_cast.cell($U(), P) :- push_cell(P).
 wall_cast.mark($U(), P) :- wall_cell(P).
 
 .decl dir(d: Dir)
-dir(D) :- dir_elem(D), wall_cast.ray($U(), _, D, _).
+dir(D) :- dir_elem(D), wall_cast.ray($U(), _, D, _, _).
 
 // The shape casts toward the wall; the wall's fill reaches on past it.
 .init cast = Ray<Unit>
@@ -59,15 +59,15 @@ reach.mark($U(), P) :- wall_cell(P).
 
 // Short of the shape, or in a line no shape claims — content stands.
 .decl short(p: Position)
-short(P) :- in(P, _), dir(D), !cast.ray($U(), P, D, _).
+short(P) :- in(P, _), dir(D), !cast.ray($U(), P, D, _, _).
 
 // Between the shape and the wall.
 .decl gap(p: Position)
-gap(P) :- cast.ray($U(), P, D, _), !reach.ray($U(), P, D, _), !shape_cell(P).
+gap(P) :- cast.ray($U(), P, D, _, _), !reach.ray($U(), P, D, _, _), !shape_cell(P).
 
 // At or past the wall, in a line a shape claims.
 .decl through(p: Position)
-through(P) :- reach.ray($U(), P, D, _), cast.ray($U(), P, D, _).
+through(P) :- reach.ray($U(), P, D, _, _), cast.ray($U(), P, D, _, _).
 
 // --- Slide: the push structure moves as one body ---
 

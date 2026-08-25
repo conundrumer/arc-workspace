@@ -42,7 +42,7 @@ cast.cell($U(), P) :- anchor_cell(P).
 cast.mark($U(), P) :- mover_cell(P).
 
 .decl move_dir(d: Dir)
-move_dir(D) :- dir_elem(D), cast.ray($U(), _, D, _).
+move_dir(D) :- dir_elem(D), cast.ray($U(), _, D, _, _).
 
 // One step back along the travel.
 .decl approach(s: Shift)

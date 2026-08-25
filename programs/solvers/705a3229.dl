@@ -24,7 +24,7 @@ rays.cell(Col, P) :- mark(Col, _), in(P, _).
 rays.mark(Col, P) :- mark(Col, P).
 
 .decl arm(p: Position, col: Color)
-arm(P, Col) :- rays.ray(Col, P, D, _), cast(Col, D).
+arm(P, Col) :- rays.ray(Col, P, D, _, _), cast(Col, D).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- arm(P, Col).

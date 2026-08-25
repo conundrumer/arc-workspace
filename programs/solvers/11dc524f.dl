@@ -27,7 +27,7 @@ sight.mark($U(), P) :- in(P, Col), c.shape_color(Col).
 sight.cell($U(), P) :- in(P, Col), c.mirror_color(Col).
 
 .decl move_dir(d: Dir)
-move_dir(D) :- dir_elem(D), sight.ray($U(), _, D, _).
+move_dir(D) :- dir_elem(D), sight.ray($U(), _, D, _, _).
 
 // The slide ends where the shape's box first covers one of these: the
 // block's box, one step back into the gap.

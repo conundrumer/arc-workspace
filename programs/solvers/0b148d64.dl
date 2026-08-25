@@ -36,7 +36,7 @@ sep.mark($U(), P) :- sep_cell(P).
 // No band lies D-ward of P. A band cell is on its own ray in every direction,
 // so it takes no side.
 .decl side(p: Position, d: Dir)
-side(P, D) :- in(P, _), opposite(D, Opp), !sep.ray($U(), P, Opp, _).
+side(P, D) :- in(P, _), opposite(D, Opp), !sep.ray($U(), P, Opp, _, _).
 
 .decl panel(p: Position, q: DiagDir)
 panel(P, Q) :-

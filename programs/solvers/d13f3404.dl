@@ -26,11 +26,11 @@ seated(P_out, Col) :-
     c.sweep(Diag), diag_opposite(Diag, Anchor),    // seat corner
     corner_anchor(Anchor, P_in, P_out).
 
-.init rays = Ray<Position>
-rays.dir(D)     :- c.sweep(D).
-rays.cell(Q, P) :- seated(Q, _), frame.cell($U(), P).
-rays.mark(P, P) :- seated(P, _).
+.init rays = Ray<Unit>
+rays.dir(D)        :- c.sweep(D).
+rays.cell($U(), P) :- frame.cell($U(), P).
+rays.mark($U(), P) :- seated(P, _).
 
 .decl out(p: Position, col: Color)
-out(P, Col) :- seated(Q, Col), rays.ray(Q, P, _, _).
-out(P, Col) :- frame.cell($U(), P), !rays.ray(_, P, _, _), c.bg(Col).
+out(P, Col) :- rays.ray($U(), P, _, _, Q), seated(Q, Col).
+out(P, Col) :- frame.cell($U(), P), !rays.ray($U(), P, _, _, _), c.bg(Col).

@@ -53,7 +53,7 @@ blocker($Solid(), P) :- in(P, Col), !c.bg(Col), !c.mover(Col).
 .init barrier = Ray<Choice>
 barrier.dir(D) :- c.dir(D).
 barrier.cell(Ch, P) :- barrier.mark(Ch, _), in(P, _).
-barrier.mark(Ch, P) :- blocker(Ch, P), c.dir(D), slide.ray($U(), P, D, _).
+barrier.mark(Ch, P) :- blocker(Ch, P), c.dir(D), slide.ray($U(), P, D, _, _).
 
 // The landing strip: the free run ahead of the whole group, plus the
 // group itself.
@@ -61,9 +61,9 @@ barrier.mark(Ch, P) :- blocker(Ch, P), c.dir(D), slide.ray($U(), P, D, _).
 strip(Ch, P_across, P) :-
     impl_choice(Ch), place(P, P_across, _),          // a cell, keyed by its line
     ( mover(P)                                       // the group itself
-    ; c.dir(D), slide.ray($U(), P, D, _),            // at or ahead of a mover
-      opposite(D, O), !slide.ray($U(), P, O, _),     // ahead of every mover
-      !barrier.ray(Ch, P, D, _)                      // short of every barrier
+    ; c.dir(D), slide.ray($U(), P, D, _, _),         // at or ahead of a mover
+      opposite(D, O), !slide.ray($U(), P, O, _, _),  // ahead of every mover
+      !barrier.ray(Ch, P, D, _, _)                   // short of every barrier
     ).
 
 // Movers and strip cells ranked from the dir edge; movers re-seat onto

@@ -66,14 +66,14 @@ mini(P, Col, $Converge()) :-
 
 // --- Cross ---
 
-.init dray = Ray<Position>
-dray.dir(D) :- diag_dir_elem(D).
-dray.cell(M, P) :- mark(M, _), in(P, _).
-dray.mark(M, M) :- mark(M, _).
+.init dray = Ray<Unit>
+dray.dir(D)        :- diag_dir_elem(D).
+dray.cell($U(), P) :- in(P, _).
+dray.mark($U(), P) :- mark(P, _).
 
 // On mark M's diagonal toward D, past M itself.
 .decl sees(m: Position, p: Position, d: Dir8)
-sees(M, P, D) :- dray.ray(M, P, D, K), K != 0.
+sees(M, P, D) :- dray.ray($U(), P, D, K, M), K != 0.
 
 .decl unseen(p: Position)
 unseen(P) :- sees(_, P, _), mark(M, _), !sees(M, P, _).
