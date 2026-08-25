@@ -253,6 +253,10 @@ dir8_opposite(D, D2) :- diag_opposite(D, D2).
 perp(AXIS_V, AXIS_H).
 perp(AXIS_H, AXIS_V).
 
+.decl diag_perp(da: DiagAxis, da2: DiagAxis)
+diag_perp(DAXIS_DG, DAXIS_AD).
+diag_perp(DAXIS_AD, DAXIS_DG).
+
 // A corner's two dirs, axis-tagged: d1 on axis a, d2 across.
 .decl diag_dirs(d: DiagDir, a: Axis, d1: Dir, d2: Dir)
 diag_dirs(Diag, A, D1, D2) :- dir_of(Diag, A, D1), perp(A, A2), dir_of(Diag, A2, D2).
@@ -288,6 +292,12 @@ dist_pair(P, D, K, K2) :- dist(P, D, K), opposite(D, O), dist(P, O, K2).
 .decl diag_dist(p: Position, diag: DiagDir, a: Axis, k1: number, k2: number) inline
 diag_dist(P, Diag, A, K1, K2) :-
     diag_dirs(Diag, A, D1, D2), dist(P, D1, K1), dist(P, D2, K2).
+
+// Taxicab distance to corner diag: the sum of its two edge distances.
+// Level sets are the lines of the perpendicular diagonal axis, so
+// equality tests same-diagonal and comparison tests sidedness.
+.decl corner_dist(p: Position, diag: DiagDir, k: number) inline
+corner_dist(P, Diag, K) :- diag_dist(P, Diag, _, K1, K2), K = K1 + K2.
 
 // Element-wise sum of two Positions. One operand may be a signed delta.
 .decl compose(p1: Position, p2: Position, p3: Position) inline
@@ -444,15 +454,12 @@ concat(P_outer, P_inner, A, G, P_grid) :-
 .decl same_dist(d: Dir, p1: Position, p2: Position) inline
 same_dist(D, P1, P2) :- dist(P1, D, K), dist(P2, D, K).
 
-// p and q on one line of family a — a row, a column, or a diagonal. Along a
-// diagonal, a step toward a corner of the axis drops the distance to both of
-// that corner's edges in lockstep, so collinearity is an equal drop on both.
+// p and q on one line of family a — a row, a column, or a diagonal.
 .decl same_line(a: Axis4, p: Position, q: Position) inline
 same_line(A, P, Q) :- perp(A, A2), axis_of(D, A2), same_dist(D, P, Q).
 same_line(DA, P, Q) :-
-    diag_axis_of(Diag, DA),
-    diag_dist(P, Diag, A, Pa, Pb), diag_dist(Q, Diag, A, Qa, Qb),
-    Qa - Pa = Qb - Pb.
+    diag_perp(DA, DA2), diag_axis_of(Diag, DA2),
+    corner_dist(P, Diag, K), corner_dist(Q, Diag, K).
 
 // Two positions agree on the distances to the two edges of corner d.
 .decl corner_anchor(d: DiagDir, p1: Position, p2: Position) inline

@@ -39,16 +39,6 @@
 
 .init c = Consts
 
-// The DiagDir peer of dist: taxicab distance to corner diag, the sum of
-// its two edge distances. Its level sets are the diagonals on the other
-// diagonal axis. Lib candidate.
-.comp CornerDist {
-    .decl corner_dist(p: Position, diag: DiagDir, k: number) inline
-    corner_dist(P, Diag, K) :- diag_dist(P, Diag, _, K1, K2), K = K1 + K2.
-}
-
-.init cd = CornerDist
-
 // Output frame: square on the input's long extent.
 .decl side(n: number)
 side(N) :- in(P, _), axis_dims(P, _, N, K), N > K.
@@ -79,15 +69,15 @@ mirror_corner(Diag) :- corner(Diag), !cast_corner(Diag).
 .decl arm(p: Position)
 arm(P) :-
     frame.cell($U(), P), seed(S, _),
-    corner(Diag), cd.corner_dist(P, Diag, K), cd.corner_dist(S, Diag, K).
+    corner(Diag), corner_dist(P, Diag, K), corner_dist(S, Diag, K).
 
 // Strictly inside the V's cone: strictly nearer each cone corner than the
 // seed.
 .decl inside(p: Position)
 inside(P) :-
     frame.cell($U(), P), seed(S, _),
-    cast_corner(CD),   cd.corner_dist(P, CD, K1), cd.corner_dist(S, CD, N1), K1 < N1,
-    mirror_corner(MD), cd.corner_dist(P, MD, K2), cd.corner_dist(S, MD, N2), K2 < N2.
+    cast_corner(CD),   corner_dist(P, CD, K1), corner_dist(S, CD, N1), K1 < N1,
+    mirror_corner(MD), corner_dist(P, MD, K2), corner_dist(S, MD, N2), K2 < N2.
 
 // --- Echo cases: the echoed cells ---
 
@@ -120,7 +110,7 @@ echo(P, $Emit()) :- rays.ray($U(), P, _, _, _), !arm(P).
 // c.period: the same corner_dist class from the mirror corner as the seed.
 echo(P, $Stripe()) :-
     inside(P), seed(S, _),
-    mirror_corner(MD), cd.corner_dist(P, MD, Kp), cd.corner_dist(S, MD, Ks),
+    mirror_corner(MD), corner_dist(P, MD, Kp), corner_dist(S, MD, Ks),
     c.period(Per), stride(Kp, Per, 0, _, R), stride(Ks, Per, 0, _, R).
 
 // --- V color cases ---
@@ -161,19 +151,19 @@ out(P, Col, [V, E]) :-
     .decl inside(e: Example, p: Position)
     inside(E, P) :-
         ex_out(E, P, _), seed(E, S),
-        cast_corner(CD),   cd.corner_dist(P, CD, K1), cd.corner_dist(S, CD, N1), K1 < N1,
-        mirror_corner(MD), cd.corner_dist(P, MD, K2), cd.corner_dist(S, MD, N2), K2 < N2.
+        cast_corner(CD),   corner_dist(P, CD, K1), corner_dist(S, CD, N1), K1 < N1,
+        mirror_corner(MD), corner_dist(P, MD, K2), corner_dist(S, MD, N2), K2 < N2.
 
     .decl cand(k: number)
     cand(K) :-
         ex_out(_, P, _),
-        mirror_corner(MD), cd.corner_dist(P, MD, K), K != 0.
+        mirror_corner(MD), corner_dist(P, MD, K), K != 0.
 
     // The cells a candidate period echoes.
     .decl striped(e: Example, p: Position, k: number)
     striped(E, P, Per) :-
         cand(Per), inside(E, P), seed(E, S),
-        mirror_corner(MD), cd.corner_dist(P, MD, Kp), cd.corner_dist(S, MD, Ks),
+        mirror_corner(MD), corner_dist(P, MD, Kp), corner_dist(S, MD, Ks),
         stride(Kp, Per, 0, _, R), stride(Ks, Per, 0, _, R).
 
     // A candidate that echoes a cell the pair does not, or misses one it does.

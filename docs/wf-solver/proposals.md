@@ -124,25 +124,6 @@ divide_by_size_slab(P, A, K, G, P_outer, P_inner) :-
 **Task-local home (protocol step 1).** 7b7f7511 (`DivideBySizeSlab`
 comp): $Tile's swept tiling.
 
-## `corner_dist` — taxicab distance to a corner
-
-The DiagDir peer of `dist`: L1 distance to corner `diag`, the sum of its
-two edge distances. Its level sets are the diagonals on the other
-diagonal axis, so it reads a cell's diagonal index with no sign or
-subtraction: equality against a reference cell tests same-diagonal,
-comparison tests sidedness, and a shared `stride` class tests periodic
-diagonal offset. Lib target: primitive beside `diag_dist`.
-
-```
-.decl corner_dist(p: Position, diag: DiagDir, k: number) inline
-corner_dist(P, Diag, K) :- diag_dist(P, Diag, _, K1, K2), K = K1 + K2.
-```
-
-**Task-local home (protocol step 1).** c1990cce (`CornerDist` comp): the
-V (level with the seed toward a cone corner), the open cone (strictly
-nearer both cone corners than the seed), and $Stripe's period (the
-seed's stride class from the mirror corner).
-
 ## `Wallpaper<Key, Val>` — lattice-quotiented isometry detection
 
 The isometry peer of `ShiftInvariance`: which isometries of the frame — a
