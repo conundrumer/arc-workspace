@@ -1264,6 +1264,58 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     occurrence(Ky, M) :- matcher.covers([Ky, M], Ky).
 }
 
+// The pieces every exact cover of a keyed cell set must contain, by
+// elimination. Pieces are opaque and placements come from the caller. On a
+// uniquely packing input the fixpoint is the whole packing; an ambiguous or
+// too-hard input leaves `forced` partial and the output fails on totality,
+// never wrongly. Forced pieces not ruled out are pairwise disjoint, so
+// covering every cell witnesses a partition. With a single footprint it
+// forces exactly the greedy reading-order peel.
+.comp Packing<Key, Piece> {
+    // The candidate pieces and the cells each covers.
+    .decl covers(key: Key, piece: Piece, p: Position)  // input
+
+    // Elimination: a cell whose rivals are all ruled out but one forces its
+    // last piece, and a piece overlapping a forced piece is ruled out.
+    // "Every other rival is ruled out" is a universal inside the recursion —
+    // forced and ruled_out are mutually recursive, so no negation across
+    // them stratifies. The rivals of a cell close into a cycle in an
+    // arbitrary stable ord order, and the universal becomes a positive walk
+    // around the cycle.
+
+    // The pieces covering a cell.
+    .decl _rival(key: Key, p: Position, piece: Piece)
+    _rival(Ky, P, B) :- covers(Ky, B, P).
+
+    // Next in ord order.
+    .decl _next(key: Key, p: Position, piece: Piece, piece2: Piece)
+    _next(Ky, P, B, B2) :-
+        _rival(Ky, P, B), _rival(Ky, P, B2), ord(B) < ord(B2),
+        M = min ord(B3) : { _rival(Ky, P, B3), ord(B3) > ord(B) }, ord(B2) = M.
+
+    // The cycle it closes.
+    .decl _succ(key: Key, p: Position, piece: Piece, piece2: Piece)
+    _succ(Ky, P, B, B2) :- _next(Ky, P, B, B2).
+    _succ(Ky, P, B, B2) :-
+        _rival(Ky, P, B), !_next(Ky, P, B, _),    // the last rival
+        _rival(Ky, P, B2), !_next(Ky, P, _, B2),  // links back to the first
+        B != B2.
+
+    // Every rival from X around to the one before B, all ruled out.
+    .decl _run_out(key: Key, p: Position, piece: Piece, piece2: Piece)
+    _run_out(Ky, P, B, X) :- ruled_out(Ky, X), _succ(Ky, P, X, B).
+    _run_out(Ky, P, B, X) :- ruled_out(Ky, X), _succ(Ky, P, X, X2), _run_out(Ky, P, B, X2).
+
+    // Some cell has no other rival left.
+    .decl forced(key: Key, piece: Piece)
+    forced(Ky, B) :- _rival(Ky, P, B), !_succ(Ky, P, B, _).
+    forced(Ky, B) :- _rival(Ky, P, B), _succ(Ky, P, B, X), _run_out(Ky, P, B, X).
+
+    // Overlaps a forced piece.
+    .decl ruled_out(key: Key, piece: Piece)
+    ruled_out(Ky, B) :- forced(Ky, B2), covers(Ky, B2, P), covers(Ky, B, P), B != B2.
+}
+
 // ============================================================
 // Consts helpers — instantiated inside Consts; not reachable from body
 // ============================================================

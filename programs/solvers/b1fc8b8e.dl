@@ -1,5 +1,5 @@
 // b1fc8b8e
-// concept: classify lookup count
+// concept: classify lookup count pack
 // Classify the ink: made of whole copies of the unit or not. Emit a fixed
 // 5x5 pattern per class — four copies of the class's 2x2 tile behind a bg
 // cross.
@@ -7,9 +7,12 @@
 // Cartesian over (detect, render); out's choice column is a record:
 //
 //   detect:
-//     $Shape — every ink cell lies inside some placement of c.unit fully on
-//              ink; outcome picks c.covered_class / c.broken_class.
-//     $Count — ink count, mapped per-count via c.class_count.
+//     $Shape     — every ink cell lies inside some placement of c.unit fully
+//                  on ink; outcome picks c.covered_class / c.broken_class.
+//     $Partition — the ink splits into disjoint copies of c.unit, same
+//                  outcome slots. Stricter than $Shape: a 2x3 block of ink is
+//                  covered by overlapping placements but splits into none.
+//     $Count     — ink count, mapped per-count via c.class_count.
 //
 //   render:
 //     $Grid    — stored grid per class.
@@ -20,7 +23,7 @@
 
 #include "../lib.dl"
 
-.type Detect = Shape {} | Count {}
+.type Detect = Shape {} | Partition {} | Count {}
 .type Render = Grid {} | Arrange {} | Corner {}
 .type Choice = [detect: Detect, render: Render]
 
@@ -30,7 +33,7 @@
     // --- shared ---
     .decl ink(c: Color) ink(8).
 
-    // --- $Shape ---
+    // --- $Shape / $Partition ---
     .decl unit(p: Position)
     GRID_MASK_2x2(unit,
         1, 1,
@@ -105,16 +108,17 @@
     .decl ink_count(k: Key, n: number)
     ink_count(K, N) :- ink_tally.tally(K, N).
 
-    // $Shape: placements where the unit lands fully on ink.
+    // Placements where the unit lands fully on ink, named by their margins,
+    // with the cells each one covers.
     .init occ = Occurrences<Key, Unit>
     occ.cell(K, P, $U())  :- ink_at(K, P).
     occ.shape(K, S, $U()) :- ink_at(K, _), c.unit(S).
 
-    .decl covered(k: Key, p: Position)
-    covered(K, P) :- occ.occurrence(K, M), c.unit(S), compose(M, S, P).
+    .decl covers(k: Key, b: Position, p: Position)
+    covers(K, B, P) :- occ.occurrence(K, B), c.unit(S), compose(B, S, P).
 
     .decl uncovered(k: Key)
-    uncovered(K) :- ink_at(K, P), !covered(K, P).
+    uncovered(K) :- ink_at(K, P), !covers(K, _, P).
 }
 
 .init parse = Parse<Unit>
@@ -127,6 +131,28 @@ parse.cell($U(), P, Col) :- in(P, Col).
 // --- $Shape ---
 class(Id, $Shape()) :- parse.uncovered($U()), c.broken_class(Id).
 class(Id, $Shape()) :- parse.ink_at($U(), _), !parse.uncovered($U()), c.covered_class(Id).
+
+// --- $Partition ---
+
+// The placements are the rival pieces of an exact cover of the ink. With one
+// footprint the forced pieces are the reading-order peel, and the peel reaches
+// a partition whenever the ink has one.
+.init pack = Packing<Unit, Position>
+pack.covers($U(), B, P) :- parse.covers($U(), B, P).
+
+// A cell of a surviving piece. Forced pieces that are not ruled out are
+// pairwise disjoint, so they are a partition of what they cover.
+.decl packed(p: Position)
+packed(P) :-
+    pack.forced($U(), B), !pack.ruled_out($U(), B),  // a surviving piece
+    parse.covers($U(), B, P).                        // and its cells
+
+// The ink cells the packing leaves over — the defect the universal negates.
+.decl unpacked(p: Position)
+unpacked(P) :- parse.ink_at($U(), P), !packed(P).
+
+class(Id, $Partition()) :- unpacked(_), c.broken_class(Id).
+class(Id, $Partition()) :- parse.ink_at($U(), _), !unpacked(_), c.covered_class(Id).
 
 // --- $Count ---
 class(Id, $Count()) :- parse.ink_count($U(), N), c.class_count(Id, N).
