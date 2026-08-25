@@ -143,70 +143,6 @@ V (level with the seed toward a cone corner), the open cone (strictly
 nearer both cone corners than the seed), and $Stripe's period (the
 seed's stride class from the mirror corner).
 
-## `same_diag` — same diagonal line
-
-The DiagAxis peer of `same_dist`: p and q lie on one diagonal line of
-axis da. Stepping toward a corner of the axis drops the distance to both
-of its edges in lockstep, so collinearity is an equal drop on both;
-either corner of the axis derives the same relation, so no corner is
-privileged. It is the undirected form of `DiagRay`'s membership test —
-`DiagRay` adds the side test and the mark/domain split. `corner_dist`
-equality states the same relation from a corner of the perpendicular
-axis; `same_diag` names the relation itself and keys it by the line's
-own axis. Lib target: composite beside `same_dist`.
-
-```
-.decl same_diag(da: DiagAxis, p: Position, q: Position) inline
-same_diag(DA, P, Q) :-
-    diag_axis_of(Diag, DA),
-    diag_dist(P, Diag, A, Pa, Pb), diag_dist(Q, Diag, A, Qa, Qb),
-    Qa - Pa = Qb - Pb.
-```
-
-**Task-local home (protocol step 1).** c3f564a4 (`SameDiag` comp): $Diag
-fills a noise cell from a clean cell on its stripe.
-
-**The `Axis4` union.** Lib's `Dir8` recurs on the undirected half:
-`Axis` and `DiagAxis` together are the four lines through a cell, and
-`same_dist` and `same_diag` are two branches of one relation — p and q
-on a common line of that kind. The name follows `Dir8` in counting the
-branch union's elements; `Line` collides with the `lines` concept term.
-Keying is open: a unified relation keys by the line's own axis
-throughout, while `same_dist` keys by a `Dir` and states collinearity
-along the *perpendicular* axis, so its convention and its callers move
-with the merge.
-
-## `Partition<Key>` — a cell set decomposes into unit copies
-
-Whether a keyed cell set partitions into disjoint translated copies of a
-footprint. Strictly stronger than `Occurrences` coverage: a 2×3 rectangle is
-covered by 2×2 placements but admits no partition.
-
-In any partition, the copy covering the reading-order-first unpeeled cell
-places its own reading-order-first cell there — any other alignment needs a
-cell already peeled or off the set — so a greedy reading-order peel is
-canonical and correct for any single footprint under translation. With D4
-variants of the unit the step is not forced; out of scope.
-
-The peel is staged deletion — each stage's remaining set negates the
-previous stage's chosen copy — which Souffle's predicate-level
-stratification rejects. It goes in a functor (`lib_functors.cpp`).
-
-```
-.comp Partition<Key> {
-    .decl cell(key: Key, p: Position)
-    .decl unit(p: Position)
-
-    .decl partitions(key: Key)
-    // functor-backed greedy reading-order peel
-}
-```
-
-Open: functors take scalars, so the sets cross the interface serialized — an
-ordered string fold, or a tooling convention for set-valued functor inputs.
-
-**Motivating site.** b1fc8b8e: a $Partition detect case beside $Shape.
-
 ## `Wallpaper<Key, Val>` — lattice-quotiented isometry detection
 
 The isometry peer of `ShiftInvariance`: which isometries of the frame — a
@@ -254,40 +190,6 @@ group's translations are the lattice). `ShiftInvariance.period` feeds the
 kinds; `out` closes survivor colors over `step`; its Fit names the
 kinds every example uses as a `point_group` Sym value.
 
-## `Closed<Key>` — the regions a cell set closes off from the edge
-
-The regions of a keyed cell set that the grid edge cannot reach — the
-entity-level half of the `enclose` prior. Enclosure is a cell property and
-floods linearly (`Reach` seeded on the edge); individuation pays
-`Components`' pairwise closure, so it runs over only the closed cells —
-the regions the model claims. `Reach` stays the unit for cell-level
-enclosure and seeded selection (00d62c1b, 1e81d6f9). Lib target: body
-comp beside `Reach`.
-
-```
-.comp Closed<Key> {
-    .decl cell(key: Key, p: Position)  // input
-
-    .init flood = Reach<Key>
-    flood.node(Ky, P) :- cell(Ky, P).
-    flood.seed(Ky, P) :- cell(Ky, P), dir_elem(D), dist(P, D, 0).
-
-    .init regions = Components<Key>
-    regions.node(Ky, P) :- cell(Ky, P), !flood.reach(Ky, P).
-
-    .decl region(key: Key, p: Position, id: Ident)
-    region(Ky, P, Id) :- regions.label(Ky, P, Id).
-}
-```
-
-**Task-local home (protocol step 1).** 0a2355a6 (`Closed` comp): both hole
-frames — the bg with all ink solid (grid key), everything-but-O with one
-object solid (object key).
-
-**Second home (protocol step 1).** 00dbd492: $Enclose writes the same
-composition inline — `Reach` from the grid edge, then `Components` over
-the enclosed cells.
-
 ## `Peel<Key>` — erosion depth of a keyed cell set
 
 The depth peer of `Reach`'s membership: ring 0 is the cells with an 8-neighbor outside the set, off-frame counting as outside, and each step inward is one ring deeper. It equals the Chebyshev distance to the set's complement minus one. Non-convex depth has no counter-free encoding, so the arithmetic sits behind the comp boundary. Lib target: body comp beside `Reach`.
@@ -322,32 +224,12 @@ sight).
 Prior special cases the comp would cover: 85c4e7cd's ring (min edge
 distance — the convex-frame case) and 135a2760's panel frame (ring 0 of a
 rectangular panel).
+## `RIGID(C4, ...)` — chiral rigid assemblies
 
-## `RIGID` — Consts relations coupled as a rigid assembly
+The rotation-subgroup variant of `RIGID`: the closure ranges `c4_elem` in place of `d4_elem`, so the hand becomes data — a stored chart of the wrong hand has an orbit that misses the observed instances, and the fit diffs — while rotation stays gauge. Closing a rotate-only task over D4 instead over-generates placements the task forbids and lets the fit accept a mirrored chart.
 
-A `RIGID` block groups Consts relations — properties of any arity and type, stated in one shared intrinsic frame — and exposes them only as D4 placements that transform them together, so the stored pose is unobservable. Each property reappears with a D4 element as a leading key column and every column transformed by that element; consumers join properties on the key, which is what "the same oriented instance" means. This cannot be a comp: comps cannot abstract over column counts and types, and the closure is type-directed — `Position` and `Shift` via `apply` (the type vocabulary already separates cell from delta, which is the distinction the actions need), `Dir` and `DiagDir` via the direction action, `Axis` via the induced swap, `Color` / `number` / `Ident` by identity.
+The rest of the machinery is group-agnostic: C4's elements are D4 elements, so placed column types and the column actions are unchanged, and the fit compare groups rows by whatever pose labels both sides emit — both sides close through the same generated rule. The change is the elem atom in the expansion plus the group argument in the parser.
 
-```
-RIGID(marker,
-    .decl glyph(p: Position)
-    GRID_MASK_2x2(glyph, 1, 1, 1, 0)
-    .decl launch(p: Position) launch([0, 1, 0, 1]).
-    .decl aim(d: DiagDir) aim(DIAG_TL).
-)
-```
+A task treating both hands as distinct pieces needs no new group: that is an id-keyed C4 chart with one id per hand.
 
-expands to the chart under generated names, plus the placed forms the solver reads:
-
-```
-marker_glyph(d4: D4, p: Position)
-marker_launch(d4: D4, p: Position)
-marker_aim(d4: D4, d: DiagDir)
-```
-
-The expansion knows each column's type statically, so it emits the branch-correct action and static union typing never bites (contrast 142ca369's `apply_diag_dir` reads, pinned to the DiagDir branch). A lint rule makes chart names unreadable outside the expansion, turning pose-unobservability from a discipline into a checked property.
-
-Scope is orientation only. Translation freedom stays with `Occurrences` (placement anchors) and color freedom with instantiation keying; a later freedom extends the placement key, not the syntax. The fit seam is untouched: a chart must still be written and row-compared, so orbit checking remains anchored projection or a canonical pose.
-
-Runner target: macro expansion beside `GRID`, lint rule beside it.
-
-**Motivating site.** 142ca369: $Glyph and its Fit hand-inline the closure at four sites (`occ.shape`, `mark`, the seed, `Fit.orient`); migration retires all of them into placed reads.
+Gate: a site whose pieces rotate but do not reflect.

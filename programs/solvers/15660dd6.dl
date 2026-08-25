@@ -1,0 +1,163 @@
+// 15660dd6
+// concept: decompose markers select mapping
+// Bordered panels sit in a lattice, and a label outside the lattice names each
+// panel band. Every panel column holds one single-colored panel (the donor)
+// and copies of one stencil. The output is one band of the lattice: each
+// column's stencil painted in its donor's color, ringed in the label of the
+// donor's band.
+//
+// Two claims name the donor of a column:
+//   $Solid — the panel whose interior holds one color.
+//   $Odd   — the panel no other panel of the column matches.
+//
+// Two claims render the interior:
+//   $Map  — c.ink maps to the donor's color; other colors pass through.
+//   $Mask — non-background cells take the donor's color, the rest c.bg.
+// Choice = [donor, render] crosses the two independent decisions.
+
+#include "../lib.dl"
+
+.type Donor = Solid {} | Odd {}
+.type Render = Map {} | Mask {}
+.type Choice = [donor: Donor, render: Render]
+
+.comp Consts {
+    .decl bg(col: Color) bg(8).
+    .decl frame_col(col: Color) frame_col(1).
+
+    // Panel columns run along this axis; bands and their labels run across it.
+    .decl layout_axis(a: Axis) layout_axis(AXIS_H).
+
+    // --- Map ---
+    .decl ink(col: Color) ink(2).
+}
+
+.init c = Consts
+
+.decl donor_elem(d: Donor)
+donor_elem($Solid()). donor_elem($Odd()).
+
+.decl render_elem(r: Render)
+render_elem($Map()). render_elem($Mask()).
+
+// --- panels ---
+
+.decl frame_cell(p: Position)
+frame_cell(P) :- in(P, Col), c.frame_col(Col).
+
+// One panel per ring of frame color.
+.init rings = Components<Unit>
+rings.node($U(), P) :- frame_cell(P).
+
+.init panel = BoxFrame<Ident>
+panel.cell(Id, P) :- rings.label($U(), P, Id).
+panel.grid(Id, P) :- rings.label($U(), _, Id), in(P, _).
+
+// A panel position on its box's edge. Unkeyed: the lattice's panels share
+// one size, so every panel has the same ring.
+.decl ring_pos(p_intile: Position)
+ring_pos(P_intile) :- panel.inner(_, _, P_intile), dir_elem(D), dist(P_intile, D, 0).
+
+.decl interior(id: Ident, p_intile: Position, col: Color)
+interior(Id, P_intile, Col) :-
+    panel.inner(Id, P, P_intile), !ring_pos(P_intile),  // inside the ring
+    in(P, Col).
+
+// A panel's column and band, as the two halves of its box placement.
+.decl panel_pos(id: Ident, p_col: Position, p_band: Position)
+panel_pos(Id, P_col, P_band) :-
+    panel.margin(Id, M), c.layout_axis(A), split(M, A, P_col, P_band).
+
+// --- lattice ---
+
+.init lattice = BoxFrame<Unit>
+lattice.cell($U(), P) :- frame_cell(P).
+lattice.grid($U(), P) :- in(P, _).
+
+// --- labels ---
+
+// A colored cell outside the lattice names the band it sits in.
+.decl band_label(p_band: Position, col: Color)
+band_label(P_band, Col) :-
+    in(P_label, Col), !c.bg(Col), !lattice.viewed($U(), P_label),  // label cell
+    panel_pos(_, _, P_band), geq(P_label, P_band).                 // in the band
+
+// --- donor ---
+
+.decl mixed(id: Ident)
+mixed(Id) :- interior(Id, _, Col1), interior(Id, _, Col2), Col1 != Col2.
+
+// Two panels of one column disagree on some interior cell.
+.decl differs(id: Ident, id2: Ident)
+differs(Id, Id2) :-
+    panel_pos(Id, P_col, _), panel_pos(Id2, P_col, _),
+    interior(Id, P_intile, Col), interior(Id2, P_intile, Col2), Col != Col2.
+
+.decl twin(id: Ident)
+twin(Id) :-
+    panel_pos(Id, P_col, _), panel_pos(Id2, P_col, _), Id != Id2,
+    !differs(Id, Id2).
+
+.decl donor(d: Donor, p_col: Position, id: Ident)
+donor($Solid(), P_col, Id) :- panel_pos(Id, P_col, _), !mixed(Id).
+donor($Odd(), P_col, Id) :- panel_pos(Id, P_col, _), !twin(Id).
+
+// The donor column stays: rival donor claims can pick different panels.
+.decl fill(d: Donor, p_col: Position, col: Color)
+fill(D, P_col, Col) :- donor(D, P_col, Id), interior(Id, _, Col).
+
+.decl border(d: Donor, p_col: Position, col: Color)
+border(D, P_col, Col) :-
+    donor(D, P_col, Id), panel_pos(Id, _, P_band), band_label(P_band, Col).
+
+.decl stencil(d: Donor, p_col: Position, p_intile: Position, col: Color)
+stencil(D, P_col, P_intile, Col) :-
+    donor(D, P_col, _),
+    panel_pos(Id, P_col, _), !donor(D, P_col, Id),  // a non-donor panel
+    interior(Id, P_intile, Col).
+
+// --- output ---
+
+// One band of the lattice: the lattice's extent along the columns, one panel
+// across.
+.init out_frame = Frame2D<Unit>
+out_frame.extent($U(), A, N) :-
+    c.layout_axis(A), lattice.inner($U(), _, P_lat), axis_dim(P_lat, A, N).
+out_frame.extent($U(), A_band, N) :-
+    c.layout_axis(A), perp(A, A_band),
+    panel.inner(_, _, P_intile), axis_dim(P_intile, A_band, N).
+
+// A panel cell keeps its place along the columns and lands in the one band.
+.decl out_pos(p_col: Position, p_intile: Position, p: Position)
+out_pos(P_col, P_intile, P) :-
+    panel.inner(Id, P_grid, P_intile), panel_pos(Id, P_col, _),
+    lattice.inner($U(), P_grid, P_lat),
+    c.layout_axis(A),
+    split(P_lat, A, P_along, _), split(P_intile, A, _, P_across),
+    compose(P_along, P_across, P).
+
+.decl out(p: Position, col: Color, c: Choice)
+
+out(P, Col, [D, R]) :-
+    out_pos(P_col, P_intile, P), ring_pos(P_intile),
+    border(D, P_col, Col), render_elem(R).
+
+out(P, Col, [D, R]) :-
+    out_frame.cell($U(), P), !out_pos(_, _, P),  // between panels
+    c.bg(Col), donor_elem(D), render_elem(R).
+
+// --- Map ---
+out(P, Col_out, [D, $Map()]) :-
+    out_pos(P_col, P_intile, P),
+    stencil(D, P_col, P_intile, Col),
+    ( c.ink(Col), fill(D, P_col, Col_out)  // the ink takes the donor's color
+    ; !c.ink(Col), Col_out = Col           // the rest passes through
+    ).
+
+// --- Mask ---
+out(P, Col_out, [D, $Mask()]) :-
+    out_pos(P_col, P_intile, P),
+    stencil(D, P_col, P_intile, Col),
+    ( !c.bg(Col), fill(D, P_col, Col_out)  // marked cells take the donor's color
+    ; c.bg(Col), c.bg(Col_out)             // the rest is background
+    ).

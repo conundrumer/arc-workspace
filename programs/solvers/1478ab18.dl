@@ -1,0 +1,123 @@
+// 1478ab18
+// concept: markers span rank
+// Marks sit on a plain field, two of them spanning a diagonal. The output draws
+// the right isosceles triangle on that diagonal in c.ink: the diagonal is the
+// hypotenuse and the legs meet at one corner of the box it spans. Marks keep
+// their color where the triangle crosses them. The other marks say which
+// diagonal and which corner; Choice = [l, v] crosses the claims:
+//
+//   l (which mark pair spans the hypotenuse):
+//     $Longest()  — the diagonal mark pair with the greatest separation.
+//     $Cornered() — the diagonal mark pair with a mark at a box corner.
+//   v (which box corner carries the right angle):
+//     $Free()     — the corner that is not a mark.
+//     $Pointed()  — the corner with a mark diagonally adjacent.
+//     $Inside()   — the corner whose closed triangle holds a non-vertex mark.
+
+#include "../lib.dl"
+
+.type Locate = Longest {} | Cornered {}
+.type Vertex = Free {} | Pointed {} | Inside {}
+.type Choice = [l: Locate, v: Vertex]
+
+.comp Consts {
+    .decl mark(col: Color) mark(5).
+    .decl ink(col: Color) ink(8).
+}
+
+.init c = Consts
+
+.decl mark(p: Position)
+mark(P) :- in(P, Col), c.mark(Col).
+
+// Marks cast along the diagonals, seeing only marks.
+.init diag = Ray<Unit>
+diag.dir(D) :- diag_dir_elem(D).
+diag.cell($U(), P) :- mark(P).
+diag.mark($U(), P) :- mark(P).
+
+// Two marks on a common diagonal, k steps apart.
+.decl aligned(p: Position, q: Position, k: number)
+aligned(P, Q, K) :- diag.ray($U(), Q, _, K, P), K != 0.
+
+// The two corners of the box a diagonal pair spans, besides p and q.
+.decl box_corner(p: Position, q: Position, cor: Position)
+box_corner(P, Q, Cor) :-
+    aligned(P, Q, _), axis_elem(A),
+    split(P, A, P_along, _), split(Q, A, _, Q_across),
+    compose(P_along, Q_across, Cor).
+
+// --- Locate cases: the hypotenuse endpoints ---
+
+.decl locate_choice(l: Locate)
+locate_choice($Longest()).
+locate_choice($Cornered()).
+
+.decl hyp(p: Position, l: Locate)
+
+// $Longest — the widest separation any diagonal mark pair reaches.
+.init far = ArgExtremes<Unit, Position>
+far.cand($U(), P, K) :- aligned(P, _, K).
+
+hyp(P, $Longest()) :- far.high($U(), P, _).
+
+// $Cornered — a mark sits at one of the pair's two box corners.
+hyp(P, $Cornered()) :- aligned(P, Q, _), box_corner(P, Q, Cor), mark(Cor).
+
+// --- Vertex cases: which box corner carries the right angle ---
+
+.decl vertex_choice(v: Vertex)
+vertex_choice($Free()).
+vertex_choice($Pointed()).
+vertex_choice($Inside()).
+
+// The right angle sits at one of the hypotenuse box's other two corners.
+.decl corner_cand(cor: Position, l: Locate)
+corner_cand(Cor, L) :- hyp(P, L), hyp(Q, L), box_corner(P, Q, Cor).
+
+.decl right_angle(p: Position, l: Locate, v: Vertex)
+
+// $Free — the corner the marks left open.
+right_angle(Cor, L, $Free()) :- corner_cand(Cor, L), !mark(Cor).
+
+// $Pointed — the corner a mark stands diagonally next to.
+right_angle(Cor, L, $Pointed()) :-
+    corner_cand(Cor, L),
+    diag_dir_elem(D), step_delta(D, Delta), compose(Cor, Delta, P_near), mark(P_near).
+
+// $Inside — the corner whose closed triangle holds a non-vertex mark. Viewed
+// from the hypotenuse pair's box, the triangle at corner (D1, D2) is the
+// cells no farther from edge D1 than from the edge opposite D2.
+.init tri = BoxFrame<Locate>
+tri.cell(L, P) :- hyp(P, L).
+tri.grid(L, P) :- in(P, _), locate_choice(L).
+
+right_angle(Cor, L, $Inside()) :-
+    corner_cand(Cor, L),
+    tri.inner(L, Cor, Cor_in), diag_dist(Cor_in, Dc, A, 0, 0),   // Cor's box corner
+    diag_dirs(Dc, A, D1, D2), opposite(D2, D2o),                 // its two dirs
+    mark(M), !hyp(M, L), M != Cor, tri.inner(L, M, M_in),        // non-vertex mark in the box
+    dist(M_in, D1, K1), dist(M_in, D2o, K2), K1 <= K2.           // on the corner's side
+
+// --- The triangle ---
+
+.decl impl_choice(ch: Choice)
+impl_choice([L, V]) :- locate_choice(L), vertex_choice(V).
+
+.decl vertex(p: Position, ch: Choice)
+vertex(P, [L, V]) :- hyp(P, L), vertex_choice(V).
+vertex(P, [L, V]) :- right_angle(P, L, V).
+
+// The three vertices cast at each other: a cell with vertices on both sides of
+// one of its lines lies on the side joining them.
+.init span = Between<Choice>
+span.axis(Ch, A) :- axis4_elem(A), impl_choice(Ch).
+span.cell(Ch, P) :- in(P, _), impl_choice(Ch).
+span.mark(Ch, P) :- vertex(P, Ch).
+
+.decl paint(p: Position, ch: Choice)
+paint(P, Ch) :- span.between(Ch, P), !mark(P).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- paint(P, Ch), c.ink(Col).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(P, Ch).

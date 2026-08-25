@@ -1,0 +1,89 @@
+// 14b8e18c
+// concept: objects stamp
+// Square objects get corner marks: at each marked corner of an object's
+// bounding box, the two cells one step outside the box along its edges take
+// the mark color. The rest of the grid passes through. A lone cell does not
+// qualify.
+//
+// The cases differ in what makes an object square, and in which corners get
+// marks:
+//   $Square  — its bounding box is square; every box corner is marked.
+//   $Corners — as $Square, but only the box corners the object occupies.
+//   $Box     — the object also covers the whole box border.
+//   $Ring    — the object is exactly the box border, with nothing inside.
+
+#include "../lib.dl"
+
+.type Choice = Square {} | Corners {} | Box {} | Ring {}
+
+.comp Consts {
+    .decl bg(col: Color) bg(7).
+    .decl mark_color(col: Color) mark_color(2).
+}
+
+.init c = Consts
+
+// --- objects ---
+
+.init comps = Components<Color>
+comps.node(Col, P) :- in(P, Col), !c.bg(Col).
+
+.decl cell_of(id: Ident, p: Position)
+cell_of(Id, P) :- comps.label(_, P, Id).
+
+.init box = BoxFrame<Ident>
+box.cell(Id, P) :- cell_of(Id, P).
+box.grid(Id, P) :- cell_of(Id, _), in(P, _).   // so the box's empty cells are viewed too
+
+.decl square(id: Ident)
+square(Id) :- box.extents(Id, _, N, N).
+
+.decl multi_cell(id: Ident)
+multi_cell(Id) :- cell_of(Id, P), cell_of(Id, Q), P != Q.
+
+.decl on_box_border(id: Ident, p: Position)
+on_box_border(Id, P) :- box.inner(Id, P, P_inner), dir_elem(D), dist(P_inner, D, 0).
+
+// Some cell of the box's border is not the object's.
+.decl border_gap(id: Ident)
+border_gap(Id) :- on_box_border(Id, P), !cell_of(Id, P).
+
+.decl has_interior(id: Ident)
+has_interior(Id) :- cell_of(Id, P), !on_box_border(Id, P).
+
+// --- marks ---
+
+// $Square and $Corners share the squareness claim; they split at `anchor`.
+.decl square_case(ch: Choice)
+square_case($Square()). square_case($Corners()).
+
+.decl qualify(id: Ident, ch: Choice)
+qualify(Id, Ch)      :- square(Id), multi_cell(Id), square_case(Ch).
+qualify(Id, $Box())  :- square(Id), multi_cell(Id), !border_gap(Id).
+qualify(Id, $Ring()) :- square(Id), multi_cell(Id), !border_gap(Id), !has_interior(Id).
+
+.decl box_corner(id: Ident, diag: DiagDir, p: Position)
+box_corner(Id, Dg, P) :-
+    box.inner(Id, P, P_inner),                       // a cell of the box
+    diag_dir_elem(Dg), diag_dist(P_inner, Dg, _, 0, 0).   // at corner Dg
+
+// The corner cells whose out-neighbors take the mark: the box's corners,
+// except $Corners keeps only those the object occupies.
+.decl anchor(diag: DiagDir, p: Position, ch: Choice)
+anchor(Dg, P, Ch) :- qualify(Id, Ch), Ch != $Corners(), box_corner(Id, Dg, P).
+anchor(Dg, P, $Corners()) :- qualify(Id, $Corners()), box.corner(Id, P, Dg).
+
+.decl mark(p: Position, ch: Choice)
+mark(P_mark, Ch) :-
+    anchor(Dg, P, Ch),                               // a marked corner cell
+    dir_of(Dg, _, D), step_delta(D, Delta),          // one step out along each corner edge
+    compose(P, Delta, P_mark), in(P_mark, _).        // the cell it lands on, when on the grid
+
+// --- output ---
+
+.decl impl_choice(ch: Choice)
+impl_choice($Square()). impl_choice($Corners()). impl_choice($Box()). impl_choice($Ring()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- mark(P, Ch), c.mark_color(Col).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !mark(P, Ch).

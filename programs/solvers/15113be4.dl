@@ -1,0 +1,59 @@
+// 15113be4
+// concept: decompose scale stamp
+// Separator lines cut the grid into cells of ink on background. A
+// separator-bordered block holds the key: its interior is a cell-sized
+// footprint scaled up, in a color found nowhere else. Every cell whose ink
+// covers the footprint has that footprint repainted in the key's color.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl bg(col: Color) bg(0).
+    .decl ink(col: Color) ink(1).
+    .decl sep(col: Color) sep(4).
+
+    // The footprint's extent — the size of a grid cell, and the parts the
+    // key's interior divides into.
+    .decl dim(k: number) dim(3).
+
+    // Separator thickness.
+    .decl gap(g: number) gap(1).
+}
+
+.init c = Consts
+
+// The key's color: the one color outside the palette.
+.decl key_color(col: Color)
+key_color(Col) :- in(_, Col), !c.bg(Col), !c.ink(Col), !c.sep(Col).
+
+// The key's interior — what its separator border encloses.
+.init key = Reach<Unit>
+key.node($U(), P) :- in(P, Col), !c.sep(Col).
+key.seed($U(), P) :- in(P, Col), key_color(Col).
+
+.init key_box = BoxFrame<Unit>
+key_box.cell($U(), P) :- key.reach($U(), P).
+
+// The footprint: the key's interior scaled down to one grid cell.
+.decl footprint(p_intile: Position)
+footprint(P_intile) :-
+    in(P, Col), key_color(Col),                 // a key cell
+    key_box.inner($U(), P, P_inner),            // in the key's own frame
+    c.dim(N), divide_2d(P_inner, N, 0, P_intile, _).
+
+// Which cell a position sits in, and where in that cell.
+.decl cell_at(p: Position, p_tile: Position, p_intile: Position)
+cell_at(P, P_tile, P_intile) :-
+    in(P, _), c.dim(K), c.gap(G), divide_by_size_2d(P, K, G, P_tile, P_intile).
+
+.init cover = KeyedSetCompare<Position, Unit, Position>
+cover.pattern_member($U(), P_intile) :- footprint(P_intile).
+cover.observed_member(P_tile, P_intile) :- cell_at(P, P_tile, P_intile), in(P, Col), c.ink(Col).
+
+// A covering cell takes the key's color over the footprint.
+.decl stamp(p: Position)
+stamp(P) :- cell_at(P, P_tile, P_intile), cover.covers(P_tile, $U()), footprint(P_intile).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- in(P, Col), !stamp(P).
+out(P, Col) :- stamp(P), key_color(Col).

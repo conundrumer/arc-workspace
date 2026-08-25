@@ -1,0 +1,95 @@
+// 150deff5
+// concept: pack
+// The marked region packs exactly one way with two pieces — a 2x2 block and a
+// 3-cell line — and every cell takes the color of the piece covering it.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl bg(col: Color) bg(0).
+
+    // The catalog: each piece's footprint, and the color it paints.
+    RIGID(piece,
+        .decl member(id: Ident, p: Position)
+        GRID_MASK_2x2(member, 0,
+            1, 1,
+            1, 1)
+        GRID_MASK_3x1(member, 1,
+            1,
+            1,
+            1)
+    )
+
+    .decl piece_color(id: Ident, col: Color)
+    piece_color(0, 8). piece_color(1, 2).
+}
+
+.init c = Consts
+
+// --- the candidate pieces ---
+
+// A piece kind: a catalog piece in one of its orientations.
+.type Kind = [id: Ident, d: D4]
+
+.init occ = Occurrences<Kind, Unit>
+occ.shape([Id, D], S, $U()) :- c.piece_member(D, Id, S).
+occ.cell([Id, D], P, $U()) :- c.piece_member(D, Id, _), in(P, Col), !c.bg(Col).
+
+// A piece is a footprint laid on marked cells, named by its margins in the
+// grid frame, so orientations sharing a footprint name the same piece.
+.decl covers(b: Position, p: Position)
+covers(B, P) :- occ.occurrence(K, B), occ.shape(K, S, $U()), compose(B, S, P).
+
+// --- the forced packing ---
+
+.init pack = Packing<Unit, Position>
+pack.covers($U(), B, P) :- covers(B, P).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- in(P, Col), c.bg(Col).
+out(P, Col) :-
+    pack.forced($U(), B), covers(B, P),                  // a cell of a forced piece
+    occ.occurrence([Id, _], B), c.piece_color(Id, Col).  // in its piece's color
+
+// --- fit ---
+
+// Pieces are labeled by their color: this task's pieces are color-distinct,
+// and Ident numbering is arbitrary.
+.comp Fit {
+    // A changed cell is covered by a piece of its output color.
+    .decl changed(e: Example, p: Position, col: Color)
+    changed(E, P, C) :- ex_out(E, P, C), ex_in(E, P, C2), C != C2.
+
+    // Same-colored regions of the changed cells: a lone piece, or adjacent
+    // same-colored pieces merged.
+    .type EC = [e: Example, col: Color]
+    .init regions = Components<EC>
+    regions.node([E, C], P) :- changed(E, P, C).
+
+    .type Region = [e: Example, col: Color, id: Ident]
+    .decl region_cell(r: Region, p: Position)
+    region_cell([E, C, Id], P) :- regions.label([E, C], P, Id).
+
+    .init size = Tally<Region, Position>
+    size.item(R, P) :- region_cell(R, P).
+
+    .init small = Extremes<Color>
+    small.cand(C, N) :- size.tally([_, C, _], N).
+
+    // A color's smallest regions are lone pieces — a merged region holds at
+    // least two. One witness region per color serves as the chart, in its
+    // own pose.
+    .init pick = Canon<Region>
+    pick.equiv([E, C, Id], [E2, C, Id2]) :-
+        size.tally([E, C, Id], N), small.low(C, N),
+        size.tally([E2, C, Id2], N2), small.low(C, N2).
+
+    .init box = BoxFrame<Region>
+    box.cell(R, P) :- pick.rep(R, R), region_cell(R, P).
+
+    .decl piece_member(id: Ident, p: Position)
+    piece_member(as(C, Ident), S) :- box.inner([E, C, Id], _, S).
+
+    .decl piece_color(id: Ident, col: Color)
+    piece_color(as(C, Ident), C) :- changed(_, _, C).
+}
