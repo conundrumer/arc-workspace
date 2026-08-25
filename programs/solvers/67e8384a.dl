@@ -69,9 +69,9 @@ anchor_tile(T) :- c.arr_pos(T), c.anchor(Diag), corner_anchor(Diag, T, ORIGIN).
 .decl unfold_val(p_tile: Position, p_intile: Position, col: Color)
 unfold_val(T, P, Col) :- in(P, Col), anchor_tile(T).
 unfold_val(T2, P_img, Col) :-
-    unfold_val(T, P, Col),                                             // known tile
-    axis_of(D, A), step_delta(D, S), compose(T, S, T2), c.arr_pos(T2), // neighbor toward d
-    flip_of(A, F), apply(F, P, P_img).                                 // reflect across the shared edge
+    unfold_val(T, P, Col),                              // known tile
+    axis_of(D, A), neighbor(T, D, T2), c.arr_pos(T2),
+    flip_of(A, F), apply(F, P, P_img).                  // reflect across the shared edge
 
 out(P_grid, Col, $Unfold()) :-
     unfold_val(T, P_intile, Col),

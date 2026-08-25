@@ -38,8 +38,8 @@ marker_at(P) :- in(P, Col), c.marker(Col).
 
 // --- Arms ---
 halo(P, Col, $Arms()) :-
-    marker_at(Q), c.arm(Diag, Col),                        // marker, arm color
-    step_delta(Diag, S), compose(Q, S, P), in(P, _).       // neighbor toward diag, on-grid
+    marker_at(Q), c.arm(Diag, Col),      // marker, arm color
+    neighbor(Q, Diag, P), in(P, _).      // on-grid
 
 // --- Stamp ---
 // Template ink viewed from the seat cell.
@@ -63,9 +63,6 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !halo(P, _, Ch), c.bg(Col).
 .type Cell = [e: Example, p: Position]
 
 .comp Fit {
-    .decl marker_at(e: Example, p: Position)
-    marker_at(E, P) :- ex_in(E, P, Col), c.marker(Col).
-
     // What the stamp writes: every output ink cell.
     .decl painted(e: Example, p: Position, col: Color)
     painted(E, P, Col) :- ex_out(E, P, Col), !c.bg(Col).
@@ -73,7 +70,7 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !halo(P, _, Ch), c.bg(Col).
     // Painted cells as offsets from their example's marker.
     .init off = Reframe<Cell>
     off.cell([E, P], P)  :- painted(E, P, _).
-    off.outer([E, P], M) :- painted(E, P, _), marker_at(E, M).
+    off.outer([E, P], M) :- painted(E, P, _), ex_in(E, M, Col), c.marker(Col).
 
     .decl offset(off: Shift, col: Color)
     offset(Off, Col) :- painted(E, P, Col), off.inner([E, P], Off).

@@ -43,7 +43,7 @@ interior(P, $Box()) :- box.inside(Id, P), !box_rim(Id, P).
 
 // Ink cell with a non-ink neighbor.
 .decl exposed(p: Position)
-exposed(P) :- ink(P), dir_elem(D), step_delta(D, S), compose(P, S, P2), !ink(P2).
+exposed(P) :- ink(P), dir_elem(D), neighbor(P, D, P2), !ink(P2).
 
 interior(P, $Erode()) :- ink(P), !exposed(P).
 

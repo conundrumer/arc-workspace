@@ -45,10 +45,9 @@ image(P, Col, $Sym()) :-
 // interrupted only there, so edge markers align with no line cell.
 .decl center(p: Position)
 center(C) :-
-    in(C, Colm), c.marker(Colm),          // a marker
-    in(Q, Coll), c.line(Coll),            // a line cell
-    axis_elem(A),
-    split(C, A, _, Ac), split(Q, A, _, Ac).   // colinear on some axis
+    in(C, Colm), c.marker(Colm),      // a marker
+    in(Q, Coll), c.line(Coll),        // a line cell
+    axis_elem(A), same_line(A, C, Q).
 
 // Input cells viewed from the crossing.
 .init rf = Reframe<Position>

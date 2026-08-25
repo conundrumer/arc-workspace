@@ -6,11 +6,8 @@
 #include "../lib.dl"
 
 .comp Consts {
-    .decl bg(c: Color)
-    bg(0).
-
-    .decl ink(c: Color)
-    ink(1).
+    .decl bg(c: Color) bg(0).
+    .decl ink(c: Color) ink(1).
 }
 
 .init c = Consts
@@ -18,9 +15,9 @@
 // Bg cell beside an ink cell.
 .decl painted(p: Position)
 painted(P) :-
-    in(P, Col), c.bg(Col),                              // bg cell
-    dir8_elem(D), step_delta(D, S), compose(P, S, P2),  // a surrounding cell
-    in(P2, Ink), c.ink(Ink).                            // ink there
+    in(P, Col), c.bg(Col),               // bg cell
+    dir8_elem(D), neighbor(P, D, P2),    // a surrounding cell
+    in(P2, Ink), c.ink(Ink).             // ink there
 
 .decl out(p: Position, col: Color)
 out(P, Ink) :- painted(P), c.ink(Ink).

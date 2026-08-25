@@ -48,9 +48,9 @@
     // Each object's hole regions when all ink closes jointly.
     .init joint_holes = Tally<KObj, Ident>
     joint_holes.item([K, O], Id) :-
-        off_ink.region(K, P, Id),                           // cell of a closed region
-        dir_elem(D), step_delta(D, S), compose(P, S, Q),    // its neighbor
-        objs.label(K, Q, O).                                // in an object
+        off_ink.region(K, P, Id),        // cell of a closed region
+        dir_elem(D), neighbor(P, D, Q),
+        objs.label(K, Q, O).             // in an object
 
     // The cells left when only O is solid — other objects among them.
     .init off_obj = Closed<KObj>

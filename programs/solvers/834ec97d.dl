@@ -45,15 +45,13 @@ beam(P, Ch) :- marker(P, _), impl_choice(Ch).
 // --- $Period ---
 beam(Q, $Period()) :-
     beam(P, $Period()),
-    across(D2), c.period(K), jump_delta(D2, K, Delta),
-    compose(P, Delta, Q), in(Q, _).
+    across(D2), c.period(K), jump(P, D2, K, Q), in(Q, _).
 
 // --- $Parity ---
 beam(Q, $Parity()) :-
-    beam(P, $Parity()),
-    across(D2), step_delta(D2, S),
-    compose(P, S, M), in(M, _),        // the skipped cell
-    compose(M, S, Q), in(Q, _).
+    beam(P, $Parity()), across(D2),
+    neighbor(P, D2, M), in(M, _),   // the skipped cell
+    neighbor(M, D2, Q), in(Q, _).
 
 // The filled region: each beam cell and its column toward the edge opposite
 // the move.
@@ -63,7 +61,7 @@ rays.cell(Ch, P) :- beam(_, Ch), in(P, _).
 rays.mark(Ch, P) :- beam(P, Ch).
 
 .decl moved(p: Position)
-moved(Q) :- marker(P, _), c.dir(D), step_delta(D, S), compose(P, S, Q).
+moved(Q) :- marker(P, _), c.dir(D), neighbor(P, D, Q).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- rays.ray(Ch, P, _, _, _), c.fill(Col).

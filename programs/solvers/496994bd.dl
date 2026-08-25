@@ -42,9 +42,9 @@ block.cell($U(), P) :- ink(P, _).
 
 img(P2, Col, $Seat()) :-
     ink(P, Col),
-    c.dir(D), axis_of(D, A), flip_of(A, F), apply(F, P, P_img),    // reflected cell
-    opposite(D, O), block.edge_min($U(), D, M),                    // block margin at d
-    jump_delta(O, M, Delta), compose(P_img, Delta, P2).            // flush at the opposite edge
+    c.dir(D), axis_of(D, A), flip_of(A, F), apply(F, P, P_img),  // reflected cell
+    opposite(D, O), block.edge_min($U(), D, M),                  // block margin at d
+    jump(P_img, O, M, P2).                                       // flush at the opposite edge
 
 // --- Output ---
 

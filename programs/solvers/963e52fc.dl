@@ -56,23 +56,20 @@ line_ok(Line, K) :-
 // continuation.
 .type CaseLine = [ch: Choice, line: Position]
 
-.init period_cand = Extremes<CaseLine>
-
-.decl period(ch: Choice, line: Position, k: number)
-period(Ch, Line, K) :- period_cand.low([Ch, Line], K).
+.init period = Extremes<CaseLine>
 
 // The input, then each cell repeating the one a period back.
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- impl_choice(Ch), base(P, Col).
 out(P_grid_out, Col, Ch) :-
     out(P, Col, Ch),
-    c.dir(D), axis_of(D, A), split(P, A, _, Line),   // the cell's line
-    period(Ch, Line, K), jump_delta(D, K, Delta),    // its period, as a step
-    compose(P, Delta, P_grid_out), out_cell(P_grid_out).
+    c.dir(D), axis_of(D, A), split(P, A, _, Line),      // the cell's line
+    period.low([Ch, Line], K), jump(P, D, K, P_grid_out),
+    out_cell(P_grid_out).
 
 // --- $Line ---
 
-period_cand.cand([$Line(), Line], K) :- line_ok(Line, K).
+period.cand([$Line(), Line], K) :- line_ok(Line, K).
 
 // --- $Grid ---
 
@@ -81,7 +78,5 @@ period_cand.cand([$Line(), Line], K) :- line_ok(Line, K).
 broken(K) :- c.dir(D), axis_of(D, A), parse.mismatch(_, A, K).
 
 // A shift no line breaks holds for the whole grid, so every line takes it.
-.decl grid_ok(k: number)
-grid_ok(K) :- line_ok(_, K), !broken(K).
-
-period_cand.cand([$Grid(), Line], K) :- cell_line(_, Line, _), grid_ok(K).
+period.cand([$Grid(), Line], K) :-
+    cell_line(_, Line, _), line_ok(_, K), !broken(K).

@@ -60,9 +60,9 @@ key_cell(P) :-
 // --- Line ---
 // Two key cells on one line along the pair axis pair up, in both orders.
 mapping(C1, C2, $Line()) :-
-    key_cell(P1), in(P1, C1),                             // one key cell
-    key_cell(P2), in(P2, C2), P1 != P2,                   // a distinct one
-    c.axis(A), split(P1, A, _, Ac), split(P2, A, _, Ac).  // same line
+    key_cell(P1), in(P1, C1),            // one key cell
+    key_cell(P2), in(P2, C2), P1 != P2,  // a distinct one
+    c.axis(A), same_line(A, P1, P2).
 
 // --- Map ---
 // The stored pairing, anchored at the key's corner.
@@ -106,9 +106,7 @@ out(P, Col_out, Ch) :-
         mapping(E, C1, C2).                   // their colors swap
 
     .decl axis(a: Axis)
-    axis(A) :-
-        grid_partner(P1, P2),
-        axis_elem(A), split(P1, A, _, Ac), split(P2, A, _, Ac).    // one line along a
+    axis(A) :- grid_partner(P1, P2), axis_elem(A), same_line(A, P1, P2).
 
     .init frame = Frame2D<Unit>
     frame.extent($U(), A, N) :- key_dim(A, N).

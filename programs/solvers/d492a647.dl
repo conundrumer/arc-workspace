@@ -38,15 +38,14 @@ lattice(P, Ch) :- seed(P, _), impl_choice(Ch).
 // --- $Period ---
 lattice(Q, $Period()) :-
     lattice(P, $Period()),
-    c.period(K), dir_elem(D), jump_delta(D, K, Delta),   // period jump, any cardinal
-    compose(P, Delta, Q), in(Q, _).
+    c.period(K), dir_elem(D),         // a period jump, any cardinal
+    jump(P, D, K, Q), in(Q, _).
 
 // --- $Parity ---
 lattice(Q, $Parity()) :-
-    lattice(P, $Parity()),
-    dir_elem(D), step_delta(D, S),
-    compose(P, S, M), in(M, _),                          // the skipped cell
-    compose(M, S, Q), in(Q, _).
+    lattice(P, $Parity()), dir_elem(D),
+    neighbor(P, D, M), in(M, _),      // the skipped cell
+    neighbor(M, D, Q), in(Q, _).
 
 .decl painted(p: Position, ch: Choice)
 painted(P, Ch) :- lattice(P, Ch), in(P, Col), c.bg(Col).

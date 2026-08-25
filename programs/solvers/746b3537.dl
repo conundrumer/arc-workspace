@@ -16,8 +16,8 @@
 .decl mismatch(a: Axis)
 mismatch(A) :-
     axis_elem(A),
-    in(P, Col), in(P2, Col2), Col != Col2,                // two colors
-    split(P, A, _, P_across), split(P2, A, _, P_across).  // one line
+    in(P, Col), in(P2, Col2), Col != Col2,   // two colors
+    same_line(A, P, P2).                     // on one line
 
 // The color sequence runs across the axis whose lines are uniform.
 .decl seq_axis(a: Axis)

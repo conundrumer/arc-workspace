@@ -31,8 +31,8 @@ panels.divider($U(), A, L) :- line_color(A, L, _), !line_mixed(A, L).
 // A panel's frame — the ring of cells with a neighbor outside it.
 .decl frame(p: Position)
 frame(P) :-
-    panels.tile_of($U(), P, T), dir_elem(D), step_delta(D, Delta),  // step off the cell
-    compose(P, Delta, Q), !panels.tile_of($U(), Q, T).              // landing outside
+    panels.tile_of($U(), P, T), dir_elem(D),
+    neighbor(P, D, Q), !panels.tile_of($U(), Q, T).   // a neighbor outside the panel
 
 .decl interior(t: Position, p: Position)
 interior(T, P) :- panels.tile_of($U(), P, T), !frame(P).

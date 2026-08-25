@@ -39,9 +39,7 @@
 .init c = Consts
 
 .decl arm(p: Position, d: Dir, col: Color)
-arm(P, D, Col) :-
-    in(P, _), dir_elem(D),                             // each dir of a cell
-    step_delta(D, S), compose(P, S, P2), in(P2, Col).
+arm(P, D, Col) :- in(P, _), dir_elem(D), neighbor(P, D, P2), in(P2, Col).
 
 // Some dir lacks a Col arm — a differing or missing neighbor.
 .decl mismatch(p: Position, col: Color)

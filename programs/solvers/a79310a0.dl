@@ -20,8 +20,7 @@
 .decl shift_image(p: Position)
 shift_image(P_out) :-
     in(P_in, Col), c.ink(Col),
-    c.shift_dir(D), c.shift_k(K), jump_delta(D, K, Delta),
-    compose(P_in, Delta, P_out),
+    c.shift_dir(D), c.shift_k(K), jump(P_in, D, K, P_out),
     in(P_out, _).
 
 .decl out(p: Position, col: Color)

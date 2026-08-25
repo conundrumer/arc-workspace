@@ -76,8 +76,8 @@ anchor(Dg, P, $Corners()) :- qualify(Id, $Corners()), box.corner(Id, P, Dg).
 .decl mark(p: Position, ch: Choice)
 mark(P_mark, Ch) :-
     anchor(Dg, P, Ch),                               // a marked corner cell
-    dir_of(Dg, _, D), step_delta(D, Delta),          // one step out along each corner edge
-    compose(P, Delta, P_mark), in(P_mark, _).        // the cell it lands on, when on the grid
+    dir_of(Dg, _, D), neighbor(P, D, P_mark),        // one step out along each corner edge
+    in(P_mark, _).                                   // when it lands on the grid
 
 // --- output ---
 

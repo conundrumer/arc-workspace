@@ -48,7 +48,7 @@ impl_choice($Gap()). impl_choice($Glyph()).
 .decl arm(p: Position, col: Color, d: Dir, p_arm: Position)
 arm(P, Col, D, P_arm) :-
     in(P, Col), !c.bg(Col),
-    dir_elem(D), step_delta(D, S), compose(P, S, P_arm), in(P_arm, Col).
+    dir_elem(D), neighbor(P, D, P_arm), in(P_arm, Col).
 
 // A dir of corner g with no arm — the defect the elbow test negates.
 .decl no_arm(p: Position, col: Color, g: DiagDir)
@@ -60,9 +60,8 @@ no_arm(P, Col, G) :-
 .decl elbow(p: Position, col: Color, gap: DiagDir)
 elbow(P, Col, G) :-
     in(P, Col), !c.bg(Col),
-    diag_dir_elem(G), !no_arm(P, Col, G),           // arms on both dirs of G
-    step_delta(G, S), compose(P, S, P_gap),         // the corner between them
-    in(P_gap, Bg), c.bg(Bg).                        // is empty
+    diag_dir_elem(G), !no_arm(P, Col, G),            // arms on both dirs of G
+    neighbor(P, G, P_gap), in(P_gap, Bg), c.bg(Bg).  // the corner between them is empty
 
 mark(P_cell, $Gap()) :-
     elbow(P, Col, G),
@@ -101,7 +100,7 @@ wall(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !c.bg(Col), !mark(P, Ch).
 // The wall beside p toward d.
 .decl side_wall(p: Position, d: Dir, col: Color, ch: Choice)
 side_wall(P, D, Col, Ch) :-
-    in(P, _), dir_elem(D), step_delta(D, S), compose(P, S, P_side), wall(P_side, Col, Ch).
+    in(P, _), dir_elem(D), neighbor(P, D, P_side), wall(P_side, Col, Ch).
 
 // A ray heading d meets a wall at p, beside it on an axis it advances along.
 .decl hit(p: Position, d: DiagDir, col: Color, ch: Choice)
@@ -130,7 +129,7 @@ ray(P, D_out, Col_out, Ch) :-
     ).
 
 enter(P_next, D, Col, Ch) :-
-    ray(P, D, Col, Ch), step_delta(D, S), compose(P, S, P_next),
+    ray(P, D, Col, Ch), neighbor(P, D, P_next),
     in(P_next, Bg), c.bg(Bg).                     // stops on occupied cells
 
 .decl paint(p: Position, col: Color, ch: Choice)
@@ -153,14 +152,14 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !paint(P, _, Ch).
     .decl beside_ink(e: Example, q: Position, col: Color)
     beside_ink(E, Q, Col) :-
         painted(E, Q, Col),
-        dir_elem(D), step_delta(D, S), compose(Q, S, W), ex_in(E, W, Col).
+        dir_elem(D), neighbor(Q, D, W), ex_in(E, W, Col).
 
     // A ray's first cell names its marker: the ink cell one step behind.
     .decl launch_cell(e: Example, p_l: Position, d: DiagDir, col: Color)
     launch_cell(E, P_l, D, Col) :-
-        painted(E, Q, Col), !beside_ink(E, Q, Col),                        // first cell, not a bounce
-        diag_opposite(D, D_back), step_delta(D_back, S), compose(Q, S, P_l),
-        ex_in(E, P_l, Col).                                                // the ink behind it
+        painted(E, Q, Col), !beside_ink(E, Q, Col),          // first cell, not a bounce
+        diag_opposite(D, D_back), neighbor(Q, D_back, P_l),  // one step back along the ray
+        ex_in(E, P_l, Col).                                  // the ink behind it
 
     // The launching marker: the launch cell's same-color component. One
     // witness marker serves as the chart, in its own pose.

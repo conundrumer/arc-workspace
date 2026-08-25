@@ -65,7 +65,7 @@ target(P_corner, Col, $Stretch()) :-
 
 target(P_out, Col, $Explode()) :-
     shape(P, Col), bb.corner($U(), P, Diag),
-    step_delta(Diag, Delta), compose(P, Delta, P_out).
+    neighbor(P, Diag, P_out).
 
 // --- Table ---
 

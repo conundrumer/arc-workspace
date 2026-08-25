@@ -25,8 +25,7 @@ sheared(P, P2) :-
     boxframe.inner($U(), P, I),               // cell in the box frame
     c.anchor(D_anc), dist(I, D_anc, K),       // distance from the anchor edge
     c.sense(S), turn(S, D_anc, D_sh),         // slide dir: anchor turned by sense
-    jump_delta(D_sh, K, Delta),
-    compose(P, Delta, P2), in(P2, _).         // slide; clip off-grid
+    jump(P, D_sh, K, P2), in(P2, _).          // slide; clip off-grid
 
 .decl out(p: Position, col: Color)
 out(P2, Col) :- sheared(P, P2), ink(P, Col).

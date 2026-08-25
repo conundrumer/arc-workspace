@@ -34,8 +34,7 @@ move_dir(D) :- dir_elem(D), sight.ray($U(), _, D, _, _).
 .decl stopper(p: Position)
 stopper(P2) :-
     c.mirror_color(Col), box.inside(Col, P),          // a block-box cell
-    move_dir(D), opposite(D, O), step_delta(O, S),    // one step back
-    compose(P, S, P2).
+    move_dir(D), opposite(D, O), neighbor(P, O, P2).  // one step back
 
 // Displacements toward the block the frame admits.
 .decl shift(delta: Shift)
@@ -54,7 +53,7 @@ halted(Delta) :-
 reach(ORIGIN).
 reach(Delta2) :-
     reach(Delta), !halted(Delta),
-    move_dir(D), step_delta(D, S), compose(Delta, S, Delta2), shift(Delta2).
+    move_dir(D), neighbor(Delta, D, Delta2), shift(Delta2).
 
 // The shape's box, docked.
 .decl home(p: Position)
@@ -69,7 +68,7 @@ home(P_home) :-
 mirror(P_mirror) :-
     move_dir(D), axis_of(D, A),
     c.shape_color(Col), box.extents(Col, A, N, _),  // the shape's length along the slide
-    home(P_home), jump_delta(D, N, Delta), compose(P_home, Delta, P_mirror).
+    home(P_home), jump(P_home, D, N, P_mirror).
 
 .decl paint(p: Position, col: Color)
 paint(P_grid_out, Col_out) :-

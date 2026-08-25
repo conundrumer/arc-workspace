@@ -48,7 +48,7 @@ mini(P, Col, $Shrink()) :-
     center(C),
     ( c.center_paint(Col), P = C                              // the center
     ; box.corner($U(), P_mark, Diag), mark(P_mark, Col),      // a mark at its box corner
-      step_delta(Diag, Delta), compose(C, Delta, P)           // one step out that way
+      neighbor(C, Diag, P)
     ).
 
 // --- Converge ---
@@ -61,7 +61,7 @@ mini(P, Col, $Converge()) :-
     ( c.center_paint(Col), P = C                              // the center
     ; mark(P_mark, Col), box.inner($U(), P_mark, P_in),       // a mark in the box's frame
       place.quadrant($U(), P_in, Diag),                       // the quadrant it lies in
-      step_delta(Diag, Delta), compose(C, Delta, P)           // one step out that way
+      neighbor(C, Diag, P)
     ).
 
 // --- Cross ---
@@ -78,16 +78,11 @@ sees(M, P, D) :- dray.ray($U(), P, D, K, M), K != 0.
 .decl unseen(p: Position)
 unseen(P) :- sees(_, P, _), mark(M, _), !sees(M, P, _).
 
-// Where every mark's diagonals meet.
-.decl meet(p: Position)
-meet(P) :- sees(_, P, _), !unseen(P).
-
 mini(P, Col, $Cross()) :-
-    meet(C),
+    sees(_, C, _), !unseen(C),                                // where every mark's diagonals meet
     ( c.center_paint(Col), P = C                              // the meeting cell
     ; sees(M, C, D), mark(M, Col),                            // a ray that reached it
-      diag_opposite(D, D_back), step_delta(D_back, Delta),
-      compose(C, Delta, P)                                    // one step back toward its mark
+      diag_opposite(D, D_back), neighbor(C, D_back, P)        // one step back toward its mark
     ).
 
 // --- out ---

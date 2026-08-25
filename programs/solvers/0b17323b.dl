@@ -34,7 +34,7 @@ mark(P) :- in(P, Col), c.mark_color(Col).
 sep(D, K) :-
     mark(P), mark(P2),                                     // two marks
     diag_dir_elem(D), axis_elem(A), sub_extent(P, A, K),   // a corner, and a step the frame admits
-    jump_delta(D, K, Delta), compose(P, Delta, P2).        // P2 is P stepped
+    jump(P, D, K, P2).
 
 // The marks are evenly spaced, so the closest pair gives the spacing.
 .init spacing = Extremes<Unit>
@@ -48,8 +48,7 @@ spacing.cand($U(), K) :- sep(_, K).
 walk(Ch, P) :- mark(P), impl_choice(Ch).
 walk(Ch, P_next) :-
     walk(Ch, P), walk_dir(Ch, D), spacing.low($U(), K),     // a cell of it, and the step
-    jump_delta(D, K, Delta), compose(P, Delta, P_next),
-    in(P_next, _).                                          // the next one, still on the grid
+    jump(P, D, K, P_next), in(P_next, _).                   // the next one, still on the grid
 
 .decl added(ch: Choice, p: Position)
 added(Ch, P) :- walk(Ch, P), !mark(P).

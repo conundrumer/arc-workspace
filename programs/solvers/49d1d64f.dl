@@ -17,15 +17,14 @@
 seated(P_in, P_out) :- in(P_in, _), c.seat_delta(Delta), compose(P_in, Delta, P_out).
 
 .decl out(p: Position, col: Color)
-out(P_out, Col) :- in(P_in, Col), seated(P_in, P_out).
-out(P_ring, Col) :-
-    in(P_in, Col_in),                                         // input cell
-    ( dir_elem(D), dist(P_in, D, 0),                          // on edge d
-      step_delta(D, S), Col = Col_in                          // steps out carrying its color
+out(P_out, Col) :-
+    in(P_in, Col_in), seated(P_in, P_seat),                   // input cell at its seat
+    ( P_out = P_seat, Col = Col_in                            // the seat itself
+    ; dir_elem(D), dist(P_in, D, 0),                          // on edge d
+      neighbor(P_seat, D, P_out), Col = Col_in                // steps out carrying its color
     ; diag_dir_elem(Diag), diag_dist(P_in, Diag, _, 0, 0),    // at corner diag
-      step_delta(Diag, S), c.bg(Col)                          // steps out as bg
-    ),
-    seated(P_in, P_out), compose(P_out, S, P_ring).           // the cell past its seat
+      neighbor(P_seat, Diag, P_out), c.bg(Col)                // steps out as bg
+    ).
 
 // --- fit ---
 

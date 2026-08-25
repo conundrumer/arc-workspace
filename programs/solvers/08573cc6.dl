@@ -69,9 +69,9 @@ arm(P, D2, Delta2, P_end2) :-
 .decl arm_cell(p: Position, d: Dir)
 arm_cell(C, D) :-
     arm(P, D, _, P_end), in(C, _),
-    axis_of(D, A), split(C, A, _, Ac), split(P, A, _, Ac),   // arm's line
-    dist(C, D, Kc), dist(P, D, Kp), Kc < Kp,                 // past start
-    dist(P_end, D, Ke), Kc >= Ke.                            // not past end
+    axis_of(D, A), same_line(A, C, P),        // arm's line
+    dist(C, D, Kc), dist(P, D, Kp), Kc < Kp,  // past start
+    dist(P_end, D, Ke), Kc >= Ke.             // not past end
 
 // The axis whose arms take the corner marker's color.
 .decl corner_axis(a: Axis, ch: Choice)

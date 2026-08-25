@@ -46,18 +46,15 @@ impl_corner($Fixed()). impl_corner($Prop()).
 halo(P, Col, $Halo(Cr)) :-
     impl_corner(Cr),
     marker_at(Q, _), c.side_col(Col),                // marker, side color
-    dir_elem(D), step_delta(D, S),                   // one step to a side
-    compose(Q, S, P), in(P, _).                      // neighbor, on-grid
+    dir_elem(D), neighbor(Q, D, P), in(P, _).        // a side neighbor, on-grid
 
 halo(P, Col, $Halo($Fixed())) :-
     marker_at(Q, _), c.corner_col(Col),              // marker, corner color
-    diag_dir_elem(Dg), step_delta(Dg, S),            // one step to a corner
-    compose(Q, S, P), in(P, _).                      // neighbor, on-grid
+    diag_dir_elem(Dg), neighbor(Q, Dg, P), in(P, _). // a corner neighbor, on-grid
 
 halo(P, Col, $Halo($Prop())) :-
     marker_at(Q, Col),                               // marker supplies the color
-    diag_dir_elem(Dg), step_delta(Dg, S),            // one step to a corner
-    compose(Q, S, P), in(P, _).                      // neighbor, on-grid
+    diag_dir_elem(Dg), neighbor(Q, Dg, P), in(P, _). // a corner neighbor, on-grid
 
 // --- Stamp ---
 // Template ink viewed from the seat cell.
@@ -100,9 +97,8 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !halo(P, _, Ch), c.bg(Col).
     off.cell([E, P], P)  :- painted(E, P, _).
     off.outer([E, P], M) :- blob.label(E, P, Id), blob.label(E, M, Id), marker_at(E, M).
 
-    .decl offset(off: Shift, col: Color)
-    offset(Off, Col) :- painted(E, P, Col), off.inner([E, P], Off).
-
     .decl template(p: Position, col: Color)
-    template(Pt, Col) :- offset(Off, Col), c.seat(Ps), compose(Ps, Off, Pt).
+    template(Pt, Col) :-
+        painted(E, P, Col), off.inner([E, P], Off),   // a painted cell's offset
+        c.seat(Ps), compose(Ps, Off, Pt).             // seated in the template frame
 }

@@ -145,7 +145,7 @@ out(P_grid_out, Col, Impl) :-
     border_step(P, S, P_next) :-
         ring_cell(P),
         turn(S, D, D_step), dist(P, D, 0),
-        step_delta(D_step, Delta), compose(P, Delta, P_next).
+        neighbor(P, D_step, P_next).
 
     // The sense the ring runs in: its step carries each corner to the cell
     // paired with the arm on that corner's diagonal.

@@ -50,9 +50,9 @@ toggle(M, A, B)   :- toggle(M, B, A).
 .decl ray_toggle(m: Color, p: Position, col: Color)
 ray_toggle(Col, P, Col) :- mark(P, Col).
 ray_toggle(M, Q, C2) :-
-    ray_toggle(M, P, C1), toggle(M, C1, C2),              // next color in the cycle
-    c.ray_dir(D), step_delta(D, S), compose(P, S, Q),     // next cell toward the edge
-    in(Q, _).                                             // still on the grid
+    ray_toggle(M, P, C1), toggle(M, C1, C2),   // next color in the cycle
+    c.ray_dir(D), neighbor(P, D, Q),           // next cell toward the edge
+    in(Q, _).                                  // still on the grid
 
 out(P, Col, $Toggle()) :- ray_toggle(_, P, Col).
 out(P, Col, $Toggle()) :- in(P, Col), !ray_toggle(_, P, _).
@@ -66,9 +66,9 @@ slots.idx($U(), K) :- c.slot(K).
 .decl ray_mask(m: Color, p: Position, k: number)
 ray_mask(Col, P, 0) :- mark(P, Col).
 ray_mask(M, Q, K2) :-
-    ray_mask(M, P, K), slots.succ($U(), K, K2),           // next slot in the period
-    c.ray_dir(D), step_delta(D, S), compose(P, S, Q),     // next cell toward the edge
-    in(Q, _).                                             // still on the grid
+    ray_mask(M, P, K), slots.succ($U(), K, K2),   // next slot in the period
+    c.ray_dir(D), neighbor(P, D, Q),              // next cell toward the edge
+    in(Q, _).                                     // still on the grid
 
 out(P, Col, $Mask()) :- ray_mask(_, P, K), c.mask(K, Col).    // overridden slot
 out(P, M,   $Mask()) :- ray_mask(M, P, K), !c.mask(K, _).     // unmarked slot echoes the dot

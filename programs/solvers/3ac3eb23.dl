@@ -81,9 +81,9 @@ seed($Edge(), Col, E, P) :- marker(P, Col), dir_elem(E), dist(P, E, 0).
 center(S, Col, E, P) :- seed(S, Col, E, P).
 center(S, Col, E, Q) :-
     center(S, Col, E, P),
-    opposite(E, D), step_delta(D, St),    // away from the marker edge
-    compose(P, St, M), in(M, _),          // the skipped cell
-    compose(M, St, Q), in(Q, _).
+    opposite(E, D),               // away from the marker edge
+    neighbor(P, D, M), in(M, _),  // the skipped cell
+    neighbor(M, D, Q), in(Q, _).
 
 lit(P, Col, $Parity(S)) :- center(S, Col, _, P).
 
@@ -91,7 +91,7 @@ lit(P, Col, $Parity(S)) :- center(S, Col, _, P).
 lit(Q, Col, $Parity(S)) :-
     center(S, Col, E, P),
     opposite(E, D), axis_of(D, A), diag_dirs(Diag, A, D, _),   // corners away from the edge
-    step_delta(Diag, Sd), compose(P, Sd, Q), in(Q, _).
+    neighbor(P, Diag, Q), in(Q, _).
 
 // --- $Walk ---
 
@@ -100,10 +100,9 @@ lit(Q, Col, $Parity(S)) :-
 walk(S, Col, E, P, Ds) :- seed(S, Col, E, P), side(E, Ds).
 walk(S, Col, E, Q, Ds2) :-
     walk(S, Col, E, P, Ds),
-    opposite(E, D), step_delta(D, St),              // away component
-    step_delta(Ds, Ss), compose(St, Ss, Sd),        // side component
-    compose(P, Sd, Q), in(Q, _),                    // diagonal step, on the grid
-    opposite(Ds, Ds2).                              // flip for the next step
+    opposite(E, D), neighbor(P, D, M),   // away from the marker edge
+    neighbor(M, Ds, Q), in(Q, _),        // and to the side
+    opposite(Ds, Ds2).                   // flip for the next step
 
 lit(P, Col, $Walk(S)) :- walk(S, Col, _, P, _).
 
@@ -117,14 +116,12 @@ slots.idx($U(), K) :- c.slot(K).
 slot_at(S, Col, E, P, 0) :- seed(S, Col, E, P).
 slot_at(S, Col, E, Q, K2) :-
     slot_at(S, Col, E, P, K), slots.succ($U(), K, K2),    // next slot
-    opposite(E, D), step_delta(D, St),                    // away from the marker edge
-    compose(P, St, Q), in(Q, _).
+    opposite(E, D), neighbor(P, D, Q), in(Q, _).          // away from the marker edge
 
 // Light each slot's radius, both sides of the line.
 lit(Q, Col, $Banner(S)) :-
     slot_at(S, Col, E, P, K), c.banner(K, R),    // slot cell, its lit radius
-    side(E, Ds), jump_delta(Ds, R, J),           // radius jump to a side
-    compose(P, J, Q), in(Q, _).
+    side(E, Ds), jump(P, Ds, R, Q), in(Q, _).    // out to that radius, each side
 
 // --- $Stamp ---
 

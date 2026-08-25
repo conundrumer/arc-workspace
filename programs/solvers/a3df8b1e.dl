@@ -58,8 +58,8 @@ trace(DC, P2, H) :-
     trace(DC, P, H), setup(DC, U, _),
     dist(P, H, Kh), Kh != 0,                   // room toward the heading
     dist(P, U, Ku), Ku != 0,                   // room toward the advance edge
-    step_delta(U, Su), step_delta(H, Sh),
-    compose(Su, Sh, S), compose(P, S, P2).
+    axis_of(U, A), diag_dirs(Diag, A, U, H),   // the diagonal U and H span
+    neighbor(P, Diag, P2).
 
 .decl traced(dc: DirCase, p: Position)
 traced(DC, P) :- trace(DC, P, _).

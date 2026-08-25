@@ -53,9 +53,7 @@ footprint_choice($Plus()). footprint_choice($Shape()).
 
 // $Plus — the cell and its four cardinal neighbors.
 footprint(P, P, $Plus()) :- in(P, _).
-footprint(P, Q, $Plus()) :-
-    in(P, _), dir_elem(D), step_delta(D, Delta),    // step off the center
-    compose(P, Delta, Q), in(Q, _).                 // neighbor in frame
+footprint(P, Q, $Plus()) :- in(P, _), dir_elem(D), neighbor(P, D, Q), in(Q, _).
 
 // $Shape — the stored cells, at every box seat that meets the frame. A
 // seat is found backward: each grid cell, viewed as each shape cell,

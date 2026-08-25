@@ -93,11 +93,8 @@
 // --- shared ---
 
 // The block: the non-bg cells, mark included.
-.decl block(p: Position)
-block(P) :- in(P, Col), !c.bg(Col).
-
 .init bb = Bbox<Unit>
-bb.cell($U(), P) :- block(P).
+bb.cell($U(), P) :- in(P, Col), !c.bg(Col).
 
 // --- Locate cases: the squares' corner ---
 
@@ -140,7 +137,7 @@ sq.cell(L, P)  :- box0(L, M), c.canvas(P), geq(P, M).
 sq_jump(L, J) :-
     diag(L, Diag), diag_opposite(Diag, Od), diag_dirs(Od, A, O1, O2),   // dirs away from the corner
     sq.inner(L, P), axis_dims(P, A, K1, K2),
-    jump_delta(O1, K1, J1), jump_delta(O2, K2, J2), compose(J1, J2, J).
+    jump_delta(O1, K1, J1), jump(J1, O2, K2, J).
 
 // --- $Grow ---
 // The first square and one diagonal step.
@@ -185,11 +182,10 @@ out(P, Col, Ch) :- impl_choice(Ch), c.canvas(P), !lit(P, _, Ch), c.bg(Col).
 .decl pair_mismatch(r: D4)
 pair_mismatch(R) :- c4_elem(R), c.pair_in(Pk, Col), apply(R, Pk, P), !in(P, Col).
 
-.decl pair_rot(r: D4)
-pair_rot(R) :- c4_elem(R), !pair_mismatch(R).
-
 // Canvas and colors both come from the stored output.
-out(Q, Col, $Pair()) :- pair_rot(R), c.pair_out(Pm, Col), apply(R, Pm, Q).
+out(Q, Col, $Pair()) :-
+    c4_elem(R), !pair_mismatch(R),         // a matching rotation
+    c.pair_out(Pm, Col), apply(R, Pm, Q).
 
 // --- fit ---
 

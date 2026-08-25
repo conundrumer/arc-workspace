@@ -29,8 +29,7 @@
 .decl shift_image(p_out: Position, col: Color)
 shift_image(P_out, Col) :-
     in(P_in, Col),
-    c.shift_dir(D), c.shift_k(K), jump_delta(D, K, Delta),
-    compose(P_in, Delta, P_out),
+    c.shift_dir(D), c.shift_k(K), jump(P_in, D, K, P_out),
     in(P_out, _).                                        // landed in the frame
 
 out(P, Col, $Shift()) :- shift_image(P, Col).

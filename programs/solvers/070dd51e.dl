@@ -24,11 +24,11 @@ bet.axis(Col, A) :- mark(Col, _), axis_elem(A).
 bet.cell(Col, P) :- mark(Col, _), in(P, _).
 bet.mark(Col, P) :- mark(Col, P).
 
-// The axis a color's line runs along: its marks share the across component.
+// The axis a color's line runs along.
 .decl line_axis(col: Color, a: Axis)
 line_axis(Col, A) :-
     mark(Col, P), mark(Col, Q), P != Q,
-    axis_elem(A), split(P, A, _, Ac), split(Q, A, _, Ac).
+    axis_elem(A), same_line(A, P, Q).
 
 // Span cells tagged with their line's axis.
 .decl span(p: Position, col: Color, a: Axis)

@@ -30,9 +30,9 @@ impl_choice($Spread()). impl_choice($Paint()).
 // P shares a line with a mark on some axis.
 .decl cross(p: Position)
 cross(P) :-
-    in(Q, Col), c.mark(Col),                               // a mark
-    in(P, _),                                              // any cell
-    axis_elem(A), split(P, A, _, Ac), split(Q, A, _, Ac).  // same line
+    in(Q, Col), c.mark(Col),          // a mark
+    in(P, _),                         // any cell
+    axis_elem(A), same_line(A, P, Q).
 
 .decl painted(p: Position)
 painted(P) :- cross(P), in(P, Col), !c.spare(Col).

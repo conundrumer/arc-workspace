@@ -15,9 +15,9 @@
 .decl flow(p: Position, col: Color)
 flow(P, Col) :- in(P, Col), !c.bg(Col).
 flow(P2, Col) :-
-    flow(P, Col),                                       // colored cell
-    c.dir(D), step_delta(D, S), compose(P, S, P2),      // neighbor toward c.dir
-    in(P2, Bg), c.bg(Bg).                               // still bg — a mark occludes
+    flow(P, Col),                     // colored cell
+    c.dir(D), neighbor(P, D, P2),     // the next cell toward c.dir
+    in(P2, Bg), c.bg(Bg).             // still bg — a mark occludes
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- flow(P, Col).

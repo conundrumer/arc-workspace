@@ -24,7 +24,7 @@ shape_box.cell(Id, P) :- shapes.label($U(), P, Id).
 
 // Where a cell would land.
 .decl target(p: Position, p2: Position)
-target(P, P2) :- ink(P, _), c.dir(D), step_delta(D, S), compose(P, S, P2).
+target(P, P2) :- ink(P, _), c.dir(D), neighbor(P, D, P2).
 
 // A landing site adjacent to its source is in the source's own shape, so
 // the pile-up needs no shape key.

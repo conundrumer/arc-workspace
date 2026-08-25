@@ -1,16 +1,9 @@
 // 7e4d4f7c
 // concept: lines mapping
-// Output has extent c.out_h along c.header_dir, perpendicular extent =
-// input. Cells at depth 0..out_h-2 from header_dir map into the output's
-// out_h frame with along-depth and across-axis position preserved. The
-// row at depth out_h-1 is derived from input depth 0 via tail_color:
-// bg passes through; non-bg becomes c.marker.
-//
-// out_cell grounds the output positions (out_h along-frame × input
-// across); both rules join to it. Keep matches each non-tail cell to its
-// input slab via slab_anchor (depth-from-header + across). Tail joins by
-// column to input depth 0, recolored via tail_color (à la b1948b0a's idiom).
-// Layout-family cluster (header/body, à la bd4472b8).
+// The output holds c.out_h rows measured from c.header_dir, over the
+// input's across extent. Every row but the last takes the input row at its
+// own depth. The last row takes the input's row at depth 0, recolored: bg
+// passes through, and every other color becomes c.marker.
 
 #include "../lib.dl"
 
@@ -45,11 +38,8 @@ out_cell(P) :-
 
 .decl out(p: Position, col: Color)
 
-// Each output cell takes an input cell's color. A non-tail cell takes it
-// from its own slab, matched on depth-from-header and across. The tail row
-// (opp-edge distance 0) takes it from the input's depth-0 cells, matched on
-// across alone — the tail row and input row 0 do not share
-// depth-from-header — and recolored via tail_color.
+// The tail row matches its input cells on the across line alone: it does
+// not share depth-from-header with input row 0.
 out(P_out, Col_out) :-
     out_cell(P_out),                                      // grounded output cell
     c.header_dir(H_dir), opposite(H_dir, H_opp),          // along-axis dirs
@@ -58,6 +48,6 @@ out(P_out, Col_out) :-
       slab_anchor(H_dir, P_in, P_out)                     // same slab as P_out
     ; dist(P_out, H_opp, 0), axis_of(H_dir, A),           // tail row, along axis
       in(P_in, Col_in), dist(P_in, H_dir, 0),             // input depth 0
-      split(P_in, A, _, Ac), split(P_out, A, _, Ac),      // same column
+      same_line(A, P_in, P_out),
       tail_color(Col_in, Col_out)                         // recolor
     ).

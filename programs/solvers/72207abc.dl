@@ -32,14 +32,12 @@ seed_next(P1, P2) :- ink(P1, _), !beyond(P1, _), ink(P2, _), !beyond(_, P2).
 // A mark: its arriving jump and the seed whose color it carries. The
 // first seed arrives with no jump; each step lengthens the jump by one
 // cell and advances the color cursor.
-.decl grown(p: Position, delta: Position, q: Position)
+.decl grown(p: Position, delta: Shift, q: Position)
 grown(P, ORIGIN, P) :- ink(P, _), !beyond(_, P).
 grown(P2, Delta2, Q2) :-
     grown(P1, Delta1, Q1), seed_next(Q1, Q2),    // color cursor advances
-    c.grow(D), step_delta(D, S),
-    compose(Delta1, S, Delta2),                  // jump grows one cell
-    compose(P1, Delta2, P2),                     // next mark
-    in(P2, _).                                   // stays on grid
+    c.grow(D), neighbor(Delta1, D, Delta2),      // jump grows one cell
+    compose(P1, Delta2, P2), in(P2, _).          // next mark, on grid
 
 .decl marked(p: Position, col: Color)
 marked(P, Col) :- ink(P, Col).

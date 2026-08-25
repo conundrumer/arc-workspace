@@ -83,7 +83,7 @@ right_angle(Cor, L, $Free()) :- corner_cand(Cor, L), !mark(Cor).
 // $Pointed — the corner a mark stands diagonally next to.
 right_angle(Cor, L, $Pointed()) :-
     corner_cand(Cor, L),
-    diag_dir_elem(D), step_delta(D, Delta), compose(Cor, Delta, P_near), mark(P_near).
+    diag_dir_elem(D), neighbor(Cor, D, P_near), mark(P_near).
 
 // $Inside — the corner whose closed triangle holds a non-vertex mark. Viewed
 // from the hypotenuse pair's box, the triangle at corner (D1, D2) is the

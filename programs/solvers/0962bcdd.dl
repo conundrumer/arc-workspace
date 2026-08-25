@@ -49,9 +49,8 @@
     // The neighbor toward D holds candidate arm color Col.
     .decl arm(key: Key, p: Position, d: Dir, col: Color)
     arm(Ky, P, D, Col) :-
-        grid(Ky, P, _), dir_elem(D),                 // candidate center
-        step_delta(D, S), compose(P, S, Q),          // neighbor toward D
-        grid(Ky, Q, Col), !c.bg(Col).                // holds a non-bg color
+        grid(Ky, P, _), dir_elem(D),                        // candidate center
+        neighbor(P, D, Q), grid(Ky, Q, Col), !c.bg(Col).    // holds a non-bg color
 
     // Some direction lacks the same arm color.
     .decl mismatch(key: Key, p: Position, col: Color)

@@ -24,9 +24,9 @@
 // Bg cell on a marker's line.
 .decl marked(p: Position)
 marked(P) :-
-    in(P, Col), c.bg(Col),                                // bg cell
-    in(Q, M), !c.bg(M),                                   // a marker
-    c.axis(A), split(P, A, _, Ac), split(Q, A, _, Ac).    // same line
+    in(P, Col), c.bg(Col),        // bg cell
+    in(Q, M), !c.bg(M),           // a marker
+    c.axis(A), same_line(A, P, Q).
 
 .decl repainted(p: Position, col: Color)
 repainted(P, C)   :- marked(P), c.shade(C).

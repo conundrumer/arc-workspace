@@ -43,7 +43,7 @@ empty_dir(D, $Edge()) :- box.edge_min($U(), D, M), M != 0.
 copy(P2, Col, Dc) :-
     ink(P, Col),                                  // block cell
     empty_dir(D, Dc), box.edge_min($U(), D, M),   // empty edge, block margin
-    jump_delta(D, M, S), compose(P, S, P2).       // jumped flush to it
+    jump(P, D, M, P2).                            // jumped flush to it
 
 // The block boundary the fill copies from.
 .decl fill_edge(e: Dir, dc: DirCh, fc: FillCh)
@@ -57,10 +57,10 @@ fill_edge(D, Dc, $Inner()) :- empty_dir(D, Dc).
 // Between block and copy, each line takes its fill-boundary cell's color.
 .decl fill(p: Position, col: Color, dc: DirCh, fc: FillCh)
 fill(P, Col, Dc, Fc) :-
-    in(P, Bg), c.bg(Bg), !copy(P, _, Dc),                   // empty cell, not under the copy
-    fill_edge(E, Dc, Fc),                                   // the block boundary copied
-    box.edge_cell($U(), Q, E), ink(Q, Col),                 // its cell and color
-    axis_of(E, A), split(P, A, _, Ac), split(Q, A, _, Ac).  // on p's line
+    in(P, Bg), c.bg(Bg), !copy(P, _, Dc),   // empty cell, not under the copy
+    fill_edge(E, Dc, Fc),                   // the block boundary copied
+    box.edge_cell($U(), Q, E), ink(Q, Col), // its cell and color
+    axis_of(E, A), same_line(A, P, Q).
 
 .decl fill_elem(fc: FillCh)
 fill_elem($Outer()). fill_elem($Inner()).

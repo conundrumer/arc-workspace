@@ -68,17 +68,16 @@ edge(D, $Edge()) :- parse.mark_edge($U(), D).
 
 // --- $Jump ---
 moved(P2, Col, [E, $Jump()]) :-
-    parse.ink($U(), P, Col), edge(D, E),         // mark, the edge
-    c.color_dist(Col, K),                        // its landing distance
-    opposite(D, O), jump_delta(O, K, Delta),     // k cells away from the edge
-    compose(P, Delta, P2).
+    parse.ink($U(), P, Col), edge(D, E),   // mark, the edge
+    c.color_dist(Col, K),                  // its landing distance
+    opposite(D, O), jump(P, O, K, P2).     // k cells away from the edge
 
 // --- $Seat ---
 moved(Q, Col, [E, $Seat()]) :-
-    parse.ink($U(), P, Col), edge(D, E),                     // mark, the edge
-    c.color_dist(Col, K),                                    // its landing distance
-    in(Q, _), dist(Q, D, K),                                 // grid cell at dist k from the edge
-    axis_of(D, A), split(P, A, _, Ac), split(Q, A, _, Ac).   // on the mark's line
+    parse.ink($U(), P, Col), edge(D, E),   // mark, the edge
+    c.color_dist(Col, K),                  // its landing distance
+    in(Q, _), dist(Q, D, K),               // grid cell at dist k from the edge
+    axis_of(D, A), same_line(A, P, Q).
 
 // --- Output ---
 
@@ -104,7 +103,7 @@ out(P, Col, Ch) :-
 
     .decl color_dist(c: Color, k: number)
     color_dist(Col, K) :-
-        parse.ink(E, P, Col), dir(D),                            // mark, the edge
-        ex_out(E, Q, Col), dist(Q, D, K),                        // its landing cell
-        axis_of(D, A), split(P, A, _, Ac), split(Q, A, _, Ac).   // on the mark's line
+        parse.ink(E, P, Col), dir(D),      // mark, the edge
+        ex_out(E, Q, Col), dist(Q, D, K),  // its landing cell
+        axis_of(D, A), same_line(A, P, Q).
 }

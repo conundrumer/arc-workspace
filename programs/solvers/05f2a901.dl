@@ -44,9 +44,9 @@ cast.mark($U(), P) :- mover_cell(P).
 .decl move_dir(d: Dir)
 move_dir(D) :- dir_elem(D), cast.ray($U(), _, D, _, _).
 
-// One step back along the travel.
-.decl approach(s: Shift)
-approach(S) :- move_dir(D), opposite(D, O), step_delta(O, S).
+// Back along the travel.
+.decl approach(d: Dir)
+approach(O) :- move_dir(D), opposite(D, O).
 
 // --- the slide ---
 
@@ -60,24 +60,20 @@ approach(S) :- move_dir(D), opposite(D, O), step_delta(O, S).
 
 shape($Block(), P) :- mover_cell(P).
 
-stopper($Block(), P2) :- anchor_cell(P), approach(S), compose(P, S, P2).
+stopper($Block(), P2) :- anchor_cell(P), approach(O), neighbor(P, O, P2).
 
 // --- Touch ---
 
 shape($Touch(), P) :- mover_cell(P).
 
-stopper($Touch(), P2) :-
-    anchor_cell(P),
-    dir_elem(D), step_delta(D, S),     // one step to any side
-    compose(P, S, P2).
+stopper($Touch(), P2) :- anchor_cell(P), dir_elem(D), neighbor(P, D, P2).
 
 // --- Extent ---
 
 shape($Extent(), P) :- c.mover(Col), box.inside(Col, P).
 
 stopper($Extent(), P2) :-
-    c.anchor(Col), box.inside(Col, P),
-    approach(S), compose(P, S, P2).
+    c.anchor(Col), box.inside(Col, P), approach(O), neighbor(P, O, P2).
 
 // --- the walk ---
 
@@ -99,7 +95,7 @@ impl_choice($Block()). impl_choice($Touch()). impl_choice($Extent()).
 reach(Ch, ORIGIN) :- impl_choice(Ch).
 reach(Ch, Delta2) :-
     reach(Ch, Delta), !halted(Ch, Delta),
-    move_dir(D), step_delta(D, S), compose(Delta, S, Delta2), shift(Delta2).
+    move_dir(D), neighbor(Delta, D, Delta2), shift(Delta2).
 
 .decl rest(ch: Choice, delta: Shift)
 rest(Ch, Delta) :- reach(Ch, Delta), halted(Ch, Delta).

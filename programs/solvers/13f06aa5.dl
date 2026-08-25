@@ -1,5 +1,5 @@
 // 13f06aa5
-// concept: markers, objects, cast, parity, border
+// concept: markers objects cast parity border
 // Each shape is drawn in one ink color and carries a single odd-colored
 // marker cell on one of its sides. The marker fires in the direction that
 // side faces: a trail of dots runs from it across the grid at a fixed
@@ -50,9 +50,9 @@ mark(P, Col) :- ink(P, Col), !ink_mode.mode($U(), Col).
 // --- Open ---
 
 mark_dir(P, D, $Open()) :-
-    mark(P, _),                                       // the marker
-    dir_elem(D), step_delta(D, S), compose(P, S, Q),  // its neighbor toward D
-    in(Q, Col), bg(Col).                              // background there
+    mark(P, _),                      // the marker
+    dir_elem(D), neighbor(P, D, Q),
+    in(Q, Col), bg(Col).             // background there
 
 // --- Side ---
 

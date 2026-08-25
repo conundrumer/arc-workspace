@@ -44,7 +44,7 @@ row_color(R, Col) :- row_cell(R, P), in(P, Col).
 .decl boundary(r: Position)
 boundary(R) :-
     row_color(R, Col),
-    c.dir(D), step_delta(D, S), compose(R, S, R2),   // row toward the edge
+    c.dir(D), neighbor(R, D, R2),                    // row toward the edge
     !row_color(R2, Col).
 
 // Rows of the run each boundary starts.
@@ -52,7 +52,7 @@ boundary(R) :-
 run_of(B, B) :- boundary(B).
 run_of(R2, B) :-
     run_of(R, B),
-    c.dir(D), opposite(D, O), step_delta(O, S), compose(R, S, R2),  // row away from the edge
+    c.dir(D), opposite(D, O), neighbor(R, O, R2),   // row away from the edge
     row_cell(R2, _), !boundary(R2).
 
 // --- $Object segmentation ---

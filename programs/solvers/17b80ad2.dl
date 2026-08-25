@@ -46,9 +46,9 @@ flow(P, Col, D, Ch) :-
     marked(P_across, D, Ch),                             // a flagged line
     axis_of(D, A), split(P, A, _, P_across).             // p on it
 flow(P2, Col, D, Ch) :-
-    flow(P, Col, D, Ch),                                 // colored cell
-    opposite(D, O), step_delta(O, S), compose(P, S, P2), // neighbor away from the mark edge
-    in(P2, Bg), c.bg(Bg).                                // still bg — ink occludes
+    flow(P, Col, D, Ch),                     // colored cell
+    opposite(D, O), neighbor(P, O, P2),      // away from the mark edge
+    in(P2, Bg), c.bg(Bg).                    // still bg — ink occludes
 
 .decl impl_choice(ch: Choice)
 impl_choice($Dir()). impl_choice($Edge()).

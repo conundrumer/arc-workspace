@@ -18,9 +18,7 @@
 .init c = Consts
 
 .decl moved(p: Position, col: Color)
-moved(P_out, Col) :-
-    in(P_in, Col), c.move(Col, D, K),
-    jump_delta(D, K, Delta), compose(P_in, Delta, P_out).
+moved(P_out, Col) :- in(P_in, Col), c.move(Col, D, K), jump(P_in, D, K, P_out).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- moved(P, Col).

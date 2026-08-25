@@ -14,9 +14,8 @@
 // from its neighbor one step toward d.
 .decl boundary(d: Dir, k: number)
 boundary(D, K) :-
-    in(P, C1), dir_elem(D), dist(P, D, K),     // cell on line k from d
-    step_delta(D, S), compose(P, S, P2),       // neighbor toward d
-    in(P2, C2), C1 != C2.                      // colors differ
+    in(P, C1), dir_elem(D), dist(P, D, K),      // cell on line k from d
+    neighbor(P, D, P2), in(P2, C2), C1 != C2.   // differs from the cell toward d
 
 // Band index of a distance from edge d: the boundaries at or inside it.
 .type EdgeDist = [d: Dir, k: number]

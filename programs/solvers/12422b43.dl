@@ -54,24 +54,20 @@ copy(P2, Col, $Stamp()) :-
     ( unit(P1, Col, _), pat_len.tally($U(), N)          // seed: one pattern-length on
     ; copy(P1, Col, $Stamp()), unit_len.tally($U(), N)  // grow: one unit-length on
     ),
-    c.flow(D), jump_delta(D, N, Dlt),           // the jump along the flow
-    compose(P1, Dlt, P2), in(P2, _).            // lands on the grid
+    c.flow(D), jump(P1, D, N, P2), in(P2, _).   // lands on the grid
 
 // --- $Tile ---
 
 // The remainder: cells of the non-ink lines.
-.decl region(p: Position)
-region(P) :- cell_line(P, _, R), !ink_line(R).
-
 .init region_frame = BoxFrame<Unit>
-region_frame.cell($U(), P) :- region(P).
+region_frame.cell($U(), P) :- cell_line(P, _, R), !ink_line(R).
 
 copy(P, Col, $Tile()) :-
     region_frame.inner($U(), P, I),
     c.flow(D), axis_of(D, A), opposite(D, O),
     unit_len.tally($U(), K), divide_by_size(I, A, K, 0, _, P_intile),   // unit-sized tiles
-    dist(P_intile, O, R), unit(P_u, Col, R),                // unit line at the tile offset
-    split(P, A, _, Ac), split(P_u, A, _, Ac).               // across passthrough
+    dist(P_intile, O, R), unit(P_u, Col, R),   // unit line at the tile offset
+    same_line(A, P, P_u).
 
 // --- Output ---
 

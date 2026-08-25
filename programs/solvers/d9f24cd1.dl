@@ -43,11 +43,11 @@ walk(P, W, $Edge()) :-
     opposite(D, W).                // away from it
 
 walk(P2, W, Ch) :-
-    walk(P, W, Ch), step_delta(W, S), compose(P, S, Q),   // cell ahead
-    ( in(Q, Col), !c.block(Col), P2 = Q                   // clear — step onto it
-    ; in(Q, Col), c.block(Col),                           // holds the block color
-      c.dodge(Sn), turn(Sn, W, Dd),                       // dodge direction
-      step_delta(Dd, S2), compose(P, S2, P2), in(P2, _)   // sidestep instead
+    walk(P, W, Ch), neighbor(P, W, Q),    // cell ahead
+    ( in(Q, Col), !c.block(Col), P2 = Q   // clear — step onto it
+    ; in(Q, Col), c.block(Col),           // holds the block color
+      c.dodge(Sn), turn(Sn, W, Dd),       // dodge direction
+      neighbor(P, Dd, P2), in(P2, _)      // sidestep instead
     ).
 
 .decl impl_choice(ch: Choice)

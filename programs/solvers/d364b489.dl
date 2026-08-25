@@ -37,8 +37,8 @@ marker_at(P) :- in(P, Col), c.marker(Col).
 // --- Arms ---
 .decl arm_halo(p: Position, col: Color)
 arm_halo(P, Col) :-
-    marker_at(Q), c.arm(D, Col),                     // marker, arm color
-    step_delta(D, S), compose(Q, S, P), in(P, _).    // neighbor toward d, on-grid
+    marker_at(Q), c.arm(D, Col),        // marker, arm color
+    neighbor(Q, D, P), in(P, _).        // on-grid
 
 out(P, Col, $Arms()) :- arm_halo(P, Col).
 out(P, Col, $Arms()) :- in(P, Col), !arm_halo(P, _).

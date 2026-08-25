@@ -67,9 +67,8 @@ walk(T, P2, D_out) :-
     ( dist(P, D, K), K != 0, D_out = D                // clear of the wall toward d
     ; dist(P, D, 0), opposite(D, D_out)               // at the wall — reflect
     ),
-    travel(T, Dt), step_delta(Dt, St),                // travel component
-    step_delta(D_out, Sd), compose(St, Sd, S),        // side component
-    compose(P, S, P2), in(P2, _).                     // still on the grid
+    travel(T, Dt), neighbor(P, Dt, M),                // one step along the travel
+    neighbor(M, D_out, P2), in(P2, _).                // and one to the side
 
 // --- Paint cases: the ball color ---
 

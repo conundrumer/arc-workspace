@@ -53,9 +53,9 @@
 // --- $Cross ---
 .decl cross_cell(p: Position)
 cross_cell(P) :-
-    in(_, Key), c.cross(Key, Q),                           // stored center
+    in(_, Key), c.cross(Key, Q),   // stored center
     c.out_pos(P),
-    axis_elem(A), split(P, A, _, Ac), split(Q, A, _, Ac).  // p on q's row or column
+    axis_elem(A), same_line(A, P, Q).
 
 out(P, Col, $Cross()) :- cross_cell(P), c.mark(Col).
 out(P, Col, $Cross()) :- c.out_pos(P), !cross_cell(P), c.bg(Col).
@@ -73,8 +73,8 @@ out(P, Col, $Lookup()) :- in(_, Key), c.glyph(Key, P, Col).
 
     .decl mismatch(key: Color, p: Position)
     mismatch(Key, P) :-
-        glyph(Key, P, _), glyph(Key, Q, Col), !c.mark(Col),    // a non-mark cell
-        axis_elem(A), split(P, A, _, Ac), split(Q, A, _, Ac).  // on p's row or column
+        glyph(Key, P, _), glyph(Key, Q, Col), !c.mark(Col),   // a non-mark cell
+        axis_elem(A), same_line(A, P, Q).
 
     .decl cross(key: Color, p: Position)
     cross(Key, P) :- glyph(Key, P, _), !mismatch(Key, P).

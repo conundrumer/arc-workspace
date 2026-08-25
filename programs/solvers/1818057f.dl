@@ -39,14 +39,14 @@ shape_covered(P) :- occ.occurrence($U(), M), c.shape(S), compose(M, S, P).
 
 // --- $Flank ---
 .decl exposed(p: Position)
-exposed(P) :- field_at(P), dir_elem(D), step_delta(D, S), compose(P, S, P2), !field_at(P2).
+exposed(P) :- field_at(P), dir_elem(D), neighbor(P, D, P2), !field_at(P2).
 
 .decl flanked(p: Position)
 flanked(P) :- field_at(P), !exposed(P).
 
 .decl flank_covered(p: Position)
 flank_covered(P) :- flanked(P).
-flank_covered(P2) :- flanked(P), dir_elem(D), step_delta(D, S), compose(P, S, P2).
+flank_covered(P2) :- flanked(P), dir_elem(D), neighbor(P, D, P2).
 
 .decl out(p: Position, col: Color, c: Choice)
 
@@ -74,15 +74,12 @@ out(P, Col, $Flank()) :- in(P, Col), !flank_covered(P).
     .init comp_size = Tally<EI, Position>
     comp_size.item(K, P) :- comp_cell(K, P).
 
-    // The smallest changed component is a single stamp.
     .init smallest = ArgExtremes<Unit, EI>
     smallest.cand($U(), K, N) :- comp_size.tally(K, N).
 
-    .decl stamp(k: EI)
-    stamp(K) :- smallest.low($U(), K, _).
-
+    // The smallest changed component is a single stamp.
     .init frame = BoxFrame<EI>
-    frame.cell(K, P) :- stamp(K), comp_cell(K, P).
+    frame.cell(K, P) :- smallest.low($U(), K, _), comp_cell(K, P).
 
     .decl shape(p: Position)
     shape(S) :- frame.inner(_, _, S).

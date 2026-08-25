@@ -27,7 +27,7 @@
 ink_at(P) :- in(P, Col), !c.bg(Col).
 
 .decl grouped(p: Position)
-grouped(P) :- ink_at(P), dir_elem(D), step_delta(D, S), compose(P, S, P2), ink_at(P2).
+grouped(P) :- ink_at(P), dir_elem(D), neighbor(P, D, P2), ink_at(P2).
 
 .decl isolated(p: Position)
 isolated(P) :- ink_at(P), !grouped(P).

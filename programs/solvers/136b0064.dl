@@ -179,13 +179,12 @@ pen(T2, P2, Ch) :- parse.next_glyph($U(), T1, T2), stroke_end(T1, P2, Ch).
 
 .decl stroke_start(t: Position, p: Position, ch: Choice)
 stroke_start(T, P2, Ch) :-
-    pen(T, P, Ch), c.advance(D), step_delta(D, S), compose(P, S, P2).
+    pen(T, P, Ch), c.advance(D), neighbor(P, D, P2).
 
 .decl stroke_end(t: Position, p: Position, ch: Choice)
 stroke_end(T, P2, Ch) :-
-    stroke_start(T, P, Ch),                          // where the run begins
-    move(T, D, K, Ch), jump_delta(D, K, S),          // the glyph's run
-    compose(P, S, P2).
+    stroke_start(T, P, Ch),                  // where the run begins
+    move(T, D, K, Ch), jump(P, D, K, P2).    // the glyph's run
 
 .init stroke = Between<Stroke>
 stroke.axis([T, Ch], A) :- move(T, D, _, Ch), axis_of(D, A).
@@ -242,9 +241,8 @@ out(P, Col, Ch) :-
 
     .decl step_ok(e: Example, d: Dir)
     step_ok(E, D) :-
-        parse.marker_cell(E, P), dir_elem(D),        // marker, candidate step
-        step_delta(D, S), compose(P, S, P2),
-        ex_out(E, P2, Col), !c.bg(Col).              // its neighbor is inked
+        parse.marker_cell(E, P), dir_elem(D),                  // marker, candidate step
+        neighbor(P, D, P2), ex_out(E, P2, Col), !c.bg(Col).    // its neighbor is inked
 
     .decl step_defect(d: Dir)
     step_defect(D) :- dir_elem(D), drawn(E), !step_ok(E, D).
@@ -263,7 +261,7 @@ out(P, Col, Ch) :-
     pen(E, T2, P) :- parse.next_glyph(E, T1, T2), drew(E, T1, _, _, P).
 
     .decl start(e: Example, t: Position, p: Position)
-    start(E, T, P2) :- pen(E, T, P), c.advance(D), step_delta(D, S), compose(P, S, P2).
+    start(E, T, P2) :- pen(E, T, P), c.advance(D), neighbor(P, D, P2).
 
     // Contiguous advance through the glyph's color, from each start.
     .decl run(e: Example, t: Position, p0: Position, d: Dir, p: Position)
@@ -271,23 +269,21 @@ out(P, Col, Ch) :-
         ( start(E, T, P0), stroke_cell(E, T, P0), dir_elem(D), P = P0  // inked start
         ; run(E, T, P0, D, P)                                          // or grow the run
         ),
-        step_delta(D, S), compose(P, S, P2), stroke_cell(E, T, P2).
+        neighbor(P, D, P2), stroke_cell(E, T, P2).
 
     // A run cell with its step count from the start.
     .decl run_len(e: Example, t: Position, d: Dir, k: number, p: Position)
     run_len(E, T, D, K, P) :-
         run(E, T, P0, D, P),
-        axis_of(D, A), sub_extent(P0, A, K), jump_delta(D, K, S), compose(P0, S, P).
+        axis_of(D, A), sub_extent(P0, A, K), jump(P0, D, K, P).
 
     .decl drew(e: Example, t: Position, d: Dir, k: number, p: Position)
     drew(E, T, D, K, P) :-
         run_len(E, T, D, K, P),
-        ( parse.next_glyph(E, T, T2),                     // the successor stroke
-          c.advance(Da), step_delta(Da, S), compose(P, S, P2),
-          stroke_cell(E, T2, P2)                          // can start at this end
-        ; parse.last_glyph(E, T),                         // no successor
-          step_delta(D, S), compose(P, S, P2),
-          !stroke_cell(E, T, P2)                          // the run is maximal
+        ( parse.next_glyph(E, T, T2),                                // the successor stroke
+          c.advance(Da), neighbor(P, Da, P2), stroke_cell(E, T2, P2) // can start at this end
+        ; parse.last_glyph(E, T),                                    // no successor
+          neighbor(P, D, P2), !stroke_cell(E, T, P2)                 // the run is maximal
         ).
 
     .decl occurrence(e: Example, t: Position)

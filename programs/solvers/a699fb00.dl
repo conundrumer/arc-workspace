@@ -25,10 +25,10 @@
 
 .decl flanked(p: Position)
 flanked(P) :-
-    in(P, Bg), c.bg(Bg), c.dot(Dot),                       // bg cell
-    c.axis(A), axis_of(D, A), opposite(D, D2),             // the two along-axis dirs
-    step_delta(D, S1), compose(P, S1, Q1), in(Q1, Dot),    // dot neighbor toward D
-    step_delta(D2, S2), compose(P, S2, Q2), in(Q2, Dot).   // dot neighbor toward D2
+    in(P, Bg), c.bg(Bg), c.dot(Dot),             // bg cell
+    c.axis(A), axis_of(D, A), opposite(D, D2),   // the two along-axis dirs
+    neighbor(P, D, Q1), in(Q1, Dot),             // dot toward D
+    neighbor(P, D2, Q2), in(Q2, Dot).            // dot toward D2
 
 out(P, F, $Flank())   :- flanked(P), c.fill(F).
 out(P, Col, $Flank()) :- in(P, Col), !flanked(P).

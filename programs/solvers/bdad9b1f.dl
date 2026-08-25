@@ -70,5 +70,5 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !on_line(P, _, Ch).
     role(Col, A) :-
         ex_in(E, P1, Col), !c.bg(Col),
         ex_in(E, P2, Col), P1 != P2,
-        axis_elem(A), split(P1, A, _, Ac), split(P2, A, _, Ac).
+        axis_elem(A), same_line(A, P1, P2).
 }

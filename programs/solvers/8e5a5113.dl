@@ -40,11 +40,24 @@
 
 .init c = Consts
 
+// --- parse ---
+
+// The tile arrangement the separators cut.
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position)  // input
+
+    .decl tile(key: Key, p_grid: Position, p_tile: Position, p_intile: Position)
+    tile(K, P_grid, P_tile, P_intile) :-
+        cell(K, P_grid),
+        c.axis(A), c.tile_n(N), c.gap(G),                    // arrangement params
+        divide_slab(P_grid, A, N, G, P_tile, P_intile).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P) :- in(P, _).
+
 .decl tile_cell(p_grid: Position, p_tile: Position, p_intile: Position)
-tile_cell(P_grid, P_tile, P_intile) :-
-    in(P_grid, _),                                       // grid cell
-    c.axis(A), c.tile_n(N), c.gap(G),                    // arrangement params
-    divide_slab(P_grid, A, N, G, P_tile, P_intile).
+tile_cell(P_grid, P_tile, P_intile) :- parse.tile($U(), P_grid, P_tile, P_intile).
 
 .decl src(p_tile: Position, p_intile: Position, col: Color)
 src(P_tile, P_intile, Col) :-
@@ -62,10 +75,10 @@ out(P, Col, $Lookup()) :- in(P, Col), !tile_cell(P, _, _).
 .decl content(p_tile: Position, p_intile: Position, col: Color)
 content(T, P, Col) :- src(T, P, Col).
 content(T2, P2, Col) :-
-    content(T1, P1, Col),                                // known tile
-    c.flow_dir(D), step_delta(D, S), compose(T1, S, T2), // neighbor toward flow
-    tile_cell(_, T2, _),                                 // stays in the arrangement
-    c.rot(R), apply(R, P1, P2).                          // rotated image
+    content(T1, P1, Col),                        // known tile
+    c.flow_dir(D), neighbor(T1, D, T2),
+    tile_cell(_, T2, _),                         // stays in the arrangement
+    c.rot(R), apply(R, P1, P2).                  // rotated image
 
 out(P_grid, Col, $Step()) :- content(T, P_intile, Col), tile_cell(P_grid, T, P_intile).
 
@@ -78,18 +91,20 @@ out(P_grid, Col, $Lookup()) :-
 // --- fit ---
 
 .comp Fit {
+    .init in_parse = Parse<Example>
+    in_parse.cell(E, P) :- ex_in(E, P, _).
+
+    .init out_parse = Parse<Example>
+    out_parse.cell(E, P) :- ex_out(E, P, _).
+
     // The pattern: an input tile's non-bg content.
     .decl src(e: Example, p_intile: Position, col: Color)
     src(E, P_intile, Col) :-
-        ex_in(E, P_grid, Col), !c.bg(Col),
-        c.axis(A), c.tile_n(N), c.gap(G),
-        divide_slab(P_grid, A, N, G, _, P_intile).
+        ex_in(E, P_grid, Col), !c.bg(Col), in_parse.tile(E, P_grid, _, P_intile).
 
     .decl out_cell(e: Example, p_tile: Position, p_intile: Position, col: Color)
     out_cell(E, P_tile, P_intile, Col) :-
-        ex_out(E, P_grid, Col),
-        c.axis(A), c.tile_n(N), c.gap(G),
-        divide_slab(P_grid, A, N, G, P_tile, P_intile).
+        ex_out(E, P_grid, Col), out_parse.tile(E, P_grid, P_tile, P_intile).
 
     .type TileK = [e: Example, p_tile: Position]
 
@@ -104,16 +119,15 @@ out(P_grid, Col, $Lookup()) :-
     .decl tile_d4(p: Position, d: D4)
     tile_d4(P_tile, D) :- out_cell(_, P_tile, _, _), d4_elem(D), !broken(P_tile, D).
 
+    // Tiles paired with their neighbor toward the flow.
+    .decl flow_pair(e: Example, t1: Position, t2: Position)
+    flow_pair(E, T1, T2) :-
+        out_cell(E, T1, _, _), c.flow_dir(D), neighbor(T1, D, T2), out_cell(E, T2, _, _).
+
     // Each tile's content must map onto its flow-neighbor's.
     .init step = D4Map<TileK, Color>
-    step.src([E, T1], P, Col) :-
-        out_cell(E, T1, P, Col),
-        c.flow_dir(D), step_delta(D, S), compose(T1, S, T2),
-        out_cell(E, T2, _, _).                       // neighbor in the arrangement
-    step.dst([E, T1], P, Col) :-
-        out_cell(E, T1, _, _),
-        c.flow_dir(D), step_delta(D, S), compose(T1, S, T2),
-        out_cell(E, T2, P, Col).
+    step.src([E, T1], P, Col) :- flow_pair(E, T1, _), out_cell(E, T1, P, Col).
+    step.dst([E, T1], P, Col) :- flow_pair(E, T1, T2), out_cell(E, T2, P, Col).
 
     .decl step_broken(d: D4)
     step_broken(R) :- step.mismatch([E, T], R), out_cell(E, T, _, _).

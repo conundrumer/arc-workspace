@@ -72,10 +72,10 @@ marker(A, P, $Singleton()) :-
 // marker's line — that pair, closed under lockstep succ.
 .decl rotation(a: Axis, k: number, k2: number, ch: Choice)
 rotation(A, K_ca, K_mk, Ch) :-
-    in(P_cn, _), c.corner(Diag), diag_dist(P_cn, Diag, _, 0, 0),   // the corner cell
-    dir_of(Diag, A, D), opposite(D, O), step_delta(O, S),
-    compose(P_cn, S, P_a), line_idx(A, P_a, K_ca),                 // the line beside it
-    marker(A, P_mk, Ch), line_idx(A, P_mk, K_mk).
+    in(P_cn, _), c.corner(Diag), diag_dist(P_cn, Diag, _, 0, 0),  // the corner cell
+    dir_of(Diag, A, D), opposite(D, O),                           // inward along a
+    neighbor(P_cn, O, P_a), line_idx(A, P_a, K_ca),               // the line beside it
+    marker(A, P_mk, Ch), line_idx(A, P_mk, K_mk).                 // the marker's line
 rotation(A, K1_next, K2_next, Ch) :-
     rotation(A, K1, K2, Ch),
     line_cycle.succ(A, K1, K1_next), line_cycle.succ(A, K2, K2_next).

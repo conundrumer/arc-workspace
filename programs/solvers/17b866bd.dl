@@ -68,8 +68,7 @@ impl_choice($Holes()). impl_choice($Stamp()).
     .decl mark_block(key: Key, p: Position, diag: DiagDir, id: Ident)
     mark_block(K, P, Diag, Id) :-
         mark(K, P, _),
-        diag_dir_elem(Diag), line(W), jump_delta(Diag, W, J),
-        compose(P, J, P0),
+        diag_dir_elem(Diag), line(W), jump(P, Diag, W, P0),
         label(K, P0, Id).
 
     .init box = Bbox<Blk>

@@ -33,18 +33,13 @@ field.item($U(), Col, P) :- in(P, Col).
 .decl mark(p: Position)
 mark(P) :- in(P, Col), !field.mode($U(), Col).
 
-// A cell agreeing with a mark along one axis lies on that mark's row or
-// column.
+// A cell on some mark's row or column.
 .decl crossed(p: Position)
-crossed(P) :-
-    in(P, _), mark(M),                                    // cell and mark
-    axis_elem(A), split(P, A, Along, _), split(M, A, Along, _).  // agree on A
+crossed(P) :- in(P, _), mark(M), axis_elem(A), same_line(A, P, M).
 
 // A mark's diagonal neighbor, clipped to the grid.
 .decl corner_cell(p: Position)
-corner_cell(P) :-
-    mark(M), diag_dir_elem(D), step_delta(D, Delta), compose(M, Delta, P),  // diagonal neighbor
-    in(P, _).                                                              // clipped to the grid
+corner_cell(P) :- mark(M), diag_dir_elem(D), neighbor(M, D, P), in(P, _).
 
 .decl out(p: Position, col: Color, c: Choice)
 

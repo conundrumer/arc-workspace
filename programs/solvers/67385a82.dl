@@ -17,7 +17,7 @@ ink(P) :- in(P, Col), c.ink(Col).
 
 // Ink cell with an ink 4-neighbor.
 .decl grouped(p: Position)
-grouped(P) :- ink(P), dir_elem(D), step_delta(D, S), compose(P, S, P2), ink(P2).
+grouped(P) :- ink(P), dir_elem(D), neighbor(P, D, P2), ink(P2).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- grouped(P), c.mark(Col).

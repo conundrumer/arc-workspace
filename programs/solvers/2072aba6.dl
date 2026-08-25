@@ -77,9 +77,9 @@ checker(P, Col) :-
     c.corner(Diag), diag_dist(P, Diag, _, 0, 0),    // at the anchor corner
     c.corner_color(Col).
 checker(P2, Col2) :-
-    checker(P1, Col1), c.alt(Col1, Col2),                 // next color in the cycle
-    dir_elem(D), step_delta(D, S), compose(P1, S, P2),    // any unit step
-    cell(P2, _, _).                                       // still on the output frame
+    checker(P1, Col1), c.alt(Col1, Col2),      // next color in the cycle
+    dir_elem(D), neighbor(P1, D, P2),          // any cardinal neighbor
+    cell(P2, _, _).                            // still on the output frame
 
 out(P_grid_out, Col, $Checker()) :-
     inked(P_grid_out, _), checker(P_grid_out, Col).

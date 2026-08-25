@@ -37,7 +37,7 @@ marker_at(P) :- in(P, Col), c.marker(Col).
 // --- $Grow ---
 halo(P, Col, $Grow()) :-
     marker_at(M), c.halo(Col),
-    dir8_elem(D), step_delta(D, S), compose(M, S, P), in(P, _).
+    dir8_elem(D), neighbor(M, D, P), in(P, _).
 
 // --- $Stamp ---
 // Template ink viewed from the template's marker cell.

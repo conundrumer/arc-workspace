@@ -30,7 +30,7 @@ bar(P) :- in(P, Col), c.bar(Col).
 
 // Cell one step beyond a bar cell along the axis.
 .decl stepped(p: Position)
-stepped(P2) :- bar(P), c.axis(A), axis_of(D, A), step_delta(D, S), compose(P, S, P2).
+stepped(P2) :- bar(P), c.axis(A), axis_of(D, A), neighbor(P, D, P2).
 
 .init box = BoxFrame<Choice>
 box.grid(Ch, P) :- impl_choice(Ch), in(P, _).

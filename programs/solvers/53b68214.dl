@@ -28,13 +28,11 @@
 .init parse = ShiftInvariance<Unit, Color>
 parse.cell($U(), P, Col) :- in(P, Col).
 
-.init shift_ok = Extremes<Unit>
-shift_ok.cand($U(), K) :-
+// The smallest agreeing shift is the period.
+.init period = Extremes<Unit>
+period.cand($U(), K) :-
     c.growth(D), axis_of(D, A),
     parse.cand($U(), A, K, _), !parse.mismatch($U(), A, K).
-
-.decl period(k: number)
-period(K) :- shift_ok.low($U(), K).
 
 .decl width(w: number)
 width(W) :- in(P, _), c.growth(D), axis_of(D, A), perp(A, A2), axis_dim(P, A2, W).
@@ -61,5 +59,5 @@ placed(Ch, P_grid, P_in) :-
 out(P_grid, Col, Ch) :- placed(Ch, P_grid, P_in), in(P_in, Col).
 out(P2, Col, Ch) :-
     out(P1, Col, Ch),
-    period(K), c.growth(D), jump_delta(D, K, Delta), compose(P1, Delta, P2),
+    period.low($U(), K), c.growth(D), jump(P1, D, K, P2),
     frame.cell(Ch, P2).

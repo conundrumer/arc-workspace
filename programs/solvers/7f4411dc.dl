@@ -36,9 +36,7 @@ square_kept(P) :- occ.occurrence($U(), M), sq.cell($U(), S), compose(M, S, P).
 
 // --- $Support ---
 .decl support(p: Position, d: Dir)
-support(P, D) :-
-    ink_at(P), dir_elem(D),
-    step_delta(D, S), compose(P, S, P2), ink_at(P2).
+support(P, D) :- ink_at(P), dir_elem(D), neighbor(P, D, P2), ink_at(P2).
 
 .decl support_kept(p: Position)
 support_kept(P) :- support(P, D1), support(P, D2), D1 != D2.

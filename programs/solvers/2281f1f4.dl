@@ -29,8 +29,8 @@
 .decl marked(p: Position, d: Dir)
 marked(P, D) :-
     in(P, _), c.header(Diag), dir_of(Diag, A, D),
-    c.marker(M), in(Q, M), dist(Q, D, 0),                     // marker on edge d
-    split(P, A, _, Ac), split(Q, A, _, Ac).                   // same line
+    c.marker(M), in(Q, M), dist(Q, D, 0),   // marker on edge d
+    same_line(A, P, Q).
 
 .decl out(p: Position, col: Color, ch: Choice)
 

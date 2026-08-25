@@ -51,11 +51,10 @@ out(P_grid, Col, $Lookup()) :-
     concat_2d(P_tile, P_intile, 0, P_grid).              // recompose
 
 // --- Alt ---
-// Step to the neighbor tile away from the anchor.
 .decl band_step(p_tile: Position, p_tile2: Position)
 band_step(T, T2) :-
-    c.anchor(D), opposite(D, O), step_delta(O, S),
-    c.arr_pos(T), compose(T, S, T2), c.arr_pos(T2).
+    c.anchor(D), opposite(D, O),
+    c.arr_pos(T), neighbor(T, O, T2), c.arr_pos(T2).
 
 // Bands alternate plain and flipped, plain at the anchor edge.
 .decl plain_tile(p_tile: Position)

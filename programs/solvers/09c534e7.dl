@@ -21,16 +21,15 @@ comp.node($U(), P) :- ink(P).
 
 // Ink cell with a neighbor off the ink — the network's outline.
 .decl border(p: Position)
-border(P) :- ink(P), dir8_elem(D), step_delta(D, S), compose(P, S, P2), !ink(P2).
-
-.decl interior(p: Position)
-interior(P) :- ink(P), !border(P).
+border(P) :- ink(P), dir8_elem(D), neighbor(P, D, P2), !ink(P2).
 
 .decl seed(id: Ident, col: Color)
 seed(Id, Col) :- comp.label($U(), P, Id), in(P, Col), !c.outline(Col).
 
 .decl fill(p: Position, col: Color)
-fill(P, Col) :- interior(P), comp.label($U(), P, Id), seed(Id, Col).
+fill(P, Col) :-
+    ink(P), !border(P),                     // interior cell
+    comp.label($U(), P, Id), seed(Id, Col). // its network's seed color
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- fill(P, Col).
