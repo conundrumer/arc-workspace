@@ -25,9 +25,8 @@
 // A line family of either kind — cardinal or diagonal.
 .type Axis4 = Axis | DiagAxis
 
-// A label carrying identity and nothing else — entries of a stored table,
-// component labels, the endpoints of a correspondence. Numbering is
-// arbitrary, so consumers join on equality and never order or count with it.
+// A label carrying identity and nothing else. Numbering is arbitrary, so
+// consumers join on equality and never order or count with it.
 .type Ident <: number
 
 // Index of a task example.
@@ -41,8 +40,7 @@
 .type Shift = Position
 .type Inset = Position
 
-// Singleton key for keyed components applied to a single set — states
-// "exactly one set" in the type.
+// Singleton key for keyed components applied to a single set.
 .type Unit = U {}
 
 #define DIR_T 10
@@ -302,8 +300,7 @@ geq([T1, B1, L1, R1], [T2, B2, L2, R2]) :-
     T1 >= T2, B1 >= B2, L1 >= L2, R1 >= R2.
 
 // The delta relations below bind none of their direction: the caller
-// supplies d, from dir_elem, diag_dir_elem, or dir8_elem when it ranges
-// over a set.
+// supplies d.
 
 // Edge delta: a Position carrying k at edge d, zero elsewhere. At a corner,
 // k sits at both of the corner's edges.
@@ -394,9 +391,7 @@ divide_by_size(P, A, K, G, P_outer, P_inner) :-
     P_inner = [@keep_axis(A, AXIS_V, K_cyc), @keep_axis(A, AXIS_V, K-1-K_cyc),
                @keep_axis(A, AXIS_H, K_cyc), @keep_axis(A, AXIS_H, K-1-K_cyc)].
 
-// Gap from tile count and tile size — the divide family's third reading,
-// beside divide, which solves for tile size, and divide_by_size, which solves
-// for tile count.
+// Gap from tile count and tile size — the divide family's third reading.
 // Asserts: the leftover extent divides evenly by the n-1 gaps.
 .decl divide_gap(p: Position, a: Axis, n: number, k: number, g: number) inline
 divide_gap(P, A, N, K, G) :-
@@ -546,8 +541,8 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 }
 
 // 1D frame from an axis-tagged extent — the n axis-only positions of a
-// 1-wide frame, per key and axis. The undirected peer of DirFrame: the
-// unindexed cell set, no end privileged, no index map.
+// 1-wide frame, per key and axis. The undirected peer of DirFrame: no end
+// privileged, no index map.
 .comp AxisFrame<Key> {
     .decl extent(key: Key, a: Axis, n: number)
 
@@ -642,11 +637,10 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     diag_cell(Ky, P, Diag, K) :- quadrant(Ky, P, Diag), diag_dist(P, Diag, _, K, K).
 }
 
-// Keyed marks cast rays toward each direction in use, cardinal or diagonal
-// alike. Reach is inclusive: a mark is on its own ray, and a domain that
-// excludes marks (bg-only) gets strict semantics with no extra rule. The cast
-// crosses the whole frame; the domain decides what is reported, not what the
-// ray passes over.
+// Keyed marks cast rays toward each direction in use. Reach is inclusive:
+// a mark is on its own ray, and a domain that excludes marks (bg-only) gets
+// strict semantics with no extra rule. The cast crosses the whole frame; the
+// domain decides what is reported, not what the ray passes over.
 .comp Ray<Key> {
     // The cast directions — the instance's parameter, unkeyed.
     .decl dir(d: Dir8)
@@ -727,9 +721,8 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
         Np > Nn, N = Np - Nn.
 }
 
-// The commonest member per key: tally each member's tokens, then keep
-// the members no other member outnumbers. The token column supplies
-// multiplicity; ties keep every member at the max.
+// The commonest member per key. The token column supplies multiplicity;
+// ties keep every member at the max.
 .comp Mode<Key, Member, Token> {
     .decl item(key: Key, m: Member, t: Token)
 
@@ -829,8 +822,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 // The nonuniform tile arrangement a divider set induces — the divider-driven
 // peer of Divide2D/Tile2D, which need equal tiles: a cell's tile position
 // holds, toward each edge, the count of dividers between the cell and that
-// edge — OrderFrame's construction, applied to cells counting dividers.
-// Divider cells get no tile; an axis with no dividers is one part. A
+// edge. Divider cells get no tile; an axis with no dividers is one part. A
 // within-tile position is a Reframe from the tile's box.
 .comp DividerFrame<Key> {
     // The position domain, per key.
@@ -1119,9 +1111,8 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     .decl inner(key: Key, p: Position, p_inner: Position)
     inner(K, P, I) :- viewed(K, P), rf.inner([K, P], I).
 
-    // The box's size, wide: n1 along axis a, n2 across, beside `margin`'s
-    // placement. Every cell of the box shares its frame, so any inner
-    // position serves.
+    // The box's size, wide: n1 along axis a, n2 across. Every cell of the
+    // box shares its frame, so any inner position serves.
     .decl extents(key: Key, a: Axis, n1: number, n2: number)
     extents(K, A, N1, N2) :- inner(K, _, I), axis_dims(I, A, N1, N2).
 }
