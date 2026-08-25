@@ -36,7 +36,7 @@ seated(P_out, Col) :-
     long_axis(A), diag_dirs(Diag, A, Dh, Dv),                      // dirs along/across the line
     opposite(Dh, Dh0), opposite(Dv, Dv0),                          // the opposite corner's
     dist(P_out, Dv0, 0),                                           // on the start edge
-    dist(P_in, Dh0, K), dist(P_out, Dh0, K).                       // same trailing offset
+    same_dist(Dh0, P_in, P_out).                                   // same trailing offset
 
 .init rays = Ray<Unit>
 rays.dir(D)        :- c.sweep(D).

@@ -42,26 +42,12 @@ out(P, Col, Ch) :- impl_choice(Ch), clean(P, Col).
 out(P, Col, $Shift()) :-
     in(P, N), c.noise(N),                              // corrupted cell
     parse.cand($U(), A, K, Delta),                     // candidate shift
-    !parse.mismatch($U(), A, K),                         // unbroken on clean cells
+    !parse.mismatch($U(), A, K),                       // unbroken on clean cells
     compose(P, Delta, P2), clean(P2, Col).             // its image
 
 // --- $Diag ---
 
-.comp SameDiag {
-    // p and q on the same diagonal line of axis da. Stepping toward a
-    // corner of the axis drops the distance to both of its edges in
-    // lockstep, so collinearity is an equal drop on both; either corner
-    // derives the same relation.
-    .decl same_diag(da: DiagAxis, p: Position, q: Position) inline
-    same_diag(DA, P, Q) :-
-        diag_axis_of(Diag, DA),
-        diag_dist(P, Diag, A, Pa, Pb), diag_dist(Q, Diag, A, Qa, Qb),
-        Qa - Pa = Qb - Pb.
-}
-
-.init sd = SameDiag
-
 out(P, Col, $Diag()) :-
     in(P, N), c.noise(N),                              // corrupted cell
-    c.diag(DA), sd.same_diag(DA, P, Q),                // its stripe
+    c.diag(DA), same_line(DA, P, Q),                   // its stripe
     clean(Q, Col).                                     // clean stripe-mate
