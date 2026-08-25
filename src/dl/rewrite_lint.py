@@ -72,6 +72,67 @@ EXAMPLE_SRC = frozenset({"in", "ex_in", "ex_out"})
 
 type Finding = tuple[str, int, str, str]
 
+# Lib-idiom chains: a lib primitive's defining body, as the two atoms a
+# hand-written site carries. `a` and `b` are (relation, arity, linking
+# slot) — b's slot is a tuple of the slots the link may sit in, more than
+# one where the relation is commutative there. `out` assembles the
+# replacement's arguments: ('a', i) / ('b', i) take that atom's argument;
+# _PARTNER takes b's other commutative slot. Optional guards hold slot
+# refs: `equal` / `distinct` — pairs that must / must not render alike;
+# `wild` — slots that must be wildcards. To cover a new primitive, add an
+# entry.
+_PARTNER = "partner"
+
+_CHAINS: tuple[dict, ...] = (
+    {
+        "prim": "neighbor",
+        "a": ("step_delta", 2, 1),
+        "b": ("compose", 3, (0, 1)),
+        "out": (_PARTNER, ("a", 0), ("b", 2)),
+    },
+    {
+        "prim": "jump",
+        "a": ("jump_delta", 3, 2),
+        "b": ("compose", 3, (0, 1)),
+        "out": (_PARTNER, ("a", 0), ("a", 1), ("b", 2)),
+    },
+    {
+        "prim": "same_line",
+        "a": ("split", 4, 3),
+        "b": ("split", 4, (3,)),
+        "out": (("a", 1), ("a", 0), ("b", 0)),
+        "equal": ((("a", 1), ("b", 1)),),
+        "wild": (("a", 2), ("b", 2)),
+        "distinct": ((("a", 0), ("b", 0)),),
+    },
+)
+
+# The slot where each delta primitive emits its Shift.
+_DELTA_OUT = {"edge_delta": 2, "jump_delta": 2, "step_delta": 1}
+
+
+def _delta_vars(ext: list[tuple[Atom, str]]) -> set[str]:
+    """Variables holding a Shift: outputs of the delta primitives, plus
+    compose outputs whose operands both hold one."""
+    out: set[str] = set()
+    for atom, name in ext:
+        slot = _DELTA_OUT.get(name)
+        if slot is not None and len(atom.args) > slot:
+            out |= term_vars(atom.args[slot])
+    changed = True
+    while changed:
+        changed = False
+        for atom, name in ext:
+            if name != "compose" or len(atom.args) != 3:
+                continue
+            operands = [term_vars(atom.args[i]) for i in (0, 1)]
+            if all(vs and vs <= out for vs in operands):
+                new = term_vars(atom.args[2]) - out
+                if new:
+                    out |= new
+                    changed = True
+    return out
+
 
 def lint_rewrites(source: str, hints: bool = False) -> list[Finding]:
     lines = source.splitlines()
@@ -128,6 +189,7 @@ class _Lint:
             self.cross_choice(info)
             self.raw_aggregate(info)
             self.subsumed_atoms(info)
+            self.lib_idiom(info)
             self.named_complement(info)
             self.long_rule(info)
         self.decl_placement()
@@ -561,6 +623,99 @@ class _Lint:
                             f"`{_atom_str(a)}` adds nothing next to "
                             f"`{_atom_str(b)}`",
                         )
+
+    def lib_idiom(self, info: RuleInfo) -> None:
+        """A lib primitive's defining chain written out by hand, with the
+        linking value confined to the chain: name it with the primitive.
+        The chains are the `_CHAINS` table."""
+        rule = info.rule
+        if rule.body is None or rule.grid:
+            return
+        head_vars = literal_vars(rule.head)
+        # (id(a), id(b)) -> [a, fix message, clean in every expansion]
+        pairs: dict[tuple[int, int], list] = {}
+        for flat in _flatten(rule.body):
+            atoms = [
+                (lit, self.ix.resolve(info.scope, lit.qual, lit.name))
+                for lit in flat
+                if isinstance(lit, Atom)
+            ]
+            for a, b, link, fix in self._idiom_pairs(atoms):
+                clean = link not in head_vars and not any(
+                    lit is not a and lit is not b and link in literal_vars(lit)
+                    for lit in flat
+                )
+                entry = pairs.setdefault((id(a), id(b)), [a, fix, True])
+                entry[2] = entry[2] and clean
+        for a, fix, clean in pairs.values():
+            if clean:
+                self.add("lib-idiom", a.line, fix)
+
+    def _idiom_pairs(
+        self, atoms: list[tuple[Atom, RelKey]],
+    ) -> Iterator[tuple[Atom, Atom, str, str]]:
+        """(atom a, atom b, linking var, fix message) per `_CHAINS` match."""
+        def var_at(atom: Atom, i: int) -> str | None:
+            arg = atom.args[i]
+            return arg.name if isinstance(arg, Var) else None
+
+        ext = [(x, key[1]) for x, key in atoms if key[0] == EXTERN]
+        deltas = _delta_vars(ext)
+        for spec in _CHAINS:
+            rel_a, ar_a, slot_a = spec["a"]
+            rel_b, ar_b, slots_b = spec["b"]
+            for a, name_a in ext:
+                if name_a != rel_a or len(a.args) != ar_a:
+                    continue
+                link = var_at(a, slot_a)
+                if link is None:
+                    continue
+                for b, name_b in ext:
+                    if b is a or name_b != rel_b or len(b.args) != ar_b:
+                        continue
+                    if rel_a == rel_b and id(b) < id(a):
+                        continue
+                    slot_b = next(
+                        (i for i in slots_b if var_at(b, i) == link), None,
+                    )
+                    if slot_b is None:
+                        continue
+
+                    def slot(ref) -> Term:
+                        if ref == _PARTNER:
+                            [i] = [i for i in slots_b if i != slot_b]
+                            return b.args[i]
+                        which, idx = ref
+                        return (a if which == "a" else b).args[idx]
+
+                    if any(
+                        _term_str(slot(x)) != _term_str(slot(y))
+                        for x, y in spec.get("equal", ())
+                    ):
+                        continue
+                    if any(
+                        not isinstance(slot(s), Wild)
+                        for s in spec.get("wild", ())
+                    ):
+                        continue
+                    if any(
+                        _term_str(slot(x)) == _term_str(slot(y))
+                        for x, y in spec.get("distinct", ())
+                    ):
+                        continue
+                    # A compose over delta algebra steps no cell: when the
+                    # would-be position operand holds a Shift, the chain is
+                    # not the primitive.
+                    if _PARTNER in spec["out"] and \
+                            term_vars(slot(_PARTNER)) & deltas:
+                        continue
+                    out = [slot(ref) for ref in spec["out"]]
+                    if any(link in term_vars(t) for t in out):
+                        continue
+                    fix = (f"`{_atom_str(a)}, {_atom_str(b)}` ⇒ "
+                           f"`{spec['prim']}"
+                           f"({', '.join(_term_str(t) for t in out)})`")
+                    yield a, b, link, fix
 
     def named_complement(self, info: RuleInfo) -> None:
         """`R(V), X != V` against a singleton fact: `!R(X)` says it
