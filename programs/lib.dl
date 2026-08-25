@@ -1316,6 +1316,61 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     ruled_out(Ky, B) :- forced(Ky, B2), covers(Ky, B2, P), covers(Ky, B, P), B != B2.
 }
 
+// The resolutions of a tiebreak: every injective assignment of candidate
+// items to slots, one term per assignment, backing a TiebreakResolution out
+// column (style: alt outputs). Branch names are program-global, so the
+// solver declares the ADT the comp constructs:
+//
+//   .type TiebreakResolution =
+//       End {} | Sit {slot: Slot, item: Item, rest: TiebreakResolution}
+.comp TiebreakResolutions<Key, Slot, Item> {
+    // The candidate items of each slot.
+    .decl cand(key: Key, slot: Slot, item: Item)  // input
+
+    .decl _slot(key: Key, slot: Slot)
+    _slot(K, S) :- cand(K, S, _).
+
+    // Slots in an arbitrary fixed order.
+    .decl _rank(key: Key, slot: Slot, r: number)
+    _rank(K, S, R) :- _slot(K, S), R = count : { _slot(K, S2), ord(S2) < ord(S) }.
+
+    .decl _nslots(key: Key, n: number)
+    _nslots(K, N) :- _slot(K, _), N = count : { _slot(K, _) }.
+
+    // One candidate per slot, in rank order.
+    .decl _partial(key: Key, r: number, l: TiebreakResolution)
+    _partial(K, 0, $End()) :- _slot(K, _).
+    _partial(K, R2, $Sit(S, I, L)) :-
+        _partial(K, R, L), _rank(K, S, R), cand(K, S, I), R2 = R + 1.
+
+    .decl _combo(key: Key, l: TiebreakResolution)
+    _combo(K, L) :- _partial(K, N, L), _nslots(K, N).
+
+    // Suffixes of the combos.
+    .decl _sub(key: Key, l: TiebreakResolution)
+    _sub(K, L) :- _combo(K, L).
+    _sub(K, L) :- _sub(K, $Sit(_, _, L)).
+
+    .decl _mem(key: Key, l: TiebreakResolution, item: Item)
+    _mem(K, $Sit(S, I, L), I) :- _sub(K, $Sit(S, I, L)).
+    _mem(K, $Sit(S, I, L), I2) :- _sub(K, $Sit(S, I, L)), _mem(K, L, I2).
+
+    .decl _dup(key: Key, l: TiebreakResolution)
+    _dup(K, $Sit(S, I, L)) :- _sub(K, $Sit(S, I, L)), _mem(K, L, I).
+    _dup(K, $Sit(S, I, L)) :- _sub(K, $Sit(S, I, L)), _dup(K, L).
+
+    // The valid assignments: no item used twice.
+    .decl resolution(key: Key, res: TiebreakResolution)
+    resolution(K, L) :- _combo(K, L), !_dup(K, L).
+
+    .decl _within(key: Key, res: TiebreakResolution, l: TiebreakResolution)
+    _within(K, L, L) :- resolution(K, L).
+    _within(K, L0, L) :- _within(K, L0, $Sit(_, _, L)).
+
+    .decl assign(key: Key, res: TiebreakResolution, slot: Slot, item: Item)
+    assign(K, L0, S, I) :- _within(K, L0, $Sit(S, I, _)).
+}
+
 // ============================================================
 // Consts helpers — instantiated inside Consts; not reachable from body
 // ============================================================

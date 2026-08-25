@@ -36,6 +36,11 @@ def render_diff(expected: list[list[int]], actual: list[list[int]]) -> list[str]
     return lines
 
 
+def _short(name: str) -> str:
+    """Variant label for listings; a resolution enumeration term gets elided."""
+    return name if len(name) <= 40 else name[:37] + "..."
+
+
 def render_pair_failure(p: PairResult) -> list[str]:
     """Lines describing a failing pair: variant breakdown + diff per failing actual."""
     lines = [f"{p.kind}[{p.idx}]: FAIL"]
@@ -46,12 +51,25 @@ def render_pair_failure(p: PairResult) -> list[str]:
         lines.append("  (no variants emitted)")
         return lines
 
+    if all(v.ok for v in p.variants):
+        # Resolution semantics: some accepted grid was never emitted.
+        produced = {tuple(tuple(r) for r in v.actual) for v in p.variants}
+        absent = [
+            g for g in (p.accepted or [])
+            if tuple(tuple(r) for r in g) not in produced
+        ]
+        lines.append(f"  {len(absent)} accepted grid(s) never emitted:")
+        for g in absent:
+            lines.append("")
+            lines.extend(f"    {gl}" for gl in _grid_lines(g))
+        return lines
+
     has_named = any(v.name for v in p.variants)
     multi = len(p.variants) > 1
 
     if has_named or multi:
-        pass_v = [v.name or "(out)" for v in p.variants if v.ok]
-        fail_v = [v.name or "(out)" for v in p.variants if not v.ok]
+        pass_v = [_short(v.name) or "(out)" for v in p.variants if v.ok]
+        fail_v = [_short(v.name) or "(out)" for v in p.variants if not v.ok]
         lines.append(f"  variants: {len(pass_v)} pass / {len(fail_v)} fail")
         if pass_v:
             lines.append(f"    pass: {', '.join(pass_v)}")
@@ -69,7 +87,7 @@ def render_pair_failure(p: PairResult) -> list[str]:
             tuple(v.conflicts),
             tuple(v.missing),
         )
-        groups[key].append(v.name or "(out)")
+        groups[key].append(_short(v.name) or "(out)")
 
     for (actual_key, conflicts_tup, missing_tup), names in groups.items():
         actual = [list(r) for r in actual_key]

@@ -176,7 +176,16 @@ Parse rules are body code: body style and the linter apply.
 
 ## Alt outputs
 
-If the task JSON contains alts, encode them as cases of `Choice` — one case per alt output.
+If the task JSON contains alts, encode by kind:
+
+- A `rule` alt is a rival model: a case of `Choice`, one case per alt output.
+- A `tiebreak` alt marks interchangeable content the task leaves free. The
+  solver enumerates the resolutions: `out` takes a trailing column typed
+  `TiebreakResolution`, one value per valid resolution, and the runner
+  accepts a pair iff the set of emitted grids equals the expected grid plus
+  the alts. A tiebreak is two-way: the runner rejects a pair emitting more
+  than two distinct grids. No data or rules name or steer the resolution
+  values, and case coverage does not apply to the resolution column.
 
 ## Souffle version
 

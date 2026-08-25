@@ -13,7 +13,15 @@ from dl.lint import lint_body
 from dl.paths import SOLVERS_DIR, all_stems
 from dl.render import render_pair_failure
 from dl.rewrite_lint import HINTS, lint_rewrites
-from dl.solve import PairResult, TaskResult, _pair_work, case_coverage, run_pair, run_task
+from dl.solve import (
+    PairResult,
+    TaskResult,
+    _pair_work,
+    case_coverage,
+    res_out_stem,
+    run_pair,
+    run_task,
+)
 from dl.souffle import _pool_workers, build_functors
 from dl.sweep import render_sweep, sweep_report
 
@@ -99,7 +107,7 @@ def cmd_one(stem: str, hints: bool = False, timed: bool = False) -> int:
             for line in render_pair_failure(p):
                 print(line)
 
-    coverage = case_coverage(result.pairs)
+    coverage = [] if res_out_stem(stem) else case_coverage(result.pairs)
     if coverage:
         print()
         print(f"--- {len(coverage)} case-coverage finding(s) in {stem}.dl ---")
@@ -176,7 +184,9 @@ def cmd_all(hints: bool = False, timed: bool = False) -> int:
                     print(f"  {line}")
 
     coverage_findings = {
-        r.stem: cov for r in results if (cov := case_coverage(r.pairs))
+        r.stem: cov
+        for r in results
+        if not res_out_stem(r.stem) and (cov := case_coverage(r.pairs))
     }
     if coverage_findings:
         print()

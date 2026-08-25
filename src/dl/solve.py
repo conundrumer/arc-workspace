@@ -2,8 +2,10 @@
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from functools import lru_cache
 
 from arc.task import load as load_task
+from dl.dlparse import Decl, ParseError, parse
 from dl.facts import grid_to_facts, parse_output
 from dl.paths import SOLVERS_DIR
 from dl.souffle import _pool_workers, _run_source
@@ -22,13 +24,38 @@ def run_dl(
     )
 
 
+def res_out(source: str) -> bool:
+    """True when `out`'s trailing column is typed `TiebreakResolution` —
+    resolution semantics: the emitted grid set must equal the accepted set."""
+    try:
+        program = parse(source)
+    except ParseError:
+        return False
+    for it in program.items:
+        if isinstance(it, Decl) and it.name == "out":
+            return bool(it.fields) and it.fields[-1].type == "TiebreakResolution"
+    return False
+
+
+@lru_cache
+def res_out_stem(stem: str) -> bool:
+    return res_out((SOLVERS_DIR / f"{stem}.dl").read_text())
+
+
+def _grid_key(grid: list[list[int]]) -> tuple:
+    return tuple(tuple(row) for row in grid)
+
+
 def _profile(mod_source: str, examples: list) -> list[frozenset[str]] | None:
     """Per-pair variant-name sets under this source; None on any failure.
 
     A modified source must reproduce the original's profile, not merely
     pass: a wrong fill or a deleted rule can silence a Choice case, and a
-    vanished variant is never checked.
+    vanished variant is never checked. A `TiebreakResolution` solver's
+    variant names are enumeration terms with no stable identity, so its
+    profile is the grid set instead.
     """
+    res = res_out(mod_source)
     profile = []
     for ex in examples:
         try:
@@ -41,11 +68,18 @@ def _profile(mod_source: str, examples: list) -> list[frozenset[str]] | None:
         if ex.alt is not None and ex.alt.kind == "tiebreak":
             accepted.append(ex.alt.grid)
         names = set()
+        grids = set()
         for variant, grid, conflicts, missing in actuals:
             if grid not in accepted or conflicts or missing:
                 return None
             names.add(variant)
-        profile.append(frozenset(names))
+            grids.add(_grid_key(grid))
+        if res:
+            if grids != {_grid_key(g) for g in accepted}:
+                return None
+            profile.append(frozenset(grids))
+        else:
+            profile.append(frozenset(names))
     return profile
 
 
@@ -120,6 +154,22 @@ def run_pair(stem: str, task_id: str, kind: str, idx: int, ex) -> PairResult:
             for v, g, c, m in actuals
         ]
         ok = bool(variants) and all(v.ok for v in variants)
+        if res_out_stem(stem):
+            # Resolution semantics: a tiebreak is two-way, and every
+            # accepted grid must also be emitted.
+            distinct = {_grid_key(v.actual) for v in variants}
+            if len(distinct) > 2:
+                return PairResult(
+                    kind=kind,
+                    idx=idx,
+                    ok=False,
+                    error=f"tiebreak is two-way: {len(distinct)} distinct "
+                          "grids emitted",
+                    expected=ex.output,
+                    accepted=accepted,
+                    variants=variants,
+                )
+            ok = ok and distinct == {_grid_key(g) for g in accepted}
         return PairResult(
             kind=kind,
             idx=idx,
