@@ -1,5 +1,5 @@
 // 017c7c7b
-// concept: wallpaper grow
+// concept: wallpaper grow lines
 // The input continues periodically: the output is the grid extended to
 // c.extent along c.dir with the ink recolored, each new cell repeating
 // the color one period back. A period is a shift along c.dir the input
@@ -40,10 +40,11 @@ out_cell(P_grid_out) :-
     c.dir(D), axis_of(D, A), frame.cell($U(), A, P_along),   // step along the axis
     cell_line(_, Line, _), compose(P_along, Line, P_grid_out).
 
-// Input embedded at the edge the growth moves away from.
-.decl base(p: Position, col: Color)
-base(P_grid_out, Col) :-
-    out_cell(P_grid_out), in(P_grid_in, Col),
+// Input embedded at the edge the growth moves away from, each cell
+// keeping its line.
+.decl base(line: Position, p: Position, col: Color)
+base(Line, P_grid_out, Col) :-
+    out_cell(P_grid_out), cell_line(P_grid_in, Line, Col),
     c.dir(D), opposite(D, O),
     slab_anchor(O, P_grid_in, P_grid_out).
 
@@ -63,18 +64,20 @@ line_ok(Line, K) :-
 .init period = Extremes<CaseLine>
 
 // Colors over the output frame: the input, then each cell repeating the
-// one a period back.
-.decl fill(ch: Choice, p: Position, col: Color)
-fill(Ch, P, Col) :- impl_choice(Ch), base(P, Col).
-fill(Ch, P_grid_out, Col) :-
-    fill(Ch, P, Col),
-    c.dir(D), axis_of(D, A), split(P, A, _, Line),      // the cell's line
-    period.low([Ch, Line], K), jump(P, D, K, P_grid_out),
+// one a period back. A jump along c.dir keeps the line.
+.decl fill(ch: Choice, line: Position, p: Position, col: Color)
+fill(Ch, Line, P, Col) :- impl_choice(Ch), base(Line, P, Col).
+fill(Ch, Line, P_grid_out, Col) :-
+    fill(Ch, Line, P, Col),
+    c.dir(D), period.low([Ch, Line], K), jump(P, D, K, P_grid_out),
     out_cell(P_grid_out).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, Ch) :- fill(Ch, P, C), !c.bg(C), c.ink(Col).
-out(P, Col, Ch) :- fill(Ch, P, Col), c.bg(Col).
+out(P, Col, Ch) :-
+    fill(Ch, _, P, C),
+    ( !c.bg(C), c.ink(Col)  // ink recolored
+    ; c.bg(C), Col = C      // bg passes
+    ).
 
 // --- $Line ---
 

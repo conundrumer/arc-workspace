@@ -214,3 +214,30 @@ The rest of the machinery is group-agnostic: C4's elements are D4 elements, so p
 A task treating both hands as distinct pieces needs no new group: that is an id-keyed C4 chart with one id per hand.
 
 Gate: a site whose pieces rotate but do not reflect.
+
+## `Matching<Key>` — unique pairing of two keyed cell sets
+
+The elimination reading of a perfect matching: candidate edges in, and an edge is kept when using every endpoint cell of both sets exactly once forces it. A matching is an exact cover of the endpoint cells by two-cell edges, so `CoverForcing` supplies the elimination fixpoint; the comp exists so a pairing task states matching, with the cover mechanics behind the boundary. Sibling to `CoverForcing`, not a replacement — region-filling sites (150deff5, 681b3aeb, b1fc8b8e) keep `CoverForcing`. Edge payloads (direction, distance) stay with the caller, recovered by joining `edge` back against the candidates. Lib target: body comp beside `CoverForcing`; a `matching` setup term for `concepts.md` rides along on promotion.
+
+As staged, the cover runs over the union of endpoint Positions: a unique matching on one cell set. That fits disjoint sides (1a244afd's pivots and pointers) and breaks when the sides share Position values — an edge `[P, P]` covers one cell, and a Position used as both `l` and `r` is forced into a single use. The nearest reuse sites all share Positions across sides: 18447a8d pairs each band's hole with another band's piece with no exclusivity enforced, and the Fit-side `pair(p_in, p_out)` labelings (e.g. 833966f4, e9afcf9a) are permutations between input and output frames. Promotion generalizes the endpoints — tagged sides or an endpoint type param — to serve them.
+
+```
+.comp Matching<Key> {
+    .type Edge = [l: Position, r: Position]
+
+    .decl cand(key: Key, l: Position, r: Position)  // input
+
+    .init forcing = CoverForcing<Key, Edge>
+    forcing.covers(Ky, [P, Q], P_cell) :-
+        cand(Ky, P, Q),
+        ( P_cell = P ; P_cell = Q ).
+
+    .decl edge(key: Key, l: Position, r: Position)
+    edge(Ky, P, Q) :- forcing.forced(Ky, [P, Q]).
+}
+```
+
+An `.init` named `match` is a Souffle syntax error (`match` is the string-match predicate); pick another instance name.
+
+**Task-local home (protocol step 1).** 1a244afd (`Matching` comp): pivots sighted along rows and columns onto pointers; the unique pivot–pointer pairing, forced by mutual exclusion.
+

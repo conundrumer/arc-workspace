@@ -1,0 +1,119 @@
+// 1a244afd
+// concept: markers lookup
+// Pivot cells and pointer cells scatter over a bg field. Each pivot takes one
+// pointer sharing its row or column, and the pairing that uses every cell
+// exactly once is unique. The pointer is erased, and a mark is painted as far
+// from the pivot as the pointer was, in a turned direction; a mark off the
+// grid is not painted. Cases claim what turns it:
+//   $Turn  — a quarter turn in a stored sense.
+//   $Table — a stored direction correspondence.
+
+#include "../lib.dl"
+
+.type Choice = Turn {} | Table {}
+
+.type Pair = [pivot: Position, pointer: Position]
+
+.comp Consts {
+    .decl bg(col: Color) bg(8).
+
+    .decl pivot(col: Color) pivot(1).
+    .decl pointer(col: Color) pointer(6).
+    .decl mark(col: Color) mark(7).
+
+    // --- $Turn ---
+    .decl sense(s: Sense) sense(SENSE_CC).
+
+    // --- $Table ---
+    .decl turn_map(d: Dir, d_out: Dir)
+    turn_map(DIR_T, DIR_L). turn_map(DIR_L, DIR_B).
+    turn_map(DIR_B, DIR_R). turn_map(DIR_R, DIR_T).
+}
+
+.init c = Consts
+
+// --- parse ---
+
+// The unique pairing of two keyed cell sets: an edge is kept when using
+// every cell of both sets exactly once forces it. A matching is an exact
+// cover of the endpoint cells by two-cell edges, so CoverForcing's elimination
+// is the matching's.
+.comp Matching<Key> {
+    .type Edge = [l: Position, r: Position]
+
+    .decl cand(key: Key, l: Position, r: Position)  // input
+
+    .init forcing = CoverForcing<Key, Edge>
+    forcing.covers(Ky, [P, Q], P_cell) :-
+        cand(Ky, P, Q),
+        ( P_cell = P ; P_cell = Q ).
+
+    .decl edge(key: Key, l: Position, r: Position)
+    edge(Ky, P, Q) :- forcing.forced(Ky, [P, Q]).
+}
+
+// Each pivot's pointer, with the direction and distance it lies at.
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)  // input
+
+    // Each pivot looks along its row and column for pointers.
+    .init sight = Ray<Key>
+    sight.dir(D) :- dir_elem(D).
+    sight.mark(Ky, P) :- cell(Ky, P, Col), c.pivot(Col).
+    sight.cell(Ky, P) :- cell(Ky, P, Col), c.pointer(Col).
+
+    // A candidate: the pointer lies K cells toward D from the pivot.
+    .decl cand(key: Key, pair: Pair, d: Dir, k: number)
+    cand(Ky, [P, Q], D, K) :- dir_elem(D), sight.ray(Ky, Q, D, K, P).
+
+    .init pairing = Matching<Key>
+    pairing.cand(Ky, P, Q) :- cand(Ky, [P, Q], _, _).
+
+    .decl pair(key: Key, pair: Pair, d: Dir, k: number)
+    pair(Ky, [P, Q], D, K) :- pairing.edge(Ky, P, Q), cand(Ky, [P, Q], D, K).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// --- the turn ---
+
+// Where the mark lies from the pivot, given where the pointer lies.
+.decl mark_dir(d: Dir, d_out: Dir, ch: Choice)
+
+// --- $Turn ---
+mark_dir(D, D_out, $Turn()) :- c.sense(S), turn(S, D, D_out).
+
+// --- $Table ---
+mark_dir(D, D_out, $Table()) :- c.turn_map(D, D_out).
+
+// --- output ---
+
+.decl mark(p: Position, ch: Choice)
+mark(P_mark, Ch) :-
+    parse.pair($U(), [P, _], D, K), mark_dir(D, D_out, Ch),  // the pointer's direction, turned
+    jump(P, D_out, K, P_mark), in(P_mark, _).                // as far off the pivot, on the grid
+
+.decl impl_choice(ch: Choice)
+impl_choice($Turn()). impl_choice($Table()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- mark(P, Ch), c.mark(Col).
+out(P, Col, Ch) :-
+    in(P, Col_in), impl_choice(Ch), !mark(P, Ch),
+    ( !c.pointer(Col_in), Col = Col_in   // kept
+    ; c.pointer(Col_in), c.bg(Col) ).    // the pointer is erased
+
+// --- fit ---
+
+.comp Fit {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // The direction a pair's mark sits in.
+    .decl turn_map(d: Dir, d_out: Dir)
+    turn_map(D, D_out) :-
+        parse.pair(E, [P, _], D, K), dir_elem(D_out),  // a pair pointing toward D
+        jump(P, D_out, K, P_mark),                     // as far off the pivot toward D_out
+        ex_out(E, P_mark, Col), c.mark(Col).           // a mark sits there
+}

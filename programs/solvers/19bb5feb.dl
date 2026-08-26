@@ -1,0 +1,61 @@
+// 19bb5feb
+// concept: markers rank
+// A panel sits on the background, carrying solid marker blocks of other
+// colors. The output holds the marker colors in their relative arrangement,
+// background where a place is empty: markers rank along each axis, and each
+// marker takes the output cell at its pair of ranks.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl bg(col: Color) bg(0).
+
+    // The color the panel is filled with.
+    .decl panel(col: Color) panel(8).
+}
+
+.init c = Consts
+
+.decl mark(p: Position, col: Color)
+mark(P, Col) :- in(P, Col), !c.bg(Col), !c.panel(Col).
+
+.init marks = Components<Unit>
+marks.node($U(), P) :- mark(P, _).
+
+.init mark_box = Bbox<Ident>
+mark_box.cell(Id, P) :- marks.label($U(), P, Id).
+
+// The markers' distances to each edge, ranked densely — markers level with
+// each other share a rank.
+.init rank = Ordinal<Dir>
+rank.idx_set(D, K) :- mark_box.edge_min(_, D, K).
+
+.decl mark_idx(id: Ident, d: Dir, r: number)
+mark_idx(Id, D, R) :- mark_box.edge_min(Id, D, K), rank.rank(D, K, R).
+
+// A marker's place along one axis: its rank from each of the axis's edges.
+.decl mark_axis_pos(id: Ident, a: Axis, p: Position)
+mark_axis_pos(Id, A, P) :-
+    axis_of(D, A), opposite(D, O),
+    mark_idx(Id, D, R), edge_delta(D, R, P1),  // rank from one edge
+    mark_idx(Id, O, S), edge_delta(O, S, P2),  // rank from the other
+    compose(P1, P2, P).
+
+// The marker at each cell: its places on the two axes, glued.
+.decl rank_mark(p: Position, col: Color)
+rank_mark(P_out, Col) :-
+    marks.label($U(), P_grid, Id), mark(P_grid, Col),  // a marker, with its color
+    perp(A1, A2), mark_axis_pos(Id, A1, P1), mark_axis_pos(Id, A2, P2),
+    compose(P1, P2, P_out).
+
+// The frame the ranks span.
+.decl rank_cell(p: Position)
+rank_cell(P_out) :-
+    perp(A1, A2), mark_axis_pos(_, A1, P1), mark_axis_pos(_, A2, P2),
+    compose(P1, P2, P_out).
+
+.decl out(p: Position, col: Color)
+out(P_out, Col) :-
+    rank_cell(P_out),
+    ( rank_mark(P_out, Col)                 // the marker ranked here
+    ; !rank_mark(P_out, _), c.bg(Col) ).    // no marker at this pair of ranks

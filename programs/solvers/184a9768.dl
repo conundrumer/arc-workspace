@@ -1,0 +1,82 @@
+// 184a9768
+// concept: objects enclose pack
+// Frames stand among loose pieces: an object is a frame when it closes
+// background off from the grid edge. The pieces translate into the holes so
+// closed and fill them exactly, each hole cell taking the color of the piece
+// that covers it. Everything outside the frames clears.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl bg(col: Color) bg(0).
+
+    // Scattered single cells that take no part.
+    .decl noise(col: Color) noise(5).
+}
+
+.init c = Consts
+
+// --- the holes ---
+
+// Background the grid's content closes off from the edge.
+.init flood = Reach<Unit>
+flood.node($U(), P) :- in(P, Col), c.bg(Col).
+flood.seed($U(), P) :- flood.node($U(), P), dir_elem(D), dist(P, D, 0).
+
+.decl hole(p: Position)
+hole(P) :- flood.node($U(), P), !flood.reach($U(), P).
+
+// --- the objects ---
+
+.init obj = Components<Color>
+obj.node(Col, P) :- in(P, Col), !c.bg(Col), !c.noise(Col).
+
+.decl obj_cell(o: Ident, col: Color, p: Position)
+obj_cell(O, Col, P) :- obj.label(Col, P, O).
+
+// A frame bounds a hole; every other object is a loose piece.
+.decl frame(o: Ident)
+frame(O) :- obj_cell(O, _, P), dir_elem(D), neighbor(P, D, Q), hole(Q).
+
+.decl piece(o: Ident)
+piece(O) :- obj_cell(O, _, _), !frame(O).
+
+// --- the candidate placements ---
+
+// A piece's shape, viewed from its own box.
+.init box = BoxFrame<Ident>
+box.cell(O, P) :- piece(O), obj_cell(O, _, P).
+
+// Where a piece lands with each of its cells on a hole.
+.init occ = Occurrences<Ident, Unit>
+occ.shape(O, S, $U()) :- box.inner(O, _, S).
+occ.cell(O, P, $U()) :- piece(O), hole(P).
+
+// A candidate: a piece translated to a spot, named by the spot's margins.
+.type Placement = [o: Ident, m: Position]
+
+.decl covers(cd: Placement, p: Position)
+covers([O, M], P) :- occ.occurrence(O, M), occ.shape(O, S, $U()), compose(M, S, P).
+
+// --- the pruning ---
+
+// Where the covers differ, every rival spot stays alive; the rivals agree
+// on the color they paint.
+.init pruning = PlacementPruning<Unit, Placement, Ident>
+pruning.cand($U(), [O, M], O) :- occ.occurrence(O, M).
+pruning.conflict($U(), Cd, Cd2) :- covers(Cd, P), covers(Cd2, P).
+
+.decl frame_cell(p: Position, col: Color)
+frame_cell(P, Col) :- obj_cell(O, Col, P), frame(O).
+
+// A hole cell takes the color of a surviving placement over it.
+.decl fill(p: Position, col: Color)
+fill(P, Col) :- pruning.alive($U(), Cd, O), covers(Cd, P), obj_cell(O, Col, _).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, _),
+    ( frame_cell(P, Col)                      // the frame stays
+    ; fill(P, Col)                            // a piece fills the hole
+    ; !frame_cell(P, _), !hole(P), c.bg(Col)  // the rest clears
+    ).

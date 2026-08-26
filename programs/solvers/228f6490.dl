@@ -1,0 +1,83 @@
+// 228f6490
+// concept: objects enclose move count
+// Walls of c.wall close off holes, and loose shapes of other colors lie around
+// the grid. A shape whose footprint is a hole's moves into it: the hole takes
+// the shape's color, and the shape's cells go back to c.bg. Several shapes can
+// fit one hole, and the cases differ in which one moves:
+//
+//   $Unique — the shape whose color no other shape carries.
+//   $AllFit — the shape whose color has no shape that fits nowhere.
+
+#include "../lib.dl"
+
+.type Choice = Unique {} | AllFit {}
+
+// A shape: one connected run of a single color.
+.type Shape = [col: Color, id: Ident]
+
+.comp Consts {
+    .decl bg(col: Color) bg(0).
+    .decl wall(col: Color) wall(5).
+}
+
+.init c = Consts
+
+// --- shared ---
+
+// The holes: the regions the walls close off from the grid edge.
+.init closed = Closed<Unit>
+closed.cell($U(), P) :- in(P, Col), !c.wall(Col).
+
+.decl hole(h: Ident, p: Position)
+hole(H, P) :- closed.region($U(), P, H).
+
+// The shapes: the loose pieces. A wall is a container, not a piece.
+.init shapes = Components<Color>
+shapes.node(Col, P) :- in(P, Col), !c.bg(Col), !c.wall(Col).
+
+.decl shape(s: Shape, p: Position)
+shape([Col, Id], P) :- shapes.label(Col, P, Id).
+
+.init hbox = BoxFrame<Ident>
+hbox.cell(H, P) :- hole(H, P).
+
+.init sbox = BoxFrame<Shape>
+sbox.cell(S, P) :- shape(S, P).
+
+// Same footprint: the two sets fill their boxes alike.
+.init fits = KeyedSetCompare<Shape, Ident, Position>
+fits.pattern_member(H, P_inner)  :- hbox.inner(H, _, P_inner).
+fits.observed_member(S, P_inner) :- sbox.inner(S, _, P_inner).
+
+// The shape each hole draws in.
+.decl taken(h: Ident, s: Shape, ch: Choice)
+
+// --- Unique ---
+
+.decl repeated(col: Color)
+repeated(Col) :- shapes.label(Col, _, Id), shapes.label(Col, _, Id2), Id != Id2.
+
+taken(H, [Col, Id], $Unique()) :- fits.equals([Col, Id], H), !repeated(Col).
+
+// --- AllFit ---
+
+.decl stray(col: Color)
+stray(Col) :- shapes.label(Col, _, Id), !fits.equals([Col, Id], _).
+
+taken(H, [Col, Id], $AllFit()) :- fits.equals([Col, Id], H), !stray(Col).
+
+// --- output ---
+
+.decl fill(p: Position, col: Color, ch: Choice)
+fill(P, Col, Ch) :- taken(H, [Col, _], Ch), hole(H, P).
+
+.decl erase(p: Position, ch: Choice)
+erase(P, Ch) :- taken(_, S, Ch), shape(S, P).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Unique()). impl_choice($AllFit()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- fill(P, Col, Ch).
+out(P, Col, Ch) :- erase(P, Ch), c.bg(Col).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !fill(P, _, Ch), !erase(P, Ch).
