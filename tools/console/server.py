@@ -330,9 +330,17 @@ def action(fn):
     return wrapped
 
 
-def require_idle(it: dict) -> None:
+def defer_reload() -> None:
+    """Drop a pending quiesce so a user action can go through. The watcher
+    arms again once the console is next quiet. Caller holds LOCK."""
+    global RELOADING
     if RELOADING:
-        raise Reject("server reload in progress — wait for it to finish")
+        RELOADING = False
+        COND.notify_all()
+
+
+def require_idle(it: dict) -> None:
+    defer_reload()
     if active(it):
         raise Reject("worker busy — wait for the turn to land")
 
@@ -2205,8 +2213,7 @@ def start_wave(k: int, order: str = "name", auto_advance: bool = False,
                chain: list | None = None, auto_stop: str | None = None) -> dict:
     global LAST_WAVE_AT
     with LOCK:
-        if RELOADING:
-            return {"error": "server reload in progress — wait for it to finish"}
+        defer_reload()
         if time.time() - LAST_WAVE_AT < WAVE_DEBOUNCE:
             return {"error": "a wave just started — wait a moment to start another"}
         if order not in ("name", "size"):
@@ -2627,8 +2634,7 @@ def submit_comment(it: dict, text: str, sess: str | None = None) -> None:
     # a comment goes to one session, so only that session has to be idle —
     # an earlier stage can talk while the current pass runs
     sess = sess if sess in stage_names(it) else it["phase"]
-    if RELOADING:
-        raise Reject("server reload in progress — wait for it to finish")
+    defer_reload()
     if it.get("handoff_pending", False):
         raise Reject("handoff in flight — wait for the next session to start")
     w = PROCS.get((it["id"], sess))
@@ -2927,8 +2933,7 @@ def act_finalize(body: dict) -> dict:
     that stage alone, seeded from the reports on disk."""
     item_id = str(body.get("id") or "").strip()
     with LOCK:
-        if RELOADING:
-            return {"error": "server reload in progress — wait for it to finish"}
+        defer_reload()
         if not item_id or not solver_path(item_id).exists():
             return {"error": f"no solver for {item_id}"}
         it = find(item_id)
@@ -3167,49 +3172,70 @@ def usage_loop() -> None:
         time.sleep(60)
 
 
+def turns_in_flight() -> bool:
+    """Whether any item holds a turn the reload has to wait out. Caller holds
+    LOCK."""
+    return any(active(it) or it["state"] == QUEUED for it in STATE["items"])
+
+
+RELOAD_POLL = 2  # seconds between checks of server.py's mtime
+
+
 def watch_reload() -> None:
-    """Quiesce turns and re-exec on a server.py change."""
+    """Re-exec on a server.py change, at the console's next quiet moment."""
     src = Path(__file__)
     mtime = src.stat().st_mtime
     while True:
-        time.sleep(2)
+        time.sleep(RELOAD_POLL)
         try:
-            if src.stat().st_mtime == mtime:
-                continue
+            current = src.stat().st_mtime
         except OSError:
             continue
+        if current == mtime:
+            continue
+        with LOCK:
+            # Arming under a running turn would hold the reload for as long as
+            # the turn takes, and the flag blocks the user for that stretch.
+            if turns_in_flight():
+                continue
         print("server.py changed — restarting")
-        reload_server()
+        if reload_server() == "failed":
+            mtime = current   # the exec did not take; wait for the next edit
 
 
-def quiesce_workers() -> None:
+def quiesce_workers() -> bool:
     """Block new turns and wait for the in-flight ones to land, however long
-    they take. A turn is never cut for a reload."""
+    they take. A turn is never cut for a reload. False once a user action has
+    taken the flag back."""
     global RELOADING
     with COND:
         RELOADING = True
-        while any(active(it) or it["state"] == QUEUED for it in STATE["items"]):
+        while RELOADING and turns_in_flight():
             COND.wait()
         # A reader's TextIOWrapper may read ahead and lose buffered output at
         # exec. Idle workers have no pending turn output, which makes this cut safe.
+        return RELOADING
 
 
-def reload_server() -> None:
+def reload_server() -> str:
+    """Hand the workers over to a fresh server. "deferred" when the console
+    took the flag back, "failed" when the exec did not take; on success it does
+    not return."""
     global RELOADING
     manifest = None
     try:
-        quiesce_workers()
-        with LOCK:
-            if any(active(it) or it["state"] == QUEUED for it in STATE["items"]):
-                for it in STATE["items"]:
-                    say(it, event("reload aborted because a new turn started"))
+        if quiesce_workers():
+            with LOCK:
+                # The flag is the standing claim on the exec: an action that
+                # dropped it in the meantime keeps its own work off the cut.
+                if RELOADING and not turns_in_flight():
+                    manifest = worker_manifest()
+                    os.environ[WORKER_HANDOFF_ENV] = json.dumps(manifest)
+                    save()
+                    os.execv(sys.executable, [sys.executable] + sys.argv)
                 RELOADING = False
-                save()
-                return
-            manifest = worker_manifest()
-            os.environ[WORKER_HANDOFF_ENV] = json.dumps(manifest)
-            save()
-            os.execv(sys.executable, [sys.executable] + sys.argv)
+        print("reload deferred — the console is in use")
+        return "deferred"
     except Exception as exc:
         if manifest is not None:
             for entry in manifest["workers"]:
@@ -3225,6 +3251,7 @@ def reload_server() -> None:
                 say(it, event(f"reload failed — server still running: {exc}"))
             save()
         resume_queued_wave()
+        return "failed"
 
 
 def shutdown_workers() -> None:

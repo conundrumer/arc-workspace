@@ -1851,6 +1851,21 @@ def idle_fake(srv, item_id, phase="refine"):
     return it, w
 
 
+def handoff_fds(manifest, swap=None):
+    """Duplicate a manifest's descriptors so the adopting side owns them alone.
+    A real handoff execs, which leaves the Popen objects behind; in-process
+    they stay alive, and the second owner to close a number frees whatever the
+    next test was handed in its place. `swap` replaces one entry's stdout with
+    a descriptor of its own, for the tests that feed adoption a bad pipe."""
+    for entry in manifest["workers"]:
+        for name in ("stdin_fd", "stdout_fd"):
+            entry[name] = os.dup(entry[name])
+    if swap is not None:
+        os.close(manifest["workers"][0]["stdout_fd"])
+        manifest["workers"][0]["stdout_fd"] = os.dup(swap.fileno())
+    return manifest
+
+
 def test_quiesce_handoff_adopt_keeps_pid_and_sends(srv):
     it, old = idle_fake(srv, "handoff")
     pid = old["proc"].pid
@@ -1859,7 +1874,7 @@ def test_quiesce_handoff_adopt_keeps_pid_and_sends(srv):
         manifest = srv.worker_manifest()
         srv.save()
         os.environ[srv.WORKER_HANDOFF_ENV] = json.dumps(manifest)
-        adopted_manifest = srv.read_worker_handoff()
+        adopted_manifest = handoff_fds(srv.read_worker_handoff())
         assert srv.WORKER_HANDOFF_ENV not in os.environ
         srv.PROCS.clear()
         srv.RELOADING = False
@@ -1883,7 +1898,7 @@ def test_quiesce_handoff_adopt_keeps_pid_and_sends(srv):
 def test_adopted_worker_reaps_on_drop_and_shutdown(srv, action):
     it, old = idle_fake(srv, "reap-" + action)
     pid = old["proc"].pid
-    manifest = srv.worker_manifest()
+    manifest = handoff_fds(srv.worker_manifest())
     srv.PROCS.clear()
     srv.adopt_workers(manifest)
     if action == "drop":
@@ -1905,9 +1920,8 @@ def test_adoption_validation_failure_drops_only_bad_worker(srv, tmp_path):
     _, bad = idle_fake(srv, "bad")
     _, good = idle_fake(srv, "good")
     bad_pid, good_pid = bad["proc"].pid, good["proc"].pid
-    manifest = srv.worker_manifest()
     regular = open(tmp_path / "not-a-pipe", "w")
-    manifest["workers"][0]["stdout_fd"] = os.dup(regular.fileno())
+    manifest = handoff_fds(srv.worker_manifest(), swap=regular)
     srv.PROCS.clear()
     try:
         srv.adopt_workers(manifest)
@@ -1920,12 +1934,60 @@ def test_adoption_validation_failure_drops_only_bad_worker(srv, tmp_path):
         srv.shutdown_workers()
 
 
-def test_quiesce_rejects_new_turns(srv):
+def test_a_comment_takes_the_flag_back_from_a_pending_reload(srv):
     it = item(srv, "a", srv.NEEDS_REVIEW)
     worker(srv, it)
     srv.quiesce_workers()
-    assert srv.act_comment("a", "one more")["error"] == \
-        "server reload in progress — wait for it to finish"
+    assert srv.act_comment("a", "one more") == {"ok": True}
+    assert not srv.RELOADING
+
+
+def test_a_running_turn_counts_against_the_reload(srv):
+    it = item(srv, "a", srv.COMMENTED)
+    w = worker(srv, it, state="running")
+    with srv.LOCK:
+        assert srv.turns_in_flight()
+        w["state"] = "idle"
+        it["state"] = srv.NEEDS_REVIEW
+        assert not srv.turns_in_flight()
+
+
+def test_a_deferred_quiesce_leaves_the_workers_alone(srv, monkeypatch):
+    it = item(srv, "a", srv.QUEUED)
+    worker(srv, it)
+    monkeypatch.setattr(srv.os, "execv",
+                        lambda exe, argv: pytest.fail("exec during a deferral"))
+    out = []
+    thread = threading.Thread(target=lambda: out.append(srv.reload_server()),
+                              daemon=True)
+    thread.start()
+    deadline = time.time() + 2
+    while not srv.RELOADING and time.time() < deadline:
+        time.sleep(.01)
+    assert srv.RELOADING
+    with srv.LOCK:
+        srv.defer_reload()
+    thread.join(timeout=2)
+    assert out == ["deferred"]
+    assert not srv.RELOADING
+    assert (it["id"], "refine") in srv.PROCS
+
+
+def test_an_action_after_the_quiesce_calls_the_exec_off(srv, monkeypatch):
+    item(srv, "a", srv.NEEDS_REVIEW)
+    monkeypatch.setattr(srv.os, "execv",
+                        lambda exe, argv: pytest.fail("exec after a deferral"))
+    quiesce = srv.quiesce_workers
+
+    def act_in_the_window():
+        held = quiesce()
+        with srv.LOCK:
+            srv.defer_reload()   # an action lands between the wait and the exec
+        return held
+
+    monkeypatch.setattr(srv, "quiesce_workers", act_in_the_window)
+    assert srv.reload_server() == "deferred"
+    assert not srv.RELOADING
 
 
 def test_stagger_launch_finishes_admitted_wave_during_reload(srv, monkeypatch):
@@ -2092,9 +2154,8 @@ def test_manifest_from_different_server_pid_is_refused(srv):
 def test_rejected_worker_clears_session_and_posts_feed(srv, tmp_path):
     it, _ = idle_fake(srv, "rejected")
     lost_session = it["sessions"]["refine"]
-    manifest = srv.worker_manifest()
     regular = open(tmp_path / "not-a-pipe", "w")
-    manifest["workers"][0]["stdout_fd"] = os.dup(regular.fileno())
+    manifest = handoff_fds(srv.worker_manifest(), swap=regular)
     srv.PROCS.clear()
     try:
         srv.adopt_workers(manifest)
