@@ -1237,12 +1237,8 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     .decl cell(key: Key, p: Position, v: Val)
     .decl shape(key: Key, p: Position, v: Val)
 
-    // Internal keys pair the solver key with an anchor Position; the
-    // matcher's patterns key on the solver key — one pattern per key.
+    // Internal keys pair the solver key with an anchor Position.
     .type KP = [key: Key, p: Position]
-
-    // A member as the matcher compares it — a position with its value.
-    .type PV = [p: Position, v: Val]
 
     // Candidate placements — align each shape cell (one origin per pair) to
     // every cell of the same value, union over the shape cells. A true
@@ -1254,20 +1250,17 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     .decl placement(key: Key, p: Position)
     placement(Ky, M) :- align.inner([Ky, _], M).
 
-    // View the cells from each placement and test the shape's footprint.
-    .init view = Reframe<KP>
-    view.outer([Ky, M], M) :- placement(Ky, M).
-    view.cell([Ky, M], P)  :- placement(Ky, M), cell(Ky, P, _).
+    // A contradicted placement: some member lands on a cell of another
+    // value, or off the grid, where no cell carries its value.
+    .decl mismatch(key: Key, p: Position)
+    mismatch(Ky, M) :-
+        placement(Ky, M),                   // a candidate placement
+        shape(Ky, S, V), compose(M, S, P),  // where a member lands
+        !cell(Ky, P, V).                    // off that member's value
 
-    // `inner` carries the viewed position alone, so recompose the source
-    // cell to read its value.
-    .init matcher = KeyedSetCompare<KP, Key, PV>
-    matcher.pattern_member(Ky, [S, V]) :- shape(Ky, S, V).
-    matcher.observed_member([Ky, M], [I, V]) :-
-        view.inner([Ky, M], I), compose(M, I, P), cell(Ky, P, V).
-
+    // The placements no member contradicts.
     .decl occurrence(key: Key, p: Position)
-    occurrence(Ky, M) :- matcher.covers([Ky, M], Ky).
+    occurrence(Ky, M) :- placement(Ky, M), !mismatch(Ky, M).
 }
 
 // The pieces every exact cover of a keyed cell set must contain, by
