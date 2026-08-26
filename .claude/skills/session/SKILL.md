@@ -1,7 +1,7 @@
 ---
 name: session
 description: On user ask, bootstrap a solver session for arc-workspace.
-argument-hint: [solver|<task_id>]
+argument-hint: [solver|triage|<task_id>]
 ---
 
 <!-- batch:skip -->
@@ -11,6 +11,7 @@ Then dispatch on `$ARGUMENTS`:
 
 - `solver` — run `bash scripts/queue.sh` for the next queued solver and work it per the cadence below.
 - a task id — work that solver per the cadence below.
+- `triage` — rule on what the console's sessions called out, per the triage section below.
 - anything else — an ordinary working request; proceed with the docs as context. A solver session is declared by keyword, never inferred from prose.
 <!-- /batch:skip -->
 
@@ -76,6 +77,12 @@ Do not read `src/dl/` during the cadence. The docs and the run output should hav
 ## `commit`
 
 - User trigger to commit. No commit without it. Make multiple commits when changes split cleanly. This includes pre-existing session work. Batch solvers appropriately.
+
+## `triage`
+
+- Read the console state (`curl -s localhost:8347/api/state`) and the backlog (`curl -s localhost:8347/api/backlog`). Both carry each item's parsed callout entries and badges — the callouts are the index. Open a report under `tools/console/state/reports/<task>/` only when an entry needs its context to rule on.
+- Cluster the callouts by what they are about, and present the clusters as a numbered list: a count, one representative quote, and the tasks it covers.
+- Write the user's rulings as flags, one call per task: `curl -sX POST localhost:8347/api/flag -d '{"id": "<task_id>", "level": 1}'`. Level 1 sorts first in the console's finalize lens; level 0 clears the flag. The flag is the whole ruling.
 <!-- /batch:skip -->
 
 ## Lib addition protocol
