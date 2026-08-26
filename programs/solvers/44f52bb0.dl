@@ -45,10 +45,6 @@
 d4.src($U(), P, Col) :- in(P, Col).
 d4.dst($U(), P, Col) :- in(P, Col).
 
-.init group_match = KeyedSetCompare<Unit, Ident, D4>
-group_match.pattern_member(Id, D) :- c.mapping_sym(Id, S), sym_member(S, D).
-group_match.observed_member($U(), D) :- d4.map($U(), D).
-
 // --- $Direct ---
 
 .decl syms_non_invariant(d: D4)
@@ -56,13 +52,18 @@ syms_non_invariant(D) :- d4.mismatch($U(), D), c.sym_group(S), sym_member(S, D).
 
 // --- $GroupMatch ---
 
-// Pick the largest group the input covers (strictest invariance). The input
-// may be invariant under more than a group requires, so this is containment,
+// The entries whose group the input is not invariant under.
+.decl group_broken(id: Ident)
+group_broken(Id) :- c.mapping_sym(Id, S), sym_member(S, D), d4.mismatch($U(), D).
+
+// Pick the largest unbroken group (strictest invariance). The input may be
+// invariant under more than a group requires, so an unbroken group suffices,
 // not equality. Assumes group sizes are unique; a tie would emit conflicting cells.
+.init group_size = Tally<Ident, D4>
+group_size.item(Id, D) :- c.mapping_sym(Id, S), sym_member(S, D).
+
 .init best_id = ArgExtremes<Unit, Ident>
-best_id.cand($U(), Id, N) :-
-    group_match.covers($U(), Id),        // group ⊆ invariance set
-    group_match.pattern_size(Id, N).     // group size
+best_id.cand($U(), Id, N) :- group_size.tally(Id, N), !group_broken(Id).
 
 // --- Output ---
 

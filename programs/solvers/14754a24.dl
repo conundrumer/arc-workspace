@@ -97,12 +97,15 @@ placement(P, [Fp, $Fragment()]) :- fragment.equals([Fp, P], _).
 
 // $Maximal — no other placement's marks strictly contain this one's.
 
-.init dom = KeyedSetCompare<KP, KP, Position>
-dom.pattern_member([Fp, P], Q) :- cand_mark(P, Q, Fp).
-dom.observed_member([Fp, P], Q) :- cand_mark(P, Q, Fp).
+// P2's marks miss one of P's.
+.decl not_cover(p2: Position, p_place: Position, fp: Footprint)
+not_cover(P2, P, Fp) :- cand_mark(P, Q, Fp), cand_mark(P2, _, Fp), !cand_mark(P2, Q, Fp).
 
+// Some placement's marks strictly contain P's.
 .decl dominated(p_place: Position, fp: Footprint)
-dominated(P, Fp) :- dom.covers([Fp, P2], [Fp, P]), !dom.equals([Fp, P2], [Fp, P]).
+dominated(P, Fp) :-
+    cand_mark(P, _, Fp), cand_mark(P2, _, Fp),
+    !not_cover(P2, P, Fp), not_cover(P, P2, Fp).
 
 placement(P, [Fp, $Maximal()]) :- cand_mark(P, _, Fp), !dominated(P, Fp).
 

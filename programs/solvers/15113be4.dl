@@ -46,13 +46,17 @@ footprint(P_intile) :-
 cell_at(P, P_tile, P_intile) :-
     in(P, _), c.dim(K), c.gap(G), divide_by_size_2d(P, K, G, P_tile, P_intile).
 
-.init cover = KeyedSetCompare<Position, Unit, Position>
-cover.pattern_member($U(), P_intile) :- footprint(P_intile).
-cover.observed_member(P_tile, P_intile) :- cell_at(P, P_tile, P_intile), in(P, Col), c.ink(Col).
+// The ink positions of each cell, in cell frame.
+.decl ink_at(p_tile: Position, p_intile: Position)
+ink_at(P_tile, P_intile) :- cell_at(P, P_tile, P_intile), in(P, Col), c.ink(Col).
+
+// A cell missing the footprint: some footprint position holds no ink there.
+.decl miss(p_tile: Position)
+miss(P_tile) :- cell_at(_, P_tile, _), footprint(P_intile), !ink_at(P_tile, P_intile).
 
 // A covering cell takes the key's color over the footprint.
 .decl stamp(p: Position)
-stamp(P) :- cell_at(P, P_tile, P_intile), cover.covers(P_tile, $U()), footprint(P_intile).
+stamp(P) :- cell_at(P, P_tile, P_intile), !miss(P_tile), footprint(P_intile).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- in(P, Col), !stamp(P).
