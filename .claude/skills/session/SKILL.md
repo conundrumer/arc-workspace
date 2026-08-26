@@ -50,7 +50,7 @@ Creation pass, do this first:
     - Does it follow principles? The review does not rest on lint or passing pairs.
     - Is there anything awkward or roundabout, like code that reads as pure implementation details with no conceptual meaning, or code that reimplements something existing, or repetitive code that might have a more principled form?
     - Any potential alt models? Alt impls are not models — do not propose them, and do not list them in the review.
-    - For each Choice case pair, and for each alt model considered and dropped: show where the models diverge, as a concrete input fragment and each model's output on it. The fragment must witness a valid divergence: the diverging model's output on it is well-formed. For data-indistinguishable pairs, state what the shared data hides. A model the data rules out was never a candidate: it does not appear in the review, not even as a note on why it is absent.
+    - For each Choice case pair, and for each alt model considered and dropped: show where the models diverge, as a concrete witness — an input fragment, refilling a Consts slot when the divergence needs one — and each model's output on it. The witness must show a valid divergence: the diverging model's output on it is well-formed. For data-indistinguishable pairs, state what the shared data hides. A model the data rules out was never a candidate: it does not appear in the review, not even as a note on why it is absent.
     - The review is a reply to the user, and it ends the turn: finish all task updates first, then write it with no tool calls after it.
 
 Fit pass, triggered when the user says `fit`:
