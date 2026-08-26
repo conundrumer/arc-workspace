@@ -5,7 +5,7 @@ argument-hint: [solver|triage|<task_id>]
 ---
 
 <!-- batch:skip -->
-Read the docs in `docs/wf-solver/` in this order: principles, style, patterns, concepts, proposals. For plain solver work, read the full output of `uv run python scripts/context.py` instead — those docs and `programs/lib.dl` in the same order and in a shorter form, with `patterns.md` and `proposals.md` as one line per entry and `lib.dl` as signatures. It points back at each file for an entry or a body.
+Read the docs in `docs/wf-solver/` in this order: principles, style, patterns, concepts, shapes, proposals. For plain solver work, read the full output of `uv run python scripts/context.py` instead — those docs and `programs/lib.dl` in the same order and in a shorter form, with `patterns.md` and `proposals.md` as one line per entry and `lib.dl` as signatures. It points back at each file for an entry or a body.
 
 Then dispatch on `$ARGUMENTS`:
 
