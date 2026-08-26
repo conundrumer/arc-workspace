@@ -58,17 +58,17 @@ plus($Center(), P, Col) :- ring(P, Col), in(P, Cc), c.center(Cc).
 plus($Halo(),   P, Col) :- ring(P, Col), !grid_bg.mode($U(), Col).
 
 // --- $Footprint ---
-.init fp = Reframe<Unit>
-fp.outer($U(), A) :- c.anchor(A).
-fp.cell($U(), S)  :- c.fp_cell(S).
+// The mask's cells as offsets from its anchor.
+.decl fp_off(off: Shift)
+fp_off(Off) :- c.fp_cell(S), c.anchor(A), displacement(A, S, Off).
 
-.decl fp_arm(p: Position, d: Position, col: Color)
-fp_arm(P, D, Col) :-
-    in(P, Cc), c.center(Cc),                          // candidate anchor cell
-    fp.inner($U(), D), compose(P, D, P2), in(P2, Col).
+.decl fp_arm(p: Position, off: Shift, col: Color)
+fp_arm(P, Off, Col) :-
+    in(P, Cc), c.center(Cc),                         // candidate anchor cell
+    fp_off(Off), compose(P, Off, P2), in(P2, Col).   // the cell at one offset
 
 .decl fp_mismatch(p: Position, col: Color)
-fp_mismatch(P, Col) :- fp_arm(P, _, Col), fp.inner($U(), D), !fp_arm(P, D, Col).
+fp_mismatch(P, Col) :- fp_arm(P, _, Col), fp_off(Off), !fp_arm(P, Off, Col).
 
 plus($Footprint(), P, Col) :- fp_arm(P, _, Col), !fp_mismatch(P, Col).
 
@@ -85,19 +85,13 @@ out(ORIGIN, Col, [Dt, $Count()]) :- plus_count.tally(Dt, Col, N), c.target(N).
 
 // --- fit ---
 
-.type Cell = [e: Example, p: Position]
-
 .comp Fit {
     .decl center_at(e: Example, p: Position)
     center_at(E, P) :- ex_in(E, P, Col), c.center(Col).
 
     // Every offset from a center cell to a cell of its own grid.
-    .init align = Reframe<Cell>
-    align.outer([E, P], P) :- center_at(E, P).
-    align.cell([E, P], P2) :- center_at(E, P), ex_in(E, P2, _).
-
     .decl cand(off: Shift)
-    cand(Off) :- align.inner(_, Off).
+    cand(Off) :- center_at(E, P), ex_in(E, P2, _), displacement(P, P2, Off).
 
     // Lands off the grid at some center — no color to compare there.
     .decl off_grid(off: Shift)

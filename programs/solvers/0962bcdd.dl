@@ -92,13 +92,9 @@ paint(P2, Col, $Ray()) :-
 
 // --- Lookup ---
 
-// The stamp box's margin at each marker: the marker minus the anchor.
-.init stamp = Reframe<Position>
-stamp.outer(P, C0) :- parse.marker($U(), P, _, _), c.center_pos(C0).
-stamp.cell(P, P) :- parse.marker($U(), P, _, _).
-
 paint(P_grid, Col, $Lookup()) :-
-    parse.marker($U(), C, Cc, Ca), stamp.inner(C, M),
+    parse.marker($U(), C, Cc, Ca),
+    c.center_pos(C0), displacement(C0, C, M),    // the stamp box's margin at the marker
     ( c.template_arm(T), Col = Ca                // arm-role cell
     ; c.template_center(T), Col = Cc ),          // center-role cell
     compose(T, M, P_grid),                       // embed the template cell

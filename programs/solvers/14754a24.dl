@@ -58,13 +58,11 @@ footprint(P, Q, $Plus()) :- in(P, _), dir_elem(D), neighbor(P, D, Q), in(Q, _).
 // $Shape — the stored cells, at every box seat that meets the frame. A
 // seat is found backward: each grid cell, viewed as each shape cell,
 // fixes the box it would sit in.
-.type QS = [q: Position, s: Position]
-.init seat = Reframe<QS>
-seat.outer([Q, S], S) :- in(Q, _), c.shape(S).
-seat.cell([Q, S], Q) :- in(Q, _), c.shape(S).
+.decl box_seat(m: Shift)
+box_seat(M) :- in(P, _), c.shape(S), displacement(S, P, M).
 
 footprint(M, Q, $Shape()) :-
-    seat.inner(_, M), c.shape(S),      // box seat, shape cell
+    box_seat(M), c.shape(S),           // box seat, shape cell
     compose(M, S, Q), in(Q, _).        // laid onto the frame
 
 // Held back by a footprint cell that is neither mark nor fill.

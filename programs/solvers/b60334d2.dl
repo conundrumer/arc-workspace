@@ -57,14 +57,10 @@ halo(P, Col, $Halo($Prop())) :-
     diag_dir_elem(Dg), neighbor(Q, Dg, P), in(P, _). // a corner neighbor, on-grid
 
 // --- Stamp ---
-// Template ink viewed from the seat cell.
-.init tview = Reframe<Color>
-tview.cell(Col, Pt)  :- c.template(Pt, Col).
-tview.outer(Col, Ps) :- tview.cell(Col, _), c.seat(Ps).
-
 halo(P, Col, $Stamp()) :-
-    marker_at(Q, _), tview.inner(Col, Off),     // template offsets by color
-    compose(Q, Off, P), in(P, _).               // seat on the marker, on-grid
+    marker_at(Q, _), c.template(Pt, Col),       // a marker, a template cell
+    c.seat(Ps), displacement(Ps, Pt, Off),      // the cell's offset from the seat
+    compose(Q, Off, P), in(P, _).               // seated on the marker, on-grid
 
 .decl impl_choice(ch: Choice)
 impl_choice($Stamp()).
@@ -75,8 +71,6 @@ out(P, Col, Ch) :- halo(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !halo(P, _, Ch), c.bg(Col).
 
 // --- fit ---
-
-.type Cell = [e: Example, p: Position]
 
 .comp Fit {
     .decl marker_at(e: Example, p: Position)
@@ -92,13 +86,10 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !halo(P, _, Ch), c.bg(Col).
     blob.node(E, P) :- painted(E, P, _).
     blob.node(E, P) :- marker_at(E, P).
 
-    // Painted cells as offsets from their marker.
-    .init off = Reframe<Cell>
-    off.cell([E, P], P)  :- painted(E, P, _).
-    off.outer([E, P], M) :- blob.label(E, P, Id), blob.label(E, M, Id), marker_at(E, M).
-
     .decl template(p: Position, col: Color)
     template(Pt, Col) :-
-        painted(E, P, Col), off.inner([E, P], Off),   // a painted cell's offset
-        c.seat(Ps), compose(Ps, Off, Pt).             // seated in the template frame
+        painted(E, P, Col),                                           // a painted cell
+        blob.label(E, P, Id), blob.label(E, M, Id), marker_at(E, M),  // the marker of its blob
+        displacement(M, P, Off),                                      // the cell's offset from it
+        c.seat(Ps), compose(Ps, Off, Pt).                             // seated in the template frame
 }

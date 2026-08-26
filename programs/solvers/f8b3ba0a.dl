@@ -114,12 +114,8 @@ out(P, Col, Ch) :- parse.minority_rank(Ch, Col, Rk), col.pos(Ch, Rk, P).
     .init span = Bbox<Example>
     span.cell(E, P) :- ink(E, P, _).
 
-    .init inset = Reframe<Example>
-    inset.outer(E, M)     :- span.margin(E, M).
-    inset.cell(E, ORIGIN) :- span.margin(E, _).
-
     .decl inset_delta(p: Inset)
-    inset_delta(Delta) :- inset.inner(_, Delta).
+    inset_delta(Delta) :- span.margin(_, M), displacement(M, ORIGIN, Delta).
 
     // Ink cells in the interior frame the lattice divides.
     .decl interior(e: Example, p: Position)

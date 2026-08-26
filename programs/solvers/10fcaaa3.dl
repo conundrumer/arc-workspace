@@ -60,12 +60,7 @@ stamp(Off, Col, $Corners()) :-
 
 // --- Table ---
 
-// The stored grid's ink, viewed from the seat cell.
-.init fview = Reframe<Color>
-fview.cell(Col, Pf)  :- c.footprint(Pf, Col).
-fview.outer(Col, Ps) :- fview.cell(Col, _), c.seat(Ps).
-
-stamp(Off, Col, $Table()) :- fview.inner(Col, Off).
+stamp(Off, Col, $Table()) :- c.footprint(Pf, Col), c.seat(Ps), displacement(Ps, Pf, Off).
 
 .decl impl_choice(ch: Choice)
 impl_choice($Corners()). impl_choice($Table()).
@@ -92,18 +87,14 @@ out(P, Col, Ch) :- parse.tiled($U(), P, Col), impl_choice(Ch), !halo(P, _, Ch).
         ex_out(E, P, Col), !c.bg(Col),
         parse.tiled(E, P, Cb), c.bg(Cb).
 
-    // Candidate footprint cells: the seat's frame, as offsets from the seat.
+    // Candidate footprint cells: the seat's frame.
     .init frame = Frame2D<Unit>
     frame.extent($U(), A, N) :- axis_elem(A), c.seat(Ps), axis_dim(Ps, A, N).
 
-    .init off = Reframe<Position>
-    off.cell(Pf, Pf)  :- frame.cell($U(), Pf).
-    off.outer(Pf, Ps) :- frame.cell($U(), Pf), c.seat(Ps).
-
-    // Each candidate's targets: its offset seated on every mark.
+    // Each candidate's targets: its offset from the seat, seated on every mark.
     .decl target(pf: Position, e: Example, p: Position)
     target(Pf, E, P) :-
-        off.inner(Pf, Off),
+        frame.cell($U(), Pf), c.seat(Ps), displacement(Ps, Pf, Off),
         parse.tiled(E, M, Cm), !c.bg(Cm),  // a mark of the arrangement
         compose(M, Off, P).
 

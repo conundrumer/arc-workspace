@@ -125,16 +125,10 @@ lit(Q, Col, $Banner(S)) :-
 
 // --- $Stamp ---
 
-// Template footprint viewed from its dot cell.
-.init tview = Reframe<Unit>
-tview.cell($U(), Pt)  :- c.template(Pt).
-tview.outer($U(), Ps) :- c.dot(Ps).
-
-// Stamp the template on each marker.
 lit(Q, Col, $Stamp()) :-
-    marker(P, Col),
-    tview.inner($U(), Off),          // dot offset
-    compose(P, Off, Q), in(Q, _).
+    marker(P, Col), c.template(Pt),         // a marker, a template cell
+    c.dot(Ps), displacement(Ps, Pt, Off),   // the cell's offset from the dot
+    compose(P, Off, Q), in(Q, _).           // seated on the marker, on-grid
 
 // --- Output ---
 
@@ -158,9 +152,9 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !lit(P, _, Ch), c.bg(Col).
     fmark([E, P], Col) :- ex_in(E, P, Col), !c.bg(Col), ex_out(E, _, _).
 
     // Each cell the pair paints in a marker's color, as an offset from it.
-    .init offset = Reframe<MarkKey>
-    offset.outer([E, P], P) :- fmark([E, P], _).
-    offset.cell([E, P], Q)  :- fmark([E, P], Col), ex_out(E, Q, Col).
+    .decl offset(k: MarkKey, delta: Shift)
+    offset([E, P], Delta) :-
+        fmark([E, P], Col), ex_out(E, Q, Col), displacement(P, Q, Delta).
 
     // An edge some marker sits off.
     .decl off_edge(d: Dir)
@@ -171,7 +165,7 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !lit(P, _, Ch), c.bg(Col).
 
     .decl radius(k: MarkKey, i: number, r: number)
     radius(Ky, I, R) :-
-        offset.inner(Ky, Delta),
+        offset(Ky, Delta),
         c.dir(E), dist(Delta, E, I),                                 // steps away from the marker edge
         side(E, Ds), opposite(Ds, Do), dist(Delta, Do, R), R >= 0.   // steps to a side
 
@@ -201,7 +195,7 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !lit(P, _, Ch), c.bg(Col).
 
     // The trail in the frame it spans, with the marker at the zero offset.
     .init tframe = BoxFrame<Unit>
-    tframe.cell($U(), Delta) :- offset.inner(_, Delta).
+    tframe.cell($U(), Delta) :- offset(_, Delta).
 
     .decl dot(p: Position)
     dot(P) :- tframe.inner($U(), ORIGIN, P).

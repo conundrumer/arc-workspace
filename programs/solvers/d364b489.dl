@@ -25,6 +25,10 @@
         0, 2, 0,
         7, 1, 6,
         0, 8, 0)
+
+    // The template's own marker cell — the one that lands on a marker.
+    .decl seat(p: Position)
+    seat(Ps) :- template(Ps, M), marker(M).
 }
 
 .init c = Consts
@@ -44,22 +48,16 @@ out(P, Col, $Arms()) :- arm_halo(P, Col).
 out(P, Col, $Arms()) :- in(P, Col), !arm_halo(P, _).
 
 // --- Stamp ---
-// Template ink viewed from the template's marker cell.
-.init tview = Reframe<Color>
-tview.cell(Col, Pt)  :- c.template(Pt, Col).
-tview.outer(Col, Pc) :- tview.cell(Col, _), c.template(Pc, M), c.marker(M).
-
 .decl stamp_halo(p: Position, col: Color)
 stamp_halo(P, Col) :-
-    marker_at(Q), tview.inner(Col, Off),        // template offsets by color
-    compose(Q, Off, P), in(P, _).               // seat on the marker, on-grid
+    marker_at(Q), c.template(Pt, Col),       // a marker, a template cell
+    c.seat(Ps), displacement(Ps, Pt, Off),   // the cell's offset from the seat
+    compose(Q, Off, P), in(P, _).            // seated on the marker, on-grid
 
 out(P, Col, $Stamp()) :- stamp_halo(P, Col).
 out(P, Col, $Stamp()) :- in(P, Col), !stamp_halo(P, _).
 
 // --- fit ---
-
-.type Cell = [e: Example, p: Position]
 
 .comp Fit {
     .decl marker_at(e: Example, p: Position)
@@ -78,12 +76,11 @@ out(P, Col, $Stamp()) :- in(P, Col), !stamp_halo(P, _).
     blob.node(E, P) :- painted(E, P, _).
 
     // Painted cells as offsets from their marker.
-    .init seat = Reframe<Cell>
-    seat.cell([E, P], P)  :- painted(E, P, _).
-    seat.outer([E, P], M) :- blob.label(E, P, Id), blob.label(E, M, Id), marker_at(E, M).
-
     .decl offset(off: Shift, col: Color)
-    offset(Off, Col) :- painted(E, P, Col), seat.inner([E, P], Off).
+    offset(Off, Col) :-
+        painted(E, P, Col),                                           // a painted cell
+        blob.label(E, P, Id), blob.label(E, M, Id), marker_at(E, M),  // the marker of its blob
+        displacement(M, P, Off).
 
     .decl arm(d: Dir, col: Color)
     arm(D, Col) :- offset(Off, Col), dir_elem(D), step_delta(D, Off).

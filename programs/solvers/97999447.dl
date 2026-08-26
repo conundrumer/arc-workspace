@@ -83,15 +83,11 @@ out(P, Col, $Mask()) :- in(P, Col), !ray_mask(_, P, _).
     .decl fmark(k: MarkKey, col: Color)
     fmark([E, P], Col) :- ex_in(E, P, Col), !c.bg(Col), ex_out(E, _, _).
 
-    // Each cell of an example as an offset from each of its dots.
-    .init offset = Reframe<MarkKey>
-    offset.outer([E, P], P) :- fmark([E, P], _).
-    offset.cell([E, P], Q)  :- fmark([E, P], _), ex_in(E, Q, _).
-
     // The color the pair paints i steps along a dot's ray.
     .decl ray_col(k: MarkKey, i: number, col: Color)
     ray_col([E, M], I, Col) :-
-        offset.inner([E, M], Delta),                        // cell relative to its dot
+        fmark([E, M], _), ex_in(E, Q, _),
+        displacement(M, Q, Delta),                          // a cell relative to its dot
         c.ray_dir(D), opposite(D, O), dist(Delta, O, I),    // steps toward ray_dir
         I >= 0, jump_delta(D, I, Delta),                    // straight along the ray
         compose(M, Delta, P), ex_out(E, P, Col).            // the painted cell

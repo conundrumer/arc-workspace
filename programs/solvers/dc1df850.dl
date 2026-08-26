@@ -25,6 +25,10 @@
         1, 1, 1,
         1, 2, 1,
         1, 1, 1)
+
+    // The template's own marker cell — the one that lands on a marker.
+    .decl seat(p: Position)
+    seat(Ps) :- template(Ps, M), marker(M).
 }
 
 .init c = Consts
@@ -40,14 +44,10 @@ halo(P, Col, $Grow()) :-
     dir8_elem(D), neighbor(M, D, P), in(P, _).
 
 // --- $Stamp ---
-// Template ink viewed from the template's marker cell.
-.init tview = Reframe<Color>
-tview.cell(Col, Pt)  :- c.template(Pt, Col).
-tview.outer(Col, Pm) :- tview.cell(Col, _), c.template(Pm, M), c.marker(M).
-
 halo(P, Col, $Stamp()) :-
-    marker_at(Q), tview.inner(Col, Off),    // template offsets by color
-    compose(Q, Off, P), in(P, _).           // seat on the marker, on-grid
+    marker_at(Q), c.template(Pt, Col),       // a marker, a template cell
+    c.seat(Ps), displacement(Ps, Pt, Off),   // the cell's offset from the seat
+    compose(Q, Off, P), in(P, _).            // seated on the marker, on-grid
 
 .decl impl_choice(ch: Choice)
 impl_choice($Grow()). impl_choice($Stamp()).
@@ -58,8 +58,6 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !halo(P, _, Ch).
 
 // --- fit ---
 
-.type Cell = [e: Example, p: Position]
-
 .comp Fit {
     .decl marker_at(e: Example, p: Position)
     marker_at(E, P) :- ex_in(E, P, Col), c.marker(Col).
@@ -68,22 +66,17 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !halo(P, _, Ch).
     .decl ambiguous(e: Example)
     ambiguous(E) :- marker_at(E, M), marker_at(E, M2), M != M2.
 
-    .decl lone(e: Example, p: Position)
-    lone(E, M) :- marker_at(E, M), !ambiguous(E).
-
-    .decl footprint(e: Example, m: Position, p: Position, col: Color)
-    footprint(E, M, M, Col) :- lone(E, M), ex_out(E, M, Col).
-    footprint(E, M, P, Col) :-
-        lone(E, M),
-        ex_in(E, P, Col_in), ex_out(E, P, Col), Col_in != Col.    // repainted
+    .decl footprint(m: Position, p: Position, col: Color)
+    footprint(M, P, Col) :-
+        marker_at(E, M), !ambiguous(E),              // the pair's lone marker
+        ex_out(E, P, Col),                           // an output cell
+        ( P = M                                      // the marker's own cell
+        ; ex_in(E, P, Col_in), Col_in != Col         // repainted
+        ).
 
     // Footprint cells as offsets from their marker.
-    .init seat = Reframe<Cell>
-    seat.cell([E, P], P)  :- footprint(E, _, P, _).
-    seat.outer([E, P], M) :- footprint(E, M, P, _).
-
     .decl offset(off: Shift, col: Color)
-    offset(Off, Col) :- footprint(E, _, P, Col), seat.inner([E, P], Off).
+    offset(Off, Col) :- footprint(M, P, Col), displacement(M, P, Off).
 
     .init frame = BoxFrame<Unit>
     frame.cell($U(), Off) :- offset(Off, _).

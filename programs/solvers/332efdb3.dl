@@ -125,10 +125,6 @@ out(P, Col, $Inset()) :-
     .init box = Bbox<Example>
     box.cell(E, P) :- ex_out(E, P, Col), c.dot(Col).
 
-    .init inset = Reframe<Example>
-    inset.outer(E, M)     :- box.margin(E, M).
-    inset.cell(E, ORIGIN) :- box.margin(E, _).
-
     .decl inset_delta(p: Inset)
-    inset_delta(Delta) :- inset.inner(_, Delta).
+    inset_delta(Delta) :- box.margin(_, M), displacement(M, ORIGIN, Delta).
 }

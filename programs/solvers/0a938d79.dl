@@ -64,9 +64,8 @@ lead(P_line, $Margin()) :-
     K < K2, K < K2_opp.                                  // the empty strip at that side is the narrower
 
 // One step of the walk: the lead line to the other one.
-.init step = Reframe<Choice>
-step.outer(Ch, P) :- lead(P, Ch).
-step.cell(Ch, Q) :- lead(P, Ch), mark_line(Q, _), Q != P.
+.decl step(ch: Choice, delta: Shift)
+step(Ch, Delta) :- lead(P, Ch), mark_line(Q, _), Q != P, displacement(P, Q, Delta).
 
 // Each mark color paired with the other one.
 .decl other_col(col: Color, col2: Color)
@@ -78,7 +77,7 @@ impl_choice($Corner()). impl_choice($Margin()).
 .decl line(p: Position, col: Color, ch: Choice)
 line(P_line, Col, Ch) :- mark_line(P_line, Col), impl_choice(Ch).
 line(P2, Col2, Ch) :-
-    line(P, Col, Ch), step.inner(Ch, Delta),    // one step along the repetition
+    line(P, Col, Ch), step(Ch, Delta),          // one step along the repetition
     compose(P, Delta, P2), cell_line(_, P2),    // still a line of the grid
     other_col(Col, Col2).                       // the colors alternate
 

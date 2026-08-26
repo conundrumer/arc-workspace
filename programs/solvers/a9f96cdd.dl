@@ -42,14 +42,10 @@ halo(P, Col, $Arms()) :-
     neighbor(Q, Diag, P), in(P, _).      // on-grid
 
 // --- Stamp ---
-// Template ink viewed from the seat cell.
-.init tview = Reframe<Color>
-tview.cell(Col, Pt)  :- c.template(Pt, Col).
-tview.outer(Col, Ps) :- tview.cell(Col, _), c.seat(Ps).
-
 halo(P, Col, $Stamp()) :-
-    marker_at(Q), tview.inner(Col, Off),        // template offsets by color
-    compose(Q, Off, P), in(P, _).               // seat on the marker, on-grid
+    marker_at(Q), c.template(Pt, Col),          // a marker, a template cell
+    c.seat(Ps), displacement(Ps, Pt, Off),      // the cell's offset from the seat
+    compose(Q, Off, P), in(P, _).               // seated on the marker, on-grid
 
 .decl impl_choice(ch: Choice)
 impl_choice($Arms()). impl_choice($Stamp()).
@@ -60,20 +56,13 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !halo(P, _, Ch), c.bg(Col).
 
 // --- fit ---
 
-.type Cell = [e: Example, p: Position]
-
 .comp Fit {
-    // What the stamp writes: every output ink cell.
-    .decl painted(e: Example, p: Position, col: Color)
-    painted(E, P, Col) :- ex_out(E, P, Col), !c.bg(Col).
-
-    // Painted cells as offsets from their example's marker.
-    .init off = Reframe<Cell>
-    off.cell([E, P], P)  :- painted(E, P, _).
-    off.outer([E, P], M) :- painted(E, P, _), ex_in(E, M, Col), c.marker(Col).
-
+    // What the stamp writes — every output ink cell — as an offset from its
+    // example's marker.
     .decl offset(off: Shift, col: Color)
-    offset(Off, Col) :- painted(E, P, Col), off.inner([E, P], Off).
+    offset(Off, Col) :-
+        ex_out(E, P, Col), !c.bg(Col),
+        ex_in(E, M, Cm), c.marker(Cm), displacement(M, P, Off).
 
     .decl arm(d: DiagDir, col: Color)
     arm(Diag, Col) :- offset(Off, Col), diag_dir_elem(Diag), step_delta(Diag, Off).

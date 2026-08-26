@@ -12,7 +12,6 @@
 #include "../lib.dl"
 
 .type Choice = Frame {} | Object {}
-.type KP = [a: Position, p: Position]
 
 .comp Consts {
     .init helpers = ConstsHelpers
@@ -35,10 +34,9 @@
 .decl mark(p: Position)
 mark(A) :- in(A, Col), c.key(Col).
 
-// Every cell viewed from every mark: inner([a, p]) = p - a.
-.init rel = Reframe<KP>
-rel.outer([A, P], A) :- mark(A), in(P, _).
-rel.cell([A, P], P)  :- mark(A), in(P, _).
+// Every cell measured from every mark.
+.decl offset(a: Position, p: Position, d: Shift)
+offset(A, P, D) :- mark(A), in(P, _), displacement(A, P, D).
 
 .decl out(p: Position, col: Color, ch: Choice)
 
@@ -46,7 +44,7 @@ rel.cell([A, P], P)  :- mark(A), in(P, _).
 
 .decl paint(p: Position, col: Color)
 paint(P_out, Col) :-
-    rel.inner([A, P], D), in(P, Col), !c.bg(Col),    // offset of an ink cell
+    offset(A, P, D), in(P, Col), !c.bg(Col),         // offset of an ink cell
     c.anchor(Anc), compose(Anc, D, P_out),           // anchor-relative render
     c.frame(P_out).                                  // within the stamp
 
@@ -63,12 +61,12 @@ comp8.node($U(), P) :- in(P, Col), !c.bg(Col).
 obj_off(D, Col) :-
     mark(A), comp8.label($U(), A, Id),
     in(P, Col), comp8.label($U(), P, Id),    // cell in the mark's object
-    rel.inner([A, P], D).
+    offset(A, P, D).
 
 // All mark-cell offsets as the dense grid.
 .init oframe = BoxFrame<Unit>
 oframe.cell($U(), D) :- obj_off(D, _).
-oframe.grid($U(), D) :- rel.inner([_, _], D).
+oframe.grid($U(), D) :- offset(_, _, D).
 
 out(P_out, Col, $Object()) :- obj_off(D, Col), oframe.inner($U(), D, P_out).
 out(P_out, Bg, $Object())  :- oframe.inner($U(), D, P_out), !obj_off(D, _), c.bg(Bg).

@@ -73,13 +73,9 @@ painted(P, Col, $Ray()) :-
     K != 0, K <= R.                                    // within reach, not the mark
 
 // --- $Lookup ---
-// The mask box's margin at each mark: the mark minus the seat.
-.init stamp = Reframe<Position>
-stamp.outer(P, C0) :- in(P, M), c.paint(M, _), c.center_pos(C0).
-stamp.cell(P, P) :- in(P, M), c.paint(M, _).
-
 painted(P_grid, Col, $Lookup()) :-
-    in(P, M), c.paint(M, Col), stamp.inner(P, Mg),   // a mark and its stamp margin
+    in(P, M), c.paint(M, Col),                       // a mark
+    c.center_pos(C0), displacement(C0, P, Mg),       // the mask box's margin there
     c.template(M, T), compose(T, Mg, P_grid),        // embed the mask cell
     in(P_grid, _).                                   // clip to the grid
 
