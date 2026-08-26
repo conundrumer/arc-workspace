@@ -94,6 +94,8 @@ A new primitive qualifies for `programs/lib.dl` through real use, not by looking
 3. On agreement, stage it: wrap the solver-local version in a task-local `.comp` named for the primitive, and write the addition proposal to `docs/wf-solver/proposals.md`. `stage` refers to this step and always includes the comp form.
 4. On approval, move to `programs/lib.dl`. Update callers.
 
+The same gates cover changes to what already stands: an edit to an existing `lib.dl` primitive, or to a term's definition in `concepts.md`, starts at step 2 and lands only on approval.
+
 Task-local comps are a staging form that lives only while the proposal is open.
 
 On veto, rewrite any task-local comp into plain body relations, and remove the primitive's proposals.md entry.
