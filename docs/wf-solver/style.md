@@ -98,7 +98,7 @@ Cases are grouped under `// --- <name> ---` markers in both Consts and body — 
 
 ## Types
 
-A solver defines types only for model coverage (`Choice` and the ADTs its cases carry) and for comp instantiation (records that fill a generic comp's type params).
+A solver defines only two kinds of types: ADTs inside `Choice` (the type itself, a factor, or a constructor field), and records that fill a generic comp's type params.
 
 ## Body
 
