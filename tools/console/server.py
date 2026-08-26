@@ -59,6 +59,7 @@ SOLVERS = ROOT / "programs" / "solvers"
 LIB = ROOT / "programs" / "lib.dl"
 DOCS = ROOT / "docs" / "wf-solver"
 TASKS = ROOT / "data" / "tasks"
+SKILL_MD = ROOT / ".claude" / "skills" / "session" / "SKILL.md"
 REF_DIR = (ROOT.parent / "arc-synth-bun").resolve()
 
 FAKE = os.environ.get("CONSOLE_FAKE") == "1"
@@ -98,6 +99,10 @@ WORKER_FLAGS = [
     # The claude.ai connectors are unauthenticated here and cost nothing while
     # they stay deferred. This holds them out whatever the deferral does.
     "--strict-mcp-config",
+    # Permission prompts come to the console over the same pipe as the stream,
+    # where answer_permission settles them. Without this the CLI has no one to
+    # ask and refuses on its own.
+    "--permission-prompt-tool", "stdio",
 ]
 # What those flags leave loaded. A release that adds a tool lands it in the
 # worker's context, and a denylist cannot know its name, so the init event is
@@ -459,11 +464,12 @@ def file_hash(p: Path) -> str:
 
 
 def watched_paths(item_id: str) -> dict[str, Path]:
-    """The shared files a pass has no business editing, by repo-relative
-    name: the lib, the docs, and the task's own data. Hashed at launch and
-    checked at landing, so a write that bypasses the edit tools (a Bash
-    heredoc, a script) still surfaces."""
+    """The files a pass shares with every other pass, by repo-relative name:
+    the lib, the docs, the session skill, and the task's own data. Hashed at
+    launch and checked at landing, so a write that bypasses the edit tools (a
+    Bash heredoc, a script) still surfaces."""
     paths = {"programs/lib.dl": LIB,
+             str(SKILL_MD.relative_to(ROOT)): SKILL_MD,
              f"data/tasks/{item_id}.json": TASKS / f"{item_id}.json"}
     for p in sorted(DOCS.glob("*.md")):
         paths[f"docs/wf-solver/{p.name}"] = p
@@ -733,7 +739,7 @@ def title_of(item_id: str) -> str:
 
 def skill_body() -> str:
     """SKILL.md minus frontmatter and <!-- batch:skip --> regions."""
-    text = (ROOT / ".claude" / "skills" / "session" / "SKILL.md").read_text()
+    text = SKILL_MD.read_text()
     text = re.sub(r"\A---\n.*?\n---\n", "", text, flags=re.S)
     text = re.sub(r"<!-- batch:skip -->.*?<!-- /batch:skip -->\n?", "", text, flags=re.S)
     return text.strip()
@@ -1203,6 +1209,50 @@ def launch(it: dict, message: str, phase: str, trigger: str | None = None,
         "message": {"role": "user", "content": message}})
 
 
+def permission_decision(req: dict) -> dict:
+    """The console's answer to one permission request. A worker may edit the
+    skill it runs on, which the CLI holds back as a file of its own. Every
+    other request keeps the refusal the CLI already reached."""
+    if req.get("tool_name") in ("Edit", "Write"):
+        try:
+            asked = Path((req.get("input") or {}).get("file_path") or "").resolve()
+        except OSError:
+            asked = None
+        if asked is not None and asked == SKILL_MD.resolve():
+            return {"behavior": "allow", "updatedInput": req.get("input") or {}}
+    return {"behavior": "deny",
+            "message": req.get("decision_reason") or "not permitted"}
+
+
+def answer_permission(worker: dict, it: dict | None, ev: dict, phase: str) -> None:
+    """Settle a control request the worker's CLI raised. One left unanswered
+    holds the turn open until the process dies, so every path here writes a
+    response first and reports to the feed afterwards."""
+    req = ev.get("request") or {}
+    request_id = ev.get("request_id")
+    if req.get("subtype") != "can_use_tool":
+        worker["outbound"].put_nowait({"type": "control_response", "response": {
+            "subtype": "error", "request_id": request_id,
+            "error": f"unsupported control request: {req.get('subtype')}"}})
+        return
+    try:
+        decision = permission_decision(req)
+    except Exception as exc:  # an unanswered request costs more than a refusal
+        decision = {"behavior": "deny", "message": f"console error: {exc!r}"}
+    worker["outbound"].put_nowait({"type": "control_response", "response": {
+        "subtype": "success", "request_id": request_id,
+        "response": {**decision, "toolUseID": req.get("tool_use_id")}}})
+    if it:
+        target = (req.get("input") or {}).get("file_path") or ""
+        try:
+            target = str(Path(target).relative_to(ROOT))
+        except ValueError:
+            pass
+        verb = "allowed" if decision["behavior"] == "allow" else "denied"
+        say(it, event(f"permission {verb}: "
+                      f"{req.get('tool_name') or '?'} {target}".rstrip()), sess=phase)
+
+
 def worker_cmd(it: dict, phase: str) -> list[str]:
     if FAKE:
         return [sys.executable, str(HERE / "fake_worker.py"), it["id"], phase]
@@ -1332,7 +1382,9 @@ def handle_event(worker: dict, ev: dict, first_response) -> None:
     with LOCK:
         it = find(item_id)
         kind = ev.get("type")
-        if kind == "system" and ev.get("subtype") == "init":
+        if kind == "control_request":
+            answer_permission(worker, it, ev, phase)
+        elif kind == "system" and ev.get("subtype") == "init":
             if it and not worker["session_seen"]:
                 it["sessions"][phase] = ev.get("session_id") or it["sessions"].get(phase)
                 worker["session_seen"] = True
