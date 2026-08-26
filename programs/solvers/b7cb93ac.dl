@@ -2,10 +2,9 @@
 // concept: objects pack
 // Scattered colored pieces assemble into a rectangle. A piece is a connected
 // same-colored region; it turns but never reflects, and the largest piece —
-// the anchor — keeps the pose the input shows. Placement runs in two stages:
-// the anchor goes where every other piece still fits, then each remaining
-// piece goes where every piece still fits beside it. Each cell takes the
-// color of the piece placed over it.
+// the anchor — keeps the pose the input shows. A placement stands while
+// every piece still finds room beside it. Each cell takes the color of
+// the piece placed over it.
 //
 // Congruent pieces of distinct colors are interchangeable: each valid
 // assignment of pieces to spots is a resolution, and out carries one grid
@@ -60,17 +59,16 @@ anchor(Pc) :- largest.high($U(), Pc, _).
 turned.src(Pc, S, $U()) :- anchor(Pc), shape(Pc, S).
 turned.dst(Pc, S, $U()) :- anchor(Pc), shape(Pc, S).
 
-// A piece's footprints: every rotation — except the anchor, which keeps the
-// pose the input shows.
+// A piece's footprints. A turn that fixes the anchor's footprint reproduces
+// it, so the anchor's branch keeps the pose the input shows.
 .type Turn = [pc: Piece, d: D4]
 
 .decl foot(t: Turn, p: Position)
 foot([Pc, D], S2) :-
-    piece(Pc), !anchor(Pc),                      // a turning piece
-    c4_elem(D), shape(Pc, S), apply(D, S, S2).   // in each rotation
-foot([Pc, D], S) :-
-    anchor(Pc), shape(Pc, S),
-    c4_elem(D), turned.map(Pc, D).               // turns that fix it — its own pose
+    piece(Pc), c4_elem(D), shape(Pc, S), apply(D, S, S2),
+    ( !anchor(Pc)          // a turning piece — every rotation
+    ; turned.map(Pc, D)    // the anchor — only the turns that fix its pose
+    ).
 
 .init rect = Frame2D<Unit>
 rect.extent($U(), A, N) :- c.rect_dim(A, N).
@@ -83,68 +81,14 @@ occ.cell(T, P, $U()) :- foot(T, _), rect.cell($U(), P).
 // its box sits at.
 .type Cand = [t: Turn, b: Position]
 
-.decl cand(cd: Cand, pc: Piece)
-cand([[Pc, D], B], Pc) :- occ.occurrence([Pc, D], B).
-
 .decl covers(cd: Cand, p: Position)
 covers([T, B], P) :- occ.occurrence(T, B), foot(T, S), compose(B, S, P).
 
-.decl overlap(cd: Cand, cd2: Cand)
-overlap(Cd, Cd2) :- covers(Cd, P), covers(Cd2, P).
+// --- the pruning ---
 
-// --- stage 1: the anchor ---
-
-.decl a_cand(cd: Cand)
-a_cand(Cd) :- cand(Cd, Pc), anchor(Pc).
-
-// A fit of piece pc2 beside anchor candidate cd.
-.decl beside(cd: Cand, cd2: Cand, pc2: Piece)
-beside(Cd, Cd2, Pc2) :- a_cand(Cd), cand(Cd2, Pc2), !anchor(Pc2), !overlap(Cd, Cd2).
-
-.decl fit_two(cd: Cand, pc2: Piece, pc3: Piece)
-fit_two(Cd, Pc2, Pc3) :- beside(Cd, C2, Pc2), beside(Cd, C3, Pc3), !overlap(C2, C3).
-
-// Dead: some piece no longer fits — nowhere at all, or some two pieces with
-// no disjoint pair of fits.
-.decl a_dead(cd: Cand)
-a_dead(Cd) :-
-    a_cand(Cd), piece(Pc2), !anchor(Pc2),
-    ( !beside(Cd, _, Pc2)                                          // fits nowhere
-    ; piece(Pc3), Pc2 != Pc3, !anchor(Pc3), !fit_two(Cd, Pc2, Pc3) // no disjoint pair
-    ).
-
-.decl a_place(cd: Cand)
-a_place(Cd) :- a_cand(Cd), !a_dead(Cd).
-
-// --- stage 2: the rest ---
-
-// Candidates in the space the anchor leaves open.
-.decl clash(cd: Cand)
-clash(Cd) :- covers(Cd, P), a_place(Cd2), covers(Cd2, P).
-
-.decl open_cand(cd: Cand, pc: Piece)
-open_cand(Cd, Pc) :- cand(Cd, Pc), !anchor(Pc), !clash(Cd).
-
-// A fit of another piece beside open candidate cd.
-.decl open_beside(cd: Cand, cd2: Cand, pc2: Piece)
-open_beside(Cd, Cd2, Pc2) :-
-    open_cand(Cd, Pc), open_cand(Cd2, Pc2), Pc != Pc2, !overlap(Cd, Cd2).
-
-.decl open_fit_two(cd: Cand, pc2: Piece, pc3: Piece)
-open_fit_two(Cd, Pc2, Pc3) :-
-    open_beside(Cd, C2, Pc2), open_beside(Cd, C3, Pc3), !overlap(C2, C3).
-
-.decl dead(cd: Cand)
-dead(Cd) :-
-    open_cand(Cd, Pc), piece(Pc2), Pc2 != Pc, !anchor(Pc2),
-    ( !open_beside(Cd, _, Pc2)                                     // fits nowhere
-    ; piece(Pc3), Pc2 != Pc3, Pc3 != Pc, !anchor(Pc3),             // no disjoint pair
-      !open_fit_two(Cd, Pc2, Pc3)
-    ).
-
-.decl placed(cd: Cand, pc: Piece)
-placed(Cd, Pc) :- a_place(Cd), cand(Cd, Pc).
-placed(Cd, Pc) :- open_cand(Cd, Pc), !dead(Cd).
+.init pruning = PlacementPruning<Unit, Cand, Piece>
+pruning.cand($U(), [[Pc, D], B], Pc) :- occ.occurrence([Pc, D], B).
+pruning.conflict($U(), Cd, Cd2) :- covers(Cd, P), covers(Cd2, P).
 
 // --- the resolutions ---
 
@@ -152,9 +96,9 @@ placed(Cd, Pc) :- open_cand(Cd, Pc), !dead(Cd).
     End {} | Sit {b: Position, pc: Piece, rest: TiebreakResolution}
 
 .init ties = TiebreakResolutions<Unit, Position, Piece>
-ties.cand($U(), B, Pc) :- placed([_, B], Pc).
+ties.cand($U(), B, Pc) :- pruning.alive($U(), [_, B], Pc).
 
 .decl out(p: Position, col: Color, res: TiebreakResolution)
 out(P, Col, R) :-
-    ties.assign($U(), R, B, [Col, Id]),           // this resolution's seat
-    placed([T, B], [Col, Id]), covers([T, B], P).  // the seated piece's cells
+    ties.assign($U(), R, B, [Col, Id]),                         // this resolution's seat
+    pruning.alive($U(), [T, B], [Col, Id]), covers([T, B], P).  // the seated piece's cells

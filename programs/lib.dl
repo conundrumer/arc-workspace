@@ -1315,6 +1315,85 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     ruled_out(Ky, B) :- forced(Ky, B2), covers(Ky, B2, P), covers(Ky, B, P), B != B2.
 }
 
+// The candidates a joint placement of the pieces may still hold, by
+// refutation — the dual of CoverForcing's elimination, for sites where
+// elimination cannot start. A candidate dies when some piece has no candidate beside
+// it — none conflict-free and itself alive — or some pair of pieces has no
+// conflict-free pair beside it, so a kill can expose the next; dead is the
+// fixpoint. Each rule's universal ("every candidate of the piece is
+// blocked") would negate alive inside the recursion, so it walks the
+// piece's candidates in an arbitrary stable ord order instead, the pair
+// rule as an inner walk nested in an outer one. alive over-approximates:
+// every joint placement's candidates survive, and a caller painting from
+// the survivors fails on cells where leftover rivals disagree — never wrongly.
+// A piece takes at most one candidate: every test picks one per piece.
+.comp PlacementPruning<Key, Cand, Piece> {
+    // The candidate placements of each piece.
+    .decl cand(key: Key, c: Cand, o: Piece)  // input
+
+    // Two candidates no joint placement holds together.
+    .decl conflict(key: Key, c: Cand, c2: Cand)  // input
+
+    .decl _piece(key: Key, o: Piece)
+    _piece(K, O) :- cand(K, _, O).
+
+    // Each piece's candidates, chained in ord order.
+    .decl _after(key: Key, o: Piece, c: Cand, c2: Cand)
+    _after(K, O, C1, C2) :-
+        cand(K, C1, O), cand(K, C2, O), ord(C1) < ord(C2),
+        M = min ord(C3) : { cand(K, C3, O), ord(C3) > ord(C1) }, ord(C2) = M.
+
+    .decl _head(key: Key, o: Piece, c: Cand)
+    _head(K, O, C) :- cand(K, C, O), !_after(K, O, _, C).
+
+    .decl _tail(key: Key, o: Piece, c: Cand)
+    _tail(K, O, C) :- cand(K, C, O), !_after(K, O, C, _).
+
+    // Piece o2 blocked beside c: every candidate of o2 so far conflicts
+    // with c or is dead.
+    .decl _blocked(key: Key, c: Cand, o2: Piece, c2: Cand)
+    _blocked(K, Cd, O2, C2) :-
+        cand(K, Cd, O), _piece(K, O2), O2 != O, _head(K, O2, C2),
+        ( conflict(K, Cd, C2) ; dead(K, C2) ).
+    _blocked(K, Cd, O2, C2) :-
+        _blocked(K, Cd, O2, C1), _after(K, O2, C1, C2),
+        ( conflict(K, Cd, C2) ; dead(K, C2) ).
+
+    // The inner walk: c2 of o2 placed beside c, and every candidate of o3
+    // so far cannot join them — it conflicts with c or c2, or is dead.
+    .decl _pair_blocked(key: Key, c: Cand, c2: Cand, o3: Piece, c3: Cand)
+    _pair_blocked(K, Cd, C2, O3, C3) :-
+        cand(K, Cd, O), cand(K, C2, O2), O2 != O, !conflict(K, Cd, C2),
+        _piece(K, O3), O3 != O, ord(O2) < ord(O3),
+        _head(K, O3, C3),
+        ( conflict(K, Cd, C3) ; conflict(K, C2, C3) ; dead(K, C3) ).
+    _pair_blocked(K, Cd, C2, O3, C3) :-
+        _pair_blocked(K, Cd, C2, O3, C1), _after(K, O3, C1, C3),
+        ( conflict(K, Cd, C3) ; conflict(K, C2, C3) ; dead(K, C3) ).
+
+    // c2 settled for the (piece of c2, o3) pair test beside c: bad in
+    // itself, or its inner walk completes.
+    .decl _settled(key: Key, c: Cand, o3: Piece, c2: Cand)
+    _settled(K, Cd, O3, C2) :-
+        cand(K, Cd, O), cand(K, C2, O2), O2 != O,
+        _piece(K, O3), O3 != O, ord(O2) < ord(O3),
+        ( conflict(K, Cd, C2) ; dead(K, C2) ).
+    _settled(K, Cd, O3, C2) :- _pair_blocked(K, Cd, C2, O3, C3), _tail(K, O3, C3).
+
+    // The outer walk: every candidate of c2's piece so far is settled.
+    .decl _pair_walk(key: Key, c: Cand, o3: Piece, c2: Cand)
+    _pair_walk(K, Cd, O3, C2) :- _head(K, _, C2), _settled(K, Cd, O3, C2).
+    _pair_walk(K, Cd, O3, C2) :-
+        _pair_walk(K, Cd, O3, C1), _after(K, _, C1, C2), _settled(K, Cd, O3, C2).
+
+    .decl dead(key: Key, c: Cand)
+    dead(K, Cd) :- _blocked(K, Cd, O2, C2), _tail(K, O2, C2).
+    dead(K, Cd) :- _pair_walk(K, Cd, O3, C2), _tail(K, _, C2).
+
+    .decl alive(key: Key, c: Cand, o: Piece)
+    alive(K, Cd, O) :- cand(K, Cd, O), !dead(K, Cd).
+}
+
 // The resolutions of a tiebreak: every injective assignment of candidate
 // items to slots, one term per assignment, backing a TiebreakResolution out
 // column (style: alt outputs). Branch names are program-global, so the
