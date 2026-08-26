@@ -1,5 +1,5 @@
 // 12997ef3
-// concept: markers, crop, tile-arrangement, rank, stamp, mapping
+// concept: markers crop tile-arrangement rank stamp mapping
 // A stencil shape in one color sits on a blank grid beside a line of
 // single-cell markers. The output lays out one tile per marker along the
 // marker line's axis, in marker order; each tile is the stencil's bounding

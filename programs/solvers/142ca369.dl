@@ -1,5 +1,5 @@
 // 142ca369
-// concept: markers, walk, lookup
+// concept: markers walk lookup
 
 // Markers launch diagonal rays that paint the empty cells they cross. Every
 // other colored cell is a wall: where one lies beside the ray's cell on an

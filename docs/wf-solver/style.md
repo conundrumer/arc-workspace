@@ -29,7 +29,7 @@ When a decomposition's inner coordinate is also the output cell, name it by the 
 - One file per task (`<task_id>.dl`); multi-impl cases live in the same file, distinguished by an ADT `Choice` column on `out`.
 - First line: `// <task_id>`.
 - Second line, exactly one of:
-    - `// concept: <terms>` — family representative. Terms from `concepts.md`, the union over cases: setup terms plus each case's prior term.
+    - `// concept: <terms>` — family representative. Terms from `concepts.md`, separated by spaces, the union over cases: setup terms plus each case's prior term.
     - `// family: <task_id>` — family sibling: same body and Fit comp, fills differ. Points at the representative, the family's first-solved member. A sibling's header keeps only task-specific content.
 - `#include "../lib.dl"` at top.
 - `.comp Consts { ... }` declares task-wide data; `.init c = Consts` exposes it as `c.<rel>`.

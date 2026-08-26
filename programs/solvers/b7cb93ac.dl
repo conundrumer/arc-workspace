@@ -1,5 +1,5 @@
 // b7cb93ac
-// concept: objects, pack
+// concept: objects pack
 // Scattered colored pieces assemble into a rectangle. A piece is a connected
 // same-colored region; it turns but never reflects, and the largest piece —
 // the anchor — keeps the pose the input shows. Placement runs in two stages:

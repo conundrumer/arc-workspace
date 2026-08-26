@@ -1,5 +1,5 @@
 // 681b3aeb
-// concept: objects, pack
+// concept: objects pack
 // The input scatters colored shapes. They translate into a square that they
 // pack exactly one way, and every cell takes the color of the shape covering
 // it.
