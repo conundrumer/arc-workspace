@@ -365,9 +365,13 @@ def bump() -> None:
 
 
 def save() -> None:
-    tmp = STATE_FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps(STATE, indent=1))
-    tmp.replace(STATE_FILE)
+    """Publish the state under the lock it is mutated under. Two savers share
+    the one temp file, so the second to write it leaves the first with nothing
+    to rename, and either can serialize a dict the other is still changing."""
+    with LOCK:
+        tmp = STATE_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(STATE, indent=1))
+        tmp.replace(STATE_FILE)
     # ref_note.py reads this: the ids ratified ahead of their commit
     text = "".join(it["id"] + "\n" for it in STATE["items"]
                    if it["state"] == APPROVED)

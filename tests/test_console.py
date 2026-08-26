@@ -3161,3 +3161,36 @@ def test_a_started_finalize_pass_lands_for_review(srv, monkeypatch):
     assert it["state"] == srv.NEEDS_REVIEW
     assert srv.fabled(srv.ledger_rows()) == {"aaa"}
     assert srv.backlog_view() == []
+
+
+def test_concurrent_saves_publish_one_whole_state(srv):
+    item(srv, "a", srv.NEEDS_REVIEW)
+    stop = threading.Event()
+    errors = []
+
+    def churn():
+        n = 0
+        while not stop.is_set():
+            n += 1
+            with srv.LOCK:
+                srv.STATE["items"][0]["rev"] = n
+            time.sleep(.001)
+
+    def saver():
+        try:
+            for _ in range(30):
+                srv.save()
+        except Exception as exc:      # a lost temp file, or a dict that moved
+            errors.append(exc)
+
+    writer = threading.Thread(target=churn, daemon=True)
+    writer.start()
+    savers = [threading.Thread(target=saver) for _ in range(4)]
+    for thread in savers:
+        thread.start()
+    for thread in savers:
+        thread.join(timeout=10)
+    stop.set()
+    writer.join(timeout=2)
+    assert errors == []
+    assert json.loads(srv.STATE_FILE.read_text())["items"][0]["id"] == "a"
