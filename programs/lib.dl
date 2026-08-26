@@ -1270,7 +1270,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 // never wrongly. Forced pieces not ruled out are pairwise disjoint, so
 // covering every cell witnesses a partition. With a single footprint it
 // forces exactly the greedy reading-order peel.
-.comp Packing<Key, Piece> {
+.comp CoverForcing<Key, Piece> {
     // The candidate pieces and the cells each covers.
     .decl covers(key: Key, piece: Piece, p: Position)  // input
 

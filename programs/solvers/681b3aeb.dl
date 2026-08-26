@@ -40,8 +40,8 @@ covers([Col, B], P) :-
 
 // --- the forced packing ---
 
-.init pack = Packing<Unit, Piece>
-pack.covers($U(), Pc, P) :- covers(Pc, P).
+.init forcing = CoverForcing<Unit, Piece>
+forcing.covers($U(), Pc, P) :- covers(Pc, P).
 
 .decl out(p: Position, col: Color)
-out(P, Col) :- pack.forced($U(), [Col, B]), covers([Col, B], P).
+out(P, Col) :- forcing.forced($U(), [Col, B]), covers([Col, B], P).

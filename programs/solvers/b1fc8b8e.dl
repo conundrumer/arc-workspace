@@ -137,14 +137,14 @@ class(Id, $Shape()) :- parse.ink_at($U(), _), !parse.uncovered($U()), c.covered_
 // The placements are the rival pieces of an exact cover of the ink. With one
 // footprint the forced pieces are the reading-order peel, and the peel reaches
 // a partition whenever the ink has one.
-.init pack = Packing<Unit, Position>
-pack.covers($U(), B, P) :- parse.covers($U(), B, P).
+.init forcing = CoverForcing<Unit, Position>
+forcing.covers($U(), B, P) :- parse.covers($U(), B, P).
 
 // A cell of a surviving piece. Forced pieces that are not ruled out are
 // pairwise disjoint, so they are a partition of what they cover.
 .decl packed(p: Position)
 packed(P) :-
-    pack.forced($U(), B), !pack.ruled_out($U(), B),  // a surviving piece
+    forcing.forced($U(), B), !forcing.ruled_out($U(), B),  // a surviving piece
     parse.covers($U(), B, P).                        // and its cells
 
 // The ink cells the packing leaves over — the defect the universal negates.

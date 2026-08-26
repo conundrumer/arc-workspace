@@ -42,13 +42,13 @@ covers(B, P) :- occ.occurrence(K, B), occ.shape(K, S, $U()), compose(B, S, P).
 
 // --- the forced packing ---
 
-.init pack = Packing<Unit, Position>
-pack.covers($U(), B, P) :- covers(B, P).
+.init forcing = CoverForcing<Unit, Position>
+forcing.covers($U(), B, P) :- covers(B, P).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- in(P, Col), c.bg(Col).
 out(P, Col) :-
-    pack.forced($U(), B), covers(B, P),                  // a cell of a forced piece
+    forcing.forced($U(), B), covers(B, P),                  // a cell of a forced piece
     occ.occurrence([Id, _], B), c.piece_color(Id, Col).  // in its piece's color
 
 // --- fit ---
