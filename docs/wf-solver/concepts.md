@@ -38,6 +38,7 @@ The transformation claim: which prior the task teaches. Rival cases of one file 
 - `rank` — an order or rank determines placement or color
 - `repair` — damaged cells restore from symmetric counterparts
 - `classify` — the input maps to a class; the output renders the class
+- `induce` — the input demonstrates its own rule, varying per input; the body fits it before applying it
 - `move` — content translates, stacks, or shears within the frame
 - `pack` — pieces jointly fill a region exactly
 - `stamp` — a footprint stamps at qualifying positions
