@@ -17,3 +17,4 @@ docs/_session_*.md
 scripts/.queue-cache
 
 tools/console/state/
+.scratch

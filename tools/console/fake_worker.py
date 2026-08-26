@@ -10,6 +10,8 @@ import uuid
 from collections import deque
 
 tid = sys.argv[1]
+# Any stage name the chain carries; `create` runs the creation script and
+# every other name runs the refining one.
 phase = sys.argv[2] if len(sys.argv) > 2 else "refine"
 sid = str(uuid.uuid5(uuid.NAMESPACE_URL, f"fake-worker/{tid}/{phase}"))
 pending = deque()
@@ -44,7 +46,7 @@ def tool(name, **inp):
                       "content": [{"type": "tool_use", "name": name, "input": inp}]}})
 
 
-def result(text, reason="completed"):
+def result(text, reason="completed", status=None):
     if reason == "completed":
         usage = usage_for()
         emit({"type": "assistant", "message": {"id": f"msg-{reqno}", "usage": usage,
@@ -62,7 +64,8 @@ def result(text, reason="completed"):
                   "contextWindow": 200000, "canonicalModel": "claude-fable-5"}}})
     else:
         emit({"type": "result", "subtype": "error_during_execution",
-              "terminal_reason": reason, "result": "", "is_error": True,
+              "terminal_reason": reason, "result": text, "is_error": True,
+              "api_error_status": status,
               "usage": {"input_tokens": 0, "output_tokens": 0},
               "total_cost_usd": 0, "duration_ms": 0, "session_id": sid})
 
@@ -109,6 +112,10 @@ def run_turn(message):
     if mode == "stop-reading-stdin":
         while True:
             time.sleep(60)
+    if mode == "quota":
+        # the account runs out mid-turn: an API error carrying the 429
+        result("Claude AI usage limit reached", "api_error", 429)
+        return None
     if mode == "/compact":
         emit({"type": "system", "subtype": "compact_boundary", "session_id": sid,
               "compact_metadata": {"trigger": "manual", "pre_tokens": 28260,
@@ -158,15 +165,19 @@ def run_turn(message):
         text = (f"(fake) Handoff report for `{tid}`.\n\n"
                 "1. Model claim: `divide` splits the grid; per-tile recolor by rank.\n"
                 "2. Discarded: global recolor — breaks train 2 (tile order flips).\n"
-                "3. Audit: clean. Judgment call: rank ties broken by position.")
+                "3. Audit: clean. Judgment call: rank ties broken by position.\n\n"
+                "## Callouts\n\n"
+                "- Rank ties are broken by position; the data does not say so.\n"
+                "- `rank_of` reads like lib material.")
     else:
         steps = [("Read", {"file_path": f"programs/solvers/{tid}.dl"}),
                  ("Edit", {"file_path": f"programs/solvers/{tid}.dl"}),
                  ("Bash", {"command": f"uv run python scripts/run_dl.py {tid}"})]
-        text = (f"(fake) Refined `{tid}`; all pairs still pass.\n\n"
+        text = (f"(fake) {phase}: refined `{tid}`; all pairs still pass.\n\n"
                 "1. Kept the model; renamed `header_color` for the concept.\n"
                 "2. **No fit pass needed.**\n"
-                "3. Lib: `rank_of` is solver-local and worked in context; candidate for staging.")
+                "3. Lib: `rank_of` is solver-local and worked in context; candidate for staging.\n\n"
+                "## Callouts\n\nnone")
     for name, inp in steps:
         stopped = pause(.35)
         if stopped:

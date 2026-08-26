@@ -38,13 +38,16 @@ body {
   font:13px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
   display:flex; flex-direction:column; overflow:hidden;
 }
+#app { flex:1; min-height:0; display:flex; flex-direction:column; }
 code, pre, .mono { font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 
 /* ---------- top bar ---------- */
 #topbar {
-  height:46px; flex:none; display:flex; align-items:center; gap:14px; padding:0 14px;
+  min-height:46px; flex:none; display:flex; flex-wrap:wrap; align-items:center;
+  gap:4px 14px; padding:4px 14px;
   background:var(--panel); border-bottom:1px solid var(--border);
 }
+#topbar .wordmark, #topbar .wavectl { white-space:nowrap; }
 #topbar .wordmark { font-family:ui-monospace,Menlo,monospace; font-size:12px; letter-spacing:.08em; }
 #topbar .wordmark b { color:var(--accent); }
 #counts { display:flex; gap:6px; align-items:center; }
@@ -69,6 +72,8 @@ code, pre, .mono { font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, mo
   background:var(--bg); color:var(--ink); font-family:ui-monospace,Menlo,monospace; font-size:12px;
 }
 .wavectl input { width:44px; }
+.wavectl input[type=checkbox] { width:auto; }
+.wavectl label { display:inline-flex; align-items:center; gap:4px; cursor:pointer; }
 button {
   font:12px system-ui,sans-serif; padding:5px 12px; border-radius:6px; cursor:pointer;
   border:1px solid var(--border); background:var(--panel2); color:var(--ink);
@@ -79,8 +84,37 @@ button.primary { background:var(--accent); color:var(--accent-ink); border-color
 button:disabled { opacity:.45; cursor:default; }
 button:disabled:hover { border-color:var(--border); }
 
+/* ---------- overnight panel ---------- */
+#nightbtn.on   { border-color:var(--st-approved); color:var(--st-approved); }
+#nightbtn.held { border-color:var(--st-review);   color:var(--st-review); }
+#nightpanel {
+  flex:none; padding:8px 14px; background:var(--panel2);
+  border-bottom:1px solid var(--border); display:flex; flex-direction:column; gap:6px;
+}
+.nightrow {
+  display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+  font-family:ui-monospace,Menlo,monospace; font-size:11.5px; color:var(--muted);
+}
+.nightrow label { display:inline-flex; align-items:center; gap:5px; cursor:pointer; }
+.nightrow b { color:var(--ink); font-weight:600; }
+.nightrow input[type=number] {
+  width:46px; padding:2px 5px; border:1px solid var(--border); border-radius:5px;
+  background:var(--bg); color:var(--ink); font-family:inherit; font-size:11.5px;
+}
+.nightrow .gate-open { color:var(--ttl-ok); }
+.nightrow .gate-held { color:var(--ttl-warn); }
+#nightlog {
+  display:flex; flex-direction:column; gap:2px; max-height:72px; overflow-y:auto;
+  font-family:ui-monospace,Menlo,monospace; font-size:10.5px; color:var(--muted);
+}
+
 /* ---------- main ---------- */
 #main { flex:1; display:grid; grid-template-columns:250px minmax(400px,560px) 1fr; min-height:0; }
+/* the finalize lens lists the backlog beside its rows, which needs the width */
+body.view-final #main { grid-template-columns:330px minmax(360px,520px) 1fr; }
+.viewtog { display:inline-flex; border:1px solid var(--border); border-radius:6px; overflow:hidden; }
+.viewtog button { border:none; border-radius:0; padding:4px 10px; background:var(--panel); color:var(--muted); }
+.viewtog button.on { background:var(--accent); color:var(--accent-ink); }
 
 /* left rail */
 #rail { border-right:1px solid var(--border); overflow-y:auto; background:var(--panel); }
@@ -108,6 +142,27 @@ button:disabled:hover { border-color:var(--border); }
   font-size:9px; letter-spacing:.06em; padding:1px 5px; border-radius:3px;
   background:var(--st-commented); color:var(--bg); font-weight:600;
 }
+/* a task-local comp: staging only, and only with an open proposal */
+.badge-comp {
+  font-size:9px; letter-spacing:.06em; padding:0 4px; border-radius:3px;
+  font-family:ui-monospace,Menlo,monospace; font-weight:600;
+  background:var(--st-review-bg); color:var(--st-review);
+  border:1px solid var(--st-review);
+}
+.badge-comp.unproposed { background:var(--st-removed); color:var(--bg); border-color:transparent; }
+/* callouts the stage left for the user */
+.badge-call {
+  font-size:9px; letter-spacing:.06em; padding:0 4px; border-radius:3px;
+  font-family:ui-monospace,Menlo,monospace; font-weight:600;
+  background:var(--st-running-bg); color:var(--st-running);
+  border:1px solid var(--st-running);
+}
+/* colored by the most urgent self-rank among the entries */
+.badge-call.r1 { background:var(--st-removed); color:var(--bg); border-color:transparent; }
+.badge-call.r2 { background:var(--st-review-bg); color:var(--st-review); border-color:var(--st-review); }
+/* backlog rows: tasks with no fable pass, not console items */
+.row.bk { cursor:pointer; }
+.peektext { white-space:pre-wrap; font-size:12px; line-height:1.55; padding:10px 14px; }
 .ttl { font-family:ui-monospace,Menlo,monospace; font-size:10.5px; display:inline-flex; align-items:center; gap:4px; }
 .ttl::before { content:""; width:6px; height:6px; border-radius:50%; background:currentColor; }
 .ttl.ok { color:var(--ttl-ok); }
@@ -117,6 +172,8 @@ button:disabled:hover { border-color:var(--border); }
 .ttl.cold::before { background:transparent; border:1px solid currentColor; }
 .ttl.none::before { display:none; }
 .ttl.active { color:var(--st-running); }
+.row .phz { font-family:ui-monospace,Menlo,monospace; font-size:10px; color:var(--st-muted); letter-spacing:.04em; }
+.row .phz.fin { color:var(--ink); }
 
 /* middle: session feed */
 #judge { border-right:1px solid var(--border); overflow-y:auto; display:flex; flex-direction:column; min-height:0; background:var(--bg); }
@@ -166,6 +223,7 @@ button:disabled:hover { border-color:var(--border); }
 .msg ul, .msg ol { margin:0 0 6px; padding-left:18px; }
 .msg.you { align-self:flex-end; background:var(--accent); color:var(--accent-ink); }
 .msg.you code { background:transparent; border-color:transparent; color:inherit; }
+.msg.you pre { background:rgba(0,0,0,.15); border-color:transparent; color:inherit; }
 .msg.worker { align-self:flex-start; background:var(--panel2); border:1px solid var(--border); }
 .event { align-self:center; font-size:10.5px; color:var(--muted); font-family:ui-monospace,Menlo,monospace; }
 .tools {
@@ -286,96 +344,135 @@ button:disabled:hover { border-color:var(--border); }
 </head>
 <body>
 
-<div id="topbar">
-  <span class="wordmark"><b>arc</b> · solver console</span>
-  <span class="chip queued mono" id="wavechip">wave —</span>
-  <span class="chip queued mono" id="progresschip" hidden></span>
-  <span id="counts"></span>
-  <span class="spacer"></span>
-  <span id="usage"></span>
-  <span class="wavectl">next wave K <input id="waveK" type="number" value="10" min="1" max="20"> <select id="waveOrder" aria-label="wave order"><option value="name" selected>name order</option><option value="size">simplest</option></select> <button id="wavebtn">start</button></span>
-  <span class="chip commented mono" id="committerchip" hidden>committing…</span>
-  <button id="commitbtn" class="primary">commit approved</button>
-</div>
-
-<div id="main">
-  <nav id="rail" aria-label="wave items"></nav>
-
-  <div id="judge">
-    <div id="judge-head"></div>
-    <div id="judge-scroll"></div>
-    <div id="composer">
-      <textarea id="cbox" placeholder="" aria-label="comment"></textarea>
-      <div class="hints">
-        <span id="chint"></span>
-        <span class="actions"><span>⏎ send · ⇧⏎ newline</span><button id="sendbtn" class="primary">send</button></span>
-      </div>
-    </div>
-  </div>
-
-  <div id="codecol">
-    <div id="taskstrip" class="open">
-      <div class="taskhead" id="taskhead"><span class="caret">▸</span><span id="tasklabel">task</span><span style="margin-left:auto">t</span></div>
-      <div id="taskbody"></div>
-    </div>
-    <div class="codehead"><span class="fname" id="fname">—</span><span id="flines"></span><span id="codebtns" style="margin-left:auto"></span></div>
-    <pre id="codepre"></pre>
-  </div>
-</div>
-
-<div id="keysbar">
-  <span><b>j/k</b> move</span><span><b>n</b> next review</span><span><b>a</b> approve</span>
-  <span><b>u</b> unapprove</span><span><b>c</b> comment</span><span><b>⏎</b> send</span><span><b>⇧⏎</b> newline</span>
-  <span><b>s</b> session</span><span><b>t</b> task</span><span><b>o</b> copy resume</span><span><b>esc</b> blur</span>
-</div>
-
-<div id="toast" role="status"></div>
+<div id="app"></div>
 
 <script src="/vendor/marked.min.js"></script>
 <script src="/vendor/purify.min.js"></script>
 <script src="/vendor/diff.min.js"></script>
-<script>
+<script type="module">
+/* UI: preact + hooks + htm, vendored from htm@3.1.1/preact/standalone.module.js */
+import { html, render, useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback }
+  from "/vendor/htm-preact-standalone.module.js";
+
 const ARC = ["#000000","#0074D9","#FF4136","#2ECC40","#FFDC00","#AAAAAA","#F012BE","#FF851B","#7FDBFF","#870C25"];
 const CHIPCLS = {"needs-review":"review","commented":"commented","running":"running","queued":"queued","approved":"approved","committed":"committed"};
 const TTL_MIN = 60;
 const TTL_ALERT = 10;   // minutes left when a cache goes hot and rings
-
-let seq = 0, wave = 0, items = [], selId = null, usage = [], progress = null, cli = {}, committerWas = false;
-
-/* interactive commands that reproduce the workers' prompt bytes (cache reuse),
-   on the model the worker ran so the resumed session keeps its cache */
-const takeoverCmd = (it,s) => "claude --resume "+it.sessions[s]
-  +(((cli.models||{})[s])?" --model "+cli.models[s]:"")
-  +` --append-system-prompt "$(cat ${it.append})" --add-dir ${cli.addDir} --exclude-dynamic-system-prompt-sections`;
-const modelShort = s => ((cli.models||{})[s]||"").replace(/^claude-/,"").split("-")[0]||"?";
-const taskCache = {};   // id -> task json | "pending" | "missing"
-const itemCache = {};   // id -> {feed, code, ver}
-const taskOpen  = {};   // id -> bool (default open)
-const tabSel    = {};   // id -> path of the active code tab
-const sessTab   = {};   // id -> session tab the user pinned
-const lastPhase = {};   // id -> phase last seen; a flip unpins the tab
-const seenN     = {};   // id|sess -> feed length when that tab was last shown
-let cboxFor = null;     // id whose draft the composer holds
-const draftKey = id => "draft:"+id;
-
-/* the session tab in view: the user's pin while it holds, else the phase */
-function tabOf(it){
-  if(lastPhase[it.id]!==it.phase){ delete sessTab[it.id]; lastPhase[it.id]=it.phase; }
-  const t=sessTab[it.id];
-  return t && (it.sessions[t]||it.phase===t) ? t : it.phase;
-}
-const hasTab = (it,s) => !!(it.sessions[s]) || it.phase===s;
+const FINAL = "finalize";
+const STATES = ["needs-review","commented","running","queued","approved","committed"];
+const NO_ITEM = {feed:[], files:[]};   // stands in until /api/item lands
 
 /* ---------- helpers ---------- */
-const $ = id => document.getElementById(id);
-const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-const render = (typeof marked!=="undefined" && typeof DOMPurify!=="undefined")
-  ? (t => DOMPurify.sanitize(marked.parse(t, {breaks:true})))
-  : (t => "<p>"+esc(t).replace(/\n/g,"<br>")+"</p>");
-const sel = () => items.find(it=>it.id===selId) || null;
+const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const pad2 = n => String(n).padStart(2,"0");
 const fmtDur = s => { s=Math.max(0,Math.floor(s)); const h=Math.floor(s/3600), m=Math.floor((s%3600)/60);
   return h ? h+"h "+m+"m" : m ? m+"m "+String(s%60).padStart(2,"0")+"s" : s+"s"; };
-function toast(msg){ const t=$("toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("show"),2600); }
+const draftKey = id => "draft:"+id;
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+
+/* markdown is re-rendered on every tick otherwise; the text is the whole key */
+const mdCache = new Map();
+const mdOne = (typeof marked!=="undefined" && typeof DOMPurify!=="undefined")
+  ? (t => DOMPurify.sanitize(marked.parse(t, {breaks:true})))
+  : (t => "<p>"+esc(t).replace(/\n/g,"<br>")+"</p>");
+function md(text){
+  let out = mdCache.get(text);
+  if(out===undefined){
+    out = mdOne(text);
+    if(mdCache.size>600) mdCache.clear();
+    mdCache.set(text, out);
+  }
+  return out;
+}
+
+/* the item's stage chain: every per-session readout is keyed by stage name */
+const stagesOf = it => it.chain||[];
+const stageNames = it => stagesOf(it).map(x=>x.name);
+const stageOf = (it,s) => stagesOf(it).find(x=>x.name===s) || {name:s, backend:"claude", model:""};
+const modelOf = (it,s) => stageOf(it,s).model || "";
+const backendOf = (it,s) => stageOf(it,s).backend || "claude";
+const nextName = it => { const ns=stageNames(it), i=ns.indexOf(it.phase);
+  return i>=0 && i+1<ns.length ? ns[i+1] : null; };
+const modelShort = (it,s) => { const m=modelOf(it,s);
+  if(!m) return "?";
+  return backendOf(it,s)==="codex" ? m.replace(/-codex$/,"") : m.replace(/^claude-/,"").split("-")[0]; };
+const stageLabel = (it,s) => s+" · "+(backendOf(it,s)==="codex"?"codex ":"")+modelShort(it,s);
+/* interactive commands that reproduce the workers' prompt bytes (cache reuse),
+   on the model the worker ran so the resumed session keeps its cache */
+const takeoverCmd = (it,s,cli) => backendOf(it,s)==="codex"
+  ? "codex exec resume "+it.sessions[s]
+  : "claude --resume "+it.sessions[s]
+    +(modelOf(it,s)?" --model "+modelOf(it,s):"")
+    +` --append-system-prompt "$(cat ${it.append})" --add-dir ${cli.addDir} --exclude-dynamic-system-prompt-sections`;
+const hasTab = (it,s) => !!(it.sessions[s]) || it.phase===s;
+
+/* cache freshness of the phase-owning session: minutes until its 1h
+   prompt-cache TTL expires */
+function cacheInfo(it){
+  const la = it.lastActive && it.lastActive[it.phase];
+  if(!it.sessions || !it.sessions[it.phase]) return {cls:"none", txt:"—", sort:9e9};
+  if(it.active) return {cls:"active", sort:5e8,
+    txt: it.turnStarted ? fmtDur(Date.now()/1000-it.turnStarted) : "active"};
+  if(!la) return {cls:"none", txt:"—", sort:9e9};
+  const rem = TTL_MIN - (Date.now()-la)/60000;
+  if(rem<=0) return {cls:"cold", txt:"cold", sort:1e9};
+  const cls = rem<TTL_ALERT?"hot":rem<30?"warn":"ok";
+  return {cls, txt:Math.ceil(rem)+"m", sort:rem};
+}
+
+/* A cache crossing TTL_ALERT rings once. An item is armed while its
+   countdown sits above the threshold, so one first seen below it stays
+   silent and a reload does not replay crossings already past. A finished
+   turn moves lastActive forward, which arms the next cycle. */
+const ttlArmed = new Map();   // item id -> the lastActive it was armed for
+const TTL_QUIET = new Set(["approved","committed"]);   // settled, let them go cold
+
+function ttlWatch(items){
+  for(const it of items){
+    if(it.active || TTL_QUIET.has(it.state) ||
+       !it.sessions || !it.sessions[it.phase]) continue;
+    const la = it.lastActive && it.lastActive[it.phase];
+    if(!la) continue;
+    const rem = TTL_MIN - (Date.now()-la)/60000;
+    if(rem>=TTL_ALERT) ttlArmed.set(it.id, la);
+    else if(rem>0 && ttlArmed.get(it.id)===la){ ttlArmed.delete(it.id); ding(); }
+  }
+}
+
+/* Two-tone chime. WebAudio opens suspended until the page has seen a
+   gesture, so the first click or keypress in the console unlocks it. */
+let actx = null;
+function audio(){
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if(!actx && Ctx) actx = new Ctx();
+  return actx;
+}
+function ding(){
+  const ac = audio();
+  if(!ac || ac.state!=="running") return;
+  const t0 = ac.currentTime;
+  [880, 1320].forEach((hz,i)=>{
+    const at = t0 + i*0.14;
+    const osc = ac.createOscillator(), gain = ac.createGain();
+    osc.type="sine"; osc.frequency.value=hz;
+    gain.gain.setValueAtTime(0.0001, at);
+    gain.gain.exponentialRampToValueAtTime(0.2, at+0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, at+0.3);
+    osc.connect(gain).connect(ac.destination);
+    osc.start(at); osc.stop(at+0.32);
+  });
+}
+for(const ev of ["pointerdown","keydown"])
+  addEventListener(ev, ()=>{ const ac=audio(); if(ac) ac.resume(); }, {once:true});
+
+/* ---------- toast ---------- */
+let toastSet = () => {};
+let toastTimer = null;
+function toast(msg){
+  toastSet({msg, show:true});
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>toastSet(t=>({msg:t.msg, show:false})), 2600);
+}
 function copy(s,label){ navigator.clipboard && navigator.clipboard.writeText(s).then(()=>toast("copied · "+label),()=>toast(s)); }
 
 async function post(route, body){
@@ -387,10 +484,11 @@ async function post(route, body){
   } catch(e){ toast("console server unreachable"); return {error:String(e)}; }
 }
 
-/* code panel: the file with this turn's edits marked, removed lines included.
-   Every line renders as an .L block whose CSS counter numbers it; removed
-   lines are skipped so the gutter tracks the file on disk.
-   Line diff vs the turn-start snapshot; replaced hunks get word-level marks. */
+/* ---------- code pane markup ----------
+   The file with this turn's edits marked, removed lines included. Every line
+   renders as an .L block whose CSS counter numbers it; removed lines are
+   skipped so the gutter tracks the file on disk. Line diff vs the turn-start
+   snapshot; replaced hunks get word-level marks. */
 const cmline = l => esc(l).replace(/(\/\/.*)/,'<span class="cm">$1</span>');
 const cmify = s => splitLines(s).map(l=>'<span class="L">'+(cmline(l)||" ")+"</span>").join("");
 function splitLines(v){ const ls=v.split("\n"); if(ls[ls.length-1]==="") ls.pop(); return ls; }
@@ -452,187 +550,112 @@ function diffHtml(before, after){
   return {html, added, removed};
 }
 
-/* A long file's edits are rarely at the top, so bring the first marked line
-   into view. Only when the pane switches to a different file: re-running this
-   as a turn streams would drag the pane away from whoever is reading it. */
-let codeAt = null;
-function jumpToFirstMark(){
-  const pre=$("codepre"), first=pre.querySelector(".add, .del");
-  if(!first){ pre.scrollTop=0; return; }
-  const lead=(parseFloat(getComputedStyle(pre).lineHeight)||0)*3;  // lines of lead-in
-  pre.scrollTop += first.getBoundingClientRect().top - pre.getBoundingClientRect().top - lead;
-}
-
-/* cache freshness of the phase-owning session: minutes until its 1h
-   prompt-cache TTL expires */
-function cacheInfo(it){
-  const la = it.lastActive && it.lastActive[it.phase];
-  if(!it.sessions || !it.sessions[it.phase]) return {cls:"none", txt:"—", sort:9e9};
-  if(it.active) return {cls:"active", sort:5e8,
-    txt: it.turnStarted ? fmtDur(Date.now()/1000-it.turnStarted) : "active"};
-  if(!la) return {cls:"none", txt:"—", sort:9e9};
-  const rem = TTL_MIN - (Date.now()-la)/60000;
-  if(rem<=0) return {cls:"cold", txt:"cold", sort:1e9};
-  const cls = rem<TTL_ALERT?"hot":rem<30?"warn":"ok";
-  return {cls, txt:Math.ceil(rem)+"m", sort:rem};
-}
-/* A cache crossing TTL_ALERT rings once. An item is armed while its
-   countdown sits above the threshold, so one first seen below it stays
-   silent and a reload does not replay crossings already past. A finished
-   turn moves lastActive forward, which arms the next cycle. */
-const ttlArmed = new Map();   // item id -> the lastActive it was armed for
-const TTL_QUIET = new Set(["approved","committed"]);   // settled, let them go cold
-
-function ttlWatch(){
-  for(const it of items){
-    if(it.active || TTL_QUIET.has(it.state) ||
-       !it.sessions || !it.sessions[it.phase]) continue;
-    const la = it.lastActive && it.lastActive[it.phase];
-    if(!la) continue;
-    const rem = TTL_MIN - (Date.now()-la)/60000;
-    if(rem>=TTL_ALERT) ttlArmed.set(it.id, la);
-    else if(rem>0 && ttlArmed.get(it.id)===la){ ttlArmed.delete(it.id); ding(); }
-  }
-}
-
-/* Two-tone chime. WebAudio opens suspended until the page has seen a
-   gesture, so the first click or keypress in the console unlocks it. */
-let actx = null;
-function audio(){
-  const Ctx = window.AudioContext || window.webkitAudioContext;
-  if(!actx && Ctx) actx = new Ctx();
-  return actx;
-}
-function ding(){
-  const ac = audio();
-  if(!ac || ac.state!=="running") return;
-  const t0 = ac.currentTime;
-  [880, 1320].forEach((hz,i)=>{
-    const at = t0 + i*0.14;
-    const osc = ac.createOscillator(), gain = ac.createGain();
-    osc.type="sine"; osc.frequency.value=hz;
-    gain.gain.setValueAtTime(0.0001, at);
-    gain.gain.exponentialRampToValueAtTime(0.2, at+0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, at+0.3);
-    osc.connect(gain).connect(ac.destination);
-    osc.start(at); osc.stop(at+0.32);
+/* ---------- small pieces ---------- */
+function CompBadges({x}){
+  return (x.comps||[]).map(c=>{
+    const bad=(x.comps_unproposed||[]).includes(c);
+    return html`<span key=${c} class=${"badge-comp"+(bad?" unproposed":"")}
+      title=${bad?"task-local comp with no proposals.md entry":"task-local comp — staging form, proposal open"}>${c}</span>`;
   });
 }
-for(const ev of ["pointerdown","keydown"])
-  addEventListener(ev, ()=>{ const ac=audio(); if(ac) ac.resume(); }, {once:true});
-
-function railOrder(){
-  return [...items].sort((a,b)=>cacheInfo(a).sort-cacheInfo(b).sort).map(it=>it.id);
+/* what the stage left for the user; the entries ride along in the tooltip */
+function CalloutBadge({x}){
+  if(!x.callout_n) return null;
+  const r = x.callout_rank;
+  return html`<span class=${"badge-call"+(r?" r"+r:"")} title=${(x.callouts||[]).join("\n")}>${x.callout_n}</span>`;
+}
+function StateChip({state, label}){
+  return html`<span class=${"chip "+CHIPCLS[state]}><span class="dot"></span>${label!==undefined?label:state}</span>`;
 }
 
 function cellPx(w,h){ const m=Math.max(w,h); return m<=10?16:m<=15?12:m<=22?9:7; }
-function gridEl(g,label){
-  const w=g[0].length,h=g.length,px=cellPx(w,h);
-  const wrap=document.createElement("div"); wrap.className="gwrap";
-  if(label){ const l=document.createElement("div"); l.className="glabel"; l.textContent=label+" · "+h+"×"+w; wrap.appendChild(l); }
-  const el=document.createElement("div"); el.className="agrid";
-  el.style.setProperty("--cell",px+"px");
-  el.style.gridTemplateColumns=`repeat(${w},${px}px)`;
-  for(const row of g) for(const v of row){ const c=document.createElement("div"); c.style.background=ARC[v]; el.appendChild(c); }
-  wrap.appendChild(el); return wrap;
-}
-function thumb(id){
-  const task=taskCache[id];
-  if(!task || typeof task==="string"){ const d=document.createElement("div"); d.className="thumb-ph"; return d; }
-  const g=task.train[0].input;
-  const w=g[0].length,h=g.length,px=Math.max(1,Math.floor(30/Math.max(w,h)));
-  const cv=document.createElement("canvas"); cv.width=w*px; cv.height=h*px;
-  const ctx=cv.getContext("2d");
-  g.forEach((row,y)=>row.forEach((v,x)=>{ ctx.fillStyle=ARC[v]; ctx.fillRect(x*px,y*px,px,px); }));
-  return cv;
-}
-function ensureTask(id){
-  if(taskCache[id]) return;
-  taskCache[id]="pending";
-  fetch("/api/task/"+id).then(r=>r.ok?r.json():"missing").then(t=>{
-    taskCache[id]=t; renderRail(); if(selId===id) renderDetail();
-  }).catch(()=>{ taskCache[id]="missing"; });
-}
-function ensureItem(id, force){
-  const cached=itemCache[id], it=items.find(x=>x.id===id);
-  if(cached && it && cached.ver===it.ver && !force) return;
-  fetch("/api/item/"+id).then(r=>r.json()).then(d=>{
-    itemCache[id]=d; if(selId===id) renderDetail();
-  }).catch(()=>{});
+function Grid({g, label}){
+  const w=g[0].length, h=g.length, px=cellPx(w,h);
+  return html`<div class="gwrap">
+    ${label && html`<div class="glabel">${label+" · "+h+"×"+w}</div>`}
+    <div class="agrid" style=${{"--cell":px+"px", gridTemplateColumns:`repeat(${w},${px}px)`}}>
+      ${g.map((row,y)=>row.map((v,x)=>html`<div key=${y+":"+x} style=${{background:ARC[v]}}></div>`))}
+    </div>
+  </div>`;
 }
 
-/* ---------- rail + counts ----------
-   Rows outlive the render that created them. A browser only fires click when
-   mousedown and mouseup land on the same element, and the rail redraws on
-   every poll tick and every countdown tick, so replacing a row swallows the
-   click the reader was in the middle of making. */
-const railRows = {};   // item id -> row element
-
-function railRow(id){
-  const row=document.createElement("div"); row.className="row"; row.tabIndex=0;
-  row.appendChild(thumb(id));
-  const meta=document.createElement("div"); meta.className="meta";
-  const side=document.createElement("div"); side.className="side";
-  side.appendChild(document.createElement("span"));   // state chip
-  side.appendChild(document.createElement("span"));   // cache ttl
-  row.appendChild(meta); row.appendChild(side);
-  row.onclick=()=>{ select(id); };
-  row.onkeydown=e=>{ if(e.key==="Enter") select(id); };
-  return row;
+function Thumb({task}){
+  const ref=useRef(null);
+  const ok = !!task && typeof task!=="string";
+  useEffect(()=>{
+    const cv=ref.current;
+    if(!cv || !ok) return;
+    const g=task.train[0].input;
+    const w=g[0].length, h=g.length, px=Math.max(1,Math.floor(30/Math.max(w,h)));
+    cv.width=w*px; cv.height=h*px;
+    const ctx=cv.getContext("2d");
+    g.forEach((row,y)=>row.forEach((v,x)=>{ ctx.fillStyle=ARC[v]; ctx.fillRect(x*px,y*px,px,px); }));
+  },[task, ok]);
+  return ok ? html`<canvas ref=${ref}></canvas>` : html`<div class="thumb-ph"></div>`;
 }
 
-function railRowUpdate(row, it, ci){
-  const th=row.children[0], meta=row.children[1], side=row.children[2];
-  if(th.className==="thumb-ph"){
-    const loaded=thumb(it.id);
-    if(loaded.tagName==="CANVAS") th.replaceWith(loaded);
-  }
-  row.classList.toggle("sel", it.id===selId);
+/* ---------- rail ---------- */
+function ItemRow({it, sel, task, onSelect}){
+  const ci=cacheInfo(it);
   const sub = it.title || (it.est ? "est "+it.est : "");
-  const metaHtml=`<div class="tid">${it.id} ${it.updated?'<span class="badge-upd">UPD</span>':""}${it.dirty?'<span class="badge-dirty">CLEANUP</span>':""}</div><div class="sub">${esc(sub)}</div>`;
-  if(row._meta!==metaHtml){ row._meta=metaHtml; meta.innerHTML=metaHtml; }
-  const chip=side.children[0], ttl=side.children[1];
-  chip.className="chip "+CHIPCLS[it.state];
-  const chipHtml=`<span class="dot"></span>${it.state==="needs-review"?"review":it.state}`;
-  if(row._chip!==chipHtml){ row._chip=chipHtml; chip.innerHTML=chipHtml; }
-  ttl.className="ttl "+ci.cls;
-  ttl.textContent=ci.txt;
+  return html`<div class=${"row"+(sel?" sel":"")} tabIndex="0"
+      onClick=${()=>onSelect(it.id)}
+      onKeyDown=${e=>{ if(e.key==="Enter") onSelect(it.id); }}>
+    <${Thumb} task=${task}/>
+    <div class="meta">
+      <div class="tid">
+        ${it.id}${" "}
+        ${it.updated && html`<span class="badge-upd">UPD</span>`}
+        ${it.dirty && html`<span class="badge-dirty">CLEANUP</span>`}
+        <${CompBadges} x=${it}/><${CalloutBadge} x=${it}/>
+      </div>
+      <div class="sub">${sub}</div>
+    </div>
+    <div class="side">
+      <${StateChip} state=${it.state} label=${it.state==="needs-review"?"review":it.state}/>
+      <span class=${"ttl "+ci.cls}>${ci.txt}</span>
+      <span class=${"phz"+(it.phase==="finalize"?" fin":"")}>${it.phase}</span>
+    </div>
+  </div>`;
 }
 
-function renderRail(){
-  const rail=$("rail");
-  let head=rail.firstElementChild;
-  if(!head){ head=document.createElement("div"); head.className="railhead"; rail.appendChild(head); }
-  head.innerHTML=`<span>wave ${String(wave).padStart(2,"0")} · ${items.length}</span><span>cache ↑expiring</span>`;
-  const order=railOrder();
-  for(const id of Object.keys(railRows)) if(!order.includes(id)){
-    railRows[id].remove(); delete railRows[id];
-  }
-  let prev=head;
-  for(const id of order){
-    const it=items.find(x=>x.id===id);
-    ensureTask(id);
-    const row = railRows[id] || (railRows[id]=railRow(id));
-    railRowUpdate(row, it, cacheInfo(it));
-    if(prev.nextElementSibling!==row) prev.after(row);
-    prev=row;
-  }
-  const counts=$("counts"); counts.innerHTML="";
-  const tally={};
-  items.forEach(it=>tally[it.state]=(tally[it.state]||0)+1);
-  for(const st of ["needs-review","commented","running","queued","approved","committed"]) if(tally[st]){
-    const c=document.createElement("span"); c.className="chip "+CHIPCLS[st];
-    c.innerHTML=`<span class="dot"></span>${tally[st]} ${st==="needs-review"?"to review":st}`;
-    counts.appendChild(c);
-  }
-  $("wavechip").textContent="wave "+String(wave).padStart(2,"0");
-  const pc=$("progresschip");
-  pc.hidden=!progress;
-  if(progress) pc.textContent=progress.solved+"/"+progress.total+" solvers";
-  $("commitbtn").disabled = !items.some(it=>it.state==="approved");
-  renderUsage();
+function BkRow({b, sel, task, onSelect}){
+  return html`<div class=${"row bk"+(sel?" sel":"")} tabIndex="0"
+      onClick=${()=>onSelect(b.id)}
+      onKeyDown=${e=>{ if(e.key==="Enter") onSelect(b.id); }}>
+    <${Thumb} task=${task}/>
+    <div class="meta">
+      <div class="tid">
+        ${b.id}${" "}
+        <${CompBadges} x=${b}/><${CalloutBadge} x=${b}/>
+      </div>
+      <div class="sub">${b.title||""}</div>
+    </div>
+  </div>`;
 }
 
+function Rail({view, wave, items, itemOrder, backlog, selId, selIsItem, tasks,
+               onSelect}){
+  const fin = view===FINAL;
+  return html`<nav id="rail" aria-label="wave items">
+    <div class="railhead">
+      <span>${fin ? "in a finalize pass · "+itemOrder.length : "wave "+pad2(wave)+" · "+items.length}</span>
+      <span>cache ↑expiring</span>
+    </div>
+    ${itemOrder.map(id=>{
+      const it=items.find(x=>x.id===id);
+      return html`<${ItemRow} key=${id} it=${it} task=${tasks[id]}
+        sel=${selIsItem && id===selId} onSelect=${onSelect}/>`;
+    })}
+    ${fin && html`<div class="railhead">
+      <span>${"no fable pass · "+backlog.length}</span><span>flag ↑</span>
+    </div>`}
+    ${fin && backlog.map(b=>html`<${BkRow} key=${b.id} b=${b} task=${tasks[b.id]}
+      sel=${b.id===selId && !itemOrder.includes(b.id)} onSelect=${onSelect}/>`)}
+  </nav>`;
+}
+
+/* ---------- top bar ---------- */
 /* account rate-limit windows, statusline style: 5h➞1pm 40%/62% */
 function resetLabel(epoch, weekly){
   const d=new Date(Math.round(epoch/1800)*1800*1000);
@@ -640,9 +663,8 @@ function resetLabel(epoch, weekly){
   const t=m ? h12+":"+String(m).padStart(2,"0")+ap : h12+ap;
   return weekly ? ["sun","mon","tue","wed","thu","fri","sat"][d.getDay()]+","+t : t;
 }
-function renderUsage(){
-  const u=$("usage"); u.innerHTML="";
-  for(const w of usage){
+function Usage({usage}){
+  return html`<span id="usage">${usage.map((w,i)=>{
     const cls = w.pct>=70?"uhot":w.pct>=45?"uwarn":"uok";
     let txt = w.label;
     if(w.reset) txt += "➞"+resetLabel(w.reset, w.window>6*86400);
@@ -651,383 +673,774 @@ function renderUsage(){
       const target=Math.max(0,Math.min(100,Math.round(100*(1-(w.reset-Date.now()/1000)/w.window))));
       txt += "/"+target+"%";
     }
-    const s=document.createElement("span"); s.className=cls; s.textContent=txt;
-    u.appendChild(s);
-  }
+    return html`<span key=${w.label+i} class=${cls}>${txt}</span>`;
+  })}</span>`;
+}
+
+function Topbar({view, setView, wave, items, progress, usage, night, nightOpen, toggleNight,
+                 cli, committer, onCommit, waveCtl}){
+  const tally={};
+  items.forEach(it=>tally[it.state]=(tally[it.state]||0)+1);
+  const gate = (night||{}).gate;
+  const nightCls = night && night.on ? (gate&&gate.open?"on":"held") : "";
+  const nightTxt = night && night.on
+    ? `autopilot ${night.live||0}/${night.target} · ${gate&&gate.open?"open":"held"}`
+    : "autopilot";
+  const presets = cli.presets||[];
+  return html`<div id="topbar">
+    <span class="wordmark"><b>arc</b> · solver console</span>
+    <span class="viewtog">
+      <button class=${view!==FINAL?"on":""} onClick=${()=>setView("wave")}>wave</button>
+      <button class=${view===FINAL?"on":""} onClick=${()=>setView(FINAL)}>finalize</button>
+    </span>
+    <span class="chip queued mono">${"wave "+pad2(wave)}</span>
+    <span class="chip queued mono" hidden=${!progress}>
+      ${progress ? progress.solved+"/"+progress.total+" solvers" : ""}
+    </span>
+    <span id="counts">${STATES.filter(st=>tally[st]).map(st=>html`
+      <${StateChip} key=${st} state=${st} label=${tally[st]+" "+(st==="needs-review"?"to review":st)}/>`)}
+    </span>
+    <span class="spacer"></span>
+    <${Usage} usage=${usage}/>
+    <button id="nightbtn" class=${nightCls} onClick=${toggleNight}>${nightTxt}</button>
+    <span class="wavectl" title="start the next wave">wave
+      <input type="number" min="1" max="20" aria-label="wave size"
+        value=${waveCtl.k} onInput=${e=>waveCtl.setK(e.target.value)}/>
+      <select aria-label="wave order" value=${waveCtl.order} onChange=${e=>waveCtl.setOrder(e.target.value)}>
+        <option value="name">name order</option>
+        <option value="size">simplest</option>
+      </select>
+      <select aria-label="stage chain" value=${waveCtl.presetId}
+        onChange=${e=>waveCtl.setPresetId(e.target.value)}>
+        ${presets.map(p=>html`<option key=${p.id} value=${p.id}>${p.label}</option>`)}
+      </select>
+      <select aria-label="auto-advance" title="how far each stage's report is handed on without you"
+        value=${waveCtl.mode} onChange=${e=>waveCtl.setMode(e.target.value)}>
+        ${waveCtl.modes.map(([v,label])=>html`<option key=${v} value=${v}>${label}</option>`)}
+      </select>
+      <button disabled=${waveCtl.busy} onClick=${waveCtl.start}>start</button>
+    </span>
+    <span class="chip commented mono" hidden=${!committer.running}>committing…</span>
+    <button class="primary" disabled=${!items.some(it=>it.state==="approved")}
+      onClick=${onCommit}>commit approved</button>
+  </div>`;
+}
+
+/* ---------- overnight ----------
+   The dials are the server's; the panel only mirrors them, so an edit posts
+   and the next poll confirms it. A field the user is typing in is left alone. */
+const NIGHT_DIALS = ["target","reserve","floor","ceiling"];
+const hhmm = e => { const d=new Date(e*1000);
+  return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); };
+
+function NightPanel({night, open, onDial, onToggle, onCatchup}){
+  const n = night||{}, g = n.gate;
+  const refs = {target:useRef(null), reserve:useRef(null), floor:useRef(null), ceiling:useRef(null)};
+  const log = useRef(null), onBox = useRef(null), catchBox = useRef(null);
+  useEffect(()=>{
+    for(const key of NIGHT_DIALS){
+      const el=refs[key].current, v=n[key];
+      if(el && v!=null && document.activeElement!==el && el.value!==String(v)) el.value=v;
+    }
+    /* the boxes mirror the server, so a click the server does not confirm —
+       a declined autopilot prompt — snaps back on the next draw */
+    if(onBox.current) onBox.current.checked=!!n.on;
+    if(catchBox.current) catchBox.current.checked=!!n.catchup;
+    if(log.current) log.current.scrollTop=log.current.scrollHeight;
+  });
+  const read=[];
+  if(g && g.wk!=null && g.line!=null)
+    read.push(html`<span key="wk">wk <b>${g.wk.toFixed(1)+"%"}</b> vs line <b>${g.line.toFixed(1)+"%"}</b>
+      ${" (elapsed "+g.elapsed.toFixed(1)+"% − reserve "+n.reserve+")"}</span>`);
+  if(g && g.fiveh!=null)
+    read.push(html`<span key="5h">5h <b>${g.fiveh.toFixed(1)+"%"}</b>${" / ceiling "+n.ceiling+"%"}
+      ${g.squeeze && html`<span> · <b>squeeze zone</b></span>`}</span>`);
+  if(g) read.push(html`<span key="gate" class=${g.open?"gate-open":"gate-held"}>
+    ${(g.open?"admission open · ":"admission held · ")+g.why}</span>`);
+  else read.push(html`<span key="off">mode off — admissions are yours</span>`);
+  if(n.next) read.push(html`<span key="next">${"next: "+n.next.what+" "+hhmm(n.next.at)}</span>`);
+  return html`<div id="nightpanel" hidden=${!open}>
+    <div class="nightrow">
+      <label title="run the queue unattended">
+        <input ref=${onBox} type="checkbox" checked=${!!n.on}
+          onChange=${e=>onToggle(e.target.checked)}/>
+        <b>autopilot</b></label>
+      <label title="items kept in flight">target
+        <input ref=${refs.target} type="number" min="1" max="40"
+          onChange=${e=>onDial("target", e.target.value)}/></label>
+      <label title="weekly points held back from the pace line">reserve
+        <input ref=${refs.reserve} type="number" min="0" max="100"
+          onChange=${e=>onDial("reserve", e.target.value)}/></label>
+      <label title="weekly points spendable however early in the week">floor
+        <input ref=${refs.floor} type="number" min="0" max="100"
+          onChange=${e=>onDial("floor", e.target.value)}/></label>
+      <label title="5h utilization above which new admissions hold">5h ceiling
+        <input ref=${refs.ceiling} type="number" min="0" max="100"
+          onChange=${e=>onDial("ceiling", e.target.value)}/></label>
+      <label title="spend the slack the week has accumulated">
+        <input ref=${catchBox} type="checkbox" checked=${!!n.catchup}
+          onChange=${e=>onCatchup(e.target.checked)}/>
+        catchup</label>
+      <span style="flex:1"></span>
+      <span><b>${n.landed||0}</b> landed unreviewed tonight</span>
+    </div>
+    <div class="nightrow">${read}</div>
+    <div id="nightlog" ref=${log}>
+      ${(n.log||[]).map((e,i)=>html`<div key=${i+":"+e.t}>${hhmm(e.t)+" · "+e.text}</div>`)}
+    </div>
+  </div>`;
 }
 
 /* ---------- feed ----------
-   The feed only grows, apart from the report that replaces a worker message at
-   turn end. Redraw the entries that changed and leave the rest in place, so a
-   streaming turn does not drag away the scroll position or drop a selection. */
-let feedAt=null;   // item id + session tab the drawn nodes belong to
-let drawn=[];      // one {sig, nodes} per feed entry, in feed order
-const feedSig = m => JSON.stringify([m.kind, !!m.sub, m.text]);
-
-function feedNodes(feed, m){
-  if(m.kind==="tool"){
-    const nodes=[];
-    let group=feed.lastElementChild;
-    if(!group || !group.classList.contains("tools")){
-      group=document.createElement("div"); group.className="tools";
-      feed.appendChild(group); nodes.push(group);
-    }
-    const t=document.createElement("div"); t.className="tl"+(m.sub?" sub":"");
-    const sp=m.text.indexOf(" ");
-    t.innerHTML= sp<0 ? "<b>"+esc(m.text)+"</b>" : "<b>"+esc(m.text.slice(0,sp))+"</b> "+esc(m.text.slice(sp+1));
-    group.appendChild(t); nodes.push(t);
-    return nodes;
-  }
-  let el;
-  if(m.kind==="report"){
-    el=document.createElement("section"); el.className="report";
-    el.innerHTML=`<div class="body">${render(m.text)}</div>`;
-  } else if(m.kind==="event"){
-    el=document.createElement("div"); el.className="event"; el.textContent="— "+m.text+" —";
-  } else if(m.kind==="ask"){
-    el=document.createElement("div"); el.className="msg ask";
-    el.innerHTML=render(m.text);
-  } else {
-    el=document.createElement("div"); el.className="msg "+(m.kind==="you"?"you":"worker")+(m.sub?" sub":"");
-    el.innerHTML=render(m.text);
-  }
-  feed.appendChild(el);
-  return [el];
-}
-
-function renderFeed(js, it, entries, key, showRun){
-  let feed=$("feed");
-  if(!feed || feedAt!==key){
-    js.innerHTML="";
-    feed=document.createElement("div"); feed.id="feed"; js.appendChild(feed);
-    feedAt=key; drawn=[];
-  }
-  const stick = js.scrollHeight - js.scrollTop - js.clientHeight < 60;
-  const ph=feed.querySelector(":scope > .placeholder");
-  if(ph) ph.remove();
-  let k=0;
-  while(k<drawn.length && k<entries.length && drawn[k].sig===feedSig(entries[k])) k++;
-  // a tools group belongs to the entry that opened it, so dropping that entry
-  // takes the later entries nested inside it too
-  for(let i=drawn.length-1;i>=k;i--) for(const n of drawn[i].nodes) n.remove();
-  drawn.length=k;
-  for(let i=k;i<entries.length;i++)
-    drawn.push({sig:feedSig(entries[i]), nodes:feedNodes(feed, entries[i])});
-  if(showRun){
-    const p=document.createElement("p"); p.className="placeholder";
-    p.innerHTML='<span class="runpulse"></span>worker running'
-      +(it.turnStarted?' · <span data-t0="'+it.turnStarted+'">'+fmtDur(Date.now()/1000-it.turnStarted)+'</span>':"");
-    feed.appendChild(p);
-  } else if(!entries.length){
-    const p=document.createElement("p"); p.className="placeholder";
-    p.textContent = it.state==="queued" ? "queued" : "no messages yet";
-    feed.appendChild(p);
-  }
-  if(stick) js.scrollTop = js.scrollHeight;
-}
-
-/* ---------- detail ----------
-   Each pane redraws only when its own inputs change. The panes carry buttons
-   and tabs, and a rebuild between mousedown and mouseup swallows the click. */
-let headAt=null;   // signature of the header the detail pane shows
-let taskAt=null;   // item id the task strip was built for
-let codeWas=null;  // markup last written to the code pane
-let tabAt=null;    // signature of the file tabs
-let btnAt=null;    // signature of the code-pane buttons
-function renderDetail(){
-  const it=sel(), js=$("judge-scroll"), jh=$("judge-head");
-  if(!it){
-    jh.innerHTML=""; headAt=null; tabAt=null; btnAt=null;
-    js.innerHTML=""; feedAt=null; drawn=[]; taskAt=null; codeWas=null;
-    const p=document.createElement("p"); p.className="placeholder";
-    p.textContent = items.length ? "select an item" : "no items — start a wave";
-    js.appendChild(p);
-    $("composer").classList.add("disabled"); $("cbox").disabled=true; $("sendbtn").disabled=true;
-    $("cbox").placeholder=""; $("cbox").value=""; cboxFor=null; $("chint").textContent="";
-    $("fname").textContent="—"; $("flines").textContent=""; $("codepre").textContent="";
-    $("tasklabel").textContent="task"; $("taskbody").innerHTML=""; codeAt=null;
-    return;
-  }
-  const ci=cacheInfo(it);
-  const cache=itemCache[it.id]||{feed:[],code:""};
-  const tab=tabOf(it);
-  const feedFor = s => (cache.feed||[]).filter(m=>(m.sess||"refine")===s);
-  const entries=feedFor(tab);
-  seenN[it.id+"|"+tab]=entries.length;
-  const other = tab==="create"?"refine":"create";
-  const badge = hasTab(it,other) && feedFor(other).length>(seenN[it.id+"|"+other]||0);
-
-  const headSig=JSON.stringify([it.id,it.state,it.updated,it.dirty,it.title,it.sessions,it.phase,it.active,it.workerLive,it.context,tab,badge]);
-  if(headAt!==headSig){
-    headAt=headSig;
-    jh.innerHTML="";
-    const dh=document.createElement("div");
-    dh.innerHTML=`<div class="dhead"><span class="tid">${it.id}</span><span class="chip ${CHIPCLS[it.state]}"><span class="dot"></span>${it.state}</span><span class="chip queued"><span class="dot"></span>${it.phase} phase</span>${it.updated?'<span class="badge-upd">UPDATED</span>':""}${it.dirty?'<span class="badge-dirty">CLEANUP PENDING</span>':""}<span class="title">${esc(it.title||"")}</span></div>`;
-    const tr=document.createElement("div"); tr.className="stabs";
-    for(const s of ["create","refine"]) if(hasTab(it,s)){
-      const t=document.createElement("span");
-      t.className="stab"+(s===tab?" on":"");
-      t.textContent=s+" · "+modelShort(s);
-      if(s!==tab && feedFor(s).length>(seenN[it.id+"|"+s]||0)){
-        const b=document.createElement("span"); b.className="bdg"; t.appendChild(b);
-      }
-      t.onclick=()=>{ sessTab[it.id]=s; renderDetail(); };
-      tr.appendChild(t);
-    }
-    dh.appendChild(tr);
-    const sid=it.sessions[tab];
-    if(sid){
-      const sl=document.createElement("div"); sl.className="sessline";
-      sl.innerHTML=`<span class="cmd">claude --resume ${sid.slice(0,8)}…</span>`;
-      const context=(it.context||{})[tab];
-      if(context){
-        const pct=document.createElement("span"); pct.textContent=`context ${context.percent.toFixed(1)}%`;
-        sl.appendChild(pct);
-        const cb=document.createElement("button"); cb.className="copybtn";
-        cb.textContent="compact · "+(context.compactPct==null?`${Math.round(context.used/1000)}k rewrite`:`~${context.compactPct.toFixed(2)}% ${context.limiting}`);
-        cb.disabled=it.active; cb.onclick=()=>post("/api/compact",{id:it.id,sess:tab});
-        sl.appendChild(cb);
-      }
-      if(!(it.workerLive||{})[tab]){
-        const b=document.createElement("button"); b.className="copybtn"; b.textContent="copy · o";
-        b.onclick=()=>copy(takeoverCmd(it,tab),"takeover "+it.id);
-        sl.appendChild(b);
-      }
-      if(it.active){
-        const kb=document.createElement("button"); kb.className="copybtn"; kb.textContent="stop";
-        kb.onclick=()=>post("/api/kill",{id:it.id});
-        sl.appendChild(kb);
-      } else {
-        const db=document.createElement("button"); db.className="copybtn"; db.textContent="drop";
-        db.onclick=()=>{ if(confirm("Drop "+it.id+" from the console?")) post("/api/drop",{id:it.id}); };
-        sl.appendChild(db);
-      }
-      dh.appendChild(sl);
-    }
-    jh.appendChild(dh);
-  }
-
-  renderFeed(js, it, entries, it.id+"|"+tab,
-             it.active && (!it.turnPhase || it.turnPhase===tab));
-
-  /* composer — sends to the session tab in view */
-  const canSend = it.sessions[tab] && !it.active && (it.state==="needs-review"||it.state==="approved");
-  const composer=$("composer"), cbox=$("cbox");
-  composer.classList.remove("disabled");
-  cbox.disabled=false;
-  $("sendbtn").disabled=!canSend;
-  cbox.placeholder = canSend ? "" :
-    it.active ? "worker running — draft freely" : "no session yet";
-  if(cboxFor!==it.id){
-    cboxFor=it.id;
-    cbox.value = localStorage.getItem(draftKey(it.id)) || "";
-  }
-  let hint = it.state==="needs-review" && it.dirty ? "cleanup pending" : "";
-  if(it.phase==="create" && it.state==="needs-review" && it.sessions.create)
-    hint = "create phase — `handoff` when ready"+(hint?" · "+hint:"");
-  $("chint").textContent=hint;
-
-  /* task strip + code — open/closed remembered per task, default open */
-  $("taskstrip").classList.toggle("open", taskOpen[it.id]!==false);
-  const task=taskCache[it.id];
-  const taskKey = it.id+"|"+(task && typeof task!=="string" ? "loaded" : "waiting");
-  if(taskAt!==taskKey){
-    taskAt=taskKey;
-    const tb=$("taskbody"); tb.innerHTML="";
-    if(task && typeof task!=="string"){
-      $("tasklabel").textContent = "task · "+task.train.length+" train / "+task.test.length+" test";
-      const tw=document.createElement("div"); tw.className="gridwell";
-      const pr=document.createElement("div"); pr.className="pairrow";
-      task.train.forEach((p,i)=>{
-        const pair=document.createElement("div"); pair.className="pair";
-        pair.appendChild(gridEl(p.input,"train "+i));
-        const a=document.createElement("span"); a.className="arr"; a.textContent="→"; pair.appendChild(a);
-        pair.appendChild(gridEl(p.output,"out"));
-        pr.appendChild(pair);
-      });
-      task.test.forEach((p,i)=>{
-        const pair=document.createElement("div"); pair.className="pair";
-        pair.appendChild(gridEl(p.input,"test "+i));
-        if(p.output){ const a=document.createElement("span"); a.className="arr"; a.textContent="→"; pair.appendChild(a); pair.appendChild(gridEl(p.output,"expected")); }
-        pr.appendChild(pair);
-      });
-      tw.appendChild(pr); tb.appendChild(tw);
-    } else {
-      $("tasklabel").textContent="task";
-    }
-  }
-
-  const files = cache.files || [];
-  const f = files.find(x=>x.path===tabSel[it.id]) || files[0] || {path:"", snap:"", code:""};
-  const tabSig=JSON.stringify([it.id,files.map(x=>x.path),f.path,!!f.code]);
-  if(tabAt!==tabSig){
-    tabAt=tabSig;
-    const fn=$("fname"); fn.innerHTML="";
-    if(files.length>1){
-      for(const x of files){
-        const t=document.createElement("span");
-        t.className="ftab"+(x.path===f.path?" on":"");
-        t.textContent=x.path.split("/").pop();
-        t.onclick=()=>{ tabSel[it.id]=x.path; renderDetail(); };
-        fn.appendChild(t);
-      }
-    } else {
-      fn.textContent = f.code ? f.path : "—";
-    }
-  }
-  let codeHtml="", added=0, removed=0;
-  if(f.code){
-    if(f.snap && f.snap!==f.code && window.Diff){
-      const r=diffHtml(f.snap, f.code); codeHtml=r.html; added=r.added; removed=r.removed;
-    } else {
-      codeHtml=cmify(f.code);
-    }
-  }
-  const turn = [added?"+"+added:"", removed?"−"+removed:""].filter(Boolean).join(" ");
-  $("flines").textContent = f.code ?
-    f.code.split("\n").length+" lines"+(turn?" · "+turn+" this turn":"") : "";
-  const pane = f.code ? codeHtml :
-    '<span class="cm">// '+(it.state==="queued"?"not started":"no file yet")+"</span>";
-  if(codeWas!==pane){ codeWas=pane; $("codepre").innerHTML=pane; }
-  const codeKey = it.id+"|"+f.path;
-  if(codeAt!==codeKey){ codeAt=codeKey; jumpToFirstMark(); }
-  const solver = files[0]||{};
-  const canRevert = f.path===solver.path && solver.code && solver.snap
-    && solver.snap!==solver.code && !it.active;
-  const btnSig = it.id+"|"+(canRevert?"revert":"");
-  if(btnAt!==btnSig){
-    btnAt=btnSig;
-    const cb=$("codebtns"); cb.innerHTML="";
-    if(canRevert){
-      const rb=document.createElement("button"); rb.className="copybtn"; rb.textContent="revert edits";
-      rb.onclick=()=>post("/api/revert",{id:it.id});
-      cb.appendChild(rb);
-    }
-  }
-}
-
-function select(id){
-  selId=id;
-  const it=sel();
-  if(it){ ensureItem(id, true); ensureTask(id); if(it.updated) post("/api/seen",{id}); }
-  renderRail(); renderDetail();
-}
-
-/* ---------- actions ---------- */
-function nextReview(){
-  const revs=railOrder().filter(id=>{ const it=items.find(x=>x.id===id); return it.state==="needs-review"&&id!==selId; });
-  if(revs.length) select(revs[0]); else toast("review queue empty");
-}
-async function approve(){
-  const it=sel();
-  if(!it||it.state!=="needs-review"){ toast("nothing to approve"); return; }
-  const r=await post("/api/approve",{id:it.id});
-  if(r.ok){ toast(it.id+" approved"); nextReview(); }
-}
-async function unapprove(){
-  const it=sel();
-  if(!it||it.state!=="approved"){ toast("not approved"); return; }
-  const r=await post("/api/unapprove",{id:it.id});
-  if(r.ok) toast(it.id+" back to review");
-}
-async function sendComment(){
-  const it=sel(), cbox=$("cbox"), text=cbox.value.trim();
-  if(!it||!text) return;
-  if($("sendbtn").disabled){
-    toast(it.active ? "worker running — draft kept" : "no session yet — draft kept");
-    return;
-  }
-  const low=text.toLowerCase();
-  if(low==="commit"){ toast("commit is a console action"); return; }
-  if(low==="next"){ toast("no next in batch mode"); return; }
-  const r=await post("/api/comment",{id:it.id,text,sess:tabOf(it)});
-  if(r.ok){ cbox.value=""; localStorage.removeItem(draftKey(it.id)); cbox.blur(); toast("sent"); }
-}
-async function commitApproved(){
-  const r=await post("/api/commit");
-  if(r.ok) toast('git commit -m "'+r.msg+'"');
-}
-async function startWave(){
-  const b=$("wavebtn");
-  if(b.disabled) return;
-  b.disabled=true;
-  try {
-    const k=parseInt($("waveK").value,10)||6;
-    const r=await post("/api/wave",{k,order:$("waveOrder").value});
-    if(r.ok) toast("wave started · "+r.ids.join(", "));
-  } finally { setTimeout(()=>{ b.disabled=false; }, 5000); }  // matches WAVE_DEBOUNCE
-}
-
-/* ---------- keys ---------- */
-document.addEventListener("keydown",e=>{
-  if(e.metaKey||e.ctrlKey||e.altKey) return;
-  const inBox = e.target===$("cbox") || e.target.tagName==="INPUT";
-  if(e.key==="Escape"){ if(inBox) e.target.blur(); return; }
-  if(inBox){
-    if(e.target===$("cbox") && e.key==="Enter" && !e.shiftKey){ e.preventDefault(); sendComment(); }
-    return;
-  }
-  const order=railOrder(), pos=order.indexOf(selId);
-  if(e.key==="j"){ if(order.length) select(order[Math.min(pos+1,order.length-1)]); }
-  else if(e.key==="k"){ if(order.length) select(order[Math.max(pos-1,0)]); }
-  else if(e.key==="n"){ nextReview(); }
-  else if(e.key==="a"){ approve(); }
-  else if(e.key==="u"){ unapprove(); }
-  else if(e.key==="c"){ if(!$("cbox").disabled){ e.preventDefault(); $("cbox").focus(); } }
-  else if(e.key==="o"){ const it=sel(); if(it){ const s=tabOf(it); if(it.sessions[s]&&!(it.workerLive||{})[s]) copy(takeoverCmd(it,s),"takeover "+it.id); } }
-  else if(e.key==="s"){ const it=sel(); if(it){ const o=tabOf(it)==="create"?"refine":"create"; if(hasTab(it,o)){ sessTab[it.id]=o; renderDetail(); } } }
-  else if(e.key==="t"){ toggleTask(); }
-});
-function toggleTask(){
-  const it=sel(); if(!it) return;
-  taskOpen[it.id] = !(taskOpen[it.id]!==false);
-  $("taskstrip").classList.toggle("open", taskOpen[it.id]);
-}
-$("taskhead").onclick=toggleTask;
-$("cbox").oninput=()=>{
-  if(!cboxFor) return;
-  const v=$("cbox").value;
-  if(v) localStorage.setItem(draftKey(cboxFor), v);
-  else localStorage.removeItem(draftKey(cboxFor));
-};
-$("sendbtn").onclick=sendComment;
-$("commitbtn").onclick=commitApproved;
-$("wavebtn").onclick=startWave;
-
-/* ---------- poll ---------- */
-async function poll(){
-  for(;;){
-    try {
-      const r=await fetch(`/api/state?since=${seq}&wait=25`);
-      const d=await r.json();
-      const changed = d.seq!==seq;
-      seq=d.seq; wave=d.wave; items=d.items; usage=d.usage||[];
-      progress = d.total ? {solved:d.solved, total:d.total} : null;
-      cli = d.cli||{};
-      const cm = d.committer||{};
-      if(committerWas && !cm.running && cm.note) toast(cm.note);
-      committerWas = !!cm.running;
-      $("committerchip").hidden = !cm.running;
-      if(selId && !items.find(x=>x.id===selId)) selId=null;
-      if(!selId && items.length) selId=railOrder()[0];
-      if(changed){
-        if(selId) ensureItem(selId);
-        renderRail(); renderDetail();
-      }
-    } catch(e){
-      await new Promise(res=>setTimeout(res,3000));
-    }
-  }
-}
-poll();
-/* live TTL countdown + turn timers */
-setInterval(()=>{
-  document.querySelectorAll("[data-t0]").forEach(el=>{
-    el.textContent=fmtDur(Date.now()/1000-parseFloat(el.dataset.t0));
+   Entries are keyed by position, so a streaming turn appends and the rows
+   already on screen stay put. Consecutive tool lines share one group. */
+function feedBlocks(entries){
+  const out=[];
+  entries.forEach((m,i)=>{
+    if(m.kind==="tool"){
+      const last=out[out.length-1];
+      if(last && last.tools) last.tools.push(m);
+      else out.push({key:i, tools:[m]});
+    } else out.push({key:i, m});
   });
-  renderRail();
-  ttlWatch();
-},1000);
+  return out;
+}
+function Entry({m}){
+  if(m.kind==="report")
+    return html`<section class="report"><div class="body"
+      dangerouslySetInnerHTML=${{__html:md(m.text)}}></div></section>`;
+  if(m.kind==="event")
+    return html`<div class="event">${"— "+m.text+" —"}</div>`;
+  if(m.kind==="ask")
+    return html`<div class="msg ask" dangerouslySetInnerHTML=${{__html:md(m.text)}}></div>`;
+  return html`<div class=${"msg "+(m.kind==="you"?"you":"worker")+(m.sub?" sub":"")}
+    dangerouslySetInnerHTML=${{__html:md(m.text)}}></div>`;
+}
+function ToolLine({m}){
+  const sp=m.text.indexOf(" ");
+  return html`<div class=${"tl"+(m.sub?" sub":"")}>${
+    sp<0 ? html`<b>${m.text}</b>`
+         : [html`<b key="h">${m.text.slice(0,sp)}</b>`, " "+m.text.slice(sp+1)]}</div>`;
+}
+
+function Feed({it, entries, feedKey, showRun, now}){
+  const box=useRef(null), stick=useRef(true), lastKey=useRef(null);
+  /* measured against the DOM as it stands before this render commits, the way
+     a hand-written append would: at the bottom now means at the bottom after */
+  if(lastKey.current!==feedKey) stick.current=true;
+  else if(box.current){
+    const js=box.current;
+    stick.current = js.scrollHeight - js.scrollTop - js.clientHeight < 60;
+  }
+  useLayoutEffect(()=>{
+    lastKey.current=feedKey;
+    if(stick.current && box.current) box.current.scrollTop=box.current.scrollHeight;
+  });
+  const rows=useMemo(()=>feedBlocks(entries).map(b=>b.tools
+    ? html`<div class="tools" key=${b.key}>${b.tools.map((m,i)=>html`<${ToolLine} key=${i} m=${m}/>`)}</div>`
+    : html`<${Entry} key=${b.key} m=${b.m}/>`), [entries]);
+  return html`<div id="judge-scroll" ref=${box}>
+    <div id="feed">
+      ${rows}
+      ${showRun
+        ? html`<p class="placeholder"><span class="runpulse"></span>worker running${
+            it.turnStarted ? html`<span> · <span>${fmtDur(now-it.turnStarted)}</span></span>` : ""}</p>`
+        : !entries.length
+        ? html`<p class="placeholder">${it.state==="queued"?"queued":"no messages yet"}</p>`
+        : null}
+    </div>
+  </div>`;
+}
+
+/* ---------- detail header ---------- */
+function DetailHead({it, cli, tab, badges, canAdvance, nxt, onTab, onDismiss}){
+  const sid=it.sessions[tab];
+  const context=(it.context||{})[tab];
+  const resume = backendOf(it,tab)==="codex" ? "codex exec resume" : "claude --resume";
+  return html`<div>
+    <div class="dhead">
+      <span class="tid">${it.id}</span>
+      <${StateChip} state=${it.state}/>
+      <span class="chip queued"><span class="dot"></span>${stageLabel(it,it.phase)}</span>
+      ${it.updated && html`<span class="badge-upd">UPDATED</span>`}
+      ${it.dirty && html`<span class="badge-dirty">CLEANUP PENDING</span>`}
+      <${CompBadges} x=${it}/><${CalloutBadge} x=${it}/>
+      <span class="title">${it.title||""}</span>
+    </div>
+    <div class="stabs">
+      ${stageNames(it).filter(s=>hasTab(it,s)).map(s=>html`
+        <span key=${s} class=${"stab"+(s===tab?" on":"")} onClick=${()=>onTab(s)}>
+          ${stageLabel(it,s)}${badges[s] && html`<span class="bdg"></span>`}
+        </span>`)}
+    </div>
+    ${sid && html`<div class="sessline">
+      <span class="cmd">${resume+" "+sid.slice(0,8)+"…"}</span>
+      ${context && html`<span>${"context "+context.percent.toFixed(1)+"%"}</span>`}
+      ${/* a codex stage reports no context window and compacts its own thread;
+            `/compact` would reach it as prompt text, so the button stays off */
+        context && backendOf(it,tab)!=="codex" && html`
+        <button class="copybtn" disabled=${it.active}
+          onClick=${()=>post("/api/compact",{id:it.id,sess:tab})}>
+          ${"compact · "+(context.compactPct==null
+            ? Math.round(context.used/1000)+"k rewrite"
+            : "~"+context.compactPct.toFixed(2)+"% "+context.limiting)}</button>`}
+      ${!(it.workerLive||{})[tab] && html`
+        <button class="copybtn"
+          onClick=${()=>copy(takeoverCmd(it,tab,cli),"takeover "+it.id)}>copy · o</button>`}
+      ${canAdvance && html`
+        <button class="copybtn" title=${"hand the report to the "+nxt+" session"}
+          onClick=${()=>post("/api/advance",{id:it.id})}>${"advance · "+stageLabel(it,nxt)}</button>`}
+      ${canAdvance && nxt==="finalize" && html`
+        <button class="copybtn" title="dismiss — record that no fable pass is needed"
+          onClick=${()=>onDismiss(it.id)}>✕ dismiss</button>`}
+      ${it.active
+        ? html`<button class="copybtn" onClick=${()=>post("/api/kill",{id:it.id})}>stop</button>`
+        : html`<button class="copybtn" onClick=${()=>{
+            if(confirm("Drop "+it.id+" from the console?")) post("/api/drop",{id:it.id});
+          }}>drop</button>`}
+    </div>`}
+  </div>`;
+}
+
+function PeekHead({d, onDismiss}){
+  return html`<div class="dhead">
+    <span class="tid">${d.id}</span>
+    <span class="chip queued"><span class="dot"></span>backlog</span>
+    <span class="title">${d.title||""}</span>
+    <button class="copybtn" title="dismiss — record that no fable pass is needed"
+      onClick=${()=>onDismiss(d.id)}>✕ dismiss</button>
+  </div>`;
+}
+function PeekBody({d}){
+  const reports=d.reports||[];
+  return html`<div id="judge-scroll">
+    ${reports.map((r,i)=>[
+      html`<div class="railhead" key=${"h"+i}><span>${r.stage+" report"}</span></div>`,
+      html`<pre class="peektext" key=${"t"+i}>${r.text}</pre>`,
+    ])}
+    ${!reports.length && html`<p class="placeholder">no reports — the solver file is the whole account</p>`}
+  </div>`;
+}
+
+/* ---------- composer ---------- */
+function Composer({boxRef, enabled, canSend, placeholder, hint, value, onInput, onSend}){
+  return html`<div id="composer" class=${enabled?"":"disabled"}>
+    <textarea ref=${boxRef} aria-label="comment" disabled=${!enabled}
+      placeholder=${placeholder} value=${value}
+      onInput=${e=>onInput(e.target.value)}></textarea>
+    <div class="hints">
+      <span>${hint}</span>
+      <span class="actions"><span>⏎ send · ⇧⏎ newline</span>
+        <button class="primary" disabled=${!canSend} onClick=${onSend}>send</button></span>
+    </div>
+  </div>`;
+}
+
+/* ---------- task strip + code column ---------- */
+function TaskStrip({id, task, open, onToggle}){
+  const body = useMemo(()=>{
+    if(!task || typeof task==="string") return null;
+    return html`<div class="gridwell"><div class="pairrow">
+      ${task.train.map((p,i)=>html`<div class="pair" key=${"tr"+i}>
+        <${Grid} g=${p.input} label=${"train "+i}/>
+        <span class="arr">→</span>
+        <${Grid} g=${p.output} label="out"/>
+      </div>`)}
+      ${task.test.map((p,i)=>html`<div class="pair" key=${"te"+i}>
+        <${Grid} g=${p.input} label=${"test "+i}/>
+        ${p.output && [html`<span class="arr" key="a">→</span>`,
+                       html`<${Grid} key="g" g=${p.output} label="expected"/>`]}
+      </div>`)}
+    </div></div>`;
+  },[task, id]);
+  const label = task && typeof task!=="string"
+    ? "task · "+task.train.length+" train / "+task.test.length+" test" : "task";
+  return html`<div id="taskstrip" class=${open?"open":""}>
+    <div class="taskhead" onClick=${onToggle}>
+      <span class="caret">▸</span><span>${label}</span><span style="margin-left:auto">t</span>
+    </div>
+    <div id="taskbody">${body}</div>
+  </div>`;
+}
+
+function CodePane({jumpKey, fname, lines, buttons, pane}){
+  const pre=useRef(null);
+  /* A long file's edits are rarely at the top, so bring the first marked line
+     into view. Only when the pane switches to a different file: re-running this
+     as a turn streams would drag the pane away from whoever is reading it. */
+  useLayoutEffect(()=>{
+    const el=pre.current;
+    if(!el) return;
+    const first=el.querySelector(".add, .del");
+    if(!first){ el.scrollTop=0; return; }
+    const lead=(parseFloat(getComputedStyle(el).lineHeight)||0)*3;   // lines of lead-in
+    el.scrollTop += first.getBoundingClientRect().top - el.getBoundingClientRect().top - lead;
+  },[jumpKey]);
+  return [
+    html`<div class="codehead" key="h">
+      <span class="fname">${fname}</span>
+      <span id="flines">${lines}</span>
+      <span id="codebtns" style="margin-left:auto">${buttons}</span>
+    </div>`,
+    html`<pre id="codepre" key="p" ref=${pre} dangerouslySetInnerHTML=${{__html:pane}}></pre>`,
+  ];
+}
+
+/* ---------- app ---------- */
+function App(){
+  const [snap,setSnap]=useState({seq:0, wave:0, items:[], usage:[], progress:null,
+                                 cli:{}, night:{}, committer:{}});
+  const [selId,setSelId]=useState(null);
+  const [view,setViewState]=useState(()=>localStorage.getItem("view")===FINAL?FINAL:"wave");
+  const [backlog,setBacklog]=useState([]);
+  const [tick,setTick]=useState(0);
+  const [cacheVer,setCacheVer]=useState(0);
+  const [toastState,setToastState]=useState({msg:"", show:false});
+  const [sessPin,setSessPin]=useState({});    // id -> {phase, tab} the user pinned
+  const [tabSel,setTabSel]=useState({});      // id -> path of the active code tab
+  const [taskOpen,setTaskOpen]=useState({});  // id -> bool (default open)
+  const [draft,setDraft]=useState("");
+  const [nightOpen,setNightOpen]=useState(()=>!!localStorage.getItem("nightOpen"));
+  const [waveK,setWaveK]=useState("10");
+  const [waveOrder,setWaveOrder]=useState("name");
+  const [presetId,setPresetId]=useState("");
+  const [autoMode,setAutoMode]=useState("manual");
+  const [waveBusy,setWaveBusy]=useState(false);
+
+  toastSet = setToastState;
+
+  const taskCache=useRef({});   // id -> task json | "pending" | "missing"
+  const itemCache=useRef({});   // id -> {feed, files, ver}
+  const peekCache=useRef({});   // id -> peek json
+  const seenN=useRef({});       // id|sess -> feed length when that tab was last shown
+  const draftFor=useRef(null);  // id whose draft the composer holds
+  const cbox=useRef(null);
+  const live=useRef({});        // what the async handlers read
+
+  const bump=useCallback(()=>setCacheVer(v=>v+1),[]);
+  const {items, cli, night, committer, usage, progress, wave} = snap;
+
+  /* ---- fetches ---- */
+  const ensureTask=useCallback(id=>{
+    if(!id || taskCache.current[id]) return;
+    taskCache.current[id]="pending";
+    fetch("/api/task/"+id).then(r=>r.ok?r.json():"missing").then(t=>{
+      taskCache.current[id]=t; bump();
+    }).catch(()=>{ taskCache.current[id]="missing"; });
+  },[bump]);
+  const ensureItem=useCallback((id, force)=>{
+    const cached=itemCache.current[id], it=live.current.items.find(x=>x.id===id);
+    if(cached && it && cached.ver===it.ver && !force) return;
+    fetch("/api/item/"+id).then(r=>r.json()).then(d=>{
+      itemCache.current[id]=d; bump();
+    }).catch(()=>{});
+  },[bump]);
+  const ensurePeek=useCallback(id=>{
+    fetch("/api/peek/"+id).then(r=>r.ok?r.json():null).then(d=>{
+      if(d){ peekCache.current[id]=d; bump(); }
+    }).catch(()=>{});
+  },[bump]);
+  const fetchBacklog=useCallback(async()=>{
+    if(live.current.view!==FINAL) return;
+    try {
+      const r=await fetch("/api/backlog");
+      const d=await r.json();
+      setBacklog(d.items||[]);
+    } catch(e){}
+  },[]);
+
+  /* ---- selection ---- */
+  const railOrder=useMemo(()=>
+    [...items].sort((a,b)=>cacheInfo(a).sort-cacheInfo(b).sort).map(it=>it.id),
+    [items, tick]);
+  const itemOrder=useMemo(()=>view===FINAL
+    ? railOrder.filter(id=>{ const it=items.find(x=>x.id===id); return it && it.phase===FINAL; })
+    : railOrder, [railOrder, items, view]);
+  /* one selection over both sections: in-pass items, then the backlog rows.
+     An id that is both a live item and a backlog row resolves to the item. */
+  const curOrder=useMemo(()=>view===FINAL
+    ? itemOrder.concat(backlog.map(b=>b.id).filter(id=>!itemOrder.includes(id)))
+    : itemOrder, [itemOrder, backlog, items, view]);
+
+  const selItem = items.find(it=>it.id===selId) || null;
+  const selBk = !selItem && view===FINAL ? (backlog.find(b=>b.id===selId)||null) : null;
+  const detailId = selItem ? selItem.id : selBk ? selBk.id : null;
+
+  const select=useCallback(id=>{
+    if(!id) return;
+    setSelId(id);
+    const it=live.current.items.find(x=>x.id===id);
+    ensureTask(id);
+    if(it){
+      ensureItem(id, true);
+      if(it.updated) post("/api/seen",{id});
+    } else {
+      ensurePeek(id);
+    }
+  },[ensureTask, ensureItem, ensurePeek]);
+
+  const setView=useCallback(v=>{
+    setViewState(cur=>{
+      if(cur===v) return cur;
+      localStorage.setItem("view", v);
+      return v;
+    });
+  },[]);
+
+  /* ---- the session tab in view: the user's pin while it holds, else the stage ---- */
+  const tabOf=useCallback(it=>{
+    const pin=sessPin[it.id];
+    const t = pin && pin.phase===it.phase ? pin.tab : null;
+    return t && (it.sessions[t]||it.phase===t) ? t : it.phase;
+  },[sessPin]);
+  const pinTab=useCallback((it,s)=>setSessPin(p=>({...p, [it.id]:{phase:it.phase, tab:s}})),[]);
+
+  const tab = selItem ? tabOf(selItem) : null;
+  const cache = (selItem && itemCache.current[selItem.id]) || NO_ITEM;
+  const feedFor = s => (cache.feed||[]).filter(m=>(m.sess||"refine")===s);
+  /* the entries hold their identity between fetches, so the second-by-second
+     redraw for the countdowns leaves the feed alone */
+  const entries = useMemo(()=>selItem?feedFor(tab):[], [cache, tab, selItem]);
+  const tabBadges = {};
+  if(selItem) for(const n of stageNames(selItem))
+    tabBadges[n] = n!==tab && hasTab(selItem,n)
+      && feedFor(n).length>(seenN.current[selItem.id+"|"+n]||0);
+  useEffect(()=>{
+    if(selItem) seenN.current[selItem.id+"|"+tab]=entries.length;
+  });
+
+  const nxt = selItem ? nextName(selItem) : null;
+  const canAdvance = !!(selItem && nxt && !selItem.active && selItem.hasReport
+    && (selItem.state==="needs-review"||selItem.state==="approved"));
+  const canSend = !!(selItem && selItem.sessions[tab] && !(selItem.busy||{})[tab]
+    && !selItem.handoffPending && selItem.state!=="committed");
+
+  /* ---- actions ---- */
+  const nextReview=useCallback(()=>{
+    const st=live.current;
+    const revs=st.railOrder.filter(id=>{
+      const it=st.items.find(x=>x.id===id);
+      return it && it.state==="needs-review" && id!==st.selId; });
+    if(revs.length) select(revs[0]); else toast("review queue empty");
+  },[select]);
+  const approve=useCallback(async()=>{
+    const it=live.current.selItem;
+    if(!it||it.state!=="needs-review"){ toast("nothing to approve"); return; }
+    const r=await post("/api/approve",{id:it.id});
+    if(r.ok){ toast(it.id+" approved"); nextReview(); }
+  },[nextReview]);
+  const unapprove=useCallback(async()=>{
+    const it=live.current.selItem;
+    if(!it||it.state!=="approved"){ toast("not approved"); return; }
+    const r=await post("/api/unapprove",{id:it.id});
+    if(r.ok) toast(it.id+" back to review");
+  },[]);
+  const sendComment=useCallback(async()=>{
+    const st=live.current, it=st.selItem, text=(st.draft||"").trim();
+    if(!it||!text) return;
+    if(!st.canSend){
+      toast((it.busy||{})[st.tab] ? "worker running — draft kept"
+        : it.handoffPending ? "handoff in flight — draft kept"
+        : "no session yet — draft kept");
+      return;
+    }
+    const low=text.toLowerCase();
+    if(low==="commit"){ toast("commit is a console action"); return; }
+    if(low==="next"){ toast("no next in batch mode"); return; }
+    const r=await post("/api/comment",{id:it.id, text, sess:st.tab});
+    if(r.ok){
+      setDraft(""); localStorage.removeItem(draftKey(it.id));
+      if(cbox.current) cbox.current.blur();
+      toast("sent");
+    }
+  },[]);
+  const commitApproved=useCallback(async()=>{
+    const r=await post("/api/commit");
+    if(r.ok) toast('git commit -m "'+r.msg+'"');
+  },[]);
+  const toggleTask=useCallback(()=>{
+    const id=live.current.detailId;
+    if(!id) return;
+    setTaskOpen(o=>({...o, [id]: !(o[id]!==false)}));
+  },[]);
+
+  /* the chain choices the server offers; the picked one goes with the wave.
+     advance modes follow the picked preset: manual, stop before a later stage,
+     or the full chain */
+  const presets = cli.presets||[];
+  const preset = presets.find(p=>p.id===presetId) || presets[0] || null;
+  const modes = useMemo(()=>{
+    const names=(preset?preset.chain:[]).map(st=>st.name);
+    const out=[["manual","manual advance"]];
+    // stopping before the second stage is manual again, so stops start at the third
+    for(const name of names.slice(2)) out.push(["stop:"+name, "auto · stop before "+name]);
+    if(names.length>1) out.push(["full","auto · full chain"]);
+    return out;
+  },[preset]);
+  const mode = modes.some(m=>m[0]===autoMode) ? autoMode : "manual";
+  const startWave=useCallback(async()=>{
+    const st=live.current;
+    if(st.waveBusy) return;
+    setWaveBusy(true);
+    try {
+      const k=parseInt(st.waveK,10)||6;
+      const r=await post("/api/wave",{k, order:st.waveOrder,
+        auto_advance:st.mode!=="manual", chain:st.preset?st.preset.chain:null,
+        auto_stop:st.mode.startsWith("stop:")?st.mode.slice(5):null});
+      if(r.ok) toast("wave started · "+r.ids.join(", "));
+    } finally {
+      setTimeout(()=>setWaveBusy(false), 5000);   // matches WAVE_DEBOUNCE
+    }
+  },[]);
+
+  const onDismiss=useCallback(async id=>{
+    if(!confirm("Drop "+id+" from the backlog? A ledger line records it as needing no fable pass.")) return;
+    await post("/api/dismiss",{id});
+    fetchBacklog();
+  },[fetchBacklog]);
+
+  const postNight=useCallback(async(body, note)=>{
+    const r=await post("/api/night", body);
+    if(r.ok && note) toast(note);
+  },[]);
+  const onNightToggle=useCallback(on=>{
+    if(on){
+      const n=live.current.night||{};
+      const ok=confirm("Autopilot admits tasks from the queue and starts "
+        +"spending now: up to "+(n.target??6)+" items in flight, create → refine, "
+        +"admissions begin within ~30s whenever the pacer is open. Start?");
+      if(!ok){ bump(); return; }   // the checkbox mirrors the server, so redraw it
+    }
+    postNight({on}, on?"autopilot on":"autopilot off");
+  },[postNight, bump]);
+
+  /* ---- what the async handlers read ---- */
+  live.current = {items, selId, selItem, detailId, tab, draft, canSend, view,
+                  railOrder, curOrder, night, waveK, waveOrder, preset, mode, waveBusy};
+
+  /* ---- long poll ---- */
+  useEffect(()=>{
+    let stop=false, seq=0, committerWas=false;
+    (async ()=>{
+      while(!stop){
+        try {
+          const r=await fetch(`/api/state?since=${seq}&wait=25`);
+          const d=await r.json();
+          const changed = d.seq!==seq;
+          seq=d.seq;
+          setSnap({seq:d.seq, wave:d.wave, items:d.items, usage:d.usage||[],
+                   progress: d.total ? {solved:d.solved, total:d.total} : null,
+                   cli:d.cli||{}, night:d.night||{}, committer:d.committer||{}});
+          const cm=d.committer||{};
+          if(committerWas && !cm.running && cm.note) toast(cm.note);
+          committerWas=!!cm.running;
+          if(changed){
+            const id=live.current.selId;
+            if(id && d.items.some(x=>x.id===id)) ensureItem(id);
+            fetchBacklog();   // a landing writes the ledger line the backlog reads
+          }
+        } catch(e){
+          await sleep(3000);
+        }
+      }
+    })();
+    return ()=>{ stop=true; };
+  },[ensureItem, fetchBacklog]);
+
+  /* ---- timers ---- */
+  useEffect(()=>{
+    const h=setInterval(()=>setTick(t=>t+1), 1000);
+    return ()=>clearInterval(h);
+  },[]);
+  useEffect(()=>{ ttlWatch(live.current.items); },[tick]);
+  /* the backlog scan reads every solver, so it is polled only while its lens is
+     open, and slowly: flags and started passes refresh it on the spot */
+  useEffect(()=>{
+    const h=setInterval(fetchBacklog, 15000);
+    return ()=>clearInterval(h);
+  },[fetchBacklog]);
+
+  /* ---- view side effects ---- */
+  useEffect(()=>{
+    document.body.classList.toggle("view-final", view===FINAL);
+    if(view===FINAL) fetchBacklog();
+    else setBacklog([]);
+  },[view, fetchBacklog]);
+
+  /* ---- selection stays on something that exists ---- */
+  useEffect(()=>{
+    let id=selId;
+    if(id && !items.some(x=>x.id===id)
+       && !(view===FINAL && backlog.some(b=>b.id===id))) id=null;
+    if(!id) id = curOrder[0] || (items.length ? railOrder[0] : null) || null;
+    if(id!==selId){
+      setSelId(id);
+      if(id){
+        const it=items.find(x=>x.id===id);
+        ensureTask(id);
+        if(it) ensureItem(id); else ensurePeek(id);
+      }
+    }
+  },[items, backlog, view, curOrder, railOrder, selId, ensureTask, ensureItem, ensurePeek]);
+
+  /* ---- the rows on screen want their thumbnails ---- */
+  useEffect(()=>{
+    for(const id of curOrder) ensureTask(id);
+    if(detailId) ensureTask(detailId);
+  },[curOrder, detailId, ensureTask]);
+
+  /* ---- per-item comment drafts ---- */
+  useEffect(()=>{
+    const id = selItem ? selItem.id : null;
+    if(draftFor.current===id) return;
+    draftFor.current=id;
+    setDraft(id ? (localStorage.getItem(draftKey(id))||"") : "");
+  },[selItem]);
+  const onDraft=useCallback(v=>{
+    setDraft(v);
+    const id=draftFor.current;
+    if(!id) return;
+    if(v) localStorage.setItem(draftKey(id), v);
+    else localStorage.removeItem(draftKey(id));
+  },[]);
+
+  /* ---- keys ---- */
+  const keyRef=useRef(null);
+  keyRef.current=e=>{
+    if(e.metaKey||e.ctrlKey||e.altKey) return;
+    const inBox = e.target===cbox.current || e.target.tagName==="INPUT";
+    if(e.key==="Escape"){ if(inBox) e.target.blur(); return; }
+    if(inBox){
+      if(e.target===cbox.current && e.key==="Enter" && !e.shiftKey){ e.preventDefault(); sendComment(); }
+      return;
+    }
+    const order=live.current.curOrder, pos=order.indexOf(live.current.selId);
+    if(e.key==="j"){ if(order.length) select(order[Math.min(pos+1,order.length-1)]); }
+    else if(e.key==="k"){ if(order.length) select(order[Math.max(pos-1,0)]); }
+    else if(e.key==="n"){ nextReview(); }
+    else if(e.key==="a"){ approve(); }
+    else if(e.key==="u"){ unapprove(); }
+    else if(e.key==="c"){ if(cbox.current && !cbox.current.disabled){ e.preventDefault(); cbox.current.focus(); } }
+    else if(e.key==="o"){
+      const it=live.current.selItem;
+      if(it){ const s=live.current.tab;
+        if(it.sessions[s] && !(it.workerLive||{})[s]) copy(takeoverCmd(it,s,cli),"takeover "+it.id); }
+    }
+    else if(e.key==="s"){
+      const it=live.current.selItem;
+      if(it){ const ns=stageNames(it).filter(n=>hasTab(it,n));
+        if(ns.length>1) pinTab(it, ns[(ns.indexOf(live.current.tab)+1)%ns.length]); }
+    }
+    else if(e.key==="t"){ toggleTask(); }
+    else if(e.key==="v"){ setView(live.current.view===FINAL?"wave":FINAL); }
+  };
+  useEffect(()=>{
+    const h=e=>keyRef.current(e);
+    document.addEventListener("keydown", h);
+    return ()=>document.removeEventListener("keydown", h);
+  },[]);
+
+  /* ---- code pane ---- */
+  const files = cache.files || [];
+  const f = files.find(x=>x.path===(selItem?tabSel[selItem.id]:null)) || files[0]
+    || {path:"", snap:"", code:""};
+  const codeBuilt = useMemo(()=>{
+    if(!f.code) return {html:"", added:0, removed:0};
+    if(f.snap && f.snap!==f.code && window.Diff) return diffHtml(f.snap, f.code);
+    return {html:cmify(f.code), added:0, removed:0};
+  },[f.path, f.snap, f.code]);
+  const peek = selBk ? peekCache.current[selBk.id] : null;
+  const peekPane = useMemo(()=>peek?esc(peek.solver):"", [peek]);
+
+  let fname="—", flines="", pane="", codeBtns=null, jumpKey="";
+  if(selItem){
+    const turn=[codeBuilt.added?"+"+codeBuilt.added:"", codeBuilt.removed?"−"+codeBuilt.removed:""]
+      .filter(Boolean).join(" ");
+    flines = f.code ? f.code.split("\n").length+" lines"+(turn?" · "+turn+" this turn":"") : "";
+    pane = f.code ? codeBuilt.html
+      : '<span class="cm">// '+(selItem.state==="queued"?"not started":"no file yet")+"</span>";
+    fname = files.length>1
+      ? files.map(x=>html`<span key=${x.path} class=${"ftab"+(x.path===f.path?" on":"")}
+          onClick=${()=>setTabSel(t=>({...t, [selItem.id]:x.path}))}>${x.path.split("/").pop()}</span>`)
+      : (f.code ? f.path : "—");
+    const solver=files[0]||{};
+    const canRevert = f.path===solver.path && solver.code && solver.snap
+      && solver.snap!==solver.code && !selItem.active;
+    if(canRevert) codeBtns=html`<button class="copybtn"
+      onClick=${()=>post("/api/revert",{id:selItem.id})}>revert edits</button>`;
+    jumpKey = selItem.id+"|"+f.path;
+  } else if(peek){
+    fname = "programs/solvers/"+peek.id+".dl";
+    flines = peek.solver.split("\n").length+" lines";
+    pane = peekPane;
+    jumpKey = "peek|"+peek.id;
+  }
+
+  /* ---- middle column ---- */
+  let head=null, body=null;
+  if(selItem){
+    head=html`<${DetailHead} it=${selItem} cli=${cli} tab=${tab} badges=${tabBadges}
+      canAdvance=${canAdvance} nxt=${nxt} onTab=${s=>pinTab(selItem,s)}
+      onDismiss=${onDismiss}/>`;
+    body=html`<${Feed} key="feed" it=${selItem} entries=${entries}
+      feedKey=${selItem.id+"|"+tab} now=${Date.now()/1000}
+      showRun=${(selItem.busy||{})[tab] || (selItem.active && !selItem.turnPhase)}/>`;
+  } else if(selBk){
+    head = peek ? html`<${PeekHead} d=${peek} onDismiss=${onDismiss}/>` : null;
+    body = peek ? html`<${PeekBody} key="peek" d=${peek}/>`
+                : html`<div id="judge-scroll" key="peek"></div>`;
+  } else {
+    body=html`<div id="judge-scroll" key="none">
+      <p class="placeholder">${items.length?"select an item":"no items — start a wave"}</p>
+    </div>`;
+  }
+
+  let hint="";
+  if(selItem){
+    hint = selItem.state==="needs-review" && selItem.dirty ? "cleanup pending" : "";
+    if(nxt && selItem.state==="needs-review" && selItem.sessions[selItem.phase])
+      hint = (selItem.hasReport ? `${selItem.phase} stage — report ready, advance to ${nxt}`
+                                : `${selItem.phase} stage — \`handoff\` when ready`)+(hint?" · "+hint:"");
+  }
+
+  return html`
+    <${Topbar} view=${view} setView=${setView} wave=${wave} items=${items}
+      progress=${progress} usage=${usage} night=${night} nightOpen=${nightOpen}
+      cli=${cli} committer=${committer} onCommit=${commitApproved}
+      toggleNight=${()=>setNightOpen(o=>{ localStorage.setItem("nightOpen", o?"":"1"); return !o; })}
+      waveCtl=${{k:waveK, setK:setWaveK, order:waveOrder, setOrder:setWaveOrder,
+                 presetId: preset?preset.id:"", setPresetId, modes, mode, setMode:setAutoMode,
+                 busy:waveBusy, start:startWave}}/>
+    <${NightPanel} night=${night} open=${nightOpen} onToggle=${onNightToggle}
+      onCatchup=${v=>postNight({catchup:v})}
+      onDial=${(key,v)=>postNight({[key]:parseInt(v,10)})}/>
+    <div id="main">
+      <${Rail} view=${view} wave=${wave} items=${items} itemOrder=${itemOrder}
+        backlog=${backlog} selId=${selId} selIsItem=${!!selItem} tasks=${taskCache.current}
+        onSelect=${select}/>
+      <div id="judge">
+        <div id="judge-head">${head}</div>
+        ${body}
+        <${Composer} boxRef=${cbox} enabled=${!!selItem} canSend=${canSend}
+          placeholder=${selItem ? (canSend ? "" : selItem.active ? "worker running — draft freely" : "no session yet") : ""}
+          hint=${hint} value=${selItem?draft:""} onInput=${onDraft} onSend=${sendComment}/>
+      </div>
+      <div id="codecol">
+        <${TaskStrip} id=${detailId} task=${detailId?taskCache.current[detailId]:null}
+          open=${detailId ? taskOpen[detailId]!==false : true} onToggle=${toggleTask}/>
+        <${CodePane} jumpKey=${jumpKey} fname=${fname} lines=${flines}
+          buttons=${codeBtns} pane=${pane}/>
+      </div>
+    </div>
+    <div id="keysbar">
+      <span><b>j/k</b> move</span><span><b>n</b> next review</span><span><b>a</b> approve</span>
+      <span><b>u</b> unapprove</span><span><b>c</b> comment</span><span><b>⏎</b> send</span><span><b>⇧⏎</b> newline</span>
+      <span><b>s</b> session</span><span><b>t</b> task</span><span><b>v</b> lens</span><span><b>o</b> copy resume</span><span><b>esc</b> blur</span>
+    </div>
+    <div id="toast" role="status" class=${toastState.show?"show":""}>${toastState.msg}</div>`;
+}
+
+render(html`<${App}/>`, document.getElementById("app"));
 </script>
 </body>
 </html>

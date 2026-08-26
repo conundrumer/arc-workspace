@@ -9,8 +9,10 @@ with review comments, and commits approved solvers.
 Env:
     CONSOLE_FAKE=1     use fake_worker.py instead of claude (UI demo)
     CONSOLE_CLAUDE     claude binary (default: claude)
-    CONSOLE_CREATE_MODEL   create-phase model (default: claude-opus-5)
-    CONSOLE_REFINE_MODEL   refine-phase model (default: claude-fable-5)
+    CONSOLE_CREATE_MODEL   the chains' stronger model (default: claude-opus-5)
+    CONSOLE_REFINE_MODEL   the chains' cheaper model (default: claude-fable-5)
+    CONSOLE_CODEX_MODEL    model for codex-backed stages (default: gpt-5.6-sol)
+    CONSOLE_CODEX_EFFORT   reasoning effort for codex-backed stages (default: high)
     CONSOLE_COMMIT_MODEL   committer model (default: claude-opus-5)
 """
 
@@ -21,6 +23,7 @@ import hashlib
 import json
 import os
 import queue
+import random
 import re
 import signal
 import stat
@@ -46,8 +49,12 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 STATE_DIR = Path(os.environ.get("CONSOLE_STATE_DIR", HERE / "state"))
 STATE_FILE = STATE_DIR / "state.json"
+APPROVED_FILE = STATE_DIR / "approved.txt"
 SAMPLE_FILE = STATE_DIR / "usage-samples.jsonl"
 LOG_DIR = STATE_DIR / "logs"
+REPORT_DIR = STATE_DIR / "reports"
+LEDGER = REPORT_DIR / "ledger.jsonl"
+FLAGS_FILE = STATE_DIR / "flags.json"
 SOLVERS = ROOT / "programs" / "solvers"
 DOCS = ROOT / "docs" / "wf-solver"
 TASKS = ROOT / "data" / "tasks"
@@ -57,16 +64,44 @@ FAKE = os.environ.get("CONSOLE_FAKE") == "1"
 CLAUDE = os.environ.get("CONSOLE_CLAUDE", "claude")
 MODELS = {"create": os.environ.get("CONSOLE_CREATE_MODEL", "claude-opus-5"),
           "refine": os.environ.get("CONSOLE_REFINE_MODEL", "claude-fable-5")}
+CODEX_MODEL = os.environ.get("CONSOLE_CODEX_MODEL", "gpt-5.6-sol")
+CODEX_EFFORT = os.environ.get("CONSOLE_CODEX_EFFORT", "high")
 COMMIT_MODEL = os.environ.get("CONSOLE_COMMIT_MODEL", "claude-opus-5")
+
+# The user's global prompt hook checks this and stays quiet for workers.
+WORKER_ENV = {**os.environ, "CLAUDE_NO_HEADLINE": "1"}
 
 WORKER_FLAGS = [
     "--output-format", "stream-json", "--input-format", "stream-json", "--verbose",
     "--permission-mode", "acceptEdits",
+    # ref_note.py hooks in to note reads of unratified solvers
+    "--settings", str(HERE / "worker-settings.json"),
     "--allowedTools",
     "Bash(uv run:*)", "Bash(cat:*)", "Bash(ls:*)", "Bash(souffle:*)",
+    # Schemas a solver session never calls, kept out of the request. ToolSearch
+    # stays: without it every deferred tool loads, which costs more than the
+    # rest of this list saves. Dropping a name from here adds it to
+    # WORKER_TOOLS.
+    "--disallowedTools",
+    "CronCreate", "CronDelete", "CronList", "DesignSync", "EnterWorktree",
+    "ExitWorktree", "ListAgents", "Monitor", "NotebookEdit", "PushNotification",
+    "RemoteTrigger", "ReportFindings", "ScheduleWakeup", "TaskOutput",
+    "WebFetch", "WebSearch", "Workflow",
     "--add-dir", str(REF_DIR),
     "--exclude-dynamic-system-prompt-sections",
+    # The appendix carries the skill body, so the skill listing is dead weight.
+    "--disable-slash-commands",
+    # The claude.ai connectors are unauthenticated here and cost nothing while
+    # they stay deferred. This holds them out whatever the deferral does.
+    "--strict-mcp-config",
 ]
+# What those flags leave loaded. A release that adds a tool lands it in the
+# worker's context, and a denylist cannot know its name, so the init event is
+# checked against this set and the difference goes to the feed. Dropping a name
+# from here adds it to the denylist above.
+WORKER_TOOLS = {"Task", "Bash", "Edit", "Read", "SendMessage", "TaskCreate",
+                "TaskGet", "TaskList", "TaskStop", "TaskUpdate", "ToolSearch",
+                "Write"}
 STAGGER_TIMEOUT = 120  # seconds to wait for the first worker's first API response
 # What a worker session is allowed to leave behind. The brief and the
 # leftovers check read the same list, so widening it moves both.
@@ -100,13 +135,21 @@ WORKER_HANDOFF_ENV = "CONSOLE_WORKER_HANDOFF"
 
 # ---------- item lifecycle ----------
 #
-# An item runs as two linked sessions: `create` writes the solver and ends its
-# pass with a handoff report, `refine` takes over from that report. `phase`
-# names the session that owns the item; the handoff flips it once, and only
-# from a turn launched with the handoff flag — the wave's first create turn,
-# or a `handoff` comment that asks for a fresh report. A stopped or dead turn
-# never hands off. Comments target either session; a debug turn to `create`
-# after the handoff does not hand off again.
+# An item runs a chain of linked sessions, one per stage: the first stage
+# writes the solver and ends its pass with a handoff report, each later stage
+# takes over from the stage before it. `phase` names the stage that owns the
+# item; a handoff moves it one stage on, and only from a turn launched with the
+# handoff flag — the wave's first turn, or a `handoff` comment that asks the
+# current stage for a fresh report. A stopped or dead turn never hands off.
+# Comments target any stage's session; a debug turn to a stage the item has
+# already left does not hand off again.
+#
+# A report lands either way; who acts on it is the wave's `auto_advance`
+# choice. With it on, the landing moves the item on and launches the next stage
+# by itself. With it off — the default — the item lands in review still in the
+# stage that reported, and the advance action moves it on when the user asks.
+# Every report is also written under state/reports/, so it outlives the item a
+# commit drops and can seed a later stage over a solver already committed.
 #
 # A turn ends in NEEDS_REVIEW, whether it reported a result or died mid-flight;
 # a worker that never reported a session falls back to QUEUED instead. `load`
@@ -125,11 +168,129 @@ COMMITTED = "committed"        # committed; dropped when the next wave starts
 ACTIVE = (RUNNING, COMMENTED)
 
 
+# ---------- stage chain ----------
+#
+# A stage descriptor is {name, backend, model, effort?}. Names are unique
+# within an item and key everything held per session: `sessions`, `lastActive`,
+# `context`, `cost_seen`, `cache_read`, `seen_hash`, feed entries, report
+# files, and PROCS.
+
+BACKENDS = ("claude", "codex")
+STAGE_NAME = re.compile(r"[A-Za-z0-9_-]{1,32}")
+
+
+def default_chain() -> list[dict]:
+    """What a wave runs when it names no chain: the first preset."""
+    return [{"name": "create", "backend": "claude", "model": MODELS["create"]},
+            {"name": "refine", "backend": "claude", "model": MODELS["create"]},
+            {"name": "finalize", "backend": "claude", "model": MODELS["refine"]}]
+
+
+def two_phase_chain() -> list[dict]:
+    """The create/refine pair earlier console versions ran, which items
+    written by those versions are read as."""
+    return [{"name": "create", "backend": "claude", "model": MODELS["create"]},
+            {"name": "refine", "backend": "claude", "model": MODELS["refine"]}]
+
+
+def stage_word(st: dict) -> str:
+    """The stage as its model reads in a preset label: opus, fable, codex."""
+    if st.get("backend") == "codex":
+        return "codex"
+    m = st.get("model") or ""
+    return m.removeprefix("claude-").split("-")[0] or st["name"]
+
+
+def preset_label(chain: list[dict]) -> str:
+    return " → ".join(stage_word(st) for st in chain)
+
+
+def wave_presets() -> list[dict]:
+    """The chains the console offers at wave start."""
+    codex = {"name": "create", "backend": "codex", "model": CODEX_MODEL}
+    if CODEX_EFFORT:
+        codex["effort"] = CODEX_EFFORT
+    return [
+        {"id": "claude", "label": preset_label(default_chain()),
+         "chain": default_chain()},
+        {"id": "codex", "label": preset_label([codex] + default_chain()[1:]),
+         "chain": [codex] + default_chain()[1:]},
+    ]
+
+
+def chain_of(it: dict) -> list[dict]:
+    return it.get("chain") or two_phase_chain()
+
+
+def stage_names(it: dict) -> list[str]:
+    return [st["name"] for st in chain_of(it)]
+
+
+def stage_of(it: dict, name: str) -> dict:
+    """The named stage's descriptor, or a plain claude stage when the chain
+    has no entry under that name."""
+    for st in chain_of(it):
+        if st.get("name") == name:
+            return st
+    return {"name": name, "backend": "claude", "model": MODELS.get(name)}
+
+
+def next_stage(it: dict, name: str) -> dict | None:
+    chain = chain_of(it)
+    names = [st["name"] for st in chain]
+    if name not in names:
+        return None
+    at = names.index(name) + 1
+    return chain[at] if at < len(chain) else None
+
+
+def backend_of(it: dict, name: str) -> str:
+    return stage_of(it, name).get("backend") or "claude"
+
+
+def model_of(it: dict, name: str) -> str:
+    return stage_of(it, name).get("model") or ""
+
+
+def clean_chain(raw) -> list[dict]:
+    """The chain a wave request asks for, checked. Stage names key report
+    files, so they are held to a filename-safe shape."""
+    if raw is None:
+        return default_chain()
+    if not isinstance(raw, list) or not raw:
+        raise Reject("chain must be a non-empty list of stages")
+    out, seen = [], set()
+    for entry in raw:
+        if not isinstance(entry, dict):
+            raise Reject("each stage must be an object")
+        name = str(entry.get("name") or "").strip()
+        if not STAGE_NAME.fullmatch(name):
+            raise Reject(f"bad stage name: {entry.get('name')!r}")
+        if name in seen:
+            raise Reject(f"duplicate stage name: {name}")
+        seen.add(name)
+        backend = str(entry.get("backend") or "claude").strip()
+        if backend not in BACKENDS:
+            raise Reject(f"unknown backend: {backend}")
+        st = {"name": name, "backend": backend,
+              "model": str(entry.get("model") or "").strip() or None}
+        effort = str(entry.get("effort") or "").strip()
+        if effort:
+            st["effort"] = effort
+        out.append(st)
+    return out
+
+
 def active(it: dict) -> bool:
     """Whether an item has a turn or handoff in flight."""
-    return (it.get("handoff_pending", False) or
-            any(w["state"] in ("spawning", "sending", "running")
-                for (item_id, _), w in PROCS.items() if item_id == it["id"]))
+    return it.get("handoff_pending", False) or busy_elsewhere(it, None)
+
+
+def busy_elsewhere(it: dict, phase: str | None) -> bool:
+    """Whether a session of the item other than `phase` has a turn in flight."""
+    return any(w["state"] in ("spawning", "sending", "running")
+               for (item_id, p), w in PROCS.items()
+               if item_id == it["id"] and p != phase)
 
 
 class Reject(Exception):
@@ -163,6 +324,12 @@ def require_idle(it: dict) -> None:
 
 # ---------- state ----------
 
+def now() -> float:
+    """Wall clock for the scheduling logic, in one place so a test can move it
+    without waiting out a rate-limit window."""
+    return time.time()
+
+
 def bump() -> None:
     with COND:
         STATE["seq"] += 1
@@ -174,6 +341,11 @@ def save() -> None:
     tmp = STATE_FILE.with_suffix(".tmp")
     tmp.write_text(json.dumps(STATE, indent=1))
     tmp.replace(STATE_FILE)
+    # ref_note.py reads this: the ids ratified ahead of their commit
+    text = "".join(it["id"] + "\n" for it in STATE["items"]
+                   if it["state"] == APPROVED)
+    if not APPROVED_FILE.exists() or APPROVED_FILE.read_text() != text:
+        APPROVED_FILE.write_text(text)
 
 
 def load() -> None:
@@ -185,22 +357,41 @@ def load() -> None:
         if it["state"] in ACTIVE:
             it.pop("pending_handoff", None)
             it.pop("handoff_pending", None)
+            it.pop("callout_wait", None)
             say(it, event("interrupted by console restart"))
             turn_died(it, it.get("last_turn_phase") or it["phase"])
 
 
 def migrate(it: dict) -> None:
-    """Fold state written by earlier console versions forward."""
+    """Fold state written by earlier console versions forward. The two-phase
+    names carry over as stage names, so sessions, feeds, and report files keep
+    the keys they were written under."""
+    if "auto_advance" not in it:
+        # every version before the flag handed off on its own
+        it["auto_advance"] = bool(it.pop("auto_refine", True))
+    it.pop("auto_refine", None)
+    if not it.get("chain"):
+        it["chain"] = two_phase_chain()
+        it["chain"][1]["model"] = it.get("refine_model") or MODELS["refine"]
+    it.pop("refine_model", None)
+    if "reports" not in it:
+        text = (it.pop("handoff_report", None) or "").strip()
+        it["reports"] = {"create": text} if text else {}
+    it.pop("handoff_report", None)
+    seed_report(it)
     if "sessions" not in it:
         old = it.pop("session", None)
         it["sessions"] = {"create": None, "refine": old}
         it["phase"] = "refine" if old else "create"
-        it["refined"] = bool(old)
         it["lastActive"] = {"create": None, "refine": it.get("lastActive")}
         for m in it.get("feed", []):
             m.setdefault("sess", "refine")
         if isinstance(it.get("reverted"), list):
             it["reverted"] = {"files": it["reverted"], "phase": "refine"}
+    if "landed" not in it:
+        # a stage that reported a session has landed a turn on it
+        it["landed"] = [n for n, s in it["sessions"].items() if s]
+    it.pop("refined", None)
     if "pre" in it:
         return
     it["pre"] = {"hash": it.pop("hash_before", ""),
@@ -258,6 +449,209 @@ def prop_text() -> str:
     return p.read_text() if p.exists() else ""
 
 
+def report_path(item_id: str, stage: str) -> Path:
+    return REPORT_DIR / item_id / f"{stage}.md"
+
+
+def save_report(item_id: str, stage: str, text: str) -> None:
+    p = report_path(item_id, stage)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(text)
+
+
+def report_of(it: dict, stage: str) -> str:
+    """A stage's handoff report, from state or from the file that outlives it."""
+    text = ((it.get("reports") or {}).get(stage) or "").strip()
+    if text:
+        return text
+    p = report_path(it["id"], stage)
+    return p.read_text().strip() if p.exists() else ""
+
+
+CALLOUT_HEAD = re.compile(r"^\s{0,3}#{1,6}\s*callouts\b.*$", re.I | re.M)
+HEADING = re.compile(r"^\s{0,3}#{1,6}\s", re.M)
+BULLET = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+(.*)$")
+
+
+def parse_callouts(text: str) -> list[str]:
+    """The entries of a report's `## Callouts` section.
+
+    Written by hand at the end of a long turn, so the shape is read loosely:
+    any heading level, list items when the section uses them and plain lines
+    when it does not, and `none` for a stage with nothing to raise."""
+    head = None
+    for head in CALLOUT_HEAD.finditer(text or ""):
+        pass  # a report that wrote the section twice is read on its last one
+    if head is None:
+        return []
+    body = text[head.end():]
+    nxt = HEADING.search(body)
+    if nxt:
+        body = body[:nxt.start()]
+    bullets, lines = [], []
+    for line in body.splitlines():
+        if not line.strip():
+            continue
+        item = BULLET.match(line)
+        if item:
+            bullets.append(item.group(1).strip())
+        else:
+            lines.append(line.strip())
+    return [e for e in (bullets or lines) if e.strip(" .*_`").lower() != "none"]
+
+
+# tolerates emphasis around the mark: `[P1]`, `**[P1]** …`, `**[P1] …`
+RANK_MARK = re.compile(r"^[*_`]{0,2}\[?[Pp]([123])\]?[*_`]{0,2}\s")
+
+
+def callout_rank(entries: list[str]) -> int | None:
+    """The most urgent P-rank among the entries, when any carries one."""
+    ranks = [int(m.group(1)) for e in entries if (m := RANK_MARK.match(e))]
+    return min(ranks) if ranks else None
+
+
+def report_stages(item_id: str) -> list[str]:
+    """Stages the task has a persisted report for."""
+    d = REPORT_DIR / item_id
+    return sorted(p.stem for p in d.glob("*.md")) if d.is_dir() else []
+
+
+def task_callouts(item_id: str) -> list[str]:
+    """Callouts from the task's most recent persisted report."""
+    d = REPORT_DIR / item_id
+    try:
+        files = sorted(d.glob("*.md"), key=lambda p: p.stat().st_mtime)
+        return parse_callouts(files[-1].read_text()) if files else []
+    except OSError:
+        return []
+
+
+# ---------- provenance ledger ----------
+#
+# One line per stage landing, append-only. Other writers add lines of the same
+# shape — a backfill pass records the passes made before the ledger existed,
+# under stage `legacy` — so readers take the fields they know and skip the rest.
+
+FABLE = "claude-fable"
+
+
+def ledger_append(row: dict) -> None:
+    try:
+        LEDGER.parent.mkdir(parents=True, exist_ok=True)
+        with LEDGER.open("a") as fh:
+            fh.write(json.dumps(row) + "\n")
+    except OSError as exc:
+        print(f"ledger append failed: {exc}", file=sys.stderr)
+
+
+def ledger_rows() -> list[dict]:
+    rows = []
+    try:
+        text = LEDGER.read_text(errors="replace")
+    except OSError:
+        return rows
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(row, dict) and row.get("task"):
+            rows.append(row)
+    return rows
+
+
+def fabled(rows: list[dict]) -> set[str]:
+    """Tasks the finalize backlog is done with: a finalize landing, a landing
+    on a fable model (the shape a backfilled line carries), or the user's
+    dismissal."""
+    return {row["task"] for row in rows
+            if row.get("stage") in ("finalize", "dismissed")
+            or str(row.get("model") or "").startswith(FABLE)}
+
+
+# ---------- flags ----------
+#
+# Triage rulings, keyed by task and held apart from the console's items: a
+# flag outlives the item it was raised on, and a task with no item can carry
+# one. Level 1 sorts first.
+
+FLAGS: dict | None = None
+
+
+def flags() -> dict:
+    global FLAGS
+    if FLAGS is None:
+        FLAGS = {}
+        try:
+            raw = json.loads(FLAGS_FILE.read_text())
+        except (OSError, ValueError):
+            raw = {}
+        if isinstance(raw, dict):
+            for tid, entry in raw.items():
+                if isinstance(entry, dict) and entry.get("level") in (1, 2, 3):
+                    FLAGS[str(tid)] = {"level": entry["level"],
+                                       "ts": entry.get("ts") or 0}
+    return FLAGS
+
+
+def save_flags() -> None:
+    FLAGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = FLAGS_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(flags(), indent=1))
+    tmp.replace(FLAGS_FILE)
+
+
+def act_flag(body: dict) -> dict:
+    item_id = str(body.get("id") or "").strip()
+    if not item_id:
+        return {"error": "no task id"}
+    try:
+        level = int(body.get("level", 0))
+    except (TypeError, ValueError):
+        level = -1
+    if level not in (0, 1, 2, 3):
+        return {"error": "level must be 0, 1, 2, or 3"}
+    with LOCK:
+        table = flags()
+        if level:
+            table[item_id] = {"level": level, "ts": int(now())}
+        else:
+            table.pop(item_id, None)
+        save_flags()
+    bump()
+    return {"ok": True, "level": level}
+
+
+def seed_report(it: dict) -> None:
+    """Adopt the report files when state carries none, so an item that came
+    back after a restart or a commit still knows what earlier stages found."""
+    reports = it.setdefault("reports", {})
+    for name in stage_names(it):
+        if not (reports.get(name) or "").strip():
+            text = report_of(it, name)
+            if text:
+                reports[name] = text
+
+
+# The components style.md gives every solver. Any other one is a task-local
+# staging form, legal only while its proposals.md entry is open.
+STOCK_COMPS = ("Consts", "Fit", "Parse")
+
+
+def comps_of(item_id: str) -> list[str]:
+    """Task-local `.comp` names the solver declares."""
+    return [name for name in
+            re.findall(r"^\.comp\s+([A-Za-z_]\w*)", solver_text(item_id), re.M)
+            if name not in STOCK_COMPS]
+
+
+def unproposed(names: list[str], proposals: str) -> list[str]:
+    return [n for n in names
+            if not re.search(rf"\b{re.escape(n)}\b", proposals)]
+
+
 def title_of(item_id: str) -> str:
     p = solver_path(item_id)
     if not p.exists():
@@ -279,25 +673,68 @@ def skill_body() -> str:
     return text.strip()
 
 
+# Worker-only, so it stays out of SKILL.md: the interactive session shares that
+# body and has a scratchpad of its own. A worker has neither, and a scratch file
+# it writes otherwise lands in the repo root and stays there.
+SCRATCH_NOTE = """## Scratch
+
+Files you write to answer a question about the task go in `.scratch/<task_id>/`, not the repo root. Write creates the directory, and git ignores it."""
+
+
 def build_append(wave: int) -> Path:
-    """The worker's system-prompt appendix: the skill body plus the docs and
-    lib.dl, in the projection dl.context renders. Byte-identical for both
-    phases, so the two sessions share the longest possible prompt prefix."""
+    """The worker's system-prompt appendix: the skill body and the scratch note,
+    then the docs and lib.dl, in the projection dl.context renders. Byte-identical
+    for every stage, so the sessions share the longest possible prompt prefix."""
     path = STATE_DIR / f"wave-{wave:02d}-append.md"
-    path.write_text(skill_body() + "\n" + appendix(DOCS))
+    path.write_text(skill_body() + "\n" + SCRATCH_NOTE + "\n" + appendix(DOCS))
     return path
+
+
+def wave_append(wave: int) -> str:
+    """The wave's appendix, reused when it is already on disk: a worker resumes
+    by reading this file again, so a rewrite would move its prompt bytes."""
+    path = STATE_DIR / f"wave-{wave:02d}-append.md"
+    return str(path if path.exists() else build_append(wave))
 
 
 # ---------- first messages ----------
 #
-# Both phases open with the same task block, so the messages share a prefix
+# Every stage opens with the same task block, so the messages share a prefix
 # beyond the appendix; only the tail after it diverges.
 
-CREATE_BRIEF = """You are the create phase of a two-session flow: you create the solver, then a separate refine session takes over.
+# After a report lands, the stage gets one more turn for the callouts, so
+# ranking them is its own task instead of the tail of a long pass. The rates
+# feed the brief as ranking signal; recalibrate by re-measuring engagement
+# over newer transcripts and editing the table.
+CALLOUT_RATES = [
+    ("lib staging and task-local comps", 75),
+    ("doc gaps", 58),
+    ("simplification", 54),
+    ("naming and vocabulary", 52),
+    ("correctness risk", 50),
+    ("lint and tooling", 39),
+    ("alt models", 36),
+    ("unwitnessed edges", 23),
+    ("hedges", 16),
+]
 
-Do steps 1-3 of the creation pass with the data above; do not re-read the data. Skip steps 4-5. When a question about the data comes up, run something that answers it rather than settling it in your head. In place of the review, end your turn with a handoff report addressed to the refine session: the model claim, each choice point with the alternatives you considered and why you discarded them, and the audit findings and judgment calls. Make it complete enough that the refine session rederives nothing."""
+CALLOUT_BRIEF = """Your report is in. Now step back from the pass and write the callouts: entries deserving the user's attention — judgment calls you could not settle, calls you made that only the user can ratify, and anything else they should see.
 
-HANDOFF_BRIEF = """Write the handoff report for the refine session that takes over from you: the model claim, each choice point with the alternatives you considered and why you discarded them, and the audit findings and judgment calls. Cover the whole session, including turns after any earlier report. Make it complete enough that the refine session rederives nothing."""
+Rank each entry P1-P3 by how likely the user is to engage it. Engagement rates by kind, as signal, not verdict: {rates}.
+
+Reply with only a `## Callouts` section: a numbered list, each entry one or two lines opening with its `[P1]`-`[P3]` mark. With nothing to raise, the section is the single word `none`, which is what most solvers get."""
+
+
+def callout_brief() -> str:
+    rates = " · ".join(f"{kind} {pct}%" for kind, pct in CALLOUT_RATES)
+    return CALLOUT_BRIEF.format(rates=rates)
+
+
+CREATE_BRIEF = """You are the first session of a chained flow: you create the solver, then a separate session takes over from your report.
+
+Do steps 1-4 of the creation pass with the data above; do not re-read the data. When the fit-plan verdict calls for a fit pass, do the fit pass too. Skip step 5. When a question about the data comes up, run something that answers it rather than settling it in your head. In place of the review, end your turn with a handoff report addressed to the next session: the model claim, each choice point with the alternatives you considered and why you discarded them, and the audit findings and judgment calls. Make it complete enough that the next session rederives nothing."""
+
+HANDOFF_BRIEF = """Write the handoff report for the session that takes over from you: the model claim, each choice point with the alternatives you considered and why you discarded them, and the audit findings and judgment calls. Cover the whole session, including turns after any earlier report. Make it complete enough that the next session rederives nothing."""
 
 NUDGE_BRIEF = """Your last turn was cut off at the output limit while it was still thinking.
 
@@ -305,7 +742,7 @@ Stop trying to settle the task in your head. Take the smallest thing you are sti
 
 Do not spend the whole next turn thinking. If you do, it will be your final turn."""
 
-BAIL_BRIEF = """Two turns went entirely to thinking, so the task moves to the refine session now. Stop solving.
+BAIL_BRIEF = """Two turns went entirely to thinking, so your pass ends here. Stop solving.
 
 Write a short state of play from what is already in front of you, without working anything out again:
 
@@ -313,7 +750,7 @@ Write a short state of play from what is already in front of you, without workin
 - what you ran, and what came back
 - where you got stuck, and what you would try next
 
-Keep it brief and factual. The refine session needs your dead ends and your open question, not a full account."""
+Keep it brief and factual. What the reader needs is your dead ends and your open question, not a full account."""
 
 # Thinking tokens with no tool call or text before the feed says so. Well
 # above a working turn's bursts, and far enough below the 64k output cap that
@@ -324,9 +761,27 @@ RUNAWAY_THINK = 40_000
 # risks another full output budget spent on the same dead end.
 CAP_POLL = 5
 
-REFINE_BRIEF = """You are the refine phase of a two-session flow: a create session did steps 1-3 of the creation pass and left the handoff report above.
+ADVANCE_BRIEF = """You are a later session of a chained flow: the creation pass is already done, and the sessions before you left the reports above.
 
-Read programs/solvers/{tid}.dl first — the report describes it, but you edit the file itself. Then refine the solver: judge the model and the code yourself, and edit what falls short. Then do steps 2-5 of the creation pass, so your own edits get the simplify and prune treatment too. Trust the report for what was already tried; do not rederive discarded alternatives."""
+Read programs/solvers/{tid}.dl first — the reports describe it, but you edit the file itself. Then refine the solver: judge the model and the code yourself, and edit what falls short. Trust the reports for what was already tried; do not rederive discarded alternatives."""
+
+# What the final stage opens with when the solver predates the chain and no
+# report was ever written for it.
+BARE_BRIEF = """You are the final session of a chained flow. No earlier session left a report, so the solver file is the whole account.
+
+Read programs/solvers/{tid}.dl first. Then refine the solver: judge the model and the code yourself, and edit what falls short."""
+
+# How a stage ends its pass. Every stage with a successor ends in a report the
+# next one takes over from; only the last stage of the chain writes the review.
+# The final stage reads every earlier report, so each one covers its own pass
+# alone and none of them restates the one before it.
+HANDOFF_TAIL = """
+
+Then do steps 2-4 of the creation pass, so your own edits get the simplify and prune treatment too; when the fit-plan verdict calls for a fit pass, do the fit pass as well. In place of the review, end your turn with a handoff report for the session that takes over from you: the model claim as it now stands, what you changed and why, the alternatives you discarded, and your open judgment calls. The report covers your own pass — your rulings, your edits, your changes; what the reports above already establish stays with them."""
+
+REVIEW_TAIL = """
+
+Then do steps 2-5 of the creation pass, so your own edits get the simplify and prune treatment too; when the fit-plan verdict calls for a fit pass, do the fit pass as well. You are the last session of the chain, so the review at step 5 ends your turn, addressed to the user."""
 
 
 def task_block(tid: str) -> str:
@@ -343,12 +798,54 @@ def create_message(tid: str) -> str:
             + f"```ts\n{ref}\n```\n\n" + CREATE_BRIEF)
 
 
-def refine_message(it: dict) -> str:
-    report = (it.get("handoff_report") or "").strip() \
-        or "(the create session left no report)"
-    return (task_block(it["id"])
-            + "\n\n## handoff report from the create session\n\n" + report
-            + "\n\n" + REFINE_BRIEF.format(tid=it["id"]))
+def reports_block(pairs: list[tuple[str, str]]) -> str:
+    return "\n\n".join(f"## handoff report from the {name} session\n\n{text}"
+                       for name, text in pairs)
+
+
+def prior_reports(it: dict, upto: str) -> list[tuple[str, str]]:
+    """Each stage's report through `upto`, in chain order."""
+    names = stage_names(it)
+    at = names.index(upto) + 1 if upto in names else len(names)
+    return [(name, text) for name in names[:at] if (text := report_of(it, name))]
+
+
+def persisted_reports(item_id: str, skip: str = "") -> list[tuple[str, str]]:
+    """The report files a task left behind, in chain order. A file whose stage
+    the chain does not name follows the ones it does, so none is dropped."""
+    order = [st["name"] for st in default_chain()]
+    stems = [s for s in report_stages(item_id) if s != skip]
+    names = ([n for n in order if n in stems]
+             + [n for n in stems if n not in order])
+    pairs = []
+    for name in names:
+        text = report_path(item_id, name).read_text().strip()
+        if text:
+            pairs.append((name, text))
+    return pairs
+
+
+def advance_message(it: dict, prev: str, more: bool) -> str:
+    # A stage that hands on again takes over from the report before it. The
+    # final stage judges the whole chain, so it reads every earlier report.
+    pairs = (prior_reports(it, prev) if not more
+             else [(prev, report_of(it, prev))])
+    pairs = [(name, text) for name, text in pairs if text]
+    body = (reports_block(pairs) if pairs else
+            f"## handoff report from the {prev} session\n\n"
+            f"(the {prev} session left no report)")
+    return (task_block(it["id"]) + "\n\n" + body
+            + "\n\n" + ADVANCE_BRIEF.format(tid=it["id"])
+            + (HANDOFF_TAIL if more else REVIEW_TAIL))
+
+
+def finalize_message(item_id: str, pairs: list[tuple[str, str]]) -> str:
+    """The first message of a finalize pass started over a committed solver."""
+    if not pairs:
+        return (task_block(item_id) + "\n\n"
+                + BARE_BRIEF.format(tid=item_id) + REVIEW_TAIL)
+    return (task_block(item_id) + "\n\n" + reports_block(pairs) + "\n\n"
+            + ADVANCE_BRIEF.format(tid=item_id) + REVIEW_TAIL)
 
 
 # ---------- workers ----------
@@ -472,7 +969,7 @@ def adopt_workers(manifest: dict) -> None:
             pid = int(entry["pid"])
             fds = [int(entry["stdin_fd"]), int(entry["stdout_fd"])]
             it = find(item_id)
-            if not it or phase not in ("create", "refine") or \
+            if not it or phase not in stage_names(it) or \
                     entry.get("state") != "idle" or entry.get("started") is not None or \
                     it["sessions"].get(phase) != entry.get("session"):
                 raise ValueError("manifest does not match idle state")
@@ -501,7 +998,7 @@ def adopt_workers(manifest: dict) -> None:
             if isinstance(entry, dict):
                 it = find(entry.get("item"))
                 phase = entry.get("phase")
-                if it is not None and phase in ("create", "refine"):
+                if it is not None and phase in stage_names(it):
                     lost_session = it["sessions"].get(phase)
                     it["sessions"][phase] = None
                     say(it, event(f"{phase} session lost on reload: {lost_session}"), sess=phase)
@@ -576,6 +1073,12 @@ def launch(it: dict, message: str, phase: str, trigger: str | None = None,
         raise Reject("server reload in progress — wait for it to finish")
     if not escalated:
         it.setdefault("runaway", {}).pop(phase, None)
+    # Any turn except the callout ask and its continuations (resume, nudge,
+    # bail) supersedes a pending callout landing, so a stale marker cannot
+    # claim a later turn's text for the report.
+    if trigger not in ("callout", "resume", "nudge", "bail") and \
+            it.get("callout_wait") == phase:
+        it.pop("callout_wait", None)
     # The CLI reads a slash command only when it opens the message, so a turn
     # carrying one skips the notices below and leaves them, and the watermarks
     # behind them, for the next real turn to deliver.
@@ -603,9 +1106,11 @@ def launch(it: dict, message: str, phase: str, trigger: str | None = None,
             say(it, event(f"{phase} worker restarting — resuming its session"),
                 sess=phase)
         worker = spawn_worker(it, phase)
-    it["pre"] = {"hash": solver_hash(it["id"]), "solver": solver_text(it["id"]),
-                 "proposals": prop_text(), "dirty": it["dirty"], "files": {},
-                 "slash": slash}
+    if not busy_elsewhere(it, phase):
+        # a side turn leaves the snapshot with the turn that owns the solver
+        it["pre"] = {"hash": solver_hash(it["id"]), "solver": solver_text(it["id"]),
+                     "proposals": prop_text(), "dirty": it["dirty"], "files": {},
+                     "slash": slash}
     worker["turn_seq"] += 1
     worker.update(state="sending", started=time.time(), trigger=trigger,
                   handoff=handoff, seen=set(), got_result=False, think_run=0,
@@ -617,12 +1122,26 @@ def launch(it: dict, message: str, phase: str, trigger: str | None = None,
 def worker_cmd(it: dict, phase: str) -> list[str]:
     if FAKE:
         return [sys.executable, str(HERE / "fake_worker.py"), it["id"], phase]
+    st = stage_of(it, phase)
+    session = it["sessions"].get(phase)
+    if (st.get("backend") or "claude") == "codex":
+        # The adapter reads the appendix itself; codex exec has no
+        # system-prompt append, and WORKER_FLAGS has no codex equivalent.
+        cmd = [sys.executable, str(HERE / "codex_worker.py"),
+               "--append", str(it["append"]), "--add-dir", str(REF_DIR)]
+        if st.get("model"):
+            cmd += ["--model", st["model"]]
+        if st.get("effort"):
+            cmd += ["--effort", st["effort"]]
+        if session:
+            cmd += ["--resume", session]
+        return cmd
     cmd = [CLAUDE, "--append-system-prompt", Path(it["append"]).read_text(),
            *WORKER_FLAGS]
-    if MODELS[phase]:
-        cmd += ["--model", MODELS[phase]]
-    if it["sessions"].get(phase):
-        cmd += ["--resume", it["sessions"][phase]]
+    if st.get("model"):
+        cmd += ["--model", st["model"]]
+    if session:
+        cmd += ["--resume", session]
     return cmd
 
 
@@ -630,7 +1149,9 @@ def spawn_worker(it: dict, phase: str) -> dict:
     item_id = it["id"]
     cmd = worker_cmd(it, phase)
     log = open(LOG_DIR / f"{item_id}.log", "ab")
-    proc = subprocess.Popen(cmd, cwd=ROOT, stdin=subprocess.PIPE,
+    proc = subprocess.Popen(cmd, cwd=ROOT,
+                            env={**WORKER_ENV, "CONSOLE_TASK": item_id},
+                            stdin=subprocess.PIPE,
                             stdout=subprocess.PIPE, stderr=log, text=True)
     log.close()
     worker = {"item_id": item_id, "phase": phase, "proc": proc,
@@ -714,6 +1235,8 @@ def reader(worker: dict) -> None:
             say(it, event(f"worker exited without result (code {proc.returncode}) — {tail}"),
                 sess=phase)
             turn_died(it, phase)
+            if quota_death(text=tail):
+                quota_cut(it, phase, bool(worker.get("handoff")))
     if first_response:
         first_response.set()
     bump()
@@ -729,6 +1252,10 @@ def handle_event(worker: dict, ev: dict, first_response) -> None:
             if it and not worker["session_seen"]:
                 it["sessions"][phase] = ev.get("session_id") or it["sessions"].get(phase)
                 worker["session_seen"] = True
+                extra = sorted(set(ev.get("tools") or ()) - WORKER_TOOLS)
+                if extra:
+                    say(it, event("\u26a0 tools outside the worker set — "
+                                  + ", ".join(extra)), sess=phase)
             # A worker can start a turn on its own (a background-task
             # notification, for one); init marks only a turn the console sent.
             if worker["state"] == "sending":
@@ -814,7 +1341,8 @@ def handle_event(worker: dict, ev: dict, first_response) -> None:
                 ctx["used"] = post
                 ctx["percent"] = post / ctx["window"] * 100
                 ctx["compactPct"] = compact_pct(post, ctx.get("model")
-                                                or MODELS[phase], ctx.get("limiting"))
+                                                or model_of(it, phase),
+                                                ctx.get("limiting"))
         elif kind == "result":
             if not it or worker["state"] not in ("sending", "running"):
                 return
@@ -852,6 +1380,9 @@ def handle_event(worker: dict, ev: dict, first_response) -> None:
                         sess=phase)
                     if not escalate:
                         turn_died(it, phase)
+                        if quota_death(ev.get("api_error_status"), reason,
+                                       str(ev.get("result") or "")):
+                            quota_cut(it, phase, handoff)
             finally:
                 # The worker goes idle even if landing the turn blew up;
                 # a wedged "running" state would block sends and reloads.
@@ -872,13 +1403,19 @@ def handle_event(worker: dict, ev: dict, first_response) -> None:
 
 
 def turn_died(it: dict, phase: str) -> None:
-    """End-of-turn fallback when no result landed. A refine turn that died
-    before reporting a session puts the item back in the create phase, where
-    `handoff` can retry."""
-    if phase == "refine" and not it["sessions"]["refine"]:
-        it["phase"] = "create"
-    it["state"] = NEEDS_REVIEW if it["sessions"][it["phase"]] else QUEUED
+    """End-of-turn fallback when no result landed. A turn that died before
+    reporting a session puts the item back on the nearest earlier stage that
+    has one, where `handoff` can retry."""
+    if not it["sessions"].get(phase):
+        names = stage_names(it)
+        at = names.index(phase) if phase in names else 0
+        for name in reversed(names[:at]):
+            if it["sessions"].get(name):
+                it["phase"] = name
+                break
+    it["state"] = NEEDS_REVIEW if it["sessions"].get(it["phase"]) else QUEUED
     it["updated"] = True
+    it["landed_at"] = now()
 
 
 def transcript_of(session: str) -> Path | None:
@@ -1013,7 +1550,7 @@ def runaway_detected(it: dict, worker: dict, note: str) -> None:
         "request_id": str(uuid.uuid4()), "request": {"subtype": "interrupt"}})
 
 
-def revive(worker: dict, stage: str, handoff: bool) -> None:
+def revive(worker: dict, step: str, handoff: bool) -> None:
     """Preserve a capped generation's thinking, then relaunch its turn.
 
     Runs on the drain thread with the worker already detached: the process
@@ -1036,38 +1573,57 @@ def revive(worker: dict, stage: str, handoff: bool) -> None:
                         sess=phase)
             except OSError as exc:
                 say(it, event(f"transcript patch failed: {exc}"), sess=phase)
-        escalate_turn(it, phase, stage, handoff)
+        escalate_turn(it, phase, step, handoff)
     bump()
 
 
-def escalate_turn(it: dict, phase: str, stage: str, handoff: bool) -> None:
+def escalate_turn(it: dict, phase: str, step: str, handoff: bool) -> None:
     """Relaunch after a runaway interrupt lands. Caller holds LOCK and has
-    reset the worker. The nudge keeps the turn's own handoff flag. A create
-    bail asks for the report whose landing hands off; a refine bail has no
-    stronger session to receive it, so the item lands for review. A bail that
-    itself runs away has said its piece twice, so the item lands either way."""
+    reset the worker. The nudge keeps the turn's own handoff flag. A bail on a
+    non-final stage asks for the report whose landing hands off; the final
+    stage has no stronger session to receive it, so the item lands for review.
+    A bail that itself runs away has said its piece twice, so the item lands
+    either way."""
     count = it.get("runaway", {}).get(phase, 0)
-    if stage == "nudge":
-        launch(it, NUDGE_BRIEF, phase, handoff=handoff, admitted=True,
-               escalated=True)
-    elif phase == "create" and count <= 2:
-        launch(it, BAIL_BRIEF, phase, handoff=True, admitted=True,
-               escalated=True)
+    if step == "nudge":
+        launch(it, NUDGE_BRIEF, phase, trigger="nudge", handoff=handoff,
+               admitted=True, escalated=True)
+    elif next_stage(it, phase) and count <= 2:
+        launch(it, BAIL_BRIEF, phase, trigger="bail", handoff=True,
+               admitted=True, escalated=True)
     else:
         turn_died(it, phase)
 
 
-def complete_handoff(it: dict) -> None:
-    """Flip the item to the refine phase and enqueue its first turn."""
+def auto_advances(it: dict, phase: str) -> bool:
+    """Whether a report landing at `phase` hands the item on by itself.
+
+    `auto_stop` names a stage auto-advance will not launch, so a run can carry
+    items through the cheap stages and stop before an expensive one. Without
+    it, auto-advance runs the whole chain."""
+    if not it.get("auto_advance"):
+        return False
+    nxt = next_stage(it, phase)
+    return bool(nxt) and nxt["name"] != it.get("auto_stop")
+
+
+def advance_stage(it: dict) -> None:
+    """Move the item on to the next stage and enqueue its first turn."""
+    nxt = next_stage(it, it["phase"])
+    if nxt is None:
+        return
     if RELOADING:
         it["state"] = NEEDS_REVIEW
         it["updated"] = True
-        say(it, event("handoff paused for server reload"), sess="create")
+        say(it, event("handoff paused for server reload"))
         return
-    it["phase"] = "refine"
+    prev, it["phase"] = it["phase"], nxt["name"]
     it["state"] = RUNNING
-    say(it, event("handoff — refine session starting"))
-    launch(it, refine_message(it), "refine")
+    say(it, event(f"handoff — {nxt['name']} session starting"))
+    # A stage with a successor opens its pass under the handoff flag, so its
+    # landing hands the chain on the way the first stage's does.
+    more = next_stage(it, nxt["name"]) is not None
+    launch(it, advance_message(it, prev, more), nxt["name"], handoff=more)
 
 
 # Dollars of list-price usage per 1% of each rate-limit window. Nothing
@@ -1197,11 +1753,11 @@ def turn_usage(it: dict, ev: dict, phase: str,
     return " · ".join(parts)
 
 
-def think_note(tokens: int, phase: str) -> str:
+def think_note(tokens: int, model: str) -> str:
     """Discarded thinking never reaches the CLI's cost accounting, so price
-    the estimate at the phase model's output rate. It is measured differently
+    the estimate at the stage model's output rate. It is measured differently
     from the dollars beside it, so it reads as its own term."""
-    pair = rates(MODELS[phase])
+    pair = rates(model)
     note = f" · lost ~{tokens // 1000}k think"
     if pair is None:
         return note
@@ -1222,7 +1778,7 @@ def turn_note(it: dict, ev: dict, phase: str, started: float | None,
     if ev.get("total_cost_usd"):
         note += quota_note(it, ev, phase)
     if lost:
-        note += think_note(lost, phase)
+        note += think_note(lost, model_of(it, phase))
     usage = turn_usage(it, ev, phase, reqs)
     return note + (" · " + usage if usage else "")
 
@@ -1249,12 +1805,23 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
         else:
             say(it, {"kind": "report", "rev": it["rev"], "text": text}, sess=phase)
     say(it, event(turn_note(it, ev, phase, started, reqs)), sess=phase)
-    # the create pass ends in prune, and the refine pass is itself the quality
-    # pass, so each phase's first landing is clean by cadence
-    first_refine = phase == "refine" and not it.get("refined")
-    if phase == "refine":
-        it["refined"] = True
-    if trigger in CLEAN_TRIGGERS or first_refine or (phase == "create" and it["rev"] == 1):
+    # A turn with no Callouts section says nothing about them, so the item
+    # keeps what the last report that carried one left.
+    if text and CALLOUT_HEAD.search(text):
+        it["callouts"] = parse_callouts(text)
+        it["callout_n"] = len(it["callouts"])
+        it["callout_rank"] = callout_rank(it["callouts"])
+    ledger_append({"task": it["id"], "stage": phase,
+                   "backend": backend_of(it, phase), "model": model_of(it, phase),
+                   "session": it["sessions"].get(phase), "ts": int(now()),
+                   "source": "console"})
+    # the create pass ends in prune, and every later pass is itself a quality
+    # pass, so each stage's first landing is clean by cadence
+    landed = it.setdefault("landed", [])
+    first_landing = phase not in landed
+    if first_landing:
+        landed.append(phase)
+    if trigger in CLEAN_TRIGGERS or first_landing:
         it["dirty"] = False
     elif solver_hash(it["id"]) != pre(it)["hash"]:
         it["dirty"] = True
@@ -1263,14 +1830,45 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
     it["lastActive"][phase] = int(time.time() * 1000)
     it["title"] = title_of(it["id"]) or it.get("title", "")
     it["prop_after"] = prop_text()
-    if handoff and phase == "create":
-        it["handoff_report"] = text
-        it["handoff_pending"] = True
+    it["comps"] = comps_of(it["id"])
+    it["comps_unproposed"] = unproposed(it["comps"], it["prop_after"])
+    it["landed_at"] = now()
+    it.pop("quota_retry", None)  # the stage got a turn through; retries reset
+    callout_landing = it.get("callout_wait") == phase
+    if callout_landing:
+        it.pop("callout_wait", None)
+    if callout_landing and next_stage(it, phase):
+        # the callout turn's text joins the stage report, so parsing and the
+        # finalize read see one document per stage
+        if text:
+            combined = ((it.get("reports", {}).get(phase) or "").rstrip()
+                        + "\n\n" + text)
+            it.setdefault("reports", {})[phase] = combined
+            save_report(it["id"], phase, combined)
+        if auto_advances(it, phase):
+            it["handoff_pending"] = True
+            worker = PROCS.get((it["id"], phase))
+            if worker:
+                DEFERRED.put_nowait(("handoff", it["id"], phase, worker["turn_seq"]))
+                ensure_drain()
+        else:
+            it["state"] = NEEDS_REVIEW
+            it["updated"] = True
+    elif handoff and next_stage(it, phase):
+        it.setdefault("reports", {})[phase] = text
+        save_report(it["id"], phase, text)
+        # the callouts get their own turn before any advance
         worker = PROCS.get((it["id"], phase))
         if worker:
-            DEFERRED.put_nowait(("handoff", it["id"], phase, worker["turn_seq"]))
+            it["callout_wait"] = phase
+            DEFERRED.put_nowait(("callout", it["id"], phase, worker["turn_seq"]))
             ensure_drain()
-    elif not pre(it).get("slash"):
+        else:
+            it["state"] = NEEDS_REVIEW
+            it["updated"] = True
+    elif not pre(it).get("slash") and not busy_elsewhere(it, phase):
+        # a side turn landing while another session runs leaves the state to
+        # the pass that owns it
         it["state"] = NEEDS_REVIEW
         it["updated"] = True
 
@@ -1294,17 +1892,33 @@ def drain_deferred() -> None:
             if job[0] == "revive":
                 revive(*job[1:])
                 continue
-            _, item_id, phase, turn_seq = job
+            kind, item_id, phase, turn_seq = job
             with LOCK:
                 it = find(item_id)
                 worker = PROCS.get((item_id, phase))
-                if not it or not it.get("handoff_pending") or not worker or \
+                if kind == "callout":
+                    if not it or it.get("callout_wait") != phase:
+                        continue
+                    if not worker or worker["turn_seq"] != turn_seq or RELOADING:
+                        # the report stands without callouts
+                        it.pop("callout_wait", None)
+                        it["state"] = NEEDS_REVIEW
+                        it["updated"] = True
+                        if RELOADING:
+                            say(it, event("callouts paused for server reload"),
+                                sess=phase)
+                    else:
+                        it["state"] = RUNNING
+                        say(it, event("callout turn starting"), sess=phase)
+                        launch(it, callout_brief(), phase, trigger="callout")
+                elif not it or not it.get("handoff_pending") or not worker or \
                         worker["turn_seq"] != turn_seq:
                     if it:
                         it.pop("handoff_pending", None)
                     continue
-                it.pop("handoff_pending", None)
-                complete_handoff(it)
+                else:
+                    it.pop("handoff_pending", None)
+                    advance_stage(it)
             bump()
         except Exception as exc:
             print(f"deferred {job[0]} failed: {exc}", file=sys.stderr)
@@ -1370,7 +1984,46 @@ def queue_pick(n: int, order: str) -> list[tuple[str, int]]:
     return picked
 
 
-def start_wave(k: int, order: str = "name") -> dict:
+def drop_committed() -> None:
+    """Forget the committed items of the round before, with their workers."""
+    for old in [it for it in STATE["items"] if it["state"] == COMMITTED]:
+        for worker in detach_workers(old["id"]):
+            queue_reap(worker)
+    STATE["items"] = [it for it in STATE["items"] if it["state"] != COMMITTED]
+
+
+def pick_new(k: int, order: str) -> list[tuple[str, int]]:
+    """The next k queue tasks the console does not already hold."""
+    existing = {it["id"] for it in STATE["items"]}
+    return [p for p in queue_pick(k + len(existing), order)
+            if p[0] not in existing][:k]
+
+
+def make_items(picked: list[tuple[str, int]], chain: list[dict], wave: int,
+               append: str, auto_advance: bool = False,
+               auto_stop: str | None = None) -> list[str]:
+    """Append picked tasks as items of `wave`. Caller holds LOCK."""
+    names = [st["name"] for st in chain]
+    for tid, est in picked:
+        it = {
+            "id": tid, "est": est, "wave": wave, "state": QUEUED,
+            "chain": [dict(st) for st in chain],
+            "auto_advance": bool(auto_advance),
+            "sessions": dict.fromkeys(names), "phase": names[0],
+            "landed": [], "dirty": False, "updated": False, "rev": 0,
+            "lastActive": dict.fromkeys(names),
+            "title": "", "feed": [], "append": append, "ver": 0,
+            "reports": {},
+        }
+        if auto_stop:
+            it["auto_stop"] = auto_stop
+        seed_report(it)
+        STATE["items"].append(it)
+    return [tid for tid, _ in picked]
+
+
+def start_wave(k: int, order: str = "name", auto_advance: bool = False,
+               chain: list | None = None, auto_stop: str | None = None) -> dict:
     global LAST_WAVE_AT
     with LOCK:
         if RELOADING:
@@ -1379,63 +2032,69 @@ def start_wave(k: int, order: str = "name") -> dict:
             return {"error": "a wave just started — wait a moment to start another"}
         if order not in ("name", "size"):
             return {"error": f"unknown order: {order}"}
-        committed = [it for it in STATE["items"] if it["state"] == COMMITTED]
-        for old in committed:
-            for worker in detach_workers(old["id"]):
-                queue_reap(worker)
-        STATE["items"] = [it for it in STATE["items"] if it["state"] != COMMITTED]
-        existing = {it["id"] for it in STATE["items"]}
         try:
-            picked = [p for p in queue_pick(k + len(existing), order)
-                      if p[0] not in existing][:k]
+            chain = clean_chain(chain)
+        except Reject as e:
+            return {"error": str(e)}
+        if auto_stop and auto_stop not in [st["name"] for st in chain[1:]]:
+            return {"error": f"auto_stop names no later stage: {auto_stop}"}
+        auto_advance = auto_advance or bool(auto_stop)
+        drop_committed()
+        try:
+            picked = pick_new(k, order)
         except Reject as e:
             return {"error": str(e)}
         if not picked:
             return {"error": "queue is empty"}
         LAST_WAVE_AT = time.time()
         STATE["wave"] += 1
-        append = str(build_append(STATE["wave"]))
-        for tid, est in picked:
-            STATE["items"].append({
-                "id": tid, "est": est, "wave": STATE["wave"], "state": QUEUED,
-                "sessions": {"create": None, "refine": None}, "phase": "create",
-                "refined": False, "dirty": False, "updated": False, "rev": 0,
-                "lastActive": {"create": None, "refine": None},
-                "title": "", "feed": [], "append": append, "ver": 0,
-            })
+        ids = make_items(picked, chain, STATE["wave"],
+                         str(build_append(STATE["wave"])), auto_advance,
+                         auto_stop)
     bump()
-    threading.Thread(target=stagger_launch,
-                     args=([tid for tid, _ in picked],), daemon=True).start()
-    return {"ok": True, "ids": [tid for tid, _ in picked]}
+    threading.Thread(target=stagger_launch, args=(ids,), daemon=True).start()
+    return {"ok": True, "ids": ids}
 
 
 def stagger_launch(ids: list[str]) -> None:
-    """Launch the first worker alone so it writes the shared prompt-cache
-    prefix, then fan the rest out once its first API response arrives."""
+    """Launch one claude-backed worker alone so it writes the shared
+    prompt-cache prefix, then fan the rest out once its first API response
+    arrives. A codex-backed first stage draws on no such cache, so it neither
+    seeds nor waits — a wave of them launches together."""
     first = threading.Event()
-    seeded = False
+    seed, seeded = None, False
     with LOCK:
-        it = find(ids[0])
-        if it is not None and it["state"] == QUEUED and not active(it):
-            FIRST_RESPONSE[ids[0]] = first
-            it["state"] = RUNNING
-            say(it, event("launched (cache seeder)"))
-            launch(it, create_message(ids[0]), "create", handoff=True, admitted=True)
-            seeded = True
+        for tid in ids:
+            it = find(tid)
+            if it is not None and backend_of(it, it["phase"]) == "claude":
+                seed = tid
+                break
+        if seed is not None:
+            it = find(seed)
+            if it["state"] == QUEUED and not active(it):
+                FIRST_RESPONSE[seed] = first
+                it["state"] = RUNNING
+                say(it, event("launched (cache seeder)"))
+                launch(it, create_message(seed), it["phase"], handoff=True,
+                       admitted=True)
+                seeded = True
     bump()
     if seeded:
         first.wait(timeout=STAGGER_TIMEOUT)
         with LOCK:
-            if FIRST_RESPONSE.get(ids[0]) is first:
-                FIRST_RESPONSE.pop(ids[0], None)
+            if FIRST_RESPONSE.get(seed) is first:
+                FIRST_RESPONSE.pop(seed, None)
     with LOCK:
-        for tid in ids[1:]:
+        for tid in ids:
+            if seeded and tid == seed:
+                continue
             it = find(tid)
             if it is None or it["state"] != QUEUED or active(it):
                 continue
             it["state"] = RUNNING
             say(it, event("launched"))
-            launch(it, create_message(tid), "create", handoff=True, admitted=True)
+            launch(it, create_message(tid), it["phase"], handoff=True,
+                   admitted=True)
     bump()
 
 
@@ -1448,6 +2107,325 @@ def resume_queued_wave() -> None:
         threading.Thread(target=stagger_launch, args=(ids,), daemon=True).start()
 
 
+# ---------- overnight mode ----------
+#
+# The console running the queue unattended. An admitter keeps a target number
+# of items in flight, a pacer decides whether the account can afford to start
+# another one, and a turn the account's quota killed is resumed once the window
+# resets. Nothing is approved and nothing is committed without the user: the
+# night's items land in review and wait for morning.
+
+NIGHT_DEFAULTS = {
+    "on": False,
+    "target": 6,       # items in flight the admitter keeps
+    "reserve": 10,     # points of weekly quota held back from the pace line
+    "floor": 5,        # weekly points spendable however early in the week
+    "ceiling": 75,     # 5h utilization above which new admissions hold
+    "catchup": True,   # spend the slack the week has accumulated
+}
+# Dial name -> the range the UI may set it to.
+NIGHT_DIALS = {"target": (1, 40), "reserve": (0, 100), "floor": (0, 100),
+               "ceiling": (0, 100)}
+ADMIT_POLL = 30        # seconds between admitter passes
+NIGHT_LOG = 40         # night log entries kept
+LIVE = (QUEUED, RUNNING, COMMENTED)   # states with work still to come
+NIGHT_WAKE = threading.Event()
+
+# The last hour before the 5h window resets, where the ceiling stops applying.
+# It matches the prompt-cache TTL: a turn that exhausts quota this close to the
+# reset resumes just after it with its cache still warm, so the retry costs
+# little. The same overrun earlier in the window strands a cold context, and
+# rebuilding it is what the ceiling exists to avoid.
+SQUEEZE = 3600
+# Spread the resumes of a fleet that all died on the same limit.
+RESUME_JITTER = (30, 210)
+RESUME_FALLBACK = 15 * 60   # when no 5h reset time is known
+RESUME_BRIEF = ("your previous turn was cut off by a usage limit; continue "
+                "from where you stopped")
+
+# A turn cut short by an exhausted account. The result event's
+# `api_error_status` carries the HTTP status of an API failure, and 429 is the
+# account out of quota; every other ending reads null. The CLI has no
+# terminal_reason of its own for the case — a usage limit arrives as a plain
+# api_error — so a worker that died before reporting one is judged on the
+# wording its log tail left behind instead.
+QUOTA_STATUS = "429"
+QUOTA_REASONS = ("rate_limit", "usage_limit", "usage_limit_reached")
+QUOTA_TEXT = re.compile(r"usage limit|rate[ _-]?limit|too many requests|quota",
+                        re.I)
+
+
+def quota_death(status=None, reason: str | None = None, text: str = "") -> bool:
+    """Whether a turn ended because the account ran out of quota."""
+    if status is not None and str(status) == QUOTA_STATUS:
+        return True
+    if (reason or "").lower() in QUOTA_REASONS:
+        return True
+    return bool(text and QUOTA_TEXT.search(text))
+
+
+def night() -> dict:
+    """The mode's config and running notes, filled in with the defaults."""
+    cfg = STATE.setdefault("overnight", {})
+    for name, value in NIGHT_DEFAULTS.items():
+        cfg.setdefault(name, value)
+    cfg.setdefault("log", [])
+    return cfg
+
+
+def night_say(text: str, once: bool = False) -> bool:
+    """Add a line to the night log. `once` drops a repeat of the line already
+    at the end, so a hold that outlives many passes is recorded once."""
+    log = night()["log"]
+    if once and log and log[-1]["text"] == text:
+        return False
+    log.append({"t": int(now()), "text": text})
+    del log[:-NIGHT_LOG]
+    return True
+
+
+def clock(at: float) -> str:
+    return time.strftime("%H:%M", time.localtime(at))
+
+
+def window(label: str) -> dict | None:
+    return next((u for u in USAGE if u.get("label") == label), None)
+
+
+def elapsed_pct(u: dict | None, at: float) -> float | None:
+    """How far through its window a rate limit is, in percent."""
+    if not u or not u.get("reset") or not u.get("window"):
+        return None
+    return max(0.0, min(100.0, 100 * (1 - (u["reset"] - at) / u["window"])))
+
+
+def pacer(at: float | None = None) -> dict:
+    """Whether the admitter may start another item, and what to say about it.
+
+    Only new admissions are gated. A turn already in flight, a review comment,
+    and every manual action run whatever the windows read.
+    """
+    at = now() if at is None else at
+    cfg = night()
+    wk, five = window("wk"), window("5h")
+    out = {"open": False, "why": "", "next": None, "wk": None, "line": None,
+           "fiveh": None, "ceiling": cfg["ceiling"], "squeeze": False,
+           "squeezeAt": None}
+    wk_elapsed = elapsed_pct(wk, at)
+    if wk is None or wk_elapsed is None:
+        out["why"] = "no weekly usage reading yet"
+        return out
+    # The floor keeps the first hours of a week spendable: elapsed% starts at
+    # zero there, and the pace line alone would hold every admission until the
+    # week had caught up with the reserve.
+    line = max(cfg["floor"], wk_elapsed - cfg["reserve"])
+    out.update(wk=wk["pct"], line=line, elapsed=wk_elapsed)
+    if five and five.get("reset"):
+        out["squeezeAt"] = five["reset"] - SQUEEZE
+        out["squeeze"] = at >= out["squeezeAt"]
+        out["fiveh"] = five["pct"]
+    if wk["pct"] > line:
+        out["why"] = f"wk at pace ({wk['pct']:.0f}% vs {line:.0f}%)"
+        return out
+    if not cfg["catchup"]:
+        # Strict pace: spend no faster than the window elapses, measured from
+        # the moment the mode came on. A window that rolled over under us reads
+        # as a drop in utilization, and starts the measurement again.
+        start, since = cfg.get("wk_start"), cfg.get("wk_start_at")
+        if start is None or since is None or wk["pct"] < start:
+            cfg["wk_start"], cfg["wk_start_at"] = wk["pct"], at
+        else:
+            points = 100 * (at - since) / wk["window"]
+            if wk["pct"] - start > points:
+                out["why"] = (f"wk above strict pace (+{wk['pct'] - start:.1f} "
+                              f"vs +{points:.1f} since mode start)")
+                return out
+    # No reset time means the 5h window is not running — nothing to hold for.
+    if out["squeezeAt"] and five["pct"] > cfg["ceiling"] and not out["squeeze"]:
+        out["next"] = out["squeezeAt"]
+        out["why"] = (f"5h above ceiling ({five['pct']:.0f}% > "
+                      f"{cfg['ceiling']}%), squeeze zone opens at "
+                      f"{clock(out['squeezeAt'])}")
+        return out
+    out["open"] = True
+    out["why"] = "squeeze zone — reset is close" if out["squeeze"] else "at pace"
+    return out
+
+
+def live_items() -> list[dict]:
+    """Items the night still has work coming for. A scheduled quota-death
+    resume holds its slot, so the admitter does not fill the night past its
+    target ahead of one."""
+    return [it for it in STATE["items"]
+            if it["state"] in LIVE or it.get("resume_at")]
+
+
+def night_landed() -> int:
+    """Items that landed unreviewed since the mode came on."""
+    since = night().get("since") or 0
+    return sum(1 for it in STATE["items"] if it["state"] == NEEDS_REVIEW
+               and (it.get("landed_at") or 0) >= since)
+
+
+def quota_cut(it: dict, phase: str, handoff: bool) -> None:
+    """A turn died with the account out of quota. In overnight mode the item
+    gets one automatic resume just after the 5h window resets; a second death
+    on the same stage leaves it for review. Caller holds LOCK."""
+    say(it, event("usage limit — turn cut short"), sess=phase)
+    cfg = night()
+    if not cfg["on"]:
+        return
+    if it.get("quota_retry"):
+        say(it, event("second usage limit — left for review"), sess=phase)
+        night_say(f"{it['id']} · second usage limit, left for review")
+        return
+    five = window("5h")
+    reset = (five or {}).get("reset")
+    at = reset if reset and reset > now() else now() + RESUME_FALLBACK
+    at += random.uniform(*RESUME_JITTER)
+    it.update(quota_retry=phase, resume_at=at, resume_phase=phase,
+              resume_handoff=bool(handoff))
+    say(it, event(f"resume scheduled for {clock(at)}"), sess=phase)
+    night_say(f"{it['id']} · usage limit in {phase}, resume at {clock(at)}")
+
+
+def due_resumes() -> list[dict]:
+    at = now()
+    return [it for it in STATE["items"]
+            if it.get("resume_at") and it["resume_at"] <= at and not active(it)]
+
+
+def resume_item(it: dict) -> None:
+    """Relaunch the stage a usage limit cut off, as a comment would. Caller
+    holds LOCK."""
+    phase = it.pop("resume_phase", None) or it["phase"]
+    handoff = bool(it.pop("resume_handoff", False))
+    it.pop("resume_at", None)
+    if not it["sessions"].get(phase):
+        say(it, event("no session to resume — left for review"), sess=phase)
+        night_say(f"{it['id']} · no session to resume, left for review")
+        return
+    it["state"] = COMMENTED
+    it["updated"] = False
+    say(it, {"kind": "you", "text": RESUME_BRIEF}, sess=phase)
+    night_say(f"{it['id']} · resuming {phase} after the reset")
+    launch(it, RESUME_BRIEF, phase, trigger="resume", handoff=handoff,
+           admitted=True)
+
+
+def night_admit() -> list[str]:
+    """Admit the next queued task into the night's wave. Caller holds LOCK.
+
+    Every admission of one night belongs to one wave, so the stages share a
+    system-prompt appendix and the committed items of the round before are
+    cleared out the way a hand-started wave clears them."""
+    cfg = night()
+    drop_committed()
+    try:
+        picked = pick_new(1, "name")
+    except Reject as e:
+        night_say(f"admission deferred — {e}", once=True)
+        return []
+    if not picked:
+        night_say("queue is empty — nothing left to admit", once=True)
+        return []
+    chain = wave_presets()[0]["chain"]
+    if not cfg.get("wave"):
+        STATE["wave"] += 1
+        cfg["wave"] = STATE["wave"]
+        cfg["append"] = str(build_append(STATE["wave"]))
+    ids = make_items(picked, chain, cfg["wave"], cfg["append"],
+                     auto_advance=True, auto_stop=chain[-1]["name"])
+    night_say("admitted " + ", ".join(ids) +
+              f" · {len(live_items())}/{cfg['target']} live")
+    return ids
+
+
+def night_tick() -> dict:
+    """One admitter pass: the resumes that came due, then one admission if a
+    slot is free and the pacer allows it."""
+    out = {"resumed": [], "admitted": [], "held": None}
+    changed = False
+    with LOCK:
+        cfg = night()
+        if not cfg["on"] or RELOADING or SHUTTING_DOWN:
+            return out
+        for it in due_resumes():
+            resume_item(it)
+            out["resumed"].append(it["id"])
+            changed = True
+        if len(live_items()) < cfg["target"]:
+            gate = pacer()
+            if gate["open"]:
+                out["admitted"] = night_admit()
+                changed = changed or bool(out["admitted"])
+            else:
+                out["held"] = gate["why"]
+                changed |= night_say("pacer holding: " + gate["why"], once=True)
+    if out["admitted"]:
+        threading.Thread(target=stagger_launch, args=(out["admitted"],),
+                         daemon=True).start()
+    if changed:
+        bump()
+    return out
+
+
+def night_loop() -> None:
+    while True:
+        NIGHT_WAKE.wait(ADMIT_POLL)
+        NIGHT_WAKE.clear()
+        try:
+            night_tick()
+        except Exception as exc:  # a failed pass must not end the night
+            print(f"overnight pass failed: {exc!r}", file=sys.stderr)
+
+
+def night_view() -> dict:
+    """What the console shows for the mode."""
+    cfg = night()
+    view = {name: cfg[name] for name in NIGHT_DEFAULTS}
+    gate = pacer() if cfg["on"] else None
+    soon = [(it["resume_at"], f"{it['id']} resumes") for it in STATE["items"]
+            if it.get("resume_at")]
+    if gate and gate.get("next"):
+        soon.append((gate["next"], "squeeze zone opens"))
+    if cfg["on"] and not soon:
+        soon.append((now() + ADMIT_POLL, "admitter pass"))
+    at, what = min(soon) if soon else (None, "")
+    view.update(gate=gate, live=len(live_items()), landed=night_landed(),
+                log=cfg["log"][-8:],
+                next=({"at": at, "what": what} if at else None))
+    return view
+
+
+def act_night(body: dict) -> dict:
+    with LOCK:
+        cfg = night()
+        for name, (lo, hi) in NIGHT_DIALS.items():
+            if name not in body:
+                continue
+            try:
+                cfg[name] = max(lo, min(hi, int(body[name])))
+            except (TypeError, ValueError):
+                return {"error": f"{name} must be a number"}
+        if "catchup" in body:
+            cfg["catchup"] = bool(body["catchup"])
+        if "on" in body and bool(body["on"]) != cfg["on"]:
+            cfg["on"] = bool(body["on"])
+            if cfg["on"]:
+                wk = window("wk")
+                cfg.update(since=now(), wave=None, append=None,
+                           wk_start=wk["pct"] if wk else None,
+                           wk_start_at=now() if wk else None)
+                night_say(f"autopilot on · target {cfg['target']}")
+            else:
+                cfg["wave"] = None
+                night_say("autopilot off")
+        NIGHT_WAKE.set()
+    bump()
+    return {"ok": True}
+
+
 # ---------- actions ----------
 
 def submit_comment(it: dict, text: str, sess: str | None = None) -> None:
@@ -1455,22 +2433,32 @@ def submit_comment(it: dict, text: str, sess: str | None = None) -> None:
     low = text.lower()
     if low in ("commit", "next"):
         raise Reject(f"`{text}` is a console action, not a worker message")
-    require_idle(it)
     if low == "handoff":
-        if it["phase"] != "create":
-            raise Reject("already handed off")
-        if not it["sessions"]["create"]:
+        require_idle(it)
+        phase = it["phase"]
+        if not next_stage(it, phase):
+            raise Reject("final stage — nothing to hand off to")
+        if not it["sessions"].get(phase):
             raise Reject("no session yet")
-        say(it, {"kind": "you", "text": text}, sess="create")
+        say(it, {"kind": "you", "text": text}, sess=phase)
         it["state"] = COMMENTED
         it["updated"] = False
-        launch(it, HANDOFF_BRIEF, "create", handoff=True)
+        launch(it, HANDOFF_BRIEF, phase, handoff=True)
         return
-    sess = sess if sess in ("create", "refine") else it["phase"]
+    # a comment goes to one session, so only that session has to be idle —
+    # an earlier stage can talk while the current pass runs
+    sess = sess if sess in stage_names(it) else it["phase"]
+    if RELOADING:
+        raise Reject("server reload in progress — wait for it to finish")
+    if it.get("handoff_pending", False):
+        raise Reject("handoff in flight — wait for the next session to start")
+    w = PROCS.get((it["id"], sess))
+    if w and w["state"] in ("spawning", "sending", "running"):
+        raise Reject("worker busy — wait for the turn to land")
     if not it["sessions"].get(sess):
         raise Reject("no session yet")
     say(it, {"kind": "you", "text": text}, sess=sess)
-    if not text.startswith("/"):
+    if not text.startswith("/") and not busy_elsewhere(it, sess):
         it["state"] = COMMENTED
         it["updated"] = False
     head = low.split()[:1]
@@ -1502,6 +2490,21 @@ def act_unapprove(it: dict) -> None:
         raise Reject("not approved")
     it["state"] = NEEDS_REVIEW
     say(it, event("approval withdrawn"))
+
+
+@action
+def act_advance(it: dict) -> None:
+    """Hand a reviewed stage to the next one by hand — what auto-advance does
+    on its own for the waves that ask for it."""
+    require_idle(it)
+    if not next_stage(it, it["phase"]):
+        raise Reject("final stage — nothing to advance to")
+    if it["state"] not in (NEEDS_REVIEW, APPROVED):
+        raise Reject("wait for the turn to land")
+    if not report_of(it, it["phase"]):
+        raise Reject("no handoff report yet — send `handoff` first")
+    it["updated"] = False
+    advance_stage(it)
 
 
 @action
@@ -1629,7 +2632,8 @@ def run_committer(append: Path) -> None:
         cmd += ["--model", COMMIT_MODEL]
     with open(LOG_DIR / "committer.log", "ab") as log:
         try:
-            subprocess.run(cmd, cwd=ROOT, stdout=log, stderr=log, timeout=900)
+            subprocess.run(cmd, cwd=ROOT, env=WORKER_ENV, stdout=log, stderr=log,
+                           timeout=900)
         except subprocess.TimeoutExpired:
             pass
     out = subprocess.run(["git", "log", "--format=%s", f"{before}..HEAD"],
@@ -1643,24 +2647,156 @@ def run_committer(append: Path) -> None:
     bump()
 
 
+# ---------- finalize backlog ----------
+#
+# What the finalize lens lists under the items in flight: every solver on disk
+# that no fable session has passed over yet. The scan reads every solver file
+# and the whole ledger, so it is its own endpoint and never runs inside
+# /api/state; the rows it produces are reused for a few seconds, while the
+# flags and the live items are read fresh on every request.
+
+BACKLOG_TTL = 3
+BACKLOG_CACHE: dict = {"at": 0.0, "rows": []}
+
+
+def backlog_scan() -> list[dict]:
+    done = fabled(ledger_rows())
+    proposals = prop_text()
+    rows = []
+    for path in sorted(SOLVERS.glob("*.dl")):
+        # a running souffle drops `.tmp*.dl` scratch files into the directory
+        if path.name.startswith("."):
+            continue
+        item_id = path.stem
+        if item_id in done:
+            continue
+        comps = comps_of(item_id)
+        calls = task_callouts(item_id)
+        rows.append({"id": item_id, "title": title_of(item_id), "comps": comps,
+                     "comps_unproposed": unproposed(comps, proposals),
+                     "callouts": calls, "callout_n": len(calls),
+                     "callout_rank": callout_rank(calls),
+                     "reports": report_stages(item_id)})
+    return rows
+
+
+def finalize_ready(it: dict) -> bool:
+    """The wave chain has landed everything before finalize, so the task ranks
+    in the backlog while the item still sits in the console — no approval or
+    commit required."""
+    nxt = next_stage(it, it["phase"])
+    return (it["state"] in (NEEDS_REVIEW, APPROVED) and not active(it)
+            and nxt is not None and nxt["name"] == "finalize"
+            and bool(report_of(it, it["phase"])))
+
+
+def backlog_view() -> list[dict]:
+    with LOCK:
+        at = time.monotonic()
+        if at - BACKLOG_CACHE["at"] > BACKLOG_TTL:
+            BACKLOG_CACHE.update(at=at, rows=backlog_scan())
+        table = flags()
+        held = {it["id"] for it in STATE["items"]
+                if it["state"] != COMMITTED and not finalize_ready(it)}
+        rows = [dict(row) for row in BACKLOG_CACHE["rows"]
+                if row["id"] not in held]
+        for row in rows:
+            row["flag"] = (table.get(row["id"]) or {}).get("level", 0)
+    rows.sort(key=lambda row: (row["flag"] or 9, row["callout_rank"] or 9,
+                               0 if row["comps"] else 1,
+                               -row["callout_n"], row["id"]))
+    return rows
+
+
+def act_dismiss(body: dict) -> dict:
+    """Drop a task from the finalize backlog: a ledger line records the ruling
+    that it needs no fable pass. Deleting that line by hand restores it."""
+    item_id = str(body.get("id") or "").strip()
+    if not item_id or not solver_path(item_id).exists():
+        return {"error": f"no solver for {item_id}"}
+    ledger_append({"task": item_id, "stage": "dismissed", "backend": None,
+                   "model": None, "session": None, "ts": int(time.time()),
+                   "source": "user"})
+    with LOCK:
+        BACKLOG_CACHE["at"] = 0.0
+    bump()
+    return {"ok": True}
+
+
+def act_finalize(body: dict) -> dict:
+    """Start a finalize pass: advance a wave item that is done up to finalize,
+    or, for a solver the console no longer holds, a fresh item whose chain is
+    that stage alone, seeded from the reports on disk."""
+    item_id = str(body.get("id") or "").strip()
+    with LOCK:
+        if RELOADING:
+            return {"error": "server reload in progress — wait for it to finish"}
+        if not item_id or not solver_path(item_id).exists():
+            return {"error": f"no solver for {item_id}"}
+        it = find(item_id)
+        if it is not None:
+            if not finalize_ready(it):
+                return {"error": "already in the console — use the item itself"}
+            # the wave chain is done up to finalize: advance the item in place
+            it["updated"] = False
+            advance_stage(it)
+            seeded_names = None
+        else:
+            stage = dict(default_chain()[-1])
+            pairs = persisted_reports(item_id, skip=stage["name"])
+            it = {"id": item_id, "est": 0, "wave": STATE["wave"], "state": RUNNING,
+                  "chain": [stage], "auto_advance": False,
+                  "sessions": {stage["name"]: None}, "phase": stage["name"],
+                  "landed": [], "dirty": False, "updated": False, "rev": 0,
+                  "lastActive": {stage["name"]: None}, "title": title_of(item_id),
+                  "feed": [], "append": wave_append(STATE["wave"]), "ver": 0,
+                  "reports": {}}
+            STATE["items"].append(it)
+            seeded = ", ".join(name for name, _ in pairs)
+            say(it, event(f"{stage['name']} started · "
+                          + (f"seeded from {seeded}" if seeded else "no earlier reports")))
+            try:
+                launch(it, finalize_message(item_id, pairs), stage["name"])
+            except (Reject, OSError) as exc:
+                # nothing is in flight, so the item goes rather than sit unstarted
+                STATE["items"].remove(it)
+                return {"error": f"could not start the worker: {exc}"}
+            seeded_names = [name for name, _ in pairs]
+        BACKLOG_CACHE["at"] = 0.0
+    bump()
+    if seeded_names is None:
+        return {"ok": True, "id": item_id, "advanced": True}
+    return {"ok": True, "id": item_id, "seeded": seeded_names}
+
+
 # ---------- http ----------
 
 def light_items() -> list[dict]:
     out = []
     for it in STATE["items"]:
+        names = stage_names(it)
         live = {phase: (worker := PROCS.get((it["id"], phase))) is not None and
                        worker["state"] != "dead"
-                for phase in ("create", "refine")}
-        running = next((phase for phase in ("create", "refine")
+                for phase in names}
+        busy = {phase: (worker := PROCS.get((it["id"], phase))) is not None and
+                       worker["state"] in ("spawning", "sending", "running")
+                for phase in names}
+        running = next((phase for phase in names
                         if (worker := PROCS.get((it["id"], phase))) and
                         worker["state"] in ("sending", "running")), None)
         turn = PROCS.get((it["id"], running)) if running else None
         out.append({k: it.get(k) for k in
                     ("id", "state", "dirty", "updated", "sessions", "phase", "context",
-                     "lastActive", "wave", "rev", "title", "est", "ver", "append")} |
-                   {"active": active(it), "turnPhase": running,
+                     "lastActive", "wave", "rev", "title", "est", "ver", "append",
+                     "comps", "comps_unproposed", "auto_advance",
+                     "callouts", "callout_n", "callout_rank")} |
+                   {"chain": chain_of(it), "active": active(it),
+                    "busy": busy,
+                    "handoffPending": it.get("handoff_pending", False),
+                    "turnPhase": running,
                     "turnStarted": turn["started"] if turn else None,
-                    "workerLive": live})
+                    "workerLive": live,
+                    "hasReport": bool(report_of(it, it["phase"]))})
     return out
 
 
@@ -1698,9 +2834,11 @@ class Handler(BaseHTTPRequestHandler):
                     COND.wait(deadline - time.time())
                 snap = {"seq": STATE["seq"], "wave": STATE["wave"],
                         "items": light_items(), "usage": USAGE,
-                        "cli": {"addDir": str(REF_DIR), "models": MODELS},
+                        "night": night_view(),
+                        "cli": {"addDir": str(REF_DIR), "presets": wave_presets()},
                         "committer": dict(COMMITTER),
-                        "solved": len(list(SOLVERS.glob("*.dl"))),
+                        "solved": len([p for p in SOLVERS.glob("*.dl")
+                                       if not p.name.startswith(".")]),
                         "total": len(list(REF_DIR.glob("programs/solvers/*.ts")))}
             self.reply(snap)
         elif url.path.startswith("/api/item/"):
@@ -1721,6 +2859,17 @@ class Handler(BaseHTTPRequestHandler):
                     })
                 self.reply({"feed": it["feed"], "files": files,
                             "ver": it.get("ver", 0)})
+        elif url.path == "/api/backlog":
+            self.reply({"items": backlog_view()})
+        elif url.path.startswith("/api/peek/"):
+            item_id = url.path.rsplit("/", 1)[1]
+            if not solver_path(item_id).exists():
+                return self.reply({"error": "no solver"}, 404)
+            with LOCK:
+                reports = [{"stage": name, "text": text}
+                           for name, text in persisted_reports(item_id)]
+            self.reply({"id": item_id, "title": title_of(item_id),
+                        "solver": solver_text(item_id), "reports": reports})
         elif url.path.startswith("/api/task/"):
             item_id = url.path.rsplit("/", 1)[1]
             p = TASKS / f"{item_id}.json"
@@ -1735,7 +2884,10 @@ class Handler(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(n) or b"{}")
         route = urlparse(self.path).path
         if route == "/api/wave":
-            res = start_wave(int(body.get("k", 6)), body.get("order", "name"))
+            res = start_wave(int(body.get("k", 6)), body.get("order", "name"),
+                             bool(body.get("auto_advance", False)),
+                             body.get("chain"),
+                             str(body.get("auto_stop") or "") or None)
         elif route == "/api/comment":
             res = act_comment(body.get("id", ""), body.get("text", ""),
                               body.get("sess"))
@@ -1745,6 +2897,8 @@ class Handler(BaseHTTPRequestHandler):
             res = act_approve(body.get("id", ""))
         elif route == "/api/unapprove":
             res = act_unapprove(body.get("id", ""))
+        elif route == "/api/advance":
+            res = act_advance(body.get("id", ""))
         elif route == "/api/seen":
             res = act_seen(body.get("id", ""))
         elif route == "/api/kill":
@@ -1755,6 +2909,14 @@ class Handler(BaseHTTPRequestHandler):
             res = act_revert(body.get("id", ""))
         elif route == "/api/commit":
             res = act_commit()
+        elif route == "/api/night":
+            res = act_night(body)
+        elif route == "/api/flag":
+            res = act_flag(body)
+        elif route == "/api/finalize":
+            res = act_finalize(body)
+        elif route == "/api/dismiss":
+            res = act_dismiss(body)
         else:
             return self.reply({"error": "not found"}, 404)
         self.reply(res, 400 if "error" in res else 200)
@@ -1922,6 +3084,7 @@ def main() -> None:
     threading.Thread(target=watch_reload, daemon=True).start()
     threading.Thread(target=usage_loop, daemon=True).start()
     threading.Thread(target=watch_caps, daemon=True).start()
+    threading.Thread(target=night_loop, daemon=True).start()
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     stopping = threading.Event()
     def request_stop(signum, frame):

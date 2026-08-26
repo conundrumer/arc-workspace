@@ -61,11 +61,12 @@ def srv(tmp_path, monkeypatch):
 def item(s, item_id, state, **kw):
     """Append an item the way start_wave does, then override for the test."""
     it = {"id": item_id, "est": 10, "wave": 1, "state": state,
+          "chain": s.two_phase_chain(), "auto_advance": False,
           "sessions": {"create": None, "refine": "sess-" + item_id},
-          "phase": "refine", "refined": True,
+          "phase": "refine", "landed": ["refine"],
           "lastActive": {"create": None, "refine": None},
           "dirty": False, "updated": False, "rev": 1, "title": "",
-          "feed": [], "append": "", "ver": 0}
+          "feed": [], "append": "", "ver": 0, "reports": {}}
     it.update(kw)
     s.STATE["items"].append(it)
     return it
@@ -87,6 +88,22 @@ def test_wave_queues_k_items(srv):
     assert res["ids"] == ["t00", "t01"]
     assert srv.STATE["wave"] == 1
     assert [it["state"] for it in srv.STATE["items"]] == [srv.QUEUED, srv.QUEUED]
+
+
+def test_wave_carries_auto_stop(srv):
+    res = srv.start_wave(1, auto_stop="finalize")
+    assert res["ids"] == ["t00"]
+    it = srv.STATE["items"][0]
+    assert it["auto_advance"] is True
+    assert it["auto_stop"] == "finalize"
+    assert srv.auto_advances(it, "create")
+    assert not srv.auto_advances(it, "refine")
+
+
+def test_wave_rejects_unknown_auto_stop(srv):
+    res = srv.start_wave(1, auto_stop="create")
+    assert "error" in res
+    assert srv.STATE["items"] == []
 
 
 def test_wave_starts_while_earlier_wave_runs(srv):
@@ -229,45 +246,360 @@ def test_handoff_is_a_worker_turn_that_reports(srv, monkeypatch):
     assert it["state"] == srv.COMMENTED
 
 
-def test_handoff_refused_outside_the_create_phase(srv):
+def test_handoff_refused_on_the_final_stage(srv):
     item(srv, "a", srv.NEEDS_REVIEW)
-    assert srv.act_comment("a", "handoff")["error"] == "already handed off"
+    assert srv.act_comment("a", "handoff")["error"] == \
+        "final stage — nothing to hand off to"
 
 
 def test_create_landing_defers_the_handoff(srv, monkeypatch):
+    asked = threading.Event()
     landed = threading.Event()
-    monkeypatch.setattr(srv, "complete_handoff", lambda it: landed.set())
-    it = item(srv, "a", srv.RUNNING, phase="create", refined=False, rev=0,
-              sessions={"create": "cs", "refine": None})
+    monkeypatch.setattr(srv, "advance_stage", lambda it: landed.set())
+    sent = []
+
+    def fake_launch(it, msg, phase, trigger=None, **kw):
+        sent.append((msg, phase, trigger))
+        asked.set()
+    monkeypatch.setattr(srv, "launch", fake_launch)
+    it = item(srv, "a", srv.RUNNING, phase="create", landed=[], rev=0,
+              auto_advance=True, sessions={"create": "cs", "refine": None})
     worker(srv, it, phase="create", state="running", turn_seq=4)
     srv.finish_turn(it, {"result": "the report"}, None, time.time(), "create", True)
+    assert asked.wait(1)   # the callout ask goes out before any advance
+    assert sent == [(srv.callout_brief(), "create", "callout")]
+    assert not landed.is_set()
+    srv.finish_turn(it, {"result": "## Callouts\n\n1. [P2] a call"}, None,
+                    time.time(), "create", False)
     assert landed.wait(1)
-    assert it["handoff_report"] == "the report"
+    assert it["reports"]["create"] == "the report\n\n## Callouts\n\n1. [P2] a call"
     assert "handoff_pending" not in it
+    assert "callout_wait" not in it
     assert it["dirty"] is False
 
 
-def test_complete_handoff_launches_refine_with_the_report(srv, monkeypatch):
+def test_advance_launches_the_next_stage_with_the_report(srv, monkeypatch):
     sent = []
     monkeypatch.setattr(srv, "launch",
                         lambda it, msg, phase, trigger=None, handoff=False:
-                        sent.append((msg, phase)))
+                        sent.append((msg, phase, handoff)))
     it = item(srv, "a", srv.RUNNING, phase="create",
               sessions={"create": "cs", "refine": None},
-              handoff_report="tried X, discarded Y")
-    srv.complete_handoff(it)
+              reports={"create": "tried X, discarded Y"})
+    srv.advance_stage(it)
+    assert it["phase"] == "refine"
+    assert it["state"] == srv.RUNNING
+    (msg, phase, handoff), = sent
+    assert phase == "refine"
+    assert handoff is False  # the final stage has nobody to hand off to
+    assert "tried X, discarded Y" in msg
+
+
+def create_item(srv, item_id="a", **kw):
+    """An item mid-create, the way a wave admits one."""
+    return item(srv, item_id, srv.RUNNING, phase="create", landed=[], rev=0,
+                sessions={"create": "cs", "refine": None}, **kw)
+
+
+def land_report(srv, it, text="tried X, discarded Y"):
+    srv.finish_turn(it, {"result": text}, None, time.time(), "create", True)
+
+
+def test_a_landed_report_is_written_beside_the_state(srv):
+    it = create_item(srv)
+    land_report(srv, it)
+    assert srv.report_path("a", "create").read_text() == "tried X, discarded Y"
+    land_report(srv, it, "a second pass")
+    assert srv.report_path("a", "create").read_text() == "a second pass"
+
+
+def test_the_report_file_stands_in_when_state_has_none(srv):
+    srv.save_report("a", "create", "from the file")
+    it = item(srv, "a", srv.NEEDS_REVIEW, phase="create",
+              sessions={"create": "cs", "refine": None})
+    assert srv.report_of(it, "create") == "from the file"
+    assert "the file" in srv.advance_message(it, "create", False)
+    srv.seed_report(it)
+    assert it["reports"]["create"] == "from the file"
+
+
+def test_a_restart_seeds_the_report_from_the_file(srv):
+    srv.save_report("a", "create", "what create found")
+    srv.STATE_FILE.write_text(json.dumps({"seq": 1, "wave": 1, "items": [
+        {"id": "a", "state": srv.NEEDS_REVIEW, "phase": "create", "session": None,
+         "feed": [], "ver": 0}]}))
+    srv.load()
+    assert srv.STATE["items"][0]["reports"]["create"] == "what create found"
+
+
+def test_a_readmitted_task_keeps_the_earlier_report(srv):
+    srv.save_report("t00", "create", "the committed pass")
+    srv.start_wave(1)
+    assert srv.find("t00")["reports"]["create"] == "the committed pass"
+
+
+# ---------- task-local comps ----------
+
+def test_comps_beyond_the_stock_two_are_flagged_by_proposal(srv):
+    write_solver(srv, "a", ".comp Consts {\n}\n.comp CornerDist {\n}\n"
+                           ".comp Wallpaper<Key> {\n}\n.comp Fit {\n}\n")
+    (srv.DOCS / "proposals.md").write_text("### CornerDist\n\nstaged here.\n")
+    it = item(srv, "a", srv.RUNNING)
+    srv.finish_turn(it, {"result": ""}, None, time.time(), "refine", False)
+    assert it["comps"] == ["CornerDist", "Wallpaper"]
+    assert it["comps_unproposed"] == ["Wallpaper"]
+    light = srv.light_items()[0]
+    assert light["comps"] == ["CornerDist", "Wallpaper"]
+    assert light["comps_unproposed"] == ["Wallpaper"]
+
+
+def test_a_stock_solver_flags_no_comps(srv):
+    write_solver(srv, "a", ".comp Consts {\n}\n.comp Parse<Key> {\n}\n"
+                           ".init c = Consts\n.comp Fit {\n}\n")
+    it = item(srv, "a", srv.RUNNING)
+    srv.finish_turn(it, {"result": ""}, None, time.time(), "refine", False)
+    assert it["comps"] == []
+
+
+# ---------- opt-in auto-advance ----------
+
+def test_a_wave_carries_its_chain_choice(srv):
+    srv.start_wave(1)
+    plain = srv.find("t00")
+    assert plain["auto_advance"] is False
+    assert plain["chain"] == srv.default_chain()
+    assert [st["name"] for st in plain["chain"]] == ["create", "refine", "finalize"]
+    assert plain["sessions"] == {"create": None, "refine": None, "finalize": None}
+    srv.LAST_WAVE_AT = 0.0
+    srv.start_wave(1, auto_advance=True, chain=[
+        {"name": "create", "backend": "codex", "model": "gpt-5.1-codex",
+         "effort": "high"},
+        {"name": "refine", "model": "claude-mythos-1"}])
+    eager = srv.find("t01")
+    assert eager["auto_advance"] is True
+    assert eager["chain"] == [
+        {"name": "create", "backend": "codex", "model": "gpt-5.1-codex",
+         "effort": "high"},
+        {"name": "refine", "backend": "claude", "model": "claude-mythos-1"}]
+
+
+def test_a_wave_refuses_a_malformed_chain(srv):
+    assert "non-empty" in srv.start_wave(1, chain=[])["error"]
+    assert "unknown backend" in srv.start_wave(1, chain=[
+        {"name": "create", "backend": "gemini"}])["error"]
+    assert "duplicate" in srv.start_wave(1, chain=[
+        {"name": "create"}, {"name": "create"}])["error"]
+    assert "bad stage name" in srv.start_wave(1, chain=[
+        {"name": "../escape"}])["error"]
+    assert srv.STATE["items"] == []
+
+
+def test_a_three_stage_wave_keys_its_state_by_stage(srv):
+    chain = [{"name": "create", "backend": "codex"}, {"name": "refine"},
+             {"name": "finalize"}]
+    assert srv.start_wave(1, chain=chain)["ids"] == ["t00"]
+    it = srv.find("t00")
+    assert srv.stage_names(it) == ["create", "refine", "finalize"]
+    assert it["sessions"] == {"create": None, "refine": None, "finalize": None}
+    assert it["lastActive"] == {"create": None, "refine": None, "finalize": None}
+    assert it["phase"] == "create"
+    assert srv.light_items()[0]["chain"] == it["chain"]
+
+
+def test_without_auto_advance_a_report_lands_for_review(srv, monkeypatch):
+    launched = []
+    monkeypatch.setattr(srv, "launch", lambda *a, **kw: launched.append(a))
+    it = create_item(srv)
+    land_report(srv, it)
+    assert it["state"] == srv.NEEDS_REVIEW
+    assert it["phase"] == "create"
+    assert it["updated"] is True
+    assert not it.get("handoff_pending")
+    assert launched == []
+    assert it["reports"]["create"] == "tried X, discarded Y"
+
+
+def test_advance_launches_from_the_stored_report(srv, monkeypatch):
+    sent = []
+    monkeypatch.setattr(srv, "launch", lambda it, msg, phase, **kw:
+                        sent.append((msg, phase)))
+    srv.save_report("a", "create", "the committed pass")
+    it = item(srv, "a", srv.NEEDS_REVIEW, phase="create", landed=[],
+              sessions={"create": "cs", "refine": None})
+    assert srv.act_advance("a") == {"ok": True}
     assert it["phase"] == "refine"
     assert it["state"] == srv.RUNNING
     (msg, phase), = sent
     assert phase == "refine"
-    assert "tried X, discarded Y" in msg
+    assert "the committed pass" in msg
 
 
-def test_refine_first_landing_clears_dirty(srv):
-    it = item(srv, "a", srv.RUNNING, dirty=True, refined=False)
+def test_advance_needs_an_idle_reported_non_final_stage(srv):
+    it = item(srv, "a", srv.NEEDS_REVIEW, phase="create",
+              sessions={"create": "cs", "refine": None})
+    assert "no handoff report" in srv.act_advance("a")["error"]
+    it["reports"] = {"create": "a report"}
+    it["state"] = srv.QUEUED
+    assert srv.act_advance("a")["error"] == "wait for the turn to land"
+    it["state"] = srv.NEEDS_REVIEW
+    worker(srv, it, phase="create", state="running")
+    assert "busy" in srv.act_advance("a")["error"]
+    srv.PROCS.clear()
+    it["phase"] = "refine"
+    assert srv.act_advance("a")["error"] == "final stage — nothing to advance to"
+
+
+def test_a_middle_stage_reports_and_hands_on(srv, monkeypatch):
+    """The advance action walks a three-stage chain end to end."""
+    sent = []
+    monkeypatch.setattr(srv, "launch", lambda it, msg, phase, **kw:
+                        sent.append((msg, phase, kw.get("handoff", False))))
+    it = item(srv, "a", srv.NEEDS_REVIEW, phase="create", landed=[],
+              chain=[{"name": "create", "backend": "codex", "model": "gpt-5.1-codex"},
+                     {"name": "refine", "backend": "claude", "model": "claude-opus-5"},
+                     {"name": "finalize", "backend": "claude", "model": "claude-fable-5"}],
+              sessions={"create": "cs", "refine": None, "finalize": None},
+              lastActive={"create": None, "refine": None, "finalize": None},
+              reports={"create": "what create found"})
+    assert srv.act_advance("a") == {"ok": True}
+    msg, phase, handoff = sent[-1]
+    assert (phase, handoff) == ("refine", True)  # a middle stage owes a report
+    assert "what create found" in msg
+    assert srv.HANDOFF_TAIL in msg
+    # the middle stage lands its own report and stops for review
+    it["sessions"]["refine"] = "rs"
+    srv.finish_turn(it, {"result": "what refine changed"}, None, time.time(),
+                    "refine", True)
+    assert it["state"] == srv.NEEDS_REVIEW
+    assert it["phase"] == "refine"
+    assert srv.report_path("a", "refine").read_text() == "what refine changed"
+    assert srv.act_advance("a") == {"ok": True}
+    msg, phase, handoff = sent[-1]
+    assert (phase, handoff) == ("finalize", False)
+    assert "what refine changed" in msg
+    assert srv.HANDOFF_TAIL not in msg
+    assert srv.act_advance("a")["error"] == "final stage — nothing to advance to"
+
+
+def test_auto_advance_runs_the_chain_without_the_user(srv, monkeypatch):
+    sent = []
+    monkeypatch.setattr(srv, "launch", lambda it, msg, phase, **kw:
+                        sent.append((phase, kw.get("handoff", False))))
+    monkeypatch.setattr(srv, "ensure_drain", lambda: None)  # drive the queue here
+    it = item(srv, "a", srv.RUNNING, phase="create", landed=[], auto_advance=True,
+              chain=[{"name": "create", "backend": "claude", "model": "m1"},
+                     {"name": "refine", "backend": "claude", "model": "m2"},
+                     {"name": "finalize", "backend": "claude", "model": "m3"}],
+              sessions={"create": "cs", "refine": None, "finalize": None},
+              lastActive={"create": None, "refine": None, "finalize": None})
+    for phase, session in (("create", "rs"), ("refine", "r2s")):
+        worker(srv, it, phase=phase, state="running", turn_seq=1)
+        srv.finish_turn(it, {"result": f"report from {phase}"}, None, time.time(),
+                        phase, True)
+        assert it["callout_wait"] == phase
+        assert srv.DEFERRED.get_nowait() == ("callout", "a", phase, 1)
+        srv.finish_turn(it, {"result": "## Callouts\n\nnone"}, None,
+                        time.time(), phase, False)
+        assert it["handoff_pending"] is True
+        assert srv.DEFERRED.get_nowait() == ("handoff", "a", phase, 1)
+        it.pop("handoff_pending")
+        srv.advance_stage(it)
+        it["sessions"][it["phase"]] = session
+    assert [p for p, _ in sent] == ["refine", "finalize"]
+    assert it["phase"] == "finalize"
+    assert it["state"] == srv.RUNNING
+    assert sorted(it["reports"]) == ["create", "refine"]
+
+
+def test_a_dead_later_stage_falls_back_to_the_stage_before_it(srv):
+    it = item(srv, "a", srv.RUNNING, phase="finalize",
+              chain=[{"name": "create"}, {"name": "refine"}, {"name": "finalize"}],
+              sessions={"create": "cs", "refine": "rs", "finalize": None})
+    srv.turn_died(it, "finalize")
+    assert it["phase"] == "refine"
+    assert it["state"] == srv.NEEDS_REVIEW
+
+
+def test_a_create_bail_without_auto_advance_lands_for_review(srv, monkeypatch):
+    sent = []
+    monkeypatch.setattr(srv, "launch", lambda it, msg, phase, **kw:
+                        sent.append((msg, phase, kw.get("handoff"))))
+    it = create_item(srv)
+    it["runaway"] = {"create": 2}
+    srv.escalate_turn(it, "create", "bail", True)
+    assert sent == [(srv.BAIL_BRIEF, "create", True)]
+    assert "refine session" not in srv.BAIL_BRIEF
+    land_report(srv, it, "where I got stuck")
+    assert it["state"] == srv.NEEDS_REVIEW
+    assert it["phase"] == "create"
+
+
+def test_worker_cmd_uses_each_stages_model(srv, tmp_path, monkeypatch):
+    monkeypatch.setattr(srv, "FAKE", False)
+    append = tmp_path / "append.md"
+    append.write_text("brief")
+    it = item(srv, "a", srv.NEEDS_REVIEW, append=str(append),
+              chain=[{"name": "create", "backend": "claude", "model": "claude-opus-5"},
+                     {"name": "refine", "backend": "claude", "model": "claude-mythos-1"}],
+              sessions={"create": "cs", "refine": "rs"})
+    cmd = srv.worker_cmd(it, "refine")
+    assert cmd[cmd.index("--model") + 1] == "claude-mythos-1"
+    create = srv.worker_cmd(it, "create")
+    assert create[create.index("--model") + 1] == "claude-opus-5"
+
+
+def codex_item(srv, item_id, state, **kw):
+    """An item whose first stage runs on codex."""
+    kw.setdefault("sessions", {"create": None, "refine": None})
+    return item(srv, item_id, state, phase="create", landed=[],
+                chain=[{"name": "create", "backend": "codex",
+                        "model": "gpt-5.1-codex", "effort": "high"},
+                       {"name": "refine", "backend": "claude",
+                        "model": "claude-fable-5"}],
+                lastActive={"create": None, "refine": None}, **kw)
+
+
+def test_worker_cmd_for_a_codex_stage_runs_the_adapter(srv, tmp_path, monkeypatch):
+    monkeypatch.setattr(srv, "FAKE", False)
+    append = tmp_path / "append.md"
+    append.write_text("brief")
+    it = codex_item(srv, "a", srv.NEEDS_REVIEW, append=str(append))
+    cmd = srv.worker_cmd(it, "create")
+    assert cmd[:2] == [sys.executable, str(srv.HERE / "codex_worker.py")]
+    assert cmd[cmd.index("--append") + 1] == str(append)
+    assert cmd[cmd.index("--add-dir") + 1] == str(srv.REF_DIR)
+    assert cmd[cmd.index("--model") + 1] == "gpt-5.1-codex"
+    assert cmd[cmd.index("--effort") + 1] == "high"
+    assert "--resume" not in cmd
+    assert "--append-system-prompt" not in cmd
+    it["sessions"]["create"] = "thread-1"
+    assert srv.worker_cmd(it, "create")[-2:] == ["--resume", "thread-1"]
+    # the claude stage of the same item still runs the CLI
+    assert srv.worker_cmd(it, "refine")[0] == srv.CLAUDE
+
+
+def test_a_codex_session_leaves_the_cap_watch_with_nothing_to_read(
+        srv, monkeypatch, tmp_path):
+    """A codex thread is not a claude session, so the CLI wrote no transcript
+    and the runaway machinery finds nothing to act on."""
+    home = tmp_path / "projects"
+    home.mkdir()
+    monkeypatch.setattr(srv.quota, "PROJECTS", home)
+    it = codex_item(srv, "a", srv.RUNNING, sessions={"create": "codex-thread-1",
+                                                     "refine": None})
+    w = worker(srv, it, phase="create", state="running")
+    assert srv.transcript_of("codex-thread-1") is None
+    assert srv.tail_turn(w, "codex-thread-1") is None
+    srv.check_caps()
+    assert "escalate" not in w
+    assert it["feed"] == []
+
+
+def test_first_landing_of_a_stage_clears_dirty(srv):
+    it = item(srv, "a", srv.RUNNING, dirty=True, landed=[])
     srv.finish_turn(it, {"result": "review"}, None, time.time(), "refine", False)
     assert it["dirty"] is False
-    assert it["refined"] is True
+    assert it["landed"] == ["refine"]
     assert it["state"] == srv.NEEDS_REVIEW
 
 
@@ -818,7 +1150,8 @@ def test_messages_share_the_task_prefix(srv, monkeypatch, tmp_path):
     (tasks / "a.json").write_text('{"train": []}\n')
     monkeypatch.setattr(srv, "TASKS", tasks)
     cm = srv.create_message("a")
-    rm = srv.refine_message({"id": "a", "handoff_report": "the report"})
+    rm = srv.advance_message({"id": "a", "reports": {"create": "the report"}},
+                             "create", False)
     prefix = srv.task_block("a")
     assert cm.startswith(prefix) and rm.startswith(prefix)
     assert "the report" in rm
@@ -927,10 +1260,37 @@ def test_load_folds_a_single_session_item(srv):
     srv.load()
     it = srv.STATE["items"][0]
     assert it["sessions"] == {"create": None, "refine": "s"}
-    assert it["phase"] == "refine" and it["refined"] is True
+    assert it["phase"] == "refine" and it["landed"] == ["refine"]
     assert it["lastActive"] == {"create": None, "refine": 123}
     assert it["feed"][0]["sess"] == "refine"
     assert it["reverted"] == {"files": ["programs/solvers/a.dl"], "phase": "refine"}
+
+
+def test_load_folds_two_phase_state_into_a_chain(srv):
+    srv.save_report("a", "create", "what create found")
+    two_phase = {"seq": 1, "wave": 1, "items": [{
+        "id": "a", "state": srv.NEEDS_REVIEW, "phase": "create", "rev": 1,
+        "sessions": {"create": "cs", "refine": None}, "refined": False,
+        "lastActive": {"create": 123, "refine": None},
+        "auto_refine": True, "refine_model": "claude-mythos-1",
+        "handoff_report": "from the old state", "dirty": False, "updated": False,
+        "feed": [], "ver": 0, "title": "",
+        "pre": {"hash": "", "solver": "", "proposals": "", "dirty": False,
+                "files": {}},
+    }]}
+    srv.STATE_FILE.write_text(json.dumps(two_phase))
+    srv.load()
+    it = srv.STATE["items"][0]
+    assert it["chain"] == [
+        {"name": "create", "backend": "claude", "model": srv.MODELS["create"]},
+        {"name": "refine", "backend": "claude", "model": "claude-mythos-1"}]
+    assert it["auto_advance"] is True
+    assert it["reports"] == {"create": "from the old state"}
+    assert it["landed"] == ["create"]     # the create session reported
+    assert not {"auto_refine", "refine_model", "handoff_report", "refined"} & set(it)
+    # the stage names carry over, so the sessions and report files keep their keys
+    assert it["sessions"] == {"create": "cs", "refine": None}
+    assert srv.report_of(it, "create") == "from the old state"
 
 
 def test_load_ends_turns_a_restart_cut_short(srv):
@@ -1098,12 +1458,25 @@ def test_dead_worker_relaunch_resumes_and_lands(srv, monkeypatch):
         srv.shutdown_workers()
 
 
-def test_other_phase_cannot_run_while_item_has_a_turn(srv):
-    it = item(srv, "a", srv.NEEDS_REVIEW,
+def test_an_idle_session_takes_comments_while_another_runs(srv):
+    it = item(srv, "a", srv.RUNNING,
               sessions={"create": "cs", "refine": "rs"})
+    worker(srv, it, phase="refine", state="running")
+    cw = worker(srv, it, phase="create", state="idle")
+    assert srv.act_comment("a", "why rank over area?", "create") == {"ok": True}
+    assert cw["state"] == "sending"
+    assert it["state"] == srv.RUNNING      # the running pass keeps the state
+    assert "pre" not in it                 # and the revert snapshot
+    assert "busy" in srv.act_comment("a", "hurry", "refine")["error"]
+
+
+def test_a_side_landing_leaves_the_state_to_the_running_pass(srv):
+    it = item(srv, "a", srv.RUNNING, sessions={"create": "cs", "refine": "rs"})
+    worker(srv, it, phase="refine", state="running")
     worker(srv, it, phase="create", state="running")
-    worker(srv, it, phase="refine", state="idle")
-    assert "busy" in srv.act_comment("a", "check this", "refine")["error"]
+    srv.finish_turn(it, {"result": "an answer"}, None, time.time(),
+                    "create", False)
+    assert it["state"] == srv.RUNNING
 
 
 def test_drop_detaches_all_idle_phase_workers(srv, monkeypatch):
@@ -1121,7 +1494,7 @@ def test_drop_detaches_all_idle_phase_workers(srv, monkeypatch):
 
 def test_cancelled_handoff_does_not_target_recreated_id(srv, monkeypatch):
     called = []
-    monkeypatch.setattr(srv, "complete_handoff", lambda it: called.append(it))
+    monkeypatch.setattr(srv, "advance_stage", lambda it: called.append(it))
     old = item(srv, "a", srv.RUNNING, phase="create", handoff_pending=True)
     old_worker = worker(srv, old, phase="create", state="idle", turn_seq=3)
     srv.STATE["items"].remove(old)
@@ -1344,6 +1717,31 @@ def test_stagger_launch_finishes_admitted_wave_during_reload(srv, monkeypatch):
     assert launched == [{"handoff": True, "admitted": True}]
 
 
+def test_codex_items_launch_without_the_cache_seeder(srv, monkeypatch):
+    items = [codex_item(srv, name, srv.QUEUED) for name in ("a", "b")]
+    launched = []
+    monkeypatch.setattr(srv, "STAGGER_TIMEOUT", 30)   # long enough to hang on
+    monkeypatch.setattr(srv, "launch",
+                        lambda it, *args, **kwargs: launched.append(it["id"]))
+    srv._test_stagger_launch([it["id"] for it in items])
+    assert launched == ["a", "b"]
+    assert srv.FIRST_RESPONSE == {}
+    assert not any("seeder" in m["text"] for m in items[0]["feed"])
+
+
+def test_a_mixed_wave_seeds_on_its_claude_item(srv, monkeypatch):
+    codex_item(srv, "a", srv.QUEUED)
+    item(srv, "b", srv.QUEUED, phase="create", landed=[],
+         sessions={"create": None, "refine": None})
+    launched = []
+    monkeypatch.setattr(srv, "STAGGER_TIMEOUT", .05)
+    monkeypatch.setattr(srv, "launch",
+                        lambda it, *args, **kwargs: launched.append(it["id"]))
+    srv._test_stagger_launch(["a", "b"])
+    assert launched == ["b", "a"]   # the claude item goes first, alone
+    assert any("seeder" in m["text"] for m in srv.find("b")["feed"])
+
+
 def test_concurrent_stagger_launches_launch_each_item_once(srv, monkeypatch):
     items = [item(srv, name, srv.QUEUED, phase="create")
              for name in ("a", "b", "c")]
@@ -1485,3 +1883,812 @@ def test_rejected_worker_clears_session_and_posts_feed(srv, tmp_path):
         regular.close()
 
 
+
+# ---------- overnight mode ----------
+
+WEEK = 7 * 86400
+FIVE = 5 * 3600
+AT = 1_700_000_000.0
+
+
+def clock_at(srv, monkeypatch, at=AT):
+    monkeypatch.setattr(srv, "now", lambda: at)
+    return at
+
+
+def set_usage(srv, monkeypatch, wk_pct=0.0, wk_elapsed=0.0, five_pct=0.0,
+              five_left=FIVE, at=AT, five_reset=True):
+    """Rate-limit rows placing each window where the test wants it."""
+    five = {"label": "5h", "pct": five_pct, "window": FIVE,
+            "reset": at + five_left if five_reset else None}
+    monkeypatch.setattr(srv, "USAGE", [
+        {"label": "wk", "pct": wk_pct, "window": WEEK,
+         "reset": at + WEEK * (1 - wk_elapsed / 100)},
+        five])
+
+
+def night_on(srv, **dials):
+    cfg = srv.night()
+    cfg.update(on=True, since=0, **dials)
+    return cfg
+
+
+def test_night_config_starts_at_the_defaults(srv):
+    cfg = srv.night()
+    assert cfg["on"] is False
+    assert (cfg["target"], cfg["reserve"], cfg["floor"], cfg["ceiling"]) == \
+        (6, 10, 5, 75)
+    assert cfg["catchup"] is True
+
+
+def test_pacer_admits_below_the_pace_line(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=30, wk_elapsed=50)
+    gate = srv.pacer()
+    assert gate["open"] is True
+    assert gate["line"] == 40  # elapsed 50 − reserve 10
+
+
+def test_pacer_holds_once_the_week_reaches_its_pace(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=45, wk_elapsed=50)
+    gate = srv.pacer()
+    assert gate["open"] is False
+    assert "wk at pace" in gate["why"]
+
+
+def test_a_wider_reserve_holds_sooner(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=35, wk_elapsed=50)
+    assert srv.pacer()["open"] is True
+    srv.night()["reserve"] = 20
+    assert srv.pacer()["open"] is False
+
+
+def test_the_floor_keeps_the_start_of_a_week_spendable(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=3, wk_elapsed=1)
+    gate = srv.pacer()
+    assert gate["open"] is True
+    assert gate["line"] == 5
+    set_usage(srv, monkeypatch, wk_pct=6, wk_elapsed=1)
+    assert srv.pacer()["open"] is False
+
+
+def test_catchup_off_caps_spending_at_strict_pace(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    cfg = night_on(srv, catchup=False, wk_start=20, wk_start_at=AT - 3600)
+    set_usage(srv, monkeypatch, wk_pct=22, wk_elapsed=60)
+    gate = srv.pacer()
+    assert gate["open"] is False           # +2 points in an hour's worth of week
+    assert "strict pace" in gate["why"]
+    cfg["catchup"] = True
+    assert srv.pacer()["open"] is True     # the slack is there to be spent
+
+
+def test_strict_pace_restarts_when_the_weekly_window_rolls(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    cfg = night_on(srv, catchup=False, wk_start=80, wk_start_at=AT - 3600)
+    set_usage(srv, monkeypatch, wk_pct=2, wk_elapsed=1)
+    assert srv.pacer()["open"] is True
+    assert cfg["wk_start"] == 2
+
+
+def test_the_five_hour_ceiling_holds_new_admissions(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50,
+              five_pct=80, five_left=2 * 3600)
+    gate = srv.pacer()
+    assert gate["open"] is False
+    assert "5h above ceiling" in gate["why"] and "squeeze zone opens at" in gate["why"]
+    assert gate["next"] == AT + 2 * 3600 - srv.SQUEEZE
+
+
+def test_the_squeeze_zone_admits_above_the_ceiling(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50,
+              five_pct=95, five_left=1800)
+    gate = srv.pacer()
+    assert gate["open"] is True
+    assert gate["squeeze"] is True
+
+
+def test_a_five_hour_window_with_no_reset_reads_as_fresh(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50, five_pct=90,
+              five_reset=False)
+    gate = srv.pacer()
+    assert gate["open"] is True
+    assert gate["squeeze"] is False
+
+
+def test_pacer_holds_without_a_weekly_reading(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    monkeypatch.setattr(srv, "USAGE", [])
+    assert srv.pacer() == {"open": False, "why": "no weekly usage reading yet",
+                           "next": None, "wk": None, "line": None,
+                           "fiveh": None, "ceiling": 75, "squeeze": False,
+                           "squeezeAt": None}
+
+
+def test_the_admitter_fills_to_target_and_stops(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50)
+    night_on(srv, target=2)
+    assert srv.night_tick()["admitted"] == ["t00"]
+    assert srv.night_tick()["admitted"] == ["t01"]
+    assert srv.night_tick()["admitted"] == []
+    assert [it["id"] for it in srv.STATE["items"]] == ["t00", "t01"]
+
+
+def test_the_admitter_respects_the_gate(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=60, wk_elapsed=50)
+    night_on(srv)
+    out = srv.night_tick()
+    assert out["admitted"] == [] and "wk at pace" in out["held"]
+    assert srv.STATE["items"] == []
+    assert "pacer holding" in srv.night()["log"][-1]["text"]
+
+
+def test_a_held_pass_logs_its_reason_once(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=60, wk_elapsed=50)
+    night_on(srv)
+    srv.night_tick()
+    srv.night_tick()
+    assert len(srv.night()["log"]) == 1
+
+
+def test_the_mode_off_admits_nothing(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50)
+    assert srv.night_tick() == {"resumed": [], "admitted": [], "held": None}
+    assert srv.STATE["items"] == []
+
+
+def test_a_night_admission_looks_like_a_wave_item(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50)
+    night_on(srv, target=2)
+    srv.night_tick()
+    srv.night_tick()
+    first, second = srv.STATE["items"]
+    assert first["state"] == srv.QUEUED
+    assert first["auto_advance"] is True
+    assert first["auto_stop"] == "finalize"
+    assert first["chain"] == srv.default_chain()
+    # one wave, one appendix: the night's stages share the cached prefix
+    assert (first["wave"], first["append"]) == (second["wave"], second["append"])
+    assert srv.STATE["wave"] == 1
+
+
+def test_a_night_admission_clears_the_committed_items(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50)
+    item(srv, "old", srv.COMMITTED)
+    night_on(srv, target=1)
+    srv.night_tick()
+    assert [it["id"] for it in srv.STATE["items"]] == ["t00"]
+
+
+def test_a_queue_failure_leaves_the_night_running(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50)
+    night_on(srv)
+
+    def boom(n, order):
+        raise srv.Reject("queue.sh failed: no bun")
+    monkeypatch.setattr(srv, "queue_pick", boom)
+    assert srv.night_tick()["admitted"] == []
+    assert "admission deferred" in srv.night()["log"][-1]["text"]
+    assert srv.STATE["items"] == []
+
+
+def night_item(srv, item_id="a", **kw):
+    """An item admitted by the mode: the whole chain but the last stage."""
+    chain = srv.default_chain()
+    return item(srv, item_id, srv.RUNNING, chain=chain, auto_advance=True,
+                auto_stop=chain[-1]["name"],
+                sessions={"create": "cs", "refine": "rs", "finalize": None},
+                phase="refine", landed=["create"], **kw)
+
+
+def test_auto_advance_runs_up_to_the_stage_it_stops_before(srv):
+    it = night_item(srv)
+    assert srv.auto_advances(it, "create") is True
+    assert srv.auto_advances(it, "refine") is False
+    assert srv.auto_advances(it, "finalize") is False
+
+
+def test_the_stage_before_the_last_lands_for_review_with_its_report(srv, monkeypatch):
+    launched = []
+    monkeypatch.setattr(srv, "launch", lambda *a, **kw: launched.append(a))
+    it = night_item(srv)
+    srv.finish_turn(it, {"result": "what refine found"}, None, time.time(),
+                    "refine", True)
+    assert it["state"] == srv.NEEDS_REVIEW
+    assert it["phase"] == "refine"
+    assert it["reports"]["refine"] == "what refine found"
+    assert srv.report_path("a", "refine").read_text() == "what refine found"
+    assert launched == []
+    assert not it.get("handoff_pending")
+
+
+def test_an_earlier_stage_still_hands_off_by_itself(srv, monkeypatch):
+    landed = threading.Event()
+    monkeypatch.setattr(srv, "advance_stage", lambda it: landed.set())
+    monkeypatch.setattr(srv, "launch", lambda *a, **kw: None)
+    chain = srv.default_chain()
+    it = item(srv, "a", srv.RUNNING, chain=chain, auto_advance=True,
+              auto_stop="finalize", phase="create", landed=[],
+              sessions={"create": "cs", "refine": None, "finalize": None})
+    worker(srv, it, phase="create", state="running", turn_seq=4)
+    srv.finish_turn(it, {"result": "the report"}, None, time.time(), "create", True)
+    srv.finish_turn(it, {"result": "## Callouts\n\nnone"}, None,
+                    time.time(), "create", False)
+    assert landed.wait(1)
+
+
+def test_quota_death_is_read_from_the_status_then_the_wording(srv):
+    assert srv.quota_death(429, "api_error", "") is True
+    assert srv.quota_death("429", None, "") is True
+    assert srv.quota_death(None, "rate_limit", "") is True
+    assert srv.quota_death(None, None, "Claude AI usage limit reached") is True
+    assert srv.quota_death(None, "api_error", "") is False
+    assert srv.quota_death(500, "api_error", "overloaded") is False
+    assert srv.quota_death(None, None, "souffle exceeded the 5s CPU limit") is False
+
+
+def quota_result(srv, it, phase="refine", handoff=False):
+    w = worker(srv, it, phase=phase, state="running")
+    w["started"] = time.time()
+    w["handoff"] = handoff
+    srv.handle_event(w, {"type": "result", "terminal_reason": "api_error",
+                         "api_error_status": 429,
+                         "result": "Claude AI usage limit reached"}, None)
+    return w
+
+
+def test_a_quota_death_schedules_a_resume_after_the_reset(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50, five_pct=100,
+              five_left=1200)
+    monkeypatch.setattr(srv.random, "uniform", lambda lo, hi: 60)
+    night_on(srv)
+    it = item(srv, "a", srv.RUNNING)
+    quota_result(srv, it, handoff=True)
+    assert it["state"] == srv.NEEDS_REVIEW
+    assert it["resume_at"] == AT + 1200 + 60
+    assert it["resume_phase"] == "refine"
+    assert it["resume_handoff"] is True
+    assert it["quota_retry"] == "refine"
+    assert "usage limit" in it["feed"][-2]["text"]
+
+
+def test_a_quota_death_with_the_mode_off_just_lands(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, five_left=1200)
+    it = item(srv, "a", srv.RUNNING)
+    quota_result(srv, it)
+    assert it["state"] == srv.NEEDS_REVIEW
+    assert "resume_at" not in it
+
+
+def test_a_second_quota_death_lands_for_review(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, five_left=1200)
+    night_on(srv)
+    it = item(srv, "a", srv.RUNNING, quota_retry="refine")
+    quota_result(srv, it)
+    assert "resume_at" not in it
+    assert "second usage limit" in it["feed"][-1]["text"]
+
+
+def test_a_turn_that_lands_clears_the_retry(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    it = item(srv, "a", srv.RUNNING, quota_retry="refine")
+    srv.finish_turn(it, {"result": "done"}, None, time.time(), "refine", False)
+    assert "quota_retry" not in it
+
+
+def test_a_worker_that_dies_of_quota_is_scheduled_too(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, five_left=600)
+    monkeypatch.setattr(srv.random, "uniform", lambda lo, hi: 0)
+    night_on(srv)
+    it = item(srv, "a", srv.RUNNING)
+
+    class Proc:
+        stdout = iter([])
+        returncode = 1
+
+        def wait(self):
+            return 1
+    w = worker(srv, it, state="running")
+    w["proc"] = Proc()
+    w["started"] = time.time()
+    (srv.LOG_DIR / "a.log").write_text("Claude AI usage limit reached|1700000000")
+    srv.reader(w)
+    assert it["resume_at"] == AT + 600
+
+
+def test_a_scheduled_resume_holds_a_slot(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    it = item(srv, "a", srv.NEEDS_REVIEW, resume_at=AT + 600)
+    assert srv.live_items() == [it]
+
+
+def test_a_due_resume_relaunches_the_same_stage(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    sent = []
+    monkeypatch.setattr(srv, "launch",
+                        lambda it, msg, phase, **kw: sent.append((msg, phase, kw)))
+    night_on(srv, target=1)
+    it = item(srv, "a", srv.NEEDS_REVIEW, resume_at=AT - 1,
+              resume_phase="refine", resume_handoff=True)
+    out = srv.night_tick()
+    assert out["resumed"] == ["a"]
+    assert sent == [(srv.RESUME_BRIEF, "refine",
+                     {"trigger": "resume", "handoff": True, "admitted": True})]
+    assert it["state"] == srv.COMMENTED
+    assert "resume_at" not in it and "resume_phase" not in it
+    assert it["feed"][-1] == {"kind": "you", "text": srv.RESUME_BRIEF,
+                              "sess": "refine"}
+
+
+def test_a_resume_that_is_not_due_waits(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    night_on(srv, target=1)
+    it = item(srv, "a", srv.NEEDS_REVIEW, resume_at=AT + 60,
+              resume_phase="refine")
+    assert srv.night_tick()["resumed"] == []
+    assert it["state"] == srv.NEEDS_REVIEW
+
+
+def test_a_resume_without_a_session_lands_for_review(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    night_on(srv, target=1)
+    it = item(srv, "a", srv.NEEDS_REVIEW, resume_at=AT - 1,
+              resume_phase="create", sessions={"create": None, "refine": "rs"})
+    assert srv.night_tick()["resumed"] == ["a"]
+    assert it["state"] == srv.NEEDS_REVIEW
+    assert "no session to resume" in it["feed"][-1]["text"]
+
+
+def test_the_night_counts_what_landed_unreviewed(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    night_on(srv)
+    srv.night()["since"] = AT - 10
+    item(srv, "old", srv.NEEDS_REVIEW, landed_at=AT - 100)
+    item(srv, "new", srv.NEEDS_REVIEW, landed_at=AT - 1)
+    item(srv, "run", srv.RUNNING, landed_at=AT - 1)
+    assert srv.night_landed() == 1
+
+
+def test_the_mode_and_its_dials_survive_a_restart(srv):
+    assert srv.act_night({"on": True, "target": 3, "catchup": False,
+                          "ceiling": 60}) == {"ok": True}
+    srv.STATE.clear()
+    srv.STATE.update({"seq": 0, "wave": 0, "items": []})
+    srv.load()
+    cfg = srv.night()
+    assert (cfg["on"], cfg["target"], cfg["ceiling"]) == (True, 3, 60)
+    assert cfg["catchup"] is False
+
+
+def test_the_dials_are_held_to_their_range(srv):
+    srv.act_night({"target": 999, "reserve": -5})
+    cfg = srv.night()
+    assert (cfg["target"], cfg["reserve"]) == (40, 0)
+    assert srv.act_night({"target": "lots"})["error"] == "target must be a number"
+
+
+def test_turning_the_mode_on_starts_a_fresh_night(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=42, wk_elapsed=50)
+    srv.night()["wave"] = 7
+    srv.act_night({"on": True})
+    cfg = srv.night()
+    assert cfg["since"] == AT
+    assert cfg["wave"] is None       # the night gets its own wave when it admits
+    assert cfg["wk_start"] == 42     # where strict pace measures from
+    srv.act_night({"on": False})
+    assert srv.night()["wave"] is None
+
+
+def test_the_console_payload_carries_the_night(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50)
+    night_on(srv, target=4)
+    view = srv.night_view()
+    assert (view["on"], view["target"], view["live"], view["landed"]) == \
+        (True, 4, 0, 0)
+    assert view["gate"]["open"] is True
+    assert view["next"]["what"] == "admitter pass"
+
+
+# ---------- callouts ----------
+
+REPORT = """The model claim stands.
+
+## Callouts
+
+- rank ties are broken by position; the data does not say so
+- `rank_of` reads like lib material
+"""
+
+
+def test_callouts_are_read_off_the_report(srv):
+    assert srv.parse_callouts(REPORT) == [
+        "rank ties are broken by position; the data does not say so",
+        "`rank_of` reads like lib material"]
+
+
+def test_a_stage_with_nothing_to_raise_reads_as_no_callouts(srv):
+    assert srv.parse_callouts("body\n\n## Callouts\n\nnone\n") == []
+    assert srv.parse_callouts("body\n\n### callouts\n\n- none\n") == []
+
+
+def test_a_report_without_the_section_has_no_callouts(srv):
+    assert srv.parse_callouts("just a report\n\n## Findings\n\n- one\n") == []
+    assert srv.parse_callouts("") == []
+
+
+def test_callouts_stop_at_the_next_heading(srv):
+    text = "## Callouts\n\n- one\n\n## Next steps\n\n- two\n- three\n"
+    assert srv.parse_callouts(text) == ["one"]
+
+
+def test_a_section_written_as_prose_counts_its_lines(srv):
+    text = "## Callouts\nthe const shape is a guess\nthe audit left one case open\n"
+    assert srv.parse_callouts(text) == ["the const shape is a guess",
+                                        "the audit left one case open"]
+
+
+def test_a_landing_puts_the_callouts_on_the_item(srv):
+    it = item(srv, "a", srv.RUNNING)
+    srv.finish_turn(it, {"result": REPORT}, None, time.time(), "refine", False)
+    assert it["callout_n"] == 2
+    light = srv.light_items()[0]
+    assert light["callout_n"] == 2
+    assert light["callouts"][0].startswith("rank ties")
+
+
+def test_a_turn_without_the_section_keeps_the_last_callouts(srv):
+    it = item(srv, "a", srv.RUNNING)
+    srv.finish_turn(it, {"result": REPORT}, None, time.time(), "refine", False)
+    srv.finish_turn(it, {"result": "fixed the join"}, None, time.time(),
+                    "refine", False)
+    assert it["callout_n"] == 2
+    srv.finish_turn(it, {"result": "all clear\n\n## Callouts\n\nnone\n"}, None,
+                    time.time(), "refine", False)
+    assert it["callout_n"] == 0
+    assert srv.light_items()[0]["callouts"] == []
+
+
+def test_an_item_that_never_landed_has_no_callout_pill(srv):
+    item(srv, "a", srv.QUEUED)
+    assert srv.light_items()[0]["callout_n"] is None
+
+
+def test_the_callout_ask_is_its_own_turn_not_a_report_section(srv):
+    for brief in (srv.CREATE_BRIEF, srv.HANDOFF_BRIEF, srv.HANDOFF_TAIL,
+                  srv.REVIEW_TAIL):
+        assert "## Callouts" not in brief
+    text = srv.callout_brief()
+    assert "## Callouts" in text
+    assert "P1-P3" in text
+    for kind, pct in srv.CALLOUT_RATES:
+        assert f"{kind} {pct}%" in text
+    # the later stage reports its own pass and leaves the earlier one alone
+    assert "covers your own pass" in srv.HANDOFF_TAIL
+
+
+def test_a_pending_callout_survives_its_continuation_turns(srv):
+    it = item(srv, "a", srv.RUNNING, phase="create", callout_wait="create",
+              sessions={"create": "cs", "refine": None})
+    worker(srv, it, phase="create")
+    for trigger in ("callout", "resume", "nudge", "bail"):
+        srv.launch(it, "poke", "create", trigger=trigger)
+        assert it["callout_wait"] == "create"
+    srv.launch(it, "a user comment", "create")
+    assert "callout_wait" not in it
+
+
+def test_callout_ranks_are_read_off_the_entries(srv):
+    assert srv.callout_rank(["[P2] a call", "[P1] urgent", "no mark"]) == 1
+    assert srv.callout_rank(["P3 loose mark"]) == 3
+    assert srv.callout_rank(["**[P1]** bolded mark"]) == 1
+    assert srv.callout_rank(["**[P2] bold runs on"]) == 2
+    assert srv.callout_rank(["no marks here"]) is None
+    assert srv.callout_rank([]) is None
+
+
+# ---------- finalize seeding ----------
+
+def three_stage(srv, item_id="a", **kw):
+    kw.setdefault("phase", "refine")
+    return item(srv, item_id, srv.NEEDS_REVIEW, landed=["create"],
+                chain=[{"name": "create", "backend": "claude", "model": "m1"},
+                       {"name": "refine", "backend": "claude", "model": "m2"},
+                       {"name": "finalize", "backend": "claude", "model": "m3"}],
+                sessions={"create": "cs", "refine": "rs", "finalize": None},
+                lastActive={"create": None, "refine": None, "finalize": None},
+                **kw)
+
+
+def test_the_final_stage_is_seeded_with_the_whole_chain(srv):
+    it = three_stage(srv, reports={"create": "what create found",
+                                   "refine": "what refine changed"})
+    msg = srv.advance_message(it, "refine", False)
+    assert msg.index("what create found") < msg.index("what refine changed")
+    assert "## handoff report from the create session" in msg
+    assert "## handoff report from the refine session" in msg
+
+
+def test_a_non_final_advance_carries_only_the_report_before_it(srv):
+    it = three_stage(srv, phase="create", reports={"create": "what create found"})
+    it["reports"]["refine"] = "not written yet"
+    msg = srv.advance_message(it, "create", True)
+    assert "what create found" in msg
+    assert "not written yet" not in msg
+
+
+def test_a_final_stage_with_one_report_reads_as_before(srv):
+    it = three_stage(srv, reports={"refine": "what refine changed"})
+    msg = srv.advance_message(it, "refine", False)
+    assert "## handoff report from the refine session" in msg
+    assert "create session" not in msg
+
+
+def test_a_final_stage_with_no_report_says_so(srv):
+    it = three_stage(srv)
+    assert "(the refine session left no report)" in \
+        srv.advance_message(it, "refine", False)
+
+
+# ---------- provenance ledger ----------
+
+def test_every_landing_writes_a_ledger_line(srv, monkeypatch):
+    monkeypatch.setattr(srv, "now", lambda: 1700.0)
+    it = item(srv, "a", srv.RUNNING,
+              chain=[{"name": "create", "backend": "codex", "model": "gpt-5.1-codex"},
+                     {"name": "refine", "backend": "claude", "model": "claude-fable-5"}])
+    srv.finish_turn(it, {"result": "r"}, None, time.time(), "refine", False)
+    rows = srv.ledger_rows()
+    assert rows == [{"task": "a", "stage": "refine", "backend": "claude",
+                     "model": "claude-fable-5", "session": "sess-a",
+                     "ts": 1700, "source": "console"}]
+    srv.finish_turn(it, {"result": "r2"}, None, time.time(), "refine", False)
+    assert len(srv.ledger_rows()) == 2       # append-only, one line per landing
+
+
+def test_the_ledger_reader_tolerates_other_writers(srv):
+    srv.LEDGER.parent.mkdir(parents=True, exist_ok=True)
+    srv.LEDGER.write_text(
+        '{"task": "a", "stage": "legacy", "backend": "claude", '
+        '"model": "claude-fable-5", "session": null, "ts": 1, "source": "backfill"}\n'
+        "\n"
+        "not json at all\n"
+        '{"no task": true}\n'
+        '{"task": "b", "stage": "create", "model": "claude-opus-5", "ts": 2}\n')
+    rows = srv.ledger_rows()
+    assert [r["task"] for r in rows] == ["a", "b"]
+    assert srv.fabled(rows) == {"a"}
+
+
+def test_a_finalize_landing_counts_as_the_fable_pass(srv):
+    srv.ledger_append({"task": "c", "stage": "finalize", "model": "claude-opus-5"})
+    srv.ledger_append({"task": "d", "stage": "refine", "model": "claude-opus-5"})
+    assert srv.fabled(srv.ledger_rows()) == {"c"}
+
+
+# ---------- flags ----------
+
+def test_a_flag_is_set_cleared_and_kept(srv, monkeypatch):
+    monkeypatch.setattr(srv, "now", lambda: 900.0)
+    assert srv.act_flag({"id": "a", "level": 1}) == {"ok": True, "level": 1}
+    assert srv.flags() == {"a": {"level": 1, "ts": 900}}
+    srv.act_flag({"id": "a", "level": 3})
+    assert srv.flags()["a"]["level"] == 3
+    assert srv.act_flag({"id": "a", "level": 0}) == {"ok": True, "level": 0}
+    assert srv.flags() == {}
+
+
+def test_flags_outlive_the_process(srv):
+    srv.act_flag({"id": "a", "level": 2})
+    srv.FLAGS = None                       # what a restart reads
+    assert srv.flags() == {"a": {"level": 2, "ts": srv.flags()["a"]["ts"]}}
+    assert json.loads(srv.FLAGS_FILE.read_text())["a"]["level"] == 2
+
+
+def test_a_flag_survives_the_item_being_dropped(srv):
+    item(srv, "a", srv.NEEDS_REVIEW)
+    srv.act_flag({"id": "a", "level": 1})
+    srv.act_drop("a")
+    assert srv.STATE["items"] == []
+    assert srv.flags()["a"]["level"] == 1
+
+
+def test_a_flag_level_is_held_to_the_three(srv):
+    assert "level" in srv.act_flag({"id": "a", "level": 4})["error"]
+    assert "level" in srv.act_flag({"id": "a", "level": "high"})["error"]
+    assert srv.act_flag({"id": "", "level": 1})["error"] == "no task id"
+    assert srv.flags() == {}
+
+
+# ---------- the finalize backlog ----------
+
+def backlog_solver(srv, item_id, text="// concept: a shape\n"):
+    write_solver(srv, item_id, text)
+
+
+def test_the_backlog_holds_the_solvers_with_no_fable_pass(srv):
+    for tid in ("aaa", "fff", "ggg"):
+        backlog_solver(srv, tid)
+    srv.ledger_append({"task": "fff", "stage": "finalize",
+                       "model": "claude-opus-5", "source": "console"})
+    srv.ledger_append({"task": "ggg", "stage": "legacy",
+                       "model": "claude-fable-5", "source": "backfill"})
+    assert [r["id"] for r in srv.backlog_view()] == ["aaa"]
+
+
+def test_dismiss_drops_a_task_from_the_backlog(srv):
+    for tid in ("aaa", "bbb"):
+        backlog_solver(srv, tid)
+    assert srv.act_dismiss({"id": "aaa"}).get("ok")
+    assert [r["id"] for r in srv.backlog_view()] == ["bbb"]
+    row = [r for r in srv.ledger_rows() if r["task"] == "aaa"][0]
+    assert row["stage"] == "dismissed" and row["source"] == "user"
+    assert "no solver" in srv.act_dismiss({"id": "zzz"})["error"]
+
+
+def test_the_backlog_sorts_flags_then_comps_then_callouts(srv):
+    for tid in ("aaa", "bbb", "ccc", "ddd", "eee"):
+        backlog_solver(srv, tid)
+    write_solver(srv, "bbb", "// concept: tiles\n.comp CornerDist {\n}\n")
+    srv.save_report("ccc", "refine", REPORT)
+    srv.act_flag({"id": "ddd", "level": 2})
+    srv.act_flag({"id": "eee", "level": 1})
+    rows = srv.backlog_view()
+    assert [r["id"] for r in rows] == ["eee", "ddd", "bbb", "ccc", "aaa"]
+    by_id = {r["id"]: r for r in rows}
+    assert by_id["eee"]["flag"] == 1
+    assert by_id["bbb"]["comps"] == ["CornerDist"]
+    assert by_id["bbb"]["comps_unproposed"] == ["CornerDist"]
+    assert by_id["ccc"]["callout_n"] == 2
+    assert by_id["ccc"]["reports"] == ["refine"]
+    assert by_id["aaa"]["reports"] == []
+    assert by_id["aaa"]["title"] == "concept: a shape"
+
+
+def test_a_self_rank_outsorts_comps_and_counts(srv):
+    for tid in ("aaa", "bbb", "ccc"):
+        backlog_solver(srv, tid)
+    write_solver(srv, "aaa", "// concept: tiles\n.comp CornerDist {\n}\n")
+    srv.save_report("bbb", "refine", REPORT)   # two entries, no marks
+    srv.save_report("ccc", "refine",
+                    "done\n\n## Callouts\n\n1. [P2] the pin is a guess\n")
+    rows = srv.backlog_view()
+    assert [r["id"] for r in rows] == ["ccc", "aaa", "bbb"]
+    assert rows[0]["callout_rank"] == 2
+    assert rows[1]["callout_rank"] is None
+
+
+def test_a_task_the_console_holds_stays_out_of_the_backlog(srv):
+    backlog_solver(srv, "aaa")
+    backlog_solver(srv, "bbb")
+    item(srv, "aaa", srv.NEEDS_REVIEW)
+    assert [r["id"] for r in srv.backlog_view()] == ["bbb"]
+
+
+def test_save_exports_the_approved_ids(srv):
+    item(srv, "a", srv.APPROVED)
+    item(srv, "b", srv.NEEDS_REVIEW)
+    srv.save()
+    assert srv.APPROVED_FILE.read_text() == "a\n"
+    srv.find("a")["state"] = srv.COMMITTED
+    srv.save()
+    assert srv.APPROVED_FILE.read_text() == ""
+
+
+def test_a_refine_done_item_ranks_in_the_backlog(srv):
+    for tid in ("aaa", "bbb", "ccc"):
+        backlog_solver(srv, tid)
+    srv.save_report("aaa", "refine", "done\n\n## Callouts\n\n1. [P1] a call\n")
+    item(srv, "aaa", srv.NEEDS_REVIEW, chain=srv.default_chain())
+    # a mid-chain item stays held even on the finalize-bearing chain
+    item(srv, "bbb", srv.NEEDS_REVIEW, chain=srv.default_chain(),
+         phase="create", sessions={"create": "sess-bbb"}, landed=["create"])
+    rows = srv.backlog_view()
+    assert [r["id"] for r in rows] == ["aaa", "ccc"]
+    assert rows[0]["callout_rank"] == 1
+
+
+def test_start_finalize_advances_a_refine_done_item(srv, monkeypatch):
+    sent = finalize_launch(srv, monkeypatch)
+    backlog_solver(srv, "aaa")
+    srv.save_report("aaa", "refine", "the handoff")
+    it = item(srv, "aaa", srv.NEEDS_REVIEW, chain=srv.default_chain())
+    assert srv.act_finalize({"id": "aaa"}) == \
+        {"ok": True, "id": "aaa", "advanced": True}
+    assert srv.find("aaa") is it
+    assert it["phase"] == "finalize" and it["state"] == srv.RUNNING
+    (_, phase), = sent
+    assert phase == "finalize"
+
+
+def test_the_backlog_scan_is_reused_between_polls(srv):
+    backlog_solver(srv, "aaa")
+    srv.backlog_view()
+    backlog_solver(srv, "bbb")
+    assert [r["id"] for r in srv.backlog_view()] == ["aaa"]   # inside the TTL
+    srv.BACKLOG_CACHE["at"] = 0.0
+    assert [r["id"] for r in srv.backlog_view()] == ["aaa", "bbb"]
+
+
+def test_a_flag_shows_up_without_waiting_for_the_scan(srv):
+    backlog_solver(srv, "aaa")
+    srv.backlog_view()
+    srv.act_flag({"id": "aaa", "level": 1})
+    assert srv.backlog_view()[0]["flag"] == 1
+
+
+# ---------- starting a finalize pass ----------
+
+def finalize_launch(srv, monkeypatch):
+    sent = []
+    monkeypatch.setattr(srv, "launch", lambda it, msg, phase, **kw:
+                        sent.append((msg, phase)))
+    return sent
+
+
+def test_start_finalize_seeds_from_the_persisted_reports(srv, monkeypatch):
+    sent = finalize_launch(srv, monkeypatch)
+    backlog_solver(srv, "aaa")
+    srv.save_report("aaa", "create", "what create found")
+    srv.save_report("aaa", "refine", "what refine changed")
+    res = srv.act_finalize({"id": "aaa"})
+    assert res == {"ok": True, "id": "aaa", "seeded": ["create", "refine"]}
+    it = srv.find("aaa")
+    assert srv.stage_names(it) == ["finalize"]
+    assert it["sessions"] == {"finalize": None}
+    assert it["phase"] == "finalize" and it["state"] == srv.RUNNING
+    assert it["chain"][0]["model"] == srv.default_chain()[-1]["model"]
+    (msg, phase), = sent
+    assert phase == "finalize"
+    assert msg.index("what create found") < msg.index("what refine changed")
+    assert srv.REVIEW_TAIL in msg
+    assert srv.HANDOFF_TAIL not in msg
+
+
+def test_start_finalize_over_a_solver_with_no_reports(srv, monkeypatch):
+    sent = finalize_launch(srv, monkeypatch)
+    backlog_solver(srv, "aaa")
+    assert srv.act_finalize({"id": "aaa"})["seeded"] == []
+    (msg, _), = sent
+    assert "No earlier session left a report" in msg
+    assert "handoff report from" not in msg
+    assert srv.task_block("aaa") in msg
+    assert srv.find("aaa")["feed"][0]["text"].endswith("no earlier reports")
+
+
+def test_start_finalize_needs_a_solver_and_a_free_task(srv, monkeypatch):
+    finalize_launch(srv, monkeypatch)
+    assert "no solver" in srv.act_finalize({"id": "aaa"})["error"]
+    backlog_solver(srv, "aaa")
+    item(srv, "aaa", srv.NEEDS_REVIEW)
+    assert "already in the console" in srv.act_finalize({"id": "aaa"})["error"]
+
+
+def test_a_started_finalize_pass_lands_for_review(srv, monkeypatch):
+    finalize_launch(srv, monkeypatch)
+    backlog_solver(srv, "aaa")
+    srv.act_finalize({"id": "aaa"})
+    it = srv.find("aaa")
+    srv.finish_turn(it, {"result": "the review"}, None, time.time(),
+                    "finalize", False)
+    assert it["state"] == srv.NEEDS_REVIEW
+    assert srv.fabled(srv.ledger_rows()) == {"aaa"}
+    assert srv.backlog_view() == []
