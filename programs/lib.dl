@@ -19,10 +19,8 @@
 .type Sym <: number
 .type Sense <: number
 
-// A direction of either kind — cardinal or diagonal.
 .type Dir8 = Dir | DiagDir
 
-// A line family of either kind — cardinal or diagonal.
 .type Axis4 = Axis | DiagAxis
 
 // A label carrying identity and nothing else. Numbering is arbitrary, so
@@ -88,7 +86,6 @@
 #define SYM_C4  78
 #define SYM_D4  79
 
-// Position with 0 distance to every edge.
 #define ORIGIN [0, 0, 0, 0]
 
 // ============================================================
@@ -159,7 +156,6 @@ d4_elem(D4_TB).
 d4_elem(D4_DG).
 d4_elem(D4_AD).
 
-// Group inverse.
 .decl d4_inverse(d: D4, d_inv: D4)
 d4_inverse(D4_ID, D4_ID).
 d4_inverse(D4_CW, D4_CC).
@@ -182,7 +178,6 @@ sym_elem(SYM_X).
 sym_elem(SYM_C4).
 sym_elem(SYM_D4).
 
-// Each subgroup's element list.
 .decl sym_member(s: Sym, d: D4)
 sym_member(SYM_1, D4_ID).
 sym_member(SYM_LR, D4_ID). sym_member(SYM_LR, D4_LR).
@@ -201,7 +196,6 @@ sym_member(SYM_D4, D) :- d4_elem(D).
 .decl c4_elem(d: D4)
 c4_elem(D) :- sym_member(SYM_C4, D).
 
-// Axis of a Dir.
 .decl axis_of(d: Dir, a: Axis)
 axis_of(DIR_T, AXIS_V).
 axis_of(DIR_B, AXIS_V).
@@ -214,7 +208,6 @@ diag_axis_of(DIAG_BR, DAXIS_DG).
 diag_axis_of(DIAG_TR, DAXIS_AD).
 diag_axis_of(DIAG_BL, DAXIS_AD).
 
-// The line family of a direction of either kind.
 .decl axis4_of(d: Dir8, a: Axis4)
 axis4_of(D, A) :- axis_of(D, A).
 axis4_of(D, A) :- diag_axis_of(D, A).
@@ -230,21 +223,18 @@ dir_of(DIAG_BL, AXIS_H, DIR_L).
 dir_of(DIAG_BR, AXIS_V, DIR_B).
 dir_of(DIAG_BR, AXIS_H, DIR_R).
 
-// Opposite Dir on the same axis.
 .decl opposite(d: Dir, opp: Dir)
 opposite(DIR_T, DIR_B).
 opposite(DIR_B, DIR_T).
 opposite(DIR_L, DIR_R).
 opposite(DIR_R, DIR_L).
 
-// Opposite corner on the same diagonal — the DiagDir half-turn.
 .decl diag_opposite(d: DiagDir, opp: DiagDir)
 diag_opposite(DIAG_TL, DIAG_BR).
 diag_opposite(DIAG_BR, DIAG_TL).
 diag_opposite(DIAG_TR, DIAG_BL).
 diag_opposite(DIAG_BL, DIAG_TR).
 
-// Opposite direction of either kind.
 .decl dir8_opposite(d: Dir8, d2: Dir8)
 dir8_opposite(D, D2) :- opposite(D, D2).
 dir8_opposite(D, D2) :- diag_opposite(D, D2).
@@ -321,7 +311,7 @@ edge_delta(D, K, [@keep_dir(D, DIR_T, K), @keep_dir(D, DIR_B, K), @keep_dir(D, D
 .decl jump_delta(d: Dir8, k: number, delta: Shift) inline
 jump_delta(D, K, [B - T, T - B, R - L, L - R]) :- edge_delta(D, K, [T, B, L, R]).
 
-// Unit step toward d — the k = 1 jump_delta.
+// Unit step toward d.
 .decl step_delta(d: Dir8, delta: Shift) inline
 step_delta(D, Step) :- jump_delta(D, 1, Step).
 
@@ -356,7 +346,7 @@ axis_dims(P, A, N1, N2) :- axis_dim(P, A, N1), perp(A, A2), axis_dim(P, A2, N2).
 .decl sub_extent(p: Position, a: Axis, k: number) inline
 sub_extent(P, A, K) :- axis_dim(P, A, N), K = range(1, N).
 
-// Apply a D4 transform to a Position — a pure index permutation.
+// Apply a D4 transform to a Position.
 .decl apply(d: D4, p: Position, p_out: Position) inline
 apply(D, P, [@apply_t(D, T, B, L, R), @apply_b(D, T, B, L, R),
              @apply_l(D, T, B, L, R), @apply_r(D, T, B, L, R)]) :- P = [T, B, L, R].
@@ -543,7 +533,6 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     // The frame's indices, per key.
     .decl dist_set(key: Key, k: number)
 
-    // The index set's size.
     .decl extent(key: Key, n: number)
     extent(Ky, N) :- dist_set(Ky, _), N = count : { dist_set(Ky, K) }.
 
@@ -846,7 +835,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     // The cutting lines, axis-only on a — detection output or stored data.
     .decl divider(key: Key, a: Axis, l: Position)
 
-    // Divider distances, materialized for the counts below.
+    // Divider distances.
     .decl div_dist(key: Key, a: Axis, d: Dir, k: number)
     div_dist(K, A, D, K1) :- divider(K, A, L), axis_of(D, A), dist(L, D, K1).
 
@@ -1038,9 +1027,8 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
         jump_delta(D, K, Delta).
 
     // One delta per magnitude: the other direction pairs the same cells
-    // transposed, so the public readouts rebuild symmetric rows by transpose
-    // at half the join work. The corner read is unobservable — no readout
-    // distinguishes a magnitude's directions.
+    // transposed, so the readouts rebuild symmetric rows by transpose. The
+    // corner picked is unobservable.
     .decl _cand(key: Key, a: Axis, k: number, delta: Shift)
     _cand(Ky, A, K, Delta) :-
         cell(Ky, P, _),
@@ -1207,10 +1195,8 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 }
 
 // The regions a keyed cell set closes off from the grid edge — the
-// entity-level half of the enclose prior. Enclosure floods linearly (Reach
-// seeded on the edge); Components' pairwise closure runs over only the
-// closed cells. Reach stays the unit for cell-level enclosure and seeded
-// selection.
+// entity-level half of the enclose prior. Reach stays the unit for
+// cell-level enclosure and seeded selection.
 .comp Closed<Key> {
     .decl cell(key: Key, p: Position)  // input
 
@@ -1317,16 +1303,13 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 
 // The candidates a joint placement of the pieces may still hold, by
 // refutation — the dual of CoverForcing's elimination, for sites where
-// elimination cannot start. A candidate dies when some piece has no candidate beside
-// it — none conflict-free and itself alive — or some pair of pieces has no
-// conflict-free pair beside it, so a kill can expose the next; dead is the
-// fixpoint. Each rule's universal ("every candidate of the piece is
-// blocked") would negate alive inside the recursion, so it walks the
-// piece's candidates in an arbitrary stable ord order instead, the pair
-// rule as an inner walk nested in an outer one. alive over-approximates:
-// every joint placement's candidates survive, and a caller painting from
-// the survivors fails on cells where leftover rivals disagree — never wrongly.
-// A piece takes at most one candidate: every test picks one per piece.
+// elimination cannot start. A candidate dies when some other piece has no
+// candidate that can stand beside it, or some pair of other pieces has no
+// conflict-free pair beside it; a kill can expose the next, and dead is the
+// fixpoint. alive over-approximates: every joint placement's candidates
+// survive, and a caller painting from the survivors fails on cells where
+// leftover rivals disagree — never wrongly. A piece takes at most one
+// candidate: every test picks one per piece.
 .comp PlacementPruning<Key, Cand, Piece> {
     // The candidate placements of each piece.
     .decl cand(key: Key, c: Cand, o: Piece)  // input
@@ -1336,6 +1319,11 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 
     .decl _piece(key: Key, o: Piece)
     _piece(K, O) :- cand(K, _, O).
+
+    // Each kill rule's universal ("every candidate of the piece is blocked")
+    // would negate alive inside the recursion, so it walks the piece's
+    // candidates in an arbitrary stable ord order — the pair rule as an
+    // inner walk nested in an outer one.
 
     // Each piece's candidates, chained in ord order.
     .decl _after(key: Key, o: Piece, c: Cand, c2: Cand)
