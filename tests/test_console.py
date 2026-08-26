@@ -220,6 +220,21 @@ def test_fit_is_a_clean_trigger(srv, monkeypatch):
     assert sent == [("fit the consts", "fit"), ("benefit from this", None)]
 
 
+def test_cleanup_counts_anywhere_in_the_message(srv, monkeypatch):
+    sent = []
+    monkeypatch.setattr(srv, "launch",
+                        lambda it, msg, phase, trigger=None, handoff=False:
+                        sent.append((msg, trigger)))
+    item(srv, "a", srv.NEEDS_REVIEW)
+    worker(srv, srv.find("a"))
+    srv.act_comment("a", "ok that reads fine. cleanup")
+    srv.act_comment("a", "drop the alias, then cleanup, then report")
+    srv.act_comment("a", "the cleanups list is stale")
+    assert sent == [("ok that reads fine. cleanup", "cleanup"),
+                    ("drop the alias, then cleanup, then report", "cleanup"),
+                    ("the cleanups list is stale", None)]
+
+
 def test_comment_routes_to_the_chosen_session(srv, monkeypatch):
     sent = []
     monkeypatch.setattr(srv, "launch",
@@ -1230,6 +1245,49 @@ def test_revert_leaves_proposals_another_worker_touched(srv):
     assert it["reverted"]["files"] == ["programs/solvers/a.dl"]
 
 
+# ---------- shared-file writes ----------
+
+def test_a_turn_that_changes_a_shared_file_gets_flagged(srv):
+    (srv.DOCS / "concepts.md").write_text("enclose: the old sense\n")
+    it = item(srv, "a", srv.RUNNING)
+    it["pre"] = {"hash": "", "solver": "", "proposals": "", "dirty": False,
+                 "files": {}, "watched": srv.watched_hashes("a")}
+    (srv.DOCS / "concepts.md").write_text("enclose: a new sense\n")
+    srv.finish_turn(it, {"result": ""}, None, time.time(), "refine", False)
+    assert it["shared_writes"] == ["docs/wf-solver/concepts.md"]
+    assert any(e["kind"] == "event" and "shared files changed" in e["text"]
+               for e in it["feed"])
+    assert srv.light_items()[0]["shared_writes"] == ["docs/wf-solver/concepts.md"]
+
+
+def test_a_solver_only_turn_flags_no_shared_write(srv):
+    (srv.DOCS / "concepts.md").write_text("stable\n")
+    it = item(srv, "a", srv.RUNNING)
+    write_solver(srv, "a", "// v1\n")
+    it["pre"] = {"hash": "", "solver": "// v1\n", "proposals": "",
+                 "dirty": False, "files": {"programs/solvers/a.dl": "// v1\n"},
+                 "watched": srv.watched_hashes("a")}
+    write_solver(srv, "a", "// v2\n")
+    srv.finish_turn(it, {"result": ""}, None, time.time(), "refine", False)
+    assert it.get("shared_writes", []) == []
+
+
+def test_a_repeat_landing_reports_a_shared_write_once(srv):
+    (srv.DOCS / "style.md").write_text("old\n")
+    it = item(srv, "a", srv.RUNNING)
+    snap = {"hash": "", "solver": "", "proposals": "", "dirty": False,
+            "files": {}, "watched": srv.watched_hashes("a")}
+    it["pre"] = dict(snap)
+    (srv.DOCS / "style.md").write_text("new\n")
+    srv.finish_turn(it, {"result": ""}, None, time.time(), "refine", False)
+    it["pre"] = dict(snap)
+    srv.finish_turn(it, {"result": ""}, None, time.time(), "refine", False)
+    assert it["shared_writes"] == ["docs/wf-solver/style.md"]
+    notes = [e for e in it["feed"]
+             if e["kind"] == "event" and "shared files changed" in e["text"]]
+    assert len(notes) == 1
+
+
 # ---------- loading ----------
 
 def test_load_folds_legacy_snapshot_keys_into_pre(srv):
@@ -1564,6 +1622,85 @@ def test_reader_death_stops_writer_before_removing_worker(srv):
     srv.reader(w)
     assert w["outbound"].get_nowait() is srv.STOP
     assert ("a", "refine") not in srv.PROCS
+
+
+def idle_worker(s, it, phase="refine", idle_for=0, **kw):
+    """A worker parked in PROCS that went idle `idle_for` seconds ago."""
+    w = worker(s, it, phase=phase)
+    w.update(idle_since=time.time() - idle_for, **kw)
+    return w
+
+
+def test_idle_reap_drops_a_worker_past_the_ttl(srv, monkeypatch):
+    reaped = []
+    monkeypatch.setattr(srv, "queue_reap", reaped.append)
+    it = item(srv, "a", srv.NEEDS_REVIEW)
+    w = idle_worker(srv, it, idle_for=srv.IDLE_TTL + 1)
+    srv.reap_idle()
+    assert ("a", "refine") not in srv.PROCS
+    assert reaped == [w]
+    assert w["state"] == "dying"
+    assert w["outbound"].get_nowait() is srv.STOP
+    # the session survives, so a later comment resumes the phase
+    assert it["sessions"]["refine"] == "sess-a"
+
+
+def test_idle_reap_keeps_a_worker_inside_the_ttl(srv, monkeypatch):
+    monkeypatch.setattr(srv, "queue_reap", lambda w: pytest.fail("reaped"))
+    it = item(srv, "a", srv.NEEDS_REVIEW)
+    idle_worker(srv, it, idle_for=srv.IDLE_TTL - 60)
+    srv.reap_idle()
+    assert ("a", "refine") in srv.PROCS
+
+
+def test_idle_reap_is_silent_when_it_takes_nothing(srv, monkeypatch):
+    """The poll runs every minute and save() rewrites the whole state file."""
+    monkeypatch.setattr(srv, "bump", lambda: pytest.fail("bumped"))
+    it = item(srv, "a", srv.NEEDS_REVIEW)
+    idle_worker(srv, it, idle_for=0)
+    srv.reap_idle()
+    assert it["feed"] == []
+
+
+@pytest.mark.parametrize("pending", ["callout_wait", "handoff_pending"])
+def test_idle_reap_spares_a_worker_with_a_deferred_job(srv, monkeypatch, pending):
+    """drain_deferred skips the callout turn and the stage advance when the
+    worker is gone, so a pending job has to outrank the TTL."""
+    monkeypatch.setattr(srv, "queue_reap", lambda w: pytest.fail("reaped"))
+    it = item(srv, "a", srv.NEEDS_REVIEW,
+              **{pending: "refine" if pending == "callout_wait" else True})
+    idle_worker(srv, it, idle_for=srv.IDLE_TTL * 2)
+    srv.reap_idle()
+    assert ("a", "refine") in srv.PROCS
+
+
+@pytest.mark.parametrize("state", ["spawning", "sending", "running", "dying"])
+def test_idle_reap_leaves_a_worker_that_is_not_idle(srv, monkeypatch, state):
+    monkeypatch.setattr(srv, "queue_reap", lambda w: pytest.fail("reaped"))
+    it = item(srv, "a", srv.RUNNING)
+    idle_worker(srv, it, idle_for=srv.IDLE_TTL * 2, state=state)
+    srv.reap_idle()
+    assert ("a", "refine") in srv.PROCS
+
+
+def test_idle_reap_reports_the_wait_on_the_item_feed(srv, monkeypatch):
+    monkeypatch.setattr(srv, "queue_reap", lambda w: None)
+    it = item(srv, "a", srv.NEEDS_REVIEW)
+    idle_worker(srv, it, idle_for=srv.IDLE_TTL + 120)
+    srv.reap_idle()
+    note = it["feed"][-1]
+    assert note["sess"] == "refine"
+    assert "reaped after 62m idle" in note["text"]
+
+
+def test_launch_clears_the_idle_clock(srv, monkeypatch):
+    monkeypatch.setattr(srv, "queue_reap", lambda w: pytest.fail("reaped"))
+    it = item(srv, "a", srv.NEEDS_REVIEW)
+    w = idle_worker(srv, it, idle_for=srv.IDLE_TTL * 2)
+    srv.launch(it, "look again", "refine")
+    assert w["idle_since"] is None
+    srv.reap_idle()
+    assert ("a", "refine") in srv.PROCS
 
 
 def test_deferred_drain_continues_after_job_failure(srv, monkeypatch):
@@ -2398,6 +2535,7 @@ def test_a_pending_callout_survives_its_continuation_turns(srv):
 
 def test_callout_ranks_are_read_off_the_entries(srv):
     assert srv.callout_rank(["[P2] a call", "[P1] urgent", "no mark"]) == 1
+    assert srv.callout_rank(["[P0] the runner crashes", "[P2] a call"]) == 0
     assert srv.callout_rank(["P3 loose mark"]) == 3
     assert srv.callout_rank(["**[P1]** bolded mark"]) == 1
     assert srv.callout_rank(["**[P2] bold runs on"]) == 2
@@ -2574,6 +2712,98 @@ def test_a_self_rank_outsorts_comps_and_counts(srv):
     assert [r["id"] for r in rows] == ["ccc", "aaa", "bbb"]
     assert rows[0]["callout_rank"] == 2
     assert rows[1]["callout_rank"] is None
+
+
+def test_a_p3_does_not_jump_the_tasks_that_ask_for_something(srv):
+    """A P3 is a note, so it sorts in the band with reports that raised
+    nothing rather than ahead of a comp or an unmarked entry."""
+    for tid in ("aaa", "bbb", "ccc", "ddd"):
+        backlog_solver(srv, tid)
+    write_solver(srv, "bbb", "// concept: tiles\n.comp CornerDist {\n}\n")
+    srv.save_report("ccc", "refine", REPORT)   # two entries, no marks
+    srv.save_report("ddd", "refine",
+                    "done\n\n## Callouts\n\n1. [P3] the name reads oddly\n")
+    rows = srv.backlog_view()
+    assert [r["id"] for r in rows] == ["bbb", "ccc", "ddd", "aaa"]
+    assert rows[2]["callout_rank"] == 3
+    assert rows[2]["callout_act"] == 0
+
+
+def test_a_p3_still_edges_out_a_report_that_raised_nothing(srv):
+    for tid in ("aaa", "bbb"):
+        backlog_solver(srv, tid)
+    srv.save_report("aaa", "refine",
+                    "done\n\n## Callouts\n\n1. [P3] a passing note\n")
+    rows = srv.backlog_view()
+    assert [r["id"] for r in rows] == ["aaa", "bbb"]
+
+
+def test_a_p1_still_outranks_everything_below_a_flag(srv):
+    for tid in ("aaa", "bbb", "ccc"):
+        backlog_solver(srv, tid)
+    write_solver(srv, "bbb", "// concept: tiles\n.comp CornerDist {\n}\n")
+    srv.save_report("ccc", "refine",
+                    "done\n\n## Callouts\n\n1. [P1] the pin is a guess\n")
+    srv.act_flag({"id": "aaa", "level": 1})
+    assert [r["id"] for r in srv.backlog_view()] == ["aaa", "ccc", "bbb"]
+
+
+def test_callout_act_counts_only_the_entries_that_ask(srv):
+    assert srv.callout_act(["[P1] a", "[P2] b", "[P3] c"]) == 2
+    assert srv.callout_act(["**[P3]** bolded note", "P3 loose mark"]) == 0
+    assert srv.callout_act(["no mark at all"]) == 1
+    assert srv.callout_act([]) == 0
+
+
+def test_a_landed_pass_with_no_solver_still_ranks(srv):
+    backlog_solver(srv, "bbb")
+    srv.save_report("aaa", "refine", "no file written\n\n## Callouts\n\n1. [P1] a call\n")
+    item(srv, "aaa", srv.NEEDS_REVIEW, chain=srv.default_chain())
+    rows = {r["id"]: r for r in srv.backlog_view()}
+    assert set(rows) == {"aaa", "bbb"}
+    assert rows["aaa"]["no_solver"] and not rows["bbb"]["no_solver"]
+    # the reports carry the row where the file cannot
+    assert rows["aaa"]["reports"] == ["refine"]
+    assert rows["aaa"]["callout_rank"] == 1
+
+
+def test_a_missing_solver_leads_the_backlog(srv):
+    backlog_solver(srv, "aaa")
+    srv.act_flag({"id": "aaa", "level": 1})
+    srv.save_report("zzz", "refine", "no file written")
+    item(srv, "zzz", srv.NEEDS_REVIEW, chain=srv.default_chain())
+    # the id sorts last and it carries no callouts, so only the lead term
+    # can put it above a P1-flagged task
+    assert [r["id"] for r in srv.backlog_view()] == ["zzz", "aaa"]
+
+
+def test_a_p0_follows_no_solver_and_leads_the_flags(srv):
+    for tid in ("aaa", "bbb"):
+        backlog_solver(srv, tid)
+    srv.act_flag({"id": "aaa", "level": 1})
+    srv.save_report("bbb", "refine",
+                    "done\n\n## Callouts\n\n1. [P0] run_dl crashes on this task\n")
+    srv.save_report("zzz", "refine", "no file written")
+    item(srv, "zzz", srv.NEEDS_REVIEW, chain=srv.default_chain())
+    rows = srv.backlog_view()
+    assert [r["id"] for r in rows] == ["zzz", "bbb", "aaa"]
+    assert rows[1]["callout_rank"] == 0
+
+
+def test_a_pass_still_running_its_first_stage_has_no_row(srv):
+    item(srv, "aaa", srv.RUNNING, chain=srv.default_chain(),
+         phase="create", landed=[])
+    assert srv.backlog_view() == []
+
+
+def test_a_dismissed_solverless_task_leaves_the_backlog(srv):
+    srv.save_report("aaa", "refine", "no file written")
+    item(srv, "aaa", srv.NEEDS_REVIEW, chain=srv.default_chain())
+    assert [r["id"] for r in srv.backlog_view()] == ["aaa"]
+    srv.ledger_append({"task": "aaa", "stage": "dismissed",
+                       "model": None, "source": "user"})
+    srv.BACKLOG_CACHE["at"] = 0.0
+    assert srv.backlog_view() == []
 
 
 def test_a_task_the_console_holds_stays_out_of_the_backlog(srv):

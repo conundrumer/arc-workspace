@@ -142,6 +142,11 @@ body.view-final #main { grid-template-columns:330px minmax(360px,520px) 1fr; }
   font-size:9px; letter-spacing:.06em; padding:1px 5px; border-radius:3px;
   background:var(--st-commented); color:var(--bg); font-weight:600;
 }
+/* a turn changed files outside the pass's surface: lib, docs, task data */
+.badge-shared {
+  font-size:9px; letter-spacing:.06em; padding:1px 5px; border-radius:3px;
+  background:var(--st-removed); color:var(--bg); font-weight:600;
+}
 /* a task-local comp: staging only, and only with an open proposal */
 .badge-comp {
   font-size:9px; letter-spacing:.06em; padding:0 4px; border-radius:3px;
@@ -158,8 +163,18 @@ body.view-final #main { grid-template-columns:330px minmax(360px,520px) 1fr; }
   border:1px solid var(--st-running);
 }
 /* colored by the most urgent self-rank among the entries */
+/* P0: broken tooling — the ruling the queue waits on */
+.badge-call.r0 { background:var(--st-removed); color:var(--bg); border-color:var(--ink); }
 .badge-call.r1 { background:var(--st-removed); color:var(--bg); border-color:transparent; }
 .badge-call.r2 { background:var(--st-review-bg); color:var(--st-review); border-color:var(--st-review); }
+/* the pass landed and wrote no solver: the one badge that reads inert, since
+   the row is not a finalize candidate */
+.badge-none {
+  font-size:9px; letter-spacing:.06em; padding:0 4px; border-radius:3px;
+  font-family:ui-monospace,Menlo,monospace; font-weight:600;
+  background:var(--st-muted-bg); color:var(--st-muted);
+  border:1px solid var(--st-muted);
+}
 /* backlog rows: tasks with no fable pass, not console items */
 .row.bk { cursor:pointer; }
 .peektext { white-space:pre-wrap; font-size:12px; line-height:1.55; padding:10px 14px; }
@@ -360,6 +375,7 @@ const TTL_MIN = 60;
 const TTL_ALERT = 10;   // minutes left when a cache goes hot and rings
 const FINAL = "finalize";
 const STATES = ["needs-review","commented","running","queued","approved","committed"];
+const SETTLED = ["approved","committed"];   // nothing left for a finalize pass to do
 const NO_ITEM = {feed:[], files:[]};   // stands in until /api/item lands
 
 /* ---------- helpers ---------- */
@@ -562,7 +578,7 @@ function CompBadges({x}){
 function CalloutBadge({x}){
   if(!x.callout_n) return null;
   const r = x.callout_rank;
-  return html`<span class=${"badge-call"+(r?" r"+r:"")} title=${(x.callouts||[]).join("\n")}>${x.callout_n}</span>`;
+  return html`<span class=${"badge-call"+(r!=null?" r"+r:"")} title=${(x.callouts||[]).join("\n")}>${r===0?"P0 · ":""}${x.callout_n}</span>`;
 }
 function StateChip({state, label}){
   return html`<span class=${"chip "+CHIPCLS[state]}><span class="dot"></span>${label!==undefined?label:state}</span>`;
@@ -607,6 +623,8 @@ function ItemRow({it, sel, task, onSelect}){
         ${it.id}${" "}
         ${it.updated && html`<span class="badge-upd">UPD</span>`}
         ${it.dirty && html`<span class="badge-dirty">CLEANUP</span>`}
+        ${it.shared_writes?.length>0 && html`<span class="badge-shared"
+          title=${it.shared_writes.join("\n")}>SHARED</span>`}
         <${CompBadges} x=${it}/><${CalloutBadge} x=${it}/>
       </div>
       <div class="sub">${sub}</div>
@@ -627,6 +645,8 @@ function BkRow({b, sel, task, onSelect}){
     <div class="meta">
       <div class="tid">
         ${b.id}${" "}
+        ${b.no_solver && html`<span class="badge-none"
+          title="the pass landed without writing a solver">no solver</span>`}
         <${CompBadges} x=${b}/><${CalloutBadge} x=${b}/>
       </div>
       <div class="sub">${b.title||""}</div>
@@ -864,6 +884,8 @@ function DetailHead({it, cli, tab, badges, canAdvance, nxt, onTab, onDismiss}){
       <span class="chip queued"><span class="dot"></span>${stageLabel(it,it.phase)}</span>
       ${it.updated && html`<span class="badge-upd">UPDATED</span>`}
       ${it.dirty && html`<span class="badge-dirty">CLEANUP PENDING</span>`}
+      ${it.shared_writes?.length>0 && html`<span class="badge-shared"
+        title=${it.shared_writes.join("\n")}>SHARED ${it.shared_writes.length}</span>`}
       <${CompBadges} x=${it}/><${CalloutBadge} x=${it}/>
       <span class="title">${it.title||""}</span>
     </div>
@@ -1053,9 +1075,16 @@ function App(){
   const railOrder=useMemo(()=>
     [...items].sort((a,b)=>cacheInfo(a).sort-cacheInfo(b).sort).map(it=>it.id),
     [items, tick]);
+  /* An approved or committed item is settled, so the finalize lens gives its
+     row back; the wave view still lists it. The selected one stays, so a row
+     does not vanish from under the detail pane while it is being read. */
   const itemOrder=useMemo(()=>view===FINAL
-    ? railOrder.filter(id=>{ const it=items.find(x=>x.id===id); return it && it.phase===FINAL; })
-    : railOrder, [railOrder, items, view]);
+    ? railOrder.filter(id=>{
+        const it=items.find(x=>x.id===id);
+        if(!it || it.phase!==FINAL) return false;
+        return id===selId || !SETTLED.includes(it.state);
+      })
+    : railOrder, [railOrder, items, view, selId]);
   /* one selection over both sections: in-pass items, then the backlog rows.
      An id that is both a live item and a backlog row resolves to the item. */
   const curOrder=useMemo(()=>view===FINAL
