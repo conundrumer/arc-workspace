@@ -174,7 +174,6 @@ def test_approve_needs_a_reviewable_item(srv):
 def test_actions_refuse_while_a_turn_is_in_flight(srv):
     it = item(srv, "a", srv.NEEDS_REVIEW)
     worker(srv, it, state="running")
-    assert "busy" in srv.act_comment("a", "tighten the join")["error"]
     assert "busy" in srv.act_approve("a")["error"]
     assert "busy" in srv.act_revert("a")["error"]
 
@@ -233,6 +232,42 @@ def test_cleanup_counts_anywhere_in_the_message(srv, monkeypatch):
     assert sent == [("ok that reads fine. cleanup", "cleanup"),
                     ("drop the alias, then cleanup, then report", "cleanup"),
                     ("the cleanups list is stale", None)]
+
+
+def test_a_message_to_a_running_session_steers_the_turn(srv):
+    it = item(srv, "a", srv.RUNNING)
+    w = worker(srv, it, state="running")
+    w["started"] = 100.0
+    assert srv.act_comment("a", "drop the alias") == {"ok": True}
+    assert w["outbound"].get_nowait() == {
+        "type": "user", "message": {"role": "user", "content": "drop the alias"}}
+    assert it["feed"][-1] == {"kind": "steer", "text": "drop the alias",
+                              "sess": "refine"}
+    assert w["turn_seq"] == 1        # the running turn keeps its count
+    assert w["started"] == 100.0     # and its clock
+    assert it["state"] == srv.RUNNING
+
+
+def test_a_steer_carries_a_clean_cadence_into_the_turn(srv):
+    it = item(srv, "a", srv.RUNNING)
+    w = worker(srv, it, state="running")
+    srv.act_comment("a", "then cleanup")
+    assert w["trigger"] == "cleanup"
+
+
+def test_a_steer_leaves_the_turns_own_cadence_alone(srv):
+    it = item(srv, "a", srv.RUNNING)
+    w = worker(srv, it, state="running")
+    w["trigger"] = "callout"
+    srv.act_comment("a", "then cleanup")
+    assert w["trigger"] == "callout"
+
+
+def test_a_slash_command_waits_for_the_turn_to_land(srv):
+    it = item(srv, "a", srv.RUNNING)
+    w = worker(srv, it, state="running")
+    assert "busy" in srv.act_comment("a", "/compact")["error"]
+    assert w["outbound"].empty()
 
 
 # ---------- permission requests ----------
@@ -1198,6 +1233,43 @@ def test_self_invoked_turn_does_not_mark_a_turn_running(srv):
     assert w["state"] == "running"
 
 
+def test_a_steer_that_lands_late_runs_as_its_own_turn(srv):
+    it = item(srv, "a", srv.RUNNING)
+    w = worker(srv, it, state="running")
+    w["started"] = time.time()
+    srv.act_comment("a", "drop the alias")
+    # the turn was already landing when the steer reached the worker
+    srv.handle_event(w, {"type": "result", "terminal_reason": "completed",
+                         "result": "done"}, None)
+    assert w["state"] == "idle"
+    srv.handle_event(w, {"type": "system", "subtype": "init",
+                         "session_id": "sess-a"}, None)
+    assert w["state"] == "running"
+    assert w["turn_seq"] == 2
+    assert srv.active(it)
+    assert it["state"] == srv.COMMENTED
+    srv.handle_event(w, {"type": "result", "terminal_reason": "completed",
+                         "result": "alias gone"}, None)
+    assert it["state"] == srv.NEEDS_REVIEW
+    assert any(m["kind"] == "report" and m["text"] == "alias gone"
+               for m in it["feed"])
+
+
+def test_a_turn_that_absorbed_the_steer_adopts_nothing(srv):
+    it = item(srv, "a", srv.RUNNING)
+    w = worker(srv, it, state="running")
+    w["started"] = time.time()
+    srv.act_comment("a", "drop the alias")
+    w["steer"]["at"] -= srv.STEER_RACE + 1
+    srv.handle_event(w, {"type": "result", "terminal_reason": "completed",
+                         "result": "done"}, None)
+    assert "steer" not in w
+    srv.handle_event(w, {"type": "system", "subtype": "init",
+                         "session_id": "sess-a"}, None)
+    assert w["state"] == "idle"      # a background turn is still the worker's own
+    assert not srv.active(it)
+
+
 def test_reader_survives_a_bad_event(srv, monkeypatch):
     it = item(srv, "a", srv.RUNNING)
 
@@ -1515,6 +1587,24 @@ def test_fake_worker_orders_multiple_turns_with_one_session():
         proc.wait(timeout=2)
 
 
+def test_fake_worker_absorbs_a_message_sent_mid_turn():
+    proc = fake_process()
+    try:
+        send_event(proc, {"type": "user",
+                          "message": {"role": "user", "content": "first"}})
+        read_until(proc, lambda ev, seen: ev.get("subtype") == "init")
+        send_event(proc, {"type": "user",
+                          "message": {"role": "user", "content": "also drop the alias"}})
+        events = read_until(proc, lambda ev, seen: ev.get("type") == "result")
+        assert sum(e.get("subtype") == "init" for e in events) == 0   # no second turn
+        texts = [b.get("text", "") for e in events if e.get("type") == "assistant"
+                 for b in e["message"]["content"] if b.get("type") == "text"]
+        assert any("into the turn" in t for t in texts)
+    finally:
+        proc.terminate()
+        proc.wait(timeout=2)
+
+
 def test_fake_worker_interrupts_and_remains_usable():
     proc = fake_process()
     try:
@@ -1610,7 +1700,10 @@ def test_an_idle_session_takes_comments_while_another_runs(srv):
     assert cw["state"] == "sending"
     assert it["state"] == srv.RUNNING      # the running pass keeps the state
     assert "pre" not in it                 # and the revert snapshot
-    assert "busy" in srv.act_comment("a", "hurry", "refine")["error"]
+    rw = srv.PROCS[("a", "refine")]
+    assert srv.act_comment("a", "hurry", "refine") == {"ok": True}
+    assert rw["state"] == "running"        # the running pass takes it as a steer
+    assert rw["turn_seq"] == 1
 
 
 def test_a_side_landing_leaves_the_state_to_the_running_pass(srv):

@@ -116,6 +116,10 @@ STAGGER_TIMEOUT = 120  # seconds to wait for the first worker's first API respon
 # cache, that process buys nothing a resume would not: the chain gives each
 # phase its own session, so a worker that has reported is only ever woken by a
 # review comment.
+# How long a message written into a running turn stays the explanation for a
+# turn the worker starts next. Past it the turn absorbed the message, and an
+# init that follows belongs to something else.
+STEER_RACE = 5
 IDLE_TTL = 3600
 IDLE_POLL = 60
 # What a worker session is allowed to leave behind. The brief and the
@@ -1204,17 +1208,54 @@ def launch(it: dict, message: str, phase: str, trigger: str | None = None,
             say(it, event(f"{phase} worker restarting — resuming its session"),
                 sess=phase)
         worker = spawn_worker(it, phase)
+    start_turn(it, worker, phase, trigger=trigger, handoff=handoff, slash=slash)
+    worker["outbound"].put_nowait({"type": "user",
+        "message": {"role": "user", "content": message}})
+
+
+def start_turn(it: dict, worker: dict, phase: str, trigger: str | None = None,
+               handoff: bool = False, slash: bool = False,
+               state: str = "sending") -> None:
+    """Open a turn's bookkeeping: the snapshot its landing diffs against, and
+    the counters it fills. Every turn passes through here, the ones the console
+    sends and the one it adopts."""
     if not busy_elsewhere(it, phase):
         # a side turn leaves the snapshot with the turn that owns the solver
         it["pre"] = {"hash": solver_hash(it["id"]), "solver": solver_text(it["id"]),
                      "proposals": prop_text(), "dirty": it["dirty"], "files": {},
                      "watched": watched_hashes(it["id"]), "slash": slash}
     worker["turn_seq"] += 1
-    worker.update(state="sending", started=time.time(), trigger=trigger,
+    worker.pop("steer", None)
+    worker.update(state=state, started=time.time(), trigger=trigger,
                   handoff=handoff, seen=set(), got_result=False, think_run=0,
                   reqs={}, idle_since=None)
+
+
+def steer(it: dict, worker: dict, text: str, phase: str) -> None:
+    """Send a message into a turn already running. The CLI hands it over at the
+    turn's next tool boundary and the turn absorbs it, so no bookkeeping opens
+    here: the turn keeps its snapshot, its count, and its one landing. A clean
+    cadence the message asks for still reaches the turn it steers."""
+    trigger = clean_trigger(text)
+    if trigger and not worker.get("trigger"):
+        worker["trigger"] = trigger
+    worker["steer"] = {"trigger": trigger, "at": time.time()}
+    say(it, {"kind": "steer", "text": text}, sess=phase)
     worker["outbound"].put_nowait({"type": "user",
-        "message": {"role": "user", "content": message}})
+        "message": {"role": "user", "content": text}})
+
+
+def adopt_turn(it: dict, worker: dict, phase: str) -> None:
+    """Take over the turn a steer starts when it reaches the worker just after
+    the turn it was meant for landed. init opens every turn and arrives before
+    the turn's first action, so the snapshot still holds the pre-turn files."""
+    pending = worker.pop("steer", None) or {}
+    start_turn(it, worker, phase, trigger=pending.get("trigger"), state="running")
+    if it["state"] not in ACTIVE:
+        it["state"] = COMMENTED
+        it["updated"] = False
+    say(it, event("message reached the worker as the turn landed — "
+                  "it runs as a turn of its own"), sess=phase)
 
 
 def permission_decision(req: dict) -> dict:
@@ -1401,9 +1442,12 @@ def handle_event(worker: dict, ev: dict, first_response) -> None:
                     say(it, event("\u26a0 tools outside the worker set — "
                                   + ", ".join(extra)), sess=phase)
             # A worker can start a turn on its own (a background-task
-            # notification, for one); init marks only a turn the console sent.
+            # notification, for one); init marks only a turn the console sent,
+            # or the one a steer starts when it lands a moment too late.
             if worker["state"] == "sending":
                 worker["state"] = "running"
+            elif it and worker["state"] == "idle" and worker.get("steer"):
+                adopt_turn(it, worker, phase)
         elif kind == "system" and ev.get("subtype") == "thinking_tokens":
             if it and worker["state"] in ("sending", "running"):
                 worker["think_run"] = (worker.get("think_run", 0)
@@ -1528,6 +1572,11 @@ def handle_event(worker: dict, ev: dict, first_response) -> None:
                                        str(ev.get("result") or "")):
                             quota_cut(it, phase, handoff)
             finally:
+                # A steer written before this turn was landing is one this turn
+                # absorbed, so it explains no later turn.
+                pending = worker.get("steer")
+                if pending and time.time() - pending["at"] > STEER_RACE:
+                    worker.pop("steer", None)
                 # The worker goes idle even if landing the turn blew up;
                 # a wedged "running" state would block sends and reloads.
                 worker.update(state="idle", started=None, trigger=None,
@@ -2638,7 +2687,13 @@ def submit_comment(it: dict, text: str, sess: str | None = None) -> None:
     if it.get("handoff_pending", False):
         raise Reject("handoff in flight — wait for the next session to start")
     w = PROCS.get((it["id"], sess))
-    if w and w["state"] in ("spawning", "sending", "running"):
+    if w and w["state"] in ("sending", "running"):
+        if text.startswith("/"):
+            raise Reject("worker busy — a slash command counts only at the "
+                         "head of a turn")
+        steer(it, w, text, sess)
+        return
+    if w and w["state"] == "spawning":
         raise Reject("worker busy — wait for the turn to land")
     if not it["sessions"].get(sess):
         raise Reject("no session yet")

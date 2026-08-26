@@ -7,14 +7,12 @@ import select
 import sys
 import time
 import uuid
-from collections import deque
 
 tid = sys.argv[1]
 # Any stage name the chain carries; `create` runs the creation script and
 # every other name runs the refining one.
 phase = sys.argv[2] if len(sys.argv) > 2 else "refine"
 sid = str(uuid.uuid5(uuid.NAMESPACE_URL, f"fake-worker/{tid}/{phase}"))
-pending = deque()
 turn = 0
 
 
@@ -98,7 +96,13 @@ def pause(seconds):
             if event.get("type") == "control_request" and control(line):
                 return "interrupt"
             if event.get("type") == "user":
-                pending.append(event)
+                # The CLI hands a message that arrives mid-turn to the model at
+                # the turn's next boundary, and the turn absorbs it.
+                emit({"type": "assistant",
+                      "message": {"id": f"msg-steer-{turn}", "usage": usage_for(),
+                                  "content": [{"type": "text",
+                                               "text": "(fake) taking that into "
+                                                       "the turn."}]}})
     return None
 
 
@@ -195,17 +199,13 @@ def run_turn(message):
 
 
 while True:
-    if pending:
-        event = pending.popleft()
-        raw = json.dumps(event)
-    else:
-        raw = sys.stdin.readline()
-        if not raw:
-            break
-        try:
-            event = json.loads(raw)
-        except ValueError:
-            continue
+    raw = sys.stdin.readline()
+    if not raw:
+        break
+    try:
+        event = json.loads(raw)
+    except ValueError:
+        continue
     if event.get("type") == "control_request":
         control(raw)
         continue

@@ -240,6 +240,7 @@ body.view-final #main { grid-template-columns:330px minmax(360px,520px) 1fr; }
 .msg.you code { background:transparent; border-color:transparent; color:inherit; }
 .msg.you pre { background:rgba(0,0,0,.15); border-color:transparent; color:inherit; }
 .msg.worker { align-self:flex-start; background:var(--panel2); border:1px solid var(--border); }
+.msg.steer { align-self:flex-end; color:var(--accent); border:1px dashed var(--accent); }
 .event { align-self:center; font-size:10.5px; color:var(--muted); font-family:ui-monospace,Menlo,monospace; }
 .tools {
   align-self:flex-start; display:flex; flex-direction:column; gap:2px;
@@ -833,7 +834,8 @@ function Entry({m}){
     return html`<div class="event">${"— "+m.text+" —"}</div>`;
   if(m.kind==="ask")
     return html`<div class="msg ask" dangerouslySetInnerHTML=${{__html:md(m.text)}}></div>`;
-  return html`<div class=${"msg "+(m.kind==="you"?"you":"worker")+(m.sub?" sub":"")}
+  const bubble = m.kind==="you" ? "you" : m.kind==="steer" ? "steer" : "worker";
+  return html`<div class=${"msg "+bubble+(m.sub?" sub":"")}
     dangerouslySetInnerHTML=${{__html:md(m.text)}}></div>`;
 }
 function ToolLine({m}){
@@ -1141,7 +1143,7 @@ function App(){
   const nxt = selItem ? nextName(selItem) : null;
   const canAdvance = !!(selItem && nxt && !selItem.active && selItem.hasReport
     && (selItem.state==="needs-review"||selItem.state==="approved"));
-  const canSend = !!(selItem && selItem.sessions[tab] && !(selItem.busy||{})[tab]
+  const canSend = !!(selItem && selItem.sessions[tab]
     && !selItem.handoffPending && selItem.state!=="committed");
 
   /* ---- actions ---- */
@@ -1168,8 +1170,7 @@ function App(){
     const st=live.current, it=st.selItem, text=(st.draft||"").trim();
     if(!it||!text) return;
     if(!st.canSend){
-      toast((it.busy||{})[st.tab] ? "worker running — draft kept"
-        : it.handoffPending ? "handoff in flight — draft kept"
+      toast(it.handoffPending ? "handoff in flight — draft kept"
         : "no session yet — draft kept");
       return;
     }
@@ -1180,7 +1181,7 @@ function App(){
     if(r.ok){
       setDraft(""); localStorage.removeItem(draftKey(it.id));
       if(cbox.current) cbox.current.blur();
-      toast("sent");
+      toast((it.busy||{})[st.tab] ? "sent into the running turn" : "sent");
     }
   },[]);
   const commitApproved=useCallback(async()=>{
@@ -1451,7 +1452,8 @@ function App(){
         <div id="judge-head">${head}</div>
         ${body}
         <${Composer} boxRef=${cbox} enabled=${!!selItem} canSend=${canSend}
-          placeholder=${selItem ? (canSend ? "" : selItem.active ? "worker running — draft freely" : "no session yet") : ""}
+          placeholder=${selItem ? (canSend ? ((selItem.busy||{})[tab] ? "sends into the running turn" : "")
+                                  : selItem.handoffPending ? "handoff in flight — draft freely" : "no session yet") : ""}
           hint=${hint} value=${selItem?draft:""} onInput=${onDraft} onSend=${sendComment}/>
       </div>
       <div id="codecol">
