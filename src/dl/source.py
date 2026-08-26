@@ -211,12 +211,22 @@ def fit_slots(source: str) -> dict[str, list[str]] | None:
     """Fitted slots (name -> Consts arg types): Fit decls that mirror a
     Consts decl. None when no Fit comp. A RIGID chart relation mirrors
     under its placed name, with the chart's types — the Fit derives the
-    chart in a pose of its own, and the runner compares up to pose."""
+    chart in a pose of its own, and the runner compares up to pose.
+
+    Mirroring is by name, so a Fit helper must not take a slot's name: a
+    name match with a different schema raises rather than misclassify."""
     fit = comp_decls(source, "Fit")
     if not fit:
         return None
     consts = comp_decls(source, "Consts")
     consts |= {name: types for name, (_, types) in rigid_decls(source).items()}
+    for name in fit:
+        if name in consts and fit[name] != consts[name]:
+            raise ValueError(
+                f"Fit relation '{name}' matches a Consts slot by name but "
+                f"not by schema ({', '.join(fit[name])} vs "
+                f"{', '.join(consts[name])}); rename the helper"
+            )
     return {name: consts[name] for name in fit if name in consts}
 
 

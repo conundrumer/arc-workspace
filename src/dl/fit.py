@@ -30,7 +30,10 @@ def run_fit(stem: str) -> FitResult | None:
 
 def fit_check(source: str, task) -> FitResult | None:
     """Fit check on solver source text; None when it has no Fit comp."""
-    slots = fit_slots(source)
+    try:
+        slots = fit_slots(source)
+    except ValueError as e:
+        return FitResult(slots=[], diff=[], error=str(e))
     if slots is None:
         return None
     circular = fit_cycles(source)
