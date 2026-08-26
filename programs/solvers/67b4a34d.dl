@@ -1,5 +1,6 @@
 // 67b4a34d
 // concept: crop symmetry repair
+// shape: latent-canvas
 // A grid symmetric about its center, occluded by a solid mask-color patch;
 // the output is the occluded content, restored from symmetric counterparts.
 //

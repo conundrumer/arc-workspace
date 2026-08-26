@@ -1,5 +1,6 @@
 // 0934a4d8
 // concept: symmetry decompose crop repair
+// shape: latent-canvas
 // A mosaic occluded by a solid block of a mask color; the output is the
 // block's content. The mosaic overhangs the grid and decomposes into an
 // arrangement of square tiles; each tile carries the subgroup of

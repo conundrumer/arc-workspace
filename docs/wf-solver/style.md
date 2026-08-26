@@ -31,6 +31,7 @@ When a decomposition's inner coordinate is also the output cell, name it by the 
 - Second line, exactly one of:
     - `// concept: <terms>` — family representative. Terms from `concepts.md`, separated by spaces, the union over cases: setup terms plus each case's prior term.
     - `// family: <task_id>` — family sibling: same body and Fit comp, fills differ. Points at the representative, the family's first-solved member. A sibling's header keeps only task-specific content.
+- Next line, when one applies: `// shape: <terms>` — task shape terms from `shapes.md`.
 - `#include "../lib.dl"` at top.
 - `.comp Consts { ... }` declares task-wide data; `.init c = Consts` exposes it as `c.<rel>`.
 - Inside Consts, `.init helpers = ConstsHelpers` makes shared helpers (`frame_pos`, `tile_pos`) available as `helpers.<rel>(...)` in data declarations. The body has no access.
