@@ -16,6 +16,7 @@ from dl.domains import (
     _position_domain,
 )
 from dl.facts import _parse_relations, _parse_value, example_facts
+from dl.lint import NUMERIC_LITERAL_RE, UNIT_MARKER, exempt_literal
 from dl.paths import PROPOSERS_SRC, SOLVERS_DIR
 from dl.souffle import _run_source
 from dl.source import (
@@ -95,8 +96,8 @@ def probe_report(
     inside a set no smaller than the domain; 'missed' — stored outside the
     set. A single-fact slot also carries a 'domain' entry, 'enumerable(n)':
     the size of its value domain, a proposer-free candidate set. embedded
-    lists rule-derived Consts relations whose rules carry nonzero number
-    literals; a rule commented `@structural` is exempt.
+    lists rule-derived Consts relations whose rules carry literals that
+    `exempt_literal` does not exempt.
     """
     source = expand_macros((SOLVERS_DIR / f"{stem}.dl").read_text())
     task = load_task(stem.split("_", 1)[0])
@@ -126,8 +127,9 @@ def probe_report(
         rules = _rules(consts_text, slot)
         if rules:
             if any(
-                re.search(r"\b[1-9]\d*\b", text) and not structural
-                for text, structural in rules
+                not exempt_literal(m.group(0), unit)
+                for text, unit in rules
+                for m in NUMERIC_LITERAL_RE.finditer(text)
             ):
                 embedded.append(slot)
             continue
@@ -176,11 +178,11 @@ def probe_report(
 
 
 def _rules(consts_text: str, slot: str) -> list[tuple[str, bool]]:
-    """The slot's rules, each as (comment-stripped text, carries the
-    `@structural` marker); empty for fact slots."""
+    """The slot's rules, each as (comment-stripped text, carries
+    `UNIT_MARKER`); empty for fact slots."""
     rules = []
     cur: list[str] = []
-    structural = False
+    unit = False
     in_rule = False
     for line in consts_text.splitlines():
         code, _, comment = line.partition("//")
@@ -188,10 +190,10 @@ def _rules(consts_text: str, slot: str) -> list[tuple[str, bool]]:
             in_rule = True
         if in_rule:
             cur.append(code)
-            structural = structural or "@structural" in comment
+            unit = unit or UNIT_MARKER in comment
             if code.rstrip().endswith("."):
-                rules.append(("\n".join(cur), structural))
-                cur, structural, in_rule = [], False, False
+                rules.append(("\n".join(cur), unit))
+                cur, unit, in_rule = [], False, False
     return rules
 
 

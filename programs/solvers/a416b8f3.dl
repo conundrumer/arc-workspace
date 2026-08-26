@@ -12,8 +12,8 @@
     .decl copies(n: number) copies(2).
 
     .decl tile(p: Position)
-    tile(P) :- copies(N), tile_axis(AXIS_V), helpers.frame_pos([N, 1], P).  // @structural: a single row of copies
-    tile(P) :- copies(N), tile_axis(AXIS_H), helpers.frame_pos([1, N], P).  // @structural
+    tile(P) :- copies(N), tile_axis(AXIS_V), helpers.frame_pos([N, 1], P).  // @unit: a single row of copies
+    tile(P) :- copies(N), tile_axis(AXIS_H), helpers.frame_pos([1, N], P).  // @unit
 }
 
 .init c = Consts

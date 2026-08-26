@@ -31,6 +31,12 @@ ORIENTATION_LITERAL_RE = re.compile(
 COMMENT_RE = re.compile(r"//.*$")
 BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", flags=re.DOTALL)
 NUMERIC_LITERAL_RE = re.compile(r"(?<![A-Za-z_0-9.])\d+(?![A-Za-z_0-9.])")
+UNIT_MARKER = "@unit"
+
+
+def exempt_literal(lit: str, unit: bool) -> bool:
+    """A 0 anywhere; a 1 in a unit-marked rule."""
+    return lit == "0" or (unit and lit == "1")
 RANGE_RE = re.compile(r"\brange\s*\(")
 # RIGID chart names exist only in the macro expansion; any appearance in
 # solver source reads a stored pose the model claims unobservable.
@@ -150,8 +156,8 @@ def lint_body(source: str) -> list[tuple[str, int, str, str]]:
       - 'nonzero literal'     — bare integer != 0
       - 'arithmetic'          — +, -, *, /, %
       - 'range'               — the `range` number generator
-      - 'consts data'         — nonzero literal in a Consts rule; a rule
-                                line commented `@structural` exempts the rule
+      - 'consts data'         — literal in a Consts rule, minus
+                                `exempt_literal` exemptions
       - 'rigid chart'         — a `_rigid_` name, anywhere: RIGID charts
                                 are readable only through their placed forms
       - 'comparison' (gated)  — <, <=, >, >=; enabled by LINT_COMPARISON
@@ -212,7 +218,7 @@ def lint_body(source: str) -> list[tuple[str, int, str, str]]:
 def _consts_data(
     comp: Comp | None, raw_lines: list[str], code,
 ) -> list[tuple[str, int, str, str]]:
-    """Nonzero literals in Consts rules, minus `@structural`-marked rules."""
+    """Consts-rule literals that `exempt_literal` does not exempt."""
     findings: list[tuple[str, int, str, str]] = []
     if comp is None:
         return findings
@@ -220,12 +226,12 @@ def _consts_data(
         if not isinstance(it, Rule) or it.body is None:
             continue
         span = range(it.line, it.end_line + 1)
-        if any("@structural" in raw_lines[ln - 1] for ln in span):
-            continue
+        unit = any(UNIT_MARKER in raw_lines[ln - 1] for ln in span)
         for ln in span:
             for m in NUMERIC_LITERAL_RE.finditer(code(ln)):
-                if m.group(0) != "0":
-                    findings.append(
-                        ("consts data", ln, m.group(0), raw_lines[ln - 1].rstrip())
-                    )
+                if exempt_literal(m.group(0), unit):
+                    continue
+                findings.append(
+                    ("consts data", ln, m.group(0), raw_lines[ln - 1].rstrip())
+                )
     return findings
