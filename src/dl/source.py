@@ -207,11 +207,29 @@ def comp_decls(source: str, comp_name: str) -> dict[str, list[str]]:
     }
 
 
+def rigid_slot_decls(source: str, consts: dict[str, list[str]]) -> dict[str, list[str]]:
+    """Placed name -> declared (chart) column types for each RIGID slot.
+
+    Raw source states the block, so `rigid_decls` reads the chart decls off
+    it. Expanded source has no block left, but the chart survives under its
+    generated name beside the placed relation, so `consts` carries it.
+    """
+    declared = {name: types for name, (_, types) in rigid_decls(source).items()}
+    declared |= {
+        public_slot(name): types
+        for name, types in consts.items()
+        if name.startswith(RIGID_CHART_PREFIX)
+    }
+    return declared
+
+
 def fit_slots(source: str) -> dict[str, list[str]] | None:
     """Fitted slots (name -> Consts arg types): Fit decls that mirror a
     Consts decl. None when no Fit comp. A RIGID chart relation mirrors
     under its placed name, with the chart's types — the Fit derives the
-    chart in a pose of its own, and the runner compares up to pose.
+    chart in a pose of its own, and the runner compares up to pose. The
+    placed schema's leading D4 column stays out of the comparison, so the
+    source may be raw or macro-expanded.
 
     Mirroring is by name, so a Fit helper must not take a slot's name: a
     name match with a different schema raises rather than misclassify."""
@@ -219,7 +237,7 @@ def fit_slots(source: str) -> dict[str, list[str]] | None:
     if not fit:
         return None
     consts = comp_decls(source, "Consts")
-    consts |= {name: types for name, (_, types) in rigid_decls(source).items()}
+    consts |= rigid_slot_decls(source, consts)
     for name in fit:
         if name in consts and fit[name] != consts[name]:
             raise ValueError(
