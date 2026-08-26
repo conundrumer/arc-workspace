@@ -32,7 +32,7 @@ The transformation claim: which prior the task teaches. Rival cases of one file 
 - `walk` — stepwise propagation; each step depends on the path or content so far
 - `cast` — content extends from a source along a line to a stopper
 - `span` — cells between marks act
-- `enclose` — cells cut off from the grid edge act
+- `enclose` — cells act by whether they reach the grid edge
 - `mapping` — a color-to-color relation recolors cells
 - `count` — a count determines output content or extent
 - `rank` — an order or rank determines placement or color
