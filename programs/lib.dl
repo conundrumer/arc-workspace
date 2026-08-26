@@ -293,6 +293,11 @@ corner_dist(P, Diag, K) :- diag_dist(P, Diag, _, K1, K2), K = K1 + K2.
 .decl compose(p1: Position, p2: Position, p3: Position) inline
 compose([T1, B1, L1, R1], [T2, B2, L2, R2], [T1+T2, B1+B2, L1+L2, R1+R2]) :- true.
 
+// The Shift carrying `from` onto `to` — the inverse read of compose.
+.decl displacement(from: Position, to: Position, v: Shift) inline
+displacement([T1, B1, L1, R1], [T2, B2, L2, R2],
+             [T2-T1, B2-B1, L2-L1, R2-R1]) :- true.
+
 // Pointwise ≥ over edge distances: p is inside the box that q describes as
 // margins.
 .decl geq(p: Position, q: Position) inline
@@ -1074,10 +1079,10 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     period(Ky, A, K) :- cand(Ky, A, K, _), !_breaks.excess([Ky, A, K], _).
 }
 
-// Re-express keyed cells relative to a per-key outer origin: inner = cell
-// minus outer, the inverse of compose. Outer extent + inner extent = cell
-// extent, so one subtraction both resizes and positions across frames. Key by
-// the cell to read `inner` backward.
+// Re-express keyed cells relative to a per-key outer origin: inner is the
+// cell's displacement from outer. Outer extent + inner extent = cell extent,
+// so one subtraction both resizes and positions across frames. Key by the
+// cell to read `inner` backward.
 //
 // Flagged: assumes one origin per key — several origins under one key
 // cross-product, so key by the varied thing instead.
@@ -1085,11 +1090,8 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     .decl outer(key: Key, p: Position)
     .decl cell(key: Key, p: Position)
 
-    .decl sub(p: Position, q: Position, d: Position) inline
-    sub([T1, B1, L1, R1], [T2, B2, L2, R2], [T1-T2, B1-B2, L1-L2, R1-R2]) :- true.
-
     .decl inner(key: Key, p: Position)
-    inner(K, I) :- cell(K, P), outer(K, O), sub(P, O, I).
+    inner(K, I) :- cell(K, P), outer(K, O), displacement(O, P, I).
 }
 
 // Keyed cells viewed from their own bounding box. `cell` defines the box
