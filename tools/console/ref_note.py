@@ -64,7 +64,7 @@ def main() -> None:
     seen_file.parent.mkdir(parents=True, exist_ok=True)
     seen_file.write_text("".join(i + "\n" for i in sorted(seen | set(noted))))
     print(json.dumps({"hookSpecificOutput": {
-        "hookName": "PostToolUse", "additionalContext": "\n".join(notes)}}))
+        "hookEventName": "PostToolUse", "additionalContext": "\n".join(notes)}}))
 
 
 if __name__ == "__main__":
