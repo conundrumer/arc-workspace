@@ -742,6 +742,18 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     mode(Ky, M) :- tally(Ky, M, N), N = max N2 : { tally(Ky, _, N2) }.
 }
 
+// The one value of each key's item set, absent on disagreement — the strict
+// peer of Mode.
+.comp Unanimous<Key, Val> {
+    .decl item(key: Key, v: Val)
+
+    .decl clash(key: Key)
+    clash(Ky) :- item(Ky, V1), item(Ky, V2), V1 != V2.
+
+    .decl value(key: Key, v: Val)
+    value(Ky, V) :- item(Ky, V), !clash(Ky).
+}
+
 // The extremum score per key, each direction a readout.
 .comp Extremes<Key> {
     .decl cand(key: Key, s: number)
