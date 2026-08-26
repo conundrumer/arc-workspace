@@ -4,6 +4,8 @@ Patterns observed across `.dl` solvers. Distinct from `style.md` (rules every so
 
 This list is descriptive, not prescriptive; the `.dl` files are the source of truth. It exists so future sessions can scan what has been used.
 
+An entry earns its place by cost: the shape took substantial derivation or user direction to reach. A shape a session can rederive cheaply stays out, even when it looks reusable.
+
 An entry's first sentence is its index line, read under the entry's title: it stands alone, and criteria and guards start after it.
 
 ## Multiple modeling forms via ADT `Choice`

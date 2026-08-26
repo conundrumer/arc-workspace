@@ -2,6 +2,8 @@
 
 Controlled vocabulary for solver `// concept:` lines.
 
+The concept line is agent-facing reference: sessions pick and revise terms on their own judgment, for future agents' sake, and term choices do not go to the user for ratification.
+
 A term names a model claim. A term is disqualified if grep over the body could derive it: primitive names, comp names, and Consts slot names are not concepts. New terms enter like lib additions: reuse an existing term when it fits; add here when none does.
 
 ## Setup
