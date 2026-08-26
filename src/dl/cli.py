@@ -1,17 +1,20 @@
 """Commands the runner exposes, and the argv dispatch over them."""
 
 import argparse
+import json
 import sys
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
+from arc.task import Alt, Example
 from dl.deletions import deletion_report
 from dl.fit import FitResult, render_fit, run_fit
 from dl.fit_plan import probe_report, render_fit_plan
 from dl.lint import lint_body
 from dl.paths import SOLVERS_DIR, all_stems
-from dl.render import render_pair_failure
+from dl.render import _grid_lines, render_pair_failure
 from dl.rewrite_lint import HINTS, lint_rewrites
 from dl.solve import (
     PairResult,
@@ -19,6 +22,7 @@ from dl.solve import (
     _pair_work,
     case_coverage,
     res_out_stem,
+    run_dl,
     run_pair,
     run_task,
 )
@@ -142,6 +146,51 @@ def cmd_one(stem: str, hints: bool = False, timed: bool = False) -> int:
         print(f"time: {', '.join(parts)}")
 
     return 0 if result.all_pass else 1
+
+
+def cmd_pairs(stem: str, path: str) -> int:
+    """Run one solver against ad-hoc pairs from a JSON file, in place of the
+    stored task: either a {train, test} object or a bare list of examples.
+    An example without "output" is a probe — its emitted grids print instead
+    of a comparison."""
+    if _missing(stem):
+        return 2
+    p = Path(path)
+    if not p.exists():
+        print(f"no pairs file at {p}", file=sys.stderr)
+        return 2
+    data = json.loads(p.read_text())
+    sections = ([("pair", data)] if isinstance(data, list)
+                else [(k, data.get(k) or []) for k in ("train", "test")])
+    build_functors()
+    task_id = stem.split("_", 1)[0]
+    failed = False
+    for kind, examples in sections:
+        for idx, e in enumerate(examples):
+            if e.get("output") is None:
+                for variant, grid, conflicts, missing in run_dl(
+                    task_id, e["input"], stem=stem
+                ):
+                    print(f"{kind}[{idx}] {variant or '(out)'}:")
+                    for line in _grid_lines(grid):
+                        print(f"  {line}")
+                    if conflicts or missing:
+                        print(f"  conflicts {len(conflicts)}, "
+                              f"missing {len(missing)}")
+                continue
+            alt = (Alt(kind=e["alt"]["kind"], grid=e["alt"]["grid"])
+                   if "alt" in e else None)
+            ex = Example(input=e["input"], output=e["output"], alt=alt)
+            r = run_pair(stem, task_id, kind, idx, ex)
+            if r.ok:
+                n = len(r.variants)
+                suffix = f" ({n} variants)" if n > 1 else ""
+                print(f"{kind}[{idx}]: PASS{suffix}")
+            else:
+                failed = True
+                for line in render_pair_failure(r):
+                    print(line)
+    return 1 if failed else 0
 
 
 def cmd_all(hints: bool = False, timed: bool = False) -> int:
@@ -307,6 +356,11 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--time", action="store_true", dest="timed",
                      help="print wall times: per phase for one solver, "
                           "slowest 15 for a full run")
+    run.add_argument("--pairs", metavar="FILE",
+                     help="run the named solver against ad-hoc pairs from "
+                          "this JSON file (e.g. .scratch/<task>/pairs.json) "
+                          "instead of the stored task; an example without "
+                          '"output" prints the emitted grids')
 
     sweep = sub.add_parser("sweep", help="fill sweep only")
     sweep.add_argument("stem")
@@ -337,6 +391,11 @@ def main(argv: list[str]) -> int:
         case "fit-plan":
             return cmd_fit_plan(args.stem)
         case _:
+            if args.pairs:
+                if not args.stem:
+                    print("--pairs needs a solver stem", file=sys.stderr)
+                    return 2
+                return cmd_pairs(args.stem, args.pairs)
             if args.stem:
                 return cmd_one(args.stem, args.hints, args.timed)
             return cmd_all(args.hints, args.timed)
