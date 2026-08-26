@@ -1,0 +1,317 @@
+// 20a9e565
+// concept: objects markers crop induce walk
+// shape: latent-canvas
+// The input shows one figure at successive growth stages, packed along an
+// axis with a fixed gap, each stage nesting the previous when stages align
+// at their trailing edges. Marker cells frame a window over a slot the
+// scene has not drawn. The scene grows on: each cell of a layer moves by
+// the delta its layer most shares with the layer one period below — read at
+// layers deep enough to have a grandparent, and carried down each chain —
+// and a new cell's colour is what the drawn stages' colour-invariances
+// (ancestor reads and layer echoes, validated over every drawn cell) reach.
+// The output is the window's view of the grown scene.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl bg(c: Color) bg(0).
+    .decl marker(c: Color) marker(5).
+    // Blank lines between consecutive slots.
+    .decl slot_gap(g: number) slot_gap(1).
+}
+
+.init c = Consts
+
+// --- stages ---
+
+.init stages = Components<Unit>
+stages.node($U(), P) :- in(P, Col), !c.bg(Col), !c.marker(Col).
+
+.decl stage_of(p: Position, id: Ident)
+stage_of(P, Id) :- stages.label($U(), P, Id).
+
+.init size = Tally<Ident, Position>
+size.item(Id, P) :- stage_of(P, Id).
+
+// Stages ordered by cell count: rank 0 is the seed.
+.init growth_order = Ordinal<Unit>
+growth_order.idx_set($U(), N) :- size.tally(_, N).
+
+.decl stage_rank(id: Ident, r: number)
+stage_rank(Id, R) :- size.tally(Id, N), growth_order.rank($U(), N, R).
+
+.init sbox = Bbox<Ident>
+sbox.cell(Id, P) :- stage_of(P, Id).
+
+// --- orientation ---
+
+// The packing axis: stages occupy disjoint bands along it, so no two stages
+// share a coordinate on it.
+.decl stack_defect(a: Axis)
+stack_defect(A) :-
+    axis_elem(A), axis_of(D, A),
+    stage_of(P, I), stage_of(Q, I2), I != I2,    // cells of two stages
+    same_dist(D, P, Q).                          // on one band coordinate
+
+.decl pax(a: Axis)
+pax(A) :- axis_elem(A), !stack_defect(A).
+
+// The seed sits at the trailing end of the progression.
+.decl trail_dir(d: Dir)
+trail_dir(D) :-
+    pax(A), axis_of(D, A),
+    stage_rank(I0, 0), size.tally(In, N), growth_order.rank_desc($U(), N, 0),  // seed, top stage
+    sbox.edge_min(I0, D, K0), sbox.edge_min(In, D, K1), K0 < K1.
+
+.decl grow_dir(d: Dir)
+grow_dir(D2) :- trail_dir(D), opposite(D, D2).
+
+// --- scene frame ---
+
+// Stage index lines: the along-axis grid line at distance k from the
+// trailing edge stands for stage k.
+.decl axis_line(l: Position)
+axis_line(L) :- in(P, _), pax(A), split(P, A, L, _).
+
+.decl stage_line(id: Ident, l: Position)
+stage_line(Id, L) :- stage_rank(Id, R), trail_dir(Td), axis_line(L), dist(L, Td, R).
+
+.decl drawn_line(l: Position)
+drawn_line(L) :- stage_line(_, L).
+
+// Drawn stage content in the scene frame: each stage shifted so its trailing
+// bbox edge lies on the grid's trailing edge; the perpendicular coordinate
+// carries over — the drawn stages already align there.
+.decl drawn(l: Position, y: Position, col: Color)
+drawn(L, Y, Col) :-
+    stage_line(Id, L), stage_of(P, Id), in(P, Col),               // stage cell
+    trail_dir(Td), sbox.edge_min(Id, Td, T), jump(P, Td, T, Y).  // to scene frame
+
+// A stage's layer: its new cells — present at L, absent from the stage before.
+.decl layer(l: Position, y: Position)
+layer(L, Y) :- drawn(L, Y, _), trail_dir(Td), neighbor(L, Td, L2), !drawn(L2, Y, _).
+
+// --- growth field, per candidate period ---
+
+// Candidate periods: the nonzero stage-index offsets.
+.decl period_cand(pn: number)
+period_cand(Pn) :- drawn_line(L), trail_dir(Td), dist(L, Td, Pn), Pn != 0.
+
+// A layer cell with each cell of the layer Pn stages earlier — its candidate
+// parents — and the move each one asks for.
+.decl cand(pn: number, l: Position, x: Position, y: Position, v: Shift)
+cand(Pn, L, X, Y, V) :-
+    period_cand(Pn), layer(L, X),                       // a layer cell
+    trail_dir(Td), jump(L, Td, Pn, L2), layer(L2, Y),   // a cell of the layer Pn back
+    displacement(Y, X, V).                              // the move it asks for
+
+// A cell moves with its layer: the delta shared by the most cells of the
+// layer wins. A tie is free — any pick replays the layers — so Canon's
+// arbitrary representative resolves it.
+.type PLV = [pn: number, l: Position, v: Shift]
+.init share = Tally<PLV, Position>
+share.item([Pn, L, V], X) :- cand(Pn, L, X, _, V).
+
+.type PX = [pn: number, x: Position]
+.init best = ArgExtremes<PX, Shift>
+best.cand([Pn, X], V, S) :- cand(Pn, L, X, _, V), share.tally([Pn, L, V], S).
+
+.type PXV = [pn: number, x: Position, v: Shift]
+.init pick_one = Canon<PXV>
+pick_one.equiv([Pn, X, V1], [Pn, X, V2]) :-
+    best.high([Pn, X], V1, _), best.high([Pn, X], V2, _).
+
+.decl pick(pn: number, x: Position, v: Shift)
+pick(Pn, X, V) :- pick_one.rep([Pn, X, V], [Pn, X, V]).
+
+// A layer two periods above the seed: deep enough that a pick's chain has a
+// grandparent behind it.
+.decl grounded(pn: number, l: Position)
+grounded(Pn, L) :-
+    period_cand(Pn), layer(L, _),
+    trail_dir(Td), jump(L, Td, Pn, L2), jump(L2, Td, Pn, L3), axis_line(L3).
+
+// The vector is constant along a chain. Picks are trusted where grounded and
+// propagate down over the parents they name, overriding the shallower
+// layers' ambiguous evidence.
+.decl chain(pn: number, x: Position, v: Shift)
+chain(Pn, X, V) :- pick(Pn, X, V), layer(L, X), grounded(Pn, L).
+chain(Pn, Y, V) :- chain(Pn, X, V), cand(Pn, _, X, Y, V).
+
+// The field: chain vectors where a chain reaches, own picks elsewhere.
+.decl vec(pn: number, x: Position, v: Shift)
+vec(Pn, X, V) :- chain(Pn, X, V).
+vec(Pn, X, V) :- pick(Pn, X, V), !chain(Pn, X, _).
+
+// A period must replay the drawn layers: pushing each grounded layer with a
+// drawn successor must reproduce that successor exactly.
+.decl val_layer(pn: number, l: Position)
+val_layer(Pn, L) :-
+    grounded(Pn, L), grow_dir(G), jump(L, G, Pn, Lf), drawn_line(Lf).
+
+.decl replay(pn: number, l: Position, y: Position)
+replay(Pn, Lf, Y) :-
+    val_layer(Pn, L), layer(L, X), vec(Pn, X, V), compose(X, V, Y),
+    grow_dir(G), jump(L, G, Pn, Lf).
+
+.decl period_defect(pn: number)
+period_defect(Pn) :- replay(Pn, Lf, Y), !layer(Lf, Y).
+period_defect(Pn) :-
+    val_layer(Pn, L), grow_dir(G), jump(L, G, Pn, Lf),
+    layer(Lf, Y), !replay(Pn, Lf, Y).
+
+// The growth period: the smallest candidate that replays.
+.init period_pick = Extremes<Unit>
+period_pick.cand($U(), Pn) :- period_cand(Pn), !period_defect(Pn).
+
+.decl period(pn: number)
+period(Pn) :- period_pick.low($U(), Pn).
+
+// The cell a cell came from: its final vector's parent edge.
+.decl drawn_parent(x: Position, y: Position)
+drawn_parent(X, Y) :- period(Pn), vec(Pn, X, V), cand(Pn, _, X, Y, V).
+
+// --- extrapolation ---
+
+// The scene grows one layer per undrawn grid line: each cell of the layer a
+// period below moves by its vector and keeps it.
+.decl pushed(l: Position, y: Position, x: Position, v: Shift)
+pushed(L2, Y, X, V) :-
+    period(Pn), ext_layer(L, X), ext_vec(X, V), compose(X, V, Y),
+    grow_dir(G), jump(L, G, Pn, L2), axis_line(L2), !drawn_line(L2).
+
+.decl ext_layer(l: Position, y: Position)
+ext_layer(L, Y) :- layer(L, Y).
+ext_layer(L, Y) :- pushed(L, Y, _, _).
+
+.decl ext_vec(x: Position, v: Shift)
+ext_vec(X, V) :- period(Pn), vec(Pn, X, V).
+ext_vec(Y, V) :- pushed(_, Y, _, V).
+
+.decl ext_parent(x: Position, y: Position)
+ext_parent(X, Y) :- drawn_parent(X, Y).
+ext_parent(Y, X) :- pushed(_, Y, X, _).
+
+// A cell's birth: the earliest layer holding it.
+.decl born_before(y: Position, l: Position)
+born_before(Y, L) :-
+    ext_layer(L, Y), ext_layer(L2, Y),
+    trail_dir(Td), dist(L, Td, K), dist(L2, Td, K2), K2 < K.
+
+.decl birth(y: Position, l: Position)
+birth(Y, L) :- ext_layer(L, Y), !born_before(Y, L).
+
+.decl drawn_birth(y: Position, l: Position)
+drawn_birth(Y, L) :- birth(Y, L), drawn_line(L).
+
+// Stage L's full figure: the layers up to L.
+.decl content(l: Position, y: Position)
+content(L, Y) :- ext_layer(L, Y).
+content(L2, Y) :- content(L, Y), grow_dir(G), neighbor(L, G, L2), axis_line(L2).
+
+// --- slots ---
+
+.init far = Extremes<Position>
+far.cand(L, S) :- content(L, Y), trail_dir(Td), dist(Y, Td, S).
+
+// Each stage's trailing grid line: drawn stages sit at their bbox; each next
+// slot starts one cell and a gap past the previous stage's far line.
+.decl slot(l: Position, lg: Position)
+slot(L, Lg) :-
+    stage_line(Id, L),
+    trail_dir(Td), sbox.edge_min(Id, Td, T), axis_line(Lg), dist(Lg, Td, T).
+slot(L2, Lg2) :-
+    slot(L, Lg), far.high(L, F),
+    grow_dir(G), neighbor(L, G, L2), axis_line(L2), !drawn_line(L2),
+    jump(Lg, G, F, Lfar), neighbor(Lfar, G, Ln),     // past the stage's far line
+    c.slot_gap(Gp), jump(Ln, G, Gp, Lg2).            // and the gap
+
+// --- window ---
+
+.init win = BoxFrame<Unit>
+win.cell($U(), P) :- in(P, Col), c.marker(Col).
+win.grid($U(), P) :- in(P, _).
+
+// The slot whose along-extent contains the marker window.
+.decl target(l: Position, lg: Position)
+target(L, Lg) :-
+    slot(L, Lg), win.margin($U(), W),
+    trail_dir(Td), dist(Lg, Td, Ts), dist(W, Td, Wn), Ts <= Wn,   // starts at or before
+    grow_dir(G), far.high(L, F), jump(Lg, G, F, Lfar),
+    dist(Lfar, G, Kf), dist(W, G, Kw), Kw >= Kf.                  // ends at or after
+
+// --- colour generators ---
+
+// Ancestry along the parent edges: validation reads the drawn edges; the
+// closure reads the extended ones.
+.decl anc_drawn(y: Position, z: Position)
+anc_drawn(Y, Y) :- layer(_, Y).
+anc_drawn(Y, Z) :- anc_drawn(Y, Z1), drawn_parent(Z1, Z).
+
+.decl anc_ext(y: Position, z: Position)
+anc_ext(Y, Y) :- ext_layer(_, Y).
+anc_ext(Y, Z) :- anc_ext(Y, Z1), ext_parent(Z1, Z).
+
+// A generator observation: a drawn cell's colour beside another drawn
+// cell's colour read a stage shift away — dj between their births, dk
+// between the stages read.
+.decl gen_obs(dk: Shift, dj: Shift, x: Position, z: Position, c: Color, c2: Color)
+gen_obs(Dk, Dj, X, Z, C, C2) :-
+    drawn(L, X, C), drawn_birth(X, Lx),              // cell and its birth
+    drawn_birth(Z, Lz), displacement(Lx, Lz, Dj),    // a cell dj births away
+    drawn(L2, Z, C2), displacement(L, L2, Dk).       // read dk stages away
+
+// An ancestor generator reads along ancestry: it stands when some ancestor
+// pair witnesses it and none contradicts it.
+.decl agen(dk: Shift, dj: Shift)
+agen(Dk, Dj) :- gen_obs(Dk, Dj, X, Z, _, _), anc_drawn(X, Z), !agen_mismatch(Dk, Dj).
+
+.decl agen_mismatch(dk: Shift, dj: Shift)
+agen_mismatch(Dk, Dj) :- gen_obs(Dk, Dj, X, Z, C, C2), anc_drawn(X, Z), C2 != C.
+
+// A layer generator reads from any cell at the birth shift: it needs
+// witnesses born at more than one layer and no contradiction.
+.decl lgen(dk: Shift, dj: Shift)
+lgen(Dk, Dj) :-
+    gen_obs(Dk, Dj, X, _, _, _), drawn_birth(X, Lx),
+    gen_obs(Dk, Dj, X2, _, _, _), drawn_birth(X2, Lx2), Lx != Lx2,
+    !lgen_mismatch(Dk, Dj).
+
+.decl lgen_mismatch(dk: Shift, dj: Shift)
+lgen_mismatch(Dk, Dj) :- gen_obs(Dk, Dj, _, _, C, C2), C2 != C.
+
+// --- colour closure ---
+
+.decl state_line(l: Position)
+state_line(L) :- drawn_line(L).
+state_line(L) :- target(L, _).
+
+// A cell's colour is what the generators reach in the drawn table; out's
+// single-valuedness enforces unanimity across every path.
+.decl col_reach(l: Position, y: Position, col: Color)
+col_reach(L, Y, C) :- drawn(L, Y, C).
+col_reach(L, Y, C) :-
+    state_line(L), birth(Y, Ly), compose(Ly, Dj, Lz),
+    ( agen(Dk, Dj), anc_ext(Y, Z), birth(Z, Lz)   // ancestor read
+    ; lgen(Dk, Dj), drawn_birth(Z, Lz)            // layer-echo read
+    ),
+    !drawn(L, Y, _),
+    compose(L, Dk, L2), drawn_line(L2),
+    col_reach(L2, Z, C).
+
+// --- output ---
+
+// A window cell shows the target stage: shift it into the scene frame and
+// read the closure's colour there; cells the stage does not cover are bg.
+.decl shown(p: Position, col: Color)
+shown(P, C) :-
+    win.inside($U(), P),
+    target(L, Lg), trail_dir(Td), dist(Lg, Td, T), jump(P, Td, T, Y),
+    content(L, Y), col_reach(L, Y, C).
+
+.decl out(p: Position, col: Color)
+out(Pw, C) :-
+    win.inner($U(), P, Pw),
+    ( shown(P, C)              // scene cell
+    ; !shown(P, _), c.bg(C)    // uncovered window cell
+    ).

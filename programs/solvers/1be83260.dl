@@ -1,0 +1,119 @@
+// 1be83260
+// concept: decompose markers scale rank stamp
+// Copies of one template block, drawn in a border color, sit in a lattice
+// of bg separator lines. One copy is the key: it fills the template's
+// holes with colors. The hole rows and hole columns cross in a palette
+// grid, one row per block row and one column per block column, so every
+// block has a palette color. The output paints the template's body in
+// that color; holes and separators stay the border color. Two models of
+// the output frame:
+//
+//   $Repaint  — the block region itself, repainted in place.
+//   $Assemble — the palette expanded, one template block per palette
+//               cell, c.gap cells of border between.
+//
+// $Repaint takes the output's separator width from the input; $Assemble
+// sets it from c.gap.
+
+#include "../lib.dl"
+
+.type Choice = Repaint {} | Assemble {}
+
+.comp Consts {
+    // --- shared ---
+    .decl bg(col: Color) bg(0).
+
+    // --- Assemble ---
+    .decl gap(g: number) gap(1).   // border cells left between stamped blocks
+}
+
+.init c = Consts
+
+// --- the block region and its lattice ---
+
+.init region = BoxFrame<Unit>
+region.cell($U(), P) :- in(P, Col), !c.bg(Col).
+region.grid($U(), P) :- in(P, _).
+
+.decl cell(p: Position, col: Color)
+cell(P_region, Col) :- region.inner($U(), P, P_region), in(P, Col).
+
+.decl inked_line(l: Position)
+inked_line(L) :- cell(P, Col), !c.bg(Col), axis_elem(A), split(P, A, L, _).
+
+.init df = DividerFrame<Unit>
+df.cell($U(), P) :- cell(P, _).
+df.divider($U(), A, L) :-
+    cell(P, _), axis_elem(A), split(P, A, L, _),  // a line of the region
+    !inked_line(L).                               // carrying no ink: a separator
+
+.init block = BoxFrame<Position>
+block.cell(P_tile, P) :- df.tile_of($U(), P, P_tile).
+
+// --- the template every block carries ---
+
+.decl hole(p_intile: Position)
+hole(P_intile) :- block.inner(_, P, P_intile), cell(P, Col), c.bg(Col).
+
+.decl body(p_intile: Position)
+body(P_intile) :- block.inner(_, _, P_intile), !hole(P_intile).
+
+// --- the border color and the key block ---
+
+.decl block_color(p_tile: Position, col: Color)
+block_color(P_tile, Col) :- df.tile_of($U(), P, P_tile), cell(P, Col), !c.bg(Col).
+
+.decl absent(col: Color)
+absent(Col) :- block_color(_, Col), block_color(P_tile, _), !block_color(P_tile, Col).
+
+.decl border(col: Color)
+border(Col) :- block_color(_, Col), !absent(Col).
+
+.decl key_cell(p_intile: Position, col: Color)
+key_cell(P_intile, Col) :-
+    block_color(P_tile, K), !border(K),          // the key block: it carries another color
+    block.inner(P_tile, P, P_intile), cell(P, Col).
+
+// --- the palette the key block's holes spell out ---
+
+.init hole_frame = OrderFrame<Axis, Position>
+hole_frame.axis(A, A) :- axis_elem(A).
+hole_frame.member(A, L, L) :- hole(P_intile), axis_elem(A), split(P_intile, A, L, _).
+
+.decl palette(p_tile: Position, col: Color)
+palette(P_tile, Col) :-
+    perp(A, A2),
+    hole_frame.pos(A, L1, P1), hole_frame.pos(A2, L2, P2),  // a hole line on each axis
+    compose(P1, P2, P_tile), compose(L1, L2, P_intile),     // their places, their crossing
+    key_cell(P_intile, Col).                                // the color the key block holds
+
+.decl out(p: Position, col: Color, c: Choice)
+
+// --- Repaint ---
+
+.decl painted(p: Position, col: Color)
+painted(P_region, Col) :-
+    block.inner(P_tile, P_region, P_intile), body(P_intile),   // on its block's template body
+    palette(P_tile, Col).                                      // in the block's palette color
+
+out(P_region, Col, $Repaint()) :-
+    cell(P_region, _),
+    ( painted(P_region, Col)                     // template body, palette color
+    ; !painted(P_region, _), border(Col)         // holes and separators
+    ).
+
+// --- Assemble ---
+
+.decl assembled(p: Position, col: Color)
+assembled(P_grid_out, Col) :-
+    palette(P_tile, Col), body(P_intile), c.gap(G),  // the template's body in a palette color
+    concat_2d(P_tile, P_intile, G, P_grid_out).      // placed as the palette lays it out
+
+.init sheet = Frame2D<Unit>
+sheet.extent($U(), A, N) :- assembled(P, _), axis_elem(A), axis_dim(P, A, N).
+
+out(P_grid_out, Col, $Assemble()) :-
+    sheet.cell($U(), P_grid_out),
+    ( assembled(P_grid_out, Col)                      // template body, palette color
+    ; !assembled(P_grid_out, _), border(Col)          // holes and gaps
+    ).
