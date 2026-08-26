@@ -30,20 +30,18 @@
 // --- parse ---
 
 .comp Parse<Key> {
+    .type Line = [key: Key, a: Axis, l: Position]
+
     .decl cell(key: Key, p: Position, col: Color)  // input
 
-    // Color present on the line at l along axis a.
-    .decl line_color(key: Key, a: Axis, l: Position, col: Color)
-    line_color(K, A, L, Col) :- cell(K, P, Col), axis_elem(A), split(P, A, L, _).
-
-    .decl line_mixed(key: Key, a: Axis, l: Position)
-    line_mixed(K, A, L) :- line_color(K, A, L, Col), line_color(K, A, L, Col2), Col != Col2.
+    .init line_color = Unanimous<Line, Color>
+    line_color.item([K, A, L], Col) :- cell(K, P, Col), axis_elem(A), split(P, A, L, _).
 
     .init frame = DividerFrame<Key>
     frame.cell(K, P) :- cell(K, P, _).
 
     // Divider: a line of one non-bg color.
-    frame.divider(K, A, L) :- line_color(K, A, L, Col), !c.bg(Col), !line_mixed(K, A, L).
+    frame.divider(K, A, L) :- line_color.value([K, A, L], Col), !c.bg(Col).
 }
 
 .init parse = Parse<Unit>

@@ -7,25 +7,19 @@
 
 #include "../lib.dl"
 
+.type Line = [a: Axis, p_line: Position]
+
 .comp Consts {}
 
 .init c = Consts
 
-.decl line_color(a: Axis, p_line: Position, col: Color)
-line_color(A, P_line, Col) :- in(P, Col), axis_elem(A), split(P, A, P_line, _).
-
-.decl line_mixed(a: Axis, p_line: Position)
-line_mixed(A, P_line) :-
-    line_color(A, P_line, Col), line_color(A, P_line, Col2), Col != Col2.
-
-// The divider color fills whole lines.
-.decl divider_color(col: Color)
-divider_color(Col) :- line_color(A, P_line, Col), !line_mixed(A, P_line).
+.init line_color = Unanimous<Line, Color>
+line_color.item([A, P_line], Col) :- in(P, Col), axis_elem(A), split(P, A, P_line, _).
 
 // A band is a run of adjacent non-divider lines — one row or column of
-// regions.
+// regions. A divider color is one that fills a whole line.
 .init bands = Components<Axis>
-bands.node(A, P_line) :- line_color(A, P_line, Col), !divider_color(Col).
+bands.node(A, P_line) :- line_color.item([A, P_line], Col), !line_color.value(_, Col).
 
 // One output line per band. Band line sets are disjoint runs, as OrderFrame
 // assumes.

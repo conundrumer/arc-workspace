@@ -8,6 +8,7 @@
 #include "../lib.dl"
 
 .type PanelAxis = [t: Position, a: Axis]
+.type Line = [a: Axis, l: Position]
 
 .comp Consts {
 }
@@ -16,17 +17,13 @@
 
 // --- panels ---
 
-// Color present on the line at l along axis a.
-.decl line_color(a: Axis, l: Position, col: Color)
-line_color(A, L, Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
-
-.decl line_mixed(a: Axis, l: Position)
-line_mixed(A, L) :- line_color(A, L, Col), line_color(A, L, Col2), Col != Col2.
+.init line_color = Unanimous<Line, Color>
+line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
 
 // A uniform line spans the grid, so it divides panels rather than sit in one.
 .init panels = DividerFrame<Unit>
 panels.cell($U(), P) :- in(P, _).
-panels.divider($U(), A, L) :- line_color(A, L, _), !line_mixed(A, L).
+panels.divider($U(), A, L) :- line_color.value([A, L], _).
 
 // A panel's frame — the ring of cells with a neighbor outside it.
 .decl frame(p: Position)

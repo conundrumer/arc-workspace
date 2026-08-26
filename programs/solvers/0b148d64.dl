@@ -45,14 +45,12 @@ panel(P, Q) :-
 
 // --- the odd panel ---
 
-.decl panel_color(q: DiagDir, col: Color)
-panel_color(Q, Col) :- panel(P, Q), ink(P, Col).
-
-.decl shared_color(col: Color)
-shared_color(Col) :- panel_color(Q, Col), panel_color(Q2, Col), Q != Q2.
+// The panel a color belongs to; a color two panels share belongs to neither.
+.init color_panel = Unanimous<Color, DiagDir>
+color_panel.item(Col, Q) :- panel(P, Q), ink(P, Col).
 
 .decl odd_panel(q: DiagDir)
-odd_panel(Q) :- panel_color(Q, Col), !shared_color(Col).
+odd_panel(Q) :- color_panel.value(_, Q).
 
 // --- the crop ---
 
