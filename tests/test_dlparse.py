@@ -1,9 +1,11 @@
 """Parser and index over the solver dialect."""
 
+import hashlib
 from pathlib import Path
 
 import pytest
 
+import dl.dlparse
 from dl.dlparse import (
     EXTERN,
     TOP,
@@ -26,10 +28,33 @@ SOLVERS = Path(__file__).parent.parent / "programs" / "solvers"
 LIB = Path(__file__).parent.parent / "programs" / "lib.dl"
 
 
-def test_corpus_parses():
+CACHE_KEY = "dlparse/corpus"
+
+
+def test_corpus_parses(request):
+    """Every program in the corpus parses and indexes.
+
+    A file that parsed under the current parser parses again, so the run
+    records what it proved and re-parses only what changed. The record is
+    keyed by the parser's own source: an edit there re-parses the corpus.
+    """
     solvers = [f for f in sorted(SOLVERS.glob("*.dl")) if not f.name.startswith(".")]
+    parser = hashlib.sha256(
+        Path(dl.dlparse.__file__).read_bytes()).hexdigest()
+    store = getattr(request.config, "cache", None)
+    cached = store.get(CACHE_KEY, {}) if store else {}
+    if cached.get("parser") != parser:
+        cached = {"parser": parser, "files": {}}
+    proved = cached["files"]
     for f in solvers + [LIB]:
-        Index(parse(f.read_text()))
+        text = f.read_text()
+        digest = hashlib.sha256(text.encode()).hexdigest()
+        if proved.get(str(f)) == digest:
+            continue
+        Index(parse(text))
+        proved[str(f)] = digest
+    if store:
+        store.set(CACHE_KEY, cached)
 
 
 def test_rule_and_fact():

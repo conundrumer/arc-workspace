@@ -9,6 +9,7 @@ whole. Every rendering derives from the live file, so no copy can go stale.
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from pathlib import Path
 
 from dl.dlparse import (Comp, Decl, Define, Functor, Init, Item, Rule,
@@ -38,6 +39,7 @@ LIB_PREAMBLE = """\
 """
 
 
+@lru_cache(maxsize=2)
 def lib_signatures(text: str) -> str:
     """lib.dl as its interface: comments, types, macros, .functor and .decl
     signatures, component structure, and the default fills components carry.

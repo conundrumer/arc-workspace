@@ -16,6 +16,7 @@ packages = ["src/arc", "src/dl"]
 dev = [
   "pyright>=1.1.409",
   "pytest>=8",
+  "pytest-xdist>=3",
   "ruff>=0.7",
 ]
 
@@ -32,7 +33,10 @@ ignore = ["E741"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra"
+# Four workers is where this suite stops gaining: the run is short enough
+# that another worker's startup costs more than the tests it takes. Pass
+# `-n 0` for one process, which a debugger or `-s` needs.
+addopts = "-ra -n 4"
 
 [tool.pyright]
 include = ["src", "scripts", "tests"]
