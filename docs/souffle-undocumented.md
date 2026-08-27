@@ -1,6 +1,6 @@
 # Souffle: undocumented features
 
-Two features have been merged into Souffle but are not on the official documentation site (`souffle-lang.github.io`): **user-defined aggregates** and **lattices**. Both were contributed by Julien Henry (MathWorks); both ship in the released compiler and are exercised by tests in `tests/interface/`. This doc describes how to use them.
+This doc covers Souffle behavior that is absent from the official documentation site (`souffle-lang.github.io`): two merged features — **user-defined aggregates** and **lattices** — and one failure mode, a type argument that collides with a component's own type names. The two features were contributed by Julien Henry (MathWorks); both ship in the released compiler and are exercised by tests in `tests/interface/`.
 
 The features are related. Lattices give you automatic lub/glb on relation attributes; user-defined aggregates give you manual fold-with-a-stateful-functor over an aggregate body. Both rely on a stateful functor folding over tuples.
 
@@ -201,6 +201,35 @@ Use a user-defined aggregate when the fold is local to a single rule (e.g., "giv
 - The `Leq` lattice operator is parsed but lacks test coverage — don't depend on it.
 - Stateful functors are linked from C++ (`SOUFFLE_USE_LIBFFI` controls dynamic loading). The interpreter and synthesizer paths both work, but the C++ side must be compiled and discoverable at run time.
 - Souffle does not verify that your operators actually form a lattice. If `Lub` isn't commutative, associative, and idempotent — or if `Glb` doesn't satisfy the dual properties — output becomes order-dependent.
+
+## Type arguments that collide with a component's own types
+
+A type name passed as a component's type argument must differ from every `.type` name declared inside that component. Souffle binds both to one name in the instance, and the instance's relations take the argument type where the internal type belongs.
+
+```souffle
+.comp BoxFrame<Key> {
+    .type KP = [key: Key, p: Position]
+    .decl cell(key: Key, p: Position)
+    // ...
+}
+
+.type KP = [key: Unit, p_part: Position]
+.decl top_cell(key: Unit, p: Position)
+
+.init box = BoxFrame<KP>
+box.cell([Ky, Q], P) :- top_cell(Ky, P), top_cell(Ky, Q).
+```
+
+```
+Error: Unable to deduce type for variable Ky in file solver.dl at line 6
+box.cell([Ky, Q], P) :- top_cell(Ky, P), top_cell(Ky, Q).
+Following constraints are incompatible:
+   Type of variable 'Ky' should be a subtype of 'Unit' in file solver.dl at line 6
+```
+
+The message names a variable in the rule rather than the collision, and where the argument is a record it can also report `Atom's argument type is not a subtype of its declared type`. Both records and subtype aliases collide. The colliding declaration may sit at top level or inside another component, and one instantiation is enough to raise the error. The collision reaches through nesting: a component that passes its own type parameter on to an inner component carries the argument name down to that component's internal type names as well.
+
+The fix is to rename either type. Souffle 2.5 (`2.5-27-gc3861e0d3`).
 
 ## References
 

@@ -210,6 +210,32 @@ out(P) :- traced(P).
     assert "pass-through" not in cats(src, hints=True)
 
 
+def test_domain_enumerator_bound_variable_fires():
+    src = """\
+.decl axis_elem(a: number)
+axis_elem(0). axis_elem(1).
+.decl src(p: number, a: number)
+src(P, A) :- g(P, A).
+.decl out(p: number)
+out(P) :- axis_elem(A), src(P, A).
+"""
+    assert "domain-enumerator" in cats(src, hints=True)
+
+
+def test_domain_enumerator_membership_test_kept():
+    # `c4_elem` holds four of the eight D4 elements, so the atom narrows a
+    # binding the rule already has.
+    src = """\
+.decl c4_elem(d: number)
+c4_elem(0). c4_elem(1).
+.decl src(p: number, d: number)
+src(P, D) :- g(P, D).
+.decl out(p: number)
+out(P) :- c4_elem(D), src(P, D).
+"""
+    assert "domain-enumerator" not in cats(src, hints=True)
+
+
 def test_domain_enumerator_inline_binder_kept():
     src = """\
 .decl helper(p: number, a: number) inline

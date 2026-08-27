@@ -70,6 +70,12 @@ HINTS = frozenset({
 # level is record arithmetic, independent of the task's grids.
 EXAMPLE_SRC = frozenset({"in", "ex_in", "ex_out"})
 
+# `*_elem` relations holding part of their element type rather than all of
+# it: `c4_elem` is the rotation subgroup of `D4`. An atom over one of these
+# tests membership, so a bound variable is a filter and the enumeration
+# reading does not apply.
+SUBSET_ELEMS = frozenset({"c4_elem"})
+
 type Finding = tuple[str, int, str, str]
 
 # Lib-idiom chains: a lib primitive's defining body, as the two atoms a
@@ -816,7 +822,9 @@ class _Lint:
     def domain_enumerator(self, info: RuleInfo) -> None:
         """An `*_elem` atom whose variable another positive atom already
         binds. An `inline` relation does not count as a binder: it
-        substitutes away, so its arguments stay ungrounded."""
+        substitutes away, so its arguments stay ungrounded. A relation in
+        `SUBSET_ELEMS` holds part of its element type, so the atom narrows
+        the binding and stays."""
         rule = info.rule
         if rule.body is None:
             return
@@ -824,6 +832,8 @@ class _Lint:
         for atom in {id(l): l for f in flats for l in f
                      if isinstance(l, Atom)}.values():
             if not atom.name.endswith("_elem") or len(atom.args) != 1:
+                continue
+            if atom.name in SUBSET_ELEMS:
                 continue
             if not isinstance(atom.args[0], Var):
                 continue
