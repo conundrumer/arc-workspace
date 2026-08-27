@@ -1,0 +1,152 @@
+"""The overnight admitter: the resumes that came due, and the next
+admission."""
+
+import sys
+import threading
+
+from . import pacing, prompts, store, waves, workers
+
+# Dial name -> the range the UI may set it to.
+NIGHT_DIALS = {"target": (1, 40), "reserve": (0, 100), "floor": (0, 100),
+               "ceiling": (0, 100)}
+ADMIT_POLL = 30        # seconds between admitter passes
+
+
+NIGHT_WAKE = threading.Event()
+
+
+def due_resumes() -> list[dict]:
+    at = store.now()
+    return [it for it in store.STATE["items"]
+            if it.get("resume_at") and it["resume_at"] <= at and not store.active(it)]
+
+
+def resume_item(it: dict) -> None:
+    """Relaunch the stage a usage limit cut off, as a comment would. Caller
+    holds LOCK."""
+    phase = it.pop("resume_phase", None) or it["phase"]
+    handoff = bool(it.pop("resume_handoff", False))
+    it.pop("resume_at", None)
+    if not it["sessions"].get(phase):
+        store.say(it, store.event("no session to resume — left for review"), sess=phase)
+        pacing.night_say(f"{it['id']} · no session to resume, left for review")
+        return
+    it["state"] = store.COMMENTED
+    it["updated"] = False
+    store.say(it, {"kind": "you", "text": pacing.RESUME_BRIEF}, sess=phase)
+    pacing.night_say(f"{it['id']} · resuming {phase}")
+    workers.launch(it, pacing.RESUME_BRIEF, phase, trigger="resume", handoff=handoff,
+                   admitted=True)
+
+
+def night_admit() -> list[str]:
+    """Admit the next queued task into the night's wave. Caller holds LOCK.
+
+    Every admission of one night belongs to one wave, so the stages share a
+    system-prompt appendix and the committed items of the round before are
+    cleared out the way a hand-started wave clears them."""
+    cfg = pacing.night()
+    waves.drop_committed()
+    try:
+        picked = waves.pick_new(1, "name")
+    except store.Reject as e:
+        pacing.night_say(f"admission deferred — {e}", once=True)
+        return []
+    if not picked:
+        pacing.night_say("queue is empty — nothing left to admit", once=True)
+        return []
+    chain = store.wave_presets()[0]["chain"]
+    if not cfg.get("wave"):
+        store.STATE["wave"] += 1
+        cfg["wave"] = store.STATE["wave"]
+        cfg["append"] = str(prompts.build_append(store.STATE["wave"]))
+    ids = waves.make_items(picked, chain, cfg["wave"], cfg["append"],
+                           auto_advance=True, auto_stop=chain[-1]["name"], night=True)
+    pacing.night_say("admitted " + ", ".join(ids) +
+                     f" · {len(pacing.live_items())}/{cfg['target']} live")
+    return ids
+
+
+def night_tick() -> dict:
+    """One admitter pass: the resumes that came due, then one admission if a
+    slot is free and the pacer allows it."""
+    out = {"resumed": [], "admitted": [], "held": None}
+    changed = False
+    with store.LOCK:
+        cfg = pacing.night()
+        if not cfg["on"] or store.RELOADING or store.SHUTTING_DOWN:
+            return out
+        for it in due_resumes():
+            resume_item(it)
+            out["resumed"].append(it["id"])
+            changed = True
+        if len(pacing.live_items()) < cfg["target"]:
+            gate = pacing.pacer()
+            if gate["open"]:
+                out["admitted"] = night_admit()
+                changed = changed or bool(out["admitted"])
+            else:
+                out["held"] = gate["why"]
+                changed |= pacing.night_say("pacer holding: " + gate["why"], once=True)
+    if out["admitted"]:
+        threading.Thread(target=waves.stagger_launch, args=(out["admitted"],),
+                         daemon=True).start()
+    if changed:
+        store.bump()
+    return out
+
+
+def night_loop() -> None:
+    while True:
+        NIGHT_WAKE.wait(ADMIT_POLL)
+        NIGHT_WAKE.clear()
+        try:
+            night_tick()
+        except Exception as exc:  # a failed pass must not end the night
+            print(f"overnight pass failed: {exc!r}", file=sys.stderr)
+
+
+def night_view() -> dict:
+    """What the console shows for the mode."""
+    cfg = pacing.night()
+    view = {name: cfg[name] for name in pacing.NIGHT_DEFAULTS}
+    gate = pacing.pacer() if cfg["on"] else None
+    soon = [(it["resume_at"], f"{it['id']} resumes") for it in store.STATE["items"]
+            if it.get("resume_at")]
+    if gate and gate.get("next"):
+        soon.append((gate["next"], "squeeze zone opens"))
+    if cfg["on"] and not soon:
+        soon.append((store.now() + ADMIT_POLL, "admitter pass"))
+    at, what = min(soon) if soon else (None, "")
+    view.update(gate=gate, live=len(pacing.live_items()), landed=pacing.night_landed(),
+                log=cfg["log"][-8:],
+                next=({"at": at, "what": what} if at else None))
+    return view
+
+
+def act_night(body: dict) -> dict:
+    with store.LOCK:
+        cfg = pacing.night()
+        for name, (lo, hi) in NIGHT_DIALS.items():
+            if name not in body:
+                continue
+            try:
+                cfg[name] = max(lo, min(hi, int(body[name])))
+            except (TypeError, ValueError):
+                return {"error": f"{name} must be a number"}
+        if "catchup" in body:
+            cfg["catchup"] = bool(body["catchup"])
+        if "on" in body and bool(body["on"]) != cfg["on"]:
+            cfg["on"] = bool(body["on"])
+            if cfg["on"]:
+                wk = pacing.window("wk")
+                cfg.update(since=store.now(), wave=None, append=None,
+                           wk_start=wk["pct"] if wk else None,
+                           wk_start_at=store.now() if wk else None)
+                pacing.night_say(f"autopilot on · target {cfg['target']}")
+            else:
+                cfg["wave"] = None
+                pacing.night_say("autopilot off")
+        NIGHT_WAKE.set()
+    store.bump()
+    return {"ok": True}

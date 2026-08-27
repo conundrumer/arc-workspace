@@ -875,7 +875,7 @@ function Feed({it, entries, feedKey, showRun, now}){
 }
 
 /* ---------- detail header ---------- */
-function DetailHead({it, cli, tab, badges, canAdvance, nxt, onTab, onDismiss}){
+function DetailHead({it, cli, tab, badges, canAdvance, canResume, nxt, onTab, onDismiss}){
   const sid=it.sessions[tab];
   const context=(it.context||{})[tab];
   const resume = backendOf(it,tab)==="codex" ? "codex exec resume" : "claude --resume";
@@ -911,6 +911,9 @@ function DetailHead({it, cli, tab, badges, canAdvance, nxt, onTab, onDismiss}){
       ${!(it.workerLive||{})[tab] && html`
         <button class="copybtn"
           onClick=${()=>copy(takeoverCmd(it,tab,cli),"takeover "+it.id)}>copy · o</button>`}
+      ${canResume && html`
+        <button class="copybtn" title="continue the turn a usage limit cut off"
+          onClick=${()=>post("/api/resume",{id:it.id})}>resume</button>`}
       ${canAdvance && html`
         <button class="copybtn" title=${"hand the report to the "+nxt+" session"}
           onClick=${()=>post("/api/advance",{id:it.id})}>${"advance · "+stageLabel(it,nxt)}</button>`}
@@ -1143,6 +1146,7 @@ function App(){
   const nxt = selItem ? nextName(selItem) : null;
   const canAdvance = !!(selItem && nxt && !selItem.active && selItem.hasReport
     && (selItem.state==="needs-review"||selItem.state==="approved"));
+  const canResume = !!(selItem && selItem.cutPhase === tab && !selItem.active);
   const canSend = !!(selItem && selItem.sessions[tab]
     && !selItem.handoffPending && selItem.state!=="committed");
 
@@ -1410,7 +1414,8 @@ function App(){
   let head=null, body=null;
   if(selItem){
     head=html`<${DetailHead} it=${selItem} cli=${cli} tab=${tab} badges=${tabBadges}
-      canAdvance=${canAdvance} nxt=${nxt} onTab=${s=>pinTab(selItem,s)}
+      canAdvance=${canAdvance} canResume=${canResume} nxt=${nxt}
+      onTab=${s=>pinTab(selItem,s)}
       onDismiss=${onDismiss}/>`;
     body=html`<${Feed} key="feed" it=${selItem} entries=${entries}
       feedKey=${selItem.id+"|"+tab} now=${Date.now()/1000}

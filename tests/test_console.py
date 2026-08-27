@@ -19,15 +19,95 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SERVER_PY = ROOT / "tools" / "console" / "server.py"
+PACKAGE = "solver_console"
 FAKE_WORKER = ROOT / "tools" / "console" / "fake_worker.py"
+# Enough of a window for a test to reach a turn mid-flight, without the demo
+# pacing the fake worker uses by default.
+FAKE_PACE = "0.002"
+# How often a test re-checks state a worker thread is about to change.
+TICK = .002
+# How long a test waits before it calls something blocked. The code under test
+# either moves within a thread hand-off or is holding, so the margin only has
+# to clear scheduling noise.
+SETTLE = .02
+# How long a test holds a window open for something that must not happen.
+# Wider than SETTLE: the assertion is only as strong as the window.
+HOLD = .2
+
+
+class Console:
+    """One namespace over the server's modules: a name resolves to the module
+    that defines it, so a test reads and patches it where its callers see it.
+
+    Patching reaches every caller because the package modules import each
+    other as `from . import mod` and read attributes at call time; a
+    `from .mod import name` import would hold a reference no patch reaches.
+    """
+
+    def __init__(self, entry):
+        mods = [entry] + [m for name, m in sorted(sys.modules.items())
+                          if name.startswith(PACKAGE + ".")]
+        seen = {}
+        for mod in mods:
+            for name, val in vars(mod).items():
+                if not name.startswith("__"):
+                    assert seen.setdefault(name, val) is val, \
+                        f"`{name}` names different things in two modules"
+        object.__setattr__(self, "_mods", mods)
+
+    def __getattr__(self, name):
+        for mod in object.__getattribute__(self, "_mods"):
+            if name in vars(mod):
+                return getattr(mod, name)
+        raise AttributeError(name)
+
+    def __setattr__(self, name, value):
+        mods = object.__getattribute__(self, "_mods")
+        for mod in mods:
+            if name in vars(mod):
+                setattr(mod, name, value)
+                return
+        setattr(mods[0], name, value)
+
+
+def load_console():
+    """server.py and its package, run into modules of their own, so no
+    module-level state carries between tests."""
+    for name in [n for n in sys.modules
+                 if n == "console_server" or n.startswith(PACKAGE)]:
+        del sys.modules[name]
+    spec = importlib.util.spec_from_file_location("console_server", SERVER_PY)
+    entry = importlib.util.module_from_spec(spec)
+    sys.modules["console_server"] = entry
+    spec.loader.exec_module(entry)
+    return Console(entry)
+
+
+@pytest.fixture(scope="session")
+def workdir(tmp_path_factory):
+    """A root for the per-test directories. The numbered directories pytest
+    hands out cost more than the tests that use them."""
+    return tmp_path_factory.mktemp("console")
+
+
+@pytest.fixture
+def tmp_path(workdir, request):     # noqa: A002 — replaces pytest's own
+    path = workdir / request.node.name[:80]
+    n = 0
+    while path.exists():
+        n += 1
+        path = workdir / f"{request.node.name[:80]}-{n}"
+    path.mkdir()
+    return path
 
 
 @pytest.fixture
 def srv(tmp_path, monkeypatch):
     monkeypatch.setenv("CONSOLE_STATE_DIR", str(tmp_path / "state"))
-    spec = importlib.util.spec_from_file_location("console_server", SERVER_PY)
-    s = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(s)
+    # The server snapshots the environment into WORKER_ENV at import, so the
+    # fake worker's pace has to be set before the module loads.
+    monkeypatch.setenv("CONSOLE_FAKE_PACE", FAKE_PACE)
+    s = load_console()
     s.STATE_DIR.mkdir(parents=True)
     s.LOG_DIR.mkdir(parents=True)
     for name in ("SOLVERS", "DOCS"):
@@ -982,7 +1062,7 @@ def test_runaway_turn_is_nudged_and_lands(srv, monkeypatch):
         srv.launch(it, "runaway", "refine")
     deadline = time.time() + 8
     while it["state"] != srv.NEEDS_REVIEW and time.time() < deadline:
-        time.sleep(.02)
+        time.sleep(TICK)
     try:
         assert it["state"] == srv.NEEDS_REVIEW
         assert any("runaway" in m.get("text", "") for m in it["feed"]
@@ -1537,6 +1617,7 @@ def test_active_tracks_worker_state_and_pending_handoff(srv):
 
 def fake_process(item_id="proto", phase="refine"):
     return subprocess.Popen([sys.executable, str(FAKE_WORKER), item_id, phase],
+                            env={**os.environ, "CONSOLE_FAKE_PACE": FAKE_PACE},
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             text=True, bufsize=1)
 
@@ -1681,7 +1762,7 @@ def test_dead_worker_relaunch_resumes_and_lands(srv, monkeypatch):
     assert srv.act_comment("rs", "carry on") == {"ok": True}
     deadline = time.time() + 8
     while it["state"] != srv.NEEDS_REVIEW and time.time() < deadline:
-        time.sleep(.02)
+        time.sleep(TICK)
     try:
         assert it["state"] == srv.NEEDS_REVIEW
         assert any("resuming its session" in m.get("text", "")
@@ -1740,7 +1821,7 @@ def test_cancelled_handoff_does_not_target_recreated_id(srv, monkeypatch):
     srv.ensure_drain()
     deadline = time.time() + 1
     while srv.find("a").get("handoff_pending") and time.time() < deadline:
-        time.sleep(.01)
+        time.sleep(TICK)
     assert called == []
     assert "handoff_pending" not in srv.find("a")
 
@@ -1772,7 +1853,7 @@ def test_stop_escalation_holds_lock_through_terminate(srv, monkeypatch):
 
     thread = threading.Thread(target=start_next_turn)
     thread.start()
-    assert not acquired.wait(.05)
+    assert not acquired.wait(HOLD)
     release.set()
     thread.join(timeout=1)
     assert acquired.is_set()
@@ -1881,6 +1962,93 @@ def test_launch_clears_the_idle_clock(srv, monkeypatch):
     assert ("a", "refine") in srv.PROCS
 
 
+def night_workers(s, idle_for):
+    """One autopilot item per entry, each parked with a worker that went idle
+    that many seconds ago."""
+    for n, seconds in enumerate(idle_for):
+        idle_worker(s, item(s, f"n{n}", s.NEEDS_REVIEW, night=True),
+                    idle_for=seconds)
+
+
+def test_night_cap_drops_the_oldest_idle_workers(srv, monkeypatch):
+    """A landed phase leaves its process resident, so the count climbs with
+    every handoff until the cap pulls it back."""
+    monkeypatch.setattr(srv, "NIGHT_WORKER_CAP", 2)
+    reaped = []
+    monkeypatch.setattr(srv, "queue_reap", reaped.append)
+    night_workers(srv, [300, 100, 200, 50])
+    srv.reap_idle()
+    assert [w["item_id"] for w in reaped] == ["n0", "n2"]
+    assert sorted(key[0] for key in srv.PROCS) == ["n1", "n3"]
+
+
+def test_night_cap_counts_the_running_workers(srv, monkeypatch):
+    """The cap is a ceiling on what the machine holds, so a turn in flight
+    takes a slot from the idle leftovers."""
+    monkeypatch.setattr(srv, "NIGHT_WORKER_CAP", 2)
+    reaped = []
+    monkeypatch.setattr(srv, "queue_reap", reaped.append)
+    worker(srv, item(srv, "busy", srv.RUNNING, night=True), state="running")
+    night_workers(srv, [100, 200])
+    srv.reap_idle()
+    assert [w["item_id"] for w in reaped] == ["n1"]
+    assert ("busy", "refine") in srv.PROCS
+
+
+def test_night_cap_holds_after_the_mode_is_off(srv, monkeypatch):
+    """The mark rides on the item, so the workers autopilot started stay
+    capped once it is switched off."""
+    monkeypatch.setattr(srv, "NIGHT_WORKER_CAP", 1)
+    reaped = []
+    monkeypatch.setattr(srv, "queue_reap", reaped.append)
+    assert srv.night()["on"] is False
+    night_workers(srv, [100, 200])
+    srv.reap_idle()
+    assert [w["item_id"] for w in reaped] == ["n1"]
+
+
+def test_night_cap_leaves_a_hand_started_item_alone(srv, monkeypatch):
+    monkeypatch.setattr(srv, "NIGHT_WORKER_CAP", 1)
+    monkeypatch.setattr(srv, "queue_reap", lambda w: pytest.fail("reaped"))
+    for n in range(3):
+        idle_worker(srv, item(srv, f"h{n}", srv.NEEDS_REVIEW), idle_for=100)
+    srv.reap_idle()
+    assert len(srv.PROCS) == 3
+
+
+def test_night_cap_spares_a_worker_with_a_deferred_job(srv, monkeypatch):
+    """drain_deferred skips the callout turn and the stage advance when the
+    worker is gone, so a pending job has to outrank the cap too."""
+    monkeypatch.setattr(srv, "NIGHT_WORKER_CAP", 1)
+    reaped = []
+    monkeypatch.setattr(srv, "queue_reap", reaped.append)
+    idle_worker(srv, item(srv, "held", srv.NEEDS_REVIEW, night=True,
+                          callout_wait="refine"), idle_for=900)
+    night_workers(srv, [100])
+    srv.reap_idle()
+    assert [w["item_id"] for w in reaped] == ["n0"]
+    assert ("held", "refine") in srv.PROCS
+
+
+def test_night_cap_reports_the_reason_on_the_item_feed(srv, monkeypatch):
+    monkeypatch.setattr(srv, "NIGHT_WORKER_CAP", 1)
+    monkeypatch.setattr(srv, "queue_reap", lambda w: None)
+    night_workers(srv, [100, 200])
+    srv.reap_idle()
+    note = srv.STATE["items"][1]["feed"][-1]
+    assert note["sess"] == "refine"
+    assert "reaped over the 1-worker autopilot cap" in note["text"]
+
+
+def test_night_cap_is_silent_under_the_ceiling(srv, monkeypatch):
+    monkeypatch.setattr(srv, "NIGHT_WORKER_CAP", 3)
+    monkeypatch.setattr(srv, "bump", lambda: pytest.fail("bumped"))
+    monkeypatch.setattr(srv, "queue_reap", lambda w: pytest.fail("reaped"))
+    night_workers(srv, [100, 200, 300])
+    srv.reap_idle()
+    assert len(srv.PROCS) == 3
+
+
 def test_deferred_drain_continues_after_job_failure(srv, monkeypatch):
     processed = []
     finished = threading.Event()
@@ -1979,7 +2147,7 @@ def test_quiesce_handoff_adopt_keeps_pid_and_sends(srv):
             srv.launch(it, "after exec", "refine")
         deadline = time.time() + 4
         while adopted["state"] != "idle" and time.time() < deadline:
-            time.sleep(.01)
+            time.sleep(TICK)
         assert adopted["state"] == "idle"
         assert it["state"] == srv.NEEDS_REVIEW
         assert any(m.get("kind") == "report" for m in it["feed"])
@@ -2002,7 +2170,7 @@ def test_adopted_worker_reaps_on_drop_and_shutdown(srv, action):
                 os.kill(pid, 0)
             except OSError:
                 break
-            time.sleep(.01)
+            time.sleep(TICK)
     else:
         srv.shutdown_workers()
     with pytest.raises(OSError):
@@ -2056,7 +2224,7 @@ def test_a_deferred_quiesce_leaves_the_workers_alone(srv, monkeypatch):
     thread.start()
     deadline = time.time() + 2
     while not srv.RELOADING and time.time() < deadline:
-        time.sleep(.01)
+        time.sleep(TICK)
     assert srv.RELOADING
     with srv.LOCK:
         srv.defer_reload()
@@ -2111,7 +2279,7 @@ def test_a_mixed_wave_seeds_on_its_claude_item(srv, monkeypatch):
     item(srv, "b", srv.QUEUED, phase="create", landed=[],
          sessions={"create": None, "refine": None})
     launched = []
-    monkeypatch.setattr(srv, "STAGGER_TIMEOUT", .05)
+    monkeypatch.setattr(srv, "STAGGER_TIMEOUT", SETTLE)
     monkeypatch.setattr(srv, "launch",
                         lambda it, *args, **kwargs: launched.append(it["id"]))
     srv._test_stagger_launch(["a", "b"])
@@ -2123,7 +2291,7 @@ def test_concurrent_stagger_launches_launch_each_item_once(srv, monkeypatch):
     items = [item(srv, name, srv.QUEUED, phase="create")
              for name in ("a", "b", "c")]
     launched = []
-    monkeypatch.setattr(srv, "STAGGER_TIMEOUT", .05)
+    monkeypatch.setattr(srv, "STAGGER_TIMEOUT", SETTLE)
     monkeypatch.setattr(srv, "launch",
                         lambda it, *args, **kwargs: launched.append(it["id"]))
     threads = [threading.Thread(target=srv._test_stagger_launch,
@@ -2177,7 +2345,7 @@ def test_reload_waits_for_running_turn(srv, monkeypatch):
     monkeypatch.setattr(srv.os, "execv", fail_exec)
     thread = threading.Thread(target=srv.reload_server, daemon=True)
     thread.start()
-    assert not execed.wait(.2)  # holds while the turn is in flight
+    assert not execed.wait(HOLD)  # holds while the turn is in flight
     with srv.COND:
         w["state"] = "idle"
         srv.PROCS.clear()
@@ -2433,6 +2601,7 @@ def test_a_night_admission_looks_like_a_wave_item(srv, monkeypatch):
     assert first["state"] == srv.QUEUED
     assert first["auto_advance"] is True
     assert first["auto_stop"] == "finalize"
+    assert first["night"] is True
     assert first["chain"] == srv.default_chain()
     # one wave, one appendix: the night's stages share the cached prefix
     assert (first["wave"], first["append"]) == (second["wave"], second["append"])
@@ -2464,6 +2633,7 @@ def test_a_queue_failure_leaves_the_night_running(srv, monkeypatch):
 def night_item(srv, item_id="a", **kw):
     """An item admitted by the mode: the whole chain but the last stage."""
     chain = srv.default_chain()
+    kw.setdefault("night", True)
     return item(srv, item_id, srv.RUNNING, chain=chain, auto_advance=True,
                 auto_stop=chain[-1]["name"],
                 sessions={"create": "cs", "refine": "rs", "finalize": None},
@@ -2551,6 +2721,35 @@ def test_a_quota_death_with_the_mode_off_just_lands(srv, monkeypatch):
     assert "resume_at" not in it
 
 
+def test_a_quota_death_records_the_handoff_flag_whatever_the_mode(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, five_left=1200)
+    it = item(srv, "a", srv.RUNNING)
+    quota_result(srv, it, handoff=True)
+    assert it["resume_phase"] == "refine"
+    assert it["resume_handoff"] is True
+
+
+def test_a_resume_by_hand_keeps_the_cut_turns_flag(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    sent = []
+    monkeypatch.setattr(srv, "launch",
+                        lambda it, msg, phase, **kw: sent.append((msg, phase, kw)))
+    it = item(srv, "a", srv.NEEDS_REVIEW,
+              resume_phase="refine", resume_handoff=True)
+    assert srv.act_resume("a") == {"ok": True}
+    assert sent == [(srv.RESUME_BRIEF, "refine",
+                     {"trigger": "resume", "handoff": True, "admitted": True})]
+    assert it["state"] == srv.COMMENTED
+    assert "resume_phase" not in it and "resume_handoff" not in it
+
+
+def test_a_resume_by_hand_needs_a_cut_turn(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    item(srv, "a", srv.NEEDS_REVIEW)
+    assert "no cut turn" in srv.act_resume("a")["error"]
+
+
 def test_a_second_quota_death_lands_for_review(srv, monkeypatch):
     clock_at(srv, monkeypatch)
     set_usage(srv, monkeypatch, five_left=1200)
@@ -2566,6 +2765,22 @@ def test_a_turn_that_lands_clears_the_retry(srv, monkeypatch):
     it = item(srv, "a", srv.RUNNING, quota_retry="refine")
     srv.finish_turn(it, {"result": "done"}, None, time.time(), "refine", False)
     assert "quota_retry" not in it
+
+
+def test_a_turn_that_lands_clears_the_cut(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    it = item(srv, "a", srv.RUNNING,
+              resume_phase="refine", resume_handoff=True)
+    srv.finish_turn(it, {"result": "done"}, None, time.time(), "refine", False)
+    assert "resume_phase" not in it and "resume_handoff" not in it
+
+
+def test_a_landing_leaves_a_scheduled_resume_its_flag(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    it = item(srv, "a", srv.RUNNING, resume_at=AT + 600,
+              resume_phase="refine", resume_handoff=True)
+    srv.finish_turn(it, {"result": "done"}, None, time.time(), "refine", False)
+    assert it["resume_phase"] == "refine" and it["resume_handoff"] is True
 
 
 def test_a_worker_that_dies_of_quota_is_scheduled_too(srv, monkeypatch):
@@ -2720,6 +2935,16 @@ def test_a_section_written_as_prose_counts_its_lines(srv):
     text = "## Callouts\nthe const shape is a guess\nthe audit left one case open\n"
     assert srv.parse_callouts(text) == ["the const shape is a guess",
                                         "the audit left one case open"]
+
+
+def test_a_sign_off_line_is_not_a_callout(srv):
+    text = ("## Callouts\nthe const shape is a guess\n"
+            "the audit left one case open\n\n*tink*\n")
+    assert srv.parse_callouts(text) == ["the const shape is a guess",
+                                        "the audit left one case open"]
+    assert srv.parse_callouts("## Callouts\n\n*tink*\n") == []
+    assert srv.parse_callouts("## Callouts\n\nnone\n\n*purr*\n") == []
+    assert srv.parse_callouts("## Callouts\n\n- one\n\n**glass**\n") == ["one"]
 
 
 def test_a_landing_puts_the_callouts_on_the_item(srv):
