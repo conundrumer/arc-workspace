@@ -3,6 +3,7 @@
 from collections import defaultdict
 
 from dl.solve import PairResult
+from dl.souffle import TEMP_NAME_RE
 
 
 def _grid_lines(grid: list[list[int]]) -> list[str]:
@@ -39,6 +40,22 @@ def render_diff(expected: list[list[int]], actual: list[list[int]]) -> list[str]
 def _short(name: str) -> str:
     """Variant label for listings; a resolution enumeration term gets elided."""
     return name if len(name) <= 40 else name[:37] + "..."
+
+
+def render_stem_failures(stem: str, pairs: list[PairResult]) -> list[str]:
+    """Failure lines for one stem's pairs. A source-level error fails every
+    pair the same way, so a single error shared by all of them prints once.
+
+    Each pair runs from a tempfile of its own and Souffle names that file,
+    so the solver stands in for the name before the errors are compared —
+    and in what prints, which names a file the reader can open.
+    """
+    bad = [p for p in pairs if not p.ok]
+    shared = {TEMP_NAME_RE.sub(f"{stem}.dl", p.error) for p in bad if p.error}
+    if len(bad) > 1 and len(shared) == 1 and all(p.error for p in bad):
+        names = ", ".join(f"{p.kind}[{p.idx}]" for p in bad)
+        return [f"{names}: FAIL", f"  {shared.pop()}"]
+    return [line for p in bad for line in render_pair_failure(p)]
 
 
 def render_pair_failure(p: PairResult) -> list[str]:

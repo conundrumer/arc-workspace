@@ -1,11 +1,23 @@
 """Invoke the `souffle` binary on a built program, and build what it links."""
 
+import re
 import signal
 import subprocess
 import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from dl.paths import FUNCTORS_LIB, FUNCTORS_SRC, PROGRAMS_DIR, SOLVERS_DIR
+
+# The tempfile `_temp_source` hands Souffle, as it appears in Souffle's own
+# messages and in the CPU-limit message. Every run names a fresh one, so a
+# reader comparing two errors has to put the solver back in its place.
+TEMP_NAME_RE = re.compile(r"\.tmp\w+\.dl")
+
+# Souffle reports the fit-mode relations as unfed whenever it reads a
+# solve-mode program, so the first error is what a compile failure is about.
+FIRST_ERROR_RE = re.compile(r"^Error:", re.M)
 
 
 def build_functors() -> None:
@@ -28,24 +40,55 @@ def build_functors() -> None:
     )
 
 
-def _run_source(
-    built: str, stdin_text: str, extra_args: list[str] | None = None,
-    cpu_limit: int = 5,
-) -> str:
-    """Write built source to a tempfile and run Souffle on it.
+@contextmanager
+def _temp_source(built: str) -> Iterator[Path]:
+    """Built source as a file Souffle can read.
 
-    Tempfile lives next to the originals so `#include "../lib.dl"` resolves.
+    The file lives next to the originals so `#include "../lib.dl"` resolves.
+    The dot prefix keeps it out of the `*.dl` solver glob.
     """
-    # The dot prefix keeps built tempfiles out of the `*.dl` solver glob.
     with tempfile.NamedTemporaryFile(
         mode="w", prefix=".tmp", suffix=".dl", dir=str(SOLVERS_DIR), delete=False
     ) as tf:
         tf.write(built)
         run_path = Path(tf.name)
     try:
-        return _souffle(run_path, stdin_text, extra_args, cpu_limit)
+        yield run_path
     finally:
         run_path.unlink(missing_ok=True)
+
+
+def _run_source(
+    built: str, stdin_text: str, extra_args: list[str] | None = None,
+    cpu_limit: int = 5,
+) -> str:
+    """Write built source to a tempfile and run Souffle on it."""
+    with _temp_source(built) as run_path:
+        return _souffle(run_path, stdin_text, extra_args, cpu_limit)
+
+
+def compile_check(built: str) -> str | None:
+    """Souffle's complaint about `built`, or None when it compiles.
+
+    `-g -` runs the parse and the semantic analyses and writes the generated
+    C++ instead of evaluating, so a source-level error surfaces once, before
+    any grid runs. A run that does not land in the timeout answers None: the
+    check is an early report, and the pair runs still say what they hit.
+    """
+    try:
+        with _temp_source(built) as run_path:
+            result = subprocess.run(
+                ["souffle", "-g", "-", "-w", "-L", str(PROGRAMS_DIR), "-lfunctors",
+                 str(run_path)],
+                capture_output=True, text=True, timeout=60,
+            )
+    except subprocess.TimeoutExpired:
+        return None
+    if result.returncode == 0:
+        return None
+    m = FIRST_ERROR_RE.search(result.stderr)
+    detail = result.stderr[m.start():] if m else result.stderr
+    return f"souffle exited {result.returncode}:\n{detail}"
 
 
 def _souffle(

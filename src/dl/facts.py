@@ -1,5 +1,6 @@
 """Encode grids as Souffle facts and decode Souffle's text output."""
 
+import json
 import re
 
 from dl.source import _split_args
@@ -117,3 +118,34 @@ def _parse_value(text: str):
     if text.startswith("["):
         return tuple(int(x) for x in _split_args(text[1:-1]))
     return int(text)
+
+
+def parse_grid(text: str) -> list[list[int]]:
+    """A hand-written grid as rows of colors.
+
+    One line per row, one character per cell: a digit 0-9, or `.` for 0.
+    Spaces and commas between cells are optional, blank lines and `#`
+    comment lines are skipped. Text that starts with `[` is read as JSON
+    instead, so a grid pasted out of a task file works unchanged.
+    """
+    stripped = text.strip()
+    if not stripped:
+        raise ValueError("empty grid")
+    if stripped.startswith("["):
+        rows = json.loads(stripped)
+    else:
+        rows = [
+            [0 if ch == "." else int(ch) for ch in re.sub(r"[\s,]", "", line)]
+            for line in stripped.splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        ]
+    if not rows or not rows[0]:
+        raise ValueError("empty grid")
+    widths = {len(row) for row in rows}
+    if len(widths) != 1:
+        raise ValueError(f"rows differ in width: {sorted(widths)}")
+    for row in rows:
+        for cell in row:
+            if not isinstance(cell, int) or not 0 <= cell <= 9:
+                raise ValueError(f"cell out of range: {cell!r}")
+    return rows

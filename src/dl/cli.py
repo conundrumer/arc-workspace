@@ -9,18 +9,20 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from arc.task import Alt, Example
-from dl.deletions import deletion_report
+from dl.deletions import deletion_report, render_deletions
+from dl.facts import parse_grid
 from dl.fit import FitResult, render_fit, run_fit
 from dl.fit_plan import probe_report, render_fit_plan
-from dl.lint import lint_body
+from dl.lint import RESERVED_CAT, SHADOWED_TYPE_CAT, lint_body
 from dl.paths import SOLVERS_DIR, all_stems
-from dl.render import _grid_lines, render_pair_failure
+from dl.render import _grid_lines, render_pair_failure, render_stem_failures
 from dl.rewrite_lint import HINTS, lint_rewrites
 from dl.solve import (
     PairResult,
     TaskResult,
     _pair_work,
     case_coverage,
+    compile_error,
     res_out_stem,
     run_dl,
     run_pair,
@@ -46,8 +48,8 @@ def _lint_tiers(source: str, hints: bool) -> list[Findings]:
 
 
 def _finding_line(stem: str, tier: str, cat: str, lineno: int, match: str) -> str:
-    if tier == "lint":
-        match = f"`{match}`"  # style matches are bare code fragments
+    if tier == "lint" and " " not in match:
+        match = f"`{match}`"  # a bare code fragment; a sentence quotes itself
     return f"{stem}.dl:{lineno}: {cat}: {match}"
 
 
@@ -95,10 +97,53 @@ def _missing(stem: str) -> bool:
     return True
 
 
+def _compile_failed(stem: str) -> bool:
+    """Print a source-level Souffle error, once, before anything runs it.
+
+    Every grid the solver would see fails on the same error, so the pair
+    loop and the fit check would each print another copy of it. Souffle
+    decides; a reserved name or a shadowed type argument prints beside its
+    message, since that message names a token class or a rule variable
+    where the collision is what the author has to read."""
+    err = compile_error(stem)
+    if err is None:
+        return False
+    print(f"{stem}.dl: {err}")
+    source = (SOLVERS_DIR / f"{stem}.dl").read_text()
+    collisions = [f for f in lint_body(source)
+                  if f[0] in (RESERVED_CAT, SHADOWED_TYPE_CAT)]
+    if collisions:
+        print("likely cause:")
+        for cat, lineno, match, _ in collisions:
+            print(f"  {_finding_line(stem, 'lint', cat, lineno, match)}")
+    return True
+
+
+def _print_lint_tiers(stem: str, hints: bool) -> list[Findings]:
+    """Print one solver's tier sections; return the tiers. Lint needs no
+    Souffle, so it stands whether or not the solver compiles."""
+    source = (SOLVERS_DIR / f"{stem}.dl").read_text()
+    tiers = _lint_tiers(source, hints)
+    for label, findings in zip(LINT_TIERS, tiers, strict=True):
+        if not findings:
+            continue
+        print()
+        print(f"--- {len(findings)} {label} finding(s) ---")
+        for cat, lineno, match, _ in findings:
+            print(f"  {_finding_line(stem, label, cat, lineno, match)}")
+    return tiers
+
+
 def cmd_one(stem: str, hints: bool = False, timed: bool = False) -> int:
     if _missing(stem):
         return 2
     build_functors()
+    if _compile_failed(stem):
+        tiers = _print_lint_tiers(stem, hints)
+        print()
+        if not any(tiers):
+            print("lint: ok")
+        return 1
     t0 = time.perf_counter()
     result = run_task(stem)
     pair_secs = time.perf_counter() - t0
@@ -118,15 +163,7 @@ def cmd_one(stem: str, hints: bool = False, timed: bool = False) -> int:
         for line in coverage:
             print(f"  {line}")
 
-    source = (SOLVERS_DIR / f"{stem}.dl").read_text()
-    tiers = _lint_tiers(source, hints)
-    for label, findings in zip(LINT_TIERS, tiers, strict=True):
-        if not findings:
-            continue
-        print()
-        print(f"--- {len(findings)} {label} finding(s) ---")
-        for cat, lineno, match, _ in findings:
-            print(f"  {_finding_line(stem, label, cat, lineno, match)}")
+    tiers = _print_lint_tiers(stem, hints)
 
     t0 = time.perf_counter()
     fit = run_fit(stem)
@@ -163,6 +200,8 @@ def cmd_pairs(stem: str, path: str) -> int:
     sections = ([("pair", data)] if isinstance(data, list)
                 else [(k, data.get(k) or []) for k in ("train", "test")])
     build_functors()
+    if _compile_failed(stem):
+        return 1
     task_id = stem.split("_", 1)[0]
     failed = False
     for kind, examples in sections:
@@ -191,6 +230,89 @@ def cmd_pairs(stem: str, path: str) -> int:
                 for line in render_pair_failure(r):
                     print(line)
     return 1 if failed else 0
+
+
+GRID_HELP = """\
+Grid format: one line per row, one character per cell — a digit 0-9, or `.`
+for 0. Spaces and commas between cells are optional; blank lines and lines
+starting with `#` are skipped. Text starting with `[` is read as JSON, so a
+grid pasted out of a task file works unchanged.
+
+    uv run python scripts/run_dl.py grid 1b60fb0c <<'EOF'
+    . 1 .
+    1 1 .
+    . . .
+    EOF
+
+Each case of the solver's Choice prints its own grid, which is what a
+divergence witness needs: one input, one output per case.
+
+Without the runner, the same run by hand. `-L programs` is what loads
+libfunctors.dylib, which lib.dl's primitives call, and the built file has to
+sit in programs/solvers/ for `#include "../lib.dl"` to resolve:
+
+    { cat programs/solvers/<stem>.dl
+      echo '.input in(IO=stdin)'
+      echo '.output out(IO=stdout)'
+    } > programs/solvers/.tmp.dl
+    souffle -D- -w -L programs -lfunctors programs/solvers/.tmp.dl
+
+Souffle then reads one fact line per cell on stdin, `[top, bottom, left,
+right]`, a tab, then the color — so the 3x3 grid above starts with
+
+    [0, 2, 0, 2]<TAB>0
+    [0, 2, 1, 1]<TAB>1
+
+A solver with GRID or RIGID call sites needs dl.source.expand_macros over
+the source first; the runner does that for you.
+"""
+
+
+def cmd_grid(stem: str, path: str | None = None) -> int:
+    """Run one solver on a grid the caller wrote, in place of a stored pair,
+    and print what each case emits."""
+    if _missing(stem):
+        return 2
+    if path in (None, "-"):
+        text = sys.stdin.read()
+    else:
+        p = Path(str(path))
+        if not p.exists():
+            print(f"no grid file at {p}", file=sys.stderr)
+            return 2
+        text = p.read_text()
+    try:
+        grid = parse_grid(text)
+    except (ValueError, json.JSONDecodeError, TypeError) as e:
+        print(f"bad grid: {e}", file=sys.stderr)
+        return 2
+
+    build_functors()
+    if _compile_failed(stem):
+        return 1
+    try:
+        actuals = run_dl(stem.split("_", 1)[0], grid, stem=stem)
+    except Exception as e:
+        print(f"{type(e).__name__}: {e}", file=sys.stderr)
+        return 1
+
+    print("input:")
+    for line in _grid_lines(grid):
+        print(f"  {line}")
+    for variant, out, conflicts, missing in actuals:
+        print()
+        print(f"{variant or '(out)'}:")
+        for line in _grid_lines(out):
+            print(f"  {line}")
+        if conflicts:
+            print(f"  conflicts at: {conflicts}")
+        if missing:
+            print(f"  missing cells at: {missing}")
+    if len(actuals) > 1:
+        distinct = {tuple(tuple(row) for row in g) for _, g, _, _ in actuals}
+        print()
+        print(f"{len(actuals)} cases, {len(distinct)} distinct grid(s)")
+    return 0
 
 
 def cmd_all(hints: bool = False, timed: bool = False) -> int:
@@ -226,11 +348,8 @@ def cmd_all(hints: bool = False, timed: bool = False) -> int:
         print(f"--- {len(failed)} failing solver(s) ---")
         for r in failed:
             print(f"\n{r.stem}:")
-            for p in r.pairs:
-                if p.ok:
-                    continue
-                for line in render_pair_failure(p):
-                    print(f"  {line}")
+            for line in render_stem_failures(r.stem, r.pairs):
+                print(f"  {line}")
 
     coverage_findings = {
         r.stem: cov
@@ -294,17 +413,9 @@ def cmd_sweep(stem: str, max_candidates: int = 64) -> int:
 
 def _print_deletions(stem: str) -> int:
     report = deletion_report(stem)
-    if report is None:
-        print("baseline fails: stored source does not pass train+test")
-        return 1
-    total, unchanged = report
-    if not unchanged:
-        print(f"every deletion changes the result ({total} tested)")
-    else:
-        print(f"{len(unchanged)}/{total} deletions change nothing:")
-        for lineno, kind, text in unchanged:
-            print(f"  {stem}.dl:{lineno}: {kind} `{text}`")
-    return 0
+    for line in render_deletions(stem, report):
+        print(line)
+    return 1 if report is None else 0
 
 
 def cmd_deletions(stem: str) -> int:
@@ -337,7 +448,7 @@ def cmd_fit_plan(stem: str) -> int:
     return 0
 
 
-COMMANDS = ("run", "lint", "sweep", "deletions", "audit", "fit-plan")
+COMMANDS = ("run", "lint", "grid", "sweep", "deletions", "audit", "fit-plan")
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -362,6 +473,18 @@ def _parser() -> argparse.ArgumentParser:
                           "instead of the stored task; an example without "
                           '"output" prints the emitted grids')
 
+    grid = sub.add_parser(
+        "grid",
+        help="run one solver on a grid you write, printing each case's output",
+        description="Run one solver on a grid the caller writes, in place of "
+                    "a stored pair, and print what each case emits.",
+        epilog=GRID_HELP,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    grid.add_argument("stem")
+    grid.add_argument("file", nargs="?",
+                      help="grid file; stdin when omitted or `-`")
+
     sweep = sub.add_parser("sweep", help="fill sweep only")
     sweep.add_argument("stem")
     sweep.add_argument("cap", nargs="?", type=int, default=64,
@@ -382,6 +505,8 @@ def main(argv: list[str]) -> int:
     match args.cmd:
         case "lint":
             return cmd_lint(args.stem, args.hints)
+        case "grid":
+            return cmd_grid(args.stem, args.file)
         case "sweep":
             return cmd_sweep(args.stem, args.cap)
         case "deletions":

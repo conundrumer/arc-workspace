@@ -8,7 +8,7 @@ from arc.task import load as load_task
 from dl.dlparse import Decl, ParseError, parse
 from dl.facts import grid_to_facts, parse_output
 from dl.paths import SOLVERS_DIR
-from dl.souffle import _pool_workers, _run_source
+from dl.souffle import _pool_workers, _run_source, compile_check
 from dl.source import build_source
 
 
@@ -22,6 +22,13 @@ def run_dl(
     return parse_output(
         _run_source(build_source(dl_path.read_text()), grid_to_facts(input_rows))
     )
+
+
+def compile_error(stem: str) -> str | None:
+    """Souffle's complaint about `stem`'s solve-mode program, or None when it
+    compiles. A source-level error fails every pair the same way, so the
+    callers check it once instead of reporting one copy per pair."""
+    return compile_check(build_source((SOLVERS_DIR / f"{stem}.dl").read_text()))
 
 
 def res_out(source: str) -> bool:
