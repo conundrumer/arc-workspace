@@ -361,7 +361,7 @@ class Worker:
             self.run_turn(str(item))
 
 
-def main(argv: list[str] | None = None) -> int:
+def parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--append", type=Path,
                     help="file whose text opens the session's first message")
@@ -371,7 +371,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--add-dir", action="append",
                     help="extra writable directory (repeatable)")
     ap.add_argument("--codex", default=CODEX)
-    Worker(ap.parse_args(argv)).run()
+    return ap
+
+
+def main(argv: list[str] | None = None) -> int:
+    Worker(parser().parse_args(argv)).run()
     return 0
 
 
