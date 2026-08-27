@@ -15,6 +15,10 @@ phase = sys.argv[2] if len(sys.argv) > 2 else "refine"
 sid = str(uuid.uuid5(uuid.NAMESPACE_URL, f"fake-worker/{tid}/{phase}"))
 turn = 0
 
+# Seconds a turn spends between beats. The default paces a turn at a human
+# rhythm for the UI demo; tests set it low.
+PACE = float(os.environ.get("CONSOLE_FAKE_PACE", "0.35"))
+
 
 reqno = 0
 cached = 0
@@ -84,7 +88,8 @@ def control(line):
 def pause(seconds):
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
-        ready, _, _ = select.select([sys.stdin], [], [], min(.05, deadline - time.monotonic()))
+        ready, _, _ = select.select([sys.stdin], [], [],
+                                    max(0, min(.05, deadline - time.monotonic())))
         if ready:
             line = sys.stdin.readline()
             if not line:
@@ -141,7 +146,7 @@ def run_turn(message):
             thought += 25000
             emit({"type": "system", "subtype": "thinking_tokens", "session_id": sid,
                   "estimated_tokens": thought, "estimated_tokens_delta": 25000})
-            stopped = pause(.2)
+            stopped = pause(PACE)
             if stopped == "interrupt":
                 result("", "aborted_streaming")
                 return None
@@ -151,7 +156,7 @@ def run_turn(message):
               "usage": usage_for(), "stop_reason": "max_tokens",
               "content": [{"type": "thinking", "thinking": ""}]}})
         while True:
-            stopped = pause(.2)
+            stopped = pause(PACE)
             if stopped == "interrupt":
                 result("", "aborted_streaming")
                 return None
@@ -183,13 +188,13 @@ def run_turn(message):
                 "3. Lib: `rank_of` is solver-local and worked in context; candidate for staging.\n\n"
                 "## Callouts\n\nnone")
     for name, inp in steps:
-        stopped = pause(.35)
+        stopped = pause(PACE)
         if stopped:
             if stopped == "interrupt":
                 result("", "aborted_streaming")
             return stopped
         tool(name, **inp)
-    stopped = pause(.35)
+    stopped = pause(PACE)
     if stopped == "interrupt":
         result("", "aborted_streaming")
         return stopped
