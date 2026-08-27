@@ -7,12 +7,16 @@ from pathlib import Path
 
 import pytest
 
+from tests.hookrun import run_hook
+
 SCRIPT = Path(__file__).resolve().parents[1] / "tools" / "console" / "ref_note.py"
 
 
-@pytest.fixture
-def repo(tmp_path):
-    root = tmp_path / "repo"
+@pytest.fixture(scope="session")
+def fixed_repo(tmp_path_factory):
+    """The three solvers every test reads, committed once for the whole run.
+    No test writes to the repo; only the state dir varies."""
+    root = tmp_path_factory.mktemp("fixed") / "repo"
     solvers = root / "programs" / "solvers"
     solvers.mkdir(parents=True)
     git = ["git", "-C", str(root), "-c", "user.email=t@t", "-c", "user.name=t"]
@@ -23,17 +27,28 @@ def repo(tmp_path):
     subprocess.run([*git, "commit", "-qm", "solvers"], check=True)
     (solvers / "bbbb2222.dl").write_text("// edited\n")
     (solvers / "cccc3333.dl").write_text("// never committed\n")
+    return root
+
+
+@pytest.fixture
+def repo(tmp_path, fixed_repo):
+    """The shared repo reached through a per-test parent, so each test gets
+    its own state dir beside it."""
+    root = tmp_path / "repo"
+    root.symlink_to(fixed_repo)
     (tmp_path / "state").mkdir()
     return root
 
 
+def env_for(repo, task=""):
+    return {**os.environ, "CONSOLE_ROOT": str(repo),
+            "CONSOLE_STATE_DIR": str(repo.parent / "state"),
+            "CONSOLE_TASK": task}
+
+
 def hook(repo, payload, task=""):
-    env = {**os.environ, "CONSOLE_ROOT": str(repo),
-           "CONSOLE_STATE_DIR": str(repo.parent / "state"),
-           "CONSOLE_TASK": task}
-    p = subprocess.run([sys.executable, str(SCRIPT)], input=json.dumps(payload),
-                       capture_output=True, text=True, env=env, check=True)
-    out = p.stdout.strip()
+    _, out, _ = run_hook(SCRIPT, json.dumps(payload), env_for(repo, task))
+    out = out.strip()
     return json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else ""
 
 
@@ -87,3 +102,11 @@ def test_notes_cover_each_id_once(repo):
     assert note.count("note:") == 2
     assert "cccc3333.dl is not approved" in note
     assert "bbbb2222.dl has uncommitted edits" in note
+
+
+def test_the_script_runs_as_a_hook(repo):
+    """The rest of this file drives main() directly; this is the script."""
+    p = subprocess.run([sys.executable, str(SCRIPT)],
+                       input=json.dumps(grep_of("cccc3333")),
+                       capture_output=True, text=True, env=env_for(repo), check=True)
+    assert "not approved" in p.stdout

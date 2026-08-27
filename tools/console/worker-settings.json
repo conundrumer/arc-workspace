@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 tools/console/kill_note.py"
+            "command": "P=\"$CLAUDE_PROJECT_DIR/tools/console/kill_note.py\"; [ -f \"$P\" ] || exit 0; python3 \"$P\""
           }
         ]
       }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 tools/console/ref_note.py"
+            "command": "P=\"$CLAUDE_PROJECT_DIR/tools/console/ref_note.py\"; [ -f \"$P\" ] || exit 0; python3 \"$P\""
           }
         ]
       }
