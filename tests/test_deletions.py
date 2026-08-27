@@ -1,6 +1,17 @@
-"""Deletion variants: every one the generator yields is parseable."""
+"""Deletion variants: every one the generator yields is parseable, and
+what the report calls each one."""
 
-from dl.deletions import deletions
+from dl import deletions as deletions_mod
+from dl.deletions import (
+    CASE_COLUMN,
+    NOOP_NOTE,
+    UNPROBED_CASE,
+    _cases_agree,
+    case_type,
+    column_deletions,
+    deletions,
+    render_deletions,
+)
 from dl.dlparse import parse
 
 DISJ_BINDING = """\
@@ -43,15 +54,199 @@ def kinds(source: str, fit: bool = False) -> list[str]:
     return out
 
 
+def atoms(source: str, fit: bool = False) -> list[str]:
+    return [
+        text for _, kind, text, _ in deletions(source, fit=fit) if kind == "atom"
+    ]
+
+
 def test_disjunct_with_binding():
-    assert kinds(DISJ_BINDING, fit=True) == ["rule", "disjunct", "disjunct"]
+    assert kinds(DISJ_BINDING, fit=True) == [
+        # `run(...)` is the whole of the second branch, so its deletion
+        # has no syntactic form and is skipped.
+        "rule", *["atom"] * 6, "disjunct", "disjunct",
+    ]
 
 
 def test_disjunct_with_negation():
     assert kinds(DISJ_NEGATION, fit=True) == [
-        "rule", "negation", "disjunct", "disjunct",
+        "rule", "negation", *["atom"] * 9, "disjunct", "disjunct",
     ]
 
 
 def test_sole_negation_in_disjunct_is_skipped():
-    assert kinds(SOLE_NEGATION) == ["rule", "disjunct", "disjunct"]
+    assert kinds(SOLE_NEGATION) == ["rule", "atom", "disjunct", "disjunct"]
+
+
+GUARD = """\
+.decl steps(b: number, n: number)
+steps(B, N) :- handle_dir(B, _), advance.low(B, N).
+"""
+
+COMPARISONS = """\
+.decl near(id: Ident, k: number)
+near(Id, K) :- from_mark(Id, K), K < 3, K != 0, K = max(0, K).
+"""
+
+CONSTRUCTOR = """\
+.decl edge(p: Position)
+edge(P) :- parse.border($U(), P), in(P, Col), !c.bg(Col).
+"""
+
+AGGREGATE = """\
+.decl extent(n: number)
+extent(N) :- dist_set(_), N = count : { dist_set(K) }.
+"""
+
+
+def test_positive_guard_atom_is_enumerated():
+    assert atoms(GUARD) == ["handle_dir(B, _)", "advance.low(B, N)"]
+
+
+def test_comparison_is_not_an_atom():
+    assert atoms(COMPARISONS) == ["from_mark(Id, K)"]
+
+
+def test_constructor_in_an_argument_list_is_not_an_atom():
+    assert atoms(CONSTRUCTOR) == ["parse.border($U(), P)", "in(P, Col)"]
+
+
+def test_negated_atom_stays_under_its_own_kind():
+    assert kinds(CONSTRUCTOR) == ["rule", "negation", "atom", "atom"]
+
+
+def test_aggregate_body_is_not_top_level():
+    assert atoms(AGGREGATE) == ["dist_set(_)"]
+
+
+CHOICE_SOLVER = """\
+.type Choice = Corner {} | Quadrant {}
+
+.decl impl_choice(ch: Choice)
+impl_choice($Corner()). impl_choice($Quadrant()).
+
+.decl trail(col: Color)
+trail(Col) :- in(P, Col).
+
+.decl trail_cell(p: Position, ch: Choice)
+trail_cell(P, Ch) :- in(P, _), impl_choice(Ch).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- trail_cell(P, Ch), trail(Col).
+"""
+
+PLAIN_SOLVER = """\
+.decl trail_cell(p: Position, col: Color)
+trail_cell(P, Col) :- in(P, Col).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- trail_cell(P, Col).
+"""
+
+
+def test_case_type_is_outs_choice_adt():
+    assert case_type(CHOICE_SOLVER) == "Choice"
+
+
+def test_case_type_absent_without_an_adt_column():
+    assert case_type(PLAIN_SOLVER) is None
+
+
+def test_column_kinds_name_the_case_column():
+    kinds = {
+        text: kind for _, kind, text, _ in column_deletions(CHOICE_SOLVER)
+    }
+    assert kinds["trail_cell.ch"] == CASE_COLUMN
+    assert kinds["trail_cell.p"] == "column"
+
+
+def test_column_kinds_are_plain_without_cases():
+    kinds = {kind for _, kind, _, _ in column_deletions(PLAIN_SOLVER)}
+    assert kinds == {"column"}
+
+
+class _Ex:
+    alt = None
+    input = [[0]]
+
+
+def test_cases_agree_reads_the_reference_profile():
+    examples = [_Ex(), _Ex()]
+    two = [frozenset({"$Corner", "$Quadrant"}), frozenset({"$Corner", "$Quadrant"})]
+    assert _cases_agree(CHOICE_SOLVER, examples, two)
+    one = [frozenset({"$Corner"}), frozenset({"$Corner", "$Quadrant"})]
+    assert not _cases_agree(CHOICE_SOLVER, examples, one)
+
+
+UNGROUNDED = """\
+Warning: No rules/facts defined for relation ex_in in file lib.dl at line 99
+Error: Ungrounded variable Ch in file .tmp1234.dl at line 67
+1 errors generated, evaluation aborted
+"""
+
+
+def test_ungrounds_reads_souffles_error(monkeypatch):
+    def raiser(*_args, **_kwargs):
+        raise RuntimeError(f"souffle exited 1:\n{UNGROUNDED}")
+
+    monkeypatch.setattr(deletions_mod, "_run_source", raiser)
+    monkeypatch.setattr(deletions_mod, "build_source", lambda src: src)
+    monkeypatch.setattr(deletions_mod, "grid_to_facts", lambda rows: "")
+    assert deletions_mod._ungrounds(CHOICE_SOLVER, _Ex())
+
+
+def test_ungrounds_is_false_on_other_failures(monkeypatch):
+    def raiser(*_args, **_kwargs):
+        raise RuntimeError("souffle exited 1:\nError: Type clash")
+
+    monkeypatch.setattr(deletions_mod, "_run_source", raiser)
+    monkeypatch.setattr(deletions_mod, "build_source", lambda src: src)
+    monkeypatch.setattr(deletions_mod, "grid_to_facts", lambda rows: "")
+    assert not deletions_mod._ungrounds(CHOICE_SOLVER, _Ex())
+
+
+def test_render_case_column_is_not_dead_code():
+    lines = render_deletions("s", (23, [(53, CASE_COLUMN, "trail_cell.ch")]))
+    assert lines[0] == "1/23 deletions change nothing:"
+    assert "  s.dl:53: case column `trail_cell.ch`" in lines
+    body = " ".join(lines)
+    assert "coverage claim" in body
+    assert "not dead code" in body
+
+
+def test_render_plain_column_carries_only_the_legend():
+    lines = render_deletions("s", (23, [(53, "column", "trail_cell.p")]))
+    assert lines == [
+        "1/23 deletions change nothing:",
+        *NOOP_NOTE,
+        "  s.dl:53: column `trail_cell.p`",
+    ]
+
+
+def test_render_legend_reads_a_no_op_as_coverage():
+    lines = render_deletions("s", (40, [(12, "atom", "handle_dir(B, _)")]))
+    assert lines[0] == "1/40 deletions change nothing:"
+    assert "  s.dl:12: atom `handle_dir(B, _)`" in lines
+    body = " ".join(lines)
+    assert "the pairs never instantiate" in body
+    assert "not a defect" in body
+
+
+def test_render_legend_is_absent_when_nothing_survives():
+    lines = render_deletions("s", (40, []))
+    assert lines == ["every deletion changes the result (40 tested)"]
+
+
+def test_render_unprobed_case_column_stands_apart():
+    lines = render_deletions("s", (22, [(45, UNPROBED_CASE, "stamp.ch")]))
+    assert lines[0] == "every deletion changes the result (22 tested)"
+    assert "1 case column the probe cannot judge:" in lines
+    assert "  s.dl:45: unprobed case column `stamp.ch`" in lines
+    body = " ".join(lines)
+    assert "says nothing about the cases" in body
+
+
+def test_render_baseline_failure():
+    assert render_deletions("s", None) == [
+        "baseline fails: stored source does not pass train+test"
+    ]
