@@ -122,10 +122,9 @@ stencil(D, P_col, P_intile, Col) :-
 // across.
 .init out_frame = Frame2D<Unit>
 out_frame.extent($U(), A, N) :-
-    c.layout_axis(A), lattice.inner($U(), _, P_lat), axis_dim(P_lat, A, N).
+    c.layout_axis(A), lattice.extents($U(), A, N, _).
 out_frame.extent($U(), A_band, N) :-
-    c.layout_axis(A), perp(A, A_band),
-    panel.inner(_, _, P_intile), axis_dim(P_intile, A_band, N).
+    c.layout_axis(A), perp(A, A_band), panel.extents(_, A_band, N, _).
 
 // A panel cell keeps its place along the columns and lands in the one band.
 .decl out_pos(p_col: Position, p_intile: Position, p: Position)

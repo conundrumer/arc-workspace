@@ -73,21 +73,12 @@ growth(A, G, G, $Iso()) :- axis_elem(A), c.sep(G).
 // --- Derive / Aniso ---
 growth(A, N1, N2, $Aniso()) :- c.sep_dim(A, N1), perp(A, A2), c.sep_dim(A2, N2).
 
-// Corner edge delta: a Position holding extents at the two edges of
-// corner diag, axis-tagged — edge_delta's DiagDir peer. Lib candidate.
-.comp DiagEdgeDelta<Key> {
-    .decl arg(key: Key, diag: DiagDir, a: Axis, k1: number, k2: number)
-
-    .decl delta(key: Key, diag: DiagDir, a: Axis, k1: number, k2: number, p: Position)
-    delta(Ky, Diag, A, K1, K2, P) :-
-        arg(Ky, Diag, A, K1, K2),
-        diag_dirs(Diag, A, D1, D2),
-        edge_delta(D1, K1, P1), edge_delta(D2, K2, P2),
-        compose(P1, P2, P).
-}
-
-.init ded = DiagEdgeDelta<Growth>
-ded.arg(Gr, Diag, A, K1, K2) :- diag_dir_elem(Diag), growth(A, K1, K2, Gr).
+// Grow delta toward a corner: the growth extents at its two edges.
+.decl grow_delta(diag: DiagDir, gr: Growth, e: Shift)
+grow_delta(Diag, Gr, E) :-
+    diag_dirs(Diag, A, D1, D2), growth(A, K1, K2, Gr),      // the corner's edges and their extents
+    edge_delta(D1, K1, E1), edge_delta(D2, K2, E2),         // one edge delta each
+    compose(E1, E2, E).
 
 .decl seated(p_out: Position, col: Color, ch: Choice)
 
@@ -95,10 +86,10 @@ ded.arg(Gr, Diag, A, K1, K2) :- diag_dir_elem(Diag), growth(A, K1, K2, Gr).
 // Displaced by the growth extents at both edges of the opposite corner —
 // the frame grows away from the seat.
 seated(P_out, Col, $Derive(Gr, S)) :-
-    in(P, Col), seat(P, Diag, S),                                // half cell and its corner
-    diag_opposite(Diag, Diag2),                                  // opposite corner
-    growth(A, K1, K2, Gr), ded.delta(Gr, Diag2, A, K1, K2, E),   // grow delta toward it
-    compose(P, E, P_out).                                        // displace
+    in(P, Col), seat(P, Diag, S),    // half cell and its corner
+    diag_opposite(Diag, Diag2),      // opposite corner
+    grow_delta(Diag2, Gr, E),        // grow delta toward it
+    compose(P, E, P_out).            // displace
 
 // --- Disp ---
 seated(P_out, Col, $Disp()) :-

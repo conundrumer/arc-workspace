@@ -19,13 +19,8 @@
     .decl bg(c: Color) bg(0).
     .decl mask_color(c: Color) mask_color(5).
 
-    // Anchor Position: target_offset on each cardinal Dir of target_corner.
     .decl target_anchor(p: Position)
-    target_anchor(P) :-
-        target_corner(Diag), target_offset(K),
-        diag_dirs(Diag, _, D1, D2),
-        edge_delta(D1, K, P1), edge_delta(D2, K, P2),
-        compose(P1, P2, P).
+    target_anchor(P) :- target_corner(Diag), target_offset(K), edge_delta(Diag, K, P).
 }
 
 .init c = Consts

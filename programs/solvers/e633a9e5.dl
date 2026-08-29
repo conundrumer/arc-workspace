@@ -13,43 +13,6 @@
 
 .type Choice = Edge {} | Table {} | Map {}
 
-// Unequal-sized rectilinear tiles, one tiling per key: per-tile dims from
-// tile_in, per-edge cumulative offsets, recomposition via compose (staged
-// in docs/wf-solver/proposals.md).
-.comp ConcatPipeline<Key> {
-    .decl tile_in(key: Key, p_outer: Position, p_inner: Position)
-    .decl axis_gap(a: Axis, g: number)
-
-    // Tile dim along axis(D), indexed by tile's distance from edge D.
-    // Every cell in a rectilinear tile produces the same K — set semantics dedupes.
-    .decl tile_dim(key: Key, d: Dir, i: number, k: number)
-    tile_dim(Ky, D, I, K) :-
-        tile_in(Ky, P_outer, P_inner),
-        dist(P_outer, D, I),
-        axis_of(D, A), axis_dim(P_inner, A, K).
-
-    // Cumulative offset from edge D for the tile at distance I from D.
-    .decl edge_off(key: Key, d: Dir, i: number, off: number)
-    edge_off(Ky, D, I, OFF) :-
-        tile_dim(Ky, D, I, _),
-        axis_of(D, A), axis_gap(A, G),
-        OFF = (sum K : { tile_dim(Ky, D, J, K), J < I }) + I*G.
-
-    // Tile bbox offset in grid units, assembled from the four edges.
-    .decl tile_offset(key: Key, p_outer: Position, p_off: Position)
-    tile_offset(Ky, [OT, BO, OL, RO], [T_off, B_off, L_off, R_off]) :-
-        edge_off(Ky, DIR_T, OT, T_off),
-        edge_off(Ky, DIR_B, BO, B_off),
-        edge_off(Ky, DIR_L, OL, L_off),
-        edge_off(Ky, DIR_R, RO, R_off).
-
-    // Lookup + compose.
-    .decl concat(key: Key, p_outer: Position, p_inner: Position, p_grid: Position) inline
-    concat(Ky, P_outer, P_inner, P_grid) :-
-        tile_offset(Ky, P_outer, P_off),
-        compose(P_off, P_inner, P_grid).
-}
-
 .comp Consts {
     .init helpers = ConstsHelpers
 
@@ -128,13 +91,35 @@ tile(Ch, P_tile, P_intile, Col) :-
     ax_pos(Ch, P_tile, A1, P1), ax_pos(Ch, P_tile, A2, P2),
     compose(P1, P2, P_intile).
 
-.init pipe = ConcatPipeline<Choice>
-pipe.tile_in(Ch, Pt, Pi) :- tile(Ch, Pt, Pi, _).
-pipe.axis_gap(A, 0) :- axis_elem(A).
+// Offset at edge D: the tile touching edge D sits at zero, and each step
+// inward moves by the extent of the tile stepped over.
+.decl edge_off(ch: Choice, d: Dir, p_tile: Position, p_off: Shift)
+edge_off(Ch, D, P_tile, ORIGIN) :-
+    tile(Ch, P_tile, _, _), dir_elem(D), dist(P_tile, D, 0).
+edge_off(Ch, D, P_next, P_off2) :-
+    edge_off(Ch, D, P_tile, P_off),                                          // the offset so far
+    axis_of(D, A), tile(Ch, P_tile, P_intile, _), axis_dim(P_intile, A, K),  // the tile's extent
+    edge_delta(D, K, Delta), compose(P_off, Delta, P_off2),                  // the next offset
+    opposite(D, D2), neighbor(P_tile, D2, P_next).                           // the next tile inward
+
+// The offset at both edges of one axis.
+.decl axis_off(ch: Choice, a: Axis, p_tile: Position, p_off: Shift)
+axis_off(Ch, A, P_tile, P_off) :-
+    axis_of(D, A), opposite(D, D2),
+    edge_off(Ch, D, P_tile, P1), edge_off(Ch, D2, P_tile, P2),
+    compose(P1, P2, P_off).
+
+// The offset at all four edges — the per-axis offsets, perp-glued.
+.decl tile_offset(ch: Choice, p_tile: Position, p_off: Shift)
+tile_offset(Ch, P_tile, P_off) :-
+    perp(A1, A2),
+    axis_off(Ch, A1, P_tile, P1), axis_off(Ch, A2, P_tile, P2),
+    compose(P1, P2, P_off).
 
 out(P_grid, Col, Ch) :-
     tile(Ch, P_tile, P_intile, Col),
-    pipe.concat(Ch, P_tile, P_intile, P_grid).
+    tile_offset(Ch, P_tile, P_off),
+    compose(P_off, P_intile, P_grid).
 
 // --- $Map ---
 out(P_grid, Col, $Map()) :- in(P_in, Col), c.map(P_in, P_grid).

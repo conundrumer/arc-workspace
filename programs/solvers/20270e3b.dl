@@ -81,7 +81,7 @@ crop.cell([H, M], P) :- figure(H, M, P, _).
 painted(P_out, Col) :- figure(H, M, P, Col), crop.inner([H, M], P, P_out).
 
 .init sheet = Frame2D<Unit>
-sheet.extent($U(), A, N) :- painted(P, _), axis_elem(A), axis_dim(P, A, N).
+sheet.extent($U(), A, N) :- crop.extents(_, A, N, _).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :-

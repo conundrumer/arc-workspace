@@ -124,17 +124,13 @@ out(P, Col, Ch) :- parse.minority_rank(Ch, Col, Rk), col.pos(Ch, Rk, P).
     .init blocks = Components<Example>
     blocks.node(E, P) :- ink(E, P, _).
 
-    .init box = Bbox<Block>
+    // Each block viewed from its own box, so the block's extents are the
+    // tile's.
+    .init box = BoxFrame<Block>
     box.cell([E, Id], P) :- blocks.label(E, P, Id).
 
-    // Each block's cells viewed from its own box, so the block's extents
-    // are the tile's.
-    .init local = Reframe<Block>
-    local.outer([E, Id], M) :- box.margin([E, Id], M).
-    local.cell([E, Id], P)  :- blocks.label(E, P, Id).
-
     .decl tile_dim(a: Axis, k: number)
-    tile_dim(A, K) :- local.inner(_, P), axis_elem(A), axis_dim(P, A, K).
+    tile_dim(A, K) :- box.extents(_, A, K, _).
 
     .type ED = [e: Example, d: Dir]
 

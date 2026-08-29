@@ -34,24 +34,6 @@
 
 // --- parse ---
 
-// The unique pairing of two keyed cell sets: an edge is kept when using
-// every cell of both sets exactly once forces it. A matching is an exact
-// cover of the endpoint cells by two-cell edges, so CoverForcing's elimination
-// is the matching's.
-.comp Matching<Key> {
-    .type Edge = [l: Position, r: Position]
-
-    .decl cand(key: Key, l: Position, r: Position)  // input
-
-    .init forcing = CoverForcing<Key, Edge>
-    forcing.covers(Ky, [P, Q], P_cell) :-
-        cand(Ky, P, Q),
-        ( P_cell = P ; P_cell = Q ).
-
-    .decl edge(key: Key, l: Position, r: Position)
-    edge(Ky, P, Q) :- forcing.forced(Ky, [P, Q]).
-}
-
 // Each pivot's pointer, with the direction and distance it lies at.
 .comp Parse<Key> {
     .decl cell(key: Key, p: Position, col: Color)  // input
@@ -66,11 +48,14 @@
     .decl cand(key: Key, pair: Pair, d: Dir, k: number)
     cand(Ky, [P, Q], D, K) :- dir_elem(D), sight.ray(Ky, Q, D, K, P).
 
-    .init pairing = Matching<Key>
-    pairing.cand(Ky, P, Q) :- cand(Ky, [P, Q], _, _).
+    // The unique pairing: a candidate is kept when using every pivot and
+    // pointer exactly once forces it — an exact cover of the cells by
+    // two-cell pieces.
+    .init forcing = CoverForcing<Key, Pair>
+    forcing.covers(Ky, [P, Q], P_cell) :- cand(Ky, [P, Q], _, _), ( P_cell = P ; P_cell = Q ).
 
     .decl pair(key: Key, pair: Pair, d: Dir, k: number)
-    pair(Ky, [P, Q], D, K) :- pairing.edge(Ky, P, Q), cand(Ky, [P, Q], D, K).
+    pair(Ky, Pr, D, K) :- forcing.forced(Ky, Pr), cand(Ky, Pr, D, K).
 }
 
 .init parse = Parse<Unit>
