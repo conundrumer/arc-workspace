@@ -37,10 +37,9 @@ box.grid($U(), P) :- in(P, _).
 // The box's center: equidistant from both edges on each axis.
 .decl center(p: Position)
 center(P) :-
-    box.inner($U(), P, P_in),                        // box cell in the box's frame
-    axis_of(D1, A), perp(A, A2), axis_of(D2, A2),    // one dir per axis
-    dist_pair(P_in, D1, K1, K1),                     // centered along A
-    dist_pair(P_in, D2, K2, K2).                     // centered across
+    box.inner($U(), P, P_in),                                  // box cell in the box's frame
+    perp_dir(D1, D2),                                          // one dir per axis
+    dist_pair(P_in, D1, K1, K1), dist_pair(P_in, D2, K2, K2).  // centered on both axes
 
 // --- Shrink ---
 

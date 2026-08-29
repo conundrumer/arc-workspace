@@ -50,10 +50,9 @@ out(P, Col, $Tile()) :-
 
 .decl center_tile(p_tile: Position)
 center_tile(P_tile) :-
-    mark(P_grid), decomp(P_grid, P_tile, P_intile),    // mark's tile
-    axis_of(D1, A), perp(A, A2), axis_of(D2, A2),      // one dir per axis
-    dist_pair(P_intile, D1, K1, K1),                   // centered along
-    dist_pair(P_intile, D2, K2, K2).                   // centered across
+    mark(P_grid), decomp(P_grid, P_tile, P_intile),                    // mark's tile
+    perp_dir(D1, D2),                                                  // one dir per axis
+    dist_pair(P_intile, D1, K1, K1), dist_pair(P_intile, D2, K2, K2).  // centered on both axes
 
 out(P, Col, $Center()) :-
     decomp(P, P_tile, _),                          // grid cell, its tile

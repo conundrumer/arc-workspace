@@ -243,6 +243,10 @@ dir8_opposite(D, D2) :- diag_opposite(D, D2).
 perp(AXIS_V, AXIS_H).
 perp(AXIS_H, AXIS_V).
 
+// The two Dirs across d; turn picks one by sense.
+.decl perp_dir(d: Dir, d2: Dir)
+perp_dir(D, D2) :- axis_of(D, A), perp(A, A2), axis_of(D2, A2).
+
 .decl diag_perp(da: DiagAxis, da2: DiagAxis)
 diag_perp(DAXIS_DG, DAXIS_AD).
 diag_perp(DAXIS_AD, DAXIS_DG).

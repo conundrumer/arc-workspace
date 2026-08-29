@@ -48,9 +48,8 @@ out(P_grid, Col, $Lookup()) :-
 // --- Mirror / Unfold ---
 .decl anchor_tile(p: Position)
 anchor_tile(T) :-
-    c.arr_pos(T), c.anchor(D), dist(T, D, 0),        // on the anchor edge
-    axis_of(D, A), perp(A, A2), axis_of(D2, A2),
-    dist_pair(T, D2, K, K).                          // centered across
+    c.arr_pos(T), c.anchor(D), dist(T, D, 0),  // on the anchor edge
+    perp_dir(D, D2), dist_pair(T, D2, K, K).   // centered across
 
 // --- Mirror ---
 // Per-axis within-tile image: tiles at the anchor's index pass through,

@@ -36,8 +36,7 @@ box.extent($U(), A, K) :- axis_elem(A), c.dim(K).
 // The box frame's centered cell and its outline.
 .decl hole(p: Position)
 hole(P) :-
-    box.cell($U(), P),
-    perp(A1, A2), axis_of(D1, A1), axis_of(D2, A2),
+    box.cell($U(), P), perp_dir(D1, D2),
     dist_pair(P, D1, K1, K1), dist_pair(P, D2, K2, K2).
 
 .decl ring(p: Position)
@@ -48,9 +47,9 @@ occ.cell(Col, P, $U())  :- in(P, Col), ink(Col).
 occ.shape(Col, S, $U()) :- ink(Col), ring(S).
 
 out(ORIGIN, Col_hole, $Box()) :-
-    occ.occurrence(Col, M),                              // one ink's box
-    hole(C0), compose(M, C0, P_c),                       // its hole on the grid
-    in(P_c, Col_hole), Col_hole != Col.      // the boxed cell's color
+    occ.occurrence(Col, M),              // one ink's box
+    hole(C0), compose(M, C0, P_c),       // its hole on the grid
+    in(P_c, Col_hole), Col_hole != Col.  // the boxed cell's color
 
 // --- Ring ---
 // Some surrounding cell of p does not carry ink a.

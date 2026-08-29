@@ -54,7 +54,7 @@ height.minus($U(), P) :- in(P, Col), c.sub(Col).
 // neighbor bar.
 result_line(P_line2, $Next()) :-
     bar_line(P_line),
-    c.base(D), turn(_, D, D2),                  // either way across
+    c.base(D), perp_dir(D, D2),  // either way across
     c.pitch(K), jump(P_line, D2, K, P_line2),
     line_of(_, P_line2), !bar_line(P_line2).
 

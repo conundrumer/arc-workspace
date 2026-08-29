@@ -77,10 +77,7 @@ foot(P) :- wall_cell(P), c.floor_dir(D), dist(P, D, 0).
 
 // The side edge the foot touches.
 .decl wall_dir(d: Dir)
-wall_dir(D) :-
-    foot(P), dist(P, D, 0),                             // edge at the foot
-    c.floor_dir(Df), axis_of(Df, Af),
-    perp(Af, A), axis_of(D, A).                         // perpendicular to the floor
+wall_dir(D) :- foot(P), dist(P, D, 0), c.floor_dir(Df), perp_dir(Df, D).
 
 .decl foot_corner(diag: DiagDir)
 foot_corner(Diag) :- c.floor_dir(Df), wall_dir(Dw), diag_dirs(Diag, _, Df, Dw).

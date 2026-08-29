@@ -33,9 +33,8 @@ impl_choice($Period()). impl_choice($Parity()).
 .decl marker(p: Position, col: Color)
 marker(P, Col) :- in(P, Col), !c.bg(Col).
 
-// Both dirs of the axis perpendicular to the move.
 .decl across(d: Dir)
-across(D2) :- c.dir(D), axis_of(D, A), perp(A, A2), axis_of(D2, A2).
+across(D2) :- c.dir(D), perp_dir(D, D2).
 
 // Cells of the marker's row whose columns the alternation hits, walked
 // outward from the marker.

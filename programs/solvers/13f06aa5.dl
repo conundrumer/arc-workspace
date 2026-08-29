@@ -85,7 +85,7 @@ paint(P, Col, Ch) :-
 
 .decl corner(p: Position, ch: Choice)
 corner(P, Ch) :-
-    diag_dirs(_, _, D1, D2),                    // the two sides of a corner
+    perp_dir(D1, D2),                           // the two sides of a corner
     fired(D1, _, Ch), fired(D2, _, Ch),         // both fired
     in(P, _), dist(P, D1, 0), dist(P, D2, 0).   // the cell where they meet
 
