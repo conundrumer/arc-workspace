@@ -1,128 +1,8 @@
 # Proposals
 
-For parked changes to `.dl` style and primitives. Each entry names its home and waits on a second one; when it is implemented, it is removed. Not a changelog or a notes file.
+The record of every lib candidate, from its sweep to its verdict. An entry is written when a sweep is dispatched. When the sweep returns, the entry carries a `Recommendation` line; the user's verdict replaces it with a `Verdict` line. Under `close` the entry stays: a later sweep covers only the solvers whose file time is at or after the entry's date. Under `park` it stays with its spec and its home. On `promote` it leaves once its homes are migrated. Not a changelog or a notes file.
 
-An entry's first sentence is its index line, read under the entry's title: it stands alone, and criteria and guards start after it.
-
-## `ConcatPipeline` — unequal-sized rectilinear tiles
-
-`ConcatPipeline` derives per-tile dims and per-edge cumulative offsets, then composes via `compose`; cumulative offsets are what unequal tiles need, because each row/column has its own extent. The uniform family — `divide` / `divide_2d` / `divide_by_size_2d` forward, `concat` / `concat_slab` / `concat_2d` inverse — takes one tile size, so its per-tile step is constant.
-
-The solver populates `tile_in` (dim info; the pipeline does not read the values) and `axis_gap`. The component derives per-row / per-col tile dims and cumulative per-edge offsets, assembles `tile_offset(key, p_outer, p_off)`, and exposes a one-line `concat` (lookup + `compose`). One tiling per key. `axis_gap` stays unkeyed: the gap is the instance's parameter, like `DirFrame`'s unkeyed `dir`.
-
-```
-.comp ConcatPipeline<Key> {
-    .decl tile_in(key: Key, p_outer: Position, p_inner: Position)
-    .decl axis_gap(a: Axis, g: number)
-
-    // Tile dim along axis(D), indexed by tile's distance from edge D.
-    // Every cell in a rectilinear tile produces the same K — set semantics dedupes.
-    .decl tile_dim(key: Key, d: Dir, i: number, k: number)
-    tile_dim(Ky, D, I, K) :-
-        tile_in(Ky, P_outer, P_inner),
-        dist(P_outer, D, I),
-        axis_of(D, A), axis_dim(P_inner, A, K).
-
-    // Cumulative offset from edge D for the tile at distance I from D.
-    .decl edge_off(key: Key, d: Dir, i: number, off: number)
-    edge_off(Ky, D, I, OFF) :-
-        tile_dim(Ky, D, I, _),
-        axis_of(D, A), axis_gap(A, G),
-        OFF = (sum K : { tile_dim(Ky, D, J, K), J < I }) + I*G.
-
-    // Tile bbox offset in grid units, assembled from the four edges.
-    .decl tile_offset(key: Key, p_outer: Position, p_off: Position)
-    tile_offset(Ky, [OT, BO, OL, RO], [T_off, B_off, L_off, R_off]) :-
-        edge_off(Ky, DIR_T, OT, T_off),
-        edge_off(Ky, DIR_B, BO, B_off),
-        edge_off(Ky, DIR_L, OL, L_off),
-        edge_off(Ky, DIR_R, RO, R_off).
-
-    // Lookup + compose.
-    .decl concat(key: Key, p_outer: Position, p_inner: Position, p_grid: Position) inline
-    concat(Ky, P_outer, P_inner, P_grid) :-
-        tile_offset(Ky, P_outer, P_off),
-        compose(P_off, P_inner, P_grid).
-}
-```
-
-The internals generalize via `Dir`: `tile_dim`, `edge_off`, and `tile_offset` each cover all edges/axes in one rule. Like the uniform `concat` family, the comp is shape-agnostic: `P_outer` full-2D or axis-only both flow through `compose`, so 2D and slab arrangements use the same rules.
-
-Solver usage:
-
-```
-.init pipe = ConcatPipeline<Choice>
-pipe.tile_in(Ch, P_outer, P_inner) :- tile_data(Ch, P_outer, P_inner, _).
-pipe.axis_gap(A, 0) :- axis_elem(A).
-
-out(P_grid, V, Ch) :-
-    tile_data(Ch, P_outer, P_inner, V),
-    pipe.concat(Ch, P_outer, P_inner, P_grid).
-```
-
-An `.init` named `concat` clashes with lib's `concat` relation; pick another instance name.
-
-**Home.** e633a9e5: nonuniform scale-up, gap 0; the $Edge and $Table extent models share one Choice-keyed instance.
-
-## `KeyedSetCompare` extensions — set-relationship lattice
-
-Extensions of `KeyedSetCompare<Key, Pat, Member>` beyond its `covers` / `equals` / `pattern_size`, each derived from the three counts it already computes (`|pattern|`, `|observed|`, `overlap`). Add one when a real task needs it, not preemptively (lib-addition protocol):
-
-- `within(observed, pattern)` — observed ⊆ pattern (`overlap == observed_size`)
-- `disjoint(observed, pattern)` — `overlap == 0`
-- `intersects(observed, pattern)` — `overlap > 0`
-- `observed_size(observed, n)`, `overlap_size(observed, pattern, n)` — projections that unlock nearest / best-overlap selection
-
-**Scope.** This component owns set-relationship derivation. Ranking policy (`best_covered`, `nearest`) and approximate / multiset / payload matching sit outside it, solver-local or in a separate component. Current hints: 3618c87e → an `unmatched` negative; 44f52bb0 → `best_covered`.
-
-## `Reframe.extents` — how big the outer is
-
-The `BoxFrame.extents` shape on an outer that is a stored box rather than a derived one: 4522001f reads `sq.inner(L, P), axis_dims(P, A, K1, K2)`. A `Reframe.extents` peer would cover it, and waits for a second site.
-
-## `Ordinal.rev` — opposite-end readout of an index set
-
-The order anti-isomorphism of `idx_set`: element-valued, pairing each element with its opposite-end counterpart, with as many elements below k as above k2. A site picks between it and `rank_desc` by what the consumer reads: `rev` where consumption stays in the element domain (each element takes its counterpart's property, and no rank number crosses the interface); `rank_desc` where the rank value flows downstream into a table join or comparison anchored at the top end, and `rev` would route through a phantom counterpart. Layout sites use neither: placing ascending ranks from the opposite edge stays the one encoding of a descending layout.
-
-```
-.decl rev(key: Key, k: number, k2: number)
-rev(Ky, K, K2) :- rank(Ky, K, R), rank_desc(Ky, K2, R).
-```
-
-Lib target: `Ordinal` — it owns `idx_set`; a readout beside `rank` and `rank_desc`.
-
-**Home.** `rev` — 85c4e7cd reverses its ring colors: `rev` over ring indices pairs ring K with the ring as deep from the center as K is from the border.
-
-## `diag_edge_delta` — edge delta at a corner
-
-The DiagDir peer of `edge_delta`: a Position holding extents at the two edges of corner `diag`, axis-tagged — k1 at the edge on axis a, k2 across. It grows toward a corner, where `step_delta` at the same corner moves toward it. It is the delta counterpart of the `diag_dist` readout.
-
-```
-.decl diag_edge_delta(diag: DiagDir, a: Axis, k1: number, k2: number, p: Position) inline
-diag_edge_delta(Diag, A, K1, K2, P) :-
-    diag_dirs(Diag, A, D1, D2),
-    edge_delta(D1, K1, P1), edge_delta(D2, K2, P2),
-    compose(P1, P2, P).
-```
-
-**Home.** 8618d23e (`DiagEdgeDelta` comp): $Derive's grow delta at the corner opposite the seat, the pair from the growth case.
-
-## `divide_by_size_slab` — divide_by_size with perpendicular passthrough
-
-The `divide_by_size` peer of `divide_slab`. Fills the one empty cell of
-the {`divide`, `divide_by_size`} × {plain, slab, 2D} composite matrix.
-Lib target: composite beside `divide_slab`.
-
-```
-.decl divide_by_size_slab(p: Position, a: Axis, k: number, gap: number,
-                          p_outer: Position, p_inner: Position) inline
-divide_by_size_slab(P, A, K, G, P_outer, P_inner) :-
-    divide_by_size(P, A, K, G, P_outer, P_i_axis),
-    split(P, A, _, Across),
-    compose(P_i_axis, Across, P_inner).
-```
-
-**Home.** 7b7f7511 (`DivideBySizeSlab`
-comp): $Tile's swept tiling.
+An entry's first sentence is its index line, read under the entry's title: it stands alone and names the operation. A family of solvers (`// family:` siblings with their representative) counts as one home.
 
 ## `Wallpaper<Key, Val>` — lattice-quotiented isometry detection
 
@@ -171,72 +51,112 @@ group's translations are the lattice). `ShiftInvariance.period` feeds the
 kinds; `out` closes survivor colors over `step`; its Fit names the
 kinds every example uses as a `point_group` Sym value.
 
-## `Peel<Key>` — erosion depth of a keyed cell set
+Not: translation periodicity alone (`ShiftInvariance`); a fixed-frame symmetry (`D4Map`); a reflection about a line the data names.
 
-The depth peer of `Reach`'s membership: ring 0 is the cells with an 8-neighbor outside the set, off-frame counting as outside, and each step inward is one ring deeper. It equals the Chebyshev distance to the set's complement minus one. Non-convex depth has no counter-free encoding, so the primitive cannot be written as body relations. Lib target: body comp beside `Reach`.
+Grep: `ShiftInvariance`, `sym_member`, `apply(D`, `mismatch`, `witnessed`, `period`.
 
-```
-.comp Peel<Key> {
-    .decl cell(key: Key, p: Position)  // input
+Homes: 0dfd9992 alone. Near: af22c60d, 981571dc, 0934a4d8 (Fit), 1b60fb0c search a mirror line or rotation center over an aperiodic pattern, where the comp tries no shift; the three Fit sites factor the search per axis over line indices.
 
-    // Some 8-neighbor lies outside the set — off-frame counts as outside.
-    .decl edge(key: Key, p: Position)
-    edge(Ky, P) :-
-        cell(Ky, P),
-        dir8_elem(D), step_delta(D, S), compose(P, S, Q), !cell(Ky, Q).
+Interface: `step` would carry its generator, `step(key, g, p, q)`; `period` stays an input; an aperiodic axis contributing its full extent would serve the four sites, but their per-axis factoring reads as a separate reflection-axis primitive.
 
-    // The shortest inward walk from the boundary.
-    .decl ring(key: Key, p: Position, k: number)
-    ring(Ky, P, 0) :- edge(Ky, P).
-    ring(Ky, P, K2) :-
-        ring(Ky, Q, K), K2 = K + 1,
-        dir8_elem(D), step_delta(D, S), compose(Q, S, P), cell(Ky, P).
-    ring(Ky, P, K) <= ring(Ky, P, K2) :- K2 < K.
-}
-```
+Verdict: park. 2026-08-29.
 
-**Home.** 13e47133 (`Peel` comp): region
-rings that a repeating marker palette paints. The solver pairs it against a
-$Sight rival — depth as the min ray-cast distance to the outside (`Ray` +
-`Extremes`). The two metrics agree wherever every wall is a straight run; a
-lone wall cell splits them (its knight's-move cells read deeper under
-sight).
+## `RIGID(<group>, ...)` — rigid assemblies under a subgroup
 
-Prior special cases the comp would cover: 85c4e7cd's ring (min edge
-distance — the convex-frame case) and 135a2760's panel frame (ring 0 of a
-rectangular panel).
-## `RIGID(C4, ...)` — chiral rigid assemblies
+A group argument on `RIGID`: the closure ranges `sym_member(S, D)` for the named `Sym` in place of `d4_elem`, with `SYM_D4` when the argument is omitted. Under `SYM_C4` the hand becomes data — a stored chart of the wrong hand has an orbit that misses the observed instances, and the fit diffs — while rotation stays gauge. Closing a rotate-only task over D4 instead over-generates placements the task forbids and lets the fit accept a mirrored chart.
 
-The rotation-subgroup variant of `RIGID`: the closure ranges `c4_elem` in place of `d4_elem`, so the hand becomes data — a stored chart of the wrong hand has an orbit that misses the observed instances, and the fit diffs — while rotation stays gauge. Closing a rotate-only task over D4 instead over-generates placements the task forbids and lets the fit accept a mirrored chart.
+The rest of the machinery is group-agnostic: the subgroup's elements are D4 elements, so placed column types and the column actions are unchanged, and the fit compare groups rows by whatever pose labels both sides emit — both sides close through the same generated rule. The change is the elem atom in the expansion plus the group argument in the parser. The group is a macro argument, not a Consts slot: the fit cannot derive it from the pairs, and which column types have an action depends on it (`Sense` and `Sym` are invariant under rotations and inverted by a reflection).
 
-The rest of the machinery is group-agnostic: C4's elements are D4 elements, so placed column types and the column actions are unchanged, and the fit compare groups rows by whatever pose labels both sides emit — both sides close through the same generated rule. The change is the elem atom in the expansion plus the group argument in the parser.
+A task treating both hands as distinct pieces needs no new group: that is an id-keyed `SYM_C4` chart with one id per hand.
 
-A task treating both hands as distinct pieces needs no new group: that is an id-keyed C4 chart with one id per hand.
+Gate: a site whose stored pieces rotate but do not reflect.
 
-Gate: a site whose pieces rotate but do not reflect.
+Not: achiral assemblies; assemblies that reflect; input-derived pieces closed by hand.
+
+Grep: `RIGID(`, `c4_elem`, `SYM_C4`, `d4_elem(D)`, `GRID_MASK`, `GRID_SPARSE`.
+
+Homes: none. The RIGID sites hold achiral assemblies (142ca369, 150deff5, 21897d95) or reflect (269e22fb). 1a244afd's `turn_map` is a C4 orbit, but closing it collapses `$Table` into `$Turn`. 2697da3f pairs `SYM_C4` against `SYM_X` over input-derived cells.
+
+Interface: a group argument, `SYM_D4` by default, as a macro argument rather than a Consts slot.
+
+Verdict: park. 2026-08-29.
+
+## Per-axis gap on `Divide2D` and `Tile2D`
+
+`gap(a, g)` in place of the scalar `gap(g)` on both comps, with `concat_2d` changed alongside for round-trip symmetry. The scalar states that the separator has one width on both axes, a claim independent of tile shape (f8b3ba0a divides rectangular tiles under one gap); under `gap(a, g)` a site that wants one width spreads it with `gap(A, G) :- axis_elem(A), c.gap(G)`, and the claim becomes the site's to restate. Change both comps together or neither: they differ only in dim-by-count against dim-by-size.
+
+**Home.** 20fb2937: bands across the header under `c.band_gap`, layers abutting along it. It writes the two `divide_by_size` calls by hand; under the change, one `split` on the band axis recovers its separate band and layer positions from `tile`'s composed outer.
+
+Not: slab divides; a gap keyed per key; `divide_gap`.
+
+Grep: pairs of `divide(` / `divide_by_size(` in one rule, `perp(A, A2)`, `tile_pos(`.
+
+Homes: 20fb2937 alone. Seventeen `tile_pos` sites pass an asymmetric gap pair with a single tile on the zero-gap axis; every genuinely 2D gap-bearing site is isotropic (b1fc8b8e, and the nonzero-gap `divide_2d` / `divide_by_size_2d` / `concat_2d` calls).
+
+Interface: both comps together or neither, with `concat_2d` alongside.
+
+Verdict: park. 2026-08-29.
+
+## `ConcatPipeline<Key>` — unequal-sized rectilinear tiles
+
+Per-tile dims and cumulative per-edge offsets for tiles laid side by side. Not: uniform tilings (`concat`, `concat_slab`, `concat_2d`, `Tile2D`); one tile at an offset; tabulated correspondences.
+
+Grep: `sum `, `+ [A-Z]`, `edge_off`, `jump_delta` chains.
+
+Homes: none beyond e633a9e5. Near: 291dc1e1 (blocks stack as slabs of their own thickness; all one thickness on the data); 0bb8deee (unequal quadrants, equal crops); e1baa8a4, 0a1d4ef5 (unequal bands, index only).
+
+Interface: no change.
+
+Verdict: close; e633a9e5 rewritten as a per-edge walk. 2026-08-29.
+
+## `KeyedSetCompare` extensions — the set-relationship lattice
+
+`within`, `disjoint`, `intersects`, and the size projections, beside `covers` and `equals`. Not: a containment test between two unkeyed sets; counting with no pattern.
+
+Grep: `KeyedSetCompare`, `overlap`, `count :`, `_member(`, `best_`.
+
+Homes: none. `within` has no site; `intersects` / `disjoint` are one-line joins at 16b78196, 0a1d4ef5, 184a9768, b7cb93ac; the size projections are `Tally` at 27a28665 and 1b60fb0c; `best_covered` is 44f52bb0 alone. Reimplementations of `covers`: 15113be4, 44f52bb0 (fixed).
+
+Interface: no change.
+
+Verdict: close. 2026-08-29.
+
+## `Reframe.extents` — how big the outer is
+
+The `BoxFrame.extents` readout on a `Reframe` outer. Not: `BoxFrame.extents`; whole-grid extents; a size stored in Consts.
+
+Grep: `Reframe`, `\.inner(`, `axis_dims`, `c\.box`.
+
+Homes: 4522001f alone. f8b3ba0a's Fit was a hand-written `BoxFrame` (fixed). Reimplementations of `BoxFrame.extents`: 15660dd6, f25ffba3, 20270e3b (fixed). Half the `Reframe` instances have an anchor-cell outer, where the readout would silently give the grid's size; the stored-box case is a margin-size subtraction, which the `Reframe` route already states relationally.
+
+Verdict: close. 2026-08-29.
+
+## `Ordinal.rev` — opposite-end readout of an index set
+
+The pairing of each element with its counterpart from the other end. Not: descending layout; a rank flowing into a table; reversal by geometry or by a stored table.
+
+Grep: `rank_desc`, `rank(`, `count :`.
+
+Homes: 85c4e7cd alone. Near: 08ed6ac7, 2753e76c (`rank_desc` into a table or an extent); 3906de3d, 9c56f360, 1da012fc, 2ccd9fef (same rank across two index sets).
+
+Verdict: close. 2026-08-29.
+
+## `diag_edge_delta` — edge delta at a corner with two amounts
+
+Two `edge_delta`s at the two edges of a corner. Not: `edge_delta` at a DiagDir (one amount at both edges); `jump` chains at a corner; `diag_dist`.
+
+Grep: `edge_delta`, `diag_dirs`, `jump_delta.*jump(`.
+
+Homes: 8618d23e alone. 1e81d6f9 was `edge_delta` at a DiagDir (fixed). Near: 4522001f, 22208ba4 (diagonal shifts); the opposite-pair form at five sites, now `axis_delta`.
+
+Verdict: close; 8618d23e keeps it as a plain relation. 2026-08-29.
 
 ## `Matching<Key>` — unique pairing of two keyed cell sets
 
-The elimination reading of a perfect matching: candidate edges in, and an edge is kept when using every endpoint cell of both sets exactly once forces it. A matching is an exact cover of the endpoint cells by two-cell edges, so `CoverForcing` supplies the elimination fixpoint; the comp exists so a pairing task states matching, with the cover mechanics behind the boundary. Sibling to `CoverForcing`, not a replacement — region-filling sites (150deff5, 681b3aeb, b1fc8b8e) keep `CoverForcing`. Edge payloads (direction, distance) stay with the caller, recovered by joining `edge` back against the candidates. Lib target: body comp beside `CoverForcing`; a `matching` setup term for `concepts.md` rides along on promotion.
+An edge kept when using every endpoint cell of both sets exactly once forces it, over `CoverForcing`. Not: region filling by multi-cell pieces; pairing by a functional rule; pairing from data; one-to-many.
 
-As staged, the cover runs over the union of endpoint Positions: a unique matching on one cell set. That fits disjoint sides (1a244afd's pivots and pointers) and breaks when the sides share Position values — an edge `[P, P]` covers one cell, and a Position used as both `l` and `r` is forced into a single use. The nearest reuse sites all share Positions across sides: 18447a8d pairs each band's hole with another band's piece with no exclusivity enforced, and the Fit-side `pair(p_in, p_out)` labelings (e.g. 833966f4, e9afcf9a) are permutations between input and output frames. Promotion generalizes the endpoints — tagged sides or an endpoint type param — to serve them.
+Grep: `CoverForcing`, `pair(`, `partner`, `count :.*= 1`, `forced`.
 
-```
-.comp Matching<Key> {
-    .type Edge = [l: Position, r: Position]
+Homes: 1a244afd alone. Near: 228f6490, 18447a8d, and the Fit `pair(p_in, p_out)` labelings (833966f4, e9afcf9a, 66e6c45b, 68b67ca3, ca8de6ea) pair without exclusivity and share endpoint values across sides; b7cb93ac, 89565ca0 want every bijection (`TiebreakResolutions`).
 
-    .decl cand(key: Key, l: Position, r: Position)  // input
-
-    .init forcing = CoverForcing<Key, Edge>
-    forcing.covers(Ky, [P, Q], P_cell) :-
-        cand(Ky, P, Q),
-        ( P_cell = P ; P_cell = Q ).
-
-    .decl edge(key: Key, l: Position, r: Position)
-    edge(Ky, P, Q) :- forcing.forced(Ky, [P, Q]).
-}
-```
-
-An `.init` named `match` is a Souffle syntax error (`match` is the string-match predicate); pick another instance name.
-
-**Home.** 1a244afd (`Matching` comp): pivots sighted along rows and columns onto pointers; the unique pivot–pointer pairing, forced by mutual exclusion.
+Verdict: close; 1a244afd calls `CoverForcing` directly. 2026-08-29.
