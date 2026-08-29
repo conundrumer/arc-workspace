@@ -87,17 +87,16 @@ Do not read `src/dl/` during the cadence. The docs and the run output should hav
 
 ## Lib addition protocol
 
-A new primitive qualifies for `programs/lib.dl` through real use, not by looking general. The order:
+A new primitive qualifies for `programs/lib.dl` through real use in the corpus, not by looking general. The order:
 
-1. Write the primitive as plain body relations, keyed when cases share it. If the linter would flag it, write it as a task-local `.comp`. Run it. Confirm it works in context.
-2. Surface it to the user: name it, describe the operation, show the solver-local version.
-3. On agreement, stage it: wrap the solver-local version in a task-local `.comp` named for the primitive, and write the addition proposal to `docs/wf-solver/proposals.md`. `stage` refers to this step and always includes the comp form.
-4. On approval, move to `programs/lib.dl`. Update callers.
+1. Write the primitive as plain body relations, keyed when cases share it. If the linter would flag it, write it as a proposal comp: a `.comp` named for the primitive, which exists only as the code form of a lib proposal. An extension of a lib comp has no comp form; its local rule sits beside the instance. Run it. Confirm it works in context.
+2. Surface it: name it, describe the operation, show the solver-local version, and send an opus agent to sweep `programs/solvers/` for sites that hand-write it. Tell the agent what is not this concept, and ask whether the interface should change. Dispatch it early, and write the report or review after it returns, carrying the result. Do not sweep yourself.
+3. Recommend a verdict on the sweep. Each verdict is the user's word, like `next` and `commit`; act on none without it.
+    - promote — repeated real use, or the sweep changed the interface
+    - close — no second home. Plain relations stay as written. A proposal comp goes with its proposal: the arithmetic it held seemed necessary and is not, so the solver's encoding is rethought in relational form.
+    - park — worth keeping with no second home yet; a `docs/wf-solver/proposals.md` entry carrying the sweep's result. Any proposal comp stays.
+4. On `promote`: move it to `programs/lib.dl` and update the surfacing solver. On `migrate`: an opus agent migrates the sweep's homes, and a separate opus agent runs Simplify and Prune over what changed.
 
-The same gates cover changes to what already stands: an edit to an existing `lib.dl` primitive, or to a term's definition in `concepts.md`, starts at step 2 and lands only on approval.
+The same gates cover changes to what already stands: an edit to an existing `lib.dl` primitive, or to a term's definition in `concepts.md`, starts at step 2 with the change as the sweep's target.
 
-Task-local comps are a staging form that lives only while the proposal is open.
-
-On veto, rewrite any task-local comp into plain body relations, and remove the primitive's proposals.md entry.
-
-Reuse of a staged proposal is promotion evidence. When a solver copies a primitive that already has a `proposals.md` entry, surface the reuse directly: name the proposal and the new home, ask whether it moves to lib, and record the home in the entry (the `Second home (protocol step 1)` convention).
+A proposal comp outlives its verdict only when parked: after the verdict, a comp with no `proposals.md` entry is a defect. Later reuse of a parked entry goes under `Second home` and is promotion evidence.
