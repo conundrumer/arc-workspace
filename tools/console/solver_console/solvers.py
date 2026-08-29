@@ -146,13 +146,13 @@ def task_callouts(item_id: str) -> list[str]:
         return []
 
 
-# The components style.md gives every solver. Any other one is a task-local
-# staging form, legal only while its proposals.md entry is open.
+# The components style.md gives every solver. Any other one is a proposal
+# comp, legal only while its proposals.md entry is open.
 STOCK_COMPS = ("Consts", "Fit", "Parse")
 
 
 def comps_of(item_id: str) -> list[str]:
-    """Task-local `.comp` names the solver declares."""
+    """Proposal comp names the solver declares."""
     return [name for name in
             re.findall(r"^\.comp\s+([A-Za-z_]\w*)", solver_text(item_id), re.M)
             if name not in STOCK_COMPS]

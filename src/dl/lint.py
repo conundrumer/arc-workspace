@@ -2,8 +2,9 @@
 
 Flags orientation literals, bare nonzero literals, arithmetic, and the
 `range` generator in solver-body code. `.comp` blocks are skipped wholesale —
-components are generic, lib-shaped code, not solver body — except `Fit` and
-`Parse`, whose rules are model claims and lint as body. The public entry
+a proposal comp is lib code on its way out of the solver, and its
+proposals.md entry is what makes it legitimate — except `Fit` and `Parse`,
+whose rules are model claims and lint as body. The public entry
 point is `lint_body`; run_dl.py calls it after running each solver.
 """
 

@@ -142,7 +142,7 @@ body.view-final #main { grid-template-columns:330px minmax(360px,520px) 1fr; }
   font-size:9px; letter-spacing:.06em; padding:1px 5px; border-radius:3px;
   background:var(--st-commented); color:var(--bg); font-weight:600;
 }
-/* a task-local comp: staging only, and only with an open proposal */
+/* a proposal comp: the code form of a proposals.md entry, and nothing else */
 .badge-comp {
   font-size:9px; letter-spacing:.06em; padding:0 4px; border-radius:3px;
   font-family:ui-monospace,Menlo,monospace; font-weight:600;
@@ -571,7 +571,7 @@ function CompBadges({x}){
   return (x.comps||[]).map(c=>{
     const bad=(x.comps_unproposed||[]).includes(c);
     return html`<span key=${c} class=${"badge-comp"+(bad?" unproposed":"")}
-      title=${bad?"task-local comp with no proposals.md entry":"task-local comp — staging form, proposal open"}>${c}</span>`;
+      title=${bad?"proposal comp with no proposals.md entry":"proposal comp — entry open"}>${c}</span>`;
   });
 }
 /* what the stage left for the user; the entries ride along in the tooltip */

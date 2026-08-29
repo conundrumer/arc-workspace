@@ -10,8 +10,8 @@ counterexamples in the corpus, worth a look rather than a rewrite — is
 behind the `hints` flag.
 
 Relation-level rules run over the scopes that hold body code: top level,
-`Fit`, `Parse`, and `Consts`. Other `.comp` interiors are lib-shaped code
-and stay out, matching `lint.py`.
+`Fit`, `Parse`, and `Consts`. Other `.comp` interiors are proposal comps,
+lib code on its way out of the solver, and stay out, matching `lint.py`.
 
 The public entry point is `lint_rewrites`; findings share `lint_body`'s
 tuple shape.

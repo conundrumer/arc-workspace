@@ -1,6 +1,6 @@
 # Proposals
 
-For proposing and staging changes to `.dl` style and primitives. Not a changelog or a notes file. If a proposal is implemented, it is removed from this doc.
+For parked changes to `.dl` style and primitives. Each entry names its home and waits on a second one; when it is implemented, it is removed. Not a changelog or a notes file.
 
 An entry's first sentence is its index line, read under the entry's title: it stands alone, and criteria and guards start after it.
 
@@ -62,7 +62,7 @@ out(P_grid, V, Ch) :-
 
 An `.init` named `concat` clashes with lib's `concat` relation; pick another instance name.
 
-**Task-local home (protocol step 1).** e633a9e5: nonuniform scale-up, gap 0; the $Edge and $Table extent models share one Choice-keyed instance.
+**Home.** e633a9e5: nonuniform scale-up, gap 0; the $Edge and $Table extent models share one Choice-keyed instance.
 
 ## `KeyedSetCompare` extensions — set-relationship lattice
 
@@ -88,9 +88,9 @@ The order anti-isomorphism of `idx_set`: element-valued, pairing each element wi
 rev(Ky, K, K2) :- rank(Ky, K, R), rank_desc(Ky, K2, R).
 ```
 
-Home: `Ordinal` — it owns `idx_set`; a readout beside `rank` and `rank_desc`.
+Lib target: `Ordinal` — it owns `idx_set`; a readout beside `rank` and `rank_desc`.
 
-**Task-local home (protocol step 1).** `rev` — 85c4e7cd reverses its ring colors: `rev` over ring indices pairs ring K with the ring as deep from the center as K is from the border.
+**Home.** `rev` — 85c4e7cd reverses its ring colors: `rev` over ring indices pairs ring K with the ring as deep from the center as K is from the border.
 
 ## `diag_edge_delta` — edge delta at a corner
 
@@ -104,7 +104,7 @@ diag_edge_delta(Diag, A, K1, K2, P) :-
     compose(P1, P2, P).
 ```
 
-**Task-local home (protocol step 1).** 8618d23e (`DiagEdgeDelta` comp): $Derive's grow delta at the corner opposite the seat, the pair from the growth case.
+**Home.** 8618d23e (`DiagEdgeDelta` comp): $Derive's grow delta at the corner opposite the seat, the pair from the growth case.
 
 ## `divide_by_size_slab` — divide_by_size with perpendicular passthrough
 
@@ -121,7 +121,7 @@ divide_by_size_slab(P, A, K, G, P_outer, P_inner) :-
     compose(P_i_axis, Across, P_inner).
 ```
 
-**Task-local home (protocol step 1).** 7b7f7511 (`DivideBySizeSlab`
+**Home.** 7b7f7511 (`DivideBySizeSlab`
 comp): $Tile's swept tiling.
 
 ## `Wallpaper<Key, Val>` — lattice-quotiented isometry detection
@@ -166,14 +166,14 @@ group's translations are the lattice). `ShiftInvariance.period` feeds the
 - An axis without a period contributes only the zero shift, so an
   aperiodic grid degrades to center-anchored D4 detection.
 
-**Task-local home (protocol step 1).** 0dfd9992: wallpaper repair —
+**Home.** 0dfd9992: wallpaper repair —
 `Parse` feeds detected per-axis periods and the stored point group's
 kinds; `out` closes survivor colors over `step`; its Fit names the
 kinds every example uses as a `point_group` Sym value.
 
 ## `Peel<Key>` — erosion depth of a keyed cell set
 
-The depth peer of `Reach`'s membership: ring 0 is the cells with an 8-neighbor outside the set, off-frame counting as outside, and each step inward is one ring deeper. It equals the Chebyshev distance to the set's complement minus one. Non-convex depth has no counter-free encoding, so the arithmetic sits behind the comp boundary. Lib target: body comp beside `Reach`.
+The depth peer of `Reach`'s membership: ring 0 is the cells with an 8-neighbor outside the set, off-frame counting as outside, and each step inward is one ring deeper. It equals the Chebyshev distance to the set's complement minus one. Non-convex depth has no counter-free encoding, so the primitive cannot be written as body relations. Lib target: body comp beside `Reach`.
 
 ```
 .comp Peel<Key> {
@@ -195,7 +195,7 @@ The depth peer of `Reach`'s membership: ring 0 is the cells with an 8-neighbor o
 }
 ```
 
-**Task-local home (protocol step 1).** 13e47133 (`Peel` comp): region
+**Home.** 13e47133 (`Peel` comp): region
 rings that a repeating marker palette paints. The solver pairs it against a
 $Sight rival — depth as the min ray-cast distance to the outside (`Ray` +
 `Extremes`). The two metrics agree wherever every wall is a straight run; a
@@ -239,4 +239,4 @@ As staged, the cover runs over the union of endpoint Positions: a unique matchin
 
 An `.init` named `match` is a Souffle syntax error (`match` is the string-match predicate); pick another instance name.
 
-**Task-local home (protocol step 1).** 1a244afd (`Matching` comp): pivots sighted along rows and columns onto pointers; the unique pivot–pointer pairing, forced by mutual exclusion.
+**Home.** 1a244afd (`Matching` comp): pivots sighted along rows and columns onto pointers; the unique pivot–pointer pairing, forced by mutual exclusion.

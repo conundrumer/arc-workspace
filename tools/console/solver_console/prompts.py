@@ -51,7 +51,7 @@ def wave_append(wave: int) -> str:
 # feed the brief as ranking signal; recalibrate by re-measuring engagement
 # over newer transcripts and editing the table.
 CALLOUT_RATES = [
-    ("lib staging and task-local comps", 75),
+    ("lib candidates and proposal comps", 75),
     ("doc gaps", 58),
     ("simplification", 54),
     ("naming and vocabulary", 52),

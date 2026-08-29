@@ -103,7 +103,7 @@ A solver defines only two kinds of types: ADTs inside `Choice` (the type itself,
 ## Body
 
 - No literals: orientation (`DIR_T`, `DIR_L`, `AXIS_V`, etc.), colors, or non-zero task-shape numbers (lengths, offsets, gaps). The body reads them from Consts via `c.<rel>(...)` and parameterizes. Hardcoded values fix the body to one task in the family; values read from Consts keep it symmetric across the family.
-    - Literals are fine inside a generic `.comp` written task-local; that is lib-shaped code rather than body, and the linter skips `.comp` blocks — except `Fit` and `Parse`, whose rules lint as body.
+    - Literals are fine inside a proposal comp only: lib code waiting on its `proposals.md` entry, which leaves the solver with that entry, to lib or to nothing. The linter skips every comp except `Fit` and `Parse`, so it cannot tell a proposal comp from a comp with no entry; the entry is what makes the comp legitimate.
 - No Position destructure. Use lib primitives instead. Position is opaque; destructuring hardcodes edge indices and breaks orientation invariance.
 - Avoid arithmetic and raw aggregates. When they seem necessary, the lib needs a new primitive. Create that instead of writing them in the solver body.
 - No `range`. It generates a number sequence; the body reads positions and extents through lib primitives.

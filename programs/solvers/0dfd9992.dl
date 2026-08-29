@@ -26,7 +26,7 @@
 
 // --- wallpaper comp ---
 
-// Task-local staging comp: the isometry peer of ShiftInvariance,
+// Proposal comp: the isometry peer of ShiftInvariance,
 // quotiented by a translation lattice. Given a keyed valued cell set, its
 // per-axis periods, and the isometry kinds in play, candidates are the
 // isometries of the frame — a kind composed with a shift from the
