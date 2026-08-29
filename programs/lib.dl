@@ -1,13 +1,11 @@
 // Shared types and primitives for ARC solvers in Souffle.
 //
 // Position: 4 distances from edges, ordered V-first then H — (top, bottom,
-// left, right). Dir constants index into Position. No corner privileged.
+// left, right). Dir constants index into Position.
 //
 // Dim: (V-length, H-length) of a frame — ConstsHelpers grouping notation only.
 //
-// The subtypes of number are typed names with no arithmetic intent. Their
-// constants are #define'd in disjoint ranges, so a value's range identifies
-// its namespace.
+// The subtypes of number are typed names with no arithmetic intent.
 
 .type Color <: number
 
@@ -26,8 +24,8 @@
 
 .type Axis4 = Axis | DiagAxis
 
-// A label carrying identity and nothing else. Numbering is arbitrary, so
-// consumers join on equality and never order or count with it.
+// A label carrying identity and nothing else: join on equality, never order
+// or count with it.
 .type Ident <: number
 
 // Index of a task example.
@@ -60,9 +58,8 @@
 #define DAXIS_DG 40
 #define DAXIS_AD 41
 
-// D4 elements as gather permutations of (t, b, l, r). Rotations: quarter CW,
-// half turn, quarter CCW. Flips are named by what swaps, not the axis of
-// reflection.
+// Rotations: quarter CW, half turn, quarter CCW. Flips are named by what
+// swaps, not the axis of reflection.
 #define D4_ID 50
 #define D4_CW 51
 #define D4_HT 52
@@ -374,8 +371,7 @@ sub_extent(P, A, K) :- axis_dim(P, A, N), K = range(1, N).
 apply(D, P, [@apply_t(D, T, B, L, R), @apply_b(D, T, B, L, R),
              @apply_l(D, T, B, L, R), @apply_r(D, T, B, L, R)]) :- P = [T, B, L, R].
 
-// The D4 action on directions — the direction peer of apply. One relation
-// per direction type; a site takes the one its directions are typed in.
+// The D4 action on directions, one relation per direction type.
 .decl apply_dir(d: D4, dir: Dir, dir_out: Dir)
 apply_dir(D, Dir, Dir_out) :-
     d4_elem(D), dir_elem(Dir), dir_elem(Dir_out),
@@ -394,7 +390,7 @@ apply_dir8(D, Dir, Dir_out) :-
 // Divide p's axis-a extent into n equal parts. p_outer is the tile
 // index in an n-strip frame; p_inner is the cell within the tile.
 // Both axis-only (perpendicular zeroed). Cells in gap rows/cols (gap > 0)
-// produce no decomposition. Two divides on different axes compose to 2D.
+// produce no decomposition.
 // Asserts: gap-adjusted extent divides evenly by n.
 .decl divide(p: Position, a: Axis, n: number, gap: number, p_outer: Position, p_inner: Position) inline
 divide(P, A, N, G, P_outer, P_inner) :-
@@ -443,7 +439,7 @@ stride(T, W, G, N, K) :-
 // Recompose axis-a tiles into a single extent — the inverse of divide, over
 // the same p_outer and p_inner. p_grid is axis-only on the same axis. With
 // gap > 0, only filled tile cells appear in p_grid — gap rows/cols are
-// absent. Two concats on different axes compose to 2D.
+// absent.
 .decl concat(p_outer: Position, p_inner: Position, a: Axis, gap: number,
              p_grid: Position) inline
 concat(P_outer, P_inner, A, G, P_grid) :-
@@ -500,8 +496,8 @@ divide_slab(P, A, N, G, P_outer, P_inner) :-
 
 // 2D divide, one tile count and gap on both axes. Outputs are full 2D:
 // p_outer indexes an n×n tile arrangement; p_inner is the cell within a tile.
-// One scalar over both axes states the square claim; a rectangular claim
-// reads axis-tagged rows through per-axis divide, perp-glued.
+// One scalar over both axes states the square claim; Divide2D makes the
+// rectangular one.
 .decl divide_2d(p: Position, n: number, gap: number,
                 p_outer: Position, p_inner: Position) inline
 divide_2d(P, N, G, P_outer, P_inner) :-
