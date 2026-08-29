@@ -100,9 +100,9 @@ emitter(P2) :-
     c.grow(D), dist(P2, D, K), K >= 0.           // rows remain
 
 .init rays = Ray<Unit>
-rays.dir(Diag)     :- cast_corner(Diag).
-rays.cell($U(), P) :- frame.cell($U(), P).
-rays.mark($U(), P) :- emitter(P).
+rays.dir($U(), Diag) :- cast_corner(Diag).
+rays.cell($U(), P)   :- frame.cell($U(), P).
+rays.mark($U(), P)   :- emitter(P).
 
 echo(P, $Emit()) :- rays.ray($U(), P, _, _, _), !arm(P).
 

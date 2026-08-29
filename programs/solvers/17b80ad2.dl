@@ -14,6 +14,9 @@
 
 .type Choice = Dir {} | Edge {}
 
+// A flagged line's mark edge, under one model.
+.type FlowKey = [d: Dir, ch: Choice]
+
 .comp Consts {
     .decl bg(c: Color) bg(0).
     .decl mark(c: Color) mark(5).
@@ -40,19 +43,21 @@ marked(P_across, D, $Edge()) :-
     axis_of(D, A), split(P, A, _, P_across).     // its line
 
 // Ink flows away from the mark edge through bg; ink occludes.
-.decl flow(p: Position, col: Color, d: Dir, ch: Choice)
-flow(P, Col, D, Ch) :-
-    in(P, Col), !c.bg(Col),                              // ink cell
-    marked(P_across, D, Ch),                             // a flagged line
-    axis_of(D, A), split(P, A, _, P_across).             // p on it
-flow(P2, Col, D, Ch) :-
-    flow(P, Col, D, Ch),                     // colored cell
-    opposite(D, O), neighbor(P, O, P2),      // away from the mark edge
-    in(P2, Bg), c.bg(Bg).                    // still bg — ink occludes
+.init flow = Ray<FlowKey>
+flow.dir([D, Ch], O) :- marked(_, D, Ch), opposite(D, O).
+flow.cell([D, Ch], P) :- marked(_, D, Ch), in(P, _).
+flow.mark([D, Ch], P) :-
+    in(P, Col), !c.bg(Col),                      // ink cell
+    marked(P_across, D, Ch),                     // a flagged line
+    axis_of(D, A), split(P, A, _, P_across).     // p on it
+flow.blocked([D, Ch], P) :- marked(_, D, Ch), in(P, Col), !c.bg(Col).
+
+.decl painted(p: Position, col: Color, ch: Choice)
+painted(P, Col, Ch) :- flow.clear([_, Ch], P, _, _, P_ink), in(P_ink, Col).
 
 .decl impl_choice(ch: Choice)
 impl_choice($Dir()). impl_choice($Edge()).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, Ch) :- flow(P, Col, _, Ch).
-out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !flow(P, _, _, Ch).
+out(P, Col, Ch) :- painted(P, Col, Ch).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !painted(P, _, Ch).

@@ -39,7 +39,7 @@ seg(P, $Set()) :- set_spans.between($U(), P).
 
 // --- Sided ---
 .init sided_rays = Ray<Color>
-sided_rays.dir(D)       :- c.axis(A), axis_of(D, A).
+sided_rays.dir(Cm, D)   :- c.marker(Cm), c.axis(A), axis_of(D, A).
 sided_rays.cell(Cm, P)  :- c.marker(Cm), in(P, Col), !c.marker(Col).
 sided_rays.mark(Col, P) :- in(P, Col), c.marker(Col).
 

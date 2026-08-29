@@ -67,7 +67,7 @@ mini(P, Col, $Converge()) :-
 // --- Cross ---
 
 .init dray = Ray<Unit>
-dray.dir(D)        :- diag_dir_elem(D).
+dray.dir($U(), D)  :- diag_dir_elem(D).
 dray.cell($U(), P) :- in(P, _).
 dray.mark($U(), P) :- mark(P, _).
 

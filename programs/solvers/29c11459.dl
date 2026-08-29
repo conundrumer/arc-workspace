@@ -1,5 +1,5 @@
 // 29c11459
-// concept: lines markers walk
+// concept: lines markers cast
 // A mark at each end of a row; the row fills with the marks' colors, half
 // each, and the middle cell gets the clash color. Every mark sits on its
 // edge, so three fill priors coincide on the data; one case each, tagged
@@ -63,14 +63,14 @@ out(P, Col, $Meet()) :- in(P, _), !front(P, _), !clash_cell(P), c.bg(Col).
 // --- $Near ---
 
 .init rays = Ray<Color>
-rays.dir(D)         :- c.axis(A), axis_of(D, A).
+rays.dir(Col, D)    :- pair(D, _, Col, _, _).
 rays.cell(Col, P)   :- mark(_, Col), in(P, _).
 rays.mark(Col, P)   :- mark(P, Col).
 
 // Front cells, plus the cells behind the near mark.
 .decl territory(p: Position, col: Color)
 territory(P, Col) :- front(P, Col).
-territory(P, Col) :- pair(D, _, Col, _, _), rays.ray(Col, P, D, _, _).
+territory(P, Col) :- rays.ray(Col, P, _, _, _).
 
 out(P, Col, $Near()) :- territory(P, Col).
 out(P, Col, $Near()) :- clash_cell(P), c.clash(Col).

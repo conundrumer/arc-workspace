@@ -29,7 +29,7 @@ ink_slice(Along) :- ink(P, _), axis_elem(A), split(P, A, Along, _).
 sep_cell(P) :- in(P, _), axis_elem(A), split(P, A, Along, _), !ink_slice(Along).
 
 .init sep = Ray<Unit>
-sep.dir(D) :- dir_elem(D).
+sep.dir($U(), D) :- dir_elem(D).
 sep.cell($U(), P) :- in(P, _).
 sep.mark($U(), P) :- sep_cell(P).
 

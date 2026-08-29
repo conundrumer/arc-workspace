@@ -32,7 +32,7 @@ mark(P) :- in(P, Col), c.mark(Col).
 
 // Marks cast along the diagonals, seeing only marks.
 .init diag = Ray<Unit>
-diag.dir(D) :- diag_dir_elem(D).
+diag.dir($U(), D) :- diag_dir_elem(D).
 diag.cell($U(), P) :- mark(P).
 diag.mark($U(), P) :- mark(P).
 

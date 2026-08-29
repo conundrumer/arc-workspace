@@ -88,15 +88,13 @@ out(P, Col, Ch) :- sym_choice(Ch), hole(P), mirror(P, Q), intact(Q, Col).
 .decl fix_corner(diag: DiagDir)
 fix_corner(Diag) :- on_fix(P), diag_dist(P, Diag, _, 0, 0).
 
-// Nearest intact color toward a fix corner, holes skipped.
-.decl seek(p: Position, diag: DiagDir, col: Color)
-seek(P, Diag, Col) :-
-    hole(P), neighbor(P, Diag, P2),
-    ( fix_corner(Diag), intact(P2, Col)   // it is intact
-    ; seek(P2, Diag, Col)                 // it seeks on
-    ).
+// Each hole seeks toward a fix corner, halting at the first intact cell.
+.init seek = Ray<Unit>
+seek.dir($U(), Diag) :- fix_corner(Diag).
+seek.mark($U(), P) :- hole(P).
+seek.blocked($U(), P) :- intact(P, _).
 
-out(P, Col, $Slide()) :- residual(P), seek(P, _, Col).
+out(P, Col, $Slide()) :- residual(P), seek.stop($U(), P2, _, _, P), intact(P2, Col).
 
 // --- Bg ---
 

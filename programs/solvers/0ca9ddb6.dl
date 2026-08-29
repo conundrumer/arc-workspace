@@ -56,12 +56,12 @@ impl_choice($Ray()). impl_choice($Lookup()).
 // --- $Ray ---
 // One cast per kind: each roster's marks cast that kind's directions.
 .init arm = Ray<Color>
-arm.dir(D) :- dir_elem(D).
+arm.dir(M, D) :- c.arm_paint(M, _), dir_elem(D).
 arm.cell(M, P) :- c.arm_paint(M, _), in(P, _).
 arm.mark(M, P) :- in(P, M), c.arm_paint(M, _).
 
 .init diag = Ray<Color>
-diag.dir(D) :- diag_dir_elem(D).
+diag.dir(M, D) :- c.diag_paint(M, _), diag_dir_elem(D).
 diag.cell(M, P) :- c.diag_paint(M, _), in(P, _).
 diag.mark(M, P) :- in(P, M), c.diag_paint(M, _).
 
@@ -117,12 +117,12 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !painted(P, _, Ch).
     // Casts from each blob's dot, one instance per kind, classify the
     // blob's painted cells.
     .init arms = Ray<StarKey>
-    arms.dir(D) :- dir_elem(D).
+    arms.dir(Ky, D) :- arms.mark(Ky, _), dir_elem(D).
     arms.cell([E, Id], P) :- arms.mark([E, Id], _), ex_in(E, P, _).
     arms.mark([E, Id], P) :- dot(E, P, _), blob.label(E, P, Id).
 
     .init diags = Ray<StarKey>
-    diags.dir(D) :- diag_dir_elem(D).
+    diags.dir(Ky, D) :- diags.mark(Ky, _), diag_dir_elem(D).
     diags.cell([E, Id], P) :- diags.mark([E, Id], _), ex_in(E, P, _).
     diags.mark([E, Id], P) :- dot(E, P, _), blob.label(E, P, Id).
 

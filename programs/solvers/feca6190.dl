@@ -39,7 +39,7 @@ seated(P_out, Col) :-
     same_dist(Dh0, P_in, P_out).                                   // same trailing offset
 
 .init rays = Ray<Unit>
-rays.dir(D)        :- c.sweep(D).
+rays.dir($U(), D)  :- c.sweep(D).
 rays.cell($U(), P) :- frame.cell($U(), P).
 rays.mark($U(), P) :- seated(P, _).
 

@@ -1,5 +1,5 @@
 // 06df4c85
-// concept: decompose span walk
+// concept: decompose span cast
 // A separator lattice cuts the grid into tiles; non-bg tiles are marks.
 // Tiles between two same-colored marks in a tile row or column fill with
 // that color. Every train span crosses only bg tiles; the cases claim what
@@ -47,13 +47,15 @@ fill($Over(), T, Col) :- bet.between(Col, T), !mark(T, Col).
 fill($Around(), T, Col) :- bet.between(Col, T), !mark(T, _).
 
 // --- Block ---
+// Each bg tile runs through bg tiles, halting at the first mark.
+.init run = Ray<Unit>
+run.dir($U(), D) :- dir_elem(D).
+run.mark($U(), T) :- bg_tile(T).
+run.blocked($U(), T) :- mark(T, _).
+
 // A bg tile whose run of bg tiles toward d ends at a Col mark.
 .decl reach(col: Color, d: Dir, p_tile: Position)
-reach(Col, D, T) :-
-    bg_tile(T), dir_elem(D), neighbor(T, D, T2),
-    ( mark(T2, Col)         // it holds the mark
-    ; reach(Col, D, T2)     // it reaches the mark
-    ).
+reach(Col, D, T) :- run.stop($U(), T2, D, _, T), dir_elem(D), mark(T2, Col).
 
 fill($Block(), T, Col) :- reach(Col, D, T), opposite(D, O), reach(Col, O, T).
 

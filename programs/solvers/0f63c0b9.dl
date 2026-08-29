@@ -28,7 +28,7 @@ mark_line(P_mark, P) :-
 
 // Each line reaches across the marks' axis, one cell per step.
 .init reach = Ray<Position>
-reach.dir(D)          :- c.tie_dir(D_tie), axis_of(D_tie, A), axis_of(D, A).
+reach.dir(P_mark, D)  :- mark(P_mark, _), c.tie_dir(D_tie), axis_of(D_tie, A), axis_of(D, A).
 reach.cell(P_mark, P) :- mark(P_mark, _), in(P, _).
 reach.mark(P_mark, P) :- mark_line(P_mark, P).
 

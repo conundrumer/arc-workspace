@@ -37,7 +37,7 @@ box.grid(Col, P) :- box.cell(Col, _), in(P, _).
 
 // The anchor lies toward one edge from the mover, on a shared line.
 .init cast = Ray<Unit>
-cast.dir(D)        :- dir_elem(D).
+cast.dir($U(), D)  :- dir_elem(D).
 cast.cell($U(), P) :- anchor_cell(P).
 cast.mark($U(), P) :- mover_cell(P).
 

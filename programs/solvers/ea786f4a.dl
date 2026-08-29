@@ -26,7 +26,7 @@ dot(P) :- in(P, Ink), c.ink(Ink).
 
 // Diagonal rays from the dot toward every corner.
 .init xrays = Ray<Unit>
-xrays.dir(D)         :- diag_dir_elem(D).
+xrays.dir($U(), D)   :- diag_dir_elem(D).
 xrays.cell($U(), P)  :- in(P, _).
 xrays.mark($U(), Q)  :- dot(Q).
 

@@ -72,7 +72,7 @@ mark_dir(P, D, $Side()) :-
 fired(D, Col, Ch) :- mark(P, Col), mark_dir(P, D, Ch).
 
 .init ray = Ray<Position>
-ray.dir(D) :- dir_elem(D).
+ray.dir(M, D) :- mark_dir(M, D, _).
 ray.cell(M, P) :- mark(M, _), in(P, _).
 ray.mark(M, M) :- mark(M, _).
 

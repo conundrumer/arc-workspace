@@ -34,7 +34,7 @@ bar_cell([Col, Id], P) :- bars.label(Col, P, Id).
 near.cand(B, K) :- bar_cell(B, P), wall_dir(D), dist(P, D, K).
 
 .init shadow = Ray<Bar>
-shadow.dir(D) :- wall_dir(D).
+shadow.dir(B, D) :- bar_cell(B, _), wall_dir(D).
 shadow.mark(B, P) :- bar_cell(B, P).
 shadow.cell(B, P) :- bar_cell(B, _), in(P, Col), c.bg(Col).
 

@@ -646,13 +646,14 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     diag_cell(Ky, P, Diag, K) :- quadrant(Ky, P, Diag), diag_dist(P, Diag, _, K, K).
 }
 
-// Keyed marks cast rays toward each direction in use. Reach is inclusive:
+// Keyed marks cast rays toward the key's directions. Reach is inclusive:
 // a mark is on its own ray, and a domain that excludes marks (bg-only) gets
 // strict semantics with no extra rule. The cast crosses the whole frame; the
-// domain decides what is reported, not what the ray passes over.
+// domain decides what is reported, not what the ray passes over. Direction
+// columns are Dir8; a cardinal-only caller narrows one with `dir_elem`.
 .comp Ray<Key> {
-    // The cast directions — the instance's parameter, unkeyed.
-    .decl dir(d: Dir8)
+    // The cast directions, per key.
+    .decl dir(key: Key, d: Dir8)
 
     // The position domain tested, per key.
     .decl cell(key: Key, p: Position)
@@ -669,7 +670,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 
     // Frame-wide cast: one cell per step from each mark, marks included.
     .decl cast(key: Key, p: Position, d: Dir8, k: number, src: Position)
-    cast(Ky, P, D, 0, P) :- mark(Ky, P), dir(D).
+    cast(Ky, P, D, 0, P) :- mark(Ky, P), dir(Ky, D).
     cast(Ky, P2, D, K+1, Src) :-
         cast(Ky, P, D, K, Src), step_delta(D, S), compose(P, S, P2), onward(P2, D).
 
@@ -677,6 +678,27 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     // k = 0 at the mark itself, and `ray(Ky, P, D, _, _)` is membership alone.
     .decl ray(key: Key, p: Position, d: Dir8, k: number, src: Position)
     ray(Ky, P, D, K, Src) :- cast(Ky, P, D, K, Src), cell(Ky, P).
+
+    // Cells a cast cannot enter, per key. A blocked mark still casts.
+    .decl blocked(key: Key, p: Position)
+
+    // Frame-wide open prefix: the cast short of its first blocked cell.
+    .decl clear_cast(key: Key, p: Position, d: Dir8, k: number, src: Position)
+    clear_cast(Ky, P, D, 0, P) :- cast(Ky, P, D, 0, P).
+    clear_cast(Ky, P, D, K, Src) :- _ahead(Ky, P, D, K, Src), !blocked(Ky, P).
+
+    // The cast cell after the prefix: it extends the prefix or halts the cast.
+    .decl _ahead(key: Key, p: Position, d: Dir8, k: number, src: Position)
+    _ahead(Ky, P2, D, K, Src) :-
+        clear_cast(Ky, P, D, _, Src), neighbor(P, D, P2), cast(Ky, P2, D, K, Src).
+
+    // ray halted before its first blocked cell.
+    .decl clear(key: Key, p: Position, d: Dir8, k: number, src: Position)
+    clear(Ky, P, D, K, Src) :- clear_cast(Ky, P, D, K, Src), cell(Ky, P).
+
+    // The first blocked cell of each cast, whether or not it is in the domain.
+    .decl stop(key: Key, p: Position, d: Dir8, k: number, src: Position)
+    stop(Ky, P, D, K, Src) :- _ahead(Ky, P, D, K, Src), blocked(Ky, P).
 }
 
 // The two-sided fold of Ray: between(k, p) holds when key-k marks lie on
@@ -686,7 +708,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     // The fold axes, per key.
     .decl axis(key: Key, a: Axis4)
 
-    dir(D) :- axis(_, A), axis4_of(D, A).   // cast both ways
+    dir(Ky, D) :- axis(Ky, A), axis4_of(D, A).   // cast both ways
 
     .decl between(key: Key, p: Position)
     between(K, P) :-

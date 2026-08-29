@@ -1,5 +1,5 @@
 // 99fa7670
-// concept: markers walk
+// concept: markers cast
 // Each ink dot fills its line from itself to the c.dir edge; there the fill
 // bends with c.sense and runs along the edge through bg, occluded by the
 // next dot's fill.

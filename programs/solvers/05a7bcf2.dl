@@ -39,7 +39,7 @@ shape_cell(P) :- in(P, Col), c.shape(Col).
 
 // From the wall toward the push structure, and on to the far edge.
 .init wall_cast = Ray<Unit>
-wall_cast.dir(D)        :- dir_elem(D).
+wall_cast.dir($U(), D)  :- dir_elem(D).
 wall_cast.cell($U(), P) :- push_cell(P).
 wall_cast.mark($U(), P) :- wall_cell(P).
 
@@ -48,12 +48,12 @@ dir(D) :- dir_elem(D), wall_cast.ray($U(), _, D, _, _).
 
 // The shape casts toward the wall; the wall's fill reaches on past it.
 .init cast = Ray<Unit>
-cast.dir(D)        :- dir(D).
+cast.dir($U(), D)  :- dir(D).
 cast.cell($U(), P) :- in(P, _).
 cast.mark($U(), P) :- shape_cell(P).
 
 .init reach = Ray<Unit>
-reach.dir(D)        :- dir(D).
+reach.dir($U(), D)  :- dir(D).
 reach.cell($U(), P) :- in(P, _).
 reach.mark($U(), P) :- wall_cell(P).
 

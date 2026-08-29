@@ -22,7 +22,7 @@ box.grid(Col, P) :- box.cell(Col, _), in(P, _).
 
 // Line of sight: the direction from the shape to the block.
 .init sight = Ray<Unit>
-sight.dir(D) :- dir_elem(D).
+sight.dir($U(), D) :- dir_elem(D).
 sight.mark($U(), P) :- in(P, Col), c.shape_color(Col).
 sight.cell($U(), P) :- in(P, Col), c.mirror_color(Col).
 

@@ -35,35 +35,31 @@ place(P, P_across, K) :-
 .decl mover(p: Position)
 mover(P) :- in(P, Col), c.mover(Col).
 
-// Movers cast along the slide axis, both ways.
-.init slide = Ray<Unit>
-slide.dir(D) :- c.dir(D).
-slide.dir(D) :- c.dir(D2), opposite(D2, D).
-slide.cell($U(), P) :- in(P, _).
-slide.mark($U(), P) :- mover(P).
-
-// What blocks the pack.
-.decl blocker(ch: Choice, p: Position)
+// Movers cast along the slide axis, both ways, halting at what blocks the pack.
+.init slide = Ray<Choice>
+slide.dir(Ch, D) :- impl_choice(Ch), c.dir(D2), ( D = D2 ; opposite(D2, D) ).
+slide.cell(Ch, P) :- impl_choice(Ch), in(P, _).
+slide.mark(Ch, P) :- impl_choice(Ch), mover(P).
 // --- Wall ---
-blocker($Wall(), P) :- in(P, Col), c.wall(Col).
+slide.blocked($Wall(), P) :- in(P, Col), c.wall(Col).
 // --- Solid ---
-blocker($Solid(), P) :- in(P, Col), !c.bg(Col), !c.mover(Col).
+slide.blocked($Solid(), P) :- in(P, Col), !c.bg(Col), !c.mover(Col).
 
-// Blockers ahead of the movers cast back across the slide path.
-.init barrier = Ray<Choice>
-barrier.dir(D) :- c.dir(D).
-barrier.cell(Ch, P) :- barrier.mark(Ch, _), in(P, _).
-barrier.mark(Ch, P) :- blocker(Ch, P), c.dir(D), slide.ray($U(), P, D, _, _).
+// A cell some mover's cast does not reach: a blocker sits between the two.
+.decl cut_off(ch: Choice, p: Position)
+cut_off(Ch, P) :-
+    c.dir(D), slide.ray(Ch, P, D, _, Src),   // on a mover's cast
+    !slide.clear(Ch, P, D, _, Src).          // past where that cast halted
 
 // The landing strip: the free run ahead of the whole group, plus the
 // group itself.
 .decl strip(ch: Choice, p_across: Position, p: Position)
 strip(Ch, P_across, P) :-
-    impl_choice(Ch), place(P, P_across, _),          // a cell, keyed by its line
-    ( mover(P)                                       // the group itself
-    ; c.dir(D), slide.ray($U(), P, D, _, _),         // at or ahead of a mover
-      opposite(D, O), !slide.ray($U(), P, O, _, _),  // ahead of every mover
-      !barrier.ray(Ch, P, D, _, _)                   // short of every barrier
+    impl_choice(Ch), place(P, P_across, _),         // a cell, keyed by its line
+    ( mover(P)                                      // the group itself
+    ; c.dir(D), slide.ray(Ch, P, D, _, _),          // at or ahead of a mover
+      opposite(D, O), !slide.ray(Ch, P, O, _, _),   // ahead of every mover
+      !cut_off(Ch, P)                               // clear from every one of them
     ).
 
 // Movers and strip cells ranked from the dir edge; movers re-seat onto

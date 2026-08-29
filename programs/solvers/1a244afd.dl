@@ -58,7 +58,7 @@
 
     // Each pivot looks along its row and column for pointers.
     .init sight = Ray<Key>
-    sight.dir(D) :- dir_elem(D).
+    sight.dir(Ky, D) :- cell(Ky, _, _), dir_elem(D).
     sight.mark(Ky, P) :- cell(Ky, P, Col), c.pivot(Col).
     sight.cell(Ky, P) :- cell(Ky, P, Col), c.pointer(Col).
 

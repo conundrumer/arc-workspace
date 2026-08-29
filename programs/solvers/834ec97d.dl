@@ -1,5 +1,5 @@
 // 834ec97d
-// concept: markers walk parity
+// concept: markers cast parity
 // A single marker cell on bg. The marker steps one cell toward c.dir;
 // alternating columns anchored at the marker's column fill with c.fill from
 // the marker's row to the opposite edge. Two models of the alternation,
@@ -56,7 +56,7 @@ beam(Q, $Parity()) :-
 // The filled region: each beam cell and its column toward the edge opposite
 // the move.
 .init rays = Ray<Choice>
-rays.dir(O)      :- c.dir(D), opposite(D, O).
+rays.dir(Ch, O)  :- impl_choice(Ch), c.dir(D), opposite(D, O).
 rays.cell(Ch, P) :- beam(_, Ch), in(P, _).
 rays.mark(Ch, P) :- beam(P, Ch).
 

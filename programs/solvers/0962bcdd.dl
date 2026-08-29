@@ -74,12 +74,12 @@ impl_choice($Ray()). impl_choice($Lookup()).
 // --- Ray ---
 // One cast per kind, keyed by the marker cell.
 .init arm = Ray<Position>
-arm.dir(D) :- dir_elem(D).
+arm.dir(Pm, D) :- parse.marker($U(), Pm, _, _), dir_elem(D).
 arm.cell(Pm, P) :- parse.marker($U(), Pm, _, _), in(P, _).
 arm.mark(Pm, Pm) :- parse.marker($U(), Pm, _, _).
 
 .init diag = Ray<Position>
-diag.dir(D) :- diag_dir_elem(D).
+diag.dir(Pm, D) :- parse.marker($U(), Pm, _, _), diag_dir_elem(D).
 diag.cell(Pm, P) :- parse.marker($U(), Pm, _, _), in(P, _).
 diag.mark(Pm, Pm) :- parse.marker($U(), Pm, _, _).
 

@@ -1,5 +1,5 @@
 // bbc9ae5d
-// concept: grow walk cast move
+// concept: grow cast move
 // Input is a single line: an ink run anchored at one end, bg beyond. The
 // output is line-length / c.divisor rows: the input, then each row
 // continuing the previous one toward c.diag.
@@ -61,7 +61,7 @@ out(P, Col, $Grow()) :- frame.cell($U(), P), !grown(P, _), c.bg(Col).
 // --- Slide ---
 
 .init rays = Ray<Unit>
-rays.dir(D)        :- c.diag(D).
+rays.dir($U(), D)  :- c.diag(D).
 rays.cell($U(), P) :- frame.cell($U(), P).
 rays.mark($U(), P) :- seated(P, _).
 

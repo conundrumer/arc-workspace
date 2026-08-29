@@ -31,11 +31,17 @@ impl_choice($Run()). impl_choice($Object()).
 
 // --- $Run segmentation ---
 
-// Ink cells by their row — the axis-only position along the stacking axis.
+// A cell's row — the axis-only position along the stacking axis.
+.decl cell_row(p: Position, r: Position)
+cell_row(P, R) :- in(P, _), c.dir(D), axis_of(D, A), split(P, A, R, _).
+
+// Every row of the stack.
+.decl row(r: Position)
+row(R) :- cell_row(_, R).
+
+// Ink cells by their row.
 .decl row_cell(r: Position, p: Position)
-row_cell(R, P) :-
-    in(P, Col), !c.bg(Col),                          // ink cell
-    c.dir(D), axis_of(D, A), split(P, A, R, _).      // its row
+row_cell(R, P) :- cell_row(P, R), in(P, Col), !c.bg(Col).
 
 .decl row_color(r: Position, col: Color)
 row_color(R, Col) :- row_cell(R, P), in(P, Col).
@@ -47,13 +53,13 @@ boundary(R) :-
     c.dir(D), neighbor(R, D, R2),                    // row toward the edge
     !row_color(R2, Col).
 
-// Rows of the run each boundary starts.
-.decl run_of(r: Position, b: Position)
-run_of(B, B) :- boundary(B).
-run_of(R2, B) :-
-    run_of(R, B),
-    c.dir(D), opposite(D, O), neighbor(R, O, R2),   // row away from the edge
-    row_cell(R2, _), !boundary(R2).
+// Rows of the run each boundary starts: it carries on away from the counting
+// edge until the next boundary or a row with no ink.
+.init run_of = Ray<Unit>
+run_of.dir($U(), O) :- c.dir(D), opposite(D, O).
+run_of.cell($U(), R) :- row(R).
+run_of.mark($U(), R) :- boundary(R).
+run_of.blocked($U(), R) :- row(R), ( boundary(R) ; !row_cell(R, _) ).
 
 // --- $Object segmentation ---
 
@@ -80,7 +86,7 @@ mark_top(Ch, K) :-
 .decl mark_cell(ch: Choice, p: Position)
 mark_cell($Run(), P) :-
     mark_top($Run(), K), c.dir(D), boundary(B), dist(B, D, K),  // marked run
-    run_of(R, B), row_cell(R, P).
+    run_of.clear($U(), R, _, _, B), row_cell(R, P).
 mark_cell($Object(), P) :-
     mark_top($Object(), K), obj_top(Id, K), comps.label(_, P, Id).
 
