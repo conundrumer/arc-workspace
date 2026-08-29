@@ -14,6 +14,10 @@ uv run python scripts/context.py         # solver docs + lib.dl, in the projecti
 
 Souffle binary required for `.dl` solvers (`brew install souffle`).
 
+## Solver console
+
+`tools/console/` runs solver sessions as `claude -p` workers in staged chains. The module docstrings in `tools/console/solver_console/` index what each module holds: what a worker session reads and may do, how a stage hands off, and how the user reaches a session. Read them before answering a question about how console sessions run.
+
 ## Conventions
 
 - **Patches are the source of truth** for corrections. `data/tasks/` regenerates from them via `scripts/materialize.py`. Upstream is pinned via submodules; corrections live in patches, not in `data/upstream/`.
