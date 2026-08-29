@@ -52,8 +52,11 @@ footprint_choice($Plus()). footprint_choice($Shape()).
 .decl footprint(p_place: Position, p: Position, fp: Footprint)
 
 // $Plus — the cell and its four cardinal neighbors.
-footprint(P, P, $Plus()) :- in(P, _).
-footprint(P, Q, $Plus()) :- in(P, _), dir_elem(D), neighbor(P, D, Q), in(Q, _).
+footprint(P, Q, $Plus()) :-
+    in(P, _),
+    ( Q = P                                       // the placement's own cell
+    ; dir_elem(D), neighbor(P, D, Q), in(Q, _)    // and each cardinal step
+    ).
 
 // $Shape — the stored cells, at every box seat that meets the frame. A
 // seat is found backward: each grid cell, viewed as each shape cell,
@@ -95,15 +98,15 @@ placement(P, [Fp, $Fragment()]) :- fragment.equals([Fp, P], _).
 
 // $Maximal — no other placement's marks strictly contain this one's.
 
-// P2's marks miss one of P's.
-.decl not_cover(p2: Position, p_place: Position, fp: Footprint)
-not_cover(P2, P, Fp) :- cand_mark(P, Q, Fp), cand_mark(P2, _, Fp), !cand_mark(P2, Q, Fp).
+// Placements compared against each other: both sides are mark sets.
+.init maximal = KeyedSetCompare<KP, KP, Position>
+maximal.pattern_member([Fp, P], Q)  :- cand_mark(P, Q, Fp).
+maximal.observed_member([Fp, P], Q) :- cand_mark(P, Q, Fp).
 
-// Some placement's marks strictly contain P's.
 .decl dominated(p_place: Position, fp: Footprint)
 dominated(P, Fp) :-
-    cand_mark(P, _, Fp), cand_mark(P2, _, Fp),
-    !not_cover(P2, P, Fp), not_cover(P, P2, Fp).
+    maximal.covers([Fp, P2], [Fp, P]),      // P2's marks hold all of P's
+    !maximal.equals([Fp, P2], [Fp, P]).     // and more besides
 
 placement(P, [Fp, $Maximal()]) :- cand_mark(P, _, Fp), !dominated(P, Fp).
 
