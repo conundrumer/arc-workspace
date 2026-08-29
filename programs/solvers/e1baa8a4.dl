@@ -26,11 +26,10 @@ bands.domain([D, K]) :- in(P, _), dir_elem(D), dist(P, D, K).
 // Axis part of the output position: band indices from both edges of a.
 .decl axis_band(a: Axis, p: Position, p_axis: Position)
 axis_band(A, P, P_axis) :-
-    in(P, _), axis_of(D, A), opposite(D, O),           // the axis's edge pair
-    dist(P, D, K1), bands.tally([D, K1], I1),          // band index from each
-    dist(P, O, K2), bands.tally([O, K2], I2),
-    edge_delta(D, I1, P1), edge_delta(O, I2, P2),
-    compose(P1, P2, P_axis).
+    in(P, _), axis_of(D, A), opposite(D, O),             // the axis's edge pair
+    dist_pair(P, D, K1, K2),                             // distance to each edge
+    bands.tally([D, K1], I1), bands.tally([O, K2], I2),  // band index from each
+    axis_delta(D, I1, I2, P_axis).
 
 .decl out(p: Position, col: Color)
 out(P_out, Col) :-

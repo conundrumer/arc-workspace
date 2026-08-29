@@ -37,9 +37,8 @@ mark_idx(Id, D, R) :- mark_box.edge_min(Id, D, K), rank.rank(D, K, R).
 .decl mark_axis_pos(id: Ident, a: Axis, p: Position)
 mark_axis_pos(Id, A, P) :-
     axis_of(D, A), opposite(D, O),
-    mark_idx(Id, D, R), edge_delta(D, R, P1),  // rank from one edge
-    mark_idx(Id, O, S), edge_delta(O, S, P2),  // rank from the other
-    compose(P1, P2, P).
+    mark_idx(Id, D, R), mark_idx(Id, O, S),
+    axis_delta(D, R, S, P).
 
 // The marker at each cell: its places on the two axes, glued.
 .decl rank_mark(p: Position, col: Color)

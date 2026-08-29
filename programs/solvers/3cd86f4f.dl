@@ -15,17 +15,15 @@
 
 .init c = Consts
 
-// The push grows one slot of the slide axis; the complementary growth on
-// the other slot keeps the widened frame consistent.
+// An inset, not a translation: the two magnitudes place the line and widen
+// the frame together.
 .decl shear(p_in: Position, p_out: Position)
 shear(P_in, P_out) :-
     in(P_in, _),
     c.slide(A), perp(A, A2), axis_of(D_m, A2),           // either cross dir
     c.sense(S), turn(S, D_m, D_push),                    // going toward d_m, cells push toward its turn
-    opposite(D_m, M), dist_pair(P_in, M, Kn, Kf),        // near/far shift magnitudes
-    opposite(D_push, D_away),
-    edge_delta(D_away, Kn, Delta_n), edge_delta(D_push, Kf, Delta_f),
-    compose(P_in, Delta_n, P_mid), compose(P_mid, Delta_f, P_out).
+    dist_pair(P_in, D_m, K_m, K_o),                      // shift magnitudes, from d_m and from across
+    axis_delta(D_push, K_m, K_o, Delta), compose(P_in, Delta, P_out).
 
 .decl image(p: Position)
 image(P_out) :- shear(_, P_out).

@@ -25,14 +25,11 @@ line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
 panels.cell($U(), P) :- in(P, _).
 panels.divider($U(), A, L) :- line_color.value([A, L], _).
 
-// A panel's frame — the ring of cells with a neighbor outside it.
-.decl frame(p: Position)
-frame(P) :-
-    panels.tile_of($U(), P, T), dir_elem(D),
-    neighbor(P, D, Q), !panels.tile_of($U(), Q, T).   // a neighbor outside the panel
+.init frame = Rim<Position>
+frame.cell(T, P) :- panels.tile_of($U(), P, T).
 
 .decl interior(t: Position, p: Position)
-interior(T, P) :- panels.tile_of($U(), P, T), !frame(P).
+interior(T, P) :- panels.tile_of($U(), P, T), !frame.rim(T, P).
 
 // --- lattice ---
 

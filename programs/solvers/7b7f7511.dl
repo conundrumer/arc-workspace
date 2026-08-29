@@ -19,18 +19,6 @@
 
 .init c = Consts
 
-// The divide_by_size peer of divide_slab. Lib candidate.
-.comp DivideBySizeSlab {
-    .decl divide_by_size_slab(p: Position, a: Axis, k: number, gap: number,
-                              p_outer: Position, p_inner: Position) inline
-    divide_by_size_slab(P, A, K, G, P_outer, P_inner) :-
-        divide_by_size(P, A, K, G, P_outer, P_i_axis),
-        split(P, A, _, Across),
-        compose(P_i_axis, Across, P_inner).
-}
-
-.init dbs = DivideBySizeSlab
-
 .decl out(p: Position, col: Color, c: Choice)
 
 // --- Dup ---
@@ -58,7 +46,7 @@ out(P_inner, Col, $Dup()) :-
 .decl tile_split(a: Axis, k: number, p: Position, p_inner: Position)
 tile_split(A, K, P, P_inner) :-
     in(P, _), axis_elem(A), sub_extent(P, A, K),
-    dbs.divide_by_size_slab(P, A, K, 0, _, P_inner).
+    divide_by_size_slab(P, A, K, 0, _, P_inner).
 
 // Two tiles disagree at a within-slab cell.
 .decl tile_mismatch(a: Axis, k: number)

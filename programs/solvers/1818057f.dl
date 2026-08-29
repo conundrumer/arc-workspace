@@ -38,11 +38,11 @@ occ.shape($U(), P, $U()) :- c.shape(P).
 shape_covered(P) :- occ.occurrence($U(), M), c.shape(S), compose(M, S, P).
 
 // --- $Flank ---
-.decl exposed(p: Position)
-exposed(P) :- field_at(P), dir_elem(D), neighbor(P, D, P2), !field_at(P2).
+.init exposed = Rim<Unit>
+exposed.cell($U(), P) :- field_at(P).
 
 .decl flanked(p: Position)
-flanked(P) :- field_at(P), !exposed(P).
+flanked(P) :- field_at(P), !exposed.rim($U(), P).
 
 .decl flank_covered(p: Position)
 flank_covered(P) :- flanked(P).

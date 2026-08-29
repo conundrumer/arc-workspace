@@ -92,7 +92,7 @@ out(P_grid_out, Col, $Tile()) :-
     data_dir(D) :- slab.margin(_, M), dir_elem(D), dist_pair(M, D, K, K2), K < K2.
 
     .decl half_h(n: number)
-    half_h(N) :- slab.inner(E, _, P), data_dir(D), axis_of(D, A), axis_dim(P, A, N).
+    half_h(N) :- data_dir(D), axis_of(D, A), slab.extents(_, A, N, _).
 
     // Tiles of the slab's depth fill the grid.
     .decl n_tiles(n: number)
@@ -114,15 +114,15 @@ out(P_grid_out, Col, $Tile()) :-
     .decl data_cell(e: Example, p_intile: Position, col: Color)
     data_cell(E, P_intile, Col) :-
         pair_cell(E, P_grid, Col),
-        data_dir(D), axis_of(D, A), n_tiles(N),
-        divide_slab(P_grid, A, N, 0, P_tile, P_intile),
+        data_dir(D), axis_of(D, A), half_h(K),
+        divide_by_size_slab(P_grid, A, K, 0, P_tile, P_intile),
         dist(P_tile, D, 0).
 
     .decl out_cell(e: Example, p_tile: Position, p_intile: Position, col: Color)
     out_cell(E, P_tile, P_intile, Col) :-
         ex_out(E, P_grid, Col),
-        data_dir(D), axis_of(D, A), n_tiles(N),
-        divide_slab(P_grid, A, N, 0, P_tile, P_intile).
+        data_dir(D), axis_of(D, A), half_h(K),
+        divide_by_size_slab(P_grid, A, K, 0, P_tile, P_intile).
 
     // A transform that lands some data cell off the output tile's color.
     .decl tile_mismatch(p_tile: Position, d: D4)

@@ -20,26 +20,6 @@
 
 .init c = Consts
 
-// Chebyshev erosion depth of a keyed cell set: ring 0 is the cells with a
-// neighbor outside the set, and each step inward is one ring deeper.
-.comp Peel<Key> {
-    .decl cell(key: Key, p: Position)  // input
-
-    // Some 8-neighbor lies outside the set — off-frame counts as outside.
-    .decl edge(key: Key, p: Position)
-    edge(Ky, P) :-
-        cell(Ky, P),
-        dir8_elem(D), neighbor(P, D, Q), !cell(Ky, Q).
-
-    // The shortest inward walk from the boundary.
-    .decl ring(key: Key, p: Position, k: number)
-    ring(Ky, P, 0) :- edge(Ky, P).
-    ring(Ky, P, K2) :-
-        ring(Ky, Q, K), K2 = K + 1,
-        dir8_elem(D), neighbor(Q, D, P), cell(Ky, P).
-    ring(Ky, P, K) <= ring(Ky, P, K2) :- K2 < K.
-}
-
 .decl impl_choice(c: Choice)
 impl_choice($Peel()). impl_choice($Sight()).
 
@@ -72,10 +52,10 @@ region(P, Id) :- comps.label($U(), P, Id).
 
 // --- Peel ---
 
-.init peel = Peel<Unit>
-peel.cell($U(), P) :- open(P).
+.init rim = Rim8<Unit>
+rim.cell($U(), P) :- open(P).
 
-depth(P, K, $Peel()) :- peel.ring($U(), P, K).
+depth(P, K, $Peel()) :- rim.depth($U(), P, K).
 
 // --- Sight ---
 

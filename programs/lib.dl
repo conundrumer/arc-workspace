@@ -35,7 +35,8 @@
 .type Dim = [v: number, h: number]
 
 // A Position slot's nature: a frame cell (bare), a translation (Shift), or
-// independent signed edge depths (Inset).
+// independent signed edge depths (Inset). A delta is a Shift when its changes
+// on each axis sum to zero, and an Inset otherwise.
 .type Shift = Position
 .type Inset = Position
 
@@ -324,8 +325,14 @@ geq([T1, B1, L1, R1], [T2, B2, L2, R2]) :-
 
 // Edge delta: a Position carrying k at edge d, zero elsewhere. At a corner,
 // k sits at both of the corner's edges.
-.decl edge_delta(d: Dir8, k: number, p: Shift) inline
+.decl edge_delta(d: Dir8, k: number, p: Inset) inline
 edge_delta(D, K, [@keep_dir(D, DIR_T, K), @keep_dir(D, DIR_B, K), @keep_dir(D, DIR_L, K), @keep_dir(D, DIR_R, K)]) :- true.
+
+// Axis delta: a Position carrying k1 at edge d and k2 at its opposite, zero
+// on the other axis.
+.decl axis_delta(d: Dir, k1: number, k2: number, p: Inset) inline
+axis_delta(D, K1, K2, P) :-
+    opposite(D, O), edge_delta(D, K1, P1), edge_delta(O, K2, P2), compose(P1, P2, P).
 
 // K-cell displacement toward d: -k at each edge of d, +k at each opposite.
 .decl jump_delta(d: Dir8, k: number, delta: Shift) inline
@@ -491,6 +498,14 @@ slab_anchor(D, P1, P2) :-
                   p_outer: Position, p_inner: Position) inline
 divide_slab(P, A, N, G, P_outer, P_inner) :-
     divide(P, A, N, G, P_outer, P_i_axis),
+    split(P, A, _, Across),
+    compose(P_i_axis, Across, P_inner).
+
+// Like divide_slab, but parameterized by tile size k.
+.decl divide_by_size_slab(p: Position, a: Axis, k: number, gap: number,
+                          p_outer: Position, p_inner: Position) inline
+divide_by_size_slab(P, A, K, G, P_outer, P_inner) :-
+    divide_by_size(P, A, K, G, P_outer, P_i_axis),
     split(P, A, _, Across),
     compose(P_i_axis, Across, P_inner).
 
@@ -1259,6 +1274,36 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     .decl reach(key: Key, p: Position)
     reach(Ky, P) :- seed(Ky, P), node(Ky, P).
     reach(Ky, Q) :- reach(Ky, P), step(D), compose(P, D, Q), node(Ky, Q).
+}
+
+// Boundary and erosion depth of a keyed cell set. The rim is the cells with
+// a neighbor outside the set, off-frame counting as outside; depth runs
+// inward from the rim, one per step. Neighbors are the four cardinals.
+.comp Rim<Key> {
+    .decl cell(key: Key, p: Position)  // input
+
+    .decl dir(d: Dir8)
+    dir(D) :- dir_elem(D).
+
+    // The outside lies one step toward d.
+    .decl rim_dir(key: Key, p: Position, d: Dir8)
+    rim_dir(Ky, P, D) :- cell(Ky, P), dir(D), neighbor(P, D, Q), !cell(Ky, Q).
+
+    .decl rim(key: Key, p: Position)
+    rim(Ky, P) :- rim_dir(Ky, P, _).
+
+    // The shortest inward walk from the rim.
+    .decl depth(key: Key, p: Position, k: number)
+    depth(Ky, P, 0) :- rim(Ky, P).
+    depth(Ky, P, K2) :-
+        depth(Ky, Q, K), K2 = K + 1,
+        dir(D), neighbor(Q, D, P), cell(Ky, P).
+    depth(Ky, P, K) <= depth(Ky, P, K2) :- K2 < K.
+}
+
+// Rim under 8-adjacency.
+.comp Rim8<Key> : Rim<Key> {
+    dir(D) :- dir8_elem(D).
 }
 
 // The regions a keyed cell set closes off from the grid edge — the
