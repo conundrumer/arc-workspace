@@ -15,17 +15,11 @@
 
 .init c = Consts
 
-.decl ink(p: Position)
-ink(P) :- in(P, Col), !c.bg(Col).
-
 .init blocks = Components<Unit>
-blocks.node($U(), P) :- ink(P).
-
-.decl block(id: Ident, p: Position)
-block(Id, P) :- blocks.label($U(), P, Id).
+blocks.node($U(), P) :- in(P, Col), !c.bg(Col).
 
 .init bb = Bbox<Ident>
-bb.cell(Id, P) :- block(Id, P).
+bb.cell(Id, P) :- blocks.label($U(), P, Id).
 
 // The two corners the chain runs through.
 .decl near(id: Ident, p: Position)
@@ -39,29 +33,24 @@ far(Id, P) :- c.corner(Diag), bb.corner(Id, P, Diag).
 beyond(Id1, Id2) :-
     c.order(D), bb.edge_min(Id1, D, K1), bb.edge_min(Id2, D, K2), K1 < K2.
 
-.decl straddled(id1: Ident, id2: Ident)
-straddled(Id1, Id2) :- beyond(Id1, Id), beyond(Id, Id2).
-
-.decl next(id1: Ident, id2: Ident)
-next(Id1, Id2) :- beyond(Id1, Id2), !straddled(Id1, Id2).
-
-.decl first(id: Ident)
-first(Id) :- block(Id, _), !beyond(_, Id).
+.init chain = Order<Unit, Ident>
+chain.elem($U(), Id) :- blocks.label($U(), _, Id).
+chain.before($U(), Id1, Id2) :- beyond(Id1, Id2).
 
 .type BlockCell = [id: Ident, p: Position]
 
 // Each block cell as a shift from the block's near corner.
 .init off = Reframe<BlockCell>
-off.outer([Id, P], N) :- block(Id, P), near(Id, N).
-off.cell([Id, P], P)  :- block(Id, P).
+off.outer([Id, P], N) :- blocks.label($U(), P, Id), near(Id, N).
+off.cell([Id, P], P)  :- blocks.label($U(), P, Id).
 
 // Where each block's near corner lands.
 .decl anchor(id: Ident, p: Position)
 anchor(Id, P) :-
-    first(Id),
+    chain.first($U(), Id),
     c.corner(Diag), diag_opposite(Diag, Start),
     in(P, _), diag_dist(P, Start, _, 0, 0).            // grid corner the chain starts at
-anchor(Id2, P2) :- next(Id1, Id2), far(Id1, P), place(Id1, P, P2).
+anchor(Id2, P2) :- chain.next($U(), Id1, Id2), far(Id1, P), place(Id1, P, P2).
 
 // Where each block cell lands.
 .decl place(id: Ident, p_in: Position, p_out: Position)

@@ -125,7 +125,7 @@ diag.corner($U(), D) :- diag_dir_elem(D).
 x_cell(P) :- diag.diagonal($U(), P, _).
 
 .init lex = LexOrder<Unit>
-lex.corner(D)     :- c.lex_corner(D).
+lex.corner($U(), D) :- c.lex_corner(D).
 lex.axis(A)       :- c.lex_axis(A).
 lex.cell($U(), P) :- x_cell(P).
 

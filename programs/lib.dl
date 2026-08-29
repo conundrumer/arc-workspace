@@ -817,8 +817,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 }
 
 // Rank by a caller-supplied strict order: the rank of t counts the
-// members before it, ascending from 0. LexOrder is the geometric
-// special case.
+// members before it, ascending from 0.
 //
 // Flagged: assumes `before` is transitive. It is counted as given and never
 // closed, so direct comparisons alone yield predecessor counts, not ranks.
@@ -828,6 +827,22 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 
     .decl rank(key: Key, t: T, r: number)
     rank(Ky, T, R) :- elem(Ky, T), R = count : { before(Ky, A, T) }.
+
+    // The element nothing precedes, and the one nothing follows.
+    .decl first(key: Key, t: T)
+    first(Ky, T) :- elem(Ky, T), !before(Ky, _, T).
+
+    .decl last(key: Key, t: T)
+    last(Ky, T) :- elem(Ky, T), !before(Ky, T, _).
+
+    // Some element lies between a and b.
+    .decl _skipped(key: Key, a: T, b: T)
+    _skipped(Ky, A, B) :- before(Ky, A, X), before(Ky, X, B).
+
+    // b directly follows a: before, with nothing between. Consumers pair it
+    // with `first` to carry state along the chain, one element per step.
+    .decl next(key: Key, a: T, b: T)
+    next(Ky, A, B) :- before(Ky, A, B), !_skipped(Ky, A, B).
 }
 
 // The dense frame a sparse member set induces along an axis, with each
@@ -922,11 +937,11 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     id(A, as(ord(B), Ident)) :- rep(A, B).
 }
 
-// Lexicographic order over a keyed cell set. Reading order is the top-left,
-// V-primary member.
-.comp LexOrder<Key> {
-    // The corner the order runs from — the instance's parameter, unkeyed.
-    .decl corner(d: DiagDir)
+// Order's geometric special case: lexicographic order over a keyed cell
+// set. Reading order is the top-left, V-primary member.
+.comp LexOrder<Key> : Order<Key, Position> {
+    // The corner the order runs from, per key.
+    .decl corner(key: Key, d: DiagDir)
 
     // The primary axis — the instance's parameter, unkeyed.
     .decl axis(a: Axis)
@@ -934,27 +949,23 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     // The cells to order, per key.
     .decl cell(key: Key, p: Position)
 
-    .decl before(key: Key, q: Position, p: Position)
+    elem(Ky, P) :- cell(Ky, P).
+
     before(Ky, Q, P) :-
         cell(Ky, Q), cell(Ky, P),
-        corner(Diag), axis(A), dir_of(Diag, A, D),   // primary dir
-        dist(Q, D, K1), dist(P, D, K2), K1 < K2.     // q strictly nearer
+        corner(Ky, Diag), axis(A), dir_of(Diag, A, D),  // primary dir
+        dist(Q, D, K1), dist(P, D, K2), K1 < K2.        // q strictly nearer
     before(Ky, Q, P) :-
         cell(Ky, Q), cell(Ky, P),
-        corner(Diag), axis(A),
+        corner(Ky, Diag), axis(A),
         diag_dirs(Diag, A, D, D2),                   // primary/secondary dirs
         same_dist(D, Q, P),                          // primary tie
         dist(Q, D2, K1), dist(P, D2, K2), K1 < K2.   // q strictly nearer
-
-    // Predecessor count, ascending from 0 at the corner.
-    .decl rank(key: Key, p: Position, r: number)
-    rank(Ky, P, R) :- cell(Ky, P), R = count : { before(Ky, Q, P) }.
 }
 
 // Z/N successor over a dense 0-based index set, per key: increment, with
-// the max wrapping to 0. A spatial cycle converts through index maps the
-// lib already owns: dist reads an index off a position, DirFrame.pos places
-// one back. Consumers split by how they advance: a lockstep closure reads
+// the max wrapping to 0. A spatial cycle converts through dist (index off a
+// position) and DirFrame.pos (position back). A lockstep closure reads
 // succ directly; a count advance feeds it to CycleWalk.
 .comp IndexCycle<Key> {
     .decl idx(key: Key, k: number)

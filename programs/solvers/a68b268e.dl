@@ -52,17 +52,16 @@ tile_ink(P_tile, P_intile, Col) :- tile_cell(P_tile, P_intile, Col), !c.bg(Col).
 .decl ink_at(p: Position, col: Color)
 ink_at(P, Col) :- tile_ink(_, P, Col).
 
-.decl out(p: Position, col: Color, ch: Choice)
-
 .decl impl_choice(ch: Choice)
 impl_choice($Scan()). impl_choice($Order()). impl_choice($Ink()).
 
+.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- impl_choice(Ch), tile_cell(_, P, _), !ink_at(P, _), c.bg(Col).
 
 // --- $Scan ---
 
 .init lex = LexOrder<Unit>
-lex.corner(D)     :- c.lex_corner(D).
+lex.corner($U(), D) :- c.lex_corner(D).
 lex.axis(A)       :- c.lex_axis(A).
 lex.cell($U(), T) :- tile_ink(T, _, _).
 
@@ -105,11 +104,13 @@ out(P, Col, $Ink()) :- ink_at(P, Col), !ink_beaten(P, Col).
         ex_out(E, P, Col).
     beats(T, T3) :- beats(T, T2), beats(T2, T3).
 
+    .init order = Order<Unit, Position>
+    order.elem($U(), T) :- tile_ink(_, T, _, _).
+    order.before($U(), T, T2) :- beats(T, T2).
+
     // The scan starts at the corner the unbeaten tile occupies.
     .decl lex_corner(d: DiagDir)
-    lex_corner(Diag) :-
-        tile_ink(_, T, _, _), !beats(_, T),
-        diag_dist(T, Diag, _, 0, 0).
+    lex_corner(Diag) :- order.first($U(), T), diag_dist(T, Diag, _, 0, 0).
 
     // The primary axis decides alone: nearer the corner's edge on it wins,
     // whatever the across coordinate does.
@@ -120,10 +121,6 @@ out(P, Col, $Ink()) :- ink_at(P, Col), !ink_beaten(P, Col).
 
     .decl lex_axis(a: Axis)
     lex_axis(A) :- axis_elem(A), !axis_mismatch(A).
-
-    .init order = Order<Unit, Position>
-    order.elem($U(), T) :- tile_ink(_, T, _, _).
-    order.before($U(), T, T2) :- beats(T, T2).
 
     .decl prio(p: Position, r: number)
     prio(T, R) :- order.rank($U(), T, R).

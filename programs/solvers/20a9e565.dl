@@ -192,14 +192,16 @@ ext_vec(Y, V) :- pushed(_, Y, _, V).
 ext_parent(X, Y) :- drawn_parent(X, Y).
 ext_parent(Y, X) :- pushed(_, Y, X, _).
 
-// A cell's birth: the earliest layer holding it.
-.decl born_before(y: Position, l: Position)
-born_before(Y, L) :-
-    ext_layer(L, Y), ext_layer(L2, Y),
-    trail_dir(Td), dist(L, Td, K), dist(L2, Td, K2), K2 < K.
+// The layers holding a cell, in stage order.
+.init layer_order = Order<Position, Position>
+layer_order.elem(Y, L) :- ext_layer(L, Y).
+layer_order.before(Y, L2, L) :-
+    ext_layer(L2, Y), ext_layer(L, Y),                        // two layers holding the cell
+    trail_dir(Td), dist(L2, Td, K2), dist(L, Td, K), K2 < K.  // the earlier stage first
 
+// A cell's birth: the earliest layer holding it.
 .decl birth(y: Position, l: Position)
-birth(Y, L) :- ext_layer(L, Y), !born_before(Y, L).
+birth(Y, L) :- layer_order.first(Y, L).
 
 .decl drawn_birth(y: Position, l: Position)
 drawn_birth(Y, L) :- birth(Y, L), drawn_line(L).
