@@ -240,4 +240,3 @@ As staged, the cover runs over the union of endpoint Positions: a unique matchin
 An `.init` named `match` is a Souffle syntax error (`match` is the string-match predicate); pick another instance name.
 
 **Task-local home (protocol step 1).** 1a244afd (`Matching` comp): pivots sighted along rows and columns onto pointers; the unique pivot–pointer pairing, forced by mutual exclusion.
-

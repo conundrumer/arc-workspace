@@ -1,0 +1,91 @@
+// 20270e3b
+// concept: objects markers move
+// Two pieces sit on a bg field. Each is a wall of ordinary colors plus a
+// socket of marker cells, and the two socket footprints are congruent. The
+// join seats one piece on the other with the footprints registered one
+// cardinal step apart; a seating counts only when every socket falls under
+// the mate's wall. The output is the joined walls cropped to their bounding
+// box, bg elsewhere.
+//
+// The join is symmetric: seating either piece on the other gives the same
+// figure up to a translation, which the crop removes, so both seatings
+// paint one output.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl bg(col: Color) bg(1).
+
+    .decl socket_color(col: Color) socket_color(7).
+}
+
+.init c = Consts
+
+// --- the two pieces ---
+
+.init pieces = Components8<Unit>
+pieces.node($U(), P) :- in(P, Col), !c.bg(Col).
+
+.decl piece(id: Ident, p: Position)
+piece(Id, P) :- pieces.label($U(), P, Id).
+
+.decl wall(id: Ident, p: Position, col: Color)
+wall(Id, P, Col) :- piece(Id, P), in(P, Col), !c.socket_color(Col).
+
+.decl socket(id: Ident, p: Position)
+socket(Id, P) :- piece(Id, P), in(P, Col), c.socket_color(Col).
+
+// --- seating one piece against the other ---
+
+.init socket_box = Bbox<Ident>
+socket_box.cell(Id, P) :- socket(Id, P).
+
+// Every cell of a piece, read from that piece's own socket footprint.
+.type PieceCell = [id: Ident, p: Position]
+.init socket_rel = Reframe<PieceCell>
+socket_rel.outer([Id, P], P_box) :- piece(Id, P), socket_box.margin(Id, P_box).
+socket_rel.cell([Id, P], P) :- piece(Id, P).
+
+// Piece m seated on piece h: m's cell p lands at p_seat.
+.decl seat(h: Ident, m: Ident, d: Dir, p: Position, p_seat: Position)
+seat(H, M, D, P, P_seat) :-
+    socket_rel.inner([M, P], P_rel), H != M,                    // a cell of the seated piece
+    socket_box.margin(H, P_box), compose(P_box, P_rel, P_reg),  // laid on the host's footprint
+    dir_elem(D), neighbor(P_reg, D, P_seat).                    // and carried one step off it
+
+// Both pieces' cells in the host's frame, under the seating (h, m, d).
+.decl laid_wall(h: Ident, m: Ident, d: Dir, p: Position, col: Color)
+laid_wall(H, M, D, P, Col) :- seat(H, M, D, _, _), wall(H, P, Col).
+laid_wall(H, M, D, P_seat, Col) :- seat(H, M, D, P, P_seat), wall(M, P, Col).
+
+.decl laid_socket(h: Ident, m: Ident, d: Dir, p: Position)
+laid_socket(H, M, D, P) :- seat(H, M, D, _, _), socket(H, P).
+laid_socket(H, M, D, P_seat) :- seat(H, M, D, P, P_seat), socket(M, P).
+
+// A socket no wall fills — the defect that rules the seating out. A piece's
+// own wall never reaches its sockets, so the filling wall is the mate's.
+.decl open(h: Ident, m: Ident, d: Dir)
+open(H, M, D) :- laid_socket(H, M, D, P), !laid_wall(H, M, D, P, _).
+
+// --- the joined figure ---
+
+// The walls of a seating that leaves no socket open.
+.decl figure(h: Ident, m: Ident, p: Position, col: Color)
+figure(H, M, P, Col) :- laid_wall(H, M, D, P, Col), !open(H, M, D).
+
+.type Join = [h: Ident, m: Ident]
+.init crop = BoxFrame<Join>
+crop.cell([H, M], P) :- figure(H, M, P, _).
+
+.decl painted(p: Position, col: Color)
+painted(P_out, Col) :- figure(H, M, P, Col), crop.inner([H, M], P, P_out).
+
+.init sheet = Frame2D<Unit>
+sheet.extent($U(), A, N) :- painted(P, _), axis_elem(A), axis_dim(P, A, N).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    sheet.cell($U(), P),
+    ( painted(P, Col)            // a wall cell
+    ; !painted(P, _), c.bg(Col)  // bg elsewhere
+    ).

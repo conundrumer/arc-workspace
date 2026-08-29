@@ -1,0 +1,67 @@
+// 1b8318e3
+// concept: objects move
+// Blocks of one color sit among single-cell dots of other colors. The blocks
+// stay. Each dot slides along a row, a column, or a diagonal until it touches
+// a block, taking the slide with the fewest steps; a cardinal slide wins a tie
+// with a diagonal one. A diagonal slide counts only point on: it rests on a
+// cell that touches the block at a corner alone, with that corner ahead.
+// Another dot on the way rules a slide out.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl bg(col: Color) bg(0).
+
+    .decl block(col: Color) block(5).
+}
+
+.init c = Consts
+
+.decl block_cell(p: Position)
+block_cell(P) :- in(P, Col), c.block(Col).
+
+.decl dot(p: Position, col: Color)
+dot(P, Col) :- in(P, Col), !c.bg(Col), !c.block(Col).
+
+// A free cell with a block cell one step toward D.
+.decl beside(p: Position, d: Dir8)
+beside(P, D) :- in(P, _), !block_cell(P), dir8_elem(D), neighbor(P, D, Q), block_cell(Q).
+
+// A cell touching a block along a side.
+.decl side(p: Position)
+side(P) :- dir_elem(D), beside(P, D).
+
+// Each dot casts along its row, column, and diagonals.
+.init cast = Ray<Unit>
+cast.dir($U(), D) :- dir8_elem(D).
+cast.cell($U(), P) :- in(P, _).
+cast.mark($U(), P) :- dot(P, _).
+cast.blocked($U(), P) :- dot(P, _).
+
+// A slide: K steps toward D from the dot to a resting cell.
+.decl run(p: Position, t: Position, d: Dir8, k: number)
+run(P, T, D, K) :-
+    cast.clear($U(), T, D, K, P),  // an open run from the dot
+    ( dir_elem(D), beside(T, _)    // cardinal: any cell touching a block
+    ; beside(T, D), !side(T) ).    // diagonal: point on the corner ahead
+
+// The fewest steps among the open slides.
+.init shortest = ArgExtremes<Position, Position>
+shortest.cand(P, T, K) :- run(P, T, _, K).
+
+// A cardinal slide among the shortest.
+.decl cardinal_low(p: Position, t: Position)
+cardinal_low(P, T) :- shortest.low(P, T, _), run(P, T, D, _), dir_elem(D).
+
+.decl arrive(p: Position, col: Color)
+arrive(T, Col) :-
+    dot(P, Col), shortest.low(P, T, _),
+    ( cardinal_low(P, T)       // a cardinal slide wins the tie
+    ; !cardinal_low(P, _) ).   // no cardinal slide among the shortest
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, _),
+    ( in(P, Col), c.block(Col)                    // the blocks stay
+    ; arrive(P, Col)                              // a dot came to rest
+    ; !block_cell(P), !arrive(P, _), c.bg(Col) ). // vacated or empty

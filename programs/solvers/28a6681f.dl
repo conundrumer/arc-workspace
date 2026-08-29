@@ -1,0 +1,108 @@
+// 28a6681f
+// concept: walk
+// Walls of every other color hold a body of water, and the water settles
+// under gravity, one cell at a time.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl bg(col: Color) bg(0).
+
+    .decl water(col: Color) water(1).
+
+    .decl gravity(d: Dir) gravity(DIR_B).
+}
+
+.init c = Consts
+
+.decl wall(p: Position)
+wall(P) :- in(P, Col), !c.bg(Col), !c.water(Col).
+
+.decl parcel(p: Position)
+parcel(P) :- in(P, Col), c.water(Col).
+
+.decl lateral(d: Dir)
+lateral(L) :- c.gravity(D), perp_dir(D, L).
+
+// The grid's adjacency, and where the grid runs out — materialized, since
+// the settling recursion reads a step per cell per turn.
+.decl adj(p: Position, d: Dir, q: Position)
+adj(P, D, Q) :- in(P, _), dir_elem(D), neighbor(P, D, Q), in(Q, _).
+
+.decl rim(p: Position, d: Dir)
+rim(P, D) :- in(P, _), dir_elem(D), !adj(P, D, _).
+
+// Whose turn it is: lexicographic order from gravity's far edge, so a parcel
+// never takes a source still to come — it rests on its own source cell or
+// below it. Along a line either end may pour first, and the two orders can
+// settle differently; the task privileges neither, so both run, keyed by
+// sense.
+.init lex = LexOrder<Sense>
+lex.axis(A) :- c.gravity(D), axis_of(D, A).
+lex.corner(S, Diag) :-
+    c.gravity(D), turn(S, D, L), diag_dirs(Diag, _, D, L).
+lex.cell(S, P) :- sense_elem(S), parcel(P).
+
+// The state a turn opens on: what its parcel may enter, and what stops it.
+// Both derive forward, so neither negates the other inside the recursion:
+// free carries over every cell the turn's rest is not. The two stay a
+// partition as long as a turn rests exactly one cell.
+.decl free(s: Sense, t: Position, p: Position)
+.decl solid(s: Sense, t: Position, p: Position)
+free(S, T, P) :- lex.first(S, T), in(P, _), !wall(P).
+solid(S, T, P) :- lex.first(S, T), wall(P).
+free(S, T2, P) :- lex.next(S, T, T2), free(S, T, P), rest(S, T, Q), P != Q.
+solid(S, T2, P) :- lex.next(S, T, T2), ( solid(S, T, P) ; rest(S, T, P) ).
+
+// What a free cell has under it: free space to fall through, or footing.
+.decl hangs(s: Sense, t: Position, p: Position)
+hangs(S, T, P) :- free(S, T, P), c.gravity(D), adj(P, D, Q), free(S, T, Q).
+
+.decl stands(s: Sense, t: Position, p: Position)
+stands(S, T, P) :-
+    free(S, T, P), c.gravity(D),
+    ( adj(P, D, Q), solid(S, T, Q)   // footing on solid
+    ; rim(P, D)                      // footing on the grid's edge
+    ).
+
+// Beyond p toward d, along the free run: some cell hangs.
+.decl drain(s: Sense, t: Position, p: Position, d: Dir)
+drain(S, T, P, L) :-
+    free(S, T, P), lateral(L), adj(P, L, Q),
+    ( hangs(S, T, Q)
+    ; drain(S, T, Q, L)
+    ).
+
+// Beyond p toward d: the run ends, or every cell of it stands. The
+// complement of drain, derived forward.
+.decl held(s: Sense, t: Position, p: Position, d: Dir)
+held(S, T, P, L) :-
+    free(S, T, P), lateral(L),
+    ( adj(P, L, Q), solid(S, T, Q)                     // the run ends at solid
+    ; rim(P, L)                                        // or at the grid's edge
+    ; adj(P, L, Q), stands(S, T, Q), held(S, T, Q, L)  // or holds on
+    ).
+
+// The turn's parcel, cell by cell along its path.
+.decl path(s: Sense, t: Position, p: Position)
+path(S, T, T) :- sense_elem(S), parcel(T).
+path(S, T, Q) :-
+    path(S, T, P), adj(P, D, Q),
+    ( hangs(S, T, P), c.gravity(D)        // falls into the free cell below
+    ; stands(S, T, P), drain(S, T, P, D)  // or steps along its line toward one
+    ).
+
+// Where it comes to rest: standing, and confined both ways.
+.decl rest(s: Sense, t: Position, p: Position)
+rest(S, T, P) :-
+    path(S, T, P), stands(S, T, P),
+    held(S, T, P, L1), opposite(L1, L2), held(S, T, P, L2).
+
+// One grid per pour order; a cell the orders settle differently gets both.
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, C), sense_elem(S),
+    ( wall(P), Col = C                       // a wall keeps its color
+    ; rest(S, _, P), c.water(Col)            // settled water
+    ; !wall(P), !rest(S, _, P), c.bg(Col)    // everywhere else
+    ).

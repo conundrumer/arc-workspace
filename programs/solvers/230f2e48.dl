@@ -1,0 +1,94 @@
+// 230f2e48
+// concept: objects markers move count
+// Every object is a straight arm: an anchor cell (c.anchor) at one end, a
+// joint cell (c.joint) partway along, body cells (c.body) filling the rest.
+// The stretch beyond the joint makes a quarter turn about the joint; the
+// cells it leaves go back to background. Each case turns it toward whichever
+// side of the arm wins a comparison at the joint:
+//
+//   $Inward — the greater distance to the edge.
+//   $Roomy  — the longer unbroken run of background leaving the joint.
+
+#include "../lib.dl"
+
+.type Choice = Inward {} | Roomy {}
+
+// An arm paired with one of the two directions it can fold toward.
+.type ArmDir = [id: Ident, d: Dir]
+
+.comp Consts {
+    .decl bg(col: Color) bg(7).
+    .decl body(col: Color) body(2).
+    .decl anchor(col: Color) anchor(5).
+    .decl joint(col: Color) joint(0).
+}
+
+.init c = Consts
+
+.decl impl_choice(ch: Choice)
+impl_choice($Inward()). impl_choice($Roomy()).
+
+.init arms = Components<Unit>
+arms.node($U(), P) :- in(P, Col), !c.bg(Col).
+
+.decl arm(id: Ident, p: Position)
+arm(Id, P) :- arms.label($U(), P, Id).
+
+.decl joint(id: Ident, p: Position)
+joint(Id, P) :- arm(Id, P), in(P, Col), c.joint(Col).
+
+// The arm runs away from its anchor toward D.
+.decl arm_dir(id: Ident, d: Dir)
+arm_dir(Id, D) :-
+    in(P, Col), c.anchor(Col),                    // the anchored end
+    dir_elem(D), neighbor(P, D, Q), arm(Id, Q).   // the arm it continues into
+
+// The two directions across the arm — the fold's candidates.
+.decl cross_dir(id: Ident, d: Dir)
+cross_dir(Id, D2) :- arm_dir(Id, D), perp_dir(D, D2).
+
+// The stretch beyond the joint, each cell with its distance from it.
+.init from_joint = Ray<Ident>
+from_joint.dir(Id, D) :- arm_dir(Id, D).
+from_joint.cell(Id, P) :- arm(Id, P).
+from_joint.mark(Id, P) :- joint(Id, P).
+
+.decl tail(id: Ident, p: Position, k: number)
+tail(Id, P, K) :- from_joint.ray(Id, P, _, K, _), K != 0.
+
+.decl fold_dir(id: Ident, d: Dir, ch: Choice)
+
+// The stretch lands across the arm, each cell keeping its distance.
+.decl folded(p: Position, ch: Choice)
+folded(Q, Ch) :-
+    tail(Id, _, K), joint(Id, P), fold_dir(Id, D2, Ch), jump(P, D2, K, Q).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    in(P, Col_in), impl_choice(Ch),
+    ( folded(P, Ch), c.body(Col)                        // the folded stretch
+    ; !folded(P, Ch), tail(_, P, _), c.bg(Col)          // the cells it left
+    ; !folded(P, Ch), !tail(_, P, _), Col = Col_in      // the rest stands
+    ).
+
+// --- $Inward ---
+
+fold_dir(Id, D2, $Inward()) :-
+    joint(Id, P), cross_dir(Id, D2), dist_pair(P, D2, K, K2), K > K2.
+
+// --- $Roomy ---
+
+// The unbroken background run leaving the joint across the arm.
+.init open = Ray<ArmDir>
+open.dir([Id, D2], D2) :- cross_dir(Id, D2).
+open.cell([Id, D2], P) :- cross_dir(Id, D2), in(P, Col), c.bg(Col).
+open.mark([Id, D2], P) :- cross_dir(Id, D2), joint(Id, P).
+open.blocked([Id, D2], P) :- cross_dir(Id, D2), in(P, Col), !c.bg(Col).
+
+// A side with no run at all still competes, at 0.
+.init room = Tally<ArmDir, Position>
+room.item(Key, Q) :- open.clear(Key, Q, _, _, _).
+room.domain([Id, D2]) :- cross_dir(Id, D2).
+
+fold_dir(Id, D2, $Roomy()) :-
+    opposite(D2, D3), room.tally([Id, D2], N), room.tally([Id, D3], N2), N > N2.

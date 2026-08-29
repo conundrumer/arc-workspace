@@ -1,0 +1,168 @@
+// 271d71e2
+// concept: objects markers move count
+
+// A marker line abuts a framed block on one side, its handle, and another
+// marker line lies ahead in that direction. The block slides toward that line
+// and stops on it, or earlier when it runs out of empty gauge cells: the
+// block's interior is a gauge of filled and empty cells, and one empty cell
+// fills per step of travel. The filled cells sit at the leading edge, the
+// handle side. The handle travels with the block, the line ahead stays, and
+// the vacated ground becomes bg.
+//
+// The gauge fills in a sweep from the leading edge: nearest that edge first,
+// then toward the side a quarter turn from the heading.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl bg(col: Color) bg(6).
+    .decl frame(col: Color) frame(0).
+    .decl marker(col: Color) marker(9).
+    .decl empty(col: Color) empty(5).
+    .decl filled(col: Color) filled(7).
+
+    // The turn from the heading to the side the sweep starts on.
+    .decl sweep(s: Sense) sweep(SENSE_CC).
+}
+
+.init c = Consts
+
+// --- blocks ---
+
+.init frames = Components<Unit>
+frames.node($U(), P) :- in(P, Col), c.frame(Col).
+
+.decl block(b: Ident)
+block(B) :- frames.label($U(), _, B).
+
+.init box = Bbox<Ident>
+box.cell(B, P) :- frames.label($U(), P, B).
+box.grid(B, P) :- block(B), in(P, _).
+
+// --- handle and target ---
+
+// The line abutting the block on side D. A cell off the grid still abuts.
+.decl abut(b: Ident, d: Dir, p: Position)
+abut(B, D, P) :- box.edge_cell(B, Q, D), neighbor(Q, D, P).
+
+.decl abut_break(b: Ident, d: Dir)
+abut_break(B, D) :- abut(B, D, P), c.marker(M), !in(P, M).
+
+// The handle: the side whose abutting line is marker all the way across.
+.decl handle_dir(b: Ident, d: Dir)
+handle_dir(B, D) :- abut(B, D, _), !abut_break(B, D).
+
+// Cast from the handle: offset K is the distance the block travels to bring
+// its handle onto the line K cells ahead.
+.init probe = Ray<Ident>
+probe.dir(B, D) :- handle_dir(B, D).
+probe.cell(B, P) :- box.grid(B, P).
+probe.mark(B, P) :- handle_dir(B, D), abut(B, D, P).
+
+.decl ahead(b: Ident, p: Position, k: number)
+ahead(B, P, K) :- probe.ray(B, P, _, K, _), K != 0.
+
+.decl ahead_break(b: Ident, k: number)
+ahead_break(B, K) :- ahead(B, P, K), c.marker(M), !in(P, M).
+
+// --- gauge ---
+
+.decl empty_cell(b: Ident, p: Position)
+empty_cell(B, P) :- box.inside(B, P), in(P, Col), c.empty(Col).
+
+.init empty_count = Tally<Ident, Position>
+empty_count.item(B, P) :- empty_cell(B, P).
+empty_count.domain(B) :- block(B).
+
+// The block advances the least of: the distance to a marker line ahead, and
+// the number of empty gauge cells.
+.init advance = Extremes<Ident>
+advance.cand(B, K) :- ahead(B, _, K), !ahead_break(B, K).  // a marker line ahead
+advance.cand(B, N) :- empty_count.tally(B, N).             // the gauge fills up
+
+// An empty cell's place in the sweep: K counts toward the leading edge, T
+// toward the side the sweep starts on.
+.decl sweep_key(b: Ident, p: Position, k: number, t: number)
+sweep_key(B, P, K, T) :-
+    empty_cell(B, P), handle_dir(B, D), dist(P, D, K),   // toward the leading edge
+    c.sweep(S), turn(S, D, D_side), dist(P, D_side, T).  // toward the starting side
+
+.init fill_order = Order<Ident, Position>
+fill_order.elem(B, P) :- empty_cell(B, P).
+fill_order.before(B, P, Q) :-
+    sweep_key(B, P, K1, T1), sweep_key(B, Q, K2, T2),
+    ( K1 < K2               // nearer the leading edge
+    ; K1 = K2, T1 < T2      // nearer the starting side
+    ).
+
+.decl fills(p: Position)
+fills(P) :- fill_order.rank(B, P, R), advance.low(B, N), R < N.
+
+// --- render ---
+
+// What travels: the block's box and the handle line abutting it.
+.decl assembly(b: Ident, p: Position)
+assembly(B, P) :- handle_dir(B, D), ( box.inside(B, P) ; abut(B, D, P) ).
+
+// The assembly as it arrives: unchanged, but for the gauge cells that fill.
+.decl paint(p: Position, col: Color)
+paint(P_out, Col) :-
+    assembly(B, P), handle_dir(B, D),         // an assembly cell, and its heading
+    advance.low(B, N), jump(P, D, N, P_out),  // carried by the block's travel
+    ( in(P, Col), !fills(P)                   // keeps its color
+    ; fills(P), c.filled(Col)                 // fills
+    ).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- paint(P, Col).
+out(P, Col) :-
+    !paint(P, _),
+    ( assembly(_, P), c.bg(Col)     // left behind
+    ; in(P, Col), !assembly(_, P)   // untouched
+    ).
+
+// --- fit ---
+
+.comp Fit {
+    .decl edge_color(col: Color)
+    edge_color(Col) :- ex_in(_, P, Col), dir_elem(D), dist(P, D, 0).
+
+    // A gauge cell sits inside a frame, so it never reaches the grid edge.
+    .decl gauge(col: Color)
+    gauge(Col) :- ex_in(_, _, Col), !edge_color(Col).
+
+    // The frame is what borders the gauge.
+    .decl frame(col: Color)
+    frame(Col) :-
+        ex_in(E, P, G), gauge(G),         // a gauge cell
+        dir_elem(D), neighbor(P, D, Q),   // the cell beside it
+        ex_in(E, Q, Col), !gauge(Col).    // outside the gauge
+
+    .type EC = [e: Example, col: Color]
+
+    .init in_count = Tally<EC, Position>
+    in_count.item([E, Col], P) :- ex_in(E, P, Col).
+
+    .init out_count = Tally<EC, Position>
+    out_count.item([E, Col], P) :- ex_out(E, P, Col).
+
+    // Travel fills empty cells, frees ground, and lands handles on the lines
+    // ahead, so each color's count moves one way.
+    .decl grew(col: Color)
+    grew(Col) :- in_count.tally([E, Col], N1), out_count.tally([E, Col], N2), N1 < N2.
+
+    .decl shrank(col: Color)
+    shrank(Col) :- in_count.tally([E, Col], N1), out_count.tally([E, Col], N2), N2 < N1.
+
+    .decl filled(col: Color)
+    filled(Col) :- gauge(Col), grew(Col).
+
+    .decl empty(col: Color)
+    empty(Col) :- gauge(Col), shrank(Col).
+
+    .decl bg(col: Color)
+    bg(Col) :- grew(Col), !gauge(Col).
+
+    .decl marker(col: Color)
+    marker(Col) :- shrank(Col), !gauge(Col).
+}

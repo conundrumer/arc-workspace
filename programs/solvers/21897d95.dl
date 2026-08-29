@@ -1,0 +1,378 @@
+// 21897d95
+// concept: objects markers mapping d4 lookup
+// The grid is a partition into flat colour regions with two kinds of marker
+// drawn over it. An arrow points across a border: the region past its tip
+// takes the colour of the arrow's centre, or the colour of the region the
+// arrow sits on when that centre is blank. A bracket turns the whole grid a
+// quarter turn; with no bracket the grid stands. A marker sits on one
+// region: the cells of its box it leaves free show that region's colour,
+// and it rejoins the region once read.
+//
+// What an arrow is splits arrow: $ATee reads a T of the arrow colour;
+// $AGlyph matches stored charts, closed over D4. An arrow chart with a
+// hole centre reads its payload there; the filled one passes its host's
+// colour.
+//
+// What a bracket is splits bracket: $BArms reads a patch that is exactly
+// two arms of its own box, and the grid turns the sweep between the pivot's
+// two edges, from the one on a stored axis; $BGlyph matches two stored
+// shapes and turns the way stored with the matched shape.
+
+#include "../lib.dl"
+
+.type ArrowChoice   = ATee {} | AGlyph {}
+.type BracketChoice = BArms {} | BGlyph {}
+.type Choice        = [arrow: ArrowChoice, bracket: BracketChoice]
+
+.comp Consts {
+    // --- shared ---
+
+    .decl arrow_color(col: Color) arrow_color(1).
+
+    // --- AGlyph ---
+
+    // The arrow charts: each one's picture, its centre, and where it
+    // points. Chart 0's centre is a hole that reads a payload; chart 1 is
+    // filled and passes its host's colour.
+    RIGID(arrow,
+        .decl glyph(id: Ident, p: Position, col: Color)
+        GRID_SPARSE_2x3(glyph, 0,
+            1, 0, 1,
+            0, 1, 0)
+        GRID_SPARSE_2x3(glyph, 1,
+            1, 1, 1,
+            0, 1, 0)
+        .decl centre(id: Ident, p: Position)
+        centre(0, [0, 1, 1, 1]). centre(1, [0, 1, 1, 1]).
+        .decl tip(id: Ident, d: Dir) tip(0, DIR_B). tip(1, DIR_B).
+    )
+
+    // --- BArms ---
+
+    .decl sweep_axis(a: Axis) sweep_axis(AXIS_H).
+
+    // --- BGlyph ---
+
+    // The bracket charts: each shape's picture, stored as drawn, and the
+    // turn it stands for. Ids keep clear of the arrow charts': one renaming
+    // spans every Ident slot.
+    .decl bracket_glyph(id: Ident, p: Position, col: Color)
+    GRID_SPARSE_3x3(bracket_glyph, 2,
+        9, 9, 9,
+        9, 0, 0,
+        9, 0, 0)
+    GRID_SPARSE_3x3(bracket_glyph, 3,
+        9, 9, 9,
+        0, 0, 9,
+        0, 0, 9)
+    .decl bracket_sense(id: Ident, s: Sense)
+    bracket_sense(2, SENSE_CW). bracket_sense(3, SENSE_CC).
+}
+
+.init c = Consts
+
+// --- parse ---
+
+.comp Parse<Key> {
+    // Keys: a colour of one grid, a patch of one grid, one corner's arms.
+    .type KC = [key: Key, col: Color]
+    .type KI = [key: Key, k: Ident]
+    .type Arms = [ki: KI, piv: DiagDir]
+
+    .decl cell(key: Key, p: Position, col: Color)  // input
+
+    // The same-coloured patches of the grid.
+    .init patch = Components<KC>
+    patch.node([Ky, Col], P) :- cell(Ky, P, Col).
+
+    .decl patch_cell(key: Key, k: Ident, p: Position)
+    patch_cell(Ky, K, P) :- patch.label([Ky, _], P, K).
+
+    .init pbox = Bbox<KI>
+    pbox.cell([Ky, K], P) :- patch_cell(Ky, K, P).
+    pbox.grid([Ky, K], P) :- patch_cell(Ky, K, _), cell(Ky, P, _).
+
+    // The box cells on either arm of corner piv — the two box edges meeting
+    // there.
+    .decl arm_cell(key: Key, k: Ident, piv: DiagDir, p: Position)
+    arm_cell(Ky, K, Piv, P) :-
+        pbox.inside([Ky, K], P), pbox.margin([Ky, K], M),  // a cell of the box
+        diag_dirs(Piv, _, D, _),                           // an edge of the corner
+        same_dist(D, M, P).                                // the cell lies on it
+
+    .init arms = KeyedSetCompare<KI, Arms, Position>
+    arms.pattern_member([[Ky, K], Piv], P) :- arm_cell(Ky, K, Piv, P).
+    arms.observed_member([Ky, K], P) :- patch_cell(Ky, K, P).
+
+    // A corner bracket: the patch is exactly the two arms meeting at piv. The
+    // far corner of its box has to be empty, or a line would be its own arms.
+    .decl bracket(key: Key, k: Ident, piv: DiagDir)
+    bracket(Ky, K, Piv) :-
+        arms.equals([Ky, K], [[Ky, K], Piv]),
+        diag_opposite(Piv, M), !pbox.corner([Ky, K], _, M).
+
+    // A neighbour carrying the arrow colour.
+    .decl marked(key: Key, p: Position, d: Dir, q: Position)
+    marked(Ky, P, D, Q) :-
+        cell(Ky, P, _), dir_elem(D), neighbor(P, D, Q),
+        cell(Ky, Q, Col), c.arrow_color(Col).
+
+    // An arrow: a centre with a bar of arrow-coloured cells across one axis
+    // and a stem out one side of the other. The centre carries any colour.
+    .decl arrow(key: Key, p_centre: Position, d: Dir)
+    arrow(Ky, P, D) :-
+        marked(Ky, P, D, _),                             // the stem
+        opposite(D, D_back), !marked(Ky, P, D_back, _),  // nothing behind it
+        perp_dir(D, B), opposite(B, B2),                 // across the stem
+        marked(Ky, P, B, _), marked(Ky, P, B2, _).       // the bar, marked both ways
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// --- the arrows ---
+
+.decl arrow_choice(a: ArrowChoice)
+arrow_choice($ATee()). arrow_choice($AGlyph()).
+
+// An arrow, per case: its centre, the direction it points, and its cells.
+.decl arrow_at(a: ArrowChoice, p_centre: Position, d: Dir)
+.decl arrow_cell(a: ArrowChoice, p_centre: Position, p: Position)
+
+// The host shows through a marker's free cells; a shape whose free cells
+// disagree is no marker.
+.type AP = [a: ArrowChoice, p: Position]
+.init arrow_host = Unanimous<AP, Color>
+
+// --- ATee ---
+
+arrow_at($ATee(), P, D) :- parse.arrow($U(), P, D).
+arrow_cell($ATee(), K, P) :-
+    parse.arrow($U(), K, _), ( P = K ; parse.marked($U(), K, _, P) ).
+
+// The arrow's free cells flank its stem.
+arrow_host.item([$ATee(), P], Col) :-
+    parse.arrow($U(), P, D), neighbor(P, D, S),  // the stem cell
+    perp_dir(D, B), neighbor(S, B, Q),           // the stem's flanks
+    in(Q, Col).                                  // the colour they show
+
+// --- AGlyph ---
+
+// The arrow charts, matched in every pose.
+.type ChartPose = [id: Ident, d: D4]
+.init aocc = Occurrences<ChartPose, Color>
+aocc.cell([Id, D], P, Col) :- c.arrow_glyph(D, Id, _, _), in(P, Col).
+aocc.shape([Id, D], P, Col) :- c.arrow_glyph(D, Id, P, Col).
+
+// A placed arrow chart, named by its centre. A hole centre must hold a
+// payload — the filled chart owns the blank-centred arrows.
+.decl placed_arrow(id: Ident, d: D4, a: Position, p_centre: Position)
+placed_arrow(Id, D, A, P_c) :-
+    aocc.occurrence([Id, D], A),
+    c.arrow_centre(D, Id, P_i), compose(A, P_i, P_c),
+    ( c.arrow_glyph(D, Id, P_i, _)          // a filled centre
+    ; !c.arrow_glyph(D, Id, P_i, _),        // a hole centre
+      in(P_c, Col), !c.arrow_color(Col) ).  // holding a payload
+
+arrow_at($AGlyph(), P_c, D_tip) :- placed_arrow(Id, D, _, P_c), c.arrow_tip(D, Id, D_tip).
+
+arrow_cell($AGlyph(), P_c, P) :-
+    placed_arrow(Id, D, A, P_c),
+    ( P = P_c                                              // the centre
+    ; c.arrow_glyph(D, Id, P_g, _), compose(A, P_g, P) ).  // a glyph cell
+
+// The chart's frame, for reading its free cells — the box-complement of
+// the ink.
+.init aframe = Frame2D<ChartPose>
+aframe.extent([Id, D], A, N) :-
+    c.arrow_glyph(D, Id, P, _), axis_elem(A), axis_dim(P, A, N).
+
+arrow_host.item([$AGlyph(), P_c], Col) :-
+    placed_arrow(Id, D, A, P_c),
+    aframe.cell([Id, D], P_f), !c.arrow_glyph(D, Id, P_f, _),  // a frame cell, not ink
+    c.arrow_centre(D, Id, P_i), P_f != P_i,                    // not the centre
+    compose(A, P_f, Q), in(Q, Col).                            // the colour it shows
+
+// --- the brackets ---
+
+.decl bracket_choice(b: BracketChoice)
+bracket_choice($BArms()). bracket_choice($BGlyph()).
+
+// A bracket, per case: the patch that is one.
+.decl bracket_at(b: BracketChoice, k: Ident)
+
+.type BK = [b: BracketChoice, k: Ident]
+.init bracket_host = Unanimous<BK, Color>
+
+// --- BArms ---
+
+bracket_at($BArms(), K) :- parse.bracket($U(), K, _).
+
+// The bracket's free cells are the concave block of its box.
+bracket_host.item([$BArms(), K], Col) :-
+    parse.bracket($U(), K, _),                  // a bracket
+    parse.pbox.inside([$U(), K], P),            // a box cell
+    !parse.patch_cell($U(), K, P), in(P, Col).  // it leaves free
+
+// --- BGlyph ---
+
+// A patch viewed from its own box, its picture compared to each chart. A
+// box of another size puts the cells in another frame, so only an exact
+// match survives.
+.init pframe = BoxFrame<Ident>
+pframe.cell(K, P) :- parse.patch_cell($U(), K, P).
+
+.type PV = [p: Position, col: Color]
+.init bshape = KeyedSetCompare<Ident, Ident, PV>
+bshape.pattern_member(Id, [P, Col]) :- c.bracket_glyph(Id, P, Col).
+bshape.observed_member(K, [P_i, Col]) :- pframe.inner(K, Q, P_i), in(Q, Col).
+
+bracket_at($BGlyph(), K) :- bshape.equals(K, _).
+
+.init bframe = Frame2D<Ident>
+bframe.extent(Id, A, N) :- c.bracket_glyph(Id, P, _), axis_elem(A), axis_dim(P, A, N).
+
+bracket_host.item([$BGlyph(), K], Col) :-
+    bshape.equals(K, Id), pframe.margin(K, M),           // a matched bracket
+    bframe.cell(Id, P_i), !c.bracket_glyph(Id, P_i, _),  // a frame cell, not ink
+    compose(M, P_i, Q), in(Q, Col).                      // the colour it shows
+
+// --- the regions ---
+
+// A marker rejoins its region: its cells take the host's colour.
+.decl covered(a: ArrowChoice, b: BracketChoice, p: Position, col: Color)
+covered(A, B, P, Col) :-
+    bracket_choice(B), arrow_cell(A, K, P), arrow_host.value([A, K], Col).
+covered(A, B, P, Col) :-
+    arrow_choice(A),
+    bracket_at(B, K), bracket_host.value([B, K], Col),
+    parse.patch_cell($U(), K, P).
+
+// The regions of the grid the markers are drawn over.
+.type RK = [a: ArrowChoice, b: BracketChoice, col: Color]
+.init region = Components<RK>
+region.node([A, B, Col], P) :-
+    arrow_choice(A), bracket_choice(B), in(P, C0),
+    ( covered(A, B, P, Col)                 // the region under a marker
+    ; !covered(A, B, P, _), Col = C0 ).     // a plain cell
+
+.decl region_of(a: ArrowChoice, b: BracketChoice, p: Position, k: Ident)
+region_of(A, B, P, K) :- region.label([A, B, _], P, K).
+
+// --- the paint ---
+
+// An arrow paints the region past its tip with the colour of its centre; a
+// blank centre passes the colour of the region the arrow sits on.
+.decl paint(a: ArrowChoice, b: BracketChoice, k: Ident, col: Color)
+paint(A, B, R, Col) :-
+    arrow_at(A, K, D), in(K, C_mid),          // an arrow and its centre colour
+    arrow_host.value([A, K], C_host),         // the region it sits on
+    neighbor(K, D, S), neighbor(S, D, Q),     // one step past its tip
+    region_of(A, B, Q, R),                    // the region there
+    ( !c.arrow_color(C_mid), Col = C_mid      // the centre's own colour
+    ; c.arrow_color(C_mid), Col = C_host ).   // a blank centre passes the host's
+
+// Each region ends in the colour an arrow gives it, or keeps its own.
+.decl region_out(a: ArrowChoice, b: BracketChoice, k: Ident, col: Color)
+region_out(A, B, R, Col) :-
+    region.label([A, B, C0], _, R),     // a region and its own colour
+    ( paint(A, B, R, Col)               // an arrow points at it
+    ; !paint(A, B, R, _), Col = C0 ).   // untouched
+
+// --- the turn ---
+
+.decl sense(b: BracketChoice, s: Sense)
+
+// The arms lie on the pivot's two edges, a quarter turn apart; the grid
+// turns the way they sweep, from the stored axis.
+sense($BArms(), S) :-
+    parse.bracket($U(), _, Piv),                       // a bracket's corner
+    c.sweep_axis(A), diag_dirs(Piv, A, D_from, D_to),  // its edges, stored axis first
+    turn(S, D_from, D_to).                             // the sweep between them
+
+sense($BGlyph(), S) :- bshape.equals(_, Id), c.bracket_sense(Id, S).
+
+// --- the output ---
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_out, Col, [A, B]) :-
+    region_of(A, B, P, R), region_out(A, B, R, Col),    // a cell's ending colour
+    ( sense(B, S), rotation(S, D), apply(D, P, P_out)   // the bracket turns it
+    ; !sense(B, _), P_out = P ).                        // no bracket, no turn
+
+// --- fit ---
+
+.comp Fit {
+    .init ex = Parse<Example>
+    ex.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // The turn carries the regions along, so every colour boundary of the
+    // output stands over one of the input.
+    .decl broken(e: Example, d: C4)
+    broken(E, D) :-
+        ex_out(E, P_out, Col), dir_elem(Dir),                 // an output cell
+        neighbor(P_out, Dir, Q_out), ex_out(E, Q_out, Col2),  // and its neighbour
+        Col != Col2,                                          // across a boundary
+        rotation(_, D), d4_inverse(D, D_back),                // a candidate turn
+        apply(D_back, P_out, P), apply(D_back, Q_out, Q),     // where the pair came from
+        ex_in(E, P, C_in), ex_in(E, Q, C_in).                 // one colour there
+
+    .decl example_turn(e: Example, s: Sense)
+    example_turn(E, S) :- ex_out(E, _, _), rotation(S, D), !broken(E, D).
+
+    // Each arrow chart comes from one marker, read in its own pose; the
+    // runner compares up to pose, with id renaming. One arrow of each kind
+    // — a payload centre and a blank one — arbitrarily; ids from the
+    // centre colours.
+    .type EP = [e: Example, p: Position]
+    .init payload_pick = Canon<EP>
+    payload_pick.equiv([E1, P1], [E2, P2]) :-
+        ex.arrow(E1, P1, _), ex_in(E1, P1, C1), !c.arrow_color(C1),
+        ex.arrow(E2, P2, _), ex_in(E2, P2, C2), !c.arrow_color(C2).
+
+    .init blank_pick = Canon<EP>
+    blank_pick.equiv([E1, P1], [E2, P2]) :-
+        ex.arrow(E1, P1, _), ex_in(E1, P1, C1), c.arrow_color(C1),
+        ex.arrow(E2, P2, _), ex_in(E2, P2, C2), c.arrow_color(C2).
+
+    .decl chosen(ep: EP, id: Ident)
+    chosen([E, P], as(Col, Ident)) :-
+        ( payload_pick.rep([E, P], [E, P]) ; blank_pick.rep([E, P], [E, P]) ),
+        ex_in(E, P, Col).
+
+    .init abox = BoxFrame<EP>
+    abox.cell([E, K], P) :- chosen([E, K], _), ( P = K ; ex.marked(E, K, _, P) ).
+
+    .decl arrow_glyph(id: Ident, p: Position, col: Color)
+    arrow_glyph(Id, P_i, Col) :-
+        chosen([E, K], Id), abox.inner([E, K], Q, P_i), ex_in(E, Q, Col),
+        ( ex.marked(E, K, _, Q)         // a marked cell
+        ; Q = K, c.arrow_color(Col) ).  // the centre, when blank
+
+    .decl arrow_centre(id: Ident, p: Position)
+    arrow_centre(Id, P_i) :- chosen([E, K], Id), abox.inner([E, K], K, P_i).
+
+    .decl arrow_tip(id: Ident, d: Dir)
+    arrow_tip(Id, D) :- chosen([E, K], Id), ex.arrow(E, K, D).
+
+    // The bracket shapes: brackets grouped by their box-framed pictures,
+    // ids from the groups, each shape's turn from its examples.
+    .type EK = [e: Example, k: Ident]
+    .init bbox = BoxFrame<EK>
+    bbox.cell([E, K], P) :- ex.bracket(E, K, _), ex.patch_cell(E, K, P).
+
+    .init bcmp = KeyedSetCompare<EK, EK, PV>
+    bcmp.pattern_member([E, K], [P_i, Col]) :-
+        bbox.inner([E, K], Q, P_i), ex_in(E, Q, Col).
+    bcmp.observed_member(X, M) :- bcmp.pattern_member(X, M).
+
+    .init bpick = Canon<EK>
+    bpick.equiv(X, Y) :- bcmp.equals(X, Y).
+
+    .decl bracket_glyph(id: Ident, p: Position, col: Color)
+    bracket_glyph(Id, P_i, Col) :-
+        bpick.id([E, K], Id), bbox.inner([E, K], Q, P_i), ex_in(E, Q, Col).
+
+    .decl bracket_sense(id: Ident, s: Sense)
+    bracket_sense(Id, S) :- bpick.id([E, _], Id), example_turn(E, S).
+}
