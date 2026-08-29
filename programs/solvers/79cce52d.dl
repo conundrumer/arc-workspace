@@ -68,16 +68,16 @@ band_count.item([A, Col], P) :- band_cell(A, P, Col).
 marker(A, P, $Singleton()) :-
     band_cell(A, P, Col), c.marker_count(N), band_count.tally([A, Col], N).
 
-// Rotation per axis: the map carrying the line beside the corner to the
+// Line rotation per axis: the map carrying the line beside the corner to the
 // marker's line — that pair, closed under lockstep succ.
-.decl rotation(a: Axis, k: number, k2: number, ch: Choice)
-rotation(A, K_ca, K_mk, Ch) :-
+.decl line_rotation(a: Axis, k: number, k2: number, ch: Choice)
+line_rotation(A, K_ca, K_mk, Ch) :-
     in(P_cn, _), c.corner(Diag), diag_dist(P_cn, Diag, _, 0, 0),  // the corner cell
     dir_of(Diag, A, D), opposite(D, O),                           // inward along a
     neighbor(P_cn, O, P_a), line_idx(A, P_a, K_ca),               // the line beside it
     marker(A, P_mk, Ch), line_idx(A, P_mk, K_mk).                 // the marker's line
-rotation(A, K1_next, K2_next, Ch) :-
-    rotation(A, K1, K2, Ch),
+line_rotation(A, K1_next, K2_next, Ch) :-
+    line_rotation(A, K1, K2, Ch),
     line_cycle.succ(A, K1, K1_next), line_cycle.succ(A, K2, K2_next).
 
 // The output frame — the payload's per-axis extents.
@@ -91,7 +91,7 @@ frame.extent($U(), A, N) :- line_count.tally(A, N).
 .decl out_along(a: Axis, p: Position, q: Position, ch: Choice)
 out_along(A, P, Q, Ch) :-
     kept(P, _), line_idx(A, P, K_in),
-    rotation(A, K_in, K_out, Ch),
+    line_rotation(A, K_in, K_out, Ch),
     frame.cell($U(), A, Q), line_idx(A, Q, K_out).   // the output line at that index
 
 .decl out(p: Position, col: Color, ch: Choice)

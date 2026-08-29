@@ -19,6 +19,9 @@
 .type Sym <: number
 .type Sense <: number
 
+// The rotation subgroup of D4 — how a heading changes.
+.type C4 <: D4
+
 .type Dir8 = Dir | DiagDir
 
 .type Axis4 = Axis | DiagAxis
@@ -166,6 +169,10 @@ d4_inverse(D4_TB, D4_TB).
 d4_inverse(D4_DG, D4_DG).
 d4_inverse(D4_AD, D4_AD).
 
+.decl sense_elem(s: Sense)
+sense_elem(SENSE_CW).
+sense_elem(SENSE_CC).
+
 .decl sym_elem(s: Sym)
 sym_elem(SYM_1).
 sym_elem(SYM_LR).
@@ -189,12 +196,14 @@ sym_member(SYM_BOX, D4_ID). sym_member(SYM_BOX, D4_LR).
 sym_member(SYM_BOX, D4_TB). sym_member(SYM_BOX, D4_HT).
 sym_member(SYM_X, D4_ID). sym_member(SYM_X, D4_DG).
 sym_member(SYM_X, D4_AD). sym_member(SYM_X, D4_HT).
-sym_member(SYM_C4, D4_ID). sym_member(SYM_C4, D4_CW).
-sym_member(SYM_C4, D4_HT). sym_member(SYM_C4, D4_CC).
+sym_member(SYM_C4, D) :- c4_elem(D).
 sym_member(SYM_D4, D) :- d4_elem(D).
 
-.decl c4_elem(d: D4)
-c4_elem(D) :- sym_member(SYM_C4, D).
+.decl c4_elem(d: C4)
+c4_elem(D4_ID).
+c4_elem(D4_CW).
+c4_elem(D4_HT).
+c4_elem(D4_CC).
 
 .decl axis_of(d: Dir, a: Axis)
 axis_of(DIR_T, AXIS_V).
@@ -272,6 +281,11 @@ turn(SENSE_CW, DIR_R, DIR_B).
 turn(SENSE_CW, DIR_B, DIR_L).
 turn(SENSE_CW, DIR_L, DIR_T).
 turn(SENSE_CC, D2, D) :- turn(SENSE_CW, D, D2).
+
+// The C4 element of a quarter turn in sense s.
+.decl rotation(s: Sense, d: C4)
+rotation(SENSE_CW, D4_CW).
+rotation(SENSE_CC, D4_CC).
 
 .decl dist(p: Position, d: Dir, k: number) inline
 dist(P, D, K) :- P = [T, B, L, R], K = @dist_proj(D, T, B, L, R).
