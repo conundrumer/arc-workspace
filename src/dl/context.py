@@ -21,13 +21,12 @@ LIB_SRC = PROGRAMS_DIR / "lib.dl"
 
 # Reading order: the claim, then its form, then what the corpus made of it.
 # A doc not listed follows, by name.
-ORDER = ("principles.md", "style.md", "patterns.md", "concepts.md", "shapes.md",
-         "proposals.md")
+ORDER = ("principles.md", "style.md", "patterns.md", "concepts.md", "shapes.md")
 # Docs the cadence never reads.
 SKIP = {"backlog.md"}
 # Catalog docs: entries are independent and a session uses few, so the context
 # carries the index and the session reads the entry it needs.
-INDEX = {"patterns.md", "proposals.md"}
+INDEX = {"patterns.md"}
 
 LIB_PREAMBLE = """\
 // Signatures only: rule bodies are dropped, and the facts of a top-level
@@ -41,15 +40,11 @@ LIB_PREAMBLE = """\
 
 @lru_cache(maxsize=2)
 def lib_signatures(text: str) -> str:
-    """lib.dl as its interface: comments, types, macros, .functor and .decl
-    signatures, component structure, and the default fills components carry.
+    """lib.dl as its interface: the declarations and the structure around
+    them, with the bodies that derive from them dropped.
 
-    A `.decl` directly followed by rules or facts derives; one followed by
-    a boundary — blank line, comment, the next declaration — is marked
-    `// input`, the lib convention for a relation the caller populates.
-    Rules are dropped everywhere; facts are kept only inside a component,
-    where the default fill is part of the interface. An underscore-named
-    item is comp-internal: dropped, with the comment block above it.
+    `LIB_PREAMBLE` states the conventions the rendering follows, and opens
+    the result.
     """
     program = parse(text)
     lines = text.splitlines()
