@@ -72,5 +72,5 @@ uv run python tools/console/server.py
 ## Docs
 
 - [`docs/arcpatches.md`](docs/arcpatches.md) — `.arcpatch` format: file layout, verbs, variants, alts
-- [`docs/wf-solver/`](docs/wf-solver/) — solver work: principles, style, patterns, proposals, backlog. The session protocol lives in `.claude/skills/session/SKILL.md`.
+- [`docs/wf-solver/`](docs/wf-solver/) — the docs a solver session reads
 - [`docs/hardware-probe.md`](docs/hardware-probe.md) — dev machine specs

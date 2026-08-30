@@ -21,7 +21,8 @@ LIB_SRC = PROGRAMS_DIR / "lib.dl"
 
 # Reading order: the claim, then its form, then what the corpus made of it.
 # A doc not listed follows, by name.
-ORDER = ("principles.md", "style.md", "patterns.md", "concepts.md", "shapes.md")
+ORDER = ("cadence.md", "principles.md", "style.md", "patterns.md", "concepts.md",
+         "shapes.md", "lib-protocol.md")
 # Docs the cadence never reads.
 SKIP = {"backlog.md"}
 # Catalog docs: entries are independent and a session uses few, so the context

@@ -1,7 +1,5 @@
 """Print the solver docs and lib.dl in the projection a solver session reads.
-
-Reading this output stands in for reading `docs/wf-solver/` and
-`programs/lib.dl` in full. See dl.context for what each part drops.
+dl.context renders the projection.
 """
 
 from dl.context import appendix
