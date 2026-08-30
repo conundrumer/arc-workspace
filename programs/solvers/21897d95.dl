@@ -1,17 +1,17 @@
 // 21897d95
 // concept: objects markers mapping d4 lookup
-// The grid is a partition into flat colour regions with two kinds of marker
+// The grid is a partition into flat color regions with two kinds of marker
 // drawn over it. An arrow points across a border: the region past its tip
-// takes the colour of the arrow's centre, or the colour of the region the
-// arrow sits on when that centre is blank. A bracket turns the whole grid a
+// takes the color of the arrow's center, or the color of the region the
+// arrow sits on when that center is blank. A bracket turns the whole grid a
 // quarter turn; with no bracket the grid stands. A marker sits on one
-// region: the cells of its box it leaves free show that region's colour,
+// region: the cells of its box it leaves free show that region's color,
 // and it rejoins the region once read.
 //
-// What an arrow is splits arrow: $ATee reads a T of the arrow colour;
+// What an arrow is splits arrow: $ATee reads a T of the arrow color;
 // $AGlyph matches stored charts, closed over D4. An arrow chart with a
-// hole centre reads its payload there; the filled one passes its host's
-// colour.
+// hole center reads its payload there; the filled one passes its host's
+// color.
 //
 // What a bracket is splits bracket: $BArms reads a patch that is exactly
 // two arms of its own box, and the grid turns the sweep between the pivot's
@@ -31,9 +31,9 @@
 
     // --- AGlyph ---
 
-    // The arrow charts: each one's picture, its centre, and where it
-    // points. Chart 0's centre is a hole that reads a payload; chart 1 is
-    // filled and passes its host's colour.
+    // The arrow charts: each one's picture, its center, and where it
+    // points. Chart 0's center is a hole that reads a payload; chart 1 is
+    // filled and passes its host's color.
     RIGID(arrow,
         .decl glyph(id: Ident, p: Position, col: Color)
         GRID_SPARSE_2x3(glyph, 0,
@@ -42,8 +42,8 @@
         GRID_SPARSE_2x3(glyph, 1,
             1, 1, 1,
             0, 1, 0)
-        .decl centre(id: Ident, p: Position)
-        centre(0, [0, 1, 1, 1]). centre(1, [0, 1, 1, 1]).
+        .decl center(id: Ident, p: Position)
+        center(0, [0, 1, 1, 1]). center(1, [0, 1, 1, 1]).
         .decl tip(id: Ident, d: Dir) tip(0, DIR_B). tip(1, DIR_B).
     )
 
@@ -74,14 +74,14 @@
 // --- parse ---
 
 .comp Parse<Key> {
-    // Keys: a colour of one grid, a patch of one grid, one corner's arms.
+    // Keys: a color of one grid, a patch of one grid, one corner's arms.
     .type KC = [key: Key, col: Color]
     .type KI = [key: Key, k: Ident]
     .type Arms = [ki: KI, piv: DiagDir]
 
     .decl cell(key: Key, p: Position, col: Color)  // input
 
-    // The same-coloured patches of the grid.
+    // The same-colored patches of the grid.
     .init patch = Components<KC>
     patch.node([Ky, Col], P) :- cell(Ky, P, Col).
 
@@ -111,15 +111,15 @@
         arms.equals([Ky, K], [[Ky, K], Piv]),
         diag_opposite(Piv, M), !pbox.corner([Ky, K], _, M).
 
-    // A neighbour carrying the arrow colour.
+    // A neighbor carrying the arrow color.
     .decl marked(key: Key, p: Position, d: Dir, q: Position)
     marked(Ky, P, D, Q) :-
         cell(Ky, P, _), dir_elem(D), neighbor(P, D, Q),
         cell(Ky, Q, Col), c.arrow_color(Col).
 
-    // An arrow: a centre with a bar of arrow-coloured cells across one axis
-    // and a stem out one side of the other. The centre carries any colour.
-    .decl arrow(key: Key, p_centre: Position, d: Dir)
+    // An arrow: a center with a bar of arrow-colored cells across one axis
+    // and a stem out one side of the other. The center carries any color.
+    .decl arrow(key: Key, p_center: Position, d: Dir)
     arrow(Ky, P, D) :-
         marked(Ky, P, D, _),                             // the stem
         opposite(D, D_back), !marked(Ky, P, D_back, _),  // nothing behind it
@@ -135,9 +135,9 @@ parse.cell($U(), P, Col) :- in(P, Col).
 .decl arrow_choice(a: ArrowChoice)
 arrow_choice($ATee()). arrow_choice($AGlyph()).
 
-// An arrow, per case: its centre, the direction it points, and its cells.
-.decl arrow_at(a: ArrowChoice, p_centre: Position, d: Dir)
-.decl arrow_cell(a: ArrowChoice, p_centre: Position, p: Position)
+// An arrow, per case: its center, the direction it points, and its cells.
+.decl arrow_at(a: ArrowChoice, p_center: Position, d: Dir)
+.decl arrow_cell(a: ArrowChoice, p_center: Position, p: Position)
 
 // The host shows through a marker's free cells; a shape whose free cells
 // disagree is no marker.
@@ -154,7 +154,7 @@ arrow_cell($ATee(), K, P) :-
 arrow_host.item([$ATee(), P], Col) :-
     parse.arrow($U(), P, D), neighbor(P, D, S),  // the stem cell
     perp_dir(D, B), neighbor(S, B, Q),           // the stem's flanks
-    in(Q, Col).                                  // the colour they show
+    in(Q, Col).                                  // the color they show
 
 // --- AGlyph ---
 
@@ -164,21 +164,21 @@ arrow_host.item([$ATee(), P], Col) :-
 aocc.cell([Id, D], P, Col) :- c.arrow_glyph(D, Id, _, _), in(P, Col).
 aocc.shape([Id, D], P, Col) :- c.arrow_glyph(D, Id, P, Col).
 
-// A placed arrow chart, named by its centre. A hole centre must hold a
-// payload — the filled chart owns the blank-centred arrows.
-.decl placed_arrow(id: Ident, d: D4, a: Position, p_centre: Position)
+// A placed arrow chart, named by its center. A hole center must hold a
+// payload — the filled chart owns the blank-centerd arrows.
+.decl placed_arrow(id: Ident, d: D4, a: Position, p_center: Position)
 placed_arrow(Id, D, A, P_c) :-
     aocc.occurrence([Id, D], A),
-    c.arrow_centre(D, Id, P_i), compose(A, P_i, P_c),
-    ( c.arrow_glyph(D, Id, P_i, _)          // a filled centre
-    ; !c.arrow_glyph(D, Id, P_i, _),        // a hole centre
+    c.arrow_center(D, Id, P_i), compose(A, P_i, P_c),
+    ( c.arrow_glyph(D, Id, P_i, _)          // a filled center
+    ; !c.arrow_glyph(D, Id, P_i, _),        // a hole center
       in(P_c, Col), !c.arrow_color(Col) ).  // holding a payload
 
 arrow_at($AGlyph(), P_c, D_tip) :- placed_arrow(Id, D, _, P_c), c.arrow_tip(D, Id, D_tip).
 
 arrow_cell($AGlyph(), P_c, P) :-
     placed_arrow(Id, D, A, P_c),
-    ( P = P_c                                              // the centre
+    ( P = P_c                                              // the center
     ; c.arrow_glyph(D, Id, P_g, _), compose(A, P_g, P) ).  // a glyph cell
 
 // The chart's frame, for reading its free cells — the box-complement of
@@ -190,8 +190,8 @@ aframe.extent([Id, D], A, N) :-
 arrow_host.item([$AGlyph(), P_c], Col) :-
     placed_arrow(Id, D, A, P_c),
     aframe.cell([Id, D], P_f), !c.arrow_glyph(D, Id, P_f, _),  // a frame cell, not ink
-    c.arrow_centre(D, Id, P_i), P_f != P_i,                    // not the centre
-    compose(A, P_f, Q), in(Q, Col).                            // the colour it shows
+    c.arrow_center(D, Id, P_i), P_f != P_i,                    // not the center
+    compose(A, P_f, Q), in(Q, Col).                            // the color it shows
 
 // --- the brackets ---
 
@@ -235,11 +235,11 @@ bframe.extent(Id, A, N) :- c.bracket_glyph(Id, P, _), axis_elem(A), axis_dim(P, 
 bracket_host.item([$BGlyph(), K], Col) :-
     bshape.equals(K, Id), pframe.margin(K, M),           // a matched bracket
     bframe.cell(Id, P_i), !c.bracket_glyph(Id, P_i, _),  // a frame cell, not ink
-    compose(M, P_i, Q), in(Q, Col).                      // the colour it shows
+    compose(M, P_i, Q), in(Q, Col).                      // the color it shows
 
 // --- the regions ---
 
-// A marker rejoins its region: its cells take the host's colour.
+// A marker rejoins its region: its cells take the host's color.
 .decl covered(a: ArrowChoice, b: BracketChoice, p: Position, col: Color)
 covered(A, B, P, Col) :-
     bracket_choice(B), arrow_cell(A, K, P), arrow_host.value([A, K], Col).
@@ -261,21 +261,21 @@ region_of(A, B, P, K) :- region.label([A, B, _], P, K).
 
 // --- the paint ---
 
-// An arrow paints the region past its tip with the colour of its centre; a
-// blank centre passes the colour of the region the arrow sits on.
+// An arrow paints the region past its tip with the color of its center; a
+// blank center passes the color of the region the arrow sits on.
 .decl paint(a: ArrowChoice, b: BracketChoice, k: Ident, col: Color)
 paint(A, B, R, Col) :-
-    arrow_at(A, K, D), in(K, C_mid),          // an arrow and its centre colour
+    arrow_at(A, K, D), in(K, C_mid),          // an arrow and its center color
     arrow_host.value([A, K], C_host),         // the region it sits on
     neighbor(K, D, S), neighbor(S, D, Q),     // one step past its tip
     region_of(A, B, Q, R),                    // the region there
-    ( !c.arrow_color(C_mid), Col = C_mid      // the centre's own colour
-    ; c.arrow_color(C_mid), Col = C_host ).   // a blank centre passes the host's
+    ( !c.arrow_color(C_mid), Col = C_mid      // the center's own color
+    ; c.arrow_color(C_mid), Col = C_host ).   // a blank center passes the host's
 
-// Each region ends in the colour an arrow gives it, or keeps its own.
+// Each region ends in the color an arrow gives it, or keeps its own.
 .decl region_out(a: ArrowChoice, b: BracketChoice, k: Ident, col: Color)
 region_out(A, B, R, Col) :-
-    region.label([A, B, C0], _, R),     // a region and its own colour
+    region.label([A, B, C0], _, R),     // a region and its own color
     ( paint(A, B, R, Col)               // an arrow points at it
     ; !paint(A, B, R, _), Col = C0 ).   // untouched
 
@@ -296,7 +296,7 @@ sense($BGlyph(), S) :- bshape.equals(_, Id), c.bracket_sense(Id, S).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P_out, Col, [A, B]) :-
-    region_of(A, B, P, R), region_out(A, B, R, Col),    // a cell's ending colour
+    region_of(A, B, P, R), region_out(A, B, R, Col),    // a cell's ending color
     ( sense(B, S), rotation(S, D), apply(D, P, P_out)   // the bracket turns it
     ; !sense(B, _), P_out = P ).                        // no bracket, no turn
 
@@ -306,24 +306,24 @@ out(P_out, Col, [A, B]) :-
     .init ex = Parse<Example>
     ex.cell(E, P, Col) :- ex_in(E, P, Col).
 
-    // The turn carries the regions along, so every colour boundary of the
+    // The turn carries the regions along, so every color boundary of the
     // output stands over one of the input.
     .decl broken(e: Example, d: C4)
     broken(E, D) :-
         ex_out(E, P_out, Col), dir_elem(Dir),                 // an output cell
-        neighbor(P_out, Dir, Q_out), ex_out(E, Q_out, Col2),  // and its neighbour
+        neighbor(P_out, Dir, Q_out), ex_out(E, Q_out, Col2),  // and its neighbor
         Col != Col2,                                          // across a boundary
         rotation(_, D), d4_inverse(D, D_back),                // a candidate turn
         apply(D_back, P_out, P), apply(D_back, Q_out, Q),     // where the pair came from
-        ex_in(E, P, C_in), ex_in(E, Q, C_in).                 // one colour there
+        ex_in(E, P, C_in), ex_in(E, Q, C_in).                 // one color there
 
     .decl example_turn(e: Example, s: Sense)
     example_turn(E, S) :- ex_out(E, _, _), rotation(S, D), !broken(E, D).
 
     // Each arrow chart comes from one marker, read in its own pose; the
     // runner compares up to pose, with id renaming. One arrow of each kind
-    // — a payload centre and a blank one — arbitrarily; ids from the
-    // centre colours.
+    // — a payload center and a blank one — arbitrarily; ids from the
+    // center colors.
     .type EP = [e: Example, p: Position]
     .init payload_pick = Canon<EP>
     payload_pick.equiv([E1, P1], [E2, P2]) :-
@@ -347,10 +347,10 @@ out(P_out, Col, [A, B]) :-
     arrow_glyph(Id, P_i, Col) :-
         chosen([E, K], Id), abox.inner([E, K], Q, P_i), ex_in(E, Q, Col),
         ( ex.marked(E, K, _, Q)         // a marked cell
-        ; Q = K, c.arrow_color(Col) ).  // the centre, when blank
+        ; Q = K, c.arrow_color(Col) ).  // the center, when blank
 
-    .decl arrow_centre(id: Ident, p: Position)
-    arrow_centre(Id, P_i) :- chosen([E, K], Id), abox.inner([E, K], K, P_i).
+    .decl arrow_center(id: Ident, p: Position)
+    arrow_center(Id, P_i) :- chosen([E, K], Id), abox.inner([E, K], K, P_i).
 
     .decl arrow_tip(id: Ident, d: Dir)
     arrow_tip(Id, D) :- chosen([E, K], Id), ex.arrow(E, K, D).

@@ -1,21 +1,11 @@
 // d47aa2ff
 // concept: decompose select fold
-// Layout: 1×2 horizontally-side-by-side 10×10 panels with 1-col separator.
-// Output is one panel frame: ink present in both panels is kept; ink present
-// in one panel only becomes the mark color of its panel.
-//
-// Both-ink cells agree in color throughout the data, leaving the
-// disagreeing both-ink cell underdetermined; two models, tagged on out's
-// Choice:
-//
-//   $Match() — kept ink is the color the panels agree on; a disagreeing
-//              cell matches neither way and falls to bg.
-//   $Base()  — the base panel passes through wherever the other panel has
-//              ink; a disagreeing cell keeps the base color.
+// Side-by-side panels, split by a separator. Output is one panel frame: ink
+// every panel carries is kept, in the color the panels agree on; ink one
+// panel alone carries becomes that panel's mark color. A cell the panels
+// ink in different colors falls to bg.
 
 #include "../lib.dl"
-
-.type Choice = Match {} | Base {}
 
 .comp Consts {
     .decl bg(c: Color) bg(0).
@@ -28,17 +18,9 @@
     .decl only_fill(p_panel: Position, col: Color)
     only_fill([0, 0, 0, 1], 2).
     only_fill([0, 0, 1, 0], 1).
-
-    // --- $Base ---
-    .decl base_panel(p_panel: Position)
-    base_panel([0, 0, 0, 1]). base_panel([0, 0, 1, 0]).
 }
 
 .init c = Consts
-
-.decl impl_choice(ch: Choice)
-impl_choice($Match()).
-impl_choice($Base()).
 
 // --- parse ---
 
@@ -54,46 +36,39 @@ impl_choice($Base()).
 
     .decl ink(k: Key, p_panel: Position, p: Position, col: Color)
     ink(K, P_panel, P, Col) :- cell(K, P_panel, P, Col), !c.bg(Col).
+
+    // Some panel leaves the cell blank.
+    .decl missing(k: Key, p: Position)
+    missing(K, P) :- cell(K, _, P, Col), c.bg(Col).
+
+    // Every panel inks the cell.
+    .decl full(k: Key, p: Position)
+    full(K, P) :- cell(K, _, P, _), !missing(K, P).
 }
 
 .init parse = Parse<Unit>
 parse.grid($U(), P, Col) :- in(P, Col).
 
-.decl panel(p_panel: Position)
-panel(P_panel) :- parse.cell($U(), P_panel, _, _).
+// The ink colors the panels put on a cell.
+.init agree = Unanimous<Position, Color>
+agree.item(P, Col) :- parse.ink($U(), _, P, Col).
 
-.decl out(p: Position, col: Color, ch: Choice)
+.decl out(p: Position, col: Color)
 
-// --- shared: one-sided ink is marked with its panel's color; blank is bg ---
-
-out(P, Col, Ch) :-
-    impl_choice(Ch),
-    parse.ink($U(), P_panel, P, _),                         // ink in one panel
-    panel(P_panel2), P_panel2 != P_panel,                   // the other panel
-    !parse.ink($U(), P_panel2, P, _),                       // blank there
+// One-sided ink is marked with its panel's color.
+out(P, Col) :-
+    parse.ink($U(), P_panel, P, _), parse.missing($U(), P),   // ink, and a panel blank
     c.only_fill(P_panel, Col).
 
-out(P, Col, Ch) :-
-    impl_choice(Ch),
-    parse.cell($U(), _, P, _), !parse.ink($U(), _, P, _),   // ink in neither panel
+out(P, Col) :-
+    parse.cell($U(), _, P, _), !parse.ink($U(), _, P, _),   // ink in no panel
     c.bg(Col).
 
-// --- $Match ---
-
-out(P, Col, $Match()) :-
-    parse.ink($U(), P_panel, P, Col),                       // panels agree
-    parse.ink($U(), P_panel2, P, Col),
-    P_panel != P_panel2.
-
-out(P, Col, $Match()) :-
-    parse.ink($U(), _, P, C1), parse.ink($U(), _, P, C2),   // both-ink, no agreement
-    C1 != C2, c.bg(Col).
-
-// --- $Base ---
-
-out(P, Col, $Base()) :-
-    c.base_panel(P_base), parse.ink($U(), P_base, P, Col),  // base panel ink
-    parse.ink($U(), P_panel2, P, _), P_panel2 != P_base.    // backed by the other panel
+out(P, Col) :-
+    parse.full($U(), P),
+    ( agree.value(P, Col)          // the panels agree
+    ; agree.clash(P), c.bg(Col)    // they disagree
+    ).
 
 // --- fit ---
 
@@ -104,16 +79,6 @@ out(P, Col, $Base()) :-
     // One-sided ink reads its mark color off the output.
     .decl only_fill(p_panel: Position, col: Color)
     only_fill(Pp, Col) :-
-        parse.ink(E, Pp, P, _),
-        parse.cell(E, Pp2, P, _), Pp2 != Pp, !parse.ink(E, Pp2, P, _),
+        parse.ink(E, Pp, P, _), parse.missing(E, P),
         ex_out(E, P, Col).
-
-    // A base panel: no both-ink cell's output contradicts its ink.
-    .decl mismatch(p_panel: Position)
-    mismatch(Pb) :-
-        parse.ink(E, Pb, P, Col), parse.ink(E, Pp2, P, _), Pp2 != Pb,
-        ex_out(E, P, Col2), Col2 != Col.
-
-    .decl base_panel(p_panel: Position)
-    base_panel(Pb) :- parse.cell(E, Pb, _, _), ex_out(E, _, _), !mismatch(Pb).
 }

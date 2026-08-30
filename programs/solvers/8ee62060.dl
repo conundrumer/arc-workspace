@@ -1,7 +1,7 @@
 // 8ee62060
 // concept: decompose d4
-// Layout: d4 on the K×K block-grid. Each block stays as-is internally; the
-// d4 transform applies to the block-grid coordinates.
+// The grid divides into c.block_size blocks. Each block keeps its
+// contents; the d4 transform applies to the block-grid coordinates.
 //
 // The blocks sit on a diagonal of the block-grid, so every d4 element that
 // moves that diagonal produces the same output; the task pins none. One
@@ -35,16 +35,18 @@ out(P_out, Col, $Blocks(D)) :-
 // --- fit ---
 
 .comp Fit {
-    // A transform that lands some input cell off the output's color.
-    .decl mismatch(d: D4)
-    mismatch(D) :-
-        ex_in(E, P_in, Col), ex_out(E, _, _),                       // cell of a train input
-        c.block_size(K),
-        divide_by_size_2d(P_in, K, 0, P_block_in, P_local),         // forward decompose
-        d4_elem(D), apply(D, P_block_in, P_block_out),              // d4 on block-grid
-        concat_2d(P_block_out, P_local, 0, P_out),                  // recompose
-        !ex_out(E, P_out, Col).
+    .type BlockK = [e: Example, p_local: Position]
+
+    // At each within-block offset, the input's block-grid must map onto the
+    // output's.
+    .init block = D4Map<BlockK, Color>
+    block.src([E, P_local], P_block, Col) :-
+        ex_in(E, P_grid, Col), ex_out(E, _, _),                               // cell of a train input
+        c.block_size(K), divide_by_size_2d(P_grid, K, 0, P_block, P_local).   // decompose
+    block.dst([E, P_local], P_block, Col) :-
+        ex_out(E, P_grid, Col),                                               // cell of a train output
+        c.block_size(K), divide_by_size_2d(P_grid, K, 0, P_block, P_local).   // decompose
 
     .decl block_d4(d: D4)
-    block_d4(D) :- d4_elem(D), !mismatch(D).
+    block_d4(D) :- d4_elem(D), !block.mismatch(_, D).
 }

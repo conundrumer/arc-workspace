@@ -1,10 +1,11 @@
 // a8610ef7
 // concept: symmetry lookup classify
-// Recolor each non-bg cell by its image under c.mirror. Two models:
+// Recolor each cell by its own color and the color of its image under
+// c.mirror.
 //
-//   $Direct — binary classification: bg passes through; non-bg → c.matched
-//             or c.unmatched by whether the mirror image is non-bg
-//   $Lookup — table on (self_color, mirror_color) → out_color
+//   $Direct — bg passes through; a non-bg cell takes c.matched or
+//             c.unmatched by whether its image is non-bg.
+//   $Lookup — a stored table takes the two colors to the output color.
 
 #include "../lib.dl"
 
@@ -52,27 +53,31 @@ out(P, Col_out, $Lookup()) :-
 
 // --- fit ---
 
+.type ColorPair = [d: D4, c_self: Color, c_mirror: Color]
+
 .comp Fit {
-    // A cell's color, its image's color under a transform, and the color the output paints it.
-    .decl pair_color(d: D4, c_self: Color, c_mirror: Color, col: Color)
-    pair_color(D, C, C_m, Col) :-
+    // The color the output paints a cell. The key is the cell's own color and
+    // the color of its image under a transform.
+    .init pair_color = Unanimous<ColorPair, Color>
+    pair_color.item([D, C, C_m], Col) :-
         d4_elem(D),
         ex_in(E, P, C), apply(D, P, P_m), ex_in(E, P_m, C_m),   // cell and its image
         ex_out(E, P, Col).
 
     // A transform that paints one color pair two ways.
     .decl mismatch(d: D4)
-    mismatch(D) :- pair_color(D, C, C_m, Col), pair_color(D, C, C_m, Col2), Col != Col2.
+    mismatch(D) :- pair_color.clash([D, _, _]).
 
     .decl mirror(d: D4)
     mirror(D) :- d4_elem(D), !mismatch(D).
 
     .decl recolor(c_self: Color, c_mirror: Color, c_out: Color)
-    recolor(C, C_m, Col) :- c.mirror(D), pair_color(D, C, C_m, Col).
+    recolor(C, C_m, Col) :- c.mirror(D), pair_color.value([D, C, C_m], Col).
 
+    // The table's non-bg entries, split by whether the image is non-bg.
     .decl matched(c: Color)
-    matched(Col) :- c.mirror(D), pair_color(D, C, C_m, Col), !c.bg(C), !c.bg(C_m).
+    matched(Col) :- recolor(C, C_m, Col), !c.bg(C), !c.bg(C_m).
 
     .decl unmatched(c: Color)
-    unmatched(Col) :- c.mirror(D), pair_color(D, C, C_m, Col), !c.bg(C), c.bg(C_m).
+    unmatched(Col) :- recolor(C, C_m, Col), !c.bg(C), c.bg(C_m).
 }

@@ -4,7 +4,7 @@
 // carries anchor cells that some set of markers repeats color for color; the
 // object moves onto that set under the D4 transform which makes every anchor
 // meet its own color, and its original cells go to bg. Choice = [a, m]
-// crosses two underdetermined claims:
+// crosses two claims:
 //
 //   a (which object cells are anchors):
 //     $Minority() — the cells whose color is not the object's commonest.
@@ -38,14 +38,14 @@ ink(P, Col) :- in(P, Col), !c.bg(Col).
 parts.node($U(), P) :- ink(P, _).
 
 // An object is a part with more than one cell; a lone cell is a marker.
-.decl object(id: Ident)
-object(Id) :- parts.label($U(), P, Id), parts.label($U(), Q, Id), P != Q.
+.init part_cell = Unanimous<Ident, Position>
+part_cell.item(Id, P) :- parts.label($U(), P, Id).
 
 .decl object_cell(id: Ident, p: Position, col: Color)
-object_cell(Id, P, Col) :- parts.label($U(), P, Id), object(Id), ink(P, Col).
+object_cell(Id, P, Col) :- parts.label($U(), P, Id), part_cell.clash(Id), ink(P, Col).
 
 .decl marker(p: Position, col: Color)
-marker(P, Col) :- parts.label($U(), P, Id), !object(Id), ink(P, Col).
+marker(P, Col) :- part_cell.value(_, P), ink(P, Col).
 
 .decl anchor(id: Ident, p: Position, col: Color, ch: Anchors)
 
@@ -80,18 +80,21 @@ placed(P_out, Col, Ch) :-
     object_cell(Id, P, Col), apply(D, P, P_img),  // each cell, transformed
     compose(Sh, P_img, P_out).                    // and carried to its seat
 
+// A cell no object lands on.
+.decl vacant(p: Position, ch: Anchors)
+vacant(P, Ch) :- in(P, _), anchors_choice(Ch), !placed(P, _, Ch).
+
 .decl out(p: Position, col: Color, c: Choice)
 out(P, Col, [Ch, M]) :- placed(P, Col, Ch), markers_choice(M).
 
 // --- $Consumed ---
 
-out(P, Col, [Ch, $Consumed()]) :-
-    in(P, _), anchors_choice(Ch), c.bg(Col), !placed(P, _, Ch).
+out(P, Col, [Ch, $Consumed()]) :- vacant(P, Ch), c.bg(Col).
 
 // --- $Kept ---
 
 out(P, Col, [Ch, $Kept()]) :-
-    in(P, _), anchors_choice(Ch), !placed(P, _, Ch),
+    vacant(P, Ch),
     ( marker(P, Col)             // a marker persists
     ; !marker(P, _), c.bg(Col)   // all else to bg
     ).

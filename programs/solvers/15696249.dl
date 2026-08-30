@@ -12,26 +12,16 @@
 #include "../lib.dl"
 
 .type Choice = Line {} | Color {}
+.type LineKey = [a: Axis, p_across: Position]
 
 .comp Consts {
-    .decl bg(c: Color)
-    bg(0).
+    .decl bg(c: Color) bg(0).
 }
 
 .init c = Consts
 
-// Two cells of one axis-A line differ.
-.decl line_diff(a: Axis, across: Position)
-line_diff(A, Across) :-
-    in(P, C1), in(Q, C2), C1 != C2,
-    axis_elem(A),
-    split(P, A, _, Across), split(Q, A, _, Across).    // same line
-
-// Cells of a monochrome line.
-.decl line_cell(p: Position)
-line_cell(P) :-
-    in(P, _), axis_elem(A),
-    split(P, A, _, Across), !line_diff(A, Across).
+.init line_color = Unanimous<LineKey, Color>
+line_color.item([A, P_across], Col) :- in(P, Col), axis_elem(A), split(P, A, _, P_across).
 
 .decl impl_choice(ch: Choice)
 impl_choice($Line()). impl_choice($Color()).
@@ -39,13 +29,12 @@ impl_choice($Line()). impl_choice($Color()).
 .decl gate(p: Position, ch: Choice)
 
 // --- $Line ---
-gate(P, $Line()) :- line_cell(P).
+gate(P, $Line()) :-
+    in(P, _), axis_elem(A),
+    split(P, A, _, P_across), !line_color.clash([A, P_across]).
 
 // --- $Color ---
-.decl line_color(col: Color)
-line_color(Col) :- line_cell(P), in(P, Col).
-
-gate(P, $Color()) :- in(P, Col), line_color(Col).
+gate(P, $Color()) :- in(P, Col), line_color.value(_, Col).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P_grid_out, Col, Ch) :-

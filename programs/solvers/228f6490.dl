@@ -54,10 +54,11 @@ fits.observed_member(S, P_inner) :- sbox.inner(S, _, P_inner).
 
 // --- Unique ---
 
-.decl repeated(col: Color)
-repeated(Col) :- shapes.label(Col, _, Id), shapes.label(Col, _, Id2), Id != Id2.
+// The shape a color carries.
+.init color_shape = Unanimous<Color, Ident>
+color_shape.item(Col, Id) :- shapes.label(Col, _, Id).
 
-taken(H, [Col, Id], $Unique()) :- fits.equals([Col, Id], H), !repeated(Col).
+taken(H, [Col, Id], $Unique()) :- fits.equals([Col, Id], H), !color_shape.clash(Col).
 
 // --- AllFit ---
 

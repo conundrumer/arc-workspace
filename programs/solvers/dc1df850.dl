@@ -2,8 +2,9 @@
 // concept: markers lookup stamp
 // Each marker cell paints a one-cell halo on its eight neighbors; the rest
 // of the grid passes through. Halos clip at the grid edge and overwrite
-// what they cover; the data never shows a halo covering other ink. Two
-// footprint claims, data-equivalent on this task, tagged on out's Choice:
+// what they cover; the data never shows a halo covering other ink.
+//
+// The cases differ in the footprint, and agree on this task's data:
 //
 //   $Grow()  — markers grow one step in all eight directions.
 //   $Stamp() — a stored template, seated by its marker cell on each marker.
@@ -59,16 +60,13 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !halo(P, _, Ch).
 // --- fit ---
 
 .comp Fit {
-    .decl marker_at(e: Example, p: Position)
-    marker_at(E, P) :- ex_in(E, P, Col), c.marker(Col).
-
     // A second marker in the pair leaves a repainted cell no unique source.
-    .decl ambiguous(e: Example)
-    ambiguous(E) :- marker_at(E, M), marker_at(E, M2), M != M2.
+    .init pair_marker = Unanimous<Example, Position>
+    pair_marker.item(E, P) :- ex_in(E, P, Col), c.marker(Col).
 
     .decl footprint(m: Position, p: Position, col: Color)
     footprint(M, P, Col) :-
-        marker_at(E, M), !ambiguous(E),              // the pair's lone marker
+        pair_marker.value(E, M),                     // the pair's lone marker
         ex_out(E, P, Col),                           // an output cell
         ( P = M                                      // the marker's own cell
         ; ex_in(E, P, Col_in), Col_in != Col         // repainted

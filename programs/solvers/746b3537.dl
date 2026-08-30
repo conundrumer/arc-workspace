@@ -1,10 +1,11 @@
 // 746b3537
 // concept: lines
-// Striped input: lines along one axis are uniform. Output is the stripe
-// color sequence across them with consecutive repeats collapsed — one
-// cell per run, order kept, 1 wide.
+// Striped input: lines along one axis are uniform. The output is the
+// sequence of stripe colors across them, one cell per run, 1 wide.
 
 #include "../lib.dl"
+
+.type Line = [a: Axis, p_across: Position]
 
 .comp Consts {
     // No task data — siblings vary only the input.
@@ -12,12 +13,12 @@
 
 .init c = Consts
 
+.init line_color = Unanimous<Line, Color>
+line_color.item([A, P_across], Col) :- in(P, Col), axis_elem(A), split(P, A, _, P_across).
+
 // A line along axis a shows two colors.
 .decl mismatch(a: Axis)
-mismatch(A) :-
-    axis_elem(A),
-    in(P, Col), in(P2, Col2), Col != Col2,   // two colors
-    same_line(A, P, P2).                     // on one line
+mismatch(A) :- line_color.clash([A, _]).
 
 // The color sequence runs across the axis whose lines are uniform.
 .decl seq_axis(a: Axis)

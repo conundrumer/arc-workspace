@@ -12,9 +12,7 @@
 .type Choice = Full {} | Detect {}
 
 .comp Consts {
-    // --- shared ---
-    .decl mask(col: Color)
-    mask(3).
+    .decl mask(col: Color) mask(3).
 }
 
 .init c = Consts
@@ -22,11 +20,9 @@
 .decl clean(p: Position, col: Color)
 clean(P, Col) :- in(P, Col), !c.mask(Col).
 
-.decl masked(p: Position)
-masked(P) :- in(P, Col), c.mask(Col).
-
+// The hole: the masked cells.
 .init boxframe = BoxFrame<Unit>
-boxframe.cell($U(), P) :- masked(P).
+boxframe.cell($U(), P) :- in(P, Col), c.mask(Col).
 
 .decl out(p: Position, col: Color, c: Choice)
 
@@ -39,14 +35,12 @@ out(P_out, Col, $Full()) :-
 
 // --- $Detect ---
 
-// D maps some clean cell to a clean cell of a different color.
-.decl mismatch(d: D4)
-mismatch(D) :-
-    d4_elem(D),
-    clean(P, Col), apply(D, P, P2),
-    clean(P2, C2), Col != C2.
+// Self-symmetry of the clean cells.
+.init sym = D4Map<Unit, Color>
+sym.src($U(), P, Col) :- clean(P, Col).
+sym.dst($U(), P, Col) :- clean(P, Col).
 
 out(P_out, Col, $Detect()) :-
-    boxframe.inner($U(), P, P_out),             // masked cell in the box frame
-    d4_elem(D), !mismatch(D), apply(D, P, P2),    // unbroken-symmetry image
+    boxframe.inner($U(), P, P_out),               // masked cell in the box frame
+    sym.compatible($U(), D), apply(D, P, P2),     // unbroken-symmetry image
     clean(P2, Col).

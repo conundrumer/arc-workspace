@@ -27,15 +27,24 @@ cross(P, Q, Col) :-
 .decl collide(ch: Choice, p: Position)
 
 // --- $Color ---
-collide($Color(), P) :- cross(P, _, C1), cross(P, _, C2), C1 != C2.
+.init cover_color = Unanimous<Position, Color>
+cover_color.item(P, Col) :- cross(P, _, Col).
+
+collide($Color(), P) :- cover_color.clash(P).
 
 // --- $Mark ---
-collide($Mark(), P) :- cross(P, Q1, _), cross(P, Q2, _), Q1 != Q2.
+.init cover_mark = Unanimous<Position, Position>
+cover_mark.item(P, Q) :- cross(P, Q, _).
+
+collide($Mark(), P) :- cover_mark.clash(P).
 
 .decl impl_choice(ch: Choice)
 impl_choice($Color()). impl_choice($Mark()).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, Ch) :- collide(Ch, P), c.cross_color(Col).
-out(P, Col, Ch) :- impl_choice(Ch), cross(P, _, Col), !collide(Ch, P).
-out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !cross(P, _, _), c.bg(Col).
+out(P, Col, Ch) :-
+    impl_choice(Ch), in(P, _),
+    ( collide(Ch, P), c.cross_color(Col)         // crosses meet
+    ; cross(P, _, Col), !collide(Ch, P)          // one cross alone
+    ; !cross(P, _, _), c.bg(Col)                 // no cross
+    ).

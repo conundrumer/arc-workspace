@@ -5,11 +5,9 @@
 // axis with a fixed gap, each stage nesting the previous when stages align
 // at their trailing edges. Marker cells frame a window over a slot the
 // scene has not drawn. The scene grows on: each cell of a layer moves by
-// the delta its layer most shares with the layer one period below — read at
-// layers deep enough to have a grandparent, and carried down each chain —
-// and a new cell's colour is what the drawn stages' colour-invariances
-// (ancestor reads and layer echoes, validated over every drawn cell) reach.
-// The output is the window's view of the grown scene.
+// the delta its layer most shares with the layer one period below, and a new
+// cell's color is what the drawn stages' color-invariances reach. The
+// output is the window's view of the grown scene.
 
 #include "../lib.dl"
 
@@ -45,13 +43,15 @@ sbox.cell(Id, P) :- stage_of(P, Id).
 
 // --- orientation ---
 
-// The packing axis: stages occupy disjoint bands along it, so no two stages
-// share a coordinate on it.
+.type Band = [d: Dir, k: number]
+
+// The stage a band coordinate belongs to.
+.init band_stage = Unanimous<Band, Ident>
+band_stage.item([D, K], I) :- dir_elem(D), stage_of(P, I), dist(P, D, K).
+
+// The packing axis: stages occupy disjoint bands along it.
 .decl stack_defect(a: Axis)
-stack_defect(A) :-
-    axis_elem(A), axis_of(D, A),
-    stage_of(P, I), stage_of(Q, I2), I != I2,    // cells of two stages
-    same_dist(D, P, Q).                          // on one band coordinate
+stack_defect(A) :- axis_of(D, A), band_stage.clash([D, _]).
 
 .decl pax(a: Axis)
 pax(A) :- axis_elem(A), !stack_defect(A).
@@ -242,7 +242,7 @@ target(L, Lg) :-
     grow_dir(G), far.high(L, F), jump(Lg, G, F, Lfar),
     dist(Lfar, G, Kf), dist(W, G, Kw), Kw >= Kf.                  // ends at or after
 
-// --- colour generators ---
+// --- color generators ---
 
 // Ancestry along the parent edges: validation reads the drawn edges; the
 // closure reads the extended ones.
@@ -254,8 +254,8 @@ anc_drawn(Y, Z) :- anc_drawn(Y, Z1), drawn_parent(Z1, Z).
 anc_ext(Y, Y) :- ext_layer(_, Y).
 anc_ext(Y, Z) :- anc_ext(Y, Z1), ext_parent(Z1, Z).
 
-// A generator observation: a drawn cell's colour beside another drawn
-// cell's colour read a stage shift away — dj between their births, dk
+// A generator observation: a drawn cell's color beside another drawn
+// cell's color read a stage shift away — dj between their births, dk
 // between the stages read.
 .decl gen_obs(dk: Shift, dj: Shift, x: Position, z: Position, c: Color, c2: Color)
 gen_obs(Dk, Dj, X, Z, C, C2) :-
@@ -282,13 +282,13 @@ lgen(Dk, Dj) :-
 .decl lgen_mismatch(dk: Shift, dj: Shift)
 lgen_mismatch(Dk, Dj) :- gen_obs(Dk, Dj, _, _, C, C2), C2 != C.
 
-// --- colour closure ---
+// --- color closure ---
 
 .decl state_line(l: Position)
 state_line(L) :- drawn_line(L).
 state_line(L) :- target(L, _).
 
-// A cell's colour is what the generators reach in the drawn table; out's
+// A cell's color is what the generators reach in the drawn table; out's
 // single-valuedness enforces unanimity across every path.
 .decl col_reach(l: Position, y: Position, col: Color)
 col_reach(L, Y, C) :- drawn(L, Y, C).
@@ -304,7 +304,7 @@ col_reach(L, Y, C) :-
 // --- output ---
 
 // A window cell shows the target stage: shift it into the scene frame and
-// read the closure's colour there; cells the stage does not cover are bg.
+// read the closure's color there; cells the stage does not cover are bg.
 .decl shown(p: Position, col: Color)
 shown(P, C) :-
     win.inside($U(), P),

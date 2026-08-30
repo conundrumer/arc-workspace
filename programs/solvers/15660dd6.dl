@@ -1,7 +1,7 @@
 // 15660dd6
 // concept: decompose markers select mapping
 // Bordered panels sit in a lattice, and a label outside the lattice names each
-// panel band. Every panel column holds one single-colored panel (the donor)
+// panel band. Every panel column holds one distinguished panel (the donor)
 // and copies of one stencil. The output is one band of the lattice: each
 // column's stencil painted in its donor's color, ringed in the label of the
 // donor's band.
@@ -13,7 +13,6 @@
 // Two claims render the interior:
 //   $Map  — c.ink maps to the donor's color; other colors pass through.
 //   $Mask — non-background cells take the donor's color, the rest c.bg.
-// Choice = [donor, render] crosses the two independent decisions.
 
 #include "../lib.dl"
 
@@ -84,8 +83,8 @@ band_label(P_band, Col) :-
 
 // --- donor ---
 
-.decl mixed(id: Ident)
-mixed(Id) :- interior(Id, _, Col1), interior(Id, _, Col2), Col1 != Col2.
+.init panel_color = Unanimous<Ident, Color>
+panel_color.item(Id, Col) :- interior(Id, _, Col).
 
 // Two panels of one column disagree on some interior cell.
 .decl differs(id: Ident, id2: Ident)
@@ -99,10 +98,9 @@ twin(Id) :-
     !differs(Id, Id2).
 
 .decl donor(d: Donor, p_col: Position, id: Ident)
-donor($Solid(), P_col, Id) :- panel_pos(Id, P_col, _), !mixed(Id).
+donor($Solid(), P_col, Id) :- panel_pos(Id, P_col, _), !panel_color.clash(Id).
 donor($Odd(), P_col, Id) :- panel_pos(Id, P_col, _), !twin(Id).
 
-// The donor column stays: rival donor claims can pick different panels.
 .decl fill(d: Donor, p_col: Position, col: Color)
 fill(D, P_col, Col) :- donor(D, P_col, Id), interior(Id, _, Col).
 

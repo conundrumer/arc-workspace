@@ -11,9 +11,7 @@
 .type Choice = Full {} | Detect {}
 
 .comp Consts {
-    // --- shared ---
-    .decl noise(col: Color)
-    noise(4).
+    .decl noise(col: Color) noise(4).
 }
 
 .init c = Consts
@@ -33,15 +31,13 @@ out(P, Col, $Full()) :-
 
 // --- $Detect ---
 
-// D maps some clean cell to a clean cell of a different color.
-.decl mismatch(d: D4)
-mismatch(D) :-
-    d4_elem(D),
-    clean(P, Col), apply(D, P, P2),
-    clean(P2, C2), Col != C2.
+// Self-symmetry of the clean cells.
+.init sym = D4Map<Unit, Color>
+sym.src($U(), P, Col) :- clean(P, Col).
+sym.dst($U(), P, Col) :- clean(P, Col).
 
 out(P, Col, $Detect()) :- clean(P, Col).
 out(P, Col, $Detect()) :-
-    in(P, N), c.noise(N),                       // corrupted cell
-    d4_elem(D), !mismatch(D), apply(D, P, P2),    // unbroken-symmetry image
+    in(P, N), c.noise(N),                         // corrupted cell
+    sym.compatible($U(), D), apply(D, P, P2),     // unbroken-symmetry image
     clean(P2, Col).

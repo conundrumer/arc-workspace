@@ -11,13 +11,11 @@
 #include "../lib.dl"
 
 .comp Consts {
-    // The emitting block.
     .decl block(col: Color) block(8).
 
     // Cells no arm can enter.
     .decl stop(col: Color) stop(5).
 
-    // What each arm family paints.
     .decl diag_paint(col: Color) diag_paint(2).  // the corner arms
     .decl arm_paint(col: Color) arm_paint(4).  // the side arms
 
@@ -90,6 +88,7 @@ out(P, Col) :- in(P, Col_in), ( paint(P, Col) ; !paint(P, _), Col = Col_in ).
 
 .type ArmKey = [e: Example, d: Dir]
 .type ArmCell = [e: Example, d: Dir, p: Position]
+.type ArmPhase = [e: Example, d: Dir, n: number, k: number]
 
 .comp Fit {
     .init parse = Parse<Example>
@@ -138,16 +137,18 @@ out(P, Col) :- in(P, Col_in), ( paint(P, Col) ; !paint(P, _), Col = Col_in ).
     .decl cand(n: number)
     cand(N) :- bend(_, _, N, _), N != 0.
 
+    // The rotation an arm's bends show at one phase of a candidate cycle.
+    .init phase_turn = Unanimous<ArmPhase, C4>
+    phase_turn.item([E, D, N, K], T) :- cand(N), bend(E, D, R, T), stride(R, N, 0, _, K).
+
     // A cycle length two same-phase bends of one arm contradict.
     .decl broken_cycle(n: number)
-    broken_cycle(N) :-
-        cand(N), bend(E, D, R1, T1), bend(E, D, R2, T2),
-        stride(R1, N, 0, _, K), stride(R2, N, 0, _, K), T1 != T2.
+    broken_cycle(N) :- phase_turn.clash([_, _, N, _]).
 
     // The gait is the shortest cycle the arms bear out.
     .init cycle = Extremes<Unit>
     cycle.cand($U(), N) :- cand(N), !broken_cycle(N).
 
     .decl gait(phase: number, t: C4)
-    gait(K, T) :- bend(_, _, R, T), cycle.low($U(), N), stride(R, N, 0, _, K).
+    gait(K, T) :- cycle.low($U(), N), phase_turn.value([_, _, N, K], T).
 }

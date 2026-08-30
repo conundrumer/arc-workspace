@@ -28,9 +28,6 @@
 
 .init c = Consts
 
-.decl clean(p: Position, col: Color)
-clean(P, Col) :- in(P, Col), !c.mask(Col).
-
 // Mosaic position of each grid cell — materialized to read backward.
 .decl mosaic(p_grid: Position, p_mosaic: Position)
 mosaic(P_grid, P_mosaic) :- in(P_grid, _), c.mosaic_margin(M), compose(P_grid, M, P_mosaic).
@@ -46,7 +43,7 @@ out(P_out, Col) :-
     c.tile_dim(K), divide_by_size_2d(Pm, K, 0, T, _), // its tile
     c.tile_sym(T, S), sym_member(S, D),               // a transform holding there
     apply(D, Pm, P2m),                                // image in the mosaic
-    mosaic(P2, P2m), clean(P2, Col).                  // visible grid cell there
+    mosaic(P2, P2m), in(P2, Col), !c.mask(Col).       // visible grid cell there
 
 // --- fit ---
 
@@ -54,8 +51,7 @@ out(P_out, Col) :-
     .decl cell(e: Example, p: Position, col: Color)
     cell(E, P, Col) :- ex_in(E, P, Col), !c.mask(Col).
 
-    // Axis positions the examples' cells occupy, and cells split by axis
-    // (materialized once — the mirror sweep joins on the components).
+    // Axis positions the examples' cells occupy, and cells split by axis.
     .decl apos(a: Axis, along: Position)
     apos(A, Along) :- ex_in(_, P, _), axis_elem(A), split(P, A, Along, _).
 
@@ -75,14 +71,15 @@ out(P_out, Col) :-
         apply(F, Lm, L_img),                        // mirror image
         apos(A, L2), compose(L2, M, L_img).         // back in-grid
 
-    // The extension's mirror maps a clean pair to different colors...
+    // The extension's mirror maps a clean pair to different colors.
     .decl ext_mismatch(a: Axis, m: Inset)
     ext_mismatch(A, M) :-
         ext_map(A, M, L1, L2),
         cell_split(E, A, L1, X, C1),
         cell_split(E, A, L2, X, C2), C2 != C1.
 
-    // ...or relates some pair of distinct cells.
+    // The extension's mirror relates two distinct cells — the witness that
+    // the examples exercise it.
     .decl ext_pair(a: Axis, m: Inset)
     ext_pair(A, M) :-
         ext_map(A, M, L1, L2), L1 != L2,
@@ -101,13 +98,18 @@ out(P_out, Col) :-
     .decl mcell(e: Example, p: Position, col: Color)
     mcell(E, Pm, Col) :- cell(E, P, Col), mosaic_margin(M), compose(P, M, Pm).
 
-    // A mosaic transform mapping some clean cell here to a differing clean
-    // cell — the violation locus the tile labels partition.
-    .decl viol(p: Position, d: D4)
-    viol(Pm, D) :-
-        d4_elem(D),
-        mcell(E, Pm, C1), apply(D, Pm, P2m),
-        mcell(E, P2m, C2), C2 != C1.
+    // The mosaic's own symmetries, per example.
+    .init inv = D4Map<Example, Color>
+    inv.src(E, P, Col) :- mcell(E, P, Col).
+    inv.dst(E, P, Col) :- mcell(E, P, Col).
+
+    // --- proposal: D4Map.broken ---
+    // The cell where a transform breaks: its image holds a differing clean
+    // cell. `conflict` with the cell kept; the tile labels partition it.
+    .decl broken(e: Example, p: Position, d: D4)
+    broken(E, P, D) :-
+        inv.src(E, P, V), d4_elem(D), apply(D, P, P2),
+        inv.dst(E, P2, V2), V2 != V.
 
     // Mosaic cell to tile, at every candidate tile extent.
     .decl kcand(k: number)
@@ -117,7 +119,7 @@ out(P_out, Col) :-
     tposk(K, Pm, T) :- mcell(_, Pm, _), kcand(K), divide_by_size_2d(Pm, K, 0, T, _).
 
     .decl mismatchk(k: number, p_tile: Position, d: D4)
-    mismatchk(K, T, D) :- tposk(K, Pm, T), viol(Pm, D).
+    mismatchk(K, T, D) :- tposk(K, Pm, T), broken(_, Pm, D).
 
     .decl symk(k: number, p_tile: Position, d: D4)
     symk(K, T, D) :- tposk(K, _, T), d4_elem(D), !mismatchk(K, T, D).
@@ -130,12 +132,9 @@ out(P_out, Col) :-
     tile_dim(K) :- nonuniform.high($U(), K).
 
     // Each tile's group is the named subgroup matching its unbroken set.
-    .decl symt(p_tile: Position, d: D4)
-    symt(T, D) :- tile_dim(K), symk(K, T, D).
-
     .init symid = KeyedSetCompare<Position, Sym, D4>
     symid.pattern_member(S, D) :- sym_member(S, D).
-    symid.observed_member(T, D) :- symt(T, D).
+    symid.observed_member(T, D) :- tile_dim(K), symk(K, T, D).
 
     .decl tile_sym(p_tile: Position, s: Sym)
     tile_sym(T, S) :- symid.equals(T, S).

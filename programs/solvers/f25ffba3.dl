@@ -2,17 +2,13 @@
 // concept: tile-arrangement d4
 // Input has a data slab anchored at one edge; the rest is empty. Output
 // is the data slab plus its images under a D4 set, filling the grid.
-// Three models:
 //
-//   $Stamp   — half-extract the data slab; stamp each cell under every
-//              D4 in c.stamps
-//   $Augment — stamp every non-bg input cell under every D4 in c.stamps;
-//              bg-fill unstamped positions
-//   $Tile    — divide input into c.n_tiles along axis_of(c.data_dir);
-//              each output tile applies c.tile_d4 to the input tile at c.data_dir
-//
-// Flagged ($Stamp): arithmetic predicate `K < Half_h` on dist. The rule
-// needs an edge-anchored half-extract primitive.
+//   $Stamp   — take the slab by its depth from the data edge, and stamp each
+//              of its cells under every D4 in c.stamps.
+//   $Augment — stamp every non-bg input cell under every D4 in c.stamps, and
+//              bg-fill what no stamp covers.
+//   $Tile    — divide the input into c.n_tiles along the data edge's axis;
+//              each output tile applies its c.tile_d4 to the data tile.
 
 #include "../lib.dl"
 
@@ -50,16 +46,14 @@ out(P_grid_out, Col, $Stamp()) :-
     c.stamps(D), apply(D, P_grid_in, P_grid_out).         // stamp under D4
 
 // --- Augment ---
-.decl augment_filled(p: Position)
-augment_filled(P_out) :-
+.decl augment_ink(p: Position, col: Color)
+augment_ink(P_out, Col) :-
     in(P_in, Col), !c.bg(Col),                            // non-bg input cell
     c.stamps(D), apply(D, P_in, P_out).                   // stamp under D4
 
-out(P_out, Col, $Augment()) :-
-    in(P_in, Col), !c.bg(Col),                            // non-bg input cell
-    c.stamps(D), apply(D, P_in, P_out).                   // stamp under D4
+out(P, Col, $Augment()) :- augment_ink(P, Col).
 out(P, Bg, $Augment()) :-
-    in(P, _), c.bg(Bg), !augment_filled(P).               // bg-fill unstamped positions
+    in(P, _), c.bg(Bg), !augment_ink(P, _).               // bg-fill unstamped positions
 
 // --- Tile ---
 out(P_grid_out, Col, $Tile()) :-
@@ -94,42 +88,48 @@ out(P_grid_out, Col, $Tile()) :-
     .decl half_h(n: number)
     half_h(N) :- data_dir(D), axis_of(D, A), slab.extents(_, A, N, _).
 
+    // The cut every tile reading below takes: the data edge's axis, and the
+    // slab's depth as the tile size.
+    .decl slab_cut(a: Axis, k: number)
+    slab_cut(A, K) :- data_dir(D), axis_of(D, A), half_h(K).
+
     // Tiles of the slab's depth fill the grid.
     .decl n_tiles(n: number)
     n_tiles(N) :-
-        pair_cell(_, P_grid, _), half_h(K),
-        data_dir(D), axis_of(D, A),
+        pair_cell(_, P_grid, _), slab_cut(A, K),
         divide_by_size(P_grid, A, K, 0, P_outer, _),
         axis_dim(P_outer, A, N).            // tile count, off the arrangement's extent
 
-    // A stamp that lands some ink cell off the output's color.
-    .decl stamp_mismatch(d: D4)
-    stamp_mismatch(D) :-
-        ink(E, P, Col), d4_elem(D), apply(D, P, P_img), !ex_out(E, P_img, Col).
+    // Each example's ink must stamp onto its output.
+    .init stamp = D4Map<Example, Color>
+    stamp.src(E, P, Col) :- ink(E, P, Col).
+    stamp.dst(E, P, Col) :- ex_out(E, P, Col).
 
     .decl stamps(d: D4)
-    stamps(D) :- d4_elem(D), !stamp_mismatch(D).
+    stamps(D) :- d4_elem(D), !stamp.mismatch(_, D).
 
     // The data tile: the input tile at the data edge.
     .decl data_cell(e: Example, p_intile: Position, col: Color)
     data_cell(E, P_intile, Col) :-
-        pair_cell(E, P_grid, Col),
-        data_dir(D), axis_of(D, A), half_h(K),
+        pair_cell(E, P_grid, Col), slab_cut(A, K),
         divide_by_size_slab(P_grid, A, K, 0, P_tile, P_intile),
-        dist(P_tile, D, 0).
+        data_dir(D), dist(P_tile, D, 0).
 
     .decl out_cell(e: Example, p_tile: Position, p_intile: Position, col: Color)
     out_cell(E, P_tile, P_intile, Col) :-
-        ex_out(E, P_grid, Col),
-        data_dir(D), axis_of(D, A), half_h(K),
+        ex_out(E, P_grid, Col), slab_cut(A, K),
         divide_by_size_slab(P_grid, A, K, 0, P_tile, P_intile).
 
-    // A transform that lands some data cell off the output tile's color.
+    .type TileK = [e: Example, p_tile: Position]
+
+    // The data tile must map onto each output tile's content.
+    .init tile = D4Map<TileK, Color>
+    tile.src([E, P_tile], P_intile, Col) :-
+        data_cell(E, P_intile, Col), out_cell(E, P_tile, _, _).
+    tile.dst([E, P_tile], P_intile, Col) :- out_cell(E, P_tile, P_intile, Col).
+
     .decl tile_mismatch(p_tile: Position, d: D4)
-    tile_mismatch(P_tile, D) :-
-        data_cell(E, P_intile, Col), out_cell(E, P_tile, _, _),
-        d4_elem(D), apply(D, P_intile, P_img),
-        !out_cell(E, P_tile, P_img, Col).
+    tile_mismatch(P_tile, D) :- tile.mismatch([_, P_tile], D).
 
     .decl tile_d4(p_tile: Position, d: D4)
     tile_d4(P_tile, D) :- out_cell(_, P_tile, _, _), d4_elem(D), !tile_mismatch(P_tile, D).

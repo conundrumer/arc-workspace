@@ -10,6 +10,8 @@
 #include "../lib.dl"
 
 .type Choice = Dup {} | Tile {}
+.type SlabCell = [a: Axis, p_inner: Position]
+.type TileCell = [a: Axis, k: number, p_inner: Position]
 
 .comp Consts {
     // --- Dup ---
@@ -23,38 +25,29 @@
 
 // --- Dup ---
 
-// The grid as c.copies slabs along A, cellwise.
-.decl dup_split(a: Axis, p: Position, p_inner: Position)
-dup_split(A, P, P_inner) :-
-    in(P, _), axis_elem(A), c.copies(N),
-    divide_slab(P, A, N, 0, _, P_inner).
+// The grid as c.copies slabs along A: what each within-slab cell holds.
+.init dup_cell = Unanimous<SlabCell, Color>
+dup_cell.item([A, P_inner], Col) :-
+    in(P, Col), axis_elem(A), c.copies(N),   // a cell, an axis
+    divide_slab(P, A, N, 0, _, P_inner).     // its place within a slab
 
 // Two copies disagree at a within-slab cell.
 .decl dup_mismatch(a: Axis)
-dup_mismatch(A) :-
-    dup_split(A, P1, P_inner), in(P1, C1),    // cell in one copy
-    dup_split(A, P2, P_inner), in(P2, C2),    // same cell, another copy
-    C1 != C2.
+dup_mismatch(A) :- dup_cell.clash([A, _]).
 
-out(P_inner, Col, $Dup()) :-
-    dup_split(A, P, P_inner), !dup_mismatch(A),
-    in(P, Col).
+out(P_inner, Col, $Dup()) :- dup_cell.value([A, P_inner], Col), !dup_mismatch(A).
 
 // --- Tile ---
 
-// The grid as K-sized slabs along A, cellwise, for every proper K.
-.decl tile_split(a: Axis, k: number, p: Position, p_inner: Position)
-tile_split(A, K, P, P_inner) :-
-    in(P, _), axis_elem(A), sub_extent(P, A, K),
-    divide_by_size_slab(P, A, K, 0, _, P_inner).
+// The grid as K-sized slabs along A, for every proper K: what each
+// within-slab cell holds.
+.init tile_cell = Unanimous<TileCell, Color>
+tile_cell.item([A, K, P_inner], Col) :-
+    in(P, Col), axis_elem(A), sub_extent(P, A, K),   // a cell, an axis, a size
+    divide_by_size_slab(P, A, K, 0, _, P_inner).     // its place within a slab
 
 // Two tiles disagree at a within-slab cell.
 .decl tile_mismatch(a: Axis, k: number)
-tile_mismatch(A, K) :-
-    tile_split(A, K, P1, P_inner), in(P1, C1),    // cell in one tile
-    tile_split(A, K, P2, P_inner), in(P2, C2),    // same cell, another tile
-    C1 != C2.
+tile_mismatch(A, K) :- tile_cell.clash([A, K, _]).
 
-out(P_inner, Col, $Tile()) :-
-    tile_split(A, K, P, P_inner), !tile_mismatch(A, K),
-    in(P, Col).
+out(P_inner, Col, $Tile()) :- tile_cell.value([A, K, P_inner], Col), !tile_mismatch(A, K).

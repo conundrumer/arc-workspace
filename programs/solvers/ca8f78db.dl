@@ -7,8 +7,7 @@
 //             cells maps each noise cell to a clean counterpart.
 //   $Period — translation repair, stored: cells a stored period apart
 //             along its axis are equal. Only the vertical period is task
-//             data (2 in every pair); the horizontal period varies per
-//             pair, so it has no row.
+//             data; the horizontal one varies per pair, so it has no row.
 //   $Rows   — line structure: rows with a clean non-bg cell are pattern
 //             rows and equal each other; the rest are separators, all bg.
 
@@ -49,12 +48,13 @@ out(P, Col, Ch) :- impl_choice(Ch), clean(P, Col).
 out(P, Col, $Shift()) :-
     in(P, N), c.noise(N),                              // corrupted cell
     parse.cand($U(), A, K, Delta),                     // candidate shift
-    !parse.mismatch($U(), A, K),                         // unbroken on clean cells
+    !parse.mismatch($U(), A, K),                       // unbroken on clean cells
     compose(P, Delta, P2), clean(P2, Col).             // its image
 
 // --- $Period ---
 
-// One stored period as a delta, both dirs, materialized once (inline cost).
+// The stored period as a delta, both directions; materialized so the walk
+// below joins against it instead of rebuilding it per step.
 .decl period_delta(delta: Position)
 period_delta(Delta) :-
     c.period(A, K), axis_of(D, A), jump_delta(D, K, Delta).
@@ -91,6 +91,8 @@ out(P, Col, $Rows()) :-
 
 // --- fit ---
 
+.type LinePos = [e: Example, a: Axis, along: Position]
+
 .comp Fit {
     .init parse = ShiftInvariance<Example, Color>
     parse.cell(E, P, Col) :- ex_out(E, P, Col).
@@ -111,13 +113,13 @@ out(P, Col, $Rows()) :-
     pattern_line(E, A, Across) :- line_cell(E, A, Across, _, Col), !c.bg(Col).
 
     // The colors the pattern lines carry at each position along the line.
-    .decl pattern_at(e: Example, a: Axis, along: Position, col: Color)
-    pattern_at(E, A, Along, Col) :-
+    .init pattern_at = Unanimous<LinePos, Color>
+    pattern_at.item([E, A, Along], Col) :-
         line_cell(E, A, Across, Along, Col), pattern_line(E, A, Across).
 
     // Pattern lines of one grid disagreeing at a shared position.
     .decl axis_mismatch(a: Axis)
-    axis_mismatch(A) :- pattern_at(E, A, Along, Col), pattern_at(E, A, Along, C2), C2 != Col.
+    axis_mismatch(A) :- pattern_at.clash([_, A, _]).
 
     // Lines run along the axis whose pattern lines all agree.
     .decl axis(a: Axis)

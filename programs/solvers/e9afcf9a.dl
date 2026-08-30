@@ -1,19 +1,19 @@
 // e9afcf9a
 // concept: permutation lookup d4
-// 2×6 cell permutation: at odd column indices, rows 0 and 1 swap; even
-// columns are unchanged. Two models:
+// The output permutes the input's cells: at odd column indices the two rows
+// swap, and even columns stay put.
 //
-//   $LabeledGrids — the permutation as data: in/out label grids paired by
-//                   shared non-zero label
-//   $Divide       — the permutation composed: divide H into 1×2 subgrids;
-//                   per-inner-column D4 transform
+//   $LabeledGrids — the permutation as data: an input label grid and an
+//                   output label grid, paired by shared label.
+//   $Divide       — the permutation composed: divide the grid into column
+//                   pairs, and apply a D4 per inner column.
 
 #include "../lib.dl"
 
 .type Choice = LabeledGrids {} | Divide {}
 
 .comp Consts {
-    // --- LabeledGrids data ---
+    // --- LabeledGrids ---
     .decl in_label(p: Position, id: Ident)
     GRID_2x6(in_label,
         1, 2, 3,  4,  5,  6,
@@ -24,7 +24,11 @@
         1, 8, 3, 10, 5, 12,
         7, 2, 9,  4, 11, 6)
 
-    // --- Divide params ---
+    // Input cell to output cell, by shared label.
+    .decl label_pair(p_in: Position, p_out: Position)
+    label_pair(P_in, P_out) :- in_label(P_in, Id), out_label(P_out, Id).
+
+    // --- Divide ---
     .decl divide_axis(a: Axis) divide_axis(AXIS_H).
     .decl divisor(n: number) divisor(3).
 
@@ -36,14 +40,12 @@
 
 .init c = Consts
 
-.decl impl_choice(ch: Choice)
-impl_choice($LabeledGrids()).
-impl_choice($Divide()).
-
 .decl perm(p_in: Position, p_out: Position, c: Choice)
-perm(P_grid_in, P_grid_out, $LabeledGrids()) :-
-    c.in_label(P_grid_in, Id), c.out_label(P_grid_out, Id),   // shared label
-    Id != 0.                                                  // non-pairing sentinel
+
+// --- LabeledGrids ---
+perm(P_grid_in, P_grid_out, $LabeledGrids()) :- c.label_pair(P_grid_in, P_grid_out).
+
+// --- Divide ---
 perm(P_grid_in, P_grid_out, $Divide()) :-
     in(P_grid_in, _),                                          // input cell
     c.divide_axis(A), c.divisor(N),                            // params
@@ -52,27 +54,28 @@ perm(P_grid_in, P_grid_out, $Divide()) :-
     apply(T, P_grid_in, P_grid_out).                           // apply to input cell
 
 .decl out(p: Position, col: Color, c: Choice)
-out(P_grid_out, Col, Impl) :-
-    impl_choice(Impl), in(P_grid_in, Col),   // choice × input cell
-    perm(P_grid_in, P_grid_out, Impl).       // the cell's image
+out(P_grid_out, Col, Ch) :- in(P_grid_in, Col), perm(P_grid_in, P_grid_out, Ch).
 
 // --- fit ---
 
+.type AxisCell = [a: Axis, p_in: Position]
+.type TileCol = [k: number, p_inner_axis: Position]
+
 .comp Fit {
-    .decl cand(a: Axis, p_in: Position, p_out: Position)
-    cand(A, P_in, P_out) :-
+    .init cand = Unanimous<AxisCell, Position>
+    cand.item([A, P_in], P_out) :-
         ex_in(E, P_in, Col), ex_out(E, P_out, Col),                            // shared color
         axis_elem(A), split(P_in, A, P_along, _), split(P_out, A, P_along, _). // same coordinate on a
 
     // Two candidates for one cell — the axis leaves the pairing open.
     .decl ambiguous(a: Axis)
-    ambiguous(A) :- cand(A, P_in, P1), cand(A, P_in, P2), P1 != P2.
+    ambiguous(A) :- cand.clash([A, _]).
 
     .decl divide_axis(a: Axis)
-    divide_axis(A) :- cand(A, _, _), !ambiguous(A).
+    divide_axis(A) :- cand.item([A, _], _), !ambiguous(A).
 
     .decl pair(p_in: Position, p_out: Position)
-    pair(P_in, P_out) :- divide_axis(A), cand(A, P_in, P_out).
+    pair(P_in, P_out) :- divide_axis(A), cand.value([A, P_in], P_out).
 
     .decl in_label(p: Position, id: Ident)
     in_label(P_in, as(ord(P_in), Ident)) :- pair(P_in, _).
@@ -89,12 +92,13 @@ out(P_grid_out, Col, Impl) :-
         pair(P_in, _), divide_axis(A),
         sub_extent(P_in, A, K), divide_by_size(P_in, A, K, 0, P_outer_axis, P_inner_axis).
 
+    .init inner_transform = Unanimous<TileCol, D4>
+    inner_transform.item([K, P_inner_axis], D) :-
+        tiled(K, P_in, _, P_inner_axis), cell_transform(P_in, D).
+
     // A tile size whose inner position does not fix the transform.
     .decl mixed(k: number)
-    mixed(K) :-
-        tiled(K, P1, _, P_inner_axis), cell_transform(P1, D1),
-        tiled(K, P2, _, P_inner_axis), cell_transform(P2, D2),
-        D1 != D2.
+    mixed(K) :- inner_transform.clash([K, _]).
 
     .decl tiling(k: number)
     tiling(K) :- tiled(K, _, _, _), !mixed(K).
@@ -105,6 +109,5 @@ out(P_grid_out, Col, Impl) :-
         divide_axis(A), axis_dim(P_outer_axis, A, N).
 
     .decl col_transform(p_inner: Position, d: D4)
-    col_transform(P_inner_axis, D) :-
-        tiling(K), tiled(K, P_in, _, P_inner_axis), cell_transform(P_in, D).
+    col_transform(P_inner_axis, D) :- tiling(K), inner_transform.value([K, P_inner_axis], D).
 }

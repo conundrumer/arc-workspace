@@ -1,21 +1,21 @@
 // 4522001f
 // concept: markers stamp lookup d4
 // A 2x2 block sits against a grid corner, its cell at the grid center
-// colored c.mark. On the c.canvas frame, the stored square c.box stamps
+// colored c.mark. On the c.canvas frame, the stored box c.box stamps
 // along the diagonal from that corner.
 // Choice = $Pair() | $Loc(l, r, f):
 //
 //   $Pair() — the task as one stored exemplar pair: the rotation matching
 //             c.pair_in onto the input applies to c.pair_out.
 //
-//   l (the squares' corner):
+//   l (the boxes' corner):
 //     $Corner() — the grid corner the block touches.
 //     $Mark()   — the block corner opposite the mark cell.
-//   r (the squares):
+//   r (the boxes):
 //     $Grow()  — c.box and one diagonal step.
 //     $Fit()   — c.box chained while it fits whole.
 //     $Stamp() — c.mask, the output's paint as one stored picture.
-//   f (square color):
+//   f (box color):
 //     $Block() — the block's non-mark color.
 //     $Ink()   — an independent c.ink.
 //
@@ -23,10 +23,10 @@
 // rotated to the located corner.
 //
 // Coincide here: the block touches the corner opposite the mark, the
-// stored square seats at that corner at twice the block's size, two
-// squares exactly fit the frame, the mask stores that same two-square
-// picture, every pair is a joint rotation of the stored exemplar, and
-// the block color equals c.ink.
+// stored box seats at that corner at twice the block's size, two boxes
+// exactly fit the frame, the mask stores that same two-box picture,
+// every pair is a joint rotation of the stored exemplar, and the block
+// color equals c.ink.
 
 #include "../lib.dl"
 
@@ -50,11 +50,11 @@
     .decl ink(c: Color) ink(3).
 
     // --- $Grow / $Fit ---
-    .decl box_corner(d: DiagDir) box_corner(DIAG_TL).   // the corner the square is drawn at
-    .decl box(m: Inset) box([0, 5, 0, 5]).           // the first square, as margins
+    .decl box_corner(d: DiagDir) box_corner(DIAG_TL).
+    .decl box(m: Inset) box([0, 5, 0, 5]).           // the first box, as margins
 
     // --- $Stamp ---
-    .decl mask_corner(d: DiagDir) mask_corner(DIAG_TL).   // the corner the picture is drawn at
+    .decl mask_corner(d: DiagDir) mask_corner(DIAG_TL).
 
     .decl mask(p: Position)   // output picture; member cells take the paint
     GRID_MASK_9x9(mask,
@@ -96,7 +96,7 @@
 .init bb = Bbox<Unit>
 bb.cell($U(), P) :- in(P, Col), !c.bg(Col).
 
-// --- Locate cases: the squares' corner ---
+// --- Locate cases: the boxes' corner ---
 
 .decl locate_choice(l: Locate)
 locate_choice($Corner()). locate_choice($Mark()).
@@ -114,7 +114,7 @@ diag($Mark(), Diag) :-
     bb.corner($U(), P, D2),         // at a block corner
     diag_opposite(D2, Diag).
 
-// --- Render cases: the squares along the diagonal ---
+// --- Render cases: the boxes along the diagonal ---
 
 .decl render_choice(r: Render)
 render_choice($Grow()). render_choice($Fit()). render_choice($Stamp()).
@@ -123,24 +123,24 @@ render_choice($Grow()). render_choice($Fit()). render_choice($Stamp()).
 .decl rot_to(l: Locate, dm: DiagDir, r: D4)
 rot_to(L, Dm, R) :- diag(L, Diag), c4_elem(R), apply_diag_dir(R, Dm, Diag).
 
-// The first square: the stored box, rotated to the located corner.
+// The first box: c.box rotated to the located corner.
 .decl box0(l: Locate, m: Position)
 box0(L, M) :- c.box_corner(Db), rot_to(L, Db, R), c.box(Mb), apply(R, Mb, M).
 
-// Square cells in the square's own frame.
+// Box cells in the box's own frame.
 .init sq = Reframe<Locate>
 sq.outer(L, M) :- box0(L, M).
 sq.cell(L, P)  :- box0(L, M), c.canvas(P), geq(P, M).
 
-// Box shift by one square: flush by the square's own extents.
+// Shift by one box: flush by the box's own extents.
 .decl sq_jump(l: Locate, j: Position)
 sq_jump(L, J) :-
     diag(L, Diag), diag_opposite(Diag, Od), diag_dirs(Od, A, O1, O2),   // dirs away from the corner
-    sq.inner(L, P), axis_dims(P, A, K1, K2),
-    jump_delta(O1, K1, J1), jump(J1, O2, K2, J).
+    sq.inner(L, P), axis_dims(P, A, K1, K2),                            // the box's extents
+    jump_delta(O1, K1, J1), jump_delta(O2, K2, J2), compose(J1, J2, J). // one box along each
 
 // --- $Grow ---
-// The first square and one diagonal step.
+// The first box and one diagonal step.
 .decl grow_box(l: Locate, m: Position)
 grow_box(L, M)  :- box0(L, M).
 grow_box(L, M2) :- box0(L, M), sq_jump(L, J), compose(M, J, M2), geq(M2, ORIGIN).
@@ -151,7 +151,7 @@ grow_box(L, M2) :- box0(L, M), sq_jump(L, J), compose(M, J, M2), geq(M2, ORIGIN)
 fit_box(L, M)  :- box0(L, M).
 fit_box(L, M2) :- fit_box(L, M), sq_jump(L, J), compose(M, J, M2), geq(M2, ORIGIN).
 
-// --- Paint cases: the square color ---
+// --- Paint cases: the box color ---
 
 .decl paint_choice(f: Paint)
 paint_choice($Block()). paint_choice($Ink()).
@@ -178,13 +178,14 @@ out(P, Col, Ch) :- lit(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), c.canvas(P), !lit(P, _, Ch), c.bg(Col).
 
 // --- $Pair ---
-// Rotations matching the stored input onto the observed input.
-.decl pair_mismatch(r: D4)
-pair_mismatch(R) :- c4_elem(R), c.pair_in(Pk, Col), apply(R, Pk, P), !in(P, Col).
+// The stored input against the observed input.
+.init pair = D4Map<Unit, Color>
+pair.src($U(), P, Col) :- c.pair_in(P, Col).
+pair.dst($U(), P, Col) :- in(P, Col).
 
 // Canvas and colors both come from the stored output.
 out(Q, Col, $Pair()) :-
-    c4_elem(R), !pair_mismatch(R),         // a matching rotation
+    c4_elem(R), !pair.mismatch($U(), R),   // a matching rotation
     c.pair_out(Pm, Col), apply(R, Pm, Q).
 
 // --- fit ---
@@ -222,7 +223,7 @@ out(Q, Col, $Pair()) :-
     .decl mask_corner(d: DiagDir)
     mask_corner(Diag) :- corner(Diag).
 
-    // The squares as separate objects; the stored one seats at the corner.
+    // The boxes as separate objects; the stored one seats at the corner.
     .init sq = Components<Unit>
     sq.node($U(), P) :- mask(P).
 
