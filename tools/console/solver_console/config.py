@@ -18,7 +18,6 @@ SOLVERS = ROOT / "programs" / "solvers"
 LIB = ROOT / "programs" / "lib.dl"
 DOCS = ROOT / "docs" / "wf-solver"
 TASKS = ROOT / "data" / "tasks"
-SKILL_MD = ROOT / ".claude" / "skills" / "session" / "SKILL.md"
 AGENT_DIR = ROOT / ".claude" / "agents"
 REF_DIR = (ROOT.parent / "arc-synth-bun").resolve()
 

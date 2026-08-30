@@ -367,16 +367,8 @@ def adopt_turn(it: dict, worker: dict, phase: str) -> None:
 
 
 def permission_decision(req: dict) -> dict:
-    """The console's answer to one permission request. A worker may edit the
-    skill it runs on, which the CLI holds back as a file of its own. Every
-    other request keeps the refusal the CLI already reached."""
-    if req.get("tool_name") in ("Edit", "Write"):
-        try:
-            asked = Path((req.get("input") or {}).get("file_path") or "").resolve()
-        except OSError:
-            asked = None
-        if asked is not None and asked == config.SKILL_MD.resolve():
-            return {"behavior": "allow", "updatedInput": req.get("input") or {}}
+    """The console's answer to one permission request: every request keeps
+    the refusal the CLI already reached."""
     return {"behavior": "deny",
             "message": req.get("decision_reason") or "not permitted"}
 

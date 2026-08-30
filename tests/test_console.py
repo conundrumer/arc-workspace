@@ -361,15 +361,9 @@ def perm_request(srv, path, tool="Edit", subtype="can_use_tool"):
                         "tool_use_id": "tu1"}}
 
 
-def test_the_session_skill_is_the_worker_s_to_edit(srv):
-    req = perm_request(srv, srv.SKILL_MD)["request"]
-    assert srv.permission_decision(req) == {
-        "behavior": "allow", "updatedInput": req["input"]}
-
-
-def test_every_other_request_keeps_the_cli_refusal(srv):
+def test_every_request_keeps_the_cli_refusal(srv):
     for path, tool in ((srv.ROOT / ".claude" / "settings.json", "Edit"),
-                       (srv.SKILL_MD, "Bash"),
+                       (srv.ROOT / "programs" / "lib.dl", "Bash"),
                        ("/tmp/note.txt", "Write")):
         req = perm_request(srv, path, tool=tool)["request"]
         decision = srv.permission_decision(req)
@@ -380,17 +374,15 @@ def test_every_other_request_keeps_the_cli_refusal(srv):
 def test_a_permission_request_is_answered_on_the_stream(srv):
     it = item(srv, "a", srv.RUNNING)
     w = worker(srv, it, state="running")
-    srv.handle_event(w, perm_request(srv, srv.SKILL_MD), None)
+    lib = srv.ROOT / "programs" / "lib.dl"
+    srv.handle_event(w, perm_request(srv, lib), None)
     assert w["outbound"].get_nowait() == {
         "type": "control_response",
         "response": {"subtype": "success", "request_id": "r1",
-                     "response": {"behavior": "allow",
-                                  "updatedInput": {"file_path": str(srv.SKILL_MD),
-                                                   "old_string": "a",
-                                                   "new_string": "b"},
+                     "response": {"behavior": "deny",
+                                  "message": f"{lib} is a sensitive file.",
                                   "toolUseID": "tu1"}}}
-    assert it["feed"][-1]["text"] == \
-        "permission allowed: Edit .claude/skills/session/SKILL.md"
+    assert it["feed"][-1]["text"] == "permission denied: Edit programs/lib.dl"
 
 
 def test_a_denial_says_which_file_it_was(srv):
@@ -405,7 +397,7 @@ def test_a_denial_says_which_file_it_was(srv):
 def test_an_unknown_control_request_still_gets_a_response(srv):
     it = item(srv, "a", srv.RUNNING)
     w = worker(srv, it, state="running")
-    srv.handle_event(w, perm_request(srv, srv.SKILL_MD, subtype="elicitation"), None)
+    srv.handle_event(w, perm_request(srv, srv.ROOT / "programs" / "lib.dl", subtype="elicitation"), None)
     reply = w["outbound"].get_nowait()
     assert reply["response"]["subtype"] == "error"
     assert reply["response"]["request_id"] == "r1"
@@ -417,7 +409,7 @@ def test_a_broken_policy_refuses_rather_than_hangs(srv, monkeypatch):
     monkeypatch.setattr(srv, "permission_decision", boom)
     it = item(srv, "a", srv.RUNNING)
     w = worker(srv, it, state="running")
-    srv.handle_event(w, perm_request(srv, srv.SKILL_MD), None)
+    srv.handle_event(w, perm_request(srv, srv.ROOT / "programs" / "lib.dl"), None)
     decision = w["outbound"].get_nowait()["response"]["response"]
     assert decision["behavior"] == "deny"
     assert "policy bug" in decision["message"]
@@ -1529,10 +1521,10 @@ def test_task_ask_carries_the_subagent_brief(srv):
     assert srv.task_ask({"prompt": "Look in programs/."}) == "Look in programs/."
 
 
-def test_append_carries_the_skill_body_and_the_docs(srv):
+def test_append_carries_the_scratch_note_and_the_docs(srv):
     (srv.DOCS / "style.md").write_text("# Style\n\nEvery word of it.\n")
     out = srv.append_path().read_text()
-    assert out.startswith("# Solver session")
+    assert out.startswith("## Scratch")
     assert "# docs/wf-solver/style.md\n\n# Style\n\nEvery word of it.\n" in out
 
 
@@ -1635,18 +1627,6 @@ def test_a_turn_that_changes_a_shared_file_gets_flagged(srv):
     assert any(e["kind"] == "event" and "shared files changed" in e["text"]
                for e in it["feed"])
     assert srv.light_items()[0]["shared_writes"] == ["docs/wf-solver/concepts.md"]
-
-
-def test_a_write_to_the_session_skill_is_flagged(srv):
-    rel = str(srv.SKILL_MD.relative_to(srv.ROOT))
-    assert rel in srv.watched_paths("a")
-    it = item(srv, "a", srv.RUNNING)
-    watched = srv.watched_hashes("a")
-    watched[rel] = "the hash the turn started with"
-    it["pre"] = {"hash": "", "solver": "", "proposals": "", "dirty": False,
-                 "files": {}, "watched": watched}
-    srv.finish_turn(it, {"result": ""}, None, time.time(), "refine", False)
-    assert it["shared_writes"] == [rel]
 
 
 def test_a_solver_only_turn_flags_no_shared_write(srv):
