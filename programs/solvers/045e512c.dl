@@ -60,14 +60,14 @@ toward(D, K, Delta) :- span(K), dir8_elem(D), jump_delta(D, K, Delta).
 .decl placed(delta: Shift, p: Position)
 placed(Delta, P2) :- toward(_, _, Delta), shape(P), compose(P, Delta, P2).
 
-// A step whose copy misses some cell of the object.
-.decl misfit(id: Ident, delta: Shift)
-misfit(Id, Delta) :- object(Id, _, P), placed(Delta, _), !placed(Delta, P).
+.init inside = KeyedSetCompare<Shift, Ident, Position>
+inside.pattern_member(Id, P) :- object(Id, _, P).
+inside.observed_member(Delta, P) :- placed(Delta, P).
 
 // Steps whose copy holds the whole object. No step holds the template
 // itself, so only the fragments march.
 .decl fits(id: Ident, delta: Shift, k: number)
-fits(Id, Delta, K) :- object(Id, _, _), toward(_, K, Delta), !misfit(Id, Delta).
+fits(Id, Delta, K) :- toward(_, K, Delta), inside.covers(Delta, Id).
 
 .decl step(id: Ident, delta: Shift, ch: Choice)
 
