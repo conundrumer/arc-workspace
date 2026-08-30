@@ -1,5 +1,5 @@
 // 575b1a71
-// concept: markers rank
+// concept: rank
 // c.mark cells recolor by their column's rank: columns holding a mark,
 // ranked by dist from the c.rank_dir edge, map through c.rank_color.
 // Other cells pass through.

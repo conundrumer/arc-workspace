@@ -1,5 +1,5 @@
 // f45f5ca7
-// concept: markers move border
+// concept: move border
 // Edge-column marks relocate along their lines: each color lands a fixed
 // distance from the edge (8→1, 2→2, 4→3, 3→4); the rest is bg.
 //

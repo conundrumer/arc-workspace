@@ -1,5 +1,5 @@
 // 642d658d
-// concept: markers count rank
+// concept: count rank
 // Noise grid with plus shapes: four same-colored arms around a center
 // cell. Detect × select models of the 1×1 output color, data-equivalent
 // on this task — the winning arm color has exactly two pluses in every

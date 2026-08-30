@@ -19,7 +19,7 @@ The structure every candidate claim stands on: what the input is and how it deco
 - `symmetry` — a symmetry of the grid carries the model
 - `lines` — per-line or per-slice structure carries the model
 - `objects` — connected components carry the model
-- `markers` — designated marker cells drive the transformation
+- `markers` — designated cells point: they fix a place, direction, extent, or choice for content other than themselves; a mark may be consumed, and its color may flow along what it designates
 - `grow` — the output frame extends the input frame
 - `permutation` — elements reorder by a fixed permutation
 

@@ -1,5 +1,5 @@
 // 19bb5feb
-// concept: markers rank
+// concept: rank
 // A panel sits on the background, carrying solid marker blocks of other
 // colors. The output holds the marker colors in their relative arrangement,
 // background where a place is empty: markers rank along each axis, and each

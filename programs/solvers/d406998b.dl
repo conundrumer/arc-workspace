@@ -1,5 +1,5 @@
 // d406998b
-// concept: markers rank parity
+// concept: rank parity
 // One c.dot cell per grid column. Alternate dots recolor to c.mark,
 // starting at c.anchor. Two models of what alternates, tagged on out's Choice:
 //

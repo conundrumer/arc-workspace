@@ -1,5 +1,5 @@
 // 11e1fe23
-// concept: markers scale move cross
+// concept: scale move cross
 // Colored marks sit at the corners of a square. The output keeps the marks
 // and adds a small copy of them at the square's center: each mark's color one
 // diagonal step out, and the center painted. The cases differ in how a mark
