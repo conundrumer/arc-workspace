@@ -1,5 +1,5 @@
 // 3428a4f5
-// concept: decompose lookup fold
+// concept: decompose lookup count
 // Layout: 2×1 vertically-stacked 6×5 subgrids with 1-row gap.
 //
 // out's choice column = [d, b]:

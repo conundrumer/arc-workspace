@@ -30,7 +30,6 @@ The transformation claim: which prior the task teaches. Rival cases of one file 
 
 - `lookup` — a stored table or grid supplies output content
 - `d4` — a D4 transform applies to content
-- `unfold` — reflection tiling seeded at an anchor
 - `walk` — stepwise propagation; each step depends on the path or content so far
 - `cast` — content extends from a source along a line
 - `span` — an extent delimited by marks carries the model
@@ -46,6 +45,5 @@ The transformation claim: which prior the task teaches. Rival cases of one file 
 - `stamp` — a footprint stamps at qualifying positions
 - `border` — cells act by which side of a border or outline they lie on
 - `select` — output keeps a distinguished part of the input
-- `fold` — per-cell combination of panel contributions
 - `parity` — even/odd position alternation carries the model
 - `cross` — cells where designated lines cross act

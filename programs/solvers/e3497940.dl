@@ -1,5 +1,5 @@
 // e3497940
-// concept: decompose fold
+// concept: decompose d4
 // Layout: 1×2 horizontally-side-by-side 10×4 subgrids with 1-col separator.
 // The far subgrid folds across the separator onto the base subgrid; ink
 // keeps its color.

@@ -1,5 +1,5 @@
 // eb281b96
-// concept: tile-arrangement lookup d4 unfold
+// concept: tile-arrangement lookup d4
 // 4×1 vertical fold: alternating D4_ID / D4_TB tiles overlap by one
 // row (gap −1), so each boundary row is shared; output rows trace a
 // triangle wave between the input's first and last rows.

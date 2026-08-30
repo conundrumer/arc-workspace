@@ -1,5 +1,5 @@
 // bc1d5164
-// concept: overlay fold
+// concept: overlay
 // Four 3×3 blocks seated at the input's corners overlay into the 3×3
 // output: a cell shows ink where any block shows ink at that seat, bg
 // otherwise. The blocks share the input's middle row and skip its middle

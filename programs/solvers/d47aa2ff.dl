@@ -1,5 +1,5 @@
 // d47aa2ff
-// concept: decompose select fold
+// concept: decompose select
 // Side-by-side panels, split by a separator. Output is one panel frame: ink
 // every panel carries is kept, in the color the panels agree on; ink one
 // panel alone carries becomes that panel's mark color. A cell the panels
