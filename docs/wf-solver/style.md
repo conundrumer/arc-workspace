@@ -109,6 +109,7 @@ A solver defines only two kinds of types: ADTs inside `Choice` (the type itself,
 - No `range`. It generates a number sequence; the body reads positions and extents through lib primitives.
 - Complement tests negate the named case: `!c.bg(Col)` for non-bg.
 - Write off-edge tests as `dist(P, D, K), K != 0`, not `K > 0`: the zero case is excluded by identity, not by order. `!dist(P, D, 0)` is unavailable: Souffle cannot negate an inline relation whose clause introduces variables.
+- A comparison of a distance against a bound is body form, not arithmetic: `dist(P, D, K), K < N` states the cells within N of edge D, and needs no primitive.
 - Inline relations cannot appear inside aggregators. Wrap in a non-inline relation when needed.
 
 ## Components
