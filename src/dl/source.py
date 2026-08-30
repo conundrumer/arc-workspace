@@ -1,8 +1,5 @@
-"""Read and rewrite solver source text, and assemble the program each mode runs.
-
-Covers GRID macro expansion, `.comp` and `.decl` analysis, Consts fact
-rewriting, and the per-mode IO directives Souffle needs.
-"""
+"""Read and rewrite solver source text, and assemble the program each mode
+runs."""
 
 import re
 

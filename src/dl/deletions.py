@@ -268,9 +268,9 @@ def column_deletions(source: str) -> Iterator[Deletion]:
     that breaks the program reads as a change, so only a column no
     result depends on survives the report.
 
-    Kind is 'case column' for a column typed as the solver's Choice ADT
-    and 'column' for the rest. A case column stands for the coverage
-    claim, so its deletion needs a reading of its own.
+    A column typed as the solver's Choice ADT reports under a kind of its
+    own: such a column stands for the coverage claim, so its deletion
+    needs a reading of its own.
     """
     try:
         ix = Index(parse(source))

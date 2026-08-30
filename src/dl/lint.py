@@ -1,11 +1,10 @@
-"""Lint .dl solver bodies against 4-style.md.
+"""Lint .dl solver bodies against the style doc under docs/wf-solver/.
 
-Flags orientation literals, bare nonzero literals, arithmetic, and the
-`range` generator in solver-body code. `.comp` blocks are skipped wholesale —
-a proposal comp is lib code on its way out of the solver, and its
-proposals.md entry is what makes it legitimate — except `Fit` and `Parse`,
-whose rules are model claims and lint as body. The public entry
-point is `lint_body`; run_dl.py calls it after running each solver.
+`.comp` blocks are skipped wholesale — a proposal comp is lib code on its
+way out of the solver, and its proposal entry is what makes it legitimate
+— except the comps whose rules are model claims, which lint as body. The
+public entry point is `lint_body`; run_dl.py calls it after running each
+solver.
 """
 
 import re
@@ -292,30 +291,14 @@ def _shadowed_types(
 
 
 def lint_body(source: str) -> list[tuple[str, int, str, str]]:
-    """Flag body code that violates 4-style.md.
+    """Flag body code that violates the style doc.
 
-    Categories:
-      - 'orientation literal' — DIR_T, DIR_L, etc. (must come from Consts)
-      - 'nonzero literal'     — bare integer != 0
-      - 'arithmetic'          — +, -, *, /, %
-      - 'range'               — the `range` number generator
-      - 'consts data'         — literal in a Consts rule, minus
-                                `exempt_literal` exemptions
-      - 'rigid chart'         — a `_rigid_` name, anywhere: RIGID charts
-                                are readable only through their placed forms
-      - 'reserved name'       — a declared name Souffle reserves, which
-                                costs the whole file a parse
-      - 'shadowed type'       — a type argument that collides with a type
-                                name inside the component it is passed to
-      - 'comparison' (gated)  — <, <=, >, >=; enabled by LINT_COMPARISON
-
-    Returns (category, lineno, match, raw_line). Skips // and /* */
-    comments and `.comp` blocks (spans from the parsed source) — except
-    `Fit` and `Parse`, which lint as body, and `Consts`, whose rules take
-    the 'consts data' check. The reserved-name check reads every line,
-    comps included, since Souffle rejects such a name anywhere. A source
-    that does not parse returns that check's findings alone; the rewrite
-    lint reports the parse error.
+    Returns (category, lineno, match, raw_line) per finding. The category
+    names what was flagged. Skips // and /* */ comments and the `.comp`
+    blocks that hold no body code, whose spans come from the parsed source.
+    The reserved-name check reads every line, comps included, since Souffle
+    rejects such a name anywhere. A source that does not parse returns that
+    check's findings alone; the rewrite lint reports the parse error.
     """
     src = _strip_block_comments(source)
     raw_lines = src.splitlines()

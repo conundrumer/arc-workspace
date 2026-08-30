@@ -1,13 +1,8 @@
 """Parse solver .dl source into an AST, plus a reference index over it.
 
-The grammar covers the dialect the solvers and lib.dl use: `#include`,
-`#define`, `.functor`, `.type`, single-level `.comp` with single
-inheritance, `.init`, `.decl`
-(with `inline` and same-line facts), facts, rules with negation,
-aggregates, and parenthesized body groups, constructors, records,
-functor calls, and GRID macro facts (which take no terminating period). Anything outside that raises
-`ParseError` — Souffle itself owns the real semantics, so the parser can
-be strict and fail loudly.
+The grammar covers the dialect the solvers and lib.dl use, and nothing
+more: anything outside it raises `ParseError`. Souffle itself owns the
+real semantics, so the parser can be strict and fail loudly.
 
 Comments are kept on the program (`Program.comments`) with position and
 own-line flags, so renderers can reattach them.
@@ -311,8 +306,8 @@ class Rule:
 @dataclass
 class Rigid:
     """A RIGID block: chart decls and facts stated in one intrinsic frame,
-    exposed only as D4 placements (`<block>_<rel>` with a leading d4
-    column). The chart itself is unreadable outside the expansion."""
+    exposed only as D4 placements. The chart itself is unreadable outside
+    the expansion."""
     name: str
     items: list[Item]   # chart Decls and fact Rules
     line: int
@@ -778,7 +773,7 @@ class Index:
 
     `decls[scope][name]` holds each declaration; scope is TOP or a comp
     name. `refs_of(key)` returns every reference to a relation, heads
-    included; aggregate-body atoms carry role 'agg', negated ones 'neg'.
+    included, each under the role `Ref` records for it.
     """
 
     def __init__(self, program: Program):
