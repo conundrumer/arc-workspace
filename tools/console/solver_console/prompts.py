@@ -65,23 +65,36 @@ def worker_agents(append: str) -> str | None:
 
 # After a report lands, the stage gets one more turn for the callouts, so
 # ranking them is its own task instead of the tail of a long pass. The rates
-# feed the brief as ranking signal; recalibrate by re-measuring engagement
-# over newer transcripts and editing the table.
+# feed the brief as ranking signal; each description pins its kind to what
+# the measurement bucketed, so an entry matches on the description, not the
+# label. Each rate is picked/raised counts over sampled comment pairs.
+# Recalibrate by re-measuring engagement over newer transcripts and
+# replacing the counts wholesale.
 CALLOUT_RATES = [
-    ("lib candidates and proposal comps", 75),
-    ("doc gaps", 58),
-    ("simplification", 54),
-    ("naming and vocabulary", 52),
-    ("correctness risk", 50),
-    ("lint and tooling", 39),
-    ("alt models", 36),
-    ("unwitnessed edges", 23),
-    ("hedges", 16),
+    ("lib candidates and proposal comps", 54, 72,
+     "a solver-local form proposed for programs/lib.dl or docs/wf-solver/proposals/, with the protocol's recommendation"),
+    ("doc gaps", 14, 24,
+     "a docs/wf-solver rule that is missing, wrong, or misleading, with the edit it needs"),
+    ("simplification", 20, 37,
+     "redundancy or awkward reading in the shipped solver, such as a relation with one consumer or a line that misleads"),
+    ("naming and vocabulary", 16, 31,
+     "a name with shared scope — a lib comp, a type, doc wording, a proposals entry; a name local to one solver is not this kind"),
+    ("correctness risk", 8, 16,
+     "a defect, or an implicit assumption the solver leans on, such as a property every input happens to satisfy"),
+    ("lint and tooling", 5, 13,
+     "an improvement or a defense of the linter, run budgets, timing, or index tooling; a broken tool is P0, not this kind"),
+    ("alt models", 32, 88,
+     "a rival model dispatched: killed by data, an alt impl with the same outputs, or dropped as not worth building"),
+    ("unwitnessed edges", 6, 26,
+     "a divergence between models that no pair in the task exhibits, stated with the constructed witness that would separate them"),
+    ("hedges", 5, 32,
+     "a trailing qualification on a settled call, not a discrete open item"),
 ]
 
 CALLOUT_BRIEF = """Your report is in. Now step back from the pass and write the callouts: entries deserving the user's attention — judgment calls you could not settle, calls you made that only the user can ratify, and anything else they should see.
 
-Rank each entry P1-P3 by how likely the user is to engage it. Engagement rates by kind, as signal, not verdict: {rates}.
+Rank each entry P1-P3 by how likely the user is to engage it. Engagement rates by kind, as signal, not verdict. Each description bounds what its rate measured; match an entry on the description, not the label, and rank an entry outside every description on your own judgment:
+{rates}
 
 P0 stands apart from that scale: use it only for a clear mechanical problem with the tooling — the runner, the linter, or the audit crashing, giving a wrong result, or lacking something the cadence needed. A P0 jumps the triage queue, so a judgment call never carries it.
 
@@ -89,7 +102,10 @@ Reply with only a `## Callouts` section: a numbered list, each entry one or two 
 
 
 def callout_brief() -> str:
-    rates = " · ".join(f"{kind} {pct}%" for kind, pct in CALLOUT_RATES)
+    rates = "\n".join(
+        f"- {kind} {picked / raised:.0%}: {desc}"
+        for kind, picked, raised, desc in CALLOUT_RATES
+    )
     return CALLOUT_BRIEF.format(rates=rates)
 
 
