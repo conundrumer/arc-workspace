@@ -124,7 +124,7 @@ def act_finalize(body: dict) -> dict:
                   "sessions": {stage["name"]: None}, "phase": stage["name"],
                   "landed": [], "dirty": False, "updated": False, "rev": 0,
                   "lastActive": {stage["name"]: None}, "title": solvers.title_of(item_id),
-                  "feed": [], "append": prompts.wave_append(store.STATE["wave"]), "ver": 0,
+                  "feed": [], "append": str(prompts.append_path()), "ver": 0,
                   "reports": {}}
             store.STATE["items"].append(it)
             seeded = ", ".join(name for name, _ in pairs)

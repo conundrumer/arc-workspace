@@ -42,9 +42,9 @@ def resume_item(it: dict) -> None:
 def night_admit() -> list[str]:
     """Admit the next queued task into the night's wave. Caller holds LOCK.
 
-    Every admission of one night belongs to one wave, so the stages share a
-    system-prompt appendix and the committed items of the round before are
-    cleared out the way a hand-started wave clears them."""
+    Every admission of one night belongs to one wave, so the committed items
+    of the round before are cleared out the way a hand-started wave clears
+    them."""
     cfg = pacing.night()
     waves.drop_committed()
     try:
@@ -59,8 +59,7 @@ def night_admit() -> list[str]:
     if not cfg.get("wave"):
         store.STATE["wave"] += 1
         cfg["wave"] = store.STATE["wave"]
-        cfg["append"] = str(prompts.build_append(store.STATE["wave"]))
-    ids = waves.make_items(picked, chain, cfg["wave"], cfg["append"],
+    ids = waves.make_items(picked, chain, cfg["wave"], str(prompts.append_path()),
                            auto_advance=True, auto_stop=chain[-1]["name"], night=True)
     pacing.night_say("admitted " + ", ".join(ids) +
                      f" · {len(pacing.live_items())}/{cfg['target']} live")

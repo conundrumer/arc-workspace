@@ -43,9 +43,25 @@ def watched_hashes(item_id: str) -> dict[str, str]:
     return {rel: file_hash(p) for rel, p in watched_paths(item_id).items()}
 
 
+PROP_DIR = "docs/wf-solver/proposals"
+
+
+def prop_path(rel: str) -> Path:
+    """The entry file a repo-relative path names."""
+    return config.DOCS / "proposals" / Path(rel).name
+
+
+def prop_files() -> dict[str, str]:
+    """Every entry under docs/wf-solver/proposals/, by repo-relative path."""
+    d = config.DOCS / "proposals"
+    if not d.is_dir():
+        return {}
+    return {f"{PROP_DIR}/{p.name}": p.read_text() for p in sorted(d.glob("*.md"))}
+
+
 def prop_text() -> str:
-    p = config.DOCS / "proposals.md"
-    return p.read_text() if p.exists() else ""
+    """The entries as one text, for a word match."""
+    return "\n".join(prop_files().values())
 
 
 def report_path(item_id: str, stage: str) -> Path:
@@ -146,8 +162,8 @@ def task_callouts(item_id: str) -> list[str]:
         return []
 
 
-# The components style.md gives every solver. Any other one is a proposal
-# comp, legal only while its proposals.md entry is open.
+# The components the style doc gives every solver. Any other one is a
+# proposal comp, legal only while its proposal entry is open.
 STOCK_COMPS = ("Consts", "Fit", "Parse")
 
 

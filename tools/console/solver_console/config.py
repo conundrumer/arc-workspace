@@ -19,6 +19,7 @@ LIB = ROOT / "programs" / "lib.dl"
 DOCS = ROOT / "docs" / "wf-solver"
 TASKS = ROOT / "data" / "tasks"
 SKILL_MD = ROOT / ".claude" / "skills" / "session" / "SKILL.md"
+AGENT_DIR = ROOT / ".claude" / "agents"
 REF_DIR = (ROOT.parent / "arc-synth-bun").resolve()
 
 FAKE = os.environ.get("CONSOLE_FAKE") == "1"
@@ -62,8 +63,8 @@ WORKER_FLAGS = [
     "--disallowedTools",
     "AskUserQuestion", "CronCreate", "CronDelete", "CronList", "DesignSync",
     "EnterPlanMode", "EnterWorktree", "ExitPlanMode", "ExitWorktree",
-    "ListAgents", "Monitor", "NotebookEdit", "PushNotification",
-    "RemoteTrigger", "ReportFindings", "ScheduleWakeup", "Skill", "TaskOutput",
+    "ListAgents", "NotebookEdit", "PushNotification",
+    "RemoteTrigger", "ReportFindings", "ScheduleWakeup", "Skill",
     "WebFetch", "WebSearch", "Workflow",
     "--add-dir", str(REF_DIR),
     "--exclude-dynamic-system-prompt-sections",
@@ -79,9 +80,9 @@ WORKER_FLAGS = [
 # worker's context, and a denylist cannot know its name, so the init event is
 # checked against this set and the difference goes to the feed. Dropping a name
 # from here adds it to the denylist above.
-WORKER_TOOLS = {"Task", "Bash", "Edit", "Read", "SendMessage", "TaskCreate",
-                "TaskGet", "TaskList", "TaskStop", "TaskUpdate", "ToolSearch",
-                "Write"}
+WORKER_TOOLS = {"Task", "Bash", "Edit", "Monitor", "Read", "SendMessage",
+                "TaskCreate", "TaskGet", "TaskList", "TaskOutput", "TaskStop",
+                "TaskUpdate", "ToolSearch", "Write"}
 STAGGER_TIMEOUT = 120  # seconds to wait for the first worker's first API response
 # A worker holds its process for as long as it sits idle. Past the prompt
 # cache, that process buys nothing a resume would not: the chain gives each
@@ -93,6 +94,10 @@ STAGGER_TIMEOUT = 120  # seconds to wait for the first worker's first API respon
 STEER_RACE = 5
 IDLE_TTL = 3600
 IDLE_POLL = 60
+# How long a handoff held for a background task waits. A subagent sweep takes
+# minutes; past this the task is treated as one that never reports, and the
+# stage lands with no report for the user to rule on.
+BG_TTL = 1200
 # Autopilot leaves a landed phase's process resident, so the count climbs with
 # every handoff and what the machine holds becomes the limit that matters. On
 # 14 cores and 24 GB, 63 workers ran with no latency cost and memory gave out

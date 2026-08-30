@@ -5,7 +5,7 @@ argument-hint: [solver|triage|<task_id>]
 ---
 
 <!-- batch:skip -->
-Read the docs in `docs/wf-solver/` in this order: principles, style, patterns, concepts, shapes, proposals. For plain solver work, read the full output of `uv run python scripts/context.py` instead — those docs and `programs/lib.dl` in the same order and in a shorter form, with `patterns.md` and `proposals.md` as one line per entry and `lib.dl` as signatures. It points back at each file for an entry or a body.
+Read the docs in `docs/wf-solver/` in this order: principles, style, patterns, concepts, shapes. For plain solver work, read the full output of `uv run python scripts/context.py` instead — those docs and `programs/lib.dl` in the same order and in a shorter form, with `patterns.md` as one line per entry and `lib.dl` as signatures. It points back at each file for an entry or a body.
 
 Then dispatch on `$ARGUMENTS`:
 
@@ -90,20 +90,23 @@ Do not read `src/dl/` during the cadence. The docs and the run output should hav
 A new primitive qualifies for `programs/lib.dl` through real use in the corpus, not by looking general. The order:
 
 1. Write the primitive as plain body relations, keyed when cases share it. If the linter would flag it, write it as a proposal comp: a `.comp` named for the primitive, which exists only as the code form of a lib proposal. An extension of a lib comp has no comp form; its local rule sits beside the instance. Run it. Confirm it works in context.
-2. Surface it: name it, describe the operation, and show the solver-local version. Then read `docs/wf-solver/proposals.md` for an entry with the same operation, matched by what it does and not by its name. When one exists, the comp takes the entry's name.
-    - No entry: write one with the concept, the operation, and the date and time to the minute. Then send an opus agent to sweep `programs/solvers/` for sites that hand-write it.
-    - An entry with a verdict: the corpus before its date is swept. Send the agent over the solvers whose file time is at or after that date (`ls -lt programs/solvers`; an edited solver counts), with the entry's grep signature, and append what it finds.
-    - An entry with no verdict: add this solver under `Homes`.
+2. Surface it: name it, describe the operation, and show the solver-local version. Then read the entries in `docs/wf-solver/proposals/` (`head -n 3 docs/wf-solver/proposals/*.md` shows each title and index sentence) for one with the same operation, matched by what it does and not by its name. When one exists, the comp takes the entry's name. A solver's proposal comp is read with its entry.
+    - No entry: write `docs/wf-solver/proposals/<name>.md`: a `# <name> — <operation>` title; an index sentence that stands alone; the code form, when it has one; a `Not:` line naming what is not this concept; a `Grep:` line with the search signature; and a `Sweep: <date time>` line, the dispatch time to the minute. Then send the `sweep` agent the entry's path, the scope (the whole corpus), and the scratch path (`.scratch/<task_id>/`).
+    - An entry with a verdict: the corpus before its `Sweep:` time (or the verdict's date, when it has none) is swept. Send the `sweep` agent the path, the scope (the solvers whose file time is at or after that time: `ls -lt programs/solvers`; an edited solver counts), and the scratch path, and append what it finds.
+    - An entry with no verdict and no `Homes:` line: its sweep is in flight. Do not dispatch; the report says so. The chain's last stage dispatches when the entry still has no result at its turn.
+    - An entry with no verdict and a `Homes:` line: add this solver under `Homes`.
 
-    Tell the agent what is not this concept, and ask whether the interface should change. A family (`// family:` siblings with their representative) counts as one home. The report has four parts: homes, each with file and line range; near-misses, each with the rule that excludes it; the interface question; and reimplementations — sites that hand-write what lib already holds. Dispatch it early, and write the report or review after it returns, carrying the result. Do not sweep yourself.
+    The agent reports homes, near-misses, the interface question, and reimplementations. A family (`// family:` siblings with their representative) counts as one home. Dispatch early, and write the report or review after it returns, carrying the result. Do not sweep yourself.
 3. Write the recommendation. The sweep's result and a `Recommendation: <verdict>. <date time>` line go into the entry, in place of any earlier `Recommendation` line, and the review carries the recommendation. The verdict is the user's word, like `next` and `commit`; act on none without it. On the verdict, the line becomes `Verdict: <verdict>. <date time>`.
     - promote — repeated real use, or the sweep changed the interface
-    - close — no second home. Plain relations stay as written. A proposal comp goes with its proposal: the arithmetic it held seemed necessary and is not, so the solver's encoding is rethought in relational form. The entry stays.
-    - park — worth keeping with no second home yet. The entry stays, with the spec and the home. Any proposal comp stays.
-4. On `promote`: move it to `programs/lib.dl` and update the surfacing solver. On `migrate`: an opus agent migrates the homes the entry lists, and a separate opus agent runs Simplify and Prune over what changed. The agent skips a home whose file time is after the recommendation's time, and the review lists it. The entry leaves once its homes are migrated, or at the verdict when it has none.
+    - close — no second home, and the solver does without it: lib already holds the operation, a plain relation states it, or a relational form replaces the arithmetic. Plain relations stay as written. A proposal comp goes with its proposal, and the solver's encoding is rethought in relational form. The entry stays.
+    - park — no second home yet, and the need stands: the surfacing solver's claim has no relational form, or the entry states the gate a later home must meet. The entry stays, with the spec, the home, and the gate. Any proposal comp stays.
 
-Reimplementations need no verdict: they are fixed in the same pass, by an opus agent, with the Simplify and Prune agent covering them too.
+    Need is measured against the task, not against a case. A comp that serves one case while another case encodes the task without it is not needed, and the case whose claim has no relational form goes with the comp. The evidence is the sweep's homes; a near-miss, or a lib primitive that holds the operation over its own domain, argues for no verdict.
+4. On `promote`: move it to `programs/lib.dl` and update the surfacing solver. On `migrate`: the `migrate` agent migrates the homes the entry lists, sent the recommendation's time; the `cleanup` agent runs Simplify and Prune over what it changed. The review lists the homes skipped. The entry's file is removed once its homes are migrated, or at the verdict when it has none.
+
+Reimplementations need no verdict: they are fixed in the same pass, by the `migrate` agent, with the `cleanup` agent covering them too.
 
 The same gates cover changes to what already stands: an edit to an existing `lib.dl` primitive, or to a term's definition in `concepts.md`, starts at step 2 with the change as the sweep's target.
 
-A proposal comp outlives its verdict only when parked: after the verdict, a comp with no `proposals.md` entry is a defect.
+A proposal comp outlives its verdict only when parked: after the verdict, a comp with no entry in `docs/wf-solver/proposals/` is a defect.

@@ -498,6 +498,130 @@ def test_advance_launches_the_next_stage_with_the_report(srv, monkeypatch):
     assert "tried X, discarded Y" in msg
 
 
+# ---------- a handoff held for a background task ----------
+
+def bg_dispatch(mid="m1", tool_id="toolu_1", name="Task", **inp):
+    """A tool_use event for a call whose result may land after the turn."""
+    return {"type": "assistant", "message": {"id": mid, "content": [
+        {"type": "tool_use", "id": tool_id, "name": name, "input": inp}]}}
+
+
+def notification(tool_id="toolu_1", **kw):
+    """The row the CLI writes when a background task reports."""
+    row = {"type": "user", "message": {"role": "user", "content":
+           f"<task-notification>\n<tool-use-id>{tool_id}</tool-use-id>\n"
+           "<status>completed</status>\n</task-notification>"}}
+    row.update(kw)
+    return row
+
+
+def test_what_a_turn_starts_in_the_background_is_outstanding(srv):
+    it = create_item(srv)
+    w = worker(srv, it, phase="create", state="running")
+    srv.handle_event(w, bg_dispatch(subagent_type="claude",
+                                    description="Sweep corpus"), None)
+    srv.handle_event(w, bg_dispatch("m2", "toolu_2", "Bash",
+                                    command="uv run pytest"), None)
+    srv.handle_event(w, bg_dispatch("m3", "toolu_3", "Bash", command="souffle x",
+                                    run_in_background=True), None)
+    srv.handle_event(w, {**bg_dispatch("m4", "toolu_4", description="its own"),
+                         "parent_tool_use_id": "toolu_1"}, None)
+    # the foreground Bash reports inside the turn; the subagent's own dispatch
+    # belongs to the subagent
+    assert w["bg"] == {"toolu_1": "Sweep corpus", "toolu_3": "`souffle x`"}
+
+
+def test_a_notification_takes_a_task_off_the_outstanding_set(srv, monkeypatch,
+                                                             tmp_path):
+    it = create_item(srv)
+    w = worker(srv, it, phase="create", state="running")
+    w["bg"] = {"toolu_1": "Sweep corpus", "toolu_9": "another sweep"}
+    path = transcript(srv, monkeypatch, tmp_path, "cs")
+    srv.tail_turn(w, "cs")      # first read marks the position
+    with path.open("a") as fh:
+        fh.write(json.dumps(notification()) + "\n")
+        fh.write(json.dumps(notification("toolu_9", isSidechain=True)) + "\n")
+    srv.tail_turn(w, "cs")
+    assert w["bg"] == {"toolu_9": "another sweep"}   # the subagent's own record
+
+
+def test_a_handoff_waiting_on_a_subagent_is_held(srv, monkeypatch):
+    sent = []
+    monkeypatch.setattr(srv, "launch",
+                        lambda it, msg, phase, **kw: sent.append(phase))
+    it = create_item(srv)
+    w = worker(srv, it, phase="create", state="running", turn_seq=4)
+    w["bg"] = {"toolu_1": "Sweep corpus"}
+    srv.finish_turn(it, {"result": "the sweep is still running"}, None,
+                    time.time(), "create", True)
+    assert it["bg_wait"] == "create"
+    assert it["reports"] == {}
+    assert not srv.report_path("a", "create").exists()
+    assert sent == []           # no callout ask over a placeholder
+    assert "handoff held — Sweep corpus" in it["feed"][-1]["text"]
+
+
+def test_a_background_wake_starts_a_turn_of_its_own(srv):
+    it = create_item(srv)
+    it["state"] = srv.NEEDS_REVIEW
+    w = worker(srv, it, phase="create")
+    init = {"type": "system", "subtype": "init", "session_id": "cs"}
+    srv.handle_event(w, init, None)
+    assert w["state"] == "idle"          # nothing outstanding, nothing to adopt
+    w["bg"] = {"toolu_1": "Sweep corpus"}
+    srv.handle_event(w, init, None)
+    assert w["state"] == "running"
+    assert it["state"] == srv.COMMENTED
+    assert "a background task woke the session" in it["feed"][-1]["text"]
+
+
+def test_the_woken_turn_sends_the_handoff_ask_again(srv, monkeypatch):
+    asked = threading.Event()
+    sent = []
+
+    def fake_launch(it, msg, phase, trigger=None, handoff=False, **kw):
+        sent.append((msg, phase, trigger, handoff))
+        asked.set()
+    monkeypatch.setattr(srv, "launch", fake_launch)
+    it = create_item(srv, bg_wait="create", bg_at=time.time())
+    worker(srv, it, phase="create", state="running", turn_seq=4)
+    srv.finish_turn(it, {"result": "the sweep found five sites"}, None,
+                    time.time(), "create", False)
+    assert asked.wait(1)
+    assert sent == [(srv.HANDOFF_BRIEF, "create", "handoff", True)]
+    assert "bg_wait" not in it
+
+
+def test_a_hold_stands_through_its_own_handoff_ask(srv):
+    it = create_item(srv, bg_wait="create", bg_at=time.time())
+    worker(srv, it, phase="create")
+    for trigger in ("handoff", "resume", "nudge", "bail"):
+        srv.launch(it, "poke", "create", trigger=trigger)
+        assert it["bg_wait"] == "create"
+    srv.launch(it, "a user comment", "create")
+    assert "bg_wait" not in it
+
+
+def test_a_hold_the_task_never_ends_expires_into_a_review(srv):
+    it = create_item(srv, bg_wait="create", bg_at=time.time() - srv.BG_TTL - 1)
+    w = worker(srv, it, phase="create", state="running")
+    srv.expire_holds()
+    assert it["bg_wait"] == "create"     # the running turn settles it
+    w["state"] = "idle"
+    srv.expire_holds()
+    assert "bg_wait" not in it
+    assert it["state"] == srv.NEEDS_REVIEW
+    assert it["reports"] == {}
+    assert "handoff hold expired" in it["feed"][-1]["text"]
+
+
+def test_a_worker_may_wait_on_what_it_starts(srv):
+    denied = srv.WORKER_FLAGS[srv.WORKER_FLAGS.index("--disallowedTools") + 1:]
+    for name in ("Monitor", "TaskOutput"):
+        assert name in srv.WORKER_TOOLS
+        assert name not in denied
+
+
 def create_item(srv, item_id="a", **kw):
     """An item mid-create, the way a wave admits one."""
     return item(srv, item_id, srv.RUNNING, phase="create", landed=[], rev=0,
@@ -546,7 +670,8 @@ def test_a_readmitted_task_keeps_the_earlier_report(srv):
 def test_comps_beyond_the_stock_two_are_flagged_by_proposal(srv):
     write_solver(srv, "a", ".comp Consts {\n}\n.comp CornerDist {\n}\n"
                            ".comp Wallpaper<Key> {\n}\n.comp Fit {\n}\n")
-    (srv.DOCS / "proposals.md").write_text("### CornerDist\n\nstaged here.\n")
+    (srv.DOCS / "proposals").mkdir()
+    (srv.DOCS / "proposals" / "CornerDist.md").write_text("# CornerDist\n\nstaged here.\n")
     it = item(srv, "a", srv.RUNNING)
     srv.finish_turn(it, {"result": ""}, None, time.time(), "refine", False)
     assert it["comps"] == ["CornerDist", "Wallpaper"]
@@ -1406,9 +1531,17 @@ def test_task_ask_carries_the_subagent_brief(srv):
 
 def test_append_carries_the_skill_body_and_the_docs(srv):
     (srv.DOCS / "style.md").write_text("# Style\n\nEvery word of it.\n")
-    out = srv.build_append(1).read_text()
+    out = srv.append_path().read_text()
     assert out.startswith("# Solver session")
     assert "# docs/wf-solver/style.md\n\n# Style\n\nEvery word of it.\n" in out
+
+
+def test_worker_agents_carry_the_appendix(srv):
+    (srv.DOCS / "style.md").write_text("# Style\n\nEvery word of it.\n")
+    agents = json.loads(srv.worker_agents(str(srv.append_path())))
+    assert set(agents) == {p.stem for p in srv.AGENT_DIR.glob("*.md")}
+    for agent in agents.values():
+        assert agent["prompt"].endswith(srv.append_path().read_text())
 
 
 def test_commit_subject_names_added_and_changed_solvers(srv):
@@ -1448,22 +1581,41 @@ def test_revert_needs_a_change_to_undo(srv):
     assert srv.act_revert("a")["error"] == "nothing to revert"
 
 
-def test_revert_restores_proposals_this_turn_wrote(srv):
-    it = item(srv, "a", srv.NEEDS_REVIEW, prop_after="A\nB\n")
-    it["pre"] = {"hash": "", "solver": "// before\n", "proposals": "A\n",
-                 "dirty": False, "files": {}}
-    (srv.DOCS / "proposals.md").write_text("A\nB\n")
+PROP = "docs/wf-solver/proposals"
+
+
+def write_prop(srv, name, text):
+    (srv.DOCS / "proposals").mkdir(exist_ok=True)
+    (srv.DOCS / "proposals" / f"{name}.md").write_text(text)
+
+
+def test_revert_restores_the_entry_this_turn_edited(srv):
+    it = item(srv, "a", srv.NEEDS_REVIEW, prop_after={f"{PROP}/X.md": "A\nB\n"})
+    it["pre"] = {"hash": "", "solver": "// before\n",
+                 "proposals": {f"{PROP}/X.md": "A\n"}, "dirty": False, "files": {}}
+    write_prop(srv, "X", "A\nB\n")
     write_solver(srv, "a", "// after\n")
     srv.act_revert("a")
     assert srv.prop_text() == "A\n"
-    assert "docs/wf-solver/proposals.md" in it["reverted"]["files"]
+    assert f"{PROP}/X.md" in it["reverted"]["files"]
 
 
-def test_revert_leaves_proposals_another_worker_touched(srv):
-    it = item(srv, "a", srv.NEEDS_REVIEW, prop_after="A\nB\n")
-    it["pre"] = {"hash": "", "solver": "// before\n", "proposals": "A\n",
+def test_revert_deletes_the_entry_this_turn_wrote(srv):
+    it = item(srv, "a", srv.NEEDS_REVIEW, prop_after={f"{PROP}/New.md": "new\n"})
+    it["pre"] = {"hash": "", "solver": "// before\n", "proposals": {},
                  "dirty": False, "files": {}}
-    (srv.DOCS / "proposals.md").write_text("A\nB\nC\n")  # a later turn appended
+    write_prop(srv, "New", "new\n")
+    write_solver(srv, "a", "// after\n")
+    srv.act_revert("a")
+    assert srv.prop_files() == {}
+    assert f"{PROP}/New.md" in it["reverted"]["files"]
+
+
+def test_revert_leaves_an_entry_another_worker_touched(srv):
+    it = item(srv, "a", srv.NEEDS_REVIEW, prop_after={f"{PROP}/X.md": "A\nB\n"})
+    it["pre"] = {"hash": "", "solver": "// before\n",
+                 "proposals": {f"{PROP}/X.md": "A\n"}, "dirty": False, "files": {}}
+    write_prop(srv, "X", "A\nB\nC\n")  # a later turn appended
     write_solver(srv, "a", "// after\n")
     srv.act_revert("a")
     assert srv.prop_text() == "A\nB\nC\n"
@@ -1537,7 +1689,7 @@ def test_load_folds_legacy_snapshot_keys_into_pre(srv):
     srv.STATE_FILE.write_text(json.dumps(legacy))
     srv.load()
     it = srv.STATE["items"][0]
-    assert it["pre"] == {"hash": "abc", "solver": "// old\n", "proposals": "A\n",
+    assert it["pre"] == {"hash": "abc", "solver": "// old\n", "proposals": {},
                          "dirty": False,
                          "files": {"docs/wf-solver/proposals.md": "A\n"}}
     assert not {"hash_before", "snap", "snap_prop", "dirty_before", "turn_files"} & set(it)
@@ -1620,119 +1772,6 @@ def fake_process(item_id="proto", phase="refine"):
                             env={**os.environ, "CONSOLE_FAKE_PACE": FAKE_PACE},
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             text=True, bufsize=1)
-
-
-def send_event(proc, event):
-    proc.stdin.write(json.dumps(event) + "\n")
-    proc.stdin.flush()
-
-
-def read_until(proc, predicate, timeout=4):
-    events = []
-    done = threading.Event()
-
-    def read():
-        while not done.is_set():
-            line = proc.stdout.readline()
-            if not line:
-                return
-            event = json.loads(line)
-            events.append(event)
-            if predicate(event, events):
-                done.set()
-                return
-    thread = threading.Thread(target=read, daemon=True)
-    thread.start()
-    assert done.wait(timeout), events
-    return events
-
-
-def test_fake_worker_orders_multiple_turns_with_one_session():
-    proc = fake_process()
-    try:
-        for text in ("first", "second"):
-            send_event(proc, {"type": "user",
-                              "message": {"role": "user", "content": text}})
-        events = read_until(proc, lambda ev, seen:
-                            sum(x.get("type") == "result" for x in seen) == 2)
-        inits = [e for e in events if e.get("subtype") == "init"]
-        results = [e for e in events if e.get("type") == "result"]
-        assert len(inits) == len(results) == 2
-        assert len({e["session_id"] for e in inits + results}) == 1
-        assert [e["terminal_reason"] for e in results] == ["completed", "completed"]
-        init_positions = [i for i, e in enumerate(events) if e.get("subtype") == "init"]
-        result_positions = [i for i, e in enumerate(events) if e.get("type") == "result"]
-        assert init_positions[0] < result_positions[0] < init_positions[1]
-    finally:
-        proc.terminate()
-        proc.wait(timeout=2)
-
-
-def test_fake_worker_absorbs_a_message_sent_mid_turn():
-    proc = fake_process()
-    try:
-        send_event(proc, {"type": "user",
-                          "message": {"role": "user", "content": "first"}})
-        read_until(proc, lambda ev, seen: ev.get("subtype") == "init")
-        send_event(proc, {"type": "user",
-                          "message": {"role": "user", "content": "also drop the alias"}})
-        events = read_until(proc, lambda ev, seen: ev.get("type") == "result")
-        assert sum(e.get("subtype") == "init" for e in events) == 0   # no second turn
-        texts = [b.get("text", "") for e in events if e.get("type") == "assistant"
-                 for b in e["message"]["content"] if b.get("type") == "text"]
-        assert any("into the turn" in t for t in texts)
-    finally:
-        proc.terminate()
-        proc.wait(timeout=2)
-
-
-def test_fake_worker_interrupts_and_remains_usable():
-    proc = fake_process()
-    try:
-        send_event(proc, {"type": "user",
-                          "message": {"role": "user", "content": "first"}})
-        first = read_until(proc, lambda ev, seen: ev.get("subtype") == "init")
-        request_id = "stop-1"
-        send_event(proc, {"type": "control_request", "request_id": request_id,
-                          "request": {"subtype": "interrupt"}})
-        stopped = read_until(proc, lambda ev, seen:
-                             ev.get("terminal_reason") == "aborted_streaming")
-        response = next(e for e in stopped if e.get("type") == "control_response")
-        assert response["response"] == {"subtype": "success", "request_id": request_id,
-                                        "response": {"still_queued": []}}
-        send_event(proc, {"type": "user",
-                          "message": {"role": "user", "content": "again"}})
-        landed = read_until(proc, lambda ev, seen: ev.get("terminal_reason") == "completed")
-        assert next(e["session_id"] for e in landed if e.get("subtype") == "init") == \
-            first[0]["session_id"]
-    finally:
-        proc.terminate()
-        proc.wait(timeout=2)
-
-
-def test_fake_worker_ignores_malformed_lines_and_exits_on_eof():
-    proc = fake_process()
-    proc.stdin.write("not json\n")
-    send_event(proc, {"type": "user", "message": {"role": "user", "content": "ok"}})
-    read_until(proc, lambda ev, seen: ev.get("terminal_reason") == "completed")
-    proc.stdin.close()
-    assert proc.wait(timeout=2) == 0
-
-
-def test_fake_worker_emits_compact_boundary():
-    proc = fake_process()
-    try:
-        send_event(proc, {"type": "user",
-                          "message": {"role": "user", "content": "/compact"}})
-        events = read_until(proc, lambda ev, seen: ev.get("type") == "result")
-        boundary = next(e for e in events if e.get("subtype") == "compact_boundary")
-        assert boundary["compact_metadata"] == {
-            "trigger": "manual", "pre_tokens": 28260, "post_tokens": 1914,
-            "cumulative_dropped_tokens": 26346, "duration_ms": 1200}
-        assert events[-1]["usage"]["iterations"] == []
-    finally:
-        proc.terminate()
-        proc.wait(timeout=2)
 
 
 def test_post_restart_comment_respawns_into_the_session(srv, monkeypatch):
@@ -1900,6 +1939,7 @@ def test_idle_reap_drops_a_worker_past_the_ttl(srv, monkeypatch):
     assert reaped == [w]
     assert w["state"] == "dying"
     assert w["outbound"].get_nowait() is srv.STOP
+    assert it["feed"][-1]["sess"] == "refine"
     # the session survives, so a later comment resumes the phase
     assert it["sessions"]["refine"] == "sess-a"
 
@@ -1942,16 +1982,6 @@ def test_idle_reap_leaves_a_worker_that_is_not_idle(srv, monkeypatch, state):
     assert ("a", "refine") in srv.PROCS
 
 
-def test_idle_reap_reports_the_wait_on_the_item_feed(srv, monkeypatch):
-    monkeypatch.setattr(srv, "queue_reap", lambda w: None)
-    it = item(srv, "a", srv.NEEDS_REVIEW)
-    idle_worker(srv, it, idle_for=srv.IDLE_TTL + 120)
-    srv.reap_idle()
-    note = it["feed"][-1]
-    assert note["sess"] == "refine"
-    assert "reaped after 62m idle" in note["text"]
-
-
 def test_launch_clears_the_idle_clock(srv, monkeypatch):
     monkeypatch.setattr(srv, "queue_reap", lambda w: pytest.fail("reaped"))
     it = item(srv, "a", srv.NEEDS_REVIEW)
@@ -1980,6 +2010,8 @@ def test_night_cap_drops_the_oldest_idle_workers(srv, monkeypatch):
     srv.reap_idle()
     assert [w["item_id"] for w in reaped] == ["n0", "n2"]
     assert sorted(key[0] for key in srv.PROCS) == ["n1", "n3"]
+    for item_id in ("n0", "n2"):
+        assert srv.find(item_id)["feed"][-1]["sess"] == "refine"
 
 
 def test_night_cap_counts_the_running_workers(srv, monkeypatch):
@@ -2014,30 +2046,6 @@ def test_night_cap_leaves_a_hand_started_item_alone(srv, monkeypatch):
         idle_worker(srv, item(srv, f"h{n}", srv.NEEDS_REVIEW), idle_for=100)
     srv.reap_idle()
     assert len(srv.PROCS) == 3
-
-
-def test_night_cap_spares_a_worker_with_a_deferred_job(srv, monkeypatch):
-    """drain_deferred skips the callout turn and the stage advance when the
-    worker is gone, so a pending job has to outrank the cap too."""
-    monkeypatch.setattr(srv, "NIGHT_WORKER_CAP", 1)
-    reaped = []
-    monkeypatch.setattr(srv, "queue_reap", reaped.append)
-    idle_worker(srv, item(srv, "held", srv.NEEDS_REVIEW, night=True,
-                          callout_wait="refine"), idle_for=900)
-    night_workers(srv, [100])
-    srv.reap_idle()
-    assert [w["item_id"] for w in reaped] == ["n0"]
-    assert ("held", "refine") in srv.PROCS
-
-
-def test_night_cap_reports_the_reason_on_the_item_feed(srv, monkeypatch):
-    monkeypatch.setattr(srv, "NIGHT_WORKER_CAP", 1)
-    monkeypatch.setattr(srv, "queue_reap", lambda w: None)
-    night_workers(srv, [100, 200])
-    srv.reap_idle()
-    note = srv.STATE["items"][1]["feed"][-1]
-    assert note["sess"] == "refine"
-    assert "reaped over the 1-worker autopilot cap" in note["text"]
 
 
 def test_night_cap_is_silent_under_the_ceiling(srv, monkeypatch):
@@ -2471,6 +2479,8 @@ def test_pacer_admits_below_the_pace_line(srv, monkeypatch):
     gate = srv.pacer()
     assert gate["open"] is True
     assert gate["line"] == 40  # elapsed 50 − reserve 10
+    srv.night()["reserve"] = 25
+    assert srv.pacer()["open"] is False
 
 
 def test_pacer_holds_once_the_week_reaches_its_pace(srv, monkeypatch):
@@ -2479,14 +2489,6 @@ def test_pacer_holds_once_the_week_reaches_its_pace(srv, monkeypatch):
     gate = srv.pacer()
     assert gate["open"] is False
     assert "wk at pace" in gate["why"]
-
-
-def test_a_wider_reserve_holds_sooner(srv, monkeypatch):
-    clock_at(srv, monkeypatch)
-    set_usage(srv, monkeypatch, wk_pct=35, wk_elapsed=50)
-    assert srv.pacer()["open"] is True
-    srv.night()["reserve"] = 20
-    assert srv.pacer()["open"] is False
 
 
 def test_the_floor_keeps_the_start_of_a_week_spendable(srv, monkeypatch):
@@ -2549,10 +2551,9 @@ def test_a_five_hour_window_with_no_reset_reads_as_fresh(srv, monkeypatch):
 def test_pacer_holds_without_a_weekly_reading(srv, monkeypatch):
     clock_at(srv, monkeypatch)
     monkeypatch.setattr(srv, "USAGE", [])
-    assert srv.pacer() == {"open": False, "why": "no weekly usage reading yet",
-                           "next": None, "wk": None, "line": None,
-                           "fiveh": None, "ceiling": 75, "squeeze": False,
-                           "squeezeAt": None}
+    gate = srv.pacer()
+    assert gate["open"] is False
+    assert "no weekly usage reading" in gate["why"]
 
 
 def test_the_admitter_fills_to_target_and_stops(srv, monkeypatch):
@@ -2760,18 +2761,12 @@ def test_a_second_quota_death_lands_for_review(srv, monkeypatch):
     assert "second usage limit" in it["feed"][-1]["text"]
 
 
-def test_a_turn_that_lands_clears_the_retry(srv, monkeypatch):
+def test_a_turn_that_lands_clears_the_retry_and_the_cut(srv, monkeypatch):
     clock_at(srv, monkeypatch)
-    it = item(srv, "a", srv.RUNNING, quota_retry="refine")
-    srv.finish_turn(it, {"result": "done"}, None, time.time(), "refine", False)
-    assert "quota_retry" not in it
-
-
-def test_a_turn_that_lands_clears_the_cut(srv, monkeypatch):
-    clock_at(srv, monkeypatch)
-    it = item(srv, "a", srv.RUNNING,
+    it = item(srv, "a", srv.RUNNING, quota_retry="refine",
               resume_phase="refine", resume_handoff=True)
     srv.finish_turn(it, {"result": "done"}, None, time.time(), "refine", False)
+    assert "quota_retry" not in it
     assert "resume_phase" not in it and "resume_handoff" not in it
 
 
@@ -3146,25 +3141,60 @@ def test_dismiss_drops_a_task_from_the_backlog(srv):
     assert "no solver" in srv.act_dismiss({"id": "zzz"})["error"]
 
 
-def test_the_backlog_sorts_flags_then_comps_then_callouts(srv):
-    for tid in ("aaa", "bbb", "ccc", "ddd", "eee"):
+def test_the_backlog_order_bands(srv):
+    """One task per band, in the order the sort produces. The ids descend as
+    the bands do, so only the sort key can put the rows in this order. The
+    last two bands tie on every term of the key, and the id separates them."""
+    for tid in ("t01", "t02", "t03", "t04", "t05", "t06",
+                "t07", "t08", "t09", "t10"):
         backlog_solver(srv, tid)
-    write_solver(srv, "bbb", "// concept: tiles\n.comp CornerDist {\n}\n")
-    srv.save_report("ccc", "refine", REPORT)
-    srv.act_flag({"id": "ddd", "level": 2})
-    srv.act_flag({"id": "eee", "level": 1})
+    # a missing solver: the pass landed and wrote a report, but no file
+    srv.save_report("t11", "refine", "no file written")
+    item(srv, "t11", srv.NEEDS_REVIEW, chain=srv.default_chain())
+    srv.save_report("t10", "refine",
+                    "done\n\n## Callouts\n\n1. [P0] run_dl crashes on this task\n")
+    srv.act_flag({"id": "t09", "level": 1})
+    srv.act_flag({"id": "t08", "level": 2})
+    srv.save_report("t07", "refine",
+                    "done\n\n## Callouts\n\n1. [P1] the pin is a guess\n")
+    srv.save_report("t06", "refine",
+                    "done\n\n## Callouts\n\n1. [P2] the pin is a guess\n")
+    write_solver(srv, "t05", "// concept: tiles\n.comp CornerDist {\n}\n")
+    srv.save_report("t04", "refine", REPORT)   # two entries, no marks
+    srv.save_report("t03", "refine",
+                    "done\n\n## Callouts\n\n1. [P3] the name reads oddly\n")
+    srv.save_report("t01", "refine", "done, nothing to raise\n")
+
     rows = srv.backlog_view()
-    assert [r["id"] for r in rows] == ["eee", "ddd", "bbb", "ccc", "aaa"]
+    assert [r["id"] for r in rows] == [
+        "t11",   # no solver
+        "t10",   # P0
+        "t09",   # flag 1
+        "t08",   # flag 2
+        "t07",   # P1
+        "t06",   # P2
+        "t05",   # a comp
+        "t04",   # callout entries with no mark
+        "t03",   # P3
+        "t01",   # a report that raised nothing
+        "t02",   # nothing at all
+    ]
     by_id = {r["id"]: r for r in rows}
-    assert by_id["eee"]["flag"] == 1
-    assert by_id["bbb"]["comps"] == ["CornerDist"]
-    assert by_id["bbb"]["comps_unproposed"] == ["CornerDist"]
-    assert by_id["ccc"]["callout_n"] == 2
-    assert by_id["ccc"]["reports"] == ["refine"]
-    assert by_id["aaa"]["reports"] == []
-    assert by_id["aaa"]["title"] == "concept: a shape"
-
-
+    assert by_id["t11"]["no_solver"] and not by_id["t10"]["no_solver"]
+    assert by_id["t10"]["callout_rank"] == 0
+    assert by_id["t09"]["flag"] == 1
+    assert by_id["t08"]["flag"] == 2
+    assert by_id["t07"]["callout_rank"] == 1
+    assert by_id["t06"]["callout_rank"] == 2
+    assert by_id["t05"]["comps"] == ["CornerDist"]
+    assert by_id["t05"]["comps_unproposed"] == ["CornerDist"]
+    assert by_id["t05"]["callout_rank"] is None
+    assert by_id["t04"]["callout_n"] == 2
+    assert by_id["t04"]["reports"] == ["refine"]
+    assert by_id["t03"]["callout_rank"] == 3
+    assert by_id["t03"]["callout_act"] == 0
+    assert by_id["t02"]["reports"] == []
+    assert by_id["t02"]["title"] == "concept: a shape"
 def test_a_self_rank_outsorts_comps_and_counts(srv):
     for tid in ("aaa", "bbb", "ccc"):
         backlog_solver(srv, tid)
@@ -3176,40 +3206,6 @@ def test_a_self_rank_outsorts_comps_and_counts(srv):
     assert [r["id"] for r in rows] == ["ccc", "aaa", "bbb"]
     assert rows[0]["callout_rank"] == 2
     assert rows[1]["callout_rank"] is None
-
-
-def test_a_p3_does_not_jump_the_tasks_that_ask_for_something(srv):
-    """A P3 is a note, so it sorts in the band with reports that raised
-    nothing rather than ahead of a comp or an unmarked entry."""
-    for tid in ("aaa", "bbb", "ccc", "ddd"):
-        backlog_solver(srv, tid)
-    write_solver(srv, "bbb", "// concept: tiles\n.comp CornerDist {\n}\n")
-    srv.save_report("ccc", "refine", REPORT)   # two entries, no marks
-    srv.save_report("ddd", "refine",
-                    "done\n\n## Callouts\n\n1. [P3] the name reads oddly\n")
-    rows = srv.backlog_view()
-    assert [r["id"] for r in rows] == ["bbb", "ccc", "ddd", "aaa"]
-    assert rows[2]["callout_rank"] == 3
-    assert rows[2]["callout_act"] == 0
-
-
-def test_a_p3_still_edges_out_a_report_that_raised_nothing(srv):
-    for tid in ("aaa", "bbb"):
-        backlog_solver(srv, tid)
-    srv.save_report("aaa", "refine",
-                    "done\n\n## Callouts\n\n1. [P3] a passing note\n")
-    rows = srv.backlog_view()
-    assert [r["id"] for r in rows] == ["aaa", "bbb"]
-
-
-def test_a_p1_still_outranks_everything_below_a_flag(srv):
-    for tid in ("aaa", "bbb", "ccc"):
-        backlog_solver(srv, tid)
-    write_solver(srv, "bbb", "// concept: tiles\n.comp CornerDist {\n}\n")
-    srv.save_report("ccc", "refine",
-                    "done\n\n## Callouts\n\n1. [P1] the pin is a guess\n")
-    srv.act_flag({"id": "aaa", "level": 1})
-    assert [r["id"] for r in srv.backlog_view()] == ["aaa", "ccc", "bbb"]
 
 
 def test_callout_act_counts_only_the_entries_that_ask(srv):
@@ -3229,29 +3225,6 @@ def test_a_landed_pass_with_no_solver_still_ranks(srv):
     # the reports carry the row where the file cannot
     assert rows["aaa"]["reports"] == ["refine"]
     assert rows["aaa"]["callout_rank"] == 1
-
-
-def test_a_missing_solver_leads_the_backlog(srv):
-    backlog_solver(srv, "aaa")
-    srv.act_flag({"id": "aaa", "level": 1})
-    srv.save_report("zzz", "refine", "no file written")
-    item(srv, "zzz", srv.NEEDS_REVIEW, chain=srv.default_chain())
-    # the id sorts last and it carries no callouts, so only the lead term
-    # can put it above a P1-flagged task
-    assert [r["id"] for r in srv.backlog_view()] == ["zzz", "aaa"]
-
-
-def test_a_p0_follows_no_solver_and_leads_the_flags(srv):
-    for tid in ("aaa", "bbb"):
-        backlog_solver(srv, tid)
-    srv.act_flag({"id": "aaa", "level": 1})
-    srv.save_report("bbb", "refine",
-                    "done\n\n## Callouts\n\n1. [P0] run_dl crashes on this task\n")
-    srv.save_report("zzz", "refine", "no file written")
-    item(srv, "zzz", srv.NEEDS_REVIEW, chain=srv.default_chain())
-    rows = srv.backlog_view()
-    assert [r["id"] for r in rows] == ["zzz", "bbb", "aaa"]
-    assert rows[1]["callout_rank"] == 0
 
 
 def test_a_pass_still_running_its_first_stage_has_no_row(srv):

@@ -170,7 +170,7 @@ def adopt_workers(manifest: dict) -> None:
                       "turn_seq": int(entry.get("turn_seq", 0)), "started": None,
                       "trigger": None, "handoff": False, "seen": set(),
                       "got_result": False, "think_run": 0, "reqs": {},
-                      "session_seen": bool(entry.get("session")),
+                      "bg": {}, "session_seen": bool(entry.get("session")),
                       "idle_since": time.time()}
             store.PROCS[(item_id, phase)] = worker
             start_worker_threads(worker)
@@ -210,8 +210,8 @@ def record_edit(it: dict, fp: str) -> None:
         return
     if rel == f"programs/solvers/{it['id']}.dl":
         p_["files"][rel] = p_["solver"]
-    elif rel == "docs/wf-solver/proposals.md":
-        p_["files"][rel] = p_["proposals"]
+    elif rel.startswith("docs/wf-solver/proposals/"):
+        p_["files"][rel] = (p_["proposals"] or {}).get(rel, "")
     else:
         p = config.ROOT / rel
         p_["files"][rel] = p.read_text() if p.exists() else ""
@@ -223,6 +223,14 @@ def task_ask(inp: dict) -> str:
                                   str(inp.get("description") or "").strip()) if x)
     prompt = str(inp.get("prompt") or "").strip()
     return f"**{head}**\n\n{prompt}" if head else prompt
+
+
+def bg_label(name: str, inp: dict) -> str:
+    """What a background task the worker started is called in the feed."""
+    if name == "Task":
+        return str(inp.get("description") or "").strip() or "a subagent"
+    cmd = str(inp.get("command") or "").replace("\n", " ").strip()
+    return f"`{cmd[:60]}`" if cmd else name
 
 
 def tool_label(name: str, inp: dict) -> str | None:
@@ -272,6 +280,10 @@ def launch(it: dict, message: str, phase: str, trigger: str | None = None,
     if trigger not in ("callout", "resume", "nudge", "bail") and \
             it.get("callout_wait") == phase:
         it.pop("callout_wait", None)
+    # A held handoff is the console's own ask, still owed. Any other turn takes
+    # the pass over, and the hold goes with it.
+    if trigger not in ("handoff", "resume", "nudge", "bail"):
+        drop_hold(it, phase)
     # The CLI reads a slash command only when it opens the message, so a turn
     # carrying one skips the notices below and leaves them, and the watermarks
     # behind them, for the next real turn to deliver.
@@ -313,7 +325,7 @@ def start_turn(it: dict, worker: dict, phase: str, trigger: str | None = None,
     if not store.busy_elsewhere(it, phase):
         # a side turn leaves the snapshot with the turn that owns the solver
         it["pre"] = {"hash": solvers.solver_hash(it["id"]), "solver": solvers.solver_text(it["id"]),
-                     "proposals": solvers.prop_text(), "dirty": it["dirty"], "files": {},
+                     "proposals": solvers.prop_files(), "dirty": it["dirty"], "files": {},
                      "watched": solvers.watched_hashes(it["id"]), "slash": slash}
     worker["turn_seq"] += 1
     worker.pop("steer", None)
@@ -337,16 +349,21 @@ def steer(it: dict, worker: dict, text: str, phase: str) -> None:
 
 
 def adopt_turn(it: dict, worker: dict, phase: str) -> None:
-    """Take over the turn a steer starts when it reaches the worker just after
-    the turn it was meant for landed. init opens every turn and arrives before
-    the turn's first action, so the snapshot still holds the pre-turn files."""
-    pending = worker.pop("steer", None) or {}
-    start_turn(it, worker, phase, trigger=pending.get("trigger"), state="running")
+    """Take over a turn the worker starts by itself: the one a steer opens when
+    it reaches the worker just after the turn it was meant for landed, and the
+    one a background task opens when its notification wakes the session. init
+    opens every turn and arrives before the turn's first action, so the
+    snapshot still holds the pre-turn files. A turn left unadopted lands
+    nothing: its text, its edits, and its cost all go unread."""
+    pending = worker.pop("steer", None)
+    start_turn(it, worker, phase,
+               trigger=(pending or {}).get("trigger"), state="running")
     if it["state"] not in store.ACTIVE:
         it["state"] = store.COMMENTED
         it["updated"] = False
-    store.say(it, store.event("message reached the worker as the turn landed — "
-                              "it runs as a turn of its own"), sess=phase)
+    why = ("message reached the worker as the turn landed"
+           if pending else "a background task woke the session")
+    store.say(it, store.event(why + " — it runs as a turn of its own"), sess=phase)
 
 
 def permission_decision(req: dict) -> dict:
@@ -412,6 +429,9 @@ def worker_cmd(it: dict, phase: str) -> list[str]:
         return cmd
     cmd = [config.CLAUDE, "--append-system-prompt", Path(it["append"]).read_text(),
            *config.WORKER_FLAGS]
+    agents = prompts.worker_agents(it["append"])
+    if agents:
+        cmd += ["--agents", agents]
     if st.get("model"):
         cmd += ["--model", st["model"]]
     if session:
@@ -432,7 +452,7 @@ def spawn_worker(it: dict, phase: str) -> dict:
               "outbound": queue.Queue(), "state": "spawning", "turn_seq": 0,
               "started": None, "trigger": None, "handoff": False, "seen": set(),
               "got_result": False, "session_seen": False, "think_run": 0,
-              "reqs": {}, "idle_since": None}
+              "reqs": {}, "bg": {}, "idle_since": None}
     # A new process restarts the session's running totals.
     it.setdefault("cost_seen", {})[phase] = {"total": 0, "fable": 0}
     # A resumed session keeps its context, so its cache baseline stands and
@@ -538,7 +558,9 @@ def handle_event(worker: dict, ev: dict, first_response) -> None:
             # or the one a steer starts when it lands a moment too late.
             if worker["state"] == "sending":
                 worker["state"] = "running"
-            elif it and worker["state"] == "idle" and worker.get("steer"):
+            elif it and worker["state"] == "idle" and (
+                    worker.get("steer") or worker.get("bg")
+                    or it.get("bg_wait") == phase):
                 adopt_turn(it, worker, phase)
         elif kind == "system" and ev.get("subtype") == "thinking_tokens":
             if it and worker["state"] in ("sending", "running"):
@@ -579,6 +601,13 @@ def handle_event(worker: dict, ev: dict, first_response) -> None:
                     inp = block.get("input", {}) or {}
                     if name in ("Edit", "Write", "NotebookEdit") and inp.get("file_path"):
                         record_edit(it, inp["file_path"])
+                    if not sub and block.get("id") and (
+                            name == "Task" or inp.get("run_in_background")):
+                        # The result of a background task reaches the
+                        # session as a notification, which lands after this
+                        # turn ends, so the task stays outstanding across the
+                        # turns between the dispatch and that notification.
+                        worker.setdefault("bg", {})[block["id"]] = bg_label(name, inp)
                     if name == "Task":
                         entry = {"kind": "ask", "text": task_ask(inp)}
                         key = (mid, "task", block.get("id") or entry["text"])
@@ -694,9 +723,11 @@ def transcript_of(session: str) -> Path | None:
 
 
 def tail_rows(worker: dict, session: str) -> list[dict]:
-    """Assistant messages the transcript gained since the last read. The first
-    read only marks the position, so a resumed session's history stays behind
-    us. Subagent rows belong to their own context and are skipped."""
+    """Assistant messages the transcript gained since the last read, with the
+    background-task notifications among them taken off the worker's
+    outstanding set. The first read only marks the position, so a resumed
+    session's history stays behind us. Subagent rows belong to their own
+    context and are skipped."""
     path = worker.get("tail_path")
     if path is None or path.name != f"{session}.jsonl":
         path = transcript_of(session)
@@ -720,9 +751,33 @@ def tail_rows(worker: dict, session: str) -> list[dict]:
             row = json.loads(line)
         except ValueError:
             continue
-        if row.get("type") == "assistant" and not row.get("isSidechain"):
+        if row.get("isSidechain"):
+            continue
+        if row.get("type") == "assistant":
             rows.append(row.get("message") or {})
+        elif row.get("type") == "user":
+            note_reported(worker, row)
     return rows
+
+
+# The tool_use id a background task's completion notification names.
+NOTIFIED = re.compile(r"<tool-use-id>(\S+?)</tool-use-id>")
+
+
+def note_reported(worker: dict, row: dict) -> None:
+    """Take the background tasks a notification row reports on off the
+    worker's outstanding set."""
+    bg = worker.get("bg")
+    if not bg:
+        return
+    content = (row.get("message") or {}).get("content")
+    if not isinstance(content, str):
+        content = " ".join(str(b.get("text") or "") for b in (content or [])
+                           if isinstance(b, dict))
+    if "<task-notification>" not in content:
+        return
+    for tool_id in NOTIFIED.findall(content):
+        bg.pop(tool_id, None)
 
 
 def tail_turn(worker: dict, session: str) -> str | None:
@@ -1100,9 +1155,9 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
         it.setdefault("seen_hash", {})[phase] = solvers.solver_hash(it["id"])
     it["lastActive"][phase] = int(time.time() * 1000)
     it["title"] = solvers.title_of(it["id"]) or it.get("title", "")
-    it["prop_after"] = solvers.prop_text()
+    it["prop_after"] = solvers.prop_files()
     it["comps"] = solvers.comps_of(it["id"])
-    it["comps_unproposed"] = solvers.unproposed(it["comps"], it["prop_after"])
+    it["comps_unproposed"] = solvers.unproposed(it["comps"], solvers.prop_text())
     it["landed_at"] = store.now()
     fresh = [rel for rel in store.shared_writes(it)
              if rel not in it.setdefault("shared_writes", [])]
@@ -1134,13 +1189,19 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
             it["state"] = store.NEEDS_REVIEW
             it["updated"] = True
     elif handoff and store.next_stage(it, phase):
-        it.setdefault("reports", {})[phase] = text
-        solvers.save_report(it["id"], phase, text)
-        # the callouts get their own turn before any advance
+        worker = store.PROCS.get((it["id"], phase))
+        outstanding = sorted((worker or {}).get("bg", {}).values())
+        if worker and outstanding:
+            hold_handoff(it, phase, outstanding)
+        else:
+            land_handoff(it, phase, text)
+    elif it.get("bg_wait") == phase:
+        # the turn the notification woke; the handoff the hold owes goes out
+        # once it lands
+        drop_hold(it, phase)
         worker = store.PROCS.get((it["id"], phase))
         if worker:
-            it["callout_wait"] = phase
-            store.DEFERRED.put_nowait(("callout", it["id"], phase, worker["turn_seq"]))
+            store.DEFERRED.put_nowait(("rehandoff", it["id"], phase, worker["turn_seq"]))
             ensure_drain()
         else:
             it["state"] = store.NEEDS_REVIEW
@@ -1148,6 +1209,41 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
     elif not store.pre(it).get("slash") and not store.busy_elsewhere(it, phase):
         # a side turn landing while another session runs leaves the state to
         # the pass that owns it
+        it["state"] = store.NEEDS_REVIEW
+        it["updated"] = True
+
+
+def hold_handoff(it: dict, phase: str, outstanding: list[str]) -> None:
+    """Wait out the background tasks a handoff turn started.
+
+    A background dispatch ends the turn, and the session has nothing to report
+    until the task comes back, so the text ending such a turn is a placeholder.
+    Filing it would spend the stage's report slot on it. The notification wakes
+    the session into a turn of its own; that turn's landing sends the handoff
+    ask again."""
+    it["bg_wait"] = phase
+    it["bg_at"] = store.now()
+    store.say(it, store.event("handoff held — " + ", ".join(outstanding)
+                              + " has not reported yet"), sess=phase)
+
+
+def drop_hold(it: dict, phase: str) -> None:
+    if it.get("bg_wait") == phase:
+        it.pop("bg_wait", None)
+        it.pop("bg_at", None)
+
+
+def land_handoff(it: dict, phase: str, text: str) -> None:
+    """File a stage's report and ask for its callouts."""
+    it.setdefault("reports", {})[phase] = text
+    solvers.save_report(it["id"], phase, text)
+    # the callouts get their own turn before any advance
+    worker = store.PROCS.get((it["id"], phase))
+    if worker:
+        it["callout_wait"] = phase
+        store.DEFERRED.put_nowait(("callout", it["id"], phase, worker["turn_seq"]))
+        ensure_drain()
+    else:
         it["state"] = store.NEEDS_REVIEW
         it["updated"] = True
 
@@ -1174,7 +1270,21 @@ def drain_deferred() -> None:
             with store.LOCK:
                 it = store.find(item_id)
                 worker = store.PROCS.get((item_id, phase))
-                if kind == "callout":
+                if kind == "rehandoff":
+                    if not it or it.get("bg_wait") == phase:
+                        continue
+                    if not worker or worker["turn_seq"] != turn_seq or store.RELOADING:
+                        it["state"] = store.NEEDS_REVIEW
+                        it["updated"] = True
+                        if store.RELOADING:
+                            store.say(it, store.event("handoff paused for server reload"),
+                                      sess=phase)
+                    else:
+                        it["state"] = store.RUNNING
+                        store.say(it, store.event("handoff ask resent"), sess=phase)
+                        launch(it, prompts.HANDOFF_BRIEF, phase,
+                               trigger="handoff", handoff=True)
+                elif kind == "callout":
                     if not it or it.get("callout_wait") != phase:
                         continue
                     if not worker or worker["turn_seq"] != turn_seq or store.RELOADING:
@@ -1226,7 +1336,8 @@ def reapable(key: tuple[str, str], worker: dict) -> dict | None:
             store.PROCS.get(key) is not worker:
         return None
     it = store.find(key[0])
-    if it is None or it.get("callout_wait") or it.get("handoff_pending"):
+    if it is None or it.get("callout_wait") or it.get("handoff_pending") \
+            or it.get("bg_wait"):
         return None
     return it
 
@@ -1281,10 +1392,34 @@ def idle_loop() -> None:
         time.sleep(config.IDLE_POLL)
         if store.SHUTTING_DOWN or store.RELOADING:
             continue
-        try:
-            reap_idle()
-        except Exception as exc:
-            print(f"idle reap failed: {exc}", file=sys.stderr)
+        for step in (reap_idle, expire_holds):
+            try:
+                step()
+            except Exception as exc:
+                print(f"{step.__name__} failed: {exc}", file=sys.stderr)
+
+
+def expire_holds() -> None:
+    """End a handoff hold whose background task never reported. The stage
+    keeps no report, so the chain stops here and the user rules on it."""
+    expired = False
+    with store.LOCK:
+        for it in list(store.STATE["items"]):
+            phase = it.get("bg_wait")
+            if not phase or store.now() - it.get("bg_at", 0) < config.BG_TTL:
+                continue
+            worker = store.PROCS.get((it["id"], phase))
+            if worker and worker["state"] != "idle":
+                continue  # a turn is running; its landing settles the hold
+            drop_hold(it, phase)
+            store.say(it, store.event(
+                f"handoff hold expired after {config.BG_TTL // 60}m — no report "
+                "for this stage"), sess=phase)
+            it["state"] = store.NEEDS_REVIEW
+            it["updated"] = True
+            expired = True
+    if expired:
+        store.bump()
 
 
 def reap(worker: dict) -> None:

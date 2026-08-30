@@ -93,7 +93,7 @@ def start_wave(k: int, order: str = "name", auto_advance: bool = False,
         LAST_WAVE_AT = time.time()
         store.STATE["wave"] += 1
         ids = make_items(picked, chain, store.STATE["wave"],
-                         str(prompts.build_append(store.STATE["wave"])), auto_advance,
+                         str(prompts.append_path()), auto_advance,
                          auto_stop)
     store.bump()
     threading.Thread(target=stagger_launch, args=(ids,), daemon=True).start()

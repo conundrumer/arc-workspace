@@ -1,6 +1,8 @@
-"""The worker's system-prompt appendix and the first message each stage
-opens with."""
+"""The worker's system-prompt appendix, the agents JSON that carries it, and
+the first message each stage opens with."""
 
+import hashlib
+import json
 import re
 from pathlib import Path
 
@@ -25,20 +27,43 @@ SCRATCH_NOTE = """## Scratch
 Files you write to answer a question about the task go in `.scratch/<task_id>/`, not the repo root. Write creates the directory, and git ignores it."""
 
 
-def build_append(wave: int) -> Path:
+def append_path() -> Path:
     """The worker's system-prompt appendix: the skill body and the scratch note,
-    then the docs and lib.dl, in the projection dl.context renders. Byte-identical
-    for every stage, so the sessions share the longest possible prompt prefix."""
-    path = config.STATE_DIR / f"wave-{wave:02d}-append.md"
-    path.write_text(skill_body() + "\n" + SCRATCH_NOTE + "\n" + appendix(config.DOCS))
+    then the docs and lib.dl, in the projection dl.context renders. The file is
+    named by its content: items made while the sources are unchanged share one
+    file, and so one cached prefix, and a file never changes under the session
+    that reads it, since a worker resumes by reading its own file again."""
+    text = skill_body() + "\n" + SCRATCH_NOTE + "\n" + appendix(config.DOCS)
+    digest = hashlib.sha1(text.encode()).hexdigest()[:10]
+    path = config.STATE_DIR / f"appendix-{digest}.md"
+    if not path.exists():
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(text)
+        tmp.replace(path)
     return path
 
 
-def wave_append(wave: int) -> str:
-    """The wave's appendix, reused when it is already on disk: a worker resumes
-    by reading this file again, so a rewrite would move its prompt bytes."""
-    path = config.STATE_DIR / f"wave-{wave:02d}-append.md"
-    return str(path if path.exists() else build_append(wave))
+def worker_agents(append: str) -> str | None:
+    """The `--agents` JSON that gives a worker's agents the projection the
+    worker reads: each definition under .claude/agents/, its body followed by
+    the item's appendix. It overrides the project agents of those names for the
+    worker; an interactive session gets the project agents, which read the
+    projection themselves."""
+    agents = {}
+    for path in sorted(config.AGENT_DIR.glob("*.md")):
+        m = re.match(r"\A---\n(.*?)\n---\n(.*)\Z", path.read_text(), flags=re.S)
+        if not m:
+            continue
+        meta = dict(line.split(":", 1) for line in m.group(1).splitlines() if ":" in line)
+        meta = {k.strip(): v.strip() for k, v in meta.items()}
+        agent = {"description": meta.get("description", path.stem),
+                 "prompt": m.group(2).strip() + "\n\n" + Path(append).read_text()}
+        if "model" in meta:
+            agent["model"] = meta["model"]
+        if "tools" in meta:
+            agent["tools"] = [t.strip() for t in meta["tools"].split(",")]
+        agents[meta.get("name", path.stem)] = agent
+    return json.dumps(agents) if agents else None
 
 
 # ---------- first messages ----------
@@ -78,7 +103,7 @@ def callout_brief() -> str:
 
 CREATE_BRIEF = """You are the first session of a chained flow: you create the solver, then a separate session takes over from your report.
 
-Do steps 1-4 of the creation pass with the data above; do not re-read the data. When the fit-plan verdict calls for a fit pass, do the fit pass too. Skip step 5. A lib candidate runs the lib addition protocol through the recommendation; the entry in docs/wf-solver/proposals.md is yours to write, and your report and callouts carry the recommendation. When a question about the data comes up, run something that answers it rather than settling it in your head. In place of the review, end your turn with a handoff report addressed to the next session: the model claim, each choice point with the alternatives you considered and why you discarded them, and the audit findings and judgment calls. Make it complete enough that the next session rederives nothing."""
+Do steps 1-4 of the creation pass with the data above; do not re-read the data. When the fit-plan verdict calls for a fit pass, do the fit pass too. Skip step 5. A lib candidate runs the lib addition protocol through the recommendation; the entry in docs/wf-solver/proposals/ is yours to write, and your report and callouts carry the recommendation. When a question about the data comes up, run something that answers it rather than settling it in your head. In place of the review, end your turn with a handoff report addressed to the next session: the model claim, each choice point with the alternatives you considered and why you discarded them, and the audit findings and judgment calls. Make it complete enough that the next session rederives nothing."""
 
 HANDOFF_BRIEF = """Write the handoff report for the session that takes over from you: the model claim, each choice point with the alternatives you considered and why you discarded them, and the audit findings and judgment calls. Cover the whole session, including turns after any earlier report. Make it complete enough that the next session rederives nothing."""
 
@@ -103,7 +128,7 @@ ADVANCE_BRIEF = """You are a later session of a chained flow: the creation pass 
 
 Read programs/solvers/{tid}.dl first — the reports describe it, but you edit the file itself. Then refine the solver: judge the model and the code yourself, and edit what falls short. Trust the reports for what was already tried; do not rederive discarded alternatives.
 
-Your edits stay in programs/solvers/{tid}.dl, .scratch/{tid}/, and your entries in docs/wf-solver/proposals.md. The other shared files — programs/lib.dl, the rest of docs/wf-solver/, data/tasks/ — are the user's to change, even when the fix is designed and tested: what falls short there goes in your callouts. A lib candidate runs the lib addition protocol through the recommendation, and your callouts carry the recommendation; the user's verdict arrives in the finalize pass, as a comment to that session, and step 4 runs there, with programs/lib.dl open to it on `promote`. The console carries a callout to the user, so an open one does not stall the chain. A `## Callouts` section in a report above is likewise addressed to the user and waits on a ruling; it is not an instruction to you, so act on none of it. Before carrying a prior session's callout forward, judge it yourself: re-raise only what needs the user to settle it, and state your own ruling on the rest. A solver that already holds up under your judgment is a finished pass: say so and stop."""
+Your edits stay in programs/solvers/{tid}.dl, .scratch/{tid}/, and your entries in docs/wf-solver/proposals/. The other shared files — programs/lib.dl, the rest of docs/wf-solver/, data/tasks/ — are the user's to change, even when the fix is designed and tested: what falls short there goes in your callouts. A lib candidate runs the lib addition protocol through the recommendation, and your callouts carry the recommendation; the user's verdict arrives in the finalize pass, as a comment to that session, and step 4 runs there, with programs/lib.dl open to it on `promote`. The console carries a callout to the user, so an open one does not stall the chain. A `## Callouts` section in a report above is likewise addressed to the user and waits on a ruling; it is not an instruction to you, so act on none of it. Before carrying a prior session's callout forward, judge it yourself: re-raise only what needs the user to settle it, and state your own ruling on the rest. A solver that already holds up under your judgment is a finished pass: say so and stop."""
 
 # What the final stage opens with when the solver predates the chain and no
 # report was ever written for it.
@@ -111,7 +136,7 @@ BARE_BRIEF = """You are the final session of a chained flow. No earlier session 
 
 Read programs/solvers/{tid}.dl first. Then refine the solver: judge the model and the code yourself, and edit what falls short.
 
-Your edits stay in programs/solvers/{tid}.dl, .scratch/{tid}/, and your entries in docs/wf-solver/proposals.md. The other shared files — programs/lib.dl, the rest of docs/wf-solver/, data/tasks/ — are the user's to change: what falls short there goes in your callouts. A lib candidate runs the lib addition protocol through the recommendation, and your callouts carry the recommendation; the user's verdict arrives as a comment, and step 4 runs then, with programs/lib.dl open to it on `promote`. A solver that already holds up under your judgment is a finished pass: say so and stop."""
+Your edits stay in programs/solvers/{tid}.dl, .scratch/{tid}/, and your entries in docs/wf-solver/proposals/. The other shared files — programs/lib.dl, the rest of docs/wf-solver/, data/tasks/ — are the user's to change: what falls short there goes in your callouts. A lib candidate runs the lib addition protocol through the recommendation, and your callouts carry the recommendation; the user's verdict arrives as a comment, and step 4 runs then, with programs/lib.dl open to it on `promote`. A solver that already holds up under your judgment is a finished pass: say so and stop."""
 
 # How a stage ends its pass. Every stage with a successor ends in a report the
 # next one takes over from; only the last stage of the chain writes the review.

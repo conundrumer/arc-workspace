@@ -48,7 +48,7 @@ WORKER_HANDOFF_ENV = "CONSOLE_WORKER_HANDOFF"
 # applies that same fallback to turns a console restart cut short, so no ACTIVE
 # state survives a restart. Comments relaunch from NEEDS_REVIEW or APPROVED,
 # approval moves between those two, and a commit ends at COMMITTED.
-# console.html renders the same six names — keep the two in step.
+# console.html renders the same names — keep the two in step.
 
 QUEUED = "queued"              # picked for a wave, worker not started
 RUNNING = "running"            # the item's first turn is in flight
@@ -63,9 +63,8 @@ ACTIVE = (RUNNING, COMMENTED)
 # ---------- stage chain ----------
 #
 # A stage descriptor is {name, backend, model, effort?}. Names are unique
-# within an item and key everything held per session: `sessions`, `lastActive`,
-# `context`, `cost_seen`, `cache_read`, `seen_hash`, feed entries, report
-# files, and PROCS.
+# within an item and key everything the item holds per session, the report
+# files and PROCS included.
 
 BACKENDS = ("claude", "codex")
 STAGE_NAME = re.compile(r"[A-Za-z0-9_-]{1,32}")
@@ -297,10 +296,16 @@ def migrate(it: dict) -> None:
         it["landed"] = [n for n, s in it["sessions"].items() if s]
     it.pop("refined", None)
     if "pre" in it:
+        # the proposals snapshot was one file's text; it is a dict per entry
+        if not isinstance(it["pre"].get("proposals"), dict):
+            it["pre"]["proposals"] = {}
+        if not isinstance(it.get("prop_after", {}), dict):
+            it["prop_after"] = {}
         return
+    it.pop("snap_prop", None)
     it["pre"] = {"hash": it.pop("hash_before", ""),
                  "solver": it.pop("snap", ""),
-                 "proposals": it.pop("snap_prop", ""),
+                 "proposals": {},
                  "dirty": it.pop("dirty_before", False),
                  "files": it.pop("turn_files", None) or {}}
 
@@ -330,7 +335,7 @@ def event(text: str) -> dict:
 
 def pre(it: dict) -> dict:
     """The item's pre-turn snapshot, empty before its first turn."""
-    return it.setdefault("pre", {"hash": "", "solver": "", "proposals": "",
+    return it.setdefault("pre", {"hash": "", "solver": "", "proposals": {},
                                  "dirty": False, "files": {}})
 
 

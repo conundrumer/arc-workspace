@@ -151,12 +151,22 @@ def act_revert(it: dict) -> None:
         raise store.Reject("nothing to revert")
     solvers.solver_path(item_id).write_text(snap)
     reverted = [f"programs/solvers/{item_id}.dl"]
-    # proposals.md is shared across workers: restore only if this turn
-    # changed it and nothing touched it since the turn landed
-    sp, pa = store.pre(it)["proposals"], it.get("prop_after")
-    if pa is not None and sp != pa and solvers.prop_text() == pa:
-        (config.DOCS / "proposals.md").write_text(sp)
-        reverted.append("docs/wf-solver/proposals.md")
+    # the proposal entries are shared across workers: restore one only if
+    # this turn changed it and nothing touched it since the turn landed
+    before, after = store.pre(it)["proposals"], it.get("prop_after")
+    before = before if isinstance(before, dict) else {}
+    after = after if isinstance(after, dict) else {}
+    now = solvers.prop_files()
+    for rel in sorted(set(before) | set(after)):
+        b, a = before.get(rel, ""), after.get(rel, "")
+        if b == a or now.get(rel, "") != a:
+            continue
+        p = solvers.prop_path(rel)
+        if b:
+            p.write_text(b)
+        elif p.exists():
+            p.unlink()
+        reverted.append(rel)
     it["dirty"] = store.pre(it)["dirty"]
     it["reverted"] = {"files": reverted,
                       "phase": it.get("last_turn_phase") or it["phase"]}
@@ -188,9 +198,10 @@ def act_commit() -> dict:
         msg = commit_subject(sorted(i for i in ids if rels[i] not in in_head),
                              sorted(i for i in ids if rels[i] in in_head))
         paths = list(rels.values())
-        proposals = "docs/wf-solver/proposals.md"
-        if subprocess.run(["git", "diff", "--quiet", "--", proposals],
-                          cwd=config.ROOT).returncode != 0:
+        # new entries are untracked, so the directory is staged as a whole
+        proposals = "docs/wf-solver/proposals"
+        if subprocess.run(["git", "status", "--porcelain", "--", proposals],
+                          cwd=config.ROOT, capture_output=True, text=True).stdout.strip():
             paths.append(proposals)
         subprocess.run(["git", "add", *paths], cwd=config.ROOT, check=False)
         out = subprocess.run(["git", "commit", "-m", msg], cwd=config.ROOT,
@@ -210,8 +221,7 @@ def act_commit() -> dict:
         if leftovers and not config.FAKE:
             store.COMMITTER["running"] = True
             store.COMMITTER["note"] = None
-            append = config.STATE_DIR / f"wave-{store.STATE['wave']:02d}-append.md"
-            threading.Thread(target=run_committer, args=(append,),
+            threading.Thread(target=run_committer, args=(prompts.append_path(),),
                              daemon=True).start()
             msgs.append("committer running…")
     store.bump()
