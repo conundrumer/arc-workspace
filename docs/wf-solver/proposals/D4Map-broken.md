@@ -11,7 +11,7 @@ A per-cell readout on `D4Map`: the src cell whose image under `d` holds a differ
     conflict(K, D) :- broken(K, _, D).
 ```
 
-Grep: `apply(`, `!=`, `D4Map`, `conflict(`, `d4_elem`.
+Match: `apply(`, `!=`, `D4Map`, `conflict(`, `d4_elem`.
 
 Proposed: 2026-08-30 10:13.
 

@@ -16,7 +16,7 @@ query.
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 
 AGG_OPS = {"count", "sum", "max", "min", "mean"}
@@ -925,6 +925,34 @@ def _aggs_in_terms(terms: Iterable[Term]) -> list[Agg]:
         elif isinstance(t, UnOp):
             stack.append(t.arg)
     return out
+
+
+def body_literals(rule: Rule, into_aggs: bool = True) -> Iterator[Lit]:
+    """The rule's body literals, `Disj` branches expanded in place.
+
+    With `into_aggs`, the literals of each aggregate body follow the
+    literal that holds the aggregate. `Neg` comes as-is; the caller
+    unwraps it.
+    """
+    def walk(lits: Iterable[Lit]) -> Iterator[Lit]:
+        for lit in lits:
+            if isinstance(lit, Disj):
+                for branch in lit.branches:
+                    yield from walk(branch)
+                continue
+            yield lit
+            if not into_aggs:
+                continue
+            if isinstance(lit, Atom):
+                aggs = _aggs_in_terms(lit.args)
+            elif isinstance(lit, Cmp):
+                aggs = _aggs_in_terms((lit.lhs, lit.rhs))
+            else:
+                continue
+            for agg in aggs:
+                yield from walk(agg.body)
+
+    yield from walk(rule.body or ())
 
 
 def term_vars(term: Term) -> set[str]:

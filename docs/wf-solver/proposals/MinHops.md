@@ -17,7 +17,7 @@ Breadth-first search as a relation: the fewest-hop distance from a seed set over
 }
 ```
 
-Grep: `<=`, `K + 1`, `depth(`, `Reach`, `Order`, `CycleWalk`.
+Match: `<=`, `K + 1`, `depth(`, `Reach`, `Order`, `CycleWalk`.
 
 Homes: 2dd70a9a alone — the comp at lines 27-43, the `$Fewest` call site at 119-127. `+ 1` and subsumption occur nowhere else in the corpus, and of 72 `Extremes`/`ArgExtremes` instances only this one scores hop counts. Near: 13e47133 (`$Peel` is `Rim.depth`, `$Sight` an extremum over a `Ray` step index); 2b83f449, 195c6913, 212895b5, 3ac3eb23, 97999447, 79cce52d (walks over self-built graphs, taking no minimum, or advancing a stored index along a cycle); 1b8318e3, dce56571, 271d71e2 (extremum over a ray length, a tally, or grid `dist`); 0e671a1a (a fixed leg shape from Consts data); the `beats` closures of 3d31c5b3, 6a11f6da, 75b8110e, a68b268e, ea9794b1 (transitive orders feeding `Order`).
 

@@ -21,6 +21,7 @@ from dl.dlparse import (
     ParseError,
     Rule,
     Wild,
+    body_literals,
     parse,
 )
 
@@ -229,3 +230,20 @@ seat(B, P) :- cand(B, P).
     assert decls["seat"].choice_domain == ["b", "pc"]
     assert decls["one"].choice_domain == ["(x, y)", "z"]
     assert decls["plain"].choice_domain == []
+
+
+def test_body_literals():
+    src = (
+        "y(P) :- a(P), (b(P) ; c(P), d(P)), !e(P),"
+        " N = count : { f(P, K), K > 1 }, N > 0.\n"
+    )
+    rule = parse(src).items[0]
+    lits = list(body_literals(rule))
+    assert [l.name for l in lits if isinstance(l, Atom)] == ["a", "b", "c", "d", "f"]
+    assert sum(isinstance(l, Neg) for l in lits) == 1
+    assert sum(isinstance(l, Cmp) for l in lits) == 3
+    shallow = list(body_literals(rule, into_aggs=False))
+    assert [l.name for l in shallow if isinstance(l, Atom)] == ["a", "b", "c", "d"]
+    assert sum(isinstance(l, Cmp) for l in shallow) == 2
+    fact = parse("seed(3).\n").items[0]
+    assert list(body_literals(fact)) == []

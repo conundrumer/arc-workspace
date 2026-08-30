@@ -10,7 +10,7 @@ Gate: a site whose stored pieces rotate but do not reflect.
 
 Not: achiral assemblies; assemblies that reflect; input-derived pieces closed by hand.
 
-Grep: `RIGID(`, `c4_elem`, `SYM_C4`, `d4_elem(D)`, `GRID_MASK`, `GRID_SPARSE`.
+Match: `RIGID(`, `c4_elem`, `SYM_C4`, `d4_elem(D)`, `GRID_MASK`, `GRID_SPARSE`.
 
 Homes: none. The RIGID sites hold achiral assemblies (142ca369, 150deff5, 21897d95) or reflect (269e22fb). 1a244afd's `turn_map` is a C4 orbit, but closing it collapses `$Table` into `$Turn`. 2697da3f pairs `SYM_C4` against `SYM_X` over input-derived cells.
 

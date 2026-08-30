@@ -6,7 +6,7 @@
 
 Not: slab divides; a gap keyed per key; `divide_gap`.
 
-Grep: pairs of `divide(` / `divide_by_size(` in one rule, `perp(A, A2)`, `tile_pos(`.
+Match: pairs of `divide(` / `divide_by_size(` in one rule, `perp(A, A2)`, `tile_pos(`.
 
 Homes: 20fb2937 alone. Seventeen `tile_pos` sites pass an asymmetric gap pair with a single tile on the zero-gap axis; every genuinely 2D gap-bearing site is isotropic (b1fc8b8e, and the nonzero-gap `divide_2d` / `divide_by_size_2d` / `concat_2d` calls).
 

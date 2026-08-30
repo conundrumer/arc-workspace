@@ -10,7 +10,7 @@ A candidate has an entry, `docs/wf-solver/proposals/<name>.md`, named for the op
 - an index sentence that stands alone
 - the code form, when it has one
 - a `Not:` line naming what is not this concept
-- a `Grep:` line with the search signature
+- a `Match:` line with the search signature: a grep pattern, or a shape stated in prose and matched with the parser (`tests/test_ast_match.py`)
 - a `Sweep: <date time>` line, the dispatch time to the minute
 - the sweep's result, and a `Homes` list of the solvers that hold the operation
 - a `Recommendation: <verdict>. <date time>` line, which becomes `Verdict: <verdict>. <date time>` on the user's word
