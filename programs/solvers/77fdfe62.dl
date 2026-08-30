@@ -47,19 +47,22 @@ frame.cell([P, Ic], P) :- interior(P, Ic).
 
 // --- $Lines ---
 
-// Full lines of the separator color, along axis a.
-.decl off_line(a: Axis, p_across: Position)
-off_line(A, P_across) :- in(P, Col), !c.line(Col), axis_elem(A), split(P, A, _, P_across).
+// A line lies across axis a, at the axis-only position l. Its defect: a cell
+// off the separator color.
+.decl off_line(a: Axis, l: Position)
+off_line(A, L) :- in(P, Col), !c.line(Col), axis_elem(A), split(P, A, L, _).
 
-.decl sep_line(a: Axis, p_across: Position)
-sep_line(A, P_across) :- in(P, _), axis_elem(A), split(P, A, _, P_across), !off_line(A, P_across).
+// The parts the separator lines cut the grid into.
+.init cut = DividerFrame<Unit>
+cut.cell($U(), P) :- in(P, _).
+cut.divider($U(), A, L) :-
+    in(P, _), axis_elem(A), split(P, A, L, _),   // a line across axis A
+    !off_line(A, L).                             // every cell the separator color
 
-// A separator line stands between p and edge d.
+// A separator line stands between p and edge d: p's part is not the
+// outermost one toward d.
 .decl screened(p: Position, d: Dir)
-screened(P, D) :-
-    in(P, _), sep_line(A, L_across),
-    perp(A, Av), axis_of(D, Av),
-    dist(L_across, D, Kl), dist(P, D, Kp), Kl < Kp.
+screened(P, D) :- cut.part_idx($U(), P, D, N), N != 0.
 
 .decl unscreened(p: Position)
 unscreened(P) :- in(P, _), dir_elem(D), !screened(P, D).
@@ -104,19 +107,18 @@ out(I, Col, [Ic, $Bg()]) :- in(P, C0), !c.ink(C0), frame.inner([P, Ic], I), c.bg
 
 .comp Fit {
     // The line-fenced interior — the boundary both interior claims read.
-    .decl off_line(e: Example, a: Axis, p_across: Position)
-    off_line(E, A, P_across) :-
-        ex_in(E, P, Col), !c.line(Col), axis_elem(A), split(P, A, _, P_across).
+    .decl off_line(e: Example, a: Axis, l: Position)
+    off_line(E, A, L) :-
+        ex_in(E, P, Col), !c.line(Col), axis_elem(A), split(P, A, L, _).
 
-    .decl sep_line(e: Example, a: Axis, p_across: Position)
-    sep_line(E, A, P_across) :-
-        ex_in(E, P, _), axis_elem(A), split(P, A, _, P_across), !off_line(E, A, P_across).
+    .init cut = DividerFrame<Example>
+    cut.cell(E, P) :- ex_in(E, P, _).
+    cut.divider(E, A, L) :-
+        ex_in(E, P, _), axis_elem(A), split(P, A, L, _),   // a line across axis A
+        !off_line(E, A, L).                                // every cell the separator color
 
     .decl screened(e: Example, p: Position, d: Dir)
-    screened(E, P, D) :-
-        ex_in(E, P, _), sep_line(E, A, L_across),
-        perp(A, Av), axis_of(D, Av),
-        dist(L_across, D, Kl), dist(P, D, Kp), Kl < Kp.
+    screened(E, P, D) :- cut.part_idx(E, P, D, N), N != 0.
 
     .decl unscreened(e: Example, p: Position)
     unscreened(E, P) :- ex_in(E, P, _), dir_elem(D), !screened(E, P, D).

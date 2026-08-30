@@ -22,18 +22,18 @@
 
 .init c = Consts
 
-// The separator's distance from each stacking-axis edge — the panels
-// stack along c.side's axis.
-.decl sep_dist(s: Dir, k: number)
-sep_dist(S, K) :-
-    in(P, Col), c.sep(Col),                    // separator cell
-    c.side(D), axis_of(D, A), axis_of(S, A),   // stacking-axis edges
-    dist(P, S, K).
+// The panels the separator cuts, stacked along c.side's axis.
+.init panels = DividerFrame<Unit>
+panels.cell($U(), P) :- in(P, _).
+panels.divider($U(), A, L) :-
+    in(P, Col), c.sep(Col),                  // separator cell
+    c.side(D), axis_of(D, A), split(P, A, L, _).  // its line on the stacking axis
 
-// Panel of a cell: the stacking-axis edge it is strictly nearer than the
-// separator.
+// The panel a cell sits in, named by the stacking-axis edge it faces.
 .decl side_of(p: Position, s: Dir)
-side_of(P, S) :- in(P, _), sep_dist(S, Ks), dist(P, S, K), K < Ks.
+side_of(P, S) :-
+    c.side(D), axis_of(D, A), axis_of(S, A),   // stacking-axis edges
+    panels.part_idx($U(), P, S, 0).            // no separator in between
 
 // A bar's length per measure: the count of its members.
 .decl measure_member(col: Color, ch: Choice, s: Dir, m: Position)

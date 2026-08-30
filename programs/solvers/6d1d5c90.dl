@@ -1,6 +1,6 @@
 // 6d1d5c90
 // concept: markers walk count
-// The c.marker_edge column is a band holding one off-color cell. Drop the band,
+// A band c.band_width wide at c.marker_edge holds one off-color cell. Drop it,
 // then shift the rest toward c.shift_dir by that cell's distance from the
 // opposite edge. The rows form a cycle (adjacency runs toward shift_dir, and
 // the shift edge wraps to the far edge), so the shift rotates each row that
@@ -47,8 +47,6 @@ band_count.item(Col, P) :- band_cell(P, Col).
 marker(P, $Singleton()) :-
     band_cell(P, Col), c.marker_count(N), band_count.tally(Col, N).
 
-// The edges the two indices are measured from: rows from the edge opposite
-// the shift, columns from the edge opposite the band.
 .decl row_origin(d: Dir)
 row_origin(FE) :- c.shift_dir(SD), opposite(SD, FE).
 
@@ -80,7 +78,8 @@ rows.dist_set($U(), K) :- row_idx(K).
 // Cells past the band — the ones the drop keeps.
 .decl kept(p: Position, col: Color)
 kept(P, Col) :-
-    in(P, Col), c.marker_edge(ME), c.band_width(W), dist(P, ME, CL), CL >= W.
+    in(P, Col), c.marker_edge(ME), c.band_width(W),  // the band's edge and width
+    edge_delta(ME, W, M), geq(P, M).                 // p at least that far inside
 
 // Drop the band: a kept cell's col_origin distance is unchanged by the drop,
 // so placing cells by that distance in the narrowed frame drops the band.
