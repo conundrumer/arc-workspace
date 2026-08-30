@@ -1,0 +1,122 @@
+// 2dd70a9a
+// concept: markers walk cast
+// Wall cells are scattered over the grid, and two two-cell stubs sit among
+// them: a source stub and a target stub. The output draws a path in the
+// source color. The walker leaves along the source stub's own line, runs
+// straight until the way ahead closes, turns a quarter turn there, and runs
+// again; it arrives where the target lies one step on. The cases differ on
+// which path the task draws:
+//
+//   $Toward — the walker turns toward the target's side at each halt, and
+//             the walk that arrives is drawn.
+//   $Jog    — the path runs out along the source stub's line, links across
+//             once, and comes in along the target stub's line.
+
+#include "../lib.dl"
+
+.type Choice = Toward {} | Jog {}
+
+// A leg of the path: the cell it starts at and the direction it runs.
+.type Leg = [p: Position, d: Dir]
+
+.comp Consts {
+    .decl bg(col: Color) bg(0).
+    .decl source(col: Color) source(3).
+    .decl target(col: Color) target(2).
+}
+
+.init c = Consts
+
+.decl impl_choice(ch: Choice)
+impl_choice($Toward()). impl_choice($Jog()).
+
+// --- shared: runs, turns, and the painted path ---
+
+// A stub's two cells lie on one line, and the path meets the stub along it.
+.decl stub_dir(col: Color, p: Position, d: Dir)
+stub_dir(Col, P, D) :-
+    ( c.source(Col) ; c.target(Col) ),
+    in(P, Col), in(P2, Col), P != P2,     // the stub's two cells
+    axis_of(D, A), same_line(A, P, P2).   // the line they share
+
+// The path leaves the source stub along the stub's own line.
+.decl leg_start(n: Leg)
+leg_start([P, D]) :- c.source(Col), stub_dir(Col, P, D).
+
+// A walker crosses the grid and halts before any occupied cell: a wall, a
+// stub, or the target.
+.init leg = Ray<Unit>
+leg.dir($U(), D) :- dir_elem(D).
+leg.cell($U(), P) :- in(P, _).
+leg.mark($U(), P) :- in(P, _).
+leg.blocked($U(), P) :- in(P, Col), !c.bg(Col).
+
+// The cell one step on from p toward d. A cell on the frame edge has none.
+.decl ahead(p: Position, d: Dir, q: Position)
+ahead(P, D, Q) :- in(P, _), dir_elem(D), neighbor(P, D, Q), in(Q, _).
+
+// The way onward is open: the walker may enter the cell one step on.
+.decl way(p: Position, d: Dir)
+way(P, D) :- ahead(P, D, Q), !leg.blocked($U(), Q).
+
+// The walker has arrived: the target lies one step on.
+.decl at_target(p: Position, d: Dir)
+at_target(P, D) :- ahead(P, D, Q), in(Q, Col), c.target(Col).
+
+// The cells one run covers, from its start to its halt.
+.decl run(a: Position, d: Dir, p: Position)
+run(A, D, P) :- leg.clear($U(), P, D, _, A), dir_elem(D).
+
+// The path turns onto the next leg where a run halts short of the target.
+// A walker that cannot take its first step does not turn.
+.decl leg_edge(a: Leg, b: Leg)
+leg_edge([A, D], [E, D2]) :-
+    run(A, D, E), E != A,           // ran
+    !way(E, D), !at_target(E, D),   // halted, and not arrived
+    perp_dir(D, D2).                // the quarter turn
+
+// A run that halts with the target one step on is a last leg.
+.decl leg_goal(n: Leg)
+leg_goal([A, D]) :- run(A, D, E), at_target(E, D).
+
+// The legs the drawn path is made of.
+.decl on_path(n: Leg, ch: Choice)
+
+.decl path_cell(p: Position, ch: Choice)
+path_cell(P, Ch) :- on_path([A, D], Ch), run(A, D, P).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- path_cell(P, Ch), c.source(Col).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !path_cell(P, Ch).
+
+// --- Toward ---
+
+// The target lies to p's d side: some target cell is nearer edge d than p.
+.decl target_side(p: Position, d: Dir)
+target_side(P, D) :-
+    in(P, _), dir_elem(D), dist(P, D, K),
+    c.target(Col), in(T, Col), dist(T, D, K2), K2 < K.
+
+// The turn the walker takes: toward the target's side.
+.decl toward_edge(a: Leg, b: Leg)
+toward_edge(N, [E, D2]) :- leg_edge(N, [E, D2]), target_side(E, D2).
+
+// The legs the walker reaches from the source.
+.decl toward_reach(n: Leg)
+toward_reach(N) :- leg_start(N).
+toward_reach(N2) :- toward_reach(N), toward_edge(N, N2).
+
+// The legs whose walk goes on to arrive.
+.decl toward_arrives(n: Leg)
+toward_arrives(N) :- leg_goal(N).
+toward_arrives(N) :- toward_edge(N, N2), toward_arrives(N2).
+
+on_path(N, $Toward()) :- toward_reach(N), toward_arrives(N).
+
+// --- Jog ---
+
+on_path(N, $Jog()) :-
+    leg_start(N1), leg_edge(N1, N2), leg_edge(N2, N3),   // out, link, in
+    leg_goal(N3), N3 = [_, D],                           // halts at the target
+    c.target(Col), stub_dir(Col, _, D),                  // along the target's line
+    ( N = N1 ; N = N2 ; N = N3 ).
