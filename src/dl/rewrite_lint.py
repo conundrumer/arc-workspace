@@ -9,8 +9,8 @@ A rewrite finding carries its fix. A hint — a pattern with real
 counterexamples in the corpus, worth a look rather than a rewrite — is
 behind the `hints` flag.
 
-Relation-level rules run over the scopes that hold body code: top level,
-`Fit`, `Parse`, and `Consts`. Other `.comp` interiors are proposal comps,
+Relation-level rules run over the scopes that hold body code, which
+`BODY_SCOPES` names. Other `.comp` interiors are proposal comps,
 lib code on its way out of the solver, and stay out, matching `lint.py`.
 
 The public entry point is `lint_rewrites`; findings share `lint_body`'s
@@ -63,7 +63,7 @@ COMMON_SUBEXPR_MIN = 2   # literals a shared window must span
 # Categories of the hint tier, for callers that render the tiers apart.
 HINTS = frozenset({
     "pass-through", "chain-join", "single-consumer", "domain-enumerator",
-    "argmax", "common-subexpr", "const-join",
+    "argmax", "common-subexpr", "const-join", "comp-idiom",
 })
 
 # Relations the runner fills per example; everything else at lib's top
@@ -115,6 +115,10 @@ _CHAINS: tuple[dict, ...] = (
 
 # The slot where each delta primitive emits its Shift.
 _DELTA_OUT = {"edge_delta": 2, "jump_delta": 2, "step_delta": 1}
+
+# The comp whose defining rule reads one valued cell set at a cell and at
+# its image, by the primitive that takes the cell onto the image.
+_IMAGE_COMPS = {"apply": "D4Map.conflict", "compose": "ShiftInvariance.mismatch"}
 
 
 def _delta_vars(ext: list[tuple[Atom, str]]) -> set[str]:
@@ -213,6 +217,7 @@ class _Lint:
                 self.domain_enumerator(info)
                 self.argmax(idx, info)
                 self.const_join(info)
+                self.comp_idiom(info)
             self.common_subexpr()
         return self.findings
 
@@ -259,10 +264,6 @@ class _Lint:
     def inlinable(self, key: RelKey) -> bool:
         """Whether substituting `key` away is even on the table: a derived,
         non-interface relation whose rules and uses share its scope.
-
-        Consts relations are data; `out` and fitted slots are read outside
-        the file; a fact-only relation has no body to substitute; and a
-        rule or use in another scope puts a comp boundary in the way.
         """
         scope, name = key
         if scope == "Consts" or key == (TOP, "out"):
@@ -364,7 +365,9 @@ class _Lint:
     def _projection(self, d: Rule) -> bool:
         """The rule projects a single positive atom: negating the head is
         negating the atom with the dropped columns wildcarded. A dropped
-        variable used twice constrains the atom, so it blocks the rewrite."""
+        variable used twice constrains the atom, so it blocks the rewrite.
+        So does a dropped column inside a record or constructor argument:
+        Souffle cannot ground a wildcard inside a record under negation."""
         if d.body is None or len(d.body) != 1 or not isinstance(d.body[0], Atom):
             return False
         counts: dict[str, int] = {}
@@ -375,7 +378,12 @@ class _Lint:
             isinstance(a, Var) and a.name in counts for a in d.head.args
         )
         head_vars = {a.name for a in d.head.args if isinstance(a, Var)}
-        return head_ok and all(
+        nested_drop = any(
+            isinstance(arg, (Rec, Ctor))
+            and (_has_wild(arg) or term_vars(arg) - head_vars)
+            for arg in d.body[0].args
+        )
+        return head_ok and not nested_drop and all(
             n == 1 for v, n in counts.items() if v not in head_vars
         )
 
@@ -722,6 +730,106 @@ class _Lint:
                            f"`{spec['prim']}"
                            f"({', '.join(_term_str(t) for t in out)})`")
                     yield a, b, link, fix
+
+    def comp_idiom(self, info: RuleInfo) -> None:
+        """Hint: a lib comp's defining rule written out by hand — one
+        relation read twice with a `!=` between the two reads. Which comp
+        that is depends on how the two reads differ, and a pair of reads
+        that stands for something else is not flagged; `_comp_idiom_fix`
+        decides both."""
+        rule = info.rule
+        if rule.body is None or rule.grid:
+            return
+        head_vars = literal_vars(rule.head)
+        seen: set[tuple[int, int]] = set()
+        for flat in _flatten(rule.body):
+            neq = {
+                frozenset((lit.lhs.name, lit.rhs.name))
+                for lit in flat
+                if isinstance(lit, Cmp) and lit.op == "!="
+                and isinstance(lit.lhs, Var) and isinstance(lit.rhs, Var)
+            }
+            if not neq:
+                continue
+            atoms = [lit for lit in flat if isinstance(lit, Atom)]
+            # The valued sets: solver relations, comp instances, and the
+            # runner's grids — not lib's record arithmetic.
+            local = [
+                a for a in atoms
+                if self.ix.resolve(info.scope, a.qual, a.name)[0] != EXTERN
+            ]
+            sets = [
+                a for a in atoms
+                if a in local or a.qual is not None or a.name in EXAMPLE_SRC
+            ]
+            for i, a in enumerate(sets):
+                for b in sets[i + 1:]:
+                    if (id(a), id(b)) in seen:
+                        continue
+                    fix = self._comp_idiom_fix(a, b, atoms, local, neq, head_vars)
+                    if fix is not None:
+                        seen.add((id(a), id(b)))
+                        self.add("comp-idiom", a.line, fix)
+
+    def _comp_idiom_fix(
+        self, a: Atom, b: Atom, atoms: list[Atom], local: list[Atom],
+        neq: set[frozenset[str]], head_vars: set[str],
+    ) -> str | None:
+        if (a.qual, a.name) != (b.qual, b.name) or len(a.args) != len(b.args):
+            return None
+        if len(a.args) < 2:
+            return None
+        if sum((x.qual, x.name) == (a.qual, a.name) for x in atoms) > 2:
+            return None
+        diff = [
+            i for i, (x, y) in enumerate(zip(a.args, b.args, strict=True))
+            if _term_str(x) != _term_str(y)
+        ]
+        compared = [
+            i for i in diff
+            if isinstance(a.args[i], Var) and isinstance(b.args[i], Var)
+            and frozenset((a.args[i].name, b.args[i].name)) in neq
+        ]
+        if len(compared) != 1:
+            return None
+        v = compared[0]
+        x, y = a.args[v].name, b.args[v].name
+        if x in head_vars or y in head_vars:
+            return None
+        # Both compared values bound by one solver relation: a pairing map,
+        # not a clash.
+        if any(
+            z is not a and z is not b and {x, y} <= literal_vars(z)
+            for z in local
+        ):
+            return None
+        pair = f"`{_atom_str(a)}, {_atom_str(b)}, {x} != {y}`"
+        if len(diff) == 1:
+            return (f"{pair} reads as `Unanimous.clash` over the shared "
+                    f"columns; a count is `Tally`")
+        if len(diff) != 2:
+            return None
+        [p] = [i for i in diff if i != v]
+        if not (isinstance(a.args[p], Var) and isinstance(b.args[p], Var)):
+            return None
+        link = self._image_link(a.args[p].name, b.args[p].name, atoms)
+        if link is None:
+            return None
+        return f"{pair} through `{link}` is `{_IMAGE_COMPS[link]}`"
+
+    def _image_link(self, p: str, q: str, atoms: list[Atom]) -> str | None:
+        """The lib relation carrying p onto q — `apply` for a D4 image,
+        `compose` for a shift — when one sits in the body."""
+        for atom in atoms:
+            if atom.qual is not None or atom.name not in _IMAGE_COMPS:
+                continue
+            if len(atom.args) != 3:
+                continue
+            names = [x.name if isinstance(x, Var) else None for x in atom.args]
+            src = names[:2] if atom.name == "compose" else names[1:2]
+            if names[2] in (p, q) and ({p, q} - {names[2]}) & set(src):
+                return atom.name
+        return None
 
     def named_complement(self, info: RuleInfo) -> None:
         """`R(V), X != V` against a singleton fact: `!R(X)` says it
@@ -1141,6 +1249,18 @@ def _all_atoms(lits: Iterable[Lit]) -> Iterator[Atom]:
         elif isinstance(lit, Disj):
             for branch in lit.branches:
                 yield from _all_atoms(branch)
+
+
+def _has_wild(t: Term) -> bool:
+    """Whether a wildcard sits anywhere inside the term."""
+    stack: list[Term] = [t]
+    while stack:
+        x = stack.pop()
+        if isinstance(x, Wild):
+            return True
+        if isinstance(x, (Ctor, Rec, Call)):
+            stack.extend(x.args)
+    return False
 
 
 def _drops_columns(d: Rule) -> bool:

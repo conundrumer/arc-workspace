@@ -73,6 +73,117 @@ out(P) :- grid(P), !painted(P).
     assert "negated-use" not in cats(src)
 
 
+def test_negated_use_keeps_record_projection():
+    src = """\
+.decl clash(k: number)
+clash([1, 2]).
+.decl broken(d: number)
+broken(D) :- clash([D, _]).
+.decl out(d: number)
+out(D) :- cand(D), !broken(D).
+"""
+    assert "negated-use" not in cats(src)
+
+
+def test_comp_idiom_clash_fires():
+    src = """\
+.decl interior(id: number, p: number, col: number)
+interior(1, 2, 3).
+.decl mixed(id: number)
+mixed(Id) :- interior(Id, _, C1), interior(Id, _, C2), C1 != C2.
+.decl out(id: number)
+out(Id) :- mixed(Id).
+"""
+    fs = [f for f in lint_rewrites(src, hints=True) if f[0] == "comp-idiom"]
+    assert len(fs) == 1 and "Unanimous.clash" in fs[0][2]
+
+
+def test_comp_idiom_pair_relation_kept():
+    src = """\
+.decl tile(t: number, p: number, col: number)
+tile(1, 2, 3).
+.decl differs(t: number, t2: number)
+differs(T, T2) :- tile(T, P, C1), tile(T2, P, C2), C1 != C2, T != T2.
+.decl out(t: number)
+out(T) :- differs(T, _).
+"""
+    assert "comp-idiom" not in cats(src, hints=True)
+
+
+def test_comp_idiom_pairing_map_kept():
+    src = """\
+.decl band(a: number, l1: number, l2: number)
+band(1, 2, 3).
+.decl cs(a: number, l: number, col: number)
+cs(1, 2, 3).
+.decl broken(a: number)
+broken(A) :- band(A, L1, L2), cs(A, L1, C1), cs(A, L2, C2), C1 != C2.
+.decl out(a: number)
+out(A) :- broken(A).
+"""
+    assert "comp-idiom" not in cats(src, hints=True)
+
+
+def test_comp_idiom_primitive_kept():
+    src = """\
+.decl line(a: number)
+line(A) :- mark(P1), mark(P2), split(P1, A, _, Ac), split(P2, A, _, Ac), P1 != P2.
+.decl out(a: number)
+out(A) :- line(A).
+"""
+    assert "comp-idiom" not in cats(src, hints=True)
+
+
+def test_comp_idiom_count_kept():
+    src = """\
+.decl mark(ln: number, p: number)
+mark(1, 2).
+.decl tripled(ln: number)
+tripled(L) :- mark(L, P1), mark(L, P2), mark(L, P3), P1 != P2, P1 != P3, P2 != P3.
+.decl out(ln: number)
+out(L) :- tripled(L).
+"""
+    assert "comp-idiom" not in cats(src, hints=True)
+
+
+def test_comp_idiom_d4_image_fires():
+    src = """\
+.decl clean(p: number, col: number)
+clean(1, 2).
+.decl mismatch(d: number)
+mismatch(D) :- d4_elem(D), clean(P, Col), apply(D, P, P2), clean(P2, C2), Col != C2.
+.decl out(d: number)
+out(D) :- d4_elem(D), !mismatch(D).
+"""
+    fs = [f for f in lint_rewrites(src, hints=True) if f[0] == "comp-idiom"]
+    assert len(fs) == 1 and "D4Map.conflict" in fs[0][2]
+
+
+def test_comp_idiom_shift_image_fires():
+    src = """\
+.decl cell(p: number, col: number)
+cell(1, 2).
+.decl broken(delta: number)
+broken(Delta) :- cand(Delta), cell(P, Col), compose(P, Delta, P2), cell(P2, C2), Col != C2.
+.decl out(delta: number)
+out(Delta) :- cand(Delta), !broken(Delta).
+"""
+    fs = [f for f in lint_rewrites(src, hints=True) if f[0] == "comp-idiom"]
+    assert len(fs) == 1 and "ShiftInvariance.mismatch" in fs[0][2]
+
+
+def test_comp_idiom_is_a_hint():
+    src = """\
+.decl interior(id: number, p: number, col: number)
+interior(1, 2, 3).
+.decl mixed(id: number)
+mixed(Id) :- interior(Id, _, C1), interior(Id, _, C2), C1 != C2.
+.decl out(id: number)
+out(Id) :- mixed(Id).
+"""
+    assert "comp-idiom" not in cats(src)
+
+
 def test_comp_input_not_inlinable():
     src = """\
 .comp Parse {
