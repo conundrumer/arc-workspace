@@ -1,5 +1,5 @@
 // ad7e01d0
-// concept: self-tiling
+// concept: tile-arrangement stamp lookup
 // The input tiled by itself: the output decomposes into an input-shaped
 // arrangement of input-shaped tiles. A tile holds a copy of the input
 // where its tile index is a c.stamp cell, and bg elsewhere.

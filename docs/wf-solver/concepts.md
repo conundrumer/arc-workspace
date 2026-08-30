@@ -11,7 +11,6 @@ A term names a model claim. A term is disqualified if grep over the body could d
 The structure every candidate claim stands on: what the input is and how it decomposes. Cases of one file share these.
 
 - `tile-arrangement` — output arranges transformed copies of the input
-- `self-tiling` — the input tiled by itself; tile identity comes from input content
 - `overlay` — panels stack on one frame
 - `scale` — content corresponds across a size change
 - `decompose` — a separator or division cuts the grid into tiles

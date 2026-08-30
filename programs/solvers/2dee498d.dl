@@ -1,5 +1,5 @@
 // 2dee498d
-// concept: self-tiling
+// concept: decompose crop
 // Layout: input is N identical tiles along the tile axis; output is one
 // tile. Set semantics dedupes the redundant copies.
 

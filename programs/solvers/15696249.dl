@@ -1,5 +1,5 @@
 // 15696249
-// concept: self-tiling lines markers stamp
+// concept: tile-arrangement lines markers stamp
 // The output is an input-shaped arrangement of input-sized tiles: tiles at
 // gate cells hold copies of the input; the rest are bg. Two models of the
 // gate, tagged on out's Choice:

@@ -1,5 +1,5 @@
 // 007bbfb7
-// concept: self-tiling scale stamp
+// concept: tile-arrangement scale stamp
 // The input tiled by itself: the output decomposes into an input-shaped
 // arrangement of input-shaped tiles, and a cell is filled iff its tile index
 // and its intile position are both active (non-bg) input cells. Two models
