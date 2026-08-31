@@ -196,38 +196,51 @@ def render_sweep(results: list[tuple[str, str, object]]) -> list[str]:
             continue
         fitting, stored, types, verdicts = detail
         vset, sset = set(fitting), set(stored)
-        shown_s = ", ".join(show(v, types) for v in stored)
+        def shown(vals, types=types):
+            return ", ".join(show(v, types) for v in vals)
+
+        shown_s = shown(stored)
         if vset == sset:
             if len(sset) == 1:
                 lines.append(f"{slot}: unique = {shown_s} ✓")
             else:
                 lines.append(f"{slot}: set of {len(sset)} = [{shown_s}] ✓")
-        elif sset <= vset:
-            extras = sorted(vset - sset)
-            shown_e = ", ".join(show(v, types) for v in extras)
-            falsified = [e for e in extras if not verdicts.get(e, False)]
-            if falsified:
-                shown_f = ", ".join(show(v, types) for v in falsified)
-                lines.append(
-                    f"{slot}: TEST-FALSIFIED — train admits [{shown_f}] "
-                    f"beyond stored [{shown_s}], test refutes"
+            continue
+        if not sset <= vset:
+            lines.append(
+                f"{slot}: stored [{shown_s}] — a stored fact fails its "
+                f"singleton run; the facts fit only together, so a "
+                f"one-at-a-time sweep cannot judge them"
+            )
+            continue
+        # Each finding about the extras gets its own clause, so a refuted
+        # extra cannot hide a surviving one.
+        extras = sorted(vset - sset)
+        refuted = [e for e in extras if not verdicts.get(e, False)]
+        passing = [e for e in extras if verdicts.get(e, False)]
+        parts = [f"stored {shown_s}", f"train also admits [{shown(extras)}]"]
+        if refuted:
+            parts.append(
+                f"test refutes [{shown(refuted)}] — a fit from train alone "
+                f"could pick it"
+            )
+        if passing:
+            parts.append(
+                f"[{shown(passing)}] reproduce the stored outputs on test too"
+            )
+            kind = [e for e in passing
+                    if not any(_num_peer(e, s, types) for s in sset)]
+            if kind:
+                parts.append(
+                    f"[{shown(kind)}] differ from stored in kind, so the "
+                    f"pairs do not pin this slot"
                 )
-            elif not all(any(_num_peer(e, s, types) for s in sset)
-                         for e in extras):
-                lines.append(
-                    f"{slot}: UNDERDETERMINED — beyond stored [{shown_s}]: [{shown_e}]"
+            below = sorted(
+                e for e in passing if any(_num_below(e, s, types) for s in sset)
+            )
+            if below:
+                parts.append(
+                    f"[{shown(below)}] fit and are smaller than stored"
                 )
-            elif any(_num_below(e, s, types) for e in extras for s in sset):
-                below = sorted(
-                    e for e in extras if any(_num_below(e, s, types) for s in sset)
-                )
-                shown_b = ", ".join(show(v, types) for v in below)
-                lines.append(
-                    f"{slot}: STORED NOT LEAST — smaller fitting: [{shown_b}]"
-                )
-            else:
-                lines.append(f"{slot}: stored {shown_s} ✓ — gauge [{shown_e}]")
-        else:
-            # Some stored value no singleton run reproduces.
-            lines.append(f"{slot}: holistic table — singleton sweep n/a")
+        lines.append(f"{slot}: " + "; ".join(parts))
     return lines
