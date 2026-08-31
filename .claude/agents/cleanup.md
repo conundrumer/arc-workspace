@@ -17,4 +17,4 @@ First, when no docs follow this section, read the output of `uv run python scrip
 
 ## Report
 
-Per file: what you changed, or `no change` with the reason; the run result; what looks wrong in the claim and needs the caller's ruling. Keep it short.
+Per file: what you changed, or `no change` with the reason; the run result; what looks wrong in the claim and needs the caller's ruling. An observation outside the brief's scope names the operation it belongs to (Simplify or Prune) and what acting on it would change. Keep it short.
