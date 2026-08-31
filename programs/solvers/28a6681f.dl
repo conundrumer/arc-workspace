@@ -35,7 +35,7 @@ adj(P, D, Q) :- in(P, _), dir_elem(D), neighbor(P, D, Q), in(Q, _).
 // settle differently; the task privileges neither, so both run, keyed by
 // sense.
 .init lex = LexOrder<Sense>
-lex.axis(A) :- c.gravity(D), axis_of(D, A).
+lex.axis(S, A) :- sense_elem(S), c.gravity(D), axis_of(D, A).
 lex.corner(S, Diag) :-
     c.gravity(D), turn(S, D, L), diag_dirs(Diag, _, D, L).
 lex.cell(S, P) :- sense_elem(S), parcel(P).

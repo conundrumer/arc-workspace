@@ -62,7 +62,7 @@ out(P, Col, Ch) :- impl_choice(Ch), tile_cell(_, P, _), !ink_at(P, _), c.bg(Col)
 
 .init lex = LexOrder<Unit>
 lex.corner($U(), D) :- c.lex_corner(D).
-lex.axis(A)       :- c.lex_axis(A).
+lex.axis($U(), A) :- c.lex_axis(A).
 lex.cell($U(), T) :- tile_ink(T, _, _).
 
 .decl scan_beaten(p_tile: Position, p: Position)

@@ -974,8 +974,8 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     // The corner the order runs from, per key.
     .decl corner(key: Key, d: DiagDir)
 
-    // The primary axis — the instance's parameter, unkeyed.
-    .decl axis(a: Axis)
+    // The primary axis, per key.
+    .decl axis(key: Key, a: Axis)
 
     // The cells to order, per key.
     .decl cell(key: Key, p: Position)
@@ -984,11 +984,11 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 
     before(Ky, Q, P) :-
         cell(Ky, Q), cell(Ky, P),
-        corner(Ky, Diag), axis(A), dir_of(Diag, A, D),  // primary dir
-        dist(Q, D, K1), dist(P, D, K2), K1 < K2.        // q strictly nearer
+        corner(Ky, Diag), axis(Ky, A), dir_of(Diag, A, D),  // primary dir
+        dist(Q, D, K1), dist(P, D, K2), K1 < K2.            // q strictly nearer
     before(Ky, Q, P) :-
         cell(Ky, Q), cell(Ky, P),
-        corner(Ky, Diag), axis(A),
+        corner(Ky, Diag), axis(Ky, A),
         diag_dirs(Diag, A, D, D2),                   // primary/secondary dirs
         same_dist(D, Q, P),                          // primary tie
         dist(Q, D2, K1), dist(P, D2, K2), K1 < K2.   // q strictly nearer

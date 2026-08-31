@@ -80,20 +80,13 @@ empty_count.domain(B) :- block(B).
 advance.cand(B, K) :- ahead(B, _, K), !ahead_break(B, K).  // a marker line ahead
 advance.cand(B, N) :- empty_count.tally(B, N).             // the gauge fills up
 
-// An empty cell's place in the sweep: K counts toward the leading edge, T
-// toward the side the sweep starts on.
-.decl sweep_key(b: Ident, p: Position, k: number, t: number)
-sweep_key(B, P, K, T) :-
-    empty_cell(B, P), handle_dir(B, D), dist(P, D, K),   // toward the leading edge
-    c.sweep(S), turn(S, D, D_side), dist(P, D_side, T).  // toward the starting side
-
-.init fill_order = Order<Ident, Position>
-fill_order.elem(B, P) :- empty_cell(B, P).
-fill_order.before(B, P, Q) :-
-    sweep_key(B, P, K1, T1), sweep_key(B, Q, K2, T2),
-    ( K1 < K2               // nearer the leading edge
-    ; K1 = K2, T1 < T2      // nearer the starting side
-    ).
+.init fill_order = LexOrder<Ident>
+fill_order.corner(B, Diag) :-
+    handle_dir(B, D),                    // the leading edge
+    c.sweep(S), turn(S, D, D_side),      // the side the sweep starts on
+    diag_dirs(Diag, _, D, D_side).       // the corner they meet at
+fill_order.axis(B, A) :- handle_dir(B, D), axis_of(D, A).
+fill_order.cell(B, P) :- empty_cell(B, P).
 
 .decl fills(p: Position)
 fills(P) :- fill_order.rank(B, P, R), advance.low(B, N), R < N.

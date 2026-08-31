@@ -124,7 +124,7 @@
 
     .init order = LexOrder<Key>
     order.corner(K, D) :- glyph(K, _), c.order_corner(D).
-    order.axis(A) :- c.order_axis(A).
+    order.axis(K, A) :- glyph(K, _), c.order_axis(A).
     order.cell(K, T) :- glyph(K, T).
 
     .decl marker_cell(k: Key, p_canvas: Position)

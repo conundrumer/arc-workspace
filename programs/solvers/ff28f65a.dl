@@ -126,7 +126,7 @@ x_cell(P) :- diag.diagonal($U(), P, _).
 
 .init lex = LexOrder<Unit>
 lex.corner($U(), D) :- c.lex_corner(D).
-lex.axis(A)       :- c.lex_axis(A).
+lex.axis($U(), A) :- c.lex_axis(A).
 lex.cell($U(), P) :- x_cell(P).
 
 .decl marked(p: Position, detect: Detect)
