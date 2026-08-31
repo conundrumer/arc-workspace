@@ -746,6 +746,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 }
 
 // Sparse numeric set → dense ordinal position, per key.
+// `ord` is a reserved word and cannot be the instance name.
 .comp Ordinal<Key> {
     // The numbers to rank, per key. A set: items sharing k share its rank,
     // and the rank set stays dense under ties.
@@ -833,6 +834,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 }
 
 // The cardinality of each key's member set.
+// `count` is a reserved word and cannot be the instance name.
 .comp Tally<Key, Member> {
     .decl item(key: Key, m: Member)
 
@@ -1331,6 +1333,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 // Positional matching is the unit-valued instantiation. Placements derive
 // backward from the data, so no grid bounds are needed and off-grid
 // candidates filter themselves out.
+// `match` is a reserved word and cannot be the instance name.
 .comp Occurrences<Key, Val> {
     .decl cell(key: Key, p: Position, v: Val)
     .decl shape(key: Key, p: Position, v: Val)

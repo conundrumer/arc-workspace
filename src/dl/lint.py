@@ -10,7 +10,7 @@ solver.
 import re
 from functools import lru_cache
 
-from dl.dlparse import Comp, Init, Item, ParseError, Rule, TypeDecl, parse
+from dl.dlparse import Comp, Decl, Init, Item, ParseError, Rigid, Rule, TypeDecl, parse
 from dl.paths import PROGRAMS_DIR
 
 ORIENTATION_LITERALS = {
@@ -41,11 +41,14 @@ def exempt_literal(lit: str, unit: bool) -> bool:
     return lit == "0" or (unit and lit == "1")
 RANGE_RE = re.compile(r"\brange\s*\(")
 
-# Souffle keywords. Each one was checked against the souffle 2.5 binary and
-# rejected in every position a name can take: relation head, .decl, .init,
-# .type, .comp, .functor, and attribute. The directive words (`decl`, `type`,
+# Souffle keywords: the complete bare-word keyword set of the souffle 2.5
+# scanner (src/parser/scanner.ll), each confirmed against the binary to fail
+# in every name position — relation, attribute, instance, comp, type,
+# functor, record field, and variable. The directive words (`decl`, `type`,
 # `init`, `comp`, `plan`, ...) are reserved only with their leading dot, so
-# they are usable as names and are not here.
+# they are usable as names and are not here. Neither are the predefined type
+# names (`number`, `symbol`, `float`, `unsigned`): they lex as identifiers
+# and fail only as `.type` names, where souffle's own message is clear.
 # The category a colliding name is reported under.
 RESERVED_CAT = "reserved name"
 
@@ -205,6 +208,58 @@ def _reserved_names(raw_lines: list[str]) -> list[tuple[str, int, str, str]]:
     return findings
 
 
+# A record-field or attribute name in raw right-hand-side text.
+FIELD_NAME_RE = re.compile(r"([A-Za-z_]\w*)\s*:")
+
+# The category a solver type outside the sanctioned kinds is reported
+# under. Sanctioned (style doc, Types and alt-outputs): `Choice` and the
+# types it reaches, a record filling a comp type param at an `.init`, and
+# `TiebreakResolution` with the types it reaches.
+BANNED_TYPE_CAT = "banned type"
+
+TYPE_TOKEN_RE = re.compile(r"[A-Za-z_]\w*")
+
+RECORD_RHS_RE = re.compile(r"=\s*\[")
+
+
+def _reserved_inner_names(
+    items: list[Item], raw_lines: list[str],
+) -> list[tuple[str, int, str, str]]:
+    """Keyword collisions in the positions only the parse can see:
+    attributes, record fields and ADT branches, component parameters, and
+    type arguments. Souffle's caret lands past the word in some of them,
+    so the finding names it."""
+    findings: list[tuple[str, int, str, str]] = []
+
+    def take(names: list[str], line: int) -> None:
+        for name in names:
+            if name not in RESERVED_WORDS:
+                continue
+            findings.append((
+                RESERVED_CAT, line,
+                f"`{name}` is a Souffle reserved word and cannot name "
+                f"anything; rename it",
+                raw_lines[line - 1].rstrip(),
+            ))
+
+    def walk(items: list[Item]) -> None:
+        for it in items:
+            if isinstance(it, Decl):
+                take([f.name for f in it.fields], it.line)
+            elif isinstance(it, TypeDecl):
+                take(it.branches + FIELD_NAME_RE.findall(it.rhs), it.line)
+            elif isinstance(it, Init):
+                take(it.targs, it.line)
+            elif isinstance(it, Comp):
+                take(it.params + it.base_targs, it.line)
+                walk(it.items)
+            elif isinstance(it, Rigid):
+                walk(it.items)
+
+    walk(items)
+    return findings
+
+
 def _lib_source() -> str:
     """lib.dl's text, or empty when it is not there to read."""
     try:
@@ -290,6 +345,81 @@ def _shadowed_types(
     return findings
 
 
+def _type_scopes(
+    items: list[Item], linted: bool = True,
+) -> list[tuple[TypeDecl, bool]]:
+    """Every solver TypeDecl, with whether it sits in linted scope: the top
+    level and the Fit/Parse comps. Other comps are skipped like the rest of
+    their lines."""
+    out: list[tuple[TypeDecl, bool]] = []
+    for it in items:
+        if isinstance(it, TypeDecl):
+            out.append((it, linted))
+        elif isinstance(it, Comp):
+            out.extend(
+                _type_scopes(it.items, linted and it.name in ("Fit", "Parse"))
+            )
+        elif isinstance(it, Rigid):
+            out.extend(_type_scopes(it.items, linted))
+    return out
+
+
+def _type_refs(td: TypeDecl, declared: set[str]) -> set[str]:
+    """Solver type names a declaration's right-hand side references —
+    constructor-field types, record-field types, factors, union members —
+    its own branch and field names excluded."""
+    tokens = set(TYPE_TOKEN_RE.findall(td.rhs))
+    fields = set(FIELD_NAME_RE.findall(td.rhs))
+    return (tokens - set(td.branches) - fields - {td.name}) & declared
+
+
+def _banned_types(
+    items: list[Item], raw_lines: list[str],
+) -> list[tuple[str, int, str, str]]:
+    """Solver types outside the sanctioned kinds.
+
+    The closure walk seeds on `Choice` and `TiebreakResolution` and follows
+    references through solver-declared types; the param-fill sanction takes
+    the record types some `.init` passes as a type argument. Names resolve
+    in file scope only, and a declaration in a skipped comp can sanction
+    but is never flagged."""
+    scoped = _type_scopes(items)
+    by_name: dict[str, list[TypeDecl]] = {}
+    for td, _ in scoped:
+        by_name.setdefault(td.name, []).append(td)
+    declared = set(by_name)
+
+    sanctioned: set[str] = set()
+    stack = [n for n in ("Choice", "TiebreakResolution") if n in declared]
+    while stack:
+        name = stack.pop()
+        if name in sanctioned:
+            continue
+        sanctioned.add(name)
+        for td in by_name[name]:
+            stack.extend(_type_refs(td, declared) - sanctioned)
+
+    records = {
+        name for name, tds in by_name.items()
+        if any(RECORD_RHS_RE.match(td.rhs.strip()) for td in tds)
+    }
+    filled = {targ for init in _inits(items) for targ in init.targs}
+    sanctioned |= records & filled
+
+    findings: list[tuple[str, int, str, str]] = []
+    for td, linted in scoped:
+        if not linted or td.name in sanctioned:
+            continue
+        findings.append((
+            BANNED_TYPE_CAT, td.line,
+            f"`{td.name}` is outside the sanctioned type kinds — `Choice`'s "
+            f"closure, or a record filling a comp type param; re-encode it "
+            f"or propose",
+            raw_lines[td.line - 1].rstrip(),
+        ))
+    return findings
+
+
 def lint_body(source: str) -> list[tuple[str, int, str, str]]:
     """Flag body code that violates the style doc.
 
@@ -297,8 +427,9 @@ def lint_body(source: str) -> list[tuple[str, int, str, str]]:
     names what was flagged. Skips // and /* */ comments and the `.comp`
     blocks that hold no body code, whose spans come from the parsed source.
     The reserved-name check reads every line, comps included, since Souffle
-    rejects such a name anywhere. A source that does not parse returns that
-    check's findings alone; the rewrite lint reports the parse error.
+    rejects such a name anywhere; the parse extends it to the inner name
+    positions. A source that does not parse returns the line-level findings
+    alone; the rewrite lint reports the parse error.
     """
     src = _strip_block_comments(source)
     raw_lines = src.splitlines()
@@ -342,7 +473,9 @@ def lint_body(source: str) -> list[tuple[str, int, str, str]]:
             for _, op in _find_comparison(line):
                 findings.append(("comparison", lineno, op, raw_line.rstrip()))
 
+    findings.extend(_reserved_inner_names(program.items, raw_lines))
     findings.extend(_shadowed_types(program.items, raw_lines))
+    findings.extend(_banned_types(program.items, raw_lines))
     findings.extend(_consts_data(program.comps().get("Consts"), raw_lines, code))
     findings.sort(key=lambda f: (f[1], f[0]))
     return findings

@@ -53,6 +53,43 @@ def test_reserved_type_and_comp_names_fire():
     assert [f[1] for f in fs] == [1, 2]
 
 
+def test_reserved_attribute_name_fires():
+    src = """\
+.decl r(ord: number)
+r(0).
+"""
+    fs = [f for f in lint_body(src) if f[0] == "reserved name"]
+    assert [f[1] for f in fs] == [1]
+    assert "`ord`" in fs[0][2]
+
+
+def test_reserved_field_branch_and_targ_names_fire():
+    src = """\
+.type P = [cat: number, y: number]
+.type T = Mk {n: number} | contains {}
+.comp Tally<Key> {
+    .decl n(key: Key, c: number)
+}
+.init t = Tally<count>
+"""
+    fs = [f for f in lint_body(src) if f[0] == "reserved name"]
+    assert [f[1] for f in fs] == [1, 2, 6]
+    assert "`cat`" in fs[0][2]
+    assert "`contains`" in fs[1][2]
+    assert "`count`" in fs[2][2]
+
+
+def test_reserved_comp_param_fires():
+    src = """\
+.comp Pick<match> {
+    .decl v(x: match)
+}
+"""
+    fs = [f for f in lint_body(src) if f[0] == "reserved name"]
+    assert [f[1] for f in fs] == [1]
+    assert "`match`" in fs[0][2]
+
+
 def test_reserved_name_in_unparsable_source_fires():
     src = """\
 .decl count(n: number)
@@ -144,3 +181,81 @@ def test_type_argument_to_a_typeless_comp_stays_quiet():
 .init tally = Mode<KP>
 """
     assert "shadowed type" not in cats(src)
+
+
+def test_free_adt_fires_as_banned_type():
+    src = """\
+.type Assembly = Bare {} | With {o: Ident, rest: Assembly}
+.decl out(p: Position, col: Color)
+"""
+    fs = [f for f in lint_body(src) if f[0] == "banned type"]
+    assert [f[1] for f in fs] == [1]
+    assert "`Assembly` is outside the sanctioned type kinds" in fs[0][2]
+
+
+def test_choice_closure_stays_quiet():
+    # The type itself, a record body, a factor, and a constructor field.
+    src = """\
+.type Locate = Grid {} | Tile {}
+.type Fill = [col: Color]
+.type Choice = [loc: Locate, fill: Fill]
+"""
+    assert "banned type" not in cats(src)
+
+
+def test_record_filling_a_comp_param_stays_quiet():
+    src = """\
+.type RunKey = [p_line: Position, col: Color]
+.init runs = Components<RunKey>
+"""
+    assert "banned type" not in cats(src)
+
+
+def test_adt_filling_a_comp_param_fires():
+    src = """\
+.type Side = Legend {} | Field {}
+.init comps = Components<Side>
+"""
+    fs = [f for f in lint_body(src) if f[0] == "banned type"]
+    assert [f[1] for f in fs] == [1]
+
+
+def test_record_filling_no_param_fires():
+    src = """\
+.type Leg = [p: Position, d: Dir]
+.decl on_path(leg: Leg)
+"""
+    fs = [f for f in lint_body(src) if f[0] == "banned type"]
+    assert [f[1] for f in fs] == [1]
+
+
+def test_tiebreak_resolution_and_its_fields_stay_quiet():
+    src = """\
+.type Piece = Bar {} | Dot {}
+.type TiebreakResolution =
+    End {} | Sit {b: Position, pc: Piece, rest: TiebreakResolution}
+"""
+    assert "banned type" not in cats(src)
+
+
+def test_type_in_a_skipped_comp_stays_quiet():
+    # A proposal comp is skipped wholesale, its types included.
+    src = """\
+.comp Profile<Key> {
+    .type Edge = Lo {} | Hi {}
+    .decl cell(key: Key, p: Position)
+}
+"""
+    assert "banned type" not in cats(src)
+
+
+def test_type_in_fit_lints_and_a_filled_record_there_stays_quiet():
+    src = """\
+.comp Fit {
+    .type EC = [e: Example, col: Color]
+    .type Tag = A {} | B {}
+    .init tally = Mode<EC>
+}
+"""
+    fs = [f for f in lint_body(src) if f[0] == "banned type"]
+    assert [f[1] for f in fs] == [3]
