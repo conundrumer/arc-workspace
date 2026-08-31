@@ -945,6 +945,10 @@ def advance_stage(it: dict) -> None:
         store.say(it, store.event("handoff paused for server reload"))
         return
     prev, it["phase"] = it["phase"], nxt["name"]
+    # A new stage is a new session, so it reads the projection as it stands;
+    # under unchanged sources the content hash returns the wave's shared
+    # file, and the cached prefix holds.
+    it["append"] = str(prompts.append_path())
     it["state"] = store.RUNNING
     store.say(it, store.event(f"handoff — {nxt['name']} session starting"))
     # A stage with a successor opens its pass under the handoff flag, so its

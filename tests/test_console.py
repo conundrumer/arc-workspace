@@ -488,6 +488,14 @@ def test_create_landing_defers_the_handoff(srv, monkeypatch):
     assert it["dirty"] is False
 
 
+def test_a_new_stage_reads_the_projection_as_it_stands(srv, monkeypatch):
+    monkeypatch.setattr(srv, "launch", lambda *a, **kw: None)
+    it = item(srv, "a", srv.NEEDS_REVIEW, phase="create",
+              append="/stale/appendix.md")
+    srv.advance_stage(it)
+    assert it["append"] == str(srv.append_path())
+
+
 def test_advance_launches_the_next_stage_with_the_report(srv, monkeypatch):
     sent = []
     monkeypatch.setattr(srv, "launch",
