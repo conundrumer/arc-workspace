@@ -66,29 +66,30 @@ run_of.blocked($U(), R) :- row(R), ( boundary(R) ; !row_cell(R, _) ).
 .init comps = Components<Color>
 comps.node(Col, P) :- in(P, Col), !c.bg(Col).
 
-.init obj_dist = Extremes<Ident>
-obj_dist.cand(Id, K) :- comps.label(_, P, Id), c.dir(D), dist(P, D, K).
+.init obj_box = Bbox<Ident>
+obj_box.cell(Id, P) :- comps.label(_, P, Id).
 
-.decl obj_top(id: Ident, k: number)
-obj_top(Id, K) :- obj_dist.low(Id, K).
+// The object's margin from the counting edge.
+.decl obj_margin(id: Ident, k: number)
+obj_margin(Id, K) :- c.dir(D), obj_box.edge_min(Id, D, K).
 
 // --- shared: rank the bars, select marked ranks ---
 
 .init seq = Ordinal<Choice>
 seq.idx_set($Run(), K)    :- boundary(B), c.dir(D), dist(B, D, K).
-seq.idx_set($Object(), K) :- obj_top(_, K).
+seq.idx_set($Object(), K) :- obj_margin(_, K).
 
-.decl mark_top(ch: Choice, k: number)
-mark_top(Ch, K) :-
+.decl mark_margin(ch: Choice, k: number)
+mark_margin(Ch, K) :-
     seq.rank(Ch, K, R),
     c.mark_len(N), c.mark_gap(G), stride(R, N, G, _, _).  // in a marked block
 
 .decl mark_cell(ch: Choice, p: Position)
 mark_cell($Run(), P) :-
-    mark_top($Run(), K), c.dir(D), boundary(B), dist(B, D, K),  // marked run
+    mark_margin($Run(), K), c.dir(D), boundary(B), dist(B, D, K),  // marked run
     run_of.clear($U(), R, _, _, B), row_cell(R, P).
 mark_cell($Object(), P) :-
-    mark_top($Object(), K), obj_top(Id, K), comps.label(_, P, Id).
+    mark_margin($Object(), K), obj_margin(Id, K), comps.label(_, P, Id).
 
 .decl out(p: Position, col: Color, c: Choice)
 out(P, Col, Ch) :- mark_cell(Ch, P), c.mark(Col).
