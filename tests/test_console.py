@@ -361,14 +361,29 @@ def perm_request(srv, path, tool="Edit", subtype="can_use_tool"):
                         "tool_use_id": "tu1"}}
 
 
-def test_every_request_keeps_the_cli_refusal(srv):
+def test_an_agent_file_is_the_worker_s_to_edit(srv):
+    for tool in ("Edit", "Write"):
+        req = perm_request(srv, srv.AGENT_DIR / "cleanup.md", tool=tool)["request"]
+        assert srv.permission_decision(req) == {
+            "behavior": "allow", "updatedInput": req["input"]}
+
+
+def test_every_other_request_keeps_the_cli_refusal(srv):
     for path, tool in ((srv.ROOT / ".claude" / "settings.json", "Edit"),
                        (srv.ROOT / "programs" / "lib.dl", "Bash"),
+                       (srv.AGENT_DIR / "cleanup.md", "Bash"),
+                       (srv.AGENT_DIR / "notes.txt", "Edit"),
+                       (srv.AGENT_DIR / "sub" / "cleanup.md", "Edit"),
                        ("/tmp/note.txt", "Write")):
         req = perm_request(srv, path, tool=tool)["request"]
         decision = srv.permission_decision(req)
         assert decision["behavior"] == "deny"
         assert decision["message"] == req["decision_reason"]
+
+
+def test_an_agent_file_edit_lands_as_a_shared_write(srv):
+    assert any(rel.startswith(".claude/agents/") and rel.endswith(".md")
+               for rel in srv.watched_paths("a"))
 
 
 def test_a_permission_request_is_answered_on_the_stream(srv):

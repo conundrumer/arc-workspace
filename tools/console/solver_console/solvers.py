@@ -30,14 +30,15 @@ def file_hash(p: Path) -> str:
 
 
 def watched_paths(item_id: str) -> dict[str, Path]:
-    """The files a pass shares with every other pass, by repo-relative name:
-    the lib, the docs, and the task's own data. Hashed at
-    launch and checked at landing, so a write that bypasses the edit tools (a
-    Bash heredoc, a script) still surfaces."""
+    """The files a pass shares with every other pass, by repo-relative name.
+    Hashed at launch and checked at landing, so a write that bypasses the
+    edit tools (a Bash heredoc, a script) still surfaces."""
     paths = {"programs/lib.dl": config.LIB,
              f"data/tasks/{item_id}.json": config.TASKS / f"{item_id}.json"}
     for p in sorted(config.DOCS.glob("*.md")):
         paths[f"docs/wf-solver/{p.name}"] = p
+    for p in sorted(config.AGENT_DIR.glob("*.md")):
+        paths[f".claude/agents/{p.name}"] = p
     return paths
 
 

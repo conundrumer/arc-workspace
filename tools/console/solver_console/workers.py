@@ -367,8 +367,18 @@ def adopt_turn(it: dict, worker: dict, phase: str) -> None:
 
 
 def permission_decision(req: dict) -> dict:
-    """The console's answer to one permission request: every request keeps
-    the refusal the CLI already reached."""
+    """The console's answer to one permission request. A worker may edit the
+    agent files, which the CLI holds back as files of its own; the edit
+    surfaces at landing as a shared write. Every other request keeps the
+    refusal the CLI already reached."""
+    if req.get("tool_name") in ("Edit", "Write"):
+        try:
+            asked = Path((req.get("input") or {}).get("file_path") or "").resolve()
+        except OSError:
+            asked = None
+        if (asked is not None and asked.suffix == ".md"
+                and asked.parent == config.AGENT_DIR.resolve()):
+            return {"behavior": "allow", "updatedInput": req.get("input") or {}}
     return {"behavior": "deny",
             "message": req.get("decision_reason") or "not permitted"}
 
