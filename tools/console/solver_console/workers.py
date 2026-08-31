@@ -182,8 +182,8 @@ def adopt_workers(manifest: dict) -> None:
                 if it is not None and phase in store.stage_names(it):
                     lost_session = it["sessions"].get(phase)
                     it["sessions"][phase] = None
-                    store.say(it, store.event(f"{phase} session lost on reload: "
-                                              f"{lost_session}"), sess=phase)
+                    store.say(it, store.event(f"session lost on reload: {lost_session}"),
+                              sess=phase)
             for fd in fds:
                 try:
                     os.close(fd)
@@ -276,7 +276,7 @@ def launch(it: dict, message: str, phase: str, trigger: str | None = None,
     the bail are turns of one chain and keep its count; every other turn starts
     its own, so a turn asked to think hard is judged on its own stretches."""
     if store.RELOADING and not admitted:
-        raise store.Reject("server reload in progress — wait for it to finish")
+        raise store.Reject("server reload in progress")
     if not escalated:
         it.setdefault("runaway", {}).pop(phase, None)
     # Any turn except the callout ask and its continuations (resume, nudge,
@@ -313,7 +313,7 @@ def launch(it: dict, message: str, phase: str, trigger: str | None = None,
     worker = store.PROCS.get(key)
     if worker is None:
         if it["sessions"].get(phase):
-            store.say(it, store.event(f"{phase} worker restarting — resuming its session"),
+            store.say(it, store.event("worker restarting — resuming its session"),
                       sess=phase)
         worker = spawn_worker(it, phase)
     start_turn(it, worker, phase, trigger=trigger, handoff=handoff, slash=slash)
@@ -368,7 +368,7 @@ def adopt_turn(it: dict, worker: dict, phase: str) -> None:
         it["updated"] = False
     why = ("message reached the worker as the turn landed"
            if pending else "a background task woke the session")
-    store.say(it, store.event(why + " — it runs as a turn of its own"), sess=phase)
+    store.say(it, store.event(why), sess=phase)
 
 
 def permission_decision(req: dict) -> dict:
@@ -901,7 +901,7 @@ def revive(worker: dict, step: str, handoff: bool) -> None:
         if path is not None:
             try:
                 if patch_capped(path):
-                    store.say(it, store.event("capped thinking preserved for the resume"),
+                    store.say(it, store.event("capped thinking preserved"),
                               sess=phase)
             except OSError as exc:
                 store.say(it, store.event(f"transcript patch failed: {exc}"), sess=phase)
@@ -1377,7 +1377,7 @@ def drop_worker(it: dict, key: tuple[str, str], worker: dict, why: str) -> None:
     store.PROCS.pop(key)
     worker["state"] = "dying"
     worker["outbound"].put_nowait(store.STOP)
-    store.say(it, store.event(f"{key[1]} worker reaped {why}"), sess=key[1])
+    store.say(it, store.event(f"worker reaped {why}"), sess=key[1])
     queue_reap(worker)
 
 

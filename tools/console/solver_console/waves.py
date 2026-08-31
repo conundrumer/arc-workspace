@@ -73,7 +73,7 @@ def start_wave(k: int, order: str = "name", auto_advance: bool = False,
     with store.LOCK:
         store.defer_reload()
         if time.time() - LAST_WAVE_AT < WAVE_DEBOUNCE:
-            return {"error": "a wave just started — wait a moment to start another"}
+            return {"error": "a wave just started"}
         if order not in ("name", "size"):
             return {"error": f"unknown order: {order}"}
         try:

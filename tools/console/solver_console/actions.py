@@ -14,7 +14,7 @@ def submit_comment(it: dict, text: str, sess: str | None = None) -> None:
     text = text.strip()
     low = text.lower()
     if low in ("commit", "next"):
-        raise store.Reject(f"`{text}` is a console action, not a worker message")
+        raise store.Reject(f"`{text}` is a console action")
     if low == "handoff":
         store.require_idle(it)
         phase = it["phase"]
@@ -32,7 +32,7 @@ def submit_comment(it: dict, text: str, sess: str | None = None) -> None:
     sess = sess if sess in store.stage_names(it) else it["phase"]
     store.defer_reload()
     if it.get("handoff_pending", False):
-        raise store.Reject("handoff in flight — wait for the next session to start")
+        raise store.Reject("handoff in flight — wait for the next session")
     w = store.PROCS.get((it["id"], sess))
     if w and w["state"] in ("sending", "running"):
         if text.startswith("/"):

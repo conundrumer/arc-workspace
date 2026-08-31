@@ -114,7 +114,7 @@ def act_finalize(body: dict) -> dict:
         it = store.find(item_id)
         if it is not None:
             if not finalize_ready(it):
-                return {"error": "already in the console — use the item itself"}
+                return {"error": "already in the console"}
             # the wave chain is done up to finalize: advance the item in place
             it["updated"] = False
             workers.advance_stage(it)
@@ -131,7 +131,7 @@ def act_finalize(body: dict) -> dict:
                   "reports": {}}
             store.STATE["items"].append(it)
             seeded = ", ".join(name for name, _ in pairs)
-            store.say(it, store.event(f"{stage['name']} started · "
+            store.say(it, store.event("started · "
                                       + (f"seeded from {seeded}" if seeded
                                          else "no earlier reports")))
             try:

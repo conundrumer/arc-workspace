@@ -172,7 +172,7 @@ def quota_cut(it: dict, phase: str, handoff: bool) -> None:
     """A turn died with the account out of quota. In overnight mode the item
     gets one automatic resume just after the 5h window resets; a second death
     on the same stage leaves it for review. Caller holds LOCK."""
-    store.say(it, store.event("usage limit — turn cut short"), sess=phase)
+    store.say(it, store.event("usage limit"), sess=phase)
     # The flag lives in the worker, which dies with the turn, so the item takes
     # a copy whatever the mode is. Without it a resume by hand opens the stage
     # as a plain comment: the pass runs again and lands, and the item stays put.

@@ -403,8 +403,8 @@ const STATES = ["needs-review","commented","running","queued","approved","commit
 const SETTLED = ["approved","committed"];   // nothing left for a finalize pass to do
 /* backlog orderings: the server's triage sort, or a complexity measure */
 const BK_ORDERS = {flag:"triage order",
-                   ts:"reference TS solver complexity, biggest first",
-                   dl:"solver rule-literal count, biggest first"};
+                   ts:"reference TS solver complexity",
+                   dl:"solver rule-literal count"};
 const stateRank = it => { const i=STATES.indexOf(it.state); return i<0?STATES.length:i; };
 const NO_ITEM = {feed:[], files:[]};   // stands in until /api/item lands
 
@@ -682,7 +682,7 @@ function CompBadges({x}){
   return (x.comps||[]).map(c=>{
     const bad=(x.comps_unproposed||[]).includes(c);
     return html`<span key=${c} class=${"badge-comp"+(bad?" unproposed":"")}
-      title=${bad?"proposal comp with no proposals.md entry":"proposal comp — entry open"}>${c}</span>`;
+      title=${bad?"no proposals.md entry":"proposals.md entry open"}>${c}</span>`;
   });
 }
 /* what the stage left for the user; the entries ride along in the tooltip */
@@ -794,7 +794,7 @@ function BkRow({b, sel, task, metric, onSelect}){
       <div class="tid">
         ${b.id}${" "}
         ${b.no_solver && html`<span class="badge-none"
-          title="the pass landed without writing a solver">no solver</span>`}
+          title="the pass wrote no solver">no solver</span>`}
         <${CompBadges} x=${b}/><${CalloutBadge} x=${b}/>
       </div>
       <div class="sub">${b.title||""}</div>
@@ -887,7 +887,7 @@ function Topbar({view, setView, wave, items, progress, usage, night, nightOpen, 
         onChange=${e=>waveCtl.setPresetId(e.target.value)}>
         ${presets.map(p=>html`<option key=${p.id} value=${p.id}>${p.label}</option>`)}
       </select>
-      <select aria-label="auto-advance" title="how far each stage's report is handed on without you"
+      <select aria-label="auto-advance" title="how far a report is handed on without you"
         value=${waveCtl.mode} onChange=${e=>waveCtl.setMode(e.target.value)}>
         ${waveCtl.modes.map(([v,label])=>html`<option key=${v} value=${v}>${label}</option>`)}
       </select>
@@ -930,7 +930,7 @@ function NightPanel({night, open, onDial, onToggle, onCatchup}){
       ${g.squeeze && html`<span> · <b>squeeze zone</b></span>`}</span>`);
   if(g) read.push(html`<span key="gate" class=${g.open?"gate-open":"gate-held"}>
     ${(g.open?"admission open · ":"admission held · ")+g.why}</span>`);
-  else read.push(html`<span key="off">mode off — admissions are yours</span>`);
+  else read.push(html`<span key="off">admissions are yours</span>`);
   if(n.next) read.push(html`<span key="next">${"next: "+n.next.what+" "+hhmm(n.next.at)}</span>`);
   return html`<div id="nightpanel" hidden=${!open}>
     <div class="nightrow">
@@ -944,13 +944,13 @@ function NightPanel({night, open, onDial, onToggle, onCatchup}){
       <label title="weekly points held back from the pace line">reserve
         <input ref=${refs.reserve} type="number" min="0" max="100"
           onChange=${e=>onDial("reserve", e.target.value)}/></label>
-      <label title="weekly points spendable however early in the week">floor
+      <label title="weekly points free to spend early in the week">floor
         <input ref=${refs.floor} type="number" min="0" max="100"
           onChange=${e=>onDial("floor", e.target.value)}/></label>
       <label title="5h utilization above which new admissions hold">5h ceiling
         <input ref=${refs.ceiling} type="number" min="0" max="100"
           onChange=${e=>onDial("ceiling", e.target.value)}/></label>
-      <label title="spend the slack the week has accumulated">
+      <label title="spend the week's slack">
         <input ref=${catchBox} type="checkbox" checked=${!!n.catchup}
           onChange=${e=>onCatchup(e.target.checked)}/>
         catchup</label>
@@ -1065,10 +1065,10 @@ function DetailHead({it, cli, tab, badges, canAdvance, canResume, nxt, onTab, on
         <button class="copybtn" title="continue the turn a usage limit cut off"
           onClick=${()=>post("/api/resume",{id:it.id})}>resume</button>`}
       ${canAdvance && html`
-        <button class="copybtn" title=${"hand the report to the "+nxt+" session"}
+        <button class="copybtn" title="hand the report on"
           onClick=${()=>post("/api/advance",{id:it.id})}>${"advance · "+stageLabel(it,nxt)}</button>`}
       ${canAdvance && nxt==="finalize" && html`
-        <button class="copybtn" title="dismiss — record that no fable pass is needed"
+        <button class="copybtn" title="record that no fable pass is needed"
           onClick=${()=>onDismiss(it.id)}>✕ dismiss</button>`}
       ${it.active
         ? html`<button class="copybtn" onClick=${()=>post("/api/kill",{id:it.id})}>stop</button>`
@@ -1095,7 +1095,7 @@ function PeekBody({d}){
       html`<div class="railhead" key=${"h"+i}><span>${r.stage+" report"}</span></div>`,
       html`<pre class="peektext" key=${"t"+i}>${r.text}</pre>`,
     ])}
-    ${!reports.length && html`<p class="placeholder">no reports — the solver file is the whole account</p>`}
+    ${!reports.length && html`<p class="placeholder">no reports</p>`}
   </div>`;
 }
 
@@ -1107,8 +1107,7 @@ function Composer({boxRef, enabled, canSend, placeholder, hint, value, onInput, 
       onInput=${e=>onInput(e.target.value)}></textarea>
     <div class="hints">
       <span>${hint}</span>
-      <span class="actions"><span>⏎ send · ⇧⏎ newline</span>
-        <button class="primary" disabled=${!canSend} onClick=${onSend}>send</button></span>
+      <span class="actions"><button class="primary" disabled=${!canSend} onClick=${onSend}>send</button></span>
     </div>
   </div>`;
 }
@@ -1438,9 +1437,9 @@ function App(){
   const onNightToggle=useCallback(on=>{
     if(on){
       const n=live.current.night||{};
-      const ok=confirm("Autopilot admits tasks from the queue and starts "
-        +"spending now: up to "+(n.target??6)+" items in flight, create → refine, "
-        +"admissions begin within ~30s whenever the pacer is open. Start?");
+      const ok=confirm("Autopilot admits tasks from the queue: up to "
+        +(n.target??6)+" items in flight, create → refine, "
+        +"within ~30s of the pacer opening. Start?");
       if(!ok){ bump(); return; }   // the checkbox mirrors the server, so redraw it
     }
     postNight({on}, on?"autopilot on":"autopilot off");
@@ -1636,8 +1635,8 @@ function App(){
   if(selItem){
     hint = selItem.state==="needs-review" && selItem.dirty ? "cleanup pending" : "";
     if(nxt && selItem.state==="needs-review" && selItem.sessions[selItem.phase])
-      hint = (selItem.hasReport ? `${selItem.phase} stage — report ready, advance to ${nxt}`
-                                : `${selItem.phase} stage — \`handoff\` when ready`)+(hint?" · "+hint:"");
+      hint = (selItem.hasReport ? `report ready, advance to ${nxt}`
+                                : "`handoff` when ready")+(hint?" · "+hint:"");
   }
 
   return html`

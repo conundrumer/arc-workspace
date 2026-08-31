@@ -53,7 +53,7 @@ def night_admit() -> list[str]:
         pacing.night_say(f"admission deferred — {e}", once=True)
         return []
     if not picked:
-        pacing.night_say("queue is empty — nothing left to admit", once=True)
+        pacing.night_say("queue is empty", once=True)
         return []
     chain = store.wave_presets()[0]["chain"]
     if not cfg.get("wave"):
