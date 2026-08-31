@@ -61,8 +61,12 @@ code, pre, .mono { font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, mo
 .chip.commented { color:var(--st-commented); background:var(--st-commented-bg); }
 .chip.approved  { color:var(--st-approved);  background:var(--st-approved-bg); }
 .chip.queued, .chip.committed { color:var(--st-muted); background:var(--st-muted-bg); }
-#topbar .spacer { flex:1; }
-#usage { display:flex; gap:12px; font-family:ui-monospace,Menlo,monospace; font-size:11px; white-space:nowrap; }
+/* the bar's flexible slot. Every readout whose width moves with the state —
+   the counts, the committing chip, the autopilot tally, the usage figures —
+   sits on its left, so the wave controls hold their place under the pointer
+   while a session runs. */
+#usage { display:flex; flex:1; justify-content:flex-end; gap:12px;
+  font-family:ui-monospace,Menlo,monospace; font-size:11px; white-space:nowrap; }
 #usage .uok { color:var(--ttl-ok); opacity:.75; }
 #usage .uwarn { color:var(--ttl-warn); }
 #usage .uhot { color:var(--ttl-hot); }
@@ -104,7 +108,7 @@ button:disabled:hover { border-color:var(--border); }
 .nightrow .gate-open { color:var(--ttl-ok); }
 .nightrow .gate-held { color:var(--ttl-warn); }
 #nightlog {
-  display:flex; flex-direction:column; gap:2px; max-height:72px; overflow-y:auto;
+  display:flex; flex-direction:column; gap:2px; height:72px; overflow-y:auto;
   font-family:ui-monospace,Menlo,monospace; font-size:10.5px; color:var(--muted);
 }
 
@@ -873,9 +877,9 @@ function Topbar({view, setView, wave, items, progress, usage, night, nightOpen, 
     <span id="counts">${STATES.filter(st=>tally[st]).map(st=>html`
       <${StateChip} key=${st} state=${st} label=${tally[st]+" "+(st==="needs-review"?"to review":st)}/>`)}
     </span>
-    <span class="spacer"></span>
-    <${Usage} usage=${usage}/>
+    <span class="chip commented mono" hidden=${!committer.running}>committing…</span>
     <button id="nightbtn" class=${nightCls} onClick=${toggleNight}>${nightTxt}</button>
+    <${Usage} usage=${usage}/>
     <span class="wavectl" title="start the next wave">wave
       <input type="number" min="1" max="20" aria-label="wave size"
         value=${waveCtl.k} onInput=${e=>waveCtl.setK(e.target.value)}/>
@@ -893,7 +897,6 @@ function Topbar({view, setView, wave, items, progress, usage, night, nightOpen, 
       </select>
       <button disabled=${waveCtl.busy} onClick=${waveCtl.start}>start</button>
     </span>
-    <span class="chip commented mono" hidden=${!committer.running}>committing…</span>
     <button class="primary" disabled=${!items.some(it=>it.state==="approved")}
       onClick=${onCommit}>commit approved</button>
   </div>`;
@@ -1047,20 +1050,11 @@ function DetailHead({it, cli, tab, badges, canAdvance, canResume, nxt, onTab, on
           ${stageLabel(it,s)}${badges[s] && html`<span class="bdg"></span>`}
         </span>`)}
     </div>
-    ${sid && html`<div class="sessline">
+    ${/* The turn buttons lead, on a fixed-width command. The readouts and the
+          two conveniences trail, since a growing context figure and a worker
+          the console reaped mid-session both move whatever follows them. */
+      sid && html`<div class="sessline">
       <span class="cmd">${resume+" "+sid.slice(0,8)+"…"}</span>
-      ${context && html`<span>${"context "+context.percent.toFixed(1)+"%"}</span>`}
-      ${/* a codex stage reports no context window and compacts its own thread;
-            `/compact` would reach it as prompt text, so the button stays off */
-        context && backendOf(it,tab)!=="codex" && html`
-        <button class="copybtn" disabled=${it.active}
-          onClick=${()=>post("/api/compact",{id:it.id,sess:tab})}>
-          ${"compact · "+(context.compactPct==null
-            ? Math.round(context.used/1000)+"k rewrite"
-            : "~"+context.compactPct.toFixed(2)+"% "+context.limiting)}</button>`}
-      ${!(it.workerLive||{})[tab] && html`
-        <button class="copybtn"
-          onClick=${()=>copy(takeoverCmd(it,tab,cli),"takeover "+it.id)}>copy · o</button>`}
       ${canResume && html`
         <button class="copybtn" title="continue the turn a usage limit cut off"
           onClick=${()=>post("/api/resume",{id:it.id})}>resume</button>`}
@@ -1075,6 +1069,18 @@ function DetailHead({it, cli, tab, badges, canAdvance, canResume, nxt, onTab, on
         : html`<button class="copybtn" onClick=${()=>{
             if(confirm("Drop "+it.id+" from the console?")) post("/api/drop",{id:it.id});
           }}>drop</button>`}
+      ${context && html`<span>${"context "+context.percent.toFixed(1)+"%"}</span>`}
+      ${/* a codex stage reports no context window and compacts its own thread;
+            `/compact` would reach it as prompt text, so the button stays off */
+        context && backendOf(it,tab)!=="codex" && html`
+        <button class="copybtn" disabled=${it.active}
+          onClick=${()=>post("/api/compact",{id:it.id,sess:tab})}>
+          ${"compact · "+(context.compactPct==null
+            ? Math.round(context.used/1000)+"k rewrite"
+            : "~"+context.compactPct.toFixed(2)+"% "+context.limiting)}</button>`}
+      ${!(it.workerLive||{})[tab] && html`
+        <button class="copybtn"
+          onClick=${()=>copy(takeoverCmd(it,tab,cli),"takeover "+it.id)}>copy · o</button>`}
     </div>`}
   </div>`;
 }
