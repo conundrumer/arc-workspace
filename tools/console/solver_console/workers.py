@@ -225,9 +225,14 @@ def task_ask(inp: dict) -> str:
     return f"**{head}**\n\n{prompt}" if head else prompt
 
 
+# The CLI registers the subagent tool as Task in the init event and emits
+# its calls as Agent, so a tool_use block may carry either name.
+DISPATCH = ("Task", "Agent")
+
+
 def bg_label(name: str, inp: dict) -> str:
     """What a background task the worker started is called in the feed."""
-    if name == "Task":
+    if name in DISPATCH:
         return str(inp.get("description") or "").strip() or "a subagent"
     cmd = str(inp.get("command") or "").replace("\n", " ").strip()
     return f"`{cmd[:60]}`" if cmd else name
@@ -604,13 +609,13 @@ def handle_event(worker: dict, ev: dict, first_response) -> None:
                     if name in ("Edit", "Write", "NotebookEdit") and inp.get("file_path"):
                         record_edit(it, inp["file_path"])
                     if not sub and block.get("id") and (
-                            name == "Task" or inp.get("run_in_background")):
+                            name in DISPATCH or inp.get("run_in_background")):
                         # The result of a background task reaches the
                         # session as a notification, which lands after this
                         # turn ends, so the task stays outstanding across the
                         # turns between the dispatch and that notification.
                         worker.setdefault("bg", {})[block["id"]] = bg_label(name, inp)
-                    if name == "Task":
+                    if name in DISPATCH:
                         entry = {"kind": "ask", "text": task_ask(inp)}
                         key = (mid, "task", block.get("id") or entry["text"])
                     else:

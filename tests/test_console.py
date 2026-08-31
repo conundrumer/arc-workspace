@@ -539,11 +539,15 @@ def test_what_a_turn_starts_in_the_background_is_outstanding(srv):
                                     command="uv run pytest"), None)
     srv.handle_event(w, bg_dispatch("m3", "toolu_3", "Bash", command="souffle x",
                                     run_in_background=True), None)
+    # the CLI emits a subagent call under either registered name
+    srv.handle_event(w, bg_dispatch("m5", "toolu_5", "Agent",
+                                    description="Survey sweep"), None)
     srv.handle_event(w, {**bg_dispatch("m4", "toolu_4", description="its own"),
                          "parent_tool_use_id": "toolu_1"}, None)
     # the foreground Bash reports inside the turn; the subagent's own dispatch
     # belongs to the subagent
-    assert w["bg"] == {"toolu_1": "Sweep corpus", "toolu_3": "`souffle x`"}
+    assert w["bg"] == {"toolu_1": "Sweep corpus", "toolu_3": "`souffle x`",
+                       "toolu_5": "Survey sweep"}
 
 
 def test_a_notification_takes_a_task_off_the_outstanding_set(srv, monkeypatch,
