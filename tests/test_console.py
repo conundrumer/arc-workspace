@@ -574,9 +574,10 @@ def test_a_handoff_waiting_on_a_subagent_is_held(srv, monkeypatch):
     srv.finish_turn(it, {"result": "the sweep is still running"}, None,
                     time.time(), "create", True)
     assert it["bg_wait"] == "create"
-    assert it["reports"] == {}
-    assert not srv.report_path("a", "create").exists()
-    assert sent == []           # no callout ask over a placeholder
+    # the turn's text is filed as the report so far; a later landing replaces it
+    assert it["reports"] == {"create": "the sweep is still running"}
+    assert srv.report_path("a", "create").read_text() == "the sweep is still running"
+    assert sent == []           # no callout ask while the hold stands
     assert "handoff held — Sweep corpus" in it["feed"][-1]["text"]
 
 
@@ -609,6 +610,23 @@ def test_the_woken_turn_sends_the_handoff_ask_again(srv, monkeypatch):
     assert asked.wait(1)
     assert sent == [(srv.HANDOFF_BRIEF, "create", "handoff", True)]
     assert "bg_wait" not in it
+    assert it["reports"] == {"create": "the sweep found five sites"}
+
+
+def test_a_held_landing_with_work_still_outstanding_stays_held(srv, monkeypatch):
+    sent = []
+    monkeypatch.setattr(srv, "launch",
+                        lambda it, msg, phase, **kw: sent.append(phase))
+    it = create_item(srv, bg_wait="create", bg_at=time.time() - 300)
+    w = worker(srv, it, phase="create", state="running", turn_seq=4)
+    w["bg"] = {"toolu_2": "another sweep"}
+    srv.finish_turn(it, {"result": "notes so far"}, None,
+                    time.time(), "create", False)
+    assert it["bg_wait"] == "create"
+    assert it["bg_at"] > time.time() - 60      # the wait starts over
+    assert it["reports"] == {"create": "notes so far"}
+    assert sent == []
+    assert "handoff held — another sweep" in it["feed"][-1]["text"]
 
 
 def test_a_hold_stands_through_its_own_handoff_ask(srv):
@@ -631,7 +649,18 @@ def test_a_hold_the_task_never_ends_expires_into_a_review(srv):
     assert "bg_wait" not in it
     assert it["state"] == srv.NEEDS_REVIEW
     assert it["reports"] == {}
-    assert "handoff hold expired" in it["feed"][-1]["text"]
+    assert "no report" in it["feed"][-1]["text"]
+
+
+def test_an_expired_hold_keeps_the_last_filed_report(srv):
+    it = create_item(srv, bg_wait="create", bg_at=time.time() - srv.BG_TTL - 1,
+                     reports={"create": "notes so far"})
+    worker(srv, it, phase="create")
+    srv.expire_holds()
+    assert "bg_wait" not in it
+    assert it["state"] == srv.NEEDS_REVIEW
+    assert it["reports"] == {"create": "notes so far"}
+    assert "the last report stands" in it["feed"][-1]["text"]
 
 
 def test_a_worker_may_wait_on_what_it_starts(srv):

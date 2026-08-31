@@ -1203,18 +1203,26 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
         worker = store.PROCS.get((it["id"], phase))
         outstanding = sorted((worker or {}).get("bg", {}).values())
         if worker and outstanding:
-            hold_handoff(it, phase, outstanding)
+            hold_handoff(it, phase, outstanding, text)
         else:
             land_handoff(it, phase, text)
     elif it.get("bg_wait") == phase:
-        # the turn the notification woke; the handoff the hold owes goes out
-        # once it lands
-        drop_hold(it, phase)
+        # a turn a background notification woke; when a landing finds nothing
+        # outstanding, the handoff ask the hold owes goes out
+        if text:
+            file_report(it, phase, text)
         worker = store.PROCS.get((it["id"], phase))
-        if worker:
+        outstanding = sorted((worker or {}).get("bg", {}).values())
+        if worker and outstanding:
+            it["bg_at"] = store.now()
+            store.say(it, store.event("handoff held — " + ", ".join(outstanding)
+                                      + " has not reported"), sess=phase)
+        elif worker:
+            drop_hold(it, phase)
             store.DEFERRED.put_nowait(("rehandoff", it["id"], phase, worker["turn_seq"]))
             ensure_drain()
         else:
+            drop_hold(it, phase)
             it["state"] = store.NEEDS_REVIEW
             it["updated"] = True
     elif not store.pre(it).get("slash") and not store.busy_elsewhere(it, phase):
@@ -1224,18 +1232,20 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
         it["updated"] = True
 
 
-def hold_handoff(it: dict, phase: str, outstanding: list[str]) -> None:
+def hold_handoff(it: dict, phase: str, outstanding: list[str],
+                 text: str) -> None:
     """Wait out the background tasks a handoff turn started.
 
-    A background dispatch ends the turn, and the session has nothing to report
-    until the task comes back, so the text ending such a turn is a placeholder.
-    Filing it would spend the stage's report slot on it. The notification wakes
-    the session into a turn of its own; that turn's landing sends the handoff
-    ask again."""
+    A background dispatch ends the turn before the task reports, so the text
+    the turn ended with is filed as the report so far, and a later landing
+    replaces it. The notification wakes the session into a turn of its own;
+    when a landing finds nothing outstanding, the handoff ask goes out again."""
+    if text:
+        file_report(it, phase, text)
     it["bg_wait"] = phase
     it["bg_at"] = store.now()
     store.say(it, store.event("handoff held — " + ", ".join(outstanding)
-                              + " has not reported yet"), sess=phase)
+                              + " has not reported"), sess=phase)
 
 
 def drop_hold(it: dict, phase: str) -> None:
@@ -1244,10 +1254,17 @@ def drop_hold(it: dict, phase: str) -> None:
         it.pop("bg_at", None)
 
 
-def land_handoff(it: dict, phase: str, text: str) -> None:
-    """File a stage's report and ask for its callouts."""
+def file_report(it: dict, phase: str, text: str) -> None:
+    """A landing's text becomes the stage report; the next filing replaces
+    it, so what stands is always the last thing the session wrote."""
     it.setdefault("reports", {})[phase] = text
     solvers.save_report(it["id"], phase, text)
+
+
+def land_handoff(it: dict, phase: str, text: str) -> None:
+    """File a stage's report and ask for its callouts."""
+    if text:
+        file_report(it, phase, text)
     # the callouts get their own turn before any advance
     worker = store.PROCS.get((it["id"], phase))
     if worker:
@@ -1411,8 +1428,9 @@ def idle_loop() -> None:
 
 
 def expire_holds() -> None:
-    """End a handoff hold whose background task never reported. The stage
-    keeps no report, so the chain stops here and the user rules on it."""
+    """End a handoff hold whose background task never reported. The chain
+    stops here, and the user rules on the stage with whatever report its
+    turns filed."""
     expired = False
     with store.LOCK:
         for it in list(store.STATE["items"]):
@@ -1423,9 +1441,12 @@ def expire_holds() -> None:
             if worker and worker["state"] != "idle":
                 continue  # a turn is running; its landing settles the hold
             drop_hold(it, phase)
+            tail = ("the last report stands"
+                    if (it.get("reports") or {}).get(phase)
+                    else "no report")
             store.say(it, store.event(
-                f"handoff hold expired after {config.BG_TTL // 60}m — no report "
-                "for this stage"), sess=phase)
+                f"handoff hold expired after {config.BG_TTL // 60}m — {tail}"),
+                sess=phase)
             it["state"] = store.NEEDS_REVIEW
             it["updated"] = True
             expired = True
