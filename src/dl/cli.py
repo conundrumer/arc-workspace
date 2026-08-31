@@ -9,7 +9,9 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from arc.task import Alt, Example
+from dl.corpus import literal_count
 from dl.deletions import deletion_report, render_deletions
+from dl.dlparse import ParseError, parse
 from dl.facts import parse_grid
 from dl.fit import FitResult, render_fit, run_fit
 from dl.fit_plan import probe_report, render_fit_plan
@@ -448,7 +450,24 @@ def cmd_fit_plan(stem: str) -> int:
     return 0
 
 
-COMMANDS = ("run", "lint", "grid", "sweep", "deletions", "audit", "fit-plan")
+def cmd_size(stem: str | None = None) -> int:
+    """The literal count of each named solver, count first so the listing
+    sorts numerically. A file outside the parser's dialect reports on
+    stderr and the command exits non-zero."""
+    if stem and _missing(stem):
+        return 2
+    stems = [stem] if stem else all_stems()
+    bad = False
+    for s in stems:
+        try:
+            print(f"{literal_count(parse((SOLVERS_DIR / f'{s}.dl').read_text()))}\t{s}")
+        except ParseError as e:
+            print(f"{s}: {e}", file=sys.stderr)
+            bad = True
+    return 1 if bad else 0
+
+
+COMMANDS = ("run", "lint", "grid", "sweep", "deletions", "audit", "fit-plan", "size")
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -495,6 +514,14 @@ def _parser() -> argparse.ArgumentParser:
     sub.add_parser(
         "fit-plan", help="which Consts slots need Fit relations",
     ).add_argument("stem")
+
+    size = sub.add_parser(
+        "size", help="literal count per solver, for ordering by complexity",
+        description="Print each named solver's literal count, count first, "
+                    "so the listing sorts numerically.",
+    )
+    size.add_argument("stem", nargs="?",
+                      help="one solver; all of them when omitted")
     return parser
 
 
@@ -515,6 +542,8 @@ def main(argv: list[str]) -> int:
             return cmd_audit(args.stem)
         case "fit-plan":
             return cmd_fit_plan(args.stem)
+        case "size":
+            return cmd_size(args.stem)
         case _:
             if args.pairs:
                 if not args.stem:
