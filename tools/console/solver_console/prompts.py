@@ -106,15 +106,23 @@ P0 stands apart from that scale: use it only for a clear mechanical problem with
 Reply with only a `## Callouts` section: a numbered list, each entry one or two lines opening with its `[P1]`-`[P3]` mark. With nothing to raise, the section is the single word `none`, which is what most solvers get."""
 
 
-def callout_brief() -> str:
+def callout_bands() -> list[tuple[str, int, int, str]]:
+    """Each kind as (kind, pct, band, description), the highest rate first:
+    the eras blended by CALLOUT_RECENT_WEIGHT, the band cut at the *_MIN
+    rates."""
     w = CALLOUT_RECENT_WEIGHT
-    lines = []
+    rows = []
     for kind, po, ro, pn, rn, desc in CALLOUT_RATES:
         rate = (po + w * pn) / (ro + w * rn)
         pct = round(rate * 100)
         band = 1 if pct >= CALLOUT_P1_MIN else 2 if pct >= CALLOUT_P2_MIN else 3
-        lines.append((rate, f"- P{band} · {kind} {pct}%: {desc}"))
-    rates = "\n".join(line for _, line in sorted(lines, reverse=True))
+        rows.append((rate, (kind, pct, band, desc)))
+    return [row for _, row in sorted(rows, reverse=True)]
+
+
+def callout_brief() -> str:
+    rates = "\n".join(f"- P{band} · {kind} {pct}%: {desc}"
+                      for kind, pct, band, desc in callout_bands())
     return CALLOUT_BRIEF.format(rates=rates)
 
 

@@ -2970,8 +2970,8 @@ def test_the_callout_ask_is_its_own_turn_not_a_report_section(srv):
     text = srv.callout_brief()
     assert "## Callouts" in text
     assert "P1-P3" in text
-    for kind, pct in srv.CALLOUT_RATES:
-        assert f"{kind} {pct}%" in text
+    for kind, pct, band, desc in srv.callout_bands():
+        assert f"- P{band} · {kind} {pct}%: {desc}" in text
     # the later stage reports its own pass and leaves the earlier one alone
     assert "covers your own pass" in srv.HANDOFF_TAIL
 
