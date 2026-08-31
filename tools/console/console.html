@@ -232,6 +232,28 @@ body.view-final #main { grid-template-columns:330px minmax(360px,520px) 1fr; }
 .report code, .msg code { background:var(--panel2); border:1px solid var(--border); border-radius:3px; padding:0 3px; font-size:11.5px; }
 .report pre { background:var(--panel2); border:1px solid var(--border); border-radius:5px; padding:8px 10px; overflow-x:auto; font-size:11px; }
 .report pre code { background:none; border:none; padding:0; }
+/* ARC palette on cell digits in grid runs and on swatch code spans.
+   Doubled so a swatch on a code element outweighs the inline-code chip. */
+.cw.cw0 { background:#111; color:#888; } .cw.cw1 { background:#0074D9; color:#fff; }
+.cw.cw2 { background:#FF4136; color:#fff; } .cw.cw3 { background:#2ECC40; color:#000; }
+.cw.cw4 { background:#FFDC00; color:#000; } .cw.cw5 { background:#AAA; color:#000; }
+.cw.cw6 { background:#F012BE; color:#fff; } .cw.cw7 { background:#FF851B; color:#000; }
+.cw.cw8 { background:#7FDBFF; color:#000; } .cw.cw9 { background:#870C25; color:#fff; }
+/* The paint reaches into the gap between cells; the negative margin gives
+   back what the padding takes, so a run keeps its column alignment. Under
+   .22em a one-space gap still separates two neighbours. */
+span.cw { border-radius:2px; padding:0 .22em; margin:0 -.22em; }
+.cite { border-bottom:1px dotted var(--accent); cursor:pointer; }
+.cite:hover { background:var(--panel2); }
+#citepop { position:fixed; z-index:60; background:var(--bg); border:1px solid var(--border);
+  border-radius:6px; padding:8px 10px; box-shadow:0 4px 16px rgba(0,0,0,.3);
+  max-width:400px; max-height:70vh; overflow:auto; }
+#citepop .cphead { font-family:ui-monospace,Menlo,monospace; font-size:10.5px;
+  color:var(--muted); margin-bottom:6px; display:flex; gap:8px; align-items:center; }
+#citepop .cpx { margin-left:auto; border:none; background:none; color:var(--muted);
+  cursor:pointer; font-size:12px; padding:0 2px; }
+#citepop .cpnote { font-size:11px; color:var(--muted); margin-top:4px; }
+.agrid .hl { box-shadow:inset 0 0 0 1.5px #fff, 0 0 0 1.5px #000; position:relative; z-index:1; }
 .msg { max-width:56ch; padding:7px 11px; border-radius:8px; font-size:12.5px; }
 .msg p { margin:0 0 6px; }
 .msg > :last-child { margin-bottom:0; }
@@ -394,10 +416,88 @@ const fmtDur = s => { s=Math.max(0,Math.floor(s)); const h=Math.floor(s/3600), m
 const draftKey = id => "draft:"+id;
 const sleep = ms => new Promise(r=>setTimeout(r,ms));
 
+/* ARC grid and color rendering. A cell run is ≥3 single digit-or-dot cells
+   separated by 1-2 spaces, or ≥3 contiguous digits; a fenced block with two
+   such lines is a grid, and every digit in its runs gets its palette color.
+   An inline code span takes the spaced form only, so a bare number stays
+   plain; a span that is exactly one digit is a color swatch, as is the digit
+   of "color N" in prose. */
+const RUN_SP = /[0-9.](?: {1,2}[0-9.]){2,}/g;
+/* the contiguous form stands alone, so a task id or path digit is no cell */
+const RUN_ANY = /(?:[0-9.](?: {1,2}[0-9.]){2,})|(?<![\w./])[0-9]{3,}(?![\w./])/g;
+const COLOR_RE = /\b(colou?r )([0-9])\b/g;
+/* a grid citation: pair, side, then comma-separated places — points and
+   row/col ranges. Binds only when the places directly follow the side token. */
+const PLACE = String.raw`\(\s*\d+\s*,\s*\d+\s*\)|(?:rows?|cols?|columns?) ?\d+(?: ?[–-] ?\d+)?`;
+const CITE = new RegExp(String.raw`\b(train|test) ?(\d) (input|output) ((?:${PLACE})(?:,\s*(?:${PLACE}))*)`, "g");
+const hasDigit = s => /[0-9]/.test(s);
+function paintRuns(text, re){
+  re.lastIndex = 0;
+  let out = "", i = 0;
+  for(const m of text.matchAll(re)){
+    if(!hasDigit(m[0])) continue;
+    out += esc(text.slice(i, m.index))
+         + m[0].replace(/./g, c => c>="0"&&c<="9" ? `<span class="cw cw${c}">${c}</span>` : esc(c));
+    i = m.index + m[0].length;
+  }
+  return i ? out + esc(text.slice(i)) : null;
+}
+function colorized(html){
+  const t = document.createElement("template");
+  t.innerHTML = html;
+  for(const code of t.content.querySelectorAll("code")){
+    const text = code.textContent;
+    if(code.closest("pre")){
+      const rows = text.split("\n").filter(l => (l.match(RUN_ANY)||[]).some(hasDigit)).length;
+      if(rows < 2) continue;
+      const painted = paintRuns(text, RUN_ANY);
+      if(painted !== null) code.innerHTML = painted;
+    } else if(/^[0-9]$/.test(text)){
+      code.classList.add("cw", "cw"+text);
+    } else {
+      const painted = paintRuns(text, RUN_SP);
+      if(painted !== null) code.innerHTML = painted;
+    }
+  }
+  const tw = document.createTreeWalker(t.content, NodeFilter.SHOW_TEXT);
+  const hits = [];
+  for(let n; (n = tw.nextNode()); ){
+    if(!n.parentElement || n.parentElement.closest("code,pre")) continue;
+    const rep = proseHTML(n.nodeValue);
+    if(rep !== null) hits.push([n, rep]);
+  }
+  for(const [n, rep] of hits){
+    const frag = document.createElement("template");
+    frag.innerHTML = rep;
+    n.replaceWith(frag.content);
+  }
+  return t.innerHTML;
+}
+function swatched(text){
+  COLOR_RE.lastIndex = 0;
+  if(!COLOR_RE.test(text)) return null;
+  return esc(text).replace(COLOR_RE, (_, w, d) => `${w}<span class="cw cw${d}">${d}</span>`);
+}
+/* citation chips and color swatches in one prose text node; null when neither */
+function proseHTML(text){
+  CITE.lastIndex = 0;
+  let out = "", i = 0;
+  for(const m of text.matchAll(CITE)){
+    const pre = text.slice(i, m.index);
+    out += swatched(pre) ?? esc(pre);
+    out += `<span class="cite" data-pair="${m[1]+m[2]}" data-side="${m[3]}"`
+         + ` data-places="${esc(m[4])}">${esc(m[0])}</span>`;
+    i = m.index + m[0].length;
+  }
+  const tail = text.slice(i);
+  const sw = swatched(tail);
+  return i === 0 ? sw : out + (sw ?? esc(tail));
+}
+
 /* markdown is re-rendered on every tick otherwise; the text is the whole key */
 const mdCache = new Map();
 const mdOne = (typeof marked!=="undefined" && typeof DOMPurify!=="undefined")
-  ? (t => DOMPurify.sanitize(marked.parse(t, {breaks:true})))
+  ? (t => colorized(DOMPurify.sanitize(marked.parse(t, {breaks:true}))))
   : (t => "<p>"+esc(t).replace(/\n/g,"<br>")+"</p>");
 function md(text){
   let out = mdCache.get(text);
@@ -596,13 +696,52 @@ function StateChip({state, label}){
 }
 
 function cellPx(w,h){ const m=Math.max(w,h); return m<=10?16:m<=15?12:m<=22?9:7; }
-function Grid({g, label}){
+function Grid({g, label, places}){
   const w=g[0].length, h=g.length, px=cellPx(w,h);
   return html`<div class="gwrap">
     ${label && html`<div class="glabel">${label+" · "+h+"×"+w}</div>`}
     <div class="agrid" style=${{"--cell":px+"px", gridTemplateColumns:`repeat(${w},${px}px)`}}>
-      ${g.map((row,y)=>row.map((v,x)=>html`<div key=${y+":"+x} style=${{background:ARC[v]}}></div>`))}
+      ${g.map((row,y)=>row.map((v,x)=>html`<div key=${y+":"+x}
+        class=${places && covers(places,y,x) ? "hl" : null}
+        style=${{background:ARC[v]}}></div>`))}
     </div>
+  </div>`;
+}
+
+/* ---------- grid citations ---------- */
+/* A place from a chip's citation text: a point carries both axes; a rows or
+   cols spec carries one, and a cols spec directly after a rows-only place
+   intersects with it (the corpus's box form) instead of starting a band. */
+function parsePlaces(s){
+  const out=[];
+  for(const m of s.matchAll(/\(\s*(\d+)\s*,\s*(\d+)\s*\)|(rows?|cols?|columns?) ?(\d+)(?: ?[–-] ?(\d+))?/g)){
+    if(m[1]!==undefined){ out.push({r0:+m[1], r1:+m[1], c0:+m[2], c1:+m[2]}); continue; }
+    const a=+m[4], b=m[5]===undefined ? a : +m[5], prev=out[out.length-1];
+    if(m[3][0]==="r") out.push({r0:a, r1:b});
+    else if(prev && prev.c0===undefined){ prev.c0=a; prev.c1=b; }
+    else out.push({c0:a, c1:b});
+  }
+  return out;
+}
+const covers=(ps,r,c)=>ps.some(p=>
+  (p.r0===undefined || (r>=p.r0 && r<=p.r1)) &&
+  (p.c0===undefined || (c>=p.c0 && c<=p.c1)));
+
+function CitePop({cite, task, onClose}){
+  const m=/^(train|test)(\d)$/.exec(cite.pair);
+  const grid=(task && typeof task!=="string" && (task[m[1]]||[])[+m[2]] || {})[cite.side];
+  const places=useMemo(()=>parsePlaces(cite.places),[cite.places]);
+  const oob=grid ? places.filter(p=>(p.r0??0)>grid.length-1 || (p.c0??0)>grid[0].length-1) : [];
+  const style={left:Math.max(8, Math.min(cite.x, window.innerWidth-360))+"px",
+               top:Math.max(8, Math.min(cite.y+6, window.innerHeight-320))+"px"};
+  return html`<div id="citepop" style=${style}>
+    <div class="cphead">${cite.tid} · ${cite.pair} ${cite.side}
+      ${cite.pinned && html`<button class="cpx" onClick=${onClose}>×</button>`}</div>
+    ${!task || task==="pending" ? html`<div class="cpnote">loading…</div>`
+      : task==="missing" ? html`<div class="cpnote">no task data</div>`
+      : !grid ? html`<div class="cpnote">no ${cite.pair} ${cite.side} in this task</div>`
+      : html`<${Grid} g=${grid} places=${places}/>`}
+    ${oob.length>0 && html`<div class="cpnote">cited place outside the ${grid.length}×${grid[0].length} grid</div>`}
   </div>`;
 }
 
@@ -875,7 +1014,7 @@ function Feed({it, entries, feedKey, showRun, now}){
     ? html`<div class="tools" key=${b.key}>${b.tools.map((m,i)=>html`<${ToolLine} key=${i} m=${m}/>`)}</div>`
     : html`<${Entry} key=${b.key} m=${b.m}/>`), [entries]);
   return html`<div id="judge-scroll" ref=${box}>
-    <div id="feed">
+    <div id="feed" data-tid=${it.id}>
       ${rows}
       ${showRun
         ? html`<p class="placeholder"><span class="runpulse"></span>worker running${
@@ -1048,6 +1187,7 @@ function App(){
   const [presetId,setPresetId]=useState("");
   const [autoMode,setAutoMode]=useState("manual");
   const [waveBusy,setWaveBusy]=useState(false);
+  const [cite,setCite]=useState(null);  // hovered/pinned grid citation
 
   toastSet = setToastState;
 
@@ -1090,6 +1230,38 @@ function App(){
       setBacklog(d.items||[]);
     } catch(e){}
   },[]);
+
+  /* ---- grid citations: hover shows, click pins, esc or click-away closes.
+     Chips are static spans out of md(), so one delegated set of listeners
+     serves every feed render; the task id rides on the feed container. ---- */
+  useEffect(()=>{
+    const at=e=>{
+      const chip=e.target.closest(".cite"), scope=chip && chip.closest("[data-tid]");
+      if(!scope) return null;
+      const r=chip.getBoundingClientRect();
+      return {tid:scope.dataset.tid, pair:chip.dataset.pair, side:chip.dataset.side,
+              places:chip.dataset.places, x:r.left, y:r.bottom};
+    };
+    const over=e=>{
+      const c=at(e);
+      if(c){ ensureTask(c.tid); setCite(p=>p && p.pinned ? p : c); }
+      else if(!e.target.closest("#citepop")) setCite(p=>p && !p.pinned ? null : p);
+    };
+    const click=e=>{
+      const c=at(e);
+      if(c){ ensureTask(c.tid); setCite({...c, pinned:true}); }
+      else if(!e.target.closest("#citepop")) setCite(null);
+    };
+    const key=e=>{ if(e.key==="Escape") setCite(null); };
+    document.addEventListener("mouseover",over);
+    document.addEventListener("click",click);
+    document.addEventListener("keydown",key);
+    return ()=>{
+      document.removeEventListener("mouseover",over);
+      document.removeEventListener("click",click);
+      document.removeEventListener("keydown",key);
+    };
+  },[ensureTask]);
 
   /* ---- selection ---- */
   const railOrder=useMemo(()=>
@@ -1504,6 +1676,8 @@ function App(){
       <span><b>u</b> unapprove</span><span><b>c</b> comment</span><span><b>⏎</b> send</span><span><b>⇧⏎</b> newline</span>
       <span><b>s</b> session</span><span><b>t</b> task</span><span><b>v</b> lens</span><span><b>o</b> copy resume</span><span><b>esc</b> blur</span>
     </div>
+    ${cite && html`<${CitePop} cite=${cite} task=${taskCache.current[cite.tid]}
+      onClose=${()=>setCite(null)}/>`}
     <div id="toast" role="status" class=${toastState.show?"show":""}>${toastState.msg}</div>`;
 }
 
