@@ -4,6 +4,8 @@ How a `.dl` solver file looks.
 
 `programs/lib.dl` defines shared types and primitives — self-explanatory.
 
+A banned form that seems necessary is a missing lib concept: it enters as a proposal, through the addition protocol, never bare in the solver.
+
 ## Variables
 
 - Single letter (with optional digit suffix): `P`, `T`, `B`, `L`, `R`, `K`, `D`, `A`, `N`, `G`, `H`, `W`, `T1`, `C2`, etc.
@@ -36,6 +38,7 @@ When a decomposition's inner coordinate is also the output cell, name it by the 
 - `.comp Consts { ... }` declares task-wide data; `.init c = Consts` exposes it as `c.<rel>`.
 - Inside Consts, `.init helpers = ConstsHelpers` makes shared helpers (`frame_pos`, `tile_pos`) available as `helpers.<rel>(...)` in data declarations. The body has no access.
 - All task-wide data lives in Consts, e.g. orientation (Dirs, Axes), dimensions, gaps, mappings, frame data.
+- A task with no task-wide data keeps the comp empty — `.comp Consts {}`, the `.init` unchanged.
 - A rule inside Consts derives from fact slots; a datum never sits as a literal in a rule body. A literal 1 stating a unit — a single row, one cell wide — stays in the rule, under an `// @unit: <what the 1 states>` comment on the rule's line; the affordance is Consts-only — the linter flags a body literal regardless of `@unit`. A derived relation carries no Fit relation.
 - A datum lives in a shared slot when more than one case reads it and every task those cases both fit fills it the same under each; a fill some such task pulls apart is per-case data.
 - A single-fact data declaration puts the fact on the decl line, one space after it. A multi-fact declaration puts the facts on the next line at the decl's indent. Facts are not column-aligned across a block.
@@ -98,15 +101,15 @@ Cases are grouped under `// --- <name> ---` markers in both Consts and body — 
 
 ## Types
 
-A solver defines only two kinds of types: ADTs inside `Choice` (the type itself, a factor, or a constructor field), and records that fill a generic comp's type params.
+A solver defines only two kinds of types: ADTs inside `Choice` (the type itself, a factor, or a constructor field), and records that fill a generic comp's type params. Banned: any other type.
 
 ## Body
 
-- No literals: orientation (`DIR_T`, `DIR_L`, `AXIS_V`, etc.), colors, or non-zero task-shape numbers (lengths, offsets, gaps). The body reads them from Consts via `c.<rel>(...)` and parameterizes. Hardcoded values fix the body to one task in the family; values read from Consts keep it symmetric across the family.
+- Banned: literals — orientation (`DIR_T`, `DIR_L`, `AXIS_V`, etc.), colors, or non-zero task-shape numbers (lengths, offsets, gaps). The body reads them from Consts via `c.<rel>(...)` and parameterizes. Hardcoded values fix the body to one task in the family; values read from Consts keep it symmetric across the family.
     - Literals are fine inside a proposal comp only: lib code waiting on its entry in `docs/wf-solver/proposals/`, which leaves the solver with that entry, to lib or to nothing. The linter skips every comp except `Fit` and `Parse`, so it cannot tell a proposal comp from a comp with no entry; the entry is what makes the comp legitimate.
-- No Position destructure. Use lib primitives instead. Position is opaque; destructuring hardcodes edge indices and breaks orientation invariance.
-- Avoid arithmetic and raw aggregates. When they seem necessary, the lib needs a new primitive. Create that instead of writing them in the solver body.
-- No `range`. It generates a number sequence; the body reads positions and extents through lib primitives.
+- Banned: Position destructure. Use lib primitives instead. Position is opaque; destructuring hardcodes edge indices and breaks orientation invariance.
+- Banned: arithmetic and raw aggregates.
+- Banned: `range`. It generates a number sequence; the body reads positions and extents through lib primitives.
 - Complement tests negate the named case: `!c.bg(Col)` for non-bg.
 - Write off-edge tests as `dist(P, D, K), K != 0`, not `K > 0`: the zero case is excluded by identity, not by order. `!dist(P, D, 0)` is unavailable: Souffle cannot negate an inline relation whose clause introduces variables.
 - A comparison of a distance against a bound is body form, not arithmetic: `dist(P, D, K), K < N` states the cells within N of edge D, and needs no primitive.
