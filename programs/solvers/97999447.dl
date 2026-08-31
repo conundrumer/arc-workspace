@@ -76,17 +76,15 @@ out(P, Col, $Mask()) :- in(P, Col), !ray_mask(_, P, _).
 
 // --- fit ---
 
-.type MarkKey = [e: Example, p: Position]
-
 .comp Fit {
     // Dots of the train inputs; the ex_out atom holds the test input out.
-    .decl fmark(k: MarkKey, col: Color)
-    fmark([E, P], Col) :- ex_in(E, P, Col), !c.bg(Col), ex_out(E, _, _).
+    .decl fmark(e: Example, p: Position, col: Color)
+    fmark(E, P, Col) :- ex_in(E, P, Col), !c.bg(Col), ex_out(E, _, _).
 
     // The color the pair paints i steps along a dot's ray.
-    .decl ray_col(k: MarkKey, i: number, col: Color)
-    ray_col([E, M], I, Col) :-
-        fmark([E, M], _), ex_in(E, Q, _),
+    .decl ray_col(e: Example, m: Position, i: number, col: Color)
+    ray_col(E, M, I, Col) :-
+        fmark(E, M, _), ex_in(E, Q, _),
         displacement(M, Q, Delta),                          // a cell relative to its dot
         c.ray_dir(D), opposite(D, O), dist(Delta, O, I),    // steps toward ray_dir
         I >= 0, jump_delta(D, I, Delta),                    // straight along the ray
@@ -94,11 +92,11 @@ out(P, Col, $Mask()) :- in(P, Col), !ray_mask(_, P, _).
 
     // Two steps of one ray that carry different colors — never one slot.
     .decl differ(i: number, i2: number)
-    differ(I, I2) :- ray_col(Ky, I, Col), ray_col(Ky, I2, Col2), Col != Col2.
+    differ(I, I2) :- ray_col(E, M, I, Col), ray_col(E, M, I2, Col2), Col != Col2.
 
     // Candidate periods: the step counts the rays reach.
     .decl cand(w: number)
-    cand(W) :- ray_col(_, W, _), W != 0.
+    cand(W) :- ray_col(_, _, W, _), W != 0.
 
     // A period that folds two differing steps onto one slot.
     .decl mismatch(w: number)
@@ -112,11 +110,11 @@ out(P, Col, $Mask()) :- in(P, Col), !ray_mask(_, P, _).
     period(N) :- unbroken.low($U(), N).
 
     .decl slot(k: number)
-    slot(K) :- ray_col(_, K, _), period(N), K < N.
+    slot(K) :- ray_col(_, _, K, _), period(N), K < N.
 
     // A step that does not echo its dot, folded into its slot.
     .decl mask(k: number, col: Color)
     mask(K, Col) :-
-        ray_col(Ky, I, Col), fmark(Ky, Mc), Col != Mc,
+        ray_col(E, M, I, Col), fmark(E, M, Mc), Col != Mc,
         period(N), stride(I, N, 0, _, K).
 }

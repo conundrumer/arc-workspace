@@ -13,8 +13,6 @@
 
 #include "../lib.dl"
 
-.type Gen = [d: D4, delta: Shift]
-
 .comp Consts {
     .decl hole(col: Color) hole(0).
 
@@ -90,24 +88,25 @@
     rot_cell(Key, D, P, V, P1) :- cell(Key, P, V), kind(D), apply(D, P, P1).
 
     // Valued cell pairs under each candidate isometry.
-    .decl pair(key: Key, g: Gen, p: Position, q: Position, v1: Val, v2: Val)
-    pair(Key, [D, Delta], P, Q, V1, V2) :-
+    .decl pair(key: Key, d: D4, delta: Shift, p: Position, q: Position,
+               v1: Val, v2: Val)
+    pair(Key, D, Delta, P, Q, V1, V2) :-
         rot_cell(Key, D, P, V1, P1), cand(Key, D, Delta),
         compose(P1, Delta, Q), cell(Key, Q, V2).
 
-    .decl mismatch(key: Key, g: Gen)
-    mismatch(Key, G) :- pair(Key, G, _, _, V1, V2), V1 != V2.
+    .decl mismatch(key: Key, d: D4, delta: Shift)
+    mismatch(Key, D, Delta) :- pair(Key, D, Delta, _, _, V1, V2), V1 != V2.
 
-    .decl witnessed(key: Key, g: Gen)
-    witnessed(Key, G) :- pair(Key, G, P, Q, _, _), P != Q.
+    .decl witnessed(key: Key, d: D4, delta: Shift)
+    witnessed(Key, D, Delta) :- pair(Key, D, Delta, P, Q, _, _), P != Q.
 
-    .decl sym(key: Key, g: Gen)
-    sym(Key, G) :- witnessed(Key, G), !mismatch(Key, G).
+    .decl sym(key: Key, d: D4, delta: Shift)
+    sym(Key, D, Delta) :- witnessed(Key, D, Delta), !mismatch(Key, D, Delta).
 
     // Kinds the key's pattern uses: kinds with an admitted representative;
     // the identity kind is used by any pattern with a lattice.
     .decl kind_used(key: Key, d: D4)
-    kind_used(Key, D) :- sym(Key, [D, _]).
+    kind_used(Key, D) :- sym(Key, D, _).
     kind_used(Key, D4_ID) :- period(Key, _, _).
 
     // One step along an admitted isometry or a lattice shift, over the
@@ -117,7 +116,7 @@
 
     .decl step(key: Key, p: Position, q: Position)
     step(Key, P, Q) :-
-        sym(Key, [D, Delta]), rot_grid(Key, D, P, P1),
+        sym(Key, D, Delta), rot_grid(Key, D, P, P1),
         compose(P1, Delta, Q), grid(Key, Q).
     step(Key, P, Q) :-
         period(Key, A, K), axis_of(D, A), jump_delta(D, K, Delta),

@@ -16,9 +16,6 @@
 
 .type Choice = Toward {} | Jog {}
 
-// A leg of the path: the cell it starts at and the direction it runs.
-.type Leg = [p: Position, d: Dir]
-
 .comp Consts {
     .decl bg(col: Color) bg(0).
     .decl source(col: Color) source(3).
@@ -39,9 +36,10 @@ stub_dir(Col, P, D) :-
     in(P, Col), in(P2, Col), P != P2,     // the stub's two cells
     axis_of(D, A), same_line(A, P, P2).   // the line they share
 
-// The path leaves the source stub along the stub's own line.
-.decl leg_start(n: Leg)
-leg_start([P, D]) :- c.source(Col), stub_dir(Col, P, D).
+// A leg is a cell the path runs from and the direction it runs. The path
+// leaves the source stub along the stub's own line.
+.decl leg_start(p: Position, d: Dir)
+leg_start(P, D) :- c.source(Col), stub_dir(Col, P, D).
 
 // A walker crosses the grid and halts before any occupied cell: a wall, a
 // stub, or the target.
@@ -69,21 +67,21 @@ run(A, D, P) :- leg.clear($U(), P, D, _, A), dir_elem(D).
 
 // The path turns onto the next leg where a run halts short of the target.
 // A walker that cannot take its first step does not turn.
-.decl leg_edge(a: Leg, b: Leg)
-leg_edge([A, D], [E, D2]) :-
+.decl leg_edge(a: Position, d: Dir, a2: Position, d2: Dir)
+leg_edge(A, D, E, D2) :-
     run(A, D, E), E != A,           // ran
     !way(E, D), !at_target(E, D),   // halted, and not arrived
     perp_dir(D, D2).                // the quarter turn
 
 // A run that halts with the target one step on is a last leg.
-.decl leg_goal(n: Leg)
-leg_goal([A, D]) :- run(A, D, E), at_target(E, D).
+.decl leg_goal(p: Position, d: Dir)
+leg_goal(A, D) :- run(A, D, E), at_target(E, D).
 
 // The legs the drawn path is made of.
-.decl on_path(n: Leg, ch: Choice)
+.decl on_path(p: Position, d: Dir, ch: Choice)
 
 .decl path_cell(p: Position, ch: Choice)
-path_cell(P, Ch) :- on_path([A, D], Ch), run(A, D, P).
+path_cell(P, Ch) :- on_path(A, D, Ch), run(A, D, P).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- path_cell(P, Ch), c.source(Col).
@@ -98,25 +96,26 @@ target_side(P, D) :-
     c.target(Col), in(T, Col), dist(T, D, K2), K2 < K.
 
 // The turn the walker takes: toward the target's side.
-.decl toward_edge(a: Leg, b: Leg)
-toward_edge(N, [E, D2]) :- leg_edge(N, [E, D2]), target_side(E, D2).
+.decl toward_edge(a: Position, d: Dir, a2: Position, d2: Dir)
+toward_edge(A, D, E, D2) :- leg_edge(A, D, E, D2), target_side(E, D2).
 
 // The legs the walker reaches from the source.
-.decl toward_reach(n: Leg)
-toward_reach(N) :- leg_start(N).
-toward_reach(N2) :- toward_reach(N), toward_edge(N, N2).
+.decl toward_reach(p: Position, d: Dir)
+toward_reach(A, D) :- leg_start(A, D).
+toward_reach(A2, D2) :- toward_reach(A, D), toward_edge(A, D, A2, D2).
 
 // The legs whose walk goes on to arrive.
-.decl toward_arrives(n: Leg)
-toward_arrives(N) :- leg_goal(N).
-toward_arrives(N) :- toward_edge(N, N2), toward_arrives(N2).
+.decl toward_arrives(p: Position, d: Dir)
+toward_arrives(A, D) :- leg_goal(A, D).
+toward_arrives(A, D) :- toward_edge(A, D, A2, D2), toward_arrives(A2, D2).
 
-on_path(N, $Toward()) :- toward_reach(N), toward_arrives(N).
+on_path(A, D, $Toward()) :- toward_reach(A, D), toward_arrives(A, D).
 
 // --- Jog ---
 
-on_path(N, $Jog()) :-
-    leg_start(N1), leg_edge(N1, N2), leg_edge(N2, N3),   // out, link, in
-    leg_goal(N3), N3 = [_, D],                           // halts at the target
-    c.target(Col), stub_dir(Col, _, D),                  // along the target's line
-    ( N = N1 ; N = N2 ; N = N3 ).
+on_path(A, D, $Jog()) :-
+    leg_start(A1, D1),                                        // out
+    leg_edge(A1, D1, A2, D2), leg_edge(A2, D2, A3, D3),       // link, in
+    leg_goal(A3, D3),                                         // halts at the target
+    c.target(Col), stub_dir(Col, _, D3),                      // along the target's line
+    ( A = A1, D = D1 ; A = A2, D = D2 ; A = A3, D = D3 ).

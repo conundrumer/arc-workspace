@@ -140,38 +140,36 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !lit(P, _, Ch), c.bg(Col).
 
 // --- fit ---
 
-.type MarkKey = [e: Example, p: Position]
-
 .comp Fit {
     // Markers of the train inputs; the ex_out atom holds the test input out.
-    .decl fmark(k: MarkKey, col: Color)
-    fmark([E, P], Col) :- ex_in(E, P, Col), !c.bg(Col), ex_out(E, _, _).
+    .decl fmark(e: Example, p: Position, col: Color)
+    fmark(E, P, Col) :- ex_in(E, P, Col), !c.bg(Col), ex_out(E, _, _).
 
     // Each cell the pair paints in a marker's color, as an offset from it.
-    .decl offset(k: MarkKey, delta: Shift)
-    offset([E, P], Delta) :-
-        fmark([E, P], Col), ex_out(E, Q, Col), displacement(P, Q, Delta).
+    .decl offset(e: Example, p: Position, delta: Shift)
+    offset(E, P, Delta) :-
+        fmark(E, P, Col), ex_out(E, Q, Col), displacement(P, Q, Delta).
 
     // An edge some marker sits off.
     .decl off_edge(d: Dir)
-    off_edge(D) :- fmark([_, P], _), dir_elem(D), dist(P, D, K), K != 0.
+    off_edge(D) :- fmark(_, P, _), dir_elem(D), dist(P, D, K), K != 0.
 
     .decl dir(d: Dir)
     dir(D) :- dir_elem(D), !off_edge(D).
 
-    .decl radius(k: MarkKey, i: number, r: number)
-    radius(Ky, I, R) :-
-        offset(Ky, Delta),
-        c.dir(E), dist(Delta, E, I),                  // steps away from the marker edge
-        perp_dir(E, Ds), dist(Delta, Ds, R), R >= 0.  // steps to a side
+    .decl radius(e: Example, p: Position, i: number, r: number)
+    radius(E, P, I, R) :-
+        offset(E, P, Delta),
+        c.dir(D), dist(Delta, D, I),                  // steps away from the marker edge
+        perp_dir(D, Ds), dist(Delta, Ds, R), R >= 0.  // steps to a side
 
     // Two steps of one trail whose lit radii differ — never one slot.
     .decl differ(i: number, i2: number)
-    differ(I, I2) :- radius(Ky, I, R), radius(Ky, I2, _), !radius(Ky, I2, R).
+    differ(I, I2) :- radius(E, P, I, R), radius(E, P, I2, _), !radius(E, P, I2, R).
 
     // Candidate periods: the step counts the trails reach.
     .decl cand(w: number)
-    cand(W) :- radius(_, W, _), W != 0.
+    cand(W) :- radius(_, _, W, _), W != 0.
 
     .decl mismatch(w: number)
     mismatch(W) :- cand(W), differ(I, I2), stride(I, W, 0, _, K), stride(I2, W, 0, _, K).
@@ -184,14 +182,14 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !lit(P, _, Ch), c.bg(Col).
     period(N) :- unbroken.low($U(), N).
 
     .decl slot(k: number)
-    slot(K) :- radius(_, K, _), period(N), K < N.
+    slot(K) :- radius(_, _, K, _), period(N), K < N.
 
     .decl banner(k: number, r: number)
-    banner(K, R) :- radius(_, I, R), period(N), stride(I, N, 0, _, K).
+    banner(K, R) :- radius(_, _, I, R), period(N), stride(I, N, 0, _, K).
 
     // The trail in the frame it spans, with the marker at the zero offset.
     .init tframe = BoxFrame<Unit>
-    tframe.cell($U(), Delta) :- offset(_, Delta).
+    tframe.cell($U(), Delta) :- offset(_, _, Delta).
 
     .decl dot(p: Position)
     dot(P) :- tframe.inner($U(), ORIGIN, P).
