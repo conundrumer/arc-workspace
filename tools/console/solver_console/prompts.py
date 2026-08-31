@@ -64,36 +64,41 @@ def worker_agents(append: str) -> str | None:
 # beyond the appendix; only the tail after it diverges.
 
 # After a report lands, the stage gets one more turn for the callouts, so
-# ranking them is its own task instead of the tail of a long pass. The rates
-# feed the brief as ranking signal; each description pins its kind to what
-# the measurement bucketed, so an entry matches on the description, not the
-# label. Each rate is picked/raised counts over sampled comment pairs.
-# Recalibrate by re-measuring engagement over newer transcripts and
-# replacing the counts wholesale.
+# ranking them is its own task instead of the tail of a long pass. Each row
+# holds picked/raised counts over sampled comment pairs, split into an old
+# and a new era at 2026-08-26T01:00Z; the render blends the eras with
+# CALLOUT_RECENT_WEIGHT and cuts the P1-P3 bands at the *_MIN rates. Each
+# description pins its kind to what the measurement bucketed, so an entry
+# matches on the description, not the label. The pipeline in
+# tools/console/recal/ re-measures the counts from a checkpoint.
+CALLOUT_RECENT_WEIGHT = 3  # weight of a new-era pair relative to an old-era one
+CALLOUT_P1_MIN = 75  # weighted rate (percent) at or above this bands P1
+CALLOUT_P2_MIN = 45  # same for P2; below it bands P3
+
 CALLOUT_RATES = [
-    ("lib candidates and proposal comps", 54, 72,
+    ("lib candidates and proposal comps", 42, 60, 83, 108,
      "a solver-local form proposed for programs/lib.dl or docs/wf-solver/proposals/, with the protocol's recommendation"),
-    ("doc gaps", 14, 24,
+    ("doc gaps", 48, 65, 202, 289,
      "a docs/wf-solver rule that is missing, wrong, or misleading, with the edit it needs"),
-    ("simplification", 20, 37,
-     "redundancy or awkward reading in the shipped solver, such as a relation with one consumer or a line that misleads"),
-    ("naming and vocabulary", 16, 31,
+    ("naming and vocabulary", 18, 32, 38, 72,
      "a name with shared scope — a lib comp, a type, doc wording, a proposals entry; a name local to one solver is not this kind"),
-    ("correctness risk", 8, 16,
-     "a defect, or an implicit assumption the solver leans on, such as a property every input happens to satisfy"),
-    ("lint and tooling", 5, 13,
+    ("lint and tooling", 11, 22, 29, 55,
      "an improvement or a defense of the linter, run budgets, timing, or index tooling; a broken tool is P0, not this kind"),
-    ("alt models", 32, 88,
-     "a rival model dispatched: killed by data, an alt impl with the same outputs, or dropped as not worth building"),
-    ("unwitnessed edges", 6, 26,
+    ("simplification", 22, 37, 24, 62,
+     "redundancy or awkward reading in the shipped solver, such as a relation with one consumer or a line that misleads"),
+    ("unwitnessed edges", 12, 35, 10, 32,
      "a divergence between models that no pair in the task exhibits, stated with the constructed witness that would separate them"),
-    ("hedges", 5, 32,
+    ("correctness risk", 13, 31, 18, 60,
+     "a defect, or an implicit assumption the solver leans on, such as a property every input happens to satisfy"),
+    ("alt models", 17, 70, 20, 73,
+     "a rival model dispatched: killed by data, an alt impl with the same outputs, or dropped as not worth building"),
+    ("hedges", 3, 26, 8, 80,
      "a trailing qualification on a settled call, not a discrete open item"),
 ]
 
 CALLOUT_BRIEF = """Your report is in. Now step back from the pass and write the callouts: entries deserving the user's attention — judgment calls you could not settle, calls you made that only the user can ratify, and anything else they should see.
 
-Rank each entry P1-P3 by how likely the user is to engage it. Engagement rates by kind, as signal, not verdict. Each description bounds what its rate measured; match an entry on the description, not the label, and rank an entry outside every description on your own judgment:
+Rank each entry P1-P3 by kind: match the entry against a description below and take that kind's band. Match on the description, not the label; an entry outside every description ranks on your own judgment. The rate is how often the user engages the kind when a report raises it:
 {rates}
 
 P0 stands apart from that scale: use it only for a clear mechanical problem with the tooling — the runner, the linter, or the audit crashing, giving a wrong result, or lacking something the cadence needed. A P0 jumps the triage queue, so a judgment call never carries it.
@@ -102,10 +107,14 @@ Reply with only a `## Callouts` section: a numbered list, each entry one or two 
 
 
 def callout_brief() -> str:
-    rates = "\n".join(
-        f"- {kind} {picked / raised:.0%}: {desc}"
-        for kind, picked, raised, desc in CALLOUT_RATES
-    )
+    w = CALLOUT_RECENT_WEIGHT
+    lines = []
+    for kind, po, ro, pn, rn, desc in CALLOUT_RATES:
+        rate = (po + w * pn) / (ro + w * rn)
+        pct = round(rate * 100)
+        band = 1 if pct >= CALLOUT_P1_MIN else 2 if pct >= CALLOUT_P2_MIN else 3
+        lines.append((rate, f"- P{band} · {kind} {pct}%: {desc}"))
+    rates = "\n".join(line for _, line in sorted(lines, reverse=True))
     return CALLOUT_BRIEF.format(rates=rates)
 
 

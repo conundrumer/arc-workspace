@@ -1,0 +1,9080 @@
+[
+ {
+  "key": "?:57781cf8b81a",
+  "task": "?",
+  "ts": "2026-05-10T20:43:44.880Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "alt_models"
+  ],
+  "picked_kinds": [
+   "alt_models"
+  ],
+  "note": "process probe about reading task data, not in revision",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:8ba1de730fac",
+  "task": "?",
+  "ts": "2026-05-10T21:42:08.066Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "hedges",
+   "hedges"
+  ],
+  "picked_kinds": [],
+  "note": "asks for doc work on models vs impls, unraised",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:42d989b29e34",
+  "task": "?",
+  "ts": "2026-05-10T22:05:07.993Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "other"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "other"
+  ],
+  "note": "approves the proposal plan, tightens its scope",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:50102323fa1a",
+  "task": "?",
+  "ts": "2026-05-11T15:32:08.663Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "correctness_risk",
+   "alt_models",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "quotes 36-entry table, rules against enumerating",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:b4133cdd52aa",
+  "task": "?",
+  "ts": "2026-05-11T15:49:55.947Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "simplification",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [],
+  "note": "proposes a lib diag_dir encoding the revision never raised",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:dcb1b58cd945",
+  "task": "?",
+  "ts": "2026-05-11T21:59:33.446Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "correctness_risk",
+   "naming_vocab"
+  ],
+  "picked_kinds": [],
+  "note": "orders three models the revision never mentioned",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:b22eb015ba59",
+  "task": "?",
+  "ts": "2026-05-11T22:25:39.180Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "note": "recalls a prior reread instruction the chain never mentions",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:6044d221c344",
+  "task": "?",
+  "ts": "2026-05-17T14:37:19.579Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "simplification"
+  ],
+  "picked_kinds": [
+   "simplification"
+  ],
+  "note": "quotes the line-length and no-issues items, asks coverage",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:ae72131e387b",
+  "task": "?",
+  "ts": "2026-05-17T15:22:31.793Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "hedges"
+  ],
+  "picked_kinds": [],
+  "note": "raises header ids, a prior solver, ConcatPipeline; sweep raised none",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:69d4ba1f7a0a",
+  "task": "?",
+  "ts": "2026-05-17T19:31:10.869Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "pastes kernel panic; message raised nothing",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:1cfc0224380e",
+  "task": "?",
+  "ts": "2026-05-17T19:43:40.510Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "lint_tooling",
+   "other",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "asks difficulty of the verification the message planned",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:979771502506",
+  "task": "?",
+  "ts": "2026-05-17T19:43:51.971Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "lint_tooling",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "asks how to verify the hypothesis the message tests",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:39aadc5f740d",
+  "task": "?",
+  "ts": "2026-05-18T01:23:34.486Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "lib_candidates",
+   "lib_candidates",
+   "alt_models",
+   "alt_models"
+  ],
+  "picked_kinds": [
+   "lib_candidates"
+  ],
+  "note": "vetoes option 1 and demands a new docstring clause",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:b43d311391ce",
+  "task": "?",
+  "ts": "2026-05-18T01:43:10.994Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "lint_tooling"
+  ],
+  "picked_kinds": [],
+  "note": "demands Revision Loop, a step the review never mentioned",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:78c557f6538c",
+  "task": "?",
+  "ts": "2026-05-18T12:08:54.409Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "alt_models"
+  ],
+  "picked_kinds": [
+   "alt_models"
+  ],
+  "note": "orders new prevention investigation the message never proposed",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:1df90ed130ba",
+  "task": "?",
+  "ts": "2026-05-27T17:51:26.319Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "other",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "other",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "note": "rules item by item on the drain list, drops 2",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:2780acf0b908",
+  "task": "?",
+  "ts": "2026-05-27T18:49:51.789Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "drain command after a bare Done",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:49e13e2d6200",
+  "task": "?",
+  "ts": "2026-05-27T19:21:47.305Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "other",
+   "naming_vocab",
+   "other"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "other",
+   "naming_vocab",
+   "other"
+  ],
+  "note": "rules item by item on all six log entries",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:da9ccb0264c7",
+  "task": "?",
+  "ts": "2026-05-27T19:56:00.354Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "lib_candidates",
+   "doc_gaps",
+   "other",
+   "other",
+   "lib_candidates",
+   "lint_tooling",
+   "other",
+   "other",
+   "other",
+   "other",
+   "other",
+   "other",
+   "other",
+   "other",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "lib_candidates",
+   "doc_gaps",
+   "other",
+   "other",
+   "lib_candidates",
+   "lint_tooling",
+   "other",
+   "other",
+   "other",
+   "other",
+   "other",
+   "other",
+   "other",
+   "other",
+   "other",
+   "other"
+  ],
+  "note": "rules on log rows 16, 17, 9-11 and the rest",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:bcb902ea02ec",
+  "task": "?",
+  "ts": "2026-05-27T19:58:30.707Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "demands direct answering; message raised no discrete items",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:dc03c86adecd",
+  "task": "?",
+  "ts": "2026-05-28T20:24:47.351Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "other",
+   "other"
+  ],
+  "note": "numbered replies to both sections of the trace",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:609b2db26b7a",
+  "task": "?",
+  "ts": "2026-05-28T20:32:57.289Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other"
+  ],
+  "picked_kinds": [],
+  "note": "vetoes the message's done claim, ignores pacing options",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:ee47829a0fc6",
+  "task": "?",
+  "ts": "2026-05-28T21:49:36.139Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "probes the matched vs exact_matched split just explained",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:ec56499a6c83",
+  "task": "?",
+  "ts": "2026-05-28T22:00:47.871Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "naming_vocab",
+   "naming_vocab"
+  ],
+  "picked_kinds": [
+   "naming_vocab",
+   "naming_vocab"
+  ],
+  "note": "rules on SetKeyMatch and on matched_size drop",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:7f0e089c8782",
+  "task": "?",
+  "ts": "2026-05-28T23:15:08.381Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "other",
+   "naming_vocab"
+  ],
+  "picked_kinds": [
+   "other",
+   "naming_vocab"
+  ],
+  "note": "quotes two of the three open items back",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:862bef68dfe1",
+  "task": "?",
+  "ts": "2026-05-29T13:27:17.513Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates",
+   "naming_vocab",
+   "other",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "lib_candidates",
+   "other",
+   "hedges"
+  ],
+  "note": "rules on the protocol note and option (b)'s A1 != A2",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:e37cb39dd2a8",
+  "task": "?",
+  "ts": "2026-05-29T13:35:47.085Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "simplification",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "lib_candidates",
+   "lib_candidates"
+  ],
+  "note": "vetoes corner_dirs, approves the proposal draft",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:2c76af80a777",
+  "task": "?",
+  "ts": "2026-05-29T14:16:09.928Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "lib_candidates",
+   "lib_candidates",
+   "other"
+  ],
+  "picked_kinds": [
+   "lib_candidates",
+   "lib_candidates"
+  ],
+  "note": "new simplification probe framed on the flagged lib primitives",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:ea522e3963e7",
+  "task": "?",
+  "ts": "2026-05-29T14:31:00.547Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "alt_models"
+  ],
+  "picked_kinds": [],
+  "note": "asks why TOP_LEFT seed, never justified in message",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:f90e12e8bcbe",
+  "task": "?",
+  "ts": "2026-05-29T20:49:19.230Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "other"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "corrects the dispatch wording the message quoted",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:5275d4f484e6",
+  "task": "?",
+  "ts": "2026-05-29T20:58:28.843Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "rejects the prune result just shown",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:2bc52168fdc8",
+  "task": "?",
+  "ts": "2026-05-29T21:17:49.020Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "other",
+   "hedges"
+  ],
+  "picked_kinds": [],
+  "note": "asks origin of gauge, a term the message never used",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:bd11bb1e0086",
+  "task": "?",
+  "ts": "2026-05-29T21:43:29.581Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "naming_vocab",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "quotes the levels claim, disputes it, drops the rest",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:5569cd589fd1",
+  "task": "?",
+  "ts": "2026-05-29T21:49:19.098Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates",
+   "alt_models",
+   "naming_vocab"
+  ],
+  "picked_kinds": [
+   "lib_candidates",
+   "naming_vocab"
+  ],
+  "note": "quotes two phrases of the proposed component",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:4a1f9b07b946",
+  "task": "?",
+  "ts": "2026-05-29T22:27:34.935Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "unwitnessed_edges",
+   "lib_candidates",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "asks what positions the described block_shape yields",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:55fe7e33d4d6",
+  "task": "?",
+  "ts": "2026-05-30T00:25:53.100Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "other",
+   "other"
+  ],
+  "note": "corrects the message's reading of translate",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:f1c4d1c1c72d",
+  "task": "?",
+  "ts": "2026-05-30T01:06:59.944Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "correctness_risk",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "correctness_risk"
+  ],
+  "note": "disputes the Lookup table's count-0 row the message justified",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:d0188a8bca1d",
+  "task": "?",
+  "ts": "2026-05-30T02:58:59.727Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "rules on the pruned bullet just shown",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:9b854a505c38",
+  "task": "?",
+  "ts": "2026-05-30T12:43:34.891Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "other"
+  ],
+  "picked_kinds": [],
+  "note": "switches to new update and next task",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:bfa729ffc718",
+  "task": "?",
+  "ts": "2026-05-30T12:49:48.876Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "other",
+   "other"
+  ],
+  "note": "orders both listed alt models implemented",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:517621f3ccbd",
+  "task": "?",
+  "ts": "2026-05-30T18:24:06.192Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "correctness_risk",
+   "other"
+  ],
+  "picked_kinds": [
+   "correctness_risk",
+   "other"
+  ],
+  "note": "takes the per-axis fix and adds a new stride-2d lib idea",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:8a1d8ec68ea8",
+  "task": "?",
+  "ts": "2026-05-30T18:26:08.866Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "correctness_risk",
+   "lib_candidates",
+   "correctness_risk"
+  ],
+  "picked_kinds": [
+   "correctness_risk"
+  ],
+  "note": "orders the axis-keyed run fix by name",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:b8c0377a2254",
+  "task": "?",
+  "ts": "2026-05-30T18:40:17.538Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "lib_candidates",
+   "naming_vocab",
+   "simplification"
+  ],
+  "picked_kinds": [
+   "lib_candidates",
+   "naming_vocab",
+   "simplification"
+  ],
+  "note": "naming probe; message asked only whether to start step 1",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:e58080d849e6",
+  "task": "?",
+  "ts": "2026-05-30T20:43:29.681Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "simplification",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "simplification"
+  ],
+  "note": "asks why the kept truncate comment survived",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:7fc577039c52",
+  "task": "?",
+  "ts": "2026-05-30T20:58:26.727Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "simplification",
+   "simplification",
+   "other",
+   "alt_models"
+  ],
+  "picked_kinds": [
+   "simplification",
+   "alt_models"
+  ],
+  "note": "picks option C over the recommended A",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:4b0fcb66d1fd",
+  "task": "?",
+  "ts": "2026-05-30T21:21:42.673Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates",
+   "alt_models"
+  ],
+  "picked_kinds": [
+   "alt_models"
+  ],
+  "note": "disputes the one-loop argument dispatching the cycle form",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:4f581376a2a1",
+  "task": "?",
+  "ts": "2026-07-05T19:41:03.174Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lint_tooling",
+   "lint_tooling"
+  ],
+  "picked_kinds": [
+   "lint_tooling",
+   "lint_tooling"
+  ],
+  "note": "approves the cap, defers the timeout to a comment",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:9bf7a0d1f082",
+  "task": "?",
+  "ts": "2026-07-05T20:21:45.811Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "simplification",
+   "alt_models",
+   "lib_candidates"
+  ],
+  "picked_kinds": [
+   "lib_candidates",
+   "simplification"
+  ],
+  "note": "recalls diag comps the message never mentioned",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:e49f3fa2ecc4",
+  "task": "?",
+  "ts": "2026-07-06T02:22:20.835Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "alt_models"
+  ],
+  "picked_kinds": [],
+  "note": "orders staging of the primitives just described",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:cefdc43fc7d7",
+  "task": "?",
+  "ts": "2026-07-06T02:26:51.004Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "naming_vocab",
+   "alt_models",
+   "correctness_risk",
+   "simplification",
+   "other"
+  ],
+  "picked_kinds": [
+   "simplification",
+   "other"
+  ],
+  "note": "quotes the K=1 slice line, scopes the proposal edit",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:bf8860b12aa4",
+  "task": "?",
+  "ts": "2026-07-06T22:50:44.035Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "recalls the train-refillability update the first commit made",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:49e97e9b1d61",
+  "task": "?",
+  "ts": "2026-07-06T23:02:01.870Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "unwitnessed_edges",
+   "simplification",
+   "hedges",
+   "alt_models",
+   "alt_models"
+  ],
+  "picked_kinds": [
+   "simplification",
+   "unwitnessed_edges"
+  ],
+  "note": "recalls prior solver 2281f1f4 instead of this review",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:752b789fa506",
+  "task": "?",
+  "ts": "2026-07-07T18:30:58.004Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "naming_vocab",
+   "lib_candidates"
+  ],
+  "picked_kinds": [
+   "naming_vocab",
+   "lib_candidates"
+  ],
+  "note": "accepts apply_dir but promotes instead of staging",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:31d3d28b562b",
+  "task": "?",
+  "ts": "2026-07-07T18:47:57.253Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "hedges"
+  ],
+  "picked_kinds": [],
+  "note": "quotes commit trailer the report never mentioned",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:7ed6b810f2d5",
+  "task": "?",
+  "ts": "2026-07-07T20:17:28.919Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "asks a process question about the missed simplification",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:174660a18199",
+  "task": "?",
+  "ts": "2026-07-07T22:50:26.027Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "hedges"
+  ],
+  "picked_kinds": [],
+  "note": "demands a prune-instruction change, not raised",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:f11552be7988",
+  "task": "?",
+  "ts": "2026-07-07T23:29:59.697Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "simplification",
+   "correctness_risk",
+   "alt_models",
+   "alt_models",
+   "alt_models",
+   "alt_models",
+   "unwitnessed_edges",
+   "unwitnessed_edges",
+   "lib_candidates",
+   "lib_candidates"
+  ],
+  "picked_kinds": [
+   "lib_candidates",
+   "lib_candidates"
+  ],
+  "note": "new pure-data rival absent from the dropped-alts list",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:876bdc527f98",
+  "task": "?",
+  "ts": "2026-07-08T00:06:38.060Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "raises outranks naming the report never mentioned",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:937b4071b251",
+  "task": "?",
+  "ts": "2026-07-08T02:57:34.363Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "alt_models",
+   "other",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "alt_models",
+   "other"
+  ],
+  "note": "approves the grounded backlog rewrite",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:a4794e9bbebf",
+  "task": "?",
+  "ts": "2026-07-08T03:01:24.733Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "correctness_risk"
+  ],
+  "picked_kinds": [
+   "other",
+   "correctness_risk"
+  ],
+  "note": "doubts the section-marker reliance, approves proceeding",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "fc754716:6f6f2c95d5c3",
+  "task": "fc754716",
+  "ts": "2026-07-08T21:14:24.224Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "unwitnessed_edges",
+   "alt_models",
+   "alt_models",
+   "other",
+   "lib_candidates"
+  ],
+  "picked_kinds": [],
+  "note": "questions quad_succ representation, ignores review items",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:2e25df62f93a",
+  "task": "?",
+  "ts": "2026-07-08T21:27:41.189Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates",
+   "unwitnessed_edges"
+  ],
+  "picked_kinds": [
+   "lib_candidates"
+  ],
+  "note": "answers the still-open Frame2D staging question",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:02267d0b00fe",
+  "task": "?",
+  "ts": "2026-07-08T21:32:24.364Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates"
+  ],
+  "picked_kinds": [
+   "lib_candidates"
+  ],
+  "note": "answers the open diag_edge_delta staging question",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:a5093469d4cf",
+  "task": "?",
+  "ts": "2026-07-08T22:11:53.932Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "lib_candidates",
+   "simplification",
+   "other"
+  ],
+  "picked_kinds": [
+   "lib_candidates"
+  ],
+  "note": "counter-proposes a 4-arity form over the perp proposal",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:4c622719ce68",
+  "task": "?",
+  "ts": "2026-07-08T22:26:01.377Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "raises Frame2D's shape, never mentioned in the essay",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:983f3f99f825",
+  "task": "?",
+  "ts": "2026-07-08T23:36:51.949Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "alt_models",
+   "hedges"
+  ],
+  "picked_kinds": [],
+  "note": "orders promotion of the Frame2D shape just defended",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:21541d7cd57f",
+  "task": "?",
+  "ts": "2026-07-09T14:06:23.962Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "disputes the claimed model of the Explore agents",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1818057f:24abcb76c22c",
+  "task": "1818057f",
+  "ts": "2026-07-09T16:04:17.030Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "simplification",
+   "unwitnessed_edges"
+  ],
+  "picked_kinds": [
+   "simplification",
+   "unwitnessed_edges"
+  ],
+  "note": "picks up the color-keyed rival the trace named",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "0692e18c:1dddf0bd9139",
+  "task": "0692e18c",
+  "ts": "2026-07-09T16:05:29.495Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "unwitnessed_edges"
+  ],
+  "picked_kinds": [],
+  "note": "elliptical unease; referent of 'that' unplaceable",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:41c6a7da19e6",
+  "task": "?",
+  "ts": "2026-07-09T17:24:42.261Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "other",
+   "other",
+   "other",
+   "other",
+   "other",
+   "other",
+   "other",
+   "other",
+   "other",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "other",
+   "other"
+  ],
+  "note": "answers consumer question, adds synthesis-shape interest",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "b8825c91:7c6759cd32a3",
+  "task": "b8825c91",
+  "ts": "2026-07-09T17:47:27.883Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "lib_candidates",
+   "unwitnessed_edges",
+   "alt_models",
+   "alt_models",
+   "alt_models"
+  ],
+  "picked_kinds": [],
+  "note": "odd sym const, a shape point the review never flagged",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "b8825c91:4505812c22ba",
+  "task": "b8825c91",
+  "ts": "2026-07-09T17:58:55.891Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "doc_gaps",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "other",
+   "doc_gaps"
+  ],
+  "note": "argues with the zero-is-absence analogy in item 3",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "b8825c91:b2f5f45d2ff1",
+  "task": "b8825c91",
+  "ts": "2026-07-09T18:00:58.977Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "other"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "note": "tweaks the zero-is-absence rule the message conceded",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1a2e2828:ccdae5444aa1",
+  "task": "1a2e2828",
+  "ts": "2026-07-09T18:40:56.274Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "alt_models",
+   "alt_models",
+   "alt_models"
+  ],
+  "picked_kinds": [
+   "alt_models"
+  ],
+  "note": "rules on the defeated-by-test-pair rival",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "49d1d64f:b8d9e56ae419",
+  "task": "49d1d64f",
+  "ts": "2026-07-09T18:51:01.204Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "correctness_risk",
+   "unwitnessed_edges",
+   "alt_models",
+   "alt_models",
+   "alt_models",
+   "alt_models"
+  ],
+  "picked_kinds": [
+   "unwitnessed_edges"
+  ],
+  "note": "attacks $Blank divergence, adds harness and doc bugs",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "49d1d64f:0998d7775fc3",
+  "task": "49d1d64f",
+  "ts": "2026-07-09T18:54:52.380Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "correctness_risk",
+   "doc_gaps",
+   "doc_gaps",
+   "alt_models",
+   "other"
+  ],
+  "picked_kinds": [
+   "correctness_risk",
+   "doc_gaps",
+   "alt_models"
+  ],
+  "note": "rejects the totality doc rule, adds high-level-gap concern",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "62b74c02:e484c44d3ec5",
+  "task": "62b74c02",
+  "ts": "2026-07-09T19:32:22.490Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "rules the multivalued-divergence claim invalid",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "e179c5f4:f17ffea7e616",
+  "task": "e179c5f4",
+  "ts": "2026-07-10T01:53:22.842Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "simplification",
+   "lib_candidates"
+  ],
+  "picked_kinds": [
+   "simplification"
+  ],
+  "note": "weighs the kept form by a new synthesis criterion",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "d4b1c2b1:d560557e081d",
+  "task": "d4b1c2b1",
+  "ts": "2026-07-10T02:40:22.677Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "other"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "other"
+  ],
+  "note": "trims the proposed rule to its first sentence",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "00576224:a07895bb6c0f",
+  "task": "00576224",
+  "ts": "2026-07-10T03:16:49.085Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "naming_vocab",
+   "lib_candidates"
+  ],
+  "picked_kinds": [
+   "naming_vocab",
+   "lib_candidates"
+  ],
+  "note": "accepts default name candidate and orders staging",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "746b3537:5f5546b216a1",
+  "task": "746b3537",
+  "ts": "2026-07-10T03:18:29.171Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates",
+   "alt_models"
+  ],
+  "picked_kinds": [
+   "lib_candidates"
+  ],
+  "note": "calls the proposed Ramp primitive overfitted",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "746b3537:b1daa8d181a2",
+  "task": "746b3537",
+  "ts": "2026-07-10T03:18:40.022Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates",
+   "alt_models"
+  ],
+  "picked_kinds": [
+   "lib_candidates"
+  ],
+  "note": "vetoes the Ramp primitive from item 1",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "00576224:cf551a502fec",
+  "task": "00576224",
+  "ts": "2026-07-10T03:34:44.148Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "alt_models",
+   "unwitnessed_edges"
+  ],
+  "picked_kinds": [
+   "alt_models"
+  ],
+  "note": "asks the cost of listed reading 2",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "a87f7484:b91c30fb8e87",
+  "task": "a87f7484",
+  "ts": "2026-07-10T15:23:21.308Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "hedges"
+  ],
+  "picked_kinds": [],
+  "note": "accepts the explanation and advances",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "d47aa2ff:a258015a6bfa",
+  "task": "d47aa2ff",
+  "ts": "2026-07-10T15:29:33.535Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "unrelated edit directive after a style self-analysis",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "50cb2852:119d05fceb7d",
+  "task": "50cb2852",
+  "ts": "2026-07-10T15:33:59.051Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "simplification",
+   "unwitnessed_edges"
+  ],
+  "picked_kinds": [
+   "lib_candidates",
+   "lib_candidates",
+   "unwitnessed_edges"
+  ],
+  "note": "vetoes $Greedy, then vetoes the ReadOrder reuse",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "50cb2852:c70074bc2da1",
+  "task": "50cb2852",
+  "ts": "2026-07-10T15:38:18.646Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "naming_vocab",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "vetoes the reading-order tiebreak the message explained",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "d492a647:4f817b2e85bc",
+  "task": "d492a647",
+  "ts": "2026-07-10T20:51:22.247Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "simplification",
+   "other"
+  ],
+  "picked_kinds": [
+   "simplification",
+   "other"
+  ],
+  "note": "rules on the stated open decision: simplest thing",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:2f4d40f727a7",
+  "task": "?",
+  "ts": "2026-07-11T00:40:21.590Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "alt_models"
+  ],
+  "picked_kinds": [],
+  "note": "asks for abstract concept behind count-difference, unmentioned",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:9415ea1c5df4",
+  "task": "?",
+  "ts": "2026-07-11T00:42:16.420Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "alt_models",
+   "lib_candidates",
+   "other"
+  ],
+  "picked_kinds": [
+   "alt_models",
+   "lib_candidates",
+   "other"
+  ],
+  "note": "revisits dispatched disjoint-set framing, adds numbers-as-sets",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:0ba2aebba64e",
+  "task": "?",
+  "ts": "2026-07-11T00:50:37.586Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates",
+   "alt_models"
+  ],
+  "picked_kinds": [
+   "lib_candidates"
+  ],
+  "note": "orders the Excess comp the message offered to stage",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:2fc1c7504cf6",
+  "task": "?",
+  "ts": "2026-07-11T01:08:21.575Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "simplification",
+   "naming_vocab"
+  ],
+  "picked_kinds": [
+   "naming_vocab"
+  ],
+  "note": "quotes item 2 and rules against the convention sentence",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:5e75a1287d4c",
+  "task": "?",
+  "ts": "2026-07-11T03:00:55.573Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "hedges",
+   "other"
+  ],
+  "picked_kinds": [],
+  "note": "raises prose style across artifacts, unrelated to report",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:e06d67c5d309",
+  "task": "?",
+  "ts": "2026-07-11T03:29:37.382Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "extends revise to task comments after a commit report",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "7b7f7511:3a534662e2c6",
+  "task": "7b7f7511",
+  "ts": "2026-07-11T21:23:21.671Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "alt_models",
+   "lib_candidates"
+  ],
+  "picked_kinds": [
+   "lib_candidates"
+  ],
+  "note": "stages the primitive, adds new doc-update demand",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:ebb6e28bdd84",
+  "task": "?",
+  "ts": "2026-07-11T22:53:32.293Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other",
+   "other",
+   "other",
+   "lint_tooling"
+  ],
+  "picked_kinds": [
+   "other",
+   "lint_tooling"
+  ],
+  "note": "'dig in' ratifies the payoff order laid out",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:e73f2ded421e",
+  "task": "?",
+  "ts": "2026-07-11T23:38:23.344Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "asks about agent orchestration the message never mentioned",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "3ac3eb23:03ed5713b4e0",
+  "task": "3ac3eb23",
+  "ts": "2026-07-22T01:42:11.362Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "corrects the Stamp case it just agreed to",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "a740d043:5b679619cc48",
+  "task": "a740d043",
+  "ts": "2026-07-22T01:59:28.742Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "unwitnessed_edges",
+   "correctness_risk",
+   "lib_candidates",
+   "correctness_risk"
+  ],
+  "picked_kinds": [
+   "unwitnessed_edges"
+  ],
+  "note": "raises range precedent; later engages the case pair",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "a740d043:303f6042009e",
+  "task": "a740d043",
+  "ts": "2026-07-22T02:03:32.571Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "lib_candidates"
+  ],
+  "picked_kinds": [],
+  "note": "proposes dropping $Stamp, never raised in message",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "d9f24cd1:9095f8131bcb",
+  "task": "d9f24cd1",
+  "ts": "2026-07-22T02:18:05.847Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "alt_models",
+   "other"
+  ],
+  "picked_kinds": [
+   "alt_models"
+  ],
+  "note": "argues the killed order-by-dir case from prio table",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "a740d043:9a5a7eadd167",
+  "task": "a740d043",
+  "ts": "2026-07-22T02:19:08.344Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "unwitnessed_edges",
+   "unwitnessed_edges"
+  ],
+  "picked_kinds": [],
+  "note": "promote comp8 directive; comp8 never mentioned",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "d9f24cd1:44718b0e8ff1",
+  "task": "d9f24cd1",
+  "ts": "2026-07-22T02:19:52.796Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "alt_models"
+  ],
+  "picked_kinds": [
+   "alt_models"
+  ],
+  "note": "concedes the rank-along-dir model the data killed",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:936f605d94f1",
+  "task": "?",
+  "ts": "2026-07-22T02:25:15.465Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lint_tooling",
+   "doc_gaps",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "rules on the one current hit as consts-scoped",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "d9f24cd1:49071f758883",
+  "task": "d9f24cd1",
+  "ts": "2026-07-22T02:28:17.035Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "unwitnessed_edges",
+   "alt_models"
+  ],
+  "picked_kinds": [],
+  "note": "quotes the period derivation, asks about limits",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "3ac3eb23:9a5a2e78d1d0",
+  "task": "3ac3eb23",
+  "ts": "2026-07-22T02:32:33.705Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "unwitnessed_edges",
+   "unwitnessed_edges",
+   "unwitnessed_edges",
+   "unwitnessed_edges",
+   "alt_models",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates"
+  ],
+  "picked_kinds": [],
+  "note": "raises margin-offset data model and body bloat",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:bffc3dee6017",
+  "task": "?",
+  "ts": "2026-07-22T14:11:40.214Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "other",
+   "other",
+   "other",
+   "other",
+   "other",
+   "other",
+   "other",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "other",
+   "other",
+   "hedges"
+  ],
+  "note": "rules on item 3 and adds task-json-in-interface demand",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:e56498b37d29",
+  "task": "?",
+  "ts": "2026-07-22T14:24:44.650Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other",
+   "hedges",
+   "other"
+  ],
+  "picked_kinds": [
+   "other",
+   "hedges",
+   "other"
+  ],
+  "note": "answers point 2 on curation, vetoes doc-reading seed",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:defd32bd92f0",
+  "task": "?",
+  "ts": "2026-07-22T15:45:57.852Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "lint_tooling",
+   "lint_tooling",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "asks to prune a readme the report never mentioned",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "0becf7df:591b55f7961e",
+  "task": "0becf7df",
+  "ts": "2026-07-22T16:23:17.639Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "alt_models",
+   "naming_vocab",
+   "correctness_risk"
+  ],
+  "picked_kinds": [
+   "correctness_risk"
+  ],
+  "note": "proposes two rivals the review never listed",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:d37db9db0673",
+  "task": "?",
+  "ts": "2026-07-22T16:47:11.728Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "hedges"
+  ],
+  "picked_kinds": [],
+  "note": "raises headline drop and turn undo, both unmentioned",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:b50a94e27391",
+  "task": "?",
+  "ts": "2026-07-22T16:57:24.432Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other",
+   "other",
+   "other",
+   "correctness_risk"
+  ],
+  "picked_kinds": [
+   "correctness_risk",
+   "other"
+  ],
+  "note": "answers item 5 with a system-message fix",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "0520fde7:f140ca8f6ded",
+  "task": "0520fde7",
+  "ts": "2026-07-22T17:50:00.110Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "other",
+   "alt_models",
+   "naming_vocab"
+  ],
+  "picked_kinds": [
+   "alt_models",
+   "naming_vocab"
+  ],
+  "note": "picks up the `and` term, adds concept-doc granularity",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:8c75d3284e02",
+  "task": "?",
+  "ts": "2026-07-22T18:21:44.899Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "reports lost wave and manual edits, unrelated to UI fix",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "dc1df850:f84088cdf114",
+  "task": "dc1df850",
+  "ts": "2026-07-22T19:52:38.971Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "unwitnessed_edges",
+   "simplification",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "unwitnessed_edges",
+   "simplification"
+  ],
+  "note": "asks how halo-wins differs from $Over, then picks it",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:1ed80bcea362",
+  "task": "?",
+  "ts": "2026-07-22T20:07:29.768Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "other",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "proposes a session for committing, never raised",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "28bf18c6:9320226c8a33",
+  "task": "28bf18c6",
+  "ts": "2026-07-24T15:08:30.765Z",
+  "origin": "MIXED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "preceding message is empty, veto unplaceable",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "c1990cce:afa841008292",
+  "task": "c1990cce",
+  "ts": "2026-07-24T15:12:03.450Z",
+  "origin": "MIXED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "preceding message is empty, veto unplaceable",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "642d658d:3a59ce619d31",
+  "task": "642d658d",
+  "ts": "2026-07-24T15:35:56.305Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "note": "approves the surviving item 4 change set",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "642d658d:0b80e8f87513",
+  "task": "642d658d",
+  "ts": "2026-07-24T15:50:25.499Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "simplification",
+   "doc_gaps",
+   "doc_gaps",
+   "simplification",
+   "hedges"
+  ],
+  "picked_kinds": [],
+  "note": "asks for a data version of ring, never raised",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:949f8edc36ec",
+  "task": "?",
+  "ts": "2026-07-24T17:44:53.143Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "simplification"
+  ],
+  "picked_kinds": [
+   "simplification"
+  ],
+  "note": "orders the non-blocking 66f2d22f drift cleanup",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:0af047b3b659",
+  "task": "?",
+  "ts": "2026-07-24T20:53:34.937Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "naming_vocab",
+   "naming_vocab",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "naming_vocab",
+   "naming_vocab"
+  ],
+  "note": "rules on items 2 and 5, Id and CompId",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:130ef7664b4f",
+  "task": "?",
+  "ts": "2026-07-24T21:01:33.138Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "alt_models",
+   "naming_vocab"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "alt_models",
+   "naming_vocab"
+  ],
+  "note": "rules on seal comment, edit cost, name packages",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:3037b736caa9",
+  "task": "?",
+  "ts": "2026-07-26T16:19:42.411Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "asks to explain the plan the message closed with",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:3b0de76609c1",
+  "task": "?",
+  "ts": "2026-07-26T16:39:17.167Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "correctness_risk",
+   "correctness_risk",
+   "correctness_risk",
+   "other",
+   "lint_tooling"
+  ],
+  "picked_kinds": [
+   "correctness_risk",
+   "correctness_risk"
+  ],
+  "note": "takes the proposed next step, delegates the triage judgment",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:0b61a7f5fc75",
+  "task": "?",
+  "ts": "2026-07-26T17:30:50.546Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "correctness_risk",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "picks the stabilizer form named in section 4",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:27a534509a1f",
+  "task": "?",
+  "ts": "2026-07-26T22:11:07.211Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lint_tooling",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "lint_tooling",
+   "doc_gaps"
+  ],
+  "note": "picks option 1 and rules on doc home of lint line",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:f2d8ea5b5b18",
+  "task": "?",
+  "ts": "2026-07-26T22:25:18.126Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "note": "quotes the proposed cadence line and states its intent",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:554ca698f4cb",
+  "task": "?",
+  "ts": "2026-07-26T23:10:23.491Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lint_tooling",
+   "lint_tooling",
+   "lib_candidates"
+  ],
+  "picked_kinds": [
+   "lint_tooling",
+   "lib_candidates"
+  ],
+  "note": "challenges the inset gauge claim the report made",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:d32a0f65d1f4",
+  "task": "?",
+  "ts": "2026-07-27T01:07:02.638Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "other"
+  ],
+  "picked_kinds": [],
+  "note": "revise on the prose plus a new grid reformat demand",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:d510ba6b6738",
+  "task": "?",
+  "ts": "2026-07-27T01:10:01.362Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "other",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "adds most-freq-color proposer absent from ladder",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:30e8e6e69980",
+  "task": "?",
+  "ts": "2026-07-30T14:12:45.082Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "other",
+   "other"
+  ],
+  "note": "inserts self into the plan's review step",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:0d16ebcf59b0",
+  "task": "?",
+  "ts": "2026-07-30T15:51:31.542Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "names proposals as a new revise target",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:c7cf217223f8",
+  "task": "?",
+  "ts": "2026-07-30T16:53:19.773Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other",
+   "doc_gaps",
+   "doc_gaps",
+   "other"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "other"
+  ],
+  "note": "numbered replies to items 3 and 4, blocks the wave",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:6ba91f11eb94",
+  "task": "?",
+  "ts": "2026-07-30T17:03:33.359Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "simplification",
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "simplification",
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "note": "quotes the reworded closure comment; later rules on 1 and 2",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:0a2de42bf6fc",
+  "task": "?",
+  "ts": "2026-07-30T18:17:29.235Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "hedges",
+   "correctness_risk",
+   "lib_candidates",
+   "lib_candidates",
+   "lint_tooling",
+   "simplification",
+   "other"
+  ],
+  "picked_kinds": [
+   "simplification",
+   "correctness_risk",
+   "lib_candidates",
+   "other"
+  ],
+  "note": "rules on numbered item 6 by index",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:bed97175b06e",
+  "task": "?",
+  "ts": "2026-07-30T19:30:25.745Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "'plan' proceeds on the wave held on his go",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:6eb420c4d7c3",
+  "task": "?",
+  "ts": "2026-08-01T15:26:01.710Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other",
+   "other",
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "other",
+   "doc_gaps"
+  ],
+  "note": "probes the stash diagnosis, then rejects proposed line 2",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:18eb1b745f8f",
+  "task": "?",
+  "ts": "2026-08-01T15:28:54.880Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "other"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "other"
+  ],
+  "note": "vetoes the proposed brief line as symptom-targeting",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:7fbe1ffd4b94",
+  "task": "?",
+  "ts": "2026-08-01T16:01:29.192Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "simplification"
+  ],
+  "picked_kinds": [],
+  "note": "demands serial agent launch, unrelated to the explanation",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:84fa80c113fc",
+  "task": "?",
+  "ts": "2026-08-01T16:22:58.767Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "other",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "other",
+   "other"
+  ],
+  "note": "asks for the JUDGE ruling the message requested",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:ee0306bfaf32",
+  "task": "?",
+  "ts": "2026-08-01T17:59:39.393Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "naming_vocab"
+  ],
+  "picked_kinds": [],
+  "note": "accepts the clean pass and moves on",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:43b743e384c4",
+  "task": "?",
+  "ts": "2026-08-01T19:27:12.129Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates",
+   "naming_vocab",
+   "lib_candidates",
+   "lib_candidates",
+   "simplification"
+  ],
+  "picked_kinds": [
+   "lib_candidates",
+   "lib_candidates",
+   "simplification"
+  ],
+  "note": "rules on items 4, 5 and JUDGE by number",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:c45625b7bea7",
+  "task": "?",
+  "ts": "2026-08-02T01:37:48.646Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "unwitnessed_edges",
+   "alt_models",
+   "alt_models",
+   "unwitnessed_edges",
+   "unwitnessed_edges",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "alt_models",
+   "other",
+   "other"
+  ],
+  "note": "replies by number to items 2 and 5, later 6",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:0326673a9508",
+  "task": "?",
+  "ts": "2026-08-02T01:45:47.004Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "alt_models",
+   "unwitnessed_edges",
+   "lib_candidates"
+  ],
+  "picked_kinds": [
+   "lib_candidates"
+  ],
+  "note": "rules on the proposals entry and raises the fitter topic",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:1218293318bb",
+  "task": "?",
+  "ts": "2026-08-02T01:50:47.176Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates",
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "lib_candidates",
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "note": "vetoes Complete name, confirms the fitter gap",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:8380177ff23f",
+  "task": "?",
+  "ts": "2026-08-02T02:09:17.806Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "new doc-update demand after a bare status line",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:c02cd520dc0c",
+  "task": "?",
+  "ts": "2026-08-02T02:23:45.491Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lint_tooling",
+   "other",
+   "doc_gaps",
+   "doc_gaps",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "lint_tooling",
+   "other",
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "note": "approves the proposed doc and skill updates",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:278852bdfb38",
+  "task": "?",
+  "ts": "2026-08-02T02:31:15.828Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "extends the prune to the work just described",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:86caccf4d63a",
+  "task": "?",
+  "ts": "2026-08-05T14:49:28.216Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "preceding raised nothing; opens propose.py rename",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:9a3f201e896a",
+  "task": "?",
+  "ts": "2026-08-05T15:04:15.676Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "doc_gaps",
+   "naming_vocab",
+   "naming_vocab",
+   "doc_gaps",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "naming_vocab"
+  ],
+  "note": "prunes the revised copy and adds items from another list",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:4f0e2aae816b",
+  "task": "?",
+  "ts": "2026-08-05T16:29:53.716Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "other"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "argues with the proposed doc location",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:d49e0c84a2c8",
+  "task": "?",
+  "ts": "2026-08-05T16:33:51.939Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "accepts style.md placement, asks about patterns entry",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:27f2208343b8",
+  "task": "?",
+  "ts": "2026-08-05T16:49:39.931Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "doc_gaps"
+  ],
+  "picked_kinds": [],
+  "note": "quotes solver code, ignores the GRID doc-fix offer",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:48e6a866d9a2",
+  "task": "?",
+  "ts": "2026-08-05T17:39:08.001Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates",
+   "other",
+   "lint_tooling",
+   "lint_tooling"
+  ],
+  "picked_kinds": [
+   "lib_candidates",
+   "other",
+   "lint_tooling"
+  ],
+  "note": "asks about marker convention in item 3, then go",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:59b1f1eee3b3",
+  "task": "?",
+  "ts": "2026-08-05T18:16:51.894Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other",
+   "other",
+   "other",
+   "other",
+   "other",
+   "other",
+   "lint_tooling"
+  ],
+  "picked_kinds": [
+   "other",
+   "other"
+  ],
+  "note": "rules on item 5's batch-of-8 dispatch plan",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:36650fc77570",
+  "task": "?",
+  "ts": "2026-08-05T20:27:54.726Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "correctness_risk",
+   "correctness_risk",
+   "other"
+  ],
+  "picked_kinds": [
+   "correctness_risk"
+  ],
+  "note": "questions the ex_in trap the report surfaced",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:4795eae2126d",
+  "task": "?",
+  "ts": "2026-08-05T20:40:45.994Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "disputes the message's not-a-doc-gap call",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:954a63571417",
+  "task": "?",
+  "ts": "2026-08-05T21:16:34.044Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "simplification",
+   "simplification"
+  ],
+  "picked_kinds": [],
+  "note": "widens the cleanup the report just described",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "af902bf9:d06727178a50",
+  "task": "af902bf9",
+  "ts": "2026-08-05T23:57:40.338Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "explanation only; user probes general lib usefulness",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "29ec7d0e:caf689f7b63b",
+  "task": "29ec7d0e",
+  "ts": "2026-08-06T00:01:08.512Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "lib_candidates"
+  ],
+  "picked_kinds": [
+   "lib_candidates"
+  ],
+  "note": "overrules task-local keep, adds new doc-update demand",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "29ec7d0e:892187f9ed54",
+  "task": "29ec7d0e",
+  "ts": "2026-08-06T00:39:33.941Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "doc_gaps",
+   "other"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "acts on the misread keying guidance, asks for doc edit",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "af902bf9:208dd7c49e76",
+  "task": "af902bf9",
+  "ts": "2026-08-06T00:48:57.796Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "flags a suspicious phrase; message was a git safety check",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "017c7c7b:8e562803451e",
+  "task": "017c7c7b",
+  "ts": "2026-08-07T01:19:56.390Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "unwitnessed_edges",
+   "alt_models",
+   "alt_models",
+   "naming_vocab"
+  ],
+  "picked_kinds": [],
+  "note": "asks why the runner was checked; process not in review",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "025d127b:65aca5ff7040",
+  "task": "025d127b",
+  "ts": "2026-08-07T16:19:39.756Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "unwitnessed_edges",
+   "alt_models",
+   "lib_candidates",
+   "other"
+  ],
+  "picked_kinds": [
+   "unwitnessed_edges"
+  ],
+  "note": "asks why the reference ts solver went unread",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "045e512c:f8ac66c43337",
+  "task": "045e512c",
+  "ts": "2026-08-07T17:30:40.902Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates",
+   "naming_vocab",
+   "naming_vocab",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "lib_candidates",
+   "naming_vocab"
+  ],
+  "note": "approves the rewrite, questions point 7's Line name",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:2ce58e7e7f32",
+  "task": "?",
+  "ts": "2026-08-07T18:44:00.572Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "introduces simplicity probe over one-line plan restatement",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:16e470911adb",
+  "task": "?",
+  "ts": "2026-08-07T18:53:45.139Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "simplification",
+   "simplification",
+   "unwitnessed_edges",
+   "other"
+  ],
+  "picked_kinds": [
+   "simplification",
+   "simplification",
+   "unwitnessed_edges",
+   "other"
+  ],
+  "note": "settles the authorship note, adds a ten-task list",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "08573cc6:23738e6ccf25",
+  "task": "08573cc6",
+  "ts": "2026-08-07T19:12:59.578Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "simplification",
+   "correctness_risk"
+  ],
+  "picked_kinds": [
+   "simplification"
+  ],
+  "note": "quotes jump deltas, then floats a counting-free model",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "08573cc6:50d011796a0a",
+  "task": "08573cc6",
+  "ts": "2026-08-07T19:32:47.640Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "alt_models"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "contests the fit-slot choice, names marker_corner",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:81898aadd3ba",
+  "task": "?",
+  "ts": "2026-08-07T19:52:51.782Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "redirects to a deleted functor comment block never mentioned",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "0934a4d8:1e198d379474",
+  "task": "0934a4d8",
+  "ts": "2026-08-07T20:43:19.422Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "alt_models",
+   "alt_models",
+   "other"
+  ],
+  "picked_kinds": [
+   "alt_models"
+  ],
+  "note": "corrects the per-tile reading in problem 1",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "0a2355a6:6eefbe3f1971",
+  "task": "0a2355a6",
+  "ts": "2026-08-10T00:09:04.544Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "alt_models",
+   "correctness_risk",
+   "other"
+  ],
+  "picked_kinds": [
+   "correctness_risk"
+  ],
+  "note": "asks to explain review item 2, the fit-frame assumption",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "0a2355a6:cf6016f66994",
+  "task": "0a2355a6",
+  "ts": "2026-08-10T00:13:02.949Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "unwitnessed_edges",
+   "correctness_risk"
+  ],
+  "picked_kinds": [
+   "unwitnessed_edges",
+   "correctness_risk"
+  ],
+  "note": "rules on fit frame call, adds new doc-gap claim",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "0a2355a6:0001cdea4b86",
+  "task": "0a2355a6",
+  "ts": "2026-08-10T00:58:00.095Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "corrects the scope of the cleanup just reported",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "0dfd9992:147639cf3c8d",
+  "task": "0dfd9992",
+  "ts": "2026-08-13T00:54:19.425Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "alt_models",
+   "unwitnessed_edges",
+   "correctness_risk",
+   "correctness_risk",
+   "alt_models",
+   "lib_candidates",
+   "other"
+  ],
+  "picked_kinds": [
+   "unwitnessed_edges"
+  ],
+  "note": "rejects two-case split, proposes new wallpaper model",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "0ca9ddb6:5e9c6a5693be",
+  "task": "0ca9ddb6",
+  "ts": "2026-08-13T00:58:30.258Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "no preceding items; raises range use and lib idioms",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "0dfd9992:80d40f011b17",
+  "task": "0dfd9992",
+  "ts": "2026-08-13T02:13:51.485Z",
+  "origin": "MIXED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "preceding message is empty, veto unplaceable",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "0e206a2e:29089c2931f4",
+  "task": "0e206a2e",
+  "ts": "2026-08-13T02:27:17.118Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "simplification",
+   "simplification",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "simplification",
+   "simplification"
+  ],
+  "note": "approves the three conversions plus the optional fourth",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1190bc91:1ec160b99c92",
+  "task": "1190bc91",
+  "ts": "2026-08-19T21:07:26.726Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "process demand about thinking, message raised nothing",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "135a2760:f15dccf588b4",
+  "task": "135a2760",
+  "ts": "2026-08-20T15:13:09.126Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates",
+   "naming_vocab"
+  ],
+  "picked_kinds": [
+   "lib_candidates"
+  ],
+  "note": "asks to expand option 1, extend ShiftInvariance",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "135a2760:05abe6ca439c",
+  "task": "135a2760",
+  "ts": "2026-08-20T15:19:11.560Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "naming_vocab",
+   "naming_vocab"
+  ],
+  "picked_kinds": [
+   "naming_vocab",
+   "naming_vocab"
+  ],
+  "note": "rejects the whole voting-metaphor candidate slate",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "135a2760:5ba5812f3e24",
+  "task": "135a2760",
+  "ts": "2026-08-20T15:28:05.707Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "asks about prune and quotes an older line",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1190bc91:3defc2010e51",
+  "task": "1190bc91",
+  "ts": "2026-08-22T13:04:30.857Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "other"
+  ],
+  "picked_kinds": [],
+  "note": "process demand about deliberation, not the model claim",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1190bc91:fe71fd783851",
+  "task": "1190bc91",
+  "ts": "2026-08-22T13:12:50.319Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "process order to stop and write handoff",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "14754a24:c63fbdcb42bc",
+  "task": "14754a24",
+  "ts": "2026-08-22T15:25:53.709Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "correctness_risk",
+   "alt_models",
+   "other",
+   "alt_models"
+  ],
+  "picked_kinds": [
+   "alt_models"
+  ],
+  "note": "quotes item 4's GRID-form claim and challenges it",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "142ca369:d9573ce241a7",
+  "task": "142ca369",
+  "ts": "2026-08-22T15:34:54.886Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "alt_models",
+   "other",
+   "other",
+   "other",
+   "unwitnessed_edges",
+   "simplification"
+  ],
+  "picked_kinds": [
+   "alt_models",
+   "other",
+   "other",
+   "unwitnessed_edges"
+  ],
+  "note": "numbered replies to items 2 and 3, later stages item 5",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "142ca369:0538287cbbbc",
+  "task": "142ca369",
+  "ts": "2026-08-22T15:46:18.631Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "unwitnessed_edges",
+   "alt_models",
+   "correctness_risk",
+   "correctness_risk",
+   "lib_candidates",
+   "other"
+  ],
+  "picked_kinds": [
+   "lib_candidates",
+   "other"
+  ],
+  "note": "stages review item 5 and orders the fit pass",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "142ca369:451be64a2f1c",
+  "task": "142ca369",
+  "ts": "2026-08-22T17:40:00.941Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates",
+   "alt_models",
+   "lib_candidates",
+   "lib_candidates",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "doc_gaps"
+  ],
+  "note": "probes the Souffle typing constraint the decisions rest on",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1190bc91:1dd2804341a0",
+  "task": "1190bc91",
+  "ts": "2026-08-22T19:57:10.591Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "bare instruction, preceding message raised nothing",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1190bc91:d58d0bcdbbbf",
+  "task": "1190bc91",
+  "ts": "2026-08-22T21:12:03.100Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "simplification",
+   "doc_gaps",
+   "unwitnessed_edges",
+   "alt_models",
+   "simplification",
+   "simplification",
+   "correctness_risk"
+  ],
+  "picked_kinds": [
+   "simplification",
+   "simplification",
+   "doc_gaps"
+  ],
+  "note": "probes L77-86 from item 4.2 plus unmentioned L34-36",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "150deff5:1895c734706d",
+  "task": "150deff5",
+  "ts": "2026-08-25T12:19:34.505Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "other",
+   "unwitnessed_edges",
+   "simplification",
+   "alt_models",
+   "lib_candidates",
+   "lib_candidates",
+   "naming_vocab"
+  ],
+  "picked_kinds": [
+   "unwitnessed_edges",
+   "lib_candidates",
+   "lib_candidates"
+  ],
+  "note": "vetoes $Size, engages ForcedCover, adds dims-column concern",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "15660dd6:c5286a15b01a",
+  "task": "15660dd6",
+  "ts": "2026-08-25T12:30:58.544Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "alt_models",
+   "alt_models"
+  ],
+  "picked_kinds": [],
+  "note": "constructs a frameless variant the message never raised",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "150deff5:0c439ff4361e",
+  "task": "150deff5",
+  "ts": "2026-08-25T12:50:12.281Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "other",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "recalls another packing task the message never mentioned",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "150deff5:69010a4d6072",
+  "task": "150deff5",
+  "ts": "2026-08-25T18:05:23.928Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "naming_vocab"
+  ],
+  "picked_kinds": [
+   "naming_vocab"
+  ],
+  "note": "rejects both offered comp names, asks more qualified",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "150deff5:8ddd2d3f51ad",
+  "task": "150deff5",
+  "ts": "2026-08-25T18:44:57.863Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "other"
+  ],
+  "picked_kinds": [],
+  "note": "raises choice-domain impl the accounting never covered",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:c0b88eec86f6",
+  "task": "?",
+  "ts": "2026-08-25T19:57:06.000Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates",
+   "lint_tooling"
+  ],
+  "picked_kinds": [
+   "lib_candidates",
+   "lint_tooling"
+  ],
+  "note": "accepts the offered miner rerun caveat",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:595a2ac5e936",
+  "task": "?",
+  "ts": "2026-08-25T20:09:15.076Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "adds cleanup-pass demand to a bare dispatch line",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:33bb1130249f",
+  "task": "?",
+  "ts": "2026-08-25T20:22:21.684Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lint_tooling"
+  ],
+  "picked_kinds": [
+   "lint_tooling"
+  ],
+  "note": "orders the proposed lint refinement",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1990f7a8:2dd34fdbfcea",
+  "task": "1990f7a8",
+  "ts": "2026-08-26T00:15:58.383Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "unwitnessed_edges",
+   "alt_models",
+   "alt_models",
+   "lint_tooling",
+   "naming_vocab"
+  ],
+  "picked_kinds": [
+   "lint_tooling"
+  ],
+  "note": "asks doc basis for callout 1, the structural-literal lint",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "19bb5feb:675f8041e60f",
+  "task": "19bb5feb",
+  "ts": "2026-08-26T01:13:30.497Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "unwitnessed_edges",
+   "alt_models",
+   "naming_vocab"
+  ],
+  "picked_kinds": [
+   "unwitnessed_edges"
+  ],
+  "note": "objects to @structural on quad_cell, never raised",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "19bb5feb:87e37358b117",
+  "task": "19bb5feb",
+  "ts": "2026-08-26T01:15:34.504Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "other",
+   "alt_models",
+   "other"
+  ],
+  "picked_kinds": [
+   "other",
+   "other"
+  ],
+  "note": "doubts the keep call, adds corpus precedent point",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "19bb5feb:0760d6c20005",
+  "task": "19bb5feb",
+  "ts": "2026-08-26T01:18:45.426Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "hedges",
+   "alt_models",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "alt_models",
+   "doc_gaps"
+  ],
+  "note": "answers items 2 and 3 by number",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "19bb5feb:9a64e91f3c38",
+  "task": "19bb5feb",
+  "ts": "2026-08-26T01:23:31.299Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "lib_candidates",
+   "hedges",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "other",
+   "doc_gaps"
+  ],
+  "note": "challenges item 2's precedent citations",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "19bb5feb:dd567d3c7e39",
+  "task": "19bb5feb",
+  "ts": "2026-08-26T01:26:08.409Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "doc_gaps",
+   "other"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "other"
+  ],
+  "note": "picks the drop-Quadrant fallback and the 1-only rule",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "19bb5feb:71d419b2743a",
+  "task": "19bb5feb",
+  "ts": "2026-08-26T01:26:36.150Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "other",
+   "doc_gaps",
+   "other"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "raises renaming the marker, message never proposed it",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "19bb5feb:c7893a996db0",
+  "task": "19bb5feb",
+  "ts": "2026-08-26T01:27:55.869Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "naming_vocab",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "naming_vocab",
+   "doc_gaps"
+  ],
+  "note": "approves the name pick and the action list",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "19bb5feb:7e2120fe3ad9",
+  "task": "19bb5feb",
+  "ts": "2026-08-26T01:31:22.792Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "doc_gaps",
+   "lint_tooling",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "prunes quoted style.md wording, adds churn-proof demand",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "19bb5feb:5a8a828e6491",
+  "task": "19bb5feb",
+  "ts": "2026-08-26T01:33:31.534Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lint_tooling",
+   "doc_gaps",
+   "other"
+  ],
+  "picked_kinds": [
+   "lint_tooling"
+  ],
+  "note": "corrects item 1's reading of churn-proofing",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "228f6490:9375da55b4c5",
+  "task": "228f6490",
+  "ts": "2026-08-26T11:55:11.702Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates",
+   "lib_candidates",
+   "other",
+   "correctness_risk",
+   "naming_vocab"
+  ],
+  "picked_kinds": [
+   "lib_candidates"
+  ],
+  "note": "numbered 1, questions callout 1's staging",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1a244afd:89f0d7e17d23",
+  "task": "1a244afd",
+  "ts": "2026-08-26T12:01:24.115Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "unwitnessed_edges",
+   "alt_models",
+   "naming_vocab",
+   "doc_gaps",
+   "lib_candidates",
+   "lint_tooling"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "lint_tooling",
+   "lib_candidates"
+  ],
+  "note": "rules on items 2 and 4, adds why-Packing challenge",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "184a9768:48a2a96d8e1c",
+  "task": "184a9768",
+  "ts": "2026-08-26T12:02:31.329Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates",
+   "simplification",
+   "alt_models",
+   "correctness_risk",
+   "alt_models",
+   "alt_models"
+  ],
+  "picked_kinds": [
+   "lib_candidates"
+  ],
+  "note": "vetoes callout 1's Pack staging call",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "184a9768:c4ce450e1018",
+  "task": "184a9768",
+  "ts": "2026-08-26T12:09:21.098Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "lib_candidates",
+   "unwitnessed_edges",
+   "correctness_risk"
+  ],
+  "picked_kinds": [
+   "lib_candidates"
+  ],
+  "note": "vetoes Pack, adds recalled solver and largest-first",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "228f6490:dbb06e4208db",
+  "task": "228f6490",
+  "ts": "2026-08-26T12:11:35.501Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates",
+   "lib_candidates",
+   "correctness_risk",
+   "naming_vocab",
+   "other",
+   "unwitnessed_edges",
+   "unwitnessed_edges",
+   "alt_models"
+  ],
+  "picked_kinds": [
+   "unwitnessed_edges",
+   "unwitnessed_edges"
+  ],
+  "note": "disputes the case divergences, then vetoes Nearest",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1acc24af:f00716df8b16",
+  "task": "1acc24af",
+  "ts": "2026-08-26T12:17:39.002Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "naming_vocab",
+   "lint_tooling",
+   "unwitnessed_edges",
+   "lib_candidates"
+  ],
+  "picked_kinds": [
+   "naming_vocab"
+  ],
+  "note": "questions callout 1's concepts.md edit",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "25094a63:e0b8cce21774",
+  "task": "25094a63",
+  "ts": "2026-08-26T12:17:39.002Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "naming_vocab",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "questions callout 1's lib.dl edit",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "247ef758:7f2968aaf207",
+  "task": "247ef758",
+  "ts": "2026-08-26T12:17:39.585Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "lib_candidates",
+   "unwitnessed_edges",
+   "other",
+   "correctness_risk",
+   "simplification"
+  ],
+  "picked_kinds": [],
+  "note": "raises task-file edit no callout mentions",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1a244afd:93784e67d2a4",
+  "task": "1a244afd",
+  "ts": "2026-08-26T12:20:14.986Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lint_tooling",
+   "alt_models",
+   "naming_vocab",
+   "lib_candidates"
+  ],
+  "picked_kinds": [
+   "lint_tooling",
+   "naming_vocab",
+   "lib_candidates"
+  ],
+  "note": "answers items 1, 3.1, 3.2 by number",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "25094a63:ec8a83d43b55",
+  "task": "25094a63",
+  "ts": "2026-08-26T12:24:56.766Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps"
+  ],
+  "picked_kinds": [],
+  "note": "rules the trace answered permission, not motive",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "228f6490:f313834d309f",
+  "task": "228f6490",
+  "ts": "2026-08-26T12:25:35.712Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "vetoes the $Nearest disqualifier of item 6",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1acc24af:f07af977bb3d",
+  "task": "1acc24af",
+  "ts": "2026-08-26T12:25:52.657Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps"
+  ],
+  "picked_kinds": [],
+  "note": "rules the trace answered the wrong question",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1a244afd:3580238e10dc",
+  "task": "1a244afd",
+  "ts": "2026-08-26T12:28:40.134Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "lint_tooling",
+   "lib_candidates"
+  ],
+  "picked_kinds": [
+   "lint_tooling",
+   "lib_candidates"
+  ],
+  "note": "rules on 1.1, adds new atom-cost probe",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1a244afd:d0485b817166",
+  "task": "1a244afd",
+  "ts": "2026-08-26T12:33:05.545Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "hedges",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "approves fix, asks about the 8-rule sketch",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "184a9768:523a21fe2f79",
+  "task": "184a9768",
+  "ts": "2026-08-26T12:35:33.421Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "correctness_risk",
+   "other",
+   "correctness_risk",
+   "lib_candidates"
+  ],
+  "picked_kinds": [
+   "correctness_risk",
+   "lib_candidates"
+  ],
+  "note": "challenges item 2's unrolled pass count",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "184a9768:9c33082f3745",
+  "task": "184a9768",
+  "ts": "2026-08-26T12:37:41.289Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates"
+  ],
+  "picked_kinds": [
+   "lib_candidates"
+  ],
+  "note": "approves building the proposed comp",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1a244afd:e78f0836a6eb",
+  "task": "1a244afd",
+  "ts": "2026-08-26T12:39:05.807Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "demands ablation to check the bloat claim",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1a244afd:ab0cf27339d5",
+  "task": "1a244afd",
+  "ts": "2026-08-26T12:41:43.939Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "alt_models"
+  ],
+  "picked_kinds": [
+   "alt_models"
+  ],
+  "note": "asks further about the ablation diff shown",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1a244afd:a6fa4db7bc59",
+  "task": "1a244afd",
+  "ts": "2026-08-26T12:44:14.312Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "rules on the diff just described, orders cleanup",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "184a9768:801db28a6b54",
+  "task": "184a9768",
+  "ts": "2026-08-26T12:47:56.821Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other",
+   "correctness_risk",
+   "correctness_risk",
+   "lib_candidates"
+  ],
+  "picked_kinds": [
+   "lib_candidates"
+  ],
+  "note": "probes item 5's second-home value claim",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1a244afd:05ca1f4e3b01",
+  "task": "1a244afd",
+  "ts": "2026-08-26T12:48:41.967Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "simplification"
+  ],
+  "picked_kinds": [],
+  "note": "asks about ray pipeline, not in cleanup report",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "184a9768:64ee7232c3e4",
+  "task": "184a9768",
+  "ts": "2026-08-26T12:49:53.050Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "other",
+   "lib_candidates",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "lib_candidates"
+  ],
+  "note": "approves the swap, adds a naming objection",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1a244afd:35239010f824",
+  "task": "1a244afd",
+  "ts": "2026-08-26T12:50:49.188Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates",
+   "alt_models"
+  ],
+  "picked_kinds": [
+   "lib_candidates"
+  ],
+  "note": "asks if abstraction point is moot given Matching",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1a244afd:79fd0f83a1fc",
+  "task": "1a244afd",
+  "ts": "2026-08-26T12:52:21.245Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "lib_candidates"
+  ],
+  "picked_kinds": [],
+  "note": "raises turn concept from an earlier review",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1a244afd:4e2c9eb5cc09",
+  "task": "1a244afd",
+  "ts": "2026-08-26T12:52:48.454Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "lib_candidates"
+  ],
+  "picked_kinds": [],
+  "note": "raises removing d4 term, message never mentioned it",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1a244afd:9c5e8f758f30",
+  "task": "1a244afd",
+  "ts": "2026-08-26T12:55:50.485Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "hedges"
+  ],
+  "picked_kinds": [],
+  "note": "orders reuse sweep for Matching, ignores the caveat",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "184a9768:fed6bf937244",
+  "task": "184a9768",
+  "ts": "2026-08-26T12:58:28.619Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "naming_vocab",
+   "simplification",
+   "lib_candidates",
+   "lib_candidates"
+  ],
+  "picked_kinds": [
+   "naming_vocab",
+   "lib_candidates"
+  ],
+  "note": "approves promotion, adds Packing name confusion",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1a244afd:535d4e299b6e",
+  "task": "1a244afd",
+  "ts": "2026-08-26T13:09:28.902Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "hedges"
+  ],
+  "picked_kinds": [
+   "hedges"
+  ],
+  "note": "rules on the pending header pass caveat",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "184a9768:9efb960d5d6f",
+  "task": "184a9768",
+  "ts": "2026-08-26T13:29:32.697Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "naming_vocab"
+  ],
+  "picked_kinds": [],
+  "note": "asks foot-rule refactor; message raised only rename wording",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "184a9768:6d601f68f129",
+  "task": "184a9768",
+  "ts": "2026-08-26T13:31:22.057Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "simplification",
+   "alt_models",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "simplification"
+  ],
+  "note": "approves merge, adds new lint question",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1be83260:525696368a28",
+  "task": "1be83260",
+  "ts": "2026-08-26T14:29:01.036Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "unwitnessed_edges",
+   "doc_gaps",
+   "doc_gaps",
+   "naming_vocab",
+   "correctness_risk"
+  ],
+  "picked_kinds": [
+   "unwitnessed_edges",
+   "doc_gaps",
+   "doc_gaps",
+   "naming_vocab"
+  ],
+  "note": "answers callouts 1 through 4 by number",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1be83260:ed32ad95c8ba",
+  "task": "1be83260",
+  "ts": "2026-08-26T14:36:23.675Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "unwitnessed_edges",
+   "doc_gaps",
+   "doc_gaps",
+   "other",
+   "naming_vocab"
+  ],
+  "picked_kinds": [
+   "unwitnessed_edges",
+   "doc_gaps",
+   "doc_gaps",
+   "other",
+   "naming_vocab"
+  ],
+  "note": "replies to all four traces by number",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1be83260:c8b674c823c2",
+  "task": "1be83260",
+  "ts": "2026-08-26T15:01:58.054Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "hedges",
+   "other"
+  ],
+  "picked_kinds": [
+   "hedges"
+  ],
+  "note": "picks up the wave-36 copy caveat on item 1",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "20a9e565:15471680c5b1",
+  "task": "20a9e565",
+  "ts": "2026-08-26T15:09:23.219Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "raises pkill tooling and multitask concept anew",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "20a9e565:a7f48899044d",
+  "task": "20a9e565",
+  "ts": "2026-08-26T15:20:12.021Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lint_tooling",
+   "naming_vocab",
+   "alt_models",
+   "simplification",
+   "lib_candidates",
+   "correctness_risk",
+   "correctness_risk"
+  ],
+  "picked_kinds": [
+   "alt_models",
+   "simplification"
+  ],
+  "note": "engages numbered replies 1 and 2",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "20a9e565:1077017da6a6",
+  "task": "20a9e565",
+  "ts": "2026-08-26T15:27:40.755Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "lib_candidates",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "lib_candidates"
+  ],
+  "note": "introduces patterns.md entry idea, later touches sub proposal",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "20a9e565:296dfc7d0fd2",
+  "task": "20a9e565",
+  "ts": "2026-08-26T15:41:24.935Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "probes whether Reframe use is a new concept",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "20a9e565:cdcf86213830",
+  "task": "20a9e565",
+  "ts": "2026-08-26T15:45:35.003Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates",
+   "naming_vocab",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "lib_candidates",
+   "naming_vocab"
+  ],
+  "note": "rules on whether deltas are needed",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "20a9e565:a517c403a145",
+  "task": "20a9e565",
+  "ts": "2026-08-26T16:19:26.522Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "lib_candidates",
+   "naming_vocab"
+  ],
+  "picked_kinds": [
+   "lib_candidates",
+   "naming_vocab"
+  ],
+  "note": "acts on proposal, adds recalled history and agent demand",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "20a9e565:c4ad0aebd271",
+  "task": "20a9e565",
+  "ts": "2026-08-26T16:19:37.891Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "lib_candidates",
+   "naming_vocab"
+  ],
+  "picked_kinds": [
+   "lib_candidates",
+   "naming_vocab"
+  ],
+  "note": "model-choice demand unrelated to the options listed",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "20a9e565:ca7465dd9c89",
+  "task": "20a9e565",
+  "ts": "2026-08-26T16:21:41.521Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "corrects the second explorer's search scope",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "20a9e565:b723a717ef01",
+  "task": "20a9e565",
+  "ts": "2026-08-26T16:46:43.377Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "lib_candidates"
+  ],
+  "picked_kinds": [
+   "lib_candidates"
+  ],
+  "note": "restart-subagents demand; later approves promotion",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "20a9e565:3da3f3d1dcfe",
+  "task": "20a9e565",
+  "ts": "2026-08-26T16:49:55.390Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates",
+   "naming_vocab",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "lib_candidates",
+   "naming_vocab"
+  ],
+  "note": "asks why displacement over alternative names",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "20a9e565:ab2794e2580a",
+  "task": "20a9e565",
+  "ts": "2026-08-26T16:53:10.501Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "naming_vocab",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "naming_vocab"
+  ],
+  "note": "approves displacement name, orders promotion",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "20a9e565:5c56f4cf55aa",
+  "task": "20a9e565",
+  "ts": "2026-08-26T16:58:24.287Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "prunes the docstring of the just-promoted lib entry",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "20a9e565:e83558feeb86",
+  "task": "20a9e565",
+  "ts": "2026-08-26T17:16:08.932Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "simplification",
+   "other"
+  ],
+  "picked_kinds": [
+   "simplification"
+  ],
+  "note": "rules on item 5, the 20fb2937 hold site",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "21897d95:3841b989b195",
+  "task": "21897d95",
+  "ts": "2026-08-26T17:23:22.576Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "unwitnessed_edges",
+   "lib_candidates",
+   "doc_gaps",
+   "naming_vocab",
+   "alt_models",
+   "simplification"
+  ],
+  "picked_kinds": [],
+  "note": "asks about Marker type, absent from the review",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "21897d95:8e685e6e9ac8",
+  "task": "21897d95",
+  "ts": "2026-08-26T17:25:58.362Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "challenges the approval status of the cited precedents",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "17cae0c1:bfdf18a3f22b",
+  "task": "17cae0c1",
+  "ts": "2026-08-26T17:33:28.650Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "alt_models",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "quotes point 4's style.md type-permission reading",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "21897d95:ac727c4d0550",
+  "task": "21897d95",
+  "ts": "2026-08-26T17:38:00.905Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "presses further on the precedent claim",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "17cae0c1:9a20f9a2c114",
+  "task": "17cae0c1",
+  "ts": "2026-08-26T17:38:59.036Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "alt_models",
+   "unwitnessed_edges",
+   "other",
+   "unwitnessed_edges",
+   "unwitnessed_edges",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "probes the Part ruling, adds style.md clause objection",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "17cae0c1:5e6f19adb967",
+  "task": "17cae0c1",
+  "ts": "2026-08-26T17:41:56.019Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "alt_models",
+   "alt_models"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "alt_models"
+  ],
+  "note": "vetoes Part, taking the reject option listed",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "21897d95:d24ce5987048",
+  "task": "21897d95",
+  "ts": "2026-08-26T17:42:38.705Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "hedges",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "vetoes the Marker type the precedent survey covered",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "17cae0c1:683b9232ada8",
+  "task": "17cae0c1",
+  "ts": "2026-08-26T17:44:03.886Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "simplification",
+   "hedges"
+  ],
+  "picked_kinds": [],
+  "note": "demands style wording the review called moot",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "17cae0c1:9eb5403158c5",
+  "task": "17cae0c1",
+  "ts": "2026-08-26T17:45:15.163Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "other"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "other"
+  ],
+  "note": "vetoes the proposal's new-type escape hatch",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "17cae0c1:652edd157892",
+  "task": "17cae0c1",
+  "ts": "2026-08-26T17:45:41.975Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "objects to the length of the revised wording",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "17cae0c1:50fb14d9f783",
+  "task": "17cae0c1",
+  "ts": "2026-08-26T17:46:58.622Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "applies the one-line clause",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "20a9e565:cb417b760988",
+  "task": "20a9e565",
+  "ts": "2026-08-26T17:59:12.086Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "hedges",
+   "other"
+  ],
+  "picked_kinds": [
+   "hedges"
+  ],
+  "note": "quotes the Datalog-tax caveat, also demands a new concept term",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "21897d95:7f42cb8533fb",
+  "task": "21897d95",
+  "ts": "2026-08-26T18:00:20.670Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "correctness_risk",
+   "lib_candidates",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "lib_candidates"
+  ],
+  "note": "asks for a verdict on the rewrite just reported",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "21897d95:b6fa2e093662",
+  "task": "21897d95",
+  "ts": "2026-08-26T18:02:01.415Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "simplification",
+   "correctness_risk",
+   "lib_candidates",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "lib_candidates"
+  ],
+  "note": "quotes cost 3, then probes a data form",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "20a9e565:cd5046db77ea",
+  "task": "20a9e565",
+  "ts": "2026-08-26T18:04:35.778Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "naming_vocab",
+   "simplification",
+   "other"
+  ],
+  "picked_kinds": [
+   "naming_vocab",
+   "simplification",
+   "other"
+  ],
+  "note": "picks induce, rules on the idx_* item",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "21897d95:c7ed1ee0e0b4",
+  "task": "21897d95",
+  "ts": "2026-08-26T18:07:15.790Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "alt_models"
+  ],
+  "picked_kinds": [
+   "alt_models"
+  ],
+  "note": "raises defect-negation sugar, untouched by the answer",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "21897d95:a369e56951a3",
+  "task": "21897d95",
+  "ts": "2026-08-26T18:11:28.626Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "alt_models",
+   "lib_candidates",
+   "alt_models",
+   "other"
+  ],
+  "picked_kinds": [
+   "lib_candidates",
+   "other"
+  ],
+  "note": "asks about Unanimous, named in the answer",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "21897d95:1e63cc2feb36",
+  "task": "21897d95",
+  "ts": "2026-08-26T18:13:57.618Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates"
+  ],
+  "picked_kinds": [
+   "lib_candidates"
+  ],
+  "note": "acts on the Unanimous proposal by ordering a sweep",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "20a9e565:8340cfdf22af",
+  "task": "20a9e565",
+  "ts": "2026-08-26T18:16:26.180Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "unwitnessed_edges",
+   "unwitnessed_edges"
+  ],
+  "picked_kinds": [],
+  "note": "asks about Canon, which the report never mentions",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "20a9e565:1cadf3ccede1",
+  "task": "20a9e565",
+  "ts": "2026-08-26T18:24:19.637Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "correctness_risk"
+  ],
+  "picked_kinds": [
+   "correctness_risk"
+  ],
+  "note": "probes the free-tie claim, then adds two new topics",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "21897d95:745a9eb091bf",
+  "task": "21897d95",
+  "ts": "2026-08-26T18:26:51.701Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "lib_candidates",
+   "alt_models",
+   "other"
+  ],
+  "picked_kinds": [
+   "lib_candidates",
+   "other"
+  ],
+  "note": "orders the promote, plus a new patterns.md question",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "20a9e565:cc45b9cf7c07",
+  "task": "20a9e565",
+  "ts": "2026-08-26T18:32:54.393Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "correctness_risk",
+   "alt_models",
+   "naming_vocab"
+  ],
+  "picked_kinds": [
+   "naming_vocab"
+  ],
+  "note": "rules on where the shape property should be tracked",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "21897d95:6f66bdcc7e48",
+  "task": "21897d95",
+  "ts": "2026-08-26T18:33:32.014Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "hedges"
+  ],
+  "picked_kinds": [],
+  "note": "prunes the lib update the message just reported",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "20a9e565:720fd094c740",
+  "task": "20a9e565",
+  "ts": "2026-08-26T18:37:11.258Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "doc_gaps",
+   "other",
+   "lint_tooling",
+   "naming_vocab",
+   "other"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "other"
+  ],
+  "note": "approves option 1 and the sweep, adds context.py demand",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "21897d95:8cbbcd9f48bd",
+  "task": "21897d95",
+  "ts": "2026-08-26T19:20:49.728Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "simplification",
+   "other"
+  ],
+  "picked_kinds": [],
+  "note": "recalls a prior solver's RIGID marker form",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "20a9e565:cc01ca45fb34",
+  "task": "20a9e565",
+  "ts": "2026-08-26T19:23:12.540Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "other",
+   "naming_vocab",
+   "naming_vocab"
+  ],
+  "picked_kinds": [],
+  "note": "orders a prune, ignores borderlines and candidate terms",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "21897d95:65140deb2d19",
+  "task": "21897d95",
+  "ts": "2026-08-26T20:00:36.750Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "alt_models",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "other",
+   "other"
+  ],
+  "note": "asks about the flagged size-fixed rival, approves glyphs",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "20a9e565:17b121e3f10b",
+  "task": "20a9e565",
+  "ts": "2026-08-26T20:03:00.791Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "redirects to a fresh solver review",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "20a9e565:8f4b005ed98f",
+  "task": "20a9e565",
+  "ts": "2026-08-26T20:08:29.843Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "naming_vocab",
+   "unwitnessed_edges",
+   "other",
+   "simplification"
+  ],
+  "picked_kinds": [
+   "naming_vocab",
+   "unwitnessed_edges",
+   "simplification"
+  ],
+  "note": "rules on items 1, 2 and 4 of the review",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "20a9e565:a7ff35c89693",
+  "task": "20a9e565",
+  "ts": "2026-08-26T20:10:52.427Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "simplification",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "corrects the report's reading of item 2",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "21897d95:615d8b4f6cb2",
+  "task": "21897d95",
+  "ts": "2026-08-26T20:35:05.524Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "correctness_risk",
+   "other",
+   "unwitnessed_edges",
+   "unwitnessed_edges",
+   "other",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "correctness_risk",
+   "other",
+   "other",
+   "other"
+  ],
+  "note": "quotes free cells and daxis, adds payload-less arrow",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "21897d95:dfcdc1a50470",
+  "task": "21897d95",
+  "ts": "2026-08-26T20:48:52.465Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other",
+   "hedges",
+   "lint_tooling"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "quotes and vetoes the pivot-derivation sentence",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:7d8b1b6dfdde",
+  "task": "?",
+  "ts": "2026-08-27T00:33:26.399Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lint_tooling",
+   "other",
+   "doc_gaps",
+   "lint_tooling",
+   "other",
+   "lint_tooling",
+   "doc_gaps",
+   "lint_tooling",
+   "lint_tooling",
+   "other"
+  ],
+  "picked_kinds": [
+   "lint_tooling",
+   "other",
+   "doc_gaps",
+   "lint_tooling",
+   "other",
+   "lint_tooling",
+   "doc_gaps",
+   "lint_tooling",
+   "lint_tooling",
+   "other"
+  ],
+  "note": "rejects flagging, orders all clusters worked now",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:70c6739c8b7c",
+  "task": "?",
+  "ts": "2026-08-27T00:33:32.140Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lint_tooling",
+   "correctness_risk",
+   "doc_gaps",
+   "lint_tooling",
+   "lint_tooling",
+   "lint_tooling",
+   "doc_gaps",
+   "lint_tooling",
+   "lint_tooling",
+   "other"
+  ],
+  "picked_kinds": [
+   "lint_tooling",
+   "correctness_risk",
+   "doc_gaps",
+   "other"
+  ],
+  "note": "vetoes the flag-posting close the clusters list proposed",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:eebb7d814218",
+  "task": "?",
+  "ts": "2026-08-27T00:35:03.759Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "other",
+   "other",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "demands a settle-vs-judgment triage the ack never offered",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:5ed51b46ed48",
+  "task": "?",
+  "ts": "2026-08-27T00:36:59.493Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "correctness_risk",
+   "doc_gaps",
+   "doc_gaps",
+   "lint_tooling",
+   "lint_tooling",
+   "lint_tooling",
+   "lint_tooling",
+   "lint_tooling"
+  ],
+  "picked_kinds": [
+   "correctness_risk",
+   "doc_gaps",
+   "doc_gaps",
+   "lint_tooling",
+   "lint_tooling",
+   "lint_tooling",
+   "lint_tooling",
+   "lint_tooling"
+  ],
+  "note": "raises server.py size and a refactor pass, never listed",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:9fdb555a32cf",
+  "task": "?",
+  "ts": "2026-08-27T00:45:41.392Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "other",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "gives the awaited rulings plus a new explanation demand",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:722fef3e8e9d",
+  "task": "?",
+  "ts": "2026-08-27T00:57:51.155Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "correctness_risk",
+   "doc_gaps",
+   "lint_tooling",
+   "lint_tooling",
+   "lint_tooling"
+  ],
+  "picked_kinds": [
+   "other",
+   "correctness_risk",
+   "doc_gaps",
+   "lint_tooling",
+   "lint_tooling",
+   "lint_tooling"
+  ],
+  "note": "lgtm on inflight and settlements, rules on all four",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:1026e66cc336",
+  "task": "?",
+  "ts": "2026-08-27T01:04:10.614Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "other"
+  ],
+  "picked_kinds": [],
+  "note": "reacts to agents running, revives an earlier review proposal",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:a5bb876d18b3",
+  "task": "?",
+  "ts": "2026-08-27T01:16:31.332Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lint_tooling",
+   "lint_tooling",
+   "lint_tooling",
+   "naming_vocab"
+  ],
+  "picked_kinds": [
+   "lint_tooling",
+   "naming_vocab"
+  ],
+  "note": "answers both open judgment calls with yes",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:f8956e0e020d",
+  "task": "?",
+  "ts": "2026-08-27T01:30:10.307Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "overrides the findings-before-commit step the message stated",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:4d718f17973a",
+  "task": "?",
+  "ts": "2026-08-27T01:46:55.370Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "hedges",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "rules on the stay-uncommitted list the message named",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "21897d95:8ea1dd64fa69",
+  "task": "21897d95",
+  "ts": "2026-08-27T14:27:38.283Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "preceding is 'No response requested'; user demands chirality clarity",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "21897d95:0ea90babd295",
+  "task": "21897d95",
+  "ts": "2026-08-27T14:37:31.457Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "alt_models",
+   "alt_models",
+   "other",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "rejects the daxis framing the message defended",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "21897d95:b9ca7964df52",
+  "task": "21897d95",
+  "ts": "2026-08-27T14:42:56.549Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "unwitnessed_edges",
+   "hedges",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "rejects the stored corner vocabulary just described",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "21897d95:a899469eb5f1",
+  "task": "21897d95",
+  "ts": "2026-08-27T14:43:08.987Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "unwitnessed_edges",
+   "hedges",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "rules against the RIGID block the message reported",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "21897d95:f39a07c1454c",
+  "task": "21897d95",
+  "ts": "2026-08-27T14:46:02.750Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "other",
+   "other",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [],
+  "note": "demands separate arrow and bracket axes, not raised",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "21897d95:07eab2e0e290",
+  "task": "21897d95",
+  "ts": "2026-08-27T14:55:57.193Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates",
+   "lint_tooling",
+   "unwitnessed_edges",
+   "unwitnessed_edges",
+   "unwitnessed_edges",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "unwitnessed_edges"
+  ],
+  "note": "asks what $Turn is in the reported structure",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "21897d95:2c287327017c",
+  "task": "21897d95",
+  "ts": "2026-08-27T14:57:03.952Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "unwitnessed_edges",
+   "unwitnessed_edges"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "challenges the $BGlyph($Turn) reading just explained",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "21897d95:372464113564",
+  "task": "21897d95",
+  "ts": "2026-08-27T14:59:15.128Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "alt_models",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "alt_models",
+   "other"
+  ],
+  "note": "takes option 1 cut, adds new docs question",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "21897d95:5a08ab981303",
+  "task": "21897d95",
+  "ts": "2026-08-27T15:02:17.820Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "asks about the cut, plus a new lint question",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "21897d95:eaf67f36e78e",
+  "task": "21897d95",
+  "ts": "2026-08-27T15:04:10.301Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lint_tooling",
+   "other",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "orders a minimal version of the proposed amendment",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "21897d95:ccb685d247ef",
+  "task": "21897d95",
+  "ts": "2026-08-27T15:05:57.487Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "applies the proposed one-sentence doc edit",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "21897d95:11ff12a13187",
+  "task": "21897d95",
+  "ts": "2026-08-27T15:08:53.700Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "simplification",
+   "hedges"
+  ],
+  "picked_kinds": [],
+  "note": "naming probe the cleanup report never raised",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "271d71e2:ac3c6e7f9cfd",
+  "task": "271d71e2",
+  "ts": "2026-08-28T12:19:20.715Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "unwitnessed_edges",
+   "alt_models",
+   "naming_vocab",
+   "lib_candidates",
+   "other"
+  ],
+  "picked_kinds": [
+   "lib_candidates"
+  ],
+  "note": "reopens the per-key Ray.dir ruling in callout item 4",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "271d71e2:9bd9969a1886",
+  "task": "271d71e2",
+  "ts": "2026-08-28T12:21:20.586Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "lib_candidates"
+  ],
+  "picked_kinds": [
+   "lib_candidates"
+  ],
+  "note": "broadens to all comps with unkeyed parameters",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "271d71e2:70a68eebdad7",
+  "task": "271d71e2",
+  "ts": "2026-08-28T12:21:45.959Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "directs how to run the survey the message just announced",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "271d71e2:b295e36a543d",
+  "task": "271d71e2",
+  "ts": "2026-08-28T12:34:18.658Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates",
+   "other"
+  ],
+  "picked_kinds": [],
+  "note": "asks about the first survey the message says is running",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "271d71e2:85cec961c3bd",
+  "task": "271d71e2",
+  "ts": "2026-08-28T12:35:01.853Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "takes the relaunch offer, adds a cause investigation",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "28a6681f:5b117d5b39a6",
+  "task": "28a6681f",
+  "ts": "2026-08-28T12:38:48.594Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "correctness_risk",
+   "alt_models",
+   "correctness_risk",
+   "lib_candidates",
+   "simplification",
+   "lint_tooling",
+   "alt_models"
+  ],
+  "picked_kinds": [
+   "lib_candidates"
+  ],
+  "note": "vetoes review item 4.1 and asks about its mechanism",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "271d71e2:ae08b70e5e64",
+  "task": "271d71e2",
+  "ts": "2026-08-28T12:41:58.735Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates",
+   "doc_gaps",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "lib_candidates",
+   "doc_gaps"
+  ],
+  "note": "picks promote over the stage alternative offered",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "28a6681f:19643fe49c50",
+  "task": "28a6681f",
+  "ts": "2026-08-28T12:44:51.725Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates",
+   "alt_models",
+   "alt_models",
+   "alt_models",
+   "other"
+  ],
+  "picked_kinds": [
+   "lib_candidates",
+   "other"
+  ],
+  "note": "answers which part he objects to, asks about SCC term",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "28a6681f:5ea9dd58e8f2",
+  "task": "28a6681f",
+  "ts": "2026-08-28T12:48:24.886Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "naming_vocab",
+   "other"
+  ],
+  "picked_kinds": [
+   "naming_vocab"
+  ],
+  "note": "rules the mismatch is altitude, not the LexOrder name",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "271d71e2:ca5224bc1162",
+  "task": "271d71e2",
+  "ts": "2026-08-28T12:49:07.945Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "other"
+  ],
+  "picked_kinds": [],
+  "note": "orders a cleanup pass the status message never mentioned",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "28a6681f:962adade58b2",
+  "task": "28a6681f",
+  "ts": "2026-08-28T12:52:00.615Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates",
+   "naming_vocab"
+  ],
+  "picked_kinds": [
+   "lib_candidates"
+  ],
+  "note": "rules on the promotion item waiting on him",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "28a6681f:a9b03c207e3f",
+  "task": "28a6681f",
+  "ts": "2026-08-28T12:54:29.742Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "demands corpus sweep; status message raised no item",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "28a6681f:9ba07f0b1013",
+  "task": "28a6681f",
+  "ts": "2026-08-28T13:25:57.891Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "simplification",
+   "simplification",
+   "simplification",
+   "simplification",
+   "simplification",
+   "simplification",
+   "simplification",
+   "simplification",
+   "lib_candidates"
+  ],
+  "picked_kinds": [
+   "simplification",
+   "simplification",
+   "simplification",
+   "simplification",
+   "simplification",
+   "simplification",
+   "simplification",
+   "simplification",
+   "lib_candidates"
+  ],
+  "note": "rules on the sweep's arguable items and approves the conversions",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "271d71e2:da960e7028da",
+  "task": "271d71e2",
+  "ts": "2026-08-28T13:43:13.542Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "simplification",
+   "simplification"
+  ],
+  "picked_kinds": [],
+  "note": "extends cleanup to lib changes outside the report",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "271d71e2:b38335f0da23",
+  "task": "271d71e2",
+  "ts": "2026-08-28T13:56:38.850Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "naming_vocab",
+   "simplification",
+   "simplification",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "simplification",
+   "simplification"
+  ],
+  "note": "approves LexOrder refactor and the first-vs-rank item",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "28a6681f:12415b71016d",
+  "task": "28a6681f",
+  "ts": "2026-08-28T13:57:08.187Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "correctness_risk"
+  ],
+  "picked_kinds": [
+   "correctness_risk"
+  ],
+  "note": "asks about item 8, the open sense slot",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "271d71e2:afc19591b89d",
+  "task": "271d71e2",
+  "ts": "2026-08-28T13:58:07.009Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "simplification"
+  ],
+  "picked_kinds": [
+   "simplification"
+  ],
+  "note": "picks option 1, adds a new corpus fix sweep",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "28a6681f:566a30d19d84",
+  "task": "28a6681f",
+  "ts": "2026-08-28T14:00:16.170Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "alt_models",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "alt_models"
+  ],
+  "note": "quotes item 2.1 and probes the literal alternative",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "271d71e2:1c35db55f949",
+  "task": "271d71e2",
+  "ts": "2026-08-28T14:04:48.433Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "simplification",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "simplification"
+  ],
+  "note": "acts on item 5, the candidate left for later",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "28a6681f:c86dc28930dd",
+  "task": "28a6681f",
+  "ts": "2026-08-28T14:06:59.709Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "doc_gaps",
+   "naming_vocab"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "demands a lib sense elem the message never mentioned",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "271d71e2:1b972519f21e",
+  "task": "271d71e2",
+  "ts": "2026-08-28T14:13:42.316Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "names 271d71e2, a target the message never listed",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "28a6681f:0743e6f36598",
+  "task": "28a6681f",
+  "ts": "2026-08-28T14:14:11.745Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "hedges"
+  ],
+  "picked_kinds": [],
+  "note": "asks for doc update; prune report raised no doc item",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "28a6681f:8db56ad7f75f",
+  "task": "28a6681f",
+  "ts": "2026-08-28T14:15:21.998Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "note": "approves edit 1, bounds edit 2",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1b8318e3:8cd4906bd963",
+  "task": "1b8318e3",
+  "ts": "2026-08-29T11:19:48.403Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "correctness_risk",
+   "unwitnessed_edges",
+   "simplification",
+   "lib_candidates",
+   "naming_vocab"
+  ],
+  "picked_kinds": [
+   "lib_candidates",
+   "unwitnessed_edges"
+  ],
+  "note": "questions the taxicab recommendation in item 1",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1b8318e3:f8b2a4f7295e",
+  "task": "1b8318e3",
+  "ts": "2026-08-29T11:22:22.230Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates",
+   "hedges",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "lib_candidates"
+  ],
+  "note": "orders a sweep to decide the taxicab proposal",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1b8318e3:8a821be89769",
+  "task": "1b8318e3",
+  "ts": "2026-08-29T11:47:07.409Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates"
+  ],
+  "picked_kinds": [
+   "lib_candidates"
+  ],
+  "note": "asks why the kept taxicab measurement exists",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1b8318e3:4015e9422f32",
+  "task": "1b8318e3",
+  "ts": "2026-08-29T11:51:20.359Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "alt_models",
+   "alt_models",
+   "alt_models"
+  ],
+  "picked_kinds": [
+   "alt_models"
+  ],
+  "note": "revisits cardinal-first, adds directly-touching notion",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1b8318e3:4aa23a892cae",
+  "task": "1b8318e3",
+  "ts": "2026-08-29T11:55:05.600Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "alt_models",
+   "alt_models",
+   "alt_models"
+  ],
+  "picked_kinds": [
+   "alt_models",
+   "alt_models",
+   "alt_models"
+  ],
+  "note": "raises task ambiguity the message never claimed",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1b8318e3:42fb4996d17b",
+  "task": "1b8318e3",
+  "ts": "2026-08-29T11:58:38.369Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "correctness_risk",
+   "correctness_risk",
+   "other"
+  ],
+  "picked_kinds": [
+   "correctness_risk",
+   "correctness_risk",
+   "other"
+  ],
+  "note": "accepts the ambiguity claim, asks for train-fitting readings",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1b8318e3:3debf2687174",
+  "task": "1b8318e3",
+  "ts": "2026-08-29T12:02:51.899Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "alt_models",
+   "other",
+   "other",
+   "other",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "other",
+   "other",
+   "other",
+   "other",
+   "other"
+  ],
+  "note": "narrows the enumerated readings by excluding Euclidean",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1b8318e3:aa4378ffd538",
+  "task": "1b8318e3",
+  "ts": "2026-08-29T12:04:06.783Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other",
+   "other",
+   "other",
+   "other",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "other",
+   "other",
+   "other",
+   "other",
+   "other"
+  ],
+  "note": "asks which of the five listed readings is simplest",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1b8318e3:809309b618eb",
+  "task": "1b8318e3",
+  "ts": "2026-08-29T12:08:30.769Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "alt_models",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "other",
+   "other"
+  ],
+  "note": "picks the edit-existing-grids alternative offered",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1b8318e3:fff8bc05706e",
+  "task": "1b8318e3",
+  "ts": "2026-08-29T12:11:45.414Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other",
+   "other",
+   "other",
+   "alt_models",
+   "other"
+  ],
+  "picked_kinds": [
+   "other",
+   "other"
+  ],
+  "note": "quotes two ack items: metric witness and patch level",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1b8318e3:643c2c676609",
+  "task": "1b8318e3",
+  "ts": "2026-08-29T12:14:58.255Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "alt_models",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "alt_models"
+  ],
+  "note": "argues with the stage-based simplicity claim",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1b8318e3:11b2dad8bd45",
+  "task": "1b8318e3",
+  "ts": "2026-08-29T12:16:51.175Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "alt_models",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "alt_models"
+  ],
+  "note": "rules against the recommendation, picks step count",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1b8318e3:152b38b916b4",
+  "task": "1b8318e3",
+  "ts": "2026-08-29T12:24:11.262Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "lint_tooling",
+   "simplification",
+   "hedges",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [],
+  "note": "observes the added 8 hits a side, unflagged in review",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1b8318e3:a794d96a8f41",
+  "task": "1b8318e3",
+  "ts": "2026-08-29T12:28:05.569Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "unwitnessed_edges",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "unwitnessed_edges",
+   "other"
+  ],
+  "note": "confirms the quoted finding, states a point-on rule",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "1b8318e3:3ad964a0d63b",
+  "task": "1b8318e3",
+  "ts": "2026-08-29T12:30:39.744Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "questions the patch plan, adds human-solving criterion",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "212895b5:f4d35dea02fc",
+  "task": "212895b5",
+  "ts": "2026-08-29T13:40:04.501Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "lib_candidates",
+   "naming_vocab",
+   "lib_candidates",
+   "alt_models",
+   "alt_models",
+   "simplification",
+   "correctness_risk"
+  ],
+  "picked_kinds": [
+   "lib_candidates",
+   "naming_vocab",
+   "lib_candidates"
+  ],
+  "note": "answers P1-P3 by number, adds Sense alternative",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "230f2e48:091e647ffa6d",
+  "task": "230f2e48",
+  "ts": "2026-08-29T13:43:19.855Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "unwitnessed_edges",
+   "lib_candidates",
+   "alt_models",
+   "naming_vocab",
+   "other"
+  ],
+  "picked_kinds": [
+   "naming_vocab"
+  ],
+  "note": "reverts review item 4, the d4 concept term",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "212895b5:d672ce4f5877",
+  "task": "212895b5",
+  "ts": "2026-08-29T13:46:46.286Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "lib_candidates"
+  ],
+  "picked_kinds": [
+   "lib_candidates"
+  ],
+  "note": "questions a Sense limitation, not the perp_dir survey",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "212895b5:2640b7a2b712",
+  "task": "212895b5",
+  "ts": "2026-08-29T13:53:55.555Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates",
+   "lib_candidates",
+   "naming_vocab",
+   "other",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "lib_candidates",
+   "lib_candidates",
+   "naming_vocab"
+  ],
+  "note": "approves items 1-2 by name, challenges the Turn name",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "212895b5:d7c50f4b91e4",
+  "task": "212895b5",
+  "ts": "2026-08-29T14:06:26.836Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "simplification",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [],
+  "note": "asks about C4/Sense options report never mentioned",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "212895b5:8fe912bb7780",
+  "task": "212895b5",
+  "ts": "2026-08-29T14:09:29.034Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "simplification",
+   "simplification",
+   "other"
+  ],
+  "picked_kinds": [],
+  "note": "raises turtle vs walk vocabulary, absent from cleanup report",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:0ae16e8de77f",
+  "task": "?",
+  "ts": "2026-08-29T14:12:04.944Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "other"
+  ],
+  "note": "demands transcript check instead of ruling on open choices",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:120ac223c0f8",
+  "task": "?",
+  "ts": "2026-08-29T14:12:16.368Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "ratifies the offered agent dispatch, names opus",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:129da32844ec",
+  "task": "?",
+  "ts": "2026-08-29T14:33:44.724Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "other",
+   "lint_tooling"
+  ],
+  "picked_kinds": [
+   "lint_tooling",
+   "doc_gaps"
+  ],
+  "note": "drops follow-up 2, asks to walk the ladder",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:eb24abf1c825",
+  "task": "?",
+  "ts": "2026-08-29T14:37:58.840Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "approves walkthrough, adds console handoff question",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:6baed3c21676",
+  "task": "?",
+  "ts": "2026-08-29T14:40:19.542Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "alt_models",
+   "doc_gaps",
+   "doc_gaps",
+   "correctness_risk",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "alt_models"
+  ],
+  "note": "kills triage option, adds new CLAUDE.md pointer demand",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "212895b5:d5cc84a63269",
+  "task": "212895b5",
+  "ts": "2026-08-29T14:44:16.976Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "alt_models",
+   "other",
+   "other",
+   "other",
+   "naming_vocab",
+   "naming_vocab",
+   "alt_models",
+   "lib_candidates",
+   "lib_candidates",
+   "alt_models",
+   "lint_tooling"
+  ],
+  "picked_kinds": [
+   "other",
+   "other",
+   "other",
+   "naming_vocab",
+   "alt_models",
+   "lib_candidates",
+   "lib_candidates",
+   "alt_models",
+   "lint_tooling"
+  ],
+  "note": "rules on defects, relabel quote, C4 section, timeouts",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:02f1953f8169",
+  "task": "?",
+  "ts": "2026-08-29T14:46:37.722Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "correctness_risk",
+   "hedges",
+   "lint_tooling",
+   "other"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "disputes rule 1 that create/refine skip the sweep",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "212895b5:40495c271d6f",
+  "task": "212895b5",
+  "ts": "2026-08-29T14:47:59.457Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "naming_vocab",
+   "naming_vocab",
+   "other"
+  ],
+  "picked_kinds": [],
+  "note": "defect 1 and cleanup agents come from earlier turn",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:568f3a5bdf37",
+  "task": "?",
+  "ts": "2026-08-29T14:50:51.931Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "hedges",
+   "hedges",
+   "hedges",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "hedges",
+   "hedges",
+   "doc_gaps"
+  ],
+  "note": "rules on costs 1 and 2 and rule 1 by number",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:aafbd2c57860",
+  "task": "?",
+  "ts": "2026-08-29T14:52:00.756Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "other"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "raises over-specification concern the draft never mentioned",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:2b308616f499",
+  "task": "?",
+  "ts": "2026-08-29T14:55:58.193Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "quotes draft step 3 close wording as conflicting",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:d02d62078f42",
+  "task": "?",
+  "ts": "2026-08-29T14:57:33.976Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "other"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "re-presses the close/park split with fuller quote",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:b25f9ff17570",
+  "task": "?",
+  "ts": "2026-08-29T14:59:44.656Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "other",
+   "hedges",
+   "lint_tooling"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "questions whether the restored close rule bypasses lint",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:8bc7527c0114",
+  "task": "?",
+  "ts": "2026-08-29T15:00:03.480Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "sharpens the objection to the denial just given",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:a908dfe5730a",
+  "task": "?",
+  "ts": "2026-08-29T15:02:11.006Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "correctness_risk"
+  ],
+  "picked_kinds": [
+   "correctness_risk"
+  ],
+  "note": "rules on the conceded rule, adds docs-failure root cause",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:90c98e25d8a8",
+  "task": "?",
+  "ts": "2026-08-29T15:03:59.078Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "note": "acts on the two doc spots the message named",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:7050dfa946c6",
+  "task": "?",
+  "ts": "2026-08-29T15:05:39.331Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "lint_tooling"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "raises renaming, which the edit list never proposed",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "212895b5:f833d73fdb19",
+  "task": "212895b5",
+  "ts": "2026-08-29T15:06:42.612Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "simplification",
+   "simplification",
+   "simplification",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "overrides the call that remaining lib comments stood",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:a6aeef103c1d",
+  "task": "?",
+  "ts": "2026-08-29T15:07:43.385Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "naming_vocab"
+  ],
+  "picked_kinds": [
+   "naming_vocab"
+  ],
+  "note": "picks candidate 1 from the name list",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:d767499b6400",
+  "task": "?",
+  "ts": "2026-08-29T15:07:51.358Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "naming_vocab"
+  ],
+  "picked_kinds": [
+   "naming_vocab"
+  ],
+  "note": "picks candidate 1 from the name list",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "212895b5:82ca1d0040d6",
+  "task": "212895b5",
+  "ts": "2026-08-29T15:08:47.561Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "takes the offered wider prune scope verbatim",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:7c4c83e990e7",
+  "task": "?",
+  "ts": "2026-08-29T15:42:58.031Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "other",
+   "other"
+  ],
+  "note": "objects to steps 3-4 autonomy in the applied ladder",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:9735c22f89ae",
+  "task": "?",
+  "ts": "2026-08-29T15:44:06.434Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "alt_models"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "rules on the proposed protocol amendment, wants minimal edits",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:c9285cf2861d",
+  "task": "?",
+  "ts": "2026-08-29T15:46:54.069Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "demands a fresh issue scan after a done-report",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:bdb9cc28dd41",
+  "task": "?",
+  "ts": "2026-08-29T15:50:37.393Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "other"
+  ],
+  "note": "handles open item 1 and the commit gate",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:c575e5787f8d",
+  "task": "?",
+  "ts": "2026-08-29T17:34:35.865Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "simplification",
+   "simplification"
+  ],
+  "picked_kinds": [
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates"
+  ],
+  "note": "raises readability and a supersession check the list never mentioned",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:74a93c167ff8",
+  "task": "?",
+  "ts": "2026-08-29T17:45:39.936Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "simplification"
+  ],
+  "picked_kinds": [
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "simplification"
+  ],
+  "note": "rules on all ten entries, adds a Peel naming objection",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:d296cc42579a",
+  "task": "?",
+  "ts": "2026-08-29T17:52:52.345Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "naming_vocab",
+   "simplification",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates"
+  ],
+  "picked_kinds": [
+   "naming_vocab",
+   "simplification",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates",
+   "lib_candidates"
+  ],
+  "note": "questions items 7 and 10, agrees to the rest",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:90a8461508fa",
+  "task": "?",
+  "ts": "2026-08-29T17:56:06.372Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "asks how the announced acting will proceed",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:3398a349cc6a",
+  "task": "?",
+  "ts": "2026-08-29T17:56:22.693Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "approves the order, asks who runs it",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:5ffd0cf991c5",
+  "task": "?",
+  "ts": "2026-08-29T17:57:31.891Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "other",
+   "other"
+  ],
+  "note": "accepts the split and gives the held-back migrate word",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:6b4912ddc444",
+  "task": "?",
+  "ts": "2026-08-29T18:02:44.697Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "questions the Rim/Rim8 split the status line never raised",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:6d0e4156d8c3",
+  "task": "?",
+  "ts": "2026-08-29T18:10:51.348Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "simplification",
+   "other"
+  ],
+  "picked_kinds": [
+   "simplification"
+  ],
+  "note": "recalls the sweep's improvement findings, absent from the report",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:1f1b28ad2bdc",
+  "task": "?",
+  "ts": "2026-08-29T18:11:25.025Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "repeats the dispatch ask, delegates the older judgment call",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:ef4d07e4307b",
+  "task": "?",
+  "ts": "2026-08-29T18:18:40.078Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates",
+   "lib_candidates",
+   "other"
+  ],
+  "picked_kinds": [
+   "lib_candidates",
+   "lib_candidates"
+  ],
+  "note": "gives the sweep word the recap asked for",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:03d1e2eab7b5",
+  "task": "?",
+  "ts": "2026-08-29T18:27:51.837Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates",
+   "naming_vocab",
+   "simplification",
+   "lib_candidates"
+  ],
+  "picked_kinds": [
+   "lib_candidates",
+   "naming_vocab",
+   "lib_candidates"
+  ],
+  "note": "questions the Inset typing, accepts the gap close",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:e10ea73d6c8c",
+  "task": "?",
+  "ts": "2026-08-29T18:28:16.578Z",
+  "origin": "MIXED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "preamble too thin; comment re-asks and adds park-vs-close",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:227d074a15b5",
+  "task": "?",
+  "ts": "2026-08-29T18:32:30.672Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "naming_vocab",
+   "naming_vocab",
+   "lib_candidates",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "naming_vocab",
+   "naming_vocab",
+   "lib_candidates",
+   "doc_gaps"
+  ],
+  "note": "asks about both answers, picks up the Position subtypes",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:861eaa78152f",
+  "task": "?",
+  "ts": "2026-08-29T18:38:44.946Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates",
+   "naming_vocab",
+   "lib_candidates"
+  ],
+  "picked_kinds": [
+   "lib_candidates",
+   "naming_vocab",
+   "lib_candidates"
+  ],
+  "note": "approves the type rule as-is, then says promote migrate",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:a69d8271f7a0",
+  "task": "?",
+  "ts": "2026-08-29T18:52:18.763Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "other"
+  ],
+  "picked_kinds": [],
+  "note": "demands protocol updates for parallel sweep collisions",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:21e0d30acf19",
+  "task": "?",
+  "ts": "2026-08-29T18:58:42.150Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "note": "rules yes or no on each of the eight proposals",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:ad015c618a1a",
+  "task": "?",
+  "ts": "2026-08-29T19:02:12.166Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "doc_gaps",
+   "hedges"
+  ],
+  "picked_kinds": [],
+  "note": "raises promoted-entry growth the report never mentioned",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:68b1959c74a0",
+  "task": "?",
+  "ts": "2026-08-29T19:05:03.384Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "challenges proposals.md's purpose, not the traced verdicts",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:e9b7eaae502d",
+  "task": "?",
+  "ts": "2026-08-29T19:12:56.599Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "hedges"
+  ],
+  "note": "quotes the cost line and disputes it",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:b54f6c68e35e",
+  "task": "?",
+  "ts": "2026-08-29T19:13:35.337Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "doc_gaps"
+  ],
+  "picked_kinds": [],
+  "note": "demands a broader error scan, engages no item",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:e983a20f0586",
+  "task": "?",
+  "ts": "2026-08-29T19:13:44.563Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "re-asks the scan, narrowed to the agent's own statements",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:2698d1db21b7",
+  "task": "?",
+  "ts": "2026-08-29T19:20:27.299Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "quotes the git-based increment rule and vetoes it",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:0b2900c071e3",
+  "task": "?",
+  "ts": "2026-08-29T19:23:24.863Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lint_tooling"
+  ],
+  "picked_kinds": [],
+  "note": "asks granularity of the ls -lt date rule just applied",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:3ef9e74524b7",
+  "task": "?",
+  "ts": "2026-08-29T19:24:57.662Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "doc_gaps"
+  ],
+  "picked_kinds": [],
+  "note": "raises verdict ownership; message only proposed minute timestamps",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:895e3997a476",
+  "task": "?",
+  "ts": "2026-08-29T19:29:33.114Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "correctness_risk",
+   "correctness_risk",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "note": "vetoes item 1's triage-runs-the-protocol fix",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:73887c1bc3ea",
+  "task": "?",
+  "ts": "2026-08-29T19:35:28.651Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "correctness_risk",
+   "doc_gaps",
+   "doc_gaps",
+   "correctness_risk",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "note": "rejects item 1's interactive-only sweep, wants it automatic",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:220714427038",
+  "task": "?",
+  "ts": "2026-08-29T19:42:27.400Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "correctness_risk"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "note": "rules on items 1-2 and renames the recommendation line",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:2dd4fe519b86",
+  "task": "?",
+  "ts": "2026-08-29T19:44:59.162Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "correctness_risk"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "quotes the second-home clause and challenges it",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:49ccbe38a6ba",
+  "task": "?",
+  "ts": "2026-08-29T20:09:04.802Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "hedges"
+  ],
+  "picked_kinds": [],
+  "note": "orders a prune; message raised no such standard",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:fbde20fca3de",
+  "task": "?",
+  "ts": "2026-08-29T20:10:21.350Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "quotes a line the reported prune left in",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:22458f8d5386",
+  "task": "?",
+  "ts": "2026-08-29T20:22:13.636Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "new demand to audit; message reported a finished cut",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:4d26724f92f1",
+  "task": "?",
+  "ts": "2026-08-29T20:35:28.384Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "naming_vocab",
+   "doc_gaps",
+   "doc_gaps",
+   "lint_tooling",
+   "correctness_risk",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "naming_vocab",
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "note": "approves the 1-3 the findings asked it to pick",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:9346c2751ef8",
+  "task": "?",
+  "ts": "2026-08-29T20:40:22.902Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lint_tooling",
+   "correctness_risk"
+  ],
+  "picked_kinds": [],
+  "note": "questions step 1's premise in the process walkthrough",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:b987c7daa013",
+  "task": "?",
+  "ts": "2026-08-29T20:41:06.560Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "picked_kinds": [],
+  "note": "accepts trigger-unchanged answer, ignores both wording fixes",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "2dd70a9a:997cd0aee75d",
+  "task": "2dd70a9a",
+  "ts": "2026-08-30T11:46:09.001Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "unwitnessed_edges",
+   "alt_models",
+   "correctness_risk",
+   "alt_models",
+   "lib_candidates"
+  ],
+  "picked_kinds": [
+   "unwitnessed_edges"
+  ],
+  "note": "questions the divergence witness in item 1",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:13b1e9a43fb3",
+  "task": "?",
+  "ts": "2026-08-30T11:50:49.268Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "hedges"
+  ],
+  "picked_kinds": [],
+  "note": "raises park justification, absent from the commit report",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "2dd70a9a:fcde29360bfc",
+  "task": "2dd70a9a",
+  "ts": "2026-08-30T11:51:37.509Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "alt_models",
+   "other"
+  ],
+  "picked_kinds": [],
+  "note": "asks for more on the jog/toward explanation",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:1bcb51f01e79",
+  "task": "?",
+  "ts": "2026-08-30T11:54:47.819Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "note": "asks why both applied doc fixes are correct",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:e7a7d28040e0",
+  "task": "?",
+  "ts": "2026-08-30T11:54:57.406Z",
+  "origin": "MIXED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "preceding message truncated to a kaomoji",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:f4ca6dc92a7c",
+  "task": "?",
+  "ts": "2026-08-30T12:01:00.189Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "objects to the 2dd70a9a citation in item 2",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:0250fc13c7a2",
+  "task": "?",
+  "ts": "2026-08-30T12:02:35.844Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "accepts citation text, then opens sweep-agent review",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "2dd70a9a:056e88ffff95",
+  "task": "2dd70a9a",
+  "ts": "2026-08-30T12:04:09.752Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "simplification",
+   "hedges"
+  ],
+  "picked_kinds": [],
+  "note": "raises corpus-wide pair pattern the cleanup never mentioned",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "2dd70a9a:4cdf81d66d85",
+  "task": "2dd70a9a",
+  "ts": "2026-08-30T12:09:41.235Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "alt_models",
+   "lib_candidates",
+   "naming_vocab"
+  ],
+  "picked_kinds": [
+   "lib_candidates"
+  ],
+  "note": "orders the sweep the Segment proposal offered",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "2dd70a9a:d47ed0eec4e4",
+  "task": "2dd70a9a",
+  "ts": "2026-08-30T12:10:16.623Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "vetoes the proposed manual sweep method",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "2dd70a9a:342d7705f99a",
+  "task": "2dd70a9a",
+  "ts": "2026-08-30T12:10:54.271Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "corrects the shape spec for the announced parse",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:a375faf2eb59",
+  "task": "?",
+  "ts": "2026-08-30T12:13:11.043Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lint_tooling",
+   "other",
+   "doc_gaps",
+   "other",
+   "doc_gaps",
+   "doc_gaps",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "challenges the whole proposal as overfit to this case",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:5d1b0a57c424",
+  "task": "?",
+  "ts": "2026-08-30T12:15:41.705Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "alt_models",
+   "alt_models",
+   "alt_models",
+   "alt_models",
+   "other",
+   "doc_gaps",
+   "other"
+  ],
+  "picked_kinds": [
+   "other",
+   "doc_gaps"
+  ],
+  "note": "answers say-which by numbering items 1 and 2",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:97817eb295f7",
+  "task": "?",
+  "ts": "2026-08-30T12:16:17.270Z",
+  "origin": "MIXED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "one-line preface; user repeats question 1",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:80f156672adb",
+  "task": "?",
+  "ts": "2026-08-30T12:18:02.212Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "doc_gaps",
+   "doc_gaps",
+   "correctness_risk"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "quotes 'a sweep agent needs neither' and disputes it",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "2dd70a9a:46137b9cd7dd",
+  "task": "2dd70a9a",
+  "ts": "2026-08-30T12:23:56.068Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates",
+   "other",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "lib_candidates",
+   "other",
+   "other"
+  ],
+  "note": "authorizes the reimplementation fixes the report listed",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:fe5affb8ef74",
+  "task": "?",
+  "ts": "2026-08-30T12:25:12.597Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "pushes back on the static-definition conclusion",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:bed6435604c5",
+  "task": "?",
+  "ts": "2026-08-30T12:27:34.857Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "alt_models",
+   "lint_tooling",
+   "correctness_risk",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "asks what the recommendation is, calls it overengineering",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:021ec68b903d",
+  "task": "?",
+  "ts": "2026-08-30T12:28:52.317Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "quotes the context.py read line, proposes embedding",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:7443d38131bf",
+  "task": "?",
+  "ts": "2026-08-30T12:35:45.985Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "lint_tooling",
+   "other",
+   "correctness_risk",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "lint_tooling",
+   "hedges"
+  ],
+  "note": "quotes the interactive-session gap and rules on wave reuse",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "2dd70a9a:d58e7a5c08fc",
+  "task": "2dd70a9a",
+  "ts": "2026-08-30T12:37:25.658Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "other",
+   "other",
+   "correctness_risk",
+   "unwitnessed_edges",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "quotes earlier Segment finding absent from this message",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:8fcf9d6a64bf",
+  "task": "?",
+  "ts": "2026-08-30T12:38:06.457Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "alt_models",
+   "other",
+   "other",
+   "other",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "alt_models",
+   "other"
+  ],
+  "note": "questions the appendix/proposal-passing the message just dispatched",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "2dd70a9a:1391f33205b7",
+  "task": "2dd70a9a",
+  "ts": "2026-08-30T12:39:47.058Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "other"
+  ],
+  "picked_kinds": [],
+  "note": "asks Segment payoff; message covered D4Map agent only",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:2142a5289bff",
+  "task": "?",
+  "ts": "2026-08-30T12:45:06.235Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "objects to item 1's disk reads and report file count",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:cfa0cdde47f5",
+  "task": "?",
+  "ts": "2026-08-30T12:45:31.812Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "quotes the report scope line from item 1",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:a0c62c339a76",
+  "task": "?",
+  "ts": "2026-08-30T12:56:58.107Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other",
+   "other",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "asks about the projection staleness the message asserted",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:a3463f5fc3b0",
+  "task": "?",
+  "ts": "2026-08-30T12:59:55.868Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "hedges"
+  ],
+  "picked_kinds": [],
+  "note": "questions the per-wave freeze the message took as given",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "2dd70a9a:0815de5b4c9e",
+  "task": "2dd70a9a",
+  "ts": "2026-08-30T13:02:18.634Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other",
+   "other",
+   "alt_models"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "acts on item 3's linter fix",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:72e95ad12c9e",
+  "task": "?",
+  "ts": "2026-08-30T13:04:23.142Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "tests content-keying against the finalize case it named",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:d443f664ed9e",
+  "task": "?",
+  "ts": "2026-08-30T13:08:00.492Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "answers the message's closing question, asks for issues",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:31e8715245ed",
+  "task": "?",
+  "ts": "2026-08-30T13:11:52.876Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "asks about the three issues the message listed",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:b2335d0fd843",
+  "task": "?",
+  "ts": "2026-08-30T13:13:37.801Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "asks on numbered item 2, the cache cost",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:a7951aef083c",
+  "task": "?",
+  "ts": "2026-08-30T13:15:50.456Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "correctness_risk",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "correctness_risk",
+   "other"
+  ],
+  "note": "orders the check the message said it had not done",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:3385bce09b66",
+  "task": "?",
+  "ts": "2026-08-30T13:30:54.838Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "alt_models",
+   "other",
+   "other",
+   "correctness_risk"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "pushes on item 2, dropping the proposals index",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "2dd70a9a:7aeff51f5bd0",
+  "task": "2dd70a9a",
+  "ts": "2026-08-30T13:32:19.387Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other",
+   "other",
+   "other",
+   "lib_candidates",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "quotes phrase from item 4's left-as-ruled list",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:3877ac16edda",
+  "task": "?",
+  "ts": "2026-08-30T13:33:31.058Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "other",
+   "doc_gaps",
+   "other"
+  ],
+  "picked_kinds": [],
+  "note": "raises one-file vs per-entry split, never mentioned",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "2dd70a9a:6591d7e44ba3",
+  "task": "2dd70a9a",
+  "ts": "2026-08-30T13:35:33.127Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "probes the why-it-stays ruling",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:072ab8527caa",
+  "task": "?",
+  "ts": "2026-08-30T13:36:51.833Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "naming_vocab",
+   "doc_gaps",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "approves the split recommendation, asks for a review",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "2dd70a9a:ec005f2bbc26",
+  "task": "2dd70a9a",
+  "ts": "2026-08-30T13:38:06.735Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "other",
+   "lib_candidates",
+   "other"
+  ],
+  "picked_kinds": [
+   "lib_candidates"
+  ],
+  "note": "agrees with broken readout, adds d47aa2ff ruling",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "2dd70a9a:7e14795588c2",
+  "task": "2dd70a9a",
+  "ts": "2026-08-30T13:40:42.725Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "other",
+   "simplification",
+   "lib_candidates"
+  ],
+  "picked_kinds": [
+   "other",
+   "simplification",
+   "lib_candidates"
+  ],
+  "note": "asks about mechanical detection, unmentioned; approves edit later",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "2dd70a9a:f9313a69abfc",
+  "task": "2dd70a9a",
+  "ts": "2026-08-30T13:44:09.943Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lint_tooling",
+   "lint_tooling",
+   "lint_tooling",
+   "lint_tooling",
+   "other"
+  ],
+  "picked_kinds": [
+   "lint_tooling",
+   "lint_tooling",
+   "lint_tooling",
+   "lint_tooling"
+  ],
+  "note": "rules on numbered items 1-4",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "2dd70a9a:00e60c6e2688",
+  "task": "2dd70a9a",
+  "ts": "2026-08-30T13:45:49.991Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "correctness_risk",
+   "lint_tooling",
+   "lint_tooling"
+  ],
+  "picked_kinds": [
+   "correctness_risk",
+   "lint_tooling",
+   "lint_tooling"
+  ],
+  "note": "approves the whole readback plan",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "2dd70a9a:21e131de1482",
+  "task": "2dd70a9a",
+  "ts": "2026-08-30T14:13:06.209Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "correctness_risk",
+   "alt_models",
+   "lib_candidates",
+   "lib_candidates",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "lib_candidates",
+   "other"
+  ],
+  "note": "quotes the open-on-your-side list and says go",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "2dd70a9a:2429dfe81a23",
+  "task": "2dd70a9a",
+  "ts": "2026-08-30T14:15:49.881Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates",
+   "lib_candidates",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "gives the word on held item 4",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "2dd70a9a:911bec1e633d",
+  "task": "2dd70a9a",
+  "ts": "2026-08-30T14:18:19.648Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "simplification",
+   "hedges"
+  ],
+  "picked_kinds": [],
+  "note": "demands Unanimous history agent, unrelated to cleanup",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "2dd70a9a:8b2abb8f2fe6",
+  "task": "2dd70a9a",
+  "ts": "2026-08-30T14:20:55.133Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "demands session-log search; message was bare status",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "2dd70a9a:3bfdf7d15f51",
+  "task": "2dd70a9a",
+  "ts": "2026-08-30T14:23:18.184Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates",
+   "alt_models",
+   "lib_candidates",
+   "other"
+  ],
+  "picked_kinds": [
+   "lib_candidates",
+   "other"
+  ],
+  "note": "quotes item 4 lib gap, asks if collapse rule followed",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:9fdab5799364",
+  "task": "?",
+  "ts": "2026-08-30T14:28:47.728Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "alt_models",
+   "other",
+   "other",
+   "other",
+   "hedges",
+   "other"
+  ],
+  "picked_kinds": [],
+  "note": "raises migrate and cleanup agents the report never named",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:afcd47077f78",
+  "task": "?",
+  "ts": "2026-08-30T14:31:27.718Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "other",
+   "naming_vocab",
+   "other",
+   "doc_gaps",
+   "correctness_risk",
+   "correctness_risk",
+   "naming_vocab"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "demands a session-log check the message did not propose",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:8919eafbe480",
+  "task": "?",
+  "ts": "2026-08-30T14:31:55.303Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "directs the log look the message just announced",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "2dd70a9a:670407b3f25c",
+  "task": "2dd70a9a",
+  "ts": "2026-08-30T14:32:18.317Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "hedges"
+  ],
+  "picked_kinds": [],
+  "note": "asks after the history agent the message left pending",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:b55d5377b69f",
+  "task": "?",
+  "ts": "2026-08-30T14:48:57.250Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "other",
+   "other",
+   "naming_vocab",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "format demand, restate in global style",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "2dd70a9a:229f3d3e4ec6",
+  "task": "2dd70a9a",
+  "ts": "2026-08-30T14:50:06.143Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "doc_gaps",
+   "naming_vocab"
+  ],
+  "picked_kinds": [],
+  "note": "raises lib overlap and undo, absent from history report",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:34bcdabe651c",
+  "task": "?",
+  "ts": "2026-08-30T14:54:04.625Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "other",
+   "other",
+   "naming_vocab",
+   "doc_gaps",
+   "correctness_risk",
+   "correctness_risk",
+   "naming_vocab"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "overengineering probe, touches no listed item",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:174e28ac6be5",
+  "task": "?",
+  "ts": "2026-08-30T14:56:01.534Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "other",
+   "other",
+   "doc_gaps",
+   "other",
+   "alt_models",
+   "other",
+   "correctness_risk"
+  ],
+  "picked_kinds": [],
+  "note": "raises reimplementation handling, absent from this message",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:3cae711f7561",
+  "task": "?",
+  "ts": "2026-08-30T14:56:19.472Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "alt_models"
+  ],
+  "picked_kinds": [
+   "alt_models"
+  ],
+  "note": "re-asks the dedicated reimpl agent the message dropped",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:0d03c28df57e",
+  "task": "?",
+  "ts": "2026-08-30T15:00:03.359Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "other",
+   "other",
+   "other",
+   "other",
+   "hedges"
+  ],
+  "picked_kinds": [],
+  "note": "new demand to look for improvements",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:9d24b4348447",
+  "task": "?",
+  "ts": "2026-08-30T15:02:05.605Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "correctness_risk",
+   "simplification",
+   "lint_tooling",
+   "doc_gaps",
+   "doc_gaps",
+   "naming_vocab"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "correctness_risk"
+  ],
+  "note": "asks which of the six listed improvements are necessary",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:7ac355507397",
+  "task": "?",
+  "ts": "2026-08-30T15:02:33.090Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "correctness_risk"
+  ],
+  "picked_kinds": [
+   "correctness_risk"
+  ],
+  "note": "challenges item 2 the message kept as necessary",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:ed305ded4a59",
+  "task": "?",
+  "ts": "2026-08-30T15:03:10.256Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "follows the git-trouble finding the message reported",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:9092605f50a7",
+  "task": "?",
+  "ts": "2026-08-30T15:03:28.950Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "refines the git ruling the message just gave",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:6e7017b9463b",
+  "task": "?",
+  "ts": "2026-08-30T15:04:36.010Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "counters proposed restore line with simpler blanket git rule",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:5624934287c3",
+  "task": "?",
+  "ts": "2026-08-30T15:04:56.099Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "demands File Editing staleness pass, one-line message raised none",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:f83e3f207d8a",
+  "task": "?",
+  "ts": "2026-08-30T15:05:05.146Z",
+  "origin": "MIXED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "approves the applied change and adds new staleness demand",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:cc5bc3ea0708",
+  "task": "?",
+  "ts": "2026-08-30T15:05:12.411Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "approves the pass the message says it is applying",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:09bf4d9e1815",
+  "task": "?",
+  "ts": "2026-08-30T15:05:34.122Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "asks about the File Editing pass the message announced",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:b87a7ee38481",
+  "task": "?",
+  "ts": "2026-08-30T15:06:46.463Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "note": "blanket ruling overrides the list's keep dispositions",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:ea3c7878da9d",
+  "task": "?",
+  "ts": "2026-08-30T15:09:07.813Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "hedges"
+  ],
+  "picked_kinds": [],
+  "note": "raises rewrite_lint comp_idiom docstring, never mentioned in report",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:af04396962ec",
+  "task": "?",
+  "ts": "2026-08-30T15:09:30.952Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "restates and refines the agent dispatch just announced",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:8bda92818054",
+  "task": "?",
+  "ts": "2026-08-30T15:52:49.126Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "hedges"
+  ],
+  "picked_kinds": [],
+  "note": "orders a scoped commit, ignores the left-set call",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:042428518dcb",
+  "task": "?",
+  "ts": "2026-08-30T15:55:36.046Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "asks about the uncommitted solver files the report named",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:0e325038fd4e",
+  "task": "?",
+  "ts": "2026-08-30T15:56:32.766Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "hedges"
+  ],
+  "picked_kinds": [],
+  "note": "introduces cleanup-agent test the file list never proposed",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:f7dd24ea8bbc",
+  "task": "?",
+  "ts": "2026-08-30T15:56:48.012Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "refines the restated plan for the cleanup run",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:c8d7089272b1",
+  "task": "?",
+  "ts": "2026-08-30T15:57:03.521Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "corrects the ack to include testing the agent",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:1d130697e8ee",
+  "task": "?",
+  "ts": "2026-08-30T15:57:40.299Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "quotes item 1's regions constraint and asks its source",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:56ce3724e405",
+  "task": "?",
+  "ts": "2026-08-30T15:58:45.667Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "other",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "picks up scope mismatch, generalizes to all agent defs",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:d03cc55fcd85",
+  "task": "?",
+  "ts": "2026-08-30T16:00:49.975Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "other"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "other"
+  ],
+  "note": "approves the proposed rewrite of the three definitions",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:5daa1bb135d2",
+  "task": "?",
+  "ts": "2026-08-30T16:02:42.983Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "correctness_risk"
+  ],
+  "picked_kinds": [
+   "correctness_risk"
+  ],
+  "note": "resolves the test-count drop the message flagged",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:2118778863b7",
+  "task": "?",
+  "ts": "2026-08-30T16:03:48.254Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "quotes cleanup's region rule and argues against it",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:19a9112a6f52",
+  "task": "?",
+  "ts": "2026-08-30T16:04:48.951Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "takes brief-provenance admission into a widespread-pattern concern",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:63a5c374b859",
+  "task": "?",
+  "ts": "2026-08-30T16:05:45.445Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "accepts the per-item list, asks recommendations first",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:88cc900b0095",
+  "task": "?",
+  "ts": "2026-08-30T16:07:44.483Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "other"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "note": "vetoes the intake items the list recommended keeping",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:ba4e43a5b356",
+  "task": "?",
+  "ts": "2026-08-30T16:09:25.028Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "accepts the cut-the-intake rewrite, asks for restated list",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:1ac89247c7a7",
+  "task": "?",
+  "ts": "2026-08-30T16:10:18.557Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "note": "asks for updated recs and a recheck of the keeps",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:8417cc27c48e",
+  "task": "?",
+  "ts": "2026-08-30T17:07:27.853Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "questions Simplify's meaning in the applied cleanup.md",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:e1bef74b214f",
+  "task": "?",
+  "ts": "2026-08-30T17:08:59.334Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "accepts skill edit and adds broader skill refactor",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:3d35f78d2989",
+  "task": "?",
+  "ts": "2026-08-30T17:11:31.728Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "other",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "proposes extraction; message proposed in-place restructure",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:c03362e7a71c",
+  "task": "?",
+  "ts": "2026-08-30T17:11:55.345Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "ratifies pull-out, adds interactive-only demand",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:4ec8cc1df457",
+  "task": "?",
+  "ts": "2026-08-30T17:13:59.374Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other",
+   "other",
+   "other",
+   "other",
+   "doc_gaps",
+   "naming_vocab"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "other",
+   "other"
+  ],
+  "note": "questions item 5, the README edit",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:7adc9a5f8129",
+  "task": "?",
+  "ts": "2026-08-30T17:21:22.133Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other",
+   "hedges",
+   "hedges",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "challenges the ORDER placement item 4 reported",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:ce35c652ab9c",
+  "task": "?",
+  "ts": "2026-08-30T17:23:39.567Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "other"
+  ],
+  "picked_kinds": [],
+  "note": "asks about a deleted cadence rule, not the order",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:fa9935a82948",
+  "task": "?",
+  "ts": "2026-08-30T17:25:42.571Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "naming_vocab"
+  ],
+  "picked_kinds": [],
+  "note": "asks whether agents know the scratch path",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:8219fbf150c5",
+  "task": "?",
+  "ts": "2026-08-30T17:27:22.264Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "doc_gaps"
+  ],
+  "picked_kinds": [],
+  "note": "demands a cache test run, ignores the doc proposal",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:cbc5ead55e94",
+  "task": "?",
+  "ts": "2026-08-30T17:29:51.317Z",
+  "origin": "MIXED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "preceding message is one character, not determinable",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:d3246837bd05",
+  "task": "?",
+  "ts": "2026-08-30T17:32:26.235Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "other",
+   "other",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "vetoes file-then-Read, floats new chunked-output model",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:f0549bd1d55b",
+  "task": "?",
+  "ts": "2026-08-30T17:34:58.842Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "approves the no-flag form the message offered",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:aaa6a6c07080",
+  "task": "?",
+  "ts": "2026-08-30T17:36:53.720Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "other",
+   "naming_vocab",
+   "other"
+  ],
+  "picked_kinds": [
+   "naming_vocab"
+  ],
+  "note": "new demand to verify with a haiku agent",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:1f2c4aac968a",
+  "task": "?",
+  "ts": "2026-08-30T17:37:30.005Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "quotes an older item; status note raised nothing",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:0681f5a1e7a6",
+  "task": "?",
+  "ts": "2026-08-30T17:41:05.595Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "tells it to revert the header change just described",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:27885b3eab7f",
+  "task": "?",
+  "ts": "2026-08-30T17:41:21.579Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "narrows the revert to context.py; message raised nothing",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:2d6224c848bb",
+  "task": "?",
+  "ts": "2026-08-30T17:42:38.212Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "other"
+  ],
+  "picked_kinds": [],
+  "note": "reports wording removed from five files, not mentioned",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:f8e854aa349a",
+  "task": "?",
+  "ts": "2026-08-30T17:43:27.639Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "new test-run demand after a plain done report",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:eed5da621649",
+  "task": "?",
+  "ts": "2026-08-30T17:46:25.416Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "naming_vocab",
+   "other",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "acts on item 3, the script docstring",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:675e33351813",
+  "task": "?",
+  "ts": "2026-08-30T17:47:01.553Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "rejects the revised docstring the message quoted",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:a16b09dbd2ff",
+  "task": "?",
+  "ts": "2026-08-30T17:51:00.358Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lint_tooling",
+   "correctness_risk",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "lint_tooling",
+   "other"
+  ],
+  "note": "asks how to fix the wasted calls just reported",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:3fa4d0acc007",
+  "task": "?",
+  "ts": "2026-08-30T17:51:54.670Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "doc_gaps",
+   "doc_gaps",
+   "other"
+  ],
+  "picked_kinds": [
+   "other",
+   "doc_gaps",
+   "doc_gaps",
+   "other"
+  ],
+  "note": "drops cause 1, approves the clause edits",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:9a61ee6fc780",
+  "task": "?",
+  "ts": "2026-08-30T17:52:47.536Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "approves the edit the message announced",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:efebdef11d8b",
+  "task": "?",
+  "ts": "2026-08-30T17:55:34.563Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "other",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "objects to the edits, adds self-documenting principle",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:d52d00ab7b51",
+  "task": "?",
+  "ts": "2026-08-30T18:00:27.541Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "reverses who runs the test the message deferred",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:3fa770ec4fac",
+  "task": "?",
+  "ts": "2026-08-30T18:04:28.350Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "asserts agents did not follow; status note raised nothing",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:2673f7473e06",
+  "task": "?",
+  "ts": "2026-08-30T18:05:48.152Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "correctness_risk",
+   "other",
+   "lint_tooling"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "correctness_risk"
+  ],
+  "note": "asks about the page-reading finding, item 2",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:45e7ae4be46f",
+  "task": "?",
+  "ts": "2026-08-30T18:07:49.883Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "simplification",
+   "other"
+  ],
+  "picked_kinds": [],
+  "note": "raises context.py instruction wording, not the batch report",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:991b7ff2687b",
+  "task": "?",
+  "ts": "2026-08-30T18:08:07.733Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "asks for wording of the delegation call just agreed",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:c72e583dfb11",
+  "task": "?",
+  "ts": "2026-08-30T18:09:46.732Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "simplification",
+   "simplification",
+   "simplification",
+   "other"
+  ],
+  "picked_kinds": [],
+  "note": "numbered reply to items 5-6 absent from this message",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:fec951a745ab",
+  "task": "?",
+  "ts": "2026-08-30T18:11:00.509Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "simplification",
+   "correctness_risk",
+   "naming_vocab"
+  ],
+  "picked_kinds": [],
+  "note": "proposes renaming context.py, ignores all pending rulings",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:5fc6bd935d50",
+  "task": "?",
+  "ts": "2026-08-30T18:11:21.644Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "naming_vocab"
+  ],
+  "picked_kinds": [
+   "naming_vocab"
+  ],
+  "note": "asks it to propose the paged-reading name it floated",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:ae0463864b83",
+  "task": "?",
+  "ts": "2026-08-30T18:12:05.913Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "naming_vocab",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "naming_vocab"
+  ],
+  "note": "vetoes the proposed script name as not self-explanatory",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:1f298bdaf4f5",
+  "task": "?",
+  "ts": "2026-08-30T18:14:15.443Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "naming_vocab",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "naming_vocab",
+   "doc_gaps"
+  ],
+  "note": "nvm drops the name, then renumbers rulings on wording items",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:ce38081c89d2",
+  "task": "?",
+  "ts": "2026-08-30T18:15:30.492Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "reopens the wording proposal with a new goal-not-imperative frame",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:e1be755e79b0",
+  "task": "?",
+  "ts": "2026-08-30T18:16:10.518Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "note": "rules on the six wording edits and their repeated presentation",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:3f7ebf55e5d5",
+  "task": "?",
+  "ts": "2026-08-30T18:17:09.395Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "note": "orders a recheck of the two proposed sentences",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:9820e2a06c8c",
+  "task": "?",
+  "ts": "2026-08-30T18:20:08.429Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "doc_gaps",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "counters the revised sentence with its own wording",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:d0287f83ea5d",
+  "task": "?",
+  "ts": "2026-08-30T18:21:44.547Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "hedges"
+  ],
+  "picked_kinds": [
+   "hedges"
+  ],
+  "note": "quotes the placement note, adds observed agent read behavior",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:b18820257be9",
+  "task": "?",
+  "ts": "2026-08-30T18:25:02.639Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "ok on the applied edits, then questions cleanup agent rulings",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:7a5e535a0bbc",
+  "task": "?",
+  "ts": "2026-08-30T18:25:45.307Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "new demand that the assistant rule first",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:2e3f964a654d",
+  "task": "?",
+  "ts": "2026-08-30T18:26:41.103Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [],
+  "picked_kinds": [],
+  "note": "repeats the demand and adds a context requirement",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:cd5dcb8c0c80",
+  "task": "?",
+  "ts": "2026-08-30T18:32:38.013Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "alt_models",
+   "correctness_risk",
+   "lib_candidates",
+   "simplification",
+   "simplification",
+   "other",
+   "correctness_risk",
+   "naming_vocab"
+  ],
+  "picked_kinds": [
+   "other",
+   "alt_models",
+   "correctness_risk",
+   "lib_candidates",
+   "simplification",
+   "simplification",
+   "other",
+   "correctness_risk",
+   "naming_vocab"
+  ],
+  "note": "approves all nine rulings with do all",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:bf8ca389f37e",
+  "task": "?",
+  "ts": "2026-08-30T18:33:02.330Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "redirects the by-hand plan to a cleanup dispatch",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:474fb97ec7af",
+  "task": "?",
+  "ts": "2026-08-30T18:35:21.275Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "simplification"
+  ],
+  "picked_kinds": [],
+  "note": "raises subagent tool-call behavior the progress report never mentioned",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:a707a5d652a0",
+  "task": "?",
+  "ts": "2026-08-30T18:38:13.659Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "simplification",
+   "simplification",
+   "naming_vocab",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "answers the pending wording item with a new dump-in-full design",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:24134a665970",
+  "task": "?",
+  "ts": "2026-08-30T18:44:15.945Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other",
+   "lib_candidates",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "lib_candidates"
+  ],
+  "note": "asks why on the promote recommendation",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:cea21afcc643",
+  "task": "?",
+  "ts": "2026-08-30T18:47:10.411Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates",
+   "doc_gaps",
+   "other"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "acts on the self-diagnosed mechanical verdict, orders doc fix",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:ef37002e3c19",
+  "task": "?",
+  "ts": "2026-08-30T18:59:06.859Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "lib_candidates"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "note": "questions the principle and the prompt behind both doc edits",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:eecc8a28d500",
+  "task": "?",
+  "ts": "2026-08-30T19:01:29.571Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "note": "numbered replies to items 1 and 2, probing the flag's age",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:36c16f461a3e",
+  "task": "?",
+  "ts": "2026-08-30T19:04:25.155Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "other",
+   "lib_candidates",
+   "doc_gaps",
+   "doc_gaps",
+   "other"
+  ],
+  "picked_kinds": [],
+  "note": "refuses the whole proposal as too indirect, restates its concern",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:5263cb436736",
+  "task": "?",
+  "ts": "2026-08-30T19:04:43.638Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "contradicts the claim that the docs are not the concern",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:3c3f0076f2e3",
+  "task": "?",
+  "ts": "2026-08-30T19:05:10.927Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "demands the proposal the message withheld",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:4b42def21e96",
+  "task": "?",
+  "ts": "2026-08-30T19:05:47.706Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "restates ask for the doc edit just proposed",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:dbb857a72287",
+  "task": "?",
+  "ts": "2026-08-30T19:06:43.293Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "doc_gaps"
+  ],
+  "note": "asks rationale for the proposed edit's parts",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:dd0f21ec21cc",
+  "task": "?",
+  "ts": "2026-08-30T19:07:48.983Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "note": "applies the three explained edit clauses",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:6d9b301472b3",
+  "task": "?",
+  "ts": "2026-08-30T19:09:07.746Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "lib_candidates",
+   "other",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "lib_candidates",
+   "other",
+   "other",
+   "other"
+  ],
+  "note": "rules on numbered next items 1-3, commits later",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:82f49f170ca2",
+  "task": "?",
+  "ts": "2026-08-30T19:24:54.043Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "simplification",
+   "other",
+   "other"
+  ],
+  "picked_kinds": [
+   "other"
+  ],
+  "note": "acts on the ready-for-commit item",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:890dd78a9800",
+  "task": "?",
+  "ts": "2026-08-30T19:40:53.896Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "other",
+   "doc_gaps",
+   "other"
+  ],
+  "picked_kinds": [
+   "other",
+   "other",
+   "doc_gaps",
+   "other"
+  ],
+  "note": "rules on items 3 and 6 by number, later applies",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:0c9be83af49f",
+  "task": "?",
+  "ts": "2026-08-30T19:41:59.680Z",
+  "origin": "USER_ORIGINATED",
+  "raised_kinds": [
+   "hedges"
+  ],
+  "picked_kinds": [],
+  "note": "opens fold and unfold, never mentioned in the message",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:59e390a02edc",
+  "task": "?",
+  "ts": "2026-08-30T19:43:48.366Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "note": "vetoes both proposed wordings as too specific",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:3374756c6523",
+  "task": "?",
+  "ts": "2026-08-30T19:44:18.169Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "doc_gaps",
+   "doc_gaps"
+  ],
+  "note": "vetoes wordings and adds dropping the terms entirely",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:a8250744686b",
+  "task": "?",
+  "ts": "2026-08-30T19:47:46.203Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "doc_gaps",
+   "naming_vocab",
+   "naming_vocab",
+   "alt_models"
+  ],
+  "picked_kinds": [
+   "naming_vocab",
+   "naming_vocab"
+  ],
+  "note": "rejects the proposed replacement terms in items 2 and 4",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:a5c486d1fdb7",
+  "task": "?",
+  "ts": "2026-08-30T19:49:15.304Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "naming_vocab",
+   "naming_vocab",
+   "other",
+   "hedges"
+  ],
+  "picked_kinds": [
+   "naming_vocab",
+   "naming_vocab",
+   "other"
+  ],
+  "note": "approves the apply, then orders a new tag scrutiny",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:24bd760f5bc1",
+  "task": "?",
+  "ts": "2026-08-30T19:55:22.979Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "other",
+   "naming_vocab",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "other",
+   "naming_vocab"
+  ],
+  "note": "rules by number on the pending scrutiny items",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:fe595043c6fa",
+  "task": "?",
+  "ts": "2026-08-30T20:00:00.961Z",
+  "origin": "MIXED",
+  "raised_kinds": [
+   "naming_vocab",
+   "other",
+   "alt_models",
+   "doc_gaps"
+  ],
+  "picked_kinds": [
+   "alt_models",
+   "doc_gaps"
+  ],
+  "note": "engages the lean but adds dropping the term, unlisted",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "?:6aba43934b03",
+  "task": "?",
+  "ts": "2026-08-30T20:10:28.831Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "simplification",
+   "hedges"
+  ],
+  "picked_kinds": [],
+  "note": "grants the commit the message was awaiting",
+  "rubric": "2026-08-30"
+ },
+ {
+  "key": "2f767503:2aae9e621cf0",
+  "task": "2f767503",
+  "ts": "2026-08-30T23:27:27.902Z",
+  "origin": "FROM_REPORT",
+  "raised_kinds": [
+   "simplification",
+   "unwitnessed_edges",
+   "other"
+  ],
+  "picked_kinds": [
+   "simplification"
+  ],
+  "note": "questions the P1 priority of callout 1",
+  "rubric": "2026-08-30"
+ }
+]
