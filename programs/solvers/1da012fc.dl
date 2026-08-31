@@ -1,0 +1,118 @@
+// 1da012fc
+// concept: objects markers rank
+// shape: percept-shadow
+// A solid legend box holds one marker per shape. The markers and the
+// shapes outside the box are two constellations of the same size, and each
+// shape takes the color of the marker at its own place in the reading
+// order. A marker is one cell, but a shape spreads over many, so two
+// models of a shape's place:
+//
+//   $Separated — a shape precedes another when it lies wholly ahead along
+//                the reading axis, or they meet there and it lies wholly
+//                ahead across.
+//   $Anchor    — a shape stands at its bounding box's reading corner.
+//
+// They coincide here; they diverge when two shapes meet along the reading
+// axis and their spans across it meet too.
+
+#include "../lib.dl"
+
+.type Choice = Separated {} | Anchor {}
+
+.comp Consts {
+    .decl bg(col: Color) bg(0).
+
+    // The legend box's fill.
+    .decl legend(col: Color) legend(5).
+
+    // Reading order: the corner it starts from, and the axis it runs
+    // along before stepping across.
+    .decl corner(d: DiagDir) corner(DIAG_TL).
+    .decl axis(a: Axis) axis(AXIS_V).
+}
+
+.init c = Consts
+
+.init box = Bbox<Unit>
+box.cell($U(), P) :- in(P, Col), c.legend(Col).
+box.grid($U(), P) :- in(P, _).
+
+// Objects, individuated alike on both sides of the box.
+.init comps = Components8<Unit>
+comps.node($U(), P) :-
+    in(P, Col), !c.bg(Col),
+    ( box.inside($U(), P), !c.legend(Col)   // a marker cell inside the box
+    ; !box.inside($U(), P)                  // an inked cell outside it
+    ).
+
+.decl obj(id: Ident)
+obj(Id) :- comps.label($U(), _, Id).
+
+// The two constellations: markers inside the box, shapes outside it.
+.decl marker(id: Ident)
+marker(Id) :- comps.label($U(), P, Id), box.inside($U(), P).
+
+.decl shape(id: Ident)
+shape(Id) :- obj(Id), !marker(Id).
+
+// Two objects of one constellation — an object's place counts only these.
+.decl peers(a: Ident, b: Ident)
+peers(A, B) :- marker(A), marker(B).
+peers(A, B) :- shape(A), shape(B).
+
+.init reading = Order<Choice, Ident>
+reading.elem(Ch, Id) :- obj(Id), impl_choice(Ch).
+
+// --- Separated ---
+
+// The two dirs of the reading order — D1 along the reading axis, D2 across.
+.decl read_dirs(d1: Dir, d2: Dir)
+read_dirs(D1, D2) :- c.corner(C), c.axis(A), diag_dirs(C, A, D1, D2).
+
+// Some cell of a lies at or behind some cell of b toward d.
+.decl behind(d: Dir, a: Ident, b: Ident)
+behind(D, A, B) :-
+    dir_elem(D),
+    comps.label($U(), P, A), dist(P, D, K1),
+    comps.label($U(), Q, B), dist(Q, D, K2), K1 >= K2.
+
+// Every cell of a lies strictly nearer edge d than every cell of b.
+.decl ahead(d: Dir, a: Ident, b: Ident)
+ahead(D, A, B) :- obj(A), obj(B), A != B, dir_elem(D), !behind(D, A, B).
+
+reading.before($Separated(), A, B) :-
+    peers(A, B), read_dirs(D1, D2),
+    ( ahead(D1, A, B)                                       // wholly ahead along
+    ; !ahead(D1, A, B), !ahead(D1, B, A),                   // or they meet along
+      ahead(D2, A, B)                                       // and wholly ahead across
+    ).
+
+// --- Anchor ---
+
+.init obox = Bbox<Ident>
+obox.cell(Id, P) :- comps.label($U(), P, Id).
+
+// A box's margin Position carries its distance to every edge, so from the
+// reading corner it reads as that corner's cell — the boxes order like cells.
+.init lex = LexOrder<Unit>
+lex.corner($U(), D) :- c.corner(D).
+lex.axis($U(), A) :- c.axis(A).
+lex.cell($U(), M) :- obox.margin(_, M).
+
+reading.before($Anchor(), A, B) :-
+    peers(A, B),
+    obox.margin(A, M1), obox.margin(B, M2), lex.before($U(), M1, M2).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Separated()). impl_choice($Anchor()).
+
+.decl shape_cell(p: Position)
+shape_cell(P) :- comps.label($U(), P, Id), shape(Id).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    shape_cell(P), comps.label($U(), P, Id),
+    reading.rank(Ch, Id, R),                    // the shape's place
+    reading.rank(Ch, Id2, R), marker(Id2),      // the marker at that place
+    comps.label($U(), P_marker, Id2), in(P_marker, Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !shape_cell(P).
