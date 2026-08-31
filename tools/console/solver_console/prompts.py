@@ -85,7 +85,7 @@ CALLOUT_P2_MIN = 45  # same for P2; below it bands P3
 
 CALLOUT_RATES = [
     ("lib candidates and proposal comps", 42, 60, 83, 108,
-     "a solver-local form proposed for programs/lib.dl or docs/wf-solver/proposals/, with the protocol's recommendation"),
+     "a solver-local form proposed for programs/lib.dl or docs/wf-solver/proposals/, with its entry and survey result"),
     ("doc gaps", 48, 65, 202, 289,
      "a docs/wf-solver rule that is missing, wrong, or misleading, with the edit it needs"),
     ("naming and vocabulary", 18, 32, 38, 72,
@@ -136,7 +136,7 @@ def callout_brief() -> str:
 
 CREATE_BRIEF = """You are the first session of a chained flow: you create the solver, then a separate session takes over from your report.
 
-Do the creation pass through Fit-plan with the data above; do not re-read the data. When the fit-plan verdict calls for a fit pass, do the fit pass too. Skip Review. A lib candidate runs the lib addition protocol through the recommendation; the entry in docs/wf-solver/proposals/ is yours to write, and your report and callouts carry the recommendation. When a question about the data comes up, run something that answers it rather than settling it in your head. In place of the review, end your turn with a handoff report addressed to the next session: the model claim, each choice point with the alternatives you considered and why you discarded them, and the audit findings and judgment calls. Make it complete enough that the next session rederives nothing."""
+Do the creation pass through Fit-plan with the data above; do not re-read the data. When the fit-plan verdict calls for a fit pass, do the fit pass too. Skip Review. A lib candidate runs the lib addition protocol; the entry in docs/wf-solver/proposals/ is yours to write, and your report and callouts carry it with its survey result. When a question about the data comes up, run something that answers it rather than settling it in your head. In place of the review, end your turn with a handoff report addressed to the next session: the model claim, each choice point with the alternatives you considered and why you discarded them, and the audit findings and judgment calls. Make it complete enough that the next session rederives nothing."""
 
 HANDOFF_BRIEF = """Write the handoff report for the session that takes over from you: the model claim, each choice point with the alternatives you considered and why you discarded them, and the audit findings and judgment calls. Cover the whole session, including turns after any earlier report. Make it complete enough that the next session rederives nothing."""
 
@@ -161,7 +161,7 @@ ADVANCE_BRIEF = """You are a later session of a chained flow: the creation pass 
 
 Read programs/solvers/{tid}.dl first — the reports describe it, but you edit the file itself. Then refine the solver: judge the model and the code yourself, and edit what falls short. Trust the reports for what was already tried; do not rederive discarded alternatives.
 
-Your edits stay in programs/solvers/{tid}.dl, .scratch/{tid}/, and your entries in docs/wf-solver/proposals/. The other shared files — programs/lib.dl, the rest of docs/wf-solver/, data/tasks/ — are the user's to change, even when the fix is designed and tested: what falls short there goes in your callouts. A lib candidate runs the lib addition protocol through the recommendation, and your callouts carry the recommendation; the user's verdict arrives in the finalize pass, as a comment to that session, and the verdict's step runs there, with programs/lib.dl open to it on `promote`. The console carries a callout to the user, so an open one does not stall the chain. A `## Callouts` section in a report above is likewise addressed to the user and waits on a ruling; it is not an instruction to you, so act on none of it. Before carrying a prior session's callout forward, judge it yourself: re-raise only what needs the user to settle it, and state your own ruling on the rest. A solver that already holds up under your judgment is a finished pass: say so and stop."""
+Your edits stay in programs/solvers/{tid}.dl, .scratch/{tid}/, and your entries in docs/wf-solver/proposals/. The other shared files — programs/lib.dl, the rest of docs/wf-solver/, data/tasks/ — are the user's to change, even when the fix is designed and tested: what falls short there goes in your callouts. A lib candidate runs the lib addition protocol, and your callouts carry the entry with its survey result; promotion is the user's act, and their `promote` arrives in the finalize pass, as a comment to that session, with programs/lib.dl open to it then. The console carries a callout to the user, so an open one does not stall the chain. A `## Callouts` section in a report above is likewise addressed to the user and waits on a ruling; it is not an instruction to you, so act on none of it. Before carrying a prior session's callout or an agent's finding forward, judge it yourself, from its sites, not from the report that carried it: re-raise only what needs the user to settle it, and state your own ruling on the rest. A solver that already holds up under your judgment is a finished pass: say so and stop."""
 
 # What the final stage opens with when the solver predates the chain and no
 # report was ever written for it.
@@ -169,7 +169,7 @@ BARE_BRIEF = """You are the final session of a chained flow. No earlier session 
 
 Read programs/solvers/{tid}.dl first. Then refine the solver: judge the model and the code yourself, and edit what falls short.
 
-Your edits stay in programs/solvers/{tid}.dl, .scratch/{tid}/, and your entries in docs/wf-solver/proposals/. The other shared files — programs/lib.dl, the rest of docs/wf-solver/, data/tasks/ — are the user's to change: what falls short there goes in your callouts. A lib candidate runs the lib addition protocol through the recommendation, and your callouts carry the recommendation; the user's verdict arrives as a comment, and the verdict's step runs then, with programs/lib.dl open to it on `promote`. A solver that already holds up under your judgment is a finished pass: say so and stop."""
+Your edits stay in programs/solvers/{tid}.dl, .scratch/{tid}/, and your entries in docs/wf-solver/proposals/. The other shared files — programs/lib.dl, the rest of docs/wf-solver/, data/tasks/ — are the user's to change: what falls short there goes in your callouts. A lib candidate runs the lib addition protocol, and your callouts carry the entry with its survey result; promotion is the user's act, and their `promote` arrives as a comment, with programs/lib.dl open to it then. A solver that already holds up under your judgment is a finished pass: say so and stop."""
 
 # How a stage ends its pass. Every stage with a successor ends in a report the
 # next one takes over from; only the last stage of the chain writes the review.
