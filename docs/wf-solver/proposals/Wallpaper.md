@@ -40,7 +40,7 @@ group's translations are the lattice). `ShiftInvariance.period` feeds the
 - An axis without a period contributes only the zero shift, so an
   aperiodic grid degrades to center-anchored D4 detection.
 
-**Home.** 0dfd9992: wallpaper repair —
+**Caller.** 0dfd9992: wallpaper repair —
 `Parse` feeds detected per-axis periods and the stored point group's
 kinds; `out` closes survivor colors over `step`; its Fit names the
 kinds every example uses as a `point_group` Sym value.
@@ -49,7 +49,7 @@ Not: translation periodicity alone (`ShiftInvariance`); a fixed-frame symmetry (
 
 Match: `ShiftInvariance`, `sym_member`, `apply(D`, `mismatch`, `witnessed`, `period`.
 
-Homes: 0dfd9992 alone. Near: af22c60d, 981571dc, 0934a4d8 (Fit), 1b60fb0c search a mirror line or rotation center over an aperiodic pattern, where the comp tries no shift; the three Fit sites factor the search per axis over line indices.
+Callers: 0dfd9992 alone. Near: af22c60d, 981571dc, 0934a4d8 (Fit), 1b60fb0c search a mirror line or rotation center over an aperiodic pattern, where the comp tries no shift; the three Fit sites factor the search per axis over line indices.
 
 Interface: `step` would carry its generator, `step(key, g, p, q)`; `period` stays an input; an aperiodic axis contributing its full extent would serve the four sites, but their per-axis factoring reads as a separate reflection-axis primitive.
 

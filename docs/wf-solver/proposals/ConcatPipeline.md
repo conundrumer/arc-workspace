@@ -4,7 +4,7 @@ Per-tile dims and cumulative per-edge offsets for tiles laid side by side. Not: 
 
 Match: `sum `, `+ [A-Z]`, `edge_off`, `jump_delta` chains.
 
-Homes: none beyond e633a9e5. Near: 291dc1e1 (blocks stack as slabs of their own thickness; all one thickness on the data); 0bb8deee (unequal quadrants, equal crops); e1baa8a4, 0a1d4ef5 (unequal bands, index only).
+Callers: none beyond e633a9e5. Near: 291dc1e1 (blocks stack as slabs of their own thickness; all one thickness on the data); 0bb8deee (unequal quadrants, equal crops); e1baa8a4, 0a1d4ef5 (unequal bands, index only).
 
 Interface: no change.
 

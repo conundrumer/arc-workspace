@@ -2,7 +2,7 @@
 
 A shape signature names an operation with no stable lexical anchor: the
 relation names vary per solver, and the operation lives in rule
-structure. Grep misses those sites; a sweep matches them with a script
+structure. Grep misses those sites; a survey matches them with a script
 under its scratch path, over the parsed corpus:
 
     from dl.corpus import each_solver
@@ -20,7 +20,7 @@ read the `# --- AST ---` and `# --- reference index ---` sections of
 The test below matches the Unanimous shape: one relation twice positive
 in a rule, with a disequality between the two bindings of one argument.
 A match is a candidate, not a home: each hit is read in its rule, per
-the sweep procedure.
+the survey procedure.
 """
 
 from itertools import combinations

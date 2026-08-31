@@ -94,7 +94,7 @@ STAGGER_TIMEOUT = 120  # seconds to wait for the first worker's first API respon
 STEER_RACE = 5
 IDLE_TTL = 3600
 IDLE_POLL = 60
-# How long a handoff held for a background task waits. A subagent sweep takes
+# How long a handoff held for a background task waits. A subagent survey takes
 # minutes; past this the task is treated as one that never reports, and the
 # stage lands with no report for the user to rule on.
 BG_TTL = 1200
