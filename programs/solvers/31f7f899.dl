@@ -1,0 +1,104 @@
+// 31f7f899
+// concept: objects lines rank move
+// A spine of one color runs across the grid; bars of other colors cross it,
+// each covering a run of lines. Every bar keeps its color and its footprint on
+// the spine, and the bars exchange their reaches, so the reaches grow from one
+// end of the spine to the other.
+//
+// Two claims on the exchange:
+//   $Spans   — the reaches are one pool, handed out in size order along the
+//              spine.
+//   $Profile — every line keeps the number of bars covering it, and its covers
+//              go to the bars nearest the far end of the spine.
+
+#include "../lib.dl"
+
+.type Choice = Spans {} | Profile {}
+
+.comp Consts {
+    .decl bg(col: Color) bg(8).
+
+    .decl spine(col: Color) spine(6).
+
+    // The end of the spine the shortest bar stands at. The bars are ordered
+    // along its axis and reach across it.
+    .decl short_dir(d: Dir) short_dir(DIR_L).
+}
+
+.init c = Consts
+
+.decl order_axis(a: Axis)
+order_axis(A) :- c.short_dir(D), axis_of(D, A).
+
+// A bar is a connected region of one color, spine and background aside.
+.init bars = Components<Color>
+bars.node(Col, P) :- in(P, Col), !c.bg(Col), !c.spine(Col).
+
+.decl bar(id: Ident, col: Color)
+bar(Id, Col) :- bars.label(Col, _, Id).
+
+// A cell splits into its place along the spine and the line it sits on.
+.decl cell_split(p: Position, along: Position, across: Position)
+cell_split(P, Along, Across) :- in(P, _), order_axis(A), split(P, A, Along, Across).
+
+.decl foot(id: Ident, along: Position)
+foot(Id, Along) :- bars.label(_, P, Id), cell_split(P, Along, _).
+
+.decl reach(id: Ident, across: Position)
+reach(Id, Across) :- bars.label(_, P, Id), cell_split(P, _, Across).
+
+// The bars in order along the spine, counted from each end.
+.init order = OrderFrame<Unit, Ident>
+order.axis($U(), A) :- order_axis(A).
+order.member($U(), Id, Along) :- foot(Id, Along).
+
+.decl rank(id: Ident, near: number, far: number)
+rank(Id, N, F) :-
+    order.pos($U(), Id, P_pos),                 // the bar's place in the order
+    c.short_dir(D), dist_pair(P_pos, D, N, F).  // the bars behind it and ahead of it
+
+.decl paint(p: Position, col: Color, ch: Choice)
+
+// --- Spans ---
+
+.init size = Tally<Ident, Position>
+size.item(Id, Across) :- reach(Id, Across).
+
+.init by_reach = Order<Unit, Ident>
+by_reach.elem($U(), Id) :- bar(Id, _).
+by_reach.before($U(), Id2, Id) :-
+    size.tally(Id2, N2), size.tally(Id, N),  // two bars' reach sizes
+    N2 < N.                                  // the smaller reach comes first
+
+// A bar and its reach stand at the same place in their orders: no more
+// smaller reaches than bars behind it, no more bigger ones than bars ahead.
+paint(P, Col, $Spans()) :-
+    bar(Id, Col), foot(Id, Along), rank(Id, N, F),  // a bar and its place
+    by_reach.rank($U(), Id2, N2), N2 <= N,          // a reach with few enough under it
+    by_reach.rank_desc($U(), Id2, F2), F2 <= F,     // and few enough over it
+    reach(Id2, Across), compose(Along, Across, P).  // the bar's foot over that reach
+
+// --- Profile ---
+
+// How many bars cover each line.
+.init covers = Tally<Position, Ident>
+covers.item(Across, Id) :- reach(Id, Across).
+
+// A line with C covers goes to the C bars nearest the far end of the spine.
+paint(P, Col, $Profile()) :-
+    bar(Id, Col), foot(Id, Along), rank(Id, _, F),  // a bar and its place
+    covers.tally(Across, C), F < C,                 // a line whose covers reach back to it
+    compose(Along, Across, P).                      // the bar's foot on that line
+
+// --- output ---
+
+.decl impl_choice(ch: Choice)
+impl_choice($Spans()). impl_choice($Profile()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- paint(P, Col, Ch).
+out(P, Col, Ch) :-
+    in(P, Col_in), impl_choice(Ch), !paint(P, _, Ch),  // a cell no bar covers
+    ( c.spine(Col_in), Col = Col_in                    // the spine stands
+    ; !c.spine(Col_in), c.bg(Col)                      // the rest clears
+    ).

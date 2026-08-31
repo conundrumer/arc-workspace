@@ -1,0 +1,185 @@
+// 291dc1e1
+// concept: objects markers rank d4
+// Solid rectangular blocks lie on the background. A marked cell sits at one
+// grid corner, and a colored line runs along each of the two edges that corner
+// joins. The output stacks the blocks in the reading order that runs from the
+// marked corner, each turned to lie across the stack and centered on the
+// longest.
+//
+// The cases claim the primary axis of that reading order:
+//   $Marked() — the axis the line colored primary_col runs along.
+//   $Aspect() — the grid's short axis.
+//   $Lanes()  — the axis the blocks stratify along.
+
+#include "../lib.dl"
+
+.type Choice = Marked {} | Aspect {} | Lanes {}
+
+.comp Consts {
+    // --- shared ---
+    .decl bg(col: Color) bg(8).
+    .decl mark(col: Color) mark(0).
+
+    // Blocks stack from stack_dir; one lying along the stack is turned by rot
+    // to lie across it.
+    .decl stack_dir(d: Dir) stack_dir(DIR_T).
+    .decl rot(d: D4) rot(D4_CC).
+
+    // --- $Marked ---
+    .decl primary_col(col: Color) primary_col(2).
+}
+
+.init c = Consts
+
+// --- parse ---
+
+.comp Parse<Key> {
+    .type KI = [key: Key, id: Ident]
+
+    .decl cell(key: Key, p: Position, col: Color)  // input
+
+    .decl mark_pos(key: Key, p: Position)
+    mark_pos(K, P) :- cell(K, P, Col), c.mark(Col).
+
+    .decl mark_corner(key: Key, diag: DiagDir)
+    mark_corner(K, Diag) :- mark_pos(K, P), diag_dist(P, Diag, _, 0, 0).
+
+    // The two lines: the grid edges the mark's corner joins.
+    .decl border(key: Key, p: Position)
+    border(K, P) :-
+        cell(K, P, _), mark_corner(K, Diag),
+        dir_of(Diag, _, D), dist(P, D, 0).
+
+    .init blocks = Components<Key>
+    blocks.node(K, P) :- cell(K, P, Col), !c.bg(Col), !border(K, P).
+
+    .decl block(key: Key, id: Ident)
+    block(K, Id) :- blocks.label(K, _, Id).
+
+    .init box = BoxFrame<KI>
+    box.cell([K, Id], P) :- blocks.label(K, P, Id).
+
+    .decl crop(key: Key, id: Ident, p_intile: Position, col: Color)
+    crop(K, Id, P_intile, Col) :- cell(K, P, Col), box.inner([K, Id], P, P_intile).
+
+    // A block lying along axis a: longer that way than across.
+    .decl along(key: Key, id: Ident, a: Axis)
+    along(K, Id, A) :- box.extents([K, Id], A, N1, N2), N1 > N2.
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// --- the blocks, turned across the stack ---
+
+.decl stack_axis(a: Axis)
+stack_axis(A) :- c.stack_dir(D), axis_of(D, A).
+
+// The axis a stacked block runs along.
+.decl slab_axis(a: Axis)
+slab_axis(A2) :- stack_axis(A), perp(A, A2).
+
+.decl turned(id: Ident, p: Position, col: Color)
+turned(Id, P_turn, Col) :-
+    parse.crop($U(), Id, P_intile, Col), stack_axis(A),
+    ( !parse.along($U(), Id, A), P_turn = P_intile                      // lies across already
+    ; parse.along($U(), Id, A), c.rot(R), apply(R, P_intile, P_turn)    // turn it across
+    ).
+
+// --- the slab each block sits in ---
+
+.init widest = Extremes<Unit>
+widest.cand($U(), N) :- turned(_, P_turn, _), slab_axis(A), axis_dim(P_turn, A, N).
+
+// As thick as its own block, as long as the longest.
+.init slab = Frame2D<Ident>
+slab.extent(Id, A, N) :- turned(Id, P_turn, _), stack_axis(A), axis_dim(P_turn, A, N).
+slab.extent(Id, A, N) :- parse.block($U(), Id), slab_axis(A), widest.high($U(), N).
+
+.decl placed(id: Ident, p: Position, col: Color)
+placed(Id, P_slab, Col) :-
+    turned(Id, P_turn, Col), slab.cell(Id, P_slab),
+    displacement(P_turn, P_slab, V),
+    stack_axis(A), split(V, A, ORIGIN, Across),                // flush on the stack axis
+    slab_axis(A2), flip_of(A2, F), apply(F, Across, Across).   // centered on the slab axis
+
+// --- the reading order ---
+
+// Each block compares as its box's margin Position.
+.init reading = LexOrder<Choice>
+reading.corner(Ch, Diag) :- parse.mark_corner($U(), Diag), primary_axis(_, Ch).
+reading.axis(Ch, A) :- primary_axis(A, Ch).
+reading.cell(Ch, P) :- parse.box.margin([$U(), _], P), primary_axis(_, Ch).
+
+.decl primary_axis(a: Axis, ch: Choice)
+
+// --- $Marked ---
+
+primary_axis(A, $Marked()) :-
+    in(P, Col), c.primary_col(Col),                                   // a cell of that color
+    parse.mark_pos($U(), P_m), axis_elem(A), same_line(A, P, P_m).    // the mark's line it lies on
+
+// --- $Aspect ---
+
+primary_axis(A, $Aspect()) :- in(P, _), axis_dims(P, A, N1, N2), N1 < N2.
+
+// --- $Lanes ---
+
+primary_axis(A, $Lanes()) :- axis_elem(A), !unstratified(A).
+
+// Two blocks whose spans along a meet: some cell of each shares a line
+// across it.
+.decl overlap(a: Axis, id: Ident, id2: Ident)
+overlap(A, Id1, Id2) :-
+    parse.blocks.label($U(), P1, Id1), parse.blocks.label($U(), P2, Id2), Id1 != Id2,
+    perp(A, A2), same_line(A2, P1, P2).
+
+// Blocks that meet along a without sharing their extent there.
+.decl unstratified(a: Axis)
+unstratified(A) :-
+    overlap(A, Id1, Id2), axis_of(D, A),
+    parse.box.edge_min([$U(), Id1], D, K1), parse.box.edge_min([$U(), Id2], D, K2),
+    K1 != K2.
+
+// --- the stack ---
+
+.init slot = DirFrame<Choice>
+slot.dir(D) :- c.stack_dir(D).
+slot.dist_set(Ch, R) :- reading.rank(Ch, _, R).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_grid, Col, Ch) :-
+    reading.rank(Ch, B, R), parse.box.margin([$U(), Id], B),    // the block, by its ranked box
+    slot.pos(Ch, R, P_tile),                                    // its place in the stack
+    slab.cell(Id, P_slab),
+    ( placed(Id, P_slab, Col)              // the block
+    ; !placed(Id, P_slab, _), c.bg(Col)    // the margin beside it
+    ),
+    stack_axis(A), concat_slab(P_tile, P_slab, A, 0, P_grid).
+
+// --- fit ---
+
+.comp Fit {
+    .type KID = [e: Example, id: Ident, d: D4]
+
+    .init ex = Parse<Example>
+    ex.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // A block the rot has to turn, in an example whose output is known.
+    .decl turnable(e: Example, id: Ident)
+    turnable(E, Id) :-
+        ex_out(E, _, _), c.stack_dir(D), axis_of(D, A), ex.along(E, Id, A).
+
+    // Each candidate turn of such a block, sought in the output.
+    .init occ = Occurrences<KID, Color>
+    occ.cell([E, Id, D], P, Col) :- turnable(E, Id), d4_elem(D), ex_out(E, P, Col).
+    occ.shape([E, Id, D], P_turn, Col) :-
+        turnable(E, Id), d4_elem(D), ex.crop(E, Id, P_intile, Col),
+        apply(D, P_intile, P_turn).
+
+    .decl unseen(d: D4)
+    unseen(D) :- turnable(E, Id), d4_elem(D), !occ.occurrence([E, Id, D], _).
+
+    .decl rot(d: D4)
+    rot(D) :- d4_elem(D), !unseen(D).
+}

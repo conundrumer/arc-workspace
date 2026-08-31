@@ -1,0 +1,183 @@
+// 2d0172a1
+// concept: objects enclose rank
+// shape: percept-shadow
+// Wandering curves of one ink nest inside one another. The output redraws
+// them as rectangles: each boundary line of the input becomes one output
+// line, and neighbouring lines sit one blank line apart.
+//
+// A container curve draws an outline, and marks the two lines it draws on
+// each axis. Any other curve collapses to a single cell, and its one mark
+// per axis spans its whole footprint. Marks that overlap along an axis take
+// the same output line, which is what carries relative position across the
+// redraw.
+//
+// The cases differ on what makes a curve a container:
+//   $Hollow — it closes some cell off from the grid edge.
+//   $Nest   — it closes another curve off from the grid edge.
+
+#include "../lib.dl"
+
+.type Choice = Hollow {} | Nest {}
+
+// The mark curve x contributes on the d side of its box.
+.type Mark = [ch: Choice, x: Ident, d: Dir]
+
+.type CaseAxis = [ch: Choice, a: Axis]
+
+.comp Consts {
+    // The blank line between neighbouring figures, which also holds a
+    // collapsed curve off the frame edge.
+    .decl gap(k: number) gap(1).
+}
+
+.init c = Consts
+
+.decl impl_choice(ch: Choice)
+impl_choice($Hollow()). impl_choice($Nest()).
+
+// --- parse ---
+
+.init palette = Mode<Unit, Color, Position>
+palette.item($U(), Col, P) :- in(P, Col).
+
+.decl bg(col: Color)
+bg(Col) :- palette.mode($U(), Col).
+
+.decl fg(col: Color)
+fg(Col) :- in(_, Col), !bg(Col).
+
+.init curves = Components<Unit>
+curves.node($U(), P) :- in(P, Col), fg(Col).
+
+.decl curve(x: Ident, p: Position)
+curve(X, P) :- curves.label($U(), P, X).
+
+// The cells a flood may pass through — everything but the curve itself.
+.decl off_curve(x: Ident, p: Position)
+off_curve(X, P) :- curve(X, _), in(P, _), !curve(X, P).
+
+.init escape = Reach<Ident>
+escape.node(X, P) :- off_curve(X, P).
+escape.seed(X, P) :- off_curve(X, P), dir_elem(D), dist(P, D, 0).
+
+// What the curve closes off from the grid edge.
+.decl encloses(x: Ident, p: Position)
+encloses(X, P) :- off_curve(X, P), !escape.reach(X, P).
+
+// The curves drawn as outlines.
+.decl ring(x: Ident, ch: Choice)
+ring(X, $Hollow()) :- encloses(X, _).
+ring(X, $Nest()) :- encloses(X, P), curve(_, P).
+
+.init box = Bbox<Ident>
+box.cell(X, P) :- curve(X, P).
+
+// The line the curve's box occupies on its d side, axis-only.
+.decl side_line(x: Ident, d: Dir, l: Position)
+side_line(X, D, L) :- box.edge_cell(X, P, D), axis_of(D, A), split(P, A, L, _).
+
+// --- marks ---
+
+.decl mark_axis(m: Mark, a: Axis)
+mark_axis([Ch, X, D], A) :- impl_choice(Ch), curve(X, _), axis_of(D, A).
+
+// The line the mark reaches toward d.
+.decl mark_end(m: Mark, d: Dir, l: Position)
+mark_end([Ch, X, D], D2, L) :-
+    mark_axis([Ch, X, D], A), axis_of(D2, A),
+    ( ring(X, Ch), side_line(X, D, L)      // an outline draws one line
+    ; !ring(X, Ch), side_line(X, D2, L)    // a collapsed curve spans its box
+    ).
+
+// One mark clears the other toward d: its far end still leads the other's
+// near end.
+.decl mark_apart(m1: Mark, m2: Mark)
+mark_apart([Ch, X1, D1], [Ch, X2, D2]) :-
+    opposite(D, O),
+    mark_end([Ch, X1, D1], O, L1), dist(L1, D, K1),   // the first mark's far end
+    mark_end([Ch, X2, D2], D, L2), dist(L2, D, K2),   // the second's near end
+    K1 < K2.
+
+// Marks that overlap take the same line, and sharing a line is transitive:
+// a run of marks linked by overlap is one line.
+.decl mark_same(m1: Mark, m2: Mark)
+mark_same([Ch, X1, D1], [Ch, X2, D2]) :-
+    mark_axis([Ch, X1, D1], A), mark_axis([Ch, X2, D2], A),
+    !mark_apart([Ch, X1, D1], [Ch, X2, D2]).
+mark_same(M1, M3) :- mark_same(M1, M2), mark_same(M2, M3).
+
+.init grp = Canon<Mark>
+grp.equiv(M1, M2) :- mark_same(M1, M2).
+
+// --- layout ---
+
+// Groups stand along the axis in the order their marks do.
+.init place = OrderFrame<CaseAxis, Ident>
+place.axis([Ch, A], A) :- impl_choice(Ch), axis_elem(A).
+place.member([Ch, A], G, L) :-
+    grp.id([Ch, X, D], G), mark_axis([Ch, X, D], A),  // the group's marks on a
+    mark_end([Ch, X, D], _, L).                       // the lines they reach
+
+// Each group is one line of the output, gaps between.
+.decl group_line(ch: Choice, g: Ident, a: Axis, l: Position)
+group_line(Ch, G, A, L) :-
+    place.pos([Ch, A], G, P_outer),                  // its place in the order
+    c.gap(Gap), concat(P_outer, ORIGIN, A, Gap, L).  // one line per place
+
+// The group whose line sits on the frame's d edge.
+.decl edge_group(ch: Choice, d: Dir, g: Ident)
+edge_group(Ch, D, G) :- group_line(Ch, G, A, L), axis_of(D, A), dist(L, D, 0).
+
+.decl edge_ring(ch: Choice, d: Dir)
+edge_ring(Ch, D) :- edge_group(Ch, D, G), grp.id([Ch, X, _], G), ring(X, Ch).
+
+.decl edge_pad(ch: Choice, d: Dir, k: number)
+edge_pad(Ch, D, K) :-
+    edge_group(Ch, D, _),
+    ( edge_ring(Ch, D), K = 0        // an outline sits on the edge
+    ; !edge_ring(Ch, D), c.gap(K)    // a collapsed curve is held off it
+    ).
+
+.decl pad_axis(ch: Choice, a: Axis, p: Inset)
+pad_axis(Ch, A, P) :-
+    axis_of(D, A), opposite(D, O),
+    edge_pad(Ch, D, K1), edge_pad(Ch, O, K2),
+    axis_delta(D, K1, K2, P).
+
+.decl pad(ch: Choice, p: Inset)
+pad(Ch, P) :- perp(A1, A2), pad_axis(Ch, A1, P1), pad_axis(Ch, A2, P2), compose(P1, P2, P).
+
+// The frame holds every group's line, the gaps between them, and the pad.
+.init frame = Frame2D<Choice>
+frame.extent(Ch, A, N) :-
+    group_line(Ch, _, A, L),
+    pad(Ch, Pad), compose(L, Pad, P), axis_dim(P, A, N).
+
+// --- render ---
+
+// The output margin at the figure's d side — the line its d-side mark took.
+.decl fig_side(ch: Choice, x: Ident, d: Dir, k: number)
+fig_side(Ch, X, D, K) :-
+    grp.id([Ch, X, D], G), axis_of(D, A), group_line(Ch, G, A, L), dist(L, D, K).
+
+.decl fig_axis(ch: Choice, x: Ident, a: Axis, p: Position)
+fig_axis(Ch, X, A, P) :-
+    axis_of(D, A), opposite(D, O),
+    fig_side(Ch, X, D, K1), fig_side(Ch, X, O, K2),
+    axis_delta(D, K1, K2, P).
+
+// The figures as margins from the four frame edges.
+.decl fig_box(ch: Choice, p: Position)
+fig_box(Ch, P) :-
+    perp(A1, A2), fig_axis(Ch, X, A1, P1), fig_axis(Ch, X, A2, P2),
+    compose(P1, P2, P_core), pad(Ch, Pad), compose(P_core, Pad, P).
+
+.decl ink(ch: Choice, p: Position)
+ink(Ch, P) :-
+    frame.cell(Ch, P), fig_box(Ch, Box),
+    geq(P, Box),                       // within the figure
+    dir_elem(D), same_dist(D, P, Box). // on its outline
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- ink(Ch, P), fg(Col).
+out(P, Col, Ch) :- frame.cell(Ch, P), !ink(Ch, P), bg(Col).

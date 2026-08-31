@@ -1,0 +1,231 @@
+// 2ccd9fef
+// concept: decompose induce move rank
+// Equal panels stacked along one axis hold the frames of an animation drawn
+// over a shared template. The plainest panel — fewest distinct colors —
+// holds the template alone, and time runs toward it; the split is the one
+// whose template leaves fewest cells unexplained. Content lies in runs
+// along the growth axis — the axis whose every line holds the same number
+// of runs in every frame — and each run's two ends move at a constant
+// velocity, read off the last step. The output is the next frame: the last
+// frame's runs with each end displaced once more, their content carried by
+// the end that moves, and recolored by the turn the steps agree on.
+//
+// The velocity read pairs each last-frame run with a run of the frame
+// before; the cases differ on what carries that correspondence along a
+// line:
+//   $Rank — runs of equal rank from the line's edge correspond.
+//   $Hue  — runs whose colors carry across the step's turn correspond.
+
+#include "../lib.dl"
+
+.type Choice = Rank {} | Hue {}
+
+.comp Consts {}
+
+.init c = Consts
+
+.decl impl_choice(ch: Choice)
+impl_choice($Rank()). impl_choice($Hue()).
+
+// --- panels ---
+
+// A candidate split: n equal panels along an axis.
+.decl cand_tile(a: Axis, n: number, p: Position, p_tile: Position, p_intile: Position)
+cand_tile(A, N, P, P_tile, P_intile) :-
+    in(P, _), axis_elem(A), sub_extent(P, A, N),
+    divide_slab(P, A, N, 0, P_tile, P_intile).
+
+.type Split = [a: Axis, n: number]
+.type Panel = [a: Axis, n: number, pan: Position]
+
+// The colors a candidate's panel holds.
+.init palette = Tally<Panel, Color>
+palette.item([A, N, Pan], Col) :- cand_tile(A, N, P, Pan, _), in(P, Col).
+
+// The candidate's template: its plainest panel.
+.init plainest = ArgExtremes<Split, Position>
+plainest.cand([A, N], Pan, S) :- palette.tally([A, N, Pan], S).
+
+.decl cand_tpl_pan(a: Axis, n: number, pan: Position)
+cand_tpl_pan(A, N, Pan) :- plainest.low([A, N], Pan, _).
+
+.decl cand_tpl(a: Axis, n: number, p_intile: Position, col: Color)
+cand_tpl(A, N, P_intile, Col) :-
+    cand_tile(A, N, P, Pan, P_intile), in(P, Col), cand_tpl_pan(A, N, Pan).
+
+.init miss = Tally<Split, Position>
+// A cell the candidate's template does not explain.
+miss.item([A, N], P) :-
+    cand_tile(A, N, P, _, P_intile), in(P, Col),
+    cand_tpl(A, N, P_intile, Col2), Col != Col2.
+// A split worth weighing leaves room for a panel other than the template.
+miss.domain([A, N]) :-
+    cand_tile(A, N, _, P_tile, _), cand_tpl_pan(A, N, Pan), P_tile != Pan.
+
+// The split its template explains best.
+.init fewest = ArgExtremes<Unit, Split>
+fewest.cand($U(), [A, N], S) :- miss.tally([A, N], S).
+
+.decl layout(a: Axis, n: number)
+layout(A, N) :- fewest.low($U(), [A, N], _).
+
+.decl tile(p: Position, p_tile: Position, p_intile: Position)
+tile(P, P_tile, P_intile) :- layout(A, N), cand_tile(A, N, P, P_tile, P_intile).
+
+.decl tpl_pan(pan: Position)
+tpl_pan(Pan) :- layout(A, N), cand_tpl_pan(A, N, Pan).
+
+.decl tpl(p_intile: Position, col: Color)
+tpl(P_intile, Col) :- layout(A, N), cand_tpl(A, N, P_intile, Col).
+
+// Time runs toward the template: the axis edge it sits at.
+.decl time_dir(d: Dir)
+time_dir(D) :- layout(A, _), axis_of(D, A), tpl_pan(Pan), dist(Pan, D, 0).
+
+// --- frames ---
+
+// Every panel but the template holds a frame of the animation.
+.decl frame_panel(pan: Position)
+frame_panel(Pan) :- tile(_, Pan, _), !tpl_pan(Pan).
+
+.decl content(pan: Position, p: Position, col: Color)
+content(Pan, P_intile, Col) :-
+    frame_panel(Pan), tile(P, Pan, P_intile), in(P, Col),
+    tpl(P_intile, Col2), Col != Col2.
+
+.decl succ_frame(pan: Position, pan2: Position)
+succ_frame(Pan, Pan2) :-
+    frame_panel(Pan), time_dir(D), neighbor(Pan, D, Pan2), frame_panel(Pan2).
+
+// The step the output continues.
+.decl last_step(pan: Position, pan2: Position)
+last_step(Pan, Pan2) :- succ_frame(Pan, Pan2), !succ_frame(Pan2, _).
+
+// --- runs ---
+
+// A run of content: its end toward d, and the cells behind that end.
+.decl run_end(pan: Position, d: Dir, p: Position)
+run_end(Pan, D, P) :-
+    content(Pan, P, _), dir_elem(D), neighbor(P, D, Q), !content(Pan, Q, _).
+
+.type RunKey = [pan: Position, d: Dir]
+
+// The run reaches back from its end while content carries on.
+.init run = Ray<RunKey>
+run.dir([Pan, D], D2) :- run_end(Pan, D, _), opposite(D, D2).
+run.cell([Pan, D], P) :- run_end(Pan, D, _), content(Pan, P, _).
+run.mark([Pan, D], P) :- run_end(Pan, D, P).
+run.blocked([Pan, D], P) :- run_end(Pan, D, _), tpl(P, _), !content(Pan, P, _).
+
+.decl run_ends(pan: Position, d: Dir, s: Position, f: Position)
+run_ends(Pan, D, S, F) :-
+    run.clear([Pan, D], F, _, _, S), opposite(D, D2), run_end(Pan, D2, F).
+
+.decl run_line(pan: Position, d: Dir, s: Position, l: Position)
+run_line(Pan, D, S, L) :- run_ends(Pan, D, S, _), axis_of(D, A), split(S, A, _, L).
+
+// --- growth axis ---
+
+.type LineKey = [pan: Position, d: Dir, l: Position]
+
+.init run_count = Tally<LineKey, Position>
+run_count.item([Pan, D, L], S) :- run_line(Pan, D, S, L).
+run_count.domain([Pan, D, L]) :-
+    frame_panel(Pan), dir_elem(D), axis_of(D, A), tpl(P_intile, _),
+    split(P_intile, A, _, L).
+
+.type DirLine = [d: Dir, l: Position]
+
+// The run count a line carries, over the frames.
+.init line_count = Unanimous<DirLine, number>
+line_count.item([D, L], N) :- run_count.tally([_, D, L], N).
+
+// A line whose run count differs between two frames breaks the axis.
+.decl axis_defect(a: Axis)
+axis_defect(A) :- axis_of(D, A), line_count.clash([D, _]).
+
+.decl growth_axis(a: Axis)
+growth_axis(A) :- axis_elem(A), !axis_defect(A).
+
+// --- color ---
+
+// What a color turns into over a step, read where consecutive frames both
+// hold content. A color the steps disagree about keeps itself.
+.init turned = Unanimous<Color, Color>
+turned.item(Col, Col2) :-
+    succ_frame(Pan, Pan2), content(Pan, P, Col), content(Pan2, P, Col2).
+
+.decl recolor(col: Color, col2: Color)
+recolor(Col, Col2) :- turned.value(Col, Col2).
+recolor(Col, Col) :- content(_, _, Col), !turned.value(Col, _).
+
+// --- motion ---
+
+// A last-frame run (pan, ends tn/tf) with the run it continues (ends sn/sf).
+.decl run_match(ch: Choice, pan: Position, d: Dir,
+                sn: Position, sf: Position, tn: Position, tf: Position)
+
+// --- Rank ---
+
+// Runs of a line in order from edge d, so the same run carries the same rank
+// in every frame.
+.init run_ord = Ordinal<LineKey>
+run_ord.idx_set([Pan, D, L], K) :- run_line(Pan, D, S, L), dist(S, D, K).
+
+.decl run_rank(pan: Position, d: Dir, l: Position, r: number, s: Position, f: Position)
+run_rank(Pan, D, L, R, S, F) :-
+    growth_axis(A), axis_of(D, A), run_ends(Pan, D, S, F),
+    run_line(Pan, D, S, L), dist(S, D, K), run_ord.rank([Pan, D, L], K, R).
+
+run_match($Rank(), Pan2, D, Sn, Sf, Tn, Tf) :-
+    last_step(Pan, Pan2),
+    run_rank(Pan, D, L, R, Sn, Sf), run_rank(Pan2, D, L, R, Tn, Tf).
+
+// --- Hue ---
+
+.type RunEnd = [d: Dir, s: Position]
+
+// The source run's colors after the step's turn, against the last-frame
+// run's colors.
+.init hues = KeyedSetCompare<RunEnd, RunEnd, Color>
+hues.pattern_member([D, S], Col2) :-
+    last_step(Pan, _), run.clear([Pan, D], P, _, _, S),   // a source run's cell
+    content(Pan, P, Col), recolor(Col, Col2).             // its color, turned
+hues.observed_member([D, T], Col) :-
+    last_step(_, Pan2), run.clear([Pan2, D], P, _, _, T), content(Pan2, P, Col).
+
+run_match($Hue(), Pan2, D, Sn, Sf, Tn, Tf) :-
+    last_step(Pan, Pan2), growth_axis(A), axis_of(D, A),
+    run_ends(Pan, D, Sn, Sf), run_line(Pan, D, Sn, L),      // a source run
+    run_ends(Pan2, D, Tn, Tf), run_line(Pan2, D, Tn, L),    // a last-frame run on its line
+    hues.equals([D, Tn], [D, Sn]).                          // whose color sets agree
+
+// Each end steps once more by the velocity it had over the last step, and
+// carries the run's content with it, as far as the run the two ends now bound.
+.decl drag(ch: Choice, d: Dir, t: Position, q: Position, col: Color, v: Shift)
+drag(Ch, D, Tn, Q, Col2, V) :-
+    run_match(Ch, Pan, D, Sn, Sf, Tn, Tf),
+    displacement(Sn, Tn, Vn), compose(Tn, Vn, En),             // the near end steps again
+    displacement(Sf, Tf, Vf), compose(Tf, Vf, Ef),             // and so does the far end
+    ( V = Vn ; V = Vf ),                                       // one end does the carrying
+    run.clear([Pan, D], P, _, _, Tn), content(Pan, P, Col),    // a cell of the run
+    compose(P, V, Q),                                          // the cell it carries to
+    dist(Q, D, Kq), dist(En, D, Kn), Kq >= Kn,                 // within the new run
+    opposite(D, D2), dist(Q, D2, Kq2), dist(Ef, D2, Kf), Kq2 >= Kf,
+    recolor(Col, Col2).
+
+.decl moved(ch: Choice, d: Dir, t: Position, q: Position)
+moved(Ch, D, T, Q) :- drag(Ch, D, T, Q, _, V), V != ORIGIN.
+
+.decl paint(ch: Choice, p: Position, col: Color)
+paint(Ch, Q, Col) :-
+    drag(Ch, D, T, Q, Col, V),
+    ( V != ORIGIN                        // a moving end carries its content
+    ; V = ORIGIN, !moved(Ch, D, T, Q)    // a still end fills what the moving end misses
+    ).
+
+// --- output ---
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_intile, Col, Ch) :- paint(Ch, P_intile, Col).
+out(P_intile, Col, Ch) :- impl_choice(Ch), tpl(P_intile, Col), !paint(Ch, P_intile, _).

@@ -1,0 +1,157 @@
+// 16b78196
+// concept: objects pack
+// A bar spans the grid and its edge is notched. The loose pieces translate to
+// the bar and to each other, each resting flush on the face it meets in a fit
+// that pins it: one step along the contact, and the piece hangs over a gap in
+// the host's face or collides with it. Every piece is used once and no two
+// overlap; a placement is refuted when holding the piece there drops some
+// piece out of reach. The output paints the assembly and leaves background
+// where the pieces came from.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl bg(col: Color) bg(0).
+}
+
+.init c = Consts
+
+// --- the objects ---
+
+.init objs = Components<Unit>
+objs.node($U(), P) :- in(P, Col), !c.bg(Col).
+
+.decl obj_cell(o: Ident, p: Position)
+obj_cell(O, P) :- objs.label($U(), P, O).
+
+.decl obj_color(o: Ident, col: Color)
+obj_color(O, Col) :- obj_cell(O, P), in(P, Col).
+
+.init box = Bbox<Ident>
+box.cell(O, P) :- obj_cell(O, P).
+
+// The bar reaches both edges of one axis. The pieces stack across it.
+.decl bar(o: Ident, a: Axis)
+bar(O, A) :-
+    box.edge_min(O, D, 0), opposite(D, D2), box.edge_min(O, D2, 0),
+    axis_of(D, A).
+
+.decl stack_dir(d: Dir)
+stack_dir(D) :- bar(_, A), perp(A, A2), axis_of(D, A2).
+
+// The object's face toward d: on each line of the stack axis, the cell
+// lying furthest that way.
+.decl face(o: Ident, d: Dir, p: Position)
+face(O, D, P) :- obj_cell(O, P), stack_dir(D), !beyond(O, D, P).
+
+.decl beyond(o: Ident, d: Dir, p: Position)
+beyond(O, D, P) :-
+    obj_cell(O, P), obj_cell(O, Q), stack_dir(D),
+    axis_of(D, A_stack), same_line(A_stack, P, Q),
+    dist(P, D, K), dist(Q, D, K2), K2 < K.  // Q lies further toward d
+
+// --- seating ---
+
+// A piece seats on a host when its whole facing edge rests on the host's
+// face toward d. A seat is relative: r carries the piece from where it lies
+// to where it meets the host. A seat is a claim about the piece and one host,
+// not about the assembly.
+
+.decl seat_offset(host: Ident, o: Ident, d: Dir, r: Shift)
+seat_offset(H, O, D, R) :-
+    opposite(D, Dn), face(O, Dn, N), !bar(O, _),  // a piece's facing cell
+    face(H, D, P), O != H,                        // a host face to meet it
+    neighbor(P, D, Q), displacement(N, Q, R).     // the cell just off the face
+
+// The rests probed: each offered seat and its one-step slides along the
+// contact.
+.decl rest(host: Ident, o: Ident, d: Dir, r: Shift)
+rest(H, O, D, R) :- seat_offset(H, O, D, R).
+rest(H, O, D, R2) :-
+    seat_offset(H, O, D, R), perp_dir(D, D_slide),  // the way along the face
+    neighbor(R, D_slide, R2).
+
+// A facing cell's rest target holding no host cell — where the rest hangs
+// over nothing.
+.decl gap(host: Ident, o: Ident, d: Dir, r: Shift, q: Position)
+gap(H, O, D, R, Q2) :-
+    rest(H, O, D, R),
+    opposite(D, Dn), face(O, Dn, N), compose(N, R, Q),  // a facing cell
+    neighbor(Q, Dn, Q2), !obj_cell(H, Q2).              // rests on nothing
+
+// The rest catches: some facing cell hangs over a gap inside the host's face.
+.decl catch(host: Ident, o: Ident, d: Dir, r: Shift)
+catch(H, O, D, R) :-
+    gap(H, O, D, R, Q2),
+    axis_of(D, A_stack), face(H, D, P_f),
+    same_line(A_stack, P_f, Q2).  // inside the host's face
+
+// The rest collides: a piece cell lands on a host cell.
+.decl sunk(host: Ident, o: Ident, d: Dir, r: Shift)
+sunk(H, O, D, R) :-
+    rest(H, O, D, R),
+    obj_cell(O, P), compose(P, R, Q), obj_cell(H, Q).
+
+// Flush: every facing cell rests on the host, from outside it.
+.decl seat_flush(host: Ident, o: Ident, d: Dir, r: Shift)
+seat_flush(H, O, D, R) :-
+    seat_offset(H, O, D, R), !gap(H, O, D, R, _), !sunk(H, O, D, R).
+
+// A rest pins only when the faces interlock: one step along the contact
+// either catches or collides. A rest whose slide merely runs off the face's
+// end still slides, and is no seat.
+.decl loose(host: Ident, o: Ident, d: Dir, r: Shift)
+loose(H, O, D, R) :-
+    seat_flush(H, O, D, R), perp_dir(D, D_slide),
+    neighbor(R, D_slide, R2), !catch(H, O, D, R2), !sunk(H, O, D, R2).
+
+.decl seat(host: Ident, o: Ident, r: Shift)
+seat(H, O, R) :- seat_flush(H, O, D, R), !loose(H, O, D, R).
+
+// --- the placements a piece can reach ---
+
+// The bar stays where it is; a piece reaches wherever it can seat on
+// something already placed, so long as it lands on the grid.
+.decl placement(o: Ident, delta: Shift)
+placement(B, ORIGIN) :- bar(B, _).
+placement(O, Delta) :- seat_step(_, _, O, Delta).
+
+// A seated step between placements: o lands at delta by seating on the host
+// placed at d_host.
+.decl seat_step(h: Ident, d_host: Shift, o: Ident, delta: Shift)
+seat_step(H, D_host, O, Delta) :-
+    placement(H, D_host), seat(H, O, R), compose(D_host, R, Delta),
+    box.margin(O, M), compose(M, Delta, M2), geq(M2, ORIGIN).  // on the grid
+
+.decl place_cell(o: Ident, delta: Shift, p: Position)
+place_cell(O, Delta, Q) :- placement(O, Delta), obj_cell(O, P), compose(P, Delta, Q).
+
+// --- the assembly ---
+
+// Each piece takes one reachable placement, every piece is used, and no two
+// overlap. A placement is refuted through what remains beside it: hold the
+// piece there, regrow the reach from the bar through placements that neither
+// overlap the held piece nor move its piece elsewhere, and if some object
+// drops out of reach, no assembly holds the placement.
+
+.decl clash(o1: Ident, d1: Shift, o2: Ident, d2: Shift)
+clash(O1, D1, O2, D2) :- place_cell(O1, D1, Q), place_cell(O2, D2, Q), O1 != O2.
+
+.decl beside(o_h: Ident, d_h: Shift, o: Ident, delta: Shift)
+beside(O_h, D_h, B, ORIGIN) :- placement(O_h, D_h), bar(B, _).
+beside(O_h, D_h, O, Delta) :-
+    beside(O_h, D_h, H, D_host), seat_step(H, D_host, O, Delta),
+    bar(B, _), !clash(O, Delta, B, ORIGIN),  // beside the bar
+    !clash(O, Delta, O_h, D_h),              // beside the held piece
+    (O != O_h ; Delta = D_h).                // the held piece stays held
+
+.decl refuted(o: Ident, delta: Shift)
+refuted(O, Delta) :- placement(O, Delta), obj_cell(O2, _), !beside(O, Delta, O2, _).
+
+.decl filled(p: Position, col: Color)
+filled(Q, Col) :-
+    place_cell(O, Delta, Q), !refuted(O, Delta), obj_color(O, Col).
+
+.decl out(p: Position, col: Color)
+out(Q, Col) :- filled(Q, Col).
+out(Q, Col) :- in(Q, _), !filled(Q, _), c.bg(Col).

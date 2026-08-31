@@ -1,0 +1,78 @@
+// 30f42897
+// concept: wallpaper parity count
+// The grid's border is a cycle of cells, and the input's non-bg cells are one
+// block on that cycle. The output keeps the input and repeats the block around
+// the cycle. The sense the cycle runs in is not observable, so the body runs
+// both. What spaces the copies is underdetermined:
+//
+//   $Alternate() — stretches of the block's length alternate painted and blank
+//                  around the cycle.
+//   $Period()    — the block recurs every c.period_blocks stretches.
+
+#include "../lib.dl"
+
+.type Choice = Alternate {} | Period {}
+
+.comp Consts {
+    // --- shared ---
+    .decl bg(col: Color) bg(8).
+
+    // --- $Period ---
+    // Stretches from one copy of the block to the next.
+    .decl period_blocks(k: number) period_blocks(2).
+}
+
+.init c = Consts
+
+// The block: the input's non-bg cells.
+.decl mark(p: Position, col: Color)
+mark(P, Col) :- in(P, Col), !c.bg(Col).
+
+.init block = Tally<Unit, Position>
+block.item($U(), P) :- mark(P, _).
+
+// The border as a cycle, walked in sense s: from a cell on edge D, the step
+// toward turn(S, D) runs along that edge. At a corner only one of the cell's
+// two edges keeps the step on the grid, so each cell has one successor.
+.init ring = CycleWalk<Sense, Position>
+ring.succ(S, P, Q) :-
+    in(P, _), turn(S, D, D_step), dist(P, D, 0),   // a cell on edge D
+    neighbor(P, D_step, Q), in(Q, _).              // the step along that edge
+ring.step(S, N) :- sense_elem(S), block.tally($U(), N).
+
+// One block-length along the cycle.
+.decl stretch(s: Sense, p: Position, q: Position)
+stretch(S, P, Q) :- block.tally($U(), N), ring.walk(S, P, N, Q).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Alternate()).
+impl_choice($Period()).
+
+.decl paint(s: Sense, p: Position, ch: Choice)
+paint(S, P, Ch) :- impl_choice(Ch), sense_elem(S), mark(P, _).
+
+// --- $Alternate ---
+
+// The stretch after a painted one is blank, and the one after that is painted.
+.decl blank(s: Sense, p: Position)
+blank(S, Q) :- paint(S, P, $Alternate()), stretch(S, P, Q).
+
+paint(S, Q, $Alternate()) :- blank(S, P), stretch(S, P, Q).
+
+// --- $Period ---
+
+.init period = CycleWalk<Sense, Position>
+period.succ(S, P, Q) :- stretch(S, P, Q).
+period.step(S, K) :- sense_elem(S), c.period_blocks(K).
+
+paint(S, Q, $Period()) :-
+    paint(S, P, $Period()),                       // a painted cell
+    c.period_blocks(K), period.walk(S, P, K, Q).  // K stretches on
+
+// --- output ---
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- paint(_, P, Ch), mark(_, Col).   // the block's color
+out(P, Col, Ch) :-
+    impl_choice(Ch), sense_elem(S),      // each case, under each sense
+    in(P, Col), !paint(S, P, Ch).        // the cell the pattern leaves alone

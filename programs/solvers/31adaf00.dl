@@ -1,0 +1,57 @@
+// 31adaf00
+// concept: stamp
+// Two colors speckle the grid. Where the background holds a solid square of side
+// two or more, that square is repainted in the mark color; a square that meets a
+// strictly larger one is displaced. Every other cell keeps its input color.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl bg(col: Color) bg(0).
+    .decl mark(col: Color) mark(1).
+
+    // The smallest square drawn.
+    .decl min_side(n: number) min_side(2).
+}
+
+.init c = Consts
+
+// --- squares of background ---
+
+.decl bg_cell(p: Position)
+bg_cell(P) :- in(P, Col), c.bg(Col).
+
+// Every pair of background cells, with the box it spans.
+.type Corners = [p: Position, q: Position]
+
+.init span = BoxFrame<Corners>
+span.cell([P, Q], R) :- bg_cell(P), bg_cell(Q), ( R = P ; R = Q ).
+
+// Only a diagonal pair spans a square, so the pairs enumerate the frame's
+// squares.
+.decl square(b: Position, n: number)
+square(B, N) :-
+    span.margin(K, B), span.extents(K, _, N, N),  // the pair's box, N by N
+    c.min_side(M), N >= M.                        // big enough to draw
+
+.decl spoiled(b: Position)
+spoiled(B) :- square(B, _), in(P, Col), !c.bg(Col), geq(P, B).
+
+.decl bg_square(b: Position, n: number)
+bg_square(B, N) :- square(B, N), !spoiled(B).
+
+.decl displaced(b: Position)
+displaced(B) :-
+    bg_square(B, N), bg_square(B2, N2), N2 > N,  // a strictly larger square
+    in(P, _), geq(P, B), geq(P, B2).             // meets B
+
+// --- drawing ---
+
+.decl painted(p: Position)
+painted(P) :-
+    bg_square(B, _), !displaced(B),  // a drawn square
+    in(P, _), geq(P, B).             // its cells
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- painted(P), c.mark(Col).
+out(P, Col) :- in(P, Col), !painted(P).
