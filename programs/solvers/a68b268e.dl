@@ -4,8 +4,7 @@
 // in its own ink. The output overlays the tiles: the highest-precedence
 // ink present fills each cell, bg where every tile is empty. Each tile
 // keeps one ink in every pair, so spatial and chromatic precedence are
-// indistinguishable; the spatial read splits data/ops. Tagged on out's
-// Choice:
+// indistinguishable; the spatial read splits data/ops:
 //
 //   $Scan()  — tiles rank in reading order from c.lex_corner along
 //              c.lex_axis.
@@ -65,28 +64,27 @@ lex.corner($U(), D) :- c.lex_corner(D).
 lex.axis($U(), A) :- c.lex_axis(A).
 lex.cell($U(), T) :- tile_ink(T, _, _).
 
-.decl scan_beaten(p_tile: Position, p: Position)
-scan_beaten(T, P) :- tile_ink(T, P, _), tile_ink(T2, P, _), lex.before($U(), T2, T).
+// The earliest tile in the scan inking each cell.
+.init front_scan = ArgExtremes<Position, Position>
+front_scan.cand(P, T, R) :- tile_ink(T, P, _), lex.rank($U(), T, R).
 
-out(P, Col, $Scan()) :- tile_ink(T, P, Col), !scan_beaten(T, P).
+out(P, Col, $Scan()) :- front_scan.low(P, T, _), tile_ink(T, P, Col).
 
 // --- $Order ---
 
-.decl order_beaten(p_tile: Position, p: Position)
-order_beaten(T, P) :-
-    tile_ink(T, P, _), tile_ink(T2, P, _),
-    c.prio(T2, R2), c.prio(T, R), R2 < R.
+// The foremost tile inking each cell.
+.init front_tile = ArgExtremes<Position, Position>
+front_tile.cand(P, T, R) :- tile_ink(T, P, _), c.prio(T, R).
 
-out(P, Col, $Order()) :- tile_ink(T, P, Col), !order_beaten(T, P).
+out(P, Col, $Order()) :- front_tile.low(P, T, _), tile_ink(T, P, Col).
 
 // --- $Ink ---
 
-.decl ink_beaten(p: Position, col: Color)
-ink_beaten(P, Col) :-
-    ink_at(P, Col), ink_at(P, C2),
-    c.ink_rank(C2, R2), c.ink_rank(Col, R), R2 < R.
+// The foremost ink at each cell.
+.init front_ink = ArgExtremes<Position, Color>
+front_ink.cand(P, Col, R) :- ink_at(P, Col), c.ink_rank(Col, R).
 
-out(P, Col, $Ink()) :- ink_at(P, Col), !ink_beaten(P, Col).
+out(P, Col, $Ink()) :- front_ink.low(P, Col, _).
 
 // --- fit ---
 

@@ -51,21 +51,19 @@ out(P, Col, Ch) :- impl_choice(Ch), tile_cell(_, P, _), !ink_at(P, _), c.bg(Col)
 
 // --- $Order ---
 
-.decl order_beaten(p_tile: Position, p: Position)
-order_beaten(T, P) :-
-    tile_ink(T, P, _), tile_ink(T2, P, _),
-    c.prio(T2, R2), c.prio(T, R), R2 < R.
+// The foremost tile inking each cell.
+.init front_tile = ArgExtremes<Position, Position>
+front_tile.cand(P, T, R) :- tile_ink(T, P, _), c.prio(T, R).
 
-out(P, Col, $Order()) :- tile_ink(T, P, Col), !order_beaten(T, P).
+out(P, Col, $Order()) :- front_tile.low(P, T, _), tile_ink(T, P, Col).
 
 // --- $Ink ---
 
-.decl ink_beaten(p: Position, col: Color)
-ink_beaten(P, Col) :-
-    ink_at(P, Col), ink_at(P, C2),
-    c.ink_rank(C2, R2), c.ink_rank(Col, R), R2 < R.
+// The foremost ink at each cell.
+.init front_ink = ArgExtremes<Position, Color>
+front_ink.cand(P, Col, R) :- ink_at(P, Col), c.ink_rank(Col, R).
 
-out(P, Col, $Ink()) :- ink_at(P, Col), !ink_beaten(P, Col).
+out(P, Col, $Ink()) :- front_ink.low(P, Col, _).
 
 // --- fit ---
 

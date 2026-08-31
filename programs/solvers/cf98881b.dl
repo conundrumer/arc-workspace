@@ -21,6 +21,9 @@
 .type Body      = Spatial {} | Palette {} | Stack {}
 .type Choice    = [d: DecChoice, b: Body]
 
+// The overlay runs per output cell, and each decompose case has its own.
+.type Cell      = [o: Position, dc: DecChoice]
+
 .comp Consts {
     .init helpers = ConstsHelpers
 
@@ -93,32 +96,34 @@ body_choice($Spatial()).
 body_choice($Palette()).
 body_choice($Stack()).
 
-.decl outranked(o: Position, p_tile: Position, dc: DecChoice, b: Body)
-
-// --- Spatial: a candidate pane nearer the stack edge wins ---
-outranked(O, T, Dc, $Spatial()) :-
-    cand(O, T, _, Dc), cand(O, T2, _, Dc),
-    c.stack_dir(D), dist(T2, D, K2), dist(T, D, K), K2 < K.
-
-// --- Palette: a candidate of higher-ranked color wins ---
-outranked(O, T, Dc, $Palette()) :-
-    cand(O, T, Lo, Dc), cand(O, _, Hi, Dc),
-    c.ink_rank(Hi, R_hi), c.ink_rank(Lo, R_lo), R_hi < R_lo.
-
-// --- Stack: a candidate from a higher-ranked pane wins ---
-outranked(O, T, Dc, $Stack()) :-
-    cand(O, T, _, Dc), cand(O, T2, _, Dc),
-    c.pane_rank(T2, R2), c.pane_rank(T, R), R2 < R.
-
-// --- Output ---
-
 .decl out(p: Position, col: Color, ch: Choice)
-out(O, Col, [Dc, B]) :-
-    cand(O, T, Col, Dc), body_choice(B),
-    !outranked(O, T, Dc, B).
 out(O, Bg, [Dc, B]) :-
     dec_choice(Dc), body_choice(B), c.frame(O),   // choice × cell
     c.bg(Bg), !cand(O, _, _, Dc).
+
+// --- Spatial ---
+
+// The competing pane nearest the stack edge.
+.init nearest_pane = ArgExtremes<Cell, Position>
+nearest_pane.cand([O, Dc], T, K) :- cand(O, T, _, Dc), c.stack_dir(D), dist(T, D, K).
+
+out(O, Col, [Dc, $Spatial()]) :- nearest_pane.low([O, Dc], T, _), cand(O, T, Col, Dc).
+
+// --- Palette ---
+
+// The top-priority color competing at the cell.
+.init front_ink = ArgExtremes<Cell, Color>
+front_ink.cand([O, Dc], Col, R) :- cand(O, _, Col, Dc), c.ink_rank(Col, R).
+
+out(O, Col, [Dc, $Palette()]) :- front_ink.low([O, Dc], Col, _).
+
+// --- Stack ---
+
+// The top-priority pane competing at the cell.
+.init front_pane = ArgExtremes<Cell, Position>
+front_pane.cand([O, Dc], T, R) :- cand(O, T, _, Dc), c.pane_rank(T, R).
+
+out(O, Col, [Dc, $Stack()]) :- front_pane.low([O, Dc], T, _), cand(O, T, Col, Dc).
 
 // --- fit ---
 
