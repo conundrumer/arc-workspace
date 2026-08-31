@@ -3,7 +3,10 @@ those reports carry."""
 
 import hashlib
 import re
+from collections.abc import Iterator
 from pathlib import Path
+
+from dl.dlparse import Bool, Comp, ParseError, Program, Rigid, Rule, body_literals, parse
 
 from . import config
 
@@ -187,3 +190,58 @@ def title_of(item_id: str) -> str:
         if m:
             return m.group(1)
     return ""
+
+
+def ts_sizes() -> dict[str, int]:
+    """Reference TS solver complexity by task id: gzipped bytes of the
+    minified source, read from the cache scripts/queue.ts maintains. The
+    cache refreshes when that script runs, so an unlisted or stale id
+    waits for the next run."""
+    try:
+        text = config.QUEUE_CACHE.read_text()
+    except OSError:
+        return {}
+    out: dict[str, int] = {}
+    for line in text.splitlines():
+        parts = line.split("\t")
+        if len(parts) >= 3 and parts[2].isdigit():
+            out[parts[0]] = int(parts[2])
+    return out
+
+
+def _rules(items: list) -> Iterator[Rule]:
+    for it in items:
+        if isinstance(it, Rule):
+            yield it
+        elif isinstance(it, (Comp, Rigid)):
+            yield from _rules(it.items)
+
+
+def _literal_count(program: Program) -> int:
+    """One per rule head and one per body atom, negation, or comparison,
+    disjunction branches expanded and aggregate bodies included. Facts count
+    their head. Declarations, types, inits, and the terms inside a literal
+    add nothing: the measure follows the program, not the code around it."""
+    return sum(1 + sum(1 for lit in body_literals(r) if not isinstance(lit, Bool))
+               for r in _rules(program.items))
+
+
+_DL_SIZE: dict[str, tuple[float, int | None]] = {}
+
+
+def dl_size(item_id: str) -> int | None:
+    """Solver complexity: the literal count of the parsed rules. None for
+    a missing file or one outside the parser's dialect."""
+    p = solver_path(item_id)
+    try:
+        mtime = p.stat().st_mtime
+    except OSError:
+        return None
+    hit = _DL_SIZE.get(item_id)
+    if hit is None or hit[0] != mtime:
+        try:
+            hit = (mtime, _literal_count(parse(p.read_text())))
+        except (OSError, ParseError):
+            hit = (mtime, None)
+        _DL_SIZE[item_id] = hit
+    return hit[1]

@@ -20,6 +20,7 @@ DOCS = ROOT / "docs" / "wf-solver"
 TASKS = ROOT / "data" / "tasks"
 AGENT_DIR = ROOT / ".claude" / "agents"
 REF_DIR = (ROOT.parent / "arc-synth-bun").resolve()
+QUEUE_CACHE = ROOT / "scripts" / ".queue-cache"
 
 FAKE = os.environ.get("CONSOLE_FAKE") == "1"
 CLAUDE = os.environ.get("CONSOLE_CLAUDE", "claude")

@@ -14,7 +14,8 @@ BACKLOG_TTL = 3
 BACKLOG_CACHE: dict = {"at": 0.0, "rows": []}
 
 
-def backlog_row(item_id: str, proposals: str, no_solver: bool = False) -> dict:
+def backlog_row(item_id: str, proposals: str, ts_size: int | None,
+                no_solver: bool = False) -> dict:
     comps = solvers.comps_of(item_id)
     calls = solvers.task_callouts(item_id)
     return {"id": item_id, "title": solvers.title_of(item_id), "comps": comps,
@@ -22,12 +23,14 @@ def backlog_row(item_id: str, proposals: str, no_solver: bool = False) -> dict:
             "callouts": calls, "callout_n": len(calls),
             "callout_rank": solvers.callout_rank(calls),
             "callout_act": solvers.callout_act(calls),
+            "ts_size": ts_size, "dl_size": solvers.dl_size(item_id),
             "reports": solvers.report_stages(item_id), "no_solver": no_solver}
 
 
 def backlog_scan() -> list[dict]:
     done = ledger.fabled(ledger.ledger_rows())
     proposals = solvers.prop_text()
+    ts = solvers.ts_sizes()
     rows = []
     for path in sorted(config.SOLVERS.glob("*.dl")):
         # a running souffle drops `.tmp*.dl` scratch files into the directory
@@ -36,11 +39,11 @@ def backlog_scan() -> list[dict]:
         item_id = path.stem
         if item_id in done:
             continue
-        rows.append(backlog_row(item_id, proposals))
+        rows.append(backlog_row(item_id, proposals, ts.get(item_id)))
     # A pass that wrote no solver leaves the glob nothing to find, so the task
     # needing a ruling most is the one the scan cannot reach. The reports carry
     # it: the stage landed, and its account of why stands in for the file.
-    rows += [backlog_row(it["id"], proposals, no_solver=True)
+    rows += [backlog_row(it["id"], proposals, ts.get(it["id"]), no_solver=True)
              for it in store.STATE["items"]
              if it.get("landed") and it["id"] not in done
              and not solvers.solver_path(it["id"]).exists()]
