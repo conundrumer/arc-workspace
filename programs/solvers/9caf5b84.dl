@@ -27,27 +27,19 @@
 .init color_count = Tally<Color, Position>
 color_count.item(Col, P) :- in(P, Col).
 
-// Col2 strictly more frequent than Col.
-.decl beaten_by(col: Color, col2: Color)
-beaten_by(Col, Col2) :- color_count.tally(Col, N), color_count.tally(Col2, N2), N2 > N.
+.init by_count = Order<Unit, Color>
+by_count.elem($U(), Col) :- color_count.tally(Col, _).
+by_count.before($U(), Col, Col2) :-
+    color_count.tally(Col, N), color_count.tally(Col2, N2),  // two colors' counts
+    N < N2.                                                  // the rarer one comes first
 
 .decl survives(col: Color, ch: Choice)
 
 // --- Keep ---
-// Rank from the frequent end: how many colors outnumber this one.
-.init freq_rank = Order<Unit, Color>
-freq_rank.elem($U(), Col) :- color_count.tally(Col, _).
-freq_rank.before($U(), Col2, Col) :- beaten_by(Col, Col2).
-
-survives(Col, $Keep()) :- freq_rank.rank($U(), Col, R), c.keep_n(K), R < K.
+survives(Col, $Keep()) :- by_count.rank_desc($U(), Col, R), c.keep_n(K), R < K.
 
 // --- Drop ---
-// Rank from the rare end: how many colors this one outnumbers.
-.init rare_rank = Order<Unit, Color>
-rare_rank.elem($U(), Col) :- color_count.tally(Col, _).
-rare_rank.before($U(), Col2, Col) :- beaten_by(Col2, Col).
-
-survives(Col, $Drop()) :- rare_rank.rank($U(), Col, R), c.drop_n(K), R >= K.
+survives(Col, $Drop()) :- by_count.rank($U(), Col, R), c.drop_n(K), R >= K.
 
 // --- Output ---
 

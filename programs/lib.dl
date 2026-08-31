@@ -859,6 +859,11 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     .decl rank(key: Key, t: T, r: number)
     rank(Ky, T, R) :- elem(Ky, T), R = count : { before(Ky, A, T) }.
 
+    // The same count, over the members after t — the order read from its
+    // far end.
+    .decl rank_desc(key: Key, t: T, r: number)
+    rank_desc(Ky, T, R) :- elem(Ky, T), R = count : { before(Ky, T, B) }.
+
     // The element nothing precedes, and the one nothing follows.
     .decl first(key: Key, t: T)
     first(Ky, T) :- elem(Ky, T), !before(Ky, _, T).
