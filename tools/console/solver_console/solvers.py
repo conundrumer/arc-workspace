@@ -3,10 +3,10 @@ those reports carry."""
 
 import hashlib
 import re
-from collections.abc import Iterator
 from pathlib import Path
 
-from dl.dlparse import Bool, Comp, ParseError, Program, Rigid, Rule, body_literals, parse
+from dl.corpus import literal_count
+from dl.dlparse import ParseError, parse
 
 from . import config
 
@@ -210,29 +210,13 @@ def ts_sizes() -> dict[str, int]:
     return out
 
 
-def _rules(items: list) -> Iterator[Rule]:
-    for it in items:
-        if isinstance(it, Rule):
-            yield it
-        elif isinstance(it, (Comp, Rigid)):
-            yield from _rules(it.items)
-
-
-def _literal_count(program: Program) -> int:
-    """One per rule head and one per body atom, negation, or comparison,
-    disjunction branches expanded and aggregate bodies included. Facts count
-    their head. Declarations, types, inits, and the terms inside a literal
-    add nothing: the measure follows the program, not the code around it."""
-    return sum(1 + sum(1 for lit in body_literals(r) if not isinstance(lit, Bool))
-               for r in _rules(program.items))
-
-
 _DL_SIZE: dict[str, tuple[float, int | None]] = {}
 
 
 def dl_size(item_id: str) -> int | None:
-    """Solver complexity: the literal count of the parsed rules. None for
-    a missing file or one outside the parser's dialect."""
+    """Solver complexity by task id: `dl.corpus.literal_count` of the
+    parsed file, cached per mtime. None for a missing file or one outside
+    the parser's dialect."""
     p = solver_path(item_id)
     try:
         mtime = p.stat().st_mtime
@@ -241,7 +225,7 @@ def dl_size(item_id: str) -> int | None:
     hit = _DL_SIZE.get(item_id)
     if hit is None or hit[0] != mtime:
         try:
-            hit = (mtime, _literal_count(parse(p.read_text())))
+            hit = (mtime, literal_count(parse(p.read_text())))
         except (OSError, ParseError):
             hit = (mtime, None)
         _DL_SIZE[item_id] = hit
