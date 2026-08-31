@@ -40,7 +40,7 @@ WORKER_ENV = {**os.environ, "CLAUDE_NO_HEADLINE": "1",
 
 WORKER_FLAGS = [
     "--output-format", "stream-json", "--input-format", "stream-json", "--verbose",
-    "--permission-mode", "acceptEdits",
+    "--permission-mode", "auto",
     # ref_note.py hooks in to note reads of unratified solvers, and
     # includeGitInstructions drops the git status block: it is rebuilt at
     # every spawn, so a resume that follows a commit or a solver write would
@@ -52,6 +52,8 @@ WORKER_FLAGS = [
     # a block — so a relative path turns one `cd` into every later Bash call
     # refused, the `cd` back among them.
     "--settings", str(HERE / "worker-settings.json"),
+    # Allow rules resolve before the classifier, so the calls workers make
+    # constantly skip its round-trip.
     "--allowedTools",
     "Bash(uv run:*)", "Bash(cat:*)", "Bash(ls:*)", "Bash(souffle:*)",
     # Schemas a solver session never calls, kept out of the request. ToolSearch

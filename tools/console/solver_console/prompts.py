@@ -11,12 +11,16 @@ from dl.context import appendix
 from . import config, solvers, store
 
 
-# Worker-only: the interactive session has a scratchpad of its own. A worker
-# has none, and a scratch file it writes otherwise lands in the repo root and
-# stays there.
+# Worker-only: where a worker's scratch files go, and what its shell leaves
+# alone. The interactive session has a scratchpad of its own and answers to
+# the user directly, so none of this applies there.
 SCRATCH_NOTE = """## Scratch
 
-Files you write to answer a question about the task go in `.scratch/<task_id>/`, not the repo root. Write creates the directory, and git ignores it."""
+Files you write to answer a question about the task go in `.scratch/<task_id>/`, not the repo root. Git ignores it.
+
+## Git
+
+No git writes."""
 
 
 def append_path() -> Path:

@@ -1,9 +1,9 @@
 """PreToolUse hook for console workers: answer a shell kill with the way to
 stop a background task.
 
-A worker's Bash surface is an allowlist, so `pkill` is refused either way. The
-refusal alone says nothing about TaskStop, and the name is deferred, so a
-session that reaches for the shell has no reason to look for the tool.
+The hook is the boundary: permission mode auto lets a repo-local kill
+through. TaskStop's name is deferred, so a session that reaches for the shell
+has no reason to look for the tool.
 """
 import json
 import re
