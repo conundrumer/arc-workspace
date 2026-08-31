@@ -24,13 +24,10 @@ parcel(P) :- in(P, Col), c.water(Col).
 .decl lateral(d: Dir)
 lateral(L) :- c.gravity(D), perp_dir(D, L).
 
-// The grid's adjacency, and where the grid runs out — materialized, since
-// the settling recursion reads a step per cell per turn.
+// The grid's adjacency — materialized, since the settling recursion reads a
+// step per cell per turn.
 .decl adj(p: Position, d: Dir, q: Position)
 adj(P, D, Q) :- in(P, _), dir_elem(D), neighbor(P, D, Q), in(Q, _).
-
-.decl rim(p: Position, d: Dir)
-rim(P, D) :- in(P, _), dir_elem(D), !adj(P, D, _).
 
 // Whose turn it is: lexicographic order from gravity's far edge, so a parcel
 // never takes a source still to come — it rests on its own source cell or
@@ -62,7 +59,7 @@ hangs(S, T, P) :- free(S, T, P), c.gravity(D), adj(P, D, Q), free(S, T, Q).
 stands(S, T, P) :-
     free(S, T, P), c.gravity(D),
     ( adj(P, D, Q), solid(S, T, Q)   // footing on solid
-    ; rim(P, D)                      // footing on the grid's edge
+    ; dist(P, D, 0)                  // footing on the grid's edge
     ).
 
 // Beyond p toward d, along the free run: some cell hangs.
@@ -79,8 +76,8 @@ drain(S, T, P, L) :-
 held(S, T, P, L) :-
     free(S, T, P), lateral(L),
     ( adj(P, L, Q), solid(S, T, Q)                     // the run ends at solid
-    ; rim(P, L)                                        // or at the grid's edge
-    ; adj(P, L, Q), stands(S, T, Q), held(S, T, Q, L)  // or holds on
+    ; dist(P, L, 0)                                    // the run ends at the grid's edge
+    ; adj(P, L, Q), stands(S, T, Q), held(S, T, Q, L)  // the run holds on
     ).
 
 // The turn's parcel, cell by cell along its path.
