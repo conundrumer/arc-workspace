@@ -1549,7 +1549,9 @@ function App(){
   const keyRef=useRef(null);
   keyRef.current=e=>{
     if(e.metaKey||e.ctrlKey||e.altKey) return;
-    const inBox = e.target===cbox.current || e.target.tagName==="INPUT";
+    /* type-ahead in a select, and every key a field of its own reads */
+    const inBox = e.target===cbox.current
+      || ["INPUT","SELECT","TEXTAREA"].includes(e.target.tagName);
     if(e.key==="Escape"){ if(inBox) e.target.blur(); return; }
     if(inBox){
       if(e.target===cbox.current && e.key==="Enter" && !e.shiftKey){ e.preventDefault(); sendComment(); }
