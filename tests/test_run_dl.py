@@ -178,6 +178,40 @@ def test_a_compile_error_still_carries_the_lint(solvers, monkeypatch, capsys):
     assert f"{STEM}.dl:2: nonzero literal: `3`" in out
 
 
+HINTED = (".decl stage(x: number)\nstage(X) :- g(X), !h(X).\n"
+          ".decl out(x: number)\nout(X) :- stage(X).\n")
+
+
+def test_a_hint_alone_leaves_lint_ok(solvers, capsys):
+    """The hint tier is advisory: the corpus both inlines and keeps its
+    shapes, so a hint is a call the session makes, not a verdict."""
+    (solvers / f"{STEM}.dl").write_text(HINTED)
+
+    assert cli.cmd_lint(STEM, hints=True) == 0
+    out = capsys.readouterr().out
+    assert "single-consumer" in out
+    assert out.endswith("lint: ok, 1 hint\n")
+
+
+def test_a_lint_finding_fails_lint_beside_a_hint(solvers, capsys):
+    (solvers / f"{STEM}.dl").write_text(HINTED.replace("!h(X)", "X != 3, !h(X)"))
+
+    assert cli.cmd_lint(STEM, hints=True) == 1
+    out = capsys.readouterr().out
+    assert f"{STEM}.dl:2: nonzero literal: `3`" in out
+    assert "lint: ok" not in out
+
+
+def test_a_run_counts_its_hints_beside_lint_ok(solvers, monkeypatch, capsys):
+    (solvers / f"{STEM}.dl").write_text(HINTED)
+    monkeypatch.setattr(cli, "res_out_stem", lambda stem: True)
+    monkeypatch.setattr(cli, "run_task", lambda stem: TaskResult(stem=stem))
+    monkeypatch.setattr(cli, "run_fit", lambda stem: None)
+
+    assert cli.cmd_one(STEM, hints=True) == 0
+    assert "\nlint: ok, 1 hint\n" in capsys.readouterr().out
+
+
 def _failed(idx: int, error: str) -> PairResult:
     return PairResult(kind="train", idx=idx, ok=False, error=error)
 

@@ -55,8 +55,22 @@ def _finding_line(stem: str, tier: str, cat: str, lineno: int, match: str) -> st
     return f"{stem}.dl:{lineno}: {cat}: {match}"
 
 
-def _print_findings(stems: list[str], hints: bool) -> int:
-    """Print the tier sections for `stems`; return the finding count."""
+def _lint_verdict(counts: list[int]) -> str | None:
+    """The verdict line for per-tier finding counts in LINT_TIERS order;
+    None when a lint or rewrite finding stands. The hint tier is
+    advisory: the corpus both inlines and keeps its shapes, so a hint
+    is a call the session makes, and it counts toward neither the
+    verdict nor the exit code."""
+    style, dec, adv = counts
+    if style or dec:
+        return None
+    if adv:
+        return f"lint: ok, {adv} hint{'s' if adv > 1 else ''}"
+    return "lint: ok"
+
+
+def _print_findings(stems: list[str], hints: bool) -> str | None:
+    """Print the tier sections for `stems`; return the verdict line."""
     by_tier: list[dict[str, Findings]] = [{}, {}, {}]
     for stem in stems:
         source = (SOLVERS_DIR / f"{stem}.dl").read_text()
@@ -65,18 +79,16 @@ def _print_findings(stems: list[str], hints: bool) -> int:
             if tier:
                 held[stem] = tier
 
-    total = 0
-    for label, held in zip(LINT_TIERS, by_tier, strict=True):
+    counts = [sum(len(v) for v in held.values()) for held in by_tier]
+    for label, held, count in zip(LINT_TIERS, by_tier, counts, strict=True):
         if not held:
             continue
         print()
-        count = sum(len(v) for v in held.values())
-        total += count
         print(f"--- {label} findings: {count} across {len(held)} solver(s) ---")
         for stem in sorted(held):
             for cat, lineno, match, _ in held[stem]:
                 print(f"  {_finding_line(stem, label, cat, lineno, match)}")
-    return total
+    return _lint_verdict(counts)
 
 
 def cmd_lint(
@@ -85,11 +97,11 @@ def cmd_lint(
     """Lint only: no solver runs, no fit checks, no Souffle needed."""
     if stem is not None and _missing(stem):
         return 2
-    total = _print_findings([stem] if stem else all_stems(), hints)
-    if total == 0:
-        print("lint: ok")
-        return 0
-    return 1
+    verdict = _print_findings([stem] if stem else all_stems(), hints)
+    if verdict is None:
+        return 1
+    print(verdict)
+    return 0
 
 
 def _missing(stem: str) -> bool:
@@ -121,9 +133,9 @@ def _compile_failed(stem: str) -> bool:
     return True
 
 
-def _print_lint_tiers(stem: str, hints: bool) -> list[Findings]:
-    """Print one solver's tier sections; return the tiers. Lint needs no
-    Souffle, so it stands whether or not the solver compiles."""
+def _print_lint_tiers(stem: str, hints: bool) -> str | None:
+    """Print one solver's tier sections; return the verdict line. Lint
+    needs no Souffle, so it stands whether or not the solver compiles."""
     source = (SOLVERS_DIR / f"{stem}.dl").read_text()
     tiers = _lint_tiers(source, hints)
     for label, findings in zip(LINT_TIERS, tiers, strict=True):
@@ -133,7 +145,7 @@ def _print_lint_tiers(stem: str, hints: bool) -> list[Findings]:
         print(f"--- {len(findings)} {label} finding(s) ---")
         for cat, lineno, match, _ in findings:
             print(f"  {_finding_line(stem, label, cat, lineno, match)}")
-    return tiers
+    return _lint_verdict([len(t) for t in tiers])
 
 
 def cmd_one(stem: str, hints: bool = False, timed: bool = False) -> int:
@@ -141,10 +153,10 @@ def cmd_one(stem: str, hints: bool = False, timed: bool = False) -> int:
         return 2
     build_functors()
     if _compile_failed(stem):
-        tiers = _print_lint_tiers(stem, hints)
+        verdict = _print_lint_tiers(stem, hints)
         print()
-        if not any(tiers):
-            print("lint: ok")
+        if verdict is not None:
+            print(verdict)
         return 1
     t0 = time.perf_counter()
     result = run_task(stem)
@@ -165,14 +177,14 @@ def cmd_one(stem: str, hints: bool = False, timed: bool = False) -> int:
         for line in coverage:
             print(f"  {line}")
 
-    tiers = _print_lint_tiers(stem, hints)
+    verdict = _print_lint_tiers(stem, hints)
 
     t0 = time.perf_counter()
     fit = run_fit(stem)
     fit_secs = time.perf_counter() - t0
     print()
-    if not any(tiers):
-        print("lint: ok")
+    if verdict is not None:
+        print(verdict)
     if fit is not None:
         for line in render_fit(fit):
             print(line)

@@ -11,7 +11,7 @@ A solver session writes a Souffle solver (`programs/solvers/<task_id>.dl`) that 
     - The reference TS solver solves the task but might not encode the best model.
 2. Draft the solver. Do not write the `Fit` comp yet.
 3. Run against materialized train+test pairs (`uv run python scripts/run_dl.py <task_id>`)
-4. Iterate until it works and passes lint.
+4. Iterate until it works and passes lint; a hint is judged, and the judgment goes in the review.
 5. Run the audit (`run_dl.py audit <task_id>`) and resolve the findings. Raise judgment calls in the review.
 
 **Simplify.** Make the code say what it claims in less. The targets: code that is roundabout, code that reads as implementation detail with no conceptual meaning, code that reimplements what lib holds, and repeated code where a principled form exists. What the code claims stays as it is.
