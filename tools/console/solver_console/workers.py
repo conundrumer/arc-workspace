@@ -1236,6 +1236,9 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
             it["bg_at"] = store.now()
             store.say(it, store.event("handoff held — " + ", ".join(outstanding)
                                       + " has not reported"), sess=phase)
+        elif worker and it.get("bg_filed"):
+            drop_hold(it, phase)
+            land_handoff(it, phase, "")
         elif worker:
             drop_hold(it, phase)
             store.DEFERRED.put_nowait(("rehandoff", it["id"], phase, worker["turn_seq"]))
@@ -1272,6 +1275,7 @@ def drop_hold(it: dict, phase: str) -> None:
     if it.get("bg_wait") == phase:
         it.pop("bg_wait", None)
         it.pop("bg_at", None)
+        it.pop("bg_filed", None)
 
 
 def file_report(it: dict, phase: str, text: str) -> None:
@@ -1489,20 +1493,29 @@ def expire_holds(force: bool = False) -> None:
     with store.LOCK:
         for it in list(store.STATE["items"]):
             phase = it.get("bg_wait")
-            if not phase or store.now() - it.get("bg_at", 0) < config.BG_TTL:
+            if not phase:
+                continue
+            if not force and store.now() - it.get("bg_at", 0) < config.BG_TTL:
                 continue
             worker = store.PROCS.get((it["id"], phase))
             if worker and worker["state"] != "idle":
                 continue  # a turn is running; its landing settles the hold
             drop_hold(it, phase)
-            tail = ("the last report stands"
-                    if (it.get("reports") or {}).get(phase)
-                    else "no report")
-            store.say(it, store.event(
-                f"handoff hold expired after {config.BG_TTL // 60}m — {tail}"),
-                sess=phase)
-            it["state"] = store.NEEDS_REVIEW
-            it["updated"] = True
+            why = "a console restart" if force else f"{config.BG_TTL // 60}m"
+            if (it.get("reports") or {}).get(phase):
+                store.say(it, store.event(f"handoff hold ended after {why} — "
+                                          "the filed report lands"), sess=phase)
+                try:
+                    ask_callouts(it, phase)
+                except (store.Reject, OSError) as exc:
+                    store.say(it, store.event(f"callout turn failed: {exc}"), sess=phase)
+                    it["state"] = store.NEEDS_REVIEW
+                    it["updated"] = True
+            else:
+                store.say(it, store.event(f"handoff hold ended after {why} — no report"),
+                          sess=phase)
+                it["state"] = store.NEEDS_REVIEW
+                it["updated"] = True
             expired = True
     if expired:
         store.bump()

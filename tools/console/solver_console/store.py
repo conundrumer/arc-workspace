@@ -138,8 +138,10 @@ def model_of(it: dict, name: str) -> str:
 
 
 def clean_chain(raw) -> list[dict]:
-    """The chain a wave request asks for, checked. Stage names key report
-    files, so they are held to a filename-safe shape."""
+    """The chain a wave request asks for, checked. The console never asks for
+    one; a request made by hand may, and its stages then name their own
+    backend and model. Stage names key report files, so they are held to a
+    filename-safe shape."""
     if raw is None:
         return default_chain()
     if not isinstance(raw, list) or not raw:

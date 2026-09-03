@@ -68,8 +68,7 @@ def backlog_view() -> list[dict]:
         table = ledger.flags()
         held = {it["id"] for it in store.STATE["items"]
                 if it["state"] != store.COMMITTED and not finalize_ready(it)}
-        rows = [dict(row) for row in BACKLOG_CACHE["rows"]
-                if row["id"] not in held]
+        rows = [row for row in backlog_scan() if row["id"] not in held]
         for row in rows:
             row["flag"] = (table.get(row["id"]) or {}).get("level", 0)
     # A missing solver leads: it outranks a flag because it is not a reading of
