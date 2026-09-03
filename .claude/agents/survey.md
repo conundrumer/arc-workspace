@@ -19,7 +19,7 @@ First, when no docs follow this section, read the output of `uv run python scrip
 
 Four parts, in this order:
 
-1. Callers — each with the file and line range, and one sentence on what it computes there. No second caller is an answer: give the negative evidence, what the signature matched across the scope.
-2. Near-misses — each with the file, the line range, and the exclusion that rules it out.
+1. Callers — each with the solver and the relation name, and one sentence on what it computes there. No second caller is an answer: give the negative evidence, what the signature matched across the scope.
+2. Near-misses — each with the solver, the relation name, and the exclusion that rules it out.
 3. Spec — whether the operation's interface or definition should change, argued from the sites in parts 1 and 2. A signal that rests on the surfacing solver alone is reported as caller-only, not as a change.
 4. Reimplementations — sites met on the way that hand-write what `programs/lib.dl` already holds, each with the file, the lines, and the lib primitive.

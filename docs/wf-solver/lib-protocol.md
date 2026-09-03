@@ -21,7 +21,7 @@ The entry's file is removed once its callers are migrated, or at promotion when 
 
 ## The order
 
-1. Write the primitive as plain body relations, keyed when cases share it. If the linter would flag it, write it as a proposal comp: a `.comp` named for the primitive, which exists only as the code form of a lib proposal. An extension of a lib comp has no comp form; its local rule sits beside the instance. Run it. Confirm it works in context.
+1. The operation enters the flow when its encoding needs a banned form, or when a grep for its shape over `programs/solvers/` finds another solver that writes it. Write the primitive as plain body relations, keyed when cases share it. If the linter would flag it, write it as a proposal comp: a `.comp` named for the primitive, which exists only as the code form of a lib proposal. An extension of a lib comp has no comp form; its local rule sits beside the instance. Run it. Confirm it works in context.
 2. Surface it: name it, describe the operation, and show the solver-local version. Then read the entries for one with the same operation, matched by what it does and not by its name. When one exists, the comp takes the entry's name. A solver's proposal comp is read with its entry.
     - No entry: write one, with its `Survey:` line. Then send the `survey` agent the entry's path, the scope (the whole corpus), and the scratch path (`.scratch/<task_id>/`).
     - A closed entry: the judgment stands; the solver does without the operation, along the entry's recorded route.
