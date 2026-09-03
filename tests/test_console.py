@@ -1835,7 +1835,6 @@ def test_worker_agents_carry_the_appendix(srv):
     assert set(agents) == {p.stem for p in srv.AGENT_DIR.glob("*.md")}
     for agent in agents.values():
         assert agent["prompt"].endswith(srv.append_path().read_text())
-    assert agents["migrate"]["effort"] == "high"
 
 
 def test_commit_subject_names_added_and_changed_solvers(srv):

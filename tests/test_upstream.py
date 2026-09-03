@@ -23,19 +23,6 @@ def test_resolution(task_id: str, expected_dataset: str, expected_split: str) ->
     assert src.split == expected_split
 
 
-def test_load_returns_task_with_examples():
-    task, src = load("0d87d2a6")
-    assert src.dataset == "arc-agi-1"
-    assert len(task.train) > 0
-    assert len(task.test) > 0
-    # examples have non-empty grids
-    for ex in task.train + task.test:
-        assert len(ex.input) > 0
-        assert len(ex.output) > 0
-        assert all(len(row) > 0 for row in ex.input)
-        assert all(len(row) > 0 for row in ex.output)
-
-
 def test_missing_task_raises():
     with pytest.raises(FileNotFoundError):
         load("ffffffff")

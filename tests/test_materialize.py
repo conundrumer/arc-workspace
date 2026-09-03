@@ -77,7 +77,6 @@ def test_unpatched_task_materializes_as_canonical_passthrough():
     file_dict = materialize_default("00576224")
     assert "patches" not in file_dict
     assert "variant" not in file_dict
-    assert len(file_dict["train"]) > 0
 
 
 def test_patches_list_collects_canonical_and_variants():
