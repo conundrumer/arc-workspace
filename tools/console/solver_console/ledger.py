@@ -40,13 +40,66 @@ def ledger_rows() -> list[dict]:
     return rows
 
 
-def fabled(rows: list[dict]) -> set[str]:
-    """Tasks the finalize backlog is done with: a finalize landing, a landing
-    on a fable model (the shape a backfilled line carries), or the user's
-    dismissal."""
-    return {row["task"] for row in rows
-            if row.get("stage") in ("finalize", "dismissed")
-            or str(row.get("model") or "").startswith(FABLE)}
+def ruled(rows: list[dict]) -> set[str]:
+    """Tasks the user has ruled on: approved, or dismissed."""
+    return {row["task"] for row in rows if row.get("stage") in RULINGS}
+
+
+def model_word(row: dict) -> str:
+    """The model a landing ran on, as the console names it: opus, fable,
+    codex."""
+    if row.get("backend") == "codex":
+        return "codex"
+    m = str(row.get("model") or "")
+    return m.removeprefix("claude-").split("-")[0] or "?"
+
+
+def passes_of(rows: list[dict]) -> dict[str, list[dict]]:
+    """The passes each task has had: one per stage, with the model of its
+    latest landing, in stage order."""
+    latest: dict[str, dict[str, tuple[int, str]]] = {}
+    for row in rows:
+        stage = row.get("stage")
+        if not stage or stage in RULINGS:
+            continue
+        ts = int(row.get("ts") or 0)
+        by = latest.setdefault(row["task"], {})
+        if stage not in by or ts >= by[stage][0]:
+            by[stage] = (ts, model_word(row))
+    return {task: [{"stage": stage, "model": word}
+                   for stage, (_, word) in sorted(
+                       by.items(), key=lambda kv: (STAGE_ORDER.get(kv[0], 9), kv[1][0]))]
+            for task, by in latest.items()}
+
+
+def record_approvals(ids: list[str], ts: int) -> None:
+    """The commit of approved items is the ruling on them."""
+    for tid in ids:
+        ledger_append({"task": tid, "stage": "approved", "backend": None,
+                       "model": None, "session": None, "ts": ts,
+                       "source": "console"})
+
+
+def entries_of(rows: list[dict]) -> dict[str, set[str]]:
+    """The entries each task's sessions added, as the ledger lines carry
+    them."""
+    out: dict[str, set[str]] = {}
+    for row in rows:
+        if row.get("entries"):
+            out.setdefault(row["task"], set()).update(row["entries"])
+    return out
+
+
+def seed_entries() -> None:
+    """An item from before the console kept entries takes its list from the
+    ledger, once; from then on its landings keep it."""
+    table = None
+    for it in store.STATE["items"]:
+        if "entries" in it:
+            continue
+        if table is None:
+            table = entries_of(ledger_rows())
+        it["entries"] = sorted(table.get(it["id"], ()))
 
 
 # ---------- flags ----------

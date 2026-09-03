@@ -233,22 +233,75 @@ def run_committer(append: Path) -> None:
     before = subprocess.run(["git", "rev-parse", "HEAD"], cwd=config.ROOT,
                             capture_output=True, text=True).stdout.strip()
     cmd = [config.CLAUDE, "-p", config.COMMIT_BRIEF, *config.COMMITTER_FLAGS]
-    if append.exists():
-        cmd += ["--append-system-prompt", append.read_text()]
     if config.COMMIT_MODEL:
         cmd += ["--model", config.COMMIT_MODEL]
+    seen: set = set()
     with open(config.LOG_DIR / "committer.log", "ab") as log:
+        proc = subprocess.Popen(cmd, cwd=config.ROOT, env=config.WORKER_ENV,
+                                stdout=subprocess.PIPE, stderr=log)
+        timer = threading.Timer(config.COMMIT_TIMEOUT, proc.kill)
+        timer.start()
         try:
-            subprocess.run(cmd, cwd=config.ROOT, env=config.WORKER_ENV, stdout=log, stderr=log,
-                           timeout=900)
-        except subprocess.TimeoutExpired:
-            pass
+            for line in proc.stdout:
+                log.write(line)
+                try:
+                    ev = json.loads(line)
+                except ValueError:
+                    continue
+                entries = []
+                for key, entry in committer_entries(ev):
+                    if key not in seen:
+                        seen.add(key)
+                        entries.append(entry)
+                if entries:
+                    with store.LOCK:
+                        store.COMMITTER["feed"].extend(entries)
+                    store.bump()
+            proc.wait()
+        finally:
+            timer.cancel()
     out = subprocess.run(["git", "log", "--format=%s", f"{before}..HEAD"],
                          cwd=config.ROOT, capture_output=True, text=True).stdout
     subjects = [s for s in out.splitlines() if s]
+    note = ("committer: " + "; ".join(reversed(subjects)) if subjects else
+            "committer made no commits — see state/logs/committer.log")
     with store.LOCK:
-        store.COMMITTER["running"] = False
-        store.COMMITTER["note"] = ("committer: " + "; ".join(reversed(subjects))
-                                   if subjects else
-                                   "committer made no commits — see state/logs/committer.log")
+        store.COMMITTER.update(running=False, note=note)
+        store.COMMITTER["feed"].append(store.event(note))
     store.bump()
+
+
+def committer_entries(ev: dict) -> list[tuple[tuple, dict]]:
+    """The feed entries one committer stream event makes, each with the key
+    that tells a repeat of it from a new one: the stream sends a message's
+    blocks one event at a time, under the message's id."""
+    if ev.get("type") != "assistant":
+        return []
+    msg = ev.get("message") or {}
+    mid = msg.get("id") or ""
+    out = []
+    for block in msg.get("content") or []:
+        if block.get("type") == "text" and block.get("text", "").strip():
+            out.append(((mid, "text", block["text"]),
+                        {"kind": "worker", "text": block["text"]}))
+        elif block.get("type") == "tool_use":
+            label = workers.tool_label(block.get("name", "?"), block.get("input") or {})
+            if label:
+                out.append(((mid, "tool", block.get("id") or label),
+                            {"kind": "tool", "text": label}))
+    return out
+
+
+def act_pipeline(body: dict) -> dict:
+    """Set the model a pipeline stage runs. The next wave reads it."""
+    with store.LOCK:
+        cfg = store.pipeline()
+        for name in store.PIPELINE_STAGES:
+            if name not in body:
+                continue
+            word = str(body[name] or "")
+            if word not in config.MODEL_IDS:
+                return {"error": f"unknown model: {word}"}
+            cfg[name] = word
+    store.bump()
+    return {"ok": True}

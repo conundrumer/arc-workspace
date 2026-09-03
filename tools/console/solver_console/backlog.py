@@ -4,14 +4,15 @@ import time
 
 from . import config, ledger, prompts, solvers, store, workers
 
-# What the finalize lens lists under the items in flight: every solver on disk
-# that no fable session has passed over yet. The scan reads every solver file
-# and the whole ledger, so it is its own endpoint and never runs inside
-# /api/state; the rows it produces are reused for a few seconds, while the
-# flags and the live items are read fresh on every request.
+# A solver is unfinalized from the moment it is written until a finalize pass
+# takes it up; the pass runs, and the user's approval ends it. A dismissal ends
+# it too. The finalize lens lists the passes in flight over the unfinalized
+# solvers, and they run to hundreds, so a row is built from its files once and
+# reused until one of them changes; what the ledger says of a task — its
+# passes and its entries — is joined on every request, as is the flag table.
 
-BACKLOG_TTL = 3
-BACKLOG_CACHE: dict = {"at": 0.0, "rows": []}
+# task id -> (the file state the row was built from, the row)
+ROW_CACHE: dict[str, tuple[tuple, dict]] = {}
 
 
 def backlog_row(item_id: str, proposals: str, ts_size: int | None,
@@ -27,9 +28,90 @@ def backlog_row(item_id: str, proposals: str, ts_size: int | None,
             "reports": solvers.report_stages(item_id), "no_solver": no_solver}
 
 
+def file_state(item_id: str) -> tuple:
+    """The solver and report files as they stand: what a cached row is keyed
+    on."""
+    out = []
+    try:
+        st = solvers.solver_path(item_id).stat()
+        out.append((st.st_mtime_ns, st.st_size))
+    except OSError:
+        out.append(None)
+    d = config.REPORT_DIR / item_id
+    if d.is_dir():
+        for p in sorted(d.glob("*.md")):
+            try:
+                st = p.stat()
+                out.append((p.name, st.st_mtime_ns, st.st_size))
+            except OSError:
+                pass
+    return tuple(out)
+
+
+def cached_row(item_id: str, proposals: str, prop_key: int, ts_size: int | None,
+               no_solver: bool = False) -> dict:
+    key = (file_state(item_id), prop_key, ts_size, no_solver)
+    hit = ROW_CACHE.get(item_id)
+    if hit is None or hit[0] != key:
+        hit = (key, backlog_row(item_id, proposals, ts_size, no_solver))
+        ROW_CACHE[item_id] = hit
+    return hit[1]
+
+
+def entries_by_task(rows: list[dict]) -> dict[str, set[str]]:
+    """The entries each task's sessions added: the ledger lines carry them,
+    and an item still in the console holds its own."""
+    out = ledger.entries_of(rows)
+    for it in store.STATE["items"]:
+        out.setdefault(it["id"], set()).update(it.get("entries", []))
+    return out
+
+
+# HEAD the table was read at, and the table: task id -> when its solver was
+# first committed.
+AGES: dict = {"head": None, "at": {}}
+
+
+def solver_ages() -> dict[str, int]:
+    """When each solver was first committed, from git. A solver not yet
+    committed has no age, and a solver directory outside the repo has
+    none for any."""
+    try:
+        rel = config.SOLVERS.relative_to(config.ROOT)
+    except ValueError:
+        return {}
+    try:
+        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=config.ROOT,
+                              capture_output=True, text=True, timeout=10).stdout.strip()
+        if not head or head == AGES["head"]:
+            return AGES["at"]
+        out = subprocess.run(["git", "log", "--diff-filter=A", "--format=%x00%ct",
+                              "--name-only", "--", str(rel)],
+                             cwd=config.ROOT, capture_output=True, text=True,
+                             timeout=60).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return AGES["at"]
+    table: dict[str, int] = {}
+    ts = 0
+    # newest first, so the last add seen for a path is its earliest
+    for line in out.splitlines():
+        if line.startswith("\0"):
+            ts = int(line[1:] or 0)
+        elif line.endswith(".dl"):
+            table[line.rsplit("/", 1)[-1][:-3]] = ts
+    AGES.update(head=head, at=table)
+    return table
+
+
 def backlog_scan() -> list[dict]:
-    done = ledger.fabled(ledger.ledger_rows())
+    """A row per unfinalized solver, each joined with what the ledger says of
+    its task. Caller holds LOCK."""
+    lines = ledger.ledger_rows()
+    settled = ledger.ruled(lines)
+    passes = ledger.passes_of(lines)
+    entries = entries_by_task(lines)
     proposals = solvers.prop_text()
+    prop_key = hash(proposals)
     ts = solvers.ts_sizes()
     rows = []
     for path in sorted(config.SOLVERS.glob("*.dl")):
@@ -43,11 +125,19 @@ def backlog_scan() -> list[dict]:
     # A pass that wrote no solver leaves the glob nothing to find, so the task
     # needing a ruling most is the one the scan cannot reach. The reports carry
     # it: the stage landed, and its account of why stands in for the file.
-    rows += [backlog_row(it["id"], proposals, ts.get(it["id"]), no_solver=True)
+    rows += [cached_row(it["id"], proposals, prop_key, ts.get(it["id"]), no_solver=True)
              for it in store.STATE["items"]
-             if it.get("landed") and it["id"] not in done
+             if it.get("landed") and it["id"] not in settled
              and not solvers.solver_path(it["id"]).exists()]
-    return rows
+    ages = solver_ages()
+    out = []
+    for row in rows:
+        row = dict(row)
+        row["entries"] = solvers.entry_names(sorted(entries.get(row["id"], ())))
+        row["passes"] = passes.get(row["id"], [])
+        row["added"] = ages.get(row["id"])
+        out.append(row)
+    return out
 
 
 def finalize_ready(it: dict) -> bool:
@@ -74,10 +164,15 @@ def backlog_view() -> list[dict]:
     # A missing solver leads: it outranks a flag because it is not a reading of
     # the task but the absence of one. A P0 — broken tooling — follows it,
     # ahead of the flags, since the breakage may hold up other passes too.
-    # -callout_n runs last, so a report carrying only P3s still edges out one
-    # that raised nothing once everything ahead of it ties.
+    # A task whose sessions added an entry comes next: the entry waits on a
+    # judgment, and the pass that made it is the one to read with it.
+    # -callout_n runs late, so a report carrying only P3s still edges out one
+    # that raised nothing once everything ahead of it ties. The oldest commit
+    # breaks the last tie, so a task does not wait behind newer ids; a solver
+    # not committed yet is the newest of all.
     rows.sort(key=lambda row: (0 if row["no_solver"] else 1,
                                0 if row["callout_rank"] == 0 else 1,
+                               0 if row["entries"] else 1,
                                row["flag"] or 9,
                                solvers.callout_weight(row["callout_rank"]),
                                0 if row["comps"] else 1,

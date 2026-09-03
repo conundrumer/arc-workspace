@@ -46,6 +46,27 @@ from solver_console import (  # noqa: E402
 )
 
 
+def item_files(it: dict) -> list[dict]:
+    """The code pane's tabs: the solver, the files this turn edited, and the
+    entries the task's sessions added, which stay across turns."""
+    solver_rel = f"programs/solvers/{it['id']}.dl"
+    edited = store.pre(it)["files"]
+    paths = {rel: config.ROOT / rel
+             for rel in [solver_rel] + [r for r in edited if r != solver_rel]}
+    for rel in it.get("entries", []):
+        if rel not in paths and solvers.prop_path(rel).exists():
+            paths[rel] = solvers.prop_path(rel)
+    files = []
+    for rel, p in paths.items():
+        files.append({
+            "path": rel,
+            "snap": edited.get(rel, store.pre(it)["solver"]
+                               if rel == solver_rel else ""),
+            "code": p.read_text() if p.exists() else "",
+        })
+    return files
+
+
 def light_items() -> list[dict]:
     out = []
     for it in store.STATE["items"]:
@@ -66,6 +87,7 @@ def light_items() -> list[dict]:
                      "comps", "comps_unproposed", "auto_advance",
                      "callouts", "callout_n", "callout_rank", "shared_writes")} |
                    {"chain": store.chain_of(it), "active": store.active(it),
+                    "entries": solvers.entry_names(it.get("entries", [])),
                     "busy": busy,
                     "handoffPending": it.get("handoff_pending", False),
                     "turnPhase": running,
@@ -126,18 +148,7 @@ class Handler(BaseHTTPRequestHandler):
                 it = store.find(item_id)
                 if it is None:
                     return self.reply({"error": "unknown item"}, 404)
-                solver_rel = f"programs/solvers/{item_id}.dl"
-                edited = store.pre(it)["files"]
-                files = []
-                for rel in [solver_rel] + [r for r in edited if r != solver_rel]:
-                    p = config.ROOT / rel
-                    files.append({
-                        "path": rel,
-                        "snap": edited.get(rel, store.pre(it)["solver"]
-                                           if rel == solver_rel else ""),
-                        "code": p.read_text() if p.exists() else "",
-                    })
-                self.reply({"feed": it["feed"], "files": files,
+                self.reply({"feed": it["feed"], "files": item_files(it),
                             "ver": it.get("ver", 0)})
         elif url.path == "/api/backlog":
             self.reply({"items": backlog.backlog_view()})

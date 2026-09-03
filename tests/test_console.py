@@ -1898,6 +1898,67 @@ def test_revert_leaves_an_entry_another_worker_touched(srv):
     assert it["reverted"]["files"] == ["programs/solvers/a.dl"]
 
 
+# ---------- entries a task adds ----------
+
+def test_an_entry_the_turn_added_stays_with_the_task(srv):
+    it = item(srv, "a", srv.RUNNING)
+    it["pre"] = {"hash": "", "solver": "", "proposals": {}, "dirty": False,
+                 "files": {f"{PROP}/Border.md": ""}, "watched": srv.watched_hashes("a")}
+    write_prop(srv, "Border", "# Border\n")
+    srv.finish_turn(it, {"result": ""}, None, time.time(), "refine", False)
+    assert it["entries"] == [f"{PROP}/Border.md"]
+    assert srv.light_items()[0]["entries"] == ["Border"]
+    row = [r for r in srv.ledger_rows() if r["task"] == "a"][-1]
+    assert row["entries"] == [f"{PROP}/Border.md"]
+    # a later turn that only edits the entry adds nothing, and drops nothing
+    it["pre"] = {"hash": "", "solver": "", "proposals": srv.prop_files(),
+                 "dirty": False, "files": {}, "watched": srv.watched_hashes("a")}
+    write_prop(srv, "Border", "# Border\n\nmore\n")
+    srv.finish_turn(it, {"result": ""}, None, time.time(), "refine", False)
+    assert it["entries"] == [f"{PROP}/Border.md"]
+    assert "entries" not in [r for r in srv.ledger_rows() if r["task"] == "a"][-1]
+
+
+def test_an_entry_a_concurrent_turn_added_stays_with_that_turn(srv):
+    it = item(srv, "a", srv.RUNNING)
+    it["pre"] = {"hash": "", "solver": "", "proposals": {}, "dirty": False,
+                 "files": {}, "watched": srv.watched_hashes("a")}
+    write_prop(srv, "Other", "# Other\n")  # another task's turn wrote it
+    srv.finish_turn(it, {"result": ""}, None, time.time(), "refine", False)
+    assert "entries" not in it
+    assert "entries" not in [r for r in srv.ledger_rows() if r["task"] == "a"][-1]
+
+
+def test_an_item_from_before_entries_takes_them_from_the_ledger(srv):
+    old = item(srv, "a", srv.NEEDS_REVIEW)
+    kept = item(srv, "b", srv.NEEDS_REVIEW, entries=[f"{PROP}/Kept.md"])
+    srv.ledger_append({"task": "a", "stage": "legacy", "source": "backfill",
+                       "entries": [f"{PROP}/Border.md"]})
+    srv.ledger_append({"task": "b", "stage": "legacy", "source": "backfill",
+                       "entries": [f"{PROP}/Other.md"]})
+    srv.seed_entries()
+    assert old["entries"] == [f"{PROP}/Border.md"]
+    assert kept["entries"] == [f"{PROP}/Kept.md"]     # its own list stands
+    old["entries"] = []
+    srv.seed_entries()
+    assert old["entries"] == []                        # seeded once
+
+
+def test_the_entry_keeps_its_tab_after_the_turn(srv):
+    it = item(srv, "a", srv.NEEDS_REVIEW, entries=[f"{PROP}/Border.md"])
+    write_solver(srv, "a", "// v1\n")
+    write_prop(srv, "Border", "# Border\n")
+    # the turn's own edits are gone from the snapshot; the entry still lists
+    it["pre"] = {"hash": "", "solver": "// v1\n", "proposals": srv.prop_files(),
+                 "dirty": False, "files": {}}
+    paths = [f["path"] for f in srv.item_files(it)]
+    assert paths == ["programs/solvers/a.dl", f"{PROP}/Border.md"]
+    assert srv.item_files(it)[1]["code"] == "# Border\n"
+    # an entry gone from disk has no tab
+    it["entries"] = [f"{PROP}/Gone.md"]
+    assert [f["path"] for f in srv.item_files(it)] == ["programs/solvers/a.dl"]
+
+
 # ---------- shared-file writes ----------
 
 def test_a_turn_that_changes_a_shared_file_gets_flagged(srv):
@@ -3447,8 +3508,11 @@ def test_the_backlog_order_bands(srv):
     the bands do, so only the sort key can put the rows in this order. The
     last two bands tie on every term of the key, and the id separates them."""
     for tid in ("t01", "t02", "t03", "t04", "t05", "t06",
-                "t07", "t08", "t09", "t10"):
+                "t07", "t08", "t09", "t10", "t12"):
         backlog_solver(srv, tid)
+    # a task whose session added an entry: the ledger line carries it
+    srv.ledger_append({"task": "t12", "stage": "refine", "model": "claude-opus-5",
+                       "source": "console", "entries": [f"{PROP}/Border.md"]})
     # a missing solver: the pass landed and wrote a report, but no file
     srv.save_report("t11", "refine", "no file written")
     item(srv, "t11", srv.NEEDS_REVIEW, chain=srv.default_chain())
@@ -3481,6 +3545,7 @@ def test_the_backlog_order_bands(srv):
         "t02",   # nothing at all
     ]
     by_id = {r["id"]: r for r in rows}
+    assert by_id["t12"]["entries"] == ["Border"] and by_id["t11"]["entries"] == []
     assert by_id["t11"]["no_solver"] and not by_id["t10"]["no_solver"]
     assert by_id["t10"]["callout_rank"] == 0
     assert by_id["t09"]["flag"] == 1
@@ -3693,3 +3758,20 @@ def test_concurrent_saves_publish_one_whole_state(srv):
     writer.join(timeout=2)
     assert errors == []
     assert json.loads(srv.STATE_FILE.read_text())["items"][0]["id"] == "a"
+
+
+# ---------- committer feed ----------
+
+def test_committer_entries_read_what_the_session_says_and_runs(srv):
+    ev = {"type": "assistant", "message": {"id": "m1", "content": [
+        {"type": "text", "text": "grouping the doc edits"},
+        {"type": "tool_use", "id": "t1", "name": "Bash",
+         "input": {"command": "git add docs/wf-solver/style.md"}},
+        {"type": "tool_use", "id": "t2", "name": "ToolSearch", "input": {}}]}}
+    keys_entries = srv.committer_entries(ev)
+    assert [e for _, e in keys_entries] == [
+        {"kind": "worker", "text": "grouping the doc edits"},
+        {"kind": "tool", "text": "Bash git add docs/wf-solver/style.md"}]
+    # a message's blocks arrive one event at a time, each repeating the message
+    assert len({k for k, _ in keys_entries}) == 2
+    assert srv.committer_entries({"type": "result", "result": "done"}) == []

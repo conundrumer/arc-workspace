@@ -161,6 +161,8 @@ body.view-final #main { grid-template-columns:330px minmax(360px,520px) 1fr; }
   border:1px solid var(--st-review);
 }
 .badge-comp.unproposed { background:var(--st-removed); color:var(--bg); border-color:transparent; }
+/* an entry the task added with no comp behind it */
+.badge-comp.entry { background:transparent; border-style:dashed; }
 /* callouts the stage left for the user */
 .badge-call {
   font-size:9px; letter-spacing:.06em; padding:0 4px; border-radius:3px;
@@ -683,11 +685,14 @@ function diffHtml(before, after){
 
 /* ---------- small pieces ---------- */
 function CompBadges({x}){
-  return (x.comps||[]).map(c=>{
+  const comps=x.comps||[];
+  return comps.map(c=>{
     const bad=(x.comps_unproposed||[]).includes(c);
     return html`<span key=${c} class=${"badge-comp"+(bad?" unproposed":"")}
       title=${bad?"no proposals.md entry":"proposals.md entry open"}>${c}</span>`;
-  });
+  }).concat((x.entries||[]).filter(e=>!comps.includes(e)).map(e=>
+    html`<span key=${"e:"+e} class="badge-comp entry"
+      title="proposals.md entry this task added, with no comp">${e}</span>`));
 }
 /* what the stage left for the user; the entries ride along in the tooltip */
 function CalloutBadge({x}){

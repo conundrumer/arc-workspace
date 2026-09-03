@@ -21,7 +21,10 @@ STOP = object()
 SHUTTING_DOWN = False
 RELOADING = False
 USAGE: list[dict] = []  # account rate-limit windows, refreshed in background
-COMMITTER = {"running": False, "note": None}
+# The committer session in flight or last run: `feed` holds what it said and
+# ran, in the entries the item feeds use, so the console can show a run while
+# it goes.
+COMMITTER = {"running": False, "note": None, "started": None, "feed": []}
 WORKER_HANDOFF_ENV = "CONSOLE_WORKER_HANDOFF"
 
 

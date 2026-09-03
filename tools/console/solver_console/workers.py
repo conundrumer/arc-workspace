@@ -1156,11 +1156,23 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
         it["callouts"] = solvers.parse_callouts(text)
         it["callout_n"] = len(it["callouts"])
         it["callout_rank"] = solvers.callout_rank(it["callouts"])
+    # An entry the turn wrote under docs/wf-solver/proposals/ is the task's
+    # proposal. It stays with the item, and the ledger line carries it, so
+    # the backlog still knows once the item is gone. A concurrent turn adds
+    # entries to the same directory, so only the turn's own edits count.
+    it["prop_after"] = solvers.prop_files()
+    before = store.pre(it).get("proposals")
+    new_entries = sorted((set(it["prop_after"])
+                          - set(before if isinstance(before, dict) else ()))
+                         & set(store.pre(it)["files"]))
+    if new_entries:
+        it["entries"] = sorted(set(it.get("entries", [])) | set(new_entries))
     ledger.ledger_append({"task": it["id"], "stage": phase,
                           "backend": store.backend_of(it, phase),
                           "model": store.model_of(it, phase),
                           "session": it["sessions"].get(phase), "ts": int(store.now()),
-                          "source": "console"})
+                          "source": "console",
+                          **({"entries": new_entries} if new_entries else {})})
     # the create pass ends in prune, and every later pass is itself a quality
     # pass, so each stage's first landing is clean by cadence
     landed = it.setdefault("landed", [])
@@ -1175,7 +1187,6 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
         it.setdefault("seen_hash", {})[phase] = solvers.solver_hash(it["id"])
     it["lastActive"][phase] = int(time.time() * 1000)
     it["title"] = solvers.title_of(it["id"]) or it.get("title", "")
-    it["prop_after"] = solvers.prop_files()
     it["comps"] = solvers.comps_of(it["id"])
     it["comps_unproposed"] = solvers.unproposed(it["comps"], solvers.prop_text())
     it["landed_at"] = store.now()

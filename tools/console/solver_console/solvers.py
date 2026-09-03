@@ -62,6 +62,11 @@ def prop_files() -> dict[str, str]:
     return {f"{PROP_DIR}/{p.name}": p.read_text() for p in sorted(d.glob("*.md"))}
 
 
+def entry_names(rels) -> list[str]:
+    """The operation names the entry paths carry, for a badge."""
+    return sorted({Path(rel).stem for rel in rels})
+
+
 def prop_text() -> str:
     """The entries as one text, for a word match."""
     return "\n".join(prop_files().values())
