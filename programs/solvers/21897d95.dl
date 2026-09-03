@@ -97,7 +97,7 @@
     .decl arm_cell(key: Key, k: Ident, piv: DiagDir, p: Position)
     arm_cell(Ky, K, Piv, P) :-
         pbox.inside([Ky, K], P), pbox.margin([Ky, K], M),  // a cell of the box
-        diag_dirs(Piv, _, D, _),                           // an edge of the corner
+        dir_of(Piv, _, D),                                 // an edge of the corner
         same_dist(D, M, P).                                // the cell lies on it
 
     .init arms = KeyedSetCompare<KI, Arms, Position>

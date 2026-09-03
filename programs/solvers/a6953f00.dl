@@ -13,7 +13,7 @@
     // The crop anchors at a corner on crop_side — the task pins neither.
     .decl crop_side(d: Dir) crop_side(DIR_T).
     .decl crop_corner(d: DiagDir)
-    crop_corner(C) :- crop_side(D), axis_of(D, A), dir_of(C, A, D).
+    crop_corner(C) :- crop_side(D), dir_of(C, _, D).
 
     .decl frame_dim(k: number) frame_dim(2).
     .decl frame(p: Position)

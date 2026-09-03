@@ -104,12 +104,12 @@ side_wall(P, D, Col, Ch) :-
 
 // A ray heading d meets a wall at p, beside it on an axis it advances along.
 .decl hit(p: Position, d: DiagDir, col: Color, ch: Choice)
-hit(P, D, Col, Ch) :- diag_dirs(D, _, D_cmp, _), side_wall(P, D_cmp, Col, Ch).
+hit(P, D, Col, Ch) :- dir_of(D, _, D_cmp), side_wall(P, D_cmp, Col, Ch).
 
 // One outgoing component of a ray heading d at p, inverted where it reflects.
 .decl leave_dir(p: Position, d: DiagDir, d_out: Dir, ch: Choice)
 leave_dir(P, D, D_out, Ch) :-
-    in(P, _), impl_choice(Ch), diag_dirs(D, _, D_cmp, _),      // a component of d
+    in(P, _), impl_choice(Ch), dir_of(D, _, D_cmp),            // a component of d
     ( side_wall(P, D_cmp, _, Ch), opposite(D_cmp, D_out)       // reflected
     ; !side_wall(P, D_cmp, _, Ch), D_out = D_cmp               // free
     ).

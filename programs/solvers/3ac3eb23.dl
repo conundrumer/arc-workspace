@@ -86,7 +86,7 @@ lit(P, Col, $Parity(S)) :- center(S, Col, _, P).
 // Flanks: the diagonal neighbors of each center, away from the edge.
 lit(Q, Col, $Parity(S)) :-
     center(S, Col, E, P),
-    opposite(E, D), axis_of(D, A), diag_dirs(Diag, A, D, _),   // corners away from the edge
+    opposite(E, D), dir_of(Diag, _, D),   // corners away from the edge
     neighbor(P, Diag, Q), in(Q, _).
 
 // --- $Walk ---
