@@ -87,28 +87,24 @@ out(P, Col) :- in(P, Col_in), ( paint(P, Col) ; !paint(P, _), Col = Col_in ).
 // --- fit ---
 
 .type ArmKey = [e: Example, d: Dir]
-.type ArmCell = [e: Example, d: Dir, p: Position]
 .type ArmPhase = [e: Example, d: Dir, n: number, k: number]
 
 .comp Fit {
     .init parse = Parse<Example>
     parse.cell(E, P, Col) :- ex_in(E, P, Col).
 
-    .decl arm_ink(e: Example, p: Position)
-    arm_ink(E, P) :- ex_out(E, P, Col), c.arm_paint(Col).
-
     // Every painted cell seen from each side's middle.
-    .init frame = Reframe<ArmCell>
-    frame.outer([E, D, P], P0) :- arm_ink(E, P), parse.seed(E, P0, D).
-    frame.cell([E, D, P], P) :- arm_ink(E, P), dir_elem(D).
+    .init frame = Reframe<ArmKey>
+    frame.outer([E, D], P0) :- parse.seed(E, P0, D).
+    frame.cell([E, D], P) :- ex_out(E, P, Col), c.arm_paint(Col), dir_elem(D).
 
     // A cell of side D's own arm: out from the block, and no further
     // across than out, which is the wedge the corner diagonals bound.
     .decl place(e: Example, d: Dir, p: Position, o: number, s: number)
     place(E, D, P, O, S) :-
-        frame.inner([E, D, P], I),
-        opposite(D, D_back), dist(I, D_back, O), O > 0,   // steps out
-        perp_dir(D, D2), dist(I, D2, S), 0 <= S, S <= O.  // steps across
+        frame.view([E, D], P, P_rel),
+        opposite(D, D_back), dist(P_rel, D_back, O), O > 0,   // steps out
+        perp_dir(D, D2), dist(P_rel, D2, S), 0 <= S, S <= O.  // steps across
 
     // The arm's path order: every step goes out or across, never back.
     .init step_order = Order<ArmKey, Position>

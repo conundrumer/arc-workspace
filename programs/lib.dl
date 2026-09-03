@@ -1188,8 +1188,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 
 // Re-express keyed cells relative to a per-key outer origin: inner is the
 // cell's displacement from outer. Outer extent + inner extent = cell extent,
-// so one subtraction both resizes and positions across frames. Key by the
-// cell to read `inner` backward.
+// so one subtraction both resizes and positions across frames.
 //
 // Flagged: assumes one origin per key — several origins under one key
 // cross-product, so key by the varied thing instead.
@@ -1197,8 +1196,13 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     .decl outer(key: Key, p: Position)
     .decl cell(key: Key, p: Position)
 
+    // Each cell beside its inner position: the read from an inner position
+    // back to its cell.
+    .decl view(key: Key, p: Position, p_inner: Position)
+    view(K, P, I) :- cell(K, P), outer(K, O), displacement(O, P, I).
+
     .decl inner(key: Key, p: Position)
-    inner(K, I) :- cell(K, P), outer(K, O), displacement(O, P, I).
+    inner(K, I) :- view(K, _, I).
 }
 
 // Keyed cells viewed from their own bounding box. `cell` defines the box
