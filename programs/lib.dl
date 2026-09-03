@@ -1203,6 +1203,22 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     inner(K, I) :- view(K, _, I).
 }
 
+// A Position packed from per-Dir scalars, keyed: the inverse read of dist.
+.comp DirPack<Key> {
+    .decl edge(key: Key, d: Dir, k: number)  // input
+
+    .decl axis_pos(key: Key, a: Axis, p: Position)
+    axis_pos(Ky, A, P) :-
+        axis_of(D, A), opposite(D, O),
+        edge(Ky, D, K1), edge(Ky, O, K2),
+        axis_delta(D, K1, K2, P).
+
+    .decl pos(key: Key, p: Position)
+    pos(Ky, P) :-
+        perp(A1, A2), axis_pos(Ky, A1, P1), axis_pos(Ky, A2, P2),
+        compose(P1, P2, P).
+}
+
 // Keyed cells viewed from their own bounding box. `cell` defines the box
 // and is viewed; feeding `grid` also views the box's inside, which is what
 // a crop reads. `inner` carries the cell alongside the inner position, so
@@ -1248,11 +1264,12 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     .decl edge_min(key: Key, d: Dir, m: number)
     edge_min(K, D, M) :- cell_dist(K, D, _), M = min Kd : { cell_dist(K, D, Kd) }.
 
+    .init pack = DirPack<Key>
+    pack.edge(K, D, M) :- edge_min(K, D, M).
+
     // The box as a Position — margin from each edge.
     .decl margin(key: Key, p: Position)
-    margin(K, [Mt, Mb, Ml, Mr]) :-
-        edge_min(K, DIR_T, Mt), edge_min(K, DIR_B, Mb),
-        edge_min(K, DIR_L, Ml), edge_min(K, DIR_R, Mr).
+    margin(K, P) :- pack.pos(K, P).
 
     // Grid cells inside the box — at least the margin from every edge.
     .decl inside(key: Key, p: Position)

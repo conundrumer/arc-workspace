@@ -17,23 +17,18 @@ boundary(D, K) :-
     in(P, C1), dir_elem(D), dist(P, D, K),      // cell on line k from d
     neighbor(P, D, P2), in(P2, C2), C1 != C2.   // differs from the cell toward d
 
+.decl edge_dist(p: Position, d: Dir, k: number)
+edge_dist(P, D, K) :- in(P, _), dir_elem(D), dist(P, D, K).
+
 // Band index of a distance from edge d: the boundaries at or inside it.
 .type EdgeDist = [d: Dir, k: number]
 .init bands = Tally<EdgeDist, number>
 bands.item([D, K], K2) :- bands.domain([D, K]), boundary(D, K2), K2 <= K.
-bands.domain([D, K]) :- in(P, _), dir_elem(D), dist(P, D, K).
+bands.domain([D, K]) :- edge_dist(_, D, K).
 
-// Axis part of the output position: band indices from both edges of a.
-.decl axis_band(a: Axis, p: Position, p_axis: Position)
-axis_band(A, P, P_axis) :-
-    in(P, _), axis_of(D, A), opposite(D, O),             // the axis's edge pair
-    dist_pair(P, D, K1, K2),                             // distance to each edge
-    bands.tally([D, K1], I1), bands.tally([O, K2], I2),  // band index from each
-    axis_delta(D, I1, I2, P_axis).
+// A cell's place in the output: its band index from each of the four edges.
+.init place = DirPack<Position>
+place.edge(P, D, I) :- edge_dist(P, D, K), bands.tally([D, K], I).
 
 .decl out(p: Position, col: Color)
-out(P_out, Col) :-
-    in(P, Col),                                          // block cell
-    perp(A1, A2),
-    axis_band(A1, P, Pa1), axis_band(A2, P, Pa2),        // both axis parts
-    compose(Pa1, Pa2, P_out).                            // glue to 2D
+out(P_out, Col) :- in(P, Col), place.pos(P, P_out).

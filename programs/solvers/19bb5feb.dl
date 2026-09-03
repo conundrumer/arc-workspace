@@ -30,27 +30,20 @@ mark_box.cell(Id, P) :- marks.label($U(), P, Id).
 .init rank = Ordinal<Dir>
 rank.idx_set(D, K) :- mark_box.edge_min(_, D, K).
 
-.decl mark_idx(id: Ident, d: Dir, r: number)
-mark_idx(Id, D, R) :- mark_box.edge_min(Id, D, K), rank.rank(D, K, R).
+// A marker's place: its rank from each of the four edges.
+.init place = DirPack<Ident>
+place.edge(Id, D, R) :- mark_box.edge_min(Id, D, K), rank.rank(D, K, R).
 
-// A marker's place along one axis: its rank from each of the axis's edges.
-.decl mark_axis_pos(id: Ident, a: Axis, p: Position)
-mark_axis_pos(Id, A, P) :-
-    axis_of(D, A), opposite(D, O),
-    mark_idx(Id, D, R), mark_idx(Id, O, S),
-    axis_delta(D, R, S, P).
-
-// The marker at each cell: its places on the two axes, glued.
+// The marker at each cell.
 .decl rank_mark(p: Position, col: Color)
 rank_mark(P_out, Col) :-
     marks.label($U(), P_grid, Id), mark(P_grid, Col),  // a marker, with its color
-    perp(A1, A2), mark_axis_pos(Id, A1, P1), mark_axis_pos(Id, A2, P2),
-    compose(P1, P2, P_out).
+    place.pos(Id, P_out).
 
 // The frame the ranks span.
 .decl rank_cell(p: Position)
 rank_cell(P_out) :-
-    perp(A1, A2), mark_axis_pos(_, A1, P1), mark_axis_pos(_, A2, P2),
+    perp(A1, A2), place.axis_pos(_, A1, P1), place.axis_pos(_, A2, P2),
     compose(P1, P2, P_out).
 
 .decl out(p: Position, col: Color)
