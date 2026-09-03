@@ -340,6 +340,10 @@ edge_delta(D, K, [@keep_dir(D, DIR_T, K), @keep_dir(D, DIR_B, K), @keep_dir(D, D
 axis_delta(D, K1, K2, P) :-
     opposite(D, O), edge_delta(D, K1, P1), edge_delta(O, K2, P2), compose(P1, P2, P).
 
+// A Position carrying k at every edge.
+.decl uniform_delta(k: number, p: Inset) inline
+uniform_delta(K, [K, K, K, K]) :- true.
+
 // K-cell displacement toward d: -k at each edge of d, +k at each opposite.
 .decl jump_delta(d: Dir8, k: number, delta: Shift) inline
 jump_delta(D, K, [B - T, T - B, R - L, L - R]) :- edge_delta(D, K, [T, B, L, R]).
