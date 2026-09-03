@@ -334,9 +334,10 @@ def start_turn(it: dict, worker: dict, phase: str, trigger: str | None = None,
                      "watched": solvers.watched_hashes(it["id"]), "slash": slash}
     worker["turn_seq"] += 1
     worker.pop("steer", None)
+    worker.pop("woke", None)
     worker.update(state=state, started=time.time(), trigger=trigger,
                   handoff=handoff, seen=set(), got_result=False, think_run=0,
-                  reqs={}, idle_since=None)
+                  reqs={}, launch={}, idle_since=None)
 
 
 def steer(it: dict, worker: dict, text: str, phase: str) -> None:
@@ -569,9 +570,23 @@ def handle_event(worker: dict, ev: dict, first_response) -> None:
             if worker["state"] == "sending":
                 worker["state"] = "running"
             elif it and worker["state"] == "idle" and (
-                    worker.get("steer") or worker.get("bg")
+                    worker.get("steer") or worker.get("bg") or worker.get("woke")
                     or it.get("bg_wait") == phase):
                 adopt_turn(it, worker, phase)
+        elif kind == "system" and ev.get("subtype") == "task_started":
+            # The result of a background task reaches the session as a
+            # notification, which lands after this turn ends, so the task
+            # stays outstanding across the turns between here and that
+            # notification. A task a subagent started is the subagent's.
+            label = worker.get("launch", {}).pop(ev.get("tool_use_id"), None)
+            if label:
+                worker.setdefault("bg", {})[ev["tool_use_id"]] = label
+        elif kind == "system" and ev.get("subtype") == "task_notification":
+            worker.get("bg", {}).pop(ev.get("tool_use_id"), None)
+            # A notification the worker takes while idle opens a turn, whose
+            # init follows this event.
+            if worker["state"] == "idle":
+                worker["woke"] = True
         elif kind == "system" and ev.get("subtype") == "thinking_tokens":
             if it and worker["state"] in ("sending", "running"):
                 worker["think_run"] = (worker.get("think_run", 0)
@@ -613,11 +628,10 @@ def handle_event(worker: dict, ev: dict, first_response) -> None:
                         record_edit(it, inp["file_path"])
                     if not sub and block.get("id") and (
                             name in DISPATCH or inp.get("run_in_background")):
-                        # The result of a background task reaches the
-                        # session as a notification, which lands after this
-                        # turn ends, so the task stays outstanding across the
-                        # turns between the dispatch and that notification.
-                        worker.setdefault("bg", {})[block["id"]] = bg_label(name, inp)
+                        # A call that asks for a task. Whether it got one
+                        # is the harness's word: task_started names the
+                        # call, and a call a hook refused never starts.
+                        worker.setdefault("launch", {})[block["id"]] = bg_label(name, inp)
                     if name in DISPATCH:
                         entry = {"kind": "ask", "text": task_ask(inp)}
                         key = (mid, "task", block.get("id") or entry["text"])
@@ -692,7 +706,7 @@ def handle_event(worker: dict, ev: dict, first_response) -> None:
                     elif reason == "aborted_streaming":
                         store.say(it, store.event("stopped"), sess=phase)
                     else:
-                        store.say(it, store.event(f"turn failed ({reason})"), sess=phase)
+                        store.say(it, store.event(failure_note(ev, reason)), sess=phase)
                     # A segment that never lands still spent quota, and this
                     # line is the only place it is ever counted.
                     store.say(it, store.event(turn_note(it, ev, phase, worker["started"],
@@ -733,11 +747,9 @@ def transcript_of(session: str) -> Path | None:
 
 
 def tail_rows(worker: dict, session: str) -> list[dict]:
-    """Assistant messages the transcript gained since the last read, with the
-    background-task notifications among them taken off the worker's
-    outstanding set. The first read only marks the position, so a resumed
-    session's history stays behind us. Subagent rows belong to their own
-    context and are skipped."""
+    """Assistant messages the transcript gained since the last read. The
+    first read only marks the position, so a resumed session's history stays
+    behind us. Subagent rows belong to their own context and are skipped."""
     path = worker.get("tail_path")
     if path is None or path.name != f"{session}.jsonl":
         path = transcript_of(session)
@@ -765,29 +777,7 @@ def tail_rows(worker: dict, session: str) -> list[dict]:
             continue
         if row.get("type") == "assistant":
             rows.append(row.get("message") or {})
-        elif row.get("type") == "user":
-            note_reported(worker, row)
     return rows
-
-
-# The tool_use id a background task's completion notification names.
-NOTIFIED = re.compile(r"<tool-use-id>(\S+?)</tool-use-id>")
-
-
-def note_reported(worker: dict, row: dict) -> None:
-    """Take the background tasks a notification row reports on off the
-    worker's outstanding set."""
-    bg = worker.get("bg")
-    if not bg:
-        return
-    content = (row.get("message") or {}).get("content")
-    if not isinstance(content, str):
-        content = " ".join(str(b.get("text") or "") for b in (content or [])
-                           if isinstance(b, dict))
-    if "<task-notification>" not in content:
-        return
-    for tool_id in NOTIFIED.findall(content):
-        bg.pop(tool_id, None)
 
 
 def tail_turn(worker: dict, session: str) -> str | None:
@@ -1122,6 +1112,21 @@ def turn_note(it: dict, ev: dict, phase: str, started: float | None,
     return note + (" · " + usage if usage else "")
 
 
+# The API's safeguards refuse a request as a plain api_error; the result text
+# names the category. A refusal is deterministic on the session's context,
+# so the note carries the CLI's own advice.
+SAFEGUARD = re.compile(r"safeguards flagged.*?\[(\w+)\]", re.S)
+
+
+def failure_note(ev: dict, reason: str) -> str:
+    """The feed line for a turn that ended without a result."""
+    hit = SAFEGUARD.search(str(ev.get("result") or ""))
+    if hit:
+        return (f"turn refused by the model's safeguards ({hit.group(1)}) — "
+                "the same request fails again here; it needs a fresh session")
+    return f"turn failed ({reason})"
+
+
 def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
                 phase: str, handoff: bool,
                 reqs: list | None = None) -> None:
@@ -1188,37 +1193,45 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
     callout_landing = it.get("callout_wait") == phase
     if callout_landing:
         it.pop("callout_wait", None)
+    worker = store.PROCS.get((it["id"], phase))
+    outstanding = sorted((worker or {}).get("bg", {}).values())
     if callout_landing and store.next_stage(it, phase):
-        # the callout turn's text joins the stage report, so parsing and the
-        # finalize read see one document per stage
-        if text:
-            combined = ((it.get("reports", {}).get(phase) or "").rstrip()
-                        + "\n\n" + text)
-            it.setdefault("reports", {})[phase] = combined
-            solvers.save_report(it["id"], phase, combined)
-        if auto_advances(it, phase):
-            it["handoff_pending"] = True
-            worker = store.PROCS.get((it["id"], phase))
-            if worker:
-                store.DEFERRED.put_nowait(("handoff", it["id"], phase, worker["turn_seq"]))
+        # a callout turn on an older brief answers with the section in
+        # place of the block
+        land_callouts(it, phase, callouts if callouts is not None else text)
+    elif store.next_stage(it, phase) and (report is not None or handoff):
+        # The block is the handoff, whichever turn carries it. A turn asked
+        # for one that ends without it is either waiting on a task it
+        # started, or missed the ask: the ask goes out once more, and a
+        # second miss files the text as written.
+        if report is None and worker and outstanding:
+            hold_handoff(it, phase, outstanding)
+            return
+        if report is None:
+            if worker and not it.get("reasked", {}).get(phase):
+                it.setdefault("reasked", {})[phase] = True
+                drop_hold(it, phase)
+                store.say(it, store.event("no handoff block — asking again"), sess=phase)
+                store.DEFERRED.put_nowait(("rehandoff", it["id"], phase, worker["turn_seq"]))
                 ensure_drain()
-        else:
-            it["state"] = store.NEEDS_REVIEW
-            it["updated"] = True
-    elif handoff and store.next_stage(it, phase):
-        worker = store.PROCS.get((it["id"], phase))
-        outstanding = sorted((worker or {}).get("bg", {}).values())
+                return
+            store.say(it, store.event("no handoff block — the text stands as the report"),
+                      sess=phase)
+            report = text
+        it.get("reasked", {}).pop(phase, None)
+        drop_hold(it, phase)
         if worker and outstanding:
-            hold_handoff(it, phase, outstanding, text)
+            hold_handoff(it, phase, outstanding, report)
+        elif callouts is not None:
+            # the turn wrote its callouts with the report: no callout turn
+            file_report(it, phase, report)
+            land_callouts(it, phase, callouts)
         else:
-            land_handoff(it, phase, text)
+            land_handoff(it, phase, report)
     elif it.get("bg_wait") == phase:
-        # a turn a background notification woke; when a landing finds nothing
-        # outstanding, the handoff ask the hold owes goes out
-        if text:
-            file_report(it, phase, text)
-        worker = store.PROCS.get((it["id"], phase))
-        outstanding = sorted((worker or {}).get("bg", {}).values())
+        # a turn a background notification woke, with no block of its own:
+        # once nothing is outstanding, the held report lands, or the ask the
+        # hold owes goes out
         if worker and outstanding:
             it["bg_at"] = store.now()
             store.say(it, store.event("handoff held — " + ", ".join(outstanding)
@@ -1239,15 +1252,16 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
 
 
 def hold_handoff(it: dict, phase: str, outstanding: list[str],
-                 text: str) -> None:
+                 report: str = "") -> None:
     """Wait out the background tasks a handoff turn started.
 
-    A background dispatch ends the turn before the task reports, so the text
-    the turn ended with is filed as the report so far, and a later landing
-    replaces it. The notification wakes the session into a turn of its own;
-    when a landing finds nothing outstanding, the handoff ask goes out again."""
-    if text:
-        file_report(it, phase, text)
+    A background dispatch ends the turn before the task reports. A report the
+    turn wrote is filed and lands once the tasks are in; without one, the
+    notification wakes the session into a turn of its own, and when a
+    landing finds nothing outstanding, the handoff ask goes out again."""
+    if report:
+        file_report(it, phase, report)
+        it["bg_filed"] = True
     it["bg_wait"] = phase
     it["bg_at"] = store.now()
     store.say(it, store.event("handoff held — " + ", ".join(outstanding)
@@ -1465,10 +1479,12 @@ def idle_loop() -> None:
                 print(f"{step.__name__} failed: {exc}", file=sys.stderr)
 
 
-def expire_holds() -> None:
-    """End a handoff hold whose background task never reported. The chain
-    stops here, and the user rules on the stage with whatever report its
-    turns filed."""
+def expire_holds(force: bool = False) -> None:
+    """End a handoff hold whose background task never reported, or every
+    hold when forced: a restart drops the outstanding set with the process,
+    so the holds it finds have nothing left to wait on. A report the stage
+    filed lands, through its callout turn; without one the chain stops here
+    for the user to rule on."""
     expired = False
     with store.LOCK:
         for it in list(store.STATE["items"]):

@@ -526,13 +526,16 @@ def bg_dispatch(mid="m1", tool_id="toolu_1", name="Task", **inp):
         {"type": "tool_use", "id": tool_id, "name": name, "input": inp}]}}
 
 
-def notification(tool_id="toolu_1", **kw):
-    """The row the CLI writes when a background task reports."""
-    row = {"type": "user", "message": {"role": "user", "content":
-           f"<task-notification>\n<tool-use-id>{tool_id}</tool-use-id>\n"
-           "<status>completed</status>\n</task-notification>"}}
-    row.update(kw)
-    return row
+def task_started(tool_id="toolu_1", **kw):
+    """The CLI's word that a call got a background task."""
+    return {"type": "system", "subtype": "task_started", "task_id": "t" + tool_id,
+            "tool_use_id": tool_id, **kw}
+
+
+def notification(tool_id="toolu_1"):
+    """The CLI's word that a background task reported."""
+    return {"type": "system", "subtype": "task_notification",
+            "task_id": "t" + tool_id, "tool_use_id": tool_id, "status": "completed"}
 
 
 def test_what_a_turn_starts_in_the_background_is_outstanding(srv):
@@ -540,33 +543,43 @@ def test_what_a_turn_starts_in_the_background_is_outstanding(srv):
     w = worker(srv, it, phase="create", state="running")
     srv.handle_event(w, bg_dispatch(subagent_type="claude",
                                     description="Sweep corpus"), None)
+    srv.handle_event(w, task_started(), None)
     srv.handle_event(w, bg_dispatch("m2", "toolu_2", "Bash",
                                     command="uv run pytest"), None)
     srv.handle_event(w, bg_dispatch("m3", "toolu_3", "Bash", command="souffle x",
                                     run_in_background=True), None)
+    srv.handle_event(w, task_started("toolu_3"), None)
     # the CLI emits a subagent call under either registered name
     srv.handle_event(w, bg_dispatch("m5", "toolu_5", "Agent",
                                     description="Survey sweep"), None)
+    srv.handle_event(w, task_started("toolu_5"), None)
     srv.handle_event(w, {**bg_dispatch("m4", "toolu_4", description="its own"),
                          "parent_tool_use_id": "toolu_1"}, None)
+    srv.handle_event(w, task_started("toolu_4", spawn_depth=2), None)
     # the foreground Bash reports inside the turn; the subagent's own dispatch
     # belongs to the subagent
     assert w["bg"] == {"toolu_1": "Sweep corpus", "toolu_3": "`souffle x`",
                        "toolu_5": "Survey sweep"}
 
 
-def test_a_notification_takes_a_task_off_the_outstanding_set(srv, monkeypatch,
-                                                             tmp_path):
+def test_a_call_a_hook_refuses_is_not_outstanding(srv):
+    it = create_item(srv)
+    w = worker(srv, it, phase="create", state="running")
+    srv.handle_event(w, bg_dispatch("m1", "toolu_1", "Bash", command="sleep 150",
+                                    run_in_background=True), None)
+    srv.handle_event(w, {"type": "user", "message": {"role": "user", "content": [
+        {"type": "tool_result", "tool_use_id": "toolu_1", "is_error": True,
+         "content": "Blocked: this command waits by timer or poll loop."}]}}, None)
+    assert not w.get("bg")
+
+
+def test_a_notification_takes_a_task_off_the_outstanding_set(srv):
     it = create_item(srv)
     w = worker(srv, it, phase="create", state="running")
     w["bg"] = {"toolu_1": "Sweep corpus", "toolu_9": "another sweep"}
-    path = transcript(srv, monkeypatch, tmp_path, "cs")
-    srv.tail_turn(w, "cs")      # first read marks the position
-    with path.open("a") as fh:
-        fh.write(json.dumps(notification()) + "\n")
-        fh.write(json.dumps(notification("toolu_9", isSidechain=True)) + "\n")
-    srv.tail_turn(w, "cs")
-    assert w["bg"] == {"toolu_9": "another sweep"}   # the subagent's own record
+    srv.handle_event(w, notification(), None)
+    assert w["bg"] == {"toolu_9": "another sweep"}
+    assert not w.get("woke")            # the running turn takes it in
 
 
 def test_a_handoff_waiting_on_a_subagent_is_held(srv, monkeypatch):
@@ -605,6 +618,13 @@ def test_a_background_wake_starts_a_turn_of_its_own(srv):
     assert w["state"] == "running"
     assert it["state"] == srv.COMMENTED
     assert "a background task woke the session" in it["feed"][-1]["text"]
+    # the notification for the last task lands before the turn it opens
+    w["state"] = "idle"
+    srv.handle_event(w, notification(), None)
+    assert w["bg"] == {}
+    srv.handle_event(w, init, None)
+    assert w["state"] == "running"
+    assert "woke" not in w
 
 
 def test_the_woken_turn_sends_the_handoff_ask_again(srv, monkeypatch):
@@ -2919,6 +2939,16 @@ def test_an_earlier_stage_still_hands_off_by_itself(srv, monkeypatch):
     srv.finish_turn(it, {"result": "## Callouts\n\nnone"}, None,
                     time.time(), "create", False)
     assert landed.wait(1)
+
+
+def test_a_safeguard_refusal_is_named_in_the_feed(srv):
+    text = ("API Error: Opus 5's safeguards flagged this message (https://x). "
+            "This sometimes happens with safe, normal conversations.\n\n"
+            "Details: `[reasoning_extraction]`\n\nRequest ID: req_1")
+    note = srv.failure_note({"result": text}, "api_error")
+    assert note.startswith("turn refused by the model's safeguards (reasoning_extraction)")
+    assert "fresh session" in note
+    assert srv.failure_note({"result": "overloaded"}, "api_error") == "turn failed (api_error)"
 
 
 def test_quota_death_is_read_from_the_status_then_the_wording(srv):
