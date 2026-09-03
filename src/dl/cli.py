@@ -15,7 +15,7 @@ from dl.dlparse import ParseError, parse
 from dl.facts import parse_grid
 from dl.fit import FitResult, render_fit, run_fit
 from dl.fit_plan import probe_report, render_fit_plan
-from dl.lint import RESERVED_CAT, SHADOWED_TYPE_CAT, lint_body
+from dl.lint import LIB_NAME_CAT, RESERVED_CAT, SHADOWED_TYPE_CAT, lint_body
 from dl.paths import SOLVERS_DIR, all_stems
 from dl.render import _grid_lines, render_pair_failure, render_stem_failures
 from dl.rewrite_lint import HINTS, lint_rewrites
@@ -113,7 +113,7 @@ def _compile_failed(stem: str) -> bool:
     print(f"{stem}.dl: {err}")
     source = (SOLVERS_DIR / f"{stem}.dl").read_text()
     collisions = [f for f in lint_body(source)
-                  if f[0] in (RESERVED_CAT, SHADOWED_TYPE_CAT)]
+                  if f[0] in (RESERVED_CAT, SHADOWED_TYPE_CAT, LIB_NAME_CAT)]
     if collisions:
         print("likely cause:")
         for cat, lineno, match, _ in collisions:

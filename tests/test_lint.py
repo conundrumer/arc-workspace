@@ -90,6 +90,68 @@ def test_reserved_comp_param_fires():
     assert "`match`" in fs[0][2]
 
 
+def test_type_named_for_a_lib_comp_fires():
+    src = """\
+.type Reach = Near {} | Object {}
+.type Choice = [sp: Reach]
+"""
+    fs = [f for f in lint_body(src) if f[0] == "lib name"]
+    assert [f[1] for f in fs] == [1]
+    assert fs[0][2] == "`Reach` is a lib component; rename it"
+
+
+def test_relation_named_for_a_lib_relation_fires_at_top_level_only():
+    # Souffle scopes a declaration inside a comp to its instance.
+    src = """\
+.decl opposite(d: Dir)
+.comp Parse<Key> {
+    .decl opposite(key: Key, d: Dir)
+}
+"""
+    fs = [f for f in lint_body(src) if f[0] == "lib name"]
+    assert [f[1] for f in fs] == [1]
+    assert "`opposite` is a lib relation" in fs[0][2]
+
+
+def test_type_named_for_a_lib_type_fires():
+    src = """\
+.type Dir = Up {} | Down {}
+"""
+    fs = [f for f in lint_body(src) if f[0] == "lib name"]
+    assert [f[1] for f in fs] == [1]
+    assert "`Dir` is a lib type" in fs[0][2]
+
+
+def test_lib_macro_in_body_fires_as_orientation_literal():
+    src = """\
+.decl v(s: Sym)
+v(SYM_BOX).
+"""
+    fs = [f for f in lint_body(src) if f[0] == "orientation literal"]
+    assert [(f[1], f[2]) for f in fs] == [(2, "SYM_BOX")]
+
+
+def test_comp_without_entry_fires(tmp_path, monkeypatch):
+    import dl.lint as lint
+    (tmp_path / "Ridge.md").write_text("# `Ridge<Key>`\n")
+    monkeypatch.setattr(lint, "PROPOSALS_DIR", tmp_path)
+    src = """\
+.comp Ridge<Key> {
+    .decl cell(key: Key, p: Position)
+}
+.comp Zigzag<Key> {
+    .decl cell(key: Key, p: Position)
+}
+.comp Fit {
+    .decl v(x: number)
+}
+"""
+    fs = [f for f in lint_body(src) if f[0] == "comp without entry"]
+    assert [f[1] for f in fs] == [4]
+    assert "`Zigzag`" in fs[0][2]
+    assert "docs/wf-solver/proposals/Zigzag.md" in fs[0][2]
+
+
 def test_reserved_name_in_unparsable_source_fires():
     src = """\
 .decl count(n: number)

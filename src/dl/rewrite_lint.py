@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Iterator
+from functools import lru_cache
 
 from dl.dlparse import (
     EXTERN,
@@ -55,6 +56,7 @@ from dl.dlparse import (
     parse,
     term_vars,
 )
+from dl.lint import _lib_source
 
 LINE_LIMIT = 100   # code only; a trailing comment does not count
 BODY_SCOPES = (TOP, "Fit", "Parse", "Consts")
@@ -70,13 +72,55 @@ HINTS = frozenset({
 # level is record arithmetic, independent of the task's grids.
 EXAMPLE_SRC = frozenset({"in", "ex_in", "ex_out"})
 
-# `*_elem` relations holding part of their element type rather than all of
-# it: `c4_elem` is the rotation subgroup of `D4`. An atom over one of these
-# tests membership, so a bound variable is a filter and the enumeration
-# reading does not apply.
-SUBSET_ELEMS = frozenset({"c4_elem"})
-
 type Finding = tuple[str, int, str, str]
+
+# Souffle's primitive types. A column typed by one states no domain, so
+# it never counts as wider than an element type.
+_PRIMITIVE_TYPES = frozenset({"number", "unsigned", "float", "symbol"})
+_UNION_RE = re.compile(r"=\s*(\w+(?:\s*\|\s*\w+)+)\s*")
+
+
+@lru_cache(maxsize=2)
+def _elem_tables(text: str) -> tuple[dict[str, str], dict[str, set[str]]]:
+    """Two tables read off lib.dl's text: each `*_elem` relation and the
+    element type it holds, and each type and the types wider than it. A
+    union `.type X = A | B` makes X wider than A and B; a subtype
+    `.type A <: B` makes B wider than A; the closure is transitive. An
+    atom over an elem relation narrows a variable bound at a column of a
+    wider type, so that binding is a filter and the enumeration reading
+    does not apply. Keyed on the text, so an edit to lib.dl reaches a
+    process that already linted against it."""
+    try:
+        items = parse(text).items
+    except ParseError:
+        return {}, {}
+    elem_type = {
+        it.name: it.fields[0].type
+        for it in items
+        if isinstance(it, Decl) and it.name.endswith("_elem")
+        and len(it.fields) == 1
+    }
+    wider: dict[str, set[str]] = {}
+    for it in items:
+        if not isinstance(it, TypeDecl):
+            continue
+        if it.rhs.startswith("<:"):
+            wider.setdefault(it.name, set()).add(it.rhs[2:].strip())
+        elif m := _UNION_RE.fullmatch(it.rhs):
+            for member in m.group(1).split("|"):
+                wider.setdefault(member.strip(), set()).add(it.name)
+    for ws in wider.values():
+        ws.difference_update(_PRIMITIVE_TYPES)
+    changed = True
+    while changed:
+        changed = False
+        for ws in wider.values():
+            more = set().union(*(wider.get(w, set()) for w in ws)) - ws
+            if more:
+                ws |= more
+                changed = True
+    return elem_type, wider
+
 
 # Lib-idiom chains: a lib primitive's defining body, as the two atoms a
 # hand-written site carries. `a` and `b` are (relation, arity, linking
@@ -796,11 +840,12 @@ class _Lint:
         x, y = a.args[v].name, b.args[v].name
         if x in head_vars or y in head_vars:
             return None
-        # Both compared values bound by one solver relation: a pairing map,
-        # not a clash.
+        # Some other atom reads both compared values, a solver pairing map
+        # or a lib relation such as `same_line`: it relates the pair, so
+        # this is not a clash.
         if any(
             z is not a and z is not b and {x, y} <= literal_vars(z)
-            for z in local
+            for z in atoms
         ):
             return None
         pair = f"`{_atom_str(a)}, {_atom_str(b)}, {x} != {y}`"
@@ -930,9 +975,9 @@ class _Lint:
     def domain_enumerator(self, info: RuleInfo) -> None:
         """An `*_elem` atom whose variable another positive atom already
         binds. An `inline` relation does not count as a binder: it
-        substitutes away, so its arguments stay ungrounded. A relation in
-        `SUBSET_ELEMS` holds part of its element type, so the atom narrows
-        the binding and stays."""
+        substitutes away, so its arguments stay ungrounded. When the binder's
+        column has a wider type than the atom's element type, the atom
+        narrows the binding and stays."""
         rule = info.rule
         if rule.body is None:
             return
@@ -940,8 +985,6 @@ class _Lint:
         for atom in {id(l): l for f in flats for l in f
                      if isinstance(l, Atom)}.values():
             if not atom.name.endswith("_elem") or len(atom.args) != 1:
-                continue
-            if atom.name in SUBSET_ELEMS:
                 continue
             if not isinstance(atom.args[0], Var):
                 continue
@@ -961,12 +1004,26 @@ class _Lint:
                 )
                 if binder is None:
                     break
-            if binder is not None:
+            if binder is not None and not self._narrows(info.scope, atom, binder, v):
                 self.add(
                     "domain-enumerator", atom.line,
                     f"`{_atom_str(atom)}`; `{v}` is already bound by "
                     f"`{binder.name}`",
                 )
+
+    def _narrows(self, scope: str, elem: Atom, binder: Atom, v: str) -> bool:
+        """The elem atom's type is a strict subtype of the column that
+        binds v: the atom narrows the binding and stays."""
+        key = self.ix.resolve(scope, binder.qual, binder.name)
+        decl = self.ix.decls.get(key[0], {}).get(key[1])
+        if decl is None:
+            return False
+        elem_type, wider_of = _elem_tables(_lib_source())
+        wider = wider_of.get(elem_type.get(elem.name, ""), set())
+        for i, arg in enumerate(binder.args):
+            if isinstance(arg, Var) and arg.name == v and i < len(decl.fields):
+                return decl.fields[i].type in wider
+        return False
 
     def _grounds(self, scope: str, atom: Atom) -> bool:
         """Whether this atom grounds its variables: a local, non-inline

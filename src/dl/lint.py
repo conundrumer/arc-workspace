@@ -1,34 +1,64 @@
 """Lint .dl solver bodies against the style doc under docs/wf-solver/.
 
 `.comp` blocks are skipped wholesale — a proposal comp is lib code on its
-way out of the solver, and its proposal entry is what makes it legitimate
-— except the comps whose rules are model claims, which lint as body. The
-public entry point is `lint_body`; run_dl.py calls it after running each
-solver.
+way out of the solver, and its proposal entry is what makes it legitimate,
+so a comp with no entry is a finding — except the comps whose rules are
+model claims, which lint as body. The public entry point is `lint_body`;
+run_dl.py calls it after running each solver.
 """
 
 import re
 from functools import lru_cache
 
-from dl.dlparse import Comp, Decl, Init, Item, ParseError, Rigid, Rule, TypeDecl, parse
+from dl.context import DOCS_DIR
+from dl.dlparse import (
+    Comp, Decl, Define, Functor, Init, Item, ParseError, Rigid, Rule,
+    TypeDecl, parse,
+)
 from dl.paths import PROGRAMS_DIR
 
-ORIENTATION_LITERALS = {
-    # Dirs
-    "DIR_T", "DIR_B", "DIR_L", "DIR_R",
-    # Axes
-    "AXIS_V", "AXIS_H",
-    # DiagDirs
-    "DIAG_TL", "DIAG_TR", "DIAG_BL", "DIAG_BR",
-    # DiagAxes
-    "DAXIS_DG", "DAXIS_AD",
-    # D4
-    "D4_ID", "D4_CW", "D4_HT", "D4_CC",
-    "D4_LR", "D4_TB", "D4_DG", "D4_AD",
+
+def _lib_source() -> str:
+    """lib.dl's text, or empty when it is not there to read."""
+    try:
+        return (PROGRAMS_DIR / "lib.dl").read_text()
+    except OSError:
+        return ""
+
+
+@lru_cache(maxsize=2)
+def _lib_items(text: str) -> list[Item]:
+    """lib.dl's parsed items, or none when it does not parse. Keyed on the
+    text, so an edit to lib.dl reaches a process that already linted
+    against it."""
+    try:
+        return parse(text).items
+    except ParseError:
+        return []
+
+
+# The kind each lib top-level directive binds its name as.
+LIB_KINDS = {
+    TypeDecl: "type", Comp: "component", Decl: "relation",
+    Functor: "functor", Define: "macro",
 }
+
+
+def _lib_names(text: str) -> dict[str, str]:
+    """lib.dl's top-level names, each with its kind."""
+    return {it.name: LIB_KINDS[type(it)] for it in _lib_items(text)
+            if type(it) in LIB_KINDS}
+
+
+# lib.dl's macros, `ORIGIN` aside: a position, not an orientation.
+ORIENTATION_LITERALS = frozenset(
+    name for name, kind in _lib_names(_lib_source()).items()
+    if kind == "macro" and name != "ORIGIN"
+)
 
 ORIENTATION_LITERAL_RE = re.compile(
     r"\b(" + "|".join(sorted(ORIENTATION_LITERALS, key=len, reverse=True)) + r")\b"
+    if ORIENTATION_LITERALS else r"(?!)"
 )
 COMMENT_RE = re.compile(r"//.*$")
 BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", flags=re.DOTALL)
@@ -76,6 +106,15 @@ DECLARED_NAME_RE = re.compile(
 # The category a type argument colliding with a component-internal type
 # name is reported under.
 SHADOWED_TYPE_CAT = "shadowed type"
+# The category a solver name colliding with a lib top-level name is
+# reported under.
+LIB_NAME_CAT = "lib name"
+# The comps a solver holds as its own. Any other is a proposal comp,
+# legitimate only with its entry under docs/wf-solver/proposals/.
+STOCK_COMPS = ("Consts", "Fit", "Parse")
+PROPOSALS_DIR = DOCS_DIR / "proposals"
+# The category a proposal comp with no entry is reported under.
+NO_ENTRY_CAT = "comp without entry"
 # RIGID chart names exist only in the macro expansion; any appearance in
 # solver source reads a stored pose the model claims unobservable.
 RIGID_CHART_RE = re.compile(r"\b_rigid_\w+")
@@ -260,24 +299,6 @@ def _reserved_inner_names(
     return findings
 
 
-def _lib_source() -> str:
-    """lib.dl's text, or empty when it is not there to read."""
-    try:
-        return (PROGRAMS_DIR / "lib.dl").read_text()
-    except OSError:
-        return ""
-
-
-@lru_cache(maxsize=2)
-def _lib_comps(text: str) -> dict[str, Comp]:
-    """lib.dl's components, keyed by name. Keyed on the text, so an edit to
-    lib.dl reaches a process that already linted against it."""
-    try:
-        return _comp_table(parse(text).items)
-    except ParseError:
-        return {}
-
-
 def _comp_table(items: list[Item]) -> dict[str, Comp]:
     """Every component in an item tree, nested ones included, by name."""
     table: dict[str, Comp] = {}
@@ -329,7 +350,7 @@ def _shadowed_types(
     names a rule variable it could not type rather than the collision, so
     this finding stands in for it.
     """
-    table = _lib_comps(_lib_source()) | _comp_table(items)
+    table = _comp_table(_lib_items(_lib_source())) | _comp_table(items)
     findings: list[tuple[str, int, str, str]] = []
     for init in _inits(items):
         inner = _inner_types(init.comp, table)
@@ -342,6 +363,64 @@ def _shadowed_types(
                 f"instance takes that name for its own type; rename it",
                 raw_lines[init.line - 1].rstrip(),
             ))
+    return findings
+
+
+def _lib_named(
+    items: list[Item], raw_lines: list[str],
+) -> list[tuple[str, int, str, str]]:
+    """Solver declarations that take a lib top-level name.
+
+    Souffle keeps top-level types, components, instances, and relations in
+    one namespace and functors in another; a declaration inside a
+    component is scoped to its instance; a macro is substituted wherever
+    its name appears. Its message points at lib.dl's line for some of
+    these, so this finding stands in for it.
+    """
+    lib = _lib_names(_lib_source())
+    findings: list[tuple[str, int, str, str]] = []
+
+    def walk(items: list[Item], top: bool) -> None:
+        for it in items:
+            if isinstance(it, Comp):
+                walk(it.items, False)
+            if not isinstance(it, (TypeDecl, Decl, Comp, Init, Functor)):
+                continue
+            name = it.inst if isinstance(it, Init) else it.name
+            kind = lib.get(name)
+            if kind is None:
+                continue
+            if kind != "macro" and (
+                not top or (kind == "functor") != isinstance(it, Functor)
+            ):
+                continue
+            findings.append((
+                LIB_NAME_CAT, it.line,
+                f"`{name}` is a lib {kind}; rename it",
+                raw_lines[it.line - 1].rstrip(),
+            ))
+
+    walk(items, True)
+    return findings
+
+
+def _comps_without_entry(
+    items: list[Item], raw_lines: list[str],
+) -> list[tuple[str, int, str, str]]:
+    """Proposal comps with no entry file of their name."""
+    findings: list[tuple[str, int, str, str]] = []
+    for it in items:
+        if not isinstance(it, Comp) or it.name in STOCK_COMPS:
+            continue
+        if (PROPOSALS_DIR / f"{it.name}.md").is_file():
+            continue
+        findings.append((
+            NO_ENTRY_CAT, it.line,
+            f"`{it.name}` is a proposal comp with no entry "
+            f"docs/wf-solver/proposals/{it.name}.md; write the entry, or "
+            f"fold the comp into body",
+            raw_lines[it.line - 1].rstrip(),
+        ))
     return findings
 
 
@@ -475,6 +554,8 @@ def lint_body(source: str) -> list[tuple[str, int, str, str]]:
 
     findings.extend(_reserved_inner_names(program.items, raw_lines))
     findings.extend(_shadowed_types(program.items, raw_lines))
+    findings.extend(_lib_named(program.items, raw_lines))
+    findings.extend(_comps_without_entry(program.items, raw_lines))
     findings.extend(_banned_types(program.items, raw_lines))
     findings.extend(_consts_data(program.comps().get("Consts"), raw_lines, code))
     findings.sort(key=lambda f: (f[1], f[0]))

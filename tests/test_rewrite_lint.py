@@ -1,7 +1,7 @@
 """Rewrite-lint rules: each fires on its corpus before-shape and stays
 quiet on the kept idiom next to it."""
 
-from dl.rewrite_lint import lint_rewrites
+from dl.rewrite_lint import _elem_tables, lint_rewrites
 
 
 def cats(src: str, hints: bool = False) -> list[str]:
@@ -122,6 +122,33 @@ broken(A) :- band(A, L1, L2), cs(A, L1, C1), cs(A, L2, C2), C1 != C2.
 out(A) :- broken(A).
 """
     assert "comp-idiom" not in cats(src, hints=True)
+
+
+def test_comp_idiom_lib_pair_relation_kept():
+    # `same_line` stays undeclared so it resolves to lib: a lib relation
+    # reading both compared values relates the pair as a local one does.
+    src = """\
+.decl mark(c: number, p: number)
+mark(1, 2).
+.decl aligned(c: number)
+aligned(C) :- mark(C, P), mark(C, Q), P != Q, axis_elem(A), same_line(A, P, Q).
+.decl out(c: number)
+out(C) :- aligned(C).
+"""
+    assert "comp-idiom" not in cats(src, hints=True)
+
+
+def test_lib_idiom_in_consts_fires():
+    src = """\
+.comp Consts {
+    .decl beside(p: Position, q: Position)
+    beside(P, Q) :- dir_elem(D), step_delta(D, S), compose(P, S, Q).
+}
+.init consts = Consts
+.decl out(p: Position)
+out(P) :- consts.beside(P, _).
+"""
+    assert "lib-idiom" in cats(src)
 
 
 def test_comp_idiom_primitive_kept():
@@ -333,18 +360,45 @@ out(P) :- axis_elem(A), src(P, A).
     assert "domain-enumerator" in cats(src, hints=True)
 
 
-def test_domain_enumerator_membership_test_kept():
-    # `c4_elem` holds four of the eight D4 elements, so the atom narrows a
-    # binding the rule already has.
+def test_domain_enumerator_wider_column_kept():
+    # `dir_elem` holds four of the eight Dir8 elements, so over a Dir8
+    # column the atom is a filter.
     src = """\
-.decl c4_elem(d: number)
-c4_elem(0). c4_elem(1).
-.decl src(p: number, d: number)
-src(P, D) :- g(P, D).
+.decl beside(p: number, d: Dir8, q: number)
+beside(P, D, Q) :- g(P, D, Q).
 .decl out(p: number)
-out(P) :- c4_elem(D), src(P, D).
+out(P) :- dir_elem(D), beside(P, D, _).
 """
     assert "domain-enumerator" not in cats(src, hints=True)
+
+
+def test_domain_enumerator_same_type_column_fires():
+    src = """\
+.decl beside(p: number, d: Dir, q: number)
+beside(P, D, Q) :- g(P, D, Q).
+.decl out(p: number)
+out(P) :- dir_elem(D), beside(P, D, _).
+"""
+    assert "domain-enumerator" in cats(src, hints=True)
+
+
+def test_elem_tables_close_wider_through_subtypes_and_unions():
+    lib = """\
+.type A <: number
+.type B <: A
+.type C <: number
+.type AC = A | C
+.type Rec = [x: number]
+.decl a_elem(x: A)
+.decl b_elem(x: B)
+.decl pair(x: A, y: A)
+"""
+    elem_type, wider = _elem_tables(lib)
+    assert elem_type == {"a_elem": "A", "b_elem": "B"}
+    assert wider["A"] == {"AC"}          # union member; `number` is no domain
+    assert wider["C"] == {"AC"}
+    assert wider["B"] == {"A", "AC"}     # subtype, closed through A
+    assert "Rec" not in wider
 
 
 def test_domain_enumerator_inline_binder_kept():
