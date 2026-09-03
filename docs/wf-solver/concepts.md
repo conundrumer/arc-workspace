@@ -42,7 +42,8 @@ The transformation claim: which prior the task teaches. Rival cases of one file 
 - `move` — content translates, stacks, or shears within the frame
 - `pack` — pieces jointly fill a region exactly
 - `stamp` — a footprint stamps at qualifying positions
-- `border` — cells act by which side of a border or outline they lie on
+- `border` — cells act by which side of a border or outline they lie on, or are the drawn outline
 - `select` — output keeps a distinguished part of the input
 - `parity` — even/odd position alternation carries the model
 - `cross` — cells where designated lines cross act
+- `merge` — like-valued items fuse under a task-given nearness into one unit; the output treats the unit as one thing
