@@ -65,7 +65,7 @@ out(P_grid_out, Col, Ch) :- in(P_grid_in, Col), perm(P_grid_in, P_grid_out, Ch).
     .init cand = Unanimous<AxisCell, Position>
     cand.item([A, P_in], P_out) :-
         ex_in(E, P_in, Col), ex_out(E, P_out, Col),                            // shared color
-        axis_elem(A), split(P_in, A, P_along, _), split(P_out, A, P_along, _). // same coordinate on a
+        axis_elem(A), perp(A, A2), same_line(A2, P_in, P_out).                 // on P_in's line across a
 
     // Two candidates for one cell — the axis leaves the pairing open.
     .decl ambiguous(a: Axis)

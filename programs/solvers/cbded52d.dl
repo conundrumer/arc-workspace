@@ -43,9 +43,8 @@ fill($Span(), P_tile, M) :- btw.between(M, P_tile).
 // --- Line ---
 fill($Line(), P_tile, M) :-
     tile(_, P_tile, _),
-    mark(M, Q1), mark(M, Q2), Q1 != Q2,        // two distinct marks
-    axis_elem(A),
-    split(P_tile, A, _, Ac), split(Q1, A, _, Ac), split(Q2, A, _, Ac).    // sharing P's line
+    mark(M, Q1), mark(M, Q2), Q1 != Q2,                            // two distinct marks
+    axis_elem(A), same_line(A, Q1, Q2), same_line(A, Q1, P_tile).  // P_tile on the marks' line
 
 .decl impl_choice(ch: Choice)
 impl_choice($Span()). impl_choice($Line()).

@@ -78,7 +78,7 @@ out(P, Col, Ch) :-
     ; c.growth(Diag), diag_dirs(Diag, _, D1, D2),                     // the corner's dir pair
       neighbor(Q, D1, M),                                             // step off the diagonal
       frame_cell(Ch, P),                                              // an arm cell
-      axis_of(D1, A), split(P, A, Along, _), split(M, A, Along, _),   // in the stepped line
+      axis_of(D2, A), same_line(A, P, M),                             // on M's line along D2
       opposite(D2, O), dist(P, O, Kp), dist(M, O, Km), Kp <= Km       // at or back across
     ),
     !placed(Ch, P, _).                                                // outside the input

@@ -366,7 +366,9 @@ neighbor(P, D, Q) :- step_delta(D, S), compose(P, S, Q).
 jump(P, D, K, Q) :- jump_delta(D, K, Delta), compose(P, Delta, Q).
 
 // Decompose p by axis: along carries the axis component (perpendicular
-// zeroed); across carries the perpendicular (axis zeroed).
+// zeroed); across carries the perpendicular (axis zeroed). Cells sharing
+// along form a line perpendicular to a; same_line(a, ...) is the line
+// along a, the cells sharing across.
 .decl split(p: Position, a: Axis, along: Position, across: Position) inline
 split(P, A,
       [@keep_axis(A, AXIS_V, T), @keep_axis(A, AXIS_V, B), @keep_axis(A, AXIS_H, L), @keep_axis(A, AXIS_H, R)],
