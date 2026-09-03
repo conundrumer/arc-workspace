@@ -596,9 +596,8 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     // Position at distance k from edge dir, axis-only (perpendicular zeroed).
     .decl pos(key: Key, k: number, p: Position) inline
     pos(Ky, K, P) :-
-        dist_set(Ky, K), dir(D), opposite(D, D_opp), extent(Ky, N),
-        edge_delta(D, K, P_d), edge_delta(D_opp, N-1-K, P_o),
-        compose(P_d, P_o, P).
+        dist_set(Ky, K), dir(D), extent(Ky, N),
+        axis_delta(D, K, N-1-K, P).
 }
 
 // 1D frame from an axis-tagged extent — the n axis-only positions of a
@@ -609,10 +608,9 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 
     .decl cell(key: Key, a: Axis, p: Position)
     cell(Ky, A, P) :-
-        extent(Ky, A, N), axis_of(D, A), opposite(D, O),
+        extent(Ky, A, N), axis_of(D, A),
         K = range(0, N),
-        edge_delta(D, K, P_d), edge_delta(O, N-1-K, P_o),
-        compose(P_d, P_o, P).
+        axis_delta(D, K, N-1-K, P).
 }
 
 // 2D frame from per-axis extents — AxisFrame cells perp-glued into full
@@ -934,9 +932,9 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     .decl pos(key: Key, m: T, p_pos: Position)
     pos(Ky, M, P_pos) :-
         mem(Ky, M), axis(Ky, A), axis_of(D, A), opposite(D, O),
-        R1 = count : { nearer(Ky, D, M1, M) }, edge_delta(D, R1, P1),
-        R2 = count : { nearer(Ky, O, M2, M) }, edge_delta(O, R2, P2),
-        compose(P1, P2, P_pos).
+        R1 = count : { nearer(Ky, D, M1, M) },
+        R2 = count : { nearer(Ky, O, M2, M) },
+        axis_delta(D, R1, R2, P_pos).
 }
 
 // The nonuniform tile arrangement a divider set induces — the divider-driven
@@ -971,7 +969,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     part_of(K, P, A, P_part) :-
         axis_of(D, A), opposite(D, D2),                 // the axis's two dirs
         part_idx(K, P, D, N1), part_idx(K, P, D2, N2),  // index from each
-        edge_delta(D, N1, Q1), edge_delta(D2, N2, Q2), compose(Q1, Q2, P_part).
+        axis_delta(D, N1, N2, P_part).
 
     // P's tile, parts on both axes glued.
     .decl tile_of(key: Key, p: Position, p_tile: Position)
