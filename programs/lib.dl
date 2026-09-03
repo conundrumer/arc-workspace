@@ -272,7 +272,8 @@ flip_of(AXIS_H, D4_LR).
 diag_flip_of(DAXIS_DG, D4_DG).
 diag_flip_of(DAXIS_AD, D4_AD).
 
-// Dir reached by a quarter turn in sense s. opposite is the half turn.
+// Dir reached by a quarter turn in sense s. opposite is the half turn;
+// the eighth turn is the corner diag_dirs puts between d and d_out.
 .decl turn(s: Sense, d: Dir, d_out: Dir)
 turn(SENSE_CW, DIR_T, DIR_R).
 turn(SENSE_CW, DIR_R, DIR_B).
@@ -453,6 +454,7 @@ divide_gap(P, A, N, K, G) :-
 // Distance t along a period of w (with gap g between periods) decomposes
 // into period index n and within-period offset k. Per-cell scalar peer of
 // `divide_by_size`, without the divisibility assertion.
+// k pinned to 0 states that t is a whole number of periods.
 .decl stride(t: number, w: number, g: number, n: number, k: number) inline
 stride(T, W, G, N, K) :-
     T >= 0,
@@ -463,7 +465,9 @@ stride(T, W, G, N, K) :-
 // Recompose axis-a tiles into a single extent — the inverse of divide, over
 // the same p_outer and p_inner. p_grid is axis-only on the same axis. With
 // gap > 0, only filled tile cells appear in p_grid — gap rows/cols are
-// absent.
+// absent. The assembled extent reads off any p_grid with `axis_dim`; an
+// AxisFrame (Frame2D for the 2D forms) over that extent holds the gap
+// cells as the cells no tile fills.
 .decl concat(p_outer: Position, p_inner: Position, a: Axis, gap: number,
              p_grid: Position) inline
 concat(P_outer, P_inner, A, G, P_grid) :-
@@ -942,7 +946,9 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 // The dense frame a sparse member set induces along an axis, with each
 // member's line in it — the order-canonical peer of AxisFrame, which
 // realizes a frame from its extent alone. Members are opaque and may span
-// several lines.
+// several lines; a line fed as its own member is the plain case, and `pos`
+// composed with a cell's across component carries the cell into the packed
+// frame.
 //
 // Flagged: assumes each key's member line sets separate cleanly along the
 // axis — no shared line, no interleaving. A pair that mixes breaks the
