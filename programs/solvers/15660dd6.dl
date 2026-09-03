@@ -116,13 +116,12 @@ stencil(D, P_col, P_intile, Col) :-
 
 // --- output ---
 
-// One band of the lattice: the lattice's extent along the columns, one panel
-// across.
+// One band of the lattice.
 .init out_frame = Frame2D<Unit>
 out_frame.extent($U(), A, N) :-
-    c.layout_axis(A), lattice.extents($U(), A, N, _).
+    c.layout_axis(A), lattice.extent($U(), A, N).
 out_frame.extent($U(), A_band, N) :-
-    c.layout_axis(A), perp(A, A_band), panel.extents(_, A_band, N, _).
+    c.layout_axis(A), perp(A, A_band), panel.extent(_, A_band, N).
 
 // A panel cell keeps its place along the columns and lands in the one band.
 .decl out_pos(p_col: Position, p_intile: Position, p: Position)

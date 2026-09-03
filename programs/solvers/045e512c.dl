@@ -84,10 +84,9 @@ step(Id, Delta, $Stride()) :- fits(Id, Delta, K), c.stride(K).
 
 // --- Abut ---
 
-.init sbox = BoxFrame<Unit>
+.init sbox = Bbox<Unit>
 sbox.cell($U(), P) :- shape(P).
 
-// The template's box is square.
 .decl shape_extent(n: number)
 shape_extent(N) :- sbox.extents($U(), _, N, N).
 

@@ -130,13 +130,11 @@ out(P, Col, Ch) :- parse.minority_rank(Ch, Col, Rk), col.pos(Ch, Rk, P).
     .init blocks = Components<Example>
     blocks.node(E, P) :- ink(E, P, _).
 
-    // Each block viewed from its own box, so the block's extents are the
-    // tile's.
-    .init box = BoxFrame<Block>
+    .init box = Bbox<Block>
     box.cell([E, Id], P) :- blocks.label(E, P, Id).
 
     .decl tile_dim(a: Axis, k: number)
-    tile_dim(A, K) :- box.extents(_, A, K, _).
+    tile_dim(A, K) :- box.extent(_, A, K).
 
     .type ED = [e: Example, d: Dir]
 

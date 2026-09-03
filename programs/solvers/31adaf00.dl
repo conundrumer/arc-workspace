@@ -24,14 +24,14 @@ bg_cell(P) :- in(P, Col), c.bg(Col).
 // Every pair of background cells, with the box it spans.
 .type Corners = [p: Position, q: Position]
 
-.init span = BoxFrame<Corners>
+.init span = Bbox<Corners>
 span.cell([P, Q], R) :- bg_cell(P), bg_cell(Q), ( R = P ; R = Q ).
 
 // Only a diagonal pair spans a square, so the pairs enumerate the frame's
 // squares.
 .decl square(b: Position, n: number)
 square(B, N) :-
-    span.margin(K, B), span.extents(K, _, N, N),  // the pair's box, N by N
+    span.margin(K, B), span.extents(K, _, N, N),
     c.min_side(M), N >= M.                        // big enough to draw
 
 .decl spoiled(b: Position)

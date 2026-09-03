@@ -67,7 +67,7 @@ home(P_home) :-
 .decl mirror(p: Position)
 mirror(P_mirror) :-
     move_dir(D), axis_of(D, A),
-    c.shape_color(Col), box.extents(Col, A, N, _),  // the shape's length along the slide
+    c.shape_color(Col), box.extent(Col, A, N),  // the shape's length along the slide
     home(P_home), jump(P_home, D, N, P_mirror).
 
 .decl paint(p: Position, col: Color)

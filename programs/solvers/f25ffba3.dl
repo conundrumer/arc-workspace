@@ -76,9 +76,7 @@ out(P_grid_out, Col, $Tile()) :-
     .decl ink(e: Example, p: Position, col: Color)
     ink(E, P, Col) :- pair_cell(E, P, Col), !c.bg(Col).
 
-    // The slab in its own frame, so its extent along the data axis is the
-    // slab's own depth.
-    .init slab = BoxFrame<Example>
+    .init slab = Bbox<Example>
     slab.cell(E, P) :- ink(E, P, _).
 
     // The data slab hugs one edge and stops short of the opposite one.
@@ -86,7 +84,7 @@ out(P_grid_out, Col, $Tile()) :-
     data_dir(D) :- slab.margin(_, M), dir_elem(D), dist_pair(M, D, K, K2), K < K2.
 
     .decl half_h(n: number)
-    half_h(N) :- data_dir(D), axis_of(D, A), slab.extents(_, A, N, _).
+    half_h(N) :- data_dir(D), axis_of(D, A), slab.extent(_, A, N).
 
     // The cut every tile reading below takes: the data edge's axis, and the
     // slab's depth as the tile size.

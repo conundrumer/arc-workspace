@@ -1336,11 +1336,6 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 
     .decl inner(key: Key, p: Position, p_inner: Position)
     inner(K, P, I) :- mf.inner(K, P, I).
-
-    // The box's size, wide: n1 along axis a, n2 across. Every cell of the
-    // box shares its frame, so any inner position serves.
-    .decl extents(key: Key, a: Axis, n1: number, n2: number)
-    extents(K, A, N1, N2) :- inner(K, _, I), axis_dims(I, A, N1, N2).
 }
 
 // Bounding box of a keyed cell set, from the min distance to each edge over
@@ -1379,6 +1374,17 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     .decl corner(key: Key, p: Position, diag: DiagDir)
     corner(K, P, Diag) :-
         diag_dirs(Diag, _, D1, D2), edge_cell(K, P, D1), edge_cell(K, P, D2).
+
+    // The box's extent along axis a.
+    .decl extent(key: Key, a: Axis, n: number)
+    extent(K, A, N) :-
+        cell(K, P), axis_dim(P, A, Ext),
+        axis_of(D, A), opposite(D, O), edge_min(K, D, M1), edge_min(K, O, M2),
+        N = Ext - M1 - M2.
+
+    // The box's size, wide: n1 along axis a, n2 across.
+    .decl extents(key: Key, a: Axis, n1: number, n2: number)
+    extents(K, A, N1, N2) :- extent(K, A, N1), perp(A, A2), extent(K, A2, N2).
 }
 
 // Connected components of a node set (4-adjacency), per key, each labeled by
