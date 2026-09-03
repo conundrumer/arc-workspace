@@ -32,7 +32,7 @@ When a decomposition's inner coordinate is also the output cell, name it by the 
 - First line: `// <task_id>`.
 - Second line, exactly one of:
     - `// concept: <terms>` — family representative. Terms from `concepts.md`, separated by spaces, the union over cases: setup terms plus each case's prior term.
-    - `// family: <task_id>` — family sibling: same body and Fit comp, fills differ. Points at the representative, the family's first-solved member. A sibling's header keeps only task-specific content.
+    - `// family: <task_id>` — family sibling: same body and Fit comp, fills may differ. Points at the representative, the family's first-solved member. A sibling's header keeps only task-specific content.
 - Next line, when one applies: `// shape: <terms>` — task shape terms from `shapes.md`.
 - `#include "../lib.dl"` at top.
 - `.comp Consts { ... }` declares task-wide data; `.init c = Consts` exposes it as `c.<rel>`.
@@ -120,7 +120,7 @@ A solver defines only two kinds of types: ADTs inside `Choice` (the type itself,
 - Use a lib unit only when the task has its concept. Needing part of its computation is not a reason to use it. If only one step is needed, write it with primitives or a local rule.
 - A new comp takes a `Key` type param; single-set sites key on `Unit` (`$U()`, in lib). An unkeyed comp forces duplication at the case boundary when a solver's cases share its pipeline: per-case `.init`s and dispatch rules that differ only in the case name.
     - "Differ only in the case name" bounds the sharing. A stage where cases differ in substance — one derives a value, one reads it from Consts — stays per-case, even when one derivation could feed every case.
-- Instance-level parameters stay unkeyed: a relation whose value is part of the instance's identity, not per-key data. Key one only when a task varies it per key.
+- Instance-level parameters stay unkeyed: a relation whose value is part of the instance's identity, not per-key data. Key one only when a task varies it per key. A parameter that varies per case is per-key data: key the comp by `Choice`.
 
 ## Multi-atom rules
 
