@@ -49,7 +49,7 @@ on_box_border(Id, P) :- box.inner(Id, P, P_inner), dir_elem(D), dist(P_inner, D,
 border_gap(Id) :- on_box_border(Id, P), !cell_of(Id, P).
 
 .decl has_interior(id: Ident)
-has_interior(Id) :- cell_of(Id, P), !on_box_border(Id, P).
+has_interior(Id) :- cell_of(Id, P), box.inner(Id, P, P_inner), gt(P_inner, ORIGIN).
 
 // --- marks ---
 
@@ -64,8 +64,8 @@ qualify(Id, $Ring()) :- square(Id), multi_cell(Id), !border_gap(Id), !has_interi
 
 .decl box_corner(id: Ident, diag: DiagDir, p: Position)
 box_corner(Id, Dg, P) :-
-    box.inner(Id, P, P_inner),                       // a cell of the box
-    diag_dir_elem(Dg), diag_dist(P_inner, Dg, _, 0, 0).   // at corner Dg
+    box.inner(Id, P, P_inner),                         // a cell of the box
+    diag_dir_elem(Dg), corner_dist(P_inner, Dg, 0).    // at corner Dg
 
 // The corner cells whose out-neighbors take the mark: the box's corners,
 // except $Corners keeps only those the object occupies.

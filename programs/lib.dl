@@ -320,6 +320,12 @@ displacement([T1, B1, L1, R1], [T2, B2, L2, R2],
 geq([T1, B1, L1, R1], [T2, B2, L2, R2]) :-
     T1 >= T2, B1 >= B2, L1 >= L2, R1 >= R2.
 
+// Pointwise > over edge distances: p is strictly inside the box that q
+// describes as margins. At q = ORIGIN, off the frame's border.
+.decl gt(p: Position, q: Position) inline
+gt([T1, B1, L1, R1], [T2, B2, L2, R2]) :-
+    T1 > T2, B1 > B2, L1 > L2, R1 > R2.
+
 // The delta relations below bind none of their direction: the caller
 // supplies d.
 

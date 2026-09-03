@@ -59,7 +59,7 @@ ring_pos(P_intile) :- panel.inner(_, _, P_intile), dir_elem(D), dist(P_intile, D
 
 .decl interior(id: Ident, p_intile: Position, col: Color)
 interior(Id, P_intile, Col) :-
-    panel.inner(Id, P, P_intile), !ring_pos(P_intile),  // inside the ring
+    panel.inner(Id, P, P_intile), gt(P_intile, ORIGIN),  // inside the ring
     in(P, Col).
 
 // A panel's column and band, as the two halves of its box placement.

@@ -30,13 +30,8 @@ comps.node($U(), P) :- ink(P).
 
 .init box = Bbox<Ident>
 box.cell(Id, P) :- comps.label($U(), P, Id).
-box.grid(Id, P) :- in(P, _), comps.label($U(), _, Id).
 
-// Box cell on the box boundary.
-.decl box_rim(id: Ident, p: Position)
-box_rim(Id, P) :- box.inside(Id, P), dir_elem(D), dist(P, D, K), box.edge_min(Id, D, K).
-
-interior(P, $Box()) :- box.inside(Id, P), !box_rim(Id, P).
+interior(P, $Box()) :- in(P, _), box.margin(_, M), gt(P, M).
 
 // --- $Erode ---
 
