@@ -753,7 +753,8 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     .decl clear(key: Key, p: Position, d: Dir8, k: number, src: Position)
     clear(Ky, P, D, K, Src) :- clear_cast(Ky, P, D, K, Src), cell(Ky, P).
 
-    // The first blocked cell of each cast, whether or not it is in the domain.
+    // The first blocked cell of each cast, past the mark itself, whether or
+    // not it is in the domain.
     .decl stop(key: Key, p: Position, d: Dir8, k: number, src: Position)
     stop(Ky, P, D, K, Src) :- _ahead(Ky, P, D, K, Src), blocked(Ky, P).
 }

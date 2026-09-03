@@ -26,16 +26,19 @@ ink_at(Across, P) :-
     in(P, Col), !c.bg(Col),
     c.axis(A), split(P, A, _, Across).
 
-// Marker-side sequences: per dir on the packing axis, the line's ink from
-// the marker out toward edge d, indexed by dist from the opposite edge;
-// the marker is rank 0.
+// The marker's sight along its line: the ink it reaches each way on the
+// packing axis, at its step count from the marker.
+.init sight = Ray<Position>
+sight.dir(Across, D) :- marker_at(Across, _), c.axis(A), axis_of(D, A).
+sight.cell(Across, P) :- ink_at(Across, P).
+sight.mark(Across, M) :- marker_at(Across, M).
+
+// Each side's sighted ink, ranked by step count. The marker is ink at step
+// 0, so it takes rank 0.
 .type Side = [p_across: Position, d: Dir]
 
 .init seq = Ordinal<Side>
-seq.idx_set([Across, D], K) :-
-    marker_at(Across, M), ink_at(Across, Q),      // marker and ink in one line
-    c.axis(A), axis_of(D, A), opposite(D, O),
-    dist(M, O, Km), dist(Q, O, K), K >= Km.       // at or beyond the marker toward d
+seq.idx_set([Across, D], K) :- sight.ray(Across, _, D, K, _).
 
 // Ink at rank r from the marker packs r cells out from it toward edge d.
 .decl packed(p: Position)
