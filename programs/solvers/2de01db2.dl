@@ -56,3 +56,12 @@ out(P, Col, Ch) :-
     ( main(P_line, Col, Ch), C_in != Col              // off the line's main color — takes it
     ; main(P_line, C_in, Ch), c.bg(Col)               // on it — erased
     ).
+
+// --- fit ---
+
+.comp Fit {
+    // The main colors, read off the outputs: an output cell is bg or its
+    // line's main.
+    .decl ink(c: Color)
+    ink(Col) :- ex_out(_, _, Col), !c.bg(Col).
+}
