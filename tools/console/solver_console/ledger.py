@@ -1,16 +1,20 @@
-"""The append-only record of stage landings, and the triage flags kept
-beside it."""
+"""The append-only record of stage landings and rulings, and the triage
+flags kept beside it."""
 
 import json
 import sys
 
-from . import config, store
+from . import config, solvers, store
 
-# One line per stage landing, append-only. Other writers add lines of the same
-# shape — a backfill pass records the passes made before the ledger existed,
-# under stage `legacy` — so readers take the fields they know and skip the rest.
+# One line per stage landing, append-only, and one per ruling: `approved`
+# when the user approves a solver, `dismissed` when they rule it needs no
+# pass. Other writers add lines of the same shape — a backfill pass records
+# the passes made before the ledger existed, under stage `legacy`, and the
+# approvals those passes and the console's commits imply — so readers take the
+# fields they know and skip the rest.
 
-FABLE = "claude-fable"
+RULINGS = ("approved", "dismissed")
+STAGE_ORDER = {"legacy": 0, "create": 1, "refine": 2, "finalize": 3}
 
 
 def ledger_append(row: dict) -> None:

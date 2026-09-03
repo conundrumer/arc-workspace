@@ -12,6 +12,15 @@ the file is only ever appended to — the live console appends to the same file.
 
     uv run python tools/console/backfill_ledger.py --dry-run
     uv run python tools/console/backfill_ledger.py
+
+`--approvals` recovers the approvals instead. The console commits only
+approved solvers and names them in its subject, so each id in such a subject
+gets an "approved" line with source "git", dated to its earliest such commit.
+A solver written by fable before the console existed was approved by hand, so
+a task with a legacy line on a fable model gets one with source "legacy",
+dated to that line. A task that already has an "approved" line is skipped.
+
+    uv run python tools/console/backfill_ledger.py --approvals --dry-run
 """
 
 from __future__ import annotations
@@ -19,6 +28,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 from collections import Counter
 from pathlib import Path
 
@@ -80,6 +90,63 @@ def scan_transcript(path: Path, tasks: set[str]) -> dict[str, Counter[str]]:
     return per_task
 
 
+APPROVAL_SUBJECT = re.compile(r"^(?:Add|Update) ")
+TASK_ID = re.compile(r"\b[0-9a-f]{8}\b")
+
+
+def git_approvals() -> dict[str, int]:
+    """Task id -> the time of the earliest console commit that named it."""
+    out = subprocess.run(["git", "log", "--format=%ct%x09%s"], cwd=REPO,
+                         capture_output=True, text=True, check=True).stdout
+    table: dict[str, int] = {}
+    for line in out.splitlines():
+        ts, _, subject = line.partition("\t")
+        if not APPROVAL_SUBJECT.match(subject):
+            continue
+        for tid in TASK_ID.findall(subject):
+            table[tid] = int(ts)     # newest first: the last seen is the earliest
+    return table
+
+
+def ledger_rows(ledger: Path) -> list[dict]:
+    if not ledger.exists():
+        return []
+    out = []
+    with ledger.open(errors="replace") as fh:
+        for line in fh:
+            try:
+                row = json.loads(line)
+            except (ValueError, TypeError):
+                continue
+            if isinstance(row, dict) and row.get("task"):
+                out.append(row)
+    return out
+
+
+def backfill_approvals(ledger: Path, dry_run: bool) -> None:
+    rows = ledger_rows(ledger)
+    have = {str(row["task"]) for row in rows if row.get("stage") == "approved"}
+    found: dict[str, tuple[int, str]] = {}
+    for row in rows:
+        if row.get("stage") == "legacy" and str(row.get("model") or "").startswith(FABLE):
+            found[str(row["task"])] = (int(row.get("ts") or 0), "legacy")
+    for tid, ts in git_approvals().items():
+        found[tid] = (ts, "git")
+    fresh = [{"task": tid, "stage": "approved", "backend": None, "model": None,
+              "session": None, "ts": ts, "source": source}
+             for tid, (ts, source) in sorted(found.items())
+             if tid not in have and (SOLVER_DIR / f"{tid}.dl").exists()]
+    for row in fresh:
+        print(f"{row['task']}  approved  {row['ts']}  {row['source']}")
+    if not dry_run and fresh:
+        ledger.parent.mkdir(parents=True, exist_ok=True)
+        with ledger.open("a") as fh:
+            for row in fresh:
+                fh.write(json.dumps(row) + "\n")
+    print(f"{len(have)} already approved, "
+          f"{len(fresh)} {'to append' if dry_run else 'appended'}")
+
+
 def existing_pairs(ledger: Path) -> set[tuple[str, str]]:
     pairs: set[tuple[str, str]] = set()
     if not ledger.exists():
@@ -102,7 +169,12 @@ def main() -> None:
     ap.add_argument("--dry-run", action="store_true", help="print, do not write")
     ap.add_argument("--ledger", type=Path, default=LEDGER)
     ap.add_argument("--transcripts", type=Path, default=TRANSCRIPT_DIR)
+    ap.add_argument("--approvals", action="store_true",
+                    help="recover approvals from the console's commits instead")
     args = ap.parse_args()
+    if args.approvals:
+        backfill_approvals(args.ledger, args.dry_run)
+        return
 
     tasks = {p.stem for p in SOLVER_DIR.glob("*.dl")}
     transcripts = sorted(args.transcripts.glob("*.jsonl"))

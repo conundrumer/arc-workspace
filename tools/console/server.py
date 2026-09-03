@@ -222,6 +222,8 @@ class Handler(BaseHTTPRequestHandler):
             res = backlog.act_finalize(body)
         elif route == "/api/dismiss":
             res = backlog.act_dismiss(body)
+        elif route == "/api/approve-solver":
+            res = backlog.act_approve_solver(body)
         else:
             return self.reply({"error": "not found"}, 404)
         self.reply(res, 400 if "error" in res else 200)

@@ -3412,13 +3412,27 @@ def test_the_ledger_reader_tolerates_other_writers(srv):
         '{"task": "b", "stage": "create", "model": "claude-opus-5", "ts": 2}\n')
     rows = srv.ledger_rows()
     assert [r["task"] for r in rows] == ["a", "b"]
-    assert srv.fabled(rows) == {"a"}
+    assert srv.ruled(rows) == set()
 
 
-def test_a_finalize_landing_counts_as_the_fable_pass(srv):
-    srv.ledger_append({"task": "c", "stage": "finalize", "model": "claude-opus-5"})
-    srv.ledger_append({"task": "d", "stage": "refine", "model": "claude-opus-5"})
-    assert srv.fabled(srv.ledger_rows()) == {"c"}
+def test_a_ruling_takes_a_task_off_the_lens(srv):
+    srv.ledger_append({"task": "c", "stage": "finalize", "model": "claude-fable-5"})
+    srv.ledger_append({"task": "d", "stage": "approved", "model": None, "source": "user"})
+    srv.ledger_append({"task": "e", "stage": "dismissed", "model": None, "source": "user"})
+    assert srv.ruled(srv.ledger_rows()) == {"d", "e"}
+
+
+def test_the_passes_name_the_model_of_each_stage_latest_landing(srv):
+    srv.ledger_append({"task": "a", "stage": "refine", "model": "claude-opus-5", "ts": 2})
+    srv.ledger_append({"task": "a", "stage": "create", "model": "claude-opus-5", "ts": 1})
+    srv.ledger_append({"task": "a", "stage": "refine", "model": "claude-fable-5", "ts": 3})
+    srv.ledger_append({"task": "a", "stage": "approved", "model": None, "ts": 4})
+    srv.ledger_append({"task": "b", "stage": "legacy", "model": "claude-fable-5", "ts": 1})
+    srv.ledger_append({"task": "b", "stage": "create", "backend": "codex",
+                       "model": "gpt-5.6-sol", "ts": 2})
+    assert srv.passes_of(srv.ledger_rows()) == {
+        "a": [{"stage": "create", "model": "opus"}, {"stage": "refine", "model": "fable"}],
+        "b": [{"stage": "legacy", "model": "fable"}, {"stage": "create", "model": "codex"}]}
 
 
 # ---------- flags ----------
@@ -3483,14 +3497,40 @@ def backlog_solver(srv, item_id, text="// concept: a shape\n"):
     write_solver(srv, item_id, text)
 
 
-def test_the_backlog_holds_the_solvers_with_no_fable_pass(srv):
-    for tid in ("aaa", "fff", "ggg"):
+def test_every_solver_not_ruled_on_is_unfinalized(srv):
+    for tid in ("aaa", "fff", "ggg", "hhh"):
         backlog_solver(srv, tid)
     srv.ledger_append({"task": "fff", "stage": "finalize",
                        "model": "claude-opus-5", "source": "console"})
     srv.ledger_append({"task": "ggg", "stage": "legacy",
                        "model": "claude-fable-5", "source": "backfill"})
-    assert [r["id"] for r in srv.backlog_view()] == ["aaa"]
+    srv.ledger_append({"task": "hhh", "stage": "finalize",
+                       "model": "claude-fable-5", "source": "console"})
+    srv.ledger_append({"task": "hhh", "stage": "approved", "model": None,
+                       "source": "console"})
+    rows = {r["id"]: r for r in srv.backlog_view()}
+    assert list(rows) == ["aaa", "fff", "ggg"]
+    assert rows["fff"]["passes"] == [{"stage": "finalize", "model": "opus"}]
+    assert rows["aaa"]["passes"] == []
+
+
+def test_approving_a_solver_from_the_lens_is_a_ledger_line(srv):
+    for tid in ("aaa", "bbb"):
+        backlog_solver(srv, tid)
+    assert srv.act_approve_solver({"id": "aaa"}).get("ok")
+    assert [r["id"] for r in srv.backlog_view()] == ["bbb"]
+    row = [r for r in srv.ledger_rows() if r["task"] == "aaa"][0]
+    assert row["stage"] == "approved" and row["source"] == "user"
+    assert "no solver" in srv.act_approve_solver({"id": "zzz"})["error"]
+
+
+def test_the_oldest_commit_breaks_the_last_tie(srv, monkeypatch):
+    for tid in ("aaa", "bbb", "ccc"):
+        backlog_solver(srv, tid)
+    monkeypatch.setattr(srv, "solver_ages", lambda: {"aaa": 200, "bbb": 100})
+    rows = srv.backlog_view()
+    assert [r["id"] for r in rows] == ["bbb", "aaa", "ccc"]   # ccc: not committed yet
+    assert [r["added"] for r in rows] == [100, 200, None]
 
 
 def test_dismiss_drops_a_task_from_the_backlog(srv):
@@ -3534,6 +3574,7 @@ def test_the_backlog_order_bands(srv):
     assert [r["id"] for r in rows] == [
         "t11",   # no solver
         "t10",   # P0
+        "t12",   # an entry
         "t09",   # flag 1
         "t08",   # flag 2
         "t07",   # P1
@@ -3605,7 +3646,6 @@ def test_a_dismissed_solverless_task_leaves_the_backlog(srv):
     assert [r["id"] for r in srv.backlog_view()] == ["aaa"]
     srv.ledger_append({"task": "aaa", "stage": "dismissed",
                        "model": None, "source": "user"})
-    srv.BACKLOG_CACHE["at"] = 0.0
     assert srv.backlog_view() == []
 
 
@@ -3652,13 +3692,16 @@ def test_start_finalize_advances_a_refine_done_item(srv, monkeypatch):
     assert phase == "finalize"
 
 
-def test_the_backlog_scan_is_reused_between_polls(srv):
+def test_an_unfinalized_row_is_rebuilt_only_when_its_files_change(srv):
     backlog_solver(srv, "aaa")
     srv.backlog_view()
+    first = srv.ROW_CACHE["aaa"]
     backlog_solver(srv, "bbb")
-    assert [r["id"] for r in srv.backlog_view()] == ["aaa"]   # inside the TTL
-    srv.BACKLOG_CACHE["at"] = 0.0
     assert [r["id"] for r in srv.backlog_view()] == ["aaa", "bbb"]
+    assert srv.ROW_CACHE["aaa"] is first
+    backlog_solver(srv, "aaa", "// concept: a shape, revised\n")
+    assert srv.backlog_view()[0]["title"] == "concept: a shape, revised"
+    assert srv.ROW_CACHE["aaa"] is not first
 
 
 def test_a_flag_shows_up_without_waiting_for_the_scan(srv):
@@ -3723,7 +3766,6 @@ def test_a_started_finalize_pass_lands_for_review(srv, monkeypatch):
     srv.finish_turn(it, {"result": "the review"}, None, time.time(),
                     "finalize", False)
     assert it["state"] == srv.NEEDS_REVIEW
-    assert srv.fabled(srv.ledger_rows()) == {"aaa"}
     assert srv.backlog_view() == []
 
 

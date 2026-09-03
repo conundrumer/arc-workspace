@@ -191,8 +191,9 @@ body.view-final #main { grid-template-columns:330px minmax(360px,520px) 1fr; }
   background:var(--st-muted-bg); color:var(--st-muted);
   border:1px solid var(--st-muted);
 }
-/* backlog rows: tasks with no fable pass, not console items */
+/* unfinalized rows: solvers the user has not ruled on, not console items */
 .row.bk { cursor:pointer; }
+.bkmore { margin:6px 12px; }
 .peektext { white-space:pre-wrap; font-size:12px; line-height:1.55; padding:10px 14px; }
 .ttl { font-family:ui-monospace,Menlo,monospace; font-size:10.5px; display:inline-flex; align-items:center; gap:4px; }
 .ttl::before { content:""; width:6px; height:6px; border-radius:50%; background:currentColor; }
@@ -213,7 +214,6 @@ body.view-final #main { grid-template-columns:330px minmax(360px,520px) 1fr; }
 #judge-scroll { flex:1; overflow-y:auto; padding:10px 16px 6px; }
 .dhead { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 .dhead .tid { font-family:ui-monospace,Menlo,monospace; font-size:17px; font-weight:600; }
-.dhead .title { color:var(--muted); font-size:12.5px; }
 .sessline {
   display:flex; align-items:center; gap:8px; margin-top:6px; font-size:11px; color:var(--muted);
   font-family:ui-monospace,Menlo,monospace; flex-wrap:wrap;
@@ -785,7 +785,7 @@ function Thumb({task}){
 /* ---------- rail ---------- */
 function ItemRow({it, sel, task, onSelect}){
   const ci=cacheInfo(it);
-  const sub = it.title || (it.est ? "est "+it.est : "");
+  const sub = it.est ? "est "+it.est : "";
   return html`<div class=${"row"+(sel?" sel":"")} tabIndex="0"
       onClick=${()=>onSelect(it.id)}
       onKeyDown=${e=>{ if(e.key==="Enter") onSelect(it.id); }}>
@@ -819,7 +819,7 @@ function BkRow({b, sel, task, metric, onSelect}){
           title="the pass wrote no solver">no solver</span>`}
         <${CompBadges} x=${b}/><${CalloutBadge} x=${b}/>
       </div>
-      <div class="sub">${b.title||""}</div>
+      <div class="sub mono" title=${(b.passes||[]).map(p=>p.stage+": "+p.model).join("\n")}>${passLabel(b)}</div>
     </div>
     ${metric!=null && html`<div class="side"><span class="bksz mono">${metric}</span></div>`}
   </div>`;
@@ -1092,7 +1092,6 @@ function DetailHead({it, cli, tab, badges, canAdvance, canResume, nxt, onTab, on
       ${it.updated && html`<span class="badge-upd">UPDATED</span>`}
       ${it.dirty && html`<span class="badge-dirty">CLEANUP PENDING</span>`}
       <${CompBadges} x=${it}/><${CalloutBadge} x=${it}/>
-      <span class="title">${it.title||""}</span>
     </div>
     <div class="stabs">
       ${stageNames(it).filter(s=>hasTab(it,s)).map(s=>html`
@@ -1112,7 +1111,7 @@ function DetailHead({it, cli, tab, badges, canAdvance, canResume, nxt, onTab, on
         <button class="copybtn" title="hand the report on"
           onClick=${()=>post("/api/advance",{id:it.id})}>${"advance · "+stageLabel(it,nxt)}</button>`}
       ${canAdvance && nxt==="finalize" && html`
-        <button class="copybtn" title="record that no fable pass is needed"
+        <button class="copybtn" title="record that no finalize pass is needed"
           onClick=${()=>onDismiss(it.id)}>✕ dismiss</button>`}
       ${it.active
         ? html`<button class="copybtn" onClick=${()=>post("/api/kill",{id:it.id})}>stop</button>`
@@ -1135,12 +1134,12 @@ function DetailHead({it, cli, tab, badges, canAdvance, canResume, nxt, onTab, on
   </div>`;
 }
 
-function PeekHead({d, onDismiss}){
+function PeekHead({d, onDismiss, onApprove}){
   return html`<div class="dhead">
     <span class="tid">${d.id}</span>
-    <span class="chip queued"><span class="dot"></span>backlog</span>
-    <span class="title">${d.title||""}</span>
-    <button class="copybtn" title="dismiss — record that no fable pass is needed"
+    <button class="copybtn" title="approve — record the ruling"
+      onClick=${()=>onApprove(d.id)}>✓ approve</button>
+    <button class="copybtn" title="dismiss — record that no finalize pass is needed"
       onClick=${()=>onDismiss(d.id)}>✕ dismiss</button>
   </div>`;
 }
@@ -1348,11 +1347,12 @@ function App(){
         const k=bkOrder+"_size", av=a[k]??-1, bv=b[k]??-1;
         return bv-av || (a.id<b.id?-1:1);
       }), [backlog, bkOrder]);
-  /* one selection over both sections: in-pass items, then the backlog rows.
-     An id that is both a live item and a backlog row resolves to the item. */
+  const bkShown=useMemo(()=>bkAll ? bkSorted : bkSorted.slice(0, BK_SHOWN), [bkSorted, bkAll]);
+  /* one selection over both sections: in-pass items, then the unfinalized rows
+     on show. An id that is both a live item and a row resolves to the item. */
   const curOrder=useMemo(()=>view===FINAL
-    ? itemOrder.concat(bkSorted.map(b=>b.id).filter(id=>!itemOrder.includes(id)))
-    : itemOrder, [itemOrder, bkSorted, items, view]);
+    ? itemOrder.concat(bkShown.map(b=>b.id).filter(id=>!itemOrder.includes(id)))
+    : itemOrder, [itemOrder, bkShown, items, view]);
 
   const selItem = items.find(it=>it.id===selId) || null;
   const selBk = !selItem && view===FINAL ? (backlog.find(b=>b.id===selId)||null) : null;
@@ -1488,10 +1488,21 @@ function App(){
       setTimeout(()=>setWaveBusy(false), 5000);   // matches WAVE_DEBOUNCE
     }
   },[]);
+  /* the setting is the server's; the select mirrors it, and the next poll
+     confirms an edit */
+  const onPipeline=useCallback(async(name, word)=>{
+    const r=await post("/api/pipeline",{[name]:word});
+    if(r.ok) toast(name+" runs "+word+" from the next wave");
+  },[]);
 
   const onDismiss=useCallback(async id=>{
-    if(!confirm("Drop "+id+" from the backlog? A ledger line records it as needing no fable pass.")) return;
+    if(!confirm("Dismiss "+id+"? A ledger line records that it needs no finalize pass.")) return;
     await post("/api/dismiss",{id});
+    fetchBacklog();
+  },[fetchBacklog]);
+  const onApprove=useCallback(async id=>{
+    if(!confirm("Approve "+id+"? A ledger line records the ruling.")) return;
+    await post("/api/approve-solver",{id});
     fetchBacklog();
   },[fetchBacklog]);
 
@@ -1554,7 +1565,7 @@ function App(){
     return ()=>clearInterval(h);
   },[]);
   useEffect(()=>{ ttlWatch(live.current.items); },[tick]);
-  /* the backlog scan reads every solver, so it is polled only while its lens is
+  /* the scan stats every solver, so it is polled only while its lens is
      open, and slowly: flags and started passes refresh it on the spot */
   useEffect(()=>{
     const h=setInterval(fetchBacklog, 15000);
@@ -1565,7 +1576,7 @@ function App(){
   useEffect(()=>{
     document.body.classList.toggle("view-final", view===FINAL);
     if(view===FINAL) fetchBacklog();
-    else setBacklog([]);
+    else { setBacklog([]); setBkAll(false); }
   },[view, fetchBacklog]);
 
   /* ---- selection stays on something that exists ---- */
@@ -1690,7 +1701,7 @@ function App(){
       feedKey=${selItem.id+"|"+tab} now=${Date.now()/1000}
       showRun=${(selItem.busy||{})[tab] || (selItem.active && !selItem.turnPhase)}/>`;
   } else if(selBk){
-    head = peek ? html`<${PeekHead} d=${peek} onDismiss=${onDismiss}/>` : null;
+    head = peek ? html`<${PeekHead} d=${peek} onDismiss=${onDismiss} onApprove=${onApprove}/>` : null;
     body = peek ? html`<${PeekBody} key="peek" d=${peek}/>`
                 : html`<div id="judge-scroll" key="peek"></div>`;
   } else {

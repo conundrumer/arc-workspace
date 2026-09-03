@@ -6,9 +6,8 @@ import subprocess
 import threading
 import time
 import uuid
-from pathlib import Path
 
-from . import config, overnight, prompts, solvers, store, workers
+from . import config, ledger, overnight, prompts, solvers, store, workers
 
 
 def submit_comment(it: dict, text: str, sess: str | None = None) -> None:
@@ -281,6 +280,7 @@ def act_commit() -> dict:
         if out.returncode != 0:
             return {"error": "git commit failed: " + (out.stderr or out.stdout).strip()[-200:]}
         msgs = [msg]
+        ledger.record_approvals(sorted(ids), int(store.now()))
         for it in store.STATE["items"]:
             if it["id"] in ids:
                 it["state"] = store.COMMITTED

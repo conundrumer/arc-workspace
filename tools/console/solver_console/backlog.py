@@ -1,5 +1,7 @@
-"""The finalize backlog: the solvers no fable pass has been over yet."""
+"""The unfinalized solvers: every solver on disk the user has not ruled
+on."""
 
+import subprocess
 import time
 
 from . import config, ledger, prompts, solvers, store, workers
@@ -17,6 +19,7 @@ ROW_CACHE: dict[str, tuple[tuple, dict]] = {}
 
 def backlog_row(item_id: str, proposals: str, ts_size: int | None,
                 no_solver: bool = False) -> dict:
+    """What a row holds from the task's files."""
     comps = solvers.comps_of(item_id)
     calls = solvers.task_callouts(item_id)
     return {"id": item_id, "title": solvers.title_of(item_id), "comps": comps,
@@ -119,9 +122,9 @@ def backlog_scan() -> list[dict]:
         if path.name.startswith("."):
             continue
         item_id = path.stem
-        if item_id in done:
+        if item_id in settled:
             continue
-        rows.append(backlog_row(item_id, proposals, ts.get(item_id)))
+        rows.append(cached_row(item_id, proposals, prop_key, ts.get(item_id)))
     # A pass that wrote no solver leaves the glob nothing to find, so the task
     # needing a ruling most is the one the scan cannot reach. The reports carry
     # it: the stage landed, and its account of why stands in for the file.
@@ -142,8 +145,8 @@ def backlog_scan() -> list[dict]:
 
 def finalize_ready(it: dict) -> bool:
     """The wave chain has landed everything before finalize, so the task ranks
-    in the backlog while the item still sits in the console — no approval or
-    commit required."""
+    among the unfinalized solvers while the item still sits in the console — no
+    approval or commit required."""
     nxt = store.next_stage(it, it["phase"])
     return (it["state"] in (store.NEEDS_REVIEW, store.APPROVED) and not store.active(it)
             and nxt is not None and nxt["name"] == "finalize"
@@ -152,9 +155,6 @@ def finalize_ready(it: dict) -> bool:
 
 def backlog_view() -> list[dict]:
     with store.LOCK:
-        at = time.monotonic()
-        if at - BACKLOG_CACHE["at"] > BACKLOG_TTL:
-            BACKLOG_CACHE.update(at=at, rows=backlog_scan())
         table = ledger.flags()
         held = {it["id"] for it in store.STATE["items"]
                 if it["state"] != store.COMMITTED and not finalize_ready(it)}
@@ -177,23 +177,32 @@ def backlog_view() -> list[dict]:
                                solvers.callout_weight(row["callout_rank"]),
                                0 if row["comps"] else 1,
                                -row["callout_act"], -row["callout_n"],
+                               row["added"] if row["added"] is not None else float("inf"),
                                row["id"]))
     return rows
 
 
-def act_dismiss(body: dict) -> dict:
-    """Drop a task from the finalize backlog: a ledger line records the ruling
-    that it needs no fable pass. Deleting that line by hand restores it."""
+def rule(body: dict, stage: str) -> dict:
+    """Record the user's ruling on a solver as a ledger line, which takes it
+    off the lens. Deleting that line by hand restores it."""
     item_id = str(body.get("id") or "").strip()
     if not item_id or not solvers.solver_path(item_id).exists():
         return {"error": f"no solver for {item_id}"}
-    ledger.ledger_append({"task": item_id, "stage": "dismissed", "backend": None,
+    ledger.ledger_append({"task": item_id, "stage": stage, "backend": None,
                           "model": None, "session": None, "ts": int(time.time()),
                           "source": "user"})
-    with store.LOCK:
-        BACKLOG_CACHE["at"] = 0.0
     store.bump()
     return {"ok": True}
+
+
+def act_dismiss(body: dict) -> dict:
+    """Rule that a task needs no finalize pass."""
+    return rule(body, "dismissed")
+
+
+def act_approve_solver(body: dict) -> dict:
+    """Approve a solver from the lens, one no item holds."""
+    return rule(body, "approved")
 
 
 def act_finalize(body: dict) -> dict:
@@ -235,7 +244,6 @@ def act_finalize(body: dict) -> dict:
                 store.STATE["items"].remove(it)
                 return {"error": f"could not start the worker: {exc}"}
             seeded_names = [name for name, _ in pairs]
-        BACKLOG_CACHE["at"] = 0.0
     store.bump()
     if seeded_names is None:
         return {"ok": True, "id": item_id, "advanced": True}
