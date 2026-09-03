@@ -1,6 +1,7 @@
 """The actions the console takes on an item, and the commit that ends a
 round."""
 
+import json
 import subprocess
 import threading
 import time
@@ -290,17 +291,20 @@ def act_commit() -> dict:
                              cwd=config.ROOT, capture_output=True, text=True)
         leftovers = any(not l.startswith("??") for l in chk.stdout.splitlines())
         if leftovers and not config.FAKE:
-            store.COMMITTER["running"] = True
-            store.COMMITTER["note"] = None
-            threading.Thread(target=run_committer, args=(prompts.append_path(),),
-                             daemon=True).start()
+            store.COMMITTER.update(running=True, note=None, started=time.time(),
+                                   feed=[])
+            threading.Thread(target=run_committer, daemon=True).start()
             msgs.append("committer running…")
     store.bump()
     return {"ok": True, "msg": " + ".join(msgs)}
 
 
-def run_committer(append: Path) -> None:
-    """One-shot session that commits worker fallout with judged messages."""
+def run_committer() -> None:
+    """One-shot session that commits worker fallout with judged messages.
+
+    It reads the diffs and the log, so it takes none of the worker appendix:
+    that one carries the worker's own rule of no git writes.
+    """
     before = subprocess.run(["git", "rev-parse", "HEAD"], cwd=config.ROOT,
                             capture_output=True, text=True).stdout.strip()
     cmd = [config.CLAUDE, "-p", config.COMMIT_BRIEF, *config.COMMITTER_FLAGS]
