@@ -294,6 +294,8 @@ def launch(it: dict, message: str, phase: str, trigger: str | None = None,
     # behind them, for the next real turn to deliver.
     slash = message.startswith("/")
     rv = it.get("reverted")
+    key = (it["id"], phase)
+    worker = store.PROCS.get(key)
     if slash:
         pass
     elif rv and rv.get("phase") == phase:
@@ -308,13 +310,23 @@ def launch(it: dict, message: str, phase: str, trigger: str | None = None,
             message = ("<system-reminder>programs/solvers/"
                        f"{it['id']}.dl changed on disk since your last turn. "
                        "Re-read before editing.</system-reminder>\n\n" + message)
+        # A resident worker keeps the projection its system prompt was built
+        # from, so its cached prefix holds; it hears that the sources moved on.
+        if worker is not None and str(prompts.append_path()) != it["append"]:
+            message = ("<system-reminder>The projection in your system prompt "
+                       "is behind programs/lib.dl or docs/wf-solver. Before you "
+                       "use a primitive, read `uv run python scripts/context.py` "
+                       "or the lib.dl sections you need.</system-reminder>\n\n"
+                       + message)
     it["last_turn_phase"] = phase
-    key = (it["id"], phase)
-    worker = store.PROCS.get(key)
     if worker is None:
         if it["sessions"].get(phase):
             store.say(it, store.event("worker restarting — resuming its session"),
                       sess=phase)
+        # A fresh process has no cached prefix to lose, so it reads the
+        # projection as it stands; under unchanged sources the content hash
+        # returns the same file.
+        it["append"] = str(prompts.append_path())
         worker = spawn_worker(it, phase)
     start_turn(it, worker, phase, trigger=trigger, handoff=handoff, slash=slash)
     worker["outbound"].put_nowait({"type": "user",

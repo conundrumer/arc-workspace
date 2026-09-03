@@ -495,6 +495,34 @@ def test_a_new_stage_reads_the_projection_as_it_stands(srv, monkeypatch):
     assert it["append"] == str(srv.append_path())
 
 
+def test_a_respawn_reads_the_projection_as_it_stands(srv, monkeypatch):
+    read = []
+
+    def spawn(it, phase):
+        read.append(it["append"])
+        return worker(srv, it, phase)
+
+    monkeypatch.setattr(srv, "spawn_worker", spawn)
+    it = item(srv, "a", srv.NEEDS_REVIEW, append="/stale/appendix.md")
+    srv.launch(it, "look again", "refine")
+    assert read == [str(srv.append_path())]
+
+
+def test_a_resident_worker_hears_the_projection_moved_on(srv):
+    it = item(srv, "a", srv.NEEDS_REVIEW, append="/stale/appendix.md")
+    w = worker(srv, it)
+    srv.launch(it, "look again", "refine")
+    sent = w["outbound"].get_nowait()["message"]["content"]
+    assert sent.startswith("<system-reminder>The projection in your system prompt "
+                           "is behind programs/lib.dl or docs/wf-solver.")
+    assert sent.endswith("</system-reminder>\n\nlook again")
+    # the prefix its system prompt was built from stays, so its cache holds
+    assert it["append"] == "/stale/appendix.md"
+    it["append"] = str(srv.append_path())
+    srv.launch(it, "look again", "refine")
+    assert w["outbound"].get_nowait()["message"]["content"] == "look again"
+
+
 def test_advance_launches_the_next_stage_with_the_report(srv, monkeypatch):
     sent = []
     monkeypatch.setattr(srv, "launch",
