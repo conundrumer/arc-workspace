@@ -1,20 +1,23 @@
 """Delete structure from a solver and report what the pairs still accept."""
 
 import re
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 
 from arc.task import load as load_task
 from dl.dlparse import TOP, Decl, Index, ParseError, TypeDecl, parse
 from dl.facts import grid_to_facts, parse_output
 from dl.fit import fit_check
+from dl.lint import _lib_source
 from dl.paths import SOLVERS_DIR
+from dl.rewrite_lint import _elem_tables
 from dl.solve import _profile, res_out
 from dl.souffle import _pool_workers, _run_source
 from dl.source import _comp_span, build_source
 
 NEG_ATOM_RE = re.compile(r"(?<![=!])!(?!=)\s*[\w.]+\s*\(")
 ATOM_RE = re.compile(r"(?<![\w.$])[\w.]+\s*\(")
+ENUM_RE = re.compile(r"(\w+_elem)\s*\(\s*([A-Za-z]\w*)\s*\)")
 UNGROUNDED_RE = re.compile(r"^Error: Ungrounded variable ", re.M)
 
 # What can stand immediately before a body atom: a disjunction's open
@@ -27,7 +30,17 @@ ATOM_LEAD = ",;("
 CASE_COLUMN = "case column"
 UNPROBED_CASE = "unprobed case column"
 
+# The kind a positive `*_elem` atom reports under when another positive
+# atom of its rule carries its variable: the readable form of a
+# per-member test, so its deletion makes no claim about the pairs.
+BOUND_ENUMERATOR = "bound enumerator"
+
+# The kind the solver's Choice type reports under when the pairs never
+# part its cases and no case column stood in for the claim.
+UNEXERCISED_CASES = "unexercised cases"
+
 type Deletion = tuple[int, str, str, str]  # lineno, kind, text, modified source
+type Finding = tuple[int, str, str]  # lineno, kind, text
 
 
 def _rule_spans(source: str, fit: bool = False) -> list[tuple[int, int]]:
@@ -168,6 +181,13 @@ def deletions(source: str, fit: bool = False) -> Iterator[Deletion]:
     to one line). With `fit`, the deletions come from the Fit comp's
     rules; otherwise from the rest.
 
+    A positive atom over a lib `*_elem` relation whose one variable
+    another positive atom of the rule carries deletes under
+    BOUND_ENUMERATOR instead of 'atom'. The other atom binds the
+    variable, so the enumerator is the readable form of a per-member
+    test, and its deletion changing nothing says nothing about the
+    pairs.
+
     A deletion with no syntactic form — a negation that is the whole of
     a disjunct, say — is skipped rather than yielded malformed.
 
@@ -181,8 +201,22 @@ def deletions(source: str, fit: bool = False) -> Iterator[Deletion]:
             yield item
 
 
+def _bound_enumerator(
+    rule: str, span: tuple[int, int], spans: list[tuple[int, int]],
+    elems: frozenset[str],
+) -> bool:
+    """True when the atom at `span` is `x_elem(V)` over a lib elem
+    relation and another of the rule's positive atoms carries `V`."""
+    m = ENUM_RE.fullmatch(rule[span[0]:span[1]])
+    if m is None or m.group(1) not in elems:
+        return False
+    var = re.compile(rf"(?<![\w.$]){re.escape(m.group(2))}(?!\w)")
+    return any(var.search(rule[s:e]) for s, e in spans if (s, e) != span)
+
+
 def _variants(source: str, fit: bool) -> Iterator[Deletion]:
     lines = source.splitlines()
+    elems = frozenset(_elem_tables(_lib_source())[0])
     for a, b in _rule_spans(source, fit):
         rule = " ".join(ln.split("//")[0].strip() for ln in lines[a:b + 1])
         head = rule.split(":-")[0].strip()
@@ -193,9 +227,13 @@ def _variants(source: str, fit: bool) -> Iterator[Deletion]:
             atom = rule[m.start():k + 1]
             modified = lines[:a] + [_drop_atom(rule, m.start(), k + 1)] + lines[b + 1:]
             yield (a + 1, "negation", atom, "\n".join(modified) + "\n")
-        for s, e in _positive_atoms(rule):
+        spans = list(_positive_atoms(rule))
+        for s, e in spans:
+            kind = "atom"
+            if _bound_enumerator(rule, (s, e), spans, elems):
+                kind = BOUND_ENUMERATOR
             modified = lines[:a] + [_drop_atom(rule, s, e)] + lines[b + 1:]
-            yield (a + 1, "atom", rule[s:e], "\n".join(modified) + "\n")
+            yield (a + 1, kind, rule[s:e], "\n".join(modified) + "\n")
         for _, _, spans in _disjunctions(rule):
             for k, (s, e) in enumerate(spans):
                 if k + 1 < len(spans):
@@ -244,22 +282,28 @@ def _drop_column(source: str, name: str, col: int) -> str | None:
     return "".join(out)
 
 
-def case_type(source: str) -> str | None:
-    """The type of `out`'s trailing column, when the file declares it as
-    an ADT of two or more branches. Its values name the cases, and the
-    output check separates them pair by pair."""
+def _case_decl(source: str) -> TypeDecl | None:
+    """The `.type` of `out`'s trailing column, when the file declares it
+    as an ADT of two or more branches. Its values name the cases, and
+    the output check separates them pair by pair."""
     try:
         program = parse(source)
     except ParseError:
         return None
     adts = {
-        it.name for it in program.items
+        it.name: it for it in program.items
         if isinstance(it, TypeDecl) and len(it.branches) >= 2
     }
     for it in program.items:
         if isinstance(it, Decl) and it.name == "out" and it.fields:
-            return it.fields[-1].type if it.fields[-1].type in adts else None
+            return adts.get(it.fields[-1].type)
     return None
+
+
+def case_type(source: str) -> str | None:
+    """The name of the solver's case type, when it has one."""
+    decl = _case_decl(source)
+    return None if decl is None else decl.name
 
 
 def column_deletions(source: str) -> Iterator[Deletion]:
@@ -330,7 +374,35 @@ def _cases_agree(source: str, examples: list, reference: list) -> bool:
     return True
 
 
-def deletion_report(stem: str) -> tuple[int, list[tuple[int, str, str]]] | None:
+def _case_findings(
+    source: str, findings: list[Finding], agree: Callable[[], bool]
+) -> list[Finding]:
+    """The findings with the coverage claim settled by the pairs.
+
+    `agree` says whether the pairs never part the cases; it runs only
+    when the answer decides something. Where a case column fired, the
+    pairs decide its reading: when some pair parts the cases, a no-op
+    drop reads as any other column's does, and an unprobed drop raises
+    nothing at all. Where none fired but the solver has cases and the
+    pairs never part them, the claim goes unexercised all the same, so
+    the case type reports it under UNEXERCISED_CASES.
+    """
+    cases = (CASE_COLUMN, UNPROBED_CASE)
+    if any(k in cases for _, k, _ in findings):
+        if agree():
+            return findings
+        return [
+            (lineno, "column" if kind == CASE_COLUMN else kind, text)
+            for lineno, kind, text in findings
+            if kind != UNPROBED_CASE
+        ]
+    claim = _case_decl(source)
+    if claim is not None and agree():
+        return [*findings, (claim.line, UNEXERCISED_CASES, claim.name)]
+    return findings
+
+
+def deletion_report(stem: str) -> tuple[int, list[Finding]] | None:
     """Structural deletions that change no pair's output or derived fill.
 
     A deletion that changes nothing removed structure the pairs never
@@ -339,8 +411,9 @@ def deletion_report(stem: str) -> tuple[int, list[tuple[int, str, str]]] | None:
     the fit check too — body and Parse rules feed both. Informational —
     such a deletion points at an unwitnessed guard or rule, not a
     violation. A case column reports under its own kinds, since the
-    pairs decide what its deletion can show. None when the stored source
-    itself fails.
+    pairs decide what its deletion can show, and a solver whose pairs
+    never part its cases reports that once, whether or not a case column
+    stood for it. None when the stored source itself fails.
     """
     source = (SOLVERS_DIR / f"{stem}.dl").read_text()
     task = load_task(stem.split("_", 1)[0])
@@ -373,22 +446,21 @@ def deletion_report(stem: str) -> tuple[int, list[tuple[int, str, str]]] | None:
 
     with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
         findings = [r for r in executor.map(test, dels) if r]
-    cases = (CASE_COLUMN, UNPROBED_CASE)
-    if any(k in cases for _, k, _ in findings) and \
-            not _cases_agree(source, examples, reference):
-        # Some pair parts the cases. A no-op drop then reads as any other
-        # column's does, and an unprobed drop raises nothing at all.
-        findings = [
-            (lineno, "column" if kind == CASE_COLUMN else kind, text)
-            for lineno, kind, text in findings
-            if kind != UNPROBED_CASE
-        ]
+    findings = _case_findings(
+        source, findings, lambda: _cases_agree(source, examples, reference)
+    )
     return (len(dels), sorted(findings))
 
 
 NOOP_NOTE = [
     "  note: each removed structure the pairs never instantiate — an unwitnessed",
     "        guard, rule, or column. This is coverage, not a defect to fix.",
+]
+
+ENUMERATOR_NOTE = [
+    "  note: an enumerator over a variable another atom binds: the readable",
+    "        form of a per-member test, not a claim. Dropping it changes",
+    "        nothing, and that says nothing about the pairs.",
 ]
 
 CASE_NOTE = [
@@ -404,29 +476,57 @@ UNPROBED_NOTE = [
     "        claim the pairs do not exercise.",
 ]
 
+UNEXERCISED_NOTE = [
+    "  note: the cases agree on every pair: the pairs emit one and the same",
+    "        grid for every case, so they do not exercise the coverage claim.",
+    "        The review's constructed witness carries it. This is not dead",
+    "        code.",
+]
 
-def render_deletions(
-    stem: str, report: tuple[int, list[tuple[int, str, str]]] | None
-) -> list[str]:
+
+def render_deletions(stem: str, report: tuple[int, list[Finding]] | None) -> list[str]:
     """The deletion section of the audit, as printable lines."""
     if report is None:
         return ["baseline fails: stored source does not pass train+test"]
     total, findings = report
-    noop = [f for f in findings if f[1] != UNPROBED_CASE]
+
+    def entries(group: list[Finding]) -> list[str]:
+        return [f"  {stem}.dl:{n}: {kind} `{text}`" for n, kind, text in group]
+
+    apart = (UNPROBED_CASE, UNEXERCISED_CASES)
+    enumerators = [f for f in findings if f[1].endswith(BOUND_ENUMERATOR)]
+    noop = [
+        f for f in findings if f[1] not in apart and f not in enumerators
+    ]
     unprobed = [f for f in findings if f[1] == UNPROBED_CASE]
+    unexercised = [f for f in findings if f[1] == UNEXERCISED_CASES]
     lines = []
     if noop:
         lines.append(f"{len(noop)}/{total} deletions change nothing:")
         lines += NOOP_NOTE
-        lines += [f"  {stem}.dl:{n}: {kind} `{text}`" for n, kind, text in noop]
+        lines += entries(noop)
         if any(kind == CASE_COLUMN for _, kind, _ in noop):
             lines += CASE_NOTE
-    else:
+    elif not enumerators:
         lines.append(f"every deletion changes the result ({total} tested)")
+    if enumerators:
+        if lines:
+            lines.append("")
+        lines.append(
+            f"{len(enumerators)}/{total} deletions remove an enumerator over a"
+            " bound variable:"
+        )
+        lines += entries(enumerators)
+        lines += ENUMERATOR_NOTE
     if unprobed:
         noun = "case column" if len(unprobed) == 1 else "case columns"
         lines.append("")
         lines.append(f"{len(unprobed)} {noun} the probe cannot judge:")
-        lines += [f"  {stem}.dl:{n}: {kind} `{text}`" for n, kind, text in unprobed]
+        lines += entries(unprobed)
         lines += UNPROBED_NOTE
+    if unexercised:
+        lines.append("")
+        lines.append("the pairs do not exercise the coverage claim:")
+        lines += entries(unexercised)
+        lines += UNEXERCISED_NOTE
     return lines

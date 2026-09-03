@@ -3,9 +3,12 @@ what the report calls each one."""
 
 from dl import deletions as deletions_mod
 from dl.deletions import (
+    BOUND_ENUMERATOR,
     CASE_COLUMN,
     NOOP_NOTE,
+    UNEXERCISED_CASES,
     UNPROBED_CASE,
+    _case_findings,
     _cases_agree,
     case_type,
     column_deletions,
@@ -63,8 +66,10 @@ def atoms(source: str, fit: bool = False) -> list[str]:
 def test_disjunct_with_binding():
     assert kinds(DISJ_BINDING, fit=True) == [
         # `run(...)` is the whole of the second branch, so its deletion
-        # has no syntactic form and is skipped.
-        "rule", *["atom"] * 6, "disjunct", "disjunct",
+        # has no syntactic form and is skipped. `dir_elem(D)` enumerates a
+        # variable `step_delta(D, S)` carries.
+        "rule", "atom", "atom", BOUND_ENUMERATOR, *["atom"] * 3,
+        "disjunct", "disjunct",
     ]
 
 
@@ -119,6 +124,35 @@ def test_aggregate_body_is_not_top_level():
     assert atoms(AGGREGATE) == ["dist_set(_)"]
 
 
+ENUMERATORS = """\
+.decl cast(col: Color, d: Dir)
+cast(Col, D) :- mark(Col, P), dir_elem(D), dist_pair(P, D, K, K2), K < K2.
+
+.decl width(d: Dir, k: number)
+width(D, K) :- dir_elem(D), c.line_width(K).
+
+.decl tile_line(a: Axis, p_axis: Position)
+tile_line(A, P_axis) :- axis_elem(A), !split(P_axis, A, _, _), in(P_axis, _).
+"""
+
+
+def test_an_enumerator_over_a_bound_variable_stands_apart_from_the_atoms():
+    """Only a positive atom of the same rule binds the enumerator's
+    variable, and the report keeps the finding apart from the guard note."""
+    assert kinds(ENUMERATORS) == [
+        "rule", "atom", BOUND_ENUMERATOR, "atom",
+        "rule", "atom", "atom",
+        "rule", "negation", "atom", "atom",
+    ]
+    lines = render_deletions("s", (23, [(2, BOUND_ENUMERATOR, "dir_elem(D)")]))
+    assert lines[0] == "1/23 deletions remove an enumerator over a bound variable:"
+    assert "  s.dl:2: bound enumerator `dir_elem(D)`" in lines
+    body = " ".join(lines)
+    assert "not a claim" in body
+    assert "the pairs never instantiate" not in body
+    assert "every deletion changes the result" not in body
+
+
 CHOICE_SOLVER = """\
 .type Choice = Corner {} | Quadrant {}
 
@@ -168,6 +202,24 @@ def test_column_kinds_are_plain_without_cases():
 class _Ex:
     alt = None
     input = [[0]]
+
+
+def test_unexercised_cases_report_without_a_case_column():
+    """The reading follows the solver's Choice type, not a column
+    deletion, and the agreement check runs only where it decides."""
+    claim = (1, UNEXERCISED_CASES, "Choice")
+    assert _case_findings(CHOICE_SOLVER, [], lambda: True) == [claim]
+    assert _case_findings(CHOICE_SOLVER, [], lambda: False) == []
+    assert _case_findings(PLAIN_SOLVER, [], lambda: 1 / 0) == []
+    column = (9, CASE_COLUMN, "trail_cell.ch")
+    assert _case_findings(CHOICE_SOLVER, [column], lambda: True) == [column]
+    lines = render_deletions("s", (23, [claim]))
+    assert lines[0] == "every deletion changes the result (23 tested)"
+    assert "the pairs do not exercise the coverage claim:" in lines
+    assert "  s.dl:1: unexercised cases `Choice`" in lines
+    body = " ".join(lines)
+    assert "the cases agree on every pair" in body
+    assert "constructed witness" in body
 
 
 def test_cases_agree_reads_the_reference_profile():
