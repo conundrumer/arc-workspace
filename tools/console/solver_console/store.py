@@ -39,10 +39,12 @@ WORKER_HANDOFF_ENV = "CONSOLE_WORKER_HANDOFF"
 # Comments target any stage's session; a debug turn to a stage the item has
 # already left does not hand off again.
 #
-# A report lands either way; who acts on it is the wave's `auto_advance`
-# choice. With it on, the landing moves the item on and launches the next stage
-# by itself. With it off — the default — the item lands in review still in the
-# stage that reported, and the advance action moves it on when the user asks.
+# A report lands either way; who acts on it is the item's `auto_advance` and
+# `auto_stop`. A wave item hands itself on through every stage before the last,
+# and stops there: the landing that would launch the last stage lands in review
+# instead, still in the stage that reported, and the advance or finalize action
+# moves it on when the user asks. An item built for one stage alone never hands
+# off.
 # Every report is also written under state/reports/, so it outlives the item a
 # commit drops and can seed a later stage over a solver already committed.
 #
@@ -120,7 +122,7 @@ def stage_of(it: dict, name: str) -> dict:
     for st in chain_of(it):
         if st.get("name") == name:
             return st
-    return {"name": name, "backend": "claude", "model": config.MODELS.get(name)}
+    return {"name": name, "backend": "claude", "model": stage_model(name)}
 
 
 def next_stage(it: dict, name: str) -> dict | None:
@@ -274,7 +276,8 @@ def migrate(it: dict) -> None:
     it.pop("auto_refine", None)
     if not it.get("chain"):
         it["chain"] = two_phase_chain()
-        it["chain"][1]["model"] = it.get("refine_model") or config.MODELS["refine"]
+        it["chain"][1]["model"] = (it.get("refine_model")
+                                   or config.MODEL_IDS[config.FINALIZE_MODEL])
     it.pop("refine_model", None)
     if "reports" not in it:
         text = (it.pop("handoff_report", None) or "").strip()

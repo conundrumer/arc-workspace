@@ -885,7 +885,6 @@ function Topbar({view, setView, wave, items, progress, usage, night, nightOpen, 
   const nightTxt = night && night.on
     ? `autopilot ${night.live||0}/${night.target} · ${gate&&gate.open?"open":"held"}`
     : "autopilot";
-  const presets = cli.presets||[];
   return html`<div id="topbar">
     <span class="wordmark"><b>arc</b> · solver console</span>
     <span class="viewtog">
@@ -918,14 +917,6 @@ function Topbar({view, setView, wave, items, progress, usage, night, nightOpen, 
       <select aria-label="wave order" value=${waveCtl.order} onChange=${e=>waveCtl.setOrder(e.target.value)}>
         <option value="name">name order</option>
         <option value="size">simplest</option>
-      </select>
-      <select aria-label="stage chain" value=${waveCtl.presetId}
-        onChange=${e=>waveCtl.setPresetId(e.target.value)}>
-        ${presets.map(p=>html`<option key=${p.id} value=${p.id}>${p.label}</option>`)}
-      </select>
-      <select aria-label="auto-advance" title="how far a report is handed on without you"
-        value=${waveCtl.mode} onChange=${e=>waveCtl.setMode(e.target.value)}>
-        ${waveCtl.modes.map(([v,label])=>html`<option key=${v} value=${v}>${label}</option>`)}
       </select>
       <button disabled=${waveCtl.busy} onClick=${waveCtl.start}>start</button>
     </span>
@@ -1460,29 +1451,13 @@ function App(){
     setTaskOpen(o=>({...o, [id]: !(o[id]!==false)}));
   },[]);
 
-  /* the chain choices the server offers; the picked one goes with the wave.
-     advance modes follow the picked preset: manual, stop before a later stage,
-     or the full chain */
-  const presets = cli.presets||[];
-  const preset = presets.find(p=>p.id===presetId) || presets[0] || null;
-  const modes = useMemo(()=>{
-    const names=(preset?preset.chain:[]).map(st=>st.name);
-    const out=[["manual","manual advance"]];
-    // stopping before the second stage is manual again, so stops start at the third
-    for(const name of names.slice(2)) out.push(["stop:"+name, "auto · stop before "+name]);
-    if(names.length>1) out.push(["full","auto · full chain"]);
-    return out;
-  },[preset]);
-  const mode = modes.some(m=>m[0]===autoMode) ? autoMode : "manual";
   const startWave=useCallback(async()=>{
     const st=live.current;
     if(st.waveBusy) return;
     setWaveBusy(true);
     try {
       const k=parseInt(st.waveK,10)||6;
-      const r=await post("/api/wave",{k, order:st.waveOrder,
-        auto_advance:st.mode!=="manual", chain:st.preset?st.preset.chain:null,
-        auto_stop:st.mode.startsWith("stop:")?st.mode.slice(5):null});
+      const r=await post("/api/wave",{k, order:st.waveOrder});
       if(r.ok) toast("wave started · "+r.ids.join(", "));
     } finally {
       setTimeout(()=>setWaveBusy(false), 5000);   // matches WAVE_DEBOUNCE
@@ -1523,7 +1498,7 @@ function App(){
 
   /* ---- what the async handlers read ---- */
   live.current = {items, selId, selItem, detailId, tab, draft, canSend, view,
-                  railOrder, curOrder, night, waveK, waveOrder, preset, mode, waveBusy};
+                  railOrder, curOrder, night, waveK, waveOrder, waveBusy};
 
   /* ---- long poll ---- */
   useEffect(()=>{

@@ -56,12 +56,12 @@ def night_admit() -> list[str]:
     if not picked:
         pacing.night_say("queue is empty", once=True)
         return []
-    chain = store.wave_presets()[0]["chain"]
+    chain = store.default_chain()
     if not cfg.get("wave"):
         store.STATE["wave"] += 1
         cfg["wave"] = store.STATE["wave"]
     ids = waves.make_items(picked, chain, cfg["wave"], str(prompts.append_path()),
-                           auto_advance=True, auto_stop=chain[-1]["name"], night=True)
+                           night=True)
     pacing.night_say("admitted " + ", ".join(ids) +
                      f" · {len(pacing.live_items())}/{cfg['target']} live")
     return ids

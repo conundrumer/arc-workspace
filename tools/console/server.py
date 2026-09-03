@@ -178,9 +178,9 @@ class Handler(BaseHTTPRequestHandler):
         route = urlparse(self.path).path
         if route == "/api/wave":
             res = waves.start_wave(int(body.get("k", 6)), body.get("order", "name"),
-                                   bool(body.get("auto_advance", False)),
-                                   body.get("chain"),
-                                   str(body.get("auto_stop") or "") or None)
+                                   body.get("chain"))
+        elif route == "/api/pipeline":
+            res = actions.act_pipeline(body)
         elif route == "/api/comment":
             res = actions.act_comment(body.get("id", ""), body.get("text", ""),
                                       body.get("sess"))

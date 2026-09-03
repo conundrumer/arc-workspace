@@ -175,20 +175,14 @@ def test_wave_queues_k_items(srv):
     assert [it["state"] for it in srv.STATE["items"]] == [srv.QUEUED, srv.QUEUED]
 
 
-def test_wave_carries_auto_stop(srv):
-    res = srv.start_wave(1, auto_stop="finalize")
+def test_a_wave_item_hands_itself_on_up_to_the_last_stage(srv):
+    res = srv.start_wave(1)
     assert res["ids"] == ["t00"]
     it = srv.STATE["items"][0]
     assert it["auto_advance"] is True
     assert it["auto_stop"] == "finalize"
     assert srv.auto_advances(it, "create")
     assert not srv.auto_advances(it, "refine")
-
-
-def test_wave_rejects_unknown_auto_stop(srv):
-    res = srv.start_wave(1, auto_stop="create")
-    assert "error" in res
-    assert srv.STATE["items"] == []
 
 
 def test_wave_starts_while_earlier_wave_runs(srv):
@@ -952,26 +946,50 @@ def test_a_stock_solver_flags_no_comps(srv):
     assert it["comps"] == []
 
 
-# ---------- opt-in auto-advance ----------
+# ---------- the chain a wave runs ----------
 
-def test_a_wave_carries_its_chain_choice(srv):
+def test_a_wave_runs_the_default_chain_unless_asked_otherwise(srv):
     srv.start_wave(1)
     plain = srv.find("t00")
-    assert plain["auto_advance"] is False
     assert plain["chain"] == srv.default_chain()
     assert [st["name"] for st in plain["chain"]] == ["create", "refine", "finalize"]
     assert plain["sessions"] == {"create": None, "refine": None, "finalize": None}
     srv.LAST_WAVE_AT = 0.0
-    srv.start_wave(1, auto_advance=True, chain=[
+    srv.start_wave(1, chain=[
         {"name": "create", "backend": "codex", "model": "gpt-5.1-codex",
          "effort": "high"},
         {"name": "refine", "model": "claude-mythos-1"}])
-    eager = srv.find("t01")
-    assert eager["auto_advance"] is True
-    assert eager["chain"] == [
+    other = srv.find("t01")
+    assert other["chain"] == [
         {"name": "create", "backend": "codex", "model": "gpt-5.1-codex",
          "effort": "high"},
         {"name": "refine", "backend": "claude", "model": "claude-mythos-1"}]
+    assert other["auto_stop"] == "refine"
+
+
+def test_the_pipeline_starts_at_opus_and_finalizes_on_fable(srv):
+    assert srv.pipeline() == {"create": "opus", "refine": "opus"}
+    assert [st["model"] for st in srv.default_chain()] == [
+        srv.MODEL_IDS["opus"], srv.MODEL_IDS["opus"], srv.MODEL_IDS["fable"]]
+
+
+def test_a_pipeline_setting_reaches_the_next_wave(srv):
+    srv.start_wave(1)
+    assert srv.act_pipeline({"refine": "fable"}) == {"ok": True}
+    assert srv.pipeline() == {"create": "opus", "refine": "fable"}
+    assert srv.find("t00")["chain"][1]["model"] == srv.MODEL_IDS["opus"]
+    srv.LAST_WAVE_AT = 0.0
+    srv.start_wave(1)
+    assert srv.find("t01")["chain"][1]["model"] == srv.MODEL_IDS["fable"]
+    # the setting outlives the process
+    srv.STATE.update(json.loads(srv.STATE_FILE.read_text()))
+    assert srv.pipeline() == {"create": "opus", "refine": "fable"}
+
+
+def test_a_pipeline_setting_names_a_known_model(srv):
+    assert "error" in srv.act_pipeline({"create": "codex"})
+    srv.act_pipeline({"finalize": "opus"})   # not a settable stage: ignored
+    assert srv.pipeline() == {"create": "opus", "refine": "opus"}
 
 
 def test_a_wave_refuses_a_malformed_chain(srv):
@@ -2054,7 +2072,7 @@ def test_load_folds_two_phase_state_into_a_chain(srv):
     srv.load()
     it = srv.STATE["items"][0]
     assert it["chain"] == [
-        {"name": "create", "backend": "claude", "model": srv.MODELS["create"]},
+        {"name": "create", "backend": "claude", "model": srv.MODEL_IDS["opus"]},
         {"name": "refine", "backend": "claude", "model": "claude-mythos-1"}]
     assert it["auto_advance"] is True
     assert it["reports"] == {"create": "from the old state"}

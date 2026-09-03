@@ -41,23 +41,23 @@ def pick_new(k: int, order: str) -> list[tuple[str, int]]:
 
 
 def make_items(picked: list[tuple[str, int]], chain: list[dict], wave: int,
-               append: str, auto_advance: bool = False,
-               auto_stop: str | None = None, night: bool = False) -> list[str]:
-    """Append picked tasks as items of `wave`. Caller holds LOCK."""
+               append: str, night: bool = False) -> list[str]:
+    """Append picked tasks as items of `wave`. Caller holds LOCK.
+
+    An item hands itself on up to the chain's last stage and stops there, so
+    that pass stays the user's own call."""
     names = [st["name"] for st in chain]
     for tid, est in picked:
         it = {
             "id": tid, "est": est, "wave": wave, "state": store.QUEUED,
             "chain": [dict(st) for st in chain],
-            "auto_advance": bool(auto_advance),
+            "auto_advance": True, "auto_stop": names[-1],
             "sessions": dict.fromkeys(names), "phase": names[0],
             "landed": [], "dirty": False, "updated": False, "rev": 0,
             "lastActive": dict.fromkeys(names),
             "title": "", "feed": [], "append": append, "ver": 0,
             "reports": {},
         }
-        if auto_stop:
-            it["auto_stop"] = auto_stop
         if night:
             # the cap follows the workers autopilot started, whether or not it
             # is still on when they go idle
@@ -67,8 +67,7 @@ def make_items(picked: list[tuple[str, int]], chain: list[dict], wave: int,
     return [tid for tid, _ in picked]
 
 
-def start_wave(k: int, order: str = "name", auto_advance: bool = False,
-               chain: list | None = None, auto_stop: str | None = None) -> dict:
+def start_wave(k: int, order: str = "name", chain: list | None = None) -> dict:
     global LAST_WAVE_AT
     with store.LOCK:
         store.defer_reload()
@@ -80,9 +79,6 @@ def start_wave(k: int, order: str = "name", auto_advance: bool = False,
             chain = store.clean_chain(chain)
         except store.Reject as e:
             return {"error": str(e)}
-        if auto_stop and auto_stop not in [st["name"] for st in chain[1:]]:
-            return {"error": f"auto_stop names no later stage: {auto_stop}"}
-        auto_advance = auto_advance or bool(auto_stop)
         drop_committed()
         try:
             picked = pick_new(k, order)
@@ -93,8 +89,7 @@ def start_wave(k: int, order: str = "name", auto_advance: bool = False,
         LAST_WAVE_AT = time.time()
         store.STATE["wave"] += 1
         ids = make_items(picked, chain, store.STATE["wave"],
-                         str(prompts.append_path()), auto_advance,
-                         auto_stop)
+                         str(prompts.append_path()))
     store.bump()
     threading.Thread(target=stagger_launch, args=(ids,), daemon=True).start()
     return {"ok": True, "ids": ids}
