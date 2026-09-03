@@ -93,6 +93,77 @@ def act_advance(it: dict) -> None:
 
 
 @store.action
+def act_land(it: dict) -> None:
+    """Take the stage's filed report as its handoff: the callout turn runs,
+    and the chain goes on from there. For a stage whose landing stopped
+    short of the callouts."""
+    store.require_idle(it)
+    phase = it["phase"]
+    if not store.next_stage(it, phase):
+        raise store.Reject("final stage — nothing to hand off to")
+    if it["state"] not in (store.NEEDS_REVIEW, store.APPROVED):
+        raise store.Reject("wait for the turn to land")
+    if not solvers.report_of(it, phase):
+        raise store.Reject("no handoff report yet — send `handoff` first")
+    if not it["sessions"].get(phase):
+        raise store.Reject("no session yet")
+    workers.ask_callouts(it, phase)
+
+
+def set_session(it: dict, phase: str, session: str) -> None:
+    """Point a stage at another CLI session by hand: a copy of its transcript
+    cut back to an earlier turn, made outside the console. The next ask
+    resumes it."""
+    store.require_idle(it)
+    if phase not in store.stage_names(it):
+        raise store.Reject(f"no stage {phase!r}")
+    session = session.strip()
+    if not session or workers.transcript_of(session) is None:
+        raise store.Reject("no transcript for that session id")
+    old = it["sessions"].get(phase)
+    # a live worker holds the old session in its process; the next ask
+    # spawns one on the new id
+    worker = store.PROCS.get((it["id"], phase))
+    if worker:
+        store.PROCS.pop((it["id"], phase))
+        worker["state"] = "dying"
+        worker["outbound"].put_nowait(store.STOP)
+        workers.queue_reap(worker)
+    it["sessions"][phase] = session
+    store.say(it, store.event(f"session replaced by hand — was {old or 'none'}"),
+              sess=phase)
+
+
+act_session = store.action(set_session)
+
+
+def set_model(it: dict, phase: str, model: str) -> None:
+    """Change the model one stage of this item runs on, for the turns still
+    to come. A session the API refuses on one model can go on under
+    another, which is the CLI's own advice for a refusal."""
+    store.require_idle(it)
+    if phase not in store.stage_names(it):
+        raise store.Reject(f"no stage {phase!r}")
+    model = model.strip()
+    if not model:
+        raise store.Reject("no model")
+    st = store.stage_of(it, phase)
+    old = st.get("model")
+    st["model"] = model
+    worker = store.PROCS.get((it["id"], phase))
+    if worker:
+        store.PROCS.pop((it["id"], phase))
+        worker["state"] = "dying"
+        worker["outbound"].put_nowait(store.STOP)
+        workers.queue_reap(worker)
+    store.say(it, store.event(f"model set by hand to {model} — was {old or 'default'}"),
+              sess=phase)
+
+
+act_model = store.action(set_model)
+
+
+@store.action
 def act_resume(it: dict) -> None:
     """Continue the stage a usage limit cut off, keeping the cut turn's handoff
     flag. Overnight mode does this on a timer once the window resets."""

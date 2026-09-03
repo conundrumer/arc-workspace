@@ -192,6 +192,14 @@ class Handler(BaseHTTPRequestHandler):
             res = actions.act_unapprove(body.get("id", ""))
         elif route == "/api/advance":
             res = actions.act_advance(body.get("id", ""))
+        elif route == "/api/land":
+            res = actions.act_land(body.get("id", ""))
+        elif route == "/api/model":
+            res = actions.act_model(body.get("id", ""), str(body.get("phase") or ""),
+                                    str(body.get("model") or ""))
+        elif route == "/api/session":
+            res = actions.act_session(body.get("id", ""), str(body.get("phase") or ""),
+                                      str(body.get("session") or ""))
         elif route == "/api/resume":
             res = actions.act_resume(body.get("id", ""))
         elif route == "/api/seen":
