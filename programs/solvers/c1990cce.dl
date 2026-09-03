@@ -57,7 +57,7 @@ seed(P_out, Col) :-
 // The two cone corners on the c.grow side; the one on the echo axis, and
 // the mirror arm's.
 .decl corner(diag: DiagDir)
-corner(Diag) :- c.grow(D), axis_of(D, A), dir_of(Diag, A, D).
+corner(Diag) :- c.grow(D), dir_of(Diag, _, D).
 
 .decl cast_corner(diag: DiagDir)
 cast_corner(Diag) :- corner(Diag), diag_axis_of(Diag, DA), c.echo_axis(DA).
@@ -65,19 +65,19 @@ cast_corner(Diag) :- corner(Diag), diag_axis_of(Diag, DA), c.echo_axis(DA).
 .decl mirror_corner(diag: DiagDir)
 mirror_corner(Diag) :- corner(Diag), !cast_corner(Diag).
 
-// The V: cells level with the seed toward some cone corner.
+// The V: the seed's line toward each cone corner.
 .decl arm(p: Position)
 arm(P) :-
     frame.cell($U(), P), seed(S, _),
-    corner(Diag), corner_dist(P, Diag, K), corner_dist(S, Diag, K).
+    corner(Diag), diag_axis_of(Diag, DA),  // the corner's diagonal
+    same_line(DA, P, S).
 
-// Strictly inside the V's cone: strictly nearer each cone corner than the
-// seed.
+// Strictly inside the V's cone.
 .decl inside(p: Position)
 inside(P) :-
     frame.cell($U(), P), seed(S, _),
-    cast_corner(CD),   corner_dist(P, CD, K1), corner_dist(S, CD, N1), K1 < N1,
-    mirror_corner(MD), corner_dist(P, MD, K2), corner_dist(S, MD, N2), K2 < N2.
+    cast_corner(CD),   nearer(CD, P, S),
+    mirror_corner(MD), nearer(MD, P, S).
 
 // --- Echo cases: the echoed cells ---
 
@@ -151,8 +151,8 @@ out(P, Col, [V, E]) :-
     .decl inside(e: Example, p: Position)
     inside(E, P) :-
         ex_out(E, P, _), seed(E, S),
-        cast_corner(CD),   corner_dist(P, CD, K1), corner_dist(S, CD, N1), K1 < N1,
-        mirror_corner(MD), corner_dist(P, MD, K2), corner_dist(S, MD, N2), K2 < N2.
+        cast_corner(CD),   nearer(CD, P, S),
+        mirror_corner(MD), nearer(MD, P, S).
 
     .decl cand(k: number)
     cand(K) :-

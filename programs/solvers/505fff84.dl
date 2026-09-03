@@ -85,6 +85,5 @@ out(P_out, Col, Ch) :-
     .decl side(d: Dir, c: Color)
     side(D, C) :-
         mark(E, Row, P, C), mark(E, Row, Q, C2), C != C2,
-        c.axis(A), axis_of(D, A),
-        dist(P, D, K1), dist(Q, D, K2), K1 < K2.
+        c.axis(A), axis_of(D, A), nearer(D, P, Q).
 }

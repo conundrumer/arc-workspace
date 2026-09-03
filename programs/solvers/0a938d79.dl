@@ -54,7 +54,7 @@ mark_line(P_line, Col) :- mark(P, Col), cell_line(P, P_line).
 lead(P_line, $Corner()) :-
     mark_line(P_line, _), mark_line(Q, _),               // the two mark lines
     c.origin(Dg), step_axis(A2), dir_of(Dg, A2, D),      // the origin side
-    dist(P_line, D, K), dist(Q, D, K2), K < K2.          // p_line is the nearer one
+    nearer(D, P_line, Q).
 
 // --- Margin ---
 lead(P_line, $Margin()) :-

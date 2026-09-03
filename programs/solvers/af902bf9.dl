@@ -26,14 +26,11 @@ mark(P) :- in(P, Col), c.marker(Col).
 .decl empty(p: Position)
 empty(P) :- in(P, Col), c.bg(Col).
 
-// A marker strictly inside quadrant Diag of a bg cell: strictly nearer
-// both of the corner's edges.
+// A marker strictly inside quadrant Diag of a bg cell.
 .decl quad_mark(p: Position, diag: DiagDir, q: Position)
 quad_mark(P, Diag, Q) :-
-    empty(P), mark(Q),
-    diag_dist(P, Diag, A, K1, K2),
-    diag_dist(Q, Diag, A, J1, J2),
-    J1 < K1, J2 < K2.
+    empty(P), mark(Q), diag_dirs(Diag, _, D1, D2),
+    nearer(D1, Q, P), nearer(D2, Q, P).
 
 .decl out(p: Position, col: Color, ch: Choice)
 

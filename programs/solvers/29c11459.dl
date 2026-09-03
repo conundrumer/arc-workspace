@@ -33,7 +33,7 @@ mark(P, Col) :- in(P, Col), !c.bg(Col).
 .decl pair(d: Dir, m1: Position, c1: Color, m2: Position, c2: Color)
 pair(D, M1, C1, M2, C2) :-
     mark(M1, C1), mark(M2, C2), c.axis(A), same_line(A, M1, M2),  // two marks on one row
-    axis_of(D, A), dist(M1, D, K1), dist(M2, D, K2), K1 < K2.     // m1 nearer d
+    axis_of(D, A), nearer(D, M1, M2).                             // m1 nearer d
 
 // --- $Meet / $Near: lockstep fronts ---
 

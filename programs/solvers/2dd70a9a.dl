@@ -49,17 +49,16 @@ leg.cell($U(), P) :- in(P, _).
 leg.mark($U(), P) :- in(P, _).
 leg.blocked($U(), P) :- in(P, Col), !c.bg(Col).
 
-// The cell one step on from p toward d. A cell on the frame edge has none.
-.decl ahead(p: Position, d: Dir, q: Position)
-ahead(P, D, Q) :- in(P, _), dir_elem(D), neighbor(P, D, Q), in(Q, _).
-
-// The way onward is open: the walker may enter the cell one step on.
-.decl way(p: Position, d: Dir)
-way(P, D) :- ahead(P, D, Q), !leg.blocked($U(), Q).
+// The open cells the walker crosses. A rim direction is one the way ahead
+// closes in: an occupied cell, or the grid edge.
+.init open = Rim<Unit>
+open.cell($U(), P) :- in(P, Col), c.bg(Col).
 
 // The walker has arrived: the target lies one step on.
 .decl at_target(p: Position, d: Dir)
-at_target(P, D) :- ahead(P, D, Q), in(Q, Col), c.target(Col).
+at_target(P, D) :-
+    in(P, _), dir_elem(D), neighbor(P, D, Q),  // one step on toward d
+    in(Q, Col), c.target(Col).                 // a target cell
 
 // The cells one run covers, from its start to its halt.
 .decl run(a: Position, d: Dir, p: Position)
@@ -69,9 +68,9 @@ run(A, D, P) :- leg.clear($U(), P, D, _, A), dir_elem(D).
 // A walker that cannot take its first step does not turn.
 .decl leg_edge(a: Position, d: Dir, a2: Position, d2: Dir)
 leg_edge(A, D, E, D2) :-
-    run(A, D, E), E != A,           // ran
-    !way(E, D), !at_target(E, D),   // halted, and not arrived
-    perp_dir(D, D2).                // the quarter turn
+    run(A, D, E), E != A,                        // ran
+    open.rim_dir($U(), E, D), !at_target(E, D),  // halted, and not arrived
+    perp_dir(D, D2).                             // the quarter turn
 
 // A run that halts with the target one step on is a last leg.
 .decl leg_goal(p: Position, d: Dir)
@@ -89,11 +88,11 @@ out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !path_cell(P, Ch).
 
 // --- Toward ---
 
-// The target lies to p's d side: some target cell is nearer edge d than p.
+// The target lies to p's d side.
 .decl target_side(p: Position, d: Dir)
 target_side(P, D) :-
-    in(P, _), dir_elem(D), dist(P, D, K),
-    c.target(Col), in(T, Col), dist(T, D, K2), K2 < K.
+    in(P, _), dir_elem(D),
+    c.target(Col), in(T, Col), nearer(D, T, P).
 
 // The turn the walker takes: toward the target's side.
 .decl toward_edge(a: Position, d: Dir, a2: Position, d2: Dir)

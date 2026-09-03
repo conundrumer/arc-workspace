@@ -61,7 +61,7 @@ pax(A) :- axis_elem(A), !stack_defect(A).
 trail_dir(D) :-
     pax(A), axis_of(D, A),
     stage_rank(I0, 0), size.tally(In, N), growth_order.rank_desc($U(), N, 0),  // seed, top stage
-    sbox.edge_min(I0, D, K0), sbox.edge_min(In, D, K1), K0 < K1.
+    sbox.margin(I0, M0), sbox.margin(In, Mn), nearer(D, M0, Mn).
 
 .decl grow_dir(d: Dir)
 grow_dir(D2) :- trail_dir(D), opposite(D, D2).

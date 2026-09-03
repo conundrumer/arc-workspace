@@ -22,9 +22,8 @@ target_at(P) :- in(P, Col), c.target(Col).
 .decl axis_step(a: Axis, s: Position)
 axis_step(A, S) :-
     mover_at(Pm), target_at(Pt), axis_of(D, A),
-    ( dist(Pm, D, Km), dist(Pt, D, Kt), Kt < Km,   // target strictly nearer edge D
-      step_delta(D, S)                             // step toward it
-    ; dist(Pm, D, K), dist(Pt, D, K), S = ORIGIN   // aligned on the axis — no step
+    ( nearer(D, Pt, Pm), step_delta(D, S)          // the target lies toward D — step that way
+    ; same_dist(D, Pm, Pt), S = ORIGIN             // aligned on the axis — no step
     ).
 
 .decl moved(p: Position)

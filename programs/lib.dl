@@ -477,6 +477,14 @@ same_line(DA, P, Q) :-
     diag_perp(DA, DA2), diag_axis_of(Diag, DA2),
     corner_dist(P, Diag, K), corner_dist(Q, Diag, K).
 
+// p strictly nearer d than q. At a DiagDir the compared distances are
+// corner_dist. Its clauses introduce the distances, so nearer cannot
+// sit under negation.
+.decl nearer(d: Dir8, p: Position, q: Position) inline
+nearer(D, P, Q) :- dir_elem(D), dist(P, D, K), dist(Q, D, K2), K < K2.
+nearer(D, P, Q) :-
+    diag_dir_elem(D), corner_dist(P, D, K), corner_dist(Q, D, K2), K < K2.
+
 // Two positions agree on the distances to the two edges of corner d.
 .decl corner_anchor(d: DiagDir, p1: Position, p2: Position) inline
 corner_anchor(Diag, P1, P2) :-
