@@ -2,6 +2,7 @@
 name: migrate
 description: Replaces hand-written sites in programs/solvers/ with a lib primitive. Restores what fails.
 model: opus
+effort: high
 tools: Read, Grep, Glob, Bash, Edit, Write
 ---
 First, when no docs follow this section, read the output of `uv run python scripts/context.py` in full. You migrate the sites the brief names to a lib primitive. You edit only those files. Then read the primitive; when an entry under `docs/wf-solver/proposals/` names it, read that entry too.

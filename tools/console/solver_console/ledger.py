@@ -100,3 +100,38 @@ def act_flag(body: dict) -> dict:
         save_flags()
     store.bump()
     return {"ok": True, "level": level}
+
+
+# ---------- debrief ----------
+#
+# When the callouts were last read across tasks. A debrief takes the tasks
+# landed after this mark, each with the callouts its latest report carries.
+
+def debriefed() -> int:
+    try:
+        raw = json.loads(config.DEBRIEF_FILE.read_text())
+    except (OSError, ValueError):
+        return 0
+    return int(raw.get("ts") or 0) if isinstance(raw, dict) else 0
+
+
+def act_debrief() -> dict:
+    ts = int(store.now())
+    with store.LOCK:
+        config.DEBRIEF_FILE.parent.mkdir(parents=True, exist_ok=True)
+        config.DEBRIEF_FILE.write_text(json.dumps({"ts": ts}))
+    store.bump()
+    return {"ok": True, "ts": ts}
+
+
+def debrief_view() -> dict:
+    mark = debriefed()
+    landed: dict[str, int] = {}
+    for row in ledger_rows():
+        ts = int(row.get("ts") or 0)
+        if ts > mark:
+            landed[row["task"]] = max(ts, landed.get(row["task"], 0))
+    items = [{"id": tid, "title": solvers.title_of(tid), "ts": ts,
+              "callouts": solvers.task_callouts(tid)}
+             for tid, ts in sorted(landed.items())]
+    return {"debriefed": mark, "items": items}

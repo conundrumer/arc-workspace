@@ -9,10 +9,9 @@ with review comments, and commits approved solvers.
 Env:
     CONSOLE_FAKE=1     use fake_worker.py instead of claude (UI demo)
     CONSOLE_CLAUDE     claude binary (default: claude)
-    CONSOLE_CREATE_MODEL   the chains' stronger model (default: claude-opus-5)
-    CONSOLE_REFINE_MODEL   the chains' cheaper model (default: claude-fable-5)
-    CONSOLE_CODEX_MODEL    model for codex-backed stages (default: gpt-5.6-sol)
-    CONSOLE_CODEX_EFFORT   reasoning effort for codex-backed stages (default: high)
+    CONSOLE_OPUS_MODEL     the model id behind the "opus" setting (default: claude-opus-5)
+    CONSOLE_FABLE_MODEL    the model id behind the "fable" setting (default: claude-fable-5)
+    CONSOLE_CLAUDE_EFFORT  effort for claude stages whose chain names none (default: high)
     CONSOLE_COMMIT_MODEL   committer model (default: claude-opus-5)
 """
 
@@ -112,8 +111,11 @@ class Handler(BaseHTTPRequestHandler):
                 snap = {"seq": store.STATE["seq"], "wave": store.STATE["wave"],
                         "items": light_items(), "usage": store.USAGE,
                         "night": overnight.night_view(),
-                        "cli": {"addDir": str(config.REF_DIR), "presets": store.wave_presets()},
+                        "cli": {"addDir": str(config.REF_DIR)},
+                        "pipeline": dict(store.pipeline()),
+                        "models": list(config.MODEL_IDS),
                         "committer": dict(store.COMMITTER),
+                        "debriefed": ledger.debriefed(),
                         "solved": len([p for p in config.SOLVERS.glob("*.dl")
                                        if not p.name.startswith(".")]),
                         "total": len(list(config.REF_DIR.glob("programs/solvers/*.ts")))}
@@ -139,6 +141,8 @@ class Handler(BaseHTTPRequestHandler):
                             "ver": it.get("ver", 0)})
         elif url.path == "/api/backlog":
             self.reply({"items": backlog.backlog_view()})
+        elif url.path == "/api/debrief":
+            self.reply(ledger.debrief_view())
         elif url.path.startswith("/api/peek/"):
             item_id = url.path.rsplit("/", 1)[1]
             if not solvers.solver_path(item_id).exists():
@@ -193,6 +197,8 @@ class Handler(BaseHTTPRequestHandler):
             res = overnight.act_night(body)
         elif route == "/api/flag":
             res = ledger.act_flag(body)
+        elif route == "/api/debrief":
+            res = ledger.act_debrief()
         elif route == "/api/finalize":
             res = backlog.act_finalize(body)
         elif route == "/api/dismiss":

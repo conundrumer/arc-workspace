@@ -14,6 +14,7 @@ LOG_DIR = STATE_DIR / "logs"
 REPORT_DIR = STATE_DIR / "reports"
 LEDGER = REPORT_DIR / "ledger.jsonl"
 FLAGS_FILE = STATE_DIR / "flags.json"
+DEBRIEF_FILE = STATE_DIR / "debrief.json"
 SOLVERS = ROOT / "programs" / "solvers"
 LIB = ROOT / "programs" / "lib.dl"
 DOCS = ROOT / "docs" / "wf-solver"
@@ -24,10 +25,17 @@ QUEUE_CACHE = ROOT / "scripts" / ".queue-cache"
 
 FAKE = os.environ.get("CONSOLE_FAKE") == "1"
 CLAUDE = os.environ.get("CONSOLE_CLAUDE", "claude")
-MODELS = {"create": os.environ.get("CONSOLE_CREATE_MODEL", "claude-opus-5"),
-          "refine": os.environ.get("CONSOLE_REFINE_MODEL", "claude-fable-5")}
-CODEX_MODEL = os.environ.get("CONSOLE_CODEX_MODEL", "gpt-5.6-sol")
-CODEX_EFFORT = os.environ.get("CONSOLE_CODEX_EFFORT", "high")
+# The models the pipeline settings pick between, under the names the console
+# shows for them.
+MODEL_IDS = {"opus": os.environ.get("CONSOLE_OPUS_MODEL", "claude-opus-5"),
+             "fable": os.environ.get("CONSOLE_FABLE_MODEL", "claude-fable-5")}
+# What each settable stage runs until the user sets it. The finalize pass has
+# no setting: it is the fable read.
+PIPELINE_DEFAULTS = {"create": "opus", "refine": "opus"}
+FINALIZE_MODEL = "fable"
+# What a claude stage runs at when its chain names no effort; it overrides
+# the per-model default in the user's settings.
+CLAUDE_EFFORT = os.environ.get("CONSOLE_CLAUDE_EFFORT", "high")
 COMMIT_MODEL = os.environ.get("CONSOLE_COMMIT_MODEL", "claude-opus-5")
 
 # The user's global prompt hook checks this and stays quiet for workers.

@@ -2,6 +2,7 @@
 name: survey
 description: Surveys programs/solvers/ for hand-written sites of one operation, from its spec. Changes no repo file.
 model: opus
+effort: high
 tools: Read, Grep, Glob, Bash, Write
 ---
 First, when no docs follow this section, read the output of `uv run python scripts/context.py` in full. You survey the solver corpus for one operation and report. You change no repo file. Then read the spec: the entry the brief names, or the brief itself.

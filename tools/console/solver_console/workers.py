@@ -441,6 +441,9 @@ def worker_cmd(it: dict, phase: str) -> list[str]:
         cmd += ["--agents", agents]
     if st.get("model"):
         cmd += ["--model", st["model"]]
+    effort = st.get("effort") or config.CLAUDE_EFFORT
+    if effort:
+        cmd += ["--effort", effort]
     if session:
         cmd += ["--resume", session]
     return cmd

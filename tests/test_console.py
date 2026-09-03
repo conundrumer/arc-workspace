@@ -935,6 +935,18 @@ def codex_item(srv, item_id, state, **kw):
                 lastActive={"create": None, "refine": None}, **kw)
 
 
+def test_worker_cmd_for_a_claude_stage_carries_the_effort(srv, tmp_path, monkeypatch):
+    monkeypatch.setattr(srv, "FAKE", False)
+    append = tmp_path / "append.md"
+    append.write_text("brief")
+    it = codex_item(srv, "a", srv.NEEDS_REVIEW, append=str(append))
+    cmd = srv.worker_cmd(it, "refine")
+    assert cmd[cmd.index("--effort") + 1] == srv.CLAUDE_EFFORT == "high"
+    it["chain"][1]["effort"] = "low"
+    cmd = srv.worker_cmd(it, "refine")
+    assert cmd[cmd.index("--effort") + 1] == "low"
+
+
 def test_worker_cmd_for_a_codex_stage_runs_the_adapter(srv, tmp_path, monkeypatch):
     monkeypatch.setattr(srv, "FAKE", False)
     append = tmp_path / "append.md"
@@ -1590,6 +1602,7 @@ def test_worker_agents_carry_the_appendix(srv):
     assert set(agents) == {p.stem for p in srv.AGENT_DIR.glob("*.md")}
     for agent in agents.values():
         assert agent["prompt"].endswith(srv.append_path().read_text())
+    assert agents["migrate"]["effort"] == "high"
 
 
 def test_commit_subject_names_added_and_changed_solvers(srv):
@@ -3142,6 +3155,28 @@ def test_a_flag_survives_the_item_being_dropped(srv):
     srv.act_drop("a")
     assert srv.STATE["items"] == []
     assert srv.flags()["a"]["level"] == 1
+
+
+# ---------- debrief ----------
+
+def test_a_debrief_records_when_it_ran(srv, monkeypatch):
+    assert srv.debriefed() == 0
+    monkeypatch.setattr(srv, "now", lambda: 900.0)
+    assert srv.act_debrief() == {"ok": True, "ts": 900}
+    assert srv.debriefed() == 900
+    assert json.loads(srv.DEBRIEF_FILE.read_text()) == {"ts": 900}
+
+
+def test_a_debrief_lists_the_tasks_landed_since_the_mark(srv, monkeypatch):
+    monkeypatch.setattr(srv, "now", lambda: 900.0)
+    srv.act_debrief()
+    srv.ledger_append({"task": "a", "stage": "refine", "ts": 950})
+    srv.ledger_append({"task": "a", "stage": "create", "ts": 920})
+    srv.ledger_append({"task": "b", "stage": "refine", "ts": 800})
+    srv.save_report("a", "refine", "done\n\n## Callouts\n\n- [P2] a doc gap\n")
+    assert srv.debrief_view() == {
+        "debriefed": 900,
+        "items": [{"id": "a", "title": "", "ts": 950, "callouts": ["[P2] a doc gap"]}]}
 
 
 def test_a_flag_level_is_held_to_the_three(srv):

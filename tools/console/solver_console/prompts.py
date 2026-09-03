@@ -58,8 +58,9 @@ def worker_agents(append: str) -> str | None:
         meta = {k.strip(): v.strip() for k, v in meta.items()}
         agent = {"description": meta.get("description", path.stem),
                  "prompt": m.group(2).strip() + "\n\n" + Path(append).read_text()}
-        if "model" in meta:
-            agent["model"] = meta["model"]
+        for key in ("model", "effort"):
+            if key in meta:
+                agent[key] = meta[key]
         if "tools" in meta:
             agent["tools"] = [t.strip() for t in meta["tools"].split(",")]
         agents[meta.get("name", path.stem)] = agent

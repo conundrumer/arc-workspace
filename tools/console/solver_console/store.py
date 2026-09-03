@@ -70,43 +70,37 @@ BACKENDS = ("claude", "codex")
 STAGE_NAME = re.compile(r"[A-Za-z0-9_-]{1,32}")
 
 
+PIPELINE_STAGES = tuple(config.PIPELINE_DEFAULTS)
+
+
+def pipeline() -> dict:
+    """The pipeline settings: the model name each settable stage runs, filled
+    in with the defaults. A wave reads them when it starts, so a change
+    reaches the next wave and leaves the items already running as they are."""
+    cfg = STATE.setdefault("pipeline", {})
+    for name, value in config.PIPELINE_DEFAULTS.items():
+        if cfg.get(name) not in config.MODEL_IDS:
+            cfg[name] = value
+    return cfg
+
+
+def stage_model(name: str) -> str:
+    """The model id a stage runs under the current settings."""
+    return config.MODEL_IDS[pipeline().get(name, config.FINALIZE_MODEL)]
+
+
 def default_chain() -> list[dict]:
-    """What a wave runs when it names no chain: the first preset."""
-    return [{"name": "create", "backend": "claude", "model": config.MODELS["create"]},
-            {"name": "refine", "backend": "claude", "model": config.MODELS["create"]},
-            {"name": "finalize", "backend": "claude", "model": config.MODELS["refine"]}]
+    """What a wave runs when it names no chain."""
+    return [{"name": name, "backend": "claude", "model": stage_model(name)}
+            for name in ("create", "refine", "finalize")]
 
 
 def two_phase_chain() -> list[dict]:
     """The create/refine pair earlier console versions ran, which items
     written by those versions are read as."""
-    return [{"name": "create", "backend": "claude", "model": config.MODELS["create"]},
-            {"name": "refine", "backend": "claude", "model": config.MODELS["refine"]}]
-
-
-def stage_word(st: dict) -> str:
-    """The stage as its model reads in a preset label: opus, fable, codex."""
-    if st.get("backend") == "codex":
-        return "codex"
-    m = st.get("model") or ""
-    return m.removeprefix("claude-").split("-")[0] or st["name"]
-
-
-def preset_label(chain: list[dict]) -> str:
-    return " → ".join(stage_word(st) for st in chain)
-
-
-def wave_presets() -> list[dict]:
-    """The chains the console offers at wave start."""
-    codex = {"name": "create", "backend": "codex", "model": config.CODEX_MODEL}
-    if config.CODEX_EFFORT:
-        codex["effort"] = config.CODEX_EFFORT
-    return [
-        {"id": "claude", "label": preset_label(default_chain()),
-         "chain": default_chain()},
-        {"id": "codex", "label": preset_label([codex] + default_chain()[1:]),
-         "chain": [codex] + default_chain()[1:]},
-    ]
+    return [{"name": "create", "backend": "claude", "model": stage_model("create")},
+            {"name": "refine", "backend": "claude",
+             "model": config.MODEL_IDS[config.FINALIZE_MODEL]}]
 
 
 def chain_of(it: dict) -> list[dict]:

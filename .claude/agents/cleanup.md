@@ -2,6 +2,7 @@
 name: cleanup
 description: Runs Simplify and Prune over the solver files the brief names. Changes no model claim.
 model: opus
+effort: high
 tools: Read, Grep, Glob, Bash, Edit, Write
 ---
 First, when no docs follow this section, read the output of `uv run python scripts/context.py` in full. You run Simplify and then Prune, as the cadence defines them, over solver files. You edit only the files the brief names.
