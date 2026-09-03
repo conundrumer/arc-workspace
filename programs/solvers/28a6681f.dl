@@ -40,32 +40,31 @@ lex.corner(S, Diag) :-
     c.gravity(D), turn(S, D, L), diag_dirs(Diag, _, D, L).
 lex.cell(S, P) :- sense_elem(S), parcel(P).
 
-// The state a turn opens on: what its parcel may enter, and what stops it.
-// Both derive forward, so neither negates the other inside the recursion:
-// free carries over every cell the turn's rest is not. The two stay a
-// partition as long as a turn rests exactly one cell.
-.decl free(s: Sense, t: Position, p: Position)
-.decl solid(s: Sense, t: Position, p: Position)
-free(S, T, P) :- lex.first(S, T), in(P, _), !wall(P).
-solid(S, T, P) :- lex.first(S, T), wall(P).
-free(S, T2, P) :- lex.next(S, T, T2), free(S, T, P), rest(S, T, Q), P != Q.
-solid(S, T2, P) :- lex.next(S, T, T2), ( solid(S, T, P) ; rest(S, T, P) ).
+// The state a turn opens on: the cells its parcel may still enter (untaken)
+// and the cells that stop it (taken).
+.init state = Take<Sense, Position, Position>
+state.start(S, T) :- lex.first(S, T).
+state.step(S, T, T2) :- lex.next(S, T, T2).
+state.take(S, T, P) :- rest(S, T, P).
+state.init_taken(S, P) :- sense_elem(S), wall(P).
+state.init_untaken(S, P) :- sense_elem(S), in(P, _), !wall(P).
 
-// What a free cell has under it: free space to fall through, or footing.
+// What an untaken cell has under it: open space to fall through, or footing.
 .decl hangs(s: Sense, t: Position, p: Position)
-hangs(S, T, P) :- free(S, T, P), c.gravity(D), adj(P, D, Q), free(S, T, Q).
+hangs(S, T, P) :-
+    state.untaken(S, T, P), c.gravity(D), adj(P, D, Q), state.untaken(S, T, Q).
 
 .decl stands(s: Sense, t: Position, p: Position)
 stands(S, T, P) :-
-    free(S, T, P), c.gravity(D),
-    ( adj(P, D, Q), solid(S, T, Q)   // footing on solid
-    ; dist(P, D, 0)                  // footing on the grid's edge
+    state.untaken(S, T, P), c.gravity(D),
+    ( adj(P, D, Q), state.taken(S, T, Q)   // footing on a taken cell
+    ; dist(P, D, 0)                        // footing on the grid's edge
     ).
 
-// Beyond p toward d, along the free run: some cell hangs.
+// Beyond p toward d, along the untaken run: some cell hangs.
 .decl drain(s: Sense, t: Position, p: Position, d: Dir)
 drain(S, T, P, L) :-
-    free(S, T, P), lateral(L), adj(P, L, Q),
+    state.untaken(S, T, P), lateral(L), adj(P, L, Q),
     ( hangs(S, T, Q)
     ; drain(S, T, Q, L)
     ).
@@ -74,8 +73,8 @@ drain(S, T, P, L) :-
 // complement of drain, derived forward.
 .decl held(s: Sense, t: Position, p: Position, d: Dir)
 held(S, T, P, L) :-
-    free(S, T, P), lateral(L),
-    ( adj(P, L, Q), solid(S, T, Q)                     // the run ends at solid
+    state.untaken(S, T, P), lateral(L),
+    ( adj(P, L, Q), state.taken(S, T, Q)               // the run ends at a taken cell
     ; dist(P, L, 0)                                    // the run ends at the grid's edge
     ; adj(P, L, Q), stands(S, T, Q), held(S, T, Q, L)  // the run holds on
     ).
@@ -85,7 +84,7 @@ held(S, T, P, L) :-
 path(S, T, T) :- sense_elem(S), parcel(T).
 path(S, T, Q) :-
     path(S, T, P), adj(P, D, Q),
-    ( hangs(S, T, P), c.gravity(D)        // falls into the free cell below
+    ( hangs(S, T, P), c.gravity(D)        // falls into the open cell below
     ; stands(S, T, P), drain(S, T, P, D)  // or steps along its line toward one
     ).
 

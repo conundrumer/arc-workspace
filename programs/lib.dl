@@ -1083,6 +1083,29 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
         bound(Ky, N1), N1 = N + 1.      // N1 is the Z/n step count
 }
 
+// A partition carried along a walk, one item passing to the taken side per
+// step. `step` may be recursive with the outputs, so the state can choose
+// the walk. A step that takes several items does not fit.
+.comp Take<Key, T, Item> {
+    .decl start(key: Key, t: T)               // input
+    .decl step(key: Key, t: T, t2: T)         // input
+
+    // The item taken at t.
+    .decl take(key: Key, t: T, item: Item)    // input
+
+    // The partition before the first step.
+    .decl init_taken(key: Key, item: Item)    // input
+    .decl init_untaken(key: Key, item: Item)  // input
+
+    .decl taken(key: Key, t: T, item: Item)
+    taken(Ky, T, X) :- start(Ky, T), init_taken(Ky, X).
+    taken(Ky, T2, X) :- step(Ky, T, T2), ( taken(Ky, T, X) ; take(Ky, T, X) ).
+
+    .decl untaken(key: Key, t: T, item: Item)
+    untaken(Ky, T, X) :- start(Ky, T), init_untaken(Ky, X).
+    untaken(Ky, T2, X) :- step(Ky, T, T2), untaken(Ky, T, X), take(Ky, T, Y), X != Y.
+}
+
 // Keyed set comparison via count equality. Member is a single type param: a
 // record for multi-field members, a scalar for one-field. Stored catalogs
 // enumerate patterns as numbers (Pat = number; single-pattern sites use
