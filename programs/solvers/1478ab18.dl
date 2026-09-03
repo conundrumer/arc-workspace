@@ -94,8 +94,8 @@ tri.grid(L, P) :- in(P, _), locate_choice(L).
 
 right_angle(Cor, L, $Inside()) :-
     corner_cand(Cor, L),
-    tri.inner(L, Cor, Cor_in), diag_dist(Cor_in, Dc, A, 0, 0),   // Cor's box corner
-    diag_dirs(Dc, A, D1, D2), opposite(D2, D2o),                 // its two dirs
+    tri.inner(L, Cor, Cor_in), corner_dist(Cor_in, Dc, 0),       // Cor's box corner
+    diag_dirs(Dc, _, D1, D2), opposite(D2, D2o),                 // its two dirs
     mark(M), !hyp(M, L), M != Cor, tri.inner(L, M, M_in),        // non-vertex mark in the box
     dist(M_in, D1, K1), dist(M_in, D2o, K2), K1 <= K2.           // on the corner's side
 

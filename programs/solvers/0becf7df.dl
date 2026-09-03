@@ -90,7 +90,7 @@ out(P, Col_out, Ch) :-
     key_cell(E, P) :- ex_in(E, P, Col), ex_out(E, P, Col), mapping(E, Col, _).
 
     .decl corner(d: DiagDir)
-    corner(Diag) :- key_cell(_, P), diag_dist(P, Diag, _, 0, 0).
+    corner(Diag) :- key_cell(_, P), corner_dist(P, Diag, 0).
 
     // Distances from the corner's edges that key cells take, per axis.
     .init key_dist = Tally<Axis, number>

@@ -42,7 +42,7 @@
     mark_pos(K, P) :- cell(K, P, Col), c.mark(Col).
 
     .decl mark_corner(key: Key, diag: DiagDir)
-    mark_corner(K, Diag) :- mark_pos(K, P), diag_dist(P, Diag, _, 0, 0).
+    mark_corner(K, Diag) :- mark_pos(K, P), corner_dist(P, Diag, 0).
 
     // The two lines: the grid edges the mark's corner joins.
     .decl border(key: Key, p: Position)

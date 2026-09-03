@@ -72,7 +72,7 @@ slid(P, Col) :- rays.ray($U(), P, _, _, Q), seated(Q, Col).
 .decl anchor_color(col: Color)
 anchor_color(Col) :-
     seated(P, Col),
-    c.diag(Diag), diag_opposite(Diag, Anchor), diag_dist(P, Anchor, _, 0, 0).
+    c.diag(Diag), diag_opposite(Diag, Anchor), corner_dist(P, Anchor, 0).
 
 out(P, Col, $Slide()) :- slid(P, Col).
 out(P, Col, $Slide()) :- frame.cell($U(), P), !slid(P, _), anchor_color(Col).

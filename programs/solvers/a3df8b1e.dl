@@ -43,7 +43,7 @@ seed(P, Col) :- in(P, Col), !c.bg(Col).
 .decl setup(dc: DirCase, u: Dir, h: Dir)
 setup($Stored(), U, H) :- c.dir(U), c.sense(S), turn(S, U, H).
 setup($Seat(), U, H) :-
-    seed(P, _), diag_dist(P, Diag, _, 0, 0),   // the corner the marker sits in
+    seed(P, _), corner_dist(P, Diag, 0),       // the corner the marker sits in
     diag_opposite(Diag, Opp),                  // ray leaves toward the opposite corner
     c.axis(A), dir_of(Opp, A, U),
     perp(A, A2), dir_of(Opp, A2, H).

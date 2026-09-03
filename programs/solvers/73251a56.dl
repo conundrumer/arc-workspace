@@ -86,7 +86,7 @@ out(P, Col, Ch) :- sym_choice(Ch), hole(P), mirror(P, Q), intact(Q, Col).
 
 // The fix axis's two ends: grid corners on the fix line.
 .decl fix_corner(diag: DiagDir)
-fix_corner(Diag) :- on_fix(P), diag_dist(P, Diag, _, 0, 0).
+fix_corner(Diag) :- on_fix(P), corner_dist(P, Diag, 0).
 
 // Each hole seeks toward a fix corner, halting at the first intact cell.
 .init seek = Ray<Unit>

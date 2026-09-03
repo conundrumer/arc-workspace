@@ -74,7 +74,7 @@ out(P_grid_out, Col, $Tile()) :-
 .decl checker(p: Position, col: Color)
 checker(P, Col) :-
     cell(P, _, _),                                  // output frame cell
-    c.corner(Diag), diag_dist(P, Diag, _, 0, 0),    // at the anchor corner
+    c.corner(Diag), corner_dist(P, Diag, 0),        // at the anchor corner
     c.corner_color(Col).
 checker(P2, Col2) :-
     checker(P1, Col1), c.alt(Col1, Col2),      // next color in the cycle
