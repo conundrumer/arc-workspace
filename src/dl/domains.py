@@ -6,7 +6,7 @@ from dl.paths import PROGRAMS_DIR
 
 ENUM_TYPES = {
     "Dir": "DIR_", "Axis": "AXIS_", "DiagDir": "DIAG_",
-    "DiagAxis": "DAXIS_", "D4": "D4_", "Sense": "SENSE_",
+    "DiagAxis": "DAXIS_", "D4": "D4_", "Sense": "SENSE_", "Sym": "SYM_",
 }
 
 POSITION_TYPES = {"Position", "Shift", "Inset"}
@@ -17,7 +17,7 @@ def _lib_defines() -> dict[str, int]:
     """Constant-name -> value from lib.dl's #define table."""
     text = (PROGRAMS_DIR / "lib.dl").read_text()
     return {m.group(1): int(m.group(2))
-            for m in re.finditer(r"^#define (\w+) (\d+)", text, flags=re.MULTILINE)}
+            for m in re.finditer(r"^#define (\w+)\s+(\d+)", text, flags=re.MULTILINE)}
 
 
 def _enum_domain(type_name: str, defines: dict[str, int]) -> list[int]:
