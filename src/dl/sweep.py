@@ -28,6 +28,7 @@ from dl.source import (
     expand_macros,
     public_slot,
     swap_fact,
+    swap_facts,
 )
 
 
@@ -47,9 +48,15 @@ def sweep_report(
     so an extra that fails test is a would-be wrong prediction, and one
     that passes is gauge for this task instance.
 
+    A slot whose stored facts fail their singleton runs fits only as a
+    set; it is re-swept whole (see _set_sweep), with candidate sets in
+    place of candidate values.
+
     Returns (slot, status, detail): status 'swept' carries
     (fitting, stored, types, verdicts) — verdicts maps each extra fitting
-    value to its test-pass bool — 'skip' carries the reason.
+    value to its test-pass bool — 'swept-set' carries the same shape with
+    frozensets of value tuples for fitting and verdict keys, and 'skip'
+    carries the reason.
     """
     # Macros expand first, so a GRID-fed slot reads as ordinary facts and a
     # RIGID chart as an ordinary generated-name slot; re-expansion at build
@@ -132,6 +139,12 @@ def sweep_report(
         with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
             fitting = [v for v in executor.map(test, candidates) if v]
 
+        if not set(stored) <= set(fitting):
+            results.append(_set_sweep(
+                source, slot, stored, types, candidates, task, reference,
+                max_candidates))
+            continue
+
         verdicts: dict[tuple, bool] = {}
         extras = sorted(set(fitting) - set(stored))
         if extras and set(stored) <= set(fitting):
@@ -148,6 +161,60 @@ def sweep_report(
                     verdicts = dict(zip(extras, executor.map(test_check, extras)))
         results.append((public_slot(slot), "swept", (fitting, stored, types, verdicts)))
     return results
+
+
+def _set_sweep(
+    source: str,
+    slot: str,
+    stored: list[tuple],
+    types: list[str],
+    singles: list[tuple],
+    task,
+    reference: list[frozenset[str]],
+    max_candidates: int,
+) -> tuple[str, str, object]:
+    """Sweep a slot whose facts fit only together, as one unit.
+
+    Candidate fills are the non-empty subsets of the singleton candidates;
+    each replaces the whole slot. Fitting and test-refutation read as in
+    the singleton sweep, over sets.
+    """
+    name = public_slot(slot)
+    n_sets = 2 ** len(singles) - 1
+    if n_sets > max_candidates:
+        return (name, "skip",
+                f"facts fit only together; {n_sets} candidate sets, "
+                f"cap {max_candidates}")
+    subsets = [
+        frozenset(c)
+        for r in range(1, len(singles) + 1)
+        for c in itertools.combinations(singles, r)
+    ]
+    stored_set = frozenset(stored)
+
+    def test(fill):
+        profile = _profile(swap_facts(source, slot, sorted(fill)), task.train)
+        return fill if profile == reference else None
+
+    with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
+        fitting = [f for f in executor.map(test, subsets) if f]
+
+    verdicts: dict[frozenset, bool] = {}
+    extras = sorted(set(fitting) - {stored_set}, key=sorted)
+    if extras and stored_set in fitting:
+        test_reference = _profile(source, task.test)
+        if test_reference is None:
+            verdicts = {e: False for e in extras}
+        else:
+            def test_check(fill):
+                profile = _profile(
+                    swap_facts(source, slot, sorted(fill)), task.test
+                )
+                return profile == test_reference
+
+            with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
+                verdicts = dict(zip(extras, executor.map(test_check, extras)))
+    return (name, "swept-set", (fitting, stored, types, verdicts))
 
 
 def _mag_vec(vals: tuple, types: list[str]) -> list[int]:
@@ -194,6 +261,42 @@ def render_sweep(results: list[tuple[str, str, object]]) -> list[str]:
         if status == "skip":
             lines.append(f"{slot}: not swept — {detail}")
             continue
+        if status == "swept-set":
+            fitting, stored, types, verdicts = detail
+            stored_set = frozenset(stored)
+
+            def show_fill(fill, types=types):
+                return "{" + ", ".join(show(v, types) for v in sorted(fill)) + "}"
+
+            def show_fills(fills):
+                return "[" + ", ".join(show_fill(f) for f in fills) + "]"
+
+            shown_s = show_fill(stored_set)
+            if set(fitting) == {stored_set}:
+                lines.append(
+                    f"{slot}: unique as a set = {shown_s} ✓ (facts fit only "
+                    f"together; swept whole)"
+                )
+                continue
+            extras = sorted(set(fitting) - {stored_set}, key=sorted)
+            refuted = [e for e in extras if not verdicts.get(e, False)]
+            passing = [e for e in extras if verdicts.get(e, False)]
+            parts = [
+                f"stored {shown_s} (swept whole)",
+                f"train also admits sets {show_fills(extras)}",
+            ]
+            if refuted:
+                parts.append(
+                    f"test refutes {show_fills(refuted)} — a fit from train "
+                    f"alone could pick it"
+                )
+            if passing:
+                parts.append(
+                    f"{show_fills(passing)} reproduce the stored outputs on "
+                    f"test too"
+                )
+            lines.append(f"{slot}: " + "; ".join(parts))
+            continue
         fitting, stored, types, verdicts = detail
         vset, sset = set(fitting), set(stored)
         def shown(vals, types=types):
@@ -205,13 +308,6 @@ def render_sweep(results: list[tuple[str, str, object]]) -> list[str]:
                 lines.append(f"{slot}: unique = {shown_s} ✓")
             else:
                 lines.append(f"{slot}: set of {len(sset)} = [{shown_s}] ✓")
-            continue
-        if not sset <= vset:
-            lines.append(
-                f"{slot}: stored [{shown_s}] — a stored fact fails its "
-                f"singleton run; the facts fit only together, so a "
-                f"one-at-a-time sweep cannot judge them"
-            )
             continue
         # Each finding about the extras gets its own clause, so a refuted
         # extra cannot hide a surviving one.

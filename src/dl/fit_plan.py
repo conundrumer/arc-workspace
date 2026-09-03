@@ -92,9 +92,10 @@ def probe_report(
     Returns (results, embedded, fitted). fitted names the slots whose Fit
     relation already exists. results is (slot, {proposer: verdict}):
     'pinned' — candidate set equals the stored set; 'narrowed(n)' — stored
-    inside a set of n smaller than the enumeration domain; 'open' — stored
-    inside a set no smaller than the domain; 'missed' — stored outside the
-    set. A single-fact slot also carries a 'domain' entry, 'enumerable(n)':
+    inside a set smaller than the enumeration domain, n its candidate
+    count (for a multi-fact slot, the non-empty subsets, since a set fill
+    applies whole); 'open' — stored inside a set no smaller than the
+    domain; 'missed' — stored outside the set. A single-fact slot also carries a 'domain' entry, 'enumerable(n)':
     the size of its value domain, a proposer-free candidate set. embedded
     lists rule-derived Consts relations whose rules carry literals that
     `exempt_literal` does not exempt.
@@ -153,7 +154,11 @@ def probe_report(
                 elif cand == stored:
                     verdicts[name] = "pinned"
                 elif len(cand) < domains[types[0]]:
-                    verdicts[name] = f"narrowed({len(cand)})"
+                    # A multi-fact fill is a subset of cand applied whole,
+                    # so its enumeration ranges over the subsets.
+                    n = (len(cand) if len(stored) == 1
+                         else 2 ** len(cand) - 1)
+                    verdicts[name] = f"narrowed({n})"
                 else:
                     verdicts[name] = "open"
             else:
