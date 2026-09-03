@@ -361,6 +361,11 @@ def seed_report(it: dict) -> None:
             text = solvers.report_of(it, name)
             if text:
                 reports[name] = text
+        text = reports.get(name) or ""
+        collapsed = solvers.collapse_callouts(text)
+        if collapsed != text:
+            reports[name] = collapsed
+            solvers.save_report(it["id"], name, collapsed)
 
 
 def turn_died(it: dict, phase: str) -> None:

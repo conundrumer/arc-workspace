@@ -86,6 +86,28 @@ def report_of(it: dict, stage: str) -> str:
     return p.read_text().strip() if p.exists() else ""
 
 
+# A worker's acts are tagged blocks in its turn text: the handoff report
+# between `<handoff>` and `</handoff>`, the callouts between `<callouts>` and
+# `</callouts>`. Only a closed block counts, and the last one of a name is
+# the one read, so a turn cut off mid-report lands nothing.
+HANDOFF_TAG = re.compile(r"<handoff>\s*(.*?)\s*</handoff>", re.S | re.I)
+CALLOUTS_TAG = re.compile(r"<callouts>\s*(.*?)\s*</callouts>", re.S | re.I)
+TAGS = re.compile(r"[ \t]*</?(?:handoff|callouts)>[ \t]*\n?", re.I)
+
+
+def tagged(text: str, tag: re.Pattern) -> str | None:
+    """The inner text of the last closed block, or None when there is none."""
+    last = None
+    for last in tag.finditer(text or ""):
+        pass
+    return last.group(1) if last else None
+
+
+def untagged(text: str) -> str:
+    """The text with the block tags removed, for the feed."""
+    return TAGS.sub("", text or "")
+
+
 CALLOUT_HEAD = re.compile(r"^\s{0,3}#{1,6}\s*callouts\b.*$", re.I | re.M)
 HEADING = re.compile(r"^\s{0,3}#{1,6}\s", re.M)
 BULLET = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+(.*)$")
@@ -93,22 +115,50 @@ BULLET = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+(.*)$")
 SIGNOFF = re.compile(r"^(\*{1,2}|_{1,2})\w+\1$")
 
 
-def parse_callouts(text: str) -> list[str]:
-    """The entries of a report's `## Callouts` section.
+def join_callouts(report: str, section: str) -> str:
+    """The report with `section` as its one callouts section: a section it
+    already holds, from its heading to the end, gives way."""
+    head = CALLOUT_HEAD.search(report or "")
+    body = (report[:head.start()] if head else (report or "")).rstrip()
+    return body + "\n\n" + section.strip()
 
-    Written by hand at the end of a long turn, so the shape is read loosely:
-    any heading level, list items when the section uses them and plain lines
-    when it does not, and `none` for a stage with nothing to raise. An entry
-    that is only an emphasized word is a sign-off, not a callout."""
+
+def collapse_callouts(text: str) -> str:
+    """A report that holds more than one callouts section keeps the last."""
+    heads = list(CALLOUT_HEAD.finditer(text or ""))
+    if len(heads) < 2:
+        return text
+    return join_callouts(text, text[heads[-1].start():])
+
+
+def callout_body(text: str) -> str | None:
+    """The callouts a text carries: its `<callouts>` block, or else its
+    `## Callouts` section, which is how the reports on disk hold them. None
+    when it carries neither."""
+    block = tagged(text, CALLOUTS_TAG)
+    if block is not None:
+        head = CALLOUT_HEAD.search(block)
+        return block[head.end():] if head else block
     head = None
     for head in CALLOUT_HEAD.finditer(text or ""):
         pass  # a report that wrote the section twice is read on its last one
     if head is None:
-        return []
+        return None
     body = text[head.end():]
     nxt = HEADING.search(body)
-    if nxt:
-        body = body[:nxt.start()]
+    return body[:nxt.start()] if nxt else body
+
+
+def parse_callouts(text: str) -> list[str]:
+    """The entries of a text's callouts.
+
+    Written by hand at the end of a long turn, so the shape is read loosely:
+    list items when the section uses them and plain lines when it does not,
+    and `none` for a stage with nothing to raise. An entry that is only an
+    emphasized word is a sign-off, not a callout."""
+    body = callout_body(text)
+    if body is None:
+        return []
     bullets, lines = [], []
     for line in body.splitlines():
         if not line.strip():

@@ -110,9 +110,11 @@ CALLOUT_BRIEF = """Your report is in. Now step back from the pass and write the 
 Rank each entry P1-P3 by kind: match the entry against a description below and take that kind's band. Match on the description, not the label; an entry outside every description ranks on your own judgment. The rate is how often the user engages the kind when a report raises it:
 {rates}
 
+An entry a description excludes, such as a name local to this solver, is not a callout at all: leave it out.
+
 P0 stands apart from that scale: use it only for a clear mechanical problem with the tooling — the runner, the linter, or the audit crashing, giving a wrong result, or lacking something the cadence needed. A P0 jumps the triage queue, so a judgment call never carries it.
 
-Reply with only a `## Callouts` section: a numbered list, each entry one or two lines opening with its `[P1]`-`[P3]` mark. With nothing to raise, the section is the single word `none`, which is what most solvers get."""
+Reply with only the callouts, between `<callouts>` and `</callouts>` tags: a numbered list, each entry one or two lines opening with its `[P1]`-`[P3]` mark. With nothing to raise, the block holds the single word `none`, which is what most solvers get."""
 
 
 def callout_bands() -> list[tuple[str, int, int, str]]:
@@ -135,11 +137,17 @@ def callout_brief() -> str:
     return CALLOUT_BRIEF.format(rates=rates)
 
 
+# The handoff report is a tagged block in the worker's text, and the console
+# lands the stage on the block, whichever turn carries it. The instruction
+# rides in every message that asks for a report, so a session resumed from
+# an older brief still gets it.
+HANDOFF_WRAP = """Put the report between `<handoff>` and `</handoff>` tags: the console lands your pass on that block, in whichever turn it appears. When a survey you dispatched is still running, end the turn without the report, and write it in the turn its result wakes."""
+
 CREATE_BRIEF = """You are the first session of a chained flow: you create the solver, then a separate session takes over from your report.
 
-Do the creation pass through Fit-plan with the data above; do not re-read the data. When the fit-plan verdict calls for a fit pass, do the fit pass too. Skip Review. A lib candidate runs the lib addition protocol; the entry in docs/wf-solver/proposals/ is yours to write, and your report and callouts carry it with its survey result. When a question about the data comes up, run something that answers it rather than settling it in your head. In place of the review, end your turn with a handoff report addressed to the next session: the model claim, each choice point with the alternatives you considered and why you discarded them, and the audit findings and judgment calls. Make it complete enough that the next session rederives nothing."""
+Do the creation pass through Fit-plan with the data above; do not re-read the data. When the fit-plan verdict calls for a fit pass, do the fit pass too. Skip Review. A lib candidate runs the lib addition protocol; the entry in docs/wf-solver/proposals/ is yours to write, and your report and callouts carry it with its survey result. The reimplementations a survey reports are yours to fix in this pass: send them to the `migrate` agent, then the `cleanup` agent over the regions it changed, and your report lists what it skipped; put both dispatches on your task list before the first, so the pass does not end between them. Other solvers are open to those agents, not to your own edits. When a question about the data comes up, run something that answers it rather than settling it in your head. In place of the review, end your turn with a handoff report addressed to the next session: the model claim, each choice point with the alternatives you considered and why you discarded them, and the audit findings and judgment calls. Make it complete enough that the next session rederives nothing. """ + HANDOFF_WRAP
 
-HANDOFF_BRIEF = """Write the handoff report for the session that takes over from you: the model claim, each choice point with the alternatives you considered and why you discarded them, and the audit findings and judgment calls. Cover the whole session, including turns after any earlier report. Make it complete enough that the next session rederives nothing."""
+HANDOFF_BRIEF = """Write the handoff report for the session that takes over from you: the model claim, each choice point with the alternatives you considered and why you discarded them, and the audit findings and judgment calls. Cover the whole session, including turns after any earlier report. Make it complete enough that the next session rederives nothing. """ + HANDOFF_WRAP
 
 NUDGE_BRIEF = """Your last turn was cut off at the output limit while it was still thinking.
 
@@ -155,7 +163,7 @@ Write a short state of play from what is already in front of you, without workin
 - what you ran, and what came back
 - where you got stuck, and what you would try next
 
-Keep it brief and factual. What the reader needs is your dead ends and your open question, not a full account."""
+Keep it brief and factual. What the reader needs is your dead ends and your open question, not a full account. Put it between `<handoff>` and `</handoff>` tags."""
 
 
 ADVANCE_BRIEF = """You are a later session of a chained flow: the creation pass is already done, and the sessions before you left the reports above.
@@ -178,7 +186,7 @@ Your edits stay in programs/solvers/{tid}.dl, .scratch/{tid}/, and your entries 
 # alone and none of them restates the one before it.
 HANDOFF_TAIL = """
 
-Then Simplify, Prune, and Fit-plan, so your own edits get the simplify and prune treatment too; when the fit-plan verdict calls for a fit pass, do the fit pass as well. In place of the review, end your turn with a handoff report for the session that takes over from you: the model claim as it now stands, what you changed and why, the alternatives you discarded, and your open judgment calls. The report covers your own pass — your rulings, your edits, your changes; what the reports above already establish stays with them."""
+Then Simplify, Prune, and Fit-plan, so your own edits get the simplify and prune treatment too; when the fit-plan verdict calls for a fit pass, do the fit pass as well. In place of the review, end your turn with a handoff report for the session that takes over from you: the model claim as it now stands, what you changed and why, the alternatives you discarded, and your open judgment calls. The report covers your own pass — your rulings, your edits, your changes; what the reports above already establish stays with them. """ + HANDOFF_WRAP
 
 REVIEW_TAIL = """
 

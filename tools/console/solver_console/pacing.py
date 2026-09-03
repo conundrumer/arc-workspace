@@ -43,6 +43,10 @@ RESUME_JITTER = (30, 210)
 RESUME_FALLBACK = 15 * 60   # when no 5h reset time is known
 RESUME_BRIEF = ("your previous turn was cut off by a usage limit; continue "
                 "from where you stopped")
+# Added when the cut turn owed a handoff report, so a session on an older
+# brief still learns where the report goes.
+RESUME_HANDOFF_NOTE = ("; the handoff report goes between `<handoff>` and "
+                       "`</handoff>` tags")
 
 # A turn cut short by an exhausted account. The result event's
 # `api_error_status` carries the HTTP status of an API failure, and 429 is the

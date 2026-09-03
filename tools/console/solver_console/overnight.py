@@ -33,9 +33,10 @@ def resume_item(it: dict) -> None:
         return
     it["state"] = store.COMMENTED
     it["updated"] = False
-    store.say(it, {"kind": "you", "text": pacing.RESUME_BRIEF}, sess=phase)
+    brief = pacing.RESUME_BRIEF + (pacing.RESUME_HANDOFF_NOTE if handoff else "")
+    store.say(it, {"kind": "you", "text": brief}, sess=phase)
     pacing.night_say(f"{it['id']} · resuming {phase}")
-    workers.launch(it, pacing.RESUME_BRIEF, phase, trigger="resume", handoff=handoff,
+    workers.launch(it, brief, phase, trigger="resume", handoff=handoff,
                    admitted=True)
 
 

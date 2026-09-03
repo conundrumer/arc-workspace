@@ -1137,16 +1137,17 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
             if m["kind"] == "worker" and not m.get("sub") and m["text"].strip() == text:
                 match = m
                 break
+        shown = solvers.untagged(text)
         if match:
             match.clear()
-            match.update(kind="report", rev=it["rev"], text=text, sess=phase)
+            match.update(kind="report", rev=it["rev"], text=shown, sess=phase)
             store.touch(it)
         else:
-            store.say(it, {"kind": "report", "rev": it["rev"], "text": text}, sess=phase)
+            store.say(it, {"kind": "report", "rev": it["rev"], "text": shown}, sess=phase)
     store.say(it, store.event(turn_note(it, ev, phase, started, reqs)), sess=phase)
-    # A turn with no Callouts section says nothing about them, so the item
-    # keeps what the last report that carried one left.
-    if text and solvers.CALLOUT_HEAD.search(text):
+    # A turn with no callouts says nothing about them, so the item keeps what
+    # the last report that carried them left.
+    if solvers.callout_body(text) is not None:
         it["callouts"] = solvers.parse_callouts(text)
         it["callout_n"] = len(it["callouts"])
         it["callout_rank"] = solvers.callout_rank(it["callouts"])
@@ -1182,6 +1183,8 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
     if it.get("resume_phase") == phase and not it.get("resume_at"):
         it.pop("resume_phase", None)
         it.pop("resume_handoff", None)
+    report = solvers.tagged(text, solvers.HANDOFF_TAG)
+    callouts = solvers.tagged(text, solvers.CALLOUTS_TAG)
     callout_landing = it.get("callout_wait") == phase
     if callout_landing:
         it.pop("callout_wait", None)
@@ -1274,6 +1277,38 @@ def land_handoff(it: dict, phase: str, text: str) -> None:
         it["callout_wait"] = phase
         store.DEFERRED.put_nowait(("callout", it["id"], phase, worker["turn_seq"]))
         ensure_drain()
+    else:
+        it["state"] = store.NEEDS_REVIEW
+        it["updated"] = True
+
+
+def ask_callouts(it: dict, phase: str) -> None:
+    """Open the callout turn on a stage whose report is filed and whose
+    worker holds no turn: the reaped worker comes back on a resume. Caller
+    holds LOCK."""
+    it["callout_wait"] = phase
+    it["state"] = store.RUNNING
+    it["updated"] = False
+    store.say(it, store.event("callout turn starting"), sess=phase)
+    launch(it, prompts.callout_brief(), phase, trigger="callout", admitted=True)
+
+
+def land_callouts(it: dict, phase: str, body: str) -> None:
+    """Join the callouts onto the stage report, so parsing and the finalize
+    read see one document per stage, then advance."""
+    if body.strip():
+        section = (body if solvers.CALLOUT_HEAD.search(body)
+                   else "## Callouts\n\n" + body.strip())
+        combined = solvers.join_callouts(it.get("reports", {}).get(phase) or "",
+                                         section)
+        it.setdefault("reports", {})[phase] = combined
+        solvers.save_report(it["id"], phase, combined)
+    if auto_advances(it, phase):
+        it["handoff_pending"] = True
+        worker = store.PROCS.get((it["id"], phase))
+        if worker:
+            store.DEFERRED.put_nowait(("handoff", it["id"], phase, worker["turn_seq"]))
+            ensure_drain()
     else:
         it["state"] = store.NEEDS_REVIEW
         it["updated"] = True

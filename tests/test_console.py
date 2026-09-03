@@ -152,6 +152,11 @@ def item(s, item_id, state, **kw):
     return it
 
 
+def tagged(text, tag="handoff"):
+    """A worker's act: the text between its tags, as a turn ends with it."""
+    return f"``(・_・)``\n\n<{tag}>\n{text}\n</{tag}>\n\n*tink*"
+
+
 def worker(s, it, phase="refine", state="idle", turn_seq=1):
     w = {"item_id": it["id"], "phase": phase, "state": state,
          "turn_seq": turn_seq, "outbound": queue.Queue(), "seen": set(),
@@ -475,7 +480,7 @@ def test_create_landing_defers_the_handoff(srv, monkeypatch):
     it = item(srv, "a", srv.RUNNING, phase="create", landed=[], rev=0,
               auto_advance=True, sessions={"create": "cs", "refine": None})
     worker(srv, it, phase="create", state="running", turn_seq=4)
-    srv.finish_turn(it, {"result": "the report"}, None, time.time(), "create", True)
+    srv.finish_turn(it, {"result": tagged("the report")}, None, time.time(), "create", True)
     assert asked.wait(1)   # the callout ask goes out before any advance
     assert sent == [(srv.callout_brief(), "create", "callout")]
     assert not landed.is_set()
@@ -574,11 +579,18 @@ def test_a_handoff_waiting_on_a_subagent_is_held(srv, monkeypatch):
     srv.finish_turn(it, {"result": "the sweep is still running"}, None,
                     time.time(), "create", True)
     assert it["bg_wait"] == "create"
-    # the turn's text is filed as the report so far; a later landing replaces it
-    assert it["reports"] == {"create": "the sweep is still running"}
-    assert srv.report_path("a", "create").read_text() == "the sweep is still running"
+    # the turn ended without its report, as the brief asks while a task runs
+    assert it["reports"] == {}
+    assert not srv.report_path("a", "create").exists()
+    assert "bg_filed" not in it
     assert sent == []           # no callout ask while the hold stands
     assert "handoff held — Sweep corpus" in it["feed"][-1]["text"]
+    assert "asking again" not in it["feed"][-1]["text"]
+    # a report written with the task still out is filed, and lands when it is in
+    srv.finish_turn(it, {"result": tagged("the report so far")}, None,
+                    time.time(), "create", True)
+    assert it["bg_wait"] == "create" and it["bg_filed"] is True
+    assert it["reports"] == {"create": "the report so far"}
 
 
 def test_a_background_wake_starts_a_turn_of_its_own(srv):
@@ -610,7 +622,169 @@ def test_the_woken_turn_sends_the_handoff_ask_again(srv, monkeypatch):
     assert asked.wait(1)
     assert sent == [(srv.HANDOFF_BRIEF, "create", "handoff", True)]
     assert "bg_wait" not in it
+    assert it["reports"] == {}      # a note on the result is not the report
+
+
+def test_the_woken_turn_lands_the_block_it_carries(srv, monkeypatch):
+    monkeypatch.setattr(srv, "launch", lambda *a, **kw: None)
+    monkeypatch.setattr(srv, "ensure_drain", lambda: None)
+    it = create_item(srv, bg_wait="create", bg_at=time.time())
+    w = worker(srv, it, phase="create", state="running", turn_seq=4)
+    srv.finish_turn(it, {"result": tagged("the sweep found five sites")}, None,
+                    time.time(), "create", False)
+    assert "bg_wait" not in it
     assert it["reports"] == {"create": "the sweep found five sites"}
+    assert it["callout_wait"] == "create"
+    assert srv.DEFERRED.get_nowait() == ("callout", "a", "create", w["turn_seq"])
+
+
+def test_the_woken_turn_lands_the_report_the_hold_filed(srv, monkeypatch):
+    monkeypatch.setattr(srv, "launch", lambda *a, **kw: None)
+    monkeypatch.setattr(srv, "ensure_drain", lambda: None)
+    it = create_item(srv, bg_wait="create", bg_at=time.time(), bg_filed=True,
+                     reports={"create": "the report so far"})
+    w = worker(srv, it, phase="create", state="running", turn_seq=4)
+    srv.finish_turn(it, {"result": "the sweep is in; nothing to add"}, None,
+                    time.time(), "create", False)
+    assert "bg_wait" not in it and "bg_filed" not in it
+    assert it["reports"] == {"create": "the report so far"}
+    assert it["callout_wait"] == "create"
+    assert srv.DEFERRED.get_nowait() == ("callout", "a", "create", w["turn_seq"])
+
+
+def test_a_comment_turn_that_carries_the_block_lands(srv, monkeypatch):
+    """The block is the act, whichever turn carries it."""
+    monkeypatch.setattr(srv, "launch", lambda *a, **kw: None)
+    monkeypatch.setattr(srv, "ensure_drain", lambda: None)
+    it = create_item(srv)
+    w = worker(srv, it, phase="create", state="running", turn_seq=2)
+    srv.finish_turn(it, {"result": tagged("as you asked, the handoff")}, None,
+                    time.time(), "create", False)
+    assert it["reports"] == {"create": "as you asked, the handoff"}
+    assert it["callout_wait"] == "create"
+    assert srv.DEFERRED.get_nowait() == ("callout", "a", "create", w["turn_seq"])
+
+
+def test_an_asked_turn_without_the_block_is_asked_once_more(srv, monkeypatch):
+    monkeypatch.setattr(srv, "ensure_drain", lambda: None)
+    it = create_item(srv)
+    w = worker(srv, it, phase="create", state="running", turn_seq=4)
+    srv.finish_turn(it, {"result": "here is my report, untagged"}, None,
+                    time.time(), "create", True)
+    assert it["reports"] == {}
+    assert it["reasked"] == {"create": True}
+    assert "no handoff block — asking again" in it["feed"][-1]["text"]
+    assert srv.DEFERRED.get_nowait() == ("rehandoff", "a", "create", w["turn_seq"])
+    # the second miss files the text as written, and the callouts follow
+    srv.finish_turn(it, {"result": "still untagged"}, None, time.time(), "create", True)
+    assert it["reports"] == {"create": "still untagged"}
+    assert "reasked" not in it or "create" not in it["reasked"]
+    assert it["callout_wait"] == "create"
+    assert srv.DEFERRED.get_nowait() == ("callout", "a", "create", w["turn_seq"])
+
+
+def test_callouts_written_with_the_report_skip_the_callout_turn(srv, monkeypatch):
+    monkeypatch.setattr(srv, "ensure_drain", lambda: None)
+    it = create_item(srv, auto_advance=True)
+    w = worker(srv, it, phase="create", state="running", turn_seq=4)
+    text = tagged("the report") + "\n\n<callouts>\n1. [P2] a call\n</callouts>"
+    srv.finish_turn(it, {"result": text}, None, time.time(), "create", True)
+    assert it["reports"] == {"create": "the report\n\n## Callouts\n\n1. [P2] a call"}
+    assert it["callouts"] == ["[P2] a call"]
+    assert "callout_wait" not in it
+    assert it["handoff_pending"] is True
+    assert srv.DEFERRED.get_nowait() == ("handoff", "a", "create", w["turn_seq"])
+    # the feed shows the text without the tags
+    report = [m for m in it["feed"] if m["kind"] == "report"][-1]["text"]
+    assert "<handoff>" not in report and "the report" in report
+    assert "<callouts>" not in report and "[P2] a call" in report
+
+
+def test_a_tagged_callout_turn_joins_the_section(srv, monkeypatch):
+    monkeypatch.setattr(srv, "ensure_drain", lambda: None)
+    it = create_item(srv, callout_wait="create", reports={"create": "the report"})
+    worker(srv, it, phase="create", state="running", turn_seq=5)
+    srv.finish_turn(it, {"result": tagged("none", "callouts")}, None,
+                    time.time(), "create", False)
+    assert it["reports"] == {"create": "the report\n\n## Callouts\n\nnone"}
+    assert it["callouts"] == []
+
+
+def test_a_second_callout_turn_replaces_the_section(srv, monkeypatch):
+    monkeypatch.setattr(srv, "ensure_drain", lambda: None)
+    it = create_item(srv, callout_wait="create",
+                     reports={"create": "the report\n\n## Callouts\n\n1. [P2] old"})
+    worker(srv, it, phase="create", state="running", turn_seq=5)
+    srv.finish_turn(it, {"result": tagged("1. [P1] new", "callouts")}, None,
+                    time.time(), "create", False)
+    assert it["reports"] == {"create": "the report\n\n## Callouts\n\n1. [P1] new"}
+    assert it["callouts"] == ["[P1] new"]
+
+
+def test_a_report_with_two_callout_sections_keeps_the_last_at_load(srv):
+    doubled = "the report\n\n## Callouts\n\n1. [P2] old\n\n## Callouts\n\n1. [P1] new"
+    it = create_item(srv, reports={"create": doubled})
+    srv.seed_report(it)
+    assert it["reports"]["create"] == "the report\n\n## Callouts\n\n1. [P1] new"
+    assert srv.report_path(it["id"], "create").read_text() == it["reports"]["create"]
+    assert srv.collapse_callouts("one section\n\n## Callouts\n\nnone") == \
+        "one section\n\n## Callouts\n\nnone"
+
+
+def test_the_blocks_are_read_closed_and_last(srv):
+    assert srv.tagged("<handoff>\n a \n</handoff>", srv.HANDOFF_TAG) == "a"
+    assert srv.tagged("<handoff>\ncut off", srv.HANDOFF_TAG) is None
+    assert srv.tagged("<handoff>x</handoff> and <handoff>y</handoff>",
+                      srv.HANDOFF_TAG) == "y"
+    assert srv.untagged("hi\n<handoff>\nbody\n</handoff>\nbye") == "hi\nbody\nbye"
+    assert srv.callout_body("<callouts>\n## Callouts\n\n- one\n</callouts>").strip() == "- one"
+    assert srv.parse_callouts("<callouts>\n1. [P1] a\n2. [P3] b\n</callouts>") == \
+        ["[P1] a", "[P3] b"]
+    assert srv.parse_callouts("<callouts>\nnone\n</callouts>") == []
+    assert srv.callout_body("no callouts here") is None
+
+
+def test_a_stage_can_be_pointed_at_another_session(srv, monkeypatch, tmp_path):
+    transcript(srv, monkeypatch, tmp_path, "cut-copy")
+    monkeypatch.setattr(srv, "ensure_drain", lambda: None)
+    it = item(srv, "a", srv.NEEDS_REVIEW)
+    w = worker(srv, it, phase="refine")
+    assert "no transcript" in srv.act_session("a", "refine", "missing")["error"]
+    assert "no stage" in srv.act_session("a", "create2", "cut-copy")["error"]
+    assert srv.act_session("a", "refine", "cut-copy") == {"ok": True}
+    assert it["sessions"]["refine"] == "cut-copy"
+    assert ("a", "refine") not in srv.PROCS          # the old worker goes
+    assert w["state"] == "dying"
+    assert "session replaced by hand — was sess-a" in it["feed"][-1]["text"]
+    assert srv.DEFERRED.get_nowait() == ("reap", w)
+
+
+def test_a_stage_model_can_be_changed_by_hand(srv, monkeypatch):
+    monkeypatch.setattr(srv, "ensure_drain", lambda: None)
+    it = item(srv, "a", srv.NEEDS_REVIEW)
+    w = worker(srv, it, phase="refine")
+    assert "no stage" in srv.act_model("a", "nope", "m2")["error"]
+    assert "no model" in srv.act_model("a", "refine", " ")["error"]
+    assert srv.act_model("a", "refine", "m2") == {"ok": True}
+    assert srv.stage_of(it, "refine")["model"] == "m2"
+    assert ("a", "refine") not in srv.PROCS and w["state"] == "dying"
+    assert "model set by hand to m2" in it["feed"][-1]["text"]
+
+
+def test_land_takes_the_filed_report_as_the_handoff(srv, monkeypatch):
+    sent = []
+    monkeypatch.setattr(srv, "launch",
+                        lambda it, msg, phase, **kw: sent.append((msg, phase, kw)))
+    it = item(srv, "a", srv.NEEDS_REVIEW, chain=srv.default_chain(),
+              reports={"refine": "the report"})
+    assert srv.act_land("a") == {"ok": True}
+    assert it["callout_wait"] == "refine" and it["state"] == srv.RUNNING
+    assert sent == [(srv.callout_brief(), "refine",
+                     {"trigger": "callout", "admitted": True})]
+    assert "callout turn starting" in it["feed"][-1]["text"]
+    it["state"] = srv.NEEDS_REVIEW
+    it["reports"] = {}
+    assert "no handoff report" in srv.act_land("a")["error"]
 
 
 def test_a_held_landing_with_work_still_outstanding_stays_held(srv, monkeypatch):
@@ -624,7 +798,7 @@ def test_a_held_landing_with_work_still_outstanding_stays_held(srv, monkeypatch)
                     time.time(), "create", False)
     assert it["bg_wait"] == "create"
     assert it["bg_at"] > time.time() - 60      # the wait starts over
-    assert it["reports"] == {"create": "notes so far"}
+    assert it["reports"] == {}
     assert sent == []
     assert "handoff held — another sweep" in it["feed"][-1]["text"]
 
@@ -652,15 +826,36 @@ def test_a_hold_the_task_never_ends_expires_into_a_review(srv):
     assert "no report" in it["feed"][-1]["text"]
 
 
-def test_an_expired_hold_keeps_the_last_filed_report(srv):
+def test_an_expired_hold_lands_the_filed_report(srv, monkeypatch):
+    sent = []
+    monkeypatch.setattr(srv, "launch",
+                        lambda it, msg, phase, **kw: sent.append((msg, phase, kw)))
     it = create_item(srv, bg_wait="create", bg_at=time.time() - srv.BG_TTL - 1,
-                     reports={"create": "notes so far"})
+                     bg_filed=True, reports={"create": "notes so far"})
     worker(srv, it, phase="create")
     srv.expire_holds()
-    assert "bg_wait" not in it
-    assert it["state"] == srv.NEEDS_REVIEW
+    assert "bg_wait" not in it and "bg_filed" not in it
     assert it["reports"] == {"create": "notes so far"}
-    assert "the last report stands" in it["feed"][-1]["text"]
+    assert it["callout_wait"] == "create" and it["state"] == srv.RUNNING
+    assert sent == [(srv.callout_brief(), "create", {"trigger": "callout", "admitted": True})]
+    assert any("the filed report lands" in e["text"] for e in it["feed"]
+               if e["kind"] == "event")
+
+
+def test_a_restart_ends_every_hold(srv, monkeypatch):
+    """The outstanding set went with the process, so a hold found at startup
+    has nothing left to wait on."""
+    monkeypatch.setattr(srv, "launch", lambda *a, **kw: None)
+    fresh = create_item(srv, "a", bg_wait="create", bg_at=time.time(),
+                        reports={"create": "notes so far"})
+    bare = create_item(srv, "b", bg_wait="create", bg_at=time.time())
+    worker(srv, fresh, phase="create")
+    srv.expire_holds()
+    assert fresh["bg_wait"] == "create"      # not due
+    srv.expire_holds(force=True)
+    assert "bg_wait" not in fresh and fresh["callout_wait"] == "create"
+    assert "bg_wait" not in bare and bare["state"] == srv.NEEDS_REVIEW
+    assert "a console restart" in bare["feed"][-1]["text"]
 
 
 def test_a_worker_may_wait_on_what_it_starts(srv):
@@ -677,7 +872,7 @@ def create_item(srv, item_id="a", **kw):
 
 
 def land_report(srv, it, text="tried X, discarded Y"):
-    srv.finish_turn(it, {"result": text}, None, time.time(), "create", True)
+    srv.finish_turn(it, {"result": tagged(text)}, None, time.time(), "create", True)
 
 
 def test_a_landed_report_is_written_beside_the_state(srv):
@@ -870,8 +1065,8 @@ def test_auto_advance_runs_the_chain_without_the_user(srv, monkeypatch):
               lastActive={"create": None, "refine": None, "finalize": None})
     for phase, session in (("create", "rs"), ("refine", "r2s")):
         worker(srv, it, phase=phase, state="running", turn_seq=1)
-        srv.finish_turn(it, {"result": f"report from {phase}"}, None, time.time(),
-                        phase, True)
+        srv.finish_turn(it, {"result": tagged(f"report from {phase}")}, None,
+                        time.time(), phase, True)
         assert it["callout_wait"] == phase
         assert srv.DEFERRED.get_nowait() == ("callout", "a", phase, 1)
         srv.finish_turn(it, {"result": "## Callouts\n\nnone"}, None,
@@ -2720,7 +2915,7 @@ def test_an_earlier_stage_still_hands_off_by_itself(srv, monkeypatch):
               auto_stop="finalize", phase="create", landed=[],
               sessions={"create": "cs", "refine": None, "finalize": None})
     worker(srv, it, phase="create", state="running", turn_seq=4)
-    srv.finish_turn(it, {"result": "the report"}, None, time.time(), "create", True)
+    srv.finish_turn(it, {"result": tagged("the report")}, None, time.time(), "create", True)
     srv.finish_turn(it, {"result": "## Callouts\n\nnone"}, None,
                     time.time(), "create", False)
     assert landed.wait(1)
@@ -2788,7 +2983,7 @@ def test_a_resume_by_hand_keeps_the_cut_turns_flag(srv, monkeypatch):
     it = item(srv, "a", srv.NEEDS_REVIEW,
               resume_phase="refine", resume_handoff=True)
     assert srv.act_resume("a") == {"ok": True}
-    assert sent == [(srv.RESUME_BRIEF, "refine",
+    assert sent == [(srv.RESUME_BRIEF + srv.RESUME_HANDOFF_NOTE, "refine",
                      {"trigger": "resume", "handoff": True, "admitted": True})]
     assert it["state"] == srv.COMMENTED
     assert "resume_phase" not in it and "resume_handoff" not in it
@@ -2864,12 +3059,12 @@ def test_a_due_resume_relaunches_the_same_stage(srv, monkeypatch):
               resume_phase="refine", resume_handoff=True)
     out = srv.night_tick()
     assert out["resumed"] == ["a"]
-    assert sent == [(srv.RESUME_BRIEF, "refine",
+    brief = srv.RESUME_BRIEF + srv.RESUME_HANDOFF_NOTE
+    assert sent == [(brief, "refine",
                      {"trigger": "resume", "handoff": True, "admitted": True})]
     assert it["state"] == srv.COMMENTED
     assert "resume_at" not in it and "resume_phase" not in it
-    assert it["feed"][-1] == {"kind": "you", "text": srv.RESUME_BRIEF,
-                              "sess": "refine"}
+    assert it["feed"][-1] == {"kind": "you", "text": brief, "sess": "refine"}
 
 
 def test_a_resume_that_is_not_due_waits(srv, monkeypatch):
@@ -3020,9 +3215,14 @@ def test_an_item_that_never_landed_has_no_callout_pill(srv):
 def test_the_callout_ask_is_its_own_turn_not_a_report_section(srv):
     for brief in (srv.CREATE_BRIEF, srv.HANDOFF_BRIEF, srv.HANDOFF_TAIL,
                   srv.REVIEW_TAIL):
-        assert "## Callouts" not in brief
+        assert "## Callouts" not in brief and "<callouts>" not in brief
+    # every message that asks for a report says where it goes
+    for brief in (srv.CREATE_BRIEF, srv.HANDOFF_BRIEF, srv.HANDOFF_TAIL,
+                  srv.BAIL_BRIEF, srv.RESUME_HANDOFF_NOTE):
+        assert "<handoff>" in brief
+    assert "<handoff>" not in srv.REVIEW_TAIL
     text = srv.callout_brief()
-    assert "## Callouts" in text
+    assert "<callouts>" in text
     assert "P1-P3" in text
     for kind, pct, band, desc in srv.callout_bands():
         assert f"- P{band} · {kind} {pct}%: {desc}" in text
