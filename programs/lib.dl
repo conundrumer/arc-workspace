@@ -348,9 +348,14 @@ uniform_delta(K, [K, K, K, K]) :- true.
 .decl jump_delta(d: Dir8, k: number, delta: Shift) inline
 jump_delta(D, K, [B - T, T - B, R - L, L - R]) :- edge_delta(D, K, [T, B, L, R]).
 
+// The unit steps, materialized so the functor chain runs eight times per
+// program, not once per calling tuple.
+.decl _step(d: Dir8, delta: Shift)
+_step(D, Step) :- dir8_elem(D), jump_delta(D, 1, Step).
+
 // Unit step toward d.
 .decl step_delta(d: Dir8, delta: Shift) inline
-step_delta(D, Step) :- jump_delta(D, 1, Step).
+step_delta(D, Step) :- _step(D, Step).
 
 // q is one step from p toward d.
 .decl neighbor(p: Position, d: Dir8, q: Position) inline
@@ -1519,11 +1524,17 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     .decl _rival(key: Key, p: Position, piece: Piece)
     _rival(Ky, P, B) :- covers(Ky, B, P).
 
+    // The ord of each rival's successor, materialized so the aggregate runs
+    // once per rival rather than once per rival pair.
+    .decl _min_after(key: Key, p: Position, piece: Piece, m: number)
+    _min_after(Ky, P, B, M) :-
+        _rival(Ky, P, B),
+        M = min ord(B3) : { _rival(Ky, P, B3), ord(B3) > ord(B) }.
+
     // Next in ord order.
     .decl _next(key: Key, p: Position, piece: Piece, piece2: Piece)
     _next(Ky, P, B, B2) :-
-        _rival(Ky, P, B), _rival(Ky, P, B2), ord(B) < ord(B2),
-        M = min ord(B3) : { _rival(Ky, P, B3), ord(B3) > ord(B) }, ord(B2) = M.
+        _min_after(Ky, P, B, M), _rival(Ky, P, B2), ord(B2) = M.
 
     // The cycle it closes.
     .decl _succ(key: Key, p: Position, piece: Piece, piece2: Piece)
@@ -1573,11 +1584,17 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     // candidates in an arbitrary stable ord order — the pair rule as an
     // inner walk nested in an outer one.
 
+    // The ord of each candidate's successor, materialized so the aggregate
+    // runs once per candidate rather than once per candidate pair.
+    .decl _min_after(key: Key, o: Piece, c: Cand, m: number)
+    _min_after(K, O, C1, M) :-
+        cand(K, C1, O),
+        M = min ord(C3) : { cand(K, C3, O), ord(C3) > ord(C1) }.
+
     // Each piece's candidates, chained in ord order.
     .decl _after(key: Key, o: Piece, c: Cand, c2: Cand)
     _after(K, O, C1, C2) :-
-        cand(K, C1, O), cand(K, C2, O), ord(C1) < ord(C2),
-        M = min ord(C3) : { cand(K, C3, O), ord(C3) > ord(C1) }, ord(C2) = M.
+        _min_after(K, O, C1, M), cand(K, C2, O), ord(C2) = M.
 
     .decl _head(key: Key, o: Piece, c: Cand)
     _head(K, O, C) :- cand(K, C, O), !_after(K, O, _, C).

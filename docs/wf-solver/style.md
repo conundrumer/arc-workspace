@@ -151,10 +151,6 @@ Each branch must ground the head's variables on its own. A branch that takes a v
 
 Branches are never choices: a rule does not range over choice tags through a disjunction.
 
-## Inline cost
-
-Lib primitives are `inline`: each call expands into the calling rule, and Souffle evaluates the expansion once per tuple. Work that is the same for every tuple is not hoisted. A deep primitive chain inside a rule that ranges over many cells can exceed the runner's 5s CPU budget per pair. Compute tuple-independent values, such as deltas derived from Consts data, in their own relation and join them. When a derived per-cell position must also be read backward, materialize it in a comp relation keyed by the cell (`Reframe.inner`); the indexed join replaces the inline chain.
-
 ## Fit
 
 A solver that fits its Consts carries a `.comp Fit` after the body, under a `// --- fit ---` marker: one relation per fitted slot, with the slot's name and schema, derived from `ex_in` / `ex_out`. Fit relations that mirror no slot are helpers. The runner pairs Fit relations to slots by name, so a helper must not take a slot's name.
