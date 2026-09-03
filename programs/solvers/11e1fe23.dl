@@ -34,12 +34,9 @@ mark(P, Col) :- in(P, Col), !c.bg(Col).
 box.cell($U(), P) :- mark(P, _).
 box.grid($U(), P) :- in(P, _).
 
-// The box's center: equidistant from both edges on each axis.
+// The box's center.
 .decl center(p: Position)
-center(P) :-
-    box.inner($U(), P, P_in),                                  // box cell in the box's frame
-    perp_dir(D1, D2),                                          // one dir per axis
-    dist_pair(P_in, D1, K1, K1), dist_pair(P_in, D2, K2, K2).  // centered on both axes
+center(P) :- box.inner($U(), P, P_in), centered(P_in).
 
 // --- Shrink ---
 

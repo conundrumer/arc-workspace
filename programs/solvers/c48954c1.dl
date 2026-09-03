@@ -63,7 +63,7 @@ out(P_grid, Col, $Mirror()) :-
 // Tile contents: the input seeds the center tile; each neighbor reflects
 // across the shared boundary.
 .decl unfold_val(p_tile: Position, p_intile: Position, col: Color)
-unfold_val(T, P, Col) :- in(P, Col), c.arr_pos(T), !axis_off(T, _).
+unfold_val(T, P, Col) :- in(P, Col), c.arr_pos(T), centered(T).
 unfold_val(T2, P_img, Col) :-
     unfold_val(T, P, Col),                              // known tile
     axis_of(D, A), neighbor(T, D, T2), c.arr_pos(T2),

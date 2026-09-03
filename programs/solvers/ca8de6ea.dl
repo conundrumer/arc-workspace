@@ -83,17 +83,14 @@ cell(P) :- c.ring_succ(P, _).
 .init dp = DiagPlacement<Unit>
 dp.cell($U(), P) :- cell(P).
 
-// The center is nearer to no edge (the rotation's fixed point).
-.decl in_center(p: Position)
-in_center(P) :- in(P, _), !dp.nearer($U(), P, _).
-
 perm(P_in, P_out, $Cycle()) :-
     in(P_in, _), dp.diag_cell($U(), P_in, Diag, Ring),                // input arm: its diagonal + ring
     c.ring_shift(Ring, Shift),                                        // ring -> cyclic shift
     c.ring_succ(P_corner, _), dp.diag_cell($U(), P_corner, Diag, 0),  // output corner at that diagonal
     ring.walk($U(), P_corner, Shift, P_out).                          // advanced by the shift
 perm(P_in, P_out, $Cycle()) :-
-    in_center(P_in), c.out_center(P_out).                    // center fixed point
+    in(P_in, _), centered(P_in),   // the center, the rotation's fixed point
+    c.out_center(P_out).           // maps to the output center
 
 .decl out(p: Position, col: Color, c: Choice)
 out(P_grid_out, Col, Impl) :-
@@ -129,9 +126,9 @@ out(P_grid_out, Col, Impl) :-
     .decl out_label(p: Position, id: Ident)
     out_label(P_out, as(ord(P_in), Ident)) :- pair(P_in, P_out).
 
-    // The input center is nearer to no edge; its pair is the output center.
+    // The input's center cell pairs with the output center.
     .decl out_center(p: Position)
-    out_center(P_out) :- pair(P_in, P_out), !dp.nearer($U(), P_in, _).
+    out_center(P_out) :- pair(P_in, P_out), centered(P_in).
 
     // The output ring: the output frame's border cells.
     .decl ring_cell(p: Position)

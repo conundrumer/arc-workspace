@@ -504,6 +504,11 @@ slab_anchor(D, P1, P2) :-
     axis_of(D, A),
     split(P1, A, _, Ac), split(P2, A, _, Ac).
 
+// The two edge distances agree on each axis. An even extent has no such
+// Position.
+.decl centered(p: Position) inline
+centered([V, V, H, H]) :- true.
+
 // 1D divide along axis a with perpendicular passthrough. p_outer is
 // axis-only on a; p_inner is the full 2D within-slab position —
 // perpendicular carried from p.

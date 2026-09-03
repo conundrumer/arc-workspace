@@ -33,12 +33,7 @@ ink(Col) :- in(_, Col), !c.bg(Col).
 .init box = Frame2D<Unit>
 box.extent($U(), A, K) :- axis_elem(A), c.dim(K).
 
-// The box frame's centered cell and its outline.
-.decl hole(p: Position)
-hole(P) :-
-    box.cell($U(), P), perp_dir(D1, D2),
-    dist_pair(P, D1, K1, K1), dist_pair(P, D2, K2, K2).
-
+// The box frame's outline.
 .decl ring(p: Position)
 ring(P) :- box.cell($U(), P), dir_elem(D), dist(P, D, 0).
 
@@ -47,9 +42,10 @@ occ.cell(Col, P, $U())  :- in(P, Col), ink(Col).
 occ.shape(Col, S, $U()) :- ink(Col), ring(S).
 
 out(ORIGIN, Col_hole, $Box()) :-
-    occ.occurrence(Col, M),              // one ink's box
-    hole(C0), compose(M, C0, P_c),       // its hole on the grid
-    in(P_c, Col_hole), Col_hole != Col.  // the boxed cell's color
+    occ.occurrence(Col, M),                    // one ink's box
+    box.cell($U(), P_ctr), centered(P_ctr),    // the frame's center cell
+    compose(M, P_ctr, P_grid),                 // its hole on the grid
+    in(P_grid, Col_hole), Col_hole != Col.     // the boxed cell's color
 
 // --- Ring ---
 // Some surrounding cell of p does not carry ink a.

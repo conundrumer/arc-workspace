@@ -128,12 +128,8 @@ out(ORIGIN, Col, $Classify()) :-
     .decl pattern_out(id: Ident, c: Color)
     pattern_out(Id, Col) :- entry.id(E, Id), ex_out(E, _, Col).
 
-    // A cell off the midline of some axis.
-    .decl off_center(p: Position)
-    off_center(P) :- parse.cell(_, P, _), dir_elem(D), dist_pair(P, D, K, K2), K != K2.
-
     .decl center_pos(p: Position)
-    center_pos(P) :- parse.cell(_, P, _), !off_center(P).
+    center_pos(P) :- parse.cell(_, P, _), centered(P).
 
     .decl center_off_out(c: Color)
     center_off_out(Col) :- ex_out(E, _, Col), !parse.center_on(E).
