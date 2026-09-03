@@ -122,10 +122,18 @@ COMMIT_BRIEF = f"""Commit the changes that solver workers left in the working tr
 Scope: files git already tracks, under {", ".join(p + "/" for p in COMMIT_SCOPE)}. A session that hits a gap in the runner fixes it there, so those changes belong in the same sweep. Never stage untracked files, and leave changes outside that scope alone.
 
 Read git status and the diffs, and recent git log for message style. Group the changes into clean commits the way the log does; write each message from what the diff shows."""
+COMMIT_TIMEOUT = 900  # seconds a committer session may run
 COMMITTER_FLAGS = [
-    "--output-format", "json",
+    # The stream feeds the committer panel, so a run in progress can be read.
+    "--output-format", "stream-json", "--verbose",
     "--allowedTools", "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)",
     "Bash(git show:*)", "Bash(git add:*)", "Bash(git commit:*)",
+    "Bash(git restore:*)",
+    # untracked_note.py holds the scope the brief states: the console commits
+    # the approved solvers itself, so a file git does not track yet is one
+    # nobody approved. Restoring the index is how the committer answers a
+    # refusal, so that call is allowed too.
+    "--settings", str(HERE / "committer-settings.json"),
     "--add-dir", str(REF_DIR),
     "--exclude-dynamic-system-prompt-sections",
 ]

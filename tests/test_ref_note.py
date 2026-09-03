@@ -61,8 +61,8 @@ def grep_of(*ids, session="s1"):
 
 def test_an_uncommitted_solver_gets_the_note(repo):
     note = hook(repo, grep_of("cccc3333"))
-    assert note == ("note: cccc3333.dl is not approved — "
-                    "don't use it as reference.")
+    assert note == ("note: cccc3333.dl is not approved — don't use it as "
+                    "reference; it still counts as a survey caller.")
 
 
 def test_a_clean_committed_solver_is_silent(repo):

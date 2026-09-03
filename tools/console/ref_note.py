@@ -28,7 +28,8 @@ def standing(item_id: str, approved: set[str]) -> str | None:
         return None
     path = f"programs/solvers/{item_id}.dl"
     if not git_ok("cat-file", "-e", f"HEAD:{path}"):
-        return f"note: {item_id}.dl is not approved — don't use it as reference."
+        return (f"note: {item_id}.dl is not approved — don't use it as reference; "
+                "it still counts as a survey caller.")
     if git_ok("diff", "--quiet", "HEAD", "--", path):
         return None
     return (f"note: {item_id}.dl has uncommitted edits — the committed "

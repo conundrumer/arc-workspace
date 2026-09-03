@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "P=\"$CLAUDE_PROJECT_DIR/tools/console/untracked_note.py\"; [ -f \"$P\" ] || exit 0; python3 \"$P\""
+          }
+        ]
+      }
+    ]
+  }
+}
