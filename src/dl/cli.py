@@ -31,7 +31,7 @@ from dl.solve import (
     run_task,
 )
 from dl.souffle import _pool_workers, build_functors
-from dl.sweep import render_sweep, sweep_report
+from dl.sweep import MAX_CANDIDATES, render_sweep, sweep_report
 
 type Findings = list[tuple[str, int, str, str]]
 
@@ -416,7 +416,7 @@ def cmd_all(hints: bool = False, timed: bool = False) -> int:
     return 0 if not failed else 1
 
 
-def cmd_sweep(stem: str, max_candidates: int = 64) -> int:
+def cmd_sweep(stem: str, max_candidates: int = MAX_CANDIDATES) -> int:
     if _missing(stem):
         return 2
     build_functors()
@@ -518,7 +518,7 @@ def _parser() -> argparse.ArgumentParser:
 
     sweep = sub.add_parser("sweep", help="fill sweep only")
     sweep.add_argument("stem")
-    sweep.add_argument("cap", nargs="?", type=int, default=64,
+    sweep.add_argument("cap", nargs="?", type=int, default=MAX_CANDIDATES,
                        help="max candidates per slot")
 
     sub.add_parser("deletions", help="deletion report only").add_argument("stem")

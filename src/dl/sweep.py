@@ -32,8 +32,11 @@ from dl.source import (
 )
 
 
+MAX_CANDIDATES = 256
+
+
 def sweep_report(
-    stem: str, max_candidates: int = 64
+    stem: str, max_candidates: int = MAX_CANDIDATES
 ) -> list[tuple[str, str, object]]:
     """Conditional sweep of each enumerable Consts slot.
 
@@ -122,7 +125,8 @@ def sweep_report(
         if len(candidates) > max_candidates:
             results.append(
                 (public_slot(slot), "skip",
-                 f"{len(candidates)} alternative fills, cap {max_candidates}")
+                 f"{len(candidates)} alternative fills, cap {max_candidates}; "
+                 f"rerun with run_dl.py sweep {stem} {len(candidates)}")
             )
             continue
 
