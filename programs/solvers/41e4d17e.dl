@@ -1,0 +1,58 @@
+// 41e4d17e
+// concept: objects cast enclose
+// Hollow squares of ink sit on a background. A center cell casts a horizontal
+// and a vertical line, each running the whole grid. A line paints the
+// background it crosses and leaves ink as it is, so it runs on through the
+// square it came from.
+//
+// A square's outline and its hole share a center, so what casts is
+// underdetermined: $Object casts from each body of ink, $Hole from each
+// region the ink closes off from the grid edge.
+
+#include "../lib.dl"
+
+.type Choice = Object {} | Hole {}
+.type Caster = [ch: Choice, id: Ident]
+
+.comp Consts {
+    .decl bg(col: Color) bg(8).
+
+    // The color the lines are drawn in.
+    .decl paint(col: Color) paint(6).
+}
+
+.init c = Consts
+
+.decl impl_choice(ch: Choice)
+impl_choice($Object()).
+impl_choice($Hole()).
+
+// --- $Object ---
+.init objects = Components<Unit>
+objects.node($U(), P) :- in(P, Col), !c.bg(Col).
+
+// --- $Hole ---
+.init holes = Closed<Unit>
+holes.cell($U(), P) :- in(P, Col), c.bg(Col).
+
+// --- shared ---
+.decl caster(ca: Caster, p: Position)
+caster([$Object(), Id], P) :- objects.label($U(), P, Id).
+caster([$Hole(), Id], P) :- holes.region($U(), P, Id).
+
+.init frame = BoxFrame<Caster>
+frame.cell(Ca, P) :- caster(Ca, P).
+frame.grid(Ca, P) :- caster(Ca, _), in(P, _).
+
+.decl painted(p: Position, ch: Choice)
+painted(P, Ch) :-
+    in(P, Col), c.bg(Col),                            // a background cell
+    frame.inner([Ch, _], P_c, P_in), centered(P_in),  // a caster's center
+    axis_elem(A), same_line(A, P, P_c).               // sharing a line with it, on either axis
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    in(P, C_in), impl_choice(Ch),
+    ( painted(P, Ch), c.paint(Col)
+    ; !painted(P, Ch), Col = C_in
+    ).

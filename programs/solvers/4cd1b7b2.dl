@@ -1,0 +1,42 @@
+// 4cd1b7b2
+// concept: lines pack
+// The input is a grid whose rows and columns each hold every palette color
+// once, with some cells blanked. The output restores them: a blank takes the
+// one color its row and column leave free, and each cell so restored narrows
+// the blanks that share its row or column.
+
+#include "../lib.dl"
+
+.comp Consts {
+    .decl bg(col: Color) bg(0).
+
+    // The colors a line holds, one each.
+    .decl palette(col: Color)
+    palette(1). palette(2). palette(3). palette(4).
+}
+
+.init c = Consts
+
+// A candidate: one color at one cell.
+.type Cand = [p: Position, col: Color]
+
+// The colors a cell may take.
+.decl cell_cand(p: Position, col: Color)
+cell_cand(P, Col) :-
+    in(P, C_in),
+    ( !c.bg(C_in), Col = C_in     // a filled cell keeps its color
+    ; c.bg(C_in), c.palette(Col)  // a blank is open to the palette
+    ).
+
+// Each cell takes one candidate; elimination settles which.
+.init fill = CoverForcing<Unit, Cand>
+fill.covers($U(), [P, Col], P) :- cell_cand(P, Col).
+
+// `covers` states one color per cell. This states the other half: one color
+// twice on a line is a pair no completion holds.
+fill.conflict($U(), [P, Col], [P2, Col]) :-
+    cell_cand(P, Col), cell_cand(P2, Col), P != P2,  // one color, two cells
+    axis_elem(A), same_line(A, P, P2).               // sharing a row or column
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- fill.forced($U(), [P, Col]).

@@ -36,6 +36,8 @@ Survey: 2026-08-31 09:57
 Result: over the 423 solvers, no site outside the surfacing solver holds the operation. The 45 `same_line` references and 24 parser-matched dist-comparison rules elsewhere state orders, spans, sidedness, walks, and per-object extremum ranks, with no per-line fold. One near-miss could be served at the same length: 505fff84's `Fit.side`, a per-row two-marker extremum that today reads the pair directly under a `Row` key. The other near-misses resolve to `Bbox.edge_cell`, `Extremes`, `Rim`, or `Ray` under the `Not:` line. The survey also found reimplementations of existing primitives, routed to `migrate` without a verdict: `Bbox.edge_min` at 13713586, 22a4bbc2, 1ae2feb7; `Rim.rim_dir` at 2b83f449.
 
 Callers:
-- 16b78196 — `face`/`beyond` (silhouette: blockers are the set itself), as plain body relations.
+- 16b78196 — `face` (silhouette: blockers are the set itself), as an `ArgExtremes` instance whose record key carries the object, the direction, and the line.
 
 Recommendation: park. 2026-08-31 10:07. One caller and one equal-length near-miss do not clear the threshold. The operation looks general: it names one prior-level operation — the per-line extremum toward a direction — and takes its whole domain (the profiled set, the blocker set, the directions) as parameters, fixing no configuration beyond the frame.
+
+Closed: 2026-09-02 18:16. The solvers do without it: lib holds the extremum in `ArgExtremes`, and the sole caller reads the operation through an instance whose record key carries the object, the direction, and the line. A site that needs the blocker set as a separate input has not appeared.

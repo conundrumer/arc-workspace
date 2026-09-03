@@ -1,0 +1,94 @@
+// 332f06d7
+// concept: objects markers move walk
+// A corridor of open cells winds across a background. A piece sits at one end
+// of it, and a marker block sits elsewhere. The piece slides along the
+// corridor in straight runs, each run going until one more step would not fit.
+// The output shows the piece at rest, with the corridor filling the place it
+// left.
+//
+//   $Corridor — the piece travels to the corridor's other end: the stop it can
+//               leave only the way it came.
+//   $Goal     — the piece heads for the marker and rests where it cuts the way
+//               to it: the stop with no other stop between it and the marker.
+
+#include "../lib.dl"
+
+.type Choice = Corridor {} | Goal {}
+
+.comp Consts {
+    // --- shared ---
+    .decl bg(col: Color) bg(3).
+    .decl piece(col: Color) piece(0).
+    .decl corridor(col: Color) corridor(1).
+
+    // --- Goal ---
+    .decl marker(col: Color) marker(2).
+}
+
+.init c = Consts
+
+// The piece: the cells that travel.
+.decl piece_cell(p: Position)
+piece_cell(P) :- in(P, Col), c.piece(Col).
+
+// The corridor: every cell the piece may cover.
+.decl open(p: Position)
+open(P) :- in(P, Col), !c.bg(Col).
+
+// The piece fits at a displacement when its every cell lands in the corridor.
+.init fits = Occurrences<Unit, Unit>
+fits.cell($U(), P, $U())  :- open(P).
+fits.shape($U(), P, $U()) :- piece_cell(P).
+
+// The piece slides through the fitting placements.
+.init slide = Slide<Unit>
+slide.node($U(), Delta) :- fits.occurrence($U(), Delta).
+slide.dir($U(), D) :- dir_elem(D).
+
+// The stops of the journey: the piece starts where it stands and slides on.
+.decl stop(delta: Shift)
+stop(ORIGIN).
+stop(Delta2) :- stop(Delta), slide.halt($U(), Delta, _, Delta2).
+
+// The cells the piece covers at a stop.
+.decl covered(delta: Shift, p: Position)
+covered(Delta, P2) :- stop(Delta), piece_cell(P), compose(P, Delta, P2).
+
+// Where the piece comes to rest.
+.decl rest(delta: Shift, ch: Choice)
+
+// --- Corridor ---
+
+// A stop with one way on has the corridor ending at it: that one way is the
+// way the piece came.
+.init onward = Unanimous<Shift, Dir8>
+onward.item(Delta, D) :- slide.halt($U(), Delta, D, _).
+
+rest(Delta, $Corridor()) :- stop(Delta), Delta != ORIGIN, onward.value(Delta, _).
+
+// --- Goal ---
+
+// What the marker still reaches with the piece standing at a stop.
+.init ahead = Reach<Shift>
+ahead.node(Delta, P) :- stop(Delta), open(P), !covered(Delta, P).
+ahead.seed(Delta, P) :- stop(Delta), in(P, Col), c.marker(Col).
+
+// A stop the piece would pass on its way to the marker: another stop lies
+// between it and the marker.
+.decl short_of(delta: Shift)
+short_of(Delta) :- covered(Delta2, P), ahead.reach(Delta, P), Delta != Delta2.
+
+rest(Delta, $Goal()) :- stop(Delta), !short_of(Delta).
+
+// --- output ---
+
+.decl landed(p: Position, ch: Choice)
+landed(P, Ch) :- rest(Delta, Ch), covered(Delta, P).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- landed(P, Ch), c.piece(Col).
+out(P, Col, Ch) :-
+    rest(_, Ch), !landed(P, Ch),      // a cell the piece leaves free
+    ( piece_cell(P), c.corridor(Col)  // where it stood, the corridor shows through
+    ; in(P, Col), !piece_cell(P)      // elsewhere, the input
+    ).

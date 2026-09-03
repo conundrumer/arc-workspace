@@ -1,0 +1,90 @@
+// 35ab12c3
+// concept: markers cast move
+// Cells of one color are the corners of an outline. Each cell sights the
+// nearest same-color cell along each of the eight directions, and a sight
+// is drawn when the cell's other sights do not straddle it. Cases (the
+// pairs never separate them):
+//
+//   $Rays  — every cell draws each of its own unstraddled sights.
+//   $Joins — a line is drawn when it is unstraddled at both of its ends.
+//
+// A color of a single cell draws no outline. That lone mark touches a cell
+// of another color, and it restates that color's whole outline, shifted by
+// the step between the two cells. The shifted copy paints only where nothing
+// is drawn.
+
+#include "../lib.dl"
+
+.type Choice = Rays {} | Joins {}
+
+.comp Consts {
+    .decl bg(col: Color) bg(0).
+}
+
+.init c = Consts
+
+.decl impl_choice(ch: Choice)
+impl_choice($Rays()). impl_choice($Joins()).
+
+.decl pt(col: Color, p: Position)
+pt(Col, P) :- in(P, Col), !c.bg(Col).
+
+// The one cell of a color that has just one — a lone mark. A color of two
+// or more cells clashes, and outlines instead.
+.init spread = Unanimous<Color, Position>
+spread.item(Col, P) :- pt(Col, P).
+
+// Each color's cells cast along the eight directions, and a same-color cell
+// halts a cast: a stop is the caster's sight — the nearest same-color cell
+// that way.
+.init sight = Ray<Color>
+sight.dir(Col, D) :- pt(Col, _), dir8_elem(D).
+sight.mark(Col, P) :- pt(Col, P).
+sight.blocked(Col, P) :- pt(Col, P).
+
+// p sights a cell strictly toward h.
+.decl leans(p: Position, h: Dir8)
+leans(P, H) :- sight.stop(_, Q, _, _, P), nearer(H, Q, P).
+
+// d runs inside the cone p's sights span: they reach strictly past both
+// sides of the line through p along d.
+.decl straddled(p: Position, d: Dir8)
+straddled(P, D) :-
+    rotation(_, R), apply_dir8(R, D, H), dir8_opposite(H, H2),  // the two ways across d
+    leans(P, H), leans(P, H2).                                  // a sight past each
+
+.decl edge(col: Color, p: Position, d: Dir8, k: number, ch: Choice)
+
+// --- $Rays ---
+edge(Col, P, D, K, $Rays()) :- sight.stop(Col, _, D, K, P), !straddled(P, D).
+
+// --- $Joins ---
+edge(Col, P, D, K, $Joins()) :-
+    sight.stop(Col, Q, D, K, P), !straddled(P, D),
+    dir8_opposite(D, D2), !straddled(Q, D2).       // and unstraddled at the far end
+
+.decl shape(col: Color, p: Position, ch: Choice)
+shape(Col, P, Ch) :- pt(Col, P), impl_choice(Ch).
+shape(Col, P_grid, Ch) :-
+    edge(Col, P, D, K, Ch),
+    sight.cast(Col, P_grid, D, K2, P), K2 <= K.    // drawn out to the far cell
+
+// A lone mark, the cell of another color it touches, and the step between.
+.decl mark_shift(col: Color, base: Color, v: Shift)
+mark_shift(Col, Base, V) :-
+    spread.value(Col, M),                          // a lone mark
+    pt(Base, N), Base != Col,                      // a cell of another color
+    dir8_elem(D), step_delta(D, V), compose(N, V, M).  // one step from it onto the mark
+
+.decl shadow(p: Position, col: Color, ch: Choice)
+shadow(P_grid, Col, Ch) :-
+    mark_shift(Col, Base, V),
+    shape(Base, P, Ch), compose(P, V, P_grid),     // that color's outline, shifted
+    in(P_grid, _), !shape(_, P_grid, Ch).          // onto free grid
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- shape(Col, P, Ch).
+out(P, Col, Ch) :- shadow(P, Col, Ch).
+out(P, Col, Ch) :-
+    impl_choice(Ch), in(P, _), c.bg(Col),
+    !shape(_, P, Ch), !shadow(P, _, Ch).
