@@ -31,6 +31,7 @@ from dl.solve import (
     run_task,
 )
 from dl.souffle import _pool_workers, build_functors
+from dl.source import expand_macros
 from dl.sweep import MAX_CANDIDATES, render_sweep, sweep_report
 
 type Findings = list[tuple[str, int, str, str]]
@@ -479,7 +480,17 @@ def cmd_size(stem: str | None = None) -> int:
     return 1 if bad else 0
 
 
-COMMANDS = ("run", "lint", "grid", "sweep", "deletions", "audit", "fit-plan", "size")
+def cmd_expand(stem: str) -> int:
+    """The solver source after the runner's GRID and RIGID expansions,
+    which is the text Souffle compiles."""
+    if _missing(stem):
+        return 2
+    sys.stdout.write(expand_macros((SOLVERS_DIR / f"{stem}.dl").read_text()))
+    return 0
+
+
+COMMANDS = ("run", "lint", "grid", "sweep", "deletions", "audit", "fit-plan", "size",
+            "expand")
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -534,6 +545,19 @@ def _parser() -> argparse.ArgumentParser:
     )
     size.add_argument("stem", nargs="?",
                       help="one solver; all of them when omitted")
+
+    sub.add_parser(
+        "expand",
+        help="the source after GRID and RIGID expansion, as Souffle sees it",
+        description="Print the solver source with each GRID and RIGID call "
+                    "replaced by what it emits and nothing else changed. "
+                    "A GRID_HxW cell fact carries the cell's Position as its "
+                    "four edge distances [top, bottom, left, right] in the "
+                    "HxW frame; a RIGID block keeps its body as the chart, "
+                    "each declared relation renamed _rigid_<block>_<rel>, "
+                    "and adds per relation a <block>_<rel>(d4: D4, ...) "
+                    "derived as every D4 placement of that chart.",
+    ).add_argument("stem")
     return parser
 
 
@@ -556,6 +580,8 @@ def main(argv: list[str]) -> int:
             return cmd_fit_plan(args.stem)
         case "size":
             return cmd_size(args.stem)
+        case "expand":
+            return cmd_expand(args.stem)
         case _:
             if args.pairs:
                 if not args.stem:

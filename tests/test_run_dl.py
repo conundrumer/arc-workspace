@@ -108,6 +108,29 @@ def test_grid_on_a_missing_solver(solvers, capsys):
     assert "no solver at" in capsys.readouterr().err
 
 
+MACROS = (".decl shape(p: Position)\n"
+          "GRID_MASK_2x2(shape,\n"
+          "    1, 0,\n"
+          "    0, 1)\n"
+          "RIGID(piece,\n"
+          "    .decl glyph(p: Position)\n"
+          "    glyph([0, 0, 0, 0]).\n"
+          ")\n")
+
+
+def test_expand_prints_the_macro_expansion_without_the_run_directives(
+        solvers, capsys):
+    (solvers / f"{STEM}.dl").write_text(MACROS)
+
+    assert cli.cmd_expand(STEM) == 0
+    out = capsys.readouterr().out
+    assert "shape([0, 1, 0, 1]).\nshape([1, 0, 1, 0]).\n" in out
+    assert ".decl piece_glyph(d4: D4, p: Position)" in out
+    assert "_rigid_piece_glyph(B0), d4_elem(D4), apply(D4, B0, A0)" in out
+    assert "GRID_" not in out and "RIGID(" not in out
+    assert ".input" not in out and ".output" not in out
+
+
 def _explode(*args, **kwargs):
     raise AssertionError("ran the solver on a source that does not compile")
 
