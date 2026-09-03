@@ -20,7 +20,8 @@ def run_dl(
         raise FileNotFoundError(f"no .dl solver at {dl_path}")
 
     return parse_output(
-        _run_source(build_source(dl_path.read_text()), grid_to_facts(input_rows))
+        _run_source(build_source(dl_path.read_text()), grid_to_facts(input_rows),
+                    solver_path=dl_path)
     )
 
 

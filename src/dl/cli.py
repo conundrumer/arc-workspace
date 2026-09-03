@@ -155,7 +155,7 @@ def cmd_one(stem: str, hints: bool = False, timed: bool = False) -> int:
             suffix = f" ({n} variants)" if n > 1 else ""
             print(f"{p.kind}[{p.idx}]: PASS{suffix}")
         else:
-            for line in render_pair_failure(p):
+            for line in render_pair_failure(p, stem):
                 print(line)
 
     coverage = [] if res_out_stem(stem) else case_coverage(result.pairs)
@@ -229,7 +229,7 @@ def cmd_pairs(stem: str, path: str) -> int:
                 print(f"{kind}[{idx}]: PASS{suffix}")
             else:
                 failed = True
-                for line in render_pair_failure(r):
+                for line in render_pair_failure(r, stem):
                     print(line)
     return 1 if failed else 0
 

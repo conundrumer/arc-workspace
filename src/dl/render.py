@@ -42,6 +42,12 @@ def _short(name: str) -> str:
     return name if len(name) <= 40 else name[:37] + "..."
 
 
+def _error_lines(error: str) -> list[str]:
+    """An error indented under its pair. A Souffle failure carries what it
+    hit on lines of its own, and each of them sits at that indent."""
+    return [f"  {line}" for line in error.splitlines()]
+
+
 def render_stem_failures(stem: str, pairs: list[PairResult]) -> list[str]:
     """Failure lines for one stem's pairs. A source-level error fails every
     pair the same way, so a single error shared by all of them prints once.
@@ -54,15 +60,18 @@ def render_stem_failures(stem: str, pairs: list[PairResult]) -> list[str]:
     shared = {TEMP_NAME_RE.sub(f"{stem}.dl", p.error) for p in bad if p.error}
     if len(bad) > 1 and len(shared) == 1 and all(p.error for p in bad):
         names = ", ".join(f"{p.kind}[{p.idx}]" for p in bad)
-        return [f"{names}: FAIL", f"  {shared.pop()}"]
-    return [line for p in bad for line in render_pair_failure(p)]
+        return [f"{names}: FAIL", *_error_lines(shared.pop())]
+    return [line for p in bad for line in render_pair_failure(p, stem)]
 
 
-def render_pair_failure(p: PairResult) -> list[str]:
-    """Lines describing a failing pair: variant breakdown + diff per failing actual."""
+def render_pair_failure(p: PairResult, stem: str | None = None) -> list[str]:
+    """Lines describing a failing pair: variant breakdown + diff per failing
+    actual. With the stem given, the solver's name stands in for the
+    tempfile's in the error."""
     lines = [f"{p.kind}[{p.idx}]: FAIL"]
     if p.error:
-        lines.append(f"  {p.error}")
+        error = TEMP_NAME_RE.sub(f"{stem}.dl", p.error) if stem else p.error
+        lines.extend(_error_lines(error))
         return lines
     if not p.variants:
         lines.append("  (no variants emitted)")

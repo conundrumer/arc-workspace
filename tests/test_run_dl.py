@@ -193,7 +193,8 @@ def test_one_error_shared_by_every_pair_renders_once():
     lines = render_stem_failures(STEM, [_failed(0, _souffle_error(".tmpab12cd.dl")),
                                         _failed(1, _souffle_error(".tmpzz98yy.dl"))])
     assert lines == ["train[0], train[1]: FAIL",
-                     f"  {_souffle_error(f'{STEM}.dl')}"]
+                     *(f"  {ln}"
+                       for ln in _souffle_error(f"{STEM}.dl").splitlines())]
 
 
 def test_pairs_failing_differently_each_render():

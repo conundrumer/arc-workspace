@@ -1,6 +1,7 @@
 """Read and rewrite solver source text, and assemble the program each mode
 runs."""
 
+import bisect
 import re
 
 from dl.dlparse import Comp, Decl, ParseError, Rigid, parse
@@ -12,6 +13,14 @@ FIT_DIRECTIVES = ".input ex_in\n.input ex_out\n.output fit_diff(IO=stdout)\n"
 COMP_HEADER_RE = re.compile(r"\.comp\s+(\w+)")
 DECL_RE = re.compile(r"\.decl\s+(\w+)\s*\(([^)]*)\)")
 GRID_CALL_RE = re.compile(r"\bGRID_(MASK_|SPARSE_)?(\d+)x(\d+)\s*\(")
+
+# One piece of an expansion's output: where in the input it came from, the
+# text it contributes, and whether that text is the input's own, copied.
+type Chunk = tuple[int, str, bool]
+
+
+def _join(chunks: list[Chunk]) -> str:
+    return "".join(text for _, text, _ in chunks)
 
 
 def _split_args(s: str) -> list[str]:
@@ -56,9 +65,10 @@ def _grid_call_facts(policy: str, h: int, w: int, args: list[str]) -> list[str]:
     return rows
 
 
-def expand_grid_macros(source: str) -> str:
-    """Replace each GRID call site with the facts it denotes."""
-    out, pos = [], 0
+def _grid_chunks(source: str) -> list[Chunk]:
+    """The pieces `expand_grid_macros` joins."""
+    out: list[Chunk] = []
+    pos = 0
     for m in GRID_CALL_RE.finditer(source):
         if m.start() < pos:
             continue
@@ -77,11 +87,16 @@ def expand_grid_macros(source: str) -> str:
         prefix = source[line_start:m.start()]
         indent = prefix if not prefix.strip() else ""
         rows = _grid_call_facts(policy, h, w, args)
-        out.append(source[pos:m.start()])
-        out.append(f"\n{indent}".join(rows))
+        out.append((pos, source[pos:m.start()], True))
+        out.append((m.start(), f"\n{indent}".join(rows), False))
         pos = i
-    out.append(source[pos:])
-    return "".join(out)
+    out.append((pos, source[pos:], True))
+    return out
+
+
+def expand_grid_macros(source: str) -> str:
+    """Replace each GRID call site with the facts it denotes."""
+    return _join(_grid_chunks(source))
 
 
 RIGID_CALL_RE = re.compile(r"\bRIGID\s*\(")
@@ -124,10 +139,10 @@ def _rigid_rule(head: str, src: str, types: list[str]) -> str:
     return f"{head}(D4, {', '.join(heads)}) :- {body}."
 
 
-def expand_rigid_macros(source: str) -> str:
-    """Replace each RIGID block with its chart under generated names and
-    the placed forms the solver reads."""
-    out, pos = [], 0
+def _rigid_chunks(source: str) -> list[Chunk]:
+    """The pieces `expand_rigid_macros` joins."""
+    out: list[Chunk] = []
+    pos = 0
     for m in RIGID_CALL_RE.finditer(source):
         if m.start() < pos:
             continue
@@ -152,17 +167,62 @@ def expand_rigid_macros(source: str) -> str:
                 _rigid_rule(f"{block}_{rel}",
                             f"{RIGID_CHART_PREFIX}{block}_{rel}", types),
             ]
-        out.append(source[pos:m.start()])
-        out.append(body.strip())
-        out.append("\n" + "\n".join(f"{indent}{g}" for g in generated))
+        out.append((pos, source[pos:m.start()], True))
+        out.append((m.start(), body.strip(), False))
+        out.append((m.start(),
+                    "\n" + "\n".join(f"{indent}{g}" for g in generated), False))
         pos = i
-    out.append(source[pos:])
-    return "".join(out)
+    out.append((pos, source[pos:], True))
+    return out
+
+
+def expand_rigid_macros(source: str) -> str:
+    """Replace each RIGID block with its chart under generated names and
+    the placed forms the solver reads."""
+    return _join(_rigid_chunks(source))
 
 
 def expand_macros(source: str) -> str:
     """Both macro expansions; RIGID first, so its inner GRID calls expand."""
     return expand_grid_macros(expand_rigid_macros(source))
+
+
+def _chunk_line_starts(chunks: list[Chunk]) -> list[int]:
+    """Input offset each output line starts at, one entry per output line.
+
+    A verbatim chunk carries its text across unchanged, so a line inside it
+    keeps its own offset. A generated chunk stands for the call it replaced,
+    so every line of it takes that call's offset.
+    """
+    starts: list[int] = []
+    fresh = True
+    for off, text, verbatim in chunks:
+        for j, ch in enumerate(text):
+            if fresh:
+                starts.append(off + j if verbatim else off)
+            fresh = ch == "\n"
+    return starts
+
+
+def _line_map(text: str, chunks: list[Chunk]) -> list[int]:
+    """Input line for each output line of `chunks` over `text`, 1-based."""
+    newlines = [i for i, ch in enumerate(text) if ch == "\n"]
+    return [
+        bisect.bisect_left(newlines, off) + 1
+        for off in _chunk_line_starts(chunks)
+    ]
+
+
+def macro_line_map(source: str) -> list[int]:
+    """Source line for each line of `expand_macros(source)`, 1-based both
+    ways, indexed from 0. A generated line maps to its call site."""
+    rigid = _rigid_chunks(source)
+    placed = _join(rigid)
+    to_source = _line_map(source, rigid)
+    return [
+        to_source[min(line, len(to_source)) - 1]
+        for line in _line_map(placed, _grid_chunks(placed))
+    ]
 
 
 def public_slot(name: str) -> str:
