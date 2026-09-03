@@ -103,23 +103,25 @@ last_step(Pan, Pan2) :- succ_frame(Pan, Pan2), !succ_frame(Pan2, _).
 
 // --- runs ---
 
-// A run of content: its end toward d, and the cells behind that end.
-.decl run_end(pan: Position, d: Dir, p: Position)
-run_end(Pan, D, P) :-
-    content(Pan, P, _), dir_elem(D), neighbor(P, D, Q), !content(Pan, Q, _).
+// The growth axis is derived from run counts, so runs are taken in every
+// direction.
+.init run = Slide<Position>
+run.node(Pan, P) :- content(Pan, P, _).
+run.dir(Pan, D) :- content(Pan, _, _), dir_elem(D).
 
-.type RunKey = [pan: Position, d: Dir]
-
-// The run reaches back from its end while content carries on.
-.init run = Ray<RunKey>
-run.dir([Pan, D], D2) :- run_end(Pan, D, _), opposite(D, D2).
-run.cell([Pan, D], P) :- run_end(Pan, D, _), content(Pan, P, _).
-run.mark([Pan, D], P) :- run_end(Pan, D, P).
-run.blocked([Pan, D], P) :- run_end(Pan, D, _), tpl(P, _), !content(Pan, P, _).
-
+// A run named by its end toward d, paired with its other end.
 .decl run_ends(pan: Position, d: Dir, s: Position, f: Position)
 run_ends(Pan, D, S, F) :-
-    run.clear([Pan, D], F, _, _, S), opposite(D, D2), run_end(Pan, D2, F).
+    run.rim_dir(Pan, S, D),                    // an end
+    opposite(D, D2), run.rest(Pan, S, D2, F).  // the other end, inward of it
+
+// The cells one run covers.
+.decl run_cell(pan: Position, d: Dir, s: Position, p: Position)
+run_cell(Pan, D, S, P) :-
+    run_ends(Pan, D, S, _), opposite(D, D2),
+    ( P = S                     // the end it is named by
+    ; run.run(Pan, S, D2, P)    // and what lies inward of it
+    ).
 
 .decl run_line(pan: Position, d: Dir, s: Position, l: Position)
 run_line(Pan, D, S, L) :- run_ends(Pan, D, S, _), axis_of(D, A), split(S, A, _, L).
@@ -189,10 +191,10 @@ run_match($Rank(), Pan2, D, Sn, Sf, Tn, Tf) :-
 // run's colors.
 .init hues = KeyedSetCompare<RunEnd, RunEnd, Color>
 hues.pattern_member([D, S], Col2) :-
-    last_step(Pan, _), run.clear([Pan, D], P, _, _, S),   // a source run's cell
-    content(Pan, P, Col), recolor(Col, Col2).             // its color, turned
+    last_step(Pan, _), run_cell(Pan, D, S, P),   // a source run's cell
+    content(Pan, P, Col), recolor(Col, Col2).    // its color, turned
 hues.observed_member([D, T], Col) :-
-    last_step(_, Pan2), run.clear([Pan2, D], P, _, _, T), content(Pan2, P, Col).
+    last_step(_, Pan2), run_cell(Pan2, D, T, P), content(Pan2, P, Col).
 
 run_match($Hue(), Pan2, D, Sn, Sf, Tn, Tf) :-
     last_step(Pan, Pan2), growth_axis(A), axis_of(D, A),
@@ -208,10 +210,11 @@ drag(Ch, D, Tn, Q, Col2, V) :-
     displacement(Sn, Tn, Vn), compose(Tn, Vn, En),             // the near end steps again
     displacement(Sf, Tf, Vf), compose(Tf, Vf, Ef),             // and so does the far end
     ( V = Vn ; V = Vf ),                                       // one end does the carrying
-    run.clear([Pan, D], P, _, _, Tn), content(Pan, P, Col),    // a cell of the run
+    run_cell(Pan, D, Tn, P), content(Pan, P, Col),             // a cell of the run
     compose(P, V, Q),                                          // the cell it carries to
-    dist(Q, D, Kq), dist(En, D, Kn), Kq >= Kn,                 // within the new run
-    opposite(D, D2), dist(Q, D2, Kq2), dist(Ef, D2, Kf), Kq2 >= Kf,
+    dist_pair(Q, D, Kq, Kq2),                                  // its distance to each edge
+    dist(En, D, Kn), dist_pair(Ef, D, _, Kf),                  // the new run's ends
+    Kq >= Kn, Kq2 >= Kf,                                       // the cell lies within it
     recolor(Col, Col2).
 
 .decl moved(ch: Choice, d: Dir, t: Position, q: Position)

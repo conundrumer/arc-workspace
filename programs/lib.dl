@@ -766,6 +766,35 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
         ray(K, P, D, _, _), ray(K, P, O, _, _).
 }
 
+// The maximal straight run inside a keyed node set. A cast with step
+// counts, or from a mark outside the set, is Ray.
+.comp Slide<Key> {
+    // Where the mover may stand, per key. Positions or Shifts.
+    .decl node(key: Key, p: Position)
+
+    // The run directions, per key.
+    .decl dir(key: Key, d: Dir8)
+
+    // q is reached from p toward d by steps that stay in the node set.
+    .decl run(key: Key, p: Position, d: Dir8, q: Position)
+    run(Ky, P, D, Q) :- node(Ky, P), dir(Ky, D), neighbor(P, D, Q), node(Ky, Q).
+    run(Ky, P, D, R) :- run(Ky, P, D, Q), neighbor(Q, D, R), node(Ky, R).
+
+    // The mover at p cannot step toward d.
+    .decl rim_dir(key: Key, p: Position, d: Dir8)
+    rim_dir(Ky, P, D) :- node(Ky, P), dir(Ky, D), neighbor(P, D, Q), !node(Ky, Q).
+
+    // The far end of a run: one more step would leave the node set.
+    .decl halt(key: Key, p: Position, d: Dir8, q: Position)
+    halt(Ky, P, D, Q) :- run(Ky, P, D, Q), rim_dir(Ky, Q, D).
+
+    // Where the mover from p comes to rest toward d: its halt, or p itself
+    // when it cannot step.
+    .decl rest(key: Key, p: Position, d: Dir8, q: Position)
+    rest(Ky, P, D, Q) :- halt(Ky, P, D, Q).
+    rest(Ky, P, D, P) :- rim_dir(Ky, P, D).
+}
+
 // Sparse numeric set → dense ordinal position, per key.
 // `ord` is a reserved word and cannot be the instance name.
 .comp Ordinal<Key> {

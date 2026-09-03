@@ -253,18 +253,16 @@ out(P, Col, Ch) :-
     .decl start(e: Example, t: Position, p: Position)
     start(E, T, P2) :- pen(E, T, P), c.advance(D), neighbor(P, D, P2).
 
-    // Contiguous advance through the glyph's color, from each start.
-    .decl run(e: Example, t: Position, p0: Position, d: Dir, p: Position)
-    run(E, T, P0, D, P2) :-
-        ( start(E, T, P0), stroke_cell(E, T, P0), dir_elem(D), P = P0  // inked start
-        ; run(E, T, P0, D, P)                                          // or grow the run
-        ),
-        neighbor(P, D, P2), stroke_cell(E, T, P2).
+    // The move tables record the stroke's direction, so runs are taken in
+    // every direction.
+    .init run = Slide<GT>
+    run.node([E, T], P) :- stroke_cell(E, T, P).
+    run.dir([E, T], D) :- stroke_cell(E, T, _), dir_elem(D).
 
     // A run cell with its step count from the start.
     .decl run_len(e: Example, t: Position, d: Dir, k: number, p: Position)
     run_len(E, T, D, K, P) :-
-        run(E, T, P0, D, P),
+        start(E, T, P0), run.run([E, T], P0, D, P),
         axis_of(D, A), sub_extent(P0, A, K), jump(P0, D, K, P).
 
     .decl drew(e: Example, t: Position, d: Dir, k: number, p: Position)
@@ -273,7 +271,7 @@ out(P, Col, Ch) :-
         ( parse.order.next(E, T, T2),                                // the successor stroke
           c.advance(Da), neighbor(P, Da, P2), stroke_cell(E, T2, P2) // can start at this end
         ; parse.order.last(E, T),                                    // no successor
-          neighbor(P, D, P2), !stroke_cell(E, T, P2)                 // the run is maximal
+          run.rim_dir([E, T], P, D)                                  // the run is maximal
         ).
 
     .decl occurrence(e: Example, t: Position)
