@@ -134,23 +134,23 @@ def test_shadowed_type_argument_fires():
 .comp Parse<Key> {
     .type KP = [key: Key, p_part: Position]
     .decl cell(key: Key, p: Position)
-    .init box = BoxFrame<KP>
-    box.cell([Ky, Q], P) :- cell(Ky, P), cell(Ky, Q).
+    .init occ = Occurrences<KP, Color>
+    occ.cell([Ky, Q], P, 1) :- cell(Ky, P), cell(Ky, Q).
 }
 .init parse = Parse<Unit>
 """
     fs = [f for f in lint_body(src) if f[0] == "shadowed type"]
     assert [f[1] for f in fs] == [4]
-    assert "`KP` also names a type inside `BoxFrame`" in fs[0][2]
+    assert "`KP` also names a type inside `Occurrences`" in fs[0][2]
     assert "rename it" in fs[0][2]
 
 
 def test_shadowed_type_reaches_through_a_nested_instance():
     src = """\
 .comp Wrap<K> {
-    .init b = BoxFrame<K>
+    .init o = Occurrences<K, Color>
     .decl cell(key: K, p: Position)
-    b.cell(K, P) :- cell(K, P).
+    o.cell(K, P, 1) :- cell(K, P).
 }
 .type KP = [key: Unit, p_part: Position]
 .init w = Wrap<KP>

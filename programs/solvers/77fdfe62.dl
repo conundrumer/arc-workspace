@@ -24,8 +24,7 @@
     .decl line(c: Color) line(1).
 
     // --- $Margin ---
-    .decl margin(p: Inset)
-    margin([2, 2, 2, 2]).
+    .decl margin(k: number) margin(2).
 
     // --- $Bg ---
     .decl bg(c: Color) bg(0).
@@ -35,15 +34,11 @@
 
 // The four corner colors, keyed by their corner.
 .decl corner_color(diag: DiagDir, col: Color)
-corner_color(Diag, Col) :- in(P, Col), diag_dist(P, Diag, _, 0, 0).
+corner_color(Diag, Col) :- in(P, Col), corner_dist(P, Diag, 0).
 
-.decl interior(p: Position, ic: Interior)
-
-// Each interior cell viewed from the interior box, keyed by cell and
-// claim; each claim supplies its box as outer.
-.type FrameKey = [p: Position, ic: Interior]
-.init frame = Reframe<FrameKey>
-frame.cell([P, Ic], P) :- interior(P, Ic).
+// The interior in its own frame; each claim supplies the margins the grid
+// keeps outside it.
+.init frame = MarginFrame<Interior>
 
 // --- $Lines ---
 
@@ -67,22 +62,24 @@ screened(P, D) :- cut.part_idx($U(), P, D, N), N != 0.
 .decl unscreened(p: Position)
 unscreened(P) :- in(P, _), dir_elem(D), !screened(P, D).
 
-interior(P, $Lines()) :- in(P, _), !unscreened(P).
+// The cells a separator line screens from every edge.
+.decl fenced(p: Position)
+fenced(P) :- in(P, _), !unscreened(P).
 
 .init box = Bbox<Unit>
-box.cell($U(), P) :- interior(P, $Lines()).
+box.cell($U(), P) :- fenced(P).
 
-frame.outer([P, $Lines()], M) :- interior(P, $Lines()), box.margin($U(), M).
+frame.cell($Lines(), P) :- fenced(P).
+frame.width($Lines(), D, K) :- box.edge_min($U(), D, K).
 
 // --- $Margin ---
 
-interior(P, $Margin()) :- in(P, _), c.margin(M), geq(P, M).
-
-frame.outer([P, $Margin()], M) :- interior(P, $Margin()), c.margin(M).
+frame.cell($Margin(), P) :- in(P, _).
+frame.width($Margin(), D, K) :- dir_elem(D), c.margin(K).
 
 // Quadrants of the interior, in its own frame.
 .init quad = DiagPlacement<Interior>
-quad.cell(Ic, I) :- frame.inner([_, Ic], I).
+quad.cell(Ic, I) :- frame.inner(Ic, _, I).
 
 .decl blank_elem(b: Blank)
 blank_elem($Pass()). blank_elem($Bg()).
@@ -91,17 +88,17 @@ blank_elem($Pass()). blank_elem($Bg()).
 
 // Ink takes the corner color of its quadrant.
 out(I, Col, [Ic, Bl]) :-
-    in(P, Ink), c.ink(Ink), frame.inner([P, Ic], I),   // interior ink cell
+    in(P, Ink), c.ink(Ink), frame.inner(Ic, P, I),   // interior ink cell
     quad.quadrant(Ic, I, Diag), corner_color(Diag, Col),
-    blank_elem(Bl).
+    blank_elem(Bl).                                  // ink reads the same under either blank claim
 
 // --- $Pass ---
 
-out(I, Col, [Ic, $Pass()]) :- in(P, Col), !c.ink(Col), frame.inner([P, Ic], I).
+out(I, Col, [Ic, $Pass()]) :- in(P, Col), !c.ink(Col), frame.inner(Ic, P, I).
 
 // --- $Bg ---
 
-out(I, Col, [Ic, $Bg()]) :- in(P, C0), !c.ink(C0), frame.inner([P, Ic], I), c.bg(Col).
+out(I, Col, [Ic, $Bg()]) :- in(P, C0), !c.ink(C0), frame.inner(Ic, P, I), c.bg(Col).
 
 // --- fit ---
 
@@ -129,6 +126,8 @@ out(I, Col, [Ic, $Bg()]) :- in(P, C0), !c.ink(C0), frame.inner([P, Ic], I), c.bg
     .init box = Bbox<Example>
     box.cell(E, P) :- interior(E, P).
 
-    .decl margin(p: Inset)
-    margin(M) :- box.margin(_, M).
+    // The fenced interior stands the same depth in from every edge of every
+    // example, so that depth is the margin.
+    .decl margin(k: number)
+    margin(K) :- box.edge_min(_, _, K).
 }

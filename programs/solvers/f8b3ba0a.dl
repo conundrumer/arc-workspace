@@ -8,8 +8,8 @@
 //
 //   $Cells   — cells of each color.
 //   $Blocks  — connected components of each color.
-//   $Lattice — tiles of the separator lattice (inset past the border, then
-//              divide_by_size_2d) of each color.
+//   $Lattice — tiles of the separator lattice (the frame inside the border,
+//              divided by tile size) of each color.
 //
 // $Cells/$Blocks coincide while every block has one size; $Blocks/$Lattice
 // coincide while every block is a lattice tile.
@@ -30,7 +30,9 @@
     tile_dim(AXIS_V, 1). tile_dim(AXIS_H, 2).
 
     .decl tile_gap(g: number) tile_gap(1).
-    .decl inset_delta(p: Inset) inset_delta([-1, -1, -1, -1]).
+
+    // The separator border around the lattice.
+    .decl border_width(k: number) border_width(1).
 }
 
 .init c = Consts
@@ -65,16 +67,21 @@ block_count.item(Col, Id) :- comps.label($U(), P, Id), in(P, Col).
 
 // --- $Lattice: tile detection ---
 
-// Non-bg cells never sit on the separator border, so the inset stays in frame.
+// The frame the border encloses. Non-bg cells never sit on that border, so
+// the frame holds every one of them.
+.init interior = MarginFrame<Unit>
+interior.cell($U(), P) :- in(P, _).
+interior.width($U(), D, K) :- dir_elem(D), c.border_width(K).
+
 .init lattice = Tile2D<Unit>
-lattice.cell(P_int) :- in(P, Col), !c.bg(Col), c.inset_delta(D), compose(P, D, P_int).
+lattice.cell(P_int) :- in(P, Col), !c.bg(Col), interior.inner($U(), P, P_int).
 lattice.dim($U(), A, K) :- c.tile_dim(A, K).
 lattice.gap(G) :- c.tile_gap(G).
 
 .decl tile_color(p_tile: Position, col: Color)
 tile_color(P_tile, Col) :-
     in(P, Col),                                          // input cell
-    c.inset_delta(Delta), compose(P, Delta, P_int),      // interior frame
+    interior.inner($U(), P, P_int),                      // seen in the interior frame
     lattice.tile($U(), P_int, P_tile, _).                // its lattice tile
 
 // --- counts per choice ---
@@ -110,16 +117,15 @@ out(P, Col, Ch) :- parse.minority_rank(Ch, Col, Rk), col.pos(Ch, Rk, P).
     .decl ink(e: Example, p: Position, col: Color)
     ink(E, P, Col) :- ex_in(E, P, Col), !c.bg(Col), ex_out(E, _, _).
 
-    // The frame the non-bg cells span: the grid inside the separator border.
-    .init span = Bbox<Example>
+    // The frame the non-bg cells span: the grid inside the separator border,
+    // with each ink cell's place in it.
+    .init span = BoxFrame<Example>
     span.cell(E, P) :- ink(E, P, _).
 
-    .decl inset_delta(p: Inset)
-    inset_delta(Delta) :- span.margin(_, M), displacement(M, ORIGIN, Delta).
-
-    // Ink cells in the interior frame the lattice divides.
-    .decl interior(e: Example, p: Position)
-    interior(E, P_int) :- ink(E, P, _), inset_delta(Delta), compose(P, Delta, P_int).
+    // The ink spans that frame, so its distance to a grid edge is the
+    // border's width there.
+    .decl border_width(k: number)
+    border_width(K) :- span.edge_min(_, _, K).
 
     .init blocks = Components<Example>
     blocks.node(E, P) :- ink(E, P, _).
@@ -140,7 +146,7 @@ out(P, Col, Ch) :- parse.minority_rank(Ch, Col, Rk), col.pos(Ch, Rk, P).
 
     .decl tile_gap(g: number)
     tile_gap(G) :-
-        interior(E, P_int),
+        span.inner(E, _, P_int),                                     // the frame the lattice divides
         tile_count.tally([E, D], N), axis_of(D, A), tile_dim(A, K),
         divide_gap(P_int, A, N, K, G).
 

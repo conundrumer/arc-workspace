@@ -8,10 +8,9 @@
 //   $Motif()   — the stored 3×3 motif seats at each grid corner and
 //                extends by the lattice generators c.period; overlapping
 //                stamps agree on their shared rows/cols.
-//   $Inset()   — compose with inset_delta to shift to the interior frame;
-//                divide_by_size_2d with K=1, G=1 on the interior places
-//                tile cells at the dot positions. Border → bg, interior
-//                tile → dot, interior gap → bg.
+//   $Inset()   — the frame inside the border; divide_by_size_2d with K=1,
+//                G=1 on that interior places tile cells at the dot
+//                positions. Interior tile → dot, border and gap → bg.
 
 #include "../lib.dl"
 
@@ -37,8 +36,9 @@
         1, 0, 1,
         1, 1, 1)
 
-    // --- $Inset extra ---
-    .decl inset_delta(p: Inset) inset_delta([-1, -1, -1, -1]).
+    // --- $Inset ---
+    // The ring of bg around the dot field.
+    .decl border_width(k: number) border_width(1).
 }
 
 .init c = Consts
@@ -68,21 +68,20 @@ out(Q2, Col, $Motif()) :-
     c.period(J), compose(Q, J, Q2), in(Q2, _).          // extended by the lattice
 
 // --- $Inset ---
-.decl is_border(p: Position)
-is_border(P) :- in(P, _), dir_elem(D), dist(P, D, 0).   // any edge
+.init interior = MarginFrame<Unit>
+interior.cell($U(), P) :- in(P, _).
+interior.width($U(), D, K) :- dir_elem(D), c.border_width(K).
 
 .decl interior_tile(p: Position)
 interior_tile(P) :-
-    in(P, _), !is_border(P),
-    c.inset_delta(Delta), compose(P, Delta, P_int),     // shift into interior frame
+    interior.inner($U(), P, P_int),                     // a cell in the interior frame
     c.tile_size(K), c.tile_gap(G),
     divide_by_size_2d(P_int, K, G, _, _).               // tile cell in interior
 
 out(P, Col, $Inset()) :-
-    in(P, _),                                            // grid cell
-    ( is_border(P), c.bg(Col)                            // the border — bg
-    ; interior_tile(P), c.dot(Col)                       // on an interior tile — the dot color
-    ; !is_border(P), !interior_tile(P), c.bg(Col)        // interior, off every tile — bg
+    in(P, _),                             // grid cell
+    ( interior_tile(P), c.dot(Col)        // on an interior tile — the dot color
+    ; !interior_tile(P), c.bg(Col)        // the border, or an interior gap — bg
     ).
 
 // --- fit ---
@@ -120,11 +119,11 @@ out(P, Col, $Inset()) :-
     .decl motif(p: Position, c: Color)
     motif(Pm, Col) :- wframe.inner([E, Dg], Q, Pm), ex_out(E, Q, Col).
 
-    // The dots span the interior frame; the inset carries a grid position
-    // into it.
+    // The dots span the interior frame, so their distance to a grid edge is
+    // the border's width there.
     .init box = Bbox<Example>
     box.cell(E, P) :- ex_out(E, P, Col), c.dot(Col).
 
-    .decl inset_delta(p: Inset)
-    inset_delta(Delta) :- box.margin(_, M), displacement(M, ORIGIN, Delta).
+    .decl border_width(k: number)
+    border_width(K) :- box.edge_min(_, _, K).
 }

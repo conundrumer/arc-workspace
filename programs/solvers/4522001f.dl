@@ -51,7 +51,10 @@
 
     // --- $Grow / $Fit ---
     .decl box_corner(d: DiagDir) box_corner(DIAG_TL).
-    .decl box(m: Inset) box([0, 5, 0, 5]).           // the first box, as margins
+
+    // The first box, as its margin at each edge.
+    .decl box(d: Dir, k: number)
+    box(DIR_T, 0). box(DIR_B, 5). box(DIR_L, 0). box(DIR_R, 5).
 
     // --- $Stamp ---
     .decl mask_corner(d: DiagDir) mask_corner(DIAG_TL).
@@ -123,32 +126,31 @@ render_choice($Grow()). render_choice($Fit()). render_choice($Stamp()).
 .decl rot_to(l: Locate, dm: DiagDir, r: D4)
 rot_to(L, Dm, R) :- diag(L, Diag), c4_elem(R), apply_diag_dir(R, Dm, Diag).
 
-// The first box: c.box rotated to the located corner.
-.decl box0(l: Locate, m: Position)
-box0(L, M) :- c.box_corner(Db), rot_to(L, Db, R), c.box(Mb), apply(R, Mb, M).
-
-// Box cells in the box's own frame.
-.init sq = Reframe<Locate>
-sq.outer(L, M) :- box0(L, M).
-sq.cell(L, P)  :- box0(L, M), c.canvas(P), geq(P, M).
+// The first box: canvas cells inside c.box, rotated to the located corner.
+.init sq = MarginFrame<Locate>
+sq.cell(L, P) :- locate_choice(L), c.canvas(P).
+sq.width(L, D2, K) :-
+    c.box(D, K),                                     // a stored margin
+    c.box_corner(Db), rot_to(L, Db, R),              // the rotation to the located corner
+    apply_dir(R, D, D2).                             // the edge it carries that margin to
 
 // Shift by one box: flush by the box's own extents.
 .decl sq_jump(l: Locate, j: Position)
 sq_jump(L, J) :-
     diag(L, Diag), diag_opposite(Diag, Od), diag_dirs(Od, A, O1, O2),   // dirs away from the corner
-    sq.inner(L, P), axis_dims(P, A, K1, K2),                            // the box's extents
+    sq.inner(L, _, P_box), axis_dims(P_box, A, K1, K2),                 // the box's extents
     jump_delta(O1, K1, J1), jump_delta(O2, K2, J2), compose(J1, J2, J). // one box along each
 
 // --- $Grow ---
 // The first box and one diagonal step.
 .decl grow_box(l: Locate, m: Position)
-grow_box(L, M)  :- box0(L, M).
-grow_box(L, M2) :- box0(L, M), sq_jump(L, J), compose(M, J, M2), geq(M2, ORIGIN).
+grow_box(L, M)  :- sq.margin(L, M).
+grow_box(L, M2) :- sq.margin(L, M), sq_jump(L, J), compose(M, J, M2), geq(M2, ORIGIN).
 
 // --- $Fit ---
 // Boxes chain while they stay on the frame.
 .decl fit_box(l: Locate, m: Position)
-fit_box(L, M)  :- box0(L, M).
+fit_box(L, M)  :- sq.margin(L, M).
 fit_box(L, M2) :- fit_box(L, M), sq_jump(L, J), compose(M, J, M2), geq(M2, ORIGIN).
 
 // --- Paint cases: the box color ---
@@ -230,6 +232,8 @@ out(Q, Col, $Pair()) :-
     .init sqbox = Bbox<Ident>
     sqbox.cell(Id, P) :- sq.label($U(), P, Id).
 
-    .decl box(m: Inset)
-    box(M) :- sqbox.margin(_, M), corner(Diag), corner_anchor(Diag, M, ORIGIN).
+    .decl box(d: Dir, k: number)
+    box(D, K) :-
+        sqbox.margin(_, M), corner(Diag), corner_anchor(Diag, M, ORIGIN),  // the box at the corner
+        dir_elem(D), dist(M, D, K).                                        // its margin at each edge
 }

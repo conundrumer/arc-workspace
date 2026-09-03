@@ -20,10 +20,6 @@
     .decl body_start(n: number) body_start(2).
     .decl copies(n: number) copies(2).
     .decl diag(da: DiagAxis) diag(DAXIS_DG).
-
-    // Shift the blank to a top-aligned frame: -body_start along header_dir.
-    .decl body_shift(p: Position)
-    body_shift(Delta) :- header_dir(D), body_start(Bs), edge_delta(D, -Bs, Delta).
 }
 
 .init c = Consts
@@ -38,14 +34,17 @@ stripe(P_stack, Col) :-
     c.diag(Da), diag_flip_of(Da, T), apply(T, P_h, P_ht),   // transpose it
     axis_of(D, A), split(P_ht, A, P_stack, _).   // keep the stacking component
 
-// Body fill. Reframe the blank top-aligned, split into N blocks, and match each
-// block cell to a transposed-header stripe by Position equality.
+// The blank: the grid past the header and separator, in its own frame.
+.init body = MarginFrame<Unit>
+body.cell($U(), P) :- in(P, _).
+body.width($U(), D, K) :- c.header_dir(D), c.body_start(K).
+
+// Body fill. Split the blank into N blocks, and match each block cell to a
+// transposed-header stripe by Position equality.
 .decl fill(p: Position, col: Color)
 fill(P_b, Col) :-
-    in(P_b, _),                                         // input cell
-    c.body_shift(Delta), compose(P_b, Delta, P_body),   // reframe blank top-aligned
-    c.header_dir(D), dist(P_body, D, K), K >= 0,        // blank cells only
-    axis_of(D, A), c.copies(N),
+    body.inner($U(), P_b, P_body),                     // a blank cell in the blank's frame
+    c.header_dir(D), axis_of(D, A), c.copies(N),
     divide(P_body, A, N, 0, _, P_inner),               // split blank into N blocks
     stripe(P_inner, Col).                              // match the transposed header
 

@@ -50,9 +50,6 @@ marker(P, $Singleton()) :-
 .decl row_origin(d: Dir)
 row_origin(FE) :- c.shift_dir(SD), opposite(SD, FE).
 
-.decl col_origin(d: Dir)
-col_origin(OE) :- c.marker_edge(ME), opposite(ME, OE).
-
 // Rotation amount: the marker's row index.
 .decl shift_amt(m: number, ch: Choice)
 shift_amt(M, Ch) :- marker(P, Ch), row_origin(FE), dist(P, FE, M).
@@ -75,24 +72,16 @@ rot.step($U(), M)     :- shift_amt(M, _).   // the shifts in use
 rows.dir(FE)     :- row_origin(FE).
 rows.dist_set($U(), K) :- row_idx(K).
 
-// Cells past the band — the ones the drop keeps.
-.decl kept(p: Position, col: Color)
-kept(P, Col) :-
-    in(P, Col), c.marker_edge(ME), c.band_width(W),  // the band's edge and width
-    edge_delta(ME, W, M), geq(P, M).                 // p at least that far inside
-
-// Drop the band: a kept cell's col_origin distance is unchanged by the drop,
-// so placing cells by that distance in the narrowed frame drops the band.
-.init cols = DirFrame<Unit>
-cols.dir(OE)     :- col_origin(OE).
-cols.dist_set($U(), K) :- kept(P, _), col_origin(OE), dist(P, OE, K).
+// Drop the band: the cells past it, seen in the frame it leaves.
+.init kept = MarginFrame<Unit>
+kept.cell($U(), P) :- in(P, _).
+kept.width($U(), D, K) :- c.marker_edge(D), c.band_width(K).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P_out, Col, Ch) :-
-    kept(P_in, Col),
-    row_origin(FE), dist(P_in, FE, K_in),                         // input row index
-    shift_amt(M, Ch), rot.walk($U(), K_in, M, K_out),             // rotated M steps along the cycle
-    rows.pos($U(), K_out, P_v_out),                               // placed back on the shift axis
-    col_origin(OE), dist(P_in, OE, K),                            // input column index
-    cols.pos($U(), K, P_col),                                     // placed in the narrowed frame
-    compose(P_v_out, P_col, P_out).
+    in(P_in, Col), kept.inner($U(), P_in, P_kept),                  // a cell the drop keeps
+    row_origin(FE), dist(P_in, FE, K_in),                           // input row index
+    shift_amt(M, Ch), rot.walk($U(), K_in, M, K_out),               // rotated M steps along the cycle
+    rows.pos($U(), K_out, P_v_out),                                 // placed back on the shift axis
+    c.marker_edge(ME), axis_of(ME, A), split(P_kept, A, P_col, _),  // its column in the kept frame
+    compose(P_v_out, P_col, P_out).                                 // row and column glued
