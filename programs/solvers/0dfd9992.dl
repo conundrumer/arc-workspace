@@ -135,22 +135,11 @@
     .init si = ShiftInvariance<Key, Color>
     si.cell(Key, P, Col) :- intact(Key, P, Col).
 
-    // A shift witnessed: it maps some survivor onto another.
-    .decl t_witnessed(key: Key, a: Axis, k: number)
-    t_witnessed(Key, A, K) :-
-        si.cand(Key, A, K, Delta),
-        intact(Key, P, _), compose(P, Delta, Q), intact(Key, Q, _).
-
-    // The pattern's period per axis: the shortest witnessed unbroken shift.
-    .type KA = [key: Key, a: Axis]
-    .init period = Extremes<KA>
-    period.cand([Key, A], K) :- t_witnessed(Key, A, K), !si.mismatch(Key, A, K).
-
     .init wp = Wallpaper<Key, Color>
     wp.kind(D) :- kind(D).
     wp.cell(Key, P, Col) :- intact(Key, P, Col).
     wp.grid(Key, P) :- in_cell(Key, P, _).
-    wp.period(Key, A, K) :- period.low([Key, A], K).
+    wp.period(Key, A, K) :- si.min_period(Key, A, K).
 
     .decl step(key: Key, p: Position, q: Position)
     step(Key, P, Q) :- wp.step(Key, P, Q).

@@ -2,8 +2,8 @@
 // concept: wallpaper grow lines
 // The input continues periodically: the output is the grid extended to
 // c.extent along c.dir with the ink recolored, each new cell repeating
-// the color one period back. A period is a shift along c.dir the input
-// agrees with itself under; the smallest one is used.
+// the color one period back. The period is the shortest shift along
+// c.dir the input agrees with itself under.
 //
 //   $Line — one period per across-line.
 //   $Grid — one period for the whole grid.
@@ -48,20 +48,8 @@ base(Line, P_grid_out, Col) :-
     c.dir(D), opposite(D, O),
     slab_anchor(O, P_grid_in, P_grid_out).
 
-// Shifts along c.dir the input agrees with itself under, per line.
-.init parse = ShiftInvariance<Position, Color>
-parse.cell(Line, P, Col) :- cell_line(P, Line, Col).
-
-.decl line_ok(line: Position, k: number)
-line_ok(Line, K) :-
-    c.dir(D), axis_of(D, A),
-    parse.cand(Line, A, K, _), !parse.mismatch(Line, A, K).
-
-// Each case supplies its candidate periods; the smallest one drives the
-// continuation.
-.type CaseLine = [ch: Choice, line: Position]
-
-.init period = Extremes<CaseLine>
+// The period the continuation repeats by, per case and line.
+.decl period_at(ch: Choice, line: Position, k: number)
 
 // Colors over the output frame: the input, then each cell repeating the
 // one a period back. A jump along c.dir keeps the line.
@@ -69,7 +57,7 @@ line_ok(Line, K) :-
 fill(Ch, Line, P, Col) :- impl_choice(Ch), base(Line, P, Col).
 fill(Ch, Line, P_grid_out, Col) :-
     fill(Ch, Line, P, Col),
-    c.dir(D), period.low([Ch, Line], K), jump(P, D, K, P_grid_out),
+    c.dir(D), period_at(Ch, Line, K), jump(P, D, K, P_grid_out),
     out_cell(P_grid_out).
 
 .decl out(p: Position, col: Color, ch: Choice)
@@ -81,14 +69,18 @@ out(P, Col, Ch) :-
 
 // --- $Line ---
 
-period.cand([$Line(), Line], K) :- line_ok(Line, K).
+.init parse_line = ShiftInvariance<Position, Color>
+parse_line.cell(Line, P, Col) :- cell_line(P, Line, Col).
+
+period_at($Line(), Line, K) :-
+    c.dir(D), axis_of(D, A), parse_line.min_period(Line, A, K).
 
 // --- $Grid ---
 
-// A shift some line breaks.
-.decl broken(k: number)
-broken(K) :- c.dir(D), axis_of(D, A), parse.mismatch(_, A, K).
+.init parse_grid = ShiftInvariance<Unit, Color>
+parse_grid.cell($U(), P, Col) :- in(P, Col).
 
-// A shift no line breaks holds for the whole grid, so every line takes it.
-period.cand([$Grid(), Line], K) :-
-    cell_line(_, Line, _), line_ok(_, K), !broken(K).
+// The grid's period, so every line takes it.
+period_at($Grid(), Line, K) :-
+    cell_line(_, Line, _),
+    c.dir(D), axis_of(D, A), parse_grid.min_period($U(), A, K).

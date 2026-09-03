@@ -1182,6 +1182,12 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     // period, and a pair-less candidate is vacuously one.
     .decl period(key: Key, a: Axis, k: number)
     period(Ky, A, K) :- cand(Ky, A, K, _), !_breaks.excess([Ky, A, K], _).
+
+    // The exact reading's minimum: the shortest witnessed shift no cell
+    // pair contradicts, per key and axis.
+    .decl min_period(key: Key, a: Axis, k: number)
+    min_period(Ky, A, K) :- _pair(Ky, A, K, _, _), !mismatch(Ky, A, K).
+    min_period(Ky, A, K) <= min_period(Ky, A, K2) :- K > K2.
 }
 
 // Re-express keyed cells relative to a per-key outer origin: inner is the

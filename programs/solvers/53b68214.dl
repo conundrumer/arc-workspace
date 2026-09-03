@@ -1,9 +1,9 @@
 // 53b68214
 // concept: grow wallpaper
-// The input is periodic along c.growth: it agrees with itself under a
-// shift, and the smallest agreeing shift is the period. The output frame
-// extends the input toward c.growth, and the pattern continues period by
-// period into the new cells. Two models of the grown extent:
+// The input is periodic along c.growth: the period is the shortest shift
+// it agrees with itself under. The output frame extends the input toward
+// c.growth, and the pattern continues period by period into the new
+// cells. Two models of the grown extent:
 //
 //   $Square() — it matches the perpendicular extent.
 //   $Canvas() — it is stored (c.out_dim); the perpendicular passes through.
@@ -24,15 +24,8 @@
 
 .init c = Consts
 
-// Shifts along c.growth the input agrees with itself under.
 .init parse = ShiftInvariance<Unit, Color>
 parse.cell($U(), P, Col) :- in(P, Col).
-
-// The smallest agreeing shift is the period.
-.init period = Extremes<Unit>
-period.cand($U(), K) :-
-    c.growth(D), axis_of(D, A),
-    parse.cand($U(), A, K, _), !parse.mismatch($U(), A, K).
 
 .decl width(w: number)
 width(W) :- in(P, _), c.growth(D), axis_of(D, A), perp(A, A2), axis_dim(P, A2, W).
@@ -59,5 +52,5 @@ placed(Ch, P_grid, P_in) :-
 out(P_grid, Col, Ch) :- placed(Ch, P_grid, P_in), in(P_in, Col).
 out(P2, Col, Ch) :-
     out(P1, Col, Ch),
-    period.low($U(), K), c.growth(D), jump(P1, D, K, P2),
-    frame.cell(Ch, P2).
+    c.growth(D), axis_of(D, A), parse.min_period($U(), A, K),
+    jump(P1, D, K, P2), frame.cell(Ch, P2).
