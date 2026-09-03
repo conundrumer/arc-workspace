@@ -32,7 +32,7 @@ out(P, Col, [$PairExist(), $PerCell()]) :- ...
 out(P, Col, [$Count(),     $SliceMap()]) :- ...
 ```
 
-Use a sum directly to enumerate cases when only specific combinations exist.
+When only some combinations are claims, keep the record and list only those in `impl_choice`. A flat sum duplicates the shared bodies and draws the linter's `choice-tag` finding.
 
 ## Choice grounding via `impl_choice`
 
