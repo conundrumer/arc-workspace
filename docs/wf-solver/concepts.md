@@ -4,11 +4,11 @@ Controlled vocabulary for solver `// concept:` lines.
 
 The concept line is agent-facing reference: sessions pick and revise terms on their own judgment, for future agents' sake, and term choices do not go to the user for ratification.
 
-A term names a model claim. A term is disqualified if grep over the body could derive it: primitive names, comp names, and Consts slot names are not concepts. New terms enter like lib additions: reuse an existing term when it fits; add here when none does.
+A term names a model claim; the mechanism its gloss names is one instance of that claim. A term is disqualified if grep over the body could derive it: primitive names, comp names, and Consts slot names are not concepts. When no term fits, the session widens a gloss or adds a term here, and reports the change.
 
 ## Setup
 
-The structure every candidate claim stands on: what the input is and how it decomposes. Cases of one file share these.
+The structure a claim stands on: what the input is and how it decomposes.
 
 - `tile-arrangement` — output arranges transformed copies of the input
 - `overlay` — panels stack on one frame
@@ -25,9 +25,9 @@ The structure every candidate claim stands on: what the input is and how it deco
 
 ## Prior
 
-The transformation claim: which prior the task teaches. Rival cases of one file typically differ here, one term per case.
+The transformation claim: which prior the task teaches.
 
-- `lookup` — a stored table or grid supplies output content
+- `lookup` — stored data supplies the output: its content, or where content is read or placed
 - `d4` — a D4 transform applies to content
 - `walk` — stepwise propagation; each step depends on the path or content so far
 - `cast` — content extends from a source along a line
