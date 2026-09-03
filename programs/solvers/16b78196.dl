@@ -41,14 +41,15 @@ stack_dir(D) :- bar(_, A), perp(A, A2), axis_of(D, A2).
 
 // The object's face toward d: on each line of the stack axis, the cell
 // lying furthest that way.
-.decl face(o: Ident, d: Dir, p: Position)
-face(O, D, P) :- obj_cell(O, P), stack_dir(D), !beyond(O, D, P).
+.type FaceLine = [o: Ident, d: Dir, line: Position]
+.init front = ArgExtremes<FaceLine, Position>
+front.cand([O, D, L], P, K) :-
+    obj_cell(O, P), stack_dir(D),                   // a cell of the object
+    axis_of(D, A_stack), split(P, A_stack, _, L),   // the line it sits on
+    dist(P, D, K).                                  // its distance to edge d
 
-.decl beyond(o: Ident, d: Dir, p: Position)
-beyond(O, D, P) :-
-    obj_cell(O, P), obj_cell(O, Q), stack_dir(D),
-    axis_of(D, A_stack), same_line(A_stack, P, Q),
-    dist(P, D, K), dist(Q, D, K2), K2 < K.  // Q lies further toward d
+.decl face(o: Ident, d: Dir, p: Position)
+face(O, D, P) :- front.low([O, D, _], P, _).
 
 // --- seating ---
 
