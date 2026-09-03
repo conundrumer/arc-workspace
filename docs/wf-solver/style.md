@@ -31,7 +31,7 @@ When a decomposition's inner coordinate is also the output cell, name it by the 
 - One file per task (`<task_id>.dl`); multi-impl cases live in the same file, distinguished by an ADT `Choice` column on `out`.
 - First line: `// <task_id>`.
 - Second line, exactly one of:
-    - `// concept: <terms>` — family representative. Terms from `concepts.md`, separated by spaces, the union over cases: setup terms plus each case's prior term.
+    - `// concept: <terms>` — family representative. Terms from `concepts.md`, separated by spaces, the union over cases: every term whose claim some case makes.
     - `// family: <task_id>` — family sibling: same body and Fit comp, fills may differ. Points at the representative, the family's first-solved member. A sibling's header keeps only task-specific content.
 - Next line, when one applies: `// shape: <terms>` — task shape terms from `shapes.md`.
 - `#include "../lib.dl"` at top.
@@ -42,7 +42,7 @@ When a decomposition's inner coordinate is also the output cell, name it by the 
 - A rule inside Consts derives from fact slots; a datum never sits as a literal in a rule body. A literal 1 stating a unit — a single row, one cell wide — stays in the rule, under an `// @unit: <what the 1 states>` comment on the rule's line; the affordance is Consts-only — the linter flags a body literal regardless of `@unit`. A derived relation carries no Fit relation.
 - A datum lives in a shared slot when more than one case reads it and every task those cases both fit fills it the same under each; a fill some such task pulls apart is per-case data.
 - A single-fact data declaration puts the fact on the decl line, one space after it. A multi-fact declaration puts the facts on the next line at the decl's indent. Facts are not column-aligned across a block.
-- Store an orientation datum constrained by another as a relative value (`Sense` via `turn`, `Axis` via `perp`). A second absolute slot admits fills the family does not have; the relative form has one fill per member.
+- No two slots admit fills that contradict. A datum another slot fixes is derived from it by a Consts rule, not stored (a stored Position fixes its frame's extents, read with `axis_dim`). An orientation datum the family fixes given another is stored relative (`Sense` via `turn`, `Axis` via `perp`).
 
 Skeleton (single-impl):
 
@@ -105,26 +105,28 @@ A solver defines only two kinds of types: ADTs inside `Choice` (the type itself,
 
 ## Body
 
-- Banned: literals — orientation (`DIR_T`, `DIR_L`, `AXIS_V`, etc.), colors, or non-zero task-shape numbers (lengths, offsets, gaps). The body reads them from Consts via `c.<rel>(...)` and parameterizes. Hardcoded values fix the body to one task in the family; values read from Consts keep it symmetric across the family.
-    - Literals are fine inside a proposal comp only: lib code waiting on its entry in `docs/wf-solver/proposals/`, which leaves the solver with that entry, to lib or to nothing. The linter skips every comp except `Fit` and `Parse`, so it cannot tell a proposal comp from a comp with no entry; the entry is what makes the comp legitimate.
+- Banned: literals — orientation (every lib constant macro but `ORIGIN`), colors, or non-zero task-shape numbers (lengths, offsets, gaps). The body reads them from Consts via `c.<rel>(...)` and parameterizes. Hardcoded values fix the body to one task in the family; values read from Consts keep it symmetric across the family.
+    - Literals are fine inside a proposal comp only: lib code waiting on its entry in `docs/wf-solver/proposals/`, which leaves the solver with that entry, to lib or to nothing. The linter skips every comp except `Fit` and `Parse`, and flags a comp with no entry.
 - Banned: Position destructure. Use lib primitives instead. Position is opaque; destructuring hardcodes edge indices and breaks orientation invariance.
 - Banned: arithmetic and raw aggregates.
 - Banned: `range`. It generates a number sequence; the body reads positions and extents through lib primitives.
 - Complement tests negate the named case: `!c.bg(Col)` for non-bg.
 - Write off-edge tests as `dist(P, D, K), K != 0`, not `K > 0`: the zero case is excluded by identity, not by order. `!dist(P, D, 0)` is unavailable: Souffle cannot negate an inline relation whose clause introduces variables.
+- A lib parameter typed on a union (`Axis4`, `Dir8`, `D4` over `C4`) that a rule binds to a narrower head column takes the member's `*_elem` atom (`axis_elem(A), same_line(A, P, Q)`).
 - A comparison of a distance against a bound is body form, not arithmetic: `dist(P, D, K), K < N` states the cells within N of edge D, and needs no primitive.
 - Inline relations cannot appear inside aggregators. Wrap in a non-inline relation when needed.
 
 ## Components
 
 - Use a lib unit only when the task has its concept. Needing part of its computation is not a reason to use it. If only one step is needed, write it with primitives or a local rule.
-- A new comp takes a `Key` type param; single-set sites key on `Unit` (`$U()`, in lib). An unkeyed comp forces duplication at the case boundary when a solver's cases share its pipeline: per-case `.init`s and dispatch rules that differ only in the case name.
+- A comp outside `Consts`, `Fit`, and `Parse` is lib code: a solver writes one only as a proposal comp (lib-protocol.md), and sharing across cases goes through keyed relations. A lib or proposal comp takes a `Key` type param; single-set sites key on `Unit` (`$U()`, in lib). An unkeyed comp forces duplication at the case boundary when a solver's cases share its pipeline: per-case `.init`s and dispatch rules that differ only in the case name.
     - "Differ only in the case name" bounds the sharing. A stage where cases differ in substance — one derives a value, one reads it from Consts — stays per-case, even when one derivation could feed every case.
 - Instance-level parameters stay unkeyed: a relation whose value is part of the instance's identity, not per-key data. Key one only when a task varies it per key. A parameter that varies per case is per-key data: key the comp by `Choice`.
+- A nested comp's outputs are read through the instance path (`parse.box.margin(...)`).
 
 ## Multi-atom rules
 
-Head and `:-` on the first line; body atoms on subsequent lines indented 4 spaces; related atoms grouped on one line; an inline `// ` comment per line names the group's role.
+Head and `:-` on the first line; body atoms on subsequent lines indented 4 spaces; related atoms grouped on one line; an inline `// ` comment names a line's role when its atoms do not already state it.
 
 ```
 header_color(Idx, Col) :-
