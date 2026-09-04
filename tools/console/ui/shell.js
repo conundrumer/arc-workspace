@@ -172,10 +172,13 @@ function App(){
   const onNightToggle=useCallback(on=>{
     if(on){
       const n=live.current.night||{};
-      const ok=confirm("Autopilot admits tasks from the queue: up to "
-        +(n.target??6)+" items in flight, create → refine"
-        +((live.current.auto||{}).finalize?" → finalize":"")+", "
-        +"within ~30s of the pacer opening. Start?");
+      const ok=confirm(n.source==="unfinalized"
+        ? "Autopilot starts finalize passes over the unfinalized solvers, in triage order: up to "
+          +(n.finalize_target??3)+" items in flight, within ~30s of the pacer opening. Start?"
+        : "Autopilot admits tasks from the queue: up to "
+          +(n.target??6)+" items in flight, create → refine"
+          +((live.current.auto||{}).finalize?" → finalize":"")+", "
+          +"within ~30s of the pacer opening. Start?");
       if(!ok){ notify(); return; }   // the checkbox mirrors the server, so redraw it
     }
     postNight({on}, on?"autopilot on":"autopilot off");
@@ -204,6 +207,7 @@ function App(){
       extra=${lens.Controls && html`<${lens.Controls} snap=${snap}/>`}/>
     <${NightPanel} night=${night} open=${nightOpen} onToggle=${onNightToggle}
       onCatchup=${v=>postNight({catchup:v})}
+      onSource=${v=>postNight({source:v}, "source · "+v)}
       onDial=${(key,v)=>postNight({[key]:parseInt(v,10)})}/>
     <${CommitPanel} committer=${committer} open=${commitOpen}/>
     ${lens.Panels && html`<${lens.Panels} snap=${snap}/>`}

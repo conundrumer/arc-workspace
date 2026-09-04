@@ -5,6 +5,7 @@ import { useClock } from "/ui/clock.js";
 import { FINAL, STATES } from "/ui/item.js";
 import { StateChip } from "/ui/panels/badges.js";
 import { pad2 } from "/ui/prose.js";
+import { activeTarget } from "/ui/panels/night.js";
 
 /* account rate-limit windows, statusline style: 5h➞1pm 40%/62% */
 function resetLabel(epoch, weekly){
@@ -36,7 +37,7 @@ export function Topbar({view, setView, wave, items, progress, usage, night, nigh
   const gate = (night||{}).gate;
   const nightCls = night && night.on ? (gate&&gate.open?"on":"held") : "";
   const nightTxt = night && night.on
-    ? `autopilot ${night.live||0}/${night.target} · ${gate&&gate.open?"open":"held"}`
+    ? `autopilot ${night.live||0}/${activeTarget(night)} · ${gate&&gate.open?"open":"held"}`
     : "autopilot";
   return html`<div id="topbar">
     <span class="wordmark"><b>arc</b> · solver console</span>
@@ -64,6 +65,9 @@ export function Topbar({view, setView, wave, items, progress, usage, night, nigh
       <label title="compact an unapproved finalize session before its cache goes cold or its worker is reaped">
         <input type="checkbox" checked=${!!auto.compact}
           onChange=${e=>onAuto("compact", e.target.checked)}/>auto compact</label>
+      <label title="compact a finalize session the autopilot opened as soon as its callouts land">
+        <input type="checkbox" checked=${!!auto.compact_landing}
+          onChange=${e=>onAuto("compact_landing", e.target.checked)}/>compact on landing</label>
     </span>
     <span class="wavectl" title="start the next wave">wave
       <input type="number" min="1" max="20" aria-label="wave size"

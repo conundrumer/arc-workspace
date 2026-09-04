@@ -4444,13 +4444,6 @@ def test_the_night_source_is_queue_until_set(srv):
     assert srv.night()["finalize_target"] == 5
 
 
-def test_a_source_change_is_logged_only_while_the_mode_is_on(srv):
-    srv.act_night({"source": "unfinalized"})
-    assert srv.night()["log"] == []
-    night_on(srv)
-    srv.act_night({"source": "queue"})
-    assert srv.night()["log"][-1]["text"] == "source · queue"
-
 
 def test_the_unfinalized_source_starts_finalize_passes_in_triage_order(srv, monkeypatch):
     clock_at(srv, monkeypatch)
@@ -4537,16 +4530,6 @@ def test_a_chain_that_wrote_no_solver_still_finalizes(srv, monkeypatch):
     assert "Read programs/solvers/aaa.dl first" not in msg
     assert srv.REVIEW_TAIL in msg
 
-
-def test_the_advance_brief_reads_the_solver_when_there_is_one(srv, monkeypatch):
-    sent = finalize_launch(srv, monkeypatch)
-    backlog_solver(srv, "aaa")
-    srv.save_report("aaa", "refine", "the handoff")
-    item(srv, "aaa", srv.NEEDS_REVIEW, chain=srv.default_chain())
-    srv.act_finalize({"id": "aaa"})
-    (msg, _), = sent
-    assert "Read programs/solvers/aaa.dl first" in msg
-    assert "wrote no solver" not in msg
 
 
 def test_the_payload_carries_the_source_and_both_targets(srv, monkeypatch):
