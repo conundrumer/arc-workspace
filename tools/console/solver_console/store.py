@@ -182,8 +182,11 @@ def slash_turn(it: dict, phase: str) -> bool:
 
 
 def active(it: dict) -> bool:
-    """Whether an item has a turn or handoff in flight."""
-    return it.get("handoff_pending", False) or busy_elsewhere(it, None)
+    """Whether an item has a turn, a handoff, or a relaunch in flight. A
+    relaunch is the stretch between a worker's detach and the fresh spawn
+    that takes its turn over, when the item has no worker to read as busy."""
+    return bool(it.get("handoff_pending", False) or it.get("respawn_wait")
+                or busy_elsewhere(it, None))
 
 
 def busy_elsewhere(it: dict, phase: str | None) -> bool:
@@ -270,6 +273,7 @@ def load() -> None:
             it.pop("pending_handoff", None)
             it.pop("handoff_pending", None)
             it.pop("callout_wait", None)
+            it.pop("respawn_wait", None)
             say(it, event("interrupted by console restart"))
             turn_died(it, it.get("last_turn_phase") or it["phase"])
 

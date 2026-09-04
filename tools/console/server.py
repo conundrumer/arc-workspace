@@ -13,6 +13,7 @@ Env:
     CONSOLE_FABLE_MODEL    the model id behind the "fable" setting (default: claude-fable-5)
     CONSOLE_CLAUDE_EFFORT  effort for claude stages whose chain names none (default: high)
     CONSOLE_COMMIT_MODEL   committer model (default: claude-opus-5)
+    CONSOLE_REFUSAL_MODEL  model a stage moves to after its report asks are refused twice (default: claude-sonnet-5)
 """
 
 import argparse

@@ -1,5 +1,6 @@
-"""Worker processes: launching a turn, reading its stream, and accounting
-for what it spent."""
+"""Worker processes: launching a turn, reading its stream, accounting for
+what it spent, and the relaunches a turn that ran away or was refused
+gets."""
 
 import fcntl
 import json
@@ -329,6 +330,8 @@ def launch(it: dict, message: str, phase: str, trigger: str | None = None,
         it["append"] = str(prompts.append_path())
         worker = spawn_worker(it, phase)
     start_turn(it, worker, phase, trigger=trigger, handoff=handoff, slash=slash)
+    # the message as sent, which is how its transcript row reads
+    worker["ask"] = message
     worker["outbound"].put_nowait({"type": "user",
         "message": {"role": "user", "content": message}})
 
@@ -696,6 +699,8 @@ def handle_event(worker: dict, ev: dict, first_response) -> None:
             reason = ev.get("terminal_reason", "completed")
             escalate = worker.pop("escalate", None)
             handoff = worker["handoff"]
+            ask = worker.get("ask")
+            recover = None
             try:
                 # The last messages may not have reached the tail's poll, and
                 # leaving them unread would carry them into the next turn.
@@ -718,13 +723,16 @@ def handle_event(worker: dict, ev: dict, first_response) -> None:
                     elif reason == "aborted_streaming":
                         store.say(it, store.event("stopped"), sess=phase)
                     else:
-                        store.say(it, store.event(failure_note(ev, reason)), sess=phase)
+                        if refusal_kind(ev) == RETRIED_REFUSAL:
+                            recover = REPORT_ASKS.get(worker["trigger"])
+                        store.say(it, store.event(failure_note(ev, reason, bool(recover))),
+                                  sess=phase)
                     # A segment that never lands still spent quota, and this
                     # line is the only place it is ever counted.
                     store.say(it, store.event(turn_note(it, ev, phase, worker["started"],
                                                         reqs, lost, done=False)),
                               sess=phase)
-                    if not escalate:
+                    if not escalate and not recover:
                         store.turn_died(it, phase)
                         if pacing.quota_death(ev.get("api_error_status"), reason,
                                               str(ev.get("result") or "")):
@@ -745,12 +753,37 @@ def handle_event(worker: dict, ev: dict, first_response) -> None:
                 # holds the turn's history in memory, where the capped
                 # thinking is already gone. A respawn rebuilds from the
                 # transcript, which patch_capped repairs first.
-                if store.PROCS.get((item_id, phase)) is worker:
-                    store.PROCS.pop((item_id, phase))
-                    worker["state"] = "dying"
-                    worker["outbound"].put_nowait(store.STOP)
+                detach_for_respawn(it, worker)
                 store.DEFERRED.put_nowait(("revive", worker, escalate, handoff))
                 ensure_drain()
+            elif recover:
+                # The refused ask is in the live process's history as much as
+                # in the transcript, so the retry comes from a fresh process
+                # over a transcript with the ask cut out.
+                detach_for_respawn(it, worker)
+                store.DEFERRED.put_nowait(("refuse", worker, recover, ask))
+                ensure_drain()
+
+
+def detach_for_respawn(it: dict, worker: dict) -> None:
+    """Take a worker out of PROCS ahead of a relaunch on the drain thread,
+    and mark the item busy until that relaunch lands. Without the mark the
+    item reads as idle in between: a comment would open a turn of its own on
+    the session, and a reload would exec with the relaunch still queued.
+    Caller holds LOCK."""
+    key = (worker["item_id"], worker["phase"])
+    if store.PROCS.get(key) is worker:
+        store.PROCS.pop(key)
+        worker["state"] = "dying"
+        worker["outbound"].put_nowait(store.STOP)
+    it["respawn_wait"] = worker["phase"]
+
+
+def respawn_done(it: dict, phase: str) -> None:
+    """Lift the relaunch mark. Caller holds LOCK, with the fresh worker in
+    PROCS or the item landed."""
+    if it.get("respawn_wait") == phase:
+        it.pop("respawn_wait", None)
 
 
 def transcript_of(session: str) -> Path | None:
@@ -901,16 +934,20 @@ def revive(worker: dict, step: str, handoff: bool) -> None:
         if not it:
             return
         phase = worker["phase"]
-        session = it["sessions"].get(phase)
-        path = transcript_of(session) if session else None
-        if path is not None:
-            try:
-                if patch_capped(path):
-                    store.say(it, store.event("capped thinking preserved"),
+        try:
+            session = it["sessions"].get(phase)
+            path = transcript_of(session) if session else None
+            if path is not None:
+                try:
+                    if patch_capped(path):
+                        store.say(it, store.event("capped thinking preserved"),
+                                  sess=phase)
+                except OSError as exc:
+                    store.say(it, store.event(f"transcript patch failed: {exc}"),
                               sess=phase)
-            except OSError as exc:
-                store.say(it, store.event(f"transcript patch failed: {exc}"), sess=phase)
-        escalate_turn(it, phase, step, handoff)
+            escalate_turn(it, phase, step, handoff)
+        finally:
+            respawn_done(it, phase)
     store.bump()
 
 
@@ -1126,17 +1163,173 @@ def turn_note(it: dict, ev: dict, phase: str, started: float | None,
 
 # The API's safeguards refuse a request as a plain api_error; the result text
 # names the category. A refusal is deterministic on the session's context,
-# so the note carries the CLI's own advice.
+# so a turn the console does not retry carries the CLI's own advice.
 SAFEGUARD = re.compile(r"safeguards flagged.*?\[(\w+)\]", re.S)
+# The category the safeguards give a request that reads as asking the model
+# for its reasoning. A report ask can read that way, so one refused under it
+# is retried: in plainer words first, then on REFUSAL_MODEL, and after that
+# the stage lands with what it has. The ladder answers the console's own
+# asks, by the trigger the turn carries; a refused user comment is the
+# user's to resend.
+RETRIED_REFUSAL = "reasoning_extraction"
+REPORT_ASKS = {"handoff": "handoff", "bail": "handoff", "callout": "callout"}
+REFUSAL_RETRIES = 2  # asks sent again before the stage lands without one
 
 
-def failure_note(ev: dict, reason: str) -> str:
-    """The feed line for a turn that ended without a result."""
+def refusal_kind(ev: dict) -> str | None:
+    """The safeguard category a result event names, if it is a refusal."""
     hit = SAFEGUARD.search(str(ev.get("result") or ""))
-    if hit:
-        return (f"turn refused by the model's safeguards ({hit.group(1)}) — "
+    return hit.group(1) if hit else None
+
+
+def failure_note(ev: dict, reason: str, retried: bool = False) -> str:
+    """The feed line for a turn that ended without a result."""
+    kind = refusal_kind(ev)
+    if kind and retried:
+        return f"turn refused by the model's safeguards ({kind})"
+    if kind:
+        return (f"turn refused by the model's safeguards ({kind}) — "
                 "the same request fails again here; it needs a fresh session")
     return f"turn failed ({reason})"
+
+
+def user_text(row: dict) -> str:
+    """The text of a transcript's user row, whichever shape it was written in."""
+    content = (row.get("message") or {}).get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(b.get("text", "") for b in content
+                       if isinstance(b, dict) and b.get("type") == "text")
+    return ""
+
+
+def strip_ask(path: Path, ask: str) -> int:
+    """Cut a transcript back to before the console's ask `ask`, so a resume
+    reads the history without it. Rows from the ask on belong to the refused
+    turn, which the retry asks for again. Returns the rows cut. Call only
+    with the worker process dead; the rewrite must not race the CLI's
+    appends."""
+    lines = path.read_text().splitlines(True)
+    at = None
+    for i, line in enumerate(lines):
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if (row.get("type") == "user" and not row.get("isSidechain")
+                and user_text(row) == ask):
+            at = i
+    if at is None:
+        return 0
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text("".join(lines[:at]))
+    tmp.replace(path)
+    return len(lines) - at
+
+
+def last_worker_text(it: dict, phase: str) -> str:
+    """The last thing the stage's session said in the feed."""
+    for m in reversed(it["feed"]):
+        if (m.get("sess") == phase and m["kind"] in ("worker", "report")
+                and not m.get("sub")):
+            return m["text"]
+    return ""
+
+
+def recover_refusal(worker: dict, kind: str, ask: str | None) -> None:
+    """Send a refused report ask again, one rung up the ladder.
+
+    Runs on the drain thread with the worker already detached, the way revive
+    does: the process dies first, the refused ask comes out of the transcript
+    while nothing else writes the file, and the retry spawns a fresh process
+    whose resume reads the history without it."""
+    if worker.get("proc") is not None:
+        reap(worker)
+    with store.LOCK:
+        it = store.find(worker["item_id"])
+        if not it:
+            return
+        phase = worker["phase"]
+        try:
+            session = it["sessions"].get(phase)
+            if not session:
+                # a retry would open a session with none of the pass in it
+                store.say(it, store.event("no session to ask again — the turn is lost"),
+                          sess=phase)
+                it.pop("callout_wait", None)
+                store.turn_died(it, phase)
+            else:
+                path = transcript_of(session)
+                if path is not None and ask:
+                    try:
+                        if strip_ask(path, ask):
+                            store.say(it, store.event("refused ask cut from the transcript"),
+                                      sess=phase)
+                    except OSError as exc:
+                        store.say(it, store.event(f"transcript cut failed: {exc}"),
+                                  sess=phase)
+                counts = it.setdefault("refused", {}).setdefault(phase, {})
+                counts[kind] = counts.get(kind, 0) + 1
+                retry_refusal(it, phase, kind, counts[kind])
+        finally:
+            respawn_done(it, phase)
+    store.bump()
+
+
+def retry_refusal(it: dict, phase: str, kind: str, count: int) -> None:
+    """The `count`th refusal of one ask kind on a stage: the plainer ask, then
+    the same on REFUSAL_MODEL, then the stage lands with what it has. Caller
+    holds LOCK, with the stage's worker gone."""
+    if count > REFUSAL_RETRIES:
+        settle_refusal(it, phase, kind)
+        return
+    if count == 1:
+        store.say(it, store.event("asking again in plainer words"), sess=phase)
+    else:
+        st = store.stage_of(it, phase)
+        if st.get("model") != config.REFUSAL_MODEL:
+            store.say(it, store.event(f"refused again — the stage moves to "
+                                      f"{config.REFUSAL_MODEL}"), sess=phase)
+            st["model"] = config.REFUSAL_MODEL
+    it["state"] = store.RUNNING
+    try:
+        if kind == "callout":
+            it["callout_wait"] = phase
+            launch(it, prompts.refused_callout_brief(), phase, trigger="callout",
+                   admitted=True)
+        else:
+            launch(it, prompts.REFUSED_HANDOFF_BRIEF, phase, trigger="handoff",
+                   handoff=True, admitted=True)
+    except (store.Reject, OSError) as exc:
+        store.say(it, store.event(f"retry failed: {exc}"), sess=phase)
+        it.pop("callout_wait", None)
+        store.turn_died(it, phase)
+
+
+def settle_refusal(it: dict, phase: str, kind: str) -> None:
+    """Land a stage whose report ask was refused past the retries. The
+    handoff takes the session's last message as the report; the callouts
+    stay unwritten. Either way the item waits for the user, who can `land`
+    the report or resend the ask by hand. Caller holds LOCK."""
+    if kind == "callout":
+        it.pop("callout_wait", None)
+        store.say(it, store.event("callouts refused past the retries — "
+                                  "the report stands without them"), sess=phase)
+    elif (it.get("reports") or {}).get(phase):
+        store.say(it, store.event("handoff refused past the retries — "
+                                  "the filed report stands"), sess=phase)
+    elif text := last_worker_text(it, phase):
+        file_report(it, phase, text)
+        store.say(it, store.event("handoff refused past the retries — the "
+                                  "session's last message stands as the report"),
+                  sess=phase)
+    else:
+        store.say(it, store.event("handoff refused past the retries — no report"),
+                  sess=phase)
+    it["state"] = store.NEEDS_REVIEW
+    it["updated"] = True
+    it["landed_at"] = store.now()
 
 
 def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
@@ -1372,6 +1565,9 @@ def drain_deferred() -> None:
                 continue
             if job[0] == "revive":
                 revive(*job[1:])
+                continue
+            if job[0] == "refuse":
+                recover_refusal(*job[1:])
                 continue
             kind, item_id, phase, turn_seq = job
             with store.LOCK:

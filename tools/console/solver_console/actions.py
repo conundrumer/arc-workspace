@@ -33,6 +33,8 @@ def submit_comment(it: dict, text: str, sess: str | None = None) -> None:
     store.defer_reload()
     if it.get("handoff_pending", False):
         raise store.Reject("handoff in flight — wait for the next session")
+    if it.get("respawn_wait") == sess:
+        raise store.Reject("relaunch in flight — wait for the turn to land")
     w = store.PROCS.get((it["id"], sess))
     if w and w["state"] in ("sending", "running"):
         if text.startswith("/"):

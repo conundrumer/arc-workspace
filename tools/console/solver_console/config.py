@@ -37,6 +37,9 @@ FINALIZE_MODEL = "fable"
 # the per-model default in the user's settings.
 CLAUDE_EFFORT = os.environ.get("CONSOLE_CLAUDE_EFFORT", "high")
 COMMIT_MODEL = os.environ.get("CONSOLE_COMMIT_MODEL", "claude-opus-5")
+# What a stage moves to when its model's safeguards refuse a report ask twice
+# over. A report summarizes the transcript, so a smaller model writes it.
+REFUSAL_MODEL = os.environ.get("CONSOLE_REFUSAL_MODEL", "claude-sonnet-5")
 
 # The user's global prompt hook checks this and stays quiet for workers.
 # The task tools are off by default for the worker models, so the cadence's

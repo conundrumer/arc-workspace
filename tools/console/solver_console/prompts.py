@@ -105,7 +105,7 @@ CALLOUT_RATES = [
      "a trailing qualification on a settled call, not a discrete open item"),
 ]
 
-CALLOUT_BRIEF = """Your report is in. Now step back from the pass and write the callouts: entries deserving the user's attention — judgment calls you could not settle, calls you made that only the user can ratify, and anything else they should see.
+CALLOUT_BRIEF = """Your report is in. Now step back from the pass and write the callouts: entries deserving the user's attention — open items only the user can settle, calls you made that only the user can ratify, and anything else they should see.
 
 Rank each entry P1-P3 by kind: match the entry against a description below and take that kind's band. Match on the description, not the label; an entry outside every description ranks on your own judgment. The rate is how often the user engages the kind when a report raises it:
 {rates}
@@ -114,7 +114,16 @@ An entry a description excludes, such as a name local to this solver, is not a c
 
 P0 stands apart from that scale: use it only for a clear mechanical problem with the tooling — the runner, the linter, or the audit crashing, giving a wrong result, or lacking something the cadence needed. A P0 jumps the triage queue, so a judgment call never carries it.
 
-Reply with only the callouts, between `<callouts>` and `</callouts>` tags: a numbered list, each entry one or two lines opening with its `[P1]`-`[P3]` mark. With nothing to raise, the block holds the single word `none`, which is what most solvers get."""
+Reply with only the callouts, between `<callouts>` and `</callouts>` tags: a numbered list, each entry one or two lines opening with its `[P1]`-`[P3]` mark. With nothing to raise, the block holds the single word `none`."""
+
+# A report ask the model's safeguards refuse as reasoning extraction goes out
+# again in these words, which ask for a record of the pass and not for what
+# the session considered. The console cuts the refused ask out of the
+# transcript first, so the retry is judged on this message alone.
+REFUSED_CALLOUT_BRIEF = """Write the callouts as a document for the user: the open items only the user can settle, and the calls only the user can ratify. Rank each entry P1-P3 by kind, matched on the description:
+{rates}
+
+Reply with only the callouts, between `<callouts>` and `</callouts>` tags: a numbered list, each entry one or two lines opening with its `[P1]`-`[P3]` mark. With nothing to raise, the block holds the single word `none`."""
 
 
 def callout_bands() -> list[tuple[str, int, int, str]]:
@@ -131,10 +140,17 @@ def callout_bands() -> list[tuple[str, int, int, str]]:
     return [row for _, row in sorted(rows, reverse=True)]
 
 
+def callout_rates() -> str:
+    return "\n".join(f"- P{band} · {kind} {pct}%: {desc}"
+                     for kind, pct, band, desc in callout_bands())
+
+
 def callout_brief() -> str:
-    rates = "\n".join(f"- P{band} · {kind} {pct}%: {desc}"
-                      for kind, pct, band, desc in callout_bands())
-    return CALLOUT_BRIEF.format(rates=rates)
+    return CALLOUT_BRIEF.format(rates=callout_rates())
+
+
+def refused_callout_brief() -> str:
+    return REFUSED_CALLOUT_BRIEF.format(rates=callout_rates())
 
 
 # The handoff report is a tagged block in the worker's text, and the console
@@ -145,17 +161,21 @@ HANDOFF_WRAP = """Put the report between `<handoff>` and `</handoff>` tags: the 
 
 CREATE_BRIEF = """You are the first session of a chained flow: you create the solver, then a separate session takes over from your report.
 
-Do the creation pass through Fit-plan with the data above; do not re-read the data. When the fit-plan verdict calls for a fit pass, do the fit pass too. Skip Review. A lib candidate runs the lib addition protocol; the entry in docs/wf-solver/proposals/ is yours to write, and your report and callouts carry it with its survey result. The reimplementations a survey reports are yours to fix in this pass: send them to the `migrate` agent, then the `cleanup` agent over the regions it changed, and your report lists what it skipped; put both dispatches on your task list before the first, so the pass does not end between them. If either agent finds another problem that Simplify or Prune covers in a file it has open, that agent fixes that problem in the same pass. A finding in a file no agent has open goes to your report. Other solvers are open to those agents, not to your own edits. When a question about the data comes up, run something that answers it rather than settling it in your head. In place of the review, end your turn with a handoff report addressed to the next session: the model claim, each choice point with the alternatives you considered and why you discarded them, and the audit findings and judgment calls. Make it complete enough that the next session rederives nothing. """ + HANDOFF_WRAP
+Do the creation pass through Fit-plan with the data above; do not re-read the data. When the fit-plan verdict calls for a fit pass, do the fit pass too. Skip Review. A lib candidate runs the lib addition protocol; the entry in docs/wf-solver/proposals/ is yours to write, and your report and callouts carry it with its survey result. The reimplementations a survey reports are yours to fix in this pass: send them to the `migrate` agent, then the `cleanup` agent over the regions it changed, and your report lists what it skipped; put both dispatches on your task list before the first, so the pass does not end between them. If either agent finds another problem that Simplify or Prune covers in a file it has open, that agent fixes that problem in the same pass. A finding in a file no agent has open goes to your report. Other solvers are open to those agents, not to your own edits. When a question about the data comes up, run something that answers it rather than working it out by hand. In place of the review, end your turn with a handoff report addressed to the next session: the model claim, each choice point with the alternatives you tested and what ruled them out, and the audit findings and open items. Make it complete enough that the next session reruns nothing. """ + HANDOFF_WRAP
 
-HANDOFF_BRIEF = """Write the handoff report for the session that takes over from you: the model claim, each choice point with the alternatives you considered and why you discarded them, and the audit findings and judgment calls. Cover the whole session, including turns after any earlier report. Make it complete enough that the next session rederives nothing. """ + HANDOFF_WRAP
+HANDOFF_BRIEF = """Write the handoff report for the session that takes over from you: the model claim, each choice point with the alternatives you tested and what ruled them out, and the audit findings and open items. Cover the whole session, including turns after any earlier report. Make it complete enough that the next session reruns nothing. """ + HANDOFF_WRAP
 
-NUDGE_BRIEF = """Your last turn was cut off at the output limit while it was still thinking.
+# What a refused handoff ask goes out as again; REFUSED_CALLOUT_BRIEF above
+# is its match for the callouts.
+REFUSED_HANDOFF_BRIEF = """Write the stage report as a document for the session that takes over from you, from the files and the run output in front of you: the model claim, the solver's current structure, the edits this pass made, what was run and what came back, and the open items. """ + HANDOFF_WRAP
 
-Stop trying to settle the task in your head. Take the smallest thing you are still unsure about and run something that answers it. Partial and wrong is fine.
+NUDGE_BRIEF = """Your last turn was cut off at the output limit before it ran anything.
 
-Do not spend the whole next turn thinking. If you do, it will be your final turn."""
+Stop trying to settle the task before you run anything. Take the smallest thing you are still unsure about and run something that answers it. Partial and wrong is fine.
 
-BAIL_BRIEF = """Two turns went entirely to thinking, so your pass ends here. Stop solving.
+If the next turn also ends without running anything, it will be your final turn."""
+
+BAIL_BRIEF = """Two turns ended without running anything, so your pass ends here. Stop solving.
 
 Write a short state of play from what is already in front of you, without working anything out again:
 
@@ -186,7 +206,7 @@ Your edits stay in programs/solvers/{tid}.dl, .scratch/{tid}/, and docs/wf-solve
 # alone and none of them restates the one before it.
 HANDOFF_TAIL = """
 
-Then Simplify, Prune, and Fit-plan, so your own edits get the simplify and prune treatment too; when the fit-plan verdict calls for a fit pass, do the fit pass as well. In place of the review, end your turn with a handoff report for the session that takes over from you: the model claim as it now stands, what you changed and why, the alternatives you discarded, and your open judgment calls. The report covers your own pass — your rulings, your edits, your changes; what the reports above already establish stays with them. """ + HANDOFF_WRAP
+Then Simplify, Prune, and Fit-plan, so your own edits get the simplify and prune treatment too; when the fit-plan verdict calls for a fit pass, do the fit pass as well. In place of the review, end your turn with a handoff report for the session that takes over from you: the model claim as it now stands, what you changed and why, the alternatives you tested and what ruled them out, and the open items for the user. The report covers your own pass — your rulings, your edits, your changes; what the reports above already establish stays with them. """ + HANDOFF_WRAP
 
 REVIEW_TAIL = """
 
