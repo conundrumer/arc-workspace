@@ -409,6 +409,9 @@ import { html, render, useState, useEffect, useLayoutEffect, useRef, useMemo, us
   from "/vendor/htm-preact-standalone.module.js";
 import { esc, pad2, fmtDur, md } from "/ui/prose.js";
 import { cmify, diffHtml } from "/ui/diff.js";
+import { toast, copy, bindToast } from "/ui/toast.js";
+import { useServer, tasks, itemData, peeks, notify, post,
+         ensureTask, ensureItem, ensurePeek, startPoll } from "/ui/server.js";
 
 const ARC = ["#000000","#0074D9","#FF4136","#2ECC40","#FFDC00","#AAAAAA","#F012BE","#FF851B","#7FDBFF","#870C25"];
 const CHIPCLS = {"needs-review":"review","commented":"commented","running":"running","queued":"queued","approved":"approved","committed":"committed"};
@@ -442,7 +445,6 @@ const NO_ITEM = {feed:[], files:[]};   // stands in until /api/item lands
 
 /* ---------- helpers ---------- */
 const draftKey = id => "draft:"+id;
-const sleep = ms => new Promise(r=>setTimeout(r,ms));
 
 /* the item's stage chain: every per-session readout is keyed by stage name */
 const stagesOf = it => it.chain||[];
@@ -526,25 +528,6 @@ function ding(){
 }
 for(const ev of ["pointerdown","keydown"])
   addEventListener(ev, ()=>{ const ac=audio(); if(ac) ac.resume(); }, {once:true});
-
-/* ---------- toast ---------- */
-let toastSet = () => {};
-let toastTimer = null;
-function toast(msg){
-  toastSet({msg, show:true});
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(()=>toastSet(t=>({msg:t.msg, show:false})), 2600);
-}
-function copy(s,label){ navigator.clipboard && navigator.clipboard.writeText(s).then(()=>toast("copied · "+label),()=>toast(s)); }
-
-async function post(route, body){
-  try {
-    const r = await fetch(route,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body||{})});
-    const j = await r.json();
-    if(j.error) toast(j.error);
-    return j;
-  } catch(e){ toast("console server unreachable"); return {error:String(e)}; }
-}
 
 /* ---------- small pieces ---------- */
 function CompBadges({x}){
@@ -1070,9 +1053,7 @@ function CodePane({jumpKey, fname, lines, buttons, pane}){
 
 /* ---------- app ---------- */
 function App(){
-  const [snap,setSnap]=useState({seq:0, wave:0, items:[], usage:[], progress:null,
-                                 cli:{}, night:{}, committer:{}, pipeline:{}, models:[],
-                                 auto:{}});
+  const snap=useServer();
   const [selId,setSelId]=useState(null);
   const [view,setViewState]=useState(()=>localStorage.getItem("view")===FINAL?FINAL:"wave");
   const [backlog,setBacklog]=useState([]);
@@ -1084,7 +1065,6 @@ function App(){
     return BK_ORDERS[v] ? v : "flag";
   });
   const [tick,setTick]=useState(0);
-  const [cacheVer,setCacheVer]=useState(0);
   const [toastState,setToastState]=useState({msg:"", show:false});
   const [sessPin,setSessPin]=useState({});    // id -> {phase, tab} the user pinned
   const [tabSel,setTabSel]=useState({});      // id -> path of the active code tab
@@ -1097,39 +1077,15 @@ function App(){
   const [waveBusy,setWaveBusy]=useState(false);
   const [cite,setCite]=useState(null);  // hovered/pinned grid citation
 
-  toastSet = setToastState;
+  bindToast(setToastState);
 
-  const taskCache=useRef({});   // id -> task json | "pending" | "missing"
-  const itemCache=useRef({});   // id -> {feed, files, ver}
-  const peekCache=useRef({});   // id -> peek json
   const seenN=useRef({});       // id|sess -> feed length when that tab was last shown
   const draftFor=useRef(null);  // id whose draft the composer holds
   const cbox=useRef(null);
   const live=useRef({});        // what the async handlers read
 
-  const bump=useCallback(()=>setCacheVer(v=>v+1),[]);
   const {items, cli, night, committer, pipeline, models, auto, usage, progress, wave} = snap;
 
-  /* ---- fetches ---- */
-  const ensureTask=useCallback(id=>{
-    if(!id || taskCache.current[id]) return;
-    taskCache.current[id]="pending";
-    fetch("/api/task/"+id).then(r=>r.ok?r.json():"missing").then(t=>{
-      taskCache.current[id]=t; bump();
-    }).catch(()=>{ taskCache.current[id]="missing"; });
-  },[bump]);
-  const ensureItem=useCallback((id, force)=>{
-    const cached=itemCache.current[id], it=live.current.items.find(x=>x.id===id);
-    if(cached && it && cached.ver===it.ver && !force) return;
-    fetch("/api/item/"+id).then(r=>r.json()).then(d=>{
-      itemCache.current[id]=d; bump();
-    }).catch(()=>{});
-  },[bump]);
-  const ensurePeek=useCallback(id=>{
-    fetch("/api/peek/"+id).then(r=>r.ok?r.json():null).then(d=>{
-      if(d){ peekCache.current[id]=d; bump(); }
-    }).catch(()=>{});
-  },[bump]);
   const fetchBacklog=useCallback(async()=>{
     if(live.current.view!==FINAL) return;
     try {
@@ -1171,7 +1127,7 @@ function App(){
       document.removeEventListener("click",click);
       document.removeEventListener("keydown",key);
     };
-  },[ensureTask]);
+  },[]);
 
   /* ---- selection ---- */
   /* soonest-expiring cache first; a phase with no session yet, or a turn that
@@ -1222,7 +1178,7 @@ function App(){
     } else {
       ensurePeek(id);
     }
-  },[ensureTask, ensureItem, ensurePeek]);
+  },[]);
 
   const setView=useCallback(v=>{
     setViewState(cur=>{
@@ -1245,7 +1201,7 @@ function App(){
   const pinTab=useCallback((it,s)=>setSessPin(p=>({...p, [it.id]:{phase:it.phase, tab:s}})),[]);
 
   const tab = selItem ? tabOf(selItem) : null;
-  const cache = (selItem && itemCache.current[selItem.id]) || NO_ITEM;
+  const cache = (selItem && itemData[selItem.id]) || NO_ITEM;
   const feedFor = s => (cache.feed||[]).filter(m=>(m.sess||"refine")===s);
   /* the entries hold their identity between fetches, so the second-by-second
      redraw for the countdowns leaves the feed alone */
@@ -1358,48 +1314,23 @@ function App(){
         +(n.target??6)+" items in flight, create → refine"
         +((live.current.auto||{}).finalize?" → finalize":"")+", "
         +"within ~30s of the pacer opening. Start?");
-      if(!ok){ bump(); return; }   // the checkbox mirrors the server, so redraw it
+      if(!ok){ notify(); return; }   // the checkbox mirrors the server, so redraw it
     }
     postNight({on}, on?"autopilot on":"autopilot off");
-  },[postNight, bump]);
+  },[postNight]);
 
   /* ---- what the async handlers read ---- */
   live.current = {items, selId, selItem, detailId, tab, draft, canSend, view, auto,
                   railOrder, curOrder, night, waveK, waveOrder, waveBusy};
 
-  /* ---- long poll ---- */
+  /* ---- a server change: the selected item's turn may have landed, and a
+     landing writes the ledger line the backlog reads ---- */
   useEffect(()=>{
-    let stop=false, seq=0, committerWas=false;
-    (async ()=>{
-      while(!stop){
-        try {
-          const r=await fetch(`/api/state?since=${seq}&wait=25`);
-          const d=await r.json();
-          const changed = d.seq!==seq;
-          seq=d.seq;
-          setSnap({seq:d.seq, wave:d.wave, items:d.items, usage:d.usage||[],
-                   progress: d.total ? {solved:d.solved, total:d.total} : null,
-                   cli:d.cli||{}, night:d.night||{}, committer:d.committer||{},
-                   pipeline:d.pipeline||{}, models:d.models||[], auto:d.auto||{}});
-          const cm=d.committer||{};
-          if(committerWas && !cm.running && cm.note) toast(cm.note);
-          committerWas=!!cm.running;
-          if(changed){
-            /* live.current still holds the pre-render snapshot, so the ver to
-               match is the one that just arrived, not the one it carries */
-            const id=live.current.selId;
-            const cur=id ? d.items.find(x=>x.id===id) : null;
-            const have=itemCache.current[id];
-            if(cur && (!have || have.ver!==cur.ver)) ensureItem(id, true);
-            fetchBacklog();   // a landing writes the ledger line the backlog reads
-          }
-        } catch(e){
-          await sleep(3000);
-        }
-      }
-    })();
-    return ()=>{ stop=true; };
-  },[ensureItem, fetchBacklog]);
+    if(!snap.seq) return;
+    const have=selItem && itemData[selItem.id];
+    if(selItem && (!have || have.ver!==selItem.ver)) ensureItem(selItem.id, true);
+    fetchBacklog();
+  },[snap.seq]);
 
   /* ---- timers ---- */
   useEffect(()=>{
@@ -1435,13 +1366,13 @@ function App(){
         if(it) ensureItem(id); else ensurePeek(id);
       }
     }
-  },[items, backlog, view, curOrder, railOrder, selId, ensureTask, ensureItem, ensurePeek]);
+  },[items, backlog, view, curOrder, railOrder, selId]);
 
   /* ---- the rows on screen want their thumbnails ---- */
   useEffect(()=>{
     for(const id of curOrder) ensureTask(id);
     if(detailId) ensureTask(detailId);
-  },[curOrder, detailId, ensureTask]);
+  },[curOrder, detailId]);
 
   /* ---- per-item comment drafts ---- */
   useEffect(()=>{
@@ -1505,7 +1436,7 @@ function App(){
     if(f.snap && f.snap!==f.code && window.Diff) return diffHtml(f.snap, f.code);
     return {html:cmify(f.code), added:0, removed:0};
   },[f.path, f.snap, f.code]);
-  const peek = selBk ? peekCache.current[selBk.id] : null;
+  const peek = selBk ? peeks[selBk.id] : null;
   const peekPane = useMemo(()=>peek?esc(peek.solver):"", [peek]);
 
   let fname="—", flines="", pane="", codeBtns=null, jumpKey="";
@@ -1579,7 +1510,7 @@ function App(){
         itemTotal=${railOrder.length} onMoreItems=${()=>setRailAll(true)}
         backlog=${bkShown} bkTotal=${bkSorted.length} onMore=${()=>setBkAll(true)} finRows=${finRows}
         bkOrder=${bkOrder} setBkOrder=${setBkOrder}
-        selId=${selId} selIsItem=${!!selItem} tasks=${taskCache.current}
+        selId=${selId} selIsItem=${!!selItem} tasks=${tasks}
         onSelect=${select}/>
       <div id="judge">
         <div id="judge-head">${head}</div>
@@ -1590,7 +1521,7 @@ function App(){
           hint=${hint} value=${selItem?draft:""} onInput=${onDraft} onSend=${sendComment}/>
       </div>
       <div id="codecol">
-        <${TaskStrip} id=${detailId} task=${detailId?taskCache.current[detailId]:null}
+        <${TaskStrip} id=${detailId} task=${detailId?tasks[detailId]:null}
           open=${detailId ? taskOpen[detailId]!==false : true} onToggle=${toggleTask}/>
         <${CodePane} jumpKey=${jumpKey} fname=${fname} lines=${flines}
           buttons=${codeBtns} pane=${pane}/>
@@ -1601,11 +1532,12 @@ function App(){
       <span><b>u</b> unapprove</span><span><b>c</b> comment</span><span><b>⏎</b> send</span><span><b>⇧⏎</b> newline</span>
       <span><b>s</b> session</span><span><b>t</b> task</span><span><b>v</b> lens</span><span><b>o</b> copy resume</span><span><b>esc</b> blur</span>
     </div>
-    ${cite && html`<${CitePop} cite=${cite} task=${taskCache.current[cite.tid]}
+    ${cite && html`<${CitePop} cite=${cite} task=${tasks[cite.tid]}
       onClose=${()=>setCite(null)}/>`}
     <div id="toast" role="status" class=${toastState.show?"show":""}>${toastState.msg}</div>`;
 }
 
+startPoll();
 render(html`<${App}/>`, document.getElementById("app"));
 </script>
 </body>
