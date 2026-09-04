@@ -2195,6 +2195,35 @@ def test_a_turn_that_changes_a_shared_file_gets_flagged(srv):
     assert srv.light_items()[0]["shared_writes"] == ["docs/wf-solver/concepts.md"]
 
 
+def bash_call(command):
+    return {"type": "assistant", "message": {"id": "m9", "content": [
+        {"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": command}}]}}
+
+
+def test_a_shared_file_no_call_named_changed_under_the_user(srv):
+    (srv.DOCS / "concepts.md").write_text("old\n")
+    it = item(srv, "a", srv.RUNNING)
+    w = worker(srv, it, state="running")
+    srv.handle_event(w, bash_call("grep -n enclose programs/solvers/a.dl"), None)
+    it["pre"] = {"hash": "", "solver": "", "proposals": "", "dirty": False,
+                 "files": {}, "watched": srv.watched_hashes("a")}
+    (srv.DOCS / "concepts.md").write_text("new\n")
+    srv.finish_turn(it, {"result": ""}, None, time.time(), "refine", False)
+    assert it.get("shared_writes", []) == []
+
+
+def test_a_shared_file_a_call_named_is_the_turns_write(srv):
+    (srv.DOCS / "concepts.md").write_text("old\n")
+    it = item(srv, "a", srv.RUNNING)
+    w = worker(srv, it, state="running")
+    it["pre"] = {"hash": "", "solver": "", "proposals": "", "dirty": False,
+                 "files": {}, "watched": srv.watched_hashes("a")}
+    srv.handle_event(w, bash_call("sed -i '' 's/old/new/' docs/wf-solver/concepts.md"), None)
+    (srv.DOCS / "concepts.md").write_text("new\n")
+    srv.finish_turn(it, {"result": ""}, None, time.time(), "refine", False)
+    assert it["shared_writes"] == ["docs/wf-solver/concepts.md"]
+
+
 def test_a_solver_only_turn_flags_no_shared_write(srv):
     (srv.DOCS / "concepts.md").write_text("stable\n")
     it = item(srv, "a", srv.RUNNING)

@@ -364,13 +364,18 @@ def pre(it: dict) -> dict:
                                  "dirty": False, "files": {}})
 
 
-def shared_writes(it: dict) -> list[str]:
+def shared_writes(it: dict, touched: set[str] | None = None) -> list[str]:
     """Repo files the turn changed outside the pass's own surface — the
-    solver and its scratch directory."""
+    solver and its scratch directory. `touched` is the set of watched files
+    the turn's tool calls named; a watched file it did not name changed
+    under someone else's hand. None, for a turn whose calls went unseen,
+    charges every change to the turn."""
     own = f"programs/solvers/{it['id']}.dl"
     watched = solvers.watched_paths(it["id"])
     hits = set()
     for rel, digest in pre(it).get("watched", {}).items():
+        if touched is not None and rel not in touched:
+            continue
         p = watched.get(rel)
         if p is None or solvers.file_hash(p) != digest:
             hits.add(rel)

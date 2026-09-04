@@ -218,6 +218,17 @@ def record_edit(it: dict, fp: str) -> None:
         p_["files"][rel] = p.read_text() if p.exists() else ""
 
 
+def note_touched(it: dict, worker: dict, inp: dict) -> None:
+    """Remember the shared files a tool call names, by path or by file name.
+    A watched file that changes over the turn is charged to the turn only
+    when one of its calls named it; the rest is the user's own editing."""
+    blob = json.dumps(inp)
+    touched = worker.setdefault("touched", set())
+    for rel in solvers.watched_paths(it["id"]):
+        if rel not in touched and (rel in blob or rel.rsplit("/", 1)[-1] in blob):
+            touched.add(rel)
+
+
 def task_ask(inp: dict) -> str:
     """The brief a Task call gives its subagent, as feed markdown."""
     head = " · ".join(x for x in (str(inp.get("subagent_type") or "").strip(),
@@ -352,7 +363,8 @@ def start_turn(it: dict, worker: dict, phase: str, trigger: str | None = None,
     worker.pop("woke", None)
     worker.update(state=state, started=time.time(), trigger=trigger,
                   handoff=handoff, slash=slash, seen=set(), got_result=False,
-                  think_run=0, reqs={}, launch={}, idle_since=None)
+                  think_run=0, reqs={}, launch={}, touched=set(),
+                  idle_since=None)
 
 
 def steer(it: dict, worker: dict, text: str, phase: str) -> None:
@@ -641,6 +653,7 @@ def handle_event(worker: dict, ev: dict, first_response) -> None:
                     inp = block.get("input", {}) or {}
                     if name in ("Edit", "Write", "NotebookEdit") and inp.get("file_path"):
                         record_edit(it, inp["file_path"])
+                    note_touched(it, worker, inp)
                     if not sub and block.get("id") and (
                             name in DISPATCH or inp.get("run_in_background")):
                         # A call that asks for a task. Whether it got one
@@ -1363,6 +1376,7 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
         else:
             store.say(it, {"kind": "report", "rev": it["rev"], "text": shown}, sess=phase)
     store.say(it, store.event(turn_note(it, ev, phase, started, reqs)), sess=phase)
+    worker = store.PROCS.get((it["id"], phase))
     # A turn with no callouts says nothing about them, so the item keeps what
     # the last report that carried them left.
     if solvers.callout_body(text) is not None:
@@ -1405,7 +1419,7 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
     it["comps"] = solvers.comps_of(it["id"])
     it["comps_unproposed"] = solvers.unproposed(it["comps"], solvers.prop_text())
     it["landed_at"] = store.now()
-    fresh = [rel for rel in store.shared_writes(it)
+    fresh = [rel for rel in store.shared_writes(it, (worker or {}).get("touched"))
              if rel not in it.setdefault("shared_writes", [])]
     if fresh:
         it["shared_writes"].extend(fresh)
@@ -1419,7 +1433,6 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
     callout_landing = it.get("callout_wait") == phase
     if callout_landing:
         it.pop("callout_wait", None)
-    worker = store.PROCS.get((it["id"], phase))
     outstanding = sorted((worker or {}).get("bg", {}).values())
     if callout_landing:
         # a callout turn on an older brief answers with the section in
