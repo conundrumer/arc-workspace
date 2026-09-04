@@ -1681,9 +1681,14 @@ def drain_deferred() -> None:
                         store.say(it, store.event("callout turn starting"), sess=phase)
                         launch(it, prompts.callout_brief(), phase, trigger="callout")
                 elif kind == "compact":
-                    # a turn since the landing, a reload, or a setting the
-                    # user turned off in the meantime: no compact
-                    if not it or store.RELOADING or store.busy_elsewhere(it, phase) \
+                    # A turn since the landing, a turn or relaunch in flight
+                    # on any session of the item, a compact already done, a
+                    # reload, or a setting turned off in the meantime: no
+                    # compact. The refusal path files the job with no turn
+                    # number, since its worker is gone, so the item's own
+                    # marks are what hold it off a turn the user opened.
+                    if not it or store.RELOADING or store.active(it) \
+                            or it.get("auto_compacted", {}).get(phase) \
                             or (turn_seq is not None
                                 and (not worker or worker["turn_seq"] != turn_seq)) \
                             or not store.auto()["compact_landing"]:

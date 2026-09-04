@@ -4618,6 +4618,8 @@ def test_the_compact_on_landing_follows_the_callout_turn(srv, monkeypatch):
                     time.time(), "finalize", False)
     assert "landing_compact" not in it and it["state"] == srv.NEEDS_REVIEW
     assert srv.DEFERRED.queue[0] == ("compact", "a", "finalize", 4)
+    # the result handler marks the worker idle before it lets go of the lock
+    srv.PROCS[("a", "finalize")]["state"] = "idle"
     assert drained(drain, lambda: sent)
     assert sent == [("/compact", "finalize")]
     assert it["auto_compacted"] == {"finalize": True}
@@ -4668,6 +4670,37 @@ def test_a_turn_since_the_landing_takes_precedence_over_the_compact(srv, monkeyp
     srv.finish_turn(it, {"result": "holds up\n\n<callouts>\n1. [P1] a call\n</callouts>"},
                     None, time.time(), "finalize", False)
     srv.PROCS[("a", "finalize")]["turn_seq"] = 5
+    assert not drained(drain, lambda: sent, wait=0.3)
+
+
+def test_a_compact_filed_without_a_turn_number_waits_out_a_turn_the_user_opened(srv, monkeypatch):
+    """The refusal path files the compact with its worker gone. A comment
+    the user sends before the job runs opens a turn on a fresh worker, and
+    the compact must not be sent into it."""
+    it, sent, drain = landing_item(srv, monkeypatch, callout_wait="finalize",
+                                   landing_compact="finalize",
+                                   refused={"finalize": {"callout": 2}},
+                                   reports={"finalize": "the report"})
+    w = srv.PROCS.pop(("a", "finalize"))
+    w["state"] = "dying"
+    srv.recover_refusal(w, "callout", None)
+    assert srv.DEFERRED.queue[0] == ("compact", "a", "finalize", None)
+    fresh = worker(srv, it, phase="finalize")
+    fresh["state"], fresh["turn_seq"] = "running", 1
+    it["state"] = srv.COMMENTED
+    assert not drained(drain, lambda: sent, wait=0.3)
+    assert "auto_compacted" not in it
+
+
+def test_a_compact_already_done_is_not_sent_again_on_landing(srv, monkeypatch):
+    it, sent, drain = landing_item(srv, monkeypatch, callout_wait="finalize",
+                                   landing_compact="finalize",
+                                   refused={"finalize": {"callout": 2}},
+                                   reports={"finalize": "the report"})
+    w = srv.PROCS.pop(("a", "finalize"))
+    w["state"] = "dying"
+    srv.recover_refusal(w, "callout", None)
+    it["auto_compacted"] = {"finalize": True}
     assert not drained(drain, lambda: sent, wait=0.3)
 
 
