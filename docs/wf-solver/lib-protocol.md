@@ -43,6 +43,6 @@ After its callers are migrated, remove the entry's file. If the entry lists no c
         4. The `cleanup` agent runs Simplify and Prune over those regions.
         5. The review lists the callers that `migrate` skipped.
 
-Nothing defers the fix of a reimplementation. The `migrate` agent fixes reimplementations in the same pass, and the `cleanup` agent also covers them. A target file's uncommitted edits do not defer the fix.
+Nothing defers the fix of a reimplementation. The `migrate` agent fixes reimplementations in the same pass, and the `cleanup` agent also covers them. If either agent finds another problem that Simplify or Prune covers in a file it has open, that agent fixes that problem in the same pass. A finding in a file no agent has open goes to the review. A target file's uncommitted edits do not defer the fix.
 
 Use the same protocol for changes to existing definitions, such as an edit to an existing `lib.dl` primitive or to a term's definition in `concepts.md`. Start such a change at step 2, with the change as the survey's target. There is no comp form, so the entry contains the spec: the operation, its code form, what is not it, and the search signature. Its callers are the places the change would benefit.
