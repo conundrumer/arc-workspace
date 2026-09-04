@@ -1054,7 +1054,7 @@ def test_auto_finalize_lifts_the_stop_before_finalize(srv):
     assert it["auto_stop"] == "finalize"
     # the setting outlives the process
     srv.STATE.update(json.loads(srv.STATE_FILE.read_text()))
-    assert srv.auto() == {"finalize": True, "compact": False}
+    assert srv.auto() == {"finalize": True, "compact": False, "compact_landing": False}
 
 
 def test_auto_finalize_leaves_a_stop_before_another_stage(srv):
@@ -4560,3 +4560,109 @@ def test_the_payload_carries_the_source_and_both_targets(srv, monkeypatch):
     srv.act_night({"on": False})
     srv.act_night({"on": True})
     assert srv.night()["log"][-1]["text"] == "autopilot on · unfinalized · target 4"
+
+
+# ---------- compact on landing ----------
+
+def landing_item(srv, monkeypatch, on=True, **kw):
+    """A finalize pass the autopilot opened, mid-turn, with the compact on
+    landing set unless `on` is False. Launches are recorded, and the deferred
+    jobs wait until the test drains them."""
+    sent = []
+    monkeypatch.setattr(srv, "launch", lambda it, msg, phase, **kw: sent.append((msg, phase)))
+    drain = srv.ensure_drain
+    monkeypatch.setattr(srv, "ensure_drain", lambda: None)
+    if on:
+        srv.act_auto({"compact_landing": True})
+    it = finalize_item(srv, state=srv.RUNNING, auto_finalize=True, **kw)
+    w = srv.PROCS[("a", "finalize")]
+    w["state"], w["turn_seq"] = "running", 4
+    return it, sent, drain
+
+
+def drained(drain, until, wait=2):
+    drain()
+    deadline = time.time() + wait
+    while not until() and time.time() < deadline:
+        time.sleep(0.01)
+    return until()
+
+
+def test_the_compact_on_landing_follows_the_callout_turn(srv, monkeypatch):
+    it, sent, drain = landing_item(srv, monkeypatch)
+    srv.finish_turn(it, {"result": "the solver holds up"}, None, time.time(), "finalize", False)
+    assert srv.DEFERRED.get_nowait() == ("callout", "a", "finalize", 4)
+    assert srv.DEFERRED.empty() and it["landing_compact"] == "finalize"
+    srv.finish_turn(it, {"result": "<callouts>\n1. [P2] a call\n</callouts>"}, None,
+                    time.time(), "finalize", False)
+    assert "landing_compact" not in it and it["state"] == srv.NEEDS_REVIEW
+    assert srv.DEFERRED.queue[0] == ("compact", "a", "finalize", 4)
+    assert drained(drain, lambda: sent)
+    assert sent == [("/compact", "finalize")]
+    assert it["auto_compacted"] == {"finalize": True}
+    assert it["feed"][-1]["text"] == "auto compact — on landing"
+
+
+def test_callouts_written_inline_queue_the_compact_at_once(srv, monkeypatch):
+    it, sent, drain = landing_item(srv, monkeypatch)
+    srv.finish_turn(it, {"result": "holds up\n\n<callouts>\n1. [P1] a call\n</callouts>"},
+                    None, time.time(), "finalize", False)
+    assert srv.DEFERRED.queue[0] == ("compact", "a", "finalize", 4)
+    assert "landing_compact" not in it
+
+
+def test_callouts_refused_past_the_retries_still_compact(srv, monkeypatch):
+    it, sent, drain = landing_item(srv, monkeypatch, callout_wait="finalize",
+                                   landing_compact="finalize",
+                                   refused={"finalize": {"callout": 2}},
+                                   reports={"finalize": "the report"})
+    w = srv.PROCS.pop(("a", "finalize"))
+    w["state"] = "dying"
+    srv.recover_refusal(w, "callout", None)
+    assert it["state"] == srv.NEEDS_REVIEW and "landing_compact" not in it
+    assert srv.DEFERRED.queue[0] == ("compact", "a", "finalize", None)
+    assert drained(drain, lambda: sent)
+    assert sent == [("/compact", "finalize")]
+
+
+def test_the_compact_on_landing_is_off_until_set(srv, monkeypatch):
+    it, sent, drain = landing_item(srv, monkeypatch, on=False)
+    srv.finish_turn(it, {"result": "holds up\n\n<callouts>\n1. [P1] a call\n</callouts>"},
+                    None, time.time(), "finalize", False)
+    assert srv.DEFERRED.empty() and "landing_compact" not in it
+    assert it["state"] == srv.NEEDS_REVIEW
+
+
+def test_the_compact_job_reads_the_setting_when_it_runs(srv, monkeypatch):
+    it, sent, drain = landing_item(srv, monkeypatch)
+    srv.finish_turn(it, {"result": "holds up\n\n<callouts>\n1. [P1] a call\n</callouts>"},
+                    None, time.time(), "finalize", False)
+    srv.act_auto({"compact_landing": False})
+    assert not drained(drain, lambda: sent, wait=0.3)
+    assert "auto_compacted" not in it
+
+
+def test_a_turn_since_the_landing_takes_precedence_over_the_compact(srv, monkeypatch):
+    it, sent, drain = landing_item(srv, monkeypatch)
+    srv.finish_turn(it, {"result": "holds up\n\n<callouts>\n1. [P1] a call\n</callouts>"},
+                    None, time.time(), "finalize", False)
+    srv.PROCS[("a", "finalize")]["turn_seq"] = 5
+    assert not drained(drain, lambda: sent, wait=0.3)
+
+
+def test_a_finalize_the_user_ran_by_hand_is_not_compacted_on_landing(srv, monkeypatch):
+    it, sent, drain = landing_item(srv, monkeypatch)
+    it.pop("auto_finalize")
+    srv.finish_turn(it, {"result": "holds up\n\n<callouts>\n1. [P1] a call\n</callouts>"},
+                    None, time.time(), "finalize", False)
+    assert srv.DEFERRED.empty() and "landing_compact" not in it
+
+
+def test_a_compact_cut_by_the_limit_arms_the_auto_compact_again(srv):
+    srv.night()["on"] = True
+    it = finalize_item(srv, "a", auto_compacted={"finalize": True})
+    w = srv.PROCS[("a", "finalize")]
+    w["state"], w["slash"] = "running", True
+    srv.quota_cut(it, "finalize", False)
+    assert it["auto_compacted"] == {}
+    assert "resume_at" not in it

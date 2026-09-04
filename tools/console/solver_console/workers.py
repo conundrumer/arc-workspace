@@ -294,9 +294,11 @@ def launch(it: dict, message: str, phase: str, trigger: str | None = None,
     # Any turn except the callout ask and its continuations (resume, nudge,
     # bail) supersedes a pending callout landing, so a stale marker cannot
     # claim a later turn's text for the report.
-    if trigger not in ("callout", "resume", "nudge", "bail") and \
-            it.get("callout_wait") == phase:
-        it.pop("callout_wait", None)
+    if trigger not in ("callout", "resume", "nudge", "bail"):
+        if it.get("callout_wait") == phase:
+            it.pop("callout_wait", None)
+        if it.get("landing_compact") == phase:
+            it.pop("landing_compact", None)
     # A held handoff is the console's own ask, still owed. Any other turn takes
     # the pass over, and the hold goes with it.
     if trigger not in ("handoff", "resume", "nudge", "bail"):
@@ -1346,6 +1348,7 @@ def settle_refusal(it: dict, phase: str, kind: str) -> None:
         it.pop("callout_wait", None)
         store.say(it, store.event("callouts refused past the retries — "
                                   "the report stands without them"), sess=phase)
+        compact_on_landing(it, phase)
     elif (it.get("reports") or {}).get(phase):
         store.say(it, store.event("handoff refused past the retries — "
                                   "the filed report stands"), sess=phase)
@@ -1511,6 +1514,9 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
             it["updated"] = True
         else:
             it.pop("auto_finalize", None)
+            # the compact on landing waits for the callouts, so the marker
+            # rides to their landing
+            it["landing_compact"] = phase
             body = (report if report is not None
                     else solvers.untagged(solvers.CALLOUTS_TAG.sub("", text))).strip()
             if callouts is None:
@@ -1568,6 +1574,7 @@ def land_handoff(it: dict, phase: str, text: str) -> None:
         store.DEFERRED.put_nowait(("callout", it["id"], phase, worker["turn_seq"]))
         ensure_drain()
     else:
+        it.pop("landing_compact", None)
         it["state"] = store.NEEDS_REVIEW
         it["updated"] = True
 
@@ -1603,6 +1610,19 @@ def land_callouts(it: dict, phase: str, body: str) -> None:
     else:
         it["state"] = store.NEEDS_REVIEW
         it["updated"] = True
+        compact_on_landing(it, phase)
+
+
+def compact_on_landing(it: dict, phase: str) -> None:
+    """Queue the compact a finalize landing the autopilot opened owes, once
+    its callouts are in. The job reads the setting when it runs, and a turn
+    the worker started since takes precedence. Caller holds LOCK."""
+    if it.pop("landing_compact", None) != phase or not store.auto()["compact_landing"]:
+        return
+    worker = store.PROCS.get((it["id"], phase))
+    store.DEFERRED.put_nowait(("compact", it["id"], phase,
+                               worker["turn_seq"] if worker else None))
+    ensure_drain()
 
 
 def ensure_drain() -> None:
@@ -1650,6 +1670,7 @@ def drain_deferred() -> None:
                     if not worker or worker["turn_seq"] != turn_seq or store.RELOADING:
                         # the report stands without callouts
                         it.pop("callout_wait", None)
+                        it.pop("landing_compact", None)
                         it["state"] = store.NEEDS_REVIEW
                         it["updated"] = True
                         if store.RELOADING:
@@ -1659,6 +1680,15 @@ def drain_deferred() -> None:
                         it["state"] = store.RUNNING
                         store.say(it, store.event("callout turn starting"), sess=phase)
                         launch(it, prompts.callout_brief(), phase, trigger="callout")
+                elif kind == "compact":
+                    # a turn since the landing, a reload, or a setting the
+                    # user turned off in the meantime: no compact
+                    if not it or store.RELOADING or store.busy_elsewhere(it, phase) \
+                            or (turn_seq is not None
+                                and (not worker or worker["turn_seq"] != turn_seq)) \
+                            or not store.auto()["compact_landing"]:
+                        continue
+                    start_compact(it, phase, "on landing")
                 elif not it or not it.get("handoff_pending") or not worker or \
                         worker["turn_seq"] != turn_seq:
                     if it:

@@ -251,7 +251,11 @@ def quota_cut(it: dict, phase: str, handoff: bool) -> None:
     death on the same stage leaves it for review. Caller holds LOCK."""
     store.say(it, store.event("usage limit"), sess=phase)
     if store.slash_turn(it, phase):
-        return   # a slash command has nothing to continue from
+        # A slash command has nothing to continue from. A compact that died
+        # this way leaves the session as it was, so the auto compact may try
+        # again, and the user may compact by hand.
+        it.get("auto_compacted", {}).pop(phase, None)
+        return
     # The flag lives in the worker, which dies with the turn, so the item takes
     # a copy whatever the mode is. Without it a resume by hand opens the stage
     # as a plain comment: the pass runs again and lands, and the item stays put.

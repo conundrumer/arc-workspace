@@ -36,8 +36,9 @@ FINALIZE_MODEL = "fable"
 # The console's automatic moves, off until the user turns them on. `finalize`
 # lets a wave item hand itself into the finalize stage; `compact` compacts an
 # unapproved finalize session before its cache goes cold or its worker is
-# reaped.
-AUTO_DEFAULTS = {"finalize": False, "compact": False}
+# reaped; `compact_landing` compacts a finalize session the autopilot opened
+# as soon as its callouts land, while the account can still afford the turn.
+AUTO_DEFAULTS = {"finalize": False, "compact": False, "compact_landing": False}
 # What a claude stage runs at when its chain names no effort; it overrides
 # the per-model default in the user's settings.
 CLAUDE_EFFORT = os.environ.get("CONSOLE_CLAUDE_EFFORT", "high")
