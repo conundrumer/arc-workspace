@@ -1,16 +1,16 @@
 # Patterns
 
-Patterns observed across `.dl` solvers. Distinct from `style.md` (rules every solver follows).
+This document records patterns observed across `.dl` solvers. These patterns are distinct from the rules in `style.md`, which every solver follows.
 
-This list is descriptive, not prescriptive; the `.dl` files are the source of truth. It exists so future sessions can scan what has been used.
+These patterns are not rules. The `.dl` files are the source of truth. The list exists so future sessions can scan what has been used.
 
-An entry earns its place by cost: the shape took substantial derivation or user direction to reach. A shape a session can rederive cheaply stays out, even when it looks reusable.
+Include an entry only when the pattern took substantial derivation or user direction to reach. If a session can rederive a pattern cheaply, omit it even when it looks reusable.
 
 An entry's first sentence is its index line, read under the entry's title: it stands alone, and criteria and guards start after it.
 
 ## Multiple modeling forms via ADT `Choice`
 
-Multiple models live in one solver file as cases of an ADT `Choice` column on `out`. Cases can be more than two, may carry their own per-case data, and may nest (a case's data can itself be an ADT). Each case fires its own rules; the runner emits each as a candidate.
+Multiple models are encoded in one solver file as cases of an ADT `Choice` column on `out`. Cases can be more than two, may carry their own per-case data, and may nest (a case's data can itself be an ADT). Each case fires its own rules, and the runner emits each case as a candidate.
 
 ```
 .type Choice = CaseA {} | CaseB {}
@@ -20,7 +20,7 @@ out(P, Col, $CaseA()) :- ...
 out(P, Col, $CaseB()) :- ...
 ```
 
-Use a record-typed `Choice` when cases compose from independent parts:
+A record-typed `Choice` represents cases that compose from independent parts:
 
 ```
 .type Detect = PairExist {} | Count {}
@@ -32,11 +32,11 @@ out(P, Col, [$PairExist(), $PerCell()]) :- ...
 out(P, Col, [$Count(),     $SliceMap()]) :- ...
 ```
 
-When only some combinations are claims, keep the record and list only those in `impl_choice`. A flat sum duplicates the shared bodies and draws the linter's `choice-tag` finding.
+When only some combinations are claims, the record remains, and `impl_choice` lists only those combinations. A flat sum duplicates the shared bodies and causes the linter's `choice-tag` finding.
 
 ## Choice grounding via `impl_choice`
 
-A rule shared by all cases needs a positive atom to bind its case variable when the case column otherwise appears only under negation. An enumeration relation provides it, one fact per case.
+If the case column otherwise appears only under negation, a rule shared by all cases needs a positive atom to bind its case variable. An enumeration relation provides it, one fact per case.
 
 ```
 .decl impl_choice(ch: Choice)
@@ -61,7 +61,7 @@ GRID_3x3(template,
 
 Arguments between the relation name and the cell values pass through as leading columns, so one relation can hold several grids keyed by id (995c5fa3 `mapping_member`).
 
-A variant that reads the cell values states a modeling claim: the grid's zeros are absence, not data.
+If a variant reads the cell values, it states a modeling claim: the grid's zeros are absence, not data.
 
 - `GRID_MASK_HxW(rel, ...)` emits `rel(p)` for each nonzero cell — membership grids (1818057f `shape`).
 - `GRID_SPARSE_HxW(rel, ...)` emits `rel(p, v)` for each nonzero cell — ink templates (d364b489 `template`).
@@ -112,7 +112,7 @@ The Fit writes the chart under its placed name, in a pose of its own, and the ru
 
 ## Position remapping via `GRID` id join
 
-To store a position correspondence, join two GRIDs on an opaque id: `src` labels the domain cells; `dst` gives each target cell the id of its source. The correspondence is visible in the layout; ids carry identity only. Raw Position-pair facts hold the same data in an unreadable form.
+A position correspondence is stored by joining two GRIDs on an opaque id: `src` labels the domain cells; `dst` gives each target cell the id of its source. The correspondence is visible in the layout; ids carry identity only. Raw Position-pair facts hold the same data in an unreadable form.
 
 ```
 .decl src(p: Position, id: Ident)
@@ -137,7 +137,7 @@ map(P_in, P_out) :- src(P_in, Id), dst(P_out, Id).
 
 ## Tabulated decomposition
 
-A constant layout stored as Consts data: the layout's dims sit in fact slots, and one relation maps each grid position to its decomposition, built with `helpers.tile_pos` and embedded behind a border with `compose`. The body joins `in` against it and works in decomposed coordinates. The body-derived peer is `divide` / `divide_by_size`; tabulation fits when the layout is the same in every pair.
+A constant layout is stored as Consts data. The layout's dims are stored in fact slots, and one relation maps each grid position to its decomposition, built with `helpers.tile_pos` and embedded behind a border with `compose`. The body joins `in` against it and works in decomposed coordinates. The body-derived peer is `divide` / `divide_by_size`. When the layout is the same in every pair, tabulation fits.
 
 ```
 .decl arr_dim(a: Axis, n: number)
@@ -157,7 +157,7 @@ decompose(P_grid, P_tile, P_intile) :-
 
 ## Per-tile data keyed by tile position
 
-Key Consts data about one tile of a decomposition by the tile position the decomposition produces; the body then joins its `p_outer` against the data directly. A second vocabulary for the same tiles (an edge Dir, a corner name) enters only through a conversion rule, which the Indirection test flags.
+Consts data about one tile of a decomposition is keyed by the tile position that the decomposition produces. The body then joins its `p_outer` against the data directly. A second vocabulary for the same tiles (an edge Dir, a corner name) requires a conversion rule, which the Indirection test flags.
 
 ```
 .decl combine_member(id: Ident, p_outer: Position, c: Color)
@@ -168,7 +168,7 @@ combine_member(0, [0,0,0,1], 0). combine_member(0, [0,0,1,0], 0).
 
 ## Stored total orders as dense ranks
 
-Store a total order in Consts as dense 0-based rank data, and consume it by comparison only. Ranks state each element's place in the sequence directly; successor edges state it only through closure. Comparison-only consumption keeps the number structure unused beyond ordering; dense 0-based fills keep the encoding canonical, since a gapped fill encodes one order many ways.
+A total order is stored in Consts as dense 0-based rank data and is consumed only by comparison. Ranks state each element's place in the sequence directly; successor edges state it only through closure. Because ranks are used only for comparison, the solver does not use their numeric structure for anything except ordering. Dense 0-based fills keep the encoding canonical, since a gapped fill encodes one order many ways.
 
 ```
 .decl ink_rank(c: Color, r: number)
@@ -179,11 +179,11 @@ beaten(P, Col) :-
     c.ink_rank(C2, R2), c.ink_rank(Col, R), R2 < R.
 ```
 
-Over a spatial domain, the ranks can lay out as a GRID: a68b268e's `c.prio` shows the precedence in the tile arrangement.
+Over a spatial domain, the ranks can be stored as a GRID: a68b268e's `c.prio` shows the precedence in the tile arrangement.
 
 ## Set-keyed relations via parent/child tables
 
-Declare a relation keyed by a multiset of members as two tables joined by an `id`: the parent holds `(id, out-fields)`; the child holds `(id, member-fields)`. The match runs through `KeyedSetCompare` (`lib.dl`): the child table feeds `pattern_member`, the observed cells feed `observed_member`, and `covers` / `equals` test containment / equality. The parent table maps the matched `id` to its output.
+A relation keyed by a multiset of members is represented as two tables joined by an `id`: the parent holds `(id, out-fields)`; the child holds `(id, member-fields)`. The match uses `KeyedSetCompare` (`lib.dl`): the child table provides `pattern_member`, the observed cells provide `observed_member`, and `covers` / `equals` test containment / equality. The parent table maps the matched `id` to its output.
 
 ```
 .decl combine_member(id: Ident, p_outer: Position, c: Color)
@@ -203,11 +203,11 @@ out(P_grid_out, Col_out) :-
     combine_match.equals(P_grid_out, Id).
 ```
 
-This example uses `equals` because the observed tiles at a cell are exactly the entry's members; use `covers` where the observed set may have members beyond the pattern.
+The observed tiles at a cell are exactly the entry's members, so this example uses `equals`. Where the observed set may have members beyond the pattern, `covers` applies.
 
 ## Bidirectional mapping via positive recursion
 
-A symmetric relation declared one direction, plus `mapping(B, A) :- mapping(A, B)` for closure.
+A symmetric relation is declared in one direction, and `mapping(B, A) :- mapping(A, B)` provides closure.
 
 ```
 .decl mapping(c_from: Color, c_to: Color)
@@ -229,9 +229,9 @@ Concrete: period-2 pattern over H=7.
 | 1 | 1 | 2 | `8 % 2 = 0` ✓ | bg cell = tile, dot cell = gap |
 | 3 | -1 | 2 | `6 % 2 = 0` ✓ | adjacent tiles overlap by 1 row |
 
-K=2 G=0 (the visual period) fails for odd H. K=1 G=1 reframes bg as tile and dot as gap. K=3 G=-1 uses shared-boundary overlap.
+K=2 G=0 (the visual period) fails for odd H. K=1 G=1 treats bg as tile and dot as gap. K=3 G=-1 uses shared-boundary overlap.
 
-Before adding a new primitive for a periodic pattern, check whether an existing divide/divide_by_size encoding covers it via a different (K, G) split.
+Existing divide/divide_by_size encodings are checked for a different (K, G) split before a new primitive is added for a periodic pattern.
 
 ## 1D `divide` composed to 2D
 
@@ -246,21 +246,21 @@ compose(P_inner_v, P_inner_h, P_intile).
 
 ## Wide and long layouts
 
-A relation can lay co-occurring values out wide (columns of one atom) or long (one row per member). Multiplicity that the concept fixes goes wide: the two axes, a corner's two dirs, the four edge distances (Position is the wide form of per-Dir distance data). Multiplicity that the task varies stays long: markers, tiles, ink cells. Wide is a single atom: a rule that repeats an atom once per member is not a wide layout, and when the members are a closed domain in one shared role, it is a universal written out by hand (see Universals via defect negation).
+A relation can lay co-occurring values out wide (columns of one atom) or long (one row per member). Multiplicity that the concept fixes goes wide: the two axes, a corner's two dirs, the four edge distances (Position is the wide form of per-Dir distance data). Multiplicity that the task varies stays long: markers, tiles, ink cells. Wide is a single atom. A rule that repeats an atom once per member is not a wide layout. When those members are a closed domain in one shared role, that rule states a universal by hand (see Universals via defect negation).
 
-Wide data reads by unification; long data reads by joins. A long encoding of a fixed co-occurrence makes every consumer reassemble it, as a self-join with a distinctness guard that derives each symmetric result twice:
+A solver reads wide data by unification and long data by joins. A long encoding of a fixed co-occurrence makes every consumer reassemble it, as a self-join with a distinctness guard that derives each symmetric result twice:
 
 ```
 edge(D1), edge(D2), D1 != D2, marked(P, D1), marked(P, D2).
 ```
 
-The reassembly belongs in one place: the domain's pairing relation (`opposite` is the Dir form; each closed domain gets its own), or the defining rule of a wide relation. On a domain with identity only (colors), the distinctness join is the concept itself.
+The reassembly occurs in one place: the domain's pairing relation (`opposite` is the Dir form; each closed domain gets its own), or the defining rule of a wide relation. On a domain with identity only (colors), the distinctness join is the concept itself.
 
-Order inside a wide atom is a tag column or a repeated value, never slot position. A pairing relation holds all orders as rows (`opposite`, `turn`), so which member fills which slot is data. A record that orders members by positional convention lacks that property: the convention crosses the interface as unstated data.
+Order inside a wide atom is a tag column or a repeated value, never slot position. A pairing relation holds all orders as rows (`opposite`, `turn`), so which member fills which slot is data. A record that orders members by positional convention lacks that property: the convention is unstated data at the interface.
 
 A repeated variable in a wide atom states the diagonal case directly: equal extents (a square), equal distances (centered; on a corner's diagonal). The long encoding needs an agreement join for the same statement.
 
-Derivation is long by nature: a rule that quantifies over an index emits one row per index value, and aggregation computes per index (`Bbox` aggregates `edge_min` per Dir, then packs the four into `margin`'s Position). Widening derived data costs one pairing join at its defining rule. A readout of a value that already holds the co-occurrence widens at no cost.
+A derivation has a long layout because a rule that quantifies over an index emits one row per index value, and aggregation computes per index (`Bbox` aggregates `edge_min` per Dir, then packs the four into `margin`'s Position). Widening derived data requires one pairing join at its defining rule. A value that already holds the co-occurrence can be widened without another join.
 
 ## Universals via defect negation
 
@@ -275,11 +275,11 @@ The enum relation (`dir_elem`, `d4_elem`, `axis_elem`) supplies the domain. Repe
 
 ## Boxes as margin Positions
 
-A rectangular region is one Position: its four edge margins. `geq(P, M)` expands a box to its cells (`Bbox.inside` in lib). A box stores as data (77fdfe62's `$Margin`; 4522001f's `c.box`, rotated to its corner by `apply`) and moves as a record: `compose` with a jump delta shifts it whole, `geq(M, ORIGIN)` tests that it still fits the frame, and a chain of placed regions recurses on the box, not its cells (4522001f's `grow_box` / `fit_box`).
+A rectangular region is one Position: its four edge margins. `geq(P, M)` expands a box to its cells (`Bbox.inside` in lib). A box is stored as data (77fdfe62's `$Margin`; 4522001f's `c.box`, rotated to its corner by `apply`) and moved as a record. `compose` with a jump delta shifts the whole box. `geq(M, ORIGIN)` tests that the box still fits the frame. A chain of placed regions recurses on the box, not its cells (4522001f's `grow_box` / `fit_box`).
 
 ## `cell_split` — input cell with its axis decomposition
 
-Pairs an input cell with its along/across split on the task's axis.
+`cell_split` pairs an input cell with its along/across split on the task's axis.
 
 ```
 .decl cell_split(p: Position, col: Color, p_inner: Position, p_across: Position)
@@ -288,7 +288,13 @@ cell_split(P, Col, P_inner, P_across) :- in(P, Col), c.axis(A), split(P, A, P_in
 
 ## Slide until halted
 
-A mover's translation found by walking: enumerate the displacements the frame admits, then advance one step at a time until the moved footprint covers a stopper. The rest displacement is the first halted reach. The stopper set carries the contact semantics — cells one step back from the obstacle's cells, or from its box — so contact variants differ only in their stoppers.
+A mover's translation is found by walking.
+
+1. The solver enumerates the displacements that the frame admits.
+2. It advances one step at a time until the moved footprint covers a stopper.
+3. The first displacement that is both reachable and halted is the final displacement.
+
+The stopper set defines the contact semantics (cells one step back from the obstacle's cells, or from its box). Contact variants therefore differ only in their stoppers.
 
 ```
 .decl shift(delta: Shift)
