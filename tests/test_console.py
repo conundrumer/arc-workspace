@@ -1447,6 +1447,29 @@ def test_turn_whose_cache_read_drops_is_marked_anomalous(srv):
     assert "⚠ DROP 28,000→21,000" in it["feed"][-1]["text"]
 
 
+def test_a_compact_starts_the_cache_baseline_over(srv):
+    it = item(srv, "a", srv.NEEDS_REVIEW)
+    srv.finish_turn(it, usage_result(180000), None, time.time(), "refine", False)
+    w = worker(srv, it, state="running")
+    srv.handle_event(w, {"type": "system", "subtype": "compact_boundary",
+                         "compact_metadata": {"pre_tokens": 180000, "post_tokens": 12000,
+                                              "cumulative_dropped_tokens": 168000}}, None)
+    srv.finish_turn(it, usage_result(180000), None, time.time(), "refine", False)
+    assert "refine" not in it["cache_read"]
+    srv.start_turn(it, w, "refine")
+    srv.finish_turn(it, usage_result(12000), None, time.time(), "refine", False)
+    assert "DROP" not in it["feed"][-1]["text"]
+    assert it["cache_read"]["refine"] == 12000
+
+
+def test_a_request_that_carried_nothing_is_no_drop(srv):
+    it = item(srv, "a", srv.NEEDS_REVIEW)
+    srv.finish_turn(it, usage_result(28000), None, time.time(), "refine", False)
+    srv.finish_turn(it, usage_result(0, 0, 0), None, time.time(), "refine", False)
+    assert "DROP" not in it["feed"][-1]["text"]
+    assert it["cache_read"]["refine"] == 28000
+
+
 def test_turn_whose_cache_read_grows_is_not_marked_anomalous(srv):
     it = item(srv, "a", srv.NEEDS_REVIEW)
     srv.finish_turn(it, usage_result(21000), None, time.time(), "refine", False)

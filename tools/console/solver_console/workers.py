@@ -363,7 +363,7 @@ def start_turn(it: dict, worker: dict, phase: str, trigger: str | None = None,
     worker.pop("woke", None)
     worker.update(state=state, started=time.time(), trigger=trigger,
                   handoff=handoff, slash=slash, seen=set(), got_result=False,
-                  think_run=0, reqs={}, launch={}, touched=set(),
+                  think_run=0, reqs={}, launch={}, touched=set(), compacted=False,
                   idle_since=None)
 
 
@@ -693,6 +693,7 @@ def handle_event(worker: dict, ev: dict, first_response) -> None:
             # a compact from any ask counts as the one the auto compact owes
             # this stretch of the session
             it.setdefault("auto_compacted", {})[phase] = True
+            worker["compacted"] = True
             meta = ev.get("compact_metadata") or {}
             store.say(it, store.event(
                 "compacted · pre {pre:,} · post {post:,} · dropped {drop:,}".format(
@@ -1113,6 +1114,11 @@ def turn_usage(it: dict, ev: dict, phase: str,
     previous = it.setdefault("cache_read", {}).get(phase)
     drops = []
     for request in requests:
+        # a request that carried no input at all never reached the model,
+        # so it says nothing about the cache
+        if not any(request.get(k) for k in ("input_tokens", "cache_read_input_tokens",
+                                             "cache_creation_input_tokens")):
+            continue
         cache_read = request.get("cache_read_input_tokens")
         if isinstance(cache_read, (int, float)):
             if isinstance(previous, (int, float)) and cache_read < previous:
@@ -1377,6 +1383,10 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
             store.say(it, {"kind": "report", "rev": it["rev"], "text": shown}, sess=phase)
     store.say(it, store.event(turn_note(it, ev, phase, started, reqs)), sess=phase)
     worker = store.PROCS.get((it["id"], phase))
+    # A compact rebuilds the context, so the next turn reads a small cache by
+    # design; the baseline starts over rather than flagging a drop.
+    if worker and worker.get("compacted"):
+        it.get("cache_read", {}).pop(phase, None)
     # A turn with no callouts says nothing about them, so the item keeps what
     # the last report that carried them left.
     if solvers.callout_body(text) is not None:
