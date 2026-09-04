@@ -4479,6 +4479,44 @@ def test_the_unfinalized_source_passes_over_a_pass_in_flight(srv, monkeypatch):
     assert [phase for _, phase in sent] == ["finalize"]
 
 
+def test_the_unfinalized_source_passes_over_items_not_done_up_to_finalize(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50)
+    sent = finalize_launch(srv, monkeypatch)
+    # a refine the usage limit cut, waiting for its resume, and a queued task
+    # whose solver is on disk from an earlier pass: neither is a candidate
+    backlog_solver(srv, "aaa")
+    item(srv, "aaa", srv.NEEDS_REVIEW, chain=srv.default_chain(), resume_phase="refine")
+    backlog_solver(srv, "bbb")
+    item(srv, "bbb", srv.QUEUED, chain=srv.default_chain(), phase="create",
+         sessions={"create": None, "refine": None, "finalize": None}, landed=[])
+    backlog_solver(srv, "ccc")
+    night_on(srv, source="unfinalized", finalize_target=5)
+    assert srv.night_tick()["admitted"] == ["ccc"]
+    assert [phase for _, phase in sent] == ["finalize"]
+    srv.night_tick()
+    assert not [e for e in srv.night()["log"] if "not started" in e["text"]]
+
+
+def test_a_worker_that_fails_to_start_ends_the_admitter_pass(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50)
+    tried = []
+
+    def failing(it, msg, phase, **kw):
+        tried.append(it["id"])
+        raise OSError("no claude binary")
+    monkeypatch.setattr(srv, "launch", failing)
+    for tid in ("aaa", "bbb", "ccc"):
+        backlog_solver(srv, tid)
+    night_on(srv, source="unfinalized", finalize_target=5)
+    assert srv.night_tick()["admitted"] == []
+    assert tried == ["aaa"]
+    assert srv.STATE["items"] == []
+    assert [e["text"] for e in srv.night()["log"]] == \
+        ["aaa · finalize not started — could not start the worker: no claude binary"]
+
+
 def test_an_empty_unfinalized_list_is_logged_once(srv, monkeypatch):
     clock_at(srv, monkeypatch)
     set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50)

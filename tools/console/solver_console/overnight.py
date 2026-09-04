@@ -72,19 +72,20 @@ def night_finalize() -> list[str]:
     """Start the finalize pass of the next unfinalized solver, in triage
     order. Caller holds LOCK.
 
-    A task whose pass is in flight, or whose item is busy, is passed over. A
-    task whose pass cannot start is logged and passed over too, so one bad
-    row does not hold the rest."""
+    A task the console holds is a candidate only when its item is done up to
+    finalize: one mid-chain, cut, or already finalizing is passed over in
+    silence, since the list carries every solver on disk. A worker that fails
+    to start ends the pass, as the cause holds for every row."""
     cfg = pacing.night()
     for row in backlog.backlog_view():
         it = store.find(row["id"])
-        if it is not None and (it["phase"] == "finalize" or store.active(it)):
+        if it is not None and not backlog.finalize_ready(it):
             continue
         res = backlog.start_finalize(row["id"])
         if "error" in res:
             pacing.night_say(f"{row['id']} · finalize not started — {res['error']}",
                              once=True)
-            continue
+            return []
         pacing.night_say(f"admitted {row['id']} · finalize"
                          f" · {len(pacing.live_items())}/{cfg['finalize_target']} live")
         return [row["id"]]
