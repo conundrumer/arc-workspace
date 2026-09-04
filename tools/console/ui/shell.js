@@ -172,13 +172,14 @@ function App(){
   const onNightToggle=useCallback(on=>{
     if(on){
       const n=live.current.night||{};
-      const ok=confirm(n.source==="unfinalized"
-        ? "Autopilot starts finalize passes over the unfinalized solvers, in triage order: up to "
-          +(n.finalize_target??3)+" items in flight, within ~30s of the pacer opening. Start?"
-        : "Autopilot admits tasks from the queue: up to "
-          +(n.target??6)+" items in flight, create → refine"
-          +((live.current.auto||{}).finalize?" → finalize":"")+", "
-          +"within ~30s of the pacer opening. Start?");
+      const queueText="admits tasks from the queue: up to "+(n.target??6)
+        +" items in flight, create → refine";
+      const finText="starts finalize passes over the unfinalized solvers, in triage order: up to "
+        +(n.finalize_target??3)+" in flight";
+      const ok=confirm("Autopilot "+(n.source==="unfinalized" ? finText
+        : n.source==="both" ? queueText+", and "+finText
+        : queueText+((live.current.auto||{}).finalize?" → finalize":""))
+        +", within ~30s of the pacer opening. Start?");
       if(!ok){ notify(); return; }   // the checkbox mirrors the server, so redraw it
     }
     postNight({on}, on?"autopilot on":"autopilot off");

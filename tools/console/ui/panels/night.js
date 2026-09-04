@@ -5,26 +5,25 @@ import { hhmm } from "/ui/prose.js";
 /* ---------- overnight ----------
    The dials are the server's; the panel only mirrors them, so an edit posts
    and the next poll confirms it. A field the user is typing in is left alone.
-   The source picks what an admission is: a queue task, or the finalize pass
-   of the next unfinalized solver. Each source has its own target, and the
-   panel shows the active one. */
-export const NIGHT_SOURCES = ["queue","unfinalized"];
-export const targetKey = n => n.source==="unfinalized" ? "finalize_target" : "target";
-export const activeTarget = n => n[targetKey(n)];
+   The source picks what an admission is: a queue task, the finalize pass of
+   the next unfinalized solver, or both side by side. Each slot has its own
+   target, and the panel shows the dials of the slots the source admits into. */
+export const NIGHT_SOURCES = ["queue","unfinalized","both"];
+const TARGET_KEYS = {queue:["target"], unfinalized:["finalize_target"], both:["target","finalize_target"]};
+export const targetKeys = n => TARGET_KEYS[n.source] || TARGET_KEYS.queue;
 const SHARED_DIALS = ["reserve","floor","ceiling"];
 
 
 export function NightPanel({night, open, onDial, onToggle, onCatchup, onSource}){
-  const n = night||{}, g = n.gate, tkey = targetKey(n);
-  const refs = {target:useRef(null), reserve:useRef(null), floor:useRef(null), ceiling:useRef(null)};
+  const n = night||{}, g = n.gate, tkeys = targetKeys(n);
+  const refs = {target:useRef(null), finalize_target:useRef(null),
+                reserve:useRef(null), floor:useRef(null), ceiling:useRef(null)};
   const log = useRef(null), onBox = useRef(null), catchBox = useRef(null);
   useEffect(()=>{
-    for(const key of SHARED_DIALS){
+    for(const key of [...tkeys, ...SHARED_DIALS]){
       const el=refs[key].current, v=n[key];
       if(el && v!=null && document.activeElement!==el && el.value!==String(v)) el.value=v;
     }
-    const tel=refs.target.current, tv=n[tkey];
-    if(tel && tv!=null && document.activeElement!==tel && tel.value!==String(tv)) tel.value=tv;
     /* the boxes mirror the server, so a click the server does not confirm —
        a declined autopilot prompt — snaps back on the next draw */
     if(onBox.current) onBox.current.checked=!!n.on;
@@ -48,13 +47,15 @@ export function NightPanel({night, open, onDial, onToggle, onCatchup, onSource})
         <input ref=${onBox} type="checkbox" checked=${!!n.on}
           onChange=${e=>onToggle(e.target.checked)}/>
         <b>autopilot</b></label>
-      <label title="what an admission is: a queue task run up to finalize, or the finalize pass of the next unfinalized solver">source
+      <label title="what an admission is: a queue task run up to finalize, the finalize pass of the next unfinalized solver, or one of each">source
         <select value=${n.source||"queue"} onChange=${e=>onSource(e.target.value)}>
           ${NIGHT_SOURCES.map(src=>html`<option key=${src} value=${src}>${src}</option>`)}
         </select></label>
-      <label title="items kept in flight under this source">target
-        <input ref=${refs.target} type="number" min="1" max="40"
-          onChange=${e=>onDial(tkey, e.target.value)}/></label>
+      ${tkeys.map(key=>html`<label key=${key} title=${key==="finalize_target"
+            ? "finalize passes kept in flight" : "items kept in flight"}>
+        ${tkeys.length>1 && key==="finalize_target" ? "finalize target" : "target"}
+        <input ref=${refs[key]} type="number" min="1" max="40"
+          onChange=${e=>onDial(key, e.target.value)}/></label>`)}
       <label title="weekly points held back from the pace line">reserve
         <input ref=${refs.reserve} type="number" min="0" max="100"
           onChange=${e=>onDial("reserve", e.target.value)}/></label>

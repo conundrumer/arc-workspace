@@ -1,6 +1,6 @@
 """The overnight admitter: the resumes that came due, and the next
-admission from the active source: a queue task, or the next unfinalized
-solver's finalize pass."""
+admission into each slot of the active source: a queue task, the next
+unfinalized solver's finalize pass, or one of each."""
 
 import sys
 import threading
@@ -63,8 +63,8 @@ def night_admit() -> list[str]:
         cfg["wave"] = store.STATE["wave"]
     ids = waves.make_items(picked, chain, cfg["wave"], str(prompts.append_path()),
                            night=True)
-    pacing.night_say("admitted " + ", ".join(ids) +
-                     f" · {len(pacing.live_items())}/{cfg['target']} live")
+    pacing.night_say("admitted " + ", ".join(ids) + " · create"
+                     f" · {pacing.slot_live(cfg, 'queue')}/{cfg['target']} live")
     return ids
 
 
@@ -87,15 +87,17 @@ def night_finalize() -> list[str]:
                              once=True)
             return []
         pacing.night_say(f"admitted {row['id']} · finalize"
-                         f" · {len(pacing.live_items())}/{cfg['finalize_target']} live")
+                         f" · {pacing.slot_live(cfg, 'finalize')}/{cfg['finalize_target']} live")
         return [row["id"]]
     pacing.night_say("nothing to finalize", once=True)
     return []
 
 
 def night_tick() -> dict:
-    """One admitter pass: the resumes that came due, then one admission from
-    the active source if a slot is free and the pacer allows it."""
+    """One admitter pass: the resumes that came due, then one admission into
+    each slot of the active source that is free and whose gate is open. The
+    counts are read again for each slot, so an admission into the first is
+    seen by the second."""
     out = {"resumed": [], "admitted": [], "held": None}
     changed = False
     stagger = []
@@ -107,18 +109,24 @@ def night_tick() -> dict:
             resume_item(it)
             out["resumed"].append(it["id"])
             changed = True
-        if len(pacing.live_items()) < pacing.target_of(cfg):
-            gate = pacing.pacer(models=pacing.admit_models())
+        slots = pacing.SOURCE_SLOTS[cfg["source"]]
+        held = []
+        for kind in slots:
+            if pacing.slot_live(cfg, kind) >= pacing.slot_target(cfg, kind):
+                continue
+            gate = pacing.pacer(models=pacing.slot_models(kind))
             if gate["open"]:
-                if cfg["source"] == "unfinalized":
-                    out["admitted"] = night_finalize()
-                else:
-                    out["admitted"] = night_admit()
-                    stagger = out["admitted"]
-                changed = changed or bool(out["admitted"])
+                ids = night_finalize() if kind == "finalize" else night_admit()
+                out["admitted"] += ids
+                if kind == "queue":
+                    stagger = ids
+                changed = changed or bool(ids)
             else:
-                out["held"] = gate["why"]
-                changed |= pacing.night_say("pacer holding: " + gate["why"], once=True)
+                # under both the line names the slot, since the other may be open
+                held.append(f"{kind}: {gate['why']}" if len(slots) > 1 else gate["why"])
+        if held:
+            out["held"] = " · ".join(held)
+            changed |= pacing.night_say("pacer holding: " + out["held"], once=True)
     if stagger:
         threading.Thread(target=waves.stagger_launch, args=(stagger,),
                          daemon=True).start()
@@ -137,11 +145,38 @@ def night_loop() -> None:
             print(f"overnight pass failed: {exc!r}", file=sys.stderr)
 
 
+def slots_view(cfg: dict) -> list[dict]:
+    """Each slot of the active source: its kind, what it holds against its
+    target, and its gate while the mode is on."""
+    return [{"kind": kind, "live": pacing.slot_live(cfg, kind),
+             "target": pacing.slot_target(cfg, kind),
+             "gate": pacing.pacer(models=pacing.slot_models(kind)) if cfg["on"] else None}
+            for kind in pacing.SOURCE_SLOTS[cfg["source"]]]
+
+
+def joint_gate(slots: list[dict]) -> dict | None:
+    """One gate over the slots: open while any slot's is, with each slot's
+    reason named when there is more than one."""
+    gates = [s["gate"] for s in slots if s["gate"]]
+    if not gates:
+        return None
+    if len(gates) == 1:
+        return gates[0]
+    out = dict(gates[0])
+    out["open"] = any(g["open"] for g in gates)
+    out["why"] = " · ".join(f"{s['kind']} {'open' if s['gate']['open'] else 'held'}: "
+                            f"{s['gate']['why']}" for s in slots)
+    nexts = [g["next"] for g in gates if g.get("next")]
+    out["next"] = min(nexts) if nexts else None
+    return out
+
+
 def night_view() -> dict:
     """What the console shows for the mode."""
     cfg = pacing.night()
     view = {name: cfg[name] for name in pacing.NIGHT_DEFAULTS}
-    gate = pacing.pacer(models=pacing.admit_models()) if cfg["on"] else None
+    slots = slots_view(cfg)
+    gate = joint_gate(slots)
     soon = [(it["resume_at"], f"{it['id']} resumes") for it in store.STATE["items"]
             if it.get("resume_at")]
     if gate and gate.get("next"):
@@ -150,6 +185,7 @@ def night_view() -> dict:
         soon.append((store.now() + ADMIT_POLL, "admitter pass"))
     at, what = min(soon) if soon else (None, "")
     view.update(gate=gate, live=len(pacing.live_items()), landed=pacing.night_landed(),
+                slots=[{k: v for k, v in s.items() if k != "gate"} for s in slots],
                 log=cfg["log"][-8:],
                 next=({"at": at, "what": what} if at else None))
     return view
@@ -181,8 +217,10 @@ def act_night(body: dict) -> dict:
                 cfg.update(since=store.now(), wave=None, append=None,
                            wk_start=wk["pct"] if wk else None,
                            wk_start_at=store.now() if wk else None)
-                pacing.night_say(f"autopilot on · {cfg['source']} · "
-                                 f"target {pacing.target_of(cfg)}")
+                slots = pacing.SOURCE_SLOTS[cfg["source"]]
+                targets = (f"target {cfg['target']} · finalize target {cfg['finalize_target']}"
+                           if len(slots) > 1 else f"target {pacing.slot_target(cfg, slots[0])}")
+                pacing.night_say(f"autopilot on · {cfg['source']} · {targets}")
             else:
                 cfg["wave"] = None
                 pacing.night_say("autopilot off")

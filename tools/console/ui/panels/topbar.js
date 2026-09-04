@@ -5,7 +5,6 @@ import { useClock } from "/ui/clock.js";
 import { FINAL, STATES } from "/ui/item.js";
 import { StateChip } from "/ui/panels/badges.js";
 import { pad2 } from "/ui/prose.js";
-import { activeTarget } from "/ui/panels/night.js";
 
 /* account rate-limit windows, statusline style: 5h➞1pm 40%/62% */
 function resetLabel(epoch, weekly){
@@ -37,7 +36,8 @@ export function Topbar({view, setView, wave, items, progress, usage, night, nigh
   const gate = (night||{}).gate;
   const nightCls = night && night.on ? (gate&&gate.open?"on":"held") : "";
   const nightTxt = night && night.on
-    ? `autopilot ${night.live||0}/${activeTarget(night)} · ${gate&&gate.open?"open":"held"}`
+    ? "autopilot "+(night.slots||[]).map(s=>s.live+"/"+s.target).join(" · ")
+      +" · "+(gate&&gate.open?"open":"held")
     : "autopilot";
   return html`<div id="topbar">
     <span class="wordmark"><b>arc</b> · solver console</span>

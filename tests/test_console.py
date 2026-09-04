@@ -4583,6 +4583,97 @@ def test_the_payload_carries_the_source_and_both_targets(srv, monkeypatch):
     assert srv.night()["log"][-1]["text"] == "autopilot on · unfinalized · target 4"
 
 
+# ---------- the both source ----------
+
+def test_the_both_source_is_accepted(srv):
+    assert srv.act_night({"source": "both"}) == {"ok": True}
+    assert srv.night()["source"] == "both"
+    srv.act_night({"on": True})
+    assert srv.night()["log"][-1]["text"] == "autopilot on · both · target 6 · finalize target 3"
+
+
+def test_the_both_source_admits_one_of_each_kind_in_a_pass(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50)
+    sent = finalize_launch(srv, monkeypatch)
+    backlog_solver(srv, "aaa")
+    night_on(srv, source="both")
+    assert srv.night_tick()["admitted"] == ["aaa", "t00"]
+    assert [phase for _, phase in sent] == ["finalize"]
+    assert srv.find("aaa")["phase"] == "finalize" and srv.find("t00")["phase"] == "create"
+    texts = [e["text"] for e in srv.night()["log"]]
+    assert texts[0].startswith("admitted aaa · finalize · 1/3 live")
+    assert texts[1].startswith("admitted t00 · create · 1/6 live")
+
+
+def test_the_both_source_fills_each_slot_to_its_own_target(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50)
+    finalize_launch(srv, monkeypatch)
+    for tid in ("aaa", "bbb"):
+        backlog_solver(srv, tid)
+    night_on(srv, source="both", target=2, finalize_target=1)
+    assert srv.night_tick()["admitted"] == ["aaa", "t00"]
+    # the finalize slot is full; the queue slot still has room
+    assert srv.night_tick()["admitted"] == ["t01"]
+    assert srv.night_tick()["admitted"] == []
+    cfg = srv.night()
+    assert (srv.slot_live(cfg, "finalize"), srv.slot_live(cfg, "queue")) == (1, 2)
+    assert srv.find("bbb") is None
+
+
+def test_the_both_source_holds_one_slot_while_the_other_admits(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50, fbl=(45, 50))
+    finalize_launch(srv, monkeypatch)
+    backlog_solver(srv, "aaa")
+    night_on(srv, source="both")
+    out = srv.night_tick()
+    assert out["admitted"] == ["t00"]
+    assert out["held"].startswith("finalize: fbl at pace")
+    assert srv.find("aaa") is None
+    assert srv.night()["log"][-1]["text"].startswith("pacer holding: finalize: fbl at pace")
+    view = srv.night_view()
+    assert view["gate"]["open"] is True
+    assert view["gate"]["why"].startswith("finalize held: fbl at pace")
+    assert "queue open: at pace" in view["gate"]["why"]
+
+
+def test_two_standing_notes_do_not_take_turns_filling_the_log(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50, fbl=(45, 50))
+    monkeypatch.setattr(srv, "queue_pick", lambda n, order: [])
+    night_on(srv, source="both")
+    for _ in range(5):
+        srv.night_tick()
+    texts = [e["text"] for e in srv.night()["log"]]
+    assert texts == ["queue is empty", "pacer holding: finalize: " + srv.pacer(
+        models=[srv.MODEL_IDS["fable"]])["why"]]
+
+
+def test_the_both_source_keeps_finalize_behind_the_pacer(srv):
+    srv.start_wave(1)
+    it = srv.find("t00")
+    srv.act_auto({"finalize": True})
+    assert srv.auto_advances(it, "refine")
+    night_on(srv, source="both")
+    assert not srv.auto_advances(it, "refine")
+
+
+def test_the_payload_carries_a_count_per_slot(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50)
+    finalize_launch(srv, monkeypatch)
+    backlog_solver(srv, "aaa")
+    night_on(srv, source="both")
+    srv.night_tick()
+    assert srv.night_view()["slots"] == [
+        {"kind": "finalize", "live": 1, "target": 3},
+        {"kind": "queue", "live": 1, "target": 6}]
+    srv.night()["source"] = "unfinalized"
+    assert srv.night_view()["slots"] == [{"kind": "finalize", "live": 2, "target": 3}]
+
+
 # ---------- compact on landing ----------
 
 def landing_item(srv, monkeypatch, on=True, **kw):

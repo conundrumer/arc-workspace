@@ -32,8 +32,12 @@ NIGHT_DEFAULTS = {
 
 # The queue source admits a task from the queue and runs it up to the stop;
 # the unfinalized source takes the next unfinalized solver and runs its
-# finalize pass. One source is live at a time.
-NIGHT_SOURCES = ("queue", "unfinalized")
+# finalize pass; both runs the two side by side, each with its own slot.
+NIGHT_SOURCES = ("queue", "unfinalized", "both")
+# The slots a source admits into, in the order a pass checks them: a landed
+# refine's finalize pass goes ahead of a new task.
+SOURCE_SLOTS = {"queue": ("queue",), "unfinalized": ("finalize",),
+                "both": ("finalize", "queue")}
 NIGHT_LOG = 40         # night log entries kept
 LIVE = (store.QUEUED, store.RUNNING, store.COMMENTED)   # states with work still to come
 
@@ -103,11 +107,42 @@ def night_models() -> list[str]:
     return [st.get("model") or "" for st in run]
 
 
-def admit_models() -> list[str]:
-    """The model ids the active source's admissions run."""
-    if night()["source"] == "unfinalized":
+def slot_models(kind: str) -> list[str]:
+    """The model ids an admission into the slot of `kind` runs."""
+    if kind == "finalize":
         return [store.stage_model("finalize")]
     return night_models()
+
+
+def admit_models() -> list[str]:
+    """The model ids the active source's admissions run, every slot
+    together."""
+    out: list[str] = []
+    for kind in SOURCE_SLOTS[night()["source"]]:
+        out += [m for m in slot_models(kind) if m not in out]
+    return out
+
+
+def slot_target(cfg: dict, kind: str) -> int:
+    """How many items in flight the slot of `kind` keeps."""
+    return cfg["finalize_target"] if kind == "finalize" else cfg["target"]
+
+
+def slot_live(cfg: dict, kind: str) -> int:
+    """The items in flight the slot of `kind` counts. A single source counts
+    every live item against its one target; both counts the finalize passes
+    against the finalize slot and every other item against the queue slot."""
+    if cfg["source"] != "both":
+        return len(live_items())
+    return sum(1 for it in live_items()
+               if (it["phase"] == "finalize") == (kind == "finalize"))
+
+
+def admitter_owns_finalize(cfg: dict) -> bool:
+    """Whether every start of a finalize pass goes through the admitter, so
+    the pacer gates it: the mode is on with a source that has a finalize
+    slot."""
+    return bool(cfg["on"]) and "finalize" in SOURCE_SLOTS[cfg["source"]]
 
 
 def night() -> dict:
@@ -121,16 +156,17 @@ def night() -> dict:
     return cfg
 
 
-def target_of(cfg: dict) -> int:
-    """How many items in flight the active source keeps."""
-    return cfg["finalize_target"] if cfg["source"] == "unfinalized" else cfg["target"]
+# How far back a `once` line looks for its repeat. Each slot of a pass can
+# leave one standing note, so with two slots the notes would take turns at
+# the end of the log if only the last line counted.
+ONCE_BACK = 3
 
 
 def night_say(text: str, once: bool = False) -> bool:
-    """Add a line to the night log. `once` drops a repeat of the line already
-    at the end, so a hold that outlives many passes is recorded once."""
+    """Add a line to the night log. `once` drops a repeat of a line among the
+    last few, so a hold that outlives many passes is recorded once."""
     log = night()["log"]
-    if once and log and log[-1]["text"] == text:
+    if once and any(e["text"] == text for e in log[-ONCE_BACK:]):
         return False
     log.append({"t": int(store.now()), "text": text})
     del log[:-NIGHT_LOG]

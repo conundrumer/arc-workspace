@@ -994,9 +994,9 @@ def auto_advances(it: dict, phase: str) -> bool:
     `auto_stop` names a stage auto-advance will not launch, so a run can carry
     items through the cheap stages and stop before an expensive one. Without
     it, auto-advance runs the whole chain. The auto finalize setting lifts the
-    stop when the stage it names is finalize, unless the autopilot is on its
-    unfinalized source: then its admitter is the only way into finalize, so
-    the pacer gates every start."""
+    stop when the stage it names is finalize, unless the autopilot is on with
+    a finalize slot: then its admitter is the only way into finalize, so the
+    pacer gates every start."""
     if not it.get("auto_advance"):
         return False
     nxt = store.next_stage(it, phase)
@@ -1006,8 +1006,7 @@ def auto_advances(it: dict, phase: str) -> bool:
         return True
     if nxt["name"] != "finalize" or not store.auto()["finalize"]:
         return False
-    cfg = pacing.night()
-    return not (cfg["on"] and cfg["source"] == "unfinalized")
+    return not pacing.admitter_owns_finalize(pacing.night())
 
 
 def advance_stage(it: dict) -> None:
