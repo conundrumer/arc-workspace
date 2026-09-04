@@ -54,7 +54,7 @@ WORKER_HANDOFF_ENV = "CONSOLE_WORKER_HANDOFF"
 # applies that same fallback to turns a console restart cut short, so no ACTIVE
 # state survives a restart. Comments relaunch from NEEDS_REVIEW or APPROVED,
 # approval moves between those two, and a commit ends at COMMITTED.
-# console.html renders the same names — keep the two in step.
+# ui/item.js renders the same names — keep the two in step.
 
 QUEUED = "queued"              # picked for a wave, worker not started
 RUNNING = "running"            # the item's first turn is in flight

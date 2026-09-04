@@ -4406,7 +4406,7 @@ def get(srv, path):
     return out
 
 
-UI_IMPORT = re.compile(r'from "(/ui/[^"]+)"')
+UI_IMPORT = re.compile(r'(?:from |src=)"(/ui/[^"]+)"')
 
 
 def test_the_page_and_every_module_it_imports_are_served(srv):
@@ -4422,7 +4422,7 @@ def test_the_page_and_every_module_it_imports_are_served(srv):
         r = get(srv, path)
         assert (r["status"], r["ctype"]) == (200, "application/javascript"), path
         todo += UI_IMPORT.findall(r["body"].decode())
-    assert "/ui/prose.js" in seen
+    assert {"/ui/shell.js", "/ui/prose.js"} <= seen
 
 
 def test_the_ui_route_serves_only_modules_under_ui(srv):

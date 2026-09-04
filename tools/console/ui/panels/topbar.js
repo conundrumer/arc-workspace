@@ -30,7 +30,7 @@ export function Usage({usage}){
 
 export function Topbar({view, setView, wave, items, progress, usage, night, nightOpen, toggleNight,
                  committer, commitOpen, toggleCommit, onCommit, waveCtl,
-                 pipeline, models, onPipeline, auto, onAuto}){
+                 pipeline, models, onPipeline, auto, onAuto, extra}){
   const tally={};
   items.forEach(it=>tally[it.state]=(tally[it.state]||0)+1);
   const gate = (night||{}).gate;
@@ -81,6 +81,7 @@ export function Topbar({view, setView, wave, items, progress, usage, night, nigh
       </select>
       <button disabled=${waveCtl.busy} onClick=${waveCtl.start}>start</button>
     </span>
+    ${extra}
     <button class="primary" disabled=${!items.some(it=>it.state==="approved")}
       onClick=${onCommit}>commit approved</button>
   </div>`;
