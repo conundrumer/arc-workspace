@@ -3539,6 +3539,31 @@ def test_a_quota_death_schedules_a_resume_after_the_reset(srv, monkeypatch):
     assert "usage limit" in it["feed"][-2]["text"]
 
 
+def test_a_weekly_limit_death_resumes_after_the_weekly_reset(srv, monkeypatch):
+    """The 5h window resets first, but the weekly limit is what ran out."""
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=100, wk_elapsed=99, five_pct=40,
+              five_left=1200)
+    monkeypatch.setattr(srv.random, "uniform", lambda lo, hi: 60)
+    night_on(srv)
+    it = item(srv, "a", srv.RUNNING)
+    quota_result(srv, it)
+    assert it["resume_at"] == AT + WEEK // 100 + 60
+
+
+def test_a_death_with_no_window_reading_full_waits_on_the_5h_reset(srv, monkeypatch):
+    """The usage cache lags the API, so a death with every window under full
+    is taken as the usual 5h one."""
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=97, wk_elapsed=50, five_pct=90,
+              five_left=1200)
+    monkeypatch.setattr(srv.random, "uniform", lambda lo, hi: 60)
+    night_on(srv)
+    it = item(srv, "a", srv.RUNNING)
+    quota_result(srv, it)
+    assert it["resume_at"] == AT + 1200 + 60
+
+
 def test_a_quota_death_with_the_mode_off_just_lands(srv, monkeypatch):
     clock_at(srv, monkeypatch)
     set_usage(srv, monkeypatch, five_left=1200)

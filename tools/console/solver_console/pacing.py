@@ -40,7 +40,7 @@ LIVE = (store.QUEUED, store.RUNNING, store.COMMENTED)   # states with work still
 SQUEEZE = 3600
 # Spread the resumes of a fleet that all died on the same limit.
 RESUME_JITTER = (30, 210)
-RESUME_FALLBACK = 15 * 60   # when no 5h reset time is known
+RESUME_FALLBACK = 15 * 60   # when no reset time is known
 RESUME_BRIEF = ("your previous turn was cut off by a usage limit; continue "
                 "from where you stopped")
 # Added when the cut turn owed a handoff report, so a session on an older
@@ -172,10 +172,22 @@ def night_landed() -> int:
                and (it.get("landed_at") or 0) >= since)
 
 
+def limit_reset() -> float | None:
+    """When the window the death hit resets. A window that reads full is the
+    one that ran out, and the latest reset among those is when every one of
+    them is open again; when the cache has not caught up and none reads full,
+    the 5h window is the usual one."""
+    full = [u["reset"] for u in store.USAGE
+            if u.get("reset") and (u.get("pct") or 0) >= 100]
+    if full:
+        return max(full)
+    return (window("5h") or {}).get("reset")
+
+
 def quota_cut(it: dict, phase: str, handoff: bool) -> None:
     """A turn died with the account out of quota. In overnight mode the item
-    gets one automatic resume just after the 5h window resets; a second death
-    on the same stage leaves it for review. Caller holds LOCK."""
+    gets one automatic resume just after the window it hit resets; a second
+    death on the same stage leaves it for review. Caller holds LOCK."""
     store.say(it, store.event("usage limit"), sess=phase)
     if store.slash_turn(it, phase):
         return   # a slash command has nothing to continue from
@@ -190,8 +202,7 @@ def quota_cut(it: dict, phase: str, handoff: bool) -> None:
         store.say(it, store.event("second usage limit — left for review"), sess=phase)
         night_say(f"{it['id']} · second usage limit, left for review")
         return
-    five = window("5h")
-    reset = (five or {}).get("reset")
+    reset = limit_reset()
     at = reset if reset and reset > store.now() else store.now() + RESUME_FALLBACK
     at += random.uniform(*RESUME_JITTER)
     it.update(quota_retry=phase, resume_at=at)
