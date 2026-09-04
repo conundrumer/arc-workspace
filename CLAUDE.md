@@ -17,6 +17,7 @@ Souffle binary required for `.dl` solvers (`brew install souffle`).
 ## Solver console
 
 `tools/console/` runs solver sessions as `claude -p` workers in staged chains. The module docstrings in `tools/console/solver_console/` index what each module holds: what a worker session reads and may do, how a stage hands off, and how the user reaches a session. Read them before answering a question about how console sessions run.
+A running server re-execs itself when `server.py` or a module under `solver_console/` changes, at its next quiet moment (`solver_console/reload.py`), so a code change needs no restart; the page and `ui/` are served from disk on each request.
 
 ## Conventions
 
