@@ -4,6 +4,8 @@
 
 export const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 export const pad2 = n => String(n).padStart(2,"0");
+export const hhmm = e => { const d=new Date(e*1000);
+  return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); };
 export const fmtDur = s => { s=Math.max(0,Math.floor(s)); const h=Math.floor(s/3600), m=Math.floor((s%3600)/60);
   return h ? h+"h "+m+"m" : m ? m+"m "+String(s%60).padStart(2,"0")+"s" : s+"s"; };
 
