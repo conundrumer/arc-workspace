@@ -38,6 +38,10 @@ def submit_comment(it: dict, text: str, sess: str | None = None) -> None:
         if text.startswith("/"):
             raise store.Reject("worker busy — a slash command counts only at the "
                                "head of a turn")
+        if w.get("slash"):
+            # a compact has no turn to absorb a steer; the message would be lost
+            raise store.Reject("worker busy — a slash command is running; wait "
+                               "for it to land")
         workers.steer(it, w, text, sess)
         return
     if w and w["state"] == "spawning":

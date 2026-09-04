@@ -173,6 +173,14 @@ def clean_chain(raw) -> list[dict]:
     return out
 
 
+def slash_turn(it: dict, phase: str) -> bool:
+    """Whether the turn on `phase` is a slash command, which the CLI runs
+    without a model turn. The flag rides on the worker, so a side turn on
+    another session of the item reads its own."""
+    w = PROCS.get((it["id"], phase))
+    return bool(w and w.get("slash"))
+
+
 def active(it: dict) -> bool:
     """Whether an item has a turn or handoff in flight."""
     return it.get("handoff_pending", False) or busy_elsewhere(it, None)

@@ -349,6 +349,27 @@ def test_a_slash_command_waits_for_the_turn_to_land(srv):
     assert w["outbound"].empty()
 
 
+def test_a_comment_is_not_steered_into_a_slash_turn(srv):
+    it = item(srv, "a", srv.NEEDS_REVIEW)
+    w = worker(srv, it, state="running")
+    w["slash"] = True
+    assert "busy" in srv.act_comment("a", "look again")["error"]
+    assert w["outbound"].empty() and it["feed"] == []
+
+
+def test_a_side_turn_reads_its_own_slash_flag(srv):
+    """A compact on one session and a comment on another run at once; the
+    comment's landing must not be read as a slash turn's."""
+    it = item(srv, "a", srv.NEEDS_REVIEW, chain=srv.default_chain(),
+              sessions={"create": "cs", "refine": "rs", "finalize": "fs"},
+              phase="finalize")
+    worker(srv, it, phase="finalize")
+    srv.act_compact("a", "finalize")
+    worker(srv, it, phase="refine")
+    srv.act_comment("a", "look again", "refine")
+    assert srv.slash_turn(it, "finalize") and not srv.slash_turn(it, "refine")
+
+
 # ---------- permission requests ----------
 
 def perm_request(srv, path, tool="Edit", subtype="can_use_tool"):
@@ -1018,6 +1039,15 @@ def test_a_pipeline_setting_names_a_known_model(srv):
     assert "error" in srv.act_pipeline({"create": "codex"})
     srv.act_pipeline({"finalize": "opus"})   # not a settable stage: ignored
     assert srv.pipeline() == {"create": "opus", "refine": "opus"}
+
+
+def test_a_slash_turn_cut_by_quota_is_not_resumed(srv):
+    srv.night()["on"] = True
+    it = item(srv, "a", srv.NEEDS_REVIEW)
+    worker(srv, it, state="running")["slash"] = True
+    srv.quota_cut(it, "refine", False)
+    assert "resume_phase" not in it and "resume_at" not in it
+    assert it["feed"][-1]["text"] == "usage limit"
 
 
 def test_a_wave_refuses_a_malformed_chain(srv):

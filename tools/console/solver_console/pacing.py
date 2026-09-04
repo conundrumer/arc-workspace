@@ -177,6 +177,8 @@ def quota_cut(it: dict, phase: str, handoff: bool) -> None:
     gets one automatic resume just after the 5h window resets; a second death
     on the same stage leaves it for review. Caller holds LOCK."""
     store.say(it, store.event("usage limit"), sess=phase)
+    if store.slash_turn(it, phase):
+        return   # a slash command has nothing to continue from
     # The flag lives in the worker, which dies with the turn, so the item takes
     # a copy whatever the mode is. Without it a resume by hand opens the stage
     # as a plain comment: the pass runs again and lands, and the item stays put.

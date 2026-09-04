@@ -343,13 +343,13 @@ def start_turn(it: dict, worker: dict, phase: str, trigger: str | None = None,
         # a side turn leaves the snapshot with the turn that owns the solver
         it["pre"] = {"hash": solvers.solver_hash(it["id"]), "solver": solvers.solver_text(it["id"]),
                      "proposals": solvers.prop_files(), "dirty": it["dirty"], "files": {},
-                     "watched": solvers.watched_hashes(it["id"]), "slash": slash}
+                     "watched": solvers.watched_hashes(it["id"])}
     worker["turn_seq"] += 1
     worker.pop("steer", None)
     worker.pop("woke", None)
     worker.update(state=state, started=time.time(), trigger=trigger,
-                  handoff=handoff, seen=set(), got_result=False, think_run=0,
-                  reqs={}, launch={}, idle_since=None)
+                  handoff=handoff, slash=slash, seen=set(), got_result=False,
+                  think_run=0, reqs={}, launch={}, idle_since=None)
 
 
 def steer(it: dict, worker: dict, text: str, phase: str) -> None:
@@ -1195,7 +1195,7 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
         it["dirty"] = False
     elif solvers.solver_hash(it["id"]) != store.pre(it)["hash"]:
         it["dirty"] = True
-    if not store.pre(it).get("slash"):
+    if not store.slash_turn(it, phase):
         it.setdefault("seen_hash", {})[phase] = solvers.solver_hash(it["id"])
     it["lastActive"][phase] = int(time.time() * 1000)
     it["title"] = solvers.title_of(it["id"]) or it.get("title", "")
@@ -1270,7 +1270,7 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
             drop_hold(it, phase)
             it["state"] = store.NEEDS_REVIEW
             it["updated"] = True
-    elif not store.pre(it).get("slash") and not store.busy_elsewhere(it, phase):
+    elif not store.slash_turn(it, phase) and not store.busy_elsewhere(it, phase):
         # a side turn landing while another session runs leaves the state to
         # the pass that owns it
         it["state"] = store.NEEDS_REVIEW
