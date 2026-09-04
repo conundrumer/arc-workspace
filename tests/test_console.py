@@ -4517,6 +4517,17 @@ def test_a_worker_that_fails_to_start_ends_the_admitter_pass(srv, monkeypatch):
         ["aaa · finalize not started — could not start the worker: no claude binary"]
 
 
+def test_the_queue_slot_is_not_paced_on_fable_when_the_admitter_owns_finalize(srv):
+    srv.auto()["finalize"] = True
+    fable = srv.MODEL_IDS["fable"]
+    assert fable in srv.night_models()
+    night_on(srv, source="both")
+    assert fable not in srv.slot_models("queue")
+    assert srv.slot_models("finalize") == [fable]
+    srv.night()["source"] = "queue"
+    assert fable in srv.slot_models("queue")
+
+
 def test_an_empty_unfinalized_list_is_logged_once(srv, monkeypatch):
     clock_at(srv, monkeypatch)
     set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50)

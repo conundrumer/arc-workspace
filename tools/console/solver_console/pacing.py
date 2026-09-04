@@ -99,10 +99,12 @@ def draws(model: str) -> list[dict]:
 def night_models() -> list[str]:
     """The model ids a queue admission runs by itself: every stage before the
     stop, and the finalize stage when the auto finalize setting lifts the
-    stop."""
+    stop. With the admitter owning finalize the stop holds, so the stage is
+    not the admission's to run."""
     chain = store.default_chain()
     run = chain[:-1]
-    if chain and chain[-1]["name"] == "finalize" and store.auto()["finalize"]:
+    if chain and chain[-1]["name"] == "finalize" and store.auto()["finalize"] \
+            and not admitter_owns_finalize(night()):
         run = chain
     return [st.get("model") or "" for st in run]
 
