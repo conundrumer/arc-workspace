@@ -1043,7 +1043,7 @@ def quota_note(it: dict, ev: dict, phase: str) -> str:
     # The Fable weekly window counts Fable usage alone, so it gets its own sum.
     fable = sum(u.get("costUSD") or 0
                 for m, u in (ev.get("modelUsage") or {}).items()
-                if isinstance(u, dict) and m.startswith(("claude-fable", "claude-mythos")))
+                if isinstance(u, dict) and pacing.is_fable(m))
     seen = it.setdefault("cost_seen", {}).get(phase) or {"total": 0, "fable": 0}
     if total < seen["total"]:  # a fresh session restarted the running totals
         seen = {"total": 0, "fable": 0}
@@ -1059,9 +1059,7 @@ def quota_note(it: dict, ev: dict, phase: str) -> str:
 def limiting_window(model: str) -> str | None:
     """The window a spend by `model` would hit first: the most-used one among
     those the model draws down."""
-    fable = model.startswith(("claude-fable", "claude-mythos"))
-    rows = [u for u in store.USAGE
-            if u["label"] in QUOTA_RATE and (u["label"] != "fbl" or fable)]
+    rows = pacing.draws(model)
     if not rows:
         return None
     return max(rows, key=lambda u: u["pct"])["label"]

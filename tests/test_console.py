@@ -3047,14 +3047,22 @@ def clock_at(srv, monkeypatch, at=AT):
 
 
 def set_usage(srv, monkeypatch, wk_pct=0.0, wk_elapsed=0.0, five_pct=0.0,
-              five_left=FIVE, at=AT, five_reset=True):
-    """Rate-limit rows placing each window where the test wants it."""
+              five_left=FIVE, at=AT, five_reset=True, fbl=None):
+    """Rate-limit rows placing each window where the test wants it. `fbl` is
+    the Fable window as (pct, elapsed), absent by default."""
     five = {"label": "5h", "pct": five_pct, "window": FIVE,
             "reset": at + five_left if five_reset else None}
-    monkeypatch.setattr(srv, "USAGE", [
-        {"label": "wk", "pct": wk_pct, "window": WEEK,
-         "reset": at + WEEK * (1 - wk_elapsed / 100)},
-        five])
+    rows = [{"label": "wk", "pct": wk_pct, "window": WEEK,
+             "reset": at + WEEK * (1 - wk_elapsed / 100)}, five]
+    if fbl:
+        rows.append({"label": "fbl", "pct": fbl[0], "window": WEEK,
+                     "reset": at + WEEK * (1 - fbl[1] / 100)})
+    monkeypatch.setattr(srv, "USAGE", rows)
+
+
+def opus_chain():
+    return [{"name": "create", "backend": "claude", "model": "claude-opus-5"},
+            {"name": "refine", "backend": "claude", "model": "claude-opus-5"}]
 
 
 def night_on(srv, **dials):
@@ -3087,6 +3095,18 @@ def test_pacer_holds_once_the_week_reaches_its_pace(srv, monkeypatch):
     gate = srv.pacer()
     assert gate["open"] is False
     assert "wk at pace" in gate["why"]
+
+
+def test_the_fable_week_paces_admissions_when_a_night_stage_runs_fable(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50, fbl=(45, 50))
+    assert srv.pacer()["open"] is True     # the night stops before finalize
+    srv.act_auto({"finalize": True})
+    gate = srv.pacer()
+    assert gate["open"] is False
+    assert "fbl at pace" in gate["why"] and gate["fbl"] == 45
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50, fbl=(30, 50))
+    assert srv.pacer()["open"] is True
 
 
 def test_the_floor_keeps_the_start_of_a_week_spendable(srv, monkeypatch):
@@ -3549,6 +3569,19 @@ def test_a_weekly_limit_death_resumes_after_the_weekly_reset(srv, monkeypatch):
     it = item(srv, "a", srv.RUNNING)
     quota_result(srv, it)
     assert it["resume_at"] == AT + WEEK // 100 + 60
+
+
+def test_a_full_fable_window_is_read_only_for_a_fable_stage(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, five_pct=100, five_left=1200, fbl=(100, 50))
+    monkeypatch.setattr(srv.random, "uniform", lambda lo, hi: 60)
+    night_on(srv)
+    opus = item(srv, "a", srv.RUNNING, chain=opus_chain())
+    quota_result(srv, opus)
+    assert opus["resume_at"] == AT + 1200 + 60
+    fable = item(srv, "b", srv.RUNNING)      # the default chain's refine runs fable
+    quota_result(srv, fable)
+    assert fable["resume_at"] == AT + WEEK // 2 + 60
 
 
 def test_a_death_with_no_window_reading_full_waits_on_the_5h_reset(srv, monkeypatch):

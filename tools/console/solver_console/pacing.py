@@ -69,6 +69,33 @@ def quota_death(status=None, reason: str | None = None, text: str = "") -> bool:
     return bool(text and QUOTA_TEXT.search(text))
 
 
+# The account's windows, which every model draws down, and the Fable window,
+# which Fable models draw down as well.
+ACCOUNT_WINDOWS = ("5h", "wk")
+FABLE_WINDOW = "fbl"
+
+
+def is_fable(model: str) -> bool:
+    return model.startswith(("claude-fable", "claude-mythos"))
+
+
+def draws(model: str) -> list[dict]:
+    """The rate-limit windows a spend by `model` draws down."""
+    return [u for u in store.USAGE
+            if u.get("label") in ACCOUNT_WINDOWS
+            or (u.get("label") == FABLE_WINDOW and is_fable(model))]
+
+
+def night_models() -> list[str]:
+    """The model ids a night item runs by itself: every stage before the stop,
+    and the finalize stage when the auto finalize setting lifts the stop."""
+    chain = store.default_chain()
+    run = chain[:-1]
+    if chain and chain[-1]["name"] == "finalize" and store.auto()["finalize"]:
+        run = chain
+    return [st.get("model") or "" for st in run]
+
+
 def night() -> dict:
     """The mode's config and running notes, filled in with the defaults."""
     cfg = store.STATE.setdefault("overnight", {})
@@ -132,6 +159,15 @@ def pacer(at: float | None = None) -> dict:
     if wk["pct"] > line:
         out["why"] = f"wk at pace ({wk['pct']:.0f}% vs {line:.0f}%)"
         return out
+    # The Fable window paces the same way when a night stage runs Fable.
+    fbl = window(FABLE_WINDOW) if any(is_fable(m) for m in night_models()) else None
+    fbl_elapsed = elapsed_pct(fbl, at)
+    if fbl_elapsed is not None:
+        fbl_line = max(cfg["floor"], fbl_elapsed - cfg["reserve"])
+        out["fbl"] = fbl["pct"]
+        if fbl["pct"] > fbl_line:
+            out["why"] = f"fbl at pace ({fbl['pct']:.0f}% vs {fbl_line:.0f}%)"
+            return out
     if not cfg["catchup"]:
         # Strict pace: spend no faster than the window elapses, measured from
         # the moment the mode came on. A window that rolled over under us reads
@@ -172,12 +208,12 @@ def night_landed() -> int:
                and (it.get("landed_at") or 0) >= since)
 
 
-def limit_reset() -> float | None:
-    """When the window the death hit resets. A window that reads full is the
-    one that ran out, and the latest reset among those is when every one of
-    them is open again; when the cache has not caught up and none reads full,
-    the 5h window is the usual one."""
-    full = [u["reset"] for u in store.USAGE
+def limit_reset(model: str) -> float | None:
+    """When the window a death under `model` hit resets. A window the model
+    draws down that reads full is the one that ran out, and the latest reset
+    among those is when every one of them is open again; when the cache has
+    not caught up and none reads full, the 5h window is the usual one."""
+    full = [u["reset"] for u in draws(model)
             if u.get("reset") and (u.get("pct") or 0) >= 100]
     if full:
         return max(full)
@@ -202,7 +238,7 @@ def quota_cut(it: dict, phase: str, handoff: bool) -> None:
         store.say(it, store.event("second usage limit — left for review"), sess=phase)
         night_say(f"{it['id']} · second usage limit, left for review")
         return
-    reset = limit_reset()
+    reset = limit_reset(store.stage_of(it, phase).get("model") or "")
     at = reset if reset and reset > store.now() else store.now() + RESUME_FALLBACK
     at += random.uniform(*RESUME_JITTER)
     it.update(quota_retry=phase, resume_at=at)
