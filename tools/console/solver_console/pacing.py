@@ -275,11 +275,18 @@ def quota_cut(it: dict, phase: str, handoff: bool) -> None:
     night_say(f"{it['id']} · usage limit in {phase}, resume at {clock(at)}")
 
 
-def read_usage() -> list[dict]:
-    """Rate-limit windows from the OAuth usage API cache; [] on any surprise."""
+# The statusline file's keys, and the window each names.
+STATUS_WINDOWS = {"five_hour": ("5h", 5 * 3600), "seven_day": ("wk", 7 * 86400),
+                  "fable_weekly": ("fbl", 7 * 86400)}
+
+
+def api_usage(path: Path | None = None) -> tuple[float, list[dict]]:
+    """When the OAuth usage API cache was fetched, and its windows; (0, [])
+    on any surprise."""
     from datetime import datetime
+    path = config.USAGE_API if path is None else path
     try:
-        raw = json.loads((Path.home() / ".claude" / "usage-api.json").read_text())
+        raw = json.loads(path.read_text())
         out = []
         for lim in (raw.get("data") or {}).get("limits") or []:
             pct, kind = lim.get("percent"), lim.get("kind")
@@ -299,18 +306,53 @@ def read_usage() -> list[dict]:
             if lim.get("resets_at"):
                 reset = int(datetime.fromisoformat(lim["resets_at"]).timestamp())
             out.append({"label": label, "pct": pct, "reset": reset, "window": window})
-        return out
+        return float(raw.get("fetched_at") or 0), out
     except Exception:
-        return []
+        return 0.0, []
+
+
+def status_usage(path: Path | None = None) -> tuple[float, list[dict]]:
+    """When the statusline last wrote its usage file, and its windows; (0, [])
+    on any surprise."""
+    path = config.USAGE_STATUS if path is None else path
+    try:
+        raw = json.loads(path.read_text())
+        out = []
+        for key, (label, window) in STATUS_WINDOWS.items():
+            lim = raw.get(key) or {}
+            if lim.get("used_pct") is None:
+                continue
+            out.append({"label": label, "pct": lim["used_pct"],
+                        "reset": lim.get("resets_at_epoch"), "window": window})
+        return path.stat().st_mtime, out
+    except Exception:
+        return 0.0, []
+
+
+def read_usage(api: Path | None = None, status: Path | None = None) -> list[dict]:
+    """Rate-limit windows from the fresher of the two files; [] when neither
+    reads."""
+    api_at, api_rows = api_usage(api)
+    status_at, status_rows = status_usage(status)
+    if status_rows and status_at > api_at:
+        return status_rows
+    return api_rows or status_rows
 
 
 def usage_loop() -> None:
-    script = Path.home() / ".claude" / "scripts" / "fetch-usage-api.sh"
+    """Fetch the account's windows every poll. A fetch that fails leaves the
+    last reading in place."""
     sampler = quota.Sampler()
     while True:
-        if script.exists():
-            subprocess.run(["bash", str(script)], capture_output=True, timeout=30)
-        store.USAGE = read_usage()
+        if config.USAGE_FETCH.exists():
+            try:
+                subprocess.run(["bash", str(config.USAGE_FETCH), "--force"],
+                               capture_output=True, timeout=30)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+        fresh = read_usage()
+        if fresh:
+            store.USAGE = fresh
         # Pairs each window's utilization with the tokens spent inside it, so
         # the QUOTA_RATE figures can be refit from observation rather than
         # measured by hand. Never worth failing the poll over.
@@ -318,4 +360,4 @@ def usage_loop() -> None:
             sampler.record(config.SAMPLE_FILE)
         except Exception:
             pass
-        time.sleep(60)
+        time.sleep(config.USAGE_POLL)

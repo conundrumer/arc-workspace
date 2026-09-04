@@ -4666,3 +4666,72 @@ def test_a_compact_cut_by_the_limit_arms_the_auto_compact_again(srv):
     srv.quota_cut(it, "finalize", False)
     assert it["auto_compacted"] == {}
     assert "resume_at" not in it
+
+
+# ---------- usage readings ----------
+
+API_USAGE = {"fetched_at": 1000, "data": {"limits": [
+    {"kind": "session", "percent": 40, "resets_at": "2026-09-04T12:00:00+00:00"},
+    {"kind": "weekly_all", "percent": 12, "resets_at": "2026-09-09T12:00:00+00:00"},
+    {"kind": "weekly_scoped", "percent": 3, "scope": {"model": {"display_name": "Fable"}},
+     "resets_at": "2026-09-09T12:00:00+00:00"}]}}
+STATUS_USAGE = {"five_hour": {"used_pct": 55, "resets_at_epoch": 1788540000},
+                "seven_day": {"used_pct": 14, "resets_at_epoch": 1789106400},
+                "fable_weekly": {"used_pct": 4, "resets_at_epoch": 1789106399}}
+
+
+def usage_files(tmp_path, api=API_USAGE, status=STATUS_USAGE, status_at=2000):
+    a, s = tmp_path / "usage-api.json", tmp_path / "usage.json"
+    if api is not None:
+        a.write_text(json.dumps(api))
+    if status is not None:
+        s.write_text(json.dumps(status))
+        os.utime(s, (status_at, status_at))
+    return a, s
+
+
+def test_the_fresher_usage_file_is_the_reading(srv, tmp_path):
+    a, s = usage_files(tmp_path)
+    rows = srv.read_usage(api=a, status=s)
+    assert [(r["label"], r["pct"], r["window"]) for r in rows] == \
+        [("5h", 55, 5 * 3600), ("wk", 14, 7 * 86400), ("fbl", 4, 7 * 86400)]
+    assert rows[0]["reset"] == 1788540000
+    a, s = usage_files(tmp_path, status_at=500)
+    rows = srv.read_usage(api=a, status=s)
+    assert [(r["label"], r["pct"]) for r in rows] == [("5h", 40), ("wk", 12), ("fbl", 3)]
+
+
+def test_a_usage_file_that_is_missing_or_broken_yields_to_the_other(srv, tmp_path):
+    a, s = usage_files(tmp_path, status=None)
+    assert [r["label"] for r in srv.read_usage(api=a, status=s)] == ["5h", "wk", "fbl"]
+    a, s = usage_files(tmp_path, api=None)
+    assert [r["pct"] for r in srv.read_usage(api=a, status=s)] == [55, 14, 4]
+    a.write_text("{")
+    assert [r["pct"] for r in srv.read_usage(api=a, status=s)] == [55, 14, 4]
+    s.unlink()
+    assert srv.read_usage(api=a, status=s) == []
+
+
+def test_the_usage_poll_forces_a_fetch_and_keeps_the_last_reading(srv, tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(srv.subprocess, "run", lambda cmd, **kw: calls.append(cmd))
+    monkeypatch.setattr(srv.quota.Sampler, "record", lambda self, path: None)
+    monkeypatch.setattr(srv, "USAGE_FETCH", tmp_path / "fetch.sh")
+    (tmp_path / "fetch.sh").write_text("")
+    a, s = usage_files(tmp_path)
+    monkeypatch.setattr(srv, "USAGE_API", a)
+    monkeypatch.setattr(srv, "USAGE_STATUS", s)
+    monkeypatch.setattr(srv, "USAGE_POLL", 0)
+
+    def one_pass(_):
+        raise StopIteration
+    monkeypatch.setattr(srv.time, "sleep", one_pass)
+    with pytest.raises(StopIteration):
+        srv.usage_loop()
+    assert calls[0][1:] == [str(tmp_path / "fetch.sh"), "--force"]
+    assert [r["pct"] for r in srv.USAGE] == [55, 14, 4]
+    a.unlink()
+    s.unlink()
+    with pytest.raises(StopIteration):
+        srv.usage_loop()
+    assert [r["pct"] for r in srv.USAGE] == [55, 14, 4]

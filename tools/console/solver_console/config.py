@@ -23,6 +23,14 @@ AGENT_DIR = ROOT / ".claude" / "agents"
 REF_DIR = (ROOT.parent / "arc-synth-bun").resolve()
 QUEUE_CACHE = ROOT / "scripts" / ".queue-cache"
 
+# The account's rate-limit windows: the OAuth usage API cache the fetch
+# script writes, and the file the user's statusline writes from its own
+# responses, which is the fresher of the two while a session is open.
+USAGE_API = Path.home() / ".claude" / "usage-api.json"
+USAGE_STATUS = Path.home() / ".claude" / "usage.json"
+USAGE_FETCH = Path.home() / ".claude" / "scripts" / "fetch-usage-api.sh"
+USAGE_POLL = 60   # seconds between usage fetches
+
 FAKE = os.environ.get("CONSOLE_FAKE") == "1"
 CLAUDE = os.environ.get("CONSOLE_CLAUDE", "claude")
 # The models the pipeline settings pick between, under the names the console
