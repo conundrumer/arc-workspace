@@ -410,6 +410,7 @@ import { html, render, useState, useEffect, useLayoutEffect, useRef, useMemo, us
 import { esc, pad2, fmtDur, md } from "/ui/prose.js";
 import { cmify, diffHtml } from "/ui/diff.js";
 import { toast, copy, bindToast } from "/ui/toast.js";
+import { useClock, useClocked, onTick } from "/ui/clock.js";
 import { useServer, tasks, itemData, peeks, notify, post,
          ensureTask, ensureItem, ensurePeek, startPoll } from "/ui/server.js";
 
@@ -617,6 +618,7 @@ function Thumb({task}){
 
 /* ---------- rail ---------- */
 function ItemRow({it, sel, task, metric, onSelect}){
+  useClock();   // the cache countdown
   const ci=cacheInfo(it);
   const sub = it.est ? "est "+it.est : "";
   return html`<div class=${"row"+(sel?" sel":"")} tabIndex="0"
@@ -697,6 +699,7 @@ function resetLabel(epoch, weekly){
   return weekly ? ["sun","mon","tue","wed","thu","fri","sat"][d.getDay()]+","+t : t;
 }
 function Usage({usage}){
+  useClock();   // the pace target moves with the time left in a window
   return html`<span id="usage">${usage.map((w,i)=>{
     const cls = w.pct>=70?"uhot":w.pct>=45?"uwarn":"uok";
     let txt = w.label;
@@ -884,8 +887,10 @@ function ToolLine({m}){
          : [html`<b key="h">${m.text.slice(0,sp)}</b>`, " "+m.text.slice(sp+1)]}</div>`;
 }
 
-function Feed({it, entries, feedKey, showRun, now}){
+function Feed({it, entries, feedKey, showRun}){
   const box=useRef(null), stick=useRef(true), lastKey=useRef(null);
+  useClock();   // the running-turn timer
+  const now=Date.now()/1000;
   /* measured against the DOM as it stands before this render commits, the way
      a hand-written append would: at the bottom now means at the bottom after */
   if(lastKey.current!==feedKey) stick.current=true;
@@ -1064,7 +1069,6 @@ function App(){
     const v=localStorage.getItem("bkOrder");
     return BK_ORDERS[v] ? v : "flag";
   });
-  const [tick,setTick]=useState(0);
   const [toastState,setToastState]=useState({msg:"", show:false});
   const [sessPin,setSessPin]=useState({});    // id -> {phase, tab} the user pinned
   const [tabSel,setTabSel]=useState({});      // id -> path of the active code tab
@@ -1132,16 +1136,16 @@ function App(){
   /* ---- selection ---- */
   /* soonest-expiring cache first; a phase with no session yet, or a turn that
      never landed, leads with "—"; running turns follow; cold ones close by state */
-  const railOrder=useMemo(()=>
+  const railOrder=useClocked(()=>
     [...items].sort((a,b)=>cacheInfo(a).sort-cacheInfo(b).sort).map(it=>it.id),
-    [items, tick]);
+    [items]);
   /* An approved or committed item is settled, so the finalize lens gives its
      row back; the wave view still lists it, cut to the first rows until asked
      for the rest. The selected one stays, so a row does not vanish from under
      the detail pane while it is being read. In the lens, a session with a
      cache to keep warm leads in cache order; the cold ones follow in the
      chosen ordering, over the rows the server sent for them. */
-  const itemOrder=useMemo(()=>{
+  const itemOrder=useClocked(()=>{
     if(view===FINAL){
       const rows=railOrder.map(id=>items.find(x=>x.id===id)).filter(it=>
         it && it.phase===FINAL && (it.id===selId || !SETTLED.includes(it.state)));
@@ -1333,11 +1337,7 @@ function App(){
   },[snap.seq]);
 
   /* ---- timers ---- */
-  useEffect(()=>{
-    const h=setInterval(()=>setTick(t=>t+1), 1000);
-    return ()=>clearInterval(h);
-  },[]);
-  useEffect(()=>{ ttlWatch(live.current.items); },[tick]);
+  useEffect(()=>onTick(()=>ttlWatch(live.current.items)),[]);
   /* the scan stats every solver, so it is polled only while its lens is
      open, and slowly: flags and started passes refresh it on the spot */
   useEffect(()=>{
@@ -1471,7 +1471,7 @@ function App(){
       onTab=${s=>pinTab(selItem,s)}
       onDismiss=${onDismiss}/>`;
     body=html`<${Feed} key="feed" it=${selItem} entries=${entries}
-      feedKey=${selItem.id+"|"+tab} now=${Date.now()/1000}
+      feedKey=${selItem.id+"|"+tab}
       showRun=${(selItem.busy||{})[tab] || (selItem.active && !selItem.turnPhase)}/>`;
   } else if(selBk){
     head = peek ? html`<${PeekHead} d=${peek} onDismiss=${onDismiss} onApprove=${onApprove}/>` : null;
