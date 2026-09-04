@@ -30,7 +30,7 @@ export function Usage({usage}){
 
 export function Topbar({view, setView, wave, items, progress, usage, night, nightOpen, toggleNight,
                  committer, commitOpen, toggleCommit, onCommit, waveCtl,
-                 pipeline, models, onPipeline, auto, onAuto, extra}){
+                 auto, onAuto, extra}){
   const tally={};
   items.forEach(it=>tally[it.state]=(tally[it.state]||0)+1);
   const gate = (night||{}).gate;
@@ -57,13 +57,6 @@ export function Topbar({view, setView, wave, items, progress, usage, night, nigh
       ${committer.running?"committing…":"committer"}</button>
     <button id="nightbtn" class=${nightCls} onClick=${toggleNight}>${nightTxt}</button>
     <${Usage} usage=${usage}/>
-    <span class="wavectl" title="the models the next wave's stages run">
-      ${Object.keys(pipeline).map(name=>html`<label key=${name}>${name}
-        <select aria-label=${name+" model"} value=${pipeline[name]}
-          onChange=${e=>onPipeline(name, e.target.value)}>
-          ${models.map(m=>html`<option key=${m} value=${m}>${m}</option>`)}
-        </select></label>`)}
-    </span>
     <span class="wavectl">
       <label title="a landing whose next stage is finalize hands on by itself">
         <input type="checkbox" checked=${!!auto.finalize}

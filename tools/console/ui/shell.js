@@ -131,7 +131,7 @@ function App(){
   bindToast(setToastState);
   const live=useRef({});        // what the async handlers read
   const lens=LENSES[view];
-  const {items, cli, night, committer, pipeline, models, auto, usage, progress, wave:waveN} = snap;
+  const {items, cli, night, committer, auto, usage, progress, wave:waveN} = snap;
   const pins={sessPin, setSessPin, tabSel, setTabSel};
 
   const setView=useCallback(v=>{
@@ -159,12 +159,8 @@ function App(){
       setTimeout(()=>setWaveBusy(false), 5000);   // matches WAVE_DEBOUNCE
     }
   },[]);
-  /* the setting is the server's; the select mirrors it, and the next poll
+  /* the settings are the server's; a control mirrors one, and the next poll
      confirms an edit */
-  const onPipeline=useCallback(async(name, word)=>{
-    const r=await post("/api/pipeline",{[name]:word});
-    if(r.ok) toast(name+" runs "+word+" from the next wave");
-  },[]);
   const onAuto=useCallback(async(name, on)=>{
     const r=await post("/api/auto",{[name]:on});
     if(r.ok) toast("auto "+name+(on?" on":" off"));
@@ -202,7 +198,6 @@ function App(){
       committer=${committer} commitOpen=${commitOpen} onCommit=${commitApproved}
       toggleNight=${()=>setNightOpen(o=>{ localStorage.setItem("nightOpen", o?"":"1"); return !o; })}
       toggleCommit=${()=>setCommitOpen(o=>{ localStorage.setItem("commitOpen", o?"":"1"); return !o; })}
-      pipeline=${pipeline} models=${models} onPipeline=${onPipeline}
       auto=${auto} onAuto=${onAuto}
       waveCtl=${{k:waveK, setK:setWaveK, order:waveOrder, setOrder:setWaveOrder,
                  busy:waveBusy, start:startWave}}
