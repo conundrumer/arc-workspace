@@ -18,6 +18,8 @@ The body is faithful to the concept of the task: the actual task, not an artifac
 
 **Zero is absence.** In spatial data, the number 0 means no gap, no offset, no distance: the lack of structure. It is never task data; a body may write `0` directly.
 
+**Time budget.** The evaluator's time budget is part of the medium, not the task. If a principled form fails only because it runs past that budget, that form is still the right form. Ship a form that runs. Report that principled form and its run time as a tooling gap. The fix for that gap belongs in the evaluator, not in the solver.
+
 ## Invariance
 
 The current task is one member of a family symmetric under ARC's transformations: rotations, mirrorings, recolorings, re-anchorings. The body is the part that stays the same across those variations; each variation becomes a Consts value the body parameterizes over. A body that is specific to the current member is a failure.
