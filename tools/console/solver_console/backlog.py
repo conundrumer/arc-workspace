@@ -220,46 +220,55 @@ def act_approve_solver(body: dict) -> dict:
     return rule(body, "approved")
 
 
-def act_finalize(body: dict) -> dict:
+def start_finalize(item_id: str) -> dict:
     """Start a finalize pass: advance a wave item that is done up to finalize,
     or, for a solver the console no longer holds, a fresh item whose chain is
-    that stage alone, seeded from the reports on disk."""
+    that stage alone, seeded from the reports on disk. Either way the pass
+    lands unattended, so its landing asks for the callouts. Caller holds
+    LOCK."""
+    it = store.find(item_id)
+    if it is not None:
+        if not finalize_ready(it):
+            return {"error": "already in the console"}
+        # The wave chain is done up to finalize: advance the item in place.
+        # A chain that wrote no solver advances too; the pass writes one.
+        it["updated"] = False
+        it["auto_finalize"] = True
+        workers.advance_stage(it)
+        return {"ok": True, "id": item_id, "advanced": True}
+    if not solvers.solver_path(item_id).exists():
+        return {"error": f"no solver for {item_id}"}
+    stage = dict(store.default_chain()[-1])
+    pairs = prompts.persisted_reports(item_id, skip=stage["name"])
+    it = {"id": item_id, "est": 0, "wave": store.STATE["wave"], "state": store.RUNNING,
+          "chain": [stage], "auto_advance": False, "auto_finalize": True,
+          "sessions": {stage["name"]: None}, "phase": stage["name"],
+          "landed": [], "dirty": False, "updated": False, "rev": 0,
+          "lastActive": {stage["name"]: None}, "title": solvers.title_of(item_id),
+          "feed": [], "append": str(prompts.append_path()), "ver": 0,
+          "reports": {}}
+    store.STATE["items"].append(it)
+    seeded = ", ".join(name for name, _ in pairs)
+    store.say(it, store.event("started · "
+                              + (f"seeded from {seeded}" if seeded
+                                 else "no earlier reports")))
+    try:
+        workers.launch(it, prompts.finalize_message(item_id, pairs), stage["name"])
+    except (store.Reject, OSError) as exc:
+        # nothing is in flight, so the item goes rather than sit unstarted
+        store.STATE["items"].remove(it)
+        return {"error": f"could not start the worker: {exc}"}
+    return {"ok": True, "id": item_id, "seeded": [name for name, _ in pairs]}
+
+
+def act_finalize(body: dict) -> dict:
+    """Start a finalize pass on the user's ask."""
     item_id = str(body.get("id") or "").strip()
+    if not item_id:
+        return {"error": "no solver for "}
     with store.LOCK:
         store.defer_reload()
-        if not item_id or not solvers.solver_path(item_id).exists():
-            return {"error": f"no solver for {item_id}"}
-        it = store.find(item_id)
-        if it is not None:
-            if not finalize_ready(it):
-                return {"error": "already in the console"}
-            # the wave chain is done up to finalize: advance the item in place
-            it["updated"] = False
-            workers.advance_stage(it)
-            seeded_names = None
-        else:
-            stage = dict(store.default_chain()[-1])
-            pairs = prompts.persisted_reports(item_id, skip=stage["name"])
-            it = {"id": item_id, "est": 0, "wave": store.STATE["wave"], "state": store.RUNNING,
-                  "chain": [stage], "auto_advance": False,
-                  "sessions": {stage["name"]: None}, "phase": stage["name"],
-                  "landed": [], "dirty": False, "updated": False, "rev": 0,
-                  "lastActive": {stage["name"]: None}, "title": solvers.title_of(item_id),
-                  "feed": [], "append": str(prompts.append_path()), "ver": 0,
-                  "reports": {}}
-            store.STATE["items"].append(it)
-            seeded = ", ".join(name for name, _ in pairs)
-            store.say(it, store.event("started · "
-                                      + (f"seeded from {seeded}" if seeded
-                                         else "no earlier reports")))
-            try:
-                workers.launch(it, prompts.finalize_message(item_id, pairs), stage["name"])
-            except (store.Reject, OSError) as exc:
-                # nothing is in flight, so the item goes rather than sit unstarted
-                store.STATE["items"].remove(it)
-                return {"error": f"could not start the worker: {exc}"}
-            seeded_names = [name for name, _ in pairs]
-    store.bump()
-    if seeded_names is None:
-        return {"ok": True, "id": item_id, "advanced": True}
-    return {"ok": True, "id": item_id, "seeded": seeded_names}
+        res = start_finalize(item_id)
+    if "error" not in res:
+        store.bump()
+    return res

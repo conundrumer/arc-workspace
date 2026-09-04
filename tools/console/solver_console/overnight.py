@@ -1,14 +1,15 @@
 """The overnight admitter: the resumes that came due, and the next
-admission."""
+admission from the active source: a queue task, or the next unfinalized
+solver's finalize pass."""
 
 import sys
 import threading
 
-from . import pacing, prompts, store, waves, workers
+from . import backlog, pacing, prompts, store, waves, workers
 
 # Dial name -> the range the UI may set it to.
-NIGHT_DIALS = {"target": (1, 40), "reserve": (0, 100), "floor": (0, 100),
-               "ceiling": (0, 100)}
+NIGHT_DIALS = {"target": (1, 40), "finalize_target": (1, 40), "reserve": (0, 100),
+               "floor": (0, 100), "ceiling": (0, 100)}
 ADMIT_POLL = 30        # seconds between admitter passes
 
 
@@ -67,11 +68,36 @@ def night_admit() -> list[str]:
     return ids
 
 
+def night_finalize() -> list[str]:
+    """Start the finalize pass of the next unfinalized solver, in triage
+    order. Caller holds LOCK.
+
+    A task whose pass is in flight, or whose item is busy, is passed over. A
+    task whose pass cannot start is logged and passed over too, so one bad
+    row does not hold the rest."""
+    cfg = pacing.night()
+    for row in backlog.backlog_view():
+        it = store.find(row["id"])
+        if it is not None and (it["phase"] == "finalize" or store.active(it)):
+            continue
+        res = backlog.start_finalize(row["id"])
+        if "error" in res:
+            pacing.night_say(f"{row['id']} · finalize not started — {res['error']}",
+                             once=True)
+            continue
+        pacing.night_say(f"admitted {row['id']} · finalize"
+                         f" · {len(pacing.live_items())}/{cfg['finalize_target']} live")
+        return [row["id"]]
+    pacing.night_say("nothing to finalize", once=True)
+    return []
+
+
 def night_tick() -> dict:
-    """One admitter pass: the resumes that came due, then one admission if a
-    slot is free and the pacer allows it."""
+    """One admitter pass: the resumes that came due, then one admission from
+    the active source if a slot is free and the pacer allows it."""
     out = {"resumed": [], "admitted": [], "held": None}
     changed = False
+    stagger = []
     with store.LOCK:
         cfg = pacing.night()
         if not cfg["on"] or store.RELOADING or store.SHUTTING_DOWN:
@@ -80,16 +106,20 @@ def night_tick() -> dict:
             resume_item(it)
             out["resumed"].append(it["id"])
             changed = True
-        if len(pacing.live_items()) < cfg["target"]:
-            gate = pacing.pacer()
+        if len(pacing.live_items()) < pacing.target_of(cfg):
+            gate = pacing.pacer(models=pacing.admit_models())
             if gate["open"]:
-                out["admitted"] = night_admit()
+                if cfg["source"] == "unfinalized":
+                    out["admitted"] = night_finalize()
+                else:
+                    out["admitted"] = night_admit()
+                    stagger = out["admitted"]
                 changed = changed or bool(out["admitted"])
             else:
                 out["held"] = gate["why"]
                 changed |= pacing.night_say("pacer holding: " + gate["why"], once=True)
-    if out["admitted"]:
-        threading.Thread(target=waves.stagger_launch, args=(out["admitted"],),
+    if stagger:
+        threading.Thread(target=waves.stagger_launch, args=(stagger,),
                          daemon=True).start()
     if changed:
         store.bump()
@@ -110,7 +140,7 @@ def night_view() -> dict:
     """What the console shows for the mode."""
     cfg = pacing.night()
     view = {name: cfg[name] for name in pacing.NIGHT_DEFAULTS}
-    gate = pacing.pacer() if cfg["on"] else None
+    gate = pacing.pacer(models=pacing.admit_models()) if cfg["on"] else None
     soon = [(it["resume_at"], f"{it['id']} resumes") for it in store.STATE["items"]
             if it.get("resume_at")]
     if gate and gate.get("next"):
@@ -136,6 +166,13 @@ def act_night(body: dict) -> dict:
                 return {"error": f"{name} must be a number"}
         if "catchup" in body:
             cfg["catchup"] = bool(body["catchup"])
+        if "source" in body:
+            if body["source"] not in pacing.NIGHT_SOURCES:
+                return {"error": "source must be one of " + ", ".join(pacing.NIGHT_SOURCES)}
+            if body["source"] != cfg["source"]:
+                cfg["source"] = body["source"]
+                if cfg["on"]:
+                    pacing.night_say(f"source · {cfg['source']}")
         if "on" in body and bool(body["on"]) != cfg["on"]:
             cfg["on"] = bool(body["on"])
             if cfg["on"]:
@@ -143,7 +180,8 @@ def act_night(body: dict) -> dict:
                 cfg.update(since=store.now(), wave=None, append=None,
                            wk_start=wk["pct"] if wk else None,
                            wk_start_at=store.now() if wk else None)
-                pacing.night_say(f"autopilot on · target {cfg['target']}")
+                pacing.night_say(f"autopilot on · {cfg['source']} · "
+                                 f"target {pacing.target_of(cfg)}")
             else:
                 cfg["wave"] = None
                 pacing.night_say("autopilot off")

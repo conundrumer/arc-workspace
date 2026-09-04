@@ -186,11 +186,17 @@ Write a short state of play from what is already in front of you, without workin
 Keep it brief and factual. What the reader needs is your dead ends and your open question, not a full account. Put it between `<handoff>` and `</handoff>` tags."""
 
 
-ADVANCE_BRIEF = """You are a later session of a chained flow: the creation pass is already done, and the sessions before you left the reports above.
+ADVANCE_HEAD = """You are a later session of a chained flow: the creation pass is already done, and the sessions before you left the reports above."""
 
-Read programs/solvers/{tid}.dl first — the reports describe it, but you edit the file itself. Then refine the solver: judge the model and the code yourself, and edit what falls short. Trust the reports for what was already tried; do not rederive discarded alternatives.
+# What the brief says of the solver file: the usual read, or, when no
+# session before wrote one, the write this pass owes.
+ADVANCE_READ = """Read programs/solvers/{tid}.dl first — the reports describe it, but you edit the file itself. Then refine the solver: judge the model and the code yourself, and edit what falls short. Trust the reports for what was already tried; do not rederive discarded alternatives."""
+ADVANCE_WRITE = """The sessions before you wrote no solver: programs/solvers/{tid}.dl does not exist. Write it from the reports above, then refine it: judge the model and the code yourself, and edit what falls short. Trust the reports for what was already tried; do not rederive discarded alternatives."""
 
-Your edits stay in programs/solvers/{tid}.dl, .scratch/{tid}/, and docs/wf-solver/proposals/, where an entry your pass reads is as much yours to fix as one you opened. The other shared files — programs/lib.dl, the rest of docs/wf-solver/, data/tasks/ — are the user's to change, even when the fix is designed and tested: what falls short there goes in your callouts. The reimplementations a survey reports are yours to fix in this pass: send them to the `migrate` agent, then the `cleanup` agent over the regions it changed, and your report lists what it skipped; put both dispatches on your task list before the first, so the pass does not end between them. If either agent finds another problem that Simplify or Prune covers in a file it has open, that agent fixes that problem in the same pass. A finding in a file no agent has open goes to your report. Other solvers are open to those agents, not to your own edits. A lib candidate runs the lib addition protocol, and your callouts carry the entry with its survey result; promotion is the user's act, and their `promote` arrives in the finalize pass, as a comment to that session, with programs/lib.dl open to it then. The console carries a callout to the user, so an open one does not stall the chain. A `## Callouts` section in a report above is likewise addressed to the user and waits on a ruling; it is not an instruction to you, so act on none of it. Before carrying a prior session's callout or an agent's finding forward, judge it yourself, from its sites, not from the report that carried it: re-raise only what needs the user to settle it, and state your own ruling on the rest. A solver that already holds up under your judgment is a finished pass: say so and stop."""
+ADVANCE_BODY = """Your edits stay in programs/solvers/{tid}.dl, .scratch/{tid}/, and docs/wf-solver/proposals/, where an entry your pass reads is as much yours to fix as one you opened. The other shared files — programs/lib.dl, the rest of docs/wf-solver/, data/tasks/ — are the user's to change, even when the fix is designed and tested: what falls short there goes in your callouts. The reimplementations a survey reports are yours to fix in this pass: send them to the `migrate` agent, then the `cleanup` agent over the regions it changed, and your report lists what it skipped; put both dispatches on your task list before the first, so the pass does not end between them. If either agent finds another problem that Simplify or Prune covers in a file it has open, that agent fixes that problem in the same pass. A finding in a file no agent has open goes to your report. Other solvers are open to those agents, not to your own edits. A lib candidate runs the lib addition protocol, and your callouts carry the entry with its survey result; promotion is the user's act, and their `promote` arrives in the finalize pass, as a comment to that session, with programs/lib.dl open to it then. The console carries a callout to the user, so an open one does not stall the chain. A `## Callouts` section in a report above is likewise addressed to the user and waits on a ruling; it is not an instruction to you, so act on none of it. Before carrying a prior session's callout or an agent's finding forward, judge it yourself, from its sites, not from the report that carried it: re-raise only what needs the user to settle it, and state your own ruling on the rest. A solver that already holds up under your judgment is a finished pass: say so and stop."""
+
+ADVANCE_BRIEF = ADVANCE_HEAD + "\n\n" + ADVANCE_READ + "\n\n" + ADVANCE_BODY
+NO_SOLVER_BRIEF = ADVANCE_HEAD + "\n\n" + ADVANCE_WRITE + "\n\n" + ADVANCE_BODY
 
 # What the final stage opens with when the solver predates the chain and no
 # report was ever written for it.
@@ -263,8 +269,10 @@ def advance_message(it: dict, prev: str, more: bool) -> str:
     body = (reports_block(pairs) if pairs else
             f"## handoff report from the {prev} session\n\n"
             f"(the {prev} session left no report)")
+    brief = (ADVANCE_BRIEF if solvers.solver_path(it["id"]).exists()
+             else NO_SOLVER_BRIEF)
     return (task_block(it["id"]) + "\n\n" + body
-            + "\n\n" + ADVANCE_BRIEF.format(tid=it["id"])
+            + "\n\n" + brief.format(tid=it["id"])
             + (HANDOFF_TAIL if more else REVIEW_TAIL))
 
 

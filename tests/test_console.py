@@ -4429,3 +4429,134 @@ def test_the_ui_route_serves_only_modules_under_ui(srv):
     assert get(srv, "/ui/../server.py")["status"] == 404
     assert get(srv, "/ui/missing.js")["status"] == 404
     assert get(srv, "/ui/")["status"] == 404
+
+
+# ---------- the unfinalized source ----------
+
+def test_the_night_source_is_queue_until_set(srv):
+    cfg = srv.night()
+    assert (cfg["source"], cfg["finalize_target"]) == ("queue", 3)
+    assert srv.act_night({"source": "unfinalized"}) == {"ok": True}
+    assert srv.night()["source"] == "unfinalized"
+    assert "source must be" in srv.act_night({"source": "backlog"})["error"]
+    assert srv.night()["source"] == "unfinalized"
+    assert srv.act_night({"finalize_target": 5}) == {"ok": True}
+    assert srv.night()["finalize_target"] == 5
+
+
+def test_a_source_change_is_logged_only_while_the_mode_is_on(srv):
+    srv.act_night({"source": "unfinalized"})
+    assert srv.night()["log"] == []
+    night_on(srv)
+    srv.act_night({"source": "queue"})
+    assert srv.night()["log"][-1]["text"] == "source · queue"
+
+
+def test_the_unfinalized_source_starts_finalize_passes_in_triage_order(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50)
+    sent = finalize_launch(srv, monkeypatch)
+    for tid in ("bbb", "ccc"):
+        backlog_solver(srv, tid)
+    # a chain that wrote no solver leads the triage order
+    srv.save_report("aaa", "refine", "no file written")
+    lead = item(srv, "aaa", srv.NEEDS_REVIEW, chain=srv.default_chain())
+    night_on(srv, source="unfinalized", finalize_target=2)
+    assert srv.night_tick()["admitted"] == ["aaa"]
+    assert lead["phase"] == "finalize" and lead["auto_finalize"] is True
+    assert srv.night_tick()["admitted"] == ["bbb"]
+    assert srv.find("bbb")["auto_finalize"] is True
+    # the target counts every item with work coming
+    assert srv.night_tick()["admitted"] == []
+    assert [phase for _, phase in sent] == ["finalize", "finalize"]
+    assert "admitted aaa · finalize" in srv.night()["log"][0]["text"]
+    # the queue was never drawn from
+    assert {it["id"] for it in srv.STATE["items"]} == {"aaa", "bbb"}
+
+
+def test_the_unfinalized_source_passes_over_a_pass_in_flight(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50)
+    sent = finalize_launch(srv, monkeypatch)
+    backlog_solver(srv, "aaa")
+    item(srv, "aaa", srv.RUNNING, chain=srv.default_chain(), phase="finalize")
+    backlog_solver(srv, "bbb")
+    night_on(srv, source="unfinalized", finalize_target=5)
+    assert srv.night_tick()["admitted"] == ["bbb"]
+    assert [phase for _, phase in sent] == ["finalize"]
+
+
+def test_an_empty_unfinalized_list_is_logged_once(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50)
+    night_on(srv, source="unfinalized")
+    assert srv.night_tick()["admitted"] == []
+    srv.night_tick()
+    assert [e["text"] for e in srv.night()["log"]] == ["nothing to finalize"]
+    assert srv.night()["on"] is True
+
+
+def test_the_unfinalized_source_paces_on_the_fable_window(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50, fbl=(45, 50))
+    night_on(srv, source="unfinalized")
+    assert srv.admit_models() == [srv.MODEL_IDS["fable"]]
+    assert srv.night_tick()["held"].startswith("fbl at pace")
+    assert srv.pacer(models=[srv.MODEL_IDS["opus"]])["open"] is True
+    assert srv.pacer(models=[srv.MODEL_IDS["fable"]])["open"] is False
+
+
+def test_the_unfinalized_source_keeps_finalize_behind_the_pacer(srv):
+    srv.start_wave(1)
+    it = srv.find("t00")
+    srv.act_auto({"finalize": True})
+    assert srv.auto_advances(it, "refine")
+    night_on(srv, source="unfinalized")
+    assert not srv.auto_advances(it, "refine")
+    srv.night()["source"] = "queue"
+    assert srv.auto_advances(it, "refine")
+    srv.night().update(source="unfinalized", on=False)
+    assert srv.auto_advances(it, "refine")
+
+
+def test_a_finalize_the_user_starts_asks_for_callouts_too(srv, monkeypatch):
+    finalize_launch(srv, monkeypatch)
+    backlog_solver(srv, "aaa")
+    srv.act_finalize({"id": "aaa"})
+    assert srv.find("aaa")["auto_finalize"] is True
+
+
+def test_a_chain_that_wrote_no_solver_still_finalizes(srv, monkeypatch):
+    sent = finalize_launch(srv, monkeypatch)
+    srv.save_report("aaa", "refine", "the handoff")
+    it = item(srv, "aaa", srv.NEEDS_REVIEW, chain=srv.default_chain())
+    assert srv.act_finalize({"id": "aaa"})["advanced"] is True
+    assert it["phase"] == "finalize"
+    (msg, _), = sent
+    assert "wrote no solver" in msg and "Write it from the reports" in msg
+    assert "Read programs/solvers/aaa.dl first" not in msg
+    assert srv.REVIEW_TAIL in msg
+
+
+def test_the_advance_brief_reads_the_solver_when_there_is_one(srv, monkeypatch):
+    sent = finalize_launch(srv, monkeypatch)
+    backlog_solver(srv, "aaa")
+    srv.save_report("aaa", "refine", "the handoff")
+    item(srv, "aaa", srv.NEEDS_REVIEW, chain=srv.default_chain())
+    srv.act_finalize({"id": "aaa"})
+    (msg, _), = sent
+    assert "Read programs/solvers/aaa.dl first" in msg
+    assert "wrote no solver" not in msg
+
+
+def test_the_payload_carries_the_source_and_both_targets(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50)
+    night_on(srv, source="unfinalized", finalize_target=4)
+    view = srv.night_view()
+    assert (view["source"], view["target"], view["finalize_target"]) == \
+        ("unfinalized", 6, 4)
+    assert "autopilot on" not in " ".join(e["text"] for e in view["log"])
+    srv.act_night({"on": False})
+    srv.act_night({"on": True})
+    assert srv.night()["log"][-1]["text"] == "autopilot on · unfinalized · target 4"

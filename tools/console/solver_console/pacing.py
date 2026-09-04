@@ -20,7 +20,9 @@ from . import config, store
 
 NIGHT_DEFAULTS = {
     "on": False,
-    "target": 6,       # items in flight the admitter keeps
+    "source": "queue",  # where the admitter draws from
+    "target": 6,       # items in flight the admitter keeps under the queue source
+    "finalize_target": 3,   # the same, under the unfinalized source
     "reserve": 10,     # points of weekly quota held back from the pace line
     "floor": 5,        # weekly points spendable however early in the week
     "ceiling": 75,     # 5h utilization above which new admissions hold
@@ -28,6 +30,10 @@ NIGHT_DEFAULTS = {
 }
 
 
+# The queue source admits a task from the queue and runs it up to the stop;
+# the unfinalized source takes the next unfinalized solver and runs its
+# finalize pass. One source is live at a time.
+NIGHT_SOURCES = ("queue", "unfinalized")
 NIGHT_LOG = 40         # night log entries kept
 LIVE = (store.QUEUED, store.RUNNING, store.COMMENTED)   # states with work still to come
 
@@ -87,8 +93,9 @@ def draws(model: str) -> list[dict]:
 
 
 def night_models() -> list[str]:
-    """The model ids a night item runs by itself: every stage before the stop,
-    and the finalize stage when the auto finalize setting lifts the stop."""
+    """The model ids a queue admission runs by itself: every stage before the
+    stop, and the finalize stage when the auto finalize setting lifts the
+    stop."""
     chain = store.default_chain()
     run = chain[:-1]
     if chain and chain[-1]["name"] == "finalize" and store.auto()["finalize"]:
@@ -96,13 +103,27 @@ def night_models() -> list[str]:
     return [st.get("model") or "" for st in run]
 
 
+def admit_models() -> list[str]:
+    """The model ids the active source's admissions run."""
+    if night()["source"] == "unfinalized":
+        return [store.stage_model("finalize")]
+    return night_models()
+
+
 def night() -> dict:
     """The mode's config and running notes, filled in with the defaults."""
     cfg = store.STATE.setdefault("overnight", {})
     for name, value in NIGHT_DEFAULTS.items():
         cfg.setdefault(name, value)
+    if cfg["source"] not in NIGHT_SOURCES:
+        cfg["source"] = NIGHT_DEFAULTS["source"]
     cfg.setdefault("log", [])
     return cfg
+
+
+def target_of(cfg: dict) -> int:
+    """How many items in flight the active source keeps."""
+    return cfg["finalize_target"] if cfg["source"] == "unfinalized" else cfg["target"]
 
 
 def night_say(text: str, once: bool = False) -> bool:
@@ -131,13 +152,17 @@ def elapsed_pct(u: dict | None, at: float) -> float | None:
     return max(0.0, min(100.0, 100 * (1 - (u["reset"] - at) / u["window"])))
 
 
-def pacer(at: float | None = None) -> dict:
+def pacer(at: float | None = None, models: list[str] | None = None) -> dict:
     """Whether the admitter may start another item, and what to say about it.
+    `models` are the model ids the admission would run; the Fable window
+    paces the gate only when one of them is Fable.
 
     Only new admissions are gated. A turn already in flight, a review comment,
     and every manual action run whatever the windows read.
     """
     at = store.now() if at is None else at
+    if models is None:
+        models = admit_models()
     cfg = night()
     wk, five = window("wk"), window("5h")
     out = {"open": False, "why": "", "next": None, "wk": None, "line": None,
@@ -159,8 +184,8 @@ def pacer(at: float | None = None) -> dict:
     if wk["pct"] > line:
         out["why"] = f"wk at pace ({wk['pct']:.0f}% vs {line:.0f}%)"
         return out
-    # The Fable window paces the same way when a night stage runs Fable.
-    fbl = window(FABLE_WINDOW) if any(is_fable(m) for m in night_models()) else None
+    # The Fable window paces the same way when an admission runs Fable.
+    fbl = window(FABLE_WINDOW) if any(is_fable(m) for m in models) else None
     fbl_elapsed = elapsed_pct(fbl, at)
     if fbl_elapsed is not None:
         fbl_line = max(cfg["floor"], fbl_elapsed - cfg["reserve"])
