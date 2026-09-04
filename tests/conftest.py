@@ -1,11 +1,11 @@
-"""After a green run over changed tests, a note to queue the cut of useless
-tests."""
+"""After a green run over changed tests, a note to cut the useless ones once
+the work is done."""
 
 import subprocess
 
 import pytest
 
-NOTE = "Note: If you added tests, add a TaskCreate task to cut useless tests."
+NOTE = "Note: When you are done, cut the useless tests among the ones you added."
 
 
 def _tests_changed(rootdir) -> bool:
