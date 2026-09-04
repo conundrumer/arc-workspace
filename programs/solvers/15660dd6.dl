@@ -86,16 +86,16 @@ band_label(P_band, Col) :-
 .init panel_color = Unanimous<Ident, Color>
 panel_color.item(Id, Col) :- interior(Id, _, Col).
 
-// Two panels of one column disagree on some interior cell.
-.decl differs(id: Ident, id2: Ident)
-differs(Id, Id2) :-
-    panel_pos(Id, P_col, _), panel_pos(Id2, P_col, _),
-    interior(Id, P_intile, Col), interior(Id2, P_intile, Col2), Col != Col2.
+// Panels holding the same interior.
+.type PanelCell = [p_intile: Position, col: Color]
+.init same = KeyedSetCompare<Ident, Ident, PanelCell>
+same.pattern_member(Id, [P_intile, Col]) :- interior(Id, P_intile, Col).
+same.observed_member(Id, [P_intile, Col]) :- interior(Id, P_intile, Col).
 
 .decl twin(id: Ident)
 twin(Id) :-
     panel_pos(Id, P_col, _), panel_pos(Id2, P_col, _), Id != Id2,
-    !differs(Id, Id2).
+    same.equals(Id, Id2).
 
 .decl donor(d: Donor, p_col: Position, id: Ident)
 donor($Solid(), P_col, Id) :- panel_pos(Id, P_col, _), !panel_color.clash(Id).
