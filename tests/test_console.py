@@ -3208,6 +3208,75 @@ def test_an_earlier_stage_still_hands_off_by_itself(srv, monkeypatch):
     assert landed.wait(1)
 
 
+def test_auto_advance_into_finalize_marks_the_pass(srv, monkeypatch):
+    monkeypatch.setattr(srv, "advance_stage", lambda it: it.update(phase="finalize"))
+    it = item(srv, "a", srv.RUNNING, chain=srv.default_chain(), phase="refine",
+              handoff_pending=True)
+    w = worker(srv, it, phase="refine", state="idle", turn_seq=3)
+    srv.DEFERRED.put_nowait(("handoff", "a", "refine", w["turn_seq"]))
+    srv.ensure_drain()
+    deadline = time.time() + 1
+    while it.get("handoff_pending") and time.time() < deadline:
+        time.sleep(0.01)
+    assert it["auto_finalize"] is True
+
+
+def test_an_auto_launched_finalize_lands_into_a_callout_turn(srv, monkeypatch):
+    monkeypatch.setattr(srv, "launch", lambda *a, **kw: None)
+    monkeypatch.setattr(srv, "ensure_drain", lambda: None)
+    it = finalize_item(srv, state=srv.RUNNING, auto_finalize=True)
+    w = srv.PROCS[("a", "finalize")]
+    w["state"], w["turn_seq"] = "running", 4
+    srv.finish_turn(it, {"result": "the solver holds up"}, None,
+                    time.time(), "finalize", False)
+    assert "auto_finalize" not in it
+    assert it["reports"]["finalize"] == "the solver holds up"
+    assert it["callout_wait"] == "finalize"
+    assert srv.DEFERRED.get_nowait() == ("callout", "a", "finalize", 4)
+    # the callout landing files the section and waits for the user
+    srv.finish_turn(it, {"result": "<callouts>\n1. [P2] a call\n</callouts>"}, None,
+                    time.time(), "finalize", False)
+    assert it["reports"]["finalize"] == "the solver holds up\n\n## Callouts\n\n1. [P2] a call"
+    assert it["callouts"] == ["[P2] a call"]
+    assert "callout_wait" not in it and "handoff_pending" not in it
+    assert it["state"] == srv.NEEDS_REVIEW and it["updated"]
+    # a later landing on the same session asks nothing more
+    srv.finish_turn(it, {"result": "promoted"}, None, time.time(), "finalize", False)
+    assert "callout_wait" not in it and it["state"] == srv.NEEDS_REVIEW
+
+
+def test_an_auto_launched_finalize_with_callouts_inline_skips_the_turn(srv, monkeypatch):
+    monkeypatch.setattr(srv, "ensure_drain", lambda: None)
+    it = finalize_item(srv, state=srv.RUNNING, auto_finalize=True)
+    srv.PROCS[("a", "finalize")]["state"] = "running"
+    srv.finish_turn(it, {"result": "holds up\n\n<callouts>\n1. [P1] a call\n</callouts>"},
+                    None, time.time(), "finalize", False)
+    assert it["reports"]["finalize"] == "holds up\n\n## Callouts\n\n1. [P1] a call"
+    assert it["callouts"] == ["[P1] a call"]
+    assert "callout_wait" not in it and it["state"] == srv.NEEDS_REVIEW
+    assert srv.DEFERRED.empty()
+
+
+def test_an_auto_launched_finalize_waits_out_its_tasks(srv, monkeypatch):
+    monkeypatch.setattr(srv, "ensure_drain", lambda: None)
+    it = finalize_item(srv, state=srv.RUNNING, auto_finalize=True)
+    w = srv.PROCS[("a", "finalize")]
+    w["state"], w["bg"] = "running", {"x": "survey"}
+    srv.finish_turn(it, {"result": "survey dispatched"}, None, time.time(), "finalize", False)
+    assert it["auto_finalize"] is True and "callout_wait" not in it
+    assert it["state"] == srv.NEEDS_REVIEW and srv.DEFERRED.empty()
+
+
+def test_a_finalize_the_user_launched_lands_as_before(srv, monkeypatch):
+    monkeypatch.setattr(srv, "ensure_drain", lambda: None)
+    it = finalize_item(srv, state=srv.RUNNING)
+    srv.PROCS[("a", "finalize")]["state"] = "running"
+    srv.finish_turn(it, {"result": "the solver holds up"}, None,
+                    time.time(), "finalize", False)
+    assert it["reports"] == {} and "callout_wait" not in it
+    assert it["state"] == srv.NEEDS_REVIEW and srv.DEFERRED.empty()
+
+
 def test_a_safeguard_refusal_is_named_in_the_feed(srv):
     text = ("API Error: Opus 5's safeguards flagged this message (https://x). "
             "This sometimes happens with safe, normal conversations.\n\n"
@@ -4002,6 +4071,20 @@ def test_a_dismissed_solverless_task_leaves_the_backlog(srv):
     srv.ledger_append({"task": "aaa", "stage": "dismissed",
                        "model": None, "source": "user"})
     assert srv.backlog_view() == []
+
+
+def test_the_lens_ranks_the_finalize_passes_in_flight(srv):
+    for tid in ("aaa", "bbb", "ccc"):
+        backlog_solver(srv, tid)
+    srv.save_report("bbb", "refine", "## Callouts\n\n1. [P1] a call")
+    item(srv, "aaa", srv.NEEDS_REVIEW, chain=srv.default_chain(), phase="finalize")
+    item(srv, "bbb", srv.NEEDS_REVIEW, chain=srv.default_chain(), phase="finalize")
+    item(srv, "ccc", srv.NEEDS_REVIEW, chain=srv.default_chain(), phase="refine")
+    view = srv.lens_view()
+    assert view["items"] == []
+    assert [r["id"] for r in view["finalizing"]] == ["bbb", "aaa"]
+    assert view["finalizing"][0]["callout_n"] == 1
+    assert "flag" in view["finalizing"][0]
 
 
 def test_a_task_the_console_holds_stays_out_of_the_backlog(srv):

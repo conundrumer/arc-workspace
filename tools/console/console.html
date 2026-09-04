@@ -415,14 +415,25 @@ const TTL_ALERT = 10;   // minutes left when a cache goes hot and rings
 const FINAL = "finalize";
 const STATES = ["needs-review","commented","running","queued","approved","committed"];
 const SETTLED = ["approved","committed"];   // nothing left for a finalize pass to do
-/* unfinalized orderings: the server's triage sort, a complexity measure, or the
-   models that made the passes */
+/* finalize lens orderings: the server's triage sort, a complexity measure, or
+   the models that made the passes. One choice orders both sections; in the
+   finalizing section it orders the cold sessions, behind the warm ones. */
 const BK_ORDERS = {flag:"triage order",
                    passes:"grouped by the models of the passes, triage order within",
                    ts:"reference TS solver complexity",
                    dl:"solver rule-literal count"};
 const BK_SHOWN = 40;   // unfinalized rows listed until the user asks for the rest
 const passLabel = b => (b.passes||[]).map(p=>p.model).join(" ");
+/* the chosen ordering over lens rows; the triage rank is the row's place in
+   the server's list, and a task with no row goes last */
+const triage = r => r.triage ?? Infinity;
+const bkCmp = order => (a,b) => {
+  if(order==="flag") return triage(a)-triage(b) || 0;
+  if(order==="passes") return passLabel(a).localeCompare(passLabel(b)) || triage(a)-triage(b) || 0;
+  const k=order+"_size", av=a[k]??-1, bv=b[k]??-1;
+  return bv-av || (a.id<b.id?-1:1);
+};
+const sizeOf = (row, order) => ["flag","passes"].includes(order) ? null : (row[order+"_size"] ?? "—");
 const RAIL_SHOWN = 40;   // wave rows listed until the user asks for the rest
 const stateRank = it => { const i=STATES.indexOf(it.state); return i<0?STATES.length:i; };
 const NO_ITEM = {feed:[], files:[]};   // stands in until /api/item lands
@@ -783,7 +794,7 @@ function Thumb({task}){
 }
 
 /* ---------- rail ---------- */
-function ItemRow({it, sel, task, onSelect}){
+function ItemRow({it, sel, task, metric, onSelect}){
   const ci=cacheInfo(it);
   const sub = it.est ? "est "+it.est : "";
   return html`<div class=${"row"+(sel?" sel":"")} tabIndex="0"
@@ -803,6 +814,7 @@ function ItemRow({it, sel, task, onSelect}){
       <${StateChip} state=${it.state} label=${it.state==="needs-review"?"review":it.state}/>
       <span class=${"ttl "+ci.cls}>${ci.txt}</span>
       <span class=${"phz"+(it.phase==="finalize"?" fin":"")}>${it.phase}</span>
+      ${metric!=null && html`<span class="bksz mono">${metric}</span>`}
     </div>
   </div>`;
 }
@@ -825,28 +837,29 @@ function BkRow({b, sel, task, metric, onSelect}){
   </div>`;
 }
 
-function Rail({view, items, itemOrder, itemTotal, onMoreItems,
+function Rail({view, items, itemOrder, itemTotal, onMoreItems, finRows,
                backlog, bkTotal, onMore, bkOrder, setBkOrder,
                selId, selIsItem, tasks, onSelect}){
   const fin = view===FINAL;
   const row = id => {
     const it=items.find(x=>x.id===id);
     return html`<${ItemRow} key=${id} it=${it} task=${tasks[id]}
+      metric=${fin ? sizeOf(finRows[id]||{}, bkOrder) : null}
       sel=${selIsItem && id===selId} onSelect=${onSelect}/>`;
   };
   return html`<nav id="rail" aria-label="wave items">
-    <div class="railhead"><span>${fin ? "finalizing · "+itemOrder.length : "cache ↑expiring"}</span></div>
+    <div class="railhead">
+      <span>${fin ? "finalizing · "+itemOrder.length : "cache ↑expiring"}</span>
+      ${fin && html`<span class="bktog">${Object.keys(BK_ORDERS).map(k=>html`<button key=${k}
+        class=${bkOrder===k?"on":""} title=${BK_ORDERS[k]}
+        onClick=${()=>setBkOrder(k)}>${k==="flag"?"flag ↑":k==="passes"?"passes":k+" ↓"}</button>`)}</span>`}
+    </div>
     ${itemOrder.map(row)}
     ${!fin && itemTotal>itemOrder.length && html`<button class="bkmore" onClick=${onMoreItems}>
       ${"show all "+itemTotal}</button>`}
-    ${fin && html`<div class="railhead">
-      <span>${"unfinalized · "+bkTotal}</span>
-      <span class="bktog">${Object.keys(BK_ORDERS).map(k=>html`<button key=${k}
-        class=${bkOrder===k?"on":""} title=${BK_ORDERS[k]}
-        onClick=${()=>setBkOrder(k)}>${k==="flag"?"flag ↑":k==="passes"?"passes":k+" ↓"}</button>`)}</span>
-    </div>`}
+    ${fin && html`<div class="railhead"><span>${"unfinalized · "+bkTotal}</span></div>`}
     ${fin && backlog.map(b=>html`<${BkRow} key=${b.id} b=${b} task=${tasks[b.id]}
-      metric=${["flag","passes"].includes(bkOrder) ? null : (b[bkOrder+"_size"] ?? "—")}
+      metric=${sizeOf(b, bkOrder)}
       sel=${b.id===selId && !itemOrder.includes(b.id)} onSelect=${onSelect}/>`)}
     ${fin && bkTotal>backlog.length && html`<button class="bkmore" onClick=${onMore}>
       ${"show all "+bkTotal}</button>`}
@@ -1224,6 +1237,7 @@ function App(){
   const [selId,setSelId]=useState(null);
   const [view,setViewState]=useState(()=>localStorage.getItem("view")===FINAL?FINAL:"wave");
   const [backlog,setBacklog]=useState([]);
+  const [finRows,setFinRows]=useState({});   // id -> lens row of a finalize pass in flight
   const [bkAll,setBkAll]=useState(false);   // every unfinalized row, on the user's ask
   const [railAll,setRailAll]=useState(false);   // every wave row, on the user's ask
   const [bkOrder,setBkOrderState]=useState(()=>{
@@ -1282,7 +1296,9 @@ function App(){
     try {
       const r=await fetch("/api/backlog");
       const d=await r.json();
-      setBacklog(d.items||[]);
+      const ranked = rows => (rows||[]).map((row,i)=>({...row, triage:i}));
+      setBacklog(ranked(d.items));
+      setFinRows(Object.fromEntries(ranked(d.finalizing).map(row=>[row.id,row])));
     } catch(e){}
   },[]);
 
@@ -1327,26 +1343,24 @@ function App(){
   /* An approved or committed item is settled, so the finalize lens gives its
      row back; the wave view still lists it, cut to the first rows until asked
      for the rest. The selected one stays, so a row does not vanish from under
-     the detail pane while it is being read. */
+     the detail pane while it is being read. In the lens, a session with a
+     cache to keep warm leads in cache order; the cold ones follow in the
+     chosen ordering, over the rows the server sent for them. */
   const itemOrder=useMemo(()=>{
-    if(view===FINAL) return railOrder.filter(id=>{
-      const it=items.find(x=>x.id===id);
-      if(!it || it.phase!==FINAL) return false;
-      return id===selId || !SETTLED.includes(it.state);
-    });
+    if(view===FINAL){
+      const rows=railOrder.map(id=>items.find(x=>x.id===id)).filter(it=>
+        it && it.phase===FINAL && (it.id===selId || !SETTLED.includes(it.state)));
+      const cmp=bkCmp(bkOrder), rowOf=it=>finRows[it.id]||{id:it.id};
+      return rows.filter(it=>cacheInfo(it).cls!=="cold")
+        .concat(rows.filter(it=>cacheInfo(it).cls==="cold").sort((a,b)=>cmp(rowOf(a), rowOf(b))))
+        .map(it=>it.id);
+    }
     if(railAll || railOrder.length<=RAIL_SHOWN) return railOrder;
     const shown=railOrder.slice(0, RAIL_SHOWN);
     return railOrder.includes(selId) && !shown.includes(selId) ? shown.concat([selId]) : shown;
-  }, [railOrder, items, view, selId, railAll]);
-  /* the triage sort comes from the server; a complexity ordering resorts
-     here, the biggest first, rows without a measure last; the passes ordering
-     groups by label and keeps the triage order within a group */
-  const bkSorted=useMemo(()=>bkOrder==="flag" ? backlog
-    : bkOrder==="passes" ? [...backlog].sort((a,b)=>passLabel(a).localeCompare(passLabel(b)))
-    : [...backlog].sort((a,b)=>{
-        const k=bkOrder+"_size", av=a[k]??-1, bv=b[k]??-1;
-        return bv-av || (a.id<b.id?-1:1);
-      }), [backlog, bkOrder]);
+  }, [railOrder, items, view, selId, railAll, bkOrder, finRows]);
+  /* the rows arrive in triage order; the other orderings resort them here */
+  const bkSorted=useMemo(()=>[...backlog].sort(bkCmp(bkOrder)), [backlog, bkOrder]);
   const bkShown=useMemo(()=>bkAll ? bkSorted : bkSorted.slice(0, BK_SHOWN), [bkSorted, bkAll]);
   /* one selection over both sections: in-pass items, then the unfinalized rows
      on show. An id that is both a live item and a row resolves to the item. */
@@ -1565,7 +1579,7 @@ function App(){
   useEffect(()=>{
     document.body.classList.toggle("view-final", view===FINAL);
     if(view===FINAL) fetchBacklog();
-    else { setBacklog([]); setBkAll(false); }
+    else { setBacklog([]); setFinRows({}); setBkAll(false); }
   },[view, fetchBacklog]);
 
   /* ---- selection stays on something that exists ---- */
@@ -1724,7 +1738,7 @@ function App(){
     <div id="main">
       <${Rail} view=${view} items=${items} itemOrder=${itemOrder}
         itemTotal=${railOrder.length} onMoreItems=${()=>setRailAll(true)}
-        backlog=${bkShown} bkTotal=${bkSorted.length} onMore=${()=>setBkAll(true)}
+        backlog=${bkShown} bkTotal=${bkSorted.length} onMore=${()=>setBkAll(true)} finRows=${finRows}
         bkOrder=${bkOrder} setBkOrder=${setBkOrder}
         selId=${selId} selIsItem=${!!selItem} tasks=${taskCache.current}
         onSelect=${select}/>

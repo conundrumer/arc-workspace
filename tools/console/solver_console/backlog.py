@@ -1,5 +1,6 @@
 """The unfinalized solvers: every solver on disk the user has not ruled
-on."""
+on. The finalize lens lists them, and sorts the finalize passes in flight
+by the same rows."""
 
 import subprocess
 import time
@@ -153,33 +154,47 @@ def finalize_ready(it: dict) -> bool:
             and bool(solvers.report_of(it, it["phase"])))
 
 
-def backlog_view() -> list[dict]:
+# The triage order. A missing solver leads: it outranks a flag because it is
+# not a reading of the task but the absence of one. A P0 — broken tooling —
+# follows it, ahead of the flags, since the breakage may hold up other passes
+# too. A task whose sessions added an entry comes next: the entry waits on a
+# judgment, and the pass that made it is the one to read with it.
+# -callout_n runs late, so a report carrying only P3s still edges out one
+# that raised nothing once everything ahead of it ties. The oldest commit
+# breaks the last tie, so a task does not wait behind newer ids; a solver
+# not committed yet is the newest of all.
+def triage_key(row: dict) -> tuple:
+    return (0 if row["no_solver"] else 1,
+            0 if row["callout_rank"] == 0 else 1,
+            0 if row["entries"] else 1,
+            row["flag"] or 9,
+            solvers.callout_weight(row["callout_rank"]),
+            0 if row["comps"] else 1,
+            -row["callout_act"], -row["callout_n"],
+            row["added"] if row["added"] is not None else float("inf"),
+            row["id"])
+
+
+def lens_view() -> dict:
+    """What the finalize lens lists, each list in triage order: the
+    unfinalized solvers, and the tasks with a finalize pass in flight, whose
+    rows the lens sorts on once the pass's cache is cold."""
     with store.LOCK:
         table = ledger.flags()
         held = {it["id"] for it in store.STATE["items"]
                 if it["state"] != store.COMMITTED and not finalize_ready(it)}
-        rows = [row for row in backlog_scan() if row["id"] not in held]
-        for row in rows:
+        finalizing = {it["id"] for it in store.STATE["items"] if it["phase"] == "finalize"}
+        scan = backlog_scan()
+        for row in scan:
             row["flag"] = (table.get(row["id"]) or {}).get("level", 0)
-    # A missing solver leads: it outranks a flag because it is not a reading of
-    # the task but the absence of one. A P0 — broken tooling — follows it,
-    # ahead of the flags, since the breakage may hold up other passes too.
-    # A task whose sessions added an entry comes next: the entry waits on a
-    # judgment, and the pass that made it is the one to read with it.
-    # -callout_n runs late, so a report carrying only P3s still edges out one
-    # that raised nothing once everything ahead of it ties. The oldest commit
-    # breaks the last tie, so a task does not wait behind newer ids; a solver
-    # not committed yet is the newest of all.
-    rows.sort(key=lambda row: (0 if row["no_solver"] else 1,
-                               0 if row["callout_rank"] == 0 else 1,
-                               0 if row["entries"] else 1,
-                               row["flag"] or 9,
-                               solvers.callout_weight(row["callout_rank"]),
-                               0 if row["comps"] else 1,
-                               -row["callout_act"], -row["callout_n"],
-                               row["added"] if row["added"] is not None else float("inf"),
-                               row["id"]))
-    return rows
+    rows = sorted((row for row in scan if row["id"] not in held), key=triage_key)
+    passes = sorted((row for row in scan if row["id"] in finalizing), key=triage_key)
+    return {"items": rows, "finalizing": passes}
+
+
+def backlog_view() -> list[dict]:
+    """The unfinalized solvers in triage order."""
+    return lens_view()["items"]
 
 
 def rule(body: dict, stage: str) -> dict:

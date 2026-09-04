@@ -153,7 +153,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply({"feed": it["feed"], "files": item_files(it),
                             "ver": it.get("ver", 0)})
         elif url.path == "/api/backlog":
-            self.reply({"items": backlog.backlog_view()})
+            self.reply(backlog.lens_view())
         elif url.path == "/api/debrief":
             self.reply(ledger.debrief_view())
         elif url.path.startswith("/api/peek/"):

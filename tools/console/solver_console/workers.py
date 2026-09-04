@@ -1418,7 +1418,7 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
         it.pop("callout_wait", None)
     worker = store.PROCS.get((it["id"], phase))
     outstanding = sorted((worker or {}).get("bg", {}).values())
-    if callout_landing and store.next_stage(it, phase):
+    if callout_landing:
         # a callout turn on an older brief answers with the section in
         # place of the block
         land_callouts(it, phase, callouts if callouts is not None else text)
@@ -1470,6 +1470,24 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
             drop_hold(it, phase)
             it["state"] = store.NEEDS_REVIEW
             it["updated"] = True
+    elif phase == "finalize" and it.get("auto_finalize") and not store.slash_turn(it, phase):
+        # The finalize pass auto-advance opened lands with no one reading
+        # it, so its first landing files the text as the stage report and
+        # asks for the callouts, which the finalize lens sorts on. A landing
+        # with a task still outstanding waits for the one that task wakes.
+        if worker and outstanding:
+            it["state"] = store.NEEDS_REVIEW
+            it["updated"] = True
+        else:
+            it.pop("auto_finalize", None)
+            body = (report if report is not None
+                    else solvers.untagged(solvers.CALLOUTS_TAG.sub("", text))).strip()
+            if callouts is None:
+                land_handoff(it, phase, body)
+            else:
+                if body:
+                    file_report(it, phase, body)
+                land_callouts(it, phase, callouts)
     elif not store.slash_turn(it, phase) and not store.busy_elsewhere(it, phase):
         # a side turn landing while another session runs leaves the state to
         # the pass that owns it
@@ -1536,7 +1554,8 @@ def ask_callouts(it: dict, phase: str) -> None:
 
 def land_callouts(it: dict, phase: str, body: str) -> None:
     """Join the callouts onto the stage report, so parsing and the finalize
-    read see one document per stage, then advance."""
+    read see one document per stage, then advance. The final stage has
+    nowhere to advance to and waits for the user."""
     if body.strip():
         section = (body if solvers.CALLOUT_HEAD.search(body)
                    else "## Callouts\n\n" + body.strip())
@@ -1616,7 +1635,12 @@ def drain_deferred() -> None:
                     continue
                 else:
                     it.pop("handoff_pending", None)
+                    prev = it["phase"]
                     advance_stage(it)
+                    # a finalize pass opened this way lands unattended, so
+                    # its first landing owes the lens its callouts
+                    if prev != "finalize" and it["phase"] == "finalize":
+                        it["auto_finalize"] = True
             store.bump()
         except Exception as exc:
             print(f"deferred {job[0]} failed: {exc}", file=sys.stderr)
