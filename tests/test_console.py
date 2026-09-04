@@ -3654,12 +3654,22 @@ def test_a_turn_that_lands_clears_the_retry_and_the_cut(srv, monkeypatch):
     assert "resume_phase" not in it and "resume_handoff" not in it
 
 
-def test_a_landing_leaves_a_scheduled_resume_its_flag(srv, monkeypatch):
+def test_a_turn_through_the_cut_stage_drops_the_scheduled_resume(srv, monkeypatch):
     clock_at(srv, monkeypatch)
     it = item(srv, "a", srv.RUNNING, resume_at=AT + 600,
               resume_phase="refine", resume_handoff=True)
     srv.finish_turn(it, {"result": "done"}, None, time.time(), "refine", False)
-    assert it["resume_phase"] == "refine" and it["resume_handoff"] is True
+    assert not any(k in it for k in ("resume_at", "resume_phase", "resume_handoff"))
+
+
+def test_a_slash_turn_or_another_stage_leaves_the_scheduled_resume(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    it = item(srv, "a", srv.RUNNING, resume_at=AT + 600, resume_phase="refine",
+              resume_handoff=True, sessions={"create": "cs", "refine": "rs"})
+    srv.finish_turn(it, {"result": "done"}, None, time.time(), "create", False)
+    worker(srv, it, phase="refine")["slash"] = True
+    srv.finish_turn(it, {"result": "compacted"}, None, time.time(), "refine", False)
+    assert it["resume_at"] == AT + 600 and it["resume_phase"] == "refine"
 
 
 def test_a_worker_that_dies_of_quota_is_scheduled_too(srv, monkeypatch):

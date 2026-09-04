@@ -1433,9 +1433,11 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
         it["shared_writes"].extend(fresh)
         store.say(it, store.event("shared files changed: " + ", ".join(fresh)), sess=phase)
     it.pop("quota_retry", None)  # the stage got a turn through; retries reset
-    if it.get("resume_phase") == phase and not it.get("resume_at"):
-        it.pop("resume_phase", None)
-        it.pop("resume_handoff", None)
+    if it.get("resume_phase") == phase and not store.slash_turn(it, phase):
+        # a turn got through on the cut stage, so the pass went on without
+        # the resume; one still scheduled would run it again
+        for key in ("resume_at", "resume_phase", "resume_handoff"):
+            it.pop(key, None)
     report = solvers.tagged(text, solvers.HANDOFF_TAG)
     callouts = solvers.tagged(text, solvers.CALLOUTS_TAG)
     callout_landing = it.get("callout_wait") == phase
