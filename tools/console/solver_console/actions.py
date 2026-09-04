@@ -373,6 +373,18 @@ def committer_entries(ev: dict) -> list[tuple[tuple, dict]]:
     return out
 
 
+def act_auto(body: dict) -> dict:
+    """Set the automatic-move settings. Each applies from the next moment it
+    is read."""
+    with store.LOCK:
+        cfg = store.auto()
+        for name in config.AUTO_DEFAULTS:
+            if name in body:
+                cfg[name] = bool(body[name])
+    store.bump()
+    return {"ok": True}
+
+
 def act_pipeline(body: dict) -> dict:
     """Set the model a pipeline stage runs. The next wave reads it."""
     with store.LOCK:

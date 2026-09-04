@@ -43,8 +43,9 @@ WORKER_HANDOFF_ENV = "CONSOLE_WORKER_HANDOFF"
 # `auto_stop`. A wave item hands itself on through every stage before the last,
 # and stops there: the landing that would launch the last stage lands in review
 # instead, still in the stage that reported, and the advance or finalize action
-# moves it on when the user asks. An item built for one stage alone never hands
-# off.
+# moves it on when the user asks; with the auto finalize setting on, a landing
+# whose next stage is finalize hands on like any other. An item built for one
+# stage alone never hands off.
 # Every report is also written under state/reports/, so it outlives the item a
 # commit drops and can seed a later stage over a solver already committed.
 #
@@ -85,6 +86,16 @@ def pipeline() -> dict:
     cfg = STATE.setdefault("pipeline", {})
     for name, value in config.PIPELINE_DEFAULTS.items():
         if cfg.get(name) not in config.MODEL_IDS:
+            cfg[name] = value
+    return cfg
+
+
+def auto() -> dict:
+    """The automatic-move settings, filled in with the defaults. Each is read
+    at the moment it applies, so a change reaches the items already running."""
+    cfg = STATE.setdefault("auto", {})
+    for name, value in config.AUTO_DEFAULTS.items():
+        if not isinstance(cfg.get(name), bool):
             cfg[name] = value
     return cfg
 

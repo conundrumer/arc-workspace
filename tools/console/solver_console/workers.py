@@ -974,11 +974,16 @@ def auto_advances(it: dict, phase: str) -> bool:
 
     `auto_stop` names a stage auto-advance will not launch, so a run can carry
     items through the cheap stages and stop before an expensive one. Without
-    it, auto-advance runs the whole chain."""
+    it, auto-advance runs the whole chain. The auto finalize setting lifts the
+    stop when the stage it names is finalize."""
     if not it.get("auto_advance"):
         return False
     nxt = store.next_stage(it, phase)
-    return bool(nxt) and nxt["name"] != it.get("auto_stop")
+    if not nxt:
+        return False
+    if nxt["name"] != it.get("auto_stop"):
+        return True
+    return nxt["name"] == "finalize" and store.auto()["finalize"]
 
 
 def advance_stage(it: dict) -> None:
@@ -1390,6 +1395,8 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
         it["dirty"] = True
     if not store.slash_turn(it, phase):
         it.setdefault("seen_hash", {})[phase] = solvers.solver_hash(it["id"])
+        # a real turn landed: the session may be auto-compacted once more
+        it.get("auto_compacted", {}).pop(phase, None)
     it["lastActive"][phase] = int(time.time() * 1000)
     it["title"] = solvers.title_of(it["id"]) or it.get("title", "")
     it["comps"] = solvers.comps_of(it["id"])
@@ -1659,18 +1666,22 @@ def drop_worker(it: dict, key: tuple[str, str], worker: dict, why: str) -> None:
 def reap_idle() -> None:
     """Drop idle workers under two rules. Anything idle past IDLE_TTL goes.
     Beyond that, the workers of autopilot items are held to NIGHT_WORKER_CAP,
-    counting the running ones, oldest idle first."""
+    counting the running ones, oldest idle first. A session the auto compact
+    covers is compacted in place of the drop, and a later pass drops it."""
     now = time.time()
-    reaped = 0
+    changed = 0
     with store.LOCK:
         for key, worker in list(store.PROCS.items()):
             it = reapable(key, worker)
             since = worker.get("idle_since")
             if it is None or now - since < config.IDLE_TTL:
                 continue
+            if compact_before_reap(it, key, worker, now):
+                changed += 1
+                continue
             drop_worker(it, key, worker,
                         f"after {int((now - since) // 60)}m idle")
-            reaped += 1
+            changed += 1
         night_keys = [key for key in store.PROCS
                       if (it := store.find(key[0])) is not None and it.get("night")]
         over = len(night_keys) - config.NIGHT_WORKER_CAP
@@ -1683,10 +1694,74 @@ def reap_idle() -> None:
                     spare.append((worker["idle_since"], key, worker, it))
             spare.sort(key=lambda row: row[0])
             for _, key, worker, it in spare[:over]:
+                if compact_before_reap(it, key, worker, now):
+                    changed += 1
+                    continue
                 drop_worker(it, key, worker,
                             f"over the {config.NIGHT_WORKER_CAP}-worker autopilot cap")
-                reaped += 1
-    if reaped:
+                changed += 1
+    if changed:
+        store.bump()
+
+
+def compact_due(it: dict, phase: str, worker: dict | None, now: float) -> float | None:
+    """Seconds until the session's cache goes cold or the idle reap takes its
+    worker, whichever comes first; None when the session is not one the auto
+    compact covers: it must be an unapproved finalize session with an idle
+    worker, nothing pending, and no auto compact since its last real turn."""
+    if phase != "finalize" or it["state"] != store.NEEDS_REVIEW \
+            or not it["sessions"].get(phase) or store.active(it) \
+            or it.get("auto_compacted", {}).get(phase):
+        return None
+    if worker is None or reapable((it["id"], phase), worker) is None:
+        return None
+    la = (it.get("lastActive") or {}).get(phase)
+    if not la:
+        return None
+    return min(la / 1000 + config.CACHE_TTL,
+               worker["idle_since"] + config.IDLE_TTL) - now
+
+
+def start_compact(it: dict, phase: str, why: str) -> None:
+    """Open the compact turn on a session, marked so that no second auto
+    compact follows before a real turn lands. Caller holds LOCK."""
+    it.setdefault("auto_compacted", {})[phase] = True
+    store.say(it, store.event(f"auto compact — {why}"), sess=phase)
+    try:
+        launch(it, "/compact", phase)
+    except (store.Reject, OSError) as exc:
+        store.say(it, store.event(f"auto compact failed: {exc}"), sess=phase)
+
+
+def compact_before_reap(it: dict, key: tuple[str, str], worker: dict,
+                        now: float) -> bool:
+    """Compact a session the auto compact covers instead of reaping it, so
+    the reap takes a compacted session on a later pass. True when the compact
+    was opened. Caller holds LOCK."""
+    if not store.auto()["compact"] or compact_due(it, key[1], worker, now) is None:
+        return False
+    start_compact(it, key[1], "before the worker is reaped")
+    return True
+
+
+def auto_compact() -> None:
+    """Compact the unapproved finalize sessions that are about to lose their
+    cache or their worker, so a later comment resumes on the summary rather
+    than re-reading the whole context cold. One compact per real turn: the
+    compact's own landing does not arm another."""
+    now = time.time()
+    launched = 0
+    with store.LOCK:
+        if not store.auto()["compact"]:
+            return
+        for it in list(store.STATE["items"]):
+            phase = it["phase"]
+            left = compact_due(it, phase, store.PROCS.get((it["id"], phase)), now)
+            if left is None or left > config.COMPACT_MARGIN:
+                continue
+            start_compact(it, phase, f"cache expires in {max(0, int(left // 60))}m")
+            launched += 1
+    if launched:
         store.bump()
 
 
@@ -1695,7 +1770,7 @@ def idle_loop() -> None:
         time.sleep(config.IDLE_POLL)
         if store.SHUTTING_DOWN or store.RELOADING:
             continue
-        for step in (reap_idle, expire_holds):
+        for step in (auto_compact, reap_idle, expire_holds):
             try:
                 step()
             except Exception as exc:

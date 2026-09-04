@@ -33,6 +33,11 @@ MODEL_IDS = {"opus": os.environ.get("CONSOLE_OPUS_MODEL", "claude-opus-5"),
 # no setting: it is the fable read.
 PIPELINE_DEFAULTS = {"create": "opus", "refine": "opus"}
 FINALIZE_MODEL = "fable"
+# The console's automatic moves, off until the user turns them on. `finalize`
+# lets a wave item hand itself into the finalize stage; `compact` compacts an
+# unapproved finalize session before its cache goes cold or its worker is
+# reaped.
+AUTO_DEFAULTS = {"finalize": False, "compact": False}
 # What a claude stage runs at when its chain names no effort; it overrides
 # the per-model default in the user's settings.
 CLAUDE_EFFORT = os.environ.get("CONSOLE_CLAUDE_EFFORT", "high")
@@ -107,6 +112,10 @@ STAGGER_TIMEOUT = 120  # seconds to wait for the first worker's first API respon
 STEER_RACE = 5
 IDLE_TTL = 3600
 IDLE_POLL = 60
+# The prompt-cache TTL, counted from a session's last landing.
+CACHE_TTL = 3600
+# How close to the cache expiry, or the idle reap, the auto compact fires.
+COMPACT_MARGIN = 180
 # How long a handoff held for a background task waits. A subagent survey takes
 # minutes; past this the task is treated as one that never reports, and the
 # stage lands with no report for the user to rule on.

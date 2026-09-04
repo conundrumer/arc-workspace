@@ -136,6 +136,7 @@ class Handler(BaseHTTPRequestHandler):
                         "night": overnight.night_view(),
                         "cli": {"addDir": str(config.REF_DIR)},
                         "pipeline": dict(store.pipeline()),
+                        "auto": dict(store.auto()),
                         "models": list(config.MODEL_IDS),
                         "committer": dict(store.COMMITTER),
                         "debriefed": ledger.debriefed(),
@@ -182,6 +183,8 @@ class Handler(BaseHTTPRequestHandler):
                                    body.get("chain"))
         elif route == "/api/pipeline":
             res = actions.act_pipeline(body)
+        elif route == "/api/auto":
+            res = actions.act_auto(body)
         elif route == "/api/comment":
             res = actions.act_comment(body.get("id", ""), body.get("text", ""),
                                       body.get("sess"))

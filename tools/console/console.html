@@ -877,7 +877,7 @@ function Usage({usage}){
 
 function Topbar({view, setView, wave, items, progress, usage, night, nightOpen, toggleNight,
                  committer, commitOpen, toggleCommit, onCommit, waveCtl,
-                 pipeline, models, onPipeline}){
+                 pipeline, models, onPipeline, auto, onAuto}){
   const tally={};
   items.forEach(it=>tally[it.state]=(tally[it.state]||0)+1);
   const gate = (night||{}).gate;
@@ -910,6 +910,14 @@ function Topbar({view, setView, wave, items, progress, usage, night, nightOpen, 
           onChange=${e=>onPipeline(name, e.target.value)}>
           ${models.map(m=>html`<option key=${m} value=${m}>${m}</option>`)}
         </select></label>`)}
+    </span>
+    <span class="wavectl">
+      <label title="a landing whose next stage is finalize hands on by itself">
+        <input type="checkbox" checked=${!!auto.finalize}
+          onChange=${e=>onAuto("finalize", e.target.checked)}/>auto finalize</label>
+      <label title="compact an unapproved finalize session before its cache goes cold or its worker is reaped">
+        <input type="checkbox" checked=${!!auto.compact}
+          onChange=${e=>onAuto("compact", e.target.checked)}/>auto compact</label>
     </span>
     <span class="wavectl" title="start the next wave">wave
       <input type="number" min="1" max="20" aria-label="wave size"
@@ -1211,7 +1219,8 @@ function CodePane({jumpKey, fname, lines, buttons, pane}){
 /* ---------- app ---------- */
 function App(){
   const [snap,setSnap]=useState({seq:0, wave:0, items:[], usage:[], progress:null,
-                                 cli:{}, night:{}, committer:{}, pipeline:{}, models:[]});
+                                 cli:{}, night:{}, committer:{}, pipeline:{}, models:[],
+                                 auto:{}});
   const [selId,setSelId]=useState(null);
   const [view,setViewState]=useState(()=>localStorage.getItem("view")===FINAL?FINAL:"wave");
   const [backlog,setBacklog]=useState([]);
@@ -1246,7 +1255,7 @@ function App(){
   const live=useRef({});        // what the async handlers read
 
   const bump=useCallback(()=>setCacheVer(v=>v+1),[]);
-  const {items, cli, night, committer, pipeline, models, usage, progress, wave} = snap;
+  const {items, cli, night, committer, pipeline, models, auto, usage, progress, wave} = snap;
 
   /* ---- fetches ---- */
   const ensureTask=useCallback(id=>{
@@ -1469,6 +1478,10 @@ function App(){
     const r=await post("/api/pipeline",{[name]:word});
     if(r.ok) toast(name+" runs "+word+" from the next wave");
   },[]);
+  const onAuto=useCallback(async(name, on)=>{
+    const r=await post("/api/auto",{[name]:on});
+    if(r.ok) toast("auto "+name+(on?" on":" off"));
+  },[]);
 
   const onDismiss=useCallback(async id=>{
     if(!confirm("Dismiss "+id+"? A ledger line records that it needs no finalize pass.")) return;
@@ -1489,7 +1502,8 @@ function App(){
     if(on){
       const n=live.current.night||{};
       const ok=confirm("Autopilot admits tasks from the queue: up to "
-        +(n.target??6)+" items in flight, create → refine, "
+        +(n.target??6)+" items in flight, create → refine"
+        +((live.current.auto||{}).finalize?" → finalize":"")+", "
         +"within ~30s of the pacer opening. Start?");
       if(!ok){ bump(); return; }   // the checkbox mirrors the server, so redraw it
     }
@@ -1497,7 +1511,7 @@ function App(){
   },[postNight, bump]);
 
   /* ---- what the async handlers read ---- */
-  live.current = {items, selId, selItem, detailId, tab, draft, canSend, view,
+  live.current = {items, selId, selItem, detailId, tab, draft, canSend, view, auto,
                   railOrder, curOrder, night, waveK, waveOrder, waveBusy};
 
   /* ---- long poll ---- */
@@ -1513,7 +1527,7 @@ function App(){
           setSnap({seq:d.seq, wave:d.wave, items:d.items, usage:d.usage||[],
                    progress: d.total ? {solved:d.solved, total:d.total} : null,
                    cli:d.cli||{}, night:d.night||{}, committer:d.committer||{},
-                   pipeline:d.pipeline||{}, models:d.models||[]});
+                   pipeline:d.pipeline||{}, models:d.models||[], auto:d.auto||{}});
           const cm=d.committer||{};
           if(committerWas && !cm.running && cm.note) toast(cm.note);
           committerWas=!!cm.running;
@@ -1700,6 +1714,7 @@ function App(){
       toggleNight=${()=>setNightOpen(o=>{ localStorage.setItem("nightOpen", o?"":"1"); return !o; })}
       toggleCommit=${()=>setCommitOpen(o=>{ localStorage.setItem("commitOpen", o?"":"1"); return !o; })}
       pipeline=${pipeline} models=${models} onPipeline=${onPipeline}
+      auto=${auto} onAuto=${onAuto}
       waveCtl=${{k:waveK, setK:setWaveK, order:waveOrder, setOrder:setWaveOrder,
                  busy:waveBusy, start:startWave}}/>
     <${NightPanel} night=${night} open=${nightOpen} onToggle=${onNightToggle}

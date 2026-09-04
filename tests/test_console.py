@@ -1041,6 +1041,120 @@ def test_a_pipeline_setting_names_a_known_model(srv):
     assert srv.pipeline() == {"create": "opus", "refine": "opus"}
 
 
+# ---------- the automatic moves ----------
+
+def test_auto_finalize_lifts_the_stop_before_finalize(srv):
+    srv.start_wave(1)
+    it = srv.find("t00")
+    assert not srv.auto_advances(it, "refine")
+    assert srv.act_auto({"finalize": True}) == {"ok": True}
+    # read at landing time, so an item already in flight hands on too
+    assert srv.auto_advances(it, "refine")
+    assert it["auto_stop"] == "finalize"
+    # the setting outlives the process
+    srv.STATE.update(json.loads(srv.STATE_FILE.read_text()))
+    assert srv.auto() == {"finalize": True, "compact": False}
+
+
+def test_auto_finalize_leaves_a_stop_before_another_stage(srv):
+    srv.act_auto({"finalize": True})
+    srv.start_wave(1, chain=[{"name": "create"}, {"name": "refine"}])
+    it = srv.find("t00")
+    assert it["auto_stop"] == "refine"
+    assert not srv.auto_advances(it, "create")
+
+
+def finalize_item(srv, item_id="a", state=None, idle_for=0, **kw):
+    """An unapproved finalize session whose worker has sat idle `idle_for`
+    seconds, its cache aging as long."""
+    it = item(srv, item_id, state or srv.NEEDS_REVIEW, chain=srv.default_chain(),
+              phase="finalize",
+              sessions={"create": "cs", "refine": "rs", "finalize": "fs"},
+              landed=["create", "refine", "finalize"],
+              lastActive={"create": None, "refine": None,
+                          "finalize": int((time.time() - idle_for) * 1000)}, **kw)
+    w = worker(srv, it, phase="finalize")
+    w["idle_since"] = time.time() - idle_for
+    return it
+
+
+def test_auto_compact_fires_within_the_margin(srv, monkeypatch):
+    sent = []
+    monkeypatch.setattr(srv, "launch",
+                        lambda it, msg, phase, **kw: sent.append((msg, phase)))
+    srv.act_auto({"compact": True})
+    early = finalize_item(srv, "a", idle_for=srv.IDLE_TTL - srv.COMPACT_MARGIN - 60)
+    due = finalize_item(srv, "b", idle_for=srv.IDLE_TTL - srv.COMPACT_MARGIN + 1)
+    srv.auto_compact()
+    assert sent == [("/compact", "finalize")]
+    assert "auto_compacted" not in early
+    assert due["auto_compacted"] == {"finalize": True}
+    assert "auto compact" in due["feed"][-1]["text"]
+    # once per real turn: the check does not fire again on the same session
+    srv.auto_compact()
+    assert len(sent) == 1
+
+
+def test_auto_compact_is_off_until_set(srv, monkeypatch):
+    sent = []
+    monkeypatch.setattr(srv, "launch",
+                        lambda it, msg, phase, **kw: sent.append((msg, phase)))
+    finalize_item(srv, "a", idle_for=srv.IDLE_TTL)
+    srv.auto_compact()
+    assert sent == []
+
+
+def test_auto_compact_leaves_settled_and_busy_sessions_alone(srv, monkeypatch):
+    sent = []
+    monkeypatch.setattr(srv, "launch",
+                        lambda it, msg, phase, **kw: sent.append((it["id"], msg)))
+    srv.act_auto({"compact": True})
+    finalize_item(srv, "approved", state=srv.APPROVED, idle_for=srv.IDLE_TTL)
+    finalize_item(srv, "held", idle_for=srv.IDLE_TTL, callout_wait="finalize")
+    running = finalize_item(srv, "running", idle_for=srv.IDLE_TTL)
+    srv.PROCS[("running", "finalize")]["state"] = "running"
+    reaped = finalize_item(srv, "reaped", idle_for=srv.IDLE_TTL)
+    del srv.PROCS[("reaped", "finalize")]
+    refine = item(srv, "refine", srv.NEEDS_REVIEW, chain=srv.default_chain())
+    worker(srv, refine)["idle_since"] = time.time() - srv.IDLE_TTL
+    srv.auto_compact()
+    assert sent == []
+    assert all("auto_compacted" not in it for it in (running, reaped, refine))
+
+
+def test_the_idle_reap_compacts_a_covered_session_first(srv, monkeypatch):
+    sent = []
+    monkeypatch.setattr(srv, "launch",
+                        lambda it, msg, phase, **kw: sent.append((msg, phase)))
+    reaped = []
+    monkeypatch.setattr(srv, "queue_reap", reaped.append)
+    srv.act_auto({"compact": True})
+    it = finalize_item(srv, "a", idle_for=srv.IDLE_TTL + 1)
+    srv.reap_idle()
+    assert sent == [("/compact", "finalize")] and reaped == []
+    assert ("a", "finalize") in srv.PROCS
+    assert "before the worker is reaped" in it["feed"][-1]["text"]
+    # compacted, the session is the reap's on the next pass
+    srv.reap_idle()
+    assert len(sent) == 1 and [w["item_id"] for w in reaped] == ["a"]
+
+
+def test_the_night_cap_compacts_a_covered_session_first(srv, monkeypatch):
+    sent = []
+    monkeypatch.setattr(srv, "launch",
+                        lambda it, msg, phase, **kw: sent.append((it["id"], msg)))
+    reaped = []
+    monkeypatch.setattr(srv, "queue_reap", reaped.append)
+    monkeypatch.setattr(srv, "NIGHT_WORKER_CAP", 1)
+    srv.act_auto({"compact": True})
+    finalize_item(srv, "old", idle_for=300, night=True)
+    night_workers(srv, [100])
+    srv.reap_idle()
+    assert sent == [("old", "/compact")] and reaped == []
+    srv.reap_idle()
+    assert len(sent) == 1 and [w["item_id"] for w in reaped] == ["old"]
+
+
 def test_a_slash_turn_cut_by_quota_is_not_resumed(srv):
     srv.night()["on"] = True
     it = item(srv, "a", srv.NEEDS_REVIEW)
@@ -1048,6 +1162,21 @@ def test_a_slash_turn_cut_by_quota_is_not_resumed(srv):
     srv.quota_cut(it, "refine", False)
     assert "resume_phase" not in it and "resume_at" not in it
     assert it["feed"][-1]["text"] == "usage limit"
+
+
+def test_a_real_landing_arms_the_auto_compact_again(srv, monkeypatch):
+    monkeypatch.setattr(srv, "launch", lambda *a, **kw: None)
+    srv.act_auto({"compact": True})
+    it = finalize_item(srv, "a", idle_for=srv.IDLE_TTL)
+    srv.auto_compact()
+    assert it["auto_compacted"] == {"finalize": True}
+    w = srv.PROCS[("a", "finalize")]
+    w["slash"] = True
+    srv.finish_turn(it, {"result": "compacted"}, None, time.time(), "finalize", False)
+    assert it["auto_compacted"] == {"finalize": True}
+    w["slash"] = False
+    srv.finish_turn(it, {"result": "a reply"}, None, time.time(), "finalize", False)
+    assert it["auto_compacted"] == {}
 
 
 def test_a_wave_refuses_a_malformed_chain(srv):
