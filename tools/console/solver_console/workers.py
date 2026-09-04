@@ -677,6 +677,9 @@ def handle_event(worker: dict, ev: dict, first_response) -> None:
         elif kind == "system" and ev.get("subtype") == "compact_boundary":
             if not it:
                 return
+            # a compact from any ask counts as the one the auto compact owes
+            # this stretch of the session
+            it.setdefault("auto_compacted", {})[phase] = True
             meta = ev.get("compact_metadata") or {}
             store.say(it, store.event(
                 "compacted · pre {pre:,} · post {post:,} · dropped {drop:,}".format(
@@ -1732,7 +1735,7 @@ def compact_due(it: dict, phase: str, worker: dict | None, now: float) -> float 
     """Seconds until the session's cache goes cold or the idle reap takes its
     worker, whichever comes first; None when the session is not one the auto
     compact covers: it must be an unapproved finalize session with an idle
-    worker, nothing pending, and no auto compact since its last real turn."""
+    worker, nothing pending, and no compact since its last real turn."""
     if phase != "finalize" or it["state"] != store.NEEDS_REVIEW \
             or not it["sessions"].get(phase) or store.active(it) \
             or it.get("auto_compacted", {}).get(phase):
@@ -1772,7 +1775,8 @@ def auto_compact() -> None:
     """Compact the unapproved finalize sessions that are about to lose their
     cache or their worker, so a later comment resumes on the summary rather
     than re-reading the whole context cold. One compact per real turn: the
-    compact's own landing does not arm another."""
+    compact's own landing does not arm another, and neither does a compact
+    the user asked for."""
     now = time.time()
     launched = 0
     with store.LOCK:

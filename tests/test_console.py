@@ -1179,6 +1179,21 @@ def test_a_real_landing_arms_the_auto_compact_again(srv, monkeypatch):
     assert it["auto_compacted"] == {}
 
 
+def test_a_compact_the_user_asked_for_disarms_the_auto_compact(srv, monkeypatch):
+    launched = []
+    monkeypatch.setattr(srv, "launch", lambda it, msg, *a, **kw: launched.append(msg))
+    srv.act_auto({"compact": True})
+    it = finalize_item(srv, "a")
+    w = srv.PROCS[("a", "finalize")]
+    srv.handle_event(w, {"type": "system", "subtype": "compact_boundary",
+                         "compact_metadata": {"pre_tokens": 180000, "post_tokens": 12000,
+                                              "cumulative_dropped_tokens": 168000}}, None)
+    assert it["auto_compacted"] == {"finalize": True}
+    w["idle_since"] = time.time() - srv.IDLE_TTL
+    srv.auto_compact()
+    assert launched == []
+
+
 def test_a_wave_refuses_a_malformed_chain(srv):
     assert "non-empty" in srv.start_wave(1, chain=[])["error"]
     assert "unknown backend" in srv.start_wave(1, chain=[
