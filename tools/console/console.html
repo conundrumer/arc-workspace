@@ -407,6 +407,8 @@ span.cw { border-radius:2px; padding:0 .22em; margin:0 -.22em; }
 /* UI: preact + hooks + htm, vendored from htm@3.1.1/preact/standalone.module.js */
 import { html, render, useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback }
   from "/vendor/htm-preact-standalone.module.js";
+import { esc, pad2, fmtDur, md } from "/ui/prose.js";
+import { cmify, diffHtml } from "/ui/diff.js";
 
 const ARC = ["#000000","#0074D9","#FF4136","#2ECC40","#FFDC00","#AAAAAA","#F012BE","#FF851B","#7FDBFF","#870C25"];
 const CHIPCLS = {"needs-review":"review","commented":"commented","running":"running","queued":"queued","approved":"approved","committed":"committed"};
@@ -439,105 +441,8 @@ const stateRank = it => { const i=STATES.indexOf(it.state); return i<0?STATES.le
 const NO_ITEM = {feed:[], files:[]};   // stands in until /api/item lands
 
 /* ---------- helpers ---------- */
-const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-const pad2 = n => String(n).padStart(2,"0");
-const fmtDur = s => { s=Math.max(0,Math.floor(s)); const h=Math.floor(s/3600), m=Math.floor((s%3600)/60);
-  return h ? h+"h "+m+"m" : m ? m+"m "+String(s%60).padStart(2,"0")+"s" : s+"s"; };
 const draftKey = id => "draft:"+id;
 const sleep = ms => new Promise(r=>setTimeout(r,ms));
-
-/* ARC grid and color rendering. A cell run is ≥3 single digit-or-dot cells
-   separated by 1-2 spaces, or ≥3 contiguous digits; a fenced block with two
-   such lines is a grid, and every digit in its runs gets its palette color.
-   An inline code span takes the spaced form only, so a bare number stays
-   plain; a span that is exactly one digit is a color swatch, as is the digit
-   of "color N" in prose. */
-const RUN_SP = /[0-9.](?: {1,2}[0-9.]){2,}/g;
-/* the contiguous form stands alone, so a task id or path digit is no cell */
-const RUN_ANY = /(?:[0-9.](?: {1,2}[0-9.]){2,})|(?<![\w./])[0-9]{3,}(?![\w./])/g;
-const COLOR_RE = /\b(colou?r )([0-9])\b/g;
-/* a grid citation: pair, side, then comma-separated places — points and
-   row/col ranges. Binds only when the places directly follow the side token. */
-const PLACE = String.raw`\(\s*\d+\s*,\s*\d+\s*\)|(?:rows?|cols?|columns?) ?\d+(?: ?[–-] ?\d+)?`;
-const CITE = new RegExp(String.raw`\b(train|test) ?(\d) (input|output) ((?:${PLACE})(?:,\s*(?:${PLACE}))*)`, "g");
-const hasDigit = s => /[0-9]/.test(s);
-function paintRuns(text, re){
-  re.lastIndex = 0;
-  let out = "", i = 0;
-  for(const m of text.matchAll(re)){
-    if(!hasDigit(m[0])) continue;
-    out += esc(text.slice(i, m.index))
-         + m[0].replace(/./g, c => c>="0"&&c<="9" ? `<span class="cw cw${c}">${c}</span>` : esc(c));
-    i = m.index + m[0].length;
-  }
-  return i ? out + esc(text.slice(i)) : null;
-}
-function colorized(html){
-  const t = document.createElement("template");
-  t.innerHTML = html;
-  for(const code of t.content.querySelectorAll("code")){
-    const text = code.textContent;
-    if(code.closest("pre")){
-      const rows = text.split("\n").filter(l => (l.match(RUN_ANY)||[]).some(hasDigit)).length;
-      if(rows < 2) continue;
-      const painted = paintRuns(text, RUN_ANY);
-      if(painted !== null) code.innerHTML = painted;
-    } else if(/^[0-9]$/.test(text)){
-      code.classList.add("cw", "cw"+text);
-    } else {
-      const painted = paintRuns(text, RUN_SP);
-      if(painted !== null) code.innerHTML = painted;
-    }
-  }
-  const tw = document.createTreeWalker(t.content, NodeFilter.SHOW_TEXT);
-  const hits = [];
-  for(let n; (n = tw.nextNode()); ){
-    if(!n.parentElement || n.parentElement.closest("code,pre")) continue;
-    const rep = proseHTML(n.nodeValue);
-    if(rep !== null) hits.push([n, rep]);
-  }
-  for(const [n, rep] of hits){
-    const frag = document.createElement("template");
-    frag.innerHTML = rep;
-    n.replaceWith(frag.content);
-  }
-  return t.innerHTML;
-}
-function swatched(text){
-  COLOR_RE.lastIndex = 0;
-  if(!COLOR_RE.test(text)) return null;
-  return esc(text).replace(COLOR_RE, (_, w, d) => `${w}<span class="cw cw${d}">${d}</span>`);
-}
-/* citation chips and color swatches in one prose text node; null when neither */
-function proseHTML(text){
-  CITE.lastIndex = 0;
-  let out = "", i = 0;
-  for(const m of text.matchAll(CITE)){
-    const pre = text.slice(i, m.index);
-    out += swatched(pre) ?? esc(pre);
-    out += `<span class="cite" data-pair="${m[1]+m[2]}" data-side="${m[3]}"`
-         + ` data-places="${esc(m[4])}">${esc(m[0])}</span>`;
-    i = m.index + m[0].length;
-  }
-  const tail = text.slice(i);
-  const sw = swatched(tail);
-  return i === 0 ? sw : out + (sw ?? esc(tail));
-}
-
-/* markdown is re-rendered on every tick otherwise; the text is the whole key */
-const mdCache = new Map();
-const mdOne = (typeof marked!=="undefined" && typeof DOMPurify!=="undefined")
-  ? (t => colorized(DOMPurify.sanitize(marked.parse(t, {breaks:true}))))
-  : (t => "<p>"+esc(t).replace(/\n/g,"<br>")+"</p>");
-function md(text){
-  let out = mdCache.get(text);
-  if(out===undefined){
-    out = mdOne(text);
-    if(mdCache.size>600) mdCache.clear();
-    mdCache.set(text, out);
-  }
-  return out;
-}
 
 /* the item's stage chain: every per-session readout is keyed by stage name */
 const stagesOf = it => it.chain||[];
@@ -639,72 +544,6 @@ async function post(route, body){
     if(j.error) toast(j.error);
     return j;
   } catch(e){ toast("console server unreachable"); return {error:String(e)}; }
-}
-
-/* ---------- code pane markup ----------
-   The file with this turn's edits marked, removed lines included. Every line
-   renders as an .L block whose CSS counter numbers it; removed lines are
-   skipped so the gutter tracks the file on disk. Line diff vs the turn-start
-   snapshot; replaced hunks get word-level marks. */
-const cmline = l => esc(l).replace(/(\/\/.*)/,'<span class="cm">$1</span>');
-const cmify = s => splitLines(s).map(l=>'<span class="L">'+(cmline(l)||" ")+"</span>").join("");
-function splitLines(v){ const ls=v.split("\n"); if(ls[ls.length-1]==="") ls.pop(); return ls; }
-function markBlock(v, cls){
-  return splitLines(v).map(l=>`<span class="L ${cls}">`+(esc(l)||" ")+"</span>").join("");
-}
-/* One side of a replaced hunk: its own lines, with the words that differ from
-   the other side marked. `side` picks which of the two the caller wants. */
-function wordSide(rem, add, side){
-  const [cls, markCls] = side==="removed" ? ["del","delw"] : ["add","addw"];
-  const lines=[[]];
-  for(const p of Diff.diffWordsWithSpace(rem, add)){
-    if(p.removed && side!=="removed") continue;
-    if(p.added && side!=="added") continue;
-    const marked = side==="removed" ? !!p.removed : !!p.added;
-    p.value.split("\n").forEach((s,si)=>{
-      if(si>0) lines.push([]);
-      if(s) lines[lines.length-1].push({s, marked});
-    });
-  }
-  if(lines.length && !lines[lines.length-1].length) lines.pop();
-  return lines.map(segs=>{
-    // whitespace between two changed runs joins them, so a highlight covering
-    // several words reads as one and does not break at the spaces
-    for(let i=1;i<segs.length-1;i++)
-      if(!segs[i].marked && !segs[i].s.trim() && segs[i-1].marked && segs[i+1].marked)
-        segs[i].marked=true;
-    let body="";
-    for(let i=0;i<segs.length;){
-      let j=i;
-      while(j<segs.length && segs[j].marked===segs[i].marked) j++;
-      const text=esc(segs.slice(i,j).map(g=>g.s).join(""));
-      body += segs[i].marked ? `<mark class="${markCls}">`+text+"</mark>" : text;
-      i=j;
-    }
-    return `<span class="L ${cls}">`+(body||" ")+"</span>";
-  }).join("");
-}
-function diffHtml(before, after){
-  const parts=Diff.diffLines(before, after);
-  let html="", added=0, removed=0;
-  for(let k=0;k<parts.length;k++){
-    const p=parts[k];
-    if(p.removed){
-      const nxt=parts[k+1];
-      removed+=splitLines(p.value).length;
-      if(nxt && nxt.added){
-        html+=wordSide(p.value, nxt.value, "removed")+wordSide(p.value, nxt.value, "added");
-        added+=splitLines(nxt.value).length; k++;
-      } else {
-        html+=markBlock(p.value,"del");
-      }
-    } else if(p.added){
-      html+=markBlock(p.value,"add"); added+=splitLines(p.value).length;
-    } else {
-      html+=cmify(p.value);
-    }
-  }
-  return {html, added, removed};
 }
 
 /* ---------- small pieces ---------- */

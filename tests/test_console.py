@@ -8,6 +8,7 @@ import importlib.util
 import json
 import os
 import queue
+import re
 import subprocess
 import sys
 import threading
@@ -4390,3 +4391,41 @@ def test_committer_entries_read_what_the_session_says_and_runs(srv):
     # a message's blocks arrive one event at a time, each repeating the message
     assert len({k for k, _ in keys_entries}) == 2
     assert srv.committer_entries({"type": "result", "result": "done"}) == []
+
+
+# ---------- the pages the server serves ----------
+
+def get(srv, path):
+    """One GET through the handler, without a socket: the reply it would send."""
+    h = srv.Handler.__new__(srv.Handler)
+    h.path = path
+    out = {}
+    h.reply = lambda obj, status=200, ctype="application/json": \
+        out.update(body=obj, status=status, ctype=ctype)
+    h.do_GET()
+    return out
+
+
+UI_IMPORT = re.compile(r'from "(/ui/[^"]+)"')
+
+
+def test_the_page_and_every_module_it_imports_are_served(srv):
+    page = get(srv, "/")
+    assert (page["status"], page["ctype"]) == (200, "text/html")
+    todo = UI_IMPORT.findall(page["body"].decode())
+    seen = set()
+    while todo:
+        path = todo.pop()
+        if path in seen:
+            continue
+        seen.add(path)
+        r = get(srv, path)
+        assert (r["status"], r["ctype"]) == (200, "application/javascript"), path
+        todo += UI_IMPORT.findall(r["body"].decode())
+    assert "/ui/prose.js" in seen
+
+
+def test_the_ui_route_serves_only_modules_under_ui(srv):
+    assert get(srv, "/ui/../server.py")["status"] == 404
+    assert get(srv, "/ui/missing.js")["status"] == 404
+    assert get(srv, "/ui/")["status"] == 404

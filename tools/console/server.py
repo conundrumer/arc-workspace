@@ -123,6 +123,12 @@ class Handler(BaseHTTPRequestHandler):
             if not p.exists():
                 return self.reply({"error": "not found"}, 404)
             self.reply(p.read_bytes(), ctype="application/javascript")
+        elif url.path.startswith("/ui/"):
+            ui = (config.HERE / "ui").resolve()
+            p = (ui / url.path[len("/ui/"):]).resolve()
+            if not (p.is_relative_to(ui) and p.suffix == ".js" and p.is_file()):
+                return self.reply({"error": "not found"}, 404)
+            self.reply(p.read_bytes(), ctype="application/javascript")
         elif url.path == "/api/state":
             q = parse_qs(url.query)
             since = int(q.get("since", ["0"])[0])
