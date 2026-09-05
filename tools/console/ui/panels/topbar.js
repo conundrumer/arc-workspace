@@ -58,7 +58,7 @@ export function Topbar({view, setView, wave, items, progress, usage, night, nigh
     </div>
     <div class="line controls">
       <button id="nightbtn" class=${nightCls} onClick=${toggleNight}>${nightTxt}</button>
-      <span class="wavectl">
+      <span class="ctl">
         <label title="a landing whose next stage is finalize hands on by itself">
           <input type="checkbox" checked=${!!auto.finalize}
             onChange=${e=>onAuto("finalize", e.target.checked)}/>auto finalize</label>
@@ -73,7 +73,7 @@ export function Topbar({view, setView, wave, items, progress, usage, night, nigh
         hidden=${!committer.running && !(committer.feed||[]).length}
         title="what the committer session says and runs" onClick=${toggleCommit}>
         ${committer.running?"committing…":"committer"}</button>
-      <span class="wavectl push" title="start the next wave">wave
+      <span class="ctl push" title="start the next wave">wave
         <input type="number" min="1" max="20" aria-label="wave size"
           value=${waveCtl.k} onInput=${e=>waveCtl.setK(e.target.value)}/>
         <select aria-label="wave order" value=${waveCtl.order} onChange=${e=>waveCtl.setOrder(e.target.value)}>

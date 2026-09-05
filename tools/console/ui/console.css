@@ -189,14 +189,14 @@ span.cw { border-radius:2px; padding:0 .22em; margin:0 -.22em; }
 #usage .uok { color:var(--ttl-ok); opacity:.75; }
 #usage .uwarn { color:var(--ttl-warn); }
 #usage .uhot { color:var(--ttl-hot); }
-#topbar .wavectl { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
-#topbar .wavectl input, #topbar .wavectl select {
+#topbar .ctl { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
+#topbar .ctl input, #topbar .ctl select {
   padding:3px 6px; border:1px solid var(--border); border-radius:5px;
   background:var(--bg); color:var(--ink); font-family:ui-monospace,Menlo,monospace; font-size:12px;
 }
-#topbar .wavectl input { width:44px; }
-#topbar .wavectl input[type=checkbox] { width:auto; }
-#topbar .wavectl label { display:inline-flex; align-items:center; gap:4px; cursor:pointer; }
+#topbar .ctl input { width:44px; }
+#topbar .ctl input[type=checkbox] { width:auto; }
+#topbar .ctl label { display:inline-flex; align-items:center; gap:4px; cursor:pointer; }
 #nightbtn.on { border-color:var(--st-approved); color:var(--st-approved); }
 #nightbtn.held { border-color:var(--st-review);   color:var(--st-review); }
 #commitbtn.on { border-color:var(--st-commented); color:var(--st-commented); }
