@@ -4435,6 +4435,58 @@ def test_the_ui_route_serves_only_modules_under_ui(srv):
     assert get(srv, "/ui/")["status"] == 404
 
 
+CONSOLE_HTML = ROOT / "tools" / "console" / "console.html"
+CSS_SECTION = re.compile(r"/\* -{10} (.+?) -{10} \*/")
+
+
+def css_rules(css: str) -> list[tuple[str, str]]:
+    """Each (section, selector) in the page's stylesheet, the selectors inside
+    an @media block included; comments, at-rule preambles and rule bodies are
+    left out."""
+    css = re.sub(r"/\*(?!\s-{10} ).*?\*/", "", css, flags=re.S)
+    out, section, i = [], "", 0
+    while i < len(css):
+        if css[i].isspace():
+            i += 1
+            continue
+        if css.startswith("/*", i):
+            j = css.index("*/", i) + 2
+            section = CSS_SECTION.match(css[i:j]).group(1)
+            i = j
+            continue
+        k = css.index("{", i)
+        head = css[i:k].strip()
+        if head.startswith("@media"):
+            i = k + 1
+            continue
+        depth, j = 0, k
+        while True:
+            depth += {"{": 1, "}": -1}.get(css[j], 0)
+            j += 1
+            if depth == 0:
+                break
+        if not head.startswith("@"):
+            out += [(section, sel.strip()) for sel in head.split(",")]
+        i = j
+        if css[i:].lstrip().startswith("}"):   # the close of an @media block
+            i = css.index("}", i) + 1
+    return out
+
+
+def test_a_component_section_of_the_stylesheet_scopes_every_rule_under_an_id():
+    """A bare class selector matches wherever the class name recurs, so one
+    component's row styling reached another component's rows. Outside the
+    shared section, every selector begins at an element id."""
+    html = CONSOLE_HTML.read_text()
+    css = html[html.index("<style>") + len("<style>"):html.index("</style>")]
+    rules = css_rules(css)
+    runs = [s for i, (s, _) in enumerate(rules) if i == 0 or rules[i - 1][0] != s]
+    assert runs[0] == "shared" and runs.count("shared") == 1, runs
+    loose = [(section, sel) for section, sel in rules
+             if section != "shared" and not re.match(r"(body\.[\w-]+ )?#", sel)]
+    assert loose == [], loose
+
+
 # ---------- the unfinalized source ----------
 
 def test_the_night_source_is_queue_until_set(srv):
