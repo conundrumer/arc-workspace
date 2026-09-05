@@ -7,7 +7,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import config, store, waves, workers
+from . import config, process, store, waves
 
 
 def turns_in_flight() -> bool:
@@ -67,7 +67,7 @@ def reload_server() -> str:
                 # The flag is the standing claim on the exec: an action that
                 # dropped it in the meantime keeps its own work off the cut.
                 if store.RELOADING and not turns_in_flight():
-                    manifest = workers.worker_manifest()
+                    manifest = process.worker_manifest()
                     os.environ[store.WORKER_HANDOFF_ENV] = json.dumps(manifest)
                     store.save()
                     os.execv(sys.executable, [sys.executable] + sys.argv)

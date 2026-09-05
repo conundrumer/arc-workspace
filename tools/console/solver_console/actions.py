@@ -7,7 +7,7 @@ import threading
 import time
 import uuid
 
-from . import config, ledger, overnight, prompts, solvers, store, workers
+from . import config, drain, landing, ledger, overnight, process, prompts, solvers, store, workers
 
 
 def submit_comment(it: dict, text: str, sess: str | None = None) -> None:
@@ -113,7 +113,7 @@ def act_land(it: dict) -> None:
         raise store.Reject("no handoff report yet — send `handoff` first")
     if not it["sessions"].get(phase):
         raise store.Reject("no session yet")
-    workers.ask_callouts(it, phase)
+    landing.ask_callouts(it, phase)
 
 
 def set_session(it: dict, phase: str, session: str) -> None:
@@ -134,7 +134,7 @@ def set_session(it: dict, phase: str, session: str) -> None:
         store.PROCS.pop((it["id"], phase))
         worker["state"] = "dying"
         worker["outbound"].put_nowait(store.STOP)
-        workers.queue_reap(worker)
+        drain.queue_reap(worker)
     it["sessions"][phase] = session
     store.say(it, store.event(f"session replaced by hand — was {old or 'none'}"),
               sess=phase)
@@ -161,7 +161,7 @@ def set_model(it: dict, phase: str, model: str) -> None:
         store.PROCS.pop((it["id"], phase))
         worker["state"] = "dying"
         worker["outbound"].put_nowait(store.STOP)
-        workers.queue_reap(worker)
+        drain.queue_reap(worker)
     store.say(it, store.event(f"model set by hand to {model} — was {old or 'default'}"),
               sess=phase)
 
@@ -190,7 +190,7 @@ def act_drop(it: dict) -> None:
     """Forget an item and its feed. The solver file on disk is left alone."""
     store.require_idle(it)
     for worker in workers.detach_workers(it["id"]):
-        workers.queue_reap(worker)
+        drain.queue_reap(worker)
     store.STATE["items"] = [x for x in store.STATE["items"] if x["id"] != it["id"]]
 
 
@@ -292,7 +292,7 @@ def act_commit() -> dict:
                 it["state"] = store.COMMITTED
                 store.say(it, store.event("committed"))
                 for worker in workers.detach_workers(it["id"]):
-                    workers.queue_reap(worker)
+                    drain.queue_reap(worker)
         chk = subprocess.run(["git", "status", "--porcelain", "--", *config.COMMIT_SCOPE],
                              cwd=config.ROOT, capture_output=True, text=True)
         leftovers = any(not l.startswith("??") for l in chk.stdout.splitlines())
@@ -366,7 +366,7 @@ def committer_entries(ev: dict) -> list[tuple[tuple, dict]]:
             out.append(((mid, "text", block["text"]),
                         {"kind": "worker", "text": block["text"]}))
         elif block.get("type") == "tool_use":
-            label = workers.tool_label(block.get("name", "?"), block.get("input") or {})
+            label = process.tool_label(block.get("name", "?"), block.get("input") or {})
             if label:
                 out.append(((mid, "tool", block.get("id") or label),
                             {"kind": "tool", "text": label}))

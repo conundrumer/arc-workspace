@@ -35,9 +35,11 @@ from solver_console import (  # noqa: E402
     actions,
     backlog,
     config,
+    drain,
     ledger,
     overnight,
     pacing,
+    process,
     prompts,
     reload,
     solvers,
@@ -251,18 +253,18 @@ def main() -> None:
         fcntl.flock(_state_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
         sys.exit("another console server owns this state dir — refusing to start")
-    handoff = workers.read_worker_handoff()
+    handoff = process.read_worker_handoff()
     store.load()
     ledger.seed_entries()
-    workers.adopt_workers(handoff)
-    workers.expire_holds(force=True)
+    process.adopt_workers(handoff)
+    drain.expire_holds(force=True)
     store.save()
     waves.resume_queued_wave()
     threading.Thread(target=reload.watch_reload, daemon=True).start()
     threading.Thread(target=pacing.usage_loop, daemon=True).start()
     threading.Thread(target=workers.watch_caps, daemon=True).start()
     threading.Thread(target=overnight.night_loop, daemon=True).start()
-    threading.Thread(target=workers.idle_loop, daemon=True).start()
+    threading.Thread(target=drain.idle_loop, daemon=True).start()
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     stopping = threading.Event()
     def request_stop(signum, frame):

@@ -5,7 +5,7 @@ import subprocess
 import threading
 import time
 
-from . import config, prompts, store, workers
+from . import config, drain, prompts, store, workers
 
 WAVE_DEBOUNCE = 5  # seconds; a fumbled double-click, not a deliberate second wave
 LAST_WAVE_AT = 0.0
@@ -29,7 +29,7 @@ def drop_committed() -> None:
     """Forget the committed items of the round before, with their workers."""
     for old in [it for it in store.STATE["items"] if it["state"] == store.COMMITTED]:
         for worker in workers.detach_workers(old["id"]):
-            workers.queue_reap(worker)
+            drain.queue_reap(worker)
     store.STATE["items"] = [it for it in store.STATE["items"] if it["state"] != store.COMMITTED]
 
 
