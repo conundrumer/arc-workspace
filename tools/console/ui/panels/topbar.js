@@ -1,5 +1,6 @@
-/* The top bar: the lens switch, the wave counts, the usage windows, and
-   the controls for the next wave. */
+/* The top bar: the readouts on the left (the lens switch, the wave counts,
+   the autopilot tally, the usage windows), the controls on the right (the
+   automatic-move toggles, the next wave, the commit). */
 import { html } from "/vendor/htm-preact-standalone.module.js";
 import { useClock } from "/ui/clock.js";
 import { FINAL, STATES } from "/ui/item.js";
@@ -40,6 +41,7 @@ export function Topbar({view, setView, wave, items, progress, usage, night, nigh
       +" · "+(gate&&gate.open?"open":"held")
     : "autopilot";
   return html`<div id="topbar">
+    <span class="readouts">
     <span class="wordmark"><b>arc</b> · solver console</span>
     <span class="viewtog">
       <button class=${view!==FINAL?"on":""} onClick=${()=>setView("wave")}>wave</button>
@@ -58,6 +60,8 @@ export function Topbar({view, setView, wave, items, progress, usage, night, nigh
       ${committer.running?"committing…":"committer"}</button>
     <button id="nightbtn" class=${nightCls} onClick=${toggleNight}>${nightTxt}</button>
     <${Usage} usage=${usage}/>
+    </span>
+    <span class="controls">
     <span class="wavectl">
       <label title="a landing whose next stage is finalize hands on by itself">
         <input type="checkbox" checked=${!!auto.finalize}
@@ -81,5 +85,6 @@ export function Topbar({view, setView, wave, items, progress, usage, night, nigh
     ${extra}
     <button class="primary" disabled=${!items.some(it=>it.state==="approved")}
       onClick=${onCommit}>commit approved</button>
+    </span>
   </div>`;
 }
