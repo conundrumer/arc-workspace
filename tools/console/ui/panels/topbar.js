@@ -41,7 +41,7 @@ export function Topbar({view, setView, wave, items, progress, usage, night, nigh
       +" · "+(gate&&gate.open?"open":"held")
     : "autopilot";
   return html`<div id="topbar">
-    <div class="row readouts">
+    <div class="line readouts">
       <span class="wordmark"><b>arc</b> · solver console</span>
       <span class="viewtog">
         <button class=${view!==FINAL?"on":""} onClick=${()=>setView("wave")}>wave</button>
@@ -56,7 +56,7 @@ export function Topbar({view, setView, wave, items, progress, usage, night, nigh
       </span>
       <${Usage} usage=${usage}/>
     </div>
-    <div class="row controls">
+    <div class="line controls">
       <button id="nightbtn" class=${nightCls} onClick=${toggleNight}>${nightTxt}</button>
       <span class="wavectl">
         <label title="a landing whose next stage is finalize hands on by itself">

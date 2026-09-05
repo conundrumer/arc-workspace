@@ -46,10 +46,10 @@ code, pre, .mono { font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, mo
   flex:none; display:flex; flex-direction:column; gap:6px; padding:6px 14px;
   background:var(--panel); border-bottom:1px solid var(--border);
 }
-/* each row keeps its own line; the readouts row's last figure and the controls
-   row's wave controls sit at the right edge, so every control holds its place
+/* each line keeps to itself; the readouts line's last figure and the controls
+   line's wave controls sit at the right edge, so every control holds its place
    under the pointer while a session runs */
-#topbar .row { display:flex; align-items:center; gap:14px; white-space:nowrap; min-height:30px; }
+#topbar .line { display:flex; align-items:center; gap:14px; white-space:nowrap; min-height:30px; }
 #topbar .push { margin-left:auto; }
 #topbar .wordmark { font-family:ui-monospace,Menlo,monospace; font-size:12px; letter-spacing:.08em; }
 #topbar .wordmark b { color:var(--accent); }
