@@ -19,12 +19,10 @@ from dl.paths import PROGRAMS_DIR, REPO_ROOT
 DOCS_DIR = REPO_ROOT / "docs" / "wf-solver"
 LIB_SRC = PROGRAMS_DIR / "lib.dl"
 
-# Reading order: the claim, then its form, then what the corpus made of it.
-# A doc not listed follows, by name.
-ORDER = ("cadence.md", "principles.md", "style.md", "patterns.md", "concepts.md",
-         "shapes.md", "lib-protocol.md")
-# Docs the cadence never reads.
-SKIP = {"backlog.md"}
+# The docs the cadence reads, in reading order: the claim, then its form,
+# then what the corpus made of it.
+DOCS = ("cadence.md", "principles.md", "style.md", "patterns.md", "concepts.md",
+        "shapes.md", "lib-protocol.md")
 # Catalog docs: entries are independent and a session uses few, so the context
 # carries the index and the session reads the entry it needs.
 INDEX = {"patterns.md"}
@@ -139,20 +137,15 @@ def entry_index(text: str, source: str) -> str:
 
 
 def appendix(docs: Path = DOCS_DIR, lib: Path = LIB_SRC) -> str:
-    """Every doc and lib.dl, each under a heading naming its file."""
+    """The docs and lib.dl, each under a heading naming its file."""
     parts: list[str] = []
-    ranked = sorted(docs.glob("*.md"),
-                    key=lambda d: (ORDER.index(d.name) if d.name in ORDER
-                                   else len(ORDER), d.name))
-    for doc in ranked:
-        if doc.name in SKIP:
-            continue
-        rel = f"docs/wf-solver/{doc.name}"
-        if doc.name in INDEX:
-            parts.append(f"\n---\n\n# {rel} — index\n\n"
-                         f"{entry_index(doc.read_text(), rel)}")
+    for name in DOCS:
+        rel = f"docs/wf-solver/{name}"
+        text = (docs / name).read_text()
+        if name in INDEX:
+            parts.append(f"\n---\n\n# {rel} — index\n\n{entry_index(text, rel)}")
         else:
-            parts.append(f"\n---\n\n# {rel}\n\n{doc.read_text()}")
+            parts.append(f"\n---\n\n# {rel}\n\n{text}")
     parts.append("\n---\n\n# programs/lib.dl — signatures\n\n"
                  f"```\n{lib_signatures(lib.read_text())}```\n")
     return "".join(parts)

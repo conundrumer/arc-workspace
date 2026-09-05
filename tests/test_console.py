@@ -18,6 +18,8 @@ from pathlib import Path
 
 import pytest
 
+from dl.context import DOCS
+
 ROOT = Path(__file__).resolve().parents[1]
 SERVER_PY = ROOT / "tools" / "console" / "server.py"
 PACKAGE = "solver_console"
@@ -115,6 +117,8 @@ def srv(tmp_path, monkeypatch):
         d = tmp_path / name.lower()
         d.mkdir()
         monkeypatch.setattr(s, name, d)
+    for name in DOCS:
+        (s.DOCS / name).write_text(f"# {name}\n")
     monkeypatch.setattr(s, "queue_pick",
                         lambda n, order: [(f"t{i:02d}", 10 + i) for i in range(n)])
     s._test_stagger_launch = s.stagger_launch
