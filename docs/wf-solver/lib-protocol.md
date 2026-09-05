@@ -21,7 +21,7 @@ After its callers are migrated, remove the entry's file. If the entry lists no c
 
 ## The order
 
-1. If an operation's encoding needs a banned form, or if a grep for its shape over `programs/solvers/` finds another solver that writes it, apply this protocol to that operation. Write the primitive as plain body relations. When cases share those relations, key them. If the linter would flag the primitive, write it as a proposal comp: a `.comp` named for the primitive, which exists only as the code form of a lib proposal. An extension of a lib comp has no comp form; its local rule remains beside the instance. Run the solver and confirm that the primitive works in context.
+1. Write the primitive as plain body relations. When cases share those relations, key them. If the linter would flag the primitive, write it as a proposal comp: a `.comp` named for the primitive, which exists only as the code form of a lib proposal. An extension of a lib comp has no comp form; its local rule remains beside the instance. Run the solver and confirm that the primitive works in context.
 2. Report the operation: name it, describe it, and show the solver-local version. Then read the entries to find one with the same operation. Match by what an operation does, not by its name. When an entry exists, use that entry's name for the comp. Read a solver's proposal comp with its entry.
     - If no entry exists, write one with its `Survey:` line. Then send the `survey` agent the entry's path, the scope (the whole corpus), and the scratch path (`.scratch/<task_id>/`).
     - If an entry is closed, keep its judgment. Encode the solver without the operation, in the way the entry records.
