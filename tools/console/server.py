@@ -128,9 +128,10 @@ class Handler(BaseHTTPRequestHandler):
         elif url.path.startswith("/ui/"):
             ui = (config.HERE / "ui").resolve()
             p = (ui / url.path[len("/ui/"):]).resolve()
-            if not (p.is_relative_to(ui) and p.suffix == ".js" and p.is_file()):
+            types = {".js": "application/javascript", ".css": "text/css"}
+            if not (p.is_relative_to(ui) and p.suffix in types and p.is_file()):
                 return self.reply({"error": "not found"}, 404)
-            self.reply(p.read_bytes(), ctype="application/javascript")
+            self.reply(p.read_bytes(), ctype=types[p.suffix])
         elif url.path == "/api/state":
             q = parse_qs(url.query)
             since = int(q.get("since", ["0"])[0])

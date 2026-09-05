@@ -1,10 +1,11 @@
-"""The pages and modules the server serves."""
+"""The page, the modules, and the stylesheet the server serves."""
 
 import re
 
 from .conftest import ROOT, get
 
 UI_IMPORT = re.compile(r'(?:from |src=)"(/ui/[^"]+)"')
+STYLESHEET = re.compile(r'<link rel="stylesheet" href="(/ui/[^"]+)"')
 
 
 def test_the_page_and_every_module_it_imports_are_served(srv):
@@ -23,13 +24,22 @@ def test_the_page_and_every_module_it_imports_are_served(srv):
     assert {"/ui/shell.js", "/ui/prose.js"} <= seen
 
 
-def test_the_ui_route_serves_only_modules_under_ui(srv):
+def test_the_stylesheet_the_page_links_is_served(srv):
+    href, = STYLESHEET.findall(get(srv, "/")["body"].decode())
+    sheet = get(srv, href)
+    assert (sheet["status"], sheet["ctype"]) == (200, "text/css")
+    assert "#topbar" in sheet["body"].decode()
+
+
+def test_the_ui_route_serves_only_modules_and_the_stylesheet_under_ui(srv):
     assert get(srv, "/ui/../server.py")["status"] == 404
+    assert get(srv, "/ui/../console.html")["status"] == 404
     assert get(srv, "/ui/missing.js")["status"] == 404
+    assert get(srv, "/ui/missing.css")["status"] == 404
     assert get(srv, "/ui/")["status"] == 404
 
 
-CONSOLE_HTML = ROOT / "tools" / "console" / "console.html"
+STYLESHEET_FILE = ROOT / "tools" / "console" / "ui" / "console.css"
 CSS_SECTION = re.compile(r"/\* -{10} (.+?) -{10} \*/")
 
 
@@ -71,9 +81,7 @@ def test_a_component_section_of_the_stylesheet_scopes_every_rule_under_an_id():
     """A bare class selector matches wherever the class name recurs, so one
     component's row styling reached another component's rows. Outside the
     shared section, every selector begins at an element id."""
-    html = CONSOLE_HTML.read_text()
-    css = html[html.index("<style>") + len("<style>"):html.index("</style>")]
-    rules = css_rules(css)
+    rules = css_rules(STYLESHEET_FILE.read_text())
     runs = [s for i, (s, _) in enumerate(rules) if i == 0 or rules[i - 1][0] != s]
     assert runs[0] == "shared" and runs.count("shared") == 1, runs
     loose = [(section, sel) for section, sel in rules
