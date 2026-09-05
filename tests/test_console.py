@@ -1027,14 +1027,14 @@ def test_the_pipeline_starts_at_opus_and_finalizes_on_fable(srv):
         srv.MODEL_IDS["opus"], srv.MODEL_IDS["opus"], srv.MODEL_IDS["fable"]]
 
 
-def test_a_pipeline_setting_reaches_the_next_wave(srv):
+def test_a_pipeline_setting_is_stored_but_the_next_wave_runs_the_default(srv):
     srv.start_wave(1)
     assert srv.act_pipeline({"refine": "fable"}) == {"ok": True}
     assert srv.pipeline() == {"create": "opus", "refine": "fable"}
     assert srv.find("t00")["chain"][1]["model"] == srv.MODEL_IDS["opus"]
     srv.LAST_WAVE_AT = 0.0
     srv.start_wave(1)
-    assert srv.find("t01")["chain"][1]["model"] == srv.MODEL_IDS["fable"]
+    assert srv.find("t01")["chain"][1]["model"] == srv.MODEL_IDS["opus"]
     # the setting outlives the process
     srv.STATE.update(json.loads(srv.STATE_FILE.read_text()))
     assert srv.pipeline() == {"create": "opus", "refine": "fable"}

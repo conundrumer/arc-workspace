@@ -101,8 +101,10 @@ def auto() -> dict:
 
 
 def stage_model(name: str) -> str:
-    """The model id a stage runs under the current settings."""
-    return config.MODEL_IDS[pipeline().get(name, config.FINALIZE_MODEL)]
+    """The model id a stage runs. Temporary override: the page shows no stage
+    selects, so the stored pipeline setting is not read and every settable
+    stage runs its default."""
+    return config.MODEL_IDS[config.PIPELINE_DEFAULTS.get(name, config.FINALIZE_MODEL)]
 
 
 def default_chain() -> list[dict]:
