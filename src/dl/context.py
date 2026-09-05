@@ -136,12 +136,18 @@ def entry_index(text: str, source: str) -> str:
     return "\n\n".join(p for p in (preamble.strip(), note, "\n".join(out)) if p) + "\n"
 
 
+def strip_editing_note(text: str) -> str:
+    """A doc without the HTML comment that opens it. That comment instructs
+    the doc's editor, and a solver session doesn't edit the doc."""
+    return re.sub(r"\A<!--.*?-->\s*", "", text, flags=re.S)
+
+
 def appendix(docs: Path = DOCS_DIR, lib: Path = LIB_SRC) -> str:
     """The docs and lib.dl, each under a heading naming its file."""
     parts: list[str] = []
     for name in DOCS:
         rel = f"docs/wf-solver/{name}"
-        text = (docs / name).read_text()
+        text = strip_editing_note((docs / name).read_text())
         if name in INDEX:
             parts.append(f"\n---\n\n# {rel} — index\n\n{entry_index(text, rel)}")
         else:

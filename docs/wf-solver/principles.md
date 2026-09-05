@@ -1,3 +1,7 @@
+<!-- When editing this doc: write in the indicative mood. Cite a task by bare id
+to give a precedent, or by id with a gloss to state the task's facts; write the
+gloss without the task's internal vocabulary. -->
+
 # Principles
 
 The theory of tasks and their solvers, and the design norms for the best model of a task.

@@ -1,3 +1,5 @@
+<!-- When editing this doc: write in the imperative mood. -->
+
 # Cadence
 
 A solver session writes a Souffle solver (`programs/solvers/<task_id>.dl`) that models an ARC task. A solver session runs in passes. Each pass is a sequence of operations. Do each operation individually. Do not batch them. Create a task per operation.

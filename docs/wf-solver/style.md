@@ -1,3 +1,5 @@
+<!-- When editing this doc: write in the indicative mood. -->
+
 # Style
 
 The form and conventions of solver files, and the constraints and limitations of the tooling.

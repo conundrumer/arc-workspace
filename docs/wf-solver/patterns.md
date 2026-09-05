@@ -1,3 +1,7 @@
+<!-- When editing this doc: cite a task by bare id to give a precedent, or by id
+with a gloss to state the task's facts; write the gloss without the task's
+internal vocabulary. -->
+
 # Patterns
 
 This document records patterns observed across `.dl` solvers. These patterns are distinct from the rules in `style.md`, which every solver follows.
