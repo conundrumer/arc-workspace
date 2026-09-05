@@ -436,206 +436,242 @@ def handle_event(worker: dict, ev: dict, first_response) -> None:
     item_id, phase = worker["item_id"], worker["phase"]
     with store.LOCK:
         it = store.find(item_id)
-        kind = ev.get("type")
+        kind, subtype = ev.get("type"), ev.get("subtype")
         if kind == "control_request":
             answer_permission(worker, it, ev, phase)
-        elif kind == "system" and ev.get("subtype") == "init":
-            if it and not worker["session_seen"]:
-                it["sessions"][phase] = ev.get("session_id") or it["sessions"].get(phase)
-                worker["session_seen"] = True
-                extra = sorted(set(ev.get("tools") or ()) - config.WORKER_TOOLS)
-                if extra:
-                    store.say(it, store.event("\u26a0 tools outside the worker set — "
-                                              + ", ".join(extra)), sess=phase)
-            # A worker can start a turn on its own (a background-task
-            # notification, for one); init marks only a turn the console sent,
-            # or the one a steer starts when it lands a moment too late.
-            if worker["state"] == "sending":
-                worker["state"] = "running"
-            elif it and worker["state"] == "idle" and (
-                    worker.get("steer") or worker.get("bg") or worker.get("woke")
-                    or it.get("bg_wait") == phase):
-                workers.adopt_turn(it, worker, phase)
-        elif kind == "system" and ev.get("subtype") == "task_started":
-            # The result of a background task reaches the session as a
-            # notification, which lands after this turn ends, so the task
-            # stays outstanding across the turns between here and that
-            # notification. A task a subagent started is the subagent's.
-            label = worker.get("launch", {}).pop(ev.get("tool_use_id"), None)
-            if label:
-                worker.setdefault("bg", {})[ev["tool_use_id"]] = label
-        elif kind == "system" and ev.get("subtype") == "task_notification":
-            worker.get("bg", {}).pop(ev.get("tool_use_id"), None)
-            # A notification the worker takes while idle opens a turn, whose
-            # init follows this event.
-            if worker["state"] == "idle":
-                worker["woke"] = True
-        elif kind == "system" and ev.get("subtype") == "thinking_tokens":
-            if it and worker["state"] in ("sending", "running"):
-                worker["think_run"] = (worker.get("think_run", 0)
-                                       + (ev.get("estimated_tokens_delta") or 0))
-                if (worker["think_run"] >= workers.RUNAWAY_THINK
-                        and not worker.get("escalate")):
-                    # Warn only. An interrupt here aborts the generation, and
-                    # an aborted generation writes nothing — the reasoning is
-                    # gone. A generation that runs to the cap lands in the
-                    # transcript with its signature, which patch_capped turns
-                    # into context the relaunch keeps. So the cap is the
-                    # cheaper exit, at the cost of the rest of the budget.
-                    worker["think_run"] = 0
-                    store.say(it, store.event(f"long thinking — {workers.RUNAWAY_THINK // 1000}k "
-                                              "tokens with no actions yet"), sess=phase)
+        elif kind == "system" and subtype == "init":
+            on_init(worker, it, ev, phase)
+        elif kind == "system" and subtype == "task_started":
+            on_task_started(worker, ev)
+        elif kind == "system" and subtype == "task_notification":
+            on_task_notification(worker, ev)
+        elif kind == "system" and subtype == "thinking_tokens":
+            on_thinking_tokens(worker, it, ev, phase)
         elif kind == "assistant":
-            if first_response:
-                first_response.set()
-            if not it:
-                return
-            msg = ev.get("message", {})
-            mid = msg.get("id") or ""
-            sub = bool(ev.get("parent_tool_use_id"))
-            usage = msg.get("usage")
-            if usage and mid and not sub and \
-                    worker["state"] in ("sending", "running"):
-                # One entry per request; a request's block events repeat the
-                # same usage. Subagent requests run their own context.
-                worker.setdefault("reqs", {})[mid] = usage
-            for block in msg.get("content", []):
-                entry, key = None, None
-                if block.get("type") == "text" and block.get("text", "").strip():
-                    entry = {"kind": "worker", "text": block["text"]}
-                    key = (mid, "text", block["text"])
-                elif block.get("type") == "tool_use":
-                    name = block.get("name", "?")
-                    inp = block.get("input", {}) or {}
-                    if name in ("Edit", "Write", "NotebookEdit") and inp.get("file_path"):
-                        record_edit(it, inp["file_path"])
-                    note_touched(it, worker, inp)
-                    if not sub and block.get("id") and (
-                            name in DISPATCH or inp.get("run_in_background")):
-                        # A call that asks for a task. Whether it got one
-                        # is the harness's word: task_started names the
-                        # call, and a call a hook refused never starts.
-                        worker.setdefault("launch", {})[block["id"]] = bg_label(name, inp)
-                    if name in DISPATCH:
-                        entry = {"kind": "ask", "text": task_ask(inp)}
-                        key = (mid, "task", block.get("id") or entry["text"])
-                    else:
-                        label = tool_label(name, inp)
-                        if label:
-                            entry = {"kind": "tool", "text": label}
-                            key = (mid, "tool", block.get("id") or label)
-                if entry and key not in worker["seen"]:
-                    worker["seen"].add(key)
-                    if sub or entry["kind"] == "ask":
-                        entry["sub"] = True
-                    store.say(it, entry, sess=phase)
-            blocks = msg.get("content") or []
-            if any(b.get("type") != "thinking" for b in blocks):
-                worker["think_run"] = 0
-            # The live CLI streams stop_reason as null on every assistant
-            # event, so today this fires only for a stream that does report
-            # the cap — the fake worker, or a CLI that starts filling the
-            # field in. The transcript tail is the detector that works now.
-            if (msg.get("stop_reason") == "max_tokens" and blocks and
-                    all(b.get("type") == "thinking" for b in blocks) and
-                    worker["state"] in ("sending", "running") and
-                    not worker.get("escalate") and
-                    (mid, "runaway") not in worker["seen"]):
-                worker["seen"].add((mid, "runaway"))
-                workers.runaway_detected(it, worker, "hit the output cap with no actions")
-        elif kind == "system" and ev.get("subtype") == "compact_boundary":
-            if not it:
-                return
-            # a compact from any ask counts as the one the auto compact owes
-            # this stretch of the session
-            it.setdefault("auto_compacted", {})[phase] = True
-            worker["compacted"] = True
-            meta = ev.get("compact_metadata") or {}
-            store.say(it, store.event(
-                "compacted · pre {pre:,} · post {post:,} · dropped {drop:,}".format(
-                    pre=meta.get("pre_tokens", 0), post=meta.get("post_tokens", 0),
-                    drop=meta.get("cumulative_dropped_tokens", 0))), sess=phase)
-            # A compact turn reports no per-request usage, so this event is the
-            # only word on the new context size until the next turn lands.
-            post = meta.get("post_tokens")
-            ctx = it.get("context", {}).get(phase)
-            if ctx and isinstance(post, (int, float)) and post > 0:
-                ctx["used"] = post
-                ctx["percent"] = post / ctx["window"] * 100
-                ctx["compactPct"] = spend.compact_pct(post, ctx.get("model")
-                                                or store.model_of(it, phase),
-                                                ctx.get("limiting"))
+            on_assistant(worker, it, ev, phase, first_response)
+        elif kind == "system" and subtype == "compact_boundary":
+            on_compact_boundary(worker, it, ev, phase)
         elif kind == "result":
-            if not it or worker["state"] not in ("sending", "running"):
-                return
-            worker["got_result"] = True
-            reason = ev.get("terminal_reason", "completed")
-            escalate = worker.pop("escalate", None)
-            handoff = worker["handoff"]
-            ask = worker.get("ask")
-            recover = None
+            on_result(worker, it, ev, phase)
+
+
+def on_init(worker: dict, it: dict | None, ev: dict, phase: str) -> None:
+    """The event that opens a turn. Caller holds LOCK."""
+    if it and not worker["session_seen"]:
+        it["sessions"][phase] = ev.get("session_id") or it["sessions"].get(phase)
+        worker["session_seen"] = True
+        extra = sorted(set(ev.get("tools") or ()) - config.WORKER_TOOLS)
+        if extra:
+            store.say(it, store.event("\u26a0 tools outside the worker set — "
+                                      + ", ".join(extra)), sess=phase)
+    # A worker can start a turn on its own (a background-task notification,
+    # for one); init marks only a turn the console sent, or the one a steer
+    # starts when it lands a moment too late.
+    if worker["state"] == "sending":
+        worker["state"] = "running"
+    elif it and worker["state"] == "idle" and (
+            worker.get("steer") or worker.get("bg") or worker.get("woke")
+            or it.get("bg_wait") == phase):
+        workers.adopt_turn(it, worker, phase)
+
+
+def on_task_started(worker: dict, ev: dict) -> None:
+    """A call that got a background task. The task's result reaches the
+    session as a notification, which lands after this turn ends, so the task
+    stays outstanding across the turns between here and that notification. A
+    task a subagent started is the subagent's. Caller holds LOCK."""
+    label = worker.get("launch", {}).pop(ev.get("tool_use_id"), None)
+    if label:
+        worker.setdefault("bg", {})[ev["tool_use_id"]] = label
+
+
+def on_task_notification(worker: dict, ev: dict) -> None:
+    """A background task reported. Caller holds LOCK."""
+    worker.get("bg", {}).pop(ev.get("tool_use_id"), None)
+    # A notification the worker takes while idle opens a turn, whose init
+    # follows this event.
+    if worker["state"] == "idle":
+        worker["woke"] = True
+
+
+def on_thinking_tokens(worker: dict, it: dict | None, ev: dict, phase: str) -> None:
+    """A stretch of thinking, counted against the runaway warning. Caller
+    holds LOCK."""
+    if not it or worker["state"] not in ("sending", "running"):
+        return
+    worker["think_run"] = (worker.get("think_run", 0)
+                           + (ev.get("estimated_tokens_delta") or 0))
+    if worker["think_run"] >= workers.RUNAWAY_THINK and not worker.get("escalate"):
+        # Warn only. An interrupt here aborts the generation, and an aborted
+        # generation writes nothing — the reasoning is gone. A generation that
+        # runs to the cap lands in the transcript with its signature, which
+        # patch_capped turns into context the relaunch keeps. So the cap is
+        # the cheaper exit, at the cost of the rest of the budget.
+        worker["think_run"] = 0
+        store.say(it, store.event(f"long thinking — {workers.RUNAWAY_THINK // 1000}k "
+                                  "tokens with no actions yet"), sess=phase)
+
+
+def on_assistant(worker: dict, it: dict | None, ev: dict, phase: str,
+                 first_response) -> None:
+    """One message the model wrote: its feed lines, the files it touched, and
+    the usage the request reports. Caller holds LOCK."""
+    if first_response:
+        first_response.set()
+    if not it:
+        return
+    msg = ev.get("message", {})
+    mid = msg.get("id") or ""
+    sub = bool(ev.get("parent_tool_use_id"))
+    usage = msg.get("usage")
+    if usage and mid and not sub and worker["state"] in ("sending", "running"):
+        # One entry per request; a request's block events repeat the same
+        # usage. Subagent requests run their own context.
+        worker.setdefault("reqs", {})[mid] = usage
+    for block in msg.get("content", []):
+        entry, key = None, None
+        if block.get("type") == "text" and block.get("text", "").strip():
+            entry = {"kind": "worker", "text": block["text"]}
+            key = (mid, "text", block["text"])
+        elif block.get("type") == "tool_use":
+            name = block.get("name", "?")
+            inp = block.get("input", {}) or {}
+            if name in ("Edit", "Write", "NotebookEdit") and inp.get("file_path"):
+                record_edit(it, inp["file_path"])
+            note_touched(it, worker, inp)
+            if not sub and block.get("id") and (
+                    name in DISPATCH or inp.get("run_in_background")):
+                # A call that asks for a task. Whether it got one is the
+                # harness's word: task_started names the call, and a call a
+                # hook refused never starts.
+                worker.setdefault("launch", {})[block["id"]] = bg_label(name, inp)
+            if name in DISPATCH:
+                entry = {"kind": "ask", "text": task_ask(inp)}
+                key = (mid, "task", block.get("id") or entry["text"])
+            else:
+                label = tool_label(name, inp)
+                if label:
+                    entry = {"kind": "tool", "text": label}
+                    key = (mid, "tool", block.get("id") or label)
+        if entry and key not in worker["seen"]:
+            worker["seen"].add(key)
+            if sub or entry["kind"] == "ask":
+                entry["sub"] = True
+            store.say(it, entry, sess=phase)
+    blocks = msg.get("content") or []
+    if any(b.get("type") != "thinking" for b in blocks):
+        worker["think_run"] = 0
+    # The live CLI streams stop_reason as null on every assistant event, so
+    # today this fires only for a stream that does report the cap — the fake
+    # worker, or a CLI that starts filling the field in. The transcript tail
+    # is the detector that works now.
+    if (msg.get("stop_reason") == "max_tokens" and blocks and
+            all(b.get("type") == "thinking" for b in blocks) and
+            worker["state"] in ("sending", "running") and
+            not worker.get("escalate") and
+            (mid, "runaway") not in worker["seen"]):
+        worker["seen"].add((mid, "runaway"))
+        workers.runaway_detected(it, worker, "hit the output cap with no actions")
+
+
+def on_compact_boundary(worker: dict, it: dict | None, ev: dict, phase: str) -> None:
+    """The session was compacted. Caller holds LOCK."""
+    if not it:
+        return
+    # a compact from any ask counts as the one the auto compact owes this
+    # stretch of the session
+    it.setdefault("auto_compacted", {})[phase] = True
+    worker["compacted"] = True
+    meta = ev.get("compact_metadata") or {}
+    store.say(it, store.event(
+        "compacted · pre {pre:,} · post {post:,} · dropped {drop:,}".format(
+            pre=meta.get("pre_tokens", 0), post=meta.get("post_tokens", 0),
+            drop=meta.get("cumulative_dropped_tokens", 0))), sess=phase)
+    # A compact turn reports no per-request usage, so this event is the only
+    # word on the new context size until the next turn lands.
+    post = meta.get("post_tokens")
+    ctx = it.get("context", {}).get(phase)
+    if ctx and isinstance(post, (int, float)) and post > 0:
+        ctx["used"] = post
+        ctx["percent"] = post / ctx["window"] * 100
+        ctx["compactPct"] = spend.compact_pct(
+            post, ctx.get("model") or store.model_of(it, phase), ctx.get("limiting"))
+
+
+def on_result(worker: dict, it: dict | None, ev: dict, phase: str) -> None:
+    """The end of a turn: its landing, or the note and the relaunch a turn
+    that ended without one gets. Caller holds LOCK."""
+    if not it or worker["state"] not in ("sending", "running"):
+        return
+    worker["got_result"] = True
+    reason = ev.get("terminal_reason", "completed")
+    escalate = worker.pop("escalate", None)
+    handoff = worker["handoff"]
+    ask = worker.get("ask")
+    recover = None
+    try:
+        # The last messages may not have reached the tail's poll, and leaving
+        # them unread would carry them into the next turn.
+        if it["sessions"].get(phase):
             try:
-                # The last messages may not have reached the tail's poll, and
-                # leaving them unread would carry them into the next turn.
-                if it["sessions"].get(phase):
-                    try:
-                        workers.tail_turn(worker, it["sessions"][phase])
-                    except OSError:
-                        pass
-                reqs = list(worker.get("reqs", {}).values())
-                # A generation that reached the cap is recorded with its
-                # thinking; one the interrupt caught in flight is not, so an
-                # unfinished run is what the turn lost.
-                lost = 0 if reason == "completed" else worker.get("think_run", 0)
-                if reason == "completed":
-                    landing.finish_turn(it, ev, worker["trigger"], worker["started"],
+                workers.tail_turn(worker, it["sessions"][phase])
+            except OSError:
+                pass
+        reqs = list(worker.get("reqs", {}).values())
+        # A generation that reached the cap is recorded with its thinking; one
+        # the interrupt caught in flight is not, so an unfinished run is what
+        # the turn lost.
+        lost = 0 if reason == "completed" else worker.get("think_run", 0)
+        if reason == "completed":
+            landing.finish_turn(it, ev, worker["trigger"], worker["started"],
                                 phase, handoff, reqs)
-                else:
-                    if escalate:
-                        pass  # the interrupt we sent landed; relaunched below
-                    elif reason == "aborted_streaming":
-                        store.say(it, store.event("stopped"), sess=phase)
-                    else:
-                        if refusals.refusal_kind(ev) == refusals.RETRIED_REFUSAL:
-                            recover = refusals.REPORT_ASKS.get(worker["trigger"])
-                        store.say(it, store.event(refusals.failure_note(ev, reason, bool(recover))),
-                                  sess=phase)
-                    # A segment that never lands still spent quota, and this
-                    # line is the only place it is ever counted.
-                    store.say(it, store.event(spend.turn_note(it, ev, phase, worker["started"],
-                                                        reqs, lost, done=False)),
-                              sess=phase)
-                    if not escalate and not recover:
-                        store.turn_died(it, phase)
-                        if pacing.quota_death(ev.get("api_error_status"), reason,
-                                              str(ev.get("result") or "")):
-                            pacing.quota_cut(it, phase, handoff)
-            finally:
-                # A steer written before this turn was landing is one this turn
-                # absorbed, so it explains no later turn.
-                pending = worker.get("steer")
-                if pending and time.time() - pending["at"] > config.STEER_RACE:
-                    worker.pop("steer", None)
-                # The worker goes idle even if landing the turn blew up;
-                # a wedged "running" state would block sends and reloads.
-                worker.update(state="idle", started=None, trigger=None,
-                              handoff=False, seen=set(), got_result=False,
-                              think_run=0, reqs={}, idle_since=time.time())
-            if escalate and reason != "completed":
-                # The relaunch must come from a fresh process: the live one
-                # holds the turn's history in memory, where the capped
-                # thinking is already gone. A respawn rebuilds from the
-                # transcript, which patch_capped repairs first.
-                workers.detach_for_respawn(it, worker)
-                store.DEFERRED.put_nowait(("revive", worker, escalate, handoff))
-                drain.ensure_drain()
-            elif recover:
-                # The refused ask is in the live process's history as much as
-                # in the transcript, so the retry comes from a fresh process
-                # over a transcript with the ask cut out.
-                workers.detach_for_respawn(it, worker)
-                store.DEFERRED.put_nowait(("refuse", worker, recover, ask))
-                drain.ensure_drain()
+        else:
+            if escalate:
+                pass  # the interrupt we sent landed; relaunched below
+            elif reason == "aborted_streaming":
+                store.say(it, store.event("stopped"), sess=phase)
+            else:
+                if refusals.refusal_kind(ev) == refusals.RETRIED_REFUSAL:
+                    recover = refusals.REPORT_ASKS.get(worker["trigger"])
+                store.say(it, store.event(refusals.failure_note(ev, reason,
+                                                                bool(recover))),
+                          sess=phase)
+            # A segment that never lands still spent quota, and this line is
+            # the only place it is ever counted.
+            store.say(it, store.event(spend.turn_note(it, ev, phase, worker["started"],
+                                                      reqs, lost, done=False)),
+                      sess=phase)
+            if not escalate and not recover:
+                store.turn_died(it, phase)
+                if pacing.quota_death(ev.get("api_error_status"), reason,
+                                      str(ev.get("result") or "")):
+                    pacing.quota_cut(it, phase, handoff)
+    finally:
+        # A steer written before this turn was landing is one this turn
+        # absorbed, so it explains no later turn.
+        pending = worker.get("steer")
+        if pending and time.time() - pending["at"] > config.STEER_RACE:
+            worker.pop("steer", None)
+        # The worker goes idle even if landing the turn blew up; a wedged
+        # "running" state would block sends and reloads.
+        worker.update(state="idle", started=None, trigger=None,
+                      handoff=False, seen=set(), got_result=False,
+                      think_run=0, reqs={}, idle_since=time.time())
+    if escalate and reason != "completed":
+        # The relaunch must come from a fresh process: the live one holds the
+        # turn's history in memory, where the capped thinking is already gone.
+        # A respawn rebuilds from the transcript, which patch_capped repairs
+        # first.
+        workers.detach_for_respawn(it, worker)
+        store.DEFERRED.put_nowait(("revive", worker, escalate, handoff))
+        drain.ensure_drain()
+    elif recover:
+        # The refused ask is in the live process's history as much as in the
+        # transcript, so the retry comes from a fresh process over a
+        # transcript with the ask cut out.
+        workers.detach_for_respawn(it, worker)
+        store.DEFERRED.put_nowait(("refuse", worker, recover, ask))
+        drain.ensure_drain()
 
 
 def reap(worker: dict) -> None:

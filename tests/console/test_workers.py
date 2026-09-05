@@ -125,6 +125,17 @@ def fake_process(item_id="proto", phase="refine"):
                             text=True, bufsize=1)
 
 
+def test_init_records_the_session_and_flags_a_tool_outside_the_set(srv):
+    it = item(srv, "a", srv.RUNNING, sessions={"create": None, "refine": None})
+    w = worker(srv, it, state="sending")
+    w["session_seen"] = False
+    srv.handle_event(w, {"type": "system", "subtype": "init", "session_id": "s9",
+                         "tools": sorted(srv.WORKER_TOOLS) + ["WebFetch"]}, None)
+    assert it["sessions"]["refine"] == "s9"
+    assert "WebFetch" in it["feed"][-1]["text"]
+    assert w["state"] == "running"
+
+
 def test_post_restart_comment_respawns_into_the_session(srv, monkeypatch):
     sent = []
     monkeypatch.setattr(srv, "launch",

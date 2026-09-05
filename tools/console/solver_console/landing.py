@@ -99,79 +99,97 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
         # place of the block
         land_callouts(it, phase, callouts if callouts is not None else text)
     elif store.next_stage(it, phase) and (report is not None or handoff):
-        # The block is the handoff, whichever turn carries it. A turn asked
-        # for one that ends without it is either waiting on a task it
-        # started, or missed the ask: the ask goes out once more, and a
-        # second miss files the text as written.
-        if report is None and worker and outstanding:
-            hold_handoff(it, phase, outstanding)
-            return
-        if report is None:
-            if worker and not it.get("reasked", {}).get(phase):
-                it.setdefault("reasked", {})[phase] = True
-                drop_hold(it, phase)
-                store.say(it, store.event("no handoff block — asking again"), sess=phase)
-                store.DEFERRED.put_nowait(("rehandoff", it["id"], phase, worker["turn_seq"]))
-                drain.ensure_drain()
-                return
-            store.say(it, store.event("no handoff block — the text stands as the report"),
-                      sess=phase)
-            report = text
-        it.get("reasked", {}).pop(phase, None)
-        drop_hold(it, phase)
-        if worker and outstanding:
-            hold_handoff(it, phase, outstanding, report)
-        elif callouts is not None:
-            # the turn wrote its callouts with the report: no callout turn
-            file_report(it, phase, report)
-            land_callouts(it, phase, callouts)
-        else:
-            land_handoff(it, phase, report)
+        hand_on(it, phase, text, report, callouts, worker, outstanding)
     elif it.get("bg_wait") == phase:
-        # a turn a background notification woke, with no block of its own:
-        # once nothing is outstanding, the held report lands, or the ask the
-        # hold owes goes out
-        if worker and outstanding:
-            it["bg_at"] = store.now()
-            store.say(it, store.event("handoff held — " + ", ".join(outstanding)
-                                      + " has not reported"), sess=phase)
-        elif worker and it.get("bg_filed"):
-            drop_hold(it, phase)
-            land_handoff(it, phase, "")
-        elif worker:
-            drop_hold(it, phase)
-            store.DEFERRED.put_nowait(("rehandoff", it["id"], phase, worker["turn_seq"]))
-            drain.ensure_drain()
-        else:
-            drop_hold(it, phase)
-            it["state"] = store.NEEDS_REVIEW
-            it["updated"] = True
+        settle_hold(it, phase, worker, outstanding)
     elif phase == "finalize" and it.get("auto_finalize") and not store.slash_turn(it, phase):
-        # The finalize pass auto-advance opened lands with no one reading
-        # it, so its first landing files the text as the stage report and
-        # asks for the callouts, which the finalize lens sorts on. A landing
-        # with a task still outstanding waits for the one that task wakes.
-        if worker and outstanding:
-            it["state"] = store.NEEDS_REVIEW
-            it["updated"] = True
-        else:
-            it.pop("auto_finalize", None)
-            # the compact on landing waits for the callouts, so the marker
-            # rides to their landing
-            it["landing_compact"] = phase
-            body = (report if report is not None
-                    else solvers.untagged(solvers.CALLOUTS_TAG.sub("", text))).strip()
-            if callouts is None:
-                land_handoff(it, phase, body)
-            else:
-                if body:
-                    file_report(it, phase, body)
-                land_callouts(it, phase, callouts)
+        land_auto_finalize(it, phase, text, report, callouts, worker, outstanding)
     elif not store.slash_turn(it, phase) and not store.busy_elsewhere(it, phase):
         # a side turn landing while another session runs leaves the state to
         # the pass that owns it
         it["state"] = store.NEEDS_REVIEW
         it["updated"] = True
+
+
+def hand_on(it: dict, phase: str, text: str, report: str | None,
+            callouts: str | None, worker: dict | None,
+            outstanding: list[str]) -> None:
+    """A landing on a stage with a successor. The block is the handoff,
+    whichever turn carries it. A turn asked for one that ends without it is
+    either waiting on a task it started, or missed the ask: the ask goes out
+    once more, and a second miss files the text as written. Caller holds
+    LOCK."""
+    if report is None and worker and outstanding:
+        hold_handoff(it, phase, outstanding)
+        return
+    if report is None:
+        if worker and not it.get("reasked", {}).get(phase):
+            it.setdefault("reasked", {})[phase] = True
+            drop_hold(it, phase)
+            store.say(it, store.event("no handoff block — asking again"), sess=phase)
+            store.DEFERRED.put_nowait(("rehandoff", it["id"], phase, worker["turn_seq"]))
+            drain.ensure_drain()
+            return
+        store.say(it, store.event("no handoff block — the text stands as the report"),
+                  sess=phase)
+        report = text
+    it.get("reasked", {}).pop(phase, None)
+    drop_hold(it, phase)
+    if worker and outstanding:
+        hold_handoff(it, phase, outstanding, report)
+    elif callouts is not None:
+        # the turn wrote its callouts with the report: no callout turn
+        file_report(it, phase, report)
+        land_callouts(it, phase, callouts)
+    else:
+        land_handoff(it, phase, report)
+
+
+def settle_hold(it: dict, phase: str, worker: dict | None,
+                outstanding: list[str]) -> None:
+    """A turn a background notification woke, with no block of its own: once
+    nothing is outstanding, the held report lands, or the ask the hold owes
+    goes out. Caller holds LOCK."""
+    if worker and outstanding:
+        it["bg_at"] = store.now()
+        store.say(it, store.event("handoff held — " + ", ".join(outstanding)
+                                  + " has not reported"), sess=phase)
+    elif worker and it.get("bg_filed"):
+        drop_hold(it, phase)
+        land_handoff(it, phase, "")
+    elif worker:
+        drop_hold(it, phase)
+        store.DEFERRED.put_nowait(("rehandoff", it["id"], phase, worker["turn_seq"]))
+        drain.ensure_drain()
+    else:
+        drop_hold(it, phase)
+        it["state"] = store.NEEDS_REVIEW
+        it["updated"] = True
+
+
+def land_auto_finalize(it: dict, phase: str, text: str, report: str | None,
+                       callouts: str | None, worker: dict | None,
+                       outstanding: list[str]) -> None:
+    """The finalize pass auto-advance opened lands with no one reading it, so
+    its first landing files the text as the stage report and asks for the
+    callouts, which the finalize lens sorts on. A landing with a task still
+    outstanding waits for the one that task wakes. Caller holds LOCK."""
+    if worker and outstanding:
+        it["state"] = store.NEEDS_REVIEW
+        it["updated"] = True
+        return
+    it.pop("auto_finalize", None)
+    # the compact on landing waits for the callouts, so the marker rides to
+    # their landing
+    it["landing_compact"] = phase
+    body = (report if report is not None
+            else solvers.untagged(solvers.CALLOUTS_TAG.sub("", text))).strip()
+    if callouts is None:
+        land_handoff(it, phase, body)
+    else:
+        if body:
+            file_report(it, phase, body)
+        land_callouts(it, phase, callouts)
 
 
 def hold_handoff(it: dict, phase: str, outstanding: list[str],
