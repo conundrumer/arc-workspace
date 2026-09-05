@@ -43,16 +43,14 @@ code, pre, .mono { font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, mo
 
 /* ---------- top bar ---------- */
 #topbar {
-  min-height:46px; flex:none; display:flex; align-items:center;
-  gap:14px; padding:4px 14px;
+  flex:none; display:flex; flex-direction:column; gap:6px; padding:6px 14px;
   background:var(--panel); border-bottom:1px solid var(--border);
 }
-/* the readouts wrap onto more lines as they widen; the controls never wrap
-   and never leave the right edge, so they hold their place under the pointer
-   while a session runs. */
-#topbar .readouts { flex:1 1 0; min-width:0; display:flex; flex-wrap:wrap; align-items:center; gap:4px 14px; }
-#topbar .controls { flex:none; display:flex; align-items:center; gap:14px; }
-#topbar .wordmark, #topbar .wavectl { white-space:nowrap; }
+/* each row keeps its own line; the readouts row's last figure and the controls
+   row's wave controls sit at the right edge, so every control holds its place
+   under the pointer while a session runs */
+#topbar .row { display:flex; align-items:center; gap:14px; white-space:nowrap; min-height:30px; }
+#topbar .push { margin-left:auto; }
 #topbar .wordmark { font-family:ui-monospace,Menlo,monospace; font-size:12px; letter-spacing:.08em; }
 #topbar .wordmark b { color:var(--accent); }
 #counts { display:flex; gap:6px; align-items:center; }
@@ -66,8 +64,7 @@ code, pre, .mono { font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, mo
 .chip.commented { color:var(--st-commented); background:var(--st-commented-bg); }
 .chip.approved  { color:var(--st-approved);  background:var(--st-approved-bg); }
 .chip.queued, .chip.committed { color:var(--st-muted); background:var(--st-muted-bg); }
-/* the usage figures fill the rest of their readout line */
-#usage { display:flex; flex:1; justify-content:flex-end; gap:12px;
+#usage { display:flex; margin-left:auto; gap:12px;
   font-family:ui-monospace,Menlo,monospace; font-size:11px; white-space:nowrap; }
 #usage .uok { color:var(--ttl-ok); opacity:.75; }
 #usage .uwarn { color:var(--ttl-warn); }

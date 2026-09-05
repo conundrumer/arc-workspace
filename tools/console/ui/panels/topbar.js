@@ -1,6 +1,6 @@
-/* The top bar: the readouts on the left (the lens switch, the wave counts,
-   the autopilot tally, the usage windows), the controls on the right (the
-   automatic-move toggles, the next wave, the commit). */
+/* The top bar, two rows. The readouts row: the lens switch, the wave
+   counts, the usage windows. The controls row: the autopilot and committer
+   panels, the automatic-move toggles, the next wave, the commit. */
 import { html } from "/vendor/htm-preact-standalone.module.js";
 import { useClock } from "/ui/clock.js";
 import { FINAL, STATES } from "/ui/item.js";
@@ -41,50 +41,50 @@ export function Topbar({view, setView, wave, items, progress, usage, night, nigh
       +" · "+(gate&&gate.open?"open":"held")
     : "autopilot";
   return html`<div id="topbar">
-    <span class="readouts">
-    <span class="wordmark"><b>arc</b> · solver console</span>
-    <span class="viewtog">
-      <button class=${view!==FINAL?"on":""} onClick=${()=>setView("wave")}>wave</button>
-      <button class=${view===FINAL?"on":""} onClick=${()=>setView(FINAL)}>finalize</button>
-    </span>
-    <span class="chip queued mono">${"wave "+pad2(wave)}</span>
-    <span class="chip queued mono" hidden=${!progress}>
-      ${progress ? progress.solved+"/"+progress.total+" solvers" : ""}
-    </span>
-    <span id="counts">${STATES.filter(st=>tally[st]).map(st=>html`
-      <${StateChip} key=${st} state=${st} label=${tally[st]+" "+(st==="needs-review"?"to review":st)}/>`)}
-    </span>
-    <button id="commitbtn" class=${committer.running?"on":""}
-      hidden=${!committer.running && !(committer.feed||[]).length}
-      title="what the committer session says and runs" onClick=${toggleCommit}>
-      ${committer.running?"committing…":"committer"}</button>
-    <button id="nightbtn" class=${nightCls} onClick=${toggleNight}>${nightTxt}</button>
-    <${Usage} usage=${usage}/>
-    </span>
-    <span class="controls">
-    <span class="wavectl">
-      <label title="a landing whose next stage is finalize hands on by itself">
-        <input type="checkbox" checked=${!!auto.finalize}
-          onChange=${e=>onAuto("finalize", e.target.checked)}/>auto finalize</label>
-      <label title="compact an unapproved finalize session before its cache goes cold or its worker is reaped">
-        <input type="checkbox" checked=${!!auto.compact}
-          onChange=${e=>onAuto("compact", e.target.checked)}/>auto compact</label>
-      <label title="compact a finalize session the autopilot opened as soon as its callouts land">
-        <input type="checkbox" checked=${!!auto.compact_landing}
-          onChange=${e=>onAuto("compact_landing", e.target.checked)}/>compact on landing</label>
-    </span>
-    <span class="wavectl" title="start the next wave">wave
-      <input type="number" min="1" max="20" aria-label="wave size"
-        value=${waveCtl.k} onInput=${e=>waveCtl.setK(e.target.value)}/>
-      <select aria-label="wave order" value=${waveCtl.order} onChange=${e=>waveCtl.setOrder(e.target.value)}>
-        <option value="name">name order</option>
-        <option value="size">simplest</option>
-      </select>
-      <button disabled=${waveCtl.busy} onClick=${waveCtl.start}>start</button>
-    </span>
-    ${extra}
-    <button class="primary" disabled=${!items.some(it=>it.state==="approved")}
-      onClick=${onCommit}>commit approved</button>
-    </span>
+    <div class="row readouts">
+      <span class="wordmark"><b>arc</b> · solver console</span>
+      <span class="viewtog">
+        <button class=${view!==FINAL?"on":""} onClick=${()=>setView("wave")}>wave</button>
+        <button class=${view===FINAL?"on":""} onClick=${()=>setView(FINAL)}>finalize</button>
+      </span>
+      <span class="chip queued mono">${"wave "+pad2(wave)}</span>
+      <span class="chip queued mono" hidden=${!progress}>
+        ${progress ? progress.solved+"/"+progress.total+" solvers" : ""}
+      </span>
+      <span id="counts">${STATES.filter(st=>tally[st]).map(st=>html`
+        <${StateChip} key=${st} state=${st} label=${tally[st]+" "+(st==="needs-review"?"to review":st)}/>`)}
+      </span>
+      <${Usage} usage=${usage}/>
+    </div>
+    <div class="row controls">
+      <button id="nightbtn" class=${nightCls} onClick=${toggleNight}>${nightTxt}</button>
+      <span class="wavectl">
+        <label title="a landing whose next stage is finalize hands on by itself">
+          <input type="checkbox" checked=${!!auto.finalize}
+            onChange=${e=>onAuto("finalize", e.target.checked)}/>auto finalize</label>
+        <label title="compact an unapproved finalize session before its cache goes cold or its worker is reaped">
+          <input type="checkbox" checked=${!!auto.compact}
+            onChange=${e=>onAuto("compact", e.target.checked)}/>auto compact</label>
+        <label title="compact a finalize session the autopilot opened as soon as its callouts land">
+          <input type="checkbox" checked=${!!auto.compact_landing}
+            onChange=${e=>onAuto("compact_landing", e.target.checked)}/>compact on landing</label>
+      </span>
+      <button id="commitbtn" class=${committer.running?"on":""}
+        hidden=${!committer.running && !(committer.feed||[]).length}
+        title="what the committer session says and runs" onClick=${toggleCommit}>
+        ${committer.running?"committing…":"committer"}</button>
+      <span class="wavectl push" title="start the next wave">wave
+        <input type="number" min="1" max="20" aria-label="wave size"
+          value=${waveCtl.k} onInput=${e=>waveCtl.setK(e.target.value)}/>
+        <select aria-label="wave order" value=${waveCtl.order} onChange=${e=>waveCtl.setOrder(e.target.value)}>
+          <option value="name">name order</option>
+          <option value="size">simplest</option>
+        </select>
+        <button disabled=${waveCtl.busy} onClick=${waveCtl.start}>start</button>
+      </span>
+      ${extra}
+      <button class="primary" disabled=${!items.some(it=>it.state==="approved")}
+        onClick=${onCommit}>commit approved</button>
+    </div>
   </div>`;
 }
