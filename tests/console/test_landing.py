@@ -63,7 +63,7 @@ def test_create_landing_defers_the_handoff(srv, monkeypatch):
     assert it["dirty"] is False
 
 
-def test_a_new_stage_reads_the_projection_as_it_stands(srv, monkeypatch):
+def test_a_new_stage_reads_the_appendix_as_it_stands(srv, monkeypatch):
     monkeypatch.setattr(srv, "launch", lambda *a, **kw: None)
     it = item(srv, "a", srv.NEEDS_REVIEW, phase="create",
               append="/stale/appendix.md")
@@ -71,7 +71,7 @@ def test_a_new_stage_reads_the_projection_as_it_stands(srv, monkeypatch):
     assert it["append"] == str(srv.append_path())
 
 
-def test_a_respawn_reads_the_projection_as_it_stands(srv, monkeypatch):
+def test_a_respawn_reads_the_appendix_as_it_stands(srv, monkeypatch):
     read = []
 
     def spawn(it, phase):
@@ -84,13 +84,13 @@ def test_a_respawn_reads_the_projection_as_it_stands(srv, monkeypatch):
     assert read == [str(srv.append_path())]
 
 
-def test_a_resident_worker_hears_the_projection_moved_on(srv):
+def test_a_resident_worker_hears_the_appendix_moved_on(srv):
     it = item(srv, "a", srv.NEEDS_REVIEW, append="/stale/appendix.md")
     w = worker(srv, it)
     srv.launch(it, "look again", "refine")
     sent = w["outbound"].get_nowait()["message"]["content"]
-    assert sent.startswith("<system-reminder>The projection in your system prompt "
-                           "is behind programs/lib.dl or docs/wf-solver.")
+    assert sent.startswith("<system-reminder>Your system prompt's copy of docs/wf-solver and "
+                           "programs/lib.dl is behind the files.")
     assert sent.endswith("</system-reminder>\n\nlook again")
     # the prefix its system prompt was built from stays, so its cache holds
     assert it["append"] == "/stale/appendix.md"

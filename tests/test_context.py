@@ -1,8 +1,8 @@
-"""The projection of the solver docs and lib.dl a session reads."""
+"""The solver docs and lib.dl as a session reads them."""
 
 from pathlib import Path
 
-from dl.context import DOCS, appendix, entry_index, lib_signatures
+from dl.context import DOCS, entry_index, lib_signatures, render
 
 
 def test_lib_signatures_keep_the_interface_and_drop_the_bodies():
@@ -68,7 +68,7 @@ Pairs an input cell with its axis split.
         "- **`cell_split`** — Pairs an input cell with its axis split.\n")
 
 
-def test_appendix_reads_the_listed_docs_in_order(tmp_path: Path):
+def test_render_reads_the_listed_docs_in_order(tmp_path: Path):
     docs = tmp_path / "docs"
     docs.mkdir()
     for name in DOCS:
@@ -79,7 +79,8 @@ def test_appendix_reads_the_listed_docs_in_order(tmp_path: Path):
     lib = tmp_path / "lib.dl"
     lib.write_text(".decl out(p: Position)\nout(P) :- in(P, _).\n")
 
-    out = appendix(docs, lib)
+    out = render(docs, lib)
+    assert out.startswith("# Handbook\n")
     assert "a queued idea" not in out
     assert out.index("# docs/wf-solver/style.md") < out.index("# docs/wf-solver/patterns.md")
     assert "# docs/wf-solver/patterns.md — index\n" in out

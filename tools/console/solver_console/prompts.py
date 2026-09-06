@@ -6,7 +6,7 @@ import json
 import re
 from pathlib import Path
 
-from dl.context import appendix
+from dl.context import render
 
 from . import config, solvers, store
 
@@ -29,11 +29,11 @@ Colors are written as backticked digits; grid rows are space-separated cells, in
 
 def append_path() -> Path:
     """The worker's system-prompt appendix: the scratch note, then the docs and
-    lib.dl, in the projection dl.context renders. The file is
+    lib.dl, as dl.context renders them. The file is
     named by its content: items made while the sources are unchanged share one
     file, and so one cached prefix, and a file never changes under the session
     that reads it, since a worker resumes by reading its own file again."""
-    text = SCRATCH_NOTE + "\n" + appendix(config.DOCS)
+    text = SCRATCH_NOTE + "\n" + render(config.DOCS)
     digest = hashlib.sha1(text.encode()).hexdigest()[:10]
     path = config.STATE_DIR / f"appendix-{digest}.md"
     if not path.exists():
@@ -44,11 +44,11 @@ def append_path() -> Path:
 
 
 def worker_agents(append: str) -> str | None:
-    """The `--agents` JSON that gives a worker's agents the projection the
+    """The `--agents` JSON that gives a worker's agents the appendix the
     worker reads: each definition under .claude/agents/, its body followed by
     the item's appendix. It overrides the project agents of those names for the
-    worker; an interactive session gets the project agents, which read the
-    projection themselves."""
+    worker; an interactive session gets the project agents, which read
+    `scripts/context.py` themselves."""
     agents = {}
     for path in sorted(config.AGENT_DIR.glob("*.md")):
         m = re.match(r"\A---\n(.*?)\n---\n(.*)\Z", path.read_text(), flags=re.S)

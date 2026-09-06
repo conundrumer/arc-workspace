@@ -1,8 +1,8 @@
-"""Print the solver docs and lib.dl in the projection a solver session reads.
-dl.context renders the projection.
+"""Print the handbook: the solver docs and lib.dl as a solver session reads them.
+dl.context renders it.
 """
 
-from dl.context import appendix
+from dl.context import render
 
 if __name__ == "__main__":
-    print(appendix(), end="")
+    print(render(), end="")

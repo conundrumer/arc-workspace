@@ -142,8 +142,8 @@ def strip_editing_note(text: str) -> str:
     return re.sub(r"\A<!--.*?-->\s*", "", text, flags=re.S)
 
 
-def appendix(docs: Path = DOCS_DIR, lib: Path = LIB_SRC) -> str:
-    """The docs and lib.dl, each under a heading naming its file."""
+def render(docs: Path = DOCS_DIR, lib: Path = LIB_SRC) -> str:
+    """The handbook: the docs and lib.dl, each under a heading naming its file."""
     parts: list[str] = []
     for name in DOCS:
         rel = f"docs/wf-solver/{name}"
@@ -154,4 +154,4 @@ def appendix(docs: Path = DOCS_DIR, lib: Path = LIB_SRC) -> str:
             parts.append(f"\n---\n\n# {rel}\n\n{text}")
     parts.append("\n---\n\n# programs/lib.dl — signatures\n\n"
                  f"```\n{lib_signatures(lib.read_text())}```\n")
-    return "".join(parts)
+    return "# Handbook\n\nThe solver docs and lib.dl as a session reads them.\n" + "".join(parts)
