@@ -26,10 +26,6 @@ The body is faithful to the concept of the task: the actual task, not an artifac
 
 **Indirection.** Data enters in the form that its consumer reads, keyed by objects that the body already has. If a rule's only function is to convert one representation of a thing into another, one of the two representations is unjustified. Examples: renaming keys into a second vocabulary (a 2×2 tile position as its corner name); passing a flat correspondence through intermediate coordinates; storing an order as successor edges, which closure must expand before a comparison can read it. When the two sides differ in content, conversion is justified, as with a sparse set and its ranking (`Ordinal`).
 
-**Derived vs stored.** When the pairs exhibit a value directly, that value is task data, stored in Consts. A body derivation instead claims that the value depends on its source. That claim needs a witness: some pair varies the source and the value follows. A value that is the same in every pair has no witness. A derivation that reproduces it makes a claim that the data does not support (4522001f stores its 9×9 canvas; N·N of the 3×3 input would reproduce it). An unwitnessed derivation is allowed only as a case beside the data case, never as a replacement for it (3b4c2228). Setup gets no case, so it cannot include an unwitnessed derivation. Because the pairs witness a correspondence cell by cell, a frame built as a correspondence over input cells (007bbfb7) derives no number.
-
-**Zero is absence.** In spatial data, the number 0 means no gap, no offset, no distance: the lack of structure. It is never task data. A body may write `0` directly.
-
 **Performance.** The principled form is the right form regardless of performance.
 
 ## Invariance
@@ -41,6 +37,10 @@ The current task is one member of a family symmetric under ARC's transformations
 **Color.** Colors have identity and nothing else. Structure over colors (an ordering, a mapping, a partition) is task data, stored in Consts. Comparing by enum ordinal or iterating C0..C9 in the body adds structure that the task does not have.
 
 **Orientation.** A task may privilege a direction, axis, or transformation. Without that, no choice is privileged. Position's four edge distances remove the corner origin. Dir, Axis, DiagDir, and D4 make orientation choices values, so a mirrored sibling needs a Consts edit, not a body restructure.
+
+**Derived vs stored.** When the pairs exhibit a value directly, that value is task data, stored in Consts. A body derivation instead claims that the value depends on its source. That claim needs a witness: some pair varies the source and the value follows. A value that is the same in every pair has no witness. A derivation that reproduces it makes a claim that the data does not support (4522001f stores its 9×9 canvas; N·N of the 3×3 input would reproduce it). An unwitnessed derivation is allowed only as a case beside the data case, never as a replacement for it (3b4c2228). Setup gets no case, so it cannot include an unwitnessed derivation. Because the pairs witness a correspondence cell by cell, a frame built as a correspondence over input cells (007bbfb7) derives no number.
+
+**Zero is absence.** In spatial data, the number 0 means no gap, no offset, no distance: the lack of structure. It is never task data. A body may write `0` directly.
 
 **Closure.** A Consts slot can carry structure: a membership set whose rows are exactly a structural class (every cardinal, a D4 orbit) with no payload that varies across them. No sibling fills a proper subset. Which members fire decides the encoding:
 
