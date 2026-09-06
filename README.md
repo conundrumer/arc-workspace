@@ -2,6 +2,8 @@
 
 ARC-AGI-2 work for the 2026 Kaggle competition. Python 3.12, `uv`.
 
+Run `just` to see frequently used scripts.
+
 ## Setup
 
 ```sh
@@ -59,14 +61,6 @@ After changing a patch, regenerate task JSON:
 
 ```sh
 uv run python scripts/materialize.py
-```
-
-## Solver console
-
-A local web console for batch solver work: launch `claude -p` workers in waves, review and commit their solvers.
-
-```sh
-uv run python tools/console/server.py
 ```
 
 ## Docs
