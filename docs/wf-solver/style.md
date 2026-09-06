@@ -1,4 +1,7 @@
-<!-- When editing this doc: write in the indicative mood. -->
+<!-- When editing this doc:
+- Write in the indicative mood.
+- Avoid justifications, unless there is necessary reason.
+- Avoid constrastive structures, unless the alternative needs to be addressed. -->
 
 # Style
 

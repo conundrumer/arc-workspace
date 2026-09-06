@@ -1,4 +1,7 @@
-<!-- When editing this doc: write in the imperative mood. -->
+<!-- When editing this doc:
+- Write in the imperative mood.
+- Avoid justifications, unless there is necessary reason.
+- Avoid constrastive structures, unless the alternative needs to be addressed. -->
 
 # Cadence
 

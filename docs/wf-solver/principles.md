@@ -1,6 +1,10 @@
-<!-- When editing this doc: write in the indicative mood. Cite a task by bare id
-to give a precedent, or by id with a gloss to state the task's facts; write the
-gloss without the task's internal vocabulary. -->
+<!-- When editing this doc:
+- Write in the indicative mood.
+- Avoid justifications, unless there is necessary reason.
+- Avoid constrastive structures, unless the alternative needs to be addressed.
+- When citing a task:
+    - To give precedence: write a bare id.
+    - To state the task's facts: write an id with a gloss not using the task's internal vocabulary. -->
 
 # Principles
 
