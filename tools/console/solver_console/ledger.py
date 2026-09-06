@@ -162,7 +162,10 @@ def act_flag(body: dict) -> dict:
 # ---------- debrief ----------
 #
 # When the callouts were last read across tasks. A debrief takes the tasks
-# landed after this mark, each with the callouts its latest report carries.
+# whose latest report was written after this mark, with the callouts it
+# carries. A callout turn rewrites the report, so a task comes back into the
+# window when it has new callouts, and a turn that files nothing, such as a
+# conversation with a finalize session, brings it back with none.
 
 def debriefed() -> int:
     try:
@@ -183,12 +186,23 @@ def act_debrief() -> dict:
 
 def debrief_view() -> dict:
     mark = debriefed()
-    landed: dict[str, int] = {}
-    for row in ledger_rows():
-        ts = int(row.get("ts") or 0)
-        if ts > mark:
-            landed[row["task"]] = max(ts, landed.get(row["task"], 0))
-    items = [{"id": tid, "title": solvers.title_of(tid), "ts": ts,
-              "callouts": solvers.task_callouts(tid)}
-             for tid, ts in sorted(landed.items())]
+    items = []
+    try:
+        dirs = sorted(d for d in config.REPORT_DIR.iterdir() if d.is_dir())
+    except OSError:
+        dirs = []
+    for d in dirs:
+        report = solvers.latest_report(d.name)
+        if report is None:
+            continue
+        try:
+            ts = int(report.stat().st_mtime)
+            callouts = solvers.parse_callouts(report.read_text())
+        except OSError:
+            continue
+        # a report filed before its callout turn lands carries none yet, and
+        # comes back once the turn rewrites it
+        if ts > mark and callouts:
+            items.append({"id": d.name, "title": solvers.title_of(d.name),
+                          "ts": ts, "callouts": callouts})
     return {"debriefed": mark, "items": items}

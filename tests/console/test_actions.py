@@ -1,6 +1,7 @@
 """The actions the user takes on an item, and what each one records."""
 
 import json
+import os
 import time
 
 from .conftest import PROP, item, worker, write_solver
@@ -449,16 +450,23 @@ def test_a_debrief_records_when_it_ran(srv, monkeypatch):
     assert json.loads(srv.DEBRIEF_FILE.read_text()) == {"ts": 900}
 
 
-def test_a_debrief_lists_the_tasks_landed_since_the_mark(srv, monkeypatch):
+def test_a_debrief_lists_the_tasks_whose_callouts_landed_since_the_mark(srv, monkeypatch):
     monkeypatch.setattr(srv, "now", lambda: 900.0)
     srv.act_debrief()
-    srv.ledger_append({"task": "a", "stage": "refine", "ts": 950})
-    srv.ledger_append({"task": "a", "stage": "create", "ts": 920})
-    srv.ledger_append({"task": "b", "stage": "refine", "ts": 800})
-    srv.save_report("a", "refine", "done\n\n## Callouts\n\n- [P2] a doc gap\n")
+    # a's refine callouts landed before the mark; its finalize turns since
+    # filed no report, so the mark already covers what it carries
+    srv.save_report("a", "refine", "done\n\n## Callouts\n\n- [P2] read already\n")
+    os.utime(srv.report_path("a", "refine"), (850, 850))
+    srv.ledger_append({"task": "a", "stage": "finalize", "ts": 950})
+    # b's callout turn rewrote its report after the mark
+    srv.save_report("b", "create", "done\n\n## Callouts\n\n- [P2] a doc gap\n")
+    os.utime(srv.report_path("b", "create"), (950, 950))
+    # c's report is filed and its callout turn has not landed yet
+    srv.save_report("c", "create", "done\n")
+    os.utime(srv.report_path("c", "create"), (960, 960))
     assert srv.debrief_view() == {
         "debriefed": 900,
-        "items": [{"id": "a", "title": "", "ts": 950, "callouts": ["[P2] a doc gap"]}]}
+        "items": [{"id": "b", "title": "", "ts": 950, "callouts": ["[P2] a doc gap"]}]}
 
 
 def test_a_flag_level_is_held_to_the_three(srv):

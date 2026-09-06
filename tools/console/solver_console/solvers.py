@@ -210,12 +210,21 @@ def report_stages(item_id: str) -> list[str]:
     return sorted(p.stem for p in d.glob("*.md")) if d.is_dir() else []
 
 
-def task_callouts(item_id: str) -> list[str]:
-    """Callouts from the task's most recent persisted report."""
+def latest_report(item_id: str) -> Path | None:
+    """The task's most recently written persisted report."""
     d = config.REPORT_DIR / item_id
     try:
         files = sorted(d.glob("*.md"), key=lambda p: p.stat().st_mtime)
-        return parse_callouts(files[-1].read_text()) if files else []
+    except OSError:
+        return None
+    return files[-1] if files else None
+
+
+def task_callouts(item_id: str) -> list[str]:
+    """Callouts from the task's most recent persisted report."""
+    p = latest_report(item_id)
+    try:
+        return parse_callouts(p.read_text()) if p else []
     except OSError:
         return []
 
