@@ -4,7 +4,7 @@ description: On user ask, bootstrap a solver session for arc-workspace.
 argument-hint: [solver|triage|debrief|<task_id>]
 ---
 
-First, read the output of `uv run python scripts/context.py` in full. It points back at each file for an entry or a body; read the file when the work is on the doc itself.
+First, when the handbook is not in your system prompt, read the output of `uv run python scripts/context.py` in full. It points back at each file for an entry or a body; read the file when the work is on the doc itself.
 
 Then dispatch on `$ARGUMENTS`:
 
@@ -37,7 +37,7 @@ Then dispatch on `$ARGUMENTS`:
 
 ## `debrief`
 
-- Send an agent to read the window (`curl -s localhost:8347/api/debrief`): the tasks landed since the last debrief, each with its callouts. It keeps the callouts that reach beyond the task's own solver and the Lib addition protocol, clusters them by what they are about, and returns one entry per cluster: a count, the gap in one plain sentence, the tasks, and one quote.
-- Send an agent per cluster to check whether a later change has closed it. It opens a report under `tools/console/state/reports/<task>/` when an entry needs its context, reads a doc as a session does (`uv run python scripts/context.py`), and reproduces a perf claim. It says whether the gap changed what a session did or was only noted. When the cluster is open, it returns the smallest edit that closes the gap, or the ways forward with the for and against of each. A gap the lib or the runner can close is closed there, and not in what a session reads. An argument from what earlier solvers did is weak, weakest for the earliest. An edit that serves one task's case overfits; it returns none.
-- Present the open clusters as a numbered list: the count, the gap, the tasks, whether it changed a session's work, and the edit or the ways forward, each in plain words. A cluster with one clear fix gets that fix made by an agent, and a second pass by kind: a solver gets the `cleanup` agent, a lib change gets its comments pruned, a doc addition gets pruned. A doc addition that answers text the doc already holds replaces that text. A cluster with more than one way forward gets the user's ruling, and then the fix and its second pass.
-- When the debrief is done, `curl -sX POST localhost:8347/api/debrief` moves the timestamp.
+- Run the `debrief` workflow (`.claude/workflows/debrief.js`) with no `args`. Its agents, the `debrief-*` definitions under `.claude/agents/`, read the window, check each issue, review every candidate fix, and make the fixes that stand. Each definition carries its stage's rules. The main session reads no window, report, or doc.
+- Present what the workflow returns as numbered lists: the tally by status; the dropped issues, each with its reason; the fixes made, each with its issues; the proposals entries written; the contested issues, each through its concrete case in plain words, the options as a sub-list with for and against, default first. No quote reaches the user.
+- Map the user's rulings to the chosen options, each with its issue id, and run the workflow again with them as `fixes` in `args`.
+- Close: `curl -sX POST localhost:8347/api/debrief` moves the timestamp.
