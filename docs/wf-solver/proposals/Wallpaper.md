@@ -49,7 +49,7 @@ Not: translation periodicity alone (`ShiftInvariance`); a fixed-frame symmetry (
 
 Match: `ShiftInvariance`, `sym_member`, `apply(D`, `mismatch`, `witnessed`, `period`.
 
-Callers: 0dfd9992 alone. Near: af22c60d, 981571dc, 0934a4d8 (Fit), 1b60fb0c search a mirror line or rotation center over an aperiodic pattern, where the comp tries no shift; the three Fit sites factor the search per axis over line indices.
+Callers: 0dfd9992 alone. Near: af22c60d, 981571dc with its twin 47996f11, 0934a4d8 (Fit), 1b60fb0c search a mirror line or rotation center over an aperiodic pattern, where the comp tries no shift; the Fit sites factor the search per axis over line indices.
 
 Interface: `step` would carry its generator, `step(key, g, p, q)`; `period` stays an input; an aperiodic axis contributing its full extent would serve the four sites, but their per-axis factoring reads as a separate reflection-axis primitive.
 

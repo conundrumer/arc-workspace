@@ -8,6 +8,6 @@ Callers: none beyond e633a9e5. Near: 291dc1e1 (blocks stack as slabs of their ow
 
 Interface: no change.
 
-Verdict: close; e633a9e5 rewritten as a per-edge walk. 2026-08-29.
+Closed: 2026-08-29 (minute not recorded). e633a9e5 rewritten as a per-edge walk.
 
 Route: 4df5b0ae ranks one place per tile line with `Order`, so a tile's offset is the count of lines before it.

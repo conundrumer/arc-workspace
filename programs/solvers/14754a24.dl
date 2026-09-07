@@ -58,15 +58,8 @@ footprint(P, Q, $Plus()) :-
     ; dir_elem(D), neighbor(P, D, Q), in(Q, _)    // and each cardinal step
     ).
 
-// $Shape — the stored cells, at every box seat that meets the frame. A
-// seat is found backward: each grid cell, viewed as each shape cell,
-// fixes the box it would sit in.
-.decl box_seat(m: Shift)
-box_seat(M) :- in(P, _), c.shape(S), displacement(S, P, M).
-
-footprint(M, Q, $Shape()) :-
-    box_seat(M), c.shape(S),           // box seat, shape cell
-    compose(M, S, Q), in(Q, _).        // laid onto the frame
+// $Shape — the stored cells.
+footprint(P, Q, $Shape()) :- in(Q, _), c.shape(S), displacement(S, Q, P).
 
 // Held back by a footprint cell that is neither mark nor fill.
 .decl blocked(p_place: Position, fp: Footprint)
