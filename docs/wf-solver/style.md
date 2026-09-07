@@ -35,7 +35,7 @@ One file per task (`<task_id>.dl`). Multi-impl cases go in that same file, disti
 
 1. `// <task_id>`
 2. Exactly one of:
-    - `// concept: <terms>` — family representative. Terms from `concepts.md`, separated by spaces, the union over cases: every term whose claim some case makes.
+    - `// concept: <terms>` — family representative. Terms from `concepts.md` that some case of the file claims, separated by spaces.
     - `// family: <task_id>` — family sibling: same body and Fit comp, fills may differ. Points at the representative, the family's first-solved member. A sibling's header keeps only task-specific content.
 3. `// shape: <terms>`, when one applies — task shape terms from `shapes.md`.
 4. `#include "../lib.dl"`
