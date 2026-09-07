@@ -95,7 +95,7 @@ A lib primitive is equivariant when `f(apply(D, P)) = apply(D, f(P))` for every 
 
 - Equivariant primitives are safe to parameterize from Consts.
 - A non-equivariant primitive adds a hidden orientation to a body that is otherwise symmetric. An explicit anchor parameter, or an equivariant encoding, removes that hidden orientation.
-    - A `T mod period` intile mapping is one, observable on non-divisible extents.
+    - A `T mod period` intile mapping is one such primitive, observable on non-divisible extents.
         - 332efdb3 <!-- a period-2 pattern; one case models it with `divide_by_size` K=1 G=1 in place of mod. -->
 
 ### Derived vs stored
