@@ -12,25 +12,25 @@ The theory of tasks and their solvers, and the design norms for the best model o
 
 ## Definitions
 
-- **body** <!-- aka program --> — the rules that derive `out` from `in` and Consts.
-- **Consts** <!-- aka parameters --> — the data of a solver.
-- **slot** <!-- aka parameter --> — a Consts relation that holds facts. A Consts relation derived by a rule is not a slot.
-- **fill** <!-- aka value --> — the facts a task gives a slot.
-- **Consts shape** <!-- aka parameterization --> — the slots with their schemas.
+- **body** — the rules that derive `out` from `in` and Consts. In synthesis terms, the *program* that the parameters complete.
+- **Consts** — the data of a solver. In modeling terms, the *parameters*.
+- **slot** — a Consts relation that holds facts. A Consts relation derived by a rule is not a slot. One *parameter*.
+- **fill** — the facts a task gives a slot. A parameter's *value*.
+- **Consts shape** — the slots with their schemas. The *parameterization*.
 - **Fit** — the rules that derive a slot's fill from the examples. Sibling solvers share the body and the Fit.
-- **model** — a Consts shape with the map from fill and input to output that a body computes over it. Bodies that compute the same map over one shape are alt impls of one model, and the same-model test (Coverage) checks that. A model admits <!-- aka fits --> a task when some fill of its shape produces the task's outputs from its inputs.
-- **family** — the tasks a model admits.
+- **model** — a Consts shape with the map from fill and input to output that a body computes over it. Bodies that compute the same map over one shape are alt impls of one model, and the same-model test (Coverage) checks that. A model fits a task when some fill of its shape produces the task's outputs from its inputs.
+- **family** — the tasks a model fits.
 - **sibling** — another task in the family.
-- **rival model** — of a model: another model that admits the task.
-- **decision point** <!-- aka factor --> — a property of the task that the pairs do not determine.
-- **claim** <!-- aka hypothesis --> — the assertion that the task is in a model's family. A claim decomposes by decision point into one answer per point.
+- **rival model** — of a model: another model that fits the task.
+- **decision point** — a property of the task that the pairs do not determine. In experimental-design terms, a *factor*, and its answers are its *levels*.
+- **claim** — the assertion that the task is in a model's family. In scientific terms, a *hypothesis*. A claim decomposes by decision point into one answer per point.
 - **case** — the encoding of one model in the solver, as a value of `Choice`. A record-typed `Choice` holds one field per decision point. A solver with one case has no `Choice`.
-- **witness** <!-- aka distinguishing input --> — an input on which two candidates, models or fills of one model, produce different outputs.
+- **witness** — an input on which two candidates, models or fills of one model, produce different outputs. In synthesis terms, a *distinguishing input*.
 - **exercised** — a part of the solver is exercised by a pair when that pair's output depends on it.
 - **setup** — the reading that every case shares, and the body rules that encode it.
-- **setup variant** <!-- aka reparameterization --> — another encoding of the same setup: it finds the same structure with a different Consts shape.
-- **settled form** <!-- aka precedent --> — the encoding that the corpus already uses for a setup structure. The solver that introduces a structure settles its form.
-- **reading** <!-- aka parse --> — which structures a model finds in the input grid. Models that find different structures are different readings.
+- **setup variant** — another encoding of the same setup: it finds the same structure with a different Consts shape. A *reparameterization* of the setup.
+- **settled form** — the encoding that the corpus already uses for a setup structure. The solver that introduces a structure settles its form. A *precedent*.
+- **reading** — which structures a model finds in the input grid. Models that find different structures are different readings. In vision terms, a *parse* of the grid.
 - **prior** — a core knowledge prior that ARC training tasks teach. The Prior terms of `concepts.md` name them. A case claims which priors the task teaches. Several models claim the same priors.
 
 The goal is a corpus that supports program synthesis of solvers. Lib primitives are the vocabulary of that synthesis, and fragments of solvers are its larger units. Bodies and their Fits accumulate across the corpus as fragments for reuse. Consts data stays specific to each task.
