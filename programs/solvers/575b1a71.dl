@@ -1,8 +1,8 @@
 // 575b1a71
 // concept: rank
-// c.mark cells recolor by their column's rank: columns holding a mark,
-// ranked by dist from the c.rank_dir edge, map through c.rank_color.
-// Other cells pass through.
+// Cells of the c.mark color recolor by rank: the lines holding a mark are
+// ranked from the c.rank_dir edge, and c.rank_color gives each rank its
+// color. Other cells pass through.
 
 #include "../lib.dl"
 
@@ -22,16 +22,23 @@
 // --- parse ---
 
 .comp Parse<Key> {
-    .decl cell(key: Key, p: Position, col: Color)
+    .decl cell(key: Key, p: Position, col: Color)  // input
 
-    .decl mark_dist(key: Key, p: Position, k: number)
-    mark_dist(Ky, P, K) :- cell(Ky, P, M), c.mark(M), c.rank_dir(D), dist(P, D, K).
+    // A mark cell beside its line of the rank axis.
+    .decl mark_line(key: Key, p: Position, l: Position)
+    mark_line(Ky, P, L) :-
+        cell(Ky, P, M), c.mark(M),
+        c.rank_dir(D), axis_of(D, A), split(P, A, L, _).
 
-    .init o = Ordinal<Key>
-    o.idx_set(Ky, K) :- mark_dist(Ky, _, K).
+    // The lines holding a mark, ordered along that axis.
+    .init order = OrderFrame<Key, Position>
+    order.axis(Ky, A) :- mark_line(Ky, _, _), c.rank_dir(D), axis_of(D, A).
+    order.member(Ky, L, L) :- mark_line(Ky, _, L).
 
     .decl rank(key: Key, p: Position, r: number)
-    rank(Ky, P, R) :- mark_dist(Ky, P, K), o.rank(Ky, K, R).
+    rank(Ky, P, R) :-
+        mark_line(Ky, P, L), order.pos(Ky, L, P_pos),
+        c.rank_dir(D), dist(P_pos, D, R).
 }
 
 .init parse = Parse<Unit>
@@ -39,7 +46,7 @@ parse.cell($U(), P, Col) :- in(P, Col).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- parse.rank($U(), P, R), c.rank_color(R, Col).
-out(P, Col) :- in(P, Col), !parse.mark_dist($U(), P, _).
+out(P, Col) :- in(P, Col), !c.mark(Col).
 
 // --- fit ---
 
