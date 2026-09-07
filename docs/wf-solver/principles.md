@@ -2,13 +2,11 @@
 - Write in the indicative mood.
 - Avoid justifications, unless there is necessary reason.
 - Avoid constrastive structures, unless the alternative needs to be addressed.
-- When citing a task:
-    - To give precedence: write a bare id.
-    - To state the task's facts: write an id with a gloss not using the task's internal vocabulary. -->
+- A cited task is a bare id. A gloss that states the task's facts in the rule's terms, without the task's internal vocabulary, goes in a comment beside the id. -->
 
 # Principles
 
-The theory of tasks and their solvers, and the design norms for the best model of a task.
+The theory of tasks and their solvers, and the design norms for the best model of a task. The goal is a corpus that supports program synthesis of solvers. Lib primitives are the vocabulary of that synthesis, and fragments of solvers are its larger units. Bodies and their Fits accumulate across the corpus as fragments for reuse. Consts data stays specific to each task.
 
 ## Definitions
 
@@ -33,72 +31,147 @@ The theory of tasks and their solvers, and the design norms for the best model o
 - **reading** — which structures a model finds in the input grid. Models that find different structures are different readings. In vision terms, a *parse* of the grid.
 - **prior** — a core knowledge prior that ARC training tasks teach. The Prior terms of `concepts.md` name them. A case claims which priors the task teaches. Several models claim the same priors.
 
-Generalization happens at the family level. The goal is a corpus that supports program synthesis of solvers. Lib primitives are the vocabulary of that synthesis, and fragments of solvers are its larger units. Bodies and their Fits accumulate across the corpus as fragments for reuse. Consts data stays specific to each task.
-
 ## Fidelity
 
 The body encodes the concept of the task, apart from how the data or the medium encodes it.
 
-**Relational form.** ARC concepts are relations between cells, regions, and properties. The body encodes them as relations. Arithmetic in a rule usually represents a relational operation: a wraparound shift is a walk along a cycle. Arithmetic that seems necessary usually marks a missing lib primitive, and the lib addition protocol decides.
+**Relational form.** ARC concepts are relations between cells, regions, and properties. The body encodes them as relations.
 
-**Lib units.** If the task does not have a lib unit's concept, the solver does not use that unit. Needing part of a unit's computation is not a reason to use it. A body that needs only one step of a unit writes that step with primitives or a local rule.
+- Arithmetic in a rule usually represents a relational operation: a wraparound shift is a walk along a cycle.
+- Arithmetic that seems necessary usually marks a missing lib primitive, and the lib addition protocol decides.
 
 **ARC values.** The body works in the task's own values: colors, directions, axes, D4 elements. Projecting them into bools or ints adds structure (ordering, arithmetic) that they do not have.
 
-**Indirection.** Data enters in the form that its consumer reads, keyed by objects that the body already has. If a rule's only function is to convert one representation of a thing into another, one of the two representations is unjustified. Conversions of that kind:
+**Lib units.** If the task does not have a lib unit's concept, the solver does not use that unit.
 
-- a key renamed into a second vocabulary, as a 2×2 tile position named by its corner
-- a flat correspondence routed through intermediate coordinates
-- an order stored as successor edges, which closure expands before a comparison reads it
+- Needing part of a unit's computation is not a reason to use it.
+- A body that needs only one step of a unit writes that step with primitives or a local rule.
 
-When the two sides differ in content, conversion is justified, as with a sparse set and its ranking (`Ordinal`).
+**Indirection.** Data enters in the form that its consumer reads, keyed by objects that the body already has. If a rule's only function is to convert one representation of a thing into another, one of the two representations is unjustified.
+
+- Conversions of that kind:
+    - a key renamed into a second vocabulary, as a 2×2 tile position named by its corner
+    - a flat correspondence routed through intermediate coordinates
+    - an order stored as successor edges, which closure expands before a comparison reads it
+- When the two sides differ in content, conversion is justified, as with a sparse set and its ranking (`Ordinal`).
 
 **Performance.** The principled form is the right form regardless of performance. A form chosen for speed is an artifact of the medium.
 
 ## Invariance
 
-The current task is one member of a family symmetric under ARC's transformations: rotations, mirrorings, recolorings, re-anchorings. The body is the part that stays the same across those variations. Each variation becomes a Consts value that the body parameterizes over. No two slots admit fills that contradict. Bodies specific to the current member are failures.
+Generalization happens at the family level. The current task is one member of a family symmetric under ARC's transformations: rotations, mirrorings, recolorings, re-anchorings. The body is the part that stays the same across those variations. Each variation becomes a Consts value that the body parameterizes over. No two slots admit fills that contradict. Bodies specific to the current member are failures.
 
 **Scope.** Invariance ranges over ARC's symmetry group: orientation, color, placement. It does not extend to the rule algebra. An OR fold is existence and an XOR fold is exact count: two concepts and two families, not one count-thresholded body with the threshold in Consts (dae9d2b5 vs 34b99a2b).
 
-**Color.** Colors have identity and nothing else. Structure over colors (an ordering, a mapping, a partition) is task data, stored in Consts. Comparing by enum ordinal or iterating C0..C9 in the body adds structure that the task does not have.
+**Color.** Colors have identity and nothing else.
 
-**Orientation.** A task may privilege a direction, axis, or transformation. Without that, no choice is privileged. Position's four edge distances remove the corner origin. Dir, Axis, DiagDir, and D4 make orientation choices values, so a mirrored sibling needs a Consts edit, not a body restructure.
+- Structure over colors (an ordering, a mapping, a partition) is task data, stored in Consts.
+- Comparing by enum ordinal or iterating C0..C9 in the body adds structure that the task does not have.
 
-**Derived vs stored.** When the pairs exhibit a value directly, that value is task data, stored in Consts. A body derivation instead claims that the value depends on its source. The witness for that claim is a pair on which the derivation and the stored slot's fill give different values. Against a stored constant, that is a pair whose source differs from the other pairs' and whose value follows it, so a value that is the same in every pair has no witness (4522001f: the input is 3×3 and the output 9×9 in every pair; the output extent is stored, and the square of the input extent would reproduce it). Against a stored table, that is a pair whose key lies outside the train entries. An unwitnessed derivation stands only as a case beside the data case (3b4c2228: the count renders as marks down a diagonal, or from a stored grid per count; every train and test count is a key of that table, so the two never differ on a pair). Setup gets no case, so it cannot include an unwitnessed derivation. Because the pairs witness a correspondence cell by cell, a frame built as a correspondence over input cells (007bbfb7) derives no number.
+**Orientation.** A task may privilege a direction, axis, or transformation. Without that, no choice is privileged.
+
+- Position's four edge distances remove the corner origin.
+- Dir, Axis, DiagDir, and D4 make orientation choices values, so a mirrored sibling needs a Consts edit, not a body restructure.
+
+**Equivariance.** A lib primitive is equivariant when `f(apply(D, P)) = apply(D, f(P))` for every D in D4. A lib primitive reads specific Position fields internally if and only if it is equivariant.
+
+- Equivariant primitives are safe to parameterize from Consts.
+- A non-equivariant primitive adds a hidden orientation to a body that is otherwise symmetric. A `T mod period` intile mapping is one, observable on non-divisible extents. The remedy is an explicit anchor parameter, or an equivariant encoding.
+    - 332efdb3 <!-- a period-2 pattern, modeled with `divide_by_size` K=1 G=1 in place of mod. -->
+
+**Derived vs stored.** When the pairs exhibit a value directly, that value is task data, stored in Consts. A body derivation instead claims that the value depends on its source. The witness for that claim is a pair on which the derivation and the stored slot's fill give different values.
+
+- Against a stored constant, the witness is a pair whose source differs from the other pairs' and whose value follows it, so a value that is the same in every pair has no witness.
+    - 4522001f <!-- the input is 3×3 and the output 9×9 in every pair; the output extent is stored, and the square of the input extent would reproduce it. -->
+- Against a stored table, the witness is a pair whose key lies outside the train entries.
+- An unwitnessed derivation stands only as a case beside the data case.
+    - 3b4c2228 <!-- the count renders as marks down a diagonal, or from a stored grid per count; every train and test count is a key of that table, so the two never differ on a pair. -->
+- Setup gets no case, so it cannot include an unwitnessed derivation.
+- Because the pairs witness a correspondence cell by cell, a frame built as a correspondence over input cells (007bbfb7) derives no number.
 
 **Zero is absence.** In spatial data, the number 0 means no gap, no offset, no distance: the lack of structure. It is never task data. A body may write `0` directly.
 
 **Closure.** A Consts slot can carry structure: a membership set whose rows are exactly a structural class (every cardinal, a D4 orbit) with no payload that varies across them. No sibling fills a proper subset. Which members fire decides the encoding:
 
-- If every member fires, the class is structural. The body enumerates it (`dir_elem`, `diag_dir_elem`). Consts keys the datum by class (0ca9ddb6: a marked dot grows arms in every cardinal direction or in every diagonal one, and one color is stored per kind of arm).
+- If every member fires, the class is structural. The body enumerates it (`dir_elem`, `diag_dir_elem`). Consts keys the datum by class.
+    - 0ca9ddb6 <!-- a marked dot grows arms in every cardinal direction or in every diagonal one, and one color is stored per kind of arm. -->
 - If one member fires and another must not, a slot holds the member.
 - If a task fires a peer class (cardinals against diagonals), it gets another body, not a refill (1f876c06, dbc1a6ce).
-- If the values vary per row, the rows are data and the class is the domain (d364b489: each marker paints its four neighbors, and each direction has its own color).
+- If the values vary per row, the rows are data and the class is the domain.
+    - d364b489 <!-- each marker paints its four neighbors, and each direction has its own color. -->
 
-Closure decides the encoding and removes no case. A membership set that some sibling refills is task data even when this task's fill coincides with a structural class (14754a24: each incomplete plus is completed from a footprint of a center and its four neighbors; a sibling that completes a T refills the footprint, so the footprint's data case stands beside its structural case).
+Closure decides the encoding and removes no case.
 
-**Underdetermined choices.** If every fill permits a body choice, that choice is not task data. A slot for it is unwitnessed. A literal hides it. The body enumerates its class and derives `out` per member, so the output is defined where the members agree (28a6681f settles water cell by cell; either end of the lateral axis may pour first, and the body runs both).
+- A membership set that some sibling refills is task data even when this task's fill coincides with a structural class.
+    - 14754a24 <!-- each incomplete plus is completed from a footprint of a center and its four neighbors; a sibling that completes a T refills the footprint, so the footprint's data case stands beside its structural case. -->
 
-**Equivariance.** A lib primitive is equivariant when `f(apply(D, P)) = apply(D, f(P))` for every D in D4. A lib primitive reads specific Position fields internally if and only if it is equivariant. Equivariant primitives are safe to parameterize from Consts. A non-equivariant primitive adds a hidden orientation to a body that is otherwise symmetric. A `T mod period` intile mapping is one, observable on non-divisible extents. The remedy is an explicit anchor parameter, or an equivariant encoding: 332efdb3 models its period-2 pattern with `divide_by_size` K=1 G=1 in place of mod.
+**Underdetermined choices.** If every fill permits a body choice, that choice is not task data.
+
+- A slot for it is unwitnessed. A literal hides it.
+- The body enumerates its class and derives `out` per member, so the output is defined where the members agree.
+    - 28a6681f <!-- water settles under gravity one cell at a time; along a line across gravity, either end may pour first, and the body runs both orders. -->
 
 ## Coverage
 
-A few train pairs underdetermine the family. Coverage is one case per model that the rules of this section admit. ARC training tasks are intended to teach core knowledge priors in pure form. Coverage shows which prior the task could be teaching. A record-typed Choice is the cross product of independent decision points (87ab05b8: one marked cell among noise, and the output fills the 2×2 region that holds it; three ways to locate the region cross two sources of the fill color).
+A few train pairs underdetermine the family. Coverage is one case per model that the rules of this section admit. ARC training tasks are intended to teach core knowledge priors in pure form. Coverage shows which prior the task could be teaching. A record-typed Choice is the cross product of independent decision points.
 
-**Data vs ops.** This is the main axis along which claims differ. Any relationship can be stored as Consts data (a table, claiming a lookup prior) or written as composed primitives (claiming a compositional prior). 3b4c2228 renders its count both ways: as marks composed down a diagonal, and as a stored grid per count. Data-leaning siblings vary the table. Ops-leaning siblings vary the parameters. The two claim different priors, and both get cases.
+- 87ab05b8 <!-- one marked cell among noise, and the output fills the 2×2 region that holds it; three ways to locate the region cross two sources of the fill color. -->
 
 **Same model or different.** Two candidates are the same model iff both hold:
 
 - same Consts shape — the free data that a sibling would refill. Derived or materialized helper relations do not count.
 - same outputs for every input under every fill of that shape
 
-Candidates that differ on either are different models. Candidates that match on both are alt impls of one model. Consts-shape divergence distinguishes candidates that coincide on the current task but parameterize different families (44f52bb0: the output is one of two stored grids by whether the input has a stored symmetry, or the stored grid of the largest group in a table that leaves the input invariant; the two agree on every input, the first is a two-entry fill of the second, and they claim different priors). One shared Consts slot across two claims asserts that they are the same parameter. If some task fits both claims and fills them differently, it refutes that assertion: 87ab05b8 reads a size, 2 in every pair, from a separate slot in each of its three ways to locate the region, because a 6×6 sibling sets them to 2 and 3. When no such task exists, the parameter is the same and shares one slot: d23f8c26 keeps one column of an odd-width grid, as the center line on a stored axis or as the gap of a two-way divide on that axis, and any task that fits both pins the axis to the same value.
+Candidates that differ on either are different models. Candidates that match on both are alt impls of one model. Consts-shape divergence distinguishes candidates that coincide on the current task but parameterize different families.
 
-A shared slot also requires a shared form: both claims read the datum in the same vocabulary. When the consumers differ, each claim stores the datum in its consumer's form, in a per-case slot. A shared slot that a case must convert fails the Indirection test. 2013d3e2 stores the output's location per case: the output is a corner region of a figure's bounding box, stored as a tile position for the case that divides the box into quadrants and as a corner for the case that seats a fixed window there.
+- 44f52bb0 <!-- the output is one of two stored grids by whether the input has a stored symmetry, or the stored grid of the largest group in a table that leaves the input invariant; the two agree on every input, the first is a two-entry fill of the second, and they claim different priors. -->
 
-A different model gets a case under the rules that follow. Divergence must be valid to count. When every divergence of a claim from a rival is ill-formed (the output has multiple values or is not total), the claim never fits a task that the rival misses, at any fill of its Consts shape. The rival subsumes it, and it gets no case (99fa7670's line fill: an unblocked ray diverges from the stepwise flow only by claiming two colors on one cell). Partiality alone is not subsumption: a model that fails on some inputs but validly diverges on others is still a rival. When a co-chosen decision pins an ops claim's inputs to stored data, that claim computes a function of Consts. Its tabulation is a fill of the data rival, so it gets no case (21897d95).
+**Data vs ops.** This is the main axis along which claims differ. Any relationship can be stored as Consts data (a table, claiming a lookup prior) or written as composed primitives (claiming a compositional prior). The two claim different priors, and both get cases.
 
-**Concept vs setup.** Cases are claims about the prior that the task teaches. Setup is the reading that every case shares (662c240a: square tiles stand in a stack along an axis, and the output is the one tile whose symmetry differs; every case reads the same stack). A setup has variants: that stack can be found by tile count, by tile size, or by squareness with no datum. The same-model test separates the three by Consts shape, but all three invoke one segmentation prior and differ only in which datum finds the stack. Together they get one case: the variant whose facts the body already reads (1190bc91), written in the corpus's settled form (2dee498d, f25ffba3). The cases go to the rival priors: a stored symmetry that the other tiles share, against the existence of any symmetry. A same-model separation gets a case only when it separates priors, regardless of its decision point. A variant that depends on different input structure is a different reading and gets a case. A variant that finds the same structure another way remains a setup variant.
+- Data-leaning siblings vary the table. Ops-leaning siblings vary the parameters.
+- 3b4c2228 <!-- the count renders both ways, as marks composed down a diagonal and as a stored grid per count. -->
 
-**A claim needs evidence.** A rival that reads the task differently gets a case. If no pair exercises a rival's added rules, slots, or comps, that rival gets no case. A claim with no relational form gets no case. When a claim's encoding depends on arithmetic and the lib addition protocol closes the primitive, that claim has no relational form (`proposals/MinHops.md`). A mapping table needs multiple entries exercised (44f52bb0: both symmetry classes occur in the pairs; a one-entry ring table over a plain border sits unexercised). When some pair contradicts an identification rule, that rule is out (87ab05b8 train 0 contradicts count-based marker identification: every noise color is a singleton). Data-leaning Consts must be refillable from the train pairs and test inputs. The test outputs are held out. A test key absent from the train-exhibited entries rules out the table claim (1fad071e: test count 3 over train's {2, 4} rules out its table; 3b4c2228's test counts stay inside train's set, so its table stands). The correct output at that unseen key is evidence that the prior is compositional.
+**Subsumption.** A different model gets a case under the rules that follow. Divergence must be valid to count.
+
+- When every divergence of a claim from a rival is ill-formed (the output has multiple values or is not total), the claim never fits a task that the rival misses, at any fill of its Consts shape. The rival subsumes it, and it gets no case.
+    - 99fa7670 <!-- each ink dot fills its line toward one edge, and the next dot's fill occludes it; an unblocked ray diverges from that stepwise flow only by claiming two colors on one cell. -->
+- Partiality alone is not subsumption: a model that fails on some inputs but validly diverges on others is still a rival.
+- When a co-chosen decision pins an ops claim's inputs to stored data, that claim computes a function of Consts. Its tabulation is a fill of the data rival, so it gets no case (21897d95).
+
+**Concept vs setup.** Cases are claims about the prior that the task teaches. Setup is the reading that every case shares.
+
+- 662c240a <!-- square tiles stand in a stack along an axis, and the output is the one tile that lacks the symmetry the others share; every case reads the same stack. -->
+- A setup has variants, and together they get one case: the variant whose facts the body already reads (1190bc91), written in the corpus's settled form (2dee498d, f25ffba3).
+    - 662c240a <!-- the stack can be found by tile count, by tile size, or by squareness with no datum; the same-model test separates the three by Consts shape, but all three invoke one segmentation prior and differ only in which datum finds the stack. -->
+- The cases go to the rival priors. A same-model separation gets a case only when it separates priors, regardless of its decision point.
+    - 662c240a <!-- a stored symmetry that the other tiles share, against the existence of any symmetry. -->
+- A rival that reads the task differently gets a case.
+    - A variant that depends on different input structure is a different reading and gets a case.
+    - A variant that finds the same structure another way remains a setup variant.
+
+**A claim needs evidence.**
+
+- If no pair exercises a rival's added rules, slots, or comps, that rival gets no case.
+- A claim with no relational form gets no case. When a claim's encoding depends on arithmetic and the lib addition protocol closes the primitive, that claim has no relational form (`proposals/MinHops.md`).
+- A mapping table needs multiple entries exercised. A one-entry ring table over a plain border sits unexercised.
+    - 44f52bb0 <!-- both symmetry classes occur in the pairs. -->
+- When some pair contradicts an identification rule, that rule is out.
+    - 87ab05b8 <!-- train pair 0 contradicts count-based marker identification, since every noise color is a singleton. -->
+- Data-leaning Consts must be refillable from the train pairs and test inputs. The test outputs are held out.
+    - A test key absent from the train-exhibited entries rules out the table claim.
+        - 1fad071e <!-- test count 3 over train's {2, 4} rules out its table. -->
+        - 3b4c2228 <!-- the test counts stay inside train's set, so its table stands. -->
+    - The correct output at that unseen key is evidence that the prior is compositional.
+
+**Shared slots.** One shared Consts slot across two claims asserts that they are the same parameter.
+
+- If some task fits both claims and fills them differently, it refutes that assertion.
+    - 87ab05b8 <!-- a size, 2 in every pair, is read from a separate slot in each of the three ways to locate the region, because a 6×6 sibling sets them to 2 and 3. -->
+- When no such task exists, the parameter is the same and shares one slot.
+    - d23f8c26 <!-- one column of an odd-width grid is kept, as the center line on a stored axis or as the gap of a two-way divide on that axis, and any task that fits both pins the axis to the same value. -->
+
+A shared slot also requires a shared form: both claims read the datum in the same vocabulary.
+
+- When the consumers differ, each claim stores the datum in its consumer's form, in a per-case slot.
+    - 2013d3e2 <!-- the output is a corner region of a figure's bounding box, stored as a tile position for the case that divides the box into quadrants and as a corner for the case that seats a fixed window there. -->
+- A shared slot that a case must convert fails the Indirection test.

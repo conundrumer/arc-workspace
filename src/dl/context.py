@@ -136,11 +136,17 @@ def entry_index(text: str, source: str) -> str:
     return "\n\n".join(p for p in (preamble.strip(), note, "\n".join(out)) if p) + "\n"
 
 
-def strip_comments(text: str) -> str:
-    """A doc without its HTML comments. They hold notes to the doc's editor,
-    and a solver session doesn't edit the doc."""
+NOTES_DROPPED = ("Cited tasks carry worked applications of the principle "
+                 "they sit under. Grep the task id in {rel} to read one.")
+
+
+def strip_comments(text: str) -> tuple[str, bool]:
+    """A doc without its HTML comments, and whether any sat past the opening
+    editing note. They hold notes to the doc's editor, and a solver session
+    doesn't edit the doc."""
     text = re.sub(r"\A<!--.*?-->\s*", "", text, flags=re.S)
-    return re.sub(r" ?<!--.*?-->", "", text, flags=re.S)
+    stripped = re.sub(r" ?<!--.*?-->", "", text, flags=re.S)
+    return stripped, stripped != text
 
 
 def render(docs: Path = DOCS_DIR, lib: Path = LIB_SRC) -> str:
@@ -148,11 +154,12 @@ def render(docs: Path = DOCS_DIR, lib: Path = LIB_SRC) -> str:
     parts: list[str] = []
     for name in DOCS:
         rel = f"docs/wf-solver/{name}"
-        text = strip_comments((docs / name).read_text())
+        text, dropped = strip_comments((docs / name).read_text())
+        note = f"\n\n{NOTES_DROPPED.format(rel=rel)}" if dropped else ""
         if name in INDEX:
-            parts.append(f"\n---\n\n# {rel} — index\n\n{entry_index(text, rel)}")
+            parts.append(f"\n---\n\n# {rel} — index{note}\n\n{entry_index(text, rel)}")
         else:
-            parts.append(f"\n---\n\n# {rel}\n\n{text}")
+            parts.append(f"\n---\n\n# {rel}{note}\n\n{text}")
     parts.append("\n---\n\n# programs/lib.dl — signatures\n\n"
                  f"```\n{lib_signatures(lib.read_text())}```\n")
     return "# Handbook\n\nThe solver docs and lib.dl as a session reads them.\n" + "".join(parts)

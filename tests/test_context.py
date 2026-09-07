@@ -87,6 +87,11 @@ def test_render_reads_the_listed_docs_in_order(tmp_path: Path):
     assert out.index("# docs/wf-solver/style.md") < out.index("# docs/wf-solver/patterns.md")
     assert "# docs/wf-solver/patterns.md — index\n" in out
     assert "- **A pattern** — Its claim.\n" in out
-    assert "# docs/wf-solver/style.md\n\n# Style\n\nEvery word of it.\n" in out
+    assert ("# docs/wf-solver/style.md\n\n"
+            "Cited tasks carry worked applications of the principle they"
+            " sit under. Grep the task id in docs/wf-solver/style.md to"
+            " read one.\n\n"
+            "# Style\n\nEvery word of it.\n") in out
+    assert "# docs/wf-solver/cadence.md\n\n# cadence.md\n" in out   # no note without notes
     assert "# programs/lib.dl — signatures\n" in out
     assert "out(P) :- in(P, _)." not in out
