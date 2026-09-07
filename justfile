@@ -8,3 +8,7 @@ session *args:
 # Start the console for batch solver work. Arguments pass through.
 console *args:
     uv run python tools/console/server.py {{args}}
+
+# Swap the two accounts between your Claude home and the console's. Stop the console first.
+swap:
+    scripts/swap-accounts.sh
