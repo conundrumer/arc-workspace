@@ -1,4 +1,10 @@
-"""The fit plan: which Consts slots need Fit relations, from the proposer probe."""
+"""The fit plan: which Consts slots need Fit relations, from the proposer probe.
+
+In conventional terms, the values consistent with the examples are a
+slot's version space. A proposer restricts the space that settling
+searches: a pinned slot is point-identified by its proposer, a narrowed
+slot set-identified, and settling enumerates the rest under the budget.
+"""
 
 import math
 import re
