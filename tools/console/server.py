@@ -9,6 +9,10 @@ with review comments, and commits approved solvers.
 Env:
     CONSOLE_FAKE=1     use fake_worker.py instead of claude (UI demo)
     CONSOLE_CLAUDE     claude binary (default: claude)
+    CONSOLE_CLAUDE_HOME    the Claude home the workers run under, logged into the
+                           console's account (default: ~/.claude-console); the
+                           login is `CLAUDE_CONFIG_DIR=<home> claude`, then /login,
+                           and `just swap` trades the two homes' accounts
     CONSOLE_OPUS_MODEL     the model id behind the "opus" setting (default: claude-opus-5)
     CONSOLE_FABLE_MODEL    the model id behind the "fable" setting (default: claude-fable-5)
     CONSOLE_CLAUDE_EFFORT  effort for claude stages whose chain names none (default: high)

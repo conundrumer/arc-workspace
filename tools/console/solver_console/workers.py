@@ -8,9 +8,7 @@ import time
 import uuid
 from pathlib import Path
 
-import quota
-
-from . import landing, pacing, process, prompts, solvers, store
+from . import config, landing, pacing, process, prompts, solvers, store
 
 # Thinking tokens with no tool call or text before the feed says so. Well
 # above a working turn's bursts, and far enough below the 64k output cap that
@@ -180,7 +178,7 @@ def respawn_done(it: dict, phase: str) -> None:
 
 def transcript_of(session: str) -> Path | None:
     """The CLI's own record of a session."""
-    return next(iter(quota.PROJECTS.glob(f"*/{session}.jsonl")), None)
+    return next(iter(config.PROJECTS.glob(f"*/{session}.jsonl")), None)
 
 
 def tail_rows(worker: dict, session: str) -> list[dict]:

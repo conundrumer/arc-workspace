@@ -4,7 +4,6 @@ quota death does to an item."""
 import json
 import random
 import re
-import subprocess
 import time
 from pathlib import Path
 
@@ -378,16 +377,10 @@ def read_usage(api: Path | None = None, status: Path | None = None) -> list[dict
 
 
 def usage_loop() -> None:
-    """Fetch the account's windows every poll. A fetch that fails leaves the
-    last reading in place."""
+    """Fetch the account's windows every poll."""
     sampler = quota.Sampler()
     while True:
-        if config.USAGE_FETCH.exists():
-            try:
-                subprocess.run(["bash", str(config.USAGE_FETCH), "--force"],
-                               capture_output=True, timeout=30)
-            except (OSError, subprocess.TimeoutExpired):
-                pass
+        quota.fetch(force=True)
         fresh = read_usage()
         if fresh:
             store.USAGE = fresh

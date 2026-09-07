@@ -1,4 +1,11 @@
 {
+  "env": {
+    "CLAUDE_CODE_FORK_SUBAGENT": "1",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "opus"
+  },
+  "cleanupPeriodDays": 36500,
+  "autoCompactEnabled": false,
+  "skipAutoPermissionPrompt": true,
   "hooks": {
     "PreToolUse": [
       {

@@ -9,8 +9,9 @@ from . import pacing, store
 
 # Dollars of list-price usage per 1% of each rate-limit window. Nothing
 # publishes what a window holds, so these come from measurement: price every
-# assistant message in ~/.claude/projects that falls inside a window at list
-# rates, then divide by that window's utilization from the OAuth usage API.
+# assistant message in the console home's transcripts that falls inside a
+# window at list rates, then divide by that window's utilization from the
+# OAuth usage API.
 # Re-measure when the plan changes; a stale figure scales every readout.
 QUOTA_RATE = {"5h": 4.44, "wk": 19.58, "fbl": 6.91}
 

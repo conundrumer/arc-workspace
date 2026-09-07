@@ -23,11 +23,21 @@ AGENT_DIR = ROOT / ".claude" / "agents"
 REF_DIR = (ROOT.parent / "arc-synth-bun").resolve()
 QUEUE_CACHE = ROOT / "scripts" / ".queue-cache"
 
+# The Claude home the workers run under: the account they are logged into,
+# their transcripts, and the usage cache the pacer reads. A home of its own
+# keeps the console's account apart from the user's own sessions, so neither
+# spends the other's windows. The console's account logs in there once, with
+# `CLAUDE_CONFIG_DIR=<home> claude` and `/login`, spelled the same way as here:
+# the keychain entry is keyed by the path string.
+CLAUDE_HOME = Path(os.environ.get("CONSOLE_CLAUDE_HOME",
+                                  Path.home() / ".claude-console"))
+PROJECTS = CLAUDE_HOME / "projects"   # the CLI's transcripts, one per session
 # The account's rate-limit windows: the OAuth usage API cache the fetch
-# script writes, and the file the user's statusline writes from its own
-# responses, which is the fresher of the two while a session is open.
-USAGE_API = Path.home() / ".claude" / "usage-api.json"
-USAGE_STATUS = Path.home() / ".claude" / "usage.json"
+# script writes, and the file the statusline of an interactive session in
+# that home writes from its own responses, which is the fresher of the two
+# while such a session is open.
+USAGE_API = CLAUDE_HOME / "usage-api.json"
+USAGE_STATUS = CLAUDE_HOME / "usage.json"
 USAGE_FETCH = Path.home() / ".claude" / "scripts" / "fetch-usage-api.sh"
 USAGE_POLL = 60   # seconds between usage fetches
 
@@ -55,12 +65,16 @@ COMMIT_MODEL = os.environ.get("CONSOLE_COMMIT_MODEL", "claude-opus-5")
 # over. A report summarizes the transcript, so a smaller model writes it.
 REFUSAL_MODEL = os.environ.get("CONSOLE_REFUSAL_MODEL", "claude-sonnet-5")
 
-# The user's global prompt hook checks this and stays quiet for workers.
+# CLAUDE_CONFIG_DIR puts the worker in the console's home. A home of its own
+# carries none of the user's settings, so worker-settings.json restates the
+# ones a worker needs. The user's global prompt hook checks CLAUDE_NO_HEADLINE
+# and stays quiet for workers, for a console run in the user's own home.
 # The task tools are off by default for the worker models, so the cadence's
 # "a task per step" had nothing to call. They arrive deferred: the worker
 # reaches them through ToolSearch, and the init event lists them, so they also
 # have to sit in WORKER_TOOLS.
-WORKER_ENV = {**os.environ, "CLAUDE_NO_HEADLINE": "1",
+WORKER_ENV = {**os.environ, "CLAUDE_CONFIG_DIR": str(CLAUDE_HOME),
+              "CLAUDE_NO_HEADLINE": "1",
               "CLAUDE_CODE_ENABLE_TODO_TOOLS": "1"}
 
 WORKER_FLAGS = [

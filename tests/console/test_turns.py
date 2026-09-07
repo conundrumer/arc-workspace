@@ -336,6 +336,17 @@ def test_worker_cmd_for_a_claude_stage_carries_the_effort(srv, tmp_path, monkeyp
     assert cmd[cmd.index("--effort") + 1] == "low"
 
 
+def test_workers_run_in_the_consoles_claude_home(srv, tmp_path):
+    home = tmp_path / "claude-home"
+    assert srv.CLAUDE_HOME == home
+    assert srv.WORKER_ENV["CLAUDE_CONFIG_DIR"] == str(home)
+    transcript = home / "projects" / "-some-cwd" / "sess-1.jsonl"
+    transcript.parent.mkdir(parents=True)
+    transcript.write_text("")
+    assert srv.transcript_of("sess-1") == transcript
+    assert srv.transcript_of("sess-2") is None
+
+
 def test_worker_cmd_for_a_codex_stage_runs_the_adapter(srv, tmp_path, monkeypatch):
     monkeypatch.setattr(srv, "FAKE", False)
     append = tmp_path / "append.md"
@@ -361,7 +372,7 @@ def test_a_codex_session_leaves_the_cap_watch_with_nothing_to_read(
     and the runaway machinery finds nothing to act on."""
     home = tmp_path / "projects"
     home.mkdir()
-    monkeypatch.setattr(srv.quota, "PROJECTS", home)
+    monkeypatch.setattr(srv, "PROJECTS", home)
     it = codex_item(srv, "a", srv.RUNNING, sessions={"create": "codex-thread-1",
                                                      "refine": None})
     w = worker(srv, it, phase="create", state="running")

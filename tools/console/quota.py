@@ -6,23 +6,23 @@ history — so the only way to learn how usage maps onto a window is to record
 the two together as they move. `record` writes one sample per call, pairing
 every window's utilization with the tokens spent inside it.
 
-Tokens are summed across every local transcript, not console workers alone,
-because the windows count the whole account. Transcript reading is incremental:
-each file is read from where the last pass stopped.
+Tokens are summed across every transcript in the console's Claude home, not
+console workers alone, because the windows count the whole account. Transcript
+reading is incremental: each file is read from where the last pass stopped.
 
 server.py samples on its usage poll; calibrate.py reads the same transcripts
 for a one-shot measurement.
 """
 
 import json
+import os
 import subprocess
 import time
 from datetime import datetime
 from pathlib import Path
 
-PROJECTS = Path.home() / ".claude" / "projects"
-USAGE_API = Path.home() / ".claude" / "usage-api.json"
-FETCH = Path.home() / ".claude" / "scripts" / "fetch-usage-api.sh"
+from solver_console import config
+
 RETAIN = 8 * 86400  # a little past the longest window
 TIERS = ("in", "out", "read", "w5m", "w1h")
 
@@ -67,10 +67,24 @@ def tally(usage: dict) -> dict[str, int]:
     }
 
 
+def fetch(force: bool = False) -> None:
+    """Refresh the usage cache of the console's home. The script reads the
+    account that home is logged into. A fetch that fails leaves the last
+    reading in place."""
+    if not config.USAGE_FETCH.exists():
+        return
+    try:
+        subprocess.run(["bash", str(config.USAGE_FETCH)] + (["--force"] if force else []),
+                       env={**os.environ, "CLAUDE_CONFIG_DIR": str(config.CLAUDE_HOME)},
+                       capture_output=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
 def scan():
     """Every assistant message across all transcripts, deduplicated by id."""
     seen = set()
-    for f in PROJECTS.rglob("*.jsonl"):
+    for f in config.PROJECTS.rglob("*.jsonl"):
         try:
             lines = f.read_text(errors="replace").splitlines()
         except OSError:
@@ -89,14 +103,9 @@ def windows(force: bool = False) -> dict[str, tuple[float, float, int, str | Non
     here lands under the key server.py reads it by. `force` refetches rather
     than accepting the cache's own staleness window.
     """
-    if FETCH.exists():
-        try:
-            subprocess.run(["bash", str(FETCH)] + (["--force"] if force else []),
-                           capture_output=True, timeout=30)
-        except subprocess.SubprocessError:
-            pass
+    fetch(force)
     try:
-        raw = json.loads(USAGE_API.read_text())
+        raw = json.loads(config.USAGE_API.read_text())
     except (OSError, ValueError):
         return {}
     out = {}
@@ -138,7 +147,7 @@ class Sampler:
 
     def refresh(self) -> None:
         """Read whatever the transcripts have gained since the last pass."""
-        for f in PROJECTS.rglob("*.jsonl"):
+        for f in config.PROJECTS.rglob("*.jsonl"):
             try:
                 size = f.stat().st_size
             except OSError:

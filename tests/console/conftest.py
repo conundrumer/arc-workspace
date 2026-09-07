@@ -69,10 +69,10 @@ class Console:
 
 
 def load_console():
-    """server.py and its package, run into modules of their own, so no
-    module-level state carries between tests."""
+    """server.py, its package, and the helper modules beside it, run into
+    modules of their own, so no module-level state carries between tests."""
     for name in [n for n in sys.modules
-                 if n == "console_server" or n.startswith(PACKAGE)]:
+                 if n in ("console_server", "quota", "calibrate") or n.startswith(PACKAGE)]:
         del sys.modules[name]
     spec = importlib.util.spec_from_file_location("console_server", SERVER_PY)
     entry = importlib.util.module_from_spec(spec)
@@ -102,6 +102,7 @@ def tmp_path(workdir, request):     # noqa: A002 — replaces pytest's own
 @pytest.fixture
 def srv(tmp_path, monkeypatch):
     monkeypatch.setenv("CONSOLE_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("CONSOLE_CLAUDE_HOME", str(tmp_path / "claude-home"))
     # The server snapshots the environment into WORKER_ENV at import, so the
     # fake worker's pace has to be set before the module loads.
     monkeypatch.setenv("CONSOLE_FAKE_PACE", FAKE_PACE)
@@ -207,7 +208,7 @@ def transcript(srv, monkeypatch, tmp_path, session, rows=()):
     (home / "proj").mkdir(parents=True, exist_ok=True)
     path = home / "proj" / f"{session}.jsonl"
     path.write_text("".join(json.dumps(r) + "\n" for r in rows))
-    monkeypatch.setattr(srv.quota, "PROJECTS", home)
+    monkeypatch.setattr(srv, "PROJECTS", home)
     return path
 
 
