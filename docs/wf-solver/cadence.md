@@ -1,7 +1,7 @@
 <!-- When editing this doc:
 - Write in the imperative mood.
 - Avoid justifications, unless there is necessary reason.
-- Avoid constrastive structures, unless the alternative needs to be addressed. -->
+- Avoid contrastive structures, unless the alternative needs to be addressed. -->
 
 # Cadence
 
@@ -34,8 +34,8 @@ In every pass, when an encoding in the solver needs a banned form, or when a gre
 - Write the review for the user to act on: keep or add cases, fix awkward code, promote primitives. Include only items that the user can act on.
 - Does it follow principles? Judge this independently of lint and passing pairs.
 - Is there anything awkward or roundabout, like code that reads as pure implementation details with no conceptual meaning, or code that reimplements something existing, or repetitive code that might have a more principled form?
-- Any potential alt models? Do not propose alt impls, and do not list them in the review.
-- For each Choice case pair, and for each alt model considered and dropped, show where the models diverge, as a concrete witness. A witness is an input fragment and each model's output on it, taken from `uv run python scripts/run_dl.py grid <task_id>`. When the divergence requires a Consts slot to be refilled, refill that slot. Choose a witness that shows a valid divergence. For data-indistinguishable pairs, state what the shared data hides. Do not include a model that the data rules out, not even as a note on why it is absent.
+- Any potential rival models? Do not propose alt impls, and do not list them in the review.
+- For each Choice case pair, and for each rival model considered and dropped, show where the models diverge, as a concrete witness. A witness is an input fragment and each model's output on it, taken from `uv run python scripts/run_dl.py grid <task_id>`. When the divergence requires a Consts slot to be refilled, refill that slot. Choose a witness that shows a valid divergence. For data-indistinguishable pairs, state what the shared data hides. Do not include a model that the data rules out, not even as a note on why it is absent.
 - Write the review as a reply to the user, and end the turn with it: finish all task updates first, then write it with no tool calls after it.
 
 ## Passes
