@@ -50,9 +50,9 @@ def night_on(srv, **dials):
 def test_night_config_starts_at_the_defaults(srv):
     cfg = srv.night()
     assert cfg["on"] is False
-    assert (cfg["target"], cfg["reserve"], cfg["floor"], cfg["ceiling"]) == \
-        (6, 10, 5, 75)
+    assert (cfg["target"], cfg["reserve"], cfg["floor"]) == (6, 10, 5)
     assert cfg["catchup"] is True
+    assert cfg["pace"] == "share"
 
 
 def test_pacer_admits_below_the_pace_line(srv, monkeypatch):
@@ -114,32 +114,196 @@ def test_strict_pace_restarts_when_the_weekly_window_rolls(srv, monkeypatch):
     assert cfg["wk_start"] == 2
 
 
-def test_the_five_hour_ceiling_holds_new_admissions(srv, monkeypatch):
+def readings(srv, label, points, reset=None, at=AT):
+    """Feed the pacer a window's readings: (seconds before `at`, pct) pairs,
+    oldest first, the way the usage loop notes them."""
+    for ago, pct in points:
+        srv.note_usage([{"label": label, "pct": pct, "reset": reset}], at=at - ago)
+
+
+def running(srv, n):
+    """`n` workers mid-turn, on items of their own."""
+    for i in range(n):
+        worker(srv, item(srv, f"run{i}", srv.RUNNING), state="running")
+
+
+def test_the_rate_is_the_slope_of_a_windows_readings(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    readings(srv, "5h", [(900, 50), (600, 55), (300, 60), (0, 65)])
+    assert srv.rate("5h") == pytest.approx(60)      # 5 points per 5 minutes
+    readings(srv, "wk", [(60, 10), (0, 11)])
+    assert srv.rate("wk") is None                    # too short a span to read
+
+
+def test_a_window_that_rolled_over_starts_its_history_again(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    readings(srv, "5h", [(900, 80), (600, 90)], reset=AT + 600)
+    readings(srv, "5h", [(300, 2)], reset=AT + FIVE)   # the value fell: a new window
+    assert srv.rate("5h") is None
+    readings(srv, "5h", [(0, 7)], reset=AT + FIVE + 1)  # a one-second wobble of the reset
+    assert srv.rate("5h") == pytest.approx(60)
+    readings(srv, "5h", [(-60, 8)], reset=AT + FIVE + 3600)   # the reset moved
+    assert srv.rate("5h") is None
+
+
+def test_the_history_is_seeded_from_the_samples_file(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    rows = [{"t": int(AT - ago), "windows": {"5h": {"pct": pct, "end": int(AT + FIVE)},
+                                             "wk": {"pct": 20, "end": int(AT + WEEK)}}}
+            for ago, pct in [(600, 30), (300, 35), (0, 40)]]
+    srv.SAMPLE_FILE.write_text("".join(json.dumps(r) + "\n" for r in rows))
+    srv.seed_history()
+    assert srv.rate("5h") == pytest.approx(60)
+    assert srv.rate("wk") == pytest.approx(0)
+
+
+def test_the_five_hour_rule_holds_a_fleet_over_the_windows_budget(srv, monkeypatch):
     clock_at(srv, monkeypatch)
     set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50,
               five_pct=80, five_left=2 * 3600)
+    readings(srv, "5h", [(900, 60), (0, 80)], reset=AT + 2 * 3600)
     gate = srv.pacer()
     assert gate["open"] is False
-    assert "5h above ceiling" in gate["why"] and "squeeze zone opens at" in gate["why"]
-    assert gate["next"] == AT + 2 * 3600 - srv.SQUEEZE
+    assert gate["why"].startswith("5h at 80%")
+    five = next(w for w in gate["windows"] if w["label"] == "5h")
+    assert (five["rate"], five["budget"]) == (pytest.approx(80), pytest.approx(10))
 
 
-def test_the_squeeze_zone_admits_above_the_ceiling(srv, monkeypatch):
+def test_the_last_hour_before_a_reset_opens_no_wider(srv, monkeypatch):
     clock_at(srv, monkeypatch)
     set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50,
               five_pct=95, five_left=1800)
     gate = srv.pacer()
-    assert gate["open"] is True
-    assert gate["squeeze"] is True
+    assert gate["open"] is False           # 5 points left, one item spends 6 an hour
+    assert gate["why"].startswith("5h at 95%")
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50,
+              five_pct=90, five_left=1800)
+    assert srv.pacer()["open"] is True
 
 
-def test_a_five_hour_window_with_no_reset_reads_as_fresh(srv, monkeypatch):
+def test_a_five_hour_window_with_no_reset_is_a_full_window_away(srv, monkeypatch):
     clock_at(srv, monkeypatch)
-    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50, five_pct=90,
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50, five_pct=0,
               five_reset=False)
     gate = srv.pacer()
     assert gate["open"] is True
-    assert gate["squeeze"] is False
+    five = next(w for w in gate["windows"] if w["label"] == "5h")
+    assert five["budget"] == pytest.approx(20)
+
+
+def test_the_running_fleet_counts_at_its_share_before_the_slope_shows(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50,
+              five_pct=70, five_left=2 * 3600)       # 15 points an hour to spend
+    assert srv.pacer()["open"] is True             # 0 + 6 fits
+    running(srv, 2)
+    gate = srv.pacer()
+    assert gate["open"] is False                   # 12 + 6 does not
+    assert "12.0 + 6.0" in gate["why"]
+
+
+def test_the_observed_share_is_remembered_in_the_config(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50, five_pct=40)
+    running(srv, 2)
+    readings(srv, "5h", [(900, 30), (0, 40)], reset=AT + FIVE)   # 40 an hour, over two
+    srv.pacer()
+    assert srv.night()["share"]["5h"] == pytest.approx(20)
+    srv.PROCS.clear()
+    srv.HISTORY = {}
+    five = next(w for w in srv.pacer()["windows"] if w["label"] == "5h")
+    assert five["share"] == pytest.approx(20)
+
+
+def test_a_share_is_written_only_off_a_full_span_of_readings(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50, five_pct=40)
+    running(srv, 2)
+    readings(srv, "5h", [(300, 30), (0, 40)], reset=AT + FIVE)   # five minutes only
+    srv.pacer()
+    assert "5h" not in srv.night().get("share", {})
+
+
+def test_seeded_readings_do_not_count_toward_the_share(srv, monkeypatch):
+    """The file does not say how many were spending when a row was written,
+    so the mean that turns a slope into one item's share skips those rows."""
+    clock_at(srv, monkeypatch)
+    rows = [{"t": int(AT - ago), "windows": {"5h": {"pct": pct, "end": int(AT + FIVE)}}}
+            for ago, pct in [(900, 20), (600, 25), (300, 30)]]
+    srv.SAMPLE_FILE.write_text("".join(json.dumps(r) + "\n" for r in rows))
+    srv.seed_history()
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50, five_pct=35)
+    running(srv, 4)
+    readings(srv, "5h", [(0, 35)], reset=AT + FIVE)
+    srv.pacer()
+    assert srv.night()["share"]["5h"] == pytest.approx(15)     # 60 an hour over four
+
+
+def test_a_garbled_samples_file_seeds_nothing_and_raises_nothing(srv):
+    srv.SAMPLE_FILE.write_bytes(b'{"t": 1, "windows": {}}\n\xff\xfe{"t":')
+    srv.seed_history()
+    assert srv.rate("5h") is None
+
+
+def test_readings_that_stopped_arriving_go_stale(srv, monkeypatch):
+    at = clock_at(srv, monkeypatch)
+    readings(srv, "5h", [(900, 50), (0, 65)], reset=AT + FIVE)
+    assert srv.rate("5h") == pytest.approx(60)
+    clock_at(srv, monkeypatch, at + 20 * 60)
+    assert srv.rate("5h") is None
+
+
+def test_a_worker_counts_as_spending_from_the_moment_its_turn_is_sent(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    worker(srv, item(srv, "s", srv.RUNNING), state="sending")
+    worker(srv, item(srv, "p", srv.RUNNING), state="spawning")
+    worker(srv, item(srv, "i", srv.NEEDS_REVIEW), state="idle")
+    assert srv.spending() == 2
+
+
+def test_a_pace_line_hold_still_reads_every_window(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=45, wk_elapsed=50)
+    gate = srv.pacer()
+    assert gate["open"] is False
+    assert {w["label"] for w in gate["windows"]} == {"5h", "wk"}
+
+
+def test_a_spend_hold_is_logged_once_while_its_numbers_move(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50,
+              five_pct=80, five_left=2 * 3600)
+    night_on(srv)
+    readings(srv, "5h", [(900, 60), (600, 67), (300, 73), (0, 80)],
+             reset=AT + 2 * 3600)
+    srv.night_tick()
+    readings(srv, "5h", [(-60, 81)], reset=AT + 2 * 3600)
+    srv.night_tick()
+    texts = [e["text"] for e in srv.night()["log"]]
+    assert texts == ["pacer holding: 5h over budget"]
+
+
+def test_exhaust_skips_the_pace_lines(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=45, wk_elapsed=50, fbl=(60, 50))
+    srv.act_auto({"finalize": True})
+    assert srv.pacer()["open"] is False
+    srv.night()["pace"] = "exhaust"
+    gate = srv.pacer()
+    assert gate["open"] is True
+    assert gate["line"] is None
+
+
+def test_the_wall_holds_a_weekly_window_an_hour_out(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    srv.night()["pace"] = "exhaust"
+    set_usage(srv, monkeypatch, wk_pct=99, wk_elapsed=50)
+    gate = srv.pacer()
+    assert gate["open"] is False           # one point left, an item spends 1.4 an hour
+    assert gate["why"].startswith("wk at 99%")
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50, fbl=(97, 50))
+    assert srv.pacer(models=[srv.MODEL_IDS["opus"]])["open"] is True
+    assert srv.pacer(models=[srv.MODEL_IDS["fable"]])["why"].startswith("fbl at 97%")
 
 
 def test_pacer_holds_without_a_weekly_reading(srv, monkeypatch):
@@ -440,8 +604,8 @@ def test_a_resume_by_hand_keeps_the_cut_turns_flag(srv, monkeypatch):
     it = item(srv, "a", srv.NEEDS_REVIEW,
               resume_phase="refine", resume_handoff=True)
     assert srv.act_resume("a") == {"ok": True}
-    assert sent == [(srv.RESUME_BRIEF + srv.RESUME_HANDOFF_NOTE, "refine",
-                     {"trigger": "resume", "handoff": True, "admitted": True})]
+    assert sent == [(srv.RESUME_BRIEF + srv.RESUME_AGENTS_GONE + srv.RESUME_HANDOFF_NOTE,
+                     "refine", {"trigger": "resume", "handoff": True, "admitted": True})]
     assert it["state"] == srv.COMMENTED
     assert "resume_phase" not in it and "resume_handoff" not in it
 
@@ -526,12 +690,27 @@ def test_a_due_resume_relaunches_the_same_stage(srv, monkeypatch):
               resume_phase="refine", resume_handoff=True)
     out = srv.night_tick()
     assert out["resumed"] == ["a"]
-    brief = srv.RESUME_BRIEF + srv.RESUME_HANDOFF_NOTE
+    brief = srv.RESUME_BRIEF + srv.RESUME_AGENTS_GONE + srv.RESUME_HANDOFF_NOTE
     assert sent == [(brief, "refine",
                      {"trigger": "resume", "handoff": True, "admitted": True})]
     assert it["state"] == srv.COMMENTED
     assert "resume_at" not in it and "resume_phase" not in it
     assert it["feed"][-1] == {"kind": "you", "text": brief, "sess": "refine"}
+
+
+def test_a_resume_into_the_live_process_has_it_message_its_agents(srv, monkeypatch):
+    """A message reaches an agent only from the process that spawned it, so
+    the brief says what to do with the agents the cut killed by whether the
+    worker is still there."""
+    clock_at(srv, monkeypatch)
+    sent = []
+    monkeypatch.setattr(srv, "launch",
+                        lambda it, msg, phase, **kw: sent.append(msg))
+    night_on(srv, target=1)
+    it = item(srv, "a", srv.NEEDS_REVIEW, resume_at=AT - 1, resume_phase="refine")
+    worker(srv, it, state="idle")
+    srv.night_tick()
+    assert sent == [srv.RESUME_BRIEF + srv.RESUME_AGENTS_LIVE]
 
 
 def test_a_resume_that_is_not_due_waits(srv, monkeypatch):
@@ -565,13 +744,18 @@ def test_the_night_counts_what_landed_unreviewed(srv, monkeypatch):
 
 def test_the_mode_and_its_dials_survive_a_restart(srv):
     assert srv.act_night({"on": True, "target": 3, "catchup": False,
-                          "ceiling": 60}) == {"ok": True}
+                          "pace": "exhaust"}) == {"ok": True}
     srv.STATE.clear()
     srv.STATE.update({"seq": 0, "wave": 0, "items": []})
     srv.load()
     cfg = srv.night()
-    assert (cfg["on"], cfg["target"], cfg["ceiling"]) == (True, 3, 60)
+    assert (cfg["on"], cfg["target"], cfg["pace"]) == (True, 3, "exhaust")
     assert cfg["catchup"] is False
+
+
+def test_an_unknown_pace_is_refused(srv):
+    assert "error" in srv.act_night({"pace": "fast"})
+    assert srv.night()["pace"] == "share"
 
 
 def test_the_dials_are_held_to_their_range(srv):
@@ -830,8 +1014,7 @@ def test_two_standing_notes_do_not_take_turns_filling_the_log(srv, monkeypatch):
     for _ in range(5):
         srv.night_tick()
     texts = [e["text"] for e in srv.night()["log"]]
-    assert texts == ["queue is empty", "pacer holding: finalize: " + srv.pacer(
-        models=[srv.MODEL_IDS["fable"]])["why"]]
+    assert texts == ["queue is empty", "pacer holding: finalize: fbl at pace"]
 
 
 def test_the_both_source_keeps_finalize_behind_the_pacer(srv):
@@ -841,6 +1024,45 @@ def test_the_both_source_keeps_finalize_behind_the_pacer(srv):
     assert srv.auto_advances(it, "refine")
     night_on(srv, source="both")
     assert not srv.auto_advances(it, "refine")
+
+
+def test_exhaust_holds_the_queue_slot_while_the_fable_window_trails(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=55, wk_elapsed=50, fbl=(40, 50))
+    finalize_launch(srv, monkeypatch)
+    backlog_solver(srv, "aaa")
+    backlog_solver(srv, "bbb")
+    night_on(srv, source="both", pace="exhaust")
+    out = srv.night_tick()
+    assert out["admitted"] == ["aaa"]           # bbb still waits, so the queue holds
+    assert out["held"].startswith("queue: Fable window trails")
+    assert srv.night_view()["gate"]["open"] is True
+
+
+def test_the_queue_slot_runs_while_the_finalize_slot_is_full(srv, monkeypatch):
+    """Holding the queue behind a slot that cannot take more would run the
+    night at the finalize target alone."""
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=55, wk_elapsed=50, fbl=(40, 50))
+    finalize_launch(srv, monkeypatch)
+    for i in range(3):
+        finalize_item(srv, f"f{i}", state=srv.RUNNING)
+    backlog_solver(srv, "aaa")
+    night_on(srv, source="both", pace="exhaust", finalize_target=3)
+    out = srv.night_tick()
+    assert out["admitted"] == ["t00"]
+    assert out["held"] is None
+
+
+def test_the_queue_slot_runs_when_fable_has_caught_up_or_nothing_waits(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    finalize_launch(srv, monkeypatch)
+    night_on(srv, source="both", pace="exhaust")
+    set_usage(srv, monkeypatch, wk_pct=55, wk_elapsed=50, fbl=(53, 50))
+    backlog_solver(srv, "aaa")
+    assert srv.night_tick()["admitted"] == ["aaa", "t00"]
+    set_usage(srv, monkeypatch, wk_pct=55, wk_elapsed=50, fbl=(40, 50))
+    assert srv.night_tick()["admitted"] == ["t01"]      # nothing left to finalize
 
 
 def test_the_payload_carries_a_count_per_slot(srv, monkeypatch):
@@ -903,7 +1125,7 @@ def test_a_usage_file_that_is_missing_or_broken_yields_to_the_other(srv, tmp_pat
 
 def test_the_usage_poll_forces_a_fetch_and_keeps_the_last_reading(srv, tmp_path, monkeypatch):
     calls = []
-    monkeypatch.setattr(srv.subprocess, "run", lambda cmd, **kw: calls.append(cmd))
+    monkeypatch.setattr(srv.subprocess, "run", lambda cmd, **kw: calls.append((cmd, kw)))
     monkeypatch.setattr(srv.quota.Sampler, "record", lambda self, path: None)
     monkeypatch.setattr(srv, "USAGE_FETCH", tmp_path / "fetch.sh")
     (tmp_path / "fetch.sh").write_text("")
@@ -917,10 +1139,32 @@ def test_the_usage_poll_forces_a_fetch_and_keeps_the_last_reading(srv, tmp_path,
     monkeypatch.setattr(srv.time, "sleep", one_pass)
     with pytest.raises(StopIteration):
         srv.usage_loop()
-    assert calls[0][1:] == [str(tmp_path / "fetch.sh"), "--force"]
+    cmd, kw = calls[0]
+    assert cmd[1:] == [str(tmp_path / "fetch.sh"), "--force"]
+    # The script reads the account the console's home is logged into.
+    assert kw["env"]["CLAUDE_CONFIG_DIR"] == str(srv.CLAUDE_HOME)
     assert [r["pct"] for r in srv.USAGE] == [55, 14, 4]
+    assert s.stat().st_mtime == srv.USAGE_AT
+    # A poll that finds the same reading again notes nothing new: a cache
+    # that stopped moving must not read as a fleet that stopped spending.
+    with pytest.raises(StopIteration):
+        srv.usage_loop()
+    assert len(srv.HISTORY["5h"]) == 1
+    fetched = srv.USAGE_AT
     a.unlink()
     s.unlink()
     with pytest.raises(StopIteration):
         srv.usage_loop()
     assert [r["pct"] for r in srv.USAGE] == [55, 14, 4]
+    assert fetched == srv.USAGE_AT
+
+
+def test_a_stale_usage_reading_holds_admissions(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50)
+    srv.USAGE_AT = AT - 60
+    assert srv.pacer()["open"] is True
+    srv.USAGE_AT = AT - 10 * 60
+    gate = srv.pacer()
+    assert gate["open"] is False
+    assert gate["hold"] == "usage reading stale"

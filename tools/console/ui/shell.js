@@ -209,6 +209,7 @@ function App(){
     <${NightPanel} night=${night} open=${nightOpen} onToggle=${onNightToggle}
       onCatchup=${v=>postNight({catchup:v})}
       onSource=${v=>postNight({source:v}, "source · "+v)}
+      onPace=${v=>postNight({pace:v}, "pace · "+v)}
       onDial=${(key,v)=>postNight({[key]:parseInt(v,10)})}/>
     <${CommitPanel} committer=${committer} open=${commitOpen}/>
     ${lens.Panels && html`<${lens.Panels} snap=${snap}/>`}

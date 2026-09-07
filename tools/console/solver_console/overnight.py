@@ -9,7 +9,7 @@ from . import backlog, pacing, prompts, store, waves, workers
 
 # Dial name -> the range the UI may set it to.
 NIGHT_DIALS = {"target": (1, 40), "finalize_target": (1, 40), "reserve": (0, 100),
-               "floor": (0, 100), "ceiling": (0, 100)}
+               "floor": (0, 100)}
 ADMIT_POLL = 30        # seconds between admitter passes
 
 
@@ -34,7 +34,10 @@ def resume_item(it: dict) -> None:
         return
     it["state"] = store.COMMENTED
     it["updated"] = False
-    brief = pacing.RESUME_BRIEF + (pacing.RESUME_HANDOFF_NOTE if handoff else "")
+    live = store.PROCS.get((it["id"], phase)) is not None
+    brief = (pacing.RESUME_BRIEF
+             + (pacing.RESUME_AGENTS_LIVE if live else pacing.RESUME_AGENTS_GONE)
+             + (pacing.RESUME_HANDOFF_NOTE if handoff else ""))
     store.say(it, {"kind": "you", "text": brief}, sess=phase)
     pacing.night_say(f"{it['id']} · resuming {phase}")
     workers.launch(it, brief, phase, trigger="resume", handoff=handoff,
@@ -93,6 +96,38 @@ def night_finalize() -> list[str]:
     return []
 
 
+# What the admitter last found when it asked whether finalize work waits.
+# The question costs a scan of the solvers and a git call, so the view reads
+# the pass's answer rather than asking again on every poll.
+FINALIZE_WAITING = False
+
+
+def finalize_waiting() -> bool:
+    """Whether the finalize slot has a solver to take, read without taking
+    it: the same test night_finalize applies to each row."""
+    global FINALIZE_WAITING
+    FINALIZE_WAITING = False
+    for row in backlog.backlog_view():
+        it = store.find(row["id"])
+        if it is None or backlog.finalize_ready(it):
+            FINALIZE_WAITING = True
+            break
+    return FINALIZE_WAITING
+
+
+def slot_gate(cfg: dict, kind: str, probe: bool = True) -> dict:
+    """The slot's gate: the pacer over the slot's models, and for the queue
+    slot the finalize-first hold while the finalize slot has room and work
+    to take. `probe` asks the backlog; the view takes the last answer."""
+    gate = pacing.pacer(models=pacing.slot_models(kind))
+    if gate["open"] and kind == "queue":
+        hold = pacing.fable_trails(cfg)
+        room = pacing.slot_live(cfg, "finalize") < pacing.slot_target(cfg, "finalize")
+        if hold and room and (finalize_waiting() if probe else FINALIZE_WAITING):
+            gate = {**gate, "open": False, "hold": hold[0], "why": hold[1]}
+    return gate
+
+
 def night_tick() -> dict:
     """One admitter pass: the resumes that came due, then one admission into
     each slot of the active source that is free and whose gate is open. The
@@ -114,7 +149,7 @@ def night_tick() -> dict:
         for kind in slots:
             if pacing.slot_live(cfg, kind) >= pacing.slot_target(cfg, kind):
                 continue
-            gate = pacing.pacer(models=pacing.slot_models(kind))
+            gate = slot_gate(cfg, kind)
             if gate["open"]:
                 ids = night_finalize() if kind == "finalize" else night_admit()
                 out["admitted"] += ids
@@ -123,7 +158,7 @@ def night_tick() -> dict:
                 changed = changed or bool(ids)
             else:
                 # under both the line names the slot, since the other may be open
-                held.append(f"{kind}: {gate['why']}" if len(slots) > 1 else gate["why"])
+                held.append(f"{kind}: {gate['hold']}" if len(slots) > 1 else gate["hold"])
         if held:
             out["held"] = " · ".join(held)
             changed |= pacing.night_say("pacer holding: " + out["held"], once=True)
@@ -150,7 +185,7 @@ def slots_view(cfg: dict) -> list[dict]:
     target, and its gate while the mode is on."""
     return [{"kind": kind, "live": pacing.slot_live(cfg, kind),
              "target": pacing.slot_target(cfg, kind),
-             "gate": pacing.pacer(models=pacing.slot_models(kind)) if cfg["on"] else None}
+             "gate": slot_gate(cfg, kind, probe=False) if cfg["on"] else None}
             for kind in pacing.SOURCE_SLOTS[cfg["source"]]]
 
 
@@ -166,8 +201,6 @@ def joint_gate(slots: list[dict]) -> dict | None:
     out["open"] = any(g["open"] for g in gates)
     out["why"] = " · ".join(f"{s['kind']} {'open' if s['gate']['open'] else 'held'}: "
                             f"{s['gate']['why']}" for s in slots)
-    nexts = [g["next"] for g in gates if g.get("next")]
-    out["next"] = min(nexts) if nexts else None
     return out
 
 
@@ -179,8 +212,6 @@ def night_view() -> dict:
     gate = joint_gate(slots)
     soon = [(it["resume_at"], f"{it['id']} resumes") for it in store.STATE["items"]
             if it.get("resume_at")]
-    if gate and gate.get("next"):
-        soon.append((gate["next"], "squeeze zone opens"))
     if cfg["on"] and not soon:
         soon.append((store.now() + ADMIT_POLL, "admitter pass"))
     at, what = min(soon) if soon else (None, "")
@@ -203,13 +234,15 @@ def act_night(body: dict) -> dict:
                 return {"error": f"{name} must be a number"}
         if "catchup" in body:
             cfg["catchup"] = bool(body["catchup"])
-        if "source" in body:
-            if body["source"] not in pacing.NIGHT_SOURCES:
-                return {"error": "source must be one of " + ", ".join(pacing.NIGHT_SOURCES)}
-            if body["source"] != cfg["source"]:
-                cfg["source"] = body["source"]
+        for name, choices in (("source", pacing.NIGHT_SOURCES), ("pace", pacing.PACE_MODES)):
+            if name not in body:
+                continue
+            if body[name] not in choices:
+                return {"error": f"{name} must be one of " + ", ".join(choices)}
+            if body[name] != cfg[name]:
+                cfg[name] = body[name]
                 if cfg["on"]:
-                    pacing.night_say(f"source · {cfg['source']}")
+                    pacing.night_say(f"{name} · {cfg[name]}")
         if "on" in body and bool(body["on"]) != cfg["on"]:
             cfg["on"] = bool(body["on"])
             if cfg["on"]:

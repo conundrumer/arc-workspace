@@ -4,6 +4,7 @@ quota death does to an item."""
 import json
 import random
 import re
+import sys
 import time
 from pathlib import Path
 
@@ -20,13 +21,18 @@ from . import config, store
 NIGHT_DEFAULTS = {
     "on": False,
     "source": "queue",  # where the admitter draws from
+    "pace": "share",   # whether the week's quota is shared or spent to the wall
     "target": 6,       # items in flight the admitter keeps under the queue source
     "finalize_target": 3,   # the same, under the unfinalized source
     "reserve": 10,     # points of weekly quota held back from the pace line
     "floor": 5,        # weekly points spendable however early in the week
-    "ceiling": 75,     # 5h utilization above which new admissions hold
     "catchup": True,   # spend the slack the week has accumulated
 }
+
+# share: the pace lines hold weekly quota back for work outside the console.
+# exhaust: the account is the console's alone, and the week is spent down to
+# its limits; only the spend rules below gate an admission.
+PACE_MODES = ("share", "exhaust")
 
 
 # The queue source admits a task from the queue and runs it up to the stop;
@@ -41,17 +47,59 @@ NIGHT_LOG = 40         # night log entries kept
 LIVE = (store.QUEUED, store.RUNNING, store.COMMENTED)   # states with work still to come
 
 
-# The last hour before the 5h window resets, where the ceiling stops applying.
-# It matches the prompt-cache TTL: a turn that exhausts quota this close to the
-# reset resumes just after it with its cache still warm, so the retry costs
-# little. The same overrun earlier in the window strands a cold context, and
-# rebuilding it is what the ceiling exists to avoid.
-SQUEEZE = 3600
+# The spend rules. The fleet's rate in each window is read off the account's
+# own utilization, as the slope of the window's readings over the last
+# SLOPE_SPAN, so no model of what an item costs is needed and the rate
+# follows the pipeline as it stands. An admission is held when the fleet's
+# rate plus one more item's share would pass the window's budget: what is
+# left, spread over the time to the reset for the 5h window, and over the
+# next hour for a weekly one. The hour is the cache TTL. A turn cut by a
+# limit resumes cold past it, and a weekly window is spread by the pace
+# line or not at all, so an hour of spend is the headroom every window
+# keeps. Near a reset the time to it is clamped to the same hour, so the
+# last hour opens no wider than the headroom allows.
+SLOPE_SPAN = 15 * 60
+SLOPE_MIN = 3 * 60      # readings must span this long before a slope is read
+STALE = 3 * 60          # a newest reading older than this reads as no slope
+SHARE_SPAN = 10 * 60    # readings must span this long before a share is written
+WALL = 3600
+# What one item spends in a window, in points an hour, until the fleet has
+# been observed. From September 2026: fifteen live items took the 5h window
+# at about 85 points an hour, and the weekly figures follow at the windows'
+# dollar rates.
+SHARE_PRIOR = {"5h": 6.0, "wk": 1.4, "fbl": 3.9}
+# A reset that moves less than this is the API's rounding, not a new window.
+RESET_WOBBLE = 60
+# A reading that falls more than this since the last one is a new window.
+ROLLOVER_DROP = 5
+# Under exhaust with both slots, points the Fable window may trail the weekly
+# one before the queue slot holds for finalize work.
+FABLE_LAG = 3
+
+# Each window's recent readings, oldest first, as (time, pct, workers
+# mid-turn), and the reset each history belongs to. Replaced whole on every
+# reading, so a pass reads one consistent list. A seeded reading carries None
+# for the workers, since the file does not say how many were spending.
+HISTORY: dict[str, list[tuple[float, float, int | None]]] = {}
+HISTORY_RESET: dict[str, float | None] = {}
+# When the reading in store.USAGE was fetched; None before the first poll.
+# A reading older than USAGE_STALE holds admissions: a cache that stopped
+# moving says nothing about where the windows stand.
+USAGE_AT: float | None = None
+USAGE_STALE = 5 * 60
+
 # Spread the resumes of a fleet that all died on the same limit.
 RESUME_JITTER = (30, 210)
 RESUME_FALLBACK = 15 * 60   # when no reset time is known
 RESUME_BRIEF = ("your previous turn was cut off by a usage limit; continue "
                 "from where you stopped")
+# The agents a cut turn had running died with it. A message reaches one only
+# from the process that spawned it, so the note depends on whether the
+# resume lands in that process or a fresh one.
+RESUME_AGENTS_LIVE = ("; the agents that were running died with it, so message "
+                      "each one to continue rather than launching it again")
+RESUME_AGENTS_GONE = ("; the agents that were running died with it and cannot "
+                      "be messaged from this process, so launch them again")
 # Added when the cut turn owed a handoff report, so a session on an older
 # brief still learns where the report goes.
 RESUME_HANDOFF_NOTE = ("; the handoff report goes between `<handoff>` and "
@@ -153,6 +201,8 @@ def night() -> dict:
         cfg.setdefault(name, value)
     if cfg["source"] not in NIGHT_SOURCES:
         cfg["source"] = NIGHT_DEFAULTS["source"]
+    if cfg["pace"] not in PACE_MODES:
+        cfg["pace"] = NIGHT_DEFAULTS["pace"]
     cfg.setdefault("log", [])
     return cfg
 
@@ -189,10 +239,129 @@ def elapsed_pct(u: dict | None, at: float) -> float | None:
     return max(0.0, min(100.0, 100 * (1 - (u["reset"] - at) / u["window"])))
 
 
+# A worker spends from the moment its turn is sent until the turn ends.
+SPENDING = ("spawning", "sending", "running")
+
+
+def spending() -> int:
+    """Workers mid-turn: what the fleet's rate is spread over. Under the
+    lock, since the usage thread counts while other threads add and drop
+    workers."""
+    with store.LOCK:
+        return sum(1 for w in store.PROCS.values() if w.get("state") in SPENDING)
+
+
+def note_usage(rows: list[dict], at: float | None = None,
+               busy: int | None = -1) -> None:
+    """Add a reading of each window to its history. A window whose reset
+    moved or whose value fell has rolled over, and its history starts
+    again. `busy` is the workers mid-turn, counted now unless given."""
+    global HISTORY, HISTORY_RESET
+    at = store.now() if at is None else at
+    if busy == -1:
+        busy = spending()
+    hist, resets = dict(HISTORY), dict(HISTORY_RESET)
+    for u in rows:
+        label, pct, reset = u.get("label"), u.get("pct"), u.get("reset")
+        if label is None or pct is None:
+            continue
+        prev = hist.get(label) or []
+        if prev:
+            last_reset = resets.get(label)
+            moved = (reset is None) != (last_reset is None) or (
+                reset is not None and abs(reset - last_reset) > RESET_WOBBLE)
+            if moved or pct < prev[-1][1] - ROLLOVER_DROP:
+                prev = []
+        hist[label] = [r for r in prev if at - r[0] <= SLOPE_SPAN] + [(at, pct, busy)]
+        resets[label] = reset
+    HISTORY, HISTORY_RESET = hist, resets
+
+
+def seed_history(path: Path | None = None) -> None:
+    """Start the history from the sampler's file, so a reload does not wait
+    out the span before a slope can be read."""
+    path = config.SAMPLE_FILE if path is None else path
+    try:
+        lines = path.read_text(errors="replace").splitlines()[-(SLOPE_SPAN // 60 + 2):]
+    except (OSError, ValueError):
+        return
+    for line in lines:
+        try:
+            row = json.loads(line)
+            rows = [{"label": label, "pct": w.get("pct"), "reset": w.get("end")}
+                    for label, w in (row.get("windows") or {}).items()]
+            note_usage(rows, at=float(row["t"]), busy=None)
+        except (ValueError, KeyError, TypeError, AttributeError):
+            continue
+
+
+def recent(label: str) -> list[tuple]:
+    """The window's readings inside the span as of now, or none when the
+    newest has gone stale: readings that stopped arriving say nothing about
+    the fleet as it stands."""
+    at = store.now()
+    pts = [r for r in HISTORY.get(label) or [] if at - r[0] <= SLOPE_SPAN]
+    if pts and at - pts[-1][0] > STALE:
+        return []
+    return pts
+
+
+def rate(label: str) -> float | None:
+    """The window's spend in points an hour, the least-squares slope over its
+    recent readings; None until they span SLOPE_MIN."""
+    pts = recent(label)
+    if len(pts) < 2 or pts[-1][0] - pts[0][0] < SLOPE_MIN:
+        return None
+    n = len(pts)
+    mt = sum(r[0] for r in pts) / n
+    mp = sum(r[1] for r in pts) / n
+    var = sum((r[0] - mt) ** 2 for r in pts)
+    if not var:
+        return None
+    return 3600 * sum((r[0] - mt) * (r[1] - mp) for r in pts) / var
+
+
+def share(label: str, cfg: dict, observed: float | None) -> float:
+    """What one item spends in the window, in points an hour. Read from the
+    fleet while its rate shows, as the slope over the workers mid-turn
+    across the same readings, and remembered in the config for the times
+    none runs; the prior stands until something is observed."""
+    shares = cfg.setdefault("share", {})
+    pts = recent(label)
+    counted = [r[2] for r in pts if r[2] is not None]
+    busy = sum(counted) / len(counted) if counted else 0
+    # One short or one-sided stretch must not set what every later admission
+    # is measured by, so a share is written only off a full span of readings.
+    if observed is not None and observed > 0 and busy > 0 \
+            and pts[-1][0] - pts[0][0] >= SHARE_SPAN:
+        shares[label] = round(observed / busy, 2)
+    return shares.get(label) or SHARE_PRIOR.get(label, SHARE_PRIOR["5h"])
+
+
+def budget(u: dict, at: float) -> float:
+    """Points an hour the window can take: what is left, over the time to
+    its reset for the 5h window and over the next hour for a weekly one,
+    the time to a reset never read as less than that hour. A 5h window
+    with no reset is a full window away from one."""
+    left = max(0.0, 100.0 - (u.get("pct") or 0))
+    if u.get("label") == "5h":
+        to_reset = (u["reset"] - at) if u.get("reset") else (u.get("window") or WALL)
+        return left / (max(to_reset, WALL) / 3600)
+    return left / (WALL / 3600)
+
+
+def spend_windows(models: list[str]) -> list[dict]:
+    """The windows an admission running `models` draws down, each once."""
+    out: list[dict] = []
+    for m in models:
+        out += [u for u in draws(m) if u not in out]
+    return out
+
+
 def pacer(at: float | None = None, models: list[str] | None = None) -> dict:
     """Whether the admitter may start another item, and what to say about it.
-    `models` are the model ids the admission would run; the Fable window
-    paces the gate only when one of them is Fable.
+    `models` are the model ids the admission would run; a window paces the
+    gate only when one of them draws it down.
 
     Only new admissions are gated. A turn already in flight, a review comment,
     and every manual action run whatever the windows read.
@@ -201,26 +370,59 @@ def pacer(at: float | None = None, models: list[str] | None = None) -> dict:
     if models is None:
         models = admit_models()
     cfg = night()
-    wk, five = window("wk"), window("5h")
-    out = {"open": False, "why": "", "next": None, "wk": None, "line": None,
-           "fiveh": None, "ceiling": cfg["ceiling"], "squeeze": False,
-           "squeezeAt": None}
+    wk = window("wk")
+    # `why` says what the gate read; `hold` names the rule that held, in
+    # words that stay the same while the numbers move, so the night log
+    # records a hold once.
+    out = {"open": False, "why": "", "hold": "", "wk": None, "line": None,
+           "elapsed": None, "fbl": None, "windows": []}
     wk_elapsed = elapsed_pct(wk, at)
     if wk is None or wk_elapsed is None:
-        out["why"] = "no weekly usage reading yet"
+        out["why"] = out["hold"] = "no weekly usage reading yet"
         return out
+    if USAGE_AT is not None and at - USAGE_AT > USAGE_STALE:
+        out["hold"] = "usage reading stale"
+        out["why"] = f"usage reading stale ({(at - USAGE_AT) / 60:.0f} min old)"
+        return out
+    out.update(wk=wk["pct"], elapsed=wk_elapsed)
+    # The spend rules, on every window the admission draws. A worker mid-turn
+    # counts at one share even before the slope shows it, so a burst of
+    # admissions is not under-read while the newest are warming up.
+    busy = spending()
+    spend_held = None
+    for u in spend_windows(models):
+        observed = rate(u["label"])
+        sh = share(u["label"], cfg, observed)
+        expected = max(observed or 0.0, busy * sh)
+        b = budget(u, at)
+        out["windows"].append({"label": u["label"], "pct": u["pct"], "rate": expected,
+                               "share": sh, "budget": b})
+        if spend_held is None and expected + sh > b:
+            spend_held = (f"{u['label']} over budget",
+                          f"{u['label']} at {u['pct']:.0f}%: {expected:.1f} + {sh:.1f} "
+                          f"points an hour over its budget of {b:.1f}")
+    held = pace_lines(cfg, models, wk, wk_elapsed, at, out) \
+        if cfg["pace"] == "share" else None
+    held = held or spend_held
+    if held:
+        out["hold"], out["why"] = held
+        return out
+    out["open"] = True
+    out["why"] = out["hold"] = "at pace"
+    return out
+
+
+def pace_lines(cfg: dict, models: list[str], wk: dict, wk_elapsed: float,
+               at: float, out: dict) -> tuple[str, str] | None:
+    """The share-mode holds: the weekly and Fable pace lines, and the strict
+    pace when catchup is off. A hold as (rule, reading), or None."""
     # The floor keeps the first hours of a week spendable: elapsed% starts at
     # zero there, and the pace line alone would hold every admission until the
     # week had caught up with the reserve.
     line = max(cfg["floor"], wk_elapsed - cfg["reserve"])
-    out.update(wk=wk["pct"], line=line, elapsed=wk_elapsed)
-    if five and five.get("reset"):
-        out["squeezeAt"] = five["reset"] - SQUEEZE
-        out["squeeze"] = at >= out["squeezeAt"]
-        out["fiveh"] = five["pct"]
+    out["line"] = line
     if wk["pct"] > line:
-        out["why"] = f"wk at pace ({wk['pct']:.0f}% vs {line:.0f}%)"
-        return out
+        return "wk at pace", f"wk at pace ({wk['pct']:.0f}% vs {line:.0f}%)"
     # The Fable window paces the same way when an admission runs Fable.
     fbl = window(FABLE_WINDOW) if any(is_fable(m) for m in models) else None
     fbl_elapsed = elapsed_pct(fbl, at)
@@ -228,8 +430,7 @@ def pacer(at: float | None = None, models: list[str] | None = None) -> dict:
         fbl_line = max(cfg["floor"], fbl_elapsed - cfg["reserve"])
         out["fbl"] = fbl["pct"]
         if fbl["pct"] > fbl_line:
-            out["why"] = f"fbl at pace ({fbl['pct']:.0f}% vs {fbl_line:.0f}%)"
-            return out
+            return "fbl at pace", f"fbl at pace ({fbl['pct']:.0f}% vs {fbl_line:.0f}%)"
     if not cfg["catchup"]:
         # Strict pace: spend no faster than the window elapses, measured from
         # the moment the mode came on. A window that rolled over under us reads
@@ -240,19 +441,26 @@ def pacer(at: float | None = None, models: list[str] | None = None) -> dict:
         else:
             points = 100 * (at - since) / wk["window"]
             if wk["pct"] - start > points:
-                out["why"] = (f"wk above strict pace (+{wk['pct'] - start:.1f} "
-                              f"vs +{points:.1f} since mode start)")
-                return out
-    # No reset time means the 5h window is not running — nothing to hold for.
-    if out["squeezeAt"] and five["pct"] > cfg["ceiling"] and not out["squeeze"]:
-        out["next"] = out["squeezeAt"]
-        out["why"] = (f"5h above ceiling ({five['pct']:.0f}% > "
-                      f"{cfg['ceiling']}%), squeeze zone opens at "
-                      f"{clock(out['squeezeAt'])}")
-        return out
-    out["open"] = True
-    out["why"] = "squeeze zone — reset is close" if out["squeeze"] else "at pace"
-    return out
+                return ("wk above strict pace",
+                        f"wk above strict pace (+{wk['pct'] - start:.1f} "
+                        f"vs +{points:.1f} since mode start)")
+    return None
+
+
+def fable_trails(cfg: dict) -> tuple[str, str] | None:
+    """Under exhaust with both slots, the hold on the queue slot while the
+    Fable window trails the weekly one, as (rule, reading): Opus spend
+    cannot move the Fable window, so the week that exhausts both runs
+    finalize first. The caller checks that the finalize slot can take
+    work and that work waits."""
+    if cfg["pace"] != "exhaust" or cfg["source"] != "both":
+        return None
+    wk, fbl = window("wk"), window(FABLE_WINDOW)
+    if not wk or not fbl or fbl["pct"] >= wk["pct"] - FABLE_LAG:
+        return None
+    return ("Fable window trails, finalize first",
+            f"Fable window trails the weekly one (fbl {fbl['pct']:.0f}% vs "
+            f"wk {wk['pct']:.0f}%), finalize first")
 
 
 def live_items() -> list[dict]:
@@ -366,29 +574,47 @@ def status_usage(path: Path | None = None) -> tuple[float, list[dict]]:
         return 0.0, []
 
 
-def read_usage(api: Path | None = None, status: Path | None = None) -> list[dict]:
-    """Rate-limit windows from the fresher of the two files; [] when neither
-    reads."""
+def usage_reading(api: Path | None = None,
+                  status: Path | None = None) -> tuple[float, list[dict]]:
+    """When the fresher of the two files was written, and its rate-limit
+    windows; (0, []) when neither reads."""
     api_at, api_rows = api_usage(api)
     status_at, status_rows = status_usage(status)
     if status_rows and status_at > api_at:
-        return status_rows
-    return api_rows or status_rows
+        return status_at, status_rows
+    if api_rows:
+        return api_at, api_rows
+    return status_at, status_rows
+
+
+def read_usage(api: Path | None = None, status: Path | None = None) -> list[dict]:
+    """Rate-limit windows from the fresher of the two files; [] when neither
+    reads."""
+    return usage_reading(api, status)[1]
 
 
 def usage_loop() -> None:
     """Fetch the account's windows every poll."""
+    global USAGE_AT
     sampler = quota.Sampler()
+    seed_history()
     while True:
-        quota.fetch(force=True)
-        fresh = read_usage()
-        if fresh:
-            store.USAGE = fresh
-        # Pairs each window's utilization with the tokens spent inside it, so
-        # the QUOTA_RATE figures can be refit from observation rather than
-        # measured by hand. Never worth failing the poll over.
+        # A poll that fails must not end the loop: the pacer reads nothing
+        # else, and a night with no readings admits nothing.
         try:
+            quota.fetch(force=True)
+            at, fresh = usage_reading()
+            if fresh:
+                store.USAGE = fresh
+                # The same reading again is a cache that did not move, not a
+                # fleet that stopped spending, so it adds nothing to the slope.
+                if at != USAGE_AT:
+                    USAGE_AT = at
+                    note_usage(fresh)
+            # Pairs each window's utilization with the tokens spent inside it,
+            # so the QUOTA_RATE figures can be refit from observation rather
+            # than measured by hand.
             sampler.record(config.SAMPLE_FILE)
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"usage poll failed: {exc!r}", file=sys.stderr)
         time.sleep(config.USAGE_POLL)
