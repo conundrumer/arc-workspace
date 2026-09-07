@@ -136,10 +136,11 @@ def entry_index(text: str, source: str) -> str:
     return "\n\n".join(p for p in (preamble.strip(), note, "\n".join(out)) if p) + "\n"
 
 
-def strip_editing_note(text: str) -> str:
-    """A doc without the HTML comment that opens it. That comment instructs
-    the doc's editor, and a solver session doesn't edit the doc."""
-    return re.sub(r"\A<!--.*?-->\s*", "", text, flags=re.S)
+def strip_comments(text: str) -> str:
+    """A doc without its HTML comments. They hold notes to the doc's editor,
+    and a solver session doesn't edit the doc."""
+    text = re.sub(r"\A<!--.*?-->\s*", "", text, flags=re.S)
+    return re.sub(r" ?<!--.*?-->", "", text, flags=re.S)
 
 
 def render(docs: Path = DOCS_DIR, lib: Path = LIB_SRC) -> str:
@@ -147,7 +148,7 @@ def render(docs: Path = DOCS_DIR, lib: Path = LIB_SRC) -> str:
     parts: list[str] = []
     for name in DOCS:
         rel = f"docs/wf-solver/{name}"
-        text = strip_editing_note((docs / name).read_text())
+        text = strip_comments((docs / name).read_text())
         if name in INDEX:
             parts.append(f"\n---\n\n# {rel} — index\n\n{entry_index(text, rel)}")
         else:

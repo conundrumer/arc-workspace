@@ -75,7 +75,9 @@ def test_render_reads_the_listed_docs_in_order(tmp_path: Path):
         (docs / name).write_text(f"# {name}\n")
     (docs / "backlog.md").write_text("# Backlog\n\n2. a queued idea\n")
     (docs / "patterns.md").write_text("# Patterns\n\n## A pattern\n\nIts claim.\n")
-    (docs / "style.md").write_text("# Style\n\nEvery word of it.\n")
+    (docs / "style.md").write_text(
+        "<!-- for the editor -->\n\n# Style\n\nEvery word <!-- aka all --> of it.\n"
+    )
     lib = tmp_path / "lib.dl"
     lib.write_text(".decl out(p: Position)\nout(P) :- in(P, _).\n")
 
