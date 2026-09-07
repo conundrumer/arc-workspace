@@ -155,15 +155,18 @@ fig.edge([Ch, X], D, K) :-
     grp.id([Ch, X, D], G), axis_of(D, A),    // the group that mark joined
     group_line(Ch, G, A, L), dist(L, D, K).  // the line the group took
 
-// The figures as margins from the four frame edges.
-.decl fig_box(ch: Choice, p: Position)
-fig_box(Ch, P) :- fig.pos([Ch, _], P_core), pad.pos(Ch, Pad), compose(P_core, Pad, P).
+// Each figure as margins from the four frame edges.
+.decl fig_box(ch: Choice, x: Ident, p: Position)
+fig_box(Ch, X, P) :-
+    fig.pos([Ch, X], P_core), pad.pos(Ch, Pad), compose(P_core, Pad, P).
 
+.init bcells = BoxCells<CaseFig>
+bcells.box([Ch, X], Box) :- fig_box(Ch, X, Box).
+bcells.cell([Ch, X], P) :- fig_box(Ch, X, _), frame.cell(Ch, P).
+
+// Each figure is drawn as the outline of its box.
 .decl ink(ch: Choice, p: Position)
-ink(Ch, P) :-
-    frame.cell(Ch, P), fig_box(Ch, Box),
-    geq(P, Box),                       // within the figure
-    dir_elem(D), same_dist(D, P, Box). // on its outline
+ink(Ch, P) :- bcells.on_edge([Ch, _], P, _).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- ink(Ch, P), fg(Col).

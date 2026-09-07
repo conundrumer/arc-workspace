@@ -31,7 +31,11 @@ comps.node($U(), P) :- ink(P).
 .init box = Bbox<Ident>
 box.cell(Id, P) :- comps.label($U(), P, Id).
 
-interior(P, $Box()) :- in(P, _), box.margin(_, M), gt(P, M).
+.init bcells = BoxCells<Ident>
+bcells.box(Id, M) :- box.margin(Id, M).
+bcells.cell(Id, P) :- box.cell(Id, _), in(P, _).
+
+interior(P, $Box()) :- bcells.hole(_, P).
 
 // --- $Erode ---
 

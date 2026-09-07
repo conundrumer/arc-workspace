@@ -92,16 +92,15 @@
     pbox.cell([Ky, K], P) :- patch_cell(Ky, K, P).
     pbox.grid([Ky, K], P) :- patch_cell(Ky, K, _), cell(Ky, P, _).
 
-    // The box cells on either arm of corner piv — the two box edges meeting
-    // there.
-    .decl arm_cell(key: Key, k: Ident, piv: DiagDir, p: Position)
-    arm_cell(Ky, K, Piv, P) :-
-        pbox.inside([Ky, K], P), pbox.margin([Ky, K], M),  // a cell of the box
-        dir_of(Piv, _, D),                                 // an edge of the corner
-        same_dist(D, M, P).                                // the cell lies on it
+    .init bcells = BoxCells<KI>
+    bcells.box([Ky, K], M) :- pbox.margin([Ky, K], M).
+    bcells.cell([Ky, K], P) :- pbox.inside([Ky, K], P).
 
+    // A patch against the two arms of each corner of its box — the two box
+    // edges meeting there.
     .init arms = KeyedSetCompare<KI, Arms, Position>
-    arms.pattern_member([[Ky, K], Piv], P) :- arm_cell(Ky, K, Piv, P).
+    arms.pattern_member([[Ky, K], Piv], P) :-
+        bcells.on_edge([Ky, K], P, D), dir_of(Piv, _, D).
     arms.observed_member([Ky, K], P) :- patch_cell(Ky, K, P).
 
     // A corner bracket: the patch is exactly the two arms meeting at piv. The

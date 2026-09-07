@@ -1387,6 +1387,53 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     extents(K, A, N1, N2) :- extent(K, A, N1), perp(A, A2), extent(K, A2, N2).
 }
 
+// The cells of a box given as a margin Position, split into its edge lines
+// and its hole.
+.comp BoxCells<Key> {
+    // The box, as margins from each edge, per key.
+    .decl box(key: Key, b: Position)
+
+    // The cells the box is read over, per key.
+    .decl cell(key: Key, p: Position)
+
+    // Covered cell on the box's d-side edge line.
+    .decl on_edge(key: Key, p: Position, d: Dir)
+    on_edge(K, P, D) :-
+        box(K, B), cell(K, P), geq(P, B),
+        dir_elem(D), same_dist(D, P, B).
+
+    // Cell strictly inside the box.
+    .decl hole(key: Key, p: Position)
+    hole(K, P) :- box(K, B), cell(K, P), gt(P, B).
+}
+
+// The rectangle outlines drawn inside a keyed node set, each reported as
+// the box its corners bound. An outline spans at least two cells on each
+// axis.
+.comp DrawnRect<Key> {
+    // The set the outlines are drawn in, per key.
+    .decl node(key: Key, p: Position)
+
+    .init run = Slide<Key>
+    run.node(K, P) :- node(K, P).
+    run.dir(K, D) :- node(K, _), dir_elem(D).
+
+    // A corner pair whose four runs close a rectangle.
+    .decl _ring(key: Key, c1: Position, c4: Position)
+    _ring(K, C1, C4) :-
+        run.run(K, C1, D1, C2), run.run(K, C1, D2, C3),  // two sides from one corner
+        perp_dir(D1, D2),                                // at right angles
+        run.run(K, C2, D2, C4), run.run(K, C3, D1, C4).  // and back to the far corner
+
+    .type _KR = [key: Key, c1: Position, c4: Position]
+
+    .init box = Bbox<_KR>
+    box.cell([K, C1, C4], C) :- _ring(K, C1, C4), ( C = C1 ; C = C4 ).
+
+    .decl rect(key: Key, b: Position)
+    rect(K, B) :- box.margin([K, _, _], B).
+}
+
 // Connected components of a node set (4-adjacency), per key, each labeled by
 // an opaque id from the lowest-ord member cell: ord is arbitrary but stable
 // within a run, so the pick carries no geometry. The key does not enter the

@@ -18,19 +18,20 @@ ink(P, Col) :- in(P, Col), !c.bg(Col).
 .init box = Bbox<Color>
 box.cell(Col, P) :- ink(P, Col).
 
-.decl interior(col: Color, p: Position)
-interior(Col, P) :- in(P, _), box.margin(Col, M), gt(P, M).
+.init bcells = BoxCells<Color>
+bcells.box(Col, M) :- box.margin(Col, M).
+bcells.cell(Col, P) :- box.cell(Col, _), in(P, _).
 
 // Some cell of Col2 lies outside the interior of Col's box.
 .decl escapes(col: Color, col2: Color)
-escapes(Col, Col2) :- ink(_, Col), ink(P, Col2), !interior(Col, P).
+escapes(Col, Col2) :- ink(_, Col), ink(P, Col2), !bcells.hole(Col, P).
 
 // The mark color frames the other color.
 .decl mark(col: Color)
 mark(Col) :- ink(_, Col), ink(_, Col2), Col != Col2, !escapes(Col, Col2).
 
 .init view = BoxFrame<Unit>
-view.cell($U(), P) :- mark(Col), interior(Col, P).
+view.cell($U(), P) :- mark(Col), bcells.hole(Col, P).
 
 .decl out(p: Position, col: Color)
 out(P_inner, Col_out) :-
