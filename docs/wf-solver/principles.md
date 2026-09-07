@@ -10,9 +10,30 @@
 
 The theory of tasks and their solvers, and the design norms for the best model of a task.
 
-A solver models an ARC task as an instance of a task family. The body encodes the family: the structure shared by every task in it. Consts holds the task's position within the family: the free data that a sibling task would refill. No two Consts slots admit fills that contradict.
+## Definitions
 
-Generalization happens at the family level. Bodies accumulate across the corpus for reuse. Consts data stays specific to each task. The goal is a model of ARC tasks usable for synthesis, where recombining bodies over new Consts values yields new tasks.
+- **body** <!-- aka program --> — the rules that derive `out` from `in` and Consts.
+- **Consts** <!-- aka parameters --> — the data of a solver.
+- **slot** <!-- aka parameter --> — a Consts relation that holds facts. A Consts relation derived by a rule is not a slot.
+- **fill** <!-- aka value --> — the facts a task gives a slot.
+- **Consts shape** <!-- aka parameterization --> — the slots with their schemas.
+- **Fit** — the rules that derive a slot's fill from the examples. Sibling solvers share the body and the Fit.
+- **model** — a Consts shape with the map from fill and input to output that a body computes over it. Bodies that compute the same map over one shape are alt impls of one model, and the same-model test (Coverage) checks that. A model admits <!-- aka fits --> a task when some fill of its shape produces the task's outputs from its inputs.
+- **family** — the tasks a model admits.
+- **sibling** — another task in the family.
+- **rival model** — of a model: another model that admits the task.
+- **decision point** <!-- aka factor --> — a property of the task that the pairs do not determine.
+- **claim** <!-- aka hypothesis --> — the assertion that the task is in a model's family. A claim decomposes by decision point into one answer per point.
+- **case** — the encoding of one model in the solver, as a value of `Choice`. A record-typed `Choice` holds one field per decision point. A solver with one case has no `Choice`.
+- **witness** <!-- aka distinguishing input --> — an input on which two candidates, models or fills of one model, produce different outputs.
+- **exercised** — a part of the solver is exercised by a pair when that pair's output depends on it.
+- **setup** — the reading that every case shares, and the body rules that encode it.
+- **setup variant** <!-- aka reparameterization --> — another encoding of the same setup: it finds the same structure with a different Consts shape.
+- **settled form** <!-- aka precedent --> — the encoding that the corpus already uses for a setup structure. The solver that introduces a structure settles its form.
+- **reading** <!-- aka parse --> — which structures a model finds in the input grid. Models that find different structures are different readings.
+- **prior** — a core knowledge prior that ARC training tasks teach. The Prior terms of `concepts.md` name them. A case claims which priors the task teaches. Several models claim the same priors.
+
+The goal is a corpus that supports program synthesis of solvers. Lib primitives are the vocabulary of that synthesis, and fragments of solvers are its larger units. Bodies and their Fits accumulate across the corpus as fragments for reuse. Consts data stays specific to each task.
 
 ## Fidelity
 
@@ -30,7 +51,7 @@ The body is faithful to the concept of the task: the actual task, not an artifac
 
 ## Invariance
 
-The current task is one member of a family symmetric under ARC's transformations: rotations, mirrorings, recolorings, re-anchorings. The body is the part that stays the same across those variations. Each variation becomes a Consts value that the body parameterizes over. Bodies specific to the current member are failures.
+The current task is one member of a family symmetric under ARC's transformations: rotations, mirrorings, recolorings, re-anchorings. The body is the part that stays the same across those variations. Each variation becomes a Consts value that the body parameterizes over. No two slots admit fills that contradict. Bodies specific to the current member are failures.
 
 **Scope.** Invariance ranges over ARC's symmetry group: orientation, color, placement. It does not extend to the rule algebra. An OR fold is existence and an XOR fold is exact count: two concepts and two families, not one count-thresholded body with the threshold in Consts (dae9d2b5 vs 34b99a2b).
 
@@ -74,6 +95,6 @@ The criterion compares maps, not the sets of tasks that the models fit. A body c
 
 Divergence must also be valid to count. When every divergence of a claim from a sibling is ill-formed (the output has multiple values or is not total), the claim never fits a task that the sibling misses, at any fill of its Consts shape. The sibling subsumes it, and it gets no case (99fa7670's line fill: an unblocked ray diverges from the stepwise flow only by claiming two colors on one cell). Partiality alone is not subsumption: a model that fails on some inputs but validly diverges on others is still a rival. When a co-chosen decision pins an ops claim's inputs to stored data, that claim computes a function of Consts. Its tabulation is a fill of the data rival, so it gets no case (21897d95).
 
-**Concept vs setup.** Cases are claims about the prior that the task teaches. Setup is structure that every candidate claim depends on: whichever selection rule 662c240a teaches, it reads the same stack of three tiles. Setup has variants of its own. That stack can be found by tile count, by tile size, or by squareness with no datum. The same-model test separates the three by Consts shape, but all three invoke one segmentation prior and differ only in which datum finds the stack. Together they get one case: the variant whose facts the body already reads (1190bc91), written in the corpus's settled shape (2dee498d, f25ffba3). Coverage applies to the rival priors: a privileged reflection ($Shared) against symmetry-existence ($Asym). A same-model separation gets a case only when it separates priors, regardless of its decision point. A variant that depends on different input structure is a different reading and gets a case. A variant that finds the same structure another way remains a setup variant. If a solver introduces or improves a shape, that solver settles it.
+**Concept vs setup.** Cases are claims about the prior that the task teaches. Setup is structure that every candidate claim depends on: whichever selection rule 662c240a teaches, it reads the same stack of three tiles. Setup has variants of its own. That stack can be found by tile count, by tile size, or by squareness with no datum. The same-model test separates the three by Consts shape, but all three invoke one segmentation prior and differ only in which datum finds the stack. Together they get one case: the variant whose facts the body already reads (1190bc91), written in the corpus's settled form (2dee498d, f25ffba3). Coverage applies to the rival priors: a privileged reflection ($Shared) against symmetry-existence ($Asym). A same-model separation gets a case only when it separates priors, regardless of its decision point. A variant that depends on different input structure is a different reading and gets a case. A variant that finds the same structure another way remains a setup variant. If a solver introduces or improves a form, that solver settles it.
 
 **A claim needs evidence.** A rival that reads the task differently gets a case. If no pair exercises a rival's added rules, slots, or comps, that rival gets no case. A claim with no relational form gets no case. When a claim's encoding depends on arithmetic and the lib addition protocol closes the primitive, that claim has no relational form (`proposals/MinHops.md`). A mapping table needs multiple entries exercised (44f52bb0's groups both fire; a one-entry ring table over a plain border sits unexercised). When some pair contradicts an identification rule, that rule is out (87ab05b8 train 0 contradicts count-based marker identification: every noise color is a singleton). Data-leaning Consts must be refillable from the train pairs and test inputs. The test outputs are held out. A test key absent from the train-exhibited entries rules out the table claim (1fad071e: test count 3 over train's {2, 4} rules out its lookup render; 3b4c2228's test counts stay inside train's set, so its table stands). The correct output at that unseen key is evidence that the prior is compositional.

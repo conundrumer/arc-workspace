@@ -15,7 +15,7 @@ In every pass, when an encoding in the solver needs a banned form, or when a gre
 
 1. Analyze the task and the reference TS solver. When they are not in the message, read them: `cat data/tasks/<task_id>.json ../arc-synth-bun/programs/solvers/<task_id>.ts`. The task is already formatted. Do not pipe it into anything. The reference TS solver solves the task but might not encode the best model.
 2. Draft the solver. Do not write the `Fit` comp yet.
-    - Write setup in the corpus's settled shape. Fidelity and reuse take priority over it.
+    - Write setup in the corpus's settled form. Fidelity and reuse take priority over it.
 3. Run against materialized train+test pairs (`uv run python scripts/run_dl.py <task_id>`)
 4. Iterate until it works and passes lint.
     - When a hint appears, judge it, and put that judgment in the review.
