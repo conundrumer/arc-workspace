@@ -2,7 +2,8 @@
 - Write in the indicative mood.
 - Avoid justifications, unless there is necessary reason.
 - Avoid contrastive structures, unless the alternative needs to be addressed.
-- A cited task is a bare id. A gloss that states the task's facts in the rule's terms, without the task's internal vocabulary, goes in a comment beside the id. -->
+- A cited task is a bare id. A gloss that states the task's facts in the rule's terms, without the task's internal vocabulary, goes in a comment beside the id.
+- A rule's formal statement goes in a comment beside the rule, in the notation that Definitions states. -->
 
 # Principles
 
@@ -12,19 +13,62 @@ The goal is a corpus that supports program synthesis of solvers. Across the corp
 
 ## Definitions <!-- deferred -->
 
+### Notation
+
+The formal lines under the terms, and the formal comments beside the rules, use these symbols and the symbols on the term lines.
+
+- Conventions
+    - a prime marks another of the same kind: θ′, T′
+    - an unbounded θ ranges over the Consts shape of the model that reads it, and an unbounded x over G
+    - = between values of a partial function: both undefined, or both defined and equal; between models, as Same model states
+    - θᵢ reads as its one fact when slot i holds one fact
+- Grids and tasks
+    - G — the set of grids
+    - x — an input
+    - y — an output
+    - T — a task: a finite set of pairs (x, y), test pairs included
+    - x ∈ T — an abbreviation of (x, y) ∈ T for some y
+    - train(T) — the train pairs of T
+    - test_in(T) — the test inputs of T
+- Fills
+    - Θᵢ — the fills that slot i admits
+    - θ(T) — the fill of M's shape that T's solver stores, or would store under the body and Fit that the family shares
+    - θ(T)ᵢ — its fill of slot i
+- Reads
+    - key(x) — the key the body reads from x
+    - keys(T) — the keys of the train pairs: { key(x) : (x, y) ∈ train(T) }
+    - d(x) — a fact the body derives from x in place of θᵢ
+- Classes
+    - C — a structural class; a membership slot i over C has θᵢ ⊆ C
+- Models
+    - M(θ, x)↓ — M defined at θ and x: `out` is a grid, total and single-valued
+    - M(θ) ⊨ T — M(θ, x) = y for every (x, y) ∈ T
+    - A and B — the models of two claims
+    - Θ_A and Θ_B — their Consts shapes
+    - M_ops and M_tab — the models of an ops claim and its data rival
+
+### Terms
+
 - **body** — the rules that derive `out` from `in` and Consts. In synthesis terms, the *program* that the parameters complete.
 - **Consts** — the data of a solver. In modeling terms, the *parameters*.
-- **slot** — a Consts relation that holds facts. A Consts relation derived by a rule is not a slot. One *parameter*.
-- **fill** — the facts a task gives a slot. A parameter's *value*.
-- **Consts shape** — the slots with their schemas. The *parameterization*.
-- **Fit** — the rules that derive a slot's fill from the examples. The solvers of siblings share the body and the Fit.
-- **model** — a Consts shape with the map from fill and input to output that a body computes over it.
-- **family** — the tasks a model fits.
-- **sibling** — another task in the family.
-- **rival model** — of a model: another model that fits the task.
-- **setup variant** — another encoding of the same setup: it finds the same structure with a different Consts shape. A *reparameterization* of the setup.
-- **settled form** — the encoding that the corpus already uses for a setup structure. A *precedent*.
-- **prior** — a core knowledge prior that ARC training tasks teach. The Prior terms of `concepts.md` name them. A case claims which priors the task teaches. Several models claim the same priors.
+- **slot** i — a Consts relation that holds facts. A Consts relation derived by a rule is not a slot. One *parameter*.
+- **Consts shape** Θ — the slots with their schemas. The *parameterization*.
+    - Θ = ∏ᵢ Θᵢ
+- **fill** (of a slot) θᵢ — the facts a task gives it. A parameter's *value*. The fill of a Consts shape, θ, is the fill of each of its slots: an *assignment*.
+- **Fit** fitᵢ — the rules that derive a slot's fill from the train pairs and the test inputs. In control terms, *parameter identification*.
+    - fitᵢ(train(T), test_in(T)) = θ(T)ᵢ
+- **model** M — the function that takes a fill and an input and computes the output, implemented by a body.
+    - M : Θ × G ⇀ G
+- **family** (of a model M) fam(M) — the tasks it fits. Their solvers share the body and the Fit.
+    - fam(M) = { T : ∃θ. M(θ) ⊨ T }
+    - M(θ(T)) ⊨ T for T ∈ fam(M)
+- **sibling** (of a task T) T′ — another task in its family.
+    - T′ ∈ fam(M) ∖ {T}, T ∈ fam(M)
+- **rival model** (of a model M) M′ — another model that fits the same task. A *peer model*.
+    - M′ ≠ M, T ∈ fam(M) ∩ fam(M′)
+- **setup variant** (of a setup) — another encoding of it, finding the same structure through a different Consts shape. A *reparameterization* of the setup.
+- **settled form** (of a setup structure) — the encoding that the corpus already uses for it. A *precedent*.
+- **prior** — a core knowledge prior that ARC training tasks teach. The Prior terms of `concepts.md` name them. A case claims which priors the task teaches. Several models can claim the same priors.
 
 ## Fidelity
 
@@ -103,9 +147,9 @@ A lib primitive is equivariant when `f(apply(D, P)) = apply(D, f(P))` for every 
 When the pairs exhibit a value directly, that value is task data, stored in Consts. A body derivation instead claims that the value depends on its source.
 
 - A witness is an input on which two candidates, models or fills of one model, produce different outputs. <!-- In synthesis terms, a *distinguishing input*. --> For that claim, it is a pair on which the derivation and the stored slot's fill give different values.
-    - Against a stored constant, the witness is a pair whose source differs from the other pairs' and whose value follows it, so a value that is the same in every pair has no witness.
-        - 4522001f <!-- the input is 3×3 and the output 9×9 in every pair; the output extent is stored, and the square of the input extent would reproduce it. -->
-    - Against a stored table, the witness is a pair whose key lies outside the train entries.
+    - Against a stored constant, the witness is a pair whose source differs from the other pairs' and whose value follows it, or a test input on which the derivation differs from the constant. <!-- ∃x ∈ T. d(x) ≠ θ(T)ᵢ --> A value that is the same on every pair and test input has no witness.
+        - 4522001f <!-- the input is 3×3 and the output 9×9 in every pair, and the test input is 3×3; the output extent is stored, and the square of the input extent would reproduce it. -->
+    - Against a stored table, the witness is a pair whose key lies outside the train entries. <!-- ∃x ∈ test_in(T). key(x) ∉ keys(T) -->
 - **Unwitnessed derivation.** An unwitnessed derivation stands only as a case beside the data case.
     - 3b4c2228 <!-- the count renders as marks down a diagonal, or from a stored grid per count; every train and test count is a key of that table, so the two never differ on a pair. -->
 - **Setup derivation.** Setup gets no case, so it cannot include an unwitnessed derivation.
@@ -117,7 +161,7 @@ In spatial data, the number 0 means no gap, no offset, no distance: the lack of 
 
 ### Closure
 
-A Consts slot can carry structure: a membership set whose rows are exactly a structural class (every cardinal, a D4 orbit) with no payload that varies across them. No sibling fills a proper subset. Which members the task uses decides the encoding:
+A Consts slot can carry structure: a membership set whose rows are exactly a structural class (every cardinal, a D4 orbit) with no payload that varies across them. No sibling fills a proper subset. <!-- ∀T′ ∈ fam(M) ∖ {T}. θ(T′)ᵢ = C --> Which members the task uses decides the encoding:
 
 - **Every member.** If the task uses every member, the class is structural. The body enumerates it (`dir_elem`, `diag_dir_elem`). Consts keys the datum by class.
     - 0ca9ddb6 <!-- a marked dot gets an arm in every cardinal direction or in every diagonal one, and each kind of arm has its own slot, keyed by the mark's color. -->
@@ -128,7 +172,7 @@ A Consts slot can carry structure: a membership set whose rows are exactly a str
 
 Closure decides the encoding and removes no case.
 
-- **Refilled set.** A membership set that some sibling refills is task data even when this task's fill coincides with a structural class.
+- **Refilled set.** A membership set that some sibling refills is task data even when this task's fill coincides with a structural class. <!-- ∃T′ ∈ fam(M) ∖ {T}. θ(T′)ᵢ ⊊ C -->
     - 14754a24 <!-- each incomplete plus is completed from a footprint of a center and its four neighbors; a sibling that completed a T would refill the footprint, so the footprint's data case stands beside its structural case. -->
 
 ### Underdetermined choice
@@ -157,7 +201,7 @@ A few train pairs underdetermine the family. Coverage is one case per model that
 Two candidates are the same model iff both hold:
 
 - same Consts shape — the free data that a sibling would refill. Derived or materialized helper relations do not count.
-- same outputs for every input under every fill of that shape
+- same outputs for every input under every fill of that shape <!-- A = B ⇔ Θ_A = Θ_B ∧ ∀θ ∀x. A(θ, x) = B(θ, x) -->
 
 The test decides:
 
@@ -177,10 +221,10 @@ Data against ops is the main way in which claims differ. Any relationship can be
 
 Divergence must be valid to count.
 
-- **Ill-formed divergence.** When every divergence of a claim from a rival is ill-formed (the output has multiple values or is not total), the claim never fits a task that the rival misses, at any fill of its Consts shape. The rival subsumes it, and it gets no case.
+- **Ill-formed divergence.** When every divergence of a claim from a rival is ill-formed (the output has multiple values or is not total), the claim never fits a task that the rival misses, at any fill of its Consts shape. The rival subsumes it, and it gets no case. <!-- (∀θ ∃θ′ ∀x. M(θ, x)↓ ⇒ M(θ, x) = M′(θ′, x)) ⇒ fam(M) ⊆ fam(M′) -->
+    - **Tabulation.** When another decision in the same case pins an ops claim's inputs to stored data, that claim computes a function of Consts. Its tabulation is a fill of the data rival, so it gets no case (21897d95). <!-- ∀θ ∃θ′ ∀x. M_ops(θ, x)↓ ⇒ M_ops(θ, x) = M_tab(θ′, x) -->
     - 99fa7670 <!-- each colored dot fills its line to one edge and then along that edge, where the next dot's fill occludes it; an unblocked ray diverges from that stepwise fill only by claiming two colors on one cell. -->
 - **Partiality.** Partiality alone is not subsumption: a model that fails on some inputs but validly diverges on others is still a rival.
-- **Tabulation.** When another decision in the same case pins an ops claim's inputs to stored data, that claim computes a function of Consts. Its tabulation is a fill of the data rival, so it gets no case (21897d95).
 
 ### Concept vs setup
 
@@ -208,7 +252,7 @@ Cases are claims about the prior that the task teaches.
 - **Contradicted rule.** When some pair contradicts an identification rule, that rule is excluded.
     - 87ab05b8 <!-- train pair 0 contradicts count-based marker identification, since every noise color is a singleton. -->
 - **Refillable.** Data-leaning Consts must be refillable from the train pairs and test inputs. The test outputs are held out.
-    - **Unseen key.** A test key absent from the train-exhibited entries rules out the table claim.
+    - **Unseen key.** A test key absent from the train-exhibited entries rules out the table claim. <!-- ∃x ∈ test_in(T). key(x) ∉ keys(T) -->
         - 1fad071e <!-- the test count is 3 and the train counts are {2, 4}, so its table is ruled out. -->
         - 3b4c2228 <!-- the test counts are in the train set, so its table stands. -->
     - The correct output at that unseen key is evidence that the prior is compositional.
@@ -217,7 +261,7 @@ Cases are claims about the prior that the task teaches.
 
 One shared Consts slot across two claims asserts that they are the same parameter.
 
-- **Separate slots.** If some task fits both claims and fills them differently, it refutes that assertion.
+- **Separate slots.** If some task fits both claims with no common value of the slot, it refutes that assertion. <!-- ∃T ∈ fam(A) ∩ fam(B). ¬∃θ, θ′. A(θ) ⊨ T ∧ B(θ′) ⊨ T ∧ θᵢ = θ′ᵢ -->
     - 87ab05b8 <!-- each of the three ways to locate the region reads its own slot, a part count or a size, all 2 in this task, because a 6×6 sibling sets the part count to 3 and the sizes to 2. -->
 - **One slot.** When no such task exists, the parameter is the same and shares one slot.
     - d23f8c26 <!-- one column of an odd-width grid is kept, as the center line on a stored axis or as the gap of a two-way divide on that axis, and any task that fits both pins the axis to the same value. -->
