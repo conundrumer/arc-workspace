@@ -77,6 +77,7 @@ def test_render_reads_the_listed_docs_in_order(tmp_path: Path):
     (docs / "patterns.md").write_text("# Patterns\n\n## A pattern\n\nIts claim.\n")
     (docs / "style.md").write_text(
         "<!-- for the editor -->\n\n# Style\n\nEvery word <!-- aka all --> of it.\n"
+        "\n## Terms <!-- deferred -->\n\n- **word** — a unit.\n\n## Rules\n\nOne rule.\n"
     )
     lib = tmp_path / "lib.dl"
     lib.write_text(".decl out(p: Position)\nout(P) :- in(P, _).\n")
@@ -91,7 +92,10 @@ def test_render_reads_the_listed_docs_in_order(tmp_path: Path):
             "Cited tasks carry worked applications of the principle they"
             " sit under. Grep the task id in docs/wf-solver/style.md to"
             " read one.\n\n"
-            "# Style\n\nEvery word of it.\n") in out
+            "The Terms section is in the source: read it in"
+            " docs/wf-solver/style.md when a term is unclear.\n\n"
+            "# Style\n\nEvery word of it.\n\n## Rules\n\nOne rule.\n") in out
+    assert "a unit" not in out
     assert "# docs/wf-solver/cadence.md\n\n# cadence.md\n" in out   # no note without notes
     assert "# programs/lib.dl — signatures\n" in out
     assert "out(P) :- in(P, _)." not in out

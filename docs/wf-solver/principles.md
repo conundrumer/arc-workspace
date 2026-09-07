@@ -6,29 +6,24 @@
 
 # Principles
 
-The theory of tasks and their solvers, and the design norms for the best model of a task. The goal is a corpus that supports program synthesis of solvers. Lib primitives are the vocabulary of that synthesis, and fragments of solvers are its larger units. Bodies and their Fits accumulate across the corpus as fragments for reuse. Consts data stays specific to each task.
+The theory of tasks and their solvers, and the design norms for the best model of a task.
 
-## Definitions
+The goal is a corpus that supports program synthesis of solvers. Across the corpus, reusable primitives and fragments are drawn from the shared parts of solvers.
+
+## Definitions <!-- deferred -->
 
 - **body** — the rules that derive `out` from `in` and Consts. In synthesis terms, the *program* that the parameters complete.
 - **Consts** — the data of a solver. In modeling terms, the *parameters*.
 - **slot** — a Consts relation that holds facts. A Consts relation derived by a rule is not a slot. One *parameter*.
-- **fill** — the facts a task gives a slot. A parameter's *value*.
+- **fill** — the facts a task gives a slot. A *parameter's value*.
 - **Consts shape** — the slots with their schemas. The *parameterization*.
 - **Fit** — the rules that derive a slot's fill from the examples. The solvers of siblings share the body and the Fit.
-- **model** — a Consts shape with the map from fill and input to output that a body computes over it. Bodies that compute the same map over one shape are alt impls of one model, and the same-model test (Coverage) checks that. A model fits a task when some fill of its shape produces the task's outputs from its inputs.
+- **model** — a Consts shape with the map from fill and input to output that a body computes over it.
 - **family** — the tasks a model fits.
 - **sibling** — another task in the family.
 - **rival model** — of a model: another model that fits the task.
-- **decision point** — a property of the task that the pairs do not determine. In experimental-design terms, a *factor*, and its answers are its *levels*.
-- **claim** — the assertion that the task is in a model's family. In scientific terms, a *hypothesis*. It decomposes by decision point into one answer per point, and each answer is itself a claim.
-- **case** — the encoding of one model in the solver, as a value of `Choice`. A record-typed `Choice` holds one field per decision point. A solver with one case has no `Choice`.
-- **witness** — an input on which two candidates, models or fills of one model, produce different outputs. In synthesis terms, a *distinguishing input*.
-- **exercised** — a part of the solver is exercised by a pair when that pair's output depends on it.
-- **setup** — the reading that every case shares, and the body rules that encode it.
 - **setup variant** — another encoding of the same setup: it finds the same structure with a different Consts shape. A *reparameterization* of the setup.
-- **settled form** — the encoding that the corpus already uses for a setup structure. The solver that introduces or improves a structure's encoding settles its form. A *precedent*.
-- **reading** — which structures a model finds in the input grid. Models that find different structures are different readings. In vision terms, a *parse* of the grid.
+- **settled form** — the encoding that the corpus already uses for a setup structure. A *precedent*.
 - **prior** — a core knowledge prior that ARC training tasks teach. The Prior terms of `concepts.md` name them. A case claims which priors the task teaches. Several models claim the same priors.
 
 ## Fidelity
@@ -79,11 +74,12 @@ Generalization happens at the family level. The current task is one member of a 
 - A non-equivariant primitive adds a hidden orientation to a body that is otherwise symmetric. A `T mod period` intile mapping is one, observable on non-divisible extents. An explicit anchor parameter, or an equivariant encoding, removes that hidden orientation.
     - 332efdb3 <!-- a period-2 pattern; one case models it with `divide_by_size` K=1 G=1 in place of mod. -->
 
-**Derived vs stored.** When the pairs exhibit a value directly, that value is task data, stored in Consts. A body derivation instead claims that the value depends on its source. The witness for that claim is a pair on which the derivation and the stored slot's fill give different values.
+**Derived vs stored.** When the pairs exhibit a value directly, that value is task data, stored in Consts. A body derivation instead claims that the value depends on its source.
 
-- Against a stored constant, the witness is a pair whose source differs from the other pairs' and whose value follows it, so a value that is the same in every pair has no witness.
-    - 4522001f <!-- the input is 3×3 and the output 9×9 in every pair; the output extent is stored, and the square of the input extent would reproduce it. -->
-- Against a stored table, the witness is a pair whose key lies outside the train entries.
+- A witness is an input on which two candidates, models or fills of one model, produce different outputs. <!-- In synthesis terms, a *distinguishing input*. --> For that claim, it is a pair on which the derivation and the stored slot's fill give different values.
+    - Against a stored constant, the witness is a pair whose source differs from the other pairs' and whose value follows it, so a value that is the same in every pair has no witness.
+        - 4522001f <!-- the input is 3×3 and the output 9×9 in every pair; the output extent is stored, and the square of the input extent would reproduce it. -->
+    - Against a stored table, the witness is a pair whose key lies outside the train entries.
 - An unwitnessed derivation stands only as a case beside the data case.
     - 3b4c2228 <!-- the count renders as marks down a diagonal, or from a stored grid per count; every train and test count is a key of that table, so the two never differ on a pair. -->
 - Setup gets no case, so it cannot include an unwitnessed derivation.
@@ -113,9 +109,16 @@ Closure decides the encoding and removes no case.
 
 ## Coverage
 
-A few train pairs underdetermine the family. Coverage is one case per model that the rules of this section admit. ARC training tasks are intended to teach core knowledge priors in pure form. Coverage shows which prior the task could be teaching. A record-typed Choice is the cross product of independent decision points.
+A few train pairs underdetermine the family. Coverage is one case per model that the rules of this section admit.
 
-- 87ab05b8 <!-- one marked cell among noise, and the output fills the 2×2 region that holds it; three ways to locate the region cross two sources of the fill color. -->
+- A model fits a task when some fill of its shape produces the task's outputs from its inputs.
+- ARC training tasks are intended to teach core knowledge priors in pure form. Coverage shows which prior the task could be teaching.
+- A decision point is a property of the task that the pairs do not determine. <!-- In experimental-design terms, a *factor*, and its answers are its *levels*. -->
+- A claim, that the task is in a model's family, decomposes by decision point into one answer per point, and each answer is itself a claim. <!-- In scientific terms, a *hypothesis*. -->
+- A case is the encoding of one model in the solver, as a value of `Choice`.
+    - A solver with one case has no `Choice`.
+    - A record-typed `Choice` holds one field per decision point, and is the cross product of independent decision points.
+        - 87ab05b8 <!-- one marked cell among noise, and the output fills the 2×2 region that holds it; three ways to locate the region cross two sources of the fill color. -->
 
 **Same model or different.** Two candidates are the same model iff both hold:
 
@@ -138,10 +141,13 @@ Candidates that differ on either are different models. Candidates that match on 
 - Partiality alone is not subsumption: a model that fails on some inputs but validly diverges on others is still a rival.
 - When another decision in the same case pins an ops claim's inputs to stored data, that claim computes a function of Consts. Its tabulation is a fill of the data rival, so it gets no case (21897d95).
 
-**Concept vs setup.** Cases are claims about the prior that the task teaches. Setup is the reading that every case shares.
+**Concept vs setup.** Cases are claims about the prior that the task teaches.
 
-- 662c240a <!-- square tiles form a stack along an axis, and the output is the one tile that lacks the symmetry the others share; every case reads the same stack. -->
+- A reading is which structures a model finds in the input grid. Models that find different structures are different readings. <!-- In vision terms, a *parse* of the grid. -->
+- Setup is the reading that every case shares, with the body rules that encode it.
+    - 662c240a <!-- square tiles form a stack along an axis, and the output is the one tile that lacks the symmetry the others share; every case reads the same stack. -->
 - A setup has variants, and together they get one case: the variant whose facts the body already reads (1190bc91), written in the corpus's settled form (2dee498d, f25ffba3).
+    - The solver that introduces or improves a structure's encoding settles its form.
     - 662c240a <!-- the stack can be found by tile count, as the solver does, by tile size, or by squareness with no datum; the same-model test separates the three, since count and size give different outputs at one fill on other extents and squareness has no slot, but all three claim one segmentation prior and differ only in which datum finds the stack. -->
 - The cases go to the rival priors. A same-model separation gets a case only when it separates priors, regardless of its decision point.
     - 662c240a <!-- a stored symmetry, with the output the tile it fails on, against the existence of any symmetry. -->
@@ -152,6 +158,7 @@ Candidates that differ on either are different models. Candidates that match on 
 **A claim needs evidence.**
 
 - If no pair exercises a rival's added rules, slots, or comps, that rival gets no case.
+    - A pair exercises a part of the solver when that pair's output depends on it.
 - A claim with no relational form gets no case. When a claim's encoding depends on arithmetic and the lib addition protocol closes the primitive, that claim has no relational form (`proposals/MinHops.md`).
 - A mapping table needs multiple entries exercised. A one-entry ring table over a plain border is unexercised.
     - 44f52bb0 <!-- both symmetry classes occur in the pairs. -->

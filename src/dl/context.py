@@ -2,8 +2,9 @@
 cadence uses.
 
 `lib.dl` renders as signatures, and the catalog docs render as one line per
-entry; both name the file that holds the rest. The other docs pass through
-whole. Every rendering derives from the live file, so no copy can go stale.
+entry. The other docs pass through without their editor notes and deferred
+sections. Each rendering names the file that holds the rest, and derives
+from the live file, so no copy can go stale.
 """
 
 from __future__ import annotations
@@ -138,6 +139,27 @@ def entry_index(text: str, source: str) -> str:
 
 NOTES_DROPPED = ("Cited tasks carry worked applications of the principle "
                  "they sit under. Grep the task id in {rel} to read one.")
+SECTION_DEFERRED = ("The {title} section is in the source: read it in {rel} "
+                    "when a term is unclear.")
+
+
+def drop_deferred(text: str) -> tuple[str, list[str]]:
+    """A doc without its deferred sections, and their titles. A heading
+    marked `<!-- deferred -->` opens a section a session reads on demand; the
+    section runs to the next heading of its level or above."""
+    titles: list[str] = []
+    out: list[str] = []
+    level = 0   # the deferred section's heading level, 0 outside one
+    for line in text.splitlines(keepends=True):
+        m = re.match(r"(#+) (.*?)( <!-- deferred -->)?\n", line)
+        if m and level and len(m.group(1)) <= level:
+            level = 0
+        if m and m.group(3):
+            titles.append(m.group(2))
+            level = len(m.group(1))
+        if not level:
+            out.append(line)
+    return "".join(out), titles
 
 
 def strip_comments(text: str) -> tuple[str, bool]:
@@ -154,8 +176,12 @@ def render(docs: Path = DOCS_DIR, lib: Path = LIB_SRC) -> str:
     parts: list[str] = []
     for name in DOCS:
         rel = f"docs/wf-solver/{name}"
-        text, dropped = strip_comments((docs / name).read_text())
-        note = f"\n\n{NOTES_DROPPED.format(rel=rel)}" if dropped else ""
+        text, titles = drop_deferred((docs / name).read_text())
+        text, dropped = strip_comments(text)
+        notes = [SECTION_DEFERRED.format(title=t, rel=rel) for t in titles]
+        if dropped:
+            notes.insert(0, NOTES_DROPPED.format(rel=rel))
+        note = "".join(f"\n\n{n}" for n in notes)
         if name in INDEX:
             parts.append(f"\n---\n\n# {rel} — index{note}\n\n{entry_index(text, rel)}")
         else:
