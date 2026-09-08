@@ -5,7 +5,7 @@
 
 # Style
 
-The form and conventions of solver files, and the constraints and limitations of the tooling.
+The form and conventions of solver files.
 
 Solvers target the latest Souffle.
 
@@ -185,23 +185,14 @@ A `.comp Parse<Key>` contains a derivation that the program and the Determine co
 `Determine` holds the determination: one relation per determined parameter, with the parameter's name and schema, derived from `ex_in` / `ex_out`.
 
 - Determination relations that mirror no parameter are helpers. The runner pairs determination relations to parameters by name, so a helper must not take a parameter's name.
-- The runner checks each determined parameter against its Params value. `determination_diff` names each parameter whose two sides differ. A nonempty `determination_diff` is a violation.
 - Derived ids need only be stable across the solver's Ident parameters, not equal to the stored ones.
-- **Test inputs.** `ex_in` also carries the test inputs, which have no outputs. A rule that keeps the candidates that no example contradicts ranges over examples with `ex_out` rows.
+- **Test inputs.** A rule that keeps the candidates that no example contradicts ranges over examples with `ex_out` rows.
 
-## Runner contract
-
-`in` is declared in `lib.dl`, and the runner appends the IO directives. A solver declares only `out` from the IO surface.
-
-**`out` is total.** `out` must be total over the expected output grid. If a cell is missing, the variant fails.
-
-### Alt outputs
+## Alt outputs
 
 Alts in the task JSON are encoded by kind:
 
 - A `rule` alt is a peer model: a case of `Choice`, one case per alt output.
 - A `tiebreak` alt marks interchangeable content that the task leaves free.
     - The solver enumerates the resolutions: `out` takes a trailing column typed `TiebreakResolution`, one value per valid resolution.
-    - The runner accepts a pair iff the set of emitted grids equals the expected grid plus the alts.
-    - A tiebreak allows only two distinct grids.
     - No data or rules name or steer the resolution values, and case coverage does not apply to the resolution column.

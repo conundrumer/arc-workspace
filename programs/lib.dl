@@ -96,12 +96,19 @@
 // The task input grid.
 .decl in(p: Position, col: Color)
 
-// Train and test inputs and train outputs, fed in determination mode.
+// The solver declares `out`, and no other IO relation. It must be total
+// over the expected output grid: a variant fails on a missing cell. With a
+// trailing TiebreakResolution column, the runner accepts a pair iff the set
+// of emitted grids equals the expected grid plus its alts, and a tiebreak
+// allows only two distinct grids.
+
+// Train and test inputs and train outputs, fed in determination mode. The
+// test examples have no ex_out rows.
 .decl ex_in(e: Example, p: Position, col: Color)
 .decl ex_out(e: Example, p: Position, col: Color)
 
 // Per-parameter diff between determine.<parameter> and params.<parameter>;
-// the runner synthesizes the rules.
+// the runner synthesizes the rules, and a nonempty diff is a violation.
 .decl determination_diff(param: symbol)
 
 // ============================================================
