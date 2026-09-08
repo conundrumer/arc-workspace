@@ -53,3 +53,11 @@ On 2026-09-08, the solver vocabulary moved to conventional terms, in the docs, t
 | Derived vs stored | Stored or derived |
 | Data vs ops | Table or rule |
 | Concept vs setup | Prior or setup |
+
+## Docs
+
+| Former | Current |
+| --- | --- |
+| `cadence.md` | `procedure.md` |
+| `concepts.md` | `keywords.md` |
+| `shapes.md` | the Shape section of `keywords.md` |

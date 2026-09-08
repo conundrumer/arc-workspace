@@ -1,5 +1,5 @@
 """The reference context a solver session reads, projected down to what the
-cadence uses.
+procedure uses.
 
 `lib.dl` renders as signatures, and the catalog docs render as one line per
 entry. The other docs pass through without their editor notes, their `+` lines,
@@ -20,9 +20,9 @@ from dl.paths import PROGRAMS_DIR, REPO_ROOT
 DOCS_DIR = REPO_ROOT / "docs" / "wf-solver"
 LIB_SRC = PROGRAMS_DIR / "lib.dl"
 
-# The docs the cadence reads, in reading order: the theory, then its form,
+# The docs the procedure reads, in reading order: the theory, then its form,
 # then what the corpus made of it.
-DOCS = ("cadence.md", "principles.md", "style.md", "patterns.md", "concepts.md",
+DOCS = ("procedure.md", "principles.md", "style.md", "patterns.md", "keywords.md",
         "lib-protocol.md", "former-names.md")
 # Catalog docs: entries are independent and a session uses few, so the context
 # carries the index and the session reads the entry it needs.

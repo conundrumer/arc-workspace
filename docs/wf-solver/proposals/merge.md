@@ -1,6 +1,6 @@
 # `merge` — like neighbors fuse into one unit
 
-A Prior term for `concepts.md`: like-valued items — cells, lines, tiles, marks — fuse into one unit under a task-given nearness (adjacency, or a bridged gap), and the output treats the unit as one thing. What the unit renders as — its box, a single cell, a fill of its own — is the task's business, not the term's: a program whose join rule only ever builds rectangles still claims fusion, not rectangles.
+A Prior term for `keywords.md`: like-valued items — cells, lines, tiles, marks — fuse into one unit under a task-given nearness (adjacency, or a bridged gap), and the output treats the unit as one thing. What the unit renders as — its box, a single cell, a fill of its own — is the task's business, not the term's: a program whose join rule only ever builds rectangles still claims fusion, not rectangles.
 
 No code form: the term names a model hypothesis, not an operation.
 

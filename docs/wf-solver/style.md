@@ -84,7 +84,7 @@ out(..., $CaseB()) :- ...
 .comp Determine { ... }
 ```
 
-- `// concept:` carries the Setup and Prior keywords that some case of the file claims, and `// shape:` the Shape keywords, from `concepts.md`, separated by spaces.
+- `// concept:` carries the Setup and Prior keywords that some case of the file claims, and `// shape:` the Shape keywords, from `keywords.md`, separated by spaces.
 - `// concept:` marks a family representative. A family sibling has `// family: <task_id>` in its place. That line points at the representative, the family's first-solved member. The sibling's header keeps only task-specific content.
 - `// shape:` appears when a shape applies. The Parse comp and the Determine comp appear when there is one.
 

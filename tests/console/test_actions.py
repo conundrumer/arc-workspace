@@ -91,14 +91,14 @@ def test_a_message_to_a_running_session_steers_the_turn(srv):
     assert it["state"] == srv.RUNNING
 
 
-def test_a_steer_carries_a_clean_cadence_into_the_turn(srv):
+def test_a_steer_carries_a_clean_pass_into_the_turn(srv):
     it = item(srv, "a", srv.RUNNING)
     w = worker(srv, it, state="running")
     srv.act_comment("a", "then cleanup")
     assert w["trigger"] == "cleanup"
 
 
-def test_a_steer_leaves_the_turns_own_cadence_alone(srv):
+def test_a_steer_leaves_the_turns_own_pass_alone(srv):
     it = item(srv, "a", srv.RUNNING)
     w = worker(srv, it, state="running")
     w["trigger"] = "callout"
@@ -282,16 +282,16 @@ def test_the_entry_keeps_its_tab_after_the_turn(srv):
 # ---------- shared-file writes ----------
 
 def test_a_turn_that_changes_a_shared_file_gets_flagged(srv):
-    (srv.DOCS / "concepts.md").write_text("enclose: the old sense\n")
+    (srv.DOCS / "keywords.md").write_text("enclose: the old sense\n")
     it = item(srv, "a", srv.RUNNING)
     it["pre"] = {"hash": "", "solver": "", "proposals": "", "dirty": False,
                  "files": {}, "watched": srv.watched_hashes("a")}
-    (srv.DOCS / "concepts.md").write_text("enclose: a new sense\n")
+    (srv.DOCS / "keywords.md").write_text("enclose: a new sense\n")
     srv.finish_turn(it, {"result": ""}, None, time.time(), "refine", False)
-    assert it["shared_writes"] == ["docs/wf-solver/concepts.md"]
+    assert it["shared_writes"] == ["docs/wf-solver/keywords.md"]
     assert any(e["kind"] == "event" and "shared files changed" in e["text"]
                for e in it["feed"])
-    assert srv.light_items()[0]["shared_writes"] == ["docs/wf-solver/concepts.md"]
+    assert srv.light_items()[0]["shared_writes"] == ["docs/wf-solver/keywords.md"]
 
 
 def bash_call(command):
@@ -300,31 +300,31 @@ def bash_call(command):
 
 
 def test_a_shared_file_no_call_named_changed_under_the_user(srv):
-    (srv.DOCS / "concepts.md").write_text("old\n")
+    (srv.DOCS / "keywords.md").write_text("old\n")
     it = item(srv, "a", srv.RUNNING)
     w = worker(srv, it, state="running")
     srv.handle_event(w, bash_call("grep -n enclose programs/solvers/a.dl"), None)
     it["pre"] = {"hash": "", "solver": "", "proposals": "", "dirty": False,
                  "files": {}, "watched": srv.watched_hashes("a")}
-    (srv.DOCS / "concepts.md").write_text("new\n")
+    (srv.DOCS / "keywords.md").write_text("new\n")
     srv.finish_turn(it, {"result": ""}, None, time.time(), "refine", False)
     assert it.get("shared_writes", []) == []
 
 
 def test_a_shared_file_a_call_named_is_the_turns_write(srv):
-    (srv.DOCS / "concepts.md").write_text("old\n")
+    (srv.DOCS / "keywords.md").write_text("old\n")
     it = item(srv, "a", srv.RUNNING)
     w = worker(srv, it, state="running")
     it["pre"] = {"hash": "", "solver": "", "proposals": "", "dirty": False,
                  "files": {}, "watched": srv.watched_hashes("a")}
-    srv.handle_event(w, bash_call("sed -i '' 's/old/new/' docs/wf-solver/concepts.md"), None)
-    (srv.DOCS / "concepts.md").write_text("new\n")
+    srv.handle_event(w, bash_call("sed -i '' 's/old/new/' docs/wf-solver/keywords.md"), None)
+    (srv.DOCS / "keywords.md").write_text("new\n")
     srv.finish_turn(it, {"result": ""}, None, time.time(), "refine", False)
-    assert it["shared_writes"] == ["docs/wf-solver/concepts.md"]
+    assert it["shared_writes"] == ["docs/wf-solver/keywords.md"]
 
 
 def test_a_solver_only_turn_flags_no_shared_write(srv):
-    (srv.DOCS / "concepts.md").write_text("stable\n")
+    (srv.DOCS / "keywords.md").write_text("stable\n")
     it = item(srv, "a", srv.RUNNING)
     write_solver(srv, "a", "// v1\n")
     it["pre"] = {"hash": "", "solver": "// v1\n", "proposals": "",

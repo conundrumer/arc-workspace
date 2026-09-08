@@ -252,7 +252,7 @@ def tool_label(name: str, inp: dict) -> str | None:
     return name
 
 
-# Words asking for a cadence that ends in Simplify and Prune, so the turn's
+# Words asking for a pass that ends in Simplify and Prune, so the turn's
 
 
 def permission_decision(req: dict) -> dict:

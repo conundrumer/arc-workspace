@@ -26,7 +26,7 @@ CLEANUP_RE = re.compile(r"\bcleanup\b")
 
 
 def clean_trigger(text: str) -> str | None:
-    """The clean cadence a message asks for. `cleanup` counts anywhere in the
+    """The clean pass a message asks for. `cleanup` counts anywhere in the
     message, since it is often the tail of a longer instruction."""
     return "cleanup" if CLEANUP_RE.search(text.lower()) else None
 
@@ -123,7 +123,7 @@ def steer(it: dict, worker: dict, text: str, phase: str) -> None:
     """Send a message into a turn already running. The CLI hands it over at the
     turn's next tool boundary and the turn absorbs it, so no bookkeeping opens
     here: the turn keeps its snapshot, its count, and its one landing. A clean
-    cadence the message asks for still reaches the turn it steers."""
+    pass the message asks for still reaches the turn it steers."""
     trigger = clean_trigger(text)
     if trigger and not worker.get("trigger"):
         worker["trigger"] = trigger

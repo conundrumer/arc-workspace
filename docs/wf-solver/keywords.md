@@ -1,4 +1,4 @@
-# Concepts
+# Keywords
 
 Keywords index the solvers by concepts that a grep over the code cannot find.
 

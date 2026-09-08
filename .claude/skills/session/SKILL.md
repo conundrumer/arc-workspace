@@ -8,8 +8,8 @@ First, when the handbook is not in your system prompt, read the output of `uv ru
 
 Then dispatch on `$ARGUMENTS`:
 
-- `solver` — run `bash scripts/queue.sh` for the next queued solver and work it per the cadence.
-- a task id — work that solver per the cadence.
+- `solver` — run `bash scripts/queue.sh` for the next queued solver and work it per the procedure.
+- a task id — work that solver per the procedure.
 - `triage` — rule on what the console's sessions called out about their tasks, per the triage section below.
 - `debrief` — rule on what the console's sessions called out beyond their own tasks, per the debrief section below.
 - anything else — an ordinary working request; proceed with the docs as context. A solver session is declared by keyword, never inferred from prose.

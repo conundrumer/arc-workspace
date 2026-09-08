@@ -59,7 +59,7 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
                           "source": "console",
                           **({"entries": new_entries} if new_entries else {})})
     # the create pass ends in prune, and every later pass is itself a quality
-    # pass, so each stage's first landing is clean by cadence
+    # pass, so each stage's first landing is clean by the procedure
     landed = it.setdefault("landed", [])
     first_landing = phase not in landed
     if first_landing:

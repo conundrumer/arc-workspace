@@ -112,7 +112,7 @@ Rank each entry P1-P3 by kind: match the entry against a description below and t
 
 An entry a description excludes, such as a name local to this solver, is not a callout at all: leave it out.
 
-P0 stands apart from that scale: use it only for a clear mechanical problem with the tooling — the runner, the linter, or the audit crashing, giving a wrong result, or lacking something the cadence needed. A P0 jumps the triage queue, so a judgment call never carries it.
+P0 stands apart from that scale: use it only for a clear mechanical problem with the tooling — the runner, the linter, or the audit crashing, giving a wrong result, or lacking something the procedure needed. A P0 jumps the triage queue, so a judgment call never carries it.
 
 Reply with only the callouts, between `<callouts>` and `</callouts>` tags: a numbered list, each entry one or two lines opening with its `[P1]`-`[P3]` mark. With nothing to raise, the block holds the single word `none`."""
 

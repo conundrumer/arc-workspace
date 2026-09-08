@@ -5,7 +5,7 @@ model: opus
 effort: high
 tools: Read, Grep, Glob, Bash, Edit, Write
 ---
-First, when the handbook does not follow this section, read the output of `uv run python scripts/context.py` in full. You run Simplify and then Prune, as the cadence defines them, over the regions the brief names, and you fix any other Simplify or Prune problem in those files. You edit only the files the brief names.
+First, when the handbook does not follow this section, read the output of `uv run python scripts/context.py` in full. You run Simplify and then Prune, as the procedure defines them, over the regions the brief names, and you fix any other Simplify or Prune problem in those files. You edit only the files the brief names.
 
 ## Procedure
 

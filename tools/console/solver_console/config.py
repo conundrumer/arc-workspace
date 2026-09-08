@@ -71,7 +71,7 @@ REFUSAL_MODEL = os.environ.get("CONSOLE_REFUSAL_MODEL", "claude-sonnet-5")
 # carries none of the user's settings, so worker-settings.json restates the
 # ones a worker needs. The user's global prompt hook checks CLAUDE_NO_HEADLINE
 # and stays quiet for workers, for a console run in the user's own home.
-# The task tools are off by default for the worker models, so the cadence's
+# The task tools are off by default for the worker models, so the procedure's
 # "a task per step" had nothing to call. They arrive deferred: the worker
 # reaches them through ToolSearch, and the init event lists them, so they also
 # have to sit in WORKER_TOOLS.

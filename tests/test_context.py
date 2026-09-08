@@ -98,6 +98,6 @@ def test_render_reads_the_listed_docs_in_order(tmp_path: Path):
             "# Style\n\nEvery word of it.\n\n- **word** — a unit.\n\n## Rules\n\nOne rule.\n") in out
     assert "a name" not in out
     assert "notation" not in out and "∀r" not in out
-    assert "# docs/wf-solver/cadence.md\n\n# cadence.md\n" in out   # no note without notes
+    assert "# docs/wf-solver/procedure.md\n\n# procedure.md\n" in out   # no note without notes
     assert "# programs/lib.dl — signatures\n" in out
     assert "out(P) :- in(P, _)." not in out
