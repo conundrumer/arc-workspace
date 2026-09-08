@@ -595,7 +595,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 // Flagged: assumes each key's dist_set is dense — {0, 1, ..., extent-1}. With
 // a sparse set, indices above |dist_set|-1 give invalid Positions.
 .comp DirFrame<Key> {
-    // The edge distances are measured from — the instance's parameter, unkeyed.
+    // The edge distances are measured from — the instance's input, unkeyed.
     .decl dir(d: Dir)
 
     // The frame's indices, per key.
@@ -642,7 +642,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 // 2D decomposition from per-axis tile counts — the divide peer of Frame2D:
 // per-axis 1D divide, perp-glued. This makes the rectangular hypothesis; the _2d
 // composites make the square hypothesis (one scalar, both axes). `cell` and `gap`
-// are the instance's parameters.
+// are the instance's inputs.
 .comp Divide2D<Key> {
     .decl cell(p: Position)
     .decl dim(key: Key, a: Axis, n: number)

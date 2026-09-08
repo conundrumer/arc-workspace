@@ -65,16 +65,16 @@ out(P, Col, Ch) :-
 
 // --- $Line ---
 
-.init parse_line = ShiftInvariance<Position, Color>
-parse_line.cell(Line, P, Col) :- cell_line(P, Line, Col).
+.init si_line = ShiftInvariance<Position, Color>
+si_line.cell(Line, P, Col) :- cell_line(P, Line, Col).
 
-period_at($Line(), Line, K) :- params.axis(A), parse_line.min_period(Line, A, K).
+period_at($Line(), Line, K) :- params.axis(A), si_line.min_period(Line, A, K).
 
 // --- $Grid ---
 
-.init parse_grid = ShiftInvariance<Unit, Color>
-parse_grid.cell($U(), P, Col) :- in(P, Col).
+.init si_grid = ShiftInvariance<Unit, Color>
+si_grid.cell($U(), P, Col) :- in(P, Col).
 
 // The grid's period, so every line takes it.
 period_at($Grid(), Line, K) :-
-    cell_line(_, Line, _), params.axis(A), parse_grid.min_period($U(), A, K).
+    cell_line(_, Line, _), params.axis(A), si_grid.min_period($U(), A, K).

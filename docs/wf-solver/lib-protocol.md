@@ -1,48 +1,96 @@
+<!-- When editing this doc:
+- Write in the imperative mood.
+- Avoid justifications, unless there is necessary reason.
+- Avoid contrastive structures, unless the alternative needs to be addressed. -->
+
 # Lib addition protocol
 
-A new primitive qualifies for `programs/lib.dl` through real use in the corpus. Looking general does not qualify it.
+Qualify a new primitive for `programs/lib.dl` by real use in the corpus, not by generality.
+
+- **Trigger.** When an encoding in the solver needs a form banned in the program, or when a grep for its shape over `programs/solvers/` finds another solver that writes it, apply this protocol to that encoding.
+- **Generality.** An operation is general when it names one prior-level operation and takes its domain as an input, fixing no configuration beyond the frame.
 
 ## The entry
 
-A candidate has an entry, `docs/wf-solver/proposals/<name>.md`, named for the operation. `head -n 3 docs/wf-solver/proposals/*.md` lists every entry's title and index sentence. An entry holds:
+Give a candidate an entry, `docs/wf-solver/proposals/<name>.md`, named for the operation. `head -n 3 docs/wf-solver/proposals/*.md` lists every entry's title and index sentence.
+
+**The entry's fields.** An entry holds:
 
 - a `# <name> — <operation>` title
 - an index sentence that stands alone
 - the code form, when it has one
-- a `Not:` line naming what is not this concept
+- a `Not:` line naming what is not this operation
 - a `Match:` line with the search signature: a grep pattern, or a shape stated in prose and matched with the parser (`tests/test_ast_match.py`)
 - a `Survey: <date time>` line, the dispatch time to the minute
 - the survey's result that is relevant to the operation: the near-misses, the spec question, and a `Callers` list of the solvers that would call it
 - a `Closed: <date time>` line with the judgment, when the operation is closed
 
-The entry holds what a reader needs to judge the operation, and nothing else. The reimplementations a survey reports, the fix made for them, and anything else about the corpus that is not relevant to the operation go in the session's report, not in the entry.
+Put in the entry what a reader needs to judge the operation, and nothing else.
 
-After its callers are migrated, remove the entry's file. If the entry lists no callers, remove its file at promotion. Keep a proposal comp with its entry. At promotion, lib replaces that comp. At close, remove that comp. A comp with no entry is a defect.
+### The entry's life
+
+Remove the entry's file at these points:
+
+- after its callers are migrated
+- at promotion, when the entry lists no callers
 
 ## The order
 
-1. Write the primitive as plain program relations. When cases share those relations, key them. If the linter would flag the primitive, write it as a proposal comp: a `.comp` named for the primitive, which exists only as the code form of a lib proposal. An extension of a lib comp has no comp form; its local rule remains beside the instance. Run the solver and confirm that the primitive works in context.
-2. Report the operation: name it, describe it, and show the solver-local version. Then read the entries to find one with the same operation. Match by what an operation does, not by its name. When an entry exists, use that entry's name for the comp. Read a solver's proposal comp with its entry.
+1. Write the primitive as plain program relations.
+    - When cases share those relations, key them.
+    - **Proposal comp.** If the linter would flag the primitive, write it as a proposal comp: a `.comp` named for the primitive.
+    - **Extension of a lib comp.** Write no comp for an extension of a lib comp. Keep its local rule beside the instance.
+    - Run the solver and confirm that the primitive works in context.
+2. Report the operation: name it, describe it, and show the solver-local version. Then read the entries to find one with the same operation.
+    - **Match by operation.** Match by what an operation does, not by its name.
+    - When an entry exists, use that entry's name for the comp.
+    - Read a solver's proposal comp with its entry.
+
+    The entry's state decides what to do next.
+
     - If no entry exists, write one with its `Survey:` line. Then send the `survey` agent the entry's path, the scope (the whole corpus), and the scratch path (`.scratch/<task_id>/`).
     - If an entry is closed, keep its judgment. Encode the solver without the operation, in the way the entry records.
-    - If an entry has a survey result, add this solver under `Callers`. The corpus before the `Survey:` time is covered. If some solvers postdate that time, send the `survey` agent the path, the scope (the solvers whose file time is at or after it: `ls -lt programs/solvers`; an edited solver counts), and the scratch path, and append the relevant results to the entry.
-    - If an entry has no result, its survey is still running. Do not dispatch another survey. State this in the report. If the entry still has no result when the chain's last stage runs, that stage dispatches the survey.
+    - If an entry has a survey result, add this solver under `Callers`.
+        - **Newer solvers.** If some solvers postdate the entry's `Survey:` time, send the `survey` agent the path, the scope, and the scratch path, and append the relevant results to the entry. The scope is the solvers whose file time is at or after that time (`ls -lt programs/solvers`). An edited solver counts.
+    - If an entry has no result and no survey of yours is running, dispatch the survey.
 
-    The agent reports callers, near-misses, the spec question, and reimplementations. Add the callers, near-misses, and spec question to the entry. Put the reimplementations in the session's report. A family (`// family:` siblings with their representative) counts as one caller. Dispatch early. After the agent returns, include its result in the report or review. Do not survey yourself.
-3. Decide whether to close the proposal. This is the only judgment in the protocol. Base that judgment on whether the operation does not follow principles, or whether it does not look general and the solvers encode their tasks without it (lib already holds the operation, a plain relation states it and no other solver writes it, or a relational form replaces the arithmetic). Looking general means it names one prior-level operation and takes its domain as a parameter, fixing no configuration beyond the frame. When closing a proposal, put the judgment in the entry as the `Closed:` line, remove the proposal comp, and rethink the solver's encoding in relational form; plain relations stay as written. Keep the entry so a later session finds the judgment. If the proposal closes before it has an entry, write the entry and close it in the same step. This records the judgment so no session reopens the question. A close is a judgment call; include it as one in the callouts.
+    **Dispatch.** Dispatch early, and do not survey yourself. The agent reports callers, near-misses, the spec question, and reimplementations.
 
-    If the proposal does not close, nothing is decided, no text can imply an outcome, the entry stays, and new callers are added to it. The caller count is evidence for the user, not an input to a rule; no step reads it.
-
-    Need is measured against the task, not against a case. A comp that serves one case while another case encodes the task without it is not needed. Remove the case whose hypothesis has no relational form with that comp. A near-miss, or a lib primitive that holds the operation over its own domain, is not a caller.
-4. Promotion is an action that the user takes on their file at the time they choose. The `Callers` list gives them the evidence. The protocol sets no caller-count threshold for promotion.
-    - On `promote`: move it to `programs/lib.dl` and update the solver that introduced the proposal.
+    - Count a family (`// family:` siblings with their representative) as one caller.
+    - Add the callers, near-misses, and spec question to the entry.
+    - Put the reimplementations in the session's report.
+    - Include the agent's result in the report or review.
+3. Decide whether to close the proposal. This is the only judgment in the protocol.
+    - **Close grounds.** Base that judgment on whether the operation does not follow principles, or whether it is not general and the solvers encode their tasks without it. The solvers encode their tasks without it when:
+        - lib already holds the operation
+        - a plain relation states it and no other solver writes it
+        - a relational form replaces the arithmetic
+    - **Closing.** When closing a proposal, put the judgment in the entry as the `Closed:` line, remove the proposal comp, and rethink the solver's encoding in relational form. Leave plain relations as written.
+        - If the proposal closes before it has an entry, write the entry and close it in the same step.
+        - Include the close in the review as a judgment call.
+    - **No close.** If the proposal does not close, nothing is decided. Write no text that implies an outcome.
+    - **Need.** Measure need against the task, not against a case.
+        - A comp that serves one case while another case encodes the task without it is not needed.
+        - Remove the case whose hypothesis has no relational form without that comp.
+    - **Not a caller.** Do not count a near-miss, or a lib primitive that holds the operation over its own domain, as a caller.
+4. Leave promotion to the user, at the time they choose. The `Callers` list is their evidence. No step reads its count.
+    - On `promote`: move the primitive to `programs/lib.dl` and update the solver that introduced the proposal.
     - On `migrate`:
         1. Send the `migrate` agent the entry's path, the call site in the solver that introduced the proposal, and the promotion's time.
-        2. The `migrate` agent migrates the callers that the entry lists.
-        3. Send the `cleanup` agent the regions that `migrate` changed and the primitive they now call.
-        4. The `cleanup` agent runs Simplify and Prune over those regions.
-        5. The review lists the callers that `migrate` skipped.
+        2. Send the `cleanup` agent the regions that `migrate` changed and the primitive they now call.
+        3. List in the review the callers that `migrate` skipped.
 
-Nothing defers the fix of a reimplementation. The `migrate` agent fixes reimplementations in the same pass, and the `cleanup` agent also covers them. If either agent finds another problem that Simplify or Prune covers in a file it has open, that agent fixes that problem in the same pass. A finding in a file no agent has open goes to the review. A target file's uncommitted edits do not defer the fix.
+**Reimplementations.** Fix every reimplementation a survey reports in the same pass.
 
-Use the same protocol for changes to existing definitions, such as an edit to an existing `lib.dl` primitive or to a term's definition in `concepts.md`. Start such a change at step 2, with the change as the survey's target. There is no comp form, so the entry contains the spec: the operation, its code form, what is not it, and the search signature. Its callers are the places the change would benefit.
+- Send them to the `migrate` agent, then the `cleanup` agent.
+- If either agent finds another problem that Simplify or Prune covers in a file it has open, that agent fixes that problem in the same pass.
+- Put a finding in a file no agent has open in the review.
+- Fix a target file even when it has uncommitted edits.
+
+## Changes to existing definitions
+
+Use the same protocol for changes to existing definitions, such as an edit to an existing `lib.dl` primitive.
+
+- Start such a change at step 2, with the change as the survey's target.
+- The change has no comp form. Put the changed definition in the entry as its code form.
+- Count as its callers the places the change would benefit.

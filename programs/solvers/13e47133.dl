@@ -20,7 +20,7 @@
 
 .init params = Params
 
-.decl impl_choice(c: Choice)
+.decl impl_choice(ch: Choice)
 impl_choice($Peel()). impl_choice($Sight()).
 
 // The two colors that cover the grid: the background, and the wall drawn on

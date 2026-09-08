@@ -89,19 +89,19 @@ out(P, Col, $Inset()) :-
 .type Window = [e: Example, diag: DiagDir]
 
 .comp Determine {
-    .init parse = ShiftInvariance<Example, Color>
-    parse.cell(E, P, Col) :- ex_out(E, P, Col).
+    .init si = ShiftInvariance<Example, Color>
+    si.cell(E, P, Col) :- ex_out(E, P, Col).
 
     .init unbroken = Extremes<Axis>
-    unbroken.cand(A, K) :- parse.cand(_, A, K, _), !parse.mismatch(_, A, K).
+    unbroken.cand(A, K) :- si.cand(_, A, K, _), !si.mismatch(_, A, K).
 
     // The lattice generators: the smallest repeating shift on each axis,
     // in each direction.
     .decl period(delta: Shift)
-    period(Delta) :- parse.cand(_, A, K, Delta), unbroken.low(A, K).
+    period(Delta) :- si.cand(_, A, K, Delta), unbroken.low(A, K).
 
     .decl span(a: Axis, k: number)
-    span(A, K) :- period(Delta), parse.cand(_, A, K, Delta).
+    span(A, K) :- period(Delta), si.cand(_, A, K, Delta).
 
     // The closed unit cell: cells within one generator of a corner,
     // boundary included.

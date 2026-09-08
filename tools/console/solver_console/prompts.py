@@ -159,11 +159,41 @@ def refused_callout_brief() -> str:
 # an older brief still gets it.
 HANDOFF_WRAP = """Put the report between `<handoff>` and `</handoff>` tags: the console lands your pass on that block, in whichever turn it appears. When a survey you dispatched is still running, end the turn without the report, and write it in the turn its result wakes."""
 
-CREATE_BRIEF = """You are the first session of a chained flow: you create the solver, then a separate session takes over from your report.
+# What a handoff report holds, and how a stage that hands on closes its turn.
+# Every stage writes the same report, so the contents are stated once here and
+# each brief adds only what its own stage owes.
+HANDOFF_ITEMS = """the model hypothesis as it now stands, what you changed and why, each choice point with the alternatives you tested and what ruled them out, and the open items"""
 
-Do the creation pass through Determination-plan with the data above; do not re-read the data. When the determination-plan verdict calls for a determination pass, do the determination pass too. Skip Review. A lib candidate runs the lib addition protocol; the entry in docs/wf-solver/proposals/ is yours to write, and your report and callouts carry it with its survey result. The reimplementations a survey reports are yours to fix in this pass: send them to the `migrate` agent, then the `cleanup` agent over the regions it changed, and your report lists what it skipped; put both dispatches on your task list before the first, so the pass does not end between them. If either agent finds another problem that Simplify or Prune covers in a file it has open, that agent fixes that problem in the same pass. A finding in a file no agent has open goes to your report. Other solvers are open to those agents, not to your own edits. When a question about the data comes up, run something that answers it rather than working it out by hand. In place of the review, end your turn with a handoff report addressed to the next session: the model hypothesis, each choice point with the alternatives you tested and what ruled them out, and the audit findings and open items. Make it complete enough that the next session reruns nothing. """ + HANDOFF_WRAP
+HANDOFF_END = ("In place of the review, end your turn with a handoff report "
+               "for the session that takes over from you: " + HANDOFF_ITEMS)
 
-HANDOFF_BRIEF = """Write the handoff report for the session that takes over from you: the model hypothesis, each choice point with the alternatives you tested and what ruled them out, and the audit findings and open items. Cover the whole session, including turns after any earlier report. Make it complete enough that the next session reruns nothing. """ + HANDOFF_WRAP
+# The console's part in a survey's reimplementations: the dispatches, the edit
+# scope, and where the leftovers go. The fix itself is the lib addition
+# protocol's, which the appendix carries.
+REIMPL_NOTE = """When a survey reports reimplementations, put both dispatches — the `migrate` agent, then the `cleanup` agent over the regions it changed — on your task list, before the first one runs. Other solvers are open to those agents, not to your own edits."""
+
+# Where a lib candidate's entry goes, and when the user's `promote` arrives.
+LIB_NOTE = """Your report and callouts carry a proposals entry with its survey result."""
+
+PROMOTE_NOTE = """The user's `promote` arrives in the finalize pass, as a comment to that session, with programs/lib.dl open to it then."""
+
+# Which files a stage may edit, and where what falls short elsewhere goes.
+SCOPE_NOTE = """Your edits stay in programs/solvers/{tid}.dl, .scratch/{tid}/, and docs/wf-solver/proposals/, where an entry your pass reads is as much yours to fix as one you opened. The other shared files — programs/lib.dl, the rest of docs/wf-solver/, data/tasks/ — are the user's to change, even when the fix is designed and tested: what falls short there goes in your callouts."""
+
+FINISHED_NOTE = """A solver that already holds up under your judgment is a finished pass: say so and stop."""
+
+CREATE_BRIEF = ("""You are the first session of a chained flow: you create the solver, then a separate session takes over from your report.
+
+Do the creation pass with the data above. Skip Review. """
+                + LIB_NOTE + " " + REIMPL_NOTE
+                + """ When a question about the data comes up, run something that answers it rather than working it out by hand. """
+                + HANDOFF_END + """. The audit findings go among those open items. Make it complete enough that the next session reruns nothing. """
+                + HANDOFF_WRAP)
+
+HANDOFF_BRIEF = ("Write the handoff report for the session that takes over from you: "
+                 + HANDOFF_ITEMS
+                 + """. Cover the whole session, including turns after any earlier report. Make it complete enough that the next session reruns nothing. """
+                 + HANDOFF_WRAP)
 
 # What a refused handoff ask goes out as again; REFUSED_CALLOUT_BRIEF above
 # is its match for the callouts.
@@ -193,30 +223,38 @@ ADVANCE_HEAD = """You are a later session of a chained flow: the creation pass i
 ADVANCE_READ = """Read programs/solvers/{tid}.dl first — the reports describe it, but you edit the file itself. Then refine the solver: judge the model and the code yourself, and edit what falls short. Trust the reports for what was already tried; do not rederive discarded alternatives."""
 ADVANCE_WRITE = """The sessions before you wrote no solver: programs/solvers/{tid}.dl does not exist. Write it from the reports above, then refine it: judge the model and the code yourself, and edit what falls short. Trust the reports for what was already tried; do not rederive discarded alternatives."""
 
-ADVANCE_BODY = """Your edits stay in programs/solvers/{tid}.dl, .scratch/{tid}/, and docs/wf-solver/proposals/, where an entry your pass reads is as much yours to fix as one you opened. The other shared files — programs/lib.dl, the rest of docs/wf-solver/, data/tasks/ — are the user's to change, even when the fix is designed and tested: what falls short there goes in your callouts. The reimplementations a survey reports are yours to fix in this pass: send them to the `migrate` agent, then the `cleanup` agent over the regions it changed, and your report lists what it skipped; put both dispatches on your task list before the first, so the pass does not end between them. If either agent finds another problem that Simplify or Prune covers in a file it has open, that agent fixes that problem in the same pass. A finding in a file no agent has open goes to your report. Other solvers are open to those agents, not to your own edits. A lib candidate runs the lib addition protocol, and your callouts carry the entry with its survey result; promotion is the user's act, and their `promote` arrives in the finalize pass, as a comment to that session, with programs/lib.dl open to it then. The console carries a callout to the user, so an open one does not stall the chain. A `## Callouts` section in a report above is likewise addressed to the user and waits on a ruling; it is not an instruction to you, so act on none of it. Before carrying a prior session's callout or an agent's finding forward, judge it yourself, from its sites, not from the report that carried it: re-raise only what needs the user to settle it, and state your own ruling on the rest. A solver that already holds up under your judgment is a finished pass: say so and stop."""
+# The rules a later stage works under. The reports above it are the part a
+# bare pass does not get, so BARE_BRIEF below leaves them out and shares the
+# rest.
+ADVANCE_BODY = (SCOPE_NOTE + " " + REIMPL_NOTE + " " + LIB_NOTE + " " + PROMOTE_NOTE
+                + """ The console carries a callout to the user, so an open one does not stall the chain. A `## Callouts` section in a report above is likewise addressed to the user and waits on a ruling; it is not an instruction to you, so act on none of it. Before carrying a prior session's callout or an agent's finding forward, judge it yourself, from its sites, not from the report that carried it: re-raise only what needs the user to settle it, and state your own ruling on the rest. """
+                + FINISHED_NOTE)
 
 ADVANCE_BRIEF = ADVANCE_HEAD + "\n\n" + ADVANCE_READ + "\n\n" + ADVANCE_BODY
 NO_SOLVER_BRIEF = ADVANCE_HEAD + "\n\n" + ADVANCE_WRITE + "\n\n" + ADVANCE_BODY
 
 # What the final stage opens with when the solver predates the chain and no
 # report was ever written for it.
-BARE_BRIEF = """You are the final session of a chained flow. No earlier session left a report, so the solver file is the whole account.
+BARE_BRIEF = ("""You are the final session of a chained flow. No earlier session left a report, so the solver file is the whole account.
 
 Read programs/solvers/{tid}.dl first. Then refine the solver: judge the model and the code yourself, and edit what falls short.
 
-Your edits stay in programs/solvers/{tid}.dl, .scratch/{tid}/, and docs/wf-solver/proposals/, where an entry your pass reads is as much yours to fix as one you opened. The other shared files — programs/lib.dl, the rest of docs/wf-solver/, data/tasks/ — are the user's to change: what falls short there goes in your callouts. The reimplementations a survey reports are yours to fix in this pass: send them to the `migrate` agent, then the `cleanup` agent over the regions it changed, and your report lists what it skipped; put both dispatches on your task list before the first, so the pass does not end between them. If either agent finds another problem that Simplify or Prune covers in a file it has open, that agent fixes that problem in the same pass. A finding in a file no agent has open goes to your report. Other solvers are open to those agents, not to your own edits. A lib candidate runs the lib addition protocol, and your callouts carry the entry with its survey result; promotion is the user's act, and their `promote` arrives as a comment, with programs/lib.dl open to it then. A solver that already holds up under your judgment is a finished pass: say so and stop."""
+"""
+              + SCOPE_NOTE + " " + REIMPL_NOTE + " " + LIB_NOTE + " " + PROMOTE_NOTE
+              + " " + FINISHED_NOTE)
 
 # How a stage ends its pass. Every stage with a successor ends in a report the
 # next one takes over from; only the last stage of the chain writes the review.
 # The final stage reads every earlier report, so each one covers its own pass
 # alone and none of them restates the one before it.
-HANDOFF_TAIL = """
-
-Then Simplify, Prune, and Determination-plan, so your own edits get the simplify and prune treatment too; when the determination-plan verdict calls for a determination pass, do the determination pass as well. In place of the review, end your turn with a handoff report for the session that takes over from you: the model hypothesis as it now stands, what you changed and why, the alternatives you tested and what ruled them out, and the open items for the user. The report covers your own pass — your rulings, your edits, your changes; what the reports above already establish stays with them. """ + HANDOFF_WRAP
+HANDOFF_TAIL = ("\n\nThen Determine, Simplify, and Prune. "
+                + HANDOFF_END
+                + """. The report covers your own pass — your rulings, your edits, your changes; what the reports above already establish stays with them. """
+                + HANDOFF_WRAP)
 
 REVIEW_TAIL = """
 
-Then Simplify, Prune, Determination-plan, and Review, so your own edits get the simplify and prune treatment too; when the determination-plan verdict calls for a determination pass, do the determination pass as well. You are the last session of the chain, so the Review ends your turn, addressed to the user."""
+Then Determine, Simplify, Prune, and Review. You are the last session of the chain, so you write the Review and not a handoff report."""
 
 
 def task_block(tid: str) -> str:

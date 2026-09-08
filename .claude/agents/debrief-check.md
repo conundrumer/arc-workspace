@@ -1,6 +1,6 @@
 ---
 name: debrief-check
-description: Checks the debrief issues about one shared thing, as closed, dropped, or open with candidate fixes. Changes no repo file.
+description: Checks the debrief issues about one shared thing, as closed, dropped, or open with candidate fixes. Changes no repo file. Reads the handbook.
 tools: Read, Grep, Glob, Bash, Write
 ---
 First, when the handbook does not follow this section, read the output of `uv run python scripts/context.py` in full. You check the issues the brief lists, all about one shared thing, and return a status for each. Your final text is data for a script, not a message for a person.

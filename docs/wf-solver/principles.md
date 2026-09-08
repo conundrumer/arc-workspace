@@ -176,7 +176,7 @@ A few train pairs underdetermine the family. Coverage is one case per model that
 - **branch** (of a choice point) — one of its possible answers.
 - **peer model** (of a model) — another model that fits the same task.
     + T ∈ fam(M) ∩ fam(M′), M′ ≠ M
-- **prior** — a core knowledge prior that ARC training tasks are intended to teach in pure form. The Prior terms of `concepts.md` name them. A case claims which priors the task teaches. Several models can claim the same priors.
+- **prior** — a core knowledge prior that ARC training tasks are intended to teach in pure form. A case claims which priors the task teaches. Several models can claim the same priors.
 - Coverage shows which prior the task could be teaching.
 - A hypothesis decomposes by choice point into one branch per point, and each branch is itself a hypothesis.
 - A solver with one case has no `Choice`.
@@ -229,9 +229,13 @@ Cases are hypotheses about the prior that the task teaches.
 - **precedent** (of a setup structure) — the encoding that the corpus already uses for it.
 - Models that find different structures are different parses.
     - 662c240a <!-- square tiles form a stack along an axis, and the output is the one tile that lacks the symmetry the others share; every case reads the same stack. -->
-- **Reparameterizations.** A setup has reparameterizations, and together they get one case: the one whose facts the program already reads (1190bc91), following the corpus's precedent (2dee498d, f25ffba3).
+- **Reparameterizations.** A setup has reparameterizations, and together they get one case.
     - The solver that introduces or improves a structure's encoding sets its precedent.
     - 662c240a <!-- the stack can be found by tile count, as the solver does, by tile size, or by squareness with no parameter; the same-model test separates the three, since count and size give different outputs at one assignment on other extents and squareness has no parameter, but all three claim one segmentation prior and differ only in which parameter finds the stack. -->
+- **Setup priority.** A setup follows, in order:
+    1. Fidelity.
+    2. Reuse of the facts and lib instances the program already has (1190bc91).
+    3. The structure's precedent (2dee498d, f25ffba3).
 - **Peer priors.** The cases go to the peer priors. A same-model separation gets a case only when it separates priors, regardless of its choice point.
     - 662c240a <!-- a stored symmetry, with the output the tile it fails on, against the existence of any symmetry. -->
 - **Different parse.** A peer model that parses the task differently gets a case.

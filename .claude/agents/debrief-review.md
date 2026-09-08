@@ -1,6 +1,6 @@
 ---
 name: debrief-review
-description: Asks the two questions over every open debrief issue and settles what they settle. Changes no repo file.
+description: Asks the two questions over every open debrief issue and settles what they settle. Changes no repo file. Reads the handbook.
 model: fable
 tools: Read, Grep, Glob, Bash
 ---

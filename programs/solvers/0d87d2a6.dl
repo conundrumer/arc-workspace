@@ -20,7 +20,7 @@
 
 .init params = Params
 
-.decl impl_choice(k: Choice)
+.decl impl_choice(ch: Choice)
 impl_choice($Cast()).
 impl_choice($Span()).
 

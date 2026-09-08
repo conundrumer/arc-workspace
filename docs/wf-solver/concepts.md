@@ -1,10 +1,6 @@
 # Concepts
 
-Controlled vocabulary for solver `// concept:` lines.
-
-The concept line is a reference for agents. Sessions use their own judgment to pick and revise terms for future agents. They do not ask the user to approve term choices.
-
-A term names a model hypothesis; the mechanism named in its gloss is one instance of that hypothesis. If grep over the program could derive a term, that term is disqualified: primitive names, comp names, and parameter names are not concepts. When no term fits, the session broadens a gloss or adds a term here, and reports the change.
+Keywords index the solvers by concepts that a grep over the code cannot find.
 
 ## Setup
 
@@ -47,3 +43,10 @@ The transformation hypothesis: which prior the task teaches.
 - `parity` — the model depends on even/odd position alternation
 - `cross` — cells where designated lines cross act
 - `merge` — like-valued items fuse under a task-given nearness into one unit; the output treats the unit as one thing
+
+## Shape
+
+A composition property of the task. It holds across the file's cases and is recorded for corpus-level analysis.
+
+- `latent-canvas` — the program constructs a canvas neither grid fully shows, and the output is determined by that canvas. A canvas is a frame of cells that holds the whole scene in one state.
+- `percept-shadow` — the pairs match content by a resemblance no exact map realizes, and the encoded hypothesis is a strictly weaker consequence of it. The tag applies if and only if a pair breaks the resemblance's exact form while its match still holds, and a configuration exists that the encoded hypothesis accepts and the resemblance rejects. The resemblance is read at the weakest form the pairs exhibit that rejects that configuration.

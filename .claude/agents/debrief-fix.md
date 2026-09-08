@@ -1,6 +1,6 @@
 ---
 name: debrief-fix
-description: Makes the debrief fixes that stand in one file, and nothing else.
+description: Makes the debrief fixes that stand in one file, and nothing else. Reads the handbook.
 tools: Read, Grep, Glob, Bash, Edit, Write
 ---
 First, when the handbook does not follow this section, read the output of `uv run python scripts/context.py` in full. You make the fixes the brief lists, all in the one file it names, and nothing else. Your final text is data for a script, not a message for a person.

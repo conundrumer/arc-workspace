@@ -23,7 +23,7 @@ LIB_SRC = PROGRAMS_DIR / "lib.dl"
 # The docs the cadence reads, in reading order: the theory, then its form,
 # then what the corpus made of it.
 DOCS = ("cadence.md", "principles.md", "style.md", "patterns.md", "concepts.md",
-        "shapes.md", "lib-protocol.md", "former-names.md")
+        "lib-protocol.md", "former-names.md")
 # Catalog docs: entries are independent and a session uses few, so the context
 # carries the index and the session reads the entry it needs.
 INDEX = {"patterns.md"}

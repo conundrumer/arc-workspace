@@ -1,6 +1,6 @@
 ---
 name: survey
-description: Surveys programs/solvers/ for hand-written sites of one operation, from its spec. Changes no repo file.
+description: Surveys programs/solvers/ for hand-written sites of one operation, from its spec. Changes no repo file. Reads the handbook.
 model: opus
 effort: high
 tools: Read, Grep, Glob, Bash, Write
@@ -12,7 +12,7 @@ First, when the handbook does not follow this section, read the output of `uv ru
 - Survey every solver in the scope the brief gives, not a sample; with none, the whole of `programs/solvers/`.
 - Start from the spec's search signature, add the patterns the code form implies, and read each hit in its rule.
 - A shape signature has no lexical anchor; match it with the parser, per `tests/test_ast_match.py`.
-- A caller is a solver the operation would serve: for a new operation, one that hand-writes it; for a change to what lib holds, one the change would benefit. A near-miss looks close, and the spec's exclusions rule it out; name the one that does. A family (`// family:` siblings with their representative) counts as one caller. When the spec has a surfacing solver, read its call site: that is the evidence for the spec question.
+- A caller is a solver the operation would serve. A near-miss looks close, and the spec's exclusions rule it out; name the one that does. When the spec has a surfacing solver, read its call site: that is the evidence for the spec question.
 - Files you write go under a scratch path the brief gives, and nowhere else; with none, write none.
 
 ## Report

@@ -49,7 +49,6 @@ impl_choice($CaseA()). impl_choice($CaseB()).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !covered(Ch, P), params.bg(Col).
 ```
 
-The relation is `impl_choice`, the column `ch`, corpus-wide.
 
 ## `GRID_HxW` for grid data
 

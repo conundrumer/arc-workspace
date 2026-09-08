@@ -21,19 +21,14 @@ CAP_POLL = 5
 
 
 # edits land already clean.
-CLEAN_TRIGGERS = ("cleanup", "determine")
+CLEAN_TRIGGERS = ("cleanup",)
 CLEANUP_RE = re.compile(r"\bcleanup\b")
 
 
 def clean_trigger(text: str) -> str | None:
     """The clean cadence a message asks for. `cleanup` counts anywhere in the
-    message, since it is often the tail of a longer instruction; `determine`
-    counts only as the opening word, since elsewhere it reads as an ordinary
-    verb."""
-    low = text.lower()
-    if CLEANUP_RE.search(low):
-        return "cleanup"
-    return "determine" if low.split()[:1] == ["determine"] else None
+    message, since it is often the tail of a longer instruction."""
+    return "cleanup" if CLEANUP_RE.search(text.lower()) else None
 
 
 def launch(it: dict, message: str, phase: str, trigger: str | None = None,

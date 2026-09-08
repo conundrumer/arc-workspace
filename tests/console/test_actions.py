@@ -62,18 +62,6 @@ def test_comment_launches_a_follow_up_turn(srv, monkeypatch):
     assert it["feed"][-1] == {"kind": "you", "text": "cleanup please", "sess": "refine"}
 
 
-def test_fit_is_a_clean_trigger(srv, monkeypatch):
-    sent = []
-    monkeypatch.setattr(srv, "launch",
-                        lambda it, msg, phase, trigger=None, handoff=False:
-                        sent.append((msg, trigger)))
-    item(srv, "a", srv.NEEDS_REVIEW)
-    worker(srv, srv.find("a"))
-    srv.act_comment("a", "determine the params")
-    srv.act_comment("a", "predetermine this")
-    assert sent == [("determine the params", "determine"), ("predetermine this", None)]
-
-
 def test_cleanup_counts_anywhere_in_the_message(srv, monkeypatch):
     sent = []
     monkeypatch.setattr(srv, "launch",
