@@ -173,7 +173,7 @@ render(P, Col) :-
 - **Proposal comps.** A comp outside `Params`, `Determine`, and `Parse` is lib code. A solver writes one only as a proposal comp, which has an entry under `docs/wf-solver/proposals/` per the lib addition protocol. The linter skips every comp but `Determine` and `Parse`, and flags a proposal comp with no entry.
 - **Keys.** A comp other than `Params` and `Determine` takes a `Key` type param, and keyed relations share it across cases. Single-set sites key on `Unit`.
     - **Shared stages.** A stage is shared when, and only when, its case-specific versions differ in nothing but the case name. If cases differ in substance (one derives a value, one reads it from Params), that stage stays per-case, even when one derivation could feed every case.
-- **Instance-level inputs.** An input relation whose value is part of the instance's identity, not per-key data, takes no key. An input that the task does not vary per key takes no key. A parameter that varies per case is per-key data: the comp is keyed by `Choice`.
+- **Instance-level inputs.** An input relation whose value is part of the instance's identity, not per-key data, takes no key. An instance-level input that the task does not vary per key takes no key. An input that varies per case is per-key data: the comp is keyed by `Choice`.
 - **Nested comps.** A nested comp's outputs are read through the instance path.
 
 ## Parse
