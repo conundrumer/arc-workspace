@@ -137,7 +137,8 @@ STAGGER_TIMEOUT = 120  # seconds to wait for the first worker's first API respon
 STEER_RACE = 5
 IDLE_TTL = 3600
 IDLE_POLL = 60
-# The prompt-cache TTL, counted from a session's last landing.
+# The prompt-cache TTL, counted from a session's last real turn. A compact
+# leaves the session no cache, so it starts no TTL.
 CACHE_TTL = 3600
 # How close to the cache expiry, or the idle reap, the auto compact fires.
 COMPACT_MARGIN = 180

@@ -72,7 +72,12 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
         it.setdefault("seen_hash", {})[phase] = solvers.solver_hash(it["id"])
         # a real turn landed: the session may be auto-compacted once more
         it.get("auto_compacted", {}).pop(phase, None)
-    it["lastActive"][phase] = int(time.time() * 1000)
+    # The compact hands its summary back as output, and nothing sends that
+    # summary until the next real turn, so the session lands holding no cache.
+    if worker and worker.get("compacted") and store.slash_turn(it, phase):
+        it["lastActive"][phase] = None
+    else:
+        it["lastActive"][phase] = int(time.time() * 1000)
     it["title"] = solvers.title_of(it["id"]) or it.get("title", "")
     it["comps"] = solvers.comps_of(it["id"])
     it["comps_unproposed"] = solvers.unproposed(it["comps"], solvers.prop_text())
