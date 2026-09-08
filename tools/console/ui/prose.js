@@ -6,6 +6,11 @@ export const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").rep
 export const pad2 = n => String(n).padStart(2,"0");
 export const hhmm = e => { const d=new Date(e*1000);
   return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); };
+const DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+/* the same clock time, with a day prefix when the epoch falls on another day */
+export const hhmmDay = e => { const d=new Date(e*1000);
+  const today = d.toDateString()===new Date().toDateString();
+  return (today ? "" : DAYS[d.getDay()]+" ")+hhmm(e); };
 export const fmtDur = s => { s=Math.max(0,Math.floor(s)); const h=Math.floor(s/3600), m=Math.floor((s%3600)/60);
   return h ? h+"h "+m+"m" : m ? m+"m "+String(s%60).padStart(2,"0")+"s" : s+"s"; };
 

@@ -71,7 +71,7 @@ def test_pacer_holds_once_the_week_reaches_its_pace(srv, monkeypatch):
     set_usage(srv, monkeypatch, wk_pct=45, wk_elapsed=50)
     gate = srv.pacer()
     assert gate["open"] is False
-    assert "wk at pace" in gate["why"]
+    assert gate["why"] == "wk pace"
 
 
 def test_the_fable_week_paces_admissions_when_a_night_stage_runs_fable(srv, monkeypatch):
@@ -81,7 +81,7 @@ def test_the_fable_week_paces_admissions_when_a_night_stage_runs_fable(srv, monk
     srv.act_auto({"finalize": True})
     gate = srv.pacer()
     assert gate["open"] is False
-    assert "fbl at pace" in gate["why"] and gate["fbl"] == 45
+    assert gate["why"] == "fbl pace" and gate["fbl"] == 45
     set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50, fbl=(30, 50))
     assert srv.pacer()["open"] is True
 
@@ -102,7 +102,7 @@ def test_catchup_off_caps_spending_at_strict_pace(srv, monkeypatch):
     set_usage(srv, monkeypatch, wk_pct=22, wk_elapsed=60)
     gate = srv.pacer()
     assert gate["open"] is False           # +2 points in an hour's worth of week
-    assert "strict pace" in gate["why"]
+    assert gate["why"] == "wk strict"
     cfg["catchup"] = True
     assert srv.pacer()["open"] is True     # the slack is there to be spent
 
@@ -165,7 +165,7 @@ def test_the_five_hour_rule_holds_a_fleet_over_the_windows_budget(srv, monkeypat
     readings(srv, "5h", [(900, 60), (0, 80)], reset=AT + 2 * 3600)
     gate = srv.pacer()
     assert gate["open"] is False
-    assert gate["why"].startswith("5h at 80%")
+    assert (gate["hold"], gate["why"]) == ("5h over budget", "5h")
     five = next(w for w in gate["windows"] if w["label"] == "5h")
     assert (five["rate"], five["budget"]) == (pytest.approx(80), pytest.approx(10))
 
@@ -176,10 +176,24 @@ def test_the_last_hour_before_a_reset_opens_no_wider(srv, monkeypatch):
               five_pct=95, five_left=1800)
     gate = srv.pacer()
     assert gate["open"] is False           # 5 points left, one item spends 6 an hour
-    assert gate["why"].startswith("5h at 95%")
+    assert gate["hold"] == "5h over budget"
     set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50,
               five_pct=90, five_left=1800)
     assert srv.pacer()["open"] is True
+
+
+def test_the_windows_eta_agrees_with_the_spend_hold(srv, monkeypatch):
+    """The panel reads when a window runs out; the gate compares rates. One
+    more item running out before the window's limit is the spend hold."""
+    clock_at(srv, monkeypatch)
+    srv.night()["pace"] = "exhaust"
+    for pct in (0, 50, 80, 90, 95, 99, 100):
+        set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50,
+                  five_pct=pct, five_left=2 * 3600)
+        gate = srv.pacer()
+        five = next(w for w in gate["windows"] if w["label"] == "5h")
+        assert (five["runs_out_more"] < five["limit"]) \
+            is (gate["hold"] == "5h over budget")
 
 
 def test_a_five_hour_window_with_no_reset_is_a_full_window_away(srv, monkeypatch):
@@ -200,7 +214,8 @@ def test_the_running_fleet_counts_at_its_share_before_the_slope_shows(srv, monke
     running(srv, 2)
     gate = srv.pacer()
     assert gate["open"] is False                   # 12 + 6 does not
-    assert "12.0 + 6.0" in gate["why"]
+    five = next(w for w in gate["windows"] if w["label"] == "5h")
+    assert (five["rate"], five["share"]) == (pytest.approx(12), pytest.approx(6))
 
 
 def test_the_observed_share_is_remembered_in_the_config(srv, monkeypatch):
@@ -249,7 +264,8 @@ def test_an_idle_fleet_admits_by_the_prior_at_most(srv, monkeypatch):
     running(srv, 1)
     gate = srv.pacer()
     assert gate["open"] is False
-    assert "30.0 + 30.0" in gate["why"]
+    five = next(w for w in gate["windows"] if w["label"] == "5h")
+    assert (five["rate"], five["share"]) == (pytest.approx(30), pytest.approx(30))
 
 
 def test_a_share_is_written_only_off_a_full_span_of_readings(srv, monkeypatch):
@@ -317,7 +333,7 @@ def test_a_spend_hold_is_logged_once_while_its_numbers_move(srv, monkeypatch):
     readings(srv, "5h", [(-60, 81)], reset=AT + 2 * 3600)
     srv.night_tick()
     texts = [e["text"] for e in srv.night()["log"]]
-    assert texts == ["pacer holding: 5h over budget"]
+    assert texts == ["hold · 5h over budget"]
 
 
 def test_exhaust_skips_the_pace_lines(srv, monkeypatch):
@@ -337,10 +353,10 @@ def test_the_wall_holds_a_weekly_window_an_hour_out(srv, monkeypatch):
     set_usage(srv, monkeypatch, wk_pct=99, wk_elapsed=50)
     gate = srv.pacer()
     assert gate["open"] is False           # one point left, an item spends 1.4 an hour
-    assert gate["why"].startswith("wk at 99%")
+    assert (gate["hold"], gate["why"]) == ("wk over budget", "wk")
     set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50, fbl=(97, 50))
     assert srv.pacer(models=[srv.MODEL_IDS["opus"]])["open"] is True
-    assert srv.pacer(models=[srv.MODEL_IDS["fable"]])["why"].startswith("fbl at 97%")
+    assert srv.pacer(models=[srv.MODEL_IDS["fable"]])["hold"] == "fbl over budget"
 
 
 def test_pacer_holds_without_a_weekly_reading(srv, monkeypatch):
@@ -348,7 +364,7 @@ def test_pacer_holds_without_a_weekly_reading(srv, monkeypatch):
     monkeypatch.setattr(srv, "USAGE", [])
     gate = srv.pacer()
     assert gate["open"] is False
-    assert "no weekly usage reading" in gate["why"]
+    assert gate["why"] == "no wk reading"
 
 
 def test_the_admitter_fills_to_target_and_stops(srv, monkeypatch):
@@ -368,7 +384,7 @@ def test_the_admitter_respects_the_gate(srv, monkeypatch):
     out = srv.night_tick()
     assert out["admitted"] == [] and "wk at pace" in out["held"]
     assert srv.STATE["items"] == []
-    assert "pacer holding" in srv.night()["log"][-1]["text"]
+    assert "hold · " in srv.night()["log"][-1]["text"]
 
 
 def test_a_held_pass_logs_its_reason_once(srv, monkeypatch):
@@ -823,7 +839,7 @@ def test_the_console_payload_carries_the_night(srv, monkeypatch):
     assert (view["on"], view["target"], view["live"], view["landed"]) == \
         (True, 4, 0, 0)
     assert view["gate"]["open"] is True
-    assert view["next"]["what"] == "admitter pass"
+    assert view["next"]["what"] == "pass"
 
 
 # ---------- the unfinalized source ----------
@@ -1036,11 +1052,10 @@ def test_the_both_source_holds_one_slot_while_the_other_admits(srv, monkeypatch)
     assert out["admitted"] == ["t00"]
     assert out["held"].startswith("finalize: fbl at pace")
     assert srv.find("aaa") is None
-    assert srv.night()["log"][-1]["text"].startswith("pacer holding: finalize: fbl at pace")
+    assert srv.night()["log"][-1]["text"] == "hold · finalize: fbl at pace"
     view = srv.night_view()
     assert view["gate"]["open"] is True
-    assert view["gate"]["why"].startswith("finalize held: fbl at pace")
-    assert "queue open: at pace" in view["gate"]["why"]
+    assert view["gate"]["why"] == "finalize held (fbl pace), queue open"
 
 
 def test_two_standing_notes_do_not_take_turns_filling_the_log(srv, monkeypatch):
@@ -1051,7 +1066,7 @@ def test_two_standing_notes_do_not_take_turns_filling_the_log(srv, monkeypatch):
     for _ in range(5):
         srv.night_tick()
     texts = [e["text"] for e in srv.night()["log"]]
-    assert texts == ["queue is empty", "pacer holding: finalize: fbl at pace"]
+    assert texts == ["queue is empty", "hold · finalize: fbl at pace"]
 
 
 def test_the_both_source_keeps_finalize_behind_the_pacer(srv):

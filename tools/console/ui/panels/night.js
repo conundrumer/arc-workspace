@@ -1,6 +1,6 @@
 /* The overnight panel. */
 import { html, useEffect, useRef } from "/vendor/htm-preact-standalone.module.js";
-import { hhmm } from "/ui/prose.js";
+import { hhmm, hhmmDay } from "/ui/prose.js";
 
 /* ---------- overnight ----------
    The dials are the server's; the panel only mirrors them, so an edit posts
@@ -16,6 +16,10 @@ const TARGET_KEYS = {queue:["target"], unfinalized:["finalize_target"], both:["t
 export const targetKeys = n => TARGET_KEYS[n.source] || TARGET_KEYS.queue;
 const LINE_DIALS = ["reserve","floor"];
 const lineDials = n => n.pace==="exhaust" ? [] : LINE_DIALS;
+/* a window's 100% time: a clock time, "?" with no rate yet, else the
+   server's word for it */
+const eta = v => v==null ? "?" : typeof v==="number" ? hhmmDay(v) : String(v);
+const ETA_HELP = "when each window hits 100%: at the current rate, with one more item; and the time the gate holds against";
 
 
 export function NightPanel({night, open, onDial, onToggle, onCatchup, onSource, onPace}){
@@ -35,18 +39,25 @@ export function NightPanel({night, open, onDial, onToggle, onCatchup, onSource, 
     if(log.current) log.current.scrollTop=log.current.scrollHeight;
   });
   const read=[];
+  /* each window the admission draws: when it reaches 100% at the rate the
+     fleet is showing, at that rate with one more item on top, and the time
+     the gate holds against. A red +1 is the spend hold. */
+  const wins=(g && g.windows) || [];
+  if(wins.length) read.push(html`<table key="win">
+    <tr title=${ETA_HELP}><th></th><th>now</th><th>+1</th><th>limit</th></tr>
+    ${wins.map(w=>html`<tr key=${w.label}
+        title=${"rate "+w.rate.toFixed(1)+" + share "+w.share.toFixed(1)+" vs budget "+w.budget.toFixed(1)+" points/h"}>
+      <td><b>${w.label}</b></td><td>${eta(w.runs_out)}</td>
+      <td class=${typeof w.runs_out_more==="number" && w.runs_out_more < w.limit ? "gate-held" : null}>
+        ${eta(w.runs_out_more)}</td><td>${eta(w.limit)}</td></tr>`)}
+  </table>`);
   if(g && g.wk!=null && g.line!=null)
-    read.push(html`<span key="wk">wk <b>${g.wk.toFixed(1)+"%"}</b> vs line <b>${g.line.toFixed(1)+"%"}</b>
-      ${" (elapsed "+g.elapsed.toFixed(1)+"% − reserve "+n.reserve+")"}</span>`);
-  /* each window the admission draws: the fleet's rate plus one more item's
-     share, against what the window can take an hour */
-  for(const w of (g && g.windows) || [])
-    read.push(html`<span key=${w.label} title="fleet rate + one item's share vs the window's budget, points an hour">
-      ${w.label} <b>${w.pct.toFixed(0)+"%"}</b>${" · "+w.rate.toFixed(1)+"+"+w.share.toFixed(1)+" vs "+w.budget.toFixed(1)+"/h"}</span>`);
-  if(g) read.push(html`<span key="gate" class=${g.open?"gate-open":"gate-held"}>
-    ${(g.open?"admission open · ":"admission held · ")+g.why}</span>`);
-  else read.push(html`<span key="off">admissions are yours</span>`);
-  if(n.next) read.push(html`<span key="next">${"next: "+n.next.what+" "+hhmm(n.next.at)}</span>`);
+    read.push(html`<div key="wk" title=${"the line is elapsed "+g.elapsed.toFixed(1)+"% less the reserve of "+n.reserve}>
+      wk <b>${g.wk.toFixed(0)+"%"}</b> vs line <b>${g.line.toFixed(0)+"%"}</b></div>`);
+  if(g) read.push(html`<div key="gate" class=${g.open?"gate-open":"gate-held"}>
+    ${g.verdict}</div>`);
+  else read.push(html`<div key="off">admissions are yours</div>`);
+  if(n.next) read.push(html`<div key="next">${"next "+n.next.what+" "+hhmm(n.next.at)}</div>`);
   return html`<div id="nightpanel" hidden=${!open}>
     <div class="nightrow">
       <label title="run the queue unattended">
@@ -79,9 +90,11 @@ export function NightPanel({night, open, onDial, onToggle, onCatchup, onSource, 
       <span style="flex:1"></span>
       <span><b>${n.landed||0}</b> landed unreviewed tonight</span>
     </div>
-    <div class="nightrow">${read}</div>
-    <div id="nightlog" ref=${log}>
-      ${(n.log||[]).map((e,i)=>html`<div key=${i+":"+e.t}>${hhmm(e.t)+" · "+e.text}</div>`)}
+    <div class="nightbody">
+      <div class="nightread">${read}</div>
+      <div id="nightlog" ref=${log}>
+        ${(n.log||[]).map((e,i)=>html`<div key=${i+":"+e.t}>${hhmm(e.t)+" · "+e.text}</div>`)}
+      </div>
     </div>
   </div>`;
 }

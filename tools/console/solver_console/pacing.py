@@ -349,16 +349,33 @@ def share(label: str, cfg: dict, observed: float | None) -> float:
     return min(stored, prior) if spending() == 0 else stored
 
 
-def budget(u: dict, at: float) -> float:
-    """Points an hour the window can take: what is left, over the time to
-    its reset for the 5h window and over the next hour for a weekly one,
-    the time to a reset never read as less than that hour. A 5h window
-    with no reset is a full window away from one."""
-    left = max(0.0, 100.0 - (u.get("pct") or 0))
+def spend_limit(u: dict, at: float) -> float:
+    """The time the gate measures a window's spend against: its reset for the
+    5h window, never read as nearer than the hour of headroom, and the next
+    hour for a weekly one. A 5h window with no reset is a full window away
+    from one."""
     if u.get("label") == "5h":
         to_reset = (u["reset"] - at) if u.get("reset") else (u.get("window") or WALL)
-        return left / (max(to_reset, WALL) / 3600)
-    return left / (WALL / 3600)
+        return at + max(to_reset, WALL)
+    return at + WALL
+
+
+def budget(u: dict, at: float) -> float:
+    """Points an hour the window can take: what is left, spread over the time
+    to its limit."""
+    left = max(0.0, 100.0 - (u.get("pct") or 0))
+    return left / ((spend_limit(u, at) - at) / 3600)
+
+
+def runs_out(u: dict, at: float, pace: float | None) -> float | str | None:
+    """When the window reaches 100% at `pace` points an hour: an epoch, the
+    string "never" when the pace is not positive, None when there is no
+    pace to go by."""
+    if pace is None:
+        return None
+    if pace <= 0:
+        return "never"
+    return at + max(0.0, 100.0 - (u.get("pct") or 0)) / pace * 3600
 
 
 def spend_windows(models: list[str]) -> list[dict]:
@@ -376,24 +393,32 @@ def pacer(at: float | None = None, models: list[str] | None = None) -> dict:
 
     Only new admissions are gated. A turn already in flight, a review comment,
     and every manual action run whatever the windows read.
+
+    Each entry of `windows` carries the figures the gate read — `rate`,
+    `share`, `budget` — the pass time `at`, the time the gate measures
+    against as `limit`, and two times the window reaches 100%: `runs_out` at
+    the observed slope and `runs_out_more` at the assumed rate with one more
+    item. Either is None with no rate to go by, and `runs_out` is "never"
+    when the window is not climbing.
     """
     at = store.now() if at is None else at
     if models is None:
         models = admit_models()
     cfg = night()
     wk = window("wk")
-    # `why` says what the gate read; `hold` names the rule that held, in
-    # words that stay the same while the numbers move, so the night log
-    # records a hold once.
+    # `why` is the panel's verdict, a few words long; `hold` names the rule
+    # that held, in words that stay the same while the numbers move, so the
+    # night log records a hold once.
     out = {"open": False, "why": "", "hold": "", "wk": None, "line": None,
            "elapsed": None, "fbl": None, "windows": []}
     wk_elapsed = elapsed_pct(wk, at)
     if wk is None or wk_elapsed is None:
-        out["why"] = out["hold"] = "no weekly usage reading yet"
+        out["hold"] = "no weekly usage reading yet"
+        out["why"] = "no wk reading"
         return out
     if USAGE_AT is not None and at - USAGE_AT > USAGE_STALE:
         out["hold"] = "usage reading stale"
-        out["why"] = f"usage reading stale ({(at - USAGE_AT) / 60:.0f} min old)"
+        out["why"] = f"usage stale {(at - USAGE_AT) / 60:.0f}m"
         return out
     out.update(wk=wk["pct"], elapsed=wk_elapsed)
     # The spend rules, on every window the admission draws. A worker mid-turn
@@ -406,12 +431,15 @@ def pacer(at: float | None = None, models: list[str] | None = None) -> dict:
         sh = share(u["label"], cfg, observed)
         expected = max(observed or 0.0, busy * sh)
         b = budget(u, at)
-        out["windows"].append({"label": u["label"], "pct": u["pct"], "rate": expected,
-                               "share": sh, "budget": b})
+        entry = {"label": u["label"], "pct": u["pct"], "rate": expected, "share": sh,
+                 "budget": b, "at": at, "limit": spend_limit(u, at),
+                 "runs_out": runs_out(u, at, observed),
+                 "runs_out_more": runs_out(u, at, (expected + sh) or None)}
+        out["windows"].append(entry)
+        # While the window has room left, `expected + sh > b` is the same test
+        # as `runs_out_more < limit`, so the panel's times and the gate agree.
         if spend_held is None and expected + sh > b:
-            spend_held = (f"{u['label']} over budget",
-                          f"{u['label']} at {u['pct']:.0f}%: {expected:.1f} + {sh:.1f} "
-                          f"points an hour over its budget of {b:.1f}")
+            spend_held = (f"{u['label']} over budget", u["label"])
     held = pace_lines(cfg, models, wk, wk_elapsed, at, out) \
         if cfg["pace"] == "share" else None
     held = held or spend_held
@@ -419,21 +447,22 @@ def pacer(at: float | None = None, models: list[str] | None = None) -> dict:
         out["hold"], out["why"] = held
         return out
     out["open"] = True
-    out["why"] = out["hold"] = "at pace"
+    out["hold"] = "at pace"
+    out["why"] = "open"
     return out
 
 
 def pace_lines(cfg: dict, models: list[str], wk: dict, wk_elapsed: float,
                at: float, out: dict) -> tuple[str, str] | None:
     """The share-mode holds: the weekly and Fable pace lines, and the strict
-    pace when catchup is off. A hold as (rule, reading), or None."""
+    pace when catchup is off. A hold as (rule, verdict), or None."""
     # The floor keeps the first hours of a week spendable: elapsed% starts at
     # zero there, and the pace line alone would hold every admission until the
     # week had caught up with the reserve.
     line = max(cfg["floor"], wk_elapsed - cfg["reserve"])
     out["line"] = line
     if wk["pct"] > line:
-        return "wk at pace", f"wk at pace ({wk['pct']:.0f}% vs {line:.0f}%)"
+        return "wk at pace", "wk pace"
     # The Fable window paces the same way when an admission runs Fable.
     fbl = window(FABLE_WINDOW) if any(is_fable(m) for m in models) else None
     fbl_elapsed = elapsed_pct(fbl, at)
@@ -441,7 +470,7 @@ def pace_lines(cfg: dict, models: list[str], wk: dict, wk_elapsed: float,
         fbl_line = max(cfg["floor"], fbl_elapsed - cfg["reserve"])
         out["fbl"] = fbl["pct"]
         if fbl["pct"] > fbl_line:
-            return "fbl at pace", f"fbl at pace ({fbl['pct']:.0f}% vs {fbl_line:.0f}%)"
+            return "fbl at pace", "fbl pace"
     if not cfg["catchup"]:
         # Strict pace: spend no faster than the window elapses, measured from
         # the moment the mode came on. A window that rolled over under us reads
@@ -452,15 +481,13 @@ def pace_lines(cfg: dict, models: list[str], wk: dict, wk_elapsed: float,
         else:
             points = 100 * (at - since) / wk["window"]
             if wk["pct"] - start > points:
-                return ("wk above strict pace",
-                        f"wk above strict pace (+{wk['pct'] - start:.1f} "
-                        f"vs +{points:.1f} since mode start)")
+                return "wk above strict pace", "wk strict"
     return None
 
 
 def fable_trails(cfg: dict) -> tuple[str, str] | None:
     """Under exhaust with both slots, the hold on the queue slot while the
-    Fable window trails the weekly one, as (rule, reading): Opus spend
+    Fable window trails the weekly one, as (rule, verdict): Opus spend
     cannot move the Fable window, so the week that exhausts both runs
     finalize first. The caller checks that the finalize slot can take
     work and that work waits."""
@@ -469,9 +496,7 @@ def fable_trails(cfg: dict) -> tuple[str, str] | None:
     wk, fbl = window("wk"), window(FABLE_WINDOW)
     if not wk or not fbl or fbl["pct"] >= wk["pct"] - FABLE_LAG:
         return None
-    return ("Fable window trails, finalize first",
-            f"Fable window trails the weekly one (fbl {fbl['pct']:.0f}% vs "
-            f"wk {wk['pct']:.0f}%), finalize first")
+    return "Fable window trails, finalize first", "fbl trails"
 
 
 def live_items() -> list[dict]:

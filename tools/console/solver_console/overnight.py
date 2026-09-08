@@ -157,11 +157,13 @@ def night_tick() -> dict:
                     stagger = ids
                 changed = changed or bool(ids)
             else:
-                # under both the line names the slot, since the other may be open
-                held.append(f"{kind}: {gate['hold']}" if len(slots) > 1 else gate["hold"])
+                held.append((kind, gate["hold"]))
         if held:
-            out["held"] = " · ".join(held)
-            changed |= pacing.night_say("pacer holding: " + out["held"], once=True)
+            # one hold for every slot reads once; anything else names the slots
+            same = len(held) == len(slots) and len({h for _, h in held}) == 1
+            out["held"] = held[0][1] if same else \
+                ", ".join(f"{kind}: {h}" for kind, h in held)
+            changed |= pacing.night_say("hold · " + out["held"], once=True)
     if stagger:
         threading.Thread(target=waves.stagger_launch, args=(stagger,),
                          daemon=True).start()
@@ -190,17 +192,22 @@ def slots_view(cfg: dict) -> list[dict]:
 
 
 def joint_gate(slots: list[dict]) -> dict | None:
-    """One gate over the slots: open while any slot's is, with each slot's
-    reason named when there is more than one."""
-    gates = [s["gate"] for s in slots if s["gate"]]
-    if not gates:
+    """One gate over the slots: open while any slot's is, with the line the
+    panel prints as `verdict`. Slots that read the same give one verdict;
+    slots that differ are named."""
+    live = [s for s in slots if s["gate"]]
+    if not live:
         return None
-    if len(gates) == 1:
-        return gates[0]
+    gates = [s["gate"] for s in live]
     out = dict(gates[0])
     out["open"] = any(g["open"] for g in gates)
-    out["why"] = " · ".join(f"{s['kind']} {'open' if s['gate']['open'] else 'held'}: "
-                            f"{s['gate']['why']}" for s in slots)
+    if len({(g["open"], g["why"]) for g in gates}) == 1:
+        out["why"] = gates[0]["why"]
+        out["verdict"] = "open" if out["open"] else "held · " + out["why"]
+    else:
+        out["why"] = out["verdict"] = ", ".join(
+            f"{s['kind']} open" if s["gate"]["open"]
+            else f"{s['kind']} held ({s['gate']['why']})" for s in live)
     return out
 
 
@@ -213,7 +220,7 @@ def night_view() -> dict:
     soon = [(it["resume_at"], f"{it['id']} resumes") for it in store.STATE["items"]
             if it.get("resume_at")]
     if cfg["on"] and not soon:
-        soon.append((store.now() + ADMIT_POLL, "admitter pass"))
+        soon.append((store.now() + ADMIT_POLL, "pass"))
     at, what = min(soon) if soon else (None, "")
     view.update(gate=gate, live=len(pacing.live_items()), landed=pacing.night_landed(),
                 slots=[{k: v for k, v in s.items() if k != "gate"} for s in slots],

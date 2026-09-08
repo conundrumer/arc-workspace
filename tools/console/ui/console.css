@@ -219,10 +219,25 @@ span.cw { border-radius:2px; padding:0 .22em; margin:0 -.22em; }
   width:46px; padding:2px 5px; border:1px solid var(--border); border-radius:5px;
   background:var(--bg); color:var(--ink); font-family:inherit; font-size:11.5px;
 }
-#nightpanel .nightrow .gate-open { color:var(--ttl-ok); }
-#nightpanel .nightrow .gate-held { color:var(--ttl-warn); }
+#nightpanel .gate-open { color:var(--ttl-ok); }
+#nightpanel .gate-held { color:var(--ttl-warn); }
+/* the gate reading on the left at its own width, the log filling the rest */
+#nightpanel .nightbody { display:grid; grid-template-columns:max-content 1fr; gap:6px 18px; }
+#nightpanel .nightread {
+  display:flex; flex-direction:column; gap:2px;
+  font-family:ui-monospace,Menlo,monospace; font-size:11.5px; color:var(--muted);
+}
+#nightpanel .nightread b { color:var(--ink); font-weight:600; }
+/* the windows table: columns at their own width, muted header, no borders */
+#nightpanel .nightread table { border-collapse:collapse; }
+#nightpanel .nightread th, #nightpanel .nightread td {
+  text-align:left; font-weight:400; padding:0 14px 0 0; white-space:nowrap;
+}
+#nightpanel .nightread td { color:var(--ink); }
+#nightpanel .nightread td.gate-held { color:var(--ttl-warn); }
 #nightlog {
-  display:flex; flex-direction:column; gap:2px; height:72px; overflow-y:auto;
+  display:flex; flex-direction:column; gap:2px; min-height:0; overflow-y:auto;
+  align-self:stretch;
   font-family:ui-monospace,Menlo,monospace; font-size:10.5px; color:var(--muted);
 }
 
