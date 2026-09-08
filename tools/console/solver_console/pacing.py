@@ -67,6 +67,8 @@ WALL = 3600
 # been observed. From September 2026: fifteen live items took the 5h window
 # at about 85 points an hour, and the weekly figures follow at the windows'
 # dollar rates.
+# Readings further apart than this have a gap between them.
+READING_GAP = 3 * config.USAGE_POLL
 SHARE_PRIOR = {"5h": 6.0, "wk": 1.4, "fbl": 3.9}
 # A reset that moves less than this is the API's rounding, not a new window.
 RESET_WOBBLE = 60
@@ -331,11 +333,20 @@ def share(label: str, cfg: dict, observed: float | None) -> float:
     counted = [r[2] for r in pts if r[2] is not None]
     busy = sum(counted) / len(counted) if counted else 0
     # One short or one-sided stretch must not set what every later admission
-    # is measured by, so a share is written only off a full span of readings.
-    if observed is not None and observed > 0 and busy > 0 \
+    # is measured by, so a share is written only off a full span of readings
+    # with none missing: a slope across a gap is shaped by the gap.
+    steady = all(b[0] - a[0] <= READING_GAP for a, b in zip(pts, pts[1:], strict=False))
+    if observed is not None and observed > 0 and busy > 0 and steady \
             and pts[-1][0] - pts[0][0] >= SHARE_SPAN:
         shares[label] = round(observed / busy, 2)
-    return shares.get(label) or SHARE_PRIOR.get(label, SHARE_PRIOR["5h"])
+    prior = SHARE_PRIOR.get(label, SHARE_PRIOR["5h"])
+    stored = shares.get(label)
+    if not stored:
+        return prior
+    # Only a running item measures the share again. With nothing spending, a
+    # stored share above the prior would hold the one admission that could
+    # correct it, so the idle fleet is measured by the smaller of the two.
+    return min(stored, prior) if spending() == 0 else stored
 
 
 def budget(u: dict, at: float) -> float:

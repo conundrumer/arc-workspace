@@ -207,13 +207,49 @@ def test_the_observed_share_is_remembered_in_the_config(srv, monkeypatch):
     clock_at(srv, monkeypatch)
     set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50, five_pct=40)
     running(srv, 2)
-    readings(srv, "5h", [(900, 30), (0, 40)], reset=AT + FIVE)   # 40 an hour, over two
+    readings(srv, "5h", [(900, 30), (600, 34), (300, 38), (0, 42)],
+             reset=AT + FIVE)                                  # 48 an hour, over two
     srv.pacer()
-    assert srv.night()["share"]["5h"] == pytest.approx(20)
+    assert srv.night()["share"]["5h"] == pytest.approx(24)
     srv.PROCS.clear()
+    running(srv, 1)
     srv.HISTORY = {}
     five = next(w for w in srv.pacer()["windows"] if w["label"] == "5h")
-    assert five["share"] == pytest.approx(20)
+    assert five["share"] == pytest.approx(24)
+
+
+def test_a_gap_in_the_readings_writes_no_share(srv, monkeypatch):
+    """A slope across a stretch with no readings is shaped by the gap, not
+    by the fleet, so it must not set what later admissions are measured by."""
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50, five_pct=9)
+    running(srv, 1)
+    readings(srv, "5h", [(900, 5), (780, 5), (660, 5), (540, 5), (0, 9)],
+             reset=AT + FIVE)
+    srv.pacer()
+    assert "5h" not in srv.night().get("share", {})
+    srv.HISTORY = {}
+    readings(srv, "5h", [(900, 5), (600, 6), (300, 7), (0, 8)], reset=AT + FIVE)
+    srv.pacer()
+    assert srv.night()["share"]["5h"] == pytest.approx(12)
+
+
+def test_an_idle_fleet_admits_by_the_prior_at_most(srv, monkeypatch):
+    """A stored share above the window's budget is re-measured only by a
+    running item. With nothing spending, the admission test uses the prior
+    when that is smaller, and the one item admitted measures it again."""
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50,
+              five_pct=9, five_left=4 * 3600)              # about 23 an hour to spend
+    srv.night()["share"] = {"5h": 30.0}
+    gate = srv.pacer()
+    assert gate["open"] is True
+    five = next(w for w in gate["windows"] if w["label"] == "5h")
+    assert five["share"] == pytest.approx(6)
+    running(srv, 1)
+    gate = srv.pacer()
+    assert gate["open"] is False
+    assert "30.0 + 30.0" in gate["why"]
 
 
 def test_a_share_is_written_only_off_a_full_span_of_readings(srv, monkeypatch):
