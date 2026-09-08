@@ -6,26 +6,26 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
     .decl lex_corner(d: DiagDir) lex_corner(DIAG_TL).
     .decl lex_axis(a: Axis) lex_axis(AXIS_V).
 }
 
-.init c = Consts
+.init params = Params
 
 .init copy_count = Tally<Unit, Position>
-copy_count.item($U(), P) :- in(P, Col), !c.bg(Col).
+copy_count.item($U(), P) :- in(P, Col), !params.bg(Col).
 
 .init side = Tally<Unit, Position>
-side.item($U(), P) :- in(P, Col), c.bg(Col).
+side.item($U(), P) :- in(P, Col), params.bg(Col).
 
 .init tiles = Frame2D<Unit>
 tiles.extent($U(), A, S) :- axis_elem(A), side.tally($U(), S).
 
 .init lex = LexOrder<Unit>
-lex.corner($U(), D) :- c.lex_corner(D).
-lex.axis($U(), A) :- c.lex_axis(A).
+lex.corner($U(), D) :- params.lex_corner(D).
+lex.axis($U(), A) :- params.lex_axis(A).
 lex.cell($U(), P) :- tiles.cell($U(), P).
 
 .decl copy(p_tile: Position)
@@ -35,6 +35,6 @@ copy(T) :- lex.rank($U(), T, R), copy_count.tally($U(), N), R < N.
 out(P_grid, Col) :-
     tiles.cell($U(), P_tile), in(P_intile, Col_in),   // tile slot, tile content
     ( copy(P_tile), Col = Col_in                      // a copy — the input
-    ; !copy(P_tile), c.bg(Col)                        // past the count — bg
+    ; !copy(P_tile), params.bg(Col)                   // past the count — bg
     ),
     concat_2d(P_tile, P_intile, 0, P_grid).           // tile ⊗ cell → grid

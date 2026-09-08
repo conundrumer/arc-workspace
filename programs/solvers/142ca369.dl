@@ -8,13 +8,13 @@
 // edge or on an occupied cell. The cases differ on what a marker is: $Gap
 // reads an L-triomino locally, aiming away from the empty corner its arms
 // straddle; $Glyph matches a stored shape and reads its launch cell and aim
-// from Consts, closed over D4.
+// from the parameters, closed over D4.
 
 #include "../lib.dl"
 
 .type Choice = Gap {} | Glyph {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl bg(col: Color)
     bg(0).
@@ -31,7 +31,7 @@
     )
 }
 
-.init c = Consts
+.init params = Params
 
 .decl impl_choice(ch: Choice)
 impl_choice($Gap()). impl_choice($Glyph()).
@@ -47,21 +47,21 @@ impl_choice($Gap()). impl_choice($Glyph()).
 // Same-color neighbor toward d — a candidate arm.
 .decl arm(p: Position, col: Color, d: Dir, p_arm: Position)
 arm(P, Col, D, P_arm) :-
-    in(P, Col), !c.bg(Col),
+    in(P, Col), !params.bg(Col),
     dir_elem(D), neighbor(P, D, P_arm), in(P_arm, Col).
 
 // A dir of corner g with no arm — the defect the elbow test negates.
 .decl no_arm(p: Position, col: Color, g: DiagDir)
 no_arm(P, Col, G) :-
-    in(P, Col), !c.bg(Col),
+    in(P, Col), !params.bg(Col),
     dir_of(G, _, D), !arm(P, Col, D, _).
 
 // The elbow of an L-triomino, with the corner its arms straddle.
 .decl elbow(p: Position, col: Color, gap: DiagDir)
 elbow(P, Col, G) :-
-    in(P, Col), !c.bg(Col),
-    diag_dir_elem(G), !no_arm(P, Col, G),            // arms on both dirs of G
-    neighbor(P, G, P_gap), in(P_gap, Bg), c.bg(Bg).  // the corner between them is empty
+    in(P, Col), !params.bg(Col),
+    diag_dir_elem(G), !no_arm(P, Col, G),                 // arms on both dirs of G
+    neighbor(P, G, P_gap), in(P_gap, Bg), params.bg(Bg).  // the corner between them is empty
 
 mark(P_cell, $Gap()) :-
     elbow(P, Col, G),
@@ -77,25 +77,25 @@ enter(P, D, Col, $Gap()) :- elbow(P, Col, G), diag_opposite(G, D).
 .type OC = [d: D4, col: Color]
 
 .init occ = Occurrences<OC, Unit>
-occ.cell([D, Col], P, $U()) :- d4_elem(D), in(P, Col), !c.bg(Col).
+occ.cell([D, Col], P, $U()) :- d4_elem(D), in(P, Col), !params.bg(Col).
 occ.shape([D, Col], P2, $U()) :-
-    in(_, Col), !c.bg(Col),      // the color domain
-    c.marker_glyph(D, P2).       // the placed shape
+    in(_, Col), !params.bg(Col),      // the color domain
+    params.marker_glyph(D, P2).       // the placed shape
 
 mark(P_grid, $Glyph()) :-
     occ.occurrence([D, Col], A),                  // a placed glyph
     occ.shape([D, Col], P_m2, $U()), compose(A, P_m2, P_grid).
 
 enter(P, D_aim, Col, $Glyph()) :-
-    occ.occurrence([D, Col], A),                     // a placed glyph
-    c.marker_launch(D, P_l), compose(A, P_l, P),     // its launch cell
-    c.marker_aim(D, D_aim).                          // its aim, placed with it
+    occ.occurrence([D, Col], A),                          // a placed glyph
+    params.marker_launch(D, P_l), compose(A, P_l, P),     // its launch cell
+    params.marker_aim(D, D_aim).                          // its aim, placed with it
 
 // --- rays ---
 
 // Colored cells outside the markers are walls.
 .decl wall(p: Position, col: Color, ch: Choice)
-wall(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !c.bg(Col), !mark(P, Ch).
+wall(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !params.bg(Col), !mark(P, Ch).
 
 // The wall beside p toward d.
 .decl side_wall(p: Position, d: Dir, col: Color, ch: Choice)
@@ -130,23 +130,23 @@ ray(P, D_out, Col_out, Ch) :-
 
 enter(P_next, D, Col, Ch) :-
     ray(P, D, Col, Ch), neighbor(P, D, P_next),
-    in(P_next, Bg), c.bg(Bg).                     // stops on occupied cells
+    in(P_next, Bg), params.bg(Bg).                     // stops on occupied cells
 
 .decl paint(p: Position, col: Color, ch: Choice)
-paint(P, Col, Ch) :- ray(P, _, Col, Ch), in(P, Bg), c.bg(Bg).
+paint(P, Col, Ch) :- ray(P, _, Col, Ch), in(P, Bg), params.bg(Bg).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !paint(P, _, Ch).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     // Ray ink: painted onto bg.
     .decl painted(e: Example, p: Position, col: Color)
     painted(E, P, Col) :-
-        ex_out(E, P, Col), !c.bg(Col),
-        ex_in(E, P, Bg), c.bg(Bg).
+        ex_out(E, P, Col), !params.bg(Col),
+        ex_in(E, P, Bg), params.bg(Bg).
 
     // Painted beside same-colored ink — a bounce cell sits against its wall.
     .decl beside_ink(e: Example, q: Position, col: Color)

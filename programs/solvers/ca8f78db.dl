@@ -15,7 +15,7 @@
 
 .type Choice = Shift {} | Period {} | Rows {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl noise(col: Color) noise(0).
 
@@ -27,10 +27,10 @@
     .decl axis(a: Axis) axis(AXIS_H).   // lines run along H
 }
 
-.init c = Consts
+.init params = Params
 
 .decl clean(p: Position, col: Color)
-clean(P, Col) :- in(P, Col), !c.noise(Col).
+clean(P, Col) :- in(P, Col), !params.noise(Col).
 
 .init parse = ShiftInvariance<Unit, Color>
 parse.cell($U(), P, Col) :- clean(P, Col).
@@ -46,7 +46,7 @@ out(P, Col, Ch) :- impl_choice(Ch), clean(P, Col).
 // --- $Shift ---
 
 out(P, Col, $Shift()) :-
-    in(P, N), c.noise(N),                              // corrupted cell
+    in(P, N), params.noise(N),                         // corrupted cell
     parse.cand($U(), A, K, Delta),                     // candidate shift
     !parse.mismatch($U(), A, K),                       // unbroken on clean cells
     compose(P, Delta, P2), clean(P2, Col).             // its image
@@ -57,7 +57,7 @@ out(P, Col, $Shift()) :-
 // below joins against it instead of rebuilding it per step.
 .decl period_delta(delta: Position)
 period_delta(Delta) :-
-    c.period(A, K), axis_of(D, A), jump_delta(D, K, Delta).
+    params.period(A, K), axis_of(D, A), jump_delta(D, K, Delta).
 
 // Cells whole stored periods apart along the period's axis.
 .decl peer(p: Position, q: Position)
@@ -68,7 +68,7 @@ peer(P, Q2) :-
     in(Q2, _).
 
 out(P, Col, $Period()) :-
-    in(P, N), c.noise(N),                              // corrupted cell
+    in(P, N), params.noise(N),                         // corrupted cell
     peer(P, Q), clean(Q, Col).                         // clean peer
 
 // --- $Rows ---
@@ -77,23 +77,23 @@ out(P, Col, $Period()) :-
 // non-bg cell.
 .decl pattern_row(across: Position)
 pattern_row(Across) :-
-    clean(P, Col), !c.bg(Col),
-    c.axis(A), split(P, A, _, Across).
+    clean(P, Col), !params.bg(Col),
+    params.axis(A), split(P, A, _, Across).
 
 out(P, Col, $Rows()) :-
-    in(P, N), c.noise(N),                                  // corrupted cell
-    c.axis(A), split(P, A, Along, Across),                 // its row and column
-    ( !pattern_row(Across), c.bg(Col)                      // separator row — bg
+    in(P, N), params.noise(N),                             // corrupted cell
+    params.axis(A), split(P, A, Along, Across),            // its row and column
+    ( !pattern_row(Across), params.bg(Col)                 // separator row — bg
     ; pattern_row(Across),                                 // pattern row
       clean(Q, Col),                                       // clean source cell
       split(Q, A, Along, Across2), pattern_row(Across2)    // same column, pattern row
     ).
 
-// --- fit ---
+// --- determination ---
 
 .type LinePos = [e: Example, a: Axis, along: Position]
 
-.comp Fit {
+.comp Determine {
     .init parse = ShiftInvariance<Example, Color>
     parse.cell(E, P, Col) :- ex_out(E, P, Col).
 
@@ -110,7 +110,7 @@ out(P, Col, $Rows()) :-
         ex_out(E, P, Col), axis_elem(A), split(P, A, Along, Across).
 
     .decl pattern_line(e: Example, a: Axis, across: Position)
-    pattern_line(E, A, Across) :- line_cell(E, A, Across, _, Col), !c.bg(Col).
+    pattern_line(E, A, Across) :- line_cell(E, A, Across, _, Col), !params.bg(Col).
 
     // The colors the pattern lines carry at each position along the line.
     .init pattern_at = Unanimous<LinePos, Color>

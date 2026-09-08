@@ -4,18 +4,18 @@
 // in its own ink. The output overlays the tiles: the highest-precedence
 // ink present fills each cell, bg where every tile is empty. Each tile
 // keeps one ink in every pair, so spatial and chromatic precedence are
-// indistinguishable; the spatial read splits data/ops:
+// indistinguishable; the spatial parse splits table/rule:
 //
-//   $Scan()  — tiles rank in reading order from c.lex_corner along
-//              c.lex_axis.
-//   $Order() — per-tile ranks stored in c.prio.
-//   $Ink()   — per-ink ranks stored in c.ink_rank.
+//   $Scan()  — tiles rank in reading order from params.lex_corner along
+//              params.lex_axis.
+//   $Order() — per-tile ranks stored in params.prio.
+//   $Ink()   — per-ink ranks stored in params.ink_rank.
 
 #include "../lib.dl"
 
 .type Choice = Scan {} | Order {} | Ink {}
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
     .decl tiles(n: number) tiles(2).
     .decl gap(g: number) gap(1).
@@ -35,18 +35,18 @@
     ink_rank(7, 0). ink_rank(4, 1). ink_rank(8, 2). ink_rank(6, 3).
 }
 
-.init c = Consts
+.init params = Params
 
 // Tile decomposition; the divider falls in the gap.
 .decl tile_cell(p_tile: Position, p_intile: Position, col: Color)
 tile_cell(P_tile, P_intile, Col) :-
     in(P_grid, Col),
-    c.tiles(N), c.gap(G),
+    params.tiles(N), params.gap(G),
     divide_2d(P_grid, N, G, P_tile, P_intile).
 
 // Ink at an output cell, keyed by its tile.
 .decl tile_ink(p_tile: Position, p: Position, col: Color)
-tile_ink(P_tile, P_intile, Col) :- tile_cell(P_tile, P_intile, Col), !c.bg(Col).
+tile_ink(P_tile, P_intile, Col) :- tile_cell(P_tile, P_intile, Col), !params.bg(Col).
 
 .decl ink_at(p: Position, col: Color)
 ink_at(P, Col) :- tile_ink(_, P, Col).
@@ -55,13 +55,13 @@ ink_at(P, Col) :- tile_ink(_, P, Col).
 impl_choice($Scan()). impl_choice($Order()). impl_choice($Ink()).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, Ch) :- impl_choice(Ch), tile_cell(_, P, _), !ink_at(P, _), c.bg(Col).
+out(P, Col, Ch) :- impl_choice(Ch), tile_cell(_, P, _), !ink_at(P, _), params.bg(Col).
 
 // --- $Scan ---
 
 .init lex = LexOrder<Unit>
-lex.corner($U(), D) :- c.lex_corner(D).
-lex.axis($U(), A) :- c.lex_axis(A).
+lex.corner($U(), D) :- params.lex_corner(D).
+lex.axis($U(), A) :- params.lex_axis(A).
 lex.cell($U(), T) :- tile_ink(T, _, _).
 
 // The earliest tile in the scan inking each cell.
@@ -74,7 +74,7 @@ out(P, Col, $Scan()) :- front_scan.low(P, T, _), tile_ink(T, P, Col).
 
 // The foremost tile inking each cell.
 .init front_tile = ArgExtremes<Position, Position>
-front_tile.cand(P, T, R) :- tile_ink(T, P, _), c.prio(T, R).
+front_tile.cand(P, T, R) :- tile_ink(T, P, _), params.prio(T, R).
 
 out(P, Col, $Order()) :- front_tile.low(P, T, _), tile_ink(T, P, Col).
 
@@ -82,17 +82,17 @@ out(P, Col, $Order()) :- front_tile.low(P, T, _), tile_ink(T, P, Col).
 
 // The foremost ink at each cell.
 .init front_ink = ArgExtremes<Position, Color>
-front_ink.cand(P, Col, R) :- ink_at(P, Col), c.ink_rank(Col, R).
+front_ink.cand(P, Col, R) :- ink_at(P, Col), params.ink_rank(Col, R).
 
 out(P, Col, $Ink()) :- front_ink.low(P, Col, _).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     .decl tile_ink(e: Example, p_tile: Position, p: Position, col: Color)
     tile_ink(E, P_tile, P_intile, Col) :-
-        ex_in(E, P_grid, Col), !c.bg(Col),
-        c.tiles(N), c.gap(G),
+        ex_in(E, P_grid, Col), !params.bg(Col),
+        params.tiles(N), params.gap(G),
         divide_2d(P_grid, N, G, P_tile, P_intile).
 
     // Closed transitively: a tile pair need not overlap directly.

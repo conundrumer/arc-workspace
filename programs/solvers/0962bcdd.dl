@@ -10,7 +10,7 @@
 
 .type Choice = Ray {} | Lookup {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl bg(col: Color) bg(0).
 
@@ -39,7 +39,7 @@
     .decl center_pos(p: Position) center_pos([2, 2, 2, 2]).
 }
 
-.init c = Consts
+.init params = Params
 
 // --- parse ---
 
@@ -49,8 +49,8 @@
     // The neighbor toward D holds candidate arm color Col.
     .decl arm(key: Key, p: Position, d: Dir, col: Color)
     arm(Ky, P, D, Col) :-
-        grid(Ky, P, _), dir_elem(D),                        // candidate center
-        neighbor(P, D, Q), grid(Ky, Q, Col), !c.bg(Col).    // holds a non-bg color
+        grid(Ky, P, _), dir_elem(D),                             // candidate center
+        neighbor(P, D, Q), grid(Ky, Q, Col), !params.bg(Col).    // holds a non-bg color
 
     // Some direction lacks the same arm color.
     .decl mismatch(key: Key, p: Position, col: Color)
@@ -64,7 +64,7 @@
 .init parse = Parse<Unit>
 parse.grid($U(), P, Col) :- in(P, Col).
 
-// --- body ---
+// --- program ---
 
 .decl impl_choice(ch: Choice)
 impl_choice($Ray()). impl_choice($Lookup()).
@@ -84,7 +84,7 @@ diag.cell(Pm, P) :- parse.marker($U(), Pm, _, _), in(P, _).
 diag.mark(Pm, Pm) :- parse.marker($U(), Pm, _, _).
 
 paint(P2, Col, $Ray()) :-
-    c.radius(R),
+    params.radius(R),
     ( arm.ray(Pm, P2, _, K, _), parse.marker($U(), Pm, _, Col)     // cardinal ray — arm color
     ; diag.ray(Pm, P2, _, K, _), parse.marker($U(), Pm, Col, _)    // diagonal ray — center color
     ),
@@ -94,11 +94,11 @@ paint(P2, Col, $Ray()) :-
 
 paint(P_grid, Col, $Lookup()) :-
     parse.marker($U(), C, Cc, Ca),
-    c.center_pos(C0), displacement(C0, C, M),    // the stamp box's margin at the marker
-    ( c.template_arm(T), Col = Ca                // arm-role cell
-    ; c.template_center(T), Col = Cc ),          // center-role cell
-    compose(T, M, P_grid),                       // embed the template cell
-    in(P_grid, _).                               // clip to the grid
+    params.center_pos(C0), displacement(C0, C, M),    // the stamp box's margin at the marker
+    ( params.template_arm(T), Col = Ca                // arm-role cell
+    ; params.template_center(T), Col = Cc ),          // center-role cell
+    compose(T, M, P_grid),                            // embed the template cell
+    in(P_grid, _).                                    // clip to the grid
 
 // --- out ---
 
@@ -106,17 +106,17 @@ paint(P_grid, Col, $Lookup()) :-
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !paint(P, _, Ch).
 
-// --- fit ---
+// --- determination ---
 
 .type StarKey = [e: Example, id: Ident]
 
-.comp Fit {
+.comp Determine {
     .init ex = Parse<Example>
     ex.grid(E, P, Col) :- ex_in(E, P, Col).
 
     // Grown stars: the non-bg output cells.
     .decl star(e: Example, p: Position, col: Color)
-    star(E, P, Col) :- ex_out(E, P, Col), !c.bg(Col).
+    star(E, P, Col) :- ex_out(E, P, Col), !params.bg(Col).
 
     .init comps = Components8<Example>
     comps.node(E, P) :- star(E, P, _).

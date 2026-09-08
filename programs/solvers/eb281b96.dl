@@ -13,7 +13,7 @@
 
 .type Choice = Lookup {} | Unfold {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl tile_axis(a: Axis) tile_axis(AXIS_V).
     .decl tile_count(n: number) tile_count(4).
@@ -31,27 +31,27 @@
     .decl anchor(d: Dir) anchor(DIR_T).
 }
 
-.init c = Consts
+.init params = Params
 
 // The tile arrangement. $Lookup keys its table by these positions;
 // $Unfold walks them.
 .init arr = AxisFrame<Unit>
-arr.extent($U(), A, N) :- c.tile_axis(A), c.tile_count(N).
+arr.extent($U(), A, N) :- params.tile_axis(A), params.tile_count(N).
 
 .decl out(p: Position, col: Color, c: Choice)
 
 // --- Lookup ---
 out(P_grid, Col, $Lookup()) :-
-    in(P_in, Col),                                      // input cell
-    c.tile(P_tile, D), apply(D, P_in, P_intile),        // d4 image at tile
-    c.tile_axis(A), c.tile_gap(G),                      // tile params
-    concat_slab(P_tile, P_intile, A, G, P_grid).        // recompose with passthrough
+    in(P_in, Col),                                           // input cell
+    params.tile(P_tile, D), apply(D, P_in, P_intile),        // d4 image at tile
+    params.tile_axis(A), params.tile_gap(G),                 // tile params
+    concat_slab(P_tile, P_intile, A, G, P_grid).             // recompose with passthrough
 
 // --- Unfold ---
 // Tile contents: the input seeds the anchor-end tile; each neighbor
 // reflects across the shared boundary.
 .decl unfold_val(p_tile: Position, p_intile: Position, col: Color)
-unfold_val(T, P, Col) :- in(P, Col), arr.cell($U(), _, T), c.anchor(D), dist(T, D, 0).
+unfold_val(T, P, Col) :- in(P, Col), arr.cell($U(), _, T), params.anchor(D), dist(T, D, 0).
 unfold_val(T2, P_img, Col) :-
     unfold_val(T, P, Col),                // known tile
     axis_of(D, A), neighbor(T, D, T2),
@@ -60,26 +60,26 @@ unfold_val(T2, P_img, Col) :-
 
 out(P_grid, Col, $Unfold()) :-
     unfold_val(T, P_intile, Col),
-    c.tile_axis(A), c.tile_gap(G),
+    params.tile_axis(A), params.tile_gap(G),
     concat_slab(T, P_intile, A, G, P_grid).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     .decl tile_size(e: Example, k: number)
-    tile_size(E, K) :- ex_in(E, P, _), c.tile_axis(A), axis_dim(P, A, K).
+    tile_size(E, K) :- ex_in(E, P, _), params.tile_axis(A), axis_dim(P, A, K).
 
     .decl tile_gap(g: number)
     tile_gap(G) :-
-        c.tile_axis(A), c.tile_count(N),        // arrangement
-        ex_out(E, P_out, _), tile_size(E, K),   // output frame, and the tile extent
+        params.tile_axis(A), params.tile_count(N),   // arrangement
+        ex_out(E, P_out, _), tile_size(E, K),        // output frame, and the tile extent
         divide_gap(P_out, A, N, K, G).
 
     // A 1-D arrangement folds within its own axis, so a tile's transform is
     // one that leaves every cell's across coordinate alone.
     .decl across_moved(d: D4)
     across_moved(D) :-
-        d4_elem(D), ex_in(_, P, _), c.tile_axis(A),
+        d4_elem(D), ex_in(_, P, _), params.tile_axis(A),
         apply(D, P, P_img),                                          // the cell's image
         split(P, A, _, P_across), split(P_img, A, _, P_across2),     // across coordinates
         P_across != P_across2.

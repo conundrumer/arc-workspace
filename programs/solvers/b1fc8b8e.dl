@@ -7,19 +7,19 @@
 // Cartesian over (detect, render); out's choice column is a record:
 //
 //   detect:
-//     $Shape     — every ink cell lies inside some placement of c.unit fully
-//                  on ink; outcome picks c.covered_class / c.broken_class.
-//     $Partition — the ink splits into disjoint copies of c.unit, same
-//                  outcome slots. Stricter than $Shape: a 2x3 block of ink is
+//     $Shape     — every ink cell lies inside some placement of params.unit fully
+//                  on ink; outcome picks params.covered_class / params.broken_class.
+//     $Partition — the ink splits into disjoint copies of params.unit, same
+//                  outcome parameters. Stricter than $Shape: a 2x3 block of ink is
 //                  covered by overlapping placements but splits into none.
-//     $Count     — ink count, mapped per-count via c.class_count.
+//     $Count     — ink count, mapped per-count via params.class_count.
 //
 //   render:
 //     $Grid    — stored grid per class.
-//     $Arrange — stored tile per class, laid out by c.arrange; gap cells get
-//                c.bg.
-//     $Corner  — stored tile anchored at each corner of c.canvas; uncovered
-//                cells get c.bg.
+//     $Arrange — stored tile per class, laid out by params.arrange; gap cells get
+//                params.bg.
+//     $Corner  — stored tile anchored at each corner of params.canvas; uncovered
+//                cells get params.bg.
 
 #include "../lib.dl"
 
@@ -27,8 +27,8 @@
 .type Render = Grid {} | Arrange {} | Corner {}
 .type Choice = [detect: Detect, render: Render]
 
-.comp Consts {
-    .init helpers = ConstsHelpers
+.comp Params {
+    .init helpers = ParamsHelpers
 
     // --- shared ---
     .decl ink(c: Color) ink(8).
@@ -92,7 +92,7 @@
         arrange(P_grid, P_intile), class_tile(Id, P_intile, Col).
 }
 
-.init c = Consts
+.init params = Params
 
 // --- parse ---
 
@@ -100,7 +100,7 @@
     .decl cell(k: Key, p: Position, col: Color)
 
     .decl ink_at(k: Key, p: Position)
-    ink_at(K, P) :- cell(K, P, Col), c.ink(Col).
+    ink_at(K, P) :- cell(K, P, Col), params.ink(Col).
 
     .init ink_tally = Tally<Key, Position>
     ink_tally.item(K, P) :- ink_at(K, P).
@@ -112,10 +112,10 @@
     // with the cells each one covers.
     .init occ = Occurrences<Key, Unit>
     occ.cell(K, P, $U())  :- ink_at(K, P).
-    occ.shape(K, S, $U()) :- ink_at(K, _), c.unit(S).
+    occ.shape(K, S, $U()) :- ink_at(K, _), params.unit(S).
 
     .decl covers(k: Key, b: Position, p: Position)
-    covers(K, B, P) :- occ.occurrence(K, B), c.unit(S), compose(B, S, P).
+    covers(K, B, P) :- occ.occurrence(K, B), params.unit(S), compose(B, S, P).
 
     .decl uncovered(k: Key)
     uncovered(K) :- ink_at(K, P), !covers(K, _, P).
@@ -124,13 +124,13 @@
 .init parse = Parse<Unit>
 parse.cell($U(), P, Col) :- in(P, Col).
 
-// --- body ---
+// --- program ---
 
 .decl class(id: Ident, d: Detect)
 
 // --- $Shape ---
-class(Id, $Shape()) :- parse.uncovered($U()), c.broken_class(Id).
-class(Id, $Shape()) :- parse.ink_at($U(), _), !parse.uncovered($U()), c.covered_class(Id).
+class(Id, $Shape()) :- parse.uncovered($U()), params.broken_class(Id).
+class(Id, $Shape()) :- parse.ink_at($U(), _), !parse.uncovered($U()), params.covered_class(Id).
 
 // --- $Partition ---
 
@@ -151,38 +151,38 @@ packed(P) :-
 .decl unpacked(p: Position)
 unpacked(P) :- parse.ink_at($U(), P), !packed(P).
 
-class(Id, $Partition()) :- unpacked(_), c.broken_class(Id).
-class(Id, $Partition()) :- parse.ink_at($U(), _), !unpacked(_), c.covered_class(Id).
+class(Id, $Partition()) :- unpacked(_), params.broken_class(Id).
+class(Id, $Partition()) :- parse.ink_at($U(), _), !unpacked(_), params.covered_class(Id).
 
 // --- $Count ---
-class(Id, $Count()) :- parse.ink_count($U(), N), c.class_count(Id, N).
+class(Id, $Count()) :- parse.ink_count($U(), N), params.class_count(Id, N).
 
 .decl out(p: Position, col: Color, c: Choice)
 
 // --- $Grid ---
-out(P, Col, [D, $Grid()]) :- class(Id, D), c.class_grid(Id, P, Col).
+out(P, Col, [D, $Grid()]) :- class(Id, D), params.class_grid(Id, P, Col).
 
 // --- $Arrange ---
-out(P_grid, Col, [D, $Arrange()]) :- class(Id, D), c.arrange_grid(Id, P_grid, Col).
+out(P_grid, Col, [D, $Arrange()]) :- class(Id, D), params.arrange_grid(Id, P_grid, Col).
 out(P_grid, Col, [D, $Arrange()]) :-
-    class(_, D), c.canvas(P_grid), !c.arrange(P_grid, _), c.bg(Col).
+    class(_, D), params.canvas(P_grid), !params.arrange(P_grid, _), params.bg(Col).
 
 // --- $Corner ---
 
 // Each canvas corner's copy of the tile frame, same orientation at every corner.
 .decl corner_map(p_intile: Position, p_grid: Position)
 corner_map(P_intile, P_grid) :-
-    c.class_tile(_, P_intile, _), c.canvas(P_grid),
+    params.class_tile(_, P_intile, _), params.canvas(P_grid),
     diag_dir_elem(Diag), corner_anchor(Diag, P_intile, P_grid).
 
 out(P_grid, Col, [D, $Corner()]) :-
-    class(Id, D), corner_map(P_intile, P_grid), c.class_tile(Id, P_intile, Col).
+    class(Id, D), corner_map(P_intile, P_grid), params.class_tile(Id, P_intile, Col).
 out(P_grid, Col, [D, $Corner()]) :-
-    class(_, D), c.canvas(P_grid), !corner_map(_, P_grid), c.bg(Col).
+    class(_, D), params.canvas(P_grid), !corner_map(_, P_grid), params.bg(Col).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     .init parse = Parse<Example>
     parse.cell(E, P, Col) :- ex_in(E, P, Col).
 
@@ -207,7 +207,7 @@ out(P_grid, Col, [D, $Corner()]) :-
 
     .decl class_tile(id: Ident, p_intile: Position, col: Color)
     class_tile(Id, P_intile, Col) :-
-        class.id(E, Id), ex_out(E, P_grid, Col), c.arrange(P_grid, P_intile).
+        class.id(E, Id), ex_out(E, P_grid, Col), params.arrange(P_grid, P_intile).
 
     .decl class_count(id: Ident, n: number)
     class_count(Id, N) :- class.id(E, Id), parse.ink_count(E, N).
@@ -220,8 +220,8 @@ out(P_grid, Col, [D, $Corner()]) :-
 
     // Each tile displays a copy of the unit: intact for the covered class,
     // damaged — cells removed — for the broken class. The displays jointly
-    // exhibit the unit. Reading it off c.covered_class's tile instead would
-    // be circular: that slot's fit runs through placements of c.unit.
+    // exhibit the unit. Reading it off params.covered_class's tile instead would
+    // be circular: that parameter's determination runs through placements of params.unit.
     .decl unit(p: Position)
-    unit(P) :- class_tile(_, P, Col), c.ink(Col).
+    unit(P) :- class_tile(_, P, Col), params.ink(Col).
 }

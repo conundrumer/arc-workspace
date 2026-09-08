@@ -11,7 +11,7 @@
 
 .type Choice = Scale {} | Canvas {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl growth(d: DiagDir) growth(DIAG_BR).
     .decl period(n: number) period(3).
@@ -25,7 +25,7 @@
     .decl anchor(d: DiagDir) anchor(DIAG_TL).
 }
 
-.init c = Consts
+.init params = Params
 
 // Per-case output frame and input placement.
 .decl frame_cell(c: Choice, p_grid: Position)
@@ -35,7 +35,7 @@
 // The frame is a scale x scale arrangement of input-sized tiles; the
 // input occupies its tile.
 .init tiles = Frame2D<Unit>
-tiles.extent($U(), A, S) :- c.scale(S), axis_elem(A).
+tiles.extent($U(), A, S) :- params.scale(S), axis_elem(A).
 
 .decl tile_cell(p_grid: Position, p_tile: Position, p_in: Position)
 tile_cell(P_grid, P_tile, P_in) :-
@@ -43,26 +43,26 @@ tile_cell(P_grid, P_tile, P_in) :-
     concat_2d(P_tile, P_in, 0, P_grid).
 
 frame_cell($Scale(), P_grid) :- tile_cell(P_grid, _, _).
-placed($Scale(), P_grid, P_in) :- c.in_tile(P_tile), tile_cell(P_grid, P_tile, P_in).
+placed($Scale(), P_grid, P_in) :- params.in_tile(P_tile), tile_cell(P_grid, P_tile, P_in).
 
 // --- Canvas ---
 // The frame is a stored canvas; the input sits at the anchor corner.
 .init canvas = Frame2D<Unit>
-canvas.extent($U(), A, K) :- c.out_dim(K), axis_elem(A).
+canvas.extent($U(), A, K) :- params.out_dim(K), axis_elem(A).
 
 frame_cell($Canvas(), P_grid) :- canvas.cell($U(), P_grid).
 placed($Canvas(), P_grid, P_in) :-
     canvas.cell($U(), P_grid), in(P_in, _),
-    c.anchor(Diag), corner_anchor(Diag, P_in, P_grid).
+    params.anchor(Diag), corner_anchor(Diag, P_in, P_grid).
 
 // The diagonal through the growth corner.
 .decl on_diag(c: Choice, p_grid: Position)
-on_diag(Ch, P) :- frame_cell(Ch, P), c.growth(Diag), diag_dist(P, Diag, _, K, K).
+on_diag(Ch, P) :- frame_cell(Ch, P), params.growth(Diag), diag_dist(P, Diag, _, K, K).
 
 // The diagonal advance of one period.
 .decl period_jump(delta: Position)
 period_jump(Delta) :-
-    c.growth(Diag), c.period(N), jump_delta(Diag, N, Delta).
+    params.growth(Diag), params.period(N), jump_delta(Diag, N, Delta).
 
 .decl out(p: Position, col: Color, c: Choice)
 
@@ -75,7 +75,7 @@ out(P_grid, Col, Ch) :- placed(Ch, P_grid, P_in), in(P_in, Col).
 out(P, Col, Ch) :-
     out(Q, Col, Ch), on_diag(Ch, Q),                                  // diagonal source
     ( period_jump(Delta), compose(Q, Delta, P), on_diag(Ch, P)        // one period out
-    ; c.growth(Diag), diag_dirs(Diag, _, D1, D2),                     // the corner's dir pair
+    ; params.growth(Diag), diag_dirs(Diag, _, D1, D2),                // the corner's dir pair
       neighbor(Q, D1, M),                                             // step off the diagonal
       frame_cell(Ch, P),                                              // an arm cell
       axis_of(D2, A), same_line(A, P, M),                             // on M's line along D2
@@ -83,9 +83,9 @@ out(P, Col, Ch) :-
     ),
     !placed(Ch, P, _).                                                // outside the input
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     // Each train input seated at each corner of its output.
     .decl anchored(e: Example, diag: DiagDir, p_in: Position, p_grid: Position)
     anchored(E, Diag, P_in, P_grid) :-
@@ -134,7 +134,7 @@ out(P, Col, Ch) :-
 
     // Tiles of the scale arrangement.
     .init tiles = Frame2D<Unit>
-    tiles.extent($U(), A, S) :- c.scale(S), axis_elem(A).
+    tiles.extent($U(), A, S) :- params.scale(S), axis_elem(A).
 
     // A tile placing some input cell on a different color.
     .decl tile_mismatch(p_tile: Position)

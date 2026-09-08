@@ -5,8 +5,8 @@
 
 #include "../lib.dl"
 
-.comp Consts {
-    .init helpers = ConstsHelpers
+.comp Params {
+    .init helpers = ParamsHelpers
 
     .decl tile_axis(a: Axis) tile_axis(AXIS_H).
     .decl copies(n: number) copies(2).
@@ -16,11 +16,11 @@
     tile(P) :- copies(N), tile_axis(AXIS_H), helpers.frame_pos([1, N], P).  // @unit
 }
 
-.init c = Consts
+.init params = Params
 
 .decl out(p: Position, col: Color)
 out(P_grid_out, Col) :-
     in(P_in, Col),                                  // input cell
-    c.tile(P_tile),                                 // tile-frame pos (axis-only)
-    c.tile_axis(A),                                 // tile axis
+    params.tile(P_tile),                            // tile-frame pos (axis-only)
+    params.tile_axis(A),                            // tile axis
     concat_slab(P_tile, P_in, A, 0, P_grid_out).    // recompose with passthrough

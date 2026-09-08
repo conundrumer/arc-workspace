@@ -7,17 +7,17 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
 
     // The color the panel is filled with.
     .decl panel(col: Color) panel(8).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl mark(p: Position, col: Color)
-mark(P, Col) :- in(P, Col), !c.bg(Col), !c.panel(Col).
+mark(P, Col) :- in(P, Col), !params.bg(Col), !params.panel(Col).
 
 .init marks = Components<Unit>
 marks.node($U(), P) :- mark(P, _).
@@ -49,5 +49,5 @@ rank_cell(P_out) :-
 .decl out(p: Position, col: Color)
 out(P_out, Col) :-
     rank_cell(P_out),
-    ( rank_mark(P_out, Col)                 // the marker ranked here
-    ; !rank_mark(P_out, _), c.bg(Col) ).    // no marker at this pair of ranks
+    ( rank_mark(P_out, Col)                      // the marker ranked here
+    ; !rank_mark(P_out, _), params.bg(Col) ).    // no marker at this pair of ranks

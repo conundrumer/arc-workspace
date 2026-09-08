@@ -11,24 +11,24 @@
 
 .type Choice = Over {} | Around {} | Block {}
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
     .decl tile_dim(k: number) tile_dim(2).
     .decl gap(g: number) gap(1).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl impl_choice(ch: Choice)
 impl_choice($Over()). impl_choice($Around()). impl_choice($Block()).
 
 .decl tile(p_grid: Position, p_tile: Position)
 tile(P_grid, P_tile) :-
-    in(P_grid, _), c.tile_dim(K), c.gap(G),
+    in(P_grid, _), params.tile_dim(K), params.gap(G),
     divide_by_size_2d(P_grid, K, G, P_tile, _).
 
 .decl mark(p_tile: Position, col: Color)
-mark(T, Col) :- in(P_grid, Col), tile(P_grid, T), !c.bg(Col).
+mark(T, Col) :- in(P_grid, Col), tile(P_grid, T), !params.bg(Col).
 
 .decl bg_tile(p_tile: Position)
 bg_tile(T) :- tile(_, T), !mark(T, _).

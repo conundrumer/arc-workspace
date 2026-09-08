@@ -1,20 +1,20 @@
 // 025d127b
 // concept: objects move
-// Each 8-connected shape advances one cell toward c.dir. A cell steps
+// Each 8-connected shape advances one cell toward params.dir. A cell steps
 // unless it sits on the shape's leading edge, or its landing site is
 // itself stuck.
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
     .decl dir(d: Dir) dir(DIR_R).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl ink(p: Position, col: Color)
-ink(P, Col) :- in(P, Col), !c.bg(Col).
+ink(P, Col) :- in(P, Col), !params.bg(Col).
 
 .init shapes = Components8<Unit>
 shapes.node($U(), P) :- ink(P, _).
@@ -24,12 +24,12 @@ shape_box.cell(Id, P) :- shapes.label($U(), P, Id).
 
 // Where a cell would land.
 .decl target(p: Position, p2: Position)
-target(P, P2) :- ink(P, _), c.dir(D), neighbor(P, D, P2).
+target(P, P2) :- ink(P, _), params.dir(D), neighbor(P, D, P2).
 
 // A landing site adjacent to its source is in the source's own shape, so
 // the pile-up needs no shape key.
 .decl stuck(p: Position)
-stuck(P) :- c.dir(D), shape_box.edge_cell(_, P, D).
+stuck(P) :- params.dir(D), shape_box.edge_cell(_, P, D).
 stuck(P) :- target(P, P2), stuck(P2).
 
 .decl slid(p: Position, col: Color)
@@ -38,4 +38,4 @@ slid(P2, Col) :- ink(P, Col), !stuck(P), target(P, P2).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- slid(P, Col).
-out(P, Col) :- in(P, _), c.bg(Col), !slid(P, _).
+out(P, Col) :- in(P, _), params.bg(Col), !slid(P, _).

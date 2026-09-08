@@ -4,11 +4,11 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl copies(n: number) copies(2).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl palette(col: Color)
 palette(Col) :- in(_, Col).
@@ -19,7 +19,7 @@ swapped(P, C2) :- in(P, C1), palette(C2), C2 != C1.
 
 // copies×copies arrangement of the swapped grid.
 .init arrangement = Frame2D<Unit>
-arrangement.extent($U(), A, N) :- axis_elem(A), c.copies(N).
+arrangement.extent($U(), A, N) :- axis_elem(A), params.copies(N).
 
 .decl out(p: Position, col: Color)
 out(P_grid_out, Col) :-

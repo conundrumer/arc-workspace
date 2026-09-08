@@ -6,11 +6,11 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl out(p: Position, col: Color)
 out(P_grid_out, Col) :-
@@ -19,5 +19,5 @@ out(P_grid_out, Col) :-
 
 out(P_grid_out, BG) :-
     in(P_tile, Col_m), in(P_intile, Col_i),             // mismatched: tile & intile distinct
-    Col_m != Col_i, c.bg(BG),
+    Col_m != Col_i, params.bg(BG),
     concat_2d(P_tile, P_intile, 0, P_grid_out).         // 2D recompose

@@ -1,12 +1,12 @@
 // 0e671a1a
 // concept: markers span
 // Marks, each named by its color, are joined into a chain. A leg turns once,
-// at the elbow standing with the destination along c.axis and with the source
-// across it, and its two straight halves are drawn in c.path over background.
+// at the elbow standing with the destination along params.axis and with the source
+// across it, and its two straight halves are drawn in params.path over background.
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
     .decl path(col: Color) path(5).
 
@@ -18,7 +18,7 @@
     .decl axis(a: Axis) axis(AXIS_V).
 }
 
-.init c = Consts
+.init params = Params
 
 // A leg, by the colors of the marks it joins.
 .type Leg = [src: Color, dst: Color]
@@ -30,14 +30,14 @@
 
     // Marks, named by color.
     .decl mark(k: Key, col: Color, p: Position)
-    mark(K, Col, P) :- cell(K, P, Col), !c.bg(Col).
+    mark(K, Col, P) :- cell(K, P, Col), !params.bg(Col).
 
     // The elbow of an ordered mark pair: standing with the destination along
-    // c.axis and with the source across it.
+    // params.axis and with the source across it.
     .decl elbow(k: Key, src: Color, dst: Color, p: Position)
     elbow(K, S, D, P_elbow) :-
         mark(K, S, P_src), mark(K, D, P_dst), S != D,  // an ordered pair of marks
-        c.axis(A), split(P_dst, A, Along, _),          // along the axis, the destination's place
+        params.axis(A), split(P_dst, A, Along, _),     // along the axis, the destination's place
         split(P_src, A, _, Across),                    // across it, the source's
         compose(Along, Across, P_elbow).
 }
@@ -49,21 +49,21 @@ parse.cell($U(), P, Col) :- in(P, Col).
 // line, elbow to destination along the other. The domain is background only,
 // so every mark keeps its own color.
 .init span = Between<Leg>
-span.axis([S, D], A) :- c.leg(S, D), axis_elem(A).
-span.cell([S, D], P) :- c.leg(S, D), in(P, Col), c.bg(Col).
+span.axis([S, D], A) :- params.leg(S, D), axis_elem(A).
+span.cell([S, D], P) :- params.leg(S, D), in(P, Col), params.bg(Col).
 span.mark([S, D], P) :-
-    c.leg(S, D),
+    params.leg(S, D),
     ( parse.mark($U(), S, P)          // the source mark
     ; parse.mark($U(), D, P)          // the destination mark
     ; parse.elbow($U(), S, D, P) ).   // the elbow between them
 
 .decl out(p: Position, col: Color)
-out(P, Col) :- span.between(_, P), c.path(Col).
+out(P, Col) :- span.between(_, P), params.path(Col).
 out(P, Col) :- in(P, Col), !span.between(_, P).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     // Train pairs only — the ex_out atom holds the test inputs out.
     .init parse = Parse<Example>
     parse.cell(E, P, Col) :- ex_in(E, P, Col), ex_out(E, _, _).
@@ -71,7 +71,7 @@ out(P, Col) :- in(P, Col), !span.between(_, P).
     // A leg's elbow is drawn in every pair: keep the ordered mark pairs no
     // example refutes.
     .decl refuted(src: Color, dst: Color)
-    refuted(S, D) :- parse.elbow(E, S, D, P), ex_out(E, P, Col), !c.path(Col).
+    refuted(S, D) :- parse.elbow(E, S, D, P), ex_out(E, P, Col), !params.path(Col).
 
     .decl leg(src: Color, dst: Color)
     leg(S, D) :- parse.elbow(_, S, D, _), !refuted(S, D).

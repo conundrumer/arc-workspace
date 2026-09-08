@@ -1,7 +1,7 @@
 // 23581191
 // concept: markers cross
 // Each mark paints its full row and column in its color; a cell where
-// crosses meet gets c.cross_color. Cases differ on what counts as a meeting:
+// crosses meet gets params.cross_color. Cases differ on what counts as a meeting:
 //
 //   $Color() — lines of two distinct colors cover the cell.
 //   $Mark()  — crosses of two distinct marks cover the cell.
@@ -10,18 +10,18 @@
 
 .type Choice = Color {} | Mark {}
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
     .decl cross_color(c: Color) cross_color(2).
 }
 
-.init c = Consts
+.init params = Params
 
 // P lies on the cross of mark Q: shares Q's line on some axis.
 .decl cross(p: Position, q: Position, col: Color)
 cross(P, Q, Col) :-
-    in(Q, Col), !c.bg(Col),                 // a mark
-    in(P, _),                               // any cell
+    in(Q, Col), !params.bg(Col),                 // a mark
+    in(P, _),                                    // any cell
     axis_elem(A), same_line(A, P, Q).
 
 .decl collide(ch: Choice, p: Position)
@@ -44,7 +44,7 @@ impl_choice($Color()). impl_choice($Mark()).
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     impl_choice(Ch), in(P, _),
-    ( collide(Ch, P), c.cross_color(Col)         // crosses meet
-    ; cross(P, _, Col), !collide(Ch, P)          // one cross alone
-    ; !cross(P, _, _), c.bg(Col)                 // no cross
+    ( collide(Ch, P), params.cross_color(Col)         // crosses meet
+    ; cross(P, _, Col), !collide(Ch, P)               // one cross alone
+    ; !cross(P, _, _), params.bg(Col)                 // no cross
     ).

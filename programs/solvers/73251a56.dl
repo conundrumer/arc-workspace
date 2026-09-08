@@ -15,7 +15,7 @@
 
 .type Choice = Slide {} | Bg {} | Label {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl hole(col: Color) hole(0).
 
@@ -48,7 +48,7 @@
        10, 6, 4, 3, 2, 2, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0)
 }
 
-.init c = Consts
+.init params = Params
 
 .decl impl_choice(ch: Choice)
 impl_choice($Slide()). impl_choice($Bg()). impl_choice($Label()).
@@ -58,16 +58,16 @@ impl_choice($Slide()). impl_choice($Bg()). impl_choice($Label()).
 sym_choice($Slide()). sym_choice($Bg()).
 
 .decl intact(p: Position, col: Color)
-intact(P, Col) :- in(P, Col), !c.hole(Col).
+intact(P, Col) :- in(P, Col), !params.hole(Col).
 
 .decl hole(p: Position)
-hole(P) :- in(P, Col), c.hole(Col).
+hole(P) :- in(P, Col), params.hole(Col).
 
 // --- Slide, Bg ---
 
 // Mirror image of each cell under the symmetry.
 .decl mirror(p: Position, q: Position)
-mirror(P, Q) :- in(P, _), c.transform(D), apply(D, P, Q).
+mirror(P, Q) :- in(P, _), params.transform(D), apply(D, P, Q).
 
 // Holes the mirror cannot repaint — the mirror is a hole too (a fix-line
 // cell is its own mirror).
@@ -114,13 +114,13 @@ out(P, Col, $Bg()) :-
 
 // Each class's color, read off the pair's intact cells.
 .decl label_color(id: Ident, col: Color)
-label_color(Id, Col) :- c.label(P, Id), intact(P, Col).
+label_color(Id, Col) :- params.label(P, Id), intact(P, Col).
 
-out(P, Col, $Label()) :- hole(P), c.label(P, Id), label_color(Id, Col).
+out(P, Col, $Label()) :- hole(P), params.label(P, Id), label_color(Id, Col).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     // Two cells some example colors differently.
     .decl differ(p: Position, q: Position)
     differ(P, Q) :- ex_out(E, P, Col), ex_out(E, Q, Col2), Col != Col2.

@@ -5,9 +5,9 @@
 
 #include "../lib.dl"
 
-.comp Consts {}
+.comp Params {}
 
-.init c = Consts
+.init params = Params
 
 .init palette = Tally<Unit, Color>
 palette.item($U(), Col) :- in(_, Col).

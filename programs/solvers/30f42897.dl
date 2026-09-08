@@ -2,18 +2,18 @@
 // concept: wallpaper parity count
 // The grid's border is a cycle of cells, and the input's non-bg cells are one
 // block on that cycle. The output keeps the input and repeats the block around
-// the cycle. The sense the cycle runs in is not observable, so the body runs
+// the cycle. The sense the cycle runs in is not observable, so the program runs
 // both. What spaces the copies is underdetermined:
 //
 //   $Alternate() — stretches of the block's length alternate painted and blank
 //                  around the cycle.
-//   $Period()    — the block recurs every c.period_blocks stretches.
+//   $Period()    — the block recurs every params.period_blocks stretches.
 
 #include "../lib.dl"
 
 .type Choice = Alternate {} | Period {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl bg(col: Color) bg(8).
 
@@ -22,11 +22,11 @@
     .decl period_blocks(k: number) period_blocks(2).
 }
 
-.init c = Consts
+.init params = Params
 
 // The block: the input's non-bg cells.
 .decl mark(p: Position, col: Color)
-mark(P, Col) :- in(P, Col), !c.bg(Col).
+mark(P, Col) :- in(P, Col), !params.bg(Col).
 
 .init block = Tally<Unit, Position>
 block.item($U(), P) :- mark(P, _).
@@ -63,11 +63,11 @@ paint(S, Q, $Alternate()) :- blank(S, P), stretch(S, P, Q).
 
 .init period = CycleWalk<Sense, Position>
 period.succ(S, P, Q) :- stretch(S, P, Q).
-period.step(S, K) :- sense_elem(S), c.period_blocks(K).
+period.step(S, K) :- sense_elem(S), params.period_blocks(K).
 
 paint(S, Q, $Period()) :-
-    paint(S, P, $Period()),                       // a painted cell
-    c.period_blocks(K), period.walk(S, P, K, Q).  // K stretches on
+    paint(S, P, $Period()),                            // a painted cell
+    params.period_blocks(K), period.walk(S, P, K, Q).  // K stretches on
 
 // --- output ---
 

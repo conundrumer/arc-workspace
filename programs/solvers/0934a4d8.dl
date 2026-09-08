@@ -9,7 +9,7 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl mask(col: Color) mask(8).
 
     // The grid's margins within the mosaic frame.
@@ -26,30 +26,30 @@
         SYM_BOX, SYM_D4,  SYM_D4,  SYM_BOX)
 }
 
-.init c = Consts
+.init params = Params
 
 // Mosaic position of each grid cell — materialized to read backward.
 .decl mosaic(p_grid: Position, p_mosaic: Position)
-mosaic(P_grid, P_mosaic) :- in(P_grid, _), c.mosaic_margin(M), compose(P_grid, M, P_mosaic).
+mosaic(P_grid, P_mosaic) :- in(P_grid, _), params.mosaic_margin(M), compose(P_grid, M, P_mosaic).
 
 // The hole: the masked cells.
 .init box = BoxFrame<Unit>
-box.cell($U(), P) :- in(P, Col), c.mask(Col).
+box.cell($U(), P) :- in(P, Col), params.mask(Col).
 
 .decl out(p: Position, col: Color)
 out(P_out, Col) :-
     box.inner($U(), P, P_out),                        // hole cell, in the crop frame
     mosaic(P, Pm),
-    c.tile_dim(K), divide_by_size_2d(Pm, K, 0, T, _), // its tile
-    c.tile_sym(T, S), sym_member(S, D),               // a transform holding there
-    apply(D, Pm, P2m),                                // image in the mosaic
-    mosaic(P2, P2m), in(P2, Col), !c.mask(Col).       // visible grid cell there
+    params.tile_dim(K), divide_by_size_2d(Pm, K, 0, T, _), // its tile
+    params.tile_sym(T, S), sym_member(S, D),               // a transform holding there
+    apply(D, Pm, P2m),                                     // image in the mosaic
+    mosaic(P2, P2m), in(P2, Col), !params.mask(Col).       // visible grid cell there
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     .decl cell(e: Example, p: Position, col: Color)
-    cell(E, P, Col) :- ex_in(E, P, Col), !c.mask(Col).
+    cell(E, P, Col) :- ex_in(E, P, Col), !params.mask(Col).
 
     // Axis positions the examples' cells occupy, and cells split by axis.
     .decl apos(a: Axis, along: Position)

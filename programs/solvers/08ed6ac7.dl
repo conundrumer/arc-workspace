@@ -5,7 +5,7 @@
 //
 //   s (what a bar is):
 //     $Object() — a connected component of ink
-//     $Line()   — a grid line along c.axis holding ink
+//     $Line()   — a grid line along params.axis holding ink
 //   a (which end of the size order is rank 0):
 //     $Tall()  — the biggest bar
 //     $Short() — the smallest bar
@@ -16,7 +16,7 @@
 .type Anchor = Tall {} | Short {}
 .type Choice = [s: Seg, a: Anchor]
 
-.comp Consts {
+.comp Params {
     .decl ink(col: Color) ink(5).
 
     // --- $Line ---
@@ -31,10 +31,10 @@
     short_color(0, 4). short_color(1, 3). short_color(2, 2). short_color(3, 1).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl ink(p: Position)
-ink(P) :- in(P, Col), c.ink(Col).
+ink(P) :- in(P, Col), params.ink(Col).
 
 // --- $Object segmentation ---
 
@@ -47,7 +47,7 @@ obj_size.item(Id, P) :- objs.label($U(), P, Id).
 // --- $Line segmentation ---
 
 .decl line_cell(b: Position, p: Position)
-line_cell(B, P) :- ink(P), c.axis(A), split(P, A, _, B).
+line_cell(B, P) :- ink(P), params.axis(A), split(P, A, _, B).
 
 .init line_size = Tally<Position, Position>
 line_size.item(B, P) :- line_cell(B, P).
@@ -62,8 +62,8 @@ bar_size($Line(), N)   :- line_size.tally(_, N).
 seq.idx_set(S, N) :- bar_size(S, N).
 
 .decl size_color(s: Seg, a: Anchor, n: number, col: Color)
-size_color(S, $Tall(),  N, Col) :- seq.rank_desc(S, N, R), c.tall_color(R, Col).
-size_color(S, $Short(), N, Col) :- seq.rank(S, N, R), c.short_color(R, Col).
+size_color(S, $Tall(),  N, Col) :- seq.rank_desc(S, N, R), params.tall_color(R, Col).
+size_color(S, $Short(), N, Col) :- seq.rank(S, N, R), params.short_color(R, Col).
 
 // --- output ---
 
@@ -78,13 +78,13 @@ out(P, Col, [$Object(), A]) :-
     objs.label($U(), P, Id), obj_size.tally(Id, N), size_color($Object(), A, N, Col).
 out(P, Col, [$Line(), A]) :-
     line_cell(B, P), line_size.tally(B, N), size_color($Line(), A, N, Col).
-out(P, Col, [S, A]) :- in(P, Col), !c.ink(Col), seg_choice(S), anchor_choice(A).
+out(P, Col, [S, A]) :- in(P, Col), !params.ink(Col), seg_choice(S), anchor_choice(A).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     .decl line_cell(e: Example, b: Position, p: Position)
-    line_cell(E, B, P) :- ex_in(E, P, Col), c.ink(Col), c.axis(A), split(P, A, _, B).
+    line_cell(E, B, P) :- ex_in(E, P, Col), params.ink(Col), params.axis(A), split(P, A, _, B).
 
     .type EB = [e: Example, b: Position]
 

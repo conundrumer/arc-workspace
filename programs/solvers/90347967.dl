@@ -1,21 +1,21 @@
 // 90347967
 // concept: markers d4
-// The grid re-seats transformed by c.transform about its c.marker cell;
+// The grid re-seats transformed by params.transform about its params.marker cell;
 // uncovered cells are bg. Seating the grid equals seating the ink object:
 // transforms are injective, so bg images land clear of the object's.
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
     .decl marker(c: Color) marker(5).
     .decl transform(d: D4) transform(D4_HT).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl mark(p: Position)
-mark(P) :- in(P, Col), c.marker(Col).
+mark(P) :- in(P, Col), params.marker(Col).
 
 // Each cell viewed from the marker, keyed by the cell.
 .init markframe = Reframe<Position>
@@ -24,13 +24,13 @@ markframe.cell(P, P)  :- in(P, _).
 
 .decl moved(p: Position, col: Color)
 moved(P_out, Col) :-
-    in(P, Col), markframe.inner(P, I),        // cell in the marker frame
-    c.transform(D), apply(D, I, I2),          // transformed offset
-    mark(M), compose(M, I2, P_out).           // seated back at the marker
+    in(P, Col), markframe.inner(P, I),           // cell in the marker frame
+    params.transform(D), apply(D, I, I2),        // transformed offset
+    mark(M), compose(M, I2, P_out).              // seated back at the marker
 
 .decl out(p: Position, col: Color)
 out(P, Col) :-
-    in(P, _),                          // grid cell
-    ( moved(P, Col)                    // content lands here
-    ; !moved(P, _), c.bg(Col)          // nothing lands — bg
+    in(P, _),                               // grid cell
+    ( moved(P, Col)                         // content lands here
+    ; !moved(P, _), params.bg(Col)          // nothing lands — bg
     ).

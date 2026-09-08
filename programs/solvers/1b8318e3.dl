@@ -9,19 +9,19 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
 
     .decl block(col: Color) block(5).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl block_cell(p: Position)
-block_cell(P) :- in(P, Col), c.block(Col).
+block_cell(P) :- in(P, Col), params.block(Col).
 
 .decl dot(p: Position, col: Color)
-dot(P, Col) :- in(P, Col), !c.bg(Col), !c.block(Col).
+dot(P, Col) :- in(P, Col), !params.bg(Col), !params.block(Col).
 
 // A free cell with a block cell one step toward D.
 .decl beside(p: Position, d: Dir8)
@@ -62,6 +62,6 @@ arrive(T, Col) :-
 .decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, _),
-    ( in(P, Col), c.block(Col)                    // the blocks stay
-    ; arrive(P, Col)                              // a dot came to rest
-    ; !block_cell(P), !arrive(P, _), c.bg(Col) ). // vacated or empty
+    ( in(P, Col), params.block(Col)                    // the blocks stay
+    ; arrive(P, Col)                                   // a dot came to rest
+    ; !block_cell(P), !arrive(P, _), params.bg(Col) ). // vacated or empty

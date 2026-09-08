@@ -7,8 +7,8 @@
 
 #include "../lib.dl"
 
-.comp Consts {
-    .init helpers = ConstsHelpers
+.comp Params {
+    .init helpers = ParamsHelpers
 
     .decl bg(c: Color)
     bg(0).
@@ -18,16 +18,16 @@
     frame(P) :- frame_dim(K), helpers.frame_pos([K, K], P).
 }
 
-.init c = Consts
+.init params = Params
 
 // Ink seen from corner Diag lands on the frame cell at the same distances
 // to that corner's edges; the frame extent bounds each block.
 .decl contribution(p_out: Position, col: Color)
 contribution(P_out, Col) :-
-    in(P_in, Col), !c.bg(Col),               // ink cell
-    diag_dir_elem(Diag), c.frame(P_out),     // each corner's view of the frame
-    corner_anchor(Diag, P_in, P_out).        // same seat from that corner
+    in(P_in, Col), !params.bg(Col),               // ink cell
+    diag_dir_elem(Diag), params.frame(P_out),     // each corner's view of the frame
+    corner_anchor(Diag, P_in, P_out).             // same seat from that corner
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- contribution(P, Col).
-out(P, Col) :- c.frame(P), !contribution(P, _), c.bg(Col).
+out(P, Col) :- params.frame(P), !contribution(P, _), params.bg(Col).

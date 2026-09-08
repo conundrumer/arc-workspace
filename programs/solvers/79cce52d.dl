@@ -1,20 +1,20 @@
 // 79cce52d
 // concept: lines markers walk count border
-// A one-cell border sits on the two edges of c.corner; the rest is the
+// A one-cell border sits on the two edges of params.corner; the rest is the
 // payload. Each border band holds one marker cell. Per axis, the payload's
 // lines rotate as a cycle so the line beside the corner lands on the
 // marker's line.
 //
 // Two models for which band cell is the marker, tagged on out's Choice:
-//   $Marked()    — the cell of the designated c.marker_col.
-//   $Singleton() — the band cell whose color appears c.marker_count times in
+//   $Marked()    — the cell of the designated params.marker_col.
+//   $Singleton() — the band cell whose color appears params.marker_count times in
 //                  its band, the color itself unnamed.
 
 #include "../lib.dl"
 
 .type Choice = Marked {} | Singleton {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl corner(d: DiagDir) corner(DIAG_TL).   // the border bands meet here
 
@@ -25,19 +25,19 @@
     .decl marker_count(k: number) marker_count(1).
 }
 
-.init c = Consts
+.init params = Params
 
 // Payload cells — off both border bands.
 .decl kept(p: Position, col: Color)
 kept(P, Col) :-
-    in(P, Col), c.corner(Diag),
+    in(P, Col), params.corner(Diag),
     diag_dist(P, Diag, _, K1, K2), K1 != 0, K2 != 0.
 
 // Line index along axis a: distance from the edge opposite the corner —
 // unchanged by the border drop, so input cells and output lines share it.
 .decl line_idx(a: Axis, p: Position, k: number) inline
 line_idx(A, P, K) :-
-    c.corner(Diag), dir_of(Diag, A, D), opposite(D, FE), dist(P, FE, K).
+    params.corner(Diag), dir_of(Diag, A, D), opposite(D, FE), dist(P, FE, K).
 
 // Each payload line, by index, is a node of the cycle.
 .decl line_set(a: Axis, k: number)
@@ -49,7 +49,7 @@ line_cycle.idx(A, K) :- line_set(A, K).
 // Marker band for axis a — the band running along a, its corner cell excluded.
 .decl band_cell(a: Axis, p: Position, col: Color)
 band_cell(A, P, Col) :-
-    in(P, Col), c.corner(Diag),
+    in(P, Col), params.corner(Diag),
     perp(A, A2), dir_of(Diag, A2, D2), dist(P, D2, 0),   // on the band running along a
     dir_of(Diag, A, D), dist(P, D, K), K != 0.           // the corner cell excluded
 
@@ -57,7 +57,7 @@ band_cell(A, P, Col) :-
 .decl marker(a: Axis, p: Position, ch: Choice)
 
 // --- Marked ---
-marker(A, P, $Marked()) :- band_cell(A, P, Col), c.marker_col(Col).
+marker(A, P, $Marked()) :- band_cell(A, P, Col), params.marker_col(Col).
 
 // --- Singleton ---
 .type BandColor = [a: Axis, col: Color]
@@ -66,16 +66,16 @@ marker(A, P, $Marked()) :- band_cell(A, P, Col), c.marker_col(Col).
 band_count.item([A, Col], P) :- band_cell(A, P, Col).
 
 marker(A, P, $Singleton()) :-
-    band_cell(A, P, Col), c.marker_count(N), band_count.tally([A, Col], N).
+    band_cell(A, P, Col), params.marker_count(N), band_count.tally([A, Col], N).
 
 // Line rotation per axis: the map carrying the line beside the corner to the
 // marker's line — that pair, closed under lockstep succ.
 .decl line_rotation(a: Axis, k: number, k2: number, ch: Choice)
 line_rotation(A, K_ca, K_mk, Ch) :-
-    in(P_cn, _), c.corner(Diag), corner_dist(P_cn, Diag, 0),      // the corner cell
-    dir_of(Diag, A, D), opposite(D, O),                           // inward along a
-    neighbor(P_cn, O, P_a), line_idx(A, P_a, K_ca),               // the line beside it
-    marker(A, P_mk, Ch), line_idx(A, P_mk, K_mk).                 // the marker's line
+    in(P_cn, _), params.corner(Diag), corner_dist(P_cn, Diag, 0),      // the corner cell
+    dir_of(Diag, A, D), opposite(D, O),                                // inward along a
+    neighbor(P_cn, O, P_a), line_idx(A, P_a, K_ca),                    // the line beside it
+    marker(A, P_mk, Ch), line_idx(A, P_mk, K_mk).                      // the marker's line
 line_rotation(A, K1_next, K2_next, Ch) :-
     line_rotation(A, K1, K2, Ch),
     line_cycle.succ(A, K1, K1_next), line_cycle.succ(A, K2, K2_next).

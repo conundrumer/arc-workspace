@@ -1,17 +1,17 @@
 // a8610ef7
 // concept: symmetry lookup classify
 // Recolor each cell by its own color and the color of its image under
-// c.mirror.
+// params.mirror.
 //
-//   $Direct — bg passes through; a non-bg cell takes c.matched or
-//             c.unmatched by whether its image is non-bg.
+//   $Direct — bg passes through; a non-bg cell takes params.matched or
+//             params.unmatched by whether its image is non-bg.
 //   $Lookup — a stored table takes the two colors to the output color.
 
 #include "../lib.dl"
 
 .type Choice = Direct {} | Lookup {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl mirror(d: D4) mirror(D4_TB).
 
@@ -28,34 +28,34 @@
     recolor(8, 8, 2).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl out(p: Position, col: Color, c: Choice)
 
 // --- Direct ---
 
 .decl non_bg(p: Position)
-non_bg(P) :- in(P, Col), !c.bg(Col).
+non_bg(P) :- in(P, Col), !params.bg(Col).
 
-out(P, Col, $Direct()) :- in(P, Col), c.bg(Col).
+out(P, Col, $Direct()) :- in(P, Col), params.bg(Col).
 out(P, Col_out, $Direct()) :-
-    non_bg(P), c.mirror(D), apply(D, P, P_m),   // non-bg cell, its mirror image
-    ( non_bg(P_m), c.matched(Col_out)           // image is also non-bg
-    ; !non_bg(P_m), c.unmatched(Col_out)        // image is bg
+    non_bg(P), params.mirror(D), apply(D, P, P_m),   // non-bg cell, its mirror image
+    ( non_bg(P_m), params.matched(Col_out)           // image is also non-bg
+    ; !non_bg(P_m), params.unmatched(Col_out)        // image is bg
     ).
 
 // --- Lookup ---
 
 out(P, Col_out, $Lookup()) :-
-    in(P, C_self),                                       // input cell color
-    c.mirror(D), apply(D, P, P_m), in(P_m, C_mirror),    // mirror cell color
-    c.recolor(C_self, C_mirror, Col_out).
+    in(P, C_self),                                            // input cell color
+    params.mirror(D), apply(D, P, P_m), in(P_m, C_mirror),    // mirror cell color
+    params.recolor(C_self, C_mirror, Col_out).
 
-// --- fit ---
+// --- determination ---
 
 .type ColorPair = [d: D4, c_self: Color, c_mirror: Color]
 
-.comp Fit {
+.comp Determine {
     // The color the output paints a cell. The key is the cell's own color and
     // the color of its image under a transform.
     .init pair_color = Unanimous<ColorPair, Color>
@@ -72,12 +72,12 @@ out(P, Col_out, $Lookup()) :-
     mirror(D) :- d4_elem(D), !mismatch(D).
 
     .decl recolor(c_self: Color, c_mirror: Color, c_out: Color)
-    recolor(C, C_m, Col) :- c.mirror(D), pair_color.value([D, C, C_m], Col).
+    recolor(C, C_m, Col) :- params.mirror(D), pair_color.value([D, C, C_m], Col).
 
     // The table's non-bg entries, split by whether the image is non-bg.
     .decl matched(c: Color)
-    matched(Col) :- recolor(C, C_m, Col), !c.bg(C), !c.bg(C_m).
+    matched(Col) :- recolor(C, C_m, Col), !params.bg(C), !params.bg(C_m).
 
     .decl unmatched(c: Color)
-    unmatched(Col) :- recolor(C, C_m, Col), !c.bg(C), c.bg(C_m).
+    unmatched(Col) :- recolor(C, C_m, Col), !params.bg(C), params.bg(C_m).
 }

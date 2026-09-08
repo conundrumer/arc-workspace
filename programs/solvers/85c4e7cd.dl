@@ -6,11 +6,11 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     // No task data — siblings vary only the input.
 }
 
-.init c = Consts
+.init params = Params
 
 // Ring index: distance to the nearest edge.
 .init edge_dist = Extremes<Position>

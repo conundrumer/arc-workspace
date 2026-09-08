@@ -750,7 +750,7 @@ type RelKey = tuple[str, str]  # (scope, name)
 
 @dataclass(frozen=True)
 class Ref:
-    scope: str            # comp the referring rule sits in, TOP for body code
+    scope: str            # comp the referring rule sits in, TOP for program code
     key: RelKey           # resolved relation
     role: str             # 'head' | 'pos' | 'neg' | 'agg'
     rule: int             # index into Index.rules

@@ -1,35 +1,35 @@
 // 46f33fce
 // concept: scale decompose markers stamp
-// Sparse dots over bg. The grid divides into c.side tiles; a dot's whole
+// Sparse dots over bg. The grid divides into params.side tiles; a dot's whole
 // tile renders in its color, bg elsewhere. Output is the result scaled
-// ×c.scale.
+// ×params.scale.
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
     .decl side(k: number) side(2).
     .decl scale(s: number) scale(2).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl tile_ink(p_tile: Position, col: Color)
 tile_ink(P_tile, Col) :-
-    in(P, Col), !c.bg(Col),
-    c.side(K), divide_by_size_2d(P, K, 0, P_tile, _).
+    in(P, Col), !params.bg(Col),
+    params.side(K), divide_by_size_2d(P, K, 0, P_tile, _).
 
 // Each input cell painted with its tile's color.
 .decl render(p: Position, col: Color)
 render(P, Col) :-
-    in(P, _), c.side(K), divide_by_size_2d(P, K, 0, P_tile, _),
-    ( tile_ink(P_tile, Col)              // inked tile
-    ; !tile_ink(P_tile, _), c.bg(Col)    // blank tile
+    in(P, _), params.side(K), divide_by_size_2d(P, K, 0, P_tile, _),
+    ( tile_ink(P_tile, Col)                   // inked tile
+    ; !tile_ink(P_tile, _), params.bg(Col)    // blank tile
     ).
 
-// Scale: each input cell becomes a c.scale block of the rendered color.
+// Scale: each input cell becomes a params.scale block of the rendered color.
 .init subf = Frame2D<Unit>
-subf.extent($U(), A, S) :- axis_elem(A), c.scale(S).
+subf.extent($U(), A, S) :- axis_elem(A), params.scale(S).
 
 .decl out(p: Position, col: Color)
 out(P_out, Col) :-

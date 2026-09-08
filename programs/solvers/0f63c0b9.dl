@@ -2,12 +2,12 @@
 // concept: markers lines cast border
 // Marks, each on its own line. Every cell belongs to the nearest
 // mark's line and takes that mark's color; at an equal distance the reach
-// travelling toward c.tie_dir wins. A cell shows its color where it lies on
+// travelling toward params.tie_dir wins. A cell shows its color where it lies on
 // the grid border or on a mark's line, and is background elsewhere.
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
 
     // The marks spread along this Dir's axis and their lines run across it.
@@ -15,20 +15,20 @@
     .decl tie_dir(d: Dir) tie_dir(DIR_B).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl mark(p: Position, col: Color)
-mark(P, Col) :- in(P, Col), !c.bg(Col).
+mark(P, Col) :- in(P, Col), !params.bg(Col).
 
 .decl mark_line(p_mark: Position, p: Position)
 mark_line(P_mark, P) :-
-    mark(P_mark, _), in(P, _),                        // a mark and a grid cell
-    c.tie_dir(D), axis_of(D, A), perp(A, A_line),     // the lines run across the marks' axis
-    same_line(A_line, P, P_mark).                     // the cell is on the mark's line
+    mark(P_mark, _), in(P, _),                             // a mark and a grid cell
+    params.tie_dir(D), axis_of(D, A), perp(A, A_line),     // the lines run across the marks' axis
+    same_line(A_line, P, P_mark).                          // the cell is on the mark's line
 
 // Each line reaches across the marks' axis, one cell per step.
 .init reach = Ray<Position>
-reach.dir(P_mark, D)  :- mark(P_mark, _), c.tie_dir(D_tie), axis_of(D_tie, A), axis_of(D, A).
+reach.dir(P_mark, D)  :- mark(P_mark, _), params.tie_dir(D_tie), axis_of(D_tie, A), axis_of(D, A).
 reach.cell(P_mark, P) :- mark(P_mark, _), in(P, _).
 reach.mark(P_mark, P) :- mark_line(P_mark, P).
 
@@ -37,7 +37,7 @@ beaten(P, M) :-
     reach.ray(M, P, _, K, _),              // this line's reach
     reach.ray(M2, P, D2, K2, _), M2 != M,  // a rival line's
     ( K2 < K                               // nearer
-    ; K2 = K, c.tie_dir(D2)                // as near, and travelling toward tie_dir
+    ; K2 = K, params.tie_dir(D2)           // as near, and travelling toward tie_dir
     ).
 
 .decl territory(p: Position, col: Color)
@@ -52,4 +52,4 @@ paint(P, Col) :-
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- paint(P, Col).
-out(P, Col) :- in(P, _), !paint(P, _), c.bg(Col).
+out(P, Col) :- in(P, _), !paint(P, _), params.bg(Col).

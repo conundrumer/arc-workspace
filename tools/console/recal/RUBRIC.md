@@ -27,7 +27,7 @@ Classify each such item into exactly one kind, using the descriptions below. **M
 - `naming_vocab` — a name with shared scope — a lib comp, a type, doc wording, a proposals entry; a name local to one solver is not this kind
 - `correctness_risk` — a defect, or an implicit assumption the solver leans on, such as a property every input happens to satisfy
 - `lint_tooling` — an improvement or a defense of the linter, run budgets, timing, or index tooling; a broken tool is P0, not this kind
-- `alt_models` — a rival model dispatched: killed by data, an alt impl with the same outputs, or dropped as not worth building
+- `alt_models` — a peer model dispatched: killed by data, an alt impl with the same outputs, or dropped as not worth building
 - `unwitnessed_edges` — a divergence between models that no pair in the task exhibits, stated with the constructed witness that would separate them
 - `hedges` — a trailing qualification on a settled call, not a discrete open item
 - `other` — a discrete item that matches none of the descriptions above

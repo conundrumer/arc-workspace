@@ -2,16 +2,16 @@
 // concept: decompose grow lookup move
 // The input's two halves along the stack axis pull apart diagonally:
 // each half reseats in a grown frame, and the vacated band fills with
-// c.filler. Choice cases, all data-equivalent here:
+// params.filler. Choice cases, all data-equivalent here:
 //   $Derive(g, s) — displacement derived from a corner seat and growth:
 //     g $Iso()     — one width: separator and lateral shift are the same
-//                    parameter (c.sep)
-//     g $Aniso()   — per-axis widths (c.sep_dim rows)
-//     s $Derived() — each half seats at the c.diag corner on its own
+//                    parameter (params.sep)
+//     g $Aniso()   — per-axis widths (params.sep_dim rows)
+//     s $Derived() — each half seats at the params.diag corner on its own
 //                    side of the stack
-//     s $Table()   — explicit side → corner map (c.seat_of)
-//   $Disp() — data-leaning: c.arr slabs along the stack axis, per-slab
-//             displacement vector (c.disp)
+//     s $Table()   — explicit side → corner map (params.seat_of)
+//   $Disp() — table: params.arr slabs along the stack axis, per-slab
+//             displacement vector (params.disp)
 
 #include "../lib.dl"
 
@@ -19,7 +19,7 @@
 .type Seats  = Derived {} | Table {}
 .type Choice = Derive { g: Growth, s: Seats } | Disp {}
 
-.comp Consts {
+.comp Params {
     .decl axis(a: Axis) axis(AXIS_V).      // stack axis
     .decl filler(c: Color) filler(9).
 
@@ -44,34 +44,34 @@
     disp([1, 0, 0, 0], [1, 0, 1, 0]).
 }
 
-.init c = Consts
+.init params = Params
 
 .init dp = DiagPlacement<Unit>
 dp.cell($U(), P) :- in(P, _).
 
 // The half a cell belongs to, named by its side of the stack axis.
 .decl side(p: Position, d: Dir)
-side(P, D) :- c.axis(A), axis_of(D, A), dp.nearer($U(), P, D).
+side(P, D) :- params.axis(A), axis_of(D, A), dp.nearer($U(), P, D).
 
 .decl seat(p: Position, diag: DiagDir, s: Seats)
 
 // --- Derive / Derived ---
 seat(P, Diag, $Derived()) :-
-    side(P, D),                                  // cell's side of the stack
-    c.diag(DA), diag_axis_of(Diag, DA),          // corner on the seating diag
-    dir_of(Diag, _, D).                          // matching that side
+    side(P, D),                                       // cell's side of the stack
+    params.diag(DA), diag_axis_of(Diag, DA),          // corner on the seating diag
+    dir_of(Diag, _, D).                               // matching that side
 
 // --- Derive / Table ---
-seat(P, Diag, $Table()) :- side(P, D), c.seat_of(D, Diag).
+seat(P, Diag, $Table()) :- side(P, D), params.seat_of(D, Diag).
 
 // Growth extents, the wide axis-tagged pair: n1 along a, n2 across.
 .decl growth(a: Axis, n1: number, n2: number, gr: Growth)
 
 // --- Derive / Iso ---
-growth(A, G, G, $Iso()) :- axis_elem(A), c.sep(G).
+growth(A, G, G, $Iso()) :- axis_elem(A), params.sep(G).
 
 // --- Derive / Aniso ---
-growth(A, N1, N2, $Aniso()) :- c.sep_dim(A, N1), perp(A, A2), c.sep_dim(A2, N2).
+growth(A, N1, N2, $Aniso()) :- params.sep_dim(A, N1), perp(A, A2), params.sep_dim(A2, N2).
 
 // Grow delta toward a corner: the growth extents at its two edges.
 .decl grow_delta(diag: DiagDir, gr: Growth, e: Shift)
@@ -93,9 +93,9 @@ seated(P_out, Col, $Derive(Gr, S)) :-
 
 // --- Disp ---
 seated(P_out, Col, $Disp()) :-
-    in(P, Col),                                               // slab cell
-    c.axis(A), c.arr(N), divide_slab(P, A, N, 0, P_tile, _),  // its slab in the stack
-    c.disp(P_tile, Delta), compose(P, Delta, P_out).          // displace by its vector
+    in(P, Col),                                                         // slab cell
+    params.axis(A), params.arr(N), divide_slab(P, A, N, 0, P_tile, _),  // its slab in the stack
+    params.disp(P_tile, Delta), compose(P, Delta, P_out).               // displace by its vector
 
 // Output frame extents, read off the seated images.
 .init frame = Frame2D<Choice>
@@ -103,16 +103,16 @@ frame.extent(Ch, A, N) :- seated(P, _, Ch), axis_elem(A), axis_dim(P, A, N).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- seated(P, Col, Ch).
-out(P, Col, Ch) :- frame.cell(Ch, P), !seated(P, _, Ch), c.filler(Col).
+out(P, Col, Ch) :- frame.cell(Ch, P), !seated(P, _, Ch), params.filler(Col).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     // Train input cells in the slabs of each candidate stack axis.
     .decl slab_cell(e: Example, a: Axis, p_tile: Position, p: Position, col: Color)
     slab_cell(E, A, P_tile, P, Col) :-
         ex_in(E, P, Col), ex_out(E, _, _),
-        axis_elem(A), c.arr(N), divide_slab(P, A, N, 0, P_tile, _).
+        axis_elem(A), params.arr(N), divide_slab(P, A, N, 0, P_tile, _).
 
     // One train pair's slab, on one candidate stack axis.
     .type SlabKey = [e: Example, a: Axis, p_tile: Position]

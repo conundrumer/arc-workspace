@@ -15,7 +15,7 @@
 
 .type Choice = Corridor {} | Goal {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl bg(col: Color) bg(3).
     .decl piece(col: Color) piece(0).
@@ -25,15 +25,15 @@
     .decl marker(col: Color) marker(2).
 }
 
-.init c = Consts
+.init params = Params
 
 // The piece: the cells that travel.
 .decl piece_cell(p: Position)
-piece_cell(P) :- in(P, Col), c.piece(Col).
+piece_cell(P) :- in(P, Col), params.piece(Col).
 
 // The corridor: every cell the piece may cover.
 .decl open(p: Position)
-open(P) :- in(P, Col), !c.bg(Col).
+open(P) :- in(P, Col), !params.bg(Col).
 
 // The piece fits at a displacement when its every cell lands in the corridor.
 .init fits = Occurrences<Unit, Unit>
@@ -71,7 +71,7 @@ rest(Delta, $Corridor()) :- stop(Delta), Delta != ORIGIN, onward.value(Delta, _)
 // What the marker still reaches with the piece standing at a stop.
 .init ahead = Reach<Shift>
 ahead.node(Delta, P) :- stop(Delta), open(P), !covered(Delta, P).
-ahead.seed(Delta, P) :- stop(Delta), in(P, Col), c.marker(Col).
+ahead.seed(Delta, P) :- stop(Delta), in(P, Col), params.marker(Col).
 
 // A stop the piece would pass on its way to the marker: another stop lies
 // between it and the marker.
@@ -86,9 +86,9 @@ rest(Delta, $Goal()) :- stop(Delta), !short_of(Delta).
 landed(P, Ch) :- rest(Delta, Ch), covered(Delta, P).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, Ch) :- landed(P, Ch), c.piece(Col).
+out(P, Col, Ch) :- landed(P, Ch), params.piece(Col).
 out(P, Col, Ch) :-
-    rest(_, Ch), !landed(P, Ch),      // a cell the piece leaves free
-    ( piece_cell(P), c.corridor(Col)  // where it stood, the corridor shows through
-    ; in(P, Col), !piece_cell(P)      // elsewhere, the input
+    rest(_, Ch), !landed(P, Ch),           // a cell the piece leaves free
+    ( piece_cell(P), params.corridor(Col)  // where it stood, the corridor shows through
+    ; in(P, Col), !piece_cell(P)           // elsewhere, the input
     ).

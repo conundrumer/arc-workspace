@@ -6,9 +6,9 @@
 // on out's Choice:
 //
 //   interior — $Lines: cells fenced off by full separator lines on all
-//              four sides; $Margin: cells at least c.margin inside.
+//              four sides; $Margin: cells at least params.margin inside.
 //   blank    — non-ink interior cells: $Pass passes them through; $Bg
-//              writes c.bg.
+//              writes params.bg.
 
 #include "../lib.dl"
 
@@ -16,7 +16,7 @@
 .type Blank = Pass {} | Bg {}
 .type Choice = [interior: Interior, blank: Blank]
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl ink(c: Color) ink(8).
 
@@ -30,13 +30,13 @@
     .decl bg(c: Color) bg(0).
 }
 
-.init c = Consts
+.init params = Params
 
 // The four corner colors, keyed by their corner.
 .decl corner_color(diag: DiagDir, col: Color)
 corner_color(Diag, Col) :- in(P, Col), corner_dist(P, Diag, 0).
 
-// The interior in its own frame; each claim supplies the margins the grid
+// The interior in its own frame; each hypothesis supplies the margins the grid
 // keeps outside it.
 .init frame = MarginFrame<Interior>
 
@@ -45,7 +45,7 @@ corner_color(Diag, Col) :- in(P, Col), corner_dist(P, Diag, 0).
 // A line lies across axis a, at the axis-only position l. Its defect: a cell
 // off the separator color.
 .decl off_line(a: Axis, l: Position)
-off_line(A, L) :- in(P, Col), !c.line(Col), axis_elem(A), split(P, A, L, _).
+off_line(A, L) :- in(P, Col), !params.line(Col), axis_elem(A), split(P, A, L, _).
 
 // The parts the separator lines cut the grid into.
 .init cut = DividerFrame<Unit>
@@ -75,7 +75,7 @@ frame.width($Lines(), D, K) :- box.edge_min($U(), D, K).
 // --- $Margin ---
 
 frame.cell($Margin(), P) :- in(P, _).
-frame.width($Margin(), D, K) :- dir_elem(D), c.margin(K).
+frame.width($Margin(), D, K) :- dir_elem(D), params.margin(K).
 
 // Quadrants of the interior, in its own frame.
 .init quad = DiagPlacement<Interior>
@@ -88,25 +88,25 @@ blank_elem($Pass()). blank_elem($Bg()).
 
 // Ink takes the corner color of its quadrant.
 out(I, Col, [Ic, Bl]) :-
-    in(P, Ink), c.ink(Ink), frame.inner(Ic, P, I),   // interior ink cell
+    in(P, Ink), params.ink(Ink), frame.inner(Ic, P, I),   // interior ink cell
     quad.quadrant(Ic, I, Diag), corner_color(Diag, Col),
     blank_elem(Bl).                                  // ink reads the same under either blank claim
 
 // --- $Pass ---
 
-out(I, Col, [Ic, $Pass()]) :- in(P, Col), !c.ink(Col), frame.inner(Ic, P, I).
+out(I, Col, [Ic, $Pass()]) :- in(P, Col), !params.ink(Col), frame.inner(Ic, P, I).
 
 // --- $Bg ---
 
-out(I, Col, [Ic, $Bg()]) :- in(P, C0), !c.ink(C0), frame.inner(Ic, P, I), c.bg(Col).
+out(I, Col, [Ic, $Bg()]) :- in(P, C0), !params.ink(C0), frame.inner(Ic, P, I), params.bg(Col).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
-    // The line-fenced interior — the boundary both interior claims read.
+.comp Determine {
+    // The line-fenced interior — the boundary both interior hypotheses read.
     .decl off_line(e: Example, a: Axis, l: Position)
     off_line(E, A, L) :-
-        ex_in(E, P, Col), !c.line(Col), axis_elem(A), split(P, A, L, _).
+        ex_in(E, P, Col), !params.line(Col), axis_elem(A), split(P, A, L, _).
 
     .init cut = DividerFrame<Example>
     cut.cell(E, P) :- ex_in(E, P, _).

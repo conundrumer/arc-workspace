@@ -1,16 +1,16 @@
 // 32597951
 // concept: markers mapping
-// Inside the bounding box of the marker cells, qualifying cells take c.to;
-// everything else passes through. Two claims of which cells qualify:
+// Inside the bounding box of the marker cells, qualifying cells take params.to;
+// everything else passes through. Two hypotheses of which cells qualify:
 //
-//   $From — cells of the stored color c.from.
+//   $From — cells of the stored color params.from.
 //   $Ink  — every non-marker cell.
 
 #include "../lib.dl"
 
 .type Choice = From {} | Ink {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl marker(c: Color) marker(8).
     .decl to(c: Color) to(3).
@@ -19,10 +19,10 @@
     .decl from(c: Color) from(1).
 }
 
-.init c = Consts
+.init params = Params
 
 .init box = Bbox<Unit>
-box.cell($U(), P) :- in(P, Col), c.marker(Col).
+box.cell($U(), P) :- in(P, Col), params.marker(Col).
 box.grid($U(), P) :- in(P, _).
 
 .decl impl_choice(ch: Choice)
@@ -31,11 +31,11 @@ impl_choice($From()). impl_choice($Ink()).
 .decl recolor(p: Position, ch: Choice)
 
 // --- From ---
-recolor(P, $From()) :- box.inside($U(), P), in(P, Col), c.from(Col).
+recolor(P, $From()) :- box.inside($U(), P), in(P, Col), params.from(Col).
 
 // --- Ink ---
-recolor(P, $Ink()) :- box.inside($U(), P), in(P, Col), !c.marker(Col).
+recolor(P, $Ink()) :- box.inside($U(), P), in(P, Col), !params.marker(Col).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, Ch) :- recolor(P, Ch), c.to(Col).
+out(P, Col, Ch) :- recolor(P, Ch), params.to(Col).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !recolor(P, Ch).

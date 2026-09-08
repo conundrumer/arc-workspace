@@ -4,7 +4,7 @@
 // cell of the other. Output is 1×1: the boxed cell's color.
 //
 // Cases (data-equivalent on this task):
-//   $Box()  — a c.dim square ring of one ink around a centered hole
+//   $Box()  — a params.dim square ring of one ink around a centered hole
 //   $Ring() — a cell whose surrounding cells all carry the other ink
 //   $Full() — a cell whose surrounding cells are all ink
 
@@ -12,7 +12,7 @@
 
 .type Choice = Box {} | Ring {} | Full {}
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color)
     bg(0).
 
@@ -21,17 +21,17 @@
     dim(3).
 }
 
-.init c = Consts
+.init params = Params
 
 // The input's ink colors.
 .decl ink(c: Color)
-ink(Col) :- in(_, Col), !c.bg(Col).
+ink(Col) :- in(_, Col), !params.bg(Col).
 
 .decl out(p: Position, col: Color, c: Choice)
 
 // --- Box ---
 .init box = Frame2D<Unit>
-box.extent($U(), A, K) :- axis_elem(A), c.dim(K).
+box.extent($U(), A, K) :- axis_elem(A), params.dim(K).
 
 // The box frame's outline.
 .decl ring(p: Position)
@@ -62,7 +62,7 @@ out(ORIGIN, Col, $Ring()) :-
 
 // --- Full ---
 .decl inked(p: Position)
-inked(P) :- in(P, Col), !c.bg(Col).
+inked(P) :- in(P, Col), !params.bg(Col).
 
 // Some surrounding cell of p is bg or off-grid.
 .decl gap(p: Position)

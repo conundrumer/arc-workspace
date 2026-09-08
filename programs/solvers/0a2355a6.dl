@@ -2,20 +2,20 @@
 // concept: objects enclose count lookup
 // Each ink object is repainted with the color its hole count selects.
 //
-// Two claims on what a hole is:
+// Two hypotheses on what a hole is:
 //   $Joint — a background region the grid edge cannot reach. Two objects can
 //            close one together, and it then counts for both.
 //   $Own   — a region the grid edge cannot reach with only that object solid.
 //            Every other object is transparent, so holes are intrinsic to an
 //            object.
 // The count tables are per-case: a task where an object plugs another's
-// cavity fits both claims at different counts, so the fills can differ.
+// cavity fits both hypotheses at different counts, so the fills can differ.
 
 #include "../lib.dl"
 
 .type Choice = Joint {} | Own {}
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
 
     // --- $Joint ---
@@ -29,7 +29,7 @@
     own_count_color(1, 1). own_count_color(2, 3). own_count_color(3, 2). own_count_color(4, 4).
 }
 
-.init c = Consts
+.init params = Params
 
 // --- parse ---
 
@@ -39,11 +39,11 @@
     .decl cell(key: Key, p: Position, col: Color)  // input
 
     .init objs = Components<Key>
-    objs.node(K, P) :- cell(K, P, Col), !c.bg(Col).
+    objs.node(K, P) :- cell(K, P, Col), !params.bg(Col).
 
     // The cells left when all ink is solid — the background.
     .init off_ink = Closed<Key>
-    off_ink.cell(K, P) :- cell(K, P, Col), c.bg(Col).
+    off_ink.cell(K, P) :- cell(K, P, Col), params.bg(Col).
 
     // Each object's hole regions when all ink closes jointly.
     .init joint_holes = Tally<KObj, Ident>
@@ -68,25 +68,25 @@ parse.cell($U(), P, Col) :- in(P, Col).
 impl_choice($Joint()). impl_choice($Own()).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, Ch) :- in(P, Col), c.bg(Col), impl_choice(Ch).
+out(P, Col, Ch) :- in(P, Col), params.bg(Col), impl_choice(Ch).
 
 // --- $Joint ---
 
 out(P, Col, $Joint()) :-
     parse.objs.label($U(), P, O),                // object cell
     parse.joint_holes.tally([$U(), O], N),       // its hole count
-    c.joint_count_color(N, Col).
+    params.joint_count_color(N, Col).
 
 // --- $Own ---
 
 out(P, Col, $Own()) :-
     parse.objs.label($U(), P, O),                // object cell
     parse.own_holes.tally([$U(), O], N),         // its hole count
-    c.own_count_color(N, Col).
+    params.own_count_color(N, Col).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     .init ex = Parse<Example>
     ex.cell(E, P, Col) :- ex_in(E, P, Col).
 

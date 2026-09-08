@@ -1,7 +1,7 @@
 // 1e81d6f9
 // concept: objects markers select
-// A marker cell at c.target_offset inside a corner-anchored L of c.mask_color
-// identifies a target color; that color is erased to c.bg everywhere else. Two
+// A marker cell at params.target_offset inside a corner-anchored L of params.mask_color
+// identifies a target color; that color is erased to params.bg everywhere else. Two
 // models of what is kept:
 //
 //   $Marker — only the marker cell is kept.
@@ -13,7 +13,7 @@
 
 .type Choice = Marker {} | Bbox {}
 
-.comp Consts {
+.comp Params {
     .decl target_corner(d: DiagDir) target_corner(DIAG_TL).
     .decl target_offset(off: number) target_offset(1).
     .decl bg(c: Color) bg(0).
@@ -23,15 +23,15 @@
     target_anchor(P) :- target_corner(Diag), target_offset(K), edge_delta(Diag, K, P).
 }
 
-.init c = Consts
+.init params = Params
 
 // --- shared: the marker identifies the target color ---
 
 .decl target_pos(p: Position)
 target_pos(P) :-
-    in(P, _),                                              // input cell
-    c.target_corner(Diag), c.target_anchor(P_anchor),      // marker anchor
-    corner_anchor(Diag, P_anchor, P).                      // match at corner
+    in(P, _),                                                        // input cell
+    params.target_corner(Diag), params.target_anchor(P_anchor),      // marker anchor
+    corner_anchor(Diag, P_anchor, P).                                // match at corner
 
 .decl target_color(c: Color)
 target_color(Col) :- in(P, Col), target_pos(P).
@@ -39,13 +39,13 @@ target_color(Col) :- in(P, Col), target_pos(P).
 // --- Bbox: the connected corner region of mask cells, bounded ---
 
 .decl mask(p: Position)
-mask(P) :- in(P, MaskCol), c.mask_color(MaskCol).
+mask(P) :- in(P, MaskCol), params.mask_color(MaskCol).
 
 // The frame's connected component, seeded from a mask cell on a corner edge;
 // a stray mask cell elsewhere does not touch those edges, so it stays out.
 .init region = Reach<Unit>
 region.node($U(), P) :- mask(P).
-region.seed($U(), P) :- mask(P), c.target_corner(Diag), dir_of(Diag, _, D), dist(P, D, 0).
+region.seed($U(), P) :- mask(P), params.target_corner(Diag), dir_of(Diag, _, D), dist(P, D, 0).
 
 // The region's bounding box over the input grid.
 .init box = Bbox<Unit>
@@ -56,16 +56,16 @@ box.grid($U(), P) :- in(P, _).
 
 // --- Marker --- only the marker cell is kept.
 out(P, Col_out, $Marker()) :-
-    in(P, Col),                                              // grid cell
-    ( !target_color(Col), Col_out = Col                      // non-target — passes
-    ; target_pos(P), Col_out = Col                           // the marker — kept
-    ; target_color(Col), !target_pos(P), c.bg(Col_out)       // target elsewhere — erased
+    in(P, Col),                                                   // grid cell
+    ( !target_color(Col), Col_out = Col                           // non-target — passes
+    ; target_pos(P), Col_out = Col                                // the marker — kept
+    ; target_color(Col), !target_pos(P), params.bg(Col_out)       // target elsewhere — erased
     ).
 
 // --- Bbox --- the whole corner region is kept.
 out(P, Col_out, $Bbox()) :-
-    in(P, Col),                                                    // grid cell
-    ( !target_color(Col), Col_out = Col                            // non-target — passes
-    ; box.inside($U(), P), Col_out = Col                           // in the region — kept
-    ; target_color(Col), !box.inside($U(), P), c.bg(Col_out)       // target outside — erased
+    in(P, Col),                                                         // grid cell
+    ( !target_color(Col), Col_out = Col                                 // non-target — passes
+    ; box.inside($U(), P), Col_out = Col                                // in the region — kept
+    ; target_color(Col), !box.inside($U(), P), params.bg(Col_out)       // target outside — erased
     ).

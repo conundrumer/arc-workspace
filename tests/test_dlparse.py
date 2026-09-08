@@ -59,20 +59,20 @@ def test_corpus_parses(request):
 
 
 def test_rule_and_fact():
-    p = parse("ink(P) :- in(P, C), !c.bg(C).\nseed(3).\n")
+    p = parse("ink(P) :- in(P, C), !params.bg(C).\nseed(3).\n")
     rule, fact = p.items
     assert isinstance(rule, Rule) and rule.body is not None
     assert isinstance(rule.body[1], Neg)
-    assert rule.body[1].atom.qual == "c"
+    assert rule.body[1].atom.qual == "params"
     assert isinstance(fact, Rule) and fact.body is None
 
 
 def test_qualified_chain_and_bool():
     p = parse(
-        "x(P) :- c.frame.pos(P).\n"
+        "x(P) :- params.frame.pos(P).\n"
         "compose(A, B) :- true.\n"
     )
-    assert p.items[0].body[0].qual == "c.frame"
+    assert p.items[0].body[0].qual == "params.frame"
     assert p.items[1].body == [Bool(True)]
 
 
@@ -91,7 +91,7 @@ def test_grid_fact_takes_no_period():
 
 
 def test_decl_line_fact():
-    p = parse(".comp Consts {\n    .decl bg(c: Color) bg(0).\n}\n")
+    p = parse(".comp Params {\n    .decl bg(c: Color) bg(0).\n}\n")
     decl, fact = p.items[0].items
     assert decl.name == "bg" and fact.head.name == "bg"
 
@@ -107,7 +107,7 @@ def test_disjunction():
     p = parse(
         "out(P, Col) :- in(P, _),\n"
         "    ( tile(P, Col)\n"
-        "    ; !tile(P, _), c.bg(Col)\n"
+        "    ; !tile(P, _), params.bg(Col)\n"
         "    ).\n"
     )
     disj = p.items[0].body[1]
@@ -191,17 +191,17 @@ def test_parse_error_positions():
 
 def test_index_resolution_and_roles():
     src = """\
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
 }
-.init c = Consts
+.init params = Params
 .decl ink(p: Position)
-ink(P) :- in(P, C), !c.bg(C).
+ink(P) :- in(P, C), !params.bg(C).
 .decl n(k: number)
 n(K) :- K = count : { ink(P) }.
 """
     ix = Index(parse(src))
-    assert [r.role for r in ix.refs_of(("Consts", "bg"))] == ["head", "neg"]
+    assert [r.role for r in ix.refs_of(("Params", "bg"))] == ["head", "neg"]
     roles = [r.role for r in ix.refs_of((TOP, "ink"))]
     assert roles == ["head", "agg"]
     assert ix.resolve(TOP, None, "in") == (EXTERN, "in")

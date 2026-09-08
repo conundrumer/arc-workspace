@@ -1,10 +1,10 @@
 // d10ecb37
 // concept: decompose crop select
-// Output is the 2×2 block at corner c.diag. The even-dimensioned inputs
+// Output is the 2×2 block at corner params.diag. The even-dimensioned inputs
 // leave the locate rule underdetermined:
 //
-//   $Corner() — a c.window block seated at the corner
-//   $Block()  — grid tiled by c.tile_dim blocks; the corner block
+//   $Corner() — a params.window block seated at the corner
+//   $Block()  — grid tiled by params.tile_dim blocks; the corner block
 //
 // A divisor arrangement is defeated: the 12×6 pair's corner tile is 6×3,
 // not 2×2.
@@ -13,8 +13,8 @@
 
 .type Choice = Corner {} | Block {}
 
-.comp Consts {
-    .init helpers = ConstsHelpers
+.comp Params {
+    .init helpers = ParamsHelpers
 
     // --- shared ---
     .decl diag(d: DiagDir)
@@ -29,18 +29,18 @@
     .decl tile_dim(k: number) tile_dim(2).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl out(p: Position, col: Color, c: Choice)
 
 // --- Corner ---
 out(P_out, Col, $Corner()) :-
-    in(P_in, Col),                                // input cell
-    c.window(P_out),                              // output position
-    c.diag(D), corner_anchor(D, P_out, P_in).     // corner-anchor match
+    in(P_in, Col),                                     // input cell
+    params.window(P_out),                              // output position
+    params.diag(D), corner_anchor(D, P_out, P_in).     // corner-anchor match
 
 // --- Block ---
 out(P_intile, Col, $Block()) :-
-    in(P_in, Col),                                                        // input cell
-    c.tile_dim(K), divide_by_size_2d(P_in, K, 0, P_tile, P_intile),       // tiling
-    c.diag(D), corner_anchor(D, P_tile, ORIGIN).                          // corner block
+    in(P_in, Col),                                                             // input cell
+    params.tile_dim(K), divide_by_size_2d(P_in, K, 0, P_tile, P_intile),       // tiling
+    params.diag(D), corner_anchor(D, P_tile, ORIGIN).                          // corner block

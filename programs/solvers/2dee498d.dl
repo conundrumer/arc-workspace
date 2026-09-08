@@ -5,7 +5,7 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl tile_axis(a: Axis)
     tile_axis(AXIS_H).
 
@@ -13,10 +13,10 @@
     tile_count(3).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl out(p: Position, col: Color)
 out(P_intile, Col) :-
-    in(P_in, Col),                                    // input cell
-    c.tile_axis(A), c.tile_count(N),                  // tile params
-    divide_slab(P_in, A, N, 0, _, P_intile).          // discard outer; intile is output
+    in(P_in, Col),                                      // input cell
+    params.tile_axis(A), params.tile_count(N),          // tile params
+    divide_slab(P_in, A, N, 0, _, P_intile).            // discard outer; intile is output

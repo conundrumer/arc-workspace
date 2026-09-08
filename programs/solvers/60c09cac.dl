@@ -5,18 +5,18 @@
 
 #include "../lib.dl"
 
-.comp Consts {
-    .init helpers = ConstsHelpers
+.comp Params {
+    .init helpers = ParamsHelpers
 
     .decl scale(k: number) scale(2).
     .decl intile(p: Position)
     intile(P) :- scale(K), helpers.frame_pos([K, K], P).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl out(p: Position, col: Color)
 out(P_grid_out, Col) :-
     in(P_tile, Col),                                  // input cell as tile pos
-    c.intile(P_intile),                               // intile pos (2×2 frame)
+    params.intile(P_intile),                          // intile pos (2×2 frame)
     concat_2d(P_tile, P_intile, 0, P_grid_out).       // 2D recompose

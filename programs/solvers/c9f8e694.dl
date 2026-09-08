@@ -1,13 +1,13 @@
 // c9f8e694
 // family: c7d4e6ad
-// Cells of color in c.targets are substituted with a per-slice replacement
-// color. Slices run along c.axis.
+// Cells of color in params.targets are substituted with a per-slice replacement
+// color. Slices run along params.axis.
 
 #include "../lib.dl"
 
 .type Choice = Anchor {} | Unique {}
 
-.comp Consts {
+.comp Params {
     // anchor
     .decl anchor(d: Dir) anchor(DIR_L).
 
@@ -17,19 +17,19 @@
     .decl axis(a: Axis) axis(AXIS_H).
 }
 
-.init c = Consts
+.init params = Params
 
 // Per-slice replacement color, parameterized by impl choice.
 .decl slice_repl(p_across: Position, col: Color, c: Choice)
 
 slice_repl(P_across, Col, $Anchor()) :-
     in(P, Col),
-    c.anchor(D), dist(P, D, 0),
-    c.axis(A), split(P, A, _, P_across).
+    params.anchor(D), dist(P, D, 0),
+    params.axis(A), split(P, A, _, P_across).
 
 slice_repl(P_across, Col, $Unique()) :-
-    in(P, Col), !c.targets(Col), !c.bg(Col),
-    c.axis(A), split(P, A, _, P_across).
+    in(P, Col), !params.targets(Col), !params.bg(Col),
+    params.axis(A), split(P, A, _, P_across).
 
 .decl impl_choice(ch: Choice)
 impl_choice($Anchor()).
@@ -38,8 +38,8 @@ impl_choice($Unique()).
 .decl out(p: Position, col: Color, c: Choice)
 out(P, Col_out, Impl) :-
     impl_choice(Impl), in(P, Col),
-    ( c.targets(Col),                             // a target cell
-      c.axis(A), split(P, A, _, P_across),
+    ( params.targets(Col),                             // a target cell
+      params.axis(A), split(P, A, _, P_across),
       slice_repl(P_across, Col_out, Impl)         // its slice's replacement
-    ; !c.targets(Col), Col_out = Col              // not a target — kept
+    ; !params.targets(Col), Col_out = Col         // not a target — kept
     ).

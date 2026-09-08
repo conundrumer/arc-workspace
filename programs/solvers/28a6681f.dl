@@ -5,7 +5,7 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
 
     .decl water(col: Color) water(1).
@@ -13,16 +13,16 @@
     .decl gravity(d: Dir) gravity(DIR_B).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl wall(p: Position)
-wall(P) :- in(P, Col), !c.bg(Col), !c.water(Col).
+wall(P) :- in(P, Col), !params.bg(Col), !params.water(Col).
 
 .decl parcel(p: Position)
-parcel(P) :- in(P, Col), c.water(Col).
+parcel(P) :- in(P, Col), params.water(Col).
 
 .decl lateral(d: Dir)
-lateral(L) :- c.gravity(D), perp_dir(D, L).
+lateral(L) :- params.gravity(D), perp_dir(D, L).
 
 // The grid's adjacency — materialized, since the settling recursion reads a
 // step per cell per turn.
@@ -35,9 +35,9 @@ adj(P, D, Q) :- in(P, _), dir_elem(D), neighbor(P, D, Q), in(Q, _).
 // settle differently; the task privileges neither, so both run, keyed by
 // sense.
 .init lex = LexOrder<Sense>
-lex.axis(S, A) :- sense_elem(S), c.gravity(D), axis_of(D, A).
+lex.axis(S, A) :- sense_elem(S), params.gravity(D), axis_of(D, A).
 lex.corner(S, Diag) :-
-    c.gravity(D), turn(S, D, L), diag_dirs(Diag, _, D, L).
+    params.gravity(D), turn(S, D, L), diag_dirs(Diag, _, D, L).
 lex.cell(S, P) :- sense_elem(S), parcel(P).
 
 // The state a turn opens on: the cells its parcel may still enter (untaken)
@@ -52,11 +52,11 @@ state.init_untaken(S, P) :- sense_elem(S), in(P, _), !wall(P).
 // What an untaken cell has under it: open space to fall through, or footing.
 .decl hangs(s: Sense, t: Position, p: Position)
 hangs(S, T, P) :-
-    state.untaken(S, T, P), c.gravity(D), adj(P, D, Q), state.untaken(S, T, Q).
+    state.untaken(S, T, P), params.gravity(D), adj(P, D, Q), state.untaken(S, T, Q).
 
 .decl stands(s: Sense, t: Position, p: Position)
 stands(S, T, P) :-
-    state.untaken(S, T, P), c.gravity(D),
+    state.untaken(S, T, P), params.gravity(D),
     ( adj(P, D, Q), state.taken(S, T, Q)   // footing on a taken cell
     ; dist(P, D, 0)                        // footing on the grid's edge
     ).
@@ -84,7 +84,7 @@ held(S, T, P, L) :-
 path(S, T, T) :- sense_elem(S), parcel(T).
 path(S, T, Q) :-
     path(S, T, P), adj(P, D, Q),
-    ( hangs(S, T, P), c.gravity(D)        // falls into the open cell below
+    ( hangs(S, T, P), params.gravity(D)   // falls into the open cell below
     ; stands(S, T, P), drain(S, T, P, D)  // or steps along its line toward one
     ).
 
@@ -98,7 +98,7 @@ rest(S, T, P) :-
 .decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, C), sense_elem(S),
-    ( wall(P), Col = C                       // a wall keeps its color
-    ; rest(S, _, P), c.water(Col)            // settled water
-    ; !wall(P), !rest(S, _, P), c.bg(Col)    // everywhere else
+    ( wall(P), Col = C                            // a wall keeps its color
+    ; rest(S, _, P), params.water(Col)            // settled water
+    ; !wall(P), !rest(S, _, P), params.bg(Col)    // everywhere else
     ).

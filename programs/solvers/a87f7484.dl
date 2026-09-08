@@ -11,21 +11,21 @@
 
 .type Choice = Count {} | Shape {}
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
     .decl tile_dim(k: number) tile_dim(3).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl tile_val(p_tile: Position, p_intile: Position, col: Color)
 tile_val(T, P, Col) :-
     in(P_grid, Col),
-    c.tile_dim(K),
+    params.tile_dim(K),
     divide_by_size_2d(P_grid, K, 0, T, P).
 
 .decl ink(p_tile: Position, p_intile: Position)
-ink(T, P) :- tile_val(T, P, Col), !c.bg(Col).
+ink(T, P) :- tile_val(T, P, Col), !params.bg(Col).
 
 .decl out(p: Position, col: Color, c: Choice)
 

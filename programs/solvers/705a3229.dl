@@ -5,14 +5,14 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl mark(col: Color, p: Position)
-mark(Col, P) :- in(P, Col), !c.bg(Col).
+mark(Col, P) :- in(P, Col), !params.bg(Col).
 
 // The dirs a mark casts toward: the strictly nearer edge on each axis.
 .decl cast(col: Color, d: Dir)

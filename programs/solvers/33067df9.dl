@@ -12,7 +12,7 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
 
     // Lattice widths.
@@ -25,30 +25,30 @@
     .decl run_axis(a: Axis) run_axis(AXIS_H).
 }
 
-.init c = Consts
+.init params = Params
 
 // --- the input lattice ---
 
 .init in_border = MarginFrame<Unit>
 in_border.cell($U(), P_grid_in) :- in(P_grid_in, _).
-in_border.width($U(), D, K) :- dir_elem(D), c.in_line(K).
+in_border.width($U(), D, K) :- dir_elem(D), params.in_line(K).
 
 // The color each lattice tile holds.
 .decl tile_col(p_tile: Position, col: Color)
 tile_col(P_tile, Col) :-
     in(P_grid_in, Col), in_border.inner($U(), P_grid_in, P_field),  // a cell off the lines
-    c.in_tile(K), c.in_line(G),
+    params.in_tile(K), params.in_line(G),
     divide_by_size_2d(P_field, K, G, P_tile, _).                    // the tile it fills
 
 .decl ink(p_tile: Position, col: Color)
-ink(P_tile, Col) :- tile_col(P_tile, Col), !c.bg(Col).
+ink(P_tile, Col) :- tile_col(P_tile, Col), !params.bg(Col).
 
 // --- runs ---
 
 // Like tiles neighboring along the run axis make a run.
 .init run = Slide<Color>
 run.node(Col, P_tile) :- ink(P_tile, Col).
-run.dir(Col, D) :- ink(_, Col), c.run_axis(A), axis_of(D, A).
+run.dir(Col, D) :- ink(_, Col), params.run_axis(A), axis_of(D, A).
 
 // How far the run reaches toward d, as its end tile's distance to edge d.
 .decl run_reach(p_tile: Position, d: Dir, k: number)
@@ -65,9 +65,9 @@ span.edge(P_tile, D, K) :- run_reach(P_tile, D, K).
 
 .decl join(p_tile: Position, q_tile: Position)
 join(P_tile, Q_tile) :-
-    ink(P_tile, Col), ink(Q_tile, Col), c.run_axis(A),   // like tiles
-    ( axis_of(D, A), neighbor(P_tile, D, Q_tile)         // one step along the run axis
-    ; perp(A, A2), axis_of(D_across, A2),                // or one step across it,
+    ink(P_tile, Col), ink(Q_tile, Col), params.run_axis(A),   // like tiles
+    ( axis_of(D, A), neighbor(P_tile, D, Q_tile)              // one step along the run axis
+    ; perp(A, A2), axis_of(D_across, A2),                     // or one step across it,
       neighbor(P_tile, D_across, Q_tile),
       span.axis_pos(P_tile, A, P_span),
       span.axis_pos(Q_tile, A, P_span)                   // over the same tiles
@@ -81,18 +81,18 @@ group.equiv(P_tile, R_tile) :- group.equiv(P_tile, Q_tile), join(Q_tile, R_tile)
 // --- the output lattice ---
 
 .init canvas = Frame2D<Unit>
-canvas.extent($U(), A, N) :- axis_elem(A), c.canvas_side(N).
+canvas.extent($U(), A, N) :- axis_elem(A), params.canvas_side(N).
 
 .init out_border = MarginFrame<Unit>
 out_border.cell($U(), P_grid_out) :- canvas.cell($U(), P_grid_out).
-out_border.width($U(), D, K) :- dir_elem(D), c.out_line(K).
+out_border.width($U(), D, K) :- dir_elem(D), params.out_line(K).
 
 // The canvas holds as many tiles as the input does, so its field fixes how
 // large they come out.
 .init out_cells = Divide2D<Unit>
 out_cells.cell(P_field) :- out_border.inner($U(), _, P_field).
 out_cells.dim($U(), A, N) :- tile_col(P_tile, _), axis_elem(A), axis_dim(P_tile, A, N).
-out_cells.gap(G) :- c.out_line(G).
+out_cells.gap(G) :- params.out_line(G).
 
 // --- render ---
 
@@ -111,6 +111,6 @@ paint(P_grid_out, Col) :-
 .decl out(p: Position, col: Color)
 out(P_grid_out, Col) :-
     canvas.cell($U(), P_grid_out),
-    ( paint(P_grid_out, Col)              // a group's box
-    ; !paint(P_grid_out, _), c.bg(Col)    // bare canvas
+    ( paint(P_grid_out, Col)                   // a group's box
+    ; !paint(P_grid_out, _), params.bg(Col)    // bare canvas
     ).

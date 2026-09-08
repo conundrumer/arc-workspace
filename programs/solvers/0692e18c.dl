@@ -7,11 +7,11 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
 }
 
-.init c = Consts
+.init params = Params
 
 // Output decomposition: tile index × intile position, both input-frame cells.
 .decl cell(p_grid: Position, p_tile: Position, p_intile: Position)
@@ -20,7 +20,7 @@ cell(P_grid_out, P_tile, P_intile) :-
     concat_2d(P_tile, P_intile, 0, P_grid_out).
 
 .decl active(p: Position)
-active(P) :- in(P, Col), !c.bg(Col).
+active(P) :- in(P, Col), !params.bg(Col).
 
 // Stamp cells: active tile, inverted intile.
 .decl stamped(p_grid: Position, p_tile: Position)
@@ -30,5 +30,5 @@ stamped(P_grid_out, P_tile) :-
 .decl out(p: Position, col: Color)
 out(P_grid_out, Col) :- stamped(P_grid_out, P_tile), in(P_tile, Col).
 out(P_grid_out, Bg) :-
-    cell(P_grid_out, _, _), c.bg(Bg),
+    cell(P_grid_out, _, _), params.bg(Bg),
     !stamped(P_grid_out, _).

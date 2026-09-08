@@ -1,7 +1,7 @@
 // 6d75e8bb
 // concept: objects
-// A shape over bg; bg cells inside its bounding box recolor c.fill. Two
-// claims of what owns a box, tagged on out's Choice:
+// A shape over bg; bg cells inside its bounding box recolor params.fill. Two
+// hypotheses of what owns a box, tagged on out's Choice:
 //
 //   $Whole — one box over all ink.
 //   $Each  — per 8-connected component: each component's own box.
@@ -10,15 +10,15 @@
 
 .type Choice = Whole {} | Each {}
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
     .decl fill(c: Color) fill(2).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl ink(p: Position)
-ink(P) :- in(P, Col), !c.bg(Col).
+ink(P) :- in(P, Col), !params.bg(Col).
 
 .decl filled(p: Position, ch: Choice)
 
@@ -28,7 +28,7 @@ ink(P) :- in(P, Col), !c.bg(Col).
 box.cell($U(), P) :- ink(P).
 box.grid($U(), P) :- in(P, _).
 
-filled(P, $Whole()) :- in(P, Col), c.bg(Col), box.inside($U(), P).
+filled(P, $Whole()) :- in(P, Col), params.bg(Col), box.inside($U(), P).
 
 // --- $Each ---
 
@@ -39,11 +39,11 @@ comps.node($U(), P) :- ink(P).
 comp_box.cell(Id, P) :- comps.label($U(), P, Id).
 comp_box.grid(Id, P) :- comps.label($U(), _, Id), in(P, _).
 
-filled(P, $Each()) :- in(P, Col), c.bg(Col), comp_box.inside(_, P).
+filled(P, $Each()) :- in(P, Col), params.bg(Col), comp_box.inside(_, P).
 
 .decl impl_choice(ch: Choice)
 impl_choice($Whole()). impl_choice($Each()).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, F, Ch)   :- filled(P, Ch), c.fill(F).
+out(P, F, Ch)   :- filled(P, Ch), params.fill(F).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !filled(P, Ch).

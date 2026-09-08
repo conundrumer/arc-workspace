@@ -1,7 +1,7 @@
 // 0dfd9992
 // concept: wallpaper symmetry repair
 // A wallpaper pattern damaged by holes of one color; the output restores
-// it. The task fixes the point group its patterns share (Consts); each
+// it. The task fixes the point group its patterns share (a parameter); each
 // input's survivors identify the rest: first the translation lattice —
 // per axis, the shortest witnessed shift no surviving pair contradicts —
 // then the group as lattice-reduced representatives: isometries of the
@@ -13,14 +13,14 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl hole(col: Color) hole(0).
 
     // The point group shared by the task's patterns.
     .decl point_group(s: Sym) point_group(SYM_D4).
 }
 
-.init c = Consts
+.init params = Params
 
 // --- wallpaper comp ---
 
@@ -130,7 +130,7 @@
     .decl kind(d: D4)                                 // input
 
     .decl intact(key: Key, p: Position, col: Color)
-    intact(Key, P, Col) :- in_cell(Key, P, Col), !c.hole(Col).
+    intact(Key, P, Col) :- in_cell(Key, P, Col), !params.hole(Col).
 
     .init si = ShiftInvariance<Key, Color>
     si.cell(Key, P, Col) :- intact(Key, P, Col).
@@ -150,15 +150,15 @@
 
 .init parse = Parse<Unit>
 parse.in_cell($U(), P, Col) :- in(P, Col).
-parse.kind(D) :- c.point_group(S), sym_member(S, D).
+parse.kind(D) :- params.point_group(S), sym_member(S, D).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- parse.intact($U(), P, Col).
 out(Q, Col) :- out(P, Col), parse.step($U(), P, Q).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     // Detection per example, over every kind.
     .init parse = Parse<Example>
     parse.in_cell(E, P, Col) :- ex_in(E, P, Col).

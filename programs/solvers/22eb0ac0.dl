@@ -1,7 +1,7 @@
 // 22eb0ac0
 // concept: lines markers span
-// Marker cells sit on the two c.axis edges; a line whose two edge cells hold
-// the same color fills with it, the rest passes through. Two claims of where
+// Marker cells sit on the two params.axis edges; a line whose two edge cells hold
+// the same color fills with it, the rest passes through. Two hypotheses of where
 // markers may sit and what fills, tagged on out's Choice:
 //
 //   $Flood — matching markers on a line's two edge cells flood the whole line.
@@ -12,12 +12,12 @@
 
 .type Choice = Flood {} | Span {}
 
-.comp Consts {
+.comp Params {
     .decl axis(a: Axis) axis(AXIS_H).   // lines run along this axis
     .decl bg(c: Color) bg(0).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl out(p: Position, col: Color, ch: Choice)
 
@@ -26,22 +26,22 @@
 // Line (keyed by across component) whose two edge cells hold the same marker color.
 .decl edge_match(ac: Position, col: Color)
 edge_match(Ac, Col) :-
-    c.axis(A), axis_of(D, A), opposite(D, D2),            // the line's two edges
+    params.axis(A), axis_of(D, A), opposite(D, D2),       // the line's two edges
     in(P1, Col), dist(P1, D, 0), split(P1, A, _, Ac),     // marker on edge d
     in(P2, Col), dist(P2, D2, 0), split(P2, A, _, Ac).    // same color opposite, same line
 
 out(P, Col_out, $Flood()) :-
-    in(P, Col), c.axis(A), split(P, A, _, Ac),   // grid cell, its line
-    ( edge_match(Ac, Col_out)                    // the line's two edges agree — flood
-    ; !edge_match(Ac, _), Col_out = Col          // no match — cell as-is
+    in(P, Col), params.axis(A), split(P, A, _, Ac),   // grid cell, its line
+    ( edge_match(Ac, Col_out)                         // the line's two edges agree — flood
+    ; !edge_match(Ac, _), Col_out = Col               // no match — cell as-is
     ).
 
 // --- Span ---
 
 .init spans = Between<Color>
-spans.axis(Col, A) :- spans.mark(Col, _), c.axis(A).
+spans.axis(Col, A) :- spans.mark(Col, _), params.axis(A).
 spans.cell(Col, P) :- spans.mark(Col, _), in(P, _).
-spans.mark(Col, Q) :- in(Q, Col), !c.bg(Col).
+spans.mark(Col, Q) :- in(Q, Col), !params.bg(Col).
 
 out(P, Col, $Span()) :- spans.between(Col, P).
 out(P, Col, $Span()) :- in(P, Col), !spans.between(_, P).

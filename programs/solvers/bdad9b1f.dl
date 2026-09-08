@@ -1,11 +1,11 @@
 // bdad9b1f
 // concept: lines lookup border
 // Two 2-cell segments on bg, each seated on a grid edge. Each extends
-// into a full line; the cell where the lines cross gets c.cross. Three
+// into a full line; the cell where the lines cross gets params.cross. Three
 // models of the extension axis:
 //
 //   $Shape — the segment's own axis: its cells share an across position.
-//   $Role  — c.role names each color's axis.
+//   $Role  — params.role names each color's axis.
 //   $Edge  — each ink cell on an edge casts its line away from it.
 //
 // Coincide here (each segment points along its color's role axis and
@@ -17,7 +17,7 @@
 .type Choice = Shape {} | Role {} | Edge {}
 .type CellChoice = [p: Position, ch: Choice]
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
     .decl cross(c: Color) cross(4).
 
@@ -26,10 +26,10 @@
     role(8, AXIS_V). role(2, AXIS_H).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl ink(p: Position, col: Color)
-ink(P, Col) :- in(P, Col), !c.bg(Col).
+ink(P, Col) :- in(P, Col), !params.bg(Col).
 
 // The line color Col paints: extension axis, across position.
 .decl line(col: Color, a: Axis, p_across: Position, ch: Choice)
@@ -41,7 +41,7 @@ line(Col, A, Ac, $Shape()) :-
 
 // --- $Role ---
 line(Col, A, Ac, $Role()) :-
-    ink(P, Col), c.role(Col, A), split(P, A, _, Ac).
+    ink(P, Col), params.role(Col, A), split(P, A, _, Ac).
 
 // --- $Edge ---
 line(Col, A, Ac, $Edge()) :-
@@ -56,17 +56,17 @@ on_line.item([P, Ch], Col) :- in(P, _), line(Col, A, Ac, Ch), split(P, A, _, Ac)
 impl_choice($Shape()). impl_choice($Role()). impl_choice($Edge()).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, Cx, Ch)  :- on_line.clash([P, Ch]), c.cross(Cx).
+out(P, Cx, Ch)  :- on_line.clash([P, Ch]), params.cross(Cx).
 out(P, Col, Ch) :- on_line.value([P, Ch], Col).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !on_line.item([P, Ch], _).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     // A color's segment cells agree across only on its own axis.
     .decl role(col: Color, a: Axis)
     role(Col, A) :-
-        ex_in(E, P1, Col), !c.bg(Col),
+        ex_in(E, P1, Col), !params.bg(Col),
         ex_in(E, P2, Col), P1 != P2,
         axis_elem(A), same_line(A, P1, P2).
 }

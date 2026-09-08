@@ -12,32 +12,32 @@
 
 .type Choice = Exact {} | Fit {}
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
     .decl base_dir(d: Dir) base_dir(DIR_L).   // edge the base tile sits toward
     .decl tile_count(n: number) tile_count(2).
     .decl gap(g: number) gap(1).            // separator width
 }
 
-.init c = Consts
+.init params = Params
 
 .decl tile_val(p_tile: Position, p_intile: Position, col: Color)
 tile_val(T, P, Col) :-
     in(P_grid, Col),
-    c.base_dir(D), axis_of(D, A),      // tile axis
-    c.tile_count(N), c.gap(G),
+    params.base_dir(D), axis_of(D, A),      // tile axis
+    params.tile_count(N), params.gap(G),
     divide_slab(P_grid, A, N, G, T, P).
 
 .decl base(p: Position, col: Color)
-base(P, Col) :- tile_val(T, P, Col), c.base_dir(D), dist(T, D, 0).
+base(P, Col) :- tile_val(T, P, Col), params.base_dir(D), dist(T, D, 0).
 
 .decl piece(p: Position, col: Color)
 piece(P, Col) :-
-    tile_val(T, P, Col), !c.bg(Col),                 // ink cell
-    c.base_dir(D), opposite(D, O), dist(T, O, 0).    // in the far tile
+    tile_val(T, P, Col), !params.bg(Col),                 // ink cell
+    params.base_dir(D), opposite(D, O), dist(T, O, 0).    // in the far tile
 
 .decl hole(p: Position)
-hole(P) :- base(P, Col), c.bg(Col).
+hole(P) :- base(P, Col), params.bg(Col).
 
 .decl impl_choice(ch: Choice)
 impl_choice($Exact()). impl_choice($Fit()).

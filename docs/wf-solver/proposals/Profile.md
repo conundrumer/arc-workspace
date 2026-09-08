@@ -33,7 +33,7 @@ Match: a defect rule joining two cells of one set through `same_line` on a direc
 
 Survey: 2026-08-31 09:57
 
-Result: over the 423 solvers, no site outside the surfacing solver holds the operation. The 45 `same_line` references and 24 parser-matched dist-comparison rules elsewhere state orders, spans, sidedness, walks, and per-object extremum ranks, with no per-line fold. One near-miss could be served at the same length: 505fff84's `Fit.side`, a per-row two-marker extremum that today reads the pair directly under a `Row` key. The other near-misses resolve to `Bbox.edge_cell`, `Extremes`, `Rim`, or `Ray` under the `Not:` line. The survey also found reimplementations of existing primitives, routed to `migrate` without a verdict: `Bbox.edge_min` at 13713586, 22a4bbc2, 1ae2feb7; `Rim.rim_dir` at 2b83f449.
+Result: over the 423 solvers, no site outside the surfacing solver holds the operation. The 45 `same_line` references and 24 parser-matched dist-comparison rules elsewhere state orders, spans, sidedness, walks, and per-object extremum ranks, with no per-line fold. One near-miss could be served at the same length: 505fff84's `Determine.side`, a per-row two-marker extremum that today reads the pair directly under a `Row` key. The other near-misses resolve to `Bbox.edge_cell`, `Extremes`, `Rim`, or `Ray` under the `Not:` line. The survey also found reimplementations of existing primitives, routed to `migrate` without a verdict: `Bbox.edge_min` at 13713586, 22a4bbc2, 1ae2feb7; `Rim.rim_dir` at 2b83f449.
 
 Callers:
 - 16b78196 — `face` (silhouette: blockers are the set itself), as an `ArgExtremes` instance whose record key carries the object, the direction, and the line.

@@ -13,7 +13,7 @@
 
 .type Choice = Grow {} | Stamp {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl marker(c: Color) marker(2).
 
@@ -32,23 +32,23 @@
     seat(Ps) :- template(Ps, M), marker(M).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl marker_at(p: Position)
-marker_at(P) :- in(P, Col), c.marker(Col).
+marker_at(P) :- in(P, Col), params.marker(Col).
 
 .decl halo(p: Position, col: Color, ch: Choice)
 
 // --- $Grow ---
 halo(P, Col, $Grow()) :-
-    marker_at(M), c.halo(Col),
+    marker_at(M), params.halo(Col),
     dir8_elem(D), neighbor(M, D, P), in(P, _).
 
 // --- $Stamp ---
 halo(P, Col, $Stamp()) :-
-    marker_at(Q), c.template(Pt, Col),       // a marker, a template cell
-    c.seat(Ps), displacement(Ps, Pt, Off),   // the cell's offset from the seat
-    compose(Q, Off, P), in(P, _).            // seated on the marker, on-grid
+    marker_at(Q), params.template(Pt, Col),       // a marker, a template cell
+    params.seat(Ps), displacement(Ps, Pt, Off),   // the cell's offset from the seat
+    compose(Q, Off, P), in(P, _).                 // seated on the marker, on-grid
 
 .decl impl_choice(ch: Choice)
 impl_choice($Grow()). impl_choice($Stamp()).
@@ -57,12 +57,12 @@ impl_choice($Grow()). impl_choice($Stamp()).
 out(P, Col, Ch) :- halo(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !halo(P, _, Ch).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     // A second marker in the pair leaves a repainted cell no unique source.
     .init pair_marker = Unanimous<Example, Position>
-    pair_marker.item(E, P) :- ex_in(E, P, Col), c.marker(Col).
+    pair_marker.item(E, P) :- ex_in(E, P, Col), params.marker(Col).
 
     .decl footprint(m: Position, p: Position, col: Color)
     footprint(M, P, Col) :-

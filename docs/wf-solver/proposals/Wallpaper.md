@@ -7,7 +7,7 @@ lattice: one representative per coset, its shift drawn from the lattice's
 fundamental domain, and square-checked against the lattice where the kind
 squares to the identity (a symmetry's square is a translation, and the
 group's translations are the lattice). `ShiftInvariance.period` feeds the
-`period` input directly. Lib target: body comp beside `ShiftInvariance`;
+`period` input directly. Lib target: program comp beside `ShiftInvariance`;
 `Gen` moves beside it.
 
 ```
@@ -23,7 +23,7 @@ group's translations are the lattice). `ShiftInvariance.period` feeds the
     .decl sym(key: Key, g: Gen)
 
     // Kinds with an admitted representative; the identity kind whenever a
-    // lattice exists. A Sym-naming Fit reads this.
+    // lattice exists. A Sym-naming determination reads this.
     .decl kind_used(key: Key, d: D4)
 
     // One step along an admitted isometry or a lattice shift, over the
@@ -42,14 +42,14 @@ group's translations are the lattice). `ShiftInvariance.period` feeds the
 
 **Caller.** 0dfd9992: wallpaper repair —
 `Parse` feeds detected per-axis periods and the stored point group's
-kinds; `out` closes survivor colors over `step`; its Fit names the
+kinds; `out` closes survivor colors over `step`; its determination names the
 kinds every example uses as a `point_group` Sym value.
 
 Not: translation periodicity alone (`ShiftInvariance`); a fixed-frame symmetry (`D4Map`); a reflection about a line the data names.
 
 Match: `ShiftInvariance`, `sym_member`, `apply(D`, `mismatch`, `witnessed`, `period`.
 
-Callers: 0dfd9992 alone. Near: af22c60d, 981571dc with its twin 47996f11, 0934a4d8 (Fit), 1b60fb0c search a mirror line or rotation center over an aperiodic pattern, where the comp tries no shift; the Fit sites factor the search per axis over line indices.
+Callers: 0dfd9992 alone. Near: af22c60d, 981571dc with its twin 47996f11, 0934a4d8 (determination), 1b60fb0c search a mirror line or rotation center over an aperiodic pattern, where the comp tries no shift; the determination sites factor the search per axis over line indices.
 
 Interface: `step` would carry its generator, `step(key, g, p, q)`; `period` stays an input; an aperiodic axis contributing its full extent would serve the four sites, but their per-axis factoring reads as a separate reflection-axis primitive.
 

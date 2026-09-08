@@ -20,9 +20,9 @@
 
 .type Choice = Rank {} | Hue {}
 
-.comp Consts {}
+.comp Params {}
 
-.init c = Consts
+.init params = Params
 
 .decl impl_choice(ch: Choice)
 impl_choice($Rank()). impl_choice($Hue()).

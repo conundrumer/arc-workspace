@@ -1,8 +1,8 @@
 // 12422b43
 // concept: lines markers stamp
-// A c.marker bar anchored at the edge opposite c.flow spans the unit lines;
+// A params.marker bar anchored at the edge opposite params.flow spans the unit lines;
 // ink (non-bg, non-marker) fills the leading lines. The unit lines' ink
-// repeats along c.flow over the bg remainder.
+// repeats along params.flow over the bg remainder.
 //
 // Two models place the copies:
 //   $Stamp — seat the unit one pattern-length past itself, then step it one
@@ -14,27 +14,27 @@
 
 .type Choice = Stamp {} | Tile {}
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
     .decl marker(c: Color) marker(5).
     .decl flow(d: Dir) flow(DIR_B).
 }
 
-.init c = Consts
+.init params = Params
 
 // Cell with its line index from the anchor edge.
 .decl cell_line(p: Position, col: Color, r: number)
-cell_line(P, Col, R) :- in(P, Col), c.flow(D), opposite(D, O), dist(P, O, R).
+cell_line(P, Col, R) :- in(P, Col), params.flow(D), opposite(D, O), dist(P, O, R).
 
 // Pattern ink.
 .decl ink(p: Position, col: Color, r: number)
-ink(P, Col, R) :- cell_line(P, Col, R), !c.bg(Col), !c.marker(Col).
+ink(P, Col, R) :- cell_line(P, Col, R), !params.bg(Col), !params.marker(Col).
 
 .decl ink_line(r: number)
 ink_line(R) :- ink(_, _, R).
 
 .decl marker_line(r: number)
-marker_line(R) :- cell_line(_, Col, R), c.marker(Col).
+marker_line(R) :- cell_line(_, Col, R), params.marker(Col).
 
 // The unit: ink of the marker-spanned lines.
 .decl unit(p: Position, col: Color, r: number)
@@ -54,7 +54,7 @@ copy(P2, Col, $Stamp()) :-
     ( unit(P1, Col, _), pat_len.tally($U(), N)          // seed: one pattern-length on
     ; copy(P1, Col, $Stamp()), unit_len.tally($U(), N)  // grow: one unit-length on
     ),
-    c.flow(D), jump(P1, D, N, P2), in(P2, _).   // lands on the grid
+    params.flow(D), jump(P1, D, N, P2), in(P2, _).   // lands on the grid
 
 // --- $Tile ---
 
@@ -64,7 +64,7 @@ region_frame.cell($U(), P) :- cell_line(P, _, R), !ink_line(R).
 
 copy(P, Col, $Tile()) :-
     region_frame.inner($U(), P, I),
-    c.flow(D), axis_of(D, A), opposite(D, O),
+    params.flow(D), axis_of(D, A), opposite(D, O),
     unit_len.tally($U(), K), divide_by_size(I, A, K, 0, _, P_intile),   // unit-sized tiles
     dist(P_intile, O, R), unit(P_u, Col, R),   // unit line at the tile offset
     same_line(A, P, P_u).

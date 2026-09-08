@@ -11,11 +11,11 @@ from pathlib import Path
 from arc.task import Alt, Example
 from dl.corpus import literal_count
 from dl.deletions import deletion_report, render_deletions
+from dl.determination_plan import probe_report, render_determination_plan
+from dl.determine import DetermineResult, render_determine, run_determine
 from dl.dlparse import ParseError, parse
 from dl.facts import parse_grid
-from dl.fit import FitResult, render_fit, run_fit
-from dl.fit_plan import probe_report, render_fit_plan
-from dl.lint import LIB_NAME_CAT, RESERVED_CAT, SHADOWED_TYPE_CAT, lint_body
+from dl.lint import LIB_NAME_CAT, RESERVED_CAT, SHADOWED_TYPE_CAT, lint_program
 from dl.paths import SOLVERS_DIR, all_stems
 from dl.render import _grid_lines, render_pair_failure, render_stem_failures
 from dl.rewrite_lint import HINTS, lint_rewrites
@@ -42,7 +42,7 @@ LINT_TIERS = ("lint", "rewrite", "hint")
 def _lint_tiers(source: str, hints: bool) -> list[Findings]:
     """Findings per tier, in LINT_TIERS order; the hint tier is empty
     unless enabled."""
-    style: Findings = lint_body(source)
+    style: Findings = lint_program(source)
     dec: Findings = []
     adv: Findings = []
     for f in lint_rewrites(source, hints):
@@ -95,7 +95,7 @@ def _print_findings(stems: list[str], hints: bool) -> str | None:
 def cmd_lint(
     stem: str | None, hints: bool = False,
 ) -> int:
-    """Lint only: no solver runs, no fit checks, no Souffle needed."""
+    """Lint only: no solver runs, no determination checks, no Souffle needed."""
     if stem is not None and _missing(stem):
         return 2
     verdict = _print_findings([stem] if stem else all_stems(), hints)
@@ -116,7 +116,7 @@ def _compile_failed(stem: str) -> bool:
     """Print a source-level Souffle error, once, before anything runs it.
 
     Every grid the solver would see fails on the same error, so the pair
-    loop and the fit check would each print another copy of it. Souffle
+    loop and the determination check would each print another copy of it. Souffle
     decides; a reserved name or a shadowed type argument prints beside its
     message, since that message names a token class or a rule variable
     where the collision is what the author has to read."""
@@ -125,7 +125,7 @@ def _compile_failed(stem: str) -> bool:
         return False
     print(f"{stem}.dl: {err}")
     source = (SOLVERS_DIR / f"{stem}.dl").read_text()
-    collisions = [f for f in lint_body(source)
+    collisions = [f for f in lint_program(source)
                   if f[0] in (RESERVED_CAT, SHADOWED_TYPE_CAT, LIB_NAME_CAT)]
     if collisions:
         print("likely cause:")
@@ -181,19 +181,19 @@ def cmd_one(stem: str, hints: bool = False, timed: bool = False) -> int:
     verdict = _print_lint_tiers(stem, hints)
 
     t0 = time.perf_counter()
-    fit = run_fit(stem)
-    fit_secs = time.perf_counter() - t0
+    determination = run_determine(stem)
+    determine_secs = time.perf_counter() - t0
     print()
     if verdict is not None:
         print(verdict)
-    if fit is not None:
-        for line in render_fit(fit):
+    if determination is not None:
+        for line in render_determine(determination):
             print(line)
 
     if timed:
         parts = [f"pairs {pair_secs:.1f}s"]
-        if fit is not None:
-            parts.append(f"fit {fit_secs:.1f}s")
+        if determination is not None:
+            parts.append(f"determination {determine_secs:.1f}s")
         print()
         print(f"time: {', '.join(parts)}")
 
@@ -382,35 +382,37 @@ def cmd_all(hints: bool = False, timed: bool = False) -> int:
 
     _print_findings(stems, hints)
 
-    fit_results: dict[str, FitResult] = {}
-    fit_secs: dict[str, float] = {}
+    determine_results: dict[str, DetermineResult] = {}
+    determine_secs: dict[str, float] = {}
     for stem in stems:
         t0 = time.perf_counter()
-        r = run_fit(stem)
+        r = run_determine(stem)
         if r is not None:
-            fit_results[stem] = r
-            fit_secs[stem] = time.perf_counter() - t0
-    if fit_results:
+            determine_results[stem] = r
+            determine_secs[stem] = time.perf_counter() - t0
+    if determine_results:
         problems = {
-            s: r for s, r in fit_results.items() if r.diff or r.error or r.circular
+            s: r for s, r in determine_results.items()
+            if r.diff or r.error or r.circular
         }
         print()
-        ok = len(fit_results) - len(problems)
-        print(f"--- fit checks: {ok}/{len(fit_results)} ok ---")
+        ok = len(determine_results) - len(problems)
+        print(f"--- determination checks: {ok}/{len(determine_results)} ok ---")
         for s in sorted(problems):
-            for line in render_fit(problems[s]):
+            for line in render_determine(problems[s]):
                 print(f"  {s}.dl: {line}")
 
     if timed:
         ranked = sorted(
-            ((pair_secs[s] + fit_secs.get(s, 0.0), s) for s in stems),
+            ((pair_secs[s] + determine_secs.get(s, 0.0), s) for s in stems),
             reverse=True,
         )
         print()
         print("--- times: slowest 15 (wall seconds) ---")
         for total, s in ranked[:15]:
-            fit_part = (f", fit {fit_secs[s]:.1f}" if s in fit_secs else "")
-            print(f"  {total:5.1f}  {s}  (pairs {pair_secs[s]:.1f}{fit_part})")
+            determine_part = (f", determination {determine_secs[s]:.1f}"
+                              if s in determine_secs else "")
+            print(f"  {total:5.1f}  {s}  (pairs {pair_secs[s]:.1f}{determine_part})")
 
     print()
     print(f"summary: {len(results) - len(failed)}/{len(results)} solvers")
@@ -441,7 +443,8 @@ def cmd_deletions(stem: str) -> int:
 
 
 def cmd_audit(stem: str) -> int:
-    """Both evidence audits of a finished solver: fill sweep + deletions."""
+    """Both evidence audits of a finished solver: parameter value sweep +
+    deletions."""
     if _missing(stem):
         return 2
     build_functors()
@@ -453,12 +456,13 @@ def cmd_audit(stem: str) -> int:
     return _print_deletions(stem)
 
 
-def cmd_fit_plan(stem: str) -> int:
-    """Which Consts slots need Fit relations, from the proposer probe."""
+def cmd_determination_plan(stem: str) -> int:
+    """Which Params parameters need determination relations, from the
+    proposer probe."""
     if _missing(stem):
         return 2
     build_functors()
-    for line in render_fit_plan(probe_report(stem)):
+    for line in render_determination_plan(probe_report(stem)):
         print(line)
     return 0
 
@@ -489,7 +493,7 @@ def cmd_expand(stem: str) -> int:
     return 0
 
 
-COMMANDS = ("run", "lint", "grid", "sweep", "deletions", "audit", "fit-plan", "size",
+COMMANDS = ("run", "lint", "grid", "sweep", "deletions", "audit", "determination-plan", "size",
             "expand")
 
 
@@ -498,7 +502,9 @@ def _parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     run = sub.add_parser(
-        "run", help="pairs, lint, fit checks; the default when no command is named",
+        "run",
+        help="pairs, lint, determination checks; the default when no command "
+             "is named",
     )
     lint = sub.add_parser("lint", help="lint only, no solver runs")
     for p in (run, lint):
@@ -527,15 +533,18 @@ def _parser() -> argparse.ArgumentParser:
     grid.add_argument("file", nargs="?",
                       help="grid file; stdin when omitted or `-`")
 
-    sweep = sub.add_parser("sweep", help="fill sweep only")
+    sweep = sub.add_parser("sweep", help="parameter value sweep only")
     sweep.add_argument("stem")
     sweep.add_argument("cap", nargs="?", type=int, default=MAX_CANDIDATES,
-                       help="max candidates per slot")
+                       help="max candidates per parameter")
 
     sub.add_parser("deletions", help="deletion report only").add_argument("stem")
-    sub.add_parser("audit", help="fill sweep + deletion report").add_argument("stem")
     sub.add_parser(
-        "fit-plan", help="which Consts slots need Fit relations",
+        "audit", help="parameter value sweep + deletion report",
+    ).add_argument("stem")
+    sub.add_parser(
+        "determination-plan",
+        help="which Params parameters need determination relations",
     ).add_argument("stem")
 
     size = sub.add_parser(
@@ -576,8 +585,8 @@ def main(argv: list[str]) -> int:
             return cmd_deletions(args.stem)
         case "audit":
             return cmd_audit(args.stem)
-        case "fit-plan":
-            return cmd_fit_plan(args.stem)
+        case "determination-plan":
+            return cmd_determination_plan(args.stem)
         case "size":
             return cmd_size(args.stem)
         case "expand":

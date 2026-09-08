@@ -4,17 +4,17 @@
 //
 // Two impls; out's choice column tags each:
 //
-//   $Direct     — emit c.sym_out if input is invariant under c.sym_group;
-//                 c.asym_out otherwise.
-//   $GroupMatch — c.mapping_sym lists candidate sym groups; pick the largest
+//   $Direct     — emit params.sym_out if input is invariant under params.sym_group;
+//                 params.asym_out otherwise.
+//   $GroupMatch — params.mapping_sym lists candidate sym groups; pick the largest
 //                 group that leaves the input invariant; emit that entry's
-//                 c.mapping_out.
+//                 params.mapping_out.
 
 #include "../lib.dl"
 
 .type Choice = Direct {} | GroupMatch {}
 
-.comp Consts {
+.comp Params {
     // --- $Direct ---
     // The group whose invariance defines the symmetric class.
     .decl sym_group(s: Sym) sym_group(SYM_BOX).
@@ -39,7 +39,7 @@
     mapping_out(1, ORIGIN, 7).
 }
 
-.init c = Consts
+.init params = Params
 
 .init d4 = D4Map<Unit, Color>
 d4.src($U(), P, Col) :- in(P, Col).
@@ -48,7 +48,7 @@ d4.dst($U(), P, Col) :- in(P, Col).
 // --- $Direct ---
 
 .decl syms_non_invariant(d: D4)
-syms_non_invariant(D) :- d4.mismatch($U(), D), c.sym_group(S), sym_member(S, D).
+syms_non_invariant(D) :- d4.mismatch($U(), D), params.sym_group(S), sym_member(S, D).
 
 // --- $GroupMatch ---
 
@@ -56,7 +56,7 @@ syms_non_invariant(D) :- d4.mismatch($U(), D), c.sym_group(S), sym_member(S, D).
 // a group requires still matches it, so the test is covers, not equals.
 // Assumes group sizes are unique; a tie would emit conflicting cells.
 .init group = KeyedSetCompare<Unit, Ident, D4>
-group.pattern_member(Id, D) :- c.mapping_sym(Id, S), sym_member(S, D).
+group.pattern_member(Id, D) :- params.mapping_sym(Id, S), sym_member(S, D).
 group.observed_member($U(), D) :- d4_elem(D), !d4.mismatch($U(), D).
 
 .init best_id = ArgExtremes<Unit, Ident>
@@ -67,15 +67,15 @@ best_id.cand($U(), Id, N) :- group.covers($U(), Id), group.pattern_size(Id, N).
 .decl out(p: Position, col: Color, c: Choice)
 
 // $Direct
-out(P, Col, $Direct()) :- c.sym_out(P, Col),  !syms_non_invariant(_).
-out(P, Col, $Direct()) :- c.asym_out(P, Col),  syms_non_invariant(_).
+out(P, Col, $Direct()) :- params.sym_out(P, Col),  !syms_non_invariant(_).
+out(P, Col, $Direct()) :- params.asym_out(P, Col),  syms_non_invariant(_).
 
 // $GroupMatch
-out(P, Col, $GroupMatch()) :- best_id.high($U(), Id, _), c.mapping_out(Id, P, Col).
+out(P, Col, $GroupMatch()) :- best_id.high($U(), Id, _), params.mapping_out(Id, P, Col).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     .init d4 = D4Map<Example, Color>
     d4.src(E, P, Col) :- ex_in(E, P, Col).
     d4.dst(E, P, Col) :- ex_in(E, P, Col).

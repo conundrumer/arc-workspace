@@ -14,7 +14,7 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(6).
     .decl frame(col: Color) frame(0).
     .decl marker(col: Color) marker(9).
@@ -25,12 +25,12 @@
     .decl sweep(s: Sense) sweep(SENSE_CC).
 }
 
-.init c = Consts
+.init params = Params
 
 // --- blocks ---
 
 .init frames = Components<Unit>
-frames.node($U(), P) :- in(P, Col), c.frame(Col).
+frames.node($U(), P) :- in(P, Col), params.frame(Col).
 
 .decl block(b: Ident)
 block(B) :- frames.label($U(), _, B).
@@ -46,7 +46,7 @@ box.grid(B, P) :- block(B), in(P, _).
 abut(B, D, P) :- box.edge_cell(B, Q, D), neighbor(Q, D, P).
 
 .decl abut_break(b: Ident, d: Dir)
-abut_break(B, D) :- abut(B, D, P), c.marker(M), !in(P, M).
+abut_break(B, D) :- abut(B, D, P), params.marker(M), !in(P, M).
 
 // The handle: the side whose abutting line is marker all the way across.
 .decl handle_dir(b: Ident, d: Dir)
@@ -63,12 +63,12 @@ probe.mark(B, P) :- handle_dir(B, D), abut(B, D, P).
 ahead(B, P, K) :- probe.ray(B, P, _, K, _), K != 0.
 
 .decl ahead_break(b: Ident, k: number)
-ahead_break(B, K) :- ahead(B, P, K), c.marker(M), !in(P, M).
+ahead_break(B, K) :- ahead(B, P, K), params.marker(M), !in(P, M).
 
 // --- gauge ---
 
 .decl empty_cell(b: Ident, p: Position)
-empty_cell(B, P) :- box.inside(B, P), in(P, Col), c.empty(Col).
+empty_cell(B, P) :- box.inside(B, P), in(P, Col), params.empty(Col).
 
 .init empty_count = Tally<Ident, Position>
 empty_count.item(B, P) :- empty_cell(B, P).
@@ -82,9 +82,9 @@ advance.cand(B, N) :- empty_count.tally(B, N).             // the gauge fills up
 
 .init fill_order = LexOrder<Ident>
 fill_order.corner(B, Diag) :-
-    handle_dir(B, D),                    // the leading edge
-    c.sweep(S), turn(S, D, D_side),      // the side the sweep starts on
-    diag_dirs(Diag, _, D, D_side).       // the corner they meet at
+    handle_dir(B, D),                         // the leading edge
+    params.sweep(S), turn(S, D, D_side),      // the side the sweep starts on
+    diag_dirs(Diag, _, D, D_side).            // the corner they meet at
 fill_order.axis(B, A) :- handle_dir(B, D), axis_of(D, A).
 fill_order.cell(B, P) :- empty_cell(B, P).
 
@@ -103,20 +103,20 @@ paint(P_out, Col) :-
     assembly(B, P), handle_dir(B, D),         // an assembly cell, and its heading
     advance.low(B, N), jump(P, D, N, P_out),  // carried by the block's travel
     ( in(P, Col), !fills(P)                   // keeps its color
-    ; fills(P), c.filled(Col)                 // fills
+    ; fills(P), params.filled(Col)            // fills
     ).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- paint(P, Col).
 out(P, Col) :-
     !paint(P, _),
-    ( assembly(_, P), c.bg(Col)     // left behind
-    ; in(P, Col), !assembly(_, P)   // untouched
+    ( assembly(_, P), params.bg(Col)   // left behind
+    ; in(P, Col), !assembly(_, P)      // untouched
     ).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     .decl edge_color(col: Color)
     edge_color(Col) :- ex_in(_, P, Col), dir_elem(D), dist(P, D, 0).
 

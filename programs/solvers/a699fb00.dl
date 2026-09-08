@@ -1,7 +1,7 @@
 // a699fb00
 // concept: lines span
-// Dashed lines: c.dot cells alternating with bg along c.axis. The gaps fill
-// with c.fill. Two models of which bg cells are gaps, tagged on out's Choice:
+// Dashed lines: params.dot cells alternating with bg along params.axis. The gaps fill
+// with params.fill. Two models of which bg cells are gaps, tagged on out's Choice:
 //
 //   $Flank — a bg cell with a dot on both along-axis neighbors.
 //   $Span  — a bg cell with a dot on both along-axis sides in its line.
@@ -10,14 +10,14 @@
 
 .type Choice = Flank {} | Span {}
 
-.comp Consts {
+.comp Params {
     .decl axis(a: Axis) axis(AXIS_H).   // lines run along this axis
     .decl bg(c: Color) bg(0).
     .decl dot(c: Color) dot(1).              // dash color
     .decl fill(c: Color) fill(2).            // gap color
 }
 
-.init c = Consts
+.init params = Params
 
 .decl out(p: Position, col: Color, ch: Choice)
 
@@ -25,20 +25,20 @@
 
 .decl flanked(p: Position)
 flanked(P) :-
-    in(P, Bg), c.bg(Bg), c.dot(Dot),             // bg cell
-    c.axis(A), axis_of(D, A), opposite(D, D2),   // the two along-axis dirs
-    neighbor(P, D, Q1), in(Q1, Dot),             // dot toward D
-    neighbor(P, D2, Q2), in(Q2, Dot).            // dot toward D2
+    in(P, Bg), params.bg(Bg), params.dot(Dot),        // bg cell
+    params.axis(A), axis_of(D, A), opposite(D, D2),   // the two along-axis dirs
+    neighbor(P, D, Q1), in(Q1, Dot),                  // dot toward D
+    neighbor(P, D2, Q2), in(Q2, Dot).                 // dot toward D2
 
-out(P, F, $Flank())   :- flanked(P), c.fill(F).
+out(P, F, $Flank())   :- flanked(P), params.fill(F).
 out(P, Col, $Flank()) :- in(P, Col), !flanked(P).
 
 // --- Span ---
 
 .init spans = Between<Unit>
-spans.axis($U(), A) :- c.axis(A).
-spans.cell($U(), P) :- in(P, Bg), c.bg(Bg).
-spans.mark($U(), Q) :- in(Q, Dot), c.dot(Dot).
+spans.axis($U(), A) :- params.axis(A).
+spans.cell($U(), P) :- in(P, Bg), params.bg(Bg).
+spans.mark($U(), Q) :- in(Q, Dot), params.dot(Dot).
 
-out(P, F, $Span())   :- spans.between($U(), P), c.fill(F).
+out(P, F, $Span())   :- spans.between($U(), P), params.fill(F).
 out(P, Col, $Span()) :- in(P, Col), !spans.between($U(), P).

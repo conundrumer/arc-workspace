@@ -7,7 +7,7 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
     .decl ink(col: Color) ink(1).
     .decl sep(col: Color) sep(4).
@@ -20,15 +20,15 @@
     .decl gap(g: number) gap(1).
 }
 
-.init c = Consts
+.init params = Params
 
 // The key's color: the one color outside the palette.
 .decl key_color(col: Color)
-key_color(Col) :- in(_, Col), !c.bg(Col), !c.ink(Col), !c.sep(Col).
+key_color(Col) :- in(_, Col), !params.bg(Col), !params.ink(Col), !params.sep(Col).
 
 // The key's interior — what its separator border encloses.
 .init key = Reach<Unit>
-key.node($U(), P) :- in(P, Col), !c.sep(Col).
+key.node($U(), P) :- in(P, Col), !params.sep(Col).
 key.seed($U(), P) :- in(P, Col), key_color(Col).
 
 .init key_box = BoxFrame<Unit>
@@ -39,18 +39,18 @@ key_box.cell($U(), P) :- key.reach($U(), P).
 footprint(P_intile) :-
     in(P, Col), key_color(Col),                 // a key cell
     key_box.inner($U(), P, P_inner),            // in the key's own frame
-    c.dim(N), divide_2d(P_inner, N, 0, P_intile, _).
+    params.dim(N), divide_2d(P_inner, N, 0, P_intile, _).
 
 // Which cell a position sits in, and where in that cell.
 .decl cell_at(p: Position, p_tile: Position, p_intile: Position)
 cell_at(P, P_tile, P_intile) :-
-    in(P, _), c.dim(K), c.gap(G), divide_by_size_2d(P, K, G, P_tile, P_intile).
+    in(P, _), params.dim(K), params.gap(G), divide_by_size_2d(P, K, G, P_tile, P_intile).
 
 // The footprint against each cell's ink, both in cell frame.
 .init cover = KeyedSetCompare<Position, Unit, Position>
 cover.pattern_member($U(), P_intile) :- footprint(P_intile).
 cover.observed_member(P_tile, P_intile) :-
-    cell_at(P, P_tile, P_intile), in(P, Col), c.ink(Col).
+    cell_at(P, P_tile, P_intile), in(P, Col), params.ink(Col).
 
 // A cell whose ink covers the footprint takes the key's color over it.
 .decl stamp(p: Position)

@@ -2,11 +2,11 @@
 // concept: grow border
 // Grow the grid by one ring: the input seats one cell in from every output
 // edge, each input edge cell replicates one step past its edge, and the
-// ring's corners get c.bg.
+// ring's corners get params.bg.
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl ring_width(k: number) ring_width(1).
 
     // The input's seat in the output.
@@ -16,10 +16,10 @@
     .decl bg(c: Color) bg(0).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl seated(p_in: Position, p_out: Position)
-seated(P_in, P_out) :- in(P_in, _), c.seat_delta(Delta), compose(P_in, Delta, P_out).
+seated(P_in, P_out) :- in(P_in, _), params.seat_delta(Delta), compose(P_in, Delta, P_out).
 
 .decl out(p: Position, col: Color)
 out(P_out, Col) :-
@@ -28,12 +28,12 @@ out(P_out, Col) :-
     ; dir_elem(D), dist(P_in, D, 0),                          // on edge d
       neighbor(P_seat, D, P_out), Col = Col_in                // steps out carrying its color
     ; diag_dir_elem(Diag), corner_dist(P_in, Diag, 0),        // at corner diag
-      neighbor(P_seat, Diag, P_out), c.bg(Col)                // steps out as bg
+      neighbor(P_seat, Diag, P_out), params.bg(Col)           // steps out as bg
     ).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     // Seat each train input among its output's cells, color for color.
     .init occ = Occurrences<Example, Color>
     occ.shape(E, P_in, Col)  :- ex_in(E, P_in, Col).

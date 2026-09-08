@@ -4,17 +4,17 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl tile_d4(p: Position, d: D4)
     GRID_2x2(tile_d4,
         D4_ID, D4_CC,
         D4_HT, D4_CW)
 }
 
-.init c = Consts
+.init params = Params
 
 .decl out(p: Position, col: Color)
 out(P_grid, Col) :-
-    in(P_in, Col),                                       // input cell
-    c.tile_d4(P_tile, D), apply(D, P_in, P_intile),      // d4 image at tile
-    concat_2d(P_tile, P_intile, 0, P_grid).              // recompose
+    in(P_in, Col),                                            // input cell
+    params.tile_d4(P_tile, D), apply(D, P_in, P_intile),      // d4 image at tile
+    concat_2d(P_tile, P_intile, 0, P_grid).                   // recompose

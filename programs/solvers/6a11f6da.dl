@@ -3,14 +3,14 @@
 // Layout: 3 vertically-stacked 5×5 ink slabs. Output is the per-cell
 // overlay: the highest-priority candidate wins; no ink is bg.
 //
-//   $Palette() — color order: the c.ink_rank priority ranks
-//   $Stack()   — slab order: the c.slab_rank priority ranks
+//   $Palette() — color order: the params.ink_rank priority ranks
+//   $Stack()   — slab order: the params.slab_rank priority ranks
 
 #include "../lib.dl"
 
 .type Choice = Palette {} | Stack {}
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
 
     .decl tile_axis(a: Axis) tile_axis(AXIS_V).
@@ -30,7 +30,7 @@
         0)
 }
 
-.init c = Consts
+.init params = Params
 
 .decl impl_choice(ch: Choice)
 impl_choice($Palette()).
@@ -39,24 +39,24 @@ impl_choice($Stack()).
 // Slab decomposition of each input cell.
 .decl decompose(p_grid: Position, p_tile: Position, p_out: Position)
 decompose(P_grid, P_tile, P_out) :-
-    in(P_grid, _),                                   // input position
-    c.tile_axis(A), c.tile_count(N),                 // slab params
+    in(P_grid, _),                                             // input position
+    params.tile_axis(A), params.tile_count(N),                 // slab params
     divide_slab(P_grid, A, N, 0, P_tile, P_out).
 
 // Inked slab cells competing at each output cell.
 .decl cand(o: Position, p_tile: Position, col: Color)
 cand(P_out, P_tile, Col) :-
-    in(P_grid, Col), !c.bg(Col),                     // inked input cell
+    in(P_grid, Col), !params.bg(Col),                     // inked input cell
     decompose(P_grid, P_tile, P_out).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(O, Bg, Ch) :- impl_choice(Ch), decompose(_, _, O), c.bg(Bg), !cand(O, _, _).
+out(O, Bg, Ch) :- impl_choice(Ch), decompose(_, _, O), params.bg(Bg), !cand(O, _, _).
 
 // --- Palette ---
 
 // The top-priority color competing at each output cell.
 .init front_ink = ArgExtremes<Position, Color>
-front_ink.cand(O, Col, R) :- cand(O, _, Col), c.ink_rank(Col, R).
+front_ink.cand(O, Col, R) :- cand(O, _, Col), params.ink_rank(Col, R).
 
 out(O, Col, $Palette()) :- front_ink.low(O, Col, _).
 
@@ -64,17 +64,17 @@ out(O, Col, $Palette()) :- front_ink.low(O, Col, _).
 
 // The top-priority slab competing at each output cell.
 .init front_slab = ArgExtremes<Position, Position>
-front_slab.cand(O, T, R) :- cand(O, T, _), c.slab_rank(T, R).
+front_slab.cand(O, T, R) :- cand(O, T, _), params.slab_rank(T, R).
 
 out(O, Col, $Stack()) :- front_slab.low(O, T, _), cand(O, T, Col).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     .decl cand(e: Example, o: Position, p_tile: Position, col: Color)
     cand(E, P_out, P_tile, Col) :-
-        ex_in(E, P_grid, Col), !c.bg(Col),               // inked input cell
-        c.tile_axis(A), c.tile_count(N),                 // slab params
+        ex_in(E, P_grid, Col), !params.bg(Col),                  // inked input cell
+        params.tile_axis(A), params.tile_count(N),               // slab params
         divide_slab(P_grid, A, N, 0, P_tile, P_out).
 
     // Closed transitively: a slab pair need not overlap directly.

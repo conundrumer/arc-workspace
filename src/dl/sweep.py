@@ -1,4 +1,4 @@
-"""Conditional sweep of a solver's Consts fills: which values the pairs admit."""
+"""Conditional sweep of a solver's parameter values: which values the pairs admit."""
 
 import itertools
 import re
@@ -21,12 +21,12 @@ from dl.souffle import _pool_workers
 from dl.source import (
     RIGID_CHART_PREFIX,
     _comp_span,
+    _param_facts,
     _render_arg,
-    _slot_facts,
     _split_args,
     comp_decls,
     expand_macros,
-    public_slot,
+    public_param,
     swap_fact,
     swap_facts,
 )
@@ -38,11 +38,11 @@ MAX_CANDIDATES = 256
 def sweep_report(
     stem: str, max_candidates: int = MAX_CANDIDATES
 ) -> list[tuple[str, str, object]]:
-    """Conditional sweep of each enumerable Consts slot.
+    """Conditional sweep of each enumerable parameter.
 
-    Sweeps one slot at a time with the others at their stored values; an
-    alternative fill fits when it reproduces the stored fill's variant
-    profile on every train pair. A slot's fill may be a set (a symmetric
+    Sweeps one parameter at a time with the others at their stored values; an
+    alternative value fits when it reproduces the stored value's variant
+    profile on every train pair. A parameter's value may be a set (a symmetric
     member stores every fitting value), so the check is fitting == stored
     facts.
 
@@ -51,45 +51,45 @@ def sweep_report(
     so an extra that fails test is a would-be wrong prediction, and one
     that passes is gauge for this task instance.
 
-    A slot whose stored facts fail their singleton runs fits only as a
+    A parameter whose stored facts fail their singleton runs fits only as a
     set; it is re-swept whole (see _set_sweep), with candidate sets in
     place of candidate values.
 
-    Returns (slot, status, detail): status 'swept' carries
+    Returns (param, status, detail): status 'swept' carries
     (fitting, stored, types, verdicts) — verdicts maps each extra fitting
     value to its test-pass bool — 'swept-set' carries the same shape with
     frozensets of value tuples for fitting and verdict keys, and 'skip'
     carries the reason.
     """
-    # Macros expand first, so a GRID-fed slot reads as ordinary facts and a
-    # RIGID chart as an ordinary generated-name slot; re-expansion at build
-    # time is a no-op. Chart slots report under their public names, and
+    # Macros expand first, so a GRID-fed parameter reads as ordinary facts and
+    # a RIGID chart as an ordinary generated-name parameter; re-expansion at
+    # build time is a no-op. Chart parameters report under their public names, and
     # their derived placed forms are elided rather than reported.
     source = expand_macros((SOLVERS_DIR / f"{stem}.dl").read_text())
     task = load_task(stem.split("_", 1)[0])
     defines = _lib_defines()
-    s, e = _comp_span(source, "Consts")
-    consts_text = "\n".join(source.splitlines()[s:e])
+    s, e = _comp_span(source, "Params")
+    params_text = "\n".join(source.splitlines()[s:e])
 
     reference: list[frozenset[str]] | None = None
     test_reference: list[frozenset[str]] | None = None
     results: list[tuple[str, str, object]] = []
-    slots = comp_decls(source, "Consts")
-    placed = {public_slot(n) for n in slots if n.startswith(RIGID_CHART_PREFIX)}
-    for slot, types in slots.items():
-        if slot in placed:
+    params = comp_decls(source, "Params")
+    placed = {public_param(n) for n in params if n.startswith(RIGID_CHART_PREFIX)}
+    for param, types in params.items():
+        if param in placed:
             continue
-        if re.search(rf"\b{slot}\s*\([^)]*\)\s*:-", consts_text):
-            results.append((public_slot(slot), "skip", "derived"))
+        if re.search(rf"\b{param}\s*\([^)]*\)\s*:-", params_text):
+            results.append((public_param(param), "skip", "derived"))
             continue
-        facts = _slot_facts(source, slot)
+        facts = _param_facts(source, param)
         if not facts:
-            results.append((public_slot(slot), "skip", "0 facts"))
+            results.append((public_param(param), "skip", "0 facts"))
             continue
         if not all(t in ENUM_TYPES or t in ("Color", "number")
                    or t in POSITION_TYPES for t in types):
             results.append(
-                (public_slot(slot), "skip", f"non-enumerable ({', '.join(types)})")
+                (public_param(param), "skip", f"non-enumerable ({', '.join(types)})")
             )
             continue
 
@@ -124,8 +124,8 @@ def sweep_report(
         candidates = sorted(set(itertools.product(*domains)) | set(stored))
         if len(candidates) > max_candidates:
             results.append(
-                (public_slot(slot), "skip",
-                 f"{len(candidates)} alternative fills, cap {max_candidates}; "
+                (public_param(param), "skip",
+                 f"{len(candidates)} alternative values, cap {max_candidates}; "
                  f"rerun with run_dl.py sweep {stem} {len(candidates)}")
             )
             continue
@@ -133,11 +133,11 @@ def sweep_report(
         if reference is None:
             reference = _profile(source, task.train)
             if reference is None:
-                results.append((public_slot(slot), "skip", "stored fill fails train"))
+                results.append((public_param(param), "skip", "stored value fails train"))
                 continue
 
-        def test(vals, slot=slot):
-            profile = _profile(swap_fact(source, slot, vals), task.train)
+        def test(vals, param=param):
+            profile = _profile(swap_fact(source, param, vals), task.train)
             return vals if profile == reference else None
 
         with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
@@ -145,7 +145,7 @@ def sweep_report(
 
         if not set(stored) <= set(fitting):
             results.append(_set_sweep(
-                source, slot, stored, types, candidates, task, reference,
+                source, param, stored, types, candidates, task, reference,
                 max_candidates))
             continue
 
@@ -157,19 +157,19 @@ def sweep_report(
             if test_reference is None:
                 verdicts = {e: False for e in extras}
             else:
-                def test_check(vals, slot=slot):
-                    profile = _profile(swap_fact(source, slot, vals), task.test)
+                def test_check(vals, param=param):
+                    profile = _profile(swap_fact(source, param, vals), task.test)
                     return profile == test_reference
 
                 with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
                     verdicts = dict(zip(extras, executor.map(test_check, extras)))
-        results.append((public_slot(slot), "swept", (fitting, stored, types, verdicts)))
+        results.append((public_param(param), "swept", (fitting, stored, types, verdicts)))
     return results
 
 
 def _set_sweep(
     source: str,
-    slot: str,
+    param: str,
     stored: list[tuple],
     types: list[str],
     singles: list[tuple],
@@ -177,13 +177,13 @@ def _set_sweep(
     reference: list[frozenset[str]],
     max_candidates: int,
 ) -> tuple[str, str, object]:
-    """Sweep a slot whose facts fit only together, as one unit.
+    """Sweep a parameter whose facts fit only together, as one unit.
 
-    Candidate fills are the non-empty subsets of the singleton candidates;
-    each replaces the whole slot. Fitting and test-refutation read as in
+    Candidate values are the non-empty subsets of the singleton candidates;
+    each replaces the whole parameter. Fitting and test-refutation read as in
     the singleton sweep, over sets.
     """
-    name = public_slot(slot)
+    name = public_param(param)
     n_sets = 2 ** len(singles) - 1
     if n_sets > max_candidates:
         return (name, "skip",
@@ -196,9 +196,9 @@ def _set_sweep(
     ]
     stored_set = frozenset(stored)
 
-    def test(fill):
-        profile = _profile(swap_facts(source, slot, sorted(fill)), task.train)
-        return fill if profile == reference else None
+    def test(value):
+        profile = _profile(swap_facts(source, param, sorted(value)), task.train)
+        return value if profile == reference else None
 
     with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
         fitting = [f for f in executor.map(test, subsets) if f]
@@ -210,9 +210,9 @@ def _set_sweep(
         if test_reference is None:
             verdicts = {e: False for e in extras}
         else:
-            def test_check(fill):
+            def test_check(value):
                 profile = _profile(
-                    swap_facts(source, slot, sorted(fill)), task.test
+                    swap_facts(source, param, sorted(value)), task.test
                 )
                 return profile == test_reference
 
@@ -235,7 +235,7 @@ def _mag_vec(vals: tuple, types: list[str]) -> list[int]:
 
 def _num_peer(e: tuple, s: tuple, types: list[str]) -> bool:
     """e differs from s only in magnitude args — number, Shift, Inset — a
-    rival magnitude, not a rival identity. Nominal args (enums, Color,
+    peer magnitude, not a peer identity. Nominal args (enums, Color,
     Ident, cell Positions) must match."""
     mag = {"number"} | MAG_POSITION_TYPES
     return all(e[i] == s[i] for i, t in enumerate(types) if t not in mag)
@@ -261,24 +261,24 @@ def render_sweep(results: list[tuple[str, str, object]]) -> list[str]:
         ) + ")"
 
     lines = []
-    for slot, status, detail in results:
+    for param, status, detail in results:
         if status == "skip":
-            lines.append(f"{slot}: not swept — {detail}")
+            lines.append(f"{param}: not swept — {detail}")
             continue
         if status == "swept-set":
             fitting, stored, types, verdicts = detail
             stored_set = frozenset(stored)
 
-            def show_fill(fill, types=types):
-                return "{" + ", ".join(show(v, types) for v in sorted(fill)) + "}"
+            def show_value(value, types=types):
+                return "{" + ", ".join(show(v, types) for v in sorted(value)) + "}"
 
-            def show_fills(fills):
-                return "[" + ", ".join(show_fill(f) for f in fills) + "]"
+            def show_values(values):
+                return "[" + ", ".join(show_value(v) for v in values) + "]"
 
-            shown_s = show_fill(stored_set)
+            shown_s = show_value(stored_set)
             if set(fitting) == {stored_set}:
                 lines.append(
-                    f"{slot}: unique as a set = {shown_s} ✓ (facts fit only "
+                    f"{param}: unique as a set = {shown_s} ✓ (facts fit only "
                     f"together; swept whole)"
                 )
                 continue
@@ -287,19 +287,19 @@ def render_sweep(results: list[tuple[str, str, object]]) -> list[str]:
             passing = [e for e in extras if verdicts.get(e, False)]
             parts = [
                 f"stored {shown_s} (swept whole)",
-                f"train also admits sets {show_fills(extras)}",
+                f"train also admits sets {show_values(extras)}",
             ]
             if refuted:
                 parts.append(
-                    f"test refutes {show_fills(refuted)} — a fit from train "
-                    f"alone could pick it"
+                    f"test refutes {show_values(refuted)} — a determination "
+                    f"from train alone could pick it"
                 )
             if passing:
                 parts.append(
-                    f"{show_fills(passing)} reproduce the stored outputs on "
+                    f"{show_values(passing)} reproduce the stored outputs on "
                     f"test too"
                 )
-            lines.append(f"{slot}: " + "; ".join(parts))
+            lines.append(f"{param}: " + "; ".join(parts))
             continue
         fitting, stored, types, verdicts = detail
         vset, sset = set(fitting), set(stored)
@@ -309,9 +309,9 @@ def render_sweep(results: list[tuple[str, str, object]]) -> list[str]:
         shown_s = shown(stored)
         if vset == sset:
             if len(sset) == 1:
-                lines.append(f"{slot}: unique = {shown_s} ✓")
+                lines.append(f"{param}: unique = {shown_s} ✓")
             else:
-                lines.append(f"{slot}: set of {len(sset)} = [{shown_s}] ✓")
+                lines.append(f"{param}: set of {len(sset)} = [{shown_s}] ✓")
             continue
         # Each finding about the extras gets its own clause, so a refuted
         # extra cannot hide a surviving one.
@@ -321,8 +321,8 @@ def render_sweep(results: list[tuple[str, str, object]]) -> list[str]:
         parts = [f"stored {shown_s}", f"train also admits [{shown(extras)}]"]
         if refuted:
             parts.append(
-                f"test refutes [{shown(refuted)}] — a fit from train alone "
-                f"could pick it"
+                f"test refutes [{shown(refuted)}] — a determination from "
+                f"train alone could pick it"
             )
         if passing:
             parts.append(
@@ -333,7 +333,7 @@ def render_sweep(results: list[tuple[str, str, object]]) -> list[str]:
             if kind:
                 parts.append(
                     f"[{shown(kind)}] differ from stored in kind, so the "
-                    f"pairs do not pin this slot"
+                    f"pairs do not fix this parameter"
                 )
             below = sorted(
                 e for e in passing if any(_num_below(e, s, types) for s in sset)
@@ -342,5 +342,5 @@ def render_sweep(results: list[tuple[str, str, object]]) -> list[str]:
                 parts.append(
                     f"[{shown(below)}] fit and are smaller than stored"
                 )
-        lines.append(f"{slot}: " + "; ".join(parts))
+        lines.append(f"{param}: " + "; ".join(parts))
     return lines

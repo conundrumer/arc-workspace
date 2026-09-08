@@ -14,14 +14,14 @@
 
 .type Choice = Shift {} | Count {}
 
-.comp Consts {
+.comp Params {
     .decl noise(col: Color) noise(0).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl clean(p: Position, col: Color)
-clean(P, Col) :- in(P, Col), !c.noise(Col).
+clean(P, Col) :- in(P, Col), !params.noise(Col).
 
 .init parse = ShiftInvariance<Unit, Color>
 parse.cell($U(), P, Col) :- clean(P, Col).

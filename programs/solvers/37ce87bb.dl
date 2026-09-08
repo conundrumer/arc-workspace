@@ -5,7 +5,7 @@
 // appended in its own line. Two models of that line:
 //
 //   $Next — the bar spacing continues one pitch past the bars.
-//   $Edge — the line at c.margin from a fixed across edge.
+//   $Edge — the line at params.margin from a fixed across edge.
 //
 // The models coincide here (every grid ends one pitch past the last bar);
 // they diverge on a wider grid.
@@ -14,7 +14,7 @@
 
 .type Choice = Next {} | Edge {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl bg(c: Color) bg(7).
     .decl base(d: Dir) base(DIR_B).       // edge the bars stand on
@@ -30,21 +30,21 @@
     .decl margin(k: number) margin(1).       // result line's distance from that edge
 }
 
-.init c = Consts
+.init params = Params
 
 // A cell's line — bars run along the base axis; the across component
 // identifies the line.
 .decl line_of(p: Position, p_line: Position)
-line_of(P, P_line) :- in(P, _), c.base(D), axis_of(D, A), split(P, A, _, P_line).
+line_of(P, P_line) :- in(P, _), params.base(D), axis_of(D, A), split(P, A, _, P_line).
 
 // Lines holding a bar.
 .decl bar_line(p_line: Position)
-bar_line(P_line) :- in(P, Col), !c.bg(Col), line_of(P, P_line).
+bar_line(P_line) :- in(P, Col), !params.bg(Col), line_of(P, P_line).
 
 // The summed height: add cells beyond sub cells.
 .init height = Excess<Unit, Position>
-height.plus($U(), P) :- in(P, Col), c.add(Col).
-height.minus($U(), P) :- in(P, Col), c.sub(Col).
+height.plus($U(), P) :- in(P, Col), params.add(Col).
+height.minus($U(), P) :- in(P, Col), params.sub(Col).
 
 .decl result_line(p_line: Position, ch: Choice)
 
@@ -54,25 +54,25 @@ height.minus($U(), P) :- in(P, Col), c.sub(Col).
 // neighbor bar.
 result_line(P_line2, $Next()) :-
     bar_line(P_line),
-    c.base(D), perp_dir(D, D2),  // either way across
-    c.pitch(K), jump(P_line, D2, K, P_line2),
+    params.base(D), perp_dir(D, D2),  // either way across
+    params.pitch(K), jump(P_line, D2, K, P_line2),
     line_of(_, P_line2), !bar_line(P_line2).
 
 // --- $Edge ---
 result_line(P_line, $Edge()) :-
     line_of(_, P_line),
-    c.base(D), c.sense(S), turn(S, D, D2),   // the result-line edge
-    c.margin(K), dist(P_line, D2, K).
+    params.base(D), params.sense(S), turn(S, D, D2),   // the result-line edge
+    params.margin(K), dist(P_line, D2, K).
 
 // The result bar: height cells up the result line from the base edge.
 .decl result_cell(p: Position, ch: Choice)
 result_cell(P, Ch) :-
-    line_of(P, P_line), result_line(P_line, Ch),               // on the result line
-    c.base(D), dist(P, D, K), height.excess($U(), N), K < N.   // within the summed height
+    line_of(P, P_line), result_line(P_line, Ch),                    // on the result line
+    params.base(D), dist(P, D, K), height.excess($U(), N), K < N.   // within the summed height
 
 .decl impl_choice(ch: Choice)
 impl_choice($Next()). impl_choice($Edge()).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, Ch) :- result_cell(P, Ch), c.result(Col).
+out(P, Col, Ch) :- result_cell(P, Ch), params.result(Col).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !result_cell(P, Ch).

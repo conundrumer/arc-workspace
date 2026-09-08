@@ -1,25 +1,25 @@
 // c1d99e64
 // concept: lines
-// One ink color over bg. Rows and columns free of ink repaint c.line;
+// One ink color over bg. Rows and columns free of ink repaint params.line;
 // the rest passes through.
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
     .decl line(c: Color) line(2).
 }
 
-.init c = Consts
+.init params = Params
 
 // Line along axis a holding ink.
 .decl has_ink(a: Axis, p_across: Position)
-has_ink(A, P_across) :- in(P, Col), !c.bg(Col), axis_elem(A), split(P, A, _, P_across).
+has_ink(A, P_across) :- in(P, Col), !params.bg(Col), axis_elem(A), split(P, A, _, P_across).
 
 // Cell on an ink-free line.
 .decl on_bg_line(p: Position)
 on_bg_line(P) :- in(P, _), axis_elem(A), split(P, A, _, P_across), !has_ink(A, P_across).
 
 .decl out(p: Position, col: Color)
-out(P, C)   :- on_bg_line(P), c.line(C).
+out(P, C)   :- on_bg_line(P), params.line(C).
 out(P, Col) :- in(P, Col), !on_bg_line(P).

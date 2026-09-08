@@ -1,11 +1,11 @@
-// Proposers: candidate fill values derived from a task's examples.
+// Proposers: candidate parameter values derived from a task's examples.
 //
 // A proposer comp reads ex_in / ex_out (lib.dl's runner contract)
-// and emits `propose` — the candidate set for a slot value. The final
+// and emits `propose` — the candidate set for a parameter's value. The final
 // column(s) of `propose` are the proposed value; leading columns are
 // proposer parameters. The runner probes every proposer against every
-// solver's stored fills (`run_dl.py --fit-plan`); a proposer claims no
-// slot itself.
+// solver's stored values (`run_dl.py determination-plan`); a proposer
+// claims no parameter itself.
 //
 // A claim about inputs alone ranges over every example; a claim about
 // the in->out transformation scopes its examples through ex_out.

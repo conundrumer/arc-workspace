@@ -13,11 +13,11 @@
 .type RegionAxis = [id: Ident, a: Axis]
 .type ChoiceAxis = [c: Choice, a: Axis]
 
-.comp Consts {
+.comp Params {
     .decl min_side(k: number) min_side(3).
 }
 
-.init c = Consts
+.init params = Params
 
 // --- rectangles ---
 
@@ -44,7 +44,7 @@ side.item([Id, A], P_line) :- region_line(Id, A, P_line).
 
 // Too short on one axis to tell it from noise.
 .decl short(id: Ident)
-short(Id) :- side.tally([Id, _], N), c.min_side(K), N < K.
+short(Id) :- side.tally([Id, _], N), params.min_side(K), N < K.
 
 .decl block(id: Ident)
 block(Id) :- side.tally([Id, _], _), !hole(Id), !short(Id).

@@ -7,20 +7,20 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color)
     bg(0).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl out(p: Position, col: Color)
 out(P_grid_out, Col) :-
-    in(P_tile, C_gate), !c.bg(C_gate),                // gate: tile's input cell non-bg
+    in(P_tile, C_gate), !params.bg(C_gate),           // gate: tile's input cell non-bg
     in(P_intile, Col),                                // tile content: the input, copied
     concat_2d(P_tile, P_intile, 0, P_grid_out).       // tile ⊗ cell → grid
 out(P_grid_out, Col) :-
-    in(P_tile, C_gate), c.bg(C_gate),                 // gate: tile's input cell bg
+    in(P_tile, C_gate), params.bg(C_gate),                 // gate: tile's input cell bg
     in(P_intile, _),
     concat_2d(P_tile, P_intile, 0, P_grid_out),       // tile ⊗ cell → grid
-    c.bg(Col).                                        // the whole tile bg
+    params.bg(Col).                                   // the whole tile bg

@@ -6,16 +6,16 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl marker(c: Color) marker(5).
     .decl bg(c: Color) bg(0).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl main(col: Color)
-main(Col) :- in(_, Col), !c.marker(Col).
+main(Col) :- in(_, Col), !params.marker(Col).
 
 .decl out(p: Position, col: Color)
-out(P, Main) :- in(P, Col), c.marker(Col), main(Main).
-out(P, Bg)   :- in(P, Col), !c.marker(Col), c.bg(Bg).
+out(P, Main) :- in(P, Col), params.marker(Col), main(Main).
+out(P, Bg)   :- in(P, Col), !params.marker(Col), params.bg(Bg).

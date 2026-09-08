@@ -5,15 +5,15 @@
 // bg. Cases:
 //
 //   $Parity(s) — alternation: centers every second cell from the marker,
-//                flanks diagonal from each center; no datum.
+//                flanks diagonal from each center; no parameter.
 //   $Walk(s)   — two zigzag walks; the side direction flips each step.
-//   $Banner(s) — a stored periodic banner: c.slot the period, c.banner
+//   $Banner(s) — a stored periodic banner: params.slot the period, params.banner
 //                the lit radius at each slot.
-//   $Stamp()   — c.template, the whole trail as one stored shape in grid
-//                coords, seated on each marker by its c.dot cell.
+//   $Stamp()   — params.template, the whole trail as one stored shape in grid
+//                coords, seated on each marker by its params.dot cell.
 //
 //   s (marker edge — the trail extends away from it):
-//     $Dir()  — c.dir names it.
+//     $Dir()  — params.dir names it.
 //     $Edge() — the edge each marker sits on.
 //
 // Coincide here: every marker sits on the top edge, the banner and
@@ -25,7 +25,7 @@
 .type Seat = Dir {} | Edge {}
 .type Choice = Parity {s: Seat} | Walk {s: Seat} | Banner {s: Seat} | Stamp {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl bg(c: Color) bg(0).
 
@@ -50,12 +50,12 @@
     .decl dot(p: Position) dot([0, 5, 1, 1]).   // the template cell that sits on the marker
 }
 
-.init c = Consts
+.init params = Params
 
 // --- shared ---
 
 .decl marker(p: Position, col: Color)
-marker(P, Col) :- in(P, Col), !c.bg(Col).
+marker(P, Col) :- in(P, Col), !params.bg(Col).
 
 // Trail cells, per case.
 .decl lit(p: Position, col: Color, ch: Choice)
@@ -65,9 +65,9 @@ marker(P, Col) :- in(P, Col), !c.bg(Col).
 .decl seat_choice(s: Seat)
 seat_choice($Dir()). seat_choice($Edge()).
 
-// Trail seeds: each marker with its edge, per seat claim.
+// Trail seeds: each marker with its edge, per seat hypothesis.
 .decl seed(s: Seat, col: Color, e: Dir, p: Position)
-seed($Dir(), Col, E, P)  :- marker(P, Col), c.dir(E).
+seed($Dir(), Col, E, P)  :- marker(P, Col), params.dir(E).
 seed($Edge(), Col, E, P) :- marker(P, Col), dir_elem(E), dist(P, E, 0).
 
 // --- $Parity ---
@@ -105,7 +105,7 @@ lit(P, Col, $Walk(S)) :- walk(S, Col, _, P, _).
 // --- $Banner ---
 
 .init slots = IndexCycle<Unit>
-slots.idx($U(), K) :- c.slot(K).
+slots.idx($U(), K) :- params.slot(K).
 
 // Walk the marker's line away from the edge, advancing the slot cycle.
 .decl slot_at(s: Seat, col: Color, e: Dir, p: Position, k: number)
@@ -116,15 +116,15 @@ slot_at(S, Col, E, Q, K2) :-
 
 // Light each slot's radius, both sides of the line.
 lit(Q, Col, $Banner(S)) :-
-    slot_at(S, Col, E, P, K), c.banner(K, R),      // slot cell, its lit radius
-    perp_dir(E, Ds), jump(P, Ds, R, Q), in(Q, _).  // out to that radius, each side
+    slot_at(S, Col, E, P, K), params.banner(K, R),  // slot cell, its lit radius
+    perp_dir(E, Ds), jump(P, Ds, R, Q), in(Q, _).   // out to that radius, each side
 
 // --- $Stamp ---
 
 lit(Q, Col, $Stamp()) :-
-    marker(P, Col), c.template(Pt),         // a marker, a template cell
-    c.dot(Ps), displacement(Ps, Pt, Off),   // the cell's offset from the dot
-    compose(P, Off, Q), in(Q, _).           // seated on the marker, on-grid
+    marker(P, Col), params.template(Pt),         // a marker, a template cell
+    params.dot(Ps), displacement(Ps, Pt, Off),   // the cell's offset from the dot
+    compose(P, Off, Q), in(Q, _).                // seated on the marker, on-grid
 
 // --- Output ---
 
@@ -136,14 +136,14 @@ impl_choice($Stamp()).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- lit(P, Col, Ch).
-out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !lit(P, _, Ch), c.bg(Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !lit(P, _, Ch), params.bg(Col).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     // Markers of the train inputs; the ex_out atom holds the test input out.
     .decl fmark(e: Example, p: Position, col: Color)
-    fmark(E, P, Col) :- ex_in(E, P, Col), !c.bg(Col), ex_out(E, _, _).
+    fmark(E, P, Col) :- ex_in(E, P, Col), !params.bg(Col), ex_out(E, _, _).
 
     // Each cell the pair paints in a marker's color, as an offset from it.
     .decl offset(e: Example, p: Position, delta: Shift)
@@ -160,7 +160,7 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !lit(P, _, Ch), c.bg(Col).
     .decl radius(e: Example, p: Position, i: number, r: number)
     radius(E, P, I, R) :-
         offset(E, P, Delta),
-        c.dir(D), dist(Delta, D, I),                  // steps away from the marker edge
+        params.dir(D), dist(Delta, D, I),             // steps away from the marker edge
         perp_dir(D, Ds), dist(Delta, Ds, R), R >= 0.  // steps to a side
 
     // Two steps of one trail whose lit radii differ — never one slot.

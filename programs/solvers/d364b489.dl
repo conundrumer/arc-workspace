@@ -4,14 +4,14 @@
 // the grid passes through. Halos clip at the grid edge.
 //
 // Cases (data-equivalent on this task):
-//   $Arms  — per-direction: the neighbor toward d paints c.arm(d).
+//   $Arms  — per-direction: the neighbor toward d paints params.arm(d).
 //   $Stamp — a stored template, seated by its marker cell on each marker.
 
 #include "../lib.dl"
 
 .type Choice = Arms {} | Stamp {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl marker(c: Color) marker(1).
 
@@ -31,18 +31,18 @@
     seat(Ps) :- template(Ps, M), marker(M).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl marker_at(p: Position)
-marker_at(P) :- in(P, Col), c.marker(Col).
+marker_at(P) :- in(P, Col), params.marker(Col).
 
 .decl out(p: Position, col: Color, ch: Choice)
 
 // --- Arms ---
 .decl arm_halo(p: Position, col: Color)
 arm_halo(P, Col) :-
-    marker_at(Q), c.arm(D, Col),        // marker, arm color
-    neighbor(Q, D, P), in(P, _).        // on-grid
+    marker_at(Q), params.arm(D, Col),        // marker, arm color
+    neighbor(Q, D, P), in(P, _).             // on-grid
 
 out(P, Col, $Arms()) :- arm_halo(P, Col).
 out(P, Col, $Arms()) :- in(P, Col), !arm_halo(P, _).
@@ -50,18 +50,18 @@ out(P, Col, $Arms()) :- in(P, Col), !arm_halo(P, _).
 // --- Stamp ---
 .decl stamp_halo(p: Position, col: Color)
 stamp_halo(P, Col) :-
-    marker_at(Q), c.template(Pt, Col),       // a marker, a template cell
-    c.seat(Ps), displacement(Ps, Pt, Off),   // the cell's offset from the seat
-    compose(Q, Off, P), in(P, _).            // seated on the marker, on-grid
+    marker_at(Q), params.template(Pt, Col),       // a marker, a template cell
+    params.seat(Ps), displacement(Ps, Pt, Off),   // the cell's offset from the seat
+    compose(Q, Off, P), in(P, _).                 // seated on the marker, on-grid
 
 out(P, Col, $Stamp()) :- stamp_halo(P, Col).
 out(P, Col, $Stamp()) :- in(P, Col), !stamp_halo(P, _).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     .decl marker_at(e: Example, p: Position)
-    marker_at(E, P) :- ex_in(E, P, Col), c.marker(Col).
+    marker_at(E, P) :- ex_in(E, P, Col), params.marker(Col).
 
     // What a stamp writes: the marker's own cell, and every repainted cell.
     .decl painted(e: Example, p: Position, col: Color)

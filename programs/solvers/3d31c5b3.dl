@@ -1,18 +1,18 @@
 // 3d31c5b3
 // concept: overlay decompose lookup rank
-// The grid divides along c.axis into a stack of tiles, each drawn in its
+// The grid divides along params.axis into a stack of tiles, each drawn in its
 // own ink. The output overlays the tiles: the highest-precedence ink
 // present fills each cell, bg where every tile is empty. Each tile keeps
 // one ink in every pair, so tile and ink precedence are indistinguishable:
 //
-//   $Order() — per-tile ranks stored in c.prio.
-//   $Ink()   — per-ink ranks stored in c.ink_rank.
+//   $Order() — per-tile ranks stored in params.prio.
+//   $Ink()   — per-ink ranks stored in params.ink_rank.
 
 #include "../lib.dl"
 
 .type Choice = Order {} | Ink {}
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
     .decl axis(a: Axis) axis(AXIS_V).
     .decl tiles(n: number) tiles(4).
@@ -30,17 +30,17 @@
     ink_rank(5, 0). ink_rank(4, 1). ink_rank(8, 2). ink_rank(2, 3).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl tile_cell(p_tile: Position, p_intile: Position, col: Color)
 tile_cell(P_tile, P_intile, Col) :-
     in(P_grid, Col),
-    c.axis(A), c.tiles(N),
+    params.axis(A), params.tiles(N),
     divide_slab(P_grid, A, N, 0, P_tile, P_intile).
 
 // Ink at an output cell, keyed by its tile.
 .decl tile_ink(p_tile: Position, p: Position, col: Color)
-tile_ink(P_tile, P_intile, Col) :- tile_cell(P_tile, P_intile, Col), !c.bg(Col).
+tile_ink(P_tile, P_intile, Col) :- tile_cell(P_tile, P_intile, Col), !params.bg(Col).
 
 .decl ink_at(p: Position, col: Color)
 ink_at(P, Col) :- tile_ink(_, P, Col).
@@ -50,13 +50,13 @@ ink_at(P, Col) :- tile_ink(_, P, Col).
 .decl impl_choice(ch: Choice)
 impl_choice($Order()). impl_choice($Ink()).
 
-out(P, Col, Ch) :- impl_choice(Ch), tile_cell(_, P, _), !ink_at(P, _), c.bg(Col).
+out(P, Col, Ch) :- impl_choice(Ch), tile_cell(_, P, _), !ink_at(P, _), params.bg(Col).
 
 // --- $Order ---
 
 // The foremost tile inking each cell.
 .init front_tile = ArgExtremes<Position, Position>
-front_tile.cand(P, T, R) :- tile_ink(T, P, _), c.prio(T, R).
+front_tile.cand(P, T, R) :- tile_ink(T, P, _), params.prio(T, R).
 
 out(P, Col, $Order()) :- front_tile.low(P, T, _), tile_ink(T, P, Col).
 
@@ -64,17 +64,17 @@ out(P, Col, $Order()) :- front_tile.low(P, T, _), tile_ink(T, P, Col).
 
 // The foremost ink at each cell.
 .init front_ink = ArgExtremes<Position, Color>
-front_ink.cand(P, Col, R) :- ink_at(P, Col), c.ink_rank(Col, R).
+front_ink.cand(P, Col, R) :- ink_at(P, Col), params.ink_rank(Col, R).
 
 out(P, Col, $Ink()) :- front_ink.low(P, Col, _).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     .decl tile_ink(e: Example, p_tile: Position, p: Position, col: Color)
     tile_ink(E, P_tile, P_intile, Col) :-
-        ex_in(E, P_grid, Col), !c.bg(Col),
-        c.axis(A), c.tiles(N),
+        ex_in(E, P_grid, Col), !params.bg(Col),
+        params.axis(A), params.tiles(N),
         divide_slab(P_grid, A, N, 0, P_tile, P_intile).
 
     // Closed transitively: a tile pair need not overlap directly.

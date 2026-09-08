@@ -7,19 +7,19 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color)
     bg(0).
 }
 
-.init c = Consts
+.init params = Params
 
 // The input's non-bg color.
 .decl ink(col: Color)
-ink(C) :- in(_, C), !c.bg(C).
+ink(C) :- in(_, C), !params.bg(C).
 
 .decl bg_cell(p: Position)
-bg_cell(P) :- in(P, C), c.bg(C).
+bg_cell(P) :- in(P, C), params.bg(C).
 
 // Output cells: every (tile, intile) pair of input positions.
 .decl out_cell(p: Position)
@@ -35,4 +35,4 @@ ink_at(P_grid) :-
 
 .decl out(p: Position, col: Color)
 out(P, C) :- ink_at(P), ink(C).
-out(P, C) :- out_cell(P), !ink_at(P), c.bg(C).
+out(P, C) :- out_cell(P), !ink_at(P), params.bg(C).

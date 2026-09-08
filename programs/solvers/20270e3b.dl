@@ -13,27 +13,27 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(1).
 
     .decl socket_color(col: Color) socket_color(7).
 }
 
-.init c = Consts
+.init params = Params
 
 // --- the two pieces ---
 
 .init pieces = Components8<Unit>
-pieces.node($U(), P) :- in(P, Col), !c.bg(Col).
+pieces.node($U(), P) :- in(P, Col), !params.bg(Col).
 
 .decl piece(id: Ident, p: Position)
 piece(Id, P) :- pieces.label($U(), P, Id).
 
 .decl wall(id: Ident, p: Position, col: Color)
-wall(Id, P, Col) :- piece(Id, P), in(P, Col), !c.socket_color(Col).
+wall(Id, P, Col) :- piece(Id, P), in(P, Col), !params.socket_color(Col).
 
 .decl socket(id: Ident, p: Position)
-socket(Id, P) :- piece(Id, P), in(P, Col), c.socket_color(Col).
+socket(Id, P) :- piece(Id, P), in(P, Col), params.socket_color(Col).
 
 // --- seating one piece against the other ---
 
@@ -85,6 +85,6 @@ sheet.extent($U(), A, N) :- crop.extent(_, A, N).
 .decl out(p: Position, col: Color)
 out(P, Col) :-
     sheet.cell($U(), P),
-    ( painted(P, Col)            // a wall cell
-    ; !painted(P, _), c.bg(Col)  // bg elsewhere
+    ( painted(P, Col)                 // a wall cell
+    ; !painted(P, _), params.bg(Col)  // bg elsewhere
     ).

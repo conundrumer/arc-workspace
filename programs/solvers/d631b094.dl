@@ -1,25 +1,25 @@
 // d631b094
 // concept: count
 // Cells of one color on bg. Output is a 1-cell-wide bar of that color
-// along c.bar_axis, extent = the cell count.
+// along params.bar_axis, extent = the cell count.
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
     .decl bar_axis(a: Axis) bar_axis(AXIS_H).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl on(p: Position, col: Color)
-on(P, Col) :- in(P, Col), !c.bg(Col).
+on(P, Col) :- in(P, Col), !params.bg(Col).
 
 .init total = Tally<Unit, Position>
 total.item($U(), P) :- on(P, _).
 
 .init bar = AxisFrame<Unit>
-bar.extent($U(), A, N) :- c.bar_axis(A), total.tally($U(), N).
+bar.extent($U(), A, N) :- params.bar_axis(A), total.tally($U(), N).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- bar.cell($U(), _, P), on(_, Col).

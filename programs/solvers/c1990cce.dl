@@ -2,16 +2,16 @@
 // concept: grow markers cast wallpaper
 // A 1×W row, bg except one ink cell. The output grows the row into a W×W
 // square: the ink casts two diagonal rays toward the far edge (a V), and
-// echo diagonals of c.echo on c.echo_axis fill the open cone between them.
-// Choice = [v, e] crosses the claims:
+// echo diagonals of params.echo on params.echo_axis fill the open cone between them.
+// Choice = [v, e] crosses the hypotheses:
 //
 //   v (V color):
 //     $VSeed()  — the ink's own color propagates to the V.
-//     $VFixed() — an independent c.v_color.
+//     $VFixed() — an independent params.v_color.
 //   e (echo placement):
-//     $Emit()   — every c.spacing-th cell along the mirror arm's line
+//     $Emit()   — every params.spacing-th cell along the mirror arm's line
 //                 casts an echo ray.
-//     $Stripe() — echoes at every c.period-th diagonal offset from the
+//     $Stripe() — echoes at every params.period-th diagonal offset from the
 //                 echo-axis arm.
 
 #include "../lib.dl"
@@ -20,7 +20,7 @@
 .type Echo   = Emit {} | Stripe {}
 .type Choice = [v: VSrc, e: Echo]
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl bg(col: Color) bg(0).
     .decl grow(d: Dir) grow(DIR_B).
@@ -37,7 +37,7 @@
     .decl period(k: number) period(4).
 }
 
-.init c = Consts
+.init params = Params
 
 // Output frame: square on the input's long extent.
 .decl side(n: number)
@@ -46,21 +46,21 @@ side(N) :- in(P, _), axis_dims(P, _, N, K), N > K.
 .init frame = Frame2D<Unit>
 frame.extent($U(), A, N) :- axis_elem(A), side(N).
 
-// The ink cell, seated in the output frame on the edge opposite c.grow.
+// The ink cell, seated in the output frame on the edge opposite params.grow.
 .decl seed(p: Position, col: Color)
 seed(P_out, Col) :-
-    in(P_in, Col), !c.bg(Col),                   // ink cell
+    in(P_in, Col), !params.bg(Col),                   // ink cell
     frame.cell($U(), P_out),
-    c.grow(D), opposite(D, D0),                  // seat edge
+    params.grow(D), opposite(D, D0),                  // seat edge
     slab_anchor(D0, P_in, P_out).
 
-// The two cone corners on the c.grow side; the one on the echo axis, and
+// The two cone corners on the params.grow side; the one on the echo axis, and
 // the mirror arm's.
 .decl corner(diag: DiagDir)
-corner(Diag) :- c.grow(D), dir_of(Diag, _, D).
+corner(Diag) :- params.grow(D), dir_of(Diag, _, D).
 
 .decl cast_corner(diag: DiagDir)
-cast_corner(Diag) :- corner(Diag), diag_axis_of(Diag, DA), c.echo_axis(DA).
+cast_corner(Diag) :- corner(Diag), diag_axis_of(Diag, DA), params.echo_axis(DA).
 
 .decl mirror_corner(diag: DiagDir)
 mirror_corner(Diag) :- corner(Diag), !cast_corner(Diag).
@@ -87,17 +87,17 @@ echo_choice($Stripe()).
 
 .decl echo(p: Position, e: Echo)
 
-// $Emit — emitters march along the mirror arm's line, every c.spacing-th
+// $Emit — emitters march along the mirror arm's line, every params.spacing-th
 // cell from the seed, continuing past the grid edge while rows remain;
 // each casts an echo ray.
 .decl march_jump(delta: Position)
-march_jump(J) :- mirror_corner(MD), c.spacing(S), jump_delta(MD, S, J).
+march_jump(J) :- mirror_corner(MD), params.spacing(S), jump_delta(MD, S, J).
 
 .decl emitter(p: Position)
 emitter(P) :- seed(P, _).
 emitter(P2) :-
     emitter(P1), march_jump(J), compose(P1, J, P2),
-    c.grow(D), dist(P2, D, K), K >= 0.           // rows remain
+    params.grow(D), dist(P2, D, K), K >= 0.           // rows remain
 
 .init rays = Ray<Unit>
 rays.dir($U(), Diag) :- cast_corner(Diag).
@@ -107,11 +107,11 @@ rays.mark($U(), P)   :- emitter(P).
 echo(P, $Emit()) :- rays.ray($U(), P, _, _, _), !arm(P).
 
 // $Stripe — diagonal offset from the echo-axis arm is a multiple of
-// c.period: the same corner_dist class from the mirror corner as the seed.
+// params.period: the same corner_dist class from the mirror corner as the seed.
 echo(P, $Stripe()) :-
     inside(P), seed(S, _),
     mirror_corner(MD), corner_dist(P, MD, Kp), corner_dist(S, MD, Ks),
-    c.period(Per), stride(Kp, Per, 0, _, R), stride(Ks, Per, 0, _, R).
+    params.period(Per), stride(Kp, Per, 0, _, R), stride(Ks, Per, 0, _, R).
 
 // --- V color cases ---
 
@@ -121,31 +121,31 @@ v_choice($VFixed()).
 
 .decl v_color(col: Color, v: VSrc)
 v_color(Col, $VSeed())  :- seed(_, Col).
-v_color(Col, $VFixed()) :- c.v_color(Col).
+v_color(Col, $VFixed()) :- params.v_color(Col).
 
 // --- Output ---
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, [V, E]) :- arm(P), v_color(Col, V), echo_choice(E).
-out(P, Col, [V, E]) :- echo(P, E), c.echo(Col), v_choice(V).
+out(P, Col, [V, E]) :- echo(P, E), params.echo(Col), v_choice(V).
 out(P, Col, [V, E]) :-
     frame.cell($U(), P), !arm(P), !echo(P, E),   // cell outside V and echoes
-    echo_choice(E), v_choice(V), c.bg(Col).
+    echo_choice(E), v_choice(V), params.bg(Col).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     // The ink cell, seated in the output frame.
     .decl seed(e: Example, p: Position)
     seed(E, P_out) :-
-        ex_in(E, P_in, Col), !c.bg(Col),             // ink cell
+        ex_in(E, P_in, Col), !params.bg(Col),             // ink cell
         ex_out(E, P_out, _),
-        c.grow(D), opposite(D, D0),                  // seat edge
+        params.grow(D), opposite(D, D0),                  // seat edge
         slab_anchor(D0, P_in, P_out).
 
     // The echoed cells an output shows.
     .decl echoed(e: Example, p: Position)
-    echoed(E, P) :- ex_out(E, P, Col), c.echo(Col).
+    echoed(E, P) :- ex_out(E, P, Col), params.echo(Col).
 
     // Strictly inside the V's cone.
     .decl inside(e: Example, p: Position)

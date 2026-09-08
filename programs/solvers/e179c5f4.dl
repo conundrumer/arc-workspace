@@ -2,18 +2,18 @@
 // concept: markers walk
 // A lone mark in a corner launches a ball diagonally away from the corner;
 // it reflects off the walls beside the travel axis and exits at the far
-// edge. Path cells take the ball color, all others c.fill. Choice = [t, f]
+// edge. Path cells take the ball color, all others params.fill. Choice = [t, f]
 // crosses:
 //
 //   t (travel axis — the walls beside it reflect):
-//     $Axis() — c.axis names it.
+//     $Axis() — params.axis names it.
 //     $Long() — the grid's long axis.
 //   f (ball color):
 //     $Mark() — the mark's own color.
-//     $Ink()  — an independent c.ink.
+//     $Ink()  — an independent params.ink.
 //
 // Coincide here: every grid is longest along V, and the mark color equals
-// c.ink.
+// params.ink.
 
 #include "../lib.dl"
 
@@ -21,7 +21,7 @@
 .type Paint  = Mark {} | Ink {}
 .type Choice = [t: Travel, f: Paint]
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
     .decl fill(c: Color) fill(8).    // off-path output color
 
@@ -32,11 +32,11 @@
     .decl ink(c: Color) ink(1).
 }
 
-.init c = Consts
+.init params = Params
 
 // The mark — the ball's start.
 .decl mark(p: Position, col: Color)
-mark(P, Col) :- in(P, Col), !c.bg(Col).
+mark(P, Col) :- in(P, Col), !params.bg(Col).
 
 // --- Travel cases: the travel axis ---
 
@@ -44,7 +44,7 @@ mark(P, Col) :- in(P, Col), !c.bg(Col).
 travel_choice($Axis()). travel_choice($Long()).
 
 .decl travel_axis(t: Travel, a: Axis)
-travel_axis($Axis(), A) :- c.axis(A).
+travel_axis($Axis(), A) :- params.axis(A).
 travel_axis($Long(), A) :- mark(P, _), axis_dims(P, A, N1, N2), N1 > N2.
 
 // --- The ball's walk ---
@@ -77,7 +77,7 @@ paint_choice($Mark()). paint_choice($Ink()).
 
 .decl paint(col: Color, f: Paint)
 paint(Col, $Mark()) :- mark(_, Col).
-paint(Col, $Ink())  :- c.ink(Col).
+paint(Col, $Ink())  :- params.ink(Col).
 
 // --- Output ---
 
@@ -85,4 +85,4 @@ paint(Col, $Ink())  :- c.ink(Col).
 out(P, Col, [T, F]) :- walk(T, P, _), paint(Col, F).
 out(P, Col, [T, F]) :-
     in(P, _), travel_choice(T), !walk(T, P, _),    // off the path
-    paint_choice(F), c.fill(Col).
+    paint_choice(F), params.fill(Col).

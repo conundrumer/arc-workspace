@@ -11,18 +11,18 @@
 
 .type Choice = Full {} | Detect {}
 
-.comp Consts {
+.comp Params {
     .decl mask(col: Color) mask(3).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl clean(p: Position, col: Color)
-clean(P, Col) :- in(P, Col), !c.mask(Col).
+clean(P, Col) :- in(P, Col), !params.mask(Col).
 
 // The hole: the masked cells.
 .init boxframe = BoxFrame<Unit>
-boxframe.cell($U(), P) :- in(P, Col), c.mask(Col).
+boxframe.cell($U(), P) :- in(P, Col), params.mask(Col).
 
 .decl out(p: Position, col: Color, c: Choice)
 

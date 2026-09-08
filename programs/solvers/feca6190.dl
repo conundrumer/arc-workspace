@@ -2,17 +2,17 @@
 // concept: lines cast count
 // A single line of cells with scattered ink. The output is a square of
 // side (ink count) × (line length); the line seats flush at the corner
-// opposite c.sweep, and every seated cell casts a diagonal ray toward
-// c.sweep — the line sliding one step per row. Cells on no ray are bg.
+// opposite params.sweep, and every seated cell casts a diagonal ray toward
+// params.sweep — the line sliding one step per row. Cells on no ray are bg.
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
     .decl sweep(d: DiagDir) sweep(DIAG_TR).
 }
 
-.init c = Consts
+.init params = Params
 
 // The line's long axis — the longer extent.
 .decl long_axis(a: Axis)
@@ -22,27 +22,27 @@ long_axis(A) :- in(P, _), axis_dims(P, A, N1, N2), N1 > N2.
 .type InkCell = [ink: Position, cell: Position]
 
 .init side = Tally<Unit, InkCell>
-side.item($U(), [P, Q]) :- in(P, Col), !c.bg(Col), in(Q, _).
+side.item($U(), [P, Q]) :- in(P, Col), !params.bg(Col), in(Q, _).
 
 .init frame = Frame2D<Unit>
 frame.extent($U(), A, N) :- axis_elem(A), side.tally($U(), N).
 
-// The line seated in the output frame, flush at the corner opposite c.sweep.
+// The line seated in the output frame, flush at the corner opposite params.sweep.
 .decl seated(p: Position, col: Color)
 seated(P_out, Col) :-
     in(P_in, Col),
     frame.cell($U(), P_out),
-    c.sweep(Diag),
+    params.sweep(Diag),
     long_axis(A), diag_dirs(Diag, A, Dh, Dv),                      // dirs along/across the line
     opposite(Dh, Dh0), opposite(Dv, Dv0),                          // the opposite corner's
     dist(P_out, Dv0, 0),                                           // on the start edge
     same_dist(Dh0, P_in, P_out).                                   // same trailing offset
 
 .init rays = Ray<Unit>
-rays.dir($U(), D)  :- c.sweep(D).
+rays.dir($U(), D)  :- params.sweep(D).
 rays.cell($U(), P) :- frame.cell($U(), P).
 rays.mark($U(), P) :- seated(P, _).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- rays.ray($U(), P, _, _, Q), seated(Q, Col).
-out(P, Col) :- frame.cell($U(), P), !rays.ray($U(), P, _, _, _), c.bg(Col).
+out(P, Col) :- frame.cell($U(), P), !rays.ray($U(), P, _, _, _), params.bg(Col).

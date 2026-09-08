@@ -10,8 +10,8 @@
 
 .type Choice = Lookup {} | Classify {}
 
-.comp Consts {
-    .init helpers = ConstsHelpers
+.comp Params {
+    .init helpers = ParamsHelpers
 
     .decl bg(c: Color) bg(0).
 
@@ -63,7 +63,7 @@
     center_on_out(4, 2).
 }
 
-.init c = Consts
+.init params = Params
 
 // --- parse ---
 
@@ -71,13 +71,13 @@
     .decl cell(k: Key, p: Position, col: Color)
 
     .decl silhouette(k: Key, p: Position)
-    silhouette(K, P) :- cell(K, P, Col), !c.bg(Col).
+    silhouette(K, P) :- cell(K, P, Col), !params.bg(Col).
 
     .decl center_on(k: Key)
-    center_on(K) :- c.center_pos(P), silhouette(K, P).
+    center_on(K) :- params.center_pos(P), silhouette(K, P).
 
     .init corners = Tally<Key, Position>
-    corners.item(K, P) :- c.corner_pos(P), silhouette(K, P).
+    corners.item(K, P) :- params.corner_pos(P), silhouette(K, P).
     corners.domain(K) :- cell(K, _, _).
 
     .decl corner_count(k: Key, n: number)
@@ -88,28 +88,28 @@
 parse.cell($U(), P, Col) :- in(P, Col).
 
 .init lookup_match = KeyedSetCompare<Unit, Ident, Position>
-lookup_match.pattern_member(Id, P) :- c.pattern_member(Id, P).
+lookup_match.pattern_member(Id, P) :- params.pattern_member(Id, P).
 lookup_match.observed_member($U(), P) :- parse.silhouette($U(), P).
 
 .decl out(p: Position, col: Color, c: Choice)
 
 // --- $Lookup ---
 out(ORIGIN, Col_out, $Lookup()) :-
-    c.pattern_out(Id, Col_out),                                   // entry's output color
-    lookup_match.equals($U(), Id).                                // silhouette == entry's shape
+    params.pattern_out(Id, Col_out),                                // entry's output color
+    lookup_match.equals($U(), Id).                                  // silhouette == entry's shape
 
 // --- $Classify ---
 out(ORIGIN, Col, $Classify()) :-
     !parse.center_on($U()),                                // center off
-    c.center_off_out(Col).
+    params.center_off_out(Col).
 
 out(ORIGIN, Col, $Classify()) :-
     parse.center_on($U()), parse.corner_count($U(), N),     // center on, count corners
-    c.center_on_out(N, Col).
+    params.center_on_out(N, Col).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     // Train pairs only — the ex_out atom holds the test inputs out.
     .init parse = Parse<Example>
     parse.cell(E, P, Col) :- ex_in(E, P, Col), ex_out(E, _, _).

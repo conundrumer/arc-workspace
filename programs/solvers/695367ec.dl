@@ -7,8 +7,8 @@
 
 #include "../lib.dl"
 
-.comp Consts {
-    .init helpers = ConstsHelpers
+.comp Params {
+    .init helpers = ParamsHelpers
 
     // Fixed output frame.
     .decl frame_dim(k: number) frame_dim(15).
@@ -28,7 +28,7 @@
     bg(0).
 }
 
-.init c = Consts
+.init params = Params
 
 // Ink, read off the input block.
 .decl ink(col: Color)
@@ -42,18 +42,18 @@ run(A, N) :- axis_elem(A), in(P, _), axis_dim(P, A, N).
 // the trailing line.
 .decl on_tile(p: Position, d: Dir)
 on_tile(P, D) :-
-    c.frame(P),
-    c.anchor(Diag), dir_of(Diag, A, D),         // an anchor edge, on axis a
-    run(A, W), c.gap(G),                        // period = block extent along that axis
+    params.frame(P),
+    params.anchor(Diag), dir_of(Diag, A, D),         // an anchor edge, on axis a
+    run(A, W), params.gap(G),                        // period = block extent along that axis
     dist(P, D, T), stride(T, W, G, _, _).
 
 // On a line: a gap on at least one anchor edge.
 .decl ruled(p: Position)
 ruled(P) :-
-    c.frame(P),
-    c.anchor(Diag), dir_of(Diag, _, D),
+    params.frame(P),
+    params.anchor(Diag), dir_of(Diag, _, D),
     !on_tile(P, D).
 
 .decl out(p: Position, col: Color)
 out(P, C)   :- ruled(P), ink(C).
-out(P, Bg)  :- c.frame(P), !ruled(P), c.bg(Bg).
+out(P, Bg)  :- params.frame(P), !ruled(P), params.bg(Bg).

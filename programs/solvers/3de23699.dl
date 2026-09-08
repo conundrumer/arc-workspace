@@ -6,14 +6,14 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl ink(p: Position, col: Color)
-ink(P, Col) :- in(P, Col), !c.bg(Col).
+ink(P, Col) :- in(P, Col), !params.bg(Col).
 
 .init box = Bbox<Color>
 box.cell(Col, P) :- ink(P, Col).
@@ -37,4 +37,4 @@ view.cell($U(), P) :- mark(Col), bcells.hole(Col, P).
 out(P_inner, Col_out) :-
     mark(Col), view.inner($U(), P, P_inner),  // the rectangle seen from itself
     ( ink(P, _), Col_out = Col                // pattern cell takes the mark color
-    ; !ink(P, _), c.bg(Col_out) ).            // bare cell stays background
+    ; !ink(P, _), params.bg(Col_out) ).       // bare cell stays background

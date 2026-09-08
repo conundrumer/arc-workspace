@@ -1,9 +1,9 @@
 // 017c7c7b
 // concept: wallpaper grow lines
 // The input continues periodically: the output is the grid extended to
-// c.extent along c.dir with the ink recolored, each new cell repeating
+// params.extent along params.dir with the ink recolored, each new cell repeating
 // the color one period back. The period is the shortest shift along
-// c.dir the input agrees with itself under.
+// params.dir the input agrees with itself under.
 //
 //   $Line — one period per across-line.
 //   $Grid — one period for the whole grid.
@@ -12,7 +12,7 @@
 
 .type Choice = Line {} | Grid {}
 
-.comp Consts {
+.comp Params {
     .decl dir(d: Dir) dir(DIR_B).        // growth direction
     .decl extent(n: number) extent(9).   // output extent along it
 
@@ -23,44 +23,44 @@
     .decl ink(col: Color) ink(2).        // output ink
 }
 
-.init c = Consts
+.init params = Params
 
 .decl impl_choice(ch: Choice)
 impl_choice($Line()). impl_choice($Grid()).
 
 // Input cell with the across-line it sits on.
 .decl cell_line(p: Position, line: Position, col: Color)
-cell_line(P, Line, Col) :- in(P, Col), c.axis(A), split(P, A, _, Line).
+cell_line(P, Line, Col) :- in(P, Col), params.axis(A), split(P, A, _, Line).
 
-// Output frame: the input grown along c.dir to c.extent.
+// Output frame: the input grown along params.dir to params.extent.
 .init frame = Frame2D<Unit>
-frame.extent($U(), A, N) :- c.axis(A), c.extent(N).
-frame.extent($U(), A2, W) :- in(P, _), c.axis(A), perp(A, A2), axis_dim(P, A2, W).
+frame.extent($U(), A, N) :- params.axis(A), params.extent(N).
+frame.extent($U(), A2, W) :- in(P, _), params.axis(A), perp(A, A2), axis_dim(P, A2, W).
 
 // Input embedded at the edge the growth moves away from, each cell
 // keeping its line.
 .decl base(line: Position, p: Position, col: Color)
 base(Line, P_grid_out, Col) :-
     frame.cell($U(), P_grid_out), cell_line(P_grid_in, Line, Col),
-    c.dir(D), opposite(D, O), slab_anchor(O, P_grid_in, P_grid_out).
+    params.dir(D), opposite(D, O), slab_anchor(O, P_grid_in, P_grid_out).
 
 // The period the continuation repeats by, per case and line.
 .decl period_at(ch: Choice, line: Position, k: number)
 
 // Colors over the output frame: the input, then each cell repeating the
-// one a period back. A jump along c.dir keeps the line.
+// one a period back. A jump along params.dir keeps the line.
 .decl fill(ch: Choice, line: Position, p: Position, col: Color)
 fill(Ch, Line, P, Col) :- impl_choice(Ch), base(Line, P, Col).
 fill(Ch, Line, P2, Col) :-
     fill(Ch, Line, P, Col),
-    c.dir(D), period_at(Ch, Line, K), jump(P, D, K, P2),
+    params.dir(D), period_at(Ch, Line, K), jump(P, D, K, P2),
     frame.cell($U(), P2).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     fill(Ch, _, P, C),
-    ( !c.bg(C), c.ink(Col)  // ink recolored
-    ; c.bg(C), Col = C      // bg passes
+    ( !params.bg(C), params.ink(Col)  // ink recolored
+    ; params.bg(C), Col = C           // bg passes
     ).
 
 // --- $Line ---
@@ -68,7 +68,7 @@ out(P, Col, Ch) :-
 .init parse_line = ShiftInvariance<Position, Color>
 parse_line.cell(Line, P, Col) :- cell_line(P, Line, Col).
 
-period_at($Line(), Line, K) :- c.axis(A), parse_line.min_period(Line, A, K).
+period_at($Line(), Line, K) :- params.axis(A), parse_line.min_period(Line, A, K).
 
 // --- $Grid ---
 
@@ -77,4 +77,4 @@ parse_grid.cell($U(), P, Col) :- in(P, Col).
 
 // The grid's period, so every line takes it.
 period_at($Grid(), Line, K) :-
-    cell_line(_, Line, _), c.axis(A), parse_grid.min_period($U(), A, K).
+    cell_line(_, Line, _), params.axis(A), parse_grid.min_period($U(), A, K).

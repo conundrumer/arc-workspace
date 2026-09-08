@@ -6,14 +6,14 @@
 // the arrangement, separators kept. Cases claim what tells the template
 // apart:
 //   $Sparse — the tile with the most bg cells.
-//   $Marker — the tile with no cell of c.marker; the marker color tags
+//   $Marker — the tile with no cell of params.marker; the marker color tags
 //             every other tile.
 
 #include "../lib.dl"
 
 .type Choice = Sparse {} | Marker {}
 
-.comp Consts {
+.comp Params {
     .decl tile_dim(k: number) tile_dim(3).
     .decl gap(g: number) gap(1).
 
@@ -24,27 +24,27 @@
     .decl marker(col: Color) marker(8).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl impl_choice(ch: Choice)
 impl_choice($Sparse()). impl_choice($Marker()).
 
 .decl tile(p_grid: Position, p_tile: Position, p_intile: Position)
 tile(P_grid, P_tile, P_intile) :-
-    in(P_grid, _), c.tile_dim(K), c.gap(G),
+    in(P_grid, _), params.tile_dim(K), params.gap(G),
     divide_by_size_2d(P_grid, K, G, P_tile, P_intile).
 
 .decl template(ch: Choice, p_tile: Position)
 
 // --- $Sparse ---
 .init sparse = Mode<Unit, Position, Position>
-sparse.item($U(), T, P) :- tile(P, T, _), in(P, Col), c.bg(Col).
+sparse.item($U(), T, P) :- tile(P, T, _), in(P, Col), params.bg(Col).
 
 template($Sparse(), T) :- sparse.mode($U(), T).
 
 // --- $Marker ---
 .decl has_marker(p_tile: Position)
-has_marker(T) :- tile(P, T, _), in(P, Col), c.marker(Col).
+has_marker(T) :- tile(P, T, _), in(P, Col), params.marker(Col).
 
 template($Marker(), T) :- tile(_, T, _), !has_marker(T).
 

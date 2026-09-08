@@ -1,18 +1,18 @@
 // 8e5a5113
 // concept: tile-arrangement decompose lookup d4 walk
 // Three full-height tiles split by separator columns; the pattern tile's
-// successive quarter-turn images fill the empty tiles. Flip readings are
+// successive quarter-turn images fill the empty tiles. Flip parses are
 // defeated (train 1: the second tile matches no reflection of its pattern).
 //
 // Cases (data-equivalent on this task):
-//   $Step()   — each tile toward c.flow_dir carries its neighbor's c.rot image
+//   $Step()   — each tile toward params.flow_dir carries its neighbor's params.rot image
 //   $Lookup() — per-tile D4 table applied to the pattern content
 
 #include "../lib.dl"
 
 .type Choice = Step {} | Lookup {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl bg(c: Color)
     bg(0).
@@ -38,7 +38,7 @@
     GRID_1x3(tile_d4, D4_ID, D4_CW, D4_HT)
 }
 
-.init c = Consts
+.init params = Params
 
 // --- parse ---
 
@@ -49,7 +49,7 @@
     .decl tile(key: Key, p_grid: Position, p_tile: Position, p_intile: Position)
     tile(K, P_grid, P_tile, P_intile) :-
         cell(K, P_grid),
-        c.axis(A), c.tile_n(N), c.gap(G),                    // arrangement params
+        params.axis(A), params.tile_n(N), params.gap(G),                    // arrangement params
         divide_slab(P_grid, A, N, G, P_tile, P_intile).
 }
 
@@ -61,7 +61,7 @@ tile_cell(P_grid, P_tile, P_intile) :- parse.tile($U(), P_grid, P_tile, P_intile
 
 .decl src(p_tile: Position, p_intile: Position, col: Color)
 src(P_tile, P_intile, Col) :-
-    tile_cell(P_grid, P_tile, P_intile), in(P_grid, Col), !c.bg(Col).
+    tile_cell(P_grid, P_tile, P_intile), in(P_grid, Col), !params.bg(Col).
 
 .decl out(p: Position, col: Color, c: Choice)
 
@@ -76,21 +76,21 @@ out(P, Col, $Lookup()) :- in(P, Col), !tile_cell(P, _, _).
 content(T, P, Col) :- src(T, P, Col).
 content(T2, P2, Col) :-
     content(T1, P1, Col),                        // known tile
-    c.flow_dir(D), neighbor(T1, D, T2),
-    tile_cell(_, T2, _),                         // stays in the arrangement
-    c.rot(R), apply(R, P1, P2).                  // rotated image
+    params.flow_dir(D), neighbor(T1, D, T2),
+    tile_cell(_, T2, _),                              // stays in the arrangement
+    params.rot(R), apply(R, P1, P2).                  // rotated image
 
 out(P_grid, Col, $Step()) :- content(T, P_intile, Col), tile_cell(P_grid, T, P_intile).
 
 // --- Lookup ---
 out(P_grid, Col, $Lookup()) :-
-    src(_, P_src, Col),                                  // pattern cell
-    c.tile_d4(P_tile, D), apply(D, P_src, P_intile),     // d4 image at tile
-    tile_cell(P_grid, P_tile, P_intile).                 // recompose
+    src(_, P_src, Col),                                       // pattern cell
+    params.tile_d4(P_tile, D), apply(D, P_src, P_intile),     // d4 image at tile
+    tile_cell(P_grid, P_tile, P_intile).                      // recompose
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     .init in_parse = Parse<Example>
     in_parse.cell(E, P) :- ex_in(E, P, _).
 
@@ -100,7 +100,7 @@ out(P_grid, Col, $Lookup()) :-
     // The pattern: an input tile's non-bg content.
     .decl src(e: Example, p_intile: Position, col: Color)
     src(E, P_intile, Col) :-
-        ex_in(E, P_grid, Col), !c.bg(Col), in_parse.tile(E, P_grid, _, P_intile).
+        ex_in(E, P_grid, Col), !params.bg(Col), in_parse.tile(E, P_grid, _, P_intile).
 
     .decl out_cell(e: Example, p_tile: Position, p_intile: Position, col: Color)
     out_cell(E, P_tile, P_intile, Col) :-
@@ -122,7 +122,7 @@ out(P_grid, Col, $Lookup()) :-
     // Tiles paired with their neighbor toward the flow.
     .decl flow_pair(e: Example, t1: Position, t2: Position)
     flow_pair(E, T1, T2) :-
-        out_cell(E, T1, _, _), c.flow_dir(D), neighbor(T1, D, T2), out_cell(E, T2, _, _).
+        out_cell(E, T1, _, _), params.flow_dir(D), neighbor(T1, D, T2), out_cell(E, T2, _, _).
 
     // Each tile's content must map onto its flow-neighbor's.
     .init step = D4Map<TileK, Color>

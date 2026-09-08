@@ -1,10 +1,10 @@
-"""Lint .dl solver bodies against the style doc under docs/wf-solver/.
+"""Lint .dl solver programs against the style doc under docs/wf-solver/.
 
 `.comp` blocks are skipped wholesale — a proposal comp is lib code on its
 way out of the solver, and its proposal entry is what makes it legitimate,
 so a comp with no entry is a finding — except the comps whose rules are
-model claims, which lint as body. The public entry point is `lint_body`;
-run_dl.py calls it after running each solver.
+model hypotheses, which lint as program. The public entry point is
+`lint_program`; run_dl.py calls it after running each solver.
 """
 
 import re
@@ -111,7 +111,7 @@ SHADOWED_TYPE_CAT = "shadowed type"
 LIB_NAME_CAT = "lib name"
 # The comps a solver holds as its own. Any other is a proposal comp,
 # legitimate only with its entry under docs/wf-solver/proposals/.
-STOCK_COMPS = ("Consts", "Fit", "Parse")
+STOCK_COMPS = ("Params", "Determine", "Parse")
 PROPOSALS_DIR = DOCS_DIR / "proposals"
 # The category a proposal comp with no entry is reported under.
 NO_ENTRY_CAT = "comp without entry"
@@ -418,7 +418,7 @@ def _comps_without_entry(
             NO_ENTRY_CAT, it.line,
             f"`{it.name}` is a proposal comp with no entry "
             f"docs/wf-solver/proposals/{it.name}.md; write the entry, or "
-            f"fold the comp into body",
+            f"fold the comp into the program",
             raw_lines[it.line - 1].rstrip(),
         ))
     return findings
@@ -428,7 +428,7 @@ def _type_scopes(
     items: list[Item], linted: bool = True,
 ) -> list[tuple[TypeDecl, bool]]:
     """Every solver TypeDecl, with whether it sits in linted scope: the top
-    level and the Fit/Parse comps. Other comps are skipped like the rest of
+    level and the Determine/Parse comps. Other comps are skipped like the rest of
     their lines."""
     out: list[tuple[TypeDecl, bool]] = []
     for it in items:
@@ -436,7 +436,7 @@ def _type_scopes(
             out.append((it, linted))
         elif isinstance(it, Comp):
             out.extend(
-                _type_scopes(it.items, linted and it.name in ("Fit", "Parse"))
+                _type_scopes(it.items, linted and it.name in ("Determine", "Parse"))
             )
         elif isinstance(it, Rigid):
             out.extend(_type_scopes(it.items, linted))
@@ -499,12 +499,12 @@ def _banned_types(
     return findings
 
 
-def lint_body(source: str) -> list[tuple[str, int, str, str]]:
-    """Flag body code that violates the style doc.
+def lint_program(source: str) -> list[tuple[str, int, str, str]]:
+    """Flag program code that violates the style doc.
 
     Returns (category, lineno, match, raw_line) per finding. The category
     names what was flagged. Skips // and /* */ comments and the `.comp`
-    blocks that hold no body code, whose spans come from the parsed source.
+    blocks that hold no program code, whose spans come from the parsed source.
     The reserved-name check reads every line, comps included, since Souffle
     rejects such a name anywhere; the parse extends it to the inner name
     positions. A source that does not parse returns the line-level findings
@@ -526,7 +526,7 @@ def lint_body(source: str) -> list[tuple[str, int, str, str]]:
 
     skip: set[int] = set()
     for comp in program.comps().values():
-        if comp.name in ("Fit", "Parse"):
+        if comp.name in ("Determine", "Parse"):
             skip.add(comp.line)
         else:
             skip.update(range(comp.line, comp.end_line + 1))
@@ -557,15 +557,15 @@ def lint_body(source: str) -> list[tuple[str, int, str, str]]:
     findings.extend(_lib_named(program.items, raw_lines))
     findings.extend(_comps_without_entry(program.items, raw_lines))
     findings.extend(_banned_types(program.items, raw_lines))
-    findings.extend(_consts_data(program.comps().get("Consts"), raw_lines, code))
+    findings.extend(_params_data(program.comps().get("Params"), raw_lines, code))
     findings.sort(key=lambda f: (f[1], f[0]))
     return findings
 
 
-def _consts_data(
+def _params_data(
     comp: Comp | None, raw_lines: list[str], code,
 ) -> list[tuple[str, int, str, str]]:
-    """Consts-rule literals that `exempt_literal` does not exempt."""
+    """Params-rule literals that `exempt_literal` does not exempt."""
     findings: list[tuple[str, int, str, str]] = []
     if comp is None:
         return findings
@@ -579,6 +579,6 @@ def _consts_data(
                 if exempt_literal(m.group(0), unit):
                     continue
                 findings.append(
-                    ("consts data", ln, m.group(0), raw_lines[ln - 1].rstrip())
+                    ("params data", ln, m.group(0), raw_lines[ln - 1].rstrip())
                 )
     return findings

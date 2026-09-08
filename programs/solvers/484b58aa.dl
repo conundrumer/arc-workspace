@@ -13,7 +13,7 @@
 
 .type Choice = Lattice {} | Lines {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl hole(col: Color) hole(0).
 
@@ -21,13 +21,13 @@
     .decl axis(a: Axis) axis(AXIS_V).   // lines run along V
 }
 
-.init c = Consts
+.init params = Params
 
 .decl intact(p: Position, col: Color)
-intact(P, Col) :- in(P, Col), !c.hole(Col).
+intact(P, Col) :- in(P, Col), !params.hole(Col).
 
 .decl damaged(p: Position)
-damaged(P) :- in(P, Col), c.hole(Col).
+damaged(P) :- in(P, Col), params.hole(Col).
 
 .decl impl_choice(ch: Choice)
 impl_choice($Lattice()). impl_choice($Lines()).
@@ -64,8 +64,8 @@ period_at($Lattice(), P, A, K) :- damaged(P), si.min_period($U(), A, K).
 // --- $Lines ---
 
 .init si_line = ShiftInvariance<Position, Color>
-si_line.cell(L, P, Col) :- intact(P, Col), c.axis(A), split(P, A, _, L).
+si_line.cell(L, P, Col) :- intact(P, Col), params.axis(A), split(P, A, _, L).
 
 period_at($Lines(), P, A, K) :-
-    damaged(P), c.axis(A), split(P, A, _, L),        // the cell's line
-    si_line.min_period(L, A, K).                     // that line's period
+    damaged(P), params.axis(A), split(P, A, _, L),        // the cell's line
+    si_line.min_period(L, A, K).                          // that line's period

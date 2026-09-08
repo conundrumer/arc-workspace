@@ -24,7 +24,7 @@ from dl.source import macro_line_map
 # reader comparing two errors has to put the solver back in its place.
 TEMP_NAME_RE = re.compile(r"\.tmp\w+\.dl")
 
-# Souffle reports the fit-mode relations as unfed whenever it reads a
+# Souffle reports the determination-mode relations as unfed whenever it reads a
 # solve-mode program, so the first error is what a compile failure is about.
 FIRST_ERROR_RE = re.compile(r"^Error:", re.M)
 
@@ -143,7 +143,7 @@ def _souffle(
     # own burn, so system load and EDR spawn stalls can't fake a failure. The
     # wall timeout backstops hangs that block without spinning; it stays low
     # so inefficient solvers surface. The default budgets one grid; a run fed
-    # every example at once (fit) passes a limit scaled to what it carries.
+    # every example at once (determination) passes a limit scaled to what it carries.
     cmd = ["souffle", "-D-", "-w", "-L", str(PROGRAMS_DIR), "-lfunctors",
            *(extra_args or []), str(dl_path)]
     result = subprocess.run(

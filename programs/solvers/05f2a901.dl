@@ -1,6 +1,6 @@
 // 05f2a901
 // concept: objects move
-// Two objects lie along one axis: the c.mover one and the c.anchor one. The
+// Two objects lie along one axis: the params.mover one and the params.anchor one. The
 // mover slides toward the anchor and stops on contact; the anchor stays.
 //
 // The cases differ in what counts as contact:
@@ -12,25 +12,25 @@
 
 .type Choice = Block {} | Touch {} | Extent {}
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
     .decl mover(col: Color) mover(2).
     .decl anchor(col: Color) anchor(8).
 }
 
-.init c = Consts
+.init params = Params
 
 // --- objects ---
 
 .decl mover_cell(p: Position)
-mover_cell(P) :- in(P, Col), c.mover(Col).
+mover_cell(P) :- in(P, Col), params.mover(Col).
 
 .decl anchor_cell(p: Position)
-anchor_cell(P) :- in(P, Col), c.anchor(Col).
+anchor_cell(P) :- in(P, Col), params.anchor(Col).
 
 .init box = Bbox<Color>
-box.cell(Col, P) :- mover_cell(P), c.mover(Col).
-box.cell(Col, P) :- anchor_cell(P), c.anchor(Col).
+box.cell(Col, P) :- mover_cell(P), params.mover(Col).
+box.cell(Col, P) :- anchor_cell(P), params.anchor(Col).
 box.grid(Col, P) :- box.cell(Col, _), in(P, _).
 
 // --- direction of travel ---
@@ -70,10 +70,10 @@ stopper($Touch(), P2) :- anchor_cell(P), dir_elem(D), neighbor(P, D, P2).
 
 // --- Extent ---
 
-shape($Extent(), P) :- c.mover(Col), box.inside(Col, P).
+shape($Extent(), P) :- params.mover(Col), box.inside(Col, P).
 
 stopper($Extent(), P2) :-
-    c.anchor(Col), box.inside(Col, P), approach(O), neighbor(P, O, P2).
+    params.anchor(Col), box.inside(Col, P), approach(O), neighbor(P, O, P2).
 
 // --- the walk ---
 
@@ -108,8 +108,8 @@ landed(Ch, P2) :- rest(Ch, Delta), mover_cell(P), compose(P, Delta, P2).
 // The grid with the mover lifted off.
 .decl cleared(p: Position, col: Color)
 cleared(P, Col) :- in(P, Col), !mover_cell(P).
-cleared(P, Col) :- mover_cell(P), c.bg(Col).
+cleared(P, Col) :- mover_cell(P), params.bg(Col).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, Ch) :- landed(Ch, P), c.mover(Col).
+out(P, Col, Ch) :- landed(Ch, P), params.mover(Col).
 out(P, Col, Ch) :- rest(Ch, _), cleared(P, Col), !landed(Ch, P).

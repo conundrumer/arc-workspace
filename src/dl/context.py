@@ -2,9 +2,9 @@
 cadence uses.
 
 `lib.dl` renders as signatures, and the catalog docs render as one line per
-entry. The other docs pass through without their editor notes and deferred
-sections. Each rendering names the file that holds the rest, and derives
-from the live file, so no copy can go stale.
+entry. The other docs pass through without their editor notes, their `+` lines,
+and their deferred sections. Each rendering names the file that holds the
+rest, and derives from the live file, so no copy can go stale.
 """
 
 from __future__ import annotations
@@ -20,10 +20,10 @@ from dl.paths import PROGRAMS_DIR, REPO_ROOT
 DOCS_DIR = REPO_ROOT / "docs" / "wf-solver"
 LIB_SRC = PROGRAMS_DIR / "lib.dl"
 
-# The docs the cadence reads, in reading order: the claim, then its form,
+# The docs the cadence reads, in reading order: the theory, then its form,
 # then what the corpus made of it.
 DOCS = ("cadence.md", "principles.md", "style.md", "patterns.md", "concepts.md",
-        "shapes.md", "lib-protocol.md")
+        "shapes.md", "lib-protocol.md", "former-names.md")
 # Catalog docs: entries are independent and a session uses few, so the context
 # carries the index and the session reads the entry it needs.
 INDEX = {"patterns.md"}
@@ -162,6 +162,14 @@ def drop_deferred(text: str) -> tuple[str, list[str]]:
     return "".join(out), titles
 
 
+def drop_omitted(text: str) -> str:
+    """A doc without its `+` list items. A `+` line is source-only: it
+    reads as a bullet in a viewer and holds what a session doesn't read,
+    such as a rule's formal statement."""
+    text = re.sub(r"^[ \t]*\+ .*\n?", "", text, flags=re.M)
+    return re.sub(r"\n{3,}", "\n\n", text)
+
+
 def strip_comments(text: str) -> tuple[str, bool]:
     """A doc without its HTML comments, and whether any sat past the opening
     editing note. They hold notes to the doc's editor, and a solver session
@@ -177,7 +185,7 @@ def render(docs: Path = DOCS_DIR, lib: Path = LIB_SRC) -> str:
     for name in DOCS:
         rel = f"docs/wf-solver/{name}"
         text, titles = drop_deferred((docs / name).read_text())
-        text, dropped = strip_comments(text)
+        text, dropped = strip_comments(drop_omitted(text))
         notes = [SECTION_DEFERRED.format(title=t, rel=rel) for t in titles]
         if dropped:
             notes.insert(0, NOTES_DROPPED.format(rel=rel))

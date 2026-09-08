@@ -14,11 +14,11 @@
 .type Choice = Line {} | Color {}
 .type LineKey = [a: Axis, p_across: Position]
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
 }
 
-.init c = Consts
+.init params = Params
 
 .init line_color = Unanimous<LineKey, Color>
 line_color.item([A, P_across], Col) :- in(P, Col), axis_elem(A), split(P, A, _, P_across).
@@ -40,6 +40,6 @@ gate(P, $Color()) :- in(P, Col), line_color.value(_, Col).
 out(P_grid_out, Col, Ch) :-
     impl_choice(Ch), in(P_tile, _), in(P_intile, Col_in),   // tile slot, tile content
     ( gate(P_tile, Ch), Col = Col_in                        // gate open — the input, copied
-    ; !gate(P_tile, Ch), c.bg(Col)                          // gate shut — the whole tile bg
+    ; !gate(P_tile, Ch), params.bg(Col)                     // gate shut — the whole tile bg
     ),
     concat_2d(P_tile, P_intile, 0, P_grid_out).             // tile ⊗ cell → grid

@@ -1,9 +1,10 @@
-"""The fit plan: which Consts slots need Fit relations, from the proposer probe.
+"""The determination plan: which Params parameters need determination
+relations, from the proposer probe.
 
 In conventional terms, the values consistent with the examples are a
-slot's version space. A proposer restricts the space that settling
-searches: a pinned slot is point-identified by its proposer, a narrowed
-slot set-identified, and settling enumerates the rest under the budget.
+parameter's version space. A proposer restricts the space that settling
+searches: an exact parameter is point-identified by its proposer, a narrowed
+parameter set-identified, and settling enumerates the rest under the budget.
 """
 
 import math
@@ -28,12 +29,12 @@ from dl.souffle import _run_source
 from dl.source import (
     COMP_HEADER_RE,
     _comp_span,
-    _slot_facts,
+    _param_facts,
     _split_args,
     comp_decls,
+    determined_params,
     expand_macros,
-    fit_slots,
-    public_slot,
+    public_param,
 )
 
 
@@ -84,33 +85,35 @@ def run_probe(task) -> dict[str, set[tuple]]:
 
 
 # Joint candidate product a produce run may enumerate to settle narrowed
-# slots by verification; over it, settling slots must move under Fit — the
-# session's choice which — until the rest go under.
+# parameters by verification; over it, settling parameters must move under
+# determination — the session's choice which — until the rest go under.
 JOINT_BUDGET = 100
 
 
 def probe_report(
     stem: str,
 ) -> tuple[list[tuple[str, dict[str, str]]], list[str], set[str]]:
-    """Compare each fact slot's stored fill with each proposer of the
-    slot's value type. Slots outside the probe's types carry no verdicts.
+    """Compare each fact parameter's stored value with each proposer of the
+    parameter's value type. Parameters outside the probe's types carry no
+    verdicts.
 
-    Returns (results, embedded, fitted). fitted names the slots whose Fit
-    relation already exists. results is (slot, {proposer: verdict}):
-    'pinned' — candidate set equals the stored set; 'narrowed(n)' — stored
+    Returns (results, embedded, determined). determined names the parameters
+    whose determination relation already exists. results is
+    (parameter, {proposer: verdict}):
+    'exact' — candidate set equals the stored set; 'narrowed(n)' — stored
     inside a set smaller than the enumeration domain, n its candidate
-    count (for a multi-fact slot, the non-empty subsets, since a set fill
-    applies whole); 'open' — stored inside a set no smaller than the
-    domain; 'missed' — stored outside the set. A single-fact slot also carries a 'domain' entry, 'enumerable(n)':
+    count (for a multi-fact parameter, the non-empty subsets, since a set
+    value applies whole); 'open' — stored inside a set no smaller than the
+    domain; 'missed' — stored outside the set. A single-fact parameter also carries a 'domain' entry, 'enumerable(n)':
     the size of its value domain, a proposer-free candidate set. embedded
-    lists rule-derived Consts relations whose rules carry literals that
+    lists rule-derived Params relations whose rules carry literals that
     `exempt_literal` does not exempt.
     """
     source = expand_macros((SOLVERS_DIR / f"{stem}.dl").read_text())
     task = load_task(stem.split("_", 1)[0])
     defines = _lib_defines()
-    s, e = _comp_span(source, "Consts")
-    consts_text = "\n".join(source.splitlines()[s:e])
+    s, e = _comp_span(source, "Params")
+    params_text = "\n".join(source.splitlines()[s:e])
     nums = _number_domain(task)
     domains = {
         "Color": len(_color_domain(task)),
@@ -128,39 +131,39 @@ def probe_report(
     supported = set(ENUM_TYPES) | POSITION_TYPES | {"Color", "number"}
     results = []
     embedded = []
-    for slot, types in comp_decls(source, "Consts").items():
+    for param, types in comp_decls(source, "Params").items():
         if not types:
             continue
-        rules = _rules(consts_text, slot)
+        rules = _rules(params_text, param)
         if rules:
             if any(
                 not exempt_literal(m.group(0), unit)
                 for text, unit in rules
                 for m in NUMERIC_LITERAL_RE.finditer(text)
             ):
-                embedded.append(slot)
+                embedded.append(param)
             continue
-        if not _slot_facts(source, slot):
+        if not _param_facts(source, param):
             continue
         if any(t not in supported for t in types):
-            results.append((public_slot(slot), {}))
+            results.append((public_param(param), {}))
             continue
         stored = {
             tuple(stored_value(a, t) for a, t in zip(args, types))
-            for args in _slot_facts(source, slot)
+            for args in _param_facts(source, param)
         }
         verdicts = {}
         for name, cand in sorted(proposals.items()):
             if ptypes[name] != types:
                 continue
             if len(types) == 1:
-                # Single-column: cand is a set of rival candidates.
+                # Single-column: cand is a set of peer candidates.
                 if not stored <= cand:
                     verdicts[name] = "missed"
                 elif cand == stored:
-                    verdicts[name] = "pinned"
+                    verdicts[name] = "exact"
                 elif len(cand) < domains[types[0]]:
-                    # A multi-fact fill is a subset of cand applied whole,
+                    # A multi-fact value is a subset of cand applied whole,
                     # so its enumeration ranges over the subsets.
                     n = (len(cand) if len(stored) == 1
                          else 2 ** len(cand) - 1)
@@ -177,7 +180,7 @@ def probe_report(
                 else:
                     n *= domains[t]
             verdicts["domain"] = f"enumerable({n})"
-        results.append((public_slot(slot), verdicts))
+        results.append((public_param(param), verdicts))
 
     combo = _combine_triples(source)
     if combo is not None and "PanelCombine" in proposals:
@@ -185,19 +188,19 @@ def probe_report(
             "combine_member+combine_out",
             {"PanelCombine": _table_verdict(proposals["PanelCombine"], combo)},
         ))
-    return results, sorted(embedded), set(fit_slots(source) or {})
+    return results, sorted(embedded), set(determined_params(source) or {})
 
 
-def _rules(consts_text: str, slot: str) -> list[tuple[str, bool]]:
-    """The slot's rules, each as (comment-stripped text, carries
-    `UNIT_MARKER`); empty for fact slots."""
+def _rules(params_text: str, param: str) -> list[tuple[str, bool]]:
+    """The parameter's rules, each as (comment-stripped text, carries
+    `UNIT_MARKER`); empty for fact parameters."""
     rules = []
     cur: list[str] = []
     unit = False
     in_rule = False
-    for line in consts_text.splitlines():
+    for line in params_text.splitlines():
         code, _, comment = line.partition("//")
-        if not in_rule and re.search(rf"\b{slot}\s*\([^)]*\)\s*:-", code):
+        if not in_rule and re.search(rf"\b{param}\s*\([^)]*\)\s*:-", code):
             in_rule = True
         if in_rule:
             cur.append(code)
@@ -224,8 +227,8 @@ def _table_verdict(cand: set, stored: set) -> str:
 def _combine_triples(source: str) -> set[tuple] | None:
     """The 2-panel combine table as (c_first, c_second, c_out) triples,
     id-invariant; None when the solver has no such table."""
-    members = _slot_facts(source, "combine_member")
-    outs = {a[0]: int(a[1]) for a in _slot_facts(source, "combine_out")}
+    members = _param_facts(source, "combine_member")
+    outs = {a[0]: int(a[1]) for a in _param_facts(source, "combine_out")}
     if not members or not outs:
         return None
     by_id: dict[str, list] = {}
@@ -241,32 +244,32 @@ def _combine_triples(source: str) -> set[tuple] | None:
     return triples
 
 
-def fit_plan(
+def determination_plan(
     results: list[tuple[str, dict[str, str]]],
-    fitted: set[str] = frozenset(),
+    determined: set[str] = frozenset(),
 ) -> tuple[list[str], list[tuple[str, int]], list[str], list[str]]:
-    """Classify slots: (fit, settle, done, pinned).
+    """Classify parameters: (determine, settle, done, exact).
 
-    A slot is pinned when some proposer reads it off exactly; it settles
-    when a candidate set — a proposer's narrowed set or the slot's own
+    A parameter is exact when some proposer reads it off exactly; it settles
+    when a candidate set — a proposer's narrowed set or the parameter's own
     value domain — gives a produce run something to enumerate; it needs a
-    Fit relation when it has neither. Settling is bounded: when the
-    settling slots' joint product is over JOINT_BUDGET, some must move
-    under Fit — which ones is the session's choice — until the rest go
-    under. Slots in `fitted` already carry a Fit relation; they are done
-    and leave the product. A paired-table row ('a+b') pins both slots on
-    'exact'.
+    determination relation when it has neither. Settling is bounded: when the
+    settling parameters' joint product is over JOINT_BUDGET, some must move
+    under determination — which ones is the session's choice — until the rest
+    go under. Parameters in `determined` already carry a determination
+    relation; they are done and leave the product. A paired-table row ('a+b')
+    makes both parameters exact.
     """
-    fit, settle, done, pinned = [], [], [], []
-    for slot, verdicts in results:
-        if "+" in slot:
+    determine, settle, done, exact = [], [], [], []
+    for param, verdicts in results:
+        if "+" in param:
             continue
-        if slot in fitted:
-            done.append(slot)
+        if param in determined:
+            done.append(param)
             continue
         vals = set(verdicts.values())
-        if "pinned" in vals or "exact" in vals:
-            pinned.append(slot)
+        if "exact" in vals:
+            exact.append(param)
             continue
         ns = [
             int(m.group(1))
@@ -274,54 +277,54 @@ def fit_plan(
             if (m := re.fullmatch(r"(?:narrowed|enumerable)\((\d+)\)", v))
         ]
         if ns:
-            settle.append((slot, min(ns)))
+            settle.append((param, min(ns)))
         else:
-            fit.append(slot)
-    for slot, verdicts in results:
-        if "+" in slot and set(verdicts.values()) == {"exact"}:
-            for part in slot.split("+"):
-                if part in fit:
-                    fit.remove(part)
-                    pinned.append(part)
+            determine.append(param)
+    for param, verdicts in results:
+        if "+" in param and set(verdicts.values()) == {"exact"}:
+            for part in param.split("+"):
+                if part in determine:
+                    determine.remove(part)
+                    exact.append(part)
 
     settle.sort(key=lambda sn: (-sn[1], sn[0]))
-    return sorted(fit), settle, sorted(done), sorted(pinned)
+    return sorted(determine), settle, sorted(done), sorted(exact)
 
 
-def render_fit_plan(
+def render_determination_plan(
     report: tuple[list[tuple[str, dict[str, str]]], list[str], set[str]],
 ) -> list[str]:
-    results, embedded, fitted = report
-    fit, settle, done, pinned = fit_plan(results, fitted)
+    results, embedded, determined = report
+    determine, settle, done, exact = determination_plan(results, determined)
     joint = math.prod(n for _, n in settle)
     over = joint > JOINT_BUDGET
-    covered = sorted(pinned + ([] if over else [slot for slot, _ in settle]))
+    covered = sorted(exact + ([] if over else [param for param, _ in settle]))
     lines: list[str] = []
 
-    def section(header: str, slots: list[str]) -> None:
-        if not slots:
+    def section(header: str, params: list[str]) -> None:
+        if not params:
             return
         if lines:
             lines.append("")
         lines.append(f"{header}:")
-        lines.extend(f"  {slot}" for slot in slots)
+        lines.extend(f"  {param}" for param in params)
 
-    if not fit and not over and not embedded:
+    if not determine and not over and not embedded:
         lines.append("no actions")
-    section("write a Fit relation", fit)
+    section("write a determination relation", determine)
     if over:
         section(
             f"over the settle budget ({joint} > {JOINT_BUDGET}) — "
-            "choose Fit relations until the rest go under",
-            [f"{slot}({n})" for slot, n in settle],
+            "choose determination relations until the rest go under",
+            [f"{param}({n})" for param, n in settle],
         )
-    section("fitted", done)
-    section("no Fit relation needed", covered)
-    section("move data from rules to fact slots", embedded)
+    section("determined", done)
+    section("no determination relation needed", covered)
+    section("move data from rules to fact parameters", embedded)
 
     detail = [
-        f"{slot}: " + ", ".join(f"{n} {v}" for n, v in verdicts.items())
-        for slot, verdicts in results
+        f"{param}: " + ", ".join(f"{n} {v}" for n, v in verdicts.items())
+        for param, verdicts in results
         if verdicts
     ]
     if detail:

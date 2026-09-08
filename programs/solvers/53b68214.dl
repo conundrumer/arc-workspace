@@ -1,12 +1,12 @@
 // 53b68214
 // concept: grow wallpaper
-// The input is periodic along c.growth: the period is the shortest shift
+// The input is periodic along params.growth: the period is the shortest shift
 // it agrees with itself under. The output frame extends the input toward
-// c.growth, and the pattern continues period by period into the new
+// params.growth, and the pattern continues period by period into the new
 // cells. Two models of the grown extent:
 //
 //   $Square() — it matches the perpendicular extent.
-//   $Canvas() — it is stored (c.out_dim); the perpendicular passes through.
+//   $Canvas() — it is stored (params.out_dim); the perpendicular passes through.
 //
 // The models coincide here (width and canvas are both 10 in every pair);
 // they diverge when the input width differs from the canvas.
@@ -15,20 +15,20 @@
 
 .type Choice = Square {} | Canvas {}
 
-.comp Consts {
+.comp Params {
     .decl growth(d: Dir) growth(DIR_B).
 
     // --- $Canvas ---
     .decl out_dim(k: number) out_dim(10).
 }
 
-.init c = Consts
+.init params = Params
 
 .init parse = ShiftInvariance<Unit, Color>
 parse.cell($U(), P, Col) :- in(P, Col).
 
 .decl width(w: number)
-width(W) :- in(P, _), c.growth(D), axis_of(D, A), perp(A, A2), axis_dim(P, A2, W).
+width(W) :- in(P, _), params.growth(D), axis_of(D, A), perp(A, A2), axis_dim(P, A2, W).
 
 // Per-case output frame.
 .init frame = Frame2D<Choice>
@@ -37,14 +37,14 @@ width(W) :- in(P, _), c.growth(D), axis_of(D, A), perp(A, A2), axis_dim(P, A2, W
 frame.extent($Square(), A, W) :- width(W), axis_elem(A).
 
 // --- $Canvas ---
-frame.extent($Canvas(), A, K)  :- c.growth(D), axis_of(D, A), c.out_dim(K).
-frame.extent($Canvas(), A2, W) :- width(W), c.growth(D), axis_of(D, A), perp(A, A2).
+frame.extent($Canvas(), A, K)  :- params.growth(D), axis_of(D, A), params.out_dim(K).
+frame.extent($Canvas(), A2, W) :- width(W), params.growth(D), axis_of(D, A), perp(A, A2).
 
 // The input seated against the edge the growth flows away from.
 .decl placed(ch: Choice, p_grid: Position, p_in: Position)
 placed(Ch, P_grid, P_in) :-
     frame.cell(Ch, P_grid), in(P_in, _),
-    c.growth(D), opposite(D, O), slab_anchor(O, P_in, P_grid).
+    params.growth(D), opposite(D, O), slab_anchor(O, P_in, P_grid).
 
 .decl out(p: Position, col: Color, ch: Choice)
 
@@ -52,5 +52,5 @@ placed(Ch, P_grid, P_in) :-
 out(P_grid, Col, Ch) :- placed(Ch, P_grid, P_in), in(P_in, Col).
 out(P2, Col, Ch) :-
     out(P1, Col, Ch),
-    c.growth(D), axis_of(D, A), parse.min_period($U(), A, K),
+    params.growth(D), axis_of(D, A), parse.min_period($U(), A, K),
     jump(P1, D, K, P2), frame.cell(Ch, P2).

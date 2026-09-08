@@ -1,6 +1,6 @@
 # `apply_about` — a D4 transform taken about a placed frame
 
-The image of a cell under a D4 element, taken about the frame that a Position places, rather than about the grid: the cell is read in that frame, transformed there, and seated back. `apply` is this with the grid's own frame, so a solver whose transform turns about an object — a marker, a bounding box, a stamp seat — states its claim in the same vocabulary instead of unfolding the view and the seating around it. The frame Position needs no relation to the cell: a cell outside it reflects across the frame's center lines just as an inside cell does, which is what a solver copying content around a pivot reads.
+The image of a cell under a D4 element, taken about the frame that a Position places, rather than about the grid: the cell is read in that frame, transformed there, and seated back. `apply` is this with the grid's own frame, so a solver whose transform turns about an object — a marker, a bounding box, a stamp seat — states its hypothesis in the same vocabulary instead of unfolding the view and the seating around it. The frame Position needs no relation to the cell: a cell outside it reflects across the frame's center lines just as an inside cell does, which is what a solver copying content around a pivot reads.
 
 ```
 .decl apply_about(d: D4, p_frame: Position, p: Position, p_out: Position) inline
@@ -16,16 +16,16 @@ Survey: 2026-09-03 21:02
 
 ## Callers
 
-- `4938f0c2` — body and Fit, about the marker block's box; the entry's exact form.
+- `4938f0c2` — program and determination, about the marker block's box; the entry's exact form.
 - `90347967` — every grid cell about the marker cell.
 - `e729b7be` — every input cell about the crossing cell.
-- `981571dc` — body and Fit: the counterpart about the wallpaper center, seated through a `Reframe` read backward, and the same operation about a candidate center, written as the grid-frame flip plus twice the center offset.
-- `47996f11` — the same two forms, body and Fit.
+- `981571dc` — program and determination: the counterpart about the wallpaper center, seated through a `Reframe` read backward, and the same operation about a candidate center, written as the grid-frame flip plus twice the center offset.
+- `47996f11` — the same two forms, program and determination.
 - `3345333e` — every grid cell about each candidate mirror frame.
 - `11852cab` — the figure in its bounding box, seated back through the same view.
 - `18419cfa` — each interior's ink in that interior's box.
 - `4290ef0e` — the operation at a fixed half turn, with no D4 element named in the file.
-- `4c5c2cf0` — body and Fit; the surfacing solver.
+- `4c5c2cf0` — program and determination; the surfacing solver.
 - `50c07299` — a fixed half turn about the cell just past a segment's end, with no D4 element named in the file.
 - `2bcee788` — the shape about the two-line box each of its mirror cases bounds.
 
@@ -45,4 +45,4 @@ Five of those callers seat by reading a frame view backward, and so inherit a do
 
 No change to the interface or the definition. The four-argument inline form serves every caller as written: each binds its frame as a plain Position already in the rule — a `Bbox.margin`, a `BoxFrame.margin`, a marker cell, a stored center, a candidate frame from a keyed relation — so the operation needs no key parameter and no comp form. `3345333e` is the strongest evidence for the inline form: its frame varies per row from a relation, and it pays for a `Reframe<Position>` instance solely to unfold the operation. `4290ef0e` and `50c07299` would have to source a D4 element their models never name; whether those sites state a transform at all is a question for their models, not for the signature.
 
-The `Not:` line now excludes a landing by Shift rather than every rule that writes a doubling. `D(P) + 2*Delta` is `apply_about(D, Delta, P)` whenever `Delta` lies on the flipped axis, which is how the Fit sites of `47996f11` and `981571dc` reach their candidate center — each has in hand the origin its transform turns about, and each passes that same origin to a `Reframe.outer` in its body. `50f325b5` searches an `Occurrences` placement Shift that no origin produces, and stays out. Those frame arguments are Shift-typed, an offset from the grid center rather than a frame cell; `Shift = Position` in lib, so the declared `p_frame: Position` accepts them.
+The `Not:` line now excludes a landing by Shift rather than every rule that writes a doubling. `D(P) + 2*Delta` is `apply_about(D, Delta, P)` whenever `Delta` lies on the flipped axis, which is how the determination sites of `47996f11` and `981571dc` reach their candidate center — each has in hand the origin its transform turns about, and each passes that same origin to a `Reframe.outer` in its program. `50f325b5` searches an `Occurrences` placement Shift that no origin produces, and stays out. Those frame arguments are Shift-typed, an offset from the grid center rather than a frame cell; `Shift = Position` in lib, so the declared `p_frame: Position` accepts them.

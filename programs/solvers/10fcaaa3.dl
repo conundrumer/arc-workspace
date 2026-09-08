@@ -1,17 +1,17 @@
 // 10fcaaa3
 // concept: tile-arrangement stamp lookup
-// A few marks sit on a bg ground. The output is a c.copies×c.copies
+// A few marks sit on a bg ground. The output is a params.copies×params.copies
 // arrangement of the input, with a halo stamped around every mark of the
 // arrangement; the halo fills bg cells only. Cases claim its footprint:
 //
-//   $Corners() — one step toward each corner, painted c.paint.
-//   $Table()   — a stored c.footprint grid, seated on the mark by c.seat.
+//   $Corners() — one step toward each corner, painted params.paint.
+//   $Table()   — a stored params.footprint grid, seated on the mark by params.seat.
 
 #include "../lib.dl"
 
 .type Choice = Corners {} | Table {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl bg(col: Color) bg(0).
     .decl copies(n: number) copies(2).
@@ -28,7 +28,7 @@
     .decl seat(p: Position) seat([1, 1, 1, 1]).
 }
 
-.init c = Consts
+.init params = Params
 
 // --- parse ---
 
@@ -37,7 +37,7 @@
     .decl grid(key: Key, p: Position, col: Color)  // input
 
     .init arrangement = Frame2D<Unit>
-    arrangement.extent($U(), A, N) :- axis_elem(A), c.copies(N).
+    arrangement.extent($U(), A, N) :- axis_elem(A), params.copies(N).
 
     .decl tiled(key: Key, p: Position, col: Color)
     tiled(K, P_grid_out, Col) :-
@@ -56,46 +56,46 @@ parse.grid($U(), P, Col) :- in(P, Col).
 
 // One step toward each corner.
 stamp(Off, Col, $Corners()) :-
-    diag_dir_elem(Diag), step_delta(Diag, Off), c.paint(Col).
+    diag_dir_elem(Diag), step_delta(Diag, Off), params.paint(Col).
 
 // --- Table ---
 
-stamp(Off, Col, $Table()) :- c.footprint(Pf, Col), c.seat(Ps), displacement(Ps, Pf, Off).
+stamp(Off, Col, $Table()) :- params.footprint(Pf, Col), params.seat(Ps), displacement(Ps, Pf, Off).
 
 .decl impl_choice(ch: Choice)
 impl_choice($Corners()). impl_choice($Table()).
 
 .decl halo(p: Position, col: Color, ch: Choice)
 halo(P, Col, Ch) :-
-    parse.tiled($U(), Q, Col_m), !c.bg(Col_m),  // a mark of the arrangement
-    stamp(Off, Col, Ch), compose(Q, Off, P),    // the stamp seated on it
-    parse.tiled($U(), P, Col_p), c.bg(Col_p).   // its target: an on-grid bg cell
+    parse.tiled($U(), Q, Col_m), !params.bg(Col_m),  // a mark of the arrangement
+    stamp(Off, Col, Ch), compose(Q, Off, P),         // the stamp seated on it
+    parse.tiled($U(), P, Col_p), params.bg(Col_p).   // its target: an on-grid bg cell
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- halo(P, Col, Ch).
 out(P, Col, Ch) :- parse.tiled($U(), P, Col), impl_choice(Ch), !halo(P, _, Ch).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     .init parse = Parse<Example>
     parse.grid(E, P, Col) :- ex_in(E, P, Col).
 
     // Cells the stamp painted: output ink where the arrangement holds bg.
     .decl painted(e: Example, p: Position, col: Color)
     painted(E, P, Col) :-
-        ex_out(E, P, Col), !c.bg(Col),
-        parse.tiled(E, P, Cb), c.bg(Cb).
+        ex_out(E, P, Col), !params.bg(Col),
+        parse.tiled(E, P, Cb), params.bg(Cb).
 
     // Candidate footprint cells: the seat's frame.
     .init frame = Frame2D<Unit>
-    frame.extent($U(), A, N) :- axis_elem(A), c.seat(Ps), axis_dim(Ps, A, N).
+    frame.extent($U(), A, N) :- axis_elem(A), params.seat(Ps), axis_dim(Ps, A, N).
 
     // Each candidate's targets: its offset from the seat, seated on every mark.
     .decl target(pf: Position, e: Example, p: Position)
     target(Pf, E, P) :-
-        frame.cell($U(), Pf), c.seat(Ps), displacement(Ps, Pf, Off),
-        parse.tiled(E, M, Cm), !c.bg(Cm),  // a mark of the arrangement
+        frame.cell($U(), Pf), params.seat(Ps), displacement(Ps, Pf, Off),
+        parse.tiled(E, M, Cm), !params.bg(Cm),  // a mark of the arrangement
         compose(M, Off, P).
 
     // A candidate's target painted from some mark...
@@ -106,8 +106,8 @@ out(P, Col, Ch) :- parse.tiled($U(), P, Col), impl_choice(Ch), !halo(P, _, Ch).
     .decl mismatch(pf: Position, col: Color)
     mismatch(Pf, Col) :-
         witness(Pf, Col), target(Pf, E, P),
-        parse.tiled(E, P, Cb), c.bg(Cb),  // on-grid bg target
-        ex_out(E, P, C2), C2 != Col.      // the output holds something else
+        parse.tiled(E, P, Cb), params.bg(Cb),  // on-grid bg target
+        ex_out(E, P, C2), C2 != Col.           // the output holds something else
 
     .decl footprint(p: Position, col: Color)
     footprint(Pf, Col) :- witness(Pf, Col), !mismatch(Pf, Col).

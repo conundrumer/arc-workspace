@@ -17,17 +17,17 @@
 
 .type Choice = Rays {} | Joins {}
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl impl_choice(ch: Choice)
 impl_choice($Rays()). impl_choice($Joins()).
 
 .decl pt(col: Color, p: Position)
-pt(Col, P) :- in(P, Col), !c.bg(Col).
+pt(Col, P) :- in(P, Col), !params.bg(Col).
 
 // The one cell of a color that has just one — a lone mark. A color of two
 // or more cells clashes, and outlines instead.
@@ -86,5 +86,5 @@ shadow(P_grid, Col, Ch) :-
 out(P, Col, Ch) :- shape(Col, P, Ch).
 out(P, Col, Ch) :- shadow(P, Col, Ch).
 out(P, Col, Ch) :-
-    impl_choice(Ch), in(P, _), c.bg(Col),
+    impl_choice(Ch), in(P, _), params.bg(Col),
     !shape(_, P, Ch), !shadow(P, _, Ch).

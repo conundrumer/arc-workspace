@@ -4,7 +4,7 @@
 // kept, cropped to its bounding box. Two models of a block:
 //
 //   $Object — a 4-adjacency component.
-//   $Window — an all-ink square window of side c.dim.
+//   $Window — an all-ink square window of side params.dim.
 //
 // The models coincide here (no blocks touch); they diverge when blocks
 // touch.
@@ -13,29 +13,29 @@
 
 .type Choice = Object {} | Window {}
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
     .decl mark(c: Color) mark(1).
 
     // --- $Window ---
-    .init helpers = ConstsHelpers
+    .init helpers = ParamsHelpers
 
     .decl dim(k: number) dim(3).
     .decl shape(p: Position)
     shape(P) :- dim(K), helpers.frame_pos([K, K], P).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl out(p: Position, col: Color, ch: Choice)
 
 // --- $Object ---
 
 .init comps = Components<Unit>
-comps.node($U(), P) :- in(P, Col), !c.bg(Col).
+comps.node($U(), P) :- in(P, Col), !params.bg(Col).
 
 .init comp_winner = Mode<Unit, Ident, Position>
-comp_winner.item($U(), Id, P) :- comps.label($U(), P, Id), in(P, Col), c.mark(Col).
+comp_winner.item($U(), Id, P) :- comps.label($U(), P, Id), in(P, Col), params.mark(Col).
 
 // Crop to the winner's bounding box.
 .init crop = BoxFrame<Unit>
@@ -48,14 +48,14 @@ out(P_out, Col, $Object()) :- in(P, Col), crop.inner($U(), P, P_out).
 
 // Placements where the square lands all-ink.
 .init occ = Occurrences<Unit, Unit>
-occ.cell($U(), P, $U())  :- in(P, Col), !c.bg(Col).
-occ.shape($U(), P, $U()) :- c.shape(P).
+occ.cell($U(), P, $U())  :- in(P, Col), !params.bg(Col).
+occ.shape($U(), P, $U()) :- params.shape(P).
 
 // Cells of each window, at their in-window positions.
 .decl window_cell(anchor: Position, p_inner: Position, p_grid: Position)
-window_cell(A, S, P) :- occ.occurrence($U(), A), c.shape(S), compose(A, S, P).
+window_cell(A, S, P) :- occ.occurrence($U(), A), params.shape(S), compose(A, S, P).
 
 .init window_winner = Mode<Unit, Position, Position>
-window_winner.item($U(), A, P) :- window_cell(A, _, P), in(P, Col), c.mark(Col).
+window_winner.item($U(), A, P) :- window_cell(A, _, P), in(P, Col), params.mark(Col).
 
 out(P_out, Col, $Window()) :- window_winner.mode($U(), A), window_cell(A, P_out, P), in(P, Col).

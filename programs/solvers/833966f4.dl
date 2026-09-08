@@ -11,7 +11,7 @@
 
 .type Choice = LabeledGrids {} | Divide {}
 
-.comp Consts {
+.comp Params {
     // --- LabeledGrids data ---
     .decl in_label(p: Position, id: Ident)
     GRID_SPARSE_5x1(in_label,
@@ -38,7 +38,7 @@
     .decl divide_gap(g: number) divide_gap(1).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl impl_choice(ch: Choice)
 impl_choice($LabeledGrids()).
@@ -47,18 +47,18 @@ impl_choice($Divide()).
 .decl decomposable(p: Position)
 decomposable(P_grid) :-
     in(P_grid, _),
-    c.divide_axis(A), c.divisor(N), c.divide_gap(G),
+    params.divide_axis(A), params.divisor(N), params.divide_gap(G),
     divide(P_grid, A, N, G, _, _).
 
 .decl perm(p_in: Position, p_out: Position, c: Choice)
-perm(P_grid_in, P_grid_out, $LabeledGrids()) :- c.map(P_grid_in, P_grid_out).
+perm(P_grid_in, P_grid_out, $LabeledGrids()) :- params.map(P_grid_in, P_grid_out).
 
 perm(P_grid_in, P_grid_out, $Divide()) :-
-    in(P_grid_in, _),                                          // input cell
-    c.divide_axis(A), c.divisor(N), c.divide_gap(G),           // params
-    divide(P_grid_in, A, N, G, P_outer, P_inner),              // 1D divide
-    flip_of(A, F), apply(F, P_inner, P_inner_out),             // swap the pair
-    concat(P_outer, P_inner_out, A, G, P_grid_out).            // recompose
+    in(P_grid_in, _),                                                         // input cell
+    params.divide_axis(A), params.divisor(N), params.divide_gap(G),           // params
+    divide(P_grid_in, A, N, G, P_outer, P_inner),                             // 1D divide
+    flip_of(A, F), apply(F, P_inner, P_inner_out),                            // swap the pair
+    concat(P_outer, P_inner_out, A, G, P_grid_out).                           // recompose
 perm(P_grid_in, P_grid_in, $Divide()) :-
     in(P_grid_in, _), !decomposable(P_grid_in).                // gap row passthrough
 
@@ -67,9 +67,9 @@ out(P_grid_out, Col, Impl) :-
     impl_choice(Impl), in(P_grid_in, Col),   // choice × input cell
     perm(P_grid_in, P_grid_out, Impl).       // the cell's image
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     .decl pair(p_in: Position, p_out: Position)
     pair(P_in, P_out) :- ex_in(E, P_in, Col), ex_out(E, P_out, Col).
 

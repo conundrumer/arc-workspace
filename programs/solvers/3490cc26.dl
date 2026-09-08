@@ -1,25 +1,25 @@
 // 3490cc26
 // concept: objects markers walk
-// The grid holds equal-sized blocks, one of them colored c.seed. Two blocks
+// The grid holds equal-sized blocks, one of them colored params.seed. Two blocks
 // reach each other when they lie on one line with no third block between
 // them. From the seed, the chain steps to the nearest block it reaches and
 // does not already hold, and it ends where every block it reaches is one it
-// already holds. Each link fills the cells between its two blocks in c.path.
+// already holds. Each link fills the cells between its two blocks in params.path.
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
     .decl seed(col: Color) seed(2).
     .decl path(col: Color) path(7).
 }
 
-.init c = Consts
+.init params = Params
 
 // --- blocks ---
 
 .init blocks = Components<Unit>
-blocks.node($U(), P) :- in(P, Col), !c.bg(Col).
+blocks.node($U(), P) :- in(P, Col), !params.bg(Col).
 
 .init bb = Bbox<Ident>
 bb.cell(Id, P) :- blocks.label($U(), P, Id).
@@ -43,7 +43,7 @@ sight.blocked($U(), M) :- block(M, _).
 reach(M, D, M2, K) :- sight.stop($U(), M2, D, K, M), dir_elem(D).
 
 .decl seed_block(m: Position)
-seed_block(M) :- block(M, Col), c.seed(Col).
+seed_block(M) :- block(M, Col), params.seed(Col).
 
 // The partition the chain carries: the blocks it holds (taken) and the rest
 // (untaken).
@@ -90,4 +90,4 @@ link_cell(P) :- span.inside(_, P), !blocks.node($U(), P).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- in(P, Col), !link_cell(P).
-out(P, Col) :- link_cell(P), c.path(Col).
+out(P, Col) :- link_cell(P), params.path(Col).

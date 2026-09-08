@@ -11,9 +11,9 @@ JUNK = ["Stop hook feedback:", "<task-notification>", "<bash-input>", "<bash-std
         "Continue from where you left off.", "<local-command", "<command-name>",
         "Revision check on this turn's writes"]
 
-TRIG = set("""next commit go fit do it done yes ok okay y proceed continue run write stage promote
-cleanup all and ship push retry again more resume good sure fine now please k backlog drop add
-this that then one first second lgtm thanks ty np agreed makes sense sounds callouts callout
+TRIG = set("""next commit go determine fit do it done yes ok okay y proceed continue run write stage
+promote cleanup all and ship push retry again more resume good sure fine now please k backlog drop
+add this that then one first second lgtm thanks ty np agreed makes sense sounds callouts callout
 simplify prune audit revise handoff nice great cool right no nope stop wait""".split())
 
 
@@ -65,8 +65,8 @@ CATS = [
                  r"global style|too big|convoluted|write plainly"),
  ("DATA_READING", r"task data|task json|data version|in the data|data[- ]heavy|"
                   r"look at the (task|json)|isn'?t in the task|data form|"
-                  r"put in(to)? consts|encode it as data|store the"),
- ("TOOLING_PERF", r"\blint|\bfit\b|budget|timeout|timing out|runner|perf(ormance)?\b|"
+                  r"put in(to)? (params|consts)|encode it as data|store the"),
+ ("TOOLING_PERF", r"\blint|\b(determine|fit)\b|budget|timeout|timing out|runner|perf(ormance)?\b|"
                   r"too (slow|long)|5s|atoms|harness"),
  ("SIMPLIFY", r"simpl(er|est|ify|ification|e way)|complicated|complicat|"
               r"can anything be|any other simplif|how much simpler|"

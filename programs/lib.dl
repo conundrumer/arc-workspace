@@ -3,7 +3,7 @@
 // Position: 4 distances from edges, ordered V-first then H — (top, bottom,
 // left, right). Dir constants index into Position.
 //
-// Dim: (V-length, H-length) of a frame — ConstsHelpers grouping notation only.
+// Dim: (V-length, H-length) of a frame — ParamsHelpers grouping notation only.
 //
 // The subtypes of number are typed names with no arithmetic intent.
 
@@ -34,7 +34,7 @@
 .type Position = [t: number, b: number, l: number, r: number]
 .type Dim = [v: number, h: number]
 
-// A Position slot's nature: a frame cell (bare), a translation (Shift), or
+// A Position parameter's nature: a frame cell (bare), a translation (Shift), or
 // independent signed edge depths (Inset). A delta is a Shift when its changes
 // on each axis sum to zero, and an Inset otherwise.
 .type Shift = Position
@@ -96,16 +96,16 @@
 // The task input grid.
 .decl in(p: Position, col: Color)
 
-// Train and test inputs and train outputs, fed in fit mode.
+// Train and test inputs and train outputs, fed in determination mode.
 .decl ex_in(e: Example, p: Position, col: Color)
 .decl ex_out(e: Example, p: Position, col: Color)
 
-// Per-slot diff between fit.<slot> and c.<slot>; the runner synthesizes
-// the rules.
-.decl fit_diff(slot: symbol)
+// Per-parameter diff between determine.<parameter> and params.<parameter>;
+// the runner synthesizes the rules.
+.decl determination_diff(param: symbol)
 
 // ============================================================
-// Solver body primitives
+// Solver program primitives
 // ============================================================
 
 // Dispatch/projection functors (C++, in lib_functors.cpp).
@@ -454,7 +454,7 @@ divide_gap(P, A, N, K, G) :-
 // Distance t along a period of w (with gap g between periods) decomposes
 // into period index n and within-period offset k. Per-cell scalar peer of
 // `divide_by_size`, without the divisibility assertion.
-// k pinned to 0 states that t is a whole number of periods.
+// k fixed to 0 states that t is a whole number of periods.
 .decl stride(t: number, w: number, g: number, n: number, k: number) inline
 stride(T, W, G, N, K) :-
     T >= 0,
@@ -481,12 +481,12 @@ concat(P_outer, P_inner, A, G, P_grid) :-
               @keep_axis(A, AXIS_H, GNear), @keep_axis(A, AXIS_H, GFar)].
 
 // ============================================================
-// Composites — recurring solver-body shapes built from primitives
+// Composites — recurring program shapes built from primitives
 // ============================================================
 
 // Anchors only work on grounded positions.
 
-// Two positions agree on the distance to edge d. A single-edge claim reads
+// Two positions agree on the distance to edge d. A single-edge hypothesis reads
 // across frames of different size, where collinearity does not.
 .decl same_dist(d: Dir, p1: Position, p2: Position) inline
 same_dist(D, P1, P2) :- dist(P1, D, K), dist(P2, D, K).
@@ -545,7 +545,7 @@ divide_by_size_slab(P, A, K, G, P_outer, P_inner) :-
 
 // 2D divide, one tile count and gap on both axes. Outputs are full 2D:
 // p_outer indexes an n×n tile arrangement; p_inner is the cell within a tile.
-// One scalar over both axes states the square claim; Divide2D makes the
+// One scalar over both axes states the square hypothesis; Divide2D makes the
 // rectangular one.
 .decl divide_2d(p: Position, n: number, gap: number,
                 p_outer: Position, p_inner: Position) inline
@@ -587,7 +587,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     compose(P_grid_v, P_grid_h, P_grid).
 
 // ============================================================
-// Body components — instantiated at solver-body scope
+// Program components — instantiated at program scope
 // ============================================================
 
 // 1D frame defined by an index set and an edge, one frame per key.
@@ -640,8 +640,8 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 }
 
 // 2D decomposition from per-axis tile counts — the divide peer of Frame2D:
-// per-axis 1D divide, perp-glued. This makes the rectangular claim; the _2d
-// composites make the square claim (one scalar, both axes). `cell` and `gap`
+// per-axis 1D divide, perp-glued. This makes the rectangular hypothesis; the _2d
+// composites make the square hypothesis (one scalar, both axes). `cell` and `gap`
 // are the instance's parameters.
 .comp Divide2D<Key> {
     .decl cell(p: Position)
@@ -1765,10 +1765,10 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 }
 
 // ============================================================
-// Consts helpers — instantiated inside Consts; not reachable from body
+// Params helpers — instantiated inside Params; not reachable from the program
 // ============================================================
 
-.comp ConstsHelpers {
+.comp ParamsHelpers {
     // All positions of a frame of given Dim.
     .decl frame_pos(dim: Dim, p: Position) inline
     frame_pos([V, H], [T, V-1-T, L, H-1-L]) :- T = range(0, V), L = range(0, H).

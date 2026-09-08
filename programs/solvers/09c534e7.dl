@@ -6,15 +6,15 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
     .decl outline(c: Color) outline(1).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl ink(p: Position)
-ink(P) :- in(P, C), !c.bg(C).
+ink(P) :- in(P, C), !params.bg(C).
 
 .init comp = Components<Unit>
 comp.node($U(), P) :- ink(P).
@@ -23,7 +23,7 @@ comp.node($U(), P) :- ink(P).
 border.cell($U(), P) :- ink(P).
 
 .decl seed(id: Ident, col: Color)
-seed(Id, Col) :- comp.label($U(), P, Id), in(P, Col), !c.outline(Col).
+seed(Id, Col) :- comp.label($U(), P, Id), in(P, Col), !params.outline(Col).
 
 .decl fill(p: Position, col: Color)
 fill(P, Col) :-

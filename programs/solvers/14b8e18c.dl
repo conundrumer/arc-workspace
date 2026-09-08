@@ -16,17 +16,17 @@
 
 .type Choice = Square {} | Corners {} | Box {} | Ring {}
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(7).
     .decl mark_color(col: Color) mark_color(2).
 }
 
-.init c = Consts
+.init params = Params
 
 // --- objects ---
 
 .init comps = Components<Color>
-comps.node(Col, P) :- in(P, Col), !c.bg(Col).
+comps.node(Col, P) :- in(P, Col), !params.bg(Col).
 
 .decl cell_of(id: Ident, p: Position)
 cell_of(Id, P) :- comps.label(_, P, Id).
@@ -54,7 +54,7 @@ has_interior(Id) :- cell_of(Id, P), bcells.hole(Id, P).
 
 // --- marks ---
 
-// $Square and $Corners share the squareness claim; they split at `anchor`.
+// $Square and $Corners share the squareness hypothesis; they split at `anchor`.
 .decl square_case(ch: Choice)
 square_case($Square()). square_case($Corners()).
 
@@ -86,5 +86,5 @@ mark(P_mark, Ch) :-
 impl_choice($Square()). impl_choice($Corners()). impl_choice($Box()). impl_choice($Ring()).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, Ch) :- mark(P, Ch), c.mark_color(Col).
+out(P, Col, Ch) :- mark(P, Ch), params.mark_color(Col).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !mark(P, Ch).

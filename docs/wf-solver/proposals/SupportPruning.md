@@ -56,10 +56,10 @@ Match: a recursive relation whose leading columns carry one held candidate (piec
 
 Survey: 2026-08-31 12:03
 
-Result: over the 423 solvers, no site outside the surfacing solver holds the operation. Candidate-level negated clash occurs in two other solvers, both cell-level. The held-thread recursion shape appears in 8 further solvers, each threading a key — a Choice tag, a line, an object id, a color — never a piece with its placement. The anchored-growth-over-placements family has four other members: two deterministic chains with one placement per piece and nothing to hold or refute (234bbc79, 03560426), and two `PlacementPruning` fills over free-standing `Occurrences` candidates with no support edge and no root (184a9768, b7cb93ac); the `CoverForcing` sites pack a known target region. The survey also caught a spec defect: the step rule's root guard was existential, admitting a candidate that clears some root while conflicting with another; the code form now guards through `_root_clash`, and no known fill is multi-root.
+Result: over the 423 solvers, no site outside the surfacing solver holds the operation. Candidate-level negated clash occurs in two other solvers, both cell-level. The held-thread recursion shape appears in 8 further solvers, each threading a key — a Choice tag, a line, an object id, a color — never a piece with its placement. The anchored-growth-over-placements family has four other members: two deterministic chains with one placement per piece and nothing to hold or refute (234bbc79, 03560426), and two `PlacementPruning` fills over free-standing `Occurrences` candidates with no support edge and no root (184a9768, b7cb93ac); the `CoverForcing` sites pack a known target region. The survey also caught a spec defect: the step rule's root guard was existential, admitting a candidate that clears some root while conflicting with another; the code form now guards through `_root_clash`, and no known assignment is multi-root.
 
 Callers:
 
-- 16b78196 — `clash`/`beside`/`refuted` over `placement`/`seat_step`, as plain body relations.
+- 16b78196 — `clash`/`beside`/`refuted` over `placement`/`seat_step`, as plain program relations.
 
 Verdict: park. 2026-08-31 12:09. One caller does not clear the threshold. The operation looks general: it names one prior-level operation — refuting a placement by the pieces its hold strands — and takes its whole domain (the candidates, conflicts, supports, and roots) as parameters, fixing no configuration.

@@ -1,53 +1,53 @@
 // 7e4d4f7c
 // concept: lines mapping
-// The output holds c.out_h rows measured from c.header_dir, over the
+// The output holds params.out_h rows measured from params.header_dir, over the
 // input's across extent. Every row but the last takes the input row at its
 // own depth. The last row takes the input's row at depth 0, recolored: bg
-// passes through, and every other color becomes c.marker.
+// passes through, and every other color becomes params.marker.
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl header_dir(d: Dir) header_dir(DIR_T).
     .decl out_h(n: number) out_h(3).
     .decl marker(col: Color) marker(6).
 }
 
-.init c = Consts
+.init params = Params
 
 // Along-axis frame for the output: out_h cells on header_dir's axis.
 .init out_along = AxisFrame<Unit>
-out_along.extent($U(), A, N) :- c.header_dir(D), axis_of(D, A), c.out_h(N).
+out_along.extent($U(), A, N) :- params.header_dir(D), axis_of(D, A), params.out_h(N).
 
 .init bg = Mode<Unit, Color, Position>
 bg.item($U(), C, P) :- in(P, C).
 
-// Tail recolor: bg passes through; non-bg becomes c.marker.
+// Tail recolor: bg passes through; non-bg becomes params.marker.
 .decl tail_color(c_in: Color, c_out: Color)
 tail_color(C, C) :- bg.mode($U(), C).
-tail_color(C, M) :- in(_, C), !bg.mode($U(), C), c.marker(M).
+tail_color(C, M) :- in(_, C), !bg.mode($U(), C), params.marker(M).
 
 // Output cells: the out_h along-frame crossed with the input's across
 // positions. Grounds the output grid so both rules can join to it.
 .decl out_cell(p: Position)
 out_cell(P) :-
-    c.header_dir(H_dir), axis_of(H_dir, A),               // the along axis
-    out_along.cell($U(), A, P_along),                     // along-axis frame cell
-    in(P_in, _), split(P_in, A, _, P_across),             // an input cell's across part
-    compose(P_along, P_across, P).                        // glue to a 2D out cell
+    params.header_dir(H_dir), axis_of(H_dir, A),             // the along axis
+    out_along.cell($U(), A, P_along),                        // along-axis frame cell
+    in(P_in, _), split(P_in, A, _, P_across),                // an input cell's across part
+    compose(P_along, P_across, P).                           // glue to a 2D out cell
 
 .decl out(p: Position, col: Color)
 
 // The tail row matches its input cells on the across line alone: it does
 // not share depth-from-header with input row 0.
 out(P_out, Col_out) :-
-    out_cell(P_out),                                      // grounded output cell
-    c.header_dir(H_dir), opposite(H_dir, H_opp),          // along-axis dirs
-    ( dist(P_out, H_opp, K_opp), K_opp != 0,              // not the tail row
-      in(P_in, Col_out),                                  // input cell
-      slab_anchor(H_dir, P_in, P_out)                     // same slab as P_out
-    ; dist(P_out, H_opp, 0), axis_of(H_dir, A),           // tail row, along axis
-      in(P_in, Col_in), dist(P_in, H_dir, 0),             // input depth 0
+    out_cell(P_out),                                           // grounded output cell
+    params.header_dir(H_dir), opposite(H_dir, H_opp),          // along-axis dirs
+    ( dist(P_out, H_opp, K_opp), K_opp != 0,                   // not the tail row
+      in(P_in, Col_out),                                       // input cell
+      slab_anchor(H_dir, P_in, P_out)                          // same slab as P_out
+    ; dist(P_out, H_opp, 0), axis_of(H_dir, A),                // tail row, along axis
+      in(P_in, Col_in), dist(P_in, H_dir, 0),                  // input depth 0
       same_line(A, P_in, P_out),
       tail_color(Col_in, Col_out)                         // recolor
     ).

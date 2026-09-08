@@ -1,10 +1,10 @@
 // 12eac192
 // concept: objects count lookup
 // Ink of several colors sits on a background as same-color 4-components.
-// Small components are repainted and the rest pass through. Two claims on
+// Small components are repainted and the rest pass through. Two hypotheses on
 // what makes a component small:
 //
-//   $Threshold — its cell count is at most c.max_size.
+//   $Threshold — its cell count is at most params.max_size.
 //   $Lookup    — a stored table keyed by cell count gives the color a
 //                component of that count takes; an omitted count passes
 //                through.
@@ -13,7 +13,7 @@
 
 .type Choice = Threshold {} | Lookup {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
 
     .decl bg(col: Color) bg(0).
@@ -29,7 +29,7 @@
     size_paint(1, 3). size_paint(2, 3).
 }
 
-.init c = Consts
+.init params = Params
 
 // --- parse ---
 
@@ -43,7 +43,7 @@
     // Touching cells of one ink color. A cell holds one color, so the color
     // keys nothing downstream: the label alone names the component.
     .init comps = Components<KC>
-    comps.node([K, Col], P) :- cell(K, P, Col), !c.bg(Col).
+    comps.node([K, Col], P) :- cell(K, P, Col), !params.bg(Col).
 
     .decl comp_cell(k: KI, p: Position)
     comp_cell([K, Id], P) :- comps.label([K, _], P, Id).
@@ -69,18 +69,18 @@ out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !repaint(P, _, Ch).
 
 repaint(P, Col, $Threshold()) :-
     parse.comp_cell(K, P), parse.comp_size.tally(K, N),   // component cell with its size
-    c.max_size(Max), N <= Max,                            // small enough to act
-    c.paint(Col).
+    params.max_size(Max), N <= Max,                       // small enough to act
+    params.paint(Col).
 
 // --- Lookup ---
 
 repaint(P, Col, $Lookup()) :-
     parse.comp_cell(K, P), parse.comp_size.tally(K, N),   // component cell with its size
-    c.size_paint(N, Col).                                 // the color its size selects
+    params.size_paint(N, Col).                            // the color its size selects
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     .init parse = Parse<Example>
     parse.cell(E, P, Col) :- ex_in(E, P, Col).
 

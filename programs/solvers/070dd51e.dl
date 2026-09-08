@@ -9,15 +9,15 @@
 
 .type Choice = PaintAll {} | PaintBg {}
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
     .decl over_axis(a: Axis) over_axis(AXIS_V).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl mark(col: Color, p: Position)
-mark(Col, P) :- in(P, Col), !c.bg(Col).
+mark(Col, P) :- in(P, Col), !params.bg(Col).
 
 .init bet = Between<Color>
 bet.axis(Col, A) :- mark(Col, _), axis_elem(A).
@@ -36,11 +36,11 @@ span(P, Col, A) :- bet.between(Col, P), line_axis(Col, A).
 
 // A cell some over-axis span covers.
 .decl over_span(p: Position)
-over_span(P) :- span(P, _, A), c.over_axis(A).
+over_span(P) :- span(P, _, A), params.over_axis(A).
 
 // The winning span color at each covered cell: over axis beats the other.
 .decl top_span(p: Position, col: Color)
-top_span(P, Col) :- span(P, Col, A), c.over_axis(A).
+top_span(P, Col) :- span(P, Col, A), params.over_axis(A).
 top_span(P, Col) :- span(P, Col, _), !over_span(P).
 
 .decl out(p: Position, col: Color, ch: Choice)
@@ -51,8 +51,8 @@ out(P, Col, $PaintAll()) :- in(P, Col), !top_span(P, _).
 
 // --- PaintBg ---
 out(P, Col, $PaintBg()) :-
-    in(P, Bg), c.bg(Bg),             // a bg cell
+    in(P, Bg), params.bg(Bg),        // a bg cell
     ( top_span(P, Col)               // a span above paints it
     ; !top_span(P, _), Col = Bg      // no span — stays bg
     ).
-out(P, Col, $PaintBg()) :- in(P, Col), !c.bg(Col).
+out(P, Col, $PaintBg()) :- in(P, Col), !params.bg(Col).

@@ -1,6 +1,6 @@
 # `GRID_STAMP` — anchored stamp stored as offsets, written as a picture
 
-A GRID_STAMP call stores a mark-anchored stamp as `Shift` offsets: the layout is written as a picture with the anchor cell marked in it, and expansion emits each member cell as its offset from the anchor. The corpus form for this datum is a grid relation plus a distinguished-cell Position fact, which every consumer must reduce with `displacement` before it can compose at a mark; the macro does that reduction at expansion, so the slot is the gauge-invariant offset set the pairs exhibit and a Fit relation compares directly, with no bounding-box gauge fixing to recover a seat.
+A GRID_STAMP call stores a mark-anchored stamp as `Shift` offsets: the layout is written as a picture with the anchor cell marked in it, and expansion emits each member cell as its offset from the anchor. The corpus form for this parameter is a grid relation plus a distinguished-cell Position fact, which every consumer must reduce with `displacement` before it can compose at a mark; the macro does that reduction at expansion, so the parameter is the gauge-invariant offset set the pairs exhibit and a determination relation compares directly, with no bounding-box gauge fixing to recover a seat.
 
 Two macros, following the GRID family:
 
@@ -25,7 +25,7 @@ expands to the nine facts `footprint([-1, 1, -1, 1]).` … `footprint([0, 0, 0, 
 
 Not: a shape placed by search over its occurrences, with no distinguished cell (14754a24); a grid registered to a box margin or a corner rather than to a cell (17b866bd, 4522001f); a stored grid whose cells are read in place; `displacement` over derived positions at rule level.
 
-Match: a Consts grid relation beside a distinguished-cell Position slot — `seat`, `anchor`, `center_pos`, or derived from a marker color inside the grid — reduced to offsets by `displacement` and composed at a mark. Grep `GRID_MASK|GRID_SPARSE` sites for a companion single-fact Position slot; the raw-offset form has no lexical signature beyond a `Shift`-typed Consts slot.
+Match: a grid parameter beside a distinguished-cell Position parameter — `seat`, `anchor`, `center_pos`, or derived from a marker color inside the grid — reduced to offsets by `displacement` and composed at a mark. Grep `GRID_MASK|GRID_SPARSE` sites for a companion single-fact Position parameter; the raw-offset form has no lexical signature beyond a `Shift`-typed parameter.
 
 Spec questions: whether a stamp inside a `RIGID` block carries its anchor through the D4 pose cleanly, which the three RIGID sites need; whether `GRID_MASK`'s absent token also moves to `_` for family uniformity.
 

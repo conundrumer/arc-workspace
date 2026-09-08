@@ -5,9 +5,9 @@ from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 
 from arc.task import load as load_task
+from dl.determine import determine_check
 from dl.dlparse import TOP, Decl, Index, ParseError, TypeDecl, parse
 from dl.facts import grid_to_facts, parse_output
-from dl.fit import fit_check
 from dl.lint import _lib_source
 from dl.paths import SOLVERS_DIR
 from dl.rewrite_lint import _elem_tables
@@ -36,26 +36,28 @@ UNPROBED_CASE = "unprobed case column"
 BOUND_ENUMERATOR = "bound enumerator"
 
 # The kind the solver's Choice type reports under when the pairs never
-# part its cases and no case column stood in for the claim.
+# part its cases and no case column stood in for the hypothesis.
 UNEXERCISED_CASES = "unexercised cases"
 
 type Deletion = tuple[int, str, str, str]  # lineno, kind, text, modified source
 type Finding = tuple[int, str, str]  # lineno, kind, text
 
 
-def _rule_spans(source: str, fit: bool = False) -> list[tuple[int, int]]:
-    """Inclusive line spans of rules — the Fit comp's when `fit`, the rest otherwise.
+def _rule_spans(source: str, determine: bool = False) -> list[tuple[int, int]]:
+    """Inclusive line spans of rules — the Determine comp's when `determine`,
+    the rest otherwise.
 
     Style-parsed: head and `:-` share the first line; `.` ends the statement.
     """
     lines = source.splitlines()
-    fs, fe = _comp_span(source, "Fit")
-    fit_lines = set(range(fs - 1, fe + 1)) if (fs, fe) != (0, 0) else set()
+    fs, fe = _comp_span(source, "Determine")
+    determine_lines = set(range(fs - 1, fe + 1)) if (fs, fe) != (0, 0) else set()
     spans = []
     i = 0
     while i < len(lines):
         code = lines[i].split("//")[0]
-        if (i in fit_lines) != fit or ":-" not in code or code.lstrip().startswith("."):
+        if ((i in determine_lines) != determine or ":-" not in code
+                or code.lstrip().startswith(".")):
             i += 1
             continue
         j = i
@@ -172,14 +174,14 @@ def _parses(source: str) -> bool:
     return True
 
 
-def deletions(source: str, fit: bool = False) -> Iterator[Deletion]:
+def deletions(source: str, determine: bool = False) -> Iterator[Deletion]:
     """Yield (lineno, kind, text, modified_source) structural deletions.
 
     Kinds: 'rule' deletes the whole rule; 'negation' deletes one negated
     body atom; 'atom' deletes one positive body atom; 'disjunct' deletes
     one branch of a disjunction (either way the modified rule collapses
-    to one line). With `fit`, the deletions come from the Fit comp's
-    rules; otherwise from the rest.
+    to one line). With `determine`, the deletions come from the Determine
+    comp's rules; otherwise from the rest.
 
     A positive atom over a lib `*_elem` relation whose one variable
     another positive atom of the rule carries deletes under
@@ -196,7 +198,7 @@ def deletions(source: str, fit: bool = False) -> Iterator[Deletion]:
     detect the case ahead of time.
     """
     strict = _parses(source)
-    for item in _variants(source, fit):
+    for item in _variants(source, determine):
         if not strict or _parses(item[3]):
             yield item
 
@@ -214,10 +216,10 @@ def _bound_enumerator(
     return any(var.search(rule[s:e]) for s, e in spans if (s, e) != span)
 
 
-def _variants(source: str, fit: bool) -> Iterator[Deletion]:
+def _variants(source: str, determine: bool) -> Iterator[Deletion]:
     lines = source.splitlines()
     elems = frozenset(_elem_tables(_lib_source())[0])
-    for a, b in _rule_spans(source, fit):
+    for a, b in _rule_spans(source, determine):
         rule = " ".join(ln.split("//")[0].strip() for ln in lines[a:b + 1])
         head = rule.split(":-")[0].strip()
         yield (a + 1, "rule", head, "\n".join(lines[:a] + lines[b + 1:]) + "\n")
@@ -313,7 +315,7 @@ def column_deletions(source: str) -> Iterator[Deletion]:
     result depends on survives the report.
 
     A column typed as the solver's Choice ADT reports under a kind of its
-    own: such a column stands for the coverage claim, so its deletion
+    own: such a column stands for the coverage hypothesis, so its deletion
     needs a reading of its own.
     """
     try:
@@ -377,14 +379,14 @@ def _cases_agree(source: str, examples: list, reference: list) -> bool:
 def _case_findings(
     source: str, findings: list[Finding], agree: Callable[[], bool]
 ) -> list[Finding]:
-    """The findings with the coverage claim settled by the pairs.
+    """The findings with the coverage hypothesis settled by the pairs.
 
     `agree` says whether the pairs never part the cases; it runs only
     when the answer decides something. Where a case column fired, the
     pairs decide its reading: when some pair parts the cases, a no-op
     drop reads as any other column's does, and an unprobed drop raises
     nothing at all. Where none fired but the solver has cases and the
-    pairs never part them, the claim goes unexercised all the same, so
+    pairs never part them, the hypothesis goes unexercised all the same, so
     the case type reports it under UNEXERCISED_CASES.
     """
     cases = (CASE_COLUMN, UNPROBED_CASE)
@@ -396,19 +398,20 @@ def _case_findings(
             for lineno, kind, text in findings
             if kind != UNPROBED_CASE
         ]
-    claim = _case_decl(source)
-    if claim is not None and agree():
-        return [*findings, (claim.line, UNEXERCISED_CASES, claim.name)]
+    hypothesis = _case_decl(source)
+    if hypothesis is not None and agree():
+        return [*findings, (hypothesis.line, UNEXERCISED_CASES, hypothesis.name)]
     return findings
 
 
 def deletion_report(stem: str) -> tuple[int, list[Finding]] | None:
-    """Structural deletions that change no pair's output or derived fill.
+    """Structural deletions that change no pair's output or derived value.
 
     A deletion that changes nothing removed structure the pairs never
-    instantiate. Deletions from the Fit comp are judged by the fit check;
-    the rest must hold the variant profile and, where the solver fits,
-    the fit check too — body and Parse rules feed both. Informational —
+    instantiate. Deletions from the Determine comp are judged by the
+    determination check; the rest must hold the variant profile and, where
+    the determination holds, the determination check too — program and Parse
+    rules feed both. Informational —
     such a deletion points at an unwitnessed guard or rule, not a
     violation. A case column reports under its own kinds, since the
     pairs decide what its deletion can show, and a solver whose pairs
@@ -422,27 +425,29 @@ def deletion_report(stem: str) -> tuple[int, list[Finding]] | None:
     if reference is None:
         return None
 
-    def fit_ok(src: str) -> bool:
-        r = fit_check(src, task)
+    def determine_ok(src: str) -> bool:
+        r = determine_check(src, task)
         return r is not None and not r.error and not r.diff
 
-    fits = fit_ok(source)
+    determines = determine_ok(source)
     dels = [("solve", d) for d in deletions(source)]
     dels += [("solve", d) for d in column_deletions(source)]
-    if fits:
-        dels += [("fit", d) for d in deletions(source, fit=True)]
+    if determines:
+        dels += [("determine", d) for d in deletions(source, determine=True)]
 
     def test(tagged: tuple[str, Deletion]) -> tuple[int, str, str] | None:
         mode, (lineno, kind, text, mod) = tagged
         if mode == "solve":
-            # The fit check is the expensive one, so it waits on the
+            # The determination check is the expensive one, so it waits on the
             # profile, which most deletions already fail.
             if _profile(mod, examples) != reference:
                 if kind == CASE_COLUMN and _ungrounds(mod, examples[0]):
                     return (lineno, UNPROBED_CASE, text)
                 return None
-            return (lineno, kind, text) if not fits or fit_ok(mod) else None
-        return (lineno, f"fit {kind}", text) if fit_ok(mod) else None
+            return ((lineno, kind, text)
+                    if not determines or determine_ok(mod) else None)
+        return ((lineno, f"determination {kind}", text)
+                if determine_ok(mod) else None)
 
     with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
         findings = [r for r in executor.map(test, dels) if r]
@@ -465,22 +470,22 @@ ENUMERATOR_NOTE = [
 
 CASE_NOTE = [
     "  note: the cases agree on every pair, so dropping the case column",
-    "        changes nothing. The column carries the coverage claim and the",
-    "        pairs do not exercise it. This is not dead code.",
+    "        changes nothing. The column carries the coverage hypothesis",
+    "        and the pairs do not exercise it. This is not dead code.",
 ]
 
 UNPROBED_NOTE = [
     "  note: dropping the case column ungrounds a variable, so the probe",
     "        result says nothing about the cases. The pairs emit one and the",
     "        same grid for every case, so this column carries a coverage",
-    "        claim the pairs do not exercise.",
+    "        hypothesis the pairs do not exercise.",
 ]
 
 UNEXERCISED_NOTE = [
     "  note: the cases agree on every pair: the pairs emit one and the same",
-    "        grid for every case, so they do not exercise the coverage claim.",
-    "        The review's constructed witness carries it. This is not dead",
-    "        code.",
+    "        grid for every case, so they do not exercise the coverage",
+    "        hypothesis. The review's constructed witness carries it. This is",
+    "        not dead code.",
 ]
 
 
@@ -526,7 +531,7 @@ def render_deletions(stem: str, report: tuple[int, list[Finding]] | None) -> lis
         lines += UNPROBED_NOTE
     if unexercised:
         lines.append("")
-        lines.append("the pairs do not exercise the coverage claim:")
+        lines.append("the pairs do not exercise the coverage hypothesis:")
         lines += entries(unexercised)
         lines += UNEXERCISED_NOTE
     return lines

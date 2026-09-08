@@ -8,13 +8,13 @@
 // arrowhead marks that arrowhead whole.
 // The cases differ on how an arrowhead is read: $Local takes the apex and its
 // two arms off the grid; $Glyph matches a stored footprint and reads the apex
-// and the aim from Consts, closed over D4.
+// and the aim from the parameters, closed over D4.
 
 #include "../lib.dl"
 
 .type Choice = Local {} | Glyph {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl bg(col: Color) bg(7).
 
@@ -43,14 +43,14 @@
     )
 }
 
-.init c = Consts
+.init params = Params
 
 .decl impl_choice(ch: Choice)
 impl_choice($Local()). impl_choice($Glyph()).
 
 // The marks' cells.
 .decl ink(p: Position)
-ink(P) :- in(P, Col), !c.bg(Col).
+ink(P) :- in(P, Col), !params.bg(Col).
 
 // An arrowhead, named by its apex, with the direction it shoots.
 .decl arrow(p_apex: Position, aim: Dir8, ch: Choice)
@@ -87,26 +87,26 @@ arrow_cell(A, P, $Local()) :-
 .type Pose = [id: Ident, d: D4]
 
 .init occ = Occurrences<Pose, Unit>
-occ.shape([Id, D], S, $U()) :- c.glyph_shape(D, Id, S).
-occ.cell([Id, D], P, $U()) :- c.glyph_shape(D, Id, _), ink(P).
+occ.shape([Id, D], S, $U()) :- params.glyph_shape(D, Id, S).
+occ.cell([Id, D], P, $U()) :- params.glyph_shape(D, Id, _), ink(P).
 
 // A placed footprint, with its stored apex placed alongside.
 .decl placed(id: Ident, d: D4, b: Position, p_apex: Position)
 placed(Id, D, B, A) :-
     occ.occurrence([Id, D], B),
-    c.glyph_apex(D, Id, P_a), compose(B, P_a, A).
+    params.glyph_apex(D, Id, P_a), compose(B, P_a, A).
 
-arrow(A, Aim, $Glyph()) :- placed(Id, D, _, A), c.glyph_aim(D, Id, Aim).
+arrow(A, Aim, $Glyph()) :- placed(Id, D, _, A), params.glyph_aim(D, Id, Aim).
 
 arrow_cell(A, P, $Glyph()) :-
     placed(Id, D, B, A),
-    c.glyph_shape(D, Id, S), compose(B, S, P).
+    params.glyph_shape(D, Id, S), compose(B, S, P).
 
 // --- shots ---
 
 // The cell an arrowhead's shot reaches.
 .decl shot(p: Position, p_apex: Position, ch: Choice)
-shot(P, A, Ch) :- arrow(A, Aim, Ch), c.reach(K), jump(A, Aim, K, P), in(P, _).
+shot(P, A, Ch) :- arrow(A, Aim, Ch), params.reach(K), jump(A, Aim, K, P), in(P, _).
 
 // The arrowhead that reached a cell, absent where more than one did.
 .type PC = [p: Position, ch: Choice]
@@ -114,35 +114,35 @@ shot(P, A, Ch) :- arrow(A, Aim, Ch), c.reach(K), jump(A, Aim, K, P), in(P, _).
 lander.item([P, Ch], A) :- shot(P, A, Ch).
 
 .decl paint(p: Position, col: Color, ch: Choice)
-paint(P, Col, Ch) :- lander.value([P, Ch], _), c.mark(Col).
-paint(P, Col, Ch) :- lander.clash([P, Ch]), c.clash(Col).
+paint(P, Col, Ch) :- lander.value([P, Ch], _), params.mark(Col).
+paint(P, Col, Ch) :- lander.clash([P, Ch]), params.clash(Col).
 paint(P, Col, Ch) :-
     shot(P_hit, _, Ch), arrow_cell(A, P_hit, Ch),  // an arrowhead a shot reaches
-    arrow_cell(A, P, Ch), c.mark(Col).             // marked whole
+    arrow_cell(A, P, Ch), params.mark(Col).        // marked whole
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !paint(P, _, Ch).
 
-// --- fit ---
+// --- determination ---
 
 // The chart is read off the marks whose shot repainted a background cell:
 // tracing the shot back gives the apex and the aim, and the mark's own cells
 // give the footprint. Marks whose footprints are D4 images of each other
 // share an id, and one of each serves as the chart, in its own pose.
-.comp Fit {
+.comp Determine {
     .decl ink_in(e: Example, p: Position)
-    ink_in(E, P) :- ex_in(E, P, Col), !c.bg(Col).
+    ink_in(E, P) :- ex_in(E, P, Col), !params.bg(Col).
 
     // A repainted background cell — where a shot landed.
     .decl landed(e: Example, p: Position)
-    landed(E, P) :- ex_out(E, P, Col), !c.bg(Col), ex_in(E, P, Bg), c.bg(Bg).
+    landed(E, P) :- ex_out(E, P, Col), !params.bg(Col), ex_in(E, P, Bg), params.bg(Bg).
 
     // The mark a landing traces back to, and the direction its shot ran.
     .decl launch(e: Example, a: Position, d: Dir8)
     launch(E, A, D) :-
         landed(E, P), dir8_opposite(D, D_back),
-        c.reach(K), jump(P, D_back, K, A), ink_in(E, A).
+        params.reach(K), jump(P, D_back, K, A), ink_in(E, A).
 
     .init comps = Components8<Example>
     comps.node(E, P) :- ink_in(E, P).

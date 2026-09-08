@@ -15,7 +15,7 @@
 
 .type Choice = Marked {} | Aspect {} | Lanes {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl bg(col: Color) bg(8).
     .decl mark(col: Color) mark(0).
@@ -29,7 +29,7 @@
     .decl primary_col(col: Color) primary_col(2).
 }
 
-.init c = Consts
+.init params = Params
 
 // --- parse ---
 
@@ -39,7 +39,7 @@
     .decl cell(key: Key, p: Position, col: Color)  // input
 
     .decl mark_pos(key: Key, p: Position)
-    mark_pos(K, P) :- cell(K, P, Col), c.mark(Col).
+    mark_pos(K, P) :- cell(K, P, Col), params.mark(Col).
 
     .decl mark_corner(key: Key, diag: DiagDir)
     mark_corner(K, Diag) :- mark_pos(K, P), corner_dist(P, Diag, 0).
@@ -51,7 +51,7 @@
         dir_of(Diag, _, D), dist(P, D, 0).
 
     .init blocks = Components<Key>
-    blocks.node(K, P) :- cell(K, P, Col), !c.bg(Col), !border(K, P).
+    blocks.node(K, P) :- cell(K, P, Col), !params.bg(Col), !border(K, P).
 
     .decl block(key: Key, id: Ident)
     block(K, Id) :- blocks.label(K, _, Id).
@@ -73,7 +73,7 @@ parse.cell($U(), P, Col) :- in(P, Col).
 // --- the blocks, turned across the stack ---
 
 .decl stack_axis(a: Axis)
-stack_axis(A) :- c.stack_dir(D), axis_of(D, A).
+stack_axis(A) :- params.stack_dir(D), axis_of(D, A).
 
 // The axis a stacked block runs along.
 .decl slab_axis(a: Axis)
@@ -82,8 +82,8 @@ slab_axis(A2) :- stack_axis(A), perp(A, A2).
 .decl turned(id: Ident, p: Position, col: Color)
 turned(Id, P_turn, Col) :-
     parse.crop($U(), Id, P_intile, Col), stack_axis(A),
-    ( !parse.along($U(), Id, A), P_turn = P_intile                      // lies across already
-    ; parse.along($U(), Id, A), c.rot(R), apply(R, P_intile, P_turn)    // turn it across
+    ( !parse.along($U(), Id, A), P_turn = P_intile                           // lies across already
+    ; parse.along($U(), Id, A), params.rot(R), apply(R, P_intile, P_turn)    // turn it across
     ).
 
 // --- the slab each block sits in ---
@@ -116,7 +116,7 @@ reading.cell(Ch, P) :- parse.box.margin([$U(), _], P), primary_axis(_, Ch).
 // --- $Marked ---
 
 primary_axis(A, $Marked()) :-
-    in(P, Col), c.primary_col(Col),                                   // a cell of that color
+    in(P, Col), params.primary_col(Col),                              // a cell of that color
     parse.mark_pos($U(), P_m), axis_elem(A), same_line(A, P, P_m).    // the mark's line it lies on
 
 // --- $Aspect ---
@@ -144,7 +144,7 @@ unstratified(A) :-
 // --- the stack ---
 
 .init slot = DirFrame<Choice>
-slot.dir(D) :- c.stack_dir(D).
+slot.dir(D) :- params.stack_dir(D).
 slot.dist_set(Ch, R) :- reading.rank(Ch, _, R).
 
 .decl out(p: Position, col: Color, ch: Choice)
@@ -152,14 +152,14 @@ out(P_grid, Col, Ch) :-
     reading.rank(Ch, B, R), parse.box.margin([$U(), Id], B),    // the block, by its ranked box
     slot.pos(Ch, R, P_tile),                                    // its place in the stack
     slab.cell(Id, P_slab),
-    ( placed(Id, P_slab, Col)              // the block
-    ; !placed(Id, P_slab, _), c.bg(Col)    // the margin beside it
+    ( placed(Id, P_slab, Col)                   // the block
+    ; !placed(Id, P_slab, _), params.bg(Col)    // the margin beside it
     ),
     stack_axis(A), concat_slab(P_tile, P_slab, A, 0, P_grid).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     .type KID = [e: Example, id: Ident, d: D4]
 
     .init ex = Parse<Example>
@@ -168,7 +168,7 @@ out(P_grid, Col, Ch) :-
     // A block the rot has to turn, in an example whose output is known.
     .decl turnable(e: Example, id: Ident)
     turnable(E, Id) :-
-        ex_out(E, _, _), c.stack_dir(D), axis_of(D, A), ex.along(E, Id, A).
+        ex_out(E, _, _), params.stack_dir(D), axis_of(D, A), ex.along(E, Id, A).
 
     // Each candidate turn of such a block, sought in the output.
     .init occ = Occurrences<KID, Color>

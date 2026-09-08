@@ -1,6 +1,6 @@
 // ff28f65a
 // concept: objects lookup count rank stamp
-// Count the blocks — c.block_shape in c.block_color — then mark that many
+// Count the blocks — params.block_shape in params.block_color — then mark that many
 // cells of the output frame's X (both corner diagonals), in reading order.
 //
 // Two models detect the blocks:
@@ -9,9 +9,9 @@
 //                touching blocks count separately, where $Object merges them.
 //
 // The count renders two ways:
-//   $Fill   — mark along the X's reading order (ops).
-//   $Lookup — select the stored count->grid from a table (data).
-// Choice = [detect, render] crosses the two independent decisions.
+//   $Fill   — mark along the X's reading order (rule).
+//   $Lookup — select the stored count->grid from a table (table).
+// Choice = [detect, render] crosses the two independent choice points.
 
 #include "../lib.dl"
 
@@ -19,8 +19,8 @@
 .type Render = Fill {} | Lookup {}
 .type Choice = [detect: Detect, render: Render]
 
-.comp Consts {
-    .init helpers = ConstsHelpers
+.comp Params {
+    .init helpers = ParamsHelpers
 
     .decl block_color(c: Color) block_color(2).
     .decl block_dim(k: number) block_dim(2).
@@ -61,7 +61,7 @@
         1, 0, 1)
 }
 
-.init c = Consts
+.init params = Params
 
 // --- parse ---
 
@@ -71,7 +71,7 @@
     .decl cell(k: Key, p: Position, col: Color)
 
     .decl on(k: Key, p: Position)
-    on(K, P) :- cell(K, P, C), c.block_color(C).
+    on(K, P) :- cell(K, P, C), params.block_color(C).
 
     .init comps = Components<Key>
     comps.node(K, P) :- on(K, P).
@@ -80,7 +80,7 @@
     frame.cell([K, Id], P) :- comps.label(K, P, Id).
 
     .init same = KeyedSetCompare<Obj, Unit, Position>
-    same.pattern_member($U(), P) :- c.block_shape(P).
+    same.pattern_member($U(), P) :- params.block_shape(P).
     same.observed_member(O, P)   :- frame.inner(O, _, P).
 
     .init blocks = Tally<Key, Ident>
@@ -98,7 +98,7 @@ parse.cell($U(), P, C) :- in(P, C).
 
 .init occ = Occurrences<Unit, Unit>
 occ.cell($U(), P, $U())  :- parse.on($U(), P).
-occ.shape($U(), P, $U()) :- c.block_shape(P).
+occ.shape($U(), P, $U()) :- params.block_shape(P).
 
 .init placements = Tally<Unit, Position>
 placements.item($U(), P) :- occ.occurrence($U(), P).
@@ -111,12 +111,12 @@ total(N, $Placement()) :- placements.tally($U(), N).
 
 // The X: cells on either diagonal of the output frame, in reading order.
 .init diag = Diagonal<Unit>
-diag.cell($U(), P)   :- c.out_pos(P).
+diag.cell($U(), P)   :- params.out_pos(P).
 diag.corner($U(), D) :- diag_dir_elem(D).
 
 .init lex = LexOrder<Unit>
-lex.corner($U(), D) :- c.lex_corner(D).
-lex.axis($U(), A) :- c.lex_axis(A).
+lex.corner($U(), D) :- params.lex_corner(D).
+lex.axis($U(), A) :- params.lex_axis(A).
 lex.cell($U(), P) :- diag.diagonal($U(), P, _).
 
 .decl marked(p: Position, detect: Detect)
@@ -124,16 +124,16 @@ marked(P, Det) :- lex.rank($U(), P, K), total(N, Det), K < N.
 
 .decl out(p: Position, col: Color, c: Choice)
 
-// $Fill (ops) — mark along the reading order.
-out(P, Mark, [Det, $Fill()]) :- marked(P, Det), c.mark(Mark).
-out(P, BG,   [Det, $Fill()]) :- c.out_pos(P), total(_, Det), !marked(P, Det), c.bg(BG).
+// $Fill (rule) — mark along the reading order.
+out(P, Mark, [Det, $Fill()]) :- marked(P, Det), params.mark(Mark).
+out(P, BG,   [Det, $Fill()]) :- params.out_pos(P), total(_, Det), !marked(P, Det), params.bg(BG).
 
-// $Lookup (data) — select the stored grid for the count.
-out(P, Col, [Det, $Lookup()]) :- total(N, Det), c.lookup_grid(N, P, Col).
+// $Lookup (table) — select the stored grid for the count.
+out(P, Col, [Det, $Lookup()]) :- total(N, Det), params.lookup_grid(N, P, Col).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     .init parse = Parse<Example>
     parse.cell(E, P, Col) :- ex_in(E, P, Col).
 

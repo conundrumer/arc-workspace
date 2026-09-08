@@ -1,13 +1,13 @@
 // 97999447
 // concept: markers lookup walk cast
-// Each non-bg dot emits a ray toward c.ray_dir, to the grid edge; cells off
+// Each non-bg dot emits a ray toward params.ray_dir, to the grid edge; cells off
 // every ray pass through. Two models of the ray's coloring, tagged on out's
 // Choice:
 //
 //   $Toggle — the ray walks the dot's two-color cycle: dot color and
-//             c.alt_color alternate, the dot itself on-color.
-//   $Mask   — the ray tiles a periodic mask: c.slot is the slot domain,
-//             c.mask its fixed-color overrides, unmarked slots echo the
+//             params.alt_color alternate, the dot itself on-color.
+//   $Mask   — the ray tiles a periodic mask: params.slot is the slot domain,
+//             params.mask its fixed-color overrides, unmarked slots echo the
 //             dot. The dot sits at slot 0.
 //
 // Coincide while the mask is a single override on period 2.
@@ -16,7 +16,7 @@
 
 .type Choice = Toggle {} | Mask {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl bg(c: Color) bg(0).
     .decl ray_dir(d: Dir) ray_dir(DIR_R).
@@ -30,12 +30,12 @@
     .decl mask(k: number, col: Color) mask(1, 5).
 }
 
-.init c = Consts
+.init params = Params
 
 // --- shared ---
 
 .decl mark(p: Position, col: Color)
-mark(P, Col) :- in(P, Col), !c.bg(Col).
+mark(P, Col) :- in(P, Col), !params.bg(Col).
 
 .decl out(p: Position, col: Color, ch: Choice)
 
@@ -43,7 +43,7 @@ mark(P, Col) :- in(P, Col), !c.bg(Col).
 
 // The two-color cycle of a ray with mark color M.
 .decl toggle(m: Color, c1: Color, c2: Color)
-toggle(M, M, Alt) :- mark(_, M), c.alt_color(Alt).
+toggle(M, M, Alt) :- mark(_, M), params.alt_color(Alt).
 toggle(M, A, B)   :- toggle(M, B, A).
 
 // From each mark, step toward ray_dir advancing the color cycle.
@@ -51,7 +51,7 @@ toggle(M, A, B)   :- toggle(M, B, A).
 ray_toggle(Col, P, Col) :- mark(P, Col).
 ray_toggle(M, Q, C2) :-
     ray_toggle(M, P, C1), toggle(M, C1, C2),   // next color in the cycle
-    c.ray_dir(D), neighbor(P, D, Q),           // next cell toward the edge
+    params.ray_dir(D), neighbor(P, D, Q),      // next cell toward the edge
     in(Q, _).                                  // still on the grid
 
 out(P, Col, $Toggle()) :- ray_toggle(_, P, Col).
@@ -60,35 +60,35 @@ out(P, Col, $Toggle()) :- in(P, Col), !ray_toggle(_, P, _).
 // --- Mask ---
 
 .init slots = IndexCycle<Unit>
-slots.idx($U(), K) :- c.slot(K).
+slots.idx($U(), K) :- params.slot(K).
 
 // From each mark, step toward ray_dir advancing the mask slot.
 .decl ray_mask(m: Color, p: Position, k: number)
 ray_mask(Col, P, 0) :- mark(P, Col).
 ray_mask(M, Q, K2) :-
     ray_mask(M, P, K), slots.succ($U(), K, K2),   // next slot in the period
-    c.ray_dir(D), neighbor(P, D, Q),              // next cell toward the edge
+    params.ray_dir(D), neighbor(P, D, Q),         // next cell toward the edge
     in(Q, _).                                     // still on the grid
 
-out(P, Col, $Mask()) :- ray_mask(_, P, K), c.mask(K, Col).    // overridden slot
-out(P, M,   $Mask()) :- ray_mask(M, P, K), !c.mask(K, _).     // unmarked slot echoes the dot
+out(P, Col, $Mask()) :- ray_mask(_, P, K), params.mask(K, Col).    // overridden slot
+out(P, M,   $Mask()) :- ray_mask(M, P, K), !params.mask(K, _).     // unmarked slot echoes the dot
 out(P, Col, $Mask()) :- in(P, Col), !ray_mask(_, P, _).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     // Dots of the train inputs; the ex_out atom holds the test input out.
     .decl fmark(e: Example, p: Position, col: Color)
-    fmark(E, P, Col) :- ex_in(E, P, Col), !c.bg(Col), ex_out(E, _, _).
+    fmark(E, P, Col) :- ex_in(E, P, Col), !params.bg(Col), ex_out(E, _, _).
 
     // The color the pair paints i steps along a dot's ray.
     .decl ray_col(e: Example, m: Position, i: number, col: Color)
     ray_col(E, M, I, Col) :-
         fmark(E, M, _), ex_in(E, Q, _),
-        displacement(M, Q, Delta),                          // a cell relative to its dot
-        c.ray_dir(D), opposite(D, O), dist(Delta, O, I),    // steps toward ray_dir
-        I >= 0, jump_delta(D, I, Delta),                    // straight along the ray
-        compose(M, Delta, P), ex_out(E, P, Col).            // the painted cell
+        displacement(M, Q, Delta),                               // a cell relative to its dot
+        params.ray_dir(D), opposite(D, O), dist(Delta, O, I),    // steps toward ray_dir
+        I >= 0, jump_delta(D, I, Delta),                         // straight along the ray
+        compose(M, Delta, P), ex_out(E, P, Col).                 // the painted cell
 
     // Two steps of one ray that carry different colors — never one slot.
     .decl differ(i: number, i2: number)

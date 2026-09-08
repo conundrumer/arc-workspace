@@ -4,7 +4,7 @@
 // of the block flush at the empty edge and fills the span between, per
 // line, from a boundary column of the block. Two independent nodes:
 //
-//   dir:  the empty edge — $Dir: c.dir names it; $Edge: the edge no ink
+//   dir:  the empty edge — $Dir: params.dir names it; $Edge: the edge no ink
 //         touches.
 //   fill: the boundary column copied — $Outer: at the anchor edge; $Inner:
 //         facing the gap.
@@ -15,17 +15,17 @@
 .type FillCh = Outer {} | Inner {}
 .type Choice = [dir: DirCh, fill: FillCh]
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
 
     // --- $Dir ---
     .decl dir(d: Dir) dir(DIR_R).   // the empty edge
 }
 
-.init c = Consts
+.init params = Params
 
 .decl ink(p: Position, col: Color)
-ink(P, Col) :- in(P, Col), !c.bg(Col).
+ink(P, Col) :- in(P, Col), !params.bg(Col).
 
 .init box = Bbox<Unit>
 box.cell($U(), P) :- ink(P, _).
@@ -33,7 +33,7 @@ box.cell($U(), P) :- ink(P, _).
 .decl empty_dir(d: Dir, dc: DirCh)
 
 // --- $Dir ---
-empty_dir(D, $Dir()) :- c.dir(D).
+empty_dir(D, $Dir()) :- params.dir(D).
 
 // --- $Edge ---
 empty_dir(D, $Edge()) :- box.edge_min($U(), D, M), M != 0.
@@ -57,9 +57,9 @@ fill_edge(D, Dc, $Inner()) :- empty_dir(D, Dc).
 // Between block and copy, each line takes its fill-boundary cell's color.
 .decl fill(p: Position, col: Color, dc: DirCh, fc: FillCh)
 fill(P, Col, Dc, Fc) :-
-    in(P, Bg), c.bg(Bg), !copy(P, _, Dc),   // empty cell, not under the copy
-    fill_edge(E, Dc, Fc),                   // the block boundary copied
-    box.edge_cell($U(), Q, E), ink(Q, Col), // its cell and color
+    in(P, Bg), params.bg(Bg), !copy(P, _, Dc), // empty cell, not under the copy
+    fill_edge(E, Dc, Fc),                      // the block boundary copied
+    box.edge_cell($U(), Q, E), ink(Q, Col),    // its cell and color
     axis_of(E, A), same_line(A, P, Q).
 
 .decl fill_elem(fc: FillCh)

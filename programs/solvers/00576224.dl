@@ -16,8 +16,8 @@
 
 .type Choice = Lookup {} | Alt {} | Mid {}
 
-.comp Consts {
-    .init helpers = ConstsHelpers
+.comp Params {
+    .init helpers = ParamsHelpers
 
     // --- Lookup ---
     .decl tile_d4(p: Position, d: D4)
@@ -40,41 +40,41 @@
     tf(D4_LR).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl out(p: Position, col: Color, c: Choice)
 
 // --- Lookup ---
 out(P_grid, Col, $Lookup()) :-
-    in(P_in, Col),                                       // input cell
-    c.tile_d4(P_tile, D), apply(D, P_in, P_intile),      // d4 image at tile
-    concat_2d(P_tile, P_intile, 0, P_grid).              // recompose
+    in(P_in, Col),                                            // input cell
+    params.tile_d4(P_tile, D), apply(D, P_in, P_intile),      // d4 image at tile
+    concat_2d(P_tile, P_intile, 0, P_grid).                   // recompose
 
 // --- Alt ---
 .decl band_step(p_tile: Position, p_tile2: Position)
 band_step(T, T2) :-
-    c.anchor(D), opposite(D, O),
-    c.arr_pos(T), neighbor(T, O, T2), c.arr_pos(T2).
+    params.anchor(D), opposite(D, O),
+    params.arr_pos(T), neighbor(T, O, T2), params.arr_pos(T2).
 
 // Bands alternate plain and flipped, plain at the anchor edge.
 .decl plain_tile(p_tile: Position)
 .decl flip_tile(p_tile: Position)
-plain_tile(T)  :- c.arr_pos(T), c.anchor(D), dist(T, D, 0).
+plain_tile(T)  :- params.arr_pos(T), params.anchor(D), dist(T, D, 0).
 flip_tile(T2)  :- plain_tile(T), band_step(T, T2).
 plain_tile(T2) :- flip_tile(T), band_step(T, T2).
 
 out(P_grid, Col, $Alt()) :-
-    in(P_in, Col),                                      // input cell
-    ( plain_tile(T), P_intile = P_in                    // plain band — as-is
-    ; flip_tile(T), c.tf(F), apply(F, P_in, P_intile)   // flipped band — transformed
+    in(P_in, Col),                                           // input cell
+    ( plain_tile(T), P_intile = P_in                         // plain band — as-is
+    ; flip_tile(T), params.tf(F), apply(F, P_in, P_intile)   // flipped band — transformed
     ),
     concat_2d(T, P_intile, 0, P_grid).
 
 // --- Mid ---
 out(P_grid, Col, $Mid()) :-
-    in(P_in, Col), c.arr_pos(T), c.anchor(D),        // input cell, its tile
-    ( dist_pair(T, D, K, K),                         // centered band — transformed
-      c.tf(F), apply(F, P_in, P_intile),
+    in(P_in, Col), params.arr_pos(T), params.anchor(D),        // input cell, its tile
+    ( dist_pair(T, D, K, K),                                   // centered band — transformed
+      params.tf(F), apply(F, P_in, P_intile),
       concat_2d(T, P_intile, 0, P_grid)
     ; dist_pair(T, D, K1, K2), K1 != K2,             // off-center band — as-is
       concat_2d(T, P_in, 0, P_grid)

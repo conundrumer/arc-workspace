@@ -1,24 +1,24 @@
 // 32e9702f
 // concept: move
-// Every mark shifts one step toward c.dir; a mark pushed off the grid
-// vanishes. All other cells become c.fill.
+// Every mark shifts one step toward params.dir; a mark pushed off the grid
+// vanishes. All other cells become params.fill.
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl dir(d: Dir) dir(DIR_L).    // shift direction
     .decl bg(c: Color) bg(0).
     .decl fill(c: Color) fill(5).      // field color
 }
 
-.init c = Consts
+.init params = Params
 
 .decl moved(p: Position, col: Color)
 moved(Q, Col) :-
-    in(P, Col), !c.bg(Col),          // mark
-    c.dir(D), neighbor(P, D, Q),
+    in(P, Col), !params.bg(Col),          // mark
+    params.dir(D), neighbor(P, D, Q),
     in(Q, _).                        // lands on the grid
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- moved(P, Col).
-out(P, F)   :- in(P, _), !moved(P, _), c.fill(F).
+out(P, F)   :- in(P, _), !moved(P, _), params.fill(F).

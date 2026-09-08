@@ -1,20 +1,20 @@
 // 412b6263
 // concept: tile-arrangement d4 border count
-// The output is a lattice: copies of the input under c.xform fill the tiles,
-// and lines of c.line_width run between the copies and around them. The
+// The output is a lattice: copies of the input under params.xform fill the tiles,
+// and lines of params.line_width run between the copies and around them. The
 // separators and the ring are the same lines, so one width serves both. A
-// frame cell off the copies takes c.line_col on a copy's row or column, and
-// c.bg where two lines cross.
+// frame cell off the copies takes params.line_col on a copy's row or column, and
+// params.bg where two lines cross.
 //
-// Two claims about the copy count:
-//   $Layout — the tile arrangement is stored per axis in c.tiles.
-//   $Count  — the copies stack along c.stack_axis, one per input object.
+// Two hypotheses about the copy count:
+//   $Layout — the tile arrangement is stored per axis in params.tiles.
+//   $Count  — the copies stack along params.stack_axis, one per input object.
 
 #include "../lib.dl"
 
 .type Choice = Layout {} | Count {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl bg(col: Color) bg(7).
     .decl line_col(col: Color) line_col(1).
@@ -33,42 +33,42 @@
     .decl stack_axis(a: Axis) stack_axis(AXIS_V).
 }
 
-.init c = Consts
+.init params = Params
 
 // The copy each tile holds.
 .decl content(p_intile: Position, col: Color)
-content(P_intile, Col) :- in(P_grid_in, Col), c.xform(D), apply(D, P_grid_in, P_intile).
+content(P_intile, Col) :- in(P_grid_in, Col), params.xform(D), apply(D, P_grid_in, P_intile).
 
 // A copy's cell, in the output frame less the ring.
 .decl placed(ch: Choice, p_inner: Position, p_intile: Position)
 
 // --- Layout ---
 .init layout = Frame2D<Unit>
-layout.extent($U(), A, N) :- c.tiles(A, N).
+layout.extent($U(), A, N) :- params.tiles(A, N).
 
 placed($Layout(), P_inner, P_intile) :-
-    layout.cell($U(), P_tile), content(P_intile, _),           // tile, and the cell in it
-    c.line_width(W), concat_2d(P_tile, P_intile, W, P_inner).  // laid out, gapped by the line
+    layout.cell($U(), P_tile), content(P_intile, _),                // tile, and the cell in it
+    params.line_width(W), concat_2d(P_tile, P_intile, W, P_inner).  // laid out, gapped by the line
 
 // --- Count ---
 .init blocks = Components<Unit>
-blocks.node($U(), P) :- in(P, Col), !c.bg(Col).
+blocks.node($U(), P) :- in(P, Col), !params.bg(Col).
 
 .init block_n = Tally<Unit, Ident>
 block_n.item($U(), Id) :- blocks.label($U(), _, Id).
 
 .init stack = AxisFrame<Unit>
-stack.extent($U(), A, N) :- c.stack_axis(A), block_n.tally($U(), N).
+stack.extent($U(), A, N) :- params.stack_axis(A), block_n.tally($U(), N).
 
 placed($Count(), P_inner, P_intile) :-
-    stack.cell($U(), A, P_tile), content(P_intile, _),              // tile, and the cell in it
-    c.line_width(W), concat_slab(P_tile, P_intile, A, W, P_inner).  // stacked, gapped by the line
+    stack.cell($U(), A, P_tile), content(P_intile, _),                   // tile, and the cell in it
+    params.line_width(W), concat_slab(P_tile, P_intile, A, W, P_inner).  // stacked, gapped by the line
 
 // --- shared ---
 // The copies in the output frame.
 .decl copy_cell(ch: Choice, p_grid: Position, p_intile: Position)
 copy_cell(Ch, P_grid, P_intile) :-
-    placed(Ch, P_inner, P_intile), c.ring(R), compose(P_inner, R, P_grid).
+    placed(Ch, P_inner, P_intile), params.ring(R), compose(P_inner, R, P_grid).
 
 // The output frame — the copies' frame, which the ring has grown.
 .init frame = Frame2D<Choice>
@@ -84,17 +84,17 @@ copy_line(Ch, P_grid) :-
 out(P_grid, Col, Ch) :- copy_cell(Ch, P_grid, P_intile), content(P_intile, Col).
 out(P_grid, Col, Ch) :-
     frame.cell(Ch, P_grid), !copy_cell(Ch, P_grid, _),   // a frame cell off the copies
-    ( copy_line(Ch, P_grid), c.line_col(Col)             // on a copy's line
-    ; !copy_line(Ch, P_grid), c.bg(Col) ).               // where two lines cross
+    ( copy_line(Ch, P_grid), params.line_col(Col)        // on a copy's line
+    ; !copy_line(Ch, P_grid), params.bg(Col) ).          // where two lines cross
 
-// --- fit ---
+// --- determination ---
 
 .type ExAxis = [e: Example, a: Axis]
 
-.comp Fit {
+.comp Determine {
     .decl content(e: Example, p_intile: Position, col: Color)
     content(E, P_intile, Col) :-
-        ex_in(E, P_grid_in, Col), c.xform(D), apply(D, P_grid_in, P_intile).
+        ex_in(E, P_grid_in, Col), params.xform(D), apply(D, P_grid_in, P_intile).
 
     // Seats of the copy on the output, from one matching cell.
     .decl cand(e: Example, v: Inset)

@@ -8,7 +8,7 @@ from dl.dlparse import Comp, Decl, ParseError, Rigid, parse
 
 # Per-mode IO directives, appended to the built source.
 SOLVE_DIRECTIVES = ".input in(IO=stdin)\n.output out(IO=stdout)\n"
-FIT_DIRECTIVES = ".input ex_in\n.input ex_out\n.output fit_diff(IO=stdout)\n"
+DETERMINE_DIRECTIVES = ".input ex_in\n.input ex_out\n.output determination_diff(IO=stdout)\n"
 
 COMP_HEADER_RE = re.compile(r"\.comp\s+(\w+)")
 DECL_RE = re.compile(r"\.decl\s+(\w+)\s*\(([^)]*)\)")
@@ -225,16 +225,16 @@ def macro_line_map(source: str) -> list[int]:
     ]
 
 
-def public_slot(name: str) -> str:
+def public_param(name: str) -> str:
     """The placed name of a RIGID chart relation; other names pass through."""
     return name.removeprefix(RIGID_CHART_PREFIX)
 
 
 def rigid_decls(source: str) -> dict[str, tuple[str, list[str]]]:
     """Placed-name -> (block, chart column types) for each RIGID chart
-    relation of Consts, from raw (unexpanded) source."""
+    relation of Params, from raw (unexpanded) source."""
     try:
-        comp = parse(source).comps().get("Consts")
+        comp = parse(source).comps().get("Params")
     except ParseError:
         return {}
     out: dict[str, tuple[str, list[str]]] = {}
@@ -264,45 +264,46 @@ def comp_decls(source: str, comp_name: str) -> dict[str, list[str]]:
     }
 
 
-def rigid_slot_decls(source: str, consts: dict[str, list[str]]) -> dict[str, list[str]]:
-    """Placed name -> declared (chart) column types for each RIGID slot.
+def rigid_param_decls(source: str, params: dict[str, list[str]]) -> dict[str, list[str]]:
+    """Placed name -> declared (chart) column types for each RIGID parameter.
 
     Raw source states the block, so `rigid_decls` reads the chart decls off
     it. Expanded source has no block left, but the chart survives under its
-    generated name beside the placed relation, so `consts` carries it.
+    generated name beside the placed relation, so `params` carries it.
     """
     declared = {name: types for name, (_, types) in rigid_decls(source).items()}
     declared |= {
-        public_slot(name): types
-        for name, types in consts.items()
+        public_param(name): types
+        for name, types in params.items()
         if name.startswith(RIGID_CHART_PREFIX)
     }
     return declared
 
 
-def fit_slots(source: str) -> dict[str, list[str]] | None:
-    """Fitted slots (name -> Consts arg types): Fit decls that mirror a
-    Consts decl. None when no Fit comp. A RIGID chart relation mirrors
-    under its placed name, with the chart's types — the Fit derives the
-    chart in a pose of its own, and the runner compares up to pose. The
-    placed schema's leading D4 column stays out of the comparison, so the
-    source may be raw or macro-expanded.
+def determined_params(source: str) -> dict[str, list[str]] | None:
+    """Determined parameters (name -> Params arg types): Determine decls
+    that mirror a Params decl. None when no Determine comp. A RIGID chart
+    relation mirrors under its placed name, with the chart's types — the
+    determination derives the chart in a pose of its own, and the runner
+    compares up to pose. The placed schema's leading D4 column stays out of
+    the comparison, so the source may be raw or macro-expanded.
 
-    Mirroring is by name, so a Fit helper must not take a slot's name: a
-    name match with a different schema raises rather than misclassify."""
-    fit = comp_decls(source, "Fit")
-    if not fit:
+    Mirroring is by name, so a Determine helper must not take a parameter's
+    name: a name match with a different schema raises rather than
+    misclassify."""
+    determine = comp_decls(source, "Determine")
+    if not determine:
         return None
-    consts = comp_decls(source, "Consts")
-    consts |= rigid_slot_decls(source, consts)
-    for name in fit:
-        if name in consts and fit[name] != consts[name]:
+    params = comp_decls(source, "Params")
+    params |= rigid_param_decls(source, params)
+    for name in determine:
+        if name in params and determine[name] != params[name]:
             raise ValueError(
-                f"Fit relation '{name}' matches a Consts slot by name but "
-                f"not by schema ({', '.join(fit[name])} vs "
-                f"{', '.join(consts[name])}); rename the helper"
+                f"determination relation '{name}' matches a Params parameter "
+                f"by name but not by schema ({', '.join(determine[name])} vs "
+                f"{', '.join(params[name])}); rename the helper"
             )
-    return {name: consts[name] for name in fit if name in consts}
+    return {name: params[name] for name in determine if name in params}
 
 
 def _comp_span(source: str, comp_name: str) -> tuple[int, int]:
@@ -313,14 +314,14 @@ def _comp_span(source: str, comp_name: str) -> tuple[int, int]:
     return (comp.line, max(comp.line, comp.end_line - 1))
 
 
-def _consts_fact_lines(source: str) -> list[int]:
-    """Line indices inside Consts outside any rule statement.
+def _params_fact_lines(source: str) -> list[int]:
+    """Line indices inside Params outside any rule statement.
 
-    A slot atom can also close a Consts rule (`x(N) :- fat(N).`), where it
-    reads like a fact; fact matching stays off rule lines.
+    A parameter atom can also close a Params rule (`x(N) :- fat(N).`), where
+    it reads like a fact; fact matching stays off rule lines.
     """
     lines = source.splitlines()
-    s, e = _comp_span(source, "Consts")
+    s, e = _comp_span(source, "Params")
     idxs = []
     in_rule = False
     for i in range(s, e):
@@ -335,10 +336,10 @@ def _consts_fact_lines(source: str) -> list[int]:
     return idxs
 
 
-def _slot_atoms(code: str, slot: str) -> list[tuple[int, int, str]]:
-    """(start, end, args) for each `slot(...).` fact atom in `code`."""
+def _param_atoms(code: str, param: str) -> list[tuple[int, int, str]]:
+    """(start, end, args) for each `param(...).` fact atom in `code`."""
     spans = []
-    for m in re.finditer(rf"\b{slot}\s*\(", code):
+    for m in re.finditer(rf"\b{param}\s*\(", code):
         depth, i = 1, m.end()
         while i < len(code) and depth:
             if code[i] == "(":
@@ -353,13 +354,13 @@ def _slot_atoms(code: str, slot: str) -> list[tuple[int, int, str]]:
     return spans
 
 
-def _slot_facts(source: str, slot: str) -> list[list[str]]:
-    """Argument lists of `slot`'s Consts facts."""
+def _param_facts(source: str, param: str) -> list[list[str]]:
+    """Argument lists of `param`'s Params facts."""
     lines = source.splitlines()
     return [
         _split_args(args)
-        for i in _consts_fact_lines(source)
-        for (_, _, args) in _slot_atoms(lines[i].split("//")[0], slot)
+        for i in _params_fact_lines(source)
+        for (_, _, args) in _param_atoms(lines[i].split("//")[0], param)
     ]
 
 
@@ -367,23 +368,23 @@ def _render_arg(v) -> str:
     return f"[{', '.join(str(x) for x in v)}]" if isinstance(v, tuple) else str(v)
 
 
-def swap_fact(source: str, slot: str, values: tuple) -> str:
-    """Replace `slot`'s Consts facts with a single fact holding `values`."""
-    return swap_facts(source, slot, [values])
+def swap_fact(source: str, param: str, values: tuple) -> str:
+    """Replace `param`'s Params facts with a single fact holding `values`."""
+    return swap_facts(source, param, [values])
 
 
-def swap_facts(source: str, slot: str, rows: list[tuple]) -> str:
-    """Replace `slot`'s Consts facts with one fact per row."""
+def swap_facts(source: str, param: str, rows: list[tuple]) -> str:
+    """Replace `param`'s Params facts with one fact per row."""
     lines = source.splitlines()
-    _, e = _comp_span(source, "Consts")
-    for i in _consts_fact_lines(source):
+    _, e = _comp_span(source, "Params")
+    for i in _params_fact_lines(source):
         code, sep, comment = lines[i].partition("//")
-        for start, end, _ in reversed(_slot_atoms(code, slot)):
+        for start, end, _ in reversed(_param_atoms(code, param)):
             code = code[:start] + code[end:]
         lines[i] = code + sep + comment
     for row in rows:
         args = ", ".join(_render_arg(v) for v in row)
-        lines.insert(e, f"    {slot}({args}).")
+        lines.insert(e, f"    {param}({args}).")
     return "\n".join(lines) + "\n"
 
 
@@ -392,39 +393,47 @@ def build_source(source: str) -> str:
     return f"{expand_macros(source)}\n{SOLVE_DIRECTIVES}"
 
 
-def build_fit_source(source: str, slots: dict[str, list[str]]) -> str:
-    """Assemble the fit-mode program: Fit instance, per-slot diffs, directives.
+def build_determine_source(source: str, params: dict[str, list[str]]) -> str:
+    """Assemble the determination-mode program: Determine instance,
+    per-parameter diffs, directives.
 
-    A slot with an Ident column gets no diff rules — its ids are arbitrary,
-    so both sides relay to output relations and the runner compares them
-    modulo id renaming. A RIGID slot gets no diff rules either: both sides
-    relay as placed forms — the stored side is already placed; the Fit's
-    chart closes through the same rule — and the runner compares orbits.
+    A parameter with an Ident column gets no diff rules — its ids are
+    arbitrary, so both sides relay to output relations and the runner
+    compares them modulo id renaming. A RIGID parameter gets no diff rules
+    either: both sides relay as placed forms — the stored side is already
+    placed; the determination's chart closes through the same rule — and the
+    runner compares orbits.
     """
     rigid = rigid_decls(source)
-    lines = [".init fit = Fit"]
-    for name, types in sorted(slots.items()):
+    lines = [".init determine = Determine"]
+    for name, types in sorted(params.items()):
         args = ", ".join(f"A{i}" for i in range(len(types)))
         if name in rigid:
             typed = "d4: D4, " + ", ".join(f"a{i}: {t}" for i, t in enumerate(types))
             lines += [
-                f".decl fit_rigid_{name}({typed})",
-                _rigid_rule(f"fit_rigid_{name}", f"fit.{name}", types),
-                f".output fit_rigid_{name}(IO=stdout)",
-                f".decl c_rigid_{name}({typed})",
-                f"c_rigid_{name}(D4, {args}) :- c.{name}(D4, {args}).",
-                f".output c_rigid_{name}(IO=stdout)",
+                f".decl determine_rigid_{name}({typed})",
+                _rigid_rule(f"determine_rigid_{name}", f"determine.{name}", types),
+                f".output determine_rigid_{name}(IO=stdout)",
+                f".decl params_rigid_{name}({typed})",
+                f"params_rigid_{name}(D4, {args}) :- params.{name}(D4, {args}).",
+                f".output params_rigid_{name}(IO=stdout)",
             ]
         elif "Ident" in types:
             typed = ", ".join(f"a{i}: {t}" for i, t in enumerate(types))
-            for side in ("fit", "c"):
+            for side in ("determine", "params"):
                 lines += [
                     f".decl {side}_ident_{name}({typed})",
                     f"{side}_ident_{name}({args}) :- {side}.{name}({args}).",
                     f".output {side}_ident_{name}(IO=stdout)",
                 ]
         else:
-            lines.append(f'fit_diff("{name}") :- fit.{name}({args}), !c.{name}({args}).')
-            lines.append(f'fit_diff("{name}") :- c.{name}({args}), !fit.{name}({args}).')
+            lines.append(
+                f'determination_diff("{name}") :- '
+                f'determine.{name}({args}), !params.{name}({args}).'
+            )
+            lines.append(
+                f'determination_diff("{name}") :- '
+                f'params.{name}({args}), !determine.{name}({args}).'
+            )
     appended = "\n".join(lines)
-    return f"{expand_macros(source)}\n{appended}\n{FIT_DIRECTIVES}"
+    return f"{expand_macros(source)}\n{appended}\n{DETERMINE_DIRECTIVES}"

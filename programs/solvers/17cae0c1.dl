@@ -6,7 +6,7 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
 
     .decl tile_axis(a: Axis) tile_axis(AXIS_H).
@@ -47,7 +47,7 @@
     glyph_color(4, 1).
 }
 
-.init c = Consts
+.init params = Params
 
 // --- parse ---
 
@@ -58,14 +58,14 @@
     .decl panel(key: Key, p_grid: Position, p_tile: Position, p_intile: Position)
     panel(K, P_grid, P_tile, P_intile) :-
         cell(K, P_grid, _),                                    // input cell
-        c.tile_axis(A), c.tile_count(N),                       // strip params
+        params.tile_axis(A), params.tile_count(N),             // strip params
         divide_slab(P_grid, A, N, 0, P_tile, P_intile).        // panel, place inside it
 
     // A panel's glyph, as the set of its marked cells.
     .decl mark(key: Key, p_tile: Position, p_intile: Position)
     mark(K, P_tile, P_intile) :-
-        cell(K, P_grid, Col), !c.bg(Col),                      // marked cell
-        panel(K, P_grid, P_tile, P_intile).                    // its panel and place
+        cell(K, P_grid, Col), !params.bg(Col),                    // marked cell
+        panel(K, P_grid, P_tile, P_intile).                       // its panel and place
 }
 
 .init parse = Parse<Unit>
@@ -74,17 +74,17 @@ parse.cell($U(), P, Col) :- in(P, Col).
 .decl out(p: Position, col: Color)
 
 .init glyph = KeyedSetCompare<Position, Ident, Position>
-glyph.pattern_member(Id, P)      :- c.glyph_member(Id, P).
+glyph.pattern_member(Id, P)      :- params.glyph_member(Id, P).
 glyph.observed_member(P_tile, P) :- parse.mark($U(), P_tile, P).
 
 out(P_grid, Col) :-
     parse.panel($U(), P_grid, P_tile, _),    // panel of the cell
     glyph.equals(P_tile, Id),                // its glyph is entry Id
-    c.glyph_color(Id, Col).                  // entry's color
+    params.glyph_color(Id, Col).             // entry's color
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     .type EP = [e: Example, tile: Position]
 
     // Train pairs only — the ex_out atom drops the test inputs.

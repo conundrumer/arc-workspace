@@ -3,18 +3,18 @@
 // Noise in a single ink color keys a fixed 3x3 glyph — plus, T, or
 // corner-L. The noise pattern carries nothing; only its color selects.
 // Every glyph is a full row and column through one point, so the render
-// splits data/ops, tagged on out's Choice:
+// splits table/rule, tagged on out's Choice:
 //
 //   $Cross()  — the table stores the cross center; the glyph is the row
-//               and column through it, c.mark over c.bg.
+//               and column through it, params.mark over params.bg.
 //   $Lookup() — the table stores the finished grid.
 
 #include "../lib.dl"
 
 .type Choice = Cross {} | Lookup {}
 
-.comp Consts {
-    .init helpers = ConstsHelpers
+.comp Params {
+    .init helpers = ParamsHelpers
 
     .decl bg(col: Color) bg(0).
 
@@ -46,34 +46,34 @@
         5, 5, 5)
 }
 
-.init c = Consts
+.init params = Params
 
 .decl out(p: Position, col: Color, ch: Choice)
 
 // --- $Cross ---
 .decl cross_cell(p: Position)
 cross_cell(P) :-
-    in(_, Key), c.cross(Key, Q),   // stored center
-    c.out_pos(P),
+    in(_, Key), params.cross(Key, Q),   // stored center
+    params.out_pos(P),
     axis_elem(A), same_line(A, P, Q).
 
-out(P, Col, $Cross()) :- cross_cell(P), c.mark(Col).
-out(P, Col, $Cross()) :- c.out_pos(P), !cross_cell(P), c.bg(Col).
+out(P, Col, $Cross()) :- cross_cell(P), params.mark(Col).
+out(P, Col, $Cross()) :- params.out_pos(P), !cross_cell(P), params.bg(Col).
 
 // --- $Lookup ---
-out(P, Col, $Lookup()) :- in(_, Key), c.glyph(Key, P, Col).
+out(P, Col, $Lookup()) :- in(_, Key), params.glyph(Key, P, Col).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     .decl glyph(key: Color, p: Position, col: Color)
     glyph(Key, P, Col) :-
-        ex_in(E, _, Key), !c.bg(Key),    // the example's ink
-        ex_out(E, P, Col).               // its whole output
+        ex_in(E, _, Key), !params.bg(Key),    // the example's ink
+        ex_out(E, P, Col).                    // its whole output
 
     .decl mismatch(key: Color, p: Position)
     mismatch(Key, P) :-
-        glyph(Key, P, _), glyph(Key, Q, Col), !c.mark(Col),   // a non-mark cell
+        glyph(Key, P, _), glyph(Key, Q, Col), !params.mark(Col),   // a non-mark cell
         axis_elem(A), same_line(A, P, Q).
 
     .decl cross(key: Color, p: Position)

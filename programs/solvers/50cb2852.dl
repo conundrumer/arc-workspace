@@ -1,7 +1,7 @@
 // 50cb2852
 // concept: objects border
-// Solid one-color rectangles on c.bg; each keeps its outline and repaints
-// its interior to c.fill.
+// Solid one-color rectangles on params.bg; each keeps its outline and repaints
+// its interior to params.fill.
 //
 // Two models pick the interior:
 //   $Box   — cells strictly inside a component's bounding box.
@@ -12,15 +12,15 @@
 
 .type Choice = Box {} | Erode {}
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
     .decl fill(c: Color) fill(8).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl ink(p: Position)
-ink(P) :- in(P, Col), !c.bg(Col).
+ink(P) :- in(P, Col), !params.bg(Col).
 
 .decl interior(p: Position, ch: Choice)
 
@@ -51,5 +51,5 @@ interior(P, $Erode()) :- ink(P), !exposed.rim($U(), P).
 impl_choice($Box()). impl_choice($Erode()).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, Ch) :- interior(P, Ch), c.fill(Col).
+out(P, Col, Ch) :- interior(P, Ch), params.fill(Col).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !interior(P, Ch).

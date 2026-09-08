@@ -6,7 +6,7 @@
 //   $Stripes() — divide_by_size on each axis with K=1, G=1. Cells on a
 //                tile row or col → bg; cells on neither → dot.
 //   $Motif()   — the stored 3×3 motif seats at each grid corner and
-//                extends by the lattice generators c.period; overlapping
+//                extends by the lattice generators params.period; overlapping
 //                stamps agree on their shared rows/cols.
 //   $Inset()   — the frame inside the border; divide_by_size_2d with K=1,
 //                G=1 on that interior places tile cells at the dot
@@ -16,7 +16,7 @@
 
 .type Choice = Stripes {} | Motif {} | Inset {}
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(1).
     .decl dot(c: Color) dot(0).
 
@@ -41,7 +41,7 @@
     .decl border_width(k: number) border_width(1).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl out(p: Position, col: Color, c: Choice)
 
@@ -50,45 +50,45 @@
 on_tile(P) :-
     in(P, _),
     axis_elem(A),                                       // enumerate axes
-    c.tile_size(K), c.tile_gap(G),
+    params.tile_size(K), params.tile_gap(G),
     divide_by_size(P, A, K, G, _, _).                   // axis tile cell
 
 out(P, Col, $Stripes()) :-
-    in(P, _),                             // grid cell
-    ( on_tile(P), c.bg(Col)               // on a stripe — bg
-    ; !on_tile(P), c.dot(Col)             // off every stripe — the dot color
+    in(P, _),                                  // grid cell
+    ( on_tile(P), params.bg(Col)               // on a stripe — bg
+    ; !on_tile(P), params.dot(Col)             // off every stripe — the dot color
     ).
 
 // --- $Motif ---
 out(Q, Col, $Motif()) :-
-    in(Q, _), c.motif(Pm, Col),
+    in(Q, _), params.motif(Pm, Col),
     diag_dir_elem(Dg), corner_anchor(Dg, Pm, Q).        // seated at each corner
 out(Q2, Col, $Motif()) :-
     out(Q, Col, $Motif()),
-    c.period(J), compose(Q, J, Q2), in(Q2, _).          // extended by the lattice
+    params.period(J), compose(Q, J, Q2), in(Q2, _).          // extended by the lattice
 
 // --- $Inset ---
 .init interior = MarginFrame<Unit>
 interior.cell($U(), P) :- in(P, _).
-interior.width($U(), D, K) :- dir_elem(D), c.border_width(K).
+interior.width($U(), D, K) :- dir_elem(D), params.border_width(K).
 
 .decl interior_tile(p: Position)
 interior_tile(P) :-
     interior.inner($U(), P, P_int),                     // a cell in the interior frame
-    c.tile_size(K), c.tile_gap(G),
+    params.tile_size(K), params.tile_gap(G),
     divide_by_size_2d(P_int, K, G, _, _).               // tile cell in interior
 
 out(P, Col, $Inset()) :-
-    in(P, _),                             // grid cell
-    ( interior_tile(P), c.dot(Col)        // on an interior tile — the dot color
-    ; !interior_tile(P), c.bg(Col)        // the border, or an interior gap — bg
+    in(P, _),                                  // grid cell
+    ( interior_tile(P), params.dot(Col)        // on an interior tile — the dot color
+    ; !interior_tile(P), params.bg(Col)        // the border, or an interior gap — bg
     ).
 
-// --- fit ---
+// --- determination ---
 
 .type Window = [e: Example, diag: DiagDir]
 
-.comp Fit {
+.comp Determine {
     .init parse = ShiftInvariance<Example, Color>
     parse.cell(E, P, Col) :- ex_out(E, P, Col).
 
@@ -122,7 +122,7 @@ out(P, Col, $Inset()) :-
     // The dots span the interior frame, so their distance to a grid edge is
     // the border's width there.
     .init box = Bbox<Example>
-    box.cell(E, P) :- ex_out(E, P, Col), c.dot(Col).
+    box.cell(E, P) :- ex_out(E, P, Col), params.dot(Col).
 
     .decl border_width(k: number)
     border_width(K) :- box.edge_min(_, _, K).

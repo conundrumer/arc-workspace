@@ -16,13 +16,13 @@
 
 .type Choice = Toward {} | Jog {}
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
     .decl source(col: Color) source(3).
     .decl target(col: Color) target(2).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl impl_choice(ch: Choice)
 impl_choice($Toward()). impl_choice($Jog()).
@@ -32,14 +32,14 @@ impl_choice($Toward()). impl_choice($Jog()).
 // A stub's two cells lie on one line, and the path meets the stub along it.
 .decl stub_dir(col: Color, p: Position, d: Dir)
 stub_dir(Col, P, D) :-
-    ( c.source(Col) ; c.target(Col) ),
+    ( params.source(Col) ; params.target(Col) ),
     in(P, Col), in(P2, Col), P != P2,     // the stub's two cells
     axis_of(D, A), same_line(A, P, P2).   // the line they share
 
 // A leg is a cell the path runs from and the direction it runs. The path
 // leaves the source stub along the stub's own line.
 .decl leg_start(p: Position, d: Dir)
-leg_start(P, D) :- c.source(Col), stub_dir(Col, P, D).
+leg_start(P, D) :- params.source(Col), stub_dir(Col, P, D).
 
 // A walker crosses the grid and halts before any occupied cell: a wall, a
 // stub, or the target.
@@ -47,18 +47,18 @@ leg_start(P, D) :- c.source(Col), stub_dir(Col, P, D).
 leg.dir($U(), D) :- dir_elem(D).
 leg.cell($U(), P) :- in(P, _).
 leg.mark($U(), P) :- in(P, _).
-leg.blocked($U(), P) :- in(P, Col), !c.bg(Col).
+leg.blocked($U(), P) :- in(P, Col), !params.bg(Col).
 
 // The open cells the walker crosses. A rim direction is one the way ahead
 // closes in: an occupied cell, or the grid edge.
 .init open = Rim<Unit>
-open.cell($U(), P) :- in(P, Col), c.bg(Col).
+open.cell($U(), P) :- in(P, Col), params.bg(Col).
 
 // The walker has arrived: the target lies one step on.
 .decl at_target(p: Position, d: Dir)
 at_target(P, D) :-
     in(P, _), dir_elem(D), neighbor(P, D, Q),  // one step on toward d
-    in(Q, Col), c.target(Col).                 // a target cell
+    in(Q, Col), params.target(Col).            // a target cell
 
 // The cells one run covers, from its start to its halt.
 .decl run(a: Position, d: Dir, p: Position)
@@ -83,7 +83,7 @@ leg_goal(A, D) :- run(A, D, E), at_target(E, D).
 path_cell(P, Ch) :- on_path(A, D, Ch), run(A, D, P).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, Ch) :- path_cell(P, Ch), c.source(Col).
+out(P, Col, Ch) :- path_cell(P, Ch), params.source(Col).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !path_cell(P, Ch).
 
 // --- Toward ---
@@ -92,7 +92,7 @@ out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !path_cell(P, Ch).
 .decl target_side(p: Position, d: Dir)
 target_side(P, D) :-
     in(P, _), dir_elem(D),
-    c.target(Col), in(T, Col), nearer(D, T, P).
+    params.target(Col), in(T, Col), nearer(D, T, P).
 
 // The turn the walker takes: toward the target's side.
 .decl toward_edge(a: Position, d: Dir, a2: Position, d2: Dir)
@@ -116,5 +116,5 @@ on_path(A, D, $Jog()) :-
     leg_start(A1, D1),                                        // out
     leg_edge(A1, D1, A2, D2), leg_edge(A2, D2, A3, D3),       // link, in
     leg_goal(A3, D3),                                         // halts at the target
-    c.target(Col), stub_dir(Col, _, D3),                      // along the target's line
+    params.target(Col), stub_dir(Col, _, D3),                 // along the target's line
     ( A = A1, D = D1 ; A = A2, D = D2 ; A = A3, D = D3 ).

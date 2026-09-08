@@ -1,8 +1,8 @@
 // 3f7978a0
 // concept: crop markers select
-// Two parallel c.bar lines over bg and noise, each end capped one step
-// beyond by a c.cap cell. Output is the spanned region cropped, content
-// passing through. Two claims of the region's along-axis extent:
+// Two parallel params.bar lines over bg and noise, each end capped one step
+// beyond by a params.cap cell. Output is the spanned region cropped, content
+// passing through. Two hypotheses of the region's along-axis extent:
 //
 //   $Cap  — the cap cells bound it: the region is the bbox of bars and caps.
 //   $Grow — the bar bbox grows one step along the axis; the caps are noise.
@@ -11,7 +11,7 @@
 
 .type Choice = Cap {} | Grow {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl bar(c: Color) bar(5).
     .decl axis(a: Axis) axis(AXIS_V).
@@ -20,24 +20,24 @@
     .decl cap(c: Color) cap(8).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl impl_choice(ch: Choice)
 impl_choice($Cap()). impl_choice($Grow()).
 
 .decl bar(p: Position)
-bar(P) :- in(P, Col), c.bar(Col).
+bar(P) :- in(P, Col), params.bar(Col).
 
 // Cell one step beyond a bar cell along the axis.
 .decl stepped(p: Position)
-stepped(P2) :- bar(P), c.axis(A), axis_of(D, A), neighbor(P, D, P2).
+stepped(P2) :- bar(P), params.axis(A), axis_of(D, A), neighbor(P, D, P2).
 
 .init box = BoxFrame<Choice>
 box.grid(Ch, P) :- impl_choice(Ch), in(P, _).
 box.cell(Ch, P) :- impl_choice(Ch), bar(P).
 
 // --- $Cap ---
-box.cell($Cap(), P) :- stepped(P), in(P, Col), c.cap(Col).
+box.cell($Cap(), P) :- stepped(P), in(P, Col), params.cap(Col).
 
 // --- $Grow ---
 box.cell($Grow(), P) :- stepped(P).

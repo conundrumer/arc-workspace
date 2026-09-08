@@ -1,14 +1,14 @@
 // 25d8a9c8
 // concept: lines lookup count classify
-// Each slice's cells are recolored uniformly: c.uniform_color if the
-// slice has a single color, else c.non_uniform_color. Slices run along
-// c.axis. Whole-slice replacement — input colors are discarded.
+// Each slice's cells are recolored uniformly: params.uniform_color if the
+// slice has a single color, else params.non_uniform_color. Slices run along
+// params.axis. Whole-slice replacement — input colors are discarded.
 //
 // Cartesian over (detect, stage); out's choice column is a record:
 //
 //   detect:
 //     $PairExist() — same-slice pair with distinct colors
-//     $Count()     — distinct-color count, mapped per-count via c.count_color
+//     $Count()     — distinct-color count, mapped per-count via params.count_color
 //
 //   stage:
 //     $PerCell()  — slice classification → single replacement color
@@ -20,7 +20,7 @@
 .type Stage  = PerCell {} | SliceMap {}
 .type Choice = [detect: Detect, stage: Stage]
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl axis(a: Axis) axis(AXIS_H).
 
@@ -46,17 +46,17 @@
     GRID_1x3(count_template, 2, 0, 0, 0)
 }
 
-.init c = Consts
+.init params = Params
 
 // --- parse ---
 
 .comp Parse<Key> {
     .decl cell(k: Key, p: Position, col: Color)
 
-    // Each cell paired with its along/across split on c.axis.
+    // Each cell paired with its along/across split on params.axis.
     .decl cell_split(k: Key, p: Position, col: Color, p_inner: Position, p_across: Position)
     cell_split(K, P, Col, P_inner, P_across) :-
-        cell(K, P, Col), c.axis(A), split(P, A, P_inner, P_across).
+        cell(K, P, Col), params.axis(A), split(P, A, P_inner, P_across).
 
     .type KA = [k: Key, across: Position]
 
@@ -81,31 +81,31 @@ parse.cell($U(), P, Col) :- in(P, Col).
 
 // --- $PairExist + $PerCell ---
 out(P, Col, [$PairExist(), $PerCell()]) :-
-    parse.cell_split($U(), P, _, _, P_across),                              // cell, its slice
-    ( !parse.slice_color.clash([$U(), P_across]), c.uniform_color(Col)      // slice agrees
-    ; parse.slice_color.clash([$U(), P_across]), c.non_uniform_color(Col)   // slice differs
+    parse.cell_split($U(), P, _, _, P_across),                                   // cell, its slice
+    ( !parse.slice_color.clash([$U(), P_across]), params.uniform_color(Col)      // slice agrees
+    ; parse.slice_color.clash([$U(), P_across]), params.non_uniform_color(Col)   // slice differs
     ).
 
 // --- $PairExist + $SliceMap ---
 out(P, Col, [$PairExist(), $SliceMap()]) :-
-    parse.cell_split($U(), P, _, P_inner, P_across),                                    // cell, its slice
-    ( !parse.slice_color.clash([$U(), P_across]), c.uniform_template(P_inner, Col)      // slice agrees
-    ; parse.slice_color.clash([$U(), P_across]), c.non_uniform_template(P_inner, Col)   // slice differs
+    parse.cell_split($U(), P, _, P_inner, P_across),                                         // cell, its slice
+    ( !parse.slice_color.clash([$U(), P_across]), params.uniform_template(P_inner, Col)      // slice agrees
+    ; parse.slice_color.clash([$U(), P_across]), params.non_uniform_template(P_inner, Col)   // slice differs
     ).
 
 // --- $Count + $PerCell ---
 out(P, Col, [$Count(), $PerCell()]) :-
     parse.cell_split($U(), P, _, _, P_across),
-    parse.ncolors($U(), P_across, N), c.count_color(N, Col).
+    parse.ncolors($U(), P_across, N), params.count_color(N, Col).
 
 // --- $Count + $SliceMap ---
 out(P, Col, [$Count(), $SliceMap()]) :-
     parse.cell_split($U(), P, _, P_inner, P_across),
-    parse.ncolors($U(), P_across, N), c.count_template(N, P_inner, Col).
+    parse.ncolors($U(), P_across, N), params.count_template(N, P_inner, Col).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     .init parse = Parse<Example>
     parse.cell(E, P, Col) :- ex_in(E, P, Col).
 

@@ -14,8 +14,8 @@
 
 .type Choice = Lookup {} | Rot {}
 
-.comp Consts {
-    .init helpers = ConstsHelpers
+.comp Params {
+    .init helpers = ParamsHelpers
 
     // --- Rot ---
     .decl arr_dim(k: number) arr_dim(2).
@@ -32,19 +32,19 @@
         D4_CC, D4_HT)
 }
 
-.init c = Consts
+.init params = Params
 
 .decl out(p: Position, col: Color, c: Choice)
 
 // --- Lookup ---
 out(P_grid, Col, $Lookup()) :-
-    in(P_in, Col),                                       // input cell
-    c.tile_d4(P_tile, D), apply(D, P_in, P_intile),      // d4 image at tile
-    concat_2d(P_tile, P_intile, 0, P_grid).              // recompose
+    in(P_in, Col),                                            // input cell
+    params.tile_d4(P_tile, D), apply(D, P_in, P_intile),      // d4 image at tile
+    concat_2d(P_tile, P_intile, 0, P_grid).                   // recompose
 
 // --- Rot ---
 .decl anchor_tile(p: Position)
-anchor_tile(T) :- c.arr_pos(T), c.anchor(Diag), corner_anchor(Diag, T, ORIGIN).
+anchor_tile(T) :- params.arr_pos(T), params.anchor(Diag), corner_anchor(Diag, T, ORIGIN).
 
 out(P_grid, Col, $Rot()) :-
     anchor_tile(T), in(P, Col),                          // input fills the anchor tile

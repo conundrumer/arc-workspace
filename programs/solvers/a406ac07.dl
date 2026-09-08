@@ -1,6 +1,6 @@
 // a406ac07
 // concept: lines markers border select cross
-// A header line along each edge of corner c.header; each header cell
+// A header line along each edge of corner params.header; each header cell
 // colors the grid line it heads. A cell whose two header colors agree is
 // painted that color. Three models, tagged on out's Choice — two read a
 // designated header corner and differ on what the unmatched rest does;
@@ -8,7 +8,7 @@
 //
 //   $Passthrough() — unmatched cells keep their input color.
 //   $Repaint()     — header edges keep their input; unmatched cells off
-//                    them get c.bg.
+//                    them get params.bg.
 //   $Coincide()    — no header edges: non-bg cells pass through, and a bg
 //                    cell is painted the color that appears on both its
 //                    row and its column.
@@ -17,7 +17,7 @@
 
 .type Choice = Passthrough {} | Repaint {} | Coincide {}
 
-.comp Consts {
+.comp Params {
     // --- $Passthrough, $Repaint ---
     .decl header(d: DiagDir) header(DIAG_BR).
 
@@ -25,7 +25,7 @@
     .decl bg(col: Color) bg(0).
 }
 
-.init c = Consts
+.init params = Params
 
 // --- $Passthrough, $Repaint ---
 
@@ -33,13 +33,13 @@
 .decl line_color(p: Position, d: Dir, col: Color)
 line_color(P, D, Col) :-
     in(P, _),
-    c.header(Diag), dir_of(Diag, A, D),   // header edge d on axis a
-    in(Q, Col), dist(Q, D, 0),            // header cell at edge d
-    same_line(A, P, Q).                   // p on q's line
+    params.header(Diag), dir_of(Diag, A, D),   // header edge d on axis a
+    in(Q, Col), dist(Q, D, 0),                 // header cell at edge d
+    same_line(A, P, Q).                        // p on q's line
 
 .decl agree(p: Position, col: Color)
 agree(P, Col) :-
-    c.header(Diag), diag_dirs(Diag, _, D1, D2),
+    params.header(Diag), diag_dirs(Diag, _, D1, D2),
     line_color(P, D1, Col), line_color(P, D2, Col).
 
 .decl out(p: Position, col: Color, ch: Choice)
@@ -50,11 +50,11 @@ out(P, Col, $Passthrough()) :- in(P, Col), !agree(P, _).
 
 // --- $Repaint ---
 .decl on_header(p: Position)
-on_header(P) :- in(P, _), c.header(Diag), dir_of(Diag, _, D), dist(P, D, 0).
+on_header(P) :- in(P, _), params.header(Diag), dir_of(Diag, _, D), dist(P, D, 0).
 
 out(P, Col, $Repaint()) :- in(P, Col), on_header(P).
 out(P, Col, $Repaint()) :- agree(P, Col), !on_header(P).
-out(P, Col, $Repaint()) :- in(P, _), !on_header(P), !agree(P, _), c.bg(Col).
+out(P, Col, $Repaint()) :- in(P, _), !on_header(P), !agree(P, _), params.bg(Col).
 
 // --- $Coincide ---
 
@@ -62,12 +62,12 @@ out(P, Col, $Repaint()) :- in(P, _), !on_header(P), !agree(P, _), c.bg(Col).
 .decl line_ink(p: Position, a: Axis, col: Color)
 line_ink(P, A, Col) :-
     in(P, _),
-    in(Q, Col), !c.bg(Col),               // ink cell
+    in(Q, Col), !params.bg(Col),          // ink cell
     axis_elem(A), same_line(A, P, Q).     // p on q's line
 
 .decl coincide(p: Position, col: Color)
 coincide(P, Col) :-
-    in(P, C0), c.bg(C0),                                     // bg cell
+    in(P, C0), params.bg(C0),                                     // bg cell
     perp(A1, A2),
     line_ink(P, A1, Col), line_ink(P, A2, Col).              // ink on both its lines
 

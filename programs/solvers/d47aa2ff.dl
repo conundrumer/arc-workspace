@@ -7,7 +7,7 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
 
     .decl panel_axis(a: Axis) panel_axis(AXIS_H).
@@ -20,7 +20,7 @@
     only_fill([0, 0, 1, 0], 1).
 }
 
-.init c = Consts
+.init params = Params
 
 // --- parse ---
 
@@ -31,15 +31,15 @@
     .decl cell(k: Key, p_panel: Position, p: Position, col: Color)
     cell(K, P_panel, P_inpanel, Col) :-
         grid(K, P_grid, Col),
-        c.panel_axis(A), c.panel_count(N), c.panel_gap(G),      // layout params
-        divide_slab(P_grid, A, N, G, P_panel, P_inpanel).       // split into panels
+        params.panel_axis(A), params.panel_count(N), params.panel_gap(G),      // layout params
+        divide_slab(P_grid, A, N, G, P_panel, P_inpanel).                      // split into panels
 
     .decl ink(k: Key, p_panel: Position, p: Position, col: Color)
-    ink(K, P_panel, P, Col) :- cell(K, P_panel, P, Col), !c.bg(Col).
+    ink(K, P_panel, P, Col) :- cell(K, P_panel, P, Col), !params.bg(Col).
 
     // Some panel leaves the cell blank.
     .decl missing(k: Key, p: Position)
-    missing(K, P) :- cell(K, _, P, Col), c.bg(Col).
+    missing(K, P) :- cell(K, _, P, Col), params.bg(Col).
 
     // Every panel inks the cell.
     .decl full(k: Key, p: Position)
@@ -58,21 +58,21 @@ agree.item(P, Col) :- parse.ink($U(), _, P, Col).
 // One-sided ink is marked with its panel's color.
 out(P, Col) :-
     parse.ink($U(), P_panel, P, _), parse.missing($U(), P),   // ink, and a panel blank
-    c.only_fill(P_panel, Col).
+    params.only_fill(P_panel, Col).
 
 out(P, Col) :-
     parse.cell($U(), _, P, _), !parse.ink($U(), _, P, _),   // ink in no panel
-    c.bg(Col).
+    params.bg(Col).
 
 out(P, Col) :-
     parse.full($U(), P),
-    ( agree.value(P, Col)          // the panels agree
-    ; agree.clash(P), c.bg(Col)    // they disagree
+    ( agree.value(P, Col)               // the panels agree
+    ; agree.clash(P), params.bg(Col)    // they disagree
     ).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     .init parse = Parse<Example>
     parse.grid(E, P, Col) :- ex_in(E, P, Col).
 

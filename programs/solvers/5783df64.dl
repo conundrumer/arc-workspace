@@ -1,18 +1,18 @@
 // 5783df64
 // concept: decompose select
-// The grid divides into a c.divisor × c.divisor tile arrangement, each tile
+// The grid divides into a params.divisor × params.divisor tile arrangement, each tile
 // holding one ink cell. Output is the arrangement of the ink colors.
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
     .decl divisor(n: number) divisor(3).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl out(p: Position, col: Color)
 out(P_tile, Col) :-
-    in(P_grid, Col), !c.bg(Col),
-    c.divisor(N), divide_2d(P_grid, N, 0, P_tile, _).
+    in(P_grid, Col), !params.bg(Col),
+    params.divisor(N), divide_2d(P_grid, N, 0, P_tile, _).

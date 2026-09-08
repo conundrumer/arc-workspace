@@ -13,7 +13,7 @@
 
 .type Choice = Tile {} | Center {} | Grow {}
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
     .decl out_fill(c: Color) out_fill(1).
 
@@ -21,16 +21,16 @@
     .decl tile_count(n: number) tile_count(3).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl mark(p: Position)
-mark(P) :- in(P, Col), !c.bg(Col).
+mark(P) :- in(P, Col), !params.bg(Col).
 
 // --- $Tile / $Center: shared 3×3 arrangement ---
 
 .decl decomp(p: Position, p_tile: Position, p_intile: Position)
 decomp(P_grid, P_tile, P_intile) :-
-    in(P_grid, _), c.tile_count(N),                 // input position, tile params
+    in(P_grid, _), params.tile_count(N),            // input position, tile params
     divide_2d(P_grid, N, 0, P_tile, P_intile).      // square arrangement
 
 .decl out(p: Position, col: Color, ch: Choice)
@@ -41,9 +41,9 @@ decomp(P_grid, P_tile, P_intile) :-
 mark_tile(P_tile) :- mark(P_grid), decomp(P_grid, P_tile, _).
 
 out(P, Col, $Tile()) :-
-    decomp(P, P_tile, _),                          // grid cell, its tile
-    ( mark_tile(P_tile), c.out_fill(Col)           // the mark's tile — filled
-    ; !mark_tile(P_tile), c.bg(Col)                // any other tile — bg
+    decomp(P, P_tile, _),                               // grid cell, its tile
+    ( mark_tile(P_tile), params.out_fill(Col)           // the mark's tile — filled
+    ; !mark_tile(P_tile), params.bg(Col)                // any other tile — bg
     ).
 
 // --- $Center ---
@@ -54,9 +54,9 @@ center_tile(P_tile) :-
     centered(P_intile).                              // the mark at the tile's center
 
 out(P, Col, $Center()) :-
-    decomp(P, P_tile, _),                          // grid cell, its tile
-    ( center_tile(P_tile), c.out_fill(Col)         // the centered mark's tile — filled
-    ; !center_tile(P_tile), c.bg(Col)              // any other tile — bg
+    decomp(P, P_tile, _),                               // grid cell, its tile
+    ( center_tile(P_tile), params.out_fill(Col)         // the centered mark's tile — filled
+    ; !center_tile(P_tile), params.bg(Col)              // any other tile — bg
     ).
 
 // --- $Grow ---
@@ -65,5 +65,5 @@ out(P, Col, $Center()) :-
 grown(P) :- mark(P).
 grown(P) :- mark(M), dir8_elem(D), neighbor(M, D, P), in(P, _).
 
-out(P, Col, $Grow()) :- grown(P), c.out_fill(Col).
-out(P, Col, $Grow()) :- in(P, _), !grown(P), c.bg(Col).
+out(P, Col, $Grow()) :- grown(P), params.out_fill(Col).
+out(P, Col, $Grow()) :- in(P, _), !grown(P), params.bg(Col).

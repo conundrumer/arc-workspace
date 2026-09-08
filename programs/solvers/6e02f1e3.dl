@@ -4,10 +4,10 @@
 // symbol: one color — the top edge row; two — the TL diagonal; three —
 // the TR diagonal.
 //
-// The render is the data/ops choice:
-//   $Lookup — select the stored count->grid from a table (data).
+// The render is the table/rule choice:
+//   $Lookup — select the stored count->grid from a table (table).
 //   $Figure — draw the count's figure spec (edge row or corner diagonal)
-//             in c.mark on c.bg (ops). The canvas is a second data/ops
+//             in params.mark on params.bg (rule). The canvas is a second table/rule
 //             node: the input frame ($Input) or a stored dim ($Fixed).
 
 #include "../lib.dl"
@@ -15,8 +15,8 @@
 .type Canvas = Input {} | Fixed {}
 .type Choice = Lookup {} | Figure {canvas: Canvas}
 
-.comp Consts {
-    .init helpers = ConstsHelpers
+.comp Params {
+    .init helpers = ParamsHelpers
 
     // --- Lookup ---
     .decl lookup_grid(n: number, p: Position, col: Color)
@@ -48,7 +48,7 @@
     out_pos(P) :- out_dim(N), helpers.frame_pos([N, N], P).
 }
 
-.init c = Consts
+.init params = Params
 
 // --- parse ---
 
@@ -68,27 +68,27 @@ parse.cell($U(), P, Col) :- in(P, Col).
 .decl out(p: Position, col: Color, ch: Choice)
 
 // --- Lookup ---
-out(P, Col, $Lookup()) :- parse.ncolors($U(), N), c.lookup_grid(N, P, Col).
+out(P, Col, $Lookup()) :- parse.ncolors($U(), N), params.lookup_grid(N, P, Col).
 
 // --- Figure ---
 .decl canvas(p: Position, cv: Canvas)
 canvas(P, $Input()) :- in(P, _).
-canvas(P, $Fixed()) :- c.out_pos(P).
+canvas(P, $Fixed()) :- params.out_pos(P).
 
 .decl figure_cell(p: Position, cv: Canvas)
 figure_cell(P, Cv) :-
-    canvas(P, Cv), parse.ncolors($U(), N),       // canvas cell, its class
-    ( c.fig_edge(N, D), dist(P, D, 0)            // class figure: on an edge row
-    ; c.fig_diag(N, DA), diag_axis_of(Dg, DA),   // class figure: on a diagonal
-      diag_dist(P, Dg, _, K, K)                  // equidistant from its edges
+    canvas(P, Cv), parse.ncolors($U(), N),            // canvas cell, its class
+    ( params.fig_edge(N, D), dist(P, D, 0)            // class figure: on an edge row
+    ; params.fig_diag(N, DA), diag_axis_of(Dg, DA),   // class figure: on a diagonal
+      diag_dist(P, Dg, _, K, K)                       // equidistant from its edges
     ).
 
-out(P, Mk, $Figure(Cv)) :- figure_cell(P, Cv), c.mark(Mk).
-out(P, Bg, $Figure(Cv)) :- canvas(P, Cv), !figure_cell(P, Cv), c.bg(Bg).
+out(P, Mk, $Figure(Cv)) :- figure_cell(P, Cv), params.mark(Mk).
+out(P, Bg, $Figure(Cv)) :- canvas(P, Cv), !figure_cell(P, Cv), params.bg(Bg).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     .init parse = Parse<Example>
     parse.cell(E, P, Col) :- ex_in(E, P, Col).
 
@@ -97,7 +97,7 @@ out(P, Bg, $Figure(Cv)) :- canvas(P, Cv), !figure_cell(P, Cv), c.bg(Bg).
     lookup_grid(N, P, Col) :- parse.ncolors(E, N), ex_out(E, P, Col).
 
     .decl mark_cell(e: Example, p: Position)
-    mark_cell(E, P) :- ex_out(E, P, Col), c.mark(Col).
+    mark_cell(E, P) :- ex_out(E, P, Col), params.mark(Col).
 
     // A corner diagonal that is exactly the output's mark cells.
     .decl mismatch(e: Example, dg: DiagDir)

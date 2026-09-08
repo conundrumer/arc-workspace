@@ -9,7 +9,7 @@
 
 .type Choice = Line {} | Map {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     // Corner the key block sits at.
     .decl corner(d: DiagDir)
@@ -42,7 +42,7 @@
     pair(P1, P2) :- src(P1, Id), dst(P2, Id).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl impl_choice(ch: Choice)
 impl_choice($Line()). impl_choice($Map()).
@@ -50,10 +50,10 @@ impl_choice($Line()). impl_choice($Map()).
 // Cells of the key block.
 .decl key_cell(p: Position)
 key_cell(P) :-
-    in(P, _),                                        // grid cell
-    c.corner(Diag), diag_dist(P, Diag, A, K1, K2),   // dists to corner edges
-    c.key_dim(A, N1), K1 < N1,                       // within extent on A
-    perp(A, A2), c.key_dim(A2, N2), K2 < N2.         // and across
+    in(P, _),                                             // grid cell
+    params.corner(Diag), diag_dist(P, Diag, A, K1, K2),   // dists to corner edges
+    params.key_dim(A, N1), K1 < N1,                       // within extent on A
+    perp(A, A2), params.key_dim(A2, N2), K2 < N2.         // and across
 
 .decl mapping(c1: Color, c2: Color, ch: Choice)
 
@@ -62,12 +62,12 @@ key_cell(P) :-
 mapping(C1, C2, $Line()) :-
     key_cell(P1), in(P1, C1),            // one key cell
     key_cell(P2), in(P2, C2), P1 != P2,  // a distinct one
-    c.axis(A), same_line(A, P1, P2).
+    params.axis(A), same_line(A, P1, P2).
 
 // --- Map ---
 // The stored pairing, anchored at the key's corner.
 mapping(C1, C2, $Map()) :-
-    c.corner(Diag), c.pair(I1, I2),
+    params.corner(Diag), params.pair(I1, I2),
     corner_anchor(Diag, P1, I1), in(P1, C1),
     corner_anchor(Diag, P2, I2), in(P2, C2).
 
@@ -79,9 +79,9 @@ out(P, Col_out, Ch) :-
     ; !key_cell(P), !mapping(Col, _, Ch), Col_out = Col   // unmapped — kept
     ).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     .decl mapping(e: Example, c1: Color, c2: Color)
     mapping(E, C1, C2) :- ex_in(E, P, C1), ex_out(E, P, C2), C1 != C2.
 

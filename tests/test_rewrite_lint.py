@@ -138,15 +138,15 @@ out(C) :- aligned(C).
     assert "comp-idiom" not in cats(src, hints=True)
 
 
-def test_lib_idiom_in_consts_fires():
+def test_lib_idiom_in_params_fires():
     src = """\
-.comp Consts {
+.comp Params {
     .decl beside(p: Position, q: Position)
     beside(P, Q) :- dir_elem(D), step_delta(D, S), compose(P, S, Q).
 }
-.init consts = Consts
+.init params = Params
 .decl out(p: Position)
-out(P) :- consts.beside(P, _).
+out(P) :- params.beside(P, _).
 """
     assert "lib-idiom" in cats(src)
 
@@ -279,25 +279,25 @@ out(X) :- r(X, _), r(X, Y), pos(Y).
 
 def test_named_complement():
     src = """\
-.comp Consts {
+.comp Params {
     .decl bg(c: number) bg(0).
 }
-.init c = Consts
+.init params = Params
 .decl out(p: number, col: number)
-out(P, Col) :- grid(P, Col), Col != BG, c.bg(BG).
+out(P, Col) :- grid(P, Col), Col != BG, params.bg(BG).
 """
     assert "named-complement" in cats(src)
 
 
 def test_named_complement_needs_singleton():
     src = """\
-.comp Consts {
+.comp Params {
     .decl bg(c: number)
     bg(0). bg(5).
 }
-.init c = Consts
+.init params = Params
 .decl out(p: number, col: number)
-out(P, Col) :- grid(P, Col), Col != BG, c.bg(BG).
+out(P, Col) :- grid(P, Col), Col != BG, params.bg(BG).
 """
     assert "named-complement" not in cats(src)
 
@@ -548,38 +548,38 @@ out(N) :- h.size(N).
     assert "raw-aggregate" not in cats(src)
 
 
-CONSTS = """\
-.comp Consts {
+PARAMS = """\
+.comp Params {
     .decl template(p: number, col: number)
     template(1, 2).
     .decl marker(col: number)
     marker(2).
 }
-.init c = Consts
+.init params = Params
 """
 
 
 def test_hint_const_join_fires():
-    src = CONSTS + """\
+    src = PARAMS + """\
 .decl out(p: number)
-out(P) :- in(P, _), c.template(P, M), c.marker(M).
+out(P) :- in(P, _), params.template(P, M), params.marker(M).
 """
     assert "const-join" in cats(src, hints=True)
     assert "const-join" not in cats(src)
 
 
 def test_const_join_lookup_kept():
-    src = CONSTS + """\
+    src = PARAMS + """\
 .decl out(p: number)
-out(P) :- in(P, M), c.template(P, M), c.marker(M).
+out(P) :- in(P, M), params.template(P, M), params.marker(M).
 """
     assert "const-join" not in cats(src, hints=True)
 
 
 def test_const_join_named_constant_kept():
-    src = CONSTS + """\
+    src = PARAMS + """\
 .decl marks(p: number)
-marks(P) :- c.template(P, M), c.marker(M).
+marks(P) :- params.template(P, M), params.marker(M).
 .decl out(p: number)
 out(P) :- in(P, _), marks(P).
 """
@@ -587,10 +587,10 @@ out(P) :- in(P, _), marks(P).
 
 
 def test_const_join_constant_instance_kept():
-    src = CONSTS + """\
+    src = PARAMS + """\
 .init tview = Reframe<number>
-tview.cell(P, M) :- c.template(P, M).
-tview.outer(P) :- tview.cell(P, M), c.marker(M).
+tview.cell(P, M) :- params.template(P, M).
+tview.outer(P) :- tview.cell(P, M), params.marker(M).
 .decl out(p: number)
 out(P) :- in(P, _), tview.outer(P).
 """
@@ -598,8 +598,8 @@ out(P) :- in(P, _), tview.outer(P).
 
 
 def test_const_join_in_disjunction_fires():
-    src = CONSTS + """\
+    src = PARAMS + """\
 .decl out(p: number)
-out(P) :- in(P, _), ( c.template(P, M), c.marker(M) ; c.template(P, 0) ).
+out(P) :- in(P, _), ( params.template(P, M), params.marker(M) ; params.template(P, 0) ).
 """
     assert "const-join" in cats(src, hints=True)

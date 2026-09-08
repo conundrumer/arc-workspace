@@ -69,9 +69,9 @@ def test_fit_is_a_clean_trigger(srv, monkeypatch):
                         sent.append((msg, trigger)))
     item(srv, "a", srv.NEEDS_REVIEW)
     worker(srv, srv.find("a"))
-    srv.act_comment("a", "fit the consts")
-    srv.act_comment("a", "benefit from this")
-    assert sent == [("fit the consts", "fit"), ("benefit from this", None)]
+    srv.act_comment("a", "determine the params")
+    srv.act_comment("a", "predetermine this")
+    assert sent == [("determine the params", "determine"), ("predetermine this", None)]
 
 
 def test_cleanup_counts_anywhere_in_the_message(srv, monkeypatch):
@@ -149,8 +149,8 @@ def test_a_side_turn_reads_its_own_slash_flag(srv):
 # ---------- task-local comps ----------
 
 def test_comps_beyond_the_stock_two_are_flagged_by_proposal(srv):
-    write_solver(srv, "a", ".comp Consts {\n}\n.comp CornerDist {\n}\n"
-                           ".comp Wallpaper<Key> {\n}\n.comp Fit {\n}\n")
+    write_solver(srv, "a", ".comp Params {\n}\n.comp CornerDist {\n}\n"
+                           ".comp Wallpaper<Key> {\n}\n.comp Determine {\n}\n")
     (srv.DOCS / "proposals").mkdir()
     (srv.DOCS / "proposals" / "CornerDist.md").write_text("# CornerDist\n\nstaged here.\n")
     it = item(srv, "a", srv.RUNNING)
@@ -163,8 +163,8 @@ def test_comps_beyond_the_stock_two_are_flagged_by_proposal(srv):
 
 
 def test_a_stock_solver_flags_no_comps(srv):
-    write_solver(srv, "a", ".comp Consts {\n}\n.comp Parse<Key> {\n}\n"
-                           ".init c = Consts\n.comp Fit {\n}\n")
+    write_solver(srv, "a", ".comp Params {\n}\n.comp Parse<Key> {\n}\n"
+                           ".init params = Params\n.comp Determine {\n}\n")
     it = item(srv, "a", srv.RUNNING)
     srv.finish_turn(it, {"result": ""}, None, time.time(), "refine", False)
     assert it["comps"] == []

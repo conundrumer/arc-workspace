@@ -12,7 +12,7 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
 
     // The rectangle the pieces fill.
@@ -20,13 +20,13 @@
     rect_dim(AXIS_V, 3). rect_dim(AXIS_H, 4).
 }
 
-.init c = Consts
+.init params = Params
 
 // --- the pieces ---
 
 // A piece is one connected same-colored region of the input.
 .init region = Components<Color>
-region.node(Col, P) :- in(P, Col), !c.bg(Col).
+region.node(Col, P) :- in(P, Col), !params.bg(Col).
 
 .type Piece = [col: Color, id: Ident]
 
@@ -71,7 +71,7 @@ foot([Pc, D], S2) :-
     ).
 
 .init rect = Frame2D<Unit>
-rect.extent($U(), A, N) :- c.rect_dim(A, N).
+rect.extent($U(), A, N) :- params.rect_dim(A, N).
 
 .init occ = Occurrences<Turn, Unit>
 occ.shape(T, S, $U()) :- foot(T, S).

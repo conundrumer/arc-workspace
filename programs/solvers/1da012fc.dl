@@ -19,7 +19,7 @@
 
 .type Choice = Separated {} | Anchor {}
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
 
     // The legend box's fill.
@@ -31,18 +31,18 @@
     .decl axis(a: Axis) axis(AXIS_V).
 }
 
-.init c = Consts
+.init params = Params
 
 .init box = Bbox<Unit>
-box.cell($U(), P) :- in(P, Col), c.legend(Col).
+box.cell($U(), P) :- in(P, Col), params.legend(Col).
 box.grid($U(), P) :- in(P, _).
 
 // Objects, individuated alike on both sides of the box.
 .init comps = Components8<Unit>
 comps.node($U(), P) :-
-    in(P, Col), !c.bg(Col),
-    ( box.inside($U(), P), !c.legend(Col)   // a marker cell inside the box
-    ; !box.inside($U(), P)                  // an inked cell outside it
+    in(P, Col), !params.bg(Col),
+    ( box.inside($U(), P), !params.legend(Col)   // a marker cell inside the box
+    ; !box.inside($U(), P)                       // an inked cell outside it
     ).
 
 .decl obj(id: Ident)
@@ -67,7 +67,7 @@ reading.elem(Ch, Id) :- obj(Id), impl_choice(Ch).
 
 // The two dirs of the reading order — D1 along the reading axis, D2 across.
 .decl read_dirs(d1: Dir, d2: Dir)
-read_dirs(D1, D2) :- c.corner(C), c.axis(A), diag_dirs(C, A, D1, D2).
+read_dirs(D1, D2) :- params.corner(C), params.axis(A), diag_dirs(C, A, D1, D2).
 
 // Some cell of a lies at or behind some cell of b toward d.
 .decl behind(d: Dir, a: Ident, b: Ident)
@@ -95,8 +95,8 @@ obox.cell(Id, P) :- comps.label($U(), P, Id).
 // A box's margin Position carries its distance to every edge, so from the
 // reading corner it reads as that corner's cell — the boxes order like cells.
 .init lex = LexOrder<Unit>
-lex.corner($U(), D) :- c.corner(D).
-lex.axis($U(), A) :- c.axis(A).
+lex.corner($U(), D) :- params.corner(D).
+lex.axis($U(), A) :- params.axis(A).
 lex.cell($U(), M) :- obox.margin(_, M).
 
 reading.before($Anchor(), A, B) :-

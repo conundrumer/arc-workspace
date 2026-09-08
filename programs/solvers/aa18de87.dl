@@ -1,17 +1,17 @@
 // aa18de87
 // concept: lines span
 // Diagonal rays, one color per input. Bg cells between two ray cells on
-// their line fill with c.fill. Two models of which lines fill, tagged on
+// their line fill with params.fill. Two models of which lines fill, tagged on
 // out's Choice:
 //
-//   $Axis — lines along c.axis only.
-//   $Iso  — lines along both axes; no orientation datum.
+//   $Axis — lines along params.axis only.
+//   $Iso  — lines along both axes; no orientation parameter.
 
 #include "../lib.dl"
 
 .type Choice = Axis {} | Iso {}
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
     .decl fill(c: Color) fill(2).
 
@@ -19,26 +19,26 @@
     .decl axis(a: Axis) axis(AXIS_H).   // fill lines run along this axis
 }
 
-.init c = Consts
+.init params = Params
 
 .decl out(p: Position, col: Color, ch: Choice)
 
 // --- Axis ---
 
 .init axis_spans = Between<Unit>
-axis_spans.axis($U(), A) :- c.axis(A).
-axis_spans.cell($U(), P) :- in(P, Bg), c.bg(Bg).
-axis_spans.mark($U(), Q) :- in(Q, Col), !c.bg(Col).
+axis_spans.axis($U(), A) :- params.axis(A).
+axis_spans.cell($U(), P) :- in(P, Bg), params.bg(Bg).
+axis_spans.mark($U(), Q) :- in(Q, Col), !params.bg(Col).
 
-out(P, F, $Axis())   :- axis_spans.between($U(), P), c.fill(F).
+out(P, F, $Axis())   :- axis_spans.between($U(), P), params.fill(F).
 out(P, Col, $Axis()) :- in(P, Col), !axis_spans.between($U(), P).
 
 // --- Iso ---
 
 .init iso_spans = Between<Unit>
 iso_spans.axis($U(), A) :- axis_elem(A).
-iso_spans.cell($U(), P) :- in(P, Bg), c.bg(Bg).
-iso_spans.mark($U(), Q) :- in(Q, Col), !c.bg(Col).
+iso_spans.cell($U(), P) :- in(P, Bg), params.bg(Bg).
+iso_spans.mark($U(), Q) :- in(Q, Col), !params.bg(Col).
 
-out(P, F, $Iso())   :- iso_spans.between($U(), P), c.fill(F).
+out(P, F, $Iso())   :- iso_spans.between($U(), P), params.fill(F).
 out(P, Col, $Iso()) :- in(P, Col), !iso_spans.between($U(), P).

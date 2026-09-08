@@ -1,7 +1,7 @@
 // 1818057f
 // concept: stamp
 // Wherever the 5-cell plus footprint lands fully on the field color, those
-// cells turn c.mark; the rest passes through. A plus may sit inside a larger
+// cells turn params.mark; the rest passes through. A plus may sit inside a larger
 // blob — only footprint cells recolor. Two models:
 //
 //   $Shape — the plus is stored data; Occurrences finds its placements.
@@ -12,7 +12,7 @@
 
 .type Choice = Shape {} | Flank {}
 
-.comp Consts {
+.comp Params {
     .decl field(c: Color) field(4).
     .decl mark(c: Color) mark(8).
 
@@ -24,18 +24,18 @@
         0, 1, 0)
 }
 
-.init c = Consts
+.init params = Params
 
 .decl field_at(p: Position)
-field_at(P) :- in(P, Col), c.field(Col).
+field_at(P) :- in(P, Col), params.field(Col).
 
 // --- $Shape ---
 .init occ = Occurrences<Unit, Unit>
 occ.cell($U(), P, $U())  :- field_at(P).
-occ.shape($U(), P, $U()) :- c.shape(P).
+occ.shape($U(), P, $U()) :- params.shape(P).
 
 .decl shape_covered(p: Position)
-shape_covered(P) :- occ.occurrence($U(), M), c.shape(S), compose(M, S, P).
+shape_covered(P) :- occ.occurrence($U(), M), params.shape(S), compose(M, S, P).
 
 // --- $Flank ---
 .init exposed = Rim<Unit>
@@ -50,18 +50,18 @@ flank_covered(P2) :- flanked(P), dir_elem(D), neighbor(P, D, P2).
 
 .decl out(p: Position, col: Color, c: Choice)
 
-out(P, Col, $Shape()) :- shape_covered(P), c.mark(Col).
+out(P, Col, $Shape()) :- shape_covered(P), params.mark(Col).
 out(P, Col, $Shape()) :- in(P, Col), !shape_covered(P).
 
-out(P, Col, $Flank()) :- flank_covered(P), c.mark(Col).
+out(P, Col, $Flank()) :- flank_covered(P), params.mark(Col).
 out(P, Col, $Flank()) :- in(P, Col), !flank_covered(P).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     // Cells the stamp recolored.
     .decl changed(e: Example, p: Position)
-    changed(E, P) :- ex_in(E, P, C1), c.field(C1), ex_out(E, P, C2), c.mark(C2).
+    changed(E, P) :- ex_in(E, P, C1), params.field(C1), ex_out(E, P, C2), params.mark(C2).
 
     .type EI = [e: Example, id: Ident]
 

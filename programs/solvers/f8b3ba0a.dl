@@ -1,7 +1,7 @@
 // f8b3ba0a
 // concept: decompose objects count rank
 // Color blocks on bg, one color dominant. Output is a 1D layout along
-// axis_of(c.rank_dir): the minority colors, anchored at c.rank_dir, in
+// axis_of(params.rank_dir): the minority colors, anchored at params.rank_dir, in
 // descending count order; the dominant (max-count) color is dropped.
 // Extent = number of minority colors. Models of what is counted, tagged on
 // out's Choice:
@@ -21,7 +21,7 @@
 
 .type Choice = Cells {} | Blocks {} | Lattice {}
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
     .decl rank_dir(d: Dir) rank_dir(DIR_T).
 
@@ -35,7 +35,7 @@
     .decl border_width(k: number) border_width(1).
 }
 
-.init c = Consts
+.init params = Params
 
 // --- parse ---
 
@@ -60,7 +60,7 @@
 // --- $Blocks: component detection ---
 
 .init comps = Components<Unit>
-comps.node($U(), P) :- in(P, Col), !c.bg(Col).
+comps.node($U(), P) :- in(P, Col), !params.bg(Col).
 
 .init block_count = Tally<Color, Ident>
 block_count.item(Col, Id) :- comps.label($U(), P, Id), in(P, Col).
@@ -71,12 +71,12 @@ block_count.item(Col, Id) :- comps.label($U(), P, Id), in(P, Col).
 // the frame holds every one of them.
 .init interior = MarginFrame<Unit>
 interior.cell($U(), P) :- in(P, _).
-interior.width($U(), D, K) :- dir_elem(D), c.border_width(K).
+interior.width($U(), D, K) :- dir_elem(D), params.border_width(K).
 
 .init lattice = Tile2D<Unit>
-lattice.cell(P_int) :- in(P, Col), !c.bg(Col), interior.inner($U(), P, P_int).
-lattice.dim($U(), A, K) :- c.tile_dim(A, K).
-lattice.gap(G) :- c.tile_gap(G).
+lattice.cell(P_int) :- in(P, Col), !params.bg(Col), interior.inner($U(), P, P_int).
+lattice.dim($U(), A, K) :- params.tile_dim(A, K).
+lattice.gap(G) :- params.tile_gap(G).
 
 .decl tile_color(p_tile: Position, col: Color)
 tile_color(P_tile, Col) :-
@@ -87,7 +87,7 @@ tile_color(P_tile, Col) :-
 // --- counts per choice ---
 
 .init cell_count = Tally<Color, Position>
-cell_count.item(Col, P) :- in(P, Col), !c.bg(Col).
+cell_count.item(Col, P) :- in(P, Col), !params.bg(Col).
 
 .init tile_count = Tally<Color, Position>
 tile_count.item(Col, P_tile) :- tile_color(P_tile, Col).
@@ -99,23 +99,23 @@ parse.count_of($Lattice(), Col, N) :- tile_count.tally(Col, N).
 
 // --- place ---
 
-// Output frame: 1D axis anchored at c.rank_dir, per choice. Placing ascending
+// Output frame: 1D axis anchored at params.rank_dir, per choice. Placing ascending
 // rank from the opposite edge puts the largest count at the rank_dir edge.
 .init col = DirFrame<Choice>
-col.dir(D_opp) :- c.rank_dir(D), opposite(D, D_opp).
+col.dir(D_opp) :- params.rank_dir(D), opposite(D, D_opp).
 col.dist_set(Ch, R) :- parse.minority_rank(Ch, _, R).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- parse.minority_rank(Ch, Col, Rk), col.pos(Ch, Rk, P).
 
-// --- fit ---
+// --- determination ---
 
 .type Block = [e: Example, id: Ident]
 
-.comp Fit {
+.comp Determine {
     // Non-bg cells of a train input — a test input has no output to read.
     .decl ink(e: Example, p: Position, col: Color)
-    ink(E, P, Col) :- ex_in(E, P, Col), !c.bg(Col), ex_out(E, _, _).
+    ink(E, P, Col) :- ex_in(E, P, Col), !params.bg(Col), ex_out(E, _, _).
 
     // The frame the non-bg cells span: the grid inside the separator border,
     // with each ink cell's place in it.

@@ -4,14 +4,14 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl ink(p: Position)
-ink(P) :- in(P, Col), !c.bg(Col).
+ink(P) :- in(P, Col), !params.bg(Col).
 
 .init boxframe = BoxFrame<Unit>
 boxframe.cell($U(), P) :- ink(P).

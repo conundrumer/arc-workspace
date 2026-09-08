@@ -100,7 +100,7 @@ CALLOUT_RATES = [
     ("correctness risk", 13, 31, 18, 60,
      "a defect, or an implicit assumption the solver leans on, such as a property every input happens to satisfy"),
     ("alt models", 17, 70, 20, 73,
-     "a rival model dispatched: killed by data, an alt impl with the same outputs, or dropped as not worth building"),
+     "a peer model dispatched: killed by data, an alt impl with the same outputs, or dropped as not worth building"),
     ("hedges", 3, 26, 8, 80,
      "a trailing qualification on a settled call, not a discrete open item"),
 ]
@@ -161,13 +161,13 @@ HANDOFF_WRAP = """Put the report between `<handoff>` and `</handoff>` tags: the 
 
 CREATE_BRIEF = """You are the first session of a chained flow: you create the solver, then a separate session takes over from your report.
 
-Do the creation pass through Fit-plan with the data above; do not re-read the data. When the fit-plan verdict calls for a fit pass, do the fit pass too. Skip Review. A lib candidate runs the lib addition protocol; the entry in docs/wf-solver/proposals/ is yours to write, and your report and callouts carry it with its survey result. The reimplementations a survey reports are yours to fix in this pass: send them to the `migrate` agent, then the `cleanup` agent over the regions it changed, and your report lists what it skipped; put both dispatches on your task list before the first, so the pass does not end between them. If either agent finds another problem that Simplify or Prune covers in a file it has open, that agent fixes that problem in the same pass. A finding in a file no agent has open goes to your report. Other solvers are open to those agents, not to your own edits. When a question about the data comes up, run something that answers it rather than working it out by hand. In place of the review, end your turn with a handoff report addressed to the next session: the model claim, each choice point with the alternatives you tested and what ruled them out, and the audit findings and open items. Make it complete enough that the next session reruns nothing. """ + HANDOFF_WRAP
+Do the creation pass through Determination-plan with the data above; do not re-read the data. When the determination-plan verdict calls for a determination pass, do the determination pass too. Skip Review. A lib candidate runs the lib addition protocol; the entry in docs/wf-solver/proposals/ is yours to write, and your report and callouts carry it with its survey result. The reimplementations a survey reports are yours to fix in this pass: send them to the `migrate` agent, then the `cleanup` agent over the regions it changed, and your report lists what it skipped; put both dispatches on your task list before the first, so the pass does not end between them. If either agent finds another problem that Simplify or Prune covers in a file it has open, that agent fixes that problem in the same pass. A finding in a file no agent has open goes to your report. Other solvers are open to those agents, not to your own edits. When a question about the data comes up, run something that answers it rather than working it out by hand. In place of the review, end your turn with a handoff report addressed to the next session: the model hypothesis, each choice point with the alternatives you tested and what ruled them out, and the audit findings and open items. Make it complete enough that the next session reruns nothing. """ + HANDOFF_WRAP
 
-HANDOFF_BRIEF = """Write the handoff report for the session that takes over from you: the model claim, each choice point with the alternatives you tested and what ruled them out, and the audit findings and open items. Cover the whole session, including turns after any earlier report. Make it complete enough that the next session reruns nothing. """ + HANDOFF_WRAP
+HANDOFF_BRIEF = """Write the handoff report for the session that takes over from you: the model hypothesis, each choice point with the alternatives you tested and what ruled them out, and the audit findings and open items. Cover the whole session, including turns after any earlier report. Make it complete enough that the next session reruns nothing. """ + HANDOFF_WRAP
 
 # What a refused handoff ask goes out as again; REFUSED_CALLOUT_BRIEF above
 # is its match for the callouts.
-REFUSED_HANDOFF_BRIEF = """Write the stage report as a document for the session that takes over from you, from the files and the run output in front of you: the model claim, the solver's current structure, the edits this pass made, what was run and what came back, and the open items. """ + HANDOFF_WRAP
+REFUSED_HANDOFF_BRIEF = """Write the stage report as a document for the session that takes over from you, from the files and the run output in front of you: the model hypothesis, the solver's current structure, the edits this pass made, what was run and what came back, and the open items. """ + HANDOFF_WRAP
 
 NUDGE_BRIEF = """Your last turn was cut off at the output limit before it ran anything.
 
@@ -212,11 +212,11 @@ Your edits stay in programs/solvers/{tid}.dl, .scratch/{tid}/, and docs/wf-solve
 # alone and none of them restates the one before it.
 HANDOFF_TAIL = """
 
-Then Simplify, Prune, and Fit-plan, so your own edits get the simplify and prune treatment too; when the fit-plan verdict calls for a fit pass, do the fit pass as well. In place of the review, end your turn with a handoff report for the session that takes over from you: the model claim as it now stands, what you changed and why, the alternatives you tested and what ruled them out, and the open items for the user. The report covers your own pass — your rulings, your edits, your changes; what the reports above already establish stays with them. """ + HANDOFF_WRAP
+Then Simplify, Prune, and Determination-plan, so your own edits get the simplify and prune treatment too; when the determination-plan verdict calls for a determination pass, do the determination pass as well. In place of the review, end your turn with a handoff report for the session that takes over from you: the model hypothesis as it now stands, what you changed and why, the alternatives you tested and what ruled them out, and the open items for the user. The report covers your own pass — your rulings, your edits, your changes; what the reports above already establish stays with them. """ + HANDOFF_WRAP
 
 REVIEW_TAIL = """
 
-Then Simplify, Prune, Fit-plan, and Review, so your own edits get the simplify and prune treatment too; when the fit-plan verdict calls for a fit pass, do the fit pass as well. You are the last session of the chain, so the Review ends your turn, addressed to the user."""
+Then Simplify, Prune, Determination-plan, and Review, so your own edits get the simplify and prune treatment too; when the determination-plan verdict calls for a determination pass, do the determination pass as well. You are the last session of the chain, so the Review ends your turn, addressed to the user."""
 
 
 def task_block(tid: str) -> str:

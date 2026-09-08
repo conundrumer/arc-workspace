@@ -234,7 +234,7 @@ def night_workers(s, idle_for):
                     idle_for=seconds)
 
 
-REPORT = """The model claim stands.
+REPORT = """The model hypothesis stands.
 
 ## Callouts
 

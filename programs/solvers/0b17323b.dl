@@ -1,10 +1,10 @@
 // 0b17323b
 // concept: markers cast
-// Marks of c.mark_color sit on one diagonal, evenly spaced. The output
-// keeps the input and continues the sequence in c.new_color, stepping by
+// Marks of params.mark_color sit on one diagonal, evenly spaced. The output
+// keeps the input and continues the sequence in params.new_color, stepping by
 // the mark spacing until it leaves the grid.
 //
-//   $Ray  — the sequence runs toward c.dir, and continues past that end.
+//   $Ray  — the sequence runs toward params.dir, and continues past that end.
 //   $Line — the diagonal has no privileged end; the sequence continues
 //           past both.
 
@@ -12,7 +12,7 @@
 
 .type Choice = Ray {} | Line {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl mark_color(col: Color) mark_color(1).
     .decl new_color(col: Color) new_color(2).
@@ -21,13 +21,13 @@
     .decl dir(d: DiagDir) dir(DIAG_BR).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl impl_choice(ch: Choice)
 impl_choice($Ray()). impl_choice($Line()).
 
 .decl mark(p: Position)
-mark(P) :- in(P, Col), c.mark_color(Col).
+mark(P) :- in(P, Col), params.mark_color(Col).
 
 // Two marks a K-cell step toward corner D apart.
 .decl sep(d: DiagDir, k: number)
@@ -54,12 +54,12 @@ walk(Ch, P_next) :-
 added(Ch, P) :- walk(Ch, P), !mark(P).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, Ch) :- added(Ch, P), c.new_color(Col).
+out(P, Col, Ch) :- added(Ch, P), params.new_color(Col).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !added(Ch, P).
 
 // --- $Ray ---
 
-walk_dir($Ray(), D) :- c.dir(D).
+walk_dir($Ray(), D) :- params.dir(D).
 
 // --- $Line ---
 

@@ -6,7 +6,7 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
     .decl marker(c: Color) marker(1).
     .decl ink(c: Color) ink(8).
@@ -33,7 +33,7 @@
     key_out(2, 7).
 }
 
-.init c = Consts
+.init params = Params
 
 // --- parse ---
 
@@ -41,7 +41,7 @@
     .decl cell(k: Key, p: Position, col: Color)
 
     .init frame = BoxFrame<Key>
-    frame.cell(K, P) :- cell(K, P, Col), c.marker(Col).
+    frame.cell(K, P) :- cell(K, P, Col), params.marker(Col).
 
     .decl key_shape(k: Key, p_inkey: Position)
     key_shape(K, P_inkey) :- frame.inner(K, _, P_inkey).
@@ -51,19 +51,19 @@
 parse.cell($U(), P, Col) :- in(P, Col).
 
 .init key_match = KeyedSetCompare<Unit, Ident, Position>
-key_match.pattern_member(Id, P_inkey) :- c.key_member(Id, P_inkey).
+key_match.pattern_member(Id, P_inkey) :- params.key_member(Id, P_inkey).
 key_match.observed_member($U(), P_inkey) :- parse.key_shape($U(), P_inkey).
 
 .decl ink_cell(p: Position)
-ink_cell(P) :- in(P, Col), c.ink(Col).
+ink_cell(P) :- in(P, Col), params.ink(Col).
 
 .decl out(p: Position, col: Color)
-out(P, Col) :- ink_cell(P), key_match.equals($U(), Id), c.key_out(Id, Col).
-out(P, Col) :- in(P, _), !ink_cell(P), c.bg(Col).
+out(P, Col) :- ink_cell(P), key_match.equals($U(), Id), params.key_out(Id, Col).
+out(P, Col) :- in(P, _), !ink_cell(P), params.bg(Col).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     // Train pairs only — the ex_out atom holds the test inputs out.
     .init parse = Parse<Example>
     parse.cell(E, P, Col) :- ex_in(E, P, Col), ex_out(E, _, _).
@@ -81,5 +81,5 @@ out(P, Col) :- in(P, _), !ink_cell(P), c.bg(Col).
 
     // The entry's color is the one color the output paints.
     .decl key_out(id: Ident, c: Color)
-    key_out(Id, Col) :- entry.id(E, Id), ex_out(E, _, Col), !c.bg(Col).
+    key_out(Id, Col) :- entry.id(E, Id), ex_out(E, _, Col), !params.bg(Col).
 }

@@ -1,36 +1,36 @@
 // d13f3404
 // concept: grow cast
 // A 3×3 pattern on a larger square canvas: the pattern seats flush at the
-// corner opposite c.sweep, and every seated ink cell casts a diagonal ray
-// toward c.sweep — the pattern sliding one diagonal step per copy, trailing
+// corner opposite params.sweep, and every seated ink cell casts a diagonal ray
+// toward params.sweep — the pattern sliding one diagonal step per copy, trailing
 // its ink. Cells on no ray are bg.
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
     .decl sweep(d: DiagDir) sweep(DIAG_BR).
     .decl side(n: number) side(6).
 }
 
-.init c = Consts
+.init params = Params
 
 .init frame = Frame2D<Unit>
-frame.extent($U(), A, N) :- axis_elem(A), c.side(N).
+frame.extent($U(), A, N) :- axis_elem(A), params.side(N).
 
-// Ink seated in the output frame, flush at the corner opposite c.sweep.
+// Ink seated in the output frame, flush at the corner opposite params.sweep.
 .decl seated(p: Position, col: Color)
 seated(P_out, Col) :-
-    in(P_in, Col), !c.bg(Col),                     // ink cell
+    in(P_in, Col), !params.bg(Col),                     // ink cell
     frame.cell($U(), P_out),
-    c.sweep(Diag), diag_opposite(Diag, Anchor),    // seat corner
+    params.sweep(Diag), diag_opposite(Diag, Anchor),    // seat corner
     corner_anchor(Anchor, P_in, P_out).
 
 .init rays = Ray<Unit>
-rays.dir($U(), D)  :- c.sweep(D).
+rays.dir($U(), D)  :- params.sweep(D).
 rays.cell($U(), P) :- frame.cell($U(), P).
 rays.mark($U(), P) :- seated(P, _).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- rays.ray($U(), P, _, _, Q), seated(Q, Col).
-out(P, Col) :- frame.cell($U(), P), !rays.ray($U(), P, _, _, _), c.bg(Col).
+out(P, Col) :- frame.cell($U(), P), !rays.ray($U(), P, _, _, _), params.bg(Col).

@@ -26,7 +26,7 @@ def test_a_rule_below_the_macros_maps_back():
     """The GRID call expands to more lines than it occupied, so a rule after
     it sits lower in the expansion than in the solver."""
     expanded = expand_macros(SOLVER)
-    rule = "out(P, C) :- c.marker_glyph"
+    rule = "out(P, C) :- params.marker_glyph"
     assert _line_of(expanded, rule) > _line_of(SOLVER, rule)
     assert _mapped(SOLVER, rule) == _line_of(SOLVER, rule)
 
@@ -116,7 +116,7 @@ def test_a_site_in_the_tempfile_lands_in_the_solver(tmp_path: Path):
     solver = tmp_path / "abcd1234.dl"
     solver.write_text(SOLVER)
     run_path = REPO_ROOT / "programs/solvers/.tmpq1.dl"
-    rule = "out(P, C) :- c.marker_glyph"
+    rule = "out(P, C) :- params.marker_glyph"
     line = _line_of(expand_macros(SOLVER), rule)
     assert _rule_site(str(run_path), line, run_path, solver) == (
         f"abcd1234.dl:{_line_of(SOLVER, rule)}")

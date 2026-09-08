@@ -1,7 +1,7 @@
 // 319f2597
 // concept: markers cast
-// A mark of c.mark sits in a field of noise. Every cell sharing a row or a
-// column with the mark is painted, edge to edge; cells holding c.spare
+// A mark of params.mark sits in a field of noise. Every cell sharing a row or a
+// column with the mark is painted, edge to edge; cells holding params.spare
 // resist and keep their color. $Spread paints with the mark's own color;
 // $Paint paints with an independently stored color.
 
@@ -9,7 +9,7 @@
 
 .type Choice = Spread {} | Paint {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     // The mark's color.
     .decl mark(col: Color) mark(0).
@@ -22,7 +22,7 @@
     .decl paint(col: Color) paint(0).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl impl_choice(ch: Choice)
 impl_choice($Spread()). impl_choice($Paint()).
@@ -30,18 +30,18 @@ impl_choice($Spread()). impl_choice($Paint()).
 // P shares a line with a mark on some axis.
 .decl cross(p: Position)
 cross(P) :-
-    in(Q, Col), c.mark(Col),          // a mark
-    in(P, _),                         // any cell
+    in(Q, Col), params.mark(Col),          // a mark
+    in(P, _),                              // any cell
     axis_elem(A), same_line(A, P, Q).
 
 .decl painted(p: Position)
-painted(P) :- cross(P), in(P, Col), !c.spare(Col).
+painted(P) :- cross(P), in(P, Col), !params.spare(Col).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- in(P, Col), !painted(P), impl_choice(Ch).
 
 // --- Spread ---
-out(P, Col, $Spread()) :- painted(P), c.mark(Col).
+out(P, Col, $Spread()) :- painted(P), params.mark(Col).
 
 // --- Paint ---
-out(P, Col, $Paint()) :- painted(P), c.paint(Col).
+out(P, Col, $Paint()) :- painted(P), params.paint(Col).

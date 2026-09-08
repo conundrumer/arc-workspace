@@ -17,18 +17,18 @@
 
 .type Choice = Stamp {} | Recolor {}
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
     .decl stencil(col: Color) stencil(1).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl stencil_cell(p: Position)
-stencil_cell(P) :- in(P, Col), c.stencil(Col).
+stencil_cell(P) :- in(P, Col), params.stencil(Col).
 
 .decl mark(p: Position, col: Color)
-mark(P, Col) :- in(P, Col), !c.bg(Col), !c.stencil(Col).
+mark(P, Col) :- in(P, Col), !params.bg(Col), !params.stencil(Col).
 
 // The markers share one line; its axis is the one they spread along.
 .decl off_axis(a: Axis)
@@ -62,8 +62,8 @@ place(P_grid_out, P_grid_in, Col) :-
 // --- $Stamp ---
 out(P_grid_out, Col, $Stamp()) :-
     place(P_grid_out, P_grid_in, Col_mark),
-    ( stencil_cell(P_grid_in), Col = Col_mark        // footprint in the marker's color
-    ; !stencil_cell(P_grid_in), c.bg(Col)            // rest of the box blank
+    ( stencil_cell(P_grid_in), Col = Col_mark         // footprint in the marker's color
+    ; !stencil_cell(P_grid_in), params.bg(Col)        // rest of the box blank
     ).
 
 // --- $Recolor ---

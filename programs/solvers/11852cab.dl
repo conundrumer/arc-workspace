@@ -4,7 +4,7 @@
 // frame the symmetry acts in, and the output adds each figure cell's images
 // under the transforms the case admits. Cases:
 //
-//   $Stored()  — c.sym names the group.
+//   $Stored()  — params.sym names the group.
 //   $Derived() — the transforms the figure itself never contradicts.
 //
 // Coincide here: every figure is consistent with all of D4, so both cases
@@ -14,7 +14,7 @@
 
 .type Choice = Stored {} | Derived {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl bg(col: Color) bg(0).
 
@@ -22,7 +22,7 @@
     .decl sym(s: Sym) sym(SYM_D4).
 }
 
-.init c = Consts
+.init params = Params
 
 // --- parse ---
 
@@ -32,11 +32,11 @@
     .decl cell(key: Key, p: Position, col: Color)  // input
 
     .init box = BoxFrame<Key>
-    box.cell(K, P) :- cell(K, P, Col), !c.bg(Col).
+    box.cell(K, P) :- cell(K, P, Col), !params.bg(Col).
     box.grid(K, P) :- cell(K, P, _).
 
     .decl figure(key: Key, p_inner: Position, col: Color)
-    figure(K, P_inner, Col) :- cell(K, P, Col), !c.bg(Col), box.inner(K, P, P_inner).
+    figure(K, P_inner, Col) :- cell(K, P, Col), !params.bg(Col), box.inner(K, P, P_inner).
 
     .decl inner(key: Key, p: Position, p_inner: Position)
     inner(K, P, P_inner) :- box.inner(K, P, P_inner).
@@ -75,15 +75,15 @@ out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(P, _, Ch).
 
 // --- $Stored ---
 
-transform(D, $Stored()) :- c.sym(S), sym_member(S, D).
+transform(D, $Stored()) :- params.sym(S), sym_member(S, D).
 
 // --- $Derived ---
 
 transform(D, $Derived()) :- parse.compatible($U(), D).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     // The completed figure of each train output.
     .init parse = Parse<Example>
     parse.cell(E, P, Col) :- ex_out(E, P, Col).

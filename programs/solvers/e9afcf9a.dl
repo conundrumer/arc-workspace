@@ -12,7 +12,7 @@
 
 .type Choice = LabeledGrids {} | Divide {}
 
-.comp Consts {
+.comp Params {
     // --- LabeledGrids ---
     .decl in_label(p: Position, id: Ident)
     GRID_2x6(in_label,
@@ -38,30 +38,30 @@
         D4_ID, D4_TB)
 }
 
-.init c = Consts
+.init params = Params
 
 .decl perm(p_in: Position, p_out: Position, c: Choice)
 
 // --- LabeledGrids ---
-perm(P_grid_in, P_grid_out, $LabeledGrids()) :- c.label_pair(P_grid_in, P_grid_out).
+perm(P_grid_in, P_grid_out, $LabeledGrids()) :- params.label_pair(P_grid_in, P_grid_out).
 
 // --- Divide ---
 perm(P_grid_in, P_grid_out, $Divide()) :-
     in(P_grid_in, _),                                          // input cell
-    c.divide_axis(A), c.divisor(N),                            // params
+    params.divide_axis(A), params.divisor(N),                  // params
     divide(P_grid_in, A, N, 0, _, P_inner_axis),               // 1D divide on H
-    c.col_transform(P_inner_axis, T),                          // transform per inner col
+    params.col_transform(P_inner_axis, T),                     // transform per inner col
     apply(T, P_grid_in, P_grid_out).                           // apply to input cell
 
 .decl out(p: Position, col: Color, c: Choice)
 out(P_grid_out, Col, Ch) :- in(P_grid_in, Col), perm(P_grid_in, P_grid_out, Ch).
 
-// --- fit ---
+// --- determination ---
 
 .type AxisCell = [a: Axis, p_in: Position]
 .type TileCol = [k: number, p_inner_axis: Position]
 
-.comp Fit {
+.comp Determine {
     .init cand = Unanimous<AxisCell, Position>
     cand.item([A, P_in], P_out) :-
         ex_in(E, P_in, Col), ex_out(E, P_out, Col),                            // shared color

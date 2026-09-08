@@ -10,12 +10,12 @@
 
 .type Choice = Mode {} | Count {}
 
-.comp Consts {
+.comp Params {
     // --- Count ---
     .decl target(n: number) target(3).
 }
 
-.init c = Consts
+.init params = Params
 
 .init tally = Mode<Unit, Color, Position>
 tally.item($U(), Col, P) :- in(P, Col).
@@ -26,4 +26,4 @@ tally.item($U(), Col, P) :- in(P, Col).
 out(P, Col, $Mode()) :- in(P, _), tally.mode($U(), Col).
 
 // --- Count ---
-out(P, Col, $Count()) :- in(P, _), tally.tally($U(), Col, N), c.target(N).
+out(P, Col, $Count()) :- in(P, _), tally.tally($U(), Col, N), params.target(N).

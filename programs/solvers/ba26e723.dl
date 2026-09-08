@@ -1,12 +1,12 @@
 // ba26e723
 // concept: lines mapping
-// Cells whose color is a c.mapping key are recolored to the mapped color,
-// but only at positions where (dist from c.anchor) mod c.period equals
-// c.phase. Other cells pass through.
+// Cells whose color is a params.mapping key are recolored to the mapped color,
+// but only at positions where (dist from params.anchor) mod params.period equals
+// params.phase. Other cells pass through.
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl anchor(d: Dir) anchor(DIR_L).
     .decl period(n: number) period(3).
     .decl phase(k: number) phase(0).
@@ -15,17 +15,17 @@
     mapping(4, 6).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl on_stride(p: Position)
 on_stride(P) :-
     in(P, _),
-    c.anchor(D), c.period(W), c.phase(K),
+    params.anchor(D), params.period(W), params.phase(K),
     dist(P, D, T), stride(T, W, 0, _, K).
 
 .decl recolored(p: Position)
-recolored(P) :- in(P, Col), c.mapping(Col, _), on_stride(P).
+recolored(P) :- in(P, Col), params.mapping(Col, _), on_stride(P).
 
 .decl out(p: Position, col: Color)
-out(P, Col_out) :- in(P, Col_in), c.mapping(Col_in, Col_out), on_stride(P).
+out(P, Col_out) :- in(P, Col_in), params.mapping(Col_in, Col_out), on_stride(P).
 out(P, Col)     :- in(P, Col), !recolored(P).

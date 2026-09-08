@@ -36,7 +36,7 @@ out(P, Col, [$PairExist(), $PerCell()]) :- ...
 out(P, Col, [$Count(),     $SliceMap()]) :- ...
 ```
 
-When only some combinations are claims, the record remains, and `impl_choice` lists only those combinations. A flat sum duplicates the shared bodies and causes the linter's `choice-tag` finding.
+When only some combinations are hypotheses, the record remains, and `impl_choice` lists only those combinations. A flat sum duplicates the shared bodies and causes the linter's `choice-tag` finding.
 
 ## Choice grounding via `impl_choice`
 
@@ -46,7 +46,7 @@ If the case column otherwise appears only under negation, a rule shared by all c
 .decl impl_choice(ch: Choice)
 impl_choice($CaseA()). impl_choice($CaseB()).
 
-out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !covered(Ch, P), c.bg(Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !covered(Ch, P), params.bg(Col).
 ```
 
 The relation is `impl_choice`, the column `ch`, corpus-wide.
@@ -65,7 +65,7 @@ GRID_3x3(template,
 
 Arguments between the relation name and the cell values pass through as leading columns, so one relation can hold several grids keyed by id (995c5fa3 `mapping_member`).
 
-If a variant reads the cell values, it states a modeling claim: the grid's zeros are absence, not data.
+If a variant reads the cell values, it states a modeling hypothesis: the grid's zeros are absence, not data.
 
 - `GRID_MASK_HxW(rel, ...)` emits `rel(p)` for each nonzero cell — membership grids (1818057f `shape`).
 - `GRID_SPARSE_HxW(rel, ...)` emits `rel(p, v)` for each nonzero cell — ink templates (d364b489 `template`).
@@ -93,9 +93,9 @@ pattern_out(1, 8).
 
 Per-entry relations with derive rules hold the same data, but a new entry is then new program text rather than new facts.
 
-## `RIGID` — Consts relations coupled as a rigid assembly
+## `RIGID` — parameter relations coupled as a rigid assembly
 
-A `RIGID` block groups Consts relations stated in one shared intrinsic frame and exposes them only as D4 placements that transform them together, so the stored pose is unobservable. Each relation reappears as `<block>_<rel>` with a leading D4 column and every column transformed by that element; consumers join relations on the element, which is what "the same oriented instance" means. The runner expands the block before Souffle sees the file, like GRID; the chart's generated names are unreadable outside the expansion (lint category 'rigid chart').
+A `RIGID` block groups parameter relations stated in one shared intrinsic frame and exposes them only as D4 placements that transform them together, so the stored pose is unobservable. Each relation reappears as `<block>_<rel>` with a leading D4 column and every column transformed by that element; consumers join relations on the element, which is what "the same oriented instance" means. The runner expands the block before Souffle sees the file, like GRID; the chart's generated names are unreadable outside the expansion (lint category 'rigid chart').
 
 ```
 RIGID(marker,
@@ -108,11 +108,11 @@ RIGID(marker,
 )
 ```
 
-The body reads `c.marker_glyph(D, P)`, `c.marker_launch(D, P_l)`, `c.marker_aim(D, D_aim)`, joined on D (142ca369). An id-keyed chart holds one independent assembly per id, the id passing through by identity (150deff5 `piece_member`).
+The program reads `params.marker_glyph(D, P)`, `params.marker_launch(D, P_l)`, `params.marker_aim(D, D_aim)`, joined on D (142ca369). An id-keyed chart holds one independent assembly per id, the id passing through by identity (150deff5 `piece_member`).
 
 The closure is type-directed: `Position`, `Shift`, and `Inset` via `apply`; `Dir`, `DiagDir`, and `Dir8` via the direction actions; `Axis` and `DiagAxis` via the induced swap; `Color`, `number`, and `Ident` by identity. Scope is orientation only: translation freedom stays with `Occurrences` placement anchors, color freedom with instantiation keying.
 
-The Fit writes the chart under its placed name, in a pose of its own, and the runner compares up to pose: an ident-free block must be one joint D4 image of the stored assembly, and an id-keyed chart is compared per id, composed with id renaming.
+The determination writes the chart under its placed name, in a pose of its own, and the runner compares up to pose: an ident-free block must be one joint D4 image of the stored assembly, and an id-keyed chart is compared per id, composed with id renaming.
 
 ## Position remapping via `GRID` id join
 
@@ -141,7 +141,7 @@ map(P_in, P_out) :- src(P_in, Id), dst(P_out, Id).
 
 ## Tabulated decomposition
 
-A constant layout is stored as Consts data. The layout's dims are stored in fact slots, and one relation maps each grid position to its decomposition, built with `helpers.tile_pos` and embedded behind a border with `compose`. The body joins `in` against it and works in decomposed coordinates. The body-derived peer is `divide` / `divide_by_size`. When the layout is the same in every pair, tabulation fits.
+A constant layout is stored as parameter data. The layout's dims are stored in fact parameters, and one relation maps each grid position to its decomposition, built with `helpers.tile_pos` and embedded behind a border with `compose`. The program joins `in` against it and works in decomposed coordinates. The program-derived peer is `divide` / `divide_by_size`. When the layout is the same in every pair, tabulation fits.
 
 ```
 .decl arr_dim(a: Axis, n: number)
@@ -161,7 +161,7 @@ decompose(P_grid, P_tile, P_intile) :-
 
 ## Per-tile data keyed by tile position
 
-Consts data about one tile of a decomposition is keyed by the tile position that the decomposition produces. The body then joins its `p_outer` against the data directly. A second vocabulary for the same tiles (an edge Dir, a corner name) requires a conversion rule, which the Indirection test flags.
+Parameter data about one tile of a decomposition is keyed by the tile position that the decomposition produces. The program then joins its `p_outer` against the data directly. A second vocabulary for the same tiles (an edge Dir, a corner name) requires a conversion rule, which the Indirection test flags.
 
 ```
 .decl combine_member(id: Ident, p_outer: Position, c: Color)
@@ -172,7 +172,7 @@ combine_member(0, [0,0,0,1], 0). combine_member(0, [0,0,1,0], 0).
 
 ## Stored total orders as dense ranks
 
-A total order is stored in Consts as dense 0-based rank data and is consumed only by comparison. Ranks state each element's place in the sequence directly; successor edges state it only through closure. Because ranks are used only for comparison, the solver does not use their numeric structure for anything except ordering. Dense 0-based fills keep the encoding canonical, since a gapped fill encodes one order many ways.
+A total order is stored in the parameters as dense 0-based rank data and is consumed only by comparison. Ranks state each element's place in the sequence directly; successor edges state it only through closure. Because ranks are used only for comparison, the solver does not use their numeric structure for anything except ordering. Dense 0-based values keep the encoding canonical, since a gapped value encodes one order many ways.
 
 ```
 .decl ink_rank(c: Color, r: number)
@@ -180,10 +180,10 @@ ink_rank(7, 0). ink_rank(4, 1). ink_rank(8, 2). ink_rank(6, 3).
 
 beaten(P, Col) :-
     ink_at(P, Col), ink_at(P, C2),
-    c.ink_rank(C2, R2), c.ink_rank(Col, R), R2 < R.
+    params.ink_rank(C2, R2), params.ink_rank(Col, R), R2 < R.
 ```
 
-Over a spatial domain, the ranks can be stored as a GRID: a68b268e's `c.prio` shows the precedence in the tile arrangement.
+Over a spatial domain, the ranks can be stored as a GRID: a68b268e's `params.prio` shows the precedence in the tile arrangement.
 
 ## Set-keyed relations via parent/child tables
 
@@ -198,12 +198,12 @@ combine_member(1, [0,1,0,0], 9). combine_member(1, [1,0,0,0], 0). combine_out(1,
 
 .type CombineMember = [p: Position, col: Color]
 .init combine_match = KeyedSetCompare<Position, Ident, CombineMember>
-combine_match.pattern_member(Id, [P_outer, C]) :- c.combine_member(Id, P_outer, C).
+combine_match.pattern_member(Id, [P_outer, C]) :- params.combine_member(Id, P_outer, C).
 combine_match.observed_member(P_grid_out, [P_tile, C]) :-
     decompose(P_grid_in, P_tile, P_grid_out, _), in(P_grid_in, C).
 
 out(P_grid_out, Col_out) :-
-    c.combine_out(Id, Col_out),
+    params.combine_out(Id, Col_out),
     combine_match.equals(P_grid_out, Id).
 ```
 
@@ -279,7 +279,7 @@ The enum relation (`dir_elem`, `d4_elem`, `axis_elem`) supplies the domain. Repe
 
 ## Boxes as margin Positions
 
-A rectangular region is one Position: its four edge margins. `geq(P, M)` expands a box to its cells (`Bbox.inside` in lib). A box is stored as data (77fdfe62's `$Margin`; 4522001f's `c.box`, rotated to its corner by `apply`) and moved as a record. `compose` with a jump delta shifts the whole box. `geq(M, ORIGIN)` tests that the box still fits the frame. A chain of placed regions recurses on the box, not its cells (4522001f's `grow_box` / `fit_box`).
+A rectangular region is one Position: its four edge margins. `geq(P, M)` expands a box to its cells (`Bbox.inside` in lib). A box is stored as data (77fdfe62's `$Margin`; 4522001f's `params.box`, rotated to its corner by `apply`) and moved as a record. `compose` with a jump delta shifts the whole box. `geq(M, ORIGIN)` tests that the box still fits the frame. A chain of placed regions recurses on the box, not its cells (4522001f's `grow_box` / `fit_box`).
 
 ## `cell_split` — input cell with its axis decomposition
 

@@ -10,16 +10,16 @@
 //
 //   $Repaint  — the block region itself, repainted in place.
 //   $Assemble — the palette expanded, one template block per palette
-//               cell, c.gap cells of border between.
+//               cell, params.gap cells of border between.
 //
 // $Repaint takes the output's separator width from the input; $Assemble
-// sets it from c.gap.
+// sets it from params.gap.
 
 #include "../lib.dl"
 
 .type Choice = Repaint {} | Assemble {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl bg(col: Color) bg(0).
 
@@ -27,19 +27,19 @@
     .decl gap(g: number) gap(1).   // border cells left between stamped blocks
 }
 
-.init c = Consts
+.init params = Params
 
 // --- the block region and its lattice ---
 
 .init region = BoxFrame<Unit>
-region.cell($U(), P) :- in(P, Col), !c.bg(Col).
+region.cell($U(), P) :- in(P, Col), !params.bg(Col).
 region.grid($U(), P) :- in(P, _).
 
 .decl cell(p: Position, col: Color)
 cell(P_region, Col) :- region.inner($U(), P, P_region), in(P, Col).
 
 .decl inked_line(l: Position)
-inked_line(L) :- cell(P, Col), !c.bg(Col), axis_elem(A), split(P, A, L, _).
+inked_line(L) :- cell(P, Col), !params.bg(Col), axis_elem(A), split(P, A, L, _).
 
 .init df = DividerFrame<Unit>
 df.cell($U(), P) :- cell(P, _).
@@ -53,7 +53,7 @@ block.cell(P_tile, P) :- df.tile_of($U(), P, P_tile).
 // --- the template every block carries ---
 
 .decl hole(p_intile: Position)
-hole(P_intile) :- block.inner(_, P, P_intile), cell(P, Col), c.bg(Col).
+hole(P_intile) :- block.inner(_, P, P_intile), cell(P, Col), params.bg(Col).
 
 .decl body(p_intile: Position)
 body(P_intile) :- block.inner(_, _, P_intile), !hole(P_intile).
@@ -61,7 +61,7 @@ body(P_intile) :- block.inner(_, _, P_intile), !hole(P_intile).
 // --- the border color and the key block ---
 
 .decl block_color(p_tile: Position, col: Color)
-block_color(P_tile, Col) :- df.tile_of($U(), P, P_tile), cell(P, Col), !c.bg(Col).
+block_color(P_tile, Col) :- df.tile_of($U(), P, P_tile), cell(P, Col), !params.bg(Col).
 
 .decl absent(col: Color)
 absent(Col) :- block_color(_, Col), block_color(P_tile, _), !block_color(P_tile, Col).
@@ -106,8 +106,8 @@ out(P_region, Col, $Repaint()) :-
 
 .decl assembled(p: Position, col: Color)
 assembled(P_grid_out, Col) :-
-    palette(P_tile, Col), body(P_intile), c.gap(G),  // the template's body in a palette color
-    concat_2d(P_tile, P_intile, G, P_grid_out).      // placed as the palette lays it out
+    palette(P_tile, Col), body(P_intile), params.gap(G),  // the template's body in a palette color
+    concat_2d(P_tile, P_intile, G, P_grid_out).           // placed as the palette lays it out
 
 .init sheet = Frame2D<Unit>
 sheet.extent($U(), A, N) :- assembled(P, _), axis_elem(A), axis_dim(P, A, N).

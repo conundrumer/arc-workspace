@@ -2,8 +2,8 @@
 // concept: decompose markers walk lookup count
 // A divider splits the input into a legend panel of glyphs and a blank canvas
 // panel holding one marker cell. The output is the canvas: a pen starts at the
-// marker and draws one stroke per glyph, in reading order from c.order_corner
-// with c.order_axis primary. A stroke steps one cell toward c.advance, then
+// marker and draws one stroke per glyph, in reading order from params.order_corner
+// with params.order_axis primary. A stroke steps one cell toward params.advance, then
 // runs k more cells toward the glyph's direction in the glyph's color; the pen
 // ends where the run ends.
 //
@@ -16,7 +16,7 @@
 
 .type Choice = Count {} | Glyph {} | Color {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl bg(c: Color) bg(0).
     .decl marker(c: Color) marker(5).
@@ -77,7 +77,7 @@
     color_move(3, DIR_L, 3).
 }
 
-.init c = Consts
+.init params = Params
 
 // --- parse ---
 
@@ -88,26 +88,26 @@
 
     .decl panel(k: Key, p_grid: Position, p_outer: Position, p_panel: Position)
     panel(K, P, P_outer, P_panel) :-
-        cell(K, P, _),                               // input cell
-        c.legend_dir(D), axis_of(D, A),              // the panels lie along this axis
-        c.divisor(N), c.divide_gap(G),               // panel count, divider width
+        cell(K, P, _),                                        // input cell
+        params.legend_dir(D), axis_of(D, A),                  // the panels lie along this axis
+        params.divisor(N), params.divide_gap(G),              // panel count, divider width
         divide_slab(P, A, N, G, P_outer, P_panel).
 
     .decl legend(k: Key, p_grid: Position, p_panel: Position)
     legend(K, P, P_panel) :-
-        panel(K, P, P_outer, P_panel),               // panel cell
-        c.legend_dir(D), dist(P_outer, D, 0).        // the panel on the legend side
+        panel(K, P, P_outer, P_panel),                    // panel cell
+        params.legend_dir(D), dist(P_outer, D, 0).        // the panel on the legend side
 
     .decl canvas(k: Key, p_grid: Position, p_canvas: Position)
     canvas(K, P, P_canvas) :-
-        panel(K, P, P_outer, P_canvas),              // panel cell
-        c.legend_dir(D), opposite(D, D_out),         // the panel away from the legend
+        panel(K, P, P_outer, P_canvas),                   // panel cell
+        params.legend_dir(D), opposite(D, D_out),         // the panel away from the legend
         dist(P_outer, D_out, 0).
 
     .decl glyph_cell(k: Key, p_tile: Position, p_intile: Position, col: Color)
     glyph_cell(K, T, P_intile, Col) :-
-        legend(K, P, P_panel), cell(K, P, Col), !c.bg(Col),  // inked legend cell
-        c.glyph_size(Sz), c.glyph_gap(G),                    // glyph size, gap between glyphs
+        legend(K, P, P_panel), cell(K, P, Col), !params.bg(Col),  // inked legend cell
+        params.glyph_size(Sz), params.glyph_gap(G),               // glyph size, gap between glyphs
         divide_by_size_2d(P_panel, Sz, G, T, P_intile).
 
     .decl glyph(k: Key, t: Position)
@@ -123,12 +123,12 @@
     glyph_count(K, T, N) :- tally.tally([K, T], N).
 
     .init order = LexOrder<Key>
-    order.corner(K, D) :- glyph(K, _), c.order_corner(D).
-    order.axis(K, A) :- glyph(K, _), c.order_axis(A).
+    order.corner(K, D) :- glyph(K, _), params.order_corner(D).
+    order.axis(K, A) :- glyph(K, _), params.order_axis(A).
     order.cell(K, T) :- glyph(K, T).
 
     .decl marker_cell(k: Key, p_canvas: Position)
-    marker_cell(K, P_canvas) :- canvas(K, P, P_canvas), cell(K, P, Col), c.marker(Col).
+    marker_cell(K, P_canvas) :- canvas(K, P, P_canvas), cell(K, P, Col), params.marker(Col).
 }
 
 .init parse = Parse<Unit>
@@ -145,19 +145,19 @@ impl_choice($Color()).
 
 // --- Count ---
 
-move(T, D, K, $Count()) :- parse.glyph_count($U(), T, N), c.count_move(N, D, K).
+move(T, D, K, $Count()) :- parse.glyph_count($U(), T, N), params.count_move(N, D, K).
 
 // --- Glyph ---
 
 .init glyph_match = KeyedSetCompare<Position, Ident, Position>
-glyph_match.pattern_member(Id, P_intile) :- c.glyph_member(Id, P_intile).
+glyph_match.pattern_member(Id, P_intile) :- params.glyph_member(Id, P_intile).
 glyph_match.observed_member(T, P_intile) :- parse.glyph_cell($U(), T, P_intile, _).
 
-move(T, D, K, $Glyph()) :- glyph_match.equals(T, Id), c.glyph_move(Id, D, K).
+move(T, D, K, $Glyph()) :- glyph_match.equals(T, Id), params.glyph_move(Id, D, K).
 
 // --- Color ---
 
-move(T, D, K, $Color()) :- parse.glyph_color($U(), T, Col), c.color_move(Col, D, K).
+move(T, D, K, $Color()) :- parse.glyph_color($U(), T, Col), params.color_move(Col, D, K).
 
 // --- the walk ---
 
@@ -167,7 +167,7 @@ pen(T, P, Ch) :- parse.order.first($U(), T), parse.marker_cell($U(), P), impl_ch
 pen(T2, P2, Ch) :- parse.order.next($U(), T1, T2), stroke_end(T1, P2, Ch).
 
 .decl stroke_start(t: Position, p: Position, ch: Choice)
-stroke_start(T, P2, Ch) :- pen(T, P, Ch), c.advance(D), neighbor(P, D, P2).
+stroke_start(T, P2, Ch) :- pen(T, P, Ch), params.advance(D), neighbor(P, D, P2).
 
 .decl stroke_end(t: Position, p: Position, ch: Choice)
 stroke_end(T, P2, Ch) :-
@@ -186,16 +186,16 @@ stroke.mark([T, Ch], P) :- stroke_end(T, P, Ch).
 
 .decl ink(p: Position, col: Color, ch: Choice)
 ink(P, Col, Ch) :- stroke.between([T, Ch], P), parse.glyph_color($U(), T, Col).
-ink(P, Col, Ch) :- parse.marker_cell($U(), P), c.marker(Col), impl_choice(Ch).
+ink(P, Col, Ch) :- parse.marker_cell($U(), P), params.marker(Col), impl_choice(Ch).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     parse.canvas($U(), _, P), impl_choice(Ch),
-    ( ink(P, Col, Ch)                    // painted cell
-    ; !ink(P, _, Ch), c.bg(Col)          // untouched canvas
+    ( ink(P, Col, Ch)                         // painted cell
+    ; !ink(P, _, Ch), params.bg(Col)          // untouched canvas
     ).
 
-// --- fit ---
+// --- determination ---
 
 .type GT = [e: Example, t: Position]
 
@@ -203,8 +203,8 @@ out(P, Col, Ch) :-
 // of the glyph's color counts as drawn when the next stroke can start at its
 // end (the last glyph's run must be maximal instead). A table entry survives
 // when every occurrence of its key drew it; a wrong branch dies at a later
-// glyph or falls to an occurrence that pins the key.
-.comp Fit {
+// glyph or falls to an occurrence that fixes the key.
+.comp Determine {
     .init parse = Parse<Example>
     parse.cell(E, P, Col) :- ex_in(E, P, Col).
 
@@ -215,9 +215,9 @@ out(P, Col, Ch) :-
 
     .decl side_ok(e: Example, d: Dir)
     side_ok(E, D) :-
-        ex_in(E, P, M), c.marker(M),                 // the marker cell
-        dir_elem(D), axis_of(D, A),                  // candidate legend side
-        c.divisor(N), c.divide_gap(G), divide_slab(P, A, N, G, P_outer, P_canvas),
+        ex_in(E, P, M), params.marker(M),                 // the marker cell
+        dir_elem(D), axis_of(D, A),                       // candidate legend side
+        params.divisor(N), params.divide_gap(G), divide_slab(P, A, N, G, P_outer, P_canvas),
         opposite(D, D2), dist(P_outer, D2, 0),       // marker in the far panel
         ex_out(E, P_canvas, M).                      // the output holds it there
 
@@ -231,8 +231,8 @@ out(P, Col, Ch) :-
 
     .decl step_ok(e: Example, d: Dir)
     step_ok(E, D) :-
-        parse.marker_cell(E, P), dir_elem(D),                  // marker, candidate step
-        neighbor(P, D, P2), ex_out(E, P2, Col), !c.bg(Col).    // its neighbor is inked
+        parse.marker_cell(E, P), dir_elem(D),                       // marker, candidate step
+        neighbor(P, D, P2), ex_out(E, P2, Col), !params.bg(Col).    // its neighbor is inked
 
     .decl step_defect(d: Dir)
     step_defect(D) :- dir_elem(D), drawn(E), !step_ok(E, D).
@@ -251,7 +251,7 @@ out(P, Col, Ch) :-
     pen(E, T2, P) :- parse.order.next(E, T1, T2), drew(E, T1, _, _, P).
 
     .decl start(e: Example, t: Position, p: Position)
-    start(E, T, P2) :- pen(E, T, P), c.advance(D), neighbor(P, D, P2).
+    start(E, T, P2) :- pen(E, T, P), params.advance(D), neighbor(P, D, P2).
 
     // The move tables record the stroke's direction, so runs are taken in
     // every direction.
@@ -268,10 +268,10 @@ out(P, Col, Ch) :-
     .decl drew(e: Example, t: Position, d: Dir, k: number, p: Position)
     drew(E, T, D, K, P) :-
         run_len(E, T, D, K, P),
-        ( parse.order.next(E, T, T2),                                // the successor stroke
-          c.advance(Da), neighbor(P, Da, P2), stroke_cell(E, T2, P2) // can start at this end
-        ; parse.order.last(E, T),                                    // no successor
-          run.rim_dir([E, T], P, D)                                  // the run is maximal
+        ( parse.order.next(E, T, T2),                                     // the successor stroke
+          params.advance(Da), neighbor(P, Da, P2), stroke_cell(E, T2, P2) // can start at this end
+        ; parse.order.last(E, T),                                         // no successor
+          run.rim_dir([E, T], P, D)                                       // the run is maximal
         ).
 
     .decl occurrence(e: Example, t: Position)

@@ -9,9 +9,9 @@
 
 .type Line = [a: Axis, p_line: Position]
 
-.comp Consts {}
+.comp Params {}
 
-.init c = Consts
+.init params = Params
 
 .init line_color = Unanimous<Line, Color>
 line_color.item([A, P_line], Col) :- in(P, Col), axis_elem(A), split(P, A, P_line, _).

@@ -6,15 +6,15 @@
 // clip at the grid edge and overwrite what they cover; the data never
 // shows a star covering other ink. Cases (data-equivalent on this task):
 //
-//   $Ray    — arms by kind, colored per mark: c.arm_paint cardinal,
-//             c.diag_paint diagonal; arms reach c.radius cells.
-//   $Lookup — a stored mask per mark, seated on the mark by c.center_pos.
+//   $Ray    — arms by kind, colored per mark: params.arm_paint cardinal,
+//             params.diag_paint diagonal; arms reach params.radius cells.
+//   $Lookup — a stored mask per mark, seated on the mark by params.center_pos.
 
 #include "../lib.dl"
 
 .type Choice = Ray {} | Lookup {}
 
-.comp Consts {
+.comp Params {
     // --- $Ray ---
     .decl radius(k: number) radius(1).
 
@@ -46,7 +46,7 @@
     .decl center_pos(p: Position) center_pos([1, 1, 1, 1]).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl impl_choice(ch: Choice)
 impl_choice($Ray()). impl_choice($Lookup()).
@@ -56,39 +56,39 @@ impl_choice($Ray()). impl_choice($Lookup()).
 // --- $Ray ---
 // One cast per kind: each roster's marks cast that kind's directions.
 .init arm = Ray<Color>
-arm.dir(M, D) :- c.arm_paint(M, _), dir_elem(D).
-arm.cell(M, P) :- c.arm_paint(M, _), in(P, _).
-arm.mark(M, P) :- in(P, M), c.arm_paint(M, _).
+arm.dir(M, D) :- params.arm_paint(M, _), dir_elem(D).
+arm.cell(M, P) :- params.arm_paint(M, _), in(P, _).
+arm.mark(M, P) :- in(P, M), params.arm_paint(M, _).
 
 .init diag = Ray<Color>
-diag.dir(M, D) :- c.diag_paint(M, _), diag_dir_elem(D).
-diag.cell(M, P) :- c.diag_paint(M, _), in(P, _).
-diag.mark(M, P) :- in(P, M), c.diag_paint(M, _).
+diag.dir(M, D) :- params.diag_paint(M, _), diag_dir_elem(D).
+diag.cell(M, P) :- params.diag_paint(M, _), in(P, _).
+diag.mark(M, P) :- in(P, M), params.diag_paint(M, _).
 
 painted(P, Col, $Ray()) :-
-    c.radius(R),
-    ( arm.ray(M, P, _, K, _), c.arm_paint(M, Col)      // on a cardinal arm
-    ; diag.ray(M, P, _, K, _), c.diag_paint(M, Col)    // on a diagonal arm
+    params.radius(R),
+    ( arm.ray(M, P, _, K, _), params.arm_paint(M, Col)      // on a cardinal arm
+    ; diag.ray(M, P, _, K, _), params.diag_paint(M, Col)    // on a diagonal arm
     ),
     K != 0, K <= R.                                    // within reach, not the mark
 
 // --- $Lookup ---
 painted(P_grid, Col, $Lookup()) :-
-    in(P, M), c.paint(M, Col),                       // a mark
-    c.center_pos(C0), displacement(C0, P, Mg),       // the mask box's margin there
-    c.template(M, T), compose(T, Mg, P_grid),        // embed the mask cell
-    in(P_grid, _).                                   // clip to the grid
+    in(P, M), params.paint(M, Col),                       // a mark
+    params.center_pos(C0), displacement(C0, P, Mg),       // the mask box's margin there
+    params.template(M, T), compose(T, Mg, P_grid),        // embed the mask cell
+    in(P_grid, _).                                        // clip to the grid
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- painted(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !painted(P, _, Ch).
 
-// --- fit ---
+// --- determination ---
 
 .type Cell = [e: Example, p: Position]
 .type StarKey = [e: Example, id: Ident]
 
-.comp Fit {
+.comp Determine {
     // The grids' ground color; dots are the exception to it.
     .init ground = Mode<Unit, Color, Cell>
     ground.item($U(), Col, [E, P]) :- ex_in(E, P, Col).

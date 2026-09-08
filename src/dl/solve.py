@@ -58,7 +58,7 @@ def _profile(mod_source: str, examples: list) -> list[frozenset[str]] | None:
     """Per-pair variant-name sets under this source; None on any failure.
 
     A modified source must reproduce the original's profile, not merely
-    pass: a wrong fill or a deleted rule can silence a Choice case, and a
+    pass: a wrong value or a deleted rule can silence a Choice case, and a
     vanished variant is never checked. A `TiebreakResolution` solver's
     variant names are enumeration terms with no stable identity, so its
     profile is the grid set instead.

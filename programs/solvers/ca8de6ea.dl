@@ -14,7 +14,7 @@
 
 .type Choice = LabeledGrids {} | Cycle {}
 
-.comp Consts {
+.comp Params {
     // --- LabeledGrids data ---
     .decl in_label(p: Position, id: Ident)
     GRID_SPARSE_5x5(in_label,
@@ -57,11 +57,11 @@
     out_center([1, 1, 1, 1]).
 }
 
-.init c = Consts
+.init params = Params
 
 .init ring = CycleWalk<Unit, Position>
-ring.succ($U(), P, P_next) :- c.ring_succ(P, P_next).    // the output ring cycle
-ring.step($U(), N)         :- c.ring_shift(_, N).        // shifts the solver applies
+ring.succ($U(), P, P_next) :- params.ring_succ(P, P_next).    // the output ring cycle
+ring.step($U(), N)         :- params.ring_shift(_, N).        // shifts the solver applies
 
 .decl impl_choice(ch: Choice)
 impl_choice($LabeledGrids()).
@@ -70,36 +70,36 @@ impl_choice($Cycle()).
 .decl perm(p_in: Position, p_out: Position, c: Choice)
 
 // --- LabeledGrids ---
-perm(P_grid_in, P_grid_out, $LabeledGrids()) :- c.map(P_grid_in, P_grid_out).
+perm(P_grid_in, P_grid_out, $LabeledGrids()) :- params.map(P_grid_in, P_grid_out).
 
 // --- Cycle ---
 // Cells across both frames, so one diagonal/ring geometry serves input arms and
 // output ring corners alike.
 .decl cell(p: Position)
 cell(P) :- in(P, _).
-cell(P) :- c.ring_succ(P, _).
+cell(P) :- params.ring_succ(P, _).
 
 // Classify cells into diagonal quadrant + ring.
 .init dp = DiagPlacement<Unit>
 dp.cell($U(), P) :- cell(P).
 
 perm(P_in, P_out, $Cycle()) :-
-    in(P_in, _), dp.diag_cell($U(), P_in, Diag, Ring),                // input arm: its diagonal + ring
-    c.ring_shift(Ring, Shift),                                        // ring -> cyclic shift
-    c.ring_succ(P_corner, _), dp.diag_cell($U(), P_corner, Diag, 0),  // output corner at that diagonal
-    ring.walk($U(), P_corner, Shift, P_out).                          // advanced by the shift
+    in(P_in, _), dp.diag_cell($U(), P_in, Diag, Ring),                     // input arm: its diagonal + ring
+    params.ring_shift(Ring, Shift),                                        // ring -> cyclic shift
+    params.ring_succ(P_corner, _), dp.diag_cell($U(), P_corner, Diag, 0),  // output corner at that diagonal
+    ring.walk($U(), P_corner, Shift, P_out).                               // advanced by the shift
 perm(P_in, P_out, $Cycle()) :-
     in(P_in, _), centered(P_in),   // the center, the rotation's fixed point
-    c.out_center(P_out).           // maps to the output center
+    params.out_center(P_out).      // maps to the output center
 
 .decl out(p: Position, col: Color, c: Choice)
 out(P_grid_out, Col, Impl) :-
     impl_choice(Impl), in(P_grid_in, Col),   // choice × input cell
     perm(P_grid_in, P_grid_out, Impl).       // the cell's image
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     // Correspondence candidates: same color at both cells. Each arm color
     // repeats across the center, so a cell has candidates in both halves.
     .decl cand(p_in: Position, p_out: Position)

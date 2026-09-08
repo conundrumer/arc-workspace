@@ -2,16 +2,16 @@
 // concept: tile-arrangement stamp lookup
 // The input tiled by itself: the output decomposes into an input-shaped
 // arrangement of input-shaped tiles. A tile holds a copy of the input
-// where its tile index is a c.stamp cell, and bg elsewhere.
+// where its tile index is a params.stamp cell, and bg elsewhere.
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
     .decl stamp(col: Color) stamp(5).
 }
 
-.init c = Consts
+.init params = Params
 
 // Output decomposition: tile index × intile position, both input-frame cells.
 .decl cell(p_grid: Position, p_tile: Position, p_intile: Position)
@@ -20,10 +20,10 @@ cell(P_grid_out, P_tile, P_intile) :-
     concat_2d(P_tile, P_intile, 0, P_grid_out).
 
 .decl active(p: Position)
-active(P) :- in(P, Col), c.stamp(Col).
+active(P) :- in(P, Col), params.stamp(Col).
 
 .decl out(p: Position, col: Color)
 out(P_grid_out, Col) :-
     cell(P_grid_out, P_tile, P_intile), active(P_tile), in(P_intile, Col).
 out(P_grid_out, Bg) :-
-    cell(P_grid_out, P_tile, _), !active(P_tile), c.bg(Bg).
+    cell(P_grid_out, P_tile, _), !active(P_tile), params.bg(Bg).

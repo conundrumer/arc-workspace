@@ -5,15 +5,15 @@
 //
 // Three models of marker identification:
 //
-//   $Anchor   — the color at corner c.marker_corner (positional)
-//   $ByCount  — the color appearing in exactly c.marker_count cells
+//   $Anchor   — the color at corner params.marker_corner (positional)
+//   $ByCount  — the color appearing in exactly params.marker_count cells
 //   $Minority — the rarest color
 
 #include "../lib.dl"
 
 .type Choice = Anchor {} | ByCount {} | Minority {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl bg(c: Color) bg(0).
 
@@ -24,15 +24,15 @@
     .decl marker_count(n: number) marker_count(1).
 }
 
-.init c = Consts
+.init params = Params
 
 // Cells carrying the marker color, per case.
 .decl marker(p: Position, col: Color, c: Choice)
 
 // --- $Anchor ---
 marker(P, Col, $Anchor()) :-
-    in(P, Col),                                             // input cell
-    c.marker_corner(Diag), corner_anchor(Diag, P, ORIGIN).  // at marker corner
+    in(P, Col),                                                  // input cell
+    params.marker_corner(Diag), corner_anchor(Diag, P, ORIGIN).  // at marker corner
 
 // --- $ByCount, $Minority shared helper ---
 .init color_count = Tally<Color, Position>
@@ -40,8 +40,8 @@ color_count.item(Col, P) :- in(P, Col).
 
 // --- $ByCount ---
 marker(P, Col, $ByCount()) :-
-    in(P, Col),                                             // input cell
-    c.marker_count(K), color_count.tally(Col, K).           // color with count K
+    in(P, Col),                                                  // input cell
+    params.marker_count(K), color_count.tally(Col, K).           // color with count K
 
 // --- $Minority ---
 .init rarest = ArgExtremes<Unit, Color>
@@ -51,8 +51,8 @@ marker(P, Col, $Minority()) :- in(P, Col), rarest.low($U(), Col, _).
 
 // --- Output ---
 .decl out(p: Position, col: Color, c: Choice)
-out(P, BG, Impl) :- marker(P, _, Impl), c.bg(BG).
-out(P, BG, Impl) :- marker(_, _, Impl), in(P, BG), c.bg(BG).
+out(P, BG, Impl) :- marker(P, _, Impl), params.bg(BG).
+out(P, BG, Impl) :- marker(_, _, Impl), in(P, BG), params.bg(BG).
 out(P, MarkerCol, Impl) :-
-    in(P, Col), !c.bg(Col), !marker(P, _, Impl),            // non-bg, non-marker cell
-    marker(_, MarkerCol, Impl).                             // marker color
+    in(P, Col), !params.bg(Col), !marker(P, _, Impl),            // non-bg, non-marker cell
+    marker(_, MarkerCol, Impl).                                  // marker color

@@ -231,7 +231,7 @@ def task_callouts(item_id: str) -> list[str]:
 
 # The components the style doc gives every solver. Any other one is a
 # proposal comp, legal only while its proposal entry is open.
-STOCK_COMPS = ("Consts", "Fit", "Parse")
+STOCK_COMPS = ("Params", "Determine", "Parse")
 
 
 def comps_of(item_id: str) -> list[str]:

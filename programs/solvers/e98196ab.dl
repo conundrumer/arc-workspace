@@ -4,15 +4,15 @@
 // Output is the per-cell overlay: each panel's ink passes through.
 //
 // out's choice column (decompose):
-//   $Tile() — pre-tabulated in Consts via tile_pos
-//   $Div()  — derived in body via the divide primitive
+//   $Tile() — pre-tabulated in the parameters via tile_pos
+//   $Div()  — derived in the program via the divide primitive
 
 #include "../lib.dl"
 
 .type Choice = Tile {} | Div {}
 
-.comp Consts {
-    .init helpers = ConstsHelpers
+.comp Params {
+    .init helpers = ParamsHelpers
 
     // --- Tile decompose data ---
     .decl arr_dim(a: Axis, n: number)
@@ -40,31 +40,31 @@
     .decl bg(c: Color) bg(0).
 }
 
-.init c = Consts
+.init params = Params
 
 // --- Decompose cases ---
 
 .decl decompose(p: Position, p_outer: Position, p_inner: Position, dc: Choice)
-decompose(P_grid, P_tile, P_intile, $Tile()) :- c.tile_decompose(P_grid, P_tile, P_intile).
+decompose(P_grid, P_tile, P_intile, $Tile()) :- params.tile_decompose(P_grid, P_tile, P_intile).
 decompose(P_grid, P_tile, P_intile, $Div()) :-
-    in(P_grid, _),                                       // input position
-    c.divide_axis(A), c.divisor(N), c.divide_gap(G),     // params
+    in(P_grid, _),                                                      // input position
+    params.divide_axis(A), params.divisor(N), params.divide_gap(G),     // params
     divide_slab(P_grid, A, N, G, P_tile, P_intile).
 
-// --- Overlay body ---
+// --- Overlay program ---
 
 .decl filled(o: Position, dc: Choice)
 filled(P_grid_out, Dc) :-
-    in(P_grid_in, Col), !c.bg(Col),                 // non-bg input cell
+    in(P_grid_in, Col), !params.bg(Col),            // non-bg input cell
     decompose(P_grid_in, _, P_grid_out, Dc).        // decomposes to output cell
 
 // --- Output ---
 
 .decl out(p: Position, col: Color, c: Choice)
 out(P_grid_out, Col, Dc) :-
-    in(P_grid_in, Col), !c.bg(Col),                 // ink passes through
+    in(P_grid_in, Col), !params.bg(Col),                 // ink passes through
     decompose(P_grid_in, _, P_grid_out, Dc).
 out(P_grid_out, Col, Dc) :-
     decompose(_, _, P_grid_out, Dc),                // output cell
     !filled(P_grid_out, Dc),                        // no contribution
-    c.bg(Col).
+    params.bg(Col).

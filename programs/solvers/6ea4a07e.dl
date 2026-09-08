@@ -5,7 +5,7 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
 
     .decl recolor(c_fg: Color, c_fill: Color)
@@ -14,11 +14,11 @@
     recolor(8, 2).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl fill(c: Color)
-fill(Out) :- in(_, Col), c.recolor(Col, Out).
+fill(Out) :- in(_, Col), params.recolor(Col, Out).
 
 .decl out(p: Position, col: Color)
-out(P, Fill) :- in(P, Col), c.bg(Col), fill(Fill).
-out(P, Bg)   :- in(P, Col), !c.bg(Col), c.bg(Bg).
+out(P, Fill) :- in(P, Col), params.bg(Col), fill(Fill).
+out(P, Bg)   :- in(P, Col), !params.bg(Col), params.bg(Bg).

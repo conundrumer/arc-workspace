@@ -4,12 +4,12 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl transform(d: D4)
     transform(D4_DG).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl out(p: Position, col: Color)
-out(P_grid_out, Col) :- in(P_grid_in, Col), c.transform(D), apply(D, P_grid_in, P_grid_out).
+out(P_grid_out, Col) :- in(P_grid_in, Col), params.transform(D), apply(D, P_grid_in, P_grid_out).

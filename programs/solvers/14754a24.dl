@@ -1,14 +1,14 @@
 // 14754a24
 // concept: objects markers stamp lookup
-// Plus pentominoes drawn partly in c.mark over c.fill. Each plus is
-// completed: its footprint cells still holding c.fill become c.paint.
+// Plus pentominoes drawn partly in params.mark over params.fill. Each plus is
+// completed: its footprint cells still holding params.fill become params.paint.
 // A footprint is clipped at the frame edge, and a placement acts only
 // where its footprint lies wholly on mark or fill, which is what fixes a
-// plus's placement. Choice = [fp, a] crosses the claims:
+// plus's placement. Choice = [fp, a] crosses the hypotheses:
 //
 //   fp (the footprint):
 //     $Plus()  — structure: the cell and its four cardinal neighbors.
-//     $Shape() — data: the c.shape cells.
+//     $Shape() — data: the params.shape cells.
 //   a (which placements act):
 //     $Fragment() — the marks are objects, one per plus; the placement
 //                   whose footprint holds exactly one whole object acts.
@@ -21,7 +21,7 @@
 .type Act = Fragment {} | Maximal {}
 .type Choice = [fp: Footprint, a: Act]
 
-.comp Consts {
+.comp Params {
     .decl mark(col: Color) mark(4).
     .decl fill(col: Color) fill(5).
     .decl paint(col: Color) paint(2).
@@ -35,13 +35,13 @@
         0, 1, 0)
 }
 
-.init c = Consts
+.init params = Params
 
 .decl mark_cell(p: Position)
-mark_cell(P) :- in(P, Col), c.mark(Col).
+mark_cell(P) :- in(P, Col), params.mark(Col).
 
 .decl fill_cell(p: Position)
-fill_cell(P) :- in(P, Col), c.fill(Col).
+fill_cell(P) :- in(P, Col), params.fill(Col).
 
 // --- Footprint cases: the stamp at each placement ---
 
@@ -59,7 +59,7 @@ footprint(P, Q, $Plus()) :-
     ).
 
 // $Shape — the stored cells.
-footprint(P, Q, $Shape()) :- in(Q, _), c.shape(S), displacement(S, Q, P).
+footprint(P, Q, $Shape()) :- in(Q, _), params.shape(S), displacement(S, Q, P).
 
 // Held back by a footprint cell that is neither mark nor fill.
 .decl blocked(p_place: Position, fp: Footprint)
@@ -109,17 +109,17 @@ placement(P, [Fp, $Maximal()]) :- cand_mark(P, _, Fp), !dominated(P, Fp).
 painted(Q, [Fp, A]) :- placement(P, [Fp, A]), footprint(P, Q, Fp), fill_cell(Q).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, Ch) :- painted(P, Ch), c.paint(Col).
+out(P, Col, Ch) :- painted(P, Ch), params.paint(Col).
 out(P, Col, [Fp, A]) :-
     in(P, Col), footprint_choice(Fp), act_choice(A),    // each claim pair
     !painted(P, [Fp, A]).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     // A completed instance's cells: its marks and its painted cells.
     .decl inst_cell(e: Example, p: Position)
-    inst_cell(E, P) :- ex_in(E, P, Col), c.mark(Col), ex_out(E, _, _).
+    inst_cell(E, P) :- ex_in(E, P, Col), params.mark(Col), ex_out(E, _, _).
     inst_cell(E, P) :- ex_in(E, P, C1), ex_out(E, P, C2), C1 != C2.
 
     .init inst = Components<Example>

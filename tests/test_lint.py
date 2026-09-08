@@ -1,11 +1,11 @@
 """Body-lint checks: each fires on the shape it names and stays quiet next
 to the legal form."""
 
-from dl.lint import lint_body
+from dl.lint import lint_program
 
 
 def cats(src: str) -> list[str]:
-    return [f[0] for f in lint_body(src)]
+    return [f[0] for f in lint_program(src)]
 
 
 def test_reserved_decl_name_fires():
@@ -13,7 +13,7 @@ def test_reserved_decl_name_fires():
 .decl count(n: number)
 count(0).
 """
-    fs = [f for f in lint_body(src) if f[0] == "reserved name"]
+    fs = [f for f in lint_program(src) if f[0] == "reserved name"]
     assert len(fs) == 1
     assert fs[0][1] == 1
     assert "`count` is a Souffle reserved word" in fs[0][2]
@@ -27,7 +27,7 @@ def test_reserved_init_name_fires():
 }
 .init count = Tally<Color>
 """
-    fs = [f for f in lint_body(src) if f[0] == "reserved name"]
+    fs = [f for f in lint_program(src) if f[0] == "reserved name"]
     assert [f[1] for f in fs] == [4]
 
 
@@ -37,7 +37,7 @@ def test_reserved_name_inside_comp_fires():
     .decl band(key: Key, p: Position)
 }
 """
-    fs = [f for f in lint_body(src) if f[0] == "reserved name"]
+    fs = [f for f in lint_program(src) if f[0] == "reserved name"]
     assert [f[1] for f in fs] == [2]
     assert "`band`" in fs[0][2]
 
@@ -49,7 +49,7 @@ def test_reserved_type_and_comp_names_fire():
     .decl v(x: number)
 }
 """
-    fs = [f for f in lint_body(src) if f[0] == "reserved name"]
+    fs = [f for f in lint_program(src) if f[0] == "reserved name"]
     assert [f[1] for f in fs] == [1, 2]
 
 
@@ -58,7 +58,7 @@ def test_reserved_attribute_name_fires():
 .decl r(ord: number)
 r(0).
 """
-    fs = [f for f in lint_body(src) if f[0] == "reserved name"]
+    fs = [f for f in lint_program(src) if f[0] == "reserved name"]
     assert [f[1] for f in fs] == [1]
     assert "`ord`" in fs[0][2]
 
@@ -72,7 +72,7 @@ def test_reserved_field_branch_and_targ_names_fire():
 }
 .init t = Tally<count>
 """
-    fs = [f for f in lint_body(src) if f[0] == "reserved name"]
+    fs = [f for f in lint_program(src) if f[0] == "reserved name"]
     assert [f[1] for f in fs] == [1, 2, 6]
     assert "`cat`" in fs[0][2]
     assert "`contains`" in fs[1][2]
@@ -85,7 +85,7 @@ def test_reserved_comp_param_fires():
     .decl v(x: match)
 }
 """
-    fs = [f for f in lint_body(src) if f[0] == "reserved name"]
+    fs = [f for f in lint_program(src) if f[0] == "reserved name"]
     assert [f[1] for f in fs] == [1]
     assert "`match`" in fs[0][2]
 
@@ -95,7 +95,7 @@ def test_type_named_for_a_lib_comp_fires():
 .type Reach = Near {} | Object {}
 .type Choice = [sp: Reach]
 """
-    fs = [f for f in lint_body(src) if f[0] == "lib name"]
+    fs = [f for f in lint_program(src) if f[0] == "lib name"]
     assert [f[1] for f in fs] == [1]
     assert fs[0][2] == "`Reach` is a lib component; rename it"
 
@@ -108,7 +108,7 @@ def test_relation_named_for_a_lib_relation_fires_at_top_level_only():
     .decl opposite(key: Key, d: Dir)
 }
 """
-    fs = [f for f in lint_body(src) if f[0] == "lib name"]
+    fs = [f for f in lint_program(src) if f[0] == "lib name"]
     assert [f[1] for f in fs] == [1]
     assert "`opposite` is a lib relation" in fs[0][2]
 
@@ -117,7 +117,7 @@ def test_type_named_for_a_lib_type_fires():
     src = """\
 .type Dir = Up {} | Down {}
 """
-    fs = [f for f in lint_body(src) if f[0] == "lib name"]
+    fs = [f for f in lint_program(src) if f[0] == "lib name"]
     assert [f[1] for f in fs] == [1]
     assert "`Dir` is a lib type" in fs[0][2]
 
@@ -127,7 +127,7 @@ def test_lib_macro_in_body_fires_as_orientation_literal():
 .decl v(s: Sym)
 v(SYM_BOX).
 """
-    fs = [f for f in lint_body(src) if f[0] == "orientation literal"]
+    fs = [f for f in lint_program(src) if f[0] == "orientation literal"]
     assert [(f[1], f[2]) for f in fs] == [(2, "SYM_BOX")]
 
 
@@ -142,11 +142,11 @@ def test_comp_without_entry_fires(tmp_path, monkeypatch):
 .comp Zigzag<Key> {
     .decl cell(key: Key, p: Position)
 }
-.comp Fit {
+.comp Determine {
     .decl v(x: number)
 }
 """
-    fs = [f for f in lint_body(src) if f[0] == "comp without entry"]
+    fs = [f for f in lint_program(src) if f[0] == "comp without entry"]
     assert [f[1] for f in fs] == [4]
     assert "`Zigzag`" in fs[0][2]
     assert "docs/wf-solver/proposals/Zigzag.md" in fs[0][2]
@@ -168,7 +168,7 @@ def test_free_names_stay_quiet():
 .decl band_cell(p: Position)
 .decl type(x: number)
 .decl plan(x: number)
-.init init = Consts
+.init init = Params
 """
     assert "reserved name" not in cats(src)
 
@@ -186,7 +186,7 @@ def test_qualified_member_named_for_a_keyword_stays_quiet():
     # merely ends in a keyword is not a collision.
     src = """\
 .decl v(x: number)
-v(N) :- c.max(N).
+v(N) :- params.max(N).
 """
     assert "reserved name" not in cats(src)
 
@@ -201,7 +201,7 @@ def test_shadowed_type_argument_fires():
 }
 .init parse = Parse<Unit>
 """
-    fs = [f for f in lint_body(src) if f[0] == "shadowed type"]
+    fs = [f for f in lint_program(src) if f[0] == "shadowed type"]
     assert [f[1] for f in fs] == [4]
     assert "`KP` also names a type inside `Occurrences`" in fs[0][2]
     assert "rename it" in fs[0][2]
@@ -217,7 +217,7 @@ def test_shadowed_type_reaches_through_a_nested_instance():
 .type KP = [key: Unit, p_part: Position]
 .init w = Wrap<KP>
 """
-    fs = [f for f in lint_body(src) if f[0] == "shadowed type"]
+    fs = [f for f in lint_program(src) if f[0] == "shadowed type"]
     assert [f[1] for f in fs] == [7]
     assert "`Wrap`" in fs[0][2]
 
@@ -250,7 +250,7 @@ def test_free_adt_fires_as_banned_type():
 .type Assembly = Bare {} | With {o: Ident, rest: Assembly}
 .decl out(p: Position, col: Color)
 """
-    fs = [f for f in lint_body(src) if f[0] == "banned type"]
+    fs = [f for f in lint_program(src) if f[0] == "banned type"]
     assert [f[1] for f in fs] == [1]
     assert "`Assembly` is outside the sanctioned type kinds" in fs[0][2]
 
@@ -278,7 +278,7 @@ def test_adt_filling_a_comp_param_fires():
 .type Side = Legend {} | Field {}
 .init comps = Components<Side>
 """
-    fs = [f for f in lint_body(src) if f[0] == "banned type"]
+    fs = [f for f in lint_program(src) if f[0] == "banned type"]
     assert [f[1] for f in fs] == [1]
 
 
@@ -287,7 +287,7 @@ def test_record_filling_no_param_fires():
 .type Leg = [p: Position, d: Dir]
 .decl on_path(leg: Leg)
 """
-    fs = [f for f in lint_body(src) if f[0] == "banned type"]
+    fs = [f for f in lint_program(src) if f[0] == "banned type"]
     assert [f[1] for f in fs] == [1]
 
 
@@ -311,13 +311,13 @@ def test_type_in_a_skipped_comp_stays_quiet():
     assert "banned type" not in cats(src)
 
 
-def test_type_in_fit_lints_and_a_filled_record_there_stays_quiet():
+def test_type_in_determine_lints_and_a_filled_record_there_stays_quiet():
     src = """\
-.comp Fit {
+.comp Determine {
     .type EC = [e: Example, col: Color]
     .type Tag = A {} | B {}
     .init tally = Mode<EC>
 }
 """
-    fs = [f for f in lint_body(src) if f[0] == "banned type"]
+    fs = [f for f in lint_program(src) if f[0] == "banned type"]
     assert [f[1] for f in fs] == [3]

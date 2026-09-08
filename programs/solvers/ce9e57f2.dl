@@ -5,26 +5,26 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bar(col: Color) bar(2).
     .decl mark(col: Color) mark(8).
     .decl base(d: Dir) base(DIR_B).
 }
 
-.init c = Consts
+.init params = Params
 
 // Bars keyed by their line's across position.
 .init bars = BoxFrame<Position>
 bars.cell(Ac, P) :-
-    in(P, Col), c.bar(Col),                       // bar cell
-    c.base(D), axis_of(D, A), split(P, A, _, Ac). // line = across position
+    in(P, Col), params.bar(Col),                       // bar cell
+    params.base(D), axis_of(D, A), split(P, A, _, Ac). // line = across position
 
 // Bar cells strictly nearer the base end of their bar than the far end.
 .decl marked(p: Position)
 marked(P) :-
     bars.inner(_, P, I),
-    c.base(D), dist_pair(I, D, K, K2), K < K2.
+    params.base(D), dist_pair(I, D, K, K2), K < K2.
 
 .decl out(p: Position, col: Color)
-out(P, Col) :- marked(P), c.mark(Col).
+out(P, Col) :- marked(P), params.mark(Col).
 out(P, Col) :- in(P, Col), !marked(P).

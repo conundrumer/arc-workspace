@@ -5,11 +5,11 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     // No task data — siblings vary only the input.
 }
 
-.init c = Consts
+.init params = Params
 
 .decl out(p: Position, col: Color)
 out(P_grid_out, Col) :-

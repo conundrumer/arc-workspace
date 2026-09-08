@@ -1,7 +1,7 @@
 // 1c0d0a4b
 // concept: decompose wallpaper lines mapping
 // 3×3 tiles on a 1-wide bg separator lattice, borders included. Tile
-// content complements: non-bg → bg, bg → c.paint. Separator cells stay
+// content complements: non-bg → bg, bg → params.paint. Separator cells stay
 // bg. Separator identification (data-equivalent on this task):
 //   $Period() — the lattice: sep_w-wide lines every sep_w + tile_w
 //   $Blank()  — all-bg grid lines
@@ -10,7 +10,7 @@
 
 .type Choice = Period {} | Blank {}
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
     .decl paint(c: Color) paint(2).
 
@@ -19,22 +19,22 @@
     .decl tile_w(k: number) tile_w(3).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl impl_choice(ch: Choice)
 impl_choice($Period()). impl_choice($Blank()).
 
 .decl ink(p: Position)
-ink(P) :- in(P, Col), !c.bg(Col).
+ink(P) :- in(P, Col), !params.bg(Col).
 
 .decl sep(p: Position, ch: Choice)
 
 // --- Period ---
 // On a lattice line: the seps divide as sep_w-wide tiles with tile_w gaps.
 sep(P, $Period()) :-
-    in(P, _), axis_elem(A),                    // each axis
-    c.sep_w(K), c.tile_w(G),                   // lattice dims
-    divide_by_size(P, A, K, G, _, _).          // in a sep band of axis A
+    in(P, _), axis_elem(A),                     // each axis
+    params.sep_w(K), params.tile_w(G),          // lattice dims
+    divide_by_size(P, A, K, G, _, _).           // in a sep band of axis A
 
 // --- Blank ---
 // Line along axis a at across-position p_across carries ink.
@@ -47,6 +47,6 @@ sep(P, $Blank()) :-
 
 // Separator stays bg; ink erases; tile bg complements to paint.
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, Bg, Ch)    :- sep(P, Ch), c.bg(Bg).
-out(P, Bg, Ch)    :- ink(P), impl_choice(Ch), c.bg(Bg).
-out(P, Paint, Ch) :- in(P, Col), c.bg(Col), impl_choice(Ch), !sep(P, Ch), c.paint(Paint).
+out(P, Bg, Ch)    :- sep(P, Ch), params.bg(Bg).
+out(P, Bg, Ch)    :- ink(P), impl_choice(Ch), params.bg(Bg).
+out(P, Paint, Ch) :- in(P, Col), params.bg(Col), impl_choice(Ch), !sep(P, Ch), params.paint(Paint).

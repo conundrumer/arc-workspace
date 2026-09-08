@@ -11,21 +11,21 @@
 
 .type Choice = Shrink {} | Converge {} | Cross {}
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
 
     .decl center_paint(col: Color) center_paint(5).
 }
 
-.init c = Consts
+.init params = Params
 
-// --- body ---
+// --- program ---
 
 .decl impl_choice(ch: Choice)
 impl_choice($Shrink()). impl_choice($Converge()). impl_choice($Cross()).
 
 .decl mark(p: Position, col: Color)
-mark(P, Col) :- in(P, Col), !c.bg(Col).
+mark(P, Col) :- in(P, Col), !params.bg(Col).
 
 .decl mini(p: Position, col: Color, ch: Choice)
 
@@ -42,7 +42,7 @@ center(P) :- box.inner($U(), P, P_in), centered(P_in).
 
 mini(P, Col, $Shrink()) :-
     center(C),
-    ( c.center_paint(Col), P = C                              // the center
+    ( params.center_paint(Col), P = C                         // the center
     ; box.corner($U(), P_mark, Diag), mark(P_mark, Col),      // a mark at its box corner
       neighbor(C, Diag, P)
     ).
@@ -54,7 +54,7 @@ place.cell($U(), P_in) :- box.inner($U(), _, P_in).
 
 mini(P, Col, $Converge()) :-
     center(C),
-    ( c.center_paint(Col), P = C                              // the center
+    ( params.center_paint(Col), P = C                         // the center
     ; mark(P_mark, Col), box.inner($U(), P_mark, P_in),       // a mark in the box's frame
       place.quadrant($U(), P_in, Diag),                       // the quadrant it lies in
       neighbor(C, Diag, P)
@@ -76,7 +76,7 @@ unseen(P) :- sees(_, P, _), mark(M, _), !sees(M, P, _).
 
 mini(P, Col, $Cross()) :-
     sees(_, C, _), !unseen(C),                                // where every mark's diagonals meet
-    ( c.center_paint(Col), P = C                              // the meeting cell
+    ( params.center_paint(Col), P = C                         // the meeting cell
     ; sees(M, C, D), mark(M, Col),                            // a ray that reached it
       diag_opposite(D, D_back), neighbor(C, D_back, P)        // one step back toward its mark
     ).

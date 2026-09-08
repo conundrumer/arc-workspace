@@ -9,25 +9,25 @@
 
 .type Choice = Span {} | Line {}
 
-.comp Consts {
+.comp Params {
     .decl arr(n: number) arr(3).
     .decl gap(g: number) gap(1).
     .decl base(col: Color) base(1).
 }
 
-.init c = Consts
+.init params = Params
 
 // Grid cell within the tile arrangement.
 .decl tile(p_grid: Position, p_tile: Position, p_intile: Position)
 tile(P_grid, P_tile, P_intile) :-
-    in(P_grid, _), c.arr(N), c.gap(G),
+    in(P_grid, _), params.arr(N), params.gap(G),
     divide_2d(P_grid, N, G, P_tile, P_intile).
 
 .type Mark = [col: Color, p_intile: Position]
 
 .decl mark(m: Mark, p_tile: Position)
 mark([Col, P_intile], P_tile) :-
-    in(P_grid, Col), !c.base(Col),
+    in(P_grid, Col), !params.base(Col),
     tile(P_grid, P_tile, P_intile).
 
 .init btw = Between<Mark>

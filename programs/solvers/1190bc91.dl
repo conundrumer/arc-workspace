@@ -14,11 +14,11 @@
 
 .type Choice = Sector {} | Flood {}
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl impl_choice(ch: Choice)
 impl_choice($Sector()). impl_choice($Flood()).
@@ -26,7 +26,7 @@ impl_choice($Sector()). impl_choice($Flood()).
 // --- the sequence and the markers ---
 
 .init obj = Components<Unit>
-obj.node($U(), P) :- in(P, Col), !c.bg(Col).
+obj.node($U(), P) :- in(P, Col), !params.bg(Col).
 
 // The sequence is the object that runs from a free end to the grid edge:
 // d heads along the run toward the edge, and the anchor is the free end.
@@ -96,5 +96,5 @@ out(P, Col, Ch) :-
 out(P, Col, Ch) :-
     area.label(Ch, P, Id), !paint(P, _),  // a cell no ray reached
     ( fill(Ch, Id, Col)                   // the marker color of its area
-    ; !fill(Ch, Id, _), c.bg(Col)         // no marker there
+    ; !fill(Ch, Id, _), params.bg(Col)    // no marker there
     ).

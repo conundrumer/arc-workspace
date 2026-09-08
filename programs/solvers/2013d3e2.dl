@@ -9,7 +9,7 @@
 
 .type Choice = Half {} | Window {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl bg(c: Color) bg(0).
 
@@ -22,10 +22,10 @@
     .decl corner(d: DiagDir) corner(DIAG_TL).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl ink(p: Position)
-ink(P) :- in(P, Col), !c.bg(Col).
+ink(P) :- in(P, Col), !params.bg(Col).
 
 .init boxframe = BoxFrame<Unit>
 boxframe.cell($U(), P) :- ink(P).
@@ -39,14 +39,14 @@ box_cell(P_box, Col) :- in(P, Col), boxframe.inner($U(), P, P_box).
 // --- Half ---
 out(P_out, Col, $Half()) :-
     box_cell(P_box, Col),
-    c.divisor(N), divide_2d(P_box, N, 0, P_tile, P_out),    // box divided NxN
-    c.out_tile(P_tile).                                     // the output tile
+    params.divisor(N), divide_2d(P_box, N, 0, P_tile, P_out),    // box divided NxN
+    params.out_tile(P_tile).                                     // the output tile
 
 // --- Window ---
 .init win = Frame2D<Unit>
-win.extent($U(), A, K) :- c.win_dim(K), axis_elem(A).
+win.extent($U(), A, K) :- params.win_dim(K), axis_elem(A).
 
 out(P_out, Col, $Window()) :-
     box_cell(P_box, Col),
     win.cell($U(), P_out),
-    c.corner(Diag), corner_anchor(Diag, P_box, P_out).   // same dists to the corner
+    params.corner(Diag), corner_anchor(Diag, P_box, P_out).   // same dists to the corner

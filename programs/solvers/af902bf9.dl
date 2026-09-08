@@ -1,7 +1,7 @@
 // af902bf9
 // concept: markers span
 // Marker cells sit at the corners of axis-aligned rectangles; each
-// rectangle's strict interior fills with c.fill. Two models of what
+// rectangle's strict interior fills with params.fill. Two models of what
 // delimits an interior cell, tagged on out's Choice:
 //
 //   $Rect — a marker pair in opposite quadrants of the cell whose two
@@ -12,19 +12,19 @@
 
 .type Choice = Rect {} | Quad {}
 
-.comp Consts {
+.comp Params {
     .decl marker(c: Color) marker(4).
     .decl fill(c: Color) fill(2).
     .decl bg(c: Color) bg(0).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl mark(p: Position)
-mark(P) :- in(P, Col), c.marker(Col).
+mark(P) :- in(P, Col), params.marker(Col).
 
 .decl empty(p: Position)
-empty(P) :- in(P, Col), c.bg(Col).
+empty(P) :- in(P, Col), params.bg(Col).
 
 // A marker strictly inside quadrant Diag of a bg cell.
 .decl quad_mark(p: Position, diag: DiagDir, q: Position)
@@ -53,7 +53,7 @@ open_pair(A, D) :-
 .decl rect_interior(p: Position)
 rect_interior(P) :- opp_pair(P, A, D), !open_pair(A, D).
 
-out(P, F, $Rect())   :- rect_interior(P), c.fill(F).
+out(P, F, $Rect())   :- rect_interior(P), params.fill(F).
 out(P, Col, $Rect()) :- in(P, Col), !rect_interior(P).
 
 // --- Quad ---
@@ -65,5 +65,5 @@ open_quad(P) :- empty(P), diag_dir_elem(Diag), !quad_mark(P, Diag, _).
 .decl quad_interior(p: Position)
 quad_interior(P) :- empty(P), !open_quad(P).
 
-out(P, F, $Quad())   :- quad_interior(P), c.fill(F).
+out(P, F, $Quad())   :- quad_interior(P), params.fill(F).
 out(P, Col, $Quad()) :- in(P, Col), !quad_interior(P).

@@ -6,13 +6,13 @@
 // column's stencil painted in its donor's color, ringed in the label of the
 // donor's band.
 //
-// Two claims name the donor of a column:
+// Two hypotheses name the donor of a column:
 //   $Solid — the panel whose interior holds one color.
 //   $Odd   — the panel no other panel of the column matches.
 //
-// Two claims render the interior:
-//   $Map  — c.ink maps to the donor's color; other colors pass through.
-//   $Mask — non-background cells take the donor's color, the rest c.bg.
+// Two hypotheses render the interior:
+//   $Map  — params.ink maps to the donor's color; other colors pass through.
+//   $Mask — non-background cells take the donor's color, the rest params.bg.
 
 #include "../lib.dl"
 
@@ -20,7 +20,7 @@
 .type Render = Map {} | Mask {}
 .type Choice = [donor: Donor, render: Render]
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(8).
     .decl frame_col(col: Color) frame_col(1).
 
@@ -31,7 +31,7 @@
     .decl ink(col: Color) ink(2).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl donor_elem(d: Donor)
 donor_elem($Solid()). donor_elem($Odd()).
@@ -42,7 +42,7 @@ render_elem($Map()). render_elem($Mask()).
 // --- panels ---
 
 .decl frame_cell(p: Position)
-frame_cell(P) :- in(P, Col), c.frame_col(Col).
+frame_cell(P) :- in(P, Col), params.frame_col(Col).
 
 // One panel per ring of frame color.
 .init rings = Components<Unit>
@@ -65,7 +65,7 @@ interior(Id, P_intile, Col) :-
 // A panel's column and band, as the two halves of its box placement.
 .decl panel_pos(id: Ident, p_col: Position, p_band: Position)
 panel_pos(Id, P_col, P_band) :-
-    panel.margin(Id, M), c.layout_axis(A), split(M, A, P_col, P_band).
+    panel.margin(Id, M), params.layout_axis(A), split(M, A, P_col, P_band).
 
 // --- lattice ---
 
@@ -78,8 +78,8 @@ lattice.grid($U(), P) :- in(P, _).
 // A colored cell outside the lattice names the band it sits in.
 .decl band_label(p_band: Position, col: Color)
 band_label(P_band, Col) :-
-    in(P_label, Col), !c.bg(Col), !lattice.viewed($U(), P_label),  // label cell
-    panel_pos(_, _, P_band), geq(P_label, P_band).                 // in the band
+    in(P_label, Col), !params.bg(Col), !lattice.viewed($U(), P_label),  // label cell
+    panel_pos(_, _, P_band), geq(P_label, P_band).                      // in the band
 
 // --- donor ---
 
@@ -119,16 +119,16 @@ stencil(D, P_col, P_intile, Col) :-
 // One band of the lattice.
 .init out_frame = Frame2D<Unit>
 out_frame.extent($U(), A, N) :-
-    c.layout_axis(A), lattice.extent($U(), A, N).
+    params.layout_axis(A), lattice.extent($U(), A, N).
 out_frame.extent($U(), A_band, N) :-
-    c.layout_axis(A), perp(A, A_band), panel.extent(_, A_band, N).
+    params.layout_axis(A), perp(A, A_band), panel.extent(_, A_band, N).
 
 // A panel cell keeps its place along the columns and lands in the one band.
 .decl out_pos(p_col: Position, p_intile: Position, p: Position)
 out_pos(P_col, P_intile, P) :-
     panel.inner(Id, P_grid, P_intile), panel_pos(Id, P_col, _),
     lattice.inner($U(), P_grid, P_lat),
-    c.layout_axis(A),
+    params.layout_axis(A),
     split(P_lat, A, P_along, _), split(P_intile, A, _, P_across),
     compose(P_along, P_across, P).
 
@@ -140,20 +140,20 @@ out(P, Col, [D, R]) :-
 
 out(P, Col, [D, R]) :-
     out_frame.cell($U(), P), !out_pos(_, _, P),  // between panels
-    c.bg(Col), donor_elem(D), render_elem(R).
+    params.bg(Col), donor_elem(D), render_elem(R).
 
 // --- Map ---
 out(P, Col_out, [D, $Map()]) :-
     out_pos(P_col, P_intile, P),
     stencil(D, P_col, P_intile, Col),
-    ( c.ink(Col), fill(D, P_col, Col_out)  // the ink takes the donor's color
-    ; !c.ink(Col), Col_out = Col           // the rest passes through
+    ( params.ink(Col), fill(D, P_col, Col_out)  // the ink takes the donor's color
+    ; !params.ink(Col), Col_out = Col           // the rest passes through
     ).
 
 // --- Mask ---
 out(P, Col_out, [D, $Mask()]) :-
     out_pos(P_col, P_intile, P),
     stencil(D, P_col, P_intile, Col),
-    ( !c.bg(Col), fill(D, P_col, Col_out)  // marked cells take the donor's color
-    ; c.bg(Col), c.bg(Col_out)             // the rest is background
+    ( !params.bg(Col), fill(D, P_col, Col_out)  // marked cells take the donor's color
+    ; params.bg(Col), params.bg(Col_out)        // the rest is background
     ).

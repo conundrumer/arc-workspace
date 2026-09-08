@@ -1,37 +1,37 @@
 // 03560426
 // concept: objects walk
 // The input holds separate solid rectangles. In the output they chain from
-// the grid corner opposite c.corner, ordered by distance from c.order: each
+// the grid corner opposite params.corner, ordered by distance from params.order: each
 // block's near corner lands where the previous block's far corner landed,
 // and the later block takes that cell.
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
     .decl order(d: Dir) order(DIR_L).
     .decl corner(d: DiagDir) corner(DIAG_BR).
 }
 
-.init c = Consts
+.init params = Params
 
 .init blocks = Components<Unit>
-blocks.node($U(), P) :- in(P, Col), !c.bg(Col).
+blocks.node($U(), P) :- in(P, Col), !params.bg(Col).
 
 .init bb = Bbox<Ident>
 bb.cell(Id, P) :- blocks.label($U(), P, Id).
 
 // The two corners the chain runs through.
 .decl near(id: Ident, p: Position)
-near(Id, P) :- c.corner(Diag), diag_opposite(Diag, Start), bb.corner(Id, P, Start).
+near(Id, P) :- params.corner(Diag), diag_opposite(Diag, Start), bb.corner(Id, P, Start).
 
 .decl far(id: Ident, p: Position)
-far(Id, P) :- c.corner(Diag), bb.corner(Id, P, Diag).
+far(Id, P) :- params.corner(Diag), bb.corner(Id, P, Diag).
 
 // Id2 stands further along the order than Id1.
 .decl beyond(id1: Ident, id2: Ident)
 beyond(Id1, Id2) :-
-    c.order(D), bb.margin(Id1, M1), bb.margin(Id2, M2), nearer(D, M1, M2).
+    params.order(D), bb.margin(Id1, M1), bb.margin(Id2, M2), nearer(D, M1, M2).
 
 .init chain = Order<Unit, Ident>
 chain.elem($U(), Id) :- blocks.label($U(), _, Id).
@@ -46,7 +46,7 @@ off.cell(Id, P) :- blocks.label($U(), P, Id).
 .decl anchor(id: Ident, p: Position)
 anchor(Id, P) :-
     chain.first($U(), Id),
-    c.corner(Diag), diag_opposite(Diag, Start),
+    params.corner(Diag), diag_opposite(Diag, Start),
     in(P, _), corner_dist(P, Start, 0).                // grid corner the chain starts at
 anchor(Id2, P2) :- chain.next($U(), Id1, Id2), far(Id1, P), place(Id1, P, P2).
 
@@ -60,4 +60,4 @@ taken(Id, P) :- place(Id, _, P), beyond(Id, Id2), place(Id2, _, P).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- place(Id, P_in, P), !taken(Id, P), in(P_in, Col).
-out(P, Col) :- in(P, _), !place(_, _, P), c.bg(Col).
+out(P, Col) :- in(P, _), !place(_, _, P), params.bg(Col).

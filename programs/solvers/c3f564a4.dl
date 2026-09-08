@@ -13,7 +13,7 @@
 
 .type Choice = Shift {} | Diag {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl noise(col: Color) noise(0).
 
@@ -21,10 +21,10 @@
     .decl diag(da: DiagAxis) diag(DAXIS_AD).   // stripes run TR-BL
 }
 
-.init c = Consts
+.init params = Params
 
 .decl clean(p: Position, col: Color)
-clean(P, Col) :- in(P, Col), !c.noise(Col).
+clean(P, Col) :- in(P, Col), !params.noise(Col).
 
 .init parse = ShiftInvariance<Unit, Color>
 parse.cell($U(), P, Col) :- clean(P, Col).
@@ -40,7 +40,7 @@ out(P, Col, Ch) :- impl_choice(Ch), clean(P, Col).
 // --- $Shift ---
 
 out(P, Col, $Shift()) :-
-    in(P, N), c.noise(N),                              // corrupted cell
+    in(P, N), params.noise(N),                         // corrupted cell
     parse.cand($U(), A, K, Delta),                     // candidate shift
     !parse.mismatch($U(), A, K),                       // unbroken on clean cells
     compose(P, Delta, P2), clean(P2, Col).             // its image
@@ -48,6 +48,6 @@ out(P, Col, $Shift()) :-
 // --- $Diag ---
 
 out(P, Col, $Diag()) :-
-    in(P, N), c.noise(N),                              // corrupted cell
-    c.diag(DA), same_line(DA, P, Q),                   // its stripe
-    clean(Q, Col).                                     // clean stripe-mate
+    in(P, N), params.noise(N),                              // corrupted cell
+    params.diag(DA), same_line(DA, P, Q),                   // its stripe
+    clean(Q, Col).                                          // clean stripe-mate

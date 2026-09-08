@@ -1,6 +1,6 @@
 // 045e512c
 // concept: objects markers cast
-// One template shape on c.bg, with fragments of it elsewhere. Each fragment
+// One template shape on params.bg, with fragments of it elsewhere. Each fragment
 // lies inside a copy of the template one step away; the output marches copies
 // along that step, in the fragment's color, until they leave the grid.
 //
@@ -13,7 +13,7 @@
 
 .type Choice = Reach {} | Stride {} | Abut {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl bg(col: Color) bg(0).
 
@@ -24,12 +24,12 @@
     .decl gap(g: number) gap(1).
 }
 
-.init c = Consts
+.init params = Params
 
 // --- objects ---
 
 .init objs = Components8<Color>
-objs.node(Col, P) :- in(P, Col), !c.bg(Col).
+objs.node(Col, P) :- in(P, Col), !params.bg(Col).
 
 .decl object(id: Ident, col: Color, p: Position)
 object(Id, Col, P) :- objs.label(Col, P, Id).
@@ -80,7 +80,7 @@ step(Id, Delta, $Reach()) :- reach.high(Id, Delta, _).
 
 // --- Stride ---
 
-step(Id, Delta, $Stride()) :- fits(Id, Delta, K), c.stride(K).
+step(Id, Delta, $Stride()) :- fits(Id, Delta, K), params.stride(K).
 
 // --- Abut ---
 
@@ -93,7 +93,7 @@ shape_extent(N) :- sbox.extents($U(), _, N, N).
 step(Id, Delta, $Abut()) :-
     fits(Id, Delta, _),
     shape_extent(N), toward(D, N, S1),        // clear the template's extent
-    c.gap(G), toward(D, G, S2),               // then the gap
+    params.gap(G), toward(D, G, S2),          // then the gap
     compose(S1, S2, Delta).
 
 // --- output ---

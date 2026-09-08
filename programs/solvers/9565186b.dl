@@ -1,7 +1,7 @@
 // 9565186b
 // concept: objects count select
 // The dominant part of the grid keeps its cells; every other cell becomes
-// c.mark. Three claims on what dominates, tagged on out's Choice:
+// params.mark. Three hypotheses on what dominates, tagged on out's Choice:
 //
 //   $Count     — the color with the most cells.
 //   $BlobColor — the color owning the largest 4-component.
@@ -12,11 +12,11 @@
 
 .type Choice = Count {} | BlobColor {} | Blob {}
 
-.comp Consts {
+.comp Params {
     .decl mark(c: Color) mark(5).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl keep(p: Position, ch: Choice)
 
@@ -55,4 +55,4 @@ impl_choice($Count()). impl_choice($BlobColor()). impl_choice($Blob()).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- keep(P, Ch), in(P, Col).
-out(P, Col, Ch) :- in(P, _), impl_choice(Ch), !keep(P, Ch), c.mark(Col).
+out(P, Col, Ch) :- in(P, _), impl_choice(Ch), !keep(P, Ch), params.mark(Col).

@@ -1,21 +1,21 @@
 // 22168020
 // concept: lines span
-// Per line along c.fill_axis, each color's span (between its extreme marks)
+// Per line along params.fill_axis, each color's span (between its extreme marks)
 // fills with that color.
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl fill_axis(a: Axis) fill_axis(AXIS_H).   // spans run along this axis
     .decl bg(c: Color) bg(0).
 }
 
-.init c = Consts
+.init params = Params
 
 .init spans = Between<Color>
-spans.axis(Col, A) :- spans.mark(Col, _), c.fill_axis(A).
+spans.axis(Col, A) :- spans.mark(Col, _), params.fill_axis(A).
 spans.cell(Col, P) :- spans.mark(Col, _), in(P, _).
-spans.mark(Col, Q) :- in(Q, Col), !c.bg(Col).
+spans.mark(Col, Q) :- in(Q, Col), !params.bg(Col).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- spans.between(Col, P).

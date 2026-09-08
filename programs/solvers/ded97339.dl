@@ -1,10 +1,10 @@
 // ded97339
 // concept: markers span
 // Marks connect: cells between two marks on their row or column
-// fill with the mark color. Two claims of what that color is, tagged on
+// fill with the mark color. Two hypotheses of what that color is, tagged on
 // out's Choice:
 //
-//   $Ink  — marks are c.ink cells; spans fill c.ink.
+//   $Ink  — marks are params.ink cells; spans fill params.ink.
 //   $Self — marks are any non-bg cells; each color spans separately and
 //           fills with itself.
 
@@ -12,14 +12,14 @@
 
 .type Choice = Ink {} | Self {}
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
 
     // --- $Ink ---
     .decl ink(c: Color) ink(8).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl out(p: Position, col: Color, ch: Choice)
 
@@ -28,9 +28,9 @@
 .init ink_spans = Between<Unit>
 ink_spans.axis($U(), A) :- axis_elem(A).
 ink_spans.cell($U(), P) :- in(P, _).
-ink_spans.mark($U(), Q) :- in(Q, Ink), c.ink(Ink).
+ink_spans.mark($U(), Q) :- in(Q, Ink), params.ink(Ink).
 
-out(P, Ink, $Ink()) :- ink_spans.between($U(), P), c.ink(Ink).
+out(P, Ink, $Ink()) :- ink_spans.between($U(), P), params.ink(Ink).
 out(P, Col, $Ink()) :- in(P, Col), !ink_spans.between($U(), P).
 
 // --- $Self ---
@@ -38,7 +38,7 @@ out(P, Col, $Ink()) :- in(P, Col), !ink_spans.between($U(), P).
 .init self_spans = Between<Color>
 self_spans.axis(Col, A) :- self_spans.mark(Col, _), axis_elem(A).
 self_spans.cell(Col, P) :- self_spans.mark(Col, _), in(P, _).
-self_spans.mark(Col, Q) :- in(Q, Col), !c.bg(Col).
+self_spans.mark(Col, Q) :- in(Q, Col), !params.bg(Col).
 
 out(P, Col, $Self()) :- self_spans.between(Col, P).
 out(P, Col, $Self()) :- in(P, Col), !self_spans.between(_, P).

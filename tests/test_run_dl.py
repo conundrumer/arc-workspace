@@ -154,7 +154,7 @@ def test_run_names_a_shadowed_type_beside_souffle(solvers, monkeypatch, capsys):
     monkeypatch.setattr(cli, "compile_error",
                         lambda stem: "souffle exited 1:\nError: Unable to deduce type")
     monkeypatch.setattr(cli, "run_task", _explode)
-    monkeypatch.setattr(cli, "run_fit", _explode)
+    monkeypatch.setattr(cli, "run_determine", _explode)
 
     assert cli.cmd_one(STEM) == 1
     out = capsys.readouterr().out
@@ -171,7 +171,7 @@ def test_a_collision_finding_alone_does_not_hold_back_the_run(solvers, monkeypat
     monkeypatch.setattr(cli, "res_out_stem", lambda stem: True)
     monkeypatch.setattr(cli, "run_task",
                         lambda stem: ran.append(stem) or TaskResult(stem=stem))
-    monkeypatch.setattr(cli, "run_fit", lambda stem: None)
+    monkeypatch.setattr(cli, "run_determine", lambda stem: None)
 
     assert cli.cmd_one(STEM) == 0
     assert ran == [STEM]
@@ -180,7 +180,7 @@ def test_a_collision_finding_alone_does_not_hold_back_the_run(solvers, monkeypat
 def test_run_reports_a_compile_error_ahead_of_the_pairs(solvers, monkeypatch, capsys):
     monkeypatch.setattr(cli, "compile_error", lambda stem: "souffle exited 1:\nError: x")
     monkeypatch.setattr(cli, "run_task", _explode)
-    monkeypatch.setattr(cli, "run_fit", _explode)
+    monkeypatch.setattr(cli, "run_determine", _explode)
 
     assert cli.cmd_one(STEM) == 1
     assert capsys.readouterr().out.count("Error: x") == 1
@@ -193,7 +193,7 @@ def test_a_compile_error_still_carries_the_lint(solvers, monkeypatch, capsys):
         ".decl v(n: number)\nv(N) :- src(N), N != 3, ok(N).\n")
     monkeypatch.setattr(cli, "compile_error", lambda stem: "souffle exited 1:\nError: x")
     monkeypatch.setattr(cli, "run_task", _explode)
-    monkeypatch.setattr(cli, "run_fit", _explode)
+    monkeypatch.setattr(cli, "run_determine", _explode)
 
     assert cli.cmd_one(STEM) == 1
     out = capsys.readouterr().out
@@ -229,7 +229,7 @@ def test_a_run_counts_its_hints_beside_lint_ok(solvers, monkeypatch, capsys):
     (solvers / f"{STEM}.dl").write_text(HINTED)
     monkeypatch.setattr(cli, "res_out_stem", lambda stem: True)
     monkeypatch.setattr(cli, "run_task", lambda stem: TaskResult(stem=stem))
-    monkeypatch.setattr(cli, "run_fit", lambda stem: None)
+    monkeypatch.setattr(cli, "run_determine", lambda stem: None)
 
     assert cli.cmd_one(STEM, hints=True) == 0
     assert "\nlint: ok, 1 hint\n" in capsys.readouterr().out

@@ -1,16 +1,16 @@
 // a6953f00
 // concept: crop
 // Output is the 2×2 crop at a top corner; either corner is a valid output.
-// One $Crop candidate per corner in c.crop_corner.
+// One $Crop candidate per corner in params.crop_corner.
 
 #include "../lib.dl"
 
 .type Choice = Crop {d: DiagDir}
 
-.comp Consts {
-    .init helpers = ConstsHelpers
+.comp Params {
+    .init helpers = ParamsHelpers
 
-    // The crop anchors at a corner on crop_side — the task pins neither.
+    // The crop anchors at a corner on crop_side — the task fixes neither.
     .decl crop_side(d: Dir) crop_side(DIR_T).
     .decl crop_corner(d: DiagDir)
     crop_corner(C) :- crop_side(D), dir_of(C, _, D).
@@ -20,11 +20,11 @@
     frame(P) :- frame_dim(K), helpers.frame_pos([K, K], P).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl out(p: Position, col: Color, c: Choice)
 out(P_grid_out, Col, $Crop(D)) :-
     in(P_grid_in, Col),                          // input cell
-    c.frame(P_grid_out),                         // output frame position
-    c.crop_corner(D),                            // candidate corner
+    params.frame(P_grid_out),                    // output frame position
+    params.crop_corner(D),                       // candidate corner
     corner_anchor(D, P_grid_out, P_grid_in).     // corner-anchored crop

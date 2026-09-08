@@ -1,17 +1,17 @@
 // 8ee62060
 // concept: decompose d4
-// The grid divides into c.block_size blocks. Each block keeps its
+// The grid divides into params.block_size blocks. Each block keeps its
 // contents; the d4 transform applies to the block-grid coordinates.
 //
 // The blocks sit on a diagonal of the block-grid, so every d4 element that
-// moves that diagonal produces the same output; the task pins none. One
-// $Blocks candidate per element in c.block_d4.
+// moves that diagonal produces the same output; the task fixes none. One
+// $Blocks candidate per element in params.block_d4.
 
 #include "../lib.dl"
 
 .type Choice = Blocks {d: D4}
 
-.comp Consts {
+.comp Params {
     .decl block_d4(d: D4)
     block_d4(D4_TB).
     block_d4(D4_LR).
@@ -22,30 +22,30 @@
     block_size(2).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl out(p: Position, col: Color, c: Choice)
 out(P_out, Col, $Blocks(D)) :-
     in(P_in, Col),                                                // input cell
-    c.block_d4(D), c.block_size(K),                               // params
+    params.block_d4(D), params.block_size(K),                     // params
     divide_by_size_2d(P_in, K, 0, P_block_in, P_local),           // forward decompose
     apply(D, P_block_in, P_block_out),                            // d4 on block-grid
     concat_2d(P_block_out, P_local, 0, P_out).                    // recompose
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     .type BlockK = [e: Example, p_local: Position]
 
     // At each within-block offset, the input's block-grid must map onto the
     // output's.
     .init block = D4Map<BlockK, Color>
     block.src([E, P_local], P_block, Col) :-
-        ex_in(E, P_grid, Col), ex_out(E, _, _),                               // cell of a train input
-        c.block_size(K), divide_by_size_2d(P_grid, K, 0, P_block, P_local).   // decompose
+        ex_in(E, P_grid, Col), ex_out(E, _, _),                                    // cell of a train input
+        params.block_size(K), divide_by_size_2d(P_grid, K, 0, P_block, P_local).   // decompose
     block.dst([E, P_local], P_block, Col) :-
-        ex_out(E, P_grid, Col),                                               // cell of a train output
-        c.block_size(K), divide_by_size_2d(P_grid, K, 0, P_block, P_local).   // decompose
+        ex_out(E, P_grid, Col),                                                    // cell of a train output
+        params.block_size(K), divide_by_size_2d(P_grid, K, 0, P_block, P_local).   // decompose
 
     .decl block_d4(d: D4)
     block_d4(D) :- d4_elem(D), !block.mismatch(_, D).

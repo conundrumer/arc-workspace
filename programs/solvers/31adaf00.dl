@@ -6,7 +6,7 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
     .decl mark(col: Color) mark(1).
 
@@ -14,12 +14,12 @@
     .decl min_side(n: number) min_side(2).
 }
 
-.init c = Consts
+.init params = Params
 
 // --- squares of background ---
 
 .decl bg_cell(p: Position)
-bg_cell(P) :- in(P, Col), c.bg(Col).
+bg_cell(P) :- in(P, Col), params.bg(Col).
 
 // Every pair of background cells, with the box it spans.
 .type Corners = [p: Position, q: Position]
@@ -32,10 +32,10 @@ span.cell([P, Q], R) :- bg_cell(P), bg_cell(Q), ( R = P ; R = Q ).
 .decl square(b: Position, n: number)
 square(B, N) :-
     span.margin(K, B), span.extents(K, _, N, N),
-    c.min_side(M), N >= M.                        // big enough to draw
+    params.min_side(M), N >= M.                        // big enough to draw
 
 .decl spoiled(b: Position)
-spoiled(B) :- square(B, _), in(P, Col), !c.bg(Col), geq(P, B).
+spoiled(B) :- square(B, _), in(P, Col), !params.bg(Col), geq(P, B).
 
 .decl bg_square(b: Position, n: number)
 bg_square(B, N) :- square(B, N), !spoiled(B).
@@ -53,5 +53,5 @@ painted(P) :-
     in(P, _), geq(P, B).             // its cells
 
 .decl out(p: Position, col: Color)
-out(P, Col) :- painted(P), c.mark(Col).
+out(P, Col) :- painted(P), params.mark(Col).
 out(P, Col) :- in(P, Col), !painted(P).

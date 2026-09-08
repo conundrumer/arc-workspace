@@ -11,7 +11,7 @@
 
 .type Choice = Sym {} | Marker {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl bg(c: Color) bg(7).
 
@@ -27,7 +27,7 @@
     .decl transform(d: D4) transform(D4_HT).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl impl_choice(ch: Choice)
 impl_choice($Sym()). impl_choice($Marker()).
@@ -37,16 +37,16 @@ impl_choice($Sym()). impl_choice($Marker()).
 
 // --- Sym ---
 image(P, Col, $Sym()) :-
-    in(P2, Col), !c.bg(Col),         // ink cell
-    c.sym(D), apply(D, P2, P).       // its symmetric counterpart
+    in(P2, Col), !params.bg(Col),         // ink cell
+    params.sym(D), apply(D, P2, P).       // its symmetric counterpart
 
 // --- Marker ---
 // The crossing: the marker colinear with a line cell — the line is
 // interrupted only there, so edge markers align with no line cell.
 .decl center(p: Position)
 center(C) :-
-    in(C, Colm), c.marker(Colm),      // a marker
-    in(Q, Coll), c.line(Coll),        // a line cell
+    in(C, Colm), params.marker(Colm),      // a marker
+    in(Q, Coll), params.line(Coll),        // a line cell
     axis_elem(A), same_line(A, C, Q).
 
 // Input cells viewed from the crossing.
@@ -57,20 +57,20 @@ rf.cell(P, P) :- in(P, _).
 // Image = crossing + the transform's linear action on the offset.
 image(P2, Col, $Marker()) :-
     in(P, Col), rf.inner(P, Dlt),        // offset from the crossing
-    c.transform(D), apply(D, Dlt, Dlt2),
+    params.transform(D), apply(D, Dlt, Dlt2),
     center(C), compose(C, Dlt2, P2).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col_out, Ch) :-
     impl_choice(Ch), in(P, Col),
-    ( !c.bg(Col), Col_out = Col                     // non-bg — kept
-    ; c.bg(Col), image(P, Col_out, Ch)              // bg — the image paints it
-    ; c.bg(Col), !image(P, _, Ch), Col_out = Col    // bg, untouched — stays bg
+    ( !params.bg(Col), Col_out = Col                     // non-bg — kept
+    ; params.bg(Col), image(P, Col_out, Ch)              // bg — the image paints it
+    ; params.bg(Col), !image(P, _, Ch), Col_out = Col    // bg, untouched — stays bg
     ).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     .init d4m = D4Map<Example, Color>
     d4m.src(E, P, Col) :- ex_out(E, P, Col).
     d4m.dst(E, P, Col) :- ex_out(E, P, Col).

@@ -1,4 +1,4 @@
-"""Fill sweep: what a skipped slot tells the reader."""
+"""Parameter value sweep: what a skipped parameter tells the reader."""
 
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,9 +10,9 @@ from dl import sweep
 STEM = "abcd1234"
 
 
-def test_a_slot_over_the_cap_names_the_rerun(tmp_path: Path, monkeypatch):
+def test_a_param_over_the_cap_names_the_rerun(tmp_path: Path, monkeypatch):
     (tmp_path / f"{STEM}.dl").write_text(
-        ".comp Consts {\n    .decl n(k: number) n(2).\n}\n")
+        ".comp Params {\n    .decl n(k: number) n(2).\n}\n")
     monkeypatch.setattr(sweep, "SOLVERS_DIR", tmp_path)
     monkeypatch.setattr(sweep, "load_task",
                         lambda task_id: SimpleNamespace(train=[], test=[]))
@@ -21,5 +21,5 @@ def test_a_slot_over_the_cap_names_the_rerun(tmp_path: Path, monkeypatch):
 
     assert sweep.sweep_report(STEM, max_candidates=2) == [
         ("n", "skip",
-         f"5 alternative fills, cap 2; rerun with run_dl.py sweep {STEM} 5"),
+         f"5 alternative values, cap 2; rerun with run_dl.py sweep {STEM} 5"),
     ]

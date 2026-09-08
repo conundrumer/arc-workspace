@@ -4,7 +4,7 @@
 // marker cell on one of its sides. The marker fires in the direction that
 // side faces: a trail of dots runs from it across the grid at a fixed
 // spacing, and the far edge takes its color whole. Where two fired edges
-// meet, the corner takes c.corner_color. Every other cell passes through.
+// meet, the corner takes params.corner_color. Every other cell passes through.
 //
 // Cases claim how a marker's direction is read:
 //   $Open — the side of the marker that faces background.
@@ -14,7 +14,7 @@
 
 .type Choice = Open {} | Side {}
 
-.comp Consts {
+.comp Params {
     // Distance between trail dots.
     .decl spacing(w: number) spacing(2).
 
@@ -22,7 +22,7 @@
     .decl corner_color(col: Color) corner_color(0).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl impl_choice(ch: Choice)
 impl_choice($Open()). impl_choice($Side()).
@@ -76,9 +76,9 @@ ray.mark(M, M) :- mark(M, _).
 .decl paint(p: Position, col: Color, ch: Choice)
 paint(P, Col, Ch) :- fired(D, Col, Ch), in(P, _), dist(P, D, 0).   // the fired edge
 paint(P, Col, Ch) :-
-    mark(M, Col), mark_dir(M, D, Ch),      // marker and its direction
-    ray.ray(M, P, D, K, _),                // a cell of its ray
-    c.spacing(W), stride(K, W, 0, _, 0).   // one dot per spacing
+    mark(M, Col), mark_dir(M, D, Ch),           // marker and its direction
+    ray.ray(M, P, D, K, _),                     // a cell of its ray
+    params.spacing(W), stride(K, W, 0, _, 0).   // one dot per spacing
 
 .decl corner(p: Position, ch: Choice)
 corner(P, Ch) :-
@@ -89,7 +89,7 @@ corner(P, Ch) :-
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     in(P, Col_in), impl_choice(Ch),
-    ( corner(P, Ch), c.corner_color(Col)               // corner of two fired edges
-    ; !corner(P, Ch), paint(P, Col, Ch)                // fired edge or trail dot
-    ; !paint(P, _, Ch), Col = Col_in                   // untouched
+    ( corner(P, Ch), params.corner_color(Col)               // corner of two fired edges
+    ; !corner(P, Ch), paint(P, Col, Ch)                     // fired edge or trail dot
+    ; !paint(P, _, Ch), Col = Col_in                        // untouched
     ).

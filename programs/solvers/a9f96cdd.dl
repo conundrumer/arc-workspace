@@ -4,14 +4,14 @@
 // per-corner colors, clipped at the grid edge; the rest of the output is
 // bg, marker included. Cases (data-equivalent on this task):
 //
-//   $Arms  — per-corner: the neighbor toward diag paints c.arm(diag).
+//   $Arms  — per-corner: the neighbor toward diag paints params.arm(diag).
 //   $Stamp — a stored template, seated on the marker by its seat cell.
 
 #include "../lib.dl"
 
 .type Choice = Arms {} | Stamp {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl bg(c: Color) bg(0).
     .decl marker(c: Color) marker(2).
@@ -29,44 +29,44 @@
     .decl seat(p: Position) seat([1, 1, 1, 1]).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl marker_at(p: Position)
-marker_at(P) :- in(P, Col), c.marker(Col).
+marker_at(P) :- in(P, Col), params.marker(Col).
 
 .decl halo(p: Position, col: Color, ch: Choice)
 
 // --- Arms ---
 halo(P, Col, $Arms()) :-
-    marker_at(Q), c.arm(Diag, Col),      // marker, arm color
-    neighbor(Q, Diag, P), in(P, _).      // on-grid
+    marker_at(Q), params.arm(Diag, Col),      // marker, arm color
+    neighbor(Q, Diag, P), in(P, _).           // on-grid
 
 // --- Stamp ---
 halo(P, Col, $Stamp()) :-
-    marker_at(Q), c.template(Pt, Col),          // a marker, a template cell
-    c.seat(Ps), displacement(Ps, Pt, Off),      // the cell's offset from the seat
-    compose(Q, Off, P), in(P, _).               // seated on the marker, on-grid
+    marker_at(Q), params.template(Pt, Col),          // a marker, a template cell
+    params.seat(Ps), displacement(Ps, Pt, Off),      // the cell's offset from the seat
+    compose(Q, Off, P), in(P, _).                    // seated on the marker, on-grid
 
 .decl impl_choice(ch: Choice)
 impl_choice($Arms()). impl_choice($Stamp()).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- halo(P, Col, Ch).
-out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !halo(P, _, Ch), c.bg(Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !halo(P, _, Ch), params.bg(Col).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     // What the stamp writes — every output ink cell — as an offset from its
     // example's marker.
     .decl offset(off: Shift, col: Color)
     offset(Off, Col) :-
-        ex_out(E, P, Col), !c.bg(Col),
-        ex_in(E, M, Cm), c.marker(Cm), displacement(M, P, Off).
+        ex_out(E, P, Col), !params.bg(Col),
+        ex_in(E, M, Cm), params.marker(Cm), displacement(M, P, Off).
 
     .decl arm(d: DiagDir, col: Color)
     arm(Diag, Col) :- offset(Off, Col), diag_dir_elem(Diag), step_delta(Diag, Off).
 
     .decl template(p: Position, col: Color)
-    template(Pt, Col) :- offset(Off, Col), c.seat(Ps), compose(Ps, Off, Pt).
+    template(Pt, Col) :- offset(Off, Col), params.seat(Ps), compose(Ps, Off, Pt).
 }

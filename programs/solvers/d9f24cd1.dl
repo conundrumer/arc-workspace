@@ -4,7 +4,7 @@
 // block-colored cell ahead deflects the walk one cell to the dodge side.
 // Two models of the mark edge:
 //
-//   $Dir  — c.dir names it.
+//   $Dir  — params.dir names it.
 //   $Edge — the edge each mark sits on.
 //
 // The models coincide here (every mark is on the bottom edge); they
@@ -14,7 +14,7 @@
 
 .type Choice = Dir {} | Edge {}
 
-.comp Consts {
+.comp Params {
     .decl mark(c: Color) mark(2).
     .decl block(c: Color) block(5).
 
@@ -25,7 +25,7 @@
     .decl dir(d: Dir) dir(DIR_B).   // mark edge; walks flow away from it
 }
 
-.init c = Consts
+.init params = Params
 
 // The walk: starts at each mark, headed away from the mark edge; steps
 // ahead while clear; deflects one cell to the dodge side when blocked.
@@ -33,26 +33,26 @@
 
 // --- $Dir ---
 walk(P, W, $Dir()) :-
-    in(P, Col), c.mark(Col),       // mark cell
-    c.dir(D), opposite(D, W).      // away from the c.dir edge
+    in(P, Col), params.mark(Col),       // mark cell
+    params.dir(D), opposite(D, W).      // away from the params.dir edge
 
 // --- $Edge ---
 walk(P, W, $Edge()) :-
-    in(P, Col), c.mark(Col),       // mark cell
-    dir_elem(D), dist(P, D, 0),    // on some edge
-    opposite(D, W).                // away from it
+    in(P, Col), params.mark(Col),    // mark cell
+    dir_elem(D), dist(P, D, 0),      // on some edge
+    opposite(D, W).                  // away from it
 
 walk(P2, W, Ch) :-
-    walk(P, W, Ch), neighbor(P, W, Q),    // cell ahead
-    ( in(Q, Col), !c.block(Col), P2 = Q   // clear — step onto it
-    ; in(Q, Col), c.block(Col),           // holds the block color
-      c.dodge(Sn), turn(Sn, W, Dd),       // dodge direction
-      neighbor(P, Dd, P2), in(P2, _)      // sidestep instead
+    walk(P, W, Ch), neighbor(P, W, Q),         // cell ahead
+    ( in(Q, Col), !params.block(Col), P2 = Q   // clear — step onto it
+    ; in(Q, Col), params.block(Col),           // holds the block color
+      params.dodge(Sn), turn(Sn, W, Dd),       // dodge direction
+      neighbor(P, Dd, P2), in(P2, _)           // sidestep instead
     ).
 
 .decl impl_choice(ch: Choice)
 impl_choice($Dir()). impl_choice($Edge()).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, Ch) :- walk(P, _, Ch), c.mark(Col).
+out(P, Col, Ch) :- walk(P, _, Ch), params.mark(Col).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !walk(P, _, Ch).

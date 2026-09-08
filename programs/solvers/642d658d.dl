@@ -18,7 +18,7 @@
 .type Select = Mode {} | Count {}
 .type Choice = [detect: Detect, select: Select]
 
-.comp Consts {
+.comp Params {
     // --- $Center ---
     .decl center(c: Color) center(4).
 
@@ -36,7 +36,7 @@
     anchor([1, 1, 1, 1]).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl arm(p: Position, d: Dir, col: Color)
 arm(P, D, Col) :- in(P, _), dir_elem(D), neighbor(P, D, P2), in(P2, Col).
@@ -54,17 +54,17 @@ ring(P, Col) :- arm(P, _, Col), !mismatch(P, Col).
 grid_bg.item($U(), Col, P) :- in(P, Col).
 
 .decl plus(dt: Detect, p: Position, col: Color)
-plus($Center(), P, Col) :- ring(P, Col), in(P, Cc), c.center(Cc).
+plus($Center(), P, Col) :- ring(P, Col), in(P, Cc), params.center(Cc).
 plus($Halo(),   P, Col) :- ring(P, Col), !grid_bg.mode($U(), Col).
 
 // --- $Footprint ---
 // The mask's cells as offsets from its anchor.
 .decl fp_off(off: Shift)
-fp_off(Off) :- c.fp_cell(S), c.anchor(A), displacement(A, S, Off).
+fp_off(Off) :- params.fp_cell(S), params.anchor(A), displacement(A, S, Off).
 
 .decl fp_arm(p: Position, off: Shift, col: Color)
 fp_arm(P, Off, Col) :-
-    in(P, Cc), c.center(Cc),                         // candidate anchor cell
+    in(P, Cc), params.center(Cc),                    // candidate anchor cell
     fp_off(Off), compose(P, Off, P2), in(P2, Col).   // the cell at one offset
 
 .decl fp_mismatch(p: Position, col: Color)
@@ -81,13 +81,13 @@ plus_count.item(Dt, Col, P) :- plus(Dt, P, Col).
 out(ORIGIN, Col, [Dt, $Mode()]) :- plus_count.mode(Dt, Col).
 
 // --- $Count ---
-out(ORIGIN, Col, [Dt, $Count()]) :- plus_count.tally(Dt, Col, N), c.target(N).
+out(ORIGIN, Col, [Dt, $Count()]) :- plus_count.tally(Dt, Col, N), params.target(N).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     .decl center_at(e: Example, p: Position)
-    center_at(E, P) :- ex_in(E, P, Col), c.center(Col).
+    center_at(E, P) :- ex_in(E, P, Col), params.center(Col).
 
     // Every offset from a center cell to a cell of its own grid.
     .decl cand(off: Shift)

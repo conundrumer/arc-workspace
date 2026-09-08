@@ -10,10 +10,10 @@
 .type PanelAxis = [t: Position, a: Axis]
 .type Line = [a: Axis, l: Position]
 
-.comp Consts {
+.comp Params {
 }
 
-.init c = Consts
+.init params = Params
 
 // --- panels ---
 

@@ -10,7 +10,7 @@
 .type Choice = Wall {} | Solid {}
 .type StripKey = [ch: Choice, p_across: Position]
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl bg(c: Color) bg(0).
     .decl mover(c: Color) mover(3).
@@ -20,7 +20,7 @@
     .decl wall(c: Color) wall(8).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl impl_choice(ch: Choice)
 impl_choice($Wall()). impl_choice($Solid()).
@@ -29,27 +29,27 @@ impl_choice($Wall()). impl_choice($Solid()).
 // within the line as dist to the dir edge.
 .decl place(p: Position, p_across: Position, k: number)
 place(P, P_across, K) :-
-    in(P, _), c.dir(D),
+    in(P, _), params.dir(D),
     axis_of(D, A), split(P, A, _, P_across), dist(P, D, K).
 
 .decl mover(p: Position)
-mover(P) :- in(P, Col), c.mover(Col).
+mover(P) :- in(P, Col), params.mover(Col).
 
 // Movers cast along the slide axis, both ways, halting at what blocks the pack.
 .init slide = Ray<Choice>
-slide.dir(Ch, D) :- impl_choice(Ch), c.dir(D2), ( D = D2 ; opposite(D2, D) ).
+slide.dir(Ch, D) :- impl_choice(Ch), params.dir(D2), ( D = D2 ; opposite(D2, D) ).
 slide.cell(Ch, P) :- impl_choice(Ch), in(P, _).
 slide.mark(Ch, P) :- impl_choice(Ch), mover(P).
 // --- Wall ---
-slide.blocked($Wall(), P) :- in(P, Col), c.wall(Col).
+slide.blocked($Wall(), P) :- in(P, Col), params.wall(Col).
 // --- Solid ---
-slide.blocked($Solid(), P) :- in(P, Col), !c.bg(Col), !c.mover(Col).
+slide.blocked($Solid(), P) :- in(P, Col), !params.bg(Col), !params.mover(Col).
 
 // A cell some mover's cast does not reach: a blocker sits between the two.
 .decl cut_off(ch: Choice, p: Position)
 cut_off(Ch, P) :-
-    c.dir(D), slide.ray(Ch, P, D, _, Src),   // on a mover's cast
-    !slide.clear(Ch, P, D, _, Src).          // past where that cast halted
+    params.dir(D), slide.ray(Ch, P, D, _, Src),   // on a mover's cast
+    !slide.clear(Ch, P, D, _, Src).               // past where that cast halted
 
 // The landing strip: the free run ahead of the whole group, plus the
 // group itself.
@@ -57,7 +57,7 @@ cut_off(Ch, P) :-
 strip(Ch, P_across, P) :-
     impl_choice(Ch), place(P, P_across, _),         // a cell, keyed by its line
     ( mover(P)                                      // the group itself
-    ; c.dir(D), slide.ray(Ch, P, D, _, _),          // at or ahead of a mover
+    ; params.dir(D), slide.ray(Ch, P, D, _, _),     // at or ahead of a mover
       opposite(D, O), !slide.ray(Ch, P, O, _, _),   // ahead of every mover
       !cut_off(Ch, P)                               // clear from every one of them
     ).
@@ -77,6 +77,6 @@ moved(Ch, P2) :-
     place(P2, P_across, K2).                     // its position
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, Ch) :- c.mover(Col), moved(Ch, P).
-out(P, Col, Ch) :- c.bg(Col), impl_choice(Ch), mover(P), !moved(Ch, P).
+out(P, Col, Ch) :- params.mover(Col), moved(Ch, P).
+out(P, Col, Ch) :- params.bg(Col), impl_choice(Ch), mover(P), !moved(Ch, P).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !mover(P), !moved(Ch, P).

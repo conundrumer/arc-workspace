@@ -1,17 +1,17 @@
 // 87ab05b8
 // concept: decompose markers lookup select
-// Noise cells on a bg ground; one cell carries c.marker. The output erases
+// Noise cells on a bg ground; one cell carries params.marker. The output erases
 // everything and fills the 2×2 region holding the marker. The 4×4 grids leave
 // both the region rule and the fill color underdetermined; Choice = [l, f]
-// crosses the claims:
+// crosses the hypotheses:
 //
 //   l (locate the region):
-//     $Div()    — grid divided into a c.divisor arrangement; the marker's tile.
-//     $Block()  — grid tiled by c.tile_dim blocks; the marker's block.
-//     $Corner() — a c.block_dim block seated at the marker's nearest corner.
+//     $Div()    — grid divided into a params.divisor arrangement; the marker's tile.
+//     $Block()  — grid tiled by params.tile_dim blocks; the marker's block.
+//     $Corner() — a params.block_dim block seated at the marker's nearest corner.
 //   f (fill color):
 //     $Marker() — the marker's own color propagates to the fill.
-//     $Fixed()  — an independent c.fill.
+//     $Fixed()  — an independent params.fill.
 
 #include "../lib.dl"
 
@@ -19,7 +19,7 @@
 .type Fill   = Marker {} | Fixed {}
 .type Choice = [l: Locate, f: Fill]
 
-.comp Consts {
+.comp Params {
     .decl marker(c: Color) marker(2).
     .decl bg(c: Color) bg(6).
 
@@ -36,11 +36,11 @@
     .decl block_dim(k: number) block_dim(2).
 }
 
-.init c = Consts
+.init params = Params
 
 // The marker cell.
 .decl marker(p: Position)
-marker(P) :- in(P, Col), c.marker(Col).
+marker(P) :- in(P, Col), params.marker(Col).
 
 // --- Locate cases: the region to fill ---
 
@@ -51,23 +51,23 @@ locate_choice($Corner()).
 
 .decl region(p: Position, l: Locate)
 
-// $Div — the marker's tile in a c.divisor arrangement.
+// $Div — the marker's tile in a params.divisor arrangement.
 region(P, $Div()) :-
-    marker(P_m), c.divisor(N), divide_2d(P_m, N, 0, P_tile, _),   // marker's tile
-    in(P, _),                  divide_2d(P,   N, 0, P_tile, _).   // cell in the same tile
+    marker(P_m), params.divisor(N), divide_2d(P_m, N, 0, P_tile, _),   // marker's tile
+    in(P, _),                  divide_2d(P,   N, 0, P_tile, _).        // cell in the same tile
 
-// $Block — the marker's block in a c.tile_dim tiling.
+// $Block — the marker's block in a params.tile_dim tiling.
 region(P, $Block()) :-
-    marker(P_m), c.tile_dim(K), divide_by_size_2d(P_m, K, 0, P_tile, _),
+    marker(P_m), params.tile_dim(K), divide_by_size_2d(P_m, K, 0, P_tile, _),
     in(P, _),                   divide_by_size_2d(P,   K, 0, P_tile, _).
 
-// $Corner — the c.block_dim block at the marker's nearest corner.
+// $Corner — the params.block_dim block at the marker's nearest corner.
 .init dp = DiagPlacement<Unit>
 dp.cell($U(), P) :- marker(P).
 
 region(P, $Corner()) :-
-    in(P, _), dp.quadrant($U(), _, Diag),            // marker's corner
-    c.block_dim(N), diag_dist(P, Diag, _, K1, K2),   // within the block
+    in(P, _), dp.quadrant($U(), _, Diag),                 // marker's corner
+    params.block_dim(N), diag_dist(P, Diag, _, K1, K2),   // within the block
     K1 < N, K2 < N.
 
 // --- Fill cases: the region's color ---
@@ -77,8 +77,8 @@ fill_choice($Marker()).
 fill_choice($Fixed()).
 
 .decl fill_color(col: Color, f: Fill)
-fill_color(Col, $Marker()) :- c.marker(Col).
-fill_color(Col, $Fixed())  :- c.fill(Col).
+fill_color(Col, $Marker()) :- params.marker(Col).
+fill_color(Col, $Fixed())  :- params.fill(Col).
 
 // --- Output ---
 
@@ -86,4 +86,4 @@ fill_color(Col, $Fixed())  :- c.fill(Col).
 out(P, Col, [L, F]) :- region(P, L), fill_color(Col, F).
 out(P, Col, [L, F]) :-
     in(P, _), locate_choice(L), !region(P, L),    // cell outside the region
-    fill_choice(F), c.bg(Col).
+    fill_choice(F), params.bg(Col).

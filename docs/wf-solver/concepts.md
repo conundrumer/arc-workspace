@@ -4,11 +4,11 @@ Controlled vocabulary for solver `// concept:` lines.
 
 The concept line is a reference for agents. Sessions use their own judgment to pick and revise terms for future agents. They do not ask the user to approve term choices.
 
-A term names a model claim; the mechanism named in its gloss is one instance of that claim. If grep over the body could derive a term, that term is disqualified: primitive names, comp names, and Consts slot names are not concepts. When no term fits, the session broadens a gloss or adds a term here, and reports the change.
+A term names a model hypothesis; the mechanism named in its gloss is one instance of that hypothesis. If grep over the program could derive a term, that term is disqualified: primitive names, comp names, and parameter names are not concepts. When no term fits, the session broadens a gloss or adds a term here, and reports the change.
 
 ## Setup
 
-The structure a claim depends on: what the input is and how it decomposes.
+The structure a hypothesis depends on: what the input is and how it decomposes.
 
 - `tile-arrangement` — output arranges transformed copies of the input
 - `overlay` — panels stack on one frame
@@ -25,7 +25,7 @@ The structure a claim depends on: what the input is and how it decomposes.
 
 ## Prior
 
-The transformation claim: which prior the task teaches.
+The transformation hypothesis: which prior the task teaches.
 
 - `lookup` — stored data supplies the output: its content, or where content is read or placed
 - `d4` — a D4 transform applies to content
@@ -38,7 +38,7 @@ The transformation claim: which prior the task teaches.
 - `rank` — an order or rank determines placement or color
 - `repair` — damaged cells restore from symmetric counterparts
 - `classify` — the input maps to a class; the output renders the class
-- `induce` — the input demonstrates a rule that varies per input; the body validates it against the demonstration and applies it beyond it
+- `induce` — the input demonstrates a rule that varies per input; the program validates it against the demonstration and applies it beyond it
 - `move` — content translates, stacks, or shears within the frame
 - `pack` — pieces jointly fill a region exactly
 - `stamp` — a footprint stamps at qualifying positions

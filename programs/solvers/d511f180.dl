@@ -5,14 +5,14 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl mapping(c_from: Color, c_to: Color)
     mapping(B, A) :- mapping(A, B).   // symmetric closure
     mapping(5, 8).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl out(p: Position, col: Color)
-out(P, Col_out) :- in(P, Col_in), c.mapping(Col_in, Col_out).
-out(P, Col)     :- in(P, Col), !c.mapping(Col, _).
+out(P, Col_out) :- in(P, Col_in), params.mapping(Col_in, Col_out).
+out(P, Col)     :- in(P, Col), !params.mapping(Col, _).

@@ -1,8 +1,8 @@
 // 228f6490
 // concept: objects enclose move count
-// Walls of c.wall close off holes, and loose shapes of other colors lie around
+// Walls of params.wall close off holes, and loose shapes of other colors lie around
 // the grid. A shape whose footprint is a hole's moves into it: the hole takes
-// the shape's color, and the shape's cells go back to c.bg. Several shapes can
+// the shape's color, and the shape's cells go back to params.bg. Several shapes can
 // fit one hole, and the cases differ in which one moves:
 //
 //   $Unique — the shape whose color no other shape carries.
@@ -15,25 +15,25 @@
 // A shape: one connected run of a single color.
 .type Shape = [col: Color, id: Ident]
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
     .decl wall(col: Color) wall(5).
 }
 
-.init c = Consts
+.init params = Params
 
 // --- shared ---
 
 // The holes: the regions the walls close off from the grid edge.
 .init closed = Closed<Unit>
-closed.cell($U(), P) :- in(P, Col), !c.wall(Col).
+closed.cell($U(), P) :- in(P, Col), !params.wall(Col).
 
 .decl hole(h: Ident, p: Position)
 hole(H, P) :- closed.region($U(), P, H).
 
 // The shapes: the loose pieces. A wall is a container, not a piece.
 .init shapes = Components<Color>
-shapes.node(Col, P) :- in(P, Col), !c.bg(Col), !c.wall(Col).
+shapes.node(Col, P) :- in(P, Col), !params.bg(Col), !params.wall(Col).
 
 .decl shape(s: Shape, p: Position)
 shape([Col, Id], P) :- shapes.label(Col, P, Id).
@@ -80,5 +80,5 @@ impl_choice($Unique()). impl_choice($AllFit()).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- fill(P, Col, Ch).
-out(P, Col, Ch) :- erase(P, Ch), c.bg(Col).
+out(P, Col, Ch) :- erase(P, Ch), params.bg(Col).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !fill(P, _, Ch), !erase(P, Ch).

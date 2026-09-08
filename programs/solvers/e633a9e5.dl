@@ -3,18 +3,18 @@
 // Nonuniform scale-up: each input cell becomes a tile, and the tiles keep
 // the input's arrangement. Three models, tagged on out's Choice:
 //
-//   $Edge()  — a cell is c.fat wide along an axis where it touches a grid
+//   $Edge()  — a cell is params.fat wide along an axis where it touches a grid
 //              edge of that axis, and unit wide elsewhere.
-//   $Table() — per-line extents stored in c.ext, keyed by the line's position.
-//   $Map()   — pure data: c.map stores the cell correspondence from input
+//   $Table() — per-line extents stored in params.ext, keyed by the line's position.
+//   $Map()   — pure data: params.map stores the cell correspondence from input
 //              positions to output positions.
 
 #include "../lib.dl"
 
 .type Choice = Edge {} | Table {} | Map {}
 
-.comp Consts {
-    .init helpers = ConstsHelpers
+.comp Params {
+    .init helpers = ParamsHelpers
 
     // --- $Edge ---
     .decl fat(n: number) fat(2).
@@ -63,7 +63,7 @@
     map(P_in, P_out) :- src(P_in, Id), dst(P_out, Id).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl out(p: Position, col: Color, ch: Choice)
 
@@ -73,15 +73,15 @@
 // --- $Edge ---
 ax_pos($Edge(), P, A, Pi) :-
     in(P, _), axis_of(D, A),
-    ( dist(P, D, 0), c.fat_pos(A, Pi)                         // touches an edge of axis a
+    ( dist(P, D, 0), params.fat_pos(A, Pi)                    // touches an edge of axis a
     ; dist_pair(P, D, K, K2), K != 0, K2 != 0, Pi = ORIGIN    // off both edges of axis a
     ).
 
 // --- $Table ---
 ax_pos($Table(), P, A, Pi) :-
     in(P, _),
-    split(P, A, P_along, _),           // the cell's line
-    c.line_pos(A, P_along, Pi).        // that line's tile
+    split(P, A, P_along, _),                // the cell's line
+    params.line_pos(A, P_along, Pi).        // that line's tile
 
 // --- $Edge, $Table ---
 .decl tile(ch: Choice, p_tile: Position, p_intile: Position, col: Color)
@@ -122,11 +122,11 @@ out(P_grid, Col, Ch) :-
     compose(P_off, P_intile, P_grid).
 
 // --- $Map ---
-out(P_grid, Col, $Map()) :- in(P_in, Col), c.map(P_in, P_grid).
+out(P_grid, Col, $Map()) :- in(P_in, Col), params.map(P_in, P_grid).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     // Correspondence candidates: same color at both cells.
     .decl cand(e: Example, p_in: Position, p_out: Position)
     cand(E, P_in, P_out) :- ex_in(E, P_in, C), ex_out(E, P_out, C).

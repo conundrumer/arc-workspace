@@ -1,11 +1,11 @@
 // 662c240a
 // concept: decompose symmetry select
-// Input stacks c.tile_count square tiles along c.tile_axis; output the one
+// Input stacks params.tile_count square tiles along params.tile_axis; output the one
 // tile that lacks the symmetry the others share.
 //
 // Cases (data-equivalent on this task):
 //   $Shared — the shared symmetry is task data: output the tile not fixed
-//             by c.sym.
+//             by params.sym.
 //   $Asym   — symmetric-vs-asymmetric is the concept: output the tile
 //             fixed by no nontrivial D4 element.
 
@@ -13,7 +13,7 @@
 
 .type Choice = Shared {} | Asym {}
 
-.comp Consts {
+.comp Params {
     .decl tile_axis(a: Axis) tile_axis(AXIS_V).
     .decl tile_count(n: number) tile_count(3).
 
@@ -21,12 +21,12 @@
     .decl sym(d: D4) sym(D4_DG).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl tile_val(p_tile: Position, p_intile: Position, col: Color)
 tile_val(T, P, Col) :-
     in(P_grid, Col),
-    c.tile_axis(A), c.tile_count(N),
+    params.tile_axis(A), params.tile_count(N),
     divide_slab(P_grid, A, N, 0, T, P).
 
 .init inv = D4Map<Position, Color>
@@ -36,7 +36,7 @@ inv.dst(T, P, Col) :- tile_val(T, P, Col).
 .decl out(p: Position, col: Color, ch: Choice)
 
 // --- $Shared ---
-out(P, Col, $Shared()) :- tile_val(T, P, Col), c.sym(F), inv.mismatch(T, F).
+out(P, Col, $Shared()) :- tile_val(T, P, Col), params.sym(F), inv.mismatch(T, F).
 
 // --- $Asym ---
 out(P, Col, $Asym()) :- tile_val(T, P, Col), !inv.has_sym(T).

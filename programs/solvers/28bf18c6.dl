@@ -1,24 +1,24 @@
 // 28bf18c6
 // concept: crop tile-arrangement
-// One shape on bg. The output arranges c.copies copies of the shape's
-// bounding-box crop along c.axis.
+// One shape on bg. The output arranges params.copies copies of the shape's
+// bounding-box crop along params.axis.
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
     .decl axis(a: Axis) axis(AXIS_H).
     .decl copies(n: number) copies(2).
 }
 
-.init c = Consts
+.init params = Params
 
 .init boxframe = BoxFrame<Unit>
-boxframe.cell($U(), P) :- in(P, Col), !c.bg(Col).
+boxframe.cell($U(), P) :- in(P, Col), !params.bg(Col).
 boxframe.grid($U(), P) :- in(P, _).
 
 .init strip = AxisFrame<Unit>
-strip.extent($U(), A, N) :- c.axis(A), c.copies(N).
+strip.extent($U(), A, N) :- params.axis(A), params.copies(N).
 
 .decl out(p: Position, col: Color)
 out(P_grid, Col) :-

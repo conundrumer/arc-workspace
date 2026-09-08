@@ -1,4 +1,4 @@
-"""Candidate value domains for a Consts slot, by declared type."""
+"""Candidate value domains for a parameter, by declared type."""
 
 import re
 
@@ -69,7 +69,7 @@ def _move_domain(vals: list[tuple]) -> set[tuple]:
 def _position_domain(
     type_name: str, vals: list[tuple], nums: list[int]
 ) -> list[tuple]:
-    """Candidate values for a Position-record slot, by declared nature.
+    """Candidate values for a Position-record parameter, by declared nature.
 
     Position (frame cell) — moves: the other cells of the stored frame.
 
@@ -78,7 +78,7 @@ def _position_domain(
 
     Inset (independent edge depths) — moves (redistributions of a depth
     across an edge pair) plus per-component lines over `nums` and
-    negations with the other three pinned at stored.
+    negations with the other three fixed at stored.
     """
     line = sorted(set(nums) | {-n for n in nums})
     if type_name == "Shift":

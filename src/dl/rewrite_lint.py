@@ -9,11 +9,11 @@ A rewrite finding carries its fix. A hint — a pattern with real
 counterexamples in the corpus, worth a look rather than a rewrite — is
 behind the `hints` flag.
 
-Relation-level rules run over the scopes that hold body code, which
-`BODY_SCOPES` names. Other `.comp` interiors are proposal comps,
+Relation-level rules run over the scopes that hold program code, which
+`PROGRAM_SCOPES` names. Other `.comp` interiors are proposal comps,
 lib code on its way out of the solver, and stay out, matching `lint.py`.
 
-The public entry point is `lint_rewrites`; findings share `lint_body`'s
+The public entry point is `lint_rewrites`; findings share `lint_program`'s
 tuple shape.
 """
 
@@ -59,7 +59,7 @@ from dl.dlparse import (
 from dl.lint import _lib_source
 
 LINE_LIMIT = 100   # code only; a trailing comment does not count
-BODY_SCOPES = (TOP, "Fit", "Parse", "Consts")
+PROGRAM_SCOPES = (TOP, "Determine", "Parse", "Params")
 COMMON_SUBEXPR_MIN = 2   # literals a shared window must span
 
 # Categories of the hint tier, for callers that render the tiers apart.
@@ -231,14 +231,14 @@ class _Lint:
     def run(self, hints: bool) -> list[Finding]:
         # Relation-level rules, strongest claim first.
         self.dead_relations()
-        for key in self.body_keys():
+        for key in self.program_keys():
             if key not in self.claimed:
                 self.alias_inline(key)
-        for key in self.body_keys():
+        for key in self.program_keys():
             if key not in self.claimed:
                 self.negated_use(key)
         # Rule-level and lexical rules.
-        for idx, info in self.body_rules():
+        for idx, info in self.program_rules():
             self.choice_tag(idx, info)
             self.cross_choice(info)
             self.raw_aggregate(info)
@@ -248,16 +248,16 @@ class _Lint:
             self.long_rule(info)
         self.decl_placement()
         if hints:
-            for key in self.body_keys():
+            for key in self.program_keys():
                 if key not in self.claimed:
                     self.pass_through(key)
-            for key in self.body_keys():
+            for key in self.program_keys():
                 if key not in self.claimed:
                     self.chain_join(key)
-            for key in self.body_keys():
+            for key in self.program_keys():
                 if key not in self.claimed:
                     self.single_consumer(key)
-            for idx, info in self.body_rules():
+            for idx, info in self.program_rules():
                 self.domain_enumerator(info)
                 self.argmax(idx, info)
                 self.const_join(info)
@@ -267,18 +267,18 @@ class _Lint:
 
     # --- shared views ---
 
-    def body_keys(self) -> list[RelKey]:
+    def program_keys(self) -> list[RelKey]:
         return [
             (scope, name)
-            for scope in BODY_SCOPES
+            for scope in PROGRAM_SCOPES
             for name in self.ix.decls.get(scope, {})
         ]
 
-    def body_rules(self) -> list[tuple[int, RuleInfo]]:
+    def program_rules(self) -> list[tuple[int, RuleInfo]]:
         return [
             (i, info)
             for i, info in enumerate(self.ix.rules)
-            if info.scope in BODY_SCOPES and not info.rule.grid
+            if info.scope in PROGRAM_SCOPES and not info.rule.grid
             and not info.rule.sub
         ]
 
@@ -300,19 +300,19 @@ class _Lint:
     def recursive(self, key: RelKey) -> bool:
         return any(self.rule_head_key(u.rule) == key for u in self.uses(key))
 
-    def fitted_slots(self) -> set[str]:
-        fit = self.ix.decls.get("Fit", {})
-        consts = self.ix.decls.get("Consts", {})
-        return set(fit) & set(consts)
+    def determined_params(self) -> set[str]:
+        determine = self.ix.decls.get("Determine", {})
+        params = self.ix.decls.get("Params", {})
+        return set(determine) & set(params)
 
     def inlinable(self, key: RelKey) -> bool:
         """Whether substituting `key` away is even on the table: a derived,
         non-interface relation whose rules and uses share its scope.
         """
         scope, name = key
-        if scope == "Consts" or key == (TOP, "out"):
+        if scope == "Params" or key == (TOP, "out"):
             return False
-        if scope in ("Fit", "Consts") and name in self.fitted_slots():
+        if scope in ("Determine", "Params") and name in self.determined_params():
             return False
         decl = self.decl_of(key)
         if decl is not None and decl.choice_domain:
@@ -330,13 +330,13 @@ class _Lint:
         """Zero references anywhere, to a fixpoint: removing a dead
         relation's rules can orphan the relations those rules read."""
         exempt = {(TOP, "out")}
-        exempt |= {("Fit", n) for n in self.fitted_slots()}
-        exempt |= {("Consts", n) for n in self.fitted_slots()}
+        exempt |= {("Determine", n) for n in self.determined_params()}
+        exempt |= {("Params", n) for n in self.determined_params()}
         dead: set[RelKey] = set()
         changed = True
         while changed:
             changed = False
-            for key in self.body_keys():
+            for key in self.program_keys():
                 if key in dead or key in exempt:
                     continue
                 live_uses = [
@@ -445,7 +445,7 @@ class _Lint:
         if len(heads) != 1:
             return
         consumer = heads.pop()
-        if consumer == key or consumer[0] in (EXTERN, "Consts") \
+        if consumer == key or consumer[0] in (EXTERN, "Params") \
                 or consumer == (TOP, "out"):
             return
         for u in ext:
@@ -578,7 +578,7 @@ class _Lint:
         rule = info.rule
         if rule.body is None:
             return
-        for jdx, other in self.body_rules():
+        for jdx, other in self.program_rules():
             if jdx >= idx:
                 break
             o = other.rule
@@ -643,7 +643,7 @@ class _Lint:
                 )
 
     def raw_aggregate(self, info: RuleInfo) -> None:
-        """An aggregate in a body rule: read it through a lib comp."""
+        """An aggregate in a program rule: read it through a lib comp."""
         for body in _conjunctions(info.rule):
             for lit in body:
                 if not isinstance(lit, Cmp):
@@ -652,7 +652,7 @@ class _Lint:
                     if isinstance(side, Agg):
                         self.add(
                             "raw-aggregate", lit.line,
-                            f"`{side.op}` in the body; read it through "
+                            f"`{side.op}` in the program; read it through "
                             f"a lib comp",
                         )
 
@@ -1061,13 +1061,13 @@ class _Lint:
                      f"read it through a lib comp")
 
     def const_join(self, info: RuleInfo) -> None:
-        """Hint: a variable internal to a rule's Consts reads. The join
+        """Hint: a variable internal to a rule's Params reads. The join
         states no per-example thing — it derives a task constant, which
-        the corpus names in its own relation. Quiet inside Consts and
+        the corpus names in its own relation. Quiet inside Params and
         under a head that is itself task-constant: those are the named
         forms."""
         rule = info.rule
-        if rule.body is None or info.scope == "Consts":
+        if rule.body is None or info.scope == "Params":
             return
         head = self._target(info.scope, rule.head)
         if isinstance(head, tuple) and head in self.const_targets():
@@ -1101,7 +1101,7 @@ class _Lint:
                 if s not in rels:
                     rels.append(s)
             msg = (f"`{'`, `'.join(rels)}` join on `{', '.join(sorted(internal))}`; "
-                   f"name the derived constant in Consts")
+                   f"name the derived constant in Params")
             if msg in seen:
                 continue
             seen.add(msg)
@@ -1141,7 +1141,7 @@ class _Lint:
         return self._const_targets
 
     def _target(self, scope: str, atom: Atom) -> tuple[str, str] | str:
-        """Where an atom's derivation comes from: 'const' for Consts data
+        """Where an atom's derivation comes from: 'const' for Params data
         and grid-free lib relations, 'example' for the runner's per-example
         fills, else the (scope, name) node the taint runs through — the
         instance for qualified atoms, the declaring scope for bare ones."""
@@ -1150,27 +1150,27 @@ class _Lint:
             for s in (*self.ix.chain(scope), TOP):
                 init = self.ix.inits.get(s, {}).get(hop)
                 if init is not None:
-                    if init.comp == "Consts":
+                    if init.comp == "Params":
                         return "const"
                     return (s, hop)
             return "example"
         key = self.ix.resolve(scope, None, atom.name)
         if key[0] == EXTERN:
             return "example" if atom.name in EXAMPLE_SRC else "const"
-        if key[0] == "Consts":
+        if key[0] == "Params":
             return "const"
         return key
 
     def common_subexpr(self) -> None:
         """The same literal run, up to renaming, in two bodies of one
-        scope. A cross-scope repeat is the fit architecture re-deriving a
+        scope. A cross-scope repeat is the determination architecture re-deriving a
         solve rule over the examples — the comp boundary blocks sharing.
         A pair that spans choices — different sections, or heads bound to
         different choice tags — stays quiet: sharing across choices is
         not a simplification of either choice."""
         seen: dict[tuple[str, ...], RuleInfo] = {}
         reported: set[tuple[int, int]] = set()
-        for _, info in self.body_rules():
+        for _, info in self.program_rules():
             body = info.rule.body or []
             n = len(body)
             for width in range(n, COMMON_SUBEXPR_MIN - 1, -1):

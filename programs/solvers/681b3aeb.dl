@@ -6,23 +6,23 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
 
     // The square the shapes fill.
     .decl side(n: number) side(3).
 }
 
-.init c = Consts
+.init params = Params
 
 // --- the candidate placements ---
 
 // Each color's cells, viewed from their own box.
 .init box = BoxFrame<Color>
-box.cell(Col, P) :- in(P, Col), !c.bg(Col).
+box.cell(Col, P) :- in(P, Col), !params.bg(Col).
 
 .init frame = Frame2D<Unit>
-frame.extent($U(), A, N) :- axis_elem(A), c.side(N).
+frame.extent($U(), A, N) :- axis_elem(A), params.side(N).
 
 // A placement lands every cell of the shape in the square.
 .init occ = Occurrences<Color, Unit>

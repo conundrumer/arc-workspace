@@ -7,16 +7,16 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
     .decl wall(col: Color) wall(5).
 }
 
-.init c = Consts
+.init params = Params
 
 // The wall edge — the one edge whose whole line is wall-colored.
 .decl wall_defect(d: Dir)
-wall_defect(D) :- dir_elem(D), in(P, Col), dist(P, D, 0), !c.wall(Col).
+wall_defect(D) :- dir_elem(D), in(P, Col), dist(P, D, 0), !params.wall(Col).
 
 .decl wall_dir(d: Dir)
 wall_dir(D) :- dir_elem(D), !wall_defect(D).
@@ -24,7 +24,7 @@ wall_dir(D) :- dir_elem(D), !wall_defect(D).
 .type Bar = [col: Color, id: Ident]
 
 .init bars = Components<Color>
-bars.node(Col, P) :- in(P, Col), !c.bg(Col), !c.wall(Col).
+bars.node(Col, P) :- in(P, Col), !params.bg(Col), !params.wall(Col).
 
 .decl bar_cell(b: Bar, p: Position)
 bar_cell([Col, Id], P) :- bars.label(Col, P, Id).
@@ -35,7 +35,7 @@ bar_box.cell(B, P) :- bar_cell(B, P).
 .init shadow = Ray<Bar>
 shadow.dir(B, D) :- bar_cell(B, _), wall_dir(D).
 shadow.mark(B, P) :- bar_cell(B, P).
-shadow.cell(B, P) :- bar_cell(B, _), in(P, Col), c.bg(Col).
+shadow.cell(B, P) :- bar_cell(B, _), in(P, Col), params.bg(Col).
 
 .init paint = ArgExtremes<Position, Color>
 paint.cand(P, Col, K) :-

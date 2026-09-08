@@ -172,7 +172,7 @@ def run_turn(message):
                  ("Bash", {"command": f"uv run python scripts/run_dl.py {tid}"}),
                  ("Bash", {"command": f"uv run python scripts/run_dl.py audit {tid}"})]
         text = (f"(fake) Handoff report for `{tid}`.\n\n"
-                "1. Model claim: `divide` splits the grid; per-tile recolor by rank.\n"
+                "1. Model hypothesis: `divide` splits the grid; per-tile recolor by rank.\n"
                 "2. Discarded: global recolor — breaks train 2 (tile order flips).\n"
                 "3. Audit: clean. Judgment call: rank ties broken by position.\n\n"
                 "## Callouts\n\n"
@@ -184,7 +184,7 @@ def run_turn(message):
                  ("Bash", {"command": f"uv run python scripts/run_dl.py {tid}"})]
         text = (f"(fake) {phase}: refined `{tid}`; all pairs still pass.\n\n"
                 "1. Kept the model; renamed `header_color` for the concept.\n"
-                "2. **No fit pass needed.**\n"
+                "2. **No determination pass needed.**\n"
                 "3. Lib: `rank_of` is solver-local and worked in context; candidate for staging.\n\n"
                 "## Callouts\n\nnone")
     for name, inp in steps:

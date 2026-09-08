@@ -1,19 +1,19 @@
 // 00d62c1b
 // concept: objects enclose
 // A bg cell that cannot reach the grid edge through bg cells is repainted
-// c.fill; every other cell passes through.
+// params.fill; every other cell passes through.
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
     .decl fill(c: Color) fill(4).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl bg_cell(p: Position)
-bg_cell(P) :- in(P, Col), c.bg(Col).
+bg_cell(P) :- in(P, Col), params.bg(Col).
 
 .init outside = Reach<Unit>
 outside.node($U(), P) :- bg_cell(P).
@@ -23,5 +23,5 @@ outside.seed($U(), P) :- bg_cell(P), dir_elem(D), dist(P, D, 0).   // on an edge
 enclosed(P) :- bg_cell(P), !outside.reach($U(), P).
 
 .decl out(p: Position, col: Color)
-out(P, Col) :- enclosed(P), c.fill(Col).
+out(P, Col) :- enclosed(P), params.fill(Col).
 out(P, Col) :- in(P, Col), !enclosed(P).

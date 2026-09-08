@@ -6,9 +6,9 @@
 
 #include "../lib.dl"
 
-.comp Consts {}
+.comp Params {}
 
-.init c = Consts
+.init params = Params
 
 // Boundary toward d at distance k: some cell on the line at k differs
 // from its neighbor one step toward d.

@@ -16,9 +16,9 @@
 
 .type Choice = Peel {} | Sight {}
 
-.comp Consts {}
+.comp Params {}
 
-.init c = Consts
+.init params = Params
 
 .decl impl_choice(c: Choice)
 impl_choice($Peel()). impl_choice($Sight()).

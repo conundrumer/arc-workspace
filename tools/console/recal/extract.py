@@ -39,7 +39,7 @@ BRIEF_MARKS = [
     "Revision check on this turn's writes",
 ]
 
-TRIGGERS = {"fit", "cleanup", "handoff", "commit", "next", "continue", "go",
+TRIGGERS = {"determine", "fit", "cleanup", "handoff", "commit", "next", "continue", "go",
             "ok", "yes", "no", "y", "n", "done", "review", "solver", "prune",
             "revise", "ack", "edited", "compact", "stop", "wait", "thanks",
             "ship it", "lgtm", "yep", "sure", "k", "callouts", "callout",

@@ -14,26 +14,26 @@
 
 .type Choice = Count {} | Span {}
 
-.comp Consts {
+.comp Params {
     .decl sep(c: Color) sep(5).
     .decl side(d: Dir) side(DIR_T).        // edge toward the before panel
     .decl out_dim(n: number) out_dim(2).   // output extent, both axes
 }
 
-.init c = Consts
+.init params = Params
 
-// The panels the separator cuts, stacked along c.side's axis.
+// The panels the separator cuts, stacked along params.side's axis.
 .init panels = DividerFrame<Unit>
 panels.cell($U(), P) :- in(P, _).
 panels.divider($U(), A, L) :-
-    in(P, Col), c.sep(Col),                  // separator cell
-    c.side(D), axis_of(D, A), split(P, A, L, _).  // its line on the stacking axis
+    in(P, Col), params.sep(Col),                  // separator cell
+    params.side(D), axis_of(D, A), split(P, A, L, _).  // its line on the stacking axis
 
 // The panel a cell sits in, named by the stacking-axis edge it faces.
 .decl side_of(p: Position, s: Dir)
 side_of(P, S) :-
-    c.side(D), axis_of(D, A), axis_of(S, A),   // stacking-axis edges
-    panels.part_idx($U(), P, S, 0).            // no separator in between
+    params.side(D), axis_of(D, A), axis_of(S, A),   // stacking-axis edges
+    panels.part_idx($U(), P, S, 0).                 // no separator in between
 
 // A bar's length per measure: the count of its members.
 .decl measure_member(col: Color, ch: Choice, s: Dir, m: Position)
@@ -44,7 +44,7 @@ measure_member(Col, $Count(), S, P) :- in(P, Col), side_of(P, S).
 // --- $Span ---
 // A cell's slice across the stacking axis.
 .decl slice_of(p: Position, r: Position)
-slice_of(P, R) :- in(P, _), c.side(D), axis_of(D, A), split(P, A, R, _).
+slice_of(P, R) :- in(P, _), params.side(D), axis_of(D, A), split(P, A, R, _).
 
 // Slices holding the color in the panel.
 .decl ink_slice(col: Color, s: Dir, r: Position)
@@ -52,7 +52,7 @@ ink_slice(Col, S, R) :- in(P, Col), side_of(P, S), slice_of(P, R).
 
 .type SKey = [col: Color, s: Dir]
 .init spans = Between<SKey>
-spans.axis([Col, S], A) :- ink_slice(Col, S, _), c.side(D), axis_of(D, A).
+spans.axis([Col, S], A) :- ink_slice(Col, S, _), params.side(D), axis_of(D, A).
 spans.cell([Col, S], R) :- ink_slice(Col, S, _), slice_of(_, R).
 spans.mark([Col, S], R) :- ink_slice(Col, S, R).
 
@@ -63,15 +63,15 @@ measure_member(Col, $Span(), S, R) :- spans.between([Col, S], R).
 .type CKey = [col: Color, ch: Choice]
 .init growth = Excess<CKey, Position>
 
-growth.plus([Col, Ch], M) :- measure_member(Col, Ch, S, M), c.side(D), opposite(D, S).
-growth.minus([Col, Ch], M) :- measure_member(Col, Ch, D, M), c.side(D).
+growth.plus([Col, Ch], M) :- measure_member(Col, Ch, S, M), params.side(D), opposite(D, S).
+growth.minus([Col, Ch], M) :- measure_member(Col, Ch, D, M), params.side(D).
 
 // The winner: the color that grows the most.
 .init winner = ArgExtremes<Choice, Color>
 winner.cand(Ch, Col, N) :- growth.excess([Col, Ch], N).
 
 .init frame = Frame2D<Unit>
-frame.extent($U(), A, N) :- axis_elem(A), c.out_dim(N).
+frame.extent($U(), A, N) :- axis_elem(A), params.out_dim(N).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- frame.cell($U(), P), winner.high(Ch, Col, _).

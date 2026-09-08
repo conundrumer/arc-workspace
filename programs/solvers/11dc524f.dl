@@ -1,30 +1,30 @@
 // 11dc524f
 // concept: objects move d4
-// A shape of c.shape_color faces a block of c.mirror_color. The block's
+// A shape of params.shape_color faces a block of params.mirror_color. The block's
 // facing edge is a mirror: the shape slides up against that edge, and its
-// reflection appears on the far side in c.mirror_color. The grid is
-// otherwise c.bg.
+// reflection appears on the far side in params.mirror_color. The grid is
+// otherwise params.bg.
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(7).
     .decl shape_color(col: Color) shape_color(2).
     .decl mirror_color(col: Color) mirror_color(5).
 }
 
-.init c = Consts
+.init params = Params
 
 // Each object viewed from its own bounding box.
 .init box = BoxFrame<Color>
-box.cell(Col, P) :- in(P, Col), !c.bg(Col).
+box.cell(Col, P) :- in(P, Col), !params.bg(Col).
 box.grid(Col, P) :- box.cell(Col, _), in(P, _).
 
 // Line of sight: the direction from the shape to the block.
 .init sight = Ray<Unit>
 sight.dir($U(), D) :- dir_elem(D).
-sight.mark($U(), P) :- in(P, Col), c.shape_color(Col).
-sight.cell($U(), P) :- in(P, Col), c.mirror_color(Col).
+sight.mark($U(), P) :- in(P, Col), params.shape_color(Col).
+sight.cell($U(), P) :- in(P, Col), params.mirror_color(Col).
 
 .decl move_dir(d: Dir)
 move_dir(D) :- dir_elem(D), sight.ray($U(), _, D, _, _).
@@ -33,7 +33,7 @@ move_dir(D) :- dir_elem(D), sight.ray($U(), _, D, _, _).
 // block's box, one step back into the gap.
 .decl stopper(p: Position)
 stopper(P2) :-
-    c.mirror_color(Col), box.inside(Col, P),          // a block-box cell
+    params.mirror_color(Col), box.inside(Col, P),     // a block-box cell
     move_dir(D), opposite(D, O), neighbor(P, O, P2).  // one step back
 
 // Displacements toward the block the frame admits.
@@ -45,8 +45,8 @@ shift(Delta) :-
 
 .decl halted(delta: Shift)
 halted(Delta) :-
-    shift(Delta), c.shape_color(Col), box.inside(Col, P),  // a shape-box cell
-    compose(P, Delta, P2), stopper(P2).                    // lands on a stopper
+    shift(Delta), params.shape_color(Col), box.inside(Col, P),  // a shape-box cell
+    compose(P, Delta, P2), stopper(P2).                         // lands on a stopper
 
 // The slide advances one step at a time until flush.
 .decl reach(delta: Shift)
@@ -58,8 +58,8 @@ reach(Delta2) :-
 // The shape's box, docked.
 .decl home(p: Position)
 home(P_home) :-
-    c.shape_color(Col), box.margin(Col, P_box),   // the shape's box
-    reach(Delta), halted(Delta),                  // at rest
+    params.shape_color(Col), box.margin(Col, P_box),   // the shape's box
+    reach(Delta), halted(Delta),                       // at rest
     compose(P_box, Delta, P_home).
 
 // The reflection's box: one shape-length on from home, so the two boxes
@@ -67,20 +67,20 @@ home(P_home) :-
 .decl mirror(p: Position)
 mirror(P_mirror) :-
     move_dir(D), axis_of(D, A),
-    c.shape_color(Col), box.extent(Col, A, N),  // the shape's length along the slide
+    params.shape_color(Col), box.extent(Col, A, N),  // the shape's length along the slide
     home(P_home), jump(P_home, D, N, P_mirror).
 
 .decl paint(p: Position, col: Color)
 paint(P_grid_out, Col_out) :-
-    c.shape_color(Col),
+    params.shape_color(Col),
     box.cell(Col, P_cell), box.inner(Col, P_cell, P_intile),           // a shape cell in its box
     ( home(P_home), compose(P_home, P_intile, P_grid_out),
       Col_out = Col                                                    // the shape, docked
     ; move_dir(D), axis_of(D, A), flip_of(A, F), apply(F, P_intile, P_flip),
       mirror(P_mirror), compose(P_mirror, P_flip, P_grid_out),
-      c.mirror_color(Col_out)                                          // its reflection
+      params.mirror_color(Col_out)                                          // its reflection
     ).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- paint(P, Col).
-out(P, Col) :- in(P, _), !paint(P, _), c.bg(Col).
+out(P, Col) :- in(P, _), !paint(P, _), params.bg(Col).

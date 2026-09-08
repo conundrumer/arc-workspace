@@ -6,13 +6,13 @@
 //
 // Cases (data-equivalent on this task — every marked row has 1 west of 8):
 //   $Set()   — the marker pair brackets a segment regardless of side
-//   $Sided() — each marker has a fixed end: c.side's color sits at its dir
+//   $Sided() — each marker has a fixed end: params.side's color sits at its dir
 
 #include "../lib.dl"
 
 .type Choice = Set {} | Sided {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl axis(a: Axis)
     axis(AXIS_H).            // marked lines run along this axis
@@ -25,38 +25,38 @@
     side(DIR_L, 1). side(DIR_R, 8).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl seg(p: Position, ch: Choice)
 
 // --- Set ---
 .init set_spans = Between<Unit>
-set_spans.axis($U(), A) :- c.axis(A).
-set_spans.cell($U(), P) :- in(P, Col), !c.marker(Col).
-set_spans.mark($U(), P) :- in(P, Col), c.marker(Col).
+set_spans.axis($U(), A) :- params.axis(A).
+set_spans.cell($U(), P) :- in(P, Col), !params.marker(Col).
+set_spans.mark($U(), P) :- in(P, Col), params.marker(Col).
 
 seg(P, $Set()) :- set_spans.between($U(), P).
 
 // --- Sided ---
 .init sided_rays = Ray<Color>
-sided_rays.dir(Cm, D)   :- c.marker(Cm), c.axis(A), axis_of(D, A).
-sided_rays.cell(Cm, P)  :- c.marker(Cm), in(P, Col), !c.marker(Col).
-sided_rays.mark(Col, P) :- in(P, Col), c.marker(Col).
+sided_rays.dir(Cm, D)   :- params.marker(Cm), params.axis(A), axis_of(D, A).
+sided_rays.cell(Cm, P)  :- params.marker(Cm), in(P, Col), !params.marker(Col).
+sided_rays.mark(Col, P) :- in(P, Col), params.marker(Col).
 
 // The marks on their own ends. A ray toward d means its mark lies away
 // from d, so each end's color casts toward the opposite end.
 seg(P, $Sided()) :-
-    c.side(D, C1), opposite(D, O), c.side(O, C2),         // the ends' colors
+    params.side(D, C1), opposite(D, O), params.side(O, C2),         // the ends' colors
     sided_rays.ray(C1, P, O, _, _), sided_rays.ray(C2, P, D, _, _).   // each mark at its end
 
 // Segment cells split into their row and their position along it.
 .decl seg_split(p_along: Position, row: Position, col: Color, ch: Choice)
 seg_split(P_along, Row, Col, Ch) :-
-    seg(P, Ch), in(P, Col), c.axis(A), split(P, A, P_along, Row).
+    seg(P, Ch), in(P, Col), params.axis(A), split(P, A, P_along, Row).
 
 // Out placement: contributing rows take their order positions.
 .init rows = OrderFrame<Choice, Position>
-rows.axis(Ch, A2)         :- seg_split(_, _, _, Ch), c.axis(A), perp(A, A2).
+rows.axis(Ch, A2)         :- seg_split(_, _, _, Ch), params.axis(A), perp(A, A2).
 rows.member(Ch, Row, Row) :- seg_split(_, Row, _, Ch).
 
 // Each segment shifts flush: its cells re-expressed from its own bounding
@@ -73,17 +73,17 @@ out(P_out, Col, Ch) :-
     seg_split(P_along, Row, Col, Ch),         // its color
     compose(P_v, P_h, P_out).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     .decl mark(e: Example, row: Position, p: Position, col: Color)
     mark(E, Row, P, Col) :-
-        ex_in(E, P, Col), c.marker(Col),
-        c.axis(A), split(P, A, _, Row).
+        ex_in(E, P, Col), params.marker(Col),
+        params.axis(A), split(P, A, _, Row).
 
     // Of a row's marker pair, each end's color is the one nearer it.
     .decl side(d: Dir, c: Color)
     side(D, C) :-
         mark(E, Row, P, C), mark(E, Row, Q, C2), C != C2,
-        c.axis(A), axis_of(D, A), nearer(D, P, Q).
+        params.axis(A), axis_of(D, A), nearer(D, P, Q).
 }

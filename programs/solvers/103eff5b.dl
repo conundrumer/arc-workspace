@@ -15,7 +15,7 @@
 
 .type Choice = Recolor {} | Stamp {}
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color)  bg(0).
 
     .decl shape_col(col: Color)  shape_col(8).
@@ -24,12 +24,12 @@
     .decl turn_to_shape(d: D4)  turn_to_shape(D4_CW).
 }
 
-.init c = Consts
+.init params = Params
 
 // --- the key, viewed in its own box ---
 
 .decl key_cell(k: Unit, p: Position, col: Color)
-key_cell($U(), P, Col) :- in(P, Col), !c.bg(Col), !c.shape_col(Col).
+key_cell($U(), P, Col) :- in(P, Col), !params.bg(Col), !params.shape_col(Col).
 
 .init key_box = BoxFrame<Unit>
 key_box.cell(K, P) :- key_cell(K, P, _).
@@ -37,13 +37,13 @@ key_box.cell(K, P) :- key_cell(K, P, _).
 // The key turned into the shape's block arrangement.
 .decl tile_col(p_tile: Position, col: Color)
 tile_col(P_tile, Col) :-
-    key_cell(K, P, Col), key_box.inner(K, P, P_tile_key),  // key cell in the key's box
-    c.turn_to_shape(D), apply(D, P_tile_key, P_tile).      // turned onto the shape
+    key_cell(K, P, Col), key_box.inner(K, P, P_tile_key),   // key cell in the key's box
+    params.turn_to_shape(D), apply(D, P_tile_key, P_tile).  // turned onto the shape
 
 // --- the shape, viewed in its own box ---
 
 .decl shape_cell(k: Unit, p: Position)
-shape_cell($U(), P) :- in(P, Col), c.shape_col(Col).
+shape_cell($U(), P) :- in(P, Col), params.shape_col(Col).
 
 .init shape_box = BoxFrame<Unit>
 shape_box.cell(K, P) :- shape_cell(K, P).
@@ -62,14 +62,14 @@ blocks.gap(0).
 out(P_grid, Col, $Recolor()) :-
     shape_cell(K, P_grid), shape_box.inner(K, P_grid, P_box),  // shape cell in the box
     blocks.tile(K, P_box, P_tile, _), tile_col(P_tile, Col).   // its block's key color
-out(P, Col, $Recolor()) :- in(P, Col), !c.shape_col(Col).
+out(P, Col, $Recolor()) :- in(P, Col), !params.shape_col(Col).
 
 // --- Stamp ---
 
 out(P_grid, Col, $Stamp()) :-
     shape_box.inner($U(), P_grid, P_box),  // box cell
     blocks.tile($U(), P_box, P_tile, _),   // its block
-    ( tile_col(P_tile, Col)              // block the key fills
-    ; !tile_col(P_tile, _), c.bg(Col)    // blank block
+    ( tile_col(P_tile, Col)                   // block the key fills
+    ; !tile_col(P_tile, _), params.bg(Col)    // blank block
     ).
 out(P, Col, $Stamp()) :- in(P, Col), !shape_box.inner($U(), P, _).

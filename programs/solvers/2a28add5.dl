@@ -2,34 +2,34 @@
 // concept: lines markers move
 // Each line holding a marker cell packs its ink against the marker: the
 // marker stays put, each side's ink slides inward, order kept, and
-// packed cells draw in c.fill. Everything else clears to bg.
+// packed cells draw in params.fill. Everything else clears to bg.
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(7).
     .decl marker(c: Color) marker(6).
     .decl fill(c: Color) fill(8).
     .decl axis(a: Axis) axis(AXIS_H).
 }
 
-.init c = Consts
+.init params = Params
 
 // Line-keyed marker and ink cells; across names the line.
 .decl marker_at(p_across: Position, m: Position)
 marker_at(Across, M) :-
-    in(M, Col), c.marker(Col),
-    c.axis(A), split(M, A, _, Across).
+    in(M, Col), params.marker(Col),
+    params.axis(A), split(M, A, _, Across).
 
 .decl ink_at(p_across: Position, p: Position)
 ink_at(Across, P) :-
-    in(P, Col), !c.bg(Col),
-    c.axis(A), split(P, A, _, Across).
+    in(P, Col), !params.bg(Col),
+    params.axis(A), split(P, A, _, Across).
 
 // The marker's sight along its line: the ink it reaches each way on the
 // packing axis, at its step count from the marker.
 .init sight = Ray<Position>
-sight.dir(Across, D) :- marker_at(Across, _), c.axis(A), axis_of(D, A).
+sight.dir(Across, D) :- marker_at(Across, _), params.axis(A), axis_of(D, A).
 sight.cell(Across, P) :- ink_at(Across, P).
 sight.mark(Across, M) :- marker_at(Across, M).
 
@@ -45,5 +45,5 @@ seq.idx_set([Across, D], K) :- sight.ray(Across, _, D, K, _).
 packed(P) :- seq.rank([Across, D], _, R), marker_at(Across, M), jump(M, D, R, P).
 
 .decl out(p: Position, col: Color)
-out(P, Col) :- packed(P), c.fill(Col).
-out(P, Col) :- in(P, _), !packed(P), c.bg(Col).
+out(P, Col) :- packed(P), params.fill(Col).
+out(P, Col) :- in(P, _), !packed(P), params.bg(Col).

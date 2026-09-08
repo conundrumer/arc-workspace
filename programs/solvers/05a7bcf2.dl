@@ -1,10 +1,10 @@
 // 05a7bcf2
 // concept: lines cast move
-// Two full lines cross the grid: a bare wall line of c.wall, and a line of
-// c.push carrying a ragged profile on its wall-facing side. Shapes of c.shape
+// Two full lines cross the grid: a bare wall line of params.wall, and a line of
+// params.push carrying a ragged profile on its wall-facing side. Shapes of params.shape
 // sit on the wall's other side. Every line running across the walls that holds
-// a shape cell is rebuilt: the shape's cells take c.mark, c.shape casts from
-// there to the wall, and c.wall fills on to the far edge, with the push
+// a shape cell is rebuilt: the shape's cells take params.mark, params.shape casts from
+// there to the wall, and params.wall fills on to the far edge, with the push
 // structure resting against that edge. Two models of how it gets there:
 //
 //   $Slide — it moves as one body.
@@ -14,14 +14,14 @@
 
 .type Choice = Slide {} | Pack {}
 
-.comp Consts {
+.comp Params {
     .decl wall(col: Color) wall(8).
     .decl push(col: Color) push(2).
     .decl shape(col: Color) shape(4).
     .decl mark(col: Color) mark(3).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl impl_choice(ch: Choice)
 impl_choice($Slide()). impl_choice($Pack()).
@@ -29,13 +29,13 @@ impl_choice($Slide()). impl_choice($Pack()).
 // --- shared ---
 
 .decl wall_cell(p: Position)
-wall_cell(P) :- in(P, Col), c.wall(Col).
+wall_cell(P) :- in(P, Col), params.wall(Col).
 
 .decl push_cell(p: Position)
-push_cell(P) :- in(P, Col), c.push(Col).
+push_cell(P) :- in(P, Col), params.push(Col).
 
 .decl shape_cell(p: Position)
-shape_cell(P) :- in(P, Col), c.shape(Col).
+shape_cell(P) :- in(P, Col), params.shape(Col).
 
 // From the wall toward the push structure, and on to the far edge.
 .init wall_cast = Ray<Unit>
@@ -98,10 +98,10 @@ placed(P2, $Pack()) :- fall.rank(P_line, K, R), place(P2, P_line, R).
 
 .decl out(p: Position, col: Color, c: Choice)
 out(P, Col, Ch) :- in(P, Col), short(P), impl_choice(Ch).
-out(P, Col, Ch) :- shape_cell(P), c.mark(Col), impl_choice(Ch).
-out(P, Col, Ch) :- gap(P), c.shape(Col), impl_choice(Ch).
+out(P, Col, Ch) :- shape_cell(P), params.mark(Col), impl_choice(Ch).
+out(P, Col, Ch) :- gap(P), params.shape(Col), impl_choice(Ch).
 out(P, Col, Ch) :-
-    impl_choice(Ch), through(P),      // a cell the shape sweeps
-    ( placed(P, Ch), c.push(Col)      // the shape lands here
-    ; !placed(P, Ch), c.wall(Col)     // vacated — the wall shows
+    impl_choice(Ch), through(P),           // a cell the shape sweeps
+    ( placed(P, Ch), params.push(Col)      // the shape lands here
+    ; !placed(P, Ch), params.wall(Col)     // vacated — the wall shows
     ).

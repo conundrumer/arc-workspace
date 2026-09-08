@@ -1,13 +1,13 @@
 // f5b8619d
 // concept: tile-arrangement lines markers
-// One marker color over bg. Bg cells on a marker's c.axis line repaint
-// c.shade; markers pass through. Output is the repainted grid arranged
-// per c.tile.
+// One marker color over bg. Bg cells on a marker's params.axis line repaint
+// params.shade; markers pass through. Output is the repainted grid arranged
+// per params.tile.
 
 #include "../lib.dl"
 
-.comp Consts {
-    .init helpers = ConstsHelpers
+.comp Params {
+    .init helpers = ParamsHelpers
 
     .decl bg(c: Color) bg(0).
     .decl shade(c: Color) shade(8).
@@ -19,21 +19,21 @@
     tile(P) :- tile_dim(K), helpers.frame_pos([K, K], P).
 }
 
-.init c = Consts
+.init params = Params
 
 // Bg cell on a marker's line.
 .decl marked(p: Position)
 marked(P) :-
-    in(P, Col), c.bg(Col),        // bg cell
-    in(Q, M), !c.bg(M),           // a marker
-    c.axis(A), same_line(A, P, Q).
+    in(P, Col), params.bg(Col),        // bg cell
+    in(Q, M), !params.bg(M),           // a marker
+    params.axis(A), same_line(A, P, Q).
 
 .decl repainted(p: Position, col: Color)
-repainted(P, C)   :- marked(P), c.shade(C).
+repainted(P, C)   :- marked(P), params.shade(C).
 repainted(P, Col) :- in(P, Col), !marked(P).
 
 .decl out(p: Position, col: Color)
 out(P_grid_out, Col) :-
     repainted(P_in, Col),                      // repainted-input cell
-    c.tile(P_tile),                            // tile-frame pos
+    params.tile(P_tile),                       // tile-frame pos
     concat_2d(P_tile, P_in, 0, P_grid_out).    // recompose

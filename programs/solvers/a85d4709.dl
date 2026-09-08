@@ -1,12 +1,12 @@
 // a85d4709
 // concept: lines markers lookup
-// Each slice along c.axis is recolored by its content. Two models of the
+// Each slice along params.axis is recolored by its content. Two models of the
 // recolor:
 //
 //   $Lookup         — set-keyed slice template; the matching entry's
-//                     c.mapping_out recolors the slice (by set-equality)
-//   $MarkerPosition — the c.marker cell's within-slice position keys
-//                     c.position_color
+//                     params.mapping_out recolors the slice (by set-equality)
+//   $MarkerPosition — the params.marker cell's within-slice position keys
+//                     params.position_color
 
 #include "../lib.dl"
 
@@ -14,7 +14,7 @@
 
 .type SliceMember = [p: Position, col: Color]
 
-.comp Consts {
+.comp Params {
     .decl axis(a: Axis) axis(AXIS_H).
 
     // --- $Lookup ---
@@ -37,14 +37,14 @@
     GRID_1x3(position_color, 2, 4, 3)
 }
 
-.init c = Consts
+.init params = Params
 
 .init slice_match = KeyedSetCompare<Position, Ident, SliceMember>
-slice_match.pattern_member(Id, [P_inner, C]) :- c.mapping_member(Id, P_inner, C).
+slice_match.pattern_member(Id, [P_inner, C]) :- params.mapping_member(Id, P_inner, C).
 slice_match.observed_member(P_across, [P_inner, C]) :- slice_cell(P_across, P_inner, C).
 
 .decl cell_split(p: Position, p_inner: Position, p_across: Position) inline
-cell_split(P, P_inner, P_across) :- in(P, _), c.axis(A), split(P, A, P_inner, P_across).
+cell_split(P, P_inner, P_across) :- in(P, _), params.axis(A), split(P, A, P_inner, P_across).
 
 .decl out(p: Position, col: Color, c: Choice)
 
@@ -55,25 +55,25 @@ slice_cell(P_across, P_inner, Col) :- in(P, Col), cell_split(P, P_inner, P_acros
 
 out(P, Out_C, $Lookup()) :-
     cell_split(P, _, P_across),
-    c.mapping_out(Id, Out_C),                                    // entry's recolor
+    params.mapping_out(Id, Out_C),                               // entry's recolor
     slice_match.equals(P_across, Id).                            // slice content == entry's template
 
 // --- $MarkerPosition ---
 
 out(P, Out_C, $MarkerPosition()) :-
     cell_split(P, _, P_across),
-    in(P_mark, MC), c.marker(MC),
+    in(P_mark, MC), params.marker(MC),
     cell_split(P_mark, P_inner_mark, P_across),
-    c.position_color(P_inner_mark, Out_C).
+    params.position_color(P_inner_mark, Out_C).
 
-// --- fit ---
+// --- determination ---
 
 .type SliceKey = [e: Example, p_across: Position]
 
-.comp Fit {
+.comp Determine {
     .decl fslice(s: SliceKey, p_inner: Position, col: Color)
     fslice([E, P_across], P_inner, Col) :-
-        ex_in(E, P, Col), c.axis(A), split(P, A, P_inner, P_across).
+        ex_in(E, P, Col), params.axis(A), split(P, A, P_inner, P_across).
 
     // Slices with equal content share an entry.
     .init same = KeyedSetCompare<SliceKey, SliceKey, SliceMember>
@@ -89,11 +89,11 @@ out(P, Out_C, $MarkerPosition()) :-
     .decl mapping_out(id: Ident, c_out: Color)
     mapping_out(Id, C_out) :-
         entry.id([E, P_across], Id),
-        ex_out(E, P, C_out), c.axis(A), split(P, A, _, P_across).
+        ex_out(E, P, C_out), params.axis(A), split(P, A, _, P_across).
 
     // The marker's within-slice position keys the slice's output color.
     .decl position_color(p: Position, col: Color)
     position_color(P_inner, C_out) :-
-        fslice([E, P_across], P_inner, MC), c.marker(MC),
-        ex_out(E, P, C_out), c.axis(A), split(P, A, _, P_across).
+        fslice([E, P_across], P_inner, MC), params.marker(MC),
+        ex_out(E, P, C_out), params.axis(A), split(P, A, _, P_across).
 }

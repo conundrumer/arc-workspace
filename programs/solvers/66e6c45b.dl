@@ -1,6 +1,6 @@
 // 66e6c45b
 // concept: lookup move
-// A 2×2 color block on bg explodes to the grid corners. Claims of the
+// A 2×2 color block on bg explodes to the grid corners. Hypotheses of the
 // motion, tagged on out's Choice:
 //
 //   $Quad    — each cell relocates to the corner of its grid quadrant.
@@ -12,7 +12,7 @@
 
 .type Choice = Quad {} | Stretch {} | Explode {} | Table {}
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
 
     // --- Table ---
@@ -34,10 +34,10 @@
     map(P_in, P_out) :- in_label(P_in, Id), out_label(P_out, Id).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl shape(p: Position, col: Color)
-shape(P, Col) :- in(P, Col), !c.bg(Col).
+shape(P, Col) :- in(P, Col), !params.bg(Col).
 
 .init gdp = DiagPlacement<Unit>
 gdp.cell($U(), P) :- in(P, _).
@@ -69,22 +69,22 @@ target(P_out, Col, $Explode()) :-
 
 // --- Table ---
 
-target(P_out, Col, $Table()) :- in(P_in, Col), c.map(P_in, P_out).
+target(P_out, Col, $Table()) :- in(P_in, Col), params.map(P_in, P_out).
 
 .decl impl_choice(ch: Choice)
 impl_choice($Quad()). impl_choice($Stretch()). impl_choice($Explode()). impl_choice($Table()).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- target(P, Col, Ch).
-out(P, Bg, Ch)  :- impl_choice(Ch), in(P, _), c.bg(Bg), !target(P, _, Ch).
+out(P, Bg, Ch)  :- impl_choice(Ch), in(P, _), params.bg(Bg), !target(P, _, Ch).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     // Ink correspondence candidates: same color in and out.
     .decl cand(e: Example, p_in: Position, p_out: Position)
     cand(E, P_in, P_out) :-
-        ex_in(E, P_in, C), !c.bg(C), ex_out(E, P_out, C).
+        ex_in(E, P_in, C), !params.bg(C), ex_out(E, P_out, C).
 
     // A within-example color coincidence breaks in some other example.
     .decl broken(p_in: Position, p_out: Position)

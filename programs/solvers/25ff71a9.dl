@@ -1,16 +1,16 @@
 // 25ff71a9
 // concept: walk move
-// Grid content moves by c.shift_k toward c.shift_dir. The edge behavior is
+// Grid content moves by params.shift_k toward params.shift_dir. The edge behavior is
 // underdetermined — the departing rows are bg in every pair:
 //
-//   $Shift() — translate; the vacated rows fill with c.bg
+//   $Shift() — translate; the vacated rows fill with params.bg
 //   $Cycle() — rows rotate as a cycle; the shift edge wraps to the far edge
 
 #include "../lib.dl"
 
 .type Choice = Shift {} | Cycle {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl shift_dir(d: Dir) shift_dir(DIR_B).
     .decl shift_k(k: number) shift_k(1).
@@ -19,7 +19,7 @@
     .decl bg(c: Color) bg(0).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl out(p: Position, col: Color, ch: Choice)
 
@@ -29,11 +29,11 @@
 .decl shift_image(p_out: Position, col: Color)
 shift_image(P_out, Col) :-
     in(P_in, Col),
-    c.shift_dir(D), c.shift_k(K), jump(P_in, D, K, P_out),
+    params.shift_dir(D), params.shift_k(K), jump(P_in, D, K, P_out),
     in(P_out, _).                                        // landed in the frame
 
 out(P, Col, $Shift()) :- shift_image(P, Col).
-out(P, Col, $Shift()) :- in(P, _), !shift_image(P, _), c.bg(Col).
+out(P, Col, $Shift()) :- in(P, _), !shift_image(P, _), params.bg(Col).
 
 // --- Cycle ---
 
@@ -41,24 +41,24 @@ out(P, Col, $Shift()) :- in(P, _), !shift_image(P, _), c.bg(Col).
 // node of the cycle. Ascending index runs toward shift_dir, so the wrap
 // (max -> 0) is the shift edge wrapping back to the far edge.
 .decl row_idx(k: number)
-row_idx(K) :- in(P, _), c.shift_dir(SD), opposite(SD, FE), dist(P, FE, K).
+row_idx(K) :- in(P, _), params.shift_dir(SD), opposite(SD, FE), dist(P, FE, K).
 
 .init row_cycle = IndexCycle<Unit>
 row_cycle.idx($U(), K) :- row_idx(K).
 
 .init rot = CycleWalk<Unit, number>
 rot.succ($U(), K, K2) :- row_cycle.succ($U(), K, K2).
-rot.step($U(), M)     :- c.shift_k(M).
+rot.step($U(), M)     :- params.shift_k(M).
 
 // Rows seated back on the shift axis by index.
 .init rows = DirFrame<Unit>
-rows.dir(FE)     :- c.shift_dir(SD), opposite(SD, FE).
+rows.dir(FE)     :- params.shift_dir(SD), opposite(SD, FE).
 rows.dist_set($U(), K) :- row_idx(K).
 
 out(P_out, Col, $Cycle()) :-
     in(P_in, Col),
-    c.shift_dir(SD), opposite(SD, FE), dist(P_in, FE, K_in),   // input row index
-    c.shift_k(M), rot.walk($U(), K_in, M, K_out),              // rotated M steps along the cycle
-    rows.pos($U(), K_out, P_row),                              // seated back on the shift axis
-    axis_of(SD, A), split(P_in, A, _, P_across),               // across passthrough
+    params.shift_dir(SD), opposite(SD, FE), dist(P_in, FE, K_in),   // input row index
+    params.shift_k(M), rot.walk($U(), K_in, M, K_out),              // rotated M steps along the cycle
+    rows.pos($U(), K_out, P_row),                                   // seated back on the shift axis
+    axis_of(SD, A), split(P_in, A, _, P_across),                    // across passthrough
     compose(P_row, P_across, P_out).

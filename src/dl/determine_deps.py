@@ -1,68 +1,72 @@
-"""Circular fits: fitted slots that derive from each other's stored fills.
+"""Circular determinations: determined parameters that derive from each
+other's stored values.
 
-A Fit relation derives a Consts slot from the examples, and the fit check
-compares the result against the stored fill. The comparison is worth something
-only when the derivation does not consume what it is being compared to.
+A determination relation derives a Params parameter from the examples, and the
+determination check compares the result against the stored value. The
+comparison is worth something only when the derivation does not consume what it
+is being compared to.
 
-Reading another fitted slot's stored fill is allowed. That slot carries its own
-Fit relation, which the same check verifies, so the value read is one the check
-has confirmed — provided the chain of such reads bottoms out. It bottoms out
-exactly when the reads form no cycle.
+Reading another determined parameter's stored value is allowed. That parameter
+carries its own determination relation, which the same check verifies, so the
+value read is one the check has confirmed — provided the chain of such reads
+bottoms out. It bottoms out exactly when the reads form no cycle.
 
-So the property is acyclicity, over a graph whose nodes are the fitted slots
-and whose edges run from a slot to each fitted slot whose stored fill its
-derivation reaches. A slot reading its own fill is the one-node case: the check
-compares the fill against itself. A two-node cycle passes both checks together
-for any jointly consistent pair of fills, and longer cycles the same way.
+So the property is acyclicity, over a graph whose nodes are the determined
+parameters and whose edges run from a parameter to each determined parameter
+whose stored value its derivation reaches. A parameter reading its own value is
+the one-node case: the check compares the value against itself. A two-node cycle
+passes both checks together for any jointly consistent pair of values, and
+longer cycles the same way.
 """
 
 import re
 
 from dl.dlparse import Index, parse
-from dl.source import fit_slots
+from dl.source import determined_params
 
-CONSTS_INIT_RE = re.compile(r"\.init\s+(\w+)\s*=\s*Consts\b")
+PARAMS_INIT_RE = re.compile(r"\.init\s+(\w+)\s*=\s*Params\b")
 
-# Pseudo-comps: the Consts instance's fills, and names from lib or outside
+# Pseudo-comps: the Params instance's values, and names from lib or outside
 # every comp. Both sort outside the file's comp names, which are identifiers.
-CONSTS = "\0consts"
+PARAMS = "\0params"
 OUTER = "\0outer"
 
 type Node = tuple[str, str]
 type Graph = dict[Node, set[tuple[Node, int]]]
 
-# One step of a cycle: the slot, and where its derivation reads the next
-# slot's stored fill.
+# One step of a cycle: the parameter, and where its derivation reads the next
+# parameter's stored value.
 type Step = tuple[str, str, int]
 
 
-def slot_reads(source: str) -> dict[str, dict[str, tuple[str, int]]]:
-    """Slot -> fitted slot whose stored fill it reads -> (comp, line of the read)."""
-    fitted = fit_slots(source)
-    m = CONSTS_INIT_RE.search(source)
-    if not fitted or not m:
+def param_reads(source: str) -> dict[str, dict[str, tuple[str, int]]]:
+    """Parameter -> determined parameter whose stored value it reads ->
+    (comp, line of the read)."""
+    determined = determined_params(source)
+    m = PARAMS_INIT_RE.search(source)
+    if not determined or not m:
         return {}
     graph = _graph(source, m.group(1))
     reads = {}
-    for slot in sorted(fitted):
+    for param in sorted(determined):
         hits = {
             other: hit
-            for other in sorted(fitted)
-            if (hit := _first_reach(graph, ("Fit", slot), (CONSTS, other)))
+            for other in sorted(determined)
+            if (hit := _first_reach(graph, ("Determine", param), (PARAMS, other)))
         }
         if hits:
-            reads[slot] = hits
+            reads[param] = hits
     return reads
 
 
-def fit_cycles(source: str) -> list[list[Step]]:
-    """Cycles in the fitted slots' reads of each other's stored fills.
+def determine_cycles(source: str) -> list[list[Step]]:
+    """Cycles in the determined parameters' reads of each other's stored values.
 
-    Each cycle is a list of steps, the last reading the first step's slot.
-    Cycles that share a slot report once: one is enough to act on, and the
+    Each cycle is a list of steps, the last reading the first step's parameter.
+    Cycles that share a parameter report once: one is enough to act on, and the
     rest of the group follows from the same edges.
     """
-    reads = slot_reads(source)
+    reads = param_reads(source)
     cycles, covered = [], set()
     for start in sorted(reads):
         if start in covered:
@@ -72,8 +76,8 @@ def fit_cycles(source: str) -> list[list[Step]]:
             continue
         covered.update(path)
         cycles.append([
-            (slot, *reads[slot][path[(i + 1) % len(path)]])
-            for i, slot in enumerate(path)
+            (param, *reads[param][path[(i + 1) % len(path)]])
+            for i, param in enumerate(path)
         ])
     return cycles
 
@@ -81,7 +85,7 @@ def fit_cycles(source: str) -> list[list[Step]]:
 def _find_cycle(
     reads: dict[str, dict[str, tuple[str, int]]], start: str
 ) -> list[str] | None:
-    """A path of slots leading from `start` back to `start`; None if none does."""
+    """A path of parameters leading from `start` back to `start`; None if none does."""
     def walk(path: list[str]) -> list[str] | None:
         for nxt in sorted(reads.get(path[-1], ())):
             if nxt == start:
@@ -94,15 +98,15 @@ def _find_cycle(
 
 
 def _graph(source: str, cname: str) -> Graph:
-    """Rule dependencies over the comps Fit reaches, head -> {(body, line)}.
+    """Rule dependencies over the comps Determine reaches, head -> {(body, line)}.
 
     A local comp resolves precisely: its instance's atoms become nodes of the
     comp itself, so the instantiator's rules and the comp's own rules join up.
     A lib comp is opaque, so all of one instance's atoms collapse to a single
     node — every output of the instance then depends on every input to it.
 
-    Rules outside a comp stay out: a Fit relation derives from `ex_in` / `ex_out`
-    and the comps Fit instantiates, not from the body.
+    Rules outside a comp stay out: a determination relation derives from `ex_in`
+    / `ex_out` and the comps Determine instantiates, not from the program.
     """
     ix = Index(parse(source))
     local = set(ix.program.comps())
@@ -116,7 +120,7 @@ def _graph(source: str, cname: str) -> Graph:
 
     graph: Graph = {}
     seen: set[str] = set()
-    work = ["Fit"] if "Fit" in local else []
+    work = ["Determine"] if "Determine" in local else []
     while work:
         comp = work.pop()
         if comp in seen:
@@ -157,7 +161,7 @@ def _node(
     if qual is None:
         return (comp, name) if name in decls[comp] else (OUTER, name)
     if qual == cname:
-        return (CONSTS, name)
+        return (PARAMS, name)
     target = insts[comp].get(qual)
     if target in local:
         return (target, name)
@@ -181,9 +185,10 @@ def _first_reach(graph: Graph, start: Node, target: Node) -> tuple[str, int] | N
 
 def render_cycles(cycles: list[list[Step]]) -> list[str]:
     return [
-        "circular fit: " + ", ".join(
-            f"{slot} reads c.{cycle[(i + 1) % len(cycle)][0]} ({comp} line {lineno})"
-            for i, (slot, comp, lineno) in enumerate(cycle)
+        "circular determination: " + ", ".join(
+            f"{param} reads params.{cycle[(i + 1) % len(cycle)][0]} "
+            f"({comp} line {lineno})"
+            for i, (param, comp, lineno) in enumerate(cycle)
         )
         for cycle in cycles
     ]

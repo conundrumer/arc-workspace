@@ -7,20 +7,20 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
 
     // Scattered single cells that take no part.
     .decl noise(col: Color) noise(5).
 }
 
-.init c = Consts
+.init params = Params
 
 // --- the holes ---
 
 // Background the grid's content closes off from the edge.
 .init flood = Reach<Unit>
-flood.node($U(), P) :- in(P, Col), c.bg(Col).
+flood.node($U(), P) :- in(P, Col), params.bg(Col).
 flood.seed($U(), P) :- flood.node($U(), P), dir_elem(D), dist(P, D, 0).
 
 .decl hole(p: Position)
@@ -29,7 +29,7 @@ hole(P) :- flood.node($U(), P), !flood.reach($U(), P).
 // --- the objects ---
 
 .init obj = Components<Color>
-obj.node(Col, P) :- in(P, Col), !c.bg(Col), !c.noise(Col).
+obj.node(Col, P) :- in(P, Col), !params.bg(Col), !params.noise(Col).
 
 .decl obj_cell(o: Ident, col: Color, p: Position)
 obj_cell(O, Col, P) :- obj.label(Col, P, O).
@@ -76,7 +76,7 @@ fill(P, Col) :- pruning.alive($U(), Cd, O), covers(Cd, P), obj_cell(O, Col, _).
 .decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, _),
-    ( frame_cell(P, Col)                      // the frame stays
-    ; fill(P, Col)                            // a piece fills the hole
-    ; !frame_cell(P, _), !hole(P), c.bg(Col)  // the rest clears
+    ( frame_cell(P, Col)                           // the frame stays
+    ; fill(P, Col)                                 // a piece fills the hole
+    ; !frame_cell(P, _), !hole(P), params.bg(Col)  // the rest clears
     ).

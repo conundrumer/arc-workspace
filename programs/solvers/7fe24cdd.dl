@@ -11,7 +11,7 @@
 
 .type Choice = Table {} | Spin {}
 
-.comp Consts {
+.comp Params {
     // --- Table ---
     .decl tile_d4(p: Position, d: D4)
     GRID_2x2(tile_d4,
@@ -22,20 +22,20 @@
     .decl anchor(p: Position) anchor([0, 1, 0, 1]).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl out(p: Position, col: Color, c: Choice)
 
 // --- Table ---
 out(P_grid, Col, $Table()) :-
-    in(P_in, Col),                                       // input cell
-    c.tile_d4(P_tile, D), apply(D, P_in, P_intile),      // d4 image at tile
-    concat_2d(P_tile, P_intile, 0, P_grid).              // recompose
+    in(P_in, Col),                                            // input cell
+    params.tile_d4(P_tile, D), apply(D, P_in, P_intile),      // d4 image at tile
+    concat_2d(P_tile, P_intile, 0, P_grid).                   // recompose
 
 // --- Spin ---
 out(P_grid, Col, $Spin()) :-
     in(P_in, Col),                                       // input cell
-    c.anchor(P_anchor), c4_elem(R),                      // anchor and rotation set
+    params.anchor(P_anchor), c4_elem(R),                 // anchor and rotation set
     apply(R, P_anchor, P_tile),                          // tile carried from anchor
     apply(R, P_in, P_intile),                            // content under the same rotation
     concat_2d(P_tile, P_intile, 0, P_grid).              // recompose

@@ -5,15 +5,15 @@
 // (data-equivalent on this task):
 //
 //   $Stamp — a stored template, seated on the marker by its seat cell.
-//   $Halo  — per-role: side neighbors paint c.side_col; corner neighbors
-//            paint c.corner_col ($Fixed) or the marker's own color ($Prop).
+//   $Halo  — per-role: side neighbors paint params.side_col; corner neighbors
+//            paint params.corner_col ($Fixed) or the marker's own color ($Prop).
 
 #include "../lib.dl"
 
 .type Corner = Fixed {} | Prop {}
 .type Choice = Stamp {} | Halo {corner: Corner}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl bg(c: Color) bg(0).
     .decl marker(c: Color) marker(5).
@@ -31,10 +31,10 @@
     .decl seat(p: Position) seat([1, 1, 1, 1]).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl marker_at(p: Position, col: Color)
-marker_at(P, Col) :- in(P, Col), c.marker(Col).
+marker_at(P, Col) :- in(P, Col), params.marker(Col).
 
 .decl halo(p: Position, col: Color, ch: Choice)
 
@@ -45,11 +45,11 @@ impl_corner($Fixed()). impl_corner($Prop()).
 // Side neighbors, shared by both corner cases.
 halo(P, Col, $Halo(Cr)) :-
     impl_corner(Cr),
-    marker_at(Q, _), c.side_col(Col),                // marker, side color
+    marker_at(Q, _), params.side_col(Col),           // marker, side color
     dir_elem(D), neighbor(Q, D, P), in(P, _).        // a side neighbor, on-grid
 
 halo(P, Col, $Halo($Fixed())) :-
-    marker_at(Q, _), c.corner_col(Col),              // marker, corner color
+    marker_at(Q, _), params.corner_col(Col),         // marker, corner color
     diag_dir_elem(Dg), neighbor(Q, Dg, P), in(P, _). // a corner neighbor, on-grid
 
 halo(P, Col, $Halo($Prop())) :-
@@ -58,9 +58,9 @@ halo(P, Col, $Halo($Prop())) :-
 
 // --- Stamp ---
 halo(P, Col, $Stamp()) :-
-    marker_at(Q, _), c.template(Pt, Col),       // a marker, a template cell
-    c.seat(Ps), displacement(Ps, Pt, Off),      // the cell's offset from the seat
-    compose(Q, Off, P), in(P, _).               // seated on the marker, on-grid
+    marker_at(Q, _), params.template(Pt, Col),       // a marker, a template cell
+    params.seat(Ps), displacement(Ps, Pt, Off),      // the cell's offset from the seat
+    compose(Q, Off, P), in(P, _).                    // seated on the marker, on-grid
 
 .decl impl_choice(ch: Choice)
 impl_choice($Stamp()).
@@ -68,17 +68,17 @@ impl_choice($Halo(Cr)) :- impl_corner(Cr).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- halo(P, Col, Ch).
-out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !halo(P, _, Ch), c.bg(Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !halo(P, _, Ch), params.bg(Col).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     .decl marker_at(e: Example, p: Position)
-    marker_at(E, P) :- ex_in(E, P, Col), c.marker(Col).
+    marker_at(E, P) :- ex_in(E, P, Col), params.marker(Col).
 
     // What the stamp writes: every output ink cell.
     .decl painted(e: Example, p: Position, col: Color)
-    painted(E, P, Col) :- ex_out(E, P, Col), !c.bg(Col).
+    painted(E, P, Col) :- ex_out(E, P, Col), !params.bg(Col).
 
     // A painted cell belongs to the marker in its blob; markers join as
     // nodes because the erased center leaves the ring markerless.
@@ -91,5 +91,5 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !halo(P, _, Ch), c.bg(Col).
         painted(E, P, Col),                                           // a painted cell
         blob.label(E, P, Id), blob.label(E, M, Id), marker_at(E, M),  // the marker of its blob
         displacement(M, P, Off),                                      // the cell's offset from it
-        c.seat(Ps), compose(Ps, Off, Pt).                             // seated in the template frame
+        params.seat(Ps), compose(Ps, Off, Pt).                        // seated in the template frame
 }

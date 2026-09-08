@@ -4,7 +4,7 @@
 // carries anchor cells that some set of markers repeats color for color; the
 // object moves onto that set under the D4 transform which makes every anchor
 // meet its own color, and its original cells go to bg. Choice = [a, m]
-// crosses two claims:
+// crosses two hypotheses:
 //
 //   a (which object cells are anchors):
 //     $Minority() — the cells whose color is not the object's commonest.
@@ -19,11 +19,11 @@
 .type Markers = Consumed {} | Kept {}
 .type Choice  = [a: Anchors, m: Markers]
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl anchors_choice(ch: Anchors)
 anchors_choice($Minority()). anchors_choice($Marked()).
@@ -32,7 +32,7 @@ anchors_choice($Minority()). anchors_choice($Marked()).
 markers_choice($Consumed()). markers_choice($Kept()).
 
 .decl ink(p: Position, col: Color)
-ink(P, Col) :- in(P, Col), !c.bg(Col).
+ink(P, Col) :- in(P, Col), !params.bg(Col).
 
 .init parts = Components<Unit>
 parts.node($U(), P) :- ink(P, _).
@@ -89,12 +89,12 @@ out(P, Col, [Ch, M]) :- placed(P, Col, Ch), markers_choice(M).
 
 // --- $Consumed ---
 
-out(P, Col, [Ch, $Consumed()]) :- vacant(P, Ch), c.bg(Col).
+out(P, Col, [Ch, $Consumed()]) :- vacant(P, Ch), params.bg(Col).
 
 // --- $Kept ---
 
 out(P, Col, [Ch, $Kept()]) :-
     vacant(P, Ch),
-    ( marker(P, Col)             // a marker persists
-    ; !marker(P, _), c.bg(Col)   // all else to bg
+    ( marker(P, Col)                  // a marker persists
+    ; !marker(P, _), params.bg(Col)   // all else to bg
     ).

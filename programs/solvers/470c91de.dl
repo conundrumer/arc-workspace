@@ -2,16 +2,16 @@
 // concept: objects markers move
 // Each non-background color fills a rectangle with one corner cell taken away.
 // The rectangle slides one step toward that corner and is painted whole; every
-// other cell becomes c.bg. Two models of what names the corner:
+// other cell becomes params.bg. Two models of what names the corner:
 //
-//   $Mark — a c.marker cell sits at that corner of the color's box.
+//   $Mark — a params.marker cell sits at that corner of the color's box.
 //   $Gap  — the color's own cells are its box minus exactly that corner.
 
 #include "../lib.dl"
 
 .type Choice = Mark {} | Gap {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl bg(col: Color) bg(7).
 
@@ -19,7 +19,7 @@
     .decl marker(col: Color) marker(8).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl impl_choice(ch: Choice)
 impl_choice($Mark()). impl_choice($Gap()).
@@ -27,7 +27,7 @@ impl_choice($Mark()). impl_choice($Gap()).
 // --- shared: each color's box ---
 
 .init bx = BoxFrame<Color>
-bx.cell(Col, P) :- in(P, Col), !c.bg(Col).
+bx.cell(Col, P) :- in(P, Col), !params.bg(Col).
 bx.grid(Col, P) :- bx.cell(Col, _), in(P, _).
 
 // The box cell at a corner, whether or not the color occupies it.
@@ -39,8 +39,8 @@ corner_cell(Col, D, P) :- bx.inner(Col, P, P_box), corner_dist(P_box, D, 0).
 
 // --- Mark ---
 slide(Col, D, $Mark()) :-
-    corner_cell(Col, D, P),                 // a corner of the color's box
-    in(P, M), c.marker(M), !c.marker(Col).  // holding a marker
+    corner_cell(Col, D, P),                           // a corner of the color's box
+    in(P, M), params.marker(M), !params.marker(Col).  // holding a marker
 
 // --- Gap ---
 // The bitten corner. Two bites name no single direction, so `value` drops them.
@@ -62,4 +62,4 @@ painted(Q, Col, Ch) :-
 
 .decl out(p: Position, col: Color, c: Choice)
 out(P, Col, Ch) :- painted(P, Col, Ch).
-out(P, Bg, Ch) :- in(P, _), impl_choice(Ch), !painted(P, _, Ch), c.bg(Bg).
+out(P, Bg, Ch) :- in(P, _), impl_choice(Ch), !painted(P, _, Ch), params.bg(Bg).

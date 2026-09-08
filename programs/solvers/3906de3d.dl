@@ -1,31 +1,31 @@
 // 3906de3d
 // concept: lines move
-// Gravity toward c.grav: each line's c.mover cells pack against the
+// Gravity toward params.grav: each line's params.mover cells pack against the
 // structure (non-bg, non-mover cells; the edge when the line has none),
 // order kept. Structure passes through; vacated cells bg.
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl grav(d: Dir) grav(DIR_T).
     .decl bg(c: Color) bg(0).
     .decl mover(c: Color) mover(2).
 }
 
-.init c = Consts
+.init params = Params
 
 // Cell split on the gravity axis: across names its line, k places it
 // within the line as dist to the gravity edge.
 .decl place(p: Position, p_across: Position, k: number)
 place(P, P_across, K) :-
-    in(P, _), c.grav(D),
+    in(P, _), params.grav(D),
     axis_of(D, A), split(P, A, _, P_across), dist(P, D, K).
 
 .decl mover(p_across: Position, k: number)
-mover(P_across, K) :- in(P, Col), c.mover(Col), place(P, P_across, K).
+mover(P_across, K) :- in(P, Col), params.mover(Col), place(P, P_across, K).
 
 .decl block(p_across: Position, k: number)
-block(P_across, K) :- in(P, Col), !c.bg(Col), !c.mover(Col), place(P, P_across, K).
+block(P_across, K) :- in(P, Col), !params.bg(Col), !params.mover(Col), place(P, P_across, K).
 
 // A blocker sits at k or beyond it, away from the gravity edge.
 .decl block_beyond(p_across: Position, k: number)
@@ -49,6 +49,6 @@ landed(Q) :-
     place(Q, P_across, K2).
 
 .decl out(p: Position, col: Color)
-out(P, Col) :- landed(P), c.mover(Col).
-out(P, Col) :- in(P, Col), !c.mover(Col), !landed(P).
-out(P, Bg)  :- in(P, M), c.mover(M), !landed(P), c.bg(Bg).
+out(P, Col) :- landed(P), params.mover(Col).
+out(P, Col) :- in(P, Col), !params.mover(Col), !landed(P).
+out(P, Bg)  :- in(P, M), params.mover(M), !landed(P), params.bg(Bg).

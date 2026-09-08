@@ -18,7 +18,7 @@ from dl.deletions import (
 from dl.dlparse import parse
 
 DISJ_BINDING = """\
-.comp Fit {
+.comp Determine {
     .decl run(e: number, t: number, p0: number, d: number, p: number)
     run(E, T, P0, D, P2) :-
         ( start(E, T, P0), stroke_cell(E, T, P0), dir_elem(D), P = P0  // inked start
@@ -29,12 +29,12 @@ DISJ_BINDING = """\
 """
 
 DISJ_NEGATION = """\
-.comp Fit {
+.comp Determine {
     .decl drew(e: number, t: number, d: number, k: number, p: number)
     drew(E, T, D, K, P) :-
         run_len(E, T, D, K, P),
         ( parse.next_glyph(E, T, T2),                     // the successor stroke
-          c.advance(Da), step_delta(Da, S), compose(P, S, P2),
+          params.advance(Da), step_delta(Da, S), compose(P, S, P2),
           stroke_cell(E, T2, P2)                          // can start at this end
         ; parse.last_glyph(E, T),                         // no successor
           step_delta(D, S), compose(P, S, P2),
@@ -49,22 +49,22 @@ out(P) :- cell(P), ( ink(P) ; !ink(P) ).
 """
 
 
-def kinds(source: str, fit: bool = False) -> list[str]:
+def kinds(source: str, determine: bool = False) -> list[str]:
     out: list[str] = []
-    for _, kind, _, mod in deletions(source, fit=fit):
+    for _, kind, _, mod in deletions(source, determine=determine):
         parse(mod)  # every variant stays in the dialect
         out.append(kind)
     return out
 
 
-def atoms(source: str, fit: bool = False) -> list[str]:
+def atoms(source: str, determine: bool = False) -> list[str]:
     return [
-        text for _, kind, text, _ in deletions(source, fit=fit) if kind == "atom"
+        text for _, kind, text, _ in deletions(source, determine=determine) if kind == "atom"
     ]
 
 
 def test_disjunct_with_binding():
-    assert kinds(DISJ_BINDING, fit=True) == [
+    assert kinds(DISJ_BINDING, determine=True) == [
         # `run(...)` is the whole of the second branch, so its deletion
         # has no syntactic form and is skipped. `dir_elem(D)` enumerates a
         # variable `step_delta(D, S)` carries.
@@ -74,7 +74,7 @@ def test_disjunct_with_binding():
 
 
 def test_disjunct_with_negation():
-    assert kinds(DISJ_NEGATION, fit=True) == [
+    assert kinds(DISJ_NEGATION, determine=True) == [
         "rule", "negation", *["atom"] * 9, "disjunct", "disjunct",
     ]
 
@@ -95,7 +95,7 @@ near(Id, K) :- from_mark(Id, K), K < 3, K != 0, K = max(0, K).
 
 CONSTRUCTOR = """\
 .decl edge(p: Position)
-edge(P) :- parse.border($U(), P), in(P, Col), !c.bg(Col).
+edge(P) :- parse.border($U(), P), in(P, Col), !params.bg(Col).
 """
 
 AGGREGATE = """\
@@ -129,7 +129,7 @@ ENUMERATORS = """\
 cast(Col, D) :- mark(Col, P), dir_elem(D), dist_pair(P, D, K, K2), K < K2.
 
 .decl width(d: Dir, k: number)
-width(D, K) :- dir_elem(D), c.line_width(K).
+width(D, K) :- dir_elem(D), params.line_width(K).
 
 .decl tile_line(a: Axis, p_axis: Position)
 tile_line(A, P_axis) :- axis_elem(A), !split(P_axis, A, _, _), in(P_axis, _).
@@ -207,15 +207,15 @@ class _Ex:
 def test_unexercised_cases_report_without_a_case_column():
     """The reading follows the solver's Choice type, not a column
     deletion, and the agreement check runs only where it decides."""
-    claim = (1, UNEXERCISED_CASES, "Choice")
-    assert _case_findings(CHOICE_SOLVER, [], lambda: True) == [claim]
+    hypothesis = (1, UNEXERCISED_CASES, "Choice")
+    assert _case_findings(CHOICE_SOLVER, [], lambda: True) == [hypothesis]
     assert _case_findings(CHOICE_SOLVER, [], lambda: False) == []
     assert _case_findings(PLAIN_SOLVER, [], lambda: 1 / 0) == []
     column = (9, CASE_COLUMN, "trail_cell.ch")
     assert _case_findings(CHOICE_SOLVER, [column], lambda: True) == [column]
-    lines = render_deletions("s", (23, [claim]))
+    lines = render_deletions("s", (23, [hypothesis]))
     assert lines[0] == "every deletion changes the result (23 tested)"
-    assert "the pairs do not exercise the coverage claim:" in lines
+    assert "the pairs do not exercise the coverage hypothesis:" in lines
     assert "  s.dl:1: unexercised cases `Choice`" in lines
     body = " ".join(lines)
     assert "the cases agree on every pair" in body
@@ -262,7 +262,7 @@ def test_render_case_column_is_not_dead_code():
     assert lines[0] == "1/23 deletions change nothing:"
     assert "  s.dl:53: case column `trail_cell.ch`" in lines
     body = " ".join(lines)
-    assert "coverage claim" in body
+    assert "coverage hypothesis" in body
     assert "not dead code" in body
 
 

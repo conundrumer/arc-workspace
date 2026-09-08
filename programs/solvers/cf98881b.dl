@@ -7,13 +7,13 @@
 // out's choice column = [d, b]:
 //
 //   d (decompose):
-//     $Tile() — pre-tabulated in Consts via tile_pos
-//     $Div()  — derived in body via the divide primitive
+//     $Tile() — pre-tabulated in the parameters via tile_pos
+//     $Div()  — derived in the program via the divide primitive
 //
-//   b (body, the priority claim):
-//     $Spatial() — pane order: the pane nearest c.stack_dir wins
-//     $Palette() — color order: the c.ink_rank priority ranks
-//     $Stack()   — pane order: the c.pane_rank priority ranks
+//   b (body, the priority hypothesis):
+//     $Spatial() — pane order: the pane nearest params.stack_dir wins
+//     $Palette() — color order: the params.ink_rank priority ranks
+//     $Stack()   — pane order: the params.pane_rank priority ranks
 
 #include "../lib.dl"
 
@@ -24,8 +24,8 @@
 // The overlay runs per output cell, and each decompose case has its own.
 .type Cell      = [o: Position, dc: DecChoice]
 
-.comp Consts {
-    .init helpers = ConstsHelpers
+.comp Params {
+    .init helpers = ParamsHelpers
 
     .decl frame_dim(k: number) frame_dim(4).
     .decl frame(p: Position)
@@ -68,7 +68,7 @@
         0, 1, 2)
 }
 
-.init c = Consts
+.init params = Params
 
 // --- Decompose cases ---
 
@@ -77,10 +77,10 @@ dec_choice($Tile()).
 dec_choice($Div()).
 
 .decl decompose(p: Position, p_outer: Position, p_inner: Position, dc: DecChoice)
-decompose(P_grid, P_tile, P_intile, $Tile()) :- c.tile_decompose(P_grid, P_tile, P_intile).
+decompose(P_grid, P_tile, P_intile, $Tile()) :- params.tile_decompose(P_grid, P_tile, P_intile).
 decompose(P_grid, P_tile, P_intile, $Div()) :-
-    in(P_grid, _),                                       // input position
-    c.divide_axis(A), c.divisor(N), c.divide_gap(G),     // params
+    in(P_grid, _),                                                      // input position
+    params.divide_axis(A), params.divisor(N), params.divide_gap(G),     // params
     divide_slab(P_grid, A, N, G, P_tile, P_intile).
 
 // --- Overlay ---
@@ -88,7 +88,7 @@ decompose(P_grid, P_tile, P_intile, $Div()) :-
 // Inked pane cells competing at each output cell.
 .decl cand(o: Position, p_tile: Position, col: Color, dc: DecChoice)
 cand(P_grid_out, P_tile, Col, Dc) :-
-    in(P_grid_in, Col), !c.bg(Col),
+    in(P_grid_in, Col), !params.bg(Col),
     decompose(P_grid_in, P_tile, P_grid_out, Dc).
 
 .decl body_choice(b: Body)
@@ -98,14 +98,14 @@ body_choice($Stack()).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(O, Bg, [Dc, B]) :-
-    dec_choice(Dc), body_choice(B), c.frame(O),   // choice × cell
-    c.bg(Bg), !cand(O, _, _, Dc).
+    dec_choice(Dc), body_choice(B), params.frame(O),   // choice × cell
+    params.bg(Bg), !cand(O, _, _, Dc).
 
 // --- Spatial ---
 
 // The competing pane nearest the stack edge.
 .init nearest_pane = ArgExtremes<Cell, Position>
-nearest_pane.cand([O, Dc], T, K) :- cand(O, T, _, Dc), c.stack_dir(D), dist(T, D, K).
+nearest_pane.cand([O, Dc], T, K) :- cand(O, T, _, Dc), params.stack_dir(D), dist(T, D, K).
 
 out(O, Col, [Dc, $Spatial()]) :- nearest_pane.low([O, Dc], T, _), cand(O, T, Col, Dc).
 
@@ -113,7 +113,7 @@ out(O, Col, [Dc, $Spatial()]) :- nearest_pane.low([O, Dc], T, _), cand(O, T, Col
 
 // The top-priority color competing at the cell.
 .init front_ink = ArgExtremes<Cell, Color>
-front_ink.cand([O, Dc], Col, R) :- cand(O, _, Col, Dc), c.ink_rank(Col, R).
+front_ink.cand([O, Dc], Col, R) :- cand(O, _, Col, Dc), params.ink_rank(Col, R).
 
 out(O, Col, [Dc, $Palette()]) :- front_ink.low([O, Dc], Col, _).
 
@@ -121,17 +121,17 @@ out(O, Col, [Dc, $Palette()]) :- front_ink.low([O, Dc], Col, _).
 
 // The top-priority pane competing at the cell.
 .init front_pane = ArgExtremes<Cell, Position>
-front_pane.cand([O, Dc], T, R) :- cand(O, T, _, Dc), c.pane_rank(T, R).
+front_pane.cand([O, Dc], T, R) :- cand(O, T, _, Dc), params.pane_rank(T, R).
 
 out(O, Col, [Dc, $Stack()]) :- front_pane.low([O, Dc], T, _), cand(O, T, Col, Dc).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     .decl cand(e: Example, o: Position, p_tile: Position, col: Color)
     cand(E, P_grid_out, P_tile, Col) :-
-        ex_in(E, P_grid_in, Col), !c.bg(Col),                // inked input cell
-        c.divide_axis(A), c.divisor(N), c.divide_gap(G),     // params
+        ex_in(E, P_grid_in, Col), !params.bg(Col),                          // inked input cell
+        params.divide_axis(A), params.divisor(N), params.divide_gap(G),     // params
         divide_slab(P_grid_in, A, N, G, P_tile, P_grid_out).
 
     // Every pane pair overlaps somewhere, so direct wins order the panes.

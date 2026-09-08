@@ -1,10 +1,10 @@
 // 1478ab18
 // concept: markers span rank
 // Marks sit on a plain field, two of them spanning a diagonal. The output draws
-// the right isosceles triangle on that diagonal in c.ink: the diagonal is the
+// the right isosceles triangle on that diagonal in params.ink: the diagonal is the
 // hypotenuse and the legs meet at one corner of the box it spans. Marks keep
 // their color where the triangle crosses them. The other marks say which
-// diagonal and which corner; Choice = [l, v] crosses the claims:
+// diagonal and which corner; Choice = [l, v] crosses the hypotheses:
 //
 //   l (which mark pair spans the hypotenuse):
 //     $Longest()  — the diagonal mark pair with the greatest separation.
@@ -20,15 +20,15 @@
 .type Vertex = Free {} | Pointed {} | Inside {}
 .type Choice = [l: Locate, v: Vertex]
 
-.comp Consts {
+.comp Params {
     .decl mark(col: Color) mark(5).
     .decl ink(col: Color) ink(8).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl mark(p: Position)
-mark(P) :- in(P, Col), c.mark(Col).
+mark(P) :- in(P, Col), params.mark(Col).
 
 // Marks cast along the diagonals, seeing only marks.
 .init diag = Ray<Unit>
@@ -119,5 +119,5 @@ span.mark(Ch, P) :- vertex(P, Ch).
 paint(P, Ch) :- span.between(Ch, P), !mark(P).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, Ch) :- paint(P, Ch), c.ink(Col).
+out(P, Col, Ch) :- paint(P, Ch), params.ink(Col).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(P, Ch).

@@ -26,13 +26,13 @@
 
 .type CaseFig = [ch: Choice, x: Ident]
 
-.comp Consts {
+.comp Params {
     // The blank line between neighbouring figures, which also holds a
     // collapsed curve off the frame edge.
     .decl gap(k: number) gap(1).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl impl_choice(ch: Choice)
 impl_choice($Hollow()). impl_choice($Nest()).
@@ -123,8 +123,8 @@ place.member([Ch, A], G, L) :-
 // Each group is one line of the output, gaps between.
 .decl group_line(ch: Choice, g: Ident, a: Axis, l: Position)
 group_line(Ch, G, A, L) :-
-    place.pos([Ch, A], G, P_outer),                  // its place in the order
-    c.gap(Gap), concat(P_outer, ORIGIN, A, Gap, L).  // one line per place
+    place.pos([Ch, A], G, P_outer),                       // its place in the order
+    params.gap(Gap), concat(P_outer, ORIGIN, A, Gap, L).  // one line per place
 
 // The group whose line sits on the frame's d edge.
 .decl edge_group(ch: Choice, d: Dir, g: Ident)
@@ -137,8 +137,8 @@ edge_ring(Ch, D) :- edge_group(Ch, D, G), grp.id([Ch, X, _], G), ring(X, Ch).
 .init pad = DirPack<Choice>
 pad.edge(Ch, D, K) :-
     edge_group(Ch, D, _),
-    ( edge_ring(Ch, D), K = 0        // an outline sits on the edge
-    ; !edge_ring(Ch, D), c.gap(K)    // a collapsed curve is held off it
+    ( edge_ring(Ch, D), K = 0             // an outline sits on the edge
+    ; !edge_ring(Ch, D), params.gap(K)    // a collapsed curve is held off it
     ).
 
 // The frame holds every group's line, the gaps between them, and the pad.

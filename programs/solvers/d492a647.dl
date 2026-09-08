@@ -4,9 +4,9 @@
 // seed's color paints every bg cell offset from it by an even count on both
 // axes; noise cells stay. Two models of the lattice, tagged on out's Choice:
 //
-//   $Period — the lattice jump is task data in Consts.
+//   $Period — the lattice jump is task data in the parameters.
 //   $Parity — every-other-cell alternation: two unit steps over a skipped
-//             cell, no datum.
+//             cell, no parameter.
 //
 // Coincide at period 2.
 
@@ -14,7 +14,7 @@
 
 .type Choice = Period {} | Parity {}
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
     .decl noise(c: Color) noise(5).
 
@@ -22,14 +22,14 @@
     .decl period(k: number) period(2).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl impl_choice(ch: Choice)
 impl_choice($Period()). impl_choice($Parity()).
 
 // The one cell neither bg nor noise.
 .decl seed(p: Position, col: Color)
-seed(P, Col) :- in(P, Col), !c.bg(Col), !c.noise(Col).
+seed(P, Col) :- in(P, Col), !params.bg(Col), !params.noise(Col).
 
 // The lattice the seed anchors: closure under jumps on the four cardinals.
 .decl lattice(p: Position, ch: Choice)
@@ -38,7 +38,7 @@ lattice(P, Ch) :- seed(P, _), impl_choice(Ch).
 // --- $Period ---
 lattice(Q, $Period()) :-
     lattice(P, $Period()),
-    c.period(K), dir_elem(D),         // a period jump, any cardinal
+    params.period(K), dir_elem(D),         // a period jump, any cardinal
     jump(P, D, K, Q), in(Q, _).
 
 // --- $Parity ---
@@ -48,7 +48,7 @@ lattice(Q, $Parity()) :-
     neighbor(M, D, Q), in(Q, _).
 
 .decl painted(p: Position, ch: Choice)
-painted(P, Ch) :- lattice(P, Ch), in(P, Col), c.bg(Col).
+painted(P, Ch) :- lattice(P, Ch), in(P, Col), params.bg(Col).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- painted(P, Ch), seed(_, Col).

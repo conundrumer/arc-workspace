@@ -8,14 +8,14 @@
 
 .type Choice = Cells {} | Colors {}
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl on(p: Position, col: Color)
-on(P, Col) :- in(P, Col), !c.bg(Col).
+on(P, Col) :- in(P, Col), !params.bg(Col).
 
 .init block = Frame2D<Choice>
 

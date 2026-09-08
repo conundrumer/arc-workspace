@@ -12,8 +12,8 @@
 
 .type Choice = Tile {} | Checker {}
 
-.comp Consts {
-    .init helpers = ConstsHelpers
+.comp Params {
+    .init helpers = ParamsHelpers
 
     // --- shared ---
     .decl bg(c: Color) bg(0).
@@ -41,7 +41,7 @@
     alt(B, A) :- alt(A, B).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl impl_choice(ch: Choice)
 impl_choice($Tile()). impl_choice($Checker()).
@@ -49,49 +49,49 @@ impl_choice($Tile()). impl_choice($Checker()).
 // Output decomposition: input cell as tile index × intile position.
 .decl cell(p_grid: Position, p_tile: Position, p_intile: Position)
 cell(P_grid_out, P_tile, P_intile) :-
-    in(P_tile, _), c.intile(P_intile),            // tile × intile
+    in(P_tile, _), params.intile(P_intile),       // tile × intile
     concat_2d(P_tile, P_intile, 0, P_grid_out).   // 2D recompose
 
 // Output cells over ink input cells — the scaled silhouette.
 .decl inked(p_grid: Position, p_intile: Position)
 inked(P_grid_out, P_intile) :-
     cell(P_grid_out, P_tile, P_intile),
-    in(P_tile, Ink), c.ink(Ink).
+    in(P_tile, Ink), params.ink(Ink).
 
 .decl out(p: Position, col: Color, ch: Choice)
 
 // Blank outside the silhouette — shared.
 out(P_grid_out, Bg, Ch) :-
     impl_choice(Ch), cell(P_grid_out, _, _),
-    !inked(P_grid_out, _), c.bg(Bg).
+    !inked(P_grid_out, _), params.bg(Bg).
 
 // --- Tile ---
 out(P_grid_out, Col, $Tile()) :-
-    inked(P_grid_out, P_intile), c.template(P_intile, Col).
+    inked(P_grid_out, P_intile), params.template(P_intile, Col).
 
 // --- Checker ---
 // Grid-global 2-coloring: seeded at a corner, each unit step swaps color.
 .decl checker(p: Position, col: Color)
 checker(P, Col) :-
-    cell(P, _, _),                                  // output frame cell
-    c.corner(Diag), corner_dist(P, Diag, 0),        // at the anchor corner
-    c.corner_color(Col).
+    cell(P, _, _),                                       // output frame cell
+    params.corner(Diag), corner_dist(P, Diag, 0),        // at the anchor corner
+    params.corner_color(Col).
 checker(P2, Col2) :-
-    checker(P1, Col1), c.alt(Col1, Col2),      // next color in the cycle
-    dir_elem(D), neighbor(P1, D, P2),          // any cardinal neighbor
-    cell(P2, _, _).                            // still on the output frame
+    checker(P1, Col1), params.alt(Col1, Col2),      // next color in the cycle
+    dir_elem(D), neighbor(P1, D, P2),               // any cardinal neighbor
+    cell(P2, _, _).                                 // still on the output frame
 
 out(P_grid_out, Col, $Checker()) :-
     inked(P_grid_out, _), checker(P_grid_out, Col).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     // Every ink cell's output tile.
     .decl template(p: Position, col: Color)
     template(P_intile, Col) :-
-        ex_in(E, P_tile, Ink), c.ink(Ink),            // ink input cell
-        c.intile(P_intile),
+        ex_in(E, P_tile, Ink), params.ink(Ink),            // ink input cell
+        params.intile(P_intile),
         concat_2d(P_tile, P_intile, 0, P_grid_out),   // its output tile cell
         ex_out(E, P_grid_out, Col).
 }

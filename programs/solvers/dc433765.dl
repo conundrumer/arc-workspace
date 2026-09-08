@@ -5,19 +5,19 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
     .decl mover(c: Color) mover(3).
     .decl target(c: Color) target(4).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl mover_at(p: Position)
-mover_at(P) :- in(P, Col), c.mover(Col).
+mover_at(P) :- in(P, Col), params.mover(Col).
 
 .decl target_at(p: Position)
-target_at(P) :- in(P, Col), c.target(Col).
+target_at(P) :- in(P, Col), params.target(Col).
 
 .decl axis_step(a: Axis, s: Position)
 axis_step(A, S) :-
@@ -33,6 +33,6 @@ moved(P) :-
     compose(Pm, S1, P1), compose(P1, S2, P).
 
 .decl out(p: Position, col: Color)
-out(P, Col) :- target_at(P), c.target(Col).
-out(P, Col) :- moved(P), c.mover(Col).
-out(P, Col) :- in(P, _), !target_at(P), !moved(P), c.bg(Col).
+out(P, Col) :- target_at(P), params.target(Col).
+out(P, Col) :- moved(P), params.mover(Col).
+out(P, Col) :- in(P, _), !target_at(P), !moved(P), params.bg(Col).

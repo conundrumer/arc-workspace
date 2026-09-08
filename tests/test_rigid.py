@@ -1,24 +1,24 @@
-"""RIGID blocks: parsing, macro expansion, fit compare, lint."""
+"""RIGID blocks: parsing, macro expansion, determination compare, lint."""
 
 import pytest
 
+from dl.determine import _ident_match, _rigid_match
 from dl.dlparse import Index, ParseError, parse
-from dl.fit import _ident_match, _rigid_match
-from dl.lint import lint_body
+from dl.lint import lint_program
 from dl.source import (
     _rigid_rule,
-    build_fit_source,
+    build_determine_source,
+    determined_params,
     expand_macros,
     expand_rigid_macros,
-    fit_slots,
-    public_slot,
+    public_param,
     rigid_decls,
 )
 
 SOLVER = """\
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
 
     RIGID(marker,
@@ -30,12 +30,12 @@ SOLVER = """\
     )
 }
 
-.init c = Consts
+.init params = Params
 
 .decl out(p: Position, col: Color)
-out(P, C) :- c.marker_glyph(_, P), c.bg(C).
+out(P, C) :- params.marker_glyph(_, P), params.bg(C).
 
-.comp Fit {
+.comp Determine {
     .decl marker_glyph(p: Position)
     marker_glyph(P) :- ex_in(_, P, _).
     .decl marker_aim(d: DiagDir)
@@ -46,7 +46,7 @@ out(P, C) :- c.marker_glyph(_, P), c.bg(C).
 
 def test_parse_and_placed_decls():
     ix = Index(parse(SOLVER))
-    placed = ix.decls["Consts"]
+    placed = ix.decls["Params"]
     assert "marker_glyph" in placed and "marker_aim" in placed
     assert [f.type for f in placed["marker_glyph"].fields] == ["D4", "Position"]
     assert "glyph" not in placed
@@ -92,19 +92,19 @@ def test_rigid_rule_actions():
         _rigid_rule("r", "s", ["Sense"])
 
 
-def test_fit_slots_and_build():
-    slots = fit_slots(SOLVER)
-    assert slots == {"marker_glyph": ["Position"], "marker_aim": ["DiagDir"]}
-    built = build_fit_source(SOLVER, slots)
-    assert ("fit_rigid_marker_glyph(D4, A0) :- fit.marker_glyph(B0), "
+def test_determined_params_and_build():
+    params = determined_params(SOLVER)
+    assert params == {"marker_glyph": ["Position"], "marker_aim": ["DiagDir"]}
+    built = build_determine_source(SOLVER, params)
+    assert ("determine_rigid_marker_glyph(D4, A0) :- determine.marker_glyph(B0), "
             "d4_elem(D4), apply(D4, B0, A0)." in built)
-    assert "c_rigid_marker_glyph(D4, A0) :- c.marker_glyph(D4, A0)." in built
-    assert 'fit_diff("marker_glyph")' not in built
+    assert "params_rigid_marker_glyph(D4, A0) :- params.marker_glyph(D4, A0)." in built
+    assert 'determination_diff("marker_glyph")' not in built
 
 
-def test_public_slot():
-    assert public_slot("_rigid_marker_glyph") == "marker_glyph"
-    assert public_slot("bg") == "bg"
+def test_public_param():
+    assert public_param("_rigid_marker_glyph") == "marker_glyph"
+    assert public_param("bg") == "bg"
 
 
 # Position rows here use opaque scalar stand-ins: the compare never
@@ -115,45 +115,45 @@ def rows(*pairs):
 
 
 def test_rigid_match_pose_quotient():
-    # fit chart is pose 51 of the stored assembly: orbits agree
+    # determination chart is pose 51 of the stored assembly: orbits agree
     rels = {
-        "c_rigid_m_a": rows((50, 10), (51, 11), (52, 12), (53, 13)),
-        "fit_rigid_m_a": rows((50, 11), (51, 12), (52, 13), (53, 10)),
+        "params_rigid_m_a": rows((50, 10), (51, 11), (52, 12), (53, 13)),
+        "determine_rigid_m_a": rows((50, 11), (51, 12), (52, 13), (53, 10)),
     }
     assert _rigid_match({"m_a": "m"}, rels) == []
     # a different assembly: some pose signature has no counterpart
-    rels["fit_rigid_m_a"] = rows((50, 11), (51, 12), (52, 13), (53, 99))
+    rels["determine_rigid_m_a"] = rows((50, 11), (51, 12), (52, 13), (53, 99))
     assert _rigid_match({"m_a": "m"}, rels) == ["m_a (pose)"]
 
 
 def test_rigid_match_couples_block():
     # each relation's orbit matches, but no single pose aligns both
     rels = {
-        "c_rigid_m_a": rows((50, 1), (51, 2)),
-        "c_rigid_m_b": rows((50, 8), (51, 9)),
-        "fit_rigid_m_a": rows((50, 1), (51, 2)),
-        "fit_rigid_m_b": rows((50, 9), (51, 8)),
+        "params_rigid_m_a": rows((50, 1), (51, 2)),
+        "params_rigid_m_b": rows((50, 8), (51, 9)),
+        "determine_rigid_m_a": rows((50, 1), (51, 2)),
+        "determine_rigid_m_b": rows((50, 9), (51, 8)),
     }
     assert _rigid_match({"m_a": "m", "m_b": "m"}, rels) == ["m_a+m_b (pose)"]
 
 
 def test_ident_match_rigid_orbits():
     # ids relabeled and each id's chart in a different pose: still a match
-    slots = {"p_member": ["Ident", "number"], "p_color": ["Ident", "Color"]}
+    params = {"p_member": ["Ident", "number"], "p_color": ["Ident", "Color"]}
     rels = {
-        "c_rigid_p_member": rows((50, "0\t7"), (51, "0\t8"), (50, "1\t5"), (51, "1\t6")),
-        "fit_rigid_p_member": rows((50, "3\t8"), (51, "3\t7"), (50, "4\t5"), (51, "4\t6")),
-        "c_ident_p_color": ["0\t2", "1\t4"],
-        "fit_ident_p_color": ["3\t2", "4\t4"],
+        "params_rigid_p_member": rows((50, "0\t7"), (51, "0\t8"), (50, "1\t5"), (51, "1\t6")),
+        "determine_rigid_p_member": rows((50, "3\t8"), (51, "3\t7"), (50, "4\t5"), (51, "4\t6")),
+        "params_ident_p_color": ["0\t2", "1\t4"],
+        "determine_ident_p_color": ["3\t2", "4\t4"],
     }
-    assert _ident_match(slots, rels, {"p_member"})
+    assert _ident_match(params, rels, {"p_member"})
     # color moved to the other id: signatures no longer pair up
-    rels["fit_ident_p_color"] = ["3\t4", "4\t2"]
-    assert not _ident_match(slots, rels, {"p_member"})
+    rels["determine_ident_p_color"] = ["3\t4", "4\t2"]
+    assert not _ident_match(params, rels, {"p_member"})
 
 
 def test_lint_flags_chart_reads():
-    bad = SOLVER.replace("c.marker_glyph(_, P)", "c._rigid_marker_glyph(P)")
-    cats = [f[0] for f in lint_body(bad)]
+    bad = SOLVER.replace("params.marker_glyph(_, P)", "params._rigid_marker_glyph(P)")
+    cats = [f[0] for f in lint_program(bad)]
     assert "rigid chart" in cats
-    assert "rigid chart" not in [f[0] for f in lint_body(SOLVER)]
+    assert "rigid chart" not in [f[0] for f in lint_program(SOLVER)]

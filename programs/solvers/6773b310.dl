@@ -1,11 +1,11 @@
 // 6773b310
 // concept: decompose markers count
 // Separator lines cut the grid into a 3×3 arrangement of 3×3 tiles.
-// Output is one cell per tile: c.mark where the tile holds a marker pair,
-// c.bg elsewhere. Two models:
+// Output is one cell per tile: params.mark where the tile holds a marker pair,
+// params.bg elsewhere. Two models:
 //
 //   $Pair  — two distinct marker cells exist in the tile.
-//   $Count — the marker count equals c.pair_count.
+//   $Count — the marker count equals params.pair_count.
 //
 // A count→value table is defeated: the test exhibits a zero-marker tile,
 // absent from train.
@@ -14,7 +14,7 @@
 
 .type Choice = Pair {} | Count {}
 
-.comp Consts {
+.comp Params {
     .decl marker(c: Color) marker(6).
     .decl mark(c: Color) mark(1).
     .decl bg(c: Color) bg(0).
@@ -26,19 +26,19 @@
     .decl pair_count(n: number) pair_count(2).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl tile_cell(p_tile: Position, p_intile: Position, col: Color)
 tile_cell(P_tile, P_intile, Col) :-
     in(P_grid, Col),
-    c.divisor(N), c.divide_gap(G),
+    params.divisor(N), params.divide_gap(G),
     divide_2d(P_grid, N, G, P_tile, P_intile).
 
 .decl tile(p_tile: Position)
 tile(P_tile) :- tile_cell(P_tile, _, _).
 
 .decl tile_marker(p_tile: Position, p_intile: Position)
-tile_marker(P_tile, P_intile) :- tile_cell(P_tile, P_intile, Col), c.marker(Col).
+tile_marker(P_tile, P_intile) :- tile_cell(P_tile, P_intile, Col), params.marker(Col).
 
 .decl out(p: Position, col: Color, c: Choice)
 
@@ -46,8 +46,8 @@ tile_marker(P_tile, P_intile) :- tile_cell(P_tile, P_intile, Col), c.marker(Col)
 .decl paired(p_tile: Position)
 paired(P_tile) :- tile_marker(P_tile, P1), tile_marker(P_tile, P2), P1 != P2.
 
-out(P_tile, Col, $Pair()) :- paired(P_tile), c.mark(Col).
-out(P_tile, Col, $Pair()) :- tile(P_tile), !paired(P_tile), c.bg(Col).
+out(P_tile, Col, $Pair()) :- paired(P_tile), params.mark(Col).
+out(P_tile, Col, $Pair()) :- tile(P_tile), !paired(P_tile), params.bg(Col).
 
 // --- $Count ---
 .init markers = Tally<Position, Position>
@@ -58,7 +58,7 @@ markers.domain(P_tile) :- tile(P_tile).
 marker_count(P_tile, N) :- markers.tally(P_tile, N).
 
 out(P_tile, Col, $Count()) :-
-    marker_count(P_tile, N),              // the tile's marker count
-    ( c.pair_count(N), c.mark(Col)        // count hits the pair count — marked
-    ; !c.pair_count(N), c.bg(Col)         // off it — bg
+    marker_count(P_tile, N),                        // the tile's marker count
+    ( params.pair_count(N), params.mark(Col)        // count hits the pair count — marked
+    ; !params.pair_count(N), params.bg(Col)         // off it — bg
     ).

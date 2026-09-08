@@ -1,33 +1,33 @@
 // 99fa7670
 // concept: markers cast
-// Each ink dot fills its line from itself to the c.dir edge; there the fill
-// bends with c.sense and runs along the edge through bg, occluded by the
+// Each ink dot fills its line from itself to the params.dir edge; there the fill
+// bends with params.sense and runs along the edge through bg, occluded by the
 // next dot's fill.
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
     .decl dir(d: Dir) dir(DIR_R).           // fill direction
     .decl sense(s: Sense) sense(SENSE_CW).  // bend at the edge
 }
 
-.init c = Consts
+.init params = Params
 
-// Line fill: color flows stepwise through bg toward c.dir; a dot occludes.
+// Line fill: color flows stepwise through bg toward params.dir; a dot occludes.
 .decl leg(p: Position, col: Color)
-leg(P, Col) :- in(P, Col), !c.bg(Col).
+leg(P, Col) :- in(P, Col), !params.bg(Col).
 leg(P2, Col) :-
     leg(P, Col),                            // colored cell
-    c.dir(D), neighbor(P, D, P2),
-    in(P2, Bg), c.bg(Bg).                   // still bg — a dot occludes
+    params.dir(D), neighbor(P, D, P2),
+    in(P2, Bg), params.bg(Bg).                   // still bg — a dot occludes
 
-// At the c.dir edge the fill bends and runs through bg; legs occlude.
+// At the params.dir edge the fill bends and runs through bg; legs occlude.
 .decl bend(p: Position, col: Color)
-bend(P, Col) :- leg(P, Col), c.dir(D), dist(P, D, 0).
+bend(P, Col) :- leg(P, Col), params.dir(D), dist(P, D, 0).
 bend(P2, Col) :-
-    bend(P, Col),                           // filled edge cell
-    c.dir(D), c.sense(S), turn(S, D, D2),   // bent direction
+    bend(P, Col),                                     // filled edge cell
+    params.dir(D), params.sense(S), turn(S, D, D2),   // bent direction
     neighbor(P, D2, P2),
     in(P2, _), !leg(P2, _).                 // unfilled — a leg occludes
 

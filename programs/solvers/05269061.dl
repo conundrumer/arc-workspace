@@ -1,12 +1,12 @@
 // 05269061
 // concept: wallpaper count
-// Wallpaper of diagonal stripes: color is constant along c.stripe_axis and
+// Wallpaper of diagonal stripes: color is constant along params.stripe_axis and
 // repeats every `period` stripes. The input shows a patch; the output is the
 // full grid. Colors propagate from input cells through the wallpaper's
 // symmetries — unit steps along the stripe, period-length jumps on the four
 // cardinals. Two models of the period, tagged on out's Choice:
 //
-//   $Fixed   — period is task data in Consts.
+//   $Fixed   — period is task data in the parameters.
 //   $Palette — period = palette size: stripes cycle the colors, each once.
 //
 // Coincide while the visible period equals the color count.
@@ -15,7 +15,7 @@
 
 .type Choice = Fixed {} | Palette {}
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
     .decl stripe_axis(da: DiagAxis) stripe_axis(DAXIS_AD).
 
@@ -23,7 +23,7 @@
     .decl period(k: number) period(3).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl impl_choice(ch: Choice)
 impl_choice($Fixed()). impl_choice($Palette()).
@@ -31,16 +31,16 @@ impl_choice($Fixed()). impl_choice($Palette()).
 // Unit step along the stripe: toward each corner of the stripe axis.
 .decl stripe_step(delta: Position)
 stripe_step(Delta) :-
-    c.stripe_axis(Da), diag_axis_of(Diag, Da),          // the axis's two corners
+    params.stripe_axis(Da), diag_axis_of(Diag, Da),          // the axis's two corners
     step_delta(Diag, Delta).
 
 // --- period per choice ---
 
 .init palette = Tally<Unit, Color>
-palette.item($U(), Col) :- in(_, Col), !c.bg(Col).
+palette.item($U(), Col) :- in(_, Col), !params.bg(Col).
 
 .decl period(k: number, ch: Choice)
-period(K, $Fixed())   :- c.period(K).
+period(K, $Fixed())   :- params.period(K).
 period(K, $Palette()) :- palette.tally($U(), K).
 
 .decl period_jump(delta: Position, ch: Choice)
@@ -49,7 +49,7 @@ period_jump(Delta, Ch) :- period(K, Ch), dir_elem(D), jump_delta(D, K, Delta).
 // --- closure under the wallpaper symmetries ---
 
 .decl known(p: Position, col: Color, ch: Choice)
-known(P, Col, Ch) :- in(P, Col), !c.bg(Col), impl_choice(Ch).
+known(P, Col, Ch) :- in(P, Col), !params.bg(Col), impl_choice(Ch).
 known(Q, Col, Ch) :-
     known(P, Col, Ch),
     ( stripe_step(D)        // one step along the stripe

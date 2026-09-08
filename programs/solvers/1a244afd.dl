@@ -14,7 +14,7 @@
 
 .type Pair = [pivot: Position, pointer: Position]
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(8).
 
     .decl pivot(col: Color) pivot(1).
@@ -30,7 +30,7 @@
     turn_map(DIR_B, DIR_R). turn_map(DIR_R, DIR_T).
 }
 
-.init c = Consts
+.init params = Params
 
 // --- parse ---
 
@@ -41,8 +41,8 @@
     // Each pivot looks along its row and column for pointers.
     .init sight = Ray<Key>
     sight.dir(Ky, D) :- cell(Ky, _, _), dir_elem(D).
-    sight.mark(Ky, P) :- cell(Ky, P, Col), c.pivot(Col).
-    sight.cell(Ky, P) :- cell(Ky, P, Col), c.pointer(Col).
+    sight.mark(Ky, P) :- cell(Ky, P, Col), params.pivot(Col).
+    sight.cell(Ky, P) :- cell(Ky, P, Col), params.pointer(Col).
 
     // A candidate: the pointer lies K cells toward D from the pivot.
     .decl cand(key: Key, pair: Pair, d: Dir, k: number)
@@ -67,10 +67,10 @@ parse.cell($U(), P, Col) :- in(P, Col).
 .decl mark_dir(d: Dir, d_out: Dir, ch: Choice)
 
 // --- $Turn ---
-mark_dir(D, D_out, $Turn()) :- c.sense(S), turn(S, D, D_out).
+mark_dir(D, D_out, $Turn()) :- params.sense(S), turn(S, D, D_out).
 
 // --- $Table ---
-mark_dir(D, D_out, $Table()) :- c.turn_map(D, D_out).
+mark_dir(D, D_out, $Table()) :- params.turn_map(D, D_out).
 
 // --- output ---
 
@@ -83,15 +83,15 @@ mark(P_mark, Ch) :-
 impl_choice($Turn()). impl_choice($Table()).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, Ch) :- mark(P, Ch), c.mark(Col).
+out(P, Col, Ch) :- mark(P, Ch), params.mark(Col).
 out(P, Col, Ch) :-
     in(P, Col_in), impl_choice(Ch), !mark(P, Ch),
-    ( !c.pointer(Col_in), Col = Col_in   // kept
-    ; c.pointer(Col_in), c.bg(Col) ).    // the pointer is erased
+    ( !params.pointer(Col_in), Col = Col_in       // kept
+    ; params.pointer(Col_in), params.bg(Col) ).   // the pointer is erased
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     .init parse = Parse<Example>
     parse.cell(E, P, Col) :- ex_in(E, P, Col).
 
@@ -100,5 +100,5 @@ out(P, Col, Ch) :-
     turn_map(D, D_out) :-
         parse.pair(E, [P, _], D, K), dir_elem(D_out),  // a pair pointing toward D
         jump(P, D_out, K, P_mark),                     // as far off the pivot toward D_out
-        ex_out(E, P_mark, Col), c.mark(Col).           // a mark sits there
+        ex_out(E, P_mark, Col), params.mark(Col).      // a mark sits there
 }

@@ -11,15 +11,15 @@
 
 .type Choice = Ink {} | Self {}
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color)
     bg(0).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl ink(p: Position, col: Color)
-ink(P, Col) :- in(P, Col), !c.bg(Col).
+ink(P, Col) :- in(P, Col), !params.bg(Col).
 
 .decl surround_step(s: Shift)
 surround_step(S) :- dir8_elem(D), step_delta(D, S).
@@ -37,4 +37,4 @@ impl_choice($Ink()). impl_choice($Self()).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- grouped(P, Ch), in(P, Col).
-out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !grouped(P, Ch), c.bg(Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !grouped(P, Ch), params.bg(Col).

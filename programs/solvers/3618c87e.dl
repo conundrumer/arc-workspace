@@ -1,15 +1,15 @@
 // 3618c87e
 // concept: lines lookup move
-// Each cell of color c.marker falls to the c.fall_to edge of its slice;
-// the original marker position clears to c.bg. Slices run along
-// axis_of(c.fall_to).
+// Each cell of color params.marker falls to the params.fall_to edge of its slice;
+// the original marker position clears to params.bg. Slices run along
+// axis_of(params.fall_to).
 //
 // Two models:
 //
 //   $PerCell  — the fall composed: clear the marker; fill the fall edge
 //               of a marker slice; else passthrough
-//   $SliceMap — the fall as data: a slice matching c.slice_in is replaced
-//               by c.slice_out as a whole; unmatched slices pass through
+//   $SliceMap — the fall as data: a slice matching params.slice_in is replaced
+//               by params.slice_out as a whole; unmatched slices pass through
 
 #include "../lib.dl"
 
@@ -17,7 +17,7 @@
 
 .type SliceMember = [p: Position, col: Color]
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
     .decl marker(c: Color) marker(1).
     .decl fall_to(d: Dir) fall_to(DIR_B).
@@ -40,35 +40,35 @@
         1)
 }
 
-.init c = Consts
+.init params = Params
 
 .init slice_match = KeyedSetCompare<Position, Ident, SliceMember>
-slice_match.pattern_member(0, [P, Col]) :- c.slice_in(P, Col).
+slice_match.pattern_member(0, [P, Col]) :- params.slice_in(P, Col).
 slice_match.observed_member(P_across, [P_inner, Col]) :- cell_split(_, Col, P_inner, P_across).
 
-// Cell decomposition along axis_of(c.fall_to).
+// Cell decomposition along axis_of(params.fall_to).
 .decl cell_split(p: Position, col: Color, p_inner: Position, p_across: Position) inline
 cell_split(P, Col, P_inner, P_across) :-
-    in(P, Col), c.fall_to(D), axis_of(D, A),
+    in(P, Col), params.fall_to(D), axis_of(D, A),
     split(P, A, P_inner, P_across).
 
 // --- $PerCell ---
 
 .decl marker_line(p_across: Position)
-marker_line(P_across) :- cell_split(_, Col, _, P_across), c.marker(Col).
+marker_line(P_across) :- cell_split(_, Col, _, P_across), params.marker(Col).
 
 .decl cleared(p: Position)
-cleared(P) :- cell_split(P, Col, _, _), c.marker(Col).
+cleared(P) :- cell_split(P, Col, _, _), params.marker(Col).
 
 .decl landed(p: Position)
 landed(P) :-
     cell_split(P, _, _, P_across),
-    c.fall_to(D), dist(P, D, 0),
+    params.fall_to(D), dist(P, D, 0),
     marker_line(P_across).
 
 // --- $SliceMap ---
 
-// Slice content equals c.slice_in.
+// Slice content equals params.slice_in.
 .decl matched_slice(p_across: Position)
 matched_slice(P_across) :- slice_match.equals(P_across, _).
 
@@ -77,31 +77,31 @@ matched_slice(P_across) :- slice_match.equals(P_across, _).
 .decl out(p: Position, col: Color, c: Choice)
 
 // $PerCell
-out(P, Col, $PerCell()) :- cleared(P), c.bg(Col).
-out(P, Col, $PerCell()) :- landed(P), c.marker(Col).
+out(P, Col, $PerCell()) :- cleared(P), params.bg(Col).
+out(P, Col, $PerCell()) :- landed(P), params.marker(Col).
 out(P, Col, $PerCell()) :- cell_split(P, Col, _, _), !cleared(P), !landed(P).
 
 // $SliceMap
 out(P, Col, $SliceMap()) :-
     cell_split(P, _, P_inner, P_across),
-    matched_slice(P_across), c.slice_out(P_inner, Col).
+    matched_slice(P_across), params.slice_out(P_inner, Col).
 out(P, Col, $SliceMap()) :-
     cell_split(P, Col, _, P_across),
     !matched_slice(P_across).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     // Train cells in slice coordinates; the test input is held out.
     .decl in_slice(e: Example, p_across: Position, p_inner: Position, col: Color)
     in_slice(E, P_across, P_inner, Col) :-
         ex_in(E, P, Col), ex_out(E, _, _),
-        c.fall_to(D), axis_of(D, A), split(P, A, P_inner, P_across).
+        params.fall_to(D), axis_of(D, A), split(P, A, P_inner, P_across).
 
     .decl out_slice(e: Example, p_across: Position, p_inner: Position, col: Color)
     out_slice(E, P_across, P_inner, Col) :-
         ex_out(E, P, Col),
-        c.fall_to(D), axis_of(D, A), split(P, A, P_inner, P_across).
+        params.fall_to(D), axis_of(D, A), split(P, A, P_inner, P_across).
 
     // A slice whose content the pair replaces.
     .decl replaced(e: Example, p_across: Position)

@@ -1,6 +1,6 @@
 // 00dbd492
 // concept: objects enclose lookup count
-// Hollow squares on c.bg, each with a lone cell inside; the empty cells a
+// Hollow squares on params.bg, each with a lone cell inside; the empty cells a
 // square holds take on a color the square selects.
 //
 // $Recolor delimits the empty region and colors it from a table, crossing
@@ -20,7 +20,7 @@
 
 .type RegionKey = [r: Region, id: Ident]
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl bg(c: Color) bg(0).
 
@@ -88,7 +88,7 @@
         2, 2, 2, 2, 2, 2, 2, 2, 2)
 }
 
-.init c = Consts
+.init params = Params
 
 // --- parse ---
 
@@ -99,7 +99,7 @@
     .decl cell(k: Key, p: Position, col: Color)
 
     .decl ink(k: Key, p: Position)
-    ink(K, P) :- cell(K, P, Col), !c.bg(Col).
+    ink(K, P) :- cell(K, P, Col), !params.bg(Col).
 
     // The square's wall is one ink component, so its box is the square.
     .init comps = Components<Key>
@@ -120,7 +120,7 @@
 parse.cell($U(), P, Col) :- in(P, Col).
 
 .decl bg_cell(p: Position)
-bg_cell(P) :- in(P, Col), c.bg(Col).
+bg_cell(P) :- in(P, Col), params.bg(Col).
 
 // --- Region cases ---
 
@@ -141,12 +141,12 @@ rbox.cell([R, Id], P) :- region(R, Id, P).
 
 .decl fill(r: Region, id: Ident, col: Color, k: Key)
 
-fill(R, Id, Col, $Size()) :- rbox.extents([R, Id], _, N, N), c.size_fill(N, Col).
+fill(R, Id, Col, $Size()) :- rbox.extents([R, Id], _, N, N), params.size_fill(N, Col).
 
 .init region_size = Tally<RegionKey, Position>
 region_size.item([R, Id], P) :- region(R, Id, P).
 
-fill(R, Id, Col, $Count()) :- region_size.tally([R, Id], N), c.count_fill(N, Col).
+fill(R, Id, Col, $Count()) :- region_size.tally([R, Id], N), params.count_fill(N, Col).
 
 // --- $Recolor ---
 
@@ -156,12 +156,12 @@ painted(P, Col, $Recolor(R, K)) :- region(R, Id, P), fill(R, Id, Col, K).
 // --- $Replace ---
 
 .init same = KeyedSetCompare<Ident, Ident, Position>
-same.pattern_member(Pat, P)       :- c.patch_member(Pat, P).
+same.pattern_member(Pat, P)       :- params.patch_member(Pat, P).
 same.observed_member(Id, P_inner) :- parse.inner($U(), Id, P, P_inner), parse.ink($U(), P).
 
 painted(P, Col, $Replace()) :-
     same.equals(Id, Pat),                                   // a stored object
-    c.patch_out(Pat, P_inner, Col),
+    params.patch_out(Pat, P_inner, Col),
     parse.inner($U(), Id, P, P_inner).                      // its patch, in place
 
 // --- output ---
@@ -177,9 +177,9 @@ impl_choice($Replace()).
 out(P, Col, Ch) :- painted(P, Col, Ch).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !painted(P, _, Ch).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     .type Hole = [e: Example, id: Ident]   // a repainted region
     .type Obj  = [e: Example, id: Ident]   // an ink object
 

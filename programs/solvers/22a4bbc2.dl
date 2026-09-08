@@ -11,7 +11,7 @@
 
 .type Choice = Run {} | Object {}
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
     .decl mark(col: Color) mark(2).
 
@@ -24,7 +24,7 @@
     .decl mark_gap(n: number) mark_gap(2).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl impl_choice(ch: Choice)
 impl_choice($Run()). impl_choice($Object()).
@@ -33,7 +33,7 @@ impl_choice($Run()). impl_choice($Object()).
 
 // A cell's row — the axis-only position along the stacking axis.
 .decl cell_row(p: Position, r: Position)
-cell_row(P, R) :- in(P, _), c.dir(D), axis_of(D, A), split(P, A, R, _).
+cell_row(P, R) :- in(P, _), params.dir(D), axis_of(D, A), split(P, A, R, _).
 
 // Every row of the stack.
 .decl row(r: Position)
@@ -41,7 +41,7 @@ row(R) :- cell_row(_, R).
 
 // Ink cells by their row.
 .decl row_cell(r: Position, p: Position)
-row_cell(R, P) :- cell_row(P, R), in(P, Col), !c.bg(Col).
+row_cell(R, P) :- cell_row(P, R), in(P, Col), !params.bg(Col).
 
 .decl row_color(r: Position, col: Color)
 row_color(R, Col) :- row_cell(R, P), in(P, Col).
@@ -50,13 +50,13 @@ row_color(R, Col) :- row_cell(R, P), in(P, Col).
 .decl boundary(r: Position)
 boundary(R) :-
     row_color(R, Col),
-    c.dir(D), neighbor(R, D, R2),                    // row toward the edge
+    params.dir(D), neighbor(R, D, R2),                    // row toward the edge
     !row_color(R2, Col).
 
 // Rows of the run each boundary starts: it carries on away from the counting
 // edge until the next boundary or a row with no ink.
 .init run_of = Ray<Unit>
-run_of.dir($U(), O) :- c.dir(D), opposite(D, O).
+run_of.dir($U(), O) :- params.dir(D), opposite(D, O).
 run_of.cell($U(), R) :- row(R).
 run_of.mark($U(), R) :- boundary(R).
 run_of.blocked($U(), R) :- row(R), ( boundary(R) ; !row_cell(R, _) ).
@@ -64,33 +64,33 @@ run_of.blocked($U(), R) :- row(R), ( boundary(R) ; !row_cell(R, _) ).
 // --- $Object segmentation ---
 
 .init comps = Components<Color>
-comps.node(Col, P) :- in(P, Col), !c.bg(Col).
+comps.node(Col, P) :- in(P, Col), !params.bg(Col).
 
 .init obj_box = Bbox<Ident>
 obj_box.cell(Id, P) :- comps.label(_, P, Id).
 
 // The object's margin from the counting edge.
 .decl obj_margin(id: Ident, k: number)
-obj_margin(Id, K) :- c.dir(D), obj_box.edge_min(Id, D, K).
+obj_margin(Id, K) :- params.dir(D), obj_box.edge_min(Id, D, K).
 
 // --- shared: rank the bars, select marked ranks ---
 
 .init seq = Ordinal<Choice>
-seq.idx_set($Run(), K)    :- boundary(B), c.dir(D), dist(B, D, K).
+seq.idx_set($Run(), K)    :- boundary(B), params.dir(D), dist(B, D, K).
 seq.idx_set($Object(), K) :- obj_margin(_, K).
 
 .decl mark_margin(ch: Choice, k: number)
 mark_margin(Ch, K) :-
     seq.rank(Ch, K, R),
-    c.mark_len(N), c.mark_gap(G), stride(R, N, G, _, _).  // in a marked block
+    params.mark_len(N), params.mark_gap(G), stride(R, N, G, _, _).  // in a marked block
 
 .decl mark_cell(ch: Choice, p: Position)
 mark_cell($Run(), P) :-
-    mark_margin($Run(), K), c.dir(D), boundary(B), dist(B, D, K),  // marked run
+    mark_margin($Run(), K), params.dir(D), boundary(B), dist(B, D, K),  // marked run
     run_of.clear($U(), R, _, _, B), row_cell(R, P).
 mark_cell($Object(), P) :-
     mark_margin($Object(), K), obj_margin(Id, K), comps.label(_, P, Id).
 
 .decl out(p: Position, col: Color, c: Choice)
-out(P, Col, Ch) :- mark_cell(Ch, P), c.mark(Col).
+out(P, Col, Ch) :- mark_cell(Ch, P), params.mark(Col).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !mark_cell(Ch, P).

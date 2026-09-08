@@ -1,10 +1,10 @@
 // 137eaa0f
 // concept: overlay objects markers move
-// Fragments scattered over bg, each holding one c.key cell. Fragments
-// overlay, aligned on their key cells. Two claims of what collects and of
+// Fragments scattered over bg, each holding one params.key cell. Fragments
+// overlay, aligned on their key cells. Two hypotheses of what collects and of
 // the output frame:
 //
-//   $Frame  — cells within the c.frame stamp placed with its c.anchor on
+//   $Frame  — cells within the params.frame stamp placed with its params.anchor on
 //             a key collect; output is the stamp.
 //   $Object — each key's 8-connected object collects; output is the
 //             overlay's bbox.
@@ -13,8 +13,8 @@
 
 .type Choice = Frame {} | Object {}
 
-.comp Consts {
-    .init helpers = ConstsHelpers
+.comp Params {
+    .init helpers = ParamsHelpers
 
     // --- shared ---
     .decl bg(c: Color) bg(0).
@@ -29,10 +29,10 @@
     anchor([1, 1, 1, 1]).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl mark(p: Position)
-mark(A) :- in(A, Col), c.key(Col).
+mark(A) :- in(A, Col), params.key(Col).
 
 // Every cell measured from every mark.
 .init offset = Reframe<Position>
@@ -45,17 +45,17 @@ offset.cell(A, P) :- mark(A), in(P, _).
 
 .decl paint(p: Position, col: Color)
 paint(P_out, Col) :-
-    offset.view(A, P, P_rel), in(P, Col), !c.bg(Col),  // offset of an ink cell
-    c.anchor(Anc), compose(Anc, P_rel, P_out),         // anchor-relative render
-    c.frame(P_out).                                    // within the stamp
+    offset.view(A, P, P_rel), in(P, Col), !params.bg(Col),  // offset of an ink cell
+    params.anchor(Anc), compose(Anc, P_rel, P_out),         // anchor-relative render
+    params.frame(P_out).                                    // within the stamp
 
 out(P, Col, $Frame()) :- paint(P, Col).
-out(P, Bg, $Frame())  :- c.frame(P), !paint(P, _), c.bg(Bg).
+out(P, Bg, $Frame())  :- params.frame(P), !paint(P, _), params.bg(Bg).
 
 // --- $Object ---
 
 .init comp8 = Components8<Unit>
-comp8.node($U(), P) :- in(P, Col), !c.bg(Col).
+comp8.node($U(), P) :- in(P, Col), !params.bg(Col).
 
 // Offsets of cells sharing their mark's component.
 .decl obj_off(p_rel: Position, col: Color)
@@ -70,4 +70,4 @@ oframe.cell($U(), P_rel) :- obj_off(P_rel, _).
 oframe.grid($U(), P_rel) :- offset.inner(_, P_rel).
 
 out(P_out, Col, $Object()) :- obj_off(P_rel, Col), oframe.inner($U(), P_rel, P_out).
-out(P_out, Bg, $Object())  :- oframe.inner($U(), P_rel, P_out), !obj_off(P_rel, _), c.bg(Bg).
+out(P_out, Bg, $Object())  :- oframe.inner($U(), P_rel, P_out), !obj_off(P_rel, _), params.bg(Bg).

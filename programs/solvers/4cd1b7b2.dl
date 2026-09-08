@@ -7,7 +7,7 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
 
     // The colors a line holds, one each.
@@ -15,7 +15,7 @@
     palette(1). palette(2). palette(3). palette(4).
 }
 
-.init c = Consts
+.init params = Params
 
 // A candidate: one color at one cell.
 .type Cand = [p: Position, col: Color]
@@ -24,8 +24,8 @@
 .decl cell_cand(p: Position, col: Color)
 cell_cand(P, Col) :-
     in(P, C_in),
-    ( !c.bg(C_in), Col = C_in     // a filled cell keeps its color
-    ; c.bg(C_in), c.palette(Col)  // a blank is open to the palette
+    ( !params.bg(C_in), Col = C_in          // a filled cell keeps its color
+    ; params.bg(C_in), params.palette(Col)  // a blank is open to the palette
     ).
 
 // Each cell takes one candidate; elimination settles which.

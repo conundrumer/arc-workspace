@@ -10,16 +10,16 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
 }
 
-.init c = Consts
+.init params = Params
 
 // --- the objects ---
 
 .init objs = Components<Unit>
-objs.node($U(), P) :- in(P, Col), !c.bg(Col).
+objs.node($U(), P) :- in(P, Col), !params.bg(Col).
 
 .decl obj_cell(o: Ident, p: Position)
 obj_cell(O, P) :- objs.label($U(), P, O).
@@ -55,7 +55,7 @@ face(O, D, P) :- front.low([O, D, _], P, _).
 
 // A piece seats on a host when its whole facing edge rests on the host's
 // face toward d. A seat is relative: r carries the piece from where it lies
-// to where it meets the host. A seat is a claim about the piece and one host,
+// to where it meets the host. A seat is a hypothesis about the piece and one host,
 // not about the assembly.
 
 .decl seat_offset(host: Ident, o: Ident, d: Dir, r: Shift)
@@ -155,4 +155,4 @@ filled(Q, Col) :-
 
 .decl out(p: Position, col: Color)
 out(Q, Col) :- filled(Q, Col).
-out(Q, Col) :- in(Q, _), !filled(Q, _), c.bg(Col).
+out(Q, Col) :- in(Q, _), !filled(Q, _), params.bg(Col).

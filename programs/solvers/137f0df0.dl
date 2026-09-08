@@ -2,12 +2,12 @@
 // concept: lines span
 // The input holds a field of blocks, cut by lines that carry no block. A
 // block-free line that crosses the field's bounding box is painted along its
-// whole length: c.inside_paint where it crosses the box, c.outside_paint on
+// whole length: params.inside_paint where it crosses the box, params.outside_paint on
 // the stretches beyond. A block-free line clear of the box is left alone.
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
 
     // A block-free line where it crosses the field's box...
@@ -17,10 +17,10 @@
     .decl outside_paint(col: Color) outside_paint(1).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl block(p: Position)
-block(P) :- in(P, Col), !c.bg(Col).
+block(P) :- in(P, Col), !params.bg(Col).
 
 .init bx = Bbox<Unit>
 bx.cell($U(), P) :- block(P).
@@ -40,7 +40,7 @@ gap_cell(P) :-
 .decl out(p: Position, col: Color)
 out(P, Col) :-
     gap_cell(P),
-    ( bx.inside($U(), P), c.inside_paint(Col)     // inside the field's box
-    ; !bx.inside($U(), P), c.outside_paint(Col)   // beyond it
+    ( bx.inside($U(), P), params.inside_paint(Col)     // inside the field's box
+    ; !bx.inside($U(), P), params.outside_paint(Col)   // beyond it
     ).
 out(P, Col) :- in(P, Col), !gap_cell(P).

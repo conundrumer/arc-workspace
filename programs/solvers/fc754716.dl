@@ -5,18 +5,18 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(0).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl ink(col: Color)
-ink(Col) :- in(_, Col), !c.bg(Col).
+ink(Col) :- in(_, Col), !params.bg(Col).
 
 .decl is_border(p: Position)
 is_border(P) :- in(P, _), dir_elem(D), dist(P, D, 0).   // on any edge
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- is_border(P), ink(Col).
-out(P, Col) :- in(P, _), gt(P, ORIGIN), c.bg(Col).
+out(P, Col) :- in(P, _), gt(P, ORIGIN), params.bg(Col).

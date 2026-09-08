@@ -11,19 +11,19 @@
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
     .decl marker(c: Color) marker(5).
     // Blank lines between consecutive slots.
     .decl slot_gap(g: number) slot_gap(1).
 }
 
-.init c = Consts
+.init params = Params
 
 // --- stages ---
 
 .init stages = Components<Unit>
-stages.node($U(), P) :- in(P, Col), !c.bg(Col), !c.marker(Col).
+stages.node($U(), P) :- in(P, Col), !params.bg(Col), !params.marker(Col).
 
 .decl stage_of(p: Position, id: Ident)
 stage_of(P, Id) :- stages.label($U(), P, Id).
@@ -223,12 +223,12 @@ slot(L2, Lg2) :-
     slot(L, Lg), far.high(L, F),
     grow_dir(G), neighbor(L, G, L2), axis_line(L2), !drawn_line(L2),
     jump(Lg, G, F, Lfar), neighbor(Lfar, G, Ln),     // past the stage's far line
-    c.slot_gap(Gp), jump(Ln, G, Gp, Lg2).            // and the gap
+    params.slot_gap(Gp), jump(Ln, G, Gp, Lg2).       // and the gap
 
 // --- window ---
 
 .init win = BoxFrame<Unit>
-win.cell($U(), P) :- in(P, Col), c.marker(Col).
+win.cell($U(), P) :- in(P, Col), params.marker(Col).
 win.grid($U(), P) :- in(P, _).
 
 // The slot whose along-extent contains the marker window.
@@ -311,6 +311,6 @@ shown(P, C) :-
 .decl out(p: Position, col: Color)
 out(Pw, C) :-
     win.inner($U(), P, Pw),
-    ( shown(P, C)              // scene cell
-    ; !shown(P, _), c.bg(C)    // uncovered window cell
+    ( shown(P, C)                   // scene cell
+    ; !shown(P, _), params.bg(C)    // uncovered window cell
     ).

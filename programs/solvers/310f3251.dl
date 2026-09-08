@@ -1,22 +1,22 @@
 // 310f3251
 // concept: tile-arrangement stamp
 // Output tiles the input scale×scale. Each ink cell casts a mark one
-// diagonal step toward c.mark_diag, wrapping at the frame edges (torus);
+// diagonal step toward params.mark_diag, wrapping at the frame edges (torus);
 // ink occludes marks.
 
 #include "../lib.dl"
 
-.comp Consts {
+.comp Params {
     .decl bg(c: Color) bg(0).
     .decl mark_color(c: Color) mark_color(2).
     .decl mark_diag(d: DiagDir) mark_diag(DIAG_TL).
     .decl scale(n: number) scale(3).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl ink(p: Position, col: Color)
-ink(P, Col) :- in(P, Col), !c.bg(Col).
+ink(P, Col) :- in(P, Col), !params.bg(Col).
 
 // Row and column index cycles — the torus wrap.
 .init cyc = IndexCycle<Axis>
@@ -26,7 +26,7 @@ cyc.idx(A, K) :- in(P, _), dir_elem(D), axis_of(D, A), dist(P, D, K).
 // an edge increments the distance from its opposite; succ wraps it.
 .decl mark_at(p: Position)
 mark_at(Q) :-
-    ink(P, _), c.mark_diag(Diag),                               // ink cell, the corner
+    ink(P, _), params.mark_diag(Diag),                               // ink cell, the corner
     diag_dirs(Diag, A1, D1, D2), perp(A1, A2),
     opposite(D1, O1), dist(P, O1, K1), cyc.succ(A1, K1, K1b),   // step along
     opposite(D2, O2), dist(P, O2, K2), cyc.succ(A2, K2, K2b),   // step across
@@ -35,12 +35,12 @@ mark_at(Q) :-
 // Tile content: ink passes through; marks fill bg; the rest stays bg.
 .decl tile_content(p: Position, col: Color)
 tile_content(P, Col) :- ink(P, Col).
-tile_content(P, Col) :- mark_at(P), !ink(P, _), c.mark_color(Col).
-tile_content(P, Col) :- in(P, _), !ink(P, _), !mark_at(P), c.bg(Col).
+tile_content(P, Col) :- mark_at(P), !ink(P, _), params.mark_color(Col).
+tile_content(P, Col) :- in(P, _), !ink(P, _), !mark_at(P), params.bg(Col).
 
 // scale×scale tile arrangement.
 .init arr = Frame2D<Unit>
-arr.extent($U(), A, N) :- axis_elem(A), c.scale(N).
+arr.extent($U(), A, N) :- axis_elem(A), params.scale(N).
 
 .decl out(p: Position, col: Color)
 out(P_grid, Col) :-

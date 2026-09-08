@@ -5,18 +5,18 @@
 // colors alternating, until the walk leaves the grid; the strip before
 // the leading line stays bg. Two models of which mark leads:
 //
-//   $Corner — the mark nearer the c.origin side.
+//   $Corner — the mark nearer the params.origin side.
 //   $Margin — the mark whose side holds the narrower empty strip, so the
 //             pattern fills the wider one.
 //
-// They coincide here — the marks huddle at the c.origin side in every
+// They coincide here — the marks huddle at the params.origin side in every
 // pair — and diverge when the marks huddle at the opposite side.
 
 #include "../lib.dl"
 
 .type Choice = Corner {} | Margin {}
 
-.comp Consts {
+.comp Params {
     // --- shared ---
     .decl bg(col: Color) bg(0).
 
@@ -24,10 +24,10 @@
     .decl origin(d: DiagDir) origin(DIAG_TL).   // the corner the walk starts from
 }
 
-.init c = Consts
+.init params = Params
 
 .decl mark(p: Position, col: Color)
-mark(P, Col) :- in(P, Col), !c.bg(Col).
+mark(P, Col) :- in(P, Col), !params.bg(Col).
 
 .decl on_axis_edge(p: Position, a: Axis)
 on_axis_edge(P, A) :- mark(P, _), dir_elem(D), axis_of(D, A), dist(P, D, 0).
@@ -52,8 +52,8 @@ mark_line(P_line, Col) :- mark(P, Col), cell_line(P, P_line).
 
 // --- Corner ---
 lead(P_line, $Corner()) :-
-    mark_line(P_line, _), mark_line(Q, _),               // the two mark lines
-    c.origin(Dg), step_axis(A2), dir_of(Dg, A2, D),      // the origin side
+    mark_line(P_line, _), mark_line(Q, _),                    // the two mark lines
+    params.origin(Dg), step_axis(A2), dir_of(Dg, A2, D),      // the origin side
     nearer(D, P_line, Q).
 
 // --- Margin ---
@@ -84,4 +84,4 @@ line(P2, Col2, Ch) :-
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- cell_line(P, P_line), line(P_line, Col, Ch).
 out(P, Col, Ch) :-
-    impl_choice(Ch), cell_line(P, P_line), !line(P_line, _, Ch), c.bg(Col).
+    impl_choice(Ch), cell_line(P, P_line), !line(P_line, _, Ch), params.bg(Col).

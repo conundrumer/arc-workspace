@@ -5,7 +5,7 @@
 // the spine, and the bars exchange their reaches, so the reaches grow from one
 // end of the spine to the other.
 //
-// Two claims on the exchange:
+// Two hypotheses on the exchange:
 //   $Spans   — the reaches are one pool, handed out in size order along the
 //              spine.
 //   $Profile — every line keeps the number of bars covering it, and its covers
@@ -15,7 +15,7 @@
 
 .type Choice = Spans {} | Profile {}
 
-.comp Consts {
+.comp Params {
     .decl bg(col: Color) bg(8).
 
     .decl spine(col: Color) spine(6).
@@ -25,14 +25,14 @@
     .decl short_dir(d: Dir) short_dir(DIR_L).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl order_axis(a: Axis)
-order_axis(A) :- c.short_dir(D), axis_of(D, A).
+order_axis(A) :- params.short_dir(D), axis_of(D, A).
 
 // A bar is a connected region of one color, spine and background aside.
 .init bars = Components<Color>
-bars.node(Col, P) :- in(P, Col), !c.bg(Col), !c.spine(Col).
+bars.node(Col, P) :- in(P, Col), !params.bg(Col), !params.spine(Col).
 
 .decl bar(id: Ident, col: Color)
 bar(Id, Col) :- bars.label(Col, _, Id).
@@ -54,8 +54,8 @@ order.member($U(), Id, Along) :- foot(Id, Along).
 
 .decl rank(id: Ident, near: number, far: number)
 rank(Id, N, F) :-
-    order.pos($U(), Id, P_pos),                 // the bar's place in the order
-    c.short_dir(D), dist_pair(P_pos, D, N, F).  // the bars behind it and ahead of it
+    order.pos($U(), Id, P_pos),                      // the bar's place in the order
+    params.short_dir(D), dist_pair(P_pos, D, N, F).  // the bars behind it and ahead of it
 
 .decl paint(p: Position, col: Color, ch: Choice)
 
@@ -99,6 +99,6 @@ impl_choice($Spans()). impl_choice($Profile()).
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Col, Ch) :-
     in(P, Col_in), impl_choice(Ch), !paint(P, _, Ch),  // a cell no bar covers
-    ( c.spine(Col_in), Col = Col_in                    // the spine stands
-    ; !c.spine(Col_in), c.bg(Col)                      // the rest clears
+    ( params.spine(Col_in), Col = Col_in               // the spine stands
+    ; !params.spine(Col_in), params.bg(Col)            // the rest clears
     ).

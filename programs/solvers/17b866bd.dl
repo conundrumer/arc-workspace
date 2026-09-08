@@ -1,17 +1,17 @@
 // 17b866bd
 // concept: decompose markers stamp
-// A lattice of c.line-wide lines cuts the grid into c.block-square blocks;
-// line crossings are c.node-colored junctions. A junction holding any other
-// color is a mark: it restores to c.node, and its color paints the block
-// toward c.corner of it. Two claims on what the paint covers:
-//   $Holes — the block's c.hole cells recolor.
+// A lattice of params.line-wide lines cuts the grid into params.block-square blocks;
+// line crossings are params.node-colored junctions. A junction holding any other
+// color is a mark: it restores to params.node, and its color paints the block
+// toward params.corner of it. Two hypotheses on what the paint covers:
+//   $Holes — the block's params.hole cells recolor.
 //   $Stamp — a stored footprint stamps over the block.
 
 #include "../lib.dl"
 
 .type Choice = Holes {} | Stamp {}
 
-.comp Consts {
+.comp Params {
     .decl line(k: number) line(1).
     .decl block(k: number) block(4).
     .decl node(col: Color) node(0).
@@ -29,7 +29,7 @@
         0, 1, 1, 0)
 }
 
-.init c = Consts
+.init params = Params
 
 .decl impl_choice(ch: Choice)
 impl_choice($Holes()). impl_choice($Stamp()).
@@ -80,44 +80,44 @@ impl_choice($Holes()). impl_choice($Stamp()).
 
 .init parse = Parse<Unit>
 parse.cell($U(), P, Col) :- in(P, Col).
-parse.line(W) :- c.line(W).
-parse.gap(G) :- c.block(G).
-parse.node(Col) :- c.node(Col).
+parse.line(W) :- params.line(W).
+parse.gap(G) :- params.block(G).
+parse.node(Col) :- params.node(Col).
 
-// The marked block: the one toward c.corner, with its paint color.
+// The marked block: the one toward params.corner, with its paint color.
 .decl painted(id: Ident, col: Color)
 painted(Id, Col) :-
     parse.mark($U(), P, Col),
-    c.corner(Diag), parse.mark_block($U(), P, Diag, Id).
+    params.corner(Diag), parse.mark_block($U(), P, Diag, Id).
 
 .decl fill(p: Position, col: Color, ch: Choice)
 
 // --- $Holes ---
 fill(Q, Col, $Holes()) :-
     painted(Id, Col), parse.label($U(), Q, Id),
-    in(Q, Hole), c.hole(Hole).
+    in(Q, Hole), params.hole(Hole).
 
 // --- $Stamp ---
 fill(Q, Col, $Stamp()) :-
     painted(Id, Col), parse.margin($U(), Id, M),
-    c.stamp(F), compose(M, F, Q).
+    params.stamp(F), compose(M, F, Q).
 
 .decl out(p: Position, col: Color, c: Choice)
 out(P, Col, Ch) :- fill(P, Col, Ch).
-out(P, Col, Ch) :- impl_choice(Ch), parse.mark($U(), P, _), c.node(Col).
+out(P, Col, Ch) :- impl_choice(Ch), parse.mark($U(), P, _), params.node(Col).
 out(P, Col, Ch) :-
     impl_choice(Ch), in(P, Col), !parse.mark($U(), P, _), !fill(P, _, Ch).
 
-// --- fit ---
+// --- determination ---
 
-.comp Fit {
+.comp Determine {
     .type EI = [e: Example, id: Ident]
 
     .init parse = Parse<Example>
     parse.cell(E, P, Col) :- ex_in(E, P, Col).
-    parse.line(W) :- c.line(W).
-    parse.gap(G) :- c.block(G).
-    parse.node(Col) :- c.node(Col).
+    parse.line(W) :- params.line(W).
+    parse.gap(G) :- params.block(G).
+    parse.node(Col) :- params.node(Col).
 
     // Cells a train pair repaints, with the block each sits in.
     .decl repaint(e: Example, p: Position, id: Ident)

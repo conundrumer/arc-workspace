@@ -4,7 +4,7 @@
 // pattern once. The repeat axis varies per pair; it is found as the
 // axis whose equal-size tiles all agree.
 //
-//   $Dup  — the repeat count is task data (c.copies).
+//   $Dup  — the repeat count is task data (params.copies).
 //   $Tile — the repeat count is free.
 
 #include "../lib.dl"
@@ -13,23 +13,23 @@
 .type SlabCell = [a: Axis, p_inner: Position]
 .type TileCell = [a: Axis, k: number, p_inner: Position]
 
-.comp Consts {
+.comp Params {
     // --- Dup ---
     .decl copies(n: number)
     copies(2).
 }
 
-.init c = Consts
+.init params = Params
 
 .decl out(p: Position, col: Color, c: Choice)
 
 // --- Dup ---
 
-// The grid as c.copies slabs along A: what each within-slab cell holds.
+// The grid as params.copies slabs along A: what each within-slab cell holds.
 .init dup_cell = Unanimous<SlabCell, Color>
 dup_cell.item([A, P_inner], Col) :-
-    in(P, Col), axis_elem(A), c.copies(N),   // a cell, an axis
-    divide_slab(P, A, N, 0, _, P_inner).     // its place within a slab
+    in(P, Col), axis_elem(A), params.copies(N),   // a cell, an axis
+    divide_slab(P, A, N, 0, _, P_inner).          // its place within a slab
 
 // Two copies disagree at a within-slab cell.
 .decl dup_mismatch(a: Axis)
