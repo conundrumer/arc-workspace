@@ -182,18 +182,49 @@ def test_the_last_hour_before_a_reset_opens_no_wider(srv, monkeypatch):
     assert srv.pacer()["open"] is True
 
 
+def eta_held(w):
+    """Whether the panel paints the +1 column red: the window runs out before
+    the time the gate holds against."""
+    return isinstance(w["runs_out_more"], float) \
+        and w["runs_out_more"] < w["limit"]
+
+
 def test_the_windows_eta_agrees_with_the_spend_hold(srv, monkeypatch):
-    """The panel reads when a window runs out; the gate compares rates. One
-    more item running out before the window's limit is the spend hold."""
+    """The panel reads when a window runs out; the gate reads what is left
+    against what the fleet spends. One more item running the window out
+    before its limit is the spend hold."""
     clock_at(srv, monkeypatch)
     srv.night()["pace"] = "exhaust"
-    for pct in (0, 50, 80, 90, 95, 99, 100):
-        set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50,
-                  five_pct=pct, five_left=2 * 3600)
-        gate = srv.pacer()
-        five = next(w for w in gate["windows"] if w["label"] == "5h")
-        assert (five["runs_out_more"] < five["limit"]) \
-            is (gate["hold"] == "5h over budget")
+    for hours in (2, 4):
+        for pct in (0, 50, 80, 90, 95, 99, 100):
+            set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50,
+                      five_pct=pct, five_left=hours * 3600)
+            gate = srv.pacer()
+            five = next(w for w in gate["windows"] if w["label"] == "5h")
+            assert eta_held(five) is (gate["hold"] == "5h over budget")
+    # a fleet climbing under the pace, with the reset four hours away
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50, five_pct=6,
+              five_left=4 * 3600)
+    readings(srv, "5h", [(900, 1), (0, 6)], reset=AT + 4 * 3600)
+    gate = srv.pacer()
+    five = next(w for w in gate["windows"] if w["label"] == "5h")
+    assert gate["open"] is True
+    assert eta_held(five) is False
+
+
+def test_a_fleet_under_the_pace_admits_with_the_reset_hours_out(srv, monkeypatch):
+    """What is left must cover the fleet to the reset, plus one item's hour.
+    With 94 points left and four hours to go, the fleet has 88 of them to
+    climb through."""
+    clock_at(srv, monkeypatch)
+    srv.night()["pace"] = "exhaust"
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50, five_pct=6,
+              five_left=4 * 3600)
+    readings(srv, "5h", [(900, 1), (0, 6)], reset=AT + 4 * 3600)
+    assert srv.pacer()["open"] is True          # 20 an hour takes 80 of them
+    srv.HISTORY = {}
+    readings(srv, "5h", [(900, 0), (0, 6)], reset=AT + 4 * 3600)
+    assert srv.pacer()["hold"] == "5h over budget"   # 24 an hour takes 96
 
 
 def test_a_five_hour_window_with_no_reset_is_a_full_window_away(srv, monkeypatch):
@@ -209,11 +240,11 @@ def test_a_five_hour_window_with_no_reset_is_a_full_window_away(srv, monkeypatch
 def test_the_running_fleet_counts_at_its_share_before_the_slope_shows(srv, monkeypatch):
     clock_at(srv, monkeypatch)
     set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50,
-              five_pct=70, five_left=2 * 3600)       # 15 points an hour to spend
-    assert srv.pacer()["open"] is True             # 0 + 6 fits
+              five_pct=76, five_left=2 * 3600)       # 24 points left, two hours
+    assert srv.pacer()["open"] is True             # one item's hour fits
     running(srv, 2)
     gate = srv.pacer()
-    assert gate["open"] is False                   # 12 + 6 does not
+    assert gate["open"] is False                   # 12 an hour for two does not
     five = next(w for w in gate["windows"] if w["label"] == "5h")
     assert (five["rate"], five["share"]) == (pytest.approx(12), pytest.approx(6))
 

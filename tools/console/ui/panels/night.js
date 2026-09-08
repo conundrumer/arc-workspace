@@ -21,7 +21,7 @@ const lineDials = n => n.pace==="exhaust" ? [] : LINE_DIALS;
 /* a window's 100% time: a clock time, "?" with no rate yet, else the
    server's word for it */
 const eta = v => v==null ? "?" : typeof v==="number" ? hhmmDay(v) : String(v);
-const ETA_HELP = "when each window hits 100%: at the current rate, with one more item; and the time the gate holds against";
+const ETA_HELP = "when each window hits 100%: at the current rate; once an hour of one more item is set aside; and the time the gate holds against";
 
 
 export function NightPanel({night, open, onDial, onToggle, onCatchup, onBalance, onSource, onPace}){
@@ -45,13 +45,13 @@ export function NightPanel({night, open, onDial, onToggle, onCatchup, onBalance,
   });
   const read=[];
   /* each window the admission draws: when it reaches 100% at the rate the
-     fleet is showing, at that rate with one more item on top, and the time
-     the gate holds against. A red +1 is the spend hold. */
+     fleet is showing, when it runs out once an hour of one more item is set
+     aside, and the time the gate holds against. A red +1 is the spend hold. */
   const wins=(g && g.windows) || [];
   if(wins.length) read.push(html`<table key="win">
     <tr title=${ETA_HELP}><th></th><th>now</th><th>+1</th><th>limit</th></tr>
     ${wins.map(w=>html`<tr key=${w.label}
-        title=${"rate "+w.rate.toFixed(1)+" + share "+w.share.toFixed(1)+" vs budget "+w.budget.toFixed(1)+" points/h"}>
+        title=${"rate "+w.rate.toFixed(1)+" · share "+w.share.toFixed(1)+" · pace "+w.budget.toFixed(1)+" points/h"}>
       <td><b>${w.label}</b></td><td>${eta(w.runs_out)}</td>
       <td class=${typeof w.runs_out_more==="number" && w.runs_out_more < w.limit ? "gate-held" : null}>
         ${eta(w.runs_out_more)}</td><td>${eta(w.limit)}</td></tr>`)}

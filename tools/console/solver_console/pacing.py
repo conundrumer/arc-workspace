@@ -51,15 +51,20 @@ LIVE = (store.QUEUED, store.RUNNING, store.COMMENTED)   # states with work still
 # The spend rules. The fleet's rate in each window is read off the account's
 # own utilization, as the slope of the window's readings over the last
 # SLOPE_SPAN, so no model of what an item costs is needed and the rate
-# follows the pipeline as it stands. An admission is held when the fleet's
-# rate plus one more item's share would pass the window's budget: what is
-# left, spread over the time to the reset for the 5h window, and over the
-# next hour for a weekly one. The hour is the cache TTL. A turn cut by a
-# limit resumes cold past it, and a weekly window is spread by the pace
-# line or not at all, so an hour of spend is the headroom every window
+# follows the pipeline as it stands. What the window has left must cover
+# the fleet running at that rate until the window's limit, plus one more
+# item for one hour; an admission is held when it does not. The limit is
+# the reset for the 5h window and the next hour for a weekly one. The hour
+# one more item is charged for is the cache TTL: a turn cut by a limit
+# resumes cold past it, so an hour of spend is the headroom every window
 # keeps. Near a reset the time to it is clamped to the same hour, so the
 # last hour opens no wider than the headroom allows.
 SLOPE_SPAN = 15 * 60
+# The span the panel reads a weekly window's rate over. The readings are
+# whole percents and a weekly window moves a point in half an hour, so a
+# slope over SLOPE_SPAN reads it as flat; two hours resolve half a point
+# an hour. The history keeps this much.
+TREND_SPAN = 2 * 3600
 SLOPE_MIN = 3 * 60      # readings must span this long before a slope is read
 STALE = 3 * 60          # a newest reading older than this reads as no slope
 SHARE_SPAN = 10 * 60    # readings must span this long before a share is written
@@ -275,7 +280,7 @@ def note_usage(rows: list[dict], at: float | None = None,
                 reset is not None and abs(reset - last_reset) > RESET_WOBBLE)
             if moved or pct < prev[-1][1] - ROLLOVER_DROP:
                 prev = []
-        hist[label] = [r for r in prev if at - r[0] <= SLOPE_SPAN] + [(at, pct, busy)]
+        hist[label] = [r for r in prev if at - r[0] <= TREND_SPAN] + [(at, pct, busy)]
         resets[label] = reset
     HISTORY, HISTORY_RESET = hist, resets
 
@@ -285,7 +290,7 @@ def seed_history(path: Path | None = None) -> None:
     out the span before a slope can be read."""
     path = config.SAMPLE_FILE if path is None else path
     try:
-        lines = path.read_text(errors="replace").splitlines()[-(SLOPE_SPAN // 60 + 2):]
+        lines = path.read_text(errors="replace").splitlines()[-(TREND_SPAN // 60 + 2):]
     except (OSError, ValueError):
         return
     for line in lines:
@@ -298,21 +303,21 @@ def seed_history(path: Path | None = None) -> None:
             continue
 
 
-def recent(label: str) -> list[tuple]:
-    """The window's readings inside the span as of now, or none when the
+def recent(label: str, span: float = SLOPE_SPAN) -> list[tuple]:
+    """The window's readings inside `span` as of now, or none when the
     newest has gone stale: readings that stopped arriving say nothing about
     the fleet as it stands."""
     at = store.now()
-    pts = [r for r in HISTORY.get(label) or [] if at - r[0] <= SLOPE_SPAN]
+    pts = [r for r in HISTORY.get(label) or [] if at - r[0] <= span]
     if pts and at - pts[-1][0] > STALE:
         return []
     return pts
 
 
-def rate(label: str) -> float | None:
+def rate(label: str, span: float = SLOPE_SPAN) -> float | None:
     """The window's spend in points an hour, the least-squares slope over its
-    recent readings; None until they span SLOPE_MIN."""
-    pts = recent(label)
+    readings inside `span`; None until they span SLOPE_MIN."""
+    pts = recent(label, span)
     if len(pts) < 2 or pts[-1][0] - pts[0][0] < SLOPE_MIN:
         return None
     n = len(pts)
@@ -361,11 +366,27 @@ def spend_limit(u: dict, at: float) -> float:
     return at + WALL
 
 
+def left_of(u: dict) -> float:
+    """The points the window has left."""
+    return max(0.0, 100.0 - (u.get("pct") or 0))
+
+
+def hours_to_limit(u: dict, at: float) -> float:
+    """Hours from `at` to the time the gate measures the window against."""
+    return (spend_limit(u, at) - at) / 3600
+
+
+def over_spend(u: dict, at: float, expected: float, sh: float) -> bool:
+    """Whether one more item is more than the window can take: what is left
+    must cover the fleet running at `expected` points an hour until the
+    limit, plus one item's share `sh` for one hour."""
+    return expected * hours_to_limit(u, at) + sh > left_of(u)
+
+
 def budget(u: dict, at: float) -> float:
     """Points an hour the window can take: what is left, spread over the time
     to its limit."""
-    left = max(0.0, 100.0 - (u.get("pct") or 0))
-    return left / ((spend_limit(u, at) - at) / 3600)
+    return left_of(u) / hours_to_limit(u, at)
 
 
 def runs_out(u: dict, at: float, pace: float | None) -> float | str | None:
@@ -376,7 +397,19 @@ def runs_out(u: dict, at: float, pace: float | None) -> float | str | None:
         return None
     if pace <= 0:
         return "never"
-    return at + max(0.0, 100.0 - (u.get("pct") or 0)) / pace * 3600
+    return at + left_of(u) / pace * 3600
+
+
+def runs_out_more(u: dict, at: float, expected: float,
+                  sh: float) -> float | str:
+    """When the window runs out once one hour of one more item is set aside:
+    the fleet at `expected` points an hour spends the rest. The string
+    "never" when the fleet is not climbing and the hour still fits, and now
+    when it does not."""
+    room = max(0.0, left_of(u) - sh)
+    if expected > 0:
+        return at + room / expected * 3600
+    return "never" if left_of(u) >= sh else at
 
 
 def spend_windows(models: list[str]) -> list[dict]:
@@ -398,9 +431,10 @@ def pacer(at: float | None = None, models: list[str] | None = None) -> dict:
     Each entry of `windows` carries the figures the gate read — `rate`,
     `share`, `budget` — the pass time `at`, the time the gate measures
     against as `limit`, and two times the window reaches 100%: `runs_out` at
-    the observed slope and `runs_out_more` at the assumed rate with one more
-    item. Either is None with no rate to go by, and `runs_out` is "never"
-    when the window is not climbing.
+    the observed slope, read over TREND_SPAN for a weekly window, and
+    `runs_out_more` once one hour of one more item is set aside. `runs_out`
+    is None with no rate to go by, and either is "never" when the window is
+    not climbing.
     """
     at = store.now() if at is None else at
     if models is None:
@@ -431,15 +465,15 @@ def pacer(at: float | None = None, models: list[str] | None = None) -> dict:
         observed = rate(u["label"])
         sh = share(u["label"], cfg, observed)
         expected = max(observed or 0.0, busy * sh)
-        b = budget(u, at)
         entry = {"label": u["label"], "pct": u["pct"], "rate": expected, "share": sh,
-                 "budget": b, "at": at, "limit": spend_limit(u, at),
-                 "runs_out": runs_out(u, at, observed),
-                 "runs_out_more": runs_out(u, at, (expected + sh) or None)}
+                 "budget": budget(u, at), "at": at, "limit": spend_limit(u, at),
+                 "runs_out": runs_out(u, at, observed if u["label"] == "5h"
+                                      else rate(u["label"], TREND_SPAN)),
+                 "runs_out_more": runs_out_more(u, at, expected, sh)}
         out["windows"].append(entry)
-        # While the window has room left, `expected + sh > b` is the same test
-        # as `runs_out_more < limit`, so the panel's times and the gate agree.
-        if spend_held is None and expected + sh > b:
+        # `runs_out_more < limit` is the same test as the spend rule, so the
+        # panel's times and the gate agree.
+        if spend_held is None and over_spend(u, at, expected, sh):
             spend_held = (f"{u['label']} over budget", u["label"])
     held = pace_lines(cfg, models, wk, wk_elapsed, at, out) \
         if cfg["pace"] == "share" else None
