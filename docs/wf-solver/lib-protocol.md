@@ -92,5 +92,5 @@ Remove the entry's file at these points:
 Use the same protocol for changes to existing definitions, such as an edit to an existing `lib.dl` primitive.
 
 - Start such a change at step 2, with the change as the survey's target.
-- The change has no comp form. Put the changed definition in the entry as its code form.
+- The change has no comp form. Write the whole spec in the entry's fields.
 - Count as its callers the places the change would benefit.

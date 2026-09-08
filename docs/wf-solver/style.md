@@ -135,7 +135,7 @@ Program style and the linter apply to the program rules, the Determine comp, and
 
 - **Complement tests.** Complement tests negate the named case: `!params.bg(Col)` for non-bg.
 - **Off-edge tests.** An off-edge test is `dist(P, D, K), K != 0`, not `K > 0`. `!dist(P, D, 0)` is unavailable: Souffle cannot negate an inline relation whose clause introduces variables.
-- **Narrowing.** When a rule binds a union-typed argument of a lib primitive to a head column of one member type, it takes that member's `*_elem` atom.
+- **Narrowing.** When a rule binds an argument of a lib primitive to a head column of a narrower type, it takes that type's `*_elem` atom.
 - **Aggregators.** Inline relations cannot appear inside aggregators. A non-inline relation wraps one when needed.
 
 ### Layout
@@ -170,7 +170,7 @@ render(P, Col) :-
 
 ## Components
 
-- **Proposal comps.** A comp outside `Params`, `Determine`, and `Parse` is lib code. A solver writes one only as a proposal comp. The linter skips every comp but `Determine` and `Parse`, and flags a proposal comp with no entry.
+- **Proposal comps.** A comp outside `Params`, `Determine`, and `Parse` is lib code. A solver writes one only as a proposal comp, which has an entry under `docs/wf-solver/proposals/` per the lib addition protocol. The linter skips every comp but `Determine` and `Parse`, and flags a proposal comp with no entry.
 - **Keys.** A comp other than `Params` and `Determine` takes a `Key` type param, and keyed relations share it across cases. Single-set sites key on `Unit`.
     - **Shared stages.** A stage is shared when, and only when, its case-specific versions differ in nothing but the case name. If cases differ in substance (one derives a value, one reads it from Params), that stage stays per-case, even when one derivation could feed every case.
 - **Instance-level inputs.** An input relation whose value is part of the instance's identity, not per-key data, takes no key. An input that the task does not vary per key takes no key. A parameter that varies per case is per-key data: the comp is keyed by `Choice`.
