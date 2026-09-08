@@ -1117,6 +1117,52 @@ def test_the_queue_slot_runs_when_fable_has_caught_up_or_nothing_waits(srv, monk
     assert srv.night_tick()["admitted"] == ["t01"]      # nothing left to finalize
 
 
+def test_balance_holds_the_finalize_slot_while_the_fable_window_leads(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=40, wk_elapsed=50, fbl=(55, 50))
+    finalize_launch(srv, monkeypatch)
+    backlog_solver(srv, "aaa")
+    night_on(srv, source="both", pace="exhaust", balance=True)
+    out = srv.night_tick()
+    assert out["admitted"] == ["t00"]
+    assert out["held"].startswith("finalize: Fable window leads")
+
+
+def test_balance_off_leaves_a_leading_fable_window_alone(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=40, wk_elapsed=50, fbl=(55, 50))
+    finalize_launch(srv, monkeypatch)
+    backlog_solver(srv, "aaa")
+    night_on(srv, source="both", pace="exhaust")
+    out = srv.night_tick()
+    assert out["admitted"] == ["aaa", "t00"]
+    assert out["held"] is None
+
+
+def test_a_leading_fable_window_holds_nothing_with_an_empty_queue(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=40, wk_elapsed=50, fbl=(55, 50))
+    finalize_launch(srv, monkeypatch)
+    monkeypatch.setattr(srv, "queue_pick", lambda n, order: [])
+    backlog_solver(srv, "aaa")
+    night_on(srv, source="both", pace="exhaust", balance=True)
+    out = srv.night_tick()
+    assert out["admitted"] == ["aaa"]
+    assert out["held"] is None
+
+
+def test_balance_checks_the_queue_slot_first_while_fable_leads(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    cfg = night_on(srv, source="both", pace="exhaust", balance=True)
+    set_usage(srv, monkeypatch, wk_pct=40, wk_elapsed=50, fbl=(55, 50))
+    assert srv.slot_order(cfg) == ("queue", "finalize")
+    set_usage(srv, monkeypatch, wk_pct=55, wk_elapsed=50, fbl=(40, 50))
+    assert srv.slot_order(cfg) == ("finalize", "queue")
+    cfg["balance"] = False
+    set_usage(srv, monkeypatch, wk_pct=40, wk_elapsed=50, fbl=(55, 50))
+    assert srv.slot_order(cfg) == ("finalize", "queue")
+
+
 def test_the_payload_carries_a_count_per_slot(srv, monkeypatch):
     clock_at(srv, monkeypatch)
     set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50)

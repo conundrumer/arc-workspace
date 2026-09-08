@@ -208,6 +208,7 @@ function App(){
       extra=${lens.Controls && html`<${lens.Controls} snap=${snap}/>`}/>
     <${NightPanel} night=${night} open=${nightOpen} onToggle=${onNightToggle}
       onCatchup=${v=>postNight({catchup:v})}
+      onBalance=${v=>postNight({balance:v})}
       onSource=${v=>postNight({source:v}, "source · "+v)}
       onPace=${v=>postNight({pace:v}, "pace · "+v)}
       onDial=${(key,v)=>postNight({[key]:parseInt(v,10)})}/>

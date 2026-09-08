@@ -9,7 +9,9 @@ import { hhmm, hhmmDay } from "/ui/prose.js";
    the next unfinalized solver, or both side by side. Each slot has its own
    target, and the panel shows the dials of the slots the source admits into.
    The pace picks whether the week's quota is shared with work outside the
-   console or spent to the wall; the pace-line dials show only under share. */
+   console or spent to the wall; the pace-line dials show only under share,
+   and the balance box only where the two windows race, under exhaust with
+   both slots. */
 export const NIGHT_SOURCES = ["queue","unfinalized","both"];
 export const PACE_MODES = ["share","exhaust"];
 const TARGET_KEYS = {queue:["target"], unfinalized:["finalize_target"], both:["target","finalize_target"]};
@@ -22,11 +24,13 @@ const eta = v => v==null ? "?" : typeof v==="number" ? hhmmDay(v) : String(v);
 const ETA_HELP = "when each window hits 100%: at the current rate, with one more item; and the time the gate holds against";
 
 
-export function NightPanel({night, open, onDial, onToggle, onCatchup, onSource, onPace}){
+export function NightPanel({night, open, onDial, onToggle, onCatchup, onBalance, onSource, onPace}){
   const n = night||{}, g = n.gate, tkeys = targetKeys(n), share = n.pace!=="exhaust";
+  const races = !share && n.source==="both";
   const refs = {target:useRef(null), finalize_target:useRef(null),
                 reserve:useRef(null), floor:useRef(null)};
-  const log = useRef(null), onBox = useRef(null), catchBox = useRef(null);
+  const log = useRef(null), onBox = useRef(null), catchBox = useRef(null),
+        balBox = useRef(null);
   useEffect(()=>{
     for(const key of [...tkeys, ...lineDials(n)]){
       const el=refs[key].current, v=n[key];
@@ -36,6 +40,7 @@ export function NightPanel({night, open, onDial, onToggle, onCatchup, onSource, 
        a declined autopilot prompt — snaps back on the next draw */
     if(onBox.current) onBox.current.checked=!!n.on;
     if(catchBox.current) catchBox.current.checked=!!n.catchup;
+    if(balBox.current) balBox.current.checked=!!n.balance;
     if(log.current) log.current.scrollTop=log.current.scrollHeight;
   });
   const read=[];
@@ -77,6 +82,10 @@ export function NightPanel({night, open, onDial, onToggle, onCatchup, onSource, 
         ${tkeys.length>1 && key==="finalize_target" ? "finalize target" : "target"}
         <input ref=${refs[key]} type="number" min="1" max="40"
           onChange=${e=>onDial(key, e.target.value)}/></label>`)}
+      <label hidden=${!races} title="keep the weekly and Fable windows within a few points of each other; whichever leads holds its slot">
+        <input ref=${balBox} type="checkbox" checked=${!!n.balance}
+          onChange=${e=>onBalance(e.target.checked)}/>
+        balance</label>
       <label hidden=${!share} title="weekly points held back from the pace line">reserve
         <input ref=${refs.reserve} type="number" min="0" max="100"
           onChange=${e=>onDial("reserve", e.target.value)}/></label>

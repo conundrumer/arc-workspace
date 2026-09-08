@@ -27,6 +27,7 @@ NIGHT_DEFAULTS = {
     "reserve": 10,     # points of weekly quota held back from the pace line
     "floor": 5,        # weekly points spendable however early in the week
     "catchup": True,   # spend the slack the week has accumulated
+    "balance": False,  # hold the slot whose window leads, so the two keep pace
 }
 
 # share: the pace lines hold weekly quota back for work outside the console.
@@ -74,8 +75,8 @@ SHARE_PRIOR = {"5h": 6.0, "wk": 1.4, "fbl": 3.9}
 RESET_WOBBLE = 60
 # A reading that falls more than this since the last one is a new window.
 ROLLOVER_DROP = 5
-# Under exhaust with both slots, points the Fable window may trail the weekly
-# one before the queue slot holds for finalize work.
+# Under exhaust with both slots, points the Fable window and the weekly one
+# may stand apart before the slot of the leading window holds for the other.
 FABLE_LAG = 3
 
 # Each window's recent readings, oldest first, as (time, pct, workers
@@ -485,18 +486,37 @@ def pace_lines(cfg: dict, models: list[str], wk: dict, wk_elapsed: float,
     return None
 
 
-def fable_trails(cfg: dict) -> tuple[str, str] | None:
-    """Under exhaust with both slots, the hold on the queue slot while the
-    Fable window trails the weekly one, as (rule, verdict): Opus spend
-    cannot move the Fable window, so the week that exhausts both runs
-    finalize first. The caller checks that the finalize slot can take
-    work and that work waits."""
+def lead_hold(cfg: dict, kind: str) -> tuple[str, str] | None:
+    """Under exhaust with both slots, the hold on the slot of `kind` while the
+    other slot's window trails by more than the lag, as (rule, verdict).
+
+    Opus spend cannot move the Fable window, so the week that exhausts both
+    runs finalize first while the Fable window trails the weekly one. With
+    balance on the rule also runs the other way, and the finalize slot holds
+    while the Fable window leads. The caller checks that the other slot can
+    take work and that work waits for it.
+    """
     if cfg["pace"] != "exhaust" or cfg["source"] != "both":
         return None
     wk, fbl = window("wk"), window(FABLE_WINDOW)
-    if not wk or not fbl or fbl["pct"] >= wk["pct"] - FABLE_LAG:
+    if not wk or not fbl:
         return None
-    return "Fable window trails, finalize first", "fbl trails"
+    lead = fbl["pct"] - wk["pct"]
+    if kind == "queue" and lead < -FABLE_LAG:
+        return "Fable window trails, finalize first", "fbl trails"
+    if kind == "finalize" and cfg.get("balance") and lead > FABLE_LAG:
+        return "Fable window leads, queue first", "fbl leads"
+    return None
+
+
+def slot_order(cfg: dict) -> tuple[str, ...]:
+    """The slots of the active source, in the order a pass checks them. The
+    slot whose window trails goes first, so under balance a leading Fable
+    window puts the queue slot ahead of finalize."""
+    slots = SOURCE_SLOTS[cfg["source"]]
+    if lead_hold(cfg, "finalize"):
+        return tuple(reversed(slots))
+    return slots
 
 
 def live_items() -> list[dict]:

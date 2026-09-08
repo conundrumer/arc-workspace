@@ -115,15 +115,46 @@ def finalize_waiting() -> bool:
     return FINALIZE_WAITING
 
 
+# What the admitter last found when it asked whether queue work waits. The
+# question shells out to the queue script, so the view reads the pass's
+# answer rather than asking again on every poll.
+QUEUE_WAITING = False
+
+
+def queue_waiting() -> bool:
+    """Whether the queue slot has a task to take, read without taking it: the
+    pick night_admit would make. A picker that refuses reads as nothing
+    waiting."""
+    global QUEUE_WAITING
+    try:
+        QUEUE_WAITING = bool(waves.pick_new(1, "name"))
+    except store.Reject:
+        QUEUE_WAITING = False
+    return QUEUE_WAITING
+
+
+# The other slot of the both source.
+OTHER_SLOT = {"queue": "finalize", "finalize": "queue"}
+
+
+def slot_waiting(kind: str, probe: bool = True) -> bool:
+    """Whether the slot of `kind` has work to take. `probe` asks; the view
+    takes the last answer."""
+    if kind == "finalize":
+        return finalize_waiting() if probe else FINALIZE_WAITING
+    return queue_waiting() if probe else QUEUE_WAITING
+
+
 def slot_gate(cfg: dict, kind: str, probe: bool = True) -> dict:
-    """The slot's gate: the pacer over the slot's models, and for the queue
-    slot the finalize-first hold while the finalize slot has room and work
-    to take. `probe` asks the backlog; the view takes the last answer."""
+    """The slot's gate: the pacer over the slot's models, and the hold that
+    lets the other slot go first while its window trails, it has room under
+    its target, and work waits for it."""
     gate = pacing.pacer(models=pacing.slot_models(kind))
-    if gate["open"] and kind == "queue":
-        hold = pacing.fable_trails(cfg)
-        room = pacing.slot_live(cfg, "finalize") < pacing.slot_target(cfg, "finalize")
-        if hold and room and (finalize_waiting() if probe else FINALIZE_WAITING):
+    if gate["open"] and kind in OTHER_SLOT:
+        hold = pacing.lead_hold(cfg, kind)
+        other = OTHER_SLOT[kind]
+        room = pacing.slot_live(cfg, other) < pacing.slot_target(cfg, other)
+        if hold and room and slot_waiting(other, probe):
             gate = {**gate, "open": False, "hold": hold[0], "why": hold[1]}
     return gate
 
@@ -144,7 +175,7 @@ def night_tick() -> dict:
             resume_item(it)
             out["resumed"].append(it["id"])
             changed = True
-        slots = pacing.SOURCE_SLOTS[cfg["source"]]
+        slots = pacing.slot_order(cfg)
         held = []
         for kind in slots:
             if pacing.slot_live(cfg, kind) >= pacing.slot_target(cfg, kind):
@@ -188,7 +219,7 @@ def slots_view(cfg: dict) -> list[dict]:
     return [{"kind": kind, "live": pacing.slot_live(cfg, kind),
              "target": pacing.slot_target(cfg, kind),
              "gate": slot_gate(cfg, kind, probe=False) if cfg["on"] else None}
-            for kind in pacing.SOURCE_SLOTS[cfg["source"]]]
+            for kind in pacing.slot_order(cfg)]
 
 
 def joint_gate(slots: list[dict]) -> dict | None:
@@ -241,6 +272,10 @@ def act_night(body: dict) -> dict:
                 return {"error": f"{name} must be a number"}
         if "catchup" in body:
             cfg["catchup"] = bool(body["catchup"])
+        if "balance" in body and bool(body["balance"]) != cfg["balance"]:
+            cfg["balance"] = bool(body["balance"])
+            if cfg["on"]:
+                pacing.night_say("balance · " + ("on" if cfg["balance"] else "off"))
         for name, choices in (("source", pacing.NIGHT_SOURCES), ("pace", pacing.PACE_MODES)):
             if name not in body:
                 continue
