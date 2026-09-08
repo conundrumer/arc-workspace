@@ -5,6 +5,7 @@ import json
 import os
 import threading
 import time
+import types
 
 import pytest
 
@@ -1125,7 +1126,8 @@ def test_a_usage_file_that_is_missing_or_broken_yields_to_the_other(srv, tmp_pat
 
 def test_the_usage_poll_forces_a_fetch_and_keeps_the_last_reading(srv, tmp_path, monkeypatch):
     calls = []
-    monkeypatch.setattr(srv.subprocess, "run", lambda cmd, **kw: calls.append((cmd, kw)))
+    monkeypatch.setattr(srv.subprocess, "run", lambda cmd, **kw: (
+        calls.append((cmd, kw)), types.SimpleNamespace(returncode=0))[1])
     monkeypatch.setattr(srv.quota.Sampler, "record", lambda self, path: None)
     monkeypatch.setattr(srv, "USAGE_FETCH", tmp_path / "fetch.sh")
     (tmp_path / "fetch.sh").write_text("")
@@ -1159,12 +1161,44 @@ def test_the_usage_poll_forces_a_fetch_and_keeps_the_last_reading(srv, tmp_path,
     assert fetched == srv.USAGE_AT
 
 
+def test_a_refused_usage_fetch_backs_off_before_asking_again(srv, tmp_path, monkeypatch):
+    """The usage endpoint rate-limits a token that asks too often, and keeps
+    refusing while the asking goes on. A refusal earns a pause that doubles
+    up to a cap; a reading clears it."""
+    calls = []
+    codes = iter([1, 1, 0, 0] + [1] * 8)
+
+    def run(cmd, **kw):
+        calls.append(cmd)
+        return types.SimpleNamespace(returncode=next(codes), stdout="", stderr="HTTP 429")
+    monkeypatch.setattr(srv.subprocess, "run", run)
+    monkeypatch.setattr(srv, "USAGE_FETCH", tmp_path / "fetch.sh")
+    (tmp_path / "fetch.sh").write_text("")
+    srv.quota.fetch(force=True)
+    assert len(calls) == 1
+    assert srv.quota.NEXT_TRY - time.time() == pytest.approx(2 * srv.USAGE_POLL, abs=1)
+    srv.quota.fetch(force=True)
+    assert len(calls) == 1, "no ask inside the pause"
+    srv.quota.NEXT_TRY = 0
+    srv.quota.fetch(force=True)
+    assert len(calls) == 2
+    assert srv.quota.NEXT_TRY - time.time() == pytest.approx(4 * srv.USAGE_POLL, abs=1)
+    srv.quota.NEXT_TRY = 0
+    srv.quota.fetch(force=True)
+    srv.quota.fetch(force=True)
+    assert len(calls) == 4, "a reading clears the pause"
+    for _ in range(8):
+        srv.quota.NEXT_TRY = 0
+        srv.quota.fetch(force=True)
+    assert srv.quota.NEXT_TRY - time.time() == pytest.approx(srv.quota.BACKOFF_MAX, abs=1)
+
+
 def test_a_stale_usage_reading_holds_admissions(srv, monkeypatch):
     clock_at(srv, monkeypatch)
     set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50)
     srv.USAGE_AT = AT - 60
     assert srv.pacer()["open"] is True
-    srv.USAGE_AT = AT - 10 * 60
+    srv.USAGE_AT = AT - 15 * 60
     gate = srv.pacer()
     assert gate["open"] is False
     assert gate["hold"] == "usage reading stale"

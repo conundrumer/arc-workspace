@@ -67,18 +67,32 @@ def tally(usage: dict) -> dict[str, int]:
     }
 
 
+# The usage endpoint rate-limits a token that asks too often, and keeps
+# refusing while the asking goes on. A refusal earns a pause that doubles up
+# to BACKOFF_MAX seconds; a reading clears it.
+BACKOFF_MAX = 600
+NEXT_TRY = 0.0
+BACKOFF = 0.0
+
+
 def fetch(force: bool = False) -> None:
     """Refresh the usage cache of the console's home. The script reads the
     account that home is logged into. A fetch that fails leaves the last
     reading in place."""
-    if not config.USAGE_FETCH.exists():
+    global NEXT_TRY, BACKOFF
+    if not config.USAGE_FETCH.exists() or time.time() < NEXT_TRY:
         return
     try:
-        subprocess.run(["bash", str(config.USAGE_FETCH)] + (["--force"] if force else []),
-                       env={**os.environ, "CLAUDE_CONFIG_DIR": str(config.CLAUDE_HOME)},
-                       capture_output=True, timeout=30)
+        out = subprocess.run(["bash", str(config.USAGE_FETCH)] + (["--force"] if force else []),
+                             env={**os.environ, "CLAUDE_CONFIG_DIR": str(config.CLAUDE_HOME)},
+                             capture_output=True, timeout=30)
     except (OSError, subprocess.SubprocessError):
-        pass
+        return
+    if out.returncode == 0:
+        BACKOFF = 0.0
+        return
+    BACKOFF = min(max(BACKOFF * 2, 2 * config.USAGE_POLL), BACKOFF_MAX)
+    NEXT_TRY = time.time() + BACKOFF
 
 
 def scan():

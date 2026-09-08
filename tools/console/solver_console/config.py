@@ -39,7 +39,9 @@ PROJECTS = CLAUDE_HOME / "projects"   # the CLI's transcripts, one per session
 USAGE_API = CLAUDE_HOME / "usage-api.json"
 USAGE_STATUS = CLAUDE_HOME / "usage.json"
 USAGE_FETCH = Path.home() / ".claude" / "scripts" / "fetch-usage-api.sh"
-USAGE_POLL = 60   # seconds between usage fetches
+# Seconds between usage fetches. The usage endpoint rate-limits a token that
+# asks about once a minute; see quota.fetch for the pause a refusal earns.
+USAGE_POLL = 120
 
 FAKE = os.environ.get("CONSOLE_FAKE") == "1"
 CLAUDE = os.environ.get("CONSOLE_CLAUDE", "claude")

@@ -86,7 +86,7 @@ HISTORY_RESET: dict[str, float | None] = {}
 # A reading older than USAGE_STALE holds admissions: a cache that stopped
 # moving says nothing about where the windows stand.
 USAGE_AT: float | None = None
-USAGE_STALE = 5 * 60
+USAGE_STALE = 10 * 60
 
 # Spread the resumes of a fleet that all died on the same limit.
 RESUME_JITTER = (30, 210)
