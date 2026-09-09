@@ -17,7 +17,9 @@ The operations and passes of a solver session.
 - **Task per operation.** Create a task per operation, and do them one at a time.
 - **Lib protocol.** Apply the lib addition protocol where its trigger holds.
 - **Source reading.** Do not read `src/dl/` during a pass. If you do, report to the user why, as a gap in the docs or the runner.
-- **Keywords.** If no keyword in `keywords.md` fits, add one and report it. Do not change an existing keyword's gloss. Propose the change in the review.
+- **Keywords.**
+    - If no keyword in `keywords.md` fits, propose one in the review, and add it to the solver's concept line.
+    - If an existing keyword's gloss should change, propose it in the review.
 
 ## Operations
 
