@@ -5,7 +5,7 @@
 
 # Lib addition protocol
 
-Qualify a new primitive for `programs/lib.dl` by real use in the corpus, not by generality.
+Qualify a new primitive for `programs/lib.dl` by real use in the corpus and by generality.
 
 - **Trigger.** When an encoding in the solver needs a form banned in the program, or when a grep for its shape over `programs/solvers/` finds another solver that writes it, apply this protocol to that encoding.
 - **Generality.** An operation is general when it names one prior-level operation and takes its domain as an input, fixing no configuration beyond the frame.
