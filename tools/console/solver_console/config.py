@@ -138,7 +138,7 @@ STEER_RACE = 5
 IDLE_TTL = 3600
 IDLE_POLL = 60
 # The prompt-cache TTL, counted from a session's last real turn. A compact
-# leaves the session no cache, so it starts no TTL.
+# leaves the session cold.
 CACHE_TTL = 3600
 # How close to the cache expiry, or the idle reap, the auto compact fires.
 COMPACT_MARGIN = 180

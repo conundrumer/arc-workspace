@@ -4,7 +4,7 @@ owes."""
 
 import time
 
-from . import drain, ledger, prompts, solvers, spend, store, workers
+from . import config, drain, ledger, prompts, solvers, spend, store, workers
 
 
 def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
@@ -73,11 +73,13 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
         # a real turn landed: the session may be auto-compacted once more
         it.get("auto_compacted", {}).pop(phase, None)
     # The compact hands its summary back as output, and nothing sends that
-    # summary until the next real turn, so the session lands holding no cache.
+    # summary until the next real turn, so the session lands with its cache
+    # cold: the stamp is set a full TTL back.
+    now_ms = int(time.time() * 1000)
     if worker and worker.get("compacted") and store.slash_turn(it, phase):
-        it["lastActive"][phase] = None
+        it["lastActive"][phase] = now_ms - config.CACHE_TTL * 1000
     else:
-        it["lastActive"][phase] = int(time.time() * 1000)
+        it["lastActive"][phase] = now_ms
     it["title"] = solvers.title_of(it["id"]) or it.get("title", "")
     it["comps"] = solvers.comps_of(it["id"])
     it["comps_unproposed"] = solvers.unproposed(it["comps"], solvers.prop_text())

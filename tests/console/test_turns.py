@@ -427,7 +427,7 @@ def test_a_compact_starts_the_cache_baseline_over(srv):
     assert it["cache_read"]["refine"] == 12000
 
 
-def test_a_compact_leaves_the_session_no_cache_to_count(srv):
+def test_a_compact_leaves_the_session_cold(srv):
     it = item(srv, "a", srv.NEEDS_REVIEW)
     w = worker(srv, it, state="running")
     w["slash"] = True
@@ -435,10 +435,10 @@ def test_a_compact_leaves_the_session_no_cache_to_count(srv):
                          "compact_metadata": {"pre_tokens": 180000, "post_tokens": 12000,
                                               "cumulative_dropped_tokens": 168000}}, None)
     srv.finish_turn(it, {"result": "compacted"}, None, time.time(), "refine", False)
-    assert it["lastActive"]["refine"] is None
+    assert time.time() - it["lastActive"]["refine"] / 1000 >= srv.CACHE_TTL
     srv.start_turn(it, w, "refine")
     srv.finish_turn(it, {"result": "a reply"}, None, time.time(), "refine", False)
-    assert it["lastActive"]["refine"] > 0
+    assert time.time() - it["lastActive"]["refine"] / 1000 < 5
 
 
 def test_a_request_that_carried_nothing_is_no_drop(srv):
