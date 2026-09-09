@@ -9,10 +9,10 @@ export function CompBadges({x}){
   return comps.map(c=>{
     const bad=(x.comps_unproposed||[]).includes(c);
     return html`<span key=${c} class=${"badge-comp"+(bad?" unproposed":"")}
-      title=${bad?"no proposals.md entry":"proposals.md entry open"}>${c}</span>`;
+      title=${bad?"no proposals entry":"proposals entry open"}>${c}</span>`;
   }).concat((x.entries||[]).filter(e=>!comps.includes(e)).map(e=>
     html`<span key=${"e:"+e} class="badge-comp entry"
-      title="proposals.md entry this task added, with no comp">${e}</span>`));
+      title="proposals entry this task added, with no comp">${e}</span>`));
 }
 /* what the stage left for the user; the entries ride along in the tooltip */
 export function CalloutBadge({x}){

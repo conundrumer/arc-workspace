@@ -66,7 +66,7 @@ button:disabled:hover { border-color:var(--border); }
   font-size:9px; letter-spacing:.06em; padding:1px 5px; border-radius:3px;
   background:var(--st-commented); color:var(--bg); font-weight:600;
 }
-/* a proposal comp: the code form of a proposals.md entry, and nothing else */
+/* a proposal comp: the code form of a proposals entry, and nothing else */
 .badge-comp {
   font-size:9px; letter-spacing:.06em; padding:0 4px; border-radius:3px;
   font-family:ui-monospace,Menlo,monospace; font-weight:600;
