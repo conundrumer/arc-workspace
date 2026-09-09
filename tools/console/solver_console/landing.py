@@ -45,13 +45,18 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
     # proposal. It stays with the item, and the ledger line carries it, so
     # the backlog still knows once the item is gone. A concurrent turn adds
     # entries to the same directory, so only the turn's own edits count.
-    it["prop_after"] = solvers.prop_files()
+    after = solvers.prop_files()
     before = store.pre(it).get("proposals")
-    new_entries = sorted((set(it["prop_after"])
-                          - set(before if isinstance(before, dict) else ()))
+    new_entries = sorted((set(after) - set(before if isinstance(before, dict) else ()))
                          & set(store.pre(it)["files"]))
     if new_entries:
         it["entries"] = sorted(set(it.get("entries", [])) | set(new_entries))
+    # The snapshot of every entry served the turn; what stays is the pair a
+    # revert compares, for the entries the turn edited: their pre-turn text
+    # is in `pre.files`, and their text as landed goes here.
+    store.pre(it)["proposals"] = {}
+    it["prop_after"] = {rel: text for rel, text in after.items()
+                        if rel in store.pre(it)["files"]}
     ledger.ledger_append({"task": it["id"], "stage": phase,
                           "backend": store.backend_of(it, phase),
                           "model": store.model_of(it, phase),
@@ -118,6 +123,36 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
         it["updated"] = True
 
 
+def owed(it: dict) -> str | None:
+    """What the stage an item waits on still lacks of what its landing
+    produces, when nothing is in flight to bring it: the handoff report, the
+    callouts on that report, or the advance the chain would have made by
+    itself. None for a stage that has it all, or one whose turn is still to
+    land."""
+    if it["state"] != store.NEEDS_REVIEW or store.active(it):
+        return None
+    phase = it["phase"]
+    if store.next_stage(it, phase) is None:
+        return None
+    report = solvers.report_of(it, phase)
+    if not report:
+        return "report"
+    if solvers.callout_body(report) is None:
+        return "callouts"
+    if workers.auto_advances(it, phase):
+        return "handoff"
+    return None
+
+
+def owe(it: dict, kind: str, phase: str, worker: dict) -> None:
+    """Queue a turn the landing owes the item. The count keeps a reload off
+    the item until the drain has sent the turn, or set it aside. Caller holds
+    LOCK."""
+    it["owed"] = it.get("owed", 0) + 1
+    store.DEFERRED.put_nowait((kind, it["id"], phase, worker["turn_seq"]))
+    drain.ensure_drain()
+
+
 def hand_on(it: dict, phase: str, text: str, report: str | None,
             callouts: str | None, worker: dict | None,
             outstanding: list[str]) -> None:
@@ -134,8 +169,7 @@ def hand_on(it: dict, phase: str, text: str, report: str | None,
             it.setdefault("reasked", {})[phase] = True
             drop_hold(it, phase)
             store.say(it, store.event("no handoff block — asking again"), sess=phase)
-            store.DEFERRED.put_nowait(("rehandoff", it["id"], phase, worker["turn_seq"]))
-            drain.ensure_drain()
+            owe(it, "rehandoff", phase, worker)
             return
         store.say(it, store.event("no handoff block — the text stands as the report"),
                   sess=phase)
@@ -166,8 +200,7 @@ def settle_hold(it: dict, phase: str, worker: dict | None,
         land_handoff(it, phase, "")
     elif worker:
         drop_hold(it, phase)
-        store.DEFERRED.put_nowait(("rehandoff", it["id"], phase, worker["turn_seq"]))
-        drain.ensure_drain()
+        owe(it, "rehandoff", phase, worker)
     else:
         drop_hold(it, phase)
         it["state"] = store.NEEDS_REVIEW
@@ -238,8 +271,7 @@ def land_handoff(it: dict, phase: str, text: str) -> None:
     worker = store.PROCS.get((it["id"], phase))
     if worker:
         it["callout_wait"] = phase
-        store.DEFERRED.put_nowait(("callout", it["id"], phase, worker["turn_seq"]))
-        drain.ensure_drain()
+        owe(it, "callout", phase, worker)
     else:
         it.pop("landing_compact", None)
         it["state"] = store.NEEDS_REVIEW
@@ -272,8 +304,7 @@ def land_callouts(it: dict, phase: str, body: str) -> None:
         it["handoff_pending"] = True
         worker = store.PROCS.get((it["id"], phase))
         if worker:
-            store.DEFERRED.put_nowait(("handoff", it["id"], phase, worker["turn_seq"]))
-            drain.ensure_drain()
+            owe(it, "handoff", phase, worker)
     else:
         it["state"] = store.NEEDS_REVIEW
         it["updated"] = True

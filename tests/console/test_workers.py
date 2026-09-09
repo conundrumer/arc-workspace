@@ -568,6 +568,71 @@ def test_a_running_turn_counts_against_the_reload(srv):
         assert not srv.turns_in_flight()
 
 
+def run_deferred(srv):
+    """Run the queued jobs on this thread, the way the drain would."""
+    srv.DEFERRED.put_nowait(srv.STOP)
+    srv.drain_deferred()
+
+
+@pytest.mark.parametrize("kind", ["callout", "rehandoff", "handoff"])
+def test_an_owed_turn_that_meets_the_reload_is_sent_after_it(srv, monkeypatch, kind):
+    launched = []
+    monkeypatch.setattr(srv, "ensure_drain", lambda: None)
+    monkeypatch.setattr(srv, "launch", lambda it, msg, phase, **kw:
+                        launched.append((phase, kw.get("trigger"), bool(kw.get("handoff")))))
+    it = item(srv, "a", srv.RUNNING, phase="create", landed=["create"],
+              sessions={"create": "cs", "refine": None}, auto_advance=True,
+              **({"callout_wait": "create"} if kind == "callout" else
+                 {"handoff_pending": True} if kind == "handoff" else {}))
+    it["reports"] = {"create": "the report"}
+    w = worker(srv, it, phase="create")
+    with srv.LOCK:
+        srv.owe(it, kind, "create", w)
+        assert srv.turns_in_flight()
+    srv.RELOADING = True
+    run_deferred(srv)
+    assert launched == []
+    assert it["reload_ask"] == {"kind": kind, "phase": "create"}
+    assert it["state"] == srv.NEEDS_REVIEW
+    assert not srv.turns_in_flight()
+    srv.RELOADING = False
+    with srv.LOCK:
+        srv.resume_paused()
+    assert "reload_ask" not in it
+    assert launched == [{"callout": ("create", "callout", False),
+                         "rehandoff": ("create", "handoff", True),
+                         "handoff": ("refine", None, False)}[kind]]
+    assert it["state"] == srv.RUNNING
+
+
+def test_a_landing_compact_that_meets_the_reload_runs_after_it(srv, monkeypatch):
+    monkeypatch.setattr(srv, "ensure_drain", lambda: None)
+    launched = []
+    monkeypatch.setattr(srv, "launch", lambda it, msg, phase, **kw: launched.append(msg))
+    srv.auto()["compact_landing"] = True
+    it = item(srv, "a", srv.NEEDS_REVIEW)
+    w = worker(srv, it)
+    srv.DEFERRED.put_nowait(("compact", "a", "refine", w["turn_seq"]))
+    srv.RELOADING = True
+    run_deferred(srv)
+    assert launched == [] and it["reload_ask"] == {"kind": "compact", "phase": "refine"}
+    srv.RELOADING = False
+    with srv.LOCK:
+        srv.resume_paused()
+    assert launched == ["/compact"]
+
+
+def test_a_called_off_reload_sends_the_turns_it_set_aside(srv, monkeypatch):
+    launched = []
+    monkeypatch.setattr(srv, "launch", lambda it, msg, phase, **kw: launched.append(phase))
+    it = item(srv, "a", srv.NEEDS_REVIEW, reload_ask={"kind": "callout", "phase": "refine"})
+    it["reports"] = {"refine": "the report"}
+    worker(srv, it)
+    monkeypatch.setattr(srv, "quiesce_workers", lambda: False)
+    assert srv.reload_server() == "deferred"
+    assert launched == ["refine"]
+
+
 def test_a_deferred_quiesce_leaves_the_workers_alone(srv, monkeypatch):
     it = item(srv, "a", srv.QUEUED)
     worker(srv, it)

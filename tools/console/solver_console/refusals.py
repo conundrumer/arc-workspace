@@ -36,7 +36,8 @@ def failure_note(ev: dict, reason: str, retried: bool = False) -> str:
     if kind:
         return (f"turn refused by the model's safeguards ({kind}) — "
                 "the same request fails again here; it needs a fresh session")
-    return f"turn failed ({reason})"
+    errors = "; ".join(str(e) for e in ev.get("errors") or [] if e)
+    return f"turn failed ({reason})" + (f" — {errors}" if errors else "")
 
 
 def user_text(row: dict) -> str:

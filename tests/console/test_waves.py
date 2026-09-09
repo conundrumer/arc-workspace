@@ -132,6 +132,25 @@ def test_load_folds_legacy_snapshot_keys_into_pre(srv):
     assert not {"hash_before", "snap", "snap_prop", "dirty_before", "turn_files"} & set(it)
 
 
+def test_load_drops_the_entry_snapshots_a_landed_turn_left(srv):
+    prop = "docs/wf-solver/proposals"
+    saved = {"seq": 1, "wave": 1, "items": [{
+        "id": "a", "state": srv.NEEDS_REVIEW, "dirty": False, "updated": False,
+        "rev": 2, "feed": [], "ver": 0, "title": "", "phase": "refine",
+        "sessions": {"create": "cs", "refine": "rs"}, "chain": srv.two_phase_chain(),
+        "lastActive": {"create": None, "refine": None},
+        "pre": {"hash": "", "solver": "", "dirty": False,
+                "proposals": {f"{prop}/X.md": "A\n", f"{prop}/Y.md": "Y\n"},
+                "files": {f"{prop}/X.md": "A\n"}},
+        "prop_after": {f"{prop}/X.md": "A\nB\n", f"{prop}/Y.md": "Y\n"},
+    }]}
+    srv.STATE_FILE.write_text(json.dumps(saved))
+    srv.load()
+    it = srv.STATE["items"][0]
+    assert it["pre"]["proposals"] == {}
+    assert it["prop_after"] == {f"{prop}/X.md": "A\nB\n"}
+
+
 def test_load_folds_a_single_session_item(srv):
     legacy = {"seq": 1, "wave": 1, "items": [{
         "id": "a", "state": srv.NEEDS_REVIEW, "session": "s", "dirty": False,

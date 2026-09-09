@@ -577,6 +577,28 @@ def test_a_turn_without_the_section_keeps_the_last_callouts(srv):
     assert srv.light_items()[0]["callouts"] == []
 
 
+def test_a_stage_that_landed_short_of_what_it_owes_says_so(srv):
+    it = item(srv, "a", srv.NEEDS_REVIEW, phase="create", landed=["create"],
+              sessions={"create": "cs", "refine": None}, auto_advance=True)
+    assert srv.owed(it) == "report"
+    it["reports"] = {"create": "the model claim"}
+    assert srv.owed(it) == "callouts"
+    it["reports"] = {"create": REPORT}
+    assert srv.owed(it) == "handoff"
+    assert srv.light_items()[0]["owes"] == "handoff"
+    it["auto_advance"] = False        # the chain waits for the user by design
+    assert srv.owed(it) is None
+    it["auto_advance"] = True
+    it["handoff_pending"] = True      # the advance is in flight
+    assert srv.owed(it) is None
+    it.pop("handoff_pending")
+    it["state"] = srv.RUNNING
+    assert srv.owed(it) is None
+    it["state"] = srv.NEEDS_REVIEW
+    it["phase"] = "refine"            # the last stage owes nothing after it
+    assert srv.owed(it) is None
+
+
 def test_an_item_that_never_landed_has_no_callout_pill(srv):
     item(srv, "a", srv.QUEUED)
     assert srv.light_items()[0]["callout_n"] is None

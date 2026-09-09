@@ -12,7 +12,8 @@ Env:
     CONSOLE_CLAUDE_HOME    the Claude home the workers run under, logged into the
                            console's account (default: ~/.claude-console); the
                            login is `CLAUDE_CONFIG_DIR=<home> claude`, then /login,
-                           and `just swap` trades the two homes' accounts
+                           and `just swap` trades the two homes' accounts; a session
+                           only the user's own home holds is copied in before a resume
     CONSOLE_OPUS_MODEL     the model id behind the "opus" setting (default: claude-opus-5)
     CONSOLE_FABLE_MODEL    the model id behind the "fable" setting (default: claude-fable-5)
     CONSOLE_CLAUDE_EFFORT  effort for claude stages whose chain names none (default: high)
@@ -40,6 +41,7 @@ from solver_console import (  # noqa: E402
     backlog,
     config,
     drain,
+    landing,
     ledger,
     overnight,
     pacing,
@@ -101,6 +103,7 @@ def light_items() -> list[dict]:
                     "turnStarted": turn["started"] if turn else None,
                     "workerLive": live,
                     "hasReport": bool(solvers.report_of(it, it["phase"])),
+                    "owes": landing.owed(it),
                     "cutPhase": it.get("resume_phase")})
     return out
 
@@ -263,6 +266,8 @@ def main() -> None:
     ledger.seed_entries()
     process.adopt_workers(handoff)
     drain.expire_holds(force=True)
+    with store.LOCK:
+        drain.resume_paused()
     store.save()
     waves.resume_queued_wave()
     threading.Thread(target=reload.watch_reload, daemon=True).start()

@@ -1,5 +1,6 @@
-/* The wave lens: every item in the console, in cache-expiry order, cut to
-   the first rows until the user asks for the rest. */
+/* The wave lens: the items whose stage landed without what it owes first,
+   then every item in cache-expiry order, cut to the first rows until the
+   user asks for the rest. */
 import { html, useState, useEffect, useCallback } from "/vendor/htm-preact-standalone.module.js";
 import { useClocked } from "/ui/clock.js";
 import { cacheInfo } from "/ui/item.js";
@@ -15,10 +16,13 @@ export const wave = {
     const items=snap.items;
     const [railAll,setRailAll]=useState(false);   // every wave row, on the user's ask
 
-    /* soonest-expiring cache first; a phase with no session yet, or a turn that
-       never landed, leads with "—"; running turns follow; cold ones close by state */
+    /* a stage that landed without its report, callouts, or handoff leads,
+       for the user to bring it by hand; then soonest-expiring cache first: a
+       phase with no session yet, or a turn that never landed, leads with "—";
+       running turns follow; cold ones close by state */
     const railOrder=useClocked(()=>
-      [...items].sort((a,b)=>cacheInfo(a).sort-cacheInfo(b).sort).map(it=>it.id),
+      [...items].sort((a,b)=>(b.owes?1:0)-(a.owes?1:0) || cacheInfo(a).sort-cacheInfo(b).sort)
+        .map(it=>it.id),
       [items]);
     /* The selected one stays past the cut, so a row does not vanish from
        under the detail pane while it is being read. */
@@ -52,7 +56,7 @@ export const wave = {
       settle: id => { ensureTask(id); ensureItem(id); },
       select,
       detailId: selItem ? selItem.id : null,
-      sections: [{key:"wave", head:"cache ↑expiring", rows,
+      sections: [{key:"wave", head:"owed first · cache ↑expiring", rows,
                   total:railOrder.length, onMore:()=>setRailAll(true)}],
       head: session.head, body: session.body, composer: session.composer, code: session.code,
       keys: session.keys,

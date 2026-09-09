@@ -2,7 +2,7 @@
    turn buttons, or an unfinalized solver's rulings and reports. */
 import { html } from "/vendor/htm-preact-standalone.module.js";
 import { stageNames, backendOf, stageLabel, takeoverCmd, hasTab } from "/ui/item.js";
-import { CompBadges, CalloutBadge, StateChip } from "/ui/panels/badges.js";
+import { CompBadges, CalloutBadge, OwesBadge, StateChip } from "/ui/panels/badges.js";
 import { post } from "/ui/server.js";
 import { copy } from "/ui/toast.js";
 
@@ -16,6 +16,7 @@ export function DetailHead({it, cli, tab, badges, canAdvance, canResume, nxt, on
       <${StateChip} state=${it.state}/>
       <span class="chip queued"><span class="dot"></span>${stageLabel(it,it.phase)}</span>
       ${it.updated && html`<span class="badge-upd">UPDATED</span>`}
+      <${OwesBadge} x=${it}/>
       ${it.dirty && html`<span class="badge-dirty">CLEANUP PENDING</span>`}
       <${CompBadges} x=${it}/><${CalloutBadge} x=${it}/>
     </div>

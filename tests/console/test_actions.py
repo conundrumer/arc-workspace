@@ -187,8 +187,8 @@ def write_prop(srv, name, text):
 
 def test_revert_restores_the_entry_this_turn_edited(srv):
     it = item(srv, "a", srv.NEEDS_REVIEW, prop_after={f"{PROP}/X.md": "A\nB\n"})
-    it["pre"] = {"hash": "", "solver": "// before\n",
-                 "proposals": {f"{PROP}/X.md": "A\n"}, "dirty": False, "files": {}}
+    it["pre"] = {"hash": "", "solver": "// before\n", "proposals": {},
+                 "dirty": False, "files": {f"{PROP}/X.md": "A\n"}}
     write_prop(srv, "X", "A\nB\n")
     write_solver(srv, "a", "// after\n")
     srv.act_revert("a")
@@ -199,7 +199,7 @@ def test_revert_restores_the_entry_this_turn_edited(srv):
 def test_revert_deletes_the_entry_this_turn_wrote(srv):
     it = item(srv, "a", srv.NEEDS_REVIEW, prop_after={f"{PROP}/New.md": "new\n"})
     it["pre"] = {"hash": "", "solver": "// before\n", "proposals": {},
-                 "dirty": False, "files": {}}
+                 "dirty": False, "files": {f"{PROP}/New.md": ""}}
     write_prop(srv, "New", "new\n")
     write_solver(srv, "a", "// after\n")
     srv.act_revert("a")
@@ -209,13 +209,24 @@ def test_revert_deletes_the_entry_this_turn_wrote(srv):
 
 def test_revert_leaves_an_entry_another_worker_touched(srv):
     it = item(srv, "a", srv.NEEDS_REVIEW, prop_after={f"{PROP}/X.md": "A\nB\n"})
-    it["pre"] = {"hash": "", "solver": "// before\n",
-                 "proposals": {f"{PROP}/X.md": "A\n"}, "dirty": False, "files": {}}
+    it["pre"] = {"hash": "", "solver": "// before\n", "proposals": {},
+                 "dirty": False, "files": {f"{PROP}/X.md": "A\n"}}
     write_prop(srv, "X", "A\nB\nC\n")  # a later turn appended
     write_solver(srv, "a", "// after\n")
     srv.act_revert("a")
     assert srv.prop_text() == "A\nB\nC\n"
     assert it["reverted"]["files"] == ["programs/solvers/a.dl"]
+
+
+def test_a_landing_keeps_only_the_entries_the_turn_edited(srv):
+    write_prop(srv, "Other", "# Other\n")
+    it = item(srv, "a", srv.RUNNING)
+    it["pre"] = {"hash": "", "solver": "", "proposals": srv.prop_files(), "dirty": False,
+                 "files": {f"{PROP}/Border.md": ""}, "watched": srv.watched_hashes("a")}
+    write_prop(srv, "Border", "# Border\n")
+    srv.finish_turn(it, {"result": ""}, None, time.time(), "refine", False)
+    assert it["pre"]["proposals"] == {}
+    assert it["prop_after"] == {f"{PROP}/Border.md": "# Border\n"}
 
 
 # ---------- entries a task adds ----------

@@ -34,50 +34,51 @@ def drain_deferred() -> None:
             with store.LOCK:
                 it = store.find(item_id)
                 worker = store.PROCS.get((item_id, phase))
+                if it and kind in store.OWED_ASKS:
+                    it["owed"] = max(0, it.get("owed", 0) - 1)
                 if kind == "rehandoff":
                     if not it or it.get("bg_wait") == phase:
                         continue
-                    if not worker or worker["turn_seq"] != turn_seq or store.RELOADING:
+                    if store.RELOADING:
+                        store.pause_for_reload(it, phase, kind)
+                    elif not worker or worker["turn_seq"] != turn_seq:
                         it["state"] = store.NEEDS_REVIEW
                         it["updated"] = True
-                        if store.RELOADING:
-                            store.say(it, store.event("handoff paused for server reload"),
-                                      sess=phase)
                     else:
-                        it["state"] = store.RUNNING
-                        store.say(it, store.event("handoff ask resent"), sess=phase)
-                        workers.launch(it, prompts.HANDOFF_BRIEF, phase,
-                               trigger="handoff", handoff=True)
+                        resend_handoff(it, phase)
                 elif kind == "callout":
                     if not it or it.get("callout_wait") != phase:
                         continue
-                    if not worker or worker["turn_seq"] != turn_seq or store.RELOADING:
+                    if store.RELOADING:
+                        it.pop("callout_wait", None)
+                        store.pause_for_reload(it, phase, kind)
+                    elif not worker or worker["turn_seq"] != turn_seq:
                         # the report stands without callouts
                         it.pop("callout_wait", None)
                         it.pop("landing_compact", None)
                         it["state"] = store.NEEDS_REVIEW
                         it["updated"] = True
-                        if store.RELOADING:
-                            store.say(it, store.event("callouts paused for server reload"),
-                                      sess=phase)
                     else:
                         it["state"] = store.RUNNING
                         store.say(it, store.event("callout turn starting"), sess=phase)
                         workers.launch(it, prompts.callout_brief(), phase, trigger="callout")
                 elif kind == "compact":
                     # A turn since the landing, a turn or relaunch in flight
-                    # on any session of the item, a compact already done, a
-                    # reload, or a setting turned off in the meantime: no
-                    # compact. The refusal path files the job with no turn
-                    # number, since its worker is gone, so the item's own
-                    # marks are what hold it off a turn the user opened.
-                    if not it or store.RELOADING or store.active(it) \
+                    # on any session of the item, a compact already done, or
+                    # a setting turned off in the meantime: no compact. The
+                    # refusal path files the job with no turn number, since
+                    # its worker is gone, so the item's own marks are what
+                    # hold it off a turn the user opened.
+                    if not it or store.active(it) \
                             or it.get("auto_compacted", {}).get(phase) \
                             or (turn_seq is not None
                                 and (not worker or worker["turn_seq"] != turn_seq)) \
                             or not store.auto()["compact_landing"]:
                         continue
-                    start_compact(it, phase, "on landing")
+                    if store.RELOADING:
+                        store.pause_for_reload(it, phase, kind)
+                    else:
+                        start_compact(it, phase, "on landing")
                 elif not it or not it.get("handoff_pending") or not worker or \
                         worker["turn_seq"] != turn_seq:
                     if it:
@@ -85,15 +86,59 @@ def drain_deferred() -> None:
                     continue
                 else:
                     it.pop("handoff_pending", None)
-                    prev = it["phase"]
-                    workers.advance_stage(it)
-                    # a finalize pass opened this way lands unattended, so
-                    # its first landing owes the lens its callouts
-                    if prev != "finalize" and it["phase"] == "finalize":
-                        it["auto_finalize"] = True
+                    advance(it)
             store.bump()
         except Exception as exc:
             print(f"deferred {job[0]} failed: {exc}", file=sys.stderr)
+
+
+def resend_handoff(it: dict, phase: str) -> None:
+    """Ask the stage for its handoff block once more. Caller holds LOCK."""
+    it["state"] = store.RUNNING
+    store.say(it, store.event("handoff ask resent"), sess=phase)
+    workers.launch(it, prompts.HANDOFF_BRIEF, phase, trigger="handoff", handoff=True,
+                   admitted=True)
+
+
+def advance(it: dict) -> None:
+    """Move the item on to its next stage, on the chain's own decision.
+    Caller holds LOCK."""
+    prev = it["phase"]
+    workers.advance_stage(it)
+    # a finalize pass opened this way lands unattended, so its first
+    # landing owes the lens its callouts
+    if prev != "finalize" and it["phase"] == "finalize":
+        it["auto_finalize"] = True
+
+
+def resume_paused() -> None:
+    """Send the turns a reload set aside, once it is over or called off. A
+    turn the user opened on the item in the meantime supersedes its ask.
+    Caller holds LOCK."""
+    for it in store.STATE["items"]:
+        ask = it.pop("reload_ask", None)
+        if not ask:
+            continue
+        phase, kind = ask["phase"], ask["kind"]
+        name = store.OWED_ASKS[kind]
+        if store.active(it):
+            store.say(it, store.event(f"{name} dropped — a turn ran since the reload"),
+                      sess=phase)
+            continue
+        try:
+            if kind == "callout":
+                landing.ask_callouts(it, phase)
+            elif kind == "rehandoff":
+                resend_handoff(it, phase)
+            elif kind == "compact":
+                if not it.get("auto_compacted", {}).get(phase) \
+                        and store.auto()["compact_landing"]:
+                    start_compact(it, phase, "on landing")
+            else:
+                advance(it)
+        except (store.Reject, OSError) as exc:
+            store.say(it, store.event(f"{name} not resumed after the reload: {exc}"),
+                      sess=phase)
 
 
 def queue_reap(worker: dict) -> None:

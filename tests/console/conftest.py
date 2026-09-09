@@ -103,6 +103,7 @@ def tmp_path(workdir, request):     # noqa: A002 — replaces pytest's own
 def srv(tmp_path, monkeypatch):
     monkeypatch.setenv("CONSOLE_STATE_DIR", str(tmp_path / "state"))
     monkeypatch.setenv("CONSOLE_CLAUDE_HOME", str(tmp_path / "claude-home"))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "user-home"))
     # The server snapshots the environment into WORKER_ENV at import, so the
     # fake worker's pace has to be set before the module loads.
     monkeypatch.setenv("CONSOLE_FAKE_PACE", FAKE_PACE)

@@ -229,13 +229,14 @@ def act_revert(it: dict) -> None:
     solvers.solver_path(item_id).write_text(snap)
     reverted = [f"programs/solvers/{item_id}.dl"]
     # the proposal entries are shared across workers: restore one only if
-    # this turn changed it and nothing touched it since the turn landed
-    before, after = store.pre(it)["proposals"], it.get("prop_after")
-    before = before if isinstance(before, dict) else {}
+    # this turn edited it and nothing touched it since the turn landed
+    before = {rel: text for rel, text in store.pre(it)["files"].items()
+              if rel.startswith(solvers.PROP_DIR + "/")}
+    after = it.get("prop_after")
     after = after if isinstance(after, dict) else {}
     now = solvers.prop_files()
-    for rel in sorted(set(before) | set(after)):
-        b, a = before.get(rel, ""), after.get(rel, "")
+    for rel in sorted(before):
+        b, a = before[rel], after.get(rel, "")
         if b == a or now.get(rel, "") != a:
             continue
         p = solvers.prop_path(rel)

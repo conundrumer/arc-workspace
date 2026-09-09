@@ -335,6 +335,11 @@ def worker_cmd(it: dict, phase: str) -> list[str]:
 
 def spawn_worker(it: dict, phase: str) -> dict:
     item_id = it["id"]
+    session = it["sessions"].get(phase)
+    if session and workers.own_transcript(session) is None \
+            and workers.adopt_transcript(session) is not None:
+        store.say(it, store.event("session copied in from the user's Claude home"),
+                  sess=phase)
     cmd = worker_cmd(it, phase)
     log = open(config.LOG_DIR / f"{item_id}.log", "ab")
     proc = subprocess.Popen(cmd, cwd=config.ROOT,
@@ -604,7 +609,11 @@ def on_result(worker: dict, it: dict | None, ev: dict, phase: str) -> None:
     if not it or worker["state"] not in ("sending", "running"):
         return
     worker["got_result"] = True
-    reason = ev.get("terminal_reason", "completed")
+    # A result the CLI raised before the turn ran names no terminal_reason,
+    # or a completed one; its error flag and subtype say what happened.
+    reason = ev.get("terminal_reason") or "completed"
+    if ev.get("is_error") and reason == "completed":
+        reason = ev.get("subtype") or "error"
     escalate = worker.pop("escalate", None)
     handoff = worker["handoff"]
     ask = worker.get("ask")

@@ -4,7 +4,7 @@
 import { html } from "/vendor/htm-preact-standalone.module.js";
 import { useClock } from "/ui/clock.js";
 import { cacheInfo } from "/ui/item.js";
-import { CompBadges, CalloutBadge, StateChip } from "/ui/panels/badges.js";
+import { CompBadges, CalloutBadge, OwesBadge, StateChip } from "/ui/panels/badges.js";
 import { Thumb } from "/ui/panels/grid.js";
 
 export const passLabel = b => (b.passes||[]).map(p=>p.model).join(" ");
@@ -21,6 +21,7 @@ export function ItemRow({it, sel, task, metric, onSelect}){
       <div class="tid">
         ${it.id}${" "}
         ${it.updated && html`<span class="badge-upd">UPD</span>`}
+        <${OwesBadge} x=${it}/>
         ${it.dirty && html`<span class="badge-dirty">CLEANUP</span>`}
         <${CompBadges} x=${it}/><${CalloutBadge} x=${it}/>
       </div>

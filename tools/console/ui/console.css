@@ -66,6 +66,11 @@ button:disabled:hover { border-color:var(--border); }
   font-size:9px; letter-spacing:.06em; padding:1px 5px; border-radius:3px;
   background:var(--st-commented); color:var(--bg); font-weight:600;
 }
+/* the stage landed without its report, callouts, or handoff */
+.badge-owes {
+  font-size:9px; letter-spacing:.06em; padding:1px 5px; border-radius:3px;
+  background:var(--st-removed); color:var(--bg); font-weight:600;
+}
 /* a proposal comp: the code form of a proposals entry, and nothing else */
 .badge-comp {
   font-size:9px; letter-spacing:.06em; padding:0 4px; border-radius:3px;

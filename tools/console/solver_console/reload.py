@@ -7,13 +7,15 @@ import sys
 import time
 from pathlib import Path
 
-from . import config, process, store, waves
+from . import config, drain, process, store, waves
 
 
 def turns_in_flight() -> bool:
-    """Whether any item holds a turn the reload has to wait out. Caller holds
+    """Whether any item holds a turn the reload has to wait out: one running,
+    or one a landing queued that the drain has not reached. Caller holds
     LOCK."""
-    return any(store.active(it) or it["state"] == store.QUEUED for it in store.STATE["items"])
+    return any(store.active(it) or it["state"] == store.QUEUED or it.get("owed")
+               for it in store.STATE["items"])
 
 
 RELOAD_POLL = 2  # seconds between checks of the sources' mtimes
@@ -72,6 +74,8 @@ def reload_server() -> str:
                     store.save()
                     os.execv(sys.executable, [sys.executable] + sys.argv)
                 store.RELOADING = False
+        with store.LOCK:
+            drain.resume_paused()
         print("reload deferred — the console is in use")
         return "deferred"
     except Exception as exc:
@@ -87,6 +91,7 @@ def reload_server() -> str:
         with store.LOCK:
             for it in store.STATE["items"]:
                 store.say(it, store.event(f"reload failed — server still running: {exc}"))
+            drain.resume_paused()
             store.save()
         waves.resume_queued_wave()
         return "failed"

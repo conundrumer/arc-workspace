@@ -32,6 +32,9 @@ QUEUE_CACHE = ROOT / "scripts" / ".queue-cache"
 CLAUDE_HOME = Path(os.environ.get("CONSOLE_CLAUDE_HOME",
                                   Path.home() / ".claude-console"))
 PROJECTS = CLAUDE_HOME / "projects"   # the CLI's transcripts, one per session
+# The user's own home, where the console's sessions lived before it had a
+# home of its own. A session found only there is copied in before a resume.
+USER_PROJECTS = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude")) / "projects"
 # The account's rate-limit windows: the OAuth usage API cache the fetch
 # script writes, and the file the statusline of an interactive session in
 # that home writes from its own responses, which is the fresher of the two

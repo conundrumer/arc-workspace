@@ -231,6 +231,22 @@ def action(fn):
     return wrapped
 
 
+# The turns the console owes an item after a landing, by the job that sends
+# them, and how the feed names each.
+OWED_ASKS = {"callout": "callouts", "rehandoff": "handoff", "handoff": "handoff",
+             "compact": "compact"}
+
+
+def pause_for_reload(it: dict, phase: str, kind: str) -> None:
+    """Set aside a turn the console owes the item while a reload is in
+    flight; `resume_paused` sends it once the reload is over or called off.
+    Caller holds LOCK."""
+    it["reload_ask"] = {"kind": kind, "phase": phase}
+    it["state"] = NEEDS_REVIEW
+    it["updated"] = True
+    say(it, event(f"{OWED_ASKS[kind]} paused for server reload"), sess=phase)
+
+
 def defer_reload() -> None:
     """Drop a pending quiesce so a user action can go through. The watcher
     arms again once the console is next quiet. Caller holds LOCK."""
@@ -282,6 +298,7 @@ def load() -> None:
     STATE.update(json.loads(config.STATE_FILE.read_text()))
     for it in STATE["items"]:
         migrate(it)
+        it.pop("owed", None)   # the jobs died with the process
         if it["state"] in ACTIVE:
             it.pop("pending_handoff", None)
             it.pop("handoff_pending", None)
@@ -323,11 +340,14 @@ def migrate(it: dict) -> None:
         it["landed"] = [n for n, s in it["sessions"].items() if s]
     it.pop("refined", None)
     if "pre" in it:
-        # the proposals snapshot was one file's text; it is a dict per entry
-        if not isinstance(it["pre"].get("proposals"), dict):
-            it["pre"]["proposals"] = {}
-        if not isinstance(it.get("prop_after", {}), dict):
-            it["prop_after"] = {}
+        # No turn is in flight at load, so the snapshot of every entry has
+        # served its turn; only the entries the turn edited stay, as the
+        # landing keeps them.
+        it["pre"]["proposals"] = {}
+        after = it.get("prop_after")
+        it["prop_after"] = {rel: text for rel, text in
+                            (after.items() if isinstance(after, dict) else ())
+                            if rel in it["pre"].get("files", {})}
         return
     it.pop("snap_prop", None)
     it["pre"] = {"hash": it.pop("hash_before", ""),

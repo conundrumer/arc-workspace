@@ -4,6 +4,7 @@ that ran away gets."""
 
 import json
 import re
+import shutil
 import time
 import uuid
 from pathlib import Path
@@ -172,9 +173,32 @@ def respawn_done(it: dict, phase: str) -> None:
         it.pop("respawn_wait", None)
 
 
-def transcript_of(session: str) -> Path | None:
-    """The CLI's own record of a session."""
+def own_transcript(session: str) -> Path | None:
+    """The CLI's own record of a session, in the console's home."""
     return next(iter(config.PROJECTS.glob(f"*/{session}.jsonl")), None)
+
+
+def adopt_transcript(session: str) -> Path | None:
+    """Copy a session the user's own home holds into the console's home, so
+    a worker under CLAUDE_CONFIG_DIR can resume it: the transcript and the
+    subagent records beside it. Returns the copy, or None when the user's
+    home has no such session either."""
+    src = next(iter(config.USER_PROJECTS.glob(f"*/{session}.jsonl")), None)
+    if src is None:
+        return None
+    dst = config.PROJECTS / src.parent.name / src.name
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dst)
+    side = src.parent / session
+    if side.is_dir():
+        shutil.copytree(side, dst.parent / session, dirs_exist_ok=True)
+    return dst
+
+
+def transcript_of(session: str) -> Path | None:
+    """The CLI's record of a session, copied in from the user's home when the
+    console's home has none."""
+    return own_transcript(session) or adopt_transcript(session)
 
 
 def tail_rows(worker: dict, session: str) -> list[dict]:
@@ -382,9 +406,7 @@ def advance_stage(it: dict) -> None:
     if nxt is None:
         return
     if store.RELOADING:
-        it["state"] = store.NEEDS_REVIEW
-        it["updated"] = True
-        store.say(it, store.event("handoff paused for server reload"))
+        store.pause_for_reload(it, it["phase"], "handoff")
         return
     prev, it["phase"] = it["phase"], nxt["name"]
     # A new stage is a new session, so it reads the appendix as it stands;

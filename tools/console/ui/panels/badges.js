@@ -20,6 +20,16 @@ export function CalloutBadge({x}){
   const r = x.callout_rank;
   return html`<span class=${"badge-call"+(r!=null?" r"+r:"")} title=${(x.callouts||[]).join("\n")}>${r===0?"P0 · ":""}${x.callout_n}</span>`;
 }
+/* what the stage the item waits on landed without; the user brings it by
+   hand: `handoff` in the composer for the report, the callouts ask for the
+   callouts, the advance button for the handoff */
+const OWES_HOW = {report:"send `handoff` to the session, or a comment that continues its pass",
+                  callouts:"send `callouts` to the session",
+                  handoff:"press advance"};
+export function OwesBadge({x}){
+  if(!x.owes) return null;
+  return html`<span class="badge-owes" title=${"the stage landed without its "+x.owes+" — "+OWES_HOW[x.owes]}>${"owes "+x.owes}</span>`;
+}
 export function StateChip({state, label}){
   return html`<span class=${"chip "+CHIPCLS[state]}><span class="dot"></span>${label!==undefined?label:state}</span>`;
 }

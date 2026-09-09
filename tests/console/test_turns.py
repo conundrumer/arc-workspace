@@ -347,6 +347,44 @@ def test_workers_run_in_the_consoles_claude_home(srv, tmp_path):
     assert srv.transcript_of("sess-2") is None
 
 
+def test_a_session_from_the_users_home_is_copied_in_for_the_resume(srv, tmp_path,
+                                                                      monkeypatch):
+    import types
+    src = srv.USER_PROJECTS / "-some-cwd" / "sess-a.jsonl"
+    src.parent.mkdir(parents=True)
+    src.write_text('{"type":"user"}\n')
+    agent = src.parent / "sess-a" / "subagents" / "agent-1.jsonl"
+    agent.parent.mkdir(parents=True)
+    agent.write_text("")
+    assert srv.own_transcript("sess-a") is None
+    monkeypatch.setattr(srv, "FAKE", True)
+    monkeypatch.setattr(srv, "start_worker_threads", lambda w: None)
+    monkeypatch.setattr(srv.subprocess, "Popen", lambda *a, **k: types.SimpleNamespace())
+    it = item(srv, "a", srv.NEEDS_REVIEW, sessions={"create": None, "refine": "sess-a"})
+    srv.spawn_worker(it, "refine")
+    copy = srv.PROJECTS / "-some-cwd" / "sess-a.jsonl"
+    assert srv.own_transcript("sess-a") == copy
+    assert copy.read_text() == src.read_text()
+    assert (copy.parent / "sess-a" / "subagents" / "agent-1.jsonl").exists()
+    assert it["feed"][-1]["text"] == "session copied in from the user's Claude home"
+
+
+def test_a_result_the_cli_raised_before_the_turn_is_a_failure(srv, monkeypatch):
+    monkeypatch.setattr(srv, "finish_turn",
+                        lambda *a, **k: pytest.fail("an error result landed as a turn"))
+    it = item(srv, "a", srv.COMMENTED)
+    w = worker(srv, it, state="running")
+    w["started"] = time.time()
+    srv.handle_event(w, {"type": "result", "subtype": "error_during_execution",
+                         "is_error": True, "num_turns": 0, "result": "",
+                         "terminal_reason": "completed",
+                         "errors": ["No conversation found with session ID: s"]}, None)
+    assert ("turn failed (error_during_execution) — No conversation found with "
+            "session ID: s") in [m["text"] for m in it["feed"]]
+    assert not srv.active(it)
+    assert w["state"] == "idle"
+
+
 def test_worker_cmd_for_a_codex_stage_runs_the_adapter(srv, tmp_path, monkeypatch):
     monkeypatch.setattr(srv, "FAKE", False)
     append = tmp_path / "append.md"
