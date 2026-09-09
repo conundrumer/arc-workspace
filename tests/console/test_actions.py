@@ -428,19 +428,19 @@ def test_a_flag_survives_the_item_being_dropped(srv):
     assert srv.flags()["a"]["level"] == 1
 
 
-# ---------- debrief ----------
+# ---------- retro ----------
 
-def test_a_debrief_records_when_it_ran(srv, monkeypatch):
-    assert srv.debriefed() == 0
+def test_a_retro_records_when_it_ran(srv, monkeypatch):
+    assert srv.retro_mark() == 0
     monkeypatch.setattr(srv, "now", lambda: 900.0)
-    assert srv.act_debrief() == {"ok": True, "ts": 900}
-    assert srv.debriefed() == 900
-    assert json.loads(srv.DEBRIEF_FILE.read_text()) == {"ts": 900}
+    assert srv.act_retro() == {"ok": True, "ts": 900}
+    assert srv.retro_mark() == 900
+    assert json.loads(srv.RETRO_FILE.read_text()) == {"ts": 900}
 
 
-def test_a_debrief_lists_the_tasks_whose_callouts_landed_since_the_mark(srv, monkeypatch):
+def test_a_retro_lists_the_tasks_whose_callouts_landed_since_the_mark(srv, monkeypatch):
     monkeypatch.setattr(srv, "now", lambda: 900.0)
-    srv.act_debrief()
+    srv.act_retro()
     # a's refine callouts landed before the mark; its finalize turns since
     # filed no report, so the mark already covers what it carries
     srv.save_report("a", "refine", "done\n\n## Callouts\n\n- [P2] read already\n")
@@ -452,8 +452,8 @@ def test_a_debrief_lists_the_tasks_whose_callouts_landed_since_the_mark(srv, mon
     # c's report is filed and its callout turn has not landed yet
     srv.save_report("c", "create", "done\n")
     os.utime(srv.report_path("c", "create"), (960, 960))
-    assert srv.debrief_view() == {
-        "debriefed": 900,
+    assert srv.retro_view() == {
+        "retro_mark": 900,
         "items": [{"id": "b", "title": "", "ts": 950, "callouts": ["[P2] a doc gap"]}]}
 
 

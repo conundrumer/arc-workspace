@@ -152,7 +152,7 @@ class Handler(BaseHTTPRequestHandler):
                         "auto": dict(store.auto()),
                         "models": list(config.MODEL_IDS),
                         "committer": dict(store.COMMITTER),
-                        "debriefed": ledger.debriefed(),
+                        "retro_mark": ledger.retro_mark(),
                         "solved": len([p for p in config.SOLVERS.glob("*.dl")
                                        if not p.name.startswith(".")]),
                         "total": len(list(config.REF_DIR.glob("programs/solvers/*.ts")))}
@@ -167,8 +167,8 @@ class Handler(BaseHTTPRequestHandler):
                             "ver": it.get("ver", 0)})
         elif url.path == "/api/backlog":
             self.reply(backlog.lens_view())
-        elif url.path == "/api/debrief":
-            self.reply(ledger.debrief_view())
+        elif url.path == "/api/retro":
+            self.reply(ledger.retro_view())
         elif url.path.startswith("/api/peek/"):
             item_id = url.path.rsplit("/", 1)[1]
             if not solvers.solver_path(item_id).exists():
@@ -233,8 +233,8 @@ class Handler(BaseHTTPRequestHandler):
             res = overnight.act_night(body)
         elif route == "/api/flag":
             res = ledger.act_flag(body)
-        elif route == "/api/debrief":
-            res = ledger.act_debrief()
+        elif route == "/api/retro":
+            res = ledger.act_retro()
         elif route == "/api/finalize":
             res = backlog.act_finalize(body)
         elif route == "/api/dismiss":

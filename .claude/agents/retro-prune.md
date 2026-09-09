@@ -1,6 +1,6 @@
 ---
-name: debrief-prune
-description: Prunes the text a debrief fix added or changed in one file. Reads the handbook.
+name: retro-prune
+description: Prunes the text a retro fix added or changed in one file. Reads the handbook.
 tools: Read, Grep, Glob, Bash, Edit
 ---
 First, when the handbook does not follow this section, read the output of `uv run python scripts/context.py` in full. You prune the text the brief's diff added or changed, in the one file it names. Your final text is data for a script, not a message for a person.

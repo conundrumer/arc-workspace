@@ -159,33 +159,33 @@ def act_flag(body: dict) -> dict:
     return {"ok": True, "level": level}
 
 
-# ---------- debrief ----------
+# ---------- retro ----------
 #
-# When the callouts were last read across tasks. A debrief takes the tasks
+# When the callouts were last read across tasks. A retro takes the tasks
 # whose latest report was written after this mark, with the callouts it
 # carries. A callout turn rewrites the report, so a task comes back into the
 # window when it has new callouts, and a turn that files nothing, such as a
 # conversation with a finalize session, brings it back with none.
 
-def debriefed() -> int:
+def retro_mark() -> int:
     try:
-        raw = json.loads(config.DEBRIEF_FILE.read_text())
+        raw = json.loads(config.RETRO_FILE.read_text())
     except (OSError, ValueError):
         return 0
     return int(raw.get("ts") or 0) if isinstance(raw, dict) else 0
 
 
-def act_debrief() -> dict:
+def act_retro() -> dict:
     ts = int(store.now())
     with store.LOCK:
-        config.DEBRIEF_FILE.parent.mkdir(parents=True, exist_ok=True)
-        config.DEBRIEF_FILE.write_text(json.dumps({"ts": ts}))
+        config.RETRO_FILE.parent.mkdir(parents=True, exist_ok=True)
+        config.RETRO_FILE.write_text(json.dumps({"ts": ts}))
     store.bump()
     return {"ok": True, "ts": ts}
 
 
-def debrief_view() -> dict:
-    mark = debriefed()
+def retro_view() -> dict:
+    mark = retro_mark()
     items = []
     try:
         dirs = sorted(d for d in config.REPORT_DIR.iterdir() if d.is_dir())
@@ -205,4 +205,4 @@ def debrief_view() -> dict:
         if ts > mark and callouts:
             items.append({"id": d.name, "title": solvers.title_of(d.name),
                           "ts": ts, "callouts": callouts})
-    return {"debriefed": mark, "items": items}
+    return {"retro_mark": mark, "items": items}
