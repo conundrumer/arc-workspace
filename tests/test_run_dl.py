@@ -184,8 +184,8 @@ def test_grid_reports_a_compile_error_once(solvers, monkeypatch, capsys):
     assert out == f"{STEM}.dl: souffle exited 1:\nError: x\n"
 
 
-SHADOWED = (".type KP = [key: Unit, p_part: Position]\n"
-            ".init occ = Occurrences<KP, Color>\n")
+SHADOWED = (".type _KP = [key: Unit, p_part: Position]\n"
+            ".init occ = Occurrences<_KP, Color>\n")
 
 
 def test_run_names_a_shadowed_type_beside_souffle(solvers, monkeypatch, capsys):

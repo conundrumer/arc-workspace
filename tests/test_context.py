@@ -11,6 +11,9 @@ def test_lib_signatures_keep_the_interface_and_drop_the_bodies():
 .decl opposite(d: Dir, opp: Dir)
 opposite(DIR_T, DIR_B).
 
+// Dispatch functors (C++).
+.functor dist_proj(d: Dir, t: number): number
+
 .comp Components<Key> {
     .decl node(key: Key, p: Position)
 
@@ -27,6 +30,7 @@ opposite(DIR_T, DIR_B).
     assert "// Opposite Dir on the same axis." in out
     assert ".decl opposite(d: Dir, opp: Dir)\n" in out   # a top-level fill goes
     assert "opposite(DIR_T, DIR_B)." not in out
+    assert "functor" not in out                          # a functor is implementation
     assert ".decl node(key: Key, p: Position)  // input" in out
     assert ".decl edge(key: Key, d: Dir)  // input\n" in out   # the mark is written once
     assert "step([-1, 1, 0, 0])." in out                 # a component's fill stays

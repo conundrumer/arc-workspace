@@ -637,12 +637,12 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 .comp Frame2D<Key> {
     .decl extent(key: Key, a: Axis, n: number)
 
-    .init ax = AxisFrame<Key>
-    ax.extent(Ky, A, N) :- extent(Ky, A, N).
+    .init _ax = AxisFrame<Key>
+    _ax.extent(Ky, A, N) :- extent(Ky, A, N).
 
     .decl cell(key: Key, p: Position)
     cell(Ky, P) :-
-        perp(A1, A2), ax.cell(Ky, A1, P1), ax.cell(Ky, A2, P2),
+        perp(A1, A2), _ax.cell(Ky, A1, P1), _ax.cell(Ky, A2, P2),
         compose(P1, P2, P).
 }
 
@@ -732,15 +732,15 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     // Short of the far edge: every edge the cast toward d approaches still
     // lies ahead. A position off the frame across d passes, so a cast that
     // starts outside still walks in.
-    .decl onward(p: Position, d: Dir8) inline
-    onward(P, D) :- dir_elem(D), dist(P, D, K), K >= 0.
-    onward(P, D) :- diag_dir_elem(D), diag_dist(P, D, _, K1, K2), K1 >= 0, K2 >= 0.
+    .decl _onward(p: Position, d: Dir8) inline
+    _onward(P, D) :- dir_elem(D), dist(P, D, K), K >= 0.
+    _onward(P, D) :- diag_dir_elem(D), diag_dist(P, D, _, K1, K2), K1 >= 0, K2 >= 0.
 
     // Frame-wide cast: one cell per step from each mark, marks included.
     .decl cast(key: Key, p: Position, d: Dir8, k: number, src: Position)
     cast(Ky, P, D, 0, P) :- mark(Ky, P), dir(Ky, D).
     cast(Ky, P2, D, K+1, Src) :-
-        cast(Ky, P, D, K, Src), step_delta(D, S), compose(P, S, P2), onward(P2, D).
+        cast(Ky, P, D, K, Src), step_delta(D, S), compose(P, S, P2), _onward(P2, D).
 
     // p on a key-k ray cast toward d, k cells from the casting mark src.
     // k = 0 at the mark itself, and `ray(Ky, P, D, _, _)` is membership alone.
@@ -1093,15 +1093,15 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     .decl step(key: Key, n: number)
 
     // Downward closure of step — the walk's recursion bound.
-    .decl bound(key: Key, n: number)
-    bound(Ky, N) :- step(Ky, M), N = range(0, M+1).
+    .decl _bound(key: Key, n: number)
+    _bound(Ky, N) :- step(Ky, M), N = range(0, M+1).
 
     // p = p0 advanced n steps along succ.
     .decl walk(key: Key, p0: T, n: number, p: T)
     walk(Ky, P0, 0, P0) :- succ(Ky, P0, _).
     walk(Ky, P0, N1, P2) :-
         walk(Ky, P0, N, P1), succ(Ky, P1, P2),
-        bound(Ky, N1), N1 = N + 1.      // N1 is the Z/n step count
+        _bound(Ky, N1), N1 = N + 1.      // N1 is the Z/n step count
 }
 
 // A partition carried along a walk, one item passing to the taken side per
@@ -1306,24 +1306,24 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     .decl width(key: Key, d: Dir, k: number)  // input
 
     // An edge with no width has margin zero.
-    .decl edge(key: Key, d: Dir, k: number)
-    edge(Ky, D, K) :- width(Ky, D, K).
-    edge(Ky, D, 0) :- cell(Ky, _), dir_elem(D), !width(Ky, D, _).
+    .decl _edge(key: Key, d: Dir, k: number)
+    _edge(Ky, D, K) :- width(Ky, D, K).
+    _edge(Ky, D, 0) :- cell(Ky, _), dir_elem(D), !width(Ky, D, _).
 
-    .init pack = DirPack<Key>
-    pack.edge(Ky, D, K) :- edge(Ky, D, K).
+    .init _pack = DirPack<Key>
+    _pack.edge(Ky, D, K) :- _edge(Ky, D, K).
 
     .decl margin(key: Key, p: Inset)
-    margin(Ky, P) :- pack.pos(Ky, P).
+    margin(Ky, P) :- _pack.pos(Ky, P).
 
-    .init rf = Reframe<Key>
-    rf.outer(Ky, M) :- margin(Ky, M).
-    rf.cell(Ky, P) :- cell(Ky, P).
+    .init _rf = Reframe<Key>
+    _rf.outer(Ky, M) :- margin(Ky, M).
+    _rf.cell(Ky, P) :- cell(Ky, P).
 
     .decl inner(key: Key, p: Position, p_inner: Position)
     inner(Ky, P, P_inner) :-
         margin(Ky, M), geq(P, M),  // clear of the margins
-        rf.view(Ky, P, P_inner).
+        _rf.view(Ky, P, P_inner).
 }
 
 // Keyed cells viewed from their own bounding box. `cell` defines the box
@@ -1331,9 +1331,9 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 // a crop reads. `inner` carries the cell alongside the inner position, so
 // one key serves the whole set.
 .comp BoxFrame<Key> : Bbox<Key> {
-    .init mf = MarginFrame<Key>
-    mf.width(K, D, M) :- edge_min(K, D, M).
-    mf.cell(K, P) :- viewed(K, P).
+    .init _mf = MarginFrame<Key>
+    _mf.width(K, D, M) :- edge_min(K, D, M).
+    _mf.cell(K, P) :- viewed(K, P).
 
     // Cells the frame covers — the box's own cells plus the grid cells it
     // encloses. Unfed, `grid` leaves the box's own cells, so a test over
@@ -1343,7 +1343,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     viewed(K, P) :- inside(K, P).
 
     .decl inner(key: Key, p: Position, p_inner: Position)
-    inner(K, P, I) :- mf.inner(K, P, I).
+    inner(K, P, I) :- _mf.inner(K, P, I).
 }
 
 // Bounding box of a keyed cell set, from the min distance to each edge over
@@ -1356,18 +1356,18 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     // The grid the box sits in, per key.
     .decl grid(key: Key, p: Position)
 
-    .decl cell_dist(key: Key, d: Dir, k: number)
-    cell_dist(K, D, Kd) :- cell(K, P), dir_elem(D), dist(P, D, Kd).
+    .decl _cell_dist(key: Key, d: Dir, k: number)
+    _cell_dist(K, D, Kd) :- cell(K, P), dir_elem(D), dist(P, D, Kd).
 
     .decl edge_min(key: Key, d: Dir, m: number)
-    edge_min(K, D, M) :- cell_dist(K, D, _), M = min Kd : { cell_dist(K, D, Kd) }.
+    edge_min(K, D, M) :- _cell_dist(K, D, _), M = min Kd : { _cell_dist(K, D, Kd) }.
 
-    .init pack = DirPack<Key>
-    pack.edge(K, D, M) :- edge_min(K, D, M).
+    .init _pack = DirPack<Key>
+    _pack.edge(K, D, M) :- edge_min(K, D, M).
 
     // The box as a Position — margin from each edge.
     .decl margin(key: Key, p: Position)
-    margin(K, P) :- pack.pos(K, P).
+    margin(K, P) :- _pack.pos(K, P).
 
     // Grid cells inside the box — at least the margin from every edge.
     .decl inside(key: Key, p: Position)
@@ -1422,24 +1422,24 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     // The set the outlines are drawn in, per key.
     .decl node(key: Key, p: Position)
 
-    .init run = Slide<Key>
-    run.node(K, P) :- node(K, P).
-    run.dir(K, D) :- node(K, _), dir_elem(D).
+    .init _run = Slide<Key>
+    _run.node(K, P) :- node(K, P).
+    _run.dir(K, D) :- node(K, _), dir_elem(D).
 
     // A corner pair whose four runs close a rectangle.
     .decl _ring(key: Key, c1: Position, c4: Position)
     _ring(K, C1, C4) :-
-        run.run(K, C1, D1, C2), run.run(K, C1, D2, C3),  // two sides from one corner
+        _run.run(K, C1, D1, C2), _run.run(K, C1, D2, C3),  // two sides from one corner
         perp_dir(D1, D2),                                // at right angles
-        run.run(K, C2, D2, C4), run.run(K, C3, D1, C4).  // and back to the far corner
+        _run.run(K, C2, D2, C4), _run.run(K, C3, D1, C4).  // and back to the far corner
 
     .type _KR = [key: Key, c1: Position, c4: Position]
 
-    .init box = Bbox<_KR>
-    box.cell([K, C1, C4], C) :- _ring(K, C1, C4), ( C = C1 ; C = C4 ).
+    .init _box = Bbox<_KR>
+    _box.cell([K, C1, C4], C) :- _ring(K, C1, C4), ( C = C1 ; C = C4 ).
 
     .decl rect(key: Key, b: Position)
-    rect(K, B) :- box.margin([K, _, _], B).
+    rect(K, B) :- _box.margin([K, _, _], B).
 }
 
 // Connected components of a node set (4-adjacency), per key, each labeled by
@@ -1450,11 +1450,11 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 .comp Components<Key> {
     .decl node(key: Key, p: Position)
 
+    // The steps that join nodes: the cardinals, and any a caller adds.
     .decl step(delta: Position)
     step([-1, 1, 0, 0]). step([1, -1, 0, 0]). step([0, 0, -1, 1]). step([0, 0, 1, -1]).
 
-    // Min-label propagation: every node proposes its own id, and
-    // subsumption keeps each component's minimum.
+    // The id of the component p belongs to.
     .decl label(key: Key, p: Position, id: Ident)
     label(Ky, P, as(ord(P), Ident)) :- node(Ky, P).
     label(Ky, Q, Id) :- label(Ky, P, Id), step(D), compose(P, D, Q), node(Ky, Q).
@@ -1487,12 +1487,12 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 .comp Rim<Key> {
     .decl cell(key: Key, p: Position)  // input
 
-    .decl dir(d: Dir8)
-    dir(D) :- dir_elem(D).
+    .decl _dir(d: Dir8)
+    _dir(D) :- dir_elem(D).
 
     // The outside lies one step toward d.
     .decl rim_dir(key: Key, p: Position, d: Dir8)
-    rim_dir(Ky, P, D) :- cell(Ky, P), dir(D), neighbor(P, D, Q), !cell(Ky, Q).
+    rim_dir(Ky, P, D) :- cell(Ky, P), _dir(D), neighbor(P, D, Q), !cell(Ky, Q).
 
     .decl rim(key: Key, p: Position)
     rim(Ky, P) :- rim_dir(Ky, P, _).
@@ -1502,13 +1502,13 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     depth(Ky, P, 0) :- rim(Ky, P).
     depth(Ky, P, K2) :-
         depth(Ky, Q, K), K2 = K + 1,
-        dir(D), neighbor(Q, D, P), cell(Ky, P).
+        _dir(D), neighbor(Q, D, P), cell(Ky, P).
     depth(Ky, P, K) <= depth(Ky, P, K2) :- K2 < K.
 }
 
 // Rim under 8-adjacency.
 .comp Rim8<Key> : Rim<Key> {
-    dir(D) :- dir8_elem(D).
+    _dir(D) :- dir8_elem(D).
 }
 
 // The regions a keyed cell set closes off from the grid edge — the
@@ -1518,16 +1518,16 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     .decl cell(key: Key, p: Position)  // input
 
     // The edge-connected part of the set.
-    .init flood = Reach<Key>
-    flood.node(Ky, P) :- cell(Ky, P).
-    flood.seed(Ky, P) :- cell(Ky, P), dir_elem(D), dist(P, D, 0).
+    .init _flood = Reach<Key>
+    _flood.node(Ky, P) :- cell(Ky, P).
+    _flood.seed(Ky, P) :- cell(Ky, P), dir_elem(D), dist(P, D, 0).
 
     // Individuate only the closed cells.
-    .init regions = Components<Key>
-    regions.node(Ky, P) :- cell(Ky, P), !flood.reach(Ky, P).
+    .init _regions = Components<Key>
+    _regions.node(Ky, P) :- cell(Ky, P), !_flood.reach(Ky, P).
 
     .decl region(key: Key, p: Position, id: Ident)
-    region(Ky, P, Id) :- regions.label(Ky, P, Id).
+    region(Ky, P, Id) :- _regions.label(Ky, P, Id).
 }
 
 // Occurrences of a shape among cells, per key: cells and shape members are
@@ -1542,17 +1542,17 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     .decl shape(key: Key, p: Position, v: Val)
 
     // Internal keys pair the solver key with an anchor Position.
-    .type KP = [key: Key, p: Position]
+    .type _KP = [key: Key, p: Position]
 
-    // Candidate placements — align each shape cell (one origin per pair) to
+    // Candidate placements — _align each shape cell (one origin per pair) to
     // every cell of the same value, union over the shape cells. A true
     // occurrence aligns every member to a same-valued cell, so the
     // restriction loses no placement.
-    .init align = Reframe<KP>
-    align.cell([Ky, S], P)  :- shape(Ky, S, V), cell(Ky, P, V).
-    align.outer([Ky, S], S) :- shape(Ky, S, _).
+    .init _align = Reframe<_KP>
+    _align.cell([Ky, S], P)  :- shape(Ky, S, V), cell(Ky, P, V).
+    _align.outer([Ky, S], S) :- shape(Ky, S, _).
     .decl placement(key: Key, p: Position)
-    placement(Ky, M) :- align.inner([Ky, _], M).
+    placement(Ky, M) :- _align.inner([Ky, _], M).
 
     // A contradicted placement: some member lands on a cell of another
     // value, or off the grid, where no cell carries its value.

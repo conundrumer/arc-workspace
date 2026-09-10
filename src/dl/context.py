@@ -74,7 +74,7 @@ def lib_signatures(text: str) -> str:
             if isinstance(it, (Define, Functor, TypeDecl, Init)):
                 name = (it.name if isinstance(it, TypeDecl)
                         else it.inst if isinstance(it, Init) else "")
-                if name.startswith("_"):
+                if name.startswith("_") or isinstance(it, Functor):
                     hidden.add(it.line)
                     continue
                 keep.add(it.line)
