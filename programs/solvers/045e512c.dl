@@ -34,18 +34,12 @@ objs.node(Col, P) :- in(P, Col), !params.bg(Col).
 .decl object(id: Ident, col: Color, p: Position)
 object(Id, Col, P) :- objs.label(Col, P, Id).
 
-.init object_size = Tally<Ident, Position>
-object_size.item(Id, P) :- object(Id, _, P).
-
 // The template is the largest object.
-.init biggest = ArgExtremes<Unit, Ident>
-biggest.cand($U(), Id, N) :- object_size.tally(Id, N).
-
-.decl template(id: Ident)
-template(Id) :- biggest.high($U(), Id, _).
+.init biggest = Mode<Unit, Ident, Position>
+biggest.item($U(), Id, P) :- object(Id, _, P).
 
 .decl shape(p: Position)
-shape(P) :- object(Id, _, P), template(Id).
+shape(P) :- biggest.mode($U(), Id), object(Id, _, P).
 
 // --- steps ---
 
@@ -56,18 +50,18 @@ span(K) :- in(P, _), axis_elem(A), sub_extent(P, A, K).
 .decl toward(d: Dir8, k: number, delta: Shift)
 toward(D, K, Delta) :- span(K), dir8_elem(D), jump_delta(D, K, Delta).
 
-// The template displaced by one step.
-.decl placed(delta: Shift, p: Position)
-placed(Delta, P2) :- toward(_, _, Delta), shape(P), compose(P, Delta, P2).
+// Where each object seats on the template: the translations that carry
+// every cell of the object onto a template cell.
+.init seating = Occurrences<Ident, Unit>
+seating.shape(Id, P, $U()) :- object(Id, _, P).
+seating.cell(Id, P, $U())  :- object(Id, _, _), shape(P).
 
-.init inside = KeyedSetCompare<Shift, Ident, Position>
-inside.pattern_member(Id, P) :- object(Id, _, P).
-inside.observed_member(Delta, P) :- placed(Delta, P).
-
-// Steps whose copy holds the whole object. No step holds the template
-// itself, so only the fragments march.
+// Steps whose copy holds the whole object: the seating's inverse, where it
+// is a step. No step holds the template itself, so only the fragments march.
 .decl fits(id: Ident, delta: Shift, k: number)
-fits(Id, Delta, K) :- toward(_, K, Delta), inside.covers(Delta, Id).
+fits(Id, Delta, K) :-
+    seating.occurrence(Id, M), displacement(M, ORIGIN, Delta),  // the step undoes the seating
+    toward(_, K, Delta).                                        // and is a straight jump
 
 .decl step(id: Ident, delta: Shift, ch: Choice)
 
@@ -87,21 +81,22 @@ step(Id, Delta, $Stride()) :- fits(Id, Delta, K), params.stride(K).
 .init sbox = Bbox<Unit>
 sbox.cell($U(), P) :- shape(P).
 
-.decl shape_extent(n: number)
-shape_extent(N) :- sbox.extents($U(), _, N, N).
-
 step(Id, Delta, $Abut()) :-
     fits(Id, Delta, _),
-    shape_extent(N), toward(D, N, S1),        // clear the template's extent
-    params.gap(G), toward(D, G, S2),          // then the gap
+    sbox.extents($U(), _, N, N), toward(D, N, S1),  // clear the square template's extent
+    params.gap(G), toward(D, G, S2),                // then the gap
     compose(S1, S2, Delta).
 
 // --- output ---
 
 // Copies march from the template until they leave the grid.
 .decl copy(id: Ident, p: Position, ch: Choice)
-copy(Id, P, Ch)  :- step(Id, Delta, Ch), placed(Delta, P), in(P, _).
-copy(Id, P2, Ch) :- copy(Id, P, Ch), step(Id, Delta, Ch), compose(P, Delta, P2), in(P2, _).
+copy(Id, P2, Ch) :-
+    step(Id, Delta, Ch),
+    ( shape(P)         // the first copy steps from the template
+    ; copy(Id, P, Ch)  // each next copy from the last
+    ),
+    compose(P, Delta, P2), in(P2, _).
 
 .decl impl_choice(ch: Choice)
 impl_choice($Reach()). impl_choice($Stride()). impl_choice($Abut()).

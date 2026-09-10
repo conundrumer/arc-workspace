@@ -92,28 +92,18 @@ out(P_grid, Col, Ch) :-
 .type ExAxis = [e: Example, a: Axis]
 
 .comp Determine {
-    .decl content(e: Example, p_intile: Position, col: Color)
-    content(E, P_intile, Col) :-
+    // Where the copies seat on the output. A copy is the input under
+    // params.xform.
+    .init seat = Occurrences<Example, Color>
+    seat.shape(E, P_intile, Col) :-
         ex_in(E, P_grid_in, Col), params.xform(D), apply(D, P_grid_in, P_intile).
+    seat.cell(E, P_grid, Col) :- ex_out(E, P_grid, Col).
 
-    // Seats of the copy on the output, from one matching cell.
-    .decl cand(e: Example, v: Inset)
-    cand(E, V) :-
-        content(E, P_intile, Col), ex_out(E, P_grid, Col),
-        displacement(P_intile, P_grid, V).
-
-    // A seat some copy cell contradicts; a cell off the output frame
-    // contradicts it too.
-    .decl clash(e: Example, v: Inset)
-    clash(E, V) :-
-        cand(E, V), content(E, P_intile, Col),
-        compose(P_intile, V, P_grid), !ex_out(E, P_grid, Col).
-
-    // The offsets of the seats that stand, along each axis: one per tile of
-    // that axis.
+    // The tile count on each axis: how many distinct offsets the seats take
+    // along it.
     .init tile_n = Tally<ExAxis, Position>
     tile_n.item([E, A], P_along) :-
-        cand(E, V), !clash(E, V), axis_elem(A), split(V, A, P_along, _).
+        seat.occurrence(E, V), axis_elem(A), split(V, A, P_along, _).
 
     .init tile_dim = Unanimous<Axis, number>
     tile_dim.item(A, N) :- tile_n.tally([_, A], N).
