@@ -83,10 +83,15 @@ out(P, Col, $GroupMatch()) :- best_id.high($U(), Id, _), params.mapping_out(Id, 
     .decl paired(e: Example)
     paired(E) :- ex_out(E, _, _).
 
-    // Two train pairs whose outputs disagree. An output is total over its
-    // frame and a Position carries its frame, so one direction settles it.
+    // Train pairs that answer alike.
+    .type PV = [p: Position, col: Color]
+    .init out_cmp = KeyedSetCompare<Example, Example, PV>
+    out_cmp.pattern_member(E, [P, Col]) :- ex_out(E, P, Col).
+    out_cmp.observed_member(E, M) :- out_cmp.pattern_member(E, M).
+
+    // Two train pairs whose outputs disagree.
     .decl differs(e1: Example, e2: Example)
-    differs(E1, E2) :- ex_out(E1, P, Col), ex_out(E2, _, _), !ex_out(E2, P, Col).
+    differs(E1, E2) :- paired(E1), paired(E2), !out_cmp.equals(E1, E2).
 
     // A transform that puts two disagreeing pairs on the same side of its
     // invariance test, so that test does not carry the classification.
@@ -116,14 +121,10 @@ out(P, Col, $GroupMatch()) :- best_id.high($U(), Id, _), params.mapping_out(Id, 
     .decl sym_group(s: Sym)
     sym_group(S) :- named.equals($U(), S).
 
-    // Train pairs that answer alike.
-    .decl same_out(e1: Example, e2: Example)
-    same_out(E1, E2) :- paired(E1), paired(E2), !differs(E1, E2).
-
-    // One table entry per class of alike pairs, labelled by its lowest
-    // member; the label carries identity only.
+    // One table entry per class of alike pairs; the label carries identity
+    // only.
     .init class = Canon<Example>
-    class.equiv(E, E2) :- same_out(E, E2).
+    class.equiv(E, E2) :- out_cmp.equals(E, E2).
 
     // A transform some member of the class breaks.
     .decl group_broken(id: Ident, d: D4)
