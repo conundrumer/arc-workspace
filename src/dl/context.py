@@ -69,6 +69,9 @@ def lib_signatures(text: str) -> str:
                 keep.update(range(it.line, it.end_line + 1))
                 decls.append(it)
             elif isinstance(it, Comp):
+                if it.name.startswith("_"):
+                    hidden.update(range(it.line, it.end_line + 1))
+                    continue
                 keep.add(it.line)
                 keep.add(it.end_line)
                 walk(it.items, True)

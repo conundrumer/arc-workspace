@@ -25,7 +25,7 @@ SOLVER = """\
         .decl glyph(p: Position)
         GRID_MASK_2x2(glyph,
             1, 1,
-            1, 0)
+            1, _)
         .decl aim(d: DiagDir) aim(DIAG_TL).
     )
 }

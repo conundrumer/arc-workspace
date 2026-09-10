@@ -61,6 +61,8 @@ ORIENTATION_LITERAL_RE = re.compile(
     if ORIENTATION_LITERALS else r"(?!)"
 )
 COMMENT_RE = re.compile(r"//.*$")
+# A `.plan` directive and the join order it carries, to end of line.
+PLAN_RE = re.compile(r"(?<![\w.])\.plan\b.*$")
 BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", flags=re.DOTALL)
 NUMERIC_LITERAL_RE = re.compile(r"(?<![A-Za-z_0-9.])\d+(?![A-Za-z_0-9.])")
 UNIT_MARKER = "@unit"
@@ -123,7 +125,9 @@ LONE_PARSE_CAT = "parse without determine"
 RIGID_CHART_RE = re.compile(r"\b_rigid_\w+")
 
 # Comparison-ops detector (<, <=, >, >=). Body comparisons are usually
-# legitimate, so this is opt-in.
+# legitimate, so this is opt-in. The comparisons that are not legitimate
+# are the ones over a type that carries no order, which the rewrite
+# lint's `typed-order` rule reads off the column types.
 LINT_COMPARISON = False
 
 
@@ -543,6 +547,8 @@ def lint_program(source: str) -> list[tuple[str, int, str, str]]:
 
     def code(lineno: int) -> str:
         line = COMMENT_RE.sub("", raw_lines[lineno - 1])
+        # A `.plan` join order names body positions, not data.
+        line = PLAN_RE.sub("", line)
         # Souffle's choice-domain qualifier is not arithmetic.
         return line.replace("choice-domain", " " * len("choice-domain"))
 

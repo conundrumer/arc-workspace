@@ -345,3 +345,16 @@ def test_type_in_determine_lints_and_a_filled_record_there_stays_quiet():
 """
     fs = [f for f in lint_program(src) if f[0] == "banned type"]
     assert [f[1] for f in fs] == [3]
+
+
+def test_plan_join_order_passes_through():
+    """A `.plan` names body positions, so its numbers are not data."""
+    src = """\
+.comp Determine {
+    .decl walk(a: Position, b: Position)
+    walk(A, B) :- step(A, B).
+    walk(A, B) :- walk(A, C), step(C, B).
+    .plan 0:(2, 1)
+}
+"""
+    assert cats(src) == []

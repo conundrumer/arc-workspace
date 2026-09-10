@@ -14,19 +14,15 @@ SCRIPT = Path(__file__).resolve().parents[1] / "tools" / "console" / "ref_note.p
 
 @pytest.fixture(scope="session")
 def fixed_repo(tmp_path_factory):
-    """The three solvers every test reads, committed once for the whole run.
-    No test writes to the repo; only the state dir varies."""
+    """The three solvers every test reads, written once for the whole run.
+    aaaa1111 carries the user's approval — no draft line; the other two are
+    tagged. No test writes to the repo; only the state dir varies."""
     root = tmp_path_factory.mktemp("fixed") / "repo"
     solvers = root / "programs" / "solvers"
     solvers.mkdir(parents=True)
-    git = ["git", "-C", str(root), "-c", "user.email=t@t", "-c", "user.name=t"]
-    subprocess.run([*git, "init", "-q"], check=True)
-    (solvers / "aaaa1111.dl").write_text("// committed\n")
-    (solvers / "bbbb2222.dl").write_text("// committed\n")
-    subprocess.run([*git, "add", "."], check=True)
-    subprocess.run([*git, "commit", "-qm", "solvers"], check=True)
-    (solvers / "bbbb2222.dl").write_text("// edited\n")
-    (solvers / "cccc3333.dl").write_text("// never committed\n")
+    (solvers / "aaaa1111.dl").write_text("// aaaa1111\n// concept: a shape\n")
+    for stem in ("bbbb2222", "cccc3333"):
+        (solvers / f"{stem}.dl").write_text(f"// {stem}\n// draft\n")
     return root
 
 
@@ -59,25 +55,14 @@ def grep_of(*ids, session="s1"):
                 f"programs/solvers/{i}.dl:3:  Reach(x, y)" for i in ids)}
 
 
-def test_an_uncommitted_solver_gets_the_note(repo):
+def test_an_unapproved_solver_gets_the_note(repo):
     note = hook(repo, grep_of("cccc3333"))
     assert note == ("note: cccc3333.dl is not approved — don't use it as "
                     "reference; it still counts as a survey caller.")
 
 
-def test_a_clean_committed_solver_is_silent(repo):
+def test_a_solver_with_no_draft_line_is_silent(repo):
     assert hook(repo, grep_of("aaaa1111")) == ""
-
-
-def test_edits_on_a_committed_solver_get_the_soft_note(repo):
-    note = hook(repo, grep_of("bbbb2222"))
-    assert note == ("note: bbbb2222.dl has uncommitted edits — the committed "
-                    "version is the ratified reference.")
-
-
-def test_an_approved_id_is_silent(repo):
-    (repo.parent / "state" / "approved.txt").write_text("cccc3333\n")
-    assert hook(repo, grep_of("cccc3333")) == ""
 
 
 def test_the_workers_own_task_is_exempt(repo):
@@ -93,7 +78,7 @@ def test_a_note_lands_once_per_session(repo):
 def test_the_command_side_is_scanned_too(repo):
     payload = {"session_id": "s1", "tool_name": "Bash",
                "tool_input": {"command": "cat programs/solvers/cccc3333.dl"},
-               "tool_response": "// never committed"}
+               "tool_response": "// draft"}
     assert "not approved" in hook(repo, payload)
 
 
@@ -101,7 +86,7 @@ def test_notes_cover_each_id_once(repo):
     note = hook(repo, grep_of("bbbb2222", "cccc3333", "aaaa1111"))
     assert note.count("note:") == 2
     assert "cccc3333.dl is not approved" in note
-    assert "bbbb2222.dl has uncommitted edits" in note
+    assert "bbbb2222.dl is not approved" in note
 
 
 def test_the_script_runs_as_a_hook(repo):

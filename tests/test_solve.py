@@ -75,3 +75,40 @@ def test_profile_needs_every_accepted_grid_under_a_rule_alt(monkeypatch):
     one = [Candidate("$CaseA", A, [], []), Candidate("$CaseB", A, [], [])]
     assert _profile(monkeypatch, RULE_EX, one) is None
 
+
+
+def _cases(monkeypatch, per_pair: list[list], cases: bool):
+    """`_run_profile` over one stub run per pair, and how many pairs ran."""
+    runs = iter(per_pair)
+    seen = []
+
+    def parse(_out):
+        actuals = next(runs)
+        seen.append(actuals)
+        return actuals
+
+    monkeypatch.setattr(solve_mod, "res_out", lambda _src: False)
+    monkeypatch.setattr(solve_mod, "build_source", lambda src: src)
+    monkeypatch.setattr(solve_mod, "grid_to_facts", lambda rows: "")
+    monkeypatch.setattr(solve_mod, "_run_source", lambda *_a, **_k: "")
+    monkeypatch.setattr(solve_mod, "parse_output", parse)
+    ex = _Ex(input=[[0]], output=A)
+    out = solve_mod._run_profile("src", [ex] * len(per_pair), cases=cases)
+    return out, len(seen)
+
+
+MISS = [Candidate("$CaseA", A, [], []), Candidate("$CaseB", B, [], [])]
+BOTH = [Candidate("$CaseA", A, [], []), Candidate("$CaseB", A, [], [])]
+
+
+def test_case_sets_need_every_pair(monkeypatch):
+    (profile, passing), ran = _cases(monkeypatch, [MISS, BOTH], cases=True)
+    assert profile is None
+    assert passing == [frozenset({"$CaseA"}), frozenset({"$CaseA", "$CaseB"})]
+    assert ran == 2
+
+
+def test_a_profile_alone_stops_at_the_failing_pair(monkeypatch):
+    (profile, passing), ran = _cases(monkeypatch, [MISS, BOTH], cases=False)
+    assert (profile, passing) == (None, None)
+    assert ran == 1

@@ -16,7 +16,7 @@ from dl.domains import (
     _position_domain,
 )
 from dl.paths import SOLVERS_DIR
-from dl.solve import _profile
+from dl.solve import _profile, _run_profile
 from dl.souffle import _pool_workers
 from dl.source import (
     RIGID_CHART_PREFIX,
@@ -27,6 +27,7 @@ from dl.source import (
     comp_decls,
     expand_macros,
     public_param,
+    shared_params,
     swap_fact,
     swap_facts,
 )
@@ -55,11 +56,16 @@ def sweep_report(
     set; it is re-swept whole (see _set_sweep), with candidate sets in
     place of candidate values.
 
+    A shared parameter is one every case reads, so the cases must admit
+    the same values. Each such parameter reports its per-case value sets
+    too, from the same runs (see _case_result).
+
     Returns (param, status, detail): status 'swept' carries
     (fitting, stored, types, verdicts) — verdicts maps each extra fitting
     value to its test-pass bool — 'swept-set' and 'swept-set-near' carry
     the same shape with frozensets of value tuples for fitting and verdict
-    keys, and 'skip' carries the reason.
+    keys, 'cases' carries (per_case, types, domain), and 'skip' carries
+    the reason.
     """
     # Macros expand first, so a GRID-fed parameter reads as ordinary facts and
     # a RIGID chart as an ordinary generated-name parameter; re-expansion at
@@ -73,6 +79,8 @@ def sweep_report(
 
     reference: list[frozenset[str]] | None = None
     test_reference: list[frozenset[str]] | None = None
+    shared = shared_params(source)
+    base_cases: frozenset[str] = frozenset()
     results: list[tuple[str, str, object]] = []
     params = comp_decls(source, "Params")
     placed = {public_param(n) for n in params if n.startswith(RIGID_CHART_PREFIX)}
@@ -131,22 +139,42 @@ def sweep_report(
             continue
 
         if reference is None:
-            reference = _profile(source, task.train)
+            if shared:
+                reference, passing = _run_profile(source, task.train, cases=True)
+                base_cases = (frozenset.intersection(*passing) if passing
+                              else frozenset())
+            else:
+                reference = _profile(source, task.train)
             if reference is None:
                 results.append((public_param(param), "skip", "stored value fails train"))
                 continue
 
-        def test(vals, param=param):
-            profile = _profile(swap_fact(source, param, vals), task.train)
-            return vals if profile == reference else None
+        # The per-case sets need every pair, so the profile's early return
+        # goes only for the shared parameters this report covers.
+        cases_wanted = (param in shared and len(base_cases) > 1
+                        and len(facts) == 1)
+
+        def test(vals, param=param, want=cases_wanted):
+            mod = swap_fact(source, param, vals)
+            if not want:
+                return vals, _profile(mod, task.train) == reference, None
+            profile, passing = _run_profile(mod, task.train, cases=True)
+            admits = frozenset.intersection(*passing) if passing else None
+            return vals, profile == reference, admits
 
         with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
-            fitting = [v for v in executor.map(test, candidates) if v]
+            rows = list(executor.map(test, candidates))
+        fitting = [v for v, ok, _ in rows if ok]
+
+        case_result = _case_result(param, types, candidates, base_cases, rows) \
+            if cases_wanted else None
 
         if not set(stored) <= set(fitting):
             results.append(_set_sweep(
                 source, param, stored, types, candidates, task, reference,
                 max_candidates))
+            if case_result:
+                results.append(case_result)
             continue
 
         verdicts: dict[tuple, bool] = {}
@@ -164,7 +192,34 @@ def sweep_report(
                 with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
                     verdicts = dict(zip(extras, executor.map(test_check, extras)))
         results.append((public_param(param), "swept", (fitting, stored, types, verdicts)))
+        if case_result:
+            results.append(case_result)
     return results
+
+
+def _case_result(
+    param: str,
+    types: list[str],
+    candidates: list[tuple],
+    base_cases: frozenset[str],
+    rows: list[tuple[tuple, bool, frozenset[str] | None]],
+) -> tuple[str, str, object] | None:
+    """The per-case entry for one shared parameter, or None when the cases
+    admit one value set.
+
+    A case admits a value when it reproduces every train pair under it. A
+    case that admits the whole domain never reads the parameter, so the
+    parameter belongs under that case's marker; a case that admits more
+    than the narrowest case is one the pairs do not exercise the parameter
+    under.
+    """
+    per_case = {
+        case: frozenset(v for v, _, admits in rows if admits and case in admits)
+        for case in base_cases
+    }
+    if len(set(per_case.values())) < 2:
+        return None
+    return (public_param(param), "cases", (per_case, types, frozenset(candidates)))
 
 
 def _neighborhood(stored: list[tuple], singles: list[tuple]) -> list[frozenset]:
@@ -288,6 +343,9 @@ def render_sweep(results: list[tuple[str, str, object]]) -> list[str]:
         if status == "skip":
             lines.append(f"{param}: not swept — {detail}")
             continue
+        if status == "cases":
+            lines.append(_render_cases(param, detail, show))
+            continue
         if status in ("swept-set", "swept-set-near"):
             fitting, stored, types, verdicts = detail
             stored_set = frozenset(stored)
@@ -369,3 +427,31 @@ def render_sweep(results: list[tuple[str, str, object]]) -> list[str]:
                 )
         lines.append(f"{param}: " + "; ".join(parts))
     return lines
+
+
+def _render_cases(param: str, detail: tuple, show) -> str:
+    """One line for a shared parameter whose cases admit different values."""
+    per_case, types, domain = detail
+    groups: dict[frozenset, list[str]] = {}
+    for case, values in sorted(per_case.items()):
+        groups.setdefault(values, []).append(case)
+    order = sorted(groups.items(), key=lambda g: (len(g[0]), sorted(g[1])))
+    least = order[0][0]
+    parts = [f"{param}: the cases admit different values"]
+    for values, cases in order:
+        label = ", ".join(cases)
+        s = "" if len(cases) > 1 else "s"
+        shown = ", ".join(show(v, types) for v in sorted(values))
+        if values == domain:
+            parts.append(
+                f"{label} admit{s} the whole domain [{shown}], so {label} "
+                f"never read{s} {param} — it belongs under that case's marker"
+            )
+        elif values != least:
+            parts.append(
+                f"{label} admit{s} [{shown}], so the pairs do not exercise "
+                f"{param} under {label}"
+            )
+        else:
+            parts.append(f"{label} admit{s} [{shown}]")
+    return "; ".join(parts)

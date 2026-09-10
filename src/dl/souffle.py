@@ -5,6 +5,7 @@ import re
 import signal
 import subprocess
 import tempfile
+import time
 from collections import defaultdict
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -45,13 +46,38 @@ class _CpuLimit(RuntimeError):
     escapes it is a RuntimeError, as every other Souffle failure is."""
 
 
+# A temp source older than this has no live run: a run that lost its process
+# to a kill left it behind.
+STALE_TEMP_SECONDS = 3600
+
+
+def sweep_temp_sources(now: float | None = None) -> int:
+    """Remove the temp sources no run owns, and return how many went.
+
+    A run removes its own temp source when it ends, but a killed process
+    removes nothing, so the files it held stay under `programs/solvers/`.
+    """
+    now = time.time() if now is None else now
+    gone = 0
+    for path in SOLVERS_DIR.glob(".tmp*.dl"):
+        try:
+            if now - path.stat().st_mtime > STALE_TEMP_SECONDS:
+                path.unlink()
+                gone += 1
+        except OSError:
+            continue
+    return gone
+
+
 def build_functors() -> None:
     """Compile lib_functors.cpp to the shared library Souffle loads at runtime.
 
     Skips when the artifact is newer than the source. Called once before the
     pool spins up — never per-pair, which would race. Solvers can't run without
     it (lib.dl's primitives call its functors), so a failure here is fatal.
+    Sweeps the stale temp sources on the way, for the same once-per-run reason.
     """
+    sweep_temp_sources()
     if FUNCTORS_LIB.exists() and FUNCTORS_LIB.stat().st_mtime >= FUNCTORS_SRC.stat().st_mtime:
         return
     souffle_prefix = subprocess.run(

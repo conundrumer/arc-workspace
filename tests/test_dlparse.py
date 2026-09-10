@@ -90,6 +90,15 @@ def test_grid_fact_takes_no_period():
     assert grid.grid and grid.head.name == "GRID_1x2"
 
 
+def test_grid_fact_takes_macro_cell_tokens():
+    """A grid head's arguments are cell tokens, not terms, so the anchor
+    prefix and the absent token pass."""
+    p = parse("GRID_STAMP_1x3(s, @1, _, 1)\nafter(P) :- s(P).\n")
+    grid = p.items[0]
+    assert grid.grid and grid.head.name == "GRID_STAMP_1x3"
+    assert p.items[1].head.name == "after"
+
+
 def test_decl_line_fact():
     p = parse(".comp Params {\n    .decl bg(c: Color) bg(0).\n}\n")
     decl, fact = p.items[0].items
@@ -247,3 +256,48 @@ def test_body_literals():
     assert sum(isinstance(l, Cmp) for l in shallow) == 2
     fact = parse("seed(3).\n").items[0]
     assert list(body_literals(fact)) == []
+
+
+def test_plan_directive():
+    src = """\
+.decl walk(a: number, b: number)
+walk(A, B) :- edge(A, B).
+walk(A, B) :- walk(A, C), edge(C, B).
+.plan 0:(2, 1)
+"""
+    base, step = parse(src).items[1:]
+    assert base.plan is None
+    assert step.plan == [(0, (2, 1))]
+    assert step.end_line == 4
+
+
+def test_plan_on_the_rule_line_and_many_versions():
+    src = "p(A, B) :- p(A, C), p(C, B). .plan 0:(1, 2), 1:(2, 1)\n"
+    rule = parse(src).items[0]
+    assert rule.plan == [(0, (1, 2)), (1, (2, 1))]
+    assert rule.end_line == 1
+    assert parse("q(A) :- r(A).\n.decl s(a: number)\n").items[0].plan is None
+
+
+def test_comp_nested_in_comp():
+    src = """\
+.comp Outer {
+    .comp Inner {
+        .decl node(k: number)
+        node(1).
+    }
+    .init i = Inner
+    .decl seen(k: number)
+    seen(X) :- i.node(X).
+}
+.init o = Outer
+top(X) :- o.seen(X), o.i.node(X).
+"""
+    p = parse(src)
+    outer = p.comps()["Outer"]
+    inner = next(it for it in outer.items if isinstance(it, dl.dlparse.Comp))
+    assert inner.name == "Inner" and "Inner" not in p.comps()
+    ix = Index(p)
+    assert ix.resolve("Outer", "i", "node") == ("Inner", "node")
+    assert ix.resolve(TOP, "o.i", "node") == ("Inner", "node")
+    assert [r.role for r in ix.refs_of(("Inner", "node"))] == ["head", "pos", "pos"]

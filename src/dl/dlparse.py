@@ -24,7 +24,7 @@ WORD_OPS = {"band", "bor", "bxor", "bshl", "bshr", "land", "lor", "lxor"}
 ARITH_OPS = {"+", "-", "*", "/", "%", "^"}
 CMP_OPS = {"=", "!=", "<", "<=", ">", ">="}
 DECL_QUALIFIERS = {"inline", "btree", "brie", "eqrel", "override", "overridable"}
-GRID_RE = re.compile(r"GRID_(MASK_|SPARSE_)?\d+x\d+$")
+GRID_RE = re.compile(r"GRID_(STAMP_)?(MASK_|SPARSE_)?\d+x\d+$")
 MACRO_CONST_RE = re.compile(r"[A-Z][A-Z0-9]*_[A-Z0-9_]*$")
 
 
@@ -301,6 +301,9 @@ class Rule:
     end_line: int
     grid: bool = False  # GRID macro fact
     sub: bool = False   # subsumptive clause; the dominant atom leads the body
+    # Souffle `.plan` join orders, one (version, order) per entry. The
+    # order is a permutation of the body's atom positions, 1-based.
+    plan: list[tuple[int, tuple[int, ...]]] | None = None
 
 
 @dataclass
@@ -368,16 +371,16 @@ class _Parser:
     def program(self) -> list[Item]:
         items: list[Item] = []
         while self.peek().kind != "eof":
-            items.append(self.item(top=True))
+            items.append(self.item())
         return items
 
-    def item(self, top: bool) -> Item:
+    def item(self) -> Item:
         t = self.peek()
         if t.kind == "hash":
             return self.hash_directive()
         if t.text == ".":
             word = self.peek(1).text
-            if word == "comp" and top:
+            if word == "comp":
                 return self.comp()
             if word == "decl":
                 return self.decl()
@@ -401,7 +404,7 @@ class _Parser:
         while not self.at(")"):
             if self.peek().kind == "eof":
                 raise ParseError(line, f"unterminated RIGID {name}")
-            it = self.item(top=False)
+            it = self.item()
             if not (isinstance(it, Decl) or (isinstance(it, Rule) and it.body is None)):
                 raise ParseError(line, f"RIGID {name} holds decls and facts only")
             items.append(it)
@@ -431,7 +434,7 @@ class _Parser:
         while not self.at("}"):
             if self.peek().kind == "eof":
                 raise ParseError(line, f"unterminated comp {name}")
-            items.append(self.item(top=False))
+            items.append(self.item())
         end = self.next().line  # '}'
         return Comp(name, params, items, line, end, base, base_targs)
 
@@ -532,23 +535,70 @@ class _Parser:
         return Functor(name, text, line)
 
     def clause(self) -> Rule:
+        if GRID_RE.match(self.peek().text) and self.at("(", 1):
+            return self.grid_fact()
         head = self.atom()
-        if GRID_RE.match(head.name):
-            return Rule(head, None, head.line, head.line, grid=True)
         if self.at("."):
             end = self.next().line
-            return Rule(head, None, head.line, end)
+            plan, end = self.plan(end)
+            return Rule(head, None, head.line, end, plan=plan)
         if self.at("<="):
             self.next()
             dominant = self.atom()
             self.expect(":-")
             body = self.conj()
             end = self.expect(".").line
-            return Rule(head, [dominant, *body], head.line, end, sub=True)
+            plan, end = self.plan(end)
+            return Rule(head, [dominant, *body], head.line, end, sub=True,
+                        plan=plan)
         self.expect(":-")
         body = self.conj()
         end = self.expect(".").line
-        return Rule(head, body, head.line, end)
+        plan, end = self.plan(end)
+        return Rule(head, body, head.line, end, plan=plan)
+
+    def grid_fact(self) -> Rule:
+        """A GRID macro call. Its arguments are cell tokens, not terms, so
+        the parser skips the list by paren depth and keeps the call's name
+        alone. The runner expands the call before Souffle sees the file."""
+        t = self.next()
+        self.expect("(")
+        depth = 1
+        while depth:
+            tok = self.next()
+            if tok.kind == "eof":
+                raise ParseError(t.line, f"unterminated {t.text}")
+            depth += 1 if tok.text == "(" else -1 if tok.text == ")" else 0
+        return Rule(Atom(None, t.text, (), t.line), None, t.line, t.line,
+                    grid=True)
+
+    def plan(self, end: int) -> tuple[list[tuple[int, tuple[int, ...]]] | None, int]:
+        """A `.plan` directive following the rule's terminating period.
+
+        Souffle writes it as `.plan v: (i, j, ...)`, one entry per version
+        of the rule, and the order permutes the body's atom positions. The
+        rule owns it, so it extends the rule's span.
+        """
+        if not (self.at(".") and self.at("plan", 1)):
+            return None, end
+        self.next()
+        self.next()
+        entries: list[tuple[int, tuple[int, ...]]] = []
+        while True:
+            entries.append((self.number("plan version"), self.plan_order()))
+            if not self.at(","):
+                return entries, self.toks[self.pos - 1].line
+            self.next()
+
+    def plan_order(self) -> tuple[int, ...]:
+        self.expect(":")
+        self.expect("(")
+        order = [self.number("plan position")]
+        while self.at(","):
+            self.next()
+            order.append(self.number("plan position"))
+        self.expect(")")
+        return tuple(order)
 
     def conj(self) -> list[Lit]:
         body: list[Lit] = [self.literal()]
@@ -710,6 +760,12 @@ class _Parser:
             raise ParseError(t.line, f"expected {what}, got {t.text!r}")
         return t.text
 
+    def number(self, what: str) -> int:
+        t = self.next()
+        if t.kind != "num":
+            raise ParseError(t.line, f"expected {what}, got {t.text!r}")
+        return int(t.text)
+
     def type_name(self) -> str:
         return self.ident("type name")
 
@@ -778,9 +834,7 @@ class Index:
 
     def __init__(self, program: Program):
         self.program = program
-        self.bases: dict[str, str] = {
-            c.name: c.base for c in program.comps().values() if c.base
-        }
+        self.bases: dict[str, str] = {}
         self.decls: dict[str, dict[str, Decl]] = {TOP: {}}
         self.inits: dict[str, dict[str, Init]] = {TOP: {}}
         self.rules: list[RuleInfo] = []
@@ -806,6 +860,11 @@ class Index:
             elif isinstance(it, Init):
                 self.inits[scope][it.inst] = it
             elif isinstance(it, Comp):
+                # A comp is one scope wherever it is declared, so a nested
+                # one indexes under its own name and its instance inside
+                # the enclosing comp resolves through that scope.
+                if it.base:
+                    self.bases[it.name] = it.base
                 self._collect(it.items, it.name)
             elif isinstance(it, Rule):
                 self.rules.append(RuleInfo(scope, it, self._section(it.line, scope)))

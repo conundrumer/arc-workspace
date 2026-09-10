@@ -5,6 +5,14 @@ relations that restate another relation, references reachable only
 through negation, dead declarations, mergeable Choice-tagged rules, and
 so on. Findings are diagnostics only — the rewrite stays with the author.
 
+Some rules read the style doc rather than an edit family:
+`typed-order` flags an order taken over a type that carries none,
+`choice-domain` flags a declaration that keeps one arbitrary tuple, and
+`shared-read` flags a shared parameter some case never reads. The first
+two need the declared type of a rule variable, which the column tables
+here already infer; the last walks the dataflow back from `out` under
+each case.
+
 A rewrite finding carries its fix. A hint — a pattern with real
 counterexamples in the corpus, worth a look rather than a rewrite — is
 behind the `hints` flag.
@@ -32,10 +40,13 @@ from dl.dlparse import (
     Bool,
     Call,
     Cmp,
+    Comp,
     Ctor,
     Decl,
     Disj,
     Index,
+    Init,
+    Item,
     Lit,
     MacroConst,
     Neg,
@@ -52,11 +63,13 @@ from dl.dlparse import (
     UnOp,
     Var,
     Wild,
+    body_literals,
     literal_vars,
     parse,
     term_vars,
 )
-from dl.lint import _lib_source
+from dl.lint import PLAN_RE, _lib_source
+from dl.source import shared_params
 
 LINE_LIMIT = 100   # code only; a trailing comment does not count
 PROGRAM_SCOPES = (TOP, "Determine", "Parse", "Params")
@@ -120,6 +133,100 @@ def _elem_tables(text: str) -> tuple[dict[str, str], dict[str, set[str]]]:
                 ws |= more
                 changed = True
     return elem_type, wider
+
+
+# The ARC value types, with `Ident`: types with identity and no order.
+# Each is declared a `number` subtype, so `Col1 < Col2` typechecks; the
+# order it states is not in the type.
+_UNORDERED_BASE = frozenset({
+    "Color", "Dir", "DiagDir", "Axis", "DiagAxis", "D4", "Sym", "Sense",
+    "Ident",
+})
+_ORDER_OPS = frozenset({"<", "<=", ">", ">="})
+_ORDER_AGGS = frozenset({"min", "max"})
+# The lib comp that ranks a numeric set, and the relation it ranks.
+_ORDINAL_COMP = "Ordinal"
+_ORDINAL_SET = "idx_set"
+
+
+@lru_cache(maxsize=2)
+def _unordered_types(text: str) -> frozenset[str]:
+    """The type names an ordering may not read: the ARC value types, the
+    subtypes they reach, and the unions whose every member is one. Read
+    off lib.dl's text, keyed on it."""
+    try:
+        items = parse(text).items
+    except ParseError:
+        return _UNORDERED_BASE
+    subs: dict[str, str] = {}
+    unions: dict[str, list[str]] = {}
+    for it in items:
+        if not isinstance(it, TypeDecl):
+            continue
+        if it.rhs.startswith("<:"):
+            subs[it.name] = it.rhs[2:].strip()
+        elif m := _UNION_RE.fullmatch(it.rhs):
+            unions[it.name] = [x.strip() for x in m.group(1).split("|")]
+    out = set(_UNORDERED_BASE)
+    changed = True
+    while changed:
+        changed = False
+        for name, base in subs.items():
+            if name not in out and base in out:
+                out.add(name)
+                changed = True
+        for name, members in unions.items():
+            if name not in out and all(m in out for m in members):
+                out.add(name)
+                changed = True
+    return frozenset(out)
+
+
+_RECORD_RE = re.compile(r"=\s*\[(.*)\]\s*$", re.DOTALL)
+_FIELD_RE = re.compile(r"\w+\s*:\s*(\w+)")
+
+
+def _record_fields(items: Iterable[Item]) -> dict[str, list[str]]:
+    """Each record type an item tree declares, with its field types."""
+    out: dict[str, list[str]] = {}
+    for it in items:
+        if isinstance(it, TypeDecl) and (m := _RECORD_RE.search(it.rhs)):
+            out[it.name] = _FIELD_RE.findall(m.group(1))
+        elif isinstance(it, Comp):
+            out |= _record_fields(it.items)
+    return out
+
+
+@lru_cache(maxsize=2)
+def _lib_records(text: str) -> dict[str, list[str]]:
+    """lib.dl's record types, keyed on its text."""
+    try:
+        return _record_fields(parse(text).items)
+    except ParseError:
+        return {}
+
+
+def _comp_table(items: Iterable[Item]) -> dict[str, Comp]:
+    """Every component in an item tree, nested ones included, by name."""
+    table: dict[str, Comp] = {}
+    for it in items:
+        if isinstance(it, Comp):
+            table[it.name] = it
+            table |= _comp_table(it.items)
+    return table
+
+
+@lru_cache(maxsize=2)
+def _lib_scopes(text: str) -> tuple[dict[str, Decl], dict[str, Comp]]:
+    """lib.dl's top-level relations by name and its components by name.
+    Keyed on the text, so an edit to lib.dl reaches a process that
+    already linted against it."""
+    try:
+        items = parse(text).items
+    except ParseError:
+        return {}, {}
+    top = {it.name: it for it in items if isinstance(it, Decl)}
+    return top, _comp_table(items)
 
 
 # Lib-idiom chains: a lib primitive's defining body, as the two atoms a
@@ -213,6 +320,8 @@ class _Lint:
         self.findings: list[Finding] = []
         self.claimed: set[RelKey] = set()  # relations an earlier rule flagged
         self._const_targets: set[tuple[str, str]] | None = None
+        self._comps: dict[str, Comp] | None = None
+        self._records: dict[str, list[str]] | None = None
         # Choice tags: branch names of the ADTs the file declares.
         self.choice_tags = {
             b
@@ -238,8 +347,11 @@ class _Lint:
             if key not in self.claimed:
                 self.negated_use(key)
         # Rule-level and lexical rules.
+        self.choice_domain()
+        self.shared_read()
         for idx, info in self.program_rules():
             self.choice_tag(idx, info)
+            self.typed_order(info)
             self.cross_choice(info)
             self.raw_aggregate(info)
             self.subsumed_atoms(info)
@@ -571,6 +683,322 @@ class _Lint:
             elif lit is not atom and v in literal_vars(lit):
                 return None
         return partner
+
+    def choice_domain(self) -> None:
+        """A `choice-domain` declaration in program code: the relation
+        keeps one arbitrary tuple per key, so which one it keeps is a
+        choice the program does not state."""
+        for scope in PROGRAM_SCOPES:
+            for name, decl in self.ix.decls.get(scope, {}).items():
+                if not decl.choice_domain:
+                    continue
+                self.add(
+                    "choice-domain", decl.line,
+                    f"`{name}` keeps one arbitrary tuple per "
+                    f"`{', '.join(decl.choice_domain)}`; state what picks it",
+                )
+
+    def shared_read(self) -> None:
+        """A shared parameter some case never reads. A shared parameter
+        serves every case, so a case that reads none of it holds a
+        parameter of its own, under that case's marker.
+
+        Reads come from a dataflow walk back from `out` under each case:
+        a rule joins the walk when its head is already reached and its
+        own Choice tag admits the case. A lib instance is opaque, so
+        every relation under it collapses to the instance and an input
+        there reaches every output; the walk over-approximates the
+        reads, and so only misses a case, never invents one.
+        """
+        shared = shared_params("\n".join(self.lines))
+        universes = self._case_universes()
+        if not shared or not universes:
+            return
+        params = self.ix.decls.get("Params", {})
+        rules = self._flow_rules()
+        for cases in universes:
+            live = self._live_relations(rules, cases)
+            for name in sorted(shared):
+                decl = params.get(name)
+                node = self._flow_node("Params", None, name)
+                missing = sorted(c for c in cases if node not in live[c])
+                if decl is None or not missing:
+                    continue
+                self.add(
+                    "shared-read", decl.line,
+                    f"`{name}` is shared, and "
+                    f"{', '.join(f'`${c}()`' for c in missing)} "
+                    f"never reads it; a parameter one case never reads "
+                    f"belongs under that case's marker",
+                )
+
+    def _case_universes(self) -> list[frozenset[str]]:
+        """The case sets `Choice` ranges over: its branch names, or, for a
+        record `Choice`, the branch names of each component in turn."""
+        types = {it.name: it for it in self.ix.program.items
+                 if isinstance(it, TypeDecl)}
+        choice = types.get("Choice")
+        if choice is None:
+            return []
+        if len(choice.branches) > 1:
+            return [frozenset(choice.branches)]
+        return [
+            frozenset(component.branches)
+            for field in self.records().get("Choice", [])
+            if (component := types.get(field)) and len(component.branches) > 1
+        ]
+
+    def _flow_node(self, scope: str, qual: str | None, name: str) -> tuple[str, str]:
+        """The dataflow node an atom reads or writes. A qualified name
+        under an opaque lib instance collapses to that instance."""
+        if qual is None:
+            for s in (*self.ix.chain(scope), TOP):
+                if name in self.ix.decls.get(s, {}):
+                    return (s, name)
+            return (EXTERN, name)
+        for hop in qual.split("."):
+            at, init = next(
+                ((s, i) for s in (*self.ix.chain(scope), TOP)
+                 if (i := self.ix.inits.get(s, {}).get(hop))),
+                (scope, None),
+            )
+            if init is None or init.comp not in self.ix.decls:
+                # An opaque instance keys by where it is declared, so its
+                # own rules and its readers meet at one node.
+                return (at, f"{hop}.")
+            scope = init.comp
+        for s in self.ix.chain(scope):
+            if name in self.ix.decls.get(s, {}):
+                return (s, name)
+        return (scope, f"{qual}.{name}")
+
+    def _flow_rules(self) -> list[tuple[tuple, set[tuple], set[str]]]:
+        """Each rule as its head node, the nodes its body reads, and the
+        Choice tags its head states."""
+        out = []
+        for info in self.ix.rules:
+            head = self._flow_node(
+                info.scope, info.rule.head.qual, info.rule.head.name)
+            body = {
+                self._flow_node(info.scope, a.qual, a.name)
+                for a in _all_atoms(body_literals(info.rule))
+            }
+            tags = set()
+            for arg in info.rule.head.args:
+                tags |= _ctor_names(arg)
+            out.append((head, body - {head}, tags))
+        return out
+
+    def _live_relations(
+        self, rules: list[tuple[tuple, set[tuple], set[str]]],
+        cases: frozenset[str],
+    ) -> dict[str, set[tuple]]:
+        """The relations each case's derivation of `out` reads.
+
+        An untagged rule takes the tags of the relations it reads, to a
+        fixpoint, so a stage between a tagged rule and its consumer keeps
+        the case it serves.
+        """
+        own = [tags & cases for _, _, tags in rules]
+        rule_tags = [set(t) for t in own]
+        rel_tags: dict[tuple, set[str]] = {}
+        changed = True
+        while changed:
+            changed = False
+            for i, (head, body, _) in enumerate(rules):
+                new = set(own[i])
+                if not own[i]:
+                    for node in body:
+                        new |= rel_tags.get(node, set())
+                if new != rule_tags[i]:
+                    rule_tags[i] = new
+                    changed = True
+                held = rel_tags.setdefault(head, set())
+                if not new <= held:
+                    held |= new
+                    changed = True
+        live: dict[str, set[tuple]] = {}
+        for case in cases:
+            reached = {self._flow_node(TOP, None, "out")}
+            grew = True
+            while grew:
+                grew = False
+                for i, (head, body, _) in enumerate(rules):
+                    if head not in reached:
+                        continue
+                    if rule_tags[i] and case not in rule_tags[i]:
+                        continue
+                    for node in body:
+                        if node not in reached:
+                            reached.add(node)
+                            grew = True
+            live[case] = reached
+        return live
+
+    def typed_order(self, info: RuleInfo) -> None:
+        """An order read off a type that has none: a comparison or a
+        `min`/`max` over a variable typed by an ARC value type, or such a
+        variable fed to `Ordinal`. A number-typed variable, a distance
+        among them, is program style and stays. Equality and inequality
+        state identity, not order, and stay."""
+        unordered = _unordered_types(_lib_source())
+        types = self._var_types(info)
+
+        def named(term: Term) -> list[tuple[str, str]]:
+            return [
+                (v, t)
+                for v in sorted(term_vars(term))
+                for t in sorted(types.get(v, ()))
+                if t in unordered
+            ]
+
+        seen: set[tuple[int, str]] = set()
+
+        def flag(line: int, term: Term, how: str) -> None:
+            for v, t in named(term):
+                if (line, v) in seen:
+                    continue
+                seen.add((line, v))
+                self.add(
+                    "typed-order", line,
+                    f"{how} `{v}`, a `{t}`; `{t}` has identity and no order, "
+                    f"so the order is task data and stores as a parameter",
+                )
+
+        for lit in body_literals(info.rule):
+            if isinstance(lit, Cmp):
+                if lit.op in _ORDER_OPS:
+                    flag(lit.line, lit.lhs, f"`{lit.op}` compares")
+                    flag(lit.line, lit.rhs, f"`{lit.op}` compares")
+                for side in (lit.lhs, lit.rhs):
+                    if isinstance(side, Agg) and side.op in _ORDER_AGGS \
+                            and side.expr is not None:
+                        flag(lit.line, side.expr, f"`{side.op}` orders")
+        for atom in (info.rule.head, *_all_atoms(body_literals(info.rule))):
+            if atom.name != _ORDINAL_SET:
+                continue
+            _, chain = self._atom_cols(info.scope, atom)
+            if _ORDINAL_COMP not in chain or len(atom.args) != 2:
+                continue
+            flag(atom.line, atom.args[1], f"`{_ORDINAL_COMP}` ranks")
+
+    # --- column types ---
+
+    def _var_types(self, info: RuleInfo) -> dict[str, set[str]]:
+        """Each rule variable and the declared types of the columns that
+        bind it."""
+        out: dict[str, set[str]] = {}
+
+        def bind(arg: Term, type_: str) -> None:
+            if isinstance(arg, Var):
+                out.setdefault(arg.name, set()).add(type_)
+            elif isinstance(arg, Rec):
+                fields = self.records().get(type_, [])
+                for sub, ft in zip(arg.args, fields, strict=False):
+                    bind(sub, ft)
+
+        for atom in (info.rule.head, *_all_atoms(body_literals(info.rule))):
+            cols, _ = self._atom_cols(info.scope, atom)
+            for i, arg in enumerate(atom.args):
+                if i < len(cols) and cols[i]:
+                    bind(arg, cols[i])
+        return out
+
+    def records(self) -> dict[str, list[str]]:
+        """Every record type in scope, the solver's own over lib's."""
+        if self._records is None:
+            self._records = (
+                _lib_records(_lib_source())
+                | _record_fields(self.ix.program.items)
+            )
+        return self._records
+
+    def comps(self) -> dict[str, Comp]:
+        """Every component in scope, the solver's own over lib's."""
+        if self._comps is None:
+            _, lib = _lib_scopes(_lib_source())
+            self._comps = lib | _comp_table(self.ix.program.items)
+        return self._comps
+
+    def _atom_cols(self, scope: str, atom: Atom) -> tuple[list[str], list[str]]:
+        """The declared type of each of an atom's columns, and the comps
+        the atom resolved through, outermost first. A column whose type
+        is unknown comes back empty."""
+        if atom.qual is None:
+            key = self.ix.resolve(scope, None, atom.name)
+            decl = self.ix.decls.get(key[0], {}).get(key[1])
+            if decl is None:
+                decl = _lib_scopes(_lib_source())[0].get(atom.name)
+            return ([f.type for f in decl.fields] if decl else []), []
+        comp, subst = None, {}
+        chain: list[str] = []
+        for hop in atom.qual.split("."):
+            init = (
+                self._comp_init(comp, hop, subst) if comp is not None
+                else next(
+                    (i for s in (*self.ix.chain(scope), TOP)
+                     if (i := self.ix.inits.get(s, {}).get(hop))),
+                    None,
+                )
+            )
+            if init is None:
+                return [], chain
+            comp = init.comp
+            chain.append(comp)
+            params = self.comps()[comp].params if comp in self.comps() else []
+            subst = {
+                p: subst.get(t, t)
+                for p, t in zip(params, init.targs, strict=False)
+            }
+        return self._comp_cols(comp, atom.name, subst, chain)
+
+    def _comp_init(
+        self, comp: str, inst: str, subst: dict[str, str],
+    ) -> Init | None:
+        """An `.init` inside a component or the components it inherits,
+        its type arguments substituted through `subst`."""
+        for name, sub in self._comp_walk(comp, subst):
+            for it in self.comps()[name].items:
+                if isinstance(it, Init) and it.inst == inst:
+                    return Init(
+                        it.inst, it.comp,
+                        [sub.get(t, t) for t in it.targs], it.line,
+                    )
+        return None
+
+    def _comp_cols(
+        self, comp: str, name: str, subst: dict[str, str], chain: list[str],
+    ) -> tuple[list[str], list[str]]:
+        """A relation's column types inside a component, read through its
+        inheritance chain."""
+        for base, sub in self._comp_walk(comp, subst):
+            if base not in chain:
+                chain.append(base)
+            for it in self.comps()[base].items:
+                if isinstance(it, Decl) and it.name == name:
+                    return [sub.get(f.type, f.type) for f in it.fields], chain
+        return [], chain
+
+    def _comp_walk(
+        self, comp: str, subst: dict[str, str],
+    ) -> Iterator[tuple[str, dict[str, str]]]:
+        """A component and the ones it inherits, each with the type
+        substitution that reaches it."""
+        seen: set[str] = set()
+        cur: str | None = comp
+        while cur is not None and cur in self.comps() and cur not in seen:
+            seen.add(cur)
+            yield cur, subst
+            c = self.comps()[cur]
+            if c.base is None or c.base not in self.comps():
+                return
+            subst = {
+                p: subst.get(t, t)
+                for p, t in zip(
+                    self.comps()[c.base].params, c.base_targs, strict=False,
+                )
+            }
+            cur = c.base
 
     def choice_tag(self, idx: int, info: RuleInfo) -> None:
         """Rules identical but for a distinct nullary constructor in one
@@ -964,11 +1392,17 @@ class _Lint:
                  f"all uses of `{name}` are in {spot}")
 
     def long_rule(self, info: RuleInfo) -> None:
+        """A rule whose whole body stands on its first line and runs past
+        the limit. The code the limit counts ends at the terminating
+        period, so a `.plan` after it counts for nothing; a body that runs
+        on to later lines is already wrapped and stays."""
         rule = info.rule
-        if rule.body is None or rule.line != rule.end_line:
+        if rule.body is None:
             return
         text = self.lines[rule.line - 1] if rule.line <= len(self.lines) else ""
-        code = text.split("//")[0].rstrip()
+        code = PLAN_RE.sub("", text.split("//")[0]).rstrip()
+        if not code.endswith("."):
+            return
         if len(code) > LINE_LIMIT:
             self.add("long-rule", rule.line,
                      f"{len(code)} > {LINE_LIMIT} chars of code; wrap the body")
@@ -1269,6 +1703,23 @@ def _lit_str(lit: Lit) -> str:
             return f"({inner})"
     return repr(lit)
 
+
+
+def _ctor_names(term: Term) -> set[str]:
+    """Constructor names anywhere inside a term."""
+    names: set[str] = set()
+    stack: list[Term] = [term]
+    while stack:
+        t = stack.pop()
+        if isinstance(t, Ctor):
+            names.add(t.name)
+        if isinstance(t, (Ctor, Rec, Call, Agg)):
+            stack.extend(t.args if not isinstance(t, Agg) else ())
+        elif isinstance(t, BinOp):
+            stack.extend((t.lhs, t.rhs))
+        elif isinstance(t, UnOp):
+            stack.append(t.arg)
+    return names
 
 def _tags(text: str) -> set[str]:
     """Nullary constructor names a rendered literal mentions."""

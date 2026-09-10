@@ -149,8 +149,8 @@ def test_grid_on_a_missing_solver(solvers, capsys):
 
 MACROS = (".decl shape(p: Position)\n"
           "GRID_MASK_2x2(shape,\n"
-          "    1, 0,\n"
-          "    0, 1)\n"
+          "    1, _,\n"
+          "    _, 1)\n"
           "RIGID(piece,\n"
           "    .decl glyph(p: Position)\n"
           "    glyph([0, 0, 0, 0]).\n"
@@ -413,14 +413,16 @@ def test_since_lists_an_uncommitted_solver(repo, capsys):
     assert capsys.readouterr().out == "bbbb2222\neeee5555\n"
 
 
-def test_since_skips_a_worktree_solver_older_than_the_date(repo, capsys):
+def test_since_lists_a_worktree_solver_older_than_the_date(repo, capsys):
+    """Uncommitted work stands between commits however long it has sat, so
+    the content difference decides, not the modification time."""
     _commit(repo, ["aaaa1111", "bbbb2222", "cccc3333", "dddd4444"], "four")
     stale = repo / "programs" / "solvers" / "eeee5555.dl"
     stale.write_text("// stale\n")
     os.utime(stale, (0, time.time() - 3600))
 
     assert cli.cmd_since("1 minute ago") == 0
-    assert capsys.readouterr().out == ""
+    assert capsys.readouterr().out == "eeee5555\n"
 
 
 DOC = """# Keywords
@@ -493,3 +495,17 @@ def test_keywords_reads_the_named_stems_alone(keyworded, capsys):
 def test_keywords_on_a_missing_solver(keyworded, capsys):
     assert cli.cmd_keywords(["nosuch"]) == 2
     assert "no solver at" in capsys.readouterr().err
+
+
+def test_a_stale_temp_source_is_swept_and_a_live_one_kept(tmp_path, monkeypatch):
+    from dl import souffle
+    monkeypatch.setattr(souffle, "SOLVERS_DIR", tmp_path)
+    stale = tmp_path / ".tmpstale.dl"
+    live = tmp_path / ".tmplive.dl"
+    stale.write_text("x")
+    live.write_text("x")
+    now = live.stat().st_mtime
+    import os
+    os.utime(stale, (now - 7200, now - 7200))
+    assert souffle.sweep_temp_sources(now) == 1
+    assert not stale.exists() and live.exists()

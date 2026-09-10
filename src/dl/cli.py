@@ -13,9 +13,11 @@ from pathlib import Path
 from arc.task import Alt, Example
 from dl.corpus import literal_count
 from dl.deletions import deletion_report, render_deletions
+from dl.derived_constant import derived_constant_report, render_derived_constant
 from dl.determination_plan import probe_report, render_determination_plan
 from dl.determine import DetermineResult, render_determine, run_determine
 from dl.dlparse import ParseError, TypeDecl, parse
+from dl.drop_one import drop_one_report, render_drop_one
 from dl.facts import parse_grid
 from dl.lint import LIB_NAME_CAT, RESERVED_CAT, SHADOWED_TYPE_CAT, lint_program
 from dl.paths import REPO_ROOT, SOLVERS_DIR, all_stems
@@ -393,28 +395,19 @@ def _worktree_stems(status: str) -> set[str]:
     return stems
 
 
-def _stem_mtime(stem: str) -> float:
-    """The modification time of a stem's solver file, or 0 when it is gone."""
-    path = REPO_ROOT / "programs" / "solvers" / f"{stem}.dl"
-    return path.stat().st_mtime if path.exists() else 0.0
-
-
 def cmd_since(when: str) -> int:
     """Print the solver stems a survey since `when` covers: the ones the
-    commits since then touch, plus the working-tree ones whose files changed
-    since then. A commit touching more than half the corpus is a corpus-wide
+    commits since then touch, plus the ones whose working-tree content differs
+    from HEAD. A commit touching more than half the corpus is a corpus-wide
     mechanical rewrite, and the solvers it touches are out of scope."""
     log = _git("log", f"--since={when}", "--name-only", "--pretty=format:commit %H",
                "--", "programs/solvers")
     status = _git("status", "--porcelain", "--", "programs/solvers")
-    max_age = _git("rev-parse", f"--since={when}")
-    if log is None or status is None or max_age is None:
+    if log is None or status is None:
         print(f"git found no history for {when!r}", file=sys.stderr)
         return 1
-    cutoff = float(max_age.strip().split("=")[-1])
     corpus = set(all_stems())
-    stems: set[str] = {s for s in _worktree_stems(status)
-                       if _stem_mtime(s) >= cutoff}
+    stems: set[str] = _worktree_stems(status)
     for touched in _commit_stems(log):
         if len(touched) * 2 <= len(corpus):
             stems |= touched
@@ -549,6 +542,28 @@ def cmd_audit(stem: str) -> int:
     return _print_deletions(stem)
 
 
+def cmd_drop_one(stem: str) -> int:
+    """Which stored facts of a multi-fact parameter no pair needs. Opt-in:
+    the audit does not run it."""
+    if _missing(stem):
+        return 2
+    build_functors()
+    for line in render_drop_one(stem, drop_one_report(stem)):
+        print(line)
+    return 0
+
+
+def cmd_derived_constant(stem: str) -> int:
+    """Which program relations derive from the input yet hold the same
+    tuples on every example. Opt-in: the audit does not run it."""
+    if _missing(stem):
+        return 2
+    build_functors()
+    for line in render_derived_constant(stem, derived_constant_report(stem)):
+        print(line)
+    return 0
+
+
 def cmd_determination_plan(stem: str) -> int:
     """Which Params parameters need determination relations, from the
     proposer probe."""
@@ -660,7 +675,7 @@ def cmd_expand(stem: str) -> int:
 
 
 COMMANDS = ("run", "lint", "grid", "sweep", "deletions", "audit", "determination-plan", "size",
-            "keywords", "expand", "since")
+            "keywords", "expand", "since", "drop-one", "derived-constant")
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -709,6 +724,33 @@ def _parser() -> argparse.ArgumentParser:
         "audit", help="parameter value sweep + deletion report",
     ).add_argument("stem")
     sub.add_parser(
+        "drop-one",
+        help="which stored facts of a multi-fact parameter no pair needs",
+        description="Drop each stored fact of each Params parameter holding "
+                    "more than one fact, one fact at a time, and report the "
+                    "facts whose removal reproduces the stored variant "
+                    "profile on the train pairs. Each such fact runs again "
+                    "over the test pairs, so a fact the test pairs need "
+                    "reports apart from one dead on both. The cut is "
+                    "textual, so a parameter with an Ident, a Grid, or any "
+                    "other column no domain enumerates is covered as well. "
+                    "Opt-in: the audit does not run it.",
+    ).add_argument("stem")
+    sub.add_parser(
+        "derived-constant",
+        help="program relations that hold the same tuples on every example",
+        description="Report each program relation that reads `in` by "
+                    "dataflow, feeds `out` by dataflow, and holds the same "
+                    "tuples on every train and test example. Such a relation "
+                    "derives from the input yet takes one value over the "
+                    "task, so what it holds is stored in the program rather "
+                    "than read off the grid. A relation empty everywhere is "
+                    "out, and so is one that keeps its tuples on control "
+                    "grids drawn from each example's palette, since it does "
+                    "not really read the input. Opt-in: the audit does not "
+                    "run it.",
+    ).add_argument("stem")
+    sub.add_parser(
         "determination-plan",
         help="which Params parameters need determination relations",
     ).add_argument("stem")
@@ -738,8 +780,8 @@ def _parser() -> argparse.ArgumentParser:
         help="the solvers in scope for a delta survey since a date-time",
         description="Print the stem of each solver a survey since the given "
                     "date-time covers: the ones the commits since then touch, "
-                    "plus the working-tree ones whose files changed since "
-                    "then. A commit touching more than half of the solvers "
+                    "plus the ones whose working-tree content differs from "
+                    "HEAD. A commit touching more than half of the solvers "
                     "is a corpus-wide mechanical rewrite, and the solvers "
                     "it touches are out of scope.",
     )
@@ -776,6 +818,10 @@ def main(argv: list[str]) -> int:
             return cmd_deletions(args.stem)
         case "audit":
             return cmd_audit(args.stem)
+        case "drop-one":
+            return cmd_drop_one(args.stem)
+        case "derived-constant":
+            return cmd_derived_constant(args.stem)
         case "determination-plan":
             return cmd_determination_plan(args.stem)
         case "size":

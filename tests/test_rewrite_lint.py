@@ -321,6 +321,23 @@ def test_long_rule():
     assert "long-rule" in cats(src)
 
 
+def test_long_rule_under_a_plan():
+    """A `.plan` sits in the rule's span after the terminating period, and
+    the body it names is still on one line."""
+    long = "out(P) :- " + ", ".join(f"g{i}(P)" for i in range(20)) + "."
+    assert "long-rule" in cats(f".decl out(p: number)\n{long}\n.plan 0:(2, 1)\n")
+    assert "long-rule" in cats(f".decl out(p: number)\n{long} .plan 0:(2, 1)\n")
+
+
+def test_long_rule_already_wrapped_stays_quiet():
+    """A body that runs on to a later line is wrapped, however long its
+    first line is."""
+    head = "out(P) :- " + ", ".join(f"g{i}(P)" for i in range(20)) + ","
+    src = f".decl out(p: number)\n{head}\n    g20(P).\n"
+    assert len(head) > 100
+    assert "long-rule" not in cats(src)
+
+
 def test_parse_error_is_a_finding():
     fs = lint_rewrites("ink(P :- in(P).\n")
     assert fs[0][0] == "parse-error"
@@ -614,3 +631,223 @@ def test_const_join_in_disjunction_fires():
 out(P) :- in(P, _), ( params.template(P, M), params.marker(M) ; params.template(P, 0) ).
 """
     assert "const-join" in cats(src, hints=True)
+
+
+def test_typed_order_color_comparison_fires():
+    src = """\
+.decl pale(c: Color)
+pale(C) :- in(_, C), in(_, C2), C < C2.
+.decl out(p: Position, c: Color)
+out(P, C) :- in(P, C), pale(C).
+"""
+    fs = [f for f in lint_rewrites(src) if f[0] == "typed-order"]
+    assert [f[1] for f in fs] == [2, 2]
+    assert "a `Color`" in fs[0][2]
+
+
+def test_typed_order_distance_bound_kept():
+    src = """\
+.comp Params { .decl gap(k: number) }
+.init params = Params
+.decl out(p: Position, c: Color)
+out(P, C) :- in(P, C), dir_elem(D), dist(P, D, K), params.gap(K2), K < K2.
+"""
+    assert "typed-order" not in cats(src)
+
+
+def test_typed_order_inequality_kept():
+    src = """\
+.decl out(p: Position, c: Color)
+out(P, C) :- in(P, C), in(_, C2), C != C2.
+"""
+    assert "typed-order" not in cats(src)
+
+
+def test_typed_order_ident_comparison_fires():
+    src = """\
+.decl piece(i: Ident, p: Position)
+piece(I, P) :- in(P, _), conn8(P, I).
+.decl out(p: Position, c: Color)
+out(P, C) :- in(P, C), piece(I, P), piece(I2, _), I < I2.
+"""
+    assert "typed-order" in cats(src)
+
+
+def test_typed_order_record_field_fires():
+    src = """\
+.type Pair = [c: Color, k: number]
+.decl pr(x: Pair)
+pr([C, K]) :- in(P, C), dir_elem(D), dist(P, D, K).
+.decl out(p: Position, c: Color)
+out(P, C) :- in(P, C), pr([C1, _]), pr([C2, _]), C1 < C2.
+"""
+    assert "typed-order" in cats(src)
+
+
+def test_typed_order_min_over_color_fires():
+    src = """\
+.decl out(p: Position, c: Color)
+out(P, C) :- in(P, _), C = min C2 : { in(_, C2) }.
+"""
+    assert "typed-order" in cats(src)
+
+
+def test_typed_order_ordinal_over_color_fires():
+    src = """\
+.init rank = Ordinal<Unit>
+rank.idx_set($U(), C) :- in(_, C).
+.decl out(p: Position, c: Color)
+out(P, C) :- in(P, C), rank.rank($U(), C, _).
+"""
+    fs = [f for f in lint_rewrites(src) if f[0] == "typed-order"]
+    assert len(fs) == 1 and "`Ordinal` ranks" in fs[0][2]
+
+
+def test_typed_order_ordinal_over_distance_kept():
+    src = """\
+.init rank = Ordinal<Unit>
+rank.idx_set($U(), K) :- in(P, _), dir_elem(D), dist(P, D, K).
+.decl out(p: Position, c: Color)
+out(P, C) :- in(P, C), rank.rank($U(), _, _).
+"""
+    assert "typed-order" not in cats(src)
+
+
+def test_typed_order_order_before_fed_by_comparison_fires():
+    src = """\
+.init seq = Order<Unit, Color>
+seq.elem($U(), C) :- in(_, C).
+seq.before($U(), C, C2) :- in(_, C), in(_, C2), C < C2.
+.decl out(p: Position, c: Color)
+out(P, C) :- in(P, C), seq.rank($U(), C, _).
+"""
+    assert "typed-order" in cats(src)
+
+
+def test_typed_order_stored_order_kept():
+    src = """\
+.comp Params { .decl ahead(a: Color, b: Color) }
+.init params = Params
+.init seq = Order<Unit, Color>
+seq.elem($U(), C) :- in(_, C).
+seq.before($U(), C, C2) :- params.ahead(C, C2).
+.decl out(p: Position, c: Color)
+out(P, C) :- in(P, C), seq.rank($U(), C, _).
+"""
+    assert "typed-order" not in cats(src)
+
+
+def test_typed_order_proposal_comp_kept():
+    src = """\
+.comp Ladder<Key> {
+    .decl c(key: Key, c: Color)
+    .decl low(key: Key, c: Color)
+    low(K, C) :- c(K, C), c(K, C2), C < C2.
+}
+.init ladder = Ladder<Unit>
+ladder.c($U(), C) :- in(_, C).
+.decl out(p: Position, c: Color)
+out(P, C) :- in(P, C), ladder.low($U(), C).
+"""
+    assert "typed-order" not in cats(src)
+
+
+def test_choice_domain_fires():
+    src = """\
+.decl pick(k: number, p: Position) choice-domain k
+pick(K, P) :- in(P, _), dir_elem(D), dist(P, D, K).
+.decl out(p: Position, c: Color)
+out(P, C) :- pick(_, P), in(P, C).
+"""
+    fs = [f for f in lint_rewrites(src) if f[0] == "choice-domain"]
+    assert len(fs) == 1 and fs[0][1] == 1
+
+
+SHARED_HEAD = """\
+.type Choice = A {} | B {}
+.comp Params {
+    // --- shared ---
+    .decl bg(col: Color) bg(0).
+
+    // --- A ---
+    .decl mark(col: Color) mark(3).
+}
+.init params = Params
+.decl out(p: Position, col: Color, ch: Choice)
+"""
+
+
+def test_shared_read_case_that_never_reads_fires():
+    src = SHARED_HEAD + """\
+out(P, C, $A()) :- in(P, C), params.bg(C), params.mark(C).
+out(P, C, $B()) :- in(P, C).
+"""
+    [f] = [f for f in lint_rewrites(src) if f[0] == "shared-read"]
+    assert f[1] == 4   # the `bg` declaration's line
+    assert f[2].startswith("`bg` is shared, and `$B()` never reads it")
+
+
+def test_shared_read_every_case_kept():
+    src = SHARED_HEAD + """\
+out(P, C, $A()) :- in(P, C), params.bg(C), params.mark(C).
+out(P, C, $B()) :- in(P, C), params.bg(C).
+"""
+    assert "shared-read" not in cats(src)
+
+
+def test_shared_read_through_a_stage_kept():
+    src = SHARED_HEAD + """\
+.decl ink(p: Position, col: Color)
+ink(P, C) :- in(P, C), !params.bg(C).
+out(P, C, $A()) :- ink(P, C), params.mark(C).
+out(P, C, $B()) :- ink(P, C).
+"""
+    assert "shared-read" not in cats(src)
+
+
+def test_shared_read_through_a_lib_instance_kept():
+    src = SHARED_HEAD + """\
+.decl impl(ch: Choice)
+impl($A()). impl($B()).
+.init parts = Objects<Choice>
+parts.cell(Ch, P) :- in(P, C), !params.bg(C), impl(Ch).
+out(P, C, Ch) :- parts.piece(Ch, P, _), in(P, C), params.mark(C).
+"""
+    assert "shared-read" not in cats(src)
+
+
+def test_shared_read_takes_the_case_a_stage_serves():
+    """An untagged rule that reads a relation only one case states serves
+    that case alone, so the parameters it reads reach that case alone."""
+    src = SHARED_HEAD + """\
+.decl impl(ch: Choice)
+impl($A()).
+out(P, C, Ch) :- impl(Ch), in(P, C), params.bg(C), params.mark(C).
+out(P, C, $B()) :- in(P, C).
+"""
+    fs = [f for f in lint_rewrites(src) if f[0] == "shared-read"]
+    assert [f[1] for f in fs] == [4]
+    assert "`$B()` never reads it" in fs[0][2]
+
+
+def test_shared_read_record_choice_reads_each_component():
+    src = """\
+.type Step = Rot {} | Look {}
+.type Paint = Keep {} | Cover {}
+.type Choice = [s: Step, p: Paint]
+.comp Params {
+    // --- shared ---
+    .decl bg(col: Color) bg(0).
+}
+.init params = Params
+.decl step_choice(s: Step)
+step_choice($Rot()). step_choice($Look()).
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, C, [S, $Keep()]) :- in(P, C), params.bg(C), step_choice(S).
+out(P, C, [S, $Cover()]) :- in(P, C), step_choice(S).
+"""
+    fs = [f for f in lint_rewrites(src) if f[0] == "shared-read"]
+    assert [f[2] for f in fs] == [
+        "`bg` is shared, and `$Cover()` never reads it; a parameter one "
+        "case never reads belongs under that case's marker",
+    ]

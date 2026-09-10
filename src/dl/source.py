@@ -4,7 +4,7 @@ runs."""
 import bisect
 import re
 
-from dl.dlparse import Comp, Decl, ParseError, Rigid, parse
+from dl.dlparse import SECTION_RE, Comp, Decl, ParseError, Rigid, parse
 
 # Per-mode IO directives, appended to the built source.
 SOLVE_DIRECTIVES = ".input in(IO=stdin)\n.output out(IO=stdout)\n"
@@ -12,7 +12,7 @@ DETERMINE_DIRECTIVES = ".input ex_in\n.input ex_out\n.output determination_diff(
 
 COMP_HEADER_RE = re.compile(r"\.comp\s+(\w+)")
 DECL_RE = re.compile(r"\.decl\s+(\w+)\s*\(([^)]*)\)")
-GRID_CALL_RE = re.compile(r"\bGRID_(MASK_|SPARSE_)?(\d+)x(\d+)\s*\(")
+GRID_CALL_RE = re.compile(r"\bGRID_(STAMP_)?(MASK_|SPARSE_)?(\d+)x(\d+)\s*\(")
 
 # One piece of an expansion's output: where in the input it came from, the
 # text it contributes, and whether that text is the input's own, copied.
@@ -40,26 +40,87 @@ def _split_args(s: str) -> list[str]:
     return parts
 
 
-def _grid_call_facts(policy: str, h: int, w: int, args: list[str]) -> list[str]:
+def _call_label(macro: str, rel: str, keys: list[str]) -> str:
+    """How an expansion error names the call: its macro, relation, and keys."""
+    return f"{macro}({', '.join([rel, *keys])})"
+
+
+def _cell_token(tok: str, sparse: bool, label: str) -> str | None:
+    """The cell value a token states, or None when it states no cell.
+
+    `_` states no cell. A member cell is `1` under a mask name and a color
+    digit under a sparse name; any other token is an expansion error.
+    """
+    if tok == "_":
+        return None
+    if sparse:
+        if len(tok) == 1 and tok.isdigit():
+            return tok
+        raise ValueError(f"{label}: cell {tok!r} is not a color digit or '_'")
+    if tok == "1":
+        return tok
+    raise ValueError(f"{label}: cell {tok!r} is not '1' or '_'")
+
+
+def _grid_call_facts(policy: str, h: int, w: int, args: list[str],
+                     macro: str) -> list[str]:
     """Fact lines for one GRID call, one line per grid row.
 
     Dense (no policy) emits `rel(p, v).` for every cell. `MASK_` emits
-    `rel(p).` for nonzero cells; `SPARSE_` emits `rel(p, v).` for nonzero
-    cells. Args between the relation name and the h*w cell values pass
-    through as leading columns.
+    `rel(p).` for each member cell; `SPARSE_` emits `rel(p, v).` for each
+    cell that holds a color. Args between the relation name and the h*w
+    cell values pass through as leading columns.
     """
     rel, keys, cells = args[0], args[1:len(args) - h * w], args[len(args) - h * w:]
     lead = "".join(f"{k}, " for k in keys)
+    label = _call_label(macro, rel, keys)
     rows = []
     for row in range(h):
         facts = []
         for col in range(w):
-            v = cells[row * w + col]
-            if policy and v == "0":
-                continue
+            tok = cells[row * w + col]
+            if policy:
+                v = _cell_token(tok, policy == "SPARSE_", label)
+                if v is None:
+                    continue
+            else:
+                v = tok
             p = f"[{row}, {h - 1 - row}, {col}, {w - 1 - col}]"
             val = "" if policy == "MASK_" else f", {v}"
             facts.append(f"{rel}({lead}{p}{val}).")
+        if facts:
+            rows.append(" ".join(facts))
+    return rows
+
+
+def _stamp_call_facts(policy: str, h: int, w: int, args: list[str],
+                      macro: str) -> list[str]:
+    """Fact lines for one GRID_STAMP call, one line per grid row.
+
+    The picture marks its anchor with an `@` prefix on one token, and each
+    member cell is emitted as its Shift offset from that anchor. The mask
+    form emits `rel(delta).`; the sparse form emits `rel(delta, v).`
+    """
+    rel, keys, cells = args[0], args[1:len(args) - h * w], args[len(args) - h * w:]
+    lead = "".join(f"{k}, " for k in keys)
+    label = _call_label(macro, rel, keys)
+    sparse = policy == "SPARSE_"
+    values = [_cell_token(c.removeprefix("@"), sparse, label) for c in cells]
+    anchors = [i for i, c in enumerate(cells) if c.startswith("@")]
+    if len(anchors) != 1:
+        raise ValueError(f"{label}: {len(anchors)} '@' anchor cells, need 1")
+    row_a, col_a = divmod(anchors[0], w)
+    rows = []
+    for row in range(h):
+        facts = []
+        for col in range(w):
+            v = values[row * w + col]
+            if v is None:
+                continue
+            dr, dc = row - row_a, col - col_a
+            delta = f"[{dr}, {-dr}, {dc}, {-dc}]"
+            val = "" if not sparse else f", {v}"
+            facts.append(f"{rel}({lead}{delta}{val}).")
         if facts:
             rows.append(" ".join(facts))
     return rows
@@ -72,7 +133,15 @@ def _grid_chunks(source: str) -> list[Chunk]:
     for m in GRID_CALL_RE.finditer(source):
         if m.start() < pos:
             continue
-        policy, h, w = m.group(1) or "", int(m.group(2)), int(m.group(3))
+        line_start = source.rfind("\n", 0, m.start()) + 1
+        prefix = source[line_start:m.start()]
+        # A call inside a line comment is prose. Expanding it would put the
+        # rows after the first outside the comment, as live facts.
+        if "//" in prefix:
+            continue
+        stamp, policy = bool(m.group(1)), m.group(2) or ""
+        h, w = int(m.group(3)), int(m.group(4))
+        macro = source[m.start():m.end() - 1].rstrip()
         depth, i = 1, m.end()
         while i < len(source) and depth:
             if source[i] == "(":
@@ -83,10 +152,9 @@ def _grid_chunks(source: str) -> list[Chunk]:
         args = _split_args(source[m.end():i - 1])
         if len(args) < 1 + h * w:
             raise ValueError(f"GRID call needs rel + {h * w} cells: {source[m.start():i]!r}")
-        line_start = source.rfind("\n", 0, m.start()) + 1
-        prefix = source[line_start:m.start()]
         indent = prefix if not prefix.strip() else ""
-        rows = _grid_call_facts(policy, h, w, args)
+        facts = _stamp_call_facts if stamp else _grid_call_facts
+        rows = facts(policy, h, w, args, macro)
         out.append((pos, source[pos:m.start()], True))
         out.append((m.start(), f"\n{indent}".join(rows), False))
         pos = i
@@ -262,6 +330,23 @@ def comp_decls(source: str, comp_name: str) -> dict[str, list[str]]:
         for it in comp.items
         if isinstance(it, Decl)
     }
+
+
+def shared_params(source: str) -> set[str]:
+    """The Params relations declared under the `// --- shared ---` marker.
+
+    A shared parameter serves every case, so it sits above the case
+    markers; a parameter under a case marker serves that case alone.
+    """
+    start, end = _comp_span(source, "Params")
+    names: set[str] = set()
+    shared = False
+    for line in source.splitlines()[start:end]:
+        if m := SECTION_RE.match(line.lstrip()):
+            shared = m.group(1) == "shared"
+        elif shared and (d := re.match(r"\s*\.decl\s+(\w+)", line)):
+            names.add(d.group(1))
+    return names
 
 
 def rigid_param_decls(source: str, params: dict[str, list[str]]) -> dict[str, list[str]]:
