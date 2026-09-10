@@ -401,7 +401,12 @@ def shared_writes(it: dict, touched: set[str] | None = None) -> list[str]:
         if touched is not None and rel not in touched:
             continue
         p = watched.get(rel)
-        if p is None or solvers.file_hash(p) != digest:
+        # A snapshot taken under an earlier watched set holds names the set
+        # no longer covers. Such a file is no longer shared, so what became
+        # of it is not this turn's to report.
+        if p is None:
+            continue
+        if solvers.file_hash(p) != digest:
             hits.add(rel)
     for rel, snap in pre(it)["files"].items():
         if rel == own or rel.startswith(".scratch/") or rel in hits:

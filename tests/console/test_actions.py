@@ -405,6 +405,28 @@ def test_a_solver_only_turn_flags_no_shared_write(srv):
     assert it.get("shared_writes", []) == []
 
 
+def test_a_snapshot_name_the_watched_set_dropped_is_not_reported(srv):
+    it = item(srv, "a", srv.RUNNING)
+    watched = srv.watched_hashes("a")
+    watched[".claude/agents/cleanup.md"] = "1" * 40
+    it["pre"] = {"hash": "", "solver": "", "proposals": "", "dirty": False,
+                 "files": {}, "watched": watched}
+    srv.finish_turn(it, {"result": ""}, None, time.time(), "refine", False)
+    assert it.get("shared_writes", []) == []
+    assert not any(e["kind"] == "event" and "shared files changed" in e["text"]
+                   for e in it["feed"])
+
+
+def test_a_watched_file_the_snapshot_lacks_is_not_reported(srv):
+    it = item(srv, "a", srv.RUNNING)
+    watched = {rel: digest for rel, digest in srv.watched_hashes("a").items()
+               if not rel.startswith(".claude/roles/")}
+    it["pre"] = {"hash": "", "solver": "", "proposals": "", "dirty": False,
+                 "files": {}, "watched": watched}
+    srv.finish_turn(it, {"result": ""}, None, time.time(), "refine", False)
+    assert it.get("shared_writes", []) == []
+
+
 def test_a_repeat_landing_reports_a_shared_write_once(srv):
     (srv.DOCS / "style.md").write_text("old\n")
     it = item(srv, "a", srv.RUNNING)
