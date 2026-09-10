@@ -1061,13 +1061,13 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     before(Ky, Q, P) :-
         cell(Ky, Q), cell(Ky, P),
         corner(Ky, Diag), axis(Ky, A), dir_of(Diag, A, D),  // primary dir
-        dist(Q, D, K1), dist(P, D, K2), K1 < K2.            // q strictly nearer
+        nearer(D, Q, P).                                    // q strictly nearer
     before(Ky, Q, P) :-
         cell(Ky, Q), cell(Ky, P),
         corner(Ky, Diag), axis(Ky, A),
         diag_dirs(Diag, A, D, D2),                   // primary/secondary dirs
         same_dist(D, Q, P),                          // primary tie
-        dist(Q, D2, K1), dist(P, D2, K2), K1 < K2.   // q strictly nearer
+        nearer(D2, Q, P).                            // q strictly nearer
 }
 
 // Z/N successor over a dense 0-based index set, per key: increment, with
@@ -1567,12 +1567,14 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 }
 
 // The pieces every exact cover of a keyed cell set must contain, by
-// elimination. Pieces are opaque and placements come from the caller. On a
-// uniquely packing input the fixpoint is the whole packing; an ambiguous or
-// too-hard input leaves `forced` partial and the output fails on totality,
-// never wrongly. Forced pieces not ruled out are pairwise disjoint, so
-// covering every cell witnesses a partition. With a single footprint it
-// forces exactly the greedy reading-order peel.
+// elimination. Pieces are opaque and placements come from the caller.
+// Elimination starts only where a cell has one rival left, so a uniquely
+// packing input whose pieces rival themselves inside their own footprints
+// leaves `forced` partial, as an ambiguous or too-hard input does. A partial
+// `forced` fails the output on totality, never wrongly. Forced pieces not
+// ruled out are pairwise disjoint, so covering every cell witnesses a
+// partition. With a single footprint it forces exactly the greedy
+// reading-order peel.
 .comp CoverForcing<Key, Piece> {
     // The candidate pieces and the cells each covers.
     .decl covers(key: Key, piece: Piece, p: Position)  // input
@@ -1638,6 +1640,9 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 // survive, and a caller painting from the survivors fails on cells where
 // leftover rivals disagree — never wrongly. A piece takes at most one
 // candidate: every test picks one per piece.
+//
+// Flagged: assumes each candidate belongs to one piece. A candidate under
+// several pieces mixes the chain walks and kills every candidate.
 .comp PlacementPruning<Key, Cand, Piece> {
     // The candidate placements of each piece.
     .decl cand(key: Key, c: Cand, o: Piece)  // input
@@ -1645,13 +1650,22 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     // Two candidates no joint placement holds together.
     .decl conflict(key: Key, c: Cand, c2: Cand)  // input
 
-    .decl _piece(key: Key, o: Piece)
-    _piece(K, O) :- cand(K, _, O).
-
-    // Each kill rule's universal ("every candidate of the piece is blocked")
-    // would negate alive inside the recursion, so it walks the piece's
-    // candidates in an arbitrary stable ord order — the pair rule as an
-    // inner walk nested in an outer one.
+    // Each kill rule's universal ("every candidate of the piece is
+    // blocked") would negate alive inside the recursion, so it walks the
+    // piece's candidates in an arbitrary stable ord order — the pair rule
+    // as an inner walk nested in an outer one.
+    //
+    // The room kill's own fixpoint lies below the joint one, so it runs
+    // first, in a stratum of its own, over every candidate. The joint
+    // fixpoint then grows from it over the survivors alone: a candidate
+    // the room kill took is dead, so a universal over a piece's candidates
+    // holds exactly when it holds over the piece's survivors. The pair
+    // walk's base joins the survivors with themselves, where a join of
+    // every candidate with itself would not fit.
+    //
+    // A walk step whose next candidate must be dead leads with the dead
+    // atom: the rule's version driven by new dead tuples then reaches the
+    // walk by lookup instead of rescanning it every iteration.
 
     // The ord of each candidate's successor, materialized so the aggregate
     // runs once per candidate rather than once per candidate pair.
@@ -1672,45 +1686,103 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     _tail(K, O, C) :- cand(K, C, O), !_after(K, O, C, _).
 
     // Piece o2 blocked beside c: every candidate of o2 so far conflicts
-    // with c or is dead.
+    // with c or is room-dead.
     .decl _blocked(key: Key, c: Cand, o2: Piece, c2: Cand)
     _blocked(K, Cd, O2, C2) :-
-        cand(K, Cd, O), _piece(K, O2), O2 != O, _head(K, O2, C2),
-        ( conflict(K, Cd, C2) ; dead(K, C2) ).
+        cand(K, Cd, O), conflict(K, Cd, C2), _head(K, O2, C2), O2 != O.
     _blocked(K, Cd, O2, C2) :-
-        _blocked(K, Cd, O2, C1), _after(K, O2, C1, C2),
-        ( conflict(K, Cd, C2) ; dead(K, C2) ).
+        _room_dead(K, C2), _head(K, O2, C2), cand(K, Cd, O), O2 != O.
+    _blocked(K, Cd, O2, C2) :-
+        _blocked(K, Cd, O2, C1), _after(K, O2, C1, C2), conflict(K, Cd, C2).
+    _blocked(K, Cd, O2, C2) :-
+        _room_dead(K, C2), _after(K, O2, C1, C2), _blocked(K, Cd, O2, C1).
 
-    // The inner walk: c2 of o2 placed beside c, and every candidate of o3
+    // The room kill's fixpoint: some other piece has no candidate that
+    // can stand beside c.
+    .decl _room_dead(key: Key, c: Cand)
+    _room_dead(K, Cd) :- _blocked(K, Cd, O2, C2), _tail(K, O2, C2).
+
+    // The survivors of the room kill, chained per piece as above.
+    .decl _live(key: Key, c: Cand, o: Piece)
+    _live(K, C, O) :- cand(K, C, O), !_room_dead(K, C).
+
+    .decl _live_piece(key: Key, o: Piece)
+    _live_piece(K, O) :- _live(K, _, O).
+
+    .decl _live_min_after(key: Key, o: Piece, c: Cand, m: number)
+    _live_min_after(K, O, C1, M) :-
+        _live(K, C1, O),
+        M = min ord(C3) : { _live(K, C3, O), ord(C3) > ord(C1) }.
+
+    .decl _live_after(key: Key, o: Piece, c: Cand, c2: Cand)
+    _live_after(K, O, C1, C2) :-
+        _live_min_after(K, O, C1, M), _live(K, C2, O), ord(C2) = M.
+
+    .decl _live_head(key: Key, o: Piece, c: Cand)
+    _live_head(K, O, C) :- _live(K, C, O), !_live_after(K, O, _, C).
+
+    .decl _live_tail(key: Key, o: Piece, c: Cand)
+    _live_tail(K, O, C) :- _live(K, C, O), !_live_after(K, O, C, _).
+
+    // Piece o2 blocked beside c, over the survivors: every survivor of o2
+    // so far conflicts with c or is dead.
+    .decl _live_blocked(key: Key, c: Cand, o2: Piece, c2: Cand)
+    _live_blocked(K, Cd, O2, C2) :-
+        _live(K, Cd, O), conflict(K, Cd, C2), _live_head(K, O2, C2), O2 != O.
+    _live_blocked(K, Cd, O2, C2) :-
+        dead(K, C2), _live_head(K, O2, C2), _live(K, Cd, O), O2 != O.
+    _live_blocked(K, Cd, O2, C2) :-
+        _live_blocked(K, Cd, O2, C1), _live_after(K, O2, C1, C2),
+        conflict(K, Cd, C2).
+    _live_blocked(K, Cd, O2, C2) :-
+        dead(K, C2), _live_after(K, O2, C1, C2), _live_blocked(K, Cd, O2, C1).
+
+    // The inner walk: c2 of o2 placed beside c, and every survivor of o3
     // so far cannot join them — it conflicts with c or c2, or is dead.
     .decl _pair_blocked(key: Key, c: Cand, c2: Cand, o3: Piece, c3: Cand)
     _pair_blocked(K, Cd, C2, O3, C3) :-
-        cand(K, Cd, O), cand(K, C2, O2), O2 != O, !conflict(K, Cd, C2),
-        _piece(K, O3), O3 != O, ord(O2) < ord(O3),
-        _head(K, O3, C3),
-        ( conflict(K, Cd, C3) ; conflict(K, C2, C3) ; dead(K, C3) ).
+        _live_head(K, O3, C3), conflict(K, Cd, C3), _live(K, Cd, O), O != O3,
+        _live(K, C2, O2), O2 != O, ord(O2) < ord(O3), !conflict(K, Cd, C2).
     _pair_blocked(K, Cd, C2, O3, C3) :-
-        _pair_blocked(K, Cd, C2, O3, C1), _after(K, O3, C1, C3),
-        ( conflict(K, Cd, C3) ; conflict(K, C2, C3) ; dead(K, C3) ).
+        _live_head(K, O3, C3), conflict(K, C2, C3), _live(K, C2, O2),
+        ord(O2) < ord(O3),
+        _live(K, Cd, O), O != O2, O != O3, !conflict(K, Cd, C2).
+    _pair_blocked(K, Cd, C2, O3, C3) :-
+        dead(K, C3), _live_head(K, O3, C3), _live(K, Cd, O), O != O3,
+        _live(K, C2, O2), O2 != O, ord(O2) < ord(O3), !conflict(K, Cd, C2).
+    _pair_blocked(K, Cd, C2, O3, C3) :-
+        _pair_blocked(K, Cd, C2, O3, C1), _live_after(K, O3, C1, C3),
+        conflict(K, Cd, C3).
+    _pair_blocked(K, Cd, C2, O3, C3) :-
+        _pair_blocked(K, Cd, C2, O3, C1), _live_after(K, O3, C1, C3),
+        conflict(K, C2, C3).
+    _pair_blocked(K, Cd, C2, O3, C3) :-
+        dead(K, C3), _live_after(K, O3, C1, C3),
+        _pair_blocked(K, Cd, C2, O3, C1).
 
     // c2 settled for the (piece of c2, o3) pair test beside c: bad in
     // itself, or its inner walk completes.
     .decl _settled(key: Key, c: Cand, o3: Piece, c2: Cand)
     _settled(K, Cd, O3, C2) :-
-        cand(K, Cd, O), cand(K, C2, O2), O2 != O,
-        _piece(K, O3), O3 != O, ord(O2) < ord(O3),
-        ( conflict(K, Cd, C2) ; dead(K, C2) ).
-    _settled(K, Cd, O3, C2) :- _pair_blocked(K, Cd, C2, O3, C3), _tail(K, O3, C3).
+        conflict(K, Cd, C2), _live(K, Cd, O), _live(K, C2, O2), O2 != O,
+        _live_piece(K, O3), O3 != O, ord(O2) < ord(O3).
+    _settled(K, Cd, O3, C2) :-
+        dead(K, C2), _live(K, C2, O2), _live(K, Cd, O), O2 != O,
+        _live_piece(K, O3), O3 != O, ord(O2) < ord(O3).
+    _settled(K, Cd, O3, C2) :-
+        _pair_blocked(K, Cd, C2, O3, C3), _live_tail(K, O3, C3).
 
-    // The outer walk: every candidate of c2's piece so far is settled.
+    // The outer walk: every survivor of c2's piece so far is settled.
     .decl _pair_walk(key: Key, c: Cand, o3: Piece, c2: Cand)
-    _pair_walk(K, Cd, O3, C2) :- _head(K, _, C2), _settled(K, Cd, O3, C2).
+    _pair_walk(K, Cd, O3, C2) :- _settled(K, Cd, O3, C2), _live_head(K, _, C2).
     _pair_walk(K, Cd, O3, C2) :-
-        _pair_walk(K, Cd, O3, C1), _after(K, _, C1, C2), _settled(K, Cd, O3, C2).
+        _pair_walk(K, Cd, O3, C1), _live_after(K, _, C1, C2),
+        _settled(K, Cd, O3, C2).
 
     .decl dead(key: Key, c: Cand)
-    dead(K, Cd) :- _blocked(K, Cd, O2, C2), _tail(K, O2, C2).
-    dead(K, Cd) :- _pair_walk(K, Cd, O3, C2), _tail(K, _, C2).
+    dead(K, Cd) :- _room_dead(K, Cd).
+    dead(K, Cd) :- _live_blocked(K, Cd, O2, C2), _live_tail(K, O2, C2).
+    dead(K, Cd) :- _pair_walk(K, Cd, O3, C2), _live_tail(K, _, C2).
 
     .decl alive(key: Key, c: Cand, o: Piece)
     alive(K, Cd, O) :- cand(K, Cd, O), !dead(K, Cd).
