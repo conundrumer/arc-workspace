@@ -80,26 +80,22 @@ def test_lens_approval_waits_for_a_landing_under_way(srv):
     assert not srv.is_draft("aaa")
 
 
-def test_a_lens_approval_waits_for_a_turn_in_flight(srv):
-    """The lens the user clicks was rendered before the click, and a pass
-    admitted in between is writing the solver. An approval then would keep
-    the item approved through that pass's landing, and commit a text the user
-    never saw, so the ruling waits for the turn."""
+def test_a_lens_approval_stands_through_a_turn_in_flight(srv):
+    """An approval does not wait for the item's turn: the landing keeps the
+    item approved and leaves the file untagged."""
     backlog_solver(srv, "aaa")
     it = finalize_item(srv, "aaa", state=srv.RUNNING)
     w = srv.PROCS[("aaa", "finalize")]
     srv.start_turn(it, w, "finalize", state="running")
-    assert "wait for the turn to land" in \
-        srv.act_approve_solver({"id": "aaa"})["error"]
-    assert it["state"] == srv.RUNNING
-    assert srv.is_draft("aaa")
-    # the pass writes the solver and lands: the row is the user's to rule on
-    write_solver(srv, "aaa", "// draft\n// concept: a shape, revised\n")
+    assert srv.act_approve_solver({"id": "aaa"}) == {"ok": True}
+    assert it["state"] == srv.APPROVED
+    assert not srv.is_draft("aaa")
+    write_solver(srv, "aaa", "// concept: a shape, revised\n")
     w["state"] = "idle"
     srv.finish_turn(it, {"result": tagged("done")}, None, time.time(),
                     "finalize", False)
-    assert it["state"] == srv.NEEDS_REVIEW
-    assert srv.is_draft("aaa")
+    assert it["state"] == srv.APPROVED
+    assert not srv.is_draft("aaa")
 
 
 def test_the_lens_route_reads_git_with_the_lock_down(srv, monkeypatch):

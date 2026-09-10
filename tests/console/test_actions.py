@@ -71,11 +71,12 @@ def test_approve_needs_a_reviewable_item(srv):
     assert srv.act_approve("a")["error"] == "nothing to approve"
 
 
-def test_actions_refuse_while_a_turn_is_in_flight(srv):
+def test_a_revert_refuses_while_a_turn_is_in_flight_and_an_approval_does_not(srv):
     it = item(srv, "a", srv.NEEDS_REVIEW)
     worker(srv, it, state="running")
-    assert "busy" in srv.act_approve("a")["error"]
     assert "busy" in srv.act_revert("a")["error"]
+    assert srv.act_approve("a")["ok"] is True
+    assert it["state"] == srv.APPROVED
 
 
 def test_compact_path_is_rejected_while_item_is_busy(srv):

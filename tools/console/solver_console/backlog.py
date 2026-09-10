@@ -20,7 +20,6 @@ ROW_CACHE: dict[str, tuple[tuple, dict]] = {}
 
 # The states an item may be ruled on from the lens. In any other state a turn
 # is on its way to the solver file, and the ruling waits for it.
-RULEABLE = (store.NEEDS_REVIEW, store.APPROVED, store.COMMITTED)
 
 
 def backlog_row(item_id: str, proposals: str, ts_size: int | None,
@@ -231,27 +230,14 @@ def act_dismiss(body: dict) -> dict:
 def act_approve_solver(body: dict) -> dict:
     """Approve a solver from the lens: the tag comes off the file, which is
     where approval stands. An item the console still holds for that solver
-    takes the ruling too, so nothing it does later withdraws it.
-
-    A ruling needs the file it rules on to stand still, so an item with a turn
-    in flight is refused, as the item panel's approval is. The lens the user
-    clicks was rendered before the click, and the pass admitted in between
-    would otherwise write the solver after the approval and land it approved,
-    with a text the user never saw."""
+    takes the ruling too, a turn in flight included, so nothing it does later
+    withdraws it."""
     item_id = str(body.get("id") or "").strip()
     if not item_id or not solvers.solver_path(item_id).exists():
         return {"error": f"no solver for {item_id}"}
     # a landing rewrites the same file under LOCK
     with store.LOCK:
         it = store.find(item_id)
-        if it is not None:
-            if it["state"] not in RULEABLE:
-                return {"error": f"the item is {it['state']} — "
-                                 "wait for the turn to land"}
-            try:
-                store.require_idle(it)
-            except store.Reject as exc:
-                return {"error": str(exc)}
         if it is None or it["state"] in (store.APPROVED, store.COMMITTED):
             solvers.clear_draft(item_id)
         else:

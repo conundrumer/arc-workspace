@@ -70,9 +70,10 @@ def act_compact(it: dict, sess: str | None = None) -> None:
 
 @store.action
 def act_approve(it: dict) -> None:
-    if it["state"] != store.NEEDS_REVIEW:
+    """Approve as the solver stands. A turn in flight does not wait: its
+    landing keeps the item approved."""
+    if it["state"] in (store.QUEUED, store.APPROVED, store.COMMITTED):
         raise store.Reject("nothing to approve")
-    store.require_idle(it)
     store.approve(it)
 
 
