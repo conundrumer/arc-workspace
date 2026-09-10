@@ -52,7 +52,7 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !covered(Ch, P), params.bg(Col).
 
 ## `GRID_HxW` for grid data
 
-A GRID call stores a grid as a literal layout, one fact per cell in row-major order: `GRID_HxW` emits every cell with its value; `GRID_MASK_HxW` and `GRID_SPARSE_HxW` emit only the nonzero cells. Each cell fact's Position is in the call's own H×W frame. The runner expands the call before Souffle sees the file; GRID is not defined in `lib.dl`. H and W are the grid's dims and take any size, so a call carries H·W cell values. Cells can hold any per-cell data: colors, labels, transforms. A distinguished cell is a Position fact, not a cell value (27a28665 `center_pos`).
+A GRID call stores a grid as a literal layout, one fact per cell in row-major order: `GRID_HxW` emits every cell with its value; `GRID_MASK_HxW` and `GRID_SPARSE_HxW` read `_` as no cell, and emit the rest. Each cell fact's Position is in the call's own H×W frame. The runner expands the call before Souffle sees the file; GRID is not defined in `lib.dl`. H and W are the grid's dims and take any size, so a call carries H·W cell values. Cells can hold any per-cell data: colors, labels, transforms. A distinguished cell is a Position fact, not a cell value (27a28665 `center_pos`).
 
 ```
 .decl template(p: Position, col: Color)
@@ -64,10 +64,15 @@ GRID_3x3(template,
 
 Arguments between the relation name and the cell values pass through as leading columns, so one relation can hold several grids keyed by id (995c5fa3 `mapping_member`).
 
-If a variant reads the cell values, it states a modeling hypothesis: the grid's zeros are absence, not data.
+A variant with an absent cell states a modeling hypothesis: `_` is where the grid holds nothing. A sparse form reads each other digit as a value, `0` included.
 
-- `GRID_MASK_HxW(rel, ...)` emits `rel(p)` for each nonzero cell — membership grids (1818057f `shape`).
-- `GRID_SPARSE_HxW(rel, ...)` emits `rel(p, v)` for each nonzero cell — ink templates (d364b489 `template`).
+- `GRID_MASK_HxW(rel, ...)` takes `1` for a member cell and emits `rel(p)` for it — membership grids (1818057f `shape`).
+- `GRID_SPARSE_HxW(rel, ...)` takes a digit for a cell's value and emits `rel(p, v)` for it — ink templates (3f23242b `shape`).
+- `GRID_STAMP_HxW(rel, ...)` and `GRID_STAMP_SPARSE_HxW(rel, ...)` store a mark-anchored stamp as `Shift` offsets. The layout is a picture with one token carrying the `@` prefix, and each member cell is emitted as its offset from that anchor. The form follows what the determination yields: offsets take a stamp, and absolute cells take a grid (3f23242b `shape`).
+    - `GRID_STAMP_HxW` takes `1` for a member cell and emits `rel(delta)` for it (3ac3eb23 `template`).
+    - `GRID_STAMP_SPARSE_HxW` takes a digit for a cell's value and emits `rel(delta, v)` for it (4258a5f9 `template`).
+    - `_` is no cell.
+    - The `@` prefix goes on any token, a blank included: 0962bcdd `template_arm` anchors on a blank, 0962bcdd `template_center` on a member. A picture anchored on a member emits the zero offset.
 
 ## `GRID_HxW` catalogs
 
@@ -78,15 +83,15 @@ A catalog stores several patterns in one id-keyed relation. Each entry is a keye
 .decl pattern_out(id: Ident, col: Color)
 
 GRID_MASK_3x3(pattern_member, 0,
-    0, 1, 0,
+    _, 1, _,
     1, 1, 1,
-    0, 1, 0)
+    _, 1, _)
 pattern_out(0, 3).
 
 GRID_MASK_3x3(pattern_member, 1,
-    1, 0, 1,
-    0, 0, 0,
-    1, 0, 1)
+    1, _, 1,
+    _, _, _,
+    1, _, 1)
 pattern_out(1, 8).
 ```
 
@@ -101,7 +106,7 @@ RIGID(marker,
     .decl glyph(p: Position)
     GRID_MASK_2x2(glyph,
         1, 1,
-        1, 0)
+        1, _)
     .decl launch(p: Position) launch([0, 1, 0, 1]).
     .decl aim(d: DiagDir) aim(DIAG_TL).
 )
@@ -171,7 +176,7 @@ combine_member(0, [0,0,0,1], 0). combine_member(0, [0,0,1,0], 0).
 
 ## Stored total orders as dense ranks
 
-A total order is stored in the parameters as dense rank data and is consumed only by comparison. Ranks state each element's place in the sequence directly; successor edges state it only through closure. Because ranks are used only for comparison, the solver does not use their numeric structure for anything except ordering. Dense values keep the encoding canonical, since a gapped value encodes one order many ways. The base is whatever the store leaves free: 0 in a plain relation, and 1 in a `GRID_SPARSE` or `GRID_MASK` store, where 0 states absence.
+A total order is stored in the parameters as dense rank data and is consumed only by comparison. Ranks state each element's place in the sequence directly; successor edges state it only through closure. Because ranks are used only for comparison, the solver does not use their numeric structure for anything except ordering. Dense values keep the encoding canonical, since a gapped value encodes one order many ways. The base is 0, which every store leaves free.
 
 ```
 .decl ink_rank(c: Color, r: number)
@@ -184,7 +189,7 @@ beaten(P, Col) :-
 
 Over a spatial domain, the ranks can be stored as a GRID: a68b268e's `params.prio` shows the precedence in the tile arrangement.
 
-(794b24be — a fill order in a `GRID_SPARSE` store, based at 1.)
+(794b24be — a fill order in a `GRID_SPARSE` store, based at 1, because a cell's place is the ink count that reaches it.)
 
 ## Set-keyed relations via parent/child tables
 

@@ -16,6 +16,8 @@ Then dispatch on `$ARGUMENTS`:
 
 ## Entry
 
+`triage` and `retro` need a running console at `localhost:8347`. Without one, stop and say so.
+
 - Read `programs/lib.dl` before writing or editing a solver, in full or as signatures. Read a primitive's body when its signature and comment leave the semantics open.
 - If requested to continue from prior solver work, run `uv run python scripts/inspect-session.py --solver-only` and read the output in full.
 - `bash scripts/queue.sh` prints the next solver and its estimated complexity.
@@ -61,4 +63,4 @@ Then dispatch on `$ARGUMENTS`:
 - Reversal: an agent runs `git apply -R` on the file's diffs, the later first. Every fix in that file comes out with it, and the kept hunks return with `git apply --include` on the same patch. The rulings for fixes go into a second run with the fixes as `fixes` in `args`: one entry per file a fix edits, each with its kind, target, and edit, under the call's id, as the first run returned them under each call's `fixes`. The second run's prune pass keeps their substance, revises the wording to the file's style, and reports that the meaning held.
 - A lib change that keeps interface and meaning is a mechanical fix and goes to an agent directly.
 - A reason the user says should never count again, or a stance the user states, goes into the agent definition that raised it, as a line.
-- Close: Run `curl -sX POST localhost:8347/api/retro` to move the mark. Commit all changes made in the retro session, excluding modifications to untracked files.
+- Close: Run `curl -sX POST localhost:8347/api/retro` to move the mark. Commit all changes made in the retro session, leaving alone the changes under `programs/solvers/` this session did not make.

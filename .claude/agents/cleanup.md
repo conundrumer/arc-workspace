@@ -12,6 +12,7 @@ First, when the handbook does not follow this section, read the output of `uv ru
 - Before the first edit of a file, run `uv run python scripts/run_dl.py <stem>` and keep the result; a failure or a finding already there is reported as already there.
 - Models, parameterizations, and Choice cases stay as they are.
 - The files do not mention this pass or an earlier form of the code.
+- A `// draft` line under the task-id line stays.
 - After each file, run it again. The run passes, with no finding the first run did not have. When that fails, restore the file by reversing your edits, and record why.
 - Do not use git.
 

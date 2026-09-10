@@ -81,3 +81,37 @@ Spec:
 - The interface otherwise fits every caller. `rank_dir`/`bar_dir` unkeyed suits all three (81c0276b and 89565ca0 derive `bar_dir` from a `Sense` via `turn`; 2753e76c derives both from a `DiagDir` and `rank_axis` via `diag_dirs`). The bg-past-end branch stays in the caller in all three sites (81c0276b: `K >= N, params.bg`; 2753e76c: `!bar(P, _)`; 89565ca0: `speck(Col)`), so the comp rightly does not paint the remainder.
 
 Reimplementations: 2753e76c reads the frame's bar-axis extent as `order.rank_desc($U(), N, 0)`, the top-ranked count, which is `Extremes.high` over the counts. The site reuses an instance it already has (Setup priority 2), so the fix is a judgment: if `BarChart` is promoted, the comp's `widest` supplies it.
+
+Survey: 2026-09-10 14:36 — the solvers since 2026-09-10 07:45, 045e512c, 0520fde7, 05f2a901, 08573cc6, 0d87d2a6, 0dfd9992, 1190bc91, 11dc524f, 137f0df0, 13e47133, 142ca369, 1478ab18, 17829a00, 17cae0c1, 19bb5feb, 1a6449f1, 20981f0e, 212895b5, 22eb0ac0, 264363fd, 291dc1e1, 2c181942, 3490cc26, 34b99a2b, 409aa875, 412b6263, 42a50994, 44f52bb0, 56dc2b01, 668eec9a, 7837ac64, 7c008303, 7e0986d6, 7e576d6e, 7f4411dc, 80a900e0, 81c0276b, 825aa9e9, 82819916, 83302e8f, 83b6b474, 83eb0a57, 8403a5d5, 84551f4c, 845d6e51, 846bdb03, 85c4e7cd, 89565ca0, 9565186b, 97999447, 99b1bc43, b1fc8b8e, b7cb93ac, bdad9b1f, d9fac9be.
+
+**Signature coverage.** The grep anchors (`Frame2D<` with `Extremes<` or `rank_desc(.., 0)` and `Ordinal<`/`Order<`) hit 4 scope files: 291dc1e1, 668eec9a, 81c0276b, 89565ca0. The parser match of the paint-rule shape (a `dist` distance compared against a variable, with a second `dist` on the same cell feeding a rank or seat lookup) hit exactly 2 rules in scope. Widened to every `<`, `<=`, `>`, `>=` between a `dist` distance and a variable, the scope holds only those same 2 rules (each also carries the `K >= N` past-the-end branch). No `// family:` sibling set is involved.
+
+## 1. Callers
+
+1. 81c0276b — `chart` (`Frame2D<Choice>`), `order` (`Order<Choice, Color>`), `colors` (`Tally`), `widest` (`Extremes`), and the `out` rule at `programs/solvers/81c0276b.dl:90`: the chart of per-color slot counts ($Tiles) or component counts ($Objects), rows ascending from `params.rank_dir`, bars growing from `params.bar_dir` (a `turn` of `bar_sense`), bg past a bar's end. Already listed in the entry; the site is unchanged in form.
+2. 89565ca0 — `chart`, `frames`, `widest`, `fewer` (`Order<Unit, Color>`), `row`, `seat`, `ties` (`TiebreakResolutions`), and the `out` rule at `programs/solvers/89565ca0.dl:103`: the chart of per-frame compartment counts in the seated form. `seat(F, K) :- row(K), fewer.rank($U(), F, R), R <= K` keeps the rows at or past a frame's member rank, `ties.assign` seats one frame per row, and the paint rule reads the member from the assignment and then tests `dist(P, Db, K2), K2 < N`. Already listed in the entry; the site is unchanged in form.
+
+No further caller in scope: the widened comparison scan returns nothing outside these two rules, and the `Ray`-based scan (a ray step count compared against a variable) hits only 1190bc91's `arm.blocked`, which orders arms by sequence index and draws no chart.
+
+## 2. Near-misses
+
+1. 668eec9a `line_row`, `out` — a fixed-extent `Frame2D` of solid rows; a line's row is its position rank from `params.order_dir` (`Extremes.low` then `Ordinal.rank_desc`), not a score, and a row is solid or bg with no bar length. Exclusions: "a chart whose rows follow an order other than the score" and "a stack of members with no bar". (Already in the entry.)
+2. 291dc1e1 `slab` (`Frame2D<Ident>`), `widest` (`Extremes`), `slot` (`DirFrame<Choice>`), `out` — blocks stacked in reading order (`LexOrder`), each slab as long as the longest block, the block's own cropped cells centered in it. The `Extremes.high` extent matches the frame half of the signature, but the rows follow reading order and the content is the input block, not a counted bar. Exclusions: "a stack of members with no bar (`OrderFrame`)" and "a chart whose rows follow an order other than the score".
+3. 19bb5feb `rank` (`Ordinal<Dir>`), `place` (`DirPack`), `rank_frame` (`Frame2D`) — markers ranked densely per edge, each taking the output cell at its rank pair; the frame's extents are the rank extents. Exclusion: "the rank alone (`Ordinal`)"; no member has a score-length bar.
+4. 412b6263 `stack` (`Frame2D`, $Count) — the copy count from `Tally` sets one extent of the tile arrangement, one copy per input object. Exclusion: "the frame alone (`Frame2D`)"; nothing is ranked and no bar is drawn.
+5. 83b6b474 `side`, `square` (`Frame2D<number>`) — the square whose border cell count equals the shape cell count (`Tally` against `Tally`). Exclusion: "the frame alone"; a count fixes an extent, no member row, no bar.
+6. 83eb0a57 `largest`, `top` (`ArgExtremes`) and 1478ab18 `far` (`ArgExtremes`) — the size rank picks the canvas, the topmost piece, or the widest mark pair. Exclusion: "the rank alone"; consumed as a pick, not drawn.
+7. 212895b5 `step_order` and 7e576d6e `seq` (`Order<_, Position>`) — a rank along a path carries state step by step. Exclusion: "the rank alone".
+8. 1190bc91 `arm.blocked` (`arm.ray(J, P, ..), J < K`) — a ray of an earlier sequence index blocks a later one. Exclusion: not a bar; the compared value is a sequence index, and the rows are the input's own lines.
+
+## 3. Spec
+
+1. Interface: no change from these sites. Both callers key the chart differently (81c0276b by `Choice`, 89565ca0 by `Unit`) with unkeyed `rank_dir`/`bar_dir`, and both derive `bar_dir` via `turn` from a `Sense`; the code form's unkeyed direction inputs suit both. Both leave the past-the-end branch in the caller (`params.bg` / `speck`), so the comp rightly paints only the bars.
+2. Definition, member rank: 89565ca0's `fewer` is exactly the code form's `order` (`elem` from the scored set, `before` by `<` on scores), and its `seat` reads `fewer.rank` as a member count (`R <= K`), which is what the entry's tie argument needs; 81c0276b's `order` is the same construction. Both scope callers confirm `Order`, not `Ordinal`, as the rank. No change beyond what the entry states.
+3. Seated form, caller-only: 89565ca0 bypasses `row` (it seats through `ties.assign`) and needs the row index set (`row(K)` from `chart.cell` and `dist` toward `rank_dir`), which the code form does not expose, then tests the bar with its own `dist` against the score. A member-agnostic bar readout and a row-index readout would serve it. This rests on the surfacing solver alone in this scope (no second seated site), so it is reported as caller-only, as the entry already records.
+
+## 4. Reimplementations
+
+Reimplementations: none.
+
+No scope site met on the way hand-writes a `programs/lib.dl` primitive. 2753e76c, the entry's recorded reimplementation (`order.rank_desc($U(), N, 0)` for `Extremes.high`), is outside this scope.

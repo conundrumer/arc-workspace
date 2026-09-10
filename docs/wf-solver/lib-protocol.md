@@ -22,10 +22,10 @@ Give a candidate an entry, `docs/wf-solver/proposals/<name>.md`, named for the o
 - the code form, when it has one
 - a `Not:` line naming what is not this operation
 - a `Match:` line with a search signature that covers every statement of the operation, including statements whose atoms sit in different lines or rules, and statements that reach the operation through another primitive. State the shape in prose and match it with the parser (`tests/test_ast_match.py`)
-    - before a dispatch, restate a `Match:` line that does not meet this spec
-- a `Survey: <date time>` line per dispatch, the dispatch time to the minute, each followed by its own result
+    - restate a `Match:` line that does not meet this spec, so the next survey reads it
+- a `Survey: <date time>` line per survey, its time to the minute, each followed by its own result
     - the result that is relevant to the operation: the near-misses, the spec question, and a `Callers` list of the solvers that would call it
-    - a result with no `Survey:` line above it counts as no result
+    - a result stands under a `Survey:` line, and the survey command writes the line and the result together. Text with no `Survey:` line above it counts as no result
     - a recorded result stays as written, except its `Callers` list: strike a solver that no longer writes the operation
 - a `Closed: <date time>` line with the judgment, when the operation is closed
 
@@ -52,25 +52,29 @@ Remove the entry's file at these points:
 
     The entry's state decides what to do next.
 
-    - If no entry exists, write one with its `Survey:` line. Then send the `survey` agent the entry's path, the scope (the whole corpus), and the scratch path (`.scratch/<task_id>/<entry name>/`).
+    - If no entry exists, write one. It carries no result, so it is owed a survey of the whole corpus.
     - If an entry is closed, keep its judgment. Encode the solver without the operation, in the way the entry records.
     - If an entry has a survey result, add this solver under `Callers`.
-        - **Newer solvers.** If some solvers postdate the entry's `Survey:` time, send the `survey` agent the path, the scope, and the scratch path (`.scratch/<task_id>/<entry name>/`), and append the relevant results to the entry. The scope is the solvers that `uv run python scripts/run_dl.py since <time>` lists.
-    - If an entry has no result and no survey is in flight, dispatch the survey.
-
-    **Dispatch.** Dispatch early, and do not survey yourself. Write the dispatch's `Survey:` line in the entry before sending the agent. A `Survey:` line with no result under it is a survey in flight: dispatch no survey of that scope, and read the result when it lands. If the pass needs the result before it lands, dispatch a second survey and report it in the review. If the pass ends first, say in the review that the result is pending. The agent reports callers, near-misses, the spec question, and reimplementations.
-
+        - **Newer solvers.** When some solvers postdate the entry's newest `Survey:` time, the entry is owed a survey of those solvers. The scope is the solvers that `uv run python scripts/run_dl.py since <time>` lists, for that time.
     - Count a family (`// family:` siblings with their representative) as one caller.
     - Add the callers, near-misses, and spec question to the entry.
-    - Put the reimplementations in the session's report.
-    - Include the agent's result in the report or review.
+
+    **Owed surveys.** `uv run python scripts/survey.py <entry>` surveys an entry and writes the result into it.
+
+    - Run it when the pass needs the result of an entry in either state:
+        - the entry carries no result
+        - some solvers are newer than the entry's newest `Survey:` line
+    - If the command fails, send the `survey` agent the entry's path, the scope the command would take, and a scratch path (`.scratch/surveys/<entry name>/`), and append its report at the end of the entry in the form the command writes:
+        - a blank line, then `Survey: <date time> — the whole corpus.` or `Survey: <date time> — the solvers since <the entry's newest survey time>, <the stems, comma separated>.`, then a blank line, then the report
+        - say in the review that the session ran the survey
+    - If the pass ends with the entry still unsurveyed, say so in the review.
 3. Decide whether to close the proposal. This is the only judgment in the protocol.
     - **Close grounds.** Base that judgment on whether the operation does not follow principles, or whether it is not general and the solvers encode their tasks without it. The solvers encode their tasks without it when:
         - lib already holds the operation
         - a plain relation states it and no other solver writes it
         - a relational form replaces the arithmetic
     - **Closing.** When closing a proposal, put the judgment in the entry as the `Closed:` line, remove the proposal comp, and rethink the solver's encoding in relational form. Leave plain relations as written.
-        - An entry closed with no `Survey:` line above its result is reopened: write the line and dispatch the survey.
+        - An entry closed with no survey result is reopened: strike its `Closed:` line, then run `uv run python scripts/survey.py <entry>`.
         - If the proposal closes before it has an entry, write the entry and close it in the same step.
         - Include the close in the review as a judgment call.
     - **No close.** If the proposal does not close, nothing is decided. Write no text that implies an outcome.
@@ -85,12 +89,10 @@ Remove the entry's file at these points:
         2. Send the `cleanup` agent the regions that `migrate` changed and the primitive they now call.
         3. List in the review the callers that `migrate` skipped.
 
-**Reimplementations.** Fix every reimplementation a survey reports in the same pass.
+**Reimplementations.** An entry lists the reimplementations its surveys met.
 
-- Send them to the `migrate` agent, then the `cleanup` agent.
-- If either agent finds another problem that Simplify or Prune covers in a file it has open, that agent fixes that problem in the same pass.
-- Put a finding in a file no agent has open in the review.
-- Fix a target file even when it has uncommitted edits.
+- Fix one where it sits in a file the pass has open, and strike it from the entry. Fix that file even when it has uncommitted edits.
+- Leave the rest to the session that opens their files, or to promotion.
 
 ## Changes to existing definitions
 

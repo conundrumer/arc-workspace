@@ -67,3 +67,37 @@ Near-misses, new:
 - `7d7772cc` `open_dir`, `20981f0e` `clear_step` — a box's margin against the grid edge; no member complement.
 
 Reimplementations: none. The local edge-line relations met (`3f23242b`, `5af49b42`, `2601afb7`) test `dist(P, D, 0)` against the grid edge with no box in the file.
+
+Survey: 2026-09-10 14:42 — the solvers since 2026-09-10 07:26, 045e512c, 0520fde7, 05f2a901, 08573cc6, 0c9aba6e, 0d87d2a6, 0dfd9992, 1190bc91, 11dc524f, 136b0064, 137f0df0, 13e47133, 142ca369, 1478ab18, 15113be4, 17829a00, 17cae0c1, 195ba7dc, 19bb5feb, 1a6449f1, 1b2d62fb, 1e32b0e9, 20981f0e, 212895b5, 22eb0ac0, 25c199f5, 264363fd, 281123b4, 291dc1e1, 29623171, 2c181942, 31d5ba1a, 3490cc26, 34b99a2b, 409aa875, 412b6263, 42a50994, 44f52bb0, 506d28a5, 56dc2b01, 5d2a5c43, 6430c8c4, 668eec9a, 66f2d22f, 75b8110e, 7837ac64, 7c008303, 7e0986d6, 7e576d6e, 7f4411dc, 80a900e0, 80af3007, 810b9b61, 817e6c09, 81c0276b, 825aa9e9, 82819916, 83302e8f, 83b6b474, 83eb0a57, 8403a5d5, 84551f4c, 845d6e51, 846bdb03, 85c4e7cd, 89565ca0, 8e5a5113, 94f9d214, 9565186b, 97999447, 99b1bc43, a68b268e, b1fc8b8e, b7cb93ac, bdad9b1f, ce4f8723, cf98881b, d19f7514, d9fac9be, dae9d2b5, e133d23d, e345f17b, e3497940, e98196ab, e9afcf9a, fafffa47.
+
+The matcher flags every rule in scope that holds an edge-line atom (`on_edge`, `edge_cell`, `corner`, `dist(_, _, 0)` tagged by whether its position comes from a `BoxFrame.inner` / `Reframe.view`, `geq`/`gt`) and reports the rule's negated atoms and disequalities beside it; it also flags every `min`/`max` aggregate, to catch hand-built boxes. Seven rules had an edge-line atom beside a complement; 28 more had an edge-line atom alone; no rule in scope holds an aggregate.
+
+## 1. Callers
+
+1. `810b9b61` — `edge_gap` (`/Users/davidlu/code/arc-workspace/programs/solvers/810b9b61.dl:69`): a component whose box edge line holds a cell it does not draw is not a whole outline, so `$Object` does not recolor it. This is the surfacing solver; its call site is as the entry's second survey records it: `Bbox<Obj>` fed `cell` alone, a `BoxCells<Obj>` fed from `box.margin` and `in(P, _)`, the complement as `!obj(K, P)` (the same set that fed `box.cell`), existence per key, and `BoxCells` kept for `hole`.
+2. `846bdb03` — `bar` (`/Users/davidlu/code/arc-workspace/programs/solvers/846bdb03.dl:37`), new: the color of a cell on side D of the corner-marked box's edge line that is neither the corner color nor bg — the bar color on that side. The box is `BoxFrame<Unit>` over the corner-colored cells with `grid` fed; the edge line is written in the inner frame (`crop(P, Col)` is `box.inner` joined to `in`, and `dist(P, D, 0)` on the inner position is side D of the box); the complement is `!params.corner(Col)` through the color, the `256b0a75` form, since `box.cell` is exactly the corner-colored cells. The rule adds `!params.bg(Col)`: the box edge line holds corners, bar cells, and bg cells on the two barless sides, and `edge_gap` would report the bg cells too, so the site narrows. It reads the side and the color, drops the position, and keys on `Unit`. It keeps `BoxFrame` for `crop` either way.
+
+Negative evidence across the 86 solvers: `on_edge` appears only in `810b9b61` (two rules, one positive); `edge_cell` in `2c181942` (two rules) and `56dc2b01` (one), all positive; an inner-frame `dist(_, _, 0)` in `212895b5` (positive) and `846bdb03` (the caller); `same_dist` only in `2c181942:94` and `56dc2b01:63`, both against a seat or a stepped-off cell, not a margin; no `nearer` under negation; no `min`/`max` aggregate, so no hand-built bounding box; every other `dist(_, _, 0)` hit tests the grid edge or a tile index (`0d87d2a6`, `1190bc91`, `136b0064`, `17829a00`, `22eb0ac0`, `291dc1e1`, `825aa9e9`, `8403a5d5`, `84551f4c`, `bdad9b1f`, `e3497940`).
+
+## 2. Near-misses
+
+1. `83302e8f` — `irregular` (`box.inside(Id, P), !region.label(...)`): the whole box against the set, no edge line and no side — the `Bbox.gap` exclusion. New; `264363fd` `ragged` and `3490cc26` `link_cell` are the same reading and are already in the entry.
+2. `56dc2b01` — `back_line`: `box.edge_cell` stepped one cell outward, then its grid line — the `Outset` band exclusion.
+3. `20981f0e` — `clear_step`: the piece box's margin against the tile's edge; no member complement. Already in the entry.
+4. `2c181942` — `bar` and `side_cell`: `Bbox.edge_cell` positive, the member cells on the edge line with no complement — the `edge_cell` readout itself, not its complement.
+5. `212895b5` — `seed`: the inner-frame edge line of a solid block, positive, with a centered test; no complement.
+6. `d9fac9be` — `outline` (`Rim` over `Frame2D` cells) and `83b6b474` — `border` (`dist(P, D, 0)` over `Frame2D` cells): the edge line of a constructed frame, used positively as a shape. The frame bounds no member set — the `3f23242b` exclusion.
+7. `845d6e51` `query`, `846bdb03` `shape.cell`, `137f0df0` `out`: `!inside`, the cells outside the box, not its edge.
+8. `1a6449f1` — `bcells`: `DrawnRect` boxes read for `hole` only; the outline is whole by construction.
+
+## 3. Spec
+
+No change to the interface or the definition. Both output columns and the key are projected as the entry describes: `846bdb03` reads side and color and drops the position; `810b9b61` reads existence per key.
+
+On the host question, `846bdb03` is the first surveyed site whose box instance is a `BoxFrame`. With the readout on `Bbox`, the site reads `box.edge_gap` through inheritance, with no new instance, and `grid` is already fed there. With the readout on `BoxCells`, the site needs a `BoxCells<Unit>` fed from `box.margin` beside the `BoxFrame` it keeps for `crop` — a second instance restating the box. That is one more site on the `Bbox` side, and the same shape as `256b0a75` and `68bc2e87` in the entry, where the gap would otherwise come from one comp and the line it breaks from another.
+
+One note for the Match line: `846bdb03` states the edge line as `dist(P_inner, D, 0)` over a `BoxFrame.inner` position, a form the line covers only as "an equivalent local edge-line relation". Naming it (inner-frame `dist` zero over `BoxFrame.inner` or `Reframe.view`) would let the next survey anchor on it; the matcher under the scratch path tags that form as `dist0-inner`.
+
+## 4. Reimplementations
+
+Reimplementations: none.

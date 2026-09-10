@@ -233,7 +233,7 @@ Cases are hypotheses about the prior that the task teaches.
     - A precedent covers how a structure is found and encoded, not the tests inside that encoding: which cells or lines qualify follows the task's concept, so a solver whose test differs still follows the precedent.
     - When two encodings of one structure stand in the corpus, the one that is not the precedent is a deviation, and a session notes it in the review.
 - Models that find different structures are different parses.
-    - 662c240a <!-- square tiles form a stack along an axis, and the output is the one tile that lacks the symmetry the others share; every case reads the same stack. -->
+    - 662c240a <!-- square tiles form a stack along an axis, and the output is the one tile that lacks the symmetry the others share; the cases find that one stack by tile count and by tile size, so none of them is a different parse. -->
 - **Setup priority.** A setup follows, in order:
     1. Fidelity.
     2. Reuse of the facts and lib instances the program already has (1190bc91).
