@@ -1,0 +1,178 @@
+// 4c177718
+// draft
+// concept: decompose markers crop stamp lookup
+// A line of one color cuts the grid into two panels. The scene panel holds
+// one shape, in the anchor color. The legend panel holds a copy of that
+// shape, an arrow, and a payload shape. The arrow names a direction, and
+// the output is the scene panel with the payload's box stamped against the
+// shape's box on that side, aligned across the arrow.
+//
+// What the payload attaches to splits target:
+//
+//   $Colored  — the scene cells in the anchor color.
+//   $Template — where the legend's copy occurs in the scene.
+//
+// How the arrow names a direction splits aim:
+//
+//   $Widest — it points away from the widest edge of its box, the bar.
+//   $Glyph  — its picture is a stored chart, in a pose that carries the
+//             chart's tip direction.
+
+#include "../lib.dl"
+
+.type Target = Colored {} | Template {}
+.type Aim    = Widest {} | Glyph {}
+.type Choice = [target: Target, aim: Aim]
+
+.type Line = [a: Axis, l: Position]
+
+.comp Params {
+    // --- shared ---
+
+    .decl bg(col: Color) bg(0).
+    .decl divider(col: Color) divider(5).
+    .decl anchor(col: Color) anchor(1).
+    .decl arrow(col: Color) arrow(2).
+
+    // --- Glyph ---
+
+    RIGID(chart,
+        .decl glyph(p: Position)
+        GRID_MASK_3x3(glyph,
+            _, 1, _,
+            _, 1, _,
+            1, 1, 1)
+        .decl tip(d: Dir) tip(DIR_T).
+    )
+}
+
+.init params = Params
+
+// --- the panels the divider cuts ---
+
+.init line_color = Unanimous<Line, Color>
+line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
+
+// The divider is a line its color runs all the way across.
+.init panels = DividerFrame<Unit>
+panels.cell($U(), P) :- in(P, _).
+panels.divider($U(), A, L) :- line_color.value([A, L], Col), params.divider(Col).
+
+// The legend is the panel the arrow sits in.
+.decl legend_panel(p_tile: Position)
+legend_panel(P_tile) :- in(P, Col), params.arrow(Col), panels.tile_of($U(), P, P_tile).
+
+.decl legend(p: Position)
+legend(P) :- panels.tile_of($U(), P, P_tile), legend_panel(P_tile).
+
+.decl scene(p: Position)
+scene(P) :- panels.tile_of($U(), P, P_tile), !legend_panel(P_tile).
+
+// --- the scene panel, in its own frame: the output ---
+
+.init view = BoxFrame<Unit>
+view.cell($U(), P) :- scene(P).
+
+.decl cell(p_intile: Position, col: Color)
+cell(P_intile, Col) :- in(P, Col), view.inner($U(), P, P_intile).
+
+// --- the direction the arrow names ---
+
+.init arrow_box = BoxFrame<Unit>
+arrow_box.cell($U(), P) :- in(P, Col), params.arrow(Col).
+
+.decl heading(a: Aim, d: Dir)
+
+// --- Widest ---
+
+.init bar = Mode<Unit, Dir, Position>
+bar.item($U(), D, P) :- arrow_box.edge_cell($U(), P, D).
+
+heading($Widest(), D) :- bar.mode($U(), D_bar), opposite(D_bar, D).
+
+// --- Glyph ---
+
+// The arrow's picture, read in its own box, against the chart in every pose.
+.init pose = KeyedSetCompare<Unit, D4, Position>
+pose.pattern_member(D, P) :- params.chart_glyph(D, P).
+pose.observed_member($U(), P_inner) :- arrow_box.inner($U(), _, P_inner).
+
+heading($Glyph(), D_tip) :- pose.equals($U(), D), params.chart_tip(D, D_tip).
+
+// --- the payload the legend shows ---
+
+.decl payload(p: Position, col: Color)
+payload(P, Col) :-
+    legend(P), in(P, Col), !params.bg(Col), !params.anchor(Col), !params.arrow(Col).
+
+.init pay_box = BoxFrame<Unit>
+pay_box.cell($U(), P) :- payload(P, _).
+// The payload may leave its box corners empty; grid keeps the whole box viewed.
+pay_box.grid($U(), P) :- legend(P).
+
+// --- what the payload attaches to ---
+
+.decl target(p_intile: Position, t: Target)
+
+// --- Colored ---
+
+target(P_intile, $Colored()) :- cell(P_intile, Col), params.anchor(Col).
+
+// --- Template ---
+
+.decl template(p: Position, col: Color)
+template(P, Col) :- legend(P), in(P, Col), params.anchor(Col).
+
+.init occ = Occurrences<Unit, Color>
+occ.shape($U(), P, Col) :- template(P, Col).
+occ.cell($U(), P, Col) :- scene(P), in(P, Col).
+
+target(P_intile, $Template()) :-
+    occ.occurrence($U(), M), template(S, _), compose(M, S, P),  // the template placed
+    view.inner($U(), P, P_intile).
+
+// --- the stamp ---
+
+.init target_box = Bbox<Target>
+target_box.cell(T, P_intile) :- target(P_intile, T).
+
+// The two boxes meet at facing corners: the payload's corner takes the
+// cell one step beyond the target's, on the arrow's side. Both alignments
+// across the arrow run, and they agree where the boxes are equally wide.
+.decl placement(v: Inset, c: Choice)
+placement(V, [T, A]) :-
+    heading(A, D), diag_dirs(Diag, _, D, D_x),                                 // the target's corner on that side
+    opposite(D, D_back), diag_dirs(Diag_pay, _, D_back, D_x),                  // the payload's corner facing it
+    target_box.margin(T, M), cell(C, _), corner_anchor(Diag, C, M),            // the target's corner cell
+    neighbor(C, D, S),                                                         // the seat beyond it
+    pay_box.inner($U(), _, P_inner), corner_anchor(Diag_pay, P_inner, ORIGIN), // the payload's corner cell
+    displacement(P_inner, S, V).                                               // the shift that seats the payload
+
+.decl stamp(p_intile: Position, col: Color, c: Choice)
+stamp(Q, Col, Ch) :-
+    placement(V, Ch), payload(P, Col), pay_box.inner($U(), P, P_inner),
+    compose(P_inner, V, Q), cell(Q, _).
+
+.decl impl_choice(ch: Choice)
+impl_choice([$Colored(), $Widest()]).  impl_choice([$Colored(), $Glyph()]).
+impl_choice([$Template(), $Widest()]). impl_choice([$Template(), $Glyph()]).
+
+.decl out(p: Position, col: Color, c: Choice)
+out(P_intile, Col, Ch) :- stamp(P_intile, Col, Ch).
+out(P_intile, Col, Ch) :-
+    cell(P_intile, Col), impl_choice(Ch), !stamp(P_intile, _, Ch).
+
+.comp Determine {
+    .decl arrow_cell(e: Example, p: Position)
+    arrow_cell(E, P) :- ex_in(E, P, Col), params.arrow(Col).
+
+    // One example's arrow serves as the chart, in its own pose.
+    .init pick = Canon<Example>
+    pick.equiv(E, E2) :- arrow_cell(E, _), arrow_cell(E2, _).
+
+    .init box = BoxFrame<Example>
+    box.cell(E, P) :- pick.rep(E, E), arrow_cell(E, P).
+
+    .decl chart_glyph(p: Position)
+    chart_glyph(S) :- box.inner(_, _, S).
+}

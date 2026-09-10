@@ -1,0 +1,109 @@
+// 7b0280bc
+// draft
+// concept: objects markers walk count
+// Squares of two colors sit on a background, joined by wires of a third
+// color. The color with the fewest squares marks the two ends. The output
+// recolors the route between the ends through the fewest pieces: its wires
+// take one fill and its squares another, and the ends keep their color.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl wire_fill(col: Color) wire_fill(5).
+    .decl square_fill(col: Color) square_fill(3).
+}
+
+.init params = Params
+
+// Fewest-hop distance from a seed set over a supplied edge relation, with
+// the edges a fewest-hop walk uses. Proposal comp: see
+// docs/wf-solver/proposals/MinHops.md.
+.comp MinHops<Key, Node> {
+    .decl edge(key: Key, a: Node, b: Node)  // input
+    .decl seed(key: Key, n: Node)  // input
+
+    // Hops from the nearest seed; subsumption keeps the minimum per node.
+    .decl dist(key: Key, n: Node, k: number)
+    dist(K, N, 0) :- seed(K, N).
+    dist(K, B, D + 1) :- dist(K, A, D), edge(K, A, B).
+    dist(K, N, D) <= dist(K, N, D2) :- D2 < D.
+
+    // a is a fewest-hop predecessor of b — an edge some fewest-hop walk uses.
+    // Tied walks all appear, so a consumer tracing it backward gets their
+    // union.
+    .decl pred(key: Key, b: Node, a: Node)
+    pred(K, B, A) :- edge(K, A, B), dist(K, A, D), dist(K, B, D2), D2 = D + 1.
+}
+
+// The background is the commonest color.
+.init ground = Mode<Unit, Color, Position>
+ground.item($U(), Col, P) :- in(P, Col).
+
+// Each color's pieces. A wire runs diagonally, so pieces are 8-connected.
+.init piece = Components8<Color>
+piece.node(Col, P) :- in(P, Col), !ground.mode($U(), Col).
+
+.decl piece_cell(id: Ident, p: Position)
+piece_cell(Id, P) :- piece.label(_, P, Id).
+
+.decl piece_color(id: Ident, col: Color)
+piece_color(Id, Col) :- piece.label(Col, _, Id).
+
+// A square fills a box with equal sides.
+.init box = Bbox<Ident>
+box.cell(Id, P) :- piece_cell(Id, P).
+box.grid(Id, P) :- piece_cell(Id, _), in(P, _).
+
+.decl gap(id: Ident, p: Position)
+gap(Id, P) :- box.inside(Id, P), !piece_cell(Id, P).
+
+.decl square(id: Ident)
+square(Id) :- box.extents(Id, _, N, N), !gap(Id, _).
+
+// The wire color has a piece that is no square.
+.decl wire_color(col: Color)
+wire_color(Col) :- piece_color(Id, Col), !square(Id).
+
+// The other colors draw squares, and the one with the fewest marks the ends.
+.decl square_color(col: Color)
+square_color(Col) :- piece_color(_, Col), !wire_color(Col).
+
+.init squares = Tally<Color, Ident>
+squares.item(Col, Id) :- square_color(Col), piece_color(Id, Col).
+
+.init fewest = ArgExtremes<Unit, Color>
+fewest.cand($U(), Col, N) :- squares.tally(Col, N).
+
+.decl end_color(col: Color)
+end_color(Col) :- fewest.low($U(), Col, _).
+
+.decl end_piece(id: Ident)
+end_piece(Id) :- piece_color(Id, Col), end_color(Col).
+
+// Two pieces touch where a cell of one neighbors a cell of the other.
+.decl touch(a: Ident, b: Ident)
+touch(A, B) :- piece_cell(A, P), dir8_elem(D), neighbor(P, D, Q), piece_cell(B, Q), A != B.
+
+// --- route ---
+
+// Hops over the touch graph from each end.
+.init hops = MinHops<Ident, Ident>
+hops.edge(E, A, B) :- end_piece(E), touch(A, B).
+hops.seed(E, E) :- end_piece(E).
+
+// The route: traced from the other end back toward the seed along
+// fewest-hop predecessors. Each end seeds the same route.
+.decl on_route(e: Ident, id: Ident)
+on_route(E, E2) :- end_piece(E), end_piece(E2), E != E2.
+on_route(E, A) :- on_route(E, B), hops.pred(E, B, A).
+
+.decl route_cell(p: Position, col: Color)
+route_cell(P, Col) :-
+    on_route(_, Id), piece_cell(Id, P), piece_color(Id, C),    // a route piece's cell
+    ( wire_color(C), params.wire_fill(Col)                     // a wire
+    ; square_color(C), !end_color(C), params.square_fill(Col)  // a square, not an end
+    ).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- route_cell(P, Col).
+out(P, Col) :- in(P, Col), !route_cell(P, _).

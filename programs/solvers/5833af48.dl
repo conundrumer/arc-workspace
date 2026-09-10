@@ -1,0 +1,140 @@
+// 5833af48
+// draft
+// concept: objects scale tile-arrangement stamp
+// Three solid blocks sit on bg. One block is monochrome: it is the canvas,
+// and its one color is the fill. One block holds params.blank: it is the
+// stamp, whose params.ink cells are the footprint. The third is the plan: a
+// picture of the tile arrangement, drawn at a pixel size of its own, whose
+// params.ink cells say which tiles carry the stamp.
+//
+// The output is the canvas divided into stamp-sized tiles, with the
+// footprint stamped in the tiles the plan marks. How the plan's pixels map
+// onto those tiles is the choice:
+//
+//   $Ratio  — the plan covers the same arrangement as the canvas, so it
+//             divides into one part per tile.
+//   $Blocks — the plan's pixels are as large as its own content allows, so
+//             the pixel size is read off the plan and the arrangement
+//             follows from it.
+
+#include "../lib.dl"
+
+.type Choice = Ratio {} | Blocks {}
+
+// A band of the plan: one block of a candidate pixel size, at one place
+// across the axis it is measured on.
+.type Band = [a: Axis, s: number, p_outer: Position, p_across: Position]
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+
+    // The stamp's own off-color, which no other block holds.
+    .decl blank(c: Color) blank(2).
+
+    .decl ink(c: Color) ink(8).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Ratio()).
+impl_choice($Blocks()).
+
+.init blocks = Components<Unit>
+blocks.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+.decl block(id: Ident, p: Position)
+block(Id, P) :- blocks.label($U(), P, Id).
+
+.init box = BoxFrame<Ident>
+box.cell(Id, P) :- block(Id, P).
+
+// The monochrome block is the canvas, and its one color is the fill.
+.init uni = Unanimous<Ident, Color>
+uni.item(Id, Col) :- block(Id, P), in(P, Col).
+
+.decl canvas(id: Ident, col: Color)
+canvas(Id, Col) :- uni.value(Id, Col).
+
+.decl stamp(id: Ident)
+stamp(Id) :- block(Id, P), in(P, Col), params.blank(Col).
+
+.decl plan(id: Ident)
+plan(Id) :- block(Id, _), !canvas(Id, _), !stamp(Id).
+
+.decl plan_cell(p: Position, col: Color)
+plan_cell(P_inner, Col) :- plan(Id), box.inner(Id, P, P_inner), in(P, Col).
+
+// --- program ---
+
+// The canvas seen as the output frame, divided into stamp-sized tiles.
+.init tiles = Tile2D<Unit>
+tiles.cell(P_grid_out) :- canvas(Id, _), box.inner(Id, _, P_grid_out).
+tiles.dim($U(), A, K) :- stamp(Id), box.extent(Id, A, K).
+tiles.gap(0).
+
+.decl footprint(p_intile: Position)
+footprint(P_intile) :-
+    stamp(Id), box.inner(Id, P, P_intile), in(P, Col), params.ink(Col).
+
+// The tiles the plan marks.
+.decl marked(p_tile: Position, ch: Choice)
+
+.decl inked(p: Position, ch: Choice)
+inked(P_grid_out, Ch) :-
+    tiles.tile($U(), P_grid_out, P_tile, P_intile),
+    marked(P_tile, Ch), footprint(P_intile).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_grid_out, Col, Ch) :-
+    impl_choice(Ch), tiles.tile($U(), P_grid_out, _, _),
+    ( inked(P_grid_out, Ch), params.ink(Col)      // stamped
+    ; !inked(P_grid_out, Ch), canvas(_, Col)      // bare canvas
+    ).
+
+// --- $Ratio ---
+
+.init plan_parts = Divide2D<Unit>
+plan_parts.cell(P_inner) :- plan_cell(P_inner, _).
+plan_parts.dim($U(), A, N) :-
+    axis_elem(A), tiles.tile($U(), _, P_tile, _), axis_dim(P_tile, A, N).    // one part per tile
+plan_parts.gap(0).
+
+// A part's pixel color, absent where the part holds more than one.
+.init part_color = Unanimous<Position, Color>
+part_color.item(P_tile, Col) :-
+    plan_cell(P_inner, Col), plan_parts.tile($U(), P_inner, P_tile, _).
+
+marked(P_tile, $Ratio()) :- part_color.value(P_tile, Col), params.ink(Col).
+
+// --- $Blocks ---
+
+// A pixel size the plan's extent admits: a whole number of pixels across.
+.decl pixel_cand(a: Axis, s: number)
+pixel_cand(A, S) :-
+    axis_elem(A), plan_cell(P, _),
+    ( sub_extent(P, A, S)      // shorter than the plan
+    ; axis_dim(P, A, S)        // the whole plan, one pixel across
+    ),
+    divide_by_size(P, A, S, 0, _, _).
+
+// The colors of each band.
+.init band_color = Unanimous<Band, Color>
+band_color.item([A, S, P_outer, P_across], Col) :-
+    pixel_cand(A, S), plan_cell(P, Col),
+    divide_by_size(P, A, S, 0, P_outer, _), split(P, A, _, P_across).
+
+.decl pixel_broken(a: Axis, s: number)
+pixel_broken(A, S) :- band_color.clash([A, S, _, _]).
+
+// The pixels are as large as the plan allows.
+.init pixel_size = Extremes<Axis>
+pixel_size.cand(A, S) :- pixel_cand(A, S), !pixel_broken(A, S).
+
+.init pixels = Tile2D<Unit>
+pixels.cell(P) :- plan_cell(P, _).
+pixels.dim($U(), A, S) :- pixel_size.high(A, S).
+pixels.gap(0).
+
+marked(P_tile, $Blocks()) :-
+    plan_cell(P, Col), params.ink(Col), pixels.tile($U(), P, P_tile, _).

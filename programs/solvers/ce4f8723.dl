@@ -4,7 +4,7 @@
 
 #include "../lib.dl"
 
-.type DecChoice = Tile {} | Div {}
+.type DecChoice = Table {} | Count {} | Size {}
 .type Body      = Lookup {} | Or {}
 .type Choice    = [d: DecChoice, b: Body]
 
@@ -18,7 +18,7 @@
     .decl frame(p: Position)
     frame(P) :- frame_dim(K), helpers.frame_pos([K, K], P).
 
-    // --- Tile decompose data ---
+    // --- Table decompose data ---
     .decl arr_dim(a: Axis, n: number)
     arr_dim(AXIS_V, 2). arr_dim(AXIS_H, 1).
     .decl gap(g: number) gap(1).
@@ -27,15 +27,16 @@
         arr_dim(AXIS_V, Av), arr_dim(AXIS_H, Ah), frame_dim(K), gap(G),
         helpers.tile_pos([Av, Ah], [K, K], [G, 0], P_grid, P_tile, P_intile).
 
-    // --- Div decompose data ---
-    .decl divisor(n: number)
-    divisor(2).
-
+    // --- Count, Size decompose data ---
     .decl divide_axis(a: Axis)
     divide_axis(AXIS_V).
 
     .decl divide_gap(g: number)
     divide_gap(1).
+
+    // --- Count decompose data ---
+    .decl divisor(n: number)
+    divisor(2).
 
     // --- Lookup combine data ---
     .decl combine_member(id: Ident, p_outer: Position, c: Color)
@@ -61,15 +62,20 @@ combine_match.observed_member([P_grid_out, Dc], [P_tile, C]) :-
 // --- Decompose cases ---
 
 .decl dec_choice(dc: DecChoice)
-dec_choice($Tile()).
-dec_choice($Div()).
+dec_choice($Table()).
+dec_choice($Count()).
+dec_choice($Size()).
 
 .decl decompose(p: Position, p_outer: Position, p_inner: Position, dc: DecChoice)
-decompose(P_grid, P_tile, P_intile, $Tile()) :- params.tile_decompose(P_grid, P_tile, P_intile).
-decompose(P_grid, P_tile, P_intile, $Div()) :-
+decompose(P_grid, P_tile, P_intile, $Table()) :- params.tile_decompose(P_grid, P_tile, P_intile).
+decompose(P_grid, P_tile, P_intile, $Count()) :-
     in(P_grid, _),                                                      // input position
     params.divide_axis(A), params.divisor(N), params.divide_gap(G),     // params
     divide_slab(P_grid, A, N, G, P_tile, P_intile).
+decompose(P_grid, P_tile, P_intile, $Size()) :-
+    in(P_grid, _),                                                      // input position
+    params.divide_axis(A), params.frame_dim(K), params.divide_gap(G),   // params: tile size = output frame extent
+    divide_by_size_slab(P_grid, A, K, G, P_tile, P_intile).
 
 // --- Or body: filled relation parameterized by decompose choice ---
 

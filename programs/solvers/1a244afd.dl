@@ -32,8 +32,6 @@
 
 .init params = Params
 
-// --- parse ---
-
 // Each pivot's pointer, with the direction and distance it lies at.
 .comp Parse<Key> {
     .decl cell(key: Key, p: Position, col: Color)  // input
@@ -88,8 +86,6 @@ out(P, Col, Ch) :-
     in(P, Col_in), impl_choice(Ch), !mark(P, Ch),
     ( !params.pointer(Col_in), Col = Col_in       // kept
     ; params.pointer(Col_in), params.bg(Col) ).   // the pointer is erased
-
-// --- determination ---
 
 .comp Determine {
     .init parse = Parse<Example>

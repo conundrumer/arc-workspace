@@ -1,0 +1,105 @@
+// 1c786137
+// draft
+// concept: crop border objects select enclose
+// Colored noise fills the grid, and one rectangle outline sits in it, drawn in
+// a color that appears nowhere else. The output is what the outline holds: the
+// cells of its box strictly inside its edges.
+//
+// $Rect — the outline is the color whose cells are exactly the edges of their
+//   own box.
+// $Solo — the outline is the color whose cells form a single connected object.
+// $Drawn — the outline is a rectangle drawn by four same-color runs, and the
+//   one holding the most cells wins.
+// $Enclose — the outline is any wall of one color, and what it holds is the
+//   region that wall cuts off from the grid edge; the largest region wins.
+
+#include "../lib.dl"
+
+.type Choice = Rect {} | Solo {} | Drawn {} | Enclose {}
+
+.comp Params {}
+
+.init params = Params
+
+.decl color(col: Color)
+color(Col) :- in(_, Col).
+
+// Each color's own bounding box.
+.init cbox = Bbox<Color>
+cbox.cell(Col, P) :- in(P, Col).
+
+// --- boxes ---
+
+// The boxes in play, each read over the grid.
+.init bcells = BoxCells<Position>
+bcells.box(B, B) :- cbox.margin(_, B).
+bcells.cell(B, P) :- bcells.box(B, _), in(P, _).
+
+// --- outline ---
+
+// The color drawing the outline.
+.decl marker(col: Color, ch: Choice)
+
+.decl outline_box(b: Position, ch: Choice)
+outline_box(B, Ch) :- marker(Col, Ch), cbox.margin(Col, B).
+
+// What the outline holds.
+.decl window(p: Position, ch: Choice)
+window(P, Ch) :- outline_box(B, Ch), bcells.hole(B, P).
+
+.init crop = BoxFrame<Choice>
+crop.cell(Ch, P) :- window(P, Ch).
+crop.grid(Ch, P) :- window(_, Ch), in(P, _).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_inner, Col, Ch) :- crop.inner(Ch, P, P_inner), in(P, Col).
+
+// --- Rect ---
+
+// The color and its box's edges part company somewhere: a gap in the edges, or
+// a cell in the hole.
+.decl misdrawn(col: Color)
+misdrawn(Col) :- cbox.margin(Col, B), bcells.on_edge(B, P, _), !in(P, Col).
+misdrawn(Col) :- cbox.margin(Col, B), bcells.hole(B, P), in(P, Col).
+
+marker(Col, $Rect()) :- color(Col), !misdrawn(Col).
+
+// --- Solo ---
+
+.init parts = Components<Color>
+parts.node(Col, P) :- in(P, Col).
+
+.init color_part = Unanimous<Color, Ident>
+color_part.item(Col, Id) :- parts.label(Col, _, Id).
+
+marker(Col, $Solo()) :- color(Col), !color_part.clash(Col).
+
+// --- Drawn ---
+
+// The rectangles each color draws.
+.init drect = DrawnRect<Color>
+drect.node(Col, P) :- in(P, Col).
+
+// Every rectangle the noise draws is a box in play.
+bcells.box(B, B) :- drect.rect(_, B).
+
+.init biggest_hole = Mode<Unit, Position, Position>
+biggest_hole.item($U(), B, P) :- drect.rect(_, B), bcells.hole(B, P).
+
+outline_box(B, $Drawn()) :- biggest_hole.mode($U(), B).
+
+// --- Enclose ---
+
+// Each color walls the rest of the grid off.
+.init closed = Closed<Color>
+closed.cell(Col, P) :- color(Col), in(P, Col2), Col2 != Col.
+
+.type Region = [col: Color, id: Ident]
+
+.decl region(k: Region, p: Position)
+region([Col, Id], P) :- closed.region(Col, P, Id).
+
+.init biggest_region = Mode<Unit, Region, Position>
+biggest_region.item($U(), K, P) :- region(K, P).
+
+window(P, $Enclose()) :- biggest_region.mode($U(), K), region(K, P).

@@ -1,0 +1,50 @@
+// 58743b76
+// draft
+// concept: scale
+
+// A canvas of marks on a plain ground fills a rectangle of the grid, and a key
+// block of colored cells sits apart from it; filler covers the rest. The key is
+// the canvas shrunk: the canvas splits into one part per key cell, and each mark
+// takes the color of the key cell at its part's place. Every other cell passes
+// through.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color)  bg(0).
+
+    // The color of the cells that are neither canvas nor key.
+    .decl filler(col: Color)  filler(8).
+}
+
+.init params = Params
+
+// --- the canvas, viewed in its own box ---
+
+.init canvas = BoxFrame<Unit>
+canvas.cell($U(), P_grid) :- in(P_grid, Col), params.bg(Col).
+canvas.grid($U(), P_grid) :- in(P_grid, _).
+
+.decl mark(p: Position)
+mark(P_grid) :- canvas.inside($U(), P_grid), in(P_grid, Col), !params.bg(Col).
+
+// --- the key, viewed in its own box ---
+
+.init key = BoxFrame<Unit>
+key.cell($U(), P_grid) :-
+    in(P_grid, Col), !params.filler(Col),  // a colored cell
+    !canvas.inside($U(), P_grid).          // outside the canvas
+
+// --- the canvas split into one part per key cell ---
+
+.init part = Divide2D<Unit>
+part.cell(P_box) :- canvas.inner($U(), _, P_box).
+part.dim(K, A, N) :- key.extent(K, A, N).
+part.gap(0).
+
+.decl out(p: Position, col: Color)
+out(P_grid, Col) :-
+    mark(P_grid), canvas.inner($U(), P_grid, P_box),  // a mark, placed in the canvas
+    part.tile($U(), P_box, P_tile, _),                // the part of the canvas it falls in
+    key.inner($U(), P_key, P_tile), in(P_key, Col).   // the color of the key cell at that place
+out(P_grid, Col) :- in(P_grid, Col), !mark(P_grid).

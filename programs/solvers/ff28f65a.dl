@@ -63,8 +63,6 @@
 
 .init params = Params
 
-// --- parse ---
-
 .comp Parse<Key> {
     .type Obj = [k: Key, id: Ident]
 
@@ -130,8 +128,6 @@ out(P, BG,   [Det, $Fill()]) :- params.out_pos(P), total(_, Det), !marked(P, Det
 
 // $Lookup (table) — select the stored grid for the count.
 out(P, Col, [Det, $Lookup()]) :- total(N, Det), params.lookup_grid(N, P, Col).
-
-// --- determination ---
 
 .comp Determine {
     .init parse = Parse<Example>

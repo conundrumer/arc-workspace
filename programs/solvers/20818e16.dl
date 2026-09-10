@@ -1,0 +1,55 @@
+// 20818e16
+// draft
+// concept: objects rank
+// Solid rectangles, one per color, overlap on a background field. A color's
+// bounding box recovers its whole rectangle, hidden part included. The output
+// frame is the biggest rectangle, and every rectangle stacks into it aligned
+// at one corner, smallest on top.
+
+#include "../lib.dl"
+
+.comp Params {
+    // The corner the rectangles align to.
+    .decl corner(d: DiagDir) corner(DIAG_TL).
+}
+
+.init params = Params
+
+// --- background ---
+
+.init field = Mode<Unit, Color, Position>
+field.item($U(), Col, P) :- in(P, Col).
+
+// Every color but the commonest bounds a rectangle.
+.decl rect_color(col: Color)
+rect_color(Col) :- in(_, Col), !field.mode($U(), Col).
+
+// --- rectangles ---
+
+// A color's rectangle is its bounding box, read in the box's own frame.
+.init box = BoxFrame<Color>
+box.cell(Col, P) :- in(P, Col), rect_color(Col).
+box.grid(Col, P) :- in(P, _), rect_color(Col).
+
+.decl rect_cell(col: Color, p_inner: Position)
+rect_cell(Col, P_inner) :- box.inner(Col, _, P_inner).
+
+.init size = Mode<Unit, Color, Position>
+size.item($U(), Col, P_inner) :- rect_cell(Col, P_inner).
+
+// --- stack ---
+
+// The biggest rectangle's frame is the output frame; the others land in it
+// by the corner they share.
+.decl cover(col: Color, p: Position)
+cover(Col, P) :-
+    rect_cell(Col, P_rect),                         // a cell of the rectangle
+    params.corner(D), corner_anchor(D, P_rect, P),  // aligned at the corner
+    size.mode($U(), C_big), rect_cell(C_big, P).    // inside the frame
+
+// The smallest rectangle covering a cell hides the bigger ones.
+.init top = ArgExtremes<Position, Color>
+top.cand(P, Col, N) :- cover(Col, P), size.tally($U(), Col, N).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- top.low(P, Col, _).

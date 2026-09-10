@@ -1,0 +1,90 @@
+// 5168d44c
+// draft
+// concept: markers move walk lookup
+// A ring of params.ring cells with one hole surrounds a dot of a line of evenly
+// spaced params.dot cells. The ring moves along that line toward params.corner; every
+// dot stays. The cases differ in what fixes where the ring lands:
+//
+//   $Next — the next dot along the line.
+//   $Jump — a stored distance.
+//   $Fit  — the nearest spot ahead whose footprint holds no dot.
+//
+// Coincide when the dots are two apart.
+
+#include "../lib.dl"
+
+.type Choice = Next {} | Jump {} | Fit {}
+
+.comp Params {
+    // --- shared ---
+    .decl bg(col: Color) bg(0).
+    .decl ring(col: Color) ring(2).
+    .decl dot(col: Color) dot(3).
+    .decl corner(d: DiagDir) corner(DIAG_BR).
+
+    // --- $Jump ---
+    .decl step(k: number) step(2).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Next()). impl_choice($Jump()). impl_choice($Fit()).
+
+.decl dot_cell(p: Position)
+dot_cell(P) :- in(P, Col), params.dot(Col).
+
+.decl ring_cell(p: Position)
+ring_cell(P) :- in(P, Col), params.ring(Col).
+
+// --- the ring and its line ---
+
+.init closed = Closed<Unit>
+closed.cell($U(), P) :- in(P, _), !ring_cell(P).
+
+// The hole the ring surrounds.
+.decl center(p: Position)
+center(P) :- closed.region($U(), P, _).
+
+// The ring's cells, as displacements from its hole.
+.decl shape(v: Shift)
+shape(V) :- ring_cell(P), center(C), displacement(C, P, V).
+
+.decl move_dir(d: Dir)
+move_dir(D) :-
+    center(C), dot_cell(P), P != C,       // another dot of the line
+    axis_elem(A), same_line(A, C, P),
+    params.corner(Diag), dir_of(Diag, A, D).
+
+// --- where the ring lands ---
+
+.decl target(p: Position, ch: Choice)
+
+// $Next and $Fit both take the first cell ahead that halts the ring.
+.init cast = Ray<Choice>
+cast.dir(Ch, D) :- impl_choice(Ch), move_dir(D).
+cast.mark(Ch, P) :- impl_choice(Ch), center(P).
+target(Q, Ch) :- cast.stop(Ch, Q, _, _, _).
+
+// --- $Next ---
+cast.blocked($Next(), P) :- dot_cell(P).
+
+// --- $Fit ---
+.decl obstructed(p: Position)
+obstructed(P) :- in(P, _), shape(V), compose(P, V, Q), dot_cell(Q).
+
+// The travel halts where the ring covers no dot.
+cast.blocked($Fit(), P) :- in(P, _), !obstructed(P).
+
+// --- $Jump ---
+target(Q, $Jump()) :- center(C), move_dir(D), params.step(K), jump(C, D, K, Q).
+
+// --- output ---
+
+.decl new_ring(p: Position, ch: Choice)
+new_ring(P, Ch) :- target(Q, Ch), shape(V), compose(Q, V, P).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- impl_choice(Ch), dot_cell(P), params.dot(Col).
+out(P, Col, Ch) :- new_ring(P, Ch), params.ring(Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !dot_cell(P), !new_ring(P, Ch), params.bg(Col).

@@ -1,0 +1,155 @@
+// 3a25b0d8
+// draft
+// concept: objects crop symmetry enclose rank
+// shape: percept-shadow
+// Two figures of walls, each closing off a set of holes. One figure is drawn
+// in the wall color alone; the other has its holes painted. The output is the
+// plain figure, cropped to its box, each hole painted the color of the hole
+// that answers to it.
+//
+// The figures are not the same drawing: their walls run differently and their
+// holes have different shapes, so holes answer to each other by place. A hole
+// lies to one side of a midline or across it, which is its class; within a
+// class the holes follow one another along the axis the midline runs. Class
+// and rank pair the two figures' holes one to one.
+//
+// $Stored reads the midline's axis from the parameters; $Mirror takes it from the
+// axis a figure folds onto itself across.
+
+#include "../lib.dl"
+
+.type Choice = Stored {} | Mirror {}
+
+.comp Params {
+    // --- Stored ---
+    // The midline's axis.
+    .decl class_axis(a: Axis) class_axis(AXIS_H).
+}
+
+.init params = Params
+
+// The background is the color that covers the grid.
+.init ground = Mode<Unit, Color, Position>
+ground.item($U(), Col, P) :- in(P, Col).
+
+.decl bg(col: Color)
+bg(Col) :- ground.mode($U(), Col).
+
+// Each figure is one body of ink; its walls meet at the corners.
+.init figures = Components8<Unit>
+figures.node($U(), P) :- in(P, Col), !bg(Col).
+
+.decl fig(f: Ident, p: Position)
+fig(F, P) :- figures.label($U(), P, F).
+
+// The plain figure carries one color, the painted figure several.
+.init fig_col = Unanimous<Ident, Color>
+fig_col.item(F, Col) :- fig(F, P), in(P, Col).
+
+.decl plain(f: Ident, col: Color)
+plain(F, Col) :- fig_col.value(F, Col).
+
+// Both figures are walled in the plain figure's color.
+.decl wall_cell(f: Ident, p: Position)
+wall_cell(F, P) :- fig(F, P), in(P, Col), plain(_, Col).
+
+// A figure seen from its own box.
+.init box = BoxFrame<Ident>
+box.cell(F, P) :- fig(F, P).
+box.grid(F, P) :- fig(F, _), in(P, _).
+
+// The holes: what a figure's walls close off from the grid edge.
+.init closed = Closed<Ident>
+closed.cell(F, P) :- fig(F, _), in(P, _), !wall_cell(F, P).
+
+.decl hole(f: Ident, r: Ident)
+hole(F, R) :- closed.region(F, _, R).
+
+.decl hole_inner(r: Ident, p_inner: Position)
+hole_inner(R, P_inner) :- closed.region(F, P, R), box.inner(F, P, P_inner).
+
+// The axis the midline inverts, one hypothesis per case. A hole's class is its
+// side on that axis, and its rank runs along the perpendicular.
+.decl class_axis(ch: Choice, a: Axis)
+
+// --- Stored ---
+class_axis($Stored(), A) :- params.class_axis(A).
+
+// --- Mirror ---
+// A figure folds onto itself across the midline. Nothing privileges either
+// figure, so either one gives the axis, and a disagreement leaves it
+// multivalued.
+.init fig_sym = D4Map<Ident, Unit>
+fig_sym.src(F, P_inner, $U()) :- fig(F, P), box.inner(F, P, P_inner).
+fig_sym.dst(F, P_inner, V) :- fig_sym.src(F, P_inner, V).
+
+class_axis($Mirror(), A) :- flip_of(A, D), fig_sym.map(_, D).
+
+// --- shared ---
+.decl class_dir(a: Axis, d: Dir)
+class_dir(A, D) :- class_axis(_, A), axis_of(D, A).
+
+.decl rank_dir(a: Axis, d: Dir)
+rank_dir(A, D) :- class_axis(_, A), perp(A, A2), axis_of(D, A2).
+
+// A hole sits on edge D's side when every one of its cells is nearer that
+// edge of the box than the opposite one.
+.decl off_side(a: Axis, r: Ident, d: Dir)
+off_side(A, R, D) :-
+    hole_inner(R, P_inner),                                 // hole cell in its box
+    class_dir(A, D), dist_pair(P_inner, D, K, K2), K >= K2. // not nearer edge D
+
+.decl side(a: Axis, r: Ident, d: Dir)
+side(A, R, D) :- hole(_, R), class_dir(A, D), !off_side(A, R, D).
+
+// Holes of one class hold the same sides. A hole across the midline holds
+// neither, and those are one class too.
+.type HoleClass = [a: Axis, r: Ident]
+
+.init sides = KeyedSetCompare<HoleClass, HoleClass, Dir>
+sides.pattern_member([A, R], D) :- side(A, R, D).
+sides.observed_member(Ky, D) :- sides.pattern_member(Ky, D).
+
+.decl same_class(a: Axis, r: Ident, r2: Ident)
+same_class(A, R, R2) :-
+    class_axis(_, A), hole(_, R), hole(_, R2),
+    ( sides.equals([A, R], [A, R2])
+    ; !side(A, R, _), !side(A, R2, _)    // or neither, which equals does not compare
+    ).
+
+// How far toward an edge of the box a hole reaches.
+.init hole_box = Bbox<Ident>
+hole_box.cell(R, P_inner) :- hole_inner(R, P_inner).
+
+.type Ranking = [a: Axis, f: Ident, d: Dir]
+
+// Within a figure, the holes of one class follow one another along the rank
+// axis.
+.init hole_rank = Order<Ranking, Ident>
+hole_rank.elem([A, F, D], R) :- hole(F, R), rank_dir(A, D).
+hole_rank.before([A, F, D], R, R2) :-
+    hole(F, R), hole(F, R2), same_class(A, R, R2),          // two of one class
+    rank_dir(A, D), hole_box.margin(R, M), hole_box.margin(R2, M2),
+    nearer(D, M, M2).                                       // R reaches nearer edge D
+
+// Class and rank pair the two figures' holes. Both ends of the rank axis
+// rank them, and a disagreement leaves the pairing multivalued.
+.decl partner(a: Axis, r: Ident, r_src: Ident)
+partner(A, R, R_src) :-
+    plain(F, _), hole_rank.rank([A, F, D], R, N),           // the plain figure's hole
+    !plain(F2, _), hole_rank.rank([A, F2, D], R_src, N),    // the painted one of that rank
+    same_class(A, R, R_src).                                // and of that class
+
+// A painted hole holds one color.
+.init hole_col = Unanimous<Ident, Color>
+hole_col.item(R, Col) :- closed.region(_, P, R), in(P, Col).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_inner, Col, Ch) :-
+    class_axis(Ch, A),                                     // the case's midline axis
+    plain(F, C_wall), box.inner(F, P, P_inner),            // a cell of the plain figure's box
+    ( fig(F, P), Col = C_wall                              // its wall
+    ; closed.region(F, P, R),                              // one of its holes,
+      partner(A, R, R_src), hole_col.value(R_src, Col)     // in its partner's color
+    ; !fig(F, P), !closed.region(F, P, _), bg(Col)         // background elsewhere
+    ).

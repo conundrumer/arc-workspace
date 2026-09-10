@@ -1,28 +1,35 @@
 // 136b0064
 // concept: decompose markers walk lookup count
 // A divider splits the input into a legend panel of glyphs and a blank canvas
-// panel holding one marker cell. The output is the canvas: a pen starts at the
-// marker and draws one stroke per glyph, in reading order from params.order_corner
-// with params.order_axis primary. A stroke steps one cell toward params.advance, then
-// runs k more cells toward the glyph's direction in the glyph's color; the pen
-// ends where the run ends.
+// panel holding one marker cell. Each glyph names a move: a direction with a
+// distance. The output is the canvas: a pen starts at the marker and draws one
+// stroke per glyph, in reading order from params.order_corner with
+// params.order_axis primary. A stroke steps one cell toward params.advance,
+// then runs the move's distance toward the move's direction in the glyph's
+// color; the pen ends where the run ends.
 //
-// Cases name what identifies a glyph:
-//   $Count() — the glyph's cell count keys the move table
-//   $Glyph() — the glyph's footprint matches a stored catalog
-//   $Color() — the glyph's color keys the move table
+// out's choice column = [m, d]:
+//
+//   m (what identifies a glyph):
+//     $Count() — the glyph's cell count keys the move table
+//     $Glyph() — the glyph's footprint matches a stored catalog
+//     $Color() — the glyph's color keys the move table
+//   d (decompose — how the divider cuts the grid into panels):
+//     $TileCount() — by panel count
+//     $Size()      — by panel size
 
 #include "../lib.dl"
 
-.type Choice = Count {} | Glyph {} | Color {}
+.type Move      = Count {} | Glyph {} | Color {}
+.type DecChoice = TileCount {} | Size {}
+.type Choice    = [m: Move, d: DecChoice]
 
 .comp Params {
     // --- shared ---
     .decl bg(c: Color) bg(0).
     .decl marker(c: Color) marker(5).
 
-    // The divider is the gap between the two panels.
-    .decl divisor(n: number) divisor(2).
+    // The divider is the gap between the panels.
     .decl divide_gap(g: number) divide_gap(1).
     .decl legend_dir(d: Dir) legend_dir(DIR_L).
 
@@ -33,6 +40,12 @@
     .decl order_axis(a: Axis) order_axis(AXIS_H).
 
     .decl advance(d: Dir) advance(DIR_B).
+
+    // --- TileCount ---
+    .decl divisor(n: number) divisor(2).
+
+    // --- Size ---
+    .decl panel_size(k: number) panel_size(7).
 
     // --- Count ---
     .decl count_move(n: number, d: Dir, k: number)
@@ -46,27 +59,27 @@
     .decl glyph_move(id: Ident, d: Dir, k: number)
 
     GRID_MASK_3x3(glyph_member, 0,
-        1, 1, 0,
-        1, 0, 1,
-        0, 1, 0)
+        1, 1, _,
+        1, _, 1,
+        _, 1, _)
     glyph_move(0, DIR_R, 2).
 
     GRID_MASK_3x3(glyph_member, 1,
-        1, 0, 1,
-        1, 0, 1,
+        1, _, 1,
+        1, _, 1,
         1, 1, 1)
     glyph_move(1, DIR_L, 1).
 
     GRID_MASK_3x3(glyph_member, 2,
-        1, 0, 1,
-        0, 1, 0,
-        0, 1, 0)
+        1, _, 1,
+        _, 1, _,
+        _, 1, _)
     glyph_move(2, DIR_B, 1).
 
     GRID_MASK_3x3(glyph_member, 3,
         1, 1, 1,
-        0, 1, 0,
-        1, 0, 1)
+        _, 1, _,
+        1, _, 1)
     glyph_move(3, DIR_L, 3).
 
     // --- Color ---
@@ -79,19 +92,14 @@
 
 .init params = Params
 
-// --- parse ---
-
 .comp Parse<Key> {
     .type KT = [k: Key, t: Position]
 
     .decl cell(k: Key, p: Position, col: Color)
 
+    // The panel split, supplied per key: the cell's panel in the arrangement,
+    // and its position within that panel.
     .decl panel(k: Key, p_grid: Position, p_outer: Position, p_panel: Position)
-    panel(K, P, P_outer, P_panel) :-
-        cell(K, P, _),                                        // input cell
-        params.legend_dir(D), axis_of(D, A),                  // the panels lie along this axis
-        params.divisor(N), params.divide_gap(G),              // panel count, divider width
-        divide_slab(P, A, N, G, P_outer, P_panel).
 
     .decl legend(k: Key, p_grid: Position, p_panel: Position)
     legend(K, P, P_panel) :-
@@ -131,40 +139,63 @@
     marker_cell(K, P_canvas) :- canvas(K, P, P_canvas), cell(K, P, Col), params.marker(Col).
 }
 
-.init parse = Parse<Unit>
-parse.cell($U(), P, Col) :- in(P, Col).
+.decl move_choice(m: Move)
+move_choice($Count()).
+move_choice($Glyph()).
+move_choice($Color()).
+
+.decl dec_choice(dc: DecChoice)
+dec_choice($TileCount()).
+dec_choice($Size()).
 
 .decl impl_choice(ch: Choice)
-impl_choice($Count()).
-impl_choice($Glyph()).
-impl_choice($Color()).
+impl_choice([M, Dc]) :- move_choice(M), dec_choice(Dc).
+
+.init parse = Parse<DecChoice>
+parse.cell(Dc, P, Col) :- in(P, Col), dec_choice(Dc).
+
+// --- TileCount ---
+parse.panel($TileCount(), P, P_outer, P_panel) :-
+    in(P, _),                                             // input cell
+    params.legend_dir(D), axis_of(D, A),                  // the panels lie along this axis
+    params.divisor(N), params.divide_gap(G),              // panel count, divider width
+    divide_slab(P, A, N, G, P_outer, P_panel).
+
+// --- Size ---
+parse.panel($Size(), P, P_outer, P_panel) :-
+    in(P, _),                                             // input cell
+    params.legend_dir(D), axis_of(D, A),                  // the panels lie along this axis
+    params.panel_size(K), params.divide_gap(G),           // panel width, divider width
+    divide_by_size_slab(P, A, K, G, P_outer, P_panel).
 
 // --- the move a glyph names ---
+
+.type DecTile = [dc: DecChoice, t: Position]
 
 .decl move(t: Position, d: Dir, k: number, ch: Choice)
 
 // --- Count ---
 
-move(T, D, K, $Count()) :- parse.glyph_count($U(), T, N), params.count_move(N, D, K).
+move(T, D, K, [$Count(), Dc]) :- parse.glyph_count(Dc, T, N), params.count_move(N, D, K).
 
 // --- Glyph ---
 
-.init glyph_match = KeyedSetCompare<Position, Ident, Position>
+.init glyph_match = KeyedSetCompare<DecTile, Ident, Position>
 glyph_match.pattern_member(Id, P_intile) :- params.glyph_member(Id, P_intile).
-glyph_match.observed_member(T, P_intile) :- parse.glyph_cell($U(), T, P_intile, _).
+glyph_match.observed_member([Dc, T], P_intile) :- parse.glyph_cell(Dc, T, P_intile, _).
 
-move(T, D, K, $Glyph()) :- glyph_match.equals(T, Id), params.glyph_move(Id, D, K).
+move(T, D, K, [$Glyph(), Dc]) :- glyph_match.equals([Dc, T], Id), params.glyph_move(Id, D, K).
 
 // --- Color ---
 
-move(T, D, K, $Color()) :- parse.glyph_color($U(), T, Col), params.color_move(Col, D, K).
+move(T, D, K, [$Color(), Dc]) :- parse.glyph_color(Dc, T, Col), params.color_move(Col, D, K).
 
 // --- the walk ---
 
 // Where the pen stands before glyph T's stroke.
 .decl pen(t: Position, p: Position, ch: Choice)
-pen(T, P, Ch) :- parse.order.first($U(), T), parse.marker_cell($U(), P), impl_choice(Ch).
-pen(T2, P2, Ch) :- parse.order.next($U(), T1, T2), stroke_end(T1, P2, Ch).
+pen(T, P, [M, Dc]) :- parse.order.first(Dc, T), parse.marker_cell(Dc, P), move_choice(M).
+pen(T2, P2, [M, Dc]) :- parse.order.next(Dc, T1, T2), stroke_end(T1, P2, [M, Dc]).
 
 .decl stroke_start(t: Position, p: Position, ch: Choice)
 stroke_start(T, P2, Ch) :- pen(T, P, Ch), params.advance(D), neighbor(P, D, P2).
@@ -178,24 +209,22 @@ stroke_end(T, P2, Ch) :-
 
 .init stroke = Between<Stroke>
 stroke.axis([T, Ch], A) :- move(T, D, _, Ch), axis_of(D, A).
-stroke.cell([T, Ch], P) :- stroke_end(T, _, Ch), parse.canvas($U(), _, P).
+stroke.cell([T, [M, Dc]], P) :- stroke_end(T, _, [M, Dc]), parse.canvas(Dc, _, P).
 stroke.mark([T, Ch], P) :- stroke_start(T, P, Ch).
 stroke.mark([T, Ch], P) :- stroke_end(T, P, Ch).
 
 // --- output ---
 
 .decl ink(p: Position, col: Color, ch: Choice)
-ink(P, Col, Ch) :- stroke.between([T, Ch], P), parse.glyph_color($U(), T, Col).
-ink(P, Col, Ch) :- parse.marker_cell($U(), P), params.marker(Col), impl_choice(Ch).
+ink(P, Col, [M, Dc]) :- stroke.between([T, [M, Dc]], P), parse.glyph_color(Dc, T, Col).
+ink(P, Col, [M, Dc]) :- parse.marker_cell(Dc, P), params.marker(Col), move_choice(M).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, Ch) :-
-    parse.canvas($U(), _, P), impl_choice(Ch),
-    ( ink(P, Col, Ch)                         // painted cell
-    ; !ink(P, _, Ch), params.bg(Col)          // untouched canvas
+out(P, Col, [M, Dc]) :-
+    parse.canvas(Dc, _, P), impl_choice([M, Dc]),
+    ( ink(P, Col, [M, Dc])                     // painted cell
+    ; !ink(P, _, [M, Dc]), params.bg(Col)      // untouched canvas
     ).
-
-// --- determination ---
 
 .type GT = [e: Example, t: Position]
 
@@ -207,6 +236,11 @@ out(P, Col, Ch) :-
 .comp Determine {
     .init parse = Parse<Example>
     parse.cell(E, P, Col) :- ex_in(E, P, Col).
+    parse.panel(E, P, P_outer, P_panel) :-
+        ex_in(E, P, _),
+        params.legend_dir(D), axis_of(D, A),
+        params.divisor(N), params.divide_gap(G),
+        divide_slab(P, A, N, G, P_outer, P_panel).
 
     .decl drawn(e: Example)
     drawn(E) :- ex_out(E, _, _).
@@ -218,8 +252,8 @@ out(P, Col, Ch) :-
         ex_in(E, P, M), params.marker(M),                 // the marker cell
         dir_elem(D), axis_of(D, A),                       // candidate legend side
         params.divisor(N), params.divide_gap(G), divide_slab(P, A, N, G, P_outer, P_canvas),
-        opposite(D, D2), dist(P_outer, D2, 0),       // marker in the far panel
-        ex_out(E, P_canvas, M).                      // the output holds it there
+        opposite(D, D2), dist(P_outer, D2, 0),            // marker in the far panel
+        ex_out(E, P_canvas, M).                           // the output holds it there
 
     .decl side_defect(d: Dir)
     side_defect(D) :- dir_elem(D), drawn(E), !side_ok(E, D).

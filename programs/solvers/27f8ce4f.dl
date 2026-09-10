@@ -1,0 +1,26 @@
+// 27f8ce4f
+// draft
+// concept: tile-arrangement stamp count
+// The input tiled by itself: the output is an input-shaped arrangement
+// of input-sized tiles, and a tile holds a copy of the input iff its
+// index cell carries the input's commonest color. Other tiles are bg.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+}
+
+.init params = Params
+
+// The commonest input color.
+.init tally = Mode<Unit, Color, Position>
+tally.item($U(), Col, P) :- in(P, Col).
+
+.decl out(p: Position, col: Color)
+out(P_grid_out, Col) :-
+    in(P_tile, C_tile), in(P_intile, C_intile),      // tile index x intile cell
+    concat_2d(P_tile, P_intile, 0, P_grid_out),
+    ( tally.mode($U(), C_tile), Col = C_intile        // stamped tile: a copy
+    ; !tally.mode($U(), C_tile), params.bg(Col)       // every other tile: bg
+    ).

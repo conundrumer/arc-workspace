@@ -1,20 +1,21 @@
 // 0520fde7
 // concept: decompose lookup
-// Layout: 1×2 horizontally-side-by-side 3×3 subgrids with 1-col separator.
+// Layout: two 3×3 subgrids side by side, separated by a column.
 //
 // out's choice column = [d, b]:
 //
 //   d (decompose):
-//     $Tile() — pre-tabulated in the parameters via tile_pos
-//     $Div()  — derived in the program via the divide primitive
+//     $Table() — tabulated in the parameters
+//     $Count() — by tile count
+//     $Size()  — by tile size
 //
 //   b (combine):
-//     $Lookup() — combine table keyed on (outer pos, color); set-equality match
-//     $And()    — AND via non-existence: no BG input contribution
+//     $Lookup() — a table keyed on the colors at the cell's tiles
+//     $And()    — filled where neither tile is bg
 
 #include "../lib.dl"
 
-.type DecChoice = Tile {} | Div {}
+.type DecChoice = Table {} | Count {} | Size {}
 .type Body      = Lookup {} | And {}
 .type Choice    = [d: DecChoice, b: Body]
 
@@ -28,7 +29,7 @@
     .decl frame(p: Position)
     frame(P) :- frame_dim(K), helpers.frame_pos([K, K], P).
 
-    // --- Tile decompose data ---
+    // --- Table decompose data ---
     .decl arr_dim(a: Axis, n: number)
     arr_dim(AXIS_V, 1). arr_dim(AXIS_H, 2).
     .decl gap(g: number) gap(1).
@@ -37,15 +38,16 @@
         arr_dim(AXIS_V, Av), arr_dim(AXIS_H, Ah), frame_dim(K), gap(G),
         helpers.tile_pos([Av, Ah], [K, K], [0, G], P_grid, P_tile, P_intile).
 
-    // --- Div decompose data ---
-    .decl divisor(n: number)
-    divisor(2).
-
+    // --- Count, Size decompose data ---
     .decl divide_axis(a: Axis)
     divide_axis(AXIS_H).
 
     .decl divide_gap(g: number)
     divide_gap(1).
+
+    // --- Count decompose data ---
+    .decl divisor(n: number)
+    divisor(2).
 
     // --- Lookup combine data ---
     .decl combine_member(id: Ident, p_outer: Position, c: Color)
@@ -71,32 +73,37 @@ combine_match.observed_member([P_grid_out, Dc], [P_tile, C]) :-
 // --- Decompose cases ---
 
 .decl dec_choice(dc: DecChoice)
-dec_choice($Tile()).
-dec_choice($Div()).
+dec_choice($Table()).
+dec_choice($Count()).
+dec_choice($Size()).
 
 .decl decompose(p: Position, p_outer: Position, p_inner: Position, dc: DecChoice)
-decompose(P_grid, P_tile, P_intile, $Tile()) :- params.tile_decompose(P_grid, P_tile, P_intile).
-decompose(P_grid, P_tile, P_intile, $Div()) :-
-    in(P_grid, _),                                                      // input position
-    params.divide_axis(A), params.divisor(N), params.divide_gap(G),     // params
+decompose(P_grid, P_tile, P_intile, $Table()) :- params.tile_decompose(P_grid, P_tile, P_intile).
+decompose(P_grid, P_tile, P_intile, $Count()) :-
+    in(P_grid, _), params.divide_axis(A), params.divide_gap(G),
+    params.divisor(N),                                              // tile count
     divide_slab(P_grid, A, N, G, P_tile, P_intile).
+decompose(P_grid, P_tile, P_intile, $Size()) :-
+    in(P_grid, _), params.divide_axis(A), params.divide_gap(G),
+    params.frame_dim(K),                                            // tile size = output frame extent
+    divide_by_size_slab(P_grid, A, K, G, P_tile, P_intile).
 
-// --- And body: unfilled relation parameterized by decompose choice ---
+// --- And ---
 
 .decl unfilled(o: Position, dc: DecChoice)
 unfilled(P_grid_out, Dc) :-
-    in(P_grid_in, Col), params.bg(Col),             // bg input cell
-    decompose(P_grid_in, _, P_grid_out, Dc).        // decomposes to output cell
+    in(P_grid_in, Col), params.bg(Col),         // bg input cell
+    decompose(P_grid_in, _, P_grid_out, Dc).
 
 // --- Output ---
 
 .decl out(p: Position, col: Color, c: Choice)
 out(P_grid_out, Col_out, [Dc, $Lookup()]) :-
-    params.combine_out(Id, Col_out),                             // entry's output color
-    combine_match.equals([P_grid_out, Dc], Id).                  // cell's tiles == entry's members
+    params.combine_out(Id, Col_out),
+    combine_match.equals([P_grid_out, Dc], Id).     // cell's tiles == entry's members
 
 out(P_grid_out, Col, [Dc, $And()]) :-
-    dec_choice(Dc), params.frame(P_grid_out),        // choice × cell
-    ( !unfilled(P_grid_out, Dc), params.out_fill(Col)    // AND=1: no bg contribution
-    ; unfilled(P_grid_out, Dc), params.bg(Col)           // AND=0: some bg contribution
+    dec_choice(Dc), params.frame(P_grid_out),       // choice × cell
+    ( !unfilled(P_grid_out, Dc), params.out_fill(Col)
+    ; unfilled(P_grid_out, Dc), params.bg(Col)
     ).

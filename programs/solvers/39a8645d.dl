@@ -1,0 +1,52 @@
+// 39a8645d
+// draft
+// concept: objects crop count
+// Pieces on params.bg, each of one color and 8-connected. Two pieces are copies
+// when they hold the same color and the same cells up to translation. The
+// output is a piece with the most copies, cropped to its box.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+}
+
+.init params = Params
+
+// --- pieces ---
+
+.init pieces = Components8<Color>
+pieces.node(Col, P) :- in(P, Col), !params.bg(Col).
+
+.init box = BoxFrame<Ident>
+box.cell(Id, P) :- pieces.label(_, P, Id).
+box.grid(Id, P) :- pieces.label(_, _, Id), in(P, _).
+
+// The piece's cells in its own box — its shape, free of placement.
+.decl shape_cell(id: Ident, p_inner: Position)
+shape_cell(Id, P_inner) :- box.inner(Id, P, P_inner), pieces.label(_, P, Id).
+
+// --- copies ---
+
+.init same_shape = KeyedSetCompare<Ident, Ident, Position>
+same_shape.pattern_member(Id, P_inner) :- shape_cell(Id, P_inner).
+same_shape.observed_member(Id, P_inner) :- shape_cell(Id, P_inner).
+
+.decl copy(id: Ident, id2: Ident)
+copy(Id, Id2) :-
+    same_shape.equals(Id, Id2),                             // the same shape
+    pieces.label(Col, _, Id), pieces.label(Col, _, Id2).    // in one color
+
+// The pieces with the most copies.
+.init commonest = Mode<Unit, Ident, Ident>
+commonest.item($U(), Id, Id2) :- copy(Id, Id2).
+
+// --- output ---
+
+.decl out(p: Position, col: Color)
+out(P_inner, Col) :-
+    commonest.mode($U(), Id),                    // a piece with the most copies
+    box.inner(Id, P, P_inner),                   // its box, cell by cell
+    ( pieces.label(Col, P, Id)                   // shape cell
+    ; !pieces.label(_, P, Id), params.bg(Col)    // rest of the box
+    ).

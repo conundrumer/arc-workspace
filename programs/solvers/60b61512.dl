@@ -1,0 +1,74 @@
+// 60b61512
+// draft
+// concept: objects mapping stamp
+// Ink shapes lie on params.bg, each spanning three cells on both axes. Each
+// shape's region is painted params.fill, over its background cells only. The
+// cases differ in what the region covers:
+//
+//   $Box   — every cell of the shape's bounding box.
+//   $Stamp — a stored footprint, read in that box's own frame.
+
+#include "../lib.dl"
+
+.type Choice = Box {} | Stamp {}
+
+.comp Params {
+    // --- shared ---
+    .decl bg(col: Color) bg(0).
+    .decl fill(col: Color) fill(7).
+
+    // --- Stamp ---
+    .decl footprint(p: Position)
+    GRID_MASK_3x3(footprint,
+        1, 1, 1,
+        1, 1, 1,
+        1, 1, 1)
+}
+
+.init params = Params
+
+// --- shapes ---
+
+.init objs = Components8<Unit>
+objs.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+.init bx = BoxFrame<Ident>
+bx.cell(Id, P) :- objs.label($U(), P, Id).
+bx.grid(Id, P) :- objs.label($U(), _, Id), in(P, _).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Box()). impl_choice($Stamp()).
+
+.decl region(p: Position, ch: Choice)
+
+// --- Box ---
+
+region(P, $Box()) :- bx.inside(_, P).
+
+// --- Stamp ---
+
+region(P, $Stamp()) :- bx.inner(_, P, F), params.footprint(F).
+
+// --- out ---
+
+.decl recolor(p: Position, ch: Choice)
+recolor(P, Ch) :- region(P, Ch), in(P, Col), params.bg(Col).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- recolor(P, Ch), params.fill(Col).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !recolor(P, Ch).
+
+.type EI = [e: Example, id: Ident]
+
+.comp Determine {
+    .init objs = Components8<Example>
+    objs.node(E, P) :- ex_in(E, P, Col), !params.bg(Col).
+
+    .init bx = BoxFrame<EI>
+    bx.cell([E, Id], P) :- objs.label(E, P, Id).
+    bx.grid([E, Id], P) :- objs.label(E, _, Id), ex_in(E, P, _).
+
+    // Box cells an output leaves non-background, in the box's own frame.
+    .decl footprint(p: Position)
+    footprint(F) :- bx.inner([E, Id], P, F), ex_out(E, P, Col), !params.bg(Col).
+}

@@ -1,0 +1,100 @@
+// 1ae2feb7
+// draft
+// concept: lines wallpaper rank
+// A separator line splits the grid into an inked side and a blank canvas. Each
+// line of the inked side holds runs of solid color. Every run divides the
+// canvas into blocks of its own length, counting from the separator, and claims
+// the separator-side cell of each block. Where several runs claim one cell, the
+// run nearest the separator wins.
+
+#include "../lib.dl"
+
+.comp Params {
+    // Runs and the pattern they claim extend along this axis; the separator
+    // is one line across it.
+    .decl axis(a: Axis) axis(AXIS_H).
+
+    .decl bg(col: Color) bg(0).
+}
+
+.init params = Params
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.bg(Col).
+
+.decl cell_split(p: Position, p_along: Position, p_line: Position)
+cell_split(P, P_along, P_line) :- in(P, _), params.axis(A), split(P, A, P_along, P_line).
+
+// The separator is the fullest line across the run axis.
+.init sep = Mode<Unit, Position, Position>
+sep.item($U(), P_along, P) :- ink(P, _), cell_split(P, P_along, _).
+
+// The two sides the separator cuts.
+.init cut = DividerFrame<Unit>
+cut.cell($U(), P) :- in(P, _).
+cut.divider($U(), A, P_sep) :- sep.mode($U(), P_sep), params.axis(A).
+
+// Which side of the separator p lies on, as the direction from the separator
+// toward p.
+.decl side(p: Position, d: Dir)
+side(P, D) :-
+    params.axis(A), axis_of(D, A),      // a direction along the run axis
+    cut.part_idx($U(), P, D, 0).        // no separator between p and edge D
+
+// The runs all sit on one side of the separator; the other side is the canvas.
+.decl ink_dir(d: Dir)
+ink_dir(D) :- side(P, D), ink(P, _).
+
+.decl canvas_dir(d: Dir)
+canvas_dir(D) :- ink_dir(D_ink), opposite(D_ink, D).
+
+.decl canvas(p: Position)
+canvas(P) :- canvas_dir(D), side(P, D).
+
+// A run is a maximal block of one color in one line of the inked side.
+// Keying by line and color confines connectivity to the line.
+.type RunKey = [p_line: Position, col: Color]
+
+.init runs = Components<RunKey>
+runs.node([P_line, Col], P) :-
+    ink(P, Col), cell_split(P, _, P_line),   // inked cell, its line
+    ink_dir(D), side(P, D).                  // on the inked side
+
+.decl run(id: Ident, p_line: Position, col: Color)
+run(Id, P_line, Col) :- runs.label([P_line, Col], _, Id).
+
+// A run's box: its margin toward the canvas measures how far it sits from
+// the separator.
+.init run_box = Bbox<Ident>
+run_box.cell(Id, P) :- runs.label(_, P, Id).
+
+// The canvas seen from its own frame, so offset 0 sits against the separator.
+.init canvas_frame = BoxFrame<Unit>
+canvas_frame.cell($U(), P) :- canvas(P).
+
+.decl canvas_off(p: Position, p_line: Position, off: number)
+canvas_off(P, P_line, Off) :-
+    canvas_frame.inner($U(), P, P_inner), cell_split(P, _, P_line),  // canvas cell in canvas frame
+    ink_dir(D), dist(P_inner, D, Off).                               // offset from the separator
+
+// A run claims the separator-side cell of every block of its own length.
+.decl claim(p: Position, id: Ident)
+claim(P, Id) :-
+    canvas_off(P, P_line, Off),                      // a canvas cell
+    run(Id, P_line, _),                              // a run of its line
+    params.axis(A), run_box.extent(Id, A, W),        // its length is its period
+    stride(Off, W, 0, _, 0).                         // the offset starts a block
+
+// Where several runs claim one cell, the one nearest the separator wins.
+.init won = ArgExtremes<Position, Ident>
+won.cand(P, Id, K) :- claim(P, Id), canvas_dir(D), run_box.edge_min(Id, D, K).
+
+.decl painted(p: Position, col: Color)
+painted(P, Col) :- won.low(P, Id, _), run(Id, _, Col).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, Col_in),
+    ( !canvas(P), Col = Col_in                         // separator and inked side, unchanged
+    ; painted(P, Col)                                  // a run claims this canvas cell
+    ; canvas(P), !painted(P, _), params.bg(Col) ).     // no run reaches it

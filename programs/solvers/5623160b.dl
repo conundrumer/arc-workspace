@@ -1,0 +1,81 @@
+// 5623160b
+// draft
+// concept: objects markers move
+// The grid holds structures of the anchor color, with pieces of other colors
+// against them. The anchors hold their place. Every piece detaches and travels
+// away from the anchor it touches, until its leading cell reaches the grid
+// edge. Three readings of what one piece is:
+//
+//   $ByColor — every cell of one color, however it is spread.
+//   $ByRun   — a connected run of one color.
+//   $ByLayer — one color's cells inside a connected region of non-ground cells.
+
+#include "../lib.dl"
+
+.type Choice = ByColor {} | ByRun {} | ByLayer {}
+.type Piece = [ch: Choice, id: Ident, col: Color]
+
+.comp Params {
+    .decl bg(c: Color) bg(7).
+
+    // The color that stays put and points.
+    .decl anchor(c: Color) anchor(9).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($ByColor()). impl_choice($ByRun()). impl_choice($ByLayer()).
+
+// The cells that travel: everything but the ground and the anchors.
+.decl part(p: Position, col: Color)
+part(P, Col) :- in(P, Col), !params.bg(Col), !params.anchor(Col).
+
+// The grouping each case finds.
+.decl group(ch: Choice, p: Position, id: Ident)
+
+// --- ByColor ---
+
+.init hue = Canon<Position>
+hue.equiv(P, Q) :- part(P, Col), part(Q, Col).
+group($ByColor(), P, Id) :- hue.id(P, Id).
+
+// --- ByRun ---
+
+.init run = Components<Color>
+run.node(Col, P) :- part(P, Col).
+group($ByRun(), P, Id) :- run.label(_, P, Id).
+
+// --- ByLayer ---
+
+// The anchors glue the assembly, so they join the region they hold together.
+.init assembly = Components<Unit>
+assembly.node($U(), P) :- in(P, Col), !params.bg(Col).
+group($ByLayer(), P, Id) :- assembly.label($U(), P, Id).
+
+// --- shared ---
+
+// A piece is one color's cells within a group.
+.decl piece_cell(pc: Piece, p: Position)
+piece_cell([Ch, Id, Col], P) :- group(Ch, P, Id), part(P, Col).
+
+.decl move_dir(pc: Piece, d: Dir)
+move_dir(Pc, D) :-
+    piece_cell(Pc, P), neighbor(P, D_anchor, Q),         // a piece cell abuts
+    in(Q, Col_a), params.anchor(Col_a),                  // an anchor
+    opposite(D, D_anchor).                               // the heading points away from it
+
+.init box = Bbox<Piece>
+box.cell(Pc, P) :- piece_cell(Pc, P).
+
+// --- output ---
+
+.decl ink(p: Position, col: Color, ch: Choice)
+ink(P, Col, Ch) :- in(P, Col), params.anchor(Col), impl_choice(Ch).
+ink(Q, Col, Ch) :-
+    Pc = [Ch, _, Col], piece_cell(Pc, P), move_dir(Pc, D),  // the piece and its heading
+    box.edge_min(Pc, D, K), jump(P, D, K, Q).               // jumped flush to the edge ahead
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- ink(P, Col, Ch).
+out(P, Col, Ch) :- in(P, _), !ink(P, _, Ch), params.bg(Col), impl_choice(Ch).

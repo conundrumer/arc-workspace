@@ -1,0 +1,84 @@
+// 6aa20dc0
+// draft
+// concept: objects markers scale d4 stamp
+// A template — the one multicolored object — carries mark colors at its
+// corners. Elsewhere, single-color squares sit in pairs at opposite corners
+// of a box that the template divides into tiles, one per template cell.
+// Each such box takes the template, scaled to the tiles and turned so its
+// marks land on the squares. The template is symmetric across the diagonal
+// through its marks, so the two turns that land them draw the same picture.
+
+#include "../lib.dl"
+
+.comp Params {}
+
+.init params = Params
+
+// The ground: the commonest color.
+.init ground = Mode<Unit, Color, Position>
+ground.item($U(), Col, P) :- in(P, Col).
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !ground.mode($U(), Col).
+
+.init obj = Components8<Unit>
+obj.node($U(), P) :- ink(P, _).
+
+// Each object's one color; the object of several colors is the template,
+// and every other object is a square.
+.init hue = Unanimous<Ident, Color>
+hue.item(Id, Col) :- obj.label($U(), P, Id), ink(P, Col).
+
+// The template as a picture: its box, ground cells included.
+.init tmpl_box = BoxFrame<Unit>
+tmpl_box.cell($U(), P) :- obj.label($U(), P, Id), hue.clash(Id).
+tmpl_box.grid($U(), P) :- in(P, _).
+
+.decl tmpl(p_inner: Position, col: Color)
+tmpl(P_inner, Col) :- tmpl_box.inner($U(), P, P_inner), in(P, Col).
+
+.decl square(p: Position, id: Ident)
+square(P, Id) :- obj.label($U(), P, Id), hue.value(Id, _).
+
+.init sq_box = Bbox<Ident>
+sq_box.cell(Id, P) :- square(P, Id).
+
+// Two squares, and the box they span together.
+.type Pair = [a: Ident, b: Ident]
+
+.init pair_box = BoxFrame<Pair>
+pair_box.cell([A, B], P) :-
+    square(_, A), square(_, B), A != B,
+    ( square(P, A) ; square(P, B) ).
+pair_box.grid(Pair, P) :- pair_box.cell(Pair, _), in(P, _).
+
+// The box divided as the template is: one tile per template cell.
+.init tiles = Divide2D<Unit>
+tiles.cell(P_inner) :- pair_box.inner(_, _, P_inner).
+tiles.dim($U(), A, N) :- tmpl_box.extent($U(), A, N).
+tiles.gap(0).
+
+// The tile a pair's square sits in: the square fills it.
+.decl square_tile(pair: Pair, id: Ident, p_tile: Position)
+square_tile(Pair, Id, P_tile) :-
+    pair_box.cell(Pair, P), square(P, Id), pair_box.inner(Pair, P, P_inner),
+    tiles.tile($U(), P_inner, P_tile, P_intile),
+    sq_box.extents(Id, A, N1, N2), axis_dims(P_intile, A, N1, N2).
+
+// A pair: both squares fill a tile of their box.
+.decl pair(pair: Pair)
+pair([A, B]) :- square_tile([A, B], A, _), square_tile([A, B], B, _).
+
+// The turns that carry the template's marks onto the pair's squares.
+.init fit = D4Map<Pair, Color>
+fit.src(Pair, P_inner, Col) :- pair(Pair), tmpl(P_inner, Col).
+fit.dst(Pair, P_tile, Col) :- square_tile(Pair, Id, P_tile), hue.value(Id, Col).
+
+.decl stamp(p: Position, col: Color)
+stamp(P, Col) :-
+    pair_box.inner(Pair, P, P_inner), tiles.tile($U(), P_inner, P_tile, _),  // a tile cell of a pair's box
+    fit.compatible(Pair, D), tmpl(Q, Col), apply(D, Q, P_tile).             // the turned template there
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- stamp(P, Col).
+out(P, Col) :- in(P, Col), !stamp(P, _).

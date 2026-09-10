@@ -1,0 +1,71 @@
+// 846bdb03
+// draft
+// concept: crop markers d4
+// Four corner marks and two bars between them frame an empty box; a two-color
+// shape floats elsewhere. The output is the box, with the shape filling its
+// interior, oriented so that each color of the shape touches the bar of that
+// color.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    .decl corner(col: Color) corner(4).
+    // The orientations the shape may take: the reflection group that swaps
+    // the bars.
+    .decl sym(s: Sym) sym(SYM_LR).
+}
+
+.init params = Params
+
+.decl transform(t: D4)
+transform(T) :- params.sym(S), sym_member(S, T).
+
+// --- the box ---
+
+.init box = BoxFrame<Unit>
+box.cell($U(), P) :- in(P, Col), params.corner(Col).
+box.grid($U(), P) :- in(P, _).
+
+.decl crop(p: Position, col: Color)
+crop(P_inner, Col) :- box.inner($U(), P, P_inner), in(P, Col).
+
+// The bars sit on the edges the group swaps.
+.decl bar_edge(d: Dir)
+bar_edge(D) :- transform(T), apply_dir(T, D, Opp), opposite(D, Opp).
+
+.decl bar(d: Dir, col: Color)
+bar(D, Col) :- crop(P, Col), bar_edge(D), dist(P, D, 0), !params.bg(Col), !params.corner(Col).
+
+// The box off its border, in its own frame.
+.init interior = BoxFrame<Unit>
+interior.cell($U(), P) :- crop(P, _), gt(P, ORIGIN).
+
+// --- the shape ---
+
+.init shape = BoxFrame<Unit>
+shape.cell($U(), P) :- in(P, Col), !params.bg(Col), !box.inside($U(), P).
+shape.grid($U(), P) :- in(P, _).
+
+// The shape under each transform, in the interior frame.
+.decl placed(t: D4, p_inner: Position, col: Color)
+placed(T, P_inner2, Col) :-
+    shape.inner($U(), P, P_inner), in(P, Col),
+    transform(T), apply(T, P_inner, P_inner2).
+
+// Under T, some cell of the bar's color meets the bar.
+.decl touches(t: D4, d: Dir)
+touches(T, D) :- bar(D, Col), placed(T, P, Col), dist(P, D, 0).
+
+// Under T, some bar meets no cell of its color.
+.decl defect(t: D4)
+defect(T) :- transform(T), bar(D, _), !touches(T, D).
+
+.decl orient(t: D4)
+orient(T) :- transform(T), !defect(T).
+
+// --- output ---
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- crop(P, Col), !interior.inner($U(), P, _).
+out(P, Col) :- interior.inner($U(), P, P_inner), orient(T), placed(T, P_inner, Col).

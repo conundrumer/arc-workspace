@@ -1,0 +1,27 @@
+// 2204b7a8
+// draft
+// concept: lines rank
+// Two opposite edges carry a solid line, each in its own color, and markers
+// are scattered over the interior. Each marker takes the color of the nearer
+// line; everything else passes through.
+
+#include "../lib.dl"
+
+.comp Params {
+    // The scattered cells that take a line's color.
+    .decl mark(col: Color) mark(3).
+}
+
+.init params = Params
+
+// An edge of two colors is no line.
+.init line = Unanimous<Dir, Color>
+line.item(D, Col) :- dir_elem(D), in(P, Col), dist(P, D, 0).   // a cell on edge D
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, Col_in),
+    ( !params.mark(Col_in), Col = Col_in                  // passes through
+    ; params.mark(Col_in),                                // a marker
+      line.value(D, Col), dist_pair(P, D, K, K2), K < K2  // takes the nearer line
+    ).

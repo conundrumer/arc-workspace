@@ -1,0 +1,52 @@
+// 22208ba4
+// draft
+// concept: objects move
+// A block sits at each corner of the grid. A block whose color another corner
+// block also carries steps inward — one block-length toward each edge of the
+// opposite corner — and leaves background behind. A block with a color no
+// other corner block has stays put.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(7).
+}
+
+.init params = Params
+
+// --- blocks ---
+
+.init blocks = Components<Color>
+blocks.node(Col, P) :- in(P, Col), !params.bg(Col).
+
+.decl corner_block(id: Ident, diag: DiagDir, col: Color)
+corner_block(Id, Diag, Col) :-
+    blocks.label(Col, P, Id),   // block cell
+    corner_dist(P, Diag, 0).    // at grid corner Diag
+
+.init box = Bbox<Ident>
+box.cell(Id, P) :- blocks.label(_, P, Id).
+
+// A corner block whose color another corner block also carries.
+.decl mover(id: Ident, diag: DiagDir)
+mover(Id, Diag) :- corner_block(Id, Diag, Col), corner_block(Id2, _, Col), Id != Id2.
+
+// --- move ---
+
+.decl moved_cell(p: Position, col: Color)
+moved_cell(Q, Col) :-
+    mover(Id, Diag), diag_opposite(Diag, Diag_in),              // the corner it moves toward
+    blocks.label(Col, P, Id),                                   // its cells
+    box.extents(Id, A, N1, N2), diag_dirs(Diag_in, A, D1, D2),
+    jump(P, D1, N1, P_step), jump(P_step, D2, N2, Q).           // one block-length each way
+
+.decl vacated(p: Position)
+vacated(P) :- mover(Id, _), blocks.label(_, P, Id).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, Col_in),
+    ( moved_cell(P, Col)                                     // block's new place
+    ; !moved_cell(P, _), vacated(P), params.bg(Col)          // block's old place
+    ; !moved_cell(P, _), !vacated(P), Col = Col_in           // untouched
+    ).

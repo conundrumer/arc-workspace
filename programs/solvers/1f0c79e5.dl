@@ -1,0 +1,71 @@
+// 1f0c79e5
+// draft
+// concept: markers cast
+//
+// A block of colored cells sits on a blank grid. Each cell carrying the mark
+// color names a diagonal heading by where it sits in the block. Toward every
+// named heading the block casts a trail: each block cell sends a ray to the
+// edge, in the block's other color.
+//
+// The block is 2x2 in every pair, so the two parses of "where it sits"
+// agree here. They part on a larger block:
+//   $Corner   — the mark is at a corner of the block's box.
+//   $Quadrant — the mark is in a quadrant of the block's box.
+
+#include "../lib.dl"
+
+.type Choice = Corner {} | Quadrant {}
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+
+    // The color that names a heading.
+    .decl mark(col: Color) mark(2).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Corner()). impl_choice($Quadrant()).
+
+.decl block(p: Position)
+block(P) :- in(P, Col), !params.bg(Col).
+
+.init box = BoxFrame<Unit>
+box.cell($U(), P) :- block(P).
+
+.decl marker(p: Position)
+marker(P) :- in(P, Col), params.mark(Col).
+
+// The block's other color paints the trails.
+.decl trail(col: Color)
+trail(Col) :- block(P), in(P, Col), !params.mark(Col).
+
+// The headings the marks name.
+.decl heading(d: DiagDir, ch: Choice)
+
+// Every block cell casts toward the headings the case claims.
+.init ray = Ray<Choice>
+ray.dir(Ch, D)   :- heading(D, Ch).
+ray.mark(Ch, P)  :- impl_choice(Ch), block(P).
+ray.cell(Ch, P)  :- impl_choice(Ch), in(P, _).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    impl_choice(Ch), in(P, _),
+    ( ray.ray(Ch, P, _, _, _), trail(Col)        // on a trail
+    ; !ray.ray(Ch, P, _, _, _), params.bg(Col)   // untouched
+    ).
+
+// --- Corner ---
+
+heading(D, $Corner()) :- marker(P), box.corner($U(), P, D).
+
+// --- Quadrant ---
+
+.init place = DiagPlacement<Unit>
+place.cell($U(), P_inner) :- box.inner($U(), _, P_inner).
+
+heading(D, $Quadrant()) :-
+    marker(P), box.inner($U(), P, P_inner),   // a mark in the block's frame
+    place.quadrant($U(), P_inner, D).         // the quadrant it lies in

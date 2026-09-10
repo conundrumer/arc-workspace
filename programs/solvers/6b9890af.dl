@@ -1,0 +1,84 @@
+// 6b9890af
+// draft
+// concept: crop scale border
+
+// A rectangle outline in the frame color and a small object of another color
+// sit apart on bg. The output is the outline's box, cropped: its edge lines
+// keep the frame color, and its hole holds the object blown up to fill it,
+// each object cell a block, bg elsewhere.
+//
+// $Stored — the frame color is stored.
+// $Drawn — the frame color is the one whose cells draw a rectangle outline.
+
+#include "../lib.dl"
+
+.type Choice = Stored {} | Drawn {}
+
+.comp Params {
+    .decl bg(col: Color)  bg(0).
+
+    // --- Stored ---
+    .decl frame(col: Color)  frame(2).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Stored()). impl_choice($Drawn()).
+
+// --- the frame color ---
+
+.decl frame_col(col: Color, ch: Choice)
+
+// --- Stored ---
+frame_col(Col, $Stored()) :- params.frame(Col).
+
+// --- Drawn ---
+.init drect = DrawnRect<Color>
+drect.node(Col, P) :- in(P, Col), !params.bg(Col).
+
+frame_col(Col, $Drawn()) :- drect.rect(Col, _).
+
+// --- the frame, viewed in its own box ---
+
+.init frame_box = BoxFrame<Choice>
+frame_box.cell(Ch, P) :- frame_col(Col, Ch), in(P, Col).
+frame_box.grid(Ch, P) :- impl_choice(Ch), in(P, _).
+
+// The box's edge lines and its hole.
+.init frame_cells = BoxCells<Choice>
+frame_cells.box(Ch, B) :- frame_box.margin(Ch, B).
+frame_cells.cell(Ch, P) :- frame_box.viewed(Ch, P).
+
+// The hole in its own frame.
+.init hole = BoxFrame<Choice>
+hole.cell(Ch, P) :- frame_cells.hole(Ch, P).
+
+// --- the object, viewed in its own box ---
+
+.decl object_cell(ch: Choice, p: Position, col: Color)
+object_cell(Ch, P, Col) :- impl_choice(Ch), in(P, Col), !params.bg(Col), !frame_col(Col, Ch).
+
+.init object_box = BoxFrame<Choice>
+object_box.cell(Ch, P) :- object_cell(Ch, P, _).
+
+// The object as a block arrangement: each cell at its box position.
+.decl tile_col(ch: Choice, p_tile: Position, col: Color)
+tile_col(Ch, P_tile, Col) :- object_cell(Ch, P_grid, Col), object_box.inner(Ch, P_grid, P_tile).
+
+// The hole divided into the object's block arrangement.
+.init blocks = Divide2D<Choice>
+blocks.cell(P_inner) :- hole.inner(_, _, P_inner).
+blocks.dim(Ch, A, N) :- object_box.extent(Ch, A, N).
+blocks.gap(0).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_intile, Col, Ch) :-
+    frame_box.inner(Ch, P_grid, P_intile),                   // box cell, in the crop frame
+    ( frame_cells.on_edge(Ch, P_grid, _), frame_col(Col, Ch)  // edge line
+    ; hole.inner(Ch, P_grid, P_inner),                        // hole cell, in the hole's frame
+      blocks.tile(Ch, P_inner, P_tile, _),                    // its block
+      ( tile_col(Ch, P_tile, Col)                             // block the object fills
+      ; !tile_col(Ch, P_tile, _), params.bg(Col)              // blank block
+      )
+    ).

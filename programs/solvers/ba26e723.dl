@@ -1,4 +1,5 @@
 // ba26e723
+// draft
 // concept: lines mapping
 // Cells whose color is a params.mapping key are recolored to the mapped color,
 // but only at positions where (dist from params.anchor) mod params.period equals

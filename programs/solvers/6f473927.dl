@@ -1,0 +1,100 @@
+// 6f473927
+// draft
+// concept: tile-arrangement d4 mapping
+// The ink leans against one edge of the grid, on params.axis: the edge its
+// bounding box lies nearer to. The output is a 2-tile arrangement along
+// that axis: the input at the tile away from the ink edge, and at the ink
+// edge the input's reflection across it, recolored.
+//
+// Cases (data-equivalent on this task):
+//   $Table()    — params.mirror maps each color of the reflection.
+//   $Negative() — the silhouette: bg becomes params.shade, ink becomes bg.
+
+#include "../lib.dl"
+
+.type Choice = Table {} | Negative {}
+
+.comp Params {
+    // --- shared ---
+    .decl bg(c: Color) bg(0).
+    .decl axis(a: Axis) axis(AXIS_H).
+    .decl n_tiles(n: number) n_tiles(2).
+
+    // --- Table ---
+    .decl mirror(c_in: Color, c_out: Color)
+    mirror(0, 8).
+    mirror(2, 0).
+
+    // --- Negative ---
+    .decl shade(c: Color) shade(8).
+}
+
+.init params = Params
+
+// Where each input cell lands in the arrangement: its own tile, away from
+// the ink edge, and its reflection in the ink-edge tile.
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)  // input
+
+    // The ink edge: the ink's box lies nearer it than its opposite.
+    .init box = Bbox<Key>
+    box.cell(K, P) :- cell(K, P, Col), !params.bg(Col).
+
+    .decl ink_edge(key: Key, d: Dir)
+    ink_edge(K, D) :-
+        box.margin(K, M), params.axis(A), axis_of(D, A),
+        dist_pair(M, D, K1, K2), K1 < K2.
+
+    // The 2-tile arrangement along params.axis.
+    .init arr = AxisFrame<Key>
+    arr.extent(K, A, N) :- cell(K, _, _), params.axis(A), params.n_tiles(N).
+
+    // The tile away from the ink edge, and the ink-edge tile beside it.
+    .decl tiles(key: Key, t_far: Position, t_near: Position)
+    tiles(K, T_far, T_near) :-
+        ink_edge(K, D), opposite(D, D_far),
+        arr.cell(K, _, T_far), dist(T_far, D_far, 0), neighbor(T_far, D, T_near).
+
+    .decl place(key: Key, p: Position, p_grid: Position, p_grid_mirror: Position)
+    place(K, P, P_grid, P_grid_mirror) :-
+        cell(K, P, _), tiles(K, T_far, T_near), params.axis(A),
+        concat_slab(T_far, P, A, 0, P_grid),                    // the input's own tile
+        flip_of(A, F), apply(F, P, P_img),                      // reflect across the boundary
+        concat_slab(T_near, P_img, A, 0, P_grid_mirror).        // the ink-edge tile
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Table()).
+impl_choice($Negative()).
+
+.decl recolor(c_in: Color, c_out: Color, ch: Choice)
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_grid, Col_out, Ch) :-
+    in(P, Col), parse.place($U(), P, P_own, P_mirror),
+    ( P_grid = P_own, Col_out = Col, impl_choice(Ch)    // the input's own tile, as is
+    ; P_grid = P_mirror, recolor(Col, Col_out, Ch)      // the reflection, recolored
+    ).
+
+// --- Table ---
+recolor(C_in, C_out, $Table()) :- params.mirror(C_in, C_out).
+
+// --- Negative ---
+recolor(C_in, C_out, $Negative()) :-
+    in(_, C_in),
+    ( params.bg(C_in), params.shade(C_out)    // bg takes the shade
+    ; !params.bg(C_in), params.bg(C_out)      // ink becomes bg
+    ).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // Each input color against what its reflection shows.
+    .decl mirror(c_in: Color, c_out: Color)
+    mirror(C_in, C_out) :-
+        ex_in(E, P, C_in), parse.place(E, P, _, P_grid), ex_out(E, P_grid, C_out).
+}

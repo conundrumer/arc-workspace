@@ -23,18 +23,16 @@
     // --- $Stamp ---
     .decl stamp(p: Position)
     GRID_MASK_4x4(stamp,
-        0, 1, 1, 0,
+        _, 1, 1, _,
         1, 1, 1, 1,
         1, 1, 1, 1,
-        0, 1, 1, 0)
+        _, 1, 1, _)
 }
 
 .init params = Params
 
 .decl impl_choice(ch: Choice)
 impl_choice($Holes()). impl_choice($Stamp()).
-
-// --- parse ---
 
 .comp Parse<Key> {
     .type Blk = [key: Key, id: Ident]
@@ -107,8 +105,6 @@ out(P, Col, Ch) :- fill(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), parse.mark($U(), P, _), params.node(Col).
 out(P, Col, Ch) :-
     impl_choice(Ch), in(P, Col), !parse.mark($U(), P, _), !fill(P, _, Ch).
-
-// --- determination ---
 
 .comp Determine {
     .type EI = [e: Example, id: Ident]

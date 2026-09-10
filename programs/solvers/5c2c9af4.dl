@@ -1,0 +1,62 @@
+// 5c2c9af4
+// draft
+// concept: markers walk border
+// Three dots of one color sit equally spaced along a diagonal. The output draws
+// concentric square outlines around the middle dot, spaced by the gap between
+// neighboring dots, as far out as the grid shows any part of one. Every dot lies
+// on an outline, so what a cell off the outlines does is underdetermined; two
+// models, tagged on out's Choice:
+//
+//   $Passthrough() — a cell off the outlines keeps its input color.
+//   $Repaint()     — a cell off the outlines gets params.bg.
+
+#include "../lib.dl"
+
+.type Choice = Passthrough {} | Repaint {}
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+}
+
+.init params = Params
+
+.decl mark(p: Position, col: Color)
+mark(P, Col) :- in(P, Col), !params.bg(Col).
+
+// The marks' bounding box is the innermost outline: the outer dots sit at
+// two of its corners, and the middle dot at its center.
+.init box = BoxFrame<Unit>
+box.cell($U(), P) :- mark(P, _).
+
+.decl center(p: Position)
+center(P) :- box.inner($U(), P, P_in), centered(P_in).    // the middle dot
+
+// The spacing, as the inset carrying the center out to the innermost outline.
+.decl spread(v: Inset)
+spread(V) :- center(P), box.margin($U(), B), displacement(P, B, V).
+
+// --- program ---
+
+// Each outline is the one inside it grown by the spacing, the center cell
+// being the innermost. An outline that draws nothing lies wholly off the
+// grid, and so does every outline beyond it.
+.decl outline(b: Position)
+outline(B) :- center(B).
+outline(B2) :- bcells.on_edge(B, _, _), spread(V), compose(B, V, B2).
+
+.init bcells = BoxCells<Position>
+bcells.box(B, B) :- outline(B).
+bcells.cell(B, P) :- outline(B), in(P, _).
+
+.decl drawn(p: Position)
+drawn(P) :- bcells.on_edge(_, P, _).
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// --- $Passthrough ---
+out(P, Col, $Passthrough()) :- drawn(P), mark(_, Col).
+out(P, Col, $Passthrough()) :- in(P, Col), !drawn(P).
+
+// --- $Repaint ---
+out(P, Col, $Repaint()) :- drawn(P), mark(_, Col).
+out(P, Col, $Repaint()) :- in(P, _), !drawn(P), params.bg(Col).

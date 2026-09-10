@@ -61,15 +61,15 @@
 
     .decl mask(p: Position)   // output picture; member cells take the paint
     GRID_MASK_9x9(mask,
-        1, 1, 1, 1, 0, 0, 0, 0, 0,
-        1, 1, 1, 1, 0, 0, 0, 0, 0,
-        1, 1, 1, 1, 0, 0, 0, 0, 0,
-        1, 1, 1, 1, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 1, 1, 1, 1, 0,
-        0, 0, 0, 0, 1, 1, 1, 1, 0,
-        0, 0, 0, 0, 1, 1, 1, 1, 0,
-        0, 0, 0, 0, 1, 1, 1, 1, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0)
+        1, 1, 1, 1, _, _, _, _, _,
+        1, 1, 1, 1, _, _, _, _, _,
+        1, 1, 1, 1, _, _, _, _, _,
+        1, 1, 1, 1, _, _, _, _, _,
+        _, _, _, _, 1, 1, 1, 1, _,
+        _, _, _, _, 1, 1, 1, 1, _,
+        _, _, _, _, 1, 1, 1, 1, _,
+        _, _, _, _, 1, 1, 1, 1, _,
+        _, _, _, _, _, _, _, _, _)
 
     // --- $Pair ---
     .decl pair_in(p: Position, col: Color)    // exemplar input
@@ -189,8 +189,6 @@ pair.dst($U(), P, Col) :- in(P, Col).
 out(Q, Col, $Pair()) :-
     c4_elem(R), !pair.mismatch($U(), R),   // a matching rotation
     params.pair_out(Pm, Col), apply(R, Pm, Q).
-
-// --- determination ---
 
 .comp Determine {
     // The stored pictures all come from one train pair.

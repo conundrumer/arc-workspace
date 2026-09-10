@@ -1,0 +1,90 @@
+// 494ef9d7
+// draft
+// concept: lines move
+// Colored cells scatter on a background, two to a line at most. Some color
+// pairs attract: on a line holding exactly such a pair, the far cell moves to
+// rest against the near one. Every other line stands.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+
+    // The colors that attract, one id per pair.
+    .decl attract(pair: Ident, col: Color)
+    attract(0, 4). attract(0, 7).
+    attract(1, 1). attract(1, 8).
+
+    // The direction the far cell moves; the near cell holds.
+    .decl pull_dir(d: Dir) pull_dir(DIR_L).
+}
+
+.init params = Params
+
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)
+
+    // The line a cell sits on: its coordinate across the pull direction.
+    .decl line_of(key: Key, p: Position, l: Position)
+    line_of(K, P, L) :- cell(K, P, _), params.pull_dir(D), axis_of(D, A), split(P, A, _, L).
+
+    .decl mark(key: Key, l: Position, p: Position, col: Color)
+    mark(K, L, P, Col) :- cell(K, P, Col), !params.bg(Col), line_of(K, P, L).
+
+    // Where a line's two marks come to rest under attraction.
+    .decl rest(key: Key, l: Position, p: Position, col: Color)
+    rest(K, L, P, Col) :-
+        mark(K, L, P_near, Col_near), mark(K, L, P_far, Col_far),          // the line's marks
+        params.pull_dir(D), nearer(D, P_near, P_far),                      // near and far along the pull
+        ( P = P_near, Col = Col_near                                       // the near cell holds
+        ; Col = Col_far, opposite(D, D_back),
+          neighbor(P_near, D_back, P)                                      // the far color, against it
+        ).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+.init pairs = KeyedSetCompare<Position, Ident, Color>
+pairs.pattern_member(Pair, Col) :- params.attract(Pair, Col).
+pairs.observed_member(L, Col) :- parse.mark($U(), L, _, Col).
+
+// A line whose colors are exactly one attracting pair.
+.decl pair_line(l: Position)
+pair_line(L) :- pairs.equals(L, _).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, C_in), parse.line_of($U(), P, L),
+    ( !pair_line(L), Col = C_in                                   // line untouched
+    ; pair_line(L), parse.rest($U(), L, P, Col)                   // the pair, come to rest
+    ; pair_line(L), !parse.rest($U(), L, P, _), params.bg(Col)    // the seat the far cell left
+    ).
+
+.comp Determine {
+    // Train pairs only — the ex_out atom holds the test inputs out.
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col), ex_out(E, _, _).
+
+    .type Line = [e: Example, l: Position]
+
+    // Lines holding the same colors share an entry.
+    .init same = KeyedSetCompare<Line, Line, Color>
+    same.pattern_member([E, L], Col) :- parse.mark(E, L, _, Col).
+    same.observed_member([E, L], Col) :- parse.mark(E, L, _, Col).
+
+    .init entry = Canon<Line>
+    entry.equiv(Ln, Ln2) :- same.equals(Ln, Ln2).
+
+    // The marks a line's output holds.
+    .decl out_mark(e: Example, l: Position, p: Position, col: Color)
+    out_mark(E, L, P, Col) :- ex_out(E, P, Col), !params.bg(Col), parse.line_of(E, P, L).
+
+    // An entry a line refutes: that line's output marks are not its marks at rest.
+    .decl refuted(pair: Ident)
+    refuted(Id) :- entry.id([E, L], Id), parse.rest(E, L, P, Col), !out_mark(E, L, P, Col).
+    refuted(Id) :- entry.id([E, L], Id), out_mark(E, L, P, Col), !parse.rest(E, L, P, Col).
+
+    .decl attract(pair: Ident, col: Color)
+    attract(Id, Col) :- entry.id([E, L], Id), parse.mark(E, L, _, Col), !refuted(Id).
+}

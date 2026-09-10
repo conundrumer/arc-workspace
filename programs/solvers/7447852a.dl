@@ -1,0 +1,109 @@
+// 7447852a
+// draft
+// concept: objects rank wallpaper lookup
+// A zigzag line runs across a strip and cuts the bg into pockets. Every
+// third pocket from the left, the first included, fills with the mark
+// color. Two models of what repeats:
+//
+//   $Rank()  — the pockets: bg components ranked by their margin from the
+//              anchor edge; the ranks in a marked block of the rhythm fill.
+//   $Stamp() — a stored stamp of mark cells, one period wide, seats on the
+//              anchor edge and repeats along the strip, over the input.
+
+#include "../lib.dl"
+
+.type Choice = Rank {} | Stamp {}
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+    .decl mark(c: Color) mark(4).
+
+    // The repetition runs from this edge.
+    .decl anchor(d: Dir) anchor(DIR_L).
+
+    // --- $Rank ---
+    // The rhythm along the pocket sequence: mark_run marked pockets, then
+    // keep_run kept, repeating.
+    .decl mark_run(k: number) mark_run(1).
+    .decl keep_run(g: number) keep_run(2).
+
+    // --- $Stamp ---
+    // One period of the marks, in the strip's frame.
+    .decl stamp(p: Position)
+    GRID_MASK_3x12(stamp,
+        _, _, _, _, _, 1, 1, 1, _, _, _, _,
+        1, _, _, _, _, _, 1, _, _, _, _, _,
+        1, 1, _, _, _, _, _, _, _, _, _, 1)
+
+    // The stamp's extent along the anchor's axis.
+    .decl period(k: number)
+    period(K) :- stamp(P), anchor(D), axis_of(D, A), axis_dim(P, A, K).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Rank()). impl_choice($Stamp()).
+
+.decl mark_cell(ch: Choice, p: Position)
+
+// --- $Rank ---
+
+.init pockets = Components<Unit>
+pockets.node($U(), P) :- in(P, Col), params.bg(Col).
+
+.init pocket_box = Bbox<Ident>
+pocket_box.cell(Id, P) :- pockets.label(_, P, Id).
+
+// The pocket's margin from the anchor edge.
+.decl pocket_margin(id: Ident, k: number)
+pocket_margin(Id, K) :- params.anchor(D), pocket_box.edge_min(Id, D, K).
+
+.init seq = Ordinal<Unit>
+seq.idx_set($U(), K) :- pocket_margin(_, K).
+
+.decl mark_margin(k: number)
+mark_margin(K) :-
+    seq.rank($U(), K, R),
+    params.mark_run(N), params.keep_run(G), stride(R, N, G, _, _).   // in a marked block
+
+mark_cell($Rank(), P) :- mark_margin(K), pocket_margin(Id, K), pockets.label(_, P, Id).
+
+// --- $Stamp ---
+
+mark_cell($Stamp(), Q) :-
+    in(Q, _), params.stamp(Pm),
+    params.anchor(D), slab_anchor(D, Pm, Q).             // seated on the anchor edge
+mark_cell($Stamp(), Q2) :-
+    mark_cell($Stamp(), Q),
+    params.anchor(D), axis_of(D, A), axis_of(O, A),      // either way along the strip
+    params.period(K), jump(Q, O, K, Q2), in(Q2, _).      // one period on
+
+.decl out(p: Position, col: Color, c: Choice)
+out(P, Col, Ch) :- mark_cell(Ch, P), params.mark(Col).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !mark_cell(Ch, P).
+
+.comp Determine {
+    .init si = ShiftInvariance<Example, Color>
+    si.cell(E, P, Col) :- ex_out(E, P, Col).
+
+    // The shortest unbroken shift of an output along the anchor's axis.
+    .decl min_period(k: number)
+    min_period(K) :- params.anchor(D), axis_of(D, A), si.min_period(_, A, K).
+
+    // The stamp's frame: one period along the anchor's axis, the strip's
+    // extent across.
+    .init frame = Frame2D<Example>
+    frame.extent(E, A, K) :- ex_out(E, _, _), params.anchor(D), axis_of(D, A), min_period(K).
+    frame.extent(E, A2, N) :-
+        ex_out(E, P, _), params.anchor(D), axis_of(D, A), perp(A, A2),   // the across axis
+        axis_dim(P, A2, N).                                              // the strip's extent
+
+    // A cell the pair marks.
+    .decl marked(e: Example, q: Position)
+    marked(E, Q) :- ex_in(E, Q, C_in), ex_out(E, Q, C_out), C_in != C_out.
+
+    // Marked cells within the first period, in the stamp's frame.
+    .decl stamp(p: Position)
+    stamp(Pm) :- frame.cell(E, Pm), params.anchor(D), slab_anchor(D, Pm, Q), marked(E, Q).
+}

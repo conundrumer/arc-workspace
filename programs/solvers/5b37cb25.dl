@@ -1,0 +1,61 @@
+// 5b37cb25
+// draft
+// concept: markers border
+// A frame of four colored edges surrounds a canvas. Blobs of one color sit on
+// the canvas background, and bites are taken out of them. A bite is a
+// five-cell background diamond that the blob closes on every side but one, and
+// it is filled with the color of the frame edge its open side faces.
+
+#include "../lib.dl"
+
+.comp Params {}
+
+.init params = Params
+
+.decl canvas(p: Position)
+canvas(P) :- in(P, _), gt(P, ORIGIN).    // clear of the frame
+
+// Each frame edge's color, read off an edge cell that faces the canvas —
+// a corner faces the frame itself.
+.decl edge_color(d: Dir, col: Color)
+edge_color(D, Col) :-
+    in(P, Col), dist(P, D, 0),                       // on frame edge d
+    opposite(D, D_in), neighbor(P, D_in, Q),
+    canvas(Q).                                       // one step in is canvas
+
+.init bg_mode = Mode<Unit, Color, Position>
+bg_mode.item($U(), Col, P) :- canvas(P), in(P, Col).
+
+.decl ground(p: Position)
+ground(P) :- canvas(P), in(P, Col), bg_mode.mode($U(), Col).
+
+.decl blob(p: Position)
+blob(P) :- canvas(P), !ground(P).
+
+// --- program ---
+
+.init ground_rim = Rim<Unit>
+ground_rim.cell($U(), P) :- ground(P).
+
+// The center of a background diamond: a ground cell no cardinal step leaves.
+.decl diamond(p: Position)
+diamond(P) :- ground(P), !ground_rim.rim($U(), P).
+
+// The blob closes the diamond toward d: it holds the cell past the arm.
+.decl closed(p: Position, d: Dir)
+closed(P, D) :-
+    diamond(P), dir_elem(D),
+    neighbor(P, D, Q), neighbor(Q, D, R), blob(R).    // two steps on
+
+// A diamond open on two sides is no bite, and `bite.value` drops it.
+.init bite = Unanimous<Position, Dir>
+bite.item(P, D) :- diamond(P), dir_elem(D), !closed(P, D).
+
+.decl paint(p: Position, col: Color)
+paint(Q, Col) :-
+    bite.value(P, D), edge_color(D, Col),            // the edge the bite faces
+    ( Q = P ; dir_elem(D2), neighbor(P, D2, Q) ).    // the diamond's five cells
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- paint(P, Col).
+out(P, Col) :- in(P, Col), !paint(P, _).

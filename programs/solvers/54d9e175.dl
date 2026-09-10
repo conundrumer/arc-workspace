@@ -1,0 +1,97 @@
+// 54d9e175
+// draft
+// concept: decompose objects markers mapping
+// One cell of each region of the grid carries a color that params.mapping
+// keys, and every cell of that region takes that color's image. A cell in no
+// region keeps its own color.
+//
+// Cases read the regions:
+//   $Lines()  — the tiles that lines wholly of params.separator cut.
+//   $Period() — the tiles of a params.tile_size decomposition, params.gap apart.
+//   $Flood()  — the connected runs of cells other than params.separator.
+
+#include "../lib.dl"
+
+.type Choice = Lines {} | Period {} | Flood {}
+
+.type Line = [a: Axis, l: Position]
+
+.comp Params {
+    // --- shared ---
+    .decl mapping(c_cell: Color, c_fill: Color)
+    mapping(1, 6).
+    mapping(2, 7).
+    mapping(3, 8).
+    mapping(4, 9).
+
+    // --- $Lines / $Flood ---
+    .decl separator(col: Color) separator(5).
+
+    // --- $Period ---
+    .decl tile_size(k: number) tile_size(3).
+    .decl gap(g: number) gap(1).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Lines()). impl_choice($Period()). impl_choice($Flood()).
+
+// Two cells of one region. Each case reads the regions its own way.
+.decl same_region(p: Position, q: Position, ch: Choice)
+
+// The tile a cell sits in, where the case cuts a lattice. A cell on a cut
+// sits in no tile, so it shares a region with nothing.
+.decl tile(p: Position, p_tile: Position, ch: Choice)
+same_region(P, Q, Ch) :- tile(P, P_tile, Ch), tile(Q, P_tile, Ch).
+
+// --- $Lines ---
+
+.init line_color = Unanimous<Line, Color>
+line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
+
+.init lattice = DividerFrame<Unit>
+lattice.cell($U(), P) :- in(P, _).
+lattice.divider($U(), A, L) :- line_color.value([A, L], Col), params.separator(Col).
+
+tile(P, P_tile, $Lines()) :- lattice.tile_of($U(), P, P_tile).
+
+// --- $Period ---
+
+tile(P, P_tile, $Period()) :-
+    in(P, _), params.tile_size(K), params.gap(G),
+    divide_by_size_2d(P, K, G, P_tile, _).
+
+// --- $Flood ---
+
+// The runs of cells the separator walls off from one another.
+.init region = Components<Unit>
+region.node($U(), P) :- in(P, Col), !params.separator(Col).
+
+same_region(P, Q, $Flood()) :- region.conn($U(), P, Q).
+
+// --- output ---
+
+// The image of the one color in a cell's region that the mapping keys.
+.decl paint(p: Position, col: Color, ch: Choice)
+paint(P, Col_fill, Ch) :-
+    same_region(P, Q, Ch), in(Q, Col), params.mapping(Col, Col_fill).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    in(P, Col_in), impl_choice(Ch),
+    ( paint(P, Col, Ch)                // in a region — its color
+    ; !paint(P, _, Ch), Col = Col_in   // in no region — stands
+    ).
+
+.comp Determine {
+    // The one output color each input color takes, over every train cell.
+    .init image = Unanimous<Color, Color>
+    image.item(Col_in, Col_out) :- ex_in(E, P, Col_in), ex_out(E, P, Col_out).
+
+    // A color the pairs recolor: its image is the same everywhere and is
+    // another color. A region's ground takes each of the fill colors, so it
+    // clashes; a separator keeps its own color.
+    .decl mapping(c_cell: Color, c_fill: Color)
+    mapping(Col_in, Col_out) :- image.value(Col_in, Col_out), Col_in != Col_out.
+}

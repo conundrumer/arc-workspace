@@ -1,0 +1,109 @@
+// 639f5a19
+// draft
+// concept: objects border lookup
+// Solid ink rectangles sit on the background. Each one is repainted: a band
+// runs inside its edges, and each band cell takes the color of the quadrant
+// of the object's bounding box it sits in. What the band encloses takes one
+// color. Choice = how deep a cell lies:
+//
+//   $Inset() — distance to the nearest edge of the bounding box.
+//   $Erode() — erosion from the object's own outline.
+//
+// Every object here is a solid rectangle, where the two depths agree; a
+// ragged object splits them.
+
+#include "../lib.dl"
+
+.type Choice = Inset {} | Erode {}
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+
+    // How deep the band runs from the rectangle's edge.
+    .decl band_depth(k: number) band_depth(2).
+
+    .decl corner_color(diag: DiagDir, col: Color)
+    corner_color(DIAG_TL, 6). corner_color(DIAG_TR, 1).
+    corner_color(DIAG_BL, 2). corner_color(DIAG_BR, 3).
+
+    .decl core_color(col: Color) core_color(4).
+}
+
+.init params = Params
+
+.init objs = Components<Unit>
+objs.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+// Each object seen from its own bounding box.
+.init box = BoxFrame<Ident>
+box.cell(Id, P) :- objs.label($U(), P, Id).
+
+// Which quadrant of its box an object cell sits in.
+.init quad = DiagPlacement<Ident>
+quad.cell(Id, P_box) :- box.inner(Id, _, P_box).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Inset()). impl_choice($Erode()).
+
+.decl band_cell(p: Position, ch: Choice)
+
+// --- $Inset ---
+
+// Nearer some edge of its bounding box than the band is deep.
+band_cell(P, $Inset()) :-
+    box.inner(_, P, P_box),                                   // the cell in its box's frame
+    dir_elem(D), dist(P_box, D, K), params.band_depth(N), K < N.
+
+// --- $Erode ---
+
+.init rim = Rim<Ident>
+rim.cell(Id, P) :- objs.label($U(), P, Id).
+
+// Fewer steps inward from the object's outline than the band is deep.
+band_cell(P, $Erode()) :- rim.depth(_, P, K), params.band_depth(N), K < N.
+
+// --- shared ---
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+out(P, Col, Ch) :- in(P, Col), params.bg(Col), impl_choice(Ch).
+
+out(P, Col, Ch) :-
+    band_cell(P, Ch), box.inner(Id, P, P_box),
+    quad.quadrant(Id, P_box, G), params.corner_color(G, Col).
+
+out(P, Col, Ch) :-
+    objs.label($U(), P, _), impl_choice(Ch), !band_cell(P, Ch),   // what the band encloses
+    params.core_color(Col).
+
+.comp Determine {
+    .decl changed(col: Color)
+    changed(Col) :- ex_in(E, P, Col), ex_out(E, P, Col2), Col != Col2.
+
+    .decl bg(col: Color)
+    bg(Col) :- ex_in(_, _, Col), !changed(Col).
+
+    .type ObjKey = [e: Example, id: Ident]
+
+    .init objs = Components<Example>
+    objs.node(E, P) :- ex_in(E, P, Col), !params.bg(Col).
+
+    .init box = BoxFrame<ObjKey>
+    box.cell([E, Id], P) :- objs.label(E, P, Id).
+
+    .decl corner_color(diag: DiagDir, col: Color)
+    corner_color(G, Col) :- box.corner([E, _], P, G), ex_out(E, P, Col).
+
+    // The one color the band does not carry.
+    .decl core_color(col: Color)
+    core_color(Col) :- objs.label(E, P, _), ex_out(E, P, Col), !corner_color(_, Col).
+
+    // The core, seen in its object's frame: its margin from that frame's
+    // edges is how deep the band runs.
+    .init core_box = Bbox<ObjKey>
+    core_box.cell([E, Id], P_box) :-
+        box.inner([E, Id], P, P_box), ex_out(E, P, Col), core_color(Col).
+
+    .decl band_depth(k: number)
+    band_depth(K) :- core_box.edge_min(_, _, K).
+}

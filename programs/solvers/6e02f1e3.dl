@@ -50,8 +50,6 @@
 
 .init params = Params
 
-// --- parse ---
-
 .comp Parse<Key> {
     .decl cell(k: Key, p: Position, col: Color)
 
@@ -85,8 +83,6 @@ figure_cell(P, Cv) :-
 
 out(P, Mk, $Figure(Cv)) :- figure_cell(P, Cv), params.mark(Mk).
 out(P, Bg, $Figure(Cv)) :- canvas(P, Cv), !figure_cell(P, Cv), params.bg(Bg).
-
-// --- determination ---
 
 .comp Determine {
     .init parse = Parse<Example>

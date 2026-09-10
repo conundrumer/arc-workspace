@@ -1,0 +1,91 @@
+// 65b59efc
+// draft
+// concept: decompose overlay scale markers stamp mapping
+// Dashed separator lines cut the scene into a lattice of N×N tiles: a band
+// of templates, one per strip, each drawn in its own color; a band of
+// markers; and a legend band with one color under each template. The
+// marker tiles of every strip overlay into one N×N arrangement. The output
+// is that arrangement scaled by N: a marked cell becomes the template
+// drawn in the marker's color, painted in the legend color under that
+// template; an unmarked cell stays bg.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    .decl sep(col: Color) sep(5).
+
+    // The edge the template band lies on.
+    .decl template_side(d: Dir) template_side(DIR_T).
+}
+
+.init params = Params
+
+// --- the scene and its lattice ---
+
+// The scene: the drawn content, cut from its bg canvas.
+.init scene = BoxFrame<Unit>
+scene.cell($U(), P) :- in(P, Col), !params.bg(Col).
+scene.grid($U(), P) :- in(P, _).
+
+.decl cell(p: Position, col: Color)
+cell(P_scene, Col) :- scene.inner($U(), P, P_scene), in(P, Col).
+
+// A separator line is dashed: the separator color runs along it, so two
+// adjacent separator cells lie on it. A lone separator cell is where a tile
+// line crosses one.
+.init lattice = DividerFrame<Unit>
+lattice.cell($U(), P) :- cell(P, _).
+lattice.divider($U(), A, L) :-
+    cell(P, Col), params.sep(Col),                       // a separator cell
+    axis_of(D, A_run), neighbor(P, D, Q), cell(Q, Col),  // beside another
+    perp(A_run, A), split(P, A, L, _).                   // the line they run along
+
+// Each tile viewed from its own box.
+.init tile = BoxFrame<Position>
+tile.cell(P_tile, P) :- lattice.tile_of($U(), P, P_tile).
+
+// A tile cell by its band along the template side's axis, its strip across,
+// and its position in the tile.
+.decl tile_cell(p_band: Position, p_strip: Position, p_intile: Position, col: Color)
+tile_cell(P_band, P_strip, P_intile, Col) :-
+    tile.inner(P_tile, P, P_intile), cell(P, Col),
+    params.template_side(D), axis_of(D, A), split(P_tile, A, P_band, P_strip).
+
+// --- the bands ---
+
+// The template band lies on the template side.
+.decl template_cell(p_strip: Position, p_intile: Position, col: Color)
+template_cell(P_strip, P_intile, Col) :-
+    tile_cell(P_band, P_strip, P_intile, Col), params.template_side(D), dist(P_band, D, 0).
+
+// The marker band follows the template band. Its tiles overlay: the strip
+// drops out.
+.decl marker_cell(p_intile: Position, col: Color)
+marker_cell(P_intile, Col) :-
+    tile_cell(P_band, _, P_intile, Col),
+    params.template_side(D), neighbor(P_band, D, P_tb), dist(P_tb, D, 0).
+
+// The legend band lies on the far edge. Where in the tile the color is
+// drawn is not read.
+.decl legend_cell(p_strip: Position, col: Color)
+legend_cell(P_strip, Col) :-
+    tile_cell(P_band, P_strip, _, Col), params.template_side(D), opposite(D, D2), dist(P_band, D2, 0).
+
+// --- output ---
+
+// A marked arrangement cell holds the template drawn in the marker's color,
+// painted in the legend color under that template.
+.decl painted(p_outer: Position, p_inner: Position, col: Color)
+painted(P_outer, P_inner, Col) :-
+    marker_cell(P_outer, C), !params.bg(C),         // a marker
+    template_cell(P_strip, P_inner, C),             // the template drawn in its color
+    legend_cell(P_strip, Col), !params.bg(Col).     // the legend color under that template
+
+.decl out(p: Position, col: Color)
+out(P_grid_out, Col) :-
+    marker_cell(P_outer, _), template_cell(_, P_inner, _),  // an arrangement cell, a template cell
+    concat_2d(P_outer, P_inner, 0, P_grid_out),             // the arrangement scaled by the tile
+    ( painted(P_outer, P_inner, Col)
+    ; !painted(P_outer, P_inner, _), params.bg(Col)
+    ).

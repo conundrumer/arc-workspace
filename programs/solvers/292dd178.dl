@@ -1,0 +1,70 @@
+// 292dd178
+// draft
+// concept: objects border walk cast
+// Rectangular outlines in params.wall each miss one cell of their perimeter.
+// The cells strictly inside an outline's bounding box take params.fill, which
+// also runs out through the missing perimeter cell, away from the box.
+//
+// $Flow — the fill is a substance. It pushes outward from the interior and
+//   params.wall stops it, so it escapes only where the perimeter is broken.
+// $Cast — the broken perimeter cell is a marker. It emits a ray outward along
+//   the side it sits on, across the whole frame.
+
+#include "../lib.dl"
+
+.type Choice = Flow {} | Cast {}
+
+.comp Params {
+    .decl wall(col: Color) wall(1).
+    .decl fill(col: Color) fill(2).
+}
+
+.init params = Params
+
+// --- boxes ---
+
+.decl wall_cell(p: Position)
+wall_cell(P) :- in(P, Col), params.wall(Col).
+
+.init comp = Components<Unit>
+comp.node($U(), P) :- wall_cell(P).
+
+.init box = Bbox<Ident>
+box.cell(Id, P) :- comp.label($U(), P, Id).
+
+// The box read over the whole grid, so its empty cells count too.
+.init bcells = BoxCells<Ident>
+bcells.box(Id, M) :- box.margin(Id, M).
+bcells.cell(Id, P) :- box.cell(Id, _), in(P, _).
+
+// The cells the fill covers.
+.decl painted(p: Position, ch: Choice)
+
+// --- Flow ---
+
+.init flow = Ray<Unit>
+flow.dir($U(), D) :- dir_elem(D).
+flow.cell($U(), P) :- in(P, _).
+flow.mark($U(), P) :- bcells.hole(_, P).
+flow.blocked($U(), P) :- wall_cell(P).
+
+painted(P, $Flow()) :- flow.clear($U(), P, _, _, _).
+
+// --- Cast ---
+
+.init cast = Ray<Dir>
+cast.dir(D, D) :- dir_elem(D).
+cast.cell(D, P) :- dir_elem(D), in(P, _).
+cast.mark(D, P) :- bcells.on_edge(_, P, D), !wall_cell(P).
+
+painted(P, $Cast()) :- bcells.hole(_, P).
+painted(P, $Cast()) :- cast.ray(_, P, _, _, _).
+
+// --- output ---
+
+.decl impl_choice(ch: Choice)
+impl_choice($Flow()). impl_choice($Cast()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- painted(P, Ch), params.fill(Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !painted(P, Ch).

@@ -1,0 +1,41 @@
+// 73ccf9c2
+// draft
+// concept: objects symmetry select crop
+// Several objects sit on params.bg. All but one are fixed by the symmetry
+// params.sym; the output crops the box of the one that is not.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    .decl sym(d: D4) sym(D4_LR).
+}
+
+.init params = Params
+
+// --- objects ---
+
+.init objs = Components8<Unit>
+objs.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+.decl object(id: Ident, p: Position)
+object(Id, P) :- objs.label($U(), P, Id).
+
+.init box = BoxFrame<Ident>
+box.cell(Id, P) :- object(Id, P).
+box.grid(Id, P) :- object(Id, _), in(P, _).
+
+// Each object's cells in its own box frame, and its self-maps under D4.
+.decl figure(id: Ident, p_inner: Position, col: Color)
+figure(Id, P_inner, Col) :- object(Id, P), box.inner(Id, P, P_inner), in(P, Col).
+
+.init inv = D4Map<Ident, Color>
+inv.src(Id, P, Col) :- figure(Id, P, Col).
+inv.dst(Id, P, Col) :- figure(Id, P, Col).
+
+// --- select and crop ---
+
+.decl out(p: Position, col: Color)
+out(P_intile, Col) :-
+    params.sym(F), inv.mismatch(Id, F),    // the object sym does not fix
+    box.inner(Id, P, P_intile), in(P, Col). // its box, cropped

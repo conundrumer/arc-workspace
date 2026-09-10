@@ -1,0 +1,90 @@
+// 58490d8a
+// draft
+// concept: markers objects count
+// A panel of params.panel sits on the grid and holds marker cells. Elsewhere the
+// grid holds shapes in the marker colors. The output is the panel, with each
+// marker's row carrying one copy of the marker per shape of its color. The copies
+// sit params.period apart and run toward params.spread_dir.
+//
+// The cases differ in where a row's run of copies starts:
+//   $FromMark — at the marker.
+//   $FromEdge — at the row's first slot, the one furthest against params.spread_dir.
+
+#include "../lib.dl"
+
+.type Choice = FromMark {} | FromEdge {}
+
+// A marker's run of copies, under one case.
+.type Run = [src: Position, ch: Choice]
+
+.comp Params {
+    .decl panel(col: Color) panel(0).
+
+    .decl spread_dir(d: Dir) spread_dir(DIR_R).
+
+    .decl period(k: number) period(2).
+}
+
+.init params = Params
+
+// --- panel ---
+
+.init box = BoxFrame<Unit>
+box.cell($U(), P) :- in(P, Col), params.panel(Col).
+box.grid($U(), P) :- in(P, _).
+
+.decl panel_cell(p_inner: Position)
+panel_cell(P_inner) :- box.inner($U(), _, P_inner).
+
+// A panel cell of another color, in the panel's own frame.
+.decl marker(p_inner: Position, col: Color)
+marker(P_inner, Col) :- box.inner($U(), P, P_inner), in(P, Col), !params.panel(Col).
+
+// --- shapes ---
+
+.init shapes = Components8<Color>
+shapes.node(Col, P) :- in(P, Col), marker(_, Col), !box.inside($U(), P).  // marker color, off the panel
+
+.init shape_count = Tally<Color, Ident>
+shape_count.item(Col, Id) :- shapes.label(Col, _, Id).
+
+// --- runs ---
+
+.init spread = Ray<Choice>
+spread.cell(Ch, P_inner) :- impl_choice(Ch), panel_cell(P_inner).
+spread.mark(Ch, P_inner) :- impl_choice(Ch), marker(P_inner, _).
+
+// The cells a marker reaches along its row, one every params.period.
+.decl slot(src: Position, p_inner: Position, k: number, ch: Choice)
+slot(Src, P_inner, K, Ch) :-
+    spread.ray(Ch, P_inner, _, K_ray, Src),
+    params.period(W), stride(K_ray, W, 0, _, 0),                           // whole periods from the marker
+    params.spread_dir(D), opposite(D, D_back), dist(P_inner, D_back, K).   // k = distance from the run's near side
+
+.init slot_rank = Ordinal<Run>
+slot_rank.idx_set([Src, Ch], K) :- slot(Src, _, K, Ch).
+
+.decl copy(p_inner: Position, col: Color, ch: Choice)
+copy(P_inner, Col, Ch) :-
+    slot(Src, P_inner, K, Ch), slot_rank.rank([Src, Ch], K, I),  // I = slots behind this one in the run
+    marker(Src, Col),
+    shape_count.tally(Col, N), I < N.                            // one copy per shape
+
+// --- FromMark ---
+
+spread.dir($FromMark(), D) :- params.spread_dir(D).
+
+// --- FromEdge ---
+
+spread.dir($FromEdge(), D) :- params.spread_dir(D0), ( D = D0 ; opposite(D0, D) ).
+
+// --- output ---
+
+.decl impl_choice(ch: Choice)
+impl_choice($FromMark()). impl_choice($FromEdge()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_inner, Col, Ch) :- copy(P_inner, Col, Ch).
+out(P_inner, Col, Ch) :-
+    panel_cell(P_inner), impl_choice(Ch),
+    !copy(P_inner, _, Ch), params.panel(Col).

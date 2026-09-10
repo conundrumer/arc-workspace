@@ -1,58 +1,81 @@
 // cbded52d
 // concept: decompose markers span cast
-// A separator lattice cuts the grid into a 3x3 tile arrangement over a base
+// A separator lattice cuts the grid into a tile arrangement over a base
 // color. Two same-color marks (non-base cells) at one intile position,
 // aligned along a tile row or column, act on their line: $Span fills the
 // tiles between them; $Line fills the whole line.
+//
+// Every grid of the task is 8×8, so the lattice reads two ways, and the
+// two readings cross with the two fills:
+//
+//   $Count() — params.arr tiles per axis.
+//   $Size()  — tiles of params.tile_dim, as many as the grid holds.
 
 #include "../lib.dl"
 
-.type Choice = Span {} | Line {}
+.type DecChoice = Count {} | Size {}
+.type Fill      = Span {} | Line {}
+.type Choice    = [d: DecChoice, f: Fill]
 
 .comp Params {
-    .decl arr(n: number) arr(3).
+    // --- shared ---
     .decl gap(g: number) gap(1).
     .decl base(col: Color) base(1).
+
+    // --- Count ---
+    .decl arr(n: number) arr(3).
+
+    // --- Size ---
+    .decl tile_dim(k: number) tile_dim(2).
 }
 
 .init params = Params
 
-// Grid cell within the tile arrangement.
-.decl tile(p_grid: Position, p_tile: Position, p_intile: Position)
-tile(P_grid, P_tile, P_intile) :-
-    in(P_grid, _), params.arr(N), params.gap(G),
-    divide_2d(P_grid, N, G, P_tile, P_intile).
+.decl dec_choice(dc: DecChoice)
+dec_choice($Count()). dec_choice($Size()).
 
-.type Mark = [col: Color, p_intile: Position]
+.decl fill_choice(f: Fill)
+fill_choice($Span()). fill_choice($Line()).
+
+// Grid cell within the tile arrangement.
+.decl tile(dc: DecChoice, p_grid: Position, p_tile: Position, p_intile: Position)
+tile($Count(), P_grid, P_tile, P_intile) :-
+    in(P_grid, _), params.arr(N), params.gap(G),                 // tile count
+    divide_2d(P_grid, N, G, P_tile, P_intile).
+tile($Size(), P_grid, P_tile, P_intile) :-
+    in(P_grid, _), params.tile_dim(K), params.gap(G),            // tile size
+    divide_by_size_2d(P_grid, K, G, P_tile, P_intile).
+
+.type Mark = [d: DecChoice, col: Color, p_intile: Position]
 
 .decl mark(m: Mark, p_tile: Position)
-mark([Col, P_intile], P_tile) :-
+mark([Dc, Col, P_intile], P_tile) :-
     in(P_grid, Col), !params.base(Col),
-    tile(P_grid, P_tile, P_intile).
+    tile(Dc, P_grid, P_tile, P_intile).
 
 .init btw = Between<Mark>
 btw.axis(M, A) :- mark(M, _), axis_elem(A).
-btw.cell(M, P_tile) :- mark(M, _), tile(_, P_tile, _).
+btw.cell([Dc, Col, P_intile], P_tile) :- mark([Dc, Col, P_intile], _), tile(Dc, _, P_tile, _).
 btw.mark(M, P_tile) :- mark(M, P_tile).
 
 .decl fill(ch: Choice, p_tile: Position, m: Mark)
 
 // --- Span ---
-fill($Span(), P_tile, M) :- btw.between(M, P_tile).
+fill([Dc, $Span()], P_tile, [Dc, Col, P_intile]) :- btw.between([Dc, Col, P_intile], P_tile).
 
 // --- Line ---
-fill($Line(), P_tile, M) :-
-    tile(_, P_tile, _),
-    mark(M, Q1), mark(M, Q2), Q1 != Q2,                            // two distinct marks
-    axis_elem(A), same_line(A, Q1, Q2), same_line(A, Q1, P_tile).  // P_tile on the marks' line
+fill([Dc, $Line()], P_tile, [Dc, Col, P_intile]) :-
+    tile(Dc, _, P_tile, _),
+    mark([Dc, Col, P_intile], Q1), mark([Dc, Col, P_intile], Q2), Q1 != Q2,  // two distinct marks
+    axis_elem(A), same_line(A, Q1, Q2), same_line(A, Q1, P_tile).            // P_tile on the marks' line
 
 .decl impl_choice(ch: Choice)
-impl_choice($Span()). impl_choice($Line()).
+impl_choice([Dc, F]) :- dec_choice(Dc), fill_choice(F).
 
 .decl filled(ch: Choice, p_grid: Position, col: Color)
-filled(Ch, P_grid, Col) :-
-    fill(Ch, P_tile, [Col, P_intile]),
-    tile(P_grid, P_tile, P_intile).
+filled([Dc, F], P_grid, Col) :-
+    fill([Dc, F], P_tile, [Dc, Col, P_intile]),
+    tile(Dc, P_grid, P_tile, P_intile).
 
 .decl out(p: Position, col: Color, c: Choice)
 out(P, Col, Ch) :- filled(Ch, P, Col).

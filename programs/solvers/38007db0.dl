@@ -1,0 +1,89 @@
+// 38007db0
+// draft
+// concept: decompose select
+// One-color lines cut the grid into a rectangular arrangement of tiles. A
+// band is the tiles at one place along params.stack_axis, and one tile of each
+// band stands out. The output shows those tiles with the separators around
+// them, each kept at its band's place along the stacking axis. Claims about
+// which tile stands out, tagged on out's Choice:
+//
+//   $BandUnique  — no equal tile in its own band.
+//   $GridUnique  — no equal tile anywhere in the grid.
+//   $GridDeviant — outside the grid's largest class of equal tiles.
+
+#include "../lib.dl"
+
+.type Choice = BandUnique {} | GridUnique {} | GridDeviant {}
+
+.comp Params {
+    .decl stack_axis(a: Axis) stack_axis(AXIS_V).
+}
+
+.init params = Params
+
+// A line of the grid, keyed by its axis and its axis-only position.
+.type Line = [a: Axis, l: Position]
+.init line_color = Unanimous<Line, Color>
+line_color.item([A, L], Col) :- in(P_grid, Col), axis_elem(A), split(P_grid, A, L, _).
+
+// The tiles the one-color lines cut out.
+.init cut = DividerFrame<Unit>
+cut.cell($U(), P_grid) :- in(P_grid, _).
+cut.divider($U(), A, L) :- line_color.value([A, L], _).
+
+.decl tile(t: Position)
+tile(T) :- cut.tile_of($U(), _, T).
+
+// A tile with the separator cells around it — the block the output shows.
+.init block = BoxFrame<Position>
+block.cell(T, P_grid) :-
+    cut.tile_of($U(), Q, T),                                   // a cell of the tile
+    ( P_grid = Q                                               // the tile itself
+    ; dir8_elem(D), neighbor(Q, D, P_grid), in(P_grid, _)      // the separators around it
+    ).
+
+// A tile's content, in the tile's own frame.
+.init tile_view = BoxFrame<Position>
+tile_view.cell(T, P_grid) :- cut.tile_of($U(), P_grid, T).
+
+.decl tile_content(t: Position, p_intile: Position, col: Color)
+tile_content(T, P_intile, Col) :- tile_view.inner(T, P_grid, P_intile), in(P_grid, Col).
+
+// Tiles holding the same content.
+.type TileCell = [p_intile: Position, col: Color]
+.init same = KeyedSetCompare<Position, Position, TileCell>
+same.pattern_member(T, [P_intile, Col]) :- tile_content(T, P_intile, Col).
+same.observed_member(T, [P_intile, Col]) :- tile_content(T, P_intile, Col).
+
+.decl odd(t: Position, ch: Choice)
+
+// --- BandUnique ---
+
+.decl band_peer(t: Position)
+band_peer(T) :-
+    same.equals(T, T2), T != T2,
+    params.stack_axis(A), perp(A, A2), same_line(A2, T, T2).    // in one band
+
+odd(T, $BandUnique()) :- tile(T), !band_peer(T).
+
+// --- GridUnique ---
+
+.decl grid_peer(t: Position)
+grid_peer(T) :- same.equals(T, T2), T != T2.
+
+odd(T, $GridUnique()) :- tile(T), !grid_peer(T).
+
+// --- GridDeviant ---
+
+// The grid's norm: the tiles in a largest class of equals.
+.init norm = Mode<Unit, Position, Position>
+norm.item($U(), T, T2) :- same.equals(T, T2).
+
+odd(T, $GridDeviant()) :- tile(T), !norm.mode($U(), T).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_out, Col, Ch) :-
+    odd(T, Ch), block.inner(T, P_grid, P_block), in(P_grid, Col),  // a cell of a standout block
+    params.stack_axis(A), split(P_grid, A, P_grid_along, _),       // along the stack: its place in the grid
+    split(P_block, A, _, P_block_across),                          // across: its place in the block
+    compose(P_grid_along, P_block_across, P_out).

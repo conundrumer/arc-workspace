@@ -1,0 +1,48 @@
+// 3bd292e8
+// draft
+// concept: objects border count rank
+// Cells of params.wall pass through. They cut the rest of the grid into regions,
+// and a wall cell between two region cells on one axis puts their regions on
+// opposite sides, so the regions two-color. The side that holds the region with
+// the fewest cells takes params.small_side, and the other side takes
+// params.other_side.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl wall(col: Color) wall(2).
+    .decl small_side(col: Color) small_side(5).
+    .decl other_side(col: Color) other_side(3).
+}
+
+.init params = Params
+
+.init region = Components<Unit>
+region.node($U(), P) :- in(P, Col), !params.wall(Col).
+
+// A wall cell lies between a cell of region A and a cell of region B.
+.decl across(a: Ident, b: Ident)
+across(A, B) :-
+    in(P, Col), params.wall(Col), opposite(D, D_opp),        // a wall cell, on one axis
+    neighbor(P, D, Q), neighbor(P, D_opp, Q_opp),            // the cells it lies between
+    region.label($U(), Q, A), region.label($U(), Q_opp, B),  // their regions
+    A != B.
+
+// Two crossings return to the side started from.
+.decl same_side(a: Ident, b: Ident)
+same_side(A, A) :- region.label($U(), _, A).
+same_side(A, C) :- same_side(A, B), across(B, X), across(X, C).
+
+.init area = Tally<Ident, Position>
+area.item(A, P) :- region.label($U(), P, A).
+
+.init smallest = ArgExtremes<Unit, Ident>
+smallest.cand($U(), A, N) :- area.tally(A, N).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- in(P, Col), params.wall(Col).
+out(P, Col) :-
+    region.label($U(), P, A), smallest.low($U(), B, _),  // P's region, the smallest region
+    ( same_side(A, B), params.small_side(Col)            // the side that holds it
+    ; !same_side(A, B), params.other_side(Col)           // the other side
+    ).

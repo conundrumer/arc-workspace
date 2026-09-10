@@ -1,0 +1,44 @@
+// 396d80d7
+// draft
+// concept: stamp
+// A figure of two colors sits on params.bg. Every bg cell that touches the figure
+// at a corner alone takes the core color: the figure color that no such cell
+// touches. The rest of the input passes through.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(7).
+}
+
+.init params = Params
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.bg(Col).
+
+.decl beside(p: Position, d: Dir8, col: Color)
+beside(P, D, Col) :-
+    in(P, C_bg), params.bg(C_bg),                  // a bg cell
+    dir8_elem(D), neighbor(P, D, Q), ink(Q, Col).  // with ink one step toward D
+
+// Touching the figure along a side.
+.decl side(p: Position)
+side(P) :- dir_elem(D), beside(P, D, _).
+
+// Touching the figure at a corner and nowhere else.
+.decl corner_only(p: Position)
+corner_only(P) :- beside(P, _, _), !side(P).
+
+// The shell is what sticks out at the corners.
+.decl shell(col: Color)
+shell(Col) :- corner_only(P), beside(P, _, Col).
+
+// The core is the figure's other color.
+.decl core(col: Color)
+core(Col) :- ink(_, Col), !shell(Col).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, C_in),
+    ( corner_only(P), core(Col)       // the corner cells take the core color
+    ; !corner_only(P), Col = C_in ).  // the rest passes through

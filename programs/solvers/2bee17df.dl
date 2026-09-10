@@ -1,0 +1,57 @@
+// 2bee17df
+// draft
+// concept: lines span rank
+// The grid holds an open region of params.open, walled off by other colors. Rows
+// and columns of that region are painted params.fill when they qualify:
+//
+//   $Clear  — every cell of the line inside the region's bounding box is open.
+//   $Widest — the line carries the most open cells of its axis.
+
+#include "../lib.dl"
+
+.type Choice = Clear {} | Widest {}
+
+.comp Params {
+    .decl open(col: Color) open(0).
+    .decl fill(col: Color) fill(3).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Clear()). impl_choice($Widest()).
+
+.decl open_cell(p: Position)
+open_cell(P) :- in(P, Col), params.open(Col).
+
+// p's line on axis a, labelled by p's component along a.
+.decl line_of(p: Position, a: Axis, l: Position)
+line_of(P, A, L) :- in(P, _), axis_elem(A), split(P, A, L, _).
+
+.decl painted(p: Position, ch: Choice)
+
+// --- Clear ---
+
+.init box = Bbox<Unit>
+box.cell($U(), P) :- open_cell(P).
+box.grid($U(), P) :- in(P, _).
+
+// A line carrying a wall cell inside the box.
+.decl blocked(l: Position)
+blocked(L) :- box.inside($U(), P), !open_cell(P), line_of(P, _, L).
+
+painted(P, $Clear()) :- box.inside($U(), P), line_of(P, _, L), !blocked(L).
+
+// --- Widest ---
+
+.init widest = Mode<Axis, Position, Position>
+widest.item(A, L, P) :- open_cell(P), line_of(P, A, L).
+
+painted(P, $Widest()) :- open_cell(P), line_of(P, A, L), widest.mode(A, L).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col_out, Ch) :-
+    in(P, Col), impl_choice(Ch),               // grid cell, per case
+    ( painted(P, Ch), params.fill(Col_out)     // on a qualifying line
+    ; !painted(P, Ch), Col_out = Col           // elsewhere — passes
+    ).

@@ -1,0 +1,61 @@
+// 6ffbe589
+// draft
+// concept: objects crop count d4 merge select
+// One figure, drawn in several colors with one-cell gaps in its lines, and
+// stray cells far from it. Cells with at most one cell between them cluster;
+// the figure is the largest cluster, and the output is the crop of its
+// bounding box. Each color of the figure turns about the crop's center by one
+// quarter turn in params.sense per stray cell of that color outside the box.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+    .decl sense(s: Sense) sense(SENSE_CW).
+}
+
+.init params = Params
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.bg(Col).
+
+// Cells cluster across a gap of at most one cell: a cluster step is two
+// steps in any directions.
+.init cluster = Components8<Unit>
+cluster.node($U(), P) :- ink(P, _).
+cluster.step(S) :-
+    dir8_elem(D1), step_delta(D1, S1), dir8_elem(D2), step_delta(D2, S2),
+    compose(S1, S2, S).
+
+// The figure is the largest cluster.
+.init size = Tally<Ident, Position>
+size.item(Id, P) :- cluster.label($U(), P, Id).
+
+.init largest = ArgExtremes<Unit, Ident>
+largest.cand($U(), Id, N) :- size.tally(Id, N).
+
+.init box = BoxFrame<Unit>
+box.cell($U(), P) :- largest.high($U(), Id, _), cluster.label($U(), P, Id).
+box.grid($U(), P) :- in(P, _).
+
+// The crop, in its own frame.
+.decl crop(p_inner: Position, col: Color)
+crop(P_inner, Col) :- box.inner($U(), P, P_inner), in(P, Col).
+
+// Quarter turns per figure color: its stray cells outside the box.
+.init turns = Tally<Color, Position>
+turns.item(Col, P) :- ink(P, Col), !box.inside($U(), P).
+turns.domain(Col) :- crop(_, Col), !params.bg(Col).
+
+// The rotation: each crop cell steps one quarter turn about the center.
+.init rot = CycleWalk<Unit, Position>
+rot.succ($U(), P, P2) :- crop(P, _), params.sense(S), rotation(S, R), apply(R, P, P2).
+rot.step($U(), N) :- turns.tally(_, N).
+
+// Where each color lands after its turns.
+.decl landed(p: Position, col: Color)
+landed(P, Col) :- crop(P0, Col), turns.tally(Col, N), rot.walk($U(), P0, N, P).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- landed(P, Col).
+out(P, Col) :- crop(P, _), !landed(P, _), params.bg(Col).

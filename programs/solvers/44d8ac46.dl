@@ -1,0 +1,137 @@
+// 44d8ac46
+// draft
+// concept: objects enclose symmetry classify
+// Hollow ink shapes sit on params.bg, each holding one or more empty regions. Some
+// regions take params.fill; every other cell passes through. In every pair the
+// filled regions are the solid squares.
+//
+// Choice = [r, t] crosses two independent hypotheses:
+//
+//   r (what a hole is):
+//     $Enclose — a bg region the grid edge cannot reach.
+//     $Box     — a bg region inside a shape's bounding box.
+//   t (which holes take the fill):
+//     $Block   — the hole covers its own box, and that box is square.
+//     $Sym     — the hole is invariant under params.hole_sym.
+
+#include "../lib.dl"
+
+.type Region = Box {} | Enclose {}
+.type Test   = Block {} | Sym {}
+.type Choice = [r: Region, t: Test]
+
+.type Hole = [r: Region, id: Ident]
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    .decl fill(col: Color) fill(2).
+
+    // --- $Sym ---
+    // The group a filled hole is invariant under.
+    .decl hole_sym(s: Sym) hole_sym(SYM_D4).
+}
+
+.init params = Params
+
+.decl bg_cell(p: Position)
+bg_cell(P) :- in(P, Col), params.bg(Col).
+
+// A cell set seen from its own box, where its symmetries live.
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position)  // input
+    .decl grid(key: Key, p: Position)  // input
+
+    .init box = BoxFrame<Key>
+    box.cell(K, P) :- cell(K, P).
+    box.grid(K, P) :- grid(K, P).
+
+    .init sym = D4Map<Key, Unit>
+    sym.src(K, P_inner, $U()) :- cell(K, P), box.inner(K, P, P_inner).
+    sym.dst(K, P, V) :- sym.src(K, P, V).
+}
+
+// --- the holes ---
+
+.decl hole(h: Hole, p: Position)
+
+// --- $Enclose ---
+
+.init closed = Closed<Unit>
+closed.cell($U(), P) :- bg_cell(P).
+
+hole([$Enclose(), Id], P) :- closed.region($U(), P, Id).
+
+// --- $Box ---
+
+.init shape = Components<Unit>
+shape.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+.init shape_box = Bbox<Ident>
+shape_box.cell(Id, P) :- shape.label($U(), P, Id).
+shape_box.grid(Id, P) :- shape.label($U(), _, Id), in(P, _).
+
+.init boxed = Components<Unit>
+boxed.node($U(), P) :- shape_box.inside(_, P), bg_cell(P).
+
+hole([$Box(), Id], P) :- boxed.label($U(), P, Id).
+
+// --- the fill test ---
+
+.init view = Parse<Hole>
+view.cell(H, P) :- hole(H, P).
+view.grid(H, P) :- hole(H, _), in(P, _).
+
+.decl filled(h: Hole, t: Test)
+
+// --- $Block ---
+
+// A cell of the hole's box the hole leaves out.
+.decl box_gap(h: Hole)
+box_gap(H) :- view.box.inside(H, P), !hole(H, P).
+
+filled(H, $Block()) :- view.box.extents(H, _, N, N), !box_gap(H).
+
+// --- $Sym ---
+
+// A member of the group the hole does not survive.
+.decl sym_gap(h: Hole)
+sym_gap(H) :- params.hole_sym(S), sym_member(S, D), view.sym.mismatch(H, D).
+
+filled(H, $Sym()) :- hole(H, _), !sym_gap(H).
+
+// --- output ---
+
+.decl impl_choice(ch: Choice)
+impl_choice([$Box(), $Block()]).
+impl_choice([$Box(), $Sym()]).
+impl_choice([$Enclose(), $Block()]).
+impl_choice([$Enclose(), $Sym()]).
+
+.decl painted(p: Position, ch: Choice)
+painted(P, [R, T]) :- hole([R, Id], P), filled([R, Id], T).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- painted(P, Ch), params.fill(Col).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !painted(P, Ch).
+
+.comp Determine {
+    .type Hole = [e: Example, id: Ident]
+
+    // The cells the output fills; their components are the filled holes.
+    .decl changed(e: Example, p: Position)
+    changed(E, P) :- ex_in(E, P, C_in), ex_out(E, P, Col), Col != C_in.
+
+    .init regions = Components<Example>
+    regions.node(E, P) :- changed(E, P).
+
+    .init view = Parse<Hole>
+    view.cell([E, Id], P) :- regions.label(E, P, Id).
+
+    // The transforms every filled hole survives, named as a subgroup.
+    .init named = KeyedSetCompare<Unit, Sym, D4>
+    named.pattern_member(S, D) :- sym_member(S, D).
+    named.observed_member($U(), D) :- d4_elem(D), !view.sym.mismatch(_, D).
+
+    .decl hole_sym(s: Sym)
+    hole_sym(S) :- named.equals($U(), S).
+}

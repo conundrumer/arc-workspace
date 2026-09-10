@@ -1,0 +1,88 @@
+// 269e22fb
+// draft
+// concept: grow lookup d4
+
+// One chart of ink and blank cells underlies every pair. The input is a
+// window cut from the chart in some pose, its ink and blank rendered in the
+// pair's two colors; the output is the whole chart in that pose and
+// rendering. Nothing marks the pose or the color roles, so the program takes
+// the rendering the input lays onto without contradiction.
+
+#include "../lib.dl"
+
+.comp Params {
+    RIGID(chart,
+        .decl ink(p: Position)
+        GRID_MASK_20x20(ink,
+            1, 1, _, _, _, _, _, _, _, _, _, _, _, _, _, 1, 1, _, _, _,
+            1, 1, 1, 1, 1, 1, _, _, _, _, _, _, _, _, _, 1, 1, _, _, _,
+            1, 1, 1, 1, 1, 1, 1, _, _, _, _, _, _, _, _, 1, 1, 1, _, _,
+            1, 1, _, _, _, 1, 1, 1, _, _, _, _, _, _, _, 1, 1, 1, _, _,
+            _, _, _, _, _, _, 1, 1, 1, _, _, _, _, _, 1, 1, 1, 1, 1, _,
+            _, _, _, _, _, _, _, 1, 1, 1, _, _, _, _, 1, _, _, 1, 1, _,
+            _, _, _, _, _, _, _, _, 1, 1, _, _, 1, 1, 1, _, _, 1, 1, _,
+            _, _, _, _, _, _, _, _, _, 1, _, _, 1, _, 1, _, _, 1, 1, _,
+            _, _, _, _, _, _, _, _, _, 1, 1, 1, 1, _, 1, _, _, 1, 1, _,
+            _, 1, 1, 1, 1, 1, 1, 1, 1, 1, _, 1, 1, _, 1, _, _, 1, 1, _,
+            _, 1, _, _, _, _, _, _, _, 1, 1, 1, 1, _, 1, _, _, 1, 1, _,
+            _, 1, 1, 1, 1, 1, 1, 1, 1, 1, _, _, 1, _, 1, _, _, 1, 1, _,
+            _, 1, _, 1, _, _, _, _, _, 1, _, _, 1, 1, 1, _, _, 1, 1, _,
+            1, 1, 1, _, 1, 1, 1, 1, 1, 1, _, _, _, _, 1, _, _, 1, 1, _,
+            _, 1, _, 1, 1, _, _, _, _, 1, _, _, _, _, 1, 1, 1, 1, 1, _,
+            1, 1, 1, _, 1, _, _, _, _, 1, _, _, _, 1, 1, _, 1, 1, _, _,
+            _, 1, _, 1, 1, _, _, _, _, 1, _, _, _, 1, _, _, _, 1, 1, _,
+            1, 1, 1, _, 1, _, _, _, _, 1, _, _, _, 1, 1, _, _, _, 1, 1,
+            _, 1, _, 1, 1, _, _, _, 1, _, 1, _, _, _, 1, _, 1, 1, 1, _,
+            1, 1, 1, _, _, _, _, 1, _, _, _, 1, _, _, 1, 1, 1, _, _, _)
+    )
+}
+
+.init params = Params
+
+// The chart's canvas — the frame its cells are stated in.
+.init canvas = Frame2D<Unit>
+canvas.extent($U(), A, N) :- params.chart_ink(_, P), axis_elem(A), axis_dim(P, A, N).
+
+// A rendering of the chart: a pose, and an assignment of the pair's two
+// colors to the chart's two cell classes.
+.type Render = [ink: Color, blank: Color, d: D4]
+
+.decl render(r: Render)
+render([Ink, Blank, D]) :- in(_, Ink), in(_, Blank), Ink != Blank, d4_elem(D).
+
+// The chart rendered: every canvas cell in the color its class takes.
+.decl chart(r: Render, p: Position, col: Color)
+chart([Ink, Blank, D], P, Col) :-
+    render([Ink, Blank, D]), canvas.cell($U(), P),  // a rendering, cell by cell
+    ( params.chart_ink(D, P), Col = Ink             // ink
+    ; !params.chart_ink(D, P), Col = Blank          // blank
+    ).
+
+// Where the input lays onto the rendered chart, cell for cell.
+.init occ = Occurrences<Render, Color>
+occ.cell(R, P, Col) :- chart(R, P, Col).
+occ.shape(R, P, Col) :- render(R), in(P, Col).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    occ.occurrence(R, _),  // the rendering the input fits
+    chart(R, P, Col).      // shown whole
+
+.comp Determine {
+    // Every output is the whole chart, so one of them serves, in its own pose.
+    .init pick = Canon<Example>
+    pick.equiv(E, E2) :- ex_out(E, _, _), ex_out(E2, _, _).
+
+    .decl witness(p: Position, col: Color)
+    witness(P, Col) :- pick.rep(E, E), ex_out(E, P, Col).
+
+    // Ink is the rarer of the witness's two colors.
+    .init size = Tally<Color, Position>
+    size.item(Col, P) :- witness(P, Col).
+
+    .init rare = ArgExtremes<Unit, Color>
+    rare.cand($U(), Col, N) :- size.tally(Col, N).
+
+    .decl chart_ink(p: Position)
+    chart_ink(P) :- rare.low($U(), Col, _), witness(P, Col).
+}

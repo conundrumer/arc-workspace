@@ -1,0 +1,49 @@
+// 82819916
+// draft
+// concept: lines mapping induce
+// One line is complete, inked across its whole extent: the template. Every
+// other inked line is a stub: a few cells, the rest blank. Each inked line
+// is a recoloring of the template, demonstrated by its inked cells: at
+// each, the template's color maps to the line's own. The output draws
+// every inked line as the template through its recoloring.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+    // Lines run along this axis.
+    .decl axis(a: Axis) axis(AXIS_H).
+}
+
+.init params = Params
+
+// --- lines ---
+
+.decl cell_split(p: Position, col: Color, p_along: Position, p_line: Position)
+cell_split(P, Col, P_along, P_line) :- in(P, Col), params.axis(A), split(P, A, P_along, P_line).
+
+.decl inked(p_line: Position)
+inked(P_line) :- cell_split(_, Col, _, P_line), !params.bg(Col).
+
+.decl blank(p_line: Position)
+blank(P_line) :- cell_split(_, Col, _, P_line), params.bg(Col).
+
+// The template's color at each position along the line: the template is
+// the line with no blank cell.
+.decl template_color(p_along: Position, c: Color)
+template_color(P_along, C) :- cell_split(_, C, P_along, P_tpl), !blank(P_tpl).
+
+// --- recoloring ---
+
+// The recoloring an inked line demonstrates: at each of its inked cells,
+// the template's color there maps to its own.
+.decl recolor(p_line: Position, c_tpl: Color, c: Color)
+recolor(P_line, C_tpl, C) :-
+    cell_split(_, C, P_along, P_line), !params.bg(C), template_color(P_along, C_tpl).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    cell_split(P, C_in, P_along, P_line),
+    ( !inked(P_line), Col = C_in                                     // blank line
+    ; template_color(P_along, C_tpl), recolor(P_line, C_tpl, Col)   // recolored template
+    ).

@@ -1,0 +1,42 @@
+// 252143c9
+// draft
+// concept: decompose markers cast
+// A bg cross through the grid center cuts four quadrants, each speckled in
+// its own color. The center cell of the cross carries one of those four
+// colors. The output erases the speckle and casts that color as a diagonal
+// ray from the center toward the matching quadrant's corner.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(7).
+}
+
+.init params = Params
+
+.init dp = DiagPlacement<Unit>
+dp.cell($U(), P) :- in(P, _).
+
+// The cross's center.
+.decl center(p: Position)
+center(P) :- in(P, _), centered(P).
+
+// Each quadrant's speckle color.
+.decl quad_color(diag: DiagDir, col: Color)
+quad_color(Diag, Col) :- in(P, Col), !params.bg(Col), dp.quadrant($U(), P, Diag).
+
+// The quadrant the center's color names — the ray's direction and its paint.
+.decl target(diag: DiagDir, col: Color)
+target(Diag, Col) :- center(P), in(P, Col), quad_color(Diag, Col).
+
+.init ray = Ray<Unit>
+ray.dir($U(), D)  :- target(D, _).
+ray.cell($U(), P) :- in(P, _).
+ray.mark($U(), P) :- center(P).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, _),
+    ( ray.ray($U(), P, _, _, _), target(_, Col)    // the cast ray
+    ; !ray.ray($U(), P, _, _, _), params.bg(Col)   // erased elsewhere
+    ).

@@ -1,0 +1,80 @@
+// 2faf500b
+// draft
+// concept: objects markers decompose move
+// Shapes lie on a bg field. Each shape carries marks that cut it: on one of
+// the two axes, every line of the shape holds a mark. The shape comes apart
+// at that cut — each part steps one cell outward along the axis — and the
+// marks are dropped. Two parses of where the cut runs, tagged on out's
+// Choice:
+//
+//   $Marks()   — line by line, at that line's own mark.
+//   $Midline() — straight across the middle of the shape.
+//
+// Every shape here is twice as long on the cut axis as across it, and every
+// mark sits on one of its line's two middle cells, so the parses agree.
+
+#include "../lib.dl"
+
+.type Choice = Marks {} | Midline {}
+
+.decl impl_choice(ch: Choice)
+impl_choice($Marks()). impl_choice($Midline()).
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+
+    .decl mark(col: Color) mark(6).
+}
+
+.init params = Params
+
+// --- the shapes and their cut axis ---
+
+.init shapes = Components<Unit>
+shapes.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+.decl shape(id: Ident, p: Position)
+shape(Id, P) :- shapes.label($U(), P, Id).
+
+.decl mark_cell(id: Ident, p: Position)
+mark_cell(Id, P) :- shape(Id, P), in(P, Col), params.mark(Col).
+
+// A cell and the mark of its own shape on its line along A.
+.decl cut_cell(id: Ident, a: Axis, p: Position, m: Position)
+cut_cell(Id, A, P, M) :- shape(Id, P), mark_cell(Id, M), axis_elem(A), same_line(A, P, M).
+
+// A cell the marks miss — the defect that rules an axis out.
+.decl uncut_cell(id: Ident, a: Axis)
+uncut_cell(Id, A) :- shape(Id, P), axis_elem(A), !cut_cell(Id, A, P, _).
+
+.decl cut_axis(id: Ident, a: Axis)
+cut_axis(Id, A) :- shape(Id, _), axis_elem(A), !uncut_cell(Id, A).
+
+// Where an ordinary cell lands: one step out past the cut it lies behind.
+.decl moved(p: Position, col: Color, ch: Choice)
+
+// --- Marks ---
+
+moved(Q, Col, $Marks()) :-
+    cut_axis(Id, A), cut_cell(Id, A, P, M),                   // the mark cutting the cell's line
+    in(P, Col), !params.mark(Col),                            // an ordinary cell
+    axis_of(D, A), nearer(D, P, M),                           // the cell lies past that mark toward D
+    neighbor(P, D, Q).                                        // and steps one further
+
+// --- Midline ---
+
+.init box = BoxFrame<Ident>
+box.cell(Id, P) :- shape(Id, P).
+
+moved(Q, Col, $Midline()) :-
+    box.inner(Id, P, P_inner), in(P, Col), !params.mark(Col),      // an ordinary cell, read from its box
+    cut_axis(Id, A), axis_of(D, A),                                // a direction along the cut axis
+    dist_pair(P_inner, D, K, K_far), K < K_far,                    // the cell lies in the half toward D
+    neighbor(P, D, Q).                                             // and steps one further
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    in(P, _), impl_choice(Ch),
+    ( moved(P, Col, Ch)                 // a cell that landed here
+    ; !moved(P, _, Ch), params.bg(Col)  // bg elsewhere
+    ).

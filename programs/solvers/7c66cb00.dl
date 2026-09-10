@@ -1,0 +1,89 @@
+// 7c66cb00
+// draft
+// concept: lines objects markers move mapping
+// Full-width bands lie toward one edge of the grid: each is a run of lines
+// with a uniform interior color and one other color at both ends. Shapes sit
+// on a background elsewhere. Each shape falls toward that edge into the band
+// whose interior color is the shape's own, comes to rest on the band's far
+// edge in its own columns, and takes the band's end color. Everything outside
+// the bands becomes background.
+
+#include "../lib.dl"
+
+.comp Params {
+    // The edge the shapes fall toward.
+    .decl gravity(d: Dir)
+    gravity(DIR_B).
+}
+
+.init params = Params
+
+// --- bands ---
+
+// A cell's line across the fall.
+.decl line_of(p: Position, l: Position)
+line_of(P, L) :- in(P, _), params.gravity(D), axis_of(D, A), split(P, A, L, _).
+
+.decl line_end(p: Position)
+line_end(P) :- in(P, _), params.gravity(D), perp_dir(D, E), dist(P, E, 0).
+
+.init ends = Unanimous<Position, Color>
+ends.item(L, Col) :- in(P, Col), line_end(P), line_of(P, L).
+
+.init interior = Unanimous<Position, Color>
+interior.item(L, Col) :- in(P, Col), !line_end(P), line_of(P, L).
+
+// A band line: a uniform interior with ends of one other color.
+.decl band_line(l: Position, c_end: Color, c_fill: Color)
+band_line(L, C_end, C_fill) :-
+    ends.value(L, C_end), interior.value(L, C_fill), C_end != C_fill.
+
+.decl band_cell(c_fill: Color, p: Position)
+band_cell(C_fill, P) :- band_line(L, _, C_fill), line_of(P, L).
+
+.init band_box = Bbox<Color>
+band_box.cell(C_fill, P) :- band_cell(C_fill, P).
+
+// --- shapes ---
+
+.decl loose(p: Position, col: Color)
+loose(P, Col) :- in(P, Col), !band_cell(_, P).
+
+.init bg_mode = Mode<Unit, Color, Position>
+bg_mode.item($U(), Col, P) :- loose(P, Col).
+
+.decl bg(col: Color)
+bg(Col) :- bg_mode.mode($U(), Col).
+
+.init shapes = Components<Color>
+shapes.node(Col, P) :- loose(P, Col), !bg(Col).
+
+.decl shape(id: Ident, p: Position, col: Color)
+shape(Id, P, Col) :- shapes.label(Col, P, Id).
+
+.init shape_box = Bbox<Ident>
+shape_box.cell(Id, P) :- shape(Id, P, _).
+
+// --- fall ---
+
+// How far a shape falls: its leading cells land on the far edge of its band,
+// in their own columns.
+.decl fall(id: Ident, delta: Shift)
+fall(Id, Delta) :-
+    params.gravity(D), shape_box.edge_cell(Id, P, D),    // a leading cell of the shape
+    shape(Id, _, Col), band_box.edge_cell(Col, Q, D),    // the far edge of its band
+    axis_of(D, A), same_line(A, P, Q),                   // in the same column
+    displacement(P, Q, Delta).
+
+.decl landed(p: Position, col: Color)
+landed(P_out, C_end) :-
+    shape(Id, P, Col), fall(Id, Delta), compose(P, Delta, P_out),    // a shape cell, fallen
+    band_cell(Col, P_out), band_line(_, C_end, Col).                 // cut to its band, in its end color
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, C_in),
+    ( landed(P, Col)                                 // a fallen shape cell
+    ; !landed(P, _), band_cell(_, P), Col = C_in     // the band as it was
+    ; !band_cell(_, P), bg(Col)                      // cleared
+    ).

@@ -114,8 +114,6 @@ out(P, Col) :-
     ; in(P, Col), !assembly(_, P)      // untouched
     ).
 
-// --- determination ---
-
 .comp Determine {
     .decl edge_color(col: Color)
     edge_color(Col) :- ex_in(_, P, Col), dir_elem(D), dist(P, D, 0).

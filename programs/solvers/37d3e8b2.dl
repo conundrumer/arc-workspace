@@ -1,0 +1,137 @@
+// 37d3e8b2
+// draft
+// concept: objects enclose count lookup
+// Ink objects lie on the background. Each object is repainted with the color
+// its hole count selects.
+//
+// Three hypotheses on what a hole is:
+//   $Joint — a background region the grid edge cannot reach. Two objects can
+//            close one together, and it counts for both.
+//   $Own   — a region the grid edge cannot reach with only that object solid.
+//   $Box   — a background region inside the object's bounding box, closed off
+//            or not.
+// The count tables are per-case: a task that separates the hypotheses counts an
+// object's holes differently under each, so the values can differ.
+
+#include "../lib.dl"
+
+.type Choice = Joint {} | Own {} | Box {}
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+
+    // --- $Joint ---
+
+    .decl joint_count_color(n: number, col: Color)
+    joint_count_color(1, 1). joint_count_color(2, 2). joint_count_color(3, 3). joint_count_color(4, 7).
+
+    // --- $Own ---
+
+    .decl own_count_color(n: number, col: Color)
+    own_count_color(1, 1). own_count_color(2, 2). own_count_color(3, 3). own_count_color(4, 7).
+
+    // --- $Box ---
+
+    .decl box_count_color(n: number, col: Color)
+    box_count_color(1, 1). box_count_color(2, 2). box_count_color(3, 3). box_count_color(4, 7).
+}
+
+.init params = Params
+
+.comp Parse<Key> {
+    .type KObj = [k: Key, o: Ident]
+
+    .decl cell(key: Key, p: Position, col: Color)  // input
+
+    .init objs = Components<Key>
+    objs.node(K, P) :- cell(K, P, Col), !params.bg(Col).
+
+    .decl bg_cell(key: Key, p: Position)
+    bg_cell(K, P) :- cell(K, P, Col), params.bg(Col).
+
+    // --- $Joint ---
+
+    // The background, with all ink solid.
+    .init off_ink = Closed<Key>
+    off_ink.cell(K, P) :- bg_cell(K, P).
+
+    // A closed region counts for every object it touches.
+    .init joint_holes = Tally<KObj, Ident>
+    joint_holes.item([K, O], Id) :-
+        off_ink.region(K, P, Id),        // cell of a closed region
+        dir_elem(D), neighbor(P, D, Q),
+        objs.label(K, Q, O).             // in an object
+
+    // --- $Own ---
+
+    // The cells left when only O is solid — other objects among them.
+    .init off_obj = Closed<KObj>
+    off_obj.cell([K, O], P) :- cell(K, P, _), objs.label(K, _, O), !objs.label(K, P, O).
+
+    .init own_holes = Tally<KObj, Ident>
+    own_holes.item(KO, Id) :- off_obj.region(KO, _, Id).
+
+    // --- $Box ---
+
+    // Each object's own extent.
+    .init box = Bbox<KObj>
+    box.cell([K, O], P) :- objs.label(K, P, O).
+    box.grid([K, O], P) :- cell(K, P, _), objs.label(K, _, O).
+
+    // The background inside that extent.
+    .init box_regions = Components<KObj>
+    box_regions.node([K, O], P) :- box.inside([K, O], P), bg_cell(K, P).
+
+    .init box_holes = Tally<KObj, Ident>
+    box_holes.item(KO, Id) :- box_regions.label(KO, _, Id).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Joint()). impl_choice($Own()). impl_choice($Box()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- in(P, Col), params.bg(Col), impl_choice(Ch).
+
+// --- $Joint ---
+
+out(P, Col, $Joint()) :-
+    parse.objs.label($U(), P, O),                // object cell
+    parse.joint_holes.tally([$U(), O], N),       // its hole count
+    params.joint_count_color(N, Col).
+
+// --- $Own ---
+
+out(P, Col, $Own()) :-
+    parse.objs.label($U(), P, O),                // object cell
+    parse.own_holes.tally([$U(), O], N),         // its hole count
+    params.own_count_color(N, Col).
+
+// --- $Box ---
+
+out(P, Col, $Box()) :-
+    parse.objs.label($U(), P, O),                // object cell
+    parse.box_holes.tally([$U(), O], N),         // its hole count
+    params.box_count_color(N, Col).
+
+.comp Determine {
+    .init ex = Parse<Example>
+    ex.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    .decl joint_count_color(n: number, col: Color)
+    joint_count_color(N, Col) :-
+        ex.objs.label(E, P, O), ex.joint_holes.tally([E, O], N),    // object with its hole count
+        ex_out(E, P, Col).                                          // the color it is painted
+
+    .decl own_count_color(n: number, col: Color)
+    own_count_color(N, Col) :-
+        ex.objs.label(E, P, O), ex.own_holes.tally([E, O], N),      // object with its hole count
+        ex_out(E, P, Col).                                          // the color it is painted
+
+    .decl box_count_color(n: number, col: Color)
+    box_count_color(N, Col) :-
+        ex.objs.label(E, P, O), ex.box_holes.tally([E, O], N),      // object with its hole count
+        ex_out(E, P, Col).                                          // the color it is painted
+}

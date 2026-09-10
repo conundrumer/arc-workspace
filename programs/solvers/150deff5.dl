@@ -51,8 +51,6 @@ out(P, Col) :-
     forcing.forced($U(), B), covers(B, P),                  // a cell of a forced piece
     occ.occurrence([Id, _], B), params.piece_color(Id, Col).  // in its piece's color
 
-// --- determination ---
-
 // Pieces are labeled by their color: this task's pieces are color-distinct,
 // and Ident numbering is arbitrary.
 .comp Determine {

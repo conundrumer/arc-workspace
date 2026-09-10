@@ -1,0 +1,50 @@
+// 7666fa5d
+// draft
+// concept: markers span
+// Non-bg marks form 8-connected diagonal lines. Between two lines, along the
+// fill axis across them, bg cells take the fill color; the marks stay. A
+// line steps past bg cells, and those cells count as line cells, so the
+// fill covers the whole band the lines bound.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(c: Color) bg(8).
+    .decl fill(c: Color) fill(2).
+
+    // The axis the fill runs along; the mark lines run across it.
+    .decl fill_axis(da: DiagAxis) fill_axis(DAXIS_DG).
+}
+
+.init params = Params
+
+.decl mark(p: Position)
+mark(P) :- in(P, Col), !params.bg(Col).
+
+// A cell a line steps past: marks across both cardinals of one corner, so
+// the two marks are diagonal neighbors.
+.decl step(p: Position)
+step(P) :-
+    in(P, _), diag_dirs(G, _, D1, D2),
+    neighbor(P, D1, Q1), mark(Q1),
+    neighbor(P, D2, Q2), mark(Q2).
+
+// The lines as walls: marks and the cells they step past, over the bg cells.
+.init wall = Between<Unit>
+wall.axis($U(), Da) :- params.fill_axis(Da).
+wall.cell($U(), P) :- in(P, Col), params.bg(Col).
+wall.mark($U(), P) :- mark(P).
+wall.mark($U(), P) :- step(P).
+
+// Strictly between walls: a wall cell beyond P on both sides. `wall.between`
+// reads a wall cell as between itself, which would fill the step cells on
+// the outer side of a line.
+.decl strict(p: Position)
+strict(P) :-
+    dir8_opposite(D, O),
+    wall.ray($U(), P, D, K, _), K != 0,
+    wall.ray($U(), P, O, K2, _), K2 != 0.
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- strict(P), params.fill(Col).
+out(P, Col) :- in(P, Col), !strict(P).

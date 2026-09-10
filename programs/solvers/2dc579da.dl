@@ -1,0 +1,66 @@
+// 2dc579da
+// draft
+// concept: decompose crop select
+// A cross cuts the grid into equal quadrants. Three are blank and the fourth
+// holds one off-color cell; the output is that quadrant. Three cases of what
+// makes it special, differing in what the quadrant is compared against:
+//
+// $Clash — itself: it is not all one color.
+// $Ink   — the grid: it holds a cell off the commonest color.
+// $Odd   — the other quadrants: none of them matches it.
+
+#include "../lib.dl"
+
+.type Choice = Clash {} | Ink {} | Odd {}
+
+.comp Params {
+    .decl divisor(n: number) divisor(2).
+    .decl gap(g: number) gap(1).
+}
+
+.init params = Params
+
+// --- the quadrants ---
+
+.decl tile_cell(p_tile: Position, p_intile: Position, col: Color)
+tile_cell(P_tile, P_intile, Col) :-
+    in(P_grid, Col),                             // input cell
+    params.divisor(N), params.gap(G),            // quadrant params
+    divide_2d(P_grid, N, G, P_tile, P_intile).   // cross cells drop out
+
+.decl tile(p_tile: Position)
+tile(P_tile) :- tile_cell(P_tile, _, _).
+
+.decl special(p_tile: Position, ch: Choice)
+
+// --- Clash ---
+
+.init tile_color = Unanimous<Position, Color>
+tile_color.item(P_tile, Col) :- tile_cell(P_tile, _, Col).
+
+special(P_tile, $Clash()) :- tile_color.clash(P_tile).
+
+// --- Ink ---
+
+.init common = Mode<Unit, Color, Position>
+common.item($U(), Col, P_grid) :- in(P_grid, Col).
+
+special(P_tile, $Ink()) :- tile_cell(P_tile, _, Col), !common.mode($U(), Col).
+
+// --- Odd ---
+
+.decl differs(p_tile: Position, p_tile2: Position)
+differs(P_tile, P_tile2) :-
+    tile_cell(P_tile, P_intile, Col),
+    tile_cell(P_tile2, P_intile, Col2), Col != Col2.
+
+.decl matched(p_tile: Position)
+matched(P_tile) :-
+    tile(P_tile), tile(P_tile2), P_tile != P_tile2, !differs(P_tile, P_tile2).
+
+special(P_tile, $Odd()) :- tile(P_tile), !matched(P_tile).
+
+// --- output ---
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_intile, Col, Ch) :- special(P_tile, Ch), tile_cell(P_tile, P_intile, Col).

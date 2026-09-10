@@ -4,58 +4,127 @@
 // separator-bordered block holds the key: its interior is a cell-sized
 // footprint scaled up, in a color found nowhere else. Every cell whose ink
 // covers the footprint has that footprint repainted in the key's color.
+//
+// Cases name what the cut reads:
+//   $Count() — the cells along an axis.
+//   $Size()  — a cell's extent.
 
 #include "../lib.dl"
 
+.type Choice = Count {} | Size {}
+
+.type CoverKey = [ch: Choice, p_tile: Position]
+
 .comp Params {
+    // --- shared ---
     .decl bg(col: Color) bg(0).
     .decl ink(col: Color) ink(1).
     .decl sep(col: Color) sep(4).
 
-    // The footprint's extent — the size of a grid cell, and the parts the
-    // key's interior divides into.
-    .decl dim(k: number) dim(3).
-
     // Separator thickness.
     .decl gap(g: number) gap(1).
+
+    // --- Count ---
+    // The cells along an axis.
+    .decl cell_count(n: number) cell_count(6).
+
+    // --- Size ---
+    // A cell's extent.
+    .decl dim(k: number) dim(3).
 }
 
 .init params = Params
 
-// The key's color: the one color outside the palette.
-.decl key_color(col: Color)
-key_color(Col) :- in(_, Col), !params.bg(Col), !params.ink(Col), !params.sep(Col).
+.decl impl_choice(ch: Choice)
+impl_choice($Count()). impl_choice($Size()).
 
-// The key's interior — what its separator border encloses.
-.init key = Reach<Unit>
-key.node($U(), P) :- in(P, Col), !params.sep(Col).
-key.seed($U(), P) :- in(P, Col), key_color(Col).
+.comp Parse<Key> {
+    .decl cell(k: Key, p: Position, col: Color)
+
+    // The key's color: the one color outside the palette.
+    .decl key_color(k: Key, col: Color)
+    key_color(K, Col) :-
+        cell(K, _, Col), !params.bg(Col), !params.ink(Col), !params.sep(Col).
+
+    // The key's interior — what its separator border encloses.
+    .init key = Reach<Key>
+    key.node(K, P) :- cell(K, P, Col), !params.sep(Col).
+    key.seed(K, P) :- cell(K, P, Col), key_color(K, Col).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
 
 .init key_box = BoxFrame<Unit>
-key_box.cell($U(), P) :- key.reach($U(), P).
-
-// The footprint: the key's interior scaled down to one grid cell.
-.decl footprint(p_intile: Position)
-footprint(P_intile) :-
-    in(P, Col), key_color(Col),                 // a key cell
-    key_box.inner($U(), P, P_inner),            // in the key's own frame
-    params.dim(N), divide_2d(P_inner, N, 0, P_intile, _).
+key_box.cell($U(), P) :- parse.key.reach($U(), P).
 
 // Which cell a position sits in, and where in that cell.
-.decl cell_at(p: Position, p_tile: Position, p_intile: Position)
-cell_at(P, P_tile, P_intile) :-
+.decl cell_at(p: Position, p_tile: Position, p_intile: Position, ch: Choice)
+
+// --- Count ---
+cell_at(P, P_tile, P_intile, $Count()) :-
+    in(P, _), params.cell_count(N), params.gap(G), divide_2d(P, N, G, P_tile, P_intile).
+
+// --- Size ---
+cell_at(P, P_tile, P_intile, $Size()) :-
     in(P, _), params.dim(K), params.gap(G), divide_by_size_2d(P, K, G, P_tile, P_intile).
 
+// --- shared ---
+
+// A cell's extent, read off the cut.
+.decl cell_dim(n: number, ch: Choice)
+cell_dim(N, Ch) :- cell_at(_, _, P_intile, Ch), axis_elem(A), axis_dim(P_intile, A, N).
+
+// The footprint: the key's interior scaled down to one grid cell.
+.decl footprint(p_intile: Position, ch: Choice)
+footprint(P_intile, Ch) :-
+    in(P, Col), parse.key_color($U(), Col),     // a key cell
+    key_box.inner($U(), P, P_inner),            // in the key's own frame
+    cell_dim(N, Ch), divide_2d(P_inner, N, 0, P_intile, _).
+
 // The footprint against each cell's ink, both in cell frame.
-.init cover = KeyedSetCompare<Position, Unit, Position>
-cover.pattern_member($U(), P_intile) :- footprint(P_intile).
-cover.observed_member(P_tile, P_intile) :-
-    cell_at(P, P_tile, P_intile), in(P, Col), params.ink(Col).
+.init cover = KeyedSetCompare<CoverKey, Choice, Position>
+cover.pattern_member(Ch, P_intile) :- footprint(P_intile, Ch).
+cover.observed_member([Ch, P_tile], P_intile) :-
+    cell_at(P, P_tile, P_intile, Ch), in(P, Col), params.ink(Col).
 
 // A cell whose ink covers the footprint takes the key's color over it.
-.decl stamp(p: Position)
-stamp(P) :- cell_at(P, P_tile, P_intile), cover.covers(P_tile, $U()), footprint(P_intile).
+.decl stamp(p: Position, ch: Choice)
+stamp(P, Ch) :-
+    cell_at(P, P_tile, P_intile, Ch),
+    cover.covers([Ch, P_tile], Ch), footprint(P_intile, Ch).
 
-.decl out(p: Position, col: Color)
-out(P, Col) :- in(P, Col), !stamp(P).
-out(P, Col) :- stamp(P), key_color(Col).
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !stamp(P, Ch).
+out(P, Col, Ch) :- stamp(P, Ch), parse.key_color($U(), Col).
+
+// The cut's gap lines are the separator lines, and the key's block is the one
+// place a separator line goes missing. So the count is the one candidate whose
+// gap cells and the separator cells agree everywhere outside that block.
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // The key's block: its interior with the border drawn around it.
+    .decl key_block(e: Example, p: Position)
+    key_block(E, P) :- parse.key.reach(E, P).
+    key_block(E, Q) :-
+        parse.key.reach(E, P), dir8_elem(D), neighbor(P, D, Q), ex_in(E, Q, _).
+
+    .decl cand(n: number)
+    cand(N) :- ex_in(_, P, _), axis_elem(A), sub_extent(P, A, N).
+
+    .decl cut(e: Example, n: number, p: Position)
+    cut(E, N, P) :- ex_in(E, P, _), cand(N), params.gap(G), divide_2d(P, N, G, _, _).
+
+    // A gap cell that carries no separator, or a separator cell inside a tile.
+    .decl defect(n: number)
+    defect(N) :-
+        cand(N), ex_in(E, P, Col), !key_block(E, P),
+        ( !cut(E, N, P), !params.sep(Col)    // gap cell with no separator
+        ; cut(E, N, P), params.sep(Col)      // separator cell inside a tile
+        ).
+
+    .decl cell_count(n: number)
+    cell_count(N) :- cand(N), !defect(N).
+}

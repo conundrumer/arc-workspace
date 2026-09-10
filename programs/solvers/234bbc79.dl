@@ -1,0 +1,103 @@
+// 234bbc79
+// draft
+// concept: objects markers move
+// Colored pieces lie along one axis. Each piece carries joint cells on the
+// ends it links from, and a joint takes the color of the piece it touches.
+// The blank lines close up, and every piece but the first slides across the
+// chain until the joint it trails with lands beside the joint the piece before
+// it leads with.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    .decl joint(col: Color) joint(5).
+    // The chain runs toward this edge; the piece at the near end stays put.
+    .decl chain_dir(d: Dir) chain_dir(DIR_R).
+}
+
+.init params = Params
+
+// --- pieces and their joints ---
+
+.init obj = Components<Color>
+obj.node(Col, P) :- in(P, Col), !params.bg(Col), !params.joint(Col).
+
+.decl joint_of(id: Ident, p: Position)
+joint_of(Id, P) :-
+    in(P, Col), params.joint(Col),                  // a joint cell
+    dir_elem(D), neighbor(P, D, Q),                 // its neighbor
+    obj.label(_, Q, Id).                            // that lies on a piece
+
+// --- the blank lines close up ---
+
+.decl inked_line(l: Position)
+inked_line(L) :-
+    in(P, Col), !params.bg(Col),
+    params.chain_dir(D), axis_of(D, A), split(P, A, L, _).
+
+.init packed = OrderFrame<Unit, Position>
+packed.axis($U(), A) :- params.chain_dir(D), axis_of(D, A).
+packed.member($U(), L, L) :- inked_line(L).
+
+// The packed frame is the output frame: one line per inked line, the across
+// extent unchanged.
+.decl remap(p_grid: Position, p_pack: Position)
+remap(P, P_pack) :-
+    in(P, _), packed.axis($U(), A),
+    split(P, A, L, Across),                         // the cell's line, and its place across
+    packed.pos($U(), L, L_pack),                    // where the line lands once the blanks close
+    compose(L_pack, Across, P_pack).
+
+.decl piece_joint(id: Ident, p_pack: Position)
+piece_joint(Id, P_pack) :- joint_of(Id, P), remap(P, P_pack).
+
+.decl piece_cell(id: Ident, p_pack: Position)
+piece_cell(Id, P_pack) :- obj.label(_, P, Id), remap(P, P_pack).
+piece_cell(Id, P_pack) :- piece_joint(Id, P_pack).
+
+// --- the chain ---
+
+// A piece leads with the joint furthest along the chain and trails with the
+// joint furthest back. An end piece carries one joint and does both with it.
+.init ends = ArgExtremes<Ident, Position>
+ends.cand(Id, P_pack, K) :-
+    piece_joint(Id, P_pack), params.chain_dir(D), opposite(D, D_back),
+    dist(P_pack, D_back, K).                        // how far along the chain it stands
+
+.decl lead_joint(id: Ident, p_pack: Position)
+lead_joint(Id, P_pack) :- ends.high(Id, P_pack, _).
+
+.decl trail_joint(id: Ident, p_pack: Position)
+trail_joint(Id, P_pack) :- ends.low(Id, P_pack, _).
+
+// Two pieces link where the joints they offer each other stand in
+// neighboring lines; the slide brings them side by side.
+.decl link(id: Ident, id2: Ident)
+link(Id, Id2) :-
+    lead_joint(Id, P_lead), params.chain_dir(D), neighbor(P_lead, D, P_next),
+    trail_joint(Id2, P_trail), same_dist(D, P_next, P_trail).
+
+// --- the slide ---
+
+// Where a piece's trailing joint ends up. The piece with nothing linking into
+// it keeps its place.
+.decl trail_dest(id: Ident, p_dest: Position)
+trail_dest(Id, P_dest) :- trail_joint(Id, P_dest), !link(_, Id).
+trail_dest(Id2, P_dest) :-
+    link(Id, Id2), slide(Id, Delta),                // the piece before it, already slid
+    lead_joint(Id, P_lead), compose(P_lead, Delta, P_lead_dest),
+    params.chain_dir(D), neighbor(P_lead_dest, D, P_dest).
+
+// How far the piece travels.
+.decl slide(id: Ident, delta: Shift)
+slide(Id, Delta) :-
+    trail_joint(Id, P_pack), trail_dest(Id, P_dest), displacement(P_pack, P_dest, Delta).
+
+.decl place(id: Ident, p_dest: Position)
+place(Id, P_dest) :-
+    slide(Id, Delta), piece_cell(Id, P_pack), compose(P_pack, Delta, P_dest).
+
+.decl out(p: Position, col: Color)
+out(P_dest, Col) :- place(Id, P_dest), obj.label(Col, _, Id).
+out(P, Col) :- remap(_, P), !place(_, P), params.bg(Col).

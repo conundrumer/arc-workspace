@@ -68,8 +68,6 @@ out(P, Col_out, Ch) :-
     ; params.bg(Col), !image(P, _, Ch), Col_out = Col    // bg, untouched — stays bg
     ).
 
-// --- determination ---
-
 .comp Determine {
     .init d4m = D4Map<Example, Color>
     d4m.src(E, P, Col) :- ex_out(E, P, Col).

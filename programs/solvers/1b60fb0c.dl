@@ -1,0 +1,77 @@
+// 1b60fb0c
+// draft
+// concept: symmetry repair d4
+// A one-color figure sits in the grid. The output adds, in a second color, the
+// cells that a placed quarter turn of the figure reaches and the input leaves
+// empty. $Complete reads the figure as closed under the turn and paints the
+// whole orbit, taking the placement whose orbit is smallest; $Copy lays down a
+// single turned copy, at the placement that overlaps the figure most.
+
+#include "../lib.dl"
+
+.type Choice = Complete {} | Copy {}
+
+.decl impl_choice(ch: Choice)
+impl_choice($Complete()). impl_choice($Copy()).
+
+.comp Params {
+    .decl ink(col: Color) ink(1).
+    .decl fill(col: Color) fill(2).
+    // The applied turn; for $Complete its powers are the figure's symmetry group.
+    .decl sym(d: D4) sym(D4_CW).
+}
+
+.init params = Params
+
+.decl ink_cell(p: Position)
+ink_cell(P) :- in(P, Col), params.ink(Col).
+
+// A placement of the turn is the shift that carries one ink cell's turned
+// image onto another ink cell.
+.decl placement(delta: Shift)
+placement(Delta) :-
+    ink_cell(P), params.sym(D), apply(D, P, P_turn),  // an ink cell, turned
+    ink_cell(Q), displacement(P_turn, Q, Delta).      // onto another ink cell
+
+// The placed turn, and the cells it reaches from the ink. Cells off the grid
+// stay in.
+.decl turn_step(delta: Shift, p: Position, q: Position)
+.decl orbit(delta: Shift, p: Position)
+turn_step(Delta, P, Q) :-
+    orbit(Delta, P),                                                 // a cell in play
+    params.sym(D), apply(D, P, P_turn), compose(P_turn, Delta, Q).   // turned, then placed
+orbit(Delta, P) :- placement(Delta), ink_cell(P).
+orbit(Delta, Q) :- turn_step(Delta, _, Q).
+
+// A cell the turn adds that the input does not hold.
+.decl restored(p: Position, ch: Choice)
+
+// --- Complete ---
+
+// The completed figure is the smallest orbit, so a placement that pushes the
+// figure off the grid pays for the cells it puts there.
+.init size = Tally<Shift, Position>
+size.item(Delta, P) :- orbit(Delta, P).
+
+.init smallest = ArgExtremes<Unit, Shift>
+smallest.cand($U(), Delta, N) :- size.tally(Delta, N).
+
+restored(P, $Complete()) :-
+    smallest.low($U(), Delta, _), orbit(Delta, P),   // the completed figure
+    in(P, Col), !params.ink(Col).                    // erased here
+
+// --- Copy ---
+
+.decl copy_cell(delta: Shift, p: Position)
+copy_cell(Delta, Q) :- turn_step(Delta, P, Q), ink_cell(P).
+
+.init fittest = Mode<Unit, Shift, Position>
+fittest.item($U(), Delta, P) :- copy_cell(Delta, P), ink_cell(P).
+
+restored(P, $Copy()) :-
+    fittest.mode($U(), Delta), copy_cell(Delta, P),   // the best-fit copy
+    in(P, Col), !params.ink(Col).                     // empty here
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !restored(P, Ch).
+out(P, Col, Ch) :- restored(P, Ch), params.fill(Col).

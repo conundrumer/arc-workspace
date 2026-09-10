@@ -132,8 +132,6 @@ out(P, Col, [V, E]) :-
     frame.cell($U(), P), !arm(P), !echo(P, E),   // cell outside V and echoes
     echo_choice(E), v_choice(V), params.bg(Col).
 
-// --- determination ---
-
 .comp Determine {
     // The ink cell, seated in the output frame.
     .decl seed(e: Example, p: Position)

@@ -1,0 +1,104 @@
+// 67636eac
+// draft
+// concept: objects color-class crop rank
+// One-color shapes lie on a blank grid, strung out along one axis. The
+// output sets their bounding-box crops side by side along that axis in
+// their order: the blank lines between the boxes are removed. Choice =
+// [g, a] crosses the hypotheses:
+//
+//   g (what a shape is):
+//     $ByColor()   — the cells of one color.
+//     $Connected() — an 8-connected component of non-bg cells.
+//   a (the layout axis):
+//     $Separate() — no two boxes share a line of it.
+//     $Spread()   — the longer axis of the shapes' joint bounding box.
+//     $Long()     — the longer axis of the grid.
+//
+// Every pair's shapes are one component each, of distinct colors, and the
+// three axis rules agree on every pair.
+
+#include "../lib.dl"
+
+.type Group = ByColor {} | Connected {}
+.type AxisRule = Separate {} | Spread {} | Long {}
+.type Choice = [g: Group, a: AxisRule]
+
+// A shape under a grouping.
+.type Obj = [g: Group, id: Ident]
+
+// The lines of one axis under a grouping.
+.type Lines = [g: Group, a: Axis]
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+}
+
+.init params = Params
+
+.decl group_choice(g: Group)
+group_choice($ByColor()). group_choice($Connected()).
+
+.decl ink(p: Position)
+ink(P) :- in(P, Col), !params.bg(Col).
+
+// --- Group cases: the shapes ---
+
+.decl shape_cell(g: Group, id: Ident, p: Position)
+
+// $ByColor — the cells of one color form a shape.
+.init by_color = Canon<Position>
+by_color.equiv(P, Q) :- ink(P), in(P, Col), in(Q, Col).
+
+shape_cell($ByColor(), Id, P) :- by_color.id(P, Id).
+
+// $Connected — an 8-connected component forms a shape.
+.init connected = Components8<Unit>
+connected.node($U(), P) :- ink(P).
+
+shape_cell($Connected(), Id, P) :- connected.label($U(), P, Id).
+
+// Each shape viewed from its own bounding box, the box's inside included.
+.init box = BoxFrame<Obj>
+box.cell([G, Id], P) :- shape_cell(G, Id, P).
+box.grid([G, Id], P) :- in(P, _), shape_cell(G, Id, _).
+
+// The lines of axis a that a shape's box covers.
+.decl box_line(g: Group, id: Ident, a: Axis, l: Position)
+box_line(G, Id, A, L) :- box.inside([G, Id], P), axis_elem(A), split(P, A, L, _).
+
+// --- AxisRule cases: the layout axis ---
+
+.decl layout_axis(ch: Choice, a: Axis)
+
+// $Separate — no two boxes share a line of the axis.
+.decl shared_line(g: Group, a: Axis)
+shared_line(G, A) :- box_line(G, Id1, A, L), box_line(G, Id2, A, L), Id1 != Id2.
+
+layout_axis([G, $Separate()], A) :- group_choice(G), axis_elem(A), !shared_line(G, A).
+
+// $Spread — the shapes' joint bounding box is longer along the axis.
+.init spread = Bbox<Group>
+spread.cell(G, P) :- shape_cell(G, _, P).
+
+layout_axis([G, $Spread()], A) :- spread.extents(G, A, N_along, N_across), N_along > N_across.
+
+// $Long — the grid is longer along the axis.
+layout_axis([G, $Long()], A) :-
+    group_choice(G), in(P, _), axis_dims(P, A, N_along, N_across), N_along > N_across.
+
+// --- output ---
+
+// The covered lines of each axis, packed: the blank lines between the
+// boxes are gone.
+.init packed = OrderFrame<Lines, Position>
+packed.axis([G, A], A) :- group_choice(G), axis_elem(A).
+packed.member([G, A], L, L) :- box_line(G, _, A, L).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_grid, Col, [G, R]) :-
+    layout_axis([G, R], A),
+    box.inner([G, Id], P, P_inner),                       // box cell in its crop frame
+    split(P, A, L, _), packed.pos([G, A], L, P_along),    // its line, packed
+    split(P_inner, A, _, P_across),                       // its place across the crop
+    compose(P_along, P_across, P_grid),
+    in(P, Col).

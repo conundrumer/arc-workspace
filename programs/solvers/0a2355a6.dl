@@ -31,8 +31,6 @@
 
 .init params = Params
 
-// --- parse ---
-
 .comp Parse<Key> {
     .type KObj = [k: Key, o: Ident]
 
@@ -83,8 +81,6 @@ out(P, Col, $Own()) :-
     parse.objs.label($U(), P, O),                // object cell
     parse.own_holes.tally([$U(), O], N),         // its hole count
     params.own_count_color(N, Col).
-
-// --- determination ---
 
 .comp Determine {
     .init ex = Parse<Example>

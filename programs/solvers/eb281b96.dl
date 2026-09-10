@@ -63,8 +63,6 @@ out(P_grid, Col, $Unfold()) :-
     params.tile_axis(A), params.tile_gap(G),
     concat_slab(T, P_intile, A, G, P_grid).
 
-// --- determination ---
-
 .comp Determine {
     .decl tile_size(e: Example, k: number)
     tile_size(E, K) :- ex_in(E, P, _), params.tile_axis(A), axis_dim(P, A, K).

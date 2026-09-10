@@ -1,0 +1,39 @@
+// 2a5f8217
+// draft
+// concept: objects classify
+// Single-color shapes lie on params.bg. Every shape of params.blank has a twin — a shape
+// of some other color with the same footprint — and takes its twin's color.
+
+#include "../lib.dl"
+
+.type Shape = [col: Color, id: Ident]
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    .decl blank(col: Color) blank(1).
+}
+
+.init params = Params
+
+.init shapes = Components<Color>
+shapes.node(Col, P) :- in(P, Col), !params.bg(Col).
+
+.decl shape(s: Shape, p: Position)
+shape([Col, Id], P) :- shapes.label(Col, P, Id).
+
+.init box = BoxFrame<Shape>
+box.cell(S, P) :- shape(S, P).
+
+// Same footprint: the two shapes fill their boxes alike.
+.init same = KeyedSetCompare<Shape, Shape, Position>
+same.pattern_member([Col, Id], P_inner) :-
+    box.inner([Col, Id], _, P_inner), !params.blank(Col).    // a colored shape
+same.observed_member([Col, Id], P_inner) :-
+    box.inner([Col, Id], _, P_inner), params.blank(Col).     // a blank shape
+
+.decl paint(p: Position, col: Color)
+paint(P, Col) :- shape(S, P), same.equals(S, [Col, _]).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- paint(P, Col).
+out(P, Col) :- in(P, Col), !paint(P, _).

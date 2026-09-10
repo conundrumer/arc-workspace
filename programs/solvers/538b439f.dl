@@ -1,0 +1,89 @@
+// 538b439f
+// draft
+// concept: objects lines d4 span
+// A line of one color crosses a plain field strewn with dust. Solid
+// rectangles sit on the field. Each rectangle is reflected in the line,
+// and the span between the rectangle and its image is painted the line's
+// color, over any dust it covers; nothing else changes.
+//
+// A rectangle is a component that fills its bounding box and reaches more
+// than one line on both axes. Every dust component fails one of those.
+
+#include "../lib.dl"
+
+.comp Params {}
+
+.init params = Params
+
+// The field is the commonest color.
+.init field = Mode<Unit, Color, Position>
+field.item($U(), Col, P) :- in(P, Col).
+
+// --- the divider ---
+
+.type Line = [a: Axis, l: Position]
+
+.init line_color = Unanimous<Line, Color>
+line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
+
+// The divider: a line of one non-field color. Its axis is the axis the
+// reflection inverts.
+.decl divider(a: Axis, l: Position, col: Color)
+divider(A, L, Col) :- line_color.value([A, L], Col), !field.mode($U(), Col).
+
+// --- the rectangles ---
+
+.type PartAxis = [id: Ident, a: Axis]
+
+.init parts = Components<Color>
+parts.node(Col, P) :- in(P, Col), !field.mode($U(), Col).
+
+.init box = Bbox<Ident>
+box.cell(Id, P) :- parts.label(_, P, Id).
+box.grid(Id, P) :- parts.label(_, _, Id), in(P, _).
+
+// A hole in the bounding box: the component is not solid.
+.decl hole(id: Ident)
+hole(Id) :- box.inside(Id, P), !parts.label(_, P, Id).
+
+// The lines a component reaches across each axis.
+.init reach = Unanimous<PartAxis, Position>
+reach.item([Id, A], L) :- parts.label(_, P, Id), axis_elem(A), split(P, A, L, _).
+
+// One line on some axis: the component is a segment, not a rectangle.
+.decl thin(id: Ident)
+thin(Id) :- reach.value([Id, _], _).
+
+.decl rect(id: Ident, p: Position, col: Color)
+rect(Id, P, Col) :- parts.label(Col, P, Id), !hole(Id), !thin(Id).
+
+// A rectangle cell reflected in the divider. The line's own Position is
+// the frame of the flip: it is zero on the axis the flip leaves alone, so
+// no cell of the line has to be picked out.
+.decl image(id: Ident, p: Position, col: Color)
+image(Id, Q, Col) :-
+    rect(Id, P, Col), divider(A, L, _), flip_of(A, F),
+    displacement(L, P, V), apply(F, V, V_img), compose(L, V_img, Q),
+    in(Q, _).
+
+// --- the span ---
+
+// Each rectangle and its image bracket a span along the reflection's axis.
+.init span = Between<Ident>
+span.axis(Id, A) :- rect(Id, _, _), divider(A, _, _).
+span.cell(Id, P) :- rect(Id, _, _), in(P, _).
+span.mark(Id, P) :- rect(Id, P, _).
+span.mark(Id, P) :- image(Id, P, _).
+
+// Across the span: the image in the rectangle's color, and the divider's
+// color over everything the rectangle and the image do not fill.
+.decl paint(p: Position, col: Color)
+paint(P, Col) :-
+    span.between(Id, P),
+    ( image(Id, P, Col)
+    ; !rect(Id, P, _), !image(Id, P, _), divider(_, _, Col)
+    ).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- paint(P, Col).
+out(P, Col) :- in(P, Col), !paint(P, _).

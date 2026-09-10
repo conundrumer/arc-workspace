@@ -1,0 +1,50 @@
+// 692cd3b6
+// draft
+// concept: objects span cast
+// Two boxes, each with one gap in its wall: its door. The cell one step out
+// of a door is the box's exit. Paint covers the rectangle the two exits span,
+// except in a box's shadow: the cells behind the box, away from its door.
+// The doors are painted too.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    .decl paint(col: Color) paint(4).
+}
+
+.init params = Params
+
+.init boxes = Components<Unit>
+boxes.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+.init box = Bbox<Ident>
+box.cell(Id, P) :- boxes.label($U(), P, Id).
+box.grid(Id, P) :- boxes.label($U(), _, Id), in(P, _).
+
+.init wall = Rim<Ident>
+wall.cell(Id, P) :- box.inside(Id, P).
+
+.decl door(id: Ident, p: Position, d: Dir)
+door(Id, P, D) :-
+    wall.rim_dir(Id, P, D), dir_elem(D),    // wall cell, D leading out of the box
+    in(P, Col), params.bg(Col).             // the gap in the wall
+
+// The rectangle the exits span.
+.init span = Bbox<Unit>
+span.cell($U(), Q) :- door(_, P, D), neighbor(P, D, Q).
+span.grid($U(), P) :- in(P, _).
+
+// The box's shadow: cast from its cells away from the door.
+.init shadow = Ray<Ident>
+shadow.dir(Id, D_back) :- door(Id, _, D), opposite(D, D_back).
+shadow.mark(Id, P) :- box.inside(Id, P).
+shadow.cell(Id, P) :- box.grid(Id, P).
+
+.decl painted(p: Position)
+painted(P) :- span.inside($U(), P), in(P, Col), params.bg(Col), !shadow.ray(_, P, _, _, _).
+painted(P) :- door(_, P, _).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- painted(P), params.paint(Col).
+out(P, Col) :- in(P, Col), !painted(P).

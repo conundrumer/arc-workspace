@@ -1,26 +1,31 @@
 // e3497940
 // concept: decompose d4
-// Layout: 1×2 horizontally-side-by-side 10×4 subgrids with 1-col separator.
+// Layout: two 10×4 subgrids side by side, separated by a column.
 // The far subgrid folds across the separator onto the base subgrid; ink
 // keeps its color.
 //
 // out's choice column (decompose):
-//   $Tile() — pre-tabulated in the parameters via tile_pos
-//   $Div()  — derived in the program via the divide primitive
+//   $Table() — tabulated in the parameters
+//   $Count() — by tile count
+//   $Size()  — by tile size
 
 #include "../lib.dl"
 
-.type Choice = Tile {} | Div {}
+.type Choice = Table {} | Count {} | Size {}
 
 .comp Params {
     .init helpers = ParamsHelpers
 
+    // --- shared ---
     .decl frame_dim(a: Axis, n: number)
     frame_dim(AXIS_V, 10). frame_dim(AXIS_H, 4).
     .decl frame(p: Position)
     frame(P) :- frame_dim(AXIS_V, Fv), frame_dim(AXIS_H, Fh), helpers.frame_pos([Fv, Fh], P).
 
-    // --- Tile decompose data ---
+    .decl base(d: Dir) base(DIR_L).   // side kept; the fold axis is its axis
+    .decl bg(c: Color) bg(0).
+
+    // --- Table ---
     .decl arr_dim(a: Axis, n: number)
     arr_dim(AXIS_V, 1). arr_dim(AXIS_H, 2).
     .decl gap(g: number) gap(1).
@@ -30,56 +35,52 @@
         frame_dim(AXIS_V, Fv), frame_dim(AXIS_H, Fh), gap(G),
         helpers.tile_pos([Av, Ah], [Fv, Fh], [0, G], P_grid, P_tile, P_intile).
 
-    // --- Div decompose data ---
-    .decl divisor(n: number)
-    divisor(2).
-
+    // --- Count, Size ---
     .decl divide_gap(g: number)
     divide_gap(1).
 
-    // --- Fold data ---
-    .decl base(d: Dir) base(DIR_L).   // side kept; the fold axis is its axis
-    .decl bg(c: Color) bg(0).
+    // --- Count ---
+    .decl divisor(n: number)
+    divisor(2).
 }
 
 .init params = Params
 
 // --- Decompose cases ---
 
-.decl dec_choice(ch: Choice)
-dec_choice($Tile()).
-dec_choice($Div()).
+.decl impl_choice(ch: Choice)
+impl_choice($Table()).
+impl_choice($Count()).
+impl_choice($Size()).
 
 .decl decompose(p: Position, p_outer: Position, p_inner: Position, ch: Choice)
-decompose(P_grid, P_tile, P_intile, $Tile()) :- params.tile_decompose(P_grid, P_tile, P_intile).
-decompose(P_grid, P_tile, P_intile, $Div()) :-
+decompose(P_grid, P_tile, P_intile, $Table()) :- params.tile_decompose(P_grid, P_tile, P_intile).
+decompose(P_grid, P_tile, P_intile, $Count()) :-
     in(P_grid, _),                                                 // input position
     params.base(D), axis_of(D, A),                                 // fold axis
-    params.divisor(N), params.divide_gap(G),                       // params
+    params.divisor(N), params.divide_gap(G),
     divide_slab(P_grid, A, N, G, P_tile, P_intile).
+decompose(P_grid, P_tile, P_intile, $Size()) :-
+    in(P_grid, _),                                                 // input position
+    params.base(D), axis_of(D, A),                                 // fold axis
+    params.frame_dim(A, K), params.divide_gap(G),                  // tile size = subgrid extent
+    divide_by_size_slab(P_grid, A, K, G, P_tile, P_intile).
 
-// --- Fold layers: the base tile passes through; the far tile reflects
-// across the separator — in tile coordinates, the flip on the fold axis.
+// --- Fold: the base tile passes through; the far tile reflects across the
+// separator — in tile coordinates, the flip on the fold axis.
 
-.decl base_ink(p: Position, col: Color, ch: Choice)
-base_ink(P_intile, Col, Ch) :-
-    in(P_grid, Col), !params.bg(Col),                    // ink cell
-    decompose(P_grid, P_tile, P_intile, Ch),
-    params.base(D), dist(P_tile, D, 0).                  // base tile
-
-.decl fold_ink(p: Position, col: Color, ch: Choice)
-fold_ink(P_out, Col, Ch) :-
-    in(P_grid, Col), !params.bg(Col),                    // ink cell
-    decompose(P_grid, P_tile, P_intile, Ch),
-    params.base(D), opposite(D, O), dist(P_tile, O, 0),  // far tile
-    axis_of(D, A), flip_of(A, F),                        // fold axis flip
-    apply(F, P_intile, P_out).
+.decl ink(p: Position, col: Color, ch: Choice)
+ink(P, Col, Ch) :-
+    in(P_grid, Col), !params.bg(Col),                        // ink cell
+    decompose(P_grid, P_tile, P_intile, Ch), params.base(D),
+    ( dist(P_tile, D, 0), P = P_intile                       // base tile
+    ; opposite(D, O), dist(P_tile, O, 0),                    // far tile
+      axis_of(D, A), flip_of(A, F), apply(F, P_intile, P)    // fold axis flip
+    ).
 
 // --- Output ---
 
 .decl out(p: Position, col: Color, c: Choice)
-out(P, Col, Ch) :- base_ink(P, Col, Ch).
-out(P, Col, Ch) :- fold_ink(P, Col, Ch).
+out(P, Col, Ch) :- ink(P, Col, Ch).
 out(P, Col, Ch) :-
-    dec_choice(Ch), params.frame(P), params.bg(Col),
-    !base_ink(P, _, Ch), !fold_ink(P, _, Ch).
+    impl_choice(Ch), params.frame(P), params.bg(Col), !ink(P, _, Ch).

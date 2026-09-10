@@ -1,0 +1,71 @@
+// 7e0986d6
+// draft
+// concept: repair count objects
+// Solid rectangles of one color sit on the bg, and a second color sprinkles
+// single cells over the grid: some inside the rectangles, some on the bg.
+// The output clears the sprinkle from the bg and restores the rectangles
+// under it. A sprinkle cell is inside a rectangle when the rectangle color
+// lies on both sides of one of its corners.
+//
+//   $Sparse   — the rectangle color is the commonest non-bg color.
+//   $Isolated — the sprinkle color is the one with a cell that touches no
+//               cell of its own color; the rectangle color is the other.
+
+#include "../lib.dl"
+
+.type Choice = Sparse {} | Isolated {}
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Sparse()). impl_choice($Isolated()).
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.bg(Col).
+
+.decl rect(col: Color, ch: Choice)
+
+// --- Sparse ---
+
+.init tally = Mode<Unit, Color, Position>
+tally.item($U(), Col, P) :- ink(P, Col).
+
+rect(Col, $Sparse()) :- tally.mode($U(), Col).
+
+// --- Isolated ---
+
+.init rim = Rim<Color>
+rim.cell(Col, P) :- ink(P, Col).
+
+// An inked cell with a same-colored cardinal neighbor.
+.decl touching(p: Position)
+touching(P) :- ink(P, Col), dir_elem(D), !rim.rim_dir(Col, P, D).
+
+.decl sprinkle_color(col: Color)
+sprinkle_color(Col) :- ink(P, Col), !touching(P).
+
+rect(Col, $Isolated()) :- ink(_, Col), !sprinkle_color(Col).
+
+// --- Sparse, Isolated ---
+
+.decl sprinkle(p: Position, ch: Choice)
+sprinkle(P, Ch) :- ink(P, Col), impl_choice(Ch), !rect(Col, Ch).
+
+// A sprinkle cell with the rectangle color on both sides of a corner.
+.decl inside(p: Position, ch: Choice)
+inside(P, Ch) :-
+    sprinkle(P, Ch), rect(Col, Ch), diag_dirs(_, _, D1, D2),
+    neighbor(P, D1, Q1), in(Q1, Col),
+    neighbor(P, D2, Q2), in(Q2, Col).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    in(P, C), impl_choice(Ch),
+    ( !sprinkle(P, Ch), Col = C                       // bg and rectangle cells stay
+    ; inside(P, Ch), rect(Col, Ch)                    // restored rectangle cell
+    ; sprinkle(P, Ch), !inside(P, Ch), params.bg(Col) // cleared sprinkle
+    ).

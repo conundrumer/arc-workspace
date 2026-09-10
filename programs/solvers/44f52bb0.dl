@@ -73,8 +73,6 @@ out(P, Col, $Direct()) :- params.asym_out(P, Col),  syms_non_invariant(_).
 // $GroupMatch
 out(P, Col, $GroupMatch()) :- best_id.high($U(), Id, _), params.mapping_out(Id, P, Col).
 
-// --- determination ---
-
 .comp Determine {
     .init d4 = D4Map<Example, Color>
     d4.src(E, P, Col) :- ex_in(E, P, Col).

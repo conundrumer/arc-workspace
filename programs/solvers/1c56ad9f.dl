@@ -1,0 +1,84 @@
+// 1c56ad9f
+// draft
+// concept: lines move
+// One figure sits on the background, and a wave displaces its lines. A
+// line's phase is its distance from the figure's params.anchor edge folded into
+// a params.period cycle; params.wave gives the phase's step as a quarter turn off the
+// anchor, and a phase with no fact holds still.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+
+    .decl anchor(d: Dir) anchor(DIR_B).   // the edge the phase counts from
+    .decl period(n: number) period(4).    // lines per wave cycle
+
+    // Which way a line of each phase steps.
+    .decl wave(k: number, s: Sense)
+    wave(1, SENSE_CW).
+    wave(3, SENSE_CC).
+}
+
+.init params = Params
+
+.comp Parse<Key> {
+    .decl figure(key: Key, p: Position, col: Color)  // input
+
+    .init box = BoxFrame<Key>
+    box.cell(Ky, P) :- figure(Ky, P, _).
+
+    .decl phase(key: Key, p: Position, k: number)
+    phase(Ky, P, K) :-
+        box.inner(Ky, P, P_inner),                // in the figure's frame
+        params.anchor(D), dist(P_inner, D, T),    // distance from the anchor edge
+        params.period(N), stride(T, N, 0, _, K).  // folded into the cycle
+}
+
+.init parse = Parse<Unit>
+parse.figure($U(), P, Col) :- in(P, Col), !params.bg(Col).
+
+// The direction a moving phase steps, across the anchor axis.
+.decl step_dir(k: number, d: Dir)
+step_dir(K, D_step) :- params.wave(K, S), params.anchor(D), turn(S, D, D_step).
+
+.decl moved(p: Position, col: Color)
+moved(Q, Col) :-
+    parse.figure($U(), P, Col), parse.phase($U(), P, K),
+    ( step_dir(K, D), neighbor(P, D, Q)   // the wave steps this line
+    ; !step_dir(K, _), Q = P              // this phase holds still
+    ).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, _),
+    ( moved(P, Col)                  // a stepped cell landed here
+    ; !moved(P, _), params.bg(Col)   // nothing landed
+    ).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.figure(E, P, Col) :- ex_in(E, P, Col), !params.bg(Col).
+
+    .type EK = [e: Example, k: number]
+
+    // Where each phase's lines seat on their example's output: the
+    // translations that carry every cell of the phase onto an output cell
+    // of its color.
+    .init seating = Occurrences<EK, Color>
+    seating.shape([E, K], P, Col) :- parse.figure(E, P, Col), parse.phase(E, P, K).
+    seating.cell([E, K], P, Col)  :- parse.phase(E, _, K), ex_out(E, P, Col).
+
+    // A turn some solved example refutes: the phase's lines, stepped that
+    // way, do not seat on the output.
+    .decl broken(k: number, s: Sense)
+    broken(K, S) :-
+        parse.phase(E, _, K), ex_out(E, _, _),                        // a phase on a solved example
+        params.anchor(D), turn(S, D, D_step), step_delta(D_step, V),  // a step across the anchor axis
+        !seating.occurrence([E, K], V).                               // that does not seat the phase
+
+    .decl wave(k: number, s: Sense)
+    wave(K, S) :-
+        parse.phase(E, _, K), ex_out(E, _, _),  // a phase on a solved example
+        sense_elem(S), !broken(K, S).
+}

@@ -1,0 +1,235 @@
+// 20fb2937
+// draft
+// concept: decompose crop markers mapping stamp lookup
+// A line of a single color cuts the grid into a header and a field. The header
+// splits into bands; each band holds a color swatch and a tile whose single
+// mark names the key color that swatch answers to. Every field cell carrying a
+// key color grows into a block. The output is the field alone.
+//
+// The cases claim what the header's cut reads:
+// $Count  — the tiles along each axis.
+// $Size — a tile's extent on each axis.
+//
+// And what a marked field cell becomes:
+// $Neighbor — the mark and its eight neighbors take the swatch color.
+// $Stamp    — a stored shape, seated on the mark, takes the swatch color.
+// $Blit     — the swatch tile itself is copied, held at the cell its band's
+//             key mark occupies.
+
+#include "../lib.dl"
+
+.type DecChoice = Count {} | Size {}
+.type Paint = Neighbor {} | Stamp {} | Blit {}
+.type Choice = [d: DecChoice, paint: Paint]
+
+.comp Params {
+    // --- shared ---
+    .decl bg(col: Color) bg(7).
+
+    // Which side of the cutting line the header sits on.
+    .decl header_dir(d: Dir) header_dir(DIR_T).
+
+    // Which side of a band the swatch sits on; the key mark takes the other.
+    // Bands run across this direction's axis.
+    .decl swatch_dir(d: Dir) swatch_dir(DIR_T).
+
+    .decl band_axis(a: Axis)
+    band_axis(A) :- swatch_dir(D), axis_of(D, A2), perp(A2, A).
+
+    // The gap between bands; layers abut, so they have none.
+    .decl band_gap(g: number) band_gap(1).
+
+    // --- Count ---
+    // The tiles the header holds along each axis.
+    .decl tile_count(a: Axis, n: number)
+    tile_count(AXIS_V, 2).
+    tile_count(AXIS_H, 3).
+
+    // --- Size ---
+    // The header tile's extent on each axis.
+    .decl tile_dim(a: Axis, k: number)
+    tile_dim(AXIS_V, 3).
+    tile_dim(AXIS_H, 3).
+
+    // --- Stamp ---
+    // The shape laid at a mark, as offsets from the cell on the mark.
+    .decl shape(delta: Shift)
+    GRID_STAMP_3x3(shape,
+        1, 1, 1,
+        1, @1, 1,
+        1, 1, 1)
+}
+
+.init params = Params
+
+.comp Parse<Key> {
+    .type Line = [key: Key, a: Axis, l: Position]
+
+    .decl cell(key: Key, p: Position, col: Color)  // input
+
+    .init line_color = Unanimous<Line, Color>
+    line_color.item([Ky, A, L], Col) :- cell(Ky, P, Col), axis_elem(A), split(P, A, L, _).
+
+    .init cut = DividerFrame<Key>
+    cut.cell(Ky, P) :- cell(Ky, P, _).
+    // The cut: a line of a single non-bg color.
+    cut.divider(Ky, A, L) :- line_color.value([Ky, A, L], Col), !params.bg(Col).
+
+    // The part of the grid lying on side d of the cut.
+    .decl side(key: Key, d: Dir, p: Position)
+    side(Ky, D, P) :-
+        cut.divider(Ky, A, _), axis_of(D, A),    // the cut's two sides
+        cut.tile_of(Ky, P, P_part), dist(P_part, D, 0).
+
+    // Each part viewed from its own box.
+    .init hdr_box = BoxFrame<Key>
+    hdr_box.cell(Ky, P) :- params.header_dir(D), side(Ky, D, P).
+
+    .init fld_box = BoxFrame<Key>
+    fld_box.cell(Ky, P) :- params.header_dir(D), opposite(D, D2), side(Ky, D2, P).
+
+    .decl header(key: Key, p_hdr: Position, col: Color)
+    header(Ky, P_hdr, Col) :- hdr_box.inner(Ky, P, P_hdr), cell(Ky, P, Col).
+
+    // The field carries the marks, and its frame is the output frame.
+    .decl field(key: Key, p_fld: Position, col: Color)
+    field(Ky, P_fld, Col) :- fld_box.inner(Ky, P, P_fld), cell(Ky, P, Col).
+
+    // The header split into bands, each band into a swatch layer and a key layer.
+    .decl header_cell(key: Key, dc: DecChoice, p_layer: Position, p_band: Position,
+                      p_intile: Position, col: Color)
+
+    // --- Count ---
+    header_cell(Ky, $Count(), P_layer, P_band, P_intile, Col) :-
+        header(Ky, P_hdr, Col),
+        params.band_axis(A), params.tile_count(A, N), params.band_gap(G),
+        divide(P_hdr, A, N, G, P_band, P_inner_band),                // bands across
+        perp(A, A2), params.tile_count(A2, N2),
+        divide(P_hdr, A2, N2, 0, P_layer, P_inner_layer),            // layers abut along
+        compose(P_inner_band, P_inner_layer, P_intile).
+
+    // --- Size ---
+    header_cell(Ky, $Size(), P_layer, P_band, P_intile, Col) :-
+        header(Ky, P_hdr, Col),
+        params.band_axis(A), params.tile_dim(A, K), params.band_gap(G),
+        divide_by_size(P_hdr, A, K, G, P_band, P_inner_band),        // bands across
+        perp(A, A2), params.tile_dim(A2, K2),
+        divide_by_size(P_hdr, A2, K2, 0, P_layer, P_inner_layer),    // layers abut along
+        compose(P_inner_band, P_inner_layer, P_intile).
+
+    // --- shared ---
+
+    .decl swatch(key: Key, dc: DecChoice, p_band: Position, p_intile: Position, col: Color)
+    swatch(Ky, Dc, B, P_intile, Col) :-
+        header_cell(Ky, Dc, P_layer, B, P_intile, Col),
+        params.swatch_dir(D), dist(P_layer, D, 0).
+
+    // The swatch is one color, so any of its cells names the band's color.
+    .decl swatch_color(key: Key, dc: DecChoice, p_band: Position, col: Color)
+    swatch_color(Ky, Dc, B, Col) :- swatch(Ky, Dc, B, _, Col).
+
+    // The key layer's single mark: the color that band answers to.
+    .decl band_key(key: Key, dc: DecChoice, p_band: Position, p_intile: Position, col: Color)
+    band_key(Ky, Dc, B, P_intile, Col) :-
+        header_cell(Ky, Dc, P_layer, B, P_intile, Col), !params.bg(Col),
+        params.swatch_dir(D), opposite(D, D2), dist(P_layer, D2, 0).
+
+    // A field cell carrying band B's key color.
+    .decl mark(key: Key, dc: DecChoice, p_fld: Position, p_band: Position)
+    mark(Ky, Dc, P_fld, B) :- field(Ky, P_fld, Col), band_key(Ky, Dc, B, _, Col).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// --- paint ---
+
+.decl paint(p_fld: Position, col: Color, ch: Choice)
+
+// --- Neighbor ---
+
+paint(Q, Col, [Dc, $Neighbor()]) :-
+    parse.mark($U(), Dc, P, B), parse.swatch_color($U(), Dc, B, Col),
+    parse.field($U(), Q, _),
+    ( Q = P                            // the mark
+    ; dir8_elem(D), neighbor(P, D, Q)  // and each cell around it
+    ).
+
+// --- Stamp ---
+
+paint(Q, Col, [Dc, $Stamp()]) :-
+    parse.mark($U(), Dc, P, B), parse.swatch_color($U(), Dc, B, Col),
+    params.shape(Delta), compose(P, Delta, Q), parse.field($U(), Q, _).
+
+// --- Blit ---
+
+paint(Q, Col, [Dc, $Blit()]) :-
+    parse.mark($U(), Dc, P, B),
+    parse.swatch($U(), Dc, B, S, Col),                      // a mark, a swatch cell of its band
+    parse.band_key($U(), Dc, B, P_key, _),                  // the band's key mark
+    displacement(P_key, S, Delta), compose(P, Delta, Q),     // the swatch cell held at the mark
+    parse.field($U(), Q, _).                                 // on the field
+
+// --- output ---
+
+.decl dec_choice(dc: DecChoice)
+dec_choice($Count()). dec_choice($Size()).
+
+.decl paint_choice(paint: Paint)
+paint_choice($Neighbor()). paint_choice($Stamp()). paint_choice($Blit()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([Dc, Pt]) :- dec_choice(Dc), paint_choice(Pt).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- paint(P, Col, Ch).
+out(P, Col, Ch) :-
+    parse.field($U(), P, _), impl_choice(Ch), !paint(P, _, Ch), params.bg(Col).
+
+.comp Determine {
+    .init ex = Parse<Example>
+    ex.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // The header's colored blobs: the swatches and the key marks.
+    .init blob = Components<Example>
+    blob.node(E, P) :- ex.header(E, P, Col), !params.bg(Col).
+
+    .type EI = [e: Example, id: Ident]
+    .init blob_box = Bbox<EI>
+    blob_box.cell([E, Id], P) :- blob.label(E, P, Id).
+
+    // A swatch fills its tile, and it is the blob on the header's swatch side.
+    .decl tile_dim(a: Axis, k: number)
+    tile_dim(A, K) :-
+        params.swatch_dir(D), blob_box.edge_min(Ky, D, 0),    // a blob on the swatch side
+        blob_box.extent(Ky, A, K).
+
+    // The tiles of that extent the header holds.
+    .decl tile_count(a: Axis, n: number)
+    tile_count(A, N) :-
+        ex.header(E, P_hdr, _), tile_dim(A, K),
+        ( params.band_axis(A), params.band_gap(G)         // bands, a line apart
+        ; params.band_axis(A2), perp(A2, A), G = 0        // layers, abutting
+        ),
+        divide_by_size(P_hdr, A, K, G, P_band, _), axis_dim(P_band, A, N).
+
+    // An output cell painted in the band color of a mark.
+    .decl hit(e: Example, p_fld: Position, q: Position)
+    hit(E, P, Q) :-
+        ex.mark(E, _, P, B), ex.swatch_color(E, _, B, Col), ex_out(E, Q, Col).
+
+    // The offset from the mark to that cell.
+    .decl offset(delta: Shift)
+    offset(Delta) :- hit(_, P, Q), displacement(P, Q, Delta).
+
+    // Contradicted: some mark whose output misses the offset.
+    .decl missed(delta: Shift)
+    missed(Delta) :-
+        offset(Delta), ex_out(E, _, _),
+        ex.mark(E, _, P, B), ex.swatch_color(E, _, B, Col),
+        compose(P, Delta, Q), !ex_out(E, Q, Col).
+
+    // The offsets no mark contradicts.
+    .decl shape(delta: Shift)
+    shape(Delta) :- offset(Delta), !missed(Delta).
+}

@@ -1,20 +1,35 @@
 // 6a11f6da
 // concept: overlay decompose rank
-// Layout: 3 vertically-stacked 5×5 ink slabs. Output is the per-cell
+// Layout: vertically-stacked 5×5 ink slabs. Output is the per-cell
 // overlay: the highest-priority candidate wins; no ink is bg.
 //
-//   $Palette() — color order: the params.ink_rank priority ranks
-//   $Stack()   — slab order: the params.slab_rank priority ranks
+// out's choice column = [d, c]:
+//
+//   d (find the slabs):
+//     $Count() — by tile count
+//     $Size()  — by tile size
+//   c (priority):
+//     $Palette() — color order
+//     $Stack()   — slab order
 
 #include "../lib.dl"
 
-.type Choice = Palette {} | Stack {}
+.type DecChoice = Count {} | Size {}
+.type Prio      = Palette {} | Stack {}
+.type Choice    = [d: DecChoice, c: Prio]
+
+.type CellKey = [o: Position, d: DecChoice]
 
 .comp Params {
+    // --- shared ---
     .decl bg(c: Color) bg(0).
-
     .decl tile_axis(a: Axis) tile_axis(AXIS_V).
+
+    // --- Count ---
     .decl tile_count(n: number) tile_count(3).
+
+    // --- Size ---
+    .decl tile_size(k: number) tile_size(5).
 
     // --- Palette ---
     // Ink priority ranks, highest first.
@@ -32,43 +47,47 @@
 
 .init params = Params
 
-.decl impl_choice(ch: Choice)
-impl_choice($Palette()).
-impl_choice($Stack()).
+.decl prio_choice(c: Prio)
+prio_choice($Palette()).
+prio_choice($Stack()).
 
-// Slab decomposition of each input cell.
-.decl decompose(p_grid: Position, p_tile: Position, p_out: Position)
-decompose(P_grid, P_tile, P_out) :-
+// --- decompose cases: the slab a cell sits in ---
+
+.decl decompose(p_grid: Position, p_tile: Position, p_out: Position, dc: DecChoice)
+decompose(P_grid, P_tile, P_out, $Count()) :-
     in(P_grid, _),                                             // input position
-    params.tile_axis(A), params.tile_count(N),                 // slab params
+    params.tile_axis(A), params.tile_count(N),                 // slabs by count
     divide_slab(P_grid, A, N, 0, P_tile, P_out).
+decompose(P_grid, P_tile, P_out, $Size()) :-
+    in(P_grid, _),                                             // input position
+    params.tile_axis(A), params.tile_size(K),                  // slabs by size
+    divide_by_size_slab(P_grid, A, K, 0, P_tile, P_out).
 
 // Inked slab cells competing at each output cell.
-.decl cand(o: Position, p_tile: Position, col: Color)
-cand(P_out, P_tile, Col) :-
+.decl cand(o: Position, p_tile: Position, col: Color, dc: DecChoice)
+cand(P_out, P_tile, Col, Dc) :-
     in(P_grid, Col), !params.bg(Col),                     // inked input cell
-    decompose(P_grid, P_tile, P_out).
+    decompose(P_grid, P_tile, P_out, Dc).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(O, Bg, Ch) :- impl_choice(Ch), decompose(_, _, O), params.bg(Bg), !cand(O, _, _).
+out(O, Bg, [Dc, C]) :-
+    prio_choice(C), decompose(_, _, O, Dc), params.bg(Bg), !cand(O, _, _, Dc).
 
 // --- Palette ---
 
 // The top-priority color competing at each output cell.
-.init front_ink = ArgExtremes<Position, Color>
-front_ink.cand(O, Col, R) :- cand(O, _, Col), params.ink_rank(Col, R).
+.init front_ink = ArgExtremes<CellKey, Color>
+front_ink.cand([O, Dc], Col, R) :- cand(O, _, Col, Dc), params.ink_rank(Col, R).
 
-out(O, Col, $Palette()) :- front_ink.low(O, Col, _).
+out(O, Col, [Dc, $Palette()]) :- front_ink.low([O, Dc], Col, _).
 
 // --- Stack ---
 
 // The top-priority slab competing at each output cell.
-.init front_slab = ArgExtremes<Position, Position>
-front_slab.cand(O, T, R) :- cand(O, T, _), params.slab_rank(T, R).
+.init front_slab = ArgExtremes<CellKey, Position>
+front_slab.cand([O, Dc], T, R) :- cand(O, T, _, Dc), params.slab_rank(T, R).
 
-out(O, Col, $Stack()) :- front_slab.low(O, T, _), cand(O, T, Col).
-
-// --- determination ---
+out(O, Col, [Dc, $Stack()]) :- front_slab.low([O, Dc], T, _), cand(O, T, Col, Dc).
 
 .comp Determine {
     .decl cand(e: Example, o: Position, p_tile: Position, col: Color)

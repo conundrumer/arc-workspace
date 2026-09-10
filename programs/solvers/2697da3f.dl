@@ -1,0 +1,62 @@
+// 2697da3f
+// draft
+// concept: tile-arrangement d4
+// One figure on a blank field. The output is a canvas carrying four copies
+// of it, each flush against one edge and centered across it, leaving a blank
+// square in the middle: on each axis the canvas runs figure-depth,
+// figure-span, figure-depth. The copy at params.arm keeps the input's
+// orientation, and the group params.sym carries it to the other three arms.
+// Every figure here mirrors across the arm axis, so the rotations and the
+// diagonal mirrors agree on this task.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+
+    // The edge the input-oriented copy sits against.
+    .decl arm(d: Dir) arm(DIR_L).
+
+    // The group carrying the copy to the other arms.
+    .decl sym(s: Sym) sym(SYM_C4).
+}
+
+.init params = Params
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.bg(Col).
+
+.init fig = BoxFrame<Unit>
+fig.cell($U(), P) :- ink(P, _).
+
+.init arm_depth = DirPack<Unit>
+arm_depth.edge($U(), D2, K) :-
+    params.arm(D), axis_of(D, A), fig.extent($U(), A, Depth),      // depth along the arm axis
+    dir_elem(D2),                                                  // each edge of the canvas
+    ( D2 = D, K = 0                                                // flush against the arm's edge
+    ; D2 != D, K = Depth                                           // one arm deep elsewhere
+    ).
+
+// How far the canvas reaches past the figure's box on each side.
+.decl arm_margin(m: Inset)
+arm_margin(M) :-
+    params.arm(D), opposite(D, D_far),                // the arm's edge, and the one across
+    axis_of(D, A), fig.extents($U(), A, _, Span),     // span across the arm axis
+    edge_delta(D_far, Span, Blank),                   // the blank square
+    arm_depth.pos($U(), Depths), compose(Depths, Blank, M).
+
+.decl placed(p: Position, col: Color)
+placed(P_canvas, Col) :-
+    ink(P, Col), fig.inner($U(), P, P_inner),       // the figure in its own frame
+    arm_margin(M), compose(P_inner, M, P_canvas).   // set into its arm
+
+// The margins already span the canvas, so a placed cell reads its extent.
+.init canvas = Frame2D<Unit>
+canvas.extent($U(), A, N) :- axis_elem(A), placed(P, _), axis_dim(P, A, N).
+
+.decl painted(p: Position, col: Color)
+painted(P2, Col) :- placed(P, Col), params.sym(S), sym_member(S, R), apply(R, P, P2).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- painted(P, Col).
+out(P, Col) :- canvas.cell($U(), P), !painted(P, _), params.bg(Col).

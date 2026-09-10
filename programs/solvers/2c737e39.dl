@@ -1,0 +1,68 @@
+// 2c737e39
+// draft
+// concept: objects markers stamp
+// A drawing sits on bg with one of its cells in params.mark — its anchor — and one
+// more params.mark cell elsewhere is the target. The input stands, and a copy of the
+// drawing stamps with its anchor on the target; the anchor prints bg, so the
+// target is consumed. Two hypotheses of what the copy carries:
+//
+//   $Transparent — the drawing's cells, leaving the rest of the landing alone.
+//   $Opaque      — its bounding box, bg included.
+
+#include "../lib.dl"
+
+.type Choice = Transparent {} | Opaque {}
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    .decl mark(col: Color) mark(5).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Transparent()). impl_choice($Opaque()).
+
+// --- shared ---
+
+.init obj = Components8<Unit>
+obj.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+// The drawing holds more than one cell.
+.decl drawing(id: Ident)
+drawing(Id) :- obj.label($U(), P, Id), obj.label($U(), Q, Id), P != Q.
+
+.decl drawn(p: Position, col: Color)
+drawn(P, Col) :- obj.label($U(), P, Id), drawing(Id), in(P, Col).
+
+.decl shift(v: Shift)
+shift(V) :-
+    drawn(P, Col), params.mark(Col),         // the drawing's anchor
+    in(Q, Col), !drawn(Q, _),                // the target, marked outside the drawing
+    displacement(P, Q, V).
+
+.decl footprint(p: Position, ch: Choice)
+
+.decl stamp(p: Position, col: Color, ch: Choice)
+stamp(P_out, Col, Ch) :-
+    footprint(P, Ch), in(P, C),                 // a cell the stamp carries
+    shift(V), compose(P, V, P_out),             // moved onto the target
+    in(P_out, _),                               // landing in the frame
+    ( !params.mark(C), Col = C                  // its color prints
+    ; params.mark(C), params.bg(Col) ).         // the anchor prints bg
+
+// --- $Transparent ---
+
+footprint(P, $Transparent()) :- drawn(P, _).
+
+// --- $Opaque ---
+
+.init box = Bbox<Unit>
+box.cell($U(), P) :- drawn(P, _).
+box.grid($U(), P) :- in(P, _).
+
+footprint(P, $Opaque()) :- box.inside($U(), P).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- stamp(P, Col, Ch).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !stamp(P, _, Ch).

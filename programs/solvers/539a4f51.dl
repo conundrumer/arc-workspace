@@ -1,0 +1,78 @@
+// 539a4f51
+// draft
+// concept: grow wallpaper
+// Both grids are built from nested L-shells at params.corner: every cell at a
+// given Chebyshev distance from that corner carries one color. The input shows
+// the leading shells of a periodic sequence and leaves the rest bg. The output
+// is a larger frame carrying the same sequence, continued by cycling through
+// the shells the input shows. Two models of the output frame:
+//
+//   $Scale()  — params.scale copies of the input frame on each axis.
+//   $Canvas() — a stored square of params.out_dim.
+
+#include "../lib.dl"
+
+.type Choice = Scale {} | Canvas {}
+
+.comp Params {
+    // --- shared ---
+    .decl bg(c: Color) bg(0).
+    .decl corner(d: DiagDir) corner(DIAG_TL).
+
+    // --- $Scale ---
+    .decl scale(n: number) scale(2).
+
+    // --- $Canvas ---
+    .decl out_dim(n: number) out_dim(10).
+}
+
+.init params = Params
+
+// The output frame, per case.
+.decl frame_cell(ch: Choice, p_grid: Position)
+
+// The cells a shell index is read off: the input's, and the output frame's.
+.decl cell(p: Position)
+cell(P) :- in(P, _).
+cell(P) :- frame_cell(_, P).
+
+// Shell index: the greater of the two distances to params.corner's edges.
+.decl shell(p: Position, k: number)
+shell(P, K) :-
+    cell(P), params.corner(Diag),
+    diag_dist(P, Diag, _, K, K2), K2 <= K.
+
+// The color a shown shell carries. The shells the input leaves bg lie past
+// the pattern.
+.decl shell_color(k: number, col: Color)
+shell_color(K, Col) :- in(P, Col), shell(P, K), !params.bg(Col).
+
+// The shown shells close into a cycle, and an output shell index walks that
+// many steps around it from the corner shell.
+.init cyc = IndexCycle<Unit>
+cyc.idx($U(), K) :- shell_color(K, _).
+
+.init wrap = CycleWalk<Unit, number>
+wrap.succ($U(), K, K2) :- cyc.succ($U(), K, K2).
+wrap.step($U(), K) :- shell(_, K).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_grid, Col, Ch) :-
+    frame_cell(Ch, P_grid), shell(P_grid, K),
+    wrap.walk($U(), 0, K, K2), shell_color(K2, Col).
+
+// --- $Scale ---
+
+.init tiles = Frame2D<Unit>
+tiles.extent($U(), A, N) :- axis_elem(A), params.scale(N).
+
+frame_cell($Scale(), P_grid) :-
+    tiles.cell($U(), P_tile), in(P_intile, _),
+    concat_2d(P_tile, P_intile, 0, P_grid).
+
+// --- $Canvas ---
+
+.init canvas = Frame2D<Unit>
+canvas.extent($U(), A, N) :- axis_elem(A), params.out_dim(N).
+
+frame_cell($Canvas(), P_grid) :- canvas.cell($U(), P_grid).

@@ -1,0 +1,107 @@
+// 3d6c6e23
+// draft
+// concept: lines count rank
+// Each line of pixels collapses into a pile on the floor: a triangle
+// centered on the line, one cell wider to each side per row, holding
+// exactly as many cells as the line has pixels. The pixels fill it in rank
+// order from the apex down, and the input pixels go to bg.
+//
+// Choice = the order the pixels fill in:
+//   $Fall() — the order they stand in the line, the topmost first.
+//   $Sink() — by color group, the largest group at the base; within a group
+//             the fall order stands.
+
+#include "../lib.dl"
+
+.type Choice = Fall {} | Sink {}
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+
+    .decl gravity(d: Dir) gravity(DIR_B).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Fall()). impl_choice($Sink()).
+
+// The line a cell falls along.
+.decl line_of(p: Position, l: Position)
+line_of(P, L) :- in(P, _), params.gravity(D), axis_of(D, A), split(P, A, _, L).
+
+.decl pixel(p: Position, l: Position, col: Color)
+pixel(P, L, Col) :- in(P, Col), !params.bg(Col), line_of(P, L).
+
+// One pixel farther from the floor than another of its line.
+.decl above(l: Position, p1: Position, p2: Position)
+above(L, P1, P2) :-
+    pixel(P1, L, _), pixel(P2, L, _), params.gravity(D), nearer(D, P2, P1).
+
+// Any cell of a line that holds pixels can be the apex.
+.decl cand(l: Position, a: Position)
+cand(L, A) :- pixel(_, L, _), line_of(A, L).
+
+// The triangle an apex casts down to the floor, one cell wider to each
+// side per step.
+.decl cone(a: Position, p: Position)
+cone(A, A) :- cand(_, A).
+cone(A, Q) :-
+    cone(A, P),                                             // the cone so far
+    params.gravity(D), ( D8 = D ; dir_of(D8, _, D) ),       // toward the floor, straight or diagonal
+    neighbor(P, D8, Q), in(Q, _).                           // one step on, inside the grid
+
+.init cone_size = Tally<Position, Position>
+cone_size.item(A, P) :- cone(A, P).
+
+.init line_size = Tally<Position, Position>
+line_size.item(L, P) :- pixel(P, L, _).
+
+// The line's pile is the triangle that holds its pixels exactly.
+.decl apex(l: Position, a: Position)
+apex(L, A) :- cand(L, A), cone_size.tally(A, N), line_size.tally(L, N).
+
+.decl pile(l: Position, p: Position)
+pile(L, P) :- apex(L, A), cone(A, P).
+
+// The pile fills from the apex, row by row. A row's lateral order is not
+// witnessed, so both senses run, and a row they disagree on gets no output.
+.type Stack = [l: Position, s: Sense]
+
+.init lex = LexOrder<Stack>
+lex.cell([L, S], P) :- pile(L, P), sense_elem(S).
+lex.axis([L, S], Ax) :- pile(L, _), sense_elem(S), params.gravity(D), axis_of(D, Ax).
+lex.corner([L, S], Diag) :-
+    pile(L, _), params.gravity(D), opposite(D, D_up),    // the pile's apex corner
+    turn(S, D_up, Lat), diag_dirs(Diag, _, D_up, Lat). // one lateral per sense
+
+// The order the line's pixels fill the pile in, one hypothesis per case.
+.type Fill = [l: Position, ch: Choice]
+
+.init fill = Order<Fill, Position>
+fill.elem([L, Ch], P) :- pixel(P, L, _), impl_choice(Ch).
+
+// --- $Fall ---
+
+fill.before([L, $Fall()], P1, P2) :- above(L, P1, P2).
+
+// --- $Sink ---
+
+.type Group = [l: Position, col: Color]
+
+.init group = Tally<Group, Position>
+group.item([L, Col], P) :- pixel(P, L, Col).
+
+fill.before([L, $Sink()], P1, P2) :-
+    pixel(P1, L, C1), pixel(P2, L, C2),
+    ( group.tally([L, C1], N1), group.tally([L, C2], N2), N1 < N2  // the smaller group first
+    ; C1 = C2, above(L, P1, P2)                                    // within a group, the fall order
+    ).
+
+// --- shared ---
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    lex.rank([L, S], P, R),                            // a pile cell, in fill order
+    fill.rank([L, Ch], P_px, R), pixel(P_px, L, Col).  // the pixel of that rank
+out(P, Col, Ch) :- in(P, _), !pile(_, P), params.bg(Col), impl_choice(Ch).

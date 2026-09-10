@@ -1,0 +1,119 @@
+// 800d221b
+// draft
+// concept: objects count
+// A network of wires in one color runs over the background. Each region of
+// the other colors is framed by wire, and its wire runs to a solid 3×3
+// hub of wire. The output recolors each wire component with the dominant
+// color of its region, keeps the hub's ring, and colors the hub's center
+// with the dominant color among the wires. Regions and background stay.
+// No task data: the background is the commonest color, the wire the
+// commonest other color, and the rest are region colors.
+// Choice = [f, c] crosses the two majorities the pairs leave open:
+//   f (a wire component's color):
+//     $Region() — the mode of the region the component frames.
+//     $Touch()  — the mode of the region cells the component touches.
+//   c (the hub center's color):
+//     $Contact() — the mode over the wire cells attached to the hub.
+//     $Extent()  — the mode over every wire cell.
+
+#include "../lib.dl"
+
+.type Fill = Region {} | Touch {}
+.type Center = Contact {} | Extent {}
+.type Choice = [f: Fill, c: Center]
+
+.comp Params {}
+
+.init params = Params
+
+.decl fill_choice(f: Fill)
+fill_choice($Region()). fill_choice($Touch()).
+
+.decl center_choice(c: Center)
+center_choice($Contact()). center_choice($Extent()).
+
+// The colors by role: the background, the wire, and the region colors.
+.init bg_mode = Mode<Unit, Color, Position>
+bg_mode.item($U(), Col, P) :- in(P, Col).
+
+.decl bg(col: Color)
+bg(Col) :- bg_mode.mode($U(), Col).
+
+.init wire_mode = Mode<Unit, Color, Position>
+wire_mode.item($U(), Col, P) :- in(P, Col), !bg(Col).
+
+.decl wire(col: Color)
+wire(Col) :- wire_mode.mode($U(), Col).
+
+.decl wire_cell(p: Position)
+wire_cell(P) :- in(P, Col), wire(Col).
+
+.decl region_cell(p: Position, col: Color)
+region_cell(P, Col) :- in(P, Col), !bg(Col), !wire(Col).
+
+// The hub: the one wire cell the wire does not expose (the wire is one
+// cell thick everywhere else), with its ring.
+.init rim = Rim8<Unit>
+rim.cell($U(), P) :- wire_cell(P).
+
+.decl hub_center(p: Position)
+hub_center(P) :- wire_cell(P), !rim.rim($U(), P).
+
+.decl hub(p: Position)
+hub(P) :- hub_center(P).
+hub(Q) :- hub_center(P), dir8_elem(D), neighbor(P, D, Q).
+
+// The wires: the wire cells outside the hub, by connected component.
+.init wires = Components<Unit>
+wires.node($U(), P) :- wire_cell(P), !hub(P).
+
+// A wire cell beside a region cell of color col.
+.decl touch(p: Position, q: Position, col: Color)
+touch(P, Q, Col) :- wires.node($U(), P), dir_elem(D), neighbor(P, D, Q), region_cell(Q, Col).
+
+// --- fill: a wire component's color ---
+
+.decl fill(id: Ident, col: Color, f: Fill)
+
+// --- $Region ---
+.init regions = Components<Unit>
+regions.node($U(), P) :- region_cell(P, _).
+
+.init region_mode = Mode<Ident, Color, Position>
+region_mode.item(Id, Col, P) :- regions.label($U(), P, Id), region_cell(P, Col).
+
+fill(Id, Col, $Region()) :-
+    wires.label($U(), P, Id), touch(P, Q, _),     // the component touches a region
+    regions.label($U(), Q, Id_r), region_mode.mode(Id_r, Col).
+
+// --- $Touch ---
+.init touch_mode = Mode<Ident, Color, Position>
+touch_mode.item(Id, Col, Q) :- wires.label($U(), P, Id), touch(P, Q, Col).
+
+fill(Id, Col, $Touch()) :- touch_mode.mode(Id, Col).
+
+.decl wire_color(p: Position, col: Color, f: Fill)
+wire_color(P, Col, F) :- wires.label($U(), P, Id), fill(Id, Col, F).
+
+// --- center: the hub center's color ---
+
+.init center_mode = Mode<Choice, Color, Position>
+
+// --- $Contact ---
+center_mode.item([F, $Contact()], Col, P) :-
+    wire_color(P, Col, F),
+    hub(Q), dir_elem(D), neighbor(P, D, Q).   // attached to the hub
+
+// --- $Extent ---
+center_mode.item([F, $Extent()], Col, P) :- wire_color(P, Col, F).
+
+// --- output ---
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, [F, C]) :-
+    in(P, Col_in), fill_choice(F), center_choice(C),
+    ( hub_center(P), center_mode.mode([F, C], Col)   // hub center takes the majority
+    ; hub(P), !hub_center(P), Col = Col_in           // hub ring stays wire
+    ; wire_color(P, Col, F)                          // wire takes its fill
+    ; !wire_cell(P), Col = Col_in                    // regions and background stay
+    ).

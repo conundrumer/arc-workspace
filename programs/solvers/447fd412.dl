@@ -1,0 +1,98 @@
+// 447fd412
+// draft
+// concept: objects markers scale stamp
+// A template object sits in the grid: a drawing in the ink color with mark
+// cells attached to it. Elsewhere, blocks of the mark color stand alone, each
+// a square.
+//
+// A placement sends one template mark to one block. Under it, each step of one
+// cell in the template is a step of K cells in the grid, where K is that
+// block's side, so every template cell covers a KxK box. The placement holds
+// when each template mark's box is a block. A holding placement stamps the
+// template into its boxes, clipped where a box runs off the grid.
+//
+// The cases differ on what the stamp carries. $Ink stamps the drawing alone
+// and leaves the blocks as they stand. $Whole stamps the template entire: a
+// block is the scaled image of its mark, and the stamp completes it.
+
+#include "../lib.dl"
+
+.type Choice = Ink {} | Whole {}
+
+.comp Params {
+    // The drawing's color.
+    .decl ink(col: Color) ink(1).
+
+    // The color of the marks and of the blocks.
+    .decl mark(col: Color) mark(2).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Ink()). impl_choice($Whole()).
+
+.decl ink_cell(p: Position)
+ink_cell(P) :- in(P, Col), params.ink(Col).
+
+// --- objects ---
+
+.init obj = Components<Unit>
+obj.node($U(), P) :- ink_cell(P).
+obj.node($U(), P) :- in(P, Col), params.mark(Col).
+
+.decl object(id: Ident, p: Position)
+object(Id, P) :- obj.label($U(), P, Id).
+
+// The template is the object the drawing belongs to; the blocks are the rest.
+.decl template(id: Ident)
+template(Id) :- object(Id, P), ink_cell(P).
+
+.init block = Bbox<Ident>
+block.cell(Id, P) :- object(Id, P), !template(Id).
+
+.decl template_cell(p: Position, col: Color)
+template_cell(P, Col) :- template(Id), object(Id, P), in(P, Col).
+
+.decl template_mark(p: Position)
+template_mark(P) :- template_cell(P, Col), params.mark(Col).
+
+// --- placement ---
+
+// Placement (T0, Id) sends template mark T0 to block Id. Under it, template
+// cell P covers the box Box.
+.decl carry(t0: Position, id: Ident, p: Position, box: Position)
+carry(T0, Id, T0, Box) :- template_mark(T0), block.margin(Id, Box).
+carry(T0, Id, P2, Box2) :-
+    carry(T0, Id, P, Box),                                   // known correspondence
+    dir_elem(D), neighbor(P, D, P2), template_cell(P2, _),   // one step along the template
+    block.extents(Id, _, K, K), jump(Box, D, K, Box2).       // K cells in the grid, K the block's side
+
+// A placement that sends some template mark where no block stands.
+.decl astray(t0: Position, id: Ident)
+astray(T0, Id) :- carry(T0, Id, P, Box), template_mark(P), !block.margin(_, Box).
+
+// The box a template cell covers, under a placement that holds.
+.decl covers(p: Position, box: Position)
+covers(P, Box) :- carry(T0, Id, P, Box), !astray(T0, Id).
+
+// --- stamp ---
+
+// A cell of a covered box, in the color the box's template cell carries.
+.decl stamped(p: Position, col: Color, ch: Choice)
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- stamped(P, Col, Ch).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !stamped(P, _, Ch).
+
+// --- $Ink ---
+
+stamped(Q, Col, $Ink()) :-
+    covers(P, Box), template_cell(P, Col), params.ink(Col),  // the drawing's boxes
+    in(Q, _), geq(Q, Box).                                   // as far as the grid reaches
+
+// --- $Whole ---
+
+stamped(Q, Col, $Whole()) :-
+    covers(P, Box), template_cell(P, Col),  // every template cell's box
+    in(Q, _), geq(Q, Box).

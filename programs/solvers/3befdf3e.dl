@@ -1,0 +1,186 @@
+// 3befdf3e
+// draft
+// concept: objects cast lookup
+// Every object is a filled rectangle: a one-cell wall of one color around a
+// square core of another. The output swaps the two colors where the object
+// stands, and adds wall-colored arms outside, one on each side.
+//
+// $Cast composes that figure: each face of the object casts outward as deep
+// as the core. $Lookup stores the whole figure once per core size, and lays
+// it over the core.
+
+#include "../lib.dl"
+
+.type Choice = Cast {} | Lookup {}
+
+// One face of an object: the cells that face direction d.
+.type Side = [id: Ident, d: Dir]
+
+.comp Params {
+    // --- shared ---
+    .decl bg(col: Color) bg(0).
+
+    // --- $Lookup ---
+
+    // The figure a core of size n makes, in a frame of its own. Each cell
+    // takes either the object's wall color or its core color.
+    .decl fig_wall(n: number, p: Position)
+    .decl fig_core(n: number, p: Position)
+
+    // The core's box inside that frame — where the figure meets the object.
+    .decl fig_core_box(n: number, p: Position)
+    fig_core_box(1, [2, 2, 2, 2]). fig_core_box(2, [3, 3, 3, 3]).
+
+    GRID_MASK_5x5(fig_wall, 1,
+        _, 1, 1, 1, _,
+        1, _, _, _, 1,
+        1, _, 1, _, 1,
+        1, _, _, _, 1,
+        _, 1, 1, 1, _)
+    GRID_MASK_5x5(fig_core, 1,
+        _, _, _, _, _,
+        _, 1, 1, 1, _,
+        _, 1, _, 1, _,
+        _, 1, 1, 1, _,
+        _, _, _, _, _)
+
+    GRID_MASK_8x8(fig_wall, 2,
+        _, _, 1, 1, 1, 1, _, _,
+        _, _, 1, 1, 1, 1, _, _,
+        1, 1, _, _, _, _, 1, 1,
+        1, 1, _, 1, 1, _, 1, 1,
+        1, 1, _, 1, 1, _, 1, 1,
+        1, 1, _, _, _, _, 1, 1,
+        _, _, 1, 1, 1, 1, _, _,
+        _, _, 1, 1, 1, 1, _, _)
+    GRID_MASK_8x8(fig_core, 2,
+        _, _, _, _, _, _, _, _,
+        _, _, _, _, _, _, _, _,
+        _, _, 1, 1, 1, 1, _, _,
+        _, _, 1, _, _, 1, _, _,
+        _, _, 1, _, _, 1, _, _,
+        _, _, 1, 1, 1, 1, _, _,
+        _, _, _, _, _, _, _, _,
+        _, _, _, _, _, _, _, _)
+}
+
+.init params = Params
+
+.init objs = Components<Unit>
+objs.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+.decl obj_cell(id: Ident, p: Position)
+obj_cell(Id, P) :- objs.label($U(), P, Id).
+
+// The wall is the object's rim; the core is what it holds.
+.init rim = Rim<Ident>
+rim.cell(Id, P) :- obj_cell(Id, P).
+
+.decl core(id: Ident, p: Position)
+core(Id, P) :- obj_cell(Id, P), !rim.rim(Id, P).
+
+.decl wall_col(id: Ident, col: Color)
+wall_col(Id, Col) :- rim.rim(Id, P), in(P, Col).
+
+.decl core_col(id: Ident, col: Color)
+core_col(Id, Col) :- core(Id, P), in(P, Col).
+
+.init core_box = Bbox<Ident>
+core_box.cell(Id, P) :- core(Id, P).
+
+.decl paint(p: Position, col: Color, ch: Choice)
+
+// --- Cast ---
+
+.init arm = Ray<Side>
+arm.mark([Id, D], P) :- rim.rim_dir(Id, P, D), dir_elem(D).  // each cardinal face
+arm.dir([Id, D], D)  :- arm.mark([Id, D], _).                // casts the way it faces
+arm.cell(K, P)       :- arm.mark(K, _), in(P, _).
+
+paint(P, Col, $Cast()) :- rim.rim(Id, P), core_col(Id, Col).
+paint(P, Col, $Cast()) :- core(Id, P), wall_col(Id, Col).
+
+paint(P, Col, $Cast()) :-
+    arm.ray([Id, D], P, D, K, _), K != 0,                  // beyond the face
+    axis_of(D, A), core_box.extent(Id, A, N), K <= N,      // as deep as the core
+    wall_col(Id, Col).
+
+// --- Lookup ---
+
+// The figure seen from the core box it holds.
+.init fig_rf = Reframe<number>
+fig_rf.outer(N, M) :- params.fig_core_box(N, M).
+fig_rf.cell(N, P) :- params.fig_wall(N, P).
+fig_rf.cell(N, P) :- params.fig_core(N, P).
+
+paint(P, Col, $Lookup()) :-
+    core_box.extents(Id, _, N, N),
+    ( params.fig_wall(N, P_fig), wall_col(Id, Col)     // the figure's wall role
+    ; params.fig_core(N, P_fig), core_col(Id, Col) ),  // its core role
+    fig_rf.view(N, P_fig, P_in),                       // the cell, from the core
+    core_box.margin(Id, M), compose(M, P_in, P),       // laid on the object's core
+    in(P, _).                                          // inside the grid
+
+// --- output ---
+
+.decl impl_choice(ch: Choice)
+impl_choice($Cast()). impl_choice($Lookup()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- paint(P, Col, Ch).
+out(P, Col, Ch) :- in(P, _), impl_choice(Ch), !paint(P, _, Ch), params.bg(Col).
+
+.comp Determine {
+    .type Obj = [e: Example, id: Ident]
+
+    .init objs = Components<Example>
+    objs.node(E, P) :- ex_in(E, P, Col), !params.bg(Col).
+
+    .decl obj_cell(o: Obj, p: Position)
+    obj_cell([E, Id], P) :- objs.label(E, P, Id).
+
+    .init rim = Rim<Obj>
+    rim.cell(O, P) :- obj_cell(O, P).
+
+    .decl core(o: Obj, p: Position)
+    core(O, P) :- obj_cell(O, P), !rim.rim(O, P).
+
+    .init core_box = Bbox<Obj>
+    core_box.cell(O, P) :- core(O, P).
+
+    // The figure an object leaves: the output ink its own cells sit in.
+    .init figs = Components<Example>
+    figs.node(E, P) :- ex_out(E, P, Col), !params.bg(Col).
+
+    .decl fig(o: Obj, p: Position)
+    fig([E, Id], P) :-
+        obj_cell([E, Id], Q), figs.label(E, Q, F),   // the object's ink
+        figs.label(E, P, F).                         // and the rest of it
+
+    // The figure viewed from its own box — the frame the catalog stores.
+    .init fig_box = BoxFrame<Obj>
+    fig_box.cell(O, P) :- fig(O, P).
+
+    // Each figure cell's output color, in the figure's own frame.
+    .decl fig_view(o: Obj, n: number, p_fig: Position, col: Color)
+    fig_view([E, Id], N, P_fig, Col) :-
+        core_box.extents([E, Id], _, N, N),
+        fig_box.inner([E, Id], P, P_fig), ex_out(E, P, Col).
+
+    .decl fig_wall(n: number, p: Position)
+    fig_wall(N, P_fig) :-
+        fig_view([E, Id], N, P_fig, Col),
+        rim.rim([E, Id], Q), ex_in(E, Q, Col).     // the color the wall had
+
+    .decl fig_core(n: number, p: Position)
+    fig_core(N, P_fig) :-
+        fig_view([E, Id], N, P_fig, Col),
+        core([E, Id], Q), ex_in(E, Q, Col).        // the color the core had
+
+    .init core_in_fig = Bbox<Obj>
+    core_in_fig.cell(O, P_fig) :- core(O, P), fig_box.inner(O, P, P_fig).
+
+    .decl fig_core_box(n: number, p: Position)
+    fig_core_box(N, M) :-
+        core_box.extents(O, _, N, N), core_in_fig.margin(O, M).
+}

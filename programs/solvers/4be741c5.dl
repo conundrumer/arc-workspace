@@ -1,0 +1,77 @@
+// 4be741c5
+// draft
+// concept: lines rank count
+// The grid is a stack of ragged color bands. Each band runs across the grid
+// on one axis, so on that axis every color reaches both edges; along the
+// other axis the bands follow one another. The output is one cell per band,
+// on a one-cell-wide strip along the stacking axis, in stacking order.
+//
+// A band ranks by its leading line — the line it holds nearest the end of
+// the stack. Either end serves: the ranks swap ends with it, and the strip
+// comes out the same. Two parses of which lines a band holds:
+//
+//   $Present  — the lines its color appears on.
+//   $Majority — the lines its color is the commonest on.
+//
+// They coincide on these pairs, and diverge on a band whose color is
+// nowhere the commonest, which $Majority drops from the stack.
+
+#include "../lib.dl"
+
+.type Choice = Present {} | Majority {}
+
+// A case, read from one end of the stacking axis.
+.type CaseDir = [ch: Choice, d: Dir]
+
+// One band of that parse.
+.type CaseBand = [ch: Choice, d: Dir, col: Color]
+
+.comp Params {}
+
+.init params = Params
+
+.decl touch(col: Color, d: Dir)
+touch(Col, D) :- dir_elem(D), in(P, Col), dist(P, D, 0).
+
+// Some color misses an edge of a — the bands do not run across a.
+.decl gapped(a: Axis)
+gapped(A) :- in(_, Col), axis_of(D, A), !touch(Col, D).
+
+// The bands stack along the axis they do not run across.
+.decl band_axis(a: Axis)
+band_axis(A) :- perp(A2, A), !gapped(A2).
+
+// The line a cell sits on: its place along the stacking axis.
+.decl line(p: Position, l: Position)
+line(P, L) :- in(P, _), band_axis(A), split(P, A, L, _).
+
+// The lines a band holds.
+.decl band_line(ch: Choice, col: Color, l: Position)
+
+// A band's leading line, as its distance to one end of the stack.
+.init lead = Extremes<CaseBand>
+lead.cand([Ch, D, Col], K) :-
+    band_line(Ch, Col, L),                          // a line the band holds
+    band_axis(A), axis_of(D, A), dist(L, D, K).     // its distance from each end
+
+// The bands rank by their leading lines.
+.init place = Ordinal<CaseDir>
+place.idx_set([Ch, D], K) :- lead.low([Ch, D, _], K).
+
+// --- Present ---
+
+band_line($Present(), Col, L) :- in(P, Col), line(P, L).
+
+// --- Majority ---
+
+.init commonest = Mode<Position, Color, Position>
+commonest.item(L, Col, P) :- in(P, Col), line(P, L).
+
+band_line($Majority(), Col, L) :- commonest.mode(L, Col).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    lead.low([Ch, D, Col], K),                      // the band's leading line
+    place.rank([Ch, D], K, R),                      // bands ahead of it
+    place.rank_desc([Ch, D], K, R2),                // bands behind it
+    axis_delta(D, R, R2, P).                        // its cell of the strip

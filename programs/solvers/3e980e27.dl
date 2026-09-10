@@ -1,0 +1,72 @@
+// 3e980e27
+// draft
+// concept: objects markers stamp d4
+// Non-bg cells form 8-connected shapes, and a cell with nothing beside it is
+// a bare marker. Its color also marks one cell of a shape; that shape stamps
+// onto the bare marker, marker cell on marker cell, turned by that color's D4.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+
+    // Marker color -> the D4 its stamp carries.
+    .decl stamp_d4(col: Color, d: D4)
+    stamp_d4(2, D4_LR). stamp_d4(3, D4_ID).
+}
+
+.init params = Params
+
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)  // input
+
+    .decl ink(key: Key, p: Position, col: Color)
+    ink(K, P, Col) :- cell(K, P, Col), !params.bg(Col).
+
+    .init obj = Components8<Key>
+    obj.node(K, P) :- ink(K, P, _).
+
+    // Ink with ink beside it: part of a shape.
+    .decl joined(key: Key, p: Position)
+    joined(K, P) :- ink(K, P, _), dir8_elem(D), neighbor(P, D, Q), ink(K, Q, _).
+
+    // A bare marker: ink with nothing beside it.
+    .decl lone(key: Key, p: Position, col: Color)
+    lone(K, P, Col) :- ink(K, P, Col), !joined(K, P).
+
+    // A shape's cells as displacements from its marker, keyed by marker color.
+    .decl footprint(key: Key, col_mark: Color, v: Shift, col: Color)
+    footprint(K, M, V, Col) :-
+        lone(K, _, M), ink(K, P0, M), joined(K, P0),  // a marker color, worn inside a shape
+        obj.label(K, P0, Id), obj.label(K, P, Id),    // a cell of the same shape
+        ink(K, P, Col), displacement(P0, P, V).       // its color and offset from the marker
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+.decl paint(p: Position, col: Color)
+paint(Q, Col) :-
+    parse.lone($U(), P, M), params.stamp_d4(M, D),   // a bare marker, and its color's D4
+    parse.footprint($U(), M, V, Col),                // a cell of that color's stamp
+    apply(D, V, V2), compose(P, V2, Q),              // that cell, laid marker on marker
+    in(Q, _).                                        // on the grid
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- paint(P, Col).
+out(P, Col) :- in(P, Col), !paint(P, _).
+
+.comp Determine {
+    .init ex = Parse<Example>
+    ex.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // A D4 some example refutes: it lands a stamp cell on a different color.
+    .decl refuted(col_mark: Color, d: D4)
+    refuted(M, D) :-
+        ex.lone(E, P, M), ex.footprint(E, M, V, Col),   // a bare marker and a cell of its stamp
+        d4_elem(D), apply(D, V, V2), compose(P, V2, Q), // placed under a candidate D4
+        ex_out(E, Q, Col2), Col2 != Col.                // the output disagrees
+
+    .decl stamp_d4(col: Color, d: D4)
+    stamp_d4(M, D) :- ex.footprint(_, M, _, _), d4_elem(D), !refuted(M, D).
+}

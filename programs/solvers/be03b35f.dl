@@ -33,8 +33,6 @@ out(P_grid_out, Col) :-
     corner_anchor(Diag, P_anchor, P_grid_in),    // P_anchor matches input at quadrant corner
     apply(D, P_anchor, P_grid_out).              // P_grid_out = D4 applied to P_anchor
 
-// --- determination ---
-
 .comp Determine {
     .type Quad = [e: Example, diag: DiagDir]
 

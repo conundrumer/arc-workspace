@@ -1,0 +1,99 @@
+// 414297c0
+// draft
+// concept: crop markers objects stamp lookup
+// A solid canvas rectangle holds scattered dots — single cells in other
+// colors. Off the canvas sit glyphs: a key cell in a dot's color, with ink
+// cells around it. The output is the canvas, with each dot's glyph stamped
+// on it, the key landing on the dot. Choice = [sp, pt] crosses the hypotheses:
+//
+//   sp (how far a glyph runs from its key):
+//     $Near()   — one step off the key, in any of the eight directions.
+//     $Object() — the rest of the key's 8-connected object.
+//   pt (which of the cells off the canvas a glyph is drawn in):
+//     $Stored() — data: the cells holding params.ink.
+//     $Copied() — structure: all of them, each stamped in the color it
+//                 holds.
+
+#include "../lib.dl"
+
+.type Spread = Near {} | Object {}
+.type Paint = Stored {} | Copied {}
+.type Choice = [sp: Spread, pt: Paint]
+
+.comp Params {
+    // --- shared ---
+    .decl bg(col: Color) bg(0).
+
+    // --- $Stored ---
+    .decl ink(col: Color) ink(2).
+}
+
+.init params = Params
+
+// The canvas covers more cells than anything else on the background.
+.init canvas = Mode<Unit, Color, Position>
+canvas.item($U(), Col, P) :- in(P, Col), !params.bg(Col).
+
+// The canvas viewed from its own box — the output frame.
+.init box = BoxFrame<Unit>
+box.cell($U(), P) :- in(P, Col), canvas.mode($U(), Col).
+box.grid($U(), P) :- in(P, _).
+
+// A canvas cell that breaks the canvas color — a stamp site.
+.decl dot(p_out: Position, col: Color)
+dot(P_out, Col) :-
+    box.inner($U(), P, P_out), in(P, Col), !canvas.mode($U(), Col).
+
+// The cells the glyphs are made of: off the canvas, off the background.
+.decl outside(p: Position, col: Color)
+outside(P, Col) :- in(P, Col), !params.bg(Col), !box.inner($U(), P, _).
+
+// The key of the glyph a dot designates: the cell in the dot's color.
+.decl key(p: Position, col: Color)
+key(P, Col) :- dot(_, Col), outside(P, Col).
+
+// --- Paint ---
+
+.decl paint_choice(pt: Paint)
+paint_choice($Stored()). paint_choice($Copied()).
+
+// A cell a glyph can be drawn in, and the color it stamps in.
+.decl ink_cell(p: Position, ink: Color, pt: Paint)
+ink_cell(P, Col, $Stored()) :- outside(P, Col), params.ink(Col).
+ink_cell(P, Col, $Copied()) :- outside(P, Col).
+
+// --- Spread ---
+
+.decl spread_choice(sp: Spread)
+spread_choice($Near()). spread_choice($Object()).
+
+.init obj = Components8<Unit>
+obj.node($U(), P) :- outside(P, _).
+
+// A glyph cell, as its displacement from the key.
+.decl glyph(col: Color, v: Shift, ink: Color, ch: Choice)
+
+glyph(Col, V, Ink, [$Near(), Pt]) :-
+    key(P, Col), dir8_elem(D), neighbor(P, D, Q),    // one step off the key
+    ink_cell(Q, Ink, Pt), step_delta(D, V).          // onto a glyph cell
+
+glyph(Col, V, Ink, [$Object(), Pt]) :-
+    key(P, Col), obj.conn($U(), P, Q), Q != P,      // another cell of the key's object
+    ink_cell(Q, Ink, Pt), displacement(P, Q, V).     // onto a glyph cell
+
+// --- out ---
+
+.decl stamp(p_out: Position, col: Color, ch: Choice)
+stamp(P_stamp, Ink, Ch) :-
+    dot(P_dot, Col), glyph(Col, V, Ink, Ch),
+    compose(P_dot, V, P_stamp),        // the glyph placed on the dot
+    box.inner($U(), _, P_stamp).       // clipped to the canvas
+
+.decl impl_choice(ch: Choice)
+impl_choice([Sp, Pt]) :- spread_choice(Sp), paint_choice(Pt).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_out, Col, Ch) :- stamp(P_out, Col, Ch).
+out(P_out, Col, Ch) :-
+    impl_choice(Ch), box.inner($U(), P, P_out), in(P, Col),
+    !stamp(P_out, _, Ch).

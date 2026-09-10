@@ -1,0 +1,68 @@
+// 760b3cac
+// draft
+// concept: decompose markers d4
+// The grid is a 2×3 arrangement of square tiles: a pattern tile with the
+// marker tile beside it. The pattern reflects across a tile edge into the
+// neighbor tile on the side the marker points to. The cases read the
+// pointing: $Corner — the marker cell at a corner of its tile points to
+// that corner's side; $Lean — the marker cell on the edge facing the
+// pattern leans to a side of the marker cell on the far edge.
+
+#include "../lib.dl"
+
+.type Choice = Corner {} | Lean {}
+
+.comp Params {
+    .decl pattern(col: Color) pattern(8).
+    .decl marker(col: Color) marker(4).
+    .decl tile_dim(k: number) tile_dim(3).
+    // The direction from the marker tile toward the pattern tile.
+    .decl facing(d: Dir) facing(DIR_T).
+    // The reflection runs across the facing direction.
+    .decl axis(a: Axis)
+    axis(A) :- facing(D), axis_of(D, A_facing), perp(A_facing, A).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Corner()). impl_choice($Lean()).
+
+.decl tile(p_grid: Position, p_tile: Position, p_intile: Position)
+tile(P_grid, P_tile, P_intile) :-
+    in(P_grid, _), params.tile_dim(K), divide_by_size_2d(P_grid, K, 0, P_tile, P_intile).
+
+.decl pattern_tile(p_tile: Position)
+pattern_tile(P_tile) :- in(P_grid, Col), params.pattern(Col), tile(P_grid, P_tile, _).
+
+.decl marker_cell(p_intile: Position)
+marker_cell(P_intile) :- in(P_grid, Col), params.marker(Col), tile(P_grid, _, P_intile).
+
+.decl dir(ch: Choice, d: Dir)
+
+// --- Corner ---
+dir($Corner(), D) :-
+    marker_cell(P_intile), corner_dist(P_intile, Diag, 0),  // marker cell at a tile corner
+    params.axis(A), dir_of(Diag, A, D).                     // that corner's side on the axis
+
+// --- Lean ---
+dir($Lean(), D) :-
+    params.facing(D_near), dist(P_near, D_near, 0), marker_cell(P_near),  // on the facing edge
+    opposite(D_near, D_far), dist(P_far, D_far, 0), marker_cell(P_far),   // on the far edge
+    params.axis(A), axis_of(D, A), nearer(D, P_near, P_far).             // leans to side d
+
+// --- output ---
+// A cell of the neighbor tile on side d and its reflection in the pattern tile.
+.decl mirror(ch: Choice, p_grid: Position, q_grid: Position)
+mirror(Ch, P_grid, Q_grid) :-
+    dir(Ch, D), pattern_tile(T_pat), neighbor(T_pat, D, T_out),
+    tile(P_grid, T_out, P_intile),
+    axis_of(D, A), flip_of(A, F), apply(F, P_intile, Q_intile),  // flip across the crossed edge
+    concat_2d(T_pat, Q_intile, 0, Q_grid).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_grid, Col, Ch) :-
+    impl_choice(Ch),
+    ( !mirror(Ch, P_grid, _), in(P_grid, Col)      // outside the reflection
+    ; mirror(Ch, P_grid, Q_grid), in(Q_grid, Col)  // reflected pattern cell
+    ).

@@ -1,0 +1,126 @@
+// 195c6913
+// draft
+// concept: markers objects walk rank
+// Two color fields split the grid, a wall and a corridor. Swatches sit on
+// the wall as a legend: those lined up with one another spell a repeating
+// color pattern, and the one standing off that line gives the stop color.
+// Each lone legend cell seeds a walk from its frame edge into the corridor.
+// The walk alternates two headings, each run going as far as the corridor
+// allows and painting the pattern one cell per step. A run that moved and
+// then met the wall marks that wall cell with the stop color; a run that
+// leaves the frame just ends. The swatches are erased to the wall.
+
+#include "../lib.dl"
+
+.comp Params {
+    // The strip is read toward this direction, and lies along its axis.
+    .decl read_dir(d: Dir) read_dir(DIR_R).
+
+    // The walk's second heading, as a quarter turn off its first.
+    .decl turn_sense(s: Sense) turn_sense(SENSE_CC).
+}
+
+.init params = Params
+
+// --- fields and legend ---
+
+// A field color reaches more than one edge of the frame; a legend patch sits
+// on at most one.
+.decl field(col: Color)
+field(Col) :-
+    in(P, Col), dir_elem(D), dist(P, D, 0),
+    in(Q, Col), dir_elem(D2), dist(Q, D2, 0),
+    D != D2.
+
+.decl legend_cell(p: Position)
+legend_cell(P) :- in(P, Col), !field(Col).
+
+// A legend cell touching another belongs to a swatch; a lone one seeds a walk.
+.decl swatch_cell(p: Position)
+swatch_cell(P) :- legend_cell(P), dir_elem(D), neighbor(P, D, Q), legend_cell(Q).
+
+.decl seed(p: Position)
+seed(P) :- legend_cell(P), !swatch_cell(P).
+
+// The swatches are drawn on the wall, so the wall surrounds them.
+.decl wall(col: Color)
+wall(Col) :- swatch_cell(P), dir_elem(D), neighbor(P, D, Q), in(Q, Col), field(Col).
+
+.decl wall_cell(p: Position)
+wall_cell(P) :- in(P, Col), wall(Col).
+
+// The corridor is the field the wall is not.
+.decl corridor_cell(p: Position)
+corridor_cell(P) :- in(P, Col), field(Col), !wall(Col).
+
+// --- swatches ---
+
+.init swatch = Components<Unit>
+swatch.node($U(), P) :- swatch_cell(P).
+
+.decl swatch_col(id: Ident, col: Color)
+swatch_col(Id, Col) :- swatch.label($U(), P, Id), in(P, Col).
+
+.decl strip_axis(a: Axis)
+strip_axis(A) :- params.read_dir(D), axis_of(D, A).
+
+// A strip swatch shares a line of the strip's axis with another swatch.
+.decl on_strip(id: Ident)
+on_strip(Id) :-
+    swatch.label($U(), P, Id),
+    swatch.label($U(), Q, Id2), Id != Id2,
+    strip_axis(A), same_line(A, P, Q).
+
+.init strip = OrderFrame<Unit, Ident>
+strip.axis($U(), A) :- strip_axis(A).
+strip.member($U(), Id, P_line) :-
+    on_strip(Id), swatch.label($U(), P, Id),           // a strip swatch's cell
+    strip_axis(A), split(P, A, P_line, _).             // its line on the strip's axis
+
+// The pattern's colors, indexed from the end the strip is read from.
+.decl pattern(k: number, col: Color)
+pattern(K, Col) :-
+    strip.pos($U(), Id, P_pos), swatch_col(Id, Col),   // a strip swatch's place and color
+    params.read_dir(D), opposite(D_start, D),          // the end the reading starts from
+    dist(P_pos, D_start, K).                           // index = swatches before it
+
+.init cycle = IndexCycle<Unit>
+cycle.idx($U(), K) :- pattern(K, _).
+
+// --- walk ---
+
+// A seed lies on one edge of the frame; the walk heads inward from it.
+.decl head(p: Position, d: Dir)
+head(P, D) :- seed(P), opposite(D_edge, D), dist(P, D_edge, 0).
+
+// The walk alternates between two headings.
+.decl alt(d: Dir, d2: Dir)
+alt(D, D2) :- head(_, D), params.turn_sense(S), turn(S, D, D2).
+alt(D2, D) :- alt(D, D2).
+
+// P is on the walk, heading D; the heading flips where a run meets the wall.
+.decl walk(p: Position, d: Dir)
+walk(P, D) :- head(P, D).
+walk(Q, D) :- step(_, D, Q).
+walk(P, D2) :- walk(P, D), neighbor(P, D, Q), wall_cell(Q), alt(D, D2).
+
+// One step of the walk: from P toward D onto corridor cell Q.
+.decl step(p: Position, d: Dir, q: Position)
+step(P, D, Q) :- walk(P, D), neighbor(P, D, Q), corridor_cell(Q).
+
+// A run that took at least one step marks the wall cell that halts it.
+.decl stop(p: Position)
+stop(Q) :- step(_, D, P), neighbor(P, D, Q), wall_cell(Q).
+
+// The pattern's phase along the walk, starting at the seed.
+.decl phase(p: Position, k: number)
+phase(P, 0) :- seed(P).
+phase(Q, K2) :- phase(P, K), step(P, _, Q), cycle.succ($U(), K, K2).
+
+// --- output ---
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- phase(P, K), pattern(K, Col).           // the painted walk
+out(P, Col) :- stop(P), swatch_col(Id, Col), !on_strip(Id).  // the stop marks
+out(P, Col) :- swatch_cell(P), wall(Col).              // the erased swatches
+out(P, Col) :- in(P, Col), !phase(P, _), !stop(P), !swatch_cell(P).

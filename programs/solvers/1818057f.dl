@@ -19,9 +19,9 @@
     // --- $Shape ---
     .decl shape(p: Position)
     GRID_MASK_3x3(shape,
-        0, 1, 0,
+        _, 1, _,
         1, 1, 1,
-        0, 1, 0)
+        _, 1, _)
 }
 
 .init params = Params
@@ -55,8 +55,6 @@ out(P, Col, $Shape()) :- in(P, Col), !shape_covered(P).
 
 out(P, Col, $Flank()) :- flank_covered(P), params.mark(Col).
 out(P, Col, $Flank()) :- in(P, Col), !flank_covered(P).
-
-// --- determination ---
 
 .comp Determine {
     // Cells the stamp recolored.

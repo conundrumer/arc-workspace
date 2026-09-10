@@ -15,27 +15,25 @@
     .decl key_out(id: Ident, c: Color)
 
     GRID_MASK_3x3(key_member, 0,
-        0, 1, 0,
+        _, 1, _,
         1, 1, 1,
-        0, 1, 0)
+        _, 1, _)
     key_out(0, 2).
 
     GRID_MASK_3x3(key_member, 1,
-        1, 0, 1,
-        0, 1, 0,
+        1, _, 1,
+        _, 1, _,
         1, 1, 1)
     key_out(1, 3).
 
     GRID_MASK_3x3(key_member, 2,
         1, 1, 1,
-        1, 0, 1,
-        0, 1, 0)
+        1, _, 1,
+        _, 1, _)
     key_out(2, 7).
 }
 
 .init params = Params
-
-// --- parse ---
 
 .comp Parse<Key> {
     .decl cell(k: Key, p: Position, col: Color)
@@ -60,8 +58,6 @@ ink_cell(P) :- in(P, Col), params.ink(Col).
 .decl out(p: Position, col: Color)
 out(P, Col) :- ink_cell(P), key_match.equals($U(), Id), params.key_out(Id, Col).
 out(P, Col) :- in(P, _), !ink_cell(P), params.bg(Col).
-
-// --- determination ---
 
 .comp Determine {
     // Train pairs only — the ex_out atom holds the test inputs out.

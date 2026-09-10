@@ -11,45 +11,46 @@
 
     .decl tile_axis(a: Axis) tile_axis(AXIS_H).
 
-    .decl tile_count(n: number) tile_count(3).
+    // The panel is the glyph's own frame, so the glyph's extent along the
+    // tiling axis is the panel's width.
+    .decl tile_size(k: number)
+    tile_size(K) :- tile_axis(A), glyph_member(_, P), axis_dim(P, A, K).
 
     .decl glyph_member(id: Ident, p: Position)
     .decl glyph_color(id: Ident, col: Color)
 
     GRID_MASK_3x3(glyph_member, 0,
         1, 1, 1,
-        1, 0, 1,
+        1, _, 1,
         1, 1, 1)
     glyph_color(0, 3).
 
     GRID_MASK_3x3(glyph_member, 1,
-        0, 0, 0,
-        0, 1, 0,
-        0, 0, 0)
+        _, _, _,
+        _, 1, _,
+        _, _, _)
     glyph_color(1, 4).
 
     GRID_MASK_3x3(glyph_member, 2,
-        0, 0, 1,
-        0, 1, 0,
-        1, 0, 0)
+        _, _, 1,
+        _, 1, _,
+        1, _, _)
     glyph_color(2, 9).
 
     GRID_MASK_3x3(glyph_member, 3,
         1, 1, 1,
-        0, 0, 0,
-        0, 0, 0)
+        _, _, _,
+        _, _, _)
     glyph_color(3, 6).
 
     GRID_MASK_3x3(glyph_member, 4,
-        0, 0, 0,
-        0, 0, 0,
+        _, _, _,
+        _, _, _,
         1, 1, 1)
     glyph_color(4, 1).
 }
 
 .init params = Params
-
-// --- parse ---
 
 .comp Parse<Key> {
     .decl cell(key: Key, p: Position, col: Color)
@@ -57,15 +58,15 @@
     // The panel a cell sits in, with the cell's place inside it.
     .decl panel(key: Key, p_grid: Position, p_tile: Position, p_intile: Position)
     panel(K, P_grid, P_tile, P_intile) :-
-        cell(K, P_grid, _),                                    // input cell
-        params.tile_axis(A), params.tile_count(N),             // strip params
-        divide_slab(P_grid, A, N, 0, P_tile, P_intile).        // panel, place inside it
+        cell(K, P_grid, _),                                      // input cell
+        params.tile_axis(A), params.tile_size(Sz),               // the strip's axis and panel width
+        divide_by_size_slab(P_grid, A, Sz, 0, P_tile, P_intile).
 
     // A panel's glyph, as the set of its marked cells.
     .decl mark(key: Key, p_tile: Position, p_intile: Position)
     mark(K, P_tile, P_intile) :-
-        cell(K, P_grid, Col), !params.bg(Col),                    // marked cell
-        panel(K, P_grid, P_tile, P_intile).                       // its panel and place
+        cell(K, P_grid, Col), !params.bg(Col),                   // marked cell
+        panel(K, P_grid, P_tile, P_intile).
 }
 
 .init parse = Parse<Unit>
@@ -81,8 +82,6 @@ out(P_grid, Col) :-
     parse.panel($U(), P_grid, P_tile, _),    // panel of the cell
     glyph.equals(P_tile, Id),                // its glyph is entry Id
     params.glyph_color(Id, Col).             // entry's color
-
-// --- determination ---
 
 .comp Determine {
     .type EP = [e: Example, tile: Position]

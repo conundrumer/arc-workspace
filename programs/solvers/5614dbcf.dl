@@ -1,0 +1,78 @@
+// 5614dbcf
+// draft
+// concept: decompose count select
+// The grid divides into an arrangement of equal tiles, and the output is that
+// arrangement: one cell per tile. Two choice points cross; Choice = [f, d]:
+//
+//   f (what fixes a tile's color):
+//     $Vote()  — the color most of the tile's cells carry.
+//     $Solid() — every cell but the params.noise ones carries one color, and
+//                that color is the tile's.
+//   d (what fixes the tiling):
+//     $Count()  — a params.divisor × params.divisor arrangement.
+//     $Size() — tiles of params.tile_size on both axes.
+
+#include "../lib.dl"
+
+.type Fill      = Vote {} | Solid {}
+.type DecChoice = Count {} | Size {}
+.type Choice    = [f: Fill, d: DecChoice]
+
+.type TileKey = [d: DecChoice, p_tile: Position]
+
+.comp Params {
+    // --- Count ---
+    .decl divisor(n: number) divisor(3).
+
+    // --- Size ---
+    .decl tile_size(k: number) tile_size(3).
+
+    // --- Solid ---
+    .decl noise(c: Color) noise(5).
+}
+
+.init params = Params
+
+.decl tile(p_grid: Position, p_tile: Position, dc: DecChoice)
+
+// --- Count ---
+tile(P_grid, P_tile, $Count()) :-
+    in(P_grid, _), params.divisor(N), divide_2d(P_grid, N, 0, P_tile, _).
+
+// --- Size ---
+tile(P_grid, P_tile, $Size()) :-
+    in(P_grid, _), params.tile_size(K), divide_by_size_2d(P_grid, K, 0, P_tile, _).
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// --- Vote ---
+
+.init vote = Mode<TileKey, Color, Position>
+vote.item([Dc, P_tile], Col, P_grid) :- tile(P_grid, P_tile, Dc), in(P_grid, Col).
+
+out(P_tile, Col, [$Vote(), Dc]) :- vote.mode([Dc, P_tile], Col).
+
+// --- Solid ---
+
+.init solid = Unanimous<TileKey, Color>
+solid.item([Dc, P_tile], Col) :- tile(P_grid, P_tile, Dc), in(P_grid, Col), !params.noise(Col).
+
+out(P_tile, Col, [$Solid(), Dc]) :- solid.value([Dc, P_tile], Col).
+
+.comp Determine {
+    // The arrangement is the output frame.
+    .decl divisor(n: number)
+    divisor(N) :- ex_out(_, P, _), axis_elem(A), axis_dim(P, A, N).
+
+    // The extent of a tile of that arrangement.
+    .decl tile_size(k: number)
+    tile_size(K) :-
+        ex_in(_, P_grid, _), divisor(N), divide_2d(P_grid, N, 0, _, P_intile),
+        axis_elem(A), axis_dim(P_intile, A, K).
+
+    .decl noise(c: Color)
+    noise(C) :-
+        ex_in(E, P_grid, C),                             // an input cell
+        divisor(N), divide_2d(P_grid, N, 0, P_tile, _),  // its tile
+        ex_out(E, P_tile, Col), Col != C.                // holds another color
+}

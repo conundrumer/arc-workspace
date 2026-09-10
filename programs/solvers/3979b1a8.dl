@@ -83,8 +83,6 @@ out(P, Col, Ch) :-
     ),
     !placed(Ch, P, _).                                                // outside the input
 
-// --- determination ---
-
 .comp Determine {
     // Each train input seated at each corner of its output.
     .decl anchored(e: Example, diag: DiagDir, p_in: Position, p_grid: Position)

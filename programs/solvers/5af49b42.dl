@@ -1,0 +1,64 @@
+// 5af49b42
+// draft
+// concept: objects markers stamp border
+// The non-bg cells make connected pieces of two kinds: bars and marks. A mark's
+// color names one cell of one bar, and a copy of that bar lands with that cell
+// on the mark, clipped at the grid edge. Every other cell keeps its color.
+//
+//   $Object — a bar is a piece of several cells, a mark a piece of one.
+//   $Edge — a bar is a piece reaching the grid edge, a mark one strictly inside.
+
+#include "../lib.dl"
+
+.type Choice = Object {} | Edge {}
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Object()). impl_choice($Edge()).
+
+.init objects = Components<Unit>
+objects.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+.decl piece(id: Ident, p: Position, col: Color)
+piece(Id, P, Col) :- objects.label($U(), P, Id), in(P, Col).
+
+.decl bar(id: Ident, p: Position, col: Color, ch: Choice)
+
+// Every piece the case does not count as a bar is a mark.
+.decl mark(p: Position, col: Color, ch: Choice)
+mark(P, Col, Ch) :- piece(Id, P, Col), impl_choice(Ch), !bar(Id, _, _, Ch).
+
+// The copy carries the bar's cell of the mark's color onto the mark.
+.decl shift(id: Ident, v: Shift, ch: Choice)
+shift(Id, V, Ch) :- mark(P, Col, Ch), bar(Id, Q, Col, Ch), displacement(Q, P, V).
+
+.decl stamp(p: Position, col: Color, ch: Choice)
+stamp(P2, Col, Ch) :-
+    bar(Id, P, Col, Ch), shift(Id, V, Ch),
+    compose(P, V, P2), in(P2, _).          // where that cell lands, clipped
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    in(P, Col_in), impl_choice(Ch),
+    ( stamp(P, Col, Ch)                    // a copied bar cell
+    ; !stamp(P, _, Ch), Col = Col_in       // untouched
+    ).
+
+// --- Object ---
+
+.decl multi_cell(id: Ident)
+multi_cell(Id) :- piece(Id, P, _), piece(Id, Q, _), P != Q.
+
+bar(Id, P, Col, $Object()) :- piece(Id, P, Col), multi_cell(Id).
+
+// --- Edge ---
+
+.decl on_edge(id: Ident)
+on_edge(Id) :- piece(Id, P, _), dir_elem(D), dist(P, D, 0).
+
+bar(Id, P, Col, $Edge()) :- piece(Id, P, Col), on_edge(Id).

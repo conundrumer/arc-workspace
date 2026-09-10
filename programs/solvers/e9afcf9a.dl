@@ -5,12 +5,12 @@
 //
 //   $LabeledGrids — the permutation as data: an input label grid and an
 //                   output label grid, paired by shared label.
-//   $Divide       — the permutation composed: divide the grid into column
-//                   pairs, and apply a D4 per inner column.
+//   $Size         — the permutation composed: divide the grid into tiles of
+//                   params.tile_size, and apply a D4 per inner column.
 
 #include "../lib.dl"
 
-.type Choice = LabeledGrids {} | Divide {}
+.type Choice = LabeledGrids {} | Size {}
 
 .comp Params {
     // --- LabeledGrids ---
@@ -28,14 +28,17 @@
     .decl label_pair(p_in: Position, p_out: Position)
     label_pair(P_in, P_out) :- in_label(P_in, Id), out_label(P_out, Id).
 
-    // --- Divide ---
+    // --- Size ---
     .decl divide_axis(a: Axis) divide_axis(AXIS_H).
-    .decl divisor(n: number) divisor(3).
 
-    // Per-inner-cell transform within a 1×2 subgrid, laid out as a grid of D4.
+    // The transform each inner column applies, laid out as a grid.
     .decl col_transform(p_inner: Position, d: D4)
     GRID_1x2(col_transform,
         D4_ID, D4_TB)
+
+    // The tile's extent along the divide axis, read off the transform grid.
+    .decl tile_size(k: number)
+    tile_size(K) :- col_transform(P_inner_axis, _), divide_axis(A), axis_dim(P_inner_axis, A, K).
 }
 
 .init params = Params
@@ -45,18 +48,16 @@
 // --- LabeledGrids ---
 perm(P_grid_in, P_grid_out, $LabeledGrids()) :- params.label_pair(P_grid_in, P_grid_out).
 
-// --- Divide ---
-perm(P_grid_in, P_grid_out, $Divide()) :-
+// --- Size ---
+perm(P_grid_in, P_grid_out, $Size()) :-
     in(P_grid_in, _),                                          // input cell
-    params.divide_axis(A), params.divisor(N),                  // params
-    divide(P_grid_in, A, N, 0, _, P_inner_axis),               // 1D divide on H
-    params.col_transform(P_inner_axis, T),                     // transform per inner col
-    apply(T, P_grid_in, P_grid_out).                           // apply to input cell
+    params.divide_axis(A), params.tile_size(K),
+    divide_by_size(P_grid_in, A, K, 0, _, P_inner_axis),       // the cell's inner column
+    params.col_transform(P_inner_axis, T),                     // that column's transform
+    apply(T, P_grid_in, P_grid_out).
 
 .decl out(p: Position, col: Color, c: Choice)
 out(P_grid_out, Col, Ch) :- in(P_grid_in, Col), perm(P_grid_in, P_grid_out, Ch).
-
-// --- determination ---
 
 .type AxisCell = [a: Axis, p_in: Position]
 .type TileCol = [k: number, p_inner_axis: Position]
@@ -87,27 +88,22 @@ out(P_grid_out, Col, Ch) :- in(P_grid_in, Col), perm(P_grid_in, P_grid_out, Ch).
     cell_transform(P_in, D) :- pair(P_in, P_out), d4_elem(D), apply(D, P_in, P_out).
 
     // Swept tiling of the divide axis, by tile size.
-    .decl tiled(k: number, p_in: Position, p_outer_axis: Position, p_inner_axis: Position)
-    tiled(K, P_in, P_outer_axis, P_inner_axis) :-
+    .decl tiled(k: number, p_in: Position, p_inner_axis: Position)
+    tiled(K, P_in, P_inner_axis) :-
         pair(P_in, _), divide_axis(A),
-        sub_extent(P_in, A, K), divide_by_size(P_in, A, K, 0, P_outer_axis, P_inner_axis).
+        sub_extent(P_in, A, K), divide_by_size(P_in, A, K, 0, _, P_inner_axis).
 
     .init inner_transform = Unanimous<TileCol, D4>
     inner_transform.item([K, P_inner_axis], D) :-
-        tiled(K, P_in, _, P_inner_axis), cell_transform(P_in, D).
+        tiled(K, P_in, P_inner_axis), cell_transform(P_in, D).
 
     // A tile size whose inner position does not fix the transform.
     .decl mixed(k: number)
     mixed(K) :- inner_transform.clash([K, _]).
 
-    .decl tiling(k: number)
-    tiling(K) :- tiled(K, _, _, _), !mixed(K).
-
-    .decl divisor(n: number)
-    divisor(N) :-
-        tiling(K), tiled(K, _, P_outer_axis, _),
-        divide_axis(A), axis_dim(P_outer_axis, A, N).
-
+    // The transform grid of the one tile size whose inner position fixes the
+    // transform.
     .decl col_transform(p_inner: Position, d: D4)
-    col_transform(P_inner_axis, D) :- tiling(K), inner_transform.value([K, P_inner_axis], D).
+    col_transform(P_inner_axis, D) :-
+        inner_transform.value([K, P_inner_axis], D), !mixed(K).
 }

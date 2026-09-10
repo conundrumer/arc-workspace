@@ -1,0 +1,50 @@
+// 5c0a986e
+// draft
+// concept: objects cast lookup
+// Each ink color forms one block on a background field. A block casts a
+// diagonal ray, leaving from the corner of its box that the ray heads toward
+// and running over background cells to the grid edge. Which corner that is, is
+// a property of the color.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+
+    // The corner each color casts toward.
+    .decl heading(col: Color, d: DiagDir)
+    heading(1, DIAG_TL).
+    heading(2, DIAG_BR).
+}
+
+.init params = Params
+
+// Each ink color's block, as the box bounding it.
+.init bx = Bbox<Color>
+bx.cell(Col, P) :- in(P, Col), !params.bg(Col).
+
+// The ray a block casts.
+.init beam = Ray<Color>
+beam.dir(Col, D) :- params.heading(Col, D).
+beam.mark(Col, P) :- params.heading(Col, D), bx.corner(Col, P, D).
+beam.cell(Col, P) :- params.heading(Col, _), in(P, Bg), params.bg(Bg).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- beam.ray(Col, P, _, _, _).
+out(P, Col) :- in(P, Col), !beam.ray(_, P, _, _, _).
+
+.type ExColor = [e: Example, col: Color]
+
+.comp Determine {
+    .init bx = Bbox<ExColor>
+    bx.cell([E, Col], P) :- ex_in(E, P, Col), !params.bg(Col).
+
+    // A cell the output paints over bg.
+    .decl new_ink(e: Example, col: Color, p: Position)
+    new_ink(E, Col, P) :- ex_out(E, P, Col), ex_in(E, P, Bg), params.bg(Bg).
+
+    .decl heading(col: Color, d: DiagDir)
+    heading(Col, D) :-
+        bx.corner([E, Col], P, D),              // a corner of the color's block
+        neighbor(P, D, Q), new_ink(E, Col, Q).  // painted one step past it
+}

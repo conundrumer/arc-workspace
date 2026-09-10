@@ -1,0 +1,59 @@
+// 63613498
+// draft
+// concept: objects match
+// Shapes of several colors sit on params.bg, and a frame in params.mark walls
+// off params.panel, a corner of the grid. The shape inside that corner is the
+// key. One shape outside holds the key's cells up to translation; that shape
+// takes params.mark, and the rest of the grid passes through.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+
+    // The frame's color: never shape content, and the color the twin takes.
+    .decl mark(c: Color) mark(5).
+
+    // The corner the key sits in, as margins from each edge.
+    .decl panel(b: Position) panel([0, 7, 0, 7]).
+}
+
+.init params = Params
+
+// --- shapes ---
+
+.init shapes = Components<Unit>
+shapes.node($U(), P) :- in(P, Col), !params.bg(Col), !params.mark(Col).
+
+// Each shape's cells in its own box — its cells up to translation.
+.init box = BoxFrame<Ident>
+box.cell(Id, P) :- shapes.label($U(), P, Id).
+
+// --- the key and its twin ---
+
+// The key's box lies within the panel, so every cell of it does.
+.decl key(id: Ident)
+key(Id) :- box.margin(Id, M), params.panel(B), geq(M, B).
+
+.init same = KeyedSetCompare<Ident, Ident, Position>
+same.pattern_member(Id, P_inner) :- box.inner(Id, _, P_inner).
+same.observed_member(Id, P_inner) :- box.inner(Id, _, P_inner).
+
+// The twin is the shape other than the key that holds the key's cells.
+.decl twin(p: Position)
+twin(P) :- key(K), same.equals(Id, K), !key(Id), shapes.label($U(), P, Id).
+
+// --- output ---
+
+.decl out(p: Position, col: Color)
+out(P, Col_out) :-
+    in(P, Col),
+    ( twin(P), params.mark(Col_out)  // the twin takes the mark
+    ; !twin(P), Col_out = Col        // the rest passes through
+    ).
+
+.comp Determine {
+    // The mark is the color the output paints the twin.
+    .decl mark(c: Color)
+    mark(Col) :- ex_in(E, P, Col_in), ex_out(E, P, Col), Col != Col_in.
+}

@@ -1,0 +1,97 @@
+// 81c0276b
+// draft
+// concept: decompose objects count rank
+// Uniform lines in one color cut the grid into a lattice of slots. Each slot
+// holds a block in a slot color, or in the lattice color, which marks the
+// slot as empty. The output is a bar chart of the slot colors: one row per
+// color from params.rank_dir in ascending count, each row that many cells of
+// the color from the params.bar_sense side and bg for the rest. Two models
+// of what is counted:
+//
+//   $Tiles   — the lattice's slots, by the color each shows.
+//   $Objects — the connected components of each color.
+//
+// They diverge when a slot holds several pieces of one color.
+
+#include "../lib.dl"
+
+.type Choice = Tiles {} | Objects {}
+.type Line = [a: Axis, l: Position]
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+
+    // The chart's layout: rows counted from rank_dir, bars growing from the
+    // edge a quarter turn away.
+    .decl rank_dir(d: Dir) rank_dir(DIR_T).
+    .decl bar_sense(s: Sense) bar_sense(SENSE_CC).
+
+    .decl bar_dir(d: Dir)
+    bar_dir(D2) :- rank_dir(D), bar_sense(S), turn(S, D, D2).
+}
+
+.init params = Params
+
+// --- the lattice and its color ---
+
+.init line_color = Unanimous<Line, Color>
+line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
+
+// The lattice color marks an empty slot.
+.decl empty(col: Color)
+empty(Col) :- line_color.value(_, Col).
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.bg(Col), !empty(Col).
+
+// --- what is counted, per case ---
+
+// The bar of each color: its length is the color's count.
+.decl bar(ch: Choice, col: Color, n: number)
+
+// --- Tiles ---
+
+.init lattice = DividerFrame<Unit>
+lattice.cell($U(), P) :- in(P, _).
+lattice.divider($U(), A, L) :- line_color.value([A, L], _).
+
+.init slots = Tally<Color, Position>
+slots.item(Col, T) :- lattice.tile_of($U(), P, T), ink(P, Col).
+
+bar($Tiles(), Col, N) :- slots.tally(Col, N).
+
+// --- Objects ---
+
+.init blob = Components<Color>
+blob.node(Col, P) :- ink(P, Col).
+
+.init blobs = Tally<Color, Ident>
+blobs.item(Col, Id) :- blob.label(Col, _, Id).
+
+bar($Objects(), Col, N) :- blobs.tally(Col, N).
+
+// --- the chart ---
+
+// Rows ascend by count: the shortest bar lies against the rank edge.
+.init order = Order<Choice, Color>
+order.elem(Ch, Col) :- bar(Ch, Col, _).
+order.before(Ch, Col, Col2) :- bar(Ch, Col, N), bar(Ch, Col2, N2), N < N2.
+
+.init colors = Tally<Choice, Color>
+colors.item(Ch, Col) :- bar(Ch, Col, _).
+
+.init widest = Extremes<Choice>
+widest.cand(Ch, N) :- bar(Ch, _, N).
+
+.init chart = Frame2D<Choice>
+chart.extent(Ch, A, N) :- params.rank_dir(D), axis_of(D, A), colors.tally(Ch, N).
+chart.extent(Ch, A, N) :- params.bar_dir(D), axis_of(D, A), widest.high(Ch, N).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    chart.cell(Ch, P), params.rank_dir(D), dist(P, D, R),
+    order.rank(Ch, Col0, R), bar(Ch, Col0, N),     // the bar in this row
+    params.bar_dir(Db), dist(P, Db, K),
+    ( K < N, Col = Col0        // the bar
+    ; K >= N, params.bg(Col)   // past its end
+    ).

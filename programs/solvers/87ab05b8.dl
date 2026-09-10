@@ -6,7 +6,7 @@
 // crosses the hypotheses:
 //
 //   l (locate the region):
-//     $Div()    — grid divided into a params.divisor arrangement; the marker's tile.
+//     $Count()  — grid divided into a params.divisor arrangement; the marker's tile.
 //     $Block()  — grid tiled by params.tile_dim blocks; the marker's block.
 //     $Corner() — a params.block_dim block seated at the marker's nearest corner.
 //   f (fill color):
@@ -15,7 +15,7 @@
 
 #include "../lib.dl"
 
-.type Locate = Div {} | Block {} | Corner {}
+.type Locate = Count {} | Block {} | Corner {}
 .type Fill   = Marker {} | Fixed {}
 .type Choice = [l: Locate, f: Fill]
 
@@ -26,7 +26,7 @@
     // --- $Fixed ---
     .decl fill(c: Color) fill(2).
 
-    // --- $Div ---
+    // --- $Count ---
     .decl divisor(n: number) divisor(2).
 
     // --- $Block ---
@@ -45,14 +45,14 @@ marker(P) :- in(P, Col), params.marker(Col).
 // --- Locate cases: the region to fill ---
 
 .decl locate_choice(l: Locate)
-locate_choice($Div()).
+locate_choice($Count()).
 locate_choice($Block()).
 locate_choice($Corner()).
 
 .decl region(p: Position, l: Locate)
 
-// $Div — the marker's tile in a params.divisor arrangement.
-region(P, $Div()) :-
+// $Count — the marker's tile in a params.divisor arrangement.
+region(P, $Count()) :-
     marker(P_m), params.divisor(N), divide_2d(P_m, N, 0, P_tile, _),   // marker's tile
     in(P, _),                  divide_2d(P,   N, 0, P_tile, _).        // cell in the same tile
 

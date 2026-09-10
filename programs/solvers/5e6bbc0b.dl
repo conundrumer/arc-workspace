@@ -1,0 +1,113 @@
+// 5e6bbc0b
+// draft
+// concept: markers lines parity move cast count
+// The input is a checkerboard of two colors, with one cell replaced by a mark.
+// That mark sits on a grid edge, and the cells of the class it covers fall
+// toward that edge. Each line along the fall direction packs its cells of that
+// class solid against the edge; the mark covers one of them and keeps its own
+// place. On the mark's line the block casts a run outward from its far end, as
+// long as that end stands from the edge.
+//
+// Two models of which cells fall:
+//
+//   $Stored — the falling color is task data, and the mark stands for one
+//             more cell of it.
+//   $Parity — the falling cells are the mark's own checkerboard class, the
+//             cells whose corner distance shares the mark's phase.
+
+#include "../lib.dl"
+
+.type Choice = Stored {} | Parity {}
+
+.comp Params {
+    .decl mark(col: Color) mark(8).
+    .decl cast(col: Color) cast(9).
+
+    // --- $Stored ---
+    .decl block(col: Color) block(1).  // the class the mark covers
+    .decl fill(col: Color) fill(0).    // the other class
+
+    // --- $Parity ---
+    .decl period(n: number) period(2).  // corner distances between cells of one class
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Stored()). impl_choice($Parity()).
+
+.decl mark_cell(p: Position)
+mark_cell(P) :- in(P, Col), params.mark(Col).
+
+// The edge the mark sits on — the direction the block falls.
+.decl fall(d: Dir)
+fall(D) :- dir_elem(D), mark_cell(P), dist(P, D, 0).
+
+// The lines the block falls along.
+.decl line(p: Position, l: Position)
+line(P, L) :- in(P, _), fall(D), axis_of(D, A), split(P, A, _, L).
+
+.decl block_cell(p: Position, ch: Choice)
+.decl block_color(col: Color, ch: Choice)
+.decl fill_color(col: Color, ch: Choice)
+
+// --- $Stored ---
+
+// The mark covers a cell of the falling class, so its cell counts as one.
+block_cell(P, $Stored()) :- in(P, Col), ( params.block(Col) ; mark_cell(P) ).
+
+block_color(Col, $Stored()) :- params.block(Col).
+fill_color(Col, $Stored()) :- params.fill(Col).
+
+// --- $Parity ---
+
+block_cell(P, $Parity()) :-
+    in(P, _), mark_cell(M),
+    diag_dir_elem(Dg), params.period(N),               // any corner reads the same class
+    corner_dist(M, Dg, K_mark), stride(K_mark, N, 0, _, R),  // the mark's phase
+    corner_dist(P, Dg, K), stride(K, N, 0, _, R).            // the cell shares it
+
+block_color(Col, $Parity()) :- block_cell(P, $Parity()), !mark_cell(P), in(P, Col).
+fill_color(Col, $Parity()) :- in(P, Col), !block_cell(P, $Parity()).
+
+// --- the fall ---
+
+.type LineKey = [ch: Choice, l: Position]
+
+.init block_len = Tally<LineKey, Position>
+block_len.item([Ch, L], P) :- block_cell(P, Ch), line(P, L).
+
+// The block packed against the edge: the N cells of the line nearest it.
+.decl packed(p: Position, ch: Choice)
+packed(P, Ch) :-
+    line(P, L), block_len.tally([Ch, L], N),
+    fall(D), dist(P, D, K), K < N.
+
+.init block_rim = Rim<Choice>
+block_rim.cell(Ch, P) :- packed(P, Ch).
+
+// The far end of the block on the mark's own line.
+.decl far_end(p: Position, ch: Choice)
+far_end(P, Ch) :-
+    mark_cell(M), line(M, L), line(P, L),                          // on the mark's line
+    fall(D), opposite(D, D_out), block_rim.rim_dir(Ch, P, D_out).  // the block's rim away from the edge
+
+.init beam = Ray<Choice>
+beam.dir(Ch, D_out) :- impl_choice(Ch), fall(D), opposite(D, D_out).
+beam.cell(Ch, P) :- impl_choice(Ch), in(P, _).
+beam.mark(Ch, P) :- far_end(P, Ch).
+
+// The run the far end casts, back out along the mark's line.
+.decl cast_cell(p: Position, ch: Choice)
+cast_cell(Q, Ch) :-
+    beam.ray(Ch, Q, _, K, S), K != 0,        // out from the far end S
+    fall(D), dist(S, D, N), K <= N.          // no further than S stands from the edge
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    impl_choice(Ch), in(P, _),
+    ( mark_cell(P), params.mark(Col)                          // the mark keeps its cell
+    ; cast_cell(P, Ch), params.cast(Col)                      // the cast run
+    ; packed(P, Ch), !mark_cell(P), block_color(Col, Ch)      // the packed block
+    ; !packed(P, Ch), !cast_cell(P, Ch), fill_color(Col, Ch)  // what the block left
+    ).

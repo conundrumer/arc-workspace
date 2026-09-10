@@ -60,8 +60,6 @@ out(P, Cx, Ch)  :- on_line.clash([P, Ch]), params.cross(Cx).
 out(P, Col, Ch) :- on_line.value([P, Ch], Col).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !on_line.item([P, Ch], _).
 
-// --- determination ---
-
 .comp Determine {
     // A color's segment cells agree across only on its own axis.
     .decl role(col: Color, a: Axis)

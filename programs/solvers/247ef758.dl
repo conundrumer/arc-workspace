@@ -1,0 +1,138 @@
+// 247ef758
+// draft
+// concept: decompose objects markers cross stamp
+//
+// A separator line cuts the grid into a legend and a bordered frame. The
+// legend holds one shape per color; the frame's border carries marks off its
+// own ground color, each marking the line it sits on. A shape whose color
+// marks lines of both axes is stamped, centered, at every crossing of its
+// lines. Where two shapes land on one cell, the one listed earlier in the
+// legend keeps it. Two models of which shapes the legend loses:
+//
+//   $Stamped — the shapes that go somewhere: a shape with a crossing.
+//   $Marked  — the shapes the border calls: a shape whose color is marked at
+//              all, so a color marked on one axis alone leaves and lands
+//              nowhere.
+
+#include "../lib.dl"
+
+.type Choice = Stamped {} | Marked {}
+
+.comp Params {
+    // An empty cell, in the legend and in the frame alike.
+    .decl bg(col: Color) bg(0).
+
+    // The side of the separator the legend sits on.
+    .decl legend_dir(d: Dir) legend_dir(DIR_L).
+
+    // Turn from legend_dir to the end the legend list starts at.
+    .decl stack_sense(s: Sense) stack_sense(SENSE_CW).
+}
+
+.init params = Params
+
+// --- the separator and the two regions ---
+
+// The colors on each line across the legend axis.
+.init line_color = Unanimous<Position, Color>
+line_color.item(L, Col) :-
+    in(P, Col), params.legend_dir(D), axis_of(D, A), split(P, A, L, _).
+
+// The separator is the one line a single non-bg color holds.
+.init cut = DividerFrame<Unit>
+cut.cell($U(), P) :- in(P, _).
+cut.divider($U(), A, L) :-
+    line_color.value(L, Col), !params.bg(Col),
+    params.legend_dir(D), axis_of(D, A).        // cutting the legend axis
+
+// A region is the cells with no separator toward its edge.
+.decl legend(p: Position)
+legend(P) :- params.legend_dir(D), cut.part_idx($U(), P, D, 0).
+
+.decl frame(p: Position)
+frame(P) :- params.legend_dir(D), opposite(D, D2), cut.part_idx($U(), P, D2, 0).
+
+// --- the frame's border ---
+
+.init fbox = Bbox<Unit>
+fbox.cell($U(), P) :- frame(P).
+
+.decl border(p: Position, d: Dir)
+border(P, D) :- fbox.edge_cell($U(), P, D).
+
+// The border's own ground, against which a mark stands out.
+.init bmode = Mode<Unit, Color, Position>
+bmode.item($U(), Col, P) :- border(P, _), in(P, Col).
+
+// A mark marks the line it lies on: l names the line, a the axis it runs
+// along.
+.decl header(l: Position, a: Axis, col: Color)
+header(L, A, Col) :-
+    border(P, D), in(P, Col), !bmode.mode($U(), Col),  // a mark on edge D
+    axis_of(D, A), perp(A, A2), split(P, A2, L, _).    // the line it lies on
+
+// Where a color's two lines cross.
+.decl cross(col: Color, p: Position)
+cross(Col, P) :-
+    header(L1, A1, Col), header(L2, A2, Col), perp(A1, A2),  // lines of both axes
+    compose(L1, L2, P).                                      // their crossing
+
+// --- the legend's shapes ---
+
+.decl shape_cell(col: Color, p: Position)
+shape_cell(Col, P) :- legend(P), in(P, Col), !params.bg(Col).
+
+.init sbox = BoxFrame<Color>
+sbox.cell(Col, P) :- shape_cell(Col, P).
+sbox.grid(Col, P) :- shape_cell(Col, _), legend(P).
+
+// The shape as offsets from its center.
+.init off = Reframe<Color>
+off.outer(Col, P) :- sbox.inner(Col, P, P_in), centered(P_in).
+off.cell(Col, P) :- shape_cell(Col, P).
+
+// --- stamping ---
+
+.decl paint(p: Position, col: Color)
+paint(P, Col) :-
+    cross(Col, X), off.inner(Col, Delta),        // the shape hung on a crossing
+    compose(X, Delta, P),
+    frame(P), !border(P, _).                     // landing in the frame's interior
+
+// The end of the legend the list starts at.
+.decl stack_dir(d: Dir)
+stack_dir(D_stack) :- params.legend_dir(D), params.stack_sense(S), turn(S, D, D_stack).
+
+// The legend read as a list.
+.init lex = LexOrder<Unit>
+lex.corner($U(), Diag) :- params.legend_dir(D), stack_dir(D_stack), diag_dirs(Diag, _, D, D_stack).
+lex.axis($U(), A) :- stack_dir(D_stack), axis_of(D_stack, A).
+lex.cell($U(), P) :- shape_cell(_, P).
+
+.init first = Extremes<Color>
+first.cand(Col, R) :- shape_cell(Col, P), lex.rank($U(), P, R).
+
+.decl occludes(col: Color, col2: Color)
+occludes(Col1, Col2) :- first.low(Col1, R1), first.low(Col2, R2), R1 < R2.
+
+.decl hidden(p: Position, col: Color)
+hidden(P, Col) :- paint(P, Col), paint(P, Col2), occludes(Col2, Col).
+
+// Shape cells the legend loses.
+.decl erased(p: Position, ch: Choice)
+
+// --- Stamped ---
+erased(P, $Stamped()) :- shape_cell(Col, P), cross(Col, _).
+
+// --- Marked ---
+erased(P, $Marked()) :- shape_cell(Col, P), header(_, _, Col).
+
+// --- output ---
+
+.decl impl_choice(ch: Choice)
+impl_choice($Stamped()). impl_choice($Marked()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- paint(P, Col), !hidden(P, Col), impl_choice(Ch).
+out(P, Col, Ch) :- erased(P, Ch), params.bg(Col).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !erased(P, Ch), !paint(P, _).

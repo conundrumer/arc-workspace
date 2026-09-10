@@ -1,0 +1,74 @@
+// 1f85a75f
+// draft
+// concept: objects crop count select
+// Noise cells of several colors lie scattered on bg, and one solid shape sits
+// among them in a color of its own. The output is the shape's bounding box.
+// Choice = [l, r] crosses what marks the shape with what its box carries:
+//
+//   l (find the shape):
+//     $Big()    — the largest connected group of one color.
+//     $Rare()   — every cell of the color with the fewest cells.
+//     $Intact() — every cell of the color that breaks into the fewest groups.
+//   r (fill the box):
+//     $Keep()  — the found cells keep their color, the rest of the box is bg.
+//     $Crop()  — the box carries the input through, noise included.
+
+#include "../lib.dl"
+
+.type Locate = Big {} | Rare {} | Intact {}
+.type Render = Keep {} | Crop {}
+.type Choice = [l: Locate, r: Render]
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+}
+
+.init params = Params
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.bg(Col).
+
+// The color node sets are disjoint, so ids separate groups across colors.
+.init grp = Components8<Color>
+grp.node(Col, P) :- ink(P, Col).
+
+.decl shape(p: Position, l: Locate)
+
+// $Rare and $Intact both take every cell of the color scoring lowest; they
+// differ in what the score counts.
+.init color_score = ArgExtremes<Locate, Color>
+shape(P, L) :- color_score.low(L, Col, _), ink(P, Col).
+
+// --- $Big ---
+
+.init biggest = Mode<Unit, Ident, Position>
+biggest.item($U(), Id, P) :- grp.label(_, P, Id).
+
+shape(P, $Big()) :- biggest.mode($U(), Id), grp.label(_, P, Id).
+
+// --- $Rare ---
+
+.init color_size = Tally<Color, Position>
+color_size.item(Col, P) :- ink(P, Col).
+color_score.cand($Rare(), Col, N) :- color_size.tally(Col, N).
+
+// --- $Intact ---
+
+.init piece_count = Tally<Color, Ident>
+piece_count.item(Col, Id) :- grp.label(Col, _, Id).
+color_score.cand($Intact(), Col, N) :- piece_count.tally(Col, N).
+
+// --- The box the shape spans ---
+
+.init box = BoxFrame<Locate>
+box.cell(L, P) :- shape(P, L).
+box.grid(L, P) :- shape(_, L), in(P, _).
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+out(P_inner, Col, [L, $Keep()]) :-
+    box.inner(L, P, P_inner),
+    ( shape(P, L), in(P, Col)           // a shape cell keeps its color
+    ; !shape(P, L), params.bg(Col) ).   // the rest of the box is blank
+
+out(P_inner, Col, [L, $Crop()]) :- box.inner(L, P, P_inner), in(P, Col).

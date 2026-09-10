@@ -37,8 +37,6 @@ mirror(P, Q) :-
 out(P, Col) :- in(P, Col), !masked(P).
 out(P, Col) :- masked(P), mirror(P, Q), !masked(Q), in(Q, Col).
 
-// --- determination ---
-
 .comp Determine {
     // Axis positions the examples' cells occupy, and visible cells split by
     // axis (materialized once — the mirror sweep joins on the components).

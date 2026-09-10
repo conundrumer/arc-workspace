@@ -1,0 +1,32 @@
+// 48f8583b
+// draft
+// concept: tile-arrangement stamp count
+// The output decomposes into an input-shaped arrangement of input-shaped
+// tiles. A tile whose index cell carries the input's rarest color holds a
+// copy of the input; every other tile is bg.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+}
+
+.init params = Params
+
+// The stamp color is the rarest.
+.init color_count = Tally<Color, Position>
+color_count.item(Col, P) :- in(P, Col).
+
+.init rarest = ArgExtremes<Unit, Color>
+rarest.cand($U(), Col, N) :- color_count.tally(Col, N).
+
+.decl active(p: Position)
+active(P) :- in(P, Col), rarest.low($U(), Col, _).
+
+.decl out(p: Position, col: Color)
+out(P_grid_out, Col) :-
+    in(P_tile, _), in(P_intile, Col_intile),        // arrangement and tile, both input-shaped
+    concat_2d(P_tile, P_intile, 0, P_grid_out),     // glued into the output frame
+    ( active(P_tile), Col = Col_intile              // stamped tile
+    ; !active(P_tile), params.bg(Col)               // blank tile
+    ).

@@ -1,0 +1,79 @@
+// 2685904e
+// draft
+// concept: lines count cast
+// A bar on one edge states a length N. The separator casts a band N deep
+// back toward that edge. Beyond the separator a pattern line holds one
+// color per column; a column whose color occurs N times there takes that
+// color through the band.
+//
+// The band is blank in every input, so what an unselected band cell holds
+// is underdetermined; two models:
+//
+//   $Passthrough() — it keeps its input color.
+//   $Repaint()     — the band is drawn fresh, so it goes params.bg.
+
+#include "../lib.dl"
+
+.type Choice = Passthrough {} | Repaint {}
+
+.comp Params {
+    // Edge the separator and the pattern line are measured from; the
+    // canvas and the bar lie the other way.
+    .decl base_dir(d: Dir)
+    base_dir(DIR_B).
+
+    .decl sep_dist(k: number) sep_dist(3).
+
+    .decl pattern_dist(k: number) pattern_dist(1).
+
+    .decl bg(col: Color) bg(0).
+}
+
+.init params = Params
+
+.decl canvas_dir(d: Dir)
+canvas_dir(D) :- params.base_dir(B), opposite(B, D).
+
+// The bar stating N: the non-bg cells of the canvas-side edge.
+.decl bar_cell(p: Position)
+bar_cell(P) :- in(P, Col), !params.bg(Col), canvas_dir(D), dist(P, D, 0).
+
+.decl sep_cell(p: Position)
+sep_cell(P) :- in(P, _), params.base_dir(D), params.sep_dist(K), dist(P, D, K).
+
+.decl pattern_cell(p: Position, col: Color)
+pattern_cell(P, Col) :-
+    in(P, Col), params.base_dir(D), params.pattern_dist(K), dist(P, D, K).
+
+.init length = Tally<Unit, Position>
+length.item($U(), P) :- bar_cell(P).
+
+.init freq = Tally<Color, Position>
+freq.item(Col, P) :- pattern_cell(P, Col).
+
+.init cast = Ray<Unit>
+cast.dir($U(), D) :- canvas_dir(D).
+cast.cell($U(), P) :- in(P, _).
+cast.mark($U(), P) :- sep_cell(P).
+
+// The band the cast reaches: N cells deep, the separator itself excluded.
+.decl band_cell(p: Position)
+band_cell(P) :- length.tally($U(), N), cast.ray($U(), P, _, K, _), K != 0, K <= N.
+
+.decl paint(p: Position, col: Color)
+paint(P, Col) :-
+    band_cell(P),                                                // within N of the separator
+    length.tally($U(), N), freq.tally(Col, N),                   // as frequent as the bar is long
+    pattern_cell(P_pat, Col),                                    // the column holding that color
+    params.base_dir(D), axis_of(D, A), same_line(A, P, P_pat).   // and P is in it
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// --- $Passthrough ---
+out(P, Col, $Passthrough()) :- paint(P, Col).
+out(P, Col, $Passthrough()) :- in(P, Col), !paint(P, _).
+
+// --- $Repaint ---
+out(P, Col, $Repaint()) :- paint(P, Col).
+out(P, Col, $Repaint()) :- band_cell(P), !paint(P, _), params.bg(Col).
+out(P, Col, $Repaint()) :- in(P, Col), !band_cell(P).

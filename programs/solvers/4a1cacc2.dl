@@ -1,0 +1,32 @@
+// 4a1cacc2
+// draft
+// concept: markers cast
+// A single mark sits on a plain field. That mark is nearer one corner of
+// the frame on both axes; the box it spans with that corner's cell fills
+// with the mark's color, and the rest of the field passes through.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(8).
+}
+
+.init params = Params
+
+.decl mark(p: Position, col: Color)
+mark(P, Col) :- in(P, Col), !params.bg(Col).
+
+.init place = DiagPlacement<Unit>
+place.cell($U(), P) :- mark(P, _).
+
+.init box = Bbox<Unit>
+box.cell($U(), P) :- mark(P, _).
+box.cell($U(), P) :- in(P, _), place.quadrant($U(), _, Diag), corner_dist(P, Diag, 0).
+box.grid($U(), P) :- in(P, _).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, C0),
+    ( box.inside($U(), P), mark(_, Col)   // the box takes the mark's color
+    ; !box.inside($U(), P), Col = C0      // the field passes through
+    ).

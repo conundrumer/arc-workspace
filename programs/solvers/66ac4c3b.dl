@@ -1,0 +1,60 @@
+// 66ac4c3b
+// draft
+// concept: lines markers d4 mapping
+// Two parallel marker lines of distinct colors carry ink at the same
+// positions along them, and shapes in one marker's color hang off the
+// other marker's line. The output adds the input's reflection across the
+// midline between the marker lines, with the marker colors swapped: the
+// lines land on each other, and the shapes land past the far line in its
+// color. Colors, axis, and spacing vary per input, so there is no task
+// data.
+
+#include "../lib.dl"
+
+.type Line = [a: Axis, p_line: Position]
+
+.comp Params {}
+
+.init params = Params
+
+// The background is the commonest color.
+.init bg_mode = Mode<Unit, Color, Position>
+bg_mode.item($U(), Col, P) :- in(P, Col).
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !bg_mode.mode($U(), Col).
+
+// A line's ink, by its position along the line.
+.decl line_ink(l: Line, p_along: Position, col: Color)
+line_ink([A, P_line], P_along, Col) :- ink(P, Col), axis_elem(A), split(P, A, P_line, P_along).
+
+// A monochrome line's color.
+.init line_color = Unanimous<Line, Color>
+line_color.item(L, Col) :- line_ink(L, _, Col).
+
+// Lines with the same ink positions.
+.init line_set = KeyedSetCompare<Line, Line, Position>
+line_set.pattern_member(L, P_along) :- line_ink(L, P_along, _).
+line_set.observed_member(L, P_along) :- line_ink(L, P_along, _).
+
+// The marker pair: two parallel monochrome lines of distinct colors with
+// the same ink positions, in both orders.
+.decl marker_pair(a: Axis, p_line: Position, p_line2: Position, col: Color, col2: Color)
+marker_pair(A, P_line, P_line2, Col, Col2) :-
+    line_color.value([A, P_line], Col), line_color.value([A, P_line2], Col2), Col != Col2,
+    line_set.equals([A, P_line], [A, P_line2]).
+
+// The output ink: the input's, and its reflection. Ink of one marker's
+// color is read in that marker line's frame, flipped on the axis the lines
+// lie across, and seated at the other marker line in its color. The lines'
+// own axis-only Positions are the frames.
+.decl painted(p: Position, col: Color)
+painted(P, Col) :- ink(P, Col).
+painted(Q, Col2) :-
+    ink(P, Col), marker_pair(A, P_line, P_line2, Col, Col2), flip_of(A, F),
+    displacement(P_line, P, V), apply(F, V, V_img), compose(P_line2, V_img, Q),
+    in(Q, _).                                          // the image lands on the grid
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- painted(P, Col).
+out(P, Col) :- in(P, Col), !painted(P, _).   // bg stands

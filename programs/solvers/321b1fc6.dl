@@ -1,0 +1,45 @@
+// 321b1fc6
+// draft
+// concept: objects stamp
+// A multicolored template and several params.blank blocks sit over bg, and
+// each block has the template's footprint. The template stamps at each block:
+// aligning the two bounding boxes carries the template onto the block. Every
+// cell the stamp misses is bg, which erases the template.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    .decl blank(col: Color) blank(8).
+}
+
+.init params = Params
+
+.decl template(p: Position, col: Color)
+template(P, Col) :- in(P, Col), !params.bg(Col), !params.blank(Col).
+
+.init blocks = Components<Unit>
+blocks.node($U(), P) :- in(P, Col), params.blank(Col).
+
+.init block_box = Bbox<Ident>
+block_box.cell(Id, P) :- blocks.label($U(), P, Id).
+
+.init tmpl_box = Bbox<Unit>
+tmpl_box.cell($U(), P) :- template(P, _).
+
+// The translations carrying the template's box onto each block's box.
+.decl shift(v: Shift)
+shift(V) :-
+    tmpl_box.margin($U(), P_tmpl_box), block_box.margin(_, P_block_box),
+    displacement(P_tmpl_box, P_block_box, V).
+
+// The template carried onto the blocks.
+.decl image(p: Position, col: Color)
+image(P, Col) :- template(P_tmpl, Col), shift(V), compose(P_tmpl, V, P).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, _),
+    ( image(P, Col)                 // stamped cell
+    ; !image(P, _), params.bg(Col)  // everything else
+    ).

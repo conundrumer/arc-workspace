@@ -1,0 +1,55 @@
+// 673ef223
+// draft
+// concept: lines markers cast
+// Two bars of params.bar color lie along params.axis. A mark beside a bar
+// flags the bar cell on its line, as that cell's place in the bar, and the
+// flag carries to the cell at that place in every bar. Each flagged bar
+// cell casts the mark color across params.axis through bg until ink or the
+// grid edge stops it, and each mark becomes params.cap.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+    .decl bar(c: Color) bar(2).
+    .decl mark(c: Color) mark(8).
+    .decl cap(c: Color) cap(4).           // a mark once its ray is drawn
+    .decl axis(a: Axis) axis(AXIS_V).     // the bars' axis
+}
+
+.init params = Params
+
+// A cell's line across the bars: its component along params.axis.
+.decl line(p: Position, p_along: Position)
+line(P, P_along) :- in(P, _), params.axis(A), split(P, A, P_along, _).
+
+.init bars = Components<Unit>
+bars.node($U(), P) :- in(P, Col), params.bar(Col).
+
+.decl bar_cell(id: Ident, p: Position, p_along: Position)
+bar_cell(Id, P, P_along) :- bars.label($U(), P, Id), line(P, P_along).
+
+// Each bar's frame over its lines: a bar cell's place in the bar.
+.init bar_frame = BoxFrame<Ident>
+bar_frame.cell(Id, P_along) :- bar_cell(Id, _, P_along).
+
+// A place in the bars flagged by a mark beside a bar.
+.decl flagged(p_inner: Position)
+flagged(P_inner) :-
+    in(P, Col), params.mark(Col), line(P, P_along),    // a mark's line
+    bar_frame.inner(_, P_along, P_inner).              // its place in the bar it lies beside
+
+// Flagged bar cells cast across params.axis through bg; ink stops the cast.
+.init cast = Ray<Unit>
+cast.dir($U(), D) :- params.axis(A), perp(A, A2), axis_of(D, A2).
+cast.cell($U(), P) :- in(P, Col), params.bg(Col).
+cast.blocked($U(), P) :- in(P, Col), !params.bg(Col).
+cast.mark($U(), P) :-
+    bar_cell(Id, P, P_along), bar_frame.inner(Id, P_along, P_inner), flagged(P_inner).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- cast.clear($U(), P, _, _, _), params.mark(Col).
+out(P, Col) :-
+    in(P, C_in), !cast.clear($U(), P, _, _, _),
+    ( params.mark(C_in), params.cap(Col)     // a mark, capped
+    ; !params.mark(C_in), Col = C_in ).      // passthrough

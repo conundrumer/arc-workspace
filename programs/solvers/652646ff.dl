@@ -1,0 +1,105 @@
+// 652646ff
+// draft
+// concept: lookup occlude rank
+// shape: percept-shadow
+// Diamonds of one shape, each in its own color, are drawn over one another on
+// a plain ground, and stray cells of further colors litter the grid. A
+// diamond that lies behind another shows with the covered cells missing.
+// The output redraws every diamond whole, one per tile, stacked from the
+// front of the pile.
+//
+// What shows of a diamond is a piece of it, so a color's diamond is the
+// placement of params.shape that its cells occur in, and a color whose cells
+// lie too far apart for any placement is litter. Where two diamonds meet, the
+// color that shows is the one in front, and that order, closed transitively,
+// ranks the tiles.
+
+#include "../lib.dl"
+
+.comp Params {
+    // The figure a color draws, in a frame of its own.
+    .decl shape(p: Position)
+    GRID_MASK_6x6(shape,
+        _, _, 1, 1, _, _,
+        _, 1, _, _, 1, _,
+        1, _, _, _, _, 1,
+        1, _, _, _, _, 1,
+        _, 1, _, _, 1, _,
+        _, _, 1, 1, _, _)
+
+    // The edge the stack runs from, the frontmost figure first.
+    .decl stack_dir(d: Dir) stack_dir(DIR_T).
+}
+
+.init params = Params
+
+.init bg_mode = Mode<Unit, Color, Position>
+bg_mode.item($U(), Col, P) :- in(P, Col).
+
+.decl bg(col: Color)
+bg(Col) :- bg_mode.mode($U(), Col).
+
+// --- placements ---
+
+// Every color but the ground draws a figure or litters the grid.
+.decl ink(col: Color)
+ink(Col) :- in(_, Col), !bg(Col).
+
+// A color's cells occur in the figure: the cells take the shape role and the
+// whole figure the cell role, so a placement is read in the figure's frame.
+.init occ = Occurrences<Color, Unit>
+occ.cell(Col, P_intile, $U()) :- ink(Col), params.shape(P_intile).  // the whole figure
+occ.shape(Col, P_grid, $U()) :- ink(Col), in(P_grid, Col).          // what shows of it
+
+// The whole figure a color draws, covered cells included.
+.decl drawn(col: Color, p: Position)
+drawn(Col, P_grid) :-
+    occ.occurrence(Col, M), displacement(M, ORIGIN, Box),  // read the figure back onto the grid
+    params.shape(P_intile), compose(Box, P_intile, P_grid).
+
+// --- pile ---
+
+// Where two figures meet, the color that shows is the one in front.
+.decl front(col: Color, col2: Color)
+front(Col, Col2) :-
+    drawn(Col, P_grid), drawn(Col2, P_grid), Col != Col2,   // a cell of both figures
+    in(P_grid, Col).                                        // Col is the one showing
+front(Col, Col2) :- front(Col, Mid), front(Mid, Col2).
+
+.init stack = Order<Unit, Color>
+stack.elem($U(), Col) :- drawn(Col, _).
+stack.before($U(), Col, Col2) :- front(Col, Col2).
+
+// The figure's tile, at its rank from the edge the stack runs from.
+.decl tile(col: Color, p_tile: Position)
+tile(Col, P_tile) :-
+    stack.rank($U(), Col, R), stack.rank_desc($U(), Col, R2),
+    params.stack_dir(D), axis_delta(D, R, R2, P_tile).
+
+// The tile's own frame, read off the shape's.
+.init tile_frame = Frame2D<Unit>
+tile_frame.extent($U(), A, N) :-
+    axis_elem(A), params.shape(P_intile), axis_dim(P_intile, A, N).
+
+.decl out(p: Position, col: Color)
+out(P_grid, Col) :-
+    tile(Col_fig, P_tile), tile_frame.cell($U(), P_intile),
+    params.stack_dir(D), axis_of(D, A), concat_slab(P_tile, P_intile, A, 0, P_grid),
+    ( params.shape(P_intile), Col = Col_fig   // the figure, redrawn whole
+    ; !params.shape(P_intile), bg(Col)        // its ground
+    ).
+
+.comp Determine {
+    // One figure of one example, keyed by the color that draws it.
+    .type Fig = [e: Example, col: Color]
+
+    .init ground = Mode<Example, Color, Position>
+    ground.item(E, Col, P) :- ex_out(E, P, Col).
+
+    // The output redraws every figure whole, so a figure fills its own box.
+    .init frame = BoxFrame<Fig>
+    frame.cell([E, Col], P) :- ex_out(E, P, Col), !ground.mode(E, Col).
+
+    .decl shape(p: Position)
+    shape(P_intile) :- frame.inner(_, _, P_intile).
+}

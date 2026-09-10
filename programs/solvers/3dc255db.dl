@@ -1,0 +1,120 @@
+// 3dc255db
+// draft
+// concept: objects markers enclose cast count
+// Two objects in contact pair up: the bigger one holds the smaller one. The
+// holder stands open on one side; on the opposite side its walls close to a
+// lone cell — the spout. The output removes the held cells and runs a line of
+// their color out of the spout, one cell per held cell, cut short at the grid
+// edge.
+//
+// The cases read the open side differently. $Pour floods the cavity from the
+// held cells and takes the side of the holder's box the flood reaches.
+// $Sight takes a side that no wall obstructs on a straight line from any held
+// cell.
+
+#include "../lib.dl"
+
+.type Choice = Pour {} | Sight {}
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+}
+
+.init params = Params
+
+.init comps = Components8<Color>
+comps.node(Col, P) :- in(P, Col), !params.bg(Col).
+
+.decl obj(id: Ident, p: Position)
+obj(Id, P) :- comps.label(_, P, Id).
+
+.init obj_size = Tally<Ident, Position>
+obj_size.item(Id, P) :- obj(Id, P).
+
+.decl holds(b: Ident, id: Ident)
+holds(B, Id) :-
+    obj(Id, P), dir_elem(D), neighbor(P, D, Q), obj(B, Q),      // cells side by side
+    obj_size.tally(Id, N), obj_size.tally(B, N2), N < N2.       // the bigger one is the holder
+
+.decl wall(b: Ident, p: Position)
+wall(B, P) :- holds(B, _), obj(B, P).
+
+.decl held(b: Ident, p: Position)
+held(B, P) :- holds(B, Id), obj(Id, P).
+
+.decl held_color(b: Ident, col: Color)
+held_color(B, Col) :- held(B, P), in(P, Col).
+
+.init held_size = Tally<Ident, Position>
+held_size.item(B, P) :- held(B, P).
+
+.init box = Bbox<Ident>
+box.cell(B, P) :- wall(B, P).
+box.grid(B, P) :- wall(B, _), in(P, _).
+
+// The side the holder stands open on.
+.decl mouth(b: Ident, d: Dir, ch: Choice)
+
+// --- Pour ---
+
+// The cavity: what the held cells reach inside the box without crossing a wall.
+.init cavity = Reach<Ident>
+cavity.node(B, P) :- box.inside(B, P), !wall(B, P).
+cavity.seed(B, P) :- held(B, P).
+
+// The cavity read against the holder's box.
+.init bcells = BoxCells<Ident>
+bcells.box(B, M) :- box.margin(B, M).
+bcells.cell(B, P) :- cavity.reach(B, P).
+
+// The cavity runs out to that side of the box.
+mouth(B, D, $Pour()) :- bcells.on_edge(B, _, D).
+
+// --- Sight ---
+
+.init sight = Ray<Ident>
+sight.dir(B, D) :- wall(B, _), dir_elem(D).
+sight.mark(B, P) :- held(B, P).
+sight.blocked(B, P) :- wall(B, P).
+
+mouth(B, D, $Sight()) :- wall(B, _), dir_elem(D), !sight.stop(B, _, D, _, _).
+
+// --- spout ---
+
+.type Side = [b: Ident, d: Dir]
+
+// The wall cell nearest a side, where it stands alone there.
+.init tip = Unanimous<Side, Position>
+tip.item([B, D], P) :- box.edge_cell(B, P, D).
+
+.decl spout(b: Ident, d: Dir, p: Position, ch: Choice)
+spout(B, D, P, Ch) :-
+    mouth(B, D_open, Ch), opposite(D, D_open),   // the side away from the mouth
+    tip.value([B, D], P).
+
+// --- the line ---
+
+.type Trail = [b: Ident, d: Dir, ch: Choice]
+
+.init trail = Ray<Trail>
+trail.dir([B, D, Ch], D)  :- spout(B, D, _, Ch).
+trail.cell([B, D, Ch], P) :- spout(B, D, _, Ch), in(P, _).
+trail.mark([B, D, Ch], P) :- spout(B, D, P, Ch).
+
+.decl paint(p: Position, col: Color, ch: Choice)
+paint(P, Col, Ch) :-
+    trail.ray([B, _, Ch], P, _, K, _), K != 0,   // past the spout
+    held_size.tally(B, N), K <= N,               // one cell per held cell
+    held_color(B, Col).
+
+// --- output ---
+
+.decl impl_choice(ch: Choice)
+impl_choice($Pour()). impl_choice($Sight()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- paint(P, Col, Ch).
+out(P, Col, Ch) :-
+    in(P, C_in), impl_choice(Ch), !paint(P, _, Ch),
+    ( !held(_, P), Col = C_in              // the input stands
+    ; held(_, P), params.bg(Col) ).        // the held cells go

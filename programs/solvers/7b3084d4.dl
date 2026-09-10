@@ -1,0 +1,132 @@
+// 7b3084d4
+// draft
+// concept: objects markers count pack d4
+// Scattered pieces pack exactly into a square whose area is their cell
+// count. A marker cell rides on one piece; the packing lands that marker on
+// a corner of the square. Each piece may rotate before it packs, and every
+// cell of the square takes the color of the piece cell covering it.
+//
+// ByColor: a piece is a color's cells, and the marker joins the color it
+// touches. ByComponent: a piece is an 8-connected component of the content.
+
+#include "../lib.dl"
+
+.type Choice = ByColor {} | ByComponent {}
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+
+    // The marker cell's color.
+    .decl marker(col: Color) marker(5).
+
+    // The corner of the square the marker lands on.
+    .decl corner(d: DiagDir) corner(DIAG_TL).
+
+    // The transforms a piece may take.
+    .decl group(s: Sym) group(SYM_C4).
+}
+
+.init params = Params
+
+// --- the pieces ---
+
+.decl content(p: Position, col: Color)
+content(P, Col) :- in(P, Col), !params.bg(Col).
+
+.decl piece_cell(ch: Choice, o: Ident, p: Position, col: Color)
+
+// --- ByColor ---
+
+// Cells of one color are one piece, and the marker joins the color it
+// touches.
+.init by_color = Canon<Position>
+by_color.equiv(P, Q) :-
+    content(P, Col),
+    ( content(Q, Col)                                        // the same color
+    ; params.marker(Col), dir8_elem(D), neighbor(P, D, Q0),  // the marker touches
+      content(Q0, Col2), content(Q, Col2)                    // a color, and joins it
+    ).
+by_color.equiv(Q, P) :- by_color.equiv(P, Q).
+
+piece_cell($ByColor(), O, P, Col) :- by_color.id(P, O), content(P, Col).
+
+// --- ByComponent ---
+
+.init by_comp = Components8<Unit>
+by_comp.node($U(), P) :- content(P, _).
+
+piece_cell($ByComponent(), O, P, Col) :- by_comp.label($U(), P, O), content(P, Col).
+
+// --- the square ---
+
+.init area = Tally<Unit, Position>
+area.item($U(), P) :- content(P, _).
+
+// Candidate squares, by side.
+.init square = Frame2D<number>
+square.extent(N, A, N) :- in(P, _), axis_elem(A), axis_elem(A0), sub_extent(P, A0, N).
+
+.init square_area = Tally<number, Position>
+square_area.item(N, P) :- square.cell(N, P).
+
+// The square whose area is the pieces' cell count.
+.decl side(n: number)
+side(N) :- square_area.tally(N, K), area.tally($U(), K).
+
+// --- the poses ---
+
+.type PieceKey = [ch: Choice, o: Ident]
+
+.init box = BoxFrame<PieceKey>
+box.cell([Ch, O], P) :- piece_cell(Ch, O, P, _).
+
+// A piece turned by an element of the group, viewed from its own box.
+.type Pose = [ch: Choice, o: Ident, d: D4]
+
+.decl image(k: Pose, s: Position, col: Color)
+image([Ch, O, D], S, Col) :-
+    piece_cell(Ch, O, P, Col), box.inner([Ch, O], P, S0),
+    params.group(G), sym_member(G, D), apply(D, S0, S).
+
+// --- the spots ---
+
+// Where each pose fits in the square.
+.init occ = Occurrences<Pose, Unit>
+occ.shape(K, S, $U()) :- image(K, S, _).
+occ.cell(K, P, $U()) :- image(K, _, _), side(N), square.cell(N, P).
+
+// A placement: a pose at a spot in the square, named by the spot's margins.
+.type Placement = [k: Pose, b: Position]
+
+.decl covers(pc: Placement, p: Position, col: Color)
+covers([K, B], P, Col) :- occ.occurrence(K, B), image(K, S, Col), compose(B, S, P).
+
+// --- the placements ---
+
+// The marker's piece takes the spot landing its marker on the corner; any
+// other piece takes every spot.
+.decl anchor(ch: Choice, o: Ident)
+anchor(Ch, O) :- piece_cell(Ch, O, _, Col), params.marker(Col).
+
+.decl placement(ch: Choice, o: Ident, pc: Placement)
+placement(Ch, O, Pc) :-
+    occ.occurrence([Ch, O, D], B), Pc = [[Ch, O, D], B],
+    ( !anchor(Ch, O)
+    ; covers(Pc, P, Col), params.marker(Col),  // where the marker lands
+      params.corner(Dg), corner_dist(P, Dg, 0)  // on the corner
+    ).
+
+// A piece with no placement leaves no packing.
+.decl unplaced(ch: Choice)
+unplaced(Ch) :- piece_cell(Ch, O, _, _), !placement(Ch, O, _).
+
+// Every joint placement survives the pruning, and the survivors agree where
+// the packing is unique.
+.init pruning = PlacementPruning<Choice, Placement, Ident>
+pruning.cand(Ch, Pc, O) :- placement(Ch, O, Pc).
+pruning.conflict(Ch, Pc, Pc2) :-
+    placement(Ch, _, Pc), placement(Ch, _, Pc2), Pc != Pc2,
+    covers(Pc, P, _), covers(Pc2, P, _).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- pruning.alive(Ch, Pc, _), !unplaced(Ch), covers(Pc, P, Col).

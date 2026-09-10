@@ -1,0 +1,36 @@
+// 1d61978c
+// draft
+// concept: lines count
+// Marks of one color lie in diagonal streaks; each streak runs on one of the
+// two diagonal axes. Marks of the axis carrying more of them turn major_paint,
+// the rest minor_paint.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl mark(col: Color) mark(5).
+    .decl major_paint(col: Color) major_paint(8).
+    .decl minor_paint(col: Color) minor_paint(2).
+}
+
+.init params = Params
+
+// A mark's streak runs on the axis of its diagonal neighbors.
+.decl streak(p: Position, a: DiagAxis)
+streak(P, A) :-
+    in(P, Col), params.mark(Col),                     // a mark
+    diag_dir_elem(D), neighbor(P, D, Q), in(Q, Col),  // beside a like mark
+    diag_axis_of(D, A).                               // the axis they share
+
+// Each axis against the other: excess holds for the axis with more marks.
+.init cmp = Excess<DiagAxis, Position>
+cmp.plus(A, P) :- streak(P, A).
+cmp.minus(A, P) :- streak(P, A2), diag_perp(A, A2).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- in(P, Col), !params.mark(Col).
+out(P, Col) :-
+    streak(P, A),
+    ( cmp.excess(A, _), params.major_paint(Col)                     // A carries more
+    ; diag_perp(A, A2), cmp.excess(A2, _), params.minor_paint(Col)  // the other does
+    ).

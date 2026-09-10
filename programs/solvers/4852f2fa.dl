@@ -1,0 +1,59 @@
+// 4852f2fa
+// draft
+// concept: markers crop tile-arrangement count select stamp
+// One shape sits on a blank grid beside scattered single-cell markers.
+// The output repeats the shape's bounding box along one axis, one copy per
+// marker.
+//
+//   $Copy()  — each copy reproduces the box's content.
+//   $Stamp() — each copy paints the shape's footprint, the rest of the box
+//              background.
+//
+// No marker falls inside the box, so the pairs do not show what the copies
+// carry there.
+
+#include "../lib.dl"
+
+.type Choice = Copy {} | Stamp {}
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    .decl ink(col: Color) ink(8).
+    .decl axis(a: Axis) axis(AXIS_H).
+}
+
+.init params = Params
+
+.decl ink_cell(p: Position)
+ink_cell(P) :- in(P, Col), params.ink(Col).
+
+.decl mark(p: Position)
+mark(P) :- in(P, Col), !params.bg(Col), !params.ink(Col).
+
+.init box = BoxFrame<Unit>
+box.cell($U(), P) :- ink_cell(P).
+box.grid($U(), P) :- in(P, _).
+
+.init mark_count = Tally<Unit, Position>
+mark_count.item($U(), P) :- mark(P).
+
+.init reps = AxisFrame<Unit>
+reps.extent($U(), A, N) :- params.axis(A), mark_count.tally($U(), N).
+
+.decl place(p_grid_out: Position, p_grid_in: Position)
+place(P_grid_out, P_grid_in) :-
+    reps.cell($U(), A, P_tile),                   // one tile per marker
+    box.inner($U(), P_grid_in, P_intile),         // box cell in the tile frame
+    concat_slab(P_tile, P_intile, A, 0, P_grid_out).
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// --- $Copy ---
+out(P_grid_out, Col, $Copy()) :- place(P_grid_out, P_grid_in), in(P_grid_in, Col).
+
+// --- $Stamp ---
+out(P_grid_out, Col, $Stamp()) :-
+    place(P_grid_out, P_grid_in),
+    ( ink_cell(P_grid_in), params.ink(Col)             // footprint painted
+    ; !ink_cell(P_grid_in), params.bg(Col)             // rest of the box blank
+    ).

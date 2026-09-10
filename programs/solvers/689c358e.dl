@@ -1,0 +1,68 @@
+// 689c358e
+// draft
+// concept: objects markers cast
+//
+// A border ring encloses a bg canvas holding crosses, one per color. Each
+// cross has a long bar and a short bar, and the short bar crosses the long
+// one off its middle. On the long bar's line, the grid edge cell on one side
+// takes the cross's color and the one on the other side takes the far color.
+//
+// The cases pick the colored side:
+// - Nearer: the grid edge the cross's box is nearer, along the long axis.
+// - Pointer: the side of its own box the cross's center is displaced toward.
+
+#include "../lib.dl"
+
+.type Choice = Nearer {} | Pointer {}
+
+.comp Params {
+    .decl bg(c: Color) bg(7).
+    // The color the far edge cell takes.
+    .decl far(c: Color) far(0).
+}
+
+.init params = Params
+
+// A cross cell: canvas ink, keyed by the cross's color.
+.decl cross_cell(c: Color, p: Position)
+cross_cell(C, P) :- in(P, C), !params.bg(C), gt(P, ORIGIN).
+
+.init box = BoxFrame<Color>
+box.cell(C, P) :- cross_cell(C, P).
+
+// The cell where the bars cross: the one cross cell off the cross's rim.
+.init rim = Rim<Color>
+rim.cell(C, P) :- cross_cell(C, P).
+
+.decl center(c: Color, p: Position)
+center(C, P) :- cross_cell(C, P), !rim.rim(C, P).
+
+// The side the cross's color goes to.
+.decl points(c: Color, d: Dir, ch: Choice)
+
+// --- Nearer ---
+points(C, D, $Nearer()) :-
+    box.extents(C, A, N1, N2), N1 > N2, axis_of(D, A),    // long axis
+    box.margin(C, P_box), dist_pair(P_box, D, K1, K2), K1 < K2.
+
+// --- Pointer ---
+points(C, D, $Pointer()) :-
+    center(C, P), box.inner(C, P, P_inner),
+    dir_elem(D), dist_pair(P_inner, D, K1, K2), K1 < K2.
+
+// --- output ---
+
+.decl impl_choice(ch: Choice)
+impl_choice($Nearer()).
+impl_choice($Pointer()).
+
+.decl mark(p: Position, col: Color, ch: Choice)
+mark(P_edge, Col, Ch) :-
+    points(C, D, Ch), center(C, P), axis_of(D, A), same_line(A, P, P_edge), in(P_edge, _),
+    ( dist(P_edge, D, 0), Col = C                          // colored side
+    ; opposite(D, Opp), dist(P_edge, Opp, 0), params.far(Col)  // far side
+    ).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- mark(P, Col, Ch).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !mark(P, _, Ch).

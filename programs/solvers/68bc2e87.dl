@@ -1,0 +1,48 @@
+// 68bc2e87
+// draft
+// concept: border occlude rank
+// Rectangle outlines, one color each, are drawn over one another on a
+// plain ground. A later outline overwrites the cells of the earlier ones it
+// crosses. The output lists the colors in drawing order, one cell per
+// color, running from the edge params.order_dir names.
+//
+// A color's rectangle is the box its cells bound. Where the outline of that
+// box shows another color, that color was drawn later, and that order,
+// closed transitively, ranks the colors.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(8).
+
+    // The edge the listing runs from, the first-drawn color first.
+    .decl order_dir(d: Dir) order_dir(DIR_T).
+}
+
+.init params = Params
+
+// The rectangle each color draws: the box its cells bound.
+.init rect = Bbox<Color>
+rect.cell(Col, P) :- in(P, Col), !params.bg(Col).
+
+// The outline of each rectangle, read over the whole grid.
+.init outline = BoxCells<Color>
+outline.box(Col, B) :- rect.margin(Col, B).
+outline.cell(Col, P) :- rect.cell(Col, _), in(P, _).
+
+// A later color overwrites a cell of an earlier color's outline.
+.decl under(col: Color, col2: Color)
+under(Col, Col2) :- outline.on_edge(Col, P, _), rect.cell(Col2, P), Col != Col2.
+under(Col, Col2) :- under(Col, Mid), under(Mid, Col2).
+
+.init order = Order<Unit, Color>
+order.elem($U(), Col) :- rect.cell(Col, _).
+order.before($U(), Col, Col2) :- under(Col, Col2).
+
+// The listing: one cell per rank, from the edge the order runs from.
+.init listing = DirFrame<Unit>
+listing.dir(D) :- params.order_dir(D).
+listing.dist_set($U(), R) :- order.rank($U(), _, R).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- order.rank($U(), Col, R), listing.pos($U(), R, P).

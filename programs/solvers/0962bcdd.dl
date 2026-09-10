@@ -18,30 +18,25 @@
     .decl radius(k: number) radius(2).
 
     // --- Lookup ---
-    // Role masks over the stamp frame; center_pos anchors the stamp on
-    // the marker.
-    .decl template_arm(p: Position)
-    GRID_MASK_5x5(template_arm,
-        0, 0, 1, 0, 0,
-        0, 0, 1, 0, 0,
-        1, 1, 0, 1, 1,
-        0, 0, 1, 0, 0,
-        0, 0, 1, 0, 0)
+    // Role masks as offsets from the marker, `@` on the marker cell.
+    .decl template_arm(delta: Shift)
+    GRID_STAMP_5x5(template_arm,
+        _, _, 1, _, _,
+        _, _, 1, _, _,
+        1, 1, @_, 1, 1,
+        _, _, 1, _, _,
+        _, _, 1, _, _)
 
-    .decl template_center(p: Position)
-    GRID_MASK_5x5(template_center,
-        1, 0, 0, 0, 1,
-        0, 1, 0, 1, 0,
-        0, 0, 1, 0, 0,
-        0, 1, 0, 1, 0,
-        1, 0, 0, 0, 1)
-
-    .decl center_pos(p: Position) center_pos([2, 2, 2, 2]).
+    .decl template_center(delta: Shift)
+    GRID_STAMP_5x5(template_center,
+        1, _, _, _, 1,
+        _, 1, _, 1, _,
+        _, _, @1, _, _,
+        _, 1, _, 1, _,
+        1, _, _, _, 1)
 }
 
 .init params = Params
-
-// --- parse ---
 
 .comp Parse<Key> {
     .decl grid(key: Key, p: Position, col: Color)
@@ -94,10 +89,9 @@ paint(P2, Col, $Ray()) :-
 
 paint(P_grid, Col, $Lookup()) :-
     parse.marker($U(), C, Cc, Ca),
-    params.center_pos(C0), displacement(C0, C, M),    // the stamp box's margin at the marker
-    ( params.template_arm(T), Col = Ca                // arm-role cell
-    ; params.template_center(T), Col = Cc ),          // center-role cell
-    compose(T, M, P_grid),                            // embed the template cell
+    ( params.template_arm(V), Col = Ca                // arm-role cell
+    ; params.template_center(V), Col = Cc ),          // center-role cell
+    compose(C, V, P_grid),                            // offset from the marker
     in(P_grid, _).                                    // clip to the grid
 
 // --- out ---
@@ -105,10 +99,6 @@ paint(P_grid, Col, $Lookup()) :-
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !paint(P, _, Ch).
-
-// --- determination ---
-
-.type StarKey = [e: Example, id: Ident]
 
 .comp Determine {
     .init ex = Parse<Example>
@@ -121,27 +111,23 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !paint(P, _, Ch).
     .init comps = Components8<Example>
     comps.node(E, P) :- star(E, P, _).
 
-    // Each star viewed from its own box — the stamp frame.
-    .init box = BoxFrame<StarKey>
-    box.cell([E, Id], P) :- comps.label(E, P, Id).
-
     // The marker inside each star.
-    .decl star_marker(e: Example, id: Ident, c_center: Color, c_arm: Color)
-    star_marker(E, Id, Cc, Ca) :-
+    .decl star_marker(e: Example, id: Ident, p: Position, c_center: Color, c_arm: Color)
+    star_marker(E, Id, Pm, Cc, Ca) :-
         ex.marker(E, Pm, Cc, Ca),                // input mark
         comps.label(E, Pm, Id).                  // its star
 
-    // A star's cell at its position in the star's box, with its color.
-    .decl star_cell(e: Example, id: Ident, p_t: Position, col: Color)
-    star_cell(E, Id, P_t, Col) :-
+    // A star's cell as its offset from the star's marker, with its color.
+    .decl star_cell(e: Example, id: Ident, delta: Shift, col: Color)
+    star_cell(E, Id, V, Col) :-
         comps.label(E, P, Id), star(E, P, Col),
-        box.inner([E, Id], P, P_t).
+        star_marker(E, Id, Pm, _, _), displacement(Pm, P, V).
 
-    .decl template_arm(p: Position)
-    template_arm(P_t) :-
-        star_marker(E, Id, _, Ca), star_cell(E, Id, P_t, Ca).
+    .decl template_arm(delta: Shift)
+    template_arm(V) :-
+        star_marker(E, Id, _, _, Ca), star_cell(E, Id, V, Ca).
 
-    .decl template_center(p: Position)
-    template_center(P_t) :-
-        star_marker(E, Id, Cc, _), star_cell(E, Id, P_t, Cc).
+    .decl template_center(delta: Shift)
+    template_center(V) :-
+        star_marker(E, Id, _, Cc, _), star_cell(E, Id, V, Cc).
 }

@@ -1,0 +1,75 @@
+// 5521c0d9
+// draft
+// concept: objects move
+// Blocks — the connected components of the non-bg cells — sit on a params.bg
+// grid. Each block translates toward params.move_dir by its own extent along
+// that direction's axis, so it comes to sit directly beyond where it stood. A
+// cell carried off the frame is lost.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+    .decl move_dir(d: Dir) move_dir(DIR_T).
+}
+
+.init params = Params
+
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)  // input
+    .decl dir(key: Key, d: Dir)                    // input
+
+    .init objs = Components<Key>
+    objs.node(Ky, P) :- cell(Ky, P, _).
+
+    .type KI = [key: Key, id: Ident]
+
+    .init box = Bbox<KI>
+    box.cell([Ky, Id], P) :- objs.label(Ky, P, Id).
+
+    // Each block cell carried the block's own length along the move.
+    .decl moved(key: Key, p: Position, col: Color)
+    moved(Ky, P_out, Col) :-
+        cell(Ky, P, Col), objs.label(Ky, P, Id),                  // a block cell
+        dir(Ky, D), axis_of(D, A), box.extent([Ky, Id], A, N),    // its block's length along the move
+        jump(P, D, N, P_out).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col), !params.bg(Col).
+parse.dir($U(), D) :- params.move_dir(D).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, _),
+    ( parse.moved($U(), P, Col)                   // a block cell lands here
+    ; !parse.moved($U(), P, _), params.bg(Col)    // nothing lands here
+    ).
+
+.comp Determine {
+    .type EP = [e: Example, p: Position]
+
+    // The color that covers most of the grid.
+    .init common = Mode<Unit, Color, EP>
+    common.item($U(), Col, [E, P]) :- ex_in(E, P, Col).
+
+    .decl bg(c: Color)
+    bg(Col) :- common.mode($U(), Col).
+
+    .type ED = [e: Example, d: Dir]
+
+    // Every direction tried against every train pair.
+    .decl trial(e: Example, d: Dir)
+    trial(E, D) :- ex_out(E, _, _), dir_elem(D).
+
+    .init parse = Parse<ED>
+    parse.cell([E, D], P, Col) :- trial(E, D), ex_in(E, P, Col), !bg(Col).
+    parse.dir([E, D], D) :- trial(E, D).
+
+    .decl refuted(d: Dir)
+    refuted(D) :- trial(E, D), ex_out(E, P, Col), !bg(Col), !parse.moved([E, D], P, Col).   // a block cell the move misses
+    refuted(D) :- parse.moved([E, D], P, Col), ex_in(E, P, _), !ex_out(E, P, Col).          // a cell the move puts where the pair has none
+
+    .decl move_dir(d: Dir)
+    move_dir(D) :- dir_elem(D), !refuted(D).
+}

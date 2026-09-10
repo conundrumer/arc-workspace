@@ -94,8 +94,6 @@
 
 .init params = Params
 
-// --- parse ---
-
 .comp Parse<Key> {
     .decl cell(k: Key, p: Position, col: Color)
 
@@ -179,8 +177,6 @@ out(P_grid, Col, [D, $Corner()]) :-
     class(Id, D), corner_map(P_intile, P_grid), params.class_tile(Id, P_intile, Col).
 out(P_grid, Col, [D, $Corner()]) :-
     class(_, D), params.canvas(P_grid), !corner_map(_, P_grid), params.bg(Col).
-
-// --- determination ---
 
 .comp Determine {
     .init parse = Parse<Example>

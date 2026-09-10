@@ -31,8 +31,6 @@
 
 .init params = Params
 
-// --- parse ---
-
 // The ink components with their sizes.
 .comp Parse<Key> {
     .type KC = [k: Key, col: Color]
@@ -77,8 +75,6 @@ repaint(P, Col, $Threshold()) :-
 repaint(P, Col, $Lookup()) :-
     parse.comp_cell(K, P), parse.comp_size.tally(K, N),   // component cell with its size
     params.size_paint(N, Col).                            // the color its size selects
-
-// --- determination ---
 
 .comp Determine {
     .init parse = Parse<Example>

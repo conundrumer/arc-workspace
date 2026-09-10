@@ -1,0 +1,139 @@
+// 694f12f3
+// draft
+// concept: objects rank border lookup
+// Solid rectangles on a background. Each rectangle keeps its outline, and
+// its interior fills with a color that its place in the size order picks.
+// Choice = [a, k, i]:
+//
+//   a (which end of the size order is first):
+//     $Large() — the biggest rectangle
+//     $Small() — the smallest rectangle
+//   k (how the place picks the color):
+//     $Table()   — a stored color per rank
+//     $Extreme() — one color for the first rectangle, another for the rest
+//   i (what the interior is):
+//     $Box()   — the cells strictly inside the rectangle's bounding box
+//     $Erode() — the rectangle's cells off its rim
+
+#include "../lib.dl"
+
+.type Anchor = Large {} | Small {}
+.type Kind = Table {} | Extreme {}
+.type Interior = Box {} | Erode {}
+.type Choice = [a: Anchor, k: Kind, i: Interior]
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+
+    // --- $Large, $Table ---
+    .decl large_color(r: number, col: Color)
+    large_color(0, 2). large_color(1, 1).
+
+    // --- $Small, $Table ---
+    .decl small_color(r: number, col: Color)
+    small_color(0, 1). small_color(1, 2).
+
+    // --- $Large, $Extreme ---
+    .decl largest_color(col: Color) largest_color(2).
+    .decl large_rest_color(col: Color) large_rest_color(1).
+
+    // --- $Small, $Extreme ---
+    .decl smallest_color(col: Color) smallest_color(1).
+    .decl small_rest_color(col: Color) small_rest_color(2).
+}
+
+.init params = Params
+
+.decl anchor_choice(a: Anchor)
+anchor_choice($Large()). anchor_choice($Small()).
+
+.decl kind_choice(k: Kind)
+kind_choice($Table()). kind_choice($Extreme()).
+
+.decl interior_choice(i: Interior)
+interior_choice($Box()). interior_choice($Erode()).
+
+// The ink components, ordered by size.
+.comp Parse<Key> {
+    .type KI = [key: Key, id: Ident]
+
+    .decl cell(key: Key, p: Position, col: Color)
+
+    .init rects = Components<Key>
+    rects.node(Ky, P) :- cell(Ky, P, Col), !params.bg(Col).
+
+    .init size = Tally<KI, Position>
+    size.item([Ky, Id], P) :- rects.label(Ky, P, Id).
+
+    // The size order, ascending; each anchor reads it from its own end.
+    .init order = Order<Key, Ident>
+    order.elem(Ky, Id) :- size.tally([Ky, Id], _).
+    order.before(Ky, Id, Id2) :- size.tally([Ky, Id], N), size.tally([Ky, Id2], N2), N < N2.
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// --- fill color per rectangle ---
+
+.decl fill(id: Ident, col: Color, a: Anchor, k: Kind)
+
+// --- $Table ---
+fill(Id, Col, $Large(), $Table()) :- parse.order.rank_desc($U(), Id, R), params.large_color(R, Col).
+fill(Id, Col, $Small(), $Table()) :- parse.order.rank($U(), Id, R), params.small_color(R, Col).
+
+// --- $Extreme ---
+fill(Id, Col, $Large(), $Extreme()) :-
+    parse.order.elem($U(), Id),
+    ( parse.order.last($U(), Id), params.largest_color(Col)      // the biggest
+    ; !parse.order.last($U(), Id), params.large_rest_color(Col)  // the rest
+    ).
+fill(Id, Col, $Small(), $Extreme()) :-
+    parse.order.elem($U(), Id),
+    ( parse.order.first($U(), Id), params.smallest_color(Col)     // the smallest
+    ; !parse.order.first($U(), Id), params.small_rest_color(Col)  // the rest
+    ).
+
+// --- interior per rectangle ---
+
+.decl interior(id: Ident, p: Position, i: Interior)
+
+// --- $Box ---
+.init box = Bbox<Ident>
+box.cell(Id, P) :- parse.rects.label($U(), P, Id).
+
+.init box_cells = BoxCells<Ident>
+box_cells.box(Id, B) :- box.margin(Id, B).
+box_cells.cell(Id, P) :- box.cell(Id, _), in(P, _).
+
+interior(Id, P, $Box()) :- box_cells.hole(Id, P).
+
+// --- $Erode ---
+.init rim = Rim<Ident>
+rim.cell(Id, P) :- parse.rects.label($U(), P, Id).
+
+interior(Id, P, $Erode()) :- parse.rects.label($U(), P, Id), !rim.rim(Id, P).
+
+// --- output ---
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, [A, K, I]) :- interior(Id, P, I), fill(Id, Col, A, K).
+out(P, Col, [A, K, I]) :-
+    in(P, Col), interior_choice(I), !interior(_, P, I),
+    anchor_choice(A), kind_choice(K).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // A rectangle's fill: the output color at a cell of it that changed.
+    .decl rect_color(e: Example, id: Ident, col: Color)
+    rect_color(E, Id, Col) :-
+        parse.rects.label(E, P, Id), ex_in(E, P, C_in), ex_out(E, P, Col), Col != C_in.
+
+    .decl large_color(r: number, col: Color)
+    large_color(R, Col) :- parse.order.rank_desc(E, Id, R), rect_color(E, Id, Col).
+
+    .decl small_color(r: number, col: Color)
+    small_color(R, Col) :- parse.order.rank(E, Id, R), rect_color(E, Id, Col).
+}

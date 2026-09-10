@@ -84,8 +84,6 @@ out(P, Col, $Inset()) :-
     ; !interior_tile(P), params.bg(Col)        // the border, or an interior gap — bg
     ).
 
-// --- determination ---
-
 .type Window = [e: Example, diag: DiagDir]
 
 .comp Determine {

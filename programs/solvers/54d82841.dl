@@ -1,0 +1,80 @@
+// 54d82841
+// draft
+// concept: markers objects cast
+// A cup is a wall of ink around one bg cell, open on a single side.
+// Every cup puts a mark on the grid edge. The cases differ on the line
+// the mark sits in and the edge that line runs to:
+//
+//   $Opening() — the open cell's line along its free side.
+//   $Fall()    — the open cell's line along params.fall.
+//   $Center()  — the cup's center line across params.fall, so the cup's
+//                own shape fixes the line and not the cell it holds.
+
+#include "../lib.dl"
+
+.type Choice = Opening {} | Fall {} | Center {}
+
+.comp Params {
+    // --- shared ---
+    .decl bg(c: Color) bg(0).
+    .decl mark(c: Color) mark(4).
+
+    // --- Fall, Center ---
+    .decl fall(d: Dir) fall(DIR_B).
+}
+
+.init params = Params
+
+// The neighbor toward D holds ink.
+.decl walled(p: Position, d: Dir)
+walled(P, D) :- in(P, _), dir_elem(D), neighbor(P, D, Q), in(Q, Col), !params.bg(Col).
+
+// A free side of a bg cell. Off the grid is free.
+.decl free(p: Position, d: Dir)
+free(P, D) :- in(P, Col), params.bg(Col), dir_elem(D), !walled(P, D).
+
+// The cell a cup holds has one free side alone, so its free sides agree.
+.init lone_free = Unanimous<Position, Dir>
+lone_free.item(P, D) :- free(P, D).
+
+// The cell a case casts from, and the direction it casts.
+.decl aim(ch: Choice, p: Position, d: Dir)
+
+// --- $Opening ---
+aim($Opening(), P, D) :- lone_free.value(P, D).
+
+// --- $Fall ---
+aim($Fall(), P, D) :- lone_free.value(P, _), params.fall(D).
+
+// --- $Center ---
+
+// A cup is one color's connected ink: cups of unlike color touch.
+.init cup = Components<Color>
+cup.node(Col, P) :- in(P, Col), !params.bg(Col).
+
+.init box = BoxFrame<Ident>
+box.cell(Id, P) :- cup.label(_, P, Id).
+
+// The cast cell is a cup cell midway between the two sides of its box.
+aim($Center(), P, D) :-
+    box.inner(_, P, P_box),           // the cell in its cup's box
+    params.fall(D), perp_dir(D, D2),  // across the cast
+    dist_pair(P_box, D2, K, K).       // centered on that axis
+
+// --- placement ---
+
+// The mark lands on the far edge of the line it is cast along.
+.decl mark_cell(ch: Choice, p: Position)
+mark_cell(Ch, Q) :-
+    aim(Ch, P, D), axis_of(D, A), same_line(A, P, Q),  // the cast's line
+    in(Q, _), dist(Q, D, 0).                           // its far edge
+
+.decl impl_choice(ch: Choice)
+impl_choice($Opening()). impl_choice($Fall()). impl_choice($Center()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    impl_choice(Ch), in(P, Col_in),
+    ( mark_cell(Ch, P), params.mark(Col)     // the mark
+    ; !mark_cell(Ch, P), Col = Col_in        // the field passes through
+    ).

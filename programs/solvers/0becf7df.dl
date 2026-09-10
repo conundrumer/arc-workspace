@@ -79,8 +79,6 @@ out(P, Col_out, Ch) :-
     ; !key_cell(P), !mapping(Col, _, Ch), Col_out = Col   // unmapped — kept
     ).
 
-// --- determination ---
-
 .comp Determine {
     .decl mapping(e: Example, c1: Color, c2: Color)
     mapping(E, C1, C2) :- ex_in(E, P, C1), ex_out(E, P, C2), C1 != C2.

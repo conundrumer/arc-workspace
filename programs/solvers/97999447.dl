@@ -78,8 +78,6 @@ ray_slot(P, M, Slot) :- on_ray(P, M, K), slot_walk.walk($U(), 0, K, Slot).
 out(P, Col, $Mask()) :- ray_slot(P, _, K), params.mask(K, Col).    // overridden slot
 out(P, M,   $Mask()) :- ray_slot(P, M, K), !params.mask(K, _).     // unmarked slot echoes the dot
 
-// --- determination ---
-
 .comp Determine {
     .type RayPhase = [e: Example, m: Position, w: number, k: number]
 

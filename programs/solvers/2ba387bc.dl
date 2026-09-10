@@ -1,0 +1,101 @@
+// 2ba387bc
+// draft
+// concept: objects classify rank
+// The input scatters equal squares, each a hollow ring or a solid block. The
+// output arranges them in two columns: hollow squares at params.hole_side, solid
+// ones opposite, each column stacked in reading order from params.corner and
+// padded with background to the taller column's height.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+
+    // The column hollow squares stack in; solid squares take the other one.
+    .decl hole_side(d: Dir) hole_side(DIR_L).
+
+    // The corner reading order runs from.
+    .decl corner(d: DiagDir) corner(DIAG_TL).
+
+    // The side of one square, and so of one output tile.
+    .decl tile_dim(n: number) tile_dim(4).
+}
+
+.init params = Params
+
+// --- squares ---
+
+.init comps = Components<Color>
+comps.node(Col, P) :- in(P, Col), !params.bg(Col).
+
+.decl square(id: Ident, p: Position, col: Color)
+square(Id, P, Col) :- comps.label(Col, P, Id).
+
+.init box = BoxFrame<Ident>
+box.cell(Id, P) :- square(Id, P, _).
+box.grid(Id, P) :- square(Id, _, _), in(P, _).
+
+// Hollow: the box encloses a cell the square does not cover.
+.decl hollow(id: Ident)
+hollow(Id) :- box.inside(Id, P), !square(Id, P, _).
+
+// --- columns ---
+
+// The two columns sit on the axis their edges name; squares stack across it.
+.decl class_axis(a: Axis)
+class_axis(A) :- params.hole_side(D), axis_of(D, A).
+
+.decl order_axis(a: Axis)
+order_axis(A2) :- class_axis(A), perp(A, A2).
+
+// The class column a square stacks in, named by the edge that column touches.
+.decl stack(id: Ident, d: Dir)
+stack(Id, D) :-
+    square(Id, _, _), params.hole_side(D0),
+    ( hollow(Id), D = D0             // hollow: the hole side
+    ; !hollow(Id), opposite(D0, D)   // solid: the column opposite
+    ).
+
+.init order = LexOrder<Dir>
+order.corner(D_stack, Diag) :- order.cell(D_stack, _), params.corner(Diag).
+order.axis(D_stack, A) :- order.cell(D_stack, _), order_axis(A).
+order.cell(D, P) :- stack(Id, D), box.margin(Id, P).
+
+.init height = Tally<Dir, Ident>
+height.item(D, Id) :- stack(Id, D).
+
+.init tallest = Extremes<Unit>
+tallest.cand($U(), N) :- height.tally(_, N).
+
+// --- output ---
+
+// One column per class, the classes being the two edges of the class axis.
+.init class_count = Tally<Axis, Dir>
+class_count.item(A, D) :- axis_of(D, A).
+
+.init tiles = Frame2D<Unit>
+tiles.extent($U(), A, N) :- order_axis(A), tallest.high($U(), N).
+tiles.extent($U(), A, N) :- class_axis(A), class_count.tally(A, N).
+
+.init cells = Frame2D<Unit>
+cells.extent($U(), A, N) :- axis_elem(A), params.tile_dim(N).
+
+.decl square_tile(id: Ident, p_tile: Position)
+square_tile(Id, P_tile) :-
+    stack(Id, D), box.margin(Id, P_margin),          // the square's column and box
+    order.rank(D, P_margin, R),                      // its place in that column
+    tiles.cell($U(), P_tile), dist(P_tile, D, 0),    // the column's tiles
+    params.corner(Cn), order_axis(A),
+    dir_of(Cn, A, D_ord), dist(P_tile, D_ord, R).    // rank counts from the corner
+
+.decl tile_cell(p_tile: Position, p_intile: Position, col: Color)
+tile_cell(P_tile, P_intile, Col) :-
+    square_tile(Id, P_tile), square(Id, P, Col), box.inner(Id, P, P_intile).
+
+.decl out(p: Position, col: Color)
+out(P_grid, Col) :-
+    tiles.cell($U(), P_tile), cells.cell($U(), P_intile),
+    concat_2d(P_tile, P_intile, 0, P_grid),
+    ( tile_cell(P_tile, P_intile, Col)                    // square cell
+    ; !tile_cell(P_tile, P_intile, _), params.bg(Col)     // ring hole or empty tile
+    ).

@@ -1,0 +1,150 @@
+// 4c3d4a41
+// draft
+// concept: lines move
+//
+// A container stands beside a staging area. That area holds a comb: a bar
+// with teeth of varying height. That comb moves into the container's
+// interior, and each line of the container's contents comes to rest on it.
+// Contents pushed out of the interior are lost, and the staging area empties.
+//
+// The cases differ in how a line's contents come to rest:
+//   $Rigid — they move as one body.
+//   $Stack — they fall cell by cell and stack on the comb.
+
+#include "../lib.dl"
+
+.type Choice = Rigid {} | Stack {}
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+
+    // The container's interior, as margins.
+    .decl box(p: Position) box([1, 1, 10, 1]).
+
+    // Carries the staging area onto the container's interior.
+    .decl shift(v: Shift) shift([0, 0, 10, -10]).
+
+    // The direction the comb's teeth point.
+    .decl rise(d: Dir) rise(DIR_T).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Rigid()).
+impl_choice($Stack()).
+
+// The container's interior.
+.decl inside(p: Position)
+inside(P) :- in(P, _), params.box(M), geq(P, M).
+
+// The staging area — what the shift carries into the container.
+.decl stage(p: Position)
+stage(P) :- in(P, _), params.shift(V), compose(P, V, Q), inside(Q).
+
+// The region the move rebuilds. Every other cell passes through.
+.decl rewritten(p: Position)
+rewritten(P) :- inside(P).
+rewritten(P) :- stage(P).
+
+// The comb, moved into the container.
+.decl comb(p: Position, col: Color)
+comb(Q, Col) :- in(P, Col), stage(P), !params.bg(Col), params.shift(V), compose(P, V, Q).
+
+// The container's contents.
+.decl content(p: Position, col: Color)
+content(P, Col) :- in(P, Col), inside(P), !params.bg(Col).
+
+// A cell split on the rise axis: the line it stands in, and its depth — the
+// distance from the edge the teeth point at.
+.decl line_cell(p: Position, l: Position, k: number)
+line_cell(P, L, K) :-
+    in(P, _), params.rise(D), axis_of(D, A),
+    split(P, A, _, L), dist(P, D, K).
+
+// The comb's high end, per line: `low` is the least depth.
+.init comb_end = ArgExtremes<Position, Position>
+comb_end.cand(L, P, K) :- comb(P, _), line_cell(P, L, K).
+
+// The seat a line's contents settle onto: one step past the comb's high end.
+.decl seat(l: Position, p: Position)
+seat(L, P_seat) :- comb_end.low(L, P_top, _), params.rise(D), neighbor(P_top, D, P_seat).
+
+// Where the contents come to rest.
+.decl placed(p: Position, col: Color, ch: Choice)
+
+// --- Rigid ---
+
+// The contents' low end, per line: `high` is the greatest depth.
+.init content_end = ArgExtremes<Position, Position>
+content_end.cand(L, P, K) :- content(P, _), line_cell(P, L, K).
+
+placed(Q, Col, $Rigid()) :-
+    content(P, Col), line_cell(P, L, _),               // a content cell
+    content_end.high(L, P_bot, _), seat(L, P_seat),    // the low end goes on the seat
+    displacement(P_bot, P_seat, V), compose(P, V, Q),  // carried as one body
+    inside(Q).                                         // what the container still holds
+
+// --- Stack ---
+
+// The run of cells rising from the seat, indexed by the step that reaches it.
+// Its domain stops at the interior, so what rises past that is lost.
+.init rise_ray = Ray<Position>
+rise_ray.dir(L, D) :- seat(L, _), params.rise(D).
+rise_ray.mark(L, P_seat) :- seat(L, P_seat).
+rise_ray.cell(L, P) :- inside(P), line_cell(P, L, _).
+
+// The contents ranked from their low end, per line.
+.init content_rank = Ordinal<Position>
+content_rank.idx_set(L, K) :- content(P, _), line_cell(P, L, K).
+
+placed(P_slot, Col, $Stack()) :-
+    content(P, Col), line_cell(P, L, K),           // a content cell
+    content_rank.rank_desc(L, K, R),               // its place from the low end
+    rise_ray.ray(L, P_slot, _, R, _).              // that many steps up from the seat
+
+// --- out ---
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- in(P, Col), !rewritten(P), impl_choice(Ch).
+out(P, Col, Ch) :- comb(P, Col), impl_choice(Ch).
+out(P, Col, Ch) :- placed(P, Col, Ch).
+out(P, Bg, Ch) :-
+    rewritten(P), impl_choice(Ch),
+    !comb(P, _), !placed(P, _, Ch), params.bg(Bg).  // nothing came to rest there
+
+.comp Determine {
+    // The cells an example empties.
+    .decl vanished(e: Example, p: Position, col: Color)
+    vanished(E, P, Col) :- ex_in(E, P, Col), !params.bg(Col), params.bg(Bg), ex_out(E, P, Bg).
+
+    // Where the emptied cells recur in the output.
+    .init occ = Occurrences<Example, Color>
+    occ.cell(E, P, Col) :- ex_out(E, P, Col).
+    occ.shape(E, P, Col) :- vanished(E, P, Col).
+
+    // A move some example refutes: its emptied cells do not recur there.
+    .decl refuted_shift(v: Shift)
+    refuted_shift(V) :- occ.placement(_, V), vanished(E, _, _), !occ.occurrence(E, V).
+
+    .decl shift(v: Shift)
+    shift(V) :- occ.placement(_, V), !refuted_shift(V).
+
+    // The emptied cells are the comb.
+    .init comb_box = Bbox<Example>
+    comb_box.cell(E, P) :- vanished(E, P, _).
+
+    .init comb_rim = Rim<Example>
+    comb_rim.cell(E, P) :- vanished(E, P, _).
+
+    // A direction the comb does not stand along: the teeth rise from the back
+    // edge, so away from that edge every comb cell has comb behind it.
+    .decl refuted_dir(d: Dir)
+    refuted_dir(D) :-
+        opposite(D, D_back),
+        comb_rim.rim_dir(E, P, D_back),      // a comb cell with nothing behind it
+        !comb_box.edge_cell(E, P, D_back).   // away from the comb's back edge
+
+    .decl rise(d: Dir)
+    rise(D) :- dir_elem(D), !refuted_dir(D).
+}

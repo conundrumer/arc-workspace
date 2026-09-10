@@ -1,0 +1,54 @@
+// 7c008303
+// draft
+// concept: decompose crop scale select
+// A cross of one full row and one full column cuts the grid into four
+// quadrants: a small key, a large pattern, and two blank quadrants. The
+// output is the pattern, divided into one block per key cell, with each
+// inked cell recolored by the key cell of its block.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+}
+
+.init params = Params
+
+.type Line = [a: Axis, l: Position]
+
+.init line_color = Unanimous<Line, Color>
+line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
+
+.init frame = DividerFrame<Unit>
+frame.cell($U(), P) :- in(P, _).
+
+// Divider: a line of one non-bg color.
+frame.divider($U(), A, L) :- line_color.value([A, L], Col), !params.bg(Col).
+
+// Each quadrant seen as its own frame.
+.init tile_frame = BoxFrame<Position>
+tile_frame.cell(P_tile, P) :- frame.tile_of($U(), P, P_tile).
+
+// A quadrant holding a non-bg cell.
+.decl filled(p_tile: Position)
+filled(P_tile) :- frame.tile_of($U(), P, P_tile), in(P, Col), !params.bg(Col).
+
+// The key is the smaller filled quadrant; the pattern is the larger.
+.decl role(t_key: Position, t_pat: Position)
+role(T_key, T_pat) :-
+    filled(T_key), filled(T_pat),
+    tile_frame.extent(T_key, A, N_key), tile_frame.extent(T_pat, A, N_pat), N_key < N_pat.
+
+// The pattern divided into one block per key cell.
+.init blocks = Divide2D<Unit>
+blocks.cell(P_intile) :- role(_, T_pat), tile_frame.inner(T_pat, _, P_intile).
+blocks.dim($U(), A, N) :- role(T_key, _), tile_frame.extent(T_key, A, N).
+blocks.gap(0).
+
+.decl out(p: Position, col: Color)
+out(P_intile, Col) :-
+    role(T_key, T_pat), tile_frame.inner(T_pat, P, P_intile), in(P, C),  // pattern cell
+    ( params.bg(C), Col = C                                             // blank stays
+    ; !params.bg(C), blocks.tile($U(), P_intile, P_block, _),           // inked: its block
+      tile_frame.inner(T_key, Q, P_block), in(Q, Col)                   // takes the key's color there
+    ).

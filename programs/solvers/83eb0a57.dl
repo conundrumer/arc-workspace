@@ -1,0 +1,62 @@
+// 83eb0a57
+// draft
+// concept: objects crop markers move count rank
+// Solid rectangles lie on a bg field, each a body color with marks drawn on
+// it. The largest is the canvas, and its body color is the one it has most of.
+// Every rectangle, with its body repainted in the canvas body color, occurs
+// exactly once in the canvas: the canvas at its own origin, a piece where its
+// marks coincide with the canvas marks. The output is the canvas frame with
+// every rectangle laid at its occurrence, the smaller on top.
+
+#include "../lib.dl"
+
+.comp Params {}
+
+.init params = Params
+
+.init field = Mode<Unit, Color, Position>
+field.item($U(), Col, P) :- in(P, Col).
+
+.init comps = Components<Unit>
+comps.node($U(), P) :- in(P, Col), !field.mode($U(), Col).
+
+.init frame = BoxFrame<Ident>
+frame.cell(Id, P) :- comps.label($U(), P, Id).
+
+// Each rectangle's cells in its own frame.
+.decl rect(id: Ident, p_inner: Position, col: Color)
+rect(Id, P_inner, Col) :- frame.inner(Id, P, P_inner), in(P, Col).
+
+.init size = Tally<Ident, Position>
+size.item(Id, P) :- comps.label($U(), P, Id).
+
+.init largest = ArgExtremes<Unit, Ident>
+largest.cand($U(), Id, N) :- size.tally(Id, N).
+
+.decl canvas(p: Position, col: Color)
+canvas(P, Col) :- largest.high($U(), Id, _), rect(Id, P, Col).
+
+.init body = Mode<Unit, Color, Position>
+body.item($U(), Col, P) :- canvas(P, Col).
+
+// --- placement ---
+
+// A rectangle in canvas colors: its marks keep their color, its body takes
+// the canvas body color.
+.init occ = Occurrences<Ident, Color>
+occ.cell(Id, P, Col) :- rect(Id, _, _), canvas(P, Col).
+occ.shape(Id, P_inner, Col) :-
+    rect(Id, P_inner, C),
+    ( canvas(_, C), Col = C                      // a mark
+    ; !canvas(_, C), body.mode($U(), Col) ).     // the body
+
+// Each rectangle laid at its occurrence in the canvas frame.
+.decl layer(id: Ident, p: Position, col: Color)
+layer(Id, P, Col) :- occ.occurrence(Id, M), rect(Id, P_inner, Col), compose(M, P_inner, P).
+
+// The smallest layer at each cell lies on top.
+.init top = ArgExtremes<Position, Ident>
+top.cand(P, Id, N) :- layer(Id, P, _), size.tally(Id, N).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- top.low(P, Id, _), layer(Id, P, Col).

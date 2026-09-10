@@ -1,0 +1,73 @@
+// 1c02dbbe
+// draft
+// concept: markers span
+// A slab covers most of the grid. Like-colored marks come in threes: one on a
+// corner of the slab, two in the margins beside it. Each color paints a
+// rectangle of the slab reaching from its corner mark to the crossing of the
+// two margin marks' lines; everything off the slab clears to background.
+//
+// The cases differ in how the three marks pick the rectangle:
+//   $Span — the marks bound a box; the part of it on the slab is painted.
+//   $Cut  — the mark on the slab anchors; a slab cell is painted when no like
+//           mark's line runs between it and the anchor.
+
+#include "../lib.dl"
+
+.type Choice = Span {} | Cut {}
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+
+    // The color the slab is filled with.
+    .decl slab(col: Color) slab(5).
+}
+
+.init params = Params
+
+.decl mark(col: Color, p: Position)
+mark(Col, P) :- in(P, Col), !params.bg(Col), !params.slab(Col).
+
+// A mark on a slab corner hides that slab cell, so the slab is the bounding
+// box of the cells that keep its color.
+.init slab_box = Bbox<Unit>
+slab_box.cell($U(), P) :- in(P, Col), params.slab(Col).
+slab_box.grid($U(), P) :- in(P, _).
+
+.decl slab_cell(p: Position)
+slab_cell(P) :- slab_box.inside($U(), P).
+
+.decl paint(p: Position, col: Color, ch: Choice)
+
+// --- Span ---
+
+.init mark_box = Bbox<Color>
+mark_box.cell(Col, P) :- mark(Col, P).
+mark_box.grid(Col, P) :- mark(Col, _), in(P, _).
+
+paint(P, Col, $Span()) :- slab_cell(P), mark_box.inside(Col, P).
+
+// --- Cut ---
+
+// A like mark's line runs between the anchor and p. Every Dir is ranged over,
+// which covers both senses of each axis; a mark's line parallel to the edge it
+// sits beyond never separates, since the mark lies off the slab that way.
+.decl separated(col: Color, p: Position)
+separated(Col, P) :-
+    slab_cell(P), mark(Col, A), slab_cell(A),              // a slab cell, and its color's anchor
+    mark(Col, M),                                          // a like mark
+    dir_elem(D), nearer(D, A, M), nearer(D, M, P).         // the mark's line lies in between
+
+paint(P, Col, $Cut()) :- slab_cell(P), mark(Col, _), !separated(Col, P).
+
+// --- output ---
+
+.decl impl_choice(ch: Choice)
+impl_choice($Span()). impl_choice($Cut()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    impl_choice(Ch), in(P, _),
+    ( paint(P, Col, Ch)                                         // painted by its color
+    ; slab_cell(P), !paint(P, _, Ch), params.slab(Col)          // slab left over
+    ; !slab_cell(P), params.bg(Col)                             // off the slab
+    ).

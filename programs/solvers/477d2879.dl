@@ -1,0 +1,94 @@
+// 477d2879
+// draft
+// concept: objects markers border pack
+// Lines of one color cut the grid into open parts. Single cells of other
+// colors are marks. A mark names either the lines it touches or the open
+// parts it touches; the named cells take its color, and the mark keeps its
+// own. Every line and every open part is named.
+//
+// The hypothesis is which marks name lines. $Line reads the mark's placement: a
+// mark that touches only free ends of lines carries those lines on, so it
+// names them; any other mark names the open parts. $Cover reads the naming as
+// a pairing: each part is named exactly once, and that forces each mark's
+// choice.
+
+#include "../lib.dl"
+
+.type Choice = Line {} | Cover {}
+
+.comp Params {
+    // The open ground the lines cut.
+    .decl bg(col: Color) bg(0).
+
+    // The cutting lines.
+    .decl line(col: Color) line(1).
+}
+
+.init params = Params
+
+.decl mark(p: Position, col: Color)
+mark(P, Col) :- in(P, Col), !params.bg(Col), !params.line(Col).
+
+// The parts a mark names: connected runs of line, and connected areas of open
+// ground.
+.init part = Components<Color>
+part.node(Col, P) :- in(P, Col), !mark(P, _).
+
+// A mark lies against part R, whose cells hold color K.
+.decl touches(p: Position, k: Color, r: Ident)
+touches(P, K, R) :- mark(P, _), dir_elem(D), neighbor(P, D, Q), part.label(K, Q, R).
+
+// The color part R takes, per case.
+.decl paint(r: Ident, col: Color, ch: Choice)
+
+// --- Line ---
+
+.decl line_cell(p: Position)
+line_cell(P) :- in(P, Col), params.line(Col).
+
+// A line cell one step from p.
+.decl line_nbr(p: Position, q: Position)
+line_nbr(P, Q) :- in(P, _), dir_elem(D), neighbor(P, D, Q), line_cell(Q).
+
+// The line goes on through a cell with more than one line neighbor; at every
+// other cell it ends.
+.init run = Unanimous<Position, Position>
+run.item(P, Q) :- line_cell(P), line_nbr(P, Q).
+
+// The mark sits beside a cell the line goes on through, so it does not stand
+// at that line's free end.
+.decl run_nbr(p: Position)
+run_nbr(P) :- mark(P, _), line_nbr(P, Q), run.clash(Q).
+
+// The mark stands at a free end of every line it touches.
+.decl on_line(p: Position)
+on_line(P) :- mark(P, _), line_nbr(P, _), !run_nbr(P).
+
+paint(R, Col, $Line()) :-
+    mark(P, Col), touches(P, K, R),  // the mark lies against part R
+    ( on_line(P), params.line(K)     // at a free end, it names the lines
+    ; !on_line(P), params.bg(K)      // otherwise it names the open ground
+    ).
+
+// --- Cover ---
+
+// A mark's claim: the parts of one color it touches. Two claims rule each
+// other out when they share a part.
+.type Claim = [p: Position, k: Color]
+
+.init pruning = PlacementPruning<Unit, Claim, Position>
+pruning.cand($U(), [P, K], P) :- touches(P, K, _).
+pruning.conflict($U(), [P, K], [P2, K]) :- touches(P, K, R), touches(P2, K, R).
+
+paint(R, Col, $Cover()) :-
+    pruning.alive($U(), [P, K], P),  // a claim the pruning leaves standing
+    touches(P, K, R), mark(P, Col).  // its parts take the mark's color
+
+// --- output ---
+
+.decl impl_choice(ch: Choice)
+impl_choice($Line()). impl_choice($Cover()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- mark(P, Col), impl_choice(Ch).
+out(P, Col, Ch) :- part.label(_, P, R), paint(R, Col, Ch).

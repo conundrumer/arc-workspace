@@ -1,0 +1,57 @@
+// 4f537728
+// draft
+// concept: markers decompose cast
+// Bg lines cut the grid into blocks of one base color, and one block carries
+// a mark color. That color spreads from the mark along rows and columns.
+//
+// $Cell  — the base cells of the mark's own rows and columns.
+// $Block — every block in line with the mark's block, filled whole.
+
+#include "../lib.dl"
+
+.type Choice = Cell {} | Block {}
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    .decl base(col: Color) base(1).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Cell()). impl_choice($Block()).
+
+.decl mark(p: Position, col: Color)
+mark(P, Col) :- in(P, Col), !params.bg(Col), !params.base(Col).
+
+// --- blocks ---
+
+.decl inked_line(l: Position)
+inked_line(L) :- in(P, Col), !params.bg(Col), axis_elem(A), split(P, A, L, _).
+
+.init blocks = DividerFrame<Unit>
+blocks.cell($U(), P) :- in(P, _).
+blocks.divider($U(), A, L) :-
+    in(P, _), axis_elem(A), split(P, A, L, _),  // a line of the grid
+    !inked_line(L).                             // carrying no ink: a gap
+
+// --- spread ---
+
+// The cells the mark color reaches.
+.decl painted(p: Position, ch: Choice)
+
+// --- Cell ---
+painted(P, $Cell()) :-
+    in(P, Col), params.base(Col),           // base cell
+    mark(P_mark, _),                        // the mark
+    axis_elem(A), same_line(A, P, P_mark).  // in line with it
+
+// --- Block ---
+painted(P, $Block()) :-
+    blocks.tile_of($U(), P, P_tile),                                 // any block's cell
+    mark(P_mark, _), blocks.tile_of($U(), P_mark, P_tile_mark),      // the mark's block
+    axis_elem(A), same_line(A, P_tile, P_tile_mark).                 // in line with it
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- painted(P, Ch), mark(_, Col).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !painted(P, Ch).

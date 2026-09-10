@@ -1,0 +1,104 @@
+// 7d18a6fb
+// draft
+// concept: decompose crop markers move stamp
+// A one-color legend block holds marker cells. A marker's color names a shape
+// elsewhere in the grid; shapes no marker names are left out. The output holds
+// each named shape, cropped to its bounding box, placed by its marker.
+//
+// $Legend — the legend divides into quadrants, one marker each; the output
+//           canvas is the legend's frame, and each quadrant is the frame of
+//           its marker's crop.
+// $Concat — the legend divides into quadrants, one marker each; the crops abut
+//           in the quadrant arrangement, one gap apart, and the output frame
+//           follows their sizes.
+// $Stamp  — the output canvas is the legend's frame, and each crop stamps with
+//           its center on its marker.
+
+#include "../lib.dl"
+
+.type Choice = Legend {} | Concat {} | Stamp {}
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+
+    // The legend's color.
+    .decl frame(col: Color) frame(1).
+
+    // --- Legend, Concat ---
+
+    // Quadrants per axis, and the gap between them.
+    .decl tiles(n: number) tiles(2).
+    .decl gap(g: number) gap(1).
+}
+
+.init params = Params
+
+// --- legend ---
+
+.init legend = BoxFrame<Unit>
+legend.cell($U(), P) :- in(P, Col), params.frame(Col).
+legend.grid($U(), P) :- in(P, _).
+
+// A marker, in the legend's frame.
+.decl marker(p_inner: Position, col: Color)
+marker(P_inner, Col) :- legend.inner($U(), P, P_inner), in(P, Col), !params.frame(Col).
+
+// --- shapes ---
+
+// Each color's shape outside the legend, viewed from its bounding box.
+.init shape = BoxFrame<Color>
+shape.cell(Col, P) :- in(P, Col), !params.bg(Col), !legend.inside($U(), P).
+
+// --- Legend, Concat ---
+
+// A marker names its quadrant's color.
+.decl quadrant_color(p_tile: Position, col: Color)
+quadrant_color(P_tile, Col) :-
+    marker(P_inner, Col), params.tiles(N), params.gap(G), divide_2d(P_inner, N, G, P_tile, _).
+
+// The shape a quadrant's marker names, in the shape's own frame.
+.decl quadrant_ink(p_tile: Position, p_intile: Position, col: Color)
+quadrant_ink(P_tile, P_intile, Col) :- quadrant_color(P_tile, Col), shape.inner(Col, _, P_intile).
+
+// --- output ---
+
+.decl canvas(ch: Choice, p: Position)
+.decl ink(ch: Choice, p: Position, col: Color)
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    canvas(Ch, P),
+    ( ink(Ch, P, Col)
+    ; !ink(Ch, P, _), params.bg(Col)
+    ).
+
+// --- Legend, Stamp ---
+
+canvas($Legend(), P_grid_out) :- legend.inner($U(), _, P_grid_out).
+canvas($Stamp(), P_grid_out) :- legend.inner($U(), _, P_grid_out).
+
+// --- Legend ---
+
+ink($Legend(), P_grid_out, Col) :-
+    canvas($Legend(), P_grid_out),
+    params.tiles(N), params.gap(G), divide_2d(P_grid_out, N, G, P_tile, P_intile),  // its quadrant
+    quadrant_ink(P_tile, P_intile, Col).
+
+// --- Concat ---
+
+ink($Concat(), P_grid_out, Col) :-
+    quadrant_ink(P_tile, P_intile, Col),
+    params.gap(G), concat_2d(P_tile, P_intile, G, P_grid_out).  // crops abut
+
+// The assembled frame, gap cells included.
+.init assembled = Frame2D<Unit>
+assembled.extent($U(), A, N) :- ink($Concat(), P, _), axis_elem(A), axis_dim(P, A, N).
+
+canvas($Concat(), P) :- assembled.cell($U(), P).
+
+// --- Stamp ---
+
+ink($Stamp(), P_grid_out, Col) :-
+    canvas($Stamp(), P_grid_out), marker(M, Col), shape.inner(Col, _, P_intile),  // a canvas cell, a marker, a cell of its crop
+    displacement(P_intile, P_grid_out, P_box),   // the crop's box, holding the canvas cell at that crop cell
+    displacement(P_box, M, V), centered(V).      // the marker at the box's center

@@ -1,0 +1,113 @@
+// 351d6448
+// draft
+// concept: decompose induce move
+// Panels stacked along one axis hold the successive frames of an animation.
+// Each frame differs from the one before by a fixed set of recolorings — the
+// wave — and the wave travels the same displacement between every pair of
+// frames. Every recoloring a step shows is a sighting of the wave. A cell
+// takes a recoloring only where it still holds the color that recoloring
+// replaces, so a step can show less than the whole wave. The output is the
+// next frame: the last one with the wave advanced over it once more.
+//
+// The cases name what the cut into panels reads:
+//   $Count()  — the panels along the axis.
+//   $Size() — a panel's extent.
+
+#include "../lib.dl"
+
+.type Choice = Count {} | Size {}
+
+.comp Params {
+    // --- shared ---
+    .decl panel_gap(g: number) panel_gap(1).
+
+    // Time runs toward this edge, so the last frame sits on it.
+    .decl time_dir(d: Dir) time_dir(DIR_B).
+
+    // --- Count ---
+    .decl panel_count(n: number) panel_count(4).
+
+    // --- Size ---
+    .decl panel_size(k: number) panel_size(3).
+}
+
+.init params = Params
+
+// --- panels ---
+
+.decl panel(ch: Choice, p_tile: Position, p_intile: Position, col: Color)
+
+// --- Count ---
+panel($Count(), P_tile, P_intile, Col) :-
+    in(P_grid, Col),
+    params.time_dir(D), axis_of(D, A),                  // frames run along this axis
+    params.panel_count(N), params.panel_gap(G),
+    divide_slab(P_grid, A, N, G, P_tile, P_intile).
+
+// --- Size ---
+panel($Size(), P_tile, P_intile, Col) :-
+    in(P_grid, Col),
+    params.time_dir(D), axis_of(D, A),                  // frames run along this axis
+    params.panel_size(K), params.panel_gap(G),
+    divide_by_size_slab(P_grid, A, K, G, P_tile, P_intile).
+
+// --- shared ---
+
+.decl succ_panel(ch: Choice, p_tile: Position, p_tile2: Position)
+succ_panel(Ch, P_tile, P_tile2) :-
+    panel(Ch, P_tile, _, _), params.time_dir(D),
+    neighbor(P_tile, D, P_tile2), panel(Ch, P_tile2, _, _).
+
+// A cell the next frame recolors.
+.decl change(ch: Choice, p_tile: Position, p_intile: Position, from: Color, to: Color)
+change(Ch, P_tile, P_intile, Col, Col2) :-
+    succ_panel(Ch, P_tile, P_tile2),
+    panel(Ch, P_tile, P_intile, Col), panel(Ch, P_tile2, P_intile, Col2), Col != Col2.
+
+// --- the wave ---
+
+// Candidate velocities: the displacements a frame admits, each with the
+// displacement that undoes it.
+.decl cand(ch: Choice, v: Shift, v_back: Shift)
+cand(Ch, V, V_back) :-
+    panel(Ch, _, P_intile, _), panel(Ch, _, P_intile2, _),
+    displacement(P_intile, P_intile2, V), displacement(P_intile2, P_intile, V_back).
+
+// Where the wave stands frame by frame: the velocity carries each sighting to
+// the frames after and before.
+.decl wave(ch: Choice, v: Shift, p_tile: Position, p_intile: Position,
+           from: Color, to: Color)
+wave(Ch, V, P_tile, P_intile, Col, Col2) :-
+    cand(Ch, V, _), change(Ch, P_tile, P_intile, Col, Col2).
+wave(Ch, V, P_tile2, P_intile2, Col, Col2) :-
+    wave(Ch, V, P_tile, P_intile, Col, Col2),
+    succ_panel(Ch, P_tile, P_tile2), compose(P_intile, V, P_intile2).
+wave(Ch, V, P_tile, P_intile, Col, Col2) :-
+    wave(Ch, V, P_tile2, P_intile2, Col, Col2),
+    succ_panel(Ch, P_tile, P_tile2), cand(Ch, V, V_back),
+    compose(P_intile2, V_back, P_intile).
+
+// The recoloring a frame's step makes: the wave stands over a cell that still
+// holds the color it replaces there.
+.decl paint(ch: Choice, v: Shift, p_tile: Position, p_intile: Position, col: Color)
+paint(Ch, V, P_tile, P_intile, Col2) :-
+    wave(Ch, V, P_tile, P_intile, Col, Col2), panel(Ch, P_tile, P_intile, Col).
+
+// A velocity the frames refute. Over every step they show, the wave must
+// recolor nothing the step leaves alone, and the frame must hold every cell of
+// the wave.
+.decl refuted(ch: Choice, v: Shift)
+refuted(Ch, V) :-
+    succ_panel(Ch, P_tile, _),
+    paint(Ch, V, P_tile, P_intile, Col), !change(Ch, P_tile, P_intile, _, Col).
+refuted(Ch, V) :-
+    succ_panel(Ch, P_tile, _), wave(Ch, V, P_tile, P_intile, _, _),
+    !panel(Ch, P_tile, P_intile, _).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_intile, Col, Ch) :-
+    cand(Ch, V, _), !refuted(Ch, V),                                // the velocity left standing
+    panel(Ch, P_tile, P_intile, Col0), !succ_panel(Ch, P_tile, _),  // a cell of the last frame
+    ( paint(Ch, V, P_tile, P_intile, Col)                           // the wave recolors it
+    ; Col = Col0, !paint(Ch, V, P_tile, P_intile, _)                // the wave passes it by
+    ).

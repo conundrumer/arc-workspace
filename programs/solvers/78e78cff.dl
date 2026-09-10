@@ -1,0 +1,78 @@
+// 78e78cff
+// draft
+// concept: markers border cast
+// A broken frame of one ink sits on a plain ground, with one lone cell of
+// a third color inside it. That cell's color fills the frame's box and
+// runs out of the box in straight lines wherever the frame leaves a gap;
+// the frame itself stays.
+//
+// The colors come from the grid: the ground is the commonest color, the
+// seed is the lone cell of its color, and the frame is the remaining ink.
+//
+// Cases, which diverge only where a frame cell lies on the seed's row or
+// column inside the box:
+//   $Leak      — the seed floods the box through non-frame cells, and every
+//                flooded cell casts cardinal rays, halted by frame cells,
+//                which carry the fill out of the box.
+//   $Crosshair — the seed's row and column are axes; each non-frame box
+//                cell on an axis casts across it, halted by frame cells.
+
+#include "../lib.dl"
+
+.type Choice = Leak {} | Crosshair {}
+
+.comp Params {}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Leak()). impl_choice($Crosshair()).
+
+.init palette = Mode<Unit, Color, Position>
+palette.item($U(), Col, P) :- in(P, Col).
+
+// The lone cell of its color.
+.init lone = Unanimous<Color, Position>
+lone.item(Col, P) :- in(P, Col).
+
+.decl seed(p: Position, col: Color)
+seed(P, Col) :- lone.value(Col, P).
+
+.decl frame(p: Position)
+frame(P) :- in(P, Col), !palette.mode($U(), Col), !seed(_, Col).
+
+.init box = Bbox<Unit>
+box.cell($U(), P) :- frame(P).
+box.grid($U(), P) :- in(P, _).
+
+.decl fill(p: Position, ch: Choice)
+
+// --- $Leak ---
+.init flood = Reach<Unit>
+flood.node($U(), P) :- box.inside($U(), P), !frame(P).
+flood.seed($U(), P) :- seed(P, _).
+
+.init leak = Ray<Unit>
+leak.dir($U(), D) :- dir_elem(D).
+leak.cell($U(), P) :- in(P, _).
+leak.mark($U(), P) :- flood.reach($U(), P).
+leak.blocked($U(), P) :- frame(P).
+
+fill(P, $Leak()) :- leak.clear($U(), P, _, _, _).
+
+// --- $Crosshair ---
+// Keyed by the cast axis: a mark on the seed's line of one axis casts
+// along the other.
+.init cross = Ray<Axis>
+cross.dir(A, D) :- axis_of(D, A).
+cross.cell(A, P) :- axis_elem(A), in(P, _).
+cross.mark(A, P) :-
+    box.inside($U(), P), !frame(P),                       // a non-frame box cell
+    seed(S, _), same_line(A_seed, P, S), perp(A_seed, A).  // on the seed's line
+cross.blocked(A, P) :- axis_elem(A), frame(P).
+
+fill(P, $Crosshair()) :- cross.clear(_, P, _, _, _).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- fill(P, Ch), seed(_, Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !fill(P, Ch).

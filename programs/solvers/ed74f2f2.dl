@@ -3,38 +3,34 @@
 // A 1×2 arrangement of 3×3 tiles, gap 1, behind a 1-cell bg border. The
 // params.key_tile selects a color from a stored tile table; the output is the
 // params.target_tile with its ink repainted that color, bg passed through.
+//
+// Every grid of the task is 5×9, so the decomposition reads two ways:
+//
+//   $Table() — the tile of each grid cell stored as parameter data.
+//   $Count() — the bordered frame divided into params.arr_dim tiles per axis.
+//
+// The division by tile size gets no case: params.key_tile is a position of
+// the tile arrangement, so a grid the two divisions read differently leaves
+// the arrangement without that tile, and the size reading emits nothing.
 
 #include "../lib.dl"
+
+.type Choice = Table {} | Count {}
 
 .type KeyCell = [p: Position, col: Color]
 
 .comp Params {
     .init helpers = ParamsHelpers
 
+    // --- shared ---
     .decl bg(c: Color) bg(0).
     .decl key_tile(p: Position) key_tile([0, 0, 0, 1]).
     .decl target_tile(p: Position) target_tile([0, 0, 1, 0]).
-
-    .decl arr_dim(a: Axis, n: number)
-    arr_dim(AXIS_V, 1). arr_dim(AXIS_H, 2).
-    .decl tile_dim(n: number) tile_dim(3).
     .decl gap(g: number) gap(1).
     .decl border(b: number) border(1).
 
-    .decl decompose(p_grid: Position, p_tile: Position, p_intile: Position)
-    decompose(P_grid, P_tile, P_intile) :-
-        arr_dim(AXIS_V, Av), arr_dim(AXIS_H, Ah), tile_dim(K), gap(G),
-        helpers.tile_pos([Av, Ah], [K, K], [0, G], P_frame, P_tile, P_intile),
-        border(B), uniform_delta(B, Delta), compose(P_frame, Delta, P_grid).
-
-    // Grid cells of the key and target tiles, with their intile positions.
-    .decl key_cell(p_grid: Position, p_intile: Position)
-    key_cell(P_grid, P_intile) :-
-        decompose(P_grid, P_tile, P_intile), key_tile(P_tile).
-
-    .decl target_cell(p_grid: Position, p_intile: Position)
-    target_cell(P_grid, P_intile) :-
-        decompose(P_grid, P_tile, P_intile), target_tile(P_tile).
+    .decl arr_dim(a: Axis, n: number)
+    arr_dim(AXIS_V, 1). arr_dim(AXIS_H, 2).
 
     // Key table: key tile content → output color.
     .decl key_member(id: Ident, p_intile: Position, col: Color)
@@ -57,44 +53,80 @@
         0, 5, 0,
         0, 5, 0)
     key_color(2, 1).
+
+    // --- Table ---
+    .decl tile_dim(n: number) tile_dim(3).
+
+    .decl decompose(p_grid: Position, p_tile: Position, p_intile: Position)
+    decompose(P_grid, P_tile, P_intile) :-
+        arr_dim(AXIS_V, Av), arr_dim(AXIS_H, Ah), tile_dim(K), gap(G),
+        helpers.tile_pos([Av, Ah], [K, K], [0, G], P_frame, P_tile, P_intile),
+        border(B), uniform_delta(B, Delta), compose(P_frame, Delta, P_grid).
+
+    // Grid cells of the key tile, with their intile positions.
+    .decl key_cell(p_grid: Position, p_intile: Position)
+    key_cell(P_grid, P_intile) :-
+        decompose(P_grid, P_tile, P_intile), key_tile(P_tile).
 }
 
 .init params = Params
 
+.decl decompose(ch: Choice, p_grid: Position, p_tile: Position, p_intile: Position)
+
+// --- Table ---
+
+decompose($Table(), P_grid, P_tile, P_intile) :- params.decompose(P_grid, P_tile, P_intile).
+
+// --- Count ---
+
+// The frame inside the border, which the division cuts.
+.init frame = MarginFrame<Unit>
+frame.cell($U(), P) :- in(P, _).
+frame.width($U(), D, B) :- dir_elem(D), params.border(B).
+
+.init div = Divide2D<Unit>
+div.cell(P_inner) :- frame.inner($U(), _, P_inner).
+div.dim($U(), A, N) :- params.arr_dim(A, N).
+div.gap(G) :- params.gap(G).
+
+decompose($Count(), P_grid, P_tile, P_intile) :-
+    frame.inner($U(), P_grid, P_inner), div.tile($U(), P_inner, P_tile, P_intile).
+
 // Key tile content → color.
-.init key_match = KeyedSetCompare<Unit, Ident, KeyCell>
+.init key_match = KeyedSetCompare<Choice, Ident, KeyCell>
 key_match.pattern_member(Id, [P_intile, Col]) :- params.key_member(Id, P_intile, Col).
-key_match.observed_member($U(), [P_intile, Col]) :-
-    in(P_grid, Col), params.key_cell(P_grid, P_intile).
+key_match.observed_member(Ch, [P_intile, Col]) :-
+    in(P_grid, Col),
+    decompose(Ch, P_grid, P_tile, P_intile), params.key_tile(P_tile).       // the key tile's cells
 
 // The target tile's content.
-.decl target(p_intile: Position, col: Color)
-target(P_intile, Col) :- in(P_grid, Col), params.target_cell(P_grid, P_intile).
+.decl target(ch: Choice, p_intile: Position, col: Color)
+target(Ch, P_intile, Col) :-
+    in(P_grid, Col),
+    decompose(Ch, P_grid, P_tile, P_intile), params.target_tile(P_tile).    // the target tile's cells
 
-.decl out(p: Position, col: Color)
-out(P, Col) :-
-    target(P, C), !params.bg(C),                                // target ink cell
-    key_match.equals($U(), Id), params.key_color(Id, Col).      // key's color
-out(P, C) :- target(P, C), params.bg(C).                        // bg passes through
-
-// --- determination ---
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    target(Ch, P, C), !params.bg(C),                            // target ink cell
+    key_match.equals(Ch, Id), params.key_color(Id, Col).        // key's color
+out(P, C, Ch) :- target(Ch, P, C), params.bg(C).                // bg passes through
 
 .comp Determine {
     // The key tile's content, per example.
-    .decl fkey(e: Example, p_intile: Position, col: Color)
-    fkey(E, P_intile, Col) :-
+    .decl key_content(e: Example, p_intile: Position, col: Color)
+    key_content(E, P_intile, Col) :-
         ex_in(E, P_grid, Col), params.key_cell(P_grid, P_intile).
 
     // Examples whose key tiles agree share an entry.
     .init same = KeyedSetCompare<Example, Example, KeyCell>
-    same.pattern_member(E, [P_intile, Col])  :- fkey(E, P_intile, Col).
-    same.observed_member(E, [P_intile, Col]) :- fkey(E, P_intile, Col).
+    same.pattern_member(E, [P_intile, Col])  :- key_content(E, P_intile, Col).
+    same.observed_member(E, [P_intile, Col]) :- key_content(E, P_intile, Col).
 
     .init entry = Canon<Example>
     entry.equiv(E, E2) :- same.equals(E, E2).
 
     .decl key_member(id: Ident, p_intile: Position, col: Color)
-    key_member(Id, P_intile, Col) :- entry.id(E, Id), fkey(E, P_intile, Col).
+    key_member(Id, P_intile, Col) :- entry.id(E, Id), key_content(E, P_intile, Col).
 
     // The entry's color is the ink the example's output carries.
     .decl key_color(id: Ident, col: Color)

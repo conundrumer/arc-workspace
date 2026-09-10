@@ -1,0 +1,85 @@
+// 72a961c9
+// draft
+// concept: markers cast lookup
+// A line of one color crosses the grid, and a few of its cells are marks of
+// other colors. Each mark projects its color params.reach cells away toward
+// params.dir, and the cells between the mark and its projection take the
+// line's color.
+//
+// The cases differ on where the line's color comes from:
+//   $Stored   — params.line.
+//   $Dominant — the commonest non-bg color of the grid.
+
+#include "../lib.dl"
+
+.type Choice = Stored {} | Dominant {}
+
+.comp Params {
+    // --- shared ---
+    .decl bg(col: Color) bg(0).
+    .decl dir(d: Dir) dir(DIR_T).
+
+    // How far each mark color projects.
+    .decl reach(col: Color, k: number)
+    reach(2, 4). reach(8, 3).
+
+    // --- Stored ---
+    .decl line(col: Color) line(1).
+}
+
+.init params = Params
+
+// The marks of a grid and the rays they cast, given the line's color.
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)
+    .decl line(key: Key, col: Color)
+
+    // A line cell of another color.
+    .decl mark(key: Key, p: Position, col: Color)
+    mark(K, P, Col) :- cell(K, P, Col), !params.bg(Col), !line(K, Col).
+
+    .init rays = Ray<Key>
+    rays.dir(K, D)  :- cell(K, _, _), params.dir(D).
+    rays.cell(K, P) :- cell(K, P, _).
+    rays.mark(K, P) :- mark(K, P, _).
+}
+
+.decl impl_choice(ch: Choice)
+impl_choice($Stored()). impl_choice($Dominant()).
+
+.init parse = Parse<Choice>
+parse.cell(Ch, P, Col) :- impl_choice(Ch), in(P, Col).
+
+// --- Stored ---
+parse.line($Stored(), Col) :- params.line(Col).
+
+// --- Dominant ---
+.init tally = Mode<Unit, Color, Position>
+tally.item($U(), Col, P) :- in(P, Col), !params.bg(Col).
+
+parse.line($Dominant(), Col) :- tally.mode($U(), Col).
+
+// --- shared ---
+
+.decl paint(p: Position, col: Color, ch: Choice)
+paint(P, Col, Ch) :-
+    parse.rays.ray(Ch, P, _, K, M), K != 0,              // K cells off a mark
+    parse.mark(Ch, M, Col_m), params.reach(Col_m, R),    // the mark's reach
+    ( K = R, Col = Col_m              // the projection
+    ; K < R, parse.line(Ch, Col)      // between the mark and its projection
+    ).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- paint(P, Col, Ch).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !paint(P, _, Ch).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+    parse.line(E, Col)    :- ex_in(E, _, _), params.line(Col).
+
+    // The projection: the mark's color again, K cells out along its ray.
+    .decl reach(col: Color, k: number)
+    reach(Col, K) :-
+        parse.rays.ray(E, P, _, K, M), K != 0, parse.mark(E, M, Col), ex_out(E, P, Col).
+}

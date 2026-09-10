@@ -1,0 +1,41 @@
+// 2c608aff
+// draft
+// concept: objects markers span
+// A solid block sits on the background, and lone marker cells lie around it.
+// A marker whose row or column crosses the block fills the cells between the
+// two with its own color. A marker on neither line stays alone.
+// No task data — the family is fully structural.
+
+#include "../lib.dl"
+
+.comp Params {}
+
+.init params = Params
+
+// The background is the commonest color; the rest is ink.
+.init bg = Mode<Unit, Color, Position>
+bg.item($U(), Col, P) :- in(P, Col).
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !bg.mode($U(), Col).
+
+// The block is the ink that touches ink; a marker is the ink that stands alone.
+.decl block(p: Position)
+block(P) :- ink(P, _), dir_elem(D), neighbor(P, D, Q), ink(Q, _).
+
+.decl marker(p: Position, col: Color)
+marker(P, Col) :- ink(P, Col), !block(P).
+
+// The span the marker and the block delimit, folded along either cardinal
+// axis; the block's own cells lie outside it.
+.init span = Between<Position>
+span.axis(M, A) :- marker(M, _), axis_elem(A).
+span.cell(M, P) :- marker(M, _), in(P, _), !block(P).
+span.mark(M, P) :- marker(M, _), ( P = M ; block(P) ).
+
+.decl paint(p: Position, col: Color)
+paint(P, Col) :- span.between(M, P), marker(M, Col).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- paint(P, Col).
+out(P, Col) :- in(P, Col), !paint(P, _).

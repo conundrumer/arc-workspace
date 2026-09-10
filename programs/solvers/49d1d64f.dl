@@ -31,8 +31,6 @@ out(P_out, Col) :-
       neighbor(P_seat, Diag, P_out), params.bg(Col)           // steps out as bg
     ).
 
-// --- determination ---
-
 .comp Determine {
     // Seat each train input among its output's cells, color for color.
     .init occ = Occurrences<Example, Color>

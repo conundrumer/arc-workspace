@@ -1,0 +1,141 @@
+// 58f5dbd5
+// draft
+// concept: objects crop stamp rank
+// The grid holds solid one-color blocks, laid out with a background border
+// between and around them, beside small keys of scattered cells. A key names
+// the block of its own color, and a key in a color no block carries goes
+// unused. The output shows the blocks in their arrangement, each with its key
+// punched out of it. Choice = [punch, frame] crosses the two hypotheses the
+// pairs leave open:
+//
+//   punch — where the key lands on the block:
+//     $Center()   — the key sits centered in the block.
+//     $Interior() — the key fills the block's interior, the block less its rim.
+//   frame — where the output frame comes from:
+//     $Crop()    — the input, over the block box let out by params.border.
+//     $Arrange() — the blocks laid out at their places, each inside a border
+//                  of that same width.
+
+#include "../lib.dl"
+
+.type Punch  = Center {} | Interior {}
+.type Frame  = Crop {} | Arrange {}
+.type Choice = [punch: Punch, frame: Frame]
+
+.comp Params {
+    // Width of the background border around the blocks.
+    .decl border(k: number) border(1).
+}
+
+.init params = Params
+
+.decl punch_choice(pu: Punch)
+punch_choice($Center()).
+punch_choice($Interior()).
+
+// The ground is the commonest color.
+.init bg_mode = Mode<Unit, Color, Position>
+bg_mode.item($U(), Col, P) :- in(P, Col).
+
+.init comps = Components8<Color>
+comps.node(Col, P) :- in(P, Col), !bg_mode.mode($U(), Col).
+
+.init comp_box = Bbox<Ident>
+comp_box.cell(Id, P) :- comps.label(_, P, Id).
+comp_box.grid(Id, P) :- comps.label(_, _, Id), in(P, _).
+
+// The blocks are the components that fill their own box; a component that
+// leaves a cell of that box empty is a key.
+.decl pierced(id: Ident)
+pierced(Id) :- comp_box.inside(Id, P), !comp_box.cell(Id, P).
+
+.decl block(col: Color, p: Position)
+block(Col, P) :- comps.label(Col, P, Id), !pierced(Id).
+
+.init block_box = BoxFrame<Color>
+block_box.cell(Col, P) :- block(Col, P).
+
+// A block's key: the cells of its color that the block does not hold.
+.decl key_cell(col: Color, p: Position)
+key_cell(Col, P) :- in(P, Col), block(Col, _), !block(Col, P).
+
+.init key_box = BoxFrame<Color>
+key_box.cell(Col, P) :- key_cell(Col, P).
+
+// --- punch: the block cells the key takes out ---
+
+.decl hole(p: Position, pu: Punch)
+
+// $Center — the key centered in the block.
+hole(P, $Center()) :-
+    block_box.inner(Col, P, P_blk), key_box.inner(Col, _, P_key),   // block cell, key cell
+    displacement(P_key, P_blk, D), centered(D).
+
+// $Interior — the key fills the block less its rim.
+.init rim = Rim<Color>
+rim.cell(Col, P) :- block(Col, P).
+
+.init inside_box = BoxFrame<Color>
+inside_box.cell(Col, P) :- block(Col, P), !rim.rim(Col, P).
+
+hole(P, $Interior()) :- inside_box.inner(Col, P, P_inner), key_box.inner(Col, _, P_inner).
+
+// --- frame: where each input cell shows in the output ---
+
+.decl view(p: Position, p_out: Position, fr: Frame)
+
+// $Crop — the block box let out by the border on every edge.
+.init blocks_box = Bbox<Unit>
+blocks_box.cell($U(), P) :- block(_, P).
+
+.decl crop_box(b: Position)
+crop_box(B) :-
+    blocks_box.margin($U(), M),
+    params.border(K), uniform_delta(K, W), displacement(W, M, B).
+
+.init crop = Reframe<Unit>
+crop.outer($U(), B) :- crop_box(B).
+crop.cell($U(), P) :- in(P, _), crop_box(B), geq(P, B).
+
+view(P, P_out, $Crop()) :- crop.view($U(), P, P_out).
+
+// $Arrange — each block at its place in the arrangement, inside the border.
+// A block's place is its rank from each of the four edges; blocks level with
+// each other share a rank, so a band of them lands in one row.
+.init lane = Ordinal<Dir>
+lane.idx_set(D, K) :- block_box.edge_min(_, D, K).
+
+.init tile = DirPack<Color>
+tile.edge(Col, D, R) :- block_box.edge_min(Col, D, K), lane.rank(D, K, R).
+
+view(P, P_out, $Arrange()) :-
+    block_box.inner(Col, P, P_inner), tile.pos(Col, P_tile),  // block cell, its tile
+    params.border(K), concat_2d(P_tile, P_inner, K, P_lat),   // tiles set the border apart
+    uniform_delta(K, W), compose(P_lat, W, P_out).            // and the border around them
+
+.init arrange_frame = Frame2D<Unit>
+arrange_frame.extent($U(), A, N) :-
+    view(_, P_out, $Arrange()), axis_elem(A), axis_dim(P_out, A, N).
+
+// --- output ---
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_out, Col, [Pu, Fr]) :-                                    // punched out
+    view(P, P_out, Fr), hole(P, Pu), bg_mode.mode($U(), Col).
+out(P_out, Col, [Pu, Fr]) :-                                    // kept
+    view(P, P_out, Fr), in(P, Col), punch_choice(Pu), !hole(P, Pu).
+out(P_out, Col, [Pu, $Arrange()]) :-                            // border
+    arrange_frame.cell($U(), P_out), !view(_, P_out, $Arrange()),
+    punch_choice(Pu), bg_mode.mode($U(), Col).
+
+.comp Determine {
+    .init bg_mode = Mode<Example, Color, Position>
+    bg_mode.item(E, Col, P) :- ex_in(E, P, Col).
+
+    // The output's blocks stand the border's width inside its frame.
+    .init box = Bbox<Example>
+    box.cell(E, P) :- ex_out(E, P, Col), !bg_mode.mode(E, Col).
+
+    .decl border(k: number)
+    border(K) :- box.edge_min(_, _, K).
+}

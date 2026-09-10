@@ -1,0 +1,141 @@
+// 4e45f183
+// draft
+// concept: decompose markers move span count
+// The grid is an arrangement of square tiles, ruled off by lines, with a
+// line on every side. Each tile carries marks in one color on a field of
+// another. Where the marks sit within a tile names that tile's seat in the
+// arrangement: on each axis they sit toward one edge or toward neither, and
+// the seat is the tile at that edge or the middle tile. The output moves
+// each tile to its seat.
+//
+// Choice = [d, l] crosses the hypotheses:
+//
+//   d (what the ruling is read by):
+//     $Count()  — the tile count.
+//     $Size() — the tile size.
+//   l (where the marks sit):
+//     $Reach() — the box they span lies nearer one edge than the other.
+//     $Bulk()  — those nearer one edge outnumber those nearer the other.
+
+#include "../lib.dl"
+
+.type DecChoice = Count {} | Size {}
+.type Lean = Reach {} | Bulk {}
+.type Choice = [d: DecChoice, l: Lean]
+
+.type TileCase = [p_tile: Position, dc: DecChoice]
+.type TileDir = [p_tile: Position, dir: Dir, dc: DecChoice]
+
+.comp Params {
+    // --- shared ---
+    .decl line_width(k: number) line_width(1).
+
+    // --- Count ---
+    .decl tile_count(n: number) tile_count(3).
+
+    // --- Size ---
+    .decl tile_side(k: number) tile_side(5).
+}
+
+.init params = Params
+
+// --- the arrangement ---
+
+.init border = MarginFrame<Unit>
+border.cell($U(), P_grid) :- in(P_grid, _).
+border.width($U(), D, K) :- dir_elem(D), params.line_width(K).
+
+.decl tile(p_grid: Position, p_tile: Position, p_intile: Position, dc: DecChoice)
+
+// --- Count ---
+tile(P_grid, P_tile, P_intile, $Count()) :-
+    border.inner($U(), P_grid, P_field),                 // a cell off the lines
+    params.tile_count(N), params.line_width(G),
+    divide_2d(P_field, N, G, P_tile, P_intile).          // the tile it sits in
+
+// --- Size ---
+tile(P_grid, P_tile, P_intile, $Size()) :-
+    border.inner($U(), P_grid, P_field),                 // a cell off the lines
+    params.tile_side(K), params.line_width(G),
+    divide_by_size_2d(P_field, K, G, P_tile, P_intile).  // the tile it sits in
+
+// --- Count, Size ---
+
+// The field is one color everywhere but the marks.
+.init field = Mode<DecChoice, Color, Position>
+field.item(Dc, Col, P_grid) :- tile(P_grid, _, _, Dc), in(P_grid, Col).
+
+.decl mark(p_tile: Position, p_intile: Position, d: DecChoice)
+mark(P_tile, P_intile, Dc) :-
+    tile(P_grid, P_tile, P_intile, Dc), in(P_grid, Col), !field.mode(Dc, Col).
+
+// --- where the marks sit ---
+
+.decl dec_choice(dc: DecChoice)
+dec_choice($Count()).
+dec_choice($Size()).
+
+.decl lean_choice(l: Lean)
+lean_choice($Reach()).
+lean_choice($Bulk()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([Dc, L]) :- dec_choice(Dc), lean_choice(L).
+
+// The marks of a tile sit toward edge d.
+.decl lean(p_tile: Position, d: Dir, ch: Choice)
+
+// Neither edge of the axis draws the marks.
+.decl balanced(p_tile: Position, a: Axis, ch: Choice)
+balanced(P_tile, A, [Dc, L]) :-
+    impl_choice([Dc, L]), mark(P_tile, _, Dc),
+    axis_of(D, A), opposite(D, D2),
+    !lean(P_tile, D, [Dc, L]), !lean(P_tile, D2, [Dc, L]).
+
+// --- Reach ---
+
+.init mark_box = Bbox<TileCase>
+mark_box.cell([P_tile, Dc], P_intile) :- mark(P_tile, P_intile, Dc).
+
+lean(P_tile, D, [Dc, $Reach()]) :-
+    mark_box.margin([P_tile, Dc], M),            // the box the marks span
+    dir_elem(D), dist_pair(M, D, K, K2), K < K2. // nearer edge D than its opposite
+
+// --- Bulk ---
+
+.decl mark_side(p_tile: Position, p_intile: Position, d: Dir, dc: DecChoice)
+mark_side(P_tile, P_intile, D, Dc) :-
+    mark(P_tile, P_intile, Dc),
+    dir_elem(D), dist_pair(P_intile, D, K, K2), K < K2.
+
+.init bulk = Excess<TileDir, Position>
+bulk.plus([P_tile, D, Dc], P_intile) :- mark_side(P_tile, P_intile, D, Dc).
+bulk.minus([P_tile, D, Dc], P_intile) :- mark_side(P_tile, P_intile, D2, Dc), opposite(D, D2).
+
+lean(P_tile, D, [Dc, $Bulk()]) :- bulk.excess([P_tile, D, Dc], _).
+
+// --- the seat ---
+
+// The tile lines of the arrangement, per axis — the seats to choose from.
+.decl tile_line(a: Axis, p_axis: Position, dc: DecChoice)
+tile_line(A, P_axis, Dc) :- tile(_, P_tile, _, Dc), axis_elem(A), split(P_tile, A, P_axis, _).
+
+.decl seat_line(p_tile: Position, a: Axis, p_axis: Position, ch: Choice)
+seat_line(P_tile, A, P_axis, [Dc, L]) :-
+    tile_line(A, P_axis, Dc),
+    ( lean(P_tile, D, [Dc, L]), axis_of(D, A), dist(P_axis, D, 0)  // the one at the edge they lean to
+    ; balanced(P_tile, A, [Dc, L]), centered(P_axis)               // the middle one, when neither draws
+    ).
+
+.decl seat(p_tile: Position, p_seat: Position, ch: Choice)
+seat(P_tile, P_seat, Ch) :-
+    seat_line(P_tile, A, P1, Ch), perp(A, A2),
+    seat_line(P_tile, A2, P2, Ch), compose(P1, P2, P_seat).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_grid_out, Col, [Dc, L]) :-
+    tile(P_grid_in, P_tile, P_intile, Dc), in(P_grid_in, Col),  // a tile's cell
+    seat(P_tile, P_seat, [Dc, L]),
+    tile(P_grid_out, P_seat, P_intile, Dc).                     // the like cell of its seat
+out(P_grid, Col, [Dc, L]) :-
+    in(P_grid, Col), impl_choice([Dc, L]), !tile(P_grid, _, _, Dc).

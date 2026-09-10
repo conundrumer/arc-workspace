@@ -22,15 +22,13 @@
     // --- Table ---
     .decl footprint(p: Position, col: Color)
     GRID_SPARSE_3x3(footprint,
-        8, 0, 8,
-        0, 0, 0,
-        8, 0, 8)
+        8, _, 8,
+        _, _, _,
+        8, _, 8)
     .decl seat(p: Position) seat([1, 1, 1, 1]).
 }
 
 .init params = Params
-
-// --- parse ---
 
 // copies×copies arrangement of a grid.
 .comp Parse<Key> {
@@ -74,8 +72,6 @@ halo(P, Col, Ch) :-
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- halo(P, Col, Ch).
 out(P, Col, Ch) :- parse.tiled($U(), P, Col), impl_choice(Ch), !halo(P, _, Ch).
-
-// --- determination ---
 
 .comp Determine {
     .init parse = Parse<Example>

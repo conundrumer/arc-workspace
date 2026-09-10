@@ -1,0 +1,60 @@
+// 278e5215
+// draft
+// concept: crop lines mapping
+// The grid holds a stencil in one color and a legend: a band of colored
+// columns over a line row, as wide as the stencil's box. The output is that
+// box — a stencil cell takes its column's legend color, a blank takes the
+// line color.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    .decl stencil(col: Color) stencil(5).
+
+    // The legend box edge the line row sits on.
+    .decl line_dir(d: Dir) line_dir(DIR_B).
+}
+
+.init params = Params
+
+.decl stencil_cell(p: Position)
+stencil_cell(P) :- in(P, Col), params.stencil(Col).
+
+.decl legend_cell(p: Position, col: Color)
+legend_cell(P, Col) :- in(P, Col), !params.bg(Col), !params.stencil(Col).
+
+.init stencil_box = BoxFrame<Unit>
+stencil_box.cell($U(), P) :- stencil_cell(P).
+stencil_box.grid($U(), P) :- in(P, _).
+
+.init legend_box = BoxFrame<Unit>
+legend_box.cell($U(), P) :- legend_cell(P, _).
+
+// The axis the legend's columns are spread along.
+.decl across(a: Axis)
+across(A2) :- params.line_dir(D), axis_of(D, A), perp(A, A2).
+
+// The legend seen from its own box.
+.decl legend_inner(p_inner: Position, col: Color)
+legend_inner(P_inner, Col) :- legend_cell(P, Col), legend_box.inner($U(), P, P_inner).
+
+.decl line_color(col: Color)
+line_color(Col) :-
+    legend_inner(P_inner, Col),                         // legend cell
+    params.line_dir(D), dist(P_inner, D, 0).            // on the line edge
+
+// The legend's color at each column of its box.
+.decl column_color(p_col: Position, col: Color)
+column_color(P_col, Col) :-
+    legend_inner(P_inner, Col),                         // legend cell
+    params.line_dir(D), dist(P_inner, D, K), K != 0,    // off the line edge
+    across(A), split(P_inner, A, P_col, _).             // its column
+
+.decl out(p: Position, col: Color)
+out(P_inner, Col) :-
+    stencil_box.inner($U(), P, P_inner),           // output cell
+    across(A), split(P_inner, A, P_col, _),        // its column
+    ( stencil_cell(P), column_color(P_col, Col)    // stencil — its column's color
+    ; !stencil_cell(P), line_color(Col)            // blank — the line color
+    ).

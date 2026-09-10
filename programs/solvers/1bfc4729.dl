@@ -1,0 +1,64 @@
+// 1bfc4729
+// draft
+// concept: markers border lookup cast
+// Two marks sit in the grid, one in each half of the task axis. Each half is
+// painted in its mark's color: the grid border where it runs through the half,
+// and one full line across the half.
+//
+// Cases (data-equivalent on this task — every mark sits two cells in from
+// its half's outer edge):
+//   $StoredLine() — the line sits at a stored distance from the outer edge
+//   $MarkLine()   — the line is the mark's own line
+
+#include "../lib.dl"
+
+.type Choice = StoredLine {} | MarkLine {}
+
+.comp Params {
+    // --- shared ---
+    .decl bg(col: Color) bg(0).
+
+    // The axis the two halves stack along.
+    .decl axis(a: Axis) axis(AXIS_V).
+
+    // --- StoredLine ---
+    // The line's distance from the half's outer edge.
+    .decl line_dist(k: number) line_dist(2).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($StoredLine()). impl_choice($MarkLine()).
+
+// A cell's half, named by the edge it is nearer.
+.decl half(p: Position, d: Dir)
+half(P, D) :-
+    in(P, _),                                   // grid cell
+    params.axis(A), axis_of(D, A),              // the axis's edges
+    dist_pair(P, D, K, K2), K < K2.             // nearer this one
+
+.decl mark(d: Dir, col: Color, p: Position)
+mark(D, Col, P) :- in(P, Col), !params.bg(Col), half(P, D).
+
+.decl ink(p: Position, col: Color, ch: Choice)
+
+// The grid's border, in the color of the half it runs through.
+ink(P, Col, Ch) :-
+    impl_choice(Ch),                            // every case
+    half(P, D), mark(D, Col, _),                // the half's color
+    dir_elem(D2), dist(P, D2, 0).               // on the border
+
+// --- StoredLine ---
+ink(P, Col, $StoredLine()) :-
+    half(P, D), mark(D, Col, _),                     // the half's color
+    params.line_dist(K), dist(P, D, K).              // the stored line
+
+// --- MarkLine ---
+ink(P, Col, $MarkLine()) :-
+    half(P, D), mark(D, Col, P_mark),           // the half's color
+    same_dist(D, P, P_mark).                    // the mark's line
+
+.decl out(p: Position, col: Color, c: Choice)
+out(P, Col, Ch) :- ink(P, Col, Ch).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !ink(P, _, Ch), params.bg(Col).

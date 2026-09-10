@@ -27,8 +27,6 @@
 
 .init params = Params
 
-// --- parse ---
-
 .comp Parse<Key> {
     .type Line = [key: Key, a: Axis, l: Position]
 
@@ -66,8 +64,6 @@ out(P_grid_out, Col, $Place()) :-
     box.inner(P_tile, P, P_intile), in(P, Col),  // cropped cell
     params.tile_box(P_tile, P_box),              // the quadrant's stored box
     compose(P_box, P_intile, P_grid_out).        // seated in it
-
-// --- determination ---
 
 .comp Determine {
     .type ET = [e: Example, p_tile: Position]

@@ -1,0 +1,121 @@
+// 18447a8d
+// draft
+// concept: decompose move pack
+// Blank lines cut the grid into bands. Each band holds a staircase in the
+// base color at one edge and a loose piece in the band's own color at the
+// opposite edge. Every staircase keeps its place, and the piece that completes
+// it into a solid block slides in beside it: the piece of whichever band fits,
+// translated until its anchored edge reaches the block's.
+//
+// $Given — the parameters hold the block's margin from the piece edge.
+// $Common — the margin is the one every band admits a piece at.
+
+#include "../lib.dl"
+
+.type Choice = Given {} | Common {}
+
+// A band under one candidate margin — the key of a single trial fit.
+.type BandMargin = [b: Position, k: number]
+
+.comp Params {
+    // --- shared ---
+    .decl bg(col: Color) bg(7).
+
+    // The staircase color.
+    .decl base(col: Color) base(8).
+
+    // The edge the loose pieces are anchored at.
+    .decl piece_dir(d: Dir) piece_dir(DIR_R).
+
+    // --- Given ---
+    // The block's margin from the piece edge.
+    .decl block_margin(k: number) block_margin(6).
+}
+
+.init params = Params
+
+// Bands run across the piece edge, so their separators lie on the
+// perpendicular axis.
+.decl band_axis(a: Axis)
+band_axis(A) :- params.piece_dir(D), axis_of(D, A2), perp(A2, A).
+
+// Something other than blank sits on the line at l.
+.decl line_ink(l: Position)
+line_ink(L) :- in(P, Col), !params.bg(Col), band_axis(A), split(P, A, L, _).
+
+.init frame = DividerFrame<Unit>
+frame.cell($U(), P) :- in(P, _).
+frame.divider($U(), A, L) :-
+    in(P, _), band_axis(A), split(P, A, L, _),  // a line of the band axis
+    !line_ink(L).                               // with nothing on it
+
+.decl band_cell(b: Position, p: Position)
+band_cell(B, P) :- frame.part_of($U(), P, A, B), band_axis(A).
+
+// Each band viewed from its own frame.
+.init box = BoxFrame<Position>
+box.cell(B, P) :- band_cell(B, P).
+
+.decl base_cell(b: Position, p_inner: Position)
+base_cell(B, P_inner) :- box.inner(B, P, P_inner), in(P, Col), params.base(Col).
+
+.decl piece_cell(b: Position, p_inner: Position, col: Color)
+piece_cell(B, P_inner, Col) :-
+    box.inner(B, P, P_inner), in(P, Col),  // band cell
+    !params.bg(Col), !params.base(Col).    // neither blank nor staircase
+
+// Every margin a band frame admits for the block's piece-side edge.
+.decl margin_cand(k: number)
+margin_cand(K) :-
+    box.inner(_, _, P_inner),                 // a band frame
+    params.piece_dir(D), axis_of(D, A), sub_extent(P_inner, A, K).
+
+// Where a band's piece lands once its anchored edge reaches the block's.
+.decl landed(b: Position, k: number, p_inner: Position, col: Color)
+landed(B, K, P_inner, Col) :-
+    piece_cell(B, P_piece, Col), margin_cand(K),  // piece cell, candidate margin
+    params.piece_dir(D), opposite(D, D_in),       // away from the piece edge
+    jump(P_piece, D_in, K, P_inner).
+
+// The hole a band's staircase leaves in the block, against a band's landed
+// piece.
+.init exact = KeyedSetCompare<BandMargin, BandMargin, Position>
+exact.observed_member([B, K], P_inner) :-
+    box.inner(B, _, P_inner), margin_cand(K),            // band cell, candidate margin
+    params.piece_dir(D), dist(P_inner, D, K2), K2 >= K,  // within the block
+    !base_cell(B, P_inner).                              // and not the staircase
+exact.pattern_member([B, K], P_inner) :- landed(B, K, P_inner, _).
+
+// Band B2's piece fills band B's hole exactly, at margin K.
+.decl fits(b: Position, piece_band: Position, k: number)
+fits(B, B2, K) :- exact.equals([B, K], [B2, K]).
+
+.decl pair(b: Position, piece_band: Position, k: number, ch: Choice)
+
+// --- Given ---
+pair(B, B2, K, $Given()) :- fits(B, B2, K), params.block_margin(K).
+
+// --- Common ---
+// A margin some band admits no piece at.
+.decl unmatched(k: number)
+unmatched(K) :- margin_cand(K), band_cell(B, _), !fits(B, _, K).
+
+pair(B, B2, K, $Common()) :- fits(B, B2, K), !unmatched(K).
+
+// --- shared ---
+
+.decl impl_choice(ch: Choice)
+impl_choice($Given()). impl_choice($Common()).
+
+.decl filled(p: Position, col: Color, ch: Choice)
+filled(P, Col, Ch) :-
+    pair(B, B2, K, Ch), landed(B2, K, P_inner, Col),  // the paired piece, landed
+    box.inner(B, P, P_inner).                         // back to the grid
+
+.decl out(p: Position, col: Color, c: Choice)
+out(P, Col, Ch) :-
+    in(P, Col_in), impl_choice(Ch),
+    ( filled(P, Col, Ch)                                          // the piece's new seat
+    ; params.base(Col_in), Col = Col_in                           // the staircase stays
+    ; !filled(P, _, Ch), !params.base(Col_in), params.bg(Col)     // everything else blank
+    ).

@@ -1,0 +1,103 @@
+// 3ad05f52
+// draft
+// concept: decompose walk span
+// Walls cut the grid into rooms, and a doorway is a gap in a wall. Paint — the
+// one color that is neither params.bg nor params.wall — sits in one room and spreads
+// through the doorways into every room reachable from there.
+//
+// The outside, the widest region, holds no paint of its own. The doorways that
+// open onto it join the buildings across it, and the two cases differ in the
+// ground they carry the paint over:
+//
+//   $Span — the box the outward doorways span together.
+//   $Duct — the box each opposed pair of outward doorways spans.
+
+#include "../lib.dl"
+
+.type Choice = Span {} | Duct {}
+
+.decl impl_choice(ch: Choice)
+impl_choice($Span()). impl_choice($Duct()).
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    .decl wall(col: Color) wall(8).
+}
+
+.init params = Params
+
+// --- shared: the buildings ---
+
+.decl paint(col: Color)
+paint(Col) :- in(_, Col), !params.bg(Col), !params.wall(Col).
+
+.decl wall_cell(p: Position)
+wall_cell(P) :- in(P, Col), params.wall(Col).
+
+// An opening in a wall: wall on both sides of one axis.
+.decl door(p: Position)
+door(P) :-
+    in(P, _), !wall_cell(P),                        // an open cell
+    opposite(D, D_opp),                             // two opposite sides
+    neighbor(P, D, Q), wall_cell(Q),                // wall on the one side
+    neighbor(P, D_opp, Q_opp), wall_cell(Q_opp).    // wall on the other
+
+// The regions the walls close off. A doorway is cut out, so no region runs
+// through one.
+.init rooms = Components<Unit>
+rooms.node($U(), P) :- in(P, _), !wall_cell(P), !door(P).
+
+// The ground the buildings stand on: the region the most cells belong to.
+.init widest = Mode<Unit, Ident, Position>
+widest.item($U(), Id, P) :- rooms.label($U(), P, Id).
+
+.decl outside(p: Position)
+outside(P) :- rooms.label($U(), P, Id), widest.mode($U(), Id).
+
+// A doorway that opens onto the outside.
+.decl outward_door(p: Position, d: Dir)
+outward_door(P, D) :- door(P), dir_elem(D), neighbor(P, D, Q), outside(Q).
+
+// The ground the outward doorways carry paint over.
+.decl crossing(p: Position, ch: Choice)
+
+// --- Span ---
+
+.init span_box = Bbox<Unit>
+span_box.cell($U(), P) :- outward_door(P, _).
+span_box.grid($U(), P) :- in(P, _).
+
+crossing(P, $Span()) :- span_box.inside($U(), P), outside(P).
+
+// --- Duct ---
+
+.type Pair = [a: Position, b: Position]
+
+// Two outward doorways opening toward each other: each opens onto the side the
+// other lies on.
+.decl opposed(p: Position, p2: Position)
+opposed(P, P2) :-
+    outward_door(P, D), outward_door(P2, D_opp),    // two outward doorways
+    opposite(D, D_opp),                             // opening opposite ways
+    nearer(D, P2, P).                               // P2 lies toward D from P
+
+.init duct_box = Bbox<Pair>
+duct_box.cell([P, P2], P) :- opposed(P, P2).
+duct_box.cell([P, P2], P2) :- opposed(P, P2).
+duct_box.grid([P, P2], Q) :- opposed(P, P2), in(Q, _).
+
+crossing(Q, $Duct()) :- duct_box.inside([P, P2], Q), outside(Q).
+
+// --- shared: the spread ---
+
+.init flood = Reach<Choice>
+flood.node(Ch, P) :- impl_choice(Ch), in(P, _), !wall_cell(P), !outside(P).
+flood.node(Ch, P) :- crossing(P, Ch).
+flood.seed(Ch, P) :- impl_choice(Ch), in(P, Col), paint(Col).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col_out, Ch) :-
+    in(P, Col), impl_choice(Ch),
+    ( flood.reach(Ch, P), paint(Col_out)      // the paint reaches it
+    ; !flood.reach(Ch, P), Col_out = Col      // untouched
+    ).

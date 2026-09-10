@@ -8,17 +8,28 @@
 //   $Center() — a tile fills iff a mark sits at its center: the input read
 //               as a stride-3 subsample, upscaled.
 //   $Grow()   — each mark grows one step in all eight directions.
+//
+// Every grid of the task is 9×9, so the arrangement reads two ways, and
+// the two tile cases carry both as a DecChoice field:
+//
+//   $Count() — params.tile_count tiles per axis.
+//   $Size()  — tiles of params.tile_dim, as many as the grid holds.
 
 #include "../lib.dl"
 
-.type Choice = Tile {} | Center {} | Grow {}
+.type DecChoice = Count {} | Size {}
+.type Choice    = Tile {d: DecChoice} | Center {d: DecChoice} | Grow {}
 
 .comp Params {
+    // --- shared ---
     .decl bg(c: Color) bg(0).
     .decl out_fill(c: Color) out_fill(1).
 
-    // --- $Tile / $Center ---
+    // --- Tile(Count), Center(Count) ---
     .decl tile_count(n: number) tile_count(3).
+
+    // --- Tile(Size), Center(Size) ---
+    .decl tile_dim(k: number) tile_dim(3).
 }
 
 .init params = Params
@@ -26,40 +37,43 @@
 .decl mark(p: Position)
 mark(P) :- in(P, Col), !params.bg(Col).
 
-// --- $Tile / $Center: shared 3×3 arrangement ---
+// --- Tile, Center ---
 
-.decl decomp(p: Position, p_tile: Position, p_intile: Position)
-decomp(P_grid, P_tile, P_intile) :-
-    in(P_grid, _), params.tile_count(N),            // input position, tile params
+.decl decomp(dc: DecChoice, p: Position, p_tile: Position, p_intile: Position)
+decomp($Count(), P_grid, P_tile, P_intile) :-
+    in(P_grid, _), params.tile_count(N),            // input position, tile count
     divide_2d(P_grid, N, 0, P_tile, P_intile).      // square arrangement
+decomp($Size(), P_grid, P_tile, P_intile) :-
+    in(P_grid, _), params.tile_dim(K),              // input position, tile size
+    divide_by_size_2d(P_grid, K, 0, P_tile, P_intile).
 
 .decl out(p: Position, col: Color, ch: Choice)
 
-// --- $Tile ---
+// --- Tile ---
 
-.decl mark_tile(p_tile: Position)
-mark_tile(P_tile) :- mark(P_grid), decomp(P_grid, P_tile, _).
+.decl mark_tile(dc: DecChoice, p_tile: Position)
+mark_tile(Dc, P_tile) :- mark(P_grid), decomp(Dc, P_grid, P_tile, _).
 
-out(P, Col, $Tile()) :-
-    decomp(P, P_tile, _),                               // grid cell, its tile
-    ( mark_tile(P_tile), params.out_fill(Col)           // the mark's tile — filled
-    ; !mark_tile(P_tile), params.bg(Col)                // any other tile — bg
+out(P, Col, $Tile(Dc)) :-
+    decomp(Dc, P, P_tile, _),                            // grid cell, its tile
+    ( mark_tile(Dc, P_tile), params.out_fill(Col)        // the mark's tile — filled
+    ; !mark_tile(Dc, P_tile), params.bg(Col)             // any other tile — bg
     ).
 
-// --- $Center ---
+// --- Center ---
 
-.decl center_tile(p_tile: Position)
-center_tile(P_tile) :-
-    mark(P_grid), decomp(P_grid, P_tile, P_intile),  // mark's tile
-    centered(P_intile).                              // the mark at the tile's center
+.decl center_tile(dc: DecChoice, p_tile: Position)
+center_tile(Dc, P_tile) :-
+    mark(P_grid), decomp(Dc, P_grid, P_tile, P_intile),  // mark's tile
+    centered(P_intile).                                  // the mark at the tile's center
 
-out(P, Col, $Center()) :-
-    decomp(P, P_tile, _),                               // grid cell, its tile
-    ( center_tile(P_tile), params.out_fill(Col)         // the centered mark's tile — filled
-    ; !center_tile(P_tile), params.bg(Col)              // any other tile — bg
+out(P, Col, $Center(Dc)) :-
+    decomp(Dc, P, P_tile, _),                            // grid cell, its tile
+    ( center_tile(Dc, P_tile), params.out_fill(Col)      // the centered mark's tile — filled
+    ; !center_tile(Dc, P_tile), params.bg(Col)           // any other tile — bg
     ).
 
-// --- $Grow ---
+// --- Grow ---
 
 .decl grown(p: Position)
 grown(P) :- mark(P).

@@ -1,0 +1,116 @@
+// 36a08778
+// draft
+// concept: markers cast walk span
+// Water sits as a two-cell stub on an edge and pours into the grid. The pour
+// runs on until a block bars the way; there it passes the block's end and
+// pours on. Every cell the water reaches turns the water color, and nothing
+// else changes. Cases:
+//
+//   flow (how the water passes a barring block):
+//     $Step()  — a cell at a time across the block's top; a block in the
+//                way stops it.
+//     $Shell() — the struck block's whole top, one cell past each end,
+//                turns to water at once.
+//
+//   seat (where the pour direction comes from):
+//     $Dir()  — params.fall names it.
+//     $Stub() — the stub's own line, away from the edge it sits on.
+//
+// Coincide here: every stub is a vertical pair on the top edge; and where a
+// block does stand on another's shell row (test 1), the water past it
+// arrives by another pour.
+
+#include "../lib.dl"
+
+.type Flow = Step {} | Shell {}
+.type Seat = Dir {} | Stub {}
+.type Choice = [flow: Flow, seat: Seat]
+.type Stream = [ch: Choice, d: Dir]
+
+.comp Params {
+    // --- shared ---
+    .decl water(col: Color) water(6).
+    .decl block(col: Color) block(2).
+
+    // --- $Dir ---
+    .decl fall(d: Dir) fall(DIR_B).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice([$Step(), $Dir()]).  impl_choice([$Step(), $Stub()]).
+impl_choice([$Shell(), $Dir()]). impl_choice([$Shell(), $Stub()]).
+
+// --- shared ---
+
+.decl source(p: Position)
+source(P) :- in(P, Col), params.water(Col).
+
+.decl block(p: Position)
+block(P) :- in(P, Col), params.block(Col).
+
+.init stub = Components<Unit>
+stub.node($U(), P) :- source(P).
+
+.decl stub_flow(id: Ident, d: Dir)
+stub_flow(Id, D) :-
+    stub.label($U(), P, Id), opposite(D, E), dist(P, E, 0),  // a stub cell on edge E
+    neighbor(P, D, Q), source(Q).                            // the stub runs on from it
+
+.decl pour(s: Seat, p: Position, d: Dir)
+pour($Dir(), P, D)  :- source(P), params.fall(D).
+pour($Stub(), P, D) :- stub.label($U(), P, Id), stub_flow(Id, D).
+
+// The water's course: a cast from each pour cell toward its direction, halted
+// by a block. Keyed by case and direction: each case seeds its own marks, and
+// a key casts toward one direction.
+.init stream = Ray<Stream>
+stream.dir([Ch, D], D)      :- impl_choice(Ch), dir_elem(D).
+stream.cell([Ch, D], P)     :- impl_choice(Ch), dir_elem(D), in(P, _).
+stream.blocked([Ch, D], P)  :- impl_choice(Ch), dir_elem(D), block(P).
+stream.mark([[F, S], D], P) :- impl_choice([F, S]), pour(S, P, D).
+
+// The cells the water reaches, and the direction it travels there.
+.decl wet(ch: Choice, d: Dir, p: Position)
+wet(Ch, D, P) :- stream.clear([Ch, D], P, D, _, _).
+
+// Block B halts the pour at wet cell P.
+.decl barred(ch: Choice, d: Dir, p: Position, b: Position)
+barred(Ch, D, P, B) :- wet(Ch, D, P), neighbor(P, D, B), stream.stop([Ch, D], B, D, _, _).
+
+// --- $Step ---
+
+// A cell to each side, across the flow, pours on.
+stream.mark([[$Step(), S], D], Q) :-
+    barred([$Step(), S], D, P, _),
+    perp_dir(D, D2), neighbor(P, D2, Q), in(Q, _), !block(Q).
+
+// --- $Shell ---
+
+// A block's maximal run along an axis: a cast over block cells that any
+// other cell halts.
+.init run = Ray<Axis>
+run.dir(A, D)     :- axis_of(D, A).
+run.cell(A, P)    :- axis_elem(A), block(P).
+run.mark(A, P)    :- axis_elem(A), block(P).
+run.blocked(A, P) :- axis_elem(A), in(P, _), !block(P).
+
+.decl span(a: Axis, b: Position, p: Position)
+span(A, B, P) :- run.clear(A, P, _, _, B).   // the run through B
+span(A, B, P) :- run.stop(A, P, _, _, B).    // the free cell past each end
+
+// The shell block B raises against a pour toward d: the span, one step back.
+.decl shell(d: Dir, b: Position, p: Position)
+shell(D, B, P) :-
+    axis_of(D, A0), perp(A0, A), span(A, B, Q),   // across the flow
+    opposite(D, D_back), neighbor(Q, D_back, P),  // one step back
+    in(P, _), !block(P).
+
+stream.mark([[$Shell(), S], D], Q) :- barred([$Shell(), S], D, _, B), shell(D, B, Q).
+
+// --- output ---
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- wet(Ch, _, P), params.water(Col).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !wet(Ch, _, P).

@@ -1,0 +1,122 @@
+// 18419cfa
+// draft
+// concept: objects markers repair d4
+// Walls of params.frame close off interiors, each holding a partial params.ink pattern.
+// Every pattern gains its mirror image within its own interior; the rest of the
+// grid passes through. Models of which mirrors apply:
+//
+//   $Klein    — every reflection of params.sym.
+//   $OneSided — the reflection across the midline the pattern lies to one side of.
+//   $Doorway  — the reflection across the axis the wall's two gaps open along.
+
+#include "../lib.dl"
+
+.type Choice = Klein {} | OneSided {} | Doorway {}
+
+.comp Params {
+    // --- shared ---
+    .decl frame(col: Color) frame(8).
+    .decl ink(col: Color) ink(2).
+
+    // --- Klein ---
+    .decl sym(s: Sym) sym(SYM_BOX).
+}
+
+.init params = Params
+
+// The interiors the walls close off, each viewed from its own bounding box.
+.comp Parse<Key> {
+    .type Interior = [k: Key, id: Ident]
+
+    .decl cell(k: Key, p: Position, col: Color)
+
+    .init closed = Closed<Key>
+    closed.cell(K, P) :- cell(K, P, Col), !params.frame(Col).
+
+    .init box = BoxFrame<Interior>
+    box.cell([K, Id], P) :- closed.region(K, P, Id).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// --- shared ---
+
+.decl ink_cell(id: Ident, p_intile: Position)
+ink_cell(Id, P_intile) :-
+    in(P, Col), params.ink(Col),                  // ink cell
+    parse.box.inner([$U(), Id], P, P_intile).     // in its interior's frame
+
+// The reflections each interior's pattern completes under.
+.decl flip(id: Ident, d: D4, ch: Choice)
+
+.decl paint(p: Position, ch: Choice)
+paint(P_grid_out, Ch) :-
+    ink_cell(Id, P_intile),                                 // the interior's ink
+    flip(Id, D, Ch), apply(D, P_intile, P_intile2),         // its mirror image
+    parse.box.inner([$U(), Id], P_grid_out, P_intile2).     // back on the grid
+
+// --- Klein ---
+
+flip(Id, D, $Klein()) :- ink_cell(Id, _), params.sym(S), sym_member(S, D).
+
+// --- OneSided ---
+
+// An ink cell at least as far from edge D as from its opposite.
+.decl far_cell(id: Ident, d: Dir)
+far_cell(Id, D) :-
+    ink_cell(Id, P_intile), dir_elem(D),        // an ink cell of the interior
+    dist_pair(P_intile, D, K, K2), K >= K2.     // not strictly nearer edge D
+
+// Every ink cell of the interior strictly nearer edge D than its opposite.
+.decl one_sided(id: Ident, d: Dir)
+one_sided(Id, D) :- ink_cell(Id, _), dir_elem(D), !far_cell(Id, D).
+
+flip(Id, D_flip, $OneSided()) :- one_sided(Id, D), axis_of(D, A), flip_of(A, D_flip).
+
+// --- Doorway ---
+
+// An interior cell pinched between two walls opens the interior along the
+// perpendicular axis.
+.decl doorway(id: Ident, a: Axis)
+doorway(Id, A_open) :-
+    parse.closed.region($U(), P, Id), params.frame(Wall),   // interior cell, wall color
+    opposite(D, D2), axis_of(D, A), perp(A, A_open),
+    neighbor(P, D, Q1), in(Q1, Wall),                  // walled on both sides
+    neighbor(P, D2, Q2), in(Q2, Wall).                 // ... of axis A
+
+flip(Id, D_flip, $Doorway()) :- doorway(Id, A), flip_of(A, D_flip).
+
+// --- output ---
+
+.decl impl_choice(ch: Choice)
+impl_choice($Klein()). impl_choice($OneSided()). impl_choice($Doorway()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(P, Ch).
+out(P, Col, Ch) :- paint(P, Ch), params.ink(Col).
+
+.comp Determine {
+    .type Interior = [e: Example, id: Ident]
+
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // Each finished pattern, in its interior's frame.
+    .decl ink_out(i: Interior, p_intile: Position)
+    ink_out([E, Id], P_intile) :-
+        ex_out(E, P, Col), params.ink(Col), parse.box.inner([E, Id], P, P_intile).
+
+    .init inv = D4Map<Interior, Unit>
+    inv.src(I, P_intile, $U()) :- ink_out(I, P_intile).
+    inv.dst(I, P_intile, $U()) :- ink_out(I, P_intile).
+
+    // The group whose members are exactly the transforms every finished
+    // pattern is invariant under.
+    .init grp = KeyedSetCompare<Unit, Sym, D4>
+    grp.pattern_member(S, D) :- sym_member(S, D).
+    grp.observed_member($U(), D) :- d4_elem(D), !inv.mismatch(_, D).
+
+    .decl sym(s: Sym)
+    sym(S) :- grp.equals($U(), S).
+}

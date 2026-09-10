@@ -20,27 +20,27 @@
     .decl pattern_out(id: Ident, c: Color)
 
     GRID_MASK_3x3(pattern_member, 0,
-        1, 1, 0,
-        1, 0, 1,
-        0, 1, 0)
+        1, 1, _,
+        1, _, 1,
+        _, 1, _)
     pattern_out(0, 1).
 
     GRID_MASK_3x3(pattern_member, 1,
-        1, 0, 1,
-        0, 1, 0,
-        1, 0, 1)
+        1, _, 1,
+        _, 1, _,
+        1, _, 1)
     pattern_out(1, 2).
 
     GRID_MASK_3x3(pattern_member, 2,
-        0, 1, 1,
-        0, 1, 1,
-        1, 0, 0)
+        _, 1, 1,
+        _, 1, 1,
+        1, _, _)
     pattern_out(2, 3).
 
     GRID_MASK_3x3(pattern_member, 3,
-        0, 1, 0,
+        _, 1, _,
         1, 1, 1,
-        0, 1, 0)
+        _, 1, _)
     pattern_out(3, 6).
 
     // --- $Classify data ---
@@ -64,8 +64,6 @@
 }
 
 .init params = Params
-
-// --- parse ---
 
 .comp Parse<Key> {
     .decl cell(k: Key, p: Position, col: Color)
@@ -106,8 +104,6 @@ out(ORIGIN, Col, $Classify()) :-
 out(ORIGIN, Col, $Classify()) :-
     parse.center_on($U()), parse.corner_count($U(), N),     // center on, count corners
     params.center_on_out(N, Col).
-
-// --- determination ---
 
 .comp Determine {
     // Train pairs only — the ex_out atom holds the test inputs out.

@@ -1,0 +1,66 @@
+// 7d1f7ee8
+// draft
+// concept: objects border enclose
+// Outlines of one color each sit in a bg field, some nested inside others.
+// Every ink cell inside an outermost outline takes that outline's color,
+// nested outlines included. Ink inside no outline keeps its color.
+//
+// $Rect — an outline is a rectangle drawn by four same-color runs, and it
+//   encloses its box. The outermost rectangles are those no other
+//   rectangle's box contains.
+// $Enclose — an outline is any wall of one color, and it encloses what it
+//   cuts off from the grid edge. The outermost walls are the ink no color
+//   cuts off.
+
+#include "../lib.dl"
+
+.type Choice = Rect {} | Enclose {}
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+}
+
+.init params = Params
+
+// Outlines are drawn in ink; the field they sit in is bg.
+.decl ink(col: Color)
+ink(Col) :- in(_, Col), !params.bg(Col).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Rect()). impl_choice($Enclose()).
+
+// An ink cell inside an outermost outline of color col.
+.decl enclosed(p: Position, col: Color, ch: Choice)
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- enclosed(P, Col, Ch).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !enclosed(P, _, Ch).
+
+// --- Rect ---
+
+.init drect = DrawnRect<Color>
+drect.node(Col, P) :- ink(Col), in(P, Col).
+
+// A rectangle inside another rectangle's box.
+.decl nested_rect(b: Position)
+nested_rect(B) :- drect.rect(_, B), drect.rect(_, B_outer), B != B_outer, geq(B, B_outer).
+
+enclosed(P, Col, $Rect()) :-
+    ink(C), in(P, C),                               // ink cell
+    drect.rect(Col, B), !nested_rect(B), geq(P, B). // in an outermost rectangle's box
+
+// --- Enclose ---
+
+// Each ink color walls the rest of the grid off; a cell some color cuts off
+// is nested.
+.init closed = Closed<Color>
+closed.cell(Col, P) :- ink(Col), in(P, C), C != Col.
+
+// Each color's outermost walls cut the grid off: a cell of another color
+// passes, and so does a cell some color already cuts off.
+.init outer = Closed<Color>
+outer.cell(Col, P) :- ink(Col), in(P, C), ( C != Col ; closed.region(_, P, _) ).
+
+enclosed(P, Col, $Enclose()) :-
+    ink(C), in(P, C),             // ink cell
+    outer.region(Col, P, _).      // cut off by an outermost wall

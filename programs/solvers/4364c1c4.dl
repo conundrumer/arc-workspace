@@ -1,0 +1,107 @@
+// 4364c1c4
+// draft
+// concept: objects move lookup
+// A bg field holds figures, each two touching parts of different colors. The
+// parts meet along a seam, and each slides one step parallel to that seam:
+// the part on the seam's top side goes left, the one on its bottom side goes
+// right. The cells a part leaves become bg. Cases claim what fixes the
+// direction:
+//   $Turn  — a quarter turn from the side of the seam the part sits on, in
+//            a stored sense.
+//   $Table — a stored side-to-direction correspondence.
+
+#include "../lib.dl"
+
+.type Choice = Turn {} | Table {}
+
+.comp Params {
+    // The slide distance.
+    .decl shift(k: number) shift(1).
+
+    // --- $Turn ---
+    .decl sense(s: Sense) sense(SENSE_CC).
+
+    // --- $Table ---
+    .decl slide_map(d: Dir, d_out: Dir)
+    slide_map(DIR_T, DIR_L). slide_map(DIR_B, DIR_R).
+}
+
+.init params = Params
+
+.comp Parse<Key> {
+    .type KC = [k: Key, col: Color]
+
+    .decl cell(k: Key, p: Position, col: Color)  // input
+
+    // The field is the commonest color; the parts are what it leaves.
+    .init field = Mode<Key, Color, Position>
+    field.item(K, Col, P) :- cell(K, P, Col).
+
+    .decl bg(k: Key, col: Color)
+    bg(K, Col) :- field.mode(K, Col).
+
+    // A part: one color's touching cells. A cell holds one color, so the
+    // parts' cell sets are disjoint and the label alone names the part.
+    .init comps = Components<KC>
+    comps.node([K, Col], P) :- cell(K, P, Col), !bg(K, Col).
+
+    .decl part(k: Key, id: Ident, p: Position, col: Color)
+    part(K, Id, P, Col) :- comps.label([K, Col], P, Id).
+
+    // The side of the seam a part sits on: its partner lies one step the
+    // other way.
+    .decl side(k: Key, id: Ident, d: Dir)
+    side(K, Id, D_side) :-
+        part(K, Id, P, _), dir_elem(D), neighbor(P, D, Q),  // a cell of the part, and its neighbor
+        part(K, Id2, Q, _), Id2 != Id,                      // in the other part
+        opposite(D, D_side).                                // so the part is on the far side
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// Which way a part slides, given the side of the seam it sits on.
+.decl slide_dir(d: Dir, d_out: Dir, ch: Choice)
+
+// --- $Turn ---
+slide_dir(D, D_out, $Turn()) :- params.sense(S), turn(S, D, D_out).
+
+// --- $Table ---
+slide_dir(D, D_out, $Table()) :- params.slide_map(D, D_out).
+
+// --- output ---
+
+.decl moved(p: Position, col: Color, ch: Choice)
+moved(Q, Col, Ch) :-
+    parse.part($U(), Id, P, Col),               // a cell of a part
+    parse.side($U(), Id, D_side),               // the side of the seam the part sits on
+    slide_dir(D_side, D, Ch), params.shift(K),  // the way it slides
+    jump(P, D, K, Q).                           // that far over
+
+.decl impl_choice(ch: Choice)
+impl_choice($Turn()). impl_choice($Table()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    in(P, _), impl_choice(Ch),
+    ( moved(P, Col, Ch)                         // a part landed here
+    ; !moved(P, _, Ch), parse.bg($U(), Col) ).  // field, or a cell a part left
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    .type EI = [e: Example, id: Ident]
+
+    // Where each part seats on its example's output: the translations that
+    // carry every cell of the part onto an output cell of its color.
+    .init seating = Occurrences<EI, Color>
+    seating.shape([E, Id], P, Col) :- parse.part(E, Id, P, Col).
+    seating.cell([E, Id], P, Col)  :- parse.part(E, Id, _, _), ex_out(E, P, Col).
+
+    .decl slide_map(d: Dir, d_out: Dir)
+    slide_map(D_side, D) :-
+        parse.side(E, Id, D_side),                          // a part, on its side of the seam
+        dir_elem(D), params.shift(K), jump_delta(D, K, M),  // a slide
+        seating.occurrence([E, Id], M).                     // that fits the output
+}

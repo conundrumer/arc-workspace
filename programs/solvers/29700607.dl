@@ -1,0 +1,76 @@
+// 29700607
+// draft
+// concept: markers span cast
+// The non-bg cells on the header edge are headers; the rest of the ink is
+// markers. Each header and the marker of its color are joined by a wire with
+// one turn: it runs from the header along the head axis to the elbow — the
+// marker's place along that axis, the header's across it — then turns toward
+// the marker. A header whose color has no marker never turns and runs off the
+// far edge. Every other cell is bg. The cases claim where the turned leg ends:
+// $AtMarker at the marker, $ToEdge at the frame edge beyond it. Every marker
+// sits on a frame edge, so the two agree on all pairs.
+
+#include "../lib.dl"
+
+.type Choice = AtMarker {} | ToEdge {}
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+
+    // The edge the headers sit on.
+    .decl head_dir(d: Dir) head_dir(DIR_T).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($AtMarker()). impl_choice($ToEdge()).
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.bg(Col).
+
+.decl header(p: Position, col: Color)
+header(P, Col) :- ink(P, Col), params.head_dir(D), dist(P, D, 0).
+
+.decl marker(p: Position, col: Color)
+marker(P, Col) :- ink(P, Col), !header(P, _).
+
+.decl elbow(p: Position, col: Color)
+elbow(P_elbow, Col) :-
+    header(H, Col), marker(M, Col),                // the wire's two ends
+    params.head_dir(D), axis_of(D, A),             // the head axis
+    split(M, A, Along, _), split(H, A, _, Across), // marker's place along, header's across
+    compose(Along, Across, P_elbow).
+
+// Each leg spans two of the wire's three points: header to elbow along the
+// head axis, elbow to marker across it.
+.init path = Between<Color>
+path.axis(Col, A) :- header(_, Col), axis_elem(A).
+path.cell(Col, P) :- header(_, Col), in(P, _).
+path.mark(Col, P) :- header(P, Col).
+path.mark(Col, P) :- elbow(P, Col).
+path.mark(Col, P) :- marker(P, Col).
+
+.decl wire(col: Color, p: Position, ch: Choice)
+wire(Col, P, Ch) :- path.between(Col, P), impl_choice(Ch).
+wire(Col, P, Ch) :-
+    header(H, Col), !elbow(_, Col),                    // an unmatched header never turns
+    params.head_dir(D_head), opposite(D_head, D),      // and runs off the far edge
+    path.ray(Col, P, D, _, H), impl_choice(Ch).
+
+// --- ToEdge ---
+
+// The direction the wire takes out of its elbow.
+.decl side(col: Color, d: Dir)
+side(Col, D) :-
+    elbow(E, Col), marker(M, Col),                   // the turn and its target
+    params.head_dir(D_head), perp_dir(D_head, D),    // a turn leaves the head axis
+    path.ray(Col, M, D, _, E).                       // the marker lies that way
+
+wire(Col, P, $ToEdge()) :- elbow(E, Col), side(Col, D), path.ray(Col, P, D, _, E).
+
+// --- output ---
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- wire(Col, P, Ch).
+out(P, Col, Ch) :- in(P, _), impl_choice(Ch), !wire(_, P, Ch), params.bg(Col).

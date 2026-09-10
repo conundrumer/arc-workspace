@@ -1,0 +1,144 @@
+// 5289ad53
+// draft
+// concept: objects lines count rank
+// Marks of two colors lie scattered on a background. The output is a fixed
+// frame holding one cell per mark, laid out in reading order, the colors in
+// params.color_rank order; params.fill takes the cells left over.
+//
+// The cases claim what one mark is:
+//   $Blocks() — a connected component of a mark color.
+//   $Runs()   — a contiguous segment of a mark color within one line of
+//               params.run_axis.
+//   $Lines()  — a line of params.line_axis the mark color reaches.
+
+#include "../lib.dl"
+
+.type Choice = Blocks {} | Runs {} | Lines {}
+
+.comp Params {
+    // --- shared ---
+    // The mark colors, in the order their marks render.
+    .decl color_rank(col: Color, r: number)
+        color_rank(3, 0). color_rank(2, 1).
+
+    // The color of a cell no mark reaches.
+    .decl fill(col: Color) fill(0).
+
+    .decl dim(a: Axis, n: number)
+        dim(AXIS_V, 2). dim(AXIS_H, 3).
+
+    // The reading order the marks render in: from corner, major axis first.
+    .decl corner(d: DiagDir) corner(DIAG_TL).
+    .decl order_axis(a: Axis) order_axis(AXIS_V).
+
+    // --- Runs ---
+    .decl run_axis(a: Axis) run_axis(AXIS_H).
+
+    // --- Lines ---
+    .decl line_axis(a: Axis) line_axis(AXIS_H).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Blocks()). impl_choice($Runs()). impl_choice($Lines()).
+
+.decl mark_cell(col: Color, p: Position)
+mark_cell(Col, P) :- in(P, Col), params.color_rank(Col, _).
+
+// One id per mark, per case.
+.decl mark(ch: Choice, col: Color, id: Ident)
+
+// --- Blocks ---
+
+.init blocks = Components<Color>
+blocks.node(Col, P) :- mark_cell(Col, P).
+
+mark($Blocks(), Col, Id) :- blocks.label(Col, _, Id).
+
+// --- Runs ---
+
+// Components within one line: the perpendicular steps connect nothing.
+.type ColorLine = [col: Color, line: Position]
+
+.init runs = Components<ColorLine>
+runs.node([Col, L], P) :- mark_cell(Col, P), params.run_axis(A), split(P, A, _, L).
+
+mark($Runs(), Col, Id) :- runs.label([Col, _], _, Id).
+
+// --- Lines ---
+
+.init lines = Canon<Position>
+lines.equiv(P, Q) :-
+    mark_cell(Col, P), mark_cell(Col, Q),          // one color
+    params.line_axis(A), same_line(A, P, Q).       // one line
+
+mark($Lines(), Col, Id) :- lines.id(P, Id), mark_cell(Col, P).
+
+// --- the block of cells each color renders into ---
+
+.type CaseColor = [ch: Choice, col: Color]
+
+// The marks the color's block starts after.
+.init preceding = Tally<CaseColor, Ident>
+preceding.domain([Ch, Col]) :- impl_choice(Ch), params.color_rank(Col, _).
+preceding.item([Ch, Col], Id) :-
+    params.color_rank(Col, R), params.color_rank(Col2, R2), R2 < R,
+    mark(Ch, Col2, Id).
+
+// Those marks and the color's own — where its block ends.
+.init through = Tally<CaseColor, Ident>
+through.item([Ch, Col], Id) :- preceding.item([Ch, Col], Id).
+through.item([Ch, Col], Id) :- mark(Ch, Col, Id).
+
+// --- the output frame, in reading order ---
+
+.init frame = Frame2D<Unit>
+frame.extent($U(), A, N) :- params.dim(A, N).
+
+.init reading = LexOrder<Unit>
+reading.cell($U(), P) :- frame.cell($U(), P).
+reading.corner($U(), D) :- params.corner(D).
+reading.axis($U(), A) :- params.order_axis(A).
+
+.decl slot(ch: Choice, p: Position, col: Color)
+slot(Ch, P, Col) :-
+    reading.rank($U(), P, R),
+    preceding.tally([Ch, Col], S), S <= R,    // the color's block has started
+    through.tally([Ch, Col], E), R < E.       // and has not ended
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    frame.cell($U(), P), impl_choice(Ch),
+    ( slot(Ch, P, Col)                   // a mark's cell
+    ; !slot(Ch, P, _), params.fill(Col)  // a cell left over
+    ).
+
+.comp Determine {
+    .type ExampleColor = [e: Example, col: Color]
+
+    // The output renders marks in colors the input holds; any other output
+    // color is the fill.
+    .decl mark_col(e: Example, col: Color)
+    mark_col(E, Col) :- ex_out(E, _, Col), ex_in(E, _, Col).
+
+    .decl fill(col: Color)
+    fill(Col) :- ex_out(E, _, Col), !mark_col(E, Col).
+
+    .init reading = LexOrder<Example>
+    reading.cell(E, P) :- ex_out(E, P, _).
+    reading.corner(E, D) :- ex_out(E, _, _), params.corner(D).
+    reading.axis(E, A) :- ex_out(E, _, _), params.order_axis(A).
+
+    // Where each color's block starts.
+    .init first = Extremes<ExampleColor>
+    first.cand([E, Col], R) :-
+        mark_col(E, Col), ex_out(E, P, Col), reading.rank(E, P, R).
+
+    // The blocks follow one another, so a color ranks by its start.
+    .init place = Ordinal<Example>
+    place.idx_set(E, K) :- first.low([E, _], K).
+
+    .decl color_rank(col: Color, r: number)
+    color_rank(Col, R) :- first.low([E, Col], K), place.rank(E, K, R).
+}

@@ -1,0 +1,72 @@
+// 3bdb4ada
+// draft
+// concept: objects parity border
+// Solid rectangles on the bg. A dash covers part of each rectangle: along
+// params.dash_axis that dash runs params.dash cells of ink, then params.gap cells of bg,
+// and the covered cells in a gap run go to bg. Two hypotheses about which cells
+// the dash covers:
+//
+//   $Midline()  — the center line across the dash axis.
+//   $Interior() — the cells off the rectangle's rim.
+//
+// Every rectangle here is three cells across the dash axis, where the two
+// hypotheses name the same cells.
+
+#include "../lib.dl"
+
+.type Choice = Midline {} | Interior {}
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+
+    // The axis the dash runs along.
+    .decl dash_axis(a: Axis) dash_axis(AXIS_H).
+
+    // The dash's period: the ink run, then the gap run.
+    .decl dash(k: number) dash(1).
+    .decl gap(g: number) gap(1).
+}
+
+.init params = Params
+
+.init rect = Components<Unit>
+rect.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+.init box = BoxFrame<Ident>
+box.cell(Id, P) :- rect.label($U(), P, Id).
+
+// The dash's ink phase, in the rectangle's own frame. The divide admits
+// only an odd extent, where the phase reads the same from either end, so
+// the dash needs no anchor.
+.decl ink_run(p: Position)
+ink_run(P) :-
+    box.inner(_, P, P_inner),                                 // the cell, rectangle-framed
+    params.dash_axis(A), params.dash(K), params.gap(G),       // the period
+    divide_by_size(P_inner, A, K, G, _, _).                   // on an ink run
+
+// The cells the dash covers.
+.decl dash_cover(p: Position, ch: Choice)
+
+// --- $Midline ---
+dash_cover(P, $Midline()) :-
+    box.inner(_, P, P_inner),                          // the cell, rectangle-framed
+    params.dash_axis(A), perp(A, A2), axis_of(D, A2),  // an edge across the dash axis
+    dist_pair(P_inner, D, K, K).                       // centered between it and its opposite
+
+// --- $Interior ---
+.init rim = Rim<Ident>
+rim.cell(Id, P) :- rect.label($U(), P, Id).
+
+dash_cover(P, $Interior()) :- rect.label($U(), P, Id), !rim.rim(Id, P).
+
+// --- output ---
+.decl impl_choice(ch: Choice)
+impl_choice($Midline()).
+impl_choice($Interior()).
+
+.decl erased(p: Position, ch: Choice)
+erased(P, Ch) :- dash_cover(P, Ch), !ink_run(P).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- erased(P, Ch), params.bg(Col).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !erased(P, Ch).

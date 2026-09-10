@@ -1,0 +1,95 @@
+// 83302e8f
+// draft
+// concept: decompose objects enclose classify
+// A lattice of wall lines, one non-bg color, cuts a bg grid into tiles.
+// Some wall cells are missing: gaps. The output paints every bg cell the
+// sealed color or the leaky color, and the walls stay. Three models of
+// which bg cells are leaky:
+//
+//   $Flood — the bg cells that reach a gap.
+//   $Tile  — the gaps, and the tiles a gap touches.
+//   $Solid — no lattice: a bg component that is not a solid rectangle.
+
+#include "../lib.dl"
+
+.type Choice = Flood {} | Tile {} | Solid {}
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    .decl sealed(col: Color) sealed(3).
+    .decl leaky(col: Color) leaky(4).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Flood()). impl_choice($Tile()). impl_choice($Solid()).
+
+.decl out(p: Position, col: Color, c: Choice)
+
+// Walls stay.
+out(P, Col, Ch) :- in(P, Col), !params.bg(Col), impl_choice(Ch).
+
+// --- Flood, Tile ---
+
+.type Line = [a: Axis, l: Position]
+
+// A wall line is mostly one non-bg color.
+.init line_color = Mode<Line, Color, Position>
+line_color.item([A, L], Col, P) :- in(P, Col), axis_elem(A), split(P, A, L, _).
+
+.init lattice = DividerFrame<Unit>
+lattice.cell($U(), P) :- in(P, _).
+lattice.divider($U(), A, L) :- line_color.mode([A, L], Col), !params.bg(Col).
+
+// A gap: a bg cell on a wall line.
+.decl gap(p: Position)
+gap(P) :- lattice.on_divider($U(), P, _), in(P, Col), params.bg(Col).
+
+// --- Flood, Solid ---
+
+.init region = Reach<Unit>
+region.node($U(), P) :- in(P, Col), params.bg(Col).
+
+// --- Flood ---
+
+region.seed($U(), P) :- gap(P).
+
+out(P, Col, $Flood()) :-
+    in(P, C0), params.bg(C0),
+    ( region.reach($U(), P), params.leaky(Col)     // reaches a gap
+    ; !region.reach($U(), P), params.sealed(Col)   // walled in
+    ).
+
+// --- Tile ---
+
+// A tile with a gap in its wall.
+.decl leaky_tile(p_tile: Position)
+leaky_tile(P_tile) :-
+    lattice.tile_of($U(), P, P_tile),          // a tile cell
+    dir_elem(D), neighbor(P, D, Q), gap(Q).    // beside a gap
+
+out(P, Col, $Tile()) :-
+    in(P, C0), params.bg(C0),
+    ( gap(P), params.leaky(Col)
+    ; lattice.tile_of($U(), P, P_tile),
+      ( leaky_tile(P_tile), params.leaky(Col)
+      ; !leaky_tile(P_tile), params.sealed(Col)
+      )
+    ).
+
+// --- Solid ---
+
+.init box = Bbox<Ident>
+box.cell(Id, P) :- region.label($U(), P, Id).
+box.grid(Id, P) :- region.label($U(), _, Id), in(P, _).
+
+// A region that does not fill its bounding box.
+.decl irregular(id: Ident)
+irregular(Id) :- box.inside(Id, P), !region.label($U(), P, Id).
+
+out(P, Col, $Solid()) :-
+    region.label($U(), P, Id),
+    ( irregular(Id), params.leaky(Col)
+    ; !irregular(Id), params.sealed(Col)
+    ).

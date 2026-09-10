@@ -5,7 +5,7 @@
 // bg, marker included. Cases (data-equivalent on this task):
 //
 //   $Arms  — per-corner: the neighbor toward diag paints params.arm(diag).
-//   $Stamp — a stored template, seated on the marker by its seat cell.
+//   $Stamp — a stored template of offsets, seated on the marker.
 
 #include "../lib.dl"
 
@@ -21,12 +21,11 @@
     arm(DIAG_TL, 3). arm(DIAG_TR, 6). arm(DIAG_BL, 8). arm(DIAG_BR, 7).
 
     // --- Stamp ---
-    .decl template(p: Position, col: Color)
-    GRID_SPARSE_3x3(template,
-        3, 0, 6,
-        0, 0, 0,
-        8, 0, 7)
-    .decl seat(p: Position) seat([1, 1, 1, 1]).
+    .decl template(off: Shift, col: Color)
+    GRID_STAMP_SPARSE_3x3(template,
+        3,  _, 6,
+        _, @_, _,
+        8,  _, 7)
 }
 
 .init params = Params
@@ -43,9 +42,8 @@ halo(P, Col, $Arms()) :-
 
 // --- Stamp ---
 halo(P, Col, $Stamp()) :-
-    marker_at(Q), params.template(Pt, Col),          // a marker, a template cell
-    params.seat(Ps), displacement(Ps, Pt, Off),      // the cell's offset from the seat
-    compose(Q, Off, P), in(P, _).                    // seated on the marker, on-grid
+    marker_at(Q), params.template(Off, Col),   // a marker, a template offset
+    compose(Q, Off, P), in(P, _).              // seated on the marker, on-grid
 
 .decl impl_choice(ch: Choice)
 impl_choice($Arms()). impl_choice($Stamp()).
@@ -54,19 +52,14 @@ impl_choice($Arms()). impl_choice($Stamp()).
 out(P, Col, Ch) :- halo(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !halo(P, _, Ch), params.bg(Col).
 
-// --- determination ---
-
 .comp Determine {
     // What the stamp writes — every output ink cell — as an offset from its
     // example's marker.
-    .decl offset(off: Shift, col: Color)
-    offset(Off, Col) :-
+    .decl template(off: Shift, col: Color)
+    template(Off, Col) :-
         ex_out(E, P, Col), !params.bg(Col),
         ex_in(E, M, Cm), params.marker(Cm), displacement(M, P, Off).
 
     .decl arm(d: DiagDir, col: Color)
-    arm(Diag, Col) :- offset(Off, Col), diag_dir_elem(Diag), step_delta(Diag, Off).
-
-    .decl template(p: Position, col: Color)
-    template(Pt, Col) :- offset(Off, Col), params.seat(Ps), compose(Ps, Off, Pt).
+    arm(Diag, Col) :- template(Off, Col), diag_dir_elem(Diag), step_delta(Diag, Off).
 }

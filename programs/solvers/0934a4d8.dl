@@ -15,8 +15,6 @@
     // The grid's margins within the mosaic frame.
     .decl mosaic_margin(p: Inset) mosaic_margin([0, 2, 0, 2]).
 
-    .decl tile_dim(k: number) tile_dim(8).
-
     // Per tile, the subgroup of mosaic transforms holding on its cells.
     .decl tile_sym(p_tile: Position, s: Sym)
     GRID_4x4(tile_sym,
@@ -24,11 +22,15 @@
         SYM_D4,  SYM_BOX, SYM_BOX, SYM_D4,
         SYM_D4,  SYM_BOX, SYM_BOX, SYM_D4,
         SYM_BOX, SYM_D4,  SYM_D4,  SYM_BOX)
+
+    // The tiles along each axis — the arrangement tile_sym is laid over.
+    .decl tile_count(n: number)
+    tile_count(N) :- tile_sym(T, _), axis_elem(A), axis_dim(T, A, N).
 }
 
 .init params = Params
 
-// Mosaic position of each grid cell — materialized to read backward.
+// Mosaic position of each grid cell.
 .decl mosaic(p_grid: Position, p_mosaic: Position)
 mosaic(P_grid, P_mosaic) :- in(P_grid, _), params.mosaic_margin(M), compose(P_grid, M, P_mosaic).
 
@@ -40,12 +42,10 @@ box.cell($U(), P) :- in(P, Col), params.mask(Col).
 out(P_out, Col) :-
     box.inner($U(), P, P_out),                        // hole cell, in the crop frame
     mosaic(P, Pm),
-    params.tile_dim(K), divide_by_size_2d(Pm, K, 0, T, _), // its tile
-    params.tile_sym(T, S), sym_member(S, D),               // a transform holding there
-    apply(D, Pm, P2m),                                     // image in the mosaic
-    mosaic(P2, P2m), in(P2, Col), !params.mask(Col).       // visible grid cell there
-
-// --- determination ---
+    params.tile_count(N), divide_2d(Pm, N, 0, T, _),   // its tile
+    params.tile_sym(T, S), sym_member(S, D),           // a transform holding there
+    apply(D, Pm, P2m),                                 // image in the mosaic
+    mosaic(P2, P2m), in(P2, Col), !params.mask(Col).   // visible grid cell there
 
 .comp Determine {
     .decl cell(e: Example, p: Position, col: Color)
@@ -111,30 +111,31 @@ out(P_out, Col) :-
         inv.src(E, P, V), d4_elem(D), apply(D, P, P2),
         inv.dst(E, P2, V2), V2 != V.
 
-    // Mosaic cell to tile, at every candidate tile extent.
-    .decl kcand(k: number)
-    kcand(K) :- mcell(_, P, _), axis_elem(A), sub_extent(P, A, K).
+    // Mosaic cell to tile, at every candidate tile count.
+    .decl cand_count(n: number)
+    cand_count(N) :- mcell(_, P, _), axis_elem(A), sub_extent(P, A, N).
 
-    .decl tposk(k: number, p: Position, p_tile: Position)
-    tposk(K, Pm, T) :- mcell(_, Pm, _), kcand(K), divide_by_size_2d(Pm, K, 0, T, _).
+    .decl cand_tile(n: number, p: Position, p_tile: Position)
+    cand_tile(N, Pm, T) :- mcell(_, Pm, _), cand_count(N), divide_2d(Pm, N, 0, T, _).
 
-    .decl mismatchk(k: number, p_tile: Position, d: D4)
-    mismatchk(K, T, D) :- tposk(K, Pm, T), broken(_, Pm, D).
+    // The transforms a candidate's tile breaks, and the ones it holds.
+    .decl cand_broken(n: number, p_tile: Position, d: D4)
+    cand_broken(N, T, D) :- cand_tile(N, Pm, T), broken(_, Pm, D).
 
-    .decl symk(k: number, p_tile: Position, d: D4)
-    symk(K, T, D) :- tposk(K, _, T), d4_elem(D), !mismatchk(K, T, D).
+    .decl cand_sym(n: number, p_tile: Position, d: D4)
+    cand_sym(N, T, D) :- cand_tile(N, _, T), d4_elem(D), !cand_broken(N, T, D).
 
-    // Tile extent: the coarsest decomposition whose tile labels differ.
+    // Tile count: the coarsest decomposition whose tile labels differ.
     .init nonuniform = Extremes<Unit>
-    nonuniform.cand($U(), K) :- symk(K, T1, D), tposk(K, _, T2), !symk(K, T2, D).
+    nonuniform.cand($U(), N) :- cand_sym(N, T1, D), cand_tile(N, _, T2), !cand_sym(N, T2, D).
 
-    .decl tile_dim(k: number)
-    tile_dim(K) :- nonuniform.high($U(), K).
+    .decl tile_count(n: number)
+    tile_count(N) :- nonuniform.low($U(), N).
 
     // Each tile's group is the named subgroup matching its unbroken set.
     .init symid = KeyedSetCompare<Position, Sym, D4>
     symid.pattern_member(S, D) :- sym_member(S, D).
-    symid.observed_member(T, D) :- tile_dim(K), symk(K, T, D).
+    symid.observed_member(T, D) :- tile_count(N), cand_sym(N, T, D).
 
     .decl tile_sym(p_tile: Position, s: Sym)
     tile_sym(T, S) :- symid.equals(T, S).

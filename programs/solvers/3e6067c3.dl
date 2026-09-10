@@ -1,0 +1,131 @@
+// 3e6067c3
+// draft
+// concept: objects markers walk
+// Boxes hold a colored label; single cells spell a color sequence. Consecutive
+// entries of the sequence name boxes that a clear straight corridor joins, and
+// each crossed corridor fills with the color of the box the walk leaves.
+//
+// $Route — the sequence is a complete route, so a slot stands only on boxes
+//   the rest of the sequence can still be walked from.
+// $Walk — the sequence is walked from its start for as far as corridors carry
+//   it, so a branch that dies still paints what it crossed.
+
+#include "../lib.dl"
+
+.type Choice = Route {} | Walk {}
+
+.comp Params {
+    // The edge the sequence reads from.
+    .decl seq_dir(d: Dir) seq_dir(DIR_L).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Route()). impl_choice($Walk()).
+
+// The background is the commonest color; what is drawn on it is ink.
+.init bg_mode = Mode<Unit, Color, Position>
+bg_mode.item($U(), Col, P) :- in(P, Col).
+
+.decl ink(p: Position)
+ink(P) :- in(P, Col), !bg_mode.mode($U(), Col).
+
+// Most of the ink goes into the boxes.
+.init box_mode = Mode<Unit, Color, Position>
+box_mode.item($U(), Col, P) :- ink(P), in(P, Col).
+
+.decl box(col: Color)
+box(Col) :- box_mode.mode($U(), Col).
+
+// --- boxes and labels ---
+
+.init comps = Components<Unit>
+comps.node($U(), P) :- ink(P).
+
+// A component built from the box color is a box; the rest spell the sequence.
+.decl is_box(id: Ident)
+is_box(Id) :- comps.label($U(), P, Id), in(P, Col), box(Col).
+
+.decl box_cell(id: Ident, p: Position)
+box_cell(Id, P) :- is_box(Id), comps.label($U(), P, Id).
+
+.decl label_cell(id: Ident, p: Position)
+label_cell(Id, P) :- box_cell(Id, P), in(P, Col), !box(Col).
+
+.decl label_color(id: Ident, col: Color)
+label_color(Id, Col) :- label_cell(Id, P), in(P, Col).
+
+.init bbox = Bbox<Ident>
+bbox.cell(Id, P) :- box_cell(Id, P).
+
+// --- corridors ---
+
+// The cells strictly between two boxes, on the lines both labels occupy.
+.decl corridor(id: Ident, id2: Ident, p: Position)
+corridor(Id, Id2, P) :-
+    in(P, _), axis_of(D, A), opposite(D, D_opp),  // a cell, and a facing axis
+    bbox.margin(Id, M), nearer(D, P, M),          // past the near box's side
+    bbox.margin(Id2, N), nearer(D_opp, P, N),     // short of the far box's side
+    label_cell(Id, Q), same_line(A, P, Q),        // on the near label's line
+    label_cell(Id2, Q2), same_line(A, P, Q2).     // and on the far one's
+
+.decl obstructed(id: Ident, id2: Ident)
+obstructed(Id, Id2) :- corridor(Id, Id2, P), ink(P).
+
+// Boxes a clear corridor joins.
+.decl joined(id: Ident, id2: Ident)
+joined(Id, Id2) :- corridor(Id, Id2, _), !obstructed(Id, Id2).
+
+// --- the sequence ---
+
+.decl seq_cell(p: Position)
+seq_cell(P) :- comps.label($U(), P, Id), !is_box(Id).
+
+.init seq = Order<Unit, Position>
+seq.elem($U(), P) :- seq_cell(P).
+seq.before($U(), P, Q) :-
+    seq_cell(P), seq_cell(Q), params.seq_dir(D), nearer(D, P, Q).
+
+// The boxes a slot names.
+.decl names(l: Position, id: Ident)
+names(L, Id) :- seq_cell(L), in(L, Col), label_color(Id, Col).
+
+// --- the walk ---
+
+// A box a slot may stand on.
+.decl cand(l: Position, id: Ident, ch: Choice)
+
+// A box the walk stands on at L, having come from the sequence's start.
+.decl at(l: Position, id: Ident, ch: Choice)
+at(L, Id, Ch) :-
+    cand(L, Id, Ch),
+    ( seq.first($U(), L)                                            // the sequence starts here
+    ; seq.next($U(), L2, L), at(L2, Id2, Ch), joined(Id2, Id)       // a corridor arrives
+    ).
+
+// --- output ---
+
+.decl fill(p: Position, col: Color, ch: Choice)
+fill(P, Col, Ch) :-
+    at(L, Id, Ch), seq.next($U(), L, L2), at(L2, Id2, Ch),   // consecutive stops
+    joined(Id, Id2), corridor(Id, Id2, P),                   // the clear corridor between them
+    label_color(Id, Col).                                    // painted by the box it leaves
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- fill(P, Col, Ch).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !fill(P, _, Ch).
+
+// --- Route ---
+
+// The rest of the sequence is still walkable from the box.
+cand(L, Id, $Route()) :-
+    names(L, Id),
+    ( seq.last($U(), L)                                                   // the sequence ends here
+    ; seq.next($U(), L, L2), cand(L2, Id2, $Route()), joined(Id, Id2)     // a corridor carries on
+    ).
+
+// --- Walk ---
+
+// Any box the slot names.
+cand(L, Id, $Walk()) :- names(L, Id).

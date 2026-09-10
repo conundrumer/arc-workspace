@@ -89,8 +89,6 @@ out(P, Col, $SliceMap()) :-
     cell_split(P, Col, _, P_across),
     !matched_slice(P_across).
 
-// --- determination ---
-
 .comp Determine {
     // Train cells in slice coordinates; the test input is held out.
     .decl in_slice(e: Example, p_across: Position, p_inner: Position, col: Color)

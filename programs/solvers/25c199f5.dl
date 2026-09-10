@@ -1,0 +1,127 @@
+// 25c199f5
+// draft
+// concept: decompose move
+// Dividers cut the input into panels, each holding one shape on
+// background. The shapes pile up line by line in one panel-sized frame,
+// settling against the edge of params.order_corner: the panel nearest that
+// corner stacks first, and each line keeps the cells it had in its panel.
+//
+// out's choice column = [d, l]:
+//
+//   d (find the panels):
+//     $Count()  — by tile count
+//     $Size() — by tile size
+//   l (which lines a panel contributes):
+//     $Rows()  — the lines it inks, so a blank line inside a shape closes up
+//     $Bands() — every line the shape spans, blank ones included
+
+#include "../lib.dl"
+
+.type DecChoice = Count {} | Size {}
+.type Lines     = Rows {} | Bands {}
+.type Choice    = [d: DecChoice, l: Lines]
+
+.comp Params {
+    // --- shared ---
+    .decl bg(col: Color) bg(7).
+
+    // The panels lie along order_axis, one divider between them.
+    .decl divide_gap(g: number) divide_gap(1).
+
+    // order_corner sets where the stack builds from: panels in order from
+    // its edge along order_axis, lines settling against its edge across.
+    .decl order_corner(d: DiagDir) order_corner(DIAG_BL).
+    .decl order_axis(a: Axis) order_axis(AXIS_H).
+
+    // --- Count ---
+    .decl divisor(n: number) divisor(3).
+
+    // --- Size ---
+    .decl panel_size(k: number) panel_size(5).
+}
+
+.init params = Params
+
+// The axis content stacks along, and the edge it stacks toward.
+.decl stack_axis(a: Axis)
+stack_axis(A_st) :- params.order_axis(A), perp(A, A_st).
+
+.decl stack_dir(d: Dir)
+stack_dir(D) :- params.order_corner(Diag), stack_axis(A_st), dir_of(Diag, A_st, D).
+
+// --- decompose cases: the panel a cell sits in ---
+
+.decl dec_choice(dc: DecChoice)
+dec_choice($Count()).
+dec_choice($Size()).
+
+.decl panel(p: Position, p_tile: Position, p_intile: Position, dc: DecChoice)
+panel(P, P_tile, P_intile, $Count()) :-
+    in(P, _),                                                       // input cell
+    params.order_axis(A), params.divisor(N), params.divide_gap(G),  // panel layout
+    divide_slab(P, A, N, G, P_tile, P_intile).
+panel(P, P_tile, P_intile, $Size()) :-
+    in(P, _),                                                           // input cell
+    params.order_axis(A), params.panel_size(K), params.divide_gap(G),   // panel layout
+    divide_by_size_slab(P, A, K, G, P_tile, P_intile).
+
+// An input cell, with its panel and its line glued into one slab position,
+// and its position within the panel.
+.decl cell_slab(p_slab: Position, p_intile: Position, col: Color, dc: DecChoice)
+cell_slab(P_slab, P_intile, Col, Dc) :-
+    in(P, Col), panel(P, P_tile, P_intile, Dc),               // cell and its panel
+    stack_axis(A_st), split(P_intile, A_st, Along, _),        // its line in the panel
+    compose(P_tile, Along, P_slab).                           // panel and line together
+
+.decl ink_slab(p_slab: Position, dc: DecChoice)
+ink_slab(P_slab, Dc) :- cell_slab(P_slab, _, Col, Dc), !params.bg(Col).
+
+// The output frame is one panel.
+.decl out_cell(p_grid_out: Position, dc: DecChoice)
+out_cell(P_intile, Dc) :- cell_slab(_, P_intile, _, Dc).
+
+// --- stack ---
+
+// The slabs the stack is built from.
+.decl stacked(p_slab: Position, ch: Choice)
+
+// --- Rows ---
+
+stacked(P_slab, [Dc, $Rows()]) :- ink_slab(P_slab, Dc).
+
+// --- Bands ---
+
+.init span = Between<DecChoice>
+span.axis(Dc, A_st) :- dec_choice(Dc), stack_axis(A_st).
+span.cell(Dc, P_slab) :- cell_slab(P_slab, _, _, Dc).
+span.mark(Dc, P_slab) :- ink_slab(P_slab, Dc).
+
+stacked(P_slab, [Dc, $Bands()]) :- span.between(Dc, P_slab).
+
+// --- output ---
+
+// Slabs stack in order, so a slab's rank is its distance from the stacking
+// edge: panel first, then line, both counted from params.order_corner.
+.init order = LexOrder<Choice>
+order.corner(Ch, Diag) :- stacked(_, Ch), params.order_corner(Diag).
+order.axis(Ch, A) :- stacked(_, Ch), params.order_axis(A).
+order.cell(Ch, P_slab) :- stacked(P_slab, Ch).
+
+// A stacked slab carries its whole line, background included.
+.decl moved(p_grid_out: Position, col: Color, ch: Choice)
+moved(P_grid_out, Col, [Dc, L]) :-
+    cell_slab(P_slab, P_intile, Col, Dc),                            // a cell of the line
+    order.rank([Dc, L], P_slab, R),                                  // its slab's place in the stack
+    out_cell(P_grid_out, Dc), stack_dir(D), dist(P_grid_out, D, R),  // that far from the edge
+    stack_axis(A_st), same_line(A_st, P_intile, P_grid_out).         // keeping its across position
+
+.decl lines_choice(l: Lines)
+lines_choice($Rows()).
+lines_choice($Bands()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, [Dc, L]) :-
+    out_cell(P, Dc), lines_choice(L),
+    ( moved(P, Col, [Dc, L])                        // a line landed here
+    ; !moved(P, _, [Dc, L]), params.bg(Col)         // the stack falls short of this line
+    ).

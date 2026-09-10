@@ -4,21 +4,24 @@
 // Output is the per-cell overlay: each panel's ink passes through.
 //
 // out's choice column (decompose):
-//   $Tile() — pre-tabulated in the parameters via tile_pos
-//   $Div()  — derived in the program via the divide primitive
+//   $Table() — pre-tabulated in the parameters via tile_pos
+//   $Count() — derived in the program, by tile count
+//   $Size()  — derived in the program, by tile size
 
 #include "../lib.dl"
 
-.type Choice = Tile {} | Div {}
+.type Choice = Table {} | Count {} | Size {}
 
 .comp Params {
     .init helpers = ParamsHelpers
 
-    // --- Tile decompose data ---
-    .decl arr_dim(a: Axis, n: number)
-    arr_dim(AXIS_V, 2). arr_dim(AXIS_H, 1).
+    // --- Table, Size decompose data ---
     .decl tile_dim(a: Axis, n: number)
     tile_dim(AXIS_V, 5). tile_dim(AXIS_H, 11).
+
+    // --- Table decompose data ---
+    .decl arr_dim(a: Axis, n: number)
+    arr_dim(AXIS_V, 2). arr_dim(AXIS_H, 1).
     .decl gap(g: number) gap(1).
     .decl tile_decompose(p: Position, p_outer: Position, p_inner: Position)
     tile_decompose(P_grid, P_tile, P_intile) :-
@@ -26,10 +29,11 @@
         tile_dim(AXIS_V, Tv), tile_dim(AXIS_H, Th), gap(G),
         helpers.tile_pos([Av, Ah], [Tv, Th], [G, 0], P_grid, P_tile, P_intile).
 
-    // --- Div decompose data ---
+    // --- Count decompose data ---
     .decl divisor(n: number)
     divisor(2).
 
+    // --- Count, Size decompose data ---
     .decl divide_axis(a: Axis)
     divide_axis(AXIS_V).
 
@@ -45,26 +49,27 @@
 // --- Decompose cases ---
 
 .decl decompose(p: Position, p_outer: Position, p_inner: Position, dc: Choice)
-decompose(P_grid, P_tile, P_intile, $Tile()) :- params.tile_decompose(P_grid, P_tile, P_intile).
-decompose(P_grid, P_tile, P_intile, $Div()) :-
+decompose(P_grid, P_tile, P_intile, $Table()) :- params.tile_decompose(P_grid, P_tile, P_intile).
+decompose(P_grid, P_tile, P_intile, $Count()) :-
     in(P_grid, _),                                                      // input position
     params.divide_axis(A), params.divisor(N), params.divide_gap(G),     // params
     divide_slab(P_grid, A, N, G, P_tile, P_intile).
+decompose(P_grid, P_tile, P_intile, $Size()) :-
+    in(P_grid, _),                                                      // input position
+    params.divide_axis(A), params.tile_dim(A, K), params.divide_gap(G), // params
+    divide_by_size_slab(P_grid, A, K, G, P_tile, P_intile).
 
-// --- Overlay program ---
+// --- Overlay ---
 
-.decl filled(o: Position, dc: Choice)
-filled(P_grid_out, Dc) :-
-    in(P_grid_in, Col), !params.bg(Col),            // non-bg input cell
-    decompose(P_grid_in, _, P_grid_out, Dc).        // decomposes to output cell
+.decl ink(p: Position, col: Color, dc: Choice)
+ink(P_frame, Col, Dc) :-
+    in(P_grid, Col), !params.bg(Col),               // ink cell
+    decompose(P_grid, _, P_frame, Dc).              // the frame cell it stacks onto
 
 // --- Output ---
 
 .decl out(p: Position, col: Color, c: Choice)
-out(P_grid_out, Col, Dc) :-
-    in(P_grid_in, Col), !params.bg(Col),                 // ink passes through
-    decompose(P_grid_in, _, P_grid_out, Dc).
-out(P_grid_out, Col, Dc) :-
-    decompose(_, _, P_grid_out, Dc),                // output cell
-    !filled(P_grid_out, Dc),                        // no contribution
+out(P, Col, Dc) :- ink(P, Col, Dc).
+out(P, Col, Dc) :-
+    decompose(_, _, P, Dc), !ink(P, _, Dc),         // frame cell with no ink
     params.bg(Col).

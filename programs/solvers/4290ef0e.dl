@@ -1,0 +1,135 @@
+// 4290ef0e
+// draft
+// concept: objects overlay repair span rank
+// Each non-bg color draws one square ring: an arm of K cells runs from every
+// corner along both edges it meets, and a side the arms do not fill is hollow
+// in the middle. The
+// rings differ in size, and the grid edge cuts some of them off — a cut ring's
+// size comes back by reflecting its cells through its center, the middle of a
+// hollow side. The output is the widest ring's frame, with every ring nested
+// concentric in it. Choice says which depth a ring lands on:
+//
+//   $Size() — the depth whose frame is as wide as the ring.
+//   $Rank() — one depth in from the next wider ring.
+
+#include "../lib.dl"
+
+.type Choice = Size {} | Rank {}
+
+.type LineKey = [col: Color, a: Axis, l: Position]
+.type RunKey = [line: LineKey, id: Ident]
+
+.comp Params {}
+
+.init params = Params
+
+// The field the rings sit on.
+.init field = Mode<Unit, Color, Position>
+field.item($U(), Col, P) :- in(P, Col).
+
+.decl bg(col: Color)
+bg(Col) :- field.mode($U(), Col).
+
+// One ring per color.
+.decl ring(col: Color, p: Position)
+ring(Col, P) :- in(P, Col), !bg(Col).
+
+.decl line_cell(key: LineKey, p: Position)
+line_cell([Col, A, L], P) :- ring(Col, P), axis_elem(A), split(P, A, _, L).
+
+// --- arm length ---
+
+// The arms are the runs a line cuts the ring into.
+.init run = Components<LineKey>
+run.node(Ky, P) :- line_cell(Ky, P).
+
+.init run_size = Tally<RunKey, Position>
+run_size.item([Ky, Id], P) :- run.label(Ky, P, Id).
+
+.init arm = Extremes<Color>
+arm.cand(Col, N) :- run_size.tally([[Col, _, _], _], N).
+
+// --- ring size ---
+
+// A line crosses the ring's two arms, with a hollow side between them.
+.init side = Between<LineKey>
+side.axis([Col, A, L], A) :- line_cell([Col, A, L], _).
+side.cell(Ky, P) :- line_cell(Ky, _), in(P, _).
+side.mark(Ky, P) :- line_cell(Ky, P).
+
+// The ring's center on that line — the middle cell of the hollow.
+.init gap = BoxFrame<LineKey>
+gap.cell(Ky, P) :- side.between(Ky, P), !line_cell(Ky, P).
+
+.decl center(key: LineKey, p: Position)
+center([Col, A, L], M) :-
+    gap.inner([Col, A, L], M, I),            // a hollow cell, viewed from its box
+    axis_of(D, A), dist_pair(I, D, K, K).    // centered along the line
+
+// The ring reaches as far past its center as its cells reach short of it.
+.decl mirror(key: LineKey, p: Position, q: Position)
+mirror(Ky, P, Q) :-
+    center(Ky, M), line_cell(Ky, P),
+    displacement(P, M, V), compose(M, V, Q).
+
+.init reach = Bbox<LineKey>
+reach.cell(Ky, P) :- mirror(Ky, P, _).
+reach.cell(Ky, Q) :- mirror(Ky, _, Q).
+
+.init ring_box = Bbox<Color>
+ring_box.cell(Col, P) :- ring(Col, P).
+
+// A ring is at least as wide as the cells it shows, and at least as wide as
+// any line's mirrored reach.
+.init size = Extremes<Color>
+size.cand(Col, N) :- ring_box.extent(Col, _, N).
+size.cand(Col, N) :- reach.extent([Col, A, _], A, N).
+
+.decl ring_size(col: Color, n: number)
+ring_size(Col, N) :- size.high(Col, N).
+
+// --- the nest ---
+
+// The canvas is the widest ring's frame.
+.init widest = Extremes<Unit>
+widest.cand($U(), N) :- ring_size(_, N).
+
+.init canvas = Frame2D<Unit>
+canvas.extent($U(), A, N) :- widest.high($U(), N), axis_elem(A).
+
+// The canvas peels into concentric frames, one per depth.
+.init peel = Rim<Unit>
+peel.cell($U(), P) :- canvas.cell($U(), P).
+
+.init nest = BoxFrame<number>
+nest.cell(R, P) :- peel.depth($U(), P, R).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Size()). impl_choice($Rank()).
+
+// The ring each depth of the nest carries.
+.decl depth_ring(r: number, col: Color, ch: Choice)
+
+// --- Size ---
+
+depth_ring(R, Col, $Size()) :- nest.extent(R, _, N), ring_size(Col, N).
+
+// --- Rank ---
+
+.init order = Ordinal<Unit>
+order.idx_set($U(), N) :- ring_size(_, N).
+
+depth_ring(R, Col, $Rank()) :- ring_size(Col, N), order.rank_desc($U(), N, R).
+
+// --- the ring on its depth ---
+
+.decl paint(p: Position, col: Color, ch: Choice)
+paint(P, Col, Ch) :-
+    nest.inner(R, P, Q), depth_ring(R, Col, Ch),  // canvas cell in its ring's frame
+    dist(Q, D, 0),                                // on an edge of it
+    perp_dir(D, D2), dist(Q, D2, K),              // within an arm of the corner
+    arm.high(Col, K_arm), K < K_arm.              // across
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- paint(P, Col, Ch).
+out(P, Col, Ch) :- canvas.cell($U(), P), impl_choice(Ch), !paint(P, _, Ch), bg(Col).

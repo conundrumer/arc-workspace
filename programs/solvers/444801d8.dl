@@ -1,0 +1,69 @@
+// 444801d8
+// draft
+// concept: objects markers border
+// A box of params.wall cells holds a seed cell of another color, and one side
+// of its wall is broken. The seed's color paints the box's non-wall cells
+// and the line one step beyond the broken side. Two models of that side:
+//
+//   $Dir — params.open_dir names it.
+//   $Gap — the side whose wall line is broken.
+//
+// Every box here breaks on the top, so the models agree.
+
+#include "../lib.dl"
+
+.type Choice = Dir {} | Gap {}
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    .decl wall(col: Color) wall(1).
+
+    // --- $Dir ---
+    .decl open_dir(d: Dir) open_dir(DIR_T).
+}
+
+.init params = Params
+
+// A box is a connected run of wall cells.
+.init walls = Components<Unit>
+walls.node($U(), P) :- in(P, Col), params.wall(Col).
+
+.decl box_id(id: Ident)
+box_id(Id) :- walls.label($U(), _, Id).
+
+.init box = Bbox<Ident>
+box.cell(Id, P) :- walls.label($U(), P, Id).
+box.grid(Id, P) :- box_id(Id), in(P, _).
+
+// The cell in a box that is neither wall nor bg gives the box its color.
+.decl seed(id: Ident, col: Color)
+seed(Id, Col) :- box.inside(Id, P), in(P, Col), !params.wall(Col), !params.bg(Col).
+
+.init bcells = BoxCells<Ident>
+bcells.box(Id, B) :- box.margin(Id, B).
+bcells.cell(Id, P) :- box.grid(Id, P).
+
+// The side the fill escapes from.
+.decl open_side(id: Ident, d: Dir, ch: Choice)
+
+// --- $Dir ---
+open_side(Id, D, $Dir()) :- box_id(Id), params.open_dir(D).
+
+// --- $Gap ---
+open_side(Id, D, $Gap()) :- bcells.on_edge(Id, P, D), in(P, Col), !params.wall(Col).
+
+// --- shared ---
+
+.decl paint(p: Position, col: Color, ch: Choice)
+paint(P, Col, Ch) :-
+    open_side(Id, D, Ch), seed(Id, Col),              // the box's fill color
+    ( box.inside(Id, P)                               // inside the box
+    ; bcells.on_edge(Id, Q, D), neighbor(Q, D, P) ),  // the line one step beyond
+    in(P, C), !params.wall(C).                        // the wall keeps its color
+
+.decl impl_choice(ch: Choice)
+impl_choice($Dir()). impl_choice($Gap()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- paint(P, Col, Ch).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !paint(P, _, Ch).

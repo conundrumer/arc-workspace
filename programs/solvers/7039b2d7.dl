@@ -1,0 +1,35 @@
+// 7039b2d7
+// draft
+// family: 1190e5a7
+// Every region has the same color, and a divider may lie on the grid edge
+// (train2 input col 0).
+
+#include "../lib.dl"
+
+.type Line = [a: Axis, p_line: Position]
+
+.comp Params {}
+
+.init params = Params
+
+.init line_color = Unanimous<Line, Color>
+line_color.item([A, P_line], Col) :- in(P, Col), axis_elem(A), split(P, A, P_line, _).
+
+// A band is a run of adjacent non-divider lines — one row or column of
+// regions. A divider color is one that fills a whole line.
+.init bands = Components<Axis>
+bands.node(A, P_line) :- line_color.item([A, P_line], Col), !line_color.value(_, Col).
+
+// One output line per band. Band line sets are disjoint runs, as OrderFrame
+// assumes.
+.init layout = OrderFrame<Axis, Ident>
+layout.axis(A, A) :- axis_elem(A).
+layout.member(A, B, P_line) :- bands.label(A, P_line, B).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P_in, Col),                                               // an input cell
+    axis_elem(A), perp(A, A2), split(P_in, A, P_line, P_line2),  // its two lines
+    bands.label(A, P_line, B), bands.label(A2, P_line2, B2),     // its band on each axis; divider cells have none
+    layout.pos(A, B, P_pos), layout.pos(A2, B2, P_pos2),         // the bands' output lines
+    compose(P_pos, P_pos2, P).                                   // where they cross

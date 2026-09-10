@@ -1,0 +1,149 @@
+// 34cfa167
+// draft
+// concept: objects wallpaper cast span
+// Two blocks of one color sit at opposite corners of a rectangle. One of
+// them carries two arms: marked lines running from its two sides toward
+// the other block. The output draws the rectangle: a block at each
+// corner, and along each side a rail that repeats the arm's marks up to
+// the next block, with a plain line one cell outside the rail in the
+// color of the mark against the block. Cases, for the distance at which
+// the marks repeat (the pairs do not separate them):
+//
+//   $Given  — params.period, the task's repeat distance.
+//   $Extend — one cell past the arm's last mark.
+
+#include "../lib.dl"
+
+.type Choice = Given {} | Extend {}
+
+.comp Params {
+    // The corner blocks' color.
+    .decl block_color(col: Color) block_color(1).
+
+    // The corner the arms run toward; the other block sits there.
+    .decl arm_corner(d: DiagDir) arm_corner(DIAG_BR).
+
+    // --- $Given ---
+    .decl period(k: number) period(4).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Given()). impl_choice($Extend()).
+
+// The ground the figure sits on.
+.init bg_mode = Mode<Unit, Color, Position>
+bg_mode.item($U(), Col, P) :- in(P, Col).
+
+.decl bg(col: Color)
+bg(Col) :- bg_mode.mode($U(), Col).
+
+// --- the two blocks ---
+
+.init blocks = Components<Unit>
+blocks.node($U(), P) :- in(P, Col), params.block_color(Col).
+
+.init box = Bbox<Ident>
+box.cell(Id, P) :- blocks.label($U(), P, Id).
+
+// The block at the arms' corner stands alone; the other carries the arms.
+.init from_corner = ArgExtremes<Unit, Ident>
+from_corner.cand($U(), Id, K) :-
+    box.margin(Id, P), params.arm_corner(Diag), corner_dist(P, Diag, K).
+
+.decl template(id: Ident)
+template(Id) :- from_corner.high($U(), Id, _).
+
+.decl standalone(id: Ident)
+standalone(Id) :- from_corner.low($U(), Id, _).
+
+// The shift carrying the template block onto the standalone one.
+.decl shift(v: Shift)
+shift(V) :-
+    template(T), box.margin(T, PT),
+    standalone(S), box.margin(S, PS), displacement(PT, PS, V).
+
+// The shift's axis parts, each beside no shift at all: the four corner
+// blocks are the template block under every combination of the two.
+.decl axis_offset(a: Axis, v: Shift)
+axis_offset(A, ORIGIN) :- axis_elem(A).
+axis_offset(A, V_axis) :- shift(V), axis_elem(A), split(V, A, V_axis, _).
+
+.decl corner_delta(v: Shift)
+corner_delta(V) :- axis_offset(A, V1), perp(A, A2), axis_offset(A2, V2), compose(V1, V2, V).
+
+// --- the arms ---
+
+// The corner's two dirs: one arm runs along each, the other across it.
+.decl arm_perp(d: Dir, d2: Dir)
+arm_perp(D, D2) :- params.arm_corner(Diag), diag_dirs(Diag, _, D, D2).
+
+.decl arm_dir(d: Dir)
+arm_dir(D) :- arm_perp(D, _).
+
+// Each arm casts from the template block's side, so a mark's distance is
+// read off the block's edge.
+.init cast = Ray<Dir>
+cast.dir(D, D) :- arm_dir(D).
+cast.cell(D, P) :- arm_dir(D), in(P, _).
+cast.mark(D, P) :- arm_dir(D), template(T), box.edge_cell(T, P, D).
+
+.decl arm_mark(d: Dir, p: Position, k: number, col: Color)
+arm_mark(D, P, K, Col) :- cast.ray(D, P, D, K, _), K != 0, in(P, Col), !bg(Col).
+
+.decl arm(d: Dir, k: number, col: Color)
+arm(D, K, Col) :- arm_mark(D, _, K, Col).
+
+.init span = Extremes<Dir>
+span.cand(D, K) :- arm(D, K, _).
+
+.decl period(d: Dir, k: number, ch: Choice)
+period(D, K, $Given()) :- arm_dir(D), params.period(K).
+period(D, K, $Extend()) :-
+    arm_mark(D, P, K_last, _), span.high(D, K_last),    // the arm's last mark
+    neighbor(P, D, Q), cast.ray(D, Q, D, K, _).         // one cell on
+
+// --- the rails ---
+
+// The run between the blocks: the cast past the template block's side,
+// short of the standalone block.
+.decl run(d: Dir, p: Position, k: number, src: Position)
+run(D, Q, K, Src) :-
+    cast.ray(D, Q, D, K, Src), K != 0,                        // past the block
+    opposite(D, D2), standalone(S), box.margin(S, P_box),     // the block ahead
+    nearer(D2, Q, P_box).                                     // short of it
+
+.decl rail(d: Dir, p: Position, col: Color, ch: Choice)
+rail(D, Q, Col, Ch) :-
+    run(D, Q, K, _), period(D, N, Ch),    // the run, cut into periods
+    stride(K, N, 0, _, R), arm(D, R, Col).
+
+// The two rails on axis D: the template's side, and the standalone's side
+// across from it. Each faces its plain line outward.
+.decl side(d: Dir, v: Shift, d_out: Dir)
+side(D, ORIGIN, D_out) :- arm_perp(D, D2), opposite(D2, D_out).
+side(D, V_axis, D2) :- arm_perp(D, D2), axis_of(D2, A2), shift(V), split(V, A2, V_axis, _).
+
+.decl paint(p: Position, col: Color, ch: Choice)
+
+// A corner block.
+paint(P_grid, Col, Ch) :-
+    blocks.label($U(), P, Id), template(Id), params.block_color(Col),    // a template block cell
+    corner_delta(V), compose(P, V, P_grid), impl_choice(Ch).             // at each corner
+
+// A rail cell.
+paint(P_grid, Col, Ch) :-
+    rail(D, Q, Col, Ch),                     // the rail's color there
+    side(D, V, _), compose(Q, V, P_grid).    // in each of the axis's two rails
+
+// The plain line one cell outside a rail.
+paint(P_grid, Col, Ch) :-
+    span.low(D, K_near), arm(D, K_near, Col), impl_choice(Ch),      // the mark against the block
+    template(T), run(D, Q, _, Src), box.edge_cell(T, Src, D_out),   // the rail's outer line
+    side(D, V, D_out), compose(Q, V, P_rail),                       // in each rail
+    neighbor(P_rail, D_out, P_grid).                                // one cell out
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- paint(P, Col, Ch), in(P, _).
+out(P, Col, Ch) :- in(P, _), bg(Col), impl_choice(Ch), !paint(P, _, Ch).

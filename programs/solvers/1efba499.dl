@@ -1,0 +1,73 @@
+// 1efba499
+// draft
+// concept: lines move
+// The grid's dominant color forms a wall, thin along one axis. Loose cells of
+// other colors sit on either side of it. Along a line that crosses the wall, a
+// loose cell on one side and a loose cell on the other trade sides: each ends
+// up against the wall's far face. A line whose loose cells all sit on one side
+// keeps them where they are.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+}
+
+.init params = Params
+
+// --- the wall ---
+
+.init dom = Mode<Unit, Color, Position>
+dom.item($U(), Col, P) :- in(P, Col), !params.bg(Col).
+
+.decl wall_col(col: Color)
+wall_col(Col) :- dom.mode($U(), Col).
+
+.decl wall(p: Position)
+wall(P) :- in(P, Col), wall_col(Col).
+
+.init wbox = Bbox<Unit>
+wbox.cell($U(), P) :- wall(P).
+
+// The crossing runs along the axis the wall is thin on.
+.decl cross_axis(a: Axis)
+cross_axis(A) :- wbox.extents($U(), A, N1, N2), N1 < N2.
+
+.decl cross_dir(d: Dir)
+cross_dir(D) :- cross_axis(A), axis_of(D, A).
+
+.init reach = Ray<Unit>
+reach.dir($U(), D) :- cross_dir(D).
+reach.cell($U(), P) :- in(P, _).
+reach.mark($U(), P) :- wall(P).
+
+// At the wall or past it toward D, in P's own line.
+.decl beyond(p: Position, d: Dir)
+beyond(P, D) :- cross_dir(D), reach.ray($U(), P, D, _, _).
+
+// The wall's far face seen from the D side: backed by the wall toward D,
+// with none of the wall at it or beyond.
+.decl touch(p: Position, d: Dir)
+touch(P, D) :- in(P, _), cross_dir(D), neighbor(P, D, Q), wall(Q), !beyond(P, D).
+
+// --- the loose cells ---
+
+.decl loose(p: Position, col: Color)
+loose(P, Col) :- in(P, Col), !params.bg(Col), !wall_col(Col).
+
+.decl crossing(p: Position, col: Color, d: Dir)
+crossing(P, Col, D) :-
+    loose(P, Col), beyond(P, D),                    // a loose cell on the D side
+    opposite(D, D2), loose(P2, _), beyond(P2, D2),  // a counterpart across the wall
+    cross_axis(A), same_line(A, P, P2).             // in the same crossing line
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- wall(P), wall_col(Col).
+ink(P_land, Col) :-
+    crossing(P, Col, D), cross_axis(A),          // a loose cell crossing from side D
+    same_line(A, P, P_land), touch(P_land, D).   // lands on the wall's far face
+ink(P, Col) :- loose(P, Col), !crossing(P, _, _).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- ink(P, Col).
+out(P, Col) :- in(P, _), !ink(P, _), params.bg(Col).

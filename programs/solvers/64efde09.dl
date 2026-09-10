@@ -1,0 +1,121 @@
+// 64efde09
+// draft
+// concept: objects markers d4 cast
+// Congruent 2-wide bars sit on a background in different D4 poses, with a
+// few single cells among them. A single cell is the tip of a beam that one
+// bar casts: an open lane runs from it back to a cell of that bar, and the
+// tip fixes the beam's color, its source cell in the bar, and its heading.
+// The D4 element carrying one bar onto another carries a source cell and a
+// heading with it, so every bar casts one beam per single cell. A beam
+// colors the background cells of the line running out of its source.
+//
+// The cases differ in what tells a beam's heading from its reverse:
+//   $Edge — the tip lies on the grid edge the beam runs to.
+//   $Lane — the beam leaves the bar by the lane where one color covers the
+//           most cells.
+
+#include "../lib.dl"
+
+.type Choice = Edge {} | Lane {}
+
+.comp Params {
+    .decl bg(col: Color) bg(8).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Edge()). impl_choice($Lane()).
+
+// --- objects ---
+
+.init obj = Components<Unit>
+obj.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+.decl part(id: Ident, p: Position, col: Color)
+part(Id, P, Col) :- obj.label($U(), P, Id), in(P, Col).
+
+// A bar: an object of more than one cell.
+.decl bar(id: Ident)
+bar(Id) :- part(Id, P, _), part(Id, Q, _), P != Q.
+
+.decl tip(p: Position, col: Color)
+tip(P, Col) :- part(Id, P, Col), !bar(Id).
+
+// --- congruence ---
+
+.init box = BoxFrame<Ident>
+box.cell(Id, P) :- part(Id, P, _), bar(Id).
+
+// A bar's cell seen from its own box.
+.decl bar_inner(id: Ident, p_inner: Position, col: Color)
+bar_inner(Id, I, Col) :- box.inner(Id, P, I), part(Id, P, Col).
+
+// Each ordered pair of bars, both read in their own box frames.
+.type Pair = [a: Ident, b: Ident]
+.init cong = D4Map<Pair, Color>
+cong.src([A, B], I, Col) :- bar_inner(A, I, Col), bar(B).
+cong.dst([A, B], I, Col) :- bar_inner(B, I, Col), bar(A).
+
+// --- the lane back from a tip ---
+
+// A tip casts along its own row and column; the lane it came down is the one
+// that reaches a bar.
+.init back = Ray<Unit>
+back.dir($U(), D) :- dir_elem(D).
+back.mark($U(), P) :- tip(P, _).
+back.blocked($U(), P) :- in(P, Col), !params.bg(Col).
+
+// The bar cell a tip's lane first reaches, with the heading from it toward
+// the tip.
+.decl reach(p_tip: Position, col: Color, id: Ident, p: Position, d: Dir)
+reach(P_tip, Col, M, S, D) :-
+    tip(P_tip, Col), back.stop($U(), S, D_back, _, P_tip),    // the first cell a lane back hits
+    box.cell(M, S), opposite(D_back, D).                      // a bar cell; the beam heads the other way
+
+// The bar cell a tip's beam issues from, with the heading it runs in.
+.decl source(id: Ident, p: Position, d: Dir, col: Color, ch: Choice)
+
+// --- Edge ---
+
+source(M, S, D, Col, $Edge()) :- reach(P_tip, Col, M, S, D), dist(P_tip, D, 0).  // the tip on the far edge
+
+// --- Lane ---
+
+// A bar's two lanes run along its long axis, one at each edge of its box on
+// the short one.
+.type Lane = [id: Ident, d: Dir, col: Color]
+.init lane_color = Tally<Lane, Position>
+lane_color.item([Id, D, Col], I) :-
+    bar_inner(Id, I, Col),
+    box.extents(Id, A, N1, N2), N1 < N2, axis_of(D, A),    // the short axis
+    dist(I, D, 0).                                         // the lane at its D edge
+
+// The way out: the lane where one color covers the most cells.
+.init exit = ArgExtremes<Ident, Dir>
+exit.cand(Id, D, N) :- lane_color.tally([Id, D, _], N).
+
+source(M, S, D, Col, $Lane()) :- reach(_, Col, M, S, D), exit.high(M, D, _).  // out by the bar's exit
+
+// --- the beams drawn ---
+
+// Every bar casts every tip's beam.
+.decl emit(p: Position, d: Dir, col: Color, ch: Choice)
+emit(S2, D2, Col, Ch) :-
+    source(M, S, D, Col, Ch), box.inner(M, S, I),  // a beam's source, in its bar's box
+    cong.map([M, M2], G),                          // an element carrying that bar onto another
+    apply(G, I, I2), box.inner(M2, S2, I2),        // the source cell carried over
+    apply_dir(G, D, D2).                           // the heading with it
+
+.type Beam = [p: Position, ch: Choice]
+.init beam = Ray<Beam>
+beam.dir([S, Ch], D) :- emit(S, D, _, Ch).
+beam.mark([S, Ch], S) :- emit(S, _, _, Ch).
+beam.cell([S, Ch], P) :- emit(S, _, _, Ch), in(P, Col), params.bg(Col).
+
+.decl paint(p: Position, col: Color, ch: Choice)
+paint(P, Col, Ch) :- emit(S, _, Col, Ch), beam.ray([S, Ch], P, _, _, _).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- paint(P, Col, Ch).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(P, _, Ch).

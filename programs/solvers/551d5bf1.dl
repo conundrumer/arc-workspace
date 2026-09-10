@@ -1,0 +1,43 @@
+// 551d5bf1
+// draft
+// concept: objects border cast
+// Rectangle outlines are drawn on a blank grid, some with border cells
+// missing. The output paints the inside of every rectangle, and each missing
+// border cell lets the paint leak out along its line, away from the
+// rectangle, to the grid edge.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl outline(col: Color) outline(1).
+    .decl ink(col: Color) ink(8).
+}
+
+.init params = Params
+
+.init rects = Components<Unit>
+rects.node($U(), P) :- in(P, Col), params.outline(Col).
+
+.init box = Bbox<Ident>
+box.cell(Id, P) :- rects.label($U(), P, Id).
+
+.init bcells = BoxCells<Ident>
+bcells.box(Id, M) :- box.margin(Id, M).
+bcells.cell(Id, P) :- box.cell(Id, _), in(P, _).
+
+// A gap — a border cell the rectangle does not draw — casts away from the
+// rectangle. The key is the side the gap breaks.
+.init leak = Ray<Dir>
+leak.dir(D, D) :- dir_elem(D).
+leak.cell(D, P) :- dir_elem(D), in(P, _).
+leak.mark(D, P) :- bcells.on_edge(Id, P, D), !box.cell(Id, P).
+
+.decl paint(p: Position)
+paint(P) :- bcells.hole(_, P).          // inside a rectangle
+paint(P) :- leak.ray(D, P, D, _, _).    // out through a gap
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, Col0),
+    ( paint(P), params.ink(Col)   // painted cell
+    ; !paint(P), Col = Col0 ).    // everything else stands

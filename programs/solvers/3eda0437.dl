@@ -1,0 +1,135 @@
+// 3eda0437
+// draft
+// concept: count rank
+// The input is ink scattered on background. A hole box is a rectangle of pure
+// background; the box with the highest score is painted params.paint, and every
+// other cell is kept. Choice is the score:
+//
+//   $Area()  — the cells the box holds, over the boxes that are regions.
+//              A box one cell thick is a line, and a line is not a region.
+//   $Block() — the squares of side params.block the box holds. A line holds
+//              none, so this score needs no region test.
+
+#include "../lib.dl"
+
+.type Choice = Area {} | Block {}
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    .decl paint(col: Color) paint(6).
+
+    // --- Block ---
+    // The block's side.
+    .decl block(k: number) block(2).
+}
+
+.init params = Params
+
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)  // input
+
+    .decl hole(key: Key, p: Position)
+    hole(Ky, P) :- cell(Ky, P, Col), params.bg(Col).
+
+    // Every box two holes span.
+    .type Corners = [key: Key, p: Position, q: Position]
+
+    .init span = Bbox<Corners>
+    span.cell([Ky, P, Q], P) :- hole(Ky, P), hole(Ky, Q).
+    span.cell([Ky, P, Q], Q) :- hole(Ky, P), hole(Ky, Q).
+
+    .decl box(key: Key, b: Position)
+    box(Ky, B) :- span.margin([Ky, _, _], B).
+
+    .decl box_ink(key: Key, b: Position)
+    box_ink(Ky, B) :- box(Ky, B), cell(Ky, P, _), !hole(Ky, P), geq(P, B).
+
+    // A box of pure background, and the cells it holds.
+    .decl hole_box(key: Key, b: Position)
+    hole_box(Ky, B) :- box(Ky, B), !box_ink(Ky, B).
+
+    .decl hole_cell(key: Key, b: Position, p: Position)
+    hole_cell(Ky, B, P) :- hole_box(Ky, B), hole(Ky, P), geq(P, B).
+
+    // A hole box of side K.
+    .decl square(key: Key, b: Position, k: number)
+    square(Ky, B, K) :-
+        hole_box(Ky, B), span.margin([Ky, P, Q], B),
+        span.extents([Ky, P, Q], _, K, K).
+
+    // How many squares of side K a box holds.
+    .type SeatKey = [key: Key, b: Position, k: number]
+
+    .init seat = Tally<SeatKey, Position>
+    seat.item([Ky, B, K], S) :- hole_box(Ky, B), square(Ky, S, K), geq(S, B).
+
+    .decl seats(key: Key, b: Position, k: number, n: number)
+    seats(Ky, B, K, N) :- seat.tally([Ky, B, K], N).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// --- The box the score picks ---
+
+.decl score(b: Position, n: number, ch: Choice)
+
+.init best = ArgExtremes<Choice, Position>
+best.cand(Ch, B, N) :- score(B, N, Ch).
+
+.decl filled(p: Position, ch: Choice)
+filled(P, Ch) :- best.high(Ch, B, _), parse.hole_cell($U(), B, P).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Area()). impl_choice($Block()).
+
+// --- Area ---
+
+// A box holding two cells a diagonal step apart is a region, not a line.
+.decl region(b: Position)
+region(B) :-
+    parse.hole_cell($U(), B, P),                       // a cell of the box
+    diag_dir_elem(D), neighbor(P, D, Q),               // and the cell across a corner
+    parse.hole_cell($U(), B, Q).
+
+.init size = Tally<Position, Position>
+size.item(B, P) :- region(B), parse.hole_cell($U(), B, P).
+
+score(B, N, $Area()) :- size.tally(B, N).
+
+// --- Block ---
+
+score(B, N, $Block()) :- params.block(K), parse.seats($U(), B, K, N).
+
+// --- Output ---
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- filled(P, Ch), params.paint(Col).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !filled(P, Ch).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // The cells the example repaints, and the box they fill.
+    .decl painted(e: Example, p: Position)
+    painted(E, P) :- ex_in(E, P, C1), ex_out(E, P, C2), C1 != C2.
+
+    .init pbox = Bbox<Example>
+    pbox.cell(E, P) :- painted(E, P).
+
+    // Every side some hole box shows.
+    .decl cand(k: number)
+    cand(K) :- parse.square(_, _, K).
+
+    .decl refuted(k: number)
+    refuted(K) :-
+        cand(K), pbox.margin(E, B),                     // an example's painted box
+        ( !parse.seats(E, B, K, _)                      // holds no such block
+        ; parse.seats(E, B, K, N),                      // or a rival matches its count
+          parse.seats(E, B2, K, N2), B2 != B, N2 >= N
+        ).
+
+    .decl block(k: number)
+    block(K) :- cand(K), !refuted(K).
+}

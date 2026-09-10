@@ -1,0 +1,61 @@
+// 4df5b0ae
+// draft
+// concept: objects rank move
+// A shape is a connected group of same-colored non-background cells. The
+// output sweeps the shapes into one corner: a shape keeps its form and rests
+// on the edge the corner lies on, and the shapes stand side by side along that
+// edge in ascending cell count, the smallest at the corner.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(7).
+
+    // The row starts at pack_dir; the shapes rest on the edge a quarter turn away.
+    .decl pack_dir(d: Dir) pack_dir(DIR_L).
+    .decl rest_sense(s: Sense) rest_sense(SENSE_CC).
+}
+
+.init params = Params
+
+.decl rest_dir(d: Dir)
+rest_dir(D_rest) :- params.pack_dir(D), params.rest_sense(S), turn(S, D, D_rest).
+
+// --- the shapes ---
+
+.init shapes = Components<Color>
+shapes.node(Col, P_grid) :- in(P_grid, Col), !params.bg(Col).
+
+.init size = Tally<Ident, Position>
+size.item(M, P_grid) :- shapes.label(_, P_grid, M).
+
+.init box = BoxFrame<Ident>
+box.cell(M, P_grid) :- shapes.label(_, P_grid, M).
+
+// --- the row ---
+
+// The row's places are the lines of the shapes' boxes. A line's rank counts
+// the lines before it, and a connected shape holds every line of its own box,
+// so each shape starts where the one before it ended.
+.type Line = [m: Ident, k: number]
+
+.decl line(m: Ident, k: number)
+line(M, K) :- box.inner(M, _, P_intile), params.pack_dir(D), dist(P_intile, D, K).
+
+.init row = Order<Unit, Line>
+row.elem($U(), [M, K]) :- line(M, K).
+row.before($U(), [M, K], [M2, K2]) :-
+    line(M, K), line(M2, K2),
+    ( size.tally(M, N), size.tally(M2, N2), N < N2    // a smaller shape stands nearer the corner
+    ; M = M2, K < K2 ).                               // a shape keeps its own lines in order
+
+.decl paint(p: Position, col: Color)
+paint(P_grid_out, Col) :-
+    shapes.label(Col, P_grid_in, M), box.inner(M, P_grid_in, P_intile),     // a shape cell, seen in its own box
+    params.pack_dir(D), dist(P_intile, D, K), row.rank($U(), [M, K], R),    // the place its line takes
+    in(P_grid_out, _), dist(P_grid_out, D, R),                              // an output grid cell, seated at that place
+    rest_dir(D_rest), same_dist(D_rest, P_intile, P_grid_out).              // as far off the rest edge as in its box
+
+.decl out(p: Position, col: Color)
+out(P_grid, Col) :- paint(P_grid, Col).
+out(P_grid, Col) :- in(P_grid, _), !paint(P_grid, _), params.bg(Col).

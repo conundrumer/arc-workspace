@@ -1,0 +1,71 @@
+// 7ee1c6ea
+// draft
+// concept: border enclose mapping
+// A rectangle outline in params.frame sits in a field of params.bg and two
+// ink colors. Inside the outline, the two ink colors trade places; the
+// outline and everything outside it stay as they are.
+//
+// Choice crosses two independent points:
+//   inside  — $Box:     the cells strictly inside the frame's bounding box.
+//             $Enclose: the region the frame cuts off from the grid edge.
+//   palette — $Held:    the two ink colors are those the inside holds.
+//             $Field:   the two ink colors are those of the whole grid, less
+//                       the frame.
+
+#include "../lib.dl"
+
+.type Inside  = Box {} | Enclose {}
+.type Palette = Held {} | Field {}
+.type Choice  = [i: Inside, pal: Palette]
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    .decl frame(col: Color) frame(5).
+}
+
+.init params = Params
+
+.decl frame_cell(p: Position)
+frame_cell(P) :- in(P, Col), params.frame(Col).
+
+.decl inside_choice(i: Inside)
+inside_choice($Box()). inside_choice($Enclose()).
+
+.decl palette_choice(pal: Palette)
+palette_choice($Held()). palette_choice($Field()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([I, Pal]) :- inside_choice(I), palette_choice(Pal).
+
+// --- inside ---
+
+.decl inside(p: Position, i: Inside)
+
+.init fbox = Bbox<Unit>
+fbox.cell($U(), P) :- frame_cell(P).
+
+inside(P, $Box()) :- in(P, _), fbox.margin($U(), B), gt(P, B).
+
+.init closed = Closed<Unit>
+closed.cell($U(), P) :- in(P, _), !frame_cell(P).
+
+inside(P, $Enclose()) :- closed.region($U(), P, _).
+
+// --- palette ---
+
+.decl ink(col: Color, ch: Choice)
+ink(Col, [I, $Held()]) :- inside(P, I), in(P, Col), !params.bg(Col).
+ink(Col, [I, $Field()]) :- inside_choice(I), in(_, Col), !params.bg(Col), !params.frame(Col).
+
+// --- output ---
+
+// Each ink color becomes the other.
+.decl swap(col: Color, col2: Color, ch: Choice)
+swap(Col, Col2, Ch) :- ink(Col, Ch), ink(Col2, Ch), Col != Col2.
+
+.decl traded(p: Position, col: Color, ch: Choice)
+traded(P, Col2, [I, Pal]) :- inside(P, I), in(P, Col), swap(Col, Col2, [I, Pal]).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- traded(P, Col, Ch).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !traded(P, _, Ch).

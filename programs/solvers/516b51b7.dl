@@ -1,0 +1,127 @@
+// 516b51b7
+// draft
+// concept: objects walk border parity lookup
+// Solid ink rectangles sit on the background. Each one gains concentric
+// rings: its outline keeps its ink, and every cell inside takes a color
+// that follows how deep it lies. Choice = [m, p] crosses two choice points:
+//
+//   m (how deep a cell lies):
+//     $Peel()  — erosion from the object's own outline.
+//     $Box()   — distance to the nearest edge of the object's bounding box.
+//   p (the color at a depth):
+//     $Cycle() — the colors of params.ring repeat over the depths.
+//     $Table() — params.ring_at holds one color per depth.
+//
+// Every object here is a solid rectangle, where the two depths agree; a
+// ragged object would split them. No depth passes the last entry of
+// params.ring_at.
+
+#include "../lib.dl"
+
+.type Metric = Peel {} | Box {}
+.type Palette = Cycle {} | Table {}
+.type Choice = [m: Metric, p: Palette]
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+
+    // --- Cycle ---
+    // Ring color by the depth's place in the repeat.
+    .decl ring(k: number, col: Color)
+        ring(0, 3). ring(1, 2).
+
+    // --- Table ---
+    .decl ring_at(k: number, col: Color)
+        ring_at(1, 2). ring_at(2, 3). ring_at(3, 2).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice([$Peel(), $Cycle()]). impl_choice([$Peel(), $Table()]).
+impl_choice([$Box(), $Cycle()]). impl_choice([$Box(), $Table()]).
+
+// The cells the objects cover.
+.decl ink(p: Position)
+ink(P) :- in(P, Col), !params.bg(Col).
+
+// How deep each object cell lies, under each metric.
+.decl depth(p: Position, k: number, m: Metric)
+
+// --- Peel ---
+
+.init rim = Rim<Unit>
+rim.cell($U(), P) :- ink(P).
+
+depth(P, K, $Peel()) :- rim.depth($U(), P, K).
+
+// --- Box ---
+
+.init objs = Components<Unit>
+objs.node($U(), P) :- ink(P).
+
+.init box = BoxFrame<Ident>
+box.cell(Id, P) :- objs.label($U(), P, Id).
+
+// Depth in the box: the least distance to a box edge.
+.init box_depth = Extremes<Position>
+box_depth.cand(P, K) :-
+    box.inner(_, P, P_inner),      // the cell seen from its own box
+    dir_elem(D), dist(P_inner, D, K).
+
+depth(P, K, $Box()) :- box_depth.low(P, K).
+
+// --- shared ---
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// The background and every object's outline keep their color.
+out(P, Col, [M, Pal]) :-
+    in(P, Col), impl_choice([M, Pal]),
+    ( !ink(P)          // background
+    ; depth(P, 0, M)   // outline
+    ).
+
+// --- Cycle ---
+
+// The length of params.ring's repeat.
+.init period = Tally<Unit, number>
+period.item($U(), K) :- params.ring(K, _).
+period.domain($U()).
+
+out(P, Col, [M, $Cycle()]) :-
+    depth(P, K, M), K != 0,                 // inside the outline
+    period.tally($U(), W),
+    stride(K, W, 0, _, Idx), params.ring(Idx, Col).
+
+// --- Table ---
+
+out(P, Col, [M, $Table()]) :- depth(P, K, M), params.ring_at(K, Col).
+
+.comp Determine {
+    .type RepeatPhase = [w: number, r: number]
+
+    .init rim = Rim<Example>
+    rim.cell(E, P) :- ex_in(E, P, Col), !params.bg(Col).
+
+    // What an example paints at each depth inside an outline.
+    .decl ring_at(k: number, col: Color)
+    ring_at(K, Col) :- rim.depth(E, P, K), K != 0, ex_out(E, P, Col).
+
+    // The colors carried at each phase of a candidate repeat length.
+    .init phase_color = Unanimous<RepeatPhase, Color>
+    phase_color.item([W, R], Col) :-
+        ring_at(W, _), ring_at(K, Col),   // candidate repeat, a depth's color
+        stride(K, W, 0, _, R).            // the depth reduced into the repeat
+
+    // A repeat length that folds two differently colored depths together.
+    .decl mismatch(w: number)
+    mismatch(W) :- phase_color.clash([W, _]).
+
+    // The shortest repeat the depths allow.
+    .init repeat = Extremes<Unit>
+    repeat.cand($U(), W) :- ring_at(W, _), !mismatch(W).
+
+    .decl ring(k: number, col: Color)
+    ring(Idx, Col) :- ring_at(K, Col), repeat.low($U(), W), stride(K, W, 0, _, Idx).
+}

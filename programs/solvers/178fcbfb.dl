@@ -1,0 +1,57 @@
+// 178fcbfb
+// draft
+// concept: markers cast
+// Isolated dots on a blank grid. Each dot paints the whole line through it,
+// in its own color; the color says which line family — row or column. Where
+// two lines cross, one family shows over the other.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+
+    // The line family each dot color paints.
+    .decl line_axis(col: Color, a: Axis)
+    line_axis(1, AXIS_H). line_axis(3, AXIS_H). line_axis(2, AXIS_V).
+
+    // The family that shows at a crossing.
+    .decl top_axis(a: Axis) top_axis(AXIS_H).
+}
+
+.init params = Params
+
+// A cell on a line some dot paints.
+.decl painted(p: Position, a: Axis, col: Color)
+painted(P, A, Col) :-
+    in(Q, Col), params.line_axis(Col, A),    // a dot, and its family
+    in(P, _), same_line(A, Q, P).            // a cell on its line
+
+// Paint from the family that wins a crossing.
+.decl top_paint(p: Position, col: Color)
+top_paint(P, Col) :- params.top_axis(A), painted(P, A, Col).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, _),
+    ( top_paint(P, Col)                       // the winning family
+    ; !top_paint(P, _), painted(P, _, Col)    // any other line
+    ; !painted(P, _, _), params.bg(Col)       // untouched cell
+    ).
+
+.comp Determine {
+    .decl dot(e: Example, p: Position, col: Color)
+    dot(E, P, Col) :- ex_in(E, P, Col), !params.bg(Col).
+
+    // A line the dot paints is covered end to end, by its own color or by an
+    // overriding one; a line in the other family keeps bg cells.
+    .decl bare(col: Color, a: Axis)
+    bare(Col, A) :-
+        dot(E, P, Col), axis_elem(A),              // a dot, and a family for it
+        ex_out(E, Q, Bg), params.bg(Bg),           // a bg cell of the output
+        same_line(A, P, Q).                        // on the dot's line
+
+    .decl line_axis(col: Color, a: Axis)
+    line_axis(Col, A) :-
+        dot(E, _, Col), ex_out(E, _, _),    // a color some solved example shows
+        axis_elem(A), !bare(Col, A).        // the family it never leaves bare
+}

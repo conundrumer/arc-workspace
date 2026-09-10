@@ -8,7 +8,7 @@
 //
 //   $Ray    — arms by kind, colored per mark: params.arm_paint cardinal,
 //             params.diag_paint diagonal; arms reach params.radius cells.
-//   $Lookup — a stored mask per mark, seated on the mark by params.center_pos.
+//   $Lookup — a stored mask per mark, as offsets from the mark.
 
 #include "../lib.dl"
 
@@ -31,19 +31,16 @@
     paint(1, 7).
     paint(2, 4).
 
-    // Footprint masks over the stamp frame; center_pos seats the mask on
-    // the mark.
-    .decl template(mark: Color, p: Position)
-    GRID_MASK_3x3(template, 1,
-        0, 1, 0,
-        1, 0, 1,
-        0, 1, 0)
-    GRID_MASK_3x3(template, 2,
-        1, 0, 1,
-        0, 0, 0,
-        1, 0, 1)
-
-    .decl center_pos(p: Position) center_pos([1, 1, 1, 1]).
+    // Footprint masks as offsets from the mark, `@` on the mark cell.
+    .decl template(mark: Color, delta: Shift)
+    GRID_STAMP_3x3(template, 1,
+        _, 1, _,
+        1, @_, 1,
+        _, 1, _)
+    GRID_STAMP_3x3(template, 2,
+        1, _, 1,
+        _, @_, _,
+        1, _, 1)
 }
 
 .init params = Params
@@ -75,15 +72,12 @@ painted(P, Col, $Ray()) :-
 // --- $Lookup ---
 painted(P_grid, Col, $Lookup()) :-
     in(P, M), params.paint(M, Col),                       // a mark
-    params.center_pos(C0), displacement(C0, P, Mg),       // the mask box's margin there
-    params.template(M, T), compose(T, Mg, P_grid),        // embed the mask cell
+    params.template(M, V), compose(P, V, P_grid),         // offset from the mark
     in(P_grid, _).                                        // clip to the grid
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- painted(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !painted(P, _, Ch).
-
-// --- determination ---
 
 .type Cell = [e: Example, p: Position]
 .type StarKey = [e: Example, id: Ident]
@@ -105,14 +99,15 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !painted(P, _, Ch).
     blob.node(E, P) :- star(E, P, _).
     blob.node(E, P) :- dot(E, P, _).
 
-    // A blob's painted cell, attributed to the blob's mark.
-    .decl star_cell(e: Example, id: Ident, m: Color, p: Position, col: Color)
-    star_cell(E, Id, M, P, Col) :-
+    // A blob's painted cell, with its offset from the blob's mark.
+    .decl star_cell(e: Example, id: Ident, m: Color, p: Position, delta: Shift, col: Color)
+    star_cell(E, Id, M, P, V, Col) :-
         dot(E, Q, M), blob.label(E, Q, Id),       // the blob's mark
-        blob.label(E, P, Id), star(E, P, Col).    // its painted cell
+        blob.label(E, P, Id), star(E, P, Col),    // its painted cell
+        displacement(Q, P, V).                    // its offset from the mark
 
     .decl paint(mark: Color, col: Color)
-    paint(M, Col) :- star_cell(_, _, M, _, Col).
+    paint(M, Col) :- star_cell(_, _, M, _, _, Col).
 
     // Casts from each blob's dot, one instance per kind, classify the
     // blob's painted cells.
@@ -128,18 +123,14 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !painted(P, _, Ch).
 
     .decl arm_paint(mark: Color, col: Color)
     arm_paint(M, Col) :-
-        star_cell(E, Id, M, P, Col),
+        star_cell(E, Id, M, P, _, Col),
         arms.ray([E, Id], P, _, K, _), K != 0.       // on a cardinal cast from its dot
 
     .decl diag_paint(mark: Color, col: Color)
     diag_paint(M, Col) :-
-        star_cell(E, Id, M, P, Col),
+        star_cell(E, Id, M, P, _, Col),
         diags.ray([E, Id], P, _, K, _), K != 0.      // on a diagonal cast from its dot
 
-    // Each blob viewed from its own box — the mask frame.
-    .init box = BoxFrame<StarKey>
-    box.cell([E, Id], P) :- blob.label(E, P, Id).
-
-    .decl template(mark: Color, p: Position)
-    template(M, T) :- star_cell(E, Id, M, P, _), box.inner([E, Id], P, T).
+    .decl template(mark: Color, delta: Shift)
+    template(M, V) :- star_cell(_, _, M, _, V, _).
 }

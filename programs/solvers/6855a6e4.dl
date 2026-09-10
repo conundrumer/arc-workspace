@@ -1,0 +1,42 @@
+// 6855a6e4
+// draft
+// concept: markers d4
+// A params.mover shape sits outside each bracket of params.mirror, beyond
+// its back bar. Every mover cell casts every way and reflects across the
+// first mirror cell it meets, so each shape lands inside its bracket,
+// mirrored. The movers' old places clear to params.bg, and the rest of the
+// input is kept.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    .decl mirror(col: Color) mirror(2).
+    .decl mover(col: Color) mover(5).
+}
+
+.init params = Params
+
+.decl mover_cell(p: Position)
+mover_cell(P) :- in(P, Col), params.mover(Col).
+
+// Movers cast every way and halt on the first mirror cell.
+.init rays = Ray<Unit>
+rays.dir($U(), D) :- dir_elem(D).
+rays.mark($U(), P) :- mover_cell(P).
+rays.blocked($U(), P) :- in(P, Col), params.mirror(Col).
+
+// A mover's image: the mover reflected across the mirror cell it faces.
+.decl image(p: Position)
+image(Q) :-
+    rays.stop($U(), B, D, _, P),                                  // the mirror cell a mover faces
+    axis_of(D, A), flip_of(A, F),                                 // the flip across that mirror
+    displacement(B, P, V), apply(F, V, V2), compose(B, V2, Q).    // taken about the mirror cell
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, Col_in),
+    ( image(P), params.mover(Col)                                  // the mover's image
+    ; !image(P), mover_cell(P), params.bg(Col)                     // the mover's old place
+    ; !image(P), !mover_cell(P), Col = Col_in                      // kept
+    ).

@@ -1,0 +1,55 @@
+// 79369cc6
+// draft
+// concept: markers stamp d4
+// The template is the bounding box of the fill-colored cells; its other
+// cells carry the mark color. Wherever a D4 image of the template's mark
+// cells appears in the grid, the image's fill cells are painted in the fill
+// color. A placement whose fill cell lands on a mark is not a match. A
+// stamp may hang off the grid edge: its marks must all be on the grid, its
+// fill cells need not.
+
+#include "../lib.dl"
+
+.comp Params {
+    // The color the stamp paints, and the color the stamp matches on.
+    .decl fill(c: Color) fill(4).
+    .decl mark(c: Color) mark(6).
+}
+
+.init params = Params
+
+// --- the template ---
+
+// The template, read in its own frame.
+.init box = BoxFrame<Unit>
+box.cell($U(), P) :- in(P, Col), params.fill(Col).
+box.grid($U(), P) :- in(P, _).
+
+// The template's D4 images, each in its own frame.
+.decl image(d: D4, s: Position, col: Color)
+image(D, S2, Col) :- d4_elem(D), box.inner($U(), P, S), in(P, Col), apply(D, S, S2).
+
+// --- the placements ---
+
+// Each image's mark cells, sought among the grid's mark cells.
+.init occ = Occurrences<D4, Unit>
+occ.shape(D, S, $U()) :- image(D, S, Col), params.mark(Col).
+occ.cell(D, P, $U()) :- d4_elem(D), in(P, Col), params.mark(Col).
+
+// Where an occurrence's fill cells land.
+.decl fill_at(d: D4, m: Position, p: Position)
+fill_at(D, M, P) :- occ.occurrence(D, M), image(D, S, Col), params.fill(Col), compose(M, S, P).
+
+// A placement whose fill cell lands on a mark is not a match.
+.decl blocked(d: D4, m: Position)
+blocked(D, M) :- fill_at(D, M, P), occ.cell(D, P, $U()).
+
+.decl stamped(p: Position)
+stamped(P) :- fill_at(D, M, P), !blocked(D, M).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, Col_in),
+    ( stamped(P), params.fill(Col)    // painted by a stamp
+    ; !stamped(P), Col = Col_in       // kept
+    ).

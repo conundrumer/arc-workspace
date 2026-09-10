@@ -1,0 +1,111 @@
+// 5ad4f10b
+// draft
+// concept: crop scale select
+// Two colors sit on bg. One is drawn thick, in blocks at least two cells
+// across: it is the figure, and it draws a picture at a fat-pixel scale.
+// The other is never drawn thick: it is the speck color, scattered over the
+// grid. The output is the figure's picture at unit scale, painted in the
+// speck color. The choice is how wide that picture is:
+//
+//   $Extent — the picture is params.dim pixels across, so the pixel size
+//             follows from the box the figure occupies.
+//   $Pixels — the pixels are as large as the figure's own content allows,
+//             so the picture's extent follows from that size.
+
+#include "../lib.dl"
+
+.type Choice = Extent {} | Pixels {}
+
+// A run of the drawing: the cells of one block of a candidate pixel size,
+// on one line of the axis that size is measured on.
+.type Run = [a: Axis, s: number, p_outer: Position, p_across: Position]
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+
+    // --- $Extent ---
+
+    // The picture's extent, in pixels.
+    .decl dim(n: number) dim(3).
+}
+
+.init params = Params
+
+.decl ink(col: Color, p: Position)
+ink(Col, P) :- in(P, Col), !params.bg(Col).
+
+// Drawn thick: the color fills a 2x2 square.
+.decl figure(col: Color)
+figure(Col) :-
+    ink(Col, P), diag_dirs(G, _, D1, D2),      // a cell and a corner of it
+    neighbor(P, D1, Q1), ink(Col, Q1),         // across each of the corner's dirs
+    neighbor(P, D2, Q2), ink(Col, Q2),
+    neighbor(P, G, Q3), ink(Col, Q3).          // and across the corner itself
+
+.decl speck(col: Color)
+speck(Col) :- ink(Col, _), !figure(Col).
+
+// The drawing: the box the figure occupies, its cells read as figure or blank.
+.init box = BoxFrame<Unit>
+box.cell($U(), P) :- figure(Col), ink(Col, P).
+box.grid($U(), P) :- in(P, _).
+
+.decl drawing(p_inner: Position, col: Color)
+drawing(P_inner, Col) :-
+    box.inner($U(), P, P_inner), in(P, C),
+    ( figure(C), Col = C                    // a figure cell
+    ; !figure(C), params.bg(Col)            // bg or a speck: blank
+    ).
+
+// --- program ---
+
+// A cell of the drawing, and the picture cell of the pixel it lies in.
+.decl pixel(p_inner: Position, p_tile: Position, ch: Choice)
+
+.decl filled(p_tile: Position, ch: Choice)
+filled(P_tile, Ch) :-
+    pixel(P_inner, P_tile, Ch),          // a cell of the pixel
+    drawing(P_inner, Col), figure(Col).  // holding figure, not blank
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_tile, Col, Ch) :-
+    pixel(_, P_tile, Ch),
+    ( filled(P_tile, Ch), speck(Col)        // a drawn pixel
+    ; !filled(P_tile, Ch), params.bg(Col)   // a blank one
+    ).
+
+// --- $Extent ---
+
+pixel(P_inner, P_tile, $Extent()) :-
+    drawing(P_inner, _), params.dim(N), divide_2d(P_inner, N, 0, P_tile, _).
+
+// --- $Pixels ---
+
+// A pixel size the drawing's extent admits: a whole number of pixels across.
+.decl pixel_cand(a: Axis, s: number)
+pixel_cand(A, S) :-
+    axis_elem(A), drawing(P_inner, _),
+    ( sub_extent(P_inner, A, S)      // shorter than the drawing
+    ; axis_dim(P_inner, A, S)        // the whole drawing, one pixel across
+    ),
+    divide_by_size(P_inner, A, S, 0, _, _).
+
+.init run_color = Unanimous<Run, Color>
+run_color.item([A, S, P_outer, P_across], Col) :-
+    pixel_cand(A, S), drawing(P_inner, Col),
+    divide_by_size(P_inner, A, S, 0, P_outer, _),   // which block along A
+    split(P_inner, A, _, P_across).                 // which line
+
+.decl pixel_broken(a: Axis, s: number)
+pixel_broken(A, S) :- run_color.clash([A, S, _, _]).
+
+// The pixels are as large as the drawing allows.
+.init pixel_size = Extremes<Axis>
+pixel_size.cand(A, S) :- pixel_cand(A, S), !pixel_broken(A, S).
+
+.init pixels = Tile2D<Unit>
+pixels.cell(P_inner) :- drawing(P_inner, _).
+pixels.dim($U(), A, S) :- pixel_size.high(A, S).
+pixels.gap(0).
+
+pixel(P_inner, P_tile, $Pixels()) :- pixels.tile($U(), P_inner, P_tile, _).

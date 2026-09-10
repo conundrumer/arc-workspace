@@ -1,0 +1,46 @@
+// 45bbe264
+// draft
+// family: 23581191
+
+#include "../lib.dl"
+
+.type Choice = Color {} | Mark {}
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+    .decl cross_color(c: Color) cross_color(2).
+}
+
+.init params = Params
+
+// P lies on the cross of mark Q: shares Q's line on some axis.
+.decl cross(p: Position, q: Position, col: Color)
+cross(P, Q, Col) :-
+    in(Q, Col), !params.bg(Col),                 // a mark
+    in(P, _),                                    // any cell
+    axis_elem(A), same_line(A, P, Q).
+
+.decl collide(ch: Choice, p: Position)
+
+// --- $Color ---
+.init cover_color = Unanimous<Position, Color>
+cover_color.item(P, Col) :- cross(P, _, Col).
+
+collide($Color(), P) :- cover_color.clash(P).
+
+// --- $Mark ---
+.init cover_mark = Unanimous<Position, Position>
+cover_mark.item(P, Q) :- cross(P, Q, _).
+
+collide($Mark(), P) :- cover_mark.clash(P).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Color()). impl_choice($Mark()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    impl_choice(Ch), in(P, _),
+    ( collide(Ch, P), params.cross_color(Col)         // crosses meet
+    ; cross(P, _, Col), !collide(Ch, P)               // one cross alone
+    ; !cross(P, _, _), params.bg(Col)                 // no cross
+    ).

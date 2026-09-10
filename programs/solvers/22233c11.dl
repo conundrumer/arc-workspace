@@ -1,0 +1,52 @@
+// 22233c11
+// draft
+// concept: decompose move
+// Two green squares touch corner to corner, so they fill one diagonal of the
+// 2x2 quadrant split of the box they share. Each of the other two quadrants
+// moves one quadrant-length outward along its own corner diagonal and lands
+// in cyan. Whatever leaves the grid is lost.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl block(col: Color) block(3).
+    .decl echo(col: Color) echo(8).
+}
+
+.init params = Params
+
+.decl block_cell(p: Position)
+block_cell(P) :- in(P, Col), params.block(Col).
+
+// The box the two squares share.
+.init box = BoxFrame<Unit>
+box.cell($U(), P) :- block_cell(P).
+box.grid($U(), P) :- in(P, _).
+
+// Its quadrants.
+.init place = DiagPlacement<Unit>
+place.cell($U(), P_box) :- box.inner($U(), _, P_box).
+
+.decl quad_cell(diag: DiagDir, p: Position)
+quad_cell(Diag, P) :-
+    box.inner($U(), P, P_box),          // a cell of the box, in both frames
+    place.quadrant($U(), P_box, Diag).  // the quadrant it sits in
+
+.init quad = Bbox<DiagDir>
+quad.cell(Diag, P) :- quad_cell(Diag, P).
+
+.decl filled(diag: DiagDir)
+filled(Diag) :- quad_cell(Diag, P), block_cell(P).
+
+.decl echo_cell(p: Position)
+echo_cell(Q) :-
+    quad_cell(Diag, P), !filled(Diag),  // cell of a square-free quadrant
+    quad.extents(Diag, _, N, N),
+    jump(P, Diag, N, Q).                // one quadrant outward
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, Col_in),
+    ( echo_cell(P), params.echo(Col)   // where a quadrant landed
+    ; !echo_cell(P), Col = Col_in      // untouched
+    ).

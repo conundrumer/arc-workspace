@@ -1,0 +1,48 @@
+// 42a15761
+// draft
+// concept: decompose rank
+// The grid divides into equal panels along the params.order_dir axis, with
+// separator lines between them. Each panel carries some cells of params.mark.
+// The output reorders those panels by mark count, fewest first at the
+// params.order_dir edge.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl mark(c: Color) mark(0).
+    .decl order_dir(d: Dir) order_dir(DIR_L).
+    .decl panel_size(k: number) panel_size(3).
+    .decl gap(g: number) gap(1).
+}
+
+.init params = Params
+
+.decl panel(p_grid: Position, p_tile: Position, p_intile: Position)
+panel(P_grid, P_tile, P_intile) :-
+    in(P_grid, _), params.order_dir(D), axis_of(D, A),            // the panels lie along this axis
+    params.panel_size(K), params.gap(G),                          // panel extent, separator width
+    divide_by_size_slab(P_grid, A, K, G, P_tile, P_intile).
+
+.decl tile(p_tile: Position)
+tile(P_tile) :- panel(_, P_tile, _).
+
+// Marks per panel; a panel carrying none counts 0.
+.init marks = Tally<Position, Position>
+marks.domain(P_tile) :- tile(P_tile).
+marks.item(P_tile, P_grid) :- panel(P_grid, P_tile, _), in(P_grid, Col), params.mark(Col).
+
+// Dense rank over the distinct mark counts, fewest first.
+.init count_order = Ordinal<Unit>
+count_order.idx_set($U(), N) :- marks.tally(_, N).
+
+// The panel of rank R moves to the tile R from the order edge.
+.decl place(p_src_tile: Position, p_dst_tile: Position)
+place(P_src_tile, P_dst_tile) :-
+    marks.tally(P_src_tile, N), count_order.rank($U(), N, R),       // the source panel's rank
+    tile(P_dst_tile), params.order_dir(D), dist(P_dst_tile, D, R).  // the tile at that index
+
+.decl out(p: Position, col: Color)
+out(P_grid_out, Col) :-
+    panel(P_grid_out, P_dst_tile, P_intile), place(P_src_tile, P_dst_tile),  // destination cell
+    panel(P_grid_in, P_src_tile, P_intile), in(P_grid_in, Col).              // the same cell of its source panel
+out(P_grid, Col) :- in(P_grid, Col), !panel(P_grid, _, _).   // separator lines pass through

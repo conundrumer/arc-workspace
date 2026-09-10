@@ -1,0 +1,111 @@
+// 4acc7107
+// draft
+// concept: objects rank move
+// Monochrome shapes of several colors lie scattered on the grid. The output
+// files them into a corner: each color takes a lane, and each shape takes a
+// slot in its color's lane.
+//
+// A shape ranks by its distance to the lane edge, and a color ranks by its
+// nearest shape. Lanes pile from the lane edge in color rank, each lane as
+// wide as its widest shape. Within a lane, shapes pile from the corner's
+// other edge in shape rank, each shape hugging the lane edge. A blank line
+// separates adjacent lanes, and adjacent slots.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+
+    // The corner the layout builds from: lanes pile from one of its edges,
+    // and the shapes of a lane pile from the other.
+    .decl corner(d: DiagDir) corner(DIAG_BL).
+
+    // The axis the shapes of a lane pile along.
+    .decl stack_axis(a: Axis) stack_axis(AXIS_V).
+
+    // Blank lines between adjacent lanes, and between adjacent slots.
+    .decl gap(k: number) gap(1).
+}
+
+.init params = Params
+
+// The edge the shapes of a lane pile from.
+.decl stack_dir(d: Dir)
+stack_dir(D) :- params.corner(Cnr), params.stack_axis(A), diag_dirs(Cnr, A, D, _).
+
+// The edge the lanes pile from, and the edge shapes are ranked by.
+.decl lane_dir(d: Dir)
+lane_dir(D) :- params.corner(Cnr), params.stack_axis(A), diag_dirs(Cnr, A, _, D).
+
+// The shapes: connected runs of one color.
+.init shapes = Components<Color>
+shapes.node(Col, P) :- in(P, Col), !params.bg(Col).
+
+.decl shape_color(id: Ident, col: Color)
+shape_color(Id, Col) :- shapes.label(Col, _, Id).
+
+.init box = Bbox<Ident>
+box.cell(Id, P) :- shapes.label(_, P, Id).
+
+.decl shape_size(id: Ident, depth: number, width: number)
+shape_size(Id, N1, N2) :- params.stack_axis(A), box.extents(Id, A, N1, N2).
+
+// The rank key: a shape's distance to the lane edge.
+.decl lane_dist(id: Ident, k: number)
+lane_dist(Id, K) :- lane_dir(D), box.edge_min(Id, D, K).
+
+// Shapes of one color rank by nearness to the lane edge.
+.init shape_ord = Order<Color, Ident>
+shape_ord.elem(Col, Id) :- shape_color(Id, Col).
+shape_ord.before(Col, Id, Id2) :-
+    shape_color(Id, Col), lane_dist(Id, K),
+    shape_color(Id2, Col), lane_dist(Id2, K2),
+    K < K2.
+
+// A color ranks by its nearest shape.
+.decl color_dist(col: Color, k: number)
+color_dist(Col, K) :- shape_ord.first(Col, Id), lane_dist(Id, K).
+
+.init color_ord = Order<Unit, Color>
+color_ord.elem($U(), Col) :- shape_color(_, Col).
+color_ord.before($U(), Col, Col2) :- color_dist(Col, K), color_dist(Col2, K2), K < K2.
+
+// A lane is as wide as its widest shape.
+.init lane_size = Extremes<Color>
+lane_size.cand(Col, W) :- shape_color(Id, Col), shape_size(Id, _, W).
+
+// The lane's cell at the corner: the first lane hugs it, and each next
+// lane clears the width of the one before it, plus the gap.
+.decl lane(col: Color, p: Position)
+lane(Col, P) :-
+    color_ord.first($U(), Col),
+    in(P, _), params.corner(Cnr), corner_dist(P, Cnr, 0).
+lane(Col2, P2) :-
+    color_ord.next($U(), Col, Col2), lane(Col, P),
+    lane_size.high(Col, W), lane_dir(D), opposite(D, D_on),
+    jump(P, D_on, W, Q), params.gap(G), jump(Q, D_on, G, P2).
+
+// The slot's cell at the corner: the first shape of a lane takes the lane's
+// own corner, and each next shape clears the depth of the one before it,
+// plus the gap.
+.decl slot(id: Ident, p: Position)
+slot(Id, P) :- shape_ord.first(Col, Id), lane(Col, P).
+slot(Id2, P2) :-
+    shape_ord.next(_, Id, Id2), slot(Id, P), shape_size(Id, N, _),
+    stack_dir(D), opposite(D, D_on),
+    jump(P, D_on, N, Q), params.gap(G), jump(Q, D_on, G, P2).
+
+// The grid cell at a shape's own corner.
+.decl anchor(id: Ident, p: Position)
+anchor(Id, P) :- box.margin(Id, M), params.corner(Cnr), in(P, _), corner_anchor(Cnr, M, P).
+
+// A shape travels by the shift carrying its corner cell onto its slot's.
+.decl move(id: Ident, v: Shift)
+move(Id, V) :- anchor(Id, A), slot(Id, P_slot), displacement(A, P_slot, V).
+
+.decl placed(p: Position, col: Color)
+placed(P_out, Col) :- shapes.label(Col, P, Id), move(Id, V), compose(P, V, P_out).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- placed(P, Col).
+out(P, Col) :- in(P, _), !placed(P, _), params.bg(Col).

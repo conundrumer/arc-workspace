@@ -1,0 +1,83 @@
+// 2f0c5170
+// draft
+// concept: objects markers crop stamp lookup
+// Two canvas panels sit on the bg. One holds a glyph of several marks; the
+// other holds one mark alone. The glyph moves so that one of its marks, its
+// handle, covers the lone mark. The output is the lone mark's panel with the
+// moved glyph on it.
+//
+//   $Match — the handle is the glyph mark colored like the lone mark.
+//   $Odd   — the handle is the glyph mark whose color the glyph's other
+//            marks do not share.
+//   $Ink   — the glyph is drawn in a stored ink; the handle is the mark
+//            that is not.
+
+#include "../lib.dl"
+
+.type Choice = Match {} | Odd {} | Ink {}
+
+.comp Params {
+    // --- shared ---
+    .decl bg(c: Color) bg(8).
+    .decl canvas(c: Color) canvas(0).
+
+    // --- Ink ---
+    .decl ink(c: Color) ink(4).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Match()). impl_choice($Odd()). impl_choice($Ink()).
+
+.init panels = Components<Unit>
+panels.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+.init box = BoxFrame<Ident>
+box.cell(Id, P) :- panels.label($U(), P, Id).
+
+.decl mark(id: Ident, p: Position, col: Color)
+mark(Id, P, Col) :- panels.label($U(), P, Id), in(P, Col), !params.canvas(Col).
+
+// The glyph panel's marks disagree on where they sit; the other panel's
+// mark is alone.
+.init alone = Unanimous<Ident, Position>
+alone.item(Id, P) :- mark(Id, P, _).
+
+.decl glyph_mark(p: Position, col: Color)
+glyph_mark(P, Col) :- alone.clash(Id), mark(Id, P, Col).
+
+.decl lone_mark(id: Ident, p: Position, col: Color)
+lone_mark(Id, P, Col) :- alone.value(Id, P), mark(Id, P, Col).
+
+.decl handle(p: Position, ch: Choice)
+
+// --- Match ---
+
+handle(P, $Match()) :- glyph_mark(P, Col), lone_mark(_, _, Col).
+
+// --- Odd ---
+
+.init glyph_color = Mode<Unit, Color, Position>
+glyph_color.item($U(), Col, P) :- glyph_mark(P, Col).
+
+handle(P, $Odd()) :- glyph_mark(P, Col), !glyph_color.mode($U(), Col).
+
+// --- Ink ---
+
+handle(P, $Ink()) :- glyph_mark(P, Col), !params.ink(Col).
+
+// --- stamp ---
+
+.decl travel(v: Shift, ch: Choice)
+travel(V, Ch) :- handle(P, Ch), lone_mark(_, P2, _), displacement(P, P2, V).
+
+.decl stamped(p: Position, col: Color, ch: Choice)
+stamped(Q, Col, Ch) :- glyph_mark(P, Col), travel(V, Ch), compose(P, V, Q).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_intile, Col, Ch) :-
+    impl_choice(Ch), lone_mark(Id, _, _), box.inner(Id, P, P_intile),
+    ( stamped(P, Col, Ch)                     // a mark of the moved glyph
+    ; !stamped(P, _, Ch), params.canvas(Col)  // bare canvas
+    ).

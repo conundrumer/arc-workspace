@@ -25,7 +25,7 @@
         .decl glyph(p: Position)
         GRID_MASK_2x2(glyph,
             1, 1,
-            1, 0)
+            1, _)
         .decl launch(p: Position) launch([0, 1, 0, 1]).
         .decl aim(d: DiagDir) aim(DIAG_TL).
     )
@@ -133,8 +133,6 @@ paint(P, Col, Ch) :- ray(P, _, Col, Ch), in(P, Bg), params.bg(Bg).
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !paint(P, _, Ch).
-
-// --- determination ---
 
 .comp Determine {
     // Ray ink: painted onto bg.

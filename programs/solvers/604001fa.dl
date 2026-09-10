@@ -1,0 +1,62 @@
+// 604001fa
+// draft
+// concept: objects markers lookup
+// An object is an 8-connected component of non-background cells: a shape with
+// a mark attached. A mark is three cells in a 2x2 box, so one corner of that
+// box stays empty, and that corner names a color. The output erases the marks
+// and paints each shape in the color its mark names.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+    .decl mark(c: Color) mark(7).
+
+    .decl corner_color(diag: DiagDir, col: Color)
+    corner_color(DIAG_TL, 3).
+    corner_color(DIAG_TR, 8).
+    corner_color(DIAG_BL, 4).
+    corner_color(DIAG_BR, 6).
+}
+
+.init params = Params
+
+.comp Parse<Key> {
+    .decl cell(k: Key, p: Position, col: Color)
+
+    .init object = Components8<Key>
+    object.node(K, P) :- cell(K, P, Col), !params.bg(Col).
+
+    .type KI = [k: Key, id: Ident]
+
+    .init box = Bbox<KI>
+    box.cell([K, Id], P) :- object.label(K, P, Id), cell(K, P, Col), params.mark(Col).
+
+    .decl missing_corner(k: Key, id: Ident, diag: DiagDir)
+    missing_corner(K, Id, Diag) :-
+        box.cell([K, Id], _), diag_dir_elem(Diag), !box.corner([K, Id], _, Diag).
+
+    .decl shape_cell(k: Key, p: Position, id: Ident)
+    shape_cell(K, P, Id) :- object.label(K, P, Id), cell(K, P, Col), !params.mark(Col).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, _),
+    ( parse.shape_cell($U(), P, Id),                                        // a shape cell
+      parse.missing_corner($U(), Id, Diag), params.corner_color(Diag, Col)  // its mark's color
+    ; !parse.shape_cell($U(), P, _), params.bg(Col)                         // mark or background
+    ).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    .decl corner_color(diag: DiagDir, col: Color)
+    corner_color(Diag, Col) :-
+        parse.missing_corner(E, Id, Diag),                  // a mark's empty corner
+        parse.shape_cell(E, P, Id), ex_out(E, P, Col).      // the color its shape takes
+}

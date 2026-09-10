@@ -1,0 +1,55 @@
+// 69889d6e
+// draft
+// concept: markers walk
+// A lone walker cell on an empty grid, with a few obstacle cells. The
+// walker climbs a staircase toward params.corner: it alternates one step
+// along each of the corner's two directions, starting on params.first_axis,
+// and paints its color on every cell it enters. When the cell ahead is
+// blocked, it turns in place: it takes the other direction next, without a
+// move, so the alternation shifts by one step. The walk ends at the grid
+// edge. The cases differ on what blocks:
+//
+//   $Wall  — only the wall color blocks; other ink is walked over.
+//   $Solid — any ink blocks.
+
+#include "../lib.dl"
+
+.type Choice = Wall {} | Solid {}
+
+.comp Params {
+    // --- shared ---
+    .decl bg(c: Color) bg(0).
+    .decl walker(c: Color) walker(2).
+    .decl corner(d: DiagDir) corner(DIAG_TR).
+    .decl first_axis(a: Axis) first_axis(AXIS_V).
+
+    // --- Wall ---
+    .decl wall(c: Color) wall(1).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Wall()). impl_choice($Solid()).
+
+.decl blocked(ch: Choice, p: Position)
+// --- Wall ---
+blocked($Wall(), P) :- in(P, Col), params.wall(Col).
+// --- Solid ---
+blocked($Solid(), P) :- in(P, Col), !params.bg(Col).
+
+// The walker at p, about to step toward d.
+.decl walk(ch: Choice, p: Position, d: Dir)
+walk(Ch, P, D) :-
+    impl_choice(Ch), in(P, Col), params.walker(Col),
+    params.corner(C), params.first_axis(A), diag_dirs(C, A, D, _).
+walk(Ch, P2, D2) :-
+    walk(Ch, P, D), neighbor(P, D, Q), in(Q, _),   // the cell ahead, on the grid
+    params.corner(C), diag_dirs(C, _, D, D2),      // the corner's other direction
+    ( !blocked(Ch, Q), P2 = Q                      // open: step in
+    ; blocked(Ch, Q), P2 = P                       // blocked: turn in place
+    ).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- walk(Ch, P, _), params.walker(Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !walk(Ch, P, _).

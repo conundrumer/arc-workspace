@@ -63,8 +63,6 @@ out(P, Col, $Cross()) :- params.out_pos(P), !cross_cell(P), params.bg(Col).
 // --- $Lookup ---
 out(P, Col, $Lookup()) :- in(_, Key), params.glyph(Key, P, Col).
 
-// --- determination ---
-
 .comp Determine {
     .decl glyph(key: Color, p: Position, col: Color)
     glyph(Key, P, Col) :-

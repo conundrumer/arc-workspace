@@ -9,8 +9,8 @@
 //   $Walk(s)   — two zigzag walks; the side direction flips each step.
 //   $Banner(s) — a stored periodic banner: params.slot the period, params.banner
 //                the lit radius at each slot.
-//   $Stamp()   — params.template, the whole trail as one stored shape in grid
-//                coords, seated on each marker by its params.dot cell.
+//   $Stamp()   — params.template, the whole trail as one stored shape of
+//                offsets, seated on each marker.
 //
 //   s (marker edge — the trail extends away from it):
 //     $Dir()  — params.dir names it.
@@ -38,16 +38,14 @@
     .decl banner(k: number, r: number) banner(0, 0). banner(1, 1).   // lit radius per slot
 
     // --- $Stamp ---
-    .decl template(p: Position)   // member cells echo the marker
-    GRID_MASK_6x3(template,
-        0, 1, 0,
-        1, 0, 1,
-        0, 1, 0,
-        1, 0, 1,
-        0, 1, 0,
-        1, 0, 1)
-
-    .decl dot(p: Position) dot([0, 5, 1, 1]).   // the template cell that sits on the marker
+    .decl template(delta: Shift)   // trail cells, as offsets from the marker
+    GRID_STAMP_6x3(template,
+        _, @1, _,
+        1,  _, 1,
+        _,  1, _,
+        1,  _, 1,
+        _,  1, _,
+        1,  _, 1)
 }
 
 .init params = Params
@@ -122,9 +120,8 @@ lit(Q, Col, $Banner(S)) :-
 // --- $Stamp ---
 
 lit(Q, Col, $Stamp()) :-
-    marker(P, Col), params.template(Pt),         // a marker, a template cell
-    params.dot(Ps), displacement(Ps, Pt, Off),   // the cell's offset from the dot
-    compose(P, Off, Q), in(Q, _).                // seated on the marker, on-grid
+    marker(P, Col), params.template(Off),   // a marker, a template offset
+    compose(P, Off, Q), in(Q, _).           // seated on the marker, on-grid
 
 // --- Output ---
 
@@ -137,8 +134,6 @@ impl_choice($Stamp()).
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- lit(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !lit(P, _, Ch), params.bg(Col).
-
-// --- determination ---
 
 .comp Determine {
     // Markers of the train inputs; the ex_out atom holds the test input out.
@@ -187,13 +182,6 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !lit(P, _, Ch), params.bg(Col).
     .decl banner(k: number, r: number)
     banner(K, R) :- radius(_, _, I, R), period(N), stride(I, N, 0, _, K).
 
-    // The trail in the frame it spans, with the marker at the zero offset.
-    .init tframe = BoxFrame<Unit>
-    tframe.cell($U(), Delta) :- offset(_, _, Delta).
-
-    .decl dot(p: Position)
-    dot(P) :- tframe.inner($U(), ORIGIN, P).
-
-    .decl template(p: Position)
-    template(P) :- tframe.inner($U(), _, P).
+    .decl template(delta: Shift)
+    template(Delta) :- offset(_, _, Delta).
 }

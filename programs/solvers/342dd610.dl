@@ -24,8 +24,6 @@ moved(P_out, Col) :- in(P_in, Col), params.move(Col, D, K), jump(P_in, D, K, P_o
 out(P, Col) :- moved(P, Col).
 out(P, Col) :- in(P, _), !moved(P, _), params.bg(Col).
 
-// --- determination ---
-
 .comp Determine {
     // The cells that carry a displacement.
     .decl ink(e: Example, p: Position, c: Color)

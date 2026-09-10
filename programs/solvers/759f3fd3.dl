@@ -1,0 +1,120 @@
+// 759f3fd3
+// draft
+// concept: cross walk parity
+// A cross of two full lines. Concentric square rings around the crossing
+// alternate bg and yellow, the ring beside the cross being bg. The cross
+// stays. Two models:
+//
+//   $Cycle  — ring colors follow a stored cycle outward from the center.
+//   $Period — rings a whole number of a stored period out are the fill
+//             color; the rest is bg.
+
+#include "../lib.dl"
+
+.type Choice = Cycle {} | Period {}
+
+.comp Params {
+    // --- shared ---
+    .decl cross(c: Color) cross(3).
+
+    // --- Cycle ---
+    // The ring beside the center.
+    .decl first_ring(c: Color) first_ring(0).
+
+    // The color cycle the rings follow outward.
+    .decl ring_cycle(c: Color, c_next: Color)
+    ring_cycle(0, 4).
+    ring_cycle(4, 0).
+
+    // The color that follows each ring color, one ring outward: the cycle,
+    // entered from the cross color at the center.
+    .decl ring_succ(c: Color, c_next: Color)
+    ring_succ(C, C2) :- ring_cycle(C, C2).
+    ring_succ(C, C1) :- cross(C), first_ring(C1).
+
+    // --- Period ---
+    .decl bg(c: Color) bg(0).
+    .decl fill(c: Color) fill(4).
+    .decl period(k: number) period(2).
+}
+
+.init params = Params
+
+// Proposal comp (docs/wf-solver/proposals/Dilate.md): the depth of each
+// domain cell outward from a keyed seed set, stepping toward the key's
+// directions. The seeds are at 0, and each further cell one more than its
+// nearest seed-side neighbor.
+.comp Dilate<Key> {
+    .decl seed(key: Key, p: Position)  // input
+    .decl cell(key: Key, p: Position)  // input
+    .decl dir(key: Key, d: Dir8)  // input
+
+    // The shortest outward walk from the seeds.
+    .decl depth(key: Key, p: Position, k: number)
+    depth(Ky, P, 0) :- seed(Ky, P).
+    depth(Ky, P, K2) :-
+        depth(Ky, Q, K), K2 = K + 1,
+        dir(Ky, D), neighbor(Q, D, P), cell(Ky, P).
+    depth(Ky, P, K) <= depth(Ky, P, K2) :- K2 < K.
+}
+
+.comp Parse<Key> {
+    .decl grid(key: Key, p: Position, col: Color)
+
+    // The cross cells. Their rim is the arms; the crossing is the one cell
+    // off it.
+    .init cross = Rim<Key>
+    cross.cell(Ky, P) :- grid(Ky, P, C), params.cross(C).
+
+    // Square rings growing out from the crossing.
+    .init rings = Dilate<Key>
+    rings.seed(Ky, P) :- cross.cell(Ky, P), !cross.rim(Ky, P).
+    rings.cell(Ky, P) :- grid(Ky, P, _).
+    rings.dir(Ky, D) :- grid(Ky, _, _), dir8_elem(D).
+
+    // The ring index of each cell off the cross.
+    .decl ring(key: Key, p: Position, k: number)
+    ring(Ky, P, K) :- grid(Ky, P, Col), !params.cross(Col), rings.depth(Ky, P, K).
+}
+
+.init parse = Parse<Unit>
+parse.grid($U(), P, Col) :- in(P, Col).
+
+// --- program ---
+
+.decl impl_choice(ch: Choice)
+impl_choice($Cycle()). impl_choice($Period()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), params.cross(Col).
+
+// --- Cycle ---
+// Ring colors: the cross color advanced one step per ring.
+.init colors = CycleWalk<Unit, Color>
+colors.succ($U(), C, C2) :- params.ring_succ(C, C2).
+colors.step($U(), K) :- parse.ring($U(), _, K).
+
+out(P, Col, $Cycle()) :-
+    parse.ring($U(), P, K), params.cross(C), colors.walk($U(), C, K, Col).
+
+// --- Period ---
+// A ring a whole number of periods out from the center is filled.
+.decl filled(p: Position)
+filled(P) :- parse.ring($U(), P, K), params.period(W), stride(K, W, 0, _, 0).
+
+out(P, Col, $Period()) :-
+    parse.ring($U(), P, _),
+    ( filled(P), params.fill(Col)
+    ; !filled(P), params.bg(Col) ).
+
+.comp Determine {
+    .init ex = Parse<Example>
+    ex.grid(E, P, Col) :- ex_in(E, P, Col).
+
+    // The output colors of a ring cell and of a neighbor one ring further out.
+    .decl ring_cycle(c: Color, c_next: Color)
+    ring_cycle(C, C2) :-
+        ex.ring(E, P, K), ex_out(E, P, C),                       // a ring cell
+        dir8_elem(D), neighbor(P, D, Q),                         // a neighbor
+        ex.ring(E, Q, K2), K < K2, ex_out(E, Q, C2).             // one ring further out
+}

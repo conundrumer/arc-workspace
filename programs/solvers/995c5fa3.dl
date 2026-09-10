@@ -3,28 +3,52 @@
 // Layout: gap-separated tiles along params.tile_axis; each tile shows a
 // catalog pattern. Output is a tile_count-sided square: the row at each
 // tile's index (params.tile_dir → params.row_dir) fills with the tile's class
-// color. Models of the classifier, data-equivalent on this task — every
-// tile matches a catalog entry:
-//   $Lookup  — tile content equals a catalog entry
-//   $HoleBox — the holes' bbox margin keys a color table; hole-free
-//              tiles take params.full_color
+// color.
+//
+// out's choice column = [cl, d]:
+//
+//   cl (classifier, data-equivalent on this task — every tile matches a
+//   catalog entry):
+//     $Lookup()  — tile content equals a catalog entry
+//     $HoleBox() — the holes' bbox margin keys a color table; hole-free
+//                  tiles take params.full_color
+//
+//   d (split):
+//     $Count() — by tile count
+//     $Size()  — by tile size
+//
+// [$Lookup(), $Count()] gets no case: the catalog's entries are tile-sized, so
+// the count reading matches an entry only where it agrees with the size
+// reading, and the size reading subsumes it.
 
 #include "../lib.dl"
 
-.type Choice = Lookup {} | HoleBox {}
+.type Classifier = Lookup {} | HoleBox {}
+.type DecChoice  = Count {} | Size {}
+.type Choice     = [cl: Classifier, d: DecChoice]
 
 .type TileMember = [p: Position, col: Color]
 
+// A tile of one split.
+.type TileK = [p_tile: Position, dc: DecChoice]
+
 .comp Params {
+    // --- shared ---
     .decl tile_axis(a: Axis) tile_axis(AXIS_H).
-    .decl tile_count(n: number) tile_count(3).
     .decl tile_gap(g: number) tile_gap(1).
 
     // Tile index (from tile_dir) maps to output row index (from row_dir).
     .decl tile_dir(d: Dir) tile_dir(DIR_L).
     .decl row_dir(d: Dir) row_dir(DIR_T).
 
-    // --- $Lookup ---
+    // The output square's side, and the divisor of the $Count() split.
+    .decl tile_count(n: number) tile_count(3).
+
+    // --- Size ---
+
+    .decl tile_size(k: number) tile_size(4).
+
+    // --- Lookup ---
 
     .decl mapping_member(id: Ident, p_intile: Position, c: Color)
     .decl mapping_out(id: Ident, c_out: Color)
@@ -57,7 +81,7 @@
         5, 0, 0, 5)
     mapping_out(3, 4).
 
-    // --- $HoleBox ---
+    // --- HoleBox ---
 
     .decl bg(c: Color) bg(0).
 
@@ -71,50 +95,52 @@
 
 .init params = Params
 
-.decl tile_cell(p_tile: Position, p_intile: Position, col: Color)
-tile_cell(P_tile, P_intile, Col) :-
+.decl tile_cell(p_tile: Position, p_intile: Position, col: Color, dc: DecChoice)
+tile_cell(P_tile, P_intile, Col, $Count()) :-
     in(P, Col),
     params.tile_axis(A), params.tile_count(N), params.tile_gap(G),
     divide_slab(P, A, N, G, P_tile, P_intile).
+tile_cell(P_tile, P_intile, Col, $Size()) :-
+    in(P, Col),
+    params.tile_axis(A), params.tile_size(K), params.tile_gap(G),
+    divide_by_size_slab(P, A, K, G, P_tile, P_intile).
 
 // Output frame: tile_count-sided square.
 .init frame = Frame2D<Unit>
 frame.extent($U(), A, N) :- axis_elem(A), params.tile_count(N).
 
 // Output cell ↔ the tile whose index matches its row index.
-.decl row_tile(p_out: Position, p_tile: Position)
-row_tile(P_out, P_tile) :-
+.decl row_tile(p_out: Position, p_tile: Position, dc: DecChoice)
+row_tile(P_out, P_tile, Dc) :-
     frame.cell($U(), P_out), params.row_dir(D_row), dist(P_out, D_row, K),
-    tile_cell(P_tile, _, _), params.tile_dir(D_tile), dist(P_tile, D_tile, K).
+    tile_cell(P_tile, _, _, Dc), params.tile_dir(D_tile), dist(P_tile, D_tile, K).
 
 .decl out(p: Position, col: Color, ch: Choice)
 
-// --- $Lookup ---
+// --- Lookup ---
 
 .init tile_match = KeyedSetCompare<Position, Ident, TileMember>
 tile_match.pattern_member(Id, [P_intile, C]) :- params.mapping_member(Id, P_intile, C).
-tile_match.observed_member(P_tile, [P_intile, C]) :- tile_cell(P_tile, P_intile, C).
+tile_match.observed_member(P_tile, [P_intile, C]) :- tile_cell(P_tile, P_intile, C, $Size()).
 
-out(P_out, Col, $Lookup()) :-
-    row_tile(P_out, P_tile),
+out(P_out, Col, [$Lookup(), $Size()]) :-
+    row_tile(P_out, P_tile, $Size()),
     params.mapping_out(Id, Col),                 // entry's color
     tile_match.equals(P_tile, Id).               // tile content == entry
 
-// --- $HoleBox ---
+// --- HoleBox ---
 
-.decl has_hole(p_tile: Position)
-has_hole(P_tile) :- tile_cell(P_tile, _, C), params.bg(C).
+.decl has_hole(p_tile: Position, dc: DecChoice)
+has_hole(P_tile, Dc) :- tile_cell(P_tile, _, C, Dc), params.bg(C).
 
-.init hole_box = Bbox<Position>
-hole_box.cell(P_tile, P_intile) :- tile_cell(P_tile, P_intile, C), params.bg(C).
+.init hole_box = Bbox<TileK>
+hole_box.cell([P_tile, Dc], P_intile) :- tile_cell(P_tile, P_intile, C, Dc), params.bg(C).
 
-out(P_out, Col, $HoleBox()) :-
-    row_tile(P_out, P_tile),                                   // output cell, its tile
-    ( hole_box.margin(P_tile, M), params.box_color(M, Col)     // the hole's box → its color
-    ; !has_hole(P_tile), params.full_color(Col)                // no hole — the full color
+out(P_out, Col, [$HoleBox(), Dc]) :-
+    row_tile(P_out, P_tile, Dc),                                       // output cell, its tile
+    ( hole_box.margin([P_tile, Dc], M), params.box_color(M, Col)       // the hole's box → its color
+    ; !has_hole(P_tile, Dc), params.full_color(Col)                    // no hole — the full color
     ).
-
-// --- determination ---
 
 .type TileKey = [e: Example, p_tile: Position]
 
@@ -124,6 +150,10 @@ out(P_out, Col, $HoleBox()) :-
         ex_in(E, P, Col),
         params.tile_axis(A), params.tile_count(N), params.tile_gap(G),
         divide_slab(P, A, N, G, P_tile, P_intile).
+
+    // The tile's extent along the split axis.
+    .decl tile_size(k: number)
+    tile_size(K) :- ftile(_, P_intile, _), params.tile_axis(A), axis_dim(P_intile, A, K).
 
     // Tiles with equal content share an entry.
     .init same = KeyedSetCompare<TileKey, TileKey, TileMember>
@@ -136,19 +166,20 @@ out(P_out, Col, $HoleBox()) :-
     .decl mapping_member(id: Ident, p_intile: Position, c: Color)
     mapping_member(Id, P_intile, C) :- entry.id(T, Id), ftile(T, P_intile, C).
 
-    .decl mapping_out(id: Ident, c_out: Color)
-    mapping_out(Id, C_out) :-
-        entry.id([E, P_tile], Id),
-        params.tile_dir(D_tile), dist(P_tile, D_tile, K),
-        ex_out(E, P_out, C_out), params.row_dir(D_row), dist(P_out, D_row, K).
+    // The tile's class color: the output row at the tile's index.
+    .decl tile_color(t: TileKey, col: Color)
+    tile_color([E, P_tile], Col) :-
+        ftile([E, P_tile], _, _),
+        params.tile_dir(D_tile), dist(P_tile, D_tile, K),                     // tile index
+        ex_out(E, P_out, Col), params.row_dir(D_row), dist(P_out, D_row, K).  // row at that index
 
-    // A holed tile's hole-bbox margin keys its row's class color.
+    .decl mapping_out(id: Ident, c_out: Color)
+    mapping_out(Id, C_out) :- entry.id(T, Id), tile_color(T, C_out).
+
+    // A holed tile's hole-bbox margin keys its class color.
     .init fhole = Bbox<TileKey>
     fhole.cell(T, P_intile) :- ftile(T, P_intile, C), params.bg(C).
 
     .decl box_color(margin: Position, col: Color)
-    box_color(M, Col) :-
-        fhole.margin([E, P_tile], M),
-        params.tile_dir(D_tile), dist(P_tile, D_tile, K),
-        ex_out(E, P_out, Col), params.row_dir(D_row), dist(P_out, D_row, K).
+    box_color(M, Col) :- fhole.margin(T, M), tile_color(T, Col).
 }

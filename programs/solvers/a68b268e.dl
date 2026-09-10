@@ -10,83 +10,110 @@
 //              params.lex_axis.
 //   $Order() — per-tile ranks stored in params.prio.
 //   $Ink()   — per-ink ranks stored in params.ink_rank.
+//
+// Every grid of the task is 9×9, so the division reads two ways, and the
+// $Scan and $Ink cases carry both as a DecChoice field:
+//
+//   $Count() — params.tiles arrangement of equal tiles.
+//   $Size()  — tiles of params.tile_dim, as many as the grid holds.
+//
+// $Order() takes no DecChoice field: params.prio keys the 2×2 arrangement,
+// so the $Size() reading is total only where the grid holds two tiles per
+// axis.
 
 #include "../lib.dl"
 
-.type Choice = Scan {} | Order {} | Ink {}
+.type DecChoice = Count {} | Size {}
+.type Choice    = Scan {d: DecChoice} | Order {} | Ink {d: DecChoice}
+
+.type CellKey = [d: DecChoice, p: Position]
 
 .comp Params {
+    // --- shared ---
     .decl bg(col: Color) bg(0).
-    .decl tiles(n: number) tiles(2).
     .decl gap(g: number) gap(1).
 
-    // --- $Scan ---
+    // --- Count ---
+    .decl tiles(n: number) tiles(2).
+
+    // --- Size ---
+    .decl tile_dim(k: number) tile_dim(4).
+
+    // --- Scan ---
     .decl lex_corner(d: DiagDir) lex_corner(DIAG_TL).
     .decl lex_axis(a: Axis) lex_axis(AXIS_V).
 
-    // --- $Order ---
+    // --- Order ---
     .decl prio(p: Position, r: number)
     GRID_2x2(prio,
         0, 1,
         2, 3)
 
-    // --- $Ink ---
+    // --- Ink ---
     .decl ink_rank(c: Color, r: number)
     ink_rank(7, 0). ink_rank(4, 1). ink_rank(8, 2). ink_rank(6, 3).
 }
 
 .init params = Params
 
+.decl dec_choice(dc: DecChoice)
+dec_choice($Count()). dec_choice($Size()).
+
+// The division each case reads.
+.decl tiling(ch: Choice, dc: DecChoice)
+tiling($Scan(Dc), Dc) :- dec_choice(Dc).
+tiling($Order(), $Count()).
+tiling($Ink(Dc), Dc) :- dec_choice(Dc).
+
 // Tile decomposition; the divider falls in the gap.
-.decl tile_cell(p_tile: Position, p_intile: Position, col: Color)
-tile_cell(P_tile, P_intile, Col) :-
+.decl tile_cell(dc: DecChoice, p_tile: Position, p_intile: Position, col: Color)
+tile_cell($Count(), P_tile, P_intile, Col) :-
     in(P_grid, Col),
-    params.tiles(N), params.gap(G),
+    params.tiles(N), params.gap(G),                                  // tile count
     divide_2d(P_grid, N, G, P_tile, P_intile).
+tile_cell($Size(), P_tile, P_intile, Col) :-
+    in(P_grid, Col),
+    params.tile_dim(K), params.gap(G),                               // tile size
+    divide_by_size_2d(P_grid, K, G, P_tile, P_intile).
 
 // Ink at an output cell, keyed by its tile.
-.decl tile_ink(p_tile: Position, p: Position, col: Color)
-tile_ink(P_tile, P_intile, Col) :- tile_cell(P_tile, P_intile, Col), !params.bg(Col).
+.decl tile_ink(dc: DecChoice, p_tile: Position, p: Position, col: Color)
+tile_ink(Dc, P_tile, P_intile, Col) :- tile_cell(Dc, P_tile, P_intile, Col), !params.bg(Col).
 
-.decl ink_at(p: Position, col: Color)
-ink_at(P, Col) :- tile_ink(_, P, Col).
-
-.decl impl_choice(ch: Choice)
-impl_choice($Scan()). impl_choice($Order()). impl_choice($Ink()).
+.decl ink_at(dc: DecChoice, p: Position, col: Color)
+ink_at(Dc, P, Col) :- tile_ink(Dc, _, P, Col).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, Ch) :- impl_choice(Ch), tile_cell(_, P, _), !ink_at(P, _), params.bg(Col).
+out(P, Col, Ch) :- tiling(Ch, Dc), tile_cell(Dc, _, P, _), !ink_at(Dc, P, _), params.bg(Col).
 
-// --- $Scan ---
+// --- Scan ---
 
-.init lex = LexOrder<Unit>
-lex.corner($U(), D) :- params.lex_corner(D).
-lex.axis($U(), A) :- params.lex_axis(A).
-lex.cell($U(), T) :- tile_ink(T, _, _).
+.init lex = LexOrder<DecChoice>
+lex.corner(Dc, C) :- dec_choice(Dc), params.lex_corner(C).
+lex.axis(Dc, A) :- dec_choice(Dc), params.lex_axis(A).
+lex.cell(Dc, T) :- tile_ink(Dc, T, _, _).
 
 // The earliest tile in the scan inking each cell.
-.init front_scan = ArgExtremes<Position, Position>
-front_scan.cand(P, T, R) :- tile_ink(T, P, _), lex.rank($U(), T, R).
+.init front_scan = ArgExtremes<CellKey, Position>
+front_scan.cand([Dc, P], T, R) :- tile_ink(Dc, T, P, _), lex.rank(Dc, T, R).
 
-out(P, Col, $Scan()) :- front_scan.low(P, T, _), tile_ink(T, P, Col).
+out(P, Col, $Scan(Dc)) :- front_scan.low([Dc, P], T, _), tile_ink(Dc, T, P, Col).
 
-// --- $Order ---
+// --- Order ---
 
 // The foremost tile inking each cell.
 .init front_tile = ArgExtremes<Position, Position>
-front_tile.cand(P, T, R) :- tile_ink(T, P, _), params.prio(T, R).
+front_tile.cand(P, T, R) :- tile_ink($Count(), T, P, _), params.prio(T, R).
 
-out(P, Col, $Order()) :- front_tile.low(P, T, _), tile_ink(T, P, Col).
+out(P, Col, $Order()) :- front_tile.low(P, T, _), tile_ink($Count(), T, P, Col).
 
-// --- $Ink ---
+// --- Ink ---
 
 // The foremost ink at each cell.
-.init front_ink = ArgExtremes<Position, Color>
-front_ink.cand(P, Col, R) :- ink_at(P, Col), params.ink_rank(Col, R).
+.init front_ink = ArgExtremes<CellKey, Color>
+front_ink.cand([Dc, P], Col, R) :- ink_at(Dc, P, Col), params.ink_rank(Col, R).
 
-out(P, Col, $Ink()) :- front_ink.low(P, Col, _).
-
-// --- determination ---
+out(P, Col, $Ink(Dc)) :- front_ink.low([Dc, P], Col, _).
 
 .comp Determine {
     .decl tile_ink(e: Example, p_tile: Position, p: Position, col: Color)
@@ -125,4 +152,8 @@ out(P, Col, $Ink()) :- front_ink.low(P, Col, _).
 
     .decl ink_rank(c: Color, r: number)
     ink_rank(Col, R) :- tile_ink(_, T, _, Col), prio(T, R).
+
+    // The tile is the output frame.
+    .decl tile_dim(k: number)
+    tile_dim(K) :- ex_out(_, P, _), axis_elem(A), axis_dim(P, A, K).
 }

@@ -89,8 +89,6 @@ out(P, Col, $Rows()) :-
       split(Q, A, Along, Across2), pattern_row(Across2)    // same column, pattern row
     ).
 
-// --- determination ---
-
 .type LinePos = [e: Example, a: Axis, along: Position]
 
 .comp Determine {

@@ -1,0 +1,75 @@
+// 5751f35e
+// draft
+// concept: symmetry repair border
+// The grid is a nest of concentric rings, each ring drawn in one color, and
+// damage has erased cells to the background. The output redraws the nest
+// whole. Cases:
+//
+//   $Layers   — the shallowest surviving cell of a color fixes that color's
+//               box, and a cell takes the innermost box that covers it.
+//   $Rings    — a ring takes the one color its own surviving cells hold.
+//   $Symmetry — a cell takes the color that survives in its orbit under the
+//               grid's symmetry group.
+
+#include "../lib.dl"
+
+.type Choice = Layers {} | Rings {} | Symmetry {}
+
+.comp Params {
+    // --- shared ---
+    // What the damage leaves behind.
+    .decl bg(c: Color) bg(0).
+
+    // --- Symmetry ---
+    // The nest's symmetry group.
+    .decl sym(s: Sym) sym(SYM_D4).
+}
+
+.init params = Params
+
+// The grid peels into concentric rings, one per depth.
+.init peel = Rim<Unit>
+peel.cell($U(), P) :- in(P, _).
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.bg(Col).
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// --- Layers ---
+
+// A color's box is the ring its shallowest cell sits on.
+.init reach = Extremes<Color>
+reach.cand(Col, K) :- ink(P, Col), peel.depth($U(), P, K).
+
+.decl layer(col: Color, b: Position)
+layer(Col, B) :- reach.low(Col, K), uniform_delta(K, B).
+
+.decl covered(p: Position, col: Color)
+covered(P, Col) :- in(P, _), layer(Col, B), geq(P, B).
+
+// A layer inside Col's box also covers P.
+.decl shadowed(p: Position, col: Color)
+shadowed(P, Col) :- layer(Col, B), covered(P, Col2), layer(Col2, B2), gt(B2, B).
+
+out(P, Col, $Layers()) :- covered(P, Col), !shadowed(P, Col).
+out(P, Col, $Layers()) :- in(P, _), !covered(P, _), params.bg(Col).  // outside every box
+
+// --- Rings ---
+
+.init ring_color = Unanimous<number, Color>
+ring_color.item(K, Col) :- ink(P, Col), peel.depth($U(), P, K).
+
+out(P, Col, $Rings()) :- peel.depth($U(), P, K), ring_color.value(K, Col).
+out(P, Col, $Rings()) :- peel.depth($U(), P, K), !ring_color.item(K, _), params.bg(Col).  // a ring with nothing left in it
+
+// --- Symmetry ---
+
+// The colors surviving in a cell's orbit. The group holds the identity, so a
+// surviving cell is its own counterpart.
+.decl orbit_color(p: Position, col: Color)
+orbit_color(P, Col) :-
+    in(P, _), params.sym(S), sym_member(S, D), apply(D, P, Q), ink(Q, Col).
+
+out(P, Col, $Symmetry()) :- orbit_color(P, Col).
+out(P, Col, $Symmetry()) :- in(P, Col), !orbit_color(P, _).  // an orbit with nothing left in it

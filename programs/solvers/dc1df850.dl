@@ -7,7 +7,7 @@
 // The cases differ in the footprint, and agree on this task's data:
 //
 //   $Grow()  — markers grow one step in all eight directions.
-//   $Stamp() — a stored template, seated by its marker cell on each marker.
+//   $Stamp() — a stored template, anchored at its marker cell on each marker.
 
 #include "../lib.dl"
 
@@ -21,15 +21,12 @@
     .decl halo(c: Color) halo(1).
 
     // --- $Stamp ---
-    .decl template(p: Position, col: Color)
-    GRID_3x3(template,
-        1, 1, 1,
-        1, 2, 1,
-        1, 1, 1)
-
-    // The template's own marker cell — the one that lands on a marker.
-    .decl seat(p: Position)
-    seat(Ps) :- template(Ps, M), marker(M).
+    // Halo cells as offsets from the marker, `@` on the marker cell.
+    .decl template(delta: Shift, col: Color)
+    GRID_STAMP_SPARSE_3x3(template,
+        1,  1, 1,
+        1, @2, 1,
+        1,  1, 1)
 }
 
 .init params = Params
@@ -46,9 +43,8 @@ halo(P, Col, $Grow()) :-
 
 // --- $Stamp ---
 halo(P, Col, $Stamp()) :-
-    marker_at(Q), params.template(Pt, Col),       // a marker, a template cell
-    params.seat(Ps), displacement(Ps, Pt, Off),   // the cell's offset from the seat
-    compose(Q, Off, P), in(P, _).                 // seated on the marker, on-grid
+    marker_at(Q), params.template(Off, Col),   // a marker, a template offset
+    compose(Q, Off, P), in(P, _).              // seated on the marker, on-grid
 
 .decl impl_choice(ch: Choice)
 impl_choice($Grow()). impl_choice($Stamp()).
@@ -56,8 +52,6 @@ impl_choice($Grow()). impl_choice($Stamp()).
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- halo(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !halo(P, _, Ch).
-
-// --- determination ---
 
 .comp Determine {
     // A second marker in the pair leaves a repainted cell no unique source.
@@ -73,12 +67,6 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !halo(P, _, Ch).
         ).
 
     // Footprint cells as offsets from their marker.
-    .decl offset(off: Shift, col: Color)
-    offset(Off, Col) :- footprint(M, P, Col), displacement(M, P, Off).
-
-    .init frame = BoxFrame<Unit>
-    frame.cell($U(), Off) :- offset(Off, _).
-
-    .decl template(p: Position, col: Color)
-    template(Pt, Col) :- offset(Off, Col), frame.inner($U(), Off, Pt).
+    .decl template(delta: Shift, col: Color)
+    template(Off, Col) :- footprint(M, P, Col), displacement(M, P, Off).
 }

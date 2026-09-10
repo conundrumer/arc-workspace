@@ -1,0 +1,71 @@
+// 358ba94e
+// draft
+// concept: objects crop count enclose
+// Several solid squares sit apart on a bg field, each with a few cells punched
+// out of its inside. Each square carries a count; one square's count is matched
+// by no other square, and the output is that square, cropped to its own box.
+// Cases claim what the count runs over:
+//
+//   $Ink      — the square's own cells.
+//   $Holes    — the bg cells inside the square's box.
+//   $Cavities — the bg regions the square closes off.
+//
+// The squares here share one size and every punched cell stands alone, so the
+// three counts move together.
+
+#include "../lib.dl"
+
+.type Choice = Ink {} | Holes {} | Cavities {}
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+}
+
+.init params = Params
+
+.init pieces = Components<Unit>
+pieces.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+// Each square viewed from its own box: the crop frame, and the inside the
+// punched cells sit in.
+.init box = BoxFrame<Ident>
+box.cell(Id, P) :- pieces.label($U(), P, Id).
+box.grid(Id, P) :- pieces.label($U(), _, Id), in(P, _).
+
+.decl score(id: Ident, ch: Choice, n: number)
+
+// --- $Ink ---
+
+.init ink_count = Tally<Ident, Position>
+ink_count.item(Id, P) :- pieces.label($U(), P, Id).
+score(Id, $Ink(), N) :- ink_count.tally(Id, N).
+
+// --- $Holes ---
+
+.init hole_count = Tally<Ident, Position>
+hole_count.domain(Id) :- pieces.label($U(), _, Id).  // an unpunched square scores 0
+hole_count.item(Id, P) :- box.inside(Id, P), in(P, Col), params.bg(Col).
+score(Id, $Holes(), N) :- hole_count.tally(Id, N).
+
+// --- $Cavities ---
+
+.init cavity = Closed<Unit>
+cavity.cell($U(), P) :- in(P, Col), params.bg(Col).
+
+.init cavity_count = Tally<Ident, Ident>
+cavity_count.domain(Id) :- pieces.label($U(), _, Id).  // an unpunched square scores 0
+cavity_count.item(Id, Id_reg) :-
+    cavity.region($U(), P, Id_reg), dir_elem(D), neighbor(P, D, Q),  // a closed region
+    pieces.label($U(), Q, Id).                                       // against this square
+score(Id, $Cavities(), N) :- cavity_count.tally(Id, N).
+
+// --- output ---
+
+// A square another square ties with on score.
+.decl shared(id: Ident, ch: Choice)
+shared(Id, Ch) :- score(Id, Ch, N), score(Id2, Ch, N), Id != Id2.
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_inner, Col, Ch) :-
+    score(Id, Ch, _), !shared(Id, Ch),      // the square nothing ties with
+    box.inner(Id, P, P_inner), in(P, Col).  // cropped to its own box

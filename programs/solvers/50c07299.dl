@@ -1,0 +1,68 @@
+// 50c07299
+// draft
+// concept: move count d4
+// A single segment of params.ink runs along params.dir on a params.bg field. The output
+// erases that segment and draws a new one further along the same line: it
+// starts at the cell just beyond the segment's leading end, and it holds one
+// cell more than the segment. Choice says what fixes the new segment:
+//
+//   $Turn()  — the segment, grown by that cell, turned half about it.
+//   $Count() — the run from that cell on, reaching as many steps along
+//              params.dir as the segment has cells.
+
+#include "../lib.dl"
+
+.type Choice = Turn {} | Count {}
+
+.comp Params {
+    .decl bg(col: Color) bg(7).
+    .decl ink(col: Color) ink(2).
+
+    // The direction the segment runs and travels.
+    .decl dir(d: DiagDir) dir(DIAG_TR).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Turn()). impl_choice($Count()).
+
+.decl mark(p: Position)
+mark(P) :- in(P, Col), params.ink(Col).
+
+// A mark further along params.dir leaves this one behind.
+.decl trailing(p: Position)
+trailing(P) :- mark(P), mark(Q), params.dir(D), nearer(D, Q, P).
+
+// The cell just beyond the segment's leading end.
+.decl beyond(p: Position)
+beyond(Q) :- mark(P), !trailing(P), params.dir(D), neighbor(P, D, Q).
+
+.decl drawn(p: Position, ch: Choice)
+
+// --- Turn ---
+
+// The segment grown by the cell beyond it.
+.decl grown(p: Position)
+grown(P) :- mark(P).
+grown(P) :- beyond(P).
+
+drawn(Q, $Turn()) :-
+    beyond(B), grown(P),
+    displacement(P, B, V), compose(B, V, Q).   // as far past B as P is short of it
+
+// --- Count ---
+
+.init line = Ray<Unit>
+line.dir($U(), D) :- params.dir(D).
+line.cell($U(), P) :- in(P, _).
+line.mark($U(), P) :- beyond(P).
+
+.init size = Tally<Unit, Position>
+size.item($U(), P) :- mark(P).
+
+drawn(Q, $Count()) :- line.ray($U(), Q, _, K, _), size.tally($U(), N), K <= N.
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- drawn(P, Ch), params.ink(Col).
+out(P, Col, Ch) :- in(P, _), impl_choice(Ch), !drawn(P, Ch), params.bg(Col).

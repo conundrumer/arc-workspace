@@ -3,21 +3,37 @@
 // The grid divides along params.axis into a stack of tiles, each drawn in its
 // own ink. The output overlays the tiles: the highest-precedence ink
 // present fills each cell, bg where every tile is empty. Each tile keeps
-// one ink in every pair, so tile and ink precedence are indistinguishable:
+// one ink in every pair, so tile and ink precedence are indistinguishable.
 //
-//   $Order() — per-tile ranks stored in params.prio.
-//   $Ink()   — per-ink ranks stored in params.ink_rank.
+// out's choice column = [d, c]:
+//
+//   d (find the tiles):
+//     $Count() — by tile count
+//     $Size()  — by tile size
+//   c (precedence):
+//     $Order() — per-tile ranks
+//     $Ink()   — per-ink ranks
 
 #include "../lib.dl"
 
-.type Choice = Order {} | Ink {}
+.type DecChoice = Count {} | Size {}
+.type Prec      = Order {} | Ink {}
+.type Choice    = [d: DecChoice, c: Prec]
+
+.type CellKey = [p: Position, d: DecChoice]
 
 .comp Params {
+    // --- shared ---
     .decl bg(col: Color) bg(0).
     .decl axis(a: Axis) axis(AXIS_V).
+
+    // --- Count ---
     .decl tiles(n: number) tiles(4).
 
-    // --- $Order ---
+    // --- Size ---
+    .decl tile_size(k: number) tile_size(3).
+
+    // --- Order ---
     .decl prio(p: Position, r: number)
     GRID_4x1(prio,
         0,
@@ -25,50 +41,56 @@
         3,
         2)
 
-    // --- $Ink ---
+    // --- Ink ---
     .decl ink_rank(c: Color, r: number)
     ink_rank(5, 0). ink_rank(4, 1). ink_rank(8, 2). ink_rank(2, 3).
 }
 
 .init params = Params
 
-.decl tile_cell(p_tile: Position, p_intile: Position, col: Color)
-tile_cell(P_tile, P_intile, Col) :-
+// --- decompose cases: the tile a cell sits in ---
+
+.decl tile_cell(p_tile: Position, p_intile: Position, col: Color, dc: DecChoice)
+tile_cell(P_tile, P_intile, Col, $Count()) :-
     in(P_grid, Col),
-    params.axis(A), params.tiles(N),
+    params.axis(A), params.tiles(N),                            // layout by count
     divide_slab(P_grid, A, N, 0, P_tile, P_intile).
+tile_cell(P_tile, P_intile, Col, $Size()) :-
+    in(P_grid, Col),
+    params.axis(A), params.tile_size(K),                        // layout by size
+    divide_by_size_slab(P_grid, A, K, 0, P_tile, P_intile).
 
 // Ink at an output cell, keyed by its tile.
-.decl tile_ink(p_tile: Position, p: Position, col: Color)
-tile_ink(P_tile, P_intile, Col) :- tile_cell(P_tile, P_intile, Col), !params.bg(Col).
+.decl tile_ink(p_tile: Position, p: Position, col: Color, dc: DecChoice)
+tile_ink(P_tile, P_intile, Col, Dc) :-
+    tile_cell(P_tile, P_intile, Col, Dc), !params.bg(Col).
 
-.decl ink_at(p: Position, col: Color)
-ink_at(P, Col) :- tile_ink(_, P, Col).
+.decl ink_at(p: Position, col: Color, dc: DecChoice)
+ink_at(P, Col, Dc) :- tile_ink(_, P, Col, Dc).
 
 .decl out(p: Position, col: Color, ch: Choice)
 
-.decl impl_choice(ch: Choice)
-impl_choice($Order()). impl_choice($Ink()).
+.decl prec_choice(c: Prec)
+prec_choice($Order()). prec_choice($Ink()).
 
-out(P, Col, Ch) :- impl_choice(Ch), tile_cell(_, P, _), !ink_at(P, _), params.bg(Col).
+out(P, Col, [Dc, C]) :-
+    prec_choice(C), tile_cell(_, P, _, Dc), !ink_at(P, _, Dc), params.bg(Col).
 
-// --- $Order ---
+// --- Order ---
 
 // The foremost tile inking each cell.
-.init front_tile = ArgExtremes<Position, Position>
-front_tile.cand(P, T, R) :- tile_ink(T, P, _), params.prio(T, R).
+.init front_tile = ArgExtremes<CellKey, Position>
+front_tile.cand([P, Dc], T, R) :- tile_ink(T, P, _, Dc), params.prio(T, R).
 
-out(P, Col, $Order()) :- front_tile.low(P, T, _), tile_ink(T, P, Col).
+out(P, Col, [Dc, $Order()]) :- front_tile.low([P, Dc], T, _), tile_ink(T, P, Col, Dc).
 
-// --- $Ink ---
+// --- Ink ---
 
 // The foremost ink at each cell.
-.init front_ink = ArgExtremes<Position, Color>
-front_ink.cand(P, Col, R) :- ink_at(P, Col), params.ink_rank(Col, R).
+.init front_ink = ArgExtremes<CellKey, Color>
+front_ink.cand([P, Dc], Col, R) :- ink_at(P, Col, Dc), params.ink_rank(Col, R).
 
-out(P, Col, $Ink()) :- front_ink.low(P, Col, _).
-
-// --- determination ---
+out(P, Col, [Dc, $Ink()]) :- front_ink.low([P, Dc], Col, _).
 
 .comp Determine {
     .decl tile_ink(e: Example, p_tile: Position, p: Position, col: Color)

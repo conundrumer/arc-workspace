@@ -1,0 +1,56 @@
+// 2753e76c
+// draft
+// concept: objects count rank
+// Solid rectangles of several colors lie on the grid. The output is a bar
+// chart of how many rectangles each color has: one row per color, rows
+// ordered by count, each bar as many cells long as that color's count.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+
+    // The chart corner: the top-ranked row lies against it, and every bar
+    // grows from it.
+    .decl corner(d: DiagDir) corner(DIAG_TR).
+
+    // The axis the rows stack along; the bars run across it.
+    .decl rank_axis(a: Axis) rank_axis(AXIS_V).
+}
+
+.init params = Params
+
+.init blocks = Components<Color>
+blocks.node(Col, P) :- in(P, Col), !params.bg(Col).
+
+.init rects = Tally<Color, Ident>
+rects.item(Col, Id) :- blocks.label(Col, _, Id).
+
+// Rows descend by count: the color with the most rectangles ranks 0.
+.init order = Ordinal<Unit>
+order.idx_set($U(), N) :- rects.tally(_, N).
+
+// The chart: one row per color, as wide as the longest bar.
+.init colors = Tally<Unit, Color>
+colors.item($U(), Col) :- rects.tally(Col, _).
+
+.init chart = Frame2D<Unit>
+chart.extent($U(), A, N) :- params.rank_axis(A), colors.tally($U(), N).
+chart.extent($U(), A2, N) :-
+    params.rank_axis(A), perp(A, A2),      // the axis the bars run along
+    order.rank_desc($U(), N, 0).           // as long as the top-ranked bar
+
+.decl bar(p: Position, col: Color)
+bar(P, Col) :-
+    chart.cell($U(), P),
+    params.corner(Diag), params.rank_axis(A), diag_dirs(Diag, A, D_rank, D_bar),
+    rects.tally(Col, N), order.rank_desc($U(), N, R),
+    dist(P, D_rank, R),         // the color's row
+    dist(P, D_bar, K), K < N.   // N cells out from the bar edge
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    chart.cell($U(), P),
+    ( bar(P, Col)                   // bar cell
+    ; !bar(P, _), params.bg(Col)    // cell the bar leaves empty
+    ).

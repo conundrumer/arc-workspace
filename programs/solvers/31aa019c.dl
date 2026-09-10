@@ -1,0 +1,96 @@
+// 31aa019c
+// draft
+// concept: markers count rank stamp lookup
+// Noise cells of many colors over params.bg. One cell is marked out by its
+// color's cell count; the output holds only that cell, keeping its color,
+// ringed by params.border. Choice = [f, fp] crosses the hypotheses:
+//
+//   f (which cell is marked out):
+//     $ByCount()  — the cell whose color has exactly params.mark_count cells.
+//     $Minority() — the cell whose color has the fewest cells.
+//   fp (the ring):
+//     $Ring()  — structure: the mark's eight neighbors.
+//     $Shape() — data: the params.shape cells, as offsets from the mark.
+
+#include "../lib.dl"
+
+.type Find = ByCount {} | Minority {}
+.type Footprint = Ring {} | Shape {}
+.type Choice = [f: Find, fp: Footprint]
+
+.comp Params {
+    // --- shared ---
+    .decl bg(col: Color) bg(0).
+    .decl border(col: Color) border(2).
+
+    // --- $ByCount ---
+    .decl mark_count(n: number) mark_count(1).
+
+    // --- $Shape ---
+    // The ring's cells, as offsets from the mark it sits at.
+    .decl shape(delta: Shift)
+    GRID_STAMP_3x3(shape,
+        1, 1, 1,
+        1, @_, 1,
+        1, 1, 1)
+}
+
+.init params = Params
+
+// --- Find cases: the marked-out cell ---
+
+.decl find_choice(f: Find)
+find_choice($ByCount()). find_choice($Minority()).
+
+.init color_count = Tally<Color, Position>
+color_count.item(Col, P) :- in(P, Col), !params.bg(Col).
+
+.decl mark(p: Position, col: Color, f: Find)
+
+// $ByCount — the color with the stored count.
+mark(P, Col, $ByCount()) :-
+    in(P, Col),                                         // input cell
+    params.mark_count(K), color_count.tally(Col, K).    // its color counts K cells
+
+// $Minority — the rarest color.
+.init rarest = ArgExtremes<Unit, Color>
+rarest.cand($U(), Col, N) :- color_count.tally(Col, N).
+
+mark(P, Col, $Minority()) :- in(P, Col), rarest.low($U(), Col, _).
+
+// --- Footprint cases: the ring around a mark ---
+
+.decl footprint_choice(fp: Footprint)
+footprint_choice($Ring()). footprint_choice($Shape()).
+
+// The ring's cells, cut off by the frame edge.
+.decl footprint(p_mark: Position, p: Position, fp: Footprint)
+
+footprint(P, Q, $Ring()) :-
+    mark(P, _, _),                                 // a mark
+    dir8_elem(D), neighbor(P, D, Q), in(Q, _).     // each step around it
+
+footprint(P, Q, $Shape()) :-
+    mark(P, _, _), params.shape(V),    // a mark, a shape offset
+    compose(P, V, Q), in(Q, _).        // laid onto the frame
+
+// --- output ---
+
+.decl ink(p: Position, col: Color, ch: Choice)
+ink(Q, Col, [F, Fp]) :- mark(P, _, F), footprint(P, Q, Fp), params.border(Col).
+ink(P, Col, [F, Fp]) :- mark(P, Col, F), footprint_choice(Fp).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- ink(P, Col, Ch).
+out(P, Bg, [F, Fp]) :-
+    in(P, _), find_choice(F), footprint_choice(Fp),    // each claim pair
+    !ink(P, _, [F, Fp]), params.bg(Bg).                // cell the ink leaves
+
+.comp Determine {
+    // The output inks the mark in its own color and the ring in params.border.
+    .decl shape(delta: Shift)
+    shape(V) :-
+        ex_out(E, P, Col), !params.border(Col), !params.bg(Col),    // the mark
+        ex_out(E, Q, B), params.border(B),                          // a ring cell
+        displacement(P, Q, V).                                      // measured from the mark
+}

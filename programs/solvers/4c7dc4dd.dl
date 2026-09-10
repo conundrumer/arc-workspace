@@ -1,0 +1,170 @@
+// 4c7dc4dd
+// draft
+// concept: objects induce parity span d4
+// Four square frames sit in a noisy field, each holding a panel of drawn
+// cells over unfilled ones. One panel is empty: it is the slot the answer
+// fills. Of the other three, two stand as a demonstration — one completion
+// rule carries the first onto the second exactly — and the answer is the
+// third panel read under that rule.
+//
+// The rules the input may demonstrate:
+//   extend  — the marks lie on a canvas whose color is constant along both
+//             diagonal families; the panel shows one half of it, and the
+//             completion shows the other half.
+//   span    — a mark on each side of an unfilled cell in its row or column
+//             fills it, in the panel's own color.
+//   reflect — the marks span a window of a pattern symmetric under D4; the
+//             completion repeats that window at every image of it, and lays
+//             the panel's own color over what no image reaches.
+
+#include "../lib.dl"
+
+.comp Params {
+    // The color of a panel's unfilled cells.
+    .decl hole(col: Color) hole(0).
+}
+
+.init params = Params
+
+// --- frames ---
+
+// The rectangles each drawn color draws.
+.init drect = DrawnRect<Color>
+drect.node(Col, P) :- in(P, Col), !params.hole(Col).
+
+// What a rectangle encloses.
+.init bcells = BoxCells<Position>
+bcells.box(Pan, Pan) :- drect.rect(_, Pan).
+bcells.cell(Pan, P) :- bcells.box(Pan, _), in(P, _).
+
+// Those cells, read in the enclosed frame.
+.init box = BoxFrame<Position>
+box.cell(Pan, P) :- bcells.hole(Pan, P).
+
+// A candidate panel: what a square rectangle encloses.
+.decl cand(pan: Position, p_intile: Position, col: Color)
+cand(Pan, P_intile, Col) :-
+    box.extents(Pan, _, N, N),                          // a square box
+    box.inner(Pan, P_grid, P_intile), in(P_grid, Col).
+
+// A framed panel: a candidate holding an unfilled cell, with its side.
+.decl cand_side(pan: Position, n: number)
+cand_side(Pan, N) :- cand(Pan, _, Col), params.hole(Col), box.extent(Pan, _, N).
+
+// The panels are the largest of them; smaller frames sit inside their marks.
+.init widest = ArgExtremes<Unit, Position>
+widest.cand($U(), Pan, N) :- cand_side(Pan, N).
+
+.decl panel(pan: Position)
+panel(Pan) :- widest.high($U(), Pan, _).
+
+// A panel's cells, the unfilled ones included.
+.decl pval(pan: Position, p_intile: Position, col: Color)
+pval(Pan, P_intile, Col) :- panel(Pan), cand(Pan, P_intile, Col).
+
+// A drawn cell.
+.decl mark(pan: Position, p_intile: Position, col: Color)
+mark(Pan, P_intile, Col) :- pval(Pan, P_intile, Col), !params.hole(Col).
+
+// A panel holding a drawing.
+.decl content(pan: Position)
+content(Pan) :- mark(Pan, _, _).
+
+// The color a panel holds that another content panel does without.
+.decl own(pan: Position, col: Color)
+own(Pan, Col) :- mark(Pan, _, Col), content(Pan2), Pan != Pan2, !mark(Pan2, _, Col).
+
+.type PanelCell = [pan: Position, p: Position]
+
+// --- induce ---
+
+// A catalog of parses, one per key: the parse that carries one object
+// exactly onto a second stands demonstrated.
+.comp Induce<Key, Obj, Val> {
+    // Each object's cells, total over its frame.
+    .decl cell(o: Obj, p: Position, v: Val)  // input
+
+    // The rule's parse of an object, per key.
+    .decl render(key: Key, o: Obj, p: Position, v: Val)  // input
+
+    // The rule does not carry o onto o2.
+    .decl defect(key: Key, o: Obj, o2: Obj)
+    defect(Ky, O, O2) :-
+        render(Ky, O, P, V),                          // a cell the rule reads
+        cell(O2, P, V2), V != V2.                     // against the second object
+    defect(Ky, O, O2) :-
+        render(Ky, O, _, _),
+        cell(O2, P, _), !render(Ky, O, P, _).         // a cell the rule leaves unread
+
+    // The pair the input demonstrates the rule on.
+    .decl demo(key: Key, o: Obj, o2: Obj)
+    demo(Ky, O, O2) :-
+        render(Ky, O, _, _), cell(O, _, _), cell(O2, _, _), O != O2,
+        !defect(Ky, O, O2).
+}
+
+// The catalog's rules, keying Induce — the comp's own override of the type
+// rule (see proposals/Induce.md).
+.type Rule = Extend {} | Span {} | Reflect {}
+
+.init catalog = Induce<Rule, Position, Color>
+catalog.cell(Pan, P_intile, Col) :- content(Pan), pval(Pan, P_intile, Col).
+
+// --- extend ---
+
+// The canvas the marks lie on: one color along a diagonal, chained across
+// the two diagonal families.
+.decl spread(pan: Position, p_intile: Position, col: Color)
+spread(Pan, P_intile, Col) :- mark(Pan, P_intile, Col).
+spread(Pan, Q, Col) :-
+    spread(Pan, P, Col), diag_axis_elem(Da), same_line(Da, P, Q), pval(Pan, Q, _).
+
+.init canvas = Unanimous<PanelCell, Color>
+canvas.item([Pan, P_intile], Col) :- spread(Pan, P_intile, Col).
+
+catalog.render($Extend(), Pan, P_intile, Col) :-
+    pval(Pan, P_intile, V), params.hole(H),
+    ( V = H, canvas.value([Pan, P_intile], Col)                   // unfilled: the canvas
+    ; V != H, Col = H ).                                          // a mark: unfilled
+
+// --- span ---
+
+.init flank = Between<Position>
+flank.cell(Pan, P_intile) :- pval(Pan, P_intile, _).
+flank.mark(Pan, P_intile) :- mark(Pan, P_intile, _).
+flank.axis(Pan, A) :- panel(Pan), axis_elem(A).
+
+catalog.render($Span(), Pan, P_intile, Col) :- mark(Pan, P_intile, Col).
+catalog.render($Span(), Pan, P_intile, Col) :-
+    pval(Pan, P_intile, H), params.hole(H),
+    ( flank.between(Pan, P_intile), own(Pan, Col)                 // flanked: the panel's own color
+    ; !flank.between(Pan, P_intile), Col = H ).                   // else it stays unfilled
+
+// --- reflect ---
+
+// The window a panel shows: the box its marks span.
+.init window = Bbox<Position>
+window.cell(Pan, P_intile) :- mark(Pan, P_intile, _).
+window.grid(Pan, P_intile) :- pval(Pan, P_intile, _).
+
+// What every D4 image of the window holds.
+.decl repeat(pan: Position, p_intile: Position, col: Color)
+repeat(Pan, Q, Col) :-
+    window.inside(Pan, P_intile), pval(Pan, P_intile, Col),
+    d4_elem(D), apply(D, P_intile, Q).
+
+.init image = Unanimous<PanelCell, Color>
+image.item([Pan, P_intile], Col) :- repeat(Pan, P_intile, Col).
+
+catalog.render($Reflect(), Pan, P_intile, Col) :-
+    pval(Pan, P_intile, _),
+    ( image.value([Pan, P_intile], Col)                           // an image of the window
+    ; !repeat(Pan, P_intile, _), own(Pan, Col) ).                 // out of every image's reach
+
+// --- output ---
+
+// The panel the demonstration leaves, read under the rule it demonstrates.
+.decl out(p: Position, col: Color)
+out(P_intile, Col) :-
+    content(Pan), Pan != Pan1, Pan != Pan2,
+    catalog.demo(R, Pan1, Pan2), catalog.render(R, Pan, P_intile, Col).

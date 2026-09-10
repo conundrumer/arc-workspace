@@ -7,8 +7,9 @@
 // out's choice column = [d, b]:
 //
 //   d (decompose):
-//     $Tile() — pre-tabulated in the parameters via tile_pos
-//     $Div()  — derived in the program via the divide primitive
+//     $Table() — pre-tabulated in the parameters via tile_pos
+//     $Count() — derived in the program by pane count
+//     $Size()  — derived in the program by pane size
 //
 //   b (priority):
 //     $Spatial() — pane order: the pane nearest params.stack_dir wins
@@ -17,7 +18,7 @@
 
 #include "../lib.dl"
 
-.type DecChoice = Tile {} | Div {}
+.type DecChoice = Table {} | Count {} | Size {}
 .type Body      = Spatial {} | Palette {} | Stack {}
 .type Choice    = [d: DecChoice, b: Body]
 
@@ -33,7 +34,7 @@
 
     .decl bg(c: Color) bg(0).
 
-    // --- Tile decompose data ---
+    // --- Table decompose data ---
     .decl arr_dim(a: Axis, n: number)
     arr_dim(AXIS_V, 1). arr_dim(AXIS_H, 3).
     .decl gap(g: number) gap(1).
@@ -42,15 +43,16 @@
         arr_dim(AXIS_V, Av), arr_dim(AXIS_H, Ah), frame_dim(K), gap(G),
         helpers.tile_pos([Av, Ah], [K, K], [0, G], P_grid, P_tile, P_intile).
 
-    // --- Div decompose data ---
-    .decl divisor(n: number)
-    divisor(3).
-
+    // --- Count, Size decompose data ---
     .decl divide_axis(a: Axis)
     divide_axis(AXIS_H).
 
     .decl divide_gap(g: number)
     divide_gap(1).
+
+    // --- Count decompose data ---
+    .decl divisor(n: number)
+    divisor(3).
 
     // --- Spatial priority data ---
     .decl stack_dir(d: Dir)
@@ -73,15 +75,20 @@
 // --- Decompose cases ---
 
 .decl dec_choice(dc: DecChoice)
-dec_choice($Tile()).
-dec_choice($Div()).
+dec_choice($Table()).
+dec_choice($Count()).
+dec_choice($Size()).
 
 .decl decompose(p: Position, p_outer: Position, p_inner: Position, dc: DecChoice)
-decompose(P_grid, P_tile, P_intile, $Tile()) :- params.tile_decompose(P_grid, P_tile, P_intile).
-decompose(P_grid, P_tile, P_intile, $Div()) :-
+decompose(P_grid, P_tile, P_intile, $Table()) :- params.tile_decompose(P_grid, P_tile, P_intile).
+decompose(P_grid, P_tile, P_intile, $Count()) :-
     in(P_grid, _),                                                      // input position
     params.divide_axis(A), params.divisor(N), params.divide_gap(G),     // params
     divide_slab(P_grid, A, N, G, P_tile, P_intile).
+decompose(P_grid, P_tile, P_intile, $Size()) :-
+    in(P_grid, _),                                                      // input position
+    params.divide_axis(A), params.frame_dim(K), params.divide_gap(G),   // params: tile size = output frame extent
+    divide_by_size_slab(P_grid, A, K, G, P_tile, P_intile).
 
 // --- Overlay ---
 
@@ -124,8 +131,6 @@ out(O, Col, [Dc, $Palette()]) :- front_ink.low([O, Dc], Col, _).
 front_pane.cand([O, Dc], T, R) :- cand(O, T, _, Dc), params.pane_rank(T, R).
 
 out(O, Col, [Dc, $Stack()]) :- front_pane.low([O, Dc], T, _), cand(O, T, Col, Dc).
-
-// --- determination ---
 
 .comp Determine {
     .decl cand(e: Example, o: Position, p_tile: Position, col: Color)

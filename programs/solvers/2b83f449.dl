@@ -1,0 +1,128 @@
+// 2b83f449
+// draft
+// concept: lines walk
+// Corridors of params.bg lie between floors of params.wall, with params.dot at corridor ends
+// and 3-cell bars of params.bar in the floors. Each bar stands up into a params.post,
+// and its two side cells open as a gap in the floor.
+//
+// Posts and walls cut a corridor into runs. A dot enters a run at one end and
+// crosses to the other; where the floor under that end opens, it drops into
+// the run below. It stops where it cannot drop: at the end it arrived at when
+// a wall backs that end, else at the far end. Dots stopping at one end fill
+// the run from that end inward.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(8).
+    .decl wall(col: Color) wall(0).
+    .decl bar(col: Color) bar(7).
+    .decl post(col: Color) post(6).
+    .decl dot(col: Color) dot(3).
+
+    // The way the dots travel between corridors.
+    .decl fall_dir(d: Dir) fall_dir(DIR_B).
+}
+
+.init params = Params
+
+// The corridors run across the fall.
+.decl across_dir(d: Dir)
+across_dir(D) :- params.fall_dir(D0), perp_dir(D0, D).
+
+// --- posts ---
+
+// A bar lies across the fall, three cells long, so its middle is the cell
+// with bar on both sides.
+.decl bar_center(p: Position)
+bar_center(P) :-
+    in(P, Col), params.bar(Col),                               // a bar cell
+    across_dir(D), opposite(D, D2),                            // along the bar
+    neighbor(P, D, Q), in(Q, Col), neighbor(P, D2, Q2), in(Q2, Col).  // both sides
+
+// The bar stands up: the same three cells, turned onto the fall axis.
+.decl post_cell(p: Position)
+post_cell(P) :- bar_center(P).
+post_cell(P) :-
+    bar_center(Q), params.fall_dir(D0), axis_of(D0, A),
+    axis_of(D, A), neighbor(Q, D, P), in(P, _).
+
+// --- runs ---
+
+.decl wall_cell(p: Position)
+wall_cell(P) :- in(P, Col), params.wall(Col).
+
+.decl open_cell(p: Position)
+open_cell(P) :- in(P, _), !wall_cell(P), !post_cell(P).
+
+// A run is a stretch of open cells along a corridor, bounded by posts and
+// walls: each open cell casts along the corridor and halts at what bounds it.
+.init run = Ray<Unit>
+run.dir($U(), D) :- across_dir(D).
+run.cell($U(), P) :- open_cell(P).
+run.mark($U(), P) :- open_cell(P).
+run.blocked($U(), P) :- in(P, _), !open_cell(P).
+
+// A run ends where the corridor stops being open.
+.init open_rim = Rim<Unit>
+open_rim.cell($U(), P) :- open_cell(P).
+
+.decl run_end(p: Position, d: Dir)
+run_end(P, D) :- across_dir(D), open_rim.rim_dir($U(), P, D).
+
+// The other end of one run.
+.decl far_end(p: Position, q: Position)
+far_end(P, Q) :-
+    run_end(P, D), opposite(D, D2),               // an end, and the way inward
+    run.clear($U(), Q, D2, _, P), run_end(Q, D2). // the end the run leads to
+
+// A gap under P: the floor below opens and the corridor beneath it is clear.
+.decl drop(p: Position, p_land: Position)
+drop(P, P_land) :-
+    open_cell(P), params.fall_dir(D),
+    neighbor(P, D, M), open_cell(M),                 // through the floor
+    neighbor(M, D, P_land), open_cell(P_land).       // into the run below
+
+// --- the walk ---
+
+// A dot enters a run at one end and drops through a gap at the far end.
+.decl arrive(src: Position, p: Position)
+arrive(P, P) :- in(P, Col), params.dot(Col).
+arrive(Src, P_land) :- arrive(Src, P), far_end(P, Q), drop(Q, P_land).
+
+.decl post_side(p: Position, d: Dir)
+post_side(P, D) :- open_cell(P), across_dir(D), neighbor(P, D, Q), post_cell(Q).
+
+// A post only divides a corridor, so a dot that landed beside one slides on;
+// anything else closing the end is a wall the dot rests against.
+.decl backed(p: Position)
+backed(P) :- run_end(P, D), !post_side(P, D).
+
+.decl rest_at(src: Position, p: Position)
+rest_at(Src, T) :-
+    arrive(Src, P), far_end(P, Q), !drop(Q, _),   // nowhere left to drop
+    ( backed(P), T = P                            // pressed where it landed
+    ; !backed(P), T = Q                           // pressed at the far end
+    ).
+
+// --- the pile ---
+
+.init pile = Tally<Position, Position>
+pile.item(T, Src) :- rest_at(Src, T).
+
+// Dots stopping at one end fill the run from that end inward.
+.decl settled(p: Position)
+settled(P) :-
+    pile.tally(T, N),                     // the dots stopping at end T
+    run.clear($U(), P, _, K, T), K < N.   // the N run cells nearest T
+
+// --- output ---
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, C_in),
+    ( post_cell(P), params.post(Col)               // the standing bar
+    ; !post_cell(P), wall_cell(P), Col = C_in      // the floors, unmoved
+    ; open_cell(P), settled(P), params.dot(Col)    // a dot at rest
+    ; open_cell(P), !settled(P), params.bg(Col)    // clear corridor
+    ).

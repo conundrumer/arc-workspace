@@ -1,0 +1,65 @@
+// 7b80bb43
+// draft
+// concept: lines cast
+// Straight lines of one ink color on a background; both colors vary per pair,
+// so the background is the pair's dominant color. Loose ink cells (not
+// interior to a straight run) that touch corner to corner form a diagonal
+// chain, a bent piece of a line. A chain cell that touches ink side on is the
+// bend's anchor: the line continues straight from it, away from that ink,
+// until it reaches ink outside the chains, and the rest of the chain clears.
+// A chain whose continuation reaches no such ink is stray and clears
+// entirely.
+
+#include "../lib.dl"
+
+.comp Params {}
+
+.init params = Params
+
+// The pair's dominant color is the background.
+.init bg_mode = Mode<Unit, Color, Position>
+bg_mode.item($U(), Col, P) :- in(P, Col).
+
+.decl bg(col: Color)
+bg(Col) :- bg_mode.mode($U(), Col).
+
+.decl ink(p: Position)
+ink(P) :- in(P, Col), !bg(Col).
+
+// Interior of a straight run: ink on both sides along one axis.
+.decl flanked(p: Position)
+flanked(P) :-
+    ink(P), opposite(D, D_opp),
+    neighbor(P, D, Q), ink(Q), neighbor(P, D_opp, Q2), ink(Q2).
+
+// A loose cell touching another loose cell corner to corner.
+.decl chain(p: Position)
+chain(P) :-
+    ink(P), !flanked(P),
+    diag_dir_elem(D), neighbor(P, D, Q), ink(Q), !flanked(Q).
+
+// A chain cell touching ink side on continues straight, away from that ink.
+.decl straight(p: Position, d: Dir)
+straight(P, D) :- chain(P), opposite(D, D_in), neighbor(P, D_in, Q), ink(Q).
+
+.init cast = Ray<Dir>
+cast.dir(D, D) :- dir_elem(D).
+cast.cell(D, P) :- dir_elem(D), in(P, _).
+cast.mark(D, P) :- straight(P, D).
+cast.blocked(D, P) :- dir_elem(D), ink(P), !chain(P).    // chain cells do not stop a cast
+
+// A continuation that reaches ink confirms its anchor, and the open cells
+// between fill with the anchor's color.
+.decl fill(p: Position, col: Color)
+fill(P, Col) :- cast.clear(D, P, _, K, Src), K != 0, cast.stop(D, _, _, _, Src), in(Src, Col).
+
+// A chain cell that is not a confirmed anchor clears.
+.decl cleared(p: Position)
+cleared(P) :- chain(P), !cast.stop(_, _, _, _, P).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, Col_in),
+    ( fill(P, Col)                                 // the line continues here
+    ; !fill(P, _), cleared(P), bg(Col)             // a stray chain cell
+    ; !fill(P, _), !cleared(P), Col = Col_in ).    // untouched

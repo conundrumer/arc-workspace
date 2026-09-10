@@ -1,0 +1,70 @@
+// 25d487eb
+// draft
+// concept: markers cast
+// A solid arrowhead of one color carries a mark cell of a second color on its
+// base. The mark casts a ray of its own color out to the grid edge, so the ray
+// shows past the arrowhead's tip. Two models of the cast direction:
+//
+//   $Away — away from the box edge the mark sits on.
+//   $Open — toward the grid edge the arrowhead's box is farthest from.
+
+#include "../lib.dl"
+
+.type Choice = Away {} | Open {}
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+}
+
+.init params = Params
+
+// --- shared: the mark and the arrowhead's box ---
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.bg(Col).
+
+.init body = Mode<Unit, Color, Position>
+body.item($U(), Col, P) :- ink(P, Col).
+
+.decl mark(p: Position, col: Color)
+mark(P, Col) :- ink(P, Col), !body.mode($U(), Col).
+
+.init box = Bbox<Unit>
+box.cell($U(), P) :- ink(P, _).
+
+.decl cast_dir(ch: Choice, d: Dir)
+
+// --- Away ---
+
+cast_dir($Away(), D) :-
+    mark(P, _), box.edge_cell($U(), P, D_base),   // the box edge the mark is on
+    opposite(D_base, D).                          // the cast leaves by the far side
+
+// --- Open ---
+
+.init margins = ArgExtremes<Unit, Dir>
+margins.cand($U(), D, K) :- box.margin($U(), P_m), dir_elem(D), dist(P_m, D, K).
+
+cast_dir($Open(), D) :- margins.high($U(), D, _).
+
+// --- shared: the cast ---
+
+.decl impl_choice(ch: Choice)
+impl_choice($Away()). impl_choice($Open()).
+
+// The cast reports background cells only, so the arrowhead's own cells pass
+// under the ray.
+.init rays = Ray<Choice>
+rays.dir(Ch, D)  :- cast_dir(Ch, D).
+rays.cell(Ch, P) :- impl_choice(Ch), in(P, Col), params.bg(Col).
+rays.mark(Ch, P) :- impl_choice(Ch), mark(P, _).
+
+.decl beam(ch: Choice, p: Position, col: Color)
+beam(Ch, P, Col) :- rays.ray(Ch, P, _, _, Src), mark(Src, Col).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    in(P, Col_in), impl_choice(Ch),
+    ( beam(Ch, P, Col)                  // on the ray — the casting mark's color
+    ; !beam(Ch, P, _), Col = Col_in     // elsewhere — the input passes through
+    ).

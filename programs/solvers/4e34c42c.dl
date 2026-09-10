@@ -1,0 +1,108 @@
+// 4e34c42c
+// draft
+// concept: objects move
+// The grid holds fragments of one scene, scattered over a field. A fragment
+// is a connected run of ink, and it carries its whole box, field cells
+// included. Two fragments join at an alignment that lands the whole of one
+// fragment's ink of some color on the other's ink of that color, where
+// nothing the two boxes cover disagrees, and where the ink they share is more
+// than one cell. Laying every fragment at its join reassembles the scene, and
+// the output is that scene, cropped to the cells the fragments cover.
+
+#include "../lib.dl"
+
+.comp Params {}
+
+.init params = Params
+
+// The field is the color that covers most of the grid.
+.init bg_mode = Mode<Unit, Color, Position>
+bg_mode.item($U(), Col, P) :- in(P, Col).
+
+.decl bg(col: Color)
+bg(Col) :- bg_mode.mode($U(), Col).
+
+// --- fragments ---
+
+.init frags = Components<Unit>
+frags.node($U(), P) :- in(P, Col), !bg(Col).
+
+.decl frag(k: Ident)
+frag(K) :- frags.label($U(), _, K).
+
+.init box = Bbox<Ident>
+box.cell(K, P) :- frags.label($U(), P, K).
+box.grid(K, P) :- in(P, _), frag(K).
+
+.decl content(k: Ident, p: Position, col: Color)
+content(K, P, Col) :- box.inside(K, P), in(P, Col).
+
+.decl motif(k: Ident, col: Color, p: Position)
+motif(K, Col, P) :- content(K, P, Col), !bg(Col).
+
+// --- joins ---
+
+// The whole of K2's motif of a color, seated on K1's ink of that color.
+.type Pair = [k1: Ident, k2: Ident, col: Color]
+
+.init occ = Occurrences<Pair, Unit>
+occ.cell([K1, K2, Col], P, $U())  :- motif(K1, Col, P), motif(K2, Col, _), K1 != K2.
+occ.shape([K1, K2, Col], P, $U()) :- motif(K2, Col, P), motif(K1, Col, _), K1 != K2.
+
+// The shift that takes one fragment's whole motif into the other: V carries
+// K2 into K1's frame. The fit read from the other frame is the same fit.
+.decl fitted(k1: Ident, k2: Ident, v: Shift)
+fitted(K1, K2, V) :- occ.occurrence([K1, K2, _], V).
+fitted(K2, K1, V_inv) :- fitted(K1, K2, V), displacement(V, ORIGIN, V_inv).
+
+// Where the two fragments cover one cell and disagree on it.
+.decl disagree(k1: Ident, k2: Ident, v: Shift)
+disagree(K1, K2, V) :-
+    fitted(K1, K2, V),
+    content(K2, P2, Col2), compose(P2, V, P1), content(K1, P1, Col1), Col1 != Col2.
+
+// The seam: where the two fragments show the same ink.
+.type Seam = [k1: Ident, k2: Ident, v: Shift]
+
+.init seam_cell = Unanimous<Seam, Position>
+seam_cell.item([K1, K2, V], P) :-
+    fitted(K1, K2, V),
+    motif(K2, Col, P2), compose(P2, V, P), motif(K1, Col, P).
+
+// Fragments join at a fitted alignment they agree on, along a seam of more
+// than one cell.
+.decl join(k1: Ident, k2: Ident, v: Shift)
+join(K1, K2, V) :- seam_cell.clash([K1, K2, V]), !disagree(K1, K2, V).
+
+// --- the scene ---
+
+// Each fragment's shift into the frame of the fragment held still. Every
+// fragment serves as the one held still, and the crop takes the choice back
+// out.
+.decl place(base: Ident, k: Ident, v: Shift)
+place(B, B, ORIGIN) :- frag(B).
+place(B, K2, V) :- place(B, K1, V1), join(K1, K2, V2), compose(V1, V2, V).
+
+.decl scene(base: Ident, p: Position, col: Color)
+scene(B, P, Col) :- place(B, K, V), content(K, P0, Col), compose(P0, V, P).
+
+// --- the crop ---
+
+// The scene's box. Every fragment box hugs its own ink, so the cells the
+// fragments cover reach as far as the scene's ink does.
+.init crop = BoxFrame<Ident>
+crop.cell(B, P) :- scene(B, P, _).
+
+// The output sheet is that box as a frame of its own.
+.init sheet = Frame2D<Ident>
+sheet.extent(B, A, N) :- crop.extent(B, A, N).
+
+.decl paint(base: Ident, p_out: Position, col: Color)
+paint(B, P_out, Col) :- crop.inner(B, P, P_out), scene(B, P, Col).
+
+.decl out(p: Position, col: Color)
+out(P_out, Col) :-
+    sheet.cell(B, P_out),
+    ( paint(B, P_out, Col)                  // painted by a fragment
+    ; !paint(B, P_out, _), bg(Col)          // covered by none
+    ).

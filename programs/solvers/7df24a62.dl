@@ -1,0 +1,43 @@
+// 7df24a62
+// draft
+// concept: markers stamp d4
+// One box holds a motif of marks; marks of the same color are scattered over
+// the grid. Wherever the motif recurs, in any D4 pose, the box is drawn
+// around it in that pose. Marks stay, and a drawn box may run off the grid.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl box(col: Color) box(1).
+    .decl mark(col: Color) mark(4).
+}
+
+.init params = Params
+
+// --- the template ---
+
+// The box and the marks it holds, in the box's own frame.
+.init tpl = BoxFrame<Unit>
+tpl.cell($U(), P) :- in(P, Col), params.box(Col).
+tpl.grid($U(), P) :- in(P, _).
+
+// The template in each D4 pose.
+.decl pose(d: D4, p: Position, col: Color)
+pose(D, S2, Col) :- d4_elem(D), tpl.inner($U(), P, S), in(P, Col), apply(D, S, S2).
+
+// --- the occurrences ---
+
+// The posed motif seated on the grid's marks.
+.init occ = Occurrences<D4, Unit>
+occ.shape(D, S, $U()) :- pose(D, S, Col), params.mark(Col).
+occ.cell(D, P, $U()) :- d4_elem(D), in(P, Col), params.mark(Col).
+
+// A non-mark cell some seated box covers: the box's fill.
+.decl filled(p: Position)
+filled(P) :-
+    occ.occurrence(D, M), pose(D, S, _), compose(M, S, P),  // a cell of a seated box
+    in(P, Col), !params.mark(Col).                           // not a mark
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- filled(P), params.box(Col).
+out(P, Col) :- in(P, Col), !filled(P).

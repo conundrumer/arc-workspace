@@ -1,0 +1,62 @@
+// 342ae2ed
+// draft
+// concept: objects cast span
+// Solid rectangles sit on a background field, two of each color. The two
+// rectangles of a color face each other across a diagonal: a corner of one
+// lies on the diagonal from the other's facing corner. The field between
+// those corners takes the color. Every input cell keeps its own.
+//
+// Cases, on how far the paint reaches: $Cast — the corner shoots a ray that
+// stops at the first figure it meets; $Span — the two corners delimit an
+// extent, and every field cell in it is painted.
+
+#include "../lib.dl"
+
+.type Choice = Cast {} | Span {}
+
+.comp Params {
+    .decl bg(col: Color) bg(7).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Cast()). impl_choice($Span()).
+
+.type Block = [col: Color, id: Ident]
+
+.init blocks = Components<Color>
+blocks.node(Col, P) :- in(P, Col), !params.bg(Col).
+
+.init box = Bbox<Block>
+box.cell([Col, Id], P) :- blocks.label(Col, P, Id).
+
+// The corners shoot along the diagonals: the field carries a shot, a figure
+// stops one.
+.init shot = Ray<Unit>
+shot.dir($U(), D) :- diag_dir_elem(D).
+shot.mark($U(), P) :- box.corner(_, P, _).
+shot.cell($U(), P) :- in(P, Col), params.bg(Col).
+shot.blocked($U(), P) :- in(P, Col), !params.bg(Col).
+
+// A block's corner toward its partner, and the K steps to the facing corner.
+.decl link(col: Color, d: DiagDir, p_from: Position, k: number)
+link(Col, D, P1, K) :-
+    diag_opposite(D, D_opp),                        // the two facing headings
+    box.corner([Col, Id1], P1, D),                  // one block's corner toward D
+    box.corner([Col, Id2], P2, D_opp), Id1 != Id2,  // the other block's, facing back
+    shot.cast($U(), P2, D, K, P1).                  // K steps along P1's diagonal
+
+.decl paint(p: Position, col: Color, ch: Choice)
+
+// --- Cast ---
+paint(P, Col, $Cast()) :- link(Col, D, P1, _), shot.clear($U(), P, D, _, P1).
+
+// --- Span ---
+paint(P, Col, $Span()) :-
+    link(Col, D, P1, K_end),                  // the pair's facing corners, K_end apart
+    shot.ray($U(), P, D, K, P1), K < K_end.   // every field cell short of the far one
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- paint(P, Col, Ch).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(P, _, Ch).

@@ -1,0 +1,84 @@
+// 810b9b61
+// draft
+// concept: objects border enclose mapping
+// Cells of the recolor table's ink color draw shapes. A shape that is a
+// closed rectangle takes the table's fill color; every other cell passes
+// through.
+//
+// $Rect — a rectangle drawn by four ink runs; its outline recolors.
+// $Object — an ink component that draws the whole outline of its bounding
+//   box, with an inside; the component recolors.
+// $Enclose — an ink component one step from a region that ink closes off
+//   from the grid edge; the component recolors.
+
+#include "../lib.dl"
+
+.type Choice = Rect {} | Object {} | Enclose {}
+
+.comp Params {
+    .decl recolor(c_ink: Color, c_fill: Color)
+    recolor(1, 3).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Rect()). impl_choice($Object()). impl_choice($Enclose()).
+
+.decl ink(col: Color, p: Position)
+ink(Col, P) :- in(P, Col), params.recolor(Col, _).
+
+// The ink cells each case recolors.
+.decl painted(p: Position, ch: Choice)
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Fill, Ch) :- painted(P, Ch), in(P, Col), params.recolor(Col, Fill).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !painted(P, Ch).
+
+// --- Rect ---
+
+.init drect = DrawnRect<Color>
+drect.node(Col, P) :- ink(Col, P).
+
+.init rcells = BoxCells<Color>
+rcells.box(Col, B) :- drect.rect(Col, B).
+rcells.cell(Col, P) :- params.recolor(Col, _), in(P, _).
+
+painted(P, $Rect()) :- rcells.on_edge(_, P, _).
+
+// --- Object, Enclose ---
+
+.init objs = Components<Color>
+objs.node(Col, P) :- ink(Col, P).
+
+.type Obj = [col: Color, id: Ident]
+
+.decl obj(k: Obj, p: Position)
+obj([Col, Id], P) :- objs.label(Col, P, Id).
+
+// --- Object ---
+
+.init box = Bbox<Obj>
+box.cell(K, P) :- obj(K, P).
+
+.init bcells = BoxCells<Obj>
+bcells.box(K, B) :- box.margin(K, B).
+bcells.cell(K, P) :- box.margin(K, _), in(P, _).
+
+// A gap on the box's edge: the component does not draw the whole outline.
+.decl edge_gap(k: Obj)
+edge_gap(K) :- bcells.on_edge(K, P, _), !obj(K, P).
+
+painted(P, $Object()) :- obj(K, P), bcells.hole(K, _), !edge_gap(K).
+
+// --- Enclose ---
+
+// Each ink color walls the rest of the grid off.
+.init closed = Closed<Color>
+closed.cell(Col, P) :- params.recolor(Col, _), in(P, C), C != Col.
+
+// The wall of a closed region: the ink component one step from it.
+.decl wall(k: Obj)
+wall([Col, Id]) :- closed.region(Col, Q, _), dir_elem(D), neighbor(Q, D, P), obj([Col, Id], P).
+
+painted(P, $Enclose()) :- wall(K), obj(K, P).

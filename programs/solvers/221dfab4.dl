@@ -1,0 +1,154 @@
+// 221dfab4
+// draft
+// concept: markers wallpaper cast
+//
+// A straight marker segment lies among blobs of one other color. The strip the
+// segment spans — its corridor — fills with a pattern that repeats as it
+// advances off the segment's line: some offsets carry a copy of the segment,
+// others carry a beam, and the rest clear to background. A beam runs past the
+// corridor too: on its line, every blob cell across the grid takes the beam
+// color. Every other cell passes through.
+
+#include "../lib.dl"
+
+.comp Params {
+    // The segment's color.
+    .decl marker_col(col: Color)
+    marker_col(4).
+
+    // The beam's color.
+    .decl beam_col(col: Color)
+    beam_col(3).
+
+    // Length of the repeat, measured off the segment's line.
+    .decl period(w: number)
+    period(6).
+
+    // Offsets within the repeat that carry a copy of the segment.
+    .decl copy_phase(k: number)
+    copy_phase(0). copy_phase(2).
+
+    // Offsets within the repeat that carry a beam.
+    .decl beam_phase(k: number)
+    beam_phase(4).
+}
+
+.init params = Params
+
+// The marker segment and the frame it induces: the corridor it spans, and every
+// cell's offset off its line.
+.comp Parse<Key> {
+    .type KD = [key: Key, d: Dir]
+
+    .decl cell(key: Key, p: Position, col: Color)  // input
+
+    .decl marker(key: Key, p: Position)
+    marker(Ky, P) :- params.marker_col(Col), cell(Ky, P, Col).
+
+    // Each marker cell's distance from edge D.
+    .init marker_dist = Unanimous<KD, number>
+    marker_dist.item([Ky, D], K) :- dir_elem(D), marker(Ky, M), dist(M, D, K).
+
+    // The segment lies square to D, so the pattern advances along D.
+    .decl step_dir(key: Key, d: Dir)
+    step_dir(Ky, D) :- dir_elem(D), marker(Ky, _), !marker_dist.clash([Ky, D]).
+
+    // The strip the segment spans, running the length of the grid.
+    .decl corridor(key: Key, p: Position)
+    corridor(Ky, P) :-
+        cell(Ky, P, _),                              // grid cell
+        step_dir(Ky, D), axis_of(D, A),              // the pattern runs on axis A
+        marker(Ky, M), same_line(A, P, M).           // shares a line with the segment
+
+    // The grid line the segment lies on, extended to the frame's width.
+    .decl marker_line(key: Key, p: Position)
+    marker_line(Ky, P) :-
+        cell(Ky, P, _),                              // grid cell
+        step_dir(Ky, D),                             // the pattern's axis
+        marker(Ky, M), same_dist(D, P, M).           // level with the segment
+
+    .init ray = Ray<Key>
+    ray.dir(Ky, D) :- step_dir(Ky, D).
+    ray.cell(Ky, P) :- cell(Ky, P, _).
+    ray.mark(Ky, P) :- marker_line(Ky, P).
+
+    // Steps off the segment's line, counted along the pattern's axis.
+    .decl offset(key: Key, p: Position, k: number)
+    offset(Ky, P, K) :- ray.ray(Ky, P, _, K, _).
+}
+
+// --- program ---
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+.init bg_mode = Mode<Unit, Color, Position>
+bg_mode.item($U(), Col, P) :- in(P, Col).
+
+.decl bg(col: Color)
+bg(Col) :- bg_mode.mode($U(), Col).
+
+// Offset reduced into the repeat.
+.decl phase(p: Position, k: number)
+phase(P, K) :- parse.offset($U(), P, T), params.period(W), stride(T, W, 0, _, K).
+
+.decl paint(p: Position, col: Color)
+paint(P, Col) :-
+    parse.corridor($U(), P), phase(P, K),
+    ( params.copy_phase(K), params.marker_col(Col)                    // a copy of the segment
+    ; params.beam_phase(K), params.beam_col(Col)                      // the beam's own line
+    ; !params.copy_phase(K), !params.beam_phase(K), bg(Col)           // cleared between them
+    ).
+paint(P, Col) :-
+    in(P, C_in), !bg(C_in),                           // a blob cell
+    phase(P, K), params.beam_phase(K),                // on a beam's line
+    params.beam_col(Col).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- paint(P, Col).
+out(P, Col) :- in(P, Col), !paint(P, _).
+
+.comp Determine {
+    .type RepeatPhase = [e: Example, w: number, k: number]
+
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // What the corridor holds at each offset — the repeat, unreduced.
+    .decl role(e: Example, k: number, col: Color)
+    role(E, T, Col) :-
+        parse.corridor(E, P), parse.offset(E, P, T),  // corridor cell at offset T
+        ex_out(E, P, Col).                            // what the output puts there
+
+    // Repeat lengths to test: every nonzero offset the corridor reaches.
+    .decl cand(w: number)
+    cand(W) :- role(_, W, _), W != 0.
+
+    // The colors carried at each phase of a candidate repeat. Keyed per
+    // example: the cleared phases hold the example's own background.
+    .init phase_color = Unanimous<RepeatPhase, Color>
+    phase_color.item([E, W, K], Col) :-
+        cand(W), role(E, T, Col),        // candidate repeat, an offset's color
+        stride(T, W, 0, _, K).           // the offset reduced into the repeat
+
+    // W is no repeat: two offsets it identifies disagree.
+    .decl period_break(w: number)
+    period_break(W) :- phase_color.clash([_, W, _]).
+
+    .init least = Extremes<Unit>
+    least.cand($U(), W) :- cand(W), !period_break(W).
+
+    // The shortest repeat no example breaks.
+    .decl period(w: number)
+    period(W) :- least.low($U(), W).
+
+    .decl copy_phase(k: number)
+    copy_phase(K) :-
+        period(W), phase_color.value([_, W, K], Col),   // a phase of the repeat
+        params.marker_col(Col).                         // holding the segment
+
+    .decl beam_phase(k: number)
+    beam_phase(K) :-
+        period(W), phase_color.value([_, W, K], Col),   // a phase of the repeat
+        params.beam_col(Col).                           // holding a beam
+}

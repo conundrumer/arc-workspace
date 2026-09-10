@@ -27,8 +27,6 @@
 
 .init params = Params
 
-// --- parse ---
-
 .comp Parse<Key> {
     .decl cell(key: Key, p: Position, col: Color)  // input
 
@@ -83,8 +81,6 @@ paint(P, Col) :- turtle(P, _, _), !parse.block_cell($U(), P), params.arm_paint(C
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- in(P, Col_in), ( paint(P, Col) ; !paint(P, _), Col = Col_in ).
-
-// --- determination ---
 
 .type ArmKey = [e: Example, d: Dir]
 .type ArmPhase = [e: Example, d: Dir, n: number, k: number]

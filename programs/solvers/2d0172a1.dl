@@ -37,8 +37,6 @@
 .decl impl_choice(ch: Choice)
 impl_choice($Hollow()). impl_choice($Nest()).
 
-// --- parse ---
-
 .init palette = Mode<Unit, Color, Position>
 palette.item($U(), Col, P) :- in(P, Col).
 

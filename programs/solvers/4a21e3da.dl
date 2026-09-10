@@ -1,0 +1,73 @@
+// 4a21e3da
+// draft
+// concept: markers move span
+// The marker, one params.mark cell, sits on the frame border. The line running
+// across the grid from the marker's edge cuts the params.ink object in three.
+// The ink on the line stays where it is. The ink on each side travels as one
+// piece, flush into the corner that side's edge makes with the marker's edge.
+// The line itself is painted params.mark, from the marker to the farthest ink cell
+// on it, around the ink cells in between.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(1).
+    .decl mark(col: Color) mark(2).
+    .decl ink(col: Color) ink(7).
+}
+
+.init params = Params
+
+.decl ink_cell(p: Position)
+ink_cell(P) :- in(P, Col), params.ink(Col).
+
+.decl marker(p: Position)
+marker(P) :- in(P, Col), params.mark(Col).
+
+// The edge the marker sits on, and the line it cuts across the grid.
+.decl cut_dir(d: Dir)
+cut_dir(D) :- marker(P), dir_elem(D), dist(P, D, 0).
+
+.decl cut_axis(a: Axis)
+cut_axis(A) :- cut_dir(D), axis_of(D, A).
+
+.decl on_cut(p: Position)
+on_cut(P) :- in(P, _), marker(M), cut_axis(A), same_line(A, P, M).
+
+// An ink cell off the cut, tagged with the side it lies on.
+.decl side(p: Position, d: Dir)
+side(P, D) :-
+    ink_cell(P), marker(M),                   // an ink cell, and the marker
+    cut_dir(D_cut), perp_dir(D_cut, D),       // a direction across the cut
+    nearer(D, P, M).                          // nearer that edge than the marker
+
+// Each side, viewed from its own bounding box.
+.init side_box = BoxFrame<Dir>
+side_box.cell(D, P) :- side(P, D).
+
+// The side laid flush into the corner between its edge and the marker's.
+.decl moved(p: Position)
+moved(P_grid) :-
+    side_box.inner(D, _, P_box),                        // a side's cell, in its box
+    cut_dir(D_cut), diag_dirs(Diag, _, D_cut, D),       // the corner the two edges make
+    in(P_grid, _), corner_anchor(Diag, P_box, P_grid).  // the box laid into that corner
+
+// The ink the cut runs through: it stays put, and it ends the marker's line.
+.decl cut_ink(p: Position)
+cut_ink(P) :- ink_cell(P), on_cut(P).
+
+// The span from the marker to the farthest ink cell on the cut.
+.init span = Between<Unit>
+span.axis($U(), A) :- cut_axis(A).
+span.cell($U(), P) :- on_cut(P).
+span.mark($U(), P) :- marker(P).
+span.mark($U(), P) :- cut_ink(P).
+
+.decl paint(p: Position, col: Color)
+paint(P, Col) :- cut_ink(P), params.ink(Col).
+paint(P, Col) :- moved(P), params.ink(Col).
+paint(P, Col) :- span.between($U(), P), !cut_ink(P), params.mark(Col).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- paint(P, Col).
+out(P, Col) :- in(P, _), !paint(P, _), params.bg(Col).

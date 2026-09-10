@@ -1,0 +1,52 @@
+// 60d73be6
+// draft
+// concept: lines d4
+// A cross of two full lines of one color stands on a plain field, and marks
+// lie in one of the four quarters the cross cuts. Each mark is reflected in
+// both lines of the cross, so it reaches all four quarters.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(c: Color)
+    bg(7).
+}
+
+.init params = Params
+
+// --- the cross ---
+
+.type Line = [a: Axis, l: Position]
+
+// A line of one color is a line of the cross: a full line meets the cross's
+// other line, so it carries that line's color.
+.init line_color = Unanimous<Line, Color>
+line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
+
+// --- the reflections ---
+
+// A mark and its images: the cross's two flips, closed over. Each flip is
+// framed by its own line's Position, which is zero on the axis that flip
+// leaves alone, so no cell of the line has to be picked out. An image off
+// the grid is dropped; each flip acts on one axis, so every image reached
+// through a dropped one is off the grid as well.
+//
+// The cross is made of marks too, and each flip carries it onto itself.
+.decl image(p: Position, col: Color)
+image(P, Col) :- in(P, Col), !params.bg(Col).
+image(Q, Col) :-
+    image(P, Col), line_color.value([A, L], _), flip_of(A, F),    // a mark, and a cross line's flip
+    displacement(L, P, V), apply(F, V, V2), compose(L, V2, Q),    // read in the line's frame, flipped, seated back
+    in(Q, _).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- image(P, Col).
+out(P, Col) :- in(P, Col), !image(P, _).
+
+.comp Determine {
+    .init bg_mode = Mode<Example, Color, Position>
+    bg_mode.item(E, Col, P) :- ex_in(E, P, Col).
+
+    .decl bg(c: Color)
+    bg(Col) :- bg_mode.mode(_, Col).
+}

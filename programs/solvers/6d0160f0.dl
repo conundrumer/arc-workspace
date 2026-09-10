@@ -1,0 +1,36 @@
+// 6d0160f0
+// draft
+// concept: decompose markers select move
+// A separator lattice cuts the grid into a 3×3 arrangement of 3×3 tiles. One
+// cell of one tile holds params.marker. That tile moves to the arrangement
+// position that the marker's position within its tile names; every other
+// tile is blank, and the separators stay.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    .decl marker(col: Color) marker(4).
+    .decl tile_dim(k: number) tile_dim(3).
+    .decl gap(g: number) gap(1).
+}
+
+.init params = Params
+
+.decl tile(p_grid: Position, p_tile: Position, p_intile: Position)
+tile(P_grid, P_tile, P_intile) :-
+    in(P_grid, _), params.tile_dim(K), params.gap(G),
+    divide_by_size_2d(P_grid, K, G, P_tile, P_intile).
+
+// The marked tile, and the arrangement position its marker names: the
+// marker's position within the tile, read in the arrangement frame.
+.decl marked(p_src: Position, p_dst: Position)
+marked(P_src, P_dst) :- in(P, Col), params.marker(Col), tile(P, P_src, P_dst).
+
+.decl out(p: Position, col: Color)
+out(P_grid, Col) :-
+    tile(P_grid, P_tile, P_intile),
+    ( marked(P_src, P_tile), tile(P_in, P_src, P_intile), in(P_in, Col)  // the marked tile lands here
+    ; !marked(_, P_tile), params.bg(Col)                                 // blank tile
+    ).
+out(P_grid, Col) :- in(P_grid, Col), !tile(P_grid, _, _).  // separators stay

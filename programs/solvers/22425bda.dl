@@ -1,0 +1,66 @@
+// 22425bda
+// draft
+// concept: lines rank
+// Full-grid lines lie stacked on the background, one color each, running
+// along a row, a column, or a diagonal. At a crossing only the upper line
+// shows, which orders that pair; the closure of those pairs stacks every
+// line. The output is one row of the line colors, the bottom of the stack
+// at the params.stack_dir edge.
+//
+// Flagged: `family` needs two visible cells — a line occluded down to one
+// fits every family, and casts four lines' worth of false crossings. Two
+// lines the crossings never order share a rank, colliding `out` facts at
+// one Position.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(7).
+
+    // The edge the bottom of the stack sits at.
+    .decl stack_dir(d: Dir) stack_dir(DIR_L).
+}
+
+.init params = Params
+
+// --- the lines ---
+
+.decl ink(col: Color, p: Position)
+ink(Col, P) :- in(P, Col), !params.bg(Col).
+
+// same_line over the ink cells, so the universal below can negate it.
+.decl collinear(a: Axis4, p: Position, q: Position)
+collinear(A, P, Q) :- ink(_, P), ink(_, Q), axis4_elem(A), same_line(A, P, Q).
+
+// A pair of the color's cells that family a fails to put on one line.
+.decl off_family(col: Color, a: Axis4)
+off_family(Col, A) :- ink(Col, P), ink(Col, Q), axis4_elem(A), !collinear(A, P, Q).
+
+// A color's visible cells all lie on one line family.
+.decl family(col: Color, a: Axis4)
+family(Col, A) :- ink(Col, _), axis4_elem(A), !off_family(Col, A).
+
+// The whole line the color runs along, occluded stretches included.
+.decl line(col: Color, p: Position)
+line(Col, P) :- family(Col, A), ink(Col, Q), in(P, _), same_line(A, P, Q).
+
+// --- the stack ---
+
+// The color showing at a crossing hides the other line there.
+.decl hides(hi: Color, lo: Color)
+hides(Hi, Lo) :- line(Hi, P), line(Lo, P), Hi != Lo, in(P, Hi).
+
+// Stack order: below through any run of crossings.
+.init stack = Order<Unit, Color>
+stack.elem($U(), Col) :- ink(Col, _).
+stack.before($U(), Lo, Hi) :- hides(Hi, Lo).
+stack.before($U(), Lo, Hi) :- stack.before($U(), Lo, Mid), stack.before($U(), Mid, Hi).
+
+// --- the output row ---
+
+.init row = DirFrame<Unit>
+row.dir(D) :- params.stack_dir(D).
+row.dist_set($U(), R) :- stack.rank($U(), _, R).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- stack.rank($U(), Col, R), row.pos($U(), R, P).

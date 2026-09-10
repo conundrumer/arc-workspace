@@ -1,0 +1,78 @@
+// 4258a5f9
+// draft
+// family: dc1df850
+// Every marker sits away from the grid edge, on an otherwise empty field, so
+// the program's edge clipping and its passthrough over ink go unwitnessed here.
+
+#include "../lib.dl"
+
+.type Choice = Grow {} | Stamp {}
+
+.comp Params {
+    // --- shared ---
+    .decl marker(c: Color) marker(5).
+
+    // --- $Grow ---
+    .decl halo(c: Color) halo(1).
+
+    // --- $Stamp ---
+    // Halo cells as offsets from the marker, `@` on the marker cell.
+    .decl template(delta: Shift, col: Color)
+    GRID_STAMP_SPARSE_3x3(template,
+        1,  1, 1,
+        1, @5, 1,
+        1,  1, 1)
+}
+
+.init params = Params
+
+.decl marker_at(p: Position)
+marker_at(P) :- in(P, Col), params.marker(Col).
+
+.decl halo(p: Position, col: Color, ch: Choice)
+
+// --- $Grow ---
+halo(P, Col, $Grow()) :-
+    marker_at(M), params.halo(Col),
+    dir8_elem(D), neighbor(M, D, P), in(P, _).
+
+// --- $Stamp ---
+halo(P, Col, $Stamp()) :-
+    marker_at(Q), params.template(Off, Col),   // a marker, a template offset
+    compose(Q, Off, P), in(P, _).              // seated on the marker, on-grid
+
+.decl impl_choice(ch: Choice)
+impl_choice($Grow()). impl_choice($Stamp()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- halo(P, Col, Ch).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !halo(P, _, Ch).
+
+.type EI = [e: Example, id: Ident]
+
+.comp Determine {
+    .decl mark(e: Example, p: Position)
+    mark(E, P) :- ex_in(E, P, Col), params.marker(Col).
+
+    .decl stamped(e: Example, p: Position, col: Color)
+    stamped(E, P, Col) :-
+        ex_out(E, P, Col),
+        ( mark(E, P)
+        ; ex_in(E, P, Col_in), Col_in != Col
+        ).
+
+    // Each stamp with its marker, one 8-connected blob.
+    .init blob = Components8<Example>
+    blob.node(E, P) :- stamped(E, P, _).
+
+    // Two markers in one blob leave its cells no unique source.
+    .init blob_marker = Unanimous<EI, Position>
+    blob_marker.item([E, Id], P) :- mark(E, P), blob.label(E, P, Id).
+
+    // Stamped cells as offsets from their marker.
+    .decl template(delta: Shift, col: Color)
+    template(Off, Col) :-
+        blob_marker.value([E, Id], M),                // the blob's lone marker
+        blob.label(E, P, Id), stamped(E, P, Col),     // one of its cells
+        displacement(M, P, Off).
+}

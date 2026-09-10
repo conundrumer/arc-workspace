@@ -1,0 +1,157 @@
+// 5545f144
+// draft
+// concept: decompose objects markers symmetry walk d4
+// Drawn lines cut the grid into panels, and each panel is one snapshot of one
+// scene: an arrow, and loose dots. The arrow is the widest set of drawn cells
+// that a mirror through one of them carries onto itself, that cell — the tip —
+// being the one furthest along the mirror's line. A dot at the arrow's corner
+// joins the piece the arrow sits in, and what the mirror leaves out of the
+// piece is a dot again.
+//
+// The arrow travels its own lines and eats the dots, going straight on or
+// turning a quarter. Two models of which dot it takes:
+//
+//   $Momentum — the dot straight ahead, and only with the way ahead clear,
+//               the nearest dot aside.
+//   $Nearest  — the nearest dot on any of the three ways.
+//
+// They coincide here — no dot aside is ever nearer than the dot ahead — and
+// diverge where one is. The output shows the arrow where it comes to rest, in
+// the panel's own frame.
+//
+// Every snapshot leads to the same rest, so the program reads them all and
+// leaves the output where they agree.
+
+#include "../lib.dl"
+
+.type Choice = Momentum {} | Nearest {}
+
+.type Line = [a: Axis, l: Position]
+.type Cand = [t: Position, d: Dir]
+.type Stance = [pan: Position, p: Position, d: Dir]
+
+.comp Params {}
+
+.init params = Params
+
+// --- panels ---
+
+// The background: the color that covers the grid.
+.init field = Mode<Unit, Color, Position>
+field.item($U(), Col, P) :- in(P, Col).
+
+.init line_color = Unanimous<Line, Color>
+line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
+
+// A drawn line running the whole way across separates snapshots.
+.init panels = DividerFrame<Unit>
+panels.cell($U(), P) :- in(P, _).
+panels.divider($U(), A, L) :- line_color.value([A, L], Col), !field.mode($U(), Col).
+
+.decl panel_cell(pan: Position, p: Position)
+panel_cell(Pan, P) :- panels.tile_of($U(), P, Pan).
+
+// What a snapshot draws. One color draws the whole of it.
+.decl ink(pan: Position, p: Position, col: Color)
+ink(Pan, P, Col) :- panel_cell(Pan, P), in(P, Col), !field.mode($U(), Col).
+
+// --- the arrow ---
+
+.init figure = Components8<Unit>
+figure.node($U(), P) :- ink(_, P, _).
+
+.decl sym_cell(t: Position, d: Dir, p: Position)
+sym_cell(T, D, P) :-
+    figure.conn($U(), T, P), dir_elem(D),                      // a cell of T's piece
+    axis_of(D, A), perp(A, A2), flip_of(A2, G),                // the mirror in T's line
+    displacement(T, P, V), apply(G, V, V2), compose(T, V2, Q),
+    figure.conn($U(), T, Q).                                   // the image is drawn too
+
+// A cell of the set stands level with T or past it, so T is no tip.
+.decl blunt(t: Position, d: Dir)
+blunt(T, D) :- sym_cell(T, D, P), P != T, dist(P, D, K), dist(T, D, K2), K <= K2.
+
+.init size = Tally<Cand, Position>
+size.item([T, D], P) :- sym_cell(T, D, P).
+
+// The arrow is the widest mirror-symmetric set the panel holds.
+.init widest = ArgExtremes<Position, Cand>
+widest.cand(Pan, [T, D], N) :-
+    size.tally([T, D], N), !blunt(T, D),  // a set T tips, and its size
+    panel_cell(Pan, T).
+
+.decl tip(pan: Position, p: Position, d: Dir)
+tip(Pan, T, D) :- widest.high(Pan, [T, D], _).
+
+.decl arrow(pan: Position, p: Position)
+arrow(Pan, P) :- widest.high(Pan, [T, D], _), sym_cell(T, D, P).
+
+.decl dot(pan: Position, p: Position)
+dot(Pan, P) :- ink(Pan, P, _), !arrow(Pan, P).
+
+// --- the journey ---
+
+.init sight = Ray<Position>
+sight.dir(Pan, D) :- panel_cell(Pan, _), dir_elem(D).
+sight.mark(Pan, P) :- dot(Pan, P).
+sight.mark(Pan, P) :- tip(Pan, P, _).
+sight.blocked(Pan, P) :- dot(Pan, P).
+
+// The first dot toward D from P, K steps on.
+.decl reach(pan: Position, p: Position, d: Dir, q: Position, k: number)
+reach(Pan, P, D, Q, K) :- sight.stop(Pan, Q, D, K, P), dir_elem(D).
+
+// The ways an arrow heading D may go: straight on, or a quarter turn.
+.decl way(d: Dir, d2: Dir)
+way(D, D) :- dir_elem(D).
+way(D, D2) :- perp_dir(D, D2).
+
+// The steps to the first dot on each way.
+.init steps = Extremes<Stance>
+steps.cand([Pan, P, D], K) :- way(D, D2), reach(Pan, P, D2, _, K).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Momentum()). impl_choice($Nearest()).
+
+// A step of the journey: the dot taken, and the way it was taken.
+.decl hop(pan: Position, p: Position, d: Dir, q: Position, d2: Dir, ch: Choice)
+
+.decl state(pan: Position, p: Position, d: Dir, ch: Choice)
+state(Pan, P, D, Ch) :- tip(Pan, P, D), impl_choice(Ch).
+state(Pan, Q, D2, Ch) :- state(Pan, P, D, Ch), hop(Pan, P, D, Q, D2, Ch).
+
+// The journey ends where no way holds a dot.
+.decl rest(pan: Position, p: Position, d: Dir, ch: Choice)
+rest(Pan, P, D, Ch) :- state(Pan, P, D, Ch), !hop(Pan, P, D, _, _, Ch).
+
+// --- Momentum ---
+
+hop(Pan, P, D, Q, D, $Momentum()) :- reach(Pan, P, D, Q, _).
+hop(Pan, P, D, Q, D2, $Momentum()) :-
+    perp_dir(D, D2), reach(Pan, P, D2, Q, K),   // a dot aside
+    !reach(Pan, P, D, _, _),                    // the way ahead clear
+    steps.low([Pan, P, D], K).                  // the fewest steps of any way
+
+// --- Nearest ---
+
+hop(Pan, P, D, Q, D2, $Nearest()) :-
+    way(D, D2), reach(Pan, P, D2, Q, K), steps.low([Pan, P, D], K).
+
+// --- output ---
+
+// The arrow at its rest, turned from its old heading onto its new one.
+.decl placed(pan: Position, p: Position, ch: Choice)
+placed(Pan, P2, Ch) :-
+    tip(Pan, T, D0), arrow(Pan, P), rest(Pan, R, D, Ch),
+    c4_elem(G), apply_dir(G, D0, D),                             // the turn it made
+    displacement(T, P, V), apply(G, V, V2), compose(R, V2, P2).  // the cell, turned and seated
+
+.init frame = BoxFrame<Position>
+frame.cell(Pan, P) :- panel_cell(Pan, P).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_in, Col, Ch) :-
+    frame.inner(Pan, P, P_in), impl_choice(Ch),
+    ( placed(Pan, P, Ch), ink(Pan, _, Col)          // the arrow, in the color it is drawn in
+    ; !placed(Pan, P, Ch), field.mode($U(), Col)    // bare ground
+    ).

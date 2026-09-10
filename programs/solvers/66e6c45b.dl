@@ -18,17 +18,17 @@
     // --- Table ---
     .decl in_label(p: Position, id: Ident)
     GRID_SPARSE_4x4(in_label,
-        0, 0, 0, 0,
-        0, 1, 2, 0,
-        0, 3, 4, 0,
-        0, 0, 0, 0)
+        _, _, _, _,
+        _, 1, 2, _,
+        _, 3, 4, _,
+        _, _, _, _)
 
     .decl out_label(p: Position, id: Ident)
     GRID_SPARSE_4x4(out_label,
-        1, 0, 0, 2,
-        0, 0, 0, 0,
-        0, 0, 0, 0,
-        3, 0, 0, 4)
+        1, _, _, 2,
+        _, _, _, _,
+        _, _, _, _,
+        3, _, _, 4)
 
     .decl map(p_in: Position, p_out: Position)
     map(P_in, P_out) :- in_label(P_in, Id), out_label(P_out, Id).
@@ -77,8 +77,6 @@ impl_choice($Quad()). impl_choice($Stretch()). impl_choice($Explode()). impl_cho
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- target(P, Col, Ch).
 out(P, Bg, Ch)  :- impl_choice(Ch), in(P, _), params.bg(Bg), !target(P, _, Ch).
-
-// --- determination ---
 
 .comp Determine {
     // Ink correspondence candidates: same color in and out.

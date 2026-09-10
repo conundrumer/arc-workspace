@@ -124,8 +124,6 @@ out(P_grid, Col, Ch) :-
 // --- $Map ---
 out(P_grid, Col, $Map()) :- in(P_in, Col), params.map(P_in, P_grid).
 
-// --- determination ---
-
 .comp Determine {
     // Correspondence candidates: same color at both cells.
     .decl cand(e: Example, p_in: Position, p_out: Position)

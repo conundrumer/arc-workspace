@@ -44,8 +44,6 @@
 
 .init params = Params
 
-// --- parse ---
-
 .comp Parse<Key> {
     .type Obj = [k: Key, id: Ident]
 
@@ -116,8 +114,6 @@ bar_mark(Col, $Counted()) :- params.block_color(Col).
 out(P, Col, [Det, M]) :- marked(P, Det), bar_mark(Col, M).
 out(P, BG,  [Det, M]) :-
     params.out_pos(P), total(_, Det), !marked(P, Det), bar_mark(_, M), params.bg(BG).
-
-// --- determination ---
 
 .type Cand = [e: Example, col: Color, k: number]
 

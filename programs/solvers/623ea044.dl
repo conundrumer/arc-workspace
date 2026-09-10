@@ -1,0 +1,25 @@
+// 623ea044
+// draft
+// concept: markers cast
+// A single colored cell sits on a blank grid. That cell casts a ray of its
+// own color toward each of the four diagonals, out to the grid edge.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+}
+
+.init params = Params
+
+.init diag = Ray<Unit>
+diag.dir($U(), D) :- diag_dir_elem(D).
+diag.cell($U(), P) :- in(P, _).
+diag.mark($U(), P) :- in(P, Col), !params.bg(Col).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, _),
+    ( diag.ray($U(), P, _, _, Src), in(Src, Col)    // on a ray, in its mark's color
+    ; !diag.ray($U(), P, _, _, _), params.bg(Col)   // untouched
+    ).

@@ -1,0 +1,112 @@
+// 4aab4007
+// draft
+// concept: lines border repair lookup
+// A grid damaged by holes of one color; the output restores it. Bands run
+// along the two edges of one corner, each band one color. Stripes cover
+// the rest: each line of one diagonal axis holds a single color, except a
+// legend at the corner. A damaged stripe cell takes the color of an
+// intact cell on its stripe. A damaged band cell takes its band's color:
+// stored per band ($Stored), or read off the band's intact cells
+// ($Uniform).
+
+#include "../lib.dl"
+
+.type Choice = Stored {} | Uniform {}
+
+.type Pair = [k1: number, k2: number]
+
+.comp Params {
+    // --- shared ---
+    .decl hole(col: Color) hole(0).
+
+    // The corner the bands and the legend are anchored at.
+    .decl corner(d: DiagDir) corner(DIAG_TL).
+
+    // How deep the bands run from the corner's edges.
+    .decl border_width(k: number) border_width(3).
+
+    // The axis the stripes run along.
+    .decl stripe_axis(a: DiagAxis) stripe_axis(DAXIS_AD).
+
+    // The legend cells, by their distances to the corner's two edges. The
+    // program reads a pair in both orders, so a row covers its reflection too.
+    .decl legend(k1: number, k2: number)
+        legend(3, 3). legend(3, 4). legend(3, 5).
+
+    // --- Stored ---
+    .decl band_color(k: number, col: Color)
+        band_color(0, 1). band_color(1, 1). band_color(2, 4).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Stored()). impl_choice($Uniform()).
+
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)  // input
+
+    .decl intact(key: Key, p: Position, col: Color)
+    intact(Ky, P, Col) :- cell(Ky, P, Col), !params.hole(Col).
+
+    // Distances to the corner's two edges, in both orders.
+    .decl corner_dists(key: Key, p: Position, k1: number, k2: number)
+    corner_dists(Ky, P, K1, K2) :-
+        cell(Ky, P, _), params.corner(Diag), diag_dist(P, Diag, _, K1, K2).
+
+    // A band cell with its depth: the nearer of its two corner-edge
+    // distances, short of the border's width.
+    .decl band_cell(key: Key, p: Position, k: number)
+    band_cell(Ky, P, K) :-
+        corner_dists(Ky, P, K, K2), K <= K2, params.border_width(N), K < N.
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+.decl damaged(p: Position)
+damaged(P) :- in(P, Col), params.hole(Col).
+
+.decl legend_cell(p: Position)
+legend_cell(P) :- parse.corner_dists($U(), P, K1, K2), params.legend(K1, K2).
+
+// The stripes cover what the bands and the legend leave.
+.decl stripe(p: Position)
+stripe(P) :- in(P, _), !parse.band_cell($U(), P, _), !legend_cell(P).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- parse.intact($U(), P, Col), impl_choice(Ch).
+
+out(P, Col, Ch) :-
+    damaged(P), stripe(P), impl_choice(Ch),     // damaged stripe cell, any case
+    stripe(Q), parse.intact($U(), Q, Col),      // an intact stripe cell
+    params.stripe_axis(A), same_line(A, P, Q).  // on the same stripe
+
+// --- Stored ---
+
+out(P, Col, $Stored()) :-
+    damaged(P), parse.band_cell($U(), P, K), params.band_color(K, Col).
+
+// --- Uniform ---
+
+out(P, Col, $Uniform()) :-
+    damaged(P), parse.band_cell($U(), P, K),                  // damaged band cell
+    parse.band_cell($U(), Q, K), parse.intact($U(), Q, Col).  // an intact cell of its band
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    .decl band_color(k: number, col: Color)
+    band_color(K, Col) :- parse.band_cell(E, P, K), parse.intact(E, P, Col).
+
+    // The legend is what every example paints alike; the stripes differ
+    // from example to example.
+    .init steady = Unanimous<Pair, Color>
+    steady.item([K1, K2], Col) :-
+        parse.intact(E, P, Col), !parse.band_cell(E, P, _),
+        parse.corner_dists(E, P, K1, K2), K1 <= K2.  // keyed as a legend row stores it
+
+    .decl legend(k1: number, k2: number)
+    legend(K1, K2) :- steady.value([K1, K2], _).
+}

@@ -1,0 +1,90 @@
+// 6e82a1ae
+// draft
+// concept: objects count lookup rank
+// Each ink object is repainted with a color that its cell count selects.
+//
+//   $Count — a table keyed by the count itself.
+//   $Rank  — a table keyed by the count's place in the size order of the
+//            grid's objects, from anchor a:
+//     $Big   — the biggest object is rank 0
+//     $Small — the smallest object is rank 0
+
+#include "../lib.dl"
+
+.type Anchor = Big {} | Small {}
+.type Choice = Count {} | Rank {a: Anchor}
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+
+    // --- $Count ---
+
+    .decl count_color(n: number, col: Color)
+    count_color(2, 3). count_color(3, 2). count_color(4, 1).
+
+    // --- $Rank($Big) ---
+
+    .decl big_color(r: number, col: Color)
+    big_color(0, 1). big_color(1, 2). big_color(2, 3).
+
+    // --- $Rank($Small) ---
+
+    .decl small_color(r: number, col: Color)
+    small_color(0, 3). small_color(1, 2). small_color(2, 1).
+}
+
+.init params = Params
+
+.comp Parse<Key> {
+    .type KObj = [k: Key, o: Ident]
+
+    .decl cell(key: Key, p: Position, col: Color)  // input
+
+    .init objs = Components<Key>
+    objs.node(K, P) :- cell(K, P, Col), !params.bg(Col).
+
+    .init size = Tally<KObj, Position>
+    size.item([K, O], P) :- objs.label(K, P, O).
+
+    // Each object cell with its object's count.
+    .decl cell_count(key: Key, p: Position, n: number)
+    cell_count(K, P, N) :- objs.label(K, P, O), size.tally([K, O], N).
+
+    // The counts ranked among the grid's objects.
+    .init size_rank = Ordinal<Key>
+    size_rank.idx_set(K, N) :- cell_count(K, _, N).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Count()). impl_choice($Rank($Big())). impl_choice($Rank($Small())).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- in(P, Col), params.bg(Col), impl_choice(Ch).
+
+// --- $Count ---
+
+out(P, Col, $Count()) :- parse.cell_count($U(), P, N), params.count_color(N, Col).
+
+// --- $Rank ---
+
+out(P, Col, $Rank($Big())) :-
+    parse.cell_count($U(), P, N), parse.size_rank.rank_desc($U(), N, R), params.big_color(R, Col).
+out(P, Col, $Rank($Small())) :-
+    parse.cell_count($U(), P, N), parse.size_rank.rank($U(), N, R), params.small_color(R, Col).
+
+.comp Determine {
+    .init ex = Parse<Example>
+    ex.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    .decl count_color(n: number, col: Color)
+    count_color(N, Col) :- ex.cell_count(E, P, N), ex_out(E, P, Col).
+
+    .decl big_color(r: number, col: Color)
+    big_color(R, Col) :- ex.cell_count(E, P, N), ex.size_rank.rank_desc(E, N, R), ex_out(E, P, Col).
+
+    .decl small_color(r: number, col: Color)
+    small_color(R, Col) :- ex.cell_count(E, P, N), ex.size_rank.rank(E, N, R), ex_out(E, P, Col).
+}

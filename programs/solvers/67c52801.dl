@@ -1,0 +1,118 @@
+// 67c52801
+// draft
+// concept: objects markers pack move d4 lookup
+// A ground row lies along one edge, and the row beside it is a marker row:
+// ground-colored, with bg gaps that are the slots. Colored rectangles float
+// above. Each rectangle drops into the one slot its extent fits, the pieces
+// packing the slots exactly, and stands on the ground from the marker row up.
+//
+// Cases:
+// - Turn — a dropped piece keeps its shape, turned so the fitting extent
+//   lies across the slot: it stands as high as its other extent.
+// - Fixed — a dropped piece stands a stored height.
+
+#include "../lib.dl"
+
+.type Choice = Turn {} | Fixed {}
+
+.comp Params {
+    // --- shared ---
+    .decl bg(c: Color) bg(0).
+
+    // The edge the ground row lies along.
+    .decl ground_dir(d: Dir) ground_dir(DIR_B).
+
+    // --- Fixed ---
+    .decl height(n: number) height(2).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Turn()).
+impl_choice($Fixed()).
+
+// --- floor ---
+
+// The ground row.
+.decl ground(p: Position)
+ground(P) :- in(P, _), params.ground_dir(D), dist(P, D, 0).
+
+// The marker row: the row beside the ground.
+.decl marker(p: Position)
+marker(P) :- in(P, _), params.ground_dir(D), neighbor(P, D, G), ground(G).
+
+// The floor: the ground row and the marker row.
+.decl floor(p: Position)
+floor(P) :- ground(P).
+floor(P) :- marker(P).
+
+// --- slots and pieces ---
+
+// A slot: a maximal run of bg in the marker row.
+.init slots = Components<Unit>
+slots.node($U(), P) :- marker(P), in(P, Col), params.bg(Col).
+
+.init slot_box = Bbox<Ident>
+slot_box.cell(Sl, P) :- slots.label($U(), P, Sl).
+
+// A piece: a colored block above the floor.
+.init pieces = Components<Color>
+pieces.node(Col, P) :- in(P, Col), !params.bg(Col), !floor(P).
+
+.init piece_box = Bbox<Ident>
+piece_box.cell(Pc, P) :- pieces.label(_, P, Pc).
+
+// A piece fits a slot when one of its extents is the slot's width; h is the
+// other extent.
+.decl fits(pc: Ident, sl: Ident, h: number)
+fits(Pc, Sl, H) :-
+    params.ground_dir(D), axis_of(D, A_v), perp(A_v, A),  // the row axis
+    slot_box.extent(Sl, A, W),                            // slot width
+    piece_box.extents(Pc, _, W, H).                       // a piece extent matches it
+
+// --- the packing ---
+
+// A candidate drop: a piece into a slot it fits. It takes the slot's cells
+// and the piece's cells, so a cover uses each once.
+.type Drop = [pc: Ident, sl: Ident]
+
+.init forcing = CoverForcing<Unit, Drop>
+forcing.covers($U(), [Pc, Sl], P) :-
+    fits(Pc, Sl, _),
+    ( slots.label($U(), P, Sl)
+    ; pieces.label(_, P, Pc)
+    ).
+
+// How high the dropped piece stands in its slot.
+.decl stand(pc: Ident, sl: Ident, h: number, ch: Choice)
+
+// --- Turn ---
+stand(Pc, Sl, H, $Turn()) :- forcing.forced($U(), [Pc, Sl]), fits(Pc, Sl, H).
+
+// --- Fixed ---
+stand(Pc, Sl, H, $Fixed()) :- forcing.forced($U(), [Pc, Sl]), params.height(H).
+
+// --- render ---
+
+// The column above each slot cell.
+.init rays = Ray<Unit>
+rays.mark($U(), P) :- slots.label($U(), P, _).
+rays.dir($U(), O) :- params.ground_dir(D), opposite(D, O).
+rays.cell($U(), P) :- in(P, _).
+
+.decl filled(p: Position, col: Color, ch: Choice)
+filled(P, Col, Ch) :-
+    stand(Pc, Sl, H, Ch), pieces.label(Col, _, Pc),        // the dropped piece
+    slots.label($U(), M, Sl), rays.ray($U(), P, _, K, M),  // above its slot
+    K < H.                                                 // within its height
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    in(P, C_in), impl_choice(Ch),
+    ( filled(P, Col, Ch)                  // a dropped piece
+    ; !filled(P, _, Ch),
+      ( floor(P), Col = C_in              // the floor stays
+      ; !floor(P), params.bg(Col)         // the rest clears
+      )
+    ).

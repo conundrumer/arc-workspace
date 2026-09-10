@@ -1,0 +1,31 @@
+// 55059096
+// draft
+// concept: markers span
+// Plus-shaped marks sit on a bg field. Two marks whose centers share a
+// diagonal are joined: the bg cells between those centers turn params.trail,
+// and the rest passes through. A row- or column-aligned pair is not joined.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+    .decl trail(c: Color) trail(2).
+}
+
+.init params = Params
+
+.decl mark_cell(p: Position)
+mark_cell(P) :- in(P, Col), !params.bg(Col).
+
+.init exposed = Rim<Unit>
+exposed.cell($U(), P) :- mark_cell(P).
+
+// Field cells with a plus center on each side along one diagonal.
+.init span = Between<Unit>
+span.axis($U(), A) :- diag_axis_elem(A).
+span.cell($U(), P) :- in(P, Col), params.bg(Col).
+span.mark($U(), P) :- mark_cell(P), !exposed.rim($U(), P).   // the center is flanked on all four sides
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- span.between($U(), P), params.trail(Col).
+out(P, Col) :- in(P, Col), !span.between($U(), P).

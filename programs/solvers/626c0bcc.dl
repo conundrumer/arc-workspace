@@ -1,0 +1,78 @@
+// 626c0bcc
+// draft
+// concept: pack lookup
+// The input holds a region of ink. That region admits one partition into the
+// stored pieces, and each piece paints its cells the color it is stored under.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl ink(col: Color) ink(8).
+
+    // Each piece in its own 2x2 frame, keyed by the color it paints.
+    .decl piece(col: Color, p: Position)
+    GRID_MASK_2x2(piece, 1,
+        1, 1,
+        1, 1)
+    GRID_MASK_2x2(piece, 2,
+        _, 1,
+        1, 1)
+    GRID_MASK_2x2(piece, 3,
+        1, 1,
+        _, 1)
+    GRID_MASK_2x2(piece, 4,
+        1, _,
+        1, 1)
+}
+
+.init params = Params
+
+// --- the candidate placements ---
+
+// A placement lands every cell of a piece on ink.
+.init occ = Occurrences<Color, Unit>
+occ.shape(Col, S, $U()) :- params.piece(Col, S).
+occ.cell(Col, P, $U()) :- params.piece(Col, _), in(P, Ink), params.ink(Ink).
+
+// The ink cells a placement takes.
+.decl covers(col: Color, b: Position, p: Position)
+covers(Col, B, P) :-
+    occ.occurrence(Col, B),                 // a placement, at its margins in the grid
+    params.piece(Col, S), compose(B, S, P).
+
+// Two placements sharing a cell cannot both stand.
+.decl clash(col: Color, b: Position, col2: Color, b2: Position)
+clash(Col, B, Col2, B2) :-
+    covers(Col, B, Q), covers(Col2, B2, Q),
+    ( Col != Col2 ; B != B2 ).  // not one placement against itself
+
+// --- the forced partition ---
+
+// One ink cell filled by one placement covering it.
+.type Fill = [p: Position, col: Color, b: Position]
+
+// Every ink cell takes a fill, and no two cells take clashing placements.
+.init fill = PlacementPruning<Unit, Fill, Position>
+fill.cand($U(), [P, Col, B], P) :- covers(Col, B, P).
+fill.conflict($U(), [P, Col, B], [P2, Col2, B2]) :-
+    covers(Col, B, P), covers(Col2, B2, P2), clash(Col, B, Col2, B2).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- fill.alive($U(), [P, Col, _], P).
+out(P, Col) :- in(P, Col), !params.ink(Col).
+
+.type Painted = [e: Example, col: Color]
+.type Part = [e: Example, id: Ident]
+
+.comp Determine {
+    // A piece is one connected run of ink cells that the output paints alike.
+    .init region = Components<Painted>
+    region.node([E, Col], P) :- ex_out(E, P, Col), ex_in(E, P, Ink), params.ink(Ink).
+
+    // Each piece read from its own box — the frame the catalog stores it in.
+    .init box = BoxFrame<Part>
+    box.cell([E, Id], P) :- region.label([E, _], P, Id).
+
+    .decl piece(col: Color, p: Position)
+    piece(Col, S) :- region.label([E, Col], P, Id), box.inner([E, Id], P, S).
+}

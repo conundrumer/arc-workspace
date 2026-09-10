@@ -1,0 +1,54 @@
+// 80af3007
+// draft
+// concept: tile-arrangement crop scale stamp
+// The ink draws a picture at a fat-pixel scale: each pixel is a block of
+// params.scale cells across. The output is the picture tiled by itself: a
+// cell is ink iff the pixel it lies in and its position within that pixel
+// are both inked pixels of the picture.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+    .decl ink(c: Color) ink(5).
+
+    // A pixel's side, in cells.
+    .decl scale(k: number) scale(3).
+}
+
+.init params = Params
+
+// The picture: the box the ink occupies.
+.init box = BoxFrame<Unit>
+box.cell($U(), P) :- in(P, Col), params.ink(Col).
+box.grid($U(), P) :- in(P, _).
+
+// A cell of the picture and the pixel it lies in.
+.decl pixel_cell(p: Position, p_tile: Position)
+pixel_cell(P, P_tile) :-
+    box.inner($U(), P, P_inner), params.scale(K),
+    divide_by_size_2d(P_inner, K, 0, P_tile, _).
+
+.decl pixel(p_tile: Position)
+pixel(P_tile) :- pixel_cell(_, P_tile).
+
+.decl inked(p_tile: Position)
+inked(P_tile) :- pixel_cell(P, P_tile), in(P, Col), params.ink(Col).
+
+// The picture tiled by itself: an output cell by its pixel and its position
+// within that pixel.
+.decl cell(p_grid: Position, p_tile: Position, p_intile: Position)
+cell(P_grid_out, P_tile, P_intile) :-
+    pixel(P_tile), pixel(P_intile), concat_2d(P_tile, P_intile, 0, P_grid_out).
+
+// The picture stamped into each of its inked pixels.
+.decl stamp(p: Position)
+stamp(P_grid_out) :-
+    cell(P_grid_out, P_tile, P_intile), inked(P_tile), inked(P_intile).
+
+.decl out(p: Position, col: Color)
+out(P_grid_out, Col) :-
+    cell(P_grid_out, _, _),
+    ( stamp(P_grid_out), params.ink(Col)
+    ; !stamp(P_grid_out), params.bg(Col)
+    ).

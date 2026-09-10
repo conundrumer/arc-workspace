@@ -105,8 +105,6 @@ frame.extent(Ch, A, N) :- seated(P, _, Ch), axis_elem(A), axis_dim(P, A, N).
 out(P, Col, Ch) :- seated(P, Col, Ch).
 out(P, Col, Ch) :- frame.cell(Ch, P), !seated(P, _, Ch), params.filler(Col).
 
-// --- determination ---
-
 .comp Determine {
     // Train input cells in the slabs of each candidate stack axis.
     .decl slab_cell(e: Example, a: Axis, p_tile: Position, p: Position, col: Color)

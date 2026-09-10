@@ -1,37 +1,56 @@
 // 46f33fce
 // concept: scale decompose markers stamp
-// Sparse dots over bg. The grid divides into params.side tiles; a dot's whole
+// Sparse dots over bg. A lattice cuts the grid into equal tiles; a dot's whole
 // tile renders in its color, bg elsewhere. Output is the result scaled
-// ×params.scale.
+// ×params.scale. Cases claim what the lattice is read by:
+//   $Count — the tile count.
+//   $Size  — the tile size.
 
 #include "../lib.dl"
 
+.type Choice = Count {} | Size {}
+
 .comp Params {
+    // --- shared ---
     .decl bg(c: Color) bg(0).
-    .decl side(k: number) side(2).
     .decl scale(s: number) scale(2).
+
+    // --- Count ---
+    .decl tile_count(n: number) tile_count(5).
+
+    // --- Size ---
+    .decl tile_dim(k: number) tile_dim(2).
 }
 
 .init params = Params
 
-.decl tile_ink(p_tile: Position, col: Color)
-tile_ink(P_tile, Col) :-
-    in(P, Col), !params.bg(Col),
-    params.side(K), divide_by_size_2d(P, K, 0, P_tile, _).
+.decl tile(p: Position, p_tile: Position, ch: Choice)
+
+// --- Count ---
+tile(P, P_tile, $Count()) :-
+    in(P, _), params.tile_count(N), divide_2d(P, N, 0, P_tile, _).
+
+// --- Size ---
+tile(P, P_tile, $Size()) :-
+    in(P, _), params.tile_dim(K), divide_by_size_2d(P, K, 0, P_tile, _).
+
+// --- Count, Size ---
+.decl tile_ink(p_tile: Position, col: Color, ch: Choice)
+tile_ink(P_tile, Col, Ch) :- tile(P, P_tile, Ch), in(P, Col), !params.bg(Col).
 
 // Each input cell painted with its tile's color.
-.decl render(p: Position, col: Color)
-render(P, Col) :-
-    in(P, _), params.side(K), divide_by_size_2d(P, K, 0, P_tile, _),
-    ( tile_ink(P_tile, Col)                   // inked tile
-    ; !tile_ink(P_tile, _), params.bg(Col)    // blank tile
+.decl render(p: Position, col: Color, ch: Choice)
+render(P, Col, Ch) :-
+    tile(P, P_tile, Ch),
+    ( tile_ink(P_tile, Col, Ch)                   // inked tile
+    ; !tile_ink(P_tile, _, Ch), params.bg(Col)    // blank tile
     ).
 
 // Scale: each input cell becomes a params.scale block of the rendered color.
 .init subf = Frame2D<Unit>
 subf.extent($U(), A, S) :- axis_elem(A), params.scale(S).
 
-.decl out(p: Position, col: Color)
-out(P_out, Col) :-
-    render(P_in, Col),
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_out, Col, Ch) :-
+    render(P_in, Col, Ch),
     subf.cell($U(), P_sub), concat_2d(P_in, P_sub, 0, P_out).

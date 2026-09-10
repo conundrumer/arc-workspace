@@ -1,0 +1,95 @@
+// 5b526a93
+// draft
+// concept: objects cross stamp lookup border
+// Hollow squares stand on background. Each square's placement lies on one
+// line per axis, and a square sits at some of the crossings of those lines.
+// Every crossing carries a square, and a crossing cell still holding
+// background takes params.fill. Choice = what a crossing carries:
+//
+//   $Lookup()  — the stored params.footprint cells.
+//   $Copy()    — the cells the squares themselves fill.
+//   $Outline() — the edge cells of the crossing's own box.
+
+#include "../lib.dl"
+
+.type Choice = Lookup {} | Copy {} | Outline {}
+
+.comp Params {
+    // --- shared ---
+    .decl bg(col: Color) bg(0).
+    .decl fill(col: Color) fill(8).
+
+    // --- $Lookup ---
+    // What a crossing carries, in its own frame.
+    .decl footprint(p: Position)
+    GRID_MASK_3x3(footprint,
+        1, 1, 1,
+        1, _, 1,
+        1, 1, 1)
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Lookup()). impl_choice($Copy()). impl_choice($Outline()).
+
+.init square = Components<Unit>
+square.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+// A square's placement — its box, as margins from the four edges — and the
+// square's cells in that box's own frame.
+.init box = BoxFrame<Ident>
+box.cell(Id, P) :- square.label($U(), P, Id).
+
+// A crossing: one placement's line along an axis, met by another placement's
+// line across that axis. The meet is a box the size of a placement.
+.decl site(b: Position)
+site(S) :-
+    box.margin(_, B), box.margin(_, B2), axis_elem(A),
+    split(B, A, L, _), split(B2, A, _, L2), compose(L, L2, S).
+
+// The cells a crossing carries.
+.decl covered(p: Position, ch: Choice)
+
+// --- $Lookup ---
+covered(P, $Lookup()) :- site(S), params.footprint(I), compose(S, I, P).
+
+// --- $Copy ---
+covered(P, $Copy()) :-
+    site(S), box.inner(_, _, I),   // an offset some square fills
+    compose(S, I, P).
+
+// --- $Outline ---
+.init ring = BoxCells<Position>
+ring.box(S, S) :- site(S).
+ring.cell(S, P) :- site(S), in(P, _).
+
+covered(P, $Outline()) :- ring.on_edge(_, P, _).
+
+// --- output ---
+
+// A carried cell that the input leaves as background.
+.decl stamp(p: Position, ch: Choice)
+stamp(P, Ch) :- covered(P, Ch), in(P, Col), params.bg(Col).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- stamp(P, Ch), params.fill(Col).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !stamp(P, Ch).
+
+.comp Determine {
+    // The cells the output changes.
+    .decl painted(e: Example, p: Position)
+    painted(E, P) :- ex_in(E, P, Col), ex_out(E, P, Col2), Col != Col2.
+
+    .init obj = Components<Example>
+    obj.node(E, P) :- painted(E, P).
+
+    .type EI = [e: Example, id: Ident]
+
+    .init box = BoxFrame<EI>
+    box.cell([E, Id], P) :- obj.label(E, P, Id).
+
+    // A stamp's cells, in its own frame.
+    .decl footprint(p: Position)
+    footprint(I) :- box.inner(_, _, I).
+}

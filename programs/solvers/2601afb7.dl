@@ -1,0 +1,158 @@
+// 2601afb7
+// draft
+// concept: lines permutation move count
+// Bars stand in a row, each filling part of one line. Every bar takes
+// the color of the bar behind it and the reach of the bar ahead of it, both
+// steps wrapping around the row.
+//
+// Two hypotheses on what the bar ahead hands over:
+//   $Move   — its cells, which move onto this line and keep their place along
+//             the line.
+//   $Length — its cell count, and the new bar is drawn that long from the edge
+//             the bars stand on.
+
+#include "../lib.dl"
+
+.type Choice = Move {} | Length {}
+
+.comp Params {
+    // --- shared ---
+
+    .decl bg(col: Color) bg(7).
+
+    // The direction colors travel; the bars are ordered along its axis, and
+    // their sizes travel the other way.
+    .decl color_dir(d: Dir) color_dir(DIR_R).
+
+    // --- Length ---
+
+    // The quarter turn from color_dir to the edge the bars stand on.
+    .decl anchor_sense(s: Sense) anchor_sense(SENSE_CW).
+
+    .decl anchor(d: Dir)
+    anchor(D2) :- color_dir(D), anchor_sense(S), turn(S, D, D2).
+}
+
+.init params = Params
+
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)  // input
+
+    // The direction colors travel, per key.
+    .decl dir(key: Key, d: Dir)  // input
+
+    // The bars are ordered along this axis and lie across it.
+    .decl axis(key: Key, a: Axis)
+    axis(K, A) :- dir(K, D), axis_of(D, A).
+
+    // A bar is the ink on one line of the row, named by that line.
+    .decl bar_cell(key: Key, l: Position, p: Position)
+    bar_cell(K, L, P) :-
+        cell(K, P, Col), !params.bg(Col),      // an ink cell
+        axis(K, A), split(P, A, L, _).         // the line it sits on
+
+    .decl bar_color(key: Key, l: Position, col: Color)
+    bar_color(K, L, Col) :- bar_cell(K, L, P), cell(K, P, Col).
+
+    .init row = OrderFrame<Key, Position>
+    row.axis(K, A) :- axis(K, A).
+    row.member(K, L, L) :- bar_cell(K, L, _).
+
+    // Place in the row, counted from the end the colors travel from.
+    .decl idx(key: Key, l: Position, k: number)
+    idx(K, L, N) :-
+        row.pos(K, L, P_pos),                   // the bar's place in the row
+        dir(K, D), opposite(D, O),              // the end the colors travel from
+        dist(P_pos, O, N).                      // index = the bars behind it
+
+    .init cyc = IndexCycle<Key>
+    cyc.idx(K, N) :- idx(K, _, N).
+
+    // The bar one step ahead, wrapping at the end of the row.
+    .decl next_bar(key: Key, l: Position, l2: Position)
+    next_bar(K, L, L2) :- idx(K, L, N), cyc.succ(K, N, N2), idx(K, L2, N2).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+parse.dir($U(), D) :- params.color_dir(D).
+
+// The cells the new bar on line l covers.
+.decl ink(l: Position, p: Position, ch: Choice)
+
+.decl impl_choice(ch: Choice)
+impl_choice($Move()). impl_choice($Length()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+// Each bar is painted the color of the bar behind it.
+out(P, Col, Ch) :-
+    ink(L, P, Ch),
+    parse.next_bar($U(), L_prev, L),            // the bar behind
+    parse.bar_color($U(), L_prev, Col).
+
+out(P, Col, Ch) :- in(P, _), params.bg(Col), impl_choice(Ch), !ink(_, P, Ch).
+
+// --- Move ---
+
+ink(L, P, $Move()) :-
+    parse.next_bar($U(), L, L_next),
+    parse.bar_cell($U(), L_next, P_src),                    // a cell of the bar ahead
+    parse.axis($U(), A), split(P_src, A, _, Across),        // its place across the row
+    compose(L, Across, P).                                  // carried onto this line
+
+// --- Length ---
+
+.init bar_len = Tally<Position, Position>
+bar_len.item(L, P) :- parse.bar_cell($U(), L, P).
+
+ink(L, P, $Length()) :-
+    parse.next_bar($U(), L, L_next),
+    bar_len.tally(L_next, N),                               // the size of the bar ahead
+    in(P, _), parse.axis($U(), A), split(P, A, L, _),       // a cell on this line
+    params.anchor(D), dist(P, D, K), K < N.                 // among the N nearest the anchor edge
+
+.comp Determine {
+    .type EP = [e: Example, p: Position]
+    .type ED = [e: Example, d: Dir]
+
+    .init bg_count = Mode<Unit, Color, EP>
+    bg_count.item($U(), Col, [E, P]) :- ex_in(E, P, Col).
+
+    .decl bg(col: Color)
+    bg(Col) :- bg_count.mode($U(), Col).
+
+    // Parse both sides under every candidate direction.
+    .init ex = Parse<ED>
+    ex.cell([E, D], P, Col) :- ex_in(E, P, Col), dir_elem(D).
+    ex.dir([E, D], D) :- ex_in(E, _, _), dir_elem(D).
+
+    .init res = Parse<ED>
+    res.cell([E, D], P, Col) :- ex_out(E, P, Col), dir_elem(D).
+    res.dir([E, D], D) :- ex_out(E, _, _), dir_elem(D).
+
+    // The candidate fails where a bar is not painted the color of the bar
+    // behind it.
+    .decl dir_bad(d: Dir)
+    dir_bad(D) :-
+        ex.next_bar([E, D], L_prev, L),         // an input bar and the one behind it
+        ex.bar_color([E, D], L_prev, Col),      // the color behind
+        res.bar_color([E, D], L, Col2),         // the color painted
+        Col != Col2.
+
+    .decl color_dir(d: Dir)
+    color_dir(D) :- dir_elem(D), !dir_bad(D).
+
+    // The bars as the determined direction reads them.
+    .decl bar(e: Example, l: Position, p: Position)
+    bar(E, L, P) :- color_dir(D), ex.bar_cell([E, D], L, P).
+
+    .decl bar_on_edge(e: Example, l: Position, d: Dir)
+    bar_on_edge(E, L, D) :- bar(E, L, P), dir_elem(D), dist(P, D, 0).
+
+    .decl anchor_bad(d: Dir)
+    anchor_bad(D) :- dir_elem(D), bar(E, L, _), !bar_on_edge(E, L, D).
+
+    // The turn that lands on an edge every bar touches.
+    .decl anchor_sense(s: Sense)
+    anchor_sense(S) :- color_dir(D), turn(S, D, D_anchor), !anchor_bad(D_anchor).
+}

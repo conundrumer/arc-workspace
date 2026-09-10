@@ -1,0 +1,118 @@
+// 48634b99
+// draft
+// concept: objects markers count rank scale
+// Bars of params.bar on params.bg, one cell wide, lying along params.axis. One bar is a
+// gauge: a run of params.mark fills it from one end. The output clears the gauge
+// and fills another bar from the same end. Choice = [t, f] crosses the two
+// hypotheses the pairs leave open:
+//
+//   t (which bar the gauge moves to):
+//     $Step() — the bar longer than the gauge by params.step.
+//     $Next() — the shortest bar longer than the gauge.
+//   f (how far the fill reaches):
+//     $Grow() — the gauge's filled run, one cell longer.
+//     $Half() — the half of the bar at the gauge's end.
+
+#include "../lib.dl"
+
+.type Target = Step {} | Next {}
+.type Fill = Grow {} | Half {}
+.type Choice = [t: Target, f: Fill]
+
+.comp Params {
+    // --- shared ---
+    .decl bg(col: Color) bg(7).
+    .decl bar(col: Color) bar(8).
+    .decl mark(col: Color) mark(9).
+    .decl axis(a: Axis) axis(AXIS_V).
+
+    // --- Step ---
+    .decl step(k: number) step(2).
+}
+
+.init params = Params
+
+// --- bars ---
+
+.decl bar_cell(p: Position)
+bar_cell(P) :- in(P, Col), !params.bg(Col).
+
+.init bars = Components<Unit>
+bars.node($U(), P) :- bar_cell(P).
+
+.init box = BoxFrame<Ident>
+box.cell(Id, P) :- bars.label($U(), P, Id).
+
+// --- the gauge ---
+
+.decl mark_cell(p: Position)
+mark_cell(P) :- in(P, Col), params.mark(Col).
+
+.decl gauge(id: Ident)
+gauge(Id) :- bars.label($U(), P, Id), mark_cell(P).
+
+// The bar end the fill reaches.
+.decl fill_dir(d: Dir)
+fill_dir(D) :-
+    gauge(Id), box.edge_cell(Id, P, D), mark_cell(P),   // marked cell at an end
+    params.axis(A), axis_of(D, A).                      // along the bars' axis
+
+// Distance from that end, within the bar.
+.decl bar_idx(id: Ident, p: Position, k: number)
+bar_idx(Id, P, K) :- box.inner(Id, P, P_in), fill_dir(D), dist(P_in, D, K).
+
+// --- which bar the gauge moves to ---
+
+.decl target_choice(t: Target)
+target_choice($Step()). target_choice($Next()).
+
+.decl target(id: Ident, t: Target)
+
+// $Step — the bar a gauge cell's within-bar position lands in once the bar
+// is stretched by params.step.
+target(Id, $Step()) :-
+    gauge(Id_g), box.inner(Id_g, _, P_in),                 // a gauge cell
+    params.axis(A), axis_of(D, A), params.step(K),         // params.step along the bars' axis
+    edge_delta(D, K, Delta), compose(P_in, Delta, P_in2),  // stretched by it
+    box.inner(Id, _, P_in2).                               // lands in the target
+
+// $Next — the shortest bar longer than the gauge.
+.decl bar_len(id: Ident, n: number)
+bar_len(Id, N) :- params.axis(A), box.extent(Id, A, N).
+
+.init longer = ArgExtremes<Unit, Ident>
+longer.cand($U(), Id, N) :- bar_len(Id, N), gauge(Id_g), bar_len(Id_g, N_g), N > N_g.
+
+target(Id, $Next()) :- longer.low($U(), Id, _).
+
+// --- how far the fill reaches ---
+
+.decl fill_choice(f: Fill)
+fill_choice($Grow()). fill_choice($Half()).
+
+.decl filled(p: Position, ch: Choice)
+
+// $Grow — the gauge's filled run, plus the cell just past it.
+.decl fill_idx(k: number)
+fill_idx(K) :-
+    gauge(Id), bar_idx(Id, P, K),
+    ( mark_cell(P)                                    // in the filled run
+    ; fill_dir(D), neighbor(P, D, Q), mark_cell(Q)    // just past its end
+    ).
+
+filled(P, [T, $Grow()]) :- target(Id, T), bar_idx(Id, P, K), fill_idx(K).
+
+// $Half — nearer the fill's end than the far end.
+filled(P, [T, $Half()]) :-
+    target(Id, T), box.inner(Id, P, P_in),
+    fill_dir(D), dist_pair(P_in, D, K, K2), K < K2.
+
+// --- output ---
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- filled(P, Ch), params.mark(Col).
+out(P, Col, [T, F]) :-
+    in(P, _), target_choice(T), fill_choice(F),
+    ( bar_cell(P), !filled(P, [T, F]), params.bar(Col)   // bar cell the fill misses
+    ; !bar_cell(P), params.bg(Col)                       // ground
+    ).

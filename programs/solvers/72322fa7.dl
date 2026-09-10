@@ -1,0 +1,82 @@
+// 72322fa7
+// draft
+// concept: markers objects induce stamp
+// Figures lie on a bg field: a center cell of one color with arms of
+// another color around it, at the ends of a row, a column, both (a plus),
+// or both diagonals (an X). Each intact figure demonstrates a template,
+// keyed by its center color: the arm color and where each arm sits. The
+// damaged copies show only the center or only the arms, and the output
+// completes each from the template its color names. The cases differ on
+// what an intact figure is:
+//   $Line   — a cell with cells of one other color at both ends of a line
+//             through it; each such line gives two arms.
+//   $Figure — a touching group of cells with a hub, a cell every other cell
+//             of the group touches; the other cells are its arms.
+
+#include "../lib.dl"
+
+.type Choice = Line {} | Figure {}
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Line()). impl_choice($Figure()).
+
+.decl empty(p: Position)
+empty(P) :- in(P, Col), params.bg(Col).
+
+// --- template ---
+
+// An arm's displacement from its center and its color, by center color.
+.decl template(c: Choice, c_center: Color, v: Shift, c_arm: Color)
+
+// --- Line ---
+
+template($Line(), Cc, V, Ca) :-
+    in(P, Cc), !params.bg(Cc),                                   // the center
+    dir8_opposite(D, D2),                                        // a line through it
+    neighbor(P, D, Q), in(Q, Ca), !params.bg(Ca), Ca != Cc,      // an arm at one end
+    neighbor(P, D2, Q2), in(Q2, Ca),                             // and at the other
+    step_delta(D, V).
+
+// --- Figure ---
+
+.init figure = Components8<Unit>
+figure.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+// The cells a figure cell touches.
+.decl touch(p: Position, q: Position)
+touch(P, Q) :- figure.label($U(), P, _), dir8_elem(D), neighbor(P, D, Q).
+
+// A cell some other cell of its figure does not touch.
+.decl untouched(p: Position)
+untouched(P) :-
+    figure.label($U(), P, Id), figure.label($U(), Q, Id), Q != P, !touch(P, Q).
+
+template($Figure(), Cc, V, Ca) :-
+    figure.label($U(), P, Id), !untouched(P), in(P, Cc),         // the hub
+    figure.label($U(), Q, Id), Q != P, in(Q, Ca), Ca != Cc,      // an arm
+    displacement(P, Q, V).
+
+// --- completion ---
+
+.decl fill(p: Position, col: Color, c: Choice)
+
+// A center's empty arm cells take the arm color.
+fill(Q, Ca, C) :- in(P, Cc), template(C, Cc, V, Ca), compose(P, V, Q), empty(Q).
+
+// An empty cell with every arm of a template around it is its missing center.
+.type Template = [c: Choice, c_center: Color]
+.init arms = Occurrences<Template, Color>
+arms.cell([C, Cc], P, Col) :- template(C, Cc, _, _), in(P, Col).
+arms.shape([C, Cc], V, Ca) :- template(C, Cc, V, Ca).
+
+fill(P, Cc, C) :- arms.occurrence([C, Cc], P), empty(P).
+
+.decl out(p: Position, col: Color, c: Choice)
+out(P, Col, C) :- fill(P, Col, C).
+out(P, Col, C) :- in(P, Col), impl_choice(C), !fill(P, _, C).

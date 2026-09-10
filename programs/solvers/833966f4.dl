@@ -1,18 +1,19 @@
 // 833966f4
 // concept: permutation lookup d4
 // 5×1 cell permutation: two pairs of adjacent rows swap around a fixed
-// center row. Two models:
+// center row. Cases:
 //
-//   $LabeledGrids — the permutation as data: paired labeled grids
-//   $Divide       — the permutation composed: divide V by 2 around the
-//                   center gap row; flip each pair
+//   $LabeledGrids() — the permutation as data: paired labeled grids
+//   $Count()        — the permutation composed: parts by tile count around the
+//                     center gap row, each part flipped
+//   $Size()         — the same composition, over parts by tile size
 
 #include "../lib.dl"
 
-.type Choice = LabeledGrids {} | Divide {}
+.type Choice = LabeledGrids {} | Count {} | Size {}
 
 .comp Params {
-    // --- LabeledGrids data ---
+    // --- LabeledGrids ---
     .decl in_label(p: Position, id: Ident)
     GRID_SPARSE_5x1(in_label,
         1,
@@ -32,42 +33,54 @@
     .decl map(p_in: Position, p_out: Position)
     map(P_in, P_out) :- in_label(P_in, Id), out_label(P_out, Id).
 
-    // --- Divide params ---
+    // --- Count, Size ---
     .decl divide_axis(a: Axis) divide_axis(AXIS_V).
-    .decl divisor(n: number) divisor(2).
     .decl divide_gap(g: number) divide_gap(1).
+
+    // --- Count ---
+    .decl divisor(n: number) divisor(2).
+
+    // --- Size ---
+    .decl tile_size(k: number) tile_size(2).
 }
 
 .init params = Params
 
 .decl impl_choice(ch: Choice)
 impl_choice($LabeledGrids()).
-impl_choice($Divide()).
+impl_choice($Count()).
+impl_choice($Size()).
 
-.decl decomposable(p: Position)
-decomposable(P_grid) :-
-    in(P_grid, _),
-    params.divide_axis(A), params.divisor(N), params.divide_gap(G),
-    divide(P_grid, A, N, G, _, _).
+// The cases that compose the permutation out of a divide.
+.decl by_divide(ch: Choice)
+by_divide($Count()). by_divide($Size()).
+
+// The part a cell sits in; the gap row falls in no part.
+.decl part(p_grid: Position, p_outer: Position, p_inner: Position, c: Choice)
+part(P_grid, P_outer, P_inner, $Count()) :-
+    in(P_grid, _),                                                            // input cell
+    params.divide_axis(A), params.divisor(N), params.divide_gap(G),           // parts by count
+    divide(P_grid, A, N, G, P_outer, P_inner).
+part(P_grid, P_outer, P_inner, $Size()) :-
+    in(P_grid, _),                                                            // input cell
+    params.divide_axis(A), params.tile_size(K), params.divide_gap(G),         // parts by size
+    divide_by_size(P_grid, A, K, G, P_outer, P_inner).
 
 .decl perm(p_in: Position, p_out: Position, c: Choice)
 perm(P_grid_in, P_grid_out, $LabeledGrids()) :- params.map(P_grid_in, P_grid_out).
 
-perm(P_grid_in, P_grid_out, $Divide()) :-
-    in(P_grid_in, _),                                                         // input cell
-    params.divide_axis(A), params.divisor(N), params.divide_gap(G),           // params
-    divide(P_grid_in, A, N, G, P_outer, P_inner),                             // 1D divide
-    flip_of(A, F), apply(F, P_inner, P_inner_out),                            // swap the pair
-    concat(P_outer, P_inner_out, A, G, P_grid_out).                           // recompose
-perm(P_grid_in, P_grid_in, $Divide()) :-
-    in(P_grid_in, _), !decomposable(P_grid_in).                // gap row passthrough
+perm(P_grid_in, P_grid_out, C) :-
+    part(P_grid_in, P_outer, P_inner, C),                                     // the cell's part
+    params.divide_axis(A), flip_of(A, F), apply(F, P_inner, P_inner_out),     // swap the pair
+    params.divide_gap(G), concat(P_outer, P_inner_out, A, G, P_grid_out).     // recompose
+
+perm(P_grid_in, P_grid_in, C) :-
+    by_divide(C), in(P_grid_in, _), !part(P_grid_in, _, _, C).   // gap row passthrough
 
 .decl out(p: Position, col: Color, c: Choice)
 out(P_grid_out, Col, Impl) :-
     impl_choice(Impl), in(P_grid_in, Col),   // choice × input cell
     perm(P_grid_in, P_grid_out, Impl).       // the cell's image
-
-// --- determination ---
 
 .comp Determine {
     .decl pair(p_in: Position, p_out: Position)

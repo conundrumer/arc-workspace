@@ -5,7 +5,7 @@
 //
 // Cases (data-equivalent on this task):
 //   $Arms  — per-direction: the neighbor toward d paints params.arm(d).
-//   $Stamp — a stored template, seated by its marker cell on each marker.
+//   $Stamp — a stored template, anchored at its marker cell on each marker.
 
 #include "../lib.dl"
 
@@ -20,15 +20,12 @@
     arm(DIR_T, 2). arm(DIR_B, 8). arm(DIR_L, 7). arm(DIR_R, 6).
 
     // --- Stamp ---
-    .decl template(p: Position, col: Color)
-    GRID_SPARSE_3x3(template,
-        0, 2, 0,
-        7, 1, 6,
-        0, 8, 0)
-
-    // The template's own marker cell — the one that lands on a marker.
-    .decl seat(p: Position)
-    seat(Ps) :- template(Ps, M), marker(M).
+    // Halo cells as offsets from the marker, `@` on the marker cell.
+    .decl template(delta: Shift, col: Color)
+    GRID_STAMP_SPARSE_3x3(template,
+        _,  2, _,
+        7, @1, 6,
+        _,  8, _)
 }
 
 .init params = Params
@@ -50,14 +47,11 @@ out(P, Col, $Arms()) :- in(P, Col), !arm_halo(P, _).
 // --- Stamp ---
 .decl stamp_halo(p: Position, col: Color)
 stamp_halo(P, Col) :-
-    marker_at(Q), params.template(Pt, Col),       // a marker, a template cell
-    params.seat(Ps), displacement(Ps, Pt, Off),   // the cell's offset from the seat
-    compose(Q, Off, P), in(P, _).                 // seated on the marker, on-grid
+    marker_at(Q), params.template(Off, Col),   // a marker, a template offset
+    compose(Q, Off, P), in(P, _).              // seated on the marker, on-grid
 
 out(P, Col, $Stamp()) :- stamp_halo(P, Col).
 out(P, Col, $Stamp()) :- in(P, Col), !stamp_halo(P, _).
-
-// --- determination ---
 
 .comp Determine {
     .decl marker_at(e: Example, p: Position)
@@ -76,18 +70,12 @@ out(P, Col, $Stamp()) :- in(P, Col), !stamp_halo(P, _).
     blob.node(E, P) :- painted(E, P, _).
 
     // Painted cells as offsets from their marker.
-    .decl offset(off: Shift, col: Color)
-    offset(Off, Col) :-
+    .decl template(delta: Shift, col: Color)
+    template(Off, Col) :-
         painted(E, P, Col),                                           // a painted cell
         blob.label(E, P, Id), blob.label(E, M, Id), marker_at(E, M),  // the marker of its blob
         displacement(M, P, Off).
 
     .decl arm(d: Dir, col: Color)
-    arm(D, Col) :- offset(Off, Col), dir_elem(D), step_delta(D, Off).
-
-    .init frame = BoxFrame<Unit>
-    frame.cell($U(), Off) :- offset(Off, _).
-
-    .decl template(p: Position, col: Color)
-    template(Pt, Col) :- offset(Off, Col), frame.inner($U(), Off, Pt).
+    arm(D, Col) :- template(Off, Col), dir_elem(D), step_delta(D, Off).
 }

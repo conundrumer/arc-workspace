@@ -1,0 +1,27 @@
+// 1f876c06
+// draft
+// concept: markers span
+// Each color marks two cells on one diagonal. The run between them fills
+// with that color.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+}
+
+.init params = Params
+
+// Marks, grouped by color.
+.decl mark(col: Color, p: Position)
+mark(Col, P) :- in(P, Col), !params.bg(Col).
+
+// The domain is the whole grid, so a span covers its own marks.
+.init span = Between<Color>
+span.axis(Col, A) :- mark(Col, _), diag_axis_elem(A).
+span.cell(Col, P) :- mark(Col, _), in(P, _).
+span.mark(Col, P) :- mark(Col, P).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- span.between(Col, P).
+out(P, Col) :- in(P, Col), !span.between(_, P).

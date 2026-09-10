@@ -1,0 +1,176 @@
+// 281123b4
+// draft
+// concept: overlay decompose lookup rank
+// Separator columns split the grid into panels, each drawn in its own ink.
+// The output overlays the panels on one frame, each cell taking its color
+// from the four panel contributions there. Each panel keeps one ink in every
+// pair, so spatial and chromatic precedence are indistinguishable.
+//
+// out's choice column = [d, c]:
+//
+//   d (find the panels):
+//     $Count()  — by tile count
+//     $Size() — by tile size
+//   c (combine the contributions):
+//     $Order()  — precedence over panel positions: the winning ink fills the
+//                 cell, bg where every panel is empty.
+//     $Ink()    — precedence over inks, the same otherwise.
+//     $Lookup() — a table keyed on the four contributions; every entry fires
+//                 in the train pairs.
+
+#include "../lib.dl"
+
+.type DecChoice = Count {} | Size {}
+.type Combine   = Order {} | Ink {} | Lookup {}
+.type Choice    = [d: DecChoice, c: Combine]
+
+.type RankKey = [ch: Choice, p: Position]
+.type CombineKey = [p: Position, d: DecChoice]
+.type CombineMember = [p: Position, col: Color]
+
+.comp Params {
+    // --- shared ---
+    .decl panel_axis(a: Axis) panel_axis(AXIS_H).
+    .decl gap(g: number) gap(1).
+
+    // --- Count ---
+    .decl panels(n: number) panels(4).
+
+    // --- Size ---
+    .decl panel_size(k: number) panel_size(4).
+
+    // --- Order, Ink ---
+    .decl bg(col: Color) bg(0).
+
+    // --- Order ---
+    .decl prio(p: Position, r: number)
+    GRID_1x4(prio, 2, 3, 0, 1)
+
+    // --- Ink ---
+    .decl ink_rank(col: Color, r: number)
+    ink_rank(9, 0). ink_rank(4, 1). ink_rank(8, 2). ink_rank(5, 3).
+
+    // --- Lookup ---
+    .decl combine_member(id: Ident, p: Position, col: Color)
+    .decl combine_out(id: Ident, col: Color)
+
+    GRID_1x4(combine_member, 0, 0, 0, 0, 0) combine_out(0, 0).
+    GRID_1x4(combine_member, 1, 0, 0, 0, 4) combine_out(1, 4).
+    GRID_1x4(combine_member, 2, 0, 0, 9, 0) combine_out(2, 9).
+    GRID_1x4(combine_member, 3, 0, 0, 9, 4) combine_out(3, 9).
+    GRID_1x4(combine_member, 4, 0, 5, 0, 0) combine_out(4, 5).
+    GRID_1x4(combine_member, 5, 0, 5, 0, 4) combine_out(5, 4).
+    GRID_1x4(combine_member, 6, 0, 5, 9, 0) combine_out(6, 9).
+    GRID_1x4(combine_member, 7, 0, 5, 9, 4) combine_out(7, 9).
+    GRID_1x4(combine_member, 8, 8, 0, 0, 0) combine_out(8, 8).
+    GRID_1x4(combine_member, 9, 8, 0, 0, 4) combine_out(9, 4).
+    GRID_1x4(combine_member, 10, 8, 0, 9, 0) combine_out(10, 9).
+    GRID_1x4(combine_member, 11, 8, 0, 9, 4) combine_out(11, 9).
+    GRID_1x4(combine_member, 12, 8, 5, 0, 0) combine_out(12, 8).
+    GRID_1x4(combine_member, 13, 8, 5, 0, 4) combine_out(13, 4).
+    GRID_1x4(combine_member, 14, 8, 5, 9, 0) combine_out(14, 9).
+    GRID_1x4(combine_member, 15, 8, 5, 9, 4) combine_out(15, 9).
+}
+
+.init params = Params
+
+// Panel decomposition; the separator falls in the gap.
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)
+
+    .decl tile_cell(key: Key, p_tile: Position, p_intile: Position, col: Color, dc: DecChoice)
+    tile_cell(K, P_tile, P_intile, Col, $Count()) :-
+        cell(K, P_grid, Col),                                              // input cell
+        params.panel_axis(A), params.panels(N), params.gap(G),             // layout by count
+        divide_slab(P_grid, A, N, G, P_tile, P_intile).
+    tile_cell(K, P_tile, P_intile, Col, $Size()) :-
+        cell(K, P_grid, Col),                                              // input cell
+        params.panel_axis(A), params.panel_size(Kp), params.gap(G),        // layout by size
+        divide_by_size_slab(P_grid, A, Kp, G, P_tile, P_intile).
+
+    // Ink at an output cell, keyed by its panel.
+    .decl tile_ink(key: Key, p_tile: Position, p: Position, col: Color, dc: DecChoice)
+    tile_ink(K, P_tile, P_intile, Col, Dc) :-
+        tile_cell(K, P_tile, P_intile, Col, Dc), !params.bg(Col).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+.decl ink_at(p: Position, col: Color, dc: DecChoice)
+ink_at(P, Col, Dc) :- parse.tile_ink($U(), _, P, Col, Dc).
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// The precedence cases; $Lookup reads the empty cell from its own entry.
+.decl rank_choice(c: Combine)
+rank_choice($Order()). rank_choice($Ink()).
+
+out(P, Col, [Dc, C]) :-
+    rank_choice(C), parse.tile_cell($U(), _, P, _, Dc),     // choice × output cell
+    !ink_at(P, _, Dc), params.bg(Col).                      // every panel empty there
+
+// Each cell's winning contribution: the best-ranked one present there.
+.init best = ArgExtremes<RankKey, Color>
+
+out(P, Col, Ch) :- best.low([Ch, P], Col, _).
+
+// --- Order ---
+
+best.cand([[Dc, $Order()], P], Col, R) :-
+    parse.tile_ink($U(), T, P, Col, Dc), params.prio(T, R).
+
+// --- Ink ---
+
+best.cand([[Dc, $Ink()], P], Col, R) :- ink_at(P, Col, Dc), params.ink_rank(Col, R).
+
+// --- Lookup ---
+
+.init combine = KeyedSetCompare<CombineKey, Ident, CombineMember>
+combine.pattern_member(Id, [P_tile, Col]) :- params.combine_member(Id, P_tile, Col).
+combine.observed_member([P_intile, Dc], [P_tile, Col]) :-
+    parse.tile_cell($U(), P_tile, P_intile, Col, Dc).
+
+out(P, Col, [Dc, $Lookup()]) :- params.combine_out(Id, Col), combine.equals([P, Dc], Id).
+
+.comp Determine {
+    .type CellKey = [e: Example, p: Position]
+
+    // Train pairs only — ex_in also holds the test inputs.
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col), ex_out(E, _, _).
+
+    // T beats T2 where both inks land on one cell and the output shows T's.
+    // Every panel pair collides somewhere, so no transitive closure is needed.
+    .decl beats(p_tile: Position, p_tile2: Position)
+    beats(T, T2) :-
+        parse.tile_ink(E, T, P, Col, _), parse.tile_ink(E, T2, P, Col2, _),
+        Col != Col2, ex_out(E, P, Col).
+
+    .init order = Order<Unit, Position>
+    order.elem($U(), T) :- parse.tile_ink(_, T, _, _, _).
+    order.before($U(), T, T2) :- beats(T, T2).
+
+    .decl prio(p: Position, r: number)
+    prio(T, R) :- order.rank($U(), T, R).
+
+    .decl ink_rank(col: Color, r: number)
+    ink_rank(Col, R) :- parse.tile_ink(_, T, _, Col, _), prio(T, R).
+
+    // Cells agreeing on every panel's contribution share a table entry.
+    .decl contrib(k: CellKey, p: Position, col: Color)
+    contrib([E, P_intile], P_tile, Col) :- parse.tile_cell(E, P_tile, P_intile, Col, _).
+
+    .init same = KeyedSetCompare<CellKey, CellKey, CombineMember>
+    same.pattern_member(K, [P_tile, Col]) :- contrib(K, P_tile, Col).
+    same.observed_member(K, [P_tile, Col]) :- contrib(K, P_tile, Col).
+
+    .init entry = Canon<CellKey>
+    entry.equiv(K, K2) :- same.equals(K, K2).
+
+    .decl combine_member(id: Ident, p: Position, col: Color)
+    combine_member(Id, P_tile, Col) :- entry.id(K, Id), contrib(K, P_tile, Col).
+
+    .decl combine_out(id: Ident, col: Color)
+    combine_out(Id, Col) :- entry.id([E, P], Id), ex_out(E, P, Col).
+}

@@ -57,8 +57,6 @@ out(P, Col, Ch) :-
     ; main(P_line, C_in, Ch), params.bg(Col)              // on it — erased
     ).
 
-// --- determination ---
-
 .comp Determine {
     // The main colors, read off the outputs: an output cell is bg or its
     // line's main.

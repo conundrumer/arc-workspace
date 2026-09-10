@@ -1,0 +1,106 @@
+// 825aa9e9
+// draft
+// concept: objects move
+// A floor of one color lies along one edge of the grid, and shapes of another
+// color hang above it on a background. Each shape falls toward the floor as
+// one body and comes to rest one cell short of what lies beneath it: the
+// floor, or the grid edge where the floor has a hole.
+//
+//   $FloorColor — the floor is the color that stands on the fall edge; every
+//                 other non-bg cell belongs to a falling shape.
+//   $Grounded   — an object that touches the fall edge stands; every other
+//                 object falls.
+
+#include "../lib.dl"
+
+.type Choice = FloorColor {} | Grounded {}
+
+.comp Params {
+    .decl bg(col: Color) bg(7).
+    .decl fall(d: Dir) fall(DIR_B).
+    // The clearance a shape keeps beneath itself.
+    .decl gap(k: number) gap(1).
+}
+
+.init params = Params
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.bg(Col).
+
+.decl impl_choice(ch: Choice)
+impl_choice($FloorColor()). impl_choice($Grounded()).
+
+// --- the bodies ---
+
+.init body = Components<Choice>
+
+// The bodies that fall.
+.decl mover(ch: Choice, id: Ident)
+
+// --- FloorColor ---
+
+// The floor's color stands on the fall edge.
+.decl floor_color(col: Color)
+floor_color(Col) :- ink(P, Col), params.fall(D), dist(P, D, 0).
+
+body.node($FloorColor(), P) :- ink(P, Col), !floor_color(Col).
+
+mover($FloorColor(), Id) :- body.label($FloorColor(), _, Id).
+
+// --- Grounded ---
+
+body.node($Grounded(), P) :- ink(P, _).
+
+// An object with a cell on the fall edge.
+.decl standing(id: Ident)
+standing(Id) :- body.label($Grounded(), P, Id), params.fall(D), dist(P, D, 0).
+
+mover($Grounded(), Id) :- body.label($Grounded(), _, Id), !standing(Id).
+
+// --- the fall ---
+
+.type Body = [ch: Choice, id: Ident]
+
+.decl mover_cell(ch: Choice, id: Ident, p: Position)
+mover_cell(Ch, Id, P) :- mover(Ch, Id), body.label(Ch, P, Id).
+
+// A cell a falling body may cover: background, or a cell a body vacates.
+.decl free(ch: Choice, p: Position)
+free(Ch, P) :- impl_choice(Ch), in(P, Col), params.bg(Col).
+free(Ch, P) :- mover_cell(Ch, _, P).
+
+// The body with its clearance: each cell, and the cell the gap beneath it.
+.decl foot(ch: Choice, id: Ident, p: Position)
+foot(Ch, Id, P) :- mover_cell(Ch, Id, P).
+foot(Ch, Id, Q) :-
+    mover_cell(Ch, Id, P), params.fall(D), params.gap(K), jump(P, D, K, Q).
+
+// The body fits at a displacement when its footprint lands on free cells.
+.init fits = Occurrences<Body, Unit>
+fits.cell([Ch, Id], P, $U())  :- mover(Ch, Id), free(Ch, P).
+fits.shape([Ch, Id], P, $U()) :- foot(Ch, Id, P).
+
+// The body falls through the fitting displacements.
+.init slide = Slide<Body>
+slide.node(B, Delta) :- fits.occurrence(B, Delta).
+slide.dir([Ch, Id], D) :- mover(Ch, Id), params.fall(D).
+
+// Where each body comes to rest.
+.decl travel(ch: Choice, id: Ident, delta: Shift)
+travel(Ch, Id, Delta) :- slide.rest([Ch, Id], ORIGIN, _, Delta).
+
+.decl landed(ch: Choice, p: Position, col: Color)
+landed(Ch, P2, Col) :-
+    travel(Ch, Id, Delta), mover_cell(Ch, Id, P), in(P, Col), compose(P, Delta, P2).
+
+// The cells the bodies leave.
+.decl vacated(ch: Choice, p: Position)
+vacated(Ch, P) :- travel(Ch, Id, _), mover_cell(Ch, Id, P).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- landed(Ch, P, Col).
+out(P, Col, Ch) :-
+    impl_choice(Ch), in(P, C_in), !landed(Ch, P, _),
+    ( vacated(Ch, P), params.bg(Col)  // a cell a body left
+    ; !vacated(Ch, P), Col = C_in     // the scene
+    ).

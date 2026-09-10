@@ -1,0 +1,80 @@
+// 465b7d93
+// draft
+// concept: markers border scale
+// A rectangular frame of params.frame stands on a field of params.bg, and a small shape
+// of one other color sits outside it. The shape is erased, and its color
+// paints the frame's inner rim. Two models of which sides get the rim:
+//
+//   $Corner  — the shape is an L; its corner cell names a corner of the frame,
+//              and the rim runs along that corner's two sides.
+//   $Stretch — the shape is the rim in miniature: a side gets its rim line when
+//              the shape's edge line on that side is solid.
+
+#include "../lib.dl"
+
+.type Choice = Corner {} | Stretch {}
+
+.comp Params {
+    .decl bg(col: Color) bg(7).
+    .decl frame(col: Color) frame(6).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Corner()). impl_choice($Stretch()).
+
+// --- shared ---
+
+.decl frame_cell(p: Position)
+frame_cell(P) :- in(P, Col), params.frame(Col).
+
+.decl mark(p: Position, col: Color)
+mark(P, Col) :- in(P, Col), !params.bg(Col), !params.frame(Col).
+
+.init box = Bbox<Unit>
+box.cell($U(), P) :- frame_cell(P).
+box.grid($U(), P) :- in(P, _).
+
+// The field the frame encloses. The frame's ring is closed, so the field's rim
+// toward d is the interior line against the frame's d side.
+.init field = Rim<Unit>
+field.cell($U(), P) :- box.inside($U(), P), !frame_cell(P).
+
+.decl paint(p: Position, c: Choice)
+
+// --- Corner ---
+
+// The corner the L names: its corner cell's two arms run away from it.
+.decl corner(d: DiagDir)
+corner(Diag) :-
+    mark(P, _),                                           // the corner cell
+    diag_opposite(Diag, Opp), diag_dirs(Opp, _, D1, D2),  // the arms' dirs
+    neighbor(P, D1, Q1), mark(Q1, _),                     // one arm
+    neighbor(P, D2, Q2), mark(Q2, _).                     // the other
+
+paint(P, $Corner()) :-
+    corner(Diag), dir_of(Diag, _, D), field.rim_dir($U(), P, D).
+
+// --- Stretch ---
+
+.init shape_box = Bbox<Unit>
+shape_box.cell($U(), P) :- mark(P, _).
+
+.init shape_cells = BoxCells<Unit>
+shape_cells.box($U(), M) :- shape_box.margin($U(), M).
+shape_cells.cell($U(), P) :- in(P, _).
+
+// A hole in the shape's own edge line on side d.
+.decl edge_hole(d: Dir)
+edge_hole(D) :- shape_cells.on_edge($U(), P, D), !mark(P, _).
+
+paint(P, $Stretch()) :- field.rim_dir($U(), P, D), !edge_hole(D).
+
+.decl out(p: Position, col: Color, c: Choice)
+out(P, Col, Ch) :- paint(P, Ch), mark(_, Col).
+out(P, Col, Ch) :-
+    in(P, Col_in), impl_choice(Ch), !paint(P, Ch),
+    ( !mark(P, _), Col = Col_in    // the cell stands
+    ; mark(P, _), params.bg(Col)   // the shape is erased
+    ).

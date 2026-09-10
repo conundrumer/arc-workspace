@@ -1,0 +1,66 @@
+// 7d7772cc
+// draft
+// concept: border markers move
+// A thin fence of one color runs across the grid and, with two arms along
+// the grid edges, pens in one side. On the free side, marks sit in one line
+// parallel to the fence; inside the pen, a gate cell faces each mark across
+// the fence. Each mark moves along its own line: to the cell beside the
+// fence when the gate has its color, else to the far grid edge. Its old
+// cell takes the free side's bg. No task data: the fence, the open side,
+// and the free bg are read from the grid.
+
+#include "../lib.dl"
+
+.type Line = [a: Axis, p_line: Position]
+
+.comp Params {}
+
+.init params = Params
+
+// A color is thin when every cell of it borders another color or the edge.
+.init thin = Rim<Color>
+thin.cell(Col, P) :- in(P, Col).
+
+.decl thick(col: Color)
+thick(Col) :- in(P, Col), !thin.rim(Col, P).
+
+// A line of one color, keyed by its normal axis.
+.init line_color = Unanimous<Line, Color>
+line_color.item([A, P_line], Col) :- in(P, Col), axis_elem(A), split(P, A, P_line, _).
+
+// The fence is the cells of a thin color that fills a whole line. The pen
+// is its bounding box: it touches the grid edge everywhere but toward the
+// open side.
+.init pen = Bbox<Unit>
+pen.cell($U(), P) :- in(P, Col), line_color.value(_, Col), !thick(Col).
+pen.grid($U(), P) :- in(P, _).
+
+.decl open_dir(d: Dir)
+open_dir(D) :- pen.margin($U(), M), dir_elem(D), dist(M, D, K), K != 0.
+
+.decl free_cell(p: Position)
+free_cell(P) :- in(P, _), !pen.inside($U(), P).
+
+.init free_bg = Mode<Unit, Color, Position>
+free_bg.item($U(), Col, P) :- free_cell(P), in(P, Col).
+
+.decl mark(p: Position, col: Color)
+mark(P, Col) :- free_cell(P), in(P, Col), !free_bg.mode($U(), Col).
+
+// Where each mark comes to rest.
+.decl rest(p: Position, col: Color)
+rest(Q, Col) :-
+    mark(P, Col), open_dir(D), axis_of(D, A),                    // a mark and its line across the fence
+    pen.edge_cell($U(), S, D), same_line(A, P, S),               // the fence cell on that line
+    opposite(D, D_in), neighbor(S, D_in, G),                     // the gate behind it
+    ( in(G, Col), neighbor(S, D, Q)                              // gate matches: beside the fence
+    ; !in(G, Col), same_line(A, P, Q), in(Q, _), dist(Q, D, 0)   // gate differs: the far edge
+    ).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, Col_in),
+    ( rest(P, Col)                                       // a mark lands here
+    ; !rest(P, _), mark(P, _), free_bg.mode($U(), Col)   // vacated
+    ; !rest(P, _), !mark(P, _), Col = Col_in             // untouched
+    ).

@@ -1,0 +1,66 @@
+// 4b6b68e5
+// draft
+// concept: objects enclose count
+// Outlines and lone specks lie on params.bg. Each outline is kept, the cells it
+// closes off take the commonest color among the specks trapped there, and the
+// rest of the grid is erased.
+//
+// $Shape counts the specks of a whole outline together; $Region counts each
+// cavity's own.
+
+#include "../lib.dl"
+
+.type Choice = Shape {} | Region {}
+
+.type Cavity = [id: Ident, region: Ident]
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+}
+
+.init params = Params
+
+// Touching cells of one color make an object; a lone cell is a speck.
+.init objects = Components<Color>
+objects.node(Col, P) :- in(P, Col), !params.bg(Col).
+
+// An outline is an object of more than one cell.
+.decl outline(id: Ident, p: Position)
+outline(Id, P) :- objects.label(Col, P, Id), objects.label(Col, Q, Id), P != Q.
+
+// The cells each outline closes off from the grid edge.
+.init closed = Closed<Ident>
+closed.cell(Id, P) :- outline(Id, _), in(P, _), !outline(Id, P).
+
+// A speck an outline traps, tagged with the cavity holding it.
+.decl trapped(id: Ident, region: Ident, p: Position, col: Color)
+trapped(Id, R, P, Col) :- closed.region(Id, P, R), in(P, Col), !params.bg(Col).
+
+.decl fill(p: Position, col: Color, ch: Choice)
+
+// --- Shape ---
+
+.init shape_specks = Mode<Ident, Color, Position>
+shape_specks.item(Id, Col, P) :- trapped(Id, _, P, Col).
+
+fill(P, Col, $Shape()) :- closed.region(Id, P, _), shape_specks.mode(Id, Col).
+
+// --- Region ---
+
+.init region_specks = Mode<Cavity, Color, Position>
+region_specks.item([Id, R], Col, P) :- trapped(Id, R, P, Col).
+
+fill(P, Col, $Region()) :- closed.region(Id, P, R), region_specks.mode([Id, R], Col).
+
+// --- output ---
+
+.decl impl_choice(ch: Choice)
+impl_choice($Shape()). impl_choice($Region()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    impl_choice(Ch), in(P, Col_in),                    // every cell, per case
+    ( fill(P, Col, Ch)                                 // enclosed, so filled
+    ; outline(_, P), Col = Col_in                      // on an outline, so kept
+    ; !outline(_, P), !fill(P, _, Ch), params.bg(Col)  // otherwise erased
+    ).

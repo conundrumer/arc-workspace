@@ -1,64 +1,83 @@
 // 6773b310
 // concept: decompose markers count
-// Separator lines cut the grid into a 3×3 arrangement of 3×3 tiles.
+// Separator lines cut the grid into an arrangement of equal tiles.
 // Output is one cell per tile: params.mark where the tile holds a marker pair,
-// params.bg elsewhere. Two models:
+// params.bg elsewhere. Two choice points cross; Choice = [m, d]:
 //
-//   $Pair  — two distinct marker cells exist in the tile.
-//   $Count — the marker count equals params.pair_count.
+//   m (what marks a tile):
+//     $Pair()  — two distinct marker cells exist in the tile.
+//     $Count() — the marker count equals params.pair_count.
+//   d (what fixes the tiling):
+//     $TileCount() — a params.divisor × params.divisor arrangement.
+//     $Size()      — tiles of params.tile_size on both axes.
 //
 // A count→value table is defeated: the test exhibits a zero-marker tile,
 // absent from train.
 
 #include "../lib.dl"
 
-.type Choice = Pair {} | Count {}
+.type Mark      = Pair {} | Count {}
+.type DecChoice = TileCount {} | Size {}
+.type Choice    = [m: Mark, d: DecChoice]
+
+.type TileKey = [d: DecChoice, p_tile: Position]
 
 .comp Params {
+    // --- shared ---
     .decl marker(c: Color) marker(6).
     .decl mark(c: Color) mark(1).
     .decl bg(c: Color) bg(0).
 
-    .decl divisor(n: number) divisor(3).
     .decl divide_gap(g: number) divide_gap(1).
 
-    // --- $Count ---
+    // --- TileCount ---
+    .decl divisor(n: number) divisor(3).
+
+    // --- Size ---
+    .decl tile_size(k: number) tile_size(3).
+
+    // --- Count ---
     .decl pair_count(n: number) pair_count(2).
 }
 
 .init params = Params
 
-.decl tile_cell(p_tile: Position, p_intile: Position, col: Color)
-tile_cell(P_tile, P_intile, Col) :-
+.decl tile_cell(p_tile: Position, p_intile: Position, col: Color, dc: DecChoice)
+
+// --- TileCount ---
+tile_cell(P_tile, P_intile, Col, $TileCount()) :-
     in(P_grid, Col),
     params.divisor(N), params.divide_gap(G),
     divide_2d(P_grid, N, G, P_tile, P_intile).
 
-.decl tile(p_tile: Position)
-tile(P_tile) :- tile_cell(P_tile, _, _).
+// --- Size ---
+tile_cell(P_tile, P_intile, Col, $Size()) :-
+    in(P_grid, Col),
+    params.tile_size(K), params.divide_gap(G),
+    divide_by_size_2d(P_grid, K, G, P_tile, P_intile).
 
-.decl tile_marker(p_tile: Position, p_intile: Position)
-tile_marker(P_tile, P_intile) :- tile_cell(P_tile, P_intile, Col), params.marker(Col).
+.decl tile(p_tile: Position, dc: DecChoice)
+tile(P_tile, Dc) :- tile_cell(P_tile, _, _, Dc).
+
+.decl tile_marker(p_tile: Position, p_intile: Position, dc: DecChoice)
+tile_marker(P_tile, P_intile, Dc) :- tile_cell(P_tile, P_intile, Col, Dc), params.marker(Col).
 
 .decl out(p: Position, col: Color, c: Choice)
 
-// --- $Pair ---
-.decl paired(p_tile: Position)
-paired(P_tile) :- tile_marker(P_tile, P1), tile_marker(P_tile, P2), P1 != P2.
+// --- Pair ---
+.decl paired(p_tile: Position, dc: DecChoice)
+paired(P_tile, Dc) :- tile_marker(P_tile, P1, Dc), tile_marker(P_tile, P2, Dc), P1 != P2.
 
-out(P_tile, Col, $Pair()) :- paired(P_tile), params.mark(Col).
-out(P_tile, Col, $Pair()) :- tile(P_tile), !paired(P_tile), params.bg(Col).
+out(P_tile, Col, [$Pair(), Dc]) :- paired(P_tile, Dc), params.mark(Col).
+out(P_tile, Col, [$Pair(), Dc]) :- tile(P_tile, Dc), !paired(P_tile, Dc), params.bg(Col).
 
-// --- $Count ---
-.init markers = Tally<Position, Position>
-markers.item(P_tile, P_intile) :- tile_marker(P_tile, P_intile).
-markers.domain(P_tile) :- tile(P_tile).
+// --- Count ---
+.init markers = Tally<TileKey, Position>
+markers.item([Dc, P_tile], P_intile) :- tile_marker(P_tile, P_intile, Dc).
+markers.domain([Dc, P_tile]) :- tile(P_tile, Dc).
 
-.decl marker_count(p_tile: Position, n: number)
-marker_count(P_tile, N) :- markers.tally(P_tile, N).
-
-out(P_tile, Col, $Count()) :-
-    marker_count(P_tile, N),                        // the tile's marker count
+out(P_tile, Col, [$Count(), Dc]) :-
+    markers.tally([Dc, P_tile], N),                 // the tile's marker count
     ( params.pair_count(N), params.mark(Col)        // count hits the pair count — marked
     ; !params.pair_count(N), params.bg(Col)         // off it — bg
     ).

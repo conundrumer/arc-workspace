@@ -1,0 +1,50 @@
+// 21f83797
+// draft
+// concept: markers cast span
+// Marks sit on a blank canvas. Each mark's row and column are drawn across
+// the whole grid, and the box the marks span is filled with params.fill
+// inside those lines. The line color splits the cases:
+//
+//   $Ink()  — an independent params.line.
+//   $Mark() — the casting mark's own color.
+
+#include "../lib.dl"
+
+.type Choice = Ink {} | Mark {}
+
+.comp Params {
+    // --- shared ---
+    .decl bg(col: Color) bg(0).
+    .decl fill(col: Color) fill(1).
+
+    // --- Ink ---
+    .decl line(col: Color) line(2).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Ink()). impl_choice($Mark()).
+
+.decl mark(p: Position)
+mark(P) :- in(P, Col), !params.bg(Col).
+
+// P is on a line cast by the mark at M.
+.decl on_line(p: Position, m: Position)
+on_line(P, M) :- in(P, _), mark(M), axis_elem(A), same_line(A, P, M).
+
+.init box = Bbox<Unit>
+box.cell($U(), P) :- mark(P).
+box.grid($U(), P) :- in(P, _).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    impl_choice(Ch), in(P, _), !on_line(P, _),
+    ( box.inside($U(), P), params.fill(Col)
+    ; !box.inside($U(), P), params.bg(Col) ).
+
+// --- Ink ---
+out(P, Col, $Ink()) :- on_line(P, _), params.line(Col).
+
+// --- Mark ---
+out(P, Col, $Mark()) :- on_line(P, M), in(M, Col).

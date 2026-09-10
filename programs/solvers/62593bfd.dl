@@ -1,0 +1,91 @@
+// 62593bfd
+// draft
+// concept: objects move count d4
+// Single-colored blobs sit on a background. Each blob slides flush to an edge:
+// a blob that has a partner goes to params.paired_dir, a blob with no partner
+// to the opposite edge.
+//
+// The cases differ in what makes two blobs partners:
+//   $Size  — they hold the same number of cells.
+//   $Shape — a D4 transform carries one onto the other.
+
+#include "../lib.dl"
+
+.type Choice = Size {} | Shape {}
+
+.comp Params {
+    // Where a partnered blob goes.
+    .decl paired_dir(d: Dir) paired_dir(DIR_T).
+}
+
+.init params = Params
+
+// --- blobs ---
+
+.init bg_mode = Mode<Unit, Color, Position>
+bg_mode.item($U(), Col, P) :- in(P, Col).
+
+.init blobs = Components8<Color>
+blobs.node(Col, P) :- in(P, Col), !bg_mode.mode($U(), Col).
+
+.init box = BoxFrame<Ident>
+box.cell(Id, P) :- blobs.label(_, P, Id).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Size()). impl_choice($Shape()).
+
+// The blob has a partner.
+.decl paired(id: Ident, ch: Choice)
+
+// --- Size ---
+
+.init size = Tally<Ident, Position>
+size.item(Id, P) :- blobs.label(_, P, Id).
+
+paired(Id, $Size()) :- size.tally(Id, N), size.tally(Id2, N), Id != Id2.
+
+// --- Shape ---
+
+.type Pair = [a: Ident, b: Ident]
+
+// Each ordered pair of blobs, both seen from their own boxes.
+.init shape_map = D4Map<Pair, Unit>
+shape_map.src([Id, Id2], P_inner, $U()) :-
+    box.inner(Id, _, P_inner), blobs.label(_, _, Id2), Id != Id2.
+shape_map.dst([Id, Id2], P_inner, $U()) :-
+    box.inner(Id2, _, P_inner), blobs.label(_, _, Id), Id != Id2.
+
+// A cell of the second blob that no cell of the first reaches under D, which
+// the into-reading of `map` allows.
+.decl over(pair: Pair, d: D4)
+over(K, D) :-
+    shape_map.dst(K, Q, V),                        // the second blob's cell
+    d4_elem(D), d4_inverse(D, D_back),
+    apply(D_back, Q, P), !shape_map.src(K, P, V).  // walked back, to nothing
+
+// D4Map.onto — D carries the first blob onto the second, with nothing left
+// over.
+.decl onto(pair: Pair, d: D4)
+onto(K, D) :- shape_map.map(K, D), !over(K, D).
+
+paired(Id, $Shape()) :- onto([Id, _], _).
+
+// --- output ---
+
+.decl dest(id: Ident, d: Dir, ch: Choice)
+dest(Id, D, Ch) :-
+    blobs.label(_, _, Id), impl_choice(Ch), params.paired_dir(D_paired),
+    ( paired(Id, Ch), D = D_paired            // partnered
+    ; !paired(Id, Ch), opposite(D_paired, D)  // lone
+    ).
+
+// The blob slid until its box touches the destination edge.
+.decl paint(p: Position, col: Color, ch: Choice)
+paint(Q, Col, Ch) :-
+    blobs.label(Col, P, Id), dest(Id, D, Ch),  // blob cell with its destination
+    box.edge_min(Id, D, M),                    // its box's margin from that edge
+    jump(P, D, M, Q).                          // slid flush
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- paint(P, Col, Ch).
+out(P, Col, Ch) :- in(P, _), bg_mode.mode($U(), Col), impl_choice(Ch), !paint(P, _, Ch).

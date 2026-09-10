@@ -1,0 +1,72 @@
+// 6ecd11f4
+// draft
+// concept: objects crop scale overlay
+// Two objects sit apart on bg: a large monochrome shape and a small
+// multicolored square. The shape is a blown-up mask with the square's cell
+// arrangement: each of its blocks is one square cell. The output is the
+// square with each cell kept where the shape's block is inked and erased to
+// bg where it is not. Two cases of which object is the square:
+//
+//   $Multicolor — the object whose cells disagree on color.
+//   $Smallest   — the object with the smallest bounding box.
+
+#include "../lib.dl"
+
+.type Choice = Multicolor {} | Smallest {}
+
+.comp Params {
+    .decl bg(col: Color)  bg(0).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Multicolor()). impl_choice($Smallest()).
+
+.init objs = Components8<Unit>
+objs.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+// Every object viewed in its own box, holes included.
+.init boxes = BoxFrame<Ident>
+boxes.cell(Id, P) :- objs.label($U(), P, Id).
+boxes.grid(Id, P) :- objs.label($U(), _, Id), in(P, _).
+
+.decl square_id(ch: Choice, id: Ident)
+
+// --- Multicolor ---
+
+.init obj_col = Unanimous<Ident, Color>
+obj_col.item(Id, Col) :- objs.label($U(), P, Id), in(P, Col).
+
+square_id($Multicolor(), Id) :- obj_col.clash(Id).
+
+// --- Smallest ---
+
+.init by_extent = ArgExtremes<Unit, Ident>
+by_extent.cand($U(), Id, N) :- boxes.extent(Id, _, N).
+
+square_id($Smallest(), Id) :- by_extent.low($U(), Id, _).
+
+// --- shared ---
+
+.decl shape_id(ch: Choice, id: Ident)
+shape_id(Ch, Id) :- impl_choice(Ch), objs.label($U(), _, Id), !square_id(Ch, Id).
+
+// The shape's box divided into the square's cell arrangement.
+.init blocks = Divide2D<Choice>
+blocks.cell(P_box) :- shape_id(_, Sh), boxes.inner(Sh, _, P_box).
+blocks.dim(Ch, A, N) :- square_id(Ch, Id), boxes.extent(Id, A, N).
+blocks.gap(0).
+
+// Each block cell votes for its square cell: the square's color where the
+// shape inks it, bg where it does not. A block the shape fills or leaves
+// empty agrees; a mixed block gives its cell no single color.
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_out, Col, Ch) :-
+    square_id(Ch, Sq), in(P_grid, Col_sq),
+    boxes.inner(Sq, P_grid, P_out),                    // square cell, at its output place
+    shape_id(Ch, Sh), blocks.tile(Ch, P_box, P_out, _),
+    boxes.inner(Sh, P_shape, P_box),                   // a cell of its block
+    ( objs.label($U(), P_shape, Sh), Col = Col_sq      // inked
+    ; !objs.label($U(), P_shape, Sh), params.bg(Col)   // empty
+    ).

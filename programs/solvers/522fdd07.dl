@@ -1,0 +1,130 @@
+// 522fdd07
+// draft
+// concept: objects border lookup
+// Solid one-color squares sit apart on params.bg. Each is redrawn concentric with
+// itself and one ring smaller; a square with no ring to spare comes back at
+// params.bloom, the largest size. The sizes therefore run as a cycle.
+//
+// Three models redraw a square:
+//   $Box    — the cells strictly inside its bounding box.
+//   $Erode  — its cells that keep every cardinal neighbor.
+//   $Lookup — a concentric square of the extent params.next_extent gives, which
+//             holds the wrap as one more entry.
+
+#include "../lib.dl"
+
+.type Choice = Box {} | Erode {} | Lookup {}
+
+// A target square: the case that asks for it, and the square it comes from.
+.type Target = [ch: Choice, id: Ident]
+
+.comp Params {
+    // --- shared ---
+
+    .decl bg(col: Color) bg(7).
+
+    // --- Box, Erode ---
+
+    // The extent a square that loses its last ring comes back at.
+    .decl bloom(n: number) bloom(9).
+
+    // --- Lookup ---
+
+    // A square's extent, and the extent it is redrawn at.
+    .decl next_extent(n: number, n2: number)
+        next_extent(1, 9). next_extent(3, 1). next_extent(5, 3).
+        next_extent(7, 5). next_extent(9, 7).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Box()). impl_choice($Erode()). impl_choice($Lookup()).
+
+// --- shared ---
+
+// One square per connected body of a single color.
+.init comps = Components<Color>
+comps.node(Col, P) :- in(P, Col), !params.bg(Col).
+
+.decl obj(id: Ident, col: Color)
+obj(Id, Col) :- comps.label(Col, _, Id).
+
+.init box = BoxFrame<Ident>
+box.cell(Id, P) :- comps.label(_, P, Id).
+
+.decl center(id: Ident, p: Position)
+center(Id, P) :- box.inner(Id, P, P_inner), centered(P_inner).
+
+// The cells a ring-taking case redraws a square as.
+.decl shrunk(ch: Choice, id: Ident, p: Position)
+
+// The extent a case draws a fresh square at.
+.decl target_extent(ch: Choice, id: Ident, n: number)
+
+// --- Box, Erode ---
+
+// The cases that redraw a square by taking a ring off it.
+.decl shrink_choice(ch: Choice)
+shrink_choice($Box()). shrink_choice($Erode()).
+
+target_extent(Ch, Id, N) :-
+    shrink_choice(Ch), obj(Id, _), !shrunk(Ch, Id, _),  // nothing left of the square
+    params.bloom(N).
+
+// --- Box ---
+
+.init bcells = BoxCells<Ident>
+bcells.box(Id, M) :- box.margin(Id, M).
+bcells.cell(Id, P) :- box.cell(Id, _), in(P, _).
+
+shrunk($Box(), Id, P) :- bcells.hole(Id, P).
+
+// --- Erode ---
+
+.init exposed = Rim<Color>
+exposed.cell(Col, P) :- comps.node(Col, P).
+
+shrunk($Erode(), Id, P) :- comps.label(Col, P, Id), !exposed.rim(Col, P).
+
+// --- Lookup ---
+
+target_extent($Lookup(), Id, N2) :-
+    box.extents(Id, _, N, N),      // a square box
+    params.next_extent(N, N2).
+
+// --- output ---
+
+.init target = Frame2D<Target>
+target.extent([Ch, Id], A, N) :- target_extent(Ch, Id, N), axis_elem(A).
+
+// The target square, seated with its center on the square it comes from.
+.decl placed(ch: Choice, id: Ident, p: Position)
+placed(Ch, Id, P) :-
+    target.cell([Ch, Id], T_c), centered(T_c),           // the target's center
+    target.cell([Ch, Id], T), displacement(T_c, T, V),   // each of its cells as an offset
+    center(Id, C), compose(C, V, P), in(P, _).           // laid off from that center
+
+.decl paint(ch: Choice, p: Position, col: Color)
+paint(Ch, P, Col) :- shrunk(Ch, Id, P), obj(Id, Col).
+paint(Ch, P, Col) :- placed(Ch, Id, P), obj(Id, Col).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- paint(Ch, P, Col).
+out(P, Col, Ch) :- in(P, _), impl_choice(Ch), !paint(Ch, P, _), params.bg(Col).
+
+.comp Determine {
+    // A color's square, per example.
+    .type Square = [e: Example, col: Color]
+
+    .init in_box = Bbox<Square>
+    in_box.cell([E, Col], P) :- ex_in(E, P, Col), !params.bg(Col).
+
+    .init out_box = Bbox<Square>
+    out_box.cell([E, Col], P) :- ex_out(E, P, Col), !params.bg(Col).
+
+    .decl next_extent(n: number, n2: number)
+    next_extent(N, N2) :-
+        in_box.extents(Sq, _, N, N),     // a square
+        out_box.extents(Sq, _, N2, N2).  // the square it comes back as
+}

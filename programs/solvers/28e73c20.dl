@@ -1,0 +1,71 @@
+// 28e73c20
+// draft
+// concept: walk
+// A spiral is drawn on a blank canvas. The walk starts at a corner cell and
+// travels until its distance to the edge ahead reaches the turn box's margin
+// there, then turns in the spiral's sense. The box starts on the frame edge
+// and insets by the arm pitch once per cycle, so each arm stops one pitch
+// short of the one before it. The walk halts where the box has closed past it.
+//
+// Every input is uniformly blank, so the cells off the spiral are
+// underdetermined; two models, tagged on out's Choice:
+//
+//   $Passthrough() — an off-spiral cell keeps its input color.
+//   $Repaint()     — an off-spiral cell gets params.bg; the input only carries the
+//                    frame size.
+
+#include "../lib.dl"
+
+.type Choice = Passthrough {} | Repaint {}
+
+.comp Params {
+    // The spiral's ink.
+    .decl ink(col: Color) ink(3).
+
+    // The corner the spiral starts from.
+    .decl corner(d: DiagDir) corner(DIAG_TL).
+
+    // The sense the spiral winds in.
+    .decl sense(s: Sense) sense(SENSE_CW).
+
+    // Spacing between successive arms.
+    .decl pitch(k: number) pitch(2).
+
+    // A cycle insets the turn box by the pitch.
+    .decl inset(p: Inset)
+    inset(P) :- pitch(K), uniform_delta(K, P).
+
+    // --- $Repaint ---
+    .decl bg(col: Color) bg(0).
+}
+
+.init params = Params
+
+// The arm that closes a cycle: the walk turns off it onto the corner's other
+// direction.
+.decl cycle_end(d: Dir)
+cycle_end(D) :- params.corner(C), diag_dirs(C, _, D, D2), params.sense(S), turn(S, D, D2).
+
+// The walk: at P, traveling toward D, turning on the margins of box B.
+.decl walk(p: Position, d: Dir, b: Inset)
+walk(P, D, ORIGIN) :-
+    in(P, _), params.corner(C), corner_dist(P, C, 0),   // the corner cell
+    cycle_end(D_end), opposite(D_end, D).               // the first arm runs against the closing one
+
+walk(P2, D2, B2) :-
+    walk(P, D, B),                                                  // the walker, and the margin ahead of it
+    ( nearer(D, B, P), D2 = D, B2 = B, neighbor(P, D, P2)           // short of it: one step on
+    ; same_dist(D, B, P), P2 = P, params.sense(S), turn(S, D, D2),  // on it: turn in the spiral's sense
+      ( cycle_end(D), params.inset(I), compose(B, I, B2)            // a closed cycle insets the box
+      ; !cycle_end(D), B2 = B )
+    ).
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// --- $Passthrough ---
+out(P, Col, $Passthrough()) :- walk(P, _, _), params.ink(Col).
+out(P, Col, $Passthrough()) :- in(P, Col), !walk(P, _, _).
+
+// --- $Repaint ---
+out(P, Col, $Repaint()) :- walk(P, _, _), params.ink(Col).
+out(P, Col, $Repaint()) :- in(P, _), !walk(P, _, _), params.bg(Col).

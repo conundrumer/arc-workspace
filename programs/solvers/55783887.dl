@@ -1,0 +1,39 @@
+// 55783887
+// draft
+// concept: markers span cast
+// Two line marks sharing a diagonal delimit a span, and the span fills with
+// the line color. A cast mark on a span emits the whole perpendicular
+// diagonal line through itself, in the cast color. Paint covers unmarked
+// cells only, so every mark keeps its color.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl line_color(col: Color) line_color(1).
+    .decl cast_color(col: Color) cast_color(6).
+}
+
+.init params = Params
+
+.decl blank(p: Position)
+blank(P) :- in(P, Col), !params.line_color(Col), !params.cast_color(Col).
+
+// The span the line marks of each diagonal axis delimit.
+.init span = Between<DiagAxis>
+span.axis(DA, DA) :- diag_axis_elem(DA).
+span.cell(DA, P) :- diag_axis_elem(DA), in(P, _).
+span.mark(DA, P) :- diag_axis_elem(DA), in(P, Col), params.line_color(Col).
+
+.decl emit(p: Position, da: DiagAxis)
+emit(P, DA2) :-
+    in(P, Col), params.cast_color(Col),    // a cast mark
+    span.between(DA, P),                   // lying on a span
+    diag_perp(DA, DA2).                    // emits across that span
+
+.decl paint(p: Position, col: Color)
+paint(P, Col) :- span.between(_, P), blank(P), params.line_color(Col).
+paint(P, Col) :- emit(Q, DA), same_line(DA, P, Q), blank(P), params.cast_color(Col).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- paint(P, Col).
+out(P, Col) :- in(P, Col), !paint(P, _).

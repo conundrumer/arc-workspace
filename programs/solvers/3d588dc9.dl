@@ -1,0 +1,158 @@
+// 3d588dc9
+// draft
+// concept: objects markers border
+// A wedge is an object packed into one corner of its box, so its far side is
+// a diagonal slant. A key is an object shaped like the stored footprint: a
+// block with a stem out of one end. A wedge claims the keys beyond its slant,
+// and names the side its corner points to on the face axis. A key opens when
+// its claimants agree on one side and its stem does not already stick out of
+// that side; it then loses its stem, and its block's edge on that side turns
+// the face color. Everything else passes through.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(7).
+    .decl face(col: Color) face(6).
+
+    // The axis a wedge's corner is read on.
+    .decl face_axis(a: Axis) face_axis(AXIS_H).
+
+    RIGID(key,
+        .decl block(p: Position)
+        GRID_MASK_6x3(block,
+            _, _, _,
+            _, _, _,
+            1, 1, 1,
+            1, 1, 1,
+            1, 1, 1,
+            1, 1, 1)
+
+        .decl stem(p: Position)
+        GRID_MASK_6x3(stem,
+            _, 1, _,
+            _, 1, _,
+            _, _, _,
+            _, _, _,
+            _, _, _,
+            _, _, _)
+    )
+}
+
+.init params = Params
+
+// --- objects ---
+
+.init objects = Components<Color>
+objects.node(Col, P) :- in(P, Col), !params.bg(Col).
+
+.decl obj(id: Ident, p: Position)
+obj(Id, P) :- objects.label(_, P, Id).
+
+.init obj_box = BoxFrame<Ident>
+obj_box.cell(Id, P) :- obj(Id, P).
+obj_box.grid(Id, P) :- obj(Id, _), in(P, _).
+
+// --- keys ---
+
+.init foot_box = BoxFrame<D4>
+foot_box.cell(D, P_shape) :- params.key_block(D, P_shape).
+foot_box.cell(D, P_shape) :- params.key_stem(D, P_shape).
+
+.init key_match = KeyedSetCompare<Ident, D4, Position>
+key_match.pattern_member(D, P_box) :- foot_box.inner(D, _, P_box).
+key_match.observed_member(Id, P_box) :- obj(Id, P), obj_box.inner(Id, P, P_box).
+
+.decl key_at(id: Ident, d: D4)
+key_at(Id, D) :- key_match.equals(Id, D).
+
+// A key's cell paired with the footprint cell it carries.
+.decl key_cell(id: Ident, d: D4, p: Position, p_shape: Position)
+key_cell(Id, D, P, P_shape) :-
+    key_at(Id, D), obj_box.inner(Id, P, P_box),      // a cell of the key, box-framed
+    foot_box.inner(D, P_shape, P_box).               // the footprint cell at that place
+
+.decl stem_cell(id: Ident, p: Position)
+stem_cell(Id, P) :- key_cell(Id, D, P, P_shape), params.key_stem(D, P_shape).
+
+// --- wedges ---
+
+// An empty box cell nearer the corner than one the object occupies.
+.decl notch(id: Ident, dg: DiagDir)
+notch(Id, Dg) :-
+    diag_dir_elem(Dg),                                      // a box corner
+    obj(Id, P), obj_box.inner(Id, P, P_box),                // an object cell
+    obj_box.inner(Id, Q, Q_box), nearer(Dg, Q_box, P_box),  // a nearer box cell
+    !obj(Id, Q).
+
+// A wedge is packed into exactly one corner, so the far diagonal is its slant.
+.init wedge = Unanimous<Ident, DiagDir>
+wedge.item(Id, Dg) :- obj(Id, _), diag_dir_elem(Dg), !notch(Id, Dg).
+
+// --- claims ---
+
+// The key's box fails to lie strictly beyond the wedge's on one axis.
+.decl short(t: Ident, k: Ident)
+short(T, K) :-
+    wedge.value(T, Dg), key_at(K, _), dir_of(Dg, _, D),       // an edge of the wedge's corner
+    obj_box.margin(T, M_t), dist(M_t, D, K_t),                // how far the wedge sits from it
+    obj_box.margin(K, M_k), dist(M_k, D, K_k), K_k <= K_t.    // the key sits no further
+
+.init side = Unanimous<Ident, Dir>
+side.item(K, D) :-
+    wedge.value(T, Dg), key_at(K, _), !short(T, K),   // the wedge claims the key
+    params.face_axis(A), dir_of(Dg, A, D).            // the side its corner points to
+
+.init block_box = Bbox<Ident>
+block_box.cell(Id, P) :- key_cell(Id, D, P, P_shape), params.key_block(D, P_shape).
+
+// The stem already sticks out of the block's edge on that side.
+.decl stem_blocks(id: Ident, d: Dir)
+stem_blocks(Id, D) :- block_box.edge_cell(Id, P, D), neighbor(P, D, Q), stem_cell(Id, Q).
+
+.decl open(id: Ident, d: Dir)
+open(Id, D) :- side.value(Id, D), !stem_blocks(Id, D).
+
+// --- output ---
+
+.decl cleared(p: Position)
+cleared(P) :- open(Id, _), stem_cell(Id, P).
+
+.decl faced(p: Position)
+faced(P) :- open(Id, D), block_box.edge_cell(Id, P, D).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, Col_in),
+    ( faced(P), params.face(Col)               // the opened face
+    ; cleared(P), params.bg(Col)               // the stem it loses
+    ; !faced(P), !cleared(P), Col = Col_in     // untouched
+    ).
+
+.comp Determine {
+    // The stem an opened key loses: an input cell the output clears to bg.
+    .decl shed(e: Example, p: Position)
+    shed(E, P) :- ex_in(E, P, Col), !params.bg(Col), ex_out(E, P, Bg), params.bg(Bg).
+
+    // The key it came off: the shed cell's same-colored component.
+    .type EP = [e: Example, p: Position]
+    .init flood = Reach<EP>
+    flood.node([E, P0], P) :- shed(E, P0), ex_in(E, P0, Col), ex_in(E, P, Col).
+    flood.seed([E, P0], P0) :- shed(E, P0).
+
+    .decl key_shed(k: EP, p: Position)
+    key_shed([E, P0], P) :- flood.reach([E, P0], P), shed(E, P).
+
+    // One witness key serves as the chart, in its own pose.
+    .init pick = Canon<EP>
+    pick.equiv([E, P0], [E2, P02]) :- shed(E, P0), shed(E2, P02).
+
+    .init box = BoxFrame<EP>
+    box.cell(K, P) :- pick.rep(K, K), flood.reach(K, P).
+
+    .decl key_stem(p: Position)
+    key_stem(S) :- key_shed(K, P), box.inner(K, P, S).
+
+    .decl key_block(p: Position)
+    key_block(S) :- box.inner(K, P, S), !key_shed(K, P).
+}

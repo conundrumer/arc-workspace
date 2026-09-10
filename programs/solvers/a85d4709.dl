@@ -66,8 +66,6 @@ out(P, Out_C, $MarkerPosition()) :-
     cell_split(P_mark, P_inner_mark, P_across),
     params.position_color(P_inner_mark, Out_C).
 
-// --- determination ---
-
 .type SliceKey = [e: Example, p_across: Position]
 
 .comp Determine {

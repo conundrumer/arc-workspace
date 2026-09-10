@@ -1,0 +1,121 @@
+// 5d588b4d
+// draft
+// concept: markers count span rank
+// The input holds marks of one color on a bg ground, and the marks give one
+// number. The output writes runs of that color: their lengths climb 1, 2,
+// ... up to that number and fall back to 1, with one bg cell between a run
+// and the next. That sequence fills the output in reading order at the
+// input's width, and bg pads the last line.
+//
+// A run's length is the size of a diagonal of the square whose side is that
+// number, since those sizes climb and fall the same way.
+//
+//   $Count — the number is how many marks there are.
+//   $Span  — the number is how far the marks reach along their axis.
+
+#include "../lib.dl"
+
+.type Choice = Count {} | Span {}
+
+// One run of the sequence: the case it belongs to, and the run's index.
+.type Run = [ch: Choice, k: number]
+
+// One cell of the sequence: its run, and its place along that run.
+.type Item = [run: number, slot: number]
+
+.comp Params {
+    // --- shared ---
+    .decl bg(c: Color) bg(0).
+    .decl read_corner(d: DiagDir) read_corner(DIAG_TL).
+    .decl read_axis(a: Axis) read_axis(AXIS_V).
+
+    // --- Span ---
+    .decl span_axis(a: Axis) span_axis(AXIS_H).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Count()). impl_choice($Span()).
+
+// The reading order's dirs: D1 across lines, D2 along a line.
+.decl read_dir(d1: Dir, d2: Dir)
+read_dir(D1, D2) :- params.read_corner(Cor), params.read_axis(A), diag_dirs(Cor, A, D1, D2).
+
+.decl mark(p: Position, col: Color)
+mark(P, Col) :- in(P, Col), !params.bg(Col).
+
+// --- the runs ---
+
+// The square whose side is the number the marks give.
+.init square = Frame2D<Choice>
+
+// Run K is the square's K-th diagonal.
+.decl run_cell(r: Run, p: Position)
+run_cell([Ch, K], P) :- square.cell(Ch, P), params.read_corner(Cor), corner_dist(P, Cor, K).
+
+// Each run's cells rank into slots 0, 1, ... along the run.
+.init slot = Ordinal<Run>
+slot.idx_set(Run, T) :- run_cell(Run, P), read_dir(D1, _), dist(P, D1, T).
+
+.init run_slots = Tally<Run, number>
+run_slots.item(Run, J) :- slot.rank(Run, _, J).
+
+// --- the sequence ---
+
+.decl ink_item(ch: Choice, i: Item)
+ink_item(Ch, [K, J]) :- slot.rank([Ch, K], _, J).
+
+.decl item(ch: Choice, i: Item)
+item(Ch, I) :- ink_item(Ch, I).
+// The gap after a run takes the slot past that run's last slot. No run
+// follows the final run, so that run takes no gap.
+item(Ch, [K, L]) :- run_slots.tally([Ch, K], L), run_cell([Ch, K2], _), K2 > K.
+
+.init seq = Order<Choice, Item>
+seq.elem(Ch, I) :- item(Ch, I).
+seq.before(Ch, [K1, J1], [K2, J2]) :-
+    item(Ch, [K1, J1]), item(Ch, [K2, J2]),
+    ( K1 < K2                 // an earlier run
+    ; K1 = K2, J1 < J2 ).     // an earlier slot of the same run
+
+// --- the wrap ---
+
+.decl width(n: number)
+width(N) :- in(P, _), read_dir(_, D2), axis_of(D2, A), axis_dim(P, A, N).
+
+// An item's line and its place along that line.
+.decl place(ch: Choice, i: Item, r: number, c: number)
+place(Ch, I, R, C) :- seq.rank(Ch, I, F), width(W), stride(F, W, 0, R, C).
+
+.init line_tally = Tally<Choice, number>
+line_tally.item(Ch, R) :- place(Ch, _, R, _).
+
+.init canvas = Frame2D<Choice>
+canvas.extent(Ch, A, N) :- read_dir(D1, _), axis_of(D1, A), line_tally.tally(Ch, N).
+canvas.extent(Ch, A, N) :- impl_choice(Ch), read_dir(_, D2), axis_of(D2, A), width(N).
+
+.decl filled(ch: Choice, p: Position)
+filled(Ch, P) :-
+    ink_item(Ch, I), place(Ch, I, R, C),              // an ink item's place in the sequence
+    canvas.cell(Ch, P), read_dir(D1, D2),
+    dist(P, D1, R), dist(P, D2, C).                   // the same place in the output
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- filled(Ch, P), mark(_, Col).
+out(P, Col, Ch) :- canvas.cell(Ch, P), !filled(Ch, P), params.bg(Col).
+
+// --- Count ---
+
+.init mark_tally = Tally<Unit, Position>
+mark_tally.item($U(), P) :- mark(P, _).
+
+square.extent($Count(), A, N) :- axis_elem(A), mark_tally.tally($U(), N).
+
+// --- Span ---
+
+.init span = Bbox<Unit>
+span.cell($U(), P) :- mark(P, _).
+
+square.extent($Span(), A, N) :-
+    axis_elem(A), params.span_axis(A2), span.extent($U(), A2, N).

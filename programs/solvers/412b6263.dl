@@ -87,8 +87,6 @@ out(P_grid, Col, Ch) :-
     ( copy_line(Ch, P_grid), params.line_col(Col)        // on a copy's line
     ; !copy_line(Ch, P_grid), params.bg(Col) ).          // where two lines cross
 
-// --- determination ---
-
 .type ExAxis = [e: Example, a: Axis]
 
 .comp Determine {

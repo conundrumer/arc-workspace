@@ -1,0 +1,102 @@
+// 5961cc34
+// draft
+// concept: objects markers cast walk
+// Ink objects sit on a field. Each object is a body with port cells stuck to
+// it, in a port color. Every port shoots a beam away from the body; the beam
+// crosses the field and lands on the next object. The current runs from one
+// source object along those beams, and turns lit every object it reaches,
+// together with the field those beams cross. Every other cell, dead objects
+// included, comes out in the field color.
+//
+// Three properties single out the source object, and the pairs never
+// separate them. Cases, on which one of them makes it the source:
+//
+//   $Lit    — its body already carries the current's color.
+//   $Marked — it wears the stored source color, its own port color here.
+//   $Rim    — it touches the grid edge, so the current comes from outside.
+
+#include "../lib.dl"
+
+.type Choice = Lit {} | Marked {} | Rim {}
+
+.comp Params {
+    // --- shared ---
+    .decl bg(col: Color) bg(8).
+
+    // The color the current carries.
+    .decl lit(col: Color) lit(2).
+
+    // Port colors — a port cell sits on a body and casts away from it.
+    .decl port(col: Color)
+    port(3).
+    port(4).
+
+    // --- $Marked ---
+    // The color that marks the source object.
+    .decl source(col: Color) source(4).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Lit()). impl_choice($Marked()). impl_choice($Rim()).
+
+// --- objects ---
+
+.decl node(p: Position)
+node(P) :- in(P, Col), !params.bg(Col).
+
+.decl port_cell(p: Position)
+port_cell(P) :- in(P, Col), params.port(Col).
+
+.init objects = Components<Unit>
+objects.node($U(), P) :- node(P).
+
+.decl obj(p: Position, id: Ident)
+obj(P, Id) :- objects.label($U(), P, Id).
+
+// A port fires away from the body cell it is stuck to.
+.decl port_dir(p: Position, d: Dir)
+port_dir(P, D) :-
+    node(Q), !port_cell(Q),                          // a body cell
+    dir_elem(D), neighbor(Q, D, P), port_cell(P).    // the port stuck to its D side
+
+// --- the beams ---
+
+// Each port's beam runs over the field until it meets ink.
+.init beam = Ray<Dir>
+beam.dir(D, D) :- dir_elem(D).
+beam.cell(D, P) :- dir_elem(D), in(P, _), !node(P).
+beam.blocked(D, P) :- dir_elem(D), node(P).
+beam.mark(D, P) :- port_dir(P, D).
+
+// The object an object's beam lands on.
+.decl feeds(id: Ident, id2: Ident)
+feeds(Id, Id2) :- beam.stop(_, P, _, _, P_port), obj(P_port, Id), obj(P, Id2).
+
+// --- the current ---
+
+.decl live(id: Ident, ch: Choice)
+live(Id2, Ch) :- live(Id, Ch), feeds(Id, Id2).   // it carries on down the beam
+
+// --- $Lit ---
+live(Id, $Lit()) :- obj(P, Id), in(P, Col), params.lit(Col).
+
+// --- $Marked ---
+live(Id, $Marked()) :- obj(P, Id), in(P, Col), params.source(Col).
+
+// --- $Rim ---
+live(Id, $Rim()) :- obj(P, Id), dir_elem(D), dist(P, D, 0).
+
+// --- output ---
+
+.decl lit_cell(p: Position, ch: Choice)
+lit_cell(P, Ch) :-
+    live(Id, Ch), obj(P_obj, Id),        // a cell of a live object
+    ( P = P_obj                          // the object's own cell
+    ; beam.clear(_, P, _, _, P_obj)      // the field a beam from it crosses
+    ).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- lit_cell(P, Ch), params.lit(Col).
+out(P, Col, Ch) :- in(P, _), impl_choice(Ch), !lit_cell(P, Ch), params.bg(Col).

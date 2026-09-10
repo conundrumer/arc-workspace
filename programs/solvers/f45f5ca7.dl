@@ -34,8 +34,6 @@
 
 .init params = Params
 
-// --- parse ---
-
 .comp Parse<Key> {
     .decl cell(key: Key, p: Position, col: Color)
 
@@ -91,8 +89,6 @@ out(P, Col, Ch) :-
     impl_choice(Ch), in(P, _),      // choice × cell
     !moved(P, _, Ch),               // no mark lands here
     params.bg(Col).
-
-// --- determination ---
 
 .comp Determine {
     .init parse = Parse<Example>

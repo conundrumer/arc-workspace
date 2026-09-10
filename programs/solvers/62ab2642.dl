@@ -1,0 +1,87 @@
+// 62ab2642
+// draft
+// concept: objects count rank
+// Ink lines cut the grid into blank regions. The region holding the most cells
+// and the region holding the fewest each take their own color, and the rest of
+// the grid passes through.
+// Choice = what joins two blank cells into one region:
+//   $Orth() — cardinal adjacency.
+//   $Diag() — cardinal or diagonal adjacency.
+
+#include "../lib.dl"
+
+.type Choice = Orth {} | Diag {}
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    .decl big_paint(col: Color) big_paint(8).
+    .decl small_paint(col: Color) small_paint(7).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Orth()). impl_choice($Diag()).
+
+// The extreme regions of a labeled partition, by cell count.
+.comp Parse<Key> {
+    .decl region(key: Key, p: Position, id: Ident)  // input
+
+    .type KeyedRegion = [key: Key, id: Ident]
+
+    .init size = Tally<KeyedRegion, Position>
+    size.item([Ky, Id], P) :- region(Ky, P, Id).
+
+    .init extreme = ArgExtremes<Key, Ident>
+    extreme.cand(Ky, Id, N) :- size.tally([Ky, Id], N).
+
+    .decl biggest(key: Key, p: Position)
+    biggest(Ky, P) :- extreme.high(Ky, Id, _), region(Ky, P, Id).
+
+    .decl smallest(key: Key, p: Position)
+    smallest(Ky, P) :- extreme.low(Ky, Id, _), region(Ky, P, Id).
+}
+
+.decl blank(p: Position)
+blank(P) :- in(P, Col), params.bg(Col).
+
+.init parse = Parse<Choice>
+
+// --- $Orth ---
+
+.init orth = Components<Unit>
+orth.node($U(), P) :- blank(P).
+parse.region($Orth(), P, Id) :- orth.label($U(), P, Id).
+
+// --- $Diag ---
+
+.init diag = Components8<Unit>
+diag.node($U(), P) :- blank(P).
+parse.region($Diag(), P, Id) :- diag.label($U(), P, Id).
+
+// --- output ---
+
+.decl paint(p: Position, col: Color, ch: Choice)
+paint(P, Col, Ch) :- parse.biggest(Ch, P), params.big_paint(Col).
+paint(P, Col, Ch) :- parse.smallest(Ch, P), params.small_paint(Col).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- paint(P, Col, Ch).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(P, _, Ch).
+
+.comp Determine {
+    .decl bg(col: Color)
+    bg(Col) :- ex_in(E, P, Col), ex_out(E, P, Col2), Col2 != Col.
+
+    .init region = Components<Example>
+    region.node(E, P) :- ex_in(E, P, Col), bg(Col).
+
+    .init parse = Parse<Example>
+    parse.region(E, P, Id) :- region.label(E, P, Id).
+
+    .decl big_paint(col: Color)
+    big_paint(Col) :- parse.biggest(E, P), ex_out(E, P, Col).
+
+    .decl small_paint(col: Color)
+    small_paint(Col) :- parse.smallest(E, P), ex_out(E, P, Col).
+}

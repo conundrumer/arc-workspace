@@ -1,0 +1,68 @@
+// 5207a7b5
+// draft
+// concept: markers walk
+// A bar of one color hangs from an edge of the grid, and a filled region
+// grows out of it one column at a time. The bar's own column is filled as
+// deep as the bar reaches. Each next column toward the slant's side reaches
+// `rise` cells deeper, and each column the other way `rise` cells shallower,
+// until the region runs out of the grid. The bar's column keeps the bar's
+// color, and every other filled cell takes the color of its side of the bar.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+
+    .decl bar(col: Color) bar(5).
+
+    // The fill color on each side of the bar.
+    .decl paint(d: Dir, col: Color)
+    paint(DIR_L, 8). paint(DIR_R, 6).
+
+    // The corner the slant runs toward, and how far it goes along the bar
+    // per cell across it.
+    .decl slant_dir(d: DiagDir) slant_dir(DIAG_BL).
+    .decl rise_axis(a: Axis) rise_axis(AXIS_V).
+    .decl rise(k: number) rise(2).
+
+    // The edge the bar hangs from: back along the slant's own axis.
+    .decl base(d: Dir)
+    base(B) :- slant_dir(Dg), rise_axis(A), diag_dirs(Dg, A, D, _), opposite(D, B).
+
+    // The slant's step, and its inverse: one line runs both ways.
+    .decl slant(v: Shift)
+    slant(V) :-
+        slant_dir(Dg), rise_axis(A), diag_dirs(Dg, A, D, D_side),
+        rise(K), jump_delta(D, K, V_along), step_delta(D_side, V_across),
+        compose(V_along, V_across, V).
+    slant(V2) :- slant(V), displacement(V, ORIGIN, V2).
+}
+
+.init params = Params
+
+.decl bar_cell(p: Position)
+bar_cell(P) :- in(P, Col), params.bar(Col).
+
+.decl region(p: Position)
+region(P) :- bar_cell(P).
+region(Q) :-
+    region(P), in(Q, _),
+    ( params.slant(V), compose(P, V, Q)      // one column across, at the slant
+    ; params.base(B), neighbor(P, B, Q) ).   // one cell back toward the base edge
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    region(P), bar_cell(Q),
+    ( params.rise_axis(A), same_line(A, P, Q), params.bar(Col)  // the bar's own column
+    ; nearer(D, P, Q), params.paint(D, Col) ).                  // one side of it
+out(P, Col) :- in(P, _), !region(P), params.bg(Col).
+
+.comp Determine {
+    // Every filled cell, under the side of the bar it lies on.
+    .decl paint(d: Dir, col: Color)
+    paint(D, Col) :-
+        ex_out(E, P, Col), !params.bg(Col),                // a filled cell
+        params.rise_axis(A), perp(A, A2), axis_of(D, A2),  // a side of the bar
+        ex_in(E, Q, Col_bar), params.bar(Col_bar),         // a cell of the bar
+        nearer(D, P, Q).
+}

@@ -1,0 +1,61 @@
+// 23b5c85d
+// draft
+// concept: objects crop select count
+// Solid colored rectangles overlap on a bg field, so some are partly hidden.
+// No two share a color, so color individuates them. The output is the bounding
+// box of the object with the fewest cells. Choice = [l, r] crosses what an
+// object covers with what its box carries:
+//
+//   l (the object's cells):
+//     $Box()     — the whole rectangle, the hidden part included.
+//     $Visible() — only the cells whose color still shows.
+//   r (fill the box):
+//     $Keep() — the object's cells keep their color, the rest of the box is bg.
+//     $Crop() — the box carries the input through, occluders included.
+
+#include "../lib.dl"
+
+.type Size = Box {} | Visible {}
+.type Render = Keep {} | Crop {}
+.type Choice = [l: Size, r: Render]
+.type Sized = [l: Size, col: Color]
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+}
+
+.init params = Params
+
+.decl obj(col: Color)
+obj(Col) :- in(_, Col), !params.bg(Col).
+
+.init boxes = BoxFrame<Color>
+boxes.cell(Col, P) :- in(P, Col), obj(Col).
+boxes.grid(Col, P) :- in(P, _), obj(Col).
+
+// --- Size cases: what the object covers ---
+
+.decl obj_cell(l: Size, col: Color, p: Position)
+obj_cell($Box(), Col, P) :- boxes.inside(Col, P).
+obj_cell($Visible(), Col, P) :- boxes.cell(Col, P).
+
+.init size = Tally<Sized, Position>
+size.item([L, Col], P) :- obj_cell(L, Col, P).
+
+.init sel = ArgExtremes<Size, Color>
+sel.cand(L, Col, N) :- size.tally([L, Col], N).
+
+// --- Render cases: fill the winner's box ---
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+out(P_inner, Col, [L, $Keep()]) :-
+    sel.low(L, Col_win, _),                         // the smallest object
+    boxes.inner(Col_win, P, P_inner),               // its box, viewed from itself
+    ( obj_cell(L, Col_win, P), Col = Col_win        // an object cell keeps its color
+    ; !obj_cell(L, Col_win, P), params.bg(Col) ).   // the rest of the box is blank
+
+out(P_inner, Col, [L, $Crop()]) :-
+    sel.low(L, Col_win, _),            // the smallest object
+    boxes.inner(Col_win, P, P_inner),  // its box, viewed from itself
+    in(P, Col).                        // carrying the input through

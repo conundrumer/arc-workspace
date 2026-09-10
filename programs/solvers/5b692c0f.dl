@@ -1,0 +1,84 @@
+// 5b692c0f
+// draft
+// concept: objects symmetry markers repair d4 count
+// Each object carries a line of params.mark cells — its mirror axis — and one
+// further mark cell off that line. One side of the axis holds the object's
+// true half; the other side is corrupted, and the output overwrites it with
+// the reflection of the true half.
+//
+// The cases differ in which side is the source:
+//   $Mark:  the side holding the most off-axis marks.
+//   $Count: the side holding the most object cells.
+
+#include "../lib.dl"
+
+.type Choice = Mark {} | Count {}
+
+.type Line = [a: Axis, l: Position]
+.type ObjCase = [id: Ident, ch: Choice]
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+
+    // The color the axis and the off-axis mark are drawn in.
+    .decl mark(c: Color) mark(4).
+}
+
+.init params = Params
+
+.init objs = Components<Unit>
+objs.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+.decl obj(id: Ident, p: Position)
+obj(Id, P) :- objs.label($U(), P, Id).
+
+.decl obj_mark(id: Ident, p: Position)
+obj_mark(Id, P) :- obj(Id, P), in(P, Col), params.mark(Col).
+
+.init box = Bbox<Ident>
+box.cell(Id, P) :- obj(Id, P).
+box.grid(Id, P) :- obj(Id, _), in(P, _).
+
+// The fold's line is the object's commonest mark line.
+.init line_pick = Mode<Ident, Line, Position>
+line_pick.item(Id, [A, L], P) :- obj_mark(Id, P), axis_elem(A), split(P, A, _, L).
+
+.decl fold(id: Ident, a: Axis, l: Position)
+fold(Id, A2, L) :- line_pick.mode(Id, [A, L]), perp(A, A2).    // the axis the fold inverts
+
+// A cell of the object's box, off the axis line, toward D.
+.decl side(id: Ident, d: Dir, p: Position)
+side(Id, D, P) :- box.inside(Id, P), fold(Id, A, L), axis_of(D, A), nearer(D, P, L).
+
+// A box cell's image under the flip, taken about the axis line. The flip fixes
+// the along-axis, so the line's own Position frames it.
+.decl mirror(id: Ident, p: Position, p_out: Position)
+mirror(Id, P, P_out) :-
+    box.inside(Id, P), fold(Id, A, L), flip_of(A, F),
+    displacement(L, P, V), apply(F, V, V2), compose(L, V2, P_out), in(P_out, _).
+
+// The source side is the side holding most of the case's cells.
+.init side_pick = Mode<ObjCase, Dir, Position>
+
+// --- Mark ---
+
+side_pick.item([Id, $Mark()], D, P) :- side(Id, D, P), obj_mark(Id, P).
+
+// --- Count ---
+
+side_pick.item([Id, $Count()], D, P) :- side(Id, D, P), obj(Id, P).
+
+// --- output ---
+
+.decl impl_choice(ch: Choice)
+impl_choice($Mark()). impl_choice($Count()).
+
+// The source side paints its reflection over the other side.
+.decl fill(p: Position, col: Color, ch: Choice)
+fill(P, Col, Ch) :-
+    side_pick.mode([Id, Ch], D), side(Id, D, Q), in(Q, Col),  // a source cell
+    mirror(Id, Q, P).                                         // its image across the axis
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- fill(P, Col, Ch).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !fill(P, _, Ch).

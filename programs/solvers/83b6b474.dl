@@ -1,0 +1,81 @@
+// 83b6b474
+// draft
+// concept: objects count pack
+// Colored shapes lie scattered on a background. The output is the square whose
+// border holds as many cells as the shapes. The shapes translate onto that
+// border and pack it exactly; the inside is background.
+
+#include "../lib.dl"
+
+.comp Params {}
+
+.init params = Params
+
+// --- the shapes ---
+
+// The background is the commonest color.
+.init field = Mode<Unit, Color, Position>
+field.item($U(), Col, P) :- in(P, Col).
+
+.decl bg(col: Color)
+bg(Col) :- field.mode($U(), Col).
+
+// Each color's shape, viewed from its own box.
+.init box = BoxFrame<Color>
+box.cell(Col, P) :- in(P, Col), !bg(Col).
+
+// --- the ring ---
+
+// Candidate sides: the input's extents and every shorter one.
+.decl cand_side(k: number)
+cand_side(K) :-
+    in(P, _), axis_elem(A),
+    ( axis_dim(P, A, K)    // an extent of the input
+    ; sub_extent(P, A, K)  // a shorter one
+    ).
+
+.init square = Frame2D<number>
+square.extent(K, A, K) :- cand_side(K), axis_elem(A).
+
+// The border of each candidate square.
+.decl border(k: number, p: Position)
+border(K, P) :- square.cell(K, P), dir_elem(D), dist(P, D, 0).
+
+.init border_size = Tally<number, Position>
+border_size.item(K, P) :- border(K, P).
+
+.init shape_size = Tally<Unit, Position>
+shape_size.item($U(), P) :- box.cell(_, P).
+
+// The output square: its border holds as many cells as the shapes.
+.decl side(k: number)
+side(K) :- shape_size.tally($U(), N), border_size.tally(K, N).
+
+.decl ring(p: Position)
+ring(P) :- side(K), border(K, P).
+
+// --- the candidate placements ---
+
+// Where a shape lands with each of its cells on the ring.
+.init occ = Occurrences<Color, Unit>
+occ.shape(Col, S, $U()) :- box.inner(Col, _, S).
+occ.cell(Col, P, $U()) :- box.cell(Col, _), ring(P).
+
+// A candidate: a shape translated to a spot, named by the spot's margins.
+.type Placement = [col: Color, m: Position]
+
+.decl covers(cd: Placement, p: Position)
+covers([Col, M], P) :- occ.occurrence(Col, M), occ.shape(Col, S, $U()), compose(M, S, P).
+
+// --- the pruning ---
+
+.init pruning = PlacementPruning<Unit, Placement, Color>
+pruning.cand($U(), [Col, M], Col) :- occ.occurrence(Col, M).
+pruning.conflict($U(), Cd, Cd2) :- covers(Cd, P), covers(Cd2, P).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    side(K), square.cell(K, P),
+    ( pruning.alive($U(), Cd, Col), covers(Cd, P)  // a surviving shape covers the ring cell
+    ; !ring(P), bg(Col)                            // the inside
+    ).

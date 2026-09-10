@@ -1,0 +1,172 @@
+// 47c1f68c
+// draft
+// concept: decompose symmetry tile-arrangement d4 lookup
+// A full row and a full column of one color cut the grid into four equal
+// quadrants. One quadrant holds a pattern; the other three are blank. The
+// output drops the cutting lines and carries the pattern into all four
+// quadrants, painted in the cutting lines' color.
+//
+// Cases (data-equivalent on this task):
+//   $Complete() — the ink completes under params.sym over the output frame
+//   $Lookup()   — per-tile D4 table over the anchor quadrant's pattern
+//   $Mirror()   — per-axis: the tile on the anchor's side passes through,
+//                 the far side flips
+//   $Unfold()   — reflection tiling: each tile reflects its neighbor across
+//                 the shared boundary, seeded at the anchor tile
+
+#include "../lib.dl"
+
+.type Choice = Complete {} | Lookup {} | Mirror {} | Unfold {}
+
+.comp Params {
+    // --- shared ---
+    .decl bg(col: Color) bg(0).
+    .decl divisor(n: number) divisor(2).
+    .decl gap(g: number) gap(1).
+
+    // --- Complete ---
+    .decl sym(s: Sym) sym(SYM_BOX).
+
+    // --- Lookup / Mirror / Unfold ---
+    .decl anchor(d: DiagDir) anchor(DIAG_TL).
+
+    // --- Lookup ---
+    .decl tile_d4(p_tile: Position, d: D4)
+    GRID_2x2(tile_d4,
+        D4_ID, D4_LR,
+        D4_TB, D4_HT)
+}
+
+.init params = Params
+
+// --- shared ---
+
+// An input cell's quadrant, its place in that quadrant, and the output
+// cell the two recompose to. The cutting lines get no quadrant and drop
+// out of the output frame.
+.decl cell(p_grid: Position, p_tile: Position, p_intile: Position, p_grid_out: Position)
+cell(P_grid, P_tile, P_intile, P_grid_out) :-
+    in(P_grid, _), params.divisor(N), params.gap(G),
+    divide_2d(P_grid, N, G, P_tile, P_intile),      // the quadrants
+    concat_2d(P_tile, P_intile, 0, P_grid_out).     // abutting, the lines gone
+
+// The cutting lines' color: the cells no quadrant holds.
+.decl line_color(col: Color)
+line_color(Col) :- in(P_grid, Col), !cell(P_grid, _, _, _).
+
+.decl ink(p_grid: Position)
+ink(P_grid) :- in(P_grid, Col), !params.bg(Col).
+
+.decl paint(p_grid_out: Position, ch: Choice)
+
+// --- Complete ---
+paint(P_img, $Complete()) :-
+    ink(P_grid), cell(P_grid, _, _, P_grid_out),                    // ink, in the output frame
+    params.sym(S), sym_member(S, D), apply(D, P_grid_out, P_img).   // its images
+
+// --- Lookup / Mirror / Unfold ---
+
+.decl anchor_tile(p_tile: Position)
+anchor_tile(P_tile) :-
+    cell(_, P_tile, _, _), params.anchor(Diag), corner_anchor(Diag, P_tile, ORIGIN).
+
+// The pattern, in the anchor quadrant's own frame.
+.decl pattern(p_intile: Position)
+pattern(P_intile) :- ink(P_grid), cell(P_grid, P_tile, P_intile, _), anchor_tile(P_tile).
+
+// --- Lookup ---
+paint(P_grid_out, $Lookup()) :-
+    pattern(P_intile), params.tile_d4(P_tile, D),        // the table's image at a tile
+    apply(D, P_intile, P_intile2),
+    concat_2d(P_tile, P_intile2, 0, P_grid_out).    // recompose
+
+// --- Mirror ---
+
+// Per-axis within-tile image: the tile on the anchor's side passes
+// through, the far side flips.
+.decl mirror(a: Axis, p_tile: Position, p_intile: Position, p_img: Position)
+mirror(A, P_tile, P_intile, P_img) :-
+    cell(_, P_tile, P_intile, _), params.anchor(Diag), dir_of(Diag, A, D),
+    ( dist(P_tile, D, 0), P_img = P_intile               // anchor side — passes through
+    ; dist(P_tile, D, K), K != 0,                        // far side — flips
+      flip_of(A, F), apply(F, P_intile, P_img)
+    ).
+
+paint(P_grid_out, $Mirror()) :-
+    pattern(P_intile), perp(A1, A2),
+    mirror(A1, P_tile, P_intile, P1),
+    mirror(A2, P_tile, P1, P_intile2),               // image through both axes
+    concat_2d(P_tile, P_intile2, 0, P_grid_out).     // recompose
+
+// --- Unfold ---
+
+// Tile contents: the pattern seeds the anchor tile; each neighbor
+// reflects across the shared boundary.
+.decl unfold(p_tile: Position, p_intile: Position)
+unfold(P_tile, P_intile) :- pattern(P_intile), anchor_tile(P_tile).
+unfold(P_tile2, P_img) :-
+    unfold(P_tile, P_intile),                                   // known tile
+    axis_of(D, A), neighbor(P_tile, D, P_tile2),
+    cell(_, P_tile2, _, _),                                     // adjacent tile
+    flip_of(A, F), apply(F, P_intile, P_img).                   // across the shared edge
+
+paint(P_grid_out, $Unfold()) :-
+    unfold(P_tile, P_intile), concat_2d(P_tile, P_intile, 0, P_grid_out).
+
+// --- output ---
+
+.decl impl_choice(ch: Choice)
+impl_choice($Complete()). impl_choice($Lookup()).
+impl_choice($Mirror()). impl_choice($Unfold()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_grid_out, Col, Ch) :- paint(P_grid_out, Ch), line_color(Col).
+out(P_grid_out, Col, Ch) :-
+    cell(_, _, _, P_grid_out), impl_choice(Ch), !paint(P_grid_out, Ch), params.bg(Col).
+
+.comp Determine {
+    // The outputs' own symmetries, per example.
+    .init grid_map = D4Map<Example, Color>
+    grid_map.src(E, P_grid_out, Col) :- ex_out(E, P_grid_out, Col).
+    grid_map.dst(E, P_grid_out, Col) :- ex_out(E, P_grid_out, Col).
+
+    // A transform some output breaks.
+    .decl broken(d: D4)
+    broken(D) :- ex_out(E, _, _), d4_elem(D), !grid_map.map(E, D).
+
+    // The named subgroup matching the transforms every output holds.
+    .init sym_id = KeyedSetCompare<Unit, Sym, D4>
+    sym_id.pattern_member(S, D) :- sym_member(S, D).
+    sym_id.observed_member($U(), D) :- d4_elem(D), !broken(D).
+
+    .decl sym(s: Sym)
+    sym(S) :- sym_id.equals($U(), S).
+
+    // The output's quadrants, each in its own frame.
+    .decl tile_cell(e: Example, p_tile: Position, p_intile: Position, col: Color)
+    tile_cell(E, P_tile, P_intile, Col) :-
+        ex_out(E, P_grid_out, Col), params.divisor(N),
+        divide_2d(P_grid_out, N, 0, P_tile, P_intile).
+
+    .decl tile(e: Example, p_tile: Position)
+    tile(E, P_tile) :- tile_cell(E, P_tile, _, _).
+
+    .decl anchor_tile(p_tile: Position)
+    anchor_tile(P_tile) :-
+        tile(_, P_tile), params.anchor(Diag), corner_anchor(Diag, P_tile, ORIGIN).
+
+    // Each quadrant against the anchor quadrant's pattern.
+    .type ET = [e: Example, p_tile: Position]
+
+    .init tile_map = D4Map<ET, Color>
+    tile_map.src([E, P_tile], P_intile, Col) :-
+        tile(E, P_tile), anchor_tile(T_anc), tile_cell(E, T_anc, P_intile, Col).
+    tile_map.dst([E, P_tile], P_intile, Col) :- tile_cell(E, P_tile, P_intile, Col).
+
+    // A transform some example's quadrant breaks.
+    .decl tile_broken(p_tile: Position, d: D4)
+    tile_broken(P_tile, D) :- tile(E, P_tile), d4_elem(D), !tile_map.map([E, P_tile], D).
+
+    .decl tile_d4(p_tile: Position, d: D4)
+    tile_d4(P_tile, D) :- tile(_, P_tile), d4_elem(D), !tile_broken(P_tile, D).
+}

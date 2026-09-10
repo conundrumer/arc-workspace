@@ -1,0 +1,79 @@
+// 5034a0b5
+// draft
+// concept: markers objects move
+// A one-cell frame borders the grid. Each side of that frame carries one
+// color, and the four corners carry the interior's background color. Marks
+// sit inside that frame. A mark whose color is a side's color takes one step
+// toward that side; a mark whose color no side carries stays, and so does a
+// mark that would step onto the frame. The marks step at once, so a mark may
+// step onto the cell another mark leaves.
+//
+// The cases differ on what takes the step.
+// $Cell — each mark steps on its own.
+// $Object — marks of one color that touch step together, and the whole group
+//   stays when any of its marks would step onto the frame.
+
+#include "../lib.dl"
+
+.type Choice = Cell {} | Object {}
+
+.decl impl_choice(ch: Choice)
+impl_choice($Cell()). impl_choice($Object()).
+
+.comp Params {}
+
+.init params = Params
+
+// --- frame ---
+
+.decl corner(p: Position)
+corner(P) :- in(P, _), corner_dist(P, _, 0).
+
+.decl interior(p: Position)
+interior(P) :- in(P, _), gt(P, ORIGIN).
+
+.decl bg(col: Color)
+bg(Col) :- in(P, Col), corner(P).
+
+// The color of the side toward D: its edge line, corners aside.
+.decl side_color(d: Dir, col: Color)
+side_color(D, Col) :- in(P, Col), dir_elem(D), dist(P, D, 0), !corner(P).
+
+// A mark heads toward the side that carries its color.
+.decl heading(p: Position, d: Dir, col: Color)
+heading(P, D, Col) :- in(P, Col), interior(P), side_color(D, Col).
+
+// --- step ---
+
+// The mark's step lands on the frame.
+.decl faces_frame(p: Position)
+faces_frame(P) :- heading(P, D, _), neighbor(P, D, Q), !interior(Q).
+
+// What holds a mark back; the cases differ here.
+.decl blocked(p: Position, ch: Choice)
+
+.decl move(p: Position, q: Position, col: Color, ch: Choice)
+move(P, Q, Col, Ch) :-
+    heading(P, D, Col), neighbor(P, D, Q),  // the mark's step
+    impl_choice(Ch), !blocked(P, Ch).       // that nothing holds back
+
+// --- Cell ---
+
+blocked(P, $Cell()) :- faces_frame(P).
+
+// --- Object ---
+
+.init obj = Components8<Color>
+obj.node(Col, P) :- heading(P, _, Col).
+
+blocked(P, $Object()) :- obj.conn(_, P, P2), faces_frame(P2).
+
+// --- output ---
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    in(P, Col_in), impl_choice(Ch),
+    ( move(_, P, Col, Ch)                                      // a mark arrives
+    ; !move(_, P, _, Ch), move(P, _, _, Ch), bg(Col)           // the mark leaves
+    ; !move(_, P, _, Ch), !move(P, _, _, Ch), Col = Col_in     // undisturbed
+    ).

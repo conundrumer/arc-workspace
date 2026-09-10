@@ -1,0 +1,75 @@
+// 78332cb0
+// draft
+// concept: decompose continue rank
+// Separator lines cut the grid into equal tiles, each holding one shape on
+// bg. A shape that touches an edge of its tile continues in the tile whose
+// facing edge is touched at the same place. The shapes chain tile to tile
+// along one axis, and the output lays the tiles out along that axis in
+// the chain's order, one separator line between neighbors.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(7).
+    .decl sep(col: Color) sep(6).
+    .decl gap(g: number) gap(1).   // separator lines between laid-out tiles
+}
+
+.init params = Params
+
+.type Line = [a: Axis, l: Position]
+
+.init line_color = Unanimous<Line, Color>
+line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
+
+// The lattice the separator lines cut.
+.init lattice = DividerFrame<Unit>
+lattice.cell($U(), P) :- in(P, _).
+lattice.divider($U(), A, L) :- line_color.value([A, L], Col), params.sep(Col).
+
+// Each tile viewed from its own box.
+.init tile = BoxFrame<Position>
+tile.cell(P_tile, P) :- lattice.tile_of($U(), P, P_tile).
+
+// --- the chain ---
+
+// The tile's shape touches its edge d at across.
+.decl port(p_tile: Position, d: Dir, across: Position)
+port(P_tile, D, Across) :-
+    tile.inner(P_tile, P, P_intile), in(P, Col), !params.bg(Col),     // a shape cell
+    dist(P_intile, D, 0), axis_of(D, A), split(P_intile, A, _, Across).  // on edge d
+
+// Y continues X toward d: X's shape leaves through edge d where Y's shape
+// enters through the facing edge.
+.decl link(x: Position, d: Dir, y: Position)
+link(X, D, Y) :- port(X, D, Across), opposite(D, D2), port(Y, D2, Across), X != Y.
+
+// The tiles ordered along the chain, read toward d.
+.init chain = Order<Dir, Position>
+chain.elem(D, X) :- link(_, D, _), tile.cell(X, _).
+chain.before(D, X, Y) :- link(X, D, Y).
+chain.before(D, X, Z) :- chain.before(D, X, Y), link(Y, D, Z).
+
+// Each tile's place in the strip along the chain's axis: toward each
+// edge, the tiles beyond it.
+.decl seat(x: Position, a: Axis, p_tile: Position)
+seat(X, A, P_tile) :-
+    chain.rank_desc(D, X, K1), chain.rank(D, X, K2),   // tiles after and before X
+    axis_of(D, A), axis_delta(D, K1, K2, P_tile).
+
+// --- the layout ---
+
+.decl placed(p: Position, col: Color)
+placed(P_grid_out, Col) :-
+    seat(X, A, P_tile), tile.inner(X, P, P_intile), in(P, Col),   // a tile cell, seated
+    params.gap(G), concat_slab(P_tile, P_intile, A, G, P_grid_out).
+
+.init sheet = Frame2D<Unit>
+sheet.extent($U(), A, N) :- placed(P, _), axis_elem(A), axis_dim(P, A, N).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    sheet.cell($U(), P),
+    ( placed(P, Col)                      // tile cell
+    ; !placed(P, _), params.sep(Col)      // separator between tiles
+    ).

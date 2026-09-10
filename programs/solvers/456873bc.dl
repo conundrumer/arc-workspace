@@ -1,0 +1,76 @@
+// 456873bc
+// draft
+// concept: decompose scale stamp repair
+// The grid divides into square tiles separated by gaps, and holds a fractal:
+// a tile carries a copy of the tile shape at each place the shape inks. Tile
+// side and tile count are one number, so a tile's place in the arrangement
+// and a cell's place inside a tile live in the same frame. A band of cover
+// color hides one slab of tiles.
+//
+// The output completes the arrangement and marks, inside every copy, the cell
+// at that copy's own place. Two models of what it draws:
+//
+//   $Draw    — the fractal, drawn from the shape alone.
+//   $Restore — the cover is damage: the input stands elsewhere, and only the
+//              cells the cover hides are drawn.
+//
+// They diverge on an input whose visible copies depart from the shape.
+
+#include "../lib.dl"
+
+.type Choice = Draw {} | Restore {}
+
+.comp Params {
+    // --- shared ---
+    .decl bg(col: Color) bg(0).
+    .decl ink(col: Color) ink(2).
+    .decl mark(col: Color) mark(8).
+    .decl gap(g: number) gap(1).
+
+    // --- $Restore ---
+    .decl cover(col: Color) cover(3).
+}
+
+.init params = Params
+
+// The tile side: the size whose arrangement is a frame of that same size.
+.decl side(k: number)
+side(K) :-
+    in(P, _), sub_extent(P, A, K),                           // candidate size
+    params.gap(G), divide_by_size_2d(P, K, G, P_tile, _),    // the division it makes
+    axis_dims(P_tile, A, K, K).                              // into a K-by-K arrangement
+
+// A grid cell with its tile and its place inside that tile; a gap cell has
+// neither.
+.decl cell(p_grid: Position, p_tile: Position, p_intile: Position)
+cell(P_grid, P_tile, P_intile) :-
+    in(P_grid, _), side(K), params.gap(G),
+    divide_by_size_2d(P_grid, K, G, P_tile, P_intile).
+
+// The tile shape, read from every copy at once.
+.decl shape(p_intile: Position)
+shape(P_intile) :- cell(P_grid, _, P_intile), in(P_grid, Col), params.ink(Col).
+
+// The fractal's ink: each shape place of each copy.
+.decl inked(p_grid: Position)
+inked(P_grid) :- cell(P_grid, P_tile, P_intile), shape(P_tile), shape(P_intile).
+
+// Inside a copy, the cell at the copy's own place.
+.decl marked(p_grid: Position)
+marked(P_grid) :- cell(P_grid, P_tile, P_tile), shape(P_tile).
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// --- $Draw ---
+out(P_grid, Col, $Draw()) :- inked(P_grid), !marked(P_grid), params.ink(Col).
+out(P_grid, Col, $Draw()) :- marked(P_grid), params.mark(Col).
+out(P_grid, Col, $Draw()) :- in(P_grid, _), !inked(P_grid), params.bg(Col).
+
+// --- $Restore ---
+out(P_grid, Col, $Restore()) :- in(P_grid, Col), !marked(P_grid), !params.cover(Col).
+out(P_grid, Col, $Restore()) :- marked(P_grid), params.mark(Col).
+out(P_grid, Col, $Restore()) :-
+    in(P_grid, Cover), params.cover(Cover), !marked(P_grid),  // a hidden cell
+    ( inked(P_grid), params.ink(Col)                          // the copy under it
+    ; !inked(P_grid), params.bg(Col)                          // or nothing
+    ).

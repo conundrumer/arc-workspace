@@ -1,10 +1,10 @@
 // 34b99a2b
 // family: 3428a4f5
-// Layout: 1×2 horizontally-side-by-side 5×4 subgrids with 1-col gap.
+// Layout: two 5×4 subgrids side by side, with a 1-column gap.
 
 #include "../lib.dl"
 
-.type DecChoice = Tile {} | Div {}
+.type DecChoice = Table {} | Count {} | Size {}
 .type Body      = Lookup {} | Xor {}
 .type Choice    = [d: DecChoice, b: Body]
 
@@ -19,7 +19,7 @@
     .decl frame(p: Position)
     frame(P) :- frame_dim(AXIS_V, Fv), frame_dim(AXIS_H, Fh), helpers.frame_pos([Fv, Fh], P).
 
-    // --- Tile decompose data ---
+    // --- Table decompose data ---
     .decl arr_dim(a: Axis, n: number)
     arr_dim(AXIS_V, 1). arr_dim(AXIS_H, 2).
     .decl gap(g: number) gap(1).
@@ -29,15 +29,16 @@
         frame_dim(AXIS_V, Fv), frame_dim(AXIS_H, Fh), gap(G),
         helpers.tile_pos([Av, Ah], [Fv, Fh], [0, G], P_grid, P_tile, P_intile).
 
-    // --- Div decompose data ---
-    .decl divisor(n: number)
-    divisor(2).
-
+    // --- Count, Size decompose data ---
     .decl divide_axis(a: Axis)
     divide_axis(AXIS_H).
 
     .decl divide_gap(g: number)
     divide_gap(1).
+
+    // --- Count decompose data ---
+    .decl divisor(n: number)
+    divisor(2).
 
     // --- Lookup combine data ---
     .decl combine_member(id: Ident, p_outer: Position, c: Color)
@@ -64,36 +65,37 @@ combine_match.observed_member([P_grid_out, Dc], [P_tile, C]) :-
 // --- Decompose cases ---
 
 .decl dec_choice(dc: DecChoice)
-dec_choice($Tile()).
-dec_choice($Div()).
+dec_choice($Table()).
+dec_choice($Count()).
+dec_choice($Size()).
 
 .decl decompose(p: Position, p_outer: Position, p_inner: Position, dc: DecChoice)
-decompose(P_grid, P_tile, P_intile, $Tile()) :- params.tile_decompose(P_grid, P_tile, P_intile).
-decompose(P_grid, P_tile, P_intile, $Div()) :-
-    in(P_grid, _),                                                      // input position
-    params.divide_axis(A), params.divisor(N), params.divide_gap(G),     // params
+decompose(P_grid, P_tile, P_intile, $Table()) :- params.tile_decompose(P_grid, P_tile, P_intile).
+decompose(P_grid, P_tile, P_intile, $Count()) :-
+    in(P_grid, _), params.divide_axis(A), params.divide_gap(G),
+    params.divisor(N),                                              // tile count
     divide_slab(P_grid, A, N, G, P_tile, P_intile).
+decompose(P_grid, P_tile, P_intile, $Size()) :-
+    in(P_grid, _), params.divide_axis(A), params.divide_gap(G),
+    params.frame_dim(A, K),                                         // tile size = output frame extent
+    divide_by_size_slab(P_grid, A, K, G, P_tile, P_intile).
 
-// --- Xor body: filled_count parameterized by decompose choice ---
+// --- Xor ---
 
 .init filled = Tally<CombineKey, Position>
 filled.item([P_grid_out, Dc], P_grid_in) :-
     in(P_grid_in, Col), !params.bg(Col), decompose(P_grid_in, _, P_grid_out, Dc).
 filled.domain([P_grid_out, Dc]) :- params.frame(P_grid_out), dec_choice(Dc).
 
-.decl filled_count(o: Position, dc: DecChoice, n: number)
-filled_count(P_grid_out, Dc, N) :- filled.tally([P_grid_out, Dc], N).
-
 // --- Output ---
 
 .decl out(p: Position, col: Color, c: Choice)
 out(P_grid_out, Col_out, [Dc, $Lookup()]) :-
-    params.combine_out(Id, Col_out),                             // entry's output color
-    combine_match.equals([P_grid_out, Dc], Id).                  // cell's tiles == entry's members
+    params.combine_out(Id, Col_out),
+    combine_match.equals([P_grid_out, Dc], Id).     // cell's tiles == entry's members
 
 out(P_grid_out, Col, [Dc, $Xor()]) :-
-    dec_choice(Dc), params.frame(P_grid_out),      // choice × cell
-    filled_count(P_grid_out, Dc, N),               // the cell's fill count
-    ( params.fill_at(N), params.out_fill(Col)      // count hits the fill threshold
-    ; !params.fill_at(N), params.bg(Col)           // count off the threshold
+    filled.tally([P_grid_out, Dc], N),             // non-bg tiles at the cell
+    ( params.fill_at(N), params.out_fill(Col)
+    ; !params.fill_at(N), params.bg(Col)
     ).

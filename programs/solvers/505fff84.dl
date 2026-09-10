@@ -73,8 +73,6 @@ out(P_out, Col, Ch) :-
     seg_split(P_along, Row, Col, Ch),         // its color
     compose(P_v, P_h, P_out).
 
-// --- determination ---
-
 .comp Determine {
     .decl mark(e: Example, row: Position, p: Position, col: Color)
     mark(E, Row, P, Col) :-

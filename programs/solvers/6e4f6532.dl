@@ -1,0 +1,145 @@
+// 6e4f6532
+// draft
+// concept: lines objects markers d4 move
+// Walls of solid color line the grid, and the panels between them hold
+// objects and targets. An object is a component with core cells and other
+// cells; a target is a component of core cells alone. Some object cells carry
+// a wall's color and face that wall. Each object moves so that its core lands
+// exactly on a target of the same shape, under a D4 transform that turns
+// every wall-colored cell toward its wall. A rotation is taken when one
+// fits; a reflection only when none does. The vacated cells go to bg.
+//
+// The cases read how a wall-colored cell faces:
+// - Backed: the object cell behind it, away from the wall, backs it.
+// - Edge: it lies on the edge of the object's bounding box toward the wall.
+
+#include "../lib.dl"
+
+.type Choice = Backed {} | Edge {}
+
+.comp Params {
+    .decl core(col: Color) core(9).
+}
+
+.init params = Params
+
+// bg is the commonest color.
+.init fill = Mode<Unit, Color, Position>
+fill.item($U(), Col, P) :- in(P, Col).
+
+.decl bg(col: Color)
+bg(Col) :- fill.mode($U(), Col).
+
+// A line holding some bg cell.
+.decl line_bg(a: Axis, along: Position)
+line_bg(A, Along) :- in(P, Col), bg(Col), axis_elem(A), split(P, A, Along, _).
+
+// A wall cell: on a line with no bg cell.
+.decl wall(p: Position, col: Color)
+wall(P, Col) :- in(P, Col), axis_elem(A), split(P, A, Along, _), !line_bg(A, Along).
+
+// Each wall's cells cast across the cells off that wall, keyed by the wall's
+// color.
+.init wall_cast = Ray<Color>
+wall_cast.mark(Col, P) :- wall(P, Col).
+wall_cast.dir(Col, D) :- wall(_, Col), dir_elem(D).
+wall_cast.cell(Col, P) :- wall(_, Col), in(P, _), !wall(P, Col).
+
+// The wall of a color lies toward d from p: p is on a cast away from d.
+.decl wall_toward(p: Position, col: Color, d: Dir)
+wall_toward(P, Col, D) :- wall_cast.ray(Col, P, Opp, _, _), opposite(D, Opp).
+
+// Panel ink: the non-bg cells off the walls.
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !bg(Col), !wall(P, _).
+
+.init parts = Components8<Unit>
+parts.node($U(), P) :- ink(P, _).
+
+// An object is a part with a non-core cell; a part of core cells alone is a
+// target.
+.decl has_body(id: Ident)
+has_body(Id) :- parts.label($U(), P, Id), ink(P, Col), !params.core(Col).
+
+.decl object_cell(id: Ident, p: Position, col: Color)
+object_cell(Id, P, Col) :- parts.label($U(), P, Id), has_body(Id), ink(P, Col).
+
+.decl target_cell(id: Ident, p: Position)
+target_cell(Id, P) :- parts.label($U(), P, Id), !has_body(Id).
+
+// --- placement ---
+
+// A pose: one object's core in one D4 image.
+.type Pose = [id: Ident, d: D4]
+
+// Seek each pose among the target cells; an occurrence lands every core cell
+// on a target cell.
+.init seat = Occurrences<Pose, Unit>
+seat.shape([Id, D], P_img, $U()) :-
+    object_cell(Id, P, Col), params.core(Col), d4_elem(D), apply(D, P, P_img).
+seat.cell([Id, D], P, $U()) :- object_cell(Id, _, _), d4_elem(D), target_cell(_, P).
+
+// Where each cell p of a seated object lands.
+.decl seated(id: Ident, d: D4, sh: Shift, p: Position, p_out: Position, col: Color)
+seated(Id, D, Sh, P, P_out, Col) :-
+    seat.occurrence([Id, D], Sh),                 // a seating of the object
+    object_cell(Id, P, Col), apply(D, P, P_img),  // each cell, transformed
+    compose(Sh, P_img, P_out).                    // and carried to its seat
+
+// A seating whose core leaves part of a target uncovered.
+.decl partial(id: Ident, d: D4, sh: Shift)
+partial(Id, D, Sh) :-
+    seated(Id, D, Sh, _, P, Col), params.core(Col), target_cell(T, P),  // the target hit
+    target_cell(T, Q), !seated(Id, D, Sh, _, Q, Col).                  // a cell of it left
+
+// --- Backed ---
+
+// A wall-colored cell of a seating faces its wall when an object cell backs
+// it, away from the wall.
+.decl faces(ch: Choice, id: Ident, d: D4, sh: Shift, p: Position)
+faces($Backed(), Id, D, Sh, P) :-
+    seated(Id, D, Sh, _, P, Col), wall_toward(P, Col, Dir),  // the cell and its wall
+    opposite(Dir, Opp), neighbor(P, Opp, Q),                 // the cell behind it
+    seated(Id, D, Sh, _, Q, _).                              // is the object's
+
+// --- Edge ---
+
+.init obj_box = Bbox<Ident>
+obj_box.cell(Id, P) :- object_cell(Id, P, _).
+
+// A wall-colored cell of a seating faces its wall when it lies on the edge of
+// the object's box that the transform turns toward the wall.
+faces($Edge(), Id, D, Sh, P_out) :-
+    seated(Id, D, Sh, P, P_out, Col), wall_toward(P_out, Col, Dir),  // the cell and its wall
+    obj_box.edge_cell(Id, P, Dir_in), apply_dir(D, Dir_in, Dir).     // on the edge turned to the wall
+
+// --- Backed, Edge ---
+
+.decl impl_choice(ch: Choice)
+impl_choice($Backed()). impl_choice($Edge()).
+
+.decl misfaced(ch: Choice, id: Ident, d: D4, sh: Shift)
+misfaced(Ch, Id, D, Sh) :-
+    impl_choice(Ch), seated(Id, D, Sh, _, P, Col), wall(_, Col), !faces(Ch, Id, D, Sh, P).
+
+.decl fit(ch: Choice, id: Ident, d: D4, sh: Shift)
+fit(Ch, Id, D, Sh) :-
+    impl_choice(Ch), seat.occurrence([Id, D], Sh), !partial(Id, D, Sh), !misfaced(Ch, Id, D, Sh).
+
+.decl rotation_fits(ch: Choice, id: Ident)
+rotation_fits(Ch, Id) :- fit(Ch, Id, D, _), c4_elem(D).
+
+// The cells of the move taken: a rotation when one fits; otherwise a
+// reflection.
+.decl placed(ch: Choice, p: Position, col: Color)
+placed(Ch, P, Col) :-
+    fit(Ch, Id, D, Sh), ( c4_elem(D) ; !rotation_fits(Ch, Id) ),  // the move taken
+    seated(Id, D, Sh, _, P, Col).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- placed(Ch, P, Col).
+out(P, Col, Ch) :-
+    impl_choice(Ch), in(P, C_in), !placed(Ch, P, _),
+    ( !object_cell(_, P, _), Col = C_in   // untouched
+    ; object_cell(_, P, _), bg(Col)       // vacated
+    ).

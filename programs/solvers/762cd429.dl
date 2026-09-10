@@ -1,0 +1,80 @@
+// 762cd429
+// draft
+// concept: scale walk
+// A 2-by-2 seed sits against the left edge. Copies of the seed extend from it
+// to the right, each copy twice the size of the previous one and adjacent to
+// it. The line where the seed's two rows meet stays fixed: the top row's
+// copies grow upward, the bottom row's downward. Copies past the grid are cut
+// off.
+//
+// A cell past the seed is the image of the cell whose scaled block covers it:
+// on each side, the seed's back corner cell scales onto the cell just past
+// the seed's front corner. Two models of the growth direction:
+//
+//   $Stored — the direction is task data.
+//   $Away   — the seed touches one grid edge and grows away from it.
+//
+// Coincide here: the seed touches the left edge and grows right.
+
+#include "../lib.dl"
+
+.type Choice = Stored {} | Away {}
+
+.comp Params {
+    // --- shared ---
+    .decl bg(c: Color) bg(0).
+    .decl factor(f: number) factor(2).
+
+    // --- $Stored ---
+    .decl grow(d: Dir) grow(DIR_R).
+}
+
+.init params = Params
+
+// The seed: the non-bg cells, as a box.
+.init seed = Bbox<Unit>
+seed.cell($U(), P) :- in(P, Col), !params.bg(Col).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Stored()). impl_choice($Away()).
+
+// The direction the copies extend in.
+.decl grow(d: Dir, ch: Choice)
+
+// --- $Stored ---
+grow(D, $Stored()) :- params.grow(D).
+
+// --- $Away ---
+grow(G, $Away()) :- seed.edge_min($U(), D, 0), opposite(D, G).
+
+// The seed's corner cells on side D: the back corner, and the cell just past
+// the front corner, where the back corner's scaled block lands. Blocks extend
+// toward the front corner's diagonal.
+.decl anchor(dg: DiagDir, p_back: Position, p_next: Position, ch: Choice)
+anchor(Dg_front, P_back, P_next, Ch) :-
+    grow(G, Ch), opposite(G, G_back),
+    seed.corner($U(), P_front, Dg_front), diag_dirs(Dg_front, _, D, G),
+    seed.corner($U(), P_back, Dg_back), diag_dirs(Dg_back, _, D, G_back),
+    neighbor(P_front, G, P_next).
+
+// A cell's source: the cell whose block, scaled by the factor from the back
+// anchor onto the next anchor, covers it.
+.decl source(q: Position, p: Position, ch: Choice)
+source(Q, P, Ch) :-
+    in(Q, _), anchor(Dg, P_back, P_next, Ch), displacement(P_next, Q, V),
+    params.factor(F), diag_dirs(Dg, _, D1, D2),
+    opposite(D1, O1), dist(V, O1, K1), stride(K1, F, 0, N1, _),   // steps toward D1, scaled down
+    opposite(D2, O2), dist(V, O2, K2), stride(K2, F, 0, N2, _),   // steps toward D2, scaled down
+    jump(P_back, D1, N1, P1), jump(P1, D2, N2, P).
+
+// The seed and its copies.
+.decl copy(p: Position, col: Color, ch: Choice)
+copy(P, Col, Ch) :- seed.cell($U(), P), in(P, Col), impl_choice(Ch).
+copy(Q, Col, Ch) :- source(Q, P, Ch), copy(P, Col, Ch).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    in(P, _), impl_choice(Ch),
+    ( copy(P, Col, Ch)                    // seed or copy cell
+    ; !copy(P, _, Ch), params.bg(Col)     // untouched cell
+    ).

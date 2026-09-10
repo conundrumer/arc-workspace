@@ -1,0 +1,81 @@
+// 42918530
+// draft
+// concept: decompose stamp classify
+// Background lines cut the grid into boxes. A box is a solid outline of one
+// color around an interior, and that interior is blank or carries a design.
+// The boxes of one color form a group, and at most one box of a group carries
+// a design.
+//
+// $Fill — a blank box takes its group's design; a box with a design of its own
+// keeps that one.
+// $Merge — every box of a group takes the group's design.
+
+#include "../lib.dl"
+
+.type Choice = Fill {} | Merge {}
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Fill()). impl_choice($Merge()).
+
+// --- lattice ---
+
+.decl inked_line(a: Axis, l: Position)
+inked_line(A, L) :- in(P, Col), !params.bg(Col), axis_elem(A), split(P, A, L, _).
+
+.init lattice = DividerFrame<Unit>
+lattice.cell($U(), P) :- in(P, _).
+lattice.divider($U(), A, L) :-
+    in(P, _), axis_elem(A), split(P, A, L, _),   // a line of the grid
+    !inked_line(A, L).                           // that carries no ink
+
+.decl box_of(p: Position, t: Position)
+box_of(P, T) :- lattice.tile_of($U(), P, T).
+
+.init box = BoxFrame<Position>
+box.cell(T, P) :- box_of(P, T).
+
+// --- boxes ---
+
+// The one color a box is drawn in.
+.decl box_color(t: Position, col: Color)
+box_color(T, Col) :- box_of(P, T), in(P, Col), !params.bg(Col).
+
+.decl outline(p_intile: Position)
+outline(P_intile) :- box.inner(_, _, P_intile), dir_elem(D), dist(P_intile, D, 0).
+
+.decl ink(t: Position, p_intile: Position)
+ink(T, P_intile) :- box.inner(T, P, P_intile), in(P, Col), !params.bg(Col).
+
+.decl design(t: Position, p_intile: Position)
+design(T, P_intile) :- ink(T, P_intile), !outline(P_intile).
+
+// --- groups ---
+
+// The designs the boxes of one color carry between them.
+.decl group_design(col: Color, p_intile: Position)
+group_design(Col, P_intile) :- box_color(T, Col), design(T, P_intile).
+
+.decl show(t: Position, p_intile: Position, ch: Choice)
+show(T, P_intile, Ch) :- ink(T, P_intile), impl_choice(Ch).
+
+// --- Fill ---
+show(T, P_intile, $Fill()) :-
+    box_color(T, Col), !design(T, _),   // a blank box of the group
+    group_design(Col, P_intile).        // takes the group's design
+
+// --- Merge ---
+show(T, P_intile, $Merge()) :- box_color(T, Col), group_design(Col, P_intile).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    box.inner(T, P, P_intile),                                  // box cell
+    ( show(T, P_intile, Ch), box_color(T, Col)                  // shown, in the box's color
+    ; impl_choice(Ch), !show(T, P_intile, Ch), params.bg(Col)   // bare
+    ).
+out(P, Col, Ch) :- in(P, _), !box_of(P, _), params.bg(Col), impl_choice(Ch).  // a cutting line

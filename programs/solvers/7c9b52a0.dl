@@ -1,0 +1,37 @@
+// 7c9b52a0
+// draft
+// concept: overlay objects
+// Panels of one size sit on a frame color, each a params.bg canvas holding
+// some ink. The frame color is the grid's commonest color. The panels stack
+// on one canvas of their size: ink cells win, and the rest stays params.bg.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+}
+
+.init params = Params
+
+// The frame color: what covers the grid outside the panels.
+.init frame = Mode<Unit, Color, Position>
+frame.item($U(), Col, P) :- in(P, Col).
+
+// A panel is a connected region of non-frame cells.
+.init panels = Components<Unit>
+panels.node($U(), P) :- in(P, Col), !frame.mode($U(), Col).
+
+// Each panel viewed from its own box.
+.init panel = BoxFrame<Ident>
+panel.cell(Id, P) :- panels.label($U(), P, Id).
+
+// Ink stacked onto the shared canvas.
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- panel.inner(_, P_grid, P), in(P_grid, Col), !params.bg(Col).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    panel.inner(_, _, P),                // canvas cell
+    ( ink(P, Col)                        // inked
+    ; !ink(P, _), params.bg(Col)         // blank
+    ).

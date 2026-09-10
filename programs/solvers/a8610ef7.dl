@@ -51,8 +51,6 @@ out(P, Col_out, $Lookup()) :-
     params.mirror(D), apply(D, P, P_m), in(P_m, C_mirror),    // mirror cell color
     params.recolor(C_self, C_mirror, Col_out).
 
-// --- determination ---
-
 .type ColorPair = [d: D4, c_self: Color, c_mirror: Color]
 
 .comp Determine {

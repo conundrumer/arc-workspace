@@ -1,0 +1,131 @@
+// 3345333e
+// draft
+// concept: symmetry repair
+// A figure mirror-symmetric across a line of params.axis, occluded by a solid
+// rectangle of a second color. The output erases the rectangle and restores
+// what it hid. The mirror line varies per pair, so each case derives it, as
+// the frame its flip acts in. Cases:
+//
+//   $Complete — the line centers the figure's extent in the lines the
+//               rectangle misses; every figure cell gains its mirror image.
+//   $Patch    — the same line; only the occluded cells fill.
+//   $Fitted   — the line no visible figure cell contradicts: each cell's
+//               image is a figure cell or an occluded one. Both scopes
+//               agree under it, so it carries one case.
+
+#include "../lib.dl"
+
+.type Choice = Complete {} | Patch {} | Fitted {}
+
+// Two figure cells a candidate mirror swaps.
+.type Pair = [p: Position, q: Position]
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+
+    // The axis the mirror inverts.
+    .decl axis(a: Axis) axis(AXIS_H).
+}
+
+.init params = Params
+
+// --- shared ---
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.bg(Col).
+
+// The occluder is the color whose cells fill their bounding box; the figure
+// is the other one.
+.init color_box = Bbox<Color>
+color_box.cell(Col, P) :- ink(P, Col).
+color_box.grid(Col, P) :- ink(_, Col), in(P, _).
+
+.decl gap(col: Color)
+gap(Col) :- color_box.inside(Col, P), !in(P, Col).
+
+.decl occluder(p: Position)
+occluder(P) :- ink(P, Col), !gap(Col).
+
+.decl figure(p: Position, col: Color)
+figure(P, Col) :- ink(P, Col), gap(Col).
+
+// The mirror acts within each line of params.axis, so an occluder cell cuts the
+// figure on its own line.
+.decl damaged(p: Position)
+damaged(P) :- figure(P, _), occluder(Q), params.axis(A), same_line(A, P, Q).
+
+// The figure where it is whole.
+.init whole = Bbox<Unit>
+whole.cell($U(), P) :- figure(P, _), !damaged(P).
+
+// A candidate mirror swaps two figure cells of one line.
+.decl pair(p: Position, q: Position)
+pair(P, Q) :- figure(P, _), figure(Q, _), params.axis(A), same_line(A, P, Q).
+
+.init pair_box = Bbox<Pair>
+pair_box.cell([P, Q], P) :- pair(P, Q).
+pair_box.cell([P, Q], Q) :- pair(P, Q).
+
+.decl cand(m: Position)
+cand(M) :- pair_box.margin(_, M).
+
+// The frames a mirror may act in.
+.decl mirror_frame(m: Position)
+mirror_frame(M) :- whole.margin($U(), M).
+mirror_frame(M) :- cand(M).
+
+// Each grid cell as frame M sees it.
+.init views = Reframe<Position>
+views.outer(M, M) :- mirror_frame(M).
+views.cell(M, P) :- mirror_frame(M), in(P, _).
+
+// Cells whose views in frame M are flip-related.
+.decl mirror(m: Position, p: Position, q: Position)
+mirror(M, P, Q) :-
+    views.view(M, P, P_inner), params.axis(A), flip_of(A, D), // the cell's view, the flip
+    apply(D, P_inner, Q_inner), views.view(M, Q, Q_inner).    // its image, back on the grid
+
+// The frame each case mirrors in.
+.decl frame(m: Position, ch: Choice)
+
+// The cells each case's repair may touch.
+.decl target(p: Position, ch: Choice)
+
+.decl paint(p: Position, col: Color, ch: Choice)
+paint(Q, Col, Ch) :-
+    figure(P, Col), frame(M, Ch), mirror(M, P, Q),   // a figure cell's mirror image
+    target(Q, Ch).                                   // where the case repairs
+
+.decl impl_choice(ch: Choice)
+impl_choice($Complete()). impl_choice($Patch()). impl_choice($Fitted()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- paint(P, Col, Ch).
+out(P, Col, Ch) :-
+    in(P, Col_in), impl_choice(Ch), !paint(P, _, Ch),
+    ( !occluder(P), Col = Col_in     // the figure and its field pass through
+    ; occluder(P), params.bg(Col)    // the rectangle is erased
+    ).
+
+// --- $Complete ---
+
+frame(M, $Complete()) :- whole.margin($U(), M).
+target(P, $Complete()) :- in(P, _).
+
+// --- $Patch ---
+
+frame(M, $Patch()) :- whole.margin($U(), M).
+target(P, $Patch()) :- occluder(P).
+
+// --- $Fitted ---
+
+// The candidate carries the figure cell onto a figure cell or an occluded
+// one — the two places the whole figure reaches.
+.decl upheld(m: Position, p: Position)
+upheld(M, P) :- mirror(M, P, Q), ( figure(Q, _) ; occluder(Q) ).
+
+.decl contradicted(m: Position)
+contradicted(M) :- cand(M), figure(P, _), !upheld(M, P).
+
+frame(M, $Fitted()) :- cand(M), !contradicted(M).
+target(P, $Fitted()) :- in(P, _).

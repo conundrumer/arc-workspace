@@ -1,0 +1,71 @@
+// 5ad8a7c0
+// draft
+// concept: lines markers span rank cross
+// Marks lie in pairs, one pair to a line of the task's axis, and the cells a
+// pair holds between its two marks are its span. Some spans take the mark
+// color, and the rest of the input passes through. Cases differ on which
+// spans fill:
+//
+//   $Shortest — the pairs standing closest together.
+//   $Clear    — the pairs no other mark lies across.
+
+#include "../lib.dl"
+
+.type Choice = Shortest {} | Clear {}
+
+.comp Params {
+    .decl mark(col: Color) mark(2).
+
+    // The axis a pair spans.
+    .decl axis(a: Axis) axis(AXIS_H).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Shortest()). impl_choice($Clear()).
+
+// --- shared ---
+
+.decl mark_cell(p: Position)
+mark_cell(P) :- in(P, Col), params.mark(Col).
+
+// Each mark casts along the task's axis and halts at the next mark.
+.init cast = Ray<Unit>
+cast.dir($U(), D) :- params.axis(A), axis_of(D, A).
+cast.cell($U(), P) :- in(P, _).
+cast.mark($U(), P) :- mark_cell(P).
+cast.blocked($U(), P) :- mark_cell(P).
+
+// A pair: the mark at src, and the next mark k cells toward d.
+.decl span(src: Position, d: Dir8, k: number)
+span(Src, D, K) :- cast.stop($U(), _, D, K, Src).
+
+// The cells a pair holds between its marks.
+.decl span_cell(src: Position, d: Dir8, p: Position)
+span_cell(Src, D, P) :- span(Src, D, _), cast.clear($U(), P, D, K, Src), K != 0.
+
+.decl fill(p: Position, ch: Choice)
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- fill(P, Ch), params.mark(Col).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !fill(P, Ch).
+
+// --- Shortest ---
+
+.init closest = Extremes<Unit>
+closest.cand($U(), K) :- span(_, _, K).
+
+fill(P, $Shortest()) :-
+    span(Src, D, K), closest.low($U(), K),   // a pair at the least gap
+    span_cell(Src, D, P).                    // fills across its span
+
+// --- Clear ---
+
+// Another mark lies on a line the span crosses.
+.decl crossed(src: Position, d: Dir8)
+crossed(Src, D) :-
+    span_cell(Src, D, P), mark_cell(Q),                 // a span cell and a mark
+    params.axis(A), perp(A, A2), same_line(A2, P, Q).   // on the line across the span
+
+fill(P, $Clear()) :- span_cell(Src, D, P), !crossed(Src, D).

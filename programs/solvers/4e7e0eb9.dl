@@ -1,0 +1,149 @@
+// 4e7e0eb9
+// draft
+// concept: decompose d4 select count
+// The grid lays square sections out in a lattice, a separator between
+// them. Inside its border, a section's field is quartered by its two
+// halving lines: four blocks, one solid color each. A halving line inked
+// end to end is a divider, and the blocks mirror across it. A section with
+// no divider takes one color over all four blocks.
+//
+// Cases (that color):
+//   $Blank  — the color of the blocks that are not params.blank.
+//   $Rarest — the color the fewest blocks carry.
+
+#include "../lib.dl"
+
+.type Choice = Blank {} | Rarest {}
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+
+    // The section lattice: square sections, params.sep apart.
+    .decl section(k: number) section(9).
+    .decl sep(g: number) sep(1).
+
+    // The border between a section's edge and its field.
+    .decl margin(k: number) margin(1).
+
+    // --- $Blank ---
+    .decl blank(c: Color) blank(1).
+}
+
+.init params = Params
+
+// --- sections ---
+
+.decl section_cell(p_grid: Position, p_sec: Position, p_insec: Position)
+section_cell(P_grid, P_sec, P_insec) :-
+    in(P_grid, _), params.section(N), params.sep(G),
+    divide_by_size_2d(P_grid, N, G, P_sec, P_insec).
+
+.init border = MarginFrame<Unit>
+border.cell($U(), P_insec) :- section_cell(_, _, P_insec).
+border.width($U(), D, K) :- dir_elem(D), params.margin(K).
+
+// The field the border frames.
+.decl field_cell(p_grid: Position, p_sec: Position, p_field: Position)
+field_cell(P_grid, P_sec, P_field) :-
+    section_cell(P_grid, P_sec, P_insec), border.inner($U(), P_insec, P_field).
+
+// --- blocks ---
+
+// The field's halving lines quarter it: one block per quadrant.
+.init quad = DiagPlacement<Unit>
+quad.cell($U(), P_field) :- field_cell(_, _, P_field).
+
+.decl block_cell(p_grid: Position, p_sec: Position, blk: DiagDir)
+block_cell(P_grid, P_sec, Blk) :-
+    field_cell(P_grid, P_sec, P_field), quad.quadrant($U(), P_field, Blk).
+
+.decl block_col(p_sec: Position, blk: DiagDir, col: Color)
+block_col(P_sec, Blk, Col) :- block_cell(P_grid, P_sec, Blk), in(P_grid, Col).
+
+// --- dividers ---
+
+// A bg cell on the line halving the field on axis a.
+.decl mid_bg(p_sec: Position, a: Axis)
+mid_bg(P_sec, A) :-
+    field_cell(P_grid, P_sec, P_field), in(P_grid, Col), params.bg(Col),  // a bg cell
+    dist_pair(P_field, D, K, K), axis_of(D, A).                           // centered on axis a
+
+// A halving line inked end to end.
+.decl divider(p_sec: Position, a: Axis)
+divider(P_sec, A) :- section_cell(_, P_sec, _), axis_elem(A), !mid_bg(P_sec, A).
+
+.decl divided(p_sec: Position)
+divided(P_sec) :- divider(P_sec, _).
+
+// --- mirroring ---
+
+// Where a side of the field goes: the far side across a divider, itself
+// where the line halving its axis is not one.
+.decl side_img(p_sec: Position, d: Dir, d_img: Dir)
+side_img(P_sec, D, E) :-
+    section_cell(_, P_sec, _), axis_of(D, A),
+    ( divider(P_sec, A), opposite(D, E)   // across the divider
+    ; !divider(P_sec, A), E = D           // no divider on this axis
+    ).
+
+// A block is a corner of the field, so its image is the corner its two
+// sides go to.
+.decl block_img(p_sec: Position, blk: DiagDir, img: DiagDir)
+block_img(P_sec, Blk, Img) :-
+    diag_dirs(Blk, A, D1, D2),
+    side_img(P_sec, D1, E1), side_img(P_sec, D2, E2),
+    diag_dirs(Img, A, E1, E2).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Blank()). impl_choice($Rarest()).
+
+// The color a section with no divider takes over all its blocks.
+.decl fill(p_sec: Position, col: Color, ch: Choice)
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_grid, Col, Ch) :-
+    block_cell(P_grid, P_sec, Blk), divided(P_sec),          // a divided section's block
+    block_img(P_sec, Blk, Img), block_col(P_sec, Img, Col),  // takes its image's color
+    impl_choice(Ch).
+out(P_grid, Col, Ch) :- block_cell(P_grid, P_sec, _), !divided(P_sec), fill(P_sec, Col, Ch).
+out(P_grid, Col, Ch) :- in(P_grid, Col), !block_cell(P_grid, _, _), impl_choice(Ch).
+
+// --- $Blank ---
+
+.init ink = Unanimous<Position, Color>
+ink.item(P_sec, Col) :- block_col(P_sec, _, Col), !params.blank(Col).
+
+fill(P_sec, Col, $Blank()) :- ink.value(P_sec, Col).
+
+// --- $Rarest ---
+
+.type SecCol = [sec: Position, col: Color]
+
+.init block_tally = Tally<SecCol, DiagDir>
+block_tally.item([P_sec, Col], Blk) :- block_col(P_sec, Blk, Col).
+
+.init rarest = ArgExtremes<Position, Color>
+rarest.cand(P_sec, Col, N) :- block_tally.tally([P_sec, Col], N).
+
+fill(P_sec, Col, $Rarest()) :- rarest.low(P_sec, Col, _).
+
+.type ExLine = [e: Example, a: Axis, l: Position]
+.type ExPart = [e: Example, p_part: Position]
+
+.comp Determine {
+    // The color a grid line holds, when it holds just one.
+    .init line_col = Unanimous<ExLine, Color>
+    line_col.item([E, A, L], Col) :- ex_in(E, P, Col), axis_elem(A), split(P, A, L, _).
+
+    // The separator lines cut the grid into parts.
+    .init parts = DividerFrame<Example>
+    parts.cell(E, P) :- ex_in(E, P, _).
+    parts.divider(E, A, L) :- line_col.value([E, A, L], Col), !params.bg(Col).
+
+    .init part_box = Bbox<ExPart>
+    part_box.cell([E, P_part], P) :- parts.tile_of(E, P, P_part).
+
+    // A section is a square part.
+    .decl section(k: number)
+    section(K) :- part_box.extents(_, _, K, K).
+}

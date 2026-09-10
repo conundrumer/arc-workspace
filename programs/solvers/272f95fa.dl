@@ -1,0 +1,113 @@
+// 272f95fa
+// draft
+// concept: decompose stamp cast lookup
+// Lines of one color cut the grid into a tile arrangement. The center tile
+// and its four cardinal neighbors each take a color; every other tile, and
+// the lines, keep the input. Models of which tile takes which color:
+//
+//   $Plus   — a plus footprint stamps at the center tile, one color per arm
+//             direction.
+//   $Cast   — the center tile casts each arm color along its direction, out
+//             to the edge of the arrangement.
+//   $Lookup — a stored table keyed by tile position.
+//
+// Every pair's arrangement is 3x3, where the one-step footprint and the cast
+// to the edge cover the same tiles.
+
+#include "../lib.dl"
+
+.type Choice = Plus {} | Cast {} | Lookup {}
+
+.comp Params {
+    // --- shared ---
+    .decl line(col: Color) line(8).
+
+    .decl center_paint(col: Color) center_paint(6).
+
+    .decl arm_paint(d: Dir, col: Color)
+    arm_paint(DIR_T, 2). arm_paint(DIR_B, 1). arm_paint(DIR_L, 4). arm_paint(DIR_R, 3).
+
+    // --- Lookup ---
+    .decl tile_paint(p_tile: Position, col: Color)
+    tile_paint([0, 2, 1, 1], 2). tile_paint([2, 0, 1, 1], 1). tile_paint([1, 1, 0, 2], 4).
+    tile_paint([1, 1, 2, 0], 3). tile_paint([1, 1, 1, 1], 6).
+}
+
+.init params = Params
+
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)  // input
+
+    .type Line = [key: Key, a: Axis, l: Position]
+
+    .init line_color = Unanimous<Line, Color>
+    line_color.item([Ky, A, L], Col) :- cell(Ky, P, Col), axis_elem(A), split(P, A, L, _).
+
+    // A line wholly of the line color spans the grid, so it cuts tiles apart.
+    .init df = DividerFrame<Key>
+    df.cell(Ky, P) :- cell(Ky, P, _).
+    df.divider(Ky, A, L) :- line_color.value([Ky, A, L], Col), params.line(Col).
+
+    // The middle tile of the arrangement.
+    .decl center_tile(key: Key, p_tile: Position)
+    center_tile(Ky, P_tile) :- df.tile_of(Ky, _, P_tile), centered(P_tile).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// --- painting ---
+
+.decl tile_ink(p_tile: Position, col: Color, c: Choice)
+
+.decl paint(p: Position, col: Color, c: Choice)
+paint(P, Col, C) :- parse.df.tile_of($U(), P, P_tile), tile_ink(P_tile, Col, C).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Plus()). impl_choice($Cast()). impl_choice($Lookup()).
+
+.decl out(p: Position, col: Color, c: Choice)
+out(P, Col, C) :- paint(P, Col, C).
+out(P, Col, C) :- in(P, Col), impl_choice(C), !paint(P, _, C).
+
+// --- Plus ---
+
+tile_ink(P_tile, Col, $Plus()) :- parse.center_tile($U(), P_tile), params.center_paint(Col).
+tile_ink(P_arm, Col, $Plus()) :-
+    parse.center_tile($U(), P_tile), neighbor(P_tile, D, P_arm),  // one tile out toward D
+    params.arm_paint(D, Col).                                     // that arm's color
+
+// --- Cast ---
+
+.init cast = Ray<Unit>
+cast.dir($U(), D) :- dir_elem(D).
+cast.cell($U(), P_tile) :- parse.df.tile_of($U(), _, P_tile).
+cast.mark($U(), P_tile) :- parse.center_tile($U(), P_tile).
+
+tile_ink(P_tile, Col, $Cast()) :- parse.center_tile($U(), P_tile), params.center_paint(Col).
+tile_ink(P_tile, Col, $Cast()) :-
+    cast.ray($U(), P_tile, D, K, _), K != 0,  // downrange of the center toward D
+    params.arm_paint(D, Col).                 // that arm's color
+
+// --- Lookup ---
+
+tile_ink(P_tile, Col, $Lookup()) :- params.tile_paint(P_tile, Col).
+
+.comp Determine {
+    .init px = Parse<Example>
+    px.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // A tile the output repaints.
+    .decl painted(e: Example, p_tile: Position, col: Color)
+    painted(E, P_tile, Col) :-
+        px.df.tile_of(E, P, P_tile), ex_out(E, P, Col),  // an output cell of the tile
+        ex_in(E, P, Col_in), Col != Col_in.              // holding what the input did not
+
+    .decl tile_paint(p_tile: Position, col: Color)
+    tile_paint(P_tile, Col) :- painted(_, P_tile, Col).
+
+    .decl arm_paint(d: Dir, col: Color)
+    arm_paint(D, Col) :-
+        dir_elem(D), px.center_tile(E, P_tile),
+        neighbor(P_tile, D, P_arm), painted(E, P_arm, Col).  // one tile out toward D
+}

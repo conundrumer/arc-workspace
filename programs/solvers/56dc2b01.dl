@@ -1,0 +1,76 @@
+// 56dc2b01
+// draft
+// concept: objects lines move
+// A shape of params.mover lies to one side of a line of params.anchor that spans
+// the grid. The shape slides toward that line and stops against it, and a
+// line of params.back is drawn across the grid one step behind it.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    .decl mover(col: Color) mover(3).
+    .decl anchor(col: Color) anchor(2).
+    .decl back(col: Color) back(8).
+}
+
+.init params = Params
+
+.decl mover_cell(p: Position)
+mover_cell(P) :- in(P, Col), params.mover(Col).
+
+.decl anchor_cell(p: Position)
+anchor_cell(P) :- in(P, Col), params.anchor(Col).
+
+// --- direction of travel ---
+
+// The anchor lies toward one edge from the mover, on a shared line.
+.init sight = Ray<Unit>
+sight.dir($U(), D)  :- dir_elem(D).
+sight.mark($U(), P) :- mover_cell(P).
+sight.cell($U(), P) :- anchor_cell(P).
+
+.decl move_dir(d: Dir)
+move_dir(D) :- dir_elem(D), sight.ray($U(), _, D, _, _).
+
+// --- the slide ---
+
+// The mover fits at a displacement when its every cell lands off the line.
+.init fits = Occurrences<Unit, Unit>
+fits.cell($U(), P, $U())  :- in(P, _), !anchor_cell(P).
+fits.shape($U(), P, $U()) :- mover_cell(P).
+
+// The mover travels through the displacements at which it fits.
+.init slide = Slide<Unit>
+slide.dir($U(), D) :- move_dir(D).
+slide.node($U(), Delta) :- fits.occurrence($U(), Delta).
+
+// The mover at rest, on the last displacement short of the line.
+.decl landed(p: Position)
+landed(P2) :-
+    slide.rest($U(), ORIGIN, _, Delta),
+    mover_cell(P), compose(P, Delta, P2).
+
+// --- the line behind ---
+
+.init box = Bbox<Unit>
+box.cell($U(), P) :- landed(P).
+
+// The grid line one step behind the resting mover's trailing face.
+.decl back_line(p: Position)
+back_line(Q) :-
+    move_dir(D), opposite(D, O),                        // back along the travel
+    box.edge_cell($U(), P, O), neighbor(P, O, P_back),  // one step behind the trailing face
+    in(Q, _), same_dist(O, P_back, Q).
+
+// --- output ---
+
+// The grid with the mover lifted off.
+.decl cleared(p: Position, col: Color)
+cleared(P, Col) :- in(P, Col), !mover_cell(P).
+cleared(P, Col) :- mover_cell(P), params.bg(Col).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- landed(P), params.mover(Col).
+out(P, Col) :- back_line(P), params.back(Col).
+out(P, Col) :- cleared(P, Col), !landed(P), !back_line(P).

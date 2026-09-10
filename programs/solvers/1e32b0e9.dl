@@ -1,0 +1,90 @@
+// 1e32b0e9
+// draft
+// concept: decompose overlay stamp rank select
+// A separator lattice cuts the grid into an arrangement of equal square tiles,
+// some holding a shape. One footprint stamps into every tile, painting the
+// separator's color on the bg cells it lands on. Choice = [d, s] crosses the
+// hypotheses:
+//
+//   d (what the lattice is read by):
+//     $Count()  — the tile count.
+//     $Size() — the tile size.
+//   s (where the footprint comes from):
+//     $Union()   — every tile's shape overlaid.
+//     $Largest() — the shape of the tile with the most cells.
+//     $Corner()  — the shape of the tile at params.corner.
+
+#include "../lib.dl"
+
+.type DecChoice = Count {} | Size {}
+.type Source = Union {} | Largest {} | Corner {}
+.type Choice = [d: DecChoice, s: Source]
+
+.comp Params {
+    // --- shared ---
+    .decl bg(col: Color) bg(0).
+    .decl gap(g: number) gap(1).
+
+    // --- Count ---
+    .decl tile_count(n: number) tile_count(3).
+
+    // --- Size ---
+    .decl tile_dim(k: number) tile_dim(5).
+
+    // --- Corner ---
+    .decl corner(d: DiagDir) corner(DIAG_TL).
+}
+
+.init params = Params
+
+.decl dec_choice(dc: DecChoice)
+dec_choice($Count()). dec_choice($Size()).
+
+.decl source_choice(s: Source)
+source_choice($Union()). source_choice($Largest()). source_choice($Corner()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([Dc, S]) :- dec_choice(Dc), source_choice(S).
+
+.decl tile(p_grid: Position, p_tile: Position, p_intile: Position, dc: DecChoice)
+tile(P_grid, P_tile, P_intile, $Count()) :-
+    in(P_grid, _), params.tile_count(N), params.gap(G),
+    divide_2d(P_grid, N, G, P_tile, P_intile).
+tile(P_grid, P_tile, P_intile, $Size()) :-
+    in(P_grid, _), params.tile_dim(K), params.gap(G),
+    divide_by_size_2d(P_grid, K, G, P_tile, P_intile).
+
+// The color the cuts between tiles are drawn in.
+.decl divider_color(col: Color, dc: DecChoice)
+divider_color(Col, Dc) :- in(P_grid, Col), dec_choice(Dc), !tile(P_grid, _, _, Dc).
+
+// A tile's shape, in tile-local coordinates.
+.decl shape(p_tile: Position, p_intile: Position, dc: DecChoice)
+shape(P_tile, P_intile, Dc) :-
+    tile(P_grid, P_tile, P_intile, Dc), in(P_grid, Col), !params.bg(Col).
+
+// The footprint stamped into every tile.
+.decl stamp(p_intile: Position, ch: Choice)
+
+// --- Union ---
+stamp(P_intile, [Dc, $Union()]) :- shape(_, P_intile, Dc).
+
+// --- Largest ---
+.init biggest = Mode<DecChoice, Position, Position>
+biggest.item(Dc, T, P_intile) :- shape(T, P_intile, Dc).
+
+stamp(P_intile, [Dc, $Largest()]) :- biggest.mode(Dc, T), shape(T, P_intile, Dc).
+
+// --- Corner ---
+stamp(P_intile, [Dc, $Corner()]) :-
+    params.corner(Dg), shape(T, P_intile, Dc), corner_dist(T, Dg, 0).
+
+// --- output ---
+.decl stamped(p_grid: Position, ch: Choice)
+stamped(P_grid, [Dc, S]) :-
+    tile(P_grid, _, P_intile, Dc), stamp(P_intile, [Dc, S]),  // the footprint lands here
+    in(P_grid, Col), params.bg(Col).                          // on a bg cell
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_grid, Col, [Dc, S]) :- stamped(P_grid, [Dc, S]), divider_color(Col, Dc).
+out(P_grid, Col, Ch) :- in(P_grid, Col), impl_choice(Ch), !stamped(P_grid, Ch).

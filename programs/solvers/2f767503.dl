@@ -1,0 +1,42 @@
+// 2f767503
+// draft
+// concept: markers objects cast
+// Specks of params.speck lie on a params.bg field. One params.eye cell sits against a line of
+// params.lens cells and looks through the lens cell it touches. That line of sight
+// crosses the whole grid, and every speck object it meets is erased to params.bg.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(7).
+    .decl speck(col: Color) speck(4).
+    .decl eye(col: Color) eye(9).
+    .decl lens(col: Color) lens(5).
+}
+
+.init params = Params
+
+.decl eye(p: Position)
+eye(P) :- in(P, Col), params.eye(Col).
+
+.decl speck(p: Position)
+speck(P) :- in(P, Col), params.speck(Col).
+
+.decl aim(d: Dir)
+aim(D) :- eye(P), dir_elem(D), neighbor(P, D, Q), in(Q, Col), params.lens(Col).
+
+.init sight = Ray<Unit>
+sight.dir($U(), D) :- aim(D).
+sight.mark($U(), P) :- eye(P).
+sight.cell($U(), P) :- speck(P).
+
+.init objs = Reach<Unit>
+objs.node($U(), P) :- speck(P).
+objs.seed($U(), P) :- sight.ray($U(), P, _, _, _).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, Col_in),
+    ( !objs.reach($U(), P), Col = Col_in     // untouched — passes
+    ; objs.reach($U(), P), params.bg(Col)    // seen — erased
+    ).

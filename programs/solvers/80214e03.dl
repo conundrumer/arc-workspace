@@ -1,0 +1,83 @@
+// 80214e03
+// draft
+// concept: lines decompose merge d4
+// One-color blocks, each with a few bg holes, fill a box on a bg field.
+// The blocks lie on a grid: on each axis, the lines fuse into block-lines,
+// and the block-lines induce a tile frame. The output is that frame under
+// a D4 transform, one cell per tile holding the tile's color. The cases
+// contest what separates two adjacent lines: $Content separates lines
+// with different color sets; $Contrast separates lines where two cells
+// of different colors touch across them.
+
+#include "../lib.dl"
+
+.type Choice = Content {} | Contrast {}
+.type Line = [a: Axis, p: Position]
+.type ChoiceLine = [c: Choice, l: Line]
+.type ChoiceAxis = [c: Choice, a: Axis]
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+    .decl transform(d: D4) transform(D4_LR).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Content()).
+impl_choice($Contrast()).
+
+// --- lines ---
+
+// The colors on a line.
+.decl line_color(l: Line, col: Color)
+line_color([A, L], Col) :- in(P, Col), !params.bg(Col), axis_elem(A), split(P, A, L, _).
+
+// Two touching lines, both with content.
+.decl adjacent(l: Line, l2: Line)
+adjacent([A, L], [A, L2]) :-
+    line_color([A, L], _), line_color([A, L2], _), axis_of(D, A), neighbor(L, D, L2).
+
+// A boundary runs between the two lines.
+.decl separated(c: Choice, l: Line, l2: Line)
+
+// --- Content ---
+
+.init content = KeyedSetCompare<Line, Line, Color>
+content.pattern_member(L, Col) :- line_color(L, Col).
+content.observed_member(L, Col) :- line_color(L, Col).
+
+separated($Content(), L, L2) :- adjacent(L, L2), !content.equals(L, L2).
+
+// --- Contrast ---
+
+separated($Contrast(), [A, L], [A, L2]) :-
+    in(P, Col), in(Q, Col2), !params.bg(Col), !params.bg(Col2), Col != Col2,  // two colors
+    axis_of(D, A), neighbor(P, D, Q),                                        // touching across the axis
+    split(P, A, L, _), split(Q, A, L2, _).                                   // one on each line
+
+// --- arrangement ---
+
+// A block-line is a run of adjacent lines that no boundary separates.
+.init block_line = Canon<ChoiceLine>
+block_line.equiv([C, L], [C, L]) :- impl_choice(C), line_color(L, _).
+block_line.equiv([C, L], [C, L3]) :-
+    block_line.equiv([C, L], [C, L2]), adjacent(L2, L3), !separated(C, L2, L3).
+
+// The frame the block-lines induce on each axis.
+.init layout = OrderFrame<ChoiceAxis, Ident>
+layout.axis([C, A], A) :- impl_choice(C), axis_elem(A).
+layout.member([C, A], B, L) :- block_line.id([C, [A, L]], B).
+
+// The tile a cell sits in.
+.decl tile_of(c: Choice, p: Position, p_tile: Position)
+tile_of(C, P, P_tile) :-
+    in(P, _), perp(A, A2), split(P, A, L, _), split(P, A2, L2, _),   // the cell's line on each axis
+    block_line.id([C, [A, L]], B), block_line.id([C, [A2, L2]], B2), // the block-line of each
+    layout.pos([C, A], B, P_line), layout.pos([C, A2], B2, P_line2), // the block-lines' output lines
+    compose(P_line, P_line2, P_tile).                                // where the two lines cross
+
+.decl out(p: Position, col: Color, c: Choice)
+out(P_out, Col, C) :-
+    in(P, Col), !params.bg(Col), tile_of(C, P, P_tile),   // the tile's color
+    params.transform(T), apply(T, P_tile, P_out).

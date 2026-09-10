@@ -1,0 +1,98 @@
+// 794b24be
+// draft
+// concept: count rank lookup
+// Count the non-bg cells of the input. The output, on the input's frame,
+// renders that count in params.mark on params.bg.
+//
+// Two models pick the cells that render the count:
+//   $Order — a stored fill sequence over the cells; a cell is inked iff its
+//            place in the sequence is within the count.
+//   $Table — a stored cell set per count.
+
+#include "../lib.dl"
+
+.type Choice = Order {} | Table {}
+
+.decl impl_choice(ch: Choice)
+impl_choice($Order()). impl_choice($Table()).
+
+.comp Params {
+    // --- shared ---
+    .decl bg(c: Color) bg(0).
+    .decl mark(c: Color) mark(2).
+
+    // --- Order ---
+    // Each cell's 1-based place in the fill sequence; a cell with no place
+    // is never inked.
+    .decl fill_seq(p: Position, k: number)
+    GRID_SPARSE_3x3(fill_seq,
+        1, 2, 3,
+        _, 4, _,
+        _, _, _)
+
+    // --- Table ---
+    // Count -> inked cells, for the counts the task exhibits.
+    .decl count_cells(n: number, p: Position)
+    GRID_MASK_3x3(count_cells, 1,
+        1, _, _,
+        _, _, _,
+        _, _, _)
+    GRID_MASK_3x3(count_cells, 2,
+        1, 1, _,
+        _, _, _,
+        _, _, _)
+    GRID_MASK_3x3(count_cells, 3,
+        1, 1, 1,
+        _, _, _,
+        _, _, _)
+    GRID_MASK_3x3(count_cells, 4,
+        1, 1, 1,
+        _, 1, _,
+        _, _, _)
+}
+
+.init params = Params
+
+.comp Parse<Key> {
+    .decl cell(k: Key, p: Position, col: Color)
+
+    .init ink = Tally<Key, Position>
+    ink.item(K, P) :- cell(K, P, C), !params.bg(C).
+    ink.domain(K) :- cell(K, _, _).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, C) :- in(P, C).
+
+.decl inked(p: Position, ch: Choice)
+
+// --- Order ---
+
+inked(P, $Order()) :- parse.ink.tally($U(), N), params.fill_seq(P, K), K <= N.
+
+// --- Table ---
+
+inked(P, $Table()) :- parse.ink.tally($U(), N), params.count_cells(N, P).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    in(P, _), impl_choice(Ch),
+    ( inked(P, Ch), params.mark(Col)
+    ; !inked(P, Ch), params.bg(Col)
+    ).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // A count's cells are its example's inked cells.
+    .decl count_cells(n: number, p: Position)
+    count_cells(N, P) :- parse.ink.tally(E, N), ex_out(E, P, Col), !params.bg(Col).
+
+    // A cell's place is the least count whose output inks it.
+    .init place = Extremes<Position>
+    place.cand(P, N) :- count_cells(N, P).
+
+    .decl fill_seq(p: Position, k: number)
+    fill_seq(P, K) :- place.low(P, K).
+}

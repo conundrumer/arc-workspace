@@ -1,0 +1,42 @@
+// 1d398264
+// draft
+// concept: markers cast
+// A 3x3 block of colored cells sits on an empty grid. The block's one
+// interior cell is its center; each of the eight cells around the center
+// casts a ray of its own color outward, along the line from the center
+// through it, to the grid edge. The rest of the input is kept.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+}
+
+.init params = Params
+
+.decl block(p: Position)
+block(P) :- in(P, Col), !params.bg(Col).
+
+.init border = Rim8<Unit>
+border.cell($U(), P) :- block(P).
+
+.decl center(p: Position)
+center(P) :- block(P), !border.rim($U(), P).
+
+// Each cell around the center casts along the direction that reaches it.
+.init burst = Ray<Dir8>
+burst.dir(D, D) :- dir8_elem(D).
+burst.cell(D, P) :- in(P, _), dir8_elem(D).
+burst.mark(D, P) :- dir8_elem(D), center(C), neighbor(C, D, P).
+
+.decl painted(p: Position, col: Color)
+painted(P, Col) :-
+    burst.ray(_, P, _, K, Src), K != 0,    // beyond the casting cell
+    in(Src, Col).                          // that cell's color
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, Col_in),
+    ( painted(P, Col)                      // on a ray
+    ; !painted(P, _), Col = Col_in         // untouched
+    ).

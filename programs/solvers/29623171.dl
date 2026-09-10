@@ -1,0 +1,61 @@
+// 29623171
+// draft
+// concept: decompose count
+// A separator lattice cuts the grid into an arrangement of equal square tiles,
+// which hold marks on bg. The tiles with the most marks fill solid in their
+// mark color; the rest clear to bg, and separators stay. Cases claim what
+// the lattice is read by:
+//   $Count  — the tile count.
+//   $Size — the tile size.
+
+#include "../lib.dl"
+
+.type Choice = Count {} | Size {}
+
+.comp Params {
+    // --- shared ---
+    .decl gap(g: number) gap(1).
+    .decl bg(col: Color) bg(0).
+
+    // --- Count ---
+    .decl tile_count(n: number) tile_count(3).
+
+    // --- Size ---
+    .decl tile_dim(k: number) tile_dim(3).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Count()). impl_choice($Size()).
+
+.decl tile(p_grid: Position, p_tile: Position, ch: Choice)
+
+// --- Count ---
+tile(P_grid, P_tile, $Count()) :-
+    in(P_grid, _), params.tile_count(N), params.gap(G),
+    divide_2d(P_grid, N, G, P_tile, _).
+
+// --- Size ---
+tile(P_grid, P_tile, $Size()) :-
+    in(P_grid, _), params.tile_dim(K), params.gap(G),
+    divide_by_size_2d(P_grid, K, G, P_tile, _).
+
+// --- Count, Size ---
+.decl mark(p_tile: Position, p_grid: Position, col: Color, ch: Choice)
+mark(T, P_grid, Col, Ch) :- tile(P_grid, T, Ch), in(P_grid, Col), !params.bg(Col).
+
+.init most = Mode<Choice, Position, Position>
+most.item(Ch, T, P_grid) :- mark(T, P_grid, _, Ch).
+
+.decl fill(p_tile: Position, col: Color, ch: Choice)
+fill(T, Col, Ch) :- most.mode(Ch, T), mark(T, _, Col, Ch).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_grid, Col, Ch) :-
+    tile(P_grid, T, Ch),
+    ( fill(T, Col, Ch)                       // a winning tile, filled solid
+    ; !fill(T, _, Ch), params.bg(Col)        // every other tile, cleared
+    ).
+out(P_grid, Col, Ch) :-
+    in(P_grid, Col), impl_choice(Ch), !tile(P_grid, _, Ch).   // separators

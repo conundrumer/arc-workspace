@@ -1,0 +1,46 @@
+// 253bf280
+// draft
+// concept: markers span
+// Cells between two marks on their row or column fill with params.fill. No line
+// holds three marks, so what a stroke does to a mark it crosses is open.
+// Two hypotheses, tagged on out's Choice:
+//
+//   $Spare — the stroke covers bg cells; a crossed mark stays a mark.
+//   $Paint — the stroke covers every cell it crosses, marks included.
+
+#include "../lib.dl"
+
+.type Choice = Spare {} | Paint {}
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+    .decl fill(c: Color) fill(3).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Spare()). impl_choice($Paint()).
+
+.init rays = Ray<Choice>
+rays.dir(Ch, D) :- impl_choice(Ch), dir_elem(D).
+rays.mark(Ch, Q) :- impl_choice(Ch), in(Q, Col), !params.bg(Col).
+
+// Marks strictly on both sides of P along one axis. lib's Between folds
+// inclusively — a mark lies on its own ray — so under $Paint's full-cell
+// domain it would cover every mark.
+.decl between(ch: Choice, p: Position)
+between(Ch, P) :-
+    opposite(D, O),
+    rays.ray(Ch, P, D, K, _), K != 0,     // a mark reaches P from one side
+    rays.ray(Ch, P, O, K2, _), K2 != 0.   // and one from the other
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, F, Ch)   :- between(Ch, P), params.fill(F).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !between(Ch, P).
+
+// --- $Spare ---
+rays.cell($Spare(), P) :- in(P, Bg), params.bg(Bg).
+
+// --- $Paint ---
+rays.cell($Paint(), P) :- in(P, _).

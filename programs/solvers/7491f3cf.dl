@@ -1,0 +1,150 @@
+// 7491f3cf
+// draft
+// concept: decompose overlay markers border lookup
+// Uniform lines cut the grid into a strip of panels. The mask panel draws a
+// line across itself and a lone marker on one side of it. Two pattern
+// panels are layers, top and under, and the blank panel's color is the
+// ground. The blank panel is painted: the marker's side shows the top
+// layer, the far side shows the under layer, and the line shows the top
+// layer's ink over the under layer.
+
+#include "../lib.dl"
+
+.comp Params {
+    // The panels, by their tile in the strip.
+    .decl mask_tile(p_tile: Position) mask_tile([1, 1, 1, 4]).
+    .decl top_tile(p_tile: Position) top_tile([1, 1, 2, 3]).
+    .decl under_tile(p_tile: Position) under_tile([1, 1, 3, 2]).
+    .decl out_tile(p_tile: Position) out_tile([1, 1, 4, 1]).
+}
+
+.init params = Params
+
+.comp Parse<Key> {
+    .type Line = [key: Key, a: Axis, l: Position]
+    .type Tile = [key: Key, p_tile: Position]
+
+    .decl cell(key: Key, p: Position, col: Color)  // input
+
+    // A uniform line spans the grid, so it divides panels rather than sit in one.
+    .init line_color = Unanimous<Line, Color>
+    line_color.item([K, A, L], Col) :- cell(K, P, Col), axis_elem(A), split(P, A, L, _).
+
+    .init frame = DividerFrame<Key>
+    frame.cell(K, P) :- cell(K, P, _).
+    frame.divider(K, A, L) :- line_color.value([K, A, L], _).
+
+    // Each panel in its own frame.
+    .init panel = BoxFrame<Tile>
+    panel.cell([K, P_tile], P) :- frame.tile_of(K, P, P_tile).
+
+    .decl panel_cell(key: Key, p_tile: Position, p_intile: Position, col: Color)
+    panel_cell(K, P_tile, P_intile, Col) :- panel.inner([K, P_tile], P, P_intile), cell(K, P, Col).
+
+    .decl ground(key: Key, col: Color)  // input
+
+    .decl ink(key: Key, p_tile: Position, p_intile: Position)
+    ink(K, T, P) :- panel_cell(K, T, P, Col), !ground(K, Col).
+
+    // An ink cell beside another ink cell: on a line.
+    .decl line(key: Key, p_tile: Position, p_intile: Position)
+    line(K, T, P) :- ink(K, T, P), dir8_elem(D), neighbor(P, D, Q), ink(K, T, Q).
+
+    // A lone ink cell: a marker.
+    .decl marker(key: Key, p_tile: Position, p_intile: Position)
+    marker(K, T, P) :- ink(K, T, P), !line(K, T, P).
+
+    .decl mask(key: Key, p_tile: Position)  // input
+
+    // The side of the mask's line that the marker sits on.
+    .init side = Reach<Key>
+    side.node(K, P) :- mask(K, T), panel_cell(K, T, P, _), !line(K, T, P).
+    side.seed(K, P) :- mask(K, T), marker(K, T, P).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+parse.mask($U(), T) :- params.mask_tile(T).
+
+// The blank panel's color is the ground.
+.decl bg(col: Color)
+bg(Col) :- params.out_tile(T), parse.panel_cell($U(), T, _, Col).
+parse.ground($U(), Col) :- bg(Col).
+
+// --- the layers ---
+
+// The under layer lies off the marker's side: the far side and the line.
+.decl under(p_intile: Position, col: Color)
+under(P, Col) :-
+    params.under_tile(T), parse.panel_cell($U(), T, P, Col), !parse.side.reach($U(), P).
+
+// The top layer's ink lies on the marker's side and the line.
+.decl top_ink(p_intile: Position, col: Color)
+top_ink(P, Col) :-
+    params.top_tile(T), parse.panel_cell($U(), T, P, Col), !bg(Col),
+    ( parse.side.reach($U(), P)                              // the marker's side
+    ; params.mask_tile(T_mask), parse.line($U(), T_mask, P)  // the line
+    ).
+
+.decl out_cell(p: Position, p_intile: Position)
+out_cell(P, P_intile) :- params.out_tile(T), parse.panel.inner([$U(), T], P, P_intile).
+
+// The painted blank panel: the top layer's ink, the under layer, or the ground.
+.decl render(p_intile: Position, col: Color)
+render(P, Col) :-
+    out_cell(_, P),
+    ( top_ink(P, Col)
+    ; !top_ink(P, _), under(P, Col)
+    ; !top_ink(P, _), !under(P, _), bg(Col)
+    ).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, _),
+    ( out_cell(P, P_intile), render(P_intile, Col)   // the blank panel, painted
+    ; !out_cell(P, _), in(P, Col)                    // the rest stands
+    ).
+
+.comp Determine {
+    .init ex = Parse<Example>
+    ex.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // A panel the output repaints.
+    .decl repainted(e: Example, p_tile: Position)
+    repainted(E, T) :-
+        ex.frame.tile_of(E, P, T), ex_in(E, P, Col), ex_out(E, P, Col2), Col != Col2.
+
+    .decl kept(p_tile: Position)
+    kept(T) :- ex_out(E, _, _), ex.frame.tile_of(E, _, T), !repainted(E, T).
+
+    .decl out_tile(p_tile: Position)
+    out_tile(T) :- repainted(_, T), !kept(T).
+
+    ex.ground(E, Col) :- out_tile(T), ex.panel_cell(E, T, _, Col).
+
+    // A panel with no marker in some example.
+    .decl unmarked(p_tile: Position)
+    unmarked(T) :- ex.frame.tile_of(E, _, T), !ex.marker(E, T, _).
+
+    .decl mask_tile(p_tile: Position)
+    mask_tile(T) :- ex.marker(_, T, _), !unmarked(T).
+
+    ex.mask(E, T) :- ex_in(E, _, _), mask_tile(T).
+
+    // A pattern panel: neither the mask nor the blank panel.
+    .decl pattern(p_tile: Position)
+    pattern(T) :- ex.frame.tile_of(_, _, T), !mask_tile(T), !out_tile(T).
+
+    // A pattern panel that the painted marker's side contradicts.
+    .decl not_top(p_tile: Position)
+    not_top(T) :-
+        pattern(T), ex.panel_cell(E, T, P_intile, Col), ex.side.reach(E, P_intile),  // its cell on the marker's side
+        out_tile(T_out), ex.panel.inner([E, T_out], P, P_intile),                   // the blank panel's cell there
+        ex_out(E, P, Col2), Col != Col2.
+
+    .decl top_tile(p_tile: Position)
+    top_tile(T) :- pattern(T), !not_top(T).
+
+    .decl under_tile(p_tile: Position)
+    under_tile(T) :- pattern(T), !top_tile(T).
+}

@@ -1,0 +1,101 @@
+// 1e97544e
+// draft
+// concept: wallpaper repair walk
+// The background is a striped pattern: one-cell-wide stripes run down the
+// grid, and every stripe jogs one cell sideways where it crosses the main
+// diagonal, so a diagonal step always moves one place along the color order.
+// Holes damage the pattern; the output restores them and keeps the rest.
+//
+// $Stripe reads the geometry: a stripe is one line, and it carries one color.
+// $Cycle reads the advance: the intact cells give a color cycle, and each
+// diagonal step walks one place along it.
+
+#include "../lib.dl"
+
+.type Choice = Stripe {} | Cycle {}
+
+.comp Params {
+    // --- shared ---
+    .decl hole(col: Color) hole(0).
+
+    // --- stripe ---
+    // The fault diagonal runs from this corner.
+    .decl corner(d: DiagDir) corner(DIAG_TL).
+
+    // Stripes run along this axis.
+    .decl axis(a: Axis) axis(AXIS_V).
+
+    // --- cycle ---
+    // The cycle advances along this diagonal.
+    .decl diag_axis(da: DiagAxis) diag_axis(DAXIS_DG).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Stripe()). impl_choice($Cycle()).
+
+// The pattern the damage spared.
+.decl intact(p: Position, col: Color)
+intact(P, Col) :- in(P, Col), !params.hole(Col).
+
+.decl damaged(p: Position)
+damaged(P) :- in(P, Col), params.hole(Col).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- intact(P, Col), impl_choice(Ch).
+
+// --- stripe ---
+
+// The fault: the corner diagonal the stripes jog across.
+.init diag = Diagonal<Unit>
+diag.cell($U(), P) :- in(P, _).
+diag.corner($U(), C) :- params.corner(C).
+
+.decl fault(p: Position)
+fault(P) :- diag.diagonal($U(), P, _).
+
+// A stripe runs away from the corner's edge on params.axis...
+.decl along(d: Dir)
+along(D2) :- params.corner(C), params.axis(A), dir_of(C, A, D), opposite(D, D2).
+
+// ...and jogs one cell toward the corner's other edge as it leaves the fault.
+.decl jog(d: Dir)
+jog(D) :- params.corner(C), params.axis(A), diag_dirs(C, A, _, D).
+
+// Adjacent cells of one stripe. The line has no direction.
+.decl stripe_step(p: Position, q: Position)
+stripe_step(P, Q) :-
+    in(P, _),
+    ( !fault(P), along(D)  // running on
+    ; fault(P), jog(D)     // leaving the fault
+    ),
+    neighbor(P, D, Q), in(Q, _).
+stripe_step(Q, P) :- stripe_step(P, Q).
+
+// One color per stripe, from wherever the stripe survives.
+.decl stripe_color(p: Position, col: Color)
+stripe_color(P, Col) :- intact(P, Col).
+stripe_color(Q, Col) :- stripe_step(P, Q), stripe_color(P, Col).
+
+out(P, Col, $Stripe()) :- damaged(P), stripe_color(P, Col).
+
+// --- cycle ---
+
+// The color cycle, read off the intact diagonal neighbor pairs — one reading
+// per direction, each the other's reverse.
+.decl cycle_succ(d: DiagDir, col: Color, col2: Color)
+cycle_succ(D, Col, Col2) :-
+    params.diag_axis(DA), diag_axis_of(D, DA),  // either way along the diagonal
+    intact(P, Col), neighbor(P, D, Q), intact(Q, Col2).
+
+// The pattern's law, walked out from the intact cells.
+.decl flow(p: Position, col: Color)
+flow(P, Col) :- intact(P, Col).
+flow(Q, Col2) :-
+    flow(P, Col),                               // reached so far
+    params.diag_axis(DA), diag_axis_of(D, DA),  // either way along the diagonal
+    neighbor(P, D, Q), in(Q, _),                // one step on
+    cycle_succ(D, Col, Col2).                   // one place along the cycle
+
+out(P, Col, $Cycle()) :- damaged(P), flow(P, Col).

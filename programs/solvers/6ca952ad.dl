@@ -1,0 +1,49 @@
+// 6ca952ad
+// draft
+// concept: objects move count
+// Gravity on the heavy objects: an object of at least params.heavy cells
+// translates flush against the params.grav edge; a lighter object stays.
+// Elsewhere background.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(c: Color) bg(7).
+    .decl grav(d: Dir) grav(DIR_B).
+    // Least cell count of an object that falls.
+    .decl heavy(n: number) heavy(4).
+}
+
+.init params = Params
+
+// --- objects ---
+
+.init obj = Components<Unit>
+obj.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+.init size = Tally<Ident, Position>
+size.item(Id, P) :- obj.label($U(), P, Id).
+
+.decl falls(id: Ident)
+falls(Id) :- size.tally(Id, N), params.heavy(K), N >= K.
+
+// --- the fall ---
+
+.init box = Bbox<Ident>
+box.cell(Id, P) :- obj.label($U(), P, Id).
+
+// Proposal Bbox.flush: the object's displacement toward d that puts its
+// box against edge d.
+.decl flush(id: Ident, d: Dir, delta: Shift)
+flush(Id, D, Delta) :- box.edge_min(Id, D, M), jump_delta(D, M, Delta).
+
+.decl fallen(p: Position, col: Color)
+fallen(Q, Col) :-
+    in(P, Col), obj.label($U(), P, Id),
+    ( falls(Id), params.grav(D), flush(Id, D, Delta), compose(P, Delta, Q)  // heavy: flush to the edge
+    ; !falls(Id), Q = P                                                     // light: stays
+    ).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- fallen(P, Col).
+out(P, Col) :- in(P, _), !fallen(P, _), params.bg(Col).

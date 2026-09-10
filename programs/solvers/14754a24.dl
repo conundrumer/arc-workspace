@@ -30,9 +30,9 @@
     // The footprint's cells, in its own frame.
     .decl shape(p: Position)
     GRID_MASK_3x3(shape,
-        0, 1, 0,
+        _, 1, _,
         1, 1, 1,
-        0, 1, 0)
+        _, 1, _)
 }
 
 .init params = Params
@@ -113,8 +113,6 @@ out(P, Col, Ch) :- painted(P, Ch), params.paint(Col).
 out(P, Col, [Fp, A]) :-
     in(P, Col), footprint_choice(Fp), act_choice(A),    // each claim pair
     !painted(P, [Fp, A]).
-
-// --- determination ---
 
 .comp Determine {
     // A completed instance's cells: its marks and its painted cells.

@@ -1,0 +1,130 @@
+// 1acc24af
+// draft
+// concept: objects enclose cast d4 classify
+// A wall of params.wall spans the grid, with notches cut into the side the params.piece
+// components lie on. A piece turns params.mark when some placement of it covers a
+// whole notch and keeps all of its cells in the space a piece can reach.
+// Choice = [a, g] crosses the hypotheses:
+//
+//   a (the space a piece can reach):
+//     $Slide() — the wall-free cells connected to the open edge.
+//     $Drop()  — the cells with no wall between them and the open edge.
+//   g (how a piece may be turned):
+//     $Rot()   — rotations only.
+//     $Flip()  — all of D4.
+//
+// The pairs separate neither axis: both a cases reach the same cells in every
+// pair, and every piece that plugs does so by a rotation.
+
+#include "../lib.dl"
+
+.type Access = Slide {} | Drop {}
+.type Group  = Rot {} | Flip {}
+.type Choice = [a: Access, g: Group]
+
+.comp Params {
+    .decl wall(col: Color) wall(1).
+    .decl piece(col: Color) piece(5).
+    .decl mark(col: Color) mark(2).
+
+    // The side the notches open toward — where the pieces lie.
+    .decl open_dir(d: Dir) open_dir(DIR_B).
+}
+
+.init params = Params
+
+.decl wall(p: Position)
+wall(P) :- in(P, Col), params.wall(Col).
+
+// --- the pieces ---
+
+.init pieces = Components<Unit>
+pieces.node($U(), P) :- in(P, Col), params.piece(Col).
+
+.decl piece_cell(id: Ident, p: Position)
+piece_cell(Id, P) :- pieces.label($U(), P, Id).
+
+.decl group_choice(g: Group)
+group_choice($Rot()). group_choice($Flip()).
+
+// The piece under each motion its g case allows. Only the shifts between the
+// turned cells travel downstream, so the frame apply leaves them in does not
+// matter.
+.decl turned(g: Group, id: Ident, d: D4, q: Position)
+turned($Rot(),  Id, D, Q) :- piece_cell(Id, P), c4_elem(D), apply(D, P, Q).
+turned($Flip(), Id, D, Q) :- piece_cell(Id, P), d4_elem(D), apply(D, P, Q).
+
+// --- the reachable space ---
+
+.decl access_choice(a: Access)
+access_choice($Slide()). access_choice($Drop()).
+
+.decl access(p: Position, a: Access)
+
+// $Slide — wall-free cells connected to the open edge.
+.init flood = Reach<Unit>
+flood.node($U(), P) :- in(P, _), !wall(P).
+flood.seed($U(), P) :- in(P, _), params.open_dir(D), dist(P, D, 0).
+access(P, $Slide()) :- flood.reach($U(), P).
+
+// $Drop — cells the wall does not shadow, casting away from the open edge.
+.init shadow = Ray<Unit>
+shadow.dir($U(), D2) :- params.open_dir(D), opposite(D, D2).
+shadow.cell($U(), P) :- in(P, _).
+shadow.mark($U(), P) :- wall(P).
+access(P, $Drop()) :- in(P, _), !shadow.ray($U(), P, _, _, _).
+
+// --- the notches ---
+
+// A notch is where the reachable space reaches into the wall's own box.
+.init wall_box = Bbox<Unit>
+wall_box.cell($U(), P) :- wall(P).
+wall_box.grid($U(), P) :- in(P, _).
+
+.init notches = Components<Access>
+notches.node(A, P) :- access(P, A), wall_box.inside($U(), P).
+
+.decl notch(a: Access, n: Ident, p: Position)
+notch(A, N, P) :- notches.label(A, P, N).
+
+// --- plugging a notch ---
+
+// A turned piece against the notch cells, one key per turn of a piece.
+.type Turn = [a: Access, g: Group, id: Ident, d: D4]
+
+// A placement seats one cell of the turned piece on a notch cell, and its
+// shift carries the rest of the piece. A piece may reach past the notch it
+// fills, so the plug test reads every placement, not the occurrences.
+.init seat = Occurrences<Turn, Unit>
+seat.shape([A, G, Id, D], Q, $U()) :- turned(G, Id, D, Q), access_choice(A).
+seat.cell([A, G, Id, D], P, $U()) :- notch(A, _, P), turned(G, Id, D, _).
+
+.decl placed(a: Access, g: Group, id: Ident, d: D4, t: Shift, p: Position)
+placed(A, G, Id, D, T, P) :-
+    seat.placement([A, G, Id, D], T), turned(G, Id, D, Q), compose(Q, T, P).
+
+// A notch cell the placement leaves open.
+.decl uncovered(a: Access, g: Group, id: Ident, d: D4, t: Shift, n: Ident)
+uncovered(A, G, Id, D, T, N) :-
+    seat.placement([A, G, Id, D], T), notch(A, N, P), !placed(A, G, Id, D, T, P).
+
+// A piece cell the placement puts where no piece can reach.
+.decl unreached(a: Access, g: Group, id: Ident, d: D4, t: Shift)
+unreached(A, G, Id, D, T) :- placed(A, G, Id, D, T, P), !access(P, A).
+
+.decl plugs(id: Ident, a: Access, g: Group)
+plugs(Id, A, G) :-
+    seat.placement([A, G, Id, D], T), notch(A, N, _),          // a placement, a notch
+    !uncovered(A, G, Id, D, T, N), !unreached(A, G, Id, D, T). // whole notch, all inside
+
+// --- output ---
+
+.decl marked(p: Position, ch: Choice)
+marked(P, [A, G]) :- piece_cell(Id, P), plugs(Id, A, G).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, [A, G]) :-
+    in(P, Col_in), access_choice(A), group_choice(G),
+    ( marked(P, [A, G]), params.mark(Col)    // a piece that plugs a notch
+    ; !marked(P, [A, G]), Col = Col_in       // every other cell keeps its color
+    ).

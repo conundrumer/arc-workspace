@@ -1,0 +1,70 @@
+// 2037f2c7
+// draft
+// concept: objects crop count
+// Two copies of one shape sit apart on the background, and one copy has cells
+// erased to the background. Each copy is read in its own bounding box, so the
+// two footprints share a frame. The output is that frame cropped to the cells
+// the copies disagree on, those cells in one color.
+//
+// $Xor    — a cell disagrees when exactly one copy fills it.
+// $Damage — the copy filling more cells is the intact one, and a cell
+//   disagrees when only the intact copy fills it.
+
+#include "../lib.dl"
+
+.type Choice = Xor {} | Damage {}
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    .decl mark(col: Color) mark(8).
+}
+
+.init params = Params
+
+// --- copies ---
+
+.init shapes = Components<Unit>
+shapes.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+.decl copy(id: Ident)
+copy(Id) :- shapes.label($U(), _, Id).
+
+.init box = BoxFrame<Ident>
+box.cell(Id, P) :- shapes.label($U(), P, Id).
+box.grid(Id, P) :- copy(Id), in(P, _).   // so the whole box is viewed, filled or not
+
+// A copy's footprint in its own box frame. Equal boxes are one frame, so the
+// two footprints compare cell for cell.
+.decl filled(id: Ident, p: Position)
+filled(Id, P_inner) :- shapes.label($U(), P, Id), box.inner(Id, P, P_inner).
+
+// A cell copy Id fills and the other copy does not.
+.decl only_in(id: Ident, p: Position)
+only_in(Id, P) :- filled(Id, P), copy(Id2), Id2 != Id, !filled(Id2, P).
+
+// The disagreeing cells, in the shared frame.
+.decl differs(p: Position, ch: Choice)
+
+// --- crop ---
+
+.init crop = BoxFrame<Choice>
+crop.cell(Ch, P) :- differs(P, Ch).
+crop.grid(Ch, P) :- differs(_, Ch), box.inner(_, _, P).   // every cell of the shared frame
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_inner, Col, Ch) :-
+    crop.inner(Ch, P, P_inner),
+    ( differs(P, Ch), params.mark(Col)      // disagreeing cell
+    ; !differs(P, Ch), params.bg(Col)       // the rest of the crop
+    ).
+
+// --- Xor ---
+
+differs(P, $Xor()) :- only_in(_, P).
+
+// --- Damage ---
+
+.init fullest = Mode<Unit, Ident, Position>
+fullest.item($U(), Id, P) :- filled(Id, P).
+
+differs(P, $Damage()) :- fullest.mode($U(), Id), only_in(Id, P).

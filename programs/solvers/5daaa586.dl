@@ -1,0 +1,89 @@
+// 5daaa586
+// draft
+// concept: crop lines cast
+// Two full rows and two full columns cross the grid, and the output is the
+// box those four lines bound. A cell inside that box runs out to a border
+// line that matches its color, filling the run.
+//
+// The cases differ on what the cell matches against.
+// EndMatch: the one border cell where the cell's own row or column ends.
+// LineMatch: the color a whole border line holds, so the four lines are
+// colored objects and a cell seeks the line that is its own color.
+
+#include "../lib.dl"
+
+.type Choice = EndMatch {} | LineMatch {}
+
+// A cast is keyed by its case and its direction, so each mark casts only the
+// way it matched.
+.type CastKey = [ch: Choice, d: Dir]
+
+.decl impl_choice(ch: Choice)
+impl_choice($EndMatch()).
+impl_choice($LineMatch()).
+
+.comp Params {
+    .decl bg(c: Color)
+    bg(0).
+}
+
+.init params = Params
+
+// --- the dividing lines ---
+
+.decl gapped(a: Axis, l: Position)
+gapped(A, L) :- in(P, Col), params.bg(Col), axis_elem(A), split(P, A, L, _).
+
+// A line of family a that no background cell breaks.
+.decl divider(a: Axis, l: Position)
+divider(A, L) :- in(P, _), axis_elem(A), split(P, A, L, _), !gapped(A, L).
+
+// --- the box the dividers bound ---
+
+.init bound = Extremes<Dir>
+bound.cand(D, K) :- divider(A, L), axis_of(D, A), dist(L, D, K).    // divider distance toward D
+
+.init crop = MarginFrame<Unit>
+crop.cell($U(), P) :- in(P, _).
+crop.width($U(), D, K) :- bound.low(D, K).                          // the nearest divider toward D
+
+.init box = BoxCells<Unit>
+box.box($U(), B) :- crop.margin($U(), B).
+box.cell($U(), P) :- in(P, _).
+
+// --- marks cast to the border they match ---
+
+.decl mark(p: Position, d: Dir, ch: Choice)
+
+.init cast = Ray<CastKey>
+cast.dir([Ch, D], D) :- impl_choice(Ch), dir_elem(D).
+cast.cell([Ch, D], P) :- impl_choice(Ch), dir_elem(D), box.hole($U(), P).
+cast.mark([Ch, D], P) :- mark(P, D, Ch).
+
+.decl fill(p: Position, col: Color, ch: Choice)
+fill(P, Col, Ch) :- cast.ray([Ch, D], P, D, _, S), in(S, Col).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_crop, Col, Ch) :-
+    impl_choice(Ch), crop.inner($U(), P, P_crop),
+    ( fill(P, Col, Ch)
+    ; !fill(P, _, Ch), in(P, Col)
+    ).
+
+// --- EndMatch ---
+
+mark(P, D, $EndMatch()) :-
+    box.hole($U(), P), in(P, Col),
+    axis_of(D, A), box.on_edge($U(), Q, D), same_line(A, P, Q),      // where its line meets the border
+    in(Q, Col).                                                      // the border carries the cell's color
+
+// --- LineMatch ---
+
+// A box corner lies on two border lines, so it states no one line's color.
+.decl crossing(p: Position)
+crossing(P) :- box.on_edge($U(), P, D), perp_dir(D, D2), box.on_edge($U(), P, D2).
+
+.init side = Unanimous<Dir, Color>
+side.item(D, Col) :- box.on_edge($U(), P, D), !crossing(P), in(P, Col).
+
+mark(P, D, $LineMatch()) :- box.hole($U(), P), in(P, Col), side.value(D, Col).

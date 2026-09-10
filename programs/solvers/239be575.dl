@@ -1,0 +1,76 @@
+// 239be575
+// draft
+// concept: objects classify lookup
+// Two blocks of params.mark sit among scattered params.link cells. The mark
+// and link cells form one graph, and the 1×1 output reports whether every
+// mark cell lies in a single connected component of it. Nothing reads the
+// 2×2 block shape.
+// Choice = [a, r] crosses two choice points:
+//
+//   a (what an edge is):
+//     $Orth() — cardinal adjacency.
+//     $Diag() — cardinal or diagonal adjacency.
+//   r (how the verdict renders):
+//     $Wire()  — joined shows the link color, apart shows bg.
+//     $Table() — a stored color per verdict.
+
+#include "../lib.dl"
+
+.type Adj    = Orth {} | Diag {}
+.type Render = Wire {} | Table {}
+.type Choice = [a: Adj, r: Render]
+
+.comp Params {
+    .decl mark(c: Color) mark(2).
+    .decl link(c: Color) link(8).
+
+    // --- $Wire ---
+    .decl bg(c: Color) bg(0).
+
+    // --- $Table ---
+    .decl join_paint(c: Color) join_paint(8).
+    .decl apart_paint(c: Color) apart_paint(0).
+}
+
+.init params = Params
+
+.decl mark_cell(p: Position)
+mark_cell(P) :- in(P, Col), params.mark(Col).
+
+// The graph's nodes: the marks, and the links that may join them.
+.decl node(p: Position)
+node(P) :- in(P, Col), (params.mark(Col) ; params.link(Col)).
+
+.decl adj_choice(a: Adj)
+adj_choice($Orth()).
+adj_choice($Diag()).
+
+// Some pair of mark cells with no path between them.
+.decl apart(a: Adj)
+
+.decl joined(a: Adj)
+joined(A) :- adj_choice(A), !apart(A).
+
+// --- $Orth ---
+
+.init orth = Components<Unit>
+orth.node($U(), P) :- node(P).
+
+apart($Orth()) :- mark_cell(P), mark_cell(Q), !orth.conn($U(), P, Q).
+
+// --- $Diag ---
+
+.init diag = Components8<Unit>
+diag.node($U(), P) :- node(P).
+
+apart($Diag()) :- mark_cell(P), mark_cell(Q), !diag.conn($U(), P, Q).
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// --- $Wire ---
+out(ORIGIN, Col, [A, $Wire()]) :- joined(A), params.link(Col).
+out(ORIGIN, Col, [A, $Wire()]) :- apart(A),  params.bg(Col).
+
+// --- $Table ---
+out(ORIGIN, Col, [A, $Table()]) :- joined(A), params.join_paint(Col).
+out(ORIGIN, Col, [A, $Table()]) :- apart(A),  params.apart_paint(Col).

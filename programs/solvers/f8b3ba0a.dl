@@ -37,8 +37,6 @@
 
 .init params = Params
 
-// --- parse ---
-
 // Ranked colors: the max-count color is dominant and drops out; the rest
 // take dense ranks over their counts, fewest first.
 .comp Parse<Key> {
@@ -107,8 +105,6 @@ col.dist_set(Ch, R) :- parse.minority_rank(Ch, _, R).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- parse.minority_rank(Ch, Col, Rk), col.pos(Ch, Rk, P).
-
-// --- determination ---
 
 .type Block = [e: Example, id: Ident]
 

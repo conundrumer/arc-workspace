@@ -1,0 +1,132 @@
+// 41ace6b5
+// draft
+// concept: lines count cast
+// A ruler of two colored lines runs across the grid. A bar stands on each
+// ruler cell the line colors skip, holding cap ink and stem ink. The output
+// redraws every bar from the ruler: the cap stands off the cap line, a stem
+// as long as the bar's own stem ink hangs off the stem line, params.rest covers
+// what is left of the bar, and params.bg clears what lies beyond the cap. Every
+// cap is drawn to one height; Choice says which:
+//
+//   $Tallest() — the tallest cap the input holds.
+//   $Common()  — the cap height most bars hold.
+
+#include "../lib.dl"
+
+.type Choice = Tallest {} | Common {}
+
+.comp Params {
+    .decl bg(col: Color) bg(7).
+    .decl cap(col: Color) cap(8).
+    .decl stem(col: Color) stem(1).
+    .decl rest(col: Color) rest(9).
+    .decl cap_line(col: Color) cap_line(2).
+    .decl stem_line(col: Color) stem_line(5).
+
+    // The direction a cap stands off the cap line; the stem hangs the other way.
+    .decl grow(d: Dir) grow(DIR_T).
+}
+
+.init params = Params
+
+// The ruler's two lines, each with the direction a bar grows from it.
+.decl ruler(col: Color, d: Dir)
+ruler(Col, D) :- params.cap_line(Col), params.grow(D).
+ruler(Col, D) :- params.stem_line(Col), params.grow(D_cap), opposite(D_cap, D).
+
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)  // input
+
+    // A bar's foot on a ruler line — the cell the line's color skips.
+    .decl foot(key: Key, col: Color, p: Position)
+    foot(Ky, Col, P) :-
+        cell(Ky, P_ink, Col), ruler(Col, _),        // a ruler cell
+        params.grow(D), same_dist(D, P_ink, P),     // its line
+        cell(Ky, P, Col_p), !ruler(Col_p, _).       // a cell the ruler's ink skips
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// A cell's bar: the line it sits on across the ruler.
+.decl bar_of(p: Position, b: Position)
+bar_of(P, B) :- in(P, _), params.grow(D), axis_of(D, A), split(P, A, _, B).
+
+.decl bar(b: Position)
+bar(B) :- parse.foot($U(), _, P), bar_of(P, B).
+
+.decl bar_cell(b: Position, p: Position)
+bar_cell(B, P) :- bar(B), bar_of(P, B).
+
+// How far each bar's stem reaches.
+.init stem_len = Tally<Position, Position>
+stem_len.domain(B) :- bar(B).
+stem_len.item(B, P) :- bar_cell(B, P), in(P, Col), params.stem(Col).
+
+// How tall each bar's cap stands.
+.init cap_len = Tally<Position, Position>
+cap_len.domain(B) :- bar(B).
+cap_len.item(B, P) :- bar_cell(B, P), in(P, Col), params.cap(Col).
+
+// Each ruler line casts its bars' ink away from the other line.
+.init cast = Ray<Color>
+cast.dir(Col, D) :- ruler(Col, D).
+cast.mark(Col, P) :- parse.foot($U(), Col, P).
+cast.cell(Col, P) :- ruler(Col, _), bar_cell(_, P).
+
+// The one height every cap is drawn to.
+.decl cap_height(n: number, ch: Choice)
+
+// --- Tallest ---
+
+.init tallest = Extremes<Unit>
+tallest.cand($U(), N) :- cap_len.tally(_, N).
+
+cap_height(N, $Tallest()) :- tallest.high($U(), N).
+
+// --- Common ---
+
+.init common = Mode<Unit, number, Position>
+common.item($U(), N, B) :- cap_len.tally(B, N).
+
+cap_height(N, $Common()) :- common.mode($U(), N).
+
+// --- render ---
+
+.decl impl_choice(ch: Choice)
+impl_choice($Tallest()).
+impl_choice($Common()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// Off the cap line stands the cap.
+out(P, Col, Ch) :-
+    params.cap_line(Col_line), cast.ray(Col_line, P, _, K, _),   // on a cap-line cast
+    cap_height(N, Ch),
+    ( K < N, params.cap(Col)                                     // the cap
+    ; K >= N, params.bg(Col) ).                                  // clear beyond it
+
+// Off the stem line hangs the bar's own stem.
+out(P, Col, Ch) :-
+    params.stem_line(Col_line), cast.ray(Col_line, P, _, K, Src),  // on a stem-line cast
+    bar_of(Src, B), stem_len.tally(B, N), impl_choice(Ch),
+    ( K < N, params.stem(Col)                                      // the stem
+    ; K >= N, params.rest(Col) ).                                  // the rest of the bar
+
+// A line the ruler's ink fills carries no bar, and keeps its cells.
+out(P, Col, Ch) :- in(P, Col), bar_of(P, B), !bar(B), impl_choice(Ch).
+
+.comp Determine {
+    .init ex = Parse<Example>
+    ex.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // What the output paints on a bar's foot, per ruler line.
+    .decl foot_ink(col_line: Color, col: Color)
+    foot_ink(Col_line, Col) :- ex.foot(E, Col_line, P), ex_out(E, P, Col).
+
+    .decl cap(col: Color)
+    cap(Col) :- foot_ink(Col_line, Col), params.cap_line(Col_line).
+
+    .decl stem(col: Color)
+    stem(Col) :- foot_ink(Col_line, Col), params.stem_line(Col_line).
+}

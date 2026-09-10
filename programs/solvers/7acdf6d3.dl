@@ -1,0 +1,55 @@
+// 7acdf6d3
+// draft
+// concept: objects span count pack
+// Two colors sit on a bg. Each 8-connected component of a color is a
+// container; its hollow is the bg cells between two of its cells along
+// params.hollow_axis. The other color's cells are loose pieces. When a
+// container's hollow has exactly as many cells as the other color has
+// pieces, the pieces move into the hollow: the hollow takes their color
+// and their old cells become bg.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(c: Color) bg(7).
+    .decl hollow_axis(a: Axis) hollow_axis(AXIS_H).
+}
+
+.init params = Params
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.bg(Col).
+
+.init comps = Components8<Color>
+comps.node(Col, P) :- ink(P, Col).
+
+.decl container(id: Ident, col: Color)
+container(Id, Col) :- comps.label(Col, _, Id).
+
+// The hollow: bg cells with the container on both sides along the axis.
+.init hollow = Between<Ident>
+hollow.axis(Id, A) :- container(Id, _), params.hollow_axis(A).
+hollow.cell(Id, P) :- container(Id, _), in(P, Col), params.bg(Col).
+hollow.mark(Id, P) :- comps.label(_, P, Id).
+
+.init hollow_size = Tally<Ident, Position>
+hollow_size.item(Id, P) :- hollow.between(Id, P).
+
+.init pieces = Tally<Color, Position>
+pieces.item(Col, P) :- ink(P, Col).
+
+// A container whose hollow holds exactly the other color's pieces.
+.decl fit(id: Ident, col: Color)
+fit(Id, Col) :-
+    hollow_size.tally(Id, N), pieces.tally(Col, N),   // equal counts
+    container(Id, Col2), Col != Col2.                 // of the other color
+
+// The move's rewrites: the hollow takes the pieces' color, and the pieces'
+// old cells become bg.
+.decl move(p: Position, col: Color)
+move(P, Col) :- fit(Id, Col), hollow.between(Id, P).
+move(P, Bg) :- fit(_, Col), in(P, Col), params.bg(Bg).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- move(P, Col).
+out(P, Col) :- in(P, Col), !move(P, _).

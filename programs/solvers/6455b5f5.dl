@@ -1,0 +1,35 @@
+// 6455b5f5
+// draft
+// concept: objects count rank
+// Lines cut the grid into regions of params.bg cells. The region with the most
+// cells takes params.most, and every region with the fewest cells takes
+// params.fewest. The rest of the grid passes through.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    .decl most(col: Color) most(1).
+    .decl fewest(col: Color) fewest(8).
+}
+
+.init params = Params
+
+.init region = Components<Unit>
+region.node($U(), P) :- in(P, Col), params.bg(Col).
+
+.init area = Tally<Ident, Position>
+area.item(Id, P) :- region.label($U(), P, Id).
+
+.init extreme = ArgExtremes<Unit, Ident>
+extreme.cand($U(), Id, N) :- area.tally(Id, N).
+
+.decl paint(p: Position, col: Color)
+paint(P, Col) :-
+    region.label($U(), P, Id),
+    ( extreme.high($U(), Id, _), params.most(Col)      // the largest region
+    ; extreme.low($U(), Id, _), params.fewest(Col) ).  // a smallest region
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- paint(P, Col).
+out(P, Col) :- in(P, Col), !paint(P, _).

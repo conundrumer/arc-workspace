@@ -1,0 +1,73 @@
+// 1b59e163
+// draft
+// concept: objects markers move count
+// The grid holds multi-cell shapes and lone dots on bg. Each shape moves onto
+// every dot colored like its anchor cell, landing that cell on the dot; the
+// shape leaves nothing behind, and a dot no shape answers stays bg. Two
+// hypotheses of which cell of a shape is its anchor:
+//
+//   $Odd   — the cell of the shape's rarest color.
+//   $Match — any cell of the shape; the dot's color picks it.
+
+#include "../lib.dl"
+
+.type Choice = Odd {} | Match {}
+.type ShapeColor = [id: Ident, col: Color]
+
+.comp Params {
+    .decl bg(col: Color) bg(4).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Odd()). impl_choice($Match()).
+
+.init obj = Components8<Unit>
+obj.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+.decl obj_cell(id: Ident, p: Position, col: Color)
+obj_cell(Id, P, Col) :- obj.label($U(), P, Id), in(P, Col).
+
+// A shape holds more than one cell; a dot is an object of one cell.
+.init obj_pos = Unanimous<Ident, Position>
+obj_pos.item(Id, P) :- obj_cell(Id, P, _).
+
+.decl shape_cell(id: Ident, p: Position, col: Color)
+shape_cell(Id, P, Col) :- obj_cell(Id, P, Col), obj_pos.clash(Id).
+
+.decl dot(p: Position, col: Color)
+dot(P, Col) :- obj_pos.value(Id, P), obj_cell(Id, P, Col).
+
+.decl anchor(p: Position, ch: Choice)
+
+// A shape reaches every dot colored like its anchor.
+.decl attract(id: Ident, ch: Choice, p_anchor: Position, p_dot: Position)
+attract(Id, Ch, P_anchor, P_dot) :-
+    anchor(P_anchor, Ch), shape_cell(Id, P_anchor, Col),    // the anchor cell of a shape
+    dot(P_dot, Col).                                        // a dot of its color
+
+.decl paint(p: Position, col: Color, ch: Choice)
+paint(P_out, Col, Ch) :-
+    attract(Id, Ch, P_anchor, P_dot),                          // an attraction
+    displacement(P_anchor, P_dot, Delta),                      // the move it asks for
+    shape_cell(Id, P_src, Col), compose(P_src, Delta, P_out),  // a carried cell
+    in(P_out, _).                                              // landing in the frame
+
+// --- $Odd ---
+
+.init tally = Tally<ShapeColor, Position>
+tally.item([Id, Col], P) :- shape_cell(Id, P, Col).
+
+.init rare = ArgExtremes<Ident, Color>
+rare.cand(Id, Col, N) :- tally.tally([Id, Col], N).
+
+anchor(P, $Odd()) :- rare.low(Id, Col, _), shape_cell(Id, P, Col).
+
+// --- $Match ---
+
+anchor(P, $Match()) :- shape_cell(_, P, _).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- paint(P, Col, Ch).
+out(P, Bg, Ch)  :- in(P, _), impl_choice(Ch), !paint(P, _, Ch), params.bg(Bg).

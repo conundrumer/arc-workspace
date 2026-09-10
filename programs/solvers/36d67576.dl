@@ -1,0 +1,86 @@
+// 36d67576
+// draft
+// concept: objects markers d4
+// Every connected group of non-background cells is a part: a shape plus one
+// anchor cell. Exactly one part also carries marks — that part is the model.
+// Read from its own anchor, each part's shape is the model's shape under a D4
+// transform, and the model's marks come along under that transform.
+//
+// Choice names what a carried mark meets:
+//
+//   $Fill()  — a mark lands only on an empty cell.
+//   $Stamp() — a mark replaces the cell it lands on.
+//
+// No pair separates the two: every carried mark lands on an empty cell.
+//
+// A shape symmetric about its anchor matches under several transforms. The
+// program keeps them all, so the output stands where they agree.
+
+#include "../lib.dl"
+
+.type Choice = Fill {} | Stamp {}
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    .decl shape(col: Color) shape(4).
+    .decl anchor(col: Color) anchor(2).
+}
+
+.init params = Params
+
+.init parts = Components<Unit>
+parts.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+.decl part_cell(id: Ident, p: Position, col: Color)
+part_cell(Id, P, Col) :- parts.label($U(), P, Id), in(P, Col).
+
+.decl anchor_at(id: Ident, p: Position)
+anchor_at(Id, P) :- part_cell(Id, P, Col), params.anchor(Col).
+
+// The part's cells in the frame its anchor fixes.
+.decl anchored(id: Ident, v: Shift, col: Color)
+anchored(Id, V, Col) :-
+    part_cell(Id, P, Col), anchor_at(Id, A), displacement(A, P, V).
+
+.decl shape_cell(id: Ident, v: Shift)
+shape_cell(Id, V) :- anchored(Id, V, Col), params.shape(Col).
+
+.decl mark_cell(id: Ident, v: Shift, col: Color)
+mark_cell(Id, V, Col) :- anchored(Id, V, Col), !params.shape(Col), !params.anchor(Col).
+
+// A part's pose: the D4 transform carrying the model's shape onto the part's
+// own shape.
+.init poses = KeyedSetCompare<Ident, D4, Position>
+poses.pattern_member(D, V_img) :-
+    mark_cell(R, _, _), shape_cell(R, V),  // a shape cell of the model
+    d4_elem(D), apply(D, V, V_img).        // under each transform
+poses.observed_member(Id, V) :- shape_cell(Id, V).
+
+.decl carried(p: Position, col: Color)
+carried(P, Col) :-
+    mark_cell(_, V, Col),                    // a mark of the model
+    poses.equals(Id, D), apply(D, V, V_img), // turned by the part's pose
+    anchor_at(Id, A), compose(A, V_img, P).  // placed from the part's anchor
+
+// Where each case lays a carried mark down.
+.decl applied(p: Position, col: Color, ch: Choice)
+
+// --- Fill ---
+
+applied(P, Col, $Fill()) :- carried(P, Col), in(P, Col_cell), params.bg(Col_cell).
+
+// --- Stamp ---
+
+applied(P, Col, $Stamp()) :- carried(P, Col).
+
+// --- shared ---
+
+.decl impl_choice(ch: Choice)
+impl_choice($Fill()). impl_choice($Stamp()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    in(P, Col_in), impl_choice(Ch),
+    ( applied(P, Col, Ch)                 // the mark laid down
+    ; !applied(P, _, Ch), Col = Col_in    // every other cell keeps its color
+    ).

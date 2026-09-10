@@ -99,8 +99,6 @@ out(P, Col_out, Ch) :-
     ; !arm_cell(P, _), !seed(P), params.bg(Col_out)              // off the walk — bg
     ).
 
-// --- determination ---
-
 .comp Determine {
     .decl marker_corner(d: DiagDir)
     marker_corner(Diag) :-

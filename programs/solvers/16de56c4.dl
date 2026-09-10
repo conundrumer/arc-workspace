@@ -1,0 +1,125 @@
+// 16de56c4
+// draft
+// concept: lines wallpaper cast span
+// Each row and each column is read on its own. A line whose ink is two cells
+// of one color, plus at most one cell of another, carries a rhythm: the pair's
+// spacing, repeated across the line. The rhythm fills the line's empty cells
+// with the pair's color. When that other cell sits on the rhythm, its color
+// takes the rhythm's cells instead, repainting the pair.
+//
+// Cases name how far the intruder's paint reaches:
+//   $Cast — the rhythm advances from the pair and halts at the intruder
+//   $Span — the rhythm's cells between the outermost ink
+
+#include "../lib.dl"
+
+.type Line = [a: Axis, across: Position]
+.type LineColor = [ln: Line, col: Color]
+.type Choice = Cast {} | Span {}
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Cast()).
+impl_choice($Span()).
+
+// A line is a row or a column, and each ink cell lies on one of each.
+.decl mark(ln: Line, p: Position, col: Color)
+mark([A, Across], P, Col) :-
+    in(P, Col), !params.bg(Col),                             // ink cell
+    axis_elem(A), split(P, A, _, Across).                    // its line on each axis
+
+.init ink = Tally<LineColor, Position>
+ink.item([Ln, Col], P) :- mark(Ln, P, Col).
+
+// A color with three cells on the line: none of its pairs is a seed.
+.decl tripled(ln: Line, col: Color)
+tripled(Ln, Col) :- ink.tally([Ln, Col], N), N > 2.
+
+// Two cells that are the whole of a color's ink on the line: the pair a rhythm
+// grows from.
+.decl seed(ln: Line, col: Color, p1: Position, p2: Position)
+seed(Ln, Col, P1, P2) :-
+    mark(Ln, P1, Col), mark(Ln, P2, Col), P1 != P2, !tripled(Ln, Col).
+
+// The line's ink outside a candidate seed's color.
+.init other_ink = Tally<LineColor, Position>
+other_ink.item([Ln, Col], P) :-
+    seed(Ln, Col, _, _), mark(Ln, P, Col2), Col2 != Col.
+
+// Two cells outside the seed color leave the line with no rhythm.
+.decl crowded(ln: Line)
+crowded(Ln) :- other_ink.tally([Ln, _], N), N > 1.
+
+.decl rhythm(ln: Line, col: Color, p1: Position, p2: Position)
+rhythm(Ln, Col, P1, P2) :- seed(Ln, Col, P1, P2), !crowded(Ln).
+
+// One step of the rhythm, from a cell it covers to the next. The seed pair
+// holds both orders, so the rhythm steps both ways.
+.decl advance(ln: Line, p: Position, q: Position)
+advance(Ln, P, Q) :-
+    lattice(Ln, P), rhythm(Ln, _, P1, P2),         // a covered cell, and the seed pair
+    displacement(P1, P2, Delta),                   // the seed's spacing
+    compose(P, Delta, Q), in(Q, _).                // the next cell, still on the grid
+
+// The rhythm across the whole line: the seed's cells, stepped both ways.
+.decl lattice(ln: Line, p: Position)
+lattice(Ln, P) :- rhythm(Ln, _, P, _).
+lattice(Ln, Q) :- advance(Ln, _, Q).
+
+// The other color, when its cell falls on the rhythm.
+.decl intruder(ln: Line, col: Color)
+intruder(Ln, Col2) :-
+    rhythm(Ln, Col, _, _), lattice(Ln, P),                   // a cell of the rhythm
+    mark(Ln, P, Col2), Col2 != Col.                          // holding another color
+
+// The rhythm cells a line paints.
+.decl fill(ln: Line, p: Position, ch: Choice)
+
+.decl paint(p: Position, col: Color, ch: Choice)
+paint(P, Col, Ch) :-
+    fill(Ln, P, Ch),
+    ( intruder(Ln, Col)                                      // the intruder takes the rhythm
+    ; !intruder(Ln, _), rhythm(Ln, Col, _, _),               // or the rhythm extends itself
+      in(P, Bg), params.bg(Bg)                               // into the line's empty cells
+    ).
+
+// --- Cast ---
+
+// The intruder's own cells on the line.
+.decl stopper(ln: Line, p: Position)
+stopper(Ln, P) :- intruder(Ln, Col2), mark(Ln, P, Col2).
+
+// The rhythm advancing from the seed, through the intruder's cell and no
+// further.
+.decl cast(ln: Line, p: Position)
+cast(Ln, P) :- rhythm(Ln, _, P, _).
+cast(Ln, Q) :- cast(Ln, P), !stopper(Ln, P), advance(Ln, P, Q).
+
+fill(Ln, P, $Cast()) :- cast(Ln, P).
+
+// --- Span ---
+
+.init span = Between<Line>
+span.axis(Ln, A) :- lattice(Ln, _), Ln = [A, _].
+span.cell(Ln, P) :- lattice(Ln, P).
+span.mark(Ln, P) :- mark(Ln, P, _).
+
+fill(Ln, P, $Span()) :-
+    lattice(Ln, P),
+    ( !intruder(Ln, _)                                       // the rhythm runs the line
+    ; intruder(Ln, _), span.between(Ln, P)                   // or reaches the outermost ink
+    ).
+
+// --- output ---
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    impl_choice(Ch),
+    ( paint(P, Col, Ch)                                      // painted cell
+    ; !paint(P, _, Ch), in(P, Col)                           // untouched input
+    ).

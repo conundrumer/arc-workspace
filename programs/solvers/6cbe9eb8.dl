@@ -1,0 +1,87 @@
+// 6cbe9eb8
+// draft
+// concept: rank move border
+// The input is a striped background with rectangles drawn over it, one
+// color each: a block, whose box it covers, or else an outline, whose cells
+// all lie on its box's edge lines. The output is the largest rectangle's
+// box, with the rectangles nested by size: each sits at params.corner of
+// the previous one's interior, the inside of an outline's rim or the whole
+// of a block. A smaller rectangle paints over a larger one; the rest of the
+// frame is params.bg.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+    .decl corner(d: DiagDir) corner(DIAG_BL).
+}
+
+.init params = Params
+
+.init box = BoxFrame<Color>
+box.cell(Col, P) :- in(P, Col).
+box.grid(Col, P) :- in(_, Col), in(P, _).
+
+// Some cell of the color's box is another color.
+.decl gap(col: Color)
+gap(Col) :- box.inside(Col, P), !in(P, Col).
+
+.decl block(col: Color)
+block(Col) :- in(_, Col), !gap(Col).
+
+// Some cell of the color lies off its box's edge.
+.decl inward(col: Color)
+inward(Col) :- in(P, Col), !box.edge_cell(Col, P, _).
+
+.decl outline(col: Color)
+outline(Col) :- in(_, Col), !block(Col), !inward(Col).
+
+.decl shape(col: Color)
+shape(Col) :- ( outline(Col) ; block(Col) ).
+
+// Col2's box is longer than Col's on some axis.
+.decl overflows(col: Color, col2: Color)
+overflows(Col, Col2) :- box.extent(Col, A, N), box.extent(Col2, A, N2), N < N2.
+
+// Shapes from the largest inward: Col2 fits in Col.
+.init nest = Order<Unit, Color>
+nest.elem($U(), Col) :- shape(Col).
+nest.before($U(), Col, Col2) :- shape(Col), shape(Col2), Col != Col2, !overflows(Col, Col2).
+
+// --- program ---
+
+.init frame = Frame2D<Unit>
+frame.extent($U(), A, N) :- nest.first($U(), Col), box.extent(Col, A, N).
+
+// Each shape's box in the output frame: the next shape's corner cell lands
+// on the anchor of the shape before it.
+.decl obox(col: Color, b: Position)
+obox(Col, ORIGIN) :- nest.first($U(), Col).
+obox(Col2, B) :-
+    nest.next($U(), Col, Col2), anchor(Col, Q),
+    params.corner(Diag), box.inner(Col2, _, Q_in), corner_dist(Q_in, Diag, 0),  // Col2's corner cell, in its own frame
+    displacement(Q_in, Q, B).
+
+// The corner cell of a shape's interior.
+.decl anchor(col: Color, p: Position)
+anchor(Col, Q) :-
+    obox(Col, B), params.corner(Diag),
+    frame.cell($U(), Q_box), corner_anchor(Diag, B, Q_box),           // the box's corner cell
+    ( block(Col), Q = Q_box
+    ; outline(Col), diag_opposite(Diag, Opp), neighbor(Q_box, Opp, Q)  // one step in from the rim
+    ).
+
+.init cells = BoxCells<Color>
+cells.box(Col, B) :- obox(Col, B).
+cells.cell(Col, P) :- obox(Col, _), frame.cell($U(), P).
+
+.decl paint(col: Color, p: Position)
+paint(Col, P) :- ( cells.on_edge(Col, P, _) ; block(Col), cells.hole(Col, P) ).
+
+// A smaller shape paints the cell too.
+.decl covered(col: Color, p: Position)
+covered(Col, P) :- nest.before($U(), Col, Col2), paint(Col2, P).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- paint(Col, P), !covered(Col, P).
+out(P, Col) :- frame.cell($U(), P), !paint(_, P), params.bg(Col).

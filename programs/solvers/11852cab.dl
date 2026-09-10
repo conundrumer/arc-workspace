@@ -24,8 +24,6 @@
 
 .init params = Params
 
-// --- parse ---
-
 // The figure — the non-bg cells, in their bounding-box frame — and its
 // self-maps under D4.
 .comp Parse<Key> {
@@ -80,8 +78,6 @@ transform(D, $Stored()) :- params.sym(S), sym_member(S, D).
 // --- $Derived ---
 
 transform(D, $Derived()) :- parse.compatible($U(), D).
-
-// --- determination ---
 
 .comp Determine {
     // The completed figure of each train output.

@@ -116,8 +116,6 @@ paint_we(P, Col) :- diag.diagonal($WallEnd(), P, _), params.diag_color(Col).
 out(P, Col, $WallEnd()) :- paint_we(P, Col).
 out(P, Col, $WallEnd()) :- in(P, Col), !paint_we(P, _).
 
-// --- determination ---
-
 .comp Determine {
     // Train cells, split by the wall.
     .decl bg_cell(e: Example, p: Position)

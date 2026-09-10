@@ -1,0 +1,69 @@
+// 7bb29440
+// draft
+// concept: objects crop count rank select
+// Solid blocks of params.body sit apart on params.bg, each with a few cells of
+// other colors. The block with the fewest such cells is kept, cropped to its
+// bounding box. The cases differ on what counts as one of those cells:
+//
+//   $Marks — a cell of a stored mark color, params.mark.
+//   $Body  — any cell that is not params.body.
+
+#include "../lib.dl"
+
+.type Choice = Marks {} | Body {}
+
+.comp Params {
+    // --- shared ---
+    .decl bg(c: Color) bg(0).
+
+    // --- Marks ---
+    .decl mark(c: Color)
+    mark(4).
+    mark(6).
+
+    // --- Body ---
+    .decl body(c: Color) body(1).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Marks()).
+impl_choice($Body()).
+
+.init blocks = Components<Unit>
+blocks.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+// A cell that counts against its block.
+.decl marked(ch: Choice, p: Position)
+
+// --- Marks ---
+marked($Marks(), P) :- in(P, Col), params.mark(Col).
+
+// --- Body ---
+marked($Body(), P) :- in(P, Col), !params.body(Col).
+
+// --- Marks, Body ---
+
+// Marked cells per block; a clean block counts 0.
+.type BlockKey = [ch: Choice, id: Ident]
+
+.init marks = Tally<BlockKey, Position>
+marks.item([Ch, Id], P) :- marked(Ch, P), blocks.label($U(), P, Id).
+marks.domain([Ch, Id]) :- impl_choice(Ch), blocks.label($U(), _, Id).
+
+.init cleanest = ArgExtremes<Choice, Ident>
+cleanest.cand(Ch, Id, N) :- marks.tally([Ch, Id], N).
+
+.init crop = BoxFrame<Choice>
+crop.cell(Ch, P) :- cleanest.low(Ch, Id, _), blocks.label($U(), P, Id).
+crop.grid(Ch, P) :- impl_choice(Ch), in(P, _).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_out, Col, Ch) :- crop.inner(Ch, P, P_out), in(P, Col).
+
+.comp Determine {
+    // Every color a block shows besides its body.
+    .decl mark(c: Color)
+    mark(Col) :- ex_in(_, _, Col), !params.bg(Col), !params.body(Col).
+}

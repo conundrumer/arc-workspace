@@ -1,0 +1,118 @@
+// 7e2bad24
+// draft
+// concept: markers walk
+
+// A diagonal segment of ray color seeds a beam that extends from both of its
+// ends. The beam paints the cells it crosses: empty cells and transparent
+// walls. A reflective wall turns the beam without being entered. The beam ends
+// at the grid edge.
+//
+// The cases differ on how a reflective wall turns the beam. $Contact inverts
+// each component of the heading whose side is blocked by a reflective cell.
+// $WallAxis reads the wall ahead as a line and reflects the heading across it.
+
+#include "../lib.dl"
+
+.type Choice = Contact {} | WallAxis {}
+
+.comp Params {
+    .decl bg(col: Color)
+    bg(0).
+
+    // The beam's color, which is the seed's.
+    .decl ray(col: Color)
+    ray(1).
+
+    // Walls the beam passes through.
+    .decl transparent(col: Color)
+    transparent(3).
+
+    // Walls the beam turns at.
+    .decl reflective(col: Color)
+    reflective(2).
+
+    // The cells the beam may enter.
+    .decl passable(col: Color)
+    passable(Col) :- bg(Col).
+    passable(Col) :- transparent(Col).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Contact()). impl_choice($WallAxis()).
+
+// A reflective wall cell.
+.decl wall(p: Position)
+wall(P) :- in(P, Col), params.reflective(Col).
+
+// The beam reaches p heading d.
+.decl enter(p: Position, d: DiagDir, ch: Choice)
+
+// The beam leaves p heading d.
+.decl leave(p: Position, d: DiagDir, ch: Choice)
+
+// The seed continues from p toward d.
+.decl seed_dir(p: Position, d: DiagDir)
+seed_dir(P, D) :-
+    in(P, Col), params.ray(Col), diag_dir_elem(D), neighbor(P, D, Q), in(Q, Col).
+
+// The beam launches from each end of the seed, heading away from it.
+enter(P, D, Ch) :-
+    impl_choice(Ch), diag_opposite(D, D_back),
+    seed_dir(P, D_back), !seed_dir(P, D).
+
+enter(Q, D, Ch) :-
+    leave(P, D, Ch), neighbor(P, D, Q),
+    in(Q, Col), params.passable(Col).
+
+// --- Contact ---
+
+.comp Bounce<Key> {
+    // The cells a beam may stand at, per key.
+    .decl cell(key: Key, p: Position)  // input
+
+    // A beam at p is blocked toward d, per key.
+    .decl side(key: Key, p: Position, d: Dir)  // input
+
+    // One outgoing component of a heading, inverted where its side blocks.
+    .decl leave_dir(key: Key, p: Position, d: DiagDir, d_out: Dir)
+    leave_dir(K, P, D, D_out) :-
+        cell(K, P), diag_dirs(D, _, D_cmp, _),
+        ( side(K, P, D_cmp), opposite(D_cmp, D_out)
+        ; !side(K, P, D_cmp), D_out = D_cmp
+        ).
+
+    // The heading the beam leaves p with, its two components recombined.
+    .decl bounce(key: Key, p: Position, d: DiagDir, d_out: DiagDir)
+    bounce(K, P, D, D_out) :-
+        leave_dir(K, P, D, D1), leave_dir(K, P, D, D2),
+        diag_dirs(D_out, _, D1, D2).
+}
+
+.init bounce = Bounce<Unit>
+bounce.cell($U(), P) :- in(P, _).
+bounce.side($U(), P, D) :- in(P, _), dir_elem(D), neighbor(P, D, Q), wall(Q).
+
+leave(P, D_out, $Contact()) :- enter(P, D, $Contact()), bounce.bounce($U(), P, D, D_out).
+
+// --- WallAxis ---
+
+// The wall runs along axis a at p: another wall cell lies beside p on that axis.
+.decl wall_axis(p: Position, a: Axis)
+wall_axis(P, A) :- wall(P), axis_of(D, A), neighbor(P, D, Q), wall(Q).
+
+// A beam facing a wall turns in place: its heading reflects across the wall's
+// line, and the turned beam faces its next cell from p again.
+enter(P, D_out, $WallAxis()) :-
+    enter(P, D, $WallAxis()), neighbor(P, D, Q), wall_axis(Q, A),
+    perp(A, A_flip), flip_of(A_flip, F), apply_diag_dir(F, D, D_out).
+
+// Every heading leaves; the step into a wall finds no passable cell.
+leave(P, D, $WallAxis()) :- enter(P, D, $WallAxis()).
+
+// --- output ---
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- enter(P, _, Ch), params.ray(Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !enter(P, _, Ch).

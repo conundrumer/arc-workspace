@@ -1,0 +1,69 @@
+// 48d8fb45
+// draft
+// concept: objects markers crop select
+// Several one-color shapes sit on a bg grid, and a mark cell sits just above
+// one of them. The output is a 3x3 crop holding that shape.
+//
+// $Object — the marked shape, drawn in its own box.
+// $Interior — the marked shape's box, with everything it contains.
+// $Window — a window stored at the mark, with everything it contains.
+
+#include "../lib.dl"
+
+.type Choice = Object {} | Interior {} | Window {}
+
+.comp Params {
+    // --- shared ---
+    .decl bg(col: Color) bg(0).
+    .decl mark(col: Color) mark(5).
+
+    // --- Window ---
+    // The window's box, as margins from the mark's cell.
+    .decl win_delta(v: Inset) win_delta([1, -3, -1, -1]).
+}
+
+.init params = Params
+
+.decl mark(p: Position)
+mark(P) :- in(P, Col), params.mark(Col).
+
+// The shapes; the mark is a cell of the one it touches.
+.init blob = Components8<Unit>
+blob.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+// The shape the mark sits on.
+.decl marked(p: Position, col: Color)
+marked(P, Col) :-
+    mark(M), blob.conn($U(), M, P),   // in the mark's blob
+    !mark(P), in(P, Col).             // a shape cell, not the mark
+
+// The marked shape's box, and the grid seen from it.
+.init box = BoxFrame<Unit>
+box.cell($U(), P) :- marked(P, _).
+box.grid($U(), P) :- in(P, _).
+
+.decl out(p: Position, col: Color, c: Choice)
+
+// --- Object ---
+out(P_out, Col, $Object()) :-
+    box.inner($U(), P, P_out),
+    ( marked(P, Col)                     // the shape
+    ; !marked(P, _), params.bg(Col) ).   // the rest of the box
+
+// --- Interior ---
+out(P_out, Col, $Interior()) :- box.inner($U(), P, P_out), in(P, Col).
+
+// --- Window ---
+
+// The window the mark fixes.
+.decl window(b: Position)
+window(B) :- mark(M), params.win_delta(V), compose(M, V, B).
+
+// The grid seen from the window.
+.init win = Reframe<Unit>
+win.outer($U(), B) :- window(B).
+win.cell($U(), P) :- in(P, _).
+
+out(P_out, Col, $Window()) :-
+    win.view($U(), P, P_out), in(P, Col),   // a grid cell, seen from the window
+    window(B), geq(P, B).                   // one the window covers

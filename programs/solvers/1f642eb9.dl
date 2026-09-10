@@ -1,0 +1,60 @@
+// 1f642eb9
+// draft
+// concept: markers cast
+// A block of params.block sits in the grid, with single cells of other colors
+// around it, each in line with it. Every such cell sends its color along its
+// line to the block's near side; the rest of the grid passes through, the
+// sending cell included.
+//
+// The block is a solid rectangle in every pair, so the data does not say what
+// stops a travelling color.
+// $Block — the block's own cells stop it.
+// $Box — the block's bounding box stops it, whether or not the block reaches
+//   that far.
+
+#include "../lib.dl"
+
+.type Choice = Block {} | Box {}
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    .decl block(col: Color) block(8).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Block()). impl_choice($Box()).
+
+// --- shared ---
+
+.decl block_cell(p: Position)
+block_cell(P) :- in(P, Col), params.block(Col).
+
+.decl marker(p: Position, col: Color)
+marker(P, Col) :- in(P, Col), !params.bg(Col), !params.block(Col).
+
+// Each marker casts every way; the color halts on the first cell the case
+// blocks.
+.init rays = Ray<Choice>
+rays.dir(Ch, D)  :- impl_choice(Ch), dir_elem(D).
+rays.mark(Ch, P) :- marker(P, _), impl_choice(Ch).
+
+.decl paint(p: Position, col: Color, ch: Choice)
+paint(Q, Col, Ch) :- rays.stop(Ch, Q, _, _, P), marker(P, Col).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- paint(P, Col, Ch).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(P, _, Ch).
+
+// --- Block ---
+
+rays.blocked($Block(), P) :- block_cell(P).
+
+// --- Box ---
+
+.init box = Bbox<Unit>
+box.cell($U(), P) :- block_cell(P).
+box.grid($U(), P) :- in(P, _).
+
+rays.blocked($Box(), P) :- box.inside($U(), P).

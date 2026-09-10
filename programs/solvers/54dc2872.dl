@@ -1,0 +1,96 @@
+// 54dc2872
+// draft
+// concept: objects markers move
+// The grid holds L-shaped pieces and lone marks. Each L carries a tag: one
+// cell of another color, sitting in its concave corner. The tag's color names
+// a mark, and the L moves so that its bend lands on that mark. An L whose tag
+// names no mark stays.
+//
+//   $Translate — the bend lands on the mark wherever the mark lies.
+//   $Slide — the L travels along the diagonal away from the corner its arms
+//            straddle, so it reaches only a mark on that ray. Every move in
+//            the pairs runs along that diagonal.
+
+#include "../lib.dl"
+
+.type Choice = Translate {} | Slide {}
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Translate()). impl_choice($Slide()).
+
+.init comps = Components<Unit>
+comps.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+.decl piece(id: Ident, p: Position, col: Color)
+piece(Id, P, Col) :- comps.label($U(), P, Id), in(P, Col).
+
+.decl multi_cell(id: Ident)
+multi_cell(Id) :- piece(Id, P, _), piece(Id, Q, _), P != Q.
+
+// A mark is a piece of one cell; its color names it.
+.decl mark(col: Color, p: Position)
+mark(Col, P) :- piece(Id, P, Col), !multi_cell(Id).
+
+// The L's own color, against the one cell of another color it carries.
+.init own_color = Mode<Ident, Color, Position>
+own_color.item(Id, Col, P) :- piece(Id, P, Col).
+
+.decl arm(id: Ident, p: Position)
+arm(Id, P) :- piece(Id, P, Col), own_color.mode(Id, Col).
+
+.decl tag(id: Ident, col: Color)
+tag(Id, Col) :- piece(Id, P, Col), !arm(Id, P).
+
+// The bend is where the two arms meet: the arm cell holding arms on both
+// cardinal sides of one corner. That corner is the L's concave side.
+.decl bend(id: Ident, p: Position, corner: DiagDir)
+bend(Id, P, G) :-
+    arm(Id, P), diag_dirs(G, _, D, D2),
+    neighbor(P, D, Q), arm(Id, Q),
+    neighbor(P, D2, Q2), arm(Id, Q2).
+
+.decl target(id: Ident, p: Position)
+target(Id, P) :- tag(Id, Col), mark(Col, P).
+
+.decl shift(id: Ident, v: Shift)
+shift(Id, V) :- bend(Id, B, _), target(Id, T), displacement(B, T, V).
+
+// The cases differ in which Ls move, not in where a moving L goes.
+.decl moves(id: Ident, ch: Choice)
+
+// A moving L leaves its old cells, and the mark it covers is consumed.
+.decl vacated(p: Position, ch: Choice)
+vacated(P, Ch) :-
+    moves(Id, Ch),
+    ( piece(Id, P, _)   // the L's old cells
+    ; target(Id, P)     // the consumed mark
+    ).
+
+.decl render(p: Position, col: Color, ch: Choice)
+render(P, Col, Ch) :- piece(_, P, Col), impl_choice(Ch), !vacated(P, Ch).
+render(P2, Col, Ch) :-
+    piece(Id, P, Col), moves(Id, Ch),
+    shift(Id, V), compose(P, V, P2).      // where that cell lands
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    in(P, _), impl_choice(Ch),
+    ( render(P, Col, Ch)
+    ; !render(P, _, Ch), params.bg(Col)
+    ).
+
+// --- Translate ---
+
+moves(Id, $Translate()) :- shift(Id, _).
+
+// --- Slide ---
+
+moves(Id, $Slide()) :-
+    bend(Id, B, G), diag_opposite(G, D), diag_axis_of(D, A),  // the way the L points
+    target(Id, T), same_line(A, B, T), nearer(D, T, B).       // its mark, ahead on that line

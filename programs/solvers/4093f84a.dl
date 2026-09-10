@@ -1,0 +1,58 @@
+// 4093f84a
+// draft
+// concept: lines markers count
+// A solid stripe of params.stripe spans the grid edge to edge on one axis, with dots
+// of one other color on both sides of it. The output drops the dots: on each
+// line across the stripe, the stripe grows out of its edge by one cell per dot
+// on that side.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    .decl stripe(col: Color) stripe(5).
+}
+
+.init params = Params
+
+// One line's growing side: the direction out, and the stripe cell it grows from.
+.type Side = [d: Dir, src: Position]
+
+.decl stripe_cell(p: Position)
+stripe_cell(P) :- in(P, Col), params.stripe(Col).
+
+.decl dot(p: Position)
+dot(P) :- in(P, Col), !params.bg(Col), !params.stripe(Col).
+
+.init box = Bbox<Unit>
+box.cell($U(), P) :- stripe_cell(P).
+
+// The stripe reaches both edges of one axis; the sides lie across that axis.
+.decl side(d: Dir)
+side(D) :-
+    box.margin($U(), M),
+    axis_elem(A), split(M, A, ORIGIN, _),   // the axis the stripe spans
+    perp(A, A2), axis_of(D, A2).            // a direction across it
+
+// The stripe's outermost cell on each side looks out along its line.
+.init spread = Ray<Dir>
+spread.dir(D, D) :- side(D).
+spread.cell(D, P) :- side(D), in(P, _).
+spread.mark(D, P) :- side(D), box.edge_cell($U(), P, D).
+
+.init pile = Tally<Side, Position>
+pile.item([D, Src], P) :- spread.ray(D, P, D, _, Src), dot(P).
+
+// The stripe, and the growth each line takes on each side.
+.decl painted(p: Position)
+painted(P) :- stripe_cell(P).
+painted(P) :-
+    spread.ray(D, P, D, K, Src), K != 0,   // K cells out from the stripe
+    pile.tally([D, Src], N), K <= N.       // within the line's dot count
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, _),
+    ( painted(P), params.stripe(Col)     // the stripe and its growth
+    ; !painted(P), params.bg(Col)        // bare ground
+    ).

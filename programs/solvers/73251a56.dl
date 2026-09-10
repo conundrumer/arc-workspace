@@ -118,8 +118,6 @@ label_color(Id, Col) :- params.label(P, Id), intact(P, Col).
 
 out(P, Col, $Label()) :- hole(P), params.label(P, Id), label_color(Id, Col).
 
-// --- determination ---
-
 .comp Determine {
     // Two cells some example colors differently.
     .decl differ(p: Position, q: Position)

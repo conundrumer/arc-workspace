@@ -1,0 +1,104 @@
+// 18286ef8
+// draft
+// concept: decompose markers move cast scale
+// Divider lines cut the grid into an arrangement of tiles. One tile holds a
+// solid block with a gaze cell at its center; the other tiles hold scattered
+// markers, one of them the target color. The gaze cell relocates within its
+// block, swapping with the cell it lands on, and the target marker takes the
+// gaze color.
+//
+// $Step — the gaze steps one cell toward the tile holding the target.
+// $Slide — the gaze slides that way until the rim of its tile.
+// $Map — the gaze's tile is a scale model of the tile arrangement, and the
+// gaze lands on the cell that stands for the target's tile.
+
+#include "../lib.dl"
+
+.type Choice = Step {} | Slide {} | Map {}
+
+.comp Params {
+    // The color of the cutting lines.
+    .decl divider(col: Color) divider(0).
+
+    // The color of the relocating cell.
+    .decl gaze(col: Color) gaze(9).
+
+    // The color of the marker it looks at.
+    .decl target(col: Color) target(6).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Step()). impl_choice($Slide()). impl_choice($Map()).
+
+// --- tiles ---
+
+// The line at l carries a color other than the divider's.
+.decl line_broken(l: Position)
+line_broken(L) :-
+    in(P, Col), !params.divider(Col),  // a cell of another color
+    axis_elem(A), split(P, A, L, _).   // on the line at l
+
+.init frame = DividerFrame<Unit>
+frame.cell($U(), P) :- in(P, _).
+frame.divider($U(), A, L) :-
+    in(P, _), axis_elem(A), split(P, A, L, _),  // a line of the grid
+    !line_broken(L).                            // wholly divider-colored
+
+// --- gaze and target ---
+
+// The gaze cell, with the tile it sits in.
+.decl gaze_cell(p: Position, p_tile: Position)
+gaze_cell(P, P_tile) :- in(P, Col), params.gaze(Col), frame.tile_of($U(), P, P_tile).
+
+// The cells of the gaze's own tile — the block it moves inside.
+.decl gaze_tile_cell(p: Position)
+gaze_tile_cell(P) :- gaze_cell(_, P_tile), frame.tile_of($U(), P, P_tile).
+
+.decl target_cell(p: Position)
+target_cell(P) :- in(P, Col), params.target(Col).
+
+.decl target_tile(p_tile: Position)
+target_tile(P_tile) :- target_cell(P), frame.tile_of($U(), P, P_tile).
+
+// The direction the gaze looks: the target's tile is one tile that way.
+.decl look(d: Dir8)
+look(D) :-
+    gaze_cell(_, P_tile), target_tile(P_tile_t),  // the two tiles
+    dir8_elem(D), neighbor(P_tile, D, P_tile_t).  // adjacent in the arrangement
+
+// Where the gaze lands.
+.decl dest(p: Position, ch: Choice)
+
+// --- Step ---
+
+dest(Q, $Step()) :- gaze_cell(P, _), look(D), neighbor(P, D, Q).
+
+// --- Slide ---
+
+// The gaze slides across its own tile, the way it looks.
+.init slide = Slide<Unit>
+slide.node($U(), P) :- gaze_tile_cell(P).
+slide.dir($U(), D) :- look(D).
+
+dest(Q, $Slide()) :- gaze_cell(P, _), slide.rest($U(), P, _, Q).
+
+// --- Map ---
+
+// The gaze's tile viewed from its own extent, so a tile position of the
+// arrangement names a cell inside it.
+.init box = BoxFrame<Unit>
+box.cell($U(), P) :- gaze_tile_cell(P).
+
+dest(Q, $Map()) :- target_tile(P_tile_t), box.inner($U(), Q, P_tile_t).
+
+// --- output ---
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(Q, Col, Ch) :- dest(Q, Ch), params.gaze(Col).             // the gaze lands
+out(P, Col, Ch) :- gaze_cell(P, _), dest(Q, Ch), in(Q, Col).  // leaving what it displaced
+out(P, Col, Ch) :- target_cell(P), params.gaze(Col), impl_choice(Ch).  // the marker lights up
+out(P, Col, Ch) :-
+    in(P, Col), impl_choice(Ch),
+    !dest(P, Ch), !gaze_cell(P, _), !target_cell(P).  // everything else stands

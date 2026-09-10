@@ -1,0 +1,106 @@
+// 79fb03f4
+// draft
+// concept: markers cast walk
+// A params.flow cell sends a stream along its row in params.flow_dir. Where the
+// stream meets a marker (any other non-bg cell), it detours around it on both
+// sides: it steps aside, runs past the marker, and steps back. The stream meets
+// the markers inside a detour in turn, and detours around them one row further
+// out. The stream can enter a detour when its first cell is free, or when the
+// stream on that row already runs up to it. The pairs leave open what a marker
+// inside a detour that cannot be passed does to the detour:
+//
+//   $Enter() — a detour is drawn when the stream can enter it.
+//   $Complete() — a detour is drawn when the stream can traverse it: it can
+//     enter, and every marker inside it has a traversable detour of its own.
+
+#include "../lib.dl"
+
+.type Choice = Enter {} | Complete {}
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+    .decl flow(c: Color) flow(1).
+    .decl flow_dir(d: Dir) flow_dir(DIR_R).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Enter()).
+impl_choice($Complete()).
+
+.decl marker(p: Position)
+marker(P) :- in(P, C), !params.bg(C), !params.flow(C).
+
+// The stream's sides: the directions across the flow.
+.decl side(s: Dir)
+side(S) :- params.flow_dir(D), perp_dir(D, S).
+
+// The row of a flow cell.
+.decl src_row(p: Position)
+src_row(P) :-
+    in(P_src, C), params.flow(C),                       // a flow cell
+    params.flow_dir(D), axis_of(D, A),                  // its row runs along the flow
+    in(P, _), same_line(A, P, P_src).
+
+// The three cells beside marker Q toward S that a detour runs through, in
+// order along the flow: the entry, the middle, the end.
+.decl aside(q: Position, s: Dir, e: Position, m: Position, x: Position)
+aside(Q, S, E, M, X) :-
+    marker(Q), side(S), neighbor(Q, S, M),
+    params.flow_dir(D), neighbor(M, D, X), opposite(D, D_back), neighbor(M, D_back, E).
+
+// A cell of the detour around Q toward S.
+.decl detour(q: Position, s: Dir, p: Position)
+detour(Q, S, P) :- aside(Q, S, E, M, X), (P = E ; P = M ; P = X).
+
+// The cell a detour around Q steps back to: past Q along the flow.
+.decl rejoin(q: Position, p: Position)
+rejoin(Q, P) :- marker(Q), params.flow_dir(D), neighbor(Q, D, P).
+
+// The cells the stream runs through on side S of its source row: the row
+// itself, and the drawn detours.
+.decl path(p: Position, s: Dir, ch: Choice)
+path(P, S, K) :- src_row(P), side(S), impl_choice(K).
+path(P, S, K) :- open(Q, S, K), detour(Q, S, P).
+
+// P carries the stream: a free cell of its path, or the cell a drawn detour
+// steps back to.
+.decl stream(p: Position, ch: Choice)
+stream(P, K) :- in(P, _), !marker(P), ( path(P, _, K) ; open(Q, _, K), rejoin(Q, P) ).
+
+// The stream can enter the detour around Q toward S: the entry is free, or the
+// stream on the entry's row runs up to it.
+.decl enterable(q: Position, s: Dir, ch: Choice)
+enterable(Q, S, K) :-
+    aside(Q, S, E, _, _), impl_choice(K),
+    ( !marker(E)
+    ; params.flow_dir(D), neighbor(P, D, E), stream(P, K)
+    ).
+
+// The detour around marker Q toward S is drawn.
+.decl open(q: Position, s: Dir, ch: Choice)
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, K) :- stream(P, K), params.flow(Col).
+out(P, Col, K) :- in(P, Col), impl_choice(K), !stream(P, K).
+
+// --- Enter ---
+
+open(Q, S, $Enter()) :- path(Q, S, $Enter()), enterable(Q, S, $Enter()).
+
+// --- Complete ---
+
+// The stream passes cell P of a detour: P holds no marker, or the detour
+// around P is traversable.
+.decl pass(p: Position, s: Dir)
+pass(P, S) :- detour(_, S, P), ( !marker(P) ; through(P, S) ).
+
+// The detour around Q toward S is traversable: the stream can enter it and
+// passes each of its cells.
+.decl through(q: Position, s: Dir)
+through(Q, S) :-
+    enterable(Q, S, $Complete()),
+    aside(Q, S, E, M, X), pass(E, S), pass(M, S), pass(X, S).
+
+open(Q, S, $Complete()) :- path(Q, S, $Complete()), through(Q, S).

@@ -1,0 +1,113 @@
+// 25094a63
+// draft
+// concept: stamp
+// Solid monochrome rectangles hide in a noise field. Wherever a footprint
+// lands on cells that all share one color, those cells turn params.paint; the
+// rest passes through. Overlapping seats cover a bigger rectangle whole, so
+// a rectangle recolors exactly when it reaches the footprint's size on both
+// axes. Two models of the footprint:
+//
+//   $Shape — the footprint is a stored mask.
+//   $Side  — the footprint is a square of stored side, so the task marks
+//            rectangles that are big enough, not rectangles of a stored shape.
+
+#include "../lib.dl"
+
+.type Choice = Shape {} | Side {}
+
+.comp Params {
+    .decl paint(col: Color) paint(4).
+
+    // --- $Shape ---
+    .decl shape(p: Position)
+    GRID_MASK_4x4(shape,
+        1, 1, 1, 1,
+        1, 1, 1, 1,
+        1, 1, 1, 1,
+        1, 1, 1, 1)
+
+    // --- $Side ---
+    .decl side(k: number) side(4).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Shape()). impl_choice($Side()).
+
+// The footprint each model stamps.
+.decl footprint(ch: Choice, s: Position)
+
+// --- $Shape ---
+footprint($Shape(), S) :- params.shape(S).
+
+// --- $Side ---
+.init square = Frame2D<Unit>
+square.extent($U(), A, K) :- params.side(K), axis_elem(A).
+
+footprint($Side(), S) :- square.cell($U(), S).
+
+// --- shared ---
+
+// One key per case and color: a seated footprint is monochrome.
+.type Field = [ch: Choice, col: Color]
+
+.init occ = Occurrences<Field, Unit>
+occ.cell([Ch, Col], P, $U())  :- impl_choice(Ch), in(P, Col).
+occ.shape([Ch, Col], S, $U()) :- footprint(Ch, S), in(_, Col).
+
+// A seated footprint recolors every cell it covers.
+.decl covered(ch: Choice, p: Position)
+covered(Ch, P) :- occ.occurrence([Ch, _], M), footprint(Ch, S), compose(M, S, P).
+
+.decl out(p: Position, col: Color, c: Choice)
+out(P, Col, Ch) :- covered(Ch, P), params.paint(Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !covered(Ch, P).
+
+.comp Determine {
+    // The footprint fits inside every recolored rectangle, so its side is
+    // at most the smallest extent among them.
+    .init blocks = Components<Example>
+    blocks.node(E, P) :- ex_out(E, P, Col), params.paint(Col).
+
+    .type ExBlock = [e: Example, id: Ident]
+
+    .init box = Bbox<ExBlock>
+    box.cell([E, Id], P) :- blocks.label(E, P, Id).
+
+    .init smallest = Extremes<Unit>
+    smallest.cand($U(), N) :- box.extent(_, _, N).
+
+    .decl cand(k: number)
+    cand(K) :-
+        ex_in(_, P, _), axis_elem(A), sub_extent(P, A, K),  // a side the grid holds
+        smallest.low($U(), N), K <= N.                      // that fits in every block
+
+    .init square = Frame2D<number>
+    square.extent(K, A, K) :- cand(K), axis_elem(A).
+
+    // Seat each candidate square on the example inputs.
+    .type ExField = [e: Example, k: number, col: Color]
+
+    .init occ = Occurrences<ExField, Unit>
+    occ.cell([E, K, Col], P, $U())  :- ex_in(E, P, Col), cand(K).
+    occ.shape([E, K, Col], S, $U()) :- square.cell(K, S), ex_in(E, _, Col).
+
+    // A footprint that lands over a cell the transform left alone is too
+    // small.
+    .decl refuted(k: number)
+    refuted(K) :-
+        occ.occurrence([E, K, _], M),           // a seated square
+        square.cell(K, S), compose(M, S, P),    // over a cell
+        ex_in(E, P, Col), ex_out(E, P, Col).    // the output kept
+
+    // The smallest square the examples leave standing.
+    .init survivor = Extremes<Unit>
+    survivor.cand($U(), K) :- cand(K), !refuted(K).
+
+    .decl side(k: number)
+    side(K) :- survivor.low($U(), K).
+
+    .decl shape(p: Position)
+    shape(S) :- survivor.low($U(), K), square.cell(K, S).
+}

@@ -1,0 +1,195 @@
+// 1e5d6875
+// draft
+// concept: objects move d4 lookup
+//
+// The grid holds L-trominoes of two colors, each filling three corners of a
+// 2x2 box. Every piece emits a copy of itself one diagonal step away, painted
+// in a color the piece's color selects; the step direction follows from the
+// piece's color and the box corner the piece leaves open. A copy reaching past
+// the frame drops, and where two copies land on one cell stored precedence
+// picks the color. Choice = [s, p] crosses the hypotheses:
+//
+//   s (the step direction):
+//     $Rotate() — a stored rotation per piece color turns the open corner.
+//     $Lookup() — a stored table keyed by piece color and open corner.
+//   p (a copy landing on a piece cell):
+//     $Keep()  — the piece keeps its cell.
+//     $Cover() — the copy paints over it.
+
+#include "../lib.dl"
+
+.type Step = Rotate {} | Lookup {}
+.type Paint = Keep {} | Cover {}
+.type Choice = [s: Step, p: Paint]
+
+// A piece: its color and its component id.
+.type Obj = [col: Color, id: Ident]
+
+// A cell under one step hypothesis — the key copies contend on.
+.type MarkKey = [p: Position, s: Step]
+
+.comp Params {
+    // --- shared ---
+    .decl bg(col: Color) bg(7).
+
+    // The color each piece color's copy paints.
+    .decl mark(src: Color, col: Color)
+    mark(5, 4).
+    mark(2, 3).
+
+    // Precedence where copies overlap, lowest rank first.
+    .decl mark_rank(col: Color, r: number)
+    mark_rank(3, 0).
+    mark_rank(4, 1).
+
+    // --- Rotate ---
+    // The rotation carrying a piece's open corner to its step direction.
+    // Reflections are outside the domain: each piece is symmetric about the
+    // diagonal of its own open corner, so a reflection only repeats a
+    // rotation's step.
+    .decl rot(src: Color, d: D4)
+    rot(5, D4_ID).
+    rot(2, D4_HT).
+
+    // --- Lookup ---
+    .decl step(src: Color, open: DiagDir, dir: DiagDir)
+    step(5, DIAG_TR, DIAG_TR).
+    step(5, DIAG_BL, DIAG_BL).
+    step(2, DIAG_TL, DIAG_BR).
+    step(2, DIAG_TR, DIAG_BL).
+    step(2, DIAG_BL, DIAG_TR).
+}
+
+.init params = Params
+
+.decl step_choice(s: Step)
+step_choice($Rotate()).
+step_choice($Lookup()).
+
+.init parts = Components<Color>
+parts.node(Col, P) :- in(P, Col), !params.bg(Col).
+
+.decl piece_cell(o: Obj, p: Position)
+piece_cell([Col, Id], P) :- parts.label(Col, P, Id).
+
+.init box = Bbox<Obj>
+box.cell(O, P) :- piece_cell(O, P).
+
+// The corner of the piece's box that the piece leaves empty.
+.decl open_diag(o: Obj, diag: DiagDir)
+open_diag(O, Diag) :- box.cell(O, _), diag_dir_elem(Diag), !box.corner(O, _, Diag).
+
+.decl step_dir(o: Obj, dir: DiagDir, s: Step)
+
+// --- Rotate ---
+step_dir([Col, Id], D, $Rotate()) :-
+    open_diag([Col, Id], Diag),                         // the piece's open corner
+    params.rot(Col, Rot), apply_diag_dir(Rot, Diag, D). // turned by the piece color's rotation
+
+// --- Lookup ---
+step_dir([Col, Id], D, $Lookup()) :- open_diag([Col, Id], Diag), params.step(Col, Diag, D).
+
+// --- shared ---
+
+// The piece's copy, one step along its step direction.
+.decl mark_cell(p: Position, col: Color, s: Step)
+mark_cell(Q, M, S) :-
+    piece_cell([Col, Id], P), step_dir([Col, Id], D, S),  // a piece cell and its step
+    params.mark(Col, M),                                  // the copy's color
+    neighbor(P, D, Q), in(Q, _).                          // one step, inside the frame
+
+.init win = ArgExtremes<MarkKey, Color>
+win.cand([P, S], M, R) :- mark_cell(P, M, S), params.mark_rank(M, R).
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// --- Keep ---
+out(P, Col, [S, $Keep()]) :- in(P, Col), !params.bg(Col), step_choice(S).
+out(P, Col, [S, $Keep()]) :-
+    in(P, Bg), params.bg(Bg), step_choice(S),  // background cell
+    ( win.low([P, S], Col, _)                  // the winning copy lands on it
+    ; !mark_cell(P, _, S), Col = Bg            // no copy reaches it
+    ).
+
+// --- Cover ---
+out(P, Col, [S, $Cover()]) :-
+    in(P, Col_in), step_choice(S),       // input cell
+    ( win.low([P, S], Col, _)            // the winning copy lands on it
+    ; !mark_cell(P, _, S), Col = Col_in  // no copy reaches it
+    ).
+
+.type ExColor = [e: Example, col: Color]
+.type ExObj = [e: Example, col: Color, id: Ident]
+
+.comp Determine {
+    .init parts = Components<ExColor>
+    parts.node([E, Col], P) :- ex_in(E, P, Col), !params.bg(Col).
+
+    .decl piece_cell(o: ExObj, p: Position)
+    piece_cell([E, Col, Id], P) :- parts.label([E, Col], P, Id).
+
+    .init box = Bbox<ExObj>
+    box.cell(O, P) :- piece_cell(O, P).
+
+    .decl open_diag(o: ExObj, diag: DiagDir)
+    open_diag(O, Diag) :- box.cell(O, _), diag_dir_elem(Diag), !box.corner(O, _, Diag).
+
+    // Cells the output repaints.
+    .decl painted(e: Example, p: Position, col: Color)
+    painted(E, P, Col) :- ex_out(E, P, Col), ex_in(E, P, Col2), Col != Col2.
+
+    // Where a copy toward D would land, inside the frame.
+    .decl copy_land(o: ExObj, dir: DiagDir, p: Position)
+    copy_land([E, Col, Id], D, Q) :-
+        piece_cell([E, Col, Id], P), diag_dir_elem(D),  // a piece cell, each direction
+        neighbor(P, D, Q), ex_in(E, Q, _).              // one step, inside the frame
+
+    // Some cell of the copy toward D is not repainted, so the piece did not
+    // step that way.
+    .decl off_step(o: ExObj, dir: DiagDir)
+    off_step([E, Col, Id], D) :- copy_land([E, Col, Id], D, Q), !painted(E, Q, _).
+
+    .decl step(src: Color, open: DiagDir, dir: DiagDir)
+    step(Col, Diag, D) :-
+        open_diag([E, Col, Id], Diag),                              // a piece's open corner
+        copy_land([E, Col, Id], D, _), !off_step([E, Col, Id], D).  // its whole copy repainted
+
+    // Candidates range over the rotations, the domain params.rot names.
+    .decl rot_off(src: Color, d: D4)
+    rot_off(Col, Rot) :-
+        step(Col, Diag, D), c4_elem(Rot), apply_diag_dir(Rot, Diag, D2), D2 != D.
+
+    .decl rot(src: Color, d: D4)
+    rot(Col, Rot) :- step(Col, _, _), c4_elem(Rot), !rot_off(Col, Rot).
+
+    // The piece's copy, under the determined step.
+    .decl copy_cell(o: ExObj, p: Position)
+    copy_cell([E, Col, Id], Q) :-
+        copy_land([E, Col, Id], D, Q),
+        open_diag([E, Col, Id], Diag), step(Col, Diag, D).
+
+    // The colors a piece's copy shows. A copy overrun by a higher-precedence
+    // one shows that color too, so a color's own mark is the one every piece
+    // of that color shows.
+    .decl copy_color(o: ExObj, col: Color)
+    copy_color([E, Col, Id], M) :- copy_cell([E, Col, Id], Q), painted(E, Q, M).
+
+    .decl mark_missing(src: Color, col: Color)
+    mark_missing(Col, M) :-
+        copy_color([_, Col, _], M), copy_color([E2, Col, Id2], _),
+        !copy_color([E2, Col, Id2], M).
+
+    .decl mark(src: Color, col: Color)
+    mark(Col, M) :- copy_color([_, Col, _], M), !mark_missing(Col, M).
+
+    // Where copies of two colors land together, the output shows the winner.
+    .decl copy_at(e: Example, p: Position, col: Color)
+    copy_at(E, Q, M) :- copy_cell([E, Col, _], Q), mark(Col, M).
+
+    .init prec = Order<Unit, Color>
+    prec.elem($U(), M) :- mark(_, M).
+    prec.before($U(), M, M2) :- copy_at(E, P, M), copy_at(E, P, M2), M != M2, ex_out(E, P, M).
+
+    .decl mark_rank(col: Color, r: number)
+    mark_rank(M, R) :- prec.rank($U(), M, R).
+}

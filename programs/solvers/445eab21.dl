@@ -1,0 +1,64 @@
+// 445eab21
+// draft
+// concept: objects enclose count rank
+// Two hollow rectangles, one color each, sit on params.bg. The output is a
+// params.out_dim block of the bigger one's color. The cases differ in what
+// "bigger" measures:
+//
+//   $Enclose — the cells the color closes off from the grid edge.
+//   $Box     — the bg cells inside the color's bounding box.
+//   $Area    — every cell of that box, the walls included.
+//   $Extent  — the box's extent along params.axis.
+
+#include "../lib.dl"
+
+.type Choice = Enclose {} | Box {} | Area {} | Extent {}
+
+.comp Params {
+    // --- shared ---
+    .decl bg(col: Color) bg(0).
+    .decl out_dim(n: number) out_dim(2).   // output extent, both axes
+
+    // --- $Extent ---
+    .decl axis(a: Axis) axis(AXIS_H).
+}
+
+.init params = Params
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.bg(Col).
+
+.decl ink_color(col: Color)
+ink_color(Col) :- ink(_, Col).
+
+.init box = Bbox<Color>
+box.cell(Col, P) :- ink(P, Col).
+box.grid(Col, P) :- ink_color(Col), in(P, _).
+
+// What each color closes off from the grid edge.
+.init closed = Closed<Color>
+closed.cell(Col, P) :- ink_color(Col), in(P, Col2), Col2 != Col.
+
+// --- how big each color is, per measure ---
+
+.init winner = ArgExtremes<Choice, Color>
+
+.type MKey = [col: Color, ch: Choice]
+
+// $Enclose, $Box and $Area count a cell set.
+.init measure = Tally<MKey, Position>
+measure.item([Col, $Enclose()], P) :- closed.region(Col, P, _).
+measure.item([Col, $Box()], P)     :- box.inside(Col, P), in(P, Col2), params.bg(Col2).
+measure.item([Col, $Area()], P)    :- box.inside(Col, P).
+
+winner.cand(Ch, Col, N) :- measure.tally([Col, Ch], N).
+
+winner.cand($Extent(), Col, N) :- params.axis(A), box.extent(Col, A, N).
+
+// --- output ---
+
+.init canvas = Frame2D<Unit>
+canvas.extent($U(), A, N) :- axis_elem(A), params.out_dim(N).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- canvas.cell($U(), P), winner.high(Ch, Col, _).

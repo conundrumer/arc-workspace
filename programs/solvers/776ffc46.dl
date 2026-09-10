@@ -1,0 +1,55 @@
+// 776ffc46
+// draft
+// concept: objects border induce
+// Rectangles drawn in the frame color each hold a reference shape in one
+// color. Loose shapes outside the rectangles that are congruent to a
+// reference, by translation, take that reference's color; the rest of the
+// grid is unchanged.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+    .decl frame(c: Color) frame(5).
+}
+
+.init params = Params
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.bg(Col), !params.frame(Col).
+
+// The rectangles drawn in the frame color, and their insides.
+.init drect = DrawnRect<Unit>
+drect.node($U(), P) :- in(P, Col), params.frame(Col).
+
+.init bcells = BoxCells<Position>
+bcells.box(B, B) :- drect.rect(_, B).
+bcells.cell(B, P) :- bcells.box(B, _), in(P, _).
+
+// Each rectangle's reference shape, viewed from its own bounding box.
+.init ref = BoxFrame<Position>
+ref.cell(B, P) :- bcells.hole(B, P), ink(P, _).
+
+// The loose shapes: ink components outside every rectangle.
+.init loose = Components<Unit>
+loose.node($U(), P) :- ink(P, _), !bcells.hole(_, P).
+
+.init shape = BoxFrame<Ident>
+shape.cell(Id, P) :- loose.label($U(), P, Id).
+
+// A loose shape matches a reference when their box-relative cell sets agree.
+.init same_shape = KeyedSetCompare<Ident, Position, Position>
+same_shape.pattern_member(B, P_inner) :- ref.inner(B, _, P_inner).
+same_shape.observed_member(Id, P_inner) :- shape.inner(Id, _, P_inner).
+
+.decl recolor(p: Position, col: Color)
+recolor(P, Col) :-
+    loose.label($U(), P, Id), same_shape.equals(Id, B),  // the loose shape matches rectangle B
+    ref.cell(B, P_ref), ink(P_ref, Col).                // B's reference color
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, C_in),
+    ( recolor(P, Col)                 // a matched loose shape takes its reference's color
+    ; !recolor(P, _), Col = C_in      // everything else stays
+    ).

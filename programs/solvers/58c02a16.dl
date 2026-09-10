@@ -1,0 +1,69 @@
+// 58c02a16
+// draft
+// concept: wallpaper scale stamp
+// A pattern block sits in a corner of the input, closed off by two
+// separator lines; the rest of the input is blank. The output repeats the
+// pattern against itself at two scales. A cell is inked when its place
+// inside its block is an inked pattern cell. It takes the pattern's own
+// color when its block's place among the blocks is an inked pattern cell,
+// and the separator color when that place is blank. Both places wrap, so
+// the layout stays periodic where the grid holds no whole number of blocks.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(7).
+
+    // The corner the pattern block sits in.
+    .decl corner(d: DiagDir) corner(DIAG_TL).
+}
+
+.init params = Params
+
+// The corner box: the pattern block with the separator lines that close it.
+.init box = Bbox<Unit>
+box.cell($U(), P) :- in(P, Col), !params.bg(Col).
+box.grid($U(), P) :- in(P, _).
+
+// The separator lines: the box edges facing away from the corner.
+.decl sep_cell(p: Position)
+sep_cell(P) :-
+    params.corner(D), diag_opposite(D, D_far),
+    dir_of(D_far, _, D_away), box.edge_cell($U(), P, D_away).
+
+.decl sep(col: Color)
+sep(Col) :- sep_cell(P), in(P, Col).
+
+.decl pat_cell(p: Position)
+pat_cell(P) :- box.inside($U(), P), !sep_cell(P).
+
+// The block's own size is the period of the layout.
+.init block = Bbox<Unit>
+block.cell($U(), P) :- pat_cell(P).
+
+// Where a grid cell sits in the two-level layout: p_fine is the pattern
+// cell it takes inside its block, p_coarse the pattern cell its block
+// takes inside the arrangement of blocks.
+.decl phase(p: Position, p_fine: Position, p_coarse: Position)
+phase(P, P_fine, P_coarse) :-
+    in(P, _), pat_cell(P_fine), pat_cell(P_coarse),
+    params.corner(D), diag_dist(P, D, A, T1, T2),          // distances from the corner
+    block.extents($U(), A, N1, N2),                        // the block's size — the fine period
+    stride(T1, N1, 0, B1, F1), stride(B1, N1, 0, _, C1),   // cell in block, block in arrangement
+    stride(T2, N2, 0, B2, F2), stride(B2, N2, 0, _, C2),   // the same across
+    diag_dist(P_fine, D, A, F1, F2), diag_dist(P_coarse, D, A, C1, C2).
+
+// The color a block is drawn in, by the pattern cell it takes.
+.decl block_ink(p_coarse: Position, col: Color)
+block_ink(P_coarse, Col) :-
+    pat_cell(P_coarse), in(P_coarse, C),
+    ( !params.bg(C), Col = C   // inked: the pattern's own color
+    ; params.bg(C), sep(Col)   // blank: the separator color
+    ).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    phase(P, P_fine, P_coarse), in(P_fine, C),
+    ( params.bg(C), params.bg(Col)          // blank inside the block
+    ; !params.bg(C), block_ink(P_coarse, Col)
+    ).

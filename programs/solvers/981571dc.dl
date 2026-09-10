@@ -38,8 +38,6 @@ out(P, Col) :-
     in(P, N), params.noise(N),            // corrupted cell
     counterpart(P, Q), clean(Q, Col).
 
-// --- determination ---
-
 .comp Determine {
     // Candidate mirror lines on one axis, as offsets from the grid center.
     .decl cand(a: Axis, delta: Shift)

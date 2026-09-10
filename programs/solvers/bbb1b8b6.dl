@@ -2,58 +2,84 @@
 // concept: overlay decompose
 // A separator splits the grid into a base tile and a piece tile, each a
 // shape over bg. If the piece fits the base's bg holes, the output is the
-// base with the piece painted in; otherwise the base unchanged. Cases are
-// the fit criterion (data-equivalent here — every train piece is an exact
-// complement or collides):
-//   $Exact — piece == holes.
-//   $Fit   — collision-free: piece ⊆ holes.
+// base with the piece painted in; otherwise the base unchanged.
+//
+// out's choice column = [cr, d]:
+//
+//   cr (fit criterion, data-equivalent here — every train piece is an exact
+//   complement or collides):
+//     $Exact() — piece == holes
+//     $Fit()   — collision-free: piece ⊆ holes
+//
+//   d (split):
+//     $Count() — by tile count
+//     $Size()  — by tile size
 
 #include "../lib.dl"
 
-.type Choice = Exact {} | Fit {}
+.type Criterion = Exact {} | Fit {}
+.type DecChoice = Count {} | Size {}
+.type Choice    = [cr: Criterion, d: DecChoice]
 
 .comp Params {
+    // --- shared ---
     .decl bg(c: Color) bg(0).
     .decl base_dir(d: Dir) base_dir(DIR_L).   // edge the base tile sits toward
-    .decl tile_count(n: number) tile_count(2).
     .decl gap(g: number) gap(1).            // separator width
+
+    // --- Count ---
+    .decl tile_count(n: number) tile_count(2).
+
+    // --- Size ---
+    .decl tile_size(k: number) tile_size(4).
 }
 
 .init params = Params
 
-.decl tile_val(p_tile: Position, p_intile: Position, col: Color)
-tile_val(T, P, Col) :-
+.decl criterion_choice(cr: Criterion)
+criterion_choice($Exact()). criterion_choice($Fit()).
+
+.decl dec_choice(dc: DecChoice)
+dec_choice($Count()). dec_choice($Size()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([Cr, Dc]) :- criterion_choice(Cr), dec_choice(Dc).
+
+.decl tile_val(p_tile: Position, p_intile: Position, col: Color, dc: DecChoice)
+tile_val(T, P, Col, $Count()) :-
     in(P_grid, Col),
     params.base_dir(D), axis_of(D, A),      // tile axis
     params.tile_count(N), params.gap(G),
     divide_slab(P_grid, A, N, G, T, P).
+tile_val(T, P, Col, $Size()) :-
+    in(P_grid, Col),
+    params.base_dir(D), axis_of(D, A),      // tile axis
+    params.tile_size(K), params.gap(G),
+    divide_by_size_slab(P_grid, A, K, G, T, P).
 
-.decl base(p: Position, col: Color)
-base(P, Col) :- tile_val(T, P, Col), params.base_dir(D), dist(T, D, 0).
+.decl base(p: Position, col: Color, dc: DecChoice)
+base(P, Col, Dc) :- tile_val(T, P, Col, Dc), params.base_dir(D), dist(T, D, 0).
 
-.decl piece(p: Position, col: Color)
-piece(P, Col) :-
-    tile_val(T, P, Col), !params.bg(Col),                 // ink cell
+.decl piece(p: Position, col: Color, dc: DecChoice)
+piece(P, Col, Dc) :-
+    tile_val(T, P, Col, Dc), !params.bg(Col),             // ink cell
     params.base_dir(D), opposite(D, O), dist(T, O, 0).    // in the far tile
 
-.decl hole(p: Position)
-hole(P) :- base(P, Col), params.bg(Col).
-
-.decl impl_choice(ch: Choice)
-impl_choice($Exact()). impl_choice($Fit()).
+.decl hole(p: Position, dc: DecChoice)
+hole(P, Dc) :- base(P, Col, Dc), params.bg(Col).
 
 // The case's fit criterion, violated. Both reject collision; $Exact also
 // rejects an unfilled hole.
 .decl unfit(ch: Choice)
-unfit(Ch) :- impl_choice(Ch), piece(P, _), !hole(P).
+unfit([Cr, Dc]) :- impl_choice([Cr, Dc]), piece(P, _, Dc), !hole(P, Dc).
 
-// --- $Exact ---
-unfit($Exact()) :- hole(P), !piece(P, _).
+// --- Exact ---
+unfit([$Exact(), Dc]) :- dec_choice(Dc), hole(P, Dc), !piece(P, _, Dc).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, Ch) :-
-    impl_choice(Ch), !unfit(Ch),    // the piece fits
-    ( piece(P, Col)                 // the piece itself
-    ; base(P, Col), !piece(P, _)    // the base elsewhere
+out(P, Col, [Cr, Dc]) :-
+    impl_choice([Cr, Dc]), !unfit([Cr, Dc]),    // the piece fits
+    ( piece(P, Col, Dc)                         // the piece itself
+    ; base(P, Col, Dc), !piece(P, _, Dc)        // the base elsewhere
     ).
-out(P, Col, Ch) :- impl_choice(Ch), unfit(Ch), base(P, Col).
+out(P, Col, [Cr, Dc]) :- impl_choice([Cr, Dc]), unfit([Cr, Dc]), base(P, Col, Dc).

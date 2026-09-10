@@ -1,0 +1,61 @@
+// 7ed72f31
+// draft
+// concept: objects markers symmetry d4
+// Shapes lie on a field, each touching a run of params.mirror cells: a
+// single cell, or a straight line. The shape reappears reflected in its
+// mirror: through the cell, or across the line. The input stays; the image
+// paints only field cells.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl mirror(c: Color) mirror(2).
+}
+
+.init params = Params
+
+// The field is the commonest color; everything else is ink.
+.init field = Mode<Unit, Color, Position>
+field.item($U(), Col, P) :- in(P, Col).
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !field.mode($U(), Col).
+
+// An object is a shape with its mirror, 8-connected.
+.init obj = Components8<Unit>
+obj.node($U(), P) :- ink(P, _).
+
+.decl mirror(id: Ident, p: Position)
+mirror(Id, P) :- obj.label($U(), P, Id), in(P, Col), params.mirror(Col).
+
+.decl shape(id: Ident, p: Position, col: Color)
+shape(Id, P, Col) :- obj.label($U(), P, Id), ink(P, Col), !params.mirror(Col).
+
+// The mirror's line on axis A: the one along coordinate its cells share.
+// A point mirror has one on both axes; a line mirror only across its run.
+.type MirrorAxis = [id: Ident, a: Axis]
+.init mirror_line = Unanimous<MirrorAxis, Position>
+mirror_line.item([Id, A], L) :- mirror(Id, P), axis_elem(A), split(P, A, L, _).
+
+// The image's coordinate on axis A: reflected in the mirror line where the
+// mirror has one on A, the shape cell's own where it does not.
+.decl image_along(p: Position, a: Axis, al: Position)
+image_along(P, A, Al_img) :-
+    shape(Id, P, _), axis_elem(A), split(P, A, Al, _),
+    ( mirror_line.value([Id, A], L), displacement(L, Al, Off),   // offset from the line
+      flip_of(A, D), apply(D, Off, Off_img), compose(L, Off_img, Al_img)
+    ; !mirror_line.value([Id, A], _), Al_img = Al
+    ).
+
+.decl image(p: Position, col: Color)
+image(Q, Col) :-
+    shape(_, P, Col), image_along(P, A, Al), perp(A, A2), image_along(P, A2, Al2),
+    compose(Al, Al2, Q).
+
+.decl out(p: Position, col: Color)
+out(P, Col_out) :-
+    in(P, Col),
+    ( ink(P, _), Col_out = Col                    // ink stays
+    ; !ink(P, _), image(P, Col_out)               // field takes the image
+    ; !ink(P, _), !image(P, _), Col_out = Col     // field stays
+    ).

@@ -2,7 +2,7 @@
 // concept: scale wallpaper stamp
 // 2× scale-up: ink cells become checkered tiles, bg cells blank tiles.
 // Two models of the checker phase, tagged on out's Choice:
-//   $Tile    — each ink cell hosts a stored template.
+//   $Table   — each ink cell hosts a stored template.
 //   $Checker — one grid-global checkerboard, corner-anchored, masked to
 //              the scaled ink silhouette.
 //
@@ -10,7 +10,7 @@
 
 #include "../lib.dl"
 
-.type Choice = Tile {} | Checker {}
+.type Choice = Table {} | Checker {}
 
 .comp Params {
     .init helpers = ParamsHelpers
@@ -23,7 +23,7 @@
     .decl intile(p: Position)
     intile(P) :- scale(K), helpers.frame_pos([K, K], P).
 
-    // --- Tile ---
+    // --- Table ---
     .decl template(p: Position, col: Color)
     GRID_2x2(template,
         1, 2,
@@ -44,7 +44,7 @@
 .init params = Params
 
 .decl impl_choice(ch: Choice)
-impl_choice($Tile()). impl_choice($Checker()).
+impl_choice($Table()). impl_choice($Checker()).
 
 // Output decomposition: input cell as tile index × intile position.
 .decl cell(p_grid: Position, p_tile: Position, p_intile: Position)
@@ -65,8 +65,8 @@ out(P_grid_out, Bg, Ch) :-
     impl_choice(Ch), cell(P_grid_out, _, _),
     !inked(P_grid_out, _), params.bg(Bg).
 
-// --- Tile ---
-out(P_grid_out, Col, $Tile()) :-
+// --- Table ---
+out(P_grid_out, Col, $Table()) :-
     inked(P_grid_out, P_intile), params.template(P_intile, Col).
 
 // --- Checker ---
@@ -83,8 +83,6 @@ checker(P2, Col2) :-
 
 out(P_grid_out, Col, $Checker()) :-
     inked(P_grid_out, _), checker(P_grid_out, Col).
-
-// --- determination ---
 
 .comp Determine {
     // Every ink cell's output tile.

@@ -1,0 +1,67 @@
+// 782b5218
+// draft
+// concept: border enclose cast
+// A barrier of params.barrier cells crosses a field of noise in one other
+// color. The output keeps the barrier, paints its params.fill_dir side in
+// the noise color, and clears the other side to bg. Two hypotheses of
+// which cells are the fill side:
+//
+//   $Region — the non-barrier cells that cannot reach the edge opposite
+//             fill_dir without crossing the barrier.
+//   $Cast   — the cells on a ray cast from a barrier cell toward fill_dir.
+
+#include "../lib.dl"
+
+.type Choice = Region {} | Cast {}
+
+.comp Params {
+    // --- shared ---
+    .decl bg(c: Color) bg(0).
+    .decl barrier(c: Color) barrier(2).
+    .decl fill_dir(d: Dir) fill_dir(DIR_B).
+
+    // --- Region ---
+    // The edge whose reachable region is cleared.
+    .decl clear_dir(d: Dir)
+    clear_dir(D) :- fill_dir(F), opposite(F, D).
+}
+
+.init params = Params
+
+.decl barrier_cell(p: Position)
+barrier_cell(P) :- in(P, Col), params.barrier(Col).
+
+.decl field_cell(p: Position)
+field_cell(P) :- in(P, _), !barrier_cell(P).
+
+// The noise color: the one that is neither bg nor the barrier.
+.decl fill_color(col: Color)
+fill_color(Col) :- in(_, Col), !params.bg(Col), !params.barrier(Col).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Region()). impl_choice($Cast()).
+
+.decl fill_cell(p: Position, ch: Choice)
+
+// --- Region ---
+.init cleared = Reach<Unit>
+cleared.node($U(), P) :- field_cell(P).
+cleared.seed($U(), P) :- field_cell(P), params.clear_dir(D), dist(P, D, 0).   // on the cleared edge
+
+fill_cell(P, $Region()) :- field_cell(P), !cleared.reach($U(), P).
+
+// --- Cast ---
+.init flow = Ray<Unit>
+flow.dir($U(), D) :- params.fill_dir(D).
+flow.cell($U(), P) :- field_cell(P).
+flow.mark($U(), P) :- barrier_cell(P).
+
+fill_cell(P, $Cast()) :- flow.ray($U(), P, _, _, _).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    in(P, C_in), impl_choice(Ch),
+    ( barrier_cell(P), Col = C_in                        // barrier kept
+    ; field_cell(P), fill_cell(P, Ch), fill_color(Col)   // fill side
+    ; field_cell(P), !fill_cell(P, Ch), params.bg(Col)   // cleared side
+    ).

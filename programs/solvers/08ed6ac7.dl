@@ -80,8 +80,6 @@ out(P, Col, [$Line(), A]) :-
     line_cell(B, P), line_size.tally(B, N), size_color($Line(), A, N, Col).
 out(P, Col, [S, A]) :- in(P, Col), !params.ink(Col), seg_choice(S), anchor_choice(A).
 
-// --- determination ---
-
 .comp Determine {
     .decl line_cell(e: Example, b: Position, p: Position)
     line_cell(E, B, P) :- ex_in(E, P, Col), params.ink(Col), params.axis(A), split(P, A, _, B).

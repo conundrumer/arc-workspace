@@ -1,0 +1,75 @@
+// 6cdd2623
+// draft
+// concept: markers border cast span rank
+// Noise cells of several colors sit on a bg ground. One color, the line
+// color, appears only on the grid border, as marks facing each other in
+// pairs across the grid. The output erases the noise and draws a line of
+// the line color across the grid from each mark, along the axis of the
+// edge it sits on. Choice = [s, d] crosses the hypotheses:
+//
+//   s (which color draws the lines):
+//     $Border() — the color whose every cell lies on the border.
+//     $Rarest() — the color with the fewest cells.
+//   d (what a mark draws):
+//     $Cast() — a mark at one end draws the whole line.
+//     $Span() — a line needs a mark at each end.
+
+#include "../lib.dl"
+
+.type Select = Border {} | Rarest {}
+.type Draw = Cast {} | Span {}
+.type Choice = [s: Select, d: Draw]
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+}
+
+.init params = Params
+
+.decl select_choice(s: Select)
+select_choice($Border()).
+select_choice($Rarest()).
+
+.decl draw_choice(d: Draw)
+draw_choice($Cast()).
+draw_choice($Span()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([S, D]) :- select_choice(S), draw_choice(D).
+
+// --- Select cases: the line color ---
+
+.decl line_color(col: Color, s: Select)
+
+// $Border — no cell of the color lies off the border.
+.decl interior_color(col: Color)
+interior_color(Col) :- in(P, Col), gt(P, ORIGIN).
+
+line_color(Col, $Border()) :- in(_, Col), !params.bg(Col), !interior_color(Col).
+
+// $Rarest — the fewest cells.
+.init tally = Tally<Color, Position>
+tally.item(Col, P) :- in(P, Col), !params.bg(Col).
+
+.init rarest = ArgExtremes<Unit, Color>
+rarest.cand($U(), Col, N) :- tally.tally(Col, N).
+
+line_color(Col, $Rarest()) :- rarest.low($U(), Col, _).
+
+// --- Draw cases: the lines ---
+
+// Marks cast along the axis of the edge they sit on.
+.type MarkKey = [s: Select, a: Axis]
+
+.init mark_cast = Between<MarkKey>
+mark_cast.axis([S, A], A) :- select_choice(S), axis_elem(A).
+mark_cast.cell([S, A], P) :- select_choice(S), axis_elem(A), in(P, _).
+mark_cast.mark([S, A], M) :- in(M, Col), line_color(Col, S), dist(M, D, 0), axis_of(D, A).
+
+.decl line(p: Position, ch: Choice)
+line(P, [S, $Cast()]) :- mark_cast.ray([S, _], P, _, _, _).
+line(P, [S, $Span()]) :- mark_cast.between([S, _], P).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, [S, D]) :- line(P, [S, D]), line_color(Col, S).
+out(P, Col, Ch) :- in(P, _), impl_choice(Ch), !line(P, Ch), params.bg(Col).

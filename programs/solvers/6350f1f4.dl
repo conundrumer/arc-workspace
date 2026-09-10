@@ -1,0 +1,103 @@
+// 6350f1f4
+// draft
+// concept: decompose scale repair stamp
+// Separator lines cut the grid into a square arrangement of square blocks,
+// as many blocks along an axis as cells along a block. Each block is either
+// a copy of one two-colored template or a solid field of one color, and
+// noise has eaten cells of both, separator lines included. The blocks that
+// still show two colors overlay into the repaired template. Two models of
+// what each block becomes:
+//
+//   $Expand — the template stamped on itself: a block whose tile position
+//             is a minor cell of the template holds a copy of the template,
+//             and every other block a solid field of the dominant color.
+//   $Invert — each block swaps state: a solid block becomes a copy of the
+//             template, and a template copy a solid field of the template's
+//             other color.
+//
+// On every pair the input is solid exactly at the template's minor cells,
+// so its arrangement is the template itself and the two models agree. They
+// diverge on an arrangement that is not the template.
+
+#include "../lib.dl"
+
+.type Choice = Expand {} | Invert {}
+
+.comp Params {
+    .decl sep(col: Color) sep(0).
+    .decl noise(col: Color) noise(5).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Expand()). impl_choice($Invert()).
+
+// --- blocks ---
+
+.decl content(p: Position, col: Color)
+content(P, Col) :- in(P, Col), !params.sep(Col), !params.noise(Col).
+
+.decl content_line(l: Position)
+content_line(L) :- content(P, _), axis_elem(A), split(P, A, L, _).
+
+.init lattice = DividerFrame<Unit>
+lattice.cell($U(), P) :- in(P, _).
+lattice.divider($U(), A, L) :-
+    in(P, _), axis_elem(A), split(P, A, L, _),  // a line of the grid
+    !content_line(L).                           // carrying no content: a separator
+
+.init block = BoxFrame<Position>
+block.cell(P_tile, P) :- lattice.tile_of($U(), P, P_tile).
+
+.decl cell(p_tile: Position, p_intile: Position, col: Color)
+cell(P_tile, P_intile, Col) :- block.inner(P_tile, P, P_intile), content(P, Col).
+
+// --- the template ---
+
+// A block showing two colors is a copy of the template; a solid field
+// shows one.
+.init block_color = Unanimous<Position, Color>
+block_color.item(P_tile, Col) :- cell(P_tile, _, Col).
+
+// The copies overlay: every cell the noise spared in any of them.
+.decl template(p_intile: Position, col: Color)
+template(P_intile, Col) :- block_color.clash(P_tile), cell(P_tile, P_intile, Col).
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+out(P, Sep, Ch) :-
+    impl_choice(Ch), in(P, _),
+    !lattice.tile_of($U(), P, _), params.sep(Sep).  // a separator cell
+
+// --- $Expand ---
+
+.init dominant = Mode<Unit, Color, Position>
+dominant.item($U(), Col, P_intile) :- template(P_intile, Col).
+
+// The template's minor cells. $Expand reads them at the tile frame too:
+// the arrangement it claims is the template itself.
+.decl minor_cell(p: Position)
+minor_cell(P_intile) :- template(P_intile, Col), !dominant.mode($U(), Col).
+
+out(P, Col, $Expand()) :-
+    block.inner(P_tile, P, P_intile),
+    ( minor_cell(P_tile), template(P_intile, Col)    // a copy of the template
+    ; !minor_cell(P_tile), dominant.mode($U(), Col)  // a solid field
+    ).
+
+// --- $Invert ---
+
+// A block that contradicts the template is a solid field.
+.decl solid(p_tile: Position)
+solid(P_tile) :- cell(P_tile, P_intile, Col), template(P_intile, C2), Col != C2.
+
+// The color the solid fields carry.
+.decl solid_color(col: Color)
+solid_color(Col) :- solid(P_tile), cell(P_tile, _, Col).
+
+out(P, Col, $Invert()) :-
+    block.inner(P_tile, P, P_intile),
+    ( solid(P_tile), template(P_intile, Col)                // a copy of the template
+    ; !solid(P_tile), template(_, Col), !solid_color(Col)   // a solid field, in the other color
+    ).

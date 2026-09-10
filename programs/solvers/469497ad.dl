@@ -1,0 +1,69 @@
+// 469497ad
+// draft
+// concept: scale lines count cast
+// A block of ink sits in a bg field, beside a legend: the grid lines that
+// hold no bg. The output is the input scaled by the count of distinct non-bg
+// colors, with a diagonal beam cast outward from each corner of the scaled
+// block. Two parses of what a beam meets, tagged on out's Choice:
+//   $Halt    — the beam stops at the first non-bg cell.
+//   $Through — the beam crosses non-bg and paints the bg beyond.
+
+#include "../lib.dl"
+
+.type Choice = Halt {} | Through {}
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+    .decl beam(c: Color) beam(2).
+}
+
+.init params = Params
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.bg(Col).
+
+// --- scale: each input cell becomes a tile, sized by the palette count ---
+
+.init palette = Tally<Unit, Color>
+palette.domain($U()).
+palette.item($U(), Col) :- ink(_, Col).
+
+.init intile = Frame2D<Unit>
+intile.extent($U(), A, N) :- axis_elem(A), palette.tally($U(), N).
+
+.decl scaled(p_grid: Position, p_tile: Position, col: Color)
+scaled(P_grid, P_tile, Col) :-
+    in(P_tile, Col), intile.cell($U(), P_intile),   // input cell, times a tile's cells
+    concat_2d(P_tile, P_intile, 0, P_grid).         // tiles glued into the output frame
+
+// --- the block: the ink off the legend's lines ---
+
+// A grid line, named by its across-position, that holds a bg cell.
+.decl broken(across: Position)
+broken(Across) :- in(P, Col), params.bg(Col), axis_elem(A), split(P, A, _, Across).
+
+.decl legend(p: Position)
+legend(P) :- in(P, _), axis_elem(A), split(P, A, _, Across), !broken(Across).
+
+.init block = Bbox<Unit>
+block.cell($U(), P_grid) :- scaled(P_grid, P_tile, _), ink(P_tile, _), !legend(P_tile).
+
+// --- the beams: one diagonal cast outward from each corner of the block ---
+
+.init diag = Ray<DiagDir>
+diag.dir(D, D) :- diag_dir_elem(D).
+diag.mark(D, P_grid) :- block.corner($U(), P_grid, D).
+diag.cell(D, P_grid) :- diag_dir_elem(D), scaled(P_grid, _, Col), params.bg(Col).
+diag.blocked(D, P_grid) :- diag_dir_elem(D), scaled(P_grid, _, Col), !params.bg(Col).
+
+.decl beam_cell(p: Position, ch: Choice)
+beam_cell(P_grid, $Halt()) :- diag.clear(_, P_grid, _, _, _).
+beam_cell(P_grid, $Through()) :- diag.ray(_, P_grid, _, _, _).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Halt()). impl_choice($Through()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_grid, Col, Ch) :- beam_cell(P_grid, Ch), params.beam(Col).
+out(P_grid, Col, Ch) :-
+    impl_choice(Ch), scaled(P_grid, _, Col), !beam_cell(P_grid, Ch).

@@ -1,0 +1,154 @@
+// 5ecac7f7
+// draft
+// concept: decompose objects rank lookup select
+// Cuts of one color split the grid into panels that stand side by side.
+// Every panel holds as many shapes as there are panels, also side by side;
+// a shape is connected cells of one color. The output is one panel: each
+// panel contributes one of its shapes, at the place that shape holds inside
+// its own panel, and the rest of the output is background.
+//
+// Two models of the cut:
+//
+//   $Separator — the lines that carry params.sep are the cuts.
+//   $Divide    — params.panels equal panels, params.gap apart.
+//
+// Two models of which shape a panel contributes:
+//
+//   $Diagonal — the shape whose place among the panel's shapes is the
+//               panel's own place among the panels.
+//   $Lookup   — the shape at the place params.pick stores for the panel's
+//               place.
+
+#include "../lib.dl"
+
+.type Cut = Separator {} | Divide {}
+.type Pick = Diagonal {} | Lookup {}
+.type Choice = [cut: Cut, pick: Pick]
+
+.comp Params {
+    // --- shared ---
+    .decl bg(col: Color) bg(7).
+    .decl axis(a: Axis) axis(AXIS_H).   // panels and shapes both run along it
+
+    // --- Separator ---
+    .decl sep(col: Color) sep(6).
+
+    // --- Divide ---
+    .decl panels(n: number) panels(3).
+    .decl gap(g: number) gap(1).
+
+    // --- Lookup ---
+    // A panel's place -> the place of the shape it contributes. A place is
+    // a Position: the count of members toward each edge of axis.
+    .decl pick(p_panel: Position, p_shape: Position)
+    pick([0, 0, 0, 2], [0, 0, 0, 2]).
+    pick([0, 0, 1, 1], [0, 0, 1, 1]).
+    pick([0, 0, 2, 0], [0, 0, 2, 0]).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice([$Separator(), $Diagonal()]). impl_choice([$Separator(), $Lookup()]).
+impl_choice([$Divide(), $Diagonal()]). impl_choice([$Divide(), $Lookup()]).
+
+.comp Parse<Key> {
+    .type Line = [key: Key, l: Position]
+    .type Grid = [key: Key, cut: Cut]
+    .type Panel = [key: Key, cut: Cut, p_tile: Position]
+    .type Shape = [key: Key, cut: Cut, p_tile: Position, col: Color]
+
+    .decl cell(key: Key, p: Position, col: Color)  // input
+
+    // --- Separator ---
+
+    // The one color a line across the split axis holds.
+    .init line_color = Unanimous<Line, Color>
+    line_color.item([K, L], Col) :- cell(K, P, Col), params.axis(A), split(P, A, L, _).
+
+    .init frame = DividerFrame<Key>
+    frame.cell(K, P) :- cell(K, P, _).
+    frame.divider(K, A, L) :-
+        params.axis(A), line_color.value([K, L], Col), params.sep(Col).
+
+    .init panel_box = BoxFrame<Panel>
+    panel_box.cell([K, $Separator(), P_tile], P) :- frame.tile_of(K, P, P_tile).
+
+    // A cell with its panel and its position inside that panel.
+    .decl panel(key: Key, cut: Cut, p: Position, p_tile: Position, p_intile: Position)
+    panel(K, $Separator(), P, P_tile, P_intile) :-
+        panel_box.inner([K, $Separator(), P_tile], P, P_intile).
+
+    // --- Divide ---
+    panel(K, $Divide(), P, P_tile, P_intile) :-
+        cell(K, P, _), params.axis(A), params.panels(N), params.gap(G),
+        divide_slab(P, A, N, G, P_tile, P_intile).
+
+    // --- shapes ---
+
+    // A shape: connected cells of one color inside one panel.
+    .init shape = Components<Shape>
+    shape.node([K, Cut, P_tile, Col], P) :-
+        panel(K, Cut, P, P_tile, _), cell(K, P, Col), !params.bg(Col).
+
+    // --- places ---
+
+    .init panel_order = OrderFrame<Grid, Position>
+    panel_order.axis([K, Cut], A) :- panel(K, Cut, _, _, _), params.axis(A).
+    panel_order.member([K, Cut], P_tile, L) :-
+        panel(K, Cut, P, P_tile, _), params.axis(A), split(P, A, L, _).
+
+    .init shape_order = OrderFrame<Panel, Ident>
+    shape_order.axis([K, Cut, P_tile], A) :- panel(K, Cut, _, P_tile, _), params.axis(A).
+    shape_order.member([K, Cut, P_tile], Id, L) :-
+        shape.label([K, Cut, P_tile, _], P, Id), params.axis(A), split(P, A, L, _).
+
+    // A shape cell, seen from its panel.
+    .decl place(key: Key, cut: Cut, p_intile: Position, col: Color,
+                p_panel: Position, p_shape: Position)
+    place(K, Cut, P_intile, Col, P_panel, P_shape) :-
+        panel(K, Cut, P, P_tile, P_intile),
+        shape.label([K, Cut, P_tile, Col], P, Id),      // a shape cell
+        panel_order.pos([K, Cut], P_tile, P_panel),     // its panel's place
+        shape_order.pos([K, Cut, P_tile], Id, P_shape). // its shape's place
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// --- the pick ---
+
+.decl picked(p_intile: Position, col: Color, c: Choice)
+
+// --- Diagonal ---
+picked(P_intile, Col, [Cut, $Diagonal()]) :-
+    parse.place($U(), Cut, P_intile, Col, P_place, P_place).
+
+// --- Lookup ---
+picked(P_intile, Col, [Cut, $Lookup()]) :-
+    parse.place($U(), Cut, P_intile, Col, P_panel, P_shape),
+    params.pick(P_panel, P_shape).
+
+.decl out(p: Position, col: Color, c: Choice)
+out(P_intile, Col, Ch) :- picked(P_intile, Col, Ch).
+out(P_intile, Col, [Cut, Pk]) :-
+    impl_choice([Cut, Pk]),
+    parse.panel($U(), Cut, _, _, P_intile),      // the output frame — one panel
+    !picked(P_intile, _, [Cut, Pk]), params.bg(Col).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // A pair of places some output refutes: a shape cell there carries
+    // another color in its example's output.
+    .decl refuted(p_panel: Position, p_shape: Position)
+    refuted(P_panel, P_shape) :-
+        parse.place(E, _, P_intile, Col, P_panel, P_shape),
+        ex_out(E, P_intile, Col2), Col2 != Col.
+
+    .decl pick(p_panel: Position, p_shape: Position)
+    pick(P_panel, P_shape) :-
+        parse.place(E, _, _, _, P_panel, P_shape), ex_out(E, _, _),
+        !refuted(P_panel, P_shape).
+}

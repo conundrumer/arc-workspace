@@ -5,12 +5,14 @@
 // defeated (train 1: the second tile matches no reflection of its pattern).
 //
 // Cases (data-equivalent on this task):
-//   $Step()   — each tile toward params.flow_dir carries its neighbor's params.rot image
-//   $Lookup() — per-tile D4 table applied to the pattern content
+//   $StepCount() — tiles by count; each tile toward params.flow_dir carries its
+//                  neighbor's params.rot image
+//   $StepSize()  — the same walk, over tiles by size
+//   $Lookup()    — per-tile D4 table applied to the pattern content
 
 #include "../lib.dl"
 
-.type Choice = Step {} | Lookup {}
+.type Choice = StepCount {} | StepSize {} | Lookup {}
 
 .comp Params {
     // --- shared ---
@@ -20,13 +22,18 @@
     .decl axis(a: Axis)
     axis(AXIS_H).
 
-    .decl tile_n(n: number)
-    tile_n(3).
-
     .decl gap(g: number)
     gap(1).
 
-    // --- Step ---
+    // --- StepCount, Lookup ---
+    .decl tile_n(n: number)
+    tile_n(3).
+
+    // --- StepSize ---
+    .decl tile_size(k: number)
+    tile_size(3).
+
+    // --- StepCount, StepSize ---
     .decl flow_dir(d: Dir)
     flow_dir(DIR_R).
 
@@ -40,55 +47,71 @@
 
 .init params = Params
 
-// --- parse ---
-
-// The tile arrangement the separators cut.
+// The tile arrangement the separators cut, in both readings of the split.
 .comp Parse<Key> {
     .decl cell(key: Key, p: Position)  // input
 
+    // Tiles counted off the extent.
     .decl tile(key: Key, p_grid: Position, p_tile: Position, p_intile: Position)
     tile(K, P_grid, P_tile, P_intile) :-
         cell(K, P_grid),
         params.axis(A), params.tile_n(N), params.gap(G),                    // arrangement params
         divide_slab(P_grid, A, N, G, P_tile, P_intile).
+
+    // Tiles of a stored size.
+    .decl size_tile(key: Key, p_grid: Position, p_tile: Position, p_intile: Position)
+    size_tile(K, P_grid, P_tile, P_intile) :-
+        cell(K, P_grid),
+        params.axis(A), params.tile_size(Sz), params.gap(G),                // arrangement params
+        divide_by_size_slab(P_grid, A, Sz, G, P_tile, P_intile).
 }
 
 .init parse = Parse<Unit>
 parse.cell($U(), P) :- in(P, _).
 
-.decl tile_cell(p_grid: Position, p_tile: Position, p_intile: Position)
-tile_cell(P_grid, P_tile, P_intile) :- parse.tile($U(), P_grid, P_tile, P_intile).
+.decl impl_choice(ch: Choice)
+impl_choice($StepCount()). impl_choice($StepSize()). impl_choice($Lookup()).
 
-.decl src(p_tile: Position, p_intile: Position, col: Color)
-src(P_tile, P_intile, Col) :-
-    tile_cell(P_grid, P_tile, P_intile), in(P_grid, Col), !params.bg(Col).
+// The cases that read the tile count, and the cases that walk the flow.
+.decl by_count(ch: Choice)
+by_count($StepCount()). by_count($Lookup()).
+
+.decl by_step(ch: Choice)
+by_step($StepCount()). by_step($StepSize()).
+
+.decl tile_cell(p_grid: Position, p_tile: Position, p_intile: Position, c: Choice)
+tile_cell(P_grid, P_tile, P_intile, C) :-
+    by_count(C), parse.tile($U(), P_grid, P_tile, P_intile).
+tile_cell(P_grid, P_tile, P_intile, $StepSize()) :-
+    parse.size_tile($U(), P_grid, P_tile, P_intile).
+
+.decl src(p_tile: Position, p_intile: Position, col: Color, c: Choice)
+src(P_tile, P_intile, Col, C) :-
+    tile_cell(P_grid, P_tile, P_intile, C), in(P_grid, Col), !params.bg(Col).
 
 .decl out(p: Position, col: Color, c: Choice)
 
 // Separator passthrough — cells the divide leaves undecomposed.
-out(P, Col, $Step())   :- in(P, Col), !tile_cell(P, _, _).
-out(P, Col, $Lookup()) :- in(P, Col), !tile_cell(P, _, _).
+out(P, Col, C) :- in(P, Col), impl_choice(C), !tile_cell(P, _, _, C).
 
-// --- Step ---
+// --- StepCount, StepSize ---
 // The pattern seeds its own tile; each neighbor toward flow_dir carries
 // the rotated image.
-.decl content(p_tile: Position, p_intile: Position, col: Color)
-content(T, P, Col) :- src(T, P, Col).
-content(T2, P2, Col) :-
-    content(T1, P1, Col),                        // known tile
+.decl content(p_tile: Position, p_intile: Position, col: Color, c: Choice)
+content(T, P, Col, C) :- by_step(C), src(T, P, Col, C).
+content(T2, P2, Col, C) :-
+    content(T1, P1, Col, C),                          // known tile
     params.flow_dir(D), neighbor(T1, D, T2),
-    tile_cell(_, T2, _),                              // stays in the arrangement
+    tile_cell(_, T2, _, C),                           // stays in the arrangement
     params.rot(R), apply(R, P1, P2).                  // rotated image
 
-out(P_grid, Col, $Step()) :- content(T, P_intile, Col), tile_cell(P_grid, T, P_intile).
+out(P_grid, Col, C) :- content(T, P_intile, Col, C), tile_cell(P_grid, T, P_intile, C).
 
 // --- Lookup ---
 out(P_grid, Col, $Lookup()) :-
-    src(_, P_src, Col),                                       // pattern cell
+    src(_, P_src, Col, $Lookup()),                            // pattern cell
     params.tile_d4(P_tile, D), apply(D, P_src, P_intile),     // d4 image at tile
-    tile_cell(P_grid, P_tile, P_intile).                      // recompose
-
-// --- determination ---
+    tile_cell(P_grid, P_tile, P_intile, $Lookup()).           // recompose
 
 .comp Determine {
     .init in_parse = Parse<Example>
@@ -134,4 +157,9 @@ out(P_grid, Col, $Lookup()) :-
 
     .decl rot(d: D4)
     rot(R) :- out_cell(_, _, _, _), d4_elem(R), !step_broken(R).
+
+    // The tile's extent along the split axis.
+    .decl tile_size(k: number)
+    tile_size(Sz) :-
+        in_parse.tile(_, _, _, P_intile), params.axis(A), axis_dim(P_intile, A, Sz).
 }

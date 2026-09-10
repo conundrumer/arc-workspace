@@ -1,0 +1,84 @@
+// 50aad11f
+// draft
+// concept: objects markers crop tile-arrangement rank
+// Shapes in one color lie on a blank grid, each with a marker cell of its
+// own color beside it. The shapes separate along one axis; the output lays
+// their bounding-box crops out along that axis in their order, each crop
+// painted in its marker's color.
+//
+//   $Aligned() — a shape takes the color of the marker on its band: the
+//                marker shares a line across the layout axis with it.
+//   $Ranked()  — a shape takes the color of the marker at its own place in
+//                the marker order along the layout axis.
+//
+// Every pair puts each marker on its own shape's band, which hides which
+// parse pairs them.
+
+#include "../lib.dl"
+
+.type Choice = Aligned {} | Ranked {}
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    .decl shape(col: Color) shape(6).
+}
+
+.init params = Params
+
+.init shapes = Components<Unit>
+shapes.node($U(), P) :- in(P, Col), params.shape(Col).
+
+.decl shape_cell(id: Ident, p: Position)
+shape_cell(Id, P) :- shapes.label($U(), P, Id).
+
+.decl mark(p: Position, col: Color)
+mark(P, Col) :- in(P, Col), !params.bg(Col), !params.shape(Col).
+
+// Two shapes meet on one line of axis A.
+.decl shared_line(a: Axis)
+shared_line(A) :-
+    axis_elem(A),
+    shape_cell(Id1, P1), shape_cell(Id2, P2), Id1 != Id2,
+    same_line(A, P1, P2).
+
+// The shapes separate along the layout axis: none of them share a line
+// across it.
+.decl layout_axis(a: Axis)
+layout_axis(A) :- perp(A, A_across), !shared_line(A_across).
+
+.init order = OrderFrame<Unit, Ident>
+order.axis($U(), A) :- layout_axis(A).
+order.member($U(), Id, P_along) :-
+    shape_cell(Id, P), layout_axis(A), split(P, A, P_along, _).
+
+.init box = BoxFrame<Ident>
+box.cell(Id, P) :- shape_cell(Id, P).
+box.grid(Id, P) :- in(P, _), shape_cell(Id, _).
+
+.decl shape_color(id: Ident, col: Color, ch: Choice)
+
+// --- $Aligned ---
+shape_color(Id, Col, $Aligned()) :-
+    mark(P_mark, Col), shape_cell(Id, P),
+    layout_axis(A), perp(A, A_across),
+    same_line(A_across, P_mark, P).
+
+// --- $Ranked ---
+.init mark_order = OrderFrame<Unit, Position>
+mark_order.axis($U(), A) :- layout_axis(A).
+mark_order.member($U(), P, P_along) :-
+    mark(P, _), layout_axis(A), split(P, A, P_along, _).
+
+shape_color(Id, Col, $Ranked()) :-
+    order.pos($U(), Id, P_place),
+    mark_order.pos($U(), P_mark, P_place), mark(P_mark, Col).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_grid, Col, Ch) :-
+    box.inner(Id, P, P_intile),                 // box cell in the crop frame
+    order.pos($U(), Id, P_tile),                // the shape's place in the layout
+    layout_axis(A), concat_slab(P_tile, P_intile, A, 0, P_grid),
+    shape_color(Id, Col_shape, Ch),
+    ( shape_cell(Id, P), Col = Col_shape        // the shape itself
+    ; !shape_cell(Id, P), params.bg(Col)        // the rest of the box
+    ).

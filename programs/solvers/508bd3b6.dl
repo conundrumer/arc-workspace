@@ -1,0 +1,86 @@
+// 508bd3b6
+// draft
+// concept: markers walk
+
+// A diagonal run of marks aims a beam. The beam runs along that diagonal
+// in both directions and paints the empty cells it crosses. It ends at the
+// grid edge or on a colored cell. A wall turns it: when a wall sits beside
+// the beam toward one component of its heading, that component inverts.
+// The cases differ on which walls turn a beam:
+//
+//   $Surface() — any wall cell.
+//   $Side()    — only a wall covering a whole side of the grid.
+
+#include "../lib.dl"
+
+.type Choice = Surface {} | Side {}
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    .decl mark(col: Color) mark(8).
+    .decl wall(col: Color) wall(2).
+    .decl paint(col: Color) paint(3).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Surface()). impl_choice($Side()).
+
+.decl mark_cell(p: Position)
+mark_cell(P) :- in(P, Col), params.mark(Col).
+
+// The beam's diagonal: two marks adjoin along it.
+.decl aim(d: DiagDir)
+aim(D) :- mark_cell(P), diag_dir_elem(D), neighbor(P, D, Q), mark_cell(Q).
+
+// The wall beside p toward d.
+.decl side_wall(p: Position, d: Dir)
+side_wall(P, D) :-
+    in(P, _), dir_elem(D), neighbor(P, D, Q), in(Q, Col), params.wall(Col).
+
+// The beam's component toward d turns back at p.
+.decl deflect(p: Position, d: Dir, ch: Choice)
+
+// --- $Surface ---
+
+deflect(P, D, $Surface()) :- side_wall(P, D).
+
+// --- $Side ---
+
+// An edge with a cell the wall leaves open.
+.decl open_edge(d: Dir)
+open_edge(D) :- dir_elem(D), in(P, Col), dist(P, D, 0), !params.wall(Col).
+
+// The wall covers the whole side toward d.
+deflect(P, D, $Side()) :- side_wall(P, D), !open_edge(D).
+
+// --- beam ---
+
+// One outgoing component of a beam heading d at p, inverted where it turns.
+.decl leave_dir(p: Position, d: DiagDir, d_out: Dir, ch: Choice)
+leave_dir(P, D, D_out, Ch) :-
+    in(P, _), impl_choice(Ch), diag_dirs(D, _, D_cmp, _),   // a component of d
+    ( deflect(P, D_cmp, Ch), opposite(D_cmp, D_out)         // turned back
+    ; !deflect(P, D_cmp, Ch), D_out = D_cmp                 // free
+    ).
+
+// The heading the beam leaves p with, its two components recombined.
+.decl bounce(p: Position, d: DiagDir, d_out: DiagDir, ch: Choice)
+bounce(P, D, D_out, Ch) :-
+    leave_dir(P, D, D1, Ch), leave_dir(P, D, D2, Ch),       // the two components
+    diag_dirs(D_out, _, D1, D2).                            // one on each axis
+
+// The beam reaches p heading d.
+.decl beam(p: Position, d: DiagDir, ch: Choice)
+beam(P, D, Ch) :- mark_cell(P), aim(D), impl_choice(Ch).
+beam(Q, D_out, Ch) :-
+    beam(P, D, Ch), bounce(P, D, D_out, Ch),             // the heading it leaves p with
+    neighbor(P, D_out, Q), in(Q, Bg), params.bg(Bg).     // the open cell ahead
+
+.decl painted(p: Position, ch: Choice)
+painted(P, Ch) :- beam(P, _, Ch), in(P, Bg), params.bg(Bg).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- painted(P, Ch), params.paint(Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !painted(P, Ch).

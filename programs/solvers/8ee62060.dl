@@ -32,8 +32,6 @@ out(P_out, Col, $Blocks(D)) :-
     apply(D, P_block_in, P_block_out),                            // d4 on block-grid
     concat_2d(P_block_out, P_local, 0, P_out).                    // recompose
 
-// --- determination ---
-
 .comp Determine {
     .type BlockK = [e: Example, p_local: Position]
 

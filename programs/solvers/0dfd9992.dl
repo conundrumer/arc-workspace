@@ -118,8 +118,6 @@
         grid(Key, P), jump(P, D, K, Q), grid(Key, Q).
 }
 
-// --- parse ---
-
 .comp Parse<Key> {
     .decl in_cell(key: Key, p: Position, col: Color)  // input
     .decl kind(d: D4)                                 // input
@@ -150,8 +148,6 @@ parse.kind(D) :- params.point_group(S), sym_member(S, D).
 .decl out(p: Position, col: Color)
 out(P, Col) :- parse.intact($U(), P, Col).
 out(Q, Col) :- out(P, Col), parse.step($U(), P, Q).
-
-// --- determination ---
 
 .comp Determine {
     // Detection per example, over every kind.

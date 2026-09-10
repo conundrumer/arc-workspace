@@ -32,10 +32,10 @@
         .decl shape(id: Ident, p: Position)
         GRID_MASK_2x2(shape, 0,
             1, 1,
-            1, 0)
+            1, _)
         GRID_MASK_2x3(shape, 1,
-            0, 1, 0,
-            1, 0, 1)
+            _, 1, _,
+            1, _, 1)
         .decl apex(id: Ident, p: Position)
         apex(0, [0, 1, 0, 1]). apex(1, [0, 1, 1, 1]).
         .decl aim(id: Ident, d: Dir8)
@@ -126,8 +126,6 @@ paint(P, Col, Ch) :-
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !paint(P, _, Ch).
-
-// --- determination ---
 
 // The chart is read off the marks whose shot repainted a background cell:
 // tracing the shot back gives the apex and the aim, and the mark's own cells

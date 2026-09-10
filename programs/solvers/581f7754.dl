@@ -1,0 +1,62 @@
+// 581f7754
+// draft
+// concept: objects markers move
+// The commonest color is the background, and the objects are the connected
+// runs of the rest. A one-cell object on the grid's edge is an anchor: it
+// fixes the line that runs from it across the grid, perpendicular to that
+// edge. Every object holds exactly one cell of an anchor's color, and the
+// object translates so that this marker cell lands on its anchor's line,
+// keeping the marker's distance to that edge. Cells carried off the grid are
+// dropped. An anchor's own cell is its marker, so an anchor stays put.
+
+#include "../lib.dl"
+
+.comp Params {}
+
+.init params = Params
+
+.init bg_mode = Mode<Unit, Color, Position>
+bg_mode.item($U(), Col, P) :- in(P, Col).
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !bg_mode.mode($U(), Col).
+
+.init objs = Components<Unit>
+objs.node($U(), P) :- ink(P, _).
+
+.decl obj_cell(id: Ident, p: Position, col: Color)
+obj_cell(Id, P, Col) :- objs.label($U(), P, Id), ink(P, Col).
+
+// The object's sole cell.
+.init lone = Unanimous<Ident, Position>
+lone.item(Id, P) :- obj_cell(Id, P, _).
+
+// The object's sole cell of a color.
+.type ObjColor = [id: Ident, col: Color]
+.init sole = Unanimous<ObjColor, Position>
+sole.item([Id, Col], P) :- obj_cell(Id, P, Col).
+
+.decl anchor(p: Position, col: Color, d: Dir)
+anchor(P, Col, D) :-
+    lone.value(_, P), ink(P, Col),    // a one-cell object
+    dir_elem(D), dist(P, D, 0).       // on edge D
+
+// The object's translation: its marker lands where the anchor's line crosses
+// the marker's own.
+.decl shift(id: Ident, v: Shift)
+shift(Id, V) :-
+    sole.value([Id, Col], M), anchor(A, Col, D), axis_of(D, Ax),   // marker, anchor, its edge axis
+    split(M, Ax, Along, _), split(A, Ax, _, Across), compose(Along, Across, T),
+    displacement(M, T, V).
+
+.decl moved(p: Position, col: Color)
+moved(Q, Col) :-
+    obj_cell(Id, P, Col),                // object cell
+    shift(Id, V), compose(P, V, Q).      // carried by its object's shift
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, _),
+    ( moved(P, Col)
+    ; !moved(P, _), bg_mode.mode($U(), Col)      // nothing landed here
+    ).

@@ -1,0 +1,73 @@
+// 6a980be1
+// draft
+// concept: lines wallpaper span cast
+// A frame of some color borders the grid. Inside it, two params.line lines
+// run across the scene, and the strip between them holds a pattern that
+// repeats along the lines, in params.pattern on params.bg. The output drops
+// the frame and continues the scene over the whole grid: the lines run edge
+// to edge, the strip repeats its pattern by its shortest period, and each
+// pattern line outside the strip takes the frame's color.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+    .decl line(c: Color) line(3).
+    .decl pattern(c: Color) pattern(2).
+}
+
+.init params = Params
+
+// The axis the lines run along: a line cell has a line neighbor on it.
+.decl line_axis(a: Axis)
+line_axis(A) :-
+    in(P, C), params.line(C), neighbor(P, D, Q), in(Q, C), axis_of(D, A).
+
+// The frame's color: the color on the grid edge.
+.decl frame_color(c: Color)
+frame_color(C) :- in(P, C), dir_elem(D), dist(P, D, 0).
+
+// The lines, continued edge to edge.
+.decl line_cell(p: Position)
+line_cell(P) :-
+    in(P, _), in(Q, C), params.line(C), line_axis(A), same_line(A, P, Q).
+
+// The strip: between the lines, across them.
+.init strip_span = Between<Unit>
+strip_span.axis($U(), A2) :- line_axis(A), perp(A, A2).
+strip_span.cell($U(), P) :- in(P, _).
+strip_span.mark($U(), P) :- line_cell(P).
+
+// The strip's content inside the frame.
+.decl strip_in(p: Position, c: Color)
+strip_in(P, C) :-
+    strip_span.between($U(), P), !line_cell(P),   // in the strip
+    gt(P, ORIGIN), in(P, C).                      // inside the frame
+
+// The shortest shift along the lines under which the strip agrees with itself.
+.init strip_shift = ShiftInvariance<Unit, Color>
+strip_shift.cell($U(), P, C) :- strip_in(P, C).
+
+// The strip continued over the whole grid: each cell repeats the one a period
+// back.
+.decl strip_out(p: Position, c: Color)
+strip_out(P, C) :- strip_in(P, C).
+strip_out(P2, C) :-
+    strip_out(P, C),
+    line_axis(A), strip_shift.min_period($U(), A, K),   // the period
+    axis_of(D, A), jump(P, D, K, P2), in(P2, _).
+
+// On a pattern cell's line across the strip.
+.decl on_pattern_line(p: Position)
+on_pattern_line(P) :-
+    in(P, _), strip_out(Q, C), params.pattern(C),
+    strip_span.axis($U(), A2), same_line(A2, P, Q).
+
+.decl out(p: Position, col: Color)
+out(P, C) :- line_cell(P), params.line(C).
+out(P, C) :- strip_out(P, C).
+out(P, C) :-
+    in(P, _), !strip_span.between($U(), P),        // outside the strip
+    ( on_pattern_line(P), frame_color(C)          // a pattern line
+    ; !on_pattern_line(P), params.bg(C)           // a bg line
+    ).

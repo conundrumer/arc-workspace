@@ -1,0 +1,79 @@
+// 4e469f39
+// draft
+// concept: objects border cast
+// Each object is a rectangular outline with a gap: one cell missing from a
+// wall. The outline's inside fills with params.fill, and that fill escapes
+// through the gap — one step out of the wall, then a ray to the grid edge,
+// running toward the wall's longer arm.
+//
+// Two models of the gapped wall:
+//   $Dir  — params.open_dir names it.
+//   $Hole — the wall whose line holds a bg cell.
+// The pairs do not separate those two: every gap sits on a top wall.
+
+#include "../lib.dl"
+
+.type Choice = Dir {} | Hole {}
+
+// An object's spill, under one model.
+.type SpillKey = [o: Ident, ch: Choice]
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    .decl fill(col: Color) fill(2).
+
+    // --- $Dir ---
+    .decl open_dir(d: Dir) open_dir(DIR_T).
+}
+
+.init params = Params
+
+// Ink objects, each viewed from its own bounding box.
+.init objs = Components<Unit>
+objs.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+.init box = BoxFrame<Ident>
+box.cell(O, P) :- objs.label($U(), P, O).
+box.grid(O, P) :- box.cell(O, _), in(P, _).
+
+// The gap: a bg cell on the object's D wall.
+.decl gap(o: Ident, d: Dir, p: Position, ch: Choice)
+
+// --- $Dir ---
+gap(O, D, P, $Dir()) :-
+    box.inner(O, P, P_inner),                   // a cell of the box
+    params.open_dir(D), dist(P_inner, D, 0),    // on the params.open_dir wall
+    in(P, Col), params.bg(Col).                 // and empty
+
+// --- $Hole ---
+gap(O, D, P, $Hole()) :-
+    box.inner(O, P, P_inner),              // a cell of the box
+    dir_elem(D), dist(P_inner, D, 0),      // on some wall
+    in(P, Col), params.bg(Col).            // and empty
+
+// --- shared ---
+
+// The wall's longer arm: the side of the box the gap is farther from.
+.decl arm_dir(o: Ident, d: Dir, ch: Choice)
+arm_dir(O, D_arm, Ch) :-
+    gap(O, D, P, Ch), box.inner(O, P, P_inner),    // the gap in the box frame
+    perp_dir(D, D_arm),                            // a direction along the wall
+    dist_pair(P_inner, D_arm, K, K2), K > K2.      // the longer arm
+
+// The fill leaves through the gap and runs along the outside of the wall.
+.init spill = Ray<SpillKey>
+spill.dir([O, Ch], D) :- arm_dir(O, D, Ch).
+spill.cell([O, Ch], P) :- arm_dir(O, _, Ch), in(P, _).
+spill.mark([O, Ch], P_out) :- gap(O, D, P, Ch), neighbor(P, D, P_out).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Dir()). impl_choice($Hole()).
+
+// One body of fill: the box's inside, and what has run out of it.
+.decl paint(p: Position, ch: Choice)
+paint(P, Ch) :- impl_choice(Ch), box.inside(_, P), in(P, Col), params.bg(Col).
+paint(P, Ch) :- spill.ray([_, Ch], P, _, _, _).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- paint(P, Ch), params.fill(Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !paint(P, Ch).

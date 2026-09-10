@@ -1,0 +1,50 @@
+// 3194b014
+// draft
+// concept: objects count
+// Shapes of solid color sit on a field of bg and scattered noise. The output
+// is a 3×3 swatch of the biggest shape's color. Choice = what "biggest"
+// measures:
+//
+//   $Cells() — the cells the shape occupies.
+//   $Span()  — the cells its bounding box covers.
+
+#include "../lib.dl"
+
+.type Choice = Cells {} | Span {}
+.type Comp = [col: Color, id: Ident]
+
+.comp Params {
+    .init helpers = ParamsHelpers
+
+    .decl bg(col: Color) bg(0).
+
+    .decl out_dim(n: number) out_dim(3).
+    .decl out_pos(p: Position)
+    out_pos(P) :- out_dim(N), helpers.frame_pos([N, N], P).
+}
+
+.init params = Params
+
+// Noise makes runs of its own, but only small ones.
+.init comps = Components<Color>
+comps.node(Col, P) :- in(P, Col), !params.bg(Col).
+
+.decl comp_cell(comp: Comp, p: Position)
+comp_cell([Col, Id], P) :- comps.label(Col, P, Id).
+
+.init biggest = Mode<Choice, Comp, Position>
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- biggest.mode(Ch, [Col, _]), params.out_pos(P).
+
+// --- $Cells ---
+
+biggest.item($Cells(), K, P) :- comp_cell(K, P).
+
+// --- $Span ---
+
+.init box = Bbox<Comp>
+box.cell(K, P) :- comp_cell(K, P).
+box.grid(K, P) :- box.cell(K, _), in(P, _).
+
+biggest.item($Span(), K, P) :- box.inside(K, P).

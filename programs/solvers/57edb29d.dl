@@ -1,0 +1,66 @@
+// 57edb29d
+// draft
+// concept: objects crop scale induce
+// shape: percept-shadow
+// Solid colored rectangles sit on the background. Each carries the same
+// design of marks, inset from its own edges, and the rectangles differ in
+// size. One rectangle carries no mark. The output is that rectangle with
+// the design on it.
+//
+// A mark holds its distance to the nearer edge on each axis, so the design
+// keeps its corners and its middle stretches. A rectangle too narrow to
+// separate two corners shows them merged, so the design is the union of
+// what the rectangles carry.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(4).
+}
+
+.init params = Params
+
+// --- panels ---
+
+.init panel = Components<Unit>
+panel.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+// Each panel viewed from its own box.
+.init box = BoxFrame<Ident>
+box.cell(Id, P) :- panel.label($U(), P, Id).
+
+// The field color, read on the border, where no mark sits.
+.decl field(id: Ident, col: Color)
+field(Id, Col) :- box.edge_cell(Id, P, _), in(P, Col).
+
+// A mark: a panel cell off the field color, placed in the panel's frame.
+.decl mark(id: Ident, p_intile: Position, col: Color)
+mark(Id, P_intile, Col) :- box.inner(Id, P, P_intile), in(P, Col), !field(Id, Col).
+
+// The cells of the panel that carries no mark — the one the design goes on.
+.decl target_cell(id: Ident, p_intile: Position)
+target_cell(Id, P_intile) :- box.inner(Id, _, P_intile), !mark(Id, _, _).
+
+// A mark's anchor on one axis: its distance to the nearer edge of its
+// panel. A centered mark anchors to both.
+.decl anchor(p_intile: Position, d: Dir, k: number)
+anchor(P_intile, D, K) :- mark(_, P_intile, _), dist_pair(P_intile, D, K, K2), K <= K2.
+
+// A target cell that repeats a mark's anchor on one axis.
+.decl anchored(p_intile: Position, m_intile: Position, a: Axis)
+anchored(P_intile, M_intile, A) :-
+    target_cell(_, P_intile),
+    anchor(M_intile, D, K), axis_of(D, A), dist(P_intile, D, K).
+
+// The design on the target: a mark anchored on both axes at once.
+.decl design(p_intile: Position, col: Color)
+design(P_intile, Col) :-
+    mark(_, M_intile, Col), perp(A, A2),
+    anchored(P_intile, M_intile, A), anchored(P_intile, M_intile, A2).
+
+.decl out(p: Position, col: Color)
+out(P_intile, Col) :-
+    target_cell(Id, P_intile),
+    ( design(P_intile, Col)                  // design cell
+    ; !design(P_intile, _), field(Id, Col)   // field elsewhere
+    ).

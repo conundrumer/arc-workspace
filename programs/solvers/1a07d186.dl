@@ -1,0 +1,47 @@
+// 1a07d186
+// draft
+// concept: lines move
+// A line is one whole row or column of one non-bg color, and loose colored
+// cells sit off the lines. Lines stay put. Each loose cell moves to the line
+// of its own color and stops against it, keeping its place along the line. A
+// loose cell whose color has no line is cleared.
+
+#include "../lib.dl"
+
+.type Line = [a: Axis, l: Position]
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+}
+
+.init params = Params
+
+.decl cell_line(p: Position, a: Axis, l: Position)
+cell_line(P, A, L) :- in(P, _), axis_elem(A), split(P, A, L, _).
+
+.init line_color = Unanimous<Line, Color>
+line_color.item([A, L], Col) :- cell_line(P, A, L), in(P, Col).
+
+.decl line(a: Axis, l: Position, col: Color)
+line(A, L, Col) :- line_color.value([A, L], Col), !params.bg(Col).
+
+.decl line_cell(p: Position, col: Color)
+line_cell(P, Col) :- line(A, L, Col), cell_line(P, A, L).
+
+.decl loose(p: Position, col: Color)
+loose(P, Col) :- in(P, Col), !params.bg(Col), !line_cell(P, _).
+
+// A loose cell arrives against its color's line, on the side it came from.
+.decl arrive(p: Position, col: Color)
+arrive(P_grid_out, Col) :-
+    loose(P_grid_in, Col), line(A, L, Col),                      // loose cell, its color's line
+    split(P_grid_in, A, L_in, Across),                           // the parallel line it sits on, its across
+    axis_of(D, A), nearer(D, L_in, L),                           // it lies toward D from the line
+    compose(L, Across, P_foot), neighbor(P_foot, D, P_grid_out). // beside the line cell it aims at
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, _),
+    ( line_cell(P, Col)                                      // the line itself
+    ; arrive(P, Col)                                         // a loose cell arrived here
+    ; !line_cell(P, _), !arrive(P, _), params.bg(Col) ).     // cleared

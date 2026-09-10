@@ -1,0 +1,86 @@
+// 22806e14
+// draft
+// concept: objects markers count
+// Same-color objects sit on a background: solid rectangles, and one marker
+// that leaves a hole in its own box. Each rectangle with a center cell takes
+// the marker's color there. The marker itself survives when it places enough
+// marks:
+//   $MarkerSize — at least as many marks as the marker has cells.
+//   $Majority   — more rectangles marked than unmarked.
+
+#include "../lib.dl"
+
+.type Choice = MarkerSize {} | Majority {}
+
+.comp Params {
+    .decl bg(col: Color) bg(7).
+}
+
+.init params = Params
+
+// --- objects ---
+
+.init comps = Components<Color>
+comps.node(Col, P) :- in(P, Col), !params.bg(Col).
+
+// Ids come from member cells, so they stay distinct across the color keys.
+.decl cell(id: Ident, p: Position)
+cell(Id, P) :- comps.label(_, P, Id).
+
+.init box = BoxFrame<Ident>
+box.cell(Id, P) :- cell(Id, P).
+box.grid(Id, P) :- cell(Id, _), in(P, _).
+
+// The marker is the one object that leaves a hole in its own box.
+.decl marker(id: Ident)
+marker(Id) :- box.inside(Id, P), !cell(Id, P).
+
+.decl marker_cell(p: Position)
+marker_cell(P) :- marker(Id), cell(Id, P).
+
+// Every other object is a solid rectangle.
+.decl rect(id: Ident)
+rect(Id) :- cell(Id, _), !marker(Id).
+
+// --- marks ---
+
+// A rectangle even on either axis has no center and takes no mark.
+.decl center(id: Ident, p: Position)
+center(Id, P) :- rect(Id), box.inner(Id, P, P_in), centered(P_in).
+
+.decl mark(p: Position)
+mark(P) :- center(_, P).
+
+.decl erase(ch: Choice)
+
+// --- $MarkerSize ---
+
+.init size_cmp = Excess<Unit, Position>
+size_cmp.plus($U(), P)  :- marker_cell(P).
+size_cmp.minus($U(), P) :- mark(P).
+
+erase($MarkerSize()) :- size_cmp.excess($U(), _).
+
+// --- $Majority ---
+
+.init rect_cmp = Excess<Unit, Ident>
+rect_cmp.plus($U(), Id)  :- center(Id, _).
+rect_cmp.minus($U(), Id) :- rect(Id), !center(Id, _).
+
+erase($Majority()) :- !rect_cmp.excess($U(), _).
+
+// --- output ---
+
+.decl gone(p: Position, ch: Choice)
+gone(P, Ch) :- erase(Ch), marker_cell(P).
+
+.decl impl_choice(ch: Choice)
+impl_choice($MarkerSize()).
+impl_choice($Majority()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    mark(P), impl_choice(Ch),     // a marked center
+    marker_cell(Q), in(Q, Col).   // takes the marker's color
+out(P, Col, Ch) :- gone(P, Ch), params.bg(Col).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !mark(P), !gone(P, Ch).

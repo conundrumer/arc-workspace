@@ -1,0 +1,59 @@
+// 45a5af55
+// draft
+// concept: lines grow rank
+// The input is a stack of one-color lines. The output is a square of nested
+// rings: the line at distance K from the outer edge paints the ring at depth K.
+// The side spans the stack and its mirror image about the innermost stripe —
+// the run of lines at the inner edge sharing its color.
+
+#include "../lib.dl"
+
+.comp Params {
+    // The input edge the innermost stripe sits on.
+    .decl inner_dir(d: Dir) inner_dir(DIR_B).
+}
+
+.init params = Params
+
+// --- the stack of lines ---
+
+.decl line_col(p_line: Position, col: Color)
+line_col(P_line, Col) :-
+    in(P, Col),
+    params.inner_dir(D_in), axis_of(D_in, A), split(P, A, P_line, _).  // the line it lies on
+
+.decl inner_col(col: Color)
+inner_col(Col) :- line_col(P_line, Col), params.inner_dir(D_in), dist(P_line, D_in, 0).
+
+// The innermost stripe: the run of inner-colored lines reaching the inner edge.
+.init core = Reach<Unit>
+core.node($U(), P_line) :- line_col(P_line, Col), inner_col(Col).
+core.seed($U(), P_line) :- line_col(P_line, _), params.inner_dir(D_in), dist(P_line, D_in, 0).
+
+// Every other line paints one ring.
+.init ring_tally = Tally<Unit, Position>
+ring_tally.item($U(), P_line) :- line_col(P_line, _), !core.reach($U(), P_line).
+ring_tally.domain($U()).
+
+// --- the output frame ---
+
+.decl side(n: number)
+side(N) :-
+    in(P, _), params.inner_dir(D_in), axis_of(D_in, A),    // the input frame
+    ring_tally.tally($U(), M), edge_delta(D_in, M, Ins),   // one cell per ring
+    compose(P, Ins, P_wide), axis_dim(P_wide, A, N).       // grown past that edge
+
+.init frame = Frame2D<Unit>
+frame.extent($U(), A, N) :- axis_elem(A), side(N).
+
+// --- the rings ---
+
+// The frame peels into rings, one per depth.
+.init peel = Rim<Unit>
+peel.cell($U(), P) :- frame.cell($U(), P).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    peel.depth($U(), P, K),                                // the cell's ring
+    params.inner_dir(D_in), opposite(D_in, D_out),
+    line_col(P_line, Col), dist(P_line, D_out, K).         // the line at that depth

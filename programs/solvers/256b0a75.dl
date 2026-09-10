@@ -1,0 +1,76 @@
+// 256b0a75
+// draft
+// concept: markers cast border
+// Four corner brackets mark a box: three drawn in params.frame, the fourth in
+// another color, which is the box's fill. The box is redrawn solid — outline
+// in params.frame, interior in the fill — and each side sweeps outward to the grid
+// edge, so the four arms take the fill color too. Single cells of other colors
+// litter the grid; one lying in an arm colors that line from itself outward,
+// so an arm cell shows the nearest such cell between it and the box. Cells
+// outside the box and its arms pass through.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    .decl frame(col: Color) frame(8).
+}
+
+.init params = Params
+
+// --- the box ---
+
+.init box = Bbox<Unit>
+box.cell($U(), P) :- in(P, Col), params.frame(Col).
+box.grid($U(), P) :- in(P, _).
+
+.init bcells = BoxCells<Unit>
+bcells.box($U(), B) :- box.margin($U(), B).
+bcells.cell($U(), P) :- in(P, _).
+
+// The odd bracket names the fill.
+.decl fill(col: Color)
+fill(Col) :- bcells.on_edge($U(), P, _), in(P, Col), !params.bg(Col), !params.frame(Col).
+
+// --- the arms ---
+
+.init sweep = Ray<Unit>
+sweep.dir($U(), D) :- dir_elem(D).
+sweep.cell($U(), P) :- in(P, _).
+sweep.mark($U(), P) :- bcells.on_edge($U(), P, _).
+
+// The arm the box's d side sweeps out: beyond that side, in line with it.
+.decl arm(p: Position, d: Dir)
+arm(P, D) :-
+    bcells.on_edge($U(), Src, D), sweep.ray($U(), P, D, K, Src), K != 0.
+
+// A litter cell lying in the arm toward d.
+.decl mark(p: Position, col: Color, d: Dir)
+mark(P, Col, D) :- arm(P, D), in(P, Col), !params.bg(Col).
+
+// --- painting ---
+
+// Each mark colors its arm outward from itself, as far as the next mark.
+.init cast = Ray<Dir>
+cast.dir(D, D) :- dir_elem(D).
+cast.cell(D, P) :- arm(P, D).
+cast.mark(D, P) :- mark(P, _, D).
+cast.blocked(D, P) :- mark(P, _, D).
+
+.decl painted(p: Position, col: Color)
+painted(P, Col) :- cast.clear(D, P, _, _, Src), mark(Src, Col, D).
+
+// --- output ---
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    box.inside($U(), P),
+    ( bcells.on_edge($U(), P, _), params.frame(Col)  // the outline, redrawn whole
+    ; bcells.hole($U(), P), fill(Col)                // the interior, filled
+    ).
+out(P, Col) :-
+    arm(P, _),
+    ( painted(P, Col)                 // the nearest mark inward
+    ; !painted(P, _), fill(Col)       // no mark inward
+    ).
+out(P, Col) :- in(P, Col), !box.inside($U(), P), !arm(P, _).

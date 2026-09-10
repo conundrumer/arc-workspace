@@ -31,8 +31,6 @@
 
 .init params = Params
 
-// --- parse ---
-
 .comp Parse<Key> {
     .type KI = [key: Key, id: Ident]
 
@@ -154,8 +152,6 @@ out(P_grid, Col, Ch) :-
     ; !placed(Id, P_slab, _), params.bg(Col)    // the margin beside it
     ),
     stack_axis(A), concat_slab(P_tile, P_slab, A, 0, P_grid).
-
-// --- determination ---
 
 .comp Determine {
     .type KID = [e: Example, id: Ident, d: D4]

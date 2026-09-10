@@ -1,0 +1,39 @@
+// 64a7c07e
+// draft
+// concept: objects move
+// Blobs of ink sit on the background. Each blob slides one blob-length
+// toward params.move_dir, so it lands flush beside where it stood, and the
+// cells it leaves go back to background.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+
+    .decl move_dir(d: Dir) move_dir(DIR_R).
+}
+
+.init params = Params
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.bg(Col).
+
+// A blob holds together through diagonal contact.
+.init blob = Components8<Unit>
+blob.node($U(), P) :- ink(P, _).
+
+.init box = Bbox<Ident>
+box.cell(Id, P) :- blob.label($U(), P, Id).
+
+.decl landed(p: Position, col: Color)
+landed(Q, Col) :-
+    blob.label($U(), P, Id), ink(P, Col),        // a blob cell
+    params.move_dir(D), axis_of(D, A),           // the travel axis
+    box.extent(Id, A, N), jump(P, D, N, Q).      // one blob-length onward
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, _),
+    ( landed(P, Col)                    // a blob cell landed here
+    ; !landed(P, _), params.bg(Col)     // everywhere else
+    ).

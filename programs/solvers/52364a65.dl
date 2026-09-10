@@ -1,0 +1,63 @@
+// 52364a65
+// draft
+// concept: objects select rank
+// Each non-bg color is one object. Every object loses the params.depth layers
+// nearest the params.peel_dir edge of its own bounding box. The rest stays put,
+// and the vacated cells become params.bg.
+//
+// The cases differ in what a layer is:
+//   $Strip    — one cell of the box, counted from that edge.
+//   $Occupied — one line the object occupies, counted from that edge.
+
+#include "../lib.dl"
+
+.type Choice = Strip {} | Occupied {}
+
+.comp Params {
+    .decl bg(col: Color) bg(8).
+    .decl peel_dir(d: Dir) peel_dir(DIR_L).
+    .decl depth(n: number) depth(2).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Strip()). impl_choice($Occupied()).
+
+.decl obj_cell(col: Color, p: Position)
+obj_cell(Col, P) :- in(P, Col), !params.bg(Col).
+
+// Each object viewed from its own bounding box.
+.init box = BoxFrame<Color>
+box.cell(Col, P) :- obj_cell(Col, P).
+
+// The cell's layer, counted in from the object's peel edge.
+.decl layer(ch: Choice, p: Position, k: number)
+
+// --- Strip ---
+
+layer($Strip(), P, K) :- box.inner(_, P, P_inner), params.peel_dir(D), dist(P_inner, D, K).
+
+// --- Occupied ---
+
+// A cell beside its line of the peel axis.
+.decl obj_line(col: Color, p: Position, l: Position)
+obj_line(Col, P, L) :- obj_cell(Col, P), params.peel_dir(D), axis_of(D, A), split(P, A, L, _).
+
+// The lines the object occupies, ordered along that axis.
+.init order = OrderFrame<Color, Position>
+order.axis(Col, A) :- obj_cell(Col, _), params.peel_dir(D), axis_of(D, A).
+order.member(Col, L, L) :- obj_line(Col, _, L).
+
+layer($Occupied(), P, K) :-
+    obj_line(Col, P, L), order.pos(Col, L, P_order),
+    params.peel_dir(D), dist(P_order, D, K).
+
+// --- output ---
+
+.decl peeled(ch: Choice, p: Position)
+peeled(Ch, P) :- layer(Ch, P, K), params.depth(N), K < N.
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !peeled(Ch, P).
+out(P, Col, Ch) :- peeled(Ch, P), params.bg(Col).

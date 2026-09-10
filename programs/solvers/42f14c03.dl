@@ -1,0 +1,95 @@
+// 42f14c03
+// draft
+// concept: objects crop pack count
+// The grid holds several objects. One of them has holes in its box, and the
+// other objects are the pieces that go in those holes. That object is the
+// one whose every hole takes a piece. The output is its box: the object's
+// own cells keep its color, and each hole takes the color of its piece.
+//
+// A piece goes in a hole when:
+//   $Shape — their cell sets are congruent.
+//   $Dims  — their boxes share their extents.
+//   $Size  — they hold as many cells.
+
+#include "../lib.dl"
+
+.type Choice = Shape {} | Dims {} | Size {}
+
+.comp Params {}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Shape()). impl_choice($Dims()). impl_choice($Size()).
+
+// --- the objects ---
+
+.init bg = Mode<Unit, Color, Position>
+bg.item($U(), Col, P) :- in(P, Col).
+
+.init obj = Components<Color>
+obj.node(Col, P) :- in(P, Col), !bg.mode($U(), Col).
+
+.decl obj_cell(o: Ident, col: Color, p: Position)
+obj_cell(O, Col, P) :- obj.label(Col, P, O).
+
+// --- the holes ---
+
+.init box = BoxFrame<Ident>
+box.cell(O, P) :- obj_cell(O, _, P).
+box.grid(O, P) :- obj_cell(O, _, _), in(P, _).
+
+.decl hole(o: Ident, p: Position)
+hole(O, P) :- box.inside(O, P), !obj_cell(O, _, P).
+
+.init holes = Components<Ident>
+holes.node(O, P) :- hole(O, P).
+
+// One hole of one object.
+.type Hole = [o: Ident, id: Ident]
+
+.decl hole_cell(h: Hole, p: Position)
+hole_cell([O, Id], P) :- holes.label(O, P, Id).
+
+.init hole_box = BoxFrame<Hole>
+hole_box.cell(H, P) :- hole_cell(H, P).
+
+// --- the frame ---
+
+// The piece that goes in a hole.
+.decl fits(h: Hole, o: Ident, ch: Choice)
+
+.decl unfillable(o: Ident, ch: Choice)
+unfillable(O, Ch) :- hole_cell([O, Id], _), impl_choice(Ch), !fits([O, Id], _, Ch).
+
+.decl frame(o: Ident, ch: Choice)
+frame(O, Ch) :- hole(O, _), impl_choice(Ch), !unfillable(O, Ch).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_inner, Col, Ch) :-
+    frame(F, Ch), obj_cell(F, Col, P), box.inner(F, P, P_inner).    // the frame's own cells
+out(P_inner, Col, Ch) :-
+    frame(F, Ch), hole_cell([F, Id], P), box.inner(F, P, P_inner),  // a hole of the frame
+    fits([F, Id], O, Ch), obj_cell(O, Col, _).                      // in the color of its piece
+
+// --- Shape ---
+
+.init shape = KeyedSetCompare<Hole, Ident, Position>
+shape.pattern_member(O, S) :- box.inner(O, P, S), obj_cell(O, _, P).
+shape.observed_member(H, S) :- hole_box.inner(H, _, S).
+
+fits(H, O, $Shape()) :- shape.equals(H, O).
+
+// --- Dims ---
+
+fits(H, O, $Dims()) :- hole_box.extents(H, A, N1, N2), box.extents(O, A, N1, N2).
+
+// --- Size ---
+
+.init hole_size = Tally<Hole, Position>
+hole_size.item(H, P) :- hole_cell(H, P).
+
+.init obj_size = Tally<Ident, Position>
+obj_size.item(O, P) :- obj_cell(O, _, P).
+
+fits(H, O, $Size()) :- hole_size.tally(H, N), obj_size.tally(O, N).

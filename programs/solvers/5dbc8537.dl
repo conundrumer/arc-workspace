@@ -1,0 +1,124 @@
+// 5dbc8537
+// draft
+// concept: decompose objects pack
+// Lines of background cut the grid into panels. One panel is a template:
+// one ink color on the background, its background cells the holes. The
+// others hold loose pieces. The pieces translate into the holes and fill
+// them exactly, each hole cell taking the color of the piece over it. The
+// output is the template panel, filled.
+
+#include "../lib.dl"
+
+.comp Params {}
+
+.init params = Params
+
+// --- the panels ---
+
+// The background is the commonest color.
+.init field = Mode<Unit, Color, Position>
+field.item($U(), Col, P) :- in(P, Col).
+
+.decl bg(col: Color)
+bg(Col) :- field.mode($U(), Col).
+
+.decl inked_line(a: Axis, l: Position)
+inked_line(A, L) :- in(P, Col), !bg(Col), axis_elem(A), split(P, A, L, _).
+
+.init panels = DividerFrame<Unit>
+panels.cell($U(), P) :- in(P, _).
+panels.divider($U(), A, L) :-
+    in(P, _), axis_elem(A), split(P, A, L, _),  // a line of the grid
+    !inked_line(A, L).                          // carrying no ink: a cut
+
+.decl panel(p_panel: Position, p: Position, col: Color)
+panel(T, P, Col) :- panels.tile_of($U(), P, T), in(P, Col).
+
+// The template is the panel whose ink is all one color.
+.init panel_ink = Unanimous<Position, Color>
+panel_ink.item(T, Col) :- panel(T, _, Col), !bg(Col).
+
+.decl template(p_panel: Position, col: Color)
+template(T, Col) :- panel_ink.value(T, Col).
+
+.decl hole(p: Position)
+hole(P) :- panel(T, P, Col), template(T, _), bg(Col).
+
+// --- the pieces ---
+
+.init piece = Components<Unit>
+piece.node($U(), P) :- panel(T, P, Col), !template(T, _), !bg(Col).
+
+.decl piece_cell(o: Ident, p: Position, col: Color)
+piece_cell(O, P, Col) :- piece.label($U(), P, O), in(P, Col).
+
+// A piece's pattern, read from its own box.
+.init box = BoxFrame<Ident>
+box.cell(O, P) :- piece_cell(O, P, _).
+
+.decl shape(o: Ident, p_inner: Position, col: Color)
+shape(O, S, Col) :- box.inner(O, P, S), piece_cell(O, P, Col).
+
+// --- the candidate placements ---
+
+// Where a piece lands with each of its cells on a hole.
+.init occ = Occurrences<Ident, Unit>
+occ.shape(O, S, $U()) :- shape(O, S, _).
+occ.cell(O, P, $U()) :- shape(O, _, _), hole(P).
+
+// A candidate: a piece translated to a spot, named by the spot's margins.
+.type Cand = [o: Ident, m: Position]
+
+.decl covers(cd: Cand, p: Position, col: Color)
+covers([O, M], P, Col) :- occ.occurrence(O, M), shape(O, S, Col), compose(M, S, P).
+
+// --- interchangeable pieces ---
+
+// Pieces of one pattern are interchangeable, so which of them takes which
+// spot is free. An order over the positions picks one answer out of that
+// freedom; any order serves, so the program takes every reading order, and
+// out is what they agree on.
+.type Reading = [diag: DiagDir, axis: Axis]
+
+.decl reading_elem(r: Reading)
+reading_elem([D, A]) :- diag_dir_elem(D), axis_elem(A).
+
+.type Member = [p_inner: Position, col: Color]
+
+.init congruent = KeyedSetCompare<Ident, Ident, Member>
+congruent.pattern_member(O, [S, Col]) :- shape(O, S, Col).
+congruent.observed_member(O, [S, Col]) :- shape(O, S, Col).
+
+// The order a reading puts the positions in: where the pieces sit, and
+// where they may go.
+.init reads = LexOrder<Reading>
+reads.cell(R, P) :- reading_elem(R), ( box.margin(_, P) ; occ.occurrence(_, P) ).
+reads.corner([D, A], D) :- reading_elem([D, A]).
+reads.axis([D, A], A) :- reading_elem([D, A]).
+
+// --- the pruning ---
+
+// A candidate stands while the other pieces still find a joint placement
+// beside it. Overlap conflicts under every reading; each reading adds its
+// own tie-break among congruent pieces.
+.init pruning = PlacementPruning<Reading, Cand, Ident>
+pruning.cand(R, [O, M], O) :- reading_elem(R), occ.occurrence(O, M).
+pruning.conflict(R, Cd, Cd2) :-
+    reading_elem(R), covers(Cd, P, _), covers(Cd2, P, _).  // over one cell
+pruning.conflict(R, [O, M], [O2, M2]) :-
+    congruent.equals(O, O2), O != O2,                              // interchangeable pieces
+    box.margin(O, S), box.margin(O2, S2), reads.before(R, S, S2),  // O sits first
+    occ.occurrence(O, M), occ.occurrence(O2, M2),
+    reads.before(R, M2, M).                                        // but takes the later spot
+
+// --- the output ---
+
+.init view = BoxFrame<Unit>
+view.cell($U(), P) :- panel(T, P, _), template(T, _).
+
+.decl out(p: Position, col: Color)
+out(P_out, Col) :-
+    view.inner($U(), P, P_out),
+    ( panel(T, P, Col), template(T, Col)                // the template's own ink
+    ; pruning.alive(_, Cd, _), covers(Cd, P, Col)       // a piece over the hole
+    ).

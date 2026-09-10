@@ -1,0 +1,92 @@
+// 363442ee
+// draft
+// concept: markers decompose stamp
+// A params.divider line cuts the grid into the key panel, on params.key_side, and the
+// canvas beyond it. The panel's non-bg cells are the key. Every params.mark cell on
+// the canvas prints a copy of the key, which covers the mark; the rest of the
+// input stands. Two hypotheses on where a copy lands:
+//
+//   $Center — the key's center cell covers the mark.
+//   $Tile   — the canvas divides into key-sized tiles, and the key fills the
+//             tile the mark sits in.
+
+#include "../lib.dl"
+
+.type Choice = Center {} | Tile {}
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    .decl mark(col: Color) mark(1).
+    .decl divider(col: Color) divider(5).
+    .decl key_side(d: Dir) key_side(DIR_L).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Center()). impl_choice($Tile()).
+
+// The panels the divider cuts, stacked along the key side's axis.
+.init panels = DividerFrame<Unit>
+panels.cell($U(), P) :- in(P, _).
+panels.divider($U(), A, L) :-
+    in(P, Col), params.divider(Col),                       // divider cell
+    params.key_side(D), axis_of(D, A), split(P, A, L, _).  // its line on that axis
+
+// The panel a cell sits in, named by the edge it reaches with no divider
+// in between.
+.decl side_of(p: Position, s: Dir)
+side_of(P, S) :-
+    params.key_side(D), axis_of(D, A), axis_of(S, A),   // the split axis's edges
+    panels.part_idx($U(), P, S, 0).                     // no divider in between
+
+.decl key_ink(p: Position, col: Color)
+key_ink(P, Col) :- params.key_side(D), side_of(P, D), in(P, Col), !params.bg(Col).
+
+// The canvas is the panel across the divider.
+.decl canvas(p: Position)
+canvas(P) :- params.key_side(D), opposite(D, S), side_of(P, S).
+
+.init key = BoxFrame<Unit>
+key.cell($U(), P) :- key_ink(P, _).
+
+// The key's cells in the key's own frame.
+.decl key_cell(p_intile: Position, col: Color)
+key_cell(P_intile, Col) :- key.inner($U(), P, P_intile), key_ink(P, Col).
+
+.decl mark(p: Position)
+mark(P) :- canvas(P), in(P, Col), params.mark(Col).
+
+.decl paint(p: Position, col: Color, ch: Choice)
+
+// --- $Center ---
+
+paint(P_grid, Col, $Center()) :-
+    mark(M), key_cell(Ctr, _), centered(Ctr),      // the mark, and the key's center
+    key_cell(P_intile, Col),                       // a key cell
+    displacement(Ctr, P_intile, V),                // its offset from that center
+    compose(M, V, P_grid).                         // laid off from the mark
+
+// --- $Tile ---
+
+.init cv = BoxFrame<Unit>
+cv.cell($U(), P) :- canvas(P).
+
+// The canvas cut into tiles the size of the key's box.
+.init cvt = Tile2D<Unit>
+cvt.cell(P_canvas) :- cv.inner($U(), _, P_canvas).
+cvt.dim($U(), A, N) :- key.extent($U(), A, N).
+cvt.gap(0).
+
+.decl tile_of(p_grid: Position, p_tile: Position, p_intile: Position)
+tile_of(P_grid, P_tile, P_intile) :-
+    cv.inner($U(), P_grid, P_canvas), cvt.tile($U(), P_canvas, P_tile, P_intile).
+
+paint(P_grid, Col, $Tile()) :-
+    mark(M), tile_of(M, P_tile, _),        // the mark's tile
+    key_cell(P_intile, Col),               // a key cell
+    tile_of(P_grid, P_tile, P_intile).     // at its place in that tile
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- paint(P, Col, Ch).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(P, _, Ch).

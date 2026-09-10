@@ -100,8 +100,6 @@ out(I, Col, [Ic, $Pass()]) :- in(P, Col), !params.ink(Col), frame.inner(Ic, P, I
 
 out(I, Col, [Ic, $Bg()]) :- in(P, C0), !params.ink(C0), frame.inner(Ic, P, I), params.bg(Col).
 
-// --- determination ---
-
 .comp Determine {
     // The line-fenced interior — the boundary both interior hypotheses read.
     .decl off_line(e: Example, a: Axis, l: Position)

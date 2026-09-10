@@ -1,0 +1,58 @@
+// 15663ba9
+// draft
+// concept: objects enclose
+// The ink draws closed curves one cell wide. A cell where the curve turns is
+// repainted by the side the turn opens onto: params.open_paint when the open
+// quadrant lies in the space that reaches the grid edge, params.enclosed_paint when
+// it lies in the space the curve cuts off. Every other cell passes through.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+    .decl open_paint(c: Color) open_paint(4).
+    .decl enclosed_paint(c: Color) enclosed_paint(2).
+}
+
+.init params = Params
+
+.decl ink(p: Position)
+ink(P) :- in(P, Col), !params.bg(Col).
+
+.decl bg_cell(p: Position)
+bg_cell(P) :- in(P, Col), params.bg(Col).
+
+.init outside = Reach<Unit>
+outside.node($U(), P) :- bg_cell(P).
+outside.seed($U(), P) :- bg_cell(P), dir_elem(D), dist(P, D, 0).   // on an edge
+
+.decl enclosed(p: Position)
+enclosed(P) :- bg_cell(P), !outside.reach($U(), P).
+
+.init rim = Rim<Unit>
+rim.cell($U(), P) :- ink(P).
+
+// The curve continues toward D.
+.decl arm(p: Position, d: Dir)
+arm(P, D) :- ink(P), dir_elem(D), !rim.rim_dir($U(), P, D).
+
+// The curve leaves toward the two edges of one corner, so the cell opens onto
+// the opposite quadrant. A straight cell leaves toward opposite edges, which
+// are the edges of no corner.
+.decl bend(p: Position, open: DiagDir)
+bend(P, Open) :-
+    diag_dirs(Arms, _, D1, D2), arm(P, D1), arm(P, D2),   // both edges of a corner
+    diag_opposite(Open, Arms).                            // opens onto the far quadrant
+
+// Some open side is not cut off from the grid edge. Off the grid counts as
+// open.
+.decl faces_open(p: Position)
+faces_open(P) :- bend(P, Open), dir_of(Open, _, D), neighbor(P, D, Q), !enclosed(Q).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    bend(P, _),
+    ( faces_open(P), params.open_paint(Col)
+    ; !faces_open(P), params.enclosed_paint(Col)
+    ).
+out(P, Col) :- in(P, Col), !bend(P, _).

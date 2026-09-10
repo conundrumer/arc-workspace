@@ -1,0 +1,120 @@
+// 2bcee788
+// draft
+// concept: markers d4 rank
+// A one-color shape on bg, with a marker line laid against one of its sides.
+// The output fills the grid with params.ground, keeps the shape, and adds its
+// mirror image across a wall between shape and marker; the marker cells fall
+// under the image. Choice = [l, w] crosses two hypotheses:
+//
+//   l (which ink is the marker):
+//     $Stored()   — the cells of params.marker.
+//     $Minority() — the scarcer of the two ink colors.
+//   w (the wall — the mirror is the center of the box its two lines bound):
+//     $Edge()  — the shape's edge line and the line just outside it; the
+//                marker only names a direction.
+//     $Seam()  — the marker's line and the line it faces.
+//     $Image() — the shape's edge line and the marker's line, so the marker
+//                is the image of that edge line.
+//
+// The marker abuts the shape in every pair, so the three w hypotheses agree here.
+
+#include "../lib.dl"
+
+.type Locate = Stored {} | Minority {}
+.type Wall   = Edge {} | Seam {} | Image {}
+.type Choice = [l: Locate, w: Wall]
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    .decl ground(col: Color) ground(3).
+
+    // --- $Stored ---
+    .decl marker(col: Color) marker(2).
+}
+
+.init params = Params
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.bg(Col).
+
+// --- Locate cases: which ink is the marker ---
+
+.decl locate_choice(l: Locate)
+locate_choice($Stored()). locate_choice($Minority()).
+
+.init size = Tally<Color, Position>
+size.item(Col, P) :- ink(P, Col).
+
+.init rare = ArgExtremes<Unit, Color>
+rare.cand($U(), Col, N) :- size.tally(Col, N).
+
+.decl marker_cell(p: Position, l: Locate)
+marker_cell(P, $Stored())   :- ink(P, Col), params.marker(Col).
+marker_cell(P, $Minority()) :- ink(P, Col), rare.low($U(), Col, _).
+
+// --- the shape and the side the marker lies on ---
+
+.decl shape_cell(p: Position, l: Locate)
+shape_cell(P, L) :- ink(P, _), locate_choice(L), !marker_cell(P, L).
+
+.init shape_box = Bbox<Locate>
+shape_box.cell(L, P) :- shape_cell(P, L).
+
+.decl short_of(d: Dir, l: Locate)
+short_of(D, L) :-
+    marker_cell(M, L), dist(M, D, K),        // a marker cell
+    shape_box.edge_min(L, D, K0), K >= K0.   // not past the shape's d-side edge
+
+// The one edge every marker cell is past.
+.decl mark_dir(d: Dir, l: Locate)
+mark_dir(D, L) :- dir_elem(D), locate_choice(L), !short_of(D, L).
+
+// --- Wall cases: the wall's two lines ---
+
+.decl wall_choice(w: Wall)
+wall_choice($Edge()). wall_choice($Seam()). wall_choice($Image()).
+
+.init wall = Bbox<Choice>
+
+// $Edge — the shape's edge line and the line just outside it.
+wall.cell([L, $Edge()], Q) :-
+    mark_dir(D, L), shape_box.margin(L, F),
+    in(P, _), same_dist(D, P, F),   // the shape's edge line
+    ( Q = P ; neighbor(P, D, Q) ).  // and the line just outside it
+
+// $Seam — the marker's line and the line it faces.
+wall.cell([L, $Seam()], Q) :-
+    mark_dir(D, L), marker_cell(M, L),
+    in(P, _), same_dist(D, P, M),                             // the marker's line
+    ( Q = P ; opposite(D, D_back), neighbor(P, D_back, Q) ).  // and the line it faces
+
+// $Image — the shape's edge line and the marker's line.
+wall.cell([L, $Image()], Q) :-
+    mark_dir(D, L), in(Q, _),
+    ( shape_box.margin(L, F), same_dist(D, Q, F)  // the shape's edge line
+    ; marker_cell(M, L), same_dist(D, Q, M)       // the marker's line
+    ).
+
+// --- the reflection: the shape flipped about the wall ---
+
+.decl mirror(p: Position, q: Position, w: Wall, l: Locate)
+mirror(P, Q, W, L) :-
+    mark_dir(D, L), axis_of(D, A), flip_of(A, T),
+    shape_cell(P, L), wall.margin([L, W], F),
+    displacement(F, P, V), apply(T, V, V2),  // its offset from the wall, flipped
+    compose(F, V2, Q), in(Q, _).             // seated back, on the grid
+
+// --- output ---
+
+.decl paint(p: Position, col: Color, ch: Choice)
+paint(Q, Col, [L, W]) :-
+    shape_cell(P, L), in(P, Col),   // a shape cell
+    ( Q = P, wall_choice(W)         // stands
+    ; mirror(P, Q, W, L)            // and reappears across the mirror
+    ).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- paint(P, Col, Ch).
+out(P, Col, [L, W]) :-
+    in(P, _), locate_choice(L), wall_choice(W),
+    !paint(P, _, [L, W]), params.ground(Col).

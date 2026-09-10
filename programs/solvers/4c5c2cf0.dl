@@ -1,0 +1,110 @@
+// 4c5c2cf0
+// draft
+// concept: markers symmetry d4 lookup
+// Two shapes, one color each, sit on an empty grid: a pivot and a mover.
+// Every shape cell is copied to its image under each element of params.group
+// about the pivot's center. params.group fixes the pivot, so the pivot lands on
+// itself and only the mover multiplies; an image off the grid is dropped.
+// The cases find the pivot in two ways, and agree on every pair:
+//
+//   $Fixed — the pivot is the shape params.group fixes.
+//   $Known — the pivot is the shape whose footprint is params.pivot_shape.
+
+#include "../lib.dl"
+
+.type Choice = Fixed {} | Known {}
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    .decl group(s: Sym) group(SYM_BOX).
+
+    // --- $Known ---
+    // The pivot's cells, in its own frame.
+    .decl pivot_shape(p: Position)
+    GRID_MASK_3x3(pivot_shape,
+        1, _, 1,
+        _, 1, _,
+        1, _, 1)
+}
+
+.init params = Params
+
+.decl shape_cell(col: Color, p: Position)
+shape_cell(Col, P) :- in(P, Col), !params.bg(Col).
+
+// Each shape read in its own bounding box.
+.init box = BoxFrame<Color>
+box.cell(Col, P) :- shape_cell(Col, P).
+
+.decl pivot(col: Color, ch: Choice)
+
+// --- $Fixed ---
+
+.init inv = D4Map<Color, Unit>
+inv.src(Col, P_inner, $U()) :- box.inner(Col, _, P_inner).
+inv.dst(Col, P_inner, $U()) :- box.inner(Col, _, P_inner).
+
+.init sym = KeyedSetCompare<Color, Sym, D4>
+sym.pattern_member(S, D) :- params.group(S), sym_member(S, D).
+sym.observed_member(Col, D) :- inv.map(Col, D).
+
+pivot(Col, $Fixed()) :- sym.covers(Col, _).
+
+// --- $Known ---
+
+.init known = KeyedSetCompare<Color, number, Position>
+known.pattern_member(0, P) :- params.pivot_shape(P).
+known.observed_member(Col, P_inner) :- box.inner(Col, _, P_inner).
+
+pivot(Col, $Known()) :- known.equals(Col, 0).
+
+// --- the copies ---
+
+.decl copy(p: Position, col: Color, ch: Choice)
+copy(P_img, Col, Ch) :-
+    shape_cell(Col, P),
+    pivot(Pivot, Ch), box.margin(Pivot, P_box),                   // the pivot's box
+    displacement(P_box, P, P_rel),                                // cell in the pivot's frame
+    params.group(S), sym_member(S, D), apply(D, P_rel, P_rel2),   // one image per group element
+    compose(P_box, P_rel2, P_img), in(P_img, _).                  // seated back on the grid
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- copy(P, Col, Ch).
+out(P, Col, Ch) :- in(P, _), pivot(_, Ch), !copy(P, _, Ch), params.bg(Col).
+
+.comp Determine {
+    .decl shape_cell(e: Example, col: Color, p: Position)
+    shape_cell(E, Col, P) :- ex_in(E, P, Col), !params.bg(Col).
+
+    .type ExColor = [e: Example, col: Color]
+    .init box = BoxFrame<ExColor>
+    box.cell([E, Col], P) :- shape_cell(E, Col, P).
+
+    // The mover gains cells; the pivot comes through untouched.
+    .decl gained(e: Example, col: Color)
+    gained(E, Col) :- ex_out(E, P, Col), !ex_in(E, P, Col).
+
+    .decl pivot(e: Example, col: Color)
+    pivot(E, Col) :- shape_cell(E, Col, _), ex_out(E, _, _), !gained(E, Col).
+
+    .decl pivot_shape(p: Position)
+    pivot_shape(P_inner) :- pivot(E, Col), box.inner([E, Col], _, P_inner).
+
+    // Each candidate group's images of the shape cells.
+    .decl orbit(e: Example, s: Sym, p: Position, col: Color)
+    orbit(E, S, P_img, Col) :-
+        shape_cell(E, Col, P),
+        pivot(E, Pivot), box.margin([E, Pivot], P_box),          // the pivot's box
+        displacement(P_box, P, P_rel),                           // cell in the pivot's frame
+        sym_member(S, D), apply(D, P_rel, P_rel2),               // one image per group element
+        compose(P_box, P_rel2, P_img), ex_in(E, P_img, _).       // seated back on the grid
+
+    .type ExCell = [e: Example, p: Position, col: Color]
+    .init same = KeyedSetCompare<Sym, number, ExCell>
+    same.pattern_member(0, [E, P, Col]) :- ex_out(E, P, Col), !params.bg(Col).
+    same.observed_member(S, [E, P, Col]) :- orbit(E, S, P, Col).
+
+    // The group whose images are exactly the output's shape cells.
+    .decl group(s: Sym)
+    group(S) :- same.equals(S, 0).
+}

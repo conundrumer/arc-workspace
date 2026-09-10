@@ -1,0 +1,38 @@
+// 7ddcd7ec
+// draft
+// concept: markers cast
+// One color inks a 2×2 block and a few lone cells, each one diagonal step
+// out from a corner of the block. Each lone cell extends into a diagonal
+// line, running from the block outward to the grid edge.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+}
+
+.init params = Params
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.bg(Col).
+
+// The block is the ink that touches ink.
+.decl block(p: Position)
+block(P) :- ink(P, _), dir_elem(D), neighbor(P, D, Q), ink(Q, _).
+
+// A tail: a lone inked cell, with the diagonal it hangs off the block at.
+.decl tail(p: Position, d: DiagDir)
+tail(P, D) :- block(Q), diag_dir_elem(D), neighbor(Q, D, P), ink(P, _), !block(P).
+
+// Each tail casts along its own diagonal, away from the block.
+.init cast = Ray<DiagDir>
+cast.dir(D, D) :- diag_dir_elem(D).
+cast.cell(D, P) :- diag_dir_elem(D), in(P, _).
+cast.mark(D, P) :- tail(P, D).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, Col_in),
+    ( cast.ray(_, P, _, _, Src), ink(Src, Col)    // on a tail's line
+    ; !cast.ray(_, P, _, _, _), Col = Col_in      // kept
+    ).

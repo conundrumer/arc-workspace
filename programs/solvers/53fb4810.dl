@@ -1,0 +1,77 @@
+// 53fb4810
+// draft
+// concept: objects markers wallpaper cast
+// Each band of cells that are neither background nor anchor color rests
+// against an anchor. The band's pattern continues away from that anchor to
+// the frame edge, one period at a step, and covers whatever it lands on. Two
+// models of the period:
+//
+//   $Extent — the band as a whole is the repeating tile.
+//   $Period — the tile is the shortest period the band's own pattern shows,
+//             read through damage.
+//
+// Coincide while no band shows a period shorter than its extent.
+
+#include "../lib.dl"
+
+.type Choice = Extent {} | Period {}
+
+.comp Params {
+    .decl bg(c: Color) bg(8).
+    .decl anchor_color(c: Color) anchor_color(1).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Extent()). impl_choice($Period()).
+
+.init bands = Components<Unit>
+bands.node($U(), P) :- in(P, Col), !params.bg(Col), !params.anchor_color(Col).
+
+// A band grows away from the anchor it rests against.
+.decl grow_dir(b: Ident, d: Dir)
+grow_dir(B, D) :-
+    bands.label($U(), P, B),
+    opposite(D, O), neighbor(P, O, Q),     // one step back
+    in(Q, Col), params.anchor_color(Col).  // an anchor cell
+
+.decl grow_axis(b: Ident, a: Axis)
+grow_axis(B, A) :- grow_dir(B, D), axis_of(D, A).
+
+.decl period(b: Ident, k: number, ch: Choice)
+
+// The band's pattern carried onward, a period at a step.
+.decl pattern(b: Ident, p: Position, col: Color, ch: Choice)
+pattern(B, P, Col, Ch) :- bands.label($U(), P, B), in(P, Col), impl_choice(Ch).
+pattern(B, Q, Col, Ch) :-
+    pattern(B, P, Col, Ch), grow_dir(B, D), period(B, K, Ch),
+    jump(P, D, K, Q), in(Q, _).
+
+// What the continuation covers, past the band itself.
+.decl beyond(p: Position, col: Color, ch: Choice)
+beyond(P, Col, Ch) :- pattern(B, P, Col, Ch), !bands.label($U(), P, B).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    in(P, C), impl_choice(Ch),
+    ( beyond(P, Col, Ch)                 // under a continuation
+    ; !beyond(P, _, Ch), Col = C         // the input shows through
+    ).
+
+// --- $Extent ---
+
+.init box = Bbox<Ident>
+box.cell(B, P) :- bands.label($U(), P, B).
+
+period(B, K, $Extent()) :- grow_axis(B, A), box.extent(B, A, K).
+
+// --- $Period ---
+
+.init shift = ShiftInvariance<Ident, Color>
+shift.cell(B, P, Col) :- bands.label($U(), P, B), in(P, Col).
+
+.init shortest = Extremes<Ident>
+shortest.cand(B, K) :- grow_axis(B, A), shift.period(B, A, K).
+
+period(B, K, $Period()) :- shortest.low(B, K).

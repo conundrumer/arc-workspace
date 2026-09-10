@@ -1,0 +1,47 @@
+// 73c3b0d8
+// draft
+// concept: move cast
+// Marks step one cell in a fixed direction. A mark whose next step would
+// enter the wall splashes: it casts rays back from the wall along both
+// diagonals that lead away from it, to the grid edge.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    .decl mark(col: Color) mark(4).
+    .decl wall(col: Color) wall(2).
+    .decl move_dir(d: Dir) move_dir(DIR_B).
+
+    // The diagonals leading back from the wall: those with a component
+    // opposite the move.
+    .decl splash_dir(d: DiagDir)
+    splash_dir(Dg) :- move_dir(D), opposite(D, Back), diag_dirs(Dg, _, Back, _).
+}
+
+.init params = Params
+
+// Each mark one step along the move.
+.decl landed(p: Position)
+landed(Q) :- in(P, Col), params.mark(Col), params.move_dir(D), neighbor(P, D, Q).
+
+// A landed mark whose next step would enter the wall.
+.decl hit(p: Position)
+hit(P) :- landed(P), params.move_dir(D), neighbor(P, D, Q), in(Q, Col), params.wall(Col).
+
+.init splash = Ray<Unit>
+splash.dir($U(), Dg) :- params.splash_dir(Dg).
+splash.cell($U(), P) :- in(P, _).
+splash.mark($U(), P) :- hit(P).
+
+.decl painted(p: Position)
+painted(P) :- landed(P).
+painted(P) :- splash.ray($U(), P, _, _, _).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, C_in),
+    ( painted(P), params.mark(Col)                        // a mark lands or splashes here
+    ; !painted(P), params.mark(C_in), params.bg(Col)      // vacated
+    ; !painted(P), !params.mark(C_in), Col = C_in         // the scene stays
+    ).

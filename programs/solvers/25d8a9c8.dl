@@ -48,8 +48,6 @@
 
 .init params = Params
 
-// --- parse ---
-
 .comp Parse<Key> {
     .decl cell(k: Key, p: Position, col: Color)
 
@@ -102,8 +100,6 @@ out(P, Col, [$Count(), $PerCell()]) :-
 out(P, Col, [$Count(), $SliceMap()]) :-
     parse.cell_split($U(), P, _, P_inner, P_across),
     parse.ncolors($U(), P_across, N), params.count_template(N, P_inner, Col).
-
-// --- determination ---
 
 .comp Determine {
     .init parse = Parse<Example>

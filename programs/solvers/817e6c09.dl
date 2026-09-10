@@ -1,0 +1,43 @@
+// 817e6c09
+// draft
+// concept: objects rank parity
+// Blocks of params.ink rank by distance from the params.anchor edge, nearest
+// first. Every other block in that order, the nearest included, recolors to
+// params.mark; other cells pass through.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl anchor(d: Dir) anchor(DIR_R).   // alternation starts here
+    .decl ink(c: Color) ink(2).
+    .decl mark(c: Color) mark(8).         // recolor for alternate blocks
+
+    // alternation rhythm: run of marked, run of kept
+    .decl mark_run(k: number) mark_run(1).
+    .decl keep_run(g: number) keep_run(1).
+}
+
+.init params = Params
+
+.init blocks = Components<Unit>
+blocks.node($U(), P) :- in(P, Col), params.ink(Col).
+
+.init box = Bbox<Ident>
+box.cell(Id, P) :- blocks.label($U(), P, Id).
+
+// Each block with its distance from the anchor edge.
+.decl block_dist(id: Ident, k: number)
+block_dist(Id, K) :- params.anchor(D), box.edge_min(Id, D, K).
+
+.init seq = Ordinal<Unit>
+seq.idx_set($U(), K) :- block_dist(_, K).
+
+.decl marked(p: Position)
+marked(P) :-
+    blocks.label($U(), P, Id),                                        // block cell
+    block_dist(Id, K), seq.rank($U(), K, R),                          // block's rank from anchor
+    params.mark_run(Kr), params.keep_run(G), stride(R, Kr, G, _, _).  // in a marked run
+
+.decl out(p: Position, col: Color)
+out(P, M)   :- marked(P), params.mark(M).
+out(P, Col) :- in(P, Col), !marked(P).

@@ -1,0 +1,47 @@
+// 668eec9a
+// draft
+// concept: rank
+// shape: percept-shadow
+// Diagonal and straight lines of distinct colors lie on the background. The
+// output is a fixed frame of solid rows: each line takes the row whose
+// distance from params.stack_dir is the count of lines farther from
+// params.order_dir than it, and the rows no line takes are background.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(7).
+
+    // The edge the lines are ordered from.
+    .decl order_dir(d: Dir) order_dir(DIR_T).
+
+    // The output edge the lines stack against.
+    .decl stack_dir(d: Dir) stack_dir(DIR_B).
+
+    // The output frame.
+    .decl out_extent(a: Axis, n: number)
+    out_extent(AXIS_V, 5). out_extent(AXIS_H, 3).
+}
+
+.init params = Params
+
+// Each line's nearest distance to the ordering edge.
+.init near = Extremes<Color>
+near.cand(Col, K) :- in(P, Col), !params.bg(Col), params.order_dir(D), dist(P, D, K).
+
+// Lines ranked from the far end: a line's rank is the count of lines
+// farther from the ordering edge.
+.init stack = Ordinal<Unit>
+stack.idx_set($U(), K) :- near.low(_, K).
+
+.decl line_row(r: number, col: Color)
+line_row(R, Col) :- near.low(Col, K), stack.rank_desc($U(), K, R).
+
+.init frame = Frame2D<Unit>
+frame.extent($U(), A, N) :- params.out_extent(A, N).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    frame.cell($U(), P), params.stack_dir(D), dist(P, D, R),
+    ( line_row(R, Col)                       // the line stacked here
+    ; !line_row(R, _), params.bg(Col) ).     // no line at this row

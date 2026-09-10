@@ -18,11 +18,11 @@
     // --- LabeledGrids data ---
     .decl in_label(p: Position, id: Ident)
     GRID_SPARSE_5x5(in_label,
-        1, 0, 0, 0, 3,
-        0, 2, 0, 4, 0,
-        0, 0, 9, 0, 0,
-        0, 8, 0, 6, 0,
-        7, 0, 0, 0, 5)
+        1, _, _, _, 3,
+        _, 2, _, 4, _,
+        _, _, 9, _, _,
+        _, 8, _, 6, _,
+        7, _, _, _, 5)
 
     .decl out_label(p: Position, id: Ident)
     GRID_3x3(out_label,
@@ -96,8 +96,6 @@ perm(P_in, P_out, $Cycle()) :-
 out(P_grid_out, Col, Impl) :-
     impl_choice(Impl), in(P_grid_in, Col),   // choice × input cell
     perm(P_grid_in, P_grid_out, Impl).       // the cell's image
-
-// --- determination ---
 
 .comp Determine {
     // Correspondence candidates: same color at both cells. Each arm color

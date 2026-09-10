@@ -1,0 +1,64 @@
+// 7b5033c1
+// draft
+// concept: walk rank
+// The non-bg cells draw one snake: a simple 4-connected path in colored
+// segments. The output straightens the snake into a line along
+// params.line_axis: the k-th path cell from the end nearer an edge lands k
+// from that edge. Either end may lead the walk, so both run, keyed by edge.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl line_axis(a: Axis) line_axis(AXIS_V).
+}
+
+.init params = Params
+
+// Bg is the commonest color.
+.init bg_mode = Mode<Unit, Color, Position>
+bg_mode.item($U(), Col, P) :- in(P, Col).
+
+.decl ink(p: Position)
+ink(P) :- in(P, Col), !bg_mode.mode($U(), Col).
+
+// Path adjacency.
+.decl link(p: Position, q: Position)
+link(P, Q) :- ink(P), dir_elem(D), neighbor(P, D, Q), ink(Q).
+
+// A cell with a second path neighbor.
+.decl fork(p: Position)
+fork(P) :- link(P, Q), link(P, Q2), Q != Q2.
+
+// An end of the path: one path neighbor.
+.decl end(p: Position)
+end(P) :- link(P, _), !fork(P).
+
+// The end nearer edge D, for each edge on the line's axis.
+.decl head(d: Dir, p: Position)
+head(D, P) :- params.line_axis(A), axis_of(D, A), end(P), end(Q), nearer(D, P, Q).
+
+// The walk from the head: each step takes the neighbor it did not come from.
+.decl step(d: Dir, p: Position, q: Position)
+step(D, P, Q) :- head(D, P), link(P, Q).
+step(D, Q, R) :- step(D, P, Q), link(Q, R), R != P.
+
+// Q lies beyond P along the walk.
+.decl before(d: Dir, p: Position, q: Position)
+before(D, P, Q) :- step(D, P, Q).
+before(D, P, R) :- before(D, P, Q), step(D, Q, R).
+
+.init path = Order<Dir, Position>
+path.elem(D, P) :- head(D, _), ink(P).
+path.before(D, P, Q) :- before(D, P, Q).
+
+// The output line: one cell per path cell.
+.init total = Tally<Unit, Position>
+total.item($U(), P) :- ink(P).
+
+.init line = AxisFrame<Unit>
+line.extent($U(), A, N) :- params.line_axis(A), total.tally($U(), N).
+
+.decl out(p: Position, col: Color)
+out(P_out, Col) :-
+    path.rank(D, P, K), in(P, Col),           // k-th path cell from the head at edge D
+    line.cell($U(), _, P_out), dist(P_out, D, K).  // k from edge D of the line

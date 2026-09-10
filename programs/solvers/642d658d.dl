@@ -7,8 +7,8 @@
 //   detect $Center — pluses sit on cells of a stored center color
 //   detect $Halo   — any cell ringed by one non-bg color; bg is the
 //                    pair's dominant color (bg varies across pairs)
-//   detect $Footprint — arms at a stored mask's offsets around its
-//                    anchor, on cells of the center color
+//   detect $Footprint — arms at a stored set of offsets around the center,
+//                    on cells of the center color
 //   select $Mode   — the arm color with the most pluses
 //   select $Count  — the arm color with a stored plus count
 
@@ -26,14 +26,11 @@
     .decl target(n: number) target(2).
 
     // --- $Footprint ---
-    .decl fp_cell(p: Position)
-    GRID_MASK_3x3(fp_cell,
-        0, 1, 0,
-        1, 0, 1,
-        0, 1, 0)
-
-    .decl anchor(p: Position)
-    anchor([1, 1, 1, 1]).
+    .decl fp_off(off: Shift)   // the arms, as offsets from the center
+    GRID_STAMP_3x3(fp_off,
+        _,  1, _,
+        1, @_, 1,
+        _,  1, _)
 }
 
 .init params = Params
@@ -58,17 +55,13 @@ plus($Center(), P, Col) :- ring(P, Col), in(P, Cc), params.center(Cc).
 plus($Halo(),   P, Col) :- ring(P, Col), !grid_bg.mode($U(), Col).
 
 // --- $Footprint ---
-// The mask's cells as offsets from its anchor.
-.decl fp_off(off: Shift)
-fp_off(Off) :- params.fp_cell(S), params.anchor(A), displacement(A, S, Off).
-
 .decl fp_arm(p: Position, off: Shift, col: Color)
 fp_arm(P, Off, Col) :-
-    in(P, Cc), params.center(Cc),                    // candidate anchor cell
-    fp_off(Off), compose(P, Off, P2), in(P2, Col).   // the cell at one offset
+    in(P, Cc), params.center(Cc),                           // candidate center cell
+    params.fp_off(Off), compose(P, Off, P2), in(P2, Col).   // the cell at one offset
 
 .decl fp_mismatch(p: Position, col: Color)
-fp_mismatch(P, Col) :- fp_arm(P, _, Col), fp_off(Off), !fp_arm(P, Off, Col).
+fp_mismatch(P, Col) :- fp_arm(P, _, Col), params.fp_off(Off), !fp_arm(P, Off, Col).
 
 plus($Footprint(), P, Col) :- fp_arm(P, _, Col), !fp_mismatch(P, Col).
 
@@ -82,8 +75,6 @@ out(ORIGIN, Col, [Dt, $Mode()]) :- plus_count.mode(Dt, Col).
 
 // --- $Count ---
 out(ORIGIN, Col, [Dt, $Count()]) :- plus_count.tally(Dt, Col, N), params.target(N).
-
-// --- determination ---
 
 .comp Determine {
     .decl center_at(e: Example, p: Position)
@@ -112,15 +103,8 @@ out(ORIGIN, Col, [Dt, $Count()]) :- plus_count.tally(Dt, Col, N), params.target(
     .init arm_off = Mode<Unit, Shift, Shift>
     arm_off.item($U(), Off, Off2) :- on_grid(Off), on_grid(Off2), !differ(Off, Off2).
 
-    .init frame = BoxFrame<Unit>
-    frame.cell($U(), Off)    :- arm_off.mode($U(), Off).
-    frame.grid($U(), ORIGIN) :- arm_off.mode($U(), _).    // the anchor sits at zero offset
-
-    .decl fp_cell(p: Position)
-    fp_cell(P) :- arm_off.mode($U(), Off), frame.inner($U(), Off, P).
-
-    .decl anchor(p: Position)
-    anchor(P) :- frame.inner($U(), ORIGIN, P).
+    .decl fp_off(off: Shift)
+    fp_off(Off) :- arm_off.mode($U(), Off).
 
     .decl winner(e: Example, p: Position)
     winner(E, P) :-

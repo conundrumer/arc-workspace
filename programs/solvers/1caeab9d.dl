@@ -1,0 +1,76 @@
+// 1caeab9d
+// draft
+// concept: objects move
+// Blocks of several colors sit at different heights on bg. Every block slides
+// vertically until its top row meets the top row of the anchor block, keeping
+// its columns. Two hypotheses of what a block is:
+//
+//   $ByColor  — all cells of one color, however they are spread.
+//   $ByObject — one connected piece.
+
+#include "../lib.dl"
+
+.type Choice = ByColor {} | ByObject {}
+.type Grp = [ch: Choice, id: Ident]
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+
+    // The block the others come to.
+    .decl anchor(col: Color) anchor(1).
+
+    // The edge whose row the blocks share once moved. Every block in this task
+    // is the same shape, so the opposite edge fits the pairs as well.
+    .decl align_dir(d: Dir) align_dir(DIR_T).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($ByColor()). impl_choice($ByObject()).
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.bg(Col).
+
+// --- ByColor ---
+
+.init hue = Canon<Position>
+hue.equiv(P, Q) :- ink(P, Col), ink(Q, Col).
+
+// --- ByObject ---
+
+.init piece = Components8<Unit>
+piece.node($U(), P) :- ink(P, _).
+
+// --- shared ---
+
+.decl group(ch: Choice, p: Position, id: Ident)
+group($ByColor(), P, Id) :- hue.id(P, Id).
+group($ByObject(), P, Id) :- piece.label($U(), P, Id).
+
+.init box = Bbox<Grp>
+box.cell([Ch, Id], P) :- group(Ch, P, Id).
+
+// The line a block leads with, as an axis-only position.
+.decl front(ky: Grp, l: Position)
+front(Ky, L) :-
+    params.align_dir(D), box.edge_cell(Ky, P, D),  // the block's cell on that edge
+    axis_of(D, A), split(P, A, L, _).              // its line along the move axis
+
+// The move that brings a block's front line onto the anchor's.
+.decl slide(ky: Grp, delta: Shift)
+slide([Ch, Id], Delta) :-
+    front([Ch, Id], L),                                  // a block's front line
+    group(Ch, P, Id_a), in(P, Col), params.anchor(Col),  // the block of the anchor color
+    front([Ch, Id_a], L_a),                              // its front line
+    displacement(L, L_a, Delta).
+
+.decl moved(p: Position, col: Color, ch: Choice)
+moved(P_out, Col, Ch) :-
+    group(Ch, P, Id), in(P, Col),  // a block cell
+    slide([Ch, Id], Delta),        // its block's move
+    compose(P, Delta, P_out).      // where it lands
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- moved(P, Col, Ch).
+out(P, Col, Ch) :- in(P, _), params.bg(Col), impl_choice(Ch), !moved(P, _, Ch).

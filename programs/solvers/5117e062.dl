@@ -1,0 +1,70 @@
+// 5117e062
+// draft
+// concept: markers objects crop select
+// Several one-color figures sit on bg. One cell of one figure carries params.mark.
+// The output is the box of the region the mark designates, with the mark cell
+// taking the region's color.
+//   $Object — the figure the mark sits in.
+//   $Touch  — the mark and the cells that touch it.
+//   $Window — the params.win_dim window centered on the mark.
+
+#include "../lib.dl"
+
+.type Choice = Object {} | Touch {} | Window {}
+
+.comp Params {
+    // --- shared ---
+    .decl bg(col: Color) bg(0).
+    .decl mark(col: Color) mark(8).
+
+    // --- Window ---
+    .decl win_dim(n: number) win_dim(3).
+}
+
+.init params = Params
+
+.decl mark_cell(p: Position)
+mark_cell(P) :- in(P, Col), params.mark(Col).
+
+// The region the output crops, per case.
+.decl region(ch: Choice, p: Position)
+
+// --- Object ---
+
+.init figures = Components<Unit>
+figures.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+region($Object(), P) :-
+    mark_cell(M), figures.label($U(), M, Id),   // the figure holding the mark
+    figures.label($U(), P, Id).
+
+// --- Touch ---
+
+// The ring's box covers the mark, so the mark needs no rule of its own.
+region($Touch(), P) :- mark_cell(M), dir8_elem(D), neighbor(M, D, P), in(P, _).
+
+// --- Window ---
+
+.init win = Frame2D<Unit>
+win.extent($U(), A, N) :- params.win_dim(N), axis_elem(A).
+
+region($Window(), P) :-
+    win.cell($U(), W_c), centered(W_c),          // the window's center
+    win.cell($U(), W), displacement(W_c, W, V),  // each window cell as an offset from it
+    mark_cell(M), compose(M, V, P), in(P, _).    // seated on the mark
+
+// --- output ---
+
+// The region carries one color besides bg and the mark, and the mark takes it.
+.init fill = Unanimous<Choice, Color>
+fill.item(Ch, Col) :- region(Ch, P), in(P, Col), !params.bg(Col), !params.mark(Col).
+
+.init crop = BoxFrame<Choice>
+crop.cell(Ch, P) :- region(Ch, P).
+crop.grid(Ch, P) :- region(Ch, _), in(P, _).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_inner, Col, Ch) :-
+    crop.inner(Ch, P, P_inner), in(P, Col_in),
+    ( params.mark(Col_in), fill.value(Ch, Col)
+    ; !params.mark(Col_in), Col = Col_in ).

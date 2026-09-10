@@ -1,0 +1,48 @@
+// 6bcdb01e
+// draft
+// concept: markers walk
+// Wall cells are scattered over a bg field, and a two-cell seed stub sits
+// among them. A walker leaves each end of the stub heading away from the
+// other cell, and runs straight until the way ahead closes, at a wall or at
+// the grid edge. Where exactly one side is open there, it turns to that side
+// and runs again; where both sides are open, or neither, the walk ends. The
+// output paints the cells the walker runs over in the seed color. The walker
+// crosses its own path freely.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl wall(col: Color) wall(8).
+    .decl seed(col: Color) seed(3).
+}
+
+.init params = Params
+
+// The walker may stand on any cell but a wall.
+.init open = Slide<Unit>
+open.node($U(), P) :- in(P, Col), !params.wall(Col).
+open.dir($U(), D) :- dir_elem(D).
+
+// A leg is a cell the walker runs from and its heading. The walker leaves
+// each seed cell heading away from the seed cell behind it, and turns onto
+// a new leg where its run halts with one side open and the other closed.
+.decl leg(p: Position, d: Dir)
+leg(P, D) :-
+    params.seed(Col), in(Q, Col), in(P, Col),  // the two seed cells
+    dir_elem(D), neighbor(Q, D, P).            // P lies from Q toward D
+leg(E, D2) :-
+    leg(A, D), open.rest($U(), A, D, E),          // the leg's halt
+    perp_dir(D, D2), !open.rim_dir($U(), E, D2),  // an open side
+    opposite(D2, D3), open.rim_dir($U(), E, D3).  // the other side closed
+
+// The cells the walker runs over. A leg starts on the seed or on the
+// previous leg's run, so the runs cover the whole path.
+.decl path(p: Position)
+path(P) :- leg(A, D), open.run($U(), A, D, P).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, Col_in),
+    ( path(P), params.seed(Col)   // painted cell
+    ; !path(P), Col = Col_in      // kept input
+    ).

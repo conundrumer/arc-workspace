@@ -1,0 +1,148 @@
+// 5a5a2103
+// draft
+// concept: decompose markers stamp lookup count
+// A separator lattice cuts the grid into equal square tiles. Some of those
+// tiles are a legend: a legend tile holds a solid square, and gives its color
+// to every tile on one line through it. One further tile holds a shape, and
+// the rest are blank. The output stamps that shape into every tile, in the
+// color the legend gives it, and passes the separator cells through. The cases
+// differ in which tiles they read as the legend, and in the line family a
+// legend color spreads along.
+//
+//   $Edge      — the legend tiles are the inked tiles on the arrangement's
+//                params.legend_dir edge; the color spreads across that
+//                edge's axis.
+//   $Footprint — the legend tiles are the inked tiles whose ink is exactly
+//                params.marker; the color spreads along params.spread_axis.
+//   $Twin      — the legend tiles are the inked tiles whose ink another tile
+//                repeats; the color spreads along params.spread_axis.
+//   $Line      — the legend tiles fill the tile line that holds the most
+//                inked tiles; the color spreads along that line's family.
+
+#include "../lib.dl"
+
+.type Choice = Edge {} | Footprint {} | Twin {} | Line {}
+
+// A line of the tile arrangement, as the axis component its tiles share.
+.type TileLine = [a: Axis, l: Position]
+
+.comp Params {
+    // --- shared ---
+    .decl bg(col: Color) bg(0).
+    .decl tile_dim(k: number) tile_dim(4).
+    .decl gap(g: number) gap(1).
+
+    // --- $Edge ---
+    .decl legend_dir(d: Dir) legend_dir(DIR_L).
+
+    // --- $Footprint, $Twin ---
+    .decl spread_axis(a: Axis) spread_axis(AXIS_H).
+
+    // The legend glyph, over a tile.
+    .decl marker(p: Position)
+    GRID_MASK_4x4(marker,
+        _, _, _, _,
+        _, 1, 1, _,
+        _, 1, 1, _,
+        _, _, _, _)
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Edge()). impl_choice($Footprint()).
+impl_choice($Twin()). impl_choice($Line()).
+
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)  // input
+
+    .decl tile(key: Key, p_grid: Position, p_tile: Position, p_intile: Position)
+    tile(Ky, P_grid, P_tile, P_intile) :-
+        cell(Ky, P_grid, _), params.tile_dim(K), params.gap(G),
+        divide_by_size_2d(P_grid, K, G, P_tile, P_intile).
+
+    .decl ink(key: Key, p_tile: Position, p_intile: Position, col: Color)
+    ink(Ky, P_tile, P_intile, Col) :-
+        tile(Ky, P, P_tile, P_intile), cell(Ky, P, Col), !params.bg(Col).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// The legend tiles, and the line family a legend color spreads along.
+.decl legend_tile(ch: Choice, p_tile: Position)
+.decl spread(ch: Choice, a: Axis)
+
+// --- $Edge ---
+legend_tile($Edge(), P_tile) :-
+    parse.ink($U(), P_tile, _, _), params.legend_dir(D), dist(P_tile, D, 0).
+
+spread($Edge(), A) :- params.legend_dir(D), axis_of(D, A).
+
+// --- $Footprint ---
+.init glyph = KeyedSetCompare<Position, number, Position>
+glyph.pattern_member(0, P_intile) :- params.marker(P_intile).
+glyph.observed_member(P_tile, P_intile) :- parse.ink($U(), P_tile, P_intile, _).
+
+legend_tile($Footprint(), P_tile) :- glyph.equals(P_tile, 0).
+
+spread($Footprint(), A) :- params.spread_axis(A).
+
+// --- $Twin ---
+// Tiles compared against each other: both sides are intile ink sets.
+.init twin = KeyedSetCompare<Position, Position, Position>
+twin.pattern_member(P_tile, P_intile)  :- parse.ink($U(), P_tile, P_intile, _).
+twin.observed_member(P_tile, P_intile) :- parse.ink($U(), P_tile, P_intile, _).
+
+legend_tile($Twin(), P_tile) :- twin.equals(P_tile, P_tile2), P_tile != P_tile2.
+
+spread($Twin(), A) :- params.spread_axis(A).
+
+// --- $Line ---
+.decl tile_line(a: Axis, l: Position, p_tile: Position)
+tile_line(A, L, P_tile) :-
+    parse.ink($U(), P_tile, _, _), axis_elem(A), split(P_tile, A, L, _).
+
+.init busiest = Mode<Unit, TileLine, Position>
+busiest.item($U(), [A, L], P_tile) :- tile_line(A, L, P_tile).
+
+.decl legend_line(a: Axis, l: Position)
+legend_line(A, L) :- busiest.mode($U(), [A, L]).
+
+legend_tile($Line(), P_tile) :- legend_line(A, L), tile_line(A, L, P_tile).
+
+spread($Line(), A) :- legend_line(A, _).
+
+// --- output ---
+
+// The shape's footprint within a tile.
+.decl stamp(ch: Choice, p_intile: Position)
+stamp(Ch, P_intile) :-
+    impl_choice(Ch), parse.ink($U(), P_tile, P_intile, _), !legend_tile(Ch, P_tile).
+
+.decl tile_color(ch: Choice, p_tile: Position, col: Color)
+tile_color(Ch, P_tile, Col) :-
+    parse.ink($U(), P_legend, _, Col), legend_tile(Ch, P_legend),  // a legend entry
+    spread(Ch, A), parse.tile($U(), _, P_tile, _), same_line(A, P_legend, P_tile).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_grid, Col, Ch) :-
+    parse.tile($U(), P_grid, P_tile, P_intile), tile_color(Ch, P_tile, Col_row),
+    ( stamp(Ch, P_intile), Col = Col_row       // stamped cell
+    ; !stamp(Ch, P_intile), params.bg(Col)     // blank cell
+    ).
+out(P_grid, Col, Ch) :-
+    in(P_grid, Col), !parse.tile($U(), P_grid, _, _), impl_choice(Ch).   // separator
+
+.comp Determine {
+    .init ex = Parse<Example>
+    ex.cell(E, P, Col) :- ex_in(E, P, Col), ex_out(E, _, _).
+
+    // The output paints every tile in a legend color, so the one ink color
+    // it never uses marks the shape tile.
+    .decl shape_tile(e: Example, p_tile: Position)
+    shape_tile(E, P_tile) :- ex.ink(E, P_tile, _, Col), !ex_out(E, _, Col).
+
+    .decl marker(p: Position)
+    marker(P_intile) :- ex.ink(E, P_tile, P_intile, _), !shape_tile(E, P_tile).
+}
