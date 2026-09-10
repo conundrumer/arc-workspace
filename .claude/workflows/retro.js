@@ -18,7 +18,16 @@ export const meta = {
 //   { dry: true }      full run that stops before Fix and returns the fixes it would make.
 //   { fixes: [...] }   second run after the user's rulings: Fix only, over the given fixes.
 //                      Each fix: { id, kind, target, edit }: a call's id with its fix, as the
-//                      first run returned them under calls[].
+//                      first run returned them under calls[]. The fixes are ruled: the prune
+//                      pass keeps their substance.
+
+// The judgment a call took. A tier-4 fix is not made in the first run.
+const TIER = {
+  type: 'integer',
+  minimum: 1,
+  maximum: 4,
+  description: '1: no judgment, a principle states it, it is a bug, or it corrects a wrong fact; 2: a straightforward reading of the user\'s intent or an existing norm; 3: a defensible judgment close to the norms; 4: insufficient basis to settle',
+}
 
 const FIX_REF = {
   type: 'object',
@@ -78,6 +87,7 @@ const CHECK_SCHEMA = {
           id: { type: 'string' },
           status: { type: 'string', enum: ['closed', 'dropped', 'open'] },
           closed_by: { type: 'string', description: 'closed: the commit or the current text that closes it' },
+          tier: { ...TIER, description: `dropped: ${TIER.description}` },
           for: { type: 'string', description: 'dropped: what argues for the drop, each reason its own sentence' },
           against: { type: 'string', description: 'dropped: what argues against the drop, each reason its own sentence; empty when nothing does' },
           changed_work: { type: 'boolean', description: 'open: whether the issue changed what a session did, or was only noted' },
@@ -101,13 +111,14 @@ const REVIEW_SCHEMA = {
         properties: {
           id: { type: 'string' },
           default: { type: 'string', enum: ['fix', 'replace', 'drop'], description: 'the outcome that holds unless the user rules otherwise' },
+          tier: TIER,
           reason: { type: 'string', description: 'the answer to the two questions, in one or two sentences' },
           for: { type: 'string', description: 'what argues for the default, each reason its own sentence' },
           against: { type: 'string', description: 'what argues against the default, each reason its own sentence; empty when nothing does' },
           fix: FIX_REF,
           covers: { type: 'array', items: { type: 'string' }, description: 'replace: the other issue ids this general fix also closes' },
         },
-        required: ['id', 'default', 'reason', 'for', 'against'],
+        required: ['id', 'default', 'tier', 'reason', 'for', 'against'],
       },
     },
   },
@@ -135,7 +146,10 @@ const reviewTask = (open) => `Review these open issues and their candidate fixes
 
 const fixTask = (target, fixes) => `Make these fixes in ${target}.\n\n${JSON.stringify(fixes, null, 2)}`
 
-const pruneTask = (target, diff) => `Prune the text this diff added or changed in ${target}.\n\n${diff}`
+const pruneTask = (target, diff, ruled) =>
+  `Prune the text this diff added or changed in ${target}.` +
+  (ruled ? ' The user ruled for these fixes: keep their substance, and reword only.' : '') +
+  `\n\n${diff}`
 
 const testCutTask = (target, diff) => `This diff changed ${target} and its tests.\n\n${diff}`
 
@@ -151,14 +165,14 @@ const byKey = (items, key) => {
   return m
 }
 
-async function fixStage(fixes) {
+async function fixStage(fixes, ruled = false) {
   const byTarget = byKey(fixes, f => f.target)
   const made = await parallel([...byTarget].map(([target, fs]) => async () => {
     const edit = await agent(fixTask(target, fs), { label: `fix:${target}`, phase: 'Fix', schema: EDIT_SCHEMA, agentType: 'retro-fix' })
     if (!edit) return null
     const kind = fs.some(f => f.kind === 'code') ? 'code' : fs.every(f => f.kind === 'entry') ? 'entry' : 'prose'
     let second = null
-    if (kind === 'prose') second = await agent(pruneTask(target, edit.diff), { label: `prune:${target}`, phase: 'Fix', schema: EDIT_SCHEMA, agentType: 'retro-prune' })
+    if (kind === 'prose') second = await agent(pruneTask(target, edit.diff, ruled), { label: `prune:${target}`, phase: 'Fix', schema: EDIT_SCHEMA, agentType: 'retro-prune' })
     if (kind === 'code') second = await agent(testCutTask(target, edit.diff), { label: `test-cut:${target}`, phase: 'Fix', schema: EDIT_SCHEMA, agentType: 'retro-test-cut' })
     return { target, kind, ids: fs.map(f => f.id), edit, second }
   }))
@@ -167,7 +181,7 @@ async function fixStage(fixes) {
 
 if (args && args.fixes) {
   phase('Fix')
-  const made = await fixStage(args.fixes)
+  const made = await fixStage(args.fixes, true)
   return { fixes: made.filter(m => m.kind !== 'entry'), entries: made.filter(m => m.kind === 'entry') }
 }
 
@@ -190,7 +204,7 @@ const open = checks.filter(r => r.status === 'open').map(withIssue)
 // every call carries the fix a ruling for it would make; for a drop, the declined one
 const ref = f => f && { kind: f.kind, target: f.target, edit: f.edit }
 const calls = checks.filter(r => r.status === 'dropped')
-  .map(r => ({ id: r.id, default: 'drop', for: r.for, against: r.against, fix: ref(r.fixes?.[0]) }))
+  .map(r => ({ id: r.id, default: 'drop', tier: r.tier, for: r.for, against: r.against, fix: ref(r.fixes?.[0]) }))
 log(`${closed.length} closed, ${calls.length} dropped, ${open.length} open`)
 
 phase('Review')
@@ -198,11 +212,12 @@ if (open.length) {
   const review = await agent(reviewTask(open), { label: 'review', phase: 'Review', schema: REVIEW_SCHEMA, agentType: 'retro-review' })
   for (const r of review ? review.results : []) {
     const o = open.find(o => o.id === r.id)
-    calls.push({ id: r.id, default: r.default, for: r.for, against: r.against, covers: r.covers,
+    calls.push({ id: r.id, default: r.default, tier: r.tier, for: r.for, against: r.against, covers: r.covers,
                  fix: ref(r.fix) || (r.default !== 'replace' ? ref(o?.fixes?.[0]) : undefined), changed_work: o?.changed_work })
   }
 }
-const stands = calls.filter(c => (c.default === 'fix' || c.default === 'replace') && c.fix)
+// a tier-4 call is presented and not made
+const stands = calls.filter(c => (c.default === 'fix' || c.default === 'replace') && c.fix && c.tier !== 4)
 // one agent per general fix: fixes that several replaced issues point at collapse to one
 const fixes = [...byKey(stands, c => `${c.fix.target}\n${c.fix.edit}`)].map(([, cs]) => ({ ...cs[0].fix, id: cs.map(c => c.id).join(',') }))
 const tally = { issues: issues.length, closed: closed.length }

@@ -12,10 +12,14 @@ First, when the handbook does not follow this section, read the output of `uv ru
 - fix: the recommended fix is needed and right-sized. Return it.
 - replace: a general fix covers it. Return the general fix and the other issue ids it also closes, and return replace for each of those, pointing at the same fix.
 - drop: the session did not need it, or the fix would serve one task's case.
+- Tier each call by the judgment it took. 1: a principle states it, it is a bug, or it corrects a wrong fact. 2: a straightforward reading of the user's intent or an existing norm. 3: a defensible judgment close to the norms. 4: insufficient basis to settle. A tier-4 fix is presented and not made.
+- A clearer or more specific message from tooling is a fix.
+- A doc wording change that only makes a rule more precise, with no rule drawn from one file, is a fix.
+- A fix is not an option when some reachable outcome of it violates a principle in `docs/wf-solver/principles.md`; the default on such an issue is drop. When the principle itself looks wrong, the call says so instead.
 - An entry fix goes to the lib addition protocol, which judges it; leave its against empty.
 - With the default, give what argues for it and what argues against it. The user strikes reasons they do not accept, so state each reason as its own sentence. Leave a side empty when nothing stands on it.
 - Do not edit any repo file.
 
 ## Report
 
-One entry per issue id: the default, the answer to the two questions in one or two sentences, its for and against, and then the fix or the covered ids, as the default needs.
+One entry per issue id: the default, its tier, the answer to the two questions in one or two sentences, its for and against, and then the fix or the covered ids, as the default needs.
