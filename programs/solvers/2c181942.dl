@@ -1,0 +1,111 @@
+// 2c181942
+// concept: objects markers d4
+// A hub of bars, one per side of its box, sits among loose pieces on
+// params.bg. The hub is the one object where colors meet; every piece is a
+// single color. A bar's color names the piece that belongs to it, and that
+// piece carries a notch: a side of its box whose cells straddle the middle.
+// The output keeps the hub and docks each named piece, turned so its notch
+// faces the hub and shifted so the notch fills the seat just beyond its
+// bar. Pieces no bar names are dropped.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(8).
+}
+
+.init params = Params
+
+// --- objects ---
+
+.init objs = Components8<Unit>
+objs.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+.decl object(id: Ident, p: Position)
+object(Id, P) :- objs.label($U(), P, Id).
+
+.init obj_color = Unanimous<Ident, Color>
+obj_color.item(Id, Col) :- object(Id, P), in(P, Col).
+
+// --- hub ---
+
+.decl hub(p: Position)
+hub(P) :- object(Id, P), obj_color.clash(Id).
+
+.init hub_box = Bbox<Unit>
+hub_box.cell($U(), P) :- hub(P).
+
+// A bar is the hub cells on one side of the hub's box.
+.decl bar(d: Dir, p: Position, col: Color)
+bar(D, P, Col) :- hub_box.edge_cell($U(), P, D), in(P, Col).
+
+// Where a bar's piece seats: one step beyond the bar.
+.decl seat(d: Dir, p: Position)
+seat(D, P_seat) :- bar(D, P, _), neighbor(P, D, P_seat).
+
+// --- pieces ---
+
+.decl piece(id: Ident, d: Dir, col: Color)
+piece(Id, D, Col) :- obj_color.value(Id, Col), bar(D, _, Col).
+
+.init box = BoxFrame<Ident>
+box.cell(Id, P) :- piece(Id, _, _), object(Id, P).
+
+// The cells a piece shows on one side of its box, in the box's frame.
+.decl side_cell(id: Ident, d: Dir, p_piece: Position)
+side_cell(Id, D, P_piece) :- box.edge_cell(Id, P, D), box.inner(Id, P, P_piece).
+
+.type Side = [id: Ident, d: Dir]
+
+.init side_sym = D4Map<Side, Unit>
+side_sym.src([Id, D], P_piece, $U()) :- side_cell(Id, D, P_piece).
+side_sym.dst([Id, D], P_piece, $U()) :- side_cell(Id, D, P_piece).
+
+// A side is a notch when its cells straddle its middle: the mirror along
+// the side carries them onto themselves.
+.decl notch(id: Ident, d: Dir)
+notch(Id, D) :-
+    side_cell(Id, D, _),
+    axis_of(D, A), perp(A, A2), flip_of(A2, F),  // the mirror along side d
+    side_sym.map([Id, D], F).
+
+// --- docking ---
+
+// A candidate docking: the piece turned by g to face the hub with a notch,
+// then shifted by v to put a cell of that notch on a seat cell.
+.decl dock_cell(id: Ident, g: D4, v: Shift, p_grid: Position)
+dock_cell(Id, G, V, P_grid) :-
+    piece(Id, D, _), opposite(D, D_faced),                     // the bar the piece docks to
+    notch(Id, D_notch), c4_elem(G),
+    apply_dir(G, D_notch, D_faced),                            // the notch faces the hub
+    side_cell(Id, D_notch, P_notch), apply(G, P_notch, P_turned_notch),
+    seat(D, P_seat), displacement(P_turned_notch, P_seat, V),  // a notch cell on a seat cell
+    box.inner(Id, _, P_piece),                                 // any cell of the piece
+    apply(G, P_piece, P_turned), compose(P_turned, V, P_grid).
+
+.type Cand = [id: Ident, g: D4, v: Shift]
+
+// The notch fills the seat: the cells a candidate puts on the seat's line
+// are the seat's.
+.init mate = KeyedSetCompare<Cand, Dir, Position>
+mate.pattern_member(D, P_seat) :- seat(D, P_seat).
+mate.observed_member([Id, G, V], P_grid) :-
+    dock_cell(Id, G, V, P_grid), piece(Id, D, _),
+    seat(D, P_seat), same_dist(D, P_grid, P_seat).  // on the seat's line
+
+.decl placed(id: Ident, p: Position)
+placed(Id, P_grid) :-
+    dock_cell(Id, G, V, P_grid), piece(Id, D, _), mate.equals([Id, G, V], D).
+
+// --- output ---
+
+.decl paint(p: Position, col: Color)
+paint(P, Col) :- hub(P), in(P, Col).
+paint(P, Col) :- placed(Id, P), piece(Id, _, Col).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, _),
+    ( paint(P, Col)
+    ; !paint(P, _), params.bg(Col)
+    ).

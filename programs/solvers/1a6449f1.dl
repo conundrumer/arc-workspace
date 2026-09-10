@@ -1,0 +1,64 @@
+// 1a6449f1
+// concept: crop objects border enclose select count
+// Colored noise fills the grid, and rings of one color sit in it. The output
+// crops the ring whose inside holds the most cells.
+//
+// $Rect — a ring is a rectangle drawn by four same-color runs, and its inside
+//   is what that rectangle holds strictly within its edges.
+// $Enclose — a ring is any wall of one color, and its inside is the region
+//   that wall cuts off from the grid edge, cropped to the region's own box.
+
+#include "../lib.dl"
+
+.type Choice = Rect {} | Enclose {}
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+}
+
+.init params = Params
+
+// Rings are drawn in ink; the field they sit in is bg.
+.decl ink(col: Color)
+ink(Col) :- in(_, Col), !params.bg(Col).
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// --- Rect ---
+
+.init drect = DrawnRect<Color>
+drect.node(Col, P) :- ink(Col), in(P, Col).
+
+// The inside of each rectangle.
+.init bcells = BoxCells<Position>
+bcells.box(B, B) :- drect.rect(_, B).
+bcells.cell(B, P) :- bcells.box(B, _), in(P, _).
+
+.init biggest_hole = Mode<Unit, Position, Position>
+biggest_hole.item($U(), B, P) :- bcells.hole(B, P).
+
+.init hole_crop = BoxFrame<Position>
+hole_crop.cell(B, P) :- biggest_hole.mode($U(), B), bcells.hole(B, P).
+
+out(P_inner, Col, $Rect()) :- hole_crop.inner(_, P, P_inner), in(P, Col).
+
+// --- Enclose ---
+
+// Each ink color walls the rest of the grid off; a region it closes is a ring's
+// inside.
+.init closed = Closed<Color>
+closed.cell(Col, P) :- ink(Col), in(P, C), C != Col.
+
+.type Region = [col: Color, id: Ident]
+
+.decl region(k: Region, p: Position)
+region([Col, Id], P) :- closed.region(Col, P, Id).
+
+.init biggest_region = Mode<Unit, Region, Position>
+biggest_region.item($U(), K, P) :- region(K, P).
+
+.init region_crop = BoxFrame<Region>
+region_crop.cell(K, P) :- biggest_region.mode($U(), K), region(K, P).
+region_crop.grid(K, P) :- biggest_region.mode($U(), K), in(P, _).
+
+out(P_inner, Col, $Enclose()) :- region_crop.inner(_, P, P_inner), in(P, Col).

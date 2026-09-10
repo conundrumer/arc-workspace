@@ -1,0 +1,106 @@
+// 264363fd
+// concept: objects markers stamp cast
+// Solid rectangles and one loose template sit on a background. Each
+// rectangle's minority-colored cells are markers. The template stamps onto
+// every marker, its box center landing on the marker, clipped to the
+// rectangle; each tip of the template then casts a ray of its own color
+// onward across the rectangle. The template itself is erased.
+
+#include "../lib.dl"
+
+.comp Params {
+}
+
+.init params = Params
+
+// --- pieces ---
+
+.init bg_mode = Mode<Unit, Color, Position>
+bg_mode.item($U(), Col, P) :- in(P, Col).
+
+.decl bg(col: Color)
+bg(Col) :- bg_mode.mode($U(), Col).
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !bg(Col).
+
+.init pieces = Components<Unit>
+pieces.node($U(), P) :- ink(P, _).
+
+.decl piece(id: Ident, p: Position)
+piece(Id, P) :- pieces.label($U(), P, Id).
+
+.init box = BoxFrame<Ident>
+box.cell(Id, P) :- piece(Id, P).
+box.grid(Id, P) :- piece(Id, _), in(P, _).
+
+// A piece that leaves a hole in its own box is the template; the others fill
+// their box and are the rectangles.
+.decl ragged(id: Ident)
+ragged(Id) :- box.inside(Id, P), !piece(Id, P).
+
+.decl rect_cell(id: Ident, p: Position, col: Color)
+rect_cell(Id, P, Col) :- piece(Id, P), !ragged(Id), ink(P, Col).
+
+.decl tmpl(p: Position, col: Color)
+tmpl(P, Col) :- piece(Id, P), ragged(Id), ink(P, Col).
+
+// --- template ---
+
+// The center cell of the template's box.
+.decl anchor(p_grid: Position)
+anchor(P) :- ragged(Id), box.inner(Id, P, P_inner), centered(P_inner).
+
+.init rim = Rim<Unit>
+rim.cell($U(), P) :- tmpl(P, _).
+
+// The template carries on toward d.
+.init attached = Unanimous<Position, Dir>
+attached.item(P, D) :- tmpl(P, _), dir_elem(D), !rim.rim_dir($U(), P, D).
+
+// A tip is attached in one direction only, and points away from it.
+.decl tip(p: Position, d: Dir, col: Color)
+tip(P, D, Col) :- tmpl(P, Col), attached.value(P, D_back), opposite(D, D_back).
+
+// --- stamp ---
+
+.init hue = Mode<Ident, Color, Position>
+hue.item(Id, Col, P) :- rect_cell(Id, P, Col).
+
+.decl marker(id: Ident, p: Position)
+marker(Id, P) :- rect_cell(Id, P, Col), !hue.mode(Id, Col).
+
+// How far the template travels to land its anchor on each marker.
+.decl travel(m: Position, delta: Shift)
+travel(M, Delta) :- marker(_, M), anchor(A), displacement(A, M, Delta).
+
+// Each template cell, where the marker's stamp puts it.
+.decl carried(id: Ident, p: Position, p_out: Position)
+carried(Id, P, P_out) :-
+    marker(Id, M), travel(M, Delta),             // the marker's displacement
+    tmpl(P, _), compose(P, Delta, P_out).        // a template cell carried along
+
+// --- rays ---
+
+// A stamped tip, with the heading it keeps.
+.decl spike(id: Ident, p: Position, d: Dir, col: Color)
+spike(Id, P_out, D, Col) :- carried(Id, P, P_out), tip(P, D, Col).
+
+.init spikes = Ray<Ident>
+spikes.dir(Id, D) :- spike(Id, _, D, _).
+spikes.cell(Id, P) :- rect_cell(Id, P, _).
+spikes.mark(Id, P) :- spike(Id, P, _, _).
+
+// --- output ---
+
+.decl paint(p: Position, col: Color)
+paint(P_out, Col) :-
+    carried(Id, P, P_out), tmpl(P, Col),         // the stamped template cell
+    rect_cell(Id, P_out, _).                     // clipped to the rectangle
+paint(P, Col) :-
+    spike(Id, Src, D, Col),                      // onward from the tip
+    spikes.ray(Id, P, D, K, Src), K != 0.
+paint(P, Col) :- tmpl(P, _), bg(Col).            // the template is erased
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- in(P, C0), ( paint(P, Col) ; !paint(P, _), Col = C0 ).

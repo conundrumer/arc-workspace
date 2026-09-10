@@ -38,7 +38,12 @@ Callers:
 
 - `142ca369` — `leave_dir` and `bounce`, the same construction, over a `side_wall` that also carries the wall's color into the ray's ink.
 - `508bd3b6` — the surfacing solver.
+- `7e2bad24` — `leave_dir` and `bounce`, the same construction, as its $Contact case, over sides blocked by a reflective color; a transparent color the beam paints through is not a side.
 
 Near-misses: `a3df8b1e` and `e179c5f4` each reverse a single cardinal component with `opposite` alone, with no second component to recombine. `2546ccf6` reflects content across the grid's cut lines with `flip_of` and `apply`, and composes two of those at a corner.
 
 The spec question is settled: both callers derive the blocked sides themselves, and neither derivation is available from a blocker cell set. 508bd3b6's `$Side` counts only a wall that covers a whole grid edge, and 142ca369 reads the blocking cell's color as the payload its ray carries on.
+
+Survey: 2026-09-10 06:33
+
+Delta over the solvers since the survey above. Callers: none new. Near-misses: `69889d6e`'s `walk` climbs a corner by toggling between the corner's two stored directions when the cell ahead is blocked, with no component inverted and no recombination; `73c3b0d8`'s `splash_dir` reverses one fixed cardinal with `opposite` alone. No new evidence on the spec question.

@@ -171,15 +171,15 @@ The seat, `displacement` or `compose` against a box with no covering test: 20 fi
 
 `box_edge`, a covered cell on a box's edge line:
 
-- `BoxCells` sites: 14, with 10 `on_edge` and 8 `hole` reads. `on_edge` is `geq` plus `same_dist` verbatim, and `hole` is `gt`, so the retirement is exact. `14b8e18c`, `1c786137`, `21897d95`, `256b0a75`, `292dd178`, `2d0172a1`, `3de23699`, `3dc255db`, `4347f46a`, `444801d8`, `446ef5d2`, `465b7d93`, `50cb2852`, `bb43febb`.
+- `BoxCells` sites: 18, with 15 `on_edge` and 17 `hole` reads. `on_edge` is `geq` plus `same_dist` verbatim, and `hole` is `gt`, so the retirement is exact. `14b8e18c`, `1a6449f1`, `1c786137`, `21897d95`, `256b0a75`, `292dd178`, `2d0172a1`, `3de23699`, `3dc255db`, `4347f46a`, `444801d8`, `446ef5d2`, `465b7d93`, `4c7dc4dd`, `50cb2852`, `522fdd07`, `551d5bf1`, `bb43febb`.
 - Hand-written through `inner` and `dist(_, D, 0)`: 5. `15660dd6` `ring_pos`, `212895b5` `Parse.seed`, `42918530` `outline`, `4290ef0e`, `4e469f39`. The closed entry `Bbox-corner_cell.md` named this operation as the edge form with the wider caller base.
 
-`Outlines`: 3. `1a6449f1` `hole`, `1c786137` `bcells.box`, `4c7dc4dd` `box.cell`. All three read `rect` and then `gt`.
+`Outlines`: 3. `1a6449f1`, `1c786137`, `4c7dc4dd`. All three feed `rect` into a `BoxCells` box and read `hole`.
 
 The readings:
 
 - `Shift` or `Inset` in a type position: 63 files, 155 `Shift` columns and 19 `Inset` columns in 8 files.
-- A stored Box typed `Position`, read by `geq` directly: `4c3d4a41` `params.box`. Solver-local Box relations typed `Position`: 15 files, among them `1a6449f1` `hole`, `2b9ef948` `box`, `3eda0437` `box_ink`, `40f6cd08` `nested`, `522fdd07` `shrunk`.
+- A stored Box typed `Position`, read by `geq` directly: `4c3d4a41` `params.box`. Solver-local Box relations typed `Position`: 13 files, among them `2b9ef948` `box`, `3eda0437` `box_ink`, `40f6cd08` `nested`.
 - Of the 8 `Inset` files, five hold a Box: `0934a4d8` `mosaic_margin`, `412b6263` `ring`, `49d1d64f` `seat_delta`, `2697da3f` `arm_margin`, `28e73c20` `walk`'s third column, whose comment reads "the margin ahead of it". `48d8fb45` `win_delta` is a per-edge change composed onto a cell to make a box. At `412b6263`, `49d1d64f`, and `28e73c20`, `uniform_delta`'s output is the Box.
 
 ## Near-misses
