@@ -66,9 +66,12 @@ ink(P) :- in(P, Col), !params.bg(Col).
 dir8_flank(D, E) :- dir_of(D, _, E).
 dir8_flank(D, E) :- dir_of(E, _, D).
 
+.init exposed = Rim8<Unit>
+exposed.cell($U(), P) :- ink(P).
+
 // A flank of g with no arm — the defect the apex test negates.
 .decl no_arm(p: Position, g: Dir8)
-no_arm(P, G) :- ink(P), dir8_flank(G, E), neighbor(P, E, Q), !ink(Q).
+no_arm(P, G) :- dir8_flank(G, E), exposed.rim_dir($U(), P, E).
 
 // An ink cell with an arm on each flank of g.
 .decl apex(p: Position, g: Dir8)

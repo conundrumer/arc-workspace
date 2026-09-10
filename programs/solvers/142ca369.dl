@@ -44,17 +44,12 @@ impl_choice($Gap()). impl_choice($Glyph()).
 
 // --- Gap ---
 
-// Same-color neighbor toward d — a candidate arm.
-.decl arm(p: Position, col: Color, d: Dir, p_arm: Position)
-arm(P, Col, D, P_arm) :-
-    in(P, Col), !params.bg(Col),
-    dir_elem(D), neighbor(P, D, P_arm), in(P_arm, Col).
+.init exposed = Rim<Color>
+exposed.cell(Col, P) :- in(P, Col), !params.bg(Col).
 
 // A dir of corner g with no arm — the defect the elbow test negates.
 .decl no_arm(p: Position, col: Color, g: DiagDir)
-no_arm(P, Col, G) :-
-    in(P, Col), !params.bg(Col),
-    dir_of(G, _, D), !arm(P, Col, D, _).
+no_arm(P, Col, G) :- dir_of(G, _, D), exposed.rim_dir(Col, P, D).
 
 // The elbow of an L-triomino, with the corner its arms straddle.
 .decl elbow(p: Position, col: Color, gap: DiagDir)
@@ -64,9 +59,9 @@ elbow(P, Col, G) :-
     neighbor(P, G, P_gap), in(P_gap, Bg), params.bg(Bg).  // the corner between them is empty
 
 mark(P_cell, $Gap()) :-
-    elbow(P, Col, G),
+    elbow(P, _, G),
     ( P_cell = P                                  // the elbow
-    ; dir_of(G, _, D), arm(P, Col, D, P_cell)     // its arms
+    ; dir_of(G, _, D), neighbor(P, D, P_cell)     // its arms
     ).
 
 enter(P, D, Col, $Gap()) :- elbow(P, Col, G), diag_opposite(G, D).

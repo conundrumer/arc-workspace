@@ -47,27 +47,25 @@ comps.node($U(), P) :- open(P).
 .decl region(p: Position, id: Ident)
 region(P, Id) :- comps.label($U(), P, Id).
 
+// The boundary of the open set. The grid edge bounds a region like a wall.
+.init rim = Rim8<Unit>
+rim.cell($U(), P) :- open(P).
+
 // How deep each open cell sits, under each case's metric.
 .decl depth(p: Position, k: number, c: Choice)
 
 // --- Peel ---
 
-.init rim = Rim8<Unit>
-rim.cell($U(), P) :- open(P).
-
 depth(P, K, $Peel()) :- rim.depth($U(), P, K).
 
 // --- Sight ---
 
-// A rim cell — the outside starts directly beyond it — casts back over the
-// cells that face the outside through it; the key is the cast direction, so
-// each instance casts only its own way.
+// A rim cell casts back over the cells that face the outside through it. The
+// key is the cast direction, so each instance casts only its own way.
 .init sray = Ray<Dir8>
 sray.dir(D, D) :- dir8_elem(D).
 sray.cell(D, P) :- open(P), dir8_elem(D).
-sray.mark(D, P) :-
-    open(P), dir8_opposite(D2, D),   // a direction and the cast back
-    neighbor(P, D2, Q), !open(Q).    // outside beyond P toward d2
+sray.mark(D, P) :- dir8_opposite(D, D2), rim.rim_dir($U(), P, D2).
 
 // A cell's sight depth: the fewest steps to a rim cell over the eight view
 // lines — how many open cells remain before the ray exits.

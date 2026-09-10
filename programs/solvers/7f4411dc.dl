@@ -35,8 +35,12 @@ occ.shape($U(), P, $U()) :- sq.cell($U(), P).
 square_kept(P) :- occ.occurrence($U(), M), sq.cell($U(), S), compose(M, S, P).
 
 // --- $Support ---
+.init rim = Rim<Unit>
+rim.cell($U(), P) :- ink_at(P).
+
+// The ink continues from P toward D.
 .decl support(p: Position, d: Dir)
-support(P, D) :- ink_at(P), dir_elem(D), neighbor(P, D, P2), ink_at(P2).
+support(P, D) :- ink_at(P), dir_elem(D), !rim.rim_dir($U(), P, D).
 
 .decl support_kept(p: Position)
 support_kept(P) :- support(P, D1), support(P, D2), D1 != D2.

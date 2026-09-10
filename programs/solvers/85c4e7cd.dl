@@ -12,22 +12,18 @@
 
 .init params = Params
 
-// Ring index: distance to the nearest edge.
-.init edge_dist = Extremes<Position>
-edge_dist.cand(P, K) :- in(P, _), dir_elem(D), dist(P, D, K).
-
-.decl ring(p: Position, k: number)
-ring(P, K) :- edge_dist.low(P, K).
+// The grid peels into concentric rings, one per depth.
+.init peel = Rim<Unit>
+peel.cell($U(), P) :- in(P, _).
 
 .init rings = Ordinal<Unit>
-rings.idx_set($U(), K) :- ring(_, K).
+rings.idx_set($U(), K) :- peel.depth($U(), _, K).
 
 .decl ring_color(k: number, col: Color)
-ring_color(K, Col) :- ring(P, K), in(P, Col).
+ring_color(K, Col) :- peel.depth($U(), P, K), in(P, Col).
 
-// Opposite-end pairing: as many rings outside K as inside K2.
 .decl out(p: Position, col: Color)
 out(P, Col) :-
-    ring(P, K), rings.rank($U(), K, R),   // rings outside this one
-    rings.rank_desc($U(), K2, R),         // the ring as deep from the centre
+    peel.depth($U(), P, K), rings.rank($U(), K, R),   // rings outside this one
+    rings.rank_desc($U(), K2, R),                     // the ring as deep from the center
     ring_color(K2, Col).
