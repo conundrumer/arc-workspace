@@ -37,70 +37,76 @@
 .decl mark(p: Position, col: Color)
 mark(P, Col) :- in(P, Col), !params.bg(Col).
 
+.init rays = Ray<Unit>
+rays.dir($U(), D)  :- params.ray_dir(D).
+rays.mark($U(), P) :- mark(P, _).
+
+// A ray cell, with its dot's color and its step count along the ray.
+.decl on_ray(p: Position, m: Color, k: number)
+on_ray(P, M, K) :- rays.cast($U(), P, _, K, Src), mark(Src, M).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Toggle()). impl_choice($Mask()).
+
 .decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !on_ray(P, _, _).   // off every ray
 
 // --- Toggle ---
 
-// The two-color cycle of a ray with mark color M.
-.decl toggle(m: Color, c1: Color, c2: Color)
-toggle(M, M, Alt) :- mark(_, M), params.alt_color(Alt).
-toggle(M, A, B)   :- toggle(M, B, A).
+// Each dot color's two-color cycle, one advance per ray step.
+.init colors = CycleWalk<Color, Color>
+colors.succ(M, M, Alt) :- mark(_, M), params.alt_color(Alt).
+colors.succ(M, A, B)   :- colors.succ(M, B, A).
+colors.step(M, K)      :- on_ray(_, M, K).
 
-// From each mark, step toward ray_dir advancing the color cycle.
-.decl ray_toggle(m: Color, p: Position, col: Color)
-ray_toggle(Col, P, Col) :- mark(P, Col).
-ray_toggle(M, Q, C2) :-
-    ray_toggle(M, P, C1), toggle(M, C1, C2),   // next color in the cycle
-    params.ray_dir(D), neighbor(P, D, Q),      // next cell toward the edge
-    in(Q, _).                                  // still on the grid
-
-out(P, Col, $Toggle()) :- ray_toggle(_, P, Col).
-out(P, Col, $Toggle()) :- in(P, Col), !ray_toggle(_, P, _).
+out(P, Col, $Toggle()) :- on_ray(P, M, K), colors.walk(M, M, K, Col).   // K steps on from the dot color
 
 // --- Mask ---
 
 .init slots = IndexCycle<Unit>
 slots.idx($U(), K) :- params.slot(K).
 
-// From each mark, step toward ray_dir advancing the mask slot.
-.decl ray_mask(m: Color, p: Position, k: number)
-ray_mask(Col, P, 0) :- mark(P, Col).
-ray_mask(M, Q, K2) :-
-    ray_mask(M, P, K), slots.succ($U(), K, K2),   // next slot in the period
-    params.ray_dir(D), neighbor(P, D, Q),         // next cell toward the edge
-    in(Q, _).                                     // still on the grid
+// A step along the ray advances the slot cycle.
+.init slot_walk = CycleWalk<Unit, number>
+slot_walk.succ($U(), K, K2) :- slots.succ($U(), K, K2).
+slot_walk.step($U(), K)     :- on_ray(_, _, K).
 
-out(P, Col, $Mask()) :- ray_mask(_, P, K), params.mask(K, Col).    // overridden slot
-out(P, M,   $Mask()) :- ray_mask(M, P, K), !params.mask(K, _).     // unmarked slot echoes the dot
-out(P, Col, $Mask()) :- in(P, Col), !ray_mask(_, P, _).
+// The slot a ray cell falls in.
+.decl ray_slot(p: Position, m: Color, k: number)
+ray_slot(P, M, Slot) :- on_ray(P, M, K), slot_walk.walk($U(), 0, K, Slot).
+
+out(P, Col, $Mask()) :- ray_slot(P, _, K), params.mask(K, Col).    // overridden slot
+out(P, M,   $Mask()) :- ray_slot(P, M, K), !params.mask(K, _).     // unmarked slot echoes the dot
 
 // --- determination ---
 
 .comp Determine {
-    // Dots of the train inputs; the ex_out atom holds the test input out.
+    .type RayPhase = [e: Example, m: Position, w: number, k: number]
+
+    // Dots of the train inputs; the ex_out atom excludes the test input.
     .decl fmark(e: Example, p: Position, col: Color)
     fmark(E, P, Col) :- ex_in(E, P, Col), !params.bg(Col), ex_out(E, _, _).
 
     // The color the pair paints i steps along a dot's ray.
     .decl ray_col(e: Example, m: Position, i: number, col: Color)
     ray_col(E, M, I, Col) :-
-        fmark(E, M, _), ex_in(E, Q, _),
-        displacement(M, Q, Delta),                               // a cell relative to its dot
-        params.ray_dir(D), opposite(D, O), dist(Delta, O, I),    // steps toward ray_dir
-        I >= 0, jump_delta(D, I, Delta),                         // straight along the ray
-        compose(M, Delta, P), ex_out(E, P, Col).                 // the painted cell
-
-    // Two steps of one ray that carry different colors — never one slot.
-    .decl differ(i: number, i2: number)
-    differ(I, I2) :- ray_col(E, M, I, Col), ray_col(E, M, I2, Col2), Col != Col2.
+        fmark(E, M, _), params.ray_dir(D),
+        ex_in(E, P, _), dist(P, D, I),      // a step count the grid spans
+        jump(M, D, I, Q), ex_out(E, Q, Col).
 
     // Candidate periods: the step counts the rays reach.
     .decl cand(w: number)
     cand(W) :- ray_col(_, _, W, _), W != 0.
 
-    // A period that folds two differing steps onto one slot.
+    // The colors one ray carries at each slot of a candidate period.
+    .init slot_color = Unanimous<RayPhase, Color>
+    slot_color.item([E, M, W, K], Col) :-
+        cand(W), ray_col(E, M, I, Col),   // candidate period, a step's color
+        stride(I, W, 0, _, K).            // the step reduced into the period
+
+    // A period that folds two differing steps of one ray onto one slot.
     .decl mismatch(w: number)
-    mismatch(W) :- cand(W), differ(I, I2), stride(I, W, 0, _, K), stride(I2, W, 0, _, K).
+    mismatch(W) :- slot_color.clash([_, _, W, _]).
 
     // The shortest period no ray breaks.
     .init unbroken = Extremes<Unit>

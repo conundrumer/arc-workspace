@@ -3,8 +3,8 @@
 // The grid holds equal-sized blocks, one of them colored params.seed. Two blocks
 // reach each other when they lie on one line with no third block between
 // them. From the seed, the chain steps to the nearest block it reaches and
-// does not already hold, and it ends where every block it reaches is one it
-// already holds. Each link fills the cells between its two blocks in params.path.
+// does not already hold. Each link fills the cells between its two blocks in
+// params.path.
 
 #include "../lib.dl"
 
@@ -37,11 +37,6 @@ sight.blocked($U(), M) :- block(M, _).
 
 // --- the chain ---
 
-// A block reaches the first block on each of its lines, at the number of
-// steps between the two boxes.
-.decl reach(m: Position, d: Dir, m2: Position, k: number)
-reach(M, D, M2, K) :- sight.stop($U(), M2, D, K, M), dir_elem(D).
-
 .decl seed_block(m: Position)
 seed_block(M) :- block(M, Col), params.seed(Col).
 
@@ -54,29 +49,13 @@ state.take($U(), M, M2) :- hop(M, M2).
 state.init_taken($U(), M) :- seed_block(M).
 state.init_untaken($U(), M) :- block(M, _), !seed_block(M).
 
-// The look along D finds no untaken block nearer than K: no block there,
-// none nearer, or a taken one.
-.decl clear_dir(m: Position, k: number, d: Dir)
-clear_dir(M, K, D) :-
-    reach(M, _, _, K), dir_elem(D),
-    ( !reach(M, D, _, _)
-    ; reach(M, D, _, K2), K <= K2
-    ; reach(M, D, M2, _), state.taken($U(), M, M2)
-    ).
+// The step taken: of the blocks the chain reaches and does not hold, the
+// one at the fewest steps. A tie leaves both, and the walk forks.
+.init nearest = ArgExtremes<Position, Position>
+nearest.cand(M, M2, K) :- state.untaken($U(), M, M2), sight.stop($U(), M2, _, K, M).
 
-// Both looks of an axis clear, then both axes: no untaken block nearer than
-// K in any direction.
-.decl clear_axis(m: Position, k: number, a: Axis)
-clear_axis(M, K, A) :-
-    clear_dir(M, K, D), clear_dir(M, K, D2), opposite(D, D2), axis_of(D, A).
-
-.decl all_clear(m: Position, k: number)
-all_clear(M, K) :- clear_axis(M, K, A), clear_axis(M, K, A2), perp(A, A2).
-
-// The step taken: the nearest block the chain does not hold. A tie leaves
-// both, and the walk forks.
 .decl hop(m: Position, m2: Position)
-hop(M, M2) :- state.untaken($U(), M, M2), reach(M, _, M2, K), all_clear(M, K).
+hop(M, M2) :- nearest.low(M, M2, _).
 
 // A link fills the box the two blocks span, less the blocks themselves.
 .type Link = [m: Position, m2: Position]
