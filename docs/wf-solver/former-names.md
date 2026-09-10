@@ -29,6 +29,8 @@ On 2026-09-08, the solver vocabulary moved to conventional terms, in the docs, t
 | data-leaning, ops-leaning | table, rule |
 | data case, data peer | stored case, table peer |
 
+NB: reparameterization has been dropped; Same model decides whether an encoding is a peer
+
 ## Code and commands
 
 | Former | Current |

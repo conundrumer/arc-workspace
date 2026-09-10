@@ -65,7 +65,7 @@ The program works in the task's own types: colors, directions, axes, D4 elements
 
 If the task does not have a lib unit's concept, the solver does not use that unit.
 
-- Needing part of a unit's computation is not a reason to use it. A program that needs only one step of a unit writes that step with primitives or a local rule.
+- Needing part of a unit's computation is not a reason to use it. A program that needs only one step of a unit writes that step with primitives or a local rule. A program may read one exposed output of a comp and leave the rest unread, as long as the task has the unit's concept.
 
 ### Indirection
 
@@ -74,8 +74,10 @@ Parameters enter in the form that their consumer reads, keyed by objects that th
 - Conversions of that kind:
     - a key renamed into a second vocabulary, as a 2×2 tile position named by its corner
     - a flat correspondence routed through intermediate coordinates
-    - an order stored as successor edges, which closure expands before a comparison reads it
-- When the two sides differ in content, conversion is justified, as with a sparse set and its ranking (`Ordinal`).
+    - an order stored in the parameters as successor edges, which closure expands before a comparison reads it
+- When the two sides differ in content, conversion is justified:
+    - a sparse set and its ranking (`Ordinal`)
+    - a cell set and the id of its equivalence class (`Canon`), when the program acts on the class as one thing through that id
 
 ### Performance
 
@@ -212,7 +214,7 @@ Table against rule is the main way in which hypotheses differ. Any relationship 
 
 Divergence must be valid to count.
 
-- **Ill-formed divergence.** When every divergence of a hypothesis from a peer is ill-formed (the output has multiple values or is not total), the hypothesis never fits a task that the peer misses, at any assignment of its parameterization. The peer subsumes it, and it gets no case.
+- **Ill-formed divergence.** When every divergence of a hypothesis from a peer is ill-formed (the output has multiple values or is not total), the hypothesis never fits a task that the peer misses, at any assignment of its parameterization. The peer subsumes it, and it gets no case. The subsumption is refuted when there is a divergence where the hypothesis is total and the peer is ill-formed.
     + (∀θ ∃θ′ ∀x. M(θ, x)↓ ⇒ M(θ, x) = M′(θ′, x)) ⇒ fam(M) ⊆ fam(M′)
         + M(θ, x)↓ — M defined at θ and x: `out` is a grid, total and single-valued
     - **Tabulation.** When another branch in the same case makes a rule hypothesis read every input from the parameters, that hypothesis computes a function of the parameters alone. Its tabulation is an assignment of the table peer, so it gets no case (21897d95).
@@ -225,13 +227,10 @@ Divergence must be valid to count.
 
 Cases are hypotheses about the prior that the task teaches.
 
-- **reparameterization** (of a setup) — another encoding of it, finding the same structure through a different parameterization.
 - **precedent** (of a setup structure) — the encoding that the corpus already uses for it.
+    - The solver that introduces or improves a structure's encoding sets its precedent.
 - Models that find different structures are different parses.
     - 662c240a <!-- square tiles form a stack along an axis, and the output is the one tile that lacks the symmetry the others share; every case reads the same stack. -->
-- **Reparameterizations.** A setup has reparameterizations, and together they get one case.
-    - The solver that introduces or improves a structure's encoding sets its precedent.
-    - 662c240a <!-- the stack can be found by tile count, as the solver does, by tile size, or by squareness with no parameter; the same-model test separates the three, since count and size give different outputs at one assignment on other extents and squareness has no parameter, but all three claim one segmentation prior and differ only in which parameter finds the stack. -->
 - **Setup priority.** A setup follows, in order:
     1. Fidelity.
     2. Reuse of the facts and lib instances the program already has (1190bc91).
@@ -240,11 +239,11 @@ Cases are hypotheses about the prior that the task teaches.
     - 662c240a <!-- a stored symmetry, with the output the tile it fails on, against the existence of any symmetry. -->
 - **Different parse.** A peer model that parses the task differently gets a case.
     - An encoding that depends on different input structure is a different parse and gets a case.
-    - An encoding that finds the same structure another way is a reparameterization.
+    - An encoding that finds the same structure another way is the same parse. Same model decides whether it is a peer.
 
 ### Evidence
 
-- **Exercised.** If no pair exercises a peer model's added rules, parameters, or comps, that peer gets no case.
+- **Exercised.** A peer model has rules, parameters, or comps that the model at hand does not. If no pair exercises them, that peer gets no case.
     - A pair exercises a part of the solver when that pair's output depends on it.
 - **No relational form.** A hypothesis with no relational form gets no case. When a hypothesis's encoding depends on arithmetic and the lib addition protocol closes the primitive, that hypothesis has no relational form (`proposals/MinHops.md`).
 - **Table entries.** A mapping table needs multiple entries exercised. A one-entry ring table over a plain border is unexercised.

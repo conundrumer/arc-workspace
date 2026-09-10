@@ -84,7 +84,7 @@ Ask these questions:
 
 **Divergence witness.** For each Choice case pair, and for each peer model considered and dropped, show where the models diverge, as a concrete witness: an input fragment and each model's output on it.
 
-- Take that witness from `uv run python scripts/run_dl.py grid <task_id>`.
+- Take that witness from `uv run python scripts/run_dl.py grid <task_id>`, which runs the solver on a grid the session writes, of any size and any content.
 - Choose a witness that shows a valid divergence.
 - When the divergence requires a parameter to be reassigned, reassign that parameter.
 - For data-indistinguishable pairs, state what the shared data hides.

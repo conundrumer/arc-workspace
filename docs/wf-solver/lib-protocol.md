@@ -21,9 +21,10 @@ Give a candidate an entry, `docs/wf-solver/proposals/<name>.md`, named for the o
 - an index sentence that stands alone
 - the code form, when it has one
 - a `Not:` line naming what is not this operation
-- a `Match:` line with the search signature: a grep pattern, or a shape stated in prose and matched with the parser (`tests/test_ast_match.py`)
-- a `Survey: <date time>` line, the dispatch time to the minute
-- the survey's result that is relevant to the operation: the near-misses, the spec question, and a `Callers` list of the solvers that would call it
+- a `Match:` line with a search signature that covers every statement of the operation, including statements whose atoms sit in different lines or rules, and statements that reach the operation through another primitive. State the shape in prose and match it with the parser (`tests/test_ast_match.py`)
+- a `Survey: <date time>` line per dispatch, the dispatch time to the minute, each followed by its own result
+    - the result that is relevant to the operation: the near-misses, the spec question, and a `Callers` list of the solvers that would call it
+    - a result with no `Survey:` line above it counts as no result
 - a `Closed: <date time>` line with the judgment, when the operation is closed
 
 Put in the entry what a reader needs to judge the operation, and nothing else.
@@ -52,7 +53,7 @@ Remove the entry's file at these points:
     - If no entry exists, write one with its `Survey:` line. Then send the `survey` agent the entry's path, the scope (the whole corpus), and the scratch path (`.scratch/<task_id>/`).
     - If an entry is closed, keep its judgment. Encode the solver without the operation, in the way the entry records.
     - If an entry has a survey result, add this solver under `Callers`.
-        - **Newer solvers.** If some solvers postdate the entry's `Survey:` time, send the `survey` agent the path, the scope, and the scratch path, and append the relevant results to the entry. The scope is the solvers whose file time is at or after that time (`ls -lt programs/solvers`). An edited solver counts.
+        - **Newer solvers.** If some solvers postdate the entry's `Survey:` time, send the `survey` agent the path, the scope, and the scratch path, and append the relevant results to the entry. The scope is the solvers that `uv run python scripts/run_dl.py since <time>` lists.
     - If an entry has no result and no survey of yours is running, dispatch the survey.
 
     **Dispatch.** Dispatch early, and do not survey yourself. The agent reports callers, near-misses, the spec question, and reimplementations.
@@ -67,6 +68,7 @@ Remove the entry's file at these points:
         - a plain relation states it and no other solver writes it
         - a relational form replaces the arithmetic
     - **Closing.** When closing a proposal, put the judgment in the entry as the `Closed:` line, remove the proposal comp, and rethink the solver's encoding in relational form. Leave plain relations as written.
+        - An entry closed with no `Survey:` line above its result is reopened: write the line and dispatch the survey.
         - If the proposal closes before it has an entry, write the entry and close it in the same step.
         - Include the close in the review as a judgment call.
     - **No close.** If the proposal does not close, nothing is decided. Write no text that implies an outcome.

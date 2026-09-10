@@ -25,6 +25,7 @@ A Position is named for its coordinate frame.
 - **grid** — task input/output frame: `P_grid`. If input and output both appear in one rule, `P_grid_in` and `P_grid_out`.
 - **tile** — tile-arrangement frame produced by `divide`. `P_tile`.
 - **intile** — within a single tile. `P_intile`.
+- **inner** — a region's own frame: `P_inner`.
 
 `divide` and `tile_pos` name their formal parameters `p_outer` / `p_inner`. A solver binds them to `P_tile` / `P_intile` at the call site. An axis-only intermediate takes decomposition language: `P_outer_v`, `P_inner_h`.
 
@@ -92,8 +93,8 @@ out(..., $CaseB()) :- ...
 
 A solver with one case has no `Choice`: no type, no case markers, no column on `out`.
 
-- **Case markers.** Cases do not interleave: each case's Params and rules sit under its marker.
-- **`impl_choice`.** The relation that enumerates the cases is `impl_choice`, its column `ch`, corpus-wide.
+- **Case markers.** Cases do not interleave: each case's Params and rules sit under its marker. Cases that share facts or rules sit under one marker naming them, `// --- Box, Erode ---`.
+- **`impl_choice`.** The relation that enumerates the cases is `impl_choice`, its column `ch`, corpus-wide. A record-typed `Choice` gets one enumerator per field, named for the field's type (`.decl locate_choice(l: Locate)`). `impl_choice` holds whole `Choice` values, and appears when a rule reads one.
 
 ## Params
 

@@ -52,7 +52,7 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !covered(Ch, P), params.bg(Col).
 
 ## `GRID_HxW` for grid data
 
-A GRID call stores a grid as a literal layout, one fact per cell in row-major order: `GRID_HxW` emits every cell with its value; `GRID_MASK_HxW` and `GRID_SPARSE_HxW` emit only the nonzero cells. The runner expands the call before Souffle sees the file; GRID is not defined in `lib.dl`. H and W are the grid's dims and take any size, so a call carries H·W cell values. Cells can hold any per-cell data: colors, labels, transforms. A distinguished cell is a Position fact, not a cell value (27a28665 `center_pos`).
+A GRID call stores a grid as a literal layout, one fact per cell in row-major order: `GRID_HxW` emits every cell with its value; `GRID_MASK_HxW` and `GRID_SPARSE_HxW` emit only the nonzero cells. Each cell fact's Position is in the call's own H×W frame. The runner expands the call before Souffle sees the file; GRID is not defined in `lib.dl`. H and W are the grid's dims and take any size, so a call carries H·W cell values. Cells can hold any per-cell data: colors, labels, transforms. A distinguished cell is a Position fact, not a cell value (27a28665 `center_pos`).
 
 ```
 .decl template(p: Position, col: Color)

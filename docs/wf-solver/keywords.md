@@ -2,6 +2,8 @@
 
 Keywords index the solvers by concepts that a grep over the code cannot find.
 
+A keyword names a hypothesis. The mechanism its gloss names is one instance of that hypothesis, not the keyword's boundary.
+
 ## Setup
 
 The structure a hypothesis depends on: what the input is and how it decomposes.
