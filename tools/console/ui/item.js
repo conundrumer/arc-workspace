@@ -35,18 +35,23 @@ export const takeoverCmd = (it,s,cli) => backendOf(it,s)==="codex"
     +` --append-system-prompt-file ${it.append} --add-dir ${cli.addDir} --exclude-dynamic-system-prompt-sections`;
 export const hasTab = (it,s) => !!(it.sessions[s]) || it.phase===s;
 
+/* Minutes left on the session's cache. A session with no stamp holds no
+   cache, so it has none left. */
+const ttlLeft = it => {
+  const la = it.lastActive && it.lastActive[it.phase];
+  return la ? TTL_MIN - (Date.now()-la)/60000 : 0;
+};
+
 /* cache freshness of the phase-owning session: minutes until its 1h
-   prompt-cache TTL expires. The sort key carries the rail order: sessions
-   with no cache to lose lead, then the live turns, then the warm ones by
+   prompt-cache TTL expires. The sort key carries the rail order: a phase with
+   no session yet leads, then the live turns, then the warm ones by
    nearest expiry. A cold cache is past saving, so those sort by state
    instead and the rail groups them the way the counts row reads. */
 export function cacheInfo(it){
-  const la = it.lastActive && it.lastActive[it.phase];
   if(!it.sessions || !it.sessions[it.phase]) return {cls:"none", txt:"—", sort:-1};
   if(it.active) return {cls:"active", sort:5e8,
     txt: it.turnStarted ? fmtDur(Date.now()/1000-it.turnStarted) : "active"};
-  if(!la) return {cls:"none", txt:"—", sort:-1};
-  const rem = TTL_MIN - (Date.now()-la)/60000;
+  const rem = ttlLeft(it);
   if(rem<=0) return {cls:"cold", txt:"cold", sort:1e9+stateRank(it)};
   const cls = rem<TTL_ALERT?"hot":rem<30?"warn":"ok";
   return {cls, txt:Math.ceil(rem)+"m", sort:rem};
@@ -64,8 +69,7 @@ export function ttlWatch(items){
     if(it.active || TTL_QUIET.has(it.state) ||
        !it.sessions || !it.sessions[it.phase]) continue;
     const la = it.lastActive && it.lastActive[it.phase];
-    if(!la) continue;
-    const rem = TTL_MIN - (Date.now()-la)/60000;
+    const rem = ttlLeft(it);
     if(rem>=TTL_ALERT) ttlArmed.set(it.id, la);
     else if(rem>0 && ttlArmed.get(it.id)===la){ ttlArmed.delete(it.id); ding(); }
   }

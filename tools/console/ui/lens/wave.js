@@ -18,8 +18,8 @@ export const wave = {
 
     /* a stage that landed without its report, callouts, or handoff leads,
        for the user to bring it by hand; then soonest-expiring cache first: a
-       phase with no session yet, or a turn that never landed, leads with "—";
-       running turns follow; cold ones close by state */
+       phase with no session yet leads with "—"; running turns follow; cold
+       ones close by state */
     const railOrder=useClocked(()=>
       [...items].sort((a,b)=>(b.owes?1:0)-(a.owes?1:0) || cacheInfo(a).sort-cacheInfo(b).sort)
         .map(it=>it.id),

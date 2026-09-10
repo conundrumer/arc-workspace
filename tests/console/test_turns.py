@@ -61,6 +61,21 @@ def test_auto_compact_fires_within_the_margin(srv, monkeypatch):
     assert len(sent) == 1
 
 
+def test_auto_compact_reads_a_session_with_no_stamp_as_cold(srv, monkeypatch):
+    """A stamp the item never got says the session holds no cache, so its
+    compact is due at once, the same as one whose stamp has run out."""
+    sent = []
+    monkeypatch.setattr(srv, "launch",
+                        lambda it, msg, phase, **kw: sent.append((it["id"], msg)))
+    srv.act_auto({"compact": True})
+    blank = finalize_item(srv, "blank")
+    blank["lastActive"]["finalize"] = None
+    finalize_item(srv, "warm")
+    srv.auto_compact()
+    assert sent == [("blank", "/compact")]
+    assert blank["auto_compacted"] == {"finalize": True}
+
+
 def test_a_compact_the_reload_refuses_stays_owed(srv, monkeypatch):
     """A reload armed between the idle pass and the launch turns the turn
     away, and the session is still owed its compact."""

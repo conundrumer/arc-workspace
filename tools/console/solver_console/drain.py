@@ -221,11 +221,11 @@ def compact_due(it: dict, phase: str, worker: dict | None, now: float) -> float 
         return None
     if worker is None or reapable((it["id"], phase), worker) is None:
         return None
+    # A session with no stamp holds no cache, so its cache is gone already,
+    # the same as one whose stamp has run out.
     la = (it.get("lastActive") or {}).get(phase)
-    if not la:
-        return None
-    return min(la / 1000 + config.CACHE_TTL,
-               worker["idle_since"] + config.IDLE_TTL) - now
+    cache_gone = la / 1000 + config.CACHE_TTL if la else now
+    return min(cache_gone, worker["idle_since"] + config.IDLE_TTL) - now
 
 
 def start_compact(it: dict, phase: str, why: str) -> bool:
