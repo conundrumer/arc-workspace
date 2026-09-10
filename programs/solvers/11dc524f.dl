@@ -29,37 +29,31 @@ sight.cell($U(), P) :- in(P, Col), params.mirror_color(Col).
 .decl move_dir(d: Dir)
 move_dir(D) :- dir_elem(D), sight.ray($U(), _, D, _, _).
 
-// The slide ends where the shape's box first covers one of these: the
-// block's box, one step back into the gap.
-.decl stopper(p: Position)
-stopper(P2) :-
-    params.mirror_color(Col), box.inside(Col, P),     // a block-box cell
-    move_dir(D), opposite(D, O), neighbor(P, O, P2).  // one step back
-
 // Displacements toward the block the frame admits.
 .decl shift(delta: Shift)
-shift(ORIGIN).
 shift(Delta) :-
     in(P, _), move_dir(D),
     axis_of(D, A), sub_extent(P, A, K), jump_delta(D, K, Delta).
 
-.decl halted(delta: Shift)
-halted(Delta) :-
+// The displacements at which the shape's box would lie over the block's box.
+.decl covering(delta: Shift)
+covering(Delta) :-
     shift(Delta), params.shape_color(Col), box.inside(Col, P),  // a shape-box cell
-    compose(P, Delta, P2), stopper(P2).                         // lands on a stopper
+    compose(P, Delta, P2),                                       // carried there
+    params.mirror_color(Col2), box.inside(Col2, P2).             // on a block-box cell
 
-// The slide advances one step at a time until flush.
-.decl reach(delta: Shift)
-reach(ORIGIN).
-reach(Delta2) :-
-    reach(Delta), !halted(Delta),
-    move_dir(D), neighbor(Delta, D, Delta2), shift(Delta2).
+// The shape stands where it is, and travels through the displacements that
+// keep its box clear of the block's.
+.init slide = Slide<Unit>
+slide.dir($U(), D) :- move_dir(D).
+slide.node($U(), ORIGIN).
+slide.node($U(), Delta) :- shift(Delta), !covering(Delta).
 
-// The shape's box, docked.
+// The shape's box, docked: flush against the block's box.
 .decl home(p: Position)
 home(P_home) :-
-    params.shape_color(Col), box.margin(Col, P_box),   // the shape's box
-    reach(Delta), halted(Delta),                       // at rest
+    params.shape_color(Col), box.margin(Col, P_box),  // the shape's box
+    slide.rest($U(), ORIGIN, _, Delta),               // at rest
     compose(P_box, Delta, P_home).
 
 // The reflection's box: one shape-length on from home, so the two boxes

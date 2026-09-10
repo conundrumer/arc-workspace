@@ -20,6 +20,9 @@
 
 .init params = Params
 
+.decl impl_choice(ch: Choice)
+impl_choice($Block()). impl_choice($Touch()). impl_choice($Extent()).
+
 // --- objects ---
 
 .decl mover_cell(p: Position)
@@ -44,66 +47,59 @@ cast.mark($U(), P) :- mover_cell(P).
 .decl move_dir(d: Dir)
 move_dir(D) :- dir_elem(D), cast.ray($U(), _, D, _, _).
 
-// Back along the travel.
-.decl approach(d: Dir)
-approach(O) :- move_dir(D), opposite(D, O).
-
-// --- the slide ---
+// --- footprint and blocked cells ---
 
 // The footprint that travels.
 .decl shape(ch: Choice, p: Position)
 
-// The slide ends where the footprint first covers one of these.
-.decl stopper(ch: Choice, p: Position)
+// The cells the footprint may not enter: the slide ends one step short of
+// covering one.
+.decl blocked(ch: Choice, p: Position)
 
 // --- Block ---
 
 shape($Block(), P) :- mover_cell(P).
 
-stopper($Block(), P2) :- anchor_cell(P), approach(O), neighbor(P, O, P2).
+blocked($Block(), P) :- anchor_cell(P).
 
 // --- Touch ---
 
 shape($Touch(), P) :- mover_cell(P).
 
-stopper($Touch(), P2) :- anchor_cell(P), dir_elem(D), neighbor(P, D, P2).
+// One step along the travel past a cell beside the anchor.
+blocked($Touch(), P2) :-
+    anchor_cell(P), dir_elem(D), neighbor(P, D, P1),  // beside the anchor
+    move_dir(D_move), neighbor(P1, D_move, P2).       // one step on
 
 // --- Extent ---
 
 shape($Extent(), P) :- params.mover(Col), box.inside(Col, P).
 
-stopper($Extent(), P2) :-
-    params.anchor(Col), box.inside(Col, P), approach(O), neighbor(P, O, P2).
+blocked($Extent(), P) :- params.anchor(Col), box.inside(Col, P).
 
-// --- the walk ---
+// --- the slide ---
 
 // Displacements toward the anchor the frame admits.
 .decl shift(delta: Shift)
-shift(ORIGIN).
 shift(Delta) :-
     in(P, _), move_dir(D),
     axis_of(D, A), sub_extent(P, A, K), jump_delta(D, K, Delta).
 
-.decl halted(ch: Choice, delta: Shift)
-halted(Ch, Delta) :- shift(Delta), shape(Ch, P), compose(P, Delta, P2), stopper(Ch, P2).
+// The displacements at which the footprint would lie over a blocked cell.
+.decl covering(ch: Choice, delta: Shift)
+covering(Ch, Delta) :- shift(Delta), shape(Ch, P), compose(P, Delta, P2), blocked(Ch, P2).
 
-.decl impl_choice(ch: Choice)
-impl_choice($Block()). impl_choice($Touch()). impl_choice($Extent()).
-
-// The slide advances one step at a time until something halts it.
-.decl reach(ch: Choice, delta: Shift)
-reach(Ch, ORIGIN) :- impl_choice(Ch).
-reach(Ch, Delta2) :-
-    reach(Ch, Delta), !halted(Ch, Delta),
-    move_dir(D), neighbor(Delta, D, Delta2), shift(Delta2).
-
-.decl rest(ch: Choice, delta: Shift)
-rest(Ch, Delta) :- reach(Ch, Delta), halted(Ch, Delta).
+// The mover stands where it is, and travels through the displacements that
+// keep it clear of the blocked cells.
+.init slide = Slide<Choice>
+slide.dir(Ch, D) :- impl_choice(Ch), move_dir(D).
+slide.node(Ch, ORIGIN) :- impl_choice(Ch).
+slide.node(Ch, Delta) :- impl_choice(Ch), shift(Delta), !covering(Ch, Delta).
 
 // --- output ---
 
 .decl landed(ch: Choice, p: Position)
-landed(Ch, P2) :- rest(Ch, Delta), mover_cell(P), compose(P, Delta, P2).
+landed(Ch, P2) :- slide.rest(Ch, ORIGIN, _, Delta), mover_cell(P), compose(P, Delta, P2).
 
 // The grid with the mover lifted off.
 .decl cleared(p: Position, col: Color)
@@ -112,4 +108,4 @@ cleared(P, Col) :- mover_cell(P), params.bg(Col).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- landed(Ch, P), params.mover(Col).
-out(P, Col, Ch) :- rest(Ch, _), cleared(P, Col), !landed(Ch, P).
+out(P, Col, Ch) :- slide.rest(Ch, ORIGIN, _, _), cleared(P, Col), !landed(Ch, P).
