@@ -9,7 +9,15 @@ import types
 
 import pytest
 
-from .conftest import backlog_solver, finalize_item, finalize_launch, item, tagged, worker
+from .conftest import (
+    backlog_solver,
+    finalize_item,
+    finalize_launch,
+    item,
+    lock_free,
+    tagged,
+    worker,
+)
 
 # ---------- overnight mode ----------
 
@@ -396,6 +404,48 @@ def test_pacer_holds_without_a_weekly_reading(srv, monkeypatch):
     gate = srv.pacer()
     assert gate["open"] is False
     assert gate["why"] == "no wk reading"
+
+
+def test_a_pass_reads_the_queue_and_git_with_the_lock_down(srv, monkeypatch):
+    """A pass runs every 30 seconds, and every worker reader thread and page
+    poll waits on LOCK, so the subprocesses a pass reads through run outside
+    it."""
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50)
+    finalize_launch(srv, monkeypatch)
+    backlog_solver(srv, "aaa")
+    free = []
+    picks, ages = srv.queue_pick, srv.solver_ages
+    monkeypatch.setattr(srv, "queue_pick", lambda n, order: (
+        free.append(("queue", lock_free(srv))), picks(n, order))[1])
+    monkeypatch.setattr(srv, "solver_ages", lambda: (
+        free.append(("git", lock_free(srv))), ages())[1])
+    night_on(srv, source="both")
+    assert srv.night_tick()["admitted"] == ["aaa", "t00"]
+    assert sorted(free) == [("git", True), ("queue", True)]
+
+
+@pytest.mark.parametrize("flag", ["SHUTTING_DOWN", "RELOADING"])
+def test_a_stop_during_the_reads_calls_the_admission_off(srv, monkeypatch, flag):
+    """A pass reads the queue script and git with LOCK down, and a shutdown or
+    a reload arrives in that stretch. Both call the admission off, the way the
+    pass reads them before the reads: a session started after a shutdown
+    outlives the console, and an item admitted into a reload holds the
+    quiesce open."""
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50)
+    finalize_launch(srv, monkeypatch)
+    backlog_solver(srv, "aaa")
+    picks = srv.queue_pick
+
+    def picking(n, order):
+        setattr(srv, flag, True)
+        return picks(n, order)
+
+    monkeypatch.setattr(srv, "queue_pick", picking)
+    night_on(srv, source="both")
+    assert srv.night_tick()["admitted"] == []
+    assert srv.STATE["items"] == []
 
 
 def test_the_admitter_fills_to_target_and_stops(srv, monkeypatch):

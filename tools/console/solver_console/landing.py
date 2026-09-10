@@ -74,6 +74,20 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
         it["dirty"] = False
     elif solvers.solver_hash(it["id"]) != store.pre(it)["hash"]:
         it["dirty"] = True
+    # The worker writes the draft tag with the solver (its brief). A landing
+    # tags a file the session left untagged, so every landed solver reads as
+    # unapproved until approval takes the tag off. The tag goes in below the
+    # reads of what the session changed, so the console's own line is never
+    # taken for the session's work. An approved item is one the user has
+    # ruled on: a turn landing after that ruling leaves the file as the
+    # approval left it, untagged.
+    if it["state"] != store.APPROVED and solvers.mark_draft(it["id"]):
+        # Every session of the item reads one snapshot of the file as the turn
+        # found it, and a session that opened its turn while this one ran keeps
+        # that snapshot to its own landing. The tag goes into the snapshot too,
+        # so that landing reads the console's line as the file it was handed,
+        # not as an edit of its own.
+        store.pre(it)["hash"] = solvers.solver_hash(it["id"])
     if not store.slash_turn(it, phase):
         it.setdefault("seen_hash", {})[phase] = solvers.solver_hash(it["id"])
         # a real turn landed: the session may be auto-compacted once more
@@ -120,8 +134,16 @@ def finish_turn(it: dict, ev: dict, trigger: str | None, started: float,
     elif not store.slash_turn(it, phase) and not store.busy_elsewhere(it, phase):
         # a side turn landing while another session runs leaves the state to
         # the pass that owns it
+        to_review(it)
+
+
+def to_review(it: dict) -> None:
+    """Leave a landed item for the user. An approved item keeps its state:
+    the user ruled on it, and a turn landing after that ruling does not take
+    the ruling back. Caller holds LOCK."""
+    it["updated"] = True
+    if it["state"] != store.APPROVED:
         it["state"] = store.NEEDS_REVIEW
-        it["updated"] = True
 
 
 def owed(it: dict) -> str | None:
@@ -204,8 +226,7 @@ def settle_hold(it: dict, phase: str, worker: dict | None,
         owe(it, "rehandoff", phase, worker)
     else:
         drop_hold(it, phase)
-        it["state"] = store.NEEDS_REVIEW
-        it["updated"] = True
+        to_review(it)
 
 
 def land_auto_finalize(it: dict, phase: str, text: str, report: str | None,
@@ -216,8 +237,7 @@ def land_auto_finalize(it: dict, phase: str, text: str, report: str | None,
     callouts, which the finalize lens sorts on. A landing with a task still
     outstanding waits for the one that task wakes. Caller holds LOCK."""
     if worker and outstanding:
-        it["state"] = store.NEEDS_REVIEW
-        it["updated"] = True
+        to_review(it)
         return
     it.pop("auto_finalize", None)
     # the compact on landing waits for the callouts, so the marker rides to
@@ -290,8 +310,7 @@ def land_handoff(it: dict, phase: str, text: str) -> None:
         owe(it, "callout", phase, worker)
     else:
         it.pop("landing_compact", None)
-        it["state"] = store.NEEDS_REVIEW
-        it["updated"] = True
+        to_review(it)
 
 
 def ask_callouts(it: dict, phase: str) -> None:
@@ -322,8 +341,7 @@ def land_callouts(it: dict, phase: str, body: str) -> None:
         if worker:
             owe(it, "handoff", phase, worker)
     else:
-        it["state"] = store.NEEDS_REVIEW
-        it["updated"] = True
+        to_review(it)
         compact_on_landing(it, phase)
 
 

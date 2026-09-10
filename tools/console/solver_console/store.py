@@ -25,6 +25,10 @@ USAGE: list[dict] = []  # account rate-limit windows, refreshed in background
 # ran, in the entries the item feeds use, so the console can show a run while
 # it goes.
 COMMITTER = {"running": False, "note": None, "started": None, "feed": []}
+# The committer session's process while it runs. It is held apart from
+# COMMITTER, which the console serializes for the page, and a shutdown reaches
+# the session through it.
+COMMITTER_PROC = None
 WORKER_HANDOFF_ENV = "CONSOLE_WORKER_HANDOFF"
 
 
@@ -53,7 +57,10 @@ WORKER_HANDOFF_ENV = "CONSOLE_WORKER_HANDOFF"
 # a worker that never reported a session falls back to QUEUED instead. `load`
 # applies that same fallback to turns a console restart cut short, so no ACTIVE
 # state survives a restart. Comments relaunch from NEEDS_REVIEW or APPROVED,
-# approval moves between those two, and a commit ends at COMMITTED.
+# approval moves between those two, and the commit of an approved item ends
+# at COMMITTED. A commit carries the unapproved solvers beside it as well, and
+# an item of one of those stays in the state it was in: the user's approval is
+# what ends an item, not the commit.
 # ui/item.js renders the same names — keep the two in step.
 
 QUEUED = "queued"              # picked for a wave, worker not started
@@ -61,7 +68,7 @@ RUNNING = "running"            # the item's first turn is in flight
 COMMENTED = "commented"        # a follow-up turn from a review comment is in flight
 NEEDS_REVIEW = "needs-review"  # a turn landed; the user has not ruled on it
 APPROVED = "approved"          # ready for the next commit
-COMMITTED = "committed"        # committed; dropped when the next wave starts
+COMMITTED = "committed"        # approved and committed; dropped when the next wave starts
 
 ACTIVE = (RUNNING, COMMENTED)
 
@@ -285,11 +292,6 @@ def save() -> None:
         tmp = config.STATE_FILE.with_suffix(".tmp")
         tmp.write_text(json.dumps(STATE, indent=1))
         tmp.replace(config.STATE_FILE)
-    # ref_note.py reads this: the ids ratified ahead of their commit
-    text = "".join(it["id"] + "\n" for it in STATE["items"]
-                   if it["state"] == APPROVED)
-    if not config.APPROVED_FILE.exists() or config.APPROVED_FILE.read_text() != text:
-        config.APPROVED_FILE.write_text(text)
 
 
 def load() -> None:
@@ -424,6 +426,17 @@ def seed_report(it: dict) -> None:
         if collapsed != text:
             reports[name] = collapsed
             solvers.save_report(it["id"], name, collapsed)
+
+
+def approve(it: dict) -> None:
+    """Rule an item approved: the state the console holds, and the draft tag
+    the solver file carries until the ruling takes it off. The lens makes the
+    same ruling over a solver, so both ways to it land here. Caller holds
+    LOCK."""
+    it["state"] = APPROVED
+    it["updated"] = False
+    solvers.clear_draft(it["id"])
+    say(it, event("approved"))
 
 
 def turn_died(it: dict, phase: str) -> None:

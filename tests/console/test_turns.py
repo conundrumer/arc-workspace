@@ -3,6 +3,7 @@ what it spent, and the transcript the console reads."""
 
 import json
 import sys
+import threading
 import time
 
 import pytest
@@ -60,6 +61,19 @@ def test_auto_compact_fires_within_the_margin(srv, monkeypatch):
     assert len(sent) == 1
 
 
+def test_a_compact_the_reload_refuses_stays_owed(srv, monkeypatch):
+    """A reload armed between the idle pass and the launch turns the turn
+    away, and the session is still owed its compact."""
+    it = finalize_item(srv, "a")
+
+    def refuse(*a, **kw):
+        raise srv.Reject("server reload in progress")
+
+    monkeypatch.setattr(srv, "launch", refuse)
+    srv.start_compact(it, "finalize", "on landing")
+    assert "auto_compacted" not in it
+
+
 def test_auto_compact_is_off_until_set(srv, monkeypatch):
     sent = []
     monkeypatch.setattr(srv, "launch",
@@ -102,6 +116,25 @@ def test_the_idle_reap_compacts_a_covered_session_first(srv, monkeypatch):
     # compacted, the session is the reap's on the next pass
     srv.reap_idle()
     assert len(sent) == 1 and [w["item_id"] for w in reaped] == ["a"]
+
+
+def test_a_compact_that_cannot_launch_is_reaped_instead(srv, monkeypatch):
+    """The compact stands in for the reap only when its turn goes out. A
+    launch that raises leaves the session uncompacted, so the idle worker is
+    dropped rather than held for a compact that never ran."""
+    def refuse(*a, **kw):
+        raise OSError("the worker pipe is closed")
+
+    monkeypatch.setattr(srv, "launch", refuse)
+    reaped = []
+    monkeypatch.setattr(srv, "queue_reap", reaped.append)
+    srv.act_auto({"compact": True})
+    it = finalize_item(srv, "a", idle_for=srv.IDLE_TTL + 1)
+    srv.reap_idle()
+    srv.reap_idle()
+    assert [w["item_id"] for w in reaped] == ["a"]
+    assert ("a", "finalize") not in srv.PROCS
+    assert "auto_compacted" not in it
 
 
 def test_the_night_cap_compacts_a_covered_session_first(srv, monkeypatch):
@@ -1062,6 +1095,29 @@ def test_append_carries_the_scratch_note_and_the_docs(srv):
     out = srv.append_path().read_text()
     assert out.startswith("## Scratch")
     assert "# docs/wf-solver/style.md\n\n# Style\n\nEvery word of it.\n" in out
+
+
+def test_two_callers_building_the_appendix_at_once_each_get_it_whole(srv):
+    """A rename publishes the file, and two callers writing one file between
+    them would publish it half written."""
+    (srv.DOCS / "style.md").write_text("# Style\n\n" + "Every word of it.\n" * 60000)
+    text = srv.append_path().read_text()
+    srv.append_path().unlink()          # as the first build after a docs change
+    out, ready = [], threading.Barrier(6)
+
+    def build():
+        ready.wait()
+        try:
+            out.append(srv.append_path().read_text())
+        except OSError as exc:
+            out.append(repr(exc))
+
+    threads = [threading.Thread(target=build) for _ in range(6)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(20)
+    assert out == [text] * 6
 
 
 def test_worker_agents_carry_the_appendix(srv):

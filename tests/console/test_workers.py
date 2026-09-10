@@ -568,6 +568,33 @@ def test_a_running_turn_counts_against_the_reload(srv):
         assert not srv.turns_in_flight()
 
 
+def test_a_running_committer_counts_against_the_reload(srv):
+    """The committer writes git from a process of its own, which an exec
+    would leave running with nothing reading it."""
+    with srv.LOCK:
+        assert not srv.turns_in_flight()
+        srv.COMMITTER.update(running=True, note=None, started=time.time(), feed=[])
+        assert srv.turns_in_flight()
+        srv.COMMITTER["running"] = False
+        assert not srv.turns_in_flight()
+
+
+def test_shutdown_ends_the_committer_session(srv):
+    """The committer writes git from a process of its own. A Ctrl-C that left
+    it running would leave a git write going with the console gone."""
+    proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"],
+                            start_new_session=True)
+    srv.COMMITTER.update(running=True, note=None, started=time.time(), feed=[])
+    srv.COMMITTER_PROC = proc
+    try:
+        srv.shutdown_workers()
+        assert proc.poll() is not None
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait(timeout=3)
+
+
 def run_deferred(srv):
     """Run the queued jobs on this thread, the way the drain would."""
     srv.DEFERRED.put_nowait(srv.STOP)

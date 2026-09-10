@@ -6,12 +6,15 @@ import sys
 
 from . import config, solvers, store
 
-# One line per stage landing, append-only, and one per ruling: `approved`
-# when the user approves a solver, `dismissed` when they rule it needs no
-# pass. Other writers add lines of the same shape — a backfill pass records
-# the passes made before the ledger existed, under stage `legacy`, and the
-# approvals those passes and the console's commits imply — so readers take the
-# fields they know and skip the rest.
+# One line per stage landing, append-only, and one per `dismissed` ruling,
+# which the user makes when a solver needs no pass. Other writers add lines of
+# the same shape — a backfill pass records the passes made before the ledger
+# existed, under stage `legacy` — so readers take the fields they know and
+# skip the rest.
+#
+# Approval is not here: it stands in the solver file, as the draft tag the
+# console takes out. The `approved` rows earlier rounds wrote are read as
+# rulings still, so they never count as landings.
 
 RULINGS = ("approved", "dismissed")
 STAGE_ORDER = {"legacy": 0, "create": 1, "refine": 2, "finalize": 3}
@@ -45,8 +48,9 @@ def ledger_rows() -> list[dict]:
 
 
 def ruled(rows: list[dict]) -> set[str]:
-    """Tasks the user has ruled on: approved, or dismissed."""
-    return {row["task"] for row in rows if row.get("stage") in RULINGS}
+    """Tasks the user has ruled off the lens, by a dismissal. Approval is the
+    solver file's own, so it is not read here."""
+    return {row["task"] for row in rows if row.get("stage") == "dismissed"}
 
 
 def model_word(row: dict) -> str:
@@ -74,14 +78,6 @@ def passes_of(rows: list[dict]) -> dict[str, list[dict]]:
                    for stage, (_, word) in sorted(
                        by.items(), key=lambda kv: (STAGE_ORDER.get(kv[0], 9), kv[1][0]))]
             for task, by in latest.items()}
-
-
-def record_approvals(ids: list[str], ts: int) -> None:
-    """The commit of approved items is the ruling on them."""
-    for tid in ids:
-        ledger_append({"task": tid, "stage": "approved", "backend": None,
-                       "model": None, "session": None, "ts": ts,
-                       "source": "console"})
 
 
 def entries_of(rows: list[dict]) -> dict[str, set[str]]:
@@ -179,7 +175,11 @@ def act_retro() -> dict:
     ts = int(store.now())
     with store.LOCK:
         config.RETRO_FILE.parent.mkdir(parents=True, exist_ok=True)
-        config.RETRO_FILE.write_text(json.dumps({"ts": ts}))
+        # a reader mid-write would read a mark of 0, which widens the retro
+        # window to every task there is
+        tmp = config.RETRO_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"ts": ts}))
+        tmp.replace(config.RETRO_FILE)
     store.bump()
     return {"ok": True, "ts": ts}
 

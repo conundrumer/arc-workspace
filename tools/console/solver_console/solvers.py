@@ -49,6 +49,71 @@ def watched_hashes(item_id: str) -> dict[str, str]:
 PROP_DIR = "docs/wf-solver/proposals"
 
 
+# The console's approval tag, by its complement: a solver the user has not
+# approved carries this line in its header block, and approval takes it out.
+# The session writes it with the solver; a landing adds it where the session
+# left it out.
+DRAFT = "// draft"
+
+
+def is_draft(item_id: str) -> bool:
+    """Whether the solver stands unapproved."""
+    return any(line.strip() == DRAFT
+               for line in solver_text(item_id).splitlines())
+
+
+def write_solver(item_id: str, text: str) -> None:
+    """Put text in the solver file, in one step. The write lands in a file
+    beside it and takes its place by a rename, so a reader outside the
+    console — a worker session, a souffle run, the ref-note hook — sees
+    either the whole old text or the whole new one. The scratch name ends in
+    `.swap`, which keeps it out of the `*.dl` solver glob; the dot prefix
+    keeps it out of the listings that skip dotfiles."""
+    p = solver_path(item_id)
+    tmp = p.with_name(f".{p.name}.swap")
+    try:
+        tmp.write_text(text)
+        tmp.replace(p)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def _retag(item_id: str, mark: bool) -> bool:
+    """Put the draft line in the header block, or take it out. The line goes
+    under the task-id line, so it reads before the doc header. True when the
+    file changed."""
+    p = solver_path(item_id)
+    try:
+        lines = p.read_text().splitlines(True)
+    except OSError:
+        return False
+    at = [n for n, line in enumerate(lines) if line.strip() == DRAFT]
+    if mark == bool(at):
+        return False
+    if mark:
+        first = 1 if lines and lines[0].startswith("//") else 0
+        # the line the tag goes under may be the last one, and a last line
+        # carries no newline of its own
+        if first and not lines[first - 1].endswith("\n"):
+            lines[first - 1] += "\n"
+        lines.insert(first, DRAFT + "\n")
+    else:
+        for n in reversed(at):
+            del lines[n]
+    write_solver(item_id, "".join(lines))
+    return True
+
+
+def mark_draft(item_id: str) -> bool:
+    """Tag a solver the user has not approved."""
+    return _retag(item_id, True)
+
+
+def clear_draft(item_id: str) -> bool:
+    """Take the tag off: the user has approved this solver."""
+    return _retag(item_id, False)
+
+
 def prop_path(rel: str) -> Path:
     """The entry file a repo-relative path names."""
     return config.DOCS / "proposals" / Path(rel).name
@@ -77,9 +142,17 @@ def report_path(item_id: str, stage: str) -> Path:
 
 
 def save_report(item_id: str, stage: str, text: str) -> None:
+    """File a stage's report, in one step: the write lands beside the report
+    and takes its place by a rename, so a reader that is not under LOCK — the
+    retro view, a session reading the file — sees a whole report."""
     p = report_path(item_id, stage)
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(text)
+    tmp = p.with_name(f".{p.name}.swap")
+    try:
+        tmp.write_text(text)
+        tmp.replace(p)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def report_of(it: dict, stage: str) -> str:

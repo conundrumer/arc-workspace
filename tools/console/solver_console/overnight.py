@@ -44,7 +44,18 @@ def resume_item(it: dict) -> None:
                    admitted=True)
 
 
-def night_admit() -> list[str]:
+def queue_next(inputs: dict) -> list[tuple[str, int]]:
+    """The next queue task the console does not already hold, out of the rows
+    the pass read. A queue script that failed carries its refusal here, and
+    the caller takes it as its own. Caller holds LOCK."""
+    rows = inputs.get("queue")
+    if isinstance(rows, store.Reject):
+        raise rows
+    existing = {it["id"] for it in store.STATE["items"]}
+    return [row for row in rows or () if row[0] not in existing][:1]
+
+
+def night_admit(inputs: dict) -> list[str]:
     """Admit the next queued task into the night's wave. Caller holds LOCK.
 
     Every admission of one night belongs to one wave, so the committed items
@@ -53,7 +64,7 @@ def night_admit() -> list[str]:
     cfg = pacing.night()
     waves.drop_committed()
     try:
-        picked = waves.pick_new(1, "name")
+        picked = queue_next(inputs)
     except store.Reject as e:
         pacing.night_say(f"admission deferred — {e}", once=True)
         return []
@@ -71,7 +82,7 @@ def night_admit() -> list[str]:
     return ids
 
 
-def night_finalize() -> list[str]:
+def night_finalize(inputs: dict) -> list[str]:
     """Start the finalize pass of the next unfinalized solver, in triage
     order. Caller holds LOCK.
 
@@ -80,7 +91,7 @@ def night_finalize() -> list[str]:
     silence, since the list carries every solver on disk. A worker that fails
     to start ends the pass, as the cause holds for every row."""
     cfg = pacing.night()
-    for row in backlog.backlog_view():
+    for row in inputs.get("rows") or ():
         it = store.find(row["id"])
         if it is not None and not backlog.finalize_ready(it):
             continue
@@ -102,12 +113,12 @@ def night_finalize() -> list[str]:
 FINALIZE_WAITING = False
 
 
-def finalize_waiting() -> bool:
+def finalize_waiting(inputs: dict) -> bool:
     """Whether the finalize slot has a solver to take, read without taking
     it: the same test night_finalize applies to each row."""
     global FINALIZE_WAITING
     FINALIZE_WAITING = False
-    for row in backlog.backlog_view():
+    for row in inputs.get("rows") or ():
         it = store.find(row["id"])
         if it is None or backlog.finalize_ready(it):
             FINALIZE_WAITING = True
@@ -121,13 +132,13 @@ def finalize_waiting() -> bool:
 QUEUE_WAITING = False
 
 
-def queue_waiting() -> bool:
+def queue_waiting(inputs: dict) -> bool:
     """Whether the queue slot has a task to take, read without taking it: the
-    pick night_admit would make. A picker that refuses reads as nothing
+    pick night_admit would make. A queue script that refused reads as nothing
     waiting."""
     global QUEUE_WAITING
     try:
-        QUEUE_WAITING = bool(waves.pick_new(1, "name"))
+        QUEUE_WAITING = bool(queue_next(inputs))
     except store.Reject:
         QUEUE_WAITING = False
     return QUEUE_WAITING
@@ -137,15 +148,16 @@ def queue_waiting() -> bool:
 OTHER_SLOT = {"queue": "finalize", "finalize": "queue"}
 
 
-def slot_waiting(kind: str, probe: bool = True) -> bool:
-    """Whether the slot of `kind` has work to take. `probe` asks; the view
-    takes the last answer."""
+def slot_waiting(kind: str, inputs: dict, probe: bool = True) -> bool:
+    """Whether the slot of `kind` has work to take. `probe` reads the pass's
+    rows; the view takes the last answer."""
     if kind == "finalize":
-        return finalize_waiting() if probe else FINALIZE_WAITING
-    return queue_waiting() if probe else QUEUE_WAITING
+        return finalize_waiting(inputs) if probe else FINALIZE_WAITING
+    return queue_waiting(inputs) if probe else QUEUE_WAITING
 
 
-def slot_gate(cfg: dict, kind: str, probe: bool = True) -> dict:
+def slot_gate(cfg: dict, kind: str, inputs: dict | None = None,
+              probe: bool = True) -> dict:
     """The slot's gate: the pacer over the slot's models, and the hold that
     lets the other slot go first while its window trails, it has room under
     its target, and work waits for it."""
@@ -154,16 +166,41 @@ def slot_gate(cfg: dict, kind: str, probe: bool = True) -> dict:
         hold = pacing.lead_hold(cfg, kind)
         other = OTHER_SLOT[kind]
         room = pacing.slot_live(cfg, other) < pacing.slot_target(cfg, other)
-        if hold and room and slot_waiting(other, probe):
+        if hold and room and slot_waiting(other, inputs or {}, probe):
             gate = {**gate, "open": False, "hold": hold[0], "why": hold[1]}
     return gate
+
+
+def tick_inputs(kinds: list[str], held: int) -> dict:
+    """What the slots of `kinds` are read for, taken with LOCK down: the queue
+    script's next tasks, and the unfinalized rows, whose order comes from a
+    git read. A refusal from the queue script is carried as itself, for the
+    admission to report. A slot at its target has no entry here, and the pass
+    leaves it alone.
+
+    A pass admits one queue task and asks whether another waits behind it, so
+    it takes two rows the console does not already hold: `held` is how many it
+    holds, and the script lists from the top of the queue."""
+    inputs: dict = {}
+    if "queue" in kinds:
+        try:
+            inputs["queue"] = waves.queue_pick(2 + held, "name")
+        except store.Reject as exc:
+            inputs["queue"] = exc
+    if "finalize" in kinds:
+        inputs["rows"] = backlog.backlog_view(backlog.solver_ages())
+    return inputs
 
 
 def night_tick() -> dict:
     """One admitter pass: the resumes that came due, then one admission into
     each slot of the active source that is free and whose gate is open. The
     counts are read again for each slot, so an admission into the first is
-    seen by the second."""
+    seen by the second.
+
+    A pass reads the queue script and git between the two stretches it holds
+    LOCK: every worker reader thread and every poll waits on that lock, and a
+    pass runs every 30 seconds."""
     out = {"resumed": [], "admitted": [], "held": None}
     changed = False
     stagger = []
@@ -176,24 +213,38 @@ def night_tick() -> dict:
             out["resumed"].append(it["id"])
             changed = True
         slots = pacing.slot_order(cfg)
-        held = []
+        free = [kind for kind in slots
+                if pacing.slot_live(cfg, kind) < pacing.slot_target(cfg, kind)]
+        items = len(store.STATE["items"])
+    inputs = tick_inputs(free, items)
+    with store.LOCK:
+        holds = []
+        # The reads run with LOCK down, and a reload, a shutdown, or the user
+        # turning autopilot off lands in that stretch. Each of them calls the
+        # admission off, the way the pass's first stretch reads them.
+        if not pacing.night()["on"] or store.RELOADING or store.SHUTTING_DOWN:
+            slots = []
         for kind in slots:
-            if pacing.slot_live(cfg, kind) >= pacing.slot_target(cfg, kind):
+            # a slot the pass did not read for was at its target when it
+            # looked, and has nothing to admit from
+            if kind not in free or \
+                    pacing.slot_live(cfg, kind) >= pacing.slot_target(cfg, kind):
                 continue
-            gate = slot_gate(cfg, kind)
+            gate = slot_gate(cfg, kind, inputs)
             if gate["open"]:
-                ids = night_finalize() if kind == "finalize" else night_admit()
+                ids = (night_finalize(inputs) if kind == "finalize"
+                       else night_admit(inputs))
                 out["admitted"] += ids
                 if kind == "queue":
                     stagger = ids
                 changed = changed or bool(ids)
             else:
-                held.append((kind, gate["hold"]))
-        if held:
+                holds.append((kind, gate["hold"]))
+        if holds:
             # one hold for every slot reads once; anything else names the slots
-            same = len(held) == len(slots) and len({h for _, h in held}) == 1
-            out["held"] = held[0][1] if same else \
-                ", ".join(f"{kind}: {h}" for kind, h in held)
+            same = len(holds) == len(slots) and len({h for _, h in holds}) == 1
+            out["held"] = holds[0][1] if same else \
+                ", ".join(f"{kind}: {h}" for kind, h in holds)
             changed |= pacing.night_say("hold · " + out["held"], once=True)
     if stagger:
         threading.Thread(target=waves.stagger_launch, args=(stagger,),

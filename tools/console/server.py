@@ -169,7 +169,9 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply({"feed": it["feed"], "files": item_files(it),
                             "ver": it.get("ver", 0)})
         elif url.path == "/api/backlog":
-            self.reply(backlog.lens_view())
+            # the order the rows take comes from a git read, which runs here
+            # rather than under LOCK: every worker reader thread waits on it
+            self.reply(backlog.lens_view(backlog.solver_ages()))
         elif url.path == "/api/retro":
             self.reply(ledger.retro_view())
         elif url.path.startswith("/api/peek/"):

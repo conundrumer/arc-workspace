@@ -42,8 +42,7 @@ def drain_deferred() -> None:
                     if store.RELOADING:
                         store.pause_for_reload(it, phase, kind)
                     elif not worker or worker["turn_seq"] != turn_seq:
-                        it["state"] = store.NEEDS_REVIEW
-                        it["updated"] = True
+                        landing.to_review(it)
                     else:
                         resend_handoff(it, phase)
                 elif kind == "callout":
@@ -56,8 +55,7 @@ def drain_deferred() -> None:
                         # the report stands without callouts
                         it.pop("callout_wait", None)
                         it.pop("landing_compact", None)
-                        it["state"] = store.NEEDS_REVIEW
-                        it["updated"] = True
+                        landing.to_review(it)
                     else:
                         it["state"] = store.RUNNING
                         store.say(it, store.event("callout turn starting"), sess=phase)
@@ -230,26 +228,30 @@ def compact_due(it: dict, phase: str, worker: dict | None, now: float) -> float 
                worker["idle_since"] + config.IDLE_TTL) - now
 
 
-def start_compact(it: dict, phase: str, why: str) -> None:
+def start_compact(it: dict, phase: str, why: str) -> bool:
     """Open the compact turn on a session, marked so that no second auto
-    compact follows before a real turn lands. Caller holds LOCK."""
-    it.setdefault("auto_compacted", {})[phase] = True
+    compact follows before a real turn lands. True when the turn went out.
+    Caller holds LOCK."""
     store.say(it, store.event(f"auto compact — {why}"), sess=phase)
     try:
         workers.launch(it, "/compact", phase)
     except (store.Reject, OSError) as exc:
+        # the turn never went out, so the session is still owed its compact
         store.say(it, store.event(f"auto compact failed: {exc}"), sess=phase)
+        return False
+    it.setdefault("auto_compacted", {})[phase] = True
+    return True
 
 
 def compact_before_reap(it: dict, key: tuple[str, str], worker: dict,
                         now: float) -> bool:
     """Compact a session the auto compact covers instead of reaping it, so
     the reap takes a compacted session on a later pass. True when the compact
-    was opened. Caller holds LOCK."""
+    turn went out; on False the caller reaps the worker, which covers a
+    compact whose launch was refused. Caller holds LOCK."""
     if not store.auto()["compact"] or compact_due(it, key[1], worker, now) is None:
         return False
-    start_compact(it, key[1], "before the worker is reaped")
-    return True
+    return start_compact(it, key[1], "before the worker is reaped")
 
 
 def auto_compact() -> None:

@@ -1,4 +1,7 @@
-"""Quiescing the console for a re-exec, and the shutdown that ends it."""
+"""Quiescing the console for a re-exec, and the shutdown that ends it.
+
+A reload waits out the turns in flight.
+"""
 
 import json
 import os
@@ -7,15 +10,18 @@ import sys
 import time
 from pathlib import Path
 
-from . import config, drain, process, store, waves
+from . import actions, config, drain, process, store, waves
 
 
 def turns_in_flight() -> bool:
-    """Whether any item holds a turn the reload has to wait out: one running,
-    or one a landing queued that the drain has not reached. Caller holds
-    LOCK."""
-    return any(store.active(it) or it["state"] == store.QUEUED or it.get("owed")
-               for it in store.STATE["items"])
+    """Whether the console holds a turn the reload has to wait out: an item
+    with one running, an item with one a landing queued that the drain has
+    not reached, or a committer session. The committer runs a session in a
+    process of its own, which the exec would leave running with nothing
+    reading it and no record that it is there. Caller holds LOCK."""
+    return store.COMMITTER["running"] or any(
+        store.active(it) or it["state"] == store.QUEUED or it.get("owed")
+        for it in store.STATE["items"])
 
 
 RELOAD_POLL = 2  # seconds between checks of the sources' mtimes
@@ -98,6 +104,8 @@ def reload_server() -> str:
 
 
 def shutdown_workers() -> None:
+    """End every session the console runs — the workers, and the committer
+    that writes git in a process of its own — and wait briefly for each."""
     with store.LOCK:
         if store.SHUTTING_DOWN:
             return
@@ -127,5 +135,12 @@ def shutdown_workers() -> None:
                     pass
         worker["reader"].join(timeout=3)
         worker["writer"].join(timeout=3)
+    committer = store.COMMITTER_PROC
+    if committer is not None:
+        actions.kill_session(committer)
+        try:
+            committer.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            pass
     if store.DEFERRED_THREAD:
         store.DEFERRED_THREAD.join(timeout=4)

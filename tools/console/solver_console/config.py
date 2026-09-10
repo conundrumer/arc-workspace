@@ -8,7 +8,6 @@ HERE = Path(__file__).resolve().parents[1]
 ROOT = HERE.parents[1]
 STATE_DIR = Path(os.environ.get("CONSOLE_STATE_DIR", HERE / "state"))
 STATE_FILE = STATE_DIR / "state.json"
-APPROVED_FILE = STATE_DIR / "approved.txt"
 SAMPLE_FILE = STATE_DIR / "usage-samples.jsonl"
 LOG_DIR = STATE_DIR / "logs"
 REPORT_DIR = STATE_DIR / "reports"
@@ -145,9 +144,9 @@ IDLE_POLL = 60
 CACHE_TTL = 3600
 # How close to the cache expiry, or the idle reap, the auto compact fires.
 COMPACT_MARGIN = 180
-# How long a handoff held for a background task waits. A subagent survey takes
-# minutes; past this the task is treated as one that never reports, and the
-# stage lands with no report for the user to rule on.
+# How long a handoff held for a background task waits. A `migrate` or
+# `cleanup` subagent takes minutes; past this the task is treated as one that
+# never reports, and the stage lands with no report for the user to rule on.
 BG_TTL = 1200
 # Autopilot leaves a landed phase's process resident, so the count climbs with
 # every handoff and what the machine holds becomes the limit that matters. On
@@ -155,12 +154,17 @@ BG_TTL = 1200
 # into swap between 74 and 80. The cap counts the running workers too, and a
 # reaped worker costs only a --resume on the next comment.
 NIGHT_WORKER_CAP = 30
+# What the console's own commit stages: every changed or untracked file
+# under these paths goes in, approved or not.
+COMMIT_STAGE = ["programs/solvers", "docs/wf-solver/proposals"]
 # What a worker session is allowed to leave behind. The brief and the
 # leftovers check read the same list, so widening it moves both.
 COMMIT_SCOPE = ["programs", "docs/wf-solver", "src/dl", "scripts", "tests"]
 COMMIT_BRIEF = f"""Commit the changes that solver workers left in the working tree.
 
-Scope: files git already tracks, under {", ".join(p + "/" for p in COMMIT_SCOPE)}. A session that hits a gap in the runner fixes it there, so those changes belong in the same sweep. Never stage untracked files, and leave changes outside that scope alone.
+Scope: files git already tracks, under {", ".join(p + "/" for p in COMMIT_SCOPE)}. A session that hits a gap in the runner fixes it there, so those changes belong in the same sweep. Leave changes outside that scope alone.
+
+The console has already committed {" and ".join(p + "/" for p in COMMIT_STAGE)}, so what git does not track there is a stray file, not work: stage no untracked file, and say in your report what you left.
 
 Read git status and the diffs, and recent git log for message style. Group the changes into clean commits the way the log does; write each message from what the diff shows."""
 COMMIT_TIMEOUT = 900  # seconds a committer session may run
@@ -170,11 +174,31 @@ COMMITTER_FLAGS = [
     "--allowedTools", "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)",
     "Bash(git show:*)", "Bash(git add:*)", "Bash(git commit:*)",
     "Bash(git restore:*)",
-    # untracked_note.py holds the scope the brief states: the console commits
-    # the approved solvers itself, so a file git does not track yet is one
-    # nobody approved. Restoring the index is how the committer answers a
-    # refusal, so that call is allowed too.
+    # untracked_note.py holds the scope the brief states: the console has
+    # committed the solvers and the proposals entries itself, so an untracked
+    # file left in the tree is outside the committer's scope. Restoring the
+    # index is how the committer answers a refusal, so that call is allowed
+    # too.
     "--settings", str(HERE / "committer-settings.json"),
     "--add-dir", str(REF_DIR),
     "--exclude-dynamic-system-prompt-sections",
+]
+
+# One survey of a lib proposals entry, which `scripts/survey.py` runs.
+SURVEY_BRIEF = """Survey the operation the entry `{entry}` specifies, over the scope ({scope}).
+
+Write the files you need under `{scratch}`, and change no file outside that path.
+
+Your reply is the report, its four parts and nothing besides them."""
+SURVEY_TIMEOUT = 3600  # seconds a survey session may run
+SURVEY_FLAGS = [
+    # The stream goes to a log under state/, so a run in progress can be read.
+    "--output-format", "stream-json", "--verbose",
+    # The session runs under the agent's own definition, so it reads the
+    # corpus and writes under the scratch path itself.
+    "--permission-mode", "acceptEdits",
+    "--allowedTools", "Bash", "Glob", "Grep", "Read", "Write",
+    "--add-dir", str(REF_DIR),
+    "--exclude-dynamic-system-prompt-sections",
+    "--strict-mcp-config",
 ]

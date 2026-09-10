@@ -8,14 +8,19 @@ import time
 from . import config, ledger, prompts, solvers, store, workers
 
 # A solver is unfinalized from the moment it is written until a finalize pass
-# takes it up; the pass runs, and the user's approval ends it. A dismissal ends
-# it too. The finalize lens lists the passes in flight over the unfinalized
-# solvers, and they run to hundreds, so a row is built from its files once and
-# reused until one of them changes; what the ledger says of a task — its
-# passes and its entries — is joined on every request, as is the flag table.
+# takes it up; the pass runs, and the user's approval ends it — the draft tag
+# leaves the file. A dismissal ends it too, as a ledger line. The finalize lens
+# lists the passes in flight over the unfinalized solvers, and they run to
+# hundreds, so a row is built from its files once and reused until one of them
+# changes; what the ledger says of a task — its passes and its entries — is
+# joined on every request, as is the flag table.
 
 # task id -> (the file state the row was built from, the row)
 ROW_CACHE: dict[str, tuple[tuple, dict]] = {}
+
+# The states an item may be ruled on from the lens. In any other state a turn
+# is on its way to the solver file, and the ruling waits for it.
+RULEABLE = (store.NEEDS_REVIEW, store.APPROVED, store.COMMITTED)
 
 
 def backlog_row(item_id: str, proposals: str, ts_size: int | None,
@@ -107,9 +112,11 @@ def solver_ages() -> dict[str, int]:
     return table
 
 
-def backlog_scan() -> list[dict]:
+def backlog_scan(ages: dict[str, int] | None = None) -> list[dict]:
     """A row per unfinalized solver, each joined with what the ledger says of
-    its task. Caller holds LOCK."""
+    its task. `ages` stands in for the git read of when each solver was
+    added, for a caller that took that read before it held the lock. Caller
+    holds LOCK."""
     lines = ledger.ledger_rows()
     settled = ledger.ruled(lines)
     passes = ledger.passes_of(lines)
@@ -123,7 +130,9 @@ def backlog_scan() -> list[dict]:
         if path.name.startswith("."):
             continue
         item_id = path.stem
-        if item_id in settled:
+        # an approved solver carries no draft tag, and a dismissal is a
+        # ledger line; either way the user has ruled and the row is gone
+        if item_id in settled or not solvers.is_draft(item_id):
             continue
         rows.append(cached_row(item_id, proposals, prop_key, ts.get(item_id)))
     # A pass that wrote no solver leaves the glob nothing to find, so the task
@@ -133,7 +142,7 @@ def backlog_scan() -> list[dict]:
              for it in store.STATE["items"]
              if it.get("landed") and it["id"] not in settled
              and not solvers.solver_path(it["id"]).exists()]
-    ages = solver_ages()
+    ages = solver_ages() if ages is None else ages
     out = []
     for row in rows:
         row = dict(row)
@@ -175,16 +184,20 @@ def triage_key(row: dict) -> tuple:
             row["id"])
 
 
-def lens_view() -> dict:
+def lens_view(ages: dict[str, int] | None = None) -> dict:
     """What the finalize lens lists, each list in triage order: the
     unfinalized solvers, and the tasks with a finalize pass in flight, whose
-    rows the lens sorts on once the pass's cache is cold."""
+    rows the lens sorts on once the pass's cache is cold.
+
+    The rows are ordered in part by when each solver was added, which is a
+    git read. A caller that must not hold LOCK through a subprocess takes
+    that read itself and passes it in."""
     with store.LOCK:
         table = ledger.flags()
         held = {it["id"] for it in store.STATE["items"]
                 if it["state"] != store.COMMITTED and not finalize_ready(it)}
         finalizing = {it["id"] for it in store.STATE["items"] if it["phase"] == "finalize"}
-        scan = backlog_scan()
+        scan = backlog_scan(ages)
         for row in scan:
             row["flag"] = (table.get(row["id"]) or {}).get("level", 0)
     rows = sorted((row for row in scan if row["id"] not in held), key=triage_key)
@@ -192,9 +205,9 @@ def lens_view() -> dict:
     return {"items": rows, "finalizing": passes}
 
 
-def backlog_view() -> list[dict]:
+def backlog_view(ages: dict[str, int] | None = None) -> list[dict]:
     """The unfinalized solvers in triage order."""
-    return lens_view()["items"]
+    return lens_view(ages)["items"]
 
 
 def rule(body: dict, stage: str) -> dict:
@@ -216,8 +229,35 @@ def act_dismiss(body: dict) -> dict:
 
 
 def act_approve_solver(body: dict) -> dict:
-    """Approve a solver from the lens, one no item holds."""
-    return rule(body, "approved")
+    """Approve a solver from the lens: the tag comes off the file, which is
+    where approval stands. An item the console still holds for that solver
+    takes the ruling too, so nothing it does later withdraws it.
+
+    A ruling needs the file it rules on to stand still, so an item with a turn
+    in flight is refused, as the item panel's approval is. The lens the user
+    clicks was rendered before the click, and the pass admitted in between
+    would otherwise write the solver after the approval and land it approved,
+    with a text the user never saw."""
+    item_id = str(body.get("id") or "").strip()
+    if not item_id or not solvers.solver_path(item_id).exists():
+        return {"error": f"no solver for {item_id}"}
+    # a landing rewrites the same file under LOCK
+    with store.LOCK:
+        it = store.find(item_id)
+        if it is not None:
+            if it["state"] not in RULEABLE:
+                return {"error": f"the item is {it['state']} — "
+                                 "wait for the turn to land"}
+            try:
+                store.require_idle(it)
+            except store.Reject as exc:
+                return {"error": str(exc)}
+        if it is None or it["state"] in (store.APPROVED, store.COMMITTED):
+            solvers.clear_draft(item_id)
+        else:
+            store.approve(it)
+    store.bump()
+    return {"ok": True}
 
 
 def start_finalize(item_id: str) -> dict:

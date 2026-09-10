@@ -1,8 +1,10 @@
 """PreToolUse hook for the console committer: refuse to stage or commit a
 file git does not already track.
 
-The console commits the approved solvers itself, and the committer runs after
-that, so an untracked file left in the tree is one no one approved. The brief
+The console commits programs/solvers/ and docs/wf-solver/proposals/ itself,
+every changed and untracked file in them, and the committer runs after that
+over what is left: the tracked changes a session made elsewhere. So an
+untracked file the committer sees is a stray one, outside its scope. The brief
 already says to leave those alone; the hook is what holds when it is not read.
 
 A staging call has to arrive on its own, because a command that stages and
@@ -68,7 +70,7 @@ def check_add(argv: list[str]) -> None:
         new = added(copy)
     if new:
         refuse("This add stages files git does not track: " + listing(new)
-               + "\nStage only tracked files. An untracked file is one nobody approved;"
+               + "\nStage only tracked files. An untracked file is outside your scope;"
                  " leave it in the working tree and say so in your report.")
 
 
@@ -78,7 +80,7 @@ def check_commit() -> None:
     if new:
         refuse("The index holds files HEAD does not track: " + listing(new)
                + "\nUnstage them with `git restore --staged` and commit the tracked"
-                 " changes alone. An untracked file is one nobody approved.")
+                 " changes alone. An untracked file is outside your scope.")
 
 
 def segments(argv: list[str]) -> list[list[str]]:

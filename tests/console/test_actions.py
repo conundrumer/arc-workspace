@@ -2,7 +2,10 @@
 
 import json
 import os
+import signal
+import threading
 import time
+import types
 
 from .conftest import PROP, item, worker, write_solver
 
@@ -13,12 +16,54 @@ def test_unknown_item_is_reported(srv):
 
 
 def test_approve_and_withdraw(srv):
+    """Approval takes the draft line out of the solver file, and withdrawing
+    it puts the line back under the task-id line."""
     it = item(srv, "a", srv.NEEDS_REVIEW, updated=True)
+    write_solver(srv, "a", "// a\n// draft\n// concept: tiles\n")
     assert srv.act_approve("a") == {"ok": True}
     assert it["state"] == srv.APPROVED
     assert it["updated"] is False
+    assert srv.solver_text("a") == "// a\n// concept: tiles\n"
     assert srv.act_unapprove("a") == {"ok": True}
     assert it["state"] == srv.NEEDS_REVIEW
+    assert srv.solver_text("a") == "// a\n// draft\n// concept: tiles\n"
+
+
+def test_the_tag_goes_under_a_task_id_line_that_ends_the_file(srv):
+    """A last line carries no newline of its own, and the tag still lands on a
+    line of its own."""
+    write_solver(srv, "a", "// a")
+    assert srv.mark_draft("a") is True
+    assert srv.solver_text("a") == "// a\n// draft\n"
+    assert srv.is_draft("a")
+
+
+def test_the_tag_is_written_in_one_step(srv):
+    """A worker session, a souffle run, and the ref-note hook read the solver
+    while the console retags it, and none of them sees a half-written file."""
+    body = "// a\n" + "// filler\n" * 60000
+    write_solver(srv, "a", body)
+    short, stop = [], threading.Event()
+
+    def read():
+        p = srv.solver_path("a")
+        while not stop.is_set():
+            try:
+                text = p.read_text()
+            except OSError:
+                continue
+            if len(text) < len(body):
+                short.append(len(text))
+                return
+
+    reader = threading.Thread(target=read, daemon=True)
+    reader.start()
+    for _ in range(200):
+        srv.mark_draft("a")
+        srv.clear_draft("a")
+    stop.set()
+    reader.join(3)
+    assert short == []
 
 
 def test_approve_needs_a_reviewable_item(srv):
@@ -167,9 +212,22 @@ def test_revert_restores_the_pre_turn_solver(srv):
                  "dirty": False, "files": {}}
     write_solver(srv, "a", "// after\n")
     assert srv.act_revert("a") == {"ok": True}
-    assert srv.solver_text("a") == "// before\n"
+    # the snapshot is the file as the turn found it; the tag the landing put
+    # on it belongs to the console, and only approval takes it off
+    assert srv.solver_text("a") == "// before\n// draft\n"
     assert it["dirty"] is False
     assert it["reverted"] == {"files": ["programs/solvers/a.dl"], "phase": "refine"}
+
+
+def test_a_revert_of_an_approved_solver_leaves_it_approved(srv):
+    """Approval takes the tag off, and a revert of the turn that followed it
+    puts back the file the user approved."""
+    it = item(srv, "a", srv.APPROVED, dirty=False)
+    it["pre"] = {"hash": "", "solver": "// a\n// concept: tiles\n", "proposals": "",
+                 "dirty": False, "files": {}}
+    write_solver(srv, "a", "// a\n// draft\n// concept: tiles, revised\n")
+    assert srv.act_revert("a") == {"ok": True}
+    assert srv.solver_text("a") == "// a\n// concept: tiles\n"
 
 
 def test_revert_needs_a_change_to_undo(srv):
@@ -392,11 +450,16 @@ def test_the_ledger_reader_tolerates_other_writers(srv):
     assert srv.ruled(rows) == set()
 
 
-def test_a_ruling_takes_a_task_off_the_lens(srv):
+def test_a_dismissal_takes_a_task_off_the_lens(srv):
+    """Approval is the solver file's own, so the ledger rules only by a
+    dismissal. The `approved` rows of the rounds before are read as rulings
+    still, so they never count as landings."""
     srv.ledger_append({"task": "c", "stage": "finalize", "model": "claude-fable-5"})
     srv.ledger_append({"task": "d", "stage": "approved", "model": None, "source": "user"})
     srv.ledger_append({"task": "e", "stage": "dismissed", "model": None, "source": "user"})
-    assert srv.ruled(srv.ledger_rows()) == {"d", "e"}
+    assert srv.ruled(srv.ledger_rows()) == {"e"}
+    assert srv.passes_of(srv.ledger_rows()) == {
+        "c": [{"stage": "finalize", "model": "fable"}]}
 
 
 def test_the_passes_name_the_model_of_each_stage_latest_landing(srv):
@@ -449,6 +512,23 @@ def test_a_retro_records_when_it_ran(srv, monkeypatch):
     assert json.loads(srv.RETRO_FILE.read_text()) == {"ts": 900}
 
 
+def test_the_retro_mark_is_written_beside_the_file_and_renamed(srv, monkeypatch):
+    """A reader that catches the console mid-write reads a whole mark. A mark
+    read as 0 would widen the retro window to every task there is."""
+    class Watched(type(srv.RETRO_FILE)):
+        written = []
+
+        def write_text(self, *args, **kw):
+            Watched.written.append(self.name)
+            return super().write_text(*args, **kw)
+
+    monkeypatch.setattr(srv, "RETRO_FILE", Watched(srv.RETRO_FILE))
+    monkeypatch.setattr(srv, "now", lambda: 900.0)
+    srv.act_retro()
+    assert Watched.written == ["retro.tmp"]
+    assert srv.retro_mark() == 900
+
+
 def test_a_retro_lists_the_tasks_whose_callouts_landed_since_the_mark(srv, monkeypatch):
     monkeypatch.setattr(srv, "now", lambda: 900.0)
     srv.act_retro()
@@ -475,6 +555,100 @@ def test_a_flag_level_is_held_to_the_three(srv):
     assert srv.flags() == {}
 
 
+# ---------- commit ----------
+
+def fake_git(srv, monkeypatch, status, head=""):
+    """The git calls act_commit makes, recorded. A status call answers with
+    the lines its pathspecs cover, as git's own filtering does."""
+    calls = []
+
+    def run(cmd, **kw):
+        calls.append(cmd)
+        out = ""
+        if cmd[1] == "ls-tree":
+            out = head
+        elif cmd[1] == "status":
+            paths = cmd[cmd.index("--") + 1:]
+            out = "".join(line + "\n" for line in status.splitlines()
+                          if any(line[3:].startswith(p) for p in paths))
+        return types.SimpleNamespace(returncode=0, stdout=out, stderr="")
+
+    monkeypatch.setattr(srv.subprocess, "run", run)
+    return calls
+
+
+def commit_repo(srv, tmp_path, monkeypatch):
+    """A root the solver paths are read against, so a commit names them the
+    way git does. aaaa1111 carries the user's approval — no draft line;
+    bbbb2222 is tagged."""
+    solvers = tmp_path / "programs" / "solvers"
+    solvers.mkdir(parents=True)
+    monkeypatch.setattr(srv, "ROOT", tmp_path)
+    monkeypatch.setattr(srv, "SOLVERS", solvers)
+    (solvers / "aaaa1111.dl").write_text("// aaaa1111\n")
+    (solvers / "bbbb2222.dl").write_text("// bbbb2222\n// draft\n")
+
+
+STATUS = (" M programs/solvers/aaaa1111.dl\n"
+          "?? programs/solvers/bbbb2222.dl\n"
+          "?? docs/wf-solver/proposals/EDGE_GAP.md\n"
+          "?? programs/solvers/.tmpq55dd1ie.dl\n"
+          " M programs/lib.dl\n")
+
+
+def test_a_commit_carries_the_unapproved_solvers_beside_the_approved_ones(
+        srv, tmp_path, monkeypatch):
+    commit_repo(srv, tmp_path, monkeypatch)
+    approved = item(srv, "aaaa1111", srv.APPROVED)
+    unapproved = item(srv, "bbbb2222", srv.NEEDS_REVIEW)
+    monkeypatch.setattr(srv, "run_committer", lambda: None)
+    calls = fake_git(srv, monkeypatch, STATUS,
+                     head="programs/solvers/aaaa1111.dl")
+
+    assert srv.act_commit()["ok"] is True
+    add = next(c for c in calls if c[1] == "add")
+    # lib.dl sits outside the commit's scope: the committer session takes it.
+    # The `.tmp` file is a running souffle's scratch, not work.
+    assert add[2:] == ["docs/wf-solver/proposals/EDGE_GAP.md",
+                       "programs/solvers/aaaa1111.dl",
+                       "programs/solvers/bbbb2222.dl"]
+    commit = next(c for c in calls if c[1] == "commit")
+    assert commit[3] == "Update aaaa1111 (carries bbbb2222)"
+    # the commit is not the ruling: the approved item ends the round, the
+    # unapproved one stays where it was, and the ledger records neither
+    assert approved["state"] == srv.COMMITTED
+    assert unapproved["state"] == srv.NEEDS_REVIEW
+    assert srv.ledger_rows() == []
+
+
+def test_an_approved_item_with_no_solver_file_stays_out_of_the_add(
+        srv, tmp_path, monkeypatch):
+    """One pathspec git cannot match makes the whole add fail and stages
+    nothing, so a pass that wrote no solver leaves nothing for the add to
+    name."""
+    commit_repo(srv, tmp_path, monkeypatch)
+    item(srv, "aaaa1111", srv.APPROVED)
+    item(srv, "cccc3333", srv.APPROVED)      # its pass wrote no solver
+    monkeypatch.setattr(srv, "run_committer", lambda: None)
+    calls = fake_git(srv, monkeypatch, STATUS,
+                     head="programs/solvers/aaaa1111.dl")
+
+    assert srv.act_commit()["ok"] is True
+    add = next(c for c in calls if c[1] == "add")
+    assert "programs/solvers/cccc3333.dl" not in add
+    assert "programs/solvers/aaaa1111.dl" in add
+    commit = next(c for c in calls if c[1] == "commit")
+    assert commit[3] == "Add cccc3333; update aaaa1111 (carries bbbb2222)"
+
+
+def test_a_commit_subject_counts_the_carried_solvers_past_a_few(srv):
+    assert srv.commit_subject([], ["aaaa1111"], ["bbbb2222", "cccc3333"]) == \
+        "Update aaaa1111 (carries bbbb2222, cccc3333)"
+    many = [f"{n}" * 8 for n in range(5)]
+    assert srv.commit_subject(["aaaa1111"], [], many) == \
+        "Add aaaa1111 (carries 5 unapproved solvers)"
+
+
 # ---------- committer feed ----------
 
 def test_committer_entries_read_what_the_session_says_and_runs(srv):
@@ -490,3 +664,121 @@ def test_committer_entries_read_what_the_session_says_and_runs(srv):
     # a message's blocks arrive one event at a time, each repeating the message
     assert len({k for k, _ in keys_entries}) == 2
     assert srv.committer_entries({"type": "result", "result": "done"}) == []
+
+
+def test_a_commit_waits_for_the_running_solver_sessions(srv, tmp_path, monkeypatch):
+    commit_repo(srv, tmp_path, monkeypatch)
+    item(srv, "aaaa1111", srv.APPROVED)
+    monkeypatch.setattr(srv, "run_committer", lambda: None)
+    calls = fake_git(srv, monkeypatch, STATUS, head="programs/solvers/aaaa1111.dl")
+    srv.PROCS[("cccc3333", "create")] = {"state": "running"}
+    try:
+        assert srv.act_commit() == {"error": "a solver session is running"}
+        assert not any(c[1] == "add" for c in calls)
+    finally:
+        del srv.PROCS[("cccc3333", "create")]
+
+
+def test_a_committer_the_timeout_ends_leaves_nothing_reading_it(srv, tmp_path,
+                                                                 monkeypatch):
+    """A session that leaves a process of its own behind holds the pipe the
+    run reads. The timeout ends the session and what it started, so the run
+    returns and the flag comes off."""
+    fake = tmp_path / "claude.sh"
+    marker = tmp_path / "alive"
+    fake.write_text(f"#!/bin/sh\n(sl" f"eep 30; touch {marker}) &\nexit 0\n")
+    fake.chmod(0o755)
+    monkeypatch.setattr(srv, "ROOT", tmp_path)
+    monkeypatch.setattr(srv, "CLAUDE", str(fake))
+    monkeypatch.setattr(srv, "COMMITTER_FLAGS", [])
+    monkeypatch.setattr(srv, "COMMIT_TIMEOUT", .2)
+    srv.COMMITTER.update(running=True, note=None, started=time.time(), feed=[])
+    done = threading.Event()
+    threading.Thread(target=lambda: (srv.run_committer(), done.set()),
+                     daemon=True).start()
+    assert done.wait(10)
+    assert srv.COMMITTER["running"] is False
+    assert not marker.exists()
+
+
+def test_a_committer_does_not_start_after_a_shutdown(srv, tmp_path, monkeypatch):
+    """The run opens on a thread of its own, so a shutdown reaches the console
+    before the thread reaches the spawn. A session started after that has
+    nothing left to end it, and it writes git with the console gone."""
+    fake = tmp_path / "claude.sh"
+    marker = tmp_path / "started"
+    fake.write_text(f"#!/bin/sh\ntouch {marker}\n")
+    fake.chmod(0o755)
+    monkeypatch.setattr(srv, "ROOT", tmp_path)
+    monkeypatch.setattr(srv, "CLAUDE", str(fake))
+    monkeypatch.setattr(srv, "COMMITTER_FLAGS", [])
+    srv.shutdown_workers()
+    srv.COMMITTER.update(running=True, note=None, started=time.time(), feed=[])
+    srv.run_committer()
+    assert not marker.exists()
+    assert srv.COMMITTER["running"] is False
+    assert "shutting down" in srv.COMMITTER["note"]
+
+
+def test_a_shutdown_between_the_spawn_and_the_publish_ends_the_session(
+        srv, tmp_path, monkeypatch):
+    """A shutdown in that window reads no process and leaves the session
+    running, so the run reads the flag the shutdown set and ends the session
+    itself."""
+    fake = tmp_path / "claude.sh"
+    marker = tmp_path / "finished"
+    fake.write_text(f"#!/bin/sh\nsl" f"eep 30\ntouch {marker}\n")
+    fake.chmod(0o755)
+    monkeypatch.setattr(srv, "ROOT", tmp_path)
+    monkeypatch.setattr(srv, "CLAUDE", str(fake))
+    monkeypatch.setattr(srv, "COMMITTER_FLAGS", [])
+    spawn = srv.subprocess.Popen
+
+    def popen(cmd, **kw):
+        proc = spawn(cmd, **kw)
+        if cmd[0] == str(fake):
+            srv.SHUTTING_DOWN = True
+        return proc
+
+    monkeypatch.setattr(srv.subprocess, "Popen", popen)
+    srv.COMMITTER.update(running=True, note=None, started=time.time(), feed=[])
+    done = threading.Event()
+    threading.Thread(target=lambda: (srv.run_committer(), done.set()),
+                     daemon=True).start()
+    assert done.wait(10)
+    assert not marker.exists()
+    assert srv.COMMITTER_PROC is None
+
+
+def test_a_kill_leaves_a_session_already_waited_for_alone(srv, monkeypatch):
+    """The pid of a waited-for session is free for the next process the
+    machine starts, and the kill would reach that one's whole session
+    group."""
+    hits = []
+    monkeypatch.setattr(srv.os, "killpg", lambda *a: hits.append(a))
+
+    class Session:
+        pid, returncode = 999999, 0
+
+        def kill(self):
+            hits.append("kill")
+
+    srv.kill_session(Session())
+    assert hits == []
+    Session.returncode = None
+    srv.kill_session(Session())
+    assert hits == [(999999, signal.SIGKILL)]
+
+
+def test_a_committer_that_cannot_start_clears_its_flag(srv, tmp_path, monkeypatch):
+    """The flag a committer run holds refuses every later commit and holds the
+    reload for as long as the console runs, so a session that never starts
+    takes it off on its way out."""
+    monkeypatch.setattr(srv, "ROOT", tmp_path)
+    monkeypatch.setattr(srv, "CLAUDE", str(tmp_path / "no-such-claude"))
+    srv.COMMITTER.update(running=True, note=None, started=time.time(), feed=[])
+    srv.run_committer()
+    assert srv.COMMITTER["running"] is False
+    assert "committer failed" in srv.COMMITTER["note"]
+    with srv.LOCK:
+        assert srv.turns_in_flight() is False

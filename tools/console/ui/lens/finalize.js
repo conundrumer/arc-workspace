@@ -110,7 +110,7 @@ export const finalize = {
     },[]);
     const session=useSession(selItem, {cli, reviewOrder:railOrder, select, pins, afterRule:fetchBacklog});
     const onApprove=useCallback(async id=>{
-      if(!confirm("Approve "+id+"? A ledger line records the ruling.")) return;
+      if(!confirm("Approve "+id+"? The draft line comes off the solver file.")) return;
       await post("/api/approve-solver",{id});
       fetchBacklog();
     },[fetchBacklog]);

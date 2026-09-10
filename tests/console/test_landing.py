@@ -38,6 +38,122 @@ def test_handoff_refused_on_the_final_stage(srv):
         "final stage — nothing to hand off to"
 
 
+def test_a_landing_tags_the_solver_as_unapproved(srv, monkeypatch):
+    """The console is the only writer of the draft tag: the create stage
+    lands the first solver file, and the landing tags it."""
+    monkeypatch.setattr(srv, "launch", lambda *a, **kw: None)
+    it = item(srv, "a", srv.RUNNING, phase="create", landed=[], rev=0,
+              sessions={"create": "cs", "refine": None})
+    write_solver(srv, "a", "// a\n// concept: tiles\n")
+    srv.finish_turn(it, {"result": tagged("the report")}, None, time.time(),
+                    "create", True)
+    assert srv.solver_text("a") == "// a\n// draft\n// concept: tiles\n"
+
+
+def test_the_tag_a_landing_writes_is_not_the_sessions_edit(srv):
+    """Approval takes the tag off, so the turn that follows one opens on an
+    untagged file and its landing tags the file again. That line is the
+    console's own, and a turn that changed nothing else stays clean."""
+    it = item(srv, "a", srv.NEEDS_REVIEW, dirty=False)
+    write_solver(srv, "a", "// a\n// concept: tiles\n")
+    w = worker(srv, it, phase="refine")
+    srv.start_turn(it, w, "refine")
+    srv.finish_turn(it, {"result": tagged("nothing to change")}, None,
+                    time.time(), "refine", False)
+    assert srv.solver_text("a") == "// a\n// draft\n// concept: tiles\n"
+    assert it["dirty"] is False
+    assert it["seen_hash"]["refine"] == srv.solver_hash("a")
+
+
+def test_a_second_session_is_not_charged_with_the_tag(srv):
+    """Two sessions of one item share the snapshot of the file as their turns
+    found it. The first landing tags the file, so the tag goes into that
+    snapshot: the second session's landing reads no edit of its own."""
+    it = item(srv, "a", srv.RUNNING, phase="create", landed=["create", "refine"],
+              sessions={"create": "cs", "refine": "rs"}, dirty=False,
+              lastActive={"create": None, "refine": None})
+    write_solver(srv, "a", "// a\n// concept: tiles\n")   # approved: no tag
+    first = worker(srv, it, phase="create", state="running")
+    srv.start_turn(it, first, "create", state="running")
+    second = worker(srv, it, phase="refine", state="running")
+    srv.start_turn(it, second, "refine", state="running")
+    srv.finish_turn(it, {"result": tagged("done")}, None, time.time(), "create", False)
+    assert srv.solver_text("a") == "// a\n// draft\n// concept: tiles\n"
+    first["state"] = "idle"
+    srv.finish_turn(it, {"result": tagged("nothing to change")}, None,
+                    time.time(), "refine", False)
+    assert it["dirty"] is False
+
+
+def test_a_slash_turn_on_an_approved_item_leaves_the_tag_off(srv):
+    """A slash command runs no model turn and leaves the item approved, so
+    the file it lands on stays as the approval left it."""
+    it = item(srv, "a", srv.APPROVED)
+    write_solver(srv, "a", "// a\n// concept: tiles\n")
+    w = worker(srv, it, phase="refine")
+    srv.start_turn(it, w, "refine", slash=True)
+    srv.finish_turn(it, {"result": "compacted"}, None, time.time(), "refine", False)
+    assert it["state"] == srv.APPROVED
+    assert srv.solver_text("a") == "// a\n// concept: tiles\n"
+
+
+def test_a_callout_landing_leaves_an_approved_item_approved(srv):
+    """The user approves an item while the callout turn its landing owes is
+    still in flight. That turn lands after the ruling, and the ruling stands:
+    the item keeps the state, and the file keeps the tag off."""
+    it = item(srv, "a", srv.APPROVED, phase="create", landed=["create"],
+              sessions={"create": "cs", "refine": None}, callout_wait="create",
+              reports={"create": "the report"})
+    write_solver(srv, "a", "// a\n// concept: tiles\n")
+    w = worker(srv, it, phase="create")
+    srv.start_turn(it, w, "create", trigger="callout")
+    srv.finish_turn(it, {"result": tagged("- [P2] a doc gap", "callouts")},
+                    "callout", time.time(), "create", False)
+    assert it["state"] == srv.APPROVED
+    assert srv.solver_text("a") == "// a\n// concept: tiles\n"
+    assert "## Callouts" in it["reports"]["create"]
+
+
+def test_a_callout_turn_dropped_with_its_worker_leaves_an_approval_standing(srv):
+    """The worker is gone when the owed callout turn comes up, so the report
+    stands as filed. The approval made in the meantime stands as well."""
+    it = item(srv, "a", srv.APPROVED, phase="create", landed=["create"],
+              sessions={"create": "cs", "refine": None}, callout_wait="create",
+              reports={"create": "the report"})
+    srv.DEFERRED.put_nowait(("callout", "a", "create", 1))
+    srv.DEFERRED.put_nowait(srv.STOP)
+    srv.drain_deferred()
+    assert it["state"] == srv.APPROVED
+    assert "callout_wait" not in it
+
+
+def test_a_report_is_filed_in_one_step(srv):
+    """A reader that is not under LOCK — the retro view, a session reading
+    the file — never sees a report half written."""
+    body = "# report\n" + "a line\n" * 60000
+    srv.save_report("a", "finalize", body)
+    short, stop = [], threading.Event()
+
+    def read():
+        p = srv.report_path("a", "finalize")
+        while not stop.is_set():
+            try:
+                text = p.read_text()
+            except OSError:
+                continue
+            if len(text) < len(body):
+                short.append(len(text))
+                return
+
+    reader = threading.Thread(target=read, daemon=True)
+    reader.start()
+    for _ in range(200):
+        srv.save_report("a", "finalize", body)
+    stop.set()
+    reader.join(3)
+    assert short == []
+
+
 def test_create_landing_defers_the_handoff(srv, monkeypatch):
     asked = threading.Event()
     landed = threading.Event()
@@ -663,6 +779,11 @@ def test_the_handoff_report_carries_the_alternatives_the_data_rules_out(srv):
     for brief in (srv.CREATE_BRIEF, srv.HANDOFF_BRIEF, srv.HANDOFF_TAIL):
         assert "the ones the data rules out" in brief
         assert "does not derive them again" in brief
+
+
+def test_every_brief_that_writes_the_solver_asks_for_the_draft_line(srv):
+    for brief in (srv.CREATE_BRIEF, srv.ADVANCE_BODY, srv.BARE_BRIEF):
+        assert srv.DRAFT_NOTE in brief
 
 
 def test_a_handoff_witness_is_written_into_the_report_not_left_in_scratch(srv):

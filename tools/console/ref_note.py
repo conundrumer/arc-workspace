@@ -1,39 +1,33 @@
 """PostToolUse hook for console workers: when a tool call touches another
-task's solver file, add a note on where that solver stands. Approved and
-committed solvers are reference; anything else gets a note, once per session.
+task's solver file, add a note on where that solver stands. Approved solvers
+are reference; anything else gets a note, once per session.
 
-Reads `approved.txt` (ids the console holds in the approved state) and asks
-git about the rest. The worker's own task, from CONSOLE_TASK, is exempt.
+Approval stands in the solver file: the console tags an unapproved solver
+with a `// draft` line, and takes that line out when the user approves. The
+worker's own task, from CONSOLE_TASK, is exempt.
 """
 import json
 import os
 import re
-import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(os.environ.get("CONSOLE_ROOT") or Path(__file__).resolve().parents[2])
 STATE = Path(os.environ.get("CONSOLE_STATE_DIR") or Path(__file__).parent / "state")
 SOLVER_ID = re.compile(r"\b([0-9a-f]{8})\.dl\b")
+DRAFT = "// draft"
 
 
-def git_ok(*args: str) -> bool:
-    return subprocess.run(["git", *args], cwd=ROOT,
-                          capture_output=True).returncode == 0
-
-
-def standing(item_id: str, approved: set[str]) -> str | None:
-    """The note an id deserves, or None for ratified reference."""
-    if item_id in approved:
+def standing(item_id: str) -> str | None:
+    """The note an id deserves, or None for a solver the user approved."""
+    try:
+        text = (ROOT / "programs" / "solvers" / f"{item_id}.dl").read_text(errors="replace")
+    except OSError:
         return None
-    path = f"programs/solvers/{item_id}.dl"
-    if not git_ok("cat-file", "-e", f"HEAD:{path}"):
-        return (f"note: {item_id}.dl is not approved — don't use it as reference; "
-                "it still counts as a survey caller.")
-    if git_ok("diff", "--quiet", "HEAD", "--", path):
+    if not any(line.strip() == DRAFT for line in text.splitlines()):
         return None
-    return (f"note: {item_id}.dl has uncommitted edits — the committed "
-            "version is the ratified reference.")
+    return (f"note: {item_id}.dl is not approved — don't use it as reference; "
+            "it still counts as a survey caller.")
 
 
 def main() -> None:
@@ -48,15 +42,11 @@ def main() -> None:
         return
     seen_file = STATE / "refnote" / f"{ev.get('session_id') or 'unknown'}.txt"
     seen = set(seen_file.read_text().split()) if seen_file.exists() else set()
-    try:
-        approved = set((STATE / "approved.txt").read_text().split())
-    except OSError:
-        approved = set()
     notes, noted = [], []
     for item_id in ids:
         if item_id in seen:
             continue
-        note = standing(item_id, approved)
+        note = standing(item_id)
         if note:
             notes.append(note)
             noted.append(item_id)

@@ -2,12 +2,15 @@
 round."""
 
 import json
+import os
+import re
+import signal
 import subprocess
 import threading
 import time
 import uuid
 
-from . import config, drain, landing, ledger, overnight, process, prompts, solvers, store, workers
+from . import config, drain, landing, overnight, process, prompts, solvers, store, workers
 
 
 def submit_comment(it: dict, text: str, sess: str | None = None) -> None:
@@ -70,9 +73,7 @@ def act_approve(it: dict) -> None:
     if it["state"] != store.NEEDS_REVIEW:
         raise store.Reject("nothing to approve")
     store.require_idle(it)
-    it["state"] = store.APPROVED
-    it["updated"] = False
-    store.say(it, store.event("approved"))
+    store.approve(it)
 
 
 @store.action
@@ -80,6 +81,7 @@ def act_unapprove(it: dict) -> None:
     if it["state"] != store.APPROVED:
         raise store.Reject("not approved")
     it["state"] = store.NEEDS_REVIEW
+    solvers.mark_draft(it["id"])
     store.say(it, store.event("approval withdrawn"))
 
 
@@ -226,7 +228,12 @@ def act_revert(it: dict) -> None:
     snap = store.pre(it)["solver"]
     if not snap or snap == solvers.solver_text(item_id):
         raise store.Reject("nothing to revert")
-    solvers.solver_path(item_id).write_text(snap)
+    solvers.write_solver(item_id, snap)
+    # The snapshot is the file as the turn found it, and the turn that landed
+    # tagged it after that, so the restore puts back a file the tag may have
+    # been missing from. Approval is the only thing that takes the tag off.
+    if it["state"] != store.APPROVED:
+        solvers.mark_draft(item_id)
     reverted = [f"programs/solvers/{item_id}.dl"]
     # the proposal entries are shared across workers: restore one only if
     # this turn edited it and nothing touched it since the turn landed
@@ -251,43 +258,85 @@ def act_revert(it: dict) -> None:
     store.say(it, store.event("edits reverted"))
 
 
-def commit_subject(added: list[str], changed: list[str]) -> str:
+SOLVER_REL = re.compile(r"programs/solvers/([0-9a-f]{8})\.dl$")
+# How many unapproved solvers a commit subject names before it counts them.
+CARRIED_NAMED = 4
+
+
+def commit_subject(added: list[str], changed: list[str],
+                   carried: list[str] = ()) -> str:
     parts = []
     if added:
         parts.append("Add " + ", ".join(added))
     if changed:
         parts.append(("update " if parts else "Update ") + ", ".join(changed))
-    return "; ".join(parts)
+    msg = "; ".join(parts)
+    if carried:
+        named = (", ".join(carried) if len(carried) <= CARRIED_NAMED
+                 else f"{len(carried)} unapproved solvers")
+        msg += f" (carries {named})"
+    return msg
+
+
+def changed_paths() -> list[str]:
+    """Every changed or untracked file under the commit's scope, as git
+    status names it. A running souffle drops `.tmp*.dl` scratch files beside
+    the solvers, so a dotfile is not work and stays out."""
+    out = subprocess.run(["git", "status", "--porcelain", "--", *config.COMMIT_STAGE],
+                         cwd=config.ROOT, capture_output=True, text=True)
+    paths = set()
+    for line in out.stdout.splitlines():
+        if not line.strip():
+            continue
+        path = line[3:].strip().split(" -> ")[-1].strip('"')
+        if not path.rsplit("/", 1)[-1].startswith("."):
+            paths.add(path)
+    return sorted(paths)
 
 
 def act_commit() -> dict:
+    """Commit the scope as it stands: the approved solvers, and the solvers
+    and entries beside them that no one has ruled on yet. Each solver file
+    says which it is — a draft tag means unapproved — and only the items the
+    console holds as approved move to COMMITTED."""
     with store.LOCK:
         if store.COMMITTER["running"]:
             return {"error": "committer session still running"}
+        # a solver session mid-turn may be writing the tree the commit takes
+        if any(w["state"] in ("spawning", "sending", "running")
+               for w in store.PROCS.values()):
+            return {"error": "a solver session is running"}
         ids = [it["id"] for it in store.STATE["items"] if it["state"] == store.APPROVED]
         if not ids:
             return {"error": "nothing approved"}
-        rels = {i: str(solvers.solver_path(i).relative_to(config.ROOT)) for i in ids}
+        paths = changed_paths()
+        stems = {m.group(1) for p in paths if (m := SOLVER_REL.match(p))}
+        # the file says whether the user approved it; the items the console
+        # holds as approved are the ones it has just untagged
+        named = sorted({s for s in stems if not solvers.is_draft(s)} | set(ids))
+        carried = sorted(stems - set(named))
+        rels = {i: str(solvers.solver_path(i).relative_to(config.ROOT))
+                for i in named}
         # HEAD, not the index: a solver staged by something else is still new
         in_head = set(subprocess.run(["git", "ls-tree", "-r", "--name-only", "HEAD",
                                       "--", *rels.values()],
                                      cwd=config.ROOT, capture_output=True,
                                      text=True).stdout.split())
-        msg = commit_subject(sorted(i for i in ids if rels[i] not in in_head),
-                             sorted(i for i in ids if rels[i] in in_head))
-        paths = list(rels.values())
-        # new entries are untracked, so the directory is staged as a whole
-        proposals = "docs/wf-solver/proposals"
-        if subprocess.run(["git", "status", "--porcelain", "--", proposals],
-                          cwd=config.ROOT, capture_output=True, text=True).stdout.strip():
-            paths.append(proposals)
-        subprocess.run(["git", "add", *paths], cwd=config.ROOT, check=False)
+        msg = commit_subject([i for i in named if rels[i] not in in_head],
+                             [i for i in named if rels[i] in in_head],
+                             carried)
+        # One pathspec git cannot match makes the whole add fail and stages
+        # nothing, so an approved item whose pass wrote no solver file is
+        # named in the subject and left out of the add. A solver deleted from
+        # the tree is staged all the same: git status lists it.
+        stage = set(paths) | {rels[i] for i in named
+                              if solvers.solver_path(i).exists()}
+        subprocess.run(["git", "add", *sorted(stage)], cwd=config.ROOT, check=False)
         out = subprocess.run(["git", "commit", "-m", msg], cwd=config.ROOT,
                              capture_output=True, text=True)
         if out.returncode != 0:
             return {"error": "git commit failed: " + (out.stderr or out.stdout).strip()[-200:]}
         msgs = [msg]
-        ledger.record_approvals(sorted(ids), int(store.now()))
         for it in store.STATE["items"]:
             if it["id"] in ids:
                 it["state"] = store.COMMITTED
@@ -306,51 +355,101 @@ def act_commit() -> dict:
     return {"ok": True, "msg": " + ".join(msgs)}
 
 
+def kill_session(proc: subprocess.Popen) -> None:
+    """End the session and everything it started.
+
+    A session already waited for is left alone: its pid is free for the next
+    process the machine starts, and the kill would reach that one's whole
+    session group. A session whose own process has ended, with something it
+    started still running, has not been waited for, and the group kill takes
+    what it left.
+    """
+    if proc.returncode is not None:
+        return
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except OSError:
+        proc.kill()
+
+
 def run_committer() -> None:
     """One-shot session that commits worker fallout with judged messages.
 
     It reads the diffs and the log, so it takes none of the worker appendix:
     that one carries the worker's own rule of no git writes.
+
+    The process is published while it runs, so a shutdown ends the session the
+    way it ends a worker.
+
+    The run ends with the flag off, whatever happened to it. A session that
+    never started — no CLI on the path, no room for the process — raises
+    here, on a thread of its own where nothing reads the exception, and the
+    flag left standing would refuse every later commit and hold the reload
+    for as long as the console runs.
     """
-    before = subprocess.run(["git", "rev-parse", "HEAD"], cwd=config.ROOT,
-                            capture_output=True, text=True).stdout.strip()
-    cmd = [config.CLAUDE, "-p", config.COMMIT_BRIEF, *config.COMMITTER_FLAGS]
-    if config.COMMIT_MODEL:
-        cmd += ["--model", config.COMMIT_MODEL]
-    seen: set = set()
-    with open(config.LOG_DIR / "committer.log", "ab") as log:
-        proc = subprocess.Popen(cmd, cwd=config.ROOT, env=config.WORKER_ENV,
-                                stdout=subprocess.PIPE, stderr=log)
-        timer = threading.Timer(config.COMMIT_TIMEOUT, proc.kill)
-        timer.start()
-        try:
-            for line in proc.stdout:
-                log.write(line)
-                try:
-                    ev = json.loads(line)
-                except ValueError:
-                    continue
-                entries = []
-                for key, entry in committer_entries(ev):
-                    if key not in seen:
-                        seen.add(key)
-                        entries.append(entry)
-                if entries:
-                    with store.LOCK:
-                        store.COMMITTER["feed"].extend(entries)
-                    store.bump()
-            proc.wait()
-        finally:
-            timer.cancel()
-    out = subprocess.run(["git", "log", "--format=%s", f"{before}..HEAD"],
-                         cwd=config.ROOT, capture_output=True, text=True).stdout
-    subjects = [s for s in out.splitlines() if s]
-    note = ("committer: " + "; ".join(reversed(subjects)) if subjects else
-            "committer made no commits — see state/logs/committer.log")
-    with store.LOCK:
-        store.COMMITTER.update(running=False, note=note)
-        store.COMMITTER["feed"].append(store.event(note))
-    store.bump()
+    note = None
+    try:
+        # The run opens on a thread of its own, so a shutdown reaches this
+        # point ahead of the session. A session started after the shutdown has
+        # nothing to end it: it would write git with the console gone.
+        with store.LOCK:
+            if store.SHUTTING_DOWN:
+                raise store.Reject("the console is shutting down")
+        before = subprocess.run(["git", "rev-parse", "HEAD"], cwd=config.ROOT,
+                                capture_output=True, text=True).stdout.strip()
+        cmd = [config.CLAUDE, "-p", config.COMMIT_BRIEF, *config.COMMITTER_FLAGS]
+        if config.COMMIT_MODEL:
+            cmd += ["--model", config.COMMIT_MODEL]
+        seen: set = set()
+        with open(config.LOG_DIR / "committer.log", "ab") as log:
+            # The session runs in a session group of its own, so the timeout
+            # takes the tools it left running with it. A process the session
+            # leaves behind holds the pipe this thread reads open, and the
+            # read would go on past the run, with the flag still up.
+            proc = subprocess.Popen(cmd, cwd=config.ROOT, env=config.WORKER_ENV,
+                                    stdout=subprocess.PIPE, stderr=log,
+                                    start_new_session=True)
+            store.COMMITTER_PROC = proc
+            # A shutdown between the spawn and the line above reads no process
+            # and leaves the session running, so the flag it set is read here:
+            # one of the two ends the session.
+            with store.LOCK:
+                if store.SHUTTING_DOWN:
+                    kill_session(proc)
+            timer = threading.Timer(config.COMMIT_TIMEOUT, kill_session, args=(proc,))
+            timer.start()
+            try:
+                for line in proc.stdout:
+                    log.write(line)
+                    try:
+                        ev = json.loads(line)
+                    except ValueError:
+                        continue
+                    entries = []
+                    for key, entry in committer_entries(ev):
+                        if key not in seen:
+                            seen.add(key)
+                            entries.append(entry)
+                    if entries:
+                        with store.LOCK:
+                            store.COMMITTER["feed"].extend(entries)
+                        store.bump()
+                proc.wait()
+            finally:
+                timer.cancel()
+        out = subprocess.run(["git", "log", "--format=%s", f"{before}..HEAD"],
+                             cwd=config.ROOT, capture_output=True, text=True).stdout
+        subjects = [s for s in out.splitlines() if s]
+        note = ("committer: " + "; ".join(reversed(subjects)) if subjects else
+                "committer made no commits — see state/logs/committer.log")
+    except Exception as exc:
+        note = f"committer failed: {exc}"
+    finally:
+        store.COMMITTER_PROC = None
+        with store.LOCK:
+            store.COMMITTER.update(running=False, note=note)
+            store.COMMITTER["feed"].append(store.event(note))
+        store.bump()
 
 
 def committer_entries(ev: dict) -> list[tuple[tuple, dict]]:

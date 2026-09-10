@@ -4,7 +4,19 @@ import json
 import threading
 import time
 
-from .conftest import PROP, REPORT, backlog_solver, finalize_launch, item, write_solver
+from .conftest import (
+    HOLD,
+    PROP,
+    REPORT,
+    backlog_solver,
+    finalize_item,
+    finalize_launch,
+    get,
+    item,
+    lock_free,
+    tagged,
+    write_solver,
+)
 
 # ---------- the finalize backlog ----------
 
@@ -18,22 +30,89 @@ def test_every_solver_not_ruled_on_is_unfinalized(srv):
                        "model": "claude-fable-5", "source": "backfill"})
     srv.ledger_append({"task": "hhh", "stage": "finalize",
                        "model": "claude-fable-5", "source": "console"})
-    srv.ledger_append({"task": "hhh", "stage": "approved", "model": None,
-                       "source": "console"})
+    srv.clear_draft("hhh")      # the user approved it: the draft line is gone
     rows = {r["id"]: r for r in srv.backlog_view()}
     assert list(rows) == ["aaa", "fff", "ggg"]
     assert rows["fff"]["passes"] == [{"stage": "finalize", "model": "opus"}]
     assert rows["aaa"]["passes"] == []
 
 
-def test_approving_a_solver_from_the_lens_is_a_ledger_line(srv):
+def test_approving_a_solver_from_the_lens_takes_its_draft_line_off(srv):
     for tid in ("aaa", "bbb"):
         backlog_solver(srv, tid)
     assert srv.act_approve_solver({"id": "aaa"}).get("ok")
     assert [r["id"] for r in srv.backlog_view()] == ["bbb"]
-    row = [r for r in srv.ledger_rows() if r["task"] == "aaa"][0]
-    assert row["stage"] == "approved" and row["source"] == "user"
+    assert not srv.is_draft("aaa")
+    assert srv.ledger_rows() == []
     assert "no solver" in srv.act_approve_solver({"id": "zzz"})["error"]
+
+
+def test_a_lens_approval_moves_the_item_the_console_holds(srv):
+    """The lens and the item panel make one ruling. An item left at
+    needs-review has its approval withdrawn by the next revert, which tags
+    the file it restores."""
+    backlog_solver(srv, "aaa")
+    it = item(srv, "aaa", srv.NEEDS_REVIEW)
+    assert srv.act_approve_solver({"id": "aaa"}).get("ok")
+    assert it["state"] == srv.APPROVED
+    assert not srv.is_draft("aaa")
+    assert it["feed"][-1]["text"] == "approved"
+    srv.pre(it).update(solver="// concept: a shape, revised\n")
+    assert srv.act_revert("aaa") == {"ok": True}
+    assert not srv.is_draft("aaa")
+
+
+def test_lens_approval_waits_for_a_landing_under_way(srv):
+    """A landing rewrites the same file under LOCK, so the tag the lens takes
+    off is not one a landing is in the middle of putting back."""
+    backlog_solver(srv, "aaa")
+    done = threading.Event()
+
+    def approve():
+        srv.act_approve_solver({"id": "aaa"})
+        done.set()
+
+    with srv.LOCK:
+        threading.Thread(target=approve, daemon=True).start()
+        time.sleep(HOLD)
+        assert srv.is_draft("aaa")
+    assert done.wait(3)
+    assert not srv.is_draft("aaa")
+
+
+def test_a_lens_approval_waits_for_a_turn_in_flight(srv):
+    """The lens the user clicks was rendered before the click, and a pass
+    admitted in between is writing the solver. An approval then would keep
+    the item approved through that pass's landing, and commit a text the user
+    never saw, so the ruling waits for the turn."""
+    backlog_solver(srv, "aaa")
+    it = finalize_item(srv, "aaa", state=srv.RUNNING)
+    w = srv.PROCS[("aaa", "finalize")]
+    srv.start_turn(it, w, "finalize", state="running")
+    assert "wait for the turn to land" in \
+        srv.act_approve_solver({"id": "aaa"})["error"]
+    assert it["state"] == srv.RUNNING
+    assert srv.is_draft("aaa")
+    # the pass writes the solver and lands: the row is the user's to rule on
+    write_solver(srv, "aaa", "// draft\n// concept: a shape, revised\n")
+    w["state"] = "idle"
+    srv.finish_turn(it, {"result": tagged("done")}, None, time.time(),
+                    "finalize", False)
+    assert it["state"] == srv.NEEDS_REVIEW
+    assert srv.is_draft("aaa")
+
+
+def test_the_lens_route_reads_git_with_the_lock_down(srv, monkeypatch):
+    """The row order comes in part from a git read. Held under LOCK, that read
+    stalls every worker reader thread and the page's own poll for as long as
+    git takes."""
+    backlog_solver(srv, "aaa")
+    free = []
+    ages = srv.solver_ages
+    monkeypatch.setattr(srv, "solver_ages",
+                        lambda: (free.append(lock_free(srv)), ages())[1])
+    assert get(srv, "/api/backlog")["status"] == 200
+    assert free == [True]
 
 
 def test_the_oldest_commit_breaks_the_last_tie(srv, monkeypatch):
@@ -76,7 +155,7 @@ def test_the_backlog_order_bands(srv):
                     "done\n\n## Callouts\n\n1. [P1] the pin is a guess\n")
     srv.save_report("t06", "refine",
                     "done\n\n## Callouts\n\n1. [P2] the pin is a guess\n")
-    write_solver(srv, "t05", "// concept: tiles\n.comp CornerDist {\n}\n")
+    write_solver(srv, "t05", "// draft\n// concept: tiles\n.comp CornerDist {\n}\n")
     srv.save_report("t04", "refine", REPORT)   # two entries, no marks
     srv.save_report("t03", "refine",
                     "done\n\n## Callouts\n\n1. [P3] the name reads oddly\n")
@@ -117,7 +196,7 @@ def test_the_backlog_order_bands(srv):
 def test_a_self_rank_outsorts_comps_and_counts(srv):
     for tid in ("aaa", "bbb", "ccc"):
         backlog_solver(srv, tid)
-    write_solver(srv, "aaa", "// concept: tiles\n.comp CornerDist {\n}\n")
+    write_solver(srv, "aaa", "// draft\n// concept: tiles\n.comp CornerDist {\n}\n")
     srv.save_report("bbb", "refine", REPORT)   # two entries, no marks
     srv.save_report("ccc", "refine",
                     "done\n\n## Callouts\n\n1. [P2] the pin is a guess\n")
@@ -182,16 +261,6 @@ def test_a_task_the_console_holds_stays_out_of_the_backlog(srv):
     assert [r["id"] for r in srv.backlog_view()] == ["bbb"]
 
 
-def test_save_exports_the_approved_ids(srv):
-    item(srv, "a", srv.APPROVED)
-    item(srv, "b", srv.NEEDS_REVIEW)
-    srv.save()
-    assert srv.APPROVED_FILE.read_text() == "a\n"
-    srv.find("a")["state"] = srv.COMMITTED
-    srv.save()
-    assert srv.APPROVED_FILE.read_text() == ""
-
-
 def test_a_refine_done_item_ranks_in_the_backlog(srv):
     for tid in ("aaa", "bbb", "ccc"):
         backlog_solver(srv, tid)
@@ -225,7 +294,7 @@ def test_an_unfinalized_row_is_rebuilt_only_when_its_files_change(srv):
     backlog_solver(srv, "bbb")
     assert [r["id"] for r in srv.backlog_view()] == ["aaa", "bbb"]
     assert srv.ROW_CACHE["aaa"] is first
-    backlog_solver(srv, "aaa", "// concept: a shape, revised\n")
+    backlog_solver(srv, "aaa", "// draft\n// concept: a shape, revised\n")
     assert srv.backlog_view()[0]["title"] == "concept: a shape, revised"
     assert srv.ROW_CACHE["aaa"] is not first
 

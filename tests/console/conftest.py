@@ -8,6 +8,7 @@ import importlib.util
 import json
 import queue
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -140,6 +141,21 @@ def srv(tmp_path, monkeypatch):
         thread.join(timeout=3)
 
 
+def lock_free(srv) -> bool:
+    """Whether another thread could take LOCK right now."""
+    got = []
+
+    def take():
+        if srv.LOCK.acquire(timeout=SETTLE):
+            srv.LOCK.release()
+            got.append(True)
+
+    t = threading.Thread(target=take)
+    t.start()
+    t.join()
+    return bool(got)
+
+
 def item(s, item_id, state, **kw):
     """Append an item the way start_wave does, then override for the test."""
     it = {"id": item_id, "est": 10, "wave": 1, "state": state,
@@ -244,7 +260,9 @@ REPORT = """The model hypothesis stands.
 """
 
 
-def backlog_solver(srv, item_id, text="// concept: a shape\n"):
+def backlog_solver(srv, item_id, text="// draft\n// concept: a shape\n"):
+    """A solver on disk the user has not approved: the draft line is the
+    console's own tag."""
     write_solver(srv, item_id, text)
 
 
