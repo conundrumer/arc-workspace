@@ -73,6 +73,13 @@ def parse_output(
     ] = []
     for variant in sorted(grouped):
         cells = grouped[variant]
+        for cell in cells:
+            for edge, k in zip(("t", "b", "l", "r"), cell[:4], strict=True):
+                if k < 0:
+                    row = f"[{cell[0]}, {cell[1]}, {cell[2]}, {cell[3]}] {cell[4]}"
+                    raise ValueError(
+                        f"negative edge distance {edge}={k} in {variant!r}: {row}"
+                    )
         bounds = {(t + b + 1, l + r + 1) for (t, b, l, r, _) in cells}
         if len(bounds) != 1:
             raise ValueError(f"inconsistent grid bounds in {variant!r}: {bounds}")

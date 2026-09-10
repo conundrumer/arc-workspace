@@ -463,6 +463,8 @@ class _Lint:
         """Hint: one rule, one positive use, a two-literal body. The
         corpus both inlines and keeps this shape — the name's value is the
         call."""
+        if key[1] == "impl_choice":
+            return  # the corpus-wide case enumerator keeps its name
         if not self.inlinable(key):
             return
         defs = self.defs(key)
@@ -850,8 +852,9 @@ class _Lint:
             return None
         pair = f"`{_atom_str(a)}, {_atom_str(b)}, {x} != {y}`"
         if len(diff) == 1:
-            return (f"{pair} reads as `Unanimous.clash` over the shared "
-                    f"columns; a count is `Tally`")
+            return (f"{pair} is a multi-cell test over the shared columns; "
+                    f"docs/wf-solver/proposals/multi_cell.md holds that "
+                    f"operation")
         if len(diff) != 2:
             return None
         [p] = [i for i in diff if i != v]

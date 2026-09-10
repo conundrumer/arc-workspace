@@ -2,6 +2,8 @@
 
 import argparse
 import json
+import re
+import subprocess
 import sys
 import time
 from collections import defaultdict
@@ -13,10 +15,10 @@ from dl.corpus import literal_count
 from dl.deletions import deletion_report, render_deletions
 from dl.determination_plan import probe_report, render_determination_plan
 from dl.determine import DetermineResult, render_determine, run_determine
-from dl.dlparse import ParseError, parse
+from dl.dlparse import ParseError, TypeDecl, parse
 from dl.facts import parse_grid
 from dl.lint import LIB_NAME_CAT, RESERVED_CAT, SHADOWED_TYPE_CAT, lint_program
-from dl.paths import SOLVERS_DIR, all_stems
+from dl.paths import REPO_ROOT, SOLVERS_DIR, all_stems
 from dl.render import _grid_lines, render_pair_failure, render_stem_failures
 from dl.rewrite_lint import HINTS, lint_rewrites
 from dl.solve import (
@@ -283,6 +285,21 @@ the source first; the runner does that for you.
 """
 
 
+def _case_branches(stem: str) -> list[str]:
+    """The branch names of the solver's Choice ADT, in source order. A solver
+    with one case has no Choice, and gets no branches."""
+    try:
+        program = parse((SOLVERS_DIR / f"{stem}.dl").read_text())
+    except (OSError, ParseError):
+        return []
+    return [
+        b
+        for it in program.items
+        if isinstance(it, TypeDecl) and it.name == "Choice"
+        for b in it.branches
+    ]
+
+
 def cmd_grid(stem: str, path: str | None = None) -> int:
     """Run one solver on a grid the caller wrote, in place of a stored pair,
     and print what each case emits."""
@@ -323,10 +340,72 @@ def cmd_grid(stem: str, path: str | None = None) -> int:
             print(f"  conflicts at: {conflicts}")
         if missing:
             print(f"  missing cells at: {missing}")
-    if len(actuals) > 1:
+
+    emitted = {v.split("(", 1)[0].removeprefix("$") for v, _, _, _ in actuals}
+    silent = [b for b in _case_branches(stem) if b not in emitted]
+    if silent:
+        print()
+        for name in silent:
+            print(f"${name}: emits nothing")
+    cases = len(actuals) + len(silent)
+    if cases > 1:
         distinct = {tuple(tuple(row) for row in g) for _, g, _, _ in actuals}
         print()
-        print(f"{len(actuals)} cases, {len(distinct)} distinct grid(s)")
+        print(f"{cases} cases, {len(distinct)} distinct grid(s)")
+    return 0
+
+
+SOLVER_PATH_RE = re.compile(r"programs/solvers/([^/]+)\.dl$")
+
+
+def _git(*args: str) -> str | None:
+    """Git's stdout, or None when the call fails."""
+    run = subprocess.run(["git", *args], cwd=REPO_ROOT,
+                         capture_output=True, text=True)
+    return run.stdout if run.returncode == 0 else None
+
+
+def _commit_stems(log: str) -> list[set[str]]:
+    """The solver stems each commit touches, one set per commit, from
+    `git log --name-only` output."""
+    commits: list[set[str]] = []
+    for line in log.splitlines():
+        if line.startswith("commit "):
+            commits.append(set())
+        elif (m := SOLVER_PATH_RE.match(line.strip())) and commits:
+            commits[-1].add(m.group(1))
+    return commits
+
+
+def _worktree_stems(status: str) -> set[str]:
+    """The solver stems with an uncommitted or untracked change, from
+    `git status --porcelain` output."""
+    stems = set()
+    for line in status.splitlines():
+        path = line[3:].strip().split(" -> ")[-1].strip('"')
+        if m := SOLVER_PATH_RE.match(path):
+            stems.add(m.group(1))
+    return stems
+
+
+def cmd_since(when: str) -> int:
+    """Print the solver stems a survey since `when` covers: the ones the
+    commits since then touch, plus the ones the working tree changes. A
+    commit touching more than half the corpus is a corpus-wide mechanical
+    rewrite, and the solvers it touches are out of scope."""
+    log = _git("log", f"--since={when}", "--name-only", "--pretty=format:commit %H",
+               "--", "programs/solvers")
+    status = _git("status", "--porcelain", "--", "programs/solvers")
+    if log is None or status is None:
+        print(f"git found no history for {when!r}", file=sys.stderr)
+        return 1
+    corpus = set(all_stems())
+    stems: set[str] = _worktree_stems(status)
+    for touched in _commit_stems(log):
+        if len(touched) * 2 <= len(corpus):
+            stems |= touched
+    for stem in sorted(stems & corpus):
+        print(stem)
     return 0
 
 
@@ -484,6 +563,79 @@ def cmd_size(stem: str | None = None) -> int:
     return 1 if bad else 0
 
 
+KEYWORDS_DOC = REPO_ROOT / "docs" / "wf-solver" / "keywords.md"
+
+# The sections of keywords.md each header line draws its keywords from.
+KEYWORD_SECTIONS = {"concept": ("Setup", "Prior"), "shape": ("Shape",)}
+
+HEADER_RE = re.compile(r"^// (concept|shape): (.*)$")
+BULLET_RE = re.compile(r"^- `([^`]+)`")
+
+
+def _doc_keywords(text: str) -> dict[str, list[str]]:
+    """The keywords of keywords.md, in doc order, per `##` section. A
+    keyword is the leading code span of a bullet."""
+    sections: dict[str, list[str]] = {}
+    held: list[str] = []
+    for line in text.splitlines():
+        if line.startswith("## "):
+            held = sections.setdefault(line[3:].strip(), [])
+        elif m := BULLET_RE.match(line):
+            held.append(m.group(1))
+    return sections
+
+
+def _header_keywords(source: str) -> list[tuple[str, str]]:
+    """The (header kind, keyword) pairs of a solver's `// concept:` and
+    `// shape:` lines. The header runs to the first line that is neither
+    blank nor a comment."""
+    pairs: list[tuple[str, str]] = []
+    for line in source.splitlines():
+        stripped = line.strip()
+        if stripped and not stripped.startswith("//"):
+            break
+        if m := HEADER_RE.match(line):
+            pairs.extend((m.group(1), word) for word in m.group(2).split())
+    return pairs
+
+
+def cmd_keywords(stems: list[str] | None = None) -> int:
+    """The keyword vocabulary in use: how many solvers carry each keyword of
+    keywords.md, and which header keyword the doc does not list. An unknown
+    keyword is reported, not failed: this is analysis, and `lint` decides
+    what a solver has to fix."""
+    for s in stems or []:
+        if _missing(s):
+            return 2
+    stems = stems or all_stems()
+    sections = _doc_keywords(KEYWORDS_DOC.read_text())
+    known = {kind: {w for name in names for w in sections.get(name, ())}
+             for kind, names in KEYWORD_SECTIONS.items()}
+
+    carriers: dict[str, set[str]] = defaultdict(set)
+    unknown: list[str] = []
+    for stem in stems:
+        source = (SOLVERS_DIR / f"{stem}.dl").read_text()
+        for kind, word in _header_keywords(source):
+            if word in known[kind]:
+                carriers[word].add(stem)
+            else:
+                unknown.append(f"{stem}: {word} is not in keywords.md")
+
+    for name in ("Setup", "Prior", "Shape"):
+        words = sections.get(name)
+        if not words:
+            continue
+        print(f"--- {name} ---")
+        for word in words:
+            print(f"  {len(carriers[word]):4d}  {word}")
+        print()
+    for line in unknown:
+        print(line)
+    print(f"unknown keywords: {len(unknown)}")
+    return 0
+
+
 def cmd_expand(stem: str) -> int:
     """The solver source after the runner's GRID and RIGID expansions,
     which is the text Souffle compiles."""
@@ -494,7 +646,7 @@ def cmd_expand(stem: str) -> int:
 
 
 COMMANDS = ("run", "lint", "grid", "sweep", "deletions", "audit", "determination-plan", "size",
-            "expand")
+            "keywords", "expand", "since")
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -555,6 +707,31 @@ def _parser() -> argparse.ArgumentParser:
     size.add_argument("stem", nargs="?",
                       help="one solver; all of them when omitted")
 
+    keywords = sub.add_parser(
+        "keywords", help="how many solvers carry each keyword of keywords.md",
+        description="Read the `// concept:` and `// shape:` header line of "
+                    "each named solver, count the solvers carrying each "
+                    "keyword of keywords.md, and name every header keyword "
+                    "the doc does not list. A concept keyword comes from the "
+                    "Setup and Prior sections, a shape keyword from the "
+                    "Shape section.",
+    )
+    keywords.add_argument("stem", nargs="*",
+                          help="solvers to read; all of them when omitted")
+
+    since = sub.add_parser(
+        "since",
+        help="the solvers in scope for a delta survey since a date-time",
+        description="Print the stem of each solver a survey since the given "
+                    "date-time covers: the ones the commits since then touch, "
+                    "plus the ones the working tree changes. A commit "
+                    "touching more than half of the solvers is a corpus-wide "
+                    "mechanical rewrite, and the solvers it touches are out "
+                    "of scope.",
+    )
+    since.add_argument("when", help="a date-time git reads, e.g. "
+                                    '"2026-09-08 14:30"')
+
     sub.add_parser(
         "expand",
         help="the source after GRID and RIGID expansion, as Souffle sees it",
@@ -589,8 +766,12 @@ def main(argv: list[str]) -> int:
             return cmd_determination_plan(args.stem)
         case "size":
             return cmd_size(args.stem)
+        case "keywords":
+            return cmd_keywords(args.stem)
         case "expand":
             return cmd_expand(args.stem)
+        case "since":
+            return cmd_since(args.when)
         case _:
             if args.pairs:
                 if not args.stem:

@@ -217,9 +217,11 @@ def test_unexercised_cases_report_without_a_case_column():
     assert lines[0] == "every deletion changes the result (23 tested)"
     assert "the pairs do not exercise the coverage hypothesis:" in lines
     assert "  s.dl:1: unexercised cases `Choice`" in lines
-    body = " ".join(lines)
-    assert "the cases agree on every pair" in body
-    assert "constructed witness" in body
+    body = " ".join(" ".join(lines).split())
+    assert "every case emits an accepted grid on every pair" in body
+    assert "every passing multi-case solver" in body
+    assert "settle nothing about the cases" in body
+    assert "constructed witness" not in body
 
 
 def test_cases_agree_reads_the_reference_profile():
@@ -275,13 +277,20 @@ def test_render_plain_column_carries_only_the_legend():
     ]
 
 
-def test_render_legend_reads_a_no_op_as_coverage():
+def test_render_legend_states_the_measurement_and_leaves_the_reading_open():
+    """The no-op note reports what the probe measured, names both
+    readings so the session judges which one holds, and states the scope
+    of a column drop."""
     lines = render_deletions("s", (40, [(12, "atom", "handle_dir(B, _)")]))
     assert lines[0] == "1/40 deletions change nothing:"
     assert "  s.dl:12: atom `handle_dir(B, _)`" in lines
-    body = " ".join(lines)
+    body = " ".join(" ".join(lines).split())
+    assert "changed no pair's output and no determined value" in body
     assert "the pairs never instantiate" in body
-    assert "not a defect" in body
+    assert "another atom already implies" in body
+    assert "the session judges which" in body
+    assert "every atom of the relation" in body
+    assert "unbound at the consumers" in body
 
 
 def test_render_legend_is_absent_when_nothing_survives():
@@ -294,8 +303,11 @@ def test_render_unprobed_case_column_stands_apart():
     assert lines[0] == "every deletion changes the result (22 tested)"
     assert "1 case column the probe cannot judge:" in lines
     assert "  s.dl:45: unprobed case column `stamp.ch`" in lines
-    body = " ".join(lines)
+    body = " ".join(" ".join(lines).split())
     assert "says nothing about the cases" in body
+    assert "case emits an accepted grid on every pair" in body
+    assert "every passing multi-case solver" in body
+    assert "coverage" not in body
 
 
 def test_render_baseline_failure():

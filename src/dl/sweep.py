@@ -57,9 +57,9 @@ def sweep_report(
 
     Returns (param, status, detail): status 'swept' carries
     (fitting, stored, types, verdicts) — verdicts maps each extra fitting
-    value to its test-pass bool — 'swept-set' carries the same shape with
-    frozensets of value tuples for fitting and verdict keys, and 'skip'
-    carries the reason.
+    value to its test-pass bool — 'swept-set' and 'swept-set-near' carry
+    the same shape with frozensets of value tuples for fitting and verdict
+    keys, and 'skip' carries the reason.
     """
     # Macros expand first, so a GRID-fed parameter reads as ordinary facts and
     # a RIGID chart as an ordinary generated-name parameter; re-expansion at
@@ -167,6 +167,26 @@ def sweep_report(
     return results
 
 
+def _neighborhood(stored: list[tuple], singles: list[tuple]) -> list[frozenset]:
+    """The candidate sets one row-change from the stored facts.
+
+    A change is a stored row reassigned to another candidate value, a stored
+    row dropped, or a non-stored candidate added; the other rows keep their
+    stored values. The stored facts are a candidate too, so the fitting sets
+    read as in the whole sweep.
+    """
+    stored_set = frozenset(stored)
+    sets = {stored_set}
+    for row in stored_set:
+        rest = stored_set - {row}
+        sets.add(rest)
+        for value in singles:
+            sets.add(rest | {value})
+    for value in singles:
+        sets.add(stored_set | {value})
+    return sorted((v for v in sets if v), key=sorted)
+
+
 def _set_sweep(
     source: str,
     param: str,
@@ -180,20 +200,23 @@ def _set_sweep(
     """Sweep a parameter whose facts fit only together, as one unit.
 
     Candidate values are the non-empty subsets of the singleton candidates;
-    each replaces the whole parameter. Fitting and test-refutation read as in
-    the singleton sweep, over sets.
+    each replaces the whole parameter. Above the cap the subsets give way to
+    the one-change neighborhood of the stored facts (see _neighborhood), and
+    the status says so. Fitting and test-refutation read as in the singleton
+    sweep, over sets.
     """
     name = public_param(param)
     n_sets = 2 ** len(singles) - 1
     if n_sets > max_candidates:
-        return (name, "skip",
-                f"facts fit only together; {n_sets} candidate sets, "
-                f"cap {max_candidates}")
-    subsets = [
-        frozenset(c)
-        for r in range(1, len(singles) + 1)
-        for c in itertools.combinations(singles, r)
-    ]
+        status = "swept-set-near"
+        subsets = _neighborhood(stored, singles)
+    else:
+        status = "swept-set"
+        subsets = [
+            frozenset(c)
+            for r in range(1, len(singles) + 1)
+            for c in itertools.combinations(singles, r)
+        ]
     stored_set = frozenset(stored)
 
     def test(value):
@@ -218,7 +241,7 @@ def _set_sweep(
 
             with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
                 verdicts = dict(zip(extras, executor.map(test_check, extras)))
-    return (name, "swept-set", (fitting, stored, types, verdicts))
+    return (name, status, (fitting, stored, types, verdicts))
 
 
 def _mag_vec(vals: tuple, types: list[str]) -> list[int]:
@@ -265,9 +288,11 @@ def render_sweep(results: list[tuple[str, str, object]]) -> list[str]:
         if status == "skip":
             lines.append(f"{param}: not swept — {detail}")
             continue
-        if status == "swept-set":
+        if status in ("swept-set", "swept-set-near"):
             fitting, stored, types, verdicts = detail
             stored_set = frozenset(stored)
+            scope = ("swept whole" if status == "swept-set"
+                     else "swept single-row changes")
 
             def show_value(value, types=types):
                 return "{" + ", ".join(show(v, types) for v in sorted(value)) + "}"
@@ -279,14 +304,14 @@ def render_sweep(results: list[tuple[str, str, object]]) -> list[str]:
             if set(fitting) == {stored_set}:
                 lines.append(
                     f"{param}: unique as a set = {shown_s} ✓ (facts fit only "
-                    f"together; swept whole)"
+                    f"together; {scope})"
                 )
                 continue
             extras = sorted(set(fitting) - {stored_set}, key=sorted)
             refuted = [e for e in extras if not verdicts.get(e, False)]
             passing = [e for e in extras if verdicts.get(e, False)]
             parts = [
-                f"stored {shown_s} (swept whole)",
+                f"stored {shown_s} ({scope})",
                 f"train also admits sets {show_values(extras)}",
             ]
             if refuted:

@@ -1,12 +1,13 @@
 """Runner: hand-written grids, and reporting a compile failure once."""
 
 import io
+import subprocess
 from pathlib import Path
 
 import pytest
 
 from dl import cli
-from dl.facts import parse_grid
+from dl.facts import parse_grid, parse_output
 from dl.render import render_stem_failures
 from dl.solve import PairResult, TaskResult, VariantResult
 
@@ -52,6 +53,12 @@ def test_empty_text_raises():
 def test_json_cell_out_of_range_raises():
     with pytest.raises(ValueError, match="out of range"):
         parse_grid("[[0, 12]]")
+
+
+def test_a_negative_edge_distance_names_the_edge_and_the_row():
+    stdout = "---------------\n===============\n[0, -1, 1, 0]\t3\n===============\n"
+    with pytest.raises(ValueError, match=r"negative edge distance b=-1.*\[0, -1, 1, 0\] 3"):
+        parse_output(stdout)
 
 
 def _emit(cases):
@@ -274,3 +281,142 @@ def test_a_wrong_grid_still_renders_its_diff():
     lines = render_stem_failures(STEM, [pair])
     assert lines[0] == "test[0]: FAIL"
     assert "    expected:" in lines
+
+
+CHOICE = ".type Choice = Complete {} | Copy {}\n"
+
+
+def test_grid_names_a_case_that_emits_nothing(solvers, monkeypatch, capsys):
+    (solvers / f"{STEM}.dl").write_text(CHOICE)
+    monkeypatch.setattr(cli, "run_dl", _emit([("$Complete", [[2, 1], [1, 1]])]))
+    monkeypatch.setattr("sys.stdin", io.StringIO(". 1\n1 1\n"))
+
+    assert cli.cmd_grid(STEM) == 0
+    assert "$Copy: emits nothing" in capsys.readouterr().out
+
+
+def test_grid_counts_an_empty_case_in_the_footer(solvers, monkeypatch, capsys):
+    (solvers / f"{STEM}.dl").write_text(CHOICE)
+    monkeypatch.setattr(cli, "run_dl", _emit([("$Complete", [[2, 1], [1, 1]])]))
+    monkeypatch.setattr("sys.stdin", io.StringIO(". 1\n1 1\n"))
+
+    assert cli.cmd_grid(STEM) == 0
+    assert "2 cases, 1 distinct grid(s)" in capsys.readouterr().out
+
+
+@pytest.fixture
+def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A git repo whose solvers directory the `since` command reads."""
+    solvers = tmp_path / "programs" / "solvers"
+    solvers.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "t@t"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=tmp_path, check=True)
+    monkeypatch.setattr(cli, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(cli, "all_stems",
+                        lambda: sorted(p.stem for p in solvers.glob("*.dl")))
+    return tmp_path
+
+
+def _commit(repo: Path, stems: list[str], message: str) -> None:
+    for stem in stems:
+        (repo / "programs" / "solvers" / f"{stem}.dl").write_text(f"// {message}\n")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", message], cwd=repo, check=True)
+
+
+def test_since_lists_the_solvers_its_commits_touch(repo, capsys):
+    _commit(repo, ["aaaa1111", "bbbb2222", "cccc3333", "dddd4444"], "four")
+    _commit(repo, ["aaaa1111"], "one")
+
+    assert cli.cmd_since("1 minute ago") == 0
+    assert capsys.readouterr().out == "aaaa1111\n"
+
+
+def test_since_skips_a_corpus_wide_rewrite(repo, capsys):
+    _commit(repo, ["aaaa1111", "bbbb2222", "cccc3333", "dddd4444"], "four")
+    _commit(repo, ["aaaa1111", "bbbb2222", "cccc3333"], "rewrite")
+
+    assert cli.cmd_since("1 minute ago") == 0
+    assert capsys.readouterr().out == ""
+
+
+def test_since_lists_an_uncommitted_solver(repo, capsys):
+    _commit(repo, ["aaaa1111", "bbbb2222", "cccc3333", "dddd4444"], "four")
+    (repo / "programs" / "solvers" / "bbbb2222.dl").write_text("// edited\n")
+    (repo / "programs" / "solvers" / "eeee5555.dl").write_text("// new\n")
+
+    assert cli.cmd_since("1 minute ago") == 0
+    assert capsys.readouterr().out == "bbbb2222\neeee5555\n"
+
+
+DOC = """# Keywords
+
+## Setup
+
+- `lines` — per-line structure
+- `crop` — a subregion
+
+## Prior
+
+- `cast` — content extends
+
+## Shape
+
+- `latent-canvas` — a canvas neither grid shows
+"""
+
+
+@pytest.fixture
+def keyworded(solvers: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A solvers directory read against a small keywords.md."""
+    doc = solvers / "keywords.md"
+    doc.write_text(DOC)
+    monkeypatch.setattr(cli, "KEYWORDS_DOC", doc)
+    monkeypatch.setattr(cli, "all_stems",
+                        lambda: sorted(p.stem for p in solvers.glob("*.dl")))
+    return solvers
+
+
+def _solver(dir: Path, stem: str, *header: str) -> None:
+    dir.joinpath(f"{stem}.dl").write_text(
+        "".join(f"// {line}\n" for line in header) + '#include "../lib.dl"\n'
+    )
+
+
+def test_keywords_counts_the_solvers_carrying_each_keyword(keyworded, capsys):
+    _solver(keyworded, "aaaa1111", "concept: lines cast", "shape: latent-canvas")
+    _solver(keyworded, "bbbb2222", "concept: lines")
+
+    assert cli.cmd_keywords([]) == 0
+    out = capsys.readouterr().out
+    assert "     2  lines\n" in out
+    assert "     1  cast\n" in out
+    assert "     0  crop\n" in out
+    assert "     1  latent-canvas\n" in out
+
+
+def test_keywords_reads_a_concept_line_against_setup_and_prior_alone(
+        keyworded, capsys):
+    _solver(keyworded, "aaaa1111", "concept: latent-canvas", "shape: cast")
+
+    assert cli.cmd_keywords([]) == 0
+    out = capsys.readouterr().out
+    assert "aaaa1111: latent-canvas is not in keywords.md\n" in out
+    assert "aaaa1111: cast is not in keywords.md\n" in out
+    assert out.endswith("unknown keywords: 2\n")
+
+
+def test_keywords_reads_the_named_stems_alone(keyworded, capsys):
+    _solver(keyworded, "aaaa1111", "concept: lines")
+    _solver(keyworded, "bbbb2222", "concept: crop")
+
+    assert cli.cmd_keywords(["aaaa1111"]) == 0
+    out = capsys.readouterr().out
+    assert "     1  lines\n" in out
+    assert "     0  crop\n" in out
+
+
+def test_keywords_on_a_missing_solver(keyworded, capsys):
+    assert cli.cmd_keywords(["nosuch"]) == 2
+    assert "no solver at" in capsys.readouterr().err

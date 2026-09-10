@@ -95,7 +95,8 @@ mixed(Id) :- interior(Id, _, C1), interior(Id, _, C2), C1 != C2.
 out(Id) :- mixed(Id).
 """
     fs = [f for f in lint_rewrites(src, hints=True) if f[0] == "comp-idiom"]
-    assert len(fs) == 1 and "Unanimous.clash" in fs[0][2]
+    assert len(fs) == 1
+    assert "docs/wf-solver/proposals/multi_cell.md" in fs[0][2]
 
 
 def test_comp_idiom_pair_relation_kept():
@@ -497,6 +498,16 @@ out($A(), Col) :- a(P, Q), b(Q, R), c(R, Col), d(Col).
 out($B(), Col) :- a(P, Q), b(Q, R), c(R, Col), e(Col).
 """
     assert "common-subexpr" not in cats(src, hints=True)
+
+
+def test_single_consumer_impl_choice_kept():
+    src = """\
+.decl impl_choice(ch: number)
+impl_choice(X) :- g(X), !h(X).
+.decl out(x: number)
+out(X) :- impl_choice(X).
+"""
+    assert "single-consumer" not in cats(src, hints=True)
 
 
 def test_hints_gated():

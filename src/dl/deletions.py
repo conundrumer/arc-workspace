@@ -458,8 +458,12 @@ def deletion_report(stem: str) -> tuple[int, list[Finding]] | None:
 
 
 NOOP_NOTE = [
-    "  note: each removed structure the pairs never instantiate — an unwitnessed",
-    "        guard, rule, or column. This is coverage, not a defect to fix.",
+    "  note: the removal changed no pair's output and no determined value.",
+    "        Either the pairs never instantiate the structure it removed, or",
+    "        another atom already implies that structure, and the session",
+    "        judges which. A column drop removes that argument at every atom",
+    "        of the relation, and leaves the variables that bound it unbound",
+    "        at the consumers.",
 ]
 
 ENUMERATOR_NOTE = [
@@ -476,16 +480,16 @@ CASE_NOTE = [
 
 UNPROBED_NOTE = [
     "  note: dropping the case column ungrounds a variable, so the probe",
-    "        result says nothing about the cases. The pairs emit one and the",
-    "        same grid for every case, so this column carries a coverage",
-    "        hypothesis the pairs do not exercise.",
+    "        result says nothing about the cases. Every case emits an",
+    "        accepted grid on every pair, which holds of every passing",
+    "        multi-case solver, so the pairs settle nothing about the cases",
+    "        either way.",
 ]
 
 UNEXERCISED_NOTE = [
-    "  note: the cases agree on every pair: the pairs emit one and the same",
-    "        grid for every case, so they do not exercise the coverage",
-    "        hypothesis. The review's constructed witness carries it. This is",
-    "        not dead code.",
+    "  note: every case emits an accepted grid on every pair, which holds of",
+    "        every passing multi-case solver, so the pairs settle nothing",
+    "        about the cases either way.",
 ]
 
 
