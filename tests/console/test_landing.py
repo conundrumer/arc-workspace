@@ -14,6 +14,7 @@ from .conftest import (
     tagged,
     transcript,
     worker,
+    write_solver,
 )
 
 # ---------- handoff ----------
@@ -318,6 +319,42 @@ def test_callouts_written_with_the_report_skip_the_callout_turn(srv, monkeypatch
     assert "<callouts>" not in report and "[P2] a call" in report
 
 
+def test_a_filed_report_carries_the_stages_solver_diff(srv, monkeypatch):
+    monkeypatch.setattr(srv, "ensure_drain", lambda: None)
+    it = create_item(srv, auto_advance=True)
+    w = worker(srv, it, phase="create", state="running", turn_seq=4)
+    write_solver(srv, "a", "// a\nout(P, C) :- in(P, C).\n")
+    srv.start_turn(it, w, "create")
+    write_solver(srv, "a", "// a\nout(P, C) :- in(P, C), params.bg(C).\n")
+    text = tagged("the report") + "\n\n<callouts>\n1. [P2] a call\n</callouts>"
+    srv.finish_turn(it, {"result": text}, None, time.time(), "create", True)
+    report = it["reports"]["create"]
+    assert "-out(P, C) :- in(P, C)." in report
+    assert "+out(P, C) :- in(P, C), params.bg(C)." in report
+    assert report.index("the report") < report.index("## Solver diff") \
+        < report.index("## Callouts")
+
+
+def test_a_stage_beside_a_running_turn_diffs_from_its_own_start(srv, monkeypatch):
+    monkeypatch.setattr(srv, "ensure_drain", lambda: None)
+    it = create_item(srv)
+    side = worker(srv, it, phase="refine", state="running")
+    write_solver(srv, "a", "// a\nout(P, C) :- in(P, C).\n")
+    srv.start_turn(it, side, "refine")            # refine holds the snapshot
+    write_solver(srv, "a", "// a\nout(P, C) :- in(P, C), params.bg(C).\n")
+    w = worker(srv, it, phase="create")
+    srv.start_turn(it, w, "create")               # create opens beside it
+    write_solver(srv, "a", "// a\nout(P, C) :- in(P, C), params.fg(C).\n")
+    srv.finish_turn(it, {"result": tagged("the report")}, None, time.time(),
+                    "create", True)
+    report = it["reports"]["create"]
+    # refine's edit is where create started, so only create's own line moves
+    assert [l for l in report.splitlines()
+            if l.startswith("-") and not l.startswith("---")] == \
+        ["-out(P, C) :- in(P, C), params.bg(C)."]
+    assert "+out(P, C) :- in(P, C), params.fg(C)." in report
+
+
 def test_a_tagged_callout_turn_joins_the_section(srv, monkeypatch):
     monkeypatch.setattr(srv, "ensure_drain", lambda: None)
     it = create_item(srv, callout_wait="create", reports={"create": "the report"})
@@ -620,6 +657,18 @@ def test_the_callout_ask_is_its_own_turn_not_a_report_section(srv):
         assert f"- P{band} · {kind} {pct}%: {desc}" in text
     # the later stage reports its own pass and leaves the earlier one alone
     assert "covers your own pass" in srv.HANDOFF_TAIL
+
+
+def test_the_handoff_report_carries_the_alternatives_the_data_rules_out(srv):
+    for brief in (srv.CREATE_BRIEF, srv.HANDOFF_BRIEF, srv.HANDOFF_TAIL):
+        assert "the ones the data rules out" in brief
+        assert "does not derive them again" in brief
+
+
+def test_a_handoff_witness_is_written_into_the_report_not_left_in_scratch(srv):
+    for brief in (srv.CREATE_BRIEF, srv.HANDOFF_BRIEF, srv.HANDOFF_TAIL):
+        assert "goes in the report itself" in brief
+        assert "never the record of it" in brief
 
 
 def test_a_pending_callout_survives_its_continuation_turns(srv):

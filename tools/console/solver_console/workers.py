@@ -106,11 +106,18 @@ def start_turn(it: dict, worker: dict, phase: str, trigger: str | None = None,
     """Open a turn's bookkeeping: the snapshot its landing diffs against, and
     the counters it fills. Every turn passes through here, the ones the console
     sends and the one it adopts."""
+    text = solvers.solver_text(it["id"])
     if not store.busy_elsewhere(it, phase):
         # a side turn leaves the snapshot with the turn that owns the solver
-        it["pre"] = {"hash": solvers.solver_hash(it["id"]), "solver": solvers.solver_text(it["id"]),
+        it["pre"] = {"hash": solvers.solver_hash(it["id"]), "solver": text,
                      "proposals": solvers.prop_files(), "dirty": it["dirty"], "files": {},
                      "watched": solvers.watched_hashes(it["id"])}
+    # The solver as the stage found it, kept from the stage's first turn.
+    # Every report the stage files carries the diff from that text, so the
+    # reader sees the whole stage's work at once. A turn that opens while
+    # another session holds the pre snapshot reads the file for itself, so
+    # the stage never takes the other turn's text as its own start.
+    it.setdefault("stage_pre", {}).setdefault(phase, text)
     worker["turn_seq"] += 1
     worker.pop("steer", None)
     worker.pop("woke", None)

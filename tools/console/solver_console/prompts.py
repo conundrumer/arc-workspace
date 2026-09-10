@@ -162,7 +162,7 @@ HANDOFF_WRAP = """Put the report between `<handoff>` and `</handoff>` tags: the 
 # What a handoff report holds, and how a stage that hands on closes its turn.
 # Every stage writes the same report, so the contents are stated once here and
 # each brief adds only what its own stage owes.
-HANDOFF_ITEMS = """the model hypothesis as it now stands, what you changed and why, each choice point with the alternatives you tested and what ruled them out, and the open items"""
+HANDOFF_ITEMS = """the model hypothesis as it now stands, what you changed and why, each choice point with the alternatives you tested and what ruled them out, and the open items. Those alternatives include the ones the data rules out: a review omits them, so the report carries them and the next session does not derive them again. A witness the report relies on goes in the report itself, as the input fragment and each model's output on it; a `.scratch/<task_id>/` path supplements that text and is never the record of it"""
 
 HANDOFF_END = ("In place of the review, end your turn with a handoff report "
                "for the session that takes over from you: " + HANDOFF_ITEMS)

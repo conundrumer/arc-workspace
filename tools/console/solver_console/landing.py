@@ -2,6 +2,7 @@
 hold a background task puts on a handoff, and the compact a finalize landing
 owes."""
 
+import difflib
 import time
 
 from . import config, drain, ledger, prompts, solvers, spend, store, workers
@@ -256,9 +257,24 @@ def drop_hold(it: dict, phase: str) -> None:
         it.pop("bg_filed", None)
 
 
+def solver_diff(it: dict, phase: str) -> str:
+    """The unified diff from the solver as the stage found it, read at the
+    stage's first turn, to the file as it stands. Empty when the stage has
+    changed nothing."""
+    before = (it.get("stage_pre") or {}).get(phase, "")
+    after = solvers.solver_text(it["id"])
+    rel = f"programs/solvers/{it['id']}.dl"
+    return "\n".join(difflib.unified_diff(before.splitlines(), after.splitlines(),
+                                          fromfile=rel, tofile=rel, lineterm=""))
+
+
 def file_report(it: dict, phase: str, text: str) -> None:
-    """A landing's text becomes the stage report; the next filing replaces
-    it, so what stands is always the last thing the session wrote."""
+    """A landing's text becomes the stage report, with the stage's solver diff
+    under it; the next filing replaces it, so what stands is always the last
+    thing the session wrote."""
+    diff = solver_diff(it, phase)
+    if diff:
+        text = text.rstrip() + "\n\n## Solver diff\n\n```diff\n" + diff + "\n```"
     it.setdefault("reports", {})[phase] = text
     solvers.save_report(it["id"], phase, text)
 
