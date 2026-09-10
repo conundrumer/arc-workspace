@@ -26,6 +26,8 @@ import threading
 import time
 from pathlib import Path
 
+from dl.context import AGENT_META
+
 from . import config, prompts
 
 # The line the protocol reads, and the line that says the entry is closed.
@@ -160,19 +162,10 @@ def append_survey(path: Path, header: str, result: str) -> None:
 
 
 def survey_session() -> list[str]:
-    """The flags that run the `survey` agent's definition as the session
-    itself: its body with the appendix a worker reads as the system prompt,
-    and the model and effort the definition names. Empty when the definition
-    is missing."""
-    agents = json.loads(prompts.worker_agents(str(prompts.append_path())) or "{}")
-    agent = agents.get("survey")
-    if not agent:
-        return []
-    flags = ["--system-prompt", agent["prompt"]]
-    for key in ("model", "effort"):
-        if agent.get(key):
-            flags += [f"--{key}", agent[key]]
-    return flags
+    """The flags that run the session as the handbook agent: the appendix a
+    worker reads as the system prompt, and the agent's model and effort."""
+    return ["--system-prompt-file", str(prompts.append_path()),
+            "--model", AGENT_META["model"], "--effort", AGENT_META["effort"]]
 
 
 def survey_kill(proc: subprocess.Popen) -> None:
@@ -193,8 +186,8 @@ def survey_kill(proc: subprocess.Popen) -> None:
 
 
 def run_survey(path: Path, plan: dict, run_dir: Path) -> str:
-    """One survey: a `claude -p` session that runs under the `survey` agent's
-    own definition. It hands back the report the session returned, and an
+    """One survey: a `claude -p` session that runs the `survey` role as the
+    handbook agent. It hands back the report the session returned, and an
     empty string when the session returned none.
 
     The session runs in a session group of its own, so the timeout takes the
@@ -203,9 +196,9 @@ def run_survey(path: Path, plan: dict, run_dir: Path) -> str:
     """
     scope = ("the whole corpus" if plan["scope"] is None
              else "the solvers " + ", ".join(plan["scope"]))
-    brief = config.SURVEY_BRIEF.format(entry=path.relative_to(config.ROOT),
-                                       scope=scope,
-                                       scratch=run_dir.relative_to(config.ROOT))
+    brief = prompts.role_text("survey") + "\n\n" + config.SURVEY_BRIEF.format(
+        entry=path.relative_to(config.ROOT), scope=scope,
+        scratch=run_dir.relative_to(config.ROOT))
     cmd = [config.CLAUDE, "-p", brief, *config.SURVEY_FLAGS, *survey_session()]
     result = ""
     with open(run_log(run_dir), "ab") as log:

@@ -18,7 +18,7 @@ SOLVERS = ROOT / "programs" / "solvers"
 LIB = ROOT / "programs" / "lib.dl"
 DOCS = ROOT / "docs" / "wf-solver"
 TASKS = ROOT / "data" / "tasks"
-AGENT_DIR = ROOT / ".claude" / "agents"
+ROLE_DIR = ROOT / ".claude" / "roles"
 REF_DIR = (ROOT.parent / "arc-synth-bun").resolve()
 QUEUE_CACHE = ROOT / "scripts" / ".queue-cache"
 
@@ -194,8 +194,8 @@ SURVEY_TIMEOUT = 3600  # seconds a survey session may run
 SURVEY_FLAGS = [
     # The stream goes to a log under state/, so a run in progress can be read.
     "--output-format", "stream-json", "--verbose",
-    # The session runs under the agent's own definition, so it reads the
-    # corpus and writes under the scratch path itself.
+    # The session runs the survey role itself, so it reads the corpus and
+    # writes under the scratch path.
     "--permission-mode", "acceptEdits",
     "--allowedTools", "Bash", "Glob", "Grep", "Read", "Write",
     "--add-dir", str(REF_DIR),

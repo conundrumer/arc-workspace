@@ -10,12 +10,17 @@ export const meta = {
   ],
 }
 
-// Most stages run a named agent from .claude/agents/; each carries its stage's
-// procedure. The checks step runs a general-purpose agent, and its task text
-// carries the commands. This script carries the order, the fan-out, the return
-// schemas, and each instance's task.
+// Most stages run the handbook agent under a role from .claude/roles/; each
+// role carries its stage's procedure, and a task opens with the role text,
+// then the brief. The checks step runs a general-purpose agent, and its task
+// text carries the commands. This script carries the order, the fan-out, the
+// return schemas, and each instance's task.
 //
 // args:
+//   { roles: {...} }   required in every run: the text of each role the run reaches, by role
+//                      name — { 'retro-read': '<the text of .claude/roles/retro-read.md>' }.
+//                      The script reads no file, so the caller passes the text. READ_ROLES and
+//                      FIX_ROLES name what each run needs; a missing one returns an error.
 //   {}                 full run; returns every call with its default, for, and against.
 //   { dry: true }      full run that stops before Fix and returns the fixes it would make.
 //   { fixes: [...] }   second run after the user's rulings: Fix and Verify, over the given fixes.
@@ -192,7 +197,7 @@ const fixTask = (target, fixes) => `Make these fixes in ${target}.\n\n${JSON.str
 // The reader the pruned text serves, by where the text lives.
 const readerFor = (target) =>
   target === 'docs/wf-solver/backlog.md' ? 'the user'
-    : target.startsWith('.claude/agents/') ? 'a retro agent that carries this file as its definition'
+    : target.startsWith('.claude/roles/') ? 'the handbook agent that carries this file as its role'
       : 'a future solver session that reads the file through `uv run python scripts/context.py` to write a Souffle solver'
 
 const pruneTask = (target, diff, ruled, fixes) =>
@@ -240,7 +245,25 @@ const kindOf = (fixes) =>
       : fixes.every(f => f.kind === 'entry') ? 'entry'
         : 'prose'
 
-const fixAgent = (kind) => (kind === 'solver' ? 'solver' : 'retro-fix')
+const fixRole = (kind) => (kind === 'solver' ? 'solver' : 'retro-fix')
+
+// A stage's task under its role: the role text, then the brief, so the agent
+// has its role before its first action. The texts come from args.
+const HANDBOOK = { agentType: 'handbook' }
+const ROLES = (args && args.roles) || {}
+const roleOf = (name) => {
+  const text = ROLES[name]
+  if (typeof text !== 'string' || !text.trim()) throw new Error(`args.roles[${JSON.stringify(name)}] is missing: pass the text of .claude/roles/${name}.md`)
+  return text.trim()
+}
+const asRole = (name, task) => `${roleOf(name)}\n\n---\n\nYour brief:\n\n${task}`
+
+// The roles a run reaches, by the run it is.
+const READ_ROLES = ['retro-read', 'retro-check', 'retro-review']
+const FIX_ROLES = ['retro-fix', 'solver', 'retro-prune', 'retro-verify']
+const rolesNeeded = () => args && args.fixes ? FIX_ROLES
+  : args && args.dry ? READ_ROLES
+    : [...READ_ROLES, ...FIX_ROLES]
 
 async function fixStage(fixes, ruled = false) {
   const targets = [...byKey(fixes, f => f.target)].map(([target, fs]) => ({ target, fixes: fs, kind: kindOf(fs) }))
@@ -248,7 +271,7 @@ async function fixStage(fixes, ruled = false) {
   const rest = targets.filter(t => t.kind !== 'code')
 
   const makeFix = async (t) => {
-    const edit = await agent(fixTask(t.target, t.fixes), { label: `fix:${t.target}`, phase: 'Fix', schema: EDIT_SCHEMA, agentType: fixAgent(t.kind) })
+    const edit = await agent(asRole(fixRole(t.kind), fixTask(t.target, t.fixes)), { label: `fix:${t.target}`, phase: 'Fix', schema: EDIT_SCHEMA, ...HANDBOOK })
     if (!edit) return null
     return { target: t.target, kind: t.kind, ids: t.fixes.map(f => f.id), fixes: t.fixes, edit, chain: null, second: null }
   }
@@ -272,7 +295,7 @@ async function fixStage(fixes, ruled = false) {
   const otherTargets = async () => parallel(rest.map(t => async () => {
     const m = await makeFix(t)
     if (!m) return null
-    if (m.kind === 'prose') m.second = await agent(pruneTask(m.target, m.edit.diff, ruled, m.fixes), { label: `prune:${m.target}`, phase: 'Fix', schema: EDIT_SCHEMA, agentType: 'retro-prune' })
+    if (m.kind === 'prose') m.second = await agent(asRole('retro-prune', pruneTask(m.target, m.edit.diff, ruled, m.fixes)), { label: `prune:${m.target}`, phase: 'Fix', schema: EDIT_SCHEMA, ...HANDBOOK })
     return m
   }))
 
@@ -282,7 +305,7 @@ async function fixStage(fixes, ruled = false) {
 
 async function verifyStage(made) {
   const findings = (await parallel(made.map(m => async () => {
-    const v = await agent(verifyTask(m), { label: `verify:${m.target}`, phase: 'Verify', schema: VERIFY_SCHEMA, agentType: 'retro-verify' })
+    const v = await agent(asRole('retro-verify', verifyTask(m)), { label: `verify:${m.target}`, phase: 'Verify', schema: VERIFY_SCHEMA, ...HANDBOOK })
     return v && { target: m.target, ...v }
   }))).filter(Boolean)
   const checks = await agent(checksTask(), { label: 'checks', phase: 'Verify', schema: CHECKS_SCHEMA })
@@ -290,6 +313,9 @@ async function verifyStage(made) {
   log(`${findings.reduce((n, f) => n + f.findings.length, 0)} verify findings; ${failed.length} failing checks`)
   return { findings, checks: checks ? checks.checks : [] }
 }
+
+const missing = rolesNeeded().filter(name => typeof ROLES[name] !== 'string' || !ROLES[name].trim())
+if (missing.length) return { error: `args.roles is missing ${missing.join(', ')}. Pass each role's text from .claude/roles/<name>.md under args.roles.` }
 
 if (args && args.fixes) {
   phase('Fix')
@@ -300,7 +326,7 @@ if (args && args.fixes) {
 }
 
 phase('Read')
-const read = await agent(readTask(), { label: 'read', phase: 'Read', schema: ISSUES_SCHEMA, agentType: 'retro-read' })
+const read = await agent(asRole('retro-read', readTask()), { label: 'read', phase: 'Read', schema: ISSUES_SCHEMA, ...HANDBOOK })
 if (!read) return { error: 'read agent returned nothing' }
 const issues = read.issues
 log(`${issues.length} issues from the window; ${read.borderline_drops.length} borderline drops`)
@@ -309,7 +335,7 @@ if (!issues.length) return { tally: { issues: 0 }, borderline_drops: read.border
 phase('Check')
 const groups = byKey(issues, i => i.group)
 const checks = (await parallel([...groups].map(([group, gi]) => () =>
-  agent(checkTask(group, gi), { label: `check:${group}`, phase: 'Check', schema: CHECK_SCHEMA, agentType: 'retro-check' })
+  agent(asRole('retro-check', checkTask(group, gi)), { label: `check:${group}`, phase: 'Check', schema: CHECK_SCHEMA, ...HANDBOOK })
 ))).filter(Boolean).flatMap(r => r.results)
 const issueById = new Map(issues.map(i => [i.id, i]))
 const withIssue = r => ({ ...r, issue: issueById.get(r.id)?.issue, tasks: issueById.get(r.id)?.tasks, count: issueById.get(r.id)?.count })
@@ -325,7 +351,7 @@ log(`${closed.length} closed, ${calls.length} dropped, ${open.length} open`)
 
 phase('Review')
 if (open.length) {
-  const review = await agent(reviewTask(open), { label: 'review', phase: 'Review', schema: REVIEW_SCHEMA, agentType: 'retro-review' })
+  const review = await agent(asRole('retro-review', reviewTask(open)), { label: 'review', phase: 'Review', schema: REVIEW_SCHEMA, model: 'fable', ...HANDBOOK })
   for (const r of review ? review.results : []) {
     const o = open.find(o => o.id === r.id)
     const fixes = r.fixes?.length ? refs(r.fixes) : (r.default === 'replace' ? [] : refs([o?.fixes?.[0]]))

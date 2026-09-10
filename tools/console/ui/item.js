@@ -32,7 +32,7 @@ export const takeoverCmd = (it,s,cli) => backendOf(it,s)==="codex"
   ? "codex exec resume "+it.sessions[s]
   : "claude --resume "+it.sessions[s]
     +(modelOf(it,s)?" --model "+modelOf(it,s):"")
-    +` --append-system-prompt "$(cat ${it.append})" --add-dir ${cli.addDir} --exclude-dynamic-system-prompt-sections`;
+    +` --append-system-prompt-file ${it.append} --add-dir ${cli.addDir} --exclude-dynamic-system-prompt-sections`;
 export const hasTab = (it,s) => !!(it.sessions[s]) || it.phase===s;
 
 /* cache freshness of the phase-owning session: minutes until its 1h

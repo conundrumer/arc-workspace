@@ -9,6 +9,7 @@ rest, and derives from the live file, so no copy can go stale.
 
 from __future__ import annotations
 
+import os
 import re
 from functools import lru_cache
 from pathlib import Path
@@ -19,6 +20,20 @@ from dl.paths import PROGRAMS_DIR, REPO_ROOT
 
 DOCS_DIR = REPO_ROOT / "docs" / "wf-solver"
 LIB_SRC = PROGRAMS_DIR / "lib.dl"
+
+# The one agent definition, generated from the handbook: an agent runs a
+# role under .claude/roles/ with the handbook as its system prompt. The file
+# is regenerated at each entry point and not tracked.
+AGENT_PATH = REPO_ROOT / ".claude" / "agents" / "handbook.md"
+AGENT_META = {
+    "name": "handbook",
+    "description": "Works the role its prompt opens with, one of .claude/roles/, "
+                   "with the handbook as its system prompt.",
+    "model": "opus",
+    "effort": "high",
+    "tools": "Read, Grep, Glob, Bash, Edit, Write",
+}
+ROLE_NOTE = "Your prompt opens with your role, then its brief. Follow the role.\n\n"
 
 # The docs the procedure reads, in reading order: the theory, then its form,
 # then what the corpus made of it.
@@ -52,6 +67,7 @@ def lib_signatures(text: str) -> str:
     hidden: set[int] = set()       # underscore-named internals
     stmt_lines: set[int] = set()   # lines of rules and facts
     decls: list[Decl] = []
+    comps: list[tuple[int, int]] = []   # the line range of each kept comp
 
     def walk(items: list[Item], in_comp: bool) -> None:
         for it in items:
@@ -74,6 +90,7 @@ def lib_signatures(text: str) -> str:
                     continue
                 keep.add(it.line)
                 keep.add(it.end_line)
+                comps.append((it.line, it.end_line))
                 walk(it.items, True)
             elif isinstance(it, Rule):
                 stmt_lines.update(range(it.line, it.end_line + 1))
@@ -104,12 +121,22 @@ def lib_signatures(text: str) -> str:
         if not derived:
             inputs.add(decl.line)
 
+    # A comment inside a comp documents the line under it. Where that line
+    # is dropped, the comment documents a body the projection drops, so it
+    # goes too. Descending order takes a whole block out with its subject.
+    interior = {ln for start, end in comps for ln in range(start + 1, end)}
+    closing = {end for _, end in comps}
+    for ln in sorted(comment_lines & interior & keep, reverse=True):
+        if ln + 1 not in keep or ln + 1 in closing:
+            keep.discard(ln)
+
     out: list[str] = []
     for i, line in enumerate(lines, start=1):
         if not line.strip():
             out.append(line)
         elif i in keep:
-            out.append(line + ("  // input" if i in inputs else ""))
+            mark = "  // input" if i in inputs and not line.endswith("// input") else ""
+            out.append(line + mark)
     return LIB_PREAMBLE + re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip() + "\n"
 
 
@@ -200,3 +227,28 @@ def render(docs: Path = DOCS_DIR, lib: Path = LIB_SRC) -> str:
     parts.append("\n---\n\n# programs/lib.dl — signatures\n\n"
                  f"```\n{lib_signatures(lib.read_text())}```\n")
     return "# Handbook\n\nThe solver docs and lib.dl as a session reads them.\n" + "".join(parts)
+
+
+def agent_prompt(handbook: str) -> str:
+    """The handbook agent's system prompt over a rendering of the handbook."""
+    return ROLE_NOTE + handbook
+
+
+def agent_definition(handbook: str) -> str:
+    """The handbook agent's definition file: AGENT_META as frontmatter, then
+    the prompt."""
+    front = "\n".join(f"{k}: {v}" for k, v in AGENT_META.items())
+    return f"---\n{front}\n---\n{agent_prompt(handbook)}"
+
+
+def write_agent(path: Path = AGENT_PATH, docs: Path = DOCS_DIR, lib: Path = LIB_SRC) -> Path:
+    """Write the handbook agent's definition, whole: a session that starts
+    while the write is in progress reads the old file or the new one."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(f".{os.getpid()}.tmp")
+    try:
+        tmp.write_text(agent_definition(render(docs, lib)))
+        tmp.replace(path)
+    finally:
+        tmp.unlink(missing_ok=True)
+    return path

@@ -14,6 +14,8 @@ opposite(DIR_T, DIR_B).
 .comp Components<Key> {
     .decl node(key: Key, p: Position)
 
+    .decl edge(key: Key, d: Dir)  // input
+
     .decl step(delta: Position)
     step([-1, 1, 0, 0]).
 
@@ -26,6 +28,7 @@ opposite(DIR_T, DIR_B).
     assert ".decl opposite(d: Dir, opp: Dir)\n" in out   # a top-level fill goes
     assert "opposite(DIR_T, DIR_B)." not in out
     assert ".decl node(key: Key, p: Position)  // input" in out
+    assert ".decl edge(key: Key, d: Dir)  // input\n" in out   # the mark is written once
     assert "step([-1, 1, 0, 0])." in out                 # a component's fill stays
     assert "min ord(Q)" not in out
     assert ".decl label(key: Key, p: Position, id: Ident)\n" in out
@@ -39,6 +42,25 @@ divide(P, A, N, P_outer) :- true.
 """)
     assert "p_outer: Position) inline  // input" not in out
     assert "             p_outer: Position) inline\n" in out
+
+
+def test_lib_signatures_drop_a_comment_that_documents_a_dropped_body():
+    out = lib_signatures("""\
+// What the comp is for.
+
+.comp Walk<Key> {
+    // The cells to walk.
+    .decl cell(key: Key, p: Position)
+
+    // How the walk closes the cycle, which the rule below holds.
+
+    .decl seen(key: Key, p: Position)
+    seen(Ky, P) :- cell(Ky, P).
+}
+""")
+    assert "// What the comp is for." in out            # a top-level comment stands
+    assert "// The cells to walk." in out               # so does one over a kept line
+    assert "closes the cycle" not in out
 
 
 def test_entry_index_gives_the_preamble_and_one_line_per_entry():
@@ -101,3 +123,20 @@ def test_render_reads_the_listed_docs_in_order(tmp_path: Path):
     assert "# docs/wf-solver/procedure.md\n\n# procedure.md\n" in out   # no note without notes
     assert "# programs/lib.dl — signatures\n" in out
     assert "out(P) :- in(P, _)." not in out
+
+
+def test_the_handbook_agent_is_the_handbook_under_its_frontmatter(tmp_path):
+    from dl.context import AGENT_META, ROLE_NOTE, agent_definition, write_agent
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    for name in DOCS:
+        (docs / name).write_text(f"# {name}\n")
+    lib = tmp_path / "lib.dl"
+    lib.write_text(".decl out(p: Position)\n")
+    path = write_agent(tmp_path / "agents" / "handbook.md", docs, lib)
+    text = path.read_text()
+    assert text == agent_definition(render(docs, lib))
+    front, _, body = text.removeprefix("---\n").partition("\n---\n")
+    assert front.splitlines() == [f"{k}: {v}" for k, v in AGENT_META.items()]
+    assert body == ROLE_NOTE + render(docs, lib)
+    assert not list((tmp_path / "agents").glob("*.tmp"))

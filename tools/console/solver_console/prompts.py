@@ -1,14 +1,13 @@
-"""The worker's system-prompt appendix, the agents JSON that carries it, and
+"""The worker's system-prompt appendix, the handbook agent that carries it, and
 the first message each stage opens with."""
 
 import hashlib
 import json
 import os
-import re
 import threading
 from pathlib import Path
 
-from dl.context import render
+from dl.context import AGENT_META, agent_prompt, render
 
 from . import config, solvers, store
 
@@ -52,28 +51,22 @@ def append_path() -> Path:
     return path
 
 
-def worker_agents(append: str) -> str | None:
-    """The `--agents` JSON that gives a worker's agents the appendix the
-    worker reads: each definition under .claude/agents/, its body followed by
-    the item's appendix. It overrides the project agents of those names for the
-    worker; an interactive session gets the project agents, which read
-    `scripts/context.py` themselves."""
-    agents = {}
-    for path in sorted(config.AGENT_DIR.glob("*.md")):
-        m = re.match(r"\A---\n(.*?)\n---\n(.*)\Z", path.read_text(), flags=re.S)
-        if not m:
-            continue
-        meta = dict(line.split(":", 1) for line in m.group(1).splitlines() if ":" in line)
-        meta = {k.strip(): v.strip() for k, v in meta.items()}
-        agent = {"description": meta.get("description", path.stem),
-                 "prompt": m.group(2).strip() + "\n\n" + Path(append).read_text()}
-        for key in ("model", "effort"):
-            if key in meta:
-                agent[key] = meta[key]
-        if "tools" in meta:
-            agent["tools"] = [t.strip() for t in meta["tools"].split(",")]
-        agents[meta.get("name", path.stem)] = agent
-    return json.dumps(agents) if agents else None
+def worker_agents(append: str) -> str:
+    """The `--agents` JSON that gives a worker the handbook agent over the
+    item's appendix: the definition `scripts/context.py --write` writes, with
+    the appendix in place of the handbook. It overrides the project's file
+    for the worker, so a resumed worker's agents read the appendix it started
+    on."""
+    agent = {"description": AGENT_META["description"],
+             "prompt": agent_prompt(Path(append).read_text()),
+             "model": AGENT_META["model"], "effort": AGENT_META["effort"],
+             "tools": [t.strip() for t in AGENT_META["tools"].split(",")]}
+    return json.dumps({AGENT_META["name"]: agent})
+
+
+def role_text(name: str) -> str:
+    """A role's text, from its file under .claude/roles/."""
+    return (config.ROLE_DIR / f"{name}.md").read_text()
 
 
 # ---------- first messages ----------

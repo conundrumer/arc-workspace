@@ -37,8 +37,8 @@ def watched_paths(item_id: str) -> dict[str, Path]:
              f"data/tasks/{item_id}.json": config.TASKS / f"{item_id}.json"}
     for p in sorted(config.DOCS.glob("*.md")):
         paths[f"docs/wf-solver/{p.name}"] = p
-    for p in sorted(config.AGENT_DIR.glob("*.md")):
-        paths[f".claude/agents/{p.name}"] = p
+    for p in sorted(config.ROLE_DIR.glob("*.md")):
+        paths[f".claude/roles/{p.name}"] = p
     return paths
 
 

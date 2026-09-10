@@ -257,7 +257,7 @@ def tool_label(name: str, inp: dict) -> str | None:
 
 def permission_decision(req: dict) -> dict:
     """The console's answer to one permission request. A worker may edit the
-    agent files, which the CLI holds back as files of its own; the edit
+    role files, which the CLI holds back as files of its own; the edit
     surfaces at landing as a shared write. Every other request keeps the
     refusal the CLI already reached."""
     if req.get("tool_name") in ("Edit", "Write"):
@@ -266,7 +266,7 @@ def permission_decision(req: dict) -> dict:
         except OSError:
             asked = None
         if (asked is not None and asked.suffix == ".md"
-                and asked.parent == config.AGENT_DIR.resolve()):
+                and asked.parent == config.ROLE_DIR.resolve()):
             return {"behavior": "allow", "updatedInput": req.get("input") or {}}
     return {"behavior": "deny",
             "message": req.get("decision_reason") or "not permitted"}
@@ -318,11 +318,8 @@ def worker_cmd(it: dict, phase: str) -> list[str]:
         if session:
             cmd += ["--resume", session]
         return cmd
-    cmd = [config.CLAUDE, "--append-system-prompt", Path(it["append"]).read_text(),
-           *config.WORKER_FLAGS]
-    agents = prompts.worker_agents(it["append"])
-    if agents:
-        cmd += ["--agents", agents]
+    cmd = [config.CLAUDE, "--append-system-prompt-file", it["append"],
+           *config.WORKER_FLAGS, "--agents", prompts.worker_agents(it["append"])]
     if st.get("model"):
         cmd += ["--model", st["model"]]
     effort = st.get("effort") or config.CLAUDE_EFFORT

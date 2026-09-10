@@ -336,3 +336,21 @@ def test_the_command_surveys_the_entry_it_names(tmp_path):
     finally:
         path.unlink(missing_ok=True)
         subprocess.run(["rm", "-rf", str(ROOT / ".scratch" / "surveys" / name)])
+
+
+# ---------- the session ----------
+
+def test_the_session_is_the_handbook_agent_over_the_survey_role(sv, srv, tmp_path, monkeypatch):
+    from dl.context import AGENT_META
+    flags = sv.survey_session()
+    assert flags[flags.index("--system-prompt-file") + 1] == str(srv.append_path())
+    assert flags[flags.index("--model") + 1] == AGENT_META["model"]
+    assert flags[flags.index("--effort") + 1] == AGENT_META["effort"]
+    assert "--system-prompt" not in flags
+    seen = tmp_path / "argv.txt"
+    local(srv, sv, tmp_path, monkeypatch,
+          body=f"printf '%s\\n' \"$@\" > {seen}\necho '{RESULT_EVENT}'\n")
+    path = entry(srv, "Thing")
+    sv.survey_entry(path)
+    brief = seen.read_text().split("\n")[1]
+    assert brief.startswith(sv.prompts.role_text("survey").split("\n")[0])

@@ -1120,12 +1120,41 @@ def test_two_callers_building_the_appendix_at_once_each_get_it_whole(srv):
     assert out == [text] * 6
 
 
-def test_worker_agents_carry_the_appendix(srv):
+def test_worker_agents_is_the_handbook_agent_over_the_appendix(srv):
+    from dl.context import AGENT_META, ROLE_NOTE
     (srv.DOCS / "style.md").write_text("# Style\n\nEvery word of it.\n")
     agents = json.loads(srv.worker_agents(str(srv.append_path())))
-    assert set(agents) == {p.stem for p in srv.AGENT_DIR.glob("*.md")}
-    for agent in agents.values():
-        assert agent["prompt"].endswith(srv.append_path().read_text())
+    assert set(agents) == {"handbook"}
+    agent = agents["handbook"]
+    assert agent["prompt"] == ROLE_NOTE + srv.append_path().read_text()
+    assert (agent["model"], agent["effort"]) == (AGENT_META["model"], AGENT_META["effort"])
+    assert agent["tools"] == ["Read", "Grep", "Glob", "Bash", "Edit", "Write"]
+
+
+def test_worker_cmd_carries_the_appendix_by_file(srv, tmp_path, monkeypatch):
+    monkeypatch.setattr(srv, "FAKE", False)
+    append = tmp_path / "append.md"
+    append.write_text("brief")
+    it = item(srv, "a", srv.NEEDS_REVIEW, append=str(append))
+    cmd = srv.worker_cmd(it, "refine")
+    assert cmd[cmd.index("--append-system-prompt-file") + 1] == str(append)
+    assert "--append-system-prompt" not in cmd
+    assert list(json.loads(cmd[cmd.index("--agents") + 1])) == ["handbook"]
+
+
+def test_worker_cmd_stays_well_under_the_argument_limit(srv, tmp_path, monkeypatch):
+    """One copy of the handbook rides in argv, inside the agents JSON. The
+    limit the spawn hits is macOS's 1 MiB over argv and the environment
+    together, which is what spawn_worker passes, so the bound is taken over
+    both."""
+    from dl.context import render
+    monkeypatch.setattr(srv, "FAKE", False)
+    append = tmp_path / "append.md"
+    append.write_text(render())   # the repo's own docs and lib.dl
+    it = item(srv, "a", srv.NEEDS_REVIEW, append=str(append))
+    cmd = srv.worker_cmd(it, "refine")
+    env = [f"{k}={v}" for k, v in srv.WORKER_ENV.items()]
+    assert sum(len(s.encode()) + 1 for s in [*cmd, *env]) < 1024 * 1024
 
 
 def test_commit_subject_names_added_and_changed_solvers(srv):

@@ -64,7 +64,7 @@ Remove the entry's file at these points:
     - Run it when the pass needs the result of an entry in either state:
         - the entry carries no result
         - some solvers are newer than the entry's newest `Survey:` line
-    - If the command fails, send the `survey` agent the entry's path, the scope the command would take, and a scratch path (`.scratch/surveys/<entry name>/`), and append its report at the end of the entry in the form the command writes:
+    - If the command fails, spawn the `survey` role with the entry's path, the scope the command would take, and a scratch path (`.scratch/surveys/<entry name>/`), and append its report at the end of the entry in the form the command writes:
         - a blank line, then `Survey: <date time> — the whole corpus.` or `Survey: <date time> — the solvers since <the entry's newest survey time>, <the stems, comma separated>.`, then a blank line, then the report
         - say in the review that the session ran the survey
     - If the pass ends with the entry still unsurveyed, say so in the review.
@@ -85,8 +85,8 @@ Remove the entry's file at these points:
 4. Leave promotion to the user, at the time they choose. The `Callers` list is their evidence. No step reads its count.
     - On `promote`: move the primitive to `programs/lib.dl` and update the solver that introduced the proposal.
     - On `migrate`:
-        1. Send the `migrate` agent the entry's path, the call site in the solver that introduced the proposal, and the promotion's time.
-        2. Send the `cleanup` agent the regions that `migrate` changed and the primitive they now call.
+        1. Spawn the `migrate` role with the entry's path, the call site in the solver that introduced the proposal, and the promotion's time.
+        2. Spawn the `cleanup` role with the regions that `migrate` changed and the primitive they now call.
         3. List in the review the callers that `migrate` skipped.
 
 **Reimplementations.** An entry lists the reimplementations its surveys met.
