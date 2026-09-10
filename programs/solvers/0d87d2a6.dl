@@ -1,16 +1,22 @@
 // 0d87d2a6
 // concept: markers objects cast span
-// Objects of params.body sit in the grid, and params.mark cells sit on its edges. A
-// marker sends a line across the grid along its edge's axis; the lines and
-// every object they touch turn params.paint. Every line here carries a marker at
-// each end, which leaves open how much marking a line needs:
+// Objects of params.body sit in the grid, and params.mark cells sit on its
+// edges. A marker sends a line across the grid along its edge's axis; the
+// lines and the objects they catch turn params.paint. The pairs leave two
+// points open, and Choice = [d, s] crosses them:
 //
-//   $Cast() — a marker at one end draws the whole line.
-//   $Span() — a line needs a marker at each end.
+//   d (how a line is drawn):
+//     $Cast()   — a marker at one end draws the whole line.
+//     $Span()   — a line needs a marker at each end.
+//   s (which objects a line catches):
+//     $Graze()  — an object that touches the line.
+//     $Pierce() — an object the line runs through.
 
 #include "../lib.dl"
 
-.type Choice = Cast {} | Span {}
+.type Draw   = Cast {} | Span {}
+.type Spread = Graze {} | Pierce {}
+.type Choice = [d: Draw, s: Spread]
 
 .comp Params {
     .decl mark(col: Color) mark(1).
@@ -20,26 +26,46 @@
 
 .init params = Params
 
+.decl draw_choice(d: Draw)
+draw_choice($Cast()).
+draw_choice($Span()).
+
+.decl spread_choice(s: Spread)
+spread_choice($Graze()).
+spread_choice($Pierce()).
+
 .decl impl_choice(ch: Choice)
-impl_choice($Cast()).
-impl_choice($Span()).
+impl_choice([D, S]) :- draw_choice(D), spread_choice(S).
 
-.decl mark_line(p: Position, d: Dir)
-mark_line(P, D) :-
-    in(M, Col), params.mark(Col), dist(M, D, 0),        // marker on edge D
-    axis_of(D, A),                                      // its line runs along A
-    in(P, _), same_line(A, P, M).                       // P in that line
+// Keyed by the axis of the edge the marker sits on.
+.init mark_cast = Between<Axis>
+mark_cast.axis(A, A) :- axis_elem(A).
+mark_cast.cell(A, P) :- axis_elem(A), in(P, _).
+mark_cast.mark(A, M) :- in(M, Col), params.mark(Col), dist(M, D, 0), axis_of(D, A).
 
-.decl line(p: Position, k: Choice)
-line(P, $Cast()) :- mark_line(P, _).
-line(P, $Span()) :- mark_line(P, D), mark_line(P, D_opp), opposite(D, D_opp).
+.decl line(p: Position, d: Draw)
 
-// The lines and the objects touching them form one connected region.
+// --- $Cast ---
+line(P, $Cast()) :- mark_cast.ray(_, P, _, _, _).
+
+// --- $Span ---
+line(P, $Span()) :- mark_cast.between(_, P).
+
+// The objects a line catches: the components that the line's cells select.
+// $Pierce is the seed rule alone — a line cell that lands on an object selects
+// it, and one that lands elsewhere selects nothing.
 .init reach = Reach<Choice>
-reach.node(K, P) :- impl_choice(K), in(P, Col), params.body(Col).
-reach.node(K, P) :- line(P, K).
-reach.seed(K, P) :- line(P, K).
+reach.node(Ch, P) :- impl_choice(Ch), in(P, Col), params.body(Col).   // an object cell
+reach.seed([D, S], P) :- line(P, D), spread_choice(S).
+
+// --- $Graze ---
+// The line is part of the region, so an object that touches it is caught too.
+reach.node([D, $Graze()], P) :- line(P, D).
+
+.decl painted(p: Position, ch: Choice)
+painted(P, [D, S]) :- line(P, D), spread_choice(S).   // the line itself
+painted(P, Ch) :- reach.reach(Ch, P).                 // the objects it catches
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, K) :- reach.reach(K, P), params.paint(Col).
-out(P, Col, K) :- in(P, Col), impl_choice(K), !reach.reach(K, P).
+out(P, Col, Ch) :- painted(P, Ch), params.paint(Col).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !painted(P, Ch).
