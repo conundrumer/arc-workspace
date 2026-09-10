@@ -1636,16 +1636,14 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 // refutation — the dual of CoverForcing's elimination, for sites where
 // elimination cannot start. A candidate dies when some other piece has no
 // candidate that can stand beside it, or some pair of other pieces has no
-// conflict-free pair beside it; a kill can expose the next, and dead is the
-// fixpoint. alive over-approximates: every joint placement's candidates
-// survive, and a caller painting from the survivors fails on cells where
-// leftover rivals disagree — never wrongly, as long as every piece has at
-// least one candidate. A piece absent from `cand` kills nothing, so the
-// other pieces' candidates all stay alive; the caller guards that case. A piece takes at most one candidate: every test picks
-// one per piece.
+// conflict-free pair beside it, to a fixpoint. alive over-approximates:
+// every joint placement's candidates survive, so a caller painting from the
+// survivors fails on cells where leftover rivals disagree, never wrongly, as
+// long as every piece has a candidate. A piece takes at most one candidate.
+// A piece absent from `cand` kills nothing; the caller guards that case.
 //
 // Flagged: assumes each candidate belongs to one piece. A candidate under
-// several pieces mixes the chain walks and kills every candidate.
+// several pieces kills every candidate.
 .comp PlacementPruning<Key, Cand, Piece> {
     // The candidate placements of each piece.
     .decl cand(key: Key, c: Cand, o: Piece)  // input
@@ -1792,11 +1790,13 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
         _pair_walk(K, Cd, O3, C1), _joint.after(K, _, C1, C2),
         _settled(K, Cd, O3, C2).
 
+    // The refuted candidates.
     .decl dead(key: Key, c: Cand)
     dead(K, Cd) :- _room.kill(K, Cd).
     dead(K, Cd) :- _joint.kill(K, Cd).
     dead(K, Cd) :- _pair_walk(K, Cd, O3, C2), _joint.tail(K, _, C2).
 
+    // The candidates not refuted, with their pieces.
     .decl alive(key: Key, c: Cand, o: Piece)
     alive(K, Cd, O) :- cand(K, Cd, O), !dead(K, Cd).
 }
