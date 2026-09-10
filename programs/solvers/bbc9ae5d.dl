@@ -7,7 +7,7 @@
 //   $Grow  — the run grows: ink spreads a step per row down the stack and
 //            toward params.diag, gaining a cell at its open end.
 //   $Slide — the row slides: cells cast diagonal rays toward params.diag;
-//            vacated cells refill with the anchor-end color.
+//            vacated cells take the anchor-end color.
 
 #include "../lib.dl"
 

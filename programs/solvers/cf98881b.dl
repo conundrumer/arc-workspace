@@ -10,7 +10,7 @@
 //     $Tile() — pre-tabulated in the parameters via tile_pos
 //     $Div()  — derived in the program via the divide primitive
 //
-//   b (body, the priority hypothesis):
+//   b (priority):
 //     $Spatial() — pane order: the pane nearest params.stack_dir wins
 //     $Palette() — color order: the params.ink_rank priority ranks
 //     $Stack()   — pane order: the params.pane_rank priority ranks
@@ -52,16 +52,16 @@
     .decl divide_gap(g: number)
     divide_gap(1).
 
-    // --- Spatial body data ---
+    // --- Spatial priority data ---
     .decl stack_dir(d: Dir)
     stack_dir(DIR_L).
 
-    // --- Palette body data ---
+    // --- Palette priority data ---
     // Ink priority ranks, highest first.
     .decl ink_rank(c: Color, r: number)
     ink_rank(4, 0). ink_rank(9, 1). ink_rank(1, 2).
 
-    // --- Stack body data ---
+    // --- Stack priority data ---
     // Pane priority ranks, highest first.
     .decl pane_rank(p_tile: Position, r: number)
     GRID_1x3(pane_rank,

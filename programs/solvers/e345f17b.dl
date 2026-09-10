@@ -32,7 +32,7 @@
     .decl divide_axis(a: Axis)
     divide_axis(AXIS_H).
 
-    // --- Lookup body data ---
+    // --- Lookup combine data ---
     .decl combine_member(id: Ident, p_outer: Position, c: Color)
     .decl combine_out(id: Ident, c_out: Color)
 
@@ -41,7 +41,7 @@
     combine_member(2, [0,0,0,1], 6). combine_member(2, [0,0,1,0], 0). combine_out(2, 0).
     combine_member(3, [0,0,0,1], 6). combine_member(3, [0,0,1,0], 5). combine_out(3, 0).
 
-    // --- Nor body data ---
+    // --- Nor combine data ---
     .decl bg(c: Color) bg(0).
     .decl out_fill(c: Color) out_fill(4).
 }

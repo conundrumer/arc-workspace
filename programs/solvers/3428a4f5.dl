@@ -8,7 +8,7 @@
 //     $Tile() — pre-tabulated in the parameters via tile_pos
 //     $Div()  — derived in the program via the divide primitive
 //
-//   b (body):
+//   b (combine):
 //     $Lookup() — combine table keyed on (outer pos, color); set-equality match
 //     $Xor()    — XOR via count: exactly one non-BG input contribution
 
@@ -49,7 +49,7 @@
     .decl divide_gap(g: number)
     divide_gap(1).
 
-    // --- Lookup body data ---
+    // --- Lookup combine data ---
     .decl combine_member(id: Ident, p_outer: Position, c: Color)
     .decl combine_out(id: Ident, c_out: Color)
 
@@ -58,7 +58,7 @@
     combine_member(2, [0,1,0,0], 0). combine_member(2, [1,0,0,0], 2). combine_out(2, 3).
     combine_member(3, [0,1,0,0], 2). combine_member(3, [1,0,0,0], 0). combine_out(3, 3).
 
-    // --- Xor body data ---
+    // --- Xor combine data ---
     .decl bg(c: Color) bg(0).
     .decl out_fill(c: Color) out_fill(3).
     .decl fill_at(n: number) fill_at(1).
