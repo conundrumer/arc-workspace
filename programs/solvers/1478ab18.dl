@@ -86,8 +86,10 @@ right_angle(Cor, L, $Pointed()) :-
     diag_dir_elem(D), neighbor(Cor, D, P_near), mark(P_near).
 
 // $Inside — the corner whose closed triangle holds a non-vertex mark. Viewed
-// from the hypotenuse pair's box, the triangle at corner (D1, D2) is the
-// cells no farther from edge D1 than from the edge opposite D2.
+// from the hypotenuse pair's box, the hypotenuse is the diagonal from a
+// corner next to Cor's, and the triangle is the cells on Cor's side of it:
+// no farther from the edge the two corners share than from the other edge
+// of that next corner.
 .init tri = BoxFrame<Locate>
 tri.cell(L, P) :- hyp(P, L).
 tri.grid(L, P) :- in(P, _), locate_choice(L).
@@ -95,9 +97,9 @@ tri.grid(L, P) :- in(P, _), locate_choice(L).
 right_angle(Cor, L, $Inside()) :-
     corner_cand(Cor, L),
     tri.inner(L, Cor, Cor_in), corner_dist(Cor_in, Dc, 0),       // Cor's box corner
-    diag_dirs(Dc, _, D1, D2), opposite(D2, D2o),                 // its two dirs
+    diag_dirs(Dc, A, D1, _), diag_dirs(Dh, A, D1, _), Dh != Dc,  // the next corner along edge D1
     mark(M), !hyp(M, L), M != Cor, tri.inner(L, M, M_in),        // non-vertex mark in the box
-    dist(M_in, D1, K1), dist(M_in, D2o, K2), K1 <= K2.           // on the corner's side
+    diag_dist(M_in, Dh, A, K1, K2), K1 <= K2.                    // on Cor's side of Dh's diagonal
 
 // --- The triangle ---
 

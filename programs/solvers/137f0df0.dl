@@ -26,16 +26,15 @@ block(P) :- in(P, Col), !params.bg(Col).
 bx.cell($U(), P) :- block(P).
 bx.grid($U(), P) :- in(P, _).
 
-// A block on the line running along axis a at across-coordinate l.
-.decl block_line(a: Axis, l: Position)
-block_line(A, L) :- block(P), axis_elem(A), split(P, A, _, L).
+// A cell whose line along axis a carries a block.
+.decl block_line(a: Axis, p: Position)
+block_line(A, P) :- in(P, _), axis_elem(A), block(Q), same_line(A, P, Q).
 
 // A cell of a block-free line that crosses the field.
 .decl gap_cell(p: Position)
 gap_cell(P) :-
-    in(P, _), axis_elem(A), split(P, A, _, L),   // a line through the cell
-    bx.inside($U(), Q), split(Q, A, _, L),       // meeting the field's box
-    !block_line(A, L).                           // and carrying no block
+    in(P, _), axis_elem(A), !block_line(A, P),
+    bx.inside($U(), Q), same_line(A, P, Q).   // the line meets the field's box
 
 .decl out(p: Position, col: Color)
 out(P, Col) :-

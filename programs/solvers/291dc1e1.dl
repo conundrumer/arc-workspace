@@ -99,9 +99,7 @@ slab.extent(Id, A, N) :- parse.block($U(), Id), slab_axis(A), widest.high($U(), 
 .decl placed(id: Ident, p: Position, col: Color)
 placed(Id, P_slab, Col) :-
     turned(Id, P_turn, Col), slab.cell(Id, P_slab),
-    displacement(P_turn, P_slab, V),
-    stack_axis(A), split(V, A, ORIGIN, Across),                // flush on the stack axis
-    slab_axis(A2), flip_of(A2, F), apply(F, Across, Across).   // centered on the slab axis
+    displacement(P_turn, P_slab, V), centered(V).    // the block centered in its slab
 
 // --- the reading order ---
 

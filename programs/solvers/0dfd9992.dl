@@ -57,12 +57,6 @@
         axis_rep(Key, A, D1), axis_rep(Key, A2, D2), perp(A, A2),
         compose(D1, D2, Delta).
 
-    // Kinds squaring to the identity; their candidates' squares are
-    // translations, and a symmetry's square must land in the lattice.
-    .decl sq_id(d: D4)
-    sq_id(D4_ID). sq_id(D4_HT). sq_id(D4_LR).
-    sq_id(D4_TB). sq_id(D4_DG). sq_id(D4_AD).
-
     // Lattice elements a candidate's square can reach: zero and one
     // period per axis, toward the canonical corner.
     .decl lat_ax(key: Key, a: Axis, delta: Shift)
@@ -74,13 +68,16 @@
         lat_ax(Key, A, D1), lat_ax(Key, A2, D2), perp(A, A2),
         compose(D1, D2, Delta).
 
-    // Candidates per kind: fundamental-domain shifts, square-checked
-    // where the kind squares to the identity.
+    // Candidates per kind: fundamental-domain shifts. A kind that is its
+    // own inverse squares to the identity, so its candidate's square is a
+    // translation, and that translation must land in the lattice.
     .decl cand(key: Key, d: D4, delta: Shift)
-    cand(Key, D, Delta) :- kind(D), !sq_id(D), dom(Key, Delta).
     cand(Key, D, Delta) :-
-        kind(D), sq_id(D), dom(Key, Delta),
-        apply(D, Delta, DD), compose(Delta, DD, S), lat0(Key, S).
+        kind(D), dom(Key, Delta),
+        ( !d4_inverse(D, D)
+        ; d4_inverse(D, D),
+          apply(D, Delta, DD), compose(Delta, DD, S), lat0(Key, S)
+        ).
 
     // Cell images under the kinds, materialized so the shift join starts
     // ground.
@@ -109,8 +106,6 @@
     kind_used(Key, D) :- sym(Key, D, _).
     kind_used(Key, D4_ID) :- period(Key, _, _).
 
-    // One step along an admitted isometry or a lattice shift, over the
-    // full grid.
     .decl rot_grid(key: Key, d: D4, p: Position, p1: Position)
     rot_grid(Key, D, P, P1) :- grid(Key, P), kind(D), apply(D, P, P1).
 
@@ -119,8 +114,8 @@
         sym(Key, D, Delta), rot_grid(Key, D, P, P1),
         compose(P1, Delta, Q), grid(Key, Q).
     step(Key, P, Q) :-
-        period(Key, A, K), axis_of(D, A), jump_delta(D, K, Delta),
-        grid(Key, P), compose(P, Delta, Q), grid(Key, Q).
+        period(Key, A, K), axis_of(D, A),
+        grid(Key, P), jump(P, D, K, Q), grid(Key, Q).
 }
 
 // --- parse ---

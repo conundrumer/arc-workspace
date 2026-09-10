@@ -54,14 +54,11 @@ other_color(Col) :-
 .decl arm(p_start: Position, d: Dir, delta: Shift, p_end: Position)
 arm(P, D, Delta, P_end) :-
     seed(P), params.start_dir(D), params.len0(N),
-    jump_delta(D, N, Delta), compose(P, Delta, P_end).
+    jump(P, D, N, P_end), jump_delta(D, N, Delta).
 arm(P, D2, Delta2, P_end2) :-
-    arm(_, D, Delta, P), in(P, _),          // previous arm ended on-grid
-    params.sense(S), turn(S, D, D2),
-    step_delta(D, S1), step_delta(D2, S2),
-    d4_elem(M), apply(M, S1, S2),           // M realizes the turn
-    apply(M, Delta, DeltaR),                // displacement, turned
-    compose(DeltaR, S2, Delta2),            // grown one step
+    arm(_, D, Delta, P), in(P, _),                          // previous arm ended on-grid
+    params.sense(S), turn(S, D, D2), rotation(S, M),
+    apply(M, Delta, DeltaR), neighbor(DeltaR, D2, Delta2),  // the arm turned, one cell longer
     compose(P, Delta2, P_end2).
 
 // An arm read back from its end, keyed by where it starts. An arm the grid

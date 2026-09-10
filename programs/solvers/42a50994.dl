@@ -21,16 +21,13 @@
 .decl ink(p: Position, col: Color)
 ink(P, Col) :- in(P, Col), !params.bg(Col).
 
-.decl surround_step(s: Shift)
-surround_step(S) :- dir8_elem(D), step_delta(D, S).
-
 .decl grouped(p: Position, ch: Choice)
 
 // --- $Ink ---
-grouped(P, $Ink()) :- ink(P, _), surround_step(S), compose(P, S, P2), ink(P2, _).
+grouped(P, $Ink()) :- ink(P, _), dir8_elem(D), neighbor(P, D, P2), ink(P2, _).
 
 // --- $Self ---
-grouped(P, $Self()) :- ink(P, Col), surround_step(S), compose(P, S, P2), ink(P2, Col).
+grouped(P, $Self()) :- ink(P, Col), dir8_elem(D), neighbor(P, D, P2), ink(P2, Col).
 
 .decl impl_choice(ch: Choice)
 impl_choice($Ink()). impl_choice($Self()).

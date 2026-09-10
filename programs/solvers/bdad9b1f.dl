@@ -36,8 +36,8 @@ ink(P, Col) :- in(P, Col), !params.bg(Col).
 
 // --- $Shape ---
 line(Col, A, Ac, $Shape()) :-
-    ink(P1, Col), ink(P2, Col), P1 != P2,                      // two segment cells
-    axis_elem(A), split(P1, A, _, Ac), split(P2, A, _, Ac).    // agree across
+    ink(P1, Col), ink(P2, Col), P1 != P2,   // two segment cells
+    axis_elem(A), split(P1, A, _, Ac), same_line(A, P1, P2).
 
 // --- $Role ---
 line(Col, A, Ac, $Role()) :-

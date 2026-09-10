@@ -28,7 +28,7 @@
 edge_match(Ac, Col) :-
     params.axis(A), axis_of(D, A), opposite(D, D2),       // the line's two edges
     in(P1, Col), dist(P1, D, 0), split(P1, A, _, Ac),     // marker on edge d
-    in(P2, Col), dist(P2, D2, 0), split(P2, A, _, Ac).    // same color opposite, same line
+    in(P2, Col), dist(P2, D2, 0), same_line(A, P1, P2).
 
 out(P, Col_out, $Flood()) :-
     in(P, Col), params.axis(A), split(P, A, _, Ac),   // grid cell, its line

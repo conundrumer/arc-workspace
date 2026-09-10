@@ -103,8 +103,8 @@ out(P, Col) :- in(P, Col_in), ( paint(P, Col) ; !paint(P, _), Col = Col_in ).
     .decl place(e: Example, d: Dir, p: Position, o: number, s: number)
     place(E, D, P, O, S) :-
         frame.view([E, D], P, P_rel),
-        opposite(D, D_back), dist(P_rel, D_back, O), O > 0,   // steps out
-        perp_dir(D, D2), dist(P_rel, D2, S), 0 <= S, S <= O.  // steps across
+        opposite(D, D_back), diag_dirs(Diag, A, D_back, _),        // a corner behind the heading
+        diag_dist(P_rel, Diag, A, O, S), O > 0, 0 <= S, S <= O.    // steps out, steps across
 
     // The arm's path order: every step goes out or across, never back.
     .init step_order = Order<ArmKey, Position>
