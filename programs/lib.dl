@@ -1105,8 +1105,9 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 }
 
 // A partition carried along a walk, one item passing to the taken side per
-// step. `step` may be recursive with the outputs, so the state can choose
-// the walk. A step that takes several items does not fit.
+// step. `step` and `take` may be recursive with `taken`/`untaken`, so the
+// state can choose the walk and the item taken. A step that takes several
+// items does not fit.
 .comp Take<Key, T, Item> {
     .decl start(key: Key, t: T)               // input
     .decl step(key: Key, t: T, t2: T)         // input
@@ -1638,8 +1639,10 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 // conflict-free pair beside it; a kill can expose the next, and dead is the
 // fixpoint. alive over-approximates: every joint placement's candidates
 // survive, and a caller painting from the survivors fails on cells where
-// leftover rivals disagree — never wrongly. A piece takes at most one
-// candidate: every test picks one per piece.
+// leftover rivals disagree — never wrongly, as long as every piece has at
+// least one candidate. A piece absent from `cand` kills nothing, so the
+// other pieces' candidates all stay alive; the caller guards that case. A piece takes at most one candidate: every test picks
+// one per piece.
 //
 // Flagged: assumes each candidate belongs to one piece. A candidate under
 // several pieces mixes the chain walks and kills every candidate.

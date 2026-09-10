@@ -216,6 +216,13 @@ def _bound_enumerator(
     return any(var.search(rule[s:e]) for s, e in spans if (s, e) != span)
 
 
+def _in_head(atom: str, head: str) -> str:
+    """The finding text for a body deletion: the atom, then the head of
+    the rule it came from. The renderer quotes the text it is given, so
+    the two read as separate quoted fragments."""
+    return f"{atom}` in `{head}"
+
+
 def _variants(source: str, determine: bool) -> Iterator[Deletion]:
     lines = source.splitlines()
     elems = frozenset(_elem_tables(_lib_source())[0])
@@ -228,14 +235,16 @@ def _variants(source: str, determine: bool) -> Iterator[Deletion]:
             k = len(rule) if k is None else k
             atom = rule[m.start():k + 1]
             modified = lines[:a] + [_drop_atom(rule, m.start(), k + 1)] + lines[b + 1:]
-            yield (a + 1, "negation", atom, "\n".join(modified) + "\n")
+            yield (a + 1, "negation", _in_head(atom, head),
+                   "\n".join(modified) + "\n")
         spans = list(_positive_atoms(rule))
         for s, e in spans:
             kind = "atom"
             if _bound_enumerator(rule, (s, e), spans, elems):
                 kind = BOUND_ENUMERATOR
             modified = lines[:a] + [_drop_atom(rule, s, e)] + lines[b + 1:]
-            yield (a + 1, kind, rule[s:e], "\n".join(modified) + "\n")
+            yield (a + 1, kind, _in_head(rule[s:e], head),
+                   "\n".join(modified) + "\n")
         for _, _, spans in _disjunctions(rule):
             for k, (s, e) in enumerate(spans):
                 if k + 1 < len(spans):
@@ -244,7 +253,7 @@ def _variants(source: str, determine: bool) -> Iterator[Deletion]:
                     cut = (spans[k - 1][1], e)  # leading ';' plus branch
                 shrunk = rule[:cut[0]] + rule[cut[1]:]
                 modified = lines[:a] + [shrunk] + lines[b + 1:]
-                yield (a + 1, "disjunct", rule[s:e].strip(),
+                yield (a + 1, "disjunct", _in_head(rule[s:e].strip(), head),
                        "\n".join(modified) + "\n")
 
 
@@ -355,11 +364,14 @@ def _cases_agree(source: str, examples: list, reference: list) -> bool:
 
     The reference profile already holds every variant to an accepted
     grid, so on a pair that accepts one grid the variants agree by
-    construction, and the profile's variant names settle it. A tiebreak
-    pair accepts two grids, and a resolution solver profiles grids
-    rather than names, so those read the run again.
+    construction, and the profile's variant names settle it. A pair with
+    a tiebreak or a rule alt accepts two grids, and a resolution solver
+    profiles grids rather than names, so those read the run again.
     """
-    plain = all(ex.alt is None or ex.alt.kind != "tiebreak" for ex in examples)
+    plain = all(
+        ex.alt is None or ex.alt.kind not in ("tiebreak", "rule")
+        for ex in examples
+    )
     if plain and not res_out(source):
         return all(len(names) >= 2 for names in reference)
     for ex in examples:
@@ -369,9 +381,9 @@ def _cases_agree(source: str, examples: list, reference: list) -> bool:
             )
         except Exception:
             return False
-        if len({variant for variant, _, _, _ in actuals}) < 2:
+        if len({c.variant for c in actuals}) < 2:
             return False
-        if len({tuple(map(tuple, grid)) for _, grid, _, _ in actuals}) != 1:
+        if len({tuple(map(tuple, c.grid)) for c in actuals}) != 1:
             return False
     return True
 

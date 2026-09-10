@@ -30,7 +30,7 @@ The transformation hypothesis: which prior the task teaches.
 - `walk` — stepwise propagation; each step depends on the path or content so far
 - `cast` — content extends from a source along a line
 - `span` — the model depends on an extent delimited by marks
-- `enclose` — cells act by whether they reach the grid edge
+- `enclose` — cells or objects act by whether they are closed off from the grid edge
 - `mapping` — a color-to-color relation recolors cells
 - `count` — a count determines output content or extent
 - `rank` — an order or rank determines placement or color

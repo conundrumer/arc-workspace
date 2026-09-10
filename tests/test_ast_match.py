@@ -12,6 +12,9 @@ under its scratch path, over the parsed corpus:
 
 `idx.refs` holds every atom reference: its role (head/pos/neg/agg), its
 resolved relation key, its rule index into `idx.rules`, and its line.
+A read through a comp instance (`wall.ray(...)`) resolves to the key
+`('!ext', 'wall.ray')`, so a matcher for a lib comp's relation tests
+`ref.atom.name` and `ref.atom.qual`, not `ref.key`.
 Start there; reach for `body_literals` when the shape involves
 comparisons, disjunctions, or aggregate bodies. For the node types,
 read the `# --- AST ---` and `# --- reference index ---` sections of

@@ -159,8 +159,8 @@ A disjunction is conditional branching inside one derivation: the shared frame s
 ```
 render(P, Col) :-
     in(P, _), params.side(K), divide_by_size_2d(P, K, 0, P_tile, _),
-    ( tile_ink(P_tile, Col)                 // inked tile
-    ; !tile_ink(P_tile, _), params.bg(Col)  // blank tile
+    ( tile_ink(P_tile, Col)                 // inked tile: one atom tests and grounds Col
+    ; !tile_ink(P_tile, _), params.bg(Col)  // blank tile: the test, then Col
     ).
 ```
 

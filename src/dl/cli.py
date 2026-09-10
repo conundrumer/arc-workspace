@@ -224,15 +224,16 @@ def cmd_pairs(stem: str, path: str) -> int:
     for kind, examples in sections:
         for idx, e in enumerate(examples):
             if e.get("output") is None:
-                for variant, grid, conflicts, missing in run_dl(
-                    task_id, e["input"], stem=stem
-                ):
-                    print(f"{kind}[{idx}] {variant or '(out)'}:")
-                    for line in _grid_lines(grid):
+                for c in run_dl(task_id, e["input"], stem=stem):
+                    print(f"{kind}[{idx}] {c.variant or '(out)'}:")
+                    if c.error:
+                        print(f"  {c.error}")
+                        continue
+                    for line in _grid_lines(c.grid):
                         print(f"  {line}")
-                    if conflicts or missing:
-                        print(f"  conflicts {len(conflicts)}, "
-                              f"missing {len(missing)}")
+                    if c.conflicts or c.missing:
+                        print(f"  conflicts {len(c.conflicts)}, "
+                              f"missing {len(c.missing)}")
                 continue
             alt = (Alt(kind=e["alt"]["kind"], grid=e["alt"]["grid"])
                    if "alt" in e else None)
@@ -331,17 +332,20 @@ def cmd_grid(stem: str, path: str | None = None) -> int:
     print("input:")
     for line in _grid_lines(grid):
         print(f"  {line}")
-    for variant, out, conflicts, missing in actuals:
+    for c in actuals:
         print()
-        print(f"{variant or '(out)'}:")
-        for line in _grid_lines(out):
+        print(f"{c.variant or '(out)'}:")
+        if c.error:
+            print(f"  {c.error}")
+            continue
+        for line in _grid_lines(c.grid):
             print(f"  {line}")
-        if conflicts:
-            print(f"  conflicts at: {conflicts}")
-        if missing:
-            print(f"  missing cells at: {missing}")
+        if c.conflicts:
+            print(f"  conflicts at: {c.conflicts}")
+        if c.missing:
+            print(f"  missing cells at: {c.missing}")
 
-    emitted = {v.split("(", 1)[0].removeprefix("$") for v, _, _, _ in actuals}
+    emitted = {c.variant.split("(", 1)[0].removeprefix("$") for c in actuals}
     silent = [b for b in _case_branches(stem) if b not in emitted]
     if silent:
         print()
@@ -349,7 +353,8 @@ def cmd_grid(stem: str, path: str | None = None) -> int:
             print(f"${name}: emits nothing")
     cases = len(actuals) + len(silent)
     if cases > 1:
-        distinct = {tuple(tuple(row) for row in g) for _, g, _, _ in actuals}
+        distinct = {tuple(tuple(row) for row in c.grid)
+                    for c in actuals if not c.error}
         print()
         print(f"{cases} cases, {len(distinct)} distinct grid(s)")
     return 0
@@ -388,19 +393,28 @@ def _worktree_stems(status: str) -> set[str]:
     return stems
 
 
+def _stem_mtime(stem: str) -> float:
+    """The modification time of a stem's solver file, or 0 when it is gone."""
+    path = REPO_ROOT / "programs" / "solvers" / f"{stem}.dl"
+    return path.stat().st_mtime if path.exists() else 0.0
+
+
 def cmd_since(when: str) -> int:
     """Print the solver stems a survey since `when` covers: the ones the
-    commits since then touch, plus the ones the working tree changes. A
-    commit touching more than half the corpus is a corpus-wide mechanical
-    rewrite, and the solvers it touches are out of scope."""
+    commits since then touch, plus the working-tree ones whose files changed
+    since then. A commit touching more than half the corpus is a corpus-wide
+    mechanical rewrite, and the solvers it touches are out of scope."""
     log = _git("log", f"--since={when}", "--name-only", "--pretty=format:commit %H",
                "--", "programs/solvers")
     status = _git("status", "--porcelain", "--", "programs/solvers")
-    if log is None or status is None:
+    max_age = _git("rev-parse", f"--since={when}")
+    if log is None or status is None or max_age is None:
         print(f"git found no history for {when!r}", file=sys.stderr)
         return 1
+    cutoff = float(max_age.strip().split("=")[-1])
     corpus = set(all_stems())
-    stems: set[str] = _worktree_stems(status)
+    stems: set[str] = {s for s in _worktree_stems(status)
+                       if _stem_mtime(s) >= cutoff}
     for touched in _commit_stems(log):
         if len(touched) * 2 <= len(corpus):
             stems |= touched
@@ -724,10 +738,10 @@ def _parser() -> argparse.ArgumentParser:
         help="the solvers in scope for a delta survey since a date-time",
         description="Print the stem of each solver a survey since the given "
                     "date-time covers: the ones the commits since then touch, "
-                    "plus the ones the working tree changes. A commit "
-                    "touching more than half of the solvers is a corpus-wide "
-                    "mechanical rewrite, and the solvers it touches are out "
-                    "of scope.",
+                    "plus the working-tree ones whose files changed since "
+                    "then. A commit touching more than half of the solvers "
+                    "is a corpus-wide mechanical rewrite, and the solvers "
+                    "it touches are out of scope.",
     )
     since.add_argument("when", help="a date-time git reads, e.g. "
                                     '"2026-09-08 14:30"')

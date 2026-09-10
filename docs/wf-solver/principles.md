@@ -179,6 +179,7 @@ A few train pairs underdetermine the family. Coverage is one case per model that
 - **peer model** (of a model) — another model that fits the same task.
     + T ∈ fam(M) ∩ fam(M′), M′ ≠ M
 - **prior** — a core knowledge prior that ARC training tasks are intended to teach in pure form. A case claims which priors the task teaches. Several models can claim the same priors.
+- The rules of this section apply in order: Prior or setup, then Evidence, then Subsumption. A peer that Evidence removes gets no case, even when it subsumes the model at hand.
 - Coverage shows which prior the task could be teaching.
 - A hypothesis decomposes by choice point into one branch per point, and each branch is itself a hypothesis.
 - A solver with one case has no `Choice`.
@@ -229,6 +230,8 @@ Cases are hypotheses about the prior that the task teaches.
 
 - **precedent** (of a setup structure) — the encoding that the corpus already uses for it.
     - The solver that introduces or improves a structure's encoding sets its precedent.
+    - A precedent covers how a structure is found and encoded, not the tests inside that encoding: which cells or lines qualify follows the task's concept, so a solver whose test differs still follows the precedent.
+    - When two encodings of one structure stand in the corpus, the one that is not the precedent is a deviation, and a session notes it in the review.
 - Models that find different structures are different parses.
     - 662c240a <!-- square tiles form a stack along an axis, and the output is the one tile that lacks the symmetry the others share; every case reads the same stack. -->
 - **Setup priority.** A setup follows, in order:
@@ -244,7 +247,7 @@ Cases are hypotheses about the prior that the task teaches.
 ### Evidence
 
 - **Exercised.** A peer model has rules, parameters, or comps that the model at hand does not. If no pair exercises them, that peer gets no case.
-    - A pair exercises a part of the solver when that pair's output depends on it.
+    - A pair exercises a part of the peer when that pair's output derives through it, even where a narrower rule would give the same output on every pair.
 - **No relational form.** A hypothesis with no relational form gets no case. When a hypothesis's encoding depends on arithmetic and the lib addition protocol closes the primitive, that hypothesis has no relational form (`proposals/MinHops.md`).
 - **Table entries.** A mapping table needs multiple entries exercised. A one-entry ring table over a plain border is unexercised.
     - 44f52bb0 <!-- both symmetry classes occur in the pairs. -->

@@ -16,6 +16,7 @@ The operations and passes of a solver session.
 
 - **Task per operation.** Create a task per operation, and do them one at a time.
 - **Lib protocol.** Apply the lib addition protocol where its trigger holds.
+- **Outside the pass.** Fix a problem in a file the pass does not edit when the docs say how and the fix raises no new issue. Otherwise put it in the review with the file, the line, and the fix it needs.
 - **Source reading.** Do not read `src/dl/` during a pass. If you do, report to the user why, as a gap in the docs or the runner.
 - **Keywords.**
     - If no keyword in `keywords.md` fits, propose one in the review, and add it to the solver's concept line.
@@ -73,6 +74,8 @@ Include only items that the user can act on:
 - A primitive to promote.
 - A judgment call the session made.
 - A gap in a doc or a tool.
+- A fix or a problem in a file the pass does not edit.
+- An item carried over from an earlier pass's report or the handoff brief, marked with the pass it came from. Do not recheck it against the current runner, lib, or docs.
 
 Ask these questions:
 

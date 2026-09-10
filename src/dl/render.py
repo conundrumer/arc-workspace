@@ -112,19 +112,22 @@ def render_pair_failure(p: PairResult, stem: str | None = None) -> list[str]:
             tuple(tuple(r) for r in v.actual) if v.actual else (),
             tuple(v.conflicts),
             tuple(v.missing),
+            v.error,
         )
         groups[key].append(_short(v.name) or "(out)")
 
-    for (actual_key, conflicts_tup, missing_tup), names in groups.items():
+    for (actual_key, conflicts_tup, missing_tup, error), names in groups.items():
         actual = [list(r) for r in actual_key]
         lines.append("")
         if has_named or multi:
             lines.append(f"  {', '.join(names)}:")
+        if error:
+            lines.append(f"    {error}")
         if conflicts_tup:
             lines.append(f"    conflicts at: {list(conflicts_tup)}")
         if missing_tup:
             lines.append(f"    missing cells at: {list(missing_tup)}")
-        if not conflicts_tup and not missing_tup:
+        if not error and not conflicts_tup and not missing_tup:
             for dl in render_diff(p.expected or [], actual):
                 lines.append(f"    {dl}")
 

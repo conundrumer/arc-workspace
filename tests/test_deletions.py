@@ -58,8 +58,11 @@ def kinds(source: str, determine: bool = False) -> list[str]:
 
 
 def atoms(source: str, determine: bool = False) -> list[str]:
+    """The deleted atoms alone, with the head each finding names dropped."""
     return [
-        text for _, kind, text, _ in deletions(source, determine=determine) if kind == "atom"
+        text.split("` in `")[0]
+        for _, kind, text, _ in deletions(source, determine=determine)
+        if kind == "atom"
     ]
 
 
@@ -118,6 +121,24 @@ def test_constructor_in_an_argument_list_is_not_an_atom():
 
 def test_negated_atom_stays_under_its_own_kind():
     assert kinds(CONSTRUCTOR) == ["rule", "negation", "atom", "atom"]
+
+
+def test_a_body_finding_names_the_head_of_its_rule():
+    """A body deletion reports the atom and the rule it came from, and
+    the renderer quotes each of the two."""
+    texts = [text for _, kind, text, _ in deletions(CONSTRUCTOR)]
+    assert texts == [
+        "edge(P)",
+        "!params.bg(Col)` in `edge(P)",
+        "parse.border($U(), P)` in `edge(P)",
+        "in(P, Col)` in `edge(P)",
+    ]
+    disjuncts = [
+        text for _, kind, text, _ in deletions(SOLE_NEGATION) if kind == "disjunct"
+    ]
+    assert disjuncts == ["ink(P)` in `out(P)", "!ink(P)` in `out(P)"]
+    lines = render_deletions("7c66cb00", (9, [(24, "atom", texts[3])]))
+    assert "  7c66cb00.dl:24: atom `in(P, Col)` in `edge(P)`" in lines
 
 
 def test_aggregate_body_is_not_top_level():

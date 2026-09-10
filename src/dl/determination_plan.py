@@ -89,6 +89,13 @@ def run_probe(task) -> dict[str, set[tuple]]:
 # determination — the session's choice which — until the rest go under.
 JOINT_BUDGET = 100
 
+# Printed once under the over-budget section when some listed count is a
+# Position parameter's enumerable domain.
+POSITION_DOMAIN_NOTE = (
+    "A Position parameter's candidates are the cells of the frame its stored "
+    "value implies, so its count follows the frame the parse produces."
+)
+
 
 def probe_report(
     stem: str,
@@ -105,7 +112,8 @@ def probe_report(
     count (for a multi-fact parameter, the non-empty subsets, since a set
     value applies whole); 'open' — stored inside a set no smaller than the
     domain; 'missed' — stored outside the set. A single-fact parameter also carries a 'domain' entry, 'enumerable(n)':
-    the size of its value domain, a proposer-free candidate set. embedded
+    the size of its value domain, a proposer-free candidate set. A parameter
+    with a Position column carries that entry under 'position-domain'. embedded
     lists rule-derived Params relations whose rules carry literals that
     `exempt_literal` does not exempt.
     """
@@ -179,7 +187,8 @@ def probe_report(
                     n *= len(_position_domain(t, [s[i] for s in stored], nums))
                 else:
                     n *= domains[t]
-            verdicts["domain"] = f"enumerable({n})"
+            key = "position-domain" if "Position" in types else "domain"
+            verdicts[key] = f"enumerable({n})"
         results.append((public_param(param), verdicts))
 
     combo = _combine_triples(source)
@@ -318,6 +327,11 @@ def render_determination_plan(
             "choose determination relations until the rest go under",
             [f"{param}({n})" for param, n in settle],
         )
+        position_domain = {
+            param: verdicts.get("position-domain") for param, verdicts in results
+        }
+        if any(position_domain.get(p) == f"enumerable({n})" for p, n in settle):
+            lines.append(POSITION_DOMAIN_NOTE)
     section("determined", done)
     section("no determination relation needed", covered)
     section("move data from rules to fact parameters", embedded)

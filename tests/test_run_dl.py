@@ -1,13 +1,15 @@
 """Runner: hand-written grids, and reporting a compile failure once."""
 
 import io
+import os
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
 
 from dl import cli
-from dl.facts import parse_grid, parse_output
+from dl.facts import Candidate, parse_grid, parse_output
 from dl.render import render_stem_failures
 from dl.solve import PairResult, TaskResult, VariantResult
 
@@ -57,13 +59,26 @@ def test_json_cell_out_of_range_raises():
 
 def test_a_negative_edge_distance_names_the_edge_and_the_row():
     stdout = "---------------\n===============\n[0, -1, 1, 0]\t3\n===============\n"
-    with pytest.raises(ValueError, match=r"negative edge distance b=-1.*\[0, -1, 1, 0\] 3"):
-        parse_output(stdout)
+    (c,) = parse_output(stdout)
+    assert "negative edge distance b=-1" in c.error
+    assert "[0, -1, 1, 0] 3" in c.error
+
+
+def test_a_malformed_variant_leaves_the_other_variants_grids():
+    stdout = ("---------------\n===============\n"
+              "[0, -1, 1, 0]\t3\t$Bad\n"
+              "[0, 0, 0, 0]\t3\t$Good\n"
+              "===============\n")
+    bad, good = parse_output(stdout)
+    assert bad.variant == "$Bad" and bad.grid == [] and bad.error
+    assert good == Candidate("$Good", [[3]], [], [])
 
 
 def _emit(cases):
     """A run_dl stand-in emitting (variant, grid) pairs, no defects."""
-    return lambda task_id, rows, stem=None: [(v, g, [], []) for v, g in cases]
+    return lambda task_id, rows, stem=None: [
+        Candidate(v, g, [], []) for v, g in cases
+    ]
 
 
 def test_grid_prints_a_case_per_choice(solvers, monkeypatch, capsys):
@@ -82,6 +97,22 @@ def test_grid_prints_a_case_per_choice(solvers, monkeypatch, capsys):
     assert "2 cases, 2 distinct grid(s)" in out
 
 
+def test_grid_prints_a_malformed_cases_message_and_the_other_cases_grids(
+    solvers, monkeypatch, capsys
+):
+    monkeypatch.setattr(cli, "run_dl", lambda t, r, stem=None: [
+        Candidate("$Bad", [], [], [], error="negative edge distance b=-1"),
+        Candidate("$Good", [[1]], [], []),
+    ])
+    monkeypatch.setattr("sys.stdin", io.StringIO("1\n"))
+
+    assert cli.cmd_grid(STEM) == 0
+    out = capsys.readouterr().out
+    assert "$Bad:\n  negative edge distance b=-1\n" in out
+    assert "$Good:\n  1\n" in out
+    assert "2 cases, 1 distinct grid(s)" in out
+
+
 def test_grid_reads_stdin_when_no_file(solvers, monkeypatch, capsys):
     monkeypatch.setattr(cli, "run_dl", _emit([("", [[1]])]))
     monkeypatch.setattr("sys.stdin", io.StringIO("1\n"))
@@ -93,8 +124,9 @@ def test_grid_reads_stdin_when_no_file(solvers, monkeypatch, capsys):
 
 
 def test_grid_reports_defective_cells(solvers, monkeypatch, capsys):
-    monkeypatch.setattr(cli, "run_dl",
-                        lambda t, r, stem=None: [("", [[1]], [(0, 0)], [(0, 1)])])
+    monkeypatch.setattr(
+        cli, "run_dl",
+        lambda t, r, stem=None: [Candidate("", [[1]], [(0, 0)], [(0, 1)])])
     monkeypatch.setattr("sys.stdin", io.StringIO("1\n"))
 
     assert cli.cmd_grid(STEM) == 0
@@ -283,6 +315,37 @@ def test_a_wrong_grid_still_renders_its_diff():
     assert "    expected:" in lines
 
 
+def test_a_variant_error_renders_under_its_heading():
+    """A variant whose cells describe no grid has no diff to show, so the
+    error stands in the diff's place."""
+    pair = PairResult(
+        kind="test", idx=0, ok=False, expected=[[1]],
+        variants=[VariantResult(name="$Copy", ok=False, actual=[],
+                                error="negative edge distance -1 at row 0")],
+    )
+    lines = render_stem_failures(STEM, [pair])
+    assert lines[lines.index("  $Copy:") + 1] == (
+        "    negative edge distance -1 at row 0")
+
+
+def test_variants_failing_on_different_errors_each_render():
+    """Two variants group into one block when they fail the same way. A
+    different error is a different way, so each keeps its own block."""
+    def variant(name: str, error: str) -> VariantResult:
+        return VariantResult(name=name, ok=False, actual=[], error=error)
+
+    pair = PairResult(
+        kind="test", idx=0, ok=False, expected=[[1]],
+        variants=[variant("$Copy", "negative edge distance -1 at row 0"),
+                  variant("$Complete", "inconsistent bounds")],
+    )
+    lines = render_stem_failures(STEM, [pair])
+    assert "  $Copy:" in lines
+    assert "  $Complete:" in lines
+    assert "    negative edge distance -1 at row 0" in lines
+    assert "    inconsistent bounds" in lines
+
+
 CHOICE = ".type Choice = Complete {} | Copy {}\n"
 
 
@@ -348,6 +411,16 @@ def test_since_lists_an_uncommitted_solver(repo, capsys):
 
     assert cli.cmd_since("1 minute ago") == 0
     assert capsys.readouterr().out == "bbbb2222\neeee5555\n"
+
+
+def test_since_skips_a_worktree_solver_older_than_the_date(repo, capsys):
+    _commit(repo, ["aaaa1111", "bbbb2222", "cccc3333", "dddd4444"], "four")
+    stale = repo / "programs" / "solvers" / "eeee5555.dl"
+    stale.write_text("// stale\n")
+    os.utime(stale, (0, time.time() - 3600))
+
+    assert cli.cmd_since("1 minute ago") == 0
+    assert capsys.readouterr().out == ""
 
 
 DOC = """# Keywords

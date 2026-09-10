@@ -2,8 +2,23 @@
 
 import json
 import re
+from typing import NamedTuple
 
 from dl.source import _split_args
+
+
+class Candidate(NamedTuple):
+    """One variant's output grid, with the defects found in it.
+
+    `error` carries a malformed variant's message; its grid is empty, and
+    the readers fail that variant alone.
+    """
+
+    variant: str  # '' when out has no trailing column
+    grid: list[list[int]]
+    conflicts: list[tuple[int, int]]
+    missing: list[tuple[int, int]]
+    error: str | None = None
 
 
 def grid_to_facts(rows: list[list[int]]) -> str:
@@ -37,25 +52,54 @@ def example_facts(task) -> dict[str, str]:
     }
 
 
-def parse_output(
-    stdout: str,
-) -> list[tuple[str, list[list[int]], list[tuple[int, int]], list[tuple[int, int]]]]:
+def _candidate(variant: str, cells: list[tuple[int, ...]]) -> Candidate:
+    """One variant's grid, or a ValueError naming what is malformed in it."""
+    for cell in cells:
+        for edge, k in zip(("t", "b", "l", "r"), cell[:4], strict=True):
+            if k < 0:
+                row = f"[{cell[0]}, {cell[1]}, {cell[2]}, {cell[3]}] {cell[4]}"
+                raise ValueError(
+                    f"negative edge distance {edge}={k} in {variant!r}: {row}"
+                )
+    bounds = {(t + b + 1, l + r + 1) for (t, b, l, r, _) in cells}
+    if len(bounds) != 1:
+        raise ValueError(f"inconsistent grid bounds in {variant!r}: {bounds}")
+    h, w = next(iter(bounds))
+    grid = [[-1] * w for _ in range(h)]
+    seen: dict[tuple[int, int], int] = {}
+    conflicts: set[tuple[int, int]] = set()
+    for (t, _, l, _, color) in cells:
+        if t < 0 or l < 0 or t >= h or l >= w:
+            raise ValueError(f"cell out of derived bounds: ({t}, {l}) in {h}x{w}")
+        if (t, l) in seen and seen[(t, l)] != color:
+            conflicts.add((t, l))
+        seen[(t, l)] = color
+        grid[t][l] = color
+    missing = sorted((t, l) for t in range(h) for l in range(w) if grid[t][l] == -1)
+    return Candidate(variant, grid, sorted(conflicts), missing)
+
+
+def parse_output(stdout: str) -> list[Candidate]:
     """Parse Souffle's default text output for the `out` relation.
 
-    Returns a list of (variant, grid, conflicts, missing) tuples. Variant is
-    the trailing column value (e.g. '$FlipTB') from a Choice ADT, or '' when
-    `out` has no trailing column. Cells are grouped by variant; each group
-    is one grid. `conflicts` is a sorted list of (t, l) cells that received
-    multiple distinct colors within the same variant — an ambiguous output.
+    Returns one Candidate per variant. Variant is the trailing column value
+    (e.g. '$FlipTB') from a Choice ADT, or '' when `out` has no trailing
+    column. Cells are grouped by variant; each group is one grid.
+    `conflicts` is a sorted list of (t, l) cells that received multiple
+    distinct colors within the same variant — an ambiguous output.
     `missing` is a sorted list of (t, l) cells no fact wrote — a partial
     output. An output grid is total, so either list fails the variant.
+
+    A variant whose cells describe no grid — a negative edge distance, or
+    bounds that disagree — carries that message in `error` and an empty
+    grid, so the other variants still report their grids.
     """
     parts = re.split(r"^={3,}$", stdout, flags=re.MULTILINE)
     if len(parts) < 3:
         raise ValueError(f"unexpected souffle output:\n{stdout}")
     data = parts[1].strip()
     if not data:
-        return [("", [], [], [])]
+        return [Candidate("", [], [], [])]
 
     line_re = re.compile(r"\[(-?\d+), (-?\d+), (-?\d+), (-?\d+)\]\t(-?\d+)(?:\t(.+))?$")
     grouped: dict[str, list] = {}
@@ -68,36 +112,12 @@ def parse_output(
         cells = grouped.setdefault(variant, [])
         cells.append(tuple(int(x) for x in groups[:5]))
 
-    candidates: list[
-        tuple[str, list[list[int]], list[tuple[int, int]], list[tuple[int, int]]]
-    ] = []
+    candidates: list[Candidate] = []
     for variant in sorted(grouped):
-        cells = grouped[variant]
-        for cell in cells:
-            for edge, k in zip(("t", "b", "l", "r"), cell[:4], strict=True):
-                if k < 0:
-                    row = f"[{cell[0]}, {cell[1]}, {cell[2]}, {cell[3]}] {cell[4]}"
-                    raise ValueError(
-                        f"negative edge distance {edge}={k} in {variant!r}: {row}"
-                    )
-        bounds = {(t + b + 1, l + r + 1) for (t, b, l, r, _) in cells}
-        if len(bounds) != 1:
-            raise ValueError(f"inconsistent grid bounds in {variant!r}: {bounds}")
-        h, w = next(iter(bounds))
-        grid = [[-1] * w for _ in range(h)]
-        seen: dict[tuple[int, int], int] = {}
-        conflicts: set[tuple[int, int]] = set()
-        for (t, _, l, _, color) in cells:
-            if t < 0 or l < 0 or t >= h or l >= w:
-                raise ValueError(f"cell out of derived bounds: ({t}, {l}) in {h}x{w}")
-            if (t, l) in seen and seen[(t, l)] != color:
-                conflicts.add((t, l))
-            seen[(t, l)] = color
-            grid[t][l] = color
-        missing = sorted(
-            (t, l) for t in range(h) for l in range(w) if grid[t][l] == -1
-        )
-        candidates.append((variant, grid, sorted(conflicts), missing))
+        try:
+            candidates.append(_candidate(variant, grouped[variant]))
+        except ValueError as e:
+            candidates.append(Candidate(variant, [], [], [], error=str(e)))
     return candidates
 
 

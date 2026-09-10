@@ -7,7 +7,7 @@
 
 Qualify a new primitive for `programs/lib.dl` by real use in the corpus and by generality.
 
-- **Trigger.** When an encoding in the solver needs a form banned in the program, or when a grep for its shape over `programs/solvers/` finds another solver that writes it, apply this protocol to that encoding.
+- **Trigger.** When an encoding in the solver needs a form banned in the program, or when a grep for its shape over `programs/solvers/` finds another solver that writes it, apply this protocol to that encoding. A repeated form the session finds only in other solvers goes in the review as a primitive to promote, naming the sites, and gets no entry.
 - **Generality.** An operation is general when it names one prior-level operation and takes its domain as an input, fixing no configuration beyond the frame.
     - An operation should be as abstract as possible. It only involves geometric types if there is no way to abstract away the geometry. It never involves the Color type.
 
@@ -22,9 +22,11 @@ Give a candidate an entry, `docs/wf-solver/proposals/<name>.md`, named for the o
 - the code form, when it has one
 - a `Not:` line naming what is not this operation
 - a `Match:` line with a search signature that covers every statement of the operation, including statements whose atoms sit in different lines or rules, and statements that reach the operation through another primitive. State the shape in prose and match it with the parser (`tests/test_ast_match.py`)
+    - before a dispatch, restate a `Match:` line that does not meet this spec
 - a `Survey: <date time>` line per dispatch, the dispatch time to the minute, each followed by its own result
     - the result that is relevant to the operation: the near-misses, the spec question, and a `Callers` list of the solvers that would call it
     - a result with no `Survey:` line above it counts as no result
+    - a recorded result stays as written, except its `Callers` list: strike a solver that no longer writes the operation
 - a `Closed: <date time>` line with the judgment, when the operation is closed
 
 Put in the entry what a reader needs to judge the operation, and nothing else.
@@ -50,13 +52,13 @@ Remove the entry's file at these points:
 
     The entry's state decides what to do next.
 
-    - If no entry exists, write one with its `Survey:` line. Then send the `survey` agent the entry's path, the scope (the whole corpus), and the scratch path (`.scratch/<task_id>/`).
+    - If no entry exists, write one with its `Survey:` line. Then send the `survey` agent the entry's path, the scope (the whole corpus), and the scratch path (`.scratch/<task_id>/<entry name>/`).
     - If an entry is closed, keep its judgment. Encode the solver without the operation, in the way the entry records.
     - If an entry has a survey result, add this solver under `Callers`.
-        - **Newer solvers.** If some solvers postdate the entry's `Survey:` time, send the `survey` agent the path, the scope, and the scratch path, and append the relevant results to the entry. The scope is the solvers that `uv run python scripts/run_dl.py since <time>` lists.
-    - If an entry has no result and no survey of yours is running, dispatch the survey.
+        - **Newer solvers.** If some solvers postdate the entry's `Survey:` time, send the `survey` agent the path, the scope, and the scratch path (`.scratch/<task_id>/<entry name>/`), and append the relevant results to the entry. The scope is the solvers that `uv run python scripts/run_dl.py since <time>` lists.
+    - If an entry has no result and no survey is in flight, dispatch the survey.
 
-    **Dispatch.** Dispatch early, and do not survey yourself. The agent reports callers, near-misses, the spec question, and reimplementations.
+    **Dispatch.** Dispatch early, and do not survey yourself. Write the dispatch's `Survey:` line in the entry before sending the agent. A `Survey:` line with no result under it is a survey in flight: dispatch no survey of that scope, and read the result when it lands. If the pass needs the result before it lands, dispatch a second survey and report it in the review. If the pass ends first, say in the review that the result is pending. The agent reports callers, near-misses, the spec question, and reimplementations.
 
     - Count a family (`// family:` siblings with their representative) as one caller.
     - Add the callers, near-misses, and spec question to the entry.

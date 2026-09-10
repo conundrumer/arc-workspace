@@ -171,7 +171,7 @@ combine_member(0, [0,0,0,1], 0). combine_member(0, [0,0,1,0], 0).
 
 ## Stored total orders as dense ranks
 
-A total order is stored in the parameters as dense 0-based rank data and is consumed only by comparison. Ranks state each element's place in the sequence directly; successor edges state it only through closure. Because ranks are used only for comparison, the solver does not use their numeric structure for anything except ordering. Dense 0-based values keep the encoding canonical, since a gapped value encodes one order many ways.
+A total order is stored in the parameters as dense rank data and is consumed only by comparison. Ranks state each element's place in the sequence directly; successor edges state it only through closure. Because ranks are used only for comparison, the solver does not use their numeric structure for anything except ordering. Dense values keep the encoding canonical, since a gapped value encodes one order many ways. The base is whatever the store leaves free: 0 in a plain relation, and 1 in a `GRID_SPARSE` or `GRID_MASK` store, where 0 states absence.
 
 ```
 .decl ink_rank(c: Color, r: number)
@@ -183,6 +183,8 @@ beaten(P, Col) :-
 ```
 
 Over a spatial domain, the ranks can be stored as a GRID: a68b268e's `params.prio` shows the precedence in the tile arrangement.
+
+(794b24be — a fill order in a `GRID_SPARSE` store, based at 1.)
 
 ## Set-keyed relations via parent/child tables
 
@@ -288,34 +290,3 @@ A rectangular region is one Position: its four edge margins. `geq(P, M)` expands
 .decl cell_split(p: Position, col: Color, p_inner: Position, p_across: Position)
 cell_split(P, Col, P_inner, P_across) :- in(P, Col), c.axis(A), split(P, A, P_inner, P_across).
 ```
-
-## Slide until halted
-
-A mover's translation is found by walking.
-
-1. The solver enumerates the displacements that the frame admits.
-2. It advances one step at a time until the moved footprint covers a stopper.
-3. The first displacement that is both reachable and halted is the final displacement.
-
-The stopper set defines the contact semantics (cells one step back from the obstacle's cells, or from its box). Contact variants therefore differ only in their stoppers.
-
-```
-.decl shift(delta: Shift)
-shift(ORIGIN).
-shift(Delta) :-
-    in(P, _), move_dir(D),
-    axis_of(D, A), sub_extent(P, A, K), jump_delta(D, K, Delta).
-
-.decl halted(delta: Shift)
-halted(Delta) :- shift(Delta), shape(P), compose(P, Delta, P2), stopper(P2).
-
-.decl reach(delta: Shift)
-reach(ORIGIN).
-reach(Delta2) :-
-    reach(Delta), !halted(Delta),
-    move_dir(D), step_delta(D, S), compose(Delta, S, Delta2), shift(Delta2).
-```
-
-The names are corpus-wide: `move_dir`, `stopper`, `shift`, `halted`, `reach`.
-
-(05f2a901 — three contact cases as per-case stoppers; 11dc524f — box-flush dock.)

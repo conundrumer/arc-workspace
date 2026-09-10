@@ -115,6 +115,9 @@ STOCK_COMPS = ("Params", "Determine", "Parse")
 PROPOSALS_DIR = DOCS_DIR / "proposals"
 # The category a proposal comp with no entry is reported under.
 NO_ENTRY_CAT = "comp without entry"
+# The category a Parse comp standing without a Determine comp is reported
+# under.
+LONE_PARSE_CAT = "parse without determine"
 # RIGID chart names exist only in the macro expansion; any appearance in
 # solver source reads a stored pose the model claims unobservable.
 RIGID_CHART_RE = re.compile(r"\b_rigid_\w+")
@@ -424,6 +427,25 @@ def _comps_without_entry(
     return findings
 
 
+def _lone_parse(
+    comps: dict[str, Comp], raw_lines: list[str],
+) -> list[tuple[str, int, str, str]]:
+    """A Parse comp in a solver that has no Determine comp.
+
+    Parse holds a derivation that the program and the Determine comp share.
+    With no Determine comp, nothing shares it.
+    """
+    comp = comps.get("Parse")
+    if comp is None or "Determine" in comps:
+        return []
+    return [(
+        LONE_PARSE_CAT, comp.line,
+        "a parse with no Determine comp belongs in program rules; fold it "
+        "into the program",
+        raw_lines[comp.line - 1].rstrip(),
+    )]
+
+
 def _type_scopes(
     items: list[Item], linted: bool = True,
 ) -> list[tuple[TypeDecl, bool]]:
@@ -556,6 +578,7 @@ def lint_program(source: str) -> list[tuple[str, int, str, str]]:
     findings.extend(_shadowed_types(program.items, raw_lines))
     findings.extend(_lib_named(program.items, raw_lines))
     findings.extend(_comps_without_entry(program.items, raw_lines))
+    findings.extend(_lone_parse(program.comps(), raw_lines))
     findings.extend(_banned_types(program.items, raw_lines))
     findings.extend(_params_data(program.comps().get("Params"), raw_lines, code))
     findings.sort(key=lambda f: (f[1], f[0]))

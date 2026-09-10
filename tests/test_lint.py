@@ -152,6 +152,30 @@ def test_comp_without_entry_fires(tmp_path, monkeypatch):
     assert "docs/wf-solver/proposals/Zigzag.md" in fs[0][2]
 
 
+def test_parse_comp_without_determine_fires():
+    src = """\
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position)
+}
+.init parse = Parse<Unit>
+"""
+    fs = [f for f in lint_program(src) if f[0] == "parse without determine"]
+    assert [f[1] for f in fs] == [1]
+    assert "belongs in program rules" in fs[0][2]
+
+
+def test_parse_comp_beside_determine_stays_quiet():
+    src = """\
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position)
+}
+.comp Determine {
+    .decl v(x: number)
+}
+"""
+    assert "parse without determine" not in cats(src)
+
+
 def test_reserved_name_in_unparsable_source_fires():
     src = """\
 .decl count(n: number)
