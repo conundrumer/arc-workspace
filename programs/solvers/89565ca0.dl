@@ -36,15 +36,12 @@ ink(P, Col) :- in(P, Col), !params.bg(Col).
 .init piece = Components<Color>
 piece.node(Col, P) :- ink(P, Col).
 
-.init pieces = Tally<Color, Ident>
-pieces.item(Col, Id) :- piece.label(Col, _, Id).
-
 // The specks are the color that lies in the most pieces.
-.init scattered = ArgExtremes<Unit, Color>
-scattered.cand($U(), Col, N) :- pieces.tally(Col, N).
+.init scattered = Mode<Unit, Color, Ident>
+scattered.item($U(), Col, Id) :- piece.label(Col, _, Id).
 
 .decl speck(col: Color)
-speck(Col) :- scattered.high($U(), Col, _).
+speck(Col) :- scattered.mode($U(), Col).
 
 .decl frame(col: Color)
 frame(Col) :- ink(_, Col), !speck(Col).
@@ -54,10 +51,9 @@ frame(Col) :- ink(_, Col), !speck(Col).
 .decl line(f: Color, p: Position)
 line(F, P) :- frame(F), ink(P, F).
 line(F, P) :-
-    frame(F), ink(P, _),                     // a cell something hides
-    dir_elem(D), step_delta(D, S),
-    compose(P, S, Q), line(F, Q),            // the cell behind it on the line
-    compose(Q, S, Q2), line(F, Q2).          // and the one behind that
+    frame(F), ink(P, _),                          // a cell something hides
+    dir_elem(D), neighbor(P, D, Q), line(F, Q),   // the cell behind it on the line
+    neighbor(Q, D, Q2), line(F, Q2).              // and the one behind that
 
 // --- the compartments a frame closes off ---
 

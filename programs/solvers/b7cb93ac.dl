@@ -33,9 +33,6 @@ region.node(Col, P) :- in(P, Col), !params.bg(Col).
 .decl piece_cell(pc: Piece, p: Position)
 piece_cell([Col, Id], P) :- region.label(Col, P, Id).
 
-.decl piece(pc: Piece)
-piece(Pc) :- piece_cell(Pc, _).
-
 .init box = BoxFrame<Piece>
 box.cell(Pc, P) :- piece_cell(Pc, P).
 
@@ -43,16 +40,13 @@ box.cell(Pc, P) :- piece_cell(Pc, P).
 .decl shape(pc: Piece, p: Position)
 shape(Pc, S) :- box.inner(Pc, _, S).
 
-.init size = Tally<Piece, Position>
-size.item(Pc, P) :- piece_cell(Pc, P).
-
 // --- the candidate placements ---
 
-.init largest = ArgExtremes<Unit, Piece>
-largest.cand($U(), Pc, N) :- size.tally(Pc, N).
+.init largest = Mode<Unit, Piece, Position>
+largest.item($U(), Pc, P) :- piece_cell(Pc, P).
 
 .decl anchor(pc: Piece)
-anchor(Pc) :- largest.high($U(), Pc, _).
+anchor(Pc) :- largest.mode($U(), Pc).
 
 // The anchor's symmetries — the turns that fix its footprint.
 .init turned = D4Map<Piece, Unit>
@@ -65,7 +59,7 @@ turned.dst(Pc, S, $U()) :- anchor(Pc), shape(Pc, S).
 
 .decl foot(t: Turn, p: Position)
 foot([Pc, D], S2) :-
-    piece(Pc), c4_elem(D), shape(Pc, S), apply(D, S, S2),
+    c4_elem(D), shape(Pc, S), apply(D, S, S2),
     ( !anchor(Pc)          // a turning piece — every rotation
     ; turned.map(Pc, D)    // the anchor — only the turns that fix its pose
     ).
