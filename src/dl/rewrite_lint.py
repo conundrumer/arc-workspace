@@ -1473,7 +1473,9 @@ class _Lint:
 
     def argmax(self, idx: int, info: RuleInfo) -> None:
         """`beaten(X) :- score(X, N), score(_, N2), N2 > N`, read only
-        negated: an aggregate in disguise."""
+        negated: an aggregate in disguise. A head that takes, from each
+        of the two atoms, a variable the other does not bind stays
+        quiet: it states a pairwise comparison, not an extremum."""
         rule = info.rule
         if rule.body is None:
             return
@@ -1489,6 +1491,10 @@ class _Lint:
             cvars = literal_vars(cmps[0])
             if not (cvars & literal_vars(atoms[0])) \
                     or not (cvars & literal_vars(atoms[1])):
+                return
+            head_vars = literal_vars(rule.head)
+            v0, v1 = literal_vars(atoms[0]), literal_vars(atoms[1])
+            if (v0 - v1) & head_vars and (v1 - v0) & head_vars:
                 return
         key = self.rule_head_key(idx)
         uses = self.uses(key)
@@ -1632,12 +1638,19 @@ class _Lint:
         """The finding message, or None when the pair spans choices.
         Same-shaped heads make the pair a disjunction merge; the message
         says so. A different-head pair must share more to be worth a
-        look, so it keeps a higher bar."""
+        look, so it keeps a higher bar. A later body that negates the
+        earlier head is a defect-negation universal: it restates that
+        rule's frame by construction, so the pair stays quiet."""
         if prev.section != cur.section:
             return None
         ph, ch = prev.rule.head, cur.rule.head
         if _tags(_atom_str(ph)) & self.choice_tags \
                 != _tags(_atom_str(ch)) & self.choice_tags:
+            return None
+        if any(isinstance(lit, Neg) and lit.atom.qual is None
+               and lit.atom.name == ph.name
+               for body in _flatten(cur.rule.body or [])
+               for lit in body):
             return None
         msg = f"{width} literals shared with `{ph.name}` (line {prev.rule.line})"
         if _canon_window([ph]) == _canon_window([ch]):

@@ -43,7 +43,7 @@ The final displacement of a multi-cell mover that slides in a direction until it
 
 Not: lib `Slide` (a point mover standing in a free-node set, resting on the last free node — a dock rests at the first contact displacement, which is not a free node, and a footprint already in contact rests at ORIGIN, which no free-node set states); `Ray.stop` (a cast's first blocked cell, with no footprint); a translation stored as data or read off the target with `displacement`.
 
-Match: `!halted` — a recursion over a Shift domain that steps by `neighbor` or `step_delta`+`compose` toward a move direction and is negated on a contact test composing a footprint against a stopper set. The `shift`/`halted`/`reach` names are corpus-wide (patterns.md "Slide until halted"). At survey time, `!halted` matched exactly the callers.
+Match: `!halted` — a recursion over a Shift domain that steps by `neighbor` or `step_delta`+`compose` toward a move direction and is negated on a contact test composing a footprint against a stopper set. The `shift`/`halted`/`reach` names are corpus-wide. At survey time, `!halted` matched exactly the callers.
 
 Survey: 2026-09-08 17:10
 

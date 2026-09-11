@@ -8,9 +8,9 @@ apply_about(D, F, P, P_out) :-
     displacement(F, P, V), apply(D, V, V2), compose(F, V2, P_out).
 ```
 
-Not: `apply` (about the grid's frame); `Reframe` (the view alone, with no transform); a seat with no transform (`displacement` and `compose` around a stored offset, as a stamp placement reads); a transform whose landing is a Shift no origin produces, such as a searched placement offset; `D4Map` (which tests a transform over a cell set and reports the element, not a cell's image).
+Not: `apply` (about the grid's frame); `Reframe` (the view alone, with no transform); a seat with no transform, which covers a seat of an offset the rule does not derive from the seated cell itself (`displacement` and `compose` around a stored offset, as a stamp placement reads) and not a displacement seated back from the far end of its own read; a transform whose landing is a Shift no origin produces, such as a searched placement offset; `D4Map` (which tests a transform over a cell set and reports the element, not a cell's image).
 
-Match: a rule that binds one Position F and holds all three of `displacement(F, P, V)` — or a `Reframe.inner` whose `outer` is F — `apply(D, V, V2)`, and `compose(F, V2, P_out)`, in either compose argument order. Grep signature: files holding both `displacement` (or `.inner`) and `apply(` and `compose(`; `grep -n 'displacement\|\.inner\|apply(\|compose(' programs/solvers/*.dl` then read the rules that hold all three.
+Match: a rule that binds one Position F and holds all three of `displacement(F, P, V)` — or a `Reframe.inner` whose `outer` is F — `apply(D, V, V2)`, and `compose(F, V2, P_out)`, in either compose argument order. A second form names no D4 element: a rule that binds one Position F and holds `displacement(P, F, V)` with `compose(F, V, Q)` — the displacement read from the cell to the frame, seated back from the frame — states this operation at `D4_HT`, because the half turn of a displacement is that displacement reversed. Grep signature: files holding both `displacement` (or `.inner`) and `apply(` and `compose(`; `grep -n 'displacement\|\.inner\|apply(\|compose(' programs/solvers/*.dl` then read the rules that hold all three. A site of the second form carries no D4 token, so that signature passes over it: the scan also reads every rule that holds both `displacement` and `compose` over one shared Position.
 
 Survey: 2026-09-08 20:07
 
@@ -62,6 +62,7 @@ That pass read the 385 solvers whose file time is at or after 06:40 (another cor
 - `4c5c2cf0` — program and determination; the surfacing solver.
 - `50c07299` — a fixed half turn about the cell just past a segment's end, with no D4 element named in the file.
 - `2bcee788` — the shape about the two-line box each of its mirror cases bounds.
+- `2ccd9fef` — a run's end carried one more step by the velocity it had, which is that end's half turn about the cell it moved to, with no D4 element named in the file.
 - `2b01abd0` — the figure about a cell of the divider line, by the flip of the line's perpendicular axis; the entry's exact form. Any line cell serves as the frame, since the flip fixes the along-axis.
 - `538b439f` — each rectangle cell about the divider's line, by the flip of the axis that line cuts; the entry's exact form. The frame is the line's own axis-only Position, which the line detection already holds.
 - `5545f144` — each drawn cell about a candidate tip cell, by the flip of the axis perpendicular to the tip's heading; the entry's exact form. The image is tested for membership in the same figure, so the rule states its domain through that test.
@@ -82,7 +83,7 @@ Five of those callers seat by reading a frame view backward, and so inherit a do
 - A view seated at another Position with no transform — a stored or derived figure, offset, or footprint carried to a target: `247ef758`, `3befdf3e`, `3f23242b`, `5117e062`, `4c177718`, `5168d44c`, `4acc7107`, `14754a24`, `363442ee`, `414297c0`, `48d8fb45`.
 - The D4 element labels a stored pose, compared as a set — no cell's image is taken: `4c177718`, `3a25b0d8`, `3d588dc9`, `409aa875` (through `D4Map`), `3aa6fb7a` (a RIGID pose, composed onto a searched `Occurrences` placement).
 - The box selects, and does not frame — a `Bbox` says which cells transform, and the transform itself is about the grid's or a panel's own frame: `2697da3f`, `4c7dc4dd`, `67b4a34d` with its family. `apply` states it.
-- Nothing seated back — the transform's output is the crop's own frame (`7468f01a`); an extent-changing Inset with the transform about the mosaic's frame (`0934a4d8`); a repeated displacement that coincides with a half turn but holds no D4 element (`2ccd9fef`); a turned inner position read as a tile index (`103eff5b`); a transform inside a `BoxFrame` crop whose output is that crop's own frame (`291dc1e1`); a chain reversed by pairing `Order.rank` against `Order.rank_desc` (`5792cb4d`), which is a reflection recovered from step indices along a path that bends, so no D4 element and no frame Position realize it.
+- Nothing seated back — the transform's output is the crop's own frame (`7468f01a`); an extent-changing Inset with the transform about the mosaic's frame (`0934a4d8`); a turned inner position read as a tile index (`103eff5b`); a transform inside a `BoxFrame` crop whose output is that crop's own frame (`291dc1e1`); a chain reversed by pairing `Order.rank` against `Order.rank_desc` (`5792cb4d`), which is a reflection recovered from step indices along a path that bends, so no D4 element and no frame Position realize it.
 
 ## Spec
 

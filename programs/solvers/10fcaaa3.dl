@@ -5,7 +5,7 @@
 // arrangement; the halo fills bg cells only. Cases claim its footprint:
 //
 //   $Corners() — one step toward each corner, painted params.paint.
-//   $Table()   — a stored params.footprint grid, seated on the mark by params.seat.
+//   $Table()   — a stored params.footprint stamp, anchored on the mark.
 
 #include "../lib.dl"
 
@@ -20,12 +20,12 @@
     .decl paint(col: Color) paint(8).
 
     // --- Table ---
-    .decl footprint(p: Position, col: Color)
-    GRID_SPARSE_3x3(footprint,
-        8, _, 8,
-        _, _, _,
-        8, _, 8)
-    .decl seat(p: Position) seat([1, 1, 1, 1]).
+    // Halo cells as offsets from the mark, `@` on the mark's cell.
+    .decl footprint(delta: Shift, col: Color)
+    GRID_STAMP_SPARSE_3x3(footprint,
+        8,  _, 8,
+        _, @_, _,
+        8,  _, 8)
 }
 
 .init params = Params
@@ -58,7 +58,7 @@ stamp(Off, Col, $Corners()) :-
 
 // --- Table ---
 
-stamp(Off, Col, $Table()) :- params.footprint(Pf, Col), params.seat(Ps), displacement(Ps, Pf, Off).
+stamp(Off, Col, $Table()) :- params.footprint(Off, Col).
 
 .decl impl_choice(ch: Choice)
 impl_choice($Corners()). impl_choice($Table()).
@@ -83,28 +83,31 @@ out(P, Col, Ch) :- parse.tiled($U(), P, Col), impl_choice(Ch), !halo(P, _, Ch).
         ex_out(E, P, Col), !params.bg(Col),
         parse.tiled(E, P, Cb), params.bg(Cb).
 
-    // Candidate footprint cells: the seat's frame.
-    .init frame = Frame2D<Unit>
-    frame.extent($U(), A, N) :- axis_elem(A), params.seat(Ps), axis_dim(Ps, A, N).
-
-    // Each candidate's targets: its offset from the seat, seated on every mark.
-    .decl target(pf: Position, e: Example, p: Position)
-    target(Pf, E, P) :-
-        frame.cell($U(), Pf), params.seat(Ps), displacement(Ps, Pf, Off),
+    // A candidate footprint cell: a painted cell read as an offset from some
+    // mark, beside the cell that witnesses it.
+    .decl witness(off: Shift, e: Example, p: Position, col: Color)
+    witness(Off, E, P, Col) :-
+        painted(E, P, Col),
         parse.tiled(E, M, Cm), !params.bg(Cm),  // a mark of the arrangement
-        compose(M, Off, P).
+        displacement(M, P, Off).
 
-    // A candidate's target painted from some mark...
-    .decl witness(pf: Position, col: Color)
-    witness(Pf, Col) :- target(Pf, E, P), painted(E, P, Col).
+    // A candidate some seating of it contradicts.
+    .decl mismatch(off: Shift, col: Color)
+    mismatch(Off, Col) :-
+        witness(Off, _, _, Col),
+        parse.tiled(E, M, Cm), !params.bg(Cm), compose(M, Off, P),  // seated on a mark
+        parse.tiled(E, P, Cb), params.bg(Cb),                       // its target is bg
+        ex_out(E, P, C2), C2 != Col.                                // the output holds something else
 
-    // ...and no bg target of it that the output contradicts.
-    .decl mismatch(pf: Position, col: Color)
-    mismatch(Pf, Col) :-
-        witness(Pf, Col), target(Pf, E, P),
-        parse.tiled(E, P, Cb), params.bg(Cb),  // on-grid bg target
-        ex_out(E, P, C2), C2 != Col.           // the output holds something else
+    // The painted cells each surviving candidate accounts for.
+    .decl explains(off: Shift, e: Example, p: Position, col: Color)
+    explains(Off, E, P, Col) :- witness(Off, E, P, Col), !mismatch(Off, Col).
 
-    .decl footprint(p: Position, col: Color)
-    footprint(Pf, Col) :- witness(Pf, Col), !mismatch(Pf, Col).
+    // Another candidate accounts for that cell too.
+    .decl shared(off: Shift, e: Example, p: Position, col: Color)
+    shared(Off, E, P, Col) :- explains(Off, E, P, Col), explains(Off2, E, P, Col), Off2 != Off.
+
+    // The offsets a painted cell leaves no other candidate for.
+    .decl footprint(delta: Shift, col: Color)
+    footprint(Off, Col) :- explains(Off, E, P, Col), !shared(Off, E, P, Col).
 }

@@ -1,4 +1,4 @@
-"""Parameter value sweep: what a skipped parameter tells the reader."""
+"""Parameter value sweep: what its report tells the reader."""
 
 import re
 from pathlib import Path
@@ -11,26 +11,12 @@ from dl import sweep
 STEM = "abcd1234"
 
 
-def test_a_param_over_the_cap_names_the_rerun(tmp_path: Path, monkeypatch):
-    (tmp_path / f"{STEM}.dl").write_text(
-        ".comp Params {\n    .decl n(k: number) n(2).\n}\n")
-    monkeypatch.setattr(sweep, "SOLVERS_DIR", tmp_path)
-    monkeypatch.setattr(sweep, "load_task",
-                        lambda task_id: SimpleNamespace(train=[], test=[]))
-    monkeypatch.setattr(sweep, "_lib_defines", lambda: {})
-    monkeypatch.setattr(sweep, "_number_domain", lambda task: list(range(5)))
-
-    assert sweep.sweep_report(STEM, max_candidates=2) == [
-        ("n", "skip",
-         f"5 alternative values, cap 2; rerun with run_dl.py sweep {STEM} 5"),
-    ]
-
-
-def _stub(tmp_path: Path, monkeypatch, facts: str, domain: list[int]):
+def _stub(tmp_path: Path, monkeypatch, facts: str, domain: list[int],
+          decl: str = "n(k: number)"):
     """A one-parameter solver over a small number domain, with the task and
     the lib defines stubbed out."""
     (tmp_path / f"{STEM}.dl").write_text(
-        f".comp Params {{\n    .decl n(k: number) {facts}\n}}\n")
+        f".comp Params {{\n    .decl {decl} {facts}\n}}\n")
     monkeypatch.setattr(sweep, "SOLVERS_DIR", tmp_path)
     monkeypatch.setattr(sweep, "load_task",
                         lambda task_id: SimpleNamespace(train=[], test=[]))
@@ -40,6 +26,78 @@ def _stub(tmp_path: Path, monkeypatch, facts: str, domain: list[int]):
 
 def _values(source: str) -> frozenset[int]:
     return frozenset(int(m) for m in re.findall(r"\bn\((-?\d+)\)", source))
+
+
+def test_a_param_over_the_cap_sweeps_single_column_changes(
+        tmp_path: Path, monkeypatch):
+    _stub(tmp_path, monkeypatch, "n(1, 2).", [0, 1, 2, 3, 4],
+          decl="n(a: number, b: number)")
+    tried = []
+
+    def profile(source, examples):
+        a, b = re.findall(r"\bn\((-?\d+), (-?\d+)\)", source)[0]
+        tried.append((int(a), int(b)))
+        return "ref" if tried[-1] == (1, 2) else None
+
+    monkeypatch.setattr(sweep, "_profile", profile)
+
+    [(param, status, detail)] = sweep.sweep_report(STEM, max_candidates=4)
+    assert (param, status) == ("n", "swept-near")
+    # The scope tuple is the swept count and the whole candidate count.
+    assert detail[4] == (9, 25)
+    # One column moves with the other held; both at once stay out.
+    assert (3, 2) in tried and (1, 3) in tried and (3, 3) not in tried
+    # A coordinate sweep names its scope in place of the tick.
+    assert sweep.render_sweep([(param, status, detail)]) == [
+        "n: unique = (1, 2) (swept single-column changes; 9 of 25 values)"
+    ]
+
+
+def test_a_one_column_param_over_the_cap_is_swept_whole(
+        tmp_path: Path, monkeypatch):
+    """One column's coordinate slice is the cross product itself, so that
+    sweep is complete and keeps its tick."""
+    _stub(tmp_path, monkeypatch, "n(1).", [0, 1, 2, 3, 4])
+
+    monkeypatch.setattr(
+        sweep, "_profile",
+        lambda source, examples: "ref" if _values(source) == frozenset({1}) else None)
+
+    [(param, status, detail)] = sweep.sweep_report(STEM, max_candidates=4)
+    assert (param, status) == ("n", "swept")
+    assert sweep.render_sweep([(param, status, detail)]) == ["n: unique = (1) ✓"]
+
+
+def test_a_zero_is_no_candidate_set_member_where_stored_rows_hold_none(
+        tmp_path: Path, monkeypatch):
+    _stub(tmp_path, monkeypatch, "n(1). n(2).", [0, 1, 2, 3])
+    tried = []
+
+    def profile(source, examples):
+        vals = _values(source)
+        tried.append(vals)
+        return "ref" if vals == frozenset({1, 2}) else None
+
+    monkeypatch.setattr(sweep, "_profile", profile)
+
+    [(param, status, _detail)] = sweep.sweep_report(STEM, max_candidates=4)
+    assert (param, status) == ("n", "swept-set-near")
+    assert not any(0 in v and len(v) > 1 for v in tried)
+
+
+def test_each_parameter_prints_its_candidate_count(
+        tmp_path: Path, monkeypatch, capsys):
+    _stub(tmp_path, monkeypatch, "n(1). n(2).", [0, 1, 2, 3])
+
+    def profile(source, examples):
+        return "ref" if _values(source) == frozenset({1, 2}) else None
+
+    monkeypatch.setattr(sweep, "_profile", profile)
+
+    sweep.sweep_report(STEM, max_candidates=4)
+    err = capsys.readouterr().err.splitlines()
+    # The singleton candidates, then the candidate sets.
+    assert err == ["n: 4 values", "n: 6 values"]
 
 
 def test_a_set_over_the_cap_sweeps_single_row_changes(tmp_path: Path, monkeypatch):
@@ -64,6 +122,39 @@ def test_a_set_over_the_cap_sweeps_single_row_changes(tmp_path: Path, monkeypatc
     assert sweep.render_sweep([(param, status, detail)])[0].startswith(
         "n: stored {(1), (2)} (swept single-row changes); ")
 
+
+def test_a_wholly_swept_set_keeps_the_tick(tmp_path: Path, monkeypatch):
+    """A set sweep that covers the whole candidate space settles the
+    parameter, so its line carries the mark."""
+    _stub(tmp_path, monkeypatch, "n(1). n(2).", [0, 1, 2])
+
+    monkeypatch.setattr(
+        sweep, "_profile",
+        lambda source, examples: "ref" if _values(source) == frozenset({1, 2}) else None)
+
+    [(param, status, detail)] = sweep.sweep_report(STEM, max_candidates=4)
+    assert (param, status) == ("n", "swept-set")
+    assert sweep.render_sweep([(param, status, detail)]) == [
+        "n: unique as a set = {(1), (2)} ✓ (facts fit only together; "
+        "swept whole)"
+    ]
+
+
+def test_a_partly_swept_set_drops_the_tick(tmp_path: Path, monkeypatch):
+    """A partial set sweep names the part of the candidate space it swept, and
+    withholds the mark, as a partial value sweep does."""
+    _stub(tmp_path, monkeypatch, "n(1). n(2).", [0, 1, 2, 3])
+
+    monkeypatch.setattr(
+        sweep, "_profile",
+        lambda source, examples: "ref" if _values(source) == frozenset({1, 2}) else None)
+
+    [(param, status, detail)] = sweep.sweep_report(STEM, max_candidates=4)
+    assert (param, status) == ("n", "swept-set-near")
+    assert sweep.render_sweep([(param, status, detail)]) == [
+        "n: unique as a set = {(1), (2)} (facts fit only together; "
+        "swept single-row changes)"
+    ]
 
 
 def _kept(rel: str):

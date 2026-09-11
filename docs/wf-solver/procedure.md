@@ -19,6 +19,7 @@ The operations and passes of a solver session.
 - **Outside the pass.** Fix a problem in a file the pass does not edit when the docs say how and the fix raises no new issue. Otherwise put it in the review with the file, the line, and the fix it needs.
 - **Roles.** Spawn a role as the `handbook` agent, with the text of `.claude/roles/<role>.md` followed by the brief as the prompt.
 - **Source reading.** Do not read `src/dl/` during a pass. If you do, report to the user why, as a gap in the docs or the runner.
+- **Corpus.** The corpus is the approved solvers. Take a draft as no evidence for a claim about the corpus, and cite one in a doc under `docs/` only in a survey result.
 - **Keywords.**
     - If no keyword in `keywords.md` fits, propose one in the review, and add it to the solver's concept line.
     - If an existing keyword's gloss should change, propose it in the review.

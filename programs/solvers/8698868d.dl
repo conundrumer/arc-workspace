@@ -80,11 +80,11 @@ fewer(Id, Id2) :- region_count.tally(Id, N), region_count.tally(Id2, N2), N < N2
 
 .init block_rank = Order<Unit, Ident>
 block_rank.elem($U(), Id) :- block(Id).
-block_rank.before($U(), Id, Id2) :- block(Id), block(Id2), fewer(Id, Id2).
+block_rank.before($U(), Id, Id2) :- fewer(Id, Id2).
 
 .init piece_rank = Order<Unit, Ident>
 piece_rank.elem($U(), Id) :- piece(Id).
-piece_rank.before($U(), Id, Id2) :- piece(Id), piece(Id2), fewer(Id, Id2).
+piece_rank.before($U(), Id, Id2) :- fewer(Id, Id2).
 
 pair(Id_b, Id_p, $Rank()) :-
     ( block_rank.rank($U(), Id_b, R), piece_rank.rank($U(), Id_p, R)             // from the fewest

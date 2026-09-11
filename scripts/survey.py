@@ -8,7 +8,7 @@ operator can follow the session. A run may take up to an hour, the timeout
 `solver_console.config.SURVEY_TIMEOUT` sets; when it ends, the entry carries
 the report under a `Survey:` line of its own.
 
-The scope is the whole corpus when the entry carries no result, and otherwise
+The scope is every solver when the entry carries no result, and otherwise
 the solvers written since the entry's newest `Survey:` time. An entry with no
 such solver is current, and the command runs nothing. A closed entry is
 refused; `--force` surveys it anyway.

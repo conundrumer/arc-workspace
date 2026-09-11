@@ -308,6 +308,7 @@ def render_determination_plan(
     joint = math.prod(n for _, n in settle)
     over = joint > JOINT_BUDGET
     covered = sorted(exact + ([] if over else [param for param, _ in settle]))
+    verdicts_by_param = dict(results)
     lines: list[str] = []
 
     def section(header: str, params: list[str]) -> None:
@@ -317,6 +318,28 @@ def render_determination_plan(
             lines.append("")
         lines.append(f"{header}:")
         lines.extend(f"  {param}" for param in params)
+
+    def covered_line(param: str) -> str:
+        """The parameter with the verdict that covers its value: the
+        proposer that reads it exactly, or the smallest candidate set."""
+        best: tuple[int, str] | None = None
+        for name, verdict in verdicts_by_param.get(param, {}).items():
+            if verdict == "exact":
+                rank = 0
+            elif m := re.fullmatch(r"(?:narrowed|enumerable)\((\d+)\)", verdict):
+                rank = int(m.group(1))
+            else:
+                continue
+            if best is None or rank < best[0]:
+                best = (rank, f"{name} {verdict}")
+        if best is None:
+            # A paired-table row carries the verdict of each of its parts.
+            for row, verdicts in results:
+                if "+" in row and param in row.split("+"):
+                    for name, verdict in verdicts.items():
+                        if verdict == "exact":
+                            best = (0, f"{name} {verdict}")
+        return f"{param} ({best[1]})" if best else param
 
     if not determine and not over and not embedded:
         lines.append("no actions")
@@ -333,7 +356,11 @@ def render_determination_plan(
         if any(position_domain.get(p) == f"enumerable({n})" for p, n in settle):
             lines.append(POSITION_DOMAIN_NOTE)
     section("determined", done)
-    section("no determination relation needed", covered)
+    section(
+        "a proposer or the parameter's value domain covers the value on "
+        "this task's examples — no determination relation needed",
+        [covered_line(param) for param in covered],
+    )
     section("move data from rules to fact parameters", embedded)
 
     detail = [

@@ -5,8 +5,14 @@
 // stamp whole; the others carry a single cell of it, or nothing. The output
 // completes every started stamp: that shape carried onto the corner, in the
 // color of the cell already drawn there.
+//
+// $Cover — a stamp covers every cell of its footprint.
+// $Fill — a stamp fills only background and the outline it is drawn over;
+// ink already on the grid stays.
 
 #include "../lib.dl"
+
+.type Choice = Cover {} | Fill {}
 
 .comp Params {
     // The color the outlines are drawn in.
@@ -73,6 +79,22 @@ painted(P, Col) :-
     stamp(P_site, P),               // a cell of the stamp at a site
     stamp(P_site, Q), ink(Q, Col).  // in the color of the part already drawn
 
-.decl out(p: Position, col: Color)
-out(P, Col) :- in(P, _), painted(P, Col).
-out(P, Col) :- in(P, Col), !painted(P, _).
+.decl out(p: Position, col: Color, c: Choice)
+
+// --- Cover ---
+
+out(P, Col, $Cover()) :- in(P, _), painted(P, Col).
+out(P, Col, $Cover()) :- in(P, Col), !painted(P, _).
+
+// --- Fill ---
+
+// A cell a stamp may fill: background, or the outline it is drawn over.
+.decl open(p: Position)
+open(P) :- in(P, Col), bg.mode($U(), Col).
+open(P) :- drawn(P).
+
+.decl filled(p: Position, col: Color)
+filled(P, Col) :- painted(P, Col), open(P).
+
+out(P, Col, $Fill()) :- in(P, _), filled(P, Col).
+out(P, Col, $Fill()) :- in(P, Col), !filled(P, _).

@@ -15,7 +15,7 @@ from dl.dlparse import (
     Comp, Decl, Define, Functor, Init, Item, ParseError, Rigid, Rule,
     TypeDecl, parse,
 )
-from dl.paths import PROGRAMS_DIR
+from dl.paths import PROGRAMS_DIR, SOLVERS_DIR
 
 
 def _lib_source() -> str:
@@ -120,6 +120,12 @@ NO_ENTRY_CAT = "comp without entry"
 # The category a Parse comp standing without a Determine comp is reported
 # under.
 LONE_PARSE_CAT = "parse without determine"
+# The header line naming the family representative, with the case name it
+# may carry: `// family: <task_id>` or `// family: <task_id> <Case>`.
+FAMILY_RE = re.compile(r"^//\s*family:\s*(\S+)(?:\s+(\S+))?\s*$")
+# The category a case name the representative does not hold is reported
+# under.
+FAMILY_CASE_CAT = "family case"
 # RIGID chart names exist only in the macro expansion; any appearance in
 # solver source reads a stored pose the model claims unobservable.
 RIGID_CHART_RE = re.compile(r"\b_rigid_\w+")
@@ -450,6 +456,50 @@ def _lone_parse(
     )]
 
 
+def _rep_items(task_id: str) -> list[Item] | None:
+    """The representative solver's parsed items, or None when its file is
+    not there to read or does not parse."""
+    try:
+        text = (SOLVERS_DIR / f"{task_id}.dl").read_text()
+    except OSError:
+        return None
+    try:
+        return parse(text).items
+    except ParseError:
+        return None
+
+
+def _family_case(raw_lines: list[str]) -> list[tuple[str, int, str, str]]:
+    """A `// family:` line whose case name the representative does not hold.
+
+    The case names one case of the representative's `Choice`, so the name
+    stands among that type's constructors. A record-typed `Choice` has no
+    constructors, so no name stands. A representative there is no parse of
+    says nothing about the name, and the line passes.
+    """
+    findings: list[tuple[str, int, str, str]] = []
+    for lineno, raw in enumerate(raw_lines, 1):
+        m = FAMILY_RE.match(raw.strip())
+        if m is None or m.group(2) is None:
+            continue
+        task_id, case = m.group(1), m.group(2)
+        items = _rep_items(task_id)
+        if items is None:
+            continue
+        choices = [it for it in items
+                   if isinstance(it, TypeDecl) and it.name == "Choice"]
+        if any(case in it.branches for it in choices):
+            continue
+        if choices and not any(it.branches for it in choices):
+            why = f"`{task_id}`'s `Choice` is a record; a sibling of it names no case"
+        else:
+            named = (f"`{case}` is no case of `{task_id}`'s `Choice`" if choices
+                     else f"`{task_id}` declares no `Choice`")
+            why = f"{named}; name a case the representative holds"
+        findings.append((FAMILY_CASE_CAT, lineno, why, raw.rstrip()))
+    return findings
+
+
 def _type_scopes(
     items: list[Item], linted: bool = True,
 ) -> list[tuple[TypeDecl, bool]]:
@@ -539,6 +589,7 @@ def lint_program(source: str) -> list[tuple[str, int, str, str]]:
     src = _strip_block_comments(source)
     raw_lines = src.splitlines()
     findings: list[tuple[str, int, str, str]] = _reserved_names(raw_lines)
+    findings.extend(_family_case(raw_lines))
 
     try:
         program = parse(source)

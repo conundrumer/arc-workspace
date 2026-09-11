@@ -91,7 +91,7 @@ def test_an_empty_scope_leaves_the_entry_current(sv, srv, monkeypatch):
 
 
 def test_a_survey_line_with_no_result_is_surveyed_over_the_corpus(sv, srv):
-    path = entry(srv, "Thing", ENTRY + f"\nSurvey: {stamp(60)} — the whole corpus.\n")
+    path = entry(srv, "Thing", ENTRY + f"\nSurvey: {stamp(60)} — every solver.\n")
     assert sv.survey_plan(path.read_text()) == {"since": None, "scope": None}
 
 
@@ -164,13 +164,20 @@ def test_a_result_lands_at_the_end_of_the_entry(sv, srv):
     assert sv.survey_result(text)
 
 
+def test_append_survey_drops_the_reply_styles_closing_sound_line(sv, srv):
+    path = entry(srv, "Thing", ENTRY)
+    sv.append_survey(path, sv.survey_header({"since": None, "scope": None}, 0),
+                     "Callers: none.\n\n*tink*\n")
+    assert path.read_text().endswith("— every solver.\n\nCallers: none.\n")
+
+
 def test_a_corpus_survey_names_the_whole_corpus(sv, srv):
     path = entry(srv, "Thing")
     at = time.mktime(time.strptime("2026-02-02 03:04", STAMP))
     sv.append_survey(path, sv.survey_header({"since": None, "scope": None}, at),
                      "Callers: none.")
     assert path.read_text().endswith(
-        "Survey: 2026-02-02 03:04 — the whole corpus.\n\nCallers: none.\n")
+        "Survey: 2026-02-02 03:04 — every solver.\n\nCallers: none.\n")
 
 
 def test_a_report_that_opens_with_its_own_heading_lands_intact(sv, srv):
@@ -181,7 +188,7 @@ def test_a_report_that_opens_with_its_own_heading_lands_intact(sv, srv):
     sv.append_survey(path, sv.survey_header({"since": None, "scope": None}, at),
                      "\n## Survey: `Thing` over 12 solvers\n\nCallers: none.\n\n")
     assert path.read_text().endswith(
-        "Survey: 2026-02-02 03:04 — the whole corpus.\n\n"
+        "Survey: 2026-02-02 03:04 — every solver.\n\n"
         "## Survey: `Thing` over 12 solvers\n\nCallers: none.\n")
 
 
@@ -192,7 +199,7 @@ def test_a_run_files_its_report_and_writes_under_the_run_directory(sv, srv, tmp_
     path = entry(srv, "Thing")
     local(srv, sv, tmp_path, monkeypatch)
     assert sv.survey_entry(path) == 0
-    assert path.read_text().endswith("— the whole corpus.\n\nCallers: none.\n")
+    assert path.read_text().endswith("— every solver.\n\nCallers: none.\n")
     runs = sorted((tmp_path / ".scratch" / "surveys" / "Thing").glob("2*"))
     assert len(runs) == 1 and (runs[0] / "session.log").exists()
 
@@ -346,7 +353,7 @@ def test_the_command_surveys_the_entry_it_names(tmp_path):
                              capture_output=True, text=True)
         assert out.returncode == 0, out.stderr
         assert path.read_text().endswith(
-            "— the whole corpus.\n\nCallers: none.\n")
+            "— every solver.\n\nCallers: none.\n")
     finally:
         path.unlink(missing_ok=True)
         subprocess.run(["rm", "-rf", str(ROOT / ".scratch" / "surveys" / name)])

@@ -32,7 +32,8 @@ A Position is named for its coordinate frame.
 When a decomposition's inner coordinate is also the output cell, the setup decides its name.
 
 - **Decompose-fold.** A decompose-fold names the output cell `P_grid_out` in the consuming rules, and keeps `P_intile` in the production rules that decompose the input.
-- **Select or crop.** A select or crop names it `P_intile`: the cell is the extracted tile's interior.
+- **Select.** A select of one tile names it `P_intile`.
+- **Crop.** A crop to a region's box names it `P_inner`.
 - **Overlay.** An overlay names the frame cell that it stacks onto: bare `P`, or `P_frame` when another frame shares the rule.
 
 ## File structure
@@ -41,6 +42,7 @@ A solver is one file, `<task_id>.dl`.
 
 ```
 // <task_id>
+// draft
 // concept: <keywords>
 // shape: <keywords>
 // Doc header — describe task and name cases.
@@ -82,8 +84,11 @@ out(..., $CaseB()) :- ...
 ```
 
 - `// concept:` carries the Setup and Prior keywords that some case of the file claims, and `// shape:` the Shape keywords, from `keywords.md`, separated by spaces.
-- `// concept:` marks a family representative. A family sibling has `// family: <task_id>` in its place. That line points at the representative, the family's first-solved member. The sibling's header keeps only task-specific content.
+- `// concept:` marks a family representative.
+    - A family sibling has `// family: <task_id>` in its place. That line points at the representative, the family's first-solved member. The sibling's header keeps only task-specific content.
+    - A sibling whose program is one case of a representative whose `Choice` is an ADT names that case: `// family: <task_id> <Case>`. A sibling of a representative whose `Choice` is a record names no case.
 - `// shape:` appears when a shape applies. The Parse comp and the Determine comp appear when there is one.
+- `// draft` under the task-id line marks a solver the user has not approved.
 
 ### Cases
 
@@ -101,7 +106,7 @@ Params holds the parameterization and what derives from it. Each parameter is a 
     - Write it as `.comp Params {}`.
 - **Shared marker.** The `shared` marker takes the parameters that every case reads. A parameter that some case never reads goes under the marker of the cases that read it.
 - **Derived data.** A rule inside Params derives a relation from parameters, and writes no value as a literal. The derived relation is not a parameter, and carries no determination relation.
-    - **`@unit` literal.** A literal 1 stating a unit (a single row, one cell wide) stays in the rule, under an `// @unit: <what the 1 states>` comment on the rule's line. The linter flags a program literal regardless of `@unit`.
+    - **`@unit` literal.** A literal 1 stating a unit stays in the rule, under an `// @unit: <what the 1 states>` comment on the rule's line. A 1 is a unit when a larger value states no model. The linter flags a program literal regardless of `@unit`.
 - Facts are not column-aligned across a block.
 - **Redundant values.** If another parameter fixes a value, a Params rule derives that value from the parameter instead of storing it. If the family fixes an orientation value from another value, the stored form is relative (`Sense` via `turn`, `Axis` via `perp`).
 
@@ -194,3 +199,4 @@ Alts in the task JSON are encoded by kind:
 - A `tiebreak` alt marks interchangeable content that the task leaves free.
     - The solver enumerates the resolutions: `out` takes a trailing column typed `TiebreakResolution`, one value per valid resolution.
     - No data or rules name or steer the resolution values, and case coverage does not apply to the resolution column.
+- A pair has at most two accepted outputs.

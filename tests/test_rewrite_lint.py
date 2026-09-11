@@ -517,6 +517,16 @@ out($B(), Col) :- a(P, Q), b(Q, R), c(R, Col), e(Col).
     assert "common-subexpr" not in cats(src, hints=True)
 
 
+def test_common_subexpr_negated_head_kept():
+    src = """\
+.decl bad(p: number)
+.decl out(p: number)
+bad(P) :- a(P, Q), b(Q, R), c(R, Col), d(Col).
+out(P) :- a(P, Q), b(Q, R), c(R, Col), !bad(P).
+"""
+    assert "common-subexpr" not in cats(src, hints=True)
+
+
 def test_single_consumer_impl_choice_kept():
     src = """\
 .decl impl_choice(ch: number)
@@ -547,6 +557,16 @@ out(X) :- score(X, _), !beaten(X).
 """
     assert "argmax" in cats(src, hints=True)
     assert "argmax" not in cats(src)
+
+
+def test_argmax_pairwise_head_kept():
+    src = """\
+.decl beaten(x: number, y: number)
+beaten(X, Y) :- score(X, N), score(Y, N2), N2 > N.
+.decl out(x: number)
+out(X) :- score(X, _), !beaten(X, _).
+"""
+    assert "argmax" not in cats(src, hints=True)
 
 
 def test_raw_aggregate_fires():

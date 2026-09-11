@@ -421,9 +421,12 @@ def cmd_since(when: str) -> int:
     return 0
 
 
-def cmd_all(hints: bool = False, timed: bool = False) -> int:
+def cmd_all(hints: bool = False, timed: bool = False,
+            stems: list[str] | None = None) -> int:
+    if stems is not None and any(_missing(s) for s in sorted(set(stems))):
+        return 2
     build_functors()
-    stems = all_stems()
+    stems = stems if stems is not None else all_stems()
 
     # Flatten all (stem, pair) work so the pool sees one big queue.
     all_work: list[tuple] = []
@@ -693,9 +696,13 @@ def _parser() -> argparse.ArgumentParser:
              "is named",
     )
     lint = sub.add_parser("lint", help="lint only, no solver runs")
+    run.add_argument("stems", nargs="*",
+                     help="the solvers to run; one runs its pairs, lint and "
+                          "determination check, several run as a corpus over "
+                          "those solvers alone, and none runs the whole corpus")
+    lint.add_argument("stem", nargs="?",
+                      help="one solver; all of them when omitted")
     for p in (run, lint):
-        p.add_argument("stem", nargs="?",
-                       help="one solver; all of them when omitted")
         p.add_argument("--hints", action=argparse.BooleanOptionalAction,
                        default=True, help="include the hint tier")
     run.add_argument("--time", action="store_true", dest="timed",
@@ -722,7 +729,8 @@ def _parser() -> argparse.ArgumentParser:
     sweep = sub.add_parser("sweep", help="parameter value sweep only")
     sweep.add_argument("stem")
     sweep.add_argument("cap", nargs="?", type=int, default=MAX_CANDIDATES,
-                       help="max candidates per parameter")
+                       help="candidate count above which the sweep narrows to "
+                            "one-column and one-row changes")
 
     sub.add_parser("deletions", help="deletion report only").add_argument("stem")
     sub.add_parser(
@@ -844,10 +852,12 @@ def main(argv: list[str]) -> int:
             return cmd_since(args.when)
         case _:
             if args.pairs:
-                if not args.stem:
-                    print("--pairs needs a solver stem", file=sys.stderr)
+                if len(args.stems) != 1:
+                    print("--pairs needs one solver stem", file=sys.stderr)
                     return 2
-                return cmd_pairs(args.stem, args.pairs)
-            if args.stem:
-                return cmd_one(args.stem, args.hints, args.timed)
+                return cmd_pairs(args.stems[0], args.pairs)
+            if len(args.stems) == 1:
+                return cmd_one(args.stems[0], args.hints, args.timed)
+            if args.stems:
+                return cmd_all(args.hints, args.timed, args.stems)
             return cmd_all(args.hints, args.timed)

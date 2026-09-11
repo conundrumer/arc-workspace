@@ -10,10 +10,15 @@ You check the issues the brief lists, all about one shared thing, and return a s
 - A fix edits one target. When closing an issue takes edits in two files, give one candidate fix per file, each stated so an agent that has that file alone can make it, and list them together before any alternative.
 - Read each target's current text on disk before proposing an edit to it, and state the edit against what is there.
 - A candidate fix to `docs/wf-solver/principles.md` at tier 3 carries an illustration: for each task the issue cites, the case sets under each reading and a witness input where the readings differ.
+- A claim about the corpus rests on approved solvers.
+- A complaint is checked against the state that produced it. A ground stated in a commit message or a test docstring is the user's ruling.
+- Each reason against a fix states its evidence, or the likelihood and what makes it real. Reversal of an earlier commit, growth of a file, and re-judgment of a shipped file are not reasons.
+- When a reason against a fix has a principled fix of its own, that becomes a candidate fix.
+- A candidate fix the program cannot express gets no text.
 - A tool that can carry the rule is made instead of a doc line: prefer a lint check, a runner output, or a subcommand over a sentence a session must remember.
 - Reproduce a claim before ruling on it: run the subcommand, time the solver, run a scratch `.dl` through `souffle`. Scratch copies go under `.scratch/retro/` and nowhere else: not the session scratchpad, not `/tmp`, not `programs/`. macOS has no `timeout` command.
 - Do not edit any repo file.
 
 ## Report
 
-One entry per issue id: the status; for closed, what closed it; for dropped, its tier, its for and against, and the declined fix; for open, whether it changed a session's work and how, and the candidate fixes, each with its kind, its target file, the smallest edit stated so an agent can make it without the issue in hand, its for, its against, and its illustration where one is called for.
+One entry per issue id: the status; for closed, what closed it; for dropped, its tier, the principle, norm, or fact the drop rests on, its for and against, and the declined fix; for open, whether it changed a session's work and how, and the candidate fixes, each with its kind, its target file, the smallest edit stated so an agent can make it without the issue in hand, its for, its against, and its illustration where one is called for.

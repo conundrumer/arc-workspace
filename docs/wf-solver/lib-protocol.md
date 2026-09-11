@@ -23,8 +23,9 @@ Give a candidate an entry, `docs/wf-solver/proposals/<name>.md`, named for the o
 - a `Not:` line naming what is not this operation
 - a `Match:` line with a search signature that covers every statement of the operation, including statements whose atoms sit in different lines or rules, and statements that reach the operation through another primitive. State the shape in prose and match it with the parser (`tests/test_ast_match.py`)
     - restate a `Match:` line that does not meet this spec, so the next survey reads it
-- a `Survey:` line per survey, its time to the minute, each followed by its own result. The line names the scope the survey covered, in one of two forms: `Survey: <date time> — the whole corpus.` or `Survey: <date time> — the solvers since <the entry's previous survey time>.`
+- a `Survey:` line per survey, its time to the minute, each followed by its own result. The line names the scope the survey covered, in one of two forms: `Survey: <date time> — every solver.` or `Survey: <date time> — the solvers since <the entry's previous survey time>.` A survey's scope includes draft solvers.
     - the result that is relevant to the operation: the near-misses, the spec question, and a `Callers` list of the solvers that would call it
+        - a citation is the stem and the relation name
     - a result stands under a `Survey:` line, and the survey command writes the line and the result together. Text with no `Survey:` line above it counts as no result
     - a recorded result stays as written, except its `Callers` list: strike a solver that no longer writes the operation
 - a `Closed: <date time>` line with the judgment, when the operation is closed
@@ -54,14 +55,13 @@ Remove the entry's file at these points:
 
     - If no entry exists, write one. It carries no result.
     - If an entry is closed, keep its judgment. Encode the solver without the operation, in the way the entry records.
-    - If an entry has a survey result, add this solver under `Callers`.
+    - If an entry has a survey result, a survey records this solver. When the pass needs that caller recorded, run the delta survey. A session writes nothing into a recorded result.
     - Count a family (`// family:` siblings with their representative) as one caller.
-    - Add the callers, near-misses, and spec question to the entry.
 
     **The survey.** `uv run python scripts/survey.py <entry>` surveys an entry and writes the result into it.
 
     - Run it when the pass needs the result of an entry in either state. The state sets the scope:
-        - the entry carries no result: the scope is the whole corpus
+        - the entry carries no result: the scope is every solver
         - some solvers are newer than the entry's newest `Survey:` time: the scope is those solvers, as `uv run python scripts/run_dl.py since <time>` lists them for that time
     - If the command fails, spawn the `survey` role with the entry's path, the scope the command would take, and a scratch path (`.scratch/surveys/<entry name>/`). Append at the end of the entry a blank line, the `Survey:` line in the form the entry's fields give, a blank line, then the role's report.
         - say in the review that the command failed and the role ran
@@ -72,6 +72,7 @@ Remove the entry's file at these points:
         - a plain relation states it and no other solver writes it
         - a relational form replaces the arithmetic
     - **Closing.** When closing a proposal, put the judgment in the entry as the `Closed:` line, remove the proposal comp, and rethink the solver's encoding in relational form. Leave plain relations as written.
+        - Write no `Closed:` line before a survey result stands in the entry.
         - An entry closed with no survey result is reopened: strike its `Closed:` line, then survey it.
         - Include the close in the review as a judgment call.
     - **No close.** If the proposal does not close, nothing is decided. Write no text that implies an outcome.
@@ -88,6 +89,7 @@ Remove the entry's file at these points:
 
 **Reimplementations.** An entry lists the reimplementations its surveys met.
 
+- A site is no reimplementation when the lib call would need a value the program bans and no parameter carries that value. Record it under the entry that states the missing operation, and dispatch nothing.
 - Fix one where it sits in a file the pass has open, and strike it from the entry. Fix that file even when it has uncommitted edits.
 - Leave the rest to the session that opens their files, or to promotion.
 

@@ -786,6 +786,16 @@ def test_every_brief_that_writes_the_solver_asks_for_the_draft_line(srv):
         assert srv.DRAFT_NOTE in brief
 
 
+def test_only_the_users_approval_takes_the_draft_line_off(srv):
+    assert "Prune" not in srv.DRAFT_NOTE
+    assert "only the user's approval takes it off" in srv.DRAFT_NOTE
+
+
+def test_the_draft_note_is_one_sentence_asking_to_leave_the_line_there(srv):
+    assert "leave it there" in srv.DRAFT_NOTE
+    assert srv.DRAFT_NOTE.count(". ") == 0
+
+
 def test_a_handoff_witness_is_written_into_the_report_not_left_in_scratch(srv):
     for brief in (srv.CREATE_BRIEF, srv.HANDOFF_BRIEF, srv.HANDOFF_TAIL):
         assert "goes in the report itself" in brief

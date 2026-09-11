@@ -274,6 +274,42 @@ def test_a_run_counts_its_hints_beside_lint_ok(solvers, monkeypatch, capsys):
     assert "\nlint: ok, 1 hint\n" in capsys.readouterr().out
 
 
+def _corpus(solvers, monkeypatch, failing: set[str]) -> None:
+    """Two solvers a corpus run sees, with one pair each and Souffle stubbed."""
+    for stem in ("aaaa1111", "bbbb2222"):
+        (solvers / f"{stem}.dl").write_text("// stub\n")
+    monkeypatch.setattr(cli, "res_out_stem", lambda stem: True)
+    monkeypatch.setattr(cli, "run_determine", lambda stem: None)
+    monkeypatch.setattr(cli, "_pair_work", lambda stem: [(stem,)])
+    monkeypatch.setattr(
+        cli, "run_pair",
+        lambda stem: PairResult(kind="train", idx=0, ok=stem not in failing,
+                                error="" if stem not in failing else "boom"),
+    )
+
+
+def test_a_run_over_two_stems_reports_those_two_alone(
+        solvers, monkeypatch, capsys):
+    _corpus(solvers, monkeypatch, failing={"bbbb2222"})
+    monkeypatch.setattr(cli, "all_stems", _explode)
+
+    assert cli.cmd_all(stems=["aaaa1111", "bbbb2222"]) == 1
+    out = capsys.readouterr().out
+    assert "aaaa1111: 1/1 PASS\n" in out
+    assert "bbbb2222: 0/1 FAIL\n" in out
+    assert "--- 1 failing solver(s) ---" in out
+    assert "boom" in out
+    assert out.endswith("summary: 1/2 solvers\n")
+
+
+def test_a_missing_stem_among_several_is_refused(solvers, monkeypatch, capsys):
+    _corpus(solvers, monkeypatch, failing=set())
+    monkeypatch.setattr(cli, "build_functors", _explode)
+
+    assert cli.cmd_all(stems=["aaaa1111", "nosuch"]) == 2
+    assert "no solver at" in capsys.readouterr().err
+
+
 def _failed(idx: int, error: str) -> PairResult:
     return PairResult(kind="train", idx=idx, ok=False, error=error)
 

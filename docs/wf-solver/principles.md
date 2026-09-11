@@ -36,7 +36,7 @@ The goal is a corpus that supports program synthesis of solvers. Across the corp
         + test_in(T) — the test inputs of T
         + θ(T) — the assignment that T's solver stores, or that a solver with this program and determination would store
         + θ(T)ᵢ — its value of parameter i
-- **family** (of a model) — the tasks it fits: a model fits a task when some assignment of its parameterization produces the task's outputs from its inputs. Their solvers share the program and the determination.
+- **family** (of a model) — the tasks it fits: a model fits a task when some assignment of its parameterization produces the task's outputs from its inputs. Their solvers share the program and the determination; where the representative holds several cases, the sibling's solver holds the case whose model it is.
     + fam(M) = { T : ∃θ. M(θ) ⊨ T }
         + M(θ) ⊨ T — ∀(x, y) ∈ T. M(θ, x) = y
     + ∀T ∈ fam(M). M(θ(T)) ⊨ T
@@ -96,8 +96,6 @@ Generalization happens at the family level. The current task is one member of a 
 
 Invariance ranges over ARC's symmetry group: orientation, color, placement. It does not extend to how the rules combine their inputs.
 
-- An OR fold is existence and an XOR fold is exact count: two concepts and two families, not one count-thresholded program with the threshold as a parameter (dae9d2b5 vs 34b99a2b).
-
 ### Color
 
 Colors have identity and nothing else.
@@ -131,6 +129,7 @@ When the pairs exhibit a value directly, that value is task data, stored as a pa
     - Against a stored table, the witness is a test input whose key has no train entry.
 - **Unwitnessed derivation.** An unwitnessed derivation stands only as a case beside the stored case.
     - 3b4c2228 <!-- the count renders as marks down a diagonal, or from a stored grid per count; every train and test count is a key of that table, so the two never differ on a pair. -->
+    - **Multiple derivations.** Several derivations of one stored value are peer models of each other, and the Coverage rules decide each on its own. No derivation is preferred for being the corpus's usual form.
 - **Setup derivation.** Setup gets no case, so it cannot include an unwitnessed derivation.
 - **Correspondence frame.** Because the pairs witness a correspondence cell by cell, a frame built as a correspondence over input cells (007bbfb7) derives no number.
 
@@ -151,7 +150,7 @@ Which members the task uses decides the encoding:
 - **Every member.** If the task uses every member, the class is structural. The program enumerates it (`dir_elem`, `diag_dir_elem`). The parameters are keyed by class.
     - 0ca9ddb6 <!-- a marked dot gets an arm in every cardinal direction or in every diagonal one, and each kind of arm has its own parameter, keyed by the mark's color. -->
 - **One member.** If the task uses one member and must not use another, a parameter holds the member.
-- **Peer class.** If a task uses a peer class (cardinals against diagonals), it gets another program, not a reassignment (1f876c06, dbc1a6ce).
+- **Peer class.** If a task uses a peer class (cardinals against diagonals), it gets another program, not a reassignment (a9f96cdd, d364b489).
 - **Payload.** If the values vary per row, the rows are data and the class is the domain.
     - d364b489 <!-- each marker paints the neighbor on each of its four sides, clipped at the grid edge, and each direction has its own color. -->
 
@@ -183,7 +182,7 @@ A few train pairs underdetermine the family. Coverage is one case per model that
 - Coverage shows which prior the task could be teaching.
 - A hypothesis decomposes by choice point into one branch per point, and each branch is itself a hypothesis.
 - A solver with one case has no `Choice`.
-- A record-typed `Choice` holds one field per choice point, and is the cross product of independent choice points.
+- A record-typed `Choice` holds one field per choice point; `impl_choice` lists the combinations these rules admit.
     - 87ab05b8 <!-- one marked cell among noise, and the output fills the 2×2 region that holds it; three ways to locate the region cross two sources of the fill color. -->
 
 ### Same model
@@ -203,6 +202,7 @@ The test decides:
 - Candidates that match on both are two implementations of one model.
 - Divergence in parameterization distinguishes candidates that coincide on the current task but parameterize different families.
     - 44f52bb0 <!-- the output is one of two stored grids, by whether the input has a stored symmetry, or, from a table of groups, the stored grid of the largest group that leaves the input invariant; the two agree on every input, the first is a two-entry assignment of the second, and they claim different priors. -->
+- An OR fold is existence and an XOR fold is exact count: two concepts and two families, not one count-thresholded program with the threshold as a parameter (dae9d2b5 vs 34b99a2b).
 
 ### Table or rule
 
@@ -218,6 +218,7 @@ Divergence must be valid to count.
 - **Ill-formed divergence.** When every divergence of a hypothesis from a peer is ill-formed (the output has multiple values or is not total), the hypothesis never fits a task that the peer misses, at any assignment of its parameterization. The peer subsumes it, and it gets no case. The subsumption is refuted when there is a divergence where the hypothesis is total and the peer is ill-formed.
     + (∀θ ∃θ′ ∀x. M(θ, x)↓ ⇒ M(θ, x) = M′(θ′, x)) ⇒ fam(M) ⊆ fam(M′)
         + M(θ, x)↓ — M defined at θ and x: `out` is a grid, total and single-valued
+    - **Refused input.** A divergence at an input the hypothesis's premise excludes does not establish subsumption. A strict hypothesis and a tolerant peer that fold the same evidence differently are two families under Invariance scope, and each gets a case.
     - **Tabulation.** When another branch in the same case makes a rule hypothesis read every input from the parameters, that hypothesis computes a function of the parameters alone. Its tabulation is an assignment of the table peer, so it gets no case (21897d95).
         + ∀θ ∃θ′ ∀x. M_rule(θ, x)↓ ⇒ M_rule(θ, x) = M_tab(θ′, x)
             + M_rule and M_tab — the models of the rule hypothesis and its table peer
@@ -231,9 +232,9 @@ Cases are hypotheses about the prior that the task teaches.
 - **precedent** (of a setup structure) — the encoding that the corpus already uses for it.
     - The solver that introduces or improves a structure's encoding sets its precedent.
     - A precedent covers how a structure is found and encoded, not the tests inside that encoding: which cells or lines qualify follows the task's concept, so a solver whose test differs still follows the precedent.
-    - When two encodings of one structure stand in the corpus, the one that is not the precedent is a deviation, and a session notes it in the review.
+    - When two encodings of one structure stand in different solvers, the one that is not the precedent is a deviation, and a session notes it in the review. Two encodings that stand as cases of one solver are peer parses, and neither is a deviation.
+        - 1a6449f1 <!-- rings sit in noise, and the output crops one of them; `DrawnRect` finds a ring as a drawn rectangle and `Closed` as a wall that cuts a region off from the grid edge, each under its own case. -->
 - Models that find different structures are different parses.
-    - 7c8af763 <!-- lines of one color cut the grid, and each bounded region takes a color from the marks that touch it; one case finds the regions as connected areas of background, another as the tiles of the lattice the full lines make. -->
 - **Setup priority.** A setup follows, in order:
     1. Fidelity.
     2. Reuse of the facts and lib instances the program already has (1190bc91).
@@ -247,7 +248,7 @@ Cases are hypotheses about the prior that the task teaches.
 ### Evidence
 
 - **Exercised.** A peer model has rules, parameters, or comps that the model at hand does not. If no pair exercises them, that peer gets no case.
-    - A pair exercises a part of the peer when that pair's output derives through it, even where a narrower rule would give the same output on every pair.
+    - A pair exercises a part of the peer when that pair's output derives through it, even where a narrower rule would give the same output on every pair, and even where the part's result matches the model at hand's on every pair. Exercised tests only the parts the peer adds; a peer that adds none passes it.
 - **No relational form.** A hypothesis with no relational form gets no case. When a hypothesis's encoding depends on arithmetic and the lib addition protocol closes the primitive, that hypothesis has no relational form (`proposals/MinHops.md`).
 - **Table entries.** A mapping table needs multiple entries exercised. A one-entry ring table over a plain border is unexercised.
     - 44f52bb0 <!-- both symmetry classes occur in the pairs. -->

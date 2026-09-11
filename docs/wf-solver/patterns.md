@@ -67,10 +67,10 @@ Arguments between the relation name and the cell values pass through as leading 
 An empty cell states a modeling hypothesis: the grid holds nothing there. A sparse form reads each other digit as a value, `0` included.
 
 - `GRID_MASK_HxW(rel, ...)` takes `1` for a member cell and emits `rel(p)` for it — membership grids (1818057f `shape`).
-- `GRID_SPARSE_HxW(rel, ...)` takes a digit for a cell's value and emits `rel(p, v)` for it — ink templates (3f23242b `shape`).
-- `GRID_STAMP_HxW(rel, ...)` and `GRID_STAMP_SPARSE_HxW(rel, ...)` store a mark-anchored stamp as `Shift` offsets. The layout is a picture with one token carrying the `@` prefix, and each member cell is emitted as its offset from that anchor. To choose between a grid and a stamp, ask what locates a cell in the data at hand: a position in a frame whose extent the data fixes takes a grid (3f23242b `shape`), and a distance from a mark takes a stamp.
+- `GRID_SPARSE_HxW(rel, ...)` takes a digit for a cell's value and emits `rel(p, v)` for it — ink templates (21897d95 `bracket_glyph`).
+- `GRID_STAMP_HxW(rel, ...)` and `GRID_STAMP_SPARSE_HxW(rel, ...)` store a mark-anchored stamp as `Shift` offsets. The layout is a picture with one token carrying the `@` prefix, and each member cell is emitted as its offset from that anchor. To choose between a grid and a stamp, ask what locates a cell in the data at hand: a position in a frame whose extent the data fixes takes a grid, and a distance from a mark takes a stamp.
     - `GRID_STAMP_HxW` takes `1` for a member cell and emits `rel(delta)` for it (3ac3eb23 `template`).
-    - `GRID_STAMP_SPARSE_HxW` takes a digit for a cell's value and emits `rel(delta, v)` for it (4258a5f9 `template`).
+    - `GRID_STAMP_SPARSE_HxW` takes a digit for a cell's value and emits `rel(delta, v)` for it (dc1df850 `template`).
     - An empty cell emits no offset.
     - The `@` prefix goes on any token, an empty cell included: 0962bcdd `template_arm` anchors on an empty cell, 0962bcdd `template_center` on a member. A picture anchored on a member emits the zero offset.
 
@@ -188,8 +188,6 @@ beaten(P, Col) :-
 ```
 
 Over a spatial domain, the ranks can be stored as a GRID: a68b268e's `params.prio` shows the precedence in the tile arrangement.
-
-(794b24be — a fill order in a `GRID_SPARSE` store, based at 1, because a cell's place is the ink count that reaches it.)
 
 ## Set-keyed relations via parent/child tables
 

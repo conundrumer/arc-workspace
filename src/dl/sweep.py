@@ -2,6 +2,7 @@
 
 import itertools
 import re
+import sys
 from concurrent.futures import ThreadPoolExecutor
 
 from arc.task import load as load_task
@@ -56,16 +57,21 @@ def sweep_report(
     set; it is re-swept whole (see _set_sweep), with candidate sets in
     place of candidate values.
 
+    Above the cap the cross product of the domains gives way to the
+    coordinate sweep (see _coordinate_candidates). A slice smaller than
+    that product is a partial sweep, and the status says so.
+
     A shared parameter is one every case reads, so the cases must admit
     the same values. Each such parameter reports its per-case value sets
     too, from the same runs (see _case_result).
 
     Returns (param, status, detail): status 'swept' carries
     (fitting, stored, types, verdicts) — verdicts maps each extra fitting
-    value to its test-pass bool — 'swept-set' and 'swept-set-near' carry
-    the same shape with frozensets of value tuples for fitting and verdict
-    keys, 'cases' carries (per_case, types, domain), and 'skip' carries
-    the reason.
+    value to its test-pass bool — 'swept-near' carries that shape with a
+    trailing (swept, whole) scope, 'swept-set' and 'swept-set-near'
+    carry the same shape with frozensets of value tuples for fitting and
+    verdict keys, 'cases' carries (per_case, types, domain), and 'skip'
+    carries the reason.
     """
     # Macros expand first, so a GRID-fed parameter reads as ordinary facts and
     # a RIGID chart as an ordinary generated-name parameter; re-expansion at
@@ -130,13 +136,14 @@ def sweep_report(
         # the domain (a count above the dims, say) still reads as stored
         # rather than as a holistic table.
         candidates = sorted(set(itertools.product(*domains)) | set(stored))
+        status, scope = "swept", None
         if len(candidates) > max_candidates:
-            results.append(
-                (public_param(param), "skip",
-                 f"{len(candidates)} alternative values, cap {max_candidates}; "
-                 f"rerun with run_dl.py sweep {stem} {len(candidates)}")
-            )
-            continue
+            whole = len(candidates)
+            candidates = _coordinate_candidates(stored, domains)
+            # A one-column parameter's coordinate slice is the whole
+            # candidate set, so that sweep is complete and reports as one.
+            if len(candidates) < whole:
+                status, scope = "swept-near", (len(candidates), whole)
 
         if reference is None:
             if shared:
@@ -162,6 +169,7 @@ def sweep_report(
             admits = frozenset.intersection(*passing) if passing else None
             return vals, profile == reference, admits
 
+        print(f"{public_param(param)}: {len(candidates)} values", file=sys.stderr)
         with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
             rows = list(executor.map(test, candidates))
         fitting = [v for v, ok, _ in rows if ok]
@@ -191,7 +199,10 @@ def sweep_report(
 
                 with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
                     verdicts = dict(zip(extras, executor.map(test_check, extras)))
-        results.append((public_param(param), "swept", (fitting, stored, types, verdicts)))
+        detail = (fitting, stored, types, verdicts)
+        if scope:
+            detail = detail + (scope,)
+        results.append((public_param(param), status, detail))
         if case_result:
             results.append(case_result)
     return results
@@ -220,6 +231,23 @@ def _case_result(
     if len(set(per_case.values())) < 2:
         return None
     return (public_param(param), "cases", (per_case, types, frozenset(candidates)))
+
+
+def _coordinate_candidates(
+    stored: list[tuple], domains: list[list]
+) -> list[tuple]:
+    """The candidate rows one column-change from the stored facts.
+
+    Each stored row joins the list, and each of its columns runs through
+    that column's domain with the other columns held. The whole sweep is
+    the cross product of the domains; this is its coordinate slice.
+    """
+    rows = set(stored)
+    for row in stored:
+        for i, domain in enumerate(domains):
+            for value in domain:
+                rows.add(row[:i] + (value,) + row[i + 1:])
+    return sorted(rows)
 
 
 def _neighborhood(stored: list[tuple], singles: list[tuple]) -> list[frozenset]:
@@ -259,8 +287,14 @@ def _set_sweep(
     the one-change neighborhood of the stored facts (see _neighborhood), and
     the status says so. Fitting and test-refutation read as in the singleton
     sweep, over sets.
+
+    Zero is absence, so a 0 in a number column stands as a candidate only
+    where the stored facts already carry one in that column.
     """
     name = public_param(param)
+    blank = {i for i, t in enumerate(types)
+             if t == "number" and all(s[i] != 0 for s in stored)}
+    singles = [v for v in singles if all(v[i] != 0 for i in blank)]
     n_sets = 2 ** len(singles) - 1
     if n_sets > max_candidates:
         status = "swept-set-near"
@@ -278,6 +312,7 @@ def _set_sweep(
         profile = _profile(swap_facts(source, param, sorted(value)), task.train)
         return value if profile == reference else None
 
+    print(f"{name}: {len(subsets)} values", file=sys.stderr)
     with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
         fitting = [f for f in executor.map(test, subsets) if f]
 
@@ -329,6 +364,15 @@ def _num_below(e: tuple, s: tuple, types: list[str]) -> bool:
 
 
 def render_sweep(results: list[tuple[str, str, object]]) -> list[str]:
+    """One line per result; ` ✓` marks a parameter the sweep settles.
+
+    The mark goes on every line whose fitting values are the stored
+    ones, in each of its forms — `unique`, `set of N`, `unique as a
+    set` — so a reader keys on the mark rather than on one form. A
+    partial sweep covers part of the candidate set, so its line names
+    that scope and drops the mark, in the value forms and the set form
+    alike.
+    """
     defines = _lib_defines()
     names = {v: k for k, v in defines.items()}
 
@@ -360,9 +404,10 @@ def render_sweep(results: list[tuple[str, str, object]]) -> list[str]:
 
             shown_s = show_value(stored_set)
             if set(fitting) == {stored_set}:
+                mark = " ✓" if status == "swept-set" else ""
                 lines.append(
-                    f"{param}: unique as a set = {shown_s} ✓ (facts fit only "
-                    f"together; {scope})"
+                    f"{param}: unique as a set = {shown_s}{mark} (facts fit "
+                    f"only together; {scope})"
                 )
                 continue
             extras = sorted(set(fitting) - {stored_set}, key=sorted)
@@ -384,17 +429,25 @@ def render_sweep(results: list[tuple[str, str, object]]) -> list[str]:
                 )
             lines.append(f"{param}: " + "; ".join(parts))
             continue
-        fitting, stored, types, verdicts = detail
+        fitting, stored, types, verdicts = detail[:4]
+        scope = ""
+        if status == "swept-near":
+            swept, whole = detail[4]
+            scope = (f" (swept single-column changes; {swept} of {whole} "
+                     "values)")
         vset, sset = set(fitting), set(stored)
         def shown(vals, types=types):
             return ", ".join(show(v, types) for v in vals)
 
         shown_s = shown(stored)
         if vset == sset:
+            mark = "" if scope else " ✓"
             if len(sset) == 1:
-                lines.append(f"{param}: unique = {shown_s} ✓")
+                lines.append(f"{param}: unique = {shown_s}{mark}{scope}")
             else:
-                lines.append(f"{param}: set of {len(sset)} = [{shown_s}] ✓")
+                lines.append(
+                    f"{param}: set of {len(sset)} = [{shown_s}]{mark}{scope}"
+                )
             continue
         # Each finding about the extras gets its own clause, so a refuted
         # extra cannot hide a surviving one.
@@ -425,7 +478,7 @@ def render_sweep(results: list[tuple[str, str, object]]) -> list[str]:
                 parts.append(
                     f"[{shown(below)}] fit and are smaller than stored"
                 )
-        lines.append(f"{param}: " + "; ".join(parts))
+        lines.append(f"{param}: " + "; ".join(parts) + scope)
     return lines
 
 

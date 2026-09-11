@@ -358,3 +358,51 @@ def test_plan_join_order_passes_through():
 }
 """
     assert cats(src) == []
+
+
+def test_family_case_the_representative_lacks_fires(tmp_path, monkeypatch):
+    import dl.lint as lint
+    (tmp_path / "67a3c6ac.dl").write_text(".type Choice = Mirror {} | Turn {}\n")
+    (tmp_path / "0d3d703e.dl").write_text(".decl out(p: Position, col: Color)\n")
+    monkeypatch.setattr(lint, "SOLVERS_DIR", tmp_path)
+    src = """\
+// 74dd1130
+// family: 67a3c6ac Shear
+"""
+    fs = [f for f in lint_program(src) if f[0] == "family case"]
+    assert [f[1] for f in fs] == [2]
+    assert "`Shear` is no case of `67a3c6ac`'s `Choice`" in fs[0][2]
+
+    src = """\
+// c8f0f002
+// family: 0d3d703e Recolor
+"""
+    fs = [f for f in lint_program(src) if f[0] == "family case"]
+    assert [f[1] for f in fs] == [2]
+    assert "`0d3d703e` declares no `Choice`" in fs[0][2]
+
+
+def test_family_case_the_representative_is_a_record_fires(tmp_path, monkeypatch):
+    import dl.lint as lint
+    (tmp_path / "87ab05b8.dl").write_text(".type Choice = [d: DecChoice, b: Body]\n")
+    monkeypatch.setattr(lint, "SOLVERS_DIR", tmp_path)
+    src = """\
+// 74dd1130
+// family: 87ab05b8 Shear
+"""
+    fs = [f for f in lint_program(src) if f[0] == "family case"]
+    assert [f[1] for f in fs] == [2]
+    assert fs[0][2] == (
+        "`87ab05b8`'s `Choice` is a record; a sibling of it names no case"
+    )
+
+
+def test_family_case_the_representative_holds_stays_quiet(tmp_path, monkeypatch):
+    import dl.lint as lint
+    (tmp_path / "67a3c6ac.dl").write_text(".type Choice = Mirror {} | Turn {}\n")
+    monkeypatch.setattr(lint, "SOLVERS_DIR", tmp_path)
+    src = """\
+// 74dd1130
+// family: 67a3c6ac Turn
+"""
+    assert "family case" not in cats(src)

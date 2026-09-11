@@ -199,7 +199,7 @@ SCOPE_NOTE = """Your edits stay in programs/solvers/{tid}.dl, .scratch/{tid}/, a
 FINISHED_NOTE = """A solver that already holds up under your judgment is a finished pass: say so and stop."""
 
 # The console's approval mark, which the worker writes with the solver.
-DRAFT_NOTE = """Put `// draft` on its own line under the task-id line when you write the solver, and leave it in place through Prune."""
+DRAFT_NOTE = """Put `// draft` on its own line under the task-id line when you write the solver, and leave it there; only the user's approval takes it off."""
 
 CREATE_BRIEF = ("""You are the first session of a chained flow: you create the solver, then a separate session takes over from your report.
 

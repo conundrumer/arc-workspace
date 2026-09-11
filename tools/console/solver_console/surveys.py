@@ -133,7 +133,7 @@ def survey_plan(text: str) -> dict | None:
     in its scope, or None when the entry is current.
 
     An entry with no `Survey:` line, and an entry whose newest such line
-    carries no result, are surveyed over the whole corpus. An entry with a
+    carries no result, are surveyed over every solver. An entry with a
     result is surveyed over the solvers written since that line's time, which
     are the solvers in the commits after that time plus the changed solvers in
     the working tree; with no such solver the entry is current. A newest
@@ -156,14 +156,18 @@ def survey_header(plan: dict, at: float) -> str:
     scope is the commits after that time plus the working tree."""
     stamp = survey_minute(at)
     if plan["scope"] is None:
-        return f"Survey: {stamp} — the whole corpus."
+        return f"Survey: {stamp} — every solver."
     return f"Survey: {stamp} — the solvers since {plan['since']}."
+
+
+SOUND_LINE = re.compile(r"\n\*[a-z]+\*\s*$")
 
 
 def append_survey(path: Path, header: str, result: str) -> None:
     """Add the `Survey:` line and the run's report at the end of the entry.
     The report is filed as the session returned it, stripped of surrounding
-    whitespace.
+    whitespace and of a closing sound-name line, `*tink*`, that the session's
+    reply style adds.
 
     The caller holds the entry's lock, which orders this module's own writers
     of the entry against each other. A session that edits the entry with its
@@ -173,7 +177,8 @@ def append_survey(path: Path, header: str, result: str) -> None:
     with open(path, "r+") as fh:
         body = fh.read().rstrip("\n")
         fh.seek(0)
-        fh.write(body + "\n\n" + header + "\n\n" + result.strip() + "\n")
+        report = SOUND_LINE.sub("", result.strip()).strip()
+        fh.write(body + "\n\n" + header + "\n\n" + report + "\n")
         fh.truncate()
 
 
@@ -210,7 +215,7 @@ def run_survey(path: Path, plan: dict, run_dir: Path) -> str:
     tools it left running with it. A process the session leaves behind holds
     the pipe this call reads open, and the read would go on past the run.
     """
-    scope = ("the whole corpus" if plan["scope"] is None
+    scope = ("every solver" if plan["scope"] is None
              else "the solvers " + ", ".join(plan["scope"]))
     brief = prompts.role_text("survey") + "\n\n" + config.SURVEY_BRIEF.format(
         entry=path.relative_to(config.ROOT), scope=scope,

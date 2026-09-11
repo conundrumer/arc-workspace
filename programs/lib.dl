@@ -313,11 +313,12 @@ diag_dist(P, Diag, A, K1, K2) :-
 .decl corner_dist(p: Position, diag: DiagDir, k: number) inline
 corner_dist(P, Diag, K) :- diag_dist(P, Diag, _, K1, K2), K = K1 + K2.
 
-// Element-wise sum of two Positions. One operand may be a signed delta.
+// Element-wise sum of two bound Positions. One operand may be a signed delta.
 .decl compose(p1: Position, p2: Position, p3: Position) inline
 compose([T1, B1, L1, R1], [T2, B2, L2, R2], [T1+T2, B1+B2, L1+L2, R1+R2]) :- true.
 
-// The Shift carrying `from` onto `to` — the inverse read of compose.
+// The Shift carrying `from` onto `to` — the inverse read of compose, and the
+// form that binds an unknown addend.
 .decl displacement(from: Position, to: Position, v: Shift) inline
 displacement([T1, B1, L1, R1], [T2, B2, L2, R2],
              [T2-T1, B2-B1, L2-L1, R2-R1]) :- true.
@@ -917,37 +918,42 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 }
 
 // Rank by a caller-supplied strict order: the rank of t counts the
-// members before it, ascending from 0.
+// members before it, ascending from 0. `before` is read over `elem`, and a
+// row with an endpoint outside `elem` is ignored.
 //
-// Flagged: assumes `before` is transitive. It is counted as given and never
-// closed, so direct comparisons alone yield predecessor counts, not ranks.
+// Flagged: assumes `before` is transitive. It is never closed, so direct
+// comparisons alone yield predecessor counts, not ranks.
 .comp Order<Key, T> {
     .decl elem(key: Key, t: T)
     .decl before(key: Key, a: T, b: T)
 
+    // A before row both of whose endpoints are members.
+    .decl _edge(key: Key, a: T, b: T)
+    _edge(Ky, A, B) :- before(Ky, A, B), elem(Ky, A), elem(Ky, B).
+
     .decl rank(key: Key, t: T, r: number)
-    rank(Ky, T, R) :- elem(Ky, T), R = count : { before(Ky, A, T) }.
+    rank(Ky, T, R) :- elem(Ky, T), R = count : { _edge(Ky, A, T) }.
 
     // The same count, over the members after t — the order read from its
     // far end.
     .decl rank_desc(key: Key, t: T, r: number)
-    rank_desc(Ky, T, R) :- elem(Ky, T), R = count : { before(Ky, T, B) }.
+    rank_desc(Ky, T, R) :- elem(Ky, T), R = count : { _edge(Ky, T, B) }.
 
     // The element nothing precedes, and the one nothing follows.
     .decl first(key: Key, t: T)
-    first(Ky, T) :- elem(Ky, T), !before(Ky, _, T).
+    first(Ky, T) :- elem(Ky, T), !_edge(Ky, _, T).
 
     .decl last(key: Key, t: T)
-    last(Ky, T) :- elem(Ky, T), !before(Ky, T, _).
+    last(Ky, T) :- elem(Ky, T), !_edge(Ky, T, _).
 
     // Some element lies between a and b.
     .decl _skipped(key: Key, a: T, b: T)
-    _skipped(Ky, A, B) :- before(Ky, A, X), before(Ky, X, B).
+    _skipped(Ky, A, B) :- _edge(Ky, A, X), _edge(Ky, X, B).
 
     // b directly follows a: before, with nothing between. Consumers pair it
     // with `first` to carry state along the chain, one element per step.
     .decl next(key: Key, a: T, b: T)
-    next(Ky, A, B) :- before(Ky, A, B), !_skipped(Ky, A, B).
+    next(Ky, A, B) :- _edge(Ky, A, B), !_skipped(Ky, A, B).
 }
 
 // The dense frame a sparse member set induces along an axis, with each
@@ -1530,9 +1536,9 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     region(Ky, P, Id) :- _regions.label(Ky, P, Id).
 }
 
-// Occurrences of a shape among cells, per key: cells and shape members are
-// valued, and a placement occurs where every shape member lands on a cell
-// carrying that member's value — the ARC "find this shape" operation.
+// Occurrences of one valued cell set, the shape, among another, per key: a
+// placement occurs where every shape member lands on a cell carrying that
+// member's value — the ARC "find this shape" operation.
 // Positional matching is the unit-valued instantiation. Placements derive
 // backward from the data, so no grid bounds are needed and off-grid
 // candidates filter themselves out.
