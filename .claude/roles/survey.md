@@ -10,7 +10,7 @@ You survey the solver corpus for one operation and report. You change no repo fi
 
 ## Report
 
-Four parts, in this order. The report is appended to the entry as it stands, so each part reads without the brief: name the operation and the scope in the text.
+Four parts, in this order. The report goes into the entry under a `Survey:` line that carries its time and scope, and it reads without the brief: name the operation in the text, and leave the scope to that line.
 
 1. Callers — each with the solver and the relation name, and one sentence on what it computes there. Open the part with a `Callers:` line and give each caller a line of its own; with none, write `Callers: none.` No second caller is an answer: give the negative evidence, what the signature matched across the scope.
 2. Near-misses — each with the solver, the relation name, and the exclusion that rules it out.
