@@ -31,7 +31,7 @@ The goal is a corpus that supports program synthesis of solvers. Across the corp
 - **determination** — the rules that derive a parameter's value from the train pairs and the test inputs.
     + detᵢ(train(T), test_in(T)) = θ(T)ᵢ
         + T — a task: a finite set of pairs (x, y) of an input and its output, test pairs included
-            + an unbound T, i, or M is the one at hand
+            + an unbound T, i, or M is the current one
         + train(T) — the train pairs of T
         + test_in(T) — the test inputs of T
         + θ(T) — the assignment that T's solver stores, or that a solver with this program and determination would store
@@ -40,7 +40,7 @@ The goal is a corpus that supports program synthesis of solvers. Across the corp
     + fam(M) = { T : ∃θ. M(θ) ⊨ T }
         + M(θ) ⊨ T — ∀(x, y) ∈ T. M(θ, x) = y
     + ∀T ∈ fam(M). M(θ(T)) ⊨ T
-- **sibling** (of a task) — another task in the family of the model at hand.
+- **sibling** (of a task) — another task in the family of that task's model.
     + T, T′ ∈ fam(M), T′ ≠ T
         + a prime marks another of the same kind
 - **case** — the encoding of one model in the solver, under one element of `Choice`.
@@ -178,7 +178,7 @@ A few train pairs underdetermine the family. Coverage is one case per model that
 - **peer model** (of a model) — another model that fits the same task.
     + T ∈ fam(M) ∩ fam(M′), M′ ≠ M
 - **prior** — a core knowledge prior that ARC training tasks are intended to teach in pure form. A case claims which priors the task teaches. Several models can claim the same priors.
-- The rules of this section apply in order: Prior or setup, then Evidence, then Subsumption. A peer that Evidence removes gets no case, even when it subsumes the model at hand.
+- The rules of this section apply in order: Prior or setup, then Evidence, then Subsumption. A peer that Evidence removes gets no case, even when it subsumes the current model.
 - Coverage shows which prior the task could be teaching.
 - A hypothesis decomposes by choice point into one branch per point, and each branch is itself a hypothesis.
 - A solver with one case has no `Choice`.
@@ -247,8 +247,8 @@ Cases are hypotheses about the prior that the task teaches.
 
 ### Evidence
 
-- **Exercised.** A peer model has rules, parameters, or comps that the model at hand does not. If no pair exercises them, that peer gets no case.
-    - A pair exercises a part of the peer when that pair's output derives through it, even where a narrower rule would give the same output on every pair, and even where the part's result matches the model at hand's on every pair. Exercised tests only the parts the peer adds; a peer that adds none passes it.
+- **Exercised.** A peer model has rules, parameters, or comps that the current model does not. If no pair exercises them, that peer gets no case.
+    - A pair exercises a part of the peer when that pair's output derives through it, even where a narrower rule would give the same output on every pair, and even where the part's result matches the current model's on every pair. Exercised tests only the parts the peer adds; a peer that adds none passes it.
 - **No relational form.** A hypothesis with no relational form gets no case. When a hypothesis's encoding depends on arithmetic and the lib addition protocol closes the primitive, that hypothesis has no relational form (`proposals/MinHops.md`).
 - **Table entries.** A mapping table needs multiple entries exercised. A one-entry ring table over a plain border is unexercised.
     - 44f52bb0 <!-- both symmetry classes occur in the pairs. -->
