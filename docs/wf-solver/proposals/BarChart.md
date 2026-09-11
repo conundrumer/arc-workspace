@@ -82,7 +82,7 @@ Spec:
 
 Reimplementations: 2753e76c reads the frame's bar-axis extent as `order.rank_desc($U(), N, 0)`, the top-ranked count, which is `Extremes.high` over the counts. The site reuses an instance it already has (Setup priority 2), so the fix is a judgment: if `BarChart` is promoted, the comp's `widest` supplies it.
 
-Survey: 2026-09-10 14:36 — the solvers since 2026-09-10 07:45, 045e512c, 0520fde7, 05f2a901, 08573cc6, 0d87d2a6, 0dfd9992, 1190bc91, 11dc524f, 137f0df0, 13e47133, 142ca369, 1478ab18, 17829a00, 17cae0c1, 19bb5feb, 1a6449f1, 20981f0e, 212895b5, 22eb0ac0, 264363fd, 291dc1e1, 2c181942, 3490cc26, 34b99a2b, 409aa875, 412b6263, 42a50994, 44f52bb0, 56dc2b01, 668eec9a, 7837ac64, 7c008303, 7e0986d6, 7e576d6e, 7f4411dc, 80a900e0, 81c0276b, 825aa9e9, 82819916, 83302e8f, 83b6b474, 83eb0a57, 8403a5d5, 84551f4c, 845d6e51, 846bdb03, 85c4e7cd, 89565ca0, 9565186b, 97999447, 99b1bc43, b1fc8b8e, b7cb93ac, bdad9b1f, d9fac9be.
+Survey: 2026-09-10 14:36 — the solvers since 2026-09-10 07:45.
 
 **Signature coverage.** The grep anchors (`Frame2D<` with `Extremes<` or `rank_desc(.., 0)` and `Ordinal<`/`Order<`) hit 4 scope files: 291dc1e1, 668eec9a, 81c0276b, 89565ca0. The parser match of the paint-rule shape (a `dist` distance compared against a variable, with a second `dist` on the same cell feeding a rank or seat lookup) hit exactly 2 rules in scope. Widened to every `<`, `<=`, `>`, `>=` between a `dist` distance and a variable, the scope holds only those same 2 rules (each also carries the `K >= N` past-the-end branch). No `// family:` sibling set is involved.
 

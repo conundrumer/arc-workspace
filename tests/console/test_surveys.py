@@ -145,7 +145,7 @@ def test_a_result_lands_at_the_end_of_the_entry(sv, srv):
     sv.append_survey(path, sv.survey_header(plan, at), "One new caller.\n")
     text = path.read_text()
     assert text.endswith("Survey: 2026-02-02 03:04 — the solvers since "
-                         "2026-01-01 00:00, aaa, bbb.\n\nOne new caller.\n")
+                         "2026-01-01 00:00.\n\nOne new caller.\n")
     assert sv.newest_survey(text) == "2026-02-02 03:04"
     assert sv.survey_result(text)
 

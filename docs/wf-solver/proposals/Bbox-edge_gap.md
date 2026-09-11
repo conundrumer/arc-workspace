@@ -68,7 +68,7 @@ Near-misses, new:
 
 Reimplementations: none. The local edge-line relations met (`3f23242b`, `5af49b42`, `2601afb7`) test `dist(P, D, 0)` against the grid edge with no box in the file.
 
-Survey: 2026-09-10 14:42 — the solvers since 2026-09-10 07:26, 045e512c, 0520fde7, 05f2a901, 08573cc6, 0c9aba6e, 0d87d2a6, 0dfd9992, 1190bc91, 11dc524f, 136b0064, 137f0df0, 13e47133, 142ca369, 1478ab18, 15113be4, 17829a00, 17cae0c1, 195ba7dc, 19bb5feb, 1a6449f1, 1b2d62fb, 1e32b0e9, 20981f0e, 212895b5, 22eb0ac0, 25c199f5, 264363fd, 281123b4, 291dc1e1, 29623171, 2c181942, 31d5ba1a, 3490cc26, 34b99a2b, 409aa875, 412b6263, 42a50994, 44f52bb0, 506d28a5, 56dc2b01, 5d2a5c43, 6430c8c4, 668eec9a, 66f2d22f, 75b8110e, 7837ac64, 7c008303, 7e0986d6, 7e576d6e, 7f4411dc, 80a900e0, 80af3007, 810b9b61, 817e6c09, 81c0276b, 825aa9e9, 82819916, 83302e8f, 83b6b474, 83eb0a57, 8403a5d5, 84551f4c, 845d6e51, 846bdb03, 85c4e7cd, 89565ca0, 8e5a5113, 94f9d214, 9565186b, 97999447, 99b1bc43, a68b268e, b1fc8b8e, b7cb93ac, bdad9b1f, ce4f8723, cf98881b, d19f7514, d9fac9be, dae9d2b5, e133d23d, e345f17b, e3497940, e98196ab, e9afcf9a, fafffa47.
+Survey: 2026-09-10 14:42 — the solvers since 2026-09-10 07:26.
 
 The matcher flags every rule in scope that holds an edge-line atom (`on_edge`, `edge_cell`, `corner`, `dist(_, _, 0)` tagged by whether its position comes from a `BoxFrame.inner` / `Reframe.view`, `geq`/`gt`) and reports the rule's negated atoms and disequalities beside it; it also flags every `min`/`max` aggregate, to catch hand-built boxes. Seven rules had an edge-line atom beside a complement; 28 more had an edge-line atom alone; no rule in scope holds an aggregate.
 

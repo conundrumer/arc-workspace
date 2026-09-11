@@ -135,13 +135,12 @@ def survey_plan(text: str) -> dict | None:
 
 
 def survey_header(plan: dict, at: float) -> str:
-    """The `Survey:` line the run's result goes under: its time, and the scope
-    it covered."""
+    """The `Survey:` line the run's result goes under: its time, and the time
+    its scope runs from. `run_dl.py since` lists that scope again from git."""
     stamp = survey_minute(at)
     if plan["scope"] is None:
         return f"Survey: {stamp} — the whole corpus."
-    return (f"Survey: {stamp} — the solvers since {plan['since']}, "
-            + ", ".join(plan["scope"]) + ".")
+    return f"Survey: {stamp} — the solvers since {plan['since']}."
 
 
 def append_survey(path: Path, header: str, result: str) -> None:

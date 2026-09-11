@@ -65,7 +65,7 @@ Remove the entry's file at these points:
         - the entry carries no result
         - some solvers are newer than the entry's newest `Survey:` line
     - If the command fails, spawn the `survey` role with the entry's path, the scope the command would take, and a scratch path (`.scratch/surveys/<entry name>/`), and append its report at the end of the entry in the form the command writes:
-        - a blank line, then `Survey: <date time> — the whole corpus.` or `Survey: <date time> — the solvers since <the entry's newest survey time>, <the stems, comma separated>.`, then a blank line, then the report
+        - a blank line, then `Survey: <date time> — the whole corpus.` or `Survey: <date time> — the solvers since <the entry's newest survey time>.`, then a blank line, then the report
         - say in the review that the session ran the survey
     - If the pass ends with the entry still unsurveyed, say so in the review.
 3. Decide whether to close the proposal. This is the only judgment in the protocol.
