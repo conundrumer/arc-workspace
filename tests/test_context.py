@@ -144,3 +144,9 @@ def test_the_handbook_agent_is_the_handbook_under_its_frontmatter(tmp_path):
     assert front.splitlines() == [f"{k}: {v}" for k, v in AGENT_META.items()]
     assert body == ROLE_NOTE + render(docs, lib)
     assert not list((tmp_path / "agents").glob("*.tmp"))
+    stamp = path.stat().st_mtime_ns
+    assert write_agent(path, docs, lib) == path
+    assert path.stat().st_mtime_ns == stamp             # the same definition is left alone
+    lib.write_text(".decl out(p: Position, col: Color)\n")
+    write_agent(path, handbook=render(docs, lib))       # a caller's own render
+    assert path.read_text() == agent_definition(render(docs, lib))

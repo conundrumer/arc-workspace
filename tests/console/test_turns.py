@@ -1112,6 +1112,16 @@ def test_append_carries_the_scratch_note_and_the_docs(srv):
     assert "# docs/wf-solver/style.md\n\n# Style\n\nEvery word of it.\n" in out
 
 
+def test_the_appendix_build_keeps_the_handbook_agent_current(srv):
+    from dl.context import agent_definition, render
+    (srv.DOCS / "style.md").write_text("# Style\n\nEvery word of it.\n")
+    srv.append_path()
+    assert srv.AGENT_PATH.read_text() == agent_definition(render(srv.DOCS))
+    stamp = srv.AGENT_PATH.stat().st_mtime_ns
+    srv.append_path()
+    assert srv.AGENT_PATH.stat().st_mtime_ns == stamp   # unchanged sources, no rewrite
+
+
 def test_two_callers_building_the_appendix_at_once_each_get_it_whole(srv):
     """A rename publishes the file, and two callers writing one file between
     them would publish it half written."""

@@ -4,6 +4,8 @@ workers with."""
 import os
 from pathlib import Path
 
+from dl import context
+
 HERE = Path(__file__).resolve().parents[1]
 ROOT = HERE.parents[1]
 STATE_DIR = Path(os.environ.get("CONSOLE_STATE_DIR", HERE / "state"))
@@ -17,6 +19,8 @@ RETRO_FILE = STATE_DIR / "retro.json"
 SOLVERS = ROOT / "programs" / "solvers"
 LIB = ROOT / "programs" / "lib.dl"
 DOCS = ROOT / "docs" / "wf-solver"
+# The handbook agent the console keeps current with the docs.
+AGENT_PATH = context.AGENT_PATH
 TASKS = ROOT / "data" / "tasks"
 ROLE_DIR = ROOT / ".claude" / "roles"
 REF_DIR = (ROOT.parent / "arc-synth-bun").resolve()

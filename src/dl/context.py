@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import re
+import threading
 from functools import lru_cache
 from pathlib import Path
 
@@ -241,13 +242,20 @@ def agent_definition(handbook: str) -> str:
     return f"---\n{front}\n---\n{agent_prompt(handbook)}"
 
 
-def write_agent(path: Path = AGENT_PATH, docs: Path = DOCS_DIR, lib: Path = LIB_SRC) -> Path:
+def write_agent(path: Path = AGENT_PATH, docs: Path = DOCS_DIR, lib: Path = LIB_SRC,
+                handbook: str | None = None) -> Path:
     """Write the handbook agent's definition, whole: a session that starts
-    while the write is in progress reads the old file or the new one."""
+    while the write is in progress reads the old file or the new one. A file
+    that already holds the definition is left alone. `handbook` is the
+    rendered handbook, for a caller that has it.
+    """
+    text = agent_definition(render(docs, lib) if handbook is None else handbook)
+    if path.exists() and path.read_text() == text:
+        return path
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(f".{os.getpid()}.tmp")
+    tmp = path.with_suffix(f".{os.getpid()}-{threading.get_ident()}.tmp")
     try:
-        tmp.write_text(agent_definition(render(docs, lib)))
+        tmp.write_text(text)
         tmp.replace(path)
     finally:
         tmp.unlink(missing_ok=True)

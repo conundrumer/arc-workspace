@@ -117,6 +117,7 @@ def srv(tmp_path, monkeypatch):
         monkeypatch.setattr(s, name, d)
     for name in DOCS:
         (s.DOCS / name).write_text(f"# {name}\n")
+    monkeypatch.setattr(s, "AGENT_PATH", tmp_path / "agents" / "handbook.md")
     monkeypatch.setattr(s, "queue_pick",
                         lambda n, order: [(f"t{i:02d}", 10 + i) for i in range(n)])
     s._test_stagger_launch = s.stagger_launch

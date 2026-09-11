@@ -7,7 +7,7 @@ import os
 import threading
 from pathlib import Path
 
-from dl.context import AGENT_META, agent_prompt, render
+from dl.context import AGENT_META, agent_prompt, render, write_agent
 
 from . import config, solvers, store
 
@@ -33,8 +33,11 @@ def append_path() -> Path:
     lib.dl, as dl.context renders them. The file is
     named by its content: items made while the sources are unchanged share one
     file, and so one cached prefix, and a file never changes under the session
-    that reads it, since a worker resumes by reading its own file again."""
-    text = SCRATCH_NOTE + "\n" + render(config.DOCS)
+    that reads it, since a worker resumes by reading its own file again. The
+    build also keeps the handbook agent's file current, so a session started
+    plainly spawns the agent over the same handbook."""
+    handbook = render(config.DOCS)
+    text = SCRATCH_NOTE + "\n" + handbook
     digest = hashlib.sha1(text.encode()).hexdigest()[:10]
     path = config.STATE_DIR / f"appendix-{digest}.md"
     if not path.exists():
@@ -48,6 +51,7 @@ def append_path() -> Path:
             tmp.replace(path)
         finally:
             tmp.unlink(missing_ok=True)
+    write_agent(config.AGENT_PATH, handbook=handbook)
     return path
 
 
