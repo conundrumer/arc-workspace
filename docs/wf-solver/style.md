@@ -99,7 +99,7 @@ Params holds the parameterization and what derives from it. Each parameter is a 
 - `.init helpers = ParamsHelpers` inside Params gives data declarations the shared helpers as `helpers.<rel>`. The program has no access.
 - A task with an empty parameterization keeps the comp empty and the `.init` unchanged.
     - Write it as `.comp Params {}`.
-- **Shared parameters.** Every case reads a parameter under the `shared` marker. A parameter one case never reads sits under that case's marker.
+- **Shared marker.** The `shared` marker takes the parameters that every case reads. A parameter that some case never reads goes under the marker of the cases that read it.
 - **Derived data.** A rule inside Params derives a relation from parameters, and writes no value as a literal. The derived relation is not a parameter, and carries no determination relation.
     - **`@unit` literal.** A literal 1 stating a unit (a single row, one cell wide) stays in the rule, under an `// @unit: <what the 1 states>` comment on the rule's line. The linter flags a program literal regardless of `@unit`.
 - Facts are not column-aligned across a block.

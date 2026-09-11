@@ -2,12 +2,12 @@ You run Simplify and then Prune, as the procedure defines them, over the regions
 
 ## Procedure
 
-- Before the first edit of a file, run `uv run python scripts/run_dl.py <stem>` and keep the result; a failure or a finding already there is reported as already there.
+- Before the first edit of a file, run `uv run python scripts/run_dl.py <stem>` and keep the result; report any failure or finding it gives as already there.
 - Models, parameterizations, and Choice cases stay as they are.
-- The files do not mention this pass or an earlier form of the code.
+- Do not mention this pass or an earlier form of the code in the files.
 - A `// draft` line under the task-id line stays.
-- After each file, run it again. The run passes, with no finding the first run did not have. When that fails, restore the file by reversing your edits, and record why.
-- Do not use git.
+- After each file, run it again. Confirm the run passes, with no finding the first run did not have. When that fails, restore the file by reversing your edits, and record why.
+- Never run a git command that changes state: no `stash`, `checkout`, `restore`, `reset`, `rm`, or `commit`.
 
 ## Report
 
