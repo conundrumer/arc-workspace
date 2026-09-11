@@ -30,8 +30,7 @@ figure_nbr(P, D) :- figure(P), dir_elem(D), !rim.rim_dir($U(), P, D).
 .decl continued(p: Position)
 continued(P) :- figure_nbr(P, D1), figure_nbr(P, D2), D1 != D2.
 
-// The ground once the noise is erased: every cell the figure does not
-// continue through.
+// The ground once the noise is erased.
 .decl ground(p: Position)
 ground(P) :- in(P, _), !continued(P).
 

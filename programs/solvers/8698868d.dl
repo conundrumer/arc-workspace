@@ -1,0 +1,115 @@
+// 8698868d
+// draft
+// concept: objects count rank crop
+// One-color squares sit on a background, in two sizes. The large squares
+// tile a region and are the blocks; the small squares are the pieces. Each
+// square encloses background regions: a block's dots, a piece's holes. The
+// output is the region the blocks tile, each block's interior replaced by
+// its piece, with the holes filled in the block's color. Two models of
+// which piece goes into a block; in every pair, the blocks' region counts
+// and the pieces' region counts are the same set, so the models agree:
+//
+//   $Count — the piece that encloses the same number of regions.
+//   $Rank  — the piece at the same rank by region count: the blocks ranked
+//            among themselves, the pieces among themselves. Ranks read
+//            from either end, so the output stands where the two reads
+//            agree.
+
+#include "../lib.dl"
+
+.type Choice = Count {} | Rank {}
+
+.comp Params {
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Count()). impl_choice($Rank()).
+
+// --- squares ---
+
+.init bg_mode = Mode<Unit, Color, Position>
+bg_mode.item($U(), Col, P) :- in(P, Col).
+
+.decl bg(col: Color)
+bg(Col) :- bg_mode.mode($U(), Col).
+
+// Touching cells of one non-bg color.
+.init squares = Components<Color>
+squares.node(Col, P) :- in(P, Col), !bg(Col).
+
+.decl square(id: Ident, col: Color)
+square(Id, Col) :- squares.label(Col, _, Id).
+
+.init box = BoxFrame<Ident>
+box.cell(Id, P) :- squares.label(_, P, Id).
+box.grid(Id, P) :- square(Id, _), in(P, _).
+
+// The largest squares are the blocks; the rest are the pieces.
+.init size = Extremes<Unit>
+size.cand($U(), N) :- box.extent(_, _, N).
+
+.decl block(id: Ident)
+block(Id) :- box.extent(Id, _, N), size.high($U(), N).
+
+.decl piece(id: Ident)
+piece(Id) :- square(Id, _), !block(Id).
+
+// --- pairing ---
+
+// The background regions a square encloses: a block's dots, a piece's holes.
+.init enclosed = Components<Ident>
+enclosed.node(Id, P) :- box.inside(Id, P), in(P, Col), bg(Col).
+
+.init region_count = Tally<Ident, Ident>
+region_count.item(Id, R) :- enclosed.label(Id, _, R).
+region_count.domain(Id) :- square(Id, _).
+
+// The piece that goes into a block.
+.decl pair(id_block: Ident, id_piece: Ident, ch: Choice)
+
+// --- Count ---
+pair(Id_b, Id_p, $Count()) :-
+    block(Id_b), piece(Id_p),
+    region_count.tally(Id_b, N), region_count.tally(Id_p, N).
+
+// --- Rank ---
+.decl fewer(id: Ident, id2: Ident)
+fewer(Id, Id2) :- region_count.tally(Id, N), region_count.tally(Id2, N2), N < N2.
+
+.init block_rank = Order<Unit, Ident>
+block_rank.elem($U(), Id) :- block(Id).
+block_rank.before($U(), Id, Id2) :- block(Id), block(Id2), fewer(Id, Id2).
+
+.init piece_rank = Order<Unit, Ident>
+piece_rank.elem($U(), Id) :- piece(Id).
+piece_rank.before($U(), Id, Id2) :- piece(Id), piece(Id2), fewer(Id, Id2).
+
+pair(Id_b, Id_p, $Rank()) :-
+    ( block_rank.rank($U(), Id_b, R), piece_rank.rank($U(), Id_p, R)             // from the fewest
+    ; block_rank.rank_desc($U(), Id_b, R), piece_rank.rank_desc($U(), Id_p, R)   // from the most
+    ).
+
+// --- render ---
+
+// A block's interior, in its own frame: the piece's frame.
+.init interior = BoxFrame<Ident>
+interior.cell(Id, P) :- block(Id), box.margin(Id, M), in(P, _), gt(P, M).
+
+// The output frame is the region the blocks tile.
+.init layout = BoxFrame<Unit>
+layout.cell($U(), P) :- block(Id), box.inside(Id, P).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_grid_out, Col, Ch) :-
+    impl_choice(Ch),
+    layout.inner($U(), P_grid_in, P_grid_out),                 // an output cell and its input cell
+    block(Id_b), box.inside(Id_b, P_grid_in),                  // the block there
+    ( !interior.inner(Id_b, P_grid_in, _), square(Id_b, Col)   // on the block's ring: its color
+    ; interior.inner(Id_b, P_grid_in, P_inner),                // inside: the piece's cell there
+      pair(Id_b, Id_p, Ch), box.inner(Id_p, Q, P_inner), in(Q, C_q),
+      ( !bg(C_q), Col = C_q                                    // the piece's ink
+      ; bg(C_q), square(Id_b, Col)                             // a hole: the block's color
+      )
+    ).

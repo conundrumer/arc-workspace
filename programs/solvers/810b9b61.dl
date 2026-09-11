@@ -5,7 +5,7 @@
 // closed rectangle takes the table's fill color; every other cell passes
 // through.
 //
-// $Rect — a rectangle drawn by four ink runs; its outline recolors.
+// $Rect — a rectangle outline drawn in ink; the outline recolors.
 // $Object — an ink component that draws the whole outline of its bounding
 //   box, with an inside; the component recolors.
 // $Enclose — an ink component one step from a region that ink closes off
@@ -75,7 +75,7 @@ painted(P, $Object()) :- obj(K, P), bcells.hole(K, _), !edge_gap(K).
 
 // Each ink color walls the rest of the grid off.
 .init closed = Closed<Color>
-closed.cell(Col, P) :- params.recolor(Col, _), in(P, C), C != Col.
+closed.cell(Col, P) :- params.recolor(Col, _), in(P, _), !ink(Col, P).
 
 // The wall of a closed region: the ink component one step from it.
 .decl wall(k: Obj)

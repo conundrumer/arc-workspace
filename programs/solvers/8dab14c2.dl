@@ -1,0 +1,71 @@
+// 8dab14c2
+// draft
+// concept: markers cast
+// A shape of one color sits on a background, and its edges carry anomalies.
+// A dent is a one-cell gap in a straight edge. A bump is a shape cell that
+// touches the dent-filled shape on one side only, its root. The clean shape
+// is the shape with its dents filled and its bumps removed. Each anomaly
+// crosses the clean shape along its own line and imprints the far edge: a
+// bump takes the far edge cell, and a dent adds the cell past it.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(c: Color) bg(8).
+    .decl shape(c: Color) shape(1).
+}
+
+.init params = Params
+
+.decl shape_cell(p: Position)
+shape_cell(P) :- in(P, Col), params.shape(Col).
+
+// The shape's edge cells, with the direction they face.
+.init edge = Rim<Unit>
+edge.cell($U(), P) :- shape_cell(P).
+
+// A dent: a background cell in a straight edge facing its opening.
+.decl dent(p: Position, opening: Dir)
+dent(P, D_open) :-
+    in(P, Col), params.bg(Col), dir_elem(D_open),
+    neighbor(P, D_open, O), !shape_cell(O),                       // open toward D_open
+    opposite(D_open, D_in), neighbor(P, D_in, B), shape_cell(B),  // the shape behind it
+    perp_dir(D_open, D1), opposite(D1, D2),                       // its two flanks
+    neighbor(P, D1, F1), edge.rim_dir($U(), F1, D_open),          // are edge cells
+    neighbor(P, D2, F2), edge.rim_dir($U(), F2, D_open).          // facing the opening
+
+// The shape with its dents filled.
+.decl filled(p: Position)
+filled(P) :- shape_cell(P).
+filled(P) :- dent(P, _).
+
+// A bump touches the filled shape in one direction only: its root.
+.init attach = Unanimous<Position, Dir>
+attach.item(P, D) :- shape_cell(P), dir_elem(D), neighbor(P, D, Q), filled(Q).
+
+.decl bump(p: Position, root: Dir)
+bump(P, D) :- attach.value(P, D).
+
+// An anomaly crosses the clean shape along its line, from where it enters
+// the shape to the far edge.
+.init cross = Slide<Unit>
+cross.node($U(), P) :- filled(P), !bump(P, _).
+cross.dir($U(), D) :- dir_elem(D).
+
+// A bump takes the far edge cell of its line.
+.decl taken(p: Position)
+taken(Q) :- bump(P, D), neighbor(P, D, R), cross.rest($U(), R, D, Q).
+
+// A dent adds the cell past the far edge of its line.
+.decl added(p: Position)
+added(Q2) :-
+    dent(P, D_open), opposite(D_open, D),      // inward from the opening
+    cross.rest($U(), P, D, Q), neighbor(Q, D, Q2), in(Q2, _).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, C_in),
+    ( taken(P), params.bg(Col)
+    ; added(P), params.shape(Col)
+    ; !taken(P), !added(P), Col = C_in
+    ).

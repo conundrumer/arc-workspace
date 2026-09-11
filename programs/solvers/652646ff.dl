@@ -1,7 +1,6 @@
 // 652646ff
 // draft
 // concept: lookup occlude rank
-// shape: percept-shadow
 // Diamonds of one shape, each in its own color, are drawn over one another on
 // a plain ground, and stray cells of further colors litter the grid. A
 // diamond that lies behind another shows with the covered cells missing.

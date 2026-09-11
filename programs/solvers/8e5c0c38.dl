@@ -1,0 +1,87 @@
+// 8e5c0c38
+// concept: objects symmetry repair d4
+// Shapes lie on the background, each a mirror-symmetric figure with a few
+// stray cells added. The output keeps, per shape, the cells whose mirror image
+// across the figure's axis is also in the shape, and erases the rest. The axis
+// is the placement of the flip that lands the most shape cells on shape cells.
+// Two hypotheses of what a shape is:
+//
+//   $ByColor  — all cells of one color.
+//   $ByObject — one connected piece.
+//
+// Placements can tie for a shape; each choice among tied placements is a
+// resolution.
+
+#include "../lib.dl"
+
+.type Choice = ByColor {} | ByObject {}
+.type Grp = [ch: Choice, id: Ident]
+
+// A shape's placement of the flip.
+.type Placement = [shape: Ident, delta: Shift]
+
+.type TiebreakResolution =
+    End {} | Sit {shape: Ident, at: Placement, rest: TiebreakResolution}
+
+.comp Params {
+    // The axis the flip inverts.
+    .decl mirror_axis(a: Axis) mirror_axis(AXIS_H).
+}
+
+.init params = Params
+
+// The background is the commonest color.
+.init ground = Mode<Unit, Color, Position>
+ground.item($U(), Col, P) :- in(P, Col).
+
+.decl bg(col: Color)
+bg(Col) :- ground.mode($U(), Col).
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !bg(Col).
+
+// A shape's cells, per hypothesis of what a shape is.
+.decl shape(ky: Grp, p: Position)
+
+// --- ByColor ---
+
+.init hue = Canon<Position>
+hue.equiv(P, Q) :- ink(P, Col), ink(Q, Col).
+
+shape([$ByColor(), Id], P) :- hue.id(P, Id).
+
+// --- ByObject ---
+
+.init piece = Components8<Unit>
+piece.node($U(), P) :- ink(P, _).
+
+shape([$ByObject(), Id], P) :- piece.label($U(), P, Id).
+
+// --- shared ---
+
+// A shape cell whose image under a placement of the flip is a shape cell. A
+// placement is the shift that carries a cell's flipped image onto a shape cell
+// on its own line across the axis.
+.decl mirrored(ky: Grp, delta: Shift, p: Position)
+mirrored(Ky, Delta, P) :-
+    shape(Ky, P), params.mirror_axis(A), flip_of(A, D), apply(D, P, P_flip),   // a cell, flipped
+    shape(Ky, Q), same_line(A, P, Q), displacement(P_flip, Q, Delta).          // onto a shape cell of its line
+
+// The figure's axis: the placement that lands the most cells.
+.init fit = Mode<Grp, Shift, Position>
+fit.item(Ky, Delta, P) :- mirrored(Ky, Delta, P).
+
+// --- the resolutions ---
+
+.init ties = TiebreakResolutions<Choice, Ident, Placement>
+ties.cand(Ch, Id, [Id, Delta]) :- fit.mode([Ch, Id], Delta).
+
+.decl kept(p: Position, ch: Choice, res: TiebreakResolution)
+kept(P, Ch, R) :- ties.assign(Ch, R, Id, [Id, Delta]), mirrored([Ch, Id], Delta, P).
+
+.decl out(p: Position, col: Color, ch: Choice, res: TiebreakResolution)
+out(P, Col, Ch, R) :-
+    in(P, Col_in), ties.resolution(Ch, R),
+    ( kept(P, Ch, R), Col = Col_in       // a mirrored cell stays
+    ; !kept(P, Ch, R), bg(Col)           // the rest is erased
+    ).

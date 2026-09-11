@@ -1,0 +1,107 @@
+// 85fa5666
+// draft
+// concept: objects markers permutation d4 lookup cast
+// Each square of params.square carries four marks, one diagonally off each
+// corner. Each mark moves to another corner of its square and casts a ray
+// from there outward along the corner's diagonal to the grid edge. The
+// squares stay; everything else is background.
+//
+// Which corner a mark moves to splits the cases: $Turn applies a stored D4
+// element to the corners; $Table stores the permutation.
+
+#include "../lib.dl"
+
+.type Choice = Turn {} | Table {}
+
+.comp Params {
+    // --- shared ---
+    .decl bg(c: Color) bg(0).
+    .decl square(c: Color) square(2).
+
+    // --- Turn ---
+    .decl turn(d: D4) turn(D4_CW).
+
+    // --- Table ---
+    // The corner each corner's mark comes from.
+    .decl corner_from(d_to: DiagDir, d_from: DiagDir)
+    corner_from(DIAG_TL, DIAG_BL).
+    corner_from(DIAG_TR, DIAG_TL).
+    corner_from(DIAG_BR, DIAG_TR).
+    corner_from(DIAG_BL, DIAG_BR).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Turn()). impl_choice($Table()).
+
+// The squares and their seats: each square is a component of the square
+// color, and its seat at corner D is the cell diagonally off that corner.
+.comp Parse<Key> {
+    .type Sq = [k: Key, id: Ident]
+
+    .decl cell(k: Key, p: Position, col: Color)
+
+    .init sq = Components<Key>
+    sq.node(K, P) :- cell(K, P, Col), params.square(Col).
+
+    .init box = Bbox<Sq>
+    box.cell([K, Id], P) :- sq.label(K, P, Id).
+
+    .decl seat(k: Key, id: Ident, d: DiagDir, p: Position)
+    seat(K, Id, D, Q) :- box.corner([K, Id], P, D), neighbor(P, D, Q).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// The corner whose mark lands at corner D_to, per case.
+.decl source(d_to: DiagDir, d_from: DiagDir, ch: Choice)
+
+// --- Turn ---
+source(D_to, D_from, $Turn()) :-
+    params.turn(R), apply_diag_dir(R, D_from, D_to).
+
+// --- Table ---
+source(D_to, D_from, $Table()) :- params.corner_from(D_to, D_from).
+
+// --- shared ---
+
+// Each seat casts outward along its own corner's diagonal: the key is the
+// cast direction.
+.init ray = Ray<DiagDir>
+ray.dir(D, D) :- diag_dir_elem(D).
+ray.cell(D, P) :- in(P, _), diag_dir_elem(D).
+ray.mark(D, Q) :- parse.seat($U(), _, D, Q).
+
+// A ray cell takes the color of the mark that moved to its seat.
+.decl lit(p: Position, col: Color, ch: Choice)
+lit(P, Col, C) :-
+    ray.ray(D, P, D, _, Q), parse.seat($U(), Id, D, Q),         // on the ray out of seat Q
+    source(D, D_from, C), parse.seat($U(), Id, D_from, Q_from),  // the corner its mark comes from
+    in(Q_from, Col).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, C) :-
+    in(P, Col_in), impl_choice(C),
+    ( lit(P, Col, C)                                          // a ray cell
+    ; params.square(Col_in), Col = Col_in                     // the square stays
+    ; !lit(P, _, C), !params.square(Col_in), params.bg(Col)   // everything else blank
+    ).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // A corner pair some square contradicts: the output at the seat of D_to
+    // is not the input at the seat of D_from.
+    .decl contradicted(d_to: DiagDir, d_from: DiagDir)
+    contradicted(D_to, D_from) :-
+        parse.seat(E, Id, D_to, Q), ex_out(E, Q, Col_out),
+        parse.seat(E, Id, D_from, Q_from), ex_in(E, Q_from, Col_in),
+        Col_out != Col_in.
+
+    .decl corner_from(d_to: DiagDir, d_from: DiagDir)
+    corner_from(D_to, D_from) :-
+        diag_dir_elem(D_to), diag_dir_elem(D_from), !contradicted(D_to, D_from).
+}

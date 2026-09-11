@@ -1,0 +1,115 @@
+// 891232d6
+// draft
+// concept: markers walk
+// Horizontal wall segments lie on a blank grid, and markers sit on the
+// bottom edge. Each marker starts a walker that climbs until a wall cell
+// lies directly ahead, slides aside under the wall to its end, and climbs
+// on past it. The walk paints its trail, the cell where it turns aside,
+// the struck wall cell, and the corner where it climbs on. Where the walker
+// cannot turn — at the top edge, or where a wall cell cuts the slide off
+// under the wall or just past its end — it halts and paints a marker.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl wall(col: Color) wall(7).
+    .decl marker(col: Color) marker(6).
+    .decl trail(col: Color) trail(2).
+    .decl hit(col: Color) hit(8).
+    .decl aside(col: Color) aside(4).
+    .decl onward(col: Color) onward(3).
+    .decl climb_dir(d: Dir) climb_dir(DIR_T).
+    .decl aside_sense(s: Sense) aside_sense(SENSE_CW).
+
+    .decl aside_dir(d: Dir)
+    aside_dir(D) :- climb_dir(D_up), aside_sense(S), turn(S, D_up, D).
+}
+
+.init params = Params
+
+// A cell the walker may stand on.
+.decl open(p: Position)
+open(P) :- in(P, Col), !params.wall(Col).
+
+// A climb runs through open cells.
+.init climb = Slide<Unit>
+climb.node($U(), P) :- open(P).
+climb.dir($U(), D) :- params.climb_dir(D).
+
+// A slide runs through open cells with a wall cell directly ahead of the
+// climb.
+.init slide = Slide<Unit>
+slide.node($U(), P) :-
+    open(P), params.climb_dir(D), neighbor(P, D, Q), in(Q, Col), params.wall(Col).
+slide.dir($U(), D) :- params.aside_dir(D).
+
+// A climb from p comes to rest at q.
+.decl climb_leg(p: Position, q: Position)
+climb_leg(P, Q) :-
+    ( in(P, Col), params.marker(Col)  // from a marker
+    ; turned(_, P)                    // from the corner past a wall's end
+    ), climb.rest($U(), P, _, Q).
+
+// The slide from a climb's rest b reaches an open cell r past the wall's
+// end: the walker turns.
+.decl turned(b: Position, r: Position)
+turned(B, R) :-
+    climb_leg(_, B), slide.rest($U(), B, _, Q),       // the slide's rest
+    params.aside_dir(D), neighbor(Q, D, R), open(R).  // one open cell on
+
+// The cells a climb, or a turn's slide, passes over, its start excluded.
+.decl trail(p: Position)
+trail(Q) :- climb_leg(P, _), climb.run($U(), P, _, Q).
+trail(Q) :- turned(B, _), slide.run($U(), B, _, Q).
+
+// The cells the walk marks.
+.decl mark(p: Position, col: Color)
+mark(B, Col) :- turned(B, _), params.aside(Col).
+mark(R, Col) :- turned(_, R), params.onward(Col).
+mark(W, Col) :- turned(B, _), params.climb_dir(D), neighbor(B, D, W), params.hit(Col).
+mark(Q, Col) :- climb_leg(_, Q), !turned(Q, _), params.marker(Col).  // the walker halts
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, Col_in),
+    ( mark(P, Col)
+    ; !mark(P, _), trail(P), params.trail(Col)
+    ; !mark(P, _), !trail(P), Col = Col_in
+    ).
+
+.comp Determine {
+    // A cell the output repaints.
+    .decl changed(e: Example, p: Position, col: Color)
+    changed(E, P, Col) :- ex_in(E, P, Col_in), ex_out(E, P, Col), Col != Col_in.
+
+    // A repainted wall cell is a struck one.
+    .decl hit_cell(e: Example, p: Position)
+    hit_cell(E, P) :- changed(E, P, _), ex_in(E, P, Col), params.wall(Col).
+
+    .decl hit(col: Color)
+    hit(Col) :- hit_cell(E, P), ex_out(E, P, Col).
+
+    // The cell behind a struck wall cell is where the walker turned aside.
+    .decl aside_cell(e: Example, p: Position)
+    aside_cell(E, Q) :- hit_cell(E, P), params.climb_dir(D), opposite(D, D2), neighbor(P, D2, Q).
+
+    .decl aside(col: Color)
+    aside(Col) :- aside_cell(E, P), ex_out(E, P, Col).
+
+    // A repainted cell just past a wall's end, beside a repainted open cell
+    // under the wall, is where the walker climbed on.
+    .decl onward_cell(e: Example, p: Position)
+    onward_cell(E, R) :-
+        changed(E, R, _), params.climb_dir(D),
+        neighbor(R, D, W), ex_in(E, W, Col_w), !params.wall(Col_w),                // no wall ahead of r
+        params.aside_dir(D_a), opposite(D_a, D_b), neighbor(R, D_b, Q),           // the cell before r
+        changed(E, Q, _), !hit_cell(E, Q),                                        // repainted, and open
+        neighbor(Q, D, W_q), ex_in(E, W_q, Col_q), params.wall(Col_q).            // under the wall
+
+    .decl onward(col: Color)
+    onward(Col) :- onward_cell(E, P), ex_out(E, P, Col).
+
+    // The repaint color left over is the trail's.
+    .decl trail(col: Color)
+    trail(Col) :- changed(_, _, Col), !hit(Col), !aside(Col), !onward(Col), !params.marker(Col).
+}

@@ -78,3 +78,36 @@ Callers:
 - `programs/solvers/52fd389e.dl` — `ring_box` and `ring`. The width is uniform: one cell per marker the rectangle holds.
 - `programs/solvers/543a7ed5.dl` — `ring_box` and `ring`, under the `$Ring` outline. The width is uniform and one cell: the band sits immediately around each shape's bounding box.
 - `programs/solvers/5adee1b2.dl` — `grown_box`. Each shape's bounding box let out by one on every edge, read as the band together with the box's own cells. It writes the dilation form, so it calls the comp on the two questions the fourth survey raises.
+- `programs/solvers/890034e9.dl` — `outline`. The band one cell around each twin of the frame's hole, a full rectangle, drawn in the frame's color. It writes the dilation form as `ring`, so it calls the comp on the unit-width question.
+
+Survey: 2026-09-10 20:49 — the solvers since 2026-09-09 01:58.
+
+The survey read the 70 solvers in scope for the band of cells around a box within a width: a rule deriving a let-out box from a box margin and a width, joined by a `geq` test against that box with membership in the source box negated, and the dilation form, one `dir8_elem` step off a full rectangle. It grepped `displacement(`, `uniform_delta(`, `edge_delta(`, `axis_delta(`, `compose(`, `geq(`, `gt(`, the `Bbox`, `BoxCells`, `BoxFrame`, `MarginFrame`, `Rim`, and `DrawnRect` instances, `dir8_elem` beside `neighbor(`, and relation names carrying ring, band, outline, border, grown, or frame, and read each hit in its rule.
+
+Callers:
+
+- `programs/solvers/890034e9.dl` — `outline`. The band one cell around each twin of the frame's hole, a full rectangle, drawn in the frame's color; unchanged since the entry listed it, still the dilation form as `ring` (`dir8_elem`, `neighbor`, `in(Q, _)`, `!twin`).
+
+No second caller: no rule in scope tests `geq` against a box derived from a box margin and a width, and no site writes the relaxed-cell variant. Of the `displacement` and `compose` sites that touch a box margin (045e512c, 20981f0e, 264363fd, 291dc1e1, 2c181942, 7c66cb00, 85b81ff1, 88207623, 88a10436), every one moves a box or content by a Shift, seats content in a box frame, or reads the offset between two boxes. The two `uniform_delta` sites (412b6263, 8719f442) build an Inset that seats content in a grown frame. The `geq` and `gt` sites (8731374e, 846bdb03, 8698868d, 84f2aca1, 20981f0e) read a box's enclosed cells or its strict interior.
+
+Near-misses:
+
+- 8719f442 — `seat_delta` and `cell`. The program names `ring_width(1)`, packs it with `uniform_delta` into the Inset that seats the input's block tile inside the grown tile frame, then takes the block tile with its `dir8_elem` neighbors as the tile frame; `copy` reads the ring tiles by direction. It is the 412b6263 class, content offset into a grown frame with the outer cells falling out around it: there is no cell domain to feed the comp, because the grown frame is what the dilation produces. It reads the seat together with the ring, which is `covered`, not `ring`.
+- 412b6263 — `ring`. The known near-miss: the ring Inset offsets copies into the grown frame, and the outer lines fall out as frame cells off the copies.
+- 8731374e — `covered`. `geq` alone against a drawn rectangle: the enclosed cells of a box.
+- 8698868d — `interior`. A block's ring is `box.inside` minus the BoxFrame over `gt(P, M)`: the box's own edge lines, `BoxCells.on_edge`.
+- 2c181942 — `seat`; 85fa5666 — `seat`. One step beyond a `Bbox.edge_cell` toward its edge, or beyond a `Bbox.corner` toward its corner: one side or one corner of the unit band, read as a seat for content carried from elsewhere (the 49d1d64f class).
+- d9fac9be — `outline`, `defect`, `gap`. `Rim` over a `Frame2D` is the box's own edge lines, used as a shape to find; `defect` and `gap` test the eight surrounding cells of one cell, no box and no width.
+- 759f3fd3 — `rings`. `Dilate` depth from the crossing cell, stepping `dir8_elem`, indexes square rings by depth: no box and no width, the 4290ef0e class.
+- 85c4e7cd — `peel`; 13e47133 — `rim`. `Rim` and `Rim8` depth over the whole grid or an open set, which follow the set's shape.
+- 20981f0e — `landing`; 85b81ff1 — `moved`. A box margin composed with a Shift and tested with `geq(M, ORIGIN)`, or the displacement between two box margins: a box moved, not let out.
+- 137f0df0 — `bx.inside`; 3490cc26 — `span.inside`; 84f2aca1 — `region`; 846bdb03 — `interior`; 1a6449f1 and 868de0fa — `bcells.hole`. The inward peers, `Bbox.inside`, `gt`, and `BoxCells.hole`.
+
+Spec:
+
+1. The `covered` readout. 8719f442 reads the box together with its band, as 5adee1b2 does; it would call the comp on that readout only if the comp also realized the domain when none is given, since its grown frame exists only as the dilation's output. That is a question for the spec, whether `cell` may default to the let-out box's own frame, and it rests on one near-miss beside one caller, so it is reported and not argued as a change.
+2. The unit width. 8719f442 is a dilation-form site that names its width as a number, `ring_width(1)`, and packs it with `uniform_delta`: unlike 5adee1b2 and 890034e9, calling the comp asks it for nothing its program does not already hold. It does not settle which form a unit width takes, because its ring is found by the step and not by the width.
+3. The `Not:` line. `Dilate` (proposal comp in 759f3fd3 and 6df30ad6: depth outward from a seed set through one direction set) covers the same cells as `covered` when the seed is a full rectangle, the directions are `dir8_elem`, and the width is uniform: depth at most the width. The two come apart on a per-edge width, on a seed that is not a rectangle, and on cardinal-only steps, where the depth band has cut corners. The `Not:` line should name `Dilate` beside `Rim`, as the outward operation that follows a set's shape and holds no per-edge width.
+4. Interface and definition otherwise: no site in scope argues a change to `box`, `width` per Dir, or `ring`.
+
+Reimplementations: none.

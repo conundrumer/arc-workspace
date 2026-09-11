@@ -1,0 +1,50 @@
+// 8731374e
+// draft
+// concept: crop markers cast select count
+// A solid block of one color sits in colored noise, with a few flaw cells of
+// another color inside it. The block is the largest rectangle outlined in one
+// color. The output crops the block; each flaw casts its color along its row
+// and its column across the crop, and the rest keeps the block's color.
+
+#include "../lib.dl"
+
+.comp Params {}
+
+.init params = Params
+
+// --- block ---
+
+.init drect = DrawnRect<Color>
+drect.node(Col, P) :- in(P, Col).
+
+// The cells a rectangle covers.
+.decl covered(b: Position, p: Position)
+covered(B, P) :- drect.rect(_, B), in(P, _), geq(P, B).
+
+// The block: the rectangle covering the most cells.
+.init biggest = Mode<Unit, Position, Position>
+biggest.item($U(), B, P) :- covered(B, P).
+
+.decl block(col: Color, b: Position)
+block(Col, B) :- biggest.mode($U(), B), drect.rect(Col, B).
+
+.init crop = Reframe<Unit>
+crop.outer($U(), B) :- block(_, B).
+crop.cell($U(), P) :- block(_, B), covered(B, P).
+
+// --- flaws ---
+
+// A block cell not of the block's color, in the crop frame.
+.decl flaw(p: Position, col: Color)
+flaw(P_inner, Col) :- crop.view($U(), P, P_inner), in(P, Col), !block(Col, _).
+
+// Crop cells on a flaw's row or column take the flaw's color.
+.decl flaw_line(p: Position, col: Color)
+flaw_line(P, Col) :- crop.inner($U(), P), flaw(Q, Col), axis_elem(A), same_line(A, P, Q).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    crop.inner($U(), P),
+    ( flaw_line(P, Col)
+    ; !flaw_line(P, _), block(Col, _)
+    ).

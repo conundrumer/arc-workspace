@@ -10,7 +10,7 @@ edge_gap(K, P, D) :- inside(K, P), edge_cell(K, Q, D), same_dist(D, P, Q), !cell
 
 Not: `Bbox.gap` (the whole box against the set, edge line included, with no side); this operation is that one narrowed to the edge line; `BoxCells.hole` (the strict interior of a margin box, with no member set); `BoxCells.on_edge` alone (the edge line, with no member test); `Rim` (the set's own boundary, which follows the set's shape); `Outset` (the band outside the box); a difference of the edge line against a set other than the one that fed the box.
 
-Match: a rule joining a box edge-line atom (`BoxCells.on_edge` over a `Bbox.margin`, or an equivalent local edge-line relation) with the complement of the member set that box bounds. The complement takes several forms: a negated member atom, a color test over the same set, a negated mark relation. `grep -n 'on_edge' programs/solvers/*.dl` is a starting point only; the shape is matched with the parser.
+Match: a rule joining a box edge-line atom with the complement of the member set that box bounds. The edge line takes several forms: `BoxCells.on_edge` over a `Bbox.margin`, `Bbox.edge_cell`, `dist(_, _, 0)` over a `BoxFrame.inner` or `Reframe.view` position, or an equivalent local edge-line relation. The complement takes several forms: a negated member atom, a color test over the same set, a negated mark relation, a member atom at another key with a key disequality. `grep -n 'on_edge' programs/solvers/*.dl` is a starting point only; the shape is matched with the parser.
 
 Survey: 2026-09-08 21:31
 

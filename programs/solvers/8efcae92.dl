@@ -1,0 +1,28 @@
+// 8efcae92
+// draft
+// concept: objects crop count select
+// Solid ink rectangles sit on bg, dotted with mark cells. The rectangle
+// with the most marks is kept, cropped to its bounding box.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+    .decl mark(c: Color) mark(2).
+}
+
+.init params = Params
+
+// A rectangle is a component of the non-bg cells.
+.init comps = Components<Unit>
+comps.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+.init winner = Mode<Unit, Ident, Position>
+winner.item($U(), Id, P) :- comps.label($U(), P, Id), in(P, Col), params.mark(Col).
+
+.init crop = BoxFrame<Unit>
+crop.cell($U(), P) :- winner.mode($U(), Id), comps.label($U(), P, Id).
+crop.grid($U(), P) :- in(P, _).
+
+.decl out(p: Position, col: Color)
+out(P_inner, Col) :- in(P, Col), crop.inner($U(), P, P_inner).

@@ -1,0 +1,90 @@
+// 8b7bacbf
+// draft
+// concept: objects markers border
+// Hollow boxes and wires lie on a background. An object is same-colored
+// ink, 8-connected. A marker is the one cell of its color, and the color
+// beside it is its guide color. Objects touch side by side, and the
+// marker's circuit is the objects reached from it by touching, boxes and
+// wires of other colors included. A hollow box fills with the marker's
+// color where a guide-colored object of its circuit touches it.
+//
+// The circuit stands in for a wire's continuation under a wire that
+// crosses it: the crossing wire touches both parts. It also reaches a wire
+// that another wire of the circuit merely touches.
+//
+// A hole is a background region walled in one color, the grid edge
+// counting as wall; its box is the wall with the same-colored ink
+// 4-connected to it, so two boxes of one color that meet at a corner stay
+// apart.
+
+#include "../lib.dl"
+
+.comp Params {}
+
+.init params = Params
+
+// The background is the commonest color; the rest is ink.
+.init bg_mode = Mode<Unit, Color, Position>
+bg_mode.item($U(), Col, P) :- in(P, Col).
+
+.decl bg(col: Color)
+bg(Col) :- bg_mode.mode($U(), Col).
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !bg(Col).
+
+// The ink one step from a cell.
+.decl beside(p: Position, q: Position, col: Color)
+beside(P, Q, Col) :- in(P, _), dir_elem(D), neighbor(P, D, Q), ink(Q, Col).
+
+// Objects: same-colored ink, 8-connected.
+.init object = Components8<Color>
+object.node(Col, P) :- ink(P, Col).
+
+// Two objects touch where a cell of one is beside a cell of the other.
+.decl contact(a: Ident, b: Ident)
+contact(A, B) :- object.label(_, P, A), beside(P, Q, _), object.label(_, Q, B).
+
+// A marker is the one cell of its color.
+.decl multi_cell(col: Color)
+multi_cell(Col) :- ink(P, Col), ink(Q, Col), P != Q.
+
+.decl marker(p: Position, col: Color)
+marker(P, M) :- ink(P, M), !multi_cell(M).
+
+// The marker's circuit: the objects reached from it by touching.
+.decl circuit(m: Color, w: Ident)
+circuit(M, W) :- marker(P, M), object.label(M, P, W).
+circuit(M, W2) :- circuit(M, W), contact(W, W2).
+
+// A live wire: an object of the marker's guide color in its circuit.
+.decl live(w: Ident, m: Color)
+live(W, M) :- marker(P, M), beside(P, _, G), object.label(G, _, W), circuit(M, W).
+
+// Background regions, and the ink beside each.
+.init region = Components<Unit>
+region.node($U(), P) :- in(P, Col), bg(Col).
+
+.decl wall(h: Ident, p: Position, col: Color)
+wall(H, P, Col) :- region.label($U(), Q, H), beside(Q, P, Col).
+
+// A hole is a region walled in one color.
+.init wall_color = Unanimous<Ident, Color>
+wall_color.item(H, Col) :- wall(H, _, Col).
+
+// A hole's box: its wall, and the same-colored ink 4-connected to the wall.
+.init box = Reach<Ident>
+box.node(H, P) :- wall_color.value(H, Col), ink(P, Col).
+box.seed(H, P) :- wall(H, P, _).
+
+// A wire touches a box where a wire cell is beside a box cell.
+.decl touch(h: Ident, w: Ident)
+touch(H, W) :- box.reach(H, P), beside(P, Q, _), !box.reach(H, Q), object.label(_, Q, W).
+
+// A hole fills with the color of a marker whose live wire touches its box.
+.decl fill(p: Position, col: Color)
+fill(P, M) :- region.label($U(), P, H), touch(H, W), live(W, M).
+
+.decl out(p: Position, col: Color)
+out(P, M) :- fill(P, M).
+out(P, Col) :- in(P, Col), !fill(P, _).

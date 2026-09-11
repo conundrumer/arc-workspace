@@ -1,0 +1,138 @@
+// 85b81ff1
+// draft
+// concept: decompose lines objects count rank move
+// Comb panels stand side by side across one-cell bg gaps: a solid spine
+// column and a tooth column with some teeth missing. The output reorders
+// the panels by ink count, the least-inked at params.least_dir; the gaps
+// stay.
+//
+//   $Tile(d)  — equal tiles across a bg gap, ranked by ink and permuted.
+//     d = $Count() — by tile count
+//     d = $Size()  — by tile size
+//   $Lines    — the lines holding both ink and bg, ranked by ink and
+//               permuted among their own places.
+//   $Objects  — the connected ink objects, ranked by size; each moves into
+//               the bounding box of the object at its rank's place.
+
+#include "../lib.dl"
+
+.type DecChoice = Count {} | Size {}
+.type Choice = Tile {d: DecChoice} | Lines {} | Objects {}
+
+.type TileKey = [t: Position, d: DecChoice]
+
+.comp Params {
+    // --- shared ---
+    .decl bg(c: Color) bg(0).
+
+    // The edge the least-inked unit sits at.
+    .decl least_dir(d: Dir) least_dir(DIR_L).
+
+    // The axis the units are ordered along.
+    .decl axis(a: Axis)
+    axis(A) :- least_dir(D), axis_of(D, A).
+
+    // --- Tile ---
+    .decl gap(g: number) gap(1).
+
+    // --- Tile Count ---
+    .decl tile_count(n: number) tile_count(5).
+
+    // --- Tile Size ---
+    .decl tile_size(k: number) tile_size(2).
+}
+
+.init params = Params
+
+.decl ink(p: Position)
+ink(P) :- in(P, Col), !params.bg(Col).
+
+.decl out(p: Position, col: Color, c: Choice)
+
+// --- Tile ---
+
+.decl dec_choice(dc: DecChoice)
+dec_choice($Count()).
+dec_choice($Size()).
+
+.decl decompose(p: Position, p_tile: Position, p_intile: Position, dc: DecChoice)
+decompose(P_grid, P_tile, P_intile, $Count()) :-
+    in(P_grid, _), params.axis(A), params.gap(G),
+    params.tile_count(N),                                     // tile count
+    divide_slab(P_grid, A, N, G, P_tile, P_intile).
+decompose(P_grid, P_tile, P_intile, $Size()) :-
+    in(P_grid, _), params.axis(A), params.gap(G),
+    params.tile_size(K),                                      // tile size
+    divide_by_size_slab(P_grid, A, K, G, P_tile, P_intile).
+
+.init tile_ink = Tally<TileKey, Position>
+tile_ink.item([P_tile, Dc], P) :- decompose(P, P_tile, _, Dc), ink(P).
+tile_ink.domain([P_tile, Dc]) :- decompose(_, P_tile, _, Dc).
+
+.init tile_rank = Ordinal<DecChoice>
+tile_rank.idx_set(Dc, N) :- tile_ink.tally([_, Dc], N).
+
+out(P_grid_out, Col, $Tile(Dc)) :-
+    decompose(P_grid_out, P_tile_out, P_intile, Dc),                // output tile cell
+    params.least_dir(D), dist(P_tile_out, D, R),                    // its tile's rank from the least edge
+    tile_ink.tally([P_tile_in, Dc], N), tile_rank.rank(Dc, N, R),   // the input tile of that ink rank
+    params.axis(A), params.gap(G),
+    concat_slab(P_tile_in, P_intile, A, G, P_grid_in), in(P_grid_in, Col).   // same cell of that tile
+out(P, Col, $Tile(Dc)) :- in(P, Col), dec_choice(Dc), !decompose(P, _, _, Dc).   // gap cells stay
+
+// --- Lines ---
+
+.decl line_ink(l: Position, p: Position)
+line_ink(L, P) :- ink(P), params.axis(A), split(P, A, L, _).
+
+.decl line_hole(l: Position)
+line_hole(L) :- in(P, Col), params.bg(Col), params.axis(A), split(P, A, L, _).
+
+.decl sortable(l: Position)
+sortable(L) :- line_ink(L, _), line_hole(L).
+
+.init line_tally = Tally<Position, Position>
+line_tally.item(L, P) :- line_ink(L, P), sortable(L).
+
+.init line_rank = Ordinal<Unit>
+line_rank.idx_set($U(), N) :- line_tally.tally(_, N).
+
+.init line_order = OrderFrame<Unit, Position>
+line_order.axis($U(), A) :- params.axis(A).
+line_order.member($U(), L, L) :- sortable(L).
+
+out(P_grid_out, Col, $Lines()) :-
+    in(P_grid_out, _), params.axis(A), split(P_grid_out, A, L_out, Across),   // output cell, its line
+    line_order.pos($U(), L_out, P_pos), params.least_dir(D), dist(P_pos, D, R),   // the line's place from the least edge
+    line_tally.tally(L_in, N), line_rank.rank($U(), N, R),                       // the input line of that ink rank
+    compose(L_in, Across, P_grid_in), in(P_grid_in, Col).                        // same cell of that line
+out(P, Col, $Lines()) :- in(P, Col), params.axis(A), split(P, A, L, _), !sortable(L).   // other lines stay
+
+// --- Objects ---
+
+.init obj = Components<Unit>
+obj.node($U(), P) :- ink(P).
+
+.init obj_size = Tally<Ident, Position>
+obj_size.item(Id, P) :- obj.label($U(), P, Id).
+
+.init obj_rank = Ordinal<Unit>
+obj_rank.idx_set($U(), N) :- obj_size.tally(_, N).
+
+.init obj_order = OrderFrame<Unit, Ident>
+obj_order.axis($U(), A) :- params.axis(A).
+obj_order.member($U(), Id, L) :- obj.label($U(), P, Id), params.axis(A), split(P, A, L, _).
+
+.init obj_box = Bbox<Ident>
+obj_box.cell(Id, P) :- obj.label($U(), P, Id).
+
+.decl moved(p: Position, col: Color)
+moved(P_out, Col) :-
+    in(P, Col), obj.label($U(), P, Id_src),                                  // object cell
+    obj_size.tally(Id_src, N), obj_rank.rank($U(), N, R),                    // its object's size rank
+    obj_order.pos($U(), Id_dst, P_pos), params.least_dir(D), dist(P_pos, D, R),   // the object at that place from the least edge
+    obj_box.margin(Id_src, B_src), obj_box.margin(Id_dst, B_dst),            // box to box
+    displacement(B_src, B_dst, V), compose(P, V, P_out).
+
+out(P, Col, $Objects()) :- moved(P, Col).
+out(P, Col, $Objects()) :- in(P, _), !moved(P, _), params.bg(Col).

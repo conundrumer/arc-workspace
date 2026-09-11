@@ -62,6 +62,7 @@ Spec question: whether `other` should be strict — absent when the key's set ha
 - `25d487eb` — `mark`: the ink palette's other color, relative to the arrowhead color the mode picks out; the complement form, inlined.
 - `63613498` — `twin`: the other of the two shapes holding the key's cells, relative to the key, over `Ident`; the complement form, inlined.
 - `52fd389e` — `marker`, keyed by rectangle `Ident`: the rectangle's other color, relative to the stored body color; the complement form, read per cell.
+- `8b28cd80` — `other`: the spiral palette's other color, the mark color and bg each paired with the other, so the rings alternate along the box recursion; the distinct-pair form.
 
 ## Near-misses
 

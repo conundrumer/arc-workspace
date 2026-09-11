@@ -1,0 +1,80 @@
+// 8b28cd80
+// draft
+// concept: markers scale cast walk
+// One marked cell in a 3x3 input. The output spreads the input's cells apart
+// by a gap and draws a square spiral in the mark's color around the mark's
+// cell. Square rings around that center alternate between the mark's color and
+// bg. Along one diagonal ray cast from beside the center, each ring's cell
+// takes the color of the ring inside it, which joins every ring to the ring
+// two out: the rings become one spiral.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+
+    // The gap between neighboring input cells in the output.
+    .decl gap(g: number) gap(3).
+
+    // The direction the spiral's arm leaves the center, and the sense the
+    // spiral winds in from there.
+    .decl arm(d: Dir) arm(DIR_T).
+    .decl wind(s: Sense) wind(SENSE_CW).
+
+    // The seam runs toward the corner between the arm and the direction that
+    // turns into the arm under the winding.
+    .decl seam(diag: DiagDir)
+    seam(Dg) :- arm(D), wind(S), turn(S, D2, D), diag_dirs(Dg, _, D, D2).
+
+    // The next ring is one cell out at every edge.
+    .decl ring_step(w: Inset)
+    ring_step(W) :- uniform_delta(1, W).  // @unit: rings are one cell apart
+}
+
+.init params = Params
+
+// The input's cells spread apart by the gap: the output lattice.
+.decl lattice(p_in: Position, p_out: Position)
+lattice(P_in, P_out) :- in(P_in, _), params.gap(G), concat_2d(P_in, ORIGIN, G, P_out).
+
+.init frame = Frame2D<Unit>
+frame.extent($U(), A, N) :- lattice(_, P), axis_elem(A), axis_dim(P, A, N).
+
+// The spiral's center: the mark's lattice point, as a degenerate box, with
+// the mark's color.
+.decl center(b: Position, col: Color)
+center(B, Col) :- in(P_in, Col), !params.bg(Col), lattice(P_in, B).
+
+// The two colors of the spiral, each paired with the other.
+.decl palette(col: Color)
+palette(Col) :- center(_, Col).
+palette(Col) :- params.bg(Col).
+
+.decl other(col: Color, col2: Color)
+other(C1, C2) :- palette(C1), palette(C2), C1 != C2.
+
+// Rings: the center, and each ring let out by one step, in the other color.
+// A ring that draws no cell ends the run: every ring beyond it is off the grid.
+.decl ring(b: Position, col: Color)
+ring(B, Col) :- center(B, Col).
+ring(B2, Col2) :- ring(B, Col), next_ring(B, B2), other(Col, Col2).
+
+.decl next_ring(b: Position, b2: Position)
+next_ring(B, B2) :- bcells.on_edge(B, _, _), params.ring_step(W), displacement(W, B, B2).
+
+.init bcells = BoxCells<Position>
+bcells.box(B, B) :- ring(B, _).
+bcells.cell(B, P) :- ring(B, _), frame.cell($U(), P).
+
+// The seam: the diagonal ray cast from the cell beside the center.
+.init seam = Ray<Unit>
+seam.dir($U(), Dg) :- params.seam(Dg).
+seam.cell($U(), P) :- frame.cell($U(), P).
+seam.mark($U(), P) :- center(B, _), params.arm(D), neighbor(B, D, P).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    bcells.on_edge(B, P, _),
+    ( !seam.ray($U(), P, _, _, _), ring(B, Col)                       // a ring cell keeps its ring's color
+    ; seam.ray($U(), P, _, _, _), next_ring(B_in, B), ring(B_in, Col) // a seam cell takes the inner ring's color
+    ).

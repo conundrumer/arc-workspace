@@ -2,7 +2,7 @@
 // draft
 // concept: cross walk parity
 // A cross of two full lines. Concentric square rings around the crossing
-// alternate bg and yellow, the ring beside the cross being bg. The cross
+// alternate bg and yellow, the ring beside the crossing being bg. The cross
 // stays. Two models:
 //
 //   $Cycle  — ring colors follow a stored cycle outward from the center.
@@ -42,8 +42,7 @@
 
 // Proposal comp (docs/wf-solver/proposals/Dilate.md): the depth of each
 // domain cell outward from a keyed seed set, stepping toward the key's
-// directions. The seeds are at 0, and each further cell one more than its
-// nearest seed-side neighbor.
+// directions.
 .comp Dilate<Key> {
     .decl seed(key: Key, p: Position)  // input
     .decl cell(key: Key, p: Position)  // input

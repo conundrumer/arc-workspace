@@ -1,0 +1,101 @@
+// 88207623
+// draft
+// concept: lines objects markers d4
+// Line segments of params.line stand on params.bg. A shape of params.shape
+// leans on each line, and a lone dot of another color lies beside it. The
+// shape is reflected across its line in the dot's color; the input shows
+// through elsewhere. Choice = [s, m] crosses the hypotheses:
+//
+//   s (which shape cells a line reflects):
+//     $Attached() — the shape cells 8-connected to the line.
+//     $Spanned()  — the shape cells in the line's band: its rows.
+//   m (which dot colors a line's reflection):
+//     $Beside() — the dot in the line's band.
+//     $Sample() — the dot on the reflection: its mirror is a shape cell.
+
+#include "../lib.dl"
+
+.type Shape = Attached {} | Spanned {}
+.type Marker = Beside {} | Sample {}
+.type Choice = [s: Shape, m: Marker]
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+    .decl line(c: Color) line(2).
+    .decl shape(c: Color) shape(4).
+    // The axis across the line, which the reflection inverts.
+    .decl across_axis(a: Axis) across_axis(AXIS_H).
+}
+
+.init params = Params
+
+// --- the lines ---
+
+.init lines = Components<Unit>
+lines.node($U(), P) :- in(P, Col), params.line(Col).
+
+// The line's band: every cell in the rows of its cells.
+.decl in_band(id: Ident, p: Position)
+in_band(Id, P) :-
+    lines.label($U(), L, Id), in(P, _),
+    params.across_axis(A), same_line(A, L, P).
+
+// A dot: any cell in none of the named colors.
+.decl dot(p: Position, col: Color)
+dot(P, Col) :- in(P, Col), !params.bg(Col), !params.line(Col), !params.shape(Col).
+
+// --- Shape cases: the cells a line reflects ---
+
+.decl shape_choice(s: Shape)
+shape_choice($Attached()).
+shape_choice($Spanned()).
+
+.decl source(id: Ident, p: Position, s: Shape)
+
+// $Attached — the shape cells reached from the line over 8-adjacency.
+.init blob = Reach<Ident>
+blob.step(S) :- dir8_elem(D), step_delta(D, S).
+blob.node(Id, P) :-
+    lines.label($U(), _, Id),
+    ( in(P, Col), params.shape(Col)    // a shape cell
+    ; lines.label($U(), P, Id)         // the line itself
+    ).
+blob.seed(Id, P) :- lines.label($U(), P, Id).
+
+source(Id, P, $Attached()) :- blob.reach(Id, P), in(P, Col), params.shape(Col).
+
+// $Spanned — the shape cells in the line's band.
+source(Id, P, $Spanned()) :- in_band(Id, P), in(P, Col), params.shape(Col).
+
+// --- the reflection ---
+
+// A source cell's image across its line: read in a line cell's frame, flipped
+// across the line, seated back. Any line cell serves, since the flip fixes
+// the line's axis. Images off the grid are dropped.
+.decl image(id: Ident, q: Position, s: Shape)
+image(Id, Q, S) :-
+    source(Id, P, S), lines.label($U(), L, Id),
+    params.across_axis(A), flip_of(A, F),
+    displacement(L, P, V), apply(F, V, V2), compose(L, V2, Q),
+    in(Q, _).
+
+// --- Marker cases: the dot that colors a line's reflection ---
+
+.decl marker_choice(m: Marker)
+marker_choice($Beside()).
+marker_choice($Sample()).
+
+.decl paint(p: Position, col: Color, ch: Choice)
+
+// $Beside — the dot in the line's band.
+paint(Q, Col, [S, $Beside()]) :- image(Id, Q, S), dot(P, Col), in_band(Id, P).
+
+// $Sample — the dot on the line's reflection.
+paint(Q, Col, [S, $Sample()]) :- image(Id, Q, S), dot(P, Col), image(Id, P, S).
+
+// --- Output ---
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- paint(P, Col, Ch).
+out(P, Col, [S, M]) :-
+    in(P, Col), shape_choice(S), marker_choice(M), !paint(P, _, [S, M]).    // shows through

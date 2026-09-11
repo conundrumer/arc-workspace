@@ -1,0 +1,72 @@
+// 880c1354
+// draft
+// concept: perimeter objects permutation
+// Regions sit around the grid's border, separated by a band of fixed colors.
+// Each region's color moves to the next region in the task's sense around the
+// border. What a region is:
+//
+//   $ByColor()  — the cells of one color.
+//   $ByObject() — one connected component of one color.
+
+#include "../lib.dl"
+
+.type Choice = ByColor {} | ByObject {}
+
+.comp Params {
+    // --- shared ---
+    // The colors of the band between the regions. They stay put.
+    .decl fixed(c: Color)
+    fixed(4).
+    fixed(7).
+
+    // The sense in which a region's color moves to the next region.
+    .decl sense(s: Sense) sense(SENSE_CW).
+}
+
+.init params = Params
+
+// A region cell: one of a color that moves.
+.decl region(p: Position, c: Color)
+region(P, C) :- in(P, C), !params.fixed(C).
+
+// The border as a cycle walked in the task's sense: from a cell on edge D, the
+// step toward turn(S, D) runs along that edge. At a corner only one of the
+// cell's two edges keeps the step on the grid, so each cell has one successor.
+.decl border_step(p: Position, q: Position)
+border_step(P, Q) :-
+    in(P, _), params.sense(S), turn(S, D, D_step), dist(P, D, 0),   // a cell on edge D
+    neighbor(P, D_step, Q), in(Q, _).                               // the step along that edge
+
+// The first region cell after p along the border: the band is skipped.
+.decl next_cell(p: Position, q: Position)
+next_cell(P, Q) :- border_step(P, Q), region(Q, _).
+next_cell(P, Q) :- border_step(P, P2), in(P2, C), params.fixed(C), next_cell(P2, Q).
+
+.decl impl_choice(ch: Choice)
+impl_choice($ByColor()).
+impl_choice($ByObject()).
+
+.decl out(p: Position, c: Color, ch: Choice)
+out(P, C, Ch) :- impl_choice(Ch), in(P, C), params.fixed(C).
+
+// --- $ByColor ---
+
+// The color that follows c around the border.
+.decl next_color(c: Color, c_next: Color)
+next_color(C, C_next) :- region(P, C), next_cell(P, Q), region(Q, C_next), C_next != C.
+
+out(P, C, $ByColor()) :- region(P, C_next), next_color(C, C_next).   // the color before it
+
+// --- $ByObject ---
+
+.init obj = Components<Color>
+obj.node(C, P) :- region(P, C).
+
+// The object that follows id around the border.
+.decl next_obj(id: Ident, id_next: Ident)
+next_obj(Id, Id_next) :-
+    obj.label(_, P, Id), next_cell(P, Q), obj.label(_, Q, Id_next), Id_next != Id.
+
+out(P, C, $ByObject()) :-
+    obj.label(_, P, Id_next), next_obj(Id, Id_next),   // the object before it
+    obj.label(C, _, Id).                               // that object's color

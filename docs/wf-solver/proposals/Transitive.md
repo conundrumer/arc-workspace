@@ -42,6 +42,7 @@ Callers:
 - 3d31c5b3, 6a11f6da, a68b268e, ea9794b1 (with 75b8110e as its family sibling) — `beats` in Determine: tile T's ink shows over tile T2's on some cell; closed, it feeds `order.before` to recover the overlay priority.
 - 80214e03 `block_line.equiv` — closes the adjacency of lines no boundary separates into block-lines, with a reflexive base over the content lines, feeding `Canon.equiv`.
 - 7b5033c1 `before`, keyed by edge — closes `step` (the walk along the snake from the end nearer that edge) into the order along the path, feeding `path.before`.
+- 88bcf3b4 `before`, keyed by worm — closes `step` (the worm's walk from its root) into the order along the walk, feeding `walk.before`; the rank against the worm's cell count truncates the walk.
 - 3d6c6e23 `cone` — the cells an apex reaches by steps toward the floor, straight or diagonal; a reflexive-transitive closure of that fixed edge with the base over the apex candidates, read as a pair by `cone_size`.
 - 2b83f449 `arrive` — the run entries a dot reaches by the composed edge `far_end ∘ drop`; a reflexive-transitive closure with the base over the dots, read as a pair by `rest_at` and tallied per stop by `pile`.
 
@@ -66,3 +67,24 @@ Result: delta over the 373 solvers changed after the third survey, matched with 
 Near-misses: `Order.before` feeds transitive by construction — 212895b5 `step_order.before` in Determine, 3d6c6e23 `fill.before`, 5587a8d0 `nest.before`, 7e576d6e `seq.before`, 89565ca0 `fewer.before`; `Canon.equiv` feeds transitive by construction — 5587a8d0 `patch.equiv` (same color, or `blob.conn`), 7b3084d4 `by_color.equiv` (symmetric closure alone, transitive because the task's marker touches one color); seeded reads of a closure whose head keeps the reached node, never the pair — 89565ca0 `line`, 7b0280bc `on_route`, and the sites the earlier results list; walks whose step depends on the state or carries a payload — 212895b5 `turtle`, 7e2bad24 `enter`, 7ec998c9 `shade`, 7d419a02 `shade`, and the earlier-listed sites; walks with a step count — 7b0280bc `MinHops.dist`, 6df30ad6 and 759f3fd3 `Dilate.depth`; fixed one-step compositions — 2546ccf6 `reflect`, 6165ea8f `slot`; argmin subsumption — 5ffb2104 and 6ad5bdfd `Settle.rest`; and the `Components.step` override in 36fdfd69.
 
 Spec: nothing in the delta changes the interface or the definition. 7b5033c1 exercises the Key parameter again (by `Dir`, as 78332cb0). 3d6c6e23 and 2b83f449 are the zero-or-more reading: each writes the identity row over its own seed set beside the closure, which confirms that `path` as one-or-more edges plus a caller-written base suffices. Both close a fixed spatial edge that no lib unit holds (a three-way cone, a two-hop composite), so they stay callers rather than `Ray` or `Components` sites.
+
+Survey: 2026-09-10 20:37 — the solvers since 2026-09-10 07:00.
+
+Callers: the transitive closure of a keyed edge relation (`Transitive<Key, T>`), surveyed over the 54 solvers in scope, matched with the parser in every scope: the self-join closure (1 rule), direct recursion with a chaining variable absent from the head (10 rules), and every feed of `.before`, `.equiv`, or `.node` (52 rules; the 42 `.node` feeds are plain cell, shift, or region sets for `Components`, `Reach`, `DrawnRect`, or `Slide`). One caller, already listed; no new caller.
+
+- 88bcf3b4 `before`, keyed by worm — closes `step` (the worm's walk from its root) into the order along the walk, feeding `walk.before`; the site stands as the entry lists it.
+
+Near-misses:
+
+- 880c1354 `next_cell` — the first region cell after p along the border, recursing through the cells of the fixed band; the head keeps a pair, but the recursion threads only through band cells and reports one successor per start, the first cell of another kind, so it is a walk whose continuation depends on the content, not the reached set of an edge.
+- 89565ca0 `line` — the self-join hit: a frame's line read through the cells that hide it, with two line cells behind; the head keeps the reached cell, never the pair (seeded read).
+- 88bcf3b4 `leg`, `free` — walks whose step depends on the state (the leg's goal), the head keeping the reached cell with the worm id.
+- 045e512c `copy`, 0dfd9992 `out`, 08573cc6 `arm`, 212895b5 `turtle` — walks whose step carries a payload or depends on the state, the head keeping the reached node.
+- 759f3fd3 `Dilate.depth` — a walk with a step count.
+- `Order.before` feeds transitive by construction: 8698868d `block_rank.before` and `piece_rank.before` (a count comparison, `fewer`), 89565ca0 `fewer.before` (a tally comparison), 212895b5 `step_order.before` in Determine (a product comparison).
+- `Canon.equiv` feeds transitive by construction: 84f2aca1 `rect_id.equiv` (the identity over drawn rectangles, an id generator), 142ca369 `pick.equiv` in Determine (the total equivalence over an example's launch cells), 409aa875 `pick.equiv` in Determine (`D4Map.map` between mark footprints, closed under D4 composition), 44f52bb0 and b1fc8b8e `class.equiv` in Determine (`KeyedSetCompare.equals`).
+- `Components.step` override: 88207623 `blob.step`, the Dir8 step set on a `Reach` (an 8-adjacency `Reach`, since lib has `Components8` and no 8-adjacency `Reach`); the closure over its own domain stays in `Components`.
+
+Spec: nothing in this scope changes the interface or the definition. The one caller (88bcf3b4) exercises the Key parameter as before, with `path` as one-or-more edges feeding `Order.before` directly. 880c1354 `next_cell` is the closest new site: it could be written as a closure over the band edge plus one exit step, but that takes three rules against its two, and its result is one successor per start, so it confirms the walk exclusion in `Not:` rather than asking for a second output.
+
+Reimplementations: none.

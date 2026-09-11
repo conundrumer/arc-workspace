@@ -87,3 +87,27 @@ a block) and clipping to the grid stay with the callers.
 - 57aa92db — `seat` and `stamp`: forward form; `concat_2d` scales the shape
   in the template's tile frame, `displacement` reads the seat off the mark
   tile, `compose` places every scaled cell; factor = the mark block's extent.
+
+Survey: 2026-09-10 21:11 — the solvers since 2026-09-10 03:45.
+
+Callers:
+8a004b2b `drawing` and `painted` — the forward form of the magnify operation: `drawing` spreads each blueprint cell over a `Frame2D` tile with `concat_2d`, giving the blueprint scaled by the block side in its own frame; `seat` (`Occurrences`) places that drawing where every block cell lands on a drawing cell of its color; `painted` reads each frame cell's drawing cell through that placement with `compose`. Factor = a block's side, one scalar, read off `block_box.extents(_, A, K, K)`.
+
+No second caller in the scope. The three-leg parser match (an anchor displacement or Reframe-family inner position; a `stride` quotient, divide-family call, or `Tile2D`/`Divide2D` tile; a `jump`, `compose`, or `DirPack` rebuild) hits no rule across the 58 solvers. Every `stride` site in scope (13e47133 `out`, 212895b5 `phase_turn.item`, 759f3fd3 `filled`, 97999447 `slot_color.item` and `mask`) leaves the quotient wild and reads the remainder alone: a period phase, not a scale. The divide-family sites (85b81ff1 `decompose`, 88a62173 `tile_val`) decompose a whole frame into equal panels with no factor. Of the `concat` sites, only 8a004b2b `drawing` scales a picture by a factor; the rest assemble unscaled content. The forward-form probes (a `jump` count bound by an extent readout; `concat` output fed to `compose`; `displacement` beside a `concat`) hit 11dc524f `mirror` only, a translation by a box length.
+
+Near-misses:
+- 8719f442 `cell` — a whole-frame scale-up: the input grown by one ring is the tile frame, every tile is input-sized, and `concat_2d` assembles the output over that whole frame. The `seat_delta` shifts the block's tile index inside the tile frame, not a cell seat, and the frame's extent divides. The `concat`-assembles-a-frame exclusion rules it out.
+- 412b6263 `placed` — a lattice of unscaled copies of the input, assembled with `concat_2d` (`$Layout`) and `concat_slab` (`$Count`) across line-width gaps. No factor: each tile is the input under a D4 element.
+- 291dc1e1 `out` — a stack of unscaled blocks assembled with `concat_slab` along the stack axis. No factor.
+- 85b81ff1 `decompose` and 88a62173 `tile_val` — whole-frame equal-panel decompositions by the divide family (`divide_slab`, `divide_by_size_slab`, `divide_2d`, `divide_by_size_2d`), reordered or selected. The divide-family exclusion rules them out, and nothing is scaled.
+- 11dc524f `mirror` — a box placed one shape-length past its home with `jump` by a `Bbox` extent. A translation of a reflected shape, no factor.
+- 7f4411dc `square_kept`, 890034e9 `twin`, 264363fd `stamped`, 88a10436 `stamp` — `Occurrences` or a `compose` from a marker places an unscaled shape. The unscaled-`Occurrences`/stamp exclusion rules them out.
+
+Spec:
+- Direction. 8a004b2b reads forward, as the two forward callers in the 03:45 result do: the picture domain in, the scaled cells out. That adds a third forward site against the one backward site (762cd429).
+- Factor. 8a004b2b reads one scalar and asserts square blocks (`extents(_, A, K, K)`), as 447fd412 does. Nothing in scope reads a per-axis factor.
+- Seat as a separate step. In 8a004b2b, as in 57aa92db (03:45), the scaling happens in the picture's own frame (`concat_2d` over a `Frame2D` tile) and the seat enters afterwards through `compose`. 8a004b2b needs the unseated scaled picture: `Occurrences` finds the seat by matching that picture's cells against the blocks, so a comp that fuses seat and scale cannot feed it. Two callers argue that the forward form should expose the scaled picture in its own frame, with the seat a caller-side `compose`; under that reading the seat and corner inputs of the entry's code form serve the backward caller only. With the forward form stated as `Frame2D` tile × `concat_2d`, the spec question is whether the operation beyond what lib holds is only the backward map (per-cell, anchored, non-dividing), which 762cd429 alone writes.
+- Corner. 8a004b2b is indifferent to the corner convention: `concat_2d` fixes the block layout inside the drawing frame, and `Occurrences` places the whole frame by its margin. This matches 57aa92db, and leaves 447fd412 and 762cd429 as the only sites where a corner input is read.
+
+Reimplementations: none.
+Matcher hit counts over the 58 solvers: three-leg backward match 0; `stride` sites 5 in 4 solvers, all remainder-only; divide-family sites 4 in 2 solvers; `concat` sites 6 in 5 solvers; extent-bound `jump` 1; `concat`-to-`compose` and `displacement`-with-`concat` 0. Method: the parser scan at the scratch path, over `dl.corpus.each_solver` filtered to the scope, plus a grep of the `// concept:` lines for scale, stamp, grow, and tile-arrangement, with each hit read in its rule.

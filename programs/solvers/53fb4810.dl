@@ -10,7 +10,9 @@
 //   $Period — the tile is the shortest period the band's own pattern shows,
 //             read through damage.
 //
-// Coincide while no band shows a period shorter than its extent.
+// Coincide on every pair: each continuing band's shortest period is its
+// extent, and each band that shows a shorter one reaches the frame edge on
+// its growth side, so it continues under neither case.
 
 #include "../lib.dl"
 

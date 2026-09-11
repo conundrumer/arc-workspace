@@ -1,0 +1,85 @@
+// 8a371977
+// draft
+// concept: decompose objects border enclose
+// Background lines separate a lattice of ink tiles. The tiles on the
+// lattice's outer ring take one color and the tiles inside another; the
+// background stays. Three hypotheses on out's Choice:
+//
+//   $Lattice — the background lines cut the grid into parts, a tile is a
+//              part that holds ink, and the ring is the tiles on the
+//              bounding box of the tile arrangement.
+//   $Blobs   — a tile is a connected component of ink, and the ring is the
+//              tiles that touch the bounding box of all ink.
+//   $Sight   — a tile is a connected component of ink, and the ring is the
+//              tiles with no other tile between them and the grid edge in
+//              some cardinal direction.
+
+#include "../lib.dl"
+
+.type Choice = Lattice {} | Blobs {} | Sight {}
+
+.comp Params {
+    // --- shared ---
+    .decl bg(c: Color) bg(1).
+    .decl ring(c: Color) ring(2).
+    .decl inside(c: Color) inside(3).
+}
+
+.init params = Params
+
+.decl ink(p: Position)
+ink(P) :- in(P, Col), !params.bg(Col).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Lattice()). impl_choice($Blobs()). impl_choice($Sight()).
+
+// The cells of the ring tiles, per hypothesis.
+.decl ring_cell(p: Position, ch: Choice)
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- in(P, Col), params.bg(Col), impl_choice(Ch).
+out(P, Col, Ch) :- ring_cell(P, Ch), params.ring(Col).
+out(P, Col, Ch) :- ink(P), impl_choice(Ch), !ring_cell(P, Ch), params.inside(Col).
+
+// --- $Lattice ---
+
+// The line across axis a at the axis-only position l holds ink.
+.decl off_line(a: Axis, l: Position)
+off_line(A, L) :- ink(P), axis_elem(A), split(P, A, L, _).
+
+.init cut = DividerFrame<Unit>
+cut.cell($U(), P) :- in(P, _).
+cut.divider($U(), A, L) :-
+    in(P, _), axis_elem(A), split(P, A, L, _),   // a line across axis A
+    !off_line(A, L).                             // every cell background
+
+// The tile arrangement: the tile positions of the parts that hold ink.
+.init lattice = Bbox<Unit>
+lattice.cell($U(), T) :- ink(P), cut.tile_of($U(), P, T).
+
+ring_cell(P, $Lattice()) :- ink(P), cut.tile_of($U(), P, T), lattice.edge_cell($U(), T, _).
+
+// --- $Blobs, $Sight ---
+
+.init blob = Components<Unit>
+blob.node($U(), P) :- ink(P).
+
+// --- $Blobs ---
+
+.init hull = Bbox<Unit>
+hull.cell($U(), P) :- ink(P).
+
+// P shares a tile with a cell on the hull's edge.
+ring_cell(P, $Blobs()) :-
+    blob.label($U(), P, Id), blob.label($U(), Q, Id),   // P and Q in one tile
+    hull.edge_cell($U(), Q, _).                         // Q on the hull
+
+// --- $Sight ---
+
+// Another tile lies toward d from some cell of tile id.
+.decl screened(id: Ident, d: Dir)
+screened(Id, D) :-
+    blob.label($U(), P, Id), blob.label($U(), Q, Id2), Id != Id2,   // cells of two tiles
+    axis_of(D, A), same_line(A, P, Q), nearer(D, Q, P).             // Q toward D on P's line
+
+ring_cell(P, $Sight()) :- blob.label($U(), P, Id), dir_elem(D), !screened(Id, D).

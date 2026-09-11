@@ -1,0 +1,112 @@
+// 8a6d367c
+// draft
+// concept: crop border markers objects scale select
+// Small shapes sit beside a rectangular frame. Inside the frame, a partial
+// fill covers whole blocks of a coarse grid. The output is the frame, cropped,
+// with its inside painted as the one shape whose pattern the fill fits: each
+// block is a pattern cell, filled where the pattern has a cell.
+//
+// $Color — a shape is the cells of one color.
+// $Piece — a shape is an 8-connected piece of one color.
+// $Object — a shape is an 8-connected object, whatever its colors.
+
+#include "../lib.dl"
+
+.type Choice = Color {} | Piece {} | Object {}
+.type Shape = [ch: Choice, id: Ident]
+
+.comp Params {
+    .decl bg(col: Color) bg(8).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Color()). impl_choice($Piece()). impl_choice($Object()).
+
+.decl ink(col: Color)
+ink(Col) :- in(_, Col), !params.bg(Col).
+
+// The rectangles each color draws.
+.init drect = DrawnRect<Color>
+drect.node(Col, P) :- ink(Col), in(P, Col).
+
+.init bcells = BoxCells<Position>
+bcells.box(B, B) :- drect.rect(_, B).
+bcells.cell(B, P) :- bcells.box(B, _), in(P, _).
+
+// The ink each rectangle holds.
+.decl held(b: Position, p: Position, col: Color)
+held(B, P, Col) :- bcells.hole(B, P), in(P, Col), ink(Col).
+
+// The frame: the rectangle that holds ink of another color.
+.decl frame(b: Position, col: Color)
+frame(B, Col) :- drect.rect(Col, B), held(B, _, C), C != Col.
+
+// The fill: the ink the frame holds.
+.decl fill(p: Position, col: Color)
+fill(P, Col) :- frame(B, _), held(B, P, Col).
+
+// The output is the frame's box.
+.init crop = Reframe<Unit>
+crop.outer($U(), B) :- frame(B, _).
+crop.cell($U(), P) :- frame(B, _), in(P, _), geq(P, B).
+
+// The frame's inside, in its own frame.
+.init hole = BoxFrame<Unit>
+hole.cell($U(), P) :- frame(B, _), bcells.hole(B, P).
+
+// The shapes' cells: the ink outside the frame.
+.decl outside(p: Position, col: Color)
+outside(P, Col) :- in(P, Col), ink(Col), !crop.view($U(), P, _).
+
+.decl shape_cell(s: Shape, p: Position)
+
+// Each shape's pattern: its cells in its own box.
+.init pattern = BoxFrame<Shape>
+pattern.cell(S, P) :- shape_cell(S, P).
+
+// The frame's inside divided into a shape's pattern of blocks.
+.init blocks = Divide2D<Shape>
+blocks.cell(P_inner) :- hole.inner($U(), _, P_inner).
+blocks.dim(S, A, N) :- pattern.extent(S, A, N).
+blocks.gap(0).
+
+// The fill contradicts a shape: a fill cell sits in a block the shape's
+// pattern leaves empty.
+.decl contradicted(s: Shape)
+contradicted(S) :-
+    fill(P_grid, _), hole.inner($U(), P_grid, P_inner),
+    blocks.tile(S, P_inner, P_tile, _), !pattern.inner(S, _, P_tile).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_grid_out, Col, Ch) :-
+    crop.view($U(), P_grid_in, P_grid_out), frame(B, Col), bcells.on_edge(B, P_grid_in, _),
+    impl_choice(Ch).
+out(P_grid_out, Col, Ch) :-
+    crop.view($U(), P_grid_in, P_grid_out), hole.inner($U(), P_grid_in, P_inner),
+    blocks.tile(S, P_inner, P_tile, _), !contradicted(S), S = [Ch, _],  // the shape the fill hints at
+    ( pattern.inner(S, _, P_tile), fill(_, Col)      // a pattern cell: filled
+    ; !pattern.inner(S, _, P_tile), params.bg(Col)   // else bg
+    ).
+
+// --- Color ---
+
+.init color_class = Canon<Position>
+color_class.equiv(P, Q) :- outside(P, Col), outside(Q, Col).
+
+shape_cell([$Color(), Id], P) :- color_class.id(P, Id).
+
+// --- Piece ---
+
+.init pieces = Components8<Color>
+pieces.node(Col, P) :- outside(P, Col).
+
+shape_cell([$Piece(), Id], P) :- pieces.label(_, P, Id).
+
+// --- Object ---
+
+.init parts = Components8<Unit>
+parts.node($U(), P) :- outside(P, _).
+
+shape_cell([$Object(), Id], P) :- parts.label($U(), P, Id).

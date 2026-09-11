@@ -1,0 +1,99 @@
+// 88e364bc
+// draft
+// concept: enclose markers move count
+// Walls of several colors close off regions on params.bg, with params.marker
+// cells inside. Each wall color has a legend: a solid block of that color
+// holding arrows, each a line of enclosed cells whose head is one color and
+// whose tail another. A marker slides in the direction of the enclosing
+// color's arrow, through the cells that color closes off, until the next step
+// would leave them.
+//
+// The cases differ in what marks an arrow's head:
+//   $Stored   — the head color is params.head.
+//   $Minority — the head color is the rarer of the legend's colors.
+
+#include "../lib.dl"
+
+.type Choice = Stored {} | Minority {}
+
+.comp Params {
+    // --- shared ---
+    .decl bg(c: Color) bg(0).
+    .decl marker(c: Color) marker(4).
+
+    // --- Stored ---
+    .decl head(c: Color) head(2).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Stored()). impl_choice($Minority()).
+
+// --- walls and the regions they close off ---
+
+.decl wall_color(c: Color)
+wall_color(C) :- in(_, C), !params.bg(C), !params.marker(C).
+
+.init closed = Closed<Color>
+closed.cell(C, P) :- wall_color(C), in(P, C2), C2 != C.
+
+// Legend ink: enclosed ink other than markers.
+.decl legend_cell(c: Color, p: Position, col: Color)
+legend_cell(C, P, Col) :-
+    closed.region(C, P, _), in(P, Col), !params.bg(Col), !params.marker(Col).
+
+// --- the head color of each wall color's arrows ---
+
+.decl head_of(c: Color, col: Color, ch: Choice)
+
+// --- Stored ---
+
+head_of(C, Col, $Stored()) :- wall_color(C), params.head(Col).
+
+// --- Minority ---
+
+.type LegendInk = [c: Color, col: Color]
+
+.init ink_count = Tally<LegendInk, Position>
+ink_count.item([C, Col], P) :- legend_cell(C, P, Col).
+
+.init rarest = ArgExtremes<Color, Color>
+rarest.cand(C, Col, N) :- ink_count.tally([C, Col], N).
+
+head_of(C, Col, $Minority()) :- rarest.low(C, Col, _).
+
+// --- arrows ---
+
+// An arrow points from a tail cell to the head cell beside it.
+.decl arrow(c: Color, d: Dir8, ch: Choice)
+arrow(C, D, Ch) :-
+    head_of(C, Col_head, Ch), legend_cell(C, P_head, Col_head),    // a head cell
+    legend_cell(C, P_tail, Col_tail), !head_of(C, Col_tail, Ch),   // a tail cell
+    dir8_elem(D), neighbor(P_tail, D, P_head).                     // one step apart
+
+// --- the slide ---
+
+.type Enclosure = [c: Color, ch: Choice]
+
+// A marker moves through the cells its enclosing color closes off.
+.init slide = Slide<Enclosure>
+slide.node([C, Ch], P) :- impl_choice(Ch), closed.region(C, P, _).
+slide.dir([C, Ch], D) :- arrow(C, D, Ch).
+
+.decl marker_cell(p: Position)
+marker_cell(P) :- in(P, Col), params.marker(Col).
+
+.decl landed(p: Position, ch: Choice)
+landed(Q, Ch) :- marker_cell(P), slide.rest([_, Ch], P, _, Q).
+
+// --- output ---
+
+// The grid with the markers lifted off.
+.decl cleared(p: Position, col: Color)
+cleared(P, Col) :- in(P, Col), !marker_cell(P).
+cleared(P, Col) :- marker_cell(P), params.bg(Col).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- landed(P, Ch), params.marker(Col).
+out(P, Col, Ch) :- impl_choice(Ch), cleared(P, Col), !landed(P, Ch).

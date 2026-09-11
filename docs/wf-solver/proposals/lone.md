@@ -16,7 +16,7 @@ The cells of a keyed cell set with no cardinal neighbor in the set, and their co
 }
 ```
 
-Not: `multi_cell` (a keyed set of more than one member, keyed by an object id); `Rim.rim_dir` and `Rim.interior` (which sides are open, and the members with no open side); `Abut` (contact between two sets, with the heading); `Surround` (walled in by another set); a contact test between a member and a second set (`beside` rules over two relations).
+Not: `multi_cell` (a keyed set of more than one member, keyed by an object id); `Rim.rim_dir` and `!Rim.rim` over the set (which sides are open, and the members with no open side); `Abut` (contact between two sets, with the heading); `Surround` (walled in by another set); a contact test between a member and a second set (`beside` rules over two relations).
 
 Match: a rule whose body joins one cell relation to itself through a single `neighbor` atom whose direction ranges over `dir_elem` and whose head keeps the first cell alone, with or without a consumer that negates it over the same set; and the same predicate stated through `Rim.rim_dir` negated over `dir_elem`, or through a `Tally` or `multi_cell` over `Components` of the set.
 
@@ -55,6 +55,7 @@ Self-join through `neighbor`, touching derived positively and lone as its negati
 - 3e980e27 `Parse.joined`, `Parse.lone` — under `dir8_elem`.
 - 7491f3cf `Parse.line`, `Parse.marker` — under `dir8_elem`.
 - 42a50994 `grouped`, `!grouped` in `out` — under `dir8_elem`; `$Self` keys the set by color, `$Ink` by `Unit`.
+- 88a10436 `touching`, `!touching` in `marker` — under `$Lone`, the ink that stands alone is the marker the shape's copy seats on; the touching ink is the shape.
 
 Through `Rim.rim_dir`:
 
@@ -65,3 +66,31 @@ Through a single-cell test over `Components` whose ids serve nothing else:
 
 - 39e1d7f9 `obj_cell` — `Unanimous<Ident, Position>` over `Components8`; `motif` reads `clash`, `seed` reads `value`.
 - 2c737e39 `drawing` — hand-written `multi_cell` over `Components8`; touching head only.
+
+Survey: 2026-09-10 20:18 — the solvers since 2026-09-10 06:35.
+
+Callers: none new in the scope. The two callers the entry already lists are in scope and stand unchanged:
+- 42a50994 `grouped`, `!grouped` in `out` — a dot with an ink cell among its eight surrounding cells stays; a lone dot becomes bg. Under `dir8_elem`; `$Self` keys the set by color, `$Ink` by `Unit`.
+- 88a10436 `touching`, `!touching` in `marker` — under `$Lone`, the ink that touches no other ink is the marker the copy seats on; the touching ink is the shape. Under `dir_elem`, keyed by `Unit`.
+
+Negative evidence. Matcher at `.scratch/surveys/lone/2026-09-10-201848/lone_scope.py`, hits at `hits.txt` beside it. The `neighbor` self-join over one cell relation matched at 42a50994 `grouped` (twice) and 88a10436 `touching` (the callers), and at 1190bc91 `seq`, 142ca369 `elbow`, 759f3fd3 `Determine.ring_cycle`, 880c1354 `border_step`, 89565ca0 `line`, and 212895b5 `Determine.entered`/`bend`, none of which keeps the first cell alone with a direction enumerator (details below). Negated `rim_dir` under `dir_elem` matched at 264363fd `attached.item` and 7f4411dc `support`, both keeping the direction. No `Tally` in scope reads a component's cell count against 1; every `Tally` over `Components` feeds a rank, an extent, or a comparison between components (412b6263 `block_n`, 84f2aca1 `region_size`, 85b81ff1 `obj_size`, 8698868d `region_count`, 89565ca0 `size`). No `Unanimous<Ident, Position>` over `Components` and no hand-written `multi_cell` in scope. A grep for `step_delta`, `jump(`, `neighbor(`, `rim_dir`, `.rim(`, and the words lone/isolated/alone/single/touch found no further statement of the predicate.
+
+Near-misses:
+- 1190bc91 `seq` — a run along D inside one component (`neighbor` self-join over `obj.label`, direction kept) plus `exposed.rim_dir` at the anchor; `marker` is the object that is not the sequence, by component id, with no single-cell test. Direction kept, and the ids serve `walk` and `area`.
+- 142ca369 `no_arm`, `elbow` — `exposed.rim_dir` keyed by color, negated per corner: an ink cell with an arm on both dirs of corner G. The direction pair is kept in the head (`Rim.rim_dir`'s reading).
+- 409aa875 `no_arm`, `apex` — the same shape under `Rim8` and `dir8_flank`: an ink cell with an arm on each flank of a Dir8. Direction kept.
+- 13e47133 `sray.mark` — `rim.rim_dir` under `Rim8`, direction kept as the cast key.
+- 264363fd `attached.item` — `!rim.rim_dir` over `dir_elem`; `Unanimous.value` over the direction gives the tip's heading. Direction kept.
+- 7f4411dc `support` — `!rim.rim_dir` over `dir_elem`; `support_kept` needs two distinct directions. Direction kept.
+- 759f3fd3 `Parse.rings.seed` — `!cross.rim` over the set, the `Rim.interior` reading; `Determine.ring_cycle` joins `ring` to itself through `neighbor` under `dir8_elem` but keeps neither cell.
+- 142ca369 `Determine.beside_ink`, negated in `launch_cell` — a painted cell with a same-colored `ex_in` ink cell one cardinal step away. Contact with a second set.
+- 8886d717 `around` — a mark cell's cardinal neighbor of a non-mark color. Contact with a second set.
+- 05f2a901 `blocked($Touch)` — the cells beside the anchor, one step on along the travel. Contact with a second set, and the head keeps the neighbor.
+- d9fac9be `gap`, `defect` — a grid cell whose eight neighbors all lie in a second set. The `Surround` reading.
+- 880c1354 `border_step` — `in` joined to itself through `neighbor`, but the head keeps both cells: the successor along the border cycle.
+- 89565ca0 `line` — two steps behind a hidden cell along D, both in the line set; the head keeps the frame color and the hidden cell. `speck` picks the color with the most pieces, with no single-cell test.
+- 9565186b `$Blob` — the largest component by `Mode` over ids; the "stray cells" are the rest of that color, not lone cells.
+
+Spec. Nothing in scope bears on the interface or the definition. Both in-scope callers fit the comp as written: `Key` covers 42a50994's color key and 88a10436's `Unit`, and both derive touching positively and state lone as its negation. On adjacency, 42a50994 is the only in-scope site under `dir8_elem`, already counted in the entry's spec question; 409aa875 and 13e47133 use `Rim8` but keep the direction, so they add nothing to the 8-adjacency count. No in-scope site states lone through `Tally` or `multi_cell`, so the id-free form gains no new caller here.
+
+Reimplementations: none.

@@ -1,6 +1,6 @@
 // 7b0280bc
 // draft
-// concept: objects markers walk count
+// concept: objects markers route
 // Squares of two colors sit on a background, joined by wires of a third
 // color. The color with the fewest squares marks the two ends. The output
 // recolors the route between the ends through the fewest pieces: its wires

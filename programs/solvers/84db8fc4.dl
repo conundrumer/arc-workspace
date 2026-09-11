@@ -1,0 +1,31 @@
+// 84db8fc4
+// draft
+// concept: enclose
+// Every bg cell is repainted by whether it can reach the grid edge through bg
+// cells: params.outside_fill when it can, params.enclosed_fill when it cannot.
+// Every other cell passes through.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+    .decl outside_fill(c: Color) outside_fill(2).
+    .decl enclosed_fill(c: Color) enclosed_fill(5).
+}
+
+.init params = Params
+
+.decl bg_cell(p: Position)
+bg_cell(P) :- in(P, Col), params.bg(Col).
+
+.init outside = Reach<Unit>
+outside.node($U(), P) :- bg_cell(P).
+outside.seed($U(), P) :- bg_cell(P), dir_elem(D), dist(P, D, 0).   // on an edge
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    bg_cell(P),
+    ( outside.reach($U(), P), params.outside_fill(Col)     // reaches the edge
+    ; !outside.reach($U(), P), params.enclosed_fill(Col)   // closed off
+    ).
+out(P, Col) :- in(P, Col), !bg_cell(P).

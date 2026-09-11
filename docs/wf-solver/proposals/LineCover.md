@@ -98,3 +98,33 @@ Neither operation subsumes the other. `LineColor` cannot state `5daaa586`, `4694
 Three sites in the third survey's scope sharpen the boundary. `60d73be6` `line_color` is the `LineColor` code form over both axes of the grid, and it discards the color (`line_color.value([A, L], _)`) — so a caller can want the agreement and no color at all, and still have no class to feed `member`. `5daaa586` calls both operations: `gapped` finds its dividers by membership in a multi-color class, and `side` reads a color off the crop box's four edge lines, which no member set yields. `5ecac7f7` `Parse.line_color` bears on the single-color question below: it is written as agreement, and it reads the color for nothing but a test against `params.sep`, which `member` states directly.
 
 `LineColor`'s hand-written blank-line class and its `469497ad` near-miss are all this operation's code form. `469497ad` belongs here alone: its class is multi-colored, so a legend line of two non-bg colors passes here and fails there. The fourteen single-color sites hold to one color per input — a one-fact parameter, or `5dbc8537`'s derived modal bg — so the cover and the agreement coincide on every input and either operation states them exactly. Which one takes them is a promotion-time choice.
+
+Survey: 2026-09-11 04:13 — the solvers since 2026-09-10 02:12.
+
+Callers:
+
+8a371977 off_line — negated in `cut.divider`: a line across either axis with no ink cell (the member set being the bg cells) is a divider, and the position feeds `DividerFrame.divider` on the along convention; the migration is `cut.divider(K, A, L) :- cover.line(K, A, L)`.
+
+Both recorded callers in the scope still write the operation: 137f0df0 `block_line`, keyed by a cell of the line through `same_line`, and 5dbc8537 `inked_line`, the bg-covered lines feeding `panels.divider`. No other caller: across the 82 solvers, the parser pass listed 298 negated relations with the bodies of their defining rules; 30 of those bodies bind a line or an edge, and beyond the three above, each is a near-miss below.
+
+Near-misses:
+
+- A per-line defect read positively, never negated: 85b81ff1 `line_hole`, a line holding a bg cell, conjoined with `line_ink` into `sortable`; the rule that keeps the other lines negates `sortable`, so `!sortable(L)` is the union of two covers, by bg and by ink, and the site reads the defect and not the cover.
+- A line that merely holds a member: 20981f0e `lattice.divider`, a dot marking its line on each axis; 8731374e `flaw_line`, the crop cells sharing a line with a flaw, negated for the other cells; 8ba14f53 `block_line`, the lines a block spans, counted into `offset`.
+- The converse containment, a set lying inside one line or one outline: 538b439f `reach` with `thin`, a component that reaches one line on some axis; 890034e9 `stray`, a cell of the outline's color off the outline, negated into `frame`.
+- A universal not over a line's cells: 8f215267 `in_hole`, an object with a cell in a rectangle's hole, negated into `frame`.
+- An edge line that merely holds a member: 846bdb03 `bar`, a non-bg non-corner color on a border line, and `touches`, a placed cell of that color on that edge; 8abad3cf `Determine.reaches`, a color at edge d, negated into `short_of`; 22eb0ac0 `edge_match`, which compares the line's two end cells.
+- An outline or edge line with no class tested: 291dc1e1 `Parse.border`; 8cb8642d `frame_color`, the colors on a box outline, negated to find the marker.
+- A line drawn from a member on it: 412b6263 `copy_line`; bdad9b1f `on_line`.
+- The `LineColor` `Unanimous` class, which reads a color that no member set yields: 538b439f `line_color`; 855e0971 `line_color`, reading `mixed` and the value; 8e1813be `stripe`, reading `clash` and the value; 88a62173 `line_color`, discarding the color and testing no class; 8d510a79 `Parse.line_color`, testing `!params.bg(Col)` on the value; 7c66cb00 `ends` and `interior`, agreement over the two parts of a line; 8886d717 `edge_color`, agreement over each edge line; 84ba50d3 `line_color`, testing the value against `params.divider`.
+
+Spec:
+
+- The operation's interface stands. 8a371977 is the blank-line class on the along convention feeding `DividerFrame`, the migration the entry already records for eight callers.
+- 85b81ff1 is a second site, beside `ca8f78db` `pattern_row`, that reads the per-line defect positively. Its `sortable` is `line_ink ∧ line_hole`, and the code form's `gap` is comp-internal, so the site cannot state `sortable` through `line` without a double negation over two instances. Caller-only evidence for exposing `gap`; the entry's judgment that `gap` stays internal is not changed by one site.
+- 84ba50d3 `line_color` is a fourth `LineColor` site that tests the agreed color against a named parameter, which `member` states directly, so either operation states it exactly; the single-color boundary the entry records is unchanged.
+- 8d510a79 tests `!params.bg(Col)` on the value and belongs to `LineColor` as written, as the five recorded sites of that kind do.
+
+Reimplementations: none.
+
+The parser pass listed, per solver in the scope, every negated relation with the body atoms of its defining rules, flagging the bodies that bind a line or an edge (`split`, `same_line`, `dist` and its kin, `on_edge`, `edge_cell`), every `Unanimous`, `Tally`, `Mode`, `Between`, `Ray`, `Slide`, `DividerFrame`, `BoxCells`, and `Bbox` instance with its input rules, and every source line matching the grep signature: 298 negated relations, 30 with a line-binding body, 207 instance input rules, and 23 solvers hit by `split(P, A` or `same_line(`. The `Tally` and `Ray` instances were read for a cover written as a count or a walk; none is one.

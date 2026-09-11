@@ -1,0 +1,103 @@
+// 8cb8642d
+// draft
+// concept: objects border markers span depth
+// Solid rectangles sit on a bg field. Each is a one-cell frame of one color
+// around a filled inside, and one inside cell, the marker, holds another
+// color. The output empties the inside to bg and draws the inside's X in the
+// marker's color: the diagonals from the inside's four corners toward its
+// center.
+//
+//   $Join   — each arm runs from its corner while it stays on the corner's
+//             side of the inside; the arm ends are joined along the line
+//             they share.
+//   $Medial — an inside cell is drawn when its nearest edge is not unique:
+//             the medial axis of the inside.
+// They diverge on an inside whose short extent is even and shorter than the
+// other: $Join joins the arm ends along both center lines, $Medial draws
+// the arms alone.
+
+#include "../lib.dl"
+
+.type Choice = Join {} | Medial {}
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+}
+
+.init params = Params
+
+// --- objects ---
+
+.init comps = Components<Unit>
+comps.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+.decl cell_of(id: Ident, p: Position)
+cell_of(Id, P) :- comps.label($U(), P, Id).
+
+.init box = Bbox<Ident>
+box.cell(Id, P) :- cell_of(Id, P).
+
+.init bcells = BoxCells<Ident>
+bcells.box(Id, M) :- box.margin(Id, M).
+bcells.cell(Id, P) :- cell_of(Id, P).
+
+// The inside, viewed from its own frame.
+.init inside = BoxFrame<Ident>
+inside.cell(Id, P) :- bcells.hole(Id, P).
+
+.decl frame_color(id: Ident, col: Color)
+frame_color(Id, Col) :- bcells.on_edge(Id, P, _), in(P, Col).
+
+// The marker: the inside cell whose color is not the frame's.
+.decl marker_color(id: Ident, col: Color)
+marker_color(Id, Col) :- bcells.hole(Id, P), in(P, Col), !frame_color(Id, Col).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Join()). impl_choice($Medial()).
+
+// Inside cells drawn in the marker color, in the inside's frame.
+.decl drawn(id: Ident, p_inner: Position, ch: Choice)
+
+// --- Join ---
+
+// An arm cell: on corner Diag's diagonal, and no nearer either opposite
+// edge than the corner's.
+.decl arm(id: Ident, p_inner: Position, diag: DiagDir)
+arm(Id, P_inner, Diag) :-
+    inside.inner(Id, _, P_inner), diag_dir_elem(Diag), diag_dirs(Diag, _, D1, D2),
+    dist_pair(P_inner, D1, K, K1), dist_pair(P_inner, D2, K, K2),   // on the corner's diagonal
+    K <= K1, K <= K2.                                                // on the corner's side
+
+// The arm's far end: the next cell inward is not on the arm.
+.decl arm_end(id: Ident, p_inner: Position)
+arm_end(Id, P_inner) :-
+    arm(Id, P_inner, Diag), diag_opposite(Diag, D_in),
+    neighbor(P_inner, D_in, Q), !arm(Id, Q, Diag).
+
+// The line joining two arm ends.
+.init join = Between<Ident>
+join.cell(Id, P_inner) :- inside.inner(Id, _, P_inner).
+join.mark(Id, P_inner) :- arm_end(Id, P_inner).
+join.axis(Id, A) :- inside.inner(Id, _, _), axis_elem(A).
+
+drawn(Id, P_inner, $Join()) :- arm(Id, P_inner, _).
+drawn(Id, P_inner, $Join()) :- join.between(Id, P_inner).
+
+// --- Medial ---
+
+// The nearest edges of each inside cell.
+.init nearest = ArgExtremes<Position, Dir>
+nearest.cand(P, D, K) :- inside.inner(_, P, P_inner), dir_elem(D), dist(P_inner, D, K).
+
+drawn(Id, P_inner, $Medial()) :-
+    inside.inner(Id, P, P_inner), nearest.low(P, D1, _), nearest.low(P, D2, _), D1 != D2.
+
+// --- output ---
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    inside.inner(Id, P, P_inner), impl_choice(Ch),
+    ( drawn(Id, P_inner, Ch), marker_color(Id, Col)   // drawn: the marker color
+    ; !drawn(Id, P_inner, Ch), params.bg(Col)         // emptied: bg
+    ).
+out(P, Col, Ch) :- in(P, Col), !bcells.hole(_, P), impl_choice(Ch).

@@ -1,12 +1,12 @@
 // 7c66cb00
 // draft
 // concept: lines objects markers move mapping
-// Full-width bands lie toward one edge of the grid: each is a run of lines
-// with a uniform interior color and one other color at both ends. Shapes sit
-// on a background elsewhere. Each shape falls toward that edge into the band
-// whose interior color is the shape's own, comes to rest on the band's far
-// edge in its own columns, and takes the band's end color. Everything outside
-// the bands becomes background.
+// Full-width bands cross the grid: each is a run of lines with a uniform
+// interior color and one other color at both ends. Shapes sit on a background
+// elsewhere. Each shape falls toward one edge of the grid into the band whose
+// interior color is the shape's own, comes to rest on the band's far edge in
+// its own columns, and takes the band's end color. Everything outside the
+// bands becomes background.
 
 #include "../lib.dl"
 

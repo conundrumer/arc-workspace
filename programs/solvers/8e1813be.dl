@@ -1,0 +1,46 @@
+// 8e1813be
+// draft
+// concept: lines markers rank
+// One-color stripes run across the grid, all along one axis, and a
+// square sits among them, cutting some of them short. The output stacks
+// the stripes in their spatial order, each as the segment it would draw
+// across the square: one line per stripe, as wide as the square.
+
+#include "../lib.dl"
+
+// A line perpendicular to axis a, at along-position p_line on a.
+.type Line = [a: Axis, p_line: Position]
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+    .decl square(c: Color) square(5).
+}
+
+.init params = Params
+
+// A stripe is a line whose colored cells (neither bg nor the square) are
+// one color.
+.init stripe = Unanimous<Line, Color>
+stripe.item([A, P_line], Col) :-
+    in(P, Col), !params.bg(Col), !params.square(Col),
+    axis_elem(A), split(P, A, P_line, _).
+
+// The stripes all run along one axis, so on that axis every colored line
+// is a stripe. On the other axis, some line holds two stripes' colors.
+.decl mixed_axis(a: Axis)
+mixed_axis(A) :- stripe.clash([A, _]).
+
+// The stripes packed along their axis, in spatial order.
+.init layout = OrderFrame<Axis, Position>
+layout.axis(A, A) :- axis_elem(A).
+layout.member(A, P_line, P_line) :- stripe.value([A, P_line], _), !mixed_axis(A).
+
+// The square, viewed from its own frame.
+.init square = BoxFrame<Unit>
+square.cell($U(), P) :- in(P, Col), params.square(Col).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    stripe.value([A, P_line], Col), layout.pos(A, P_line, P_pos),   // the stripe's output line
+    square.inner($U(), _, P_inner), split(P_inner, A, _, P_across),  // a square cell's position across the stripe
+    compose(P_pos, P_across, P).

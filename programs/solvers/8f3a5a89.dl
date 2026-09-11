@@ -1,0 +1,54 @@
+// 8f3a5a89
+// draft
+// concept: markers objects enclose border
+// A start marker seeds a region: the cells it reaches without crossing a
+// wall-colored cell. The region's outline is painted: its bg cells on the
+// grid edge or beside the outside. A wall component the grid edge does not
+// reach is an obstacle inside the region, and the outline does not wrap it.
+//
+// The cases differ on what the outside is:
+//   $Walls  — the wall-colored components the grid edge reaches.
+//   $Beyond — every cell off the region that the grid edge reaches.
+
+#include "../lib.dl"
+
+.type Choice = Walls {} | Beyond {}
+
+.comp Params {
+    .decl bg(c: Color) bg(8).
+    .decl wall(c: Color) wall(1).
+    .decl start(c: Color) start(6).
+    .decl paint(c: Color) paint(7).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Walls()). impl_choice($Beyond()).
+
+// The marker's region: what it reaches without crossing a wall.
+.init region = Reach<Unit>
+region.node($U(), P) :- in(P, Col), !params.wall(Col).
+region.seed($U(), P) :- in(P, Col), params.start(Col).
+
+// The candidate outside cells, per case. Those closed off from the grid edge
+// are obstacles inside the region.
+.init barrier = Closed<Choice>
+barrier.cell($Walls(), P) :- in(P, Col), params.wall(Col).
+barrier.cell($Beyond(), P) :- in(P, _), !region.reach($U(), P).
+
+// The inside: the grid minus the outside.
+.init inside = Rim8<Choice>
+inside.cell(Ch, P) :-
+    in(P, _), impl_choice(Ch),
+    ( !barrier.cell(Ch, P)          // not a candidate
+    ; barrier.region(Ch, P, _)      // an obstacle
+    ).
+
+// The region's bg cells on the inside's outline.
+.decl painted(p: Position, ch: Choice)
+painted(P, Ch) :- inside.rim(Ch, P), region.reach($U(), P), in(P, Col), params.bg(Col).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- painted(P, Ch), params.paint(Col).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !painted(P, Ch).

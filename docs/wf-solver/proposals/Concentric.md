@@ -73,6 +73,7 @@ Survey: 2026-09-10 15:18 — the solvers since 2026-09-09 03:12.
 ## 1. Callers
 
 1. `programs/solvers/5c2c9af4.dl` — `outline` (lines 46–51) with its `BoxCells<Position>` instance. Seed is the center cell as a degenerate box, `spread` is the inset from the center to the innermost ring, and the run continues from any outline that still draws a grid cell.
+2. `programs/solvers/8b28cd80.dl` — `ring`/`next_ring` with its `BoxCells<Position>` instance. Seed is the spiral's center cell as a degenerate box, the inset is one cell at every edge, and the run continues from any ring that still draws a grid cell. The recursion carries a color that swaps at each ring, and a seam cell reads the ring inside its own through the step relation — a caller that colors per ring with no index.
 
 No second caller. Every other recursive Position cycle with a step atom closes a Shift over cells or placements, not an Inset over a box: 045e512c `copy`, 08573cc6 `arm`, 16de56c4 `lattice`/`advance`, 1b60fb0c `orbit`, 234bbc79 `slide`, 351d6448 `wave`, 4e34c42c `fitted`/`place`, 5207a7b5 `slant`/`region`, 5ffb2104 and 6ad5bdfd `Settle.room/rest`, 60d73be6 `image`, 7d18a6fb `ink`, 84551f4c `landed`. Every `BoxCells` instance but 5c2c9af4's and 6cbe9eb8's feeds one box per key from `Bbox.margin`, `DrawnRect.rect`, or a single derived box (1a6449f1, 1c786137, 21897d95, 256b0a75, 292dd178, 3dc255db, 444801d8, 446ef5d2, 465b7d93, 4c7dc4dd, 522fdd07, 551d5bf1, 5b526a93, 5daaa586, 68bc2e87, 694f12f3, 6b9890af, 776ffc46, 810b9b61). Every `compose`/`displacement` rule reading a margin translates a box or seats content in a box frame once (11dc524f, 17b866bd, 20981f0e, 21897d95, 2bcee788, 321b1fc6, 34cfa167, 3befdf3e, 3ed85e70, 4938f0c2, 4c177718, 4c5c2cf0, 5b526a93).
 
@@ -99,3 +100,31 @@ No second caller. Every other recursive Position cycle with a step atom closes a
 Reimplementations: none.
 
 The sites read reach the operation through lib primitives or through proposal comps that have entries (`Dilate` in 759f3fd3 and 6df30ad6, `Settle` in 5ffb2104 and 6ad5bdfd, the `Outset` form in the one-box-let-out class).
+
+Survey: 2026-09-11 02:41 — the solvers since 2026-09-10 15:18.
+
+Callers:
+
+8b28cd80 `ring` / `next_ring` (lines 59–64) with its `BoxCells<Position>` instance (lines 66–68). The seed is the spiral's center lattice cell as a degenerate box, `params.ring_step` is one cell at every edge, and `next_ring` lets a ring out by that inset only while the ring still draws a frame cell, so the run ends at the first ring off the grid. The recursion carries the ring's color, swapped at each step through `other`, and the seam rule reads the ring inside a seam cell's ring through `next_ring`.
+
+No second caller. Across the 47 solvers, the shape signature hit one file, 8b28cd80. The only other recursive cycle holding a step atom is 8abad3cf `edge_off`, a near-miss below. The two `uniform_delta` lines are 8b28cd80's `ring_step` and 8719f442's `seat_delta`, a single seat with no closure. The two `compose`/`displacement` rules that read a margin or head their own body are 85b81ff1 `moved` (a box-to-box translation, once) and 8abad3cf `edge_off`. Every other `BoxCells` instance (868de0fa, 890034e9, 8a6d367c, 8cb8642d, 8f215267) is fed one box per key from `DrawnRect.rect` or `Bbox.margin`, and every `geq`/`gt` margin read (846bdb03 `interior`, 84f2aca1 `region`, 8698868d `interior`, 8731374e `covered`, 8a6d367c `crop`, 8f215267 `view`) reads the inside or cover of one box.
+
+Near-misses:
+
+1. 759f3fd3 `Parse.rings` / `ring` (lines 69–76) — square rings around the cross's crossing as a `Dilate` depth under `dir8_elem`; `filled` (line 102) keeps the rings a whole number of the stored period out via `stride`, and `$Cycle` walks a color cycle by the ring index. Ruled out by the `Not:` line's `Rim.depth` class: rings drawn as a depth from a seed set at unit spacing, with no seed box, and read by an index that `box` does not carry. The Dilate entry lists this site as its caller.
+2. 8abad3cf `edge_off` (lines 97–103) — a recursion over an `Inset` accumulator that composes each square's side and the gap as `edge_delta`s along `row.next`. The step varies per square and acts on one edge, and no box consumer reads the accumulated offset: it is an offset sum along an order, not a box family under one repeated inset.
+3. 8719f442 `seat_delta` (lines 27–28) — a `uniform_delta` used once to seat the block in the tile grid: one inset with no closure over it.
+4. 85b81ff1 `moved` (lines 128–134) — `displacement` between two `obj_box.margin` boxes, applied once to move an object's cells: a box translated by a Shift.
+5. 8dae5dfc `peel` (lines 34–35) — `Rim.depth` over the objects, read for each layer's depth: rings that follow the set's own shape.
+6. 8f215267 `kept` (lines 92–97) — `stride` along one direction inside a frame's box, keeping the I-th dot slot: a 1D spacing on a line, not rings.
+7. `BoxCells` over one box per key: 868de0fa `bcells`, 890034e9 `bcells`, 8a6d367c `bcells`, 8cb8642d `bcells`, 8f215267 `bcells`.
+
+Spec:
+
+1. Ring index. 8b28cd80 orders the family: the color alternates per ring, and the seam cell reads the ring one inside its own. With `box` as written, that caller still hand-writes `next_ring` beside the instance to read the inner ring, and carries the color in its own recursion. An ordered readout on the family, a ring index or a `next` between boxes, would let it read the inner ring from the comp and take the color as a cycle walk by index, as 759f3fd3's `$Cycle` does. This scope adds 8b28cd80 to the ordered-readout signal that the 2026-09-10 15:18 survey reported from 759f3fd3 alone; two callers now read the family in order, and neither needs the bare set.
+2. Both ways. No site in scope runs a box family both ways.
+3. Clip. Unchanged. 8b28cd80 clips by domain: a ring continues from any ring that draws a `frame.cell`, the same test as the surfacing solver. No site in scope writes a margin test against the frame as its clip.
+
+Reimplementations: none.
+
+The sites read reach the operation through lib primitives or through a proposal comp with an entry (`Dilate` in 759f3fd3). Matcher hits: 1 file on the shape signature (recursive SCC holding a step atom and a box-as-margins consumer, comp instances collapsed to one node), 2 recursive cycles holding a step atom, 2 `uniform_delta` lines, 2 `compose`/`displacement` rules reading a margin or self-heading, 6 `BoxCells` instances, 1 `Rim.depth` readout, and 2 `stride` readouts, each read in its rule.

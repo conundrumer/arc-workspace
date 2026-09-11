@@ -1,0 +1,63 @@
+// 896d5239
+// draft
+// concept: markers merge span
+// A noise grid of two colors carries chevrons in params.mark: an apex mark
+// with a diagonal arm toward each corner of one cardinal, each arm a chain
+// of marks within params.reach steps of one another. The closed wedge
+// between the arms fills with params.fill, as deep toward that cardinal as
+// the farthest arm mark; mark cells stay.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl mark(col: Color) mark(3).
+    .decl fill(col: Color) fill(8).
+
+    // The most diagonal steps between consecutive arm marks.
+    .decl reach(k: number) reach(2).
+}
+
+.init params = Params
+
+.decl mark(p: Position)
+mark(P) :- in(P, Col), params.mark(Col).
+
+// Marks sight each other along the diagonals, through whatever lies between.
+.init sight = Ray<Unit>
+sight.dir($U(), Diag) :- diag_dir_elem(Diag).
+sight.cell($U(), P) :- mark(P).
+sight.mark($U(), P) :- mark(P).
+
+// A mark on the arm from mark A toward corner Diag: within reach of A, or
+// of an earlier arm mark.
+.decl arm(a: Position, diag: DiagDir, g: Position)
+arm(A, Diag, G) :-
+    diag_dir_elem(Diag), sight.ray($U(), G, Diag, K, G2),
+    K != 0, params.reach(R), K <= R,                   // G within reach of mark G2
+    ( A = G2               // the apex itself
+    ; arm(A, Diag, G2)     // an earlier arm mark
+    ).
+
+// An apex toward D: a mark with an arm toward each of D's two corners.
+.decl one_armed(a: Position, d: Dir)
+one_armed(A, D) :- mark(A), dir_of(Diag, _, D), !arm(A, Diag, _).
+
+.decl apex(a: Position, d: Dir)
+apex(A, D) :- mark(A), dir_elem(D), !one_armed(A, D).
+
+// A cell farther than the apex from one of the wedge's two corners: across
+// one of the arm lines.
+.decl outside(a: Position, d: Dir, q: Position)
+outside(A, D, Q) :- apex(A, D), in(Q, _), dir_of(Diag, _, D), nearer(Diag, A, Q).
+
+// The wedge: as near each corner as the apex or nearer, no deeper toward D
+// than some arm mark, and not a mark itself.
+.decl filled(p: Position)
+filled(Q) :-
+    apex(A, D), in(Q, _), !mark(Q), !outside(A, D, Q),
+    dir_of(Diag, _, D), arm(A, Diag, G),                         // an arm mark G
+    dist(Q, D, Kq), dist(G, D, Kg), Kq >= Kg.                    // Q no deeper than G
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- filled(P), params.fill(Col).
+out(P, Col) :- in(P, Col), !filled(P).

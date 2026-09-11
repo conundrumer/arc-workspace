@@ -1,0 +1,104 @@
+// 8f215267
+// draft
+// concept: objects count border enclose
+// Hollow frames, one color each, stand in a background field, with small
+// blobs of their colors around them. The output keeps each frame, erases the
+// blobs, and writes dots on the frame's middle line: one per blob of the
+// frame's color, params.spacing apart, counted in from the params.dot_dir
+// edge.
+//
+// Cases claim what makes an object a frame:
+//   $Rect — it draws a rectangle outline and has no cell inside it.
+//   $Enclose — it closes a region off from the grid edge; its box is its
+//     bounding box.
+
+#include "../lib.dl"
+
+.type Choice = Rect {} | Enclose {}
+
+.comp Params {
+    // The frame edge the dots count in from.
+    .decl dot_dir(d: Dir) dot_dir(DIR_R).
+
+    // Distance between dots.
+    .decl spacing(w: number) spacing(2).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Rect()). impl_choice($Enclose()).
+
+// --- shared ---
+
+.init bg_mode = Mode<Unit, Color, Position>
+bg_mode.item($U(), Col, P) :- in(P, Col).
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !bg_mode.mode($U(), Col).
+
+// The objects, one color each.
+.init comps = Components<Color>
+comps.node(Col, P) :- ink(P, Col).
+
+// Object id of color col is a frame occupying box b.
+.decl frame(col: Color, id: Ident, b: Position, ch: Choice)
+
+// --- Rect ---
+
+.init drect = DrawnRect<Color>
+drect.node(Col, P) :- ink(P, Col).
+
+.init bcells = BoxCells<Position>
+bcells.box(B, B) :- drect.rect(_, B).
+bcells.cell(B, P) :- bcells.box(B, _), in(P, _).
+
+// Object id has a cell in the hole of rectangle b.
+.decl in_hole(b: Position, id: Ident)
+in_hole(B, Id) :- bcells.hole(B, P), comps.label(_, P, Id).
+
+frame(Col, Id, B, $Rect()) :-
+    drect.rect(Col, B), bcells.hole(B, _),               // a rectangle with a hole
+    bcells.on_edge(B, P, _), comps.label(Col, P, Id),    // the object that draws it
+    !in_hole(B, Id).                                     // and leaves the hole empty
+
+// --- Enclose ---
+
+// What each object closes off, over the cells that are not its own.
+.init closed = Closed<Ident>
+closed.cell(Id, P) :- comps.label(_, _, Id), in(P, _), !comps.label(_, P, Id).
+
+.init obox = Bbox<Ident>
+obox.cell(Id, P) :- comps.label(_, P, Id).
+
+frame(Col, Id, B, $Enclose()) :-
+    closed.region(Id, _, _),                    // the object closes something off
+    comps.label(Col, _, Id), obox.margin(Id, B).
+
+// --- output ---
+
+.type ColorCase = [col: Color, ch: Choice]
+
+// The blobs of each color: its objects that are not frames.
+.init blobs = Tally<ColorCase, Ident>
+blobs.item([Col, Ch], Id) :- comps.label(Col, _, Id), impl_choice(Ch), !frame(Col, Id, _, Ch).
+
+// The cells inside each frame's box, in the box's own frame.
+.init view = Reframe<Position>
+view.outer(B, B) :- frame(_, _, B, _).
+view.cell(B, P) :- view.outer(B, _), in(P, _), gt(P, B).
+
+.decl kept(p: Position, col: Color, ch: Choice)
+kept(P, Col, Ch) :- frame(Col, Id, _, Ch), comps.label(Col, P, Id).   // the frame itself
+kept(P, Col, Ch) :-                                                     // a dot
+    frame(Col, _, B, Ch), view.view(B, P, P_inner),                       // inside the frame
+    params.dot_dir(D), perp_dir(D, D2), dist_pair(P_inner, D2, K2, K2),   // on its middle line
+    dist(P_inner, D, K), params.spacing(W), stride(K, W, 0, I, 0),        // the I-th dot slot from the edge
+    blobs.tally([Col, Ch], N), I <= N.                                    // one slot per blob
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    in(P, _), impl_choice(Ch),
+    ( kept(P, Col, Ch)                                 // frame or dot
+    ; !kept(P, _, Ch), bg_mode.mode($U(), Col)         // everything else is background
+    ).

@@ -1,0 +1,145 @@
+// 84ba50d3
+// draft
+// concept: objects lines move rank
+// A full line of params.divider crosses the grid, and shapes of params.shape
+// sit on one side of it. Each shape falls toward params.fall_dir. A shape's
+// rows are its lines across the fall; a wide row holds more than one cell.
+// The divider stops a shape by one of its rows: that row comes to rest
+// against the divider, and the rest of the shape stays with it, on or past
+// the divider. A shape the divider does not stop falls to the far edge. A
+// divider cell that a shape cell lands beyond is erased.
+//
+//   $Widest — the divider stops a shape by its widest row, when that row is
+//             unique and wide.
+//   $Sieve  — the divider stops every wide row, so the shape rests on its
+//             wide row nearest the divider.
+
+#include "../lib.dl"
+
+.type Choice = Widest {} | Sieve {}
+
+.comp Params {
+    // --- shared ---
+    .decl bg(col: Color) bg(8).
+    .decl shape(col: Color) shape(1).
+    .decl divider(col: Color) divider(2).
+    .decl fall_dir(d: Dir) fall_dir(DIR_B).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Widest()). impl_choice($Sieve()).
+
+.decl fall_axis(a: Axis)
+fall_axis(A) :- params.fall_dir(D), axis_of(D, A).
+
+// A cell's line across the fall, axis-only on the fall axis.
+.decl line_of(p: Position, l: Position)
+line_of(P, L) :- in(P, _), fall_axis(A), split(P, A, L, _).
+
+// --- the divider ---
+
+// The color of each line across the fall, when the line is uniform.
+.init line_color = Unanimous<Position, Color>
+line_color.item(L, Col) :- in(P, Col), line_of(P, L).
+
+// The line filled with the divider color.
+.decl divider(l: Position)
+divider(L) :- line_color.value(L, Col), params.divider(Col).
+
+.decl divider_cell(p: Position)
+divider_cell(P) :- line_of(P, L), divider(L).
+
+// --- shapes ---
+
+.init shapes = Components<Unit>
+shapes.node($U(), P) :- in(P, Col), params.shape(Col).
+
+// A shape's cell with its row: the cell's line across the fall.
+.decl shape_row_cell(id: Ident, row: Position, p: Position)
+shape_row_cell(Id, R, P) :- shapes.label($U(), P, Id), line_of(P, R).
+
+// A wide row holds more than one cell.
+.decl wide(id: Ident, row: Position)
+wide(Id, R) :- shape_row_cell(Id, R, P), shape_row_cell(Id, R, Q), P != Q.
+
+// The rows the divider stops.
+.decl stopped(id: Ident, row: Position, ch: Choice)
+
+// --- Widest ---
+
+.type ShapeRow = [id: Ident, row: Position]
+
+.init width = Tally<ShapeRow, Position>
+width.item([Id, R], P) :- shape_row_cell(Id, R, P).
+
+.init widest = ArgExtremes<Ident, Position>
+widest.cand(Id, R, N) :- width.tally([Id, R], N).
+
+// The widest row, when no other row ties it.
+.init unique_widest = Unanimous<Ident, Position>
+unique_widest.item(Id, R) :- widest.high(Id, R, _).
+
+stopped(Id, R, $Widest()) :- unique_widest.value(Id, R), wide(Id, R).
+
+// --- Sieve ---
+
+stopped(Id, R, $Sieve()) :- wide(Id, R).
+
+// --- the fall ---
+
+// Displacements toward the fall edge the frame admits.
+.decl shift(delta: Shift)
+shift(Delta) :-
+    in(P, _), params.fall_dir(D), fall_axis(A),
+    sub_extent(P, A, K), jump_delta(D, K, Delta).
+
+// A displacement that carries a shape cell off the grid.
+.decl off_grid(id: Ident, delta: Shift)
+off_grid(Id, Delta) :-
+    shift(Delta), shape_row_cell(Id, _, P), compose(P, Delta, Q), !in(Q, _).
+
+// A displacement that carries a stopped row onto or past the divider.
+.decl through(id: Ident, delta: Shift, ch: Choice)
+through(Id, Delta, Ch) :-
+    stopped(Id, R, Ch), shift(Delta), compose(R, Delta, R2),    // the stopped row, displaced
+    divider(L), params.fall_dir(D),
+    dist(R2, D, K), dist(L, D, K_div), K <= K_div.              // at or past the divider
+
+// Each shape falls under each case.
+.decl mover(id: Ident, ch: Choice)
+mover(Id, Ch) :- shapes.label($U(), _, Id), impl_choice(Ch).
+
+// A shape stands where it is, and travels through the displacements that
+// keep it on the grid and its stopped rows short of the divider.
+.type Fall = [id: Ident, ch: Choice]
+
+.init fall = Slide<Fall>
+fall.dir([Id, Ch], D) :- mover(Id, Ch), params.fall_dir(D).
+fall.node([Id, Ch], ORIGIN) :- mover(Id, Ch).
+fall.node([Id, Ch], Delta) :-
+    mover(Id, Ch), shift(Delta), !off_grid(Id, Delta), !through(Id, Delta, Ch).
+
+.decl landed(p: Position, ch: Choice)
+landed(Q, Ch) :-
+    fall.rest([Id, Ch], ORIGIN, _, Delta),          // where the shape comes to rest
+    shape_row_cell(Id, _, P), compose(P, Delta, Q).
+
+// A divider cell a shape passed: a landed cell lies past it in its column.
+.decl pierced(p: Position, ch: Choice)
+pierced(P, Ch) :-
+    divider_cell(P), landed(Q, Ch),
+    fall_axis(A), same_line(A, P, Q), params.fall_dir(D), nearer(D, Q, P).
+
+// A divider cell no shape passed.
+.decl standing(p: Position, ch: Choice)
+standing(P, Ch) :- divider_cell(P), impl_choice(Ch), !pierced(P, Ch).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    in(P, _), impl_choice(Ch),
+    ( landed(P, Ch), params.shape(Col)                       // a shape lands here
+    ; !landed(P, Ch), standing(P, Ch), params.divider(Col)   // the divider stands
+    ; !landed(P, Ch), !standing(P, Ch), params.bg(Col)       // blank, or erased
+    ).

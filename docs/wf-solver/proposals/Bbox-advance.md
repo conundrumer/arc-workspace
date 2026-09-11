@@ -69,3 +69,31 @@ The entry's open question is whether to widen `d` to `Dir8` with a per-axis delt
 ## 4. Reimplementations
 
 Reimplementations: none.
+
+Survey: 2026-09-11 03:51 — the solvers since 2026-09-10 14:40.
+
+Callers: none.
+
+The signature — `axis_of(D, A)` with a `Bbox` `extent(_, A, N)` fed to `jump`/`jump_delta` toward `D` — matched no rule in the scope, direct or across one hop. Across the scope, the `jump`/`jump_delta`/`edge_delta`/`uniform_delta`/`displacement` atoms take: a `Tally` count (`8ba14f53`, `8e301a54`), a `sub_extent` enumeration (`84ba50d3`), a stored width or unit (`8719f442`, `8b28cd80`), a count-derived square side (`8abad3cf`), or a cell-to-cell or box-to-box displacement (`7c66cb00`, `85b81ff1`, `88a10436`, `8e5c0c38`, `538b439f`, `88207623`). The one `Bbox` extent that reaches a jump is `53fb4810`, through its `period` relation, listed below. The other `Bbox` extent readouts in scope (`7b0280bc` `square`, `84f2aca1` `fill`, `8698868d` `block`, `8a004b2b` `tile.extent`, `8a6d367c` `blocks.dim`) go to a square test, a table key, a size rank, a tile side, or a tile count, and no displacement follows.
+
+Near-misses:
+
+- `53fb4810` `period` under `$Extent` (lines 41–42, 69) with `pattern` (lines 49–51): `grow_axis` reselects the axis from `grow_dir` with `axis_of`, `box.extent` reads the band's extent along it, and `pattern` jumps each pattern cell one period toward `grow_dir`, recursively to the frame edge. This is the operation's three atoms spread over three rules, and the walk's first step is the band advanced one band-length. Excluded as an extent used as a period: `period` is shared with the `$Period` case, which fills it from `ShiftInvariance.period` through `Extremes.low` (lines 77–79), so the consumer takes a number in both cases.
+- `8e301a54` `landed` (lines 53–54): each ink cell jumps toward `params.move_dir` by `N`, its shape's cell count from `Tally` (`hue_size.tally`, `object_size.tally`). A counted length, not an extent.
+- `8ba14f53` `filled` (lines 107–109): a block's cells jump toward `params.stack_dir` by `offset.tally`, the count of lines the earlier shapes' blocks take. A stack of copies, but the offset is a counted length over the earlier blocks, not the set's own extent.
+- `8abad3cf` `edge_off` (lines 100–103): each next square in the row takes the offset one side and one gap past the square outward of it, as `edge_delta` composed into an `Inset`. The side is derived by count (`side`, line 62: the `Frame2D` whose area matches the color's `Tally`), and the result is an `Inset` margin, not a `Shift`. Same shape as the entry's `4acc7107`, ruled out on both the counted length and the margin result.
+- `84ba50d3` `shift` (lines 94–96): `sub_extent` of the frame along the fall axis fed to `jump_delta`. Enumerates every displacement the frame admits, not one set-length.
+- `7c66cb00` `fall` (lines 72–76): `displacement` from a shape's leading `edge_cell` to the far `edge_cell` of its band, on the same column. A slide until contact, the `Dock` exclusion.
+- `85b81ff1` `moved` (lines 130–135): `displacement(B_src, B_dst)` between two `obj_box.margin` readouts. `Bbox.margin` composed with another box's margin.
+- `8719f442` `params.seat_delta` (line 28) and `8b28cd80` `params.ring_step` (line 31): `uniform_delta` of a stored ring width or a unit. Stored lengths, and the result is an `Inset`.
+- `8a004b2b` `tile.extent` (line 52), `8a6d367c` `blocks.dim` (line 72): a `Bbox` extent as a tile side for `Frame2D` or a tile count for `Divide2D`. Extent as a period, with no displacement.
+
+Spec:
+
+No site in this scope argues for a change to the interface or the definition. The scope adds nothing to the `Dir8` widening question: the two jumps of a set-derived length (`8e301a54`, `8ba14f53`) are cardinal, and neither reads an extent.
+
+One observation on the period exclusion, from `53fb4810`: the exclusion holds at that site only because the shared `period` relation carries a number for both cases. Were each case to state its step as a `Shift` (the `$Period` case through `jump_delta` from `shortest.low`), the `$Extent` case would be `grow_dir(B, D), box.advance(B, D, Delta)` in one atom. That rests on a rewrite of the surfacing site and on one solver, so it is reported as a possible caller at most, not as a change to the `Not:` line.
+
+Reimplementations: none.
+
+Matcher hits: 4 (`53fb4810` line 49 by hop through `period`; `84ba50d3` line 94; `8ba14f53` line 107; `8e301a54` line 53 by hop through `shape_cell`), from a parser script over the 49 solvers that traces a length source (`extent`, `extents`, `axis_dim(s)`, `sub_extent`, `tally`, `min_period`) into the length slot of `jump`, `jump_delta`, `edge_delta`, `axis_delta`, or `uniform_delta`, within a rule or one hop across rules; `8abad3cf` was found by grep, since its side is a `Tally` key rather than a count. All 49 solvers in scope exist and were covered.

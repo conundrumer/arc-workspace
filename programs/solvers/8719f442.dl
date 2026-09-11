@@ -1,0 +1,83 @@
+// 8719f442
+// draft
+// concept: grow scale tile-arrangement stamp
+// The output is a grid of input-sized tiles: the input frame grown by one
+// ring. The block inside the ring scales the input up, a tile per cell, and
+// each fg cell on an input edge stamps a copy of the input into the tile one
+// step past that edge. The rest is bg. The block's color, on out's Choice:
+//
+//   $Scaled — a fg cell's tile takes the cell's color.
+//   $Stored — a fg cell's tile takes params.fill.
+//   $Hub    — as $Stored, and the center tile takes params.fill whatever the
+//             center cell holds.
+//
+// Coincide on inputs of one color with a fg center.
+
+#include "../lib.dl"
+
+.type Choice = Scaled {} | Stored {} | Hub {}
+
+.comp Params {
+    // --- shared ---
+    .decl bg(c: Color) bg(0).
+
+    .decl ring_width(k: number) ring_width(1).
+
+    // The block's seat in the tile grid.
+    .decl seat_delta(p: Inset)
+    seat_delta(P) :- ring_width(K), uniform_delta(K, P).
+
+    // --- Stored, Hub ---
+    .decl fill(c: Color) fill(5).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Scaled()). impl_choice($Stored()). impl_choice($Hub()).
+
+.decl active(p: Position)
+active(P) :- in(P, Col), !params.bg(Col).
+
+// An input cell with its block tile.
+.decl seated(p_in: Position, p_tile: Position)
+seated(P_in, P_tile) :- in(P_in, _), params.seat_delta(Delta), compose(P_in, Delta, P_tile).
+
+// Output cell: tile index × intile position. The tile grid is the block with
+// its ring; the intile frame is the input frame.
+.decl cell(p_grid: Position, p_tile: Position, p_intile: Position)
+cell(P_grid_out, P_tile, P_intile) :-
+    seated(_, P_seat),
+    ( P_tile = P_seat                              // the block tile itself
+    ; dir8_elem(D), neighbor(P_seat, D, P_tile)    // its ring neighbors
+    ),
+    in(P_intile, _), concat_2d(P_tile, P_intile, 0, P_grid_out).
+
+// A tile holding a copy of the input: one step past the edge a fg cell sits on.
+.decl copy(p_tile: Position)
+copy(P_tile) :-
+    active(P_in), seated(P_in, P_seat),          // fg cell at its block tile
+    dir_elem(D), dist(P_in, D, 0),               // on edge d
+    neighbor(P_seat, D, P_tile).                 // the tile one step past it
+
+// A block tile with its color, per case.
+.decl block(p_tile: Position, col: Color, ch: Choice)
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_grid_out, Col, Ch) :-
+    cell(P_grid_out, P_tile, P_intile), impl_choice(Ch),
+    ( block(P_tile, Col, Ch)                                      // block tile
+    ; copy(P_tile), in(P_intile, Col)                             // copy tile: the input
+    ; !block(P_tile, _, Ch), !copy(P_tile), params.bg(Col)        // the rest
+    ).
+
+// --- $Scaled ---
+block(P_tile, Col, $Scaled()) :- in(P_in, Col), seated(P_in, P_tile).
+
+// --- $Stored ---
+block(P_tile, Col, $Stored()) :- active(P_in), seated(P_in, P_tile), params.fill(Col).
+
+// --- $Hub ---
+block(P_tile, Col, $Hub()) :-
+    ( active(P_in) ; centered(P_in) ),                // fg cell, or the center
+    seated(P_in, P_tile), params.fill(Col).

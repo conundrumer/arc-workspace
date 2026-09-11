@@ -1,0 +1,37 @@
+// 8fbca751
+// draft
+// concept: merge bbox
+// Ink cells over bg. Two ink cells that share a row or a column belong to one
+// group, transitively. Each group's bounding box has its bg cells recolored
+// params.fill.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+    .decl fill(c: Color) fill(2).
+}
+
+.init params = Params
+
+.decl ink(p: Position)
+ink(P) :- in(P, Col), !params.bg(Col).
+
+// A group is what line sharing connects.
+.init group = Canon<Position>
+group.equiv(P, P) :- ink(P).
+group.equiv(P, R) :- group.equiv(P, Q), ink(R), axis_elem(A), same_line(A, Q, R).
+
+.init group_box = Bbox<Ident>
+group_box.cell(Id, P) :- group.id(P, Id).
+group_box.grid(Id, P) :- group.id(_, Id), in(P, _).
+
+.decl filled(p: Position)
+filled(P) :- in(P, Col), params.bg(Col), group_box.inside(_, P).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, Col_in),
+    ( filled(P), params.fill(Col)
+    ; !filled(P), Col = Col_in
+    ).

@@ -94,3 +94,29 @@ Callers:
 - 5833af48 ($Blocks case)
 - 5ad4f10b ($Pixels case) — the figure's own pixel size, against the stored
   picture extent of its $Extent case.
+
+Survey: 2026-09-11 05:33 — the solvers since 2026-09-09 01:42.
+
+Callers:
+5833af48 pixel_cand, band_color, pixel_broken, pixel_size — the $Blocks case sweeps every block size the plan's extent admits per axis (`sub_extent` or `axis_dim`, then `divide_by_size`), keys a `Unanimous` by axis, size, block index, and across component so a band holding two colors breaks the size, and takes the largest unbroken size per axis with `Extremes`, then feeds it into a `Tile2D` `dim` to read each plan cell's pixel. That is the operation the entry specifies, still written as plain relations.
+No second caller. Across the scope, 39 divide-family calls take a size; 37 take it from a parameter, and the 2 that do not are both in 5833af48. The parser scan for a rule that binds a divide-family size from `sub_extent` or `axis_dim` in the same rule matched that one rule in scope. Every `Tile2D` and `Divide2D` `dim` in scope other than 5833af48's `pixels` takes its size from a parameter, a stamp's box extent, or a pattern's box extent.
+
+Near-misses:
+898e7135 scale_cand — sweeps `axis_dim ; sub_extent` over a piece's box, scales each hole by the candidate with `Frame2D` and `concat_2d`, and picks the size at which the scaled hole is congruent to the piece (`KeyedSetCompare`). The size is chosen by congruence with another shape, a criterion other than block uniformity, and the picture is scaled up, not recovered.
+8abad3cf cand_side — sweeps `sub_extent ; axis_dim` over the input and picks the side whose square area equals a color's cell count. No division of the grid and no block test: a size chosen by a count.
+8a6d367c blocks — `Divide2D` `dim` is the shape pattern's box extent, so the block size is a scale factor read off two extents (the hole's and the pattern's); `contradicted` tests fill cells against the pattern, not block uniformity.
+0dfd9992 axis_rep — `sub_extent` bounded by `period`, an input: a period (`ShiftInvariance`), which repeats a pattern rather than stretching one cell.
+045e512c span — `sub_extent` yields step lengths for translations of an object; nothing divides.
+88a62173 line_color, lattice — one-colored lines are found by a `Unanimous` and fed as dividers to a `DividerFrame`; the tile size comes from the dividers, not from a sweep tested for uniform blocks.
+8f2ea7aa cell ($Divide), 88a62173 tile_val ($Size), 85b81ff1 decompose ($Size), and the divide_slab family in scope (0520fde7, 0c9aba6e, 195ba7dc, 1b2d62fb, 31d5ba1a, 3428a4f5, 34b99a2b, ce4f8723, cf98881b, d19f7514, dae9d2b5, e133d23d, e345f17b, f2829549, fafffa47) — the tile size or count is stored as a parameter.
+412b6263 tile_dim — a `Unanimous` over axes in `Determine` agrees a tile count across examples, counted from seat offsets, not a block test.
+
+Spec:
+The scope holds one site, the surfacing solver, so every signal is caller-only. Its call site agrees with the entry's recorded questions: `cand` includes the whole extent (`axis_dim` beside `sub_extent`); the block index is the only part of `pixel` read; and per-axis sizes reach the 2D `pixel` through a `Tile2D` `dim`. One detail the entry's prose does not state: 5833af48 tests uniformity per band, a 1D run along the swept axis keyed by its across component, not per 2D block, so the per-axis `broken(key, a, s)` in the code form is the reading the caller takes. Caller-only; no change proposed.
+
+Reimplementations:
+8b7bacbf multi_cell, line 51 — `ink(P, Col), ink(Q, Col), P != Q` is `Unanimous<Color, Position>` `clash`; `marker` at line 54 is its `value`.
+84ba50d3 wide, line 65 — `shape_row_cell(Id, R, P), shape_row_cell(Id, R, Q), P != Q` is `Unanimous<ShapeRow, Position>` `clash`.
+71e489b6 continued, line 31 — `figure_nbr(P, D1), figure_nbr(P, D2), D1 != D2` is `Unanimous<Position, Dir>` `clash`.
+7f4411dc support_kept, line 46 — `support(P, D1), support(P, D2), D1 != D2` is `Unanimous<Position, Dir>` `clash`.
+Method: a grep for `divide`, `sub_extent`, `axis_dim`, `Unanimous`, `Tile2D`, `Divide2D`, and `stride` over the 103 scope files, each hit read in its rule; a parser scan over the scope for divide-family atoms whose size argument is not bound by a `params` atom (39 calls, 2 hits, 1 bound by `sub_extent`/`axis_dim` in the same rule); and the Unanimous-shape matcher from `tests/test_ast_match.py` over the scope (25 candidate rules, of which the four above are clash tests and the rest are pair or order rules).

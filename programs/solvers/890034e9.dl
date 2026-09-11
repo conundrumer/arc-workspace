@@ -1,0 +1,69 @@
+// 890034e9
+// draft
+// concept: markers border stamp
+// Colored noise fills the grid. One color draws nothing but a rectangle
+// outline, and the outline's hole has a twin elsewhere in the noise. The
+// output draws the same outline around the twin.
+//
+// $Content — the twin is another occurrence of the hole's cells with their
+//   colors.
+// $Empty — the twin is another empty rectangle of the hole's extents.
+
+#include "../lib.dl"
+
+.type Choice = Content {} | Empty {}
+
+// A frame's twin search, per case.
+.type FrameKey = [ch: Choice, b: Position]
+
+.comp Params {
+    // --- Empty ---
+    .decl bg(col: Color) bg(0).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Content()). impl_choice($Empty()).
+
+// The rectangle outlines each color draws.
+.init drect = DrawnRect<Color>
+drect.node(Col, P) :- in(P, Col).
+
+.init bcells = BoxCells<Position>
+bcells.box(B, B) :- drect.rect(_, B).
+bcells.cell(B, P) :- bcells.box(B, _), in(P, _).
+
+// A cell of the outline's color off the outline.
+.decl stray(b: Position)
+stray(B) :- drect.rect(Col, B), in(P, Col), !bcells.on_edge(B, P, _).
+
+// The frame: an outline whose color is used for nothing else.
+.decl frame(col: Color, b: Position)
+frame(Col, B) :- drect.rect(Col, B), !stray(B).
+
+.decl hole(b: Position, p: Position)
+hole(B, P) :- frame(_, B), bcells.hole(B, P).
+
+// The hole's twins, the hole itself among them: the cases value the hole's
+// cells differently.
+.init occ = Occurrences<FrameKey, Color>
+occ.cell([Ch, B], P, Col) :- impl_choice(Ch), frame(_, B), in(P, Col).
+
+// --- Content ---
+occ.shape([$Content(), B], S, Col) :- hole(B, S), in(S, Col).
+
+// --- Empty ---
+occ.shape([$Empty(), B], S, Col) :- hole(B, S), params.bg(Col).
+
+.decl twin(ch: Choice, b: Position, p: Position)
+twin(Ch, B, P) :- occ.occurrence([Ch, B], M), hole(B, S), compose(M, S, P).
+
+// The outline around a twin: the grid cells touching it.
+.decl outline(ch: Choice, b: Position, p: Position)
+outline(Ch, B, Q) :-
+    twin(Ch, B, P), dir8_elem(D), neighbor(P, D, Q), in(Q, _), !twin(Ch, B, Q).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(Q, Col, Ch) :- outline(Ch, B, Q), frame(Col, B).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !outline(Ch, _, P).

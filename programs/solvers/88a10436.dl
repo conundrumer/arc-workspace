@@ -1,0 +1,86 @@
+// 88a10436
+// draft
+// concept: markers objects stamp
+// A multicolor shape and one marker cell sit on bg. A copy of the shape lands
+// with the center of its box on the marker; the rest of the input stands.
+// Choice = [m, c] crosses two choice points:
+//
+//   m (which cells are the marker):
+//     $Color() — the cells of params.marker.
+//     $Lone()  — the ink cells that touch no other ink.
+//   c (what the copy carries):
+//     $Ink() — the shape's ink cells; the holes of its box leave the scene as it is.
+//     $Box() — the shape's whole box, holes included.
+
+#include "../lib.dl"
+
+.type Marker  = Color {} | Lone {}
+.type Content = Ink {} | Box {}
+.type Choice  = [m: Marker, c: Content]
+
+.comp Params {
+    // --- shared ---
+    .decl bg(col: Color) bg(0).
+
+    // --- $Color ---
+    .decl marker(col: Color) marker(5).
+}
+
+.init params = Params
+
+.decl marker_choice(m: Marker)
+marker_choice($Color()). marker_choice($Lone()).
+
+.decl content_choice(c: Content)
+content_choice($Ink()). content_choice($Box()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([M, C]) :- marker_choice(M), content_choice(C).
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.bg(Col).
+
+// --- Marker cases: the cells the copy lands on ---
+
+.decl marker(p: Position, m: Marker)
+
+// $Color — the cells of the marker color.
+marker(P, $Color()) :- ink(P, Col), params.marker(Col).
+
+// $Lone — the ink that touches no other ink.
+.decl touching(p: Position)
+touching(P) :- ink(P, _), dir_elem(D), neighbor(P, D, Q), ink(Q, _).
+
+marker(P, $Lone()) :- ink(P, _), !touching(P).
+
+// The shape is the ink that is not a marker.
+.decl shape(p: Position, m: Marker)
+shape(P, M) :- ink(P, _), marker_choice(M), !marker(P, M).
+
+.init box = BoxFrame<Marker>
+box.cell(M, P) :- shape(P, M).
+box.grid(M, P) :- marker_choice(M), in(P, _).
+
+// Each cell of the shape's box beside where it lands: the box's center on a marker.
+.decl seated(p: Position, q: Position, m: Marker)
+seated(P, Q, M) :-
+    box.inner(M, Ctr, P_inner), centered(P_inner),   // the box's center
+    box.viewed(M, P), displacement(Ctr, P, V),       // a box cell, as its offset from the center
+    marker(A, M), compose(A, V, Q), in(Q, _).        // laid off from a marker, on the grid
+
+// --- Content cases: the cells the copy carries ---
+
+.decl content(p: Position, col: Color, ch: Choice)
+
+// $Ink — the shape's ink cells.
+content(P, Col, [M, $Ink()]) :- shape(P, M), ink(P, Col).
+
+// $Box — every cell of the shape's box.
+content(P, Col, [M, $Box()]) :- box.viewed(M, P), in(P, Col).
+
+.decl paint(q: Position, col: Color, ch: Choice)
+paint(Q, Col, [M, C]) :- content(P, Col, [M, C]), seated(P, Q, M).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- paint(P, Col, Ch).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(P, _, Ch).

@@ -1,0 +1,107 @@
+// 8b9c3697
+// draft
+// concept: objects move span
+// The grid is a background, the commonest color, with movers of params.mover
+// and anchors of a third color on it. An anchor is a component; its cavity
+// is the cells with anchor cells of it on both sides along a row or a
+// column. Each mover slides toward each cardinal direction until its next
+// step would leave the frame or cover a cell that is neither background nor
+// its own. When that step would cover an anchor cell and the rest lies
+// wholly in that anchor's cavity, the mover stays at rest, and the cells it
+// passed over, its start included, take params.trail. Every other mover is
+// erased.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl mover(col: Color) mover(2).
+    .decl trail(col: Color) trail(0).
+}
+
+.init params = Params
+
+// The background: the commonest color.
+.init bg_mode = Mode<Unit, Color, Position>
+bg_mode.item($U(), Col, P) :- in(P, Col).
+
+.decl bg(col: Color)
+bg(Col) :- bg_mode.mode($U(), Col).
+
+// --- objects ---
+
+.init movers = Components<Unit>
+movers.node($U(), P) :- in(P, Col), params.mover(Col).
+
+.decl mover(id: Ident, p: Position)
+mover(Id, P) :- movers.label($U(), P, Id).
+
+// An anchor: a component of what is neither background nor mover.
+.init anchors = Components<Unit>
+anchors.node($U(), P) :- in(P, Col), !bg(Col), !params.mover(Col).
+
+.decl anchor(id: Ident, p: Position)
+anchor(Id, P) :- anchors.label($U(), P, Id).
+
+// Each anchor's cavity.
+.init cavity = Between<Ident>
+cavity.axis(Id, A) :- anchor(Id, _), axis_elem(A).
+cavity.mark(Id, P) :- anchor(Id, P).
+cavity.cell(Id, P) :- anchor(Id, _), in(P, _).
+
+// --- the slide ---
+
+// A mover fits at a displacement when its every cell lands on background or
+// on its own cells.
+.init fits = Occurrences<Ident, Unit>
+fits.cell(Id, P, $U())  :- mover(Id, _), in(P, Col), ( bg(Col) ; mover(Id, P) ).
+fits.shape(Id, P, $U()) :- mover(Id, P).
+
+// Each mover slides through its fitting displacements.
+.init slide = Slide<Ident>
+slide.node(Id, Delta) :- fits.occurrence(Id, Delta).
+slide.dir(Id, D) :- mover(Id, _), dir_elem(D).
+
+// The mover's cells carried to a fitting displacement.
+.decl carried(id: Ident, delta: Shift, p: Position)
+carried(Id, Delta, P2) :- slide.node(Id, Delta), mover(Id, P), compose(P, Delta, P2).
+
+// A mover at rest toward D, with the anchor its next step would hit.
+.decl docked(id: Ident, d: Dir, delta: Shift, a: Ident)
+docked(Id, D, Delta, A) :-
+    dir_elem(D), slide.rest(Id, ORIGIN, D, Delta),  // at rest toward D
+    carried(Id, Delta, P), neighbor(P, D, P2),      // one step on from a rest cell
+    anchor(A, P2).                                  // is an anchor cell
+
+// A docked mover with a rest cell outside that anchor's cavity.
+.decl outside(id: Ident, d: Dir, delta: Shift, a: Ident)
+outside(Id, D, Delta, A) :-
+    docked(Id, D, Delta, A), carried(Id, Delta, P), !cavity.between(A, P).
+
+// A mover seated in a cavity.
+.decl seated(id: Ident, d: Dir, delta: Shift)
+seated(Id, D, Delta) :- docked(Id, D, Delta, A), !outside(Id, D, Delta, A).
+
+// --- output ---
+
+.decl landed(p: Position)
+landed(P) :- seated(Id, _, Delta), carried(Id, Delta, P).
+
+// The cells a seated mover passed over short of its rest, its start
+// included.
+.decl trail(p: Position)
+trail(P) :-
+    seated(Id, D, Delta),
+    ( Delta2 = ORIGIN                                    // the start
+    ; slide.run(Id, ORIGIN, D, Delta2), Delta2 != Delta  // a step short of the rest
+    ),
+    carried(Id, Delta2, P), !landed(P).
+
+// The grid with the movers lifted off.
+.decl cleared(p: Position, col: Color)
+cleared(P, Col) :- in(P, Col), !mover(_, P).
+cleared(P, Col) :- mover(_, P), bg(Col).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- landed(P), params.mover(Col).
+out(P, Col) :- trail(P), params.trail(Col).
+out(P, Col) :- cleared(P, Col), !landed(P), !trail(P).

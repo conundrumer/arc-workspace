@@ -1,0 +1,105 @@
+// 8d510a79
+// draft
+// concept: decompose markers cast lookup
+// A uniform line divides the grid in two. Each mark casts its color
+// through bg along the line's perpendicular, stopped by the divider or
+// the grid edge. Two models of a mark's cast direction:
+//
+//   $Relative — by color: params.toward colors cast toward the divider,
+//               params.away colors cast away from it.
+//   $Table    — params.cast_dir maps (color, side the divider lies on) to
+//               the direction.
+
+#include "../lib.dl"
+
+.type Choice = Relative {} | Table {}
+
+// Marks casting toward d, under one model.
+.type CastKey = [d: Dir, ch: Choice]
+
+.comp Params {
+    // --- shared ---
+    .decl bg(col: Color) bg(0).
+
+    // --- Relative ---
+    .decl toward(col: Color) toward(2).
+    .decl away(col: Color) away(1).
+
+    // --- Table ---
+    // A mark of color col, with the divider toward side, casts toward d.
+    .decl cast_dir(col: Color, side: Dir, d: Dir)
+    cast_dir(2, DIR_B, DIR_B).
+    cast_dir(2, DIR_T, DIR_T).
+    cast_dir(1, DIR_B, DIR_T).
+    cast_dir(1, DIR_T, DIR_B).
+}
+
+.init params = Params
+
+.comp Parse<Key> {
+    .type Line = [key: Key, a: Axis, l: Position]
+
+    .decl cell(key: Key, p: Position, col: Color)  // input
+
+    .init line_color = Unanimous<Line, Color>
+    line_color.item([K, A, L], Col) :- cell(K, P, Col), axis_elem(A), split(P, A, L, _).
+
+    .init frame = DividerFrame<Key>
+    frame.cell(K, P) :- cell(K, P, _).
+
+    // Divider: a line of one non-bg color.
+    frame.divider(K, A, L) :- line_color.value([K, A, L], Col), !params.bg(Col).
+
+    // A non-bg cell off the divider.
+    .decl mark(key: Key, p: Position, col: Color)
+    mark(K, P, Col) :- cell(K, P, Col), !params.bg(Col), !frame.on_divider(K, P, _).
+
+    // The divider lies toward d from the cell.
+    .decl side(key: Key, p: Position, d: Dir)
+    side(K, P, D) :- frame.part_idx(K, P, D, N), N != 0.
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+.decl casts(p: Position, d: Dir, ch: Choice)
+
+// --- Relative ---
+casts(P, D, $Relative()) :-
+    parse.mark($U(), P, Col), parse.side($U(), P, D_side),
+    ( params.toward(Col), D = D_side
+    ; params.away(Col), opposite(D_side, D)
+    ).
+
+// --- Table ---
+casts(P, D, $Table()) :-
+    parse.mark($U(), P, Col), parse.side($U(), P, D_side),
+    params.cast_dir(Col, D_side, D).
+
+// Each mark casts through bg; the divider blocks.
+.init cast = Ray<CastKey>
+cast.dir([D, Ch], D) :- casts(_, D, Ch).
+cast.cell([D, Ch], P) :- casts(_, D, Ch), in(P, Col), params.bg(Col).
+cast.mark([D, Ch], P) :- casts(P, D, Ch).
+cast.blocked([D, Ch], P) :- casts(_, D, Ch), parse.frame.on_divider($U(), P, _).
+
+.decl painted(p: Position, col: Color, ch: Choice)
+painted(P, Col, Ch) :- cast.clear([_, Ch], P, _, _, Src), parse.mark($U(), Src, Col).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Relative()). impl_choice($Table()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- painted(P, Col, Ch).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !painted(P, _, Ch).
+
+.comp Determine {
+    .init ex = Parse<Example>
+    ex.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // A mark casts toward the neighbor that holds its color in the output.
+    .decl cast_dir(col: Color, side: Dir, d: Dir)
+    cast_dir(Col, D_side, D) :-
+        ex.mark(E, P, Col), ex.side(E, P, D_side),
+        dir_elem(D), neighbor(P, D, Q), ex_out(E, Q, Col).
+}

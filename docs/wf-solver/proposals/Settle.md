@@ -94,5 +94,3 @@ Dock-shaped near-misses, a single body per key against a stopper set fixed befor
 - 320afe60, 5623160b, 62593bfd — several bodies jump flush to the frame edge by `box.edge_min`, with no stopper set but the edge; no two same-heading bodies share a line, so none witnesses a pile.
 
 Spec: the delta's static-floor sites all hold one body per key, and 17829a00's several bodies never share a line, so the only site where `blocked` and the recursion are live together is 6ad5bdfd. Two details from that call site: `dir` is derived there, as the cardinal the wall does not stand off, and `blocked` is fed the whole wall, not its edge line.
-
-Reimplementations: the 5ffb2104 copy of the comp predates the spec, with no `blocked` input and no static-cell branch in `room`.

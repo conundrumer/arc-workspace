@@ -74,5 +74,5 @@ Survey: 2026-09-10 02:48 — scope: the 341 solvers `since 2026-09-09 01:42` lis
 - 2546ccf6 — `gap` (`:52-57`): the tile a 2x2 block of tiles is missing, read
   over tile positions. The same file reads the quad again at `mirror`
   (`:68-72`), through `block_dir`.
-- 71e489b6 — `solid` (`:43`): ground drawn thick, through a local `quad` in the entry's code form; a ground cell in no 2x2 block of ground is thin, and thin clusters are the hole candidates.
+- 71e489b6 — `solid` (`:45`): ground drawn thick, through a local `quad` in the entry's code form; a ground cell in no 2x2 block of ground is thin, and thin clusters are the hole candidates.
 - 142ca369 — `elbow` (`:56-59`, with `no_arm` `:52`): the elbow of an L-triomino with the corner its arms straddle, in a split form — the two cardinal members as a universal through the `no_arm` defect over `Rim.rim_dir`, the corner member through `neighbor` tested for bg. `mark` under `$Gap` (`:61-65`) reads the anchor and its cardinal members again.

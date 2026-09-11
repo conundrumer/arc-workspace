@@ -87,6 +87,7 @@ Survey: 2026-09-10 15:25 — the solvers since 2026-09-10 08:31.
 6. 36d67576 `poses` (`36d67576.dl:53-63`) — `KeyedSetCompare<Ident, D4, Position>` whose pattern set is each D4 image (via `apply`) of the model part's shape and whose observed set is each part's shape; `poses.equals(Id, D)` is the element carrying the model exactly onto part `Id`, and `carried` applies that `D` to the model's marks.
 7. 3d588dc9 `key_match` (`3d588dc9.dl:62-72`) — `KeyedSetCompare<Ident, D4, Position>` whose pattern set is the stored key footprint in every pose of its `RIGID` chart (`foot_box.inner(D, ...)`) and whose observed set is each object in its box; `key_cell` reads the `D` to pair each key cell with its footprint cell.
 8. 4c177718 `pose` (`4c177718.dl:96-100`) — `KeyedSetCompare<Unit, D4, Position>` whose pattern set is the chart glyph in every pose (`params.chart_glyph(D, P)`) and whose observed set is the arrow in its box; `pose.equals($U(), D)` feeds `params.chart_tip(D, D_tip)`.
+9. 898e7135 `congruent` (`898e7135.dl:69-78`) — `KeyedSetCompare<Turned, Ident, Position>` whose observed set is each hole scaled by a candidate factor and turned by every D4 element (via `apply`), keyed `[hole, factor, D]`, and whose pattern set is each piece in its box; `congruent.equals([H, K, _], O)` is the piece a hole's scaled image is carried exactly onto. The src side is a scaled set, so the `onto` call would sit on a `[hole, factor, piece]`-keyed instance; the element is dropped, since pieces are one color.
 
 All eight stand at the call sites the earlier surveys recorded; the rewrite changed none of their forms. No ninth site: every other `D4Map` cross-feed, `map` read, `d4_inverse` use, and D4-imaged catalog is accounted for below.
 
@@ -118,3 +119,22 @@ No change to the interface or definition from this pass; the two open points sta
 Reimplementations: one candidate.
 
 - `/Users/davidlu/code/arc-workspace/programs/solvers/3e980e27.dl` lines 68–72, `Determine.refuted(M, D)`: places each footprint cell under a candidate D4 at its marker (`apply`, `compose`) and tests `ex_out` for a differing color where a cell exists. That is `D4Map.conflict` over a `[M, E, P]`-keyed instance with `src` = the footprint and `dst` = `ex_out` displaced from the marker; the earlier surveys listed this site as a near-miss only.
+
+Survey: 2026-09-10 21:18 — the solvers since 2026-09-10 15:25.
+
+Callers:
+898e7135 `congruent` — a `KeyedSetCompare<Turned, Ident, Position>` whose observed set is each hole scaled by a candidate factor and turned by every D4 element (`d4_elem`, `apply`), keyed `[hole, factor, D]`, and whose pattern set is each piece in its box; `congruent.equals([H, K, _], O)` is the piece that a hole's scaled image is carried exactly onto, and `fit` drops the element since pieces are one color. The site stands as the 2026-09-10 15:25 result recorded it. No second caller: across the scope, no solver instantiates `D4Map`, no rule writes `d4_inverse`, the only `Canon` (84f2aca1 `rect_id`) is fed a reflexive identity over drawn rectangles with no `map`, the only other `KeyedSetCompare` (88a62173 `same`) is a translation-only tile comparison, and the two `Occurrences` instances (890034e9 `occ`, 8a004b2b `seat`) seek a shape at an unknown placement.
+
+Near-misses:
+846bdb03 `placed`/`defect` — a shape's D4 images under a stored `Sym` (`sym_member`, `apply`) are tested for meeting each bar's color at the bar's edge; one set is placed and tested against bar colors, and no second cell set is carried onto (the `Not:` line's self-symmetry reading, with no comparison of two sets).
+88207623 `image` — a source cell reflected across its line by `flip_of`, `displacement`, `apply`, `compose`; a position transform over one set, painted rather than compared.
+85fa5666 — a stored `C4` element turns a corner name through `apply_diag_dir`; no cell set enters.
+88a62173 `same` — `KeyedSetCompare.equals` over tiles in their boxes under translation alone, no D4 element.
+890034e9 `occ`, 8a004b2b `seat` — a hole's content or a block's ink sought within the grid or drawing at an unknown placement, translation alone (the `Not:` line's `Occurrences`).
+8698868d `pair` — blocks and pieces paired by enclosed-region count or rank, not by shape.
+
+Spec:
+No change from this pass. 898e7135 is the one caller in scope and drops the element column, so the element-column point rests on the callers the earlier results name (36d67576, 3d588dc9, 4c177718, 67e490f4, 845d6e51) and stands. 898e7135 adds a wrinkle the entry's interface does not hold: its src side is a hole scaled by a factor before the turn, so an `onto` call there would key the instance by `[hole, factor, piece]` and feed `src` from the scaled set; that is a caller-side composition, not an interface change, and this pass alone does not argue for one. The `RIGID`-chart point gains no evidence: no scope solver feeds a D4-keyed pattern set from a chart. `map` keeps the into-reading; no scope site reads it either way.
+
+Reimplementations: none.
+The matcher under the scratch path ran the five shapes of the 15:25 result over the 27 scope solvers; shapes A, B, C, and E hit nothing, and shape D, extended to `observed_member` heads, hit only 898e7135 line 71. Grep for `D4Map`, `KeyedSetCompare`, `Canon`, `d4_inverse`, `sym_member`, `Occurrences`, `.map(`, `apply(`, `apply_dir`, `.equals(`, `.equiv(`, `pattern_member`, `d4_elem`, `flip_of`, `rotation(`, `BoxFrame`, `Reframe`, and `ShiftInvariance` found the sites read above and no other.

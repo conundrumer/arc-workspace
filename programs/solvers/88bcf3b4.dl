@@ -1,0 +1,159 @@
+// 88bcf3b4
+// draft
+// concept: objects markers walk count
+// Poles rise from the grid edge, and a worm hangs off the tip of each one.
+// The worm is redrawn with its cell count as a walk from its root beside the
+// tip: it heads for the nearest object ahead of the tip on its side of the
+// pole, follows that object's contour on the same side, and leaves on the
+// diagonal that runs on along the pole and back across its line.
+
+#include "../lib.dl"
+
+.comp Params {}
+
+.init params = Params
+
+// --- objects ---
+
+// The background is the commonest color.
+.init bg_mode = Mode<Unit, Color, Position>
+bg_mode.item($U(), Col, P) :- in(P, Col).
+
+.decl bg(col: Color)
+bg(Col) :- bg_mode.mode($U(), Col).
+
+.init objs = Components8<Color>
+objs.node(Col, P) :- in(P, Col), !bg(Col).
+
+.decl object(id: Ident, p: Position)
+object(Id, P) :- objs.label(_, P, Id).
+
+// --- poles ---
+
+// An object with cells on more than one line along axis A.
+.decl bent(id: Ident, a: Axis)
+bent(Id, A) :-
+    object(Id, P), object(Id, Q), axis_elem(A),
+    split(P, A, _, X), split(Q, A, _, X2), X != X2.
+
+// A pole: a straight object of at least two cells. Its heading runs from
+// its foot on the grid edge along the line.
+.decl pole(id: Ident, a: Axis)
+pole(Id, A) :- object(Id, P), object(Id, Q), P != Q, axis_elem(A), !bent(Id, A).
+
+.decl heading(id: Ident, t: Dir)
+heading(Id, T) :-
+    pole(Id, A), axis_of(D_foot, A), object(Id, P), dist(P, D_foot, 0),
+    opposite(D_foot, T).
+
+// The tip: the pole cell farthest from its foot.
+.init reach = ArgExtremes<Ident, Position>
+reach.cand(Id, P, K) :- heading(Id, T), object(Id, P), dist(P, T, K).
+
+.decl tip(id: Ident, p: Position)
+tip(Id, P) :- reach.low(Id, P, _).
+
+// --- worms ---
+
+// A worm hangs off a tip: its root is one step across the pole from the
+// tip, on side S.
+.decl worm(w: Ident, pole: Ident, root: Position, s: Dir)
+worm(W, Pole, Root, S) :-
+    tip(Pole, Tip), heading(Pole, T), perp_dir(T, S),
+    neighbor(Tip, S, Root), object(W, Root).
+
+// Object sizes: the worm keeps its cell count.
+.init size = Tally<Ident, Position>
+size.item(Id, P) :- object(Id, P).
+
+// --- targets ---
+
+// The target: the object with the cell nearest ahead of the tip, among the
+// cells beyond the tip along the heading and not across the pole's line
+// from the worm.
+.init nearest = ArgExtremes<Ident, Ident>
+nearest.cand(W, Obj, K) :-
+    worm(W, Pole, _, S), tip(Pole, Tip), heading(Pole, T),
+    object(Obj, Q), Obj != W,
+    nearer(T, Q, Tip), dist(Q, T, K),                      // beyond the tip
+    dist(Q, S, K_s), dist(Tip, S, K_tip), K_s <= K_tip.    // not across the pole's line
+
+// The target's silhouette toward S: on each line across the pole's axis,
+// its cell nearest S.
+.type Line = [w: Ident, l: Position]
+
+.init silhouette = ArgExtremes<Line, Position>
+silhouette.cand([W, L], Q, K) :-
+    nearest.high(W, Obj, _), object(Obj, Q),
+    worm(W, Pole, _, S), pole(Pole, A), split(Q, A, L, _), dist(Q, S, K).
+
+// The contour: one step S from each silhouette cell.
+.decl contour(w: Ident, p: Position)
+contour(W, P) :- silhouette.low([W, _], Q, _), worm(W, _, _, S), neighbor(Q, S, P), in(P, _).
+
+// The contour in walking order: line by line along the heading.
+.decl next(w: Ident, p: Position, q: Position)
+next(W, P, Q) :-
+    contour(W, P), worm(W, Pole, _, S), heading(Pole, T),
+    neighbor(P, T, P2), axis_of(S, A2), same_line(A2, P2, Q),   // the next line along the heading
+    contour(W, Q).
+
+// --- the walk ---
+
+// The king heading from p toward g: the cardinal g lies toward, alone when
+// p is in line with g, else the diagonal that pairs the two.
+.decl toward(p: Position, g: Position, d: Dir8) inline
+toward(P, G, D8) :-
+    dir_elem(D), nearer(D, G, P),
+    ( axis_of(D, A), same_line(A, P, G), D8 = D
+    ; dir_elem(D2), nearer(D2, G, P), diag_dirs(D8, _, D, D2)
+    ).
+
+// The walk's legs: at p, heading for contour cell g. The first goal is the
+// contour's first cell, and a reached goal hands over to the next.
+.decl leg(w: Ident, p: Position, g: Position)
+leg(W, Root, G) :- worm(W, _, Root, _), contour(W, G), !next(W, _, G).
+leg(W, G, G2) :- leg(W, G, G), next(W, G, G2).
+leg(W, Q, G) :- leg(W, P, G), P != G, step(W, P, Q).
+
+// Past the last contour cell the walk leaves, along the heading and back
+// toward the pole's line.
+.decl depart(w: Ident, d: DiagDir)
+depart(W, Diag) :-
+    worm(W, Pole, _, S), heading(Pole, T), opposite(S, S_back),
+    diag_dirs(Diag, _, T, S_back).
+
+.decl free(w: Ident, p: Position)
+free(W, G) :- leg(W, G, G), !next(W, G, _).
+free(W, Q) :- free(W, P), step(W, P, Q).
+
+// Each step of the walk: toward the leg's goal, or away.
+.decl step(w: Ident, p: Position, q: Position)
+step(W, P, Q) :- leg(W, P, G), P != G, toward(P, G, D), neighbor(P, D, Q).
+step(W, P, Q) :- free(W, P), depart(W, D), neighbor(P, D, Q), in(Q, _).
+
+// The walk's cells, ranked by their place along it.
+.decl before(w: Ident, p: Position, q: Position)
+before(W, P, Q) :- step(W, P, Q).
+before(W, P, R) :- before(W, P, Q), step(W, Q, R).
+
+.init walk = Order<Ident, Position>
+walk.elem(W, P) :- worm(W, _, P, _).
+walk.elem(W, Q) :- step(W, _, Q).
+walk.before(W, P, Q) :- before(W, P, Q).
+
+// The worm's new body: the walk's first cells, as many as the worm has.
+.decl body(w: Ident, p: Position)
+body(W, P) :- walk.rank(W, P, R), size.tally(W, N), R < N.
+
+// --- output ---
+
+// The worms' old cells are cleared.
+.decl worm_cell(p: Position)
+worm_cell(P) :- worm(W, _, _, _), object(W, P).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- body(W, P), objs.label(Col, _, W).
+out(P, Col) :-
+    in(P, Col_in), !body(_, P),
+    ( worm_cell(P), bg(Col) ; !worm_cell(P), Col = Col_in ).

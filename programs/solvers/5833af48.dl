@@ -118,7 +118,6 @@ pixel_cand(A, S) :-
     ),
     divide_by_size(P, A, S, 0, _, _).
 
-// The colors of each band.
 .init band_color = Unanimous<Band, Color>
 band_color.item([A, S, P_outer, P_across], Col) :-
     pixel_cand(A, S), plan_cell(P, Col),

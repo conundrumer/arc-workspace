@@ -1,0 +1,129 @@
+// 84f2aca1
+// draft
+// concept: objects border enclose lookup count
+// Hollow outlines on params.bg; the empty cells an outline holds take on a
+// color that the hole's size selects.
+//
+// Choice crosses two independent choice points:
+//   region — $Rect:    bg cells strictly inside a drawn rectangle outline.
+//            $Box:     bg cells inside an ink object's bounding box.
+//            $Enclose: bg cells that cannot reach the grid edge.
+//   key    — $Count:   the region's cell count.
+//            $Extent:  the region's box extents, short side first.
+
+#include "../lib.dl"
+
+.type Region = Rect {} | Box {} | Enclose {}
+.type Key    = Count {} | Extent {}
+.type Choice = [r: Region, k: Key]
+
+.type RegionKey = [r: Region, id: Ident]
+
+.comp Params {
+    // --- shared ---
+    .decl bg(c: Color) bg(0).
+
+    // --- $Count ---
+    .decl count_fill(n: number, col: Color)
+    count_fill(1, 5). count_fill(2, 7).
+
+    // --- $Extent ---
+    // Short side first: the hole's orientation is not task data.
+    .decl extent_fill(n_short: number, n_long: number, col: Color)
+    extent_fill(1, 1, 5). extent_fill(1, 2, 7).
+}
+
+.init params = Params
+
+.decl bg_cell(p: Position)
+bg_cell(P) :- in(P, Col), params.bg(Col).
+
+.decl ink(p: Position)
+ink(P) :- in(P, Col), !params.bg(Col).
+
+// --- Region cases ---
+
+.decl region(r: Region, id: Ident, p: Position)
+
+// $Rect: the inside of each rectangle outline drawn in ink.
+.init drect = DrawnRect<Unit>
+drect.node($U(), P) :- ink(P).
+
+.init rect_id = Canon<Position>
+rect_id.equiv(B, B) :- drect.rect($U(), B).
+
+region($Rect(), Id, P) :- rect_id.id(B, Id), bg_cell(P), gt(P, B).
+
+// $Box: the bg cells each ink object's box holds.
+.init objs = Components<Unit>
+objs.node($U(), P) :- ink(P).
+
+.init obox = Bbox<Ident>
+obox.cell(Id, P) :- objs.label($U(), P, Id).
+obox.grid(Id, P) :- objs.label($U(), _, Id), in(P, _).
+
+region($Box(), Id, P) :- obox.inside(Id, P), bg_cell(P).
+
+// $Enclose: the bg regions closed off from the grid edge.
+.init closed = Closed<Unit>
+closed.cell($U(), P) :- bg_cell(P).
+
+region($Enclose(), Id, P) :- closed.region($U(), P, Id).
+
+// --- Key cases ---
+
+.decl fill(r: Region, id: Ident, col: Color, k: Key)
+
+.init region_size = Tally<RegionKey, Position>
+region_size.item([R, Id], P) :- region(R, Id, P).
+
+fill(R, Id, Col, $Count()) :- region_size.tally([R, Id], N), params.count_fill(N, Col).
+
+.init rbox = Bbox<RegionKey>
+rbox.cell([R, Id], P) :- region(R, Id, P).
+
+fill(R, Id, Col, $Extent()) :- rbox.extents([R, Id], _, N1, N2), params.extent_fill(N1, N2, Col).
+
+// --- output ---
+
+.decl painted(p: Position, col: Color, ch: Choice)
+painted(P, Col, [R, K]) :- region(R, Id, P), fill(R, Id, Col, K).
+
+.decl region_choice(r: Region)
+region_choice($Rect()). region_choice($Box()). region_choice($Enclose()).
+
+.decl key_choice(k: Key)
+key_choice($Count()). key_choice($Extent()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([R, K]) :- region_choice(R), key_choice(K).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- painted(P, Col, Ch).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !painted(P, _, Ch).
+
+.comp Determine {
+    .type Hole = [e: Example, id: Ident]
+
+    // The cells the output repaints, one hole per component.
+    .decl changed(e: Example, p: Position, col: Color)
+    changed(E, P, Col) :- ex_in(E, P, C_in), ex_out(E, P, Col), Col != C_in.
+
+    .init holes = Components<Example>
+    holes.node(E, P) :- changed(E, P, _).
+
+    .decl hole(h: Hole, p: Position, col: Color)
+    hole([E, Id], P, Col) :- holes.label(E, P, Id), changed(E, P, Col).
+
+    .init hole_size = Tally<Hole, Position>
+    hole_size.item(H, P) :- hole(H, P, _).
+
+    .decl count_fill(n: number, col: Color)
+    count_fill(N, Col) :- hole_size.tally(H, N), hole(H, _, Col).
+
+    .init hbox = Bbox<Hole>
+    hbox.cell(H, P) :- hole(H, P, _).
+
+    .decl extent_fill(n_short: number, n_long: number, col: Color)
+    extent_fill(N1, N2, Col) :- hbox.extents(H, _, N1, N2), N1 <= N2, hole(H, _, Col).
+}

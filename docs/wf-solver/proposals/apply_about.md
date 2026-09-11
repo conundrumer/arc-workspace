@@ -70,6 +70,7 @@ That pass read the 385 solvers whose file time is at or after 06:40 (another cor
 - `6855a6e4` — each mover cell about the mirror cell its cast halts on (a `Ray.stop` cell), by the flip of the cast's axis; the entry's exact form. The frame is a cell in the mover's own line, and the image's domain test is left to the `out` rule's grid join.
 - `84551f4c` — each cell of a toppling bar about the bar's base cell, by the quarter turn of the stored topple sense; the entry's exact form. The image's domain test is left to the `out` rule's grid join.
 - `7ed72f31` — each shape cell's along coordinate about its object's mirror line, per axis on which the mirror is thin, by that axis's flip; the entry's exact form. The frame is the mirror's axis-only line Position, a point mirror giving one on each axis, and the image's domain test is left to the `out` rule's grid join.
+- `88207623` — each shape cell about a cell of the line segment it leans on, by the flip of the stored axis across the line; the entry's exact form. Any cell of the segment serves as the frame, and the rule states its own domain test.
 
 Five of those callers seat by reading a frame view backward, and so inherit a domain test from the view comp's `cell` set. `apply_about` emits an image with no domain, so each of them states the test itself (`in(P_out, _)`).
 
@@ -94,3 +95,38 @@ The `Not:` line now excludes a landing by Shift rather than every rule that writ
 `5b692c0f` is the third caller whose frame is an axis-only line Position that the flip fixes, so the "any line cell serves" reading recorded for `2b01abd0` is a stable form. It also states its own domain test without reading a view comp, which extends that behavior beyond the view-seating callers.
 
 The full-corpus re-survey confirms the exclusions: `0dfd9992` and `08573cc6` stand beside `50f325b5` as landings by a Shift no origin produces, and `2546ccf6` is the strongest pressure on the two-frame exclusion — its concept is a mirror in the cut, and only its unequal tiles keep it out.
+
+Survey: 2026-09-10 19:51 — the solvers since 2026-09-10 08:21.
+
+**Survey of `apply_about` — a D4 transform taken about a placed frame — over the 48 solvers in scope.** The pass used the grep signature (files holding a view — `displacement`, or a `.inner`/`.view` read — plus `apply(` plus `compose(`), a scan for any D4 token (`D4`, `apply*`, `d4_*`, `flip_of`, `rotation(`, `sym_member`), and a parser pass (`.scratch/surveys/apply_about/2026-09-10-195158/match.py`) over rules holding an `apply*` atom, recording which view and seat atoms share the rule, and over the D4-free half turn (`displacement(P, F, V), compose(F, V, Q)`).
+
+1. Callers
+
+Callers:
+- `88207623`, `image` — each shape cell about a cell of the line segment it leans on, by the flip of the stored across axis: `displacement(L, P, V), apply(F, V, V2), compose(L, V2, Q)`, then `in(Q, _)` as its own domain test. The entry already records it; its form still matches.
+
+No second caller. Fourteen files in scope name a D4 element; sixteen rules in scope hold an `apply*` atom. The grep signature matched four files (`11dc524f`, `2c181942`, `88207623`, `b7cb93ac`), and only `88207623`'s rule holds all three of view, transform, and seat about one frame. The D4-free half-turn pass matched no rule in scope. No rule in scope reaches the shape through a `Reframe.inner` or `BoxFrame.inner` read seated back at the same frame.
+
+2. Near-misses
+
+- `846bdb03`, `placed` with `out` — the shape is viewed in its own `BoxFrame` (`shape.inner`), transformed there, and seated into the crop's interior box (`interior.inner` read backward). Two frames, the shape's box and the interior's box, so one frame Position cannot state it: the two-frame transfer `apply_between.md` holds. The seat is also the crop's own frame, the nothing-seated-back class.
+- `2c181942`, `dock_cell` — the piece is turned about the grid's frame and lands by the Shift `displacement(P_turned_notch, P_seat, V)`, a displacement between a turned notch cell and a seat cell. The landing is a Shift no origin produces, and the view (`box.inner`) and the seat are in different frames: the two-frame transfer class, as the entry records.
+- `11dc524f`, `paint` — the shape is viewed in its box (`box.inner`), flipped, and seated at `mirror`, a cell `jump`ed from `home`. View at the box, seat at another Position: the two-frame transfer class, as the entry records.
+- `b7cb93ac`, `foot` — each piece's shape is turned about the grid's frame and later lands by a searched `Occurrences` placement. No frame Position to pass, as the entry records.
+- `0dfd9992`, `cand`, `pair`, `step` — a point-group element about the grid's frame plus a lattice Shift; a glide has no fixed point. The landing-by-Shift class, as the entry records.
+- `08573cc6`, `arm` — a rotation applied to a Shift (`apply(M, Delta, DeltaR)`) that no cell's displacement produces, then `compose` onto the arm's end. Landing by Shift, as the entry records.
+- `291dc1e1`, `turned` and the determination's `occ.shape` — a transform in the crop's intile frame with nothing seated back (the program) and a landing by `Occurrences` (the determination). As the entry records.
+- `412b6263`, `content` and the determination's `seat.shape` — the input transformed about its own frame; plain `apply` states it. As the entry records.
+- `142ca369`, `occ.cell` — D4 closed over a searched `Occurrences` placement; no cell's image about a frame. As the entry records.
+- `409aa875`, `same` (`D4Map`) and `placed` — the D4 element labels a stored pose compared as a set. As the entry records.
+- `44f52bb0`, `d4` (`D4Map`) and `group` — the element is tested through `D4Map` and `sym_member`; no cell's image is taken. As the entry records.
+- `212895b5`, two `apply_dir` sites, and `85fa5666`, `source` (`apply_diag_dir`) — a heading or a corner label is turned; no cell's image is taken. `212895b5` is the class the entry records; `85fa5666` joins it.
+- Seat with no transform — a displacement carried onto a third cell, or a view seated elsewhere with no transform: `045e512c` and `20981f0e` (as the entry records), `264363fd` (`travel`, `carried`: a template carried to each marker), `7c66cb00` (`displacement(P, Q, Delta)` between a shape's leading cell and its band's far edge), `85b81ff1` (`moved`: box to box, `displacement(B_src, B_dst, V), compose(P, V, P_out)`), `05f2a901` and `84ba50d3` (`compose` of a footprint with a `jump_delta` Shift, under `Slide`). The view-only files `1478ab18`, `1a6449f1`, `868de0fa`, `8698868d`, and `8731374e` read a `.inner` with no transform and no seat.
+
+3. Spec
+
+No change to the interface or the definition. The one caller in scope, `88207623`, binds its frame as a plain Position already in the rule and states its own domain test, which is the form the entry records for the line-Position callers (`2b01abd0`, `538b439f`, `5b692c0f`). The near-misses fall in the classes the `Not:` line names; `846bdb03` adds one more two-frame site (shape box to interior box) beside `4938f0c2`'s `$Seat` case and `291dc1e1`, so the pressure on the two-frame exclusion rests with `apply_between.md`, not with this entry. No signal in scope rests on a site that would call the operation and does not yet fit the four-argument inline form.
+
+4. Reimplementations
+
+Reimplementations: none.

@@ -1,0 +1,52 @@
+// 855e0971
+// draft
+// concept: lines markers cast
+// The grid is a stack of bands: stripes of one color each, stacked along
+// one axis, which varies per input. Each band holds marker cells. A marker
+// casts its color both ways along the stacking axis and stops at its band's
+// edge.
+
+#include "../lib.dl"
+
+.type Line = [a: Axis, p_line: Position]
+
+.comp Params {
+    .decl marker(c: Color) marker(0).
+}
+
+.init params = Params
+
+// The one non-marker color of each line. A line is keyed by the axis it
+// lies across and its position along that axis.
+.init line_color = Unanimous<Line, Color>
+line_color.item([A, P_line], Col) :-
+    in(P, Col), !params.marker(Col), axis_elem(A), split(P, A, P_line, _).
+
+// An axis with a line of more than one color across it.
+.decl mixed(a: Axis)
+mixed(A) :- line_color.clash([A, _]).
+
+// Bands stack along this axis: every line across it is one color.
+.decl stack_axis(a: Axis)
+stack_axis(A) :- axis_elem(A), !mixed(A).
+
+// The band color of each cell: the color of its line across the stacking
+// axis, so a marker takes its band's color.
+.decl band_of(p: Position, col: Color)
+band_of(P, Col) :-
+    in(P, _), stack_axis(A), split(P, A, P_line, _),   // the cell's line
+    line_color.value([A, P_line], Col).                // its color
+
+// Each marker casts along the stacking axis, keyed by its band's color;
+// cells outside that band block it.
+.init cast = Ray<Color>
+cast.dir(Col, D) :- band_of(_, Col), stack_axis(A), axis_of(D, A).
+cast.cell(Col, P) :- band_of(_, Col), in(P, _).
+cast.mark(Col, P) :- band_of(P, Col), in(P, M), params.marker(M).
+cast.blocked(Col, P) :- band_of(_, Col), in(P, _), !band_of(P, Col).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :-
+    in(P, C_in),
+    ( cast.clear(_, P, _, _, _), params.marker(Col)   // on a marker's cast
+    ; !cast.clear(_, P, _, _, _), Col = C_in ).        // untouched

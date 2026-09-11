@@ -13,7 +13,7 @@
 //     $Boxed()    — the bg inside a shape's bounding box.
 //   outline (the bg just outside)
 //     $Band()     — the outside bg one 8-step off a shape cell.
-//     $Ring()     — the band one cell out from a shape's bounding box.
+//     $Ring()     — the band ring_width out from a shape's bounding box.
 //
 // $Boxed with $Band is left out. Where a box's border is not solid shape,
 // some bg cell on that border is both inside the box and one step off the

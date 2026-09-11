@@ -172,4 +172,4 @@ The eleventh survey read the 380 solvers in scope by every `Unanimous` instance 
 
 Spec: no change forced. `82819916` joins the one-axis, across-reading sites; `81c0276b` joins the callers that apply no color filter.
 
-Reimplementations: `7e0986d6` `touching` is `Rim<Color>.rim_dir` negated; `80a900e0` `end` is `Rim8<Ident>.rim_dir` restricted to the segment's diagonal directions.
+Reimplementations: `7e0986d6` `touching` is `Rim<Color>.rim_dir` negated.

@@ -1,0 +1,96 @@
+// 898e7135
+// draft
+// concept: objects enclose scale d4 pack
+// A board sits among loose pieces and scattered noise cells on params.bg.
+// The board is the object that closes background off from the grid edge;
+// the regions it closes off are its holes. Each piece is a hole scaled up
+// by one factor and turned by a D4 element. The output is the board scaled
+// by that factor, in the board's color, with each hole painted in the color
+// of the piece that fits it. The noise fits no hole and plays no part.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+}
+
+.init params = Params
+
+// --- objects ---
+
+.init objs = Components<Color>
+objs.node(Col, P) :- in(P, Col), !params.bg(Col).
+
+.decl object(id: Ident, col: Color, p: Position)
+object(Id, Col, P) :- objs.label(Col, P, Id).
+
+// --- the board and its holes ---
+
+// What each object closes off: the cells outside it that cannot reach the
+// grid edge.
+.init closed = Closed<Ident>
+closed.cell(Id, P) :- object(Id, _, _), in(P, _), !object(Id, _, P).
+
+.decl board(id: Ident)
+board(Id) :- closed.region(Id, _, _).
+
+.decl hole(h: Ident, p: Position)
+hole(H, P) :- closed.region(_, P, H).
+
+// The board viewed from its box, holes included.
+.init board_box = BoxFrame<Ident>
+board_box.cell(Id, P) :- board(Id), object(Id, _, P).
+board_box.grid(Id, P) :- board(Id), in(P, _).
+
+// Each hole viewed from its own box.
+.init hole_box = BoxFrame<Ident>
+hole_box.cell(H, P) :- hole(H, P).
+
+// --- the pieces ---
+
+.init piece_box = BoxFrame<Ident>
+piece_box.cell(O, P) :- object(O, _, P), !board(O).
+
+// --- the fit ---
+
+// Scale factors a piece admits: an extent of its box, or less.
+.decl scale_cand(k: number)
+scale_cand(K) :-
+    piece_box.inner(_, _, P), axis_elem(A),
+    ( axis_dim(P, A, K) ; sub_extent(P, A, K) ).
+
+// The block a cell becomes at each scale.
+.init block = Frame2D<number>
+block.extent(K, A, K) :- scale_cand(K), axis_elem(A).
+
+// A hole scaled by K and turned by D, viewed from its box.
+.type Turned = [h: Ident, k: number, d: D4]
+
+.init congruent = KeyedSetCompare<Turned, Ident, Position>
+congruent.pattern_member(O, P_piece) :- piece_box.inner(O, _, P_piece).
+congruent.observed_member([H, K, D], P_turned) :-
+    hole_box.inner(H, _, P_hole), block.cell(K, P_blk),
+    concat_2d(P_hole, P_blk, 0, P_scaled),           // the hole scaled by K
+    d4_elem(D), apply(D, P_scaled, P_turned).        // turned by D
+
+// Piece O is hole H scaled by K, under some turn.
+.decl fit(h: Ident, k: number, o: Ident)
+fit(H, K, O) :- congruent.equals([H, K, _], O).
+
+// The scale is the factor at which every hole has a piece.
+.decl unfit_hole(k: number)
+unfit_hole(K) :- hole(H, _), scale_cand(K), !fit(H, K, _).
+
+.decl scale(k: number)
+scale(K) :- scale_cand(K), !unfit_hole(K).
+
+// --- output ---
+
+// Board cells keep the board's color; each hole takes its piece's color.
+.decl out(p: Position, col: Color)
+out(P_out, Col) :-
+    scale(K), block.cell(K, P_blk),                                        // each cell becomes a block
+    board_box.inner(Id, P, P_board), concat_2d(P_board, P_blk, 0, P_out),  // of the board's box
+    ( object(Id, Col, P)                             // the board
+    ; hole(H, P), fit(H, K, O), object(O, Col, _)    // a hole, in its piece's color
+    ).

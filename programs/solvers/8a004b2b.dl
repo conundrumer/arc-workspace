@@ -1,0 +1,76 @@
+// 8a004b2b
+// draft
+// concept: crop markers objects scale stamp
+// Marker cells bound a frame. Outside it, a small blueprint is drawn. Inside
+// it stand square blocks, each one blueprint cell drawn at scale. The
+// output is the frame with the whole blueprint drawn at that scale: each
+// blueprint cell becomes a tile with a block's side, and the drawing sits
+// where every block lands on a tile of its color. Frame cells the drawing
+// leaves alone keep their color.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+
+    // The color of the cells that bound the frame.
+    .decl marker(c: Color) marker(4).
+}
+
+.init params = Params
+
+// --- frame ---
+
+// The frame is the box the markers bound; the output is its interior.
+.init frame = BoxFrame<Unit>
+frame.cell($U(), P) :- in(P, Col), params.marker(Col).
+frame.grid($U(), P) :- in(P, _).
+
+.decl frame_cell(p: Position, col: Color)
+frame_cell(P_out, Col) :- frame.inner($U(), P, P_out), in(P, Col).
+
+// --- blueprint ---
+
+// The ink outside the frame, in its own box.
+.init blueprint = BoxFrame<Unit>
+blueprint.cell($U(), P) :- in(P, Col), !params.bg(Col), !frame.inside($U(), P).
+
+// --- blocks ---
+
+// The frame's ink, apart from the markers.
+.decl block_ink(p: Position, col: Color)
+block_ink(P, Col) :- frame_cell(P, Col), !params.bg(Col), !params.marker(Col).
+
+.init block = Components<Color>
+block.node(Col, P) :- block_ink(P, Col).
+
+.init block_box = Bbox<Ident>
+block_box.cell(Id, P) :- block.label(_, P, Id).
+
+// A tile is a square with a block's side.
+.init tile = Frame2D<Unit>
+tile.extent($U(), A, K) :- block_box.extents(_, A, K, K).
+
+// --- drawing ---
+
+// The blueprint at the tile scale, in its own frame.
+.decl drawing(p: Position, col: Color)
+drawing(P_draw, Col) :-
+    blueprint.inner($U(), P, P_bp), in(P, Col),  // a blueprint cell
+    tile.cell($U(), P_intile),                    // spread over a tile
+    concat_2d(P_bp, P_intile, 0, P_draw).
+
+// The drawing sits where every block cell lands on a drawing cell of its
+// color.
+.init seat = Occurrences<Unit, Color>
+seat.shape($U(), P, Col) :- block_ink(P, Col).
+seat.cell($U(), P, Col) :- drawing(P, Col).
+
+.decl painted(p: Position, col: Color)
+painted(P_out, Col) :-
+    seat.occurrence($U(), M), frame_cell(P_out, _),
+    compose(M, P_out, P_draw), drawing(P_draw, Col).
+
+.decl out(p: Position, col: Color)
+out(P, Col) :- painted(P, Col).
+out(P, Col) :- frame_cell(P, Col), !painted(P, _).

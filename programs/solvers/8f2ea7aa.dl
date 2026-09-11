@@ -1,0 +1,86 @@
+// 8f2ea7aa
+// draft
+// concept: tile-arrangement crop decompose select scale stamp
+// A 3×3 shape sits in one 3×3 block of a blank 9×9 grid. The output is the
+// shape tiled by itself: a block holds the shape iff its index is an ink cell
+// of the shape. Choice = [pa, f] crosses the hypotheses:
+//
+//   pa (the shape and the output decomposition):
+//     $Crop()   — the ink's bounding box; the output is shape ⊗ shape.
+//     $Divide() — the block holding ink, in a params.tile_dim division of
+//                 the grid; the output keeps the input frame.
+//   f (fill color):
+//     $Stamp() — the intile position's color: copies of the shape.
+//     $Mask()  — the block index's color: the shape scaled up, masked by
+//                itself.
+//
+// The parses coincide when the ink's box is one block; the fills coincide on
+// a monochrome shape.
+
+#include "../lib.dl"
+
+.type Parse = Crop {} | Divide {}
+.type Fill = Stamp {} | Mask {}
+.type Choice = [pa: Parse, f: Fill]
+
+.comp Params {
+    // --- shared ---
+    .decl bg(c: Color) bg(0).
+
+    // --- $Divide ---
+    .decl tile_dim(k: number) tile_dim(3).
+}
+
+.init params = Params
+
+.decl ink(p: Position)
+ink(P) :- in(P, Col), !params.bg(Col).
+
+// --- Parse cases: the shape and the output decomposition ---
+
+// The shape in its own frame.
+.decl shape(p: Position, col: Color, pa: Parse)
+
+// Output decomposition: block index × intile position, both shape-frame cells.
+.decl cell(p_grid: Position, p_tile: Position, p_intile: Position, pa: Parse)
+
+// $Crop — the ink's bounding box, tiled by itself.
+.init box = BoxFrame<Unit>
+box.cell($U(), P) :- ink(P).
+box.grid($U(), P) :- in(P, _).
+
+shape(P_inner, Col, $Crop()) :- box.inner($U(), P, P_inner), in(P, Col).
+
+cell(P_grid_out, P_tile, P_intile, $Crop()) :-
+    shape(P_tile, _, $Crop()), shape(P_intile, _, $Crop()),
+    concat_2d(P_tile, P_intile, 0, P_grid_out).
+
+// $Divide — the block holding ink; the output decomposes as the input does.
+cell(P_grid, P_tile, P_intile, $Divide()) :-
+    in(P_grid, _), params.tile_dim(K), divide_by_size_2d(P_grid, K, 0, P_tile, P_intile).
+
+shape(P_intile, Col, $Divide()) :-
+    cell(P, P_tile, P_intile, $Divide()), in(P, Col),   // a block's cell
+    cell(P_ink, P_tile, _, $Divide()), ink(P_ink).      // the block holds ink
+
+// An ink cell of the shape.
+.decl active(p: Position, pa: Parse)
+active(P, Pa) :- shape(P, Col, Pa), !params.bg(Col).
+
+// --- Fill cases: the color of a filled block's cells ---
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// $Stamp — copies of the shape at its active cells.
+out(P_grid_out, Col, [Pa, $Stamp()]) :-
+    cell(P_grid_out, P_tile, P_intile, Pa),
+    ( active(P_tile, Pa), shape(P_intile, Col, Pa)   // active block: the shape
+    ; !active(P_tile, Pa), params.bg(Col)            // blank block
+    ).
+
+// $Mask — the shape scaled up, masked by itself.
+out(P_grid_out, Col, [Pa, $Mask()]) :-
+    cell(P_grid_out, P_tile, P_intile, Pa),
+    ( active(P_intile, Pa), shape(P_tile, Col, Pa)   // in the mask: the scaled shape
+    ; !active(P_intile, Pa), params.bg(Col)          // outside the mask
+    ).

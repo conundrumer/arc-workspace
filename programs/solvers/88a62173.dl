@@ -1,0 +1,77 @@
+// 88a62173
+// draft
+// concept: decompose select count
+// A cross of blank lines cuts the grid into a 2×2 arrangement of equal tiles.
+// Three tiles carry one pattern and the fourth its own; the output is the
+// rarest tile: the one whose pattern the fewest tiles carry.
+//
+// The cases find the tiles:
+//   $Count — by tile count and gap.
+//   $Size  — by tile size and gap.
+//   $Cross — by the cross: a line of one color is a divider.
+
+#include "../lib.dl"
+
+.type Choice = Count {} | Size {} | Cross {}
+
+.comp Params {
+    // --- Count, Size ---
+    .decl gap(g: number) gap(1).
+
+    // --- Count ---
+    .decl tile_count(n: number) tile_count(2).
+
+    // --- Size ---
+    .decl tile_size(k: number) tile_size(2).
+}
+
+.init params = Params
+
+// --- the tiles ---
+
+.decl tile_val(p_tile: Position, p_intile: Position, col: Color, ch: Choice)
+
+// --- Count ---
+tile_val(T, P_intile, Col, $Count()) :-
+    in(P_grid, Col), params.tile_count(N), params.gap(G),
+    divide_2d(P_grid, N, G, T, P_intile).
+
+// --- Size ---
+tile_val(T, P_intile, Col, $Size()) :-
+    in(P_grid, Col), params.tile_size(K), params.gap(G),
+    divide_by_size_2d(P_grid, K, G, T, P_intile).
+
+// --- Cross ---
+.type Line = [a: Axis, l: Position]
+.init line_color = Unanimous<Line, Color>
+line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
+
+.init lattice = DividerFrame<Unit>
+lattice.cell($U(), P) :- in(P, _).
+lattice.divider($U(), A, L) :- line_color.value([A, L], _).
+
+// Each tile viewed from its own box.
+.init box = BoxFrame<Position>
+box.cell(T, P) :- lattice.tile_of($U(), P, T).
+
+tile_val(T, P_intile, Col, $Cross()) :- box.inner(T, P_grid, P_intile), in(P_grid, Col).
+
+// --- the rarest tile ---
+
+.type TileKey = [t: Position, ch: Choice]
+.type TileCell = [p_intile: Position, col: Color]
+
+// Tiles carrying the same pattern.
+.init same = KeyedSetCompare<TileKey, TileKey, TileCell>
+same.pattern_member([T, Ch], [P_intile, Col]) :- tile_val(T, P_intile, Col, Ch).
+same.observed_member([T, Ch], [P_intile, Col]) :- tile_val(T, P_intile, Col, Ch).
+
+// How many tiles carry each tile's pattern.
+.init alike = Tally<TileKey, Position>
+alike.item([T, Ch], T2) :- same.equals([T, Ch], [T2, Ch]).
+
+.init rarest = ArgExtremes<Choice, Position>
+rarest.cand(Ch, T, N) :- alike.tally([T, Ch], N).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P_intile, Col, Ch) :- rarest.low(Ch, T, _), tile_val(T, P_intile, Col, Ch).

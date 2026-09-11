@@ -1,0 +1,101 @@
+// 8886d717
+// draft
+// concept: markers objects cast
+// A line of one color runs along one grid edge. The rest of the grid is two
+// regions, with marks scattered in both. A mark in the absorbing region takes
+// that region's color. A mark in the extending region stays and copies itself
+// one cell toward the edge line.
+//
+// Choice = [region, border] crosses two independent choice points.
+//
+// How a mark reads the region it sits in:
+//   $Cell    — each mark cell reads its own non-mark neighbors.
+//   $Cluster — a connected cluster of marks reads the neighbors of the whole
+//              cluster.
+//
+// Which edge the line runs along:
+//   $Stored  — the edge line of one color, and that color is params.border.
+//   $Uniform — any edge line of one color.
+//
+// Coincide here: every cluster has uniform surroundings, and no input has a
+// second edge line of one color.
+
+#include "../lib.dl"
+
+.type Region = Cell {} | Cluster {}
+.type Border = Stored {} | Uniform {}
+.type Choice = [region: Region, border: Border]
+
+.comp Params {
+    // --- shared ---
+    .decl mark(col: Color) mark(8).
+    // Marks in this region take its color.
+    .decl absorb(col: Color) absorb(2).
+    // Marks in this region copy themselves toward the edge line.
+    .decl extend(col: Color) extend(7).
+
+    // --- Stored ---
+    .decl border(col: Color) border(9).
+}
+
+.init params = Params
+
+.decl region_choice(r: Region)
+region_choice($Cell()). region_choice($Cluster()).
+
+.decl border_choice(b: Border)
+border_choice($Stored()). border_choice($Uniform()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([R, B]) :- region_choice(R), border_choice(B).
+
+.decl mark(p: Position)
+mark(P) :- in(P, Col), params.mark(Col).
+
+// A non-mark color beside a mark cell.
+.decl around(p: Position, col: Color)
+around(P, Col) :- mark(P), dir_elem(D), neighbor(P, D, Q), in(Q, Col), !params.mark(Col).
+
+// The region a mark sits in.
+.decl region(p: Position, col: Color, r: Region)
+
+// --- Cell ---
+.init cell_region = Unanimous<Position, Color>
+cell_region.item(P, Col) :- around(P, Col).
+
+region(P, Col, $Cell()) :- cell_region.value(P, Col).
+
+// --- Cluster ---
+.init clusters = Components<Unit>
+clusters.node($U(), P) :- mark(P).
+
+.init cluster_region = Unanimous<Ident, Color>
+cluster_region.item(Id, Col) :- clusters.label($U(), P, Id), around(P, Col).
+
+region(P, Col, $Cluster()) :- clusters.label($U(), P, Id), cluster_region.value(Id, Col).
+
+// The one color of each edge line, where it has one.
+.init edge_color = Unanimous<Dir, Color>
+edge_color.item(D, Col) :- in(P, Col), dir_elem(D), dist(P, D, 0).
+
+// The edge the line runs along.
+.decl border_dir(d: Dir, b: Border)
+
+// --- Stored ---
+border_dir(D, $Stored()) :- edge_color.value(D, Col), params.border(Col).
+
+// --- Uniform ---
+border_dir(D, $Uniform()) :- edge_color.value(D, _).
+
+// The cell a mark copies itself onto.
+.decl copy(p: Position, ch: Choice)
+copy(Q, [R, B]) :- region(P, Col, R), params.extend(Col), border_dir(D, B), neighbor(P, D, Q).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col_m, Ch) :- copy(P, Ch), params.mark(Col_m).
+out(P, Col_out, [R, B]) :-
+    region(P, Col, R), border_choice(B),
+    ( params.absorb(Col), Col_out = Col        // absorbed: takes the region color
+    ; params.extend(Col), params.mark(Col_out) // extending: stays a mark
+    ).
+out(P, Col, Ch) :- in(P, Col), !mark(P), impl_choice(Ch), !copy(P, Ch).

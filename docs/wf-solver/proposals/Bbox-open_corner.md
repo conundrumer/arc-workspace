@@ -40,3 +40,27 @@ The interface and the definition stand as written.
 - The composition argument that closed `Bbox.corner_cell` does not transfer. That close rested on `inner` grounding the composition by itself. The negation here binds nothing, so the two-atom form is three atoms at every enumerating site, and `604001fa`, `1e5d6875`, and `470c91de` all carry the grounding atom the readout would absorb.
 - `corner` derives from `cell` alone, so `open_corner` needs no `grid`. `604001fa` and `1e5d6875` never feed `box.grid`, so the `inside`/`inner` route to a corner cell is closed to them without a new feed.
 - The `cell(K, _)` grounding makes the relation total over the keys that have a cell, which is what `21897d95` reads with the key and the corner both bound. That site gains no atom, and it is one of four.
+
+Survey: 2026-09-11 02:04 — the solvers since 2026-09-09 04:13.
+
+Callers: none.
+
+No solver in the scope negates a `Bbox` or `BoxFrame` `corner`. Across the 90 solvers, 34 hold 53 `Bbox`/`BoxFrame` instances, and 8 files carry 9 `.corner(` references, every one positive: `212895b5` `cast.mark` and `diag_arm` cast rays from box corners, `85fa5666` `seat` steps out of a box corner, and the rest are `LexOrder.corner` or `Diagonal.corner` inputs. The one negated `corner` in the scope, `846bdb03` `bar` at line 35, is `params.corner`, a color parameter. The parser passes returned the sites below, and reading each in its rule found no site that reads the corner a set's bounding box leaves empty.
+
+Near-misses:
+
+- `142ca369` `elbow` (line 57) finds an L-tromino's elbow with the corner its arms straddle: `diag_dir_elem(G)`, a defect negation over `Rim.rim_dir` for the two arms, and a bg cell at the diagonal neighbor. It is the open corner of the piece's 2x2 box, and it is read from the arms present at the cell with no box, in the `15663ba9` `bend` manner; the rule also reports the elbow position, which `mark` and `enter` consume.
+- `896d5239` `one_armed` (line 43) negates a `Ray`-derived arm set at each corner of a Dir, and reports a Dir; no box and no member set.
+- `1478ab18` `right_angle` (line 97) reports a position, and the set it negates is not the set that bounds the box.
+- `08573cc6` `Determine.marker_corner` (line 104), `291dc1e1` `Parse.mark_corner` (line 43), and `bbc9ae5d` `anchor_color` (line 74) name the frame corner a cell hugs through `corner_dist(P, Diag, 0)`: the `corner_anchor` against ORIGIN exclusion, and a member reading.
+- `85fa5666` `Determine.corner_from` (line 105) is a determination universal by defect negation over `diag_dir_elem` with no box occupancy read; its `seat` reads `box.corner` positively, and every square fills every corner.
+- `2c181942` `notch` (line 67) reports the side a piece is notched on, from a `D4Map` symmetry of that side's `edge_cell` set; a Dir, with no absence test.
+- `8cb8642d` `arm` (line 66) pairs a `BoxFrame` `inner` with `diag_dir_elem` to draw the diagonals inside a box, and `arm_end` (line 73) negates `arm` at a position; neither reads occupancy. `878187ab` `paint` (line 60) negates `Diagonal.diagonal`, and `b1fc8b8e` `corner_map` (line 172) anchors tile copies at every canvas corner with no negation.
+
+Spec:
+
+The interface and the definition stand as written. The scope adds no caller and no site that argues for a change. The one site with the operation's concept, `142ca369` `elbow`, needs the elbow's position as well as the open corner, so a direction-only readout would not serve it on its own; that is the `Bbox.corner_cell` reading, closed, and the Not line already draws that boundary. The `Callers` list from the 2026-09-09 04:13 result stands unchanged.
+
+Reimplementations: none.
+
+Method: grep over the scope for `.corner(`, `diag_dir_elem`, `edge_min`, `dir_of`, `diag_opposite`, `corner_anchor`, `corner_dist(…, 0)`, and negated reads of each box instance's `cell`/`inside`/`inner`/`corner`; a parser pass over the scope with four shapes: a negation sharing a variable with a corner-binding atom (7 rules, 5 files), any negation beside a corner-binding atom (10 rules, 7 files), a box instance read beside `diag_dir_elem` (1 rule), and a negated box `corner`/`edge_min`/`margin` (1 rule, the `params.corner` color).

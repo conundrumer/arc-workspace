@@ -1,10 +1,10 @@
 // 538b439f
 // draft
 // concept: objects lines d4 span
-// A line of one color crosses a plain field strewn with dust. Solid
-// rectangles sit on the field. Each rectangle is reflected in the line,
-// and the span between the rectangle and its image is painted the line's
-// color, over any dust it covers; nothing else changes.
+// A line of one color crosses a plain field. Solid rectangles and dust
+// sit on the field. Each rectangle is reflected in the line, and the
+// span between the rectangle and its image is painted the line's color,
+// over any dust it covers; nothing else changes.
 //
 // A rectangle is a component that fills its bounding box and reaches more
 // than one line on both axes. Every dust component fails one of those.
@@ -26,8 +26,7 @@ field.item($U(), Col, P) :- in(P, Col).
 .init line_color = Unanimous<Line, Color>
 line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
 
-// The divider: a line of one non-field color. Its axis is the axis the
-// reflection inverts.
+// The divider's axis is the axis the reflection inverts.
 .decl divider(a: Axis, l: Position, col: Color)
 divider(A, L, Col) :- line_color.value([A, L], Col), !field.mode($U(), Col).
 
@@ -42,7 +41,6 @@ parts.node(Col, P) :- in(P, Col), !field.mode($U(), Col).
 box.cell(Id, P) :- parts.label(_, P, Id).
 box.grid(Id, P) :- parts.label(_, _, Id), in(P, _).
 
-// A hole in the bounding box: the component is not solid.
 .decl hole(id: Ident)
 hole(Id) :- box.inside(Id, P), !parts.label(_, P, Id).
 

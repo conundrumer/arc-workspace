@@ -1,0 +1,77 @@
+// 878187ab
+// draft
+// concept: count rank cast
+
+// Scattered cells of two colors sit on a bg grid. Each color's cell count is
+// an extent: the larger count runs along params.long_axis, the smaller across
+// it. A box of those extents, filled params.fill, sits in the params.anchor
+// corner of a bare square canvas of side params.canvas_side. The two corner
+// diagonals rising from the ends of the box's long edge at the anchor paint
+// params.x_color.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(c: Color) bg(7).
+    .decl fill(c: Color) fill(2).
+    .decl x_color(c: Color) x_color(4).
+
+    .decl canvas_side(n: number) canvas_side(16).
+
+    .decl anchor(d: DiagDir) anchor(DIAG_BL).
+
+    .decl long_axis(a: Axis) long_axis(AXIS_H).
+
+    // The box's long edge at the anchor: the anchor's edge across the long axis.
+    .decl x_edge(d: Dir)
+    x_edge(E) :- anchor(Diag), long_axis(A_long), perp(A_long, A), dir_of(Diag, A, E).
+}
+
+.init params = Params
+
+// --- extents ---
+
+.init marks = Tally<Color, Position>
+marks.item(Col, P_grid_in) :- in(P_grid_in, Col), !params.bg(Col).
+
+.init counts = Extremes<Unit>
+counts.cand($U(), N) :- marks.tally(_, N).
+
+// --- the box ---
+
+.init box = Frame2D<Unit>
+box.extent($U(), A, N) :-
+    params.long_axis(A_long),
+    ( A = A_long, counts.high($U(), N)
+    ; perp(A_long, A), counts.low($U(), N)
+    ).
+
+.init xdiag = Diagonal<Unit>
+xdiag.cell($U(), P_inner) :- box.cell($U(), P_inner).
+xdiag.corner($U(), Diag) :- params.x_edge(E), dir_of(Diag, _, E).
+
+// --- render ---
+
+.init canvas = Frame2D<Unit>
+canvas.extent($U(), A, N) :- axis_elem(A), params.canvas_side(N).
+
+// The box placed in the anchor corner: the diagonals over the fill.
+.decl paint(p_grid_out: Position, col: Color)
+paint(P_grid_out, Col) :-
+    canvas.cell($U(), P_grid_out), box.cell($U(), P_inner),
+    params.anchor(Diag), corner_anchor(Diag, P_grid_out, P_inner),
+    ( xdiag.diagonal($U(), P_inner, _), params.x_color(Col)
+    ; !xdiag.diagonal($U(), P_inner, _), params.fill(Col)
+    ).
+
+.decl out(p: Position, col: Color)
+out(P_grid_out, Col) :-
+    canvas.cell($U(), P_grid_out),
+    ( paint(P_grid_out, Col)                 // the box
+    ; !paint(P_grid_out, _), params.bg(Col)  // bare canvas
+    ).
+
+.comp Determine {
+    .decl x_color(c: Color)
+    x_color(Col) :- ex_out(_, _, Col), !params.bg(Col), !params.fill(Col).
+}

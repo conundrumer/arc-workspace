@@ -1,0 +1,61 @@
+// 8e301a54
+// draft
+// concept: objects count move
+// Shapes of several colors lie on params.bg. Each shape moves toward
+// params.move_dir by as many cells as it has, and the cells that leave the
+// frame are lost. Cases differ in what a shape is:
+//
+//   $Hue()    — every cell of one color
+//   $Object() — a connected component of non-bg cells, whatever their colors
+
+#include "../lib.dl"
+
+.type Choice = Hue {} | Object {}
+
+.comp Params {
+    .decl bg(col: Color) bg(7).
+    .decl move_dir(d: Dir) move_dir(DIR_B).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Hue()). impl_choice($Object()).
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.bg(Col).
+
+// A shape cell, with the size of its shape.
+.decl shape_cell(p: Position, n: number, ch: Choice)
+
+// --- Hue ---
+
+.init hue_size = Tally<Color, Position>
+hue_size.item(Col, P) :- ink(P, Col).
+
+shape_cell(P, N, $Hue()) :- ink(P, Col), hue_size.tally(Col, N).
+
+// --- Object ---
+
+.init objects = Components<Unit>
+objects.node($U(), P) :- ink(P, _).
+
+.init object_size = Tally<Ident, Position>
+object_size.item(Id, P) :- objects.label($U(), P, Id).
+
+shape_cell(P, N, $Object()) :- objects.label($U(), P, Id), object_size.tally(Id, N).
+
+// --- output ---
+
+// Where a shape cell lands. A landing off the frame is lost: out ranges
+// over the frame.
+.decl landed(p: Position, col: Color, ch: Choice)
+landed(Q, Col, Ch) :-
+    shape_cell(P, N, Ch), ink(P, Col), params.move_dir(D), jump(P, D, N, Q).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :-
+    in(P, _), impl_choice(Ch),
+    ( landed(P, Col, Ch)
+    ; !landed(P, _, Ch), params.bg(Col)
+    ).

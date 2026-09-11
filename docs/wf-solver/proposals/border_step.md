@@ -27,5 +27,6 @@ Callers:
 
 - `programs/solvers/30f42897.dl` — `ring.succ`, feeding `CycleWalk<Sense, Position>` so the block repeats around the perimeter.
 - `programs/solvers/ca8de6ea.dl` — `border_step` and `ring_succ` in its `Determine` comp, feeding `CycleWalk<Unit, Position>` to recover the ring's sense and each ring's shift.
+- `programs/solvers/880c1354.dl` — `border_step`, at the stored sense; `next_cell` follows it through the band to the next region cell.
 
-Verdict: close; both callers keep the operation as plain rules. 2026-08-31.
+Closed: 2026-08-31 (minute not recorded). Both callers keep the operation as plain rules.

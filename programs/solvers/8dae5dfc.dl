@@ -1,0 +1,58 @@
+// 8dae5dfc
+// draft
+// concept: objects permutation merge
+// Each object is a nest of concentric rings. Adjacent rings of one color
+// fuse into one layer. The output reverses the layer colors of each
+// object: the layer k-th from the outside takes the color of the layer
+// k-th from the inside, and every layer keeps its width.
+
+#include "../lib.dl"
+
+.comp Params {
+    .decl bg(c: Color)
+    bg(0).
+}
+
+.init params = Params
+
+// An object is a component of the non-background cells.
+.init objs = Components<Unit>
+objs.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+.decl object(p: Position, id: Ident)
+object(P, Obj) :- objs.label($U(), P, Obj).
+
+// A layer is a same-color component of an object: adjacent rings of one
+// color fuse.
+.init fused = Components<Color>
+fused.node(Col, P) :- object(P, _), in(P, Col).
+
+.decl layer(p: Position, id: Ident)
+layer(P, Id) :- fused.label(_, P, Id).
+
+// The objects peel into rings; depth counts the rings outside a cell.
+.init peel = Rim<Unit>
+peel.cell($U(), P) :- object(P, _).
+
+// A layer's depth is the depth of its outermost ring.
+.init layer_depth = Extremes<Ident>
+layer_depth.cand(Id, K) :- layer(P, Id), peel.depth($U(), P, K).
+
+// The layers of an object, ordered from the outside in.
+.init nest = Order<Ident, Ident>
+nest.elem(Obj, Id) :- object(P, Obj), layer(P, Id).
+nest.before(Obj, Id, Id2) :-
+    nest.elem(Obj, Id), nest.elem(Obj, Id2),
+    layer_depth.low(Id, K), layer_depth.low(Id2, K2), K < K2.
+
+.decl out(p: Position, col: Color)
+
+// The background stays.
+out(P, Col) :- in(P, Col), params.bg(Col).
+
+// A layer takes the color of the layer as deep from the inside as it is from
+// the outside.
+out(P, Col) :-
+    layer(P, Id), nest.rank(Obj, Id, R),   // layers outside this one, in its object
+    nest.rank_desc(Obj, Id2, R),           // the layer as deep from the inside
+    layer(P2, Id2), in(P2, Col).

@@ -1,0 +1,113 @@
+// 8ba14f53
+// draft
+// concept: objects enclose count rank
+// Hollow shapes lie on params.bg. Each shape fills as many cells of a fixed
+// params.out_dim frame as it encloses. The cells run in reading order from
+// params.corner with params.axis primary, each shape starts on a new line,
+// and the shapes come in order of their nearest cell to params.order_dir.
+// Unfilled cells are params.bg.
+//
+// Two parses of what a shape is:
+//   $Shape — one connected run of a single color.
+//   $Hue   — every cell of one color.
+
+#include "../lib.dl"
+
+.type Choice = Shape {} | Hue {}
+
+// A shape under a parse: its color and an id.
+.type Key = [ch: Choice, col: Color, id: Ident]
+
+// A line of a shape's block.
+.type BlockLine = [k: Key, l: Position]
+
+.comp Params {
+    .init helpers = ParamsHelpers
+
+    .decl bg(col: Color) bg(0).
+
+    .decl out_dim(a: Axis, n: number)
+    out_dim(AXIS_V, 3). out_dim(AXIS_H, 3).
+
+    .decl out_pos(p: Position)
+    out_pos(P) :- out_dim(AXIS_V, V), out_dim(AXIS_H, H), helpers.frame_pos([V, H], P).
+
+    // The reading order the filled cells follow: from corner, axis primary.
+    .decl corner(d: DiagDir) corner(DIAG_TL).
+    .decl axis(a: Axis) axis(AXIS_V).
+
+    // Blocks stack away from the corner along the primary axis.
+    .decl stack_dir(d: Dir)
+    stack_dir(D) :- corner(C), axis(A), dir_of(C, A, D_corner), opposite(D_corner, D).
+
+    // Shapes fill in order of their nearest cell to this edge.
+    .decl order_dir(d: Dir) order_dir(DIR_L).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Shape()). impl_choice($Hue()).
+
+.decl obj(k: Key, p: Position)
+
+// --- Shape ---
+
+.init shapes = Components<Color>
+shapes.node(Col, P) :- in(P, Col), !params.bg(Col).
+
+obj([$Shape(), Col, Id], P) :- shapes.label(Col, P, Id).
+
+// --- Hue ---
+
+.init hues = Canon<Position>
+hues.equiv(P, Q) :- in(P, Col), in(Q, Col), !params.bg(Col).
+
+obj([$Hue(), Col, Id], P) :- in(P, Col), hues.id(P, Id).
+
+// --- shared ---
+
+// The cells a shape closes off from the grid edge.
+.init closed = Closed<Key>
+closed.cell(K, P) :- in(P, _), obj(K, _), !obj(K, P).
+
+.init holes = Tally<Key, Position>
+holes.item(K, P) :- closed.region(K, P, _).
+
+// Reading order over the output frame.
+.init reading = LexOrder<Unit>
+reading.corner($U(), C) :- params.corner(C).
+reading.axis($U(), A)   :- params.axis(A).
+reading.cell($U(), P)   :- params.out_pos(P).
+
+// A shape's block: its count of cells in reading order, before stacking.
+.decl block(k: Key, p: Position)
+block(K, P) :- holes.tally(K, N), reading.rank($U(), P, R), R < N.
+
+// The lines a block spans along the primary axis.
+.decl block_line(k: Key, l: Position)
+block_line(K, L) :- block(K, P), params.axis(A), split(P, A, L, _).
+
+// Shape order: by the nearest cell to order_dir.
+.init box = Bbox<Key>
+box.cell(K, P) :- obj(K, P).
+
+.decl before(k1: Key, k2: Key)
+before([Ch, C1, I1], [Ch, C2, I2]) :-
+    params.order_dir(D),
+    box.edge_cell([Ch, C1, I1], P, D), box.edge_cell([Ch, C2, I2], Q, D),
+    nearer(D, P, Q).
+
+// The lines the earlier shapes' blocks take: how far this block stacks.
+.init offset = Tally<Key, BlockLine>
+offset.item(K, [K2, L]) :- before(K2, K), block_line(K2, L).
+offset.domain(K) :- obj(K, _).
+
+.decl filled(p: Position, col: Color, ch: Choice)
+filled(P, Col, Ch) :-
+    block([Ch, Col, Id], P0), offset.tally([Ch, Col, Id], S),
+    params.stack_dir(D), jump(P0, D, S, P).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- filled(P, Col, Ch).
+out(P, Col, Ch) :- params.out_pos(P), impl_choice(Ch), !filled(P, _, Ch), params.bg(Col).

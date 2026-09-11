@@ -48,8 +48,6 @@ overflows(Col, Col2) :- box.extent(Col, A, N), box.extent(Col2, A, N2), N < N2.
 nest.elem($U(), Col) :- shape(Col).
 nest.before($U(), Col, Col2) :- shape(Col), shape(Col2), Col != Col2, !overflows(Col, Col2).
 
-// --- program ---
-
 .init frame = Frame2D<Unit>
 frame.extent($U(), A, N) :- nest.first($U(), Col), box.extent(Col, A, N).
 
