@@ -23,5 +23,3 @@ Match: a `Divide2D` or `Tile2D` instance whose `dim` is keyed by `Choice` or by 
 - `57aa92db` — `obj_grid.cell(P_inner) :- obj_box.inner(_, _, P_inner).` `dim` is keyed by `Ident`, and each object divides its own box, so the rule becomes `obj_grid.cell(O, P_inner) :- obj_box.inner(O, _, P_inner).`
 
 The remaining callers key on `Unit`: `103eff5b`, `33067df9`, `363442ee`, `58743b76`, `5833af48` (three instances), `5ad4f10b`, `6aa20dc0`, `7c008303`, `f8b3ba0a`. Each feeds one frame, and migration adds the key: `cell($U(), P)`.
-
-Survey: 2026-09-10 09:10

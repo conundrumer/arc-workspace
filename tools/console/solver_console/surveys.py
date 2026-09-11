@@ -86,9 +86,14 @@ def survey_minute(at: float) -> str:
 def filed_since(text: str, at: float) -> bool:
     """Whether the entry carries a result from the minute of that clock
     reading or a later one. A caller that waited for the lock reads its own
-    arrival against the result the run before it filed."""
+    arrival against the result the run before it filed. A `Survey:` line
+    carries its time to the minute, so the clock reading is taken to its own
+    minute first."""
     when = newest_survey(text)
-    return when is not None and survey_result(text) and when >= survey_minute(at)
+    if when is None or not survey_result(text):
+        return False
+    filed = survey_time(when)
+    return filed is not None and filed >= at - at % 60
 
 
 def survey_time(when: str) -> float | None:
@@ -104,11 +109,17 @@ class ScopeUnknown(Exception):
     """The runner could not list the solvers a survey since a time covers."""
 
 
+class TimeUnknown(Exception):
+    """The entry's newest `Survey:` line carries a time no clock holds."""
+
+
 def survey_scope(when: str) -> list[str]:
     """The solvers a survey since that time covers, as the runner lists
-    them. A runner that refuses raises: no answer and an empty scope read the
-    same way otherwise, and the entry would pass as current with the survey
-    it is owed never run."""
+    them. The working tree's changed solvers count as newer than any time, so
+    the scope is the solvers in the commits after that time plus the changed
+    solvers in the working tree. A runner that refuses raises: no answer and
+    an empty scope read the same way otherwise, and the entry would pass as
+    current with the survey it is owed never run."""
     out = subprocess.run(["uv", "run", "python", "scripts/run_dl.py", "since", when],
                          cwd=config.ROOT, capture_output=True, text=True)
     if out.returncode != 0:
@@ -121,22 +132,28 @@ def survey_plan(text: str) -> dict | None:
     """What the entry is owed: the time the survey runs from and the solvers
     in its scope, or None when the entry is current.
 
-    An entry with no result is surveyed over the whole corpus, and so is one
-    whose newest `Survey:` line carries a time no clock holds. An entry with a
-    result is surveyed over the solvers written since that line's time; with
-    no such solver the entry is current.
+    An entry with no `Survey:` line, and an entry whose newest such line
+    carries no result, are surveyed over the whole corpus. An entry with a
+    result is surveyed over the solvers written since that line's time, which
+    are the solvers in the commits after that time plus the changed solvers in
+    the working tree; with no such solver the entry is current. A newest
+    `Survey:` line whose time no clock holds raises: the scope it stands for
+    cannot be read.
     """
     when = newest_survey(text)
-    at = survey_time(when) if when is not None else None
-    if at is None or not survey_result(text):
+    if when is None or not survey_result(text):
         return {"since": None, "scope": None}
+    if survey_time(when) is None:
+        raise TimeUnknown(f"Survey: {when}")
     scope = survey_scope(when)
     return {"since": when, "scope": scope} if scope else None
 
 
 def survey_header(plan: dict, at: float) -> str:
     """The `Survey:` line the run's result goes under: its time, and the time
-    its scope runs from. `run_dl.py since` lists that scope again from git."""
+    its scope runs from. `run_dl.py since` lists that scope again from git:
+    the working tree's changed solvers count as newer than any time, so the
+    scope is the commits after that time plus the working tree."""
     stamp = survey_minute(at)
     if plan["scope"] is None:
         return f"Survey: {stamp} — the whole corpus."
@@ -148,12 +165,12 @@ def append_survey(path: Path, header: str, result: str) -> None:
     The report is filed as the session returned it, stripped of surrounding
     whitespace.
 
-    The flock orders this module's own writers of the entry against each
-    other. A session that edits the entry with its own tools takes no lock,
-    so the append and such an edit are not ordered against each other.
+    The caller holds the entry's lock, which orders this module's own writers
+    of the entry against each other. A session that edits the entry with its
+    own tools takes no lock, so the append and such an edit are not ordered
+    against each other.
     """
     with open(path, "r+") as fh:
-        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
         body = fh.read().rstrip("\n")
         fh.seek(0)
         fh.write(body + "\n\n" + header + "\n\n" + result.strip() + "\n")
@@ -253,12 +270,18 @@ def survey_entry(path: Path, force: bool = False) -> int:
             print(f"{path.name}: the solvers in scope could not be listed: {exc}",
                   file=sys.stderr)
             return 1
+        except TimeUnknown as exc:
+            print(f"{path.name}: the newest `Survey:` line carries a time no "
+                  f"clock holds: {exc}", file=sys.stderr)
+            return 1
         if plan is None:
             print(f"{path.name} is current.")
             return 0
         at = time.time()
         run_dir = scratch / time.strftime(RUN_STAMP, time.localtime(at))
         run_dir.mkdir(parents=True, exist_ok=True)
+        print(f"{path.name}: the run writes under {run_dir}. "
+              f"Its session's stream goes to {run_log(run_dir)}.", flush=True)
         try:
             result = run_survey(path, plan, run_dir)
         except OSError as exc:

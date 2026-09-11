@@ -23,7 +23,7 @@ Give a candidate an entry, `docs/wf-solver/proposals/<name>.md`, named for the o
 - a `Not:` line naming what is not this operation
 - a `Match:` line with a search signature that covers every statement of the operation, including statements whose atoms sit in different lines or rules, and statements that reach the operation through another primitive. State the shape in prose and match it with the parser (`tests/test_ast_match.py`)
     - restate a `Match:` line that does not meet this spec, so the next survey reads it
-- a `Survey: <date time>` line per survey, its time to the minute, each followed by its own result
+- a `Survey:` line per survey, its time to the minute, each followed by its own result. The line names the scope the survey covered, in one of two forms: `Survey: <date time> — the whole corpus.` or `Survey: <date time> — the solvers since <the entry's previous survey time>.`
     - the result that is relevant to the operation: the near-misses, the spec question, and a `Callers` list of the solvers that would call it
     - a result stands under a `Survey:` line, and the survey command writes the line and the result together. Text with no `Survey:` line above it counts as no result
     - a recorded result stays as written, except its `Callers` list: strike a solver that no longer writes the operation
@@ -52,21 +52,19 @@ Remove the entry's file at these points:
 
     The entry's state decides what to do next.
 
-    - If no entry exists, write one. It carries no result, so it is owed a survey of the whole corpus.
+    - If no entry exists, write one. It carries no result.
     - If an entry is closed, keep its judgment. Encode the solver without the operation, in the way the entry records.
     - If an entry has a survey result, add this solver under `Callers`.
-        - **Newer solvers.** When some solvers postdate the entry's newest `Survey:` time, the entry is owed a survey of those solvers. The scope is the solvers that `uv run python scripts/run_dl.py since <time>` lists, for that time.
     - Count a family (`// family:` siblings with their representative) as one caller.
     - Add the callers, near-misses, and spec question to the entry.
 
-    **Owed surveys.** `uv run python scripts/survey.py <entry>` surveys an entry and writes the result into it.
+    **The survey.** `uv run python scripts/survey.py <entry>` surveys an entry and writes the result into it.
 
-    - Run it when the pass needs the result of an entry in either state:
-        - the entry carries no result
-        - some solvers are newer than the entry's newest `Survey:` line
-    - If the command fails, spawn the `survey` role with the entry's path, the scope the command would take, and a scratch path (`.scratch/surveys/<entry name>/`), and append its report at the end of the entry in the form the command writes:
-        - a blank line, then `Survey: <date time> — the whole corpus.` or `Survey: <date time> — the solvers since <the entry's newest survey time>.`, then a blank line, then the report
-        - say in the review that the session ran the survey
+    - Run it when the pass needs the result of an entry in either state. The state sets the scope:
+        - the entry carries no result: the scope is the whole corpus
+        - some solvers are newer than the entry's newest `Survey:` time: the scope is those solvers, as `uv run python scripts/run_dl.py since <time>` lists them for that time
+    - If the command fails, spawn the `survey` role with the entry's path, the scope the command would take, and a scratch path (`.scratch/surveys/<entry name>/`). Append at the end of the entry a blank line, the `Survey:` line in the form the entry's fields give, a blank line, then the role's report.
+        - say in the review that the command failed and the role ran
     - If the pass ends with the entry still unsurveyed, say so in the review.
 3. Decide whether to close the proposal. This is the only judgment in the protocol.
     - **Close grounds.** Base that judgment on whether the operation does not follow principles, or whether it is not general and the solvers encode their tasks without it. The solvers encode their tasks without it when:
@@ -74,8 +72,7 @@ Remove the entry's file at these points:
         - a plain relation states it and no other solver writes it
         - a relational form replaces the arithmetic
     - **Closing.** When closing a proposal, put the judgment in the entry as the `Closed:` line, remove the proposal comp, and rethink the solver's encoding in relational form. Leave plain relations as written.
-        - An entry closed with no survey result is reopened: strike its `Closed:` line, then run `uv run python scripts/survey.py <entry>`.
-        - If the proposal closes before it has an entry, write the entry and close it in the same step.
+        - An entry closed with no survey result is reopened: strike its `Closed:` line, then survey it.
         - Include the close in the review as a judgment call.
     - **No close.** If the proposal does not close, nothing is decided. Write no text that implies an outcome.
     - **Need.** Measure need against the task, not against a case.

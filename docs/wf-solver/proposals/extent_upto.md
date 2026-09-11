@@ -15,5 +15,3 @@ Sites:
 - 83b6b474.dl:30-34 — `cand_side`: the input's extents and every shorter one, as candidate square sides.
 - 5833af48.dl:117-118 — `pixel_cand`: a pixel size the plan's extent admits, the whole plan being one pixel across.
 - 5ad4f10b.dl:89-90 — `pixel_cand`: the same sweep over the drawing's extent.
-
-Survey: 2026-09-10 09:09

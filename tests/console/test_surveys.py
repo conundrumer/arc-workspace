@@ -95,11 +95,25 @@ def test_a_survey_line_with_no_result_is_surveyed_over_the_corpus(sv, srv):
     assert sv.survey_plan(path.read_text()) == {"since": None, "scope": None}
 
 
-def test_a_survey_time_no_clock_holds_is_surveyed_over_the_corpus(sv, srv):
-    """A `Survey:` line whose time reads as a date but names none leaves the
-    entry with no result the command can date."""
+def test_a_survey_time_no_clock_holds_stops_the_command(sv, srv, tmp_path,
+                                                        monkeypatch, capsys):
+    """A `Survey:` line whose time reads as a date but names none stands for a
+    scope the command cannot read."""
     path = entry(srv, "Thing", ENTRY + "\nSurvey: 2026-13-45 99:99\n\nCallers: none.\n")
-    assert sv.survey_plan(path.read_text()) == {"since": None, "scope": None}
+    local(srv, sv, tmp_path, monkeypatch, body="exit 1\n")
+    with pytest.raises(sv.TimeUnknown):
+        sv.survey_plan(path.read_text())
+    assert sv.survey_entry(path) == 1
+    assert "Survey: 2026-13-45 99:99" in capsys.readouterr().err
+    assert path.read_text().count("Survey:") == 1
+
+
+def test_a_result_from_the_caller_own_minute_is_current(sv):
+    """A `Survey:` line carries its time to the minute, and the caller reads
+    its arrival at that resolution."""
+    at = time.mktime(time.strptime("2026-02-02 03:04", STAMP)) + 59
+    assert sv.filed_since(surveyed("2026-02-02 03:04"), at)
+    assert not sv.filed_since(surveyed("2026-02-02 03:03"), at)
 
 
 def test_an_entry_is_named_by_its_name_or_its_path(sv, srv):
