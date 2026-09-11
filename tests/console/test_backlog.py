@@ -37,6 +37,22 @@ def test_every_solver_not_ruled_on_is_unfinalized(srv):
     assert rows["aaa"]["passes"] == []
 
 
+def test_a_draft_read_stands_until_the_file_changes(srv, monkeypatch):
+    """The lens asks of every solver on each request, so an unchanged file is
+    read once."""
+    backlog_solver(srv, "aaa")
+    reads = []
+    read = srv.solver_text
+    monkeypatch.setattr(srv, "solver_text",
+                        lambda tid: (reads.append(tid), read(tid))[1])
+    assert srv.is_draft("aaa")
+    assert srv.is_draft("aaa")
+    assert reads == ["aaa"]
+    write_solver(srv, "aaa", "// concept: a shape\n")
+    assert not srv.is_draft("aaa")
+    assert reads == ["aaa", "aaa"]
+
+
 def test_approving_a_solver_from_the_lens_takes_its_draft_line_off(srv):
     for tid in ("aaa", "bbb"):
         backlog_solver(srv, tid)

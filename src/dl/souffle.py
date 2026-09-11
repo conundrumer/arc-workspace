@@ -75,9 +75,7 @@ def build_functors() -> None:
     Skips when the artifact is newer than the source. Called once before the
     pool spins up — never per-pair, which would race. Solvers can't run without
     it (lib.dl's primitives call its functors), so a failure here is fatal.
-    Sweeps the stale temp sources on the way, for the same once-per-run reason.
     """
-    sweep_temp_sources()
     if FUNCTORS_LIB.exists() and FUNCTORS_LIB.stat().st_mtime >= FUNCTORS_SRC.stat().st_mtime:
         return
     souffle_prefix = subprocess.run(

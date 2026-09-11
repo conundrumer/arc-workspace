@@ -401,7 +401,9 @@ def test_since_skips_a_corpus_wide_rewrite(repo, capsys):
     _commit(repo, ["aaaa1111", "bbbb2222", "cccc3333"], "rewrite")
 
     assert cli.cmd_since("1 minute ago") == 0
-    assert capsys.readouterr().out == ""
+    out = capsys.readouterr()
+    assert out.out == ""
+    assert "3 solvers" in out.err
 
 
 def test_since_lists_an_uncommitted_solver(repo, capsys):

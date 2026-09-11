@@ -56,10 +56,28 @@ PROP_DIR = "docs/wf-solver/proposals"
 DRAFT = "// draft"
 
 
+# The draft answer per solver path, keyed on the file state it was read from:
+# path -> ((size, mtime_ns), the answer). The backlog asks for every solver on
+# each request, and a file that has not changed gives the same answer.
+DRAFT_CACHE: dict[Path, tuple[tuple[int, int], bool]] = {}
+
+
 def is_draft(item_id: str) -> bool:
     """Whether the solver stands unapproved."""
-    return any(line.strip() == DRAFT
-               for line in solver_text(item_id).splitlines())
+    path = solver_path(item_id)
+    try:
+        st = path.stat()
+    except OSError:
+        DRAFT_CACHE.pop(path, None)
+        return False
+    key = (st.st_size, st.st_mtime_ns)
+    hit = DRAFT_CACHE.get(path)
+    if hit is not None and hit[0] == key:
+        return hit[1]
+    answer = any(line.strip() == DRAFT
+                 for line in solver_text(item_id).splitlines())
+    DRAFT_CACHE[path] = (key, answer)
+    return answer
 
 
 def write_solver(item_id: str, text: str) -> None:

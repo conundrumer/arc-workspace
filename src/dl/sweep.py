@@ -16,7 +16,7 @@ from dl.domains import (
     _position_domain,
 )
 from dl.paths import SOLVERS_DIR
-from dl.solve import _profile, _run_profile
+from dl.solve import _profile, _profile_cases
 from dl.souffle import _pool_workers
 from dl.source import (
     RIGID_CHART_PREFIX,
@@ -140,7 +140,7 @@ def sweep_report(
 
         if reference is None:
             if shared:
-                reference, passing = _run_profile(source, task.train, cases=True)
+                reference, passing = _profile_cases(source, task.train)
                 base_cases = (frozenset.intersection(*passing) if passing
                               else frozenset())
             else:
@@ -158,7 +158,7 @@ def sweep_report(
             mod = swap_fact(source, param, vals)
             if not want:
                 return vals, _profile(mod, task.train) == reference, None
-            profile, passing = _run_profile(mod, task.train, cases=True)
+            profile, passing = _profile_cases(mod, task.train)
             admits = frozenset.intersection(*passing) if passing else None
             return vals, profile == reference, admits
 

@@ -18,9 +18,6 @@ from . import config, ledger, prompts, solvers, store, workers
 # task id -> (the file state the row was built from, the row)
 ROW_CACHE: dict[str, tuple[tuple, dict]] = {}
 
-# The states an item may be ruled on from the lens. In any other state a turn
-# is on its way to the solver file, and the ruling waits for it.
-
 
 def backlog_row(item_id: str, proposals: str, ts_size: int | None,
                 no_solver: bool = False) -> dict:
@@ -209,22 +206,18 @@ def backlog_view(ages: dict[str, int] | None = None) -> list[dict]:
     return lens_view(ages)["items"]
 
 
-def rule(body: dict, stage: str) -> dict:
-    """Record the user's ruling on a solver as a ledger line, which takes it
-    off the lens. Deleting that line by hand restores it."""
+def act_dismiss(body: dict) -> dict:
+    """Rule that a task needs no finalize pass. The ruling is a ledger line,
+    which takes the task off the lens. Deleting that line by hand restores
+    it."""
     item_id = str(body.get("id") or "").strip()
     if not item_id or not solvers.solver_path(item_id).exists():
         return {"error": f"no solver for {item_id}"}
-    ledger.ledger_append({"task": item_id, "stage": stage, "backend": None,
+    ledger.ledger_append({"task": item_id, "stage": "dismissed", "backend": None,
                           "model": None, "session": None, "ts": int(time.time()),
                           "source": "user"})
     store.bump()
     return {"ok": True}
-
-
-def act_dismiss(body: dict) -> dict:
-    """Rule that a task needs no finalize pass."""
-    return rule(body, "dismissed")
 
 
 def act_approve_solver(body: dict) -> dict:

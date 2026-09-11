@@ -100,6 +100,13 @@ def tmp_path(workdir, request):     # noqa: A002 — replaces pytest's own
     return path
 
 
+def fake_queue(n, order, held=()):
+    """A queue of t00, t01, ... in place of the script: the top `n` rows the
+    caller does not already hold."""
+    rows = [(f"t{i:02d}", 10 + i) for i in range(n + len(held))]
+    return [row for row in rows if row[0] not in held][:n]
+
+
 @pytest.fixture
 def srv(tmp_path, monkeypatch):
     monkeypatch.setenv("CONSOLE_STATE_DIR", str(tmp_path / "state"))
@@ -118,8 +125,7 @@ def srv(tmp_path, monkeypatch):
     for name in DOCS:
         (s.DOCS / name).write_text(f"# {name}\n")
     monkeypatch.setattr(s, "AGENT_PATH", tmp_path / "agents" / "handbook.md")
-    monkeypatch.setattr(s, "queue_pick",
-                        lambda n, order: [(f"t{i:02d}", 10 + i) for i in range(n)])
+    monkeypatch.setattr(s, "queue_pick", fake_queue)
     s._test_stagger_launch = s.stagger_launch
     monkeypatch.setattr(s, "stagger_launch", lambda ids: None)
     # A worker thread outliving its test closes pipes on its way out, and the

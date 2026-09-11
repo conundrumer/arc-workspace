@@ -78,7 +78,8 @@ def test_profile_needs_every_accepted_grid_under_a_rule_alt(monkeypatch):
 
 
 def _cases(monkeypatch, per_pair: list[list], cases: bool):
-    """`_run_profile` over one stub run per pair, and how many pairs ran."""
+    """One stub run per pair, and how many pairs ran: `_profile_cases` under
+    `cases`, `_profile` without it."""
     runs = iter(per_pair)
     seen = []
 
@@ -93,7 +94,9 @@ def _cases(monkeypatch, per_pair: list[list], cases: bool):
     monkeypatch.setattr(solve_mod, "_run_source", lambda *_a, **_k: "")
     monkeypatch.setattr(solve_mod, "parse_output", parse)
     ex = _Ex(input=[[0]], output=A)
-    out = solve_mod._run_profile("src", [ex] * len(per_pair), cases=cases)
+    examples = [ex] * len(per_pair)
+    out = (solve_mod._profile_cases("src", examples) if cases
+           else solve_mod._profile("src", examples))
     return out, len(seen)
 
 
@@ -109,6 +112,6 @@ def test_case_sets_need_every_pair(monkeypatch):
 
 
 def test_a_profile_alone_stops_at_the_failing_pair(monkeypatch):
-    (profile, passing), ran = _cases(monkeypatch, [MISS, BOTH], cases=False)
-    assert (profile, passing) == (None, None)
+    profile, ran = _cases(monkeypatch, [MISS, BOTH], cases=False)
+    assert profile is None
     assert ran == 1

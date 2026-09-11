@@ -96,14 +96,14 @@ def test_a_case_admitting_the_whole_domain_reads_no_shared_param(
     _shared_stub(tmp_path, monkeypatch, [0, 1, 2])
     asked = []
 
-    def run_profile(source, examples, cases=False):
-        asked.append(cases)
+    def run_profile(source, examples):
+        asked.append(source)
         stored = _values(source) == frozenset({1})
         # $A holds the stored value alone; $B passes under every value.
         return (["ref"] if stored else None,
                 [frozenset({"$A", "$B"} if stored else {"$B"})])
 
-    monkeypatch.setattr(sweep, "_run_profile", run_profile)
+    monkeypatch.setattr(sweep, "_profile_cases", run_profile)
     monkeypatch.setattr(sweep, "_profile", _kept("m"))
 
     results = sweep.sweep_report(STEM)
@@ -120,18 +120,18 @@ def test_a_case_admitting_the_whole_domain_reads_no_shared_param(
         "it belongs under that case's marker"
     ]
     # The parameter under a case marker asks for no per-case run.
-    assert asked == [True] * 4
+    assert len(asked) == 4
 
 
 def test_cases_that_agree_report_nothing(tmp_path: Path, monkeypatch):
     _shared_stub(tmp_path, monkeypatch, [0, 1])
 
-    def run_profile(source, examples, cases=False):
+    def run_profile(source, examples):
         stored = _values(source) == frozenset({1})
         return (["ref"] if stored else None,
                 [frozenset({"$A", "$B"}) if stored else frozenset()])
 
-    monkeypatch.setattr(sweep, "_run_profile", run_profile)
+    monkeypatch.setattr(sweep, "_profile_cases", run_profile)
     monkeypatch.setattr(sweep, "_profile", _kept("m"))
 
     assert [(p, s) for p, s, _ in sweep.sweep_report(STEM)] == [

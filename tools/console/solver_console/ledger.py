@@ -16,6 +16,8 @@ from . import config, solvers, store
 # console takes out. The `approved` rows earlier rounds wrote are read as
 # rulings still, so they never count as landings.
 
+# The stage names a ruling writes, which are not landings: `dismissed`, and
+# `approved` from the rounds that recorded approval here.
 RULINGS = ("approved", "dismissed")
 STAGE_ORDER = {"legacy": 0, "create": 1, "refine": 2, "finalize": 3}
 

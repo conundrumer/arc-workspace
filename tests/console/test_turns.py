@@ -1112,6 +1112,24 @@ def test_append_carries_the_scratch_note_and_the_docs(srv):
     assert "# docs/wf-solver/style.md\n\n# Style\n\nEvery word of it.\n" in out
 
 
+def test_the_appendix_a_caller_takes_outlives_a_build_under_new_docs(srv):
+    """The sweep dates an appendix by its mtime, so a caller that takes a file
+    already on disk starts its age again; otherwise a build under changed docs
+    takes the file a spawn is about to read."""
+    import os
+
+    from dl.context import DIGEST_TTL
+
+    (srv.DOCS / "style.md").write_text("# Style\n\nEvery word of it.\n")
+    path = srv.append_path()
+    aged = time.time() - DIGEST_TTL - 60
+    os.utime(path, (aged, aged))
+    assert srv.append_path() == path            # unchanged sources, the same file
+    (srv.DOCS / "style.md").write_text("# Style\n\nEvery other word.\n")
+    assert srv.append_path() != path
+    assert path.exists()
+
+
 def test_the_appendix_build_keeps_the_handbook_agent_current(srv):
     from dl.context import agent_definition, render
     (srv.DOCS / "style.md").write_text("# Style\n\nEvery word of it.\n")

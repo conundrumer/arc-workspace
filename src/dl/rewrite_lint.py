@@ -1713,8 +1713,8 @@ def _ctor_names(term: Term) -> set[str]:
         t = stack.pop()
         if isinstance(t, Ctor):
             names.add(t.name)
-        if isinstance(t, (Ctor, Rec, Call, Agg)):
-            stack.extend(t.args if not isinstance(t, Agg) else ())
+        if isinstance(t, (Ctor, Rec, Call)):
+            stack.extend(t.args)
         elif isinstance(t, BinOp):
             stack.extend((t.lhs, t.rhs))
         elif isinstance(t, UnOp):

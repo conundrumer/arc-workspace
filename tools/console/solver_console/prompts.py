@@ -7,7 +7,8 @@ import os
 import threading
 from pathlib import Path
 
-from dl.context import AGENT_META, agent_prompt, render, write_agent
+from dl.context import (AGENT_META, AGENT_PATH, agent_prompt, render,
+                        sweep_digests, write_agent)
 
 from . import config, solvers, store
 
@@ -40,7 +41,15 @@ def append_path() -> Path:
     text = SCRATCH_NOTE + "\n" + handbook
     digest = hashlib.sha1(text.encode()).hexdigest()[:10]
     path = config.STATE_DIR / f"appendix-{digest}.md"
-    if not path.exists():
+    if path.exists():
+        # The sweep dates a file by its mtime, and this caller takes the file
+        # now, so its age starts again here. Without that, a build under
+        # changed sources sweeps the file a caller is about to spawn on.
+        try:
+            os.utime(path)
+        except OSError:
+            pass
+    else:
         path.parent.mkdir(parents=True, exist_ok=True)
         # A name of this caller's own: two callers building the same appendix
         # at once would otherwise write one file between them, and the rename
@@ -51,7 +60,8 @@ def append_path() -> Path:
             tmp.replace(path)
         finally:
             tmp.unlink(missing_ok=True)
-    write_agent(config.AGENT_PATH, handbook=handbook)
+        sweep_digests(path)
+    write_agent(AGENT_PATH, handbook=handbook)
     return path
 
 

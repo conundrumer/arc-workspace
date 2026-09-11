@@ -60,7 +60,7 @@ def test_refused_wave_does_not_arm_the_debounce(srv):
 
 
 def test_queue_failure_reports_and_leaves_state_clean(srv, monkeypatch):
-    def boom(n, order):
+    def boom(n, order, held=()):
         raise srv.Reject("queue.sh failed: no bun")
     monkeypatch.setattr(srv, "queue_pick", boom)
     assert srv.start_wave(2)["error"] == "queue.sh failed: no bun"

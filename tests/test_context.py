@@ -150,3 +150,29 @@ def test_the_handbook_agent_is_the_handbook_under_its_frontmatter(tmp_path):
     lib.write_text(".decl out(p: Position, col: Color)\n")
     write_agent(path, handbook=render(docs, lib))       # a caller's own render
     assert path.read_text() == agent_definition(render(docs, lib))
+
+
+def test_a_sweep_takes_the_digest_files_no_caller_has_taken_lately(tmp_path):
+    import os
+    import time
+
+    from dl.context import DIGEST_TTL, sweep_digests
+
+    now = time.time()
+
+    def digest(name: str, age: float) -> Path:
+        path = tmp_path / name
+        path.write_text(name)
+        os.utime(path, (now - age, now - age))
+        return path
+
+    current = digest("appendix-aaaaaaaaaa.md", DIGEST_TTL * 2)
+    stale = digest("appendix-bbbbbbbbbb.md", DIGEST_TTL + 60)
+    taken = digest("appendix-cccccccccc.md", DIGEST_TTL - 60)
+    other = digest("handbook-dddddddddd.md", DIGEST_TTL + 60)
+
+    sweep_digests(current, now)
+    assert not stale.exists()
+    # the file the caller holds, one a caller took within the window, and a
+    # file of another family
+    assert current.exists() and taken.exists() and other.exists()

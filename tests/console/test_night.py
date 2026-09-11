@@ -416,8 +416,8 @@ def test_a_pass_reads_the_queue_and_git_with_the_lock_down(srv, monkeypatch):
     backlog_solver(srv, "aaa")
     free = []
     picks, ages = srv.queue_pick, srv.solver_ages
-    monkeypatch.setattr(srv, "queue_pick", lambda n, order: (
-        free.append(("queue", lock_free(srv))), picks(n, order))[1])
+    monkeypatch.setattr(srv, "queue_pick", lambda n, order, held=(): (
+        free.append(("queue", lock_free(srv))), picks(n, order, held))[1])
     monkeypatch.setattr(srv, "solver_ages", lambda: (
         free.append(("git", lock_free(srv))), ages())[1])
     night_on(srv, source="both")
@@ -438,9 +438,9 @@ def test_a_stop_during_the_reads_calls_the_admission_off(srv, monkeypatch, flag)
     backlog_solver(srv, "aaa")
     picks = srv.queue_pick
 
-    def picking(n, order):
+    def picking(n, order, held=()):
         setattr(srv, flag, True)
-        return picks(n, order)
+        return picks(n, order, held)
 
     monkeypatch.setattr(srv, "queue_pick", picking)
     night_on(srv, source="both")
@@ -515,7 +515,7 @@ def test_a_queue_failure_leaves_the_night_running(srv, monkeypatch):
     set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50)
     night_on(srv)
 
-    def boom(n, order):
+    def boom(n, order, held=()):
         raise srv.Reject("queue.sh failed: no bun")
     monkeypatch.setattr(srv, "queue_pick", boom)
     assert srv.night_tick()["admitted"] == []
@@ -1142,7 +1142,7 @@ def test_the_both_source_holds_one_slot_while_the_other_admits(srv, monkeypatch)
 def test_two_standing_notes_do_not_take_turns_filling_the_log(srv, monkeypatch):
     clock_at(srv, monkeypatch)
     set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50, fbl=(45, 50))
-    monkeypatch.setattr(srv, "queue_pick", lambda n, order: [])
+    monkeypatch.setattr(srv, "queue_pick", lambda n, order, held=(): [])
     night_on(srv, source="both")
     for _ in range(5):
         srv.night_tick()
@@ -1224,7 +1224,7 @@ def test_a_leading_fable_window_holds_nothing_with_an_empty_queue(srv, monkeypat
     clock_at(srv, monkeypatch)
     set_usage(srv, monkeypatch, wk_pct=40, wk_elapsed=50, fbl=(55, 50))
     finalize_launch(srv, monkeypatch)
-    monkeypatch.setattr(srv, "queue_pick", lambda n, order: [])
+    monkeypatch.setattr(srv, "queue_pick", lambda n, order, held=(): [])
     backlog_solver(srv, "aaa")
     night_on(srv, source="both", pace="exhaust", balance=True)
     out = srv.night_tick()

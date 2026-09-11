@@ -112,36 +112,59 @@ def _passing(actuals: list, ex) -> frozenset[str]:
     )
 
 
-def _run_profile(
-    mod_source: str, examples: list, cases: bool = False
-) -> tuple[list[frozenset[str]] | None, list[frozenset[str]] | None]:
-    """The profile of this source, and its per-pair passing-variant sets.
+def _pair_profile(mod_source: str, ex, res: bool
+                  ) -> tuple[frozenset[str] | None, frozenset[str]]:
+    """One pair's profile entry and its passing-variant set. The entry is
+    None when the pair fails."""
+    try:
+        actuals = parse_output(
+            _run_source(build_source(mod_source), grid_to_facts(ex.input))
+        )
+    except Exception:
+        actuals = None
+    if actuals is None:
+        return None, frozenset()
+    return _pair_entry(actuals, ex, res), _passing(actuals, ex)
+
+
+def _profile(mod_source: str, examples: list) -> list[frozenset[str]] | None:
+    """Per-pair variant-name sets under this source; None on any failure.
 
     A modified source must reproduce the original's profile, not merely
     pass: a wrong value or a deleted rule can silence a Choice case, and a
     vanished variant is never checked. A `TiebreakResolution` solver's
     variant names are enumeration terms with no stable identity, so its
-    profile is the grid set instead, and it has no passing-variant sets.
+    profile is the grid set instead.
 
-    A failing pair ends the run and the profile is None. Under `cases` the
-    remaining pairs run anyway, since a passing-variant set per pair needs
-    every pair; the extra runs are the cost of asking for the sets.
+    A failing pair ends the run.
+    """
+    res = res_out(mod_source)
+    profile: list[frozenset[str]] = []
+    for ex in examples:
+        entry, _ = _pair_profile(mod_source, ex, res)
+        if entry is None:
+            return None
+        profile.append(entry)
+    return profile
+
+
+def _profile_cases(
+    mod_source: str, examples: list
+) -> tuple[list[frozenset[str]] | None, list[frozenset[str]] | None]:
+    """The profile of this source, and its per-pair passing-variant sets.
+
+    A passing-variant set per pair needs every pair, so a failing pair does
+    not end the run; the extra runs are the cost of asking for the sets. A
+    `TiebreakResolution` solver has no such sets, and there a failing pair
+    ends the run as it does in `_profile`.
     """
     res = res_out(mod_source)
     profile: list[frozenset[str]] | None = []
-    passing: list[frozenset[str]] | None = None if res or not cases else []
+    passing: list[frozenset[str]] | None = None if res else []
     for ex in examples:
-        try:
-            actuals = parse_output(
-                _run_source(build_source(mod_source), grid_to_facts(ex.input))
-            )
-        except Exception:
-            actuals = None
-        entry = None if actuals is None else _pair_entry(actuals, ex, res)
+        entry, ok = _pair_profile(mod_source, ex, res)
         if passing is not None:
-            passing.append(
-                frozenset() if actuals is None else _passing(actuals, ex)
-            )
+            passing.append(ok)
         if entry is None:
             profile = None
             if passing is None:
@@ -149,11 +172,6 @@ def _run_profile(
         elif profile is not None:
             profile.append(entry)
     return profile, passing
-
-
-def _profile(mod_source: str, examples: list) -> list[frozenset[str]] | None:
-    """Per-pair variant-name sets under this source; None on any failure."""
-    return _run_profile(mod_source, examples)[0]
 
 
 @dataclass

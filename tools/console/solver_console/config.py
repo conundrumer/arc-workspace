@@ -4,8 +4,6 @@ workers with."""
 import os
 from pathlib import Path
 
-from dl import context
-
 HERE = Path(__file__).resolve().parents[1]
 ROOT = HERE.parents[1]
 STATE_DIR = Path(os.environ.get("CONSOLE_STATE_DIR", HERE / "state"))
@@ -19,8 +17,6 @@ RETRO_FILE = STATE_DIR / "retro.json"
 SOLVERS = ROOT / "programs" / "solvers"
 LIB = ROOT / "programs" / "lib.dl"
 DOCS = ROOT / "docs" / "wf-solver"
-# The handbook agent the console keeps current with the docs.
-AGENT_PATH = context.AGENT_PATH
 TASKS = ROOT / "data" / "tasks"
 ROLE_DIR = ROOT / ".claude" / "roles"
 REF_DIR = (ROOT.parent / "arc-synth-bun").resolve()
@@ -148,9 +144,10 @@ IDLE_POLL = 60
 CACHE_TTL = 3600
 # How close to the cache expiry, or the idle reap, the auto compact fires.
 COMPACT_MARGIN = 180
-# How long a handoff held for a background task waits. A `migrate` or
-# `cleanup` subagent takes minutes; past this the task is treated as one that
-# never reports, and the stage lands with no report for the user to rule on.
+# How long a handoff waits on the background subagents a turn dispatched,
+# counted from the last notification one of them sent. Past this they are
+# treated as tasks that never report, and the stage lands with the report the
+# turn filed, or with none for the user to rule on.
 BG_TTL = 1200
 # Autopilot leaves a landed phase's process resident, so the count climbs with
 # every handoff and what the machine holds becomes the limit that matters. On

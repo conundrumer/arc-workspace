@@ -615,7 +615,6 @@ def commit_repo(srv, tmp_path, monkeypatch):
 STATUS = (" M programs/solvers/aaaa1111.dl\n"
           "?? programs/solvers/bbbb2222.dl\n"
           "?? docs/wf-solver/proposals/EDGE_GAP.md\n"
-          "?? programs/solvers/.tmpq55dd1ie.dl\n"
           " M programs/lib.dl\n")
 
 
@@ -631,7 +630,6 @@ def test_a_commit_carries_the_unapproved_solvers_beside_the_approved_ones(
     assert srv.act_commit()["ok"] is True
     add = next(c for c in calls if c[1] == "add")
     # lib.dl sits outside the commit's scope: the committer session takes it.
-    # The `.tmp` file is a running souffle's scratch, not work.
     assert add[2:] == ["docs/wf-solver/proposals/EDGE_GAP.md",
                        "programs/solvers/aaaa1111.dl",
                        "programs/solvers/bbbb2222.dl"]

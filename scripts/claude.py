@@ -13,18 +13,23 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools" / "console"))
 
-from dl.context import render, write_agent  # noqa: E402
+from dl.context import render, sweep_digests, write_agent  # noqa: E402
 from solver_console import config  # noqa: E402
 
 
 def main() -> None:
-    write_agent()
     text = render()
+    write_agent(handbook=text)
     digest = hashlib.sha1(text.encode()).hexdigest()[:10]
     path = config.STATE_DIR / f"handbook-{digest}.md"
-    if not path.exists():
+    if path.exists():
+        # The sweep dates a file by its mtime, and this session takes the file
+        # now, so its age starts again here.
+        os.utime(path)
+    else:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text)
+        sweep_digests(path)
     os.execvp(config.CLAUDE, [config.CLAUDE, "--append-system-prompt-file", str(path),
                               *sys.argv[1:]])
 

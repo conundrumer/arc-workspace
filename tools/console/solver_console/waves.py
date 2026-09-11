@@ -4,6 +4,7 @@ import re
 import subprocess
 import threading
 import time
+from collections.abc import Collection
 
 from . import config, drain, prompts, store, workers
 
@@ -11,18 +12,23 @@ WAVE_DEBOUNCE = 5  # seconds; a fumbled double-click, not a deliberate second wa
 LAST_WAVE_AT = 0.0
 
 
-def queue_pick(n: int, order: str) -> list[tuple[str, int]]:
-    """Top `n` unsolved tasks from scripts/queue.sh, as (id, size estimate)."""
-    out = subprocess.run(["bash", "scripts/queue.sh", "-n", str(n), "--order", order],
+def queue_pick(n: int, order: str,
+               held: Collection[str] = ()) -> list[tuple[str, int]]:
+    """Top `n` unsolved tasks from scripts/queue.sh, as (id, size estimate).
+
+    The script lists from the top of the queue, so the read asks for enough
+    rows to reach `n` past the tasks `held` names."""
+    want = n + len(held)
+    out = subprocess.run(["bash", "scripts/queue.sh", "-n", str(want), "--order", order],
                          cwd=config.ROOT, capture_output=True, text=True)
     if out.returncode != 0:
         raise store.Reject("queue.sh failed: " + out.stderr.strip()[-200:])
     picked = []
     for line in out.stdout.splitlines():
         m = re.match(r"\s*(\d+)\s+(\S+)", line)
-        if m:
+        if m and m.group(2) not in held:
             picked.append((m.group(2), int(m.group(1))))
-    return picked
+    return picked[:n]
 
 
 def drop_committed() -> None:
@@ -35,9 +41,7 @@ def drop_committed() -> None:
 
 def pick_new(k: int, order: str) -> list[tuple[str, int]]:
     """The next k queue tasks the console does not already hold."""
-    existing = {it["id"] for it in store.STATE["items"]}
-    return [p for p in queue_pick(k + len(existing), order)
-            if p[0] not in existing][:k]
+    return queue_pick(k, order, {it["id"] for it in store.STATE["items"]})
 
 
 def make_items(picked: list[tuple[str, int]], chain: list[dict], wave: int,

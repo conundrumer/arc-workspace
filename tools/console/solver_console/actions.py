@@ -281,17 +281,14 @@ def commit_subject(added: list[str], changed: list[str],
 
 def changed_paths() -> list[str]:
     """Every changed or untracked file under the commit's scope, as git
-    status names it. A running souffle drops `.tmp*.dl` scratch files beside
-    the solvers, so a dotfile is not work and stays out."""
+    status names it."""
     out = subprocess.run(["git", "status", "--porcelain", "--", *config.COMMIT_STAGE],
                          cwd=config.ROOT, capture_output=True, text=True)
     paths = set()
     for line in out.stdout.splitlines():
         if not line.strip():
             continue
-        path = line[3:].strip().split(" -> ")[-1].strip('"')
-        if not path.rsplit("/", 1)[-1].startswith("."):
-            paths.add(path)
+        paths.add(line[3:].strip().split(" -> ")[-1].strip('"'))
     return sorted(paths)
 
 
@@ -410,11 +407,11 @@ def run_committer() -> None:
             proc = subprocess.Popen(cmd, cwd=config.ROOT, env=config.WORKER_ENV,
                                     stdout=subprocess.PIPE, stderr=log,
                                     start_new_session=True)
-            store.COMMITTER_PROC = proc
-            # A shutdown between the spawn and the line above reads no process
-            # and leaves the session running, so the flag it set is read here:
-            # one of the two ends the session.
+            # A shutdown between the spawn and the publish below reads no
+            # process and leaves the session running, so the flag it set is
+            # read here: one of the two ends the session.
             with store.LOCK:
+                store.COMMITTER_PROC = proc
                 if store.SHUTTING_DOWN:
                     kill_session(proc)
             timer = threading.Timer(config.COMMIT_TIMEOUT, kill_session, args=(proc,))
@@ -446,8 +443,8 @@ def run_committer() -> None:
     except Exception as exc:
         note = f"committer failed: {exc}"
     finally:
-        store.COMMITTER_PROC = None
         with store.LOCK:
+            store.COMMITTER_PROC = None
             store.COMMITTER.update(running=False, note=note)
             store.COMMITTER["feed"].append(store.event(note))
         store.bump()

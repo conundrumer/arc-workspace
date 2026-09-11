@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import re
 import threading
+import time
 from functools import lru_cache
 from pathlib import Path
 
@@ -260,3 +261,28 @@ def write_agent(path: Path = AGENT_PATH, docs: Path = DOCS_DIR, lib: Path = LIB_
     finally:
         tmp.unlink(missing_ok=True)
     return path
+
+
+# A digest file no longer current, and untouched for this long, has no session
+# left reading it.
+DIGEST_TTL = 24 * 3600
+
+
+def sweep_digests(path: Path, now: float | None = None) -> None:
+    """Remove the stale digest files beside `path`, keeping `path` itself.
+
+    A file named `<family>-<digest>.md` holds one rendering of its sources.
+    A new rendering earns a new name, and the file it replaces stays on disk
+    for the sessions still reading it. The age is time since a caller last
+    took the file, so a caller that takes one already on disk touches it.
+    """
+    now = time.time() if now is None else now
+    family = path.name.rsplit("-", 1)[0]
+    for other in path.parent.glob(f"{family}-*.md"):
+        if other == path:
+            continue
+        try:
+            if now - other.stat().st_mtime > DIGEST_TTL:
+                other.unlink()
+        except OSError:
+            continue

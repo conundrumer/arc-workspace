@@ -37,7 +37,7 @@ A role is spawned as the `handbook` agent, `.claude/agents/handbook.md`. `uv run
 
 ## `retro`
 
-- Run the `retro` workflow (`.claude/workflows/retro.js`) with `roles` in `args`: the text of each role file the run needs, keyed by role name, as the workflow's header lists them. Its agents read the window, check each issue, take a default on each open one, make the fixes the defaults call for, tier 4 excepted, and verify what those fixes changed. Each stage's rules live in its role, under `.claude/roles/`. The main session reads the role files to pass them, and no window, report, solver, or doc, and runs no edit, revert, or check itself: those go to agents.
+- Run the `retro` workflow (`.claude/workflows/retro.js`) with `roles` in `args`: the text of each role file the run needs, keyed by role name. A full run and a `dry` run need retro-read, retro-check, retro-review; a full run and a `fixes` run also need retro-fix, solver, retro-prune, retro-verify. Its agents read the window, check each issue, take a default on each open one, make the fixes the defaults call for, tier 4 excepted, and verify what those fixes changed. Each stage's rules live in its role, under `.claude/roles/`. The main session reads the role files to pass them, and no window, report, solver, or doc, and runs no edit, revert, or check itself: those go to agents.
 - The workflow returns every call with its default, its tier, and what argues for and against it. Present the tally, the closed issues, the files the fixes changed, and the entries written. Then present the calls as a numbered list of the four tiers, each tier a numbered sub-list of its calls, so the user can name a call by its index (2.3). Each call carries its task ids. Issue ids stay out, and so do quotes.
 
     ```

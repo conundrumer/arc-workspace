@@ -34,7 +34,7 @@ from dl.solve import (
     run_pair,
     run_task,
 )
-from dl.souffle import _pool_workers, build_functors
+from dl.souffle import _pool_workers, build_functors, sweep_temp_sources
 from dl.source import expand_macros
 from dl.sweep import MAX_CANDIDATES, render_sweep, sweep_report
 
@@ -372,15 +372,15 @@ def _git(*args: str) -> str | None:
     return run.stdout if run.returncode == 0 else None
 
 
-def _commit_stems(log: str) -> list[set[str]]:
-    """The solver stems each commit touches, one set per commit, from
+def _commit_stems(log: str) -> list[tuple[str, set[str]]]:
+    """Each commit as its hash and the solver stems it touches, from
     `git log --name-only` output."""
-    commits: list[set[str]] = []
+    commits: list[tuple[str, set[str]]] = []
     for line in log.splitlines():
         if line.startswith("commit "):
-            commits.append(set())
+            commits.append((line.split(" ", 1)[1].strip(), set()))
         elif (m := SOLVER_PATH_RE.match(line.strip())) and commits:
-            commits[-1].add(m.group(1))
+            commits[-1][1].add(m.group(1))
     return commits
 
 
@@ -398,8 +398,10 @@ def _worktree_stems(status: str) -> set[str]:
 def cmd_since(when: str) -> int:
     """Print the solver stems a survey since `when` covers: the ones the
     commits since then touch, plus the ones whose working-tree content differs
-    from HEAD. A commit touching more than half the corpus is a corpus-wide
-    mechanical rewrite, and the solvers it touches are out of scope."""
+    from HEAD. An uncommitted change is newer than any commit, so the
+    working-tree half takes every such solver and applies no time test.
+    A commit touching more than half the corpus is a corpus-wide mechanical
+    rewrite, and the solvers it touches are out of scope."""
     log = _git("log", f"--since={when}", "--name-only", "--pretty=format:commit %H",
                "--", "programs/solvers")
     status = _git("status", "--porcelain", "--", "programs/solvers")
@@ -408,9 +410,12 @@ def cmd_since(when: str) -> int:
         return 1
     corpus = set(all_stems())
     stems: set[str] = _worktree_stems(status)
-    for touched in _commit_stems(log):
+    for sha, touched in _commit_stems(log):
         if len(touched) * 2 <= len(corpus):
             stems |= touched
+        else:
+            print(f"skipped {sha}: a mechanical rewrite over {len(touched)} solvers",
+                  file=sys.stderr)
     for stem in sorted(stems & corpus):
         print(stem)
     return 0
@@ -781,7 +786,9 @@ def _parser() -> argparse.ArgumentParser:
         description="Print the stem of each solver a survey since the given "
                     "date-time covers: the ones the commits since then touch, "
                     "plus the ones whose working-tree content differs from "
-                    "HEAD. A commit touching more than half of the solvers "
+                    "HEAD. An uncommitted change is newer than any commit, so "
+                    "every such solver is in scope and no time test applies to "
+                    "it. A commit touching more than half of the solvers "
                     "is a corpus-wide mechanical rewrite, and the solvers "
                     "it touches are out of scope.",
     )
@@ -804,6 +811,9 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str]) -> int:
+    # once per invocation, before any solver runs: the temp sources a killed
+    # run left behind go here
+    sweep_temp_sources()
     if not argv or argv[0] not in (*COMMANDS, "-h", "--help"):
         argv = ["run", *argv]
     args = _parser().parse_args(argv)

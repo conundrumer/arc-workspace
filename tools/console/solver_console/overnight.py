@@ -4,6 +4,8 @@ unfinalized solver's finalize pass, or one of each."""
 
 import sys
 import threading
+from collections.abc import Collection
+from dataclasses import dataclass, field
 
 from . import backlog, pacing, prompts, store, waves, workers
 
@@ -44,18 +46,29 @@ def resume_item(it: dict) -> None:
                    admitted=True)
 
 
-def queue_next(inputs: dict) -> list[tuple[str, int]]:
+@dataclass
+class TickInputs:
+    """What one admitter pass read for its slots: the queue script's next
+    tasks, the unfinalized rows, and the refusal a failed queue script
+    returned in place of its rows."""
+
+    queue: list[tuple[str, int]] = field(default_factory=list)
+    rows: list[dict] = field(default_factory=list)
+    refusal: store.Reject | None = None
+
+
+def queue_next(inputs: TickInputs) -> list[tuple[str, int]]:
     """The next queue task the console does not already hold, out of the rows
     the pass read. A queue script that failed carries its refusal here, and
-    the caller takes it as its own. Caller holds LOCK."""
-    rows = inputs.get("queue")
-    if isinstance(rows, store.Reject):
-        raise rows
+    the caller takes it as its own. The rows were read with LOCK down, so a
+    task admitted since then is dropped again. Caller holds LOCK."""
+    if inputs.refusal is not None:
+        raise inputs.refusal
     existing = {it["id"] for it in store.STATE["items"]}
-    return [row for row in rows or () if row[0] not in existing][:1]
+    return [row for row in inputs.queue if row[0] not in existing][:1]
 
 
-def night_admit(inputs: dict) -> list[str]:
+def night_admit(inputs: TickInputs) -> list[str]:
     """Admit the next queued task into the night's wave. Caller holds LOCK.
 
     Every admission of one night belongs to one wave, so the committed items
@@ -82,7 +95,7 @@ def night_admit(inputs: dict) -> list[str]:
     return ids
 
 
-def night_finalize(inputs: dict) -> list[str]:
+def night_finalize(inputs: TickInputs) -> list[str]:
     """Start the finalize pass of the next unfinalized solver, in triage
     order. Caller holds LOCK.
 
@@ -91,7 +104,7 @@ def night_finalize(inputs: dict) -> list[str]:
     silence, since the list carries every solver on disk. A worker that fails
     to start ends the pass, as the cause holds for every row."""
     cfg = pacing.night()
-    for row in inputs.get("rows") or ():
+    for row in inputs.rows:
         it = store.find(row["id"])
         if it is not None and not backlog.finalize_ready(it):
             continue
@@ -113,12 +126,12 @@ def night_finalize(inputs: dict) -> list[str]:
 FINALIZE_WAITING = False
 
 
-def finalize_waiting(inputs: dict) -> bool:
+def finalize_waiting(inputs: TickInputs) -> bool:
     """Whether the finalize slot has a solver to take, read without taking
     it: the same test night_finalize applies to each row."""
     global FINALIZE_WAITING
     FINALIZE_WAITING = False
-    for row in inputs.get("rows") or ():
+    for row in inputs.rows:
         it = store.find(row["id"])
         if it is None or backlog.finalize_ready(it):
             FINALIZE_WAITING = True
@@ -132,7 +145,7 @@ def finalize_waiting(inputs: dict) -> bool:
 QUEUE_WAITING = False
 
 
-def queue_waiting(inputs: dict) -> bool:
+def queue_waiting(inputs: TickInputs) -> bool:
     """Whether the queue slot has a task to take, read without taking it: the
     pick night_admit would make. A queue script that refused reads as nothing
     waiting."""
@@ -148,7 +161,7 @@ def queue_waiting(inputs: dict) -> bool:
 OTHER_SLOT = {"queue": "finalize", "finalize": "queue"}
 
 
-def slot_waiting(kind: str, inputs: dict, probe: bool = True) -> bool:
+def slot_waiting(kind: str, inputs: TickInputs, probe: bool = True) -> bool:
     """Whether the slot of `kind` has work to take. `probe` reads the pass's
     rows; the view takes the last answer."""
     if kind == "finalize":
@@ -156,7 +169,7 @@ def slot_waiting(kind: str, inputs: dict, probe: bool = True) -> bool:
     return queue_waiting(inputs) if probe else QUEUE_WAITING
 
 
-def slot_gate(cfg: dict, kind: str, inputs: dict | None = None,
+def slot_gate(cfg: dict, kind: str, inputs: TickInputs | None = None,
               probe: bool = True) -> dict:
     """The slot's gate: the pacer over the slot's models, and the hold that
     lets the other slot go first while its window trails, it has room under
@@ -166,29 +179,27 @@ def slot_gate(cfg: dict, kind: str, inputs: dict | None = None,
         hold = pacing.lead_hold(cfg, kind)
         other = OTHER_SLOT[kind]
         room = pacing.slot_live(cfg, other) < pacing.slot_target(cfg, other)
-        if hold and room and slot_waiting(other, inputs or {}, probe):
+        if hold and room and slot_waiting(other, inputs or TickInputs(), probe):
             gate = {**gate, "open": False, "hold": hold[0], "why": hold[1]}
     return gate
 
 
-def tick_inputs(kinds: list[str], held: int) -> dict:
+def tick_inputs(kinds: list[str], held: Collection[str]) -> TickInputs:
     """What the slots of `kinds` are read for, taken with LOCK down: the queue
     script's next tasks, and the unfinalized rows, whose order comes from a
-    git read. A refusal from the queue script is carried as itself, for the
-    admission to report. A slot at its target has no entry here, and the pass
-    leaves it alone.
+    git read. A slot at its target is left unread, and the pass leaves it
+    alone.
 
     A pass admits one queue task and asks whether another waits behind it, so
-    it takes two rows the console does not already hold: `held` is how many it
-    holds, and the script lists from the top of the queue."""
-    inputs: dict = {}
+    it takes two rows past the tasks `held` names."""
+    inputs = TickInputs()
     if "queue" in kinds:
         try:
-            inputs["queue"] = waves.queue_pick(2 + held, "name")
+            inputs.queue = waves.queue_pick(2, "name", held)
         except store.Reject as exc:
-            inputs["queue"] = exc
+            inputs.refusal = exc
     if "finalize" in kinds:
-        inputs["rows"] = backlog.backlog_view(backlog.solver_ages())
+        inputs.rows = backlog.backlog_view(backlog.solver_ages())
     return inputs
 
 
@@ -215,8 +226,8 @@ def night_tick() -> dict:
         slots = pacing.slot_order(cfg)
         free = [kind for kind in slots
                 if pacing.slot_live(cfg, kind) < pacing.slot_target(cfg, kind)]
-        items = len(store.STATE["items"])
-    inputs = tick_inputs(free, items)
+        held = {it["id"] for it in store.STATE["items"]}
+    inputs = tick_inputs(free, held)
     with store.LOCK:
         holds = []
         # The reads run with LOCK down, and a reload, a shutdown, or the user
