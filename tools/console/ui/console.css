@@ -220,6 +220,10 @@ span.cw { border-radius:2px; padding:0 .22em; margin:0 -.22em; }
 }
 #nightpanel .nightrow label { display:inline-flex; align-items:center; gap:5px; cursor:pointer; }
 #nightpanel .nightrow b { color:var(--ink); font-weight:600; }
+#nightpanel .nightrow input[type=time] {
+  padding:1px 5px; border:1px solid var(--border); border-radius:5px;
+  background:var(--bg); color:var(--ink); font-family:inherit; font-size:11.5px;
+}
 #nightpanel .nightrow input[type=number] {
   width:46px; padding:2px 5px; border:1px solid var(--border); border-radius:5px;
   background:var(--bg); color:var(--ink); font-family:inherit; font-size:11.5px;
@@ -264,6 +268,11 @@ body.view-final #main { grid-template-columns:330px minmax(360px,520px) 1fr; }
 #rail .railhead {
   padding:8px 12px 4px; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted);
   display:flex; justify-content:space-between;
+}
+#rail .railsearch {
+  display:block; width:calc(100% - 24px); margin:8px 12px 0; padding:3px 7px;
+  border:1px solid var(--border); border-radius:5px; background:var(--bg); color:var(--ink);
+  font-family:ui-monospace,Menlo,monospace; font-size:11.5px;
 }
 #rail .railhead .bktog { display:flex; gap:2px; }
 #rail .railhead .bktog button {
@@ -346,6 +355,10 @@ body.view-final #main { grid-template-columns:330px minmax(360px,520px) 1fr; }
   background:var(--panel2); font-family:ui-monospace,Menlo,monospace; font-size:11.5px; color:var(--muted);
 }
 #taskstrip .taskhead:hover { color:var(--ink); }
+#taskstrip .ttabs { display:flex; gap:10px; }
+#taskstrip .ttab { cursor:pointer; color:var(--muted); }
+#taskstrip .ttab:hover { color:var(--ink); }
+#taskstrip .ttab.on { color:var(--ink); text-decoration:underline; text-underline-offset:4px; }
 #taskstrip .caret { display:inline-block; transition:transform .12s; }
 #taskstrip.open .caret { transform:rotate(90deg); }
 @media (prefers-reduced-motion: reduce) { #taskstrip .caret { transition:none; } }

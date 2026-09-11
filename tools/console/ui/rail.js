@@ -55,9 +55,13 @@ export function BkRow({b, sel, task, metric, onSelect}){
 }
 
 /* a section: {key, head, tools, rows, total, onMore}; rows are rendered
-   already, total is how many there are when the rows on show are a cut */
-export function Rail({sections}){
+   already, total is how many there are when the rows on show are a cut.
+   The search box narrows every section to the ids holding its text, and
+   lifts their cuts. */
+export function Rail({sections, filter, setFilter}){
   return html`<nav id="rail" aria-label="wave items">
+    <input class="railsearch" type="search" placeholder="search ids" aria-label="search ids"
+      value=${filter} onInput=${e=>setFilter(e.target.value.trim().toLowerCase())}/>
     ${sections.map(s=>[
       html`<div class="railhead" key=${s.key+":head"}><span>${s.head}</span>${s.tools||null}</div>`,
       ...s.rows,

@@ -24,11 +24,15 @@ const eta = v => v==null ? "?" : typeof v==="number" ? hhmmDay(v) : String(v);
 const ETA_HELP = "when each window hits 100%: at the current rate; once an hour of one more item is set aside; and the time the gate holds against";
 
 
-export function NightPanel({night, open, onDial, onToggle, onCatchup, onBalance, onSource, onPace}){
+/* the end as the clock reads it, for the time field */
+const endValue = e => { if(!e) return ""; const d=new Date(e*1000);
+  return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); };
+
+export function NightPanel({night, open, onDial, onToggle, onCatchup, onBalance, onSource, onPace, onEnd}){
   const n = night||{}, g = n.gate, tkeys = targetKeys(n), share = n.pace!=="exhaust";
   const races = !share && n.source==="both";
   const refs = {target:useRef(null), finalize_target:useRef(null),
-                reserve:useRef(null), floor:useRef(null)};
+                reserve:useRef(null), floor:useRef(null), end:useRef(null)};
   const log = useRef(null), onBox = useRef(null), catchBox = useRef(null),
         balBox = useRef(null);
   useEffect(()=>{
@@ -39,6 +43,8 @@ export function NightPanel({night, open, onDial, onToggle, onCatchup, onBalance,
     /* the boxes mirror the server, so a click the server does not confirm —
        a declined autopilot prompt — snaps back on the next draw */
     if(onBox.current) onBox.current.checked=!!n.on;
+    { const el=refs.end.current, v=endValue(n.end);
+      if(el && document.activeElement!==el && el.value!==v) el.value=v; }
     if(catchBox.current) catchBox.current.checked=!!n.catchup;
     if(balBox.current) balBox.current.checked=!!n.balance;
     if(log.current) log.current.scrollTop=log.current.scrollHeight;
@@ -69,6 +75,8 @@ export function NightPanel({night, open, onDial, onToggle, onCatchup, onBalance,
         <input ref=${onBox} type="checkbox" checked=${!!n.on}
           onChange=${e=>onToggle(e.target.checked)}/>
         <b>autopilot</b></label>
+      <label title="the clock time the mode turns itself off, the next time the clock reads it; empty for no end">end
+        <input ref=${refs.end} type="time" onChange=${e=>onEnd(e.target.value)}/></label>
       <label title="what an admission is: a queue task run up to finalize, the finalize pass of the next unfinalized solver, or one of each">source
         <select value=${n.source||"queue"} onChange=${e=>onSource(e.target.value)}>
           ${NIGHT_SOURCES.map(src=>html`<option key=${src} value=${src}>${src}</option>`)}

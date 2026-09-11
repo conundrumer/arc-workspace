@@ -43,6 +43,19 @@ export function useSession(selItem, {cli, reviewOrder, select, pins, afterRule})
     if(selItem) seenN.current[selItem.id+"|"+tab]=entries.length;
   });
 
+  /* the task ids the prose of the tab in view names, besides the item's own;
+     tool lines and events are left out, so a path or a hash in a command is
+     no mention */
+  const mentions = useMemo(()=>{
+    const seen=new Set();
+    for(const m of entries){
+      if(m.kind==="tool" || m.kind==="event") continue;
+      for(const w of (m.text||"").match(/\b[0-9a-f]{8}\b/g)||[]) seen.add(w);
+    }
+    if(selItem) seen.delete(selItem.id);
+    return [...seen];
+  },[entries, selItem && selItem.id]);
+
   const nxt = selItem ? nextName(selItem) : null;
   const canAdvance = !!(selItem && nxt && !selItem.active && selItem.hasReport
     && (selItem.state==="needs-review"||selItem.state==="approved"));
@@ -62,8 +75,8 @@ export function useSession(selItem, {cli, reviewOrder, select, pins, afterRule})
     const it=live.current.selItem;
     if(!it||it.state!=="needs-review"){ toast("nothing to approve"); return; }
     const r=await post("/api/approve",{id:it.id});
-    if(r.ok){ toast(it.id+" approved"); nextReview(); }
-  },[nextReview]);
+    if(r.ok) toast(it.id+" approved");
+  },[]);
   const unapprove=useCallback(async()=>{
     const it=live.current.selItem;
     if(!it||it.state!=="approved"){ toast("not approved"); return; }
@@ -185,5 +198,5 @@ export function useSession(selItem, {cli, reviewOrder, select, pins, afterRule})
                             : selItem.handoffPending ? "handoff in flight — draft freely" : "no session yet") : "",
     hint, value:selItem?draft:"", onInput:onDraft, onSend:sendComment};
 
-  return {tab, head, body, composer, code, keys, dismiss};
+  return {tab, head, body, composer, code, keys, dismiss, mentions};
 }

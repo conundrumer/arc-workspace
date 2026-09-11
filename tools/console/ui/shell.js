@@ -9,6 +9,8 @@
      settle(id) loads what a fallback selection shows
      select(id) the user's pick: selects and loads
      detailId   the id whose task the task strip shows
+     mentions   the other task ids the pane in view names; the strip tabs them
+     filter     the rail's search text, applied to the rows
      sections   the rail's sections, see rail.js
      head, body the middle column; a null body shows the placeholder
      composer   the composer's props
@@ -30,6 +32,7 @@ import { TaskStrip } from "/ui/panels/taskstrip.js";
 import { Topbar } from "/ui/panels/topbar.js";
 import { Rail } from "/ui/rail.js";
 import { snap as snapNow, tasks, notify, useServer, post, ensureTask, startPoll } from "/ui/server.js";
+import { hhmmDay } from "/ui/prose.js";
 import { bindToast, toast } from "/ui/toast.js";
 
 const LENSES = {wave, [FINAL]: finalize};
@@ -51,7 +54,8 @@ const KEYS_TAIL = [
 ];
 
 function LensHost({lens, snap, selId, setSelId, pins, cli, view, setView, taskOpen, setTaskOpen}){
-  const L=lens.use({snap, selId, setSelId, pins, cli});
+  const [filter,setFilter]=useState("");
+  const L=lens.use({snap, selId, setSelId, pins, cli, filter});
   const live=useRef({});
   const toggleTask=useCallback(()=>{
     const id=live.current.L.detailId;
@@ -95,14 +99,14 @@ function LensHost({lens, snap, selId, setSelId, pins, cli, view, setView, taskOp
   </div>`;
   return html`
     <div id="main">
-      <${Rail} sections=${L.sections}/>
+      <${Rail} sections=${L.sections} filter=${filter} setFilter=${setFilter}/>
       <div id="judge">
         <div id="judge-head">${L.head}</div>
         ${body}
         <${Composer} ...${L.composer}/>
       </div>
       <div id="codecol">
-        <${TaskStrip} id=${L.detailId} task=${L.detailId?tasks[L.detailId]:null}
+        <${TaskStrip} id=${L.detailId} mentions=${L.mentions}
           open=${L.detailId ? taskOpen[L.detailId]!==false : true} onToggle=${toggleTask}/>
         <${CodePane} ...${L.code||NO_CODE}/>
       </div>
@@ -176,10 +180,11 @@ function App(){
         +" items in flight, create → refine";
       const finText="starts finalize passes over the unfinalized solvers, in triage order: up to "
         +(n.finalize_target??3)+" in flight";
+      const ends = n.end && n.end*1000>Date.now() ? " Ends at "+hhmmDay(n.end)+"." : "";
       const ok=confirm("Autopilot "+(n.source==="unfinalized" ? finText
         : n.source==="both" ? queueText+", and "+finText
         : queueText+((live.current.auto||{}).finalize?" → finalize":""))
-        +", within ~30s of the pacer opening. Start?");
+        +", within ~30s of the pacer opening."+ends+" Start?");
       if(!ok){ notify(); return; }   // the checkbox mirrors the server, so redraw it
     }
     postNight({on}, on?"autopilot on":"autopilot off");
@@ -211,6 +216,7 @@ function App(){
       onBalance=${v=>postNight({balance:v})}
       onSource=${v=>postNight({source:v}, "source · "+v)}
       onPace=${v=>postNight({pace:v}, "pace · "+v)}
+      onEnd=${v=>postNight({end:v||null}, v ? "ends "+v : "no end")}
       onDial=${(key,v)=>postNight({[key]:parseInt(v,10)})}/>
     <${CommitPanel} committer=${committer} open=${commitOpen}/>
     ${lens.Panels && html`<${lens.Panels} snap=${snap}/>`}

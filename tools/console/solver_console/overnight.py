@@ -2,10 +2,12 @@
 admission into each slot of the active source: a queue task, the next
 unfinalized solver's finalize pass, or one of each."""
 
+import re
 import sys
 import threading
 from collections.abc import Collection
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 
 from . import backlog, pacing, prompts, store, waves, workers
 
@@ -13,9 +15,34 @@ from . import backlog, pacing, prompts, store, waves, workers
 NIGHT_DIALS = {"target": (1, 40), "finalize_target": (1, 40), "reserve": (0, 100),
                "floor": (0, 100)}
 ADMIT_POLL = 30        # seconds between admitter passes
+END_TIME = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 
 
 NIGHT_WAKE = threading.Event()
+
+
+def end_epoch(hhmm: str) -> float:
+    """The next time the clock reads `hhmm`: today if that is still ahead,
+    else tomorrow. So an end the user sets is never already past."""
+    now = datetime.fromtimestamp(store.now())
+    at = now.replace(hour=int(hhmm[:2]), minute=int(hhmm[3:]), second=0, microsecond=0)
+    if at <= now:
+        at += timedelta(days=1)
+    return at.timestamp()
+
+
+def end_label(epoch: float) -> str:
+    return datetime.fromtimestamp(epoch).strftime("%H:%M")
+
+
+def night_off(cfg: dict, why: str) -> None:
+    """Turn the mode off. Turns in flight run on; the admitter stops. The
+    end belongs to the run it ended, so it goes with it. Caller holds
+    LOCK."""
+    cfg["on"] = False
+    cfg["wave"] = None
+    cfg["end"] = None
+    pacing.night_say("autopilot off" + (" · " + why if why else ""))
 
 
 def due_resumes() -> list[dict]:
@@ -217,7 +244,12 @@ def night_tick() -> dict:
     stagger = []
     with store.LOCK:
         cfg = pacing.night()
+        if cfg["on"] and cfg["end"] and cfg["end"] <= store.now():
+            night_off(cfg, "scheduled end " + end_label(cfg["end"]))
+            changed = True
         if not cfg["on"] or store.RELOADING or store.SHUTTING_DOWN:
+            if changed:
+                store.bump()
             return out
         for it in due_resumes():
             resume_item(it)
@@ -312,6 +344,8 @@ def night_view() -> dict:
     gate = joint_gate(slots)
     soon = [(it["resume_at"], f"{it['id']} resumes") for it in store.STATE["items"]
             if it.get("resume_at")]
+    if cfg["on"] and cfg["end"]:
+        soon.append((cfg["end"], "autopilot ends"))
     if cfg["on"] and not soon:
         soon.append((store.now() + ADMIT_POLL, "pass"))
     at, what = min(soon) if soon else (None, "")
@@ -347,20 +381,38 @@ def act_night(body: dict) -> dict:
                 cfg[name] = body[name]
                 if cfg["on"]:
                     pacing.night_say(f"{name} · {cfg[name]}")
+        if "end" in body:
+            # a clock time, or nothing for no end; the epoch is the next time
+            # the clock reads it, so it is ahead of now when it is set
+            end = body["end"]
+            if end in (None, ""):
+                if cfg["end"] is not None:
+                    cfg["end"] = None
+                    if cfg["on"]:
+                        pacing.night_say("end · none")
+            elif not isinstance(end, str) or not END_TIME.match(end):
+                return {"error": "end must be a clock time, HH:MM"}
+            else:
+                cfg["end"] = end_epoch(end)
+                if cfg["on"]:
+                    pacing.night_say("end · " + end)
         if "on" in body and bool(body["on"]) != cfg["on"]:
-            cfg["on"] = bool(body["on"])
-            if cfg["on"]:
+            if body["on"]:
+                cfg["on"] = True
                 wk = pacing.window("wk")
                 cfg.update(since=store.now(), wave=None, append=None,
                            wk_start=wk["pct"] if wk else None,
                            wk_start_at=store.now() if wk else None)
+                if cfg["end"] and cfg["end"] <= store.now():
+                    # set for a run that never came; it would end this one at once
+                    cfg["end"] = None
                 slots = pacing.SOURCE_SLOTS[cfg["source"]]
                 targets = (f"target {cfg['target']} · finalize target {cfg['finalize_target']}"
                            if len(slots) > 1 else f"target {pacing.slot_target(cfg, slots[0])}")
-                pacing.night_say(f"autopilot on · {cfg['source']} · {targets}")
+                ends = f" · ends {end_label(cfg['end'])}" if cfg["end"] else ""
+                pacing.night_say(f"autopilot on · {cfg['source']} · {targets}{ends}")
             else:
-                cfg["wave"] = None
-                pacing.night_say("autopilot off")
+                night_off(cfg, "")
         NIGHT_WAKE.set()
     store.bump()
     return {"ok": True}

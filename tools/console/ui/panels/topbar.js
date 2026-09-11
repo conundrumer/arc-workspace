@@ -84,7 +84,8 @@ export function Topbar({view, setView, wave, items, progress, usage, night, nigh
       </span>
       ${extra}
       <button class="primary" disabled=${!items.some(it=>it.state==="approved")}
-        onClick=${onCommit}>commit approved</button>
+        title="commit the approved solvers, and carry the unruled drafts beside them"
+        onClick=${onCommit}>commit</button>
     </div>
   </div>`;
 }

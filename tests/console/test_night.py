@@ -912,6 +912,56 @@ def test_turning_the_mode_on_starts_a_fresh_night(srv, monkeypatch):
     assert srv.night()["wave"] is None
 
 
+def test_an_end_is_the_next_time_the_clock_reads_it(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    assert srv.act_night({"end": "07:30"}) == {"ok": True}
+    end = srv.night()["end"]
+    assert AT < end <= AT + 86400 and srv.end_label(end) == "07:30"
+    assert srv.act_night({"end": srv.end_label(AT + 60)})["ok"]
+    assert srv.night()["end"] - AT < 120     # still ahead: today
+    assert srv.act_night({"end": srv.end_label(AT - 60)})["ok"]
+    assert srv.night()["end"] > AT + 86000   # already past: tomorrow
+
+
+def test_an_end_that_is_no_clock_time_is_refused(srv):
+    for bad in ("24:00", "7:30", "soon", 730):
+        assert "error" in srv.act_night({"end": bad})
+    assert srv.night()["end"] is None
+    srv.act_night({"end": "07:30"})
+    assert srv.act_night({"end": ""}) == {"ok": True}
+    assert srv.night()["end"] is None
+
+
+def test_the_mode_turns_itself_off_at_its_end(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch)
+    srv.act_night({"on": True, "end": srv.end_label(AT + 120)})
+    assert srv.night_view()["next"]["what"] == "autopilot ends"
+    srv.night_tick()
+    assert srv.night()["on"] is True
+    clock_at(srv, monkeypatch, AT + 130)
+    assert srv.night_tick() == {"resumed": [], "admitted": [], "held": None}
+    cfg = srv.night()
+    assert cfg["on"] is False and cfg["end"] is None
+    assert cfg["log"][-1]["text"].startswith("autopilot off · scheduled end ")
+
+
+def test_an_end_goes_with_the_run_it_belongs_to(srv, monkeypatch):
+    clock_at(srv, monkeypatch)
+    set_usage(srv, monkeypatch)
+    srv.act_night({"on": True, "end": "07:30"})
+    srv.act_night({"on": False})
+    assert srv.night()["end"] is None
+    # an end set for a run that never came would end the next one at once
+    srv.act_night({"end": srv.end_label(AT + 60)})
+    clock_at(srv, monkeypatch, AT + 120)
+    srv.act_night({"on": True})
+    cfg = srv.night()
+    assert cfg["on"] is True and cfg["end"] is None
+    srv.night_tick()
+    assert srv.night()["on"] is True
+
+
 def test_the_console_payload_carries_the_night(srv, monkeypatch):
     clock_at(srv, monkeypatch)
     set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50)

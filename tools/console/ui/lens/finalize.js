@@ -31,7 +31,7 @@ const sizeOf = (row, order) => ["flag","passes"].includes(order) ? null : (row[o
 
 export const finalize = {
   id: FINAL,
-  use({snap, selId, setSelId, pins, cli}){
+  use({snap, selId, setSelId, pins, cli, filter}){
     const items=snap.items;
     const [backlog,setBacklog]=useState([]);
     const [finRows,setFinRows]=useState({});   // id -> lens row of a finalize pass in flight
@@ -85,12 +85,15 @@ export const finalize = {
     }, [railOrder, items, selId, bkOrder, finRows]);
     /* the rows arrive in triage order; the other orderings resort them here */
     const bkSorted=useMemo(()=>[...backlog].sort(bkCmp(bkOrder)), [backlog, bkOrder]);
-    const bkShown=useMemo(()=>bkAll ? bkSorted : bkSorted.slice(0, BK_SHOWN), [bkSorted, bkAll]);
+    const bkShown=useMemo(()=>filter ? bkSorted.filter(b=>b.id.includes(filter))
+      : bkAll ? bkSorted : bkSorted.slice(0, BK_SHOWN), [bkSorted, bkAll, filter]);
+    const finShown=useMemo(()=>filter ? itemOrder.filter(id=>id.includes(filter)) : itemOrder,
+      [itemOrder, filter]);
     /* one selection over both sections: in-pass items, then the unfinalized rows
        on show. An id that is both a live item and a row resolves to the item. */
     const order=useMemo(()=>
-      itemOrder.concat(bkShown.map(b=>b.id).filter(id=>!itemOrder.includes(id))),
-      [itemOrder, bkShown]);
+      finShown.concat(bkShown.map(b=>b.id).filter(id=>!itemOrder.includes(id))),
+      [finShown, bkShown, itemOrder]);
 
     const selItem = items.find(it=>it.id===selId) || null;
     const selBk = !selItem ? (backlog.find(b=>b.id===selId)||null) : null;
@@ -134,7 +137,7 @@ export const finalize = {
     const tools=html`<span class="bktog">${Object.keys(BK_ORDERS).map(k=>html`<button key=${k}
       class=${bkOrder===k?"on":""} title=${BK_ORDERS[k]}
       onClick=${()=>setBkOrder(k)}>${k==="flag"?"flag ↑":k==="passes"?"passes":k+" ↓"}</button>`)}</span>`;
-    const finRowsShown=itemOrder.map(id=>html`<${ItemRow} key=${id} it=${items.find(x=>x.id===id)}
+    const finRowsShown=finShown.map(id=>html`<${ItemRow} key=${id} it=${items.find(x=>x.id===id)}
       task=${tasks[id]} metric=${sizeOf(finRows[id]||{}, bkOrder)}
       sel=${!!selItem && id===selId} onSelect=${select}/>`);
     const bkRows=bkShown.map(b=>html`<${BkRow} key=${b.id} b=${b} task=${tasks[b.id]}
@@ -148,10 +151,11 @@ export const finalize = {
       select,
       detailId,
       sections: [
-        {key:"fin", head:"finalizing · "+itemOrder.length, tools, rows:finRowsShown, total:itemOrder.length},
+        {key:"fin", head:"finalizing · "+itemOrder.length, tools, rows:finRowsShown, total:finShown.length},
         {key:"bk", head:"unfinalized · "+bkSorted.length, rows:bkRows,
-         total:bkSorted.length, onMore:()=>setBkAll(true)},
+         total:filter ? bkRows.length : bkSorted.length, onMore:()=>setBkAll(true)},
       ],
+      mentions: session.mentions,
       head, body, composer: session.composer, code,
       keys: session.keys,
     };

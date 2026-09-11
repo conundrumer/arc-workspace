@@ -28,6 +28,7 @@ NIGHT_DEFAULTS = {
     "floor": 5,        # weekly points spendable however early in the week
     "catchup": True,   # spend the slack the week has accumulated
     "balance": False,  # hold the slot whose window leads, so the two keep pace
+    "end": None,       # epoch at which the mode turns itself off; None for no end
 }
 
 # share: the pace lines hold weekly quota back for work outside the console.

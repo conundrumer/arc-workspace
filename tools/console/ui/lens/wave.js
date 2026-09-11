@@ -1,6 +1,8 @@
 /* The wave lens: the items whose stage landed without what it owes first,
    then every item in cache-expiry order, cut to the first rows until the
-   user asks for the rest. */
+   user asks for the rest. A review that has gone cold with nothing new on
+   it is past the cut too, so the list holds the items the user can still
+   steer warm; "show all" and the search reach the rest. */
 import { html, useState, useEffect, useCallback } from "/vendor/htm-preact-standalone.module.js";
 import { useClocked } from "/ui/clock.js";
 import { cacheInfo } from "/ui/item.js";
@@ -12,9 +14,12 @@ const RAIL_SHOWN = 40;   // wave rows listed until the user asks for the rest
 
 export const wave = {
   id: "wave",
-  use({snap, selId, setSelId, pins, cli}){
+  use({snap, selId, setSelId, pins, cli, filter}){
     const items=snap.items;
     const [railAll,setRailAll]=useState(false);   // every wave row, on the user's ask
+    /* past the default cut: a review gone cold with nothing new on it. An
+       owed item stays, as the user must bring its turn by hand. */
+    const old = it => it.state==="needs-review" && !it.updated && !it.owes && cacheInfo(it).cls==="cold";
 
     /* a stage that landed without its report, callouts, or handoff leads,
        for the user to bring it by hand; then soonest-expiring cache first: a
@@ -27,10 +32,13 @@ export const wave = {
     /* The selected one stays past the cut, so a row does not vanish from
        under the detail pane while it is being read. */
     const order=useClocked(()=>{
-      if(railAll || railOrder.length<=RAIL_SHOWN) return railOrder;
-      const shown=railOrder.slice(0, RAIL_SHOWN);
+      if(filter) return railOrder.filter(id=>id.includes(filter));
+      if(railAll) return railOrder;
+      const byId=new Map(items.map(it=>[it.id, it]));
+      const fresh=railOrder.filter(id=>byId.has(id) && !old(byId.get(id)));
+      const shown=fresh.length<=RAIL_SHOWN ? fresh : fresh.slice(0, RAIL_SHOWN);
       return railOrder.includes(selId) && !shown.includes(selId) ? shown.concat([selId]) : shown;
-    }, [railOrder, selId, railAll]);
+    }, [railOrder, selId, railAll, filter, items]);
 
     const selItem = items.find(it=>it.id===selId) || null;
     const select=useCallback(id=>{
@@ -57,7 +65,8 @@ export const wave = {
       select,
       detailId: selItem ? selItem.id : null,
       sections: [{key:"wave", head:"owed first · cache ↑expiring", rows,
-                  total:railOrder.length, onMore:()=>setRailAll(true)}],
+                  total:filter ? rows.length : railOrder.length, onMore:()=>setRailAll(true)}],
+      mentions: session.mentions,
       head: session.head, body: session.body, composer: session.composer, code: session.code,
       keys: session.keys,
     };
