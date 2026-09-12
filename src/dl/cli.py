@@ -38,9 +38,10 @@ from dl.souffle import (
     CPU_LIMIT_SECONDS,
     _pool_workers,
     build_functors,
+    expression_report,
     sweep_temp_sources,
 )
-from dl.source import expand_macros
+from dl.source import build_source, expand_macros
 from dl.sweep import MAX_CANDIDATES, render_sweep, sweep_report
 
 type Findings = list[tuple[str, int, str, str]]
@@ -179,6 +180,12 @@ def cmd_one(stem: str, hints: bool = False, timed: bool = False) -> int:
         else:
             for line in render_pair_failure(p, stem):
                 print(line)
+
+    if result.all_pass:
+        source_text = (SOLVERS_DIR / f"{stem}.dl").read_text()
+        report = expression_report(build_source(source_text))
+        if report is not None:
+            print(report)
 
     coverage = [] if res_out_stem(stem) else case_coverage(result.pairs)
     if coverage:

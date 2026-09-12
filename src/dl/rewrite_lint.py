@@ -197,6 +197,71 @@ def _record_fields(items: Iterable[Item]) -> dict[str, list[str]]:
     return out
 
 
+def _calls_range(t: Term) -> bool:
+    match t:
+        case Call(name, args, functor):
+            return (name == "range" and not functor) or any(_calls_range(a) for a in args)
+        case Rec(args) | Ctor(_, args):
+            return any(_calls_range(a) for a in args)
+        case BinOp(_, lhs, rhs):
+            return _calls_range(lhs) or _calls_range(rhs)
+        case UnOp(_, arg):
+            return _calls_range(arg)
+    return False
+
+
+@lru_cache(maxsize=2)
+def _lib_inline(text: str) -> tuple[frozenset[str], frozenset[str]]:
+    """Two sets read off the lib's text: its top-level inline relations,
+    and those among them whose expansion introduces no variable: every
+    clause binds only head variables, with no wildcard, range, or
+    aggregate, through relations that are themselves such. Souffle accepts
+    `!prim(...)` at one of these when the use binds every column, and
+    rejects the negation of any other inline relation."""
+    try:
+        items = parse(text).items
+    except ParseError:
+        return frozenset(), frozenset()
+    inline = frozenset(
+        it.name for it in items
+        if isinstance(it, Decl) and "inline" in it.qualifiers
+    )
+    clauses: dict[str, list[Rule]] = {}
+    for it in items:
+        if isinstance(it, Rule) and it.body is not None \
+                and it.head.qual is None and it.head.name in inline:
+            clauses.setdefault(it.head.name, []).append(it)
+
+    def closed(r: Rule) -> bool:
+        head_vars = literal_vars(r.head)
+        for lit in r.body or []:
+            if isinstance(lit, Bool):
+                continue
+            if not isinstance(lit, (Atom, Cmp)):
+                return False
+            if literal_vars(lit) - head_vars:
+                return False
+            if isinstance(lit, Atom) and any(_has_wild(a) for a in lit.args):
+                return False
+            if isinstance(lit, Cmp) and (_calls_range(lit.lhs) or _calls_range(lit.rhs)):
+                return False
+        return True
+
+    negatable = {n for n in inline if all(closed(r) for r in clauses.get(n, []))}
+    changed = True
+    while changed:
+        changed = False
+        for n in list(negatable):
+            for r in clauses.get(n, []):
+                for lit in r.body or []:
+                    if isinstance(lit, Atom) and lit.qual is None \
+                            and lit.name in inline and lit.name not in negatable:
+                        negatable.discard(n)
+                        changed = True
+                        break
+    return inline, frozenset(negatable)
+
+
 @lru_cache(maxsize=2)
 def _lib_records(text: str) -> dict[str, list[str]]:
     """lib.dl's record types, keyed on its text."""
@@ -357,6 +422,7 @@ class _Lint:
             self.subsumed_atoms(info)
             self.lib_idiom(info)
             self.named_complement(info)
+            self.negated_value(info)
             self.long_rule(info)
         self.decl_placement()
         if hints:
@@ -486,6 +552,12 @@ class _Lint:
         if len(set(head_vars)) != len(head_vars) or \
                 set(head_vars) != set(atom_vars):
             return
+        inline, negatable = _lib_inline(_lib_source())
+        if self.ix.resolve(key[0], atom.qual, atom.name)[0] == EXTERN \
+                and atom.qual is None and atom.name in inline \
+                and atom.name not in negatable \
+                and any(u.role == "neg" for u in self.uses(key)):
+            return  # the rename is what lets Souffle negate the primitive
         self.claim("alias-inline", key, self.decl_of(key).line,
                    f"`{_atom_str(defs[0].head)}` is `{_atom_str(atom)}` renamed")
 
@@ -497,7 +569,7 @@ class _Lint:
         if not uses or any(u.role != "neg" for u in uses):
             return
         defs = self.defs(key)
-        if not defs or any(not self._projection(d) for d in defs):
+        if not defs or any(not self._projection(d, key[0]) for d in defs):
             return
         self.claim("negated-use", key, self.decl_of(key).line,
                    self._neg_rewrite(key, defs))
@@ -518,14 +590,24 @@ class _Lint:
             parts.append(f"!{_atom_str(atom, names)}")
         return f"`!{key[1]}({', '.join(canon)})` ⇒ `{', '.join(parts)}`"
 
-    def _projection(self, d: Rule) -> bool:
+    def _projection(self, d: Rule, scope: str) -> bool:
         """The rule projects a single positive atom: negating the head is
         negating the atom with the dropped columns wildcarded. A dropped
         variable used twice constrains the atom, so it blocks the rewrite.
         So does a dropped column inside a record or constructor argument:
-        Souffle cannot ground a wildcard inside a record under negation."""
+        Souffle cannot ground a wildcard inside a record under negation.
+        A lib inline atom negates only when its expansion introduces no
+        variable and the use binds every column."""
         if d.body is None or len(d.body) != 1 or not isinstance(d.body[0], Atom):
             return False
+        atom = d.body[0]
+        inline, negatable = _lib_inline(_lib_source())
+        if self.ix.resolve(scope, atom.qual, atom.name)[0] == EXTERN \
+                and atom.qual is None and atom.name in inline:
+            head_vars = {a.name for a in d.head.args if isinstance(a, Var)}
+            if atom.name not in negatable or literal_vars(atom) - head_vars \
+                    or any(_has_wild(a) for a in atom.args):
+                return False
         counts: dict[str, int] = {}
         for arg in d.body[0].args:
             for v in term_vars(arg):
@@ -1306,6 +1388,79 @@ class _Lint:
             if names[2] in (p, q) and ({p, q} - {names[2]}) & set(src):
                 return atom.name
         return None
+
+    def negated_value(self, info: RuleInfo) -> None:
+        """`prim(..., K), K != c`, with K read nowhere else: `!prim(..., c)`
+        says it directly. Only at a lib inline relation whose negation
+        Souffle accepts, and only when the rewrite binds every column."""
+        rule = info.rule
+        if rule.body is None or rule.grid:
+            return
+        _, negatable = _lib_inline(_lib_source())
+        head_vars = literal_vars(rule.head)
+        flats = list(_flatten(rule.body))
+        atoms = {id(l): l for f in flats for l in f if isinstance(l, Atom)}
+        for atom in atoms.values():
+            if atom.qual is not None or atom.name not in negatable \
+                    or self.ix.resolve(info.scope, None, atom.name)[0] != EXTERN \
+                    or any(_has_wild(a) for a in atom.args):
+                continue
+            for i, arg in enumerate(atom.args):
+                if not isinstance(arg, Var) or arg.name in head_vars:
+                    continue
+                v = arg.name
+                if sum(1 for a in atom.args if v in term_vars(a)) != 1:
+                    continue
+                const = self._sole_complement(atom, v, flats)
+                if const is None:
+                    continue
+                rest = [a for j, a in enumerate(atom.args) if j != i]
+                if not all(
+                    self._bound_elsewhere(atom, w, flats)
+                    for a in rest for w in term_vars(a)
+                ):
+                    continue
+                new_atom = Atom(atom.qual, atom.name,
+                                tuple(const if j == i else a for j, a in enumerate(atom.args)),
+                                atom.line)
+                self.add("negated-value", atom.line,
+                         f"`{_atom_str(atom)}, {v} != {_term_str(const)}` ⇒ "
+                         f"`!{_atom_str(new_atom)}`")
+                break
+
+    def _sole_complement(
+        self, atom: Atom, v: str, flats: list[list[Lit]],
+    ) -> Term | None:
+        """The constant `v` is compared against by `!=` in one literal, the
+        only other literal reading `v`, in every expansion holding `atom`."""
+        const: Term | None = None
+        for flat in flats:
+            if not any(l is atom for l in flat):
+                continue
+            others = [lit for lit in flat if lit is not atom and v in literal_vars(lit)]
+            if len(others) != 1 or not isinstance(others[0], Cmp) or others[0].op != "!=":
+                return None
+            cmp = others[0]
+            if isinstance(cmp.lhs, Var) and cmp.lhs.name == v:
+                t = cmp.rhs
+            elif isinstance(cmp.rhs, Var) and cmp.rhs.name == v:
+                t = cmp.lhs
+            else:
+                return None
+            if not isinstance(t, (Num, MacroConst)) or (const is not None and const != t):
+                return None
+            const = t
+        return const
+
+    @staticmethod
+    def _bound_elsewhere(atom: Atom, w: str, flats: list[list[Lit]]) -> bool:
+        """`w` is read by a literal other than `atom` in every expansion
+        holding `atom`, so the negation of `atom` leaves it grounded."""
+        return all(
+            any(lit is not atom and not isinstance(lit, (Neg, Cmp)) and w in literal_vars(lit)
+                for lit in flat)
+            for flat in flats if any(l is atom for l in flat)
+        )
 
     def named_complement(self, info: RuleInfo) -> None:
         """`R(V), X != V` against a singleton fact: `!R(X)` says it

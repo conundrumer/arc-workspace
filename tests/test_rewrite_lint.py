@@ -871,3 +871,49 @@ out(P, C, [S, $Cover()]) :- in(P, C), step_choice(S).
         "`bg` is shared, and `$Cover()` never reads it; a parameter one "
         "case never reads belongs under that case's marker",
     ]
+
+
+def test_negated_value_fires_on_off_edge_test():
+    src = """\
+.decl out(p: Position)
+out(P) :- in(P, _), params.d(D), dist(P, D, K), K != 0.
+"""
+    fs = lint_rewrites(src)
+    assert [f[0] for f in fs] == ["negated-value"]
+    assert fs[0][2] == "`dist(P, D, K), K != 0` ⇒ `!dist(P, D, 0)`"
+
+
+def test_negated_value_keeps_a_read_value():
+    src = """\
+.decl out(p: Position, k: number)
+out(P, K) :- in(P, _), params.d(D), dist(P, D, K), K != 0.
+"""
+    assert "negated-value" not in cats(src)
+
+
+def test_negated_value_skips_a_primitive_that_introduces_variables():
+    src = """\
+.decl out(p: Position)
+out(P) :- in(P, _), params.d(D), dist_pair(P, D, K, _), K != 0.
+"""
+    assert "negated-value" not in cats(src)
+
+
+def test_negated_use_rewrites_a_wrapper_over_a_bound_primitive():
+    src = """\
+.decl key(p: Position, d: Dir)
+key(P, D) :- dist(P, D, 0).
+.decl out(p: Position)
+out(P) :- in(P, _), params.d(D), !key(P, D).
+"""
+    assert "negated-use" in cats(src)
+
+
+def test_negated_use_keeps_a_wrapper_that_drops_a_primitive_column():
+    src = """\
+.decl key(p: Position)
+key(P) :- crop(P, _, _).
+.decl out(p: Position)
+out(P) :- in(P, _), !key(P).
+"""
+    assert "negated-use" not in cats(src)

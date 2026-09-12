@@ -25,7 +25,7 @@ ARITH_OPS = {"+", "-", "*", "/", "%", "^"}
 CMP_OPS = {"=", "!=", "<", "<=", ">", ">="}
 DECL_QUALIFIERS = {"inline", "btree", "brie", "eqrel", "override", "overridable"}
 GRID_RE = re.compile(r"GRID_(STAMP_)?(MASK_|SPARSE_)?\d+x\d+$")
-MACRO_CONST_RE = re.compile(r"[A-Z][A-Z0-9]*_[A-Z0-9_]*$")
+MACRO_CONST_RE = re.compile(r"(?:[A-Z][A-Z0-9]*_[A-Z0-9_]*|ZERO)$")
 
 
 class ParseError(Exception):

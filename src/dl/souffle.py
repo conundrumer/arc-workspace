@@ -29,6 +29,14 @@ TEMP_NAME_RE = re.compile(r"\.tmp\w+\.dl")
 # solve-mode program, so the first error is what a compile failure is about.
 FIRST_ERROR_RE = re.compile(r"^Error:", re.M)
 
+# Souffle's report when a rule takes a record pattern to a Box a functor
+# returned: it names the pattern's variable and asserts instead of erroring.
+_PATTERN_ON_FUNCTOR_RE = re.compile(r"variable not grounded: (\w+) at \S+ \[(\d+):")
+
+# Functor calls a rule's body holds after Souffle inlines the lib primitives,
+# from which the run reports the rule.
+EXPRESSION_REPORT_MIN = 100
+
 # A profile's `source-locator`: the file, then the span it covers.
 LOCATOR_RE = re.compile(r"^(?P<file>.*) \[(?P<line>\d+):\d+-\d+:\d+\]$")
 
@@ -133,6 +141,51 @@ def _run_source(
             raise RuntimeError(f"{e}\n{note}") from None
 
 
+def _explained(stderr: str) -> str:
+    """Souffle's stderr, led by a plain statement of the one failure it
+    reports as an assertion: a record pattern over a Box a functor returned.
+    A Box a primitive returns is read by a primitive; a rule that has to
+    take it apart binds it through a relation first."""
+    m = _PATTERN_ON_FUNCTOR_RE.search(stderr)
+    if m and "Assertion failed" in stderr:
+        return (f"a record pattern binds `{m.group(1)}` (line {m.group(2)}) from a "
+                "Box a functor returned, which Souffle cannot ground; read the Box "
+                "through a primitive, or derive it in a relation and take it apart "
+                f"there\n{stderr}")
+    return stderr
+
+
+def expression_report(built: str) -> str | None:
+    """One line naming the rule whose body holds the most functor calls
+    after Souffle inlines the lib primitives, when that count reaches
+    EXPRESSION_REPORT_MIN. The count measures what one candidate tuple costs
+    to evaluate; the line goes in the review, and says nothing about how the
+    solver should read. None when the count is under the threshold or the
+    program does not compile."""
+    try:
+        with _temp_source(built) as run_path:
+            result = subprocess.run(
+                ["souffle", "--show=transformed-datalog", "-w", "-L", str(PROGRAMS_DIR),
+                 "-lfunctors", str(run_path)],
+                input="", capture_output=True, text=True, timeout=60,
+            )
+    except subprocess.TimeoutExpired:
+        return None
+    if result.returncode != 0:
+        return None
+    largest: tuple[str, int] | None = None
+    for rule in re.split(r"\.\s*\n", result.stdout):
+        if ":-" not in rule:
+            continue
+        head = rule.split(":-", 1)[0].strip().split("(", 1)[0]
+        calls = rule.count("@")
+        if largest is None or calls > largest[1]:
+            largest = (head, calls)
+    if largest is None or largest[1] < EXPRESSION_REPORT_MIN:
+        return None
+    return f"expression size: {largest[0]}, {largest[1]} functor calls after inlining"
+
+
 def compile_check(built: str) -> str | None:
     """Souffle's complaint about `built`, or None when it compiles.
 
@@ -153,7 +206,7 @@ def compile_check(built: str) -> str | None:
     if result.returncode == 0:
         return None
     m = FIRST_ERROR_RE.search(result.stderr)
-    detail = result.stderr[m.start():] if m else result.stderr
+    detail = result.stderr[m.start():] if m else _explained(result.stderr)
     return f"souffle exited {result.returncode}:\n{detail}"
 
 
@@ -184,7 +237,8 @@ def _souffle(
         raise _CpuLimit(
             f"souffle exceeded the {cpu_limit}s CPU limit on {dl_path.name}")
     if result.returncode != 0:
-        raise RuntimeError(f"souffle exited {result.returncode}:\n{result.stderr}")
+        raise RuntimeError(
+            f"souffle exited {result.returncode}:\n{_explained(result.stderr)}")
     return result.stdout
 
 

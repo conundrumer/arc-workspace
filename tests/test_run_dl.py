@@ -547,3 +547,15 @@ def test_a_stale_temp_source_is_swept_and_a_live_one_kept(tmp_path, monkeypatch)
     os.utime(stale, (now - 7200, now - 7200))
     assert souffle.sweep_temp_sources(now) == 1
     assert not stale.exists() and live.exists()
+
+
+def test_explained_restates_a_pattern_over_a_functor_result():
+    from dl.souffle import _explained
+
+    stderr = ("variable not grounded: T at .tmpx.dl [108:49-108:50]\n"
+              'Assertion failed: ("variable not grounded" && false), '
+              "function visit_, file ValueTranslator.cpp, line 48.\n")
+    out = _explained(stderr)
+    assert out.startswith("a record pattern binds `T` (line 108)")
+    assert out.endswith(stderr)
+    assert _explained("Error: Ungrounded variable X\n") == "Error: Ungrounded variable X\n"
