@@ -74,19 +74,17 @@
     .init comps = Components<Key>
     comps.node(K, P) :- on(K, P).
 
-    .init frame = BoxFrame<Obj>
-    frame.cell([K, Id], P) :- comps.label(K, P, Id).
+    .init bbox = Bbox<Obj>
+    bbox.cell([K, Id], P) :- comps.label(K, P, Id).
 
     .init same = KeyedSetCompare<Obj, Unit, Position>
     same.pattern_member($U(), P) :- params.block_shape(P).
-    same.observed_member(O, P)   :- frame.inner(O, _, P).
+    same.observed_member(O, P_inner) :-
+        bbox.cell(O, P), bbox.box(O, B), crop(P, B, P_inner).
 
     .init blocks = Tally<Key, Ident>
     blocks.item(K, Id) :- same.equals([K, Id], $U()).
     blocks.domain(K) :- cell(K, _, _).
-
-    .decl block_count(k: Key, n: number)
-    block_count(K, N) :- blocks.tally(K, N).
 }
 
 .init parse = Parse<Unit>
@@ -102,7 +100,7 @@ occ.shape($U(), P, $U()) :- params.block_shape(P).
 placements.item($U(), P) :- occ.occurrence($U(), P).
 
 .decl total(n: number, detect: Detect)
-total(N, $Object())    :- parse.block_count($U(), N).
+total(N, $Object())    :- parse.blocks.tally($U(), N).
 total(N, $Placement()) :- placements.tally($U(), N).
 
 // --- render ---
@@ -135,5 +133,5 @@ out(P, Col, [Det, $Lookup()]) :- total(N, Det), params.lookup_grid(N, P, Col).
 
     // A count's grid is its example's whole output.
     .decl lookup_grid(n: number, p: Position, col: Color)
-    lookup_grid(N, P, Col) :- parse.block_count(E, N), ex_out(E, P, Col).
+    lookup_grid(N, P, Col) :- parse.blocks.tally(E, N), ex_out(E, P, Col).
 }

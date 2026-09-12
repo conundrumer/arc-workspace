@@ -70,15 +70,15 @@ scene(P) :- panels.tile_of($U(), P, P_tile), !legend_panel(P_tile).
 
 // --- the scene panel, in its own frame: the output ---
 
-.init view = BoxFrame<Unit>
+.init view = Bbox<Unit>
 view.cell($U(), P) :- scene(P).
 
 .decl cell(p_intile: Position, col: Color)
-cell(P_intile, Col) :- in(P, Col), view.inner($U(), P, P_intile).
+cell(P_intile, Col) :- scene(P), in(P, Col), view.box($U(), B), crop(P, B, P_intile).
 
 // --- the direction the arrow names ---
 
-.init arrow_box = BoxFrame<Unit>
+.init arrow_box = Bbox<Unit>
 arrow_box.cell($U(), P) :- in(P, Col), params.arrow(Col).
 
 .decl heading(a: Aim, d: Dir)
@@ -86,7 +86,7 @@ arrow_box.cell($U(), P) :- in(P, Col), params.arrow(Col).
 // --- Widest ---
 
 .init bar = Mode<Unit, Dir, Position>
-bar.item($U(), D, P) :- arrow_box.edge_cell($U(), P, D).
+bar.item($U(), D, P) :- arrow_box.cell($U(), P), arrow_box.box($U(), B), box_edge(P, B, D).
 
 heading($Widest(), D) :- bar.mode($U(), D_bar), opposite(D_bar, D).
 
@@ -95,7 +95,8 @@ heading($Widest(), D) :- bar.mode($U(), D_bar), opposite(D_bar, D).
 // The arrow's picture, read in its own box, against the chart in every pose.
 .init pose = KeyedSetCompare<Unit, D4, Position>
 pose.pattern_member(D, P) :- params.chart_glyph(D, P).
-pose.observed_member($U(), P_inner) :- arrow_box.inner($U(), _, P_inner).
+pose.observed_member($U(), P_inner) :-
+    arrow_box.cell($U(), P), arrow_box.box($U(), B), crop(P, B, P_inner).
 
 heading($Glyph(), D_tip) :- pose.equals($U(), D), params.chart_tip(D, D_tip).
 
@@ -105,10 +106,8 @@ heading($Glyph(), D_tip) :- pose.equals($U(), D), params.chart_tip(D, D_tip).
 payload(P, Col) :-
     legend(P), in(P, Col), !params.bg(Col), !params.anchor(Col), !params.arrow(Col).
 
-.init pay_box = BoxFrame<Unit>
+.init pay_box = Bbox<Unit>
 pay_box.cell($U(), P) :- payload(P, _).
-// The payload may leave its box corners empty; grid keeps the whole box viewed.
-pay_box.grid($U(), P) :- legend(P).
 
 // --- what the payload attaches to ---
 
@@ -128,8 +127,8 @@ occ.shape($U(), P, Col) :- template(P, Col).
 occ.cell($U(), P, Col) :- scene(P), in(P, Col).
 
 target(P_intile, $Template()) :-
-    occ.occurrence($U(), M), template(S, _), compose(M, S, P),  // the template placed
-    view.inner($U(), P, P_intile).
+    occ.occurrence($U(), B_occ), template(S, _), compose(B_occ, S, P),  // the template placed
+    scene(P), view.box($U(), B), crop(P, B, P_intile).
 
 // --- the stamp ---
 
@@ -141,16 +140,17 @@ target_box.cell(T, P_intile) :- target(P_intile, T).
 // across the arrow run, and they agree where the boxes are equally wide.
 .decl placement(v: Box, c: Choice)
 placement(V, [T, A]) :-
-    heading(A, D), diag_dirs(Diag, _, D, D_x),                                 // the target's corner on that side
-    opposite(D, D_back), diag_dirs(Diag_pay, _, D_back, D_x),                  // the payload's corner facing it
-    target_box.box(T, M), cell(C, _), corner_anchor(Diag, C, M),            // the target's corner cell
-    neighbor(C, D, S),                                                         // the seat beyond it
-    pay_box.inner($U(), _, P_inner), corner_anchor(Diag_pay, P_inner, ZERO), // the payload's corner cell
-    relative(P_inner, S, V).                                               // the shift that seats the payload
+    heading(A, D), diag_dirs(Diag, _, D, D_x),                             // the target's corner on that side
+    opposite(D, D_back), diag_dirs(Diag_pay, _, D_back, D_x),              // the payload's corner facing it
+    target_box.box(T, B_tgt), cell(C, _), corner_anchor(Diag, C, B_tgt),   // the target's corner cell
+    neighbor(C, D, S),                                                     // the seat beyond it
+    legend(P), pay_box.box($U(), B_pay), box_corner(P, B_pay, Diag_pay),   // the payload's corner cell
+    crop(P, B_pay, P_inner),                                               // in the payload's box
+    relative(P_inner, S, V).                                    // the frame change that seats the payload
 
 .decl stamp(p_intile: Position, col: Color, c: Choice)
 stamp(Q, Col, Ch) :-
-    placement(V, Ch), payload(P, Col), pay_box.inner($U(), P, P_inner),
+    placement(V, Ch), payload(P, Col), pay_box.box($U(), B_pay), crop(P, B_pay, P_inner),
     compose(P_inner, V, Q), cell(Q, _).
 
 .decl impl_choice(ch: Choice)
@@ -170,9 +170,9 @@ out(P_intile, Col, Ch) :-
     .init pick = Canon<Example>
     pick.equiv(E, E2) :- arrow_cell(E, _), arrow_cell(E2, _).
 
-    .init bbox = BoxFrame<Example>
+    .init bbox = Bbox<Example>
     bbox.cell(E, P) :- pick.rep(E, E), arrow_cell(E, P).
 
     .decl chart_glyph(p: Position)
-    chart_glyph(S) :- bbox.inner(_, _, S).
+    chart_glyph(P_inner) :- bbox.cell(E, P), bbox.box(E, B), crop(P, B, P_inner).
 }

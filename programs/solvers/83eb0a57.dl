@@ -20,12 +20,12 @@ field.item($U(), Col, P) :- in(P, Col).
 .init comps = Components<Unit>
 comps.node($U(), P) :- in(P, Col), !field.mode($U(), Col).
 
-.init frame = BoxFrame<Ident>
-frame.cell(Id, P) :- comps.label($U(), P, Id).
+.init bbox = Bbox<Ident>
+bbox.cell(Id, P) :- comps.label($U(), P, Id).
 
 // Each rectangle's cells in its own frame.
 .decl rect(id: Ident, p_inner: Position, col: Color)
-rect(Id, P_inner, Col) :- frame.inner(Id, P, P_inner), in(P, Col).
+rect(Id, P_inner, Col) :- bbox.cell(Id, P), bbox.box(Id, B), crop(P, B, P_inner), in(P, Col).
 
 .init size = Tally<Ident, Position>
 size.item(Id, P) :- comps.label($U(), P, Id).

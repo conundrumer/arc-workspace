@@ -71,13 +71,14 @@ impl_choice([$Divide(), $Diagonal()]). impl_choice([$Divide(), $Lookup()]).
     frame.divider(K, A, L) :-
         params.axis(A), line_color.value([K, L], Col), params.sep(Col).
 
-    .init panel_box = BoxFrame<Panel>
+    .init panel_box = Bbox<Panel>
     panel_box.cell([K, $Separator(), P_tile], P) :- frame.tile_of(K, P, P_tile).
 
     // A cell with its panel and its position inside that panel.
     .decl panel(key: Key, cut: Cut, p: Position, p_tile: Position, p_intile: Position)
     panel(K, $Separator(), P, P_tile, P_intile) :-
-        panel_box.inner([K, $Separator(), P_tile], P, P_intile).
+        frame.tile_of(K, P, P_tile),
+        panel_box.box([K, $Separator(), P_tile], B), crop(P, B, P_intile).
 
     // --- Divide ---
     panel(K, $Divide(), P, P_tile, P_intile) :-

@@ -26,11 +26,9 @@
 .init pieces = Components<Unit>
 pieces.node($U(), P) :- in(P, Col), !params.bg(Col).
 
-// Each square viewed from its own box: the crop frame, and the inside the
-// punched cells sit in.
-.init bbox = BoxFrame<Ident>
+// Each square's own box: the crop frame, and the inside the punched cells sit in.
+.init bbox = Bbox<Ident>
 bbox.cell(Id, P) :- pieces.label($U(), P, Id).
-bbox.grid(Id, P) :- pieces.label($U(), _, Id), in(P, _).
 
 .decl score(id: Ident, ch: Choice, n: number)
 
@@ -44,7 +42,7 @@ score(Id, $Ink(), N) :- ink_count.tally(Id, N).
 
 .init hole_count = Tally<Ident, Position>
 hole_count.domain(Id) :- pieces.label($U(), _, Id).  // an unpunched square scores 0
-hole_count.item(Id, P) :- bbox.inside(Id, P), in(P, Col), params.bg(Col).
+hole_count.item(Id, P) :- bbox.box(Id, B), in(P, Col), params.bg(Col), inside(P, B).
 score(Id, $Holes(), N) :- hole_count.tally(Id, N).
 
 // --- $Cavities ---
@@ -68,4 +66,4 @@ shared(Id, Ch) :- score(Id, Ch, N), score(Id2, Ch, N), Id != Id2.
 .decl out(p: Position, col: Color, ch: Choice)
 out(P_inner, Col, Ch) :-
     score(Id, Ch, _), !shared(Id, Ch),      // the square nothing ties with
-    bbox.inner(Id, P, P_inner), in(P, Col).  // cropped to its own box
+    bbox.box(Id, B), in(P, Col), crop(P, B, P_inner).  // cropped to its own box

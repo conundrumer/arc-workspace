@@ -44,8 +44,11 @@ frame(B, Col) :- drect.box(Col, B), held(B, _, C), C != Col.
 fill(P, Col) :- frame(B, _), held(B, P, Col).
 
 // The frame's inside, in its own frame.
-.init hole = BoxFrame<Unit>
+.init hole = Bbox<Unit>
 hole.cell($U(), P) :- frame(B, _), in(P, _), interior(P, B).
+
+.decl hole_view(p: Position, p_inner: Position)
+hole_view(P, P_inner) :- hole.cell($U(), P), hole.box($U(), B), crop(P, B, P_inner).
 
 // A grid cell the frame's box covers.
 .decl covered(p: Position)
@@ -58,31 +61,34 @@ outside(P, Col) :- in(P, Col), ink(Col), !covered(P).
 .decl shape_cell(s: Shape, p: Position)
 
 // Each shape's pattern: its cells in its own box.
-.init pattern = BoxFrame<Shape>
+.init pattern = Bbox<Shape>
 pattern.cell(S, P) :- shape_cell(S, P).
+
+.decl pattern_cell(s: Shape, p_tile: Position)
+pattern_cell(S, P_tile) :- shape_cell(S, P), pattern.box(S, B), crop(P, B, P_tile).
 
 // The frame's inside divided into a shape's pattern of blocks.
 .init blocks = Divide2D<Shape>
-blocks.cell(P_inner) :- hole.inner($U(), _, P_inner).
-blocks.dim(S, A, N) :- pattern.extent(S, A, N).
+blocks.cell(P_inner) :- hole_view(_, P_inner).
+blocks.dim(S, A, N) :- shape_cell(S, P), pattern.box(S, B), box_extent(B, P, A, N).
 blocks.gap(0).
 
 // The fill contradicts a shape: a fill cell sits in a block the shape's
 // pattern leaves empty.
 .decl contradicted(s: Shape)
 contradicted(S) :-
-    fill(P_grid, _), hole.inner($U(), P_grid, P_inner),
-    blocks.tile(S, P_inner, P_tile, _), !pattern.inner(S, _, P_tile).
+    fill(P_grid, _), hole_view(P_grid, P_inner),
+    blocks.tile(S, P_inner, P_tile, _), !pattern_cell(S, P_tile).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P_grid_out, Col, Ch) :-
     frame(B, Col), in(P_grid_in, _), box_edge(P_grid_in, B, _),
     crop(P_grid_in, B, P_grid_out), impl_choice(Ch).
 out(P_grid_out, Col, Ch) :-
-    hole.inner($U(), P_grid_in, P_inner), frame(B, _), crop(P_grid_in, B, P_grid_out),
+    hole_view(P_grid_in, P_inner), frame(B, _), crop(P_grid_in, B, P_grid_out),
     blocks.tile(S, P_inner, P_tile, _), !contradicted(S), S = [Ch, _],  // the shape the fill hints at
-    ( pattern.inner(S, _, P_tile), fill(_, Col)      // a pattern cell: filled
-    ; !pattern.inner(S, _, P_tile), params.bg(Col)   // else bg
+    ( pattern_cell(S, P_tile), fill(_, Col)      // a pattern cell: filled
+    ; !pattern_cell(S, P_tile), params.bg(Col)   // else bg
     ).
 
 // --- Color ---

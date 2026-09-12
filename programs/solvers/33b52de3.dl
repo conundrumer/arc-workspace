@@ -21,16 +21,18 @@
 
 // The miniature. Its own frame is the tile arrangement, so each of its cells
 // sits at a tile place.
-.init mini = BoxFrame<Unit>
+.init mini = Bbox<Unit>
 mini.cell($U(), P) :- in(P, Col), !params.bg(Col), !params.tile_col(Col).
 
-.init field = BoxFrame<Unit>
+.init field = Bbox<Unit>
 field.cell($U(), P) :- in(P, Col), params.tile_col(Col).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- in(P, Col), !params.tile_col(Col).
 out(P, Col) :-
-    field.inner($U(), P, P_inner),                       // a tile cell, in the field's frame
+    field.cell($U(), P), field.box($U(), B_field),
+    crop(P, B_field, P_inner),                           // a tile cell, in the field's frame
     params.tile_dim(K), params.gap(G),                   // the arrangement's step
     divide_by_size_2d(P_inner, K, G, P_tile, _),         // the tile it falls in
-    in(P_mini, Col), mini.inner($U(), P_mini, P_tile).   // the miniature's cell there
+    in(P_mini, Col), mini.cell($U(), P_mini),
+    mini.box($U(), B_mini), crop(P_mini, B_mini, P_tile).   // the miniature's cell there

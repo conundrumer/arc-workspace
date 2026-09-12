@@ -42,25 +42,32 @@ comps.node(Col, P) :- in(P, Col), !bg_mode.mode($U(), Col).
 
 .init comp_box = Bbox<Ident>
 comp_box.cell(Id, P) :- comps.label(_, P, Id).
-comp_box.grid(Id, P) :- comps.label(_, _, Id), in(P, _).
 
 // The blocks are the components that fill their own box; a component that
 // leaves a cell of that box empty is a key.
 .decl pierced(id: Ident)
-pierced(Id) :- comp_box.inside(Id, P), !comp_box.cell(Id, P).
+pierced(Id) :- comp_box.box(Id, B), in(P, _), inside(P, B), !comp_box.cell(Id, P).
 
 .decl block(col: Color, p: Position)
 block(Col, P) :- comps.label(Col, P, Id), !pierced(Id).
 
-.init block_box = BoxFrame<Color>
+.init block_box = Bbox<Color>
 block_box.cell(Col, P) :- block(Col, P).
+
+// A block's cells, in the block's own frame.
+.decl block_inner(col: Color, p: Position, p_inner: Position)
+block_inner(Col, P, P_inner) :- block(Col, P), block_box.box(Col, B), crop(P, B, P_inner).
 
 // A block's key: the cells of its color that the block does not hold.
 .decl key_cell(col: Color, p: Position)
 key_cell(Col, P) :- in(P, Col), block(Col, _), !block(Col, P).
 
-.init key_box = BoxFrame<Color>
+.init key_box = Bbox<Color>
 key_box.cell(Col, P) :- key_cell(Col, P).
+
+// The key's cells, in the key's own frame.
+.decl key_inner(col: Color, p_inner: Position)
+key_inner(Col, P_inner) :- key_cell(Col, P), key_box.box(Col, B), crop(P, B, P_inner).
 
 // --- punch: the block cells the key takes out ---
 
@@ -68,17 +75,19 @@ key_box.cell(Col, P) :- key_cell(Col, P).
 
 // $Center — the key centered in the block.
 hole(P, $Center()) :-
-    block_box.inner(Col, P, P_blk), key_box.inner(Col, _, P_key),   // block cell, key cell
-    relative(P_key, P_blk, B), centered(B).                         // the key lands centered
+    block_inner(Col, P, P_blk), key_inner(Col, P_key),  // block cell, key cell
+    relative(P_key, P_blk, B), centered(B).             // the key lands centered
 
 // $Interior — the key fills the block less its rim.
 .init rim = Rim<Color>
 rim.cell(Col, P) :- block(Col, P).
 
-.init inside_box = BoxFrame<Color>
+.init inside_box = Bbox<Color>
 inside_box.cell(Col, P) :- block(Col, P), !rim.rim(Col, P).
 
-hole(P, $Interior()) :- inside_box.inner(Col, P, P_inner), key_box.inner(Col, _, P_inner).
+hole(P, $Interior()) :-
+    inside_box.cell(Col, P), inside_box.box(Col, B), crop(P, B, P_inner),
+    key_inner(Col, P_inner).
 
 // --- frame: where each input cell shows in the output ---
 
@@ -99,13 +108,13 @@ view(P, P_out, $Crop()) :- crop_box(B), in(P, _), crop(P, B, P_out).
 // A block's place is its rank from each of the four edges; blocks level with
 // each other share a rank, so a band of them lands in one row.
 .init lane = Ordinal<Dir>
-lane.idx_set(D, K) :- block_box.edge_min(_, D, K).
+lane.idx_set(D, K) :- block_box.box(_, B), dir_elem(D), dist(B, D, K).
 
 .init tile = DirPack<Color>
-tile.edge(Col, D, R) :- block_box.edge_min(Col, D, K), lane.rank(D, K, R).
+tile.edge(Col, D, R) :- block_box.box(Col, B), dir_elem(D), dist(B, D, K), lane.rank(D, K, R).
 
 view(P, P_out, $Arrange()) :-
-    block_box.inner(Col, P, P_inner), tile.box(Col, P_tile),  // block cell, its tile
+    block_inner(Col, P, P_inner), tile.box(Col, P_tile),      // block cell, its tile
     params.border(K), concat_2d(P_tile, P_inner, K, P_lat),   // tiles set the border apart
     uniform_inset(K, B), compose(B, P_lat, P_out).            // the lattice seated inside the border
 
@@ -133,5 +142,5 @@ out(P_out, Col, [Pu, $Arrange()]) :-                            // border
     bbox.cell(E, P) :- ex_out(E, P, Col), !bg_mode.mode(E, Col).
 
     .decl border(k: number)
-    border(K) :- bbox.edge_min(_, _, K).
+    border(K) :- bbox.box(_, B), dir_elem(D), dist(B, D, K).
 }

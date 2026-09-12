@@ -53,24 +53,25 @@ piece.node($U(), P) :- panel(T, P, Col), !template(T, _), !bg(Col).
 piece_cell(O, P, Col) :- piece.label($U(), P, O), in(P, Col).
 
 // A piece's pattern, read from its own bbox.
-.init bbox = BoxFrame<Ident>
+.init bbox = Bbox<Ident>
 bbox.cell(O, P) :- piece_cell(O, P, _).
 
 .decl shape(o: Ident, p_inner: Position, col: Color)
-shape(O, S, Col) :- bbox.inner(O, P, S), piece_cell(O, P, Col).
+shape(O, P_inner, Col) :- piece_cell(O, P, Col), bbox.box(O, B), crop(P, B, P_inner).
 
 // --- the candidate placements ---
 
 // Where a piece lands with each of its cells on a hole.
 .init occ = Occurrences<Ident, Unit>
-occ.shape(O, S, $U()) :- shape(O, S, _).
+occ.shape(O, P_inner, $U()) :- shape(O, P_inner, _).
 occ.cell(O, P, $U()) :- shape(O, _, _), hole(P).
 
-// A candidate: a piece translated to a spot, named by the spot's margins.
-.type Cand = [o: Ident, m: Position]
+// A candidate: a piece translated to a spot, named by that spot.
+.type Cand = [o: Ident, p_spot: Position]
 
 .decl covers(cd: Cand, p: Position, col: Color)
-covers([O, M], P, Col) :- occ.occurrence(O, M), shape(O, S, Col), compose(M, S, P).
+covers([O, P_spot], P, Col) :-
+    occ.occurrence(O, P_spot), shape(O, P_inner, Col), compose(P_spot, P_inner, P).
 
 // --- interchangeable pieces ---
 
@@ -86,8 +87,8 @@ reading_elem([D, A]) :- diag_dir_elem(D), axis_elem(A).
 .type Member = [p_inner: Position, col: Color]
 
 .init congruent = KeyedSetCompare<Ident, Ident, Member>
-congruent.pattern_member(O, [S, Col]) :- shape(O, S, Col).
-congruent.observed_member(O, [S, Col]) :- shape(O, S, Col).
+congruent.pattern_member(O, [P_inner, Col]) :- shape(O, P_inner, Col).
+congruent.observed_member(O, [P_inner, Col]) :- shape(O, P_inner, Col).
 
 // The order a reading puts the positions in: where the pieces sit, and
 // where they may go.
@@ -102,23 +103,23 @@ reads.axis([D, A], A) :- reading_elem([D, A]).
 // beside it. Overlap conflicts under every reading; each reading adds its
 // own tie-break among congruent pieces.
 .init pruning = PlacementPruning<Reading, Cand, Ident>
-pruning.cand(R, [O, M], O) :- reading_elem(R), occ.occurrence(O, M).
+pruning.cand(R, [O, P_spot], O) :- reading_elem(R), occ.occurrence(O, P_spot).
 pruning.conflict(R, Cd, Cd2) :-
     reading_elem(R), covers(Cd, P, _), covers(Cd2, P, _).  // over one cell
-pruning.conflict(R, [O, M], [O2, M2]) :-
-    congruent.equals(O, O2), O != O2,                              // interchangeable pieces
-    bbox.box(O, S), bbox.box(O2, S2), reads.before(R, S, S2),  // O sits first
-    occ.occurrence(O, M), occ.occurrence(O2, M2),
-    reads.before(R, M2, M).                                        // but takes the later spot
+pruning.conflict(R, [O, P_spot], [O2, P_spot2]) :-
+    congruent.equals(O, O2), O != O2,                               // interchangeable pieces
+    bbox.box(O, B), bbox.box(O2, B2), reads.before(R, B, B2),       // O sits first
+    occ.occurrence(O, P_spot), occ.occurrence(O2, P_spot2),
+    reads.before(R, P_spot2, P_spot).                               // but takes the later spot
 
 // --- the output ---
 
-.init view = BoxFrame<Unit>
+.init view = Bbox<Unit>
 view.cell($U(), P) :- panel(T, P, _), template(T, _).
 
 .decl out(p: Position, col: Color)
-out(P_out, Col) :-
-    view.inner($U(), P, P_out),
+out(P_inner, Col) :-
+    view.cell($U(), P), view.box($U(), B), crop(P, B, P_inner),
     ( panel(T, P, Col), template(T, Col)                // the template's own ink
     ; pruning.alive(_, Cd, _), covers(Cd, P, Col)       // a piece over the hole
     ).

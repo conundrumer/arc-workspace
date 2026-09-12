@@ -39,14 +39,12 @@ bg_cell(P) :- in(P, Col), params.bg(Col).
 // A cell set seen from its own box, where its symmetries live.
 .comp Parse<Key> {
     .decl cell(key: Key, p: Position)  // input
-    .decl grid(key: Key, p: Position)  // input
 
-    .init bbox = BoxFrame<Key>
+    .init bbox = Bbox<Key>
     bbox.cell(K, P) :- cell(K, P).
-    bbox.grid(K, P) :- grid(K, P).
 
     .init sym = D4Map<Key, Unit>
-    sym.src(K, P_inner, $U()) :- cell(K, P), bbox.inner(K, P, P_inner).
+    sym.src(K, P_inner, $U()) :- cell(K, P), bbox.box(K, B), crop(P, B, P_inner).
     sym.dst(K, P, V) :- sym.src(K, P, V).
 }
 
@@ -68,10 +66,9 @@ shape.node($U(), P) :- in(P, Col), !params.bg(Col).
 
 .init shape_box = Bbox<Ident>
 shape_box.cell(Id, P) :- shape.label($U(), P, Id).
-shape_box.grid(Id, P) :- shape.label($U(), _, Id), in(P, _).
 
 .init boxed = Components<Unit>
-boxed.node($U(), P) :- shape_box.inside(_, P), bg_cell(P).
+boxed.node($U(), P) :- shape_box.box(_, B), bg_cell(P), inside(P, B).
 
 hole([$Box(), Id], P) :- boxed.label($U(), P, Id).
 
@@ -79,7 +76,6 @@ hole([$Box(), Id], P) :- boxed.label($U(), P, Id).
 
 .init view = Parse<Hole>
 view.cell(H, P) :- hole(H, P).
-view.grid(H, P) :- hole(H, _), in(P, _).
 
 .decl filled(h: Hole, t: Test)
 
@@ -87,9 +83,12 @@ view.grid(H, P) :- hole(H, _), in(P, _).
 
 // A cell of the hole's box the hole leaves out.
 .decl box_gap(h: Hole)
-box_gap(H) :- view.bbox.inside(H, P), !hole(H, P).
+box_gap(H) :- view.bbox.box(H, B), in(P, _), inside(P, B), !hole(H, P).
 
-filled(H, $Block()) :- view.bbox.extents(H, _, N, N), !box_gap(H).
+filled(H, $Block()) :-
+    hole(H, P), view.bbox.box(H, B),                               // the hole's box
+    box_extent(B, P, A, N), perp(A, A2), box_extent(B, P, A2, N),  // as wide as it is tall
+    !box_gap(H).
 
 // --- $Sym ---
 

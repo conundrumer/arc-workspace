@@ -35,19 +35,22 @@
 
 // --- legend ---
 
-.init legend = BoxFrame<Unit>
+.init legend = Bbox<Unit>
 legend.cell($U(), P) :- in(P, Col), params.frame(Col).
-legend.grid($U(), P) :- in(P, _).
+
+// A grid cell the legend covers, with its place in the legend's frame.
+.decl legend_cell(p: Position, p_inner: Position)
+legend_cell(P, P_inner) :- legend.box($U(), B), in(P, _), crop(P, B, P_inner).
 
 // A marker, in the legend's frame.
 .decl marker(p_inner: Position, col: Color)
-marker(P_inner, Col) :- legend.inner($U(), P, P_inner), in(P, Col), !params.frame(Col).
+marker(P_inner, Col) :- legend_cell(P, P_inner), in(P, Col), !params.frame(Col).
 
 // --- shapes ---
 
-// Each color's shape outside the legend, viewed from its bounding box.
-.init shape = BoxFrame<Color>
-shape.cell(Col, P) :- in(P, Col), !params.bg(Col), !legend.inside($U(), P).
+// Each color's shape outside the legend, with its bounding box.
+.init shape = Bbox<Color>
+shape.cell(Col, P) :- in(P, Col), !params.bg(Col), !legend_cell(P, _).
 
 // --- Legend, Concat ---
 
@@ -58,7 +61,9 @@ quadrant_color(P_tile, Col) :-
 
 // The shape a quadrant's marker names, in the shape's own frame.
 .decl quadrant_ink(p_tile: Position, p_intile: Position, col: Color)
-quadrant_ink(P_tile, P_intile, Col) :- quadrant_color(P_tile, Col), shape.inner(Col, _, P_intile).
+quadrant_ink(P_tile, P_intile, Col) :-
+    quadrant_color(P_tile, Col),
+    shape.cell(Col, P), shape.box(Col, B), crop(P, B, P_intile).
 
 // --- output ---
 
@@ -74,8 +79,8 @@ out(P, Col, Ch) :-
 
 // --- Legend, Stamp ---
 
-canvas($Legend(), P_grid_out) :- legend.inner($U(), _, P_grid_out).
-canvas($Stamp(), P_grid_out) :- legend.inner($U(), _, P_grid_out).
+canvas($Legend(), P_grid_out) :- legend_cell(_, P_grid_out).
+canvas($Stamp(), P_grid_out) :- legend_cell(_, P_grid_out).
 
 // --- Legend ---
 
@@ -99,6 +104,7 @@ canvas($Concat(), P) :- assembled.cell($U(), P).
 // --- Stamp ---
 
 ink($Stamp(), P_grid_out, Col) :-
-    canvas($Stamp(), P_grid_out), marker(M, Col), shape.inner(Col, _, P_intile),  // a canvas cell, a marker, a cell of its crop
-    relative(P_intile, P_grid_out, P_box),   // the crop's box, holding the canvas cell at that crop cell
-    relative(P_box, M, V), centered(V).      // the marker at the box's center
+    canvas($Stamp(), P_grid_out), marker(M, Col),                  // a canvas cell and a marker
+    shape.cell(Col, P), shape.box(Col, B), crop(P, B, P_intile),   // a cell of the marker's crop
+    relative(P_intile, P_grid_out, B_stamp),      // the crop's box, holding the canvas cell there
+    relative(B_stamp, M, P_rel), centered(P_rel). // the marker at the box's center

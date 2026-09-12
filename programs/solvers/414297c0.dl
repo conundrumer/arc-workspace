@@ -34,19 +34,21 @@
 .init canvas = Mode<Unit, Color, Position>
 canvas.item($U(), Col, P) :- in(P, Col), !params.bg(Col).
 
-// The canvas viewed from its own box — the output frame.
-.init bbox = BoxFrame<Unit>
+.init bbox = Bbox<Unit>
 bbox.cell($U(), P) :- in(P, Col), canvas.mode($U(), Col).
-bbox.grid($U(), P) :- in(P, _).
+
+// The grid cells the canvas box covers, viewed from that box — the output frame.
+.decl canvas_view(p: Position, p_out: Position)
+canvas_view(P, P_out) :- in(P, _), bbox.box($U(), B), crop(P, B, P_out).
 
 // A canvas cell that breaks the canvas color — a stamp site.
 .decl dot(p_out: Position, col: Color)
 dot(P_out, Col) :-
-    bbox.inner($U(), P, P_out), in(P, Col), !canvas.mode($U(), Col).
+    canvas_view(P, P_out), in(P, Col), !canvas.mode($U(), Col).
 
 // The cells the glyphs are made of: off the canvas, off the background.
 .decl outside(p: Position, col: Color)
-outside(P, Col) :- in(P, Col), !params.bg(Col), !bbox.inner($U(), P, _).
+outside(P, Col) :- in(P, Col), !params.bg(Col), !canvas_view(P, _).
 
 // The key of the glyph a dot designates: the cell in the dot's color.
 .decl key(p: Position, col: Color)
@@ -74,11 +76,11 @@ obj.node($U(), P) :- outside(P, _).
 .decl glyph(col: Color, v: Offset, ink: Color, ch: Choice)
 
 glyph(Col, V, Ink, [$Near(), Pt]) :-
-    key(P, Col), dir8_elem(D), neighbor(P, D, Q),    // one step off the key
-    ink_cell(Q, Ink, Pt), step_offset(D, V).          // onto a glyph cell
+    key(P, Col), dir8_elem(D), neighbor(P, D, Q),   // one step off the key
+    ink_cell(Q, Ink, Pt), step_offset(D, V).        // onto a glyph cell
 
 glyph(Col, V, Ink, [$Object(), Pt]) :-
-    key(P, Col), obj.conn($U(), P, Q), Q != P,      // another cell of the key's object
+    key(P, Col), obj.conn($U(), P, Q), Q != P,   // another cell of the key's object
     ink_cell(Q, Ink, Pt), relative(P, Q, V).     // onto a glyph cell
 
 // --- out ---
@@ -87,7 +89,7 @@ glyph(Col, V, Ink, [$Object(), Pt]) :-
 stamp(P_stamp, Ink, Ch) :-
     dot(P_dot, Col), glyph(Col, V, Ink, Ch),
     compose(P_dot, V, P_stamp),        // the glyph placed on the dot
-    bbox.inner($U(), _, P_stamp).       // clipped to the canvas
+    canvas_view(_, P_stamp).           // clipped to the canvas
 
 .decl impl_choice(ch: Choice)
 impl_choice([Sp, Pt]) :- spread_choice(Sp), paint_choice(Pt).
@@ -95,5 +97,5 @@ impl_choice([Sp, Pt]) :- spread_choice(Sp), paint_choice(Pt).
 .decl out(p: Position, col: Color, ch: Choice)
 out(P_out, Col, Ch) :- stamp(P_out, Col, Ch).
 out(P_out, Col, Ch) :-
-    impl_choice(Ch), bbox.inner($U(), P, P_out), in(P, Col),
+    impl_choice(Ch), canvas_view(P, P_out), in(P, Col),
     !stamp(P_out, _, Ch).

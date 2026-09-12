@@ -47,12 +47,12 @@ key_ink(P, Col) :- params.key_side(D), side_of(P, D), in(P, Col), !params.bg(Col
 .decl canvas(p: Position)
 canvas(P) :- params.key_side(D), opposite(D, S), side_of(P, S).
 
-.init key = BoxFrame<Unit>
+.init key = Bbox<Unit>
 key.cell($U(), P) :- key_ink(P, _).
 
 // The key's cells in the key's own frame.
 .decl key_cell(p_intile: Position, col: Color)
-key_cell(P_intile, Col) :- key.inner($U(), P, P_intile), key_ink(P, Col).
+key_cell(P_intile, Col) :- key.box($U(), B), key_ink(P, Col), crop(P, B, P_intile).
 
 .decl mark(p: Position)
 mark(P) :- canvas(P), in(P, Col), params.mark(Col).
@@ -69,18 +69,22 @@ paint(P_grid, Col, $Center()) :-
 
 // --- $Tile ---
 
-.init cv = BoxFrame<Unit>
+.init cv = Bbox<Unit>
 cv.cell($U(), P) :- canvas(P).
+
+// A canvas cell in the canvas's own frame.
+.decl canvas_cell(p_grid: Position, p_canvas: Position)
+canvas_cell(P_grid, P_canvas) :- cv.box($U(), B), canvas(P_grid), crop(P_grid, B, P_canvas).
 
 // The canvas cut into tiles the size of the key's box.
 .init cvt = Tile2D<Unit>
-cvt.cell(P_canvas) :- cv.inner($U(), _, P_canvas).
-cvt.dim($U(), A, N) :- key.extent($U(), A, N).
+cvt.cell(P_canvas) :- canvas_cell(_, P_canvas).
+cvt.dim($U(), A, N) :- key.box($U(), B), key.cell($U(), P), box_extent(B, P, A, N).
 cvt.gap(0).
 
 .decl tile_of(p_grid: Position, p_tile: Position, p_intile: Position)
 tile_of(P_grid, P_tile, P_intile) :-
-    cv.inner($U(), P_grid, P_canvas), cvt.tile($U(), P_canvas, P_tile, P_intile).
+    canvas_cell(P_grid, P_canvas), cvt.tile($U(), P_canvas, P_tile, P_intile).
 
 paint(P_grid, Col, $Tile()) :-
     mark(M), tile_of(M, P_tile, _),        // the mark's tile

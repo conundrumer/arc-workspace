@@ -53,10 +53,12 @@ plain(F, Col) :- fig_col.value(F, Col).
 .decl wall_cell(f: Ident, p: Position)
 wall_cell(F, P) :- fig(F, P), in(P, Col), plain(_, Col).
 
-// A figure seen from its own bbox.
-.init bbox = BoxFrame<Ident>
+// A figure's own bbox, and the cells it covers in that figure's own frame.
+.init bbox = Bbox<Ident>
 bbox.cell(F, P) :- fig(F, P).
-bbox.grid(F, P) :- fig(F, _), in(P, _).
+
+.decl fig_inner(f: Ident, p: Position, p_inner: Position)
+fig_inner(F, P, P_inner) :- in(P, _), bbox.box(F, B), crop(P, B, P_inner).
 
 // The holes: what a figure's walls close off from the grid edge.
 .init closed = Closed<Ident>
@@ -66,7 +68,7 @@ closed.cell(F, P) :- fig(F, _), in(P, _), !wall_cell(F, P).
 hole(F, R) :- closed.region(F, _, R).
 
 .decl hole_inner(r: Ident, p_inner: Position)
-hole_inner(R, P_inner) :- closed.region(F, P, R), bbox.inner(F, P, P_inner).
+hole_inner(R, P_inner) :- closed.region(F, P, R), fig_inner(F, P, P_inner).
 
 // The axis the midline inverts, one hypothesis per case. A hole's class is its
 // side on that axis, and its rank runs along the perpendicular.
@@ -80,7 +82,7 @@ class_axis($Stored(), A) :- params.class_axis(A).
 // figure, so either one gives the axis, and a disagreement leaves it
 // multivalued.
 .init fig_sym = D4Map<Ident, Unit>
-fig_sym.src(F, P_inner, $U()) :- fig(F, P), bbox.inner(F, P, P_inner).
+fig_sym.src(F, P_inner, $U()) :- fig(F, P), fig_inner(F, P, P_inner).
 fig_sym.dst(F, P_inner, V) :- fig_sym.src(F, P_inner, V).
 
 class_axis($Mirror(), A) :- flip_of(A, D), fig_sym.map(_, D).
@@ -129,8 +131,8 @@ hole_box.cell(R, P_inner) :- hole_inner(R, P_inner).
 hole_rank.elem([A, F, D], R) :- hole(F, R), rank_dir(A, D).
 hole_rank.before([A, F, D], R, R2) :-
     hole(F, R), hole(F, R2), same_class(A, R, R2),          // two of one class
-    rank_dir(A, D), hole_box.box(R, M), hole_box.box(R2, M2),
-    nearer(D, M, M2).                                       // R reaches nearer edge D
+    rank_dir(A, D), hole_box.box(R, B), hole_box.box(R2, B2),
+    nearer(D, B, B2).                                       // R reaches nearer edge D
 
 // Class and rank pair the two figures' holes. Both ends of the rank axis
 // rank them, and a disagreement leaves the pairing multivalued.
@@ -147,7 +149,7 @@ hole_col.item(R, Col) :- closed.region(_, P, R), in(P, Col).
 .decl out(p: Position, col: Color, ch: Choice)
 out(P_inner, Col, Ch) :-
     class_axis(Ch, A),                                     // the case's midline axis
-    plain(F, C_wall), bbox.inner(F, P, P_inner),            // a cell of the plain figure's box
+    plain(F, C_wall), fig_inner(F, P, P_inner),            // a cell of the plain figure's box
     ( fig(F, P), Col = C_wall                              // its wall
     ; closed.region(F, P, R),                              // one of its holes,
       partner(A, R, R_src), hole_col.value(R_src, Col)     // in its partner's color

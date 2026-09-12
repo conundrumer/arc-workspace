@@ -32,24 +32,28 @@
 .init rect = Components<Unit>
 rect.node($U(), P) :- in(P, Col), !params.bg(Col).
 
-.init bbox = BoxFrame<Ident>
+.init bbox = Bbox<Ident>
 bbox.cell(Id, P) :- rect.label($U(), P, Id).
+
+// A rectangle's cell, in the rectangle's own frame.
+.decl rect_cell(p: Position, p_inner: Position)
+rect_cell(P, P_inner) :- bbox.cell(Id, P), bbox.box(Id, B), crop(P, B, P_inner).
 
 // The dash's ink phase, in the rectangle's own frame. The divide admits
 // only an odd extent, where the phase reads the same from either end, so
 // the dash needs no anchor.
 .decl ink_run(p: Position)
 ink_run(P) :-
-    bbox.inner(_, P, P_inner),                                 // the cell, rectangle-framed
-    params.dash_axis(A), params.dash(K), params.gap(G),       // the period
-    divide_by_size(P_inner, A, K, G, _, _).                   // on an ink run
+    rect_cell(P, P_inner),                               // the cell, rectangle-framed
+    params.dash_axis(A), params.dash(K), params.gap(G),  // the period
+    divide_by_size(P_inner, A, K, G, _, _).              // on an ink run
 
 // The cells the dash covers.
 .decl dash_cover(p: Position, ch: Choice)
 
 // --- $Midline ---
 dash_cover(P, $Midline()) :-
-    bbox.inner(_, P, P_inner),                          // the cell, rectangle-framed
+    rect_cell(P, P_inner),                             // the cell, rectangle-framed
     params.dash_axis(A), perp(A, A2), axis_of(D, A2),  // an edge across the dash axis
     dist_pair(P_inner, D, K, K).                       // centered between it and its opposite
 

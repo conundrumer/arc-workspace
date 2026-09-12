@@ -29,8 +29,13 @@ shapes.node(Col, P_grid) :- in(P_grid, Col), !params.bg(Col).
 .init size = Tally<Ident, Position>
 size.item(M, P_grid) :- shapes.label(_, P_grid, M).
 
-.init bbox = BoxFrame<Ident>
+.init bbox = Bbox<Ident>
 bbox.cell(M, P_grid) :- shapes.label(_, P_grid, M).
+
+// A shape cell, seen in its own box.
+.decl shape_inner(m: Ident, p_grid: Position, p_inner: Position)
+shape_inner(M, P_grid, P_inner) :-
+    shapes.label(_, P_grid, M), bbox.box(M, B), crop(P_grid, B, P_inner).
 
 // --- the row ---
 
@@ -40,7 +45,7 @@ bbox.cell(M, P_grid) :- shapes.label(_, P_grid, M).
 .type Line = [m: Ident, k: number]
 
 .decl line(m: Ident, k: number)
-line(M, K) :- bbox.inner(M, _, P_intile), params.pack_dir(D), dist(P_intile, D, K).
+line(M, K) :- shape_inner(M, _, P_inner), params.pack_dir(D), dist(P_inner, D, K).
 
 .init row = Order<Unit, Line>
 row.elem($U(), [M, K]) :- line(M, K).
@@ -51,10 +56,10 @@ row.before($U(), [M, K], [M2, K2]) :-
 
 .decl paint(p: Position, col: Color)
 paint(P_grid_out, Col) :-
-    shapes.label(Col, P_grid_in, M), bbox.inner(M, P_grid_in, P_intile),     // a shape cell, seen in its own box
-    params.pack_dir(D), dist(P_intile, D, K), row.rank($U(), [M, K], R),    // the place its line takes
-    in(P_grid_out, _), dist(P_grid_out, D, R),                              // an output grid cell, seated at that place
-    rest_dir(D_rest), same_dist(D_rest, P_intile, P_grid_out).              // as far off the rest edge as in its bbox
+    shapes.label(Col, P_grid_in, M), shape_inner(M, P_grid_in, P_inner), // a shape cell, seen in its own box
+    params.pack_dir(D), dist(P_inner, D, K), row.rank($U(), [M, K], R),  // the place its line takes
+    in(P_grid_out, _), dist(P_grid_out, D, R),                           // an output grid cell, seated at that place
+    rest_dir(D_rest), same_dist(D_rest, P_inner, P_grid_out).            // as far off the rest edge as in its own box
 
 .decl out(p: Position, col: Color)
 out(P_grid, Col) :- paint(P_grid, Col).

@@ -42,8 +42,11 @@ bbox.cell(Id, P) :- cell_of(Id, P).
 hole(Id, P) :- bbox.box(Id, B), cell_of(Id, P), interior(P, B).
 
 // The inside, viewed from its own frame.
-.init within = BoxFrame<Ident>
-within.cell(Id, P) :- hole(Id, P).
+.init hole_box = Bbox<Ident>
+hole_box.cell(Id, P) :- hole(Id, P).
+
+.decl hole_view(id: Ident, p: Position, p_inner: Position)
+hole_view(Id, P, P_inner) :- hole(Id, P), hole_box.box(Id, B), crop(P, B, P_inner).
 
 .decl frame_color(id: Ident, col: Color)
 frame_color(Id, Col) :- bbox.box(Id, B), cell_of(Id, P), box_edge(P, B, _), in(P, Col).
@@ -64,7 +67,7 @@ impl_choice($Join()). impl_choice($Medial()).
 // edge than the corner's.
 .decl arm(id: Ident, p_inner: Position, diag: DiagDir)
 arm(Id, P_inner, Diag) :-
-    within.inner(Id, _, P_inner), diag_dir_elem(Diag), diag_dirs(Diag, _, D1, D2),
+    hole_view(Id, _, P_inner), diag_dir_elem(Diag), diag_dirs(Diag, _, D1, D2),
     dist_pair(P_inner, D1, K, K1), dist_pair(P_inner, D2, K, K2),   // on the corner's diagonal
     K <= K1, K <= K2.                                                // on the corner's side
 
@@ -76,9 +79,9 @@ arm_end(Id, P_inner) :-
 
 // The line joining two arm ends.
 .init join = Between<Ident>
-join.cell(Id, P_inner) :- within.inner(Id, _, P_inner).
+join.cell(Id, P_inner) :- hole_view(Id, _, P_inner).
 join.mark(Id, P_inner) :- arm_end(Id, P_inner).
-join.axis(Id, A) :- within.inner(Id, _, _), axis_elem(A).
+join.axis(Id, A) :- hole_view(Id, _, _), axis_elem(A).
 
 drawn(Id, P_inner, $Join()) :- arm(Id, P_inner, _).
 drawn(Id, P_inner, $Join()) :- join.between(Id, P_inner).
@@ -87,16 +90,16 @@ drawn(Id, P_inner, $Join()) :- join.between(Id, P_inner).
 
 // The nearest edges of each inside cell.
 .init nearest = ArgExtremes<Position, Dir>
-nearest.cand(P, D, K) :- within.inner(_, P, P_inner), dir_elem(D), dist(P_inner, D, K).
+nearest.cand(P, D, K) :- hole_view(_, P, P_inner), dir_elem(D), dist(P_inner, D, K).
 
 drawn(Id, P_inner, $Medial()) :-
-    within.inner(Id, P, P_inner), nearest.low(P, D1, _), nearest.low(P, D2, _), D1 != D2.
+    hole_view(Id, P, P_inner), nearest.low(P, D1, _), nearest.low(P, D2, _), D1 != D2.
 
 // --- output ---
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
-    within.inner(Id, P, P_inner), impl_choice(Ch),
+    hole_view(Id, P, P_inner), impl_choice(Ch),
     ( drawn(Id, P_inner, Ch), marker_color(Id, Col)   // drawn: the marker color
     ; !drawn(Id, P_inner, Ch), params.bg(Col)         // emptied: bg
     ).

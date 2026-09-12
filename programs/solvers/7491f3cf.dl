@@ -34,12 +34,18 @@
     frame.cell(K, P) :- cell(K, P, _).
     frame.divider(K, A, L) :- line_color.value([K, A, L], _).
 
-    // Each panel in its own frame.
-    .init panel = BoxFrame<Tile>
+    // Each panel's box.
+    .init panel = Bbox<Tile>
     panel.cell([K, P_tile], P) :- frame.tile_of(K, P, P_tile).
 
+    // A panel's cell, beside its position in the panel's own frame.
+    .decl panel_view(key: Key, p_tile: Position, p: Position, p_intile: Position)
+    panel_view(K, P_tile, P, P_intile) :-
+        panel.cell([K, P_tile], P), panel.box([K, P_tile], B), crop(P, B, P_intile).
+
     .decl panel_cell(key: Key, p_tile: Position, p_intile: Position, col: Color)
-    panel_cell(K, P_tile, P_intile, Col) :- panel.inner([K, P_tile], P, P_intile), cell(K, P, Col).
+    panel_cell(K, P_tile, P_intile, Col) :-
+        panel_view(K, P_tile, P, P_intile), cell(K, P, Col).
 
     .decl ground(key: Key, col: Color)  // input
 
@@ -87,7 +93,8 @@ top_ink(P, Col) :-
     ).
 
 .decl out_cell(p: Position, p_intile: Position)
-out_cell(P, P_intile) :- params.out_tile(T), parse.panel.inner([$U(), T], P, P_intile).
+out_cell(P, P_intile) :-
+    params.out_tile(T), parse.panel_view($U(), T, P, P_intile).
 
 // The painted blank panel: the top layer's ink, the under layer, or the ground.
 .decl render(p_intile: Position, col: Color)
@@ -139,7 +146,7 @@ out(P, Col) :-
     .decl not_top(p_tile: Position)
     not_top(T) :-
         pattern(T), ex.panel_cell(E, T, P_intile, Col), ex.side.reach(E, P_intile),  // its cell on the marker's side
-        out_tile(T_out), ex.panel.inner([E, T_out], P, P_intile),                   // the blank panel's cell there
+        out_tile(T_out), ex.panel_view(E, T_out, P, P_intile),                       // the blank panel's cell there
         ex_out(E, P, Col2), Col != Col2.
 
     .decl top_tile(p_tile: Position)

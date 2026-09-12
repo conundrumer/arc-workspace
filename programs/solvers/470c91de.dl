@@ -26,13 +26,12 @@ impl_choice($Mark()). impl_choice($Gap()).
 
 // --- shared: each color's box ---
 
-.init bx = BoxFrame<Color>
+.init bx = Bbox<Color>
 bx.cell(Col, P) :- in(P, Col), !params.bg(Col).
-bx.grid(Col, P) :- bx.cell(Col, _), in(P, _).
 
 // The box cell at a corner, whether or not the color occupies it.
 .decl corner_cell(col: Color, d: DiagDir, p: Position)
-corner_cell(Col, D, P) :- bx.inner(Col, P, P_box), corner_dist(P_box, D, 0).
+corner_cell(Col, D, P) :- bx.box(Col, B), in(P, _), box_corner(P, B, D).
 
 // The corner each color slides toward.
 .decl slide(col: Color, d: DiagDir, ch: Choice)
@@ -49,7 +48,9 @@ gap.item(Col, D) :- corner_cell(Col, D, P), !bx.cell(Col, P).
 
 // A hole away from the corners: the color's cells are no bitten rectangle.
 .decl ragged(col: Color)
-ragged(Col) :- bx.inside(Col, P), !bx.cell(Col, P), !corner_cell(Col, _, P).
+ragged(Col) :-
+    bx.box(Col, B), in(P, _), inside(P, B),          // a cell of the color's box
+    !bx.cell(Col, P), !corner_cell(Col, _, P).       // empty, and off the corners
 
 slide(Col, D, $Gap()) :- gap.value(Col, D), !ragged(Col).
 
@@ -57,7 +58,8 @@ slide(Col, D, $Gap()) :- gap.value(Col, D), !ragged(Col).
 
 .decl painted(p: Position, col: Color, ch: Choice)
 painted(Q, Col, Ch) :-
-    slide(Col, D, Ch), bx.inside(Col, P),       // a cell of the sliding box
+    slide(Col, D, Ch), bx.box(Col, B),          // the sliding box
+    in(P, _), inside(P, B),                     // a cell of it
     neighbor(P, D, Q), in(Q, _).                // one step toward D
 
 .decl out(p: Position, col: Color, c: Choice)

@@ -53,8 +53,8 @@ occ.shape(Col, P_grid, $U()) :- ink(Col), in(P_grid, Col).          // what show
 // The whole figure a color draws, covered cells included.
 .decl drawn(col: Color, p: Position)
 drawn(Col, P_grid) :-
-    occ.occurrence(Col, M), relative(M, ZERO, Box),  // read the figure back onto the grid
-    params.shape(P_intile), compose(Box, P_intile, P_grid).
+    occ.occurrence(Col, P_place), relative(P_place, ZERO, B),  // the figure's frame at that placement
+    params.shape(P_intile), compose(B, P_intile, P_grid).
 
 // --- pile ---
 
@@ -96,9 +96,9 @@ out(P_grid, Col) :-
     ground.item(E, Col, P) :- ex_out(E, P, Col).
 
     // The output redraws every figure whole, so a figure fills its own box.
-    .init frame = BoxFrame<Fig>
+    .init frame = Bbox<Fig>
     frame.cell([E, Col], P) :- ex_out(E, P, Col), !ground.mode(E, Col).
 
     .decl shape(p: Position)
-    shape(P_intile) :- frame.inner(_, _, P_intile).
+    shape(P_intile) :- frame.cell(F, P), frame.box(F, B), crop(P, B, P_intile).
 }

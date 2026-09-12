@@ -51,9 +51,8 @@ order.axis($U(), A) :- layout_axis(A).
 order.member($U(), Id, P_along) :-
     shape_cell(Id, P), layout_axis(A), split(P, A, P_along, _).
 
-.init bbox = BoxFrame<Ident>
+.init bbox = Bbox<Ident>
 bbox.cell(Id, P) :- shape_cell(Id, P).
-bbox.grid(Id, P) :- in(P, _), shape_cell(Id, _).
 
 .decl shape_color(id: Ident, col: Color, ch: Choice)
 
@@ -74,11 +73,11 @@ shape_color(Id, Col, $Ranked()) :-
     mark_order.pos($U(), P_mark, P_place), mark(P_mark, Col).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P_grid, Col, Ch) :-
-    bbox.inner(Id, P, P_intile),                 // box cell in the crop frame
-    order.pos($U(), Id, P_tile),                // the shape's place in the layout
-    layout_axis(A), concat_slab(P_tile, P_intile, A, 0, P_grid),
+out(P_grid_out, Col, Ch) :-
+    in(P_grid_in, _), bbox.box(Id, B), crop(P_grid_in, B, P_intile),   // a box cell, in the box's frame
+    order.pos($U(), Id, P_tile),                                       // the shape's place in the layout
+    layout_axis(A), concat_slab(P_tile, P_intile, A, 0, P_grid_out),
     shape_color(Id, Col_shape, Ch),
-    ( shape_cell(Id, P), Col = Col_shape        // the shape itself
-    ; !shape_cell(Id, P), params.bg(Col)        // the rest of the box
+    ( shape_cell(Id, P_grid_in), Col = Col_shape                       // the shape itself
+    ; !shape_cell(Id, P_grid_in), params.bg(Col)                       // the rest of the box
     ).

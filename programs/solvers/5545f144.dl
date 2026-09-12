@@ -143,15 +143,16 @@ hop(Pan, P, D, Q, D2, $Nearest()) :-
 .decl placed(pan: Position, p: Position, ch: Choice)
 placed(Pan, P2, Ch) :-
     tip(Pan, T, D0), arrow(Pan, P), rest(Pan, R, D, Ch),
-    c4_elem(G), apply_dir(G, D0, D),                             // the turn it made
+    c4_elem(G), apply_dir(G, D0, D),                         // the turn it made
     relative(T, P, V), apply(G, V, V2), compose(R, V2, P2).  // the cell, turned and seated
 
-.init frame = BoxFrame<Position>
+.init frame = Bbox<Position>
 frame.cell(Pan, P) :- panel_cell(Pan, P).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P_in, Col, Ch) :-
-    frame.inner(Pan, P, P_in), impl_choice(Ch),
+out(P_inner, Col, Ch) :-
+    panel_cell(Pan, P), frame.box(Pan, B), crop(P, B, P_inner),  // a panel cell in its panel's frame
+    impl_choice(Ch),
     ( placed(Pan, P, Ch), ink(Pan, _, Col)          // the arrow, in the color it is drawn in
     ; !placed(Pan, P, Ch), field.mode($U(), Col)    // bare ground
     ).

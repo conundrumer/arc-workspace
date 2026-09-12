@@ -32,9 +32,8 @@
 .init objs = Components8<Unit>
 objs.node($U(), P) :- in(P, Col), !params.bg(Col).
 
-.init bx = BoxFrame<Ident>
+.init bx = Bbox<Ident>
 bx.cell(Id, P) :- objs.label($U(), P, Id).
-bx.grid(Id, P) :- objs.label($U(), _, Id), in(P, _).
 
 .decl impl_choice(ch: Choice)
 impl_choice($Box()). impl_choice($Stamp()).
@@ -43,11 +42,11 @@ impl_choice($Box()). impl_choice($Stamp()).
 
 // --- Box ---
 
-region(P, $Box()) :- bx.inside(_, P).
+region(P, $Box()) :- in(P, _), bx.box(_, B), inside(P, B).
 
 // --- Stamp ---
 
-region(P, $Stamp()) :- bx.inner(_, P, F), params.footprint(F).
+region(P, $Stamp()) :- in(P, _), bx.box(_, B), crop(P, B, P_inner), params.footprint(P_inner).
 
 // --- out ---
 
@@ -64,11 +63,12 @@ out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !recolor(P, Ch).
     .init objs = Components8<Example>
     objs.node(E, P) :- ex_in(E, P, Col), !params.bg(Col).
 
-    .init bx = BoxFrame<EI>
+    .init bx = Bbox<EI>
     bx.cell([E, Id], P) :- objs.label(E, P, Id).
-    bx.grid([E, Id], P) :- objs.label(E, _, Id), ex_in(E, P, _).
 
     // Box cells an output leaves non-background, in the box's own frame.
     .decl footprint(p: Position)
-    footprint(F) :- bx.inner([E, Id], P, F), ex_out(E, P, Col), !params.bg(Col).
+    footprint(P_inner) :-
+        ex_in(E, P, _), bx.box([E, Id], B), crop(P, B, P_inner),
+        ex_out(E, P, Col), !params.bg(Col).
 }

@@ -84,19 +84,24 @@ out(P, Col, $Flank()) :- in(P, Col), !replaced(P, _).
     .init comps = Components<Example>
     comps.node(E, P) :- changed(E, P).
 
-    .init frame = BoxFrame<EI>
+    .init frame = Bbox<EI>
     frame.cell([E, Id], P) :- comps.label(E, P, Id).
+
+    // A changed cell in its ring's frame.
+    .decl ring_cell(e: Example, p: Position, p_inner: Position)
+    ring_cell(E, P, P_inner) :-
+        frame.cell([E, Id], P), frame.box([E, Id], B), crop(P, B, P_inner).
 
     // Every ring reads the same source and the same replacement.
     .init src_read = Unanimous<Position, Color>
-    src_read.item(S, Col) :- frame.inner([E, _], P, S), ex_in(E, P, Col).
+    src_read.item(P_inner, Col) :- ring_cell(E, P, P_inner), ex_in(E, P, Col).
 
     .init dst_read = Unanimous<Position, Color>
-    dst_read.item(S, Col) :- frame.inner([E, _], P, S), ex_out(E, P, Col).
+    dst_read.item(P_inner, Col) :- ring_cell(E, P, P_inner), ex_out(E, P, Col).
 
     .decl src(p: Position, col: Color)
-    src(S, Col) :- src_read.value(S, Col).
+    src(P_inner, Col) :- src_read.value(P_inner, Col).
 
     .decl dst(p: Position, col: Color)
-    dst(S, Col) :- dst_read.value(S, Col).
+    dst(P_inner, Col) :- dst_read.value(P_inner, Col).
 }

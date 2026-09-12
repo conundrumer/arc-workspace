@@ -46,8 +46,12 @@ blocks.node($U(), P) :- in(P, Col), !params.bg(Col).
 .decl block(id: Ident, p: Position)
 block(Id, P) :- blocks.label($U(), P, Id).
 
-.init bbox = BoxFrame<Ident>
+.init bbox = Bbox<Ident>
 bbox.cell(Id, P) :- block(Id, P).
+
+// A block's cells, read in the block's own frame.
+.decl block_inner(id: Ident, p: Position, p_inner: Position)
+block_inner(Id, P, P_inner) :- block(Id, P), bbox.box(Id, B), crop(P, B, P_inner).
 
 // The monochrome block is the canvas, and its one color is the fill.
 .init uni = Unanimous<Ident, Color>
@@ -63,19 +67,19 @@ stamp(Id) :- block(Id, P), in(P, Col), params.blank(Col).
 plan(Id) :- block(Id, _), !canvas(Id, _), !stamp(Id).
 
 .decl plan_cell(p: Position, col: Color)
-plan_cell(P_inner, Col) :- plan(Id), bbox.inner(Id, P, P_inner), in(P, Col).
+plan_cell(P_inner, Col) :- plan(Id), block_inner(Id, P, P_inner), in(P, Col).
 
 // --- program ---
 
 // The canvas seen as the output frame, divided into stamp-sized tiles.
 .init tiles = Tile2D<Unit>
-tiles.cell(P_grid_out) :- canvas(Id, _), bbox.inner(Id, _, P_grid_out).
-tiles.dim($U(), A, K) :- stamp(Id), bbox.extent(Id, A, K).
+tiles.cell(P_grid_out) :- canvas(Id, _), block_inner(Id, _, P_grid_out).
+tiles.dim($U(), A, K) :- stamp(Id), block(Id, P), bbox.box(Id, B), box_extent(B, P, A, K).
 tiles.gap(0).
 
 .decl footprint(p_intile: Position)
 footprint(P_intile) :-
-    stamp(Id), bbox.inner(Id, P, P_intile), in(P, Col), params.ink(Col).
+    stamp(Id), block_inner(Id, P, P_intile), in(P, Col), params.ink(Col).
 
 // The tiles the plan marks.
 .decl marked(p_tile: Position, ch: Choice)

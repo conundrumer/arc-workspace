@@ -28,8 +28,12 @@ bg_mode.item($U(), Col, P) :- in(P, Col).
 .init blobs = Components8<Color>
 blobs.node(Col, P) :- in(P, Col), !bg_mode.mode($U(), Col).
 
-.init bbox = BoxFrame<Ident>
+.init bbox = Bbox<Ident>
 bbox.cell(Id, P) :- blobs.label(_, P, Id).
+
+// Each blob's cells, in its own box frame.
+.decl blob_inner(id: Ident, p_inner: Position)
+blob_inner(Id, P_inner) :- blobs.label(_, P, Id), bbox.box(Id, B), crop(P, B, P_inner).
 
 .decl impl_choice(ch: Choice)
 impl_choice($Size()). impl_choice($Shape()).
@@ -51,9 +55,9 @@ paired(Id, $Size()) :- size.tally(Id, N), size.tally(Id2, N), Id != Id2.
 // Each ordered pair of blobs, both seen from their own boxes.
 .init shape_map = D4Map<Pair, Unit>
 shape_map.src([Id, Id2], P_inner, $U()) :-
-    bbox.inner(Id, _, P_inner), blobs.label(_, _, Id2), Id != Id2.
+    blob_inner(Id, P_inner), blobs.label(_, _, Id2), Id != Id2.
 shape_map.dst([Id, Id2], P_inner, $U()) :-
-    bbox.inner(Id2, _, P_inner), blobs.label(_, _, Id), Id != Id2.
+    blob_inner(Id2, P_inner), blobs.label(_, _, Id), Id != Id2.
 
 // A cell of the second blob that no cell of the first reaches under D, which
 // the into-reading of `map` allows.
@@ -83,8 +87,8 @@ dest(Id, D, Ch) :-
 .decl paint(p: Position, col: Color, ch: Choice)
 paint(Q, Col, Ch) :-
     blobs.label(Col, P, Id), dest(Id, D, Ch),  // blob cell with its destination
-    bbox.edge_min(Id, D, M),                    // its box's margin from that edge
-    jump(P, D, M, Q).                          // slid flush
+    bbox.box(Id, B), dist(B, D, K),            // its box's margin from that edge
+    jump(P, D, K, Q).                          // slid flush
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- paint(P, Col, Ch).

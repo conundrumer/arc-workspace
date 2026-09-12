@@ -41,12 +41,11 @@ frame_col(Col, $Drawn()) :- drect.box(Col, _).
 
 // --- the frame, viewed in its own box ---
 
-.init frame_box = BoxFrame<Choice>
+.init frame_box = Bbox<Choice>
 frame_box.cell(Ch, P) :- frame_col(Col, Ch), in(P, Col).
-frame_box.grid(Ch, P) :- impl_choice(Ch), in(P, _).
 
-// The hole in its own frame.
-.init hole = BoxFrame<Choice>
+// The cells the frame's edge lines enclose.
+.init hole = Bbox<Choice>
 hole.cell(Ch, P) :- frame_box.box(Ch, B), in(P, _), interior(P, B).
 
 // --- the object, viewed in its own box ---
@@ -54,26 +53,27 @@ hole.cell(Ch, P) :- frame_box.box(Ch, B), in(P, _), interior(P, B).
 .decl object_cell(ch: Choice, p: Position, col: Color)
 object_cell(Ch, P, Col) :- impl_choice(Ch), in(P, Col), !params.bg(Col), !frame_col(Col, Ch).
 
-.init object_box = BoxFrame<Choice>
+.init object_box = Bbox<Choice>
 object_box.cell(Ch, P) :- object_cell(Ch, P, _).
 
 // The object as a block arrangement: each cell at its box position.
 .decl tile_col(ch: Choice, p_tile: Position, col: Color)
-tile_col(Ch, P_tile, Col) :- object_cell(Ch, P_grid, Col), object_box.inner(Ch, P_grid, P_tile).
+tile_col(Ch, P_tile, Col) :-
+    object_cell(Ch, P_grid, Col), object_box.box(Ch, B), crop(P_grid, B, P_tile).
 
 // The hole divided into the object's block arrangement.
 .init blocks = Divide2D<Choice>
-blocks.cell(P_inner) :- hole.inner(_, _, P_inner).
-blocks.dim(Ch, A, N) :- object_box.extent(Ch, A, N).
+blocks.cell(P_hole) :- hole.cell(Ch, P), hole.box(Ch, B), crop(P, B, P_hole).
+blocks.dim(Ch, A, N) :- object_box.cell(Ch, P), object_box.box(Ch, B), box_extent(B, P, A, N).
 blocks.gap(0).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P_intile, Col, Ch) :-
-    frame_box.inner(Ch, P_grid, P_intile),                   // box cell, in the crop frame
-    ( frame_box.box(Ch, B), box_edge(P_grid, B, _), frame_col(Col, Ch)  // edge line
-    ; hole.inner(Ch, P_grid, P_inner),                        // hole cell, in the hole's frame
-      blocks.tile(Ch, P_inner, P_tile, _),                    // its block
-      ( tile_col(Ch, P_tile, Col)                             // block the object fills
-      ; !tile_col(Ch, P_tile, _), params.bg(Col)              // blank block
+out(P_inner, Col, Ch) :-
+    frame_box.box(Ch, B), in(P_grid, _), crop(P_grid, B, P_inner),  // box cell, in the box's frame
+    ( box_edge(P_grid, B, _), frame_col(Col, Ch)                    // edge line
+    ; hole.box(Ch, B_hole), crop(P_grid, B_hole, P_hole),           // hole cell, in the hole's frame
+      blocks.tile(Ch, P_hole, P_tile, _),                           // its block
+      ( tile_col(Ch, P_tile, Col)                                   // block the object fills
+      ; !tile_col(Ch, P_tile, _), params.bg(Col)                    // blank block
       )
     ).

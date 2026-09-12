@@ -27,8 +27,8 @@ line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
 lattice.cell($U(), P) :- in(P, _).
 lattice.divider($U(), A, L) :- line_color.value([A, L], Col), params.sep(Col).
 
-// Each tile viewed from its own box.
-.init tile = BoxFrame<Position>
+// Each tile's own box.
+.init tile = Bbox<Position>
 tile.cell(P_tile, P) :- lattice.tile_of($U(), P, P_tile).
 
 // --- the chain ---
@@ -36,8 +36,10 @@ tile.cell(P_tile, P) :- lattice.tile_of($U(), P, P_tile).
 // The tile's shape touches its edge d at across.
 .decl port(p_tile: Position, d: Dir, across: Position)
 port(P_tile, D, Across) :-
-    tile.inner(P_tile, P, P_intile), in(P, Col), !params.bg(Col),     // a shape cell
-    dist(P_intile, D, 0), axis_of(D, A), split(P_intile, A, _, Across).  // on edge d
+    tile.cell(P_tile, P), in(P, Col), !params.bg(Col),      // a shape cell
+    tile.box(P_tile, B), crop(P, B, P_intile),              // in the tile's frame
+    dist(P_intile, D, 0),                                   // on edge d
+    axis_of(D, A), split(P_intile, A, _, Across).           // where along that edge
 
 // Y continues X toward d: X's shape leaves through edge d where Y's shape
 // enters through the facing edge.
@@ -61,7 +63,8 @@ seat(X, A, P_tile) :-
 
 .decl placed(p: Position, col: Color)
 placed(P_grid_out, Col) :-
-    seat(X, A, P_tile), tile.inner(X, P, P_intile), in(P, Col),   // a tile cell, seated
+    seat(X, A, P_tile), tile.cell(X, P), in(P, Col),   // a tile cell, with its tile's seat
+    tile.box(X, B), crop(P, B, P_intile),              // its place in the tile
     params.gap(G), concat_slab(P_tile, P_intile, A, G, P_grid_out).
 
 .init sheet = Frame2D<Unit>

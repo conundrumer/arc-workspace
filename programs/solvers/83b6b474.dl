@@ -20,8 +20,8 @@ field.item($U(), Col, P) :- in(P, Col).
 .decl bg(col: Color)
 bg(Col) :- field.mode($U(), Col).
 
-// Each color's shape, viewed from its own bbox.
-.init bbox = BoxFrame<Color>
+// The box each color's shape occupies.
+.init bbox = Bbox<Color>
 bbox.cell(Col, P) :- in(P, Col), !bg(Col).
 
 // --- the ring ---
@@ -58,19 +58,21 @@ ring(P) :- side(K), border(K, P).
 
 // Where a shape lands with each of its cells on the ring.
 .init occ = Occurrences<Color, Unit>
-occ.shape(Col, S, $U()) :- bbox.inner(Col, _, S).
+occ.shape(Col, P_inner, $U()) :-
+    bbox.cell(Col, P), bbox.box(Col, B), crop(P, B, P_inner).
 occ.cell(Col, P, $U()) :- bbox.cell(Col, _), ring(P).
 
 // A candidate: a shape translated to a spot, named by the spot's margins.
-.type Placement = [col: Color, m: Position]
+.type Placement = [col: Color, b: Box]
 
 .decl covers(cd: Placement, p: Position)
-covers([Col, M], P) :- occ.occurrence(Col, M), occ.shape(Col, S, $U()), compose(M, S, P).
+covers([Col, B], P) :-
+    occ.occurrence(Col, B), occ.shape(Col, P_inner, $U()), compose(B, P_inner, P).
 
 // --- the pruning ---
 
 .init pruning = PlacementPruning<Unit, Placement, Color>
-pruning.cand($U(), [Col, M], Col) :- occ.occurrence(Col, M).
+pruning.cand($U(), [Col, B], Col) :- occ.occurrence(Col, B).
 pruning.conflict($U(), Cd, Cd2) :- covers(Cd, P), covers(Cd2, P).
 
 .decl out(p: Position, col: Color)

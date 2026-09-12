@@ -28,37 +28,35 @@
 
 .init params = Params
 
-// Ink objects, each viewed from its own bounding bbox.
+// Ink objects, each with its own bounding box.
 .init objs = Components<Unit>
 objs.node($U(), P) :- in(P, Col), !params.bg(Col).
 
-.init bbox = BoxFrame<Ident>
+.init bbox = Bbox<Ident>
 bbox.cell(O, P) :- objs.label($U(), P, O).
-bbox.grid(O, P) :- bbox.cell(O, _), in(P, _).
 
 // The gap: a bg cell on the object's D wall.
 .decl gap(o: Ident, d: Dir, p: Position, ch: Choice)
 
 // --- $Dir ---
 gap(O, D, P, $Dir()) :-
-    bbox.inner(O, P, P_inner),                   // a cell of the box
-    params.open_dir(D), dist(P_inner, D, 0),    // on the params.open_dir wall
-    in(P, Col), params.bg(Col).                 // and empty
+    in(P, Col), params.bg(Col),                        // an empty cell
+    bbox.box(O, B), params.open_dir(D),
+    box_edge(P, B, D).                                 // on the params.open_dir wall
 
 // --- $Hole ---
 gap(O, D, P, $Hole()) :-
-    bbox.inner(O, P, P_inner),              // a cell of the box
-    dir_elem(D), dist(P_inner, D, 0),      // on some wall
-    in(P, Col), params.bg(Col).            // and empty
+    in(P, Col), params.bg(Col),                        // an empty cell
+    bbox.box(O, B), box_edge(P, B, D).                 // on some wall
 
 // --- shared ---
 
 // The wall's longer arm: the side of the box the gap is farther from.
 .decl arm_dir(o: Ident, d: Dir, ch: Choice)
 arm_dir(O, D_arm, Ch) :-
-    gap(O, D, P, Ch), bbox.inner(O, P, P_inner),    // the gap in the box frame
-    perp_dir(D, D_arm),                            // a direction along the wall
-    dist_pair(P_inner, D_arm, K, K2), K > K2.      // the longer arm
+    gap(O, D, P, Ch), bbox.box(O, B), crop(P, B, P_inner),   // the gap in the box frame
+    perp_dir(D, D_arm),                                      // a direction along the wall
+    dist_pair(P_inner, D_arm, K, K2), K > K2.                // the longer arm
 
 // The fill leaves through the gap and runs along the outside of the wall.
 .init spill = Ray<SpillKey>
@@ -71,7 +69,9 @@ impl_choice($Dir()). impl_choice($Hole()).
 
 // One body of fill: the box's inside, and what has run out of it.
 .decl paint(p: Position, ch: Choice)
-paint(P, Ch) :- impl_choice(Ch), bbox.inside(_, P), in(P, Col), params.bg(Col).
+paint(P, Ch) :-
+    impl_choice(Ch), in(P, Col), params.bg(Col),   // an empty cell
+    bbox.box(_, B), inside(P, B).                  // within an outline's box
 paint(P, Ch) :- spill.ray([_, Ch], P, _, _, _).
 
 .decl out(p: Position, col: Color, ch: Choice)

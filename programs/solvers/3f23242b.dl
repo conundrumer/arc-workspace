@@ -63,7 +63,7 @@ impl_choice($Lookup()). impl_choice($Frame()).
 placed(P_box, P_grid) :-
     in(Q, Col_mark), params.mark(Col_mark), box.cell($U(), P_box),  // a mark, a bracket cell
     params.seat(P_seat), relative(P_seat, P_box, Off),  // its offset from the seat
-    compose(Q, Off, P_grid), in(P_grid, _).                 // seated on the mark, on-grid
+    compose(Q, Off, P_grid), in(P_grid, _).             // seated on the mark, on-grid
 
 // The line the brackets stand on: the ground edge run out across the grid,
 // where no bracket covers it.
@@ -134,19 +134,19 @@ out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(P, _, Ch).
 
     // The bracket's frame is the ink's bounding box, and the mark sits at
     // the offsets' origin.
-    .init frame = BoxFrame<Unit>
+    .init frame = Bbox<Unit>
     frame.cell($U(), Off) :- cand(Off, Col), !missed(Off, Col).
 
     .decl seat(p: Position)
-    seat(P) :- frame.inner($U(), ZERO, P).
+    seat(P) :- frame.box($U(), B), crop(ZERO, B, P).
 
     // The bracket, in its own frame: the paint each mark holds under it.
     .decl shape(p: Position, col: Color)
     shape(P_box, Col) :-
-        box.cell($U(), P_box), params.seat(P_seat),      // a bracket cell
+        box.cell($U(), P_box), params.seat(P_seat),  // a bracket cell
         relative(P_seat, P_box, Off),                // its offset from the seat
-        mark_at(E, M), compose(M, Off, P),               // seated on a mark
-        painted(E, P, Col).                              // the paint there
+        mark_at(E, M), compose(M, Off, P),           // seated on a mark
+        painted(E, P, Col).                          // the paint there
 
     .decl corner(p_box: Position)
     corner(P) :- box.cell($U(), P), diag_dir_elem(Diag), corner_anchor(Diag, P, ZERO).
@@ -157,6 +157,6 @@ out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(P, _, Ch).
 
     .decl arm_dir(d: Dir)
     arm_dir(D) :-
-        shape(P, _), interior(P, ZERO),                                // ink off the rim
+        shape(P, _), interior(P, ZERO),                            // ink off the rim
         params.seat(P_seat), dir_elem(D), neighbor(P_seat, D, P).  // beside the mark
 }

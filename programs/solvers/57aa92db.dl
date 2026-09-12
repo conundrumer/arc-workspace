@@ -20,15 +20,12 @@
 .init objs = Components8<Unit>
 objs.node($U(), P) :- in(P, Col), !params.bg(Col).
 
-.decl obj(id: Ident)
-obj(O) :- objs.label($U(), _, O).
-
 .decl obj_cell(id: Ident, p: Position, col: Color)
 obj_cell(O, P, Col) :- objs.label($U(), P, O), in(P, Col).
 
 // The mark color: the one color every object carries.
 .decl unshared(col: Color)
-unshared(Col) :- obj_cell(_, _, Col), obj(O), !obj_cell(O, _, Col).
+unshared(Col) :- obj_cell(_, _, Col), obj_cell(O, _, _), !obj_cell(O, _, Col).
 
 .decl mark_col(col: Color)
 mark_col(Col) :- obj_cell(_, _, Col), !unshared(Col).
@@ -38,39 +35,46 @@ mark_col(Col) :- obj_cell(_, _, Col), !unshared(Col).
 body_col(O, Col) :- obj_cell(O, _, Col), !mark_col(Col).
 
 // The mark's block: one tile of the object's copy, and so its size.
-.init block = BoxFrame<Ident>
+.init block = Bbox<Ident>
 block.cell(O, P) :- obj_cell(O, P, Col), mark_col(Col).
-block.grid(O, P) :- obj(O), in(P, _).
 
-// Each object as a grid of tiles the size of its mark.
-.init obj_box = BoxFrame<Ident>
+// The object's mark block, cell by cell, in the block's own frame.
+.decl block_inner(id: Ident, p_grid: Position, p_intile: Position)
+block_inner(O, P_grid, P_intile) :- block.box(O, B), in(P_grid, _), crop(P_grid, B, P_intile).
+
+.init obj_box = Bbox<Ident>
 obj_box.cell(O, P) :- obj_cell(O, P, _).
 
+// An object's cells, in the object's own box.
+.decl obj_inner(id: Ident, p_grid: Position, p_inner: Position)
+obj_inner(O, P, P_inner) :- obj_box.cell(O, P), obj_box.box(O, B), crop(P, B, P_inner).
+
+// Each object as a grid of tiles the size of its mark.
 .init obj_grid = Tile2D<Ident>
-obj_grid.cell(P_inner) :- obj_box.inner(_, _, P_inner).
-obj_grid.dim(O, A, K) :- block.extent(O, A, K).
+obj_grid.cell(P_inner) :- obj_inner(_, _, P_inner).
+obj_grid.dim(O, A, K) :- block.cell(O, P), block.box(O, B), box_extent(B, P, A, K).
 obj_grid.gap(0).
 
 // The template: the object showing the most tiles of the shape.
 .init fullest = Mode<Unit, Ident, Position>
 fullest.item($U(), O, P_tile) :-
-    obj_box.inner(O, _, P_inner), obj_grid.tile(O, P_inner, P_tile, _).
+    obj_inner(O, _, P_inner), obj_grid.tile(O, P_inner, P_tile, _).
 
 // The shape, tile by tile, in the template's own box.
 .decl shape_cell(p_tile: Position, col: Color)
 shape_cell(P_tile, Col) :-
     fullest.mode($U(), O),                               // the template
-    obj_box.inner(O, P_grid, P_inner), in(P_grid, Col),  // its cells, in its own box
+    obj_inner(O, P_grid, P_inner), in(P_grid, Col),      // its cells, in its own box
     obj_grid.tile(O, P_inner, P_tile, _).                // read at its tile size
 
 // --- program ---
 
 // Where an object's copy sits: the seat carrying the scaled shape's mark tile
 // onto the object's mark.
-.decl seat(id: Ident, v: Box)
+.decl seat(id: Ident, v: Offset)
 seat(O, V) :-
     shape_cell(P_tile, Col), mark_col(Col),      // the shape's mark tile
-    block.inner(O, P_grid, P_intile),            // the object's mark, cell by cell
+    block_inner(O, P_grid, P_intile),            // the object's mark, cell by cell
     concat_2d(P_tile, P_intile, 0, P_stamp),     // that cell of the scaled shape
     relative(P_stamp, P_grid, V).
 
@@ -78,7 +82,7 @@ seat(O, V) :-
 .decl stamp(id: Ident, p_grid: Position, col: Color)
 stamp(O, P_grid, C_shape) :-
     seat(O, V), shape_cell(P_tile, C_shape),
-    block.inner(O, _, P_intile), concat_2d(P_tile, P_intile, 0, P_stamp),
+    block_inner(O, _, P_intile), concat_2d(P_tile, P_intile, 0, P_stamp),
     compose(P_stamp, V, P_grid), in(P_grid, _).
 
 .decl out(p: Position, col: Color)

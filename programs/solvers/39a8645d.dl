@@ -18,13 +18,12 @@
 .init pieces = Components8<Color>
 pieces.node(Col, P) :- in(P, Col), !params.bg(Col).
 
-.init bbox = BoxFrame<Ident>
+.init bbox = Bbox<Ident>
 bbox.cell(Id, P) :- pieces.label(_, P, Id).
-bbox.grid(Id, P) :- pieces.label(_, _, Id), in(P, _).
 
 // The piece's cells in its own box — its shape, free of placement.
 .decl shape_cell(id: Ident, p_inner: Position)
-shape_cell(Id, P_inner) :- bbox.inner(Id, P, P_inner), pieces.label(_, P, Id).
+shape_cell(Id, P_inner) :- bbox.box(Id, B), pieces.label(_, P, Id), crop(P, B, P_inner).
 
 // --- copies ---
 
@@ -45,8 +44,8 @@ commonest.item($U(), Id, Id2) :- copy(Id, Id2).
 
 .decl out(p: Position, col: Color)
 out(P_inner, Col) :-
-    commonest.mode($U(), Id),                    // a piece with the most copies
-    bbox.inner(Id, P, P_inner),                   // its box, cell by cell
-    ( pieces.label(Col, P, Id)                   // shape cell
-    ; !pieces.label(_, P, Id), params.bg(Col)    // rest of the box
+    commonest.mode($U(), Id),                          // a piece with the most copies
+    bbox.box(Id, B), in(P, _), crop(P, B, P_inner),     // its box, cell by cell
+    ( pieces.label(Col, P, Id)                          // shape cell
+    ; !pieces.label(_, P, Id), params.bg(Col)           // rest of the box
     ).

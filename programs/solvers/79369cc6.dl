@@ -20,25 +20,27 @@
 
 // --- the template ---
 
-// The template, read in its own frame.
-.init bbox = BoxFrame<Unit>
+// The template's box, bounding the fill cells.
+.init bbox = Bbox<Unit>
 bbox.cell($U(), P) :- in(P, Col), params.fill(Col).
-bbox.grid($U(), P) :- in(P, _).
 
 // The template's D4 images, each in its own frame.
-.decl image(d: D4, s: Position, col: Color)
-image(D, S2, Col) :- d4_elem(D), bbox.inner($U(), P, S), in(P, Col), apply(D, S, S2).
+.decl image(d: D4, p_inner: Position, col: Color)
+image(D, P_turned, Col) :-
+    bbox.box($U(), B), in(P, Col), crop(P, B, P_inner),   // a template cell, in the box's frame
+    d4_elem(D), apply(D, P_inner, P_turned).
 
 // --- the placements ---
 
 // Each image's mark cells, sought among the grid's mark cells.
 .init occ = Occurrences<D4, Unit>
-occ.shape(D, S, $U()) :- image(D, S, Col), params.mark(Col).
+occ.shape(D, P_inner, $U()) :- image(D, P_inner, Col), params.mark(Col).
 occ.cell(D, P, $U()) :- d4_elem(D), in(P, Col), params.mark(Col).
 
 // Where an occurrence's fill cells land.
 .decl fill_at(d: D4, m: Position, p: Position)
-fill_at(D, M, P) :- occ.occurrence(D, M), image(D, S, Col), params.fill(Col), compose(M, S, P).
+fill_at(D, M, P) :-
+    occ.occurrence(D, M), image(D, P_inner, Col), params.fill(Col), compose(M, P_inner, P).
 
 // A placement whose fill cell lands on a mark is not a match.
 .decl blocked(d: D4, m: Position)

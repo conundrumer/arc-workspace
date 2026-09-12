@@ -70,9 +70,8 @@ parts.node($U(), P) :- ink(P).
 
 .init part_box = Bbox<Ident>
 part_box.cell(Id, P) :- parts.label($U(), P, Id).
-part_box.grid(Id, P) :- parts.label($U(), _, Id), in(P, _).
 
-mark(P, $Box()) :- empty(P), part_box.inside(_, P).
+mark(P, $Box()) :- empty(P), part_box.box(_, B), inside(P, B).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- mark(P, Ch), params.fill(Col).
@@ -96,9 +95,9 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !mark(P, Ch).
     .init pick = Canon<EP>
     pick.equiv([E, P], [E2, P2]) :- marked(E, P), marked(E2, P2).
 
-    .init bbox = BoxFrame<EP>
+    .init bbox = Bbox<EP>
     bbox.cell(K, Q) :- pick.rep(K, K), piece.reach(K, Q).
 
     .decl piece_glyph(p: Position)
-    piece_glyph(S) :- bbox.inner(_, _, S).
+    piece_glyph(P_inner) :- bbox.cell(K, P), bbox.box(K, B), crop(P, B, P_inner).
 }

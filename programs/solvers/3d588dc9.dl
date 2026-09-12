@@ -49,19 +49,23 @@ objects.node(Col, P) :- in(P, Col), !params.bg(Col).
 .decl obj(id: Ident, p: Position)
 obj(Id, P) :- objects.label(_, P, Id).
 
-.init obj_box = BoxFrame<Ident>
+.init obj_box = Bbox<Ident>
 obj_box.cell(Id, P) :- obj(Id, P).
-obj_box.grid(Id, P) :- obj(Id, _), in(P, _).
 
 // --- keys ---
 
-.init foot_box = BoxFrame<D4>
+.init foot_box = Bbox<D4>
 foot_box.cell(D, P_shape) :- params.key_block(D, P_shape).
 foot_box.cell(D, P_shape) :- params.key_stem(D, P_shape).
 
+// The footprint's cells, read in its own box.
+.decl foot_view(d: D4, p_shape: Position, p_inner: Position)
+foot_view(D, P_shape, P_inner) :-
+    foot_box.cell(D, P_shape), foot_box.box(D, B), crop(P_shape, B, P_inner).
+
 .init key_match = KeyedSetCompare<Ident, D4, Position>
-key_match.pattern_member(D, P_box) :- foot_box.inner(D, _, P_box).
-key_match.observed_member(Id, P_box) :- obj(Id, P), obj_box.inner(Id, P, P_box).
+key_match.pattern_member(D, P_inner) :- foot_view(D, _, P_inner).
+key_match.observed_member(Id, P_inner) :- obj(Id, P), obj_box.box(Id, B), crop(P, B, P_inner).
 
 .decl key_at(id: Ident, d: D4)
 key_at(Id, D) :- key_match.equals(Id, D).
@@ -69,8 +73,8 @@ key_at(Id, D) :- key_match.equals(Id, D).
 // A key's cell paired with the footprint cell it carries.
 .decl key_cell(id: Ident, d: D4, p: Position, p_shape: Position)
 key_cell(Id, D, P, P_shape) :-
-    key_at(Id, D), obj_box.inner(Id, P, P_box),      // a cell of the key, box-framed
-    foot_box.inner(D, P_shape, P_box).               // the footprint cell at that place
+    key_at(Id, D), in(P, _), obj_box.box(Id, B), crop(P, B, P_inner),  // a cell of the key's box, box-framed
+    foot_view(D, P_shape, P_inner).                                    // the footprint cell at that place
 
 .decl stem_cell(id: Ident, p: Position)
 stem_cell(Id, P) :- key_cell(Id, D, P, P_shape), params.key_stem(D, P_shape).
@@ -80,9 +84,9 @@ stem_cell(Id, P) :- key_cell(Id, D, P, P_shape), params.key_stem(D, P_shape).
 // An empty box cell nearer the corner than one the object occupies.
 .decl notch(id: Ident, dg: DiagDir)
 notch(Id, Dg) :-
-    diag_dir_elem(Dg),                                      // a box corner
-    obj(Id, P), obj_box.inner(Id, P, P_box),                // an object cell
-    obj_box.inner(Id, Q, Q_box), nearer(Dg, Q_box, P_box),  // a nearer box cell
+    diag_dir_elem(Dg),                                            // a box corner
+    obj(Id, P), obj_box.box(Id, B), crop(P, B, P_inner),          // an object cell
+    in(Q, _), crop(Q, B, Q_inner), nearer(Dg, Q_inner, P_inner),  // a nearer box cell
     !obj(Id, Q).
 
 // A wedge is packed into exactly one corner, so the far diagonal is its slant.
@@ -94,9 +98,9 @@ wedge.item(Id, Dg) :- obj(Id, _), diag_dir_elem(Dg), !notch(Id, Dg).
 // The key's box fails to lie strictly beyond the wedge's on one axis.
 .decl short(t: Ident, k: Ident)
 short(T, K) :-
-    wedge.value(T, Dg), key_at(K, _), dir_of(Dg, _, D),       // an edge of the wedge's corner
-    obj_box.box(T, M_t), dist(M_t, D, K_t),                // how far the wedge sits from it
-    obj_box.box(K, M_k), dist(M_k, D, K_k), K_k <= K_t.    // the key sits no further
+    wedge.value(T, Dg), key_at(K, _), dir_of(Dg, _, D),      // an edge of the wedge's corner
+    obj_box.box(T, B_t), dist(B_t, D, N_t),                  // how far the wedge sits from it
+    obj_box.box(K, B_k), dist(B_k, D, N_k), N_k <= N_t.      // the key sits no further
 
 .init side = Unanimous<Ident, Dir>
 side.item(K, D) :-
@@ -106,9 +110,13 @@ side.item(K, D) :-
 .init block_box = Bbox<Ident>
 block_box.cell(Id, P) :- key_cell(Id, D, P, P_shape), params.key_block(D, P_shape).
 
+// A block cell on the block's d-side edge.
+.decl block_edge(id: Ident, d: Dir, p: Position)
+block_edge(Id, D, P) :- block_box.cell(Id, P), block_box.box(Id, B), box_edge(P, B, D).
+
 // The stem already sticks out of the block's edge on that side.
 .decl stem_blocks(id: Ident, d: Dir)
-stem_blocks(Id, D) :- block_box.edge_cell(Id, P, D), neighbor(P, D, Q), stem_cell(Id, Q).
+stem_blocks(Id, D) :- block_edge(Id, D, P), neighbor(P, D, Q), stem_cell(Id, Q).
 
 .decl open(id: Ident, d: Dir)
 open(Id, D) :- side.value(Id, D), !stem_blocks(Id, D).
@@ -119,7 +127,7 @@ open(Id, D) :- side.value(Id, D), !stem_blocks(Id, D).
 cleared(P) :- open(Id, _), stem_cell(Id, P).
 
 .decl faced(p: Position)
-faced(P) :- open(Id, D), block_box.edge_cell(Id, P, D).
+faced(P) :- open(Id, D), block_edge(Id, D, P).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :-
@@ -147,12 +155,16 @@ out(P, Col) :-
     .init pick = Canon<EP>
     pick.equiv([E, P0], [E2, P02]) :- shed(E, P0), shed(E2, P02).
 
-    .init bbox = BoxFrame<EP>
+    .init bbox = Bbox<EP>
     bbox.cell(K, P) :- pick.rep(K, K), flood.reach(K, P).
 
+    // The chart key's cells, read in its own box.
+    .decl chart_view(k: EP, p: Position, p_inner: Position)
+    chart_view(K, P, P_inner) :- bbox.cell(K, P), bbox.box(K, B), crop(P, B, P_inner).
+
     .decl key_stem(p: Position)
-    key_stem(S) :- key_shed(K, P), bbox.inner(K, P, S).
+    key_stem(P_inner) :- key_shed(K, P), chart_view(K, P, P_inner).
 
     .decl key_block(p: Position)
-    key_block(S) :- bbox.inner(K, P, S), !key_shed(K, P).
+    key_block(P_inner) :- chart_view(K, P, P_inner), !key_shed(K, P).
 }

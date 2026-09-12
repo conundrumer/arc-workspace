@@ -17,8 +17,8 @@
 
 // --- the candidate placements ---
 
-// Each color's cells, viewed from their own bbox.
-.init bbox = BoxFrame<Color>
+// Each color's cells and the box they bound.
+.init bbox = Bbox<Color>
 bbox.cell(Col, P) :- in(P, Col), !params.bg(Col).
 
 .init frame = Frame2D<Unit>
@@ -26,7 +26,7 @@ frame.extent($U(), A, N) :- axis_elem(A), params.side(N).
 
 // A placement lands every cell of the shape in the square.
 .init occ = Occurrences<Color, Unit>
-occ.shape(Col, S, $U()) :- bbox.inner(Col, _, S).
+occ.shape(Col, P_inner, $U()) :- bbox.cell(Col, P), bbox.box(Col, B), crop(P, B, P_inner).
 occ.cell(Col, P, $U()) :- bbox.cell(Col, _), frame.cell($U(), P).
 
 // A piece: one color's shape at one placement, named by its margins in the
@@ -36,7 +36,7 @@ occ.cell(Col, P, $U()) :- bbox.cell(Col, _), frame.cell($U(), P).
 .decl covers(piece: Piece, p: Position)
 covers([Col, B], P) :-
     occ.occurrence(Col, B),                     // a placement of the shape
-    occ.shape(Col, S, $U()), compose(B, S, P).  // the rect cells it takes
+    occ.shape(Col, P_inner, $U()), compose(B, P_inner, P).  // the square cells it takes
 
 // --- the forced packing ---
 

@@ -24,15 +24,12 @@ objs.node($U(), P) :- ink(P).
 .decl paint(id: Ident, col: Color)
 paint(Id, Col) :- objs.label($U(), P, Id), in(P, Col).
 
-.init bbox = BoxFrame<Ident>
+.init bbox = Bbox<Ident>
 bbox.cell(Id, P) :- objs.label($U(), P, Id).
-bbox.grid(Id, P) :- paint(Id, _), in(P, _).
 
 // The empty corner of an object's box, and the corner it sits at.
 .decl tip(id: Ident, p: Position, d: DiagDir)
-tip(Id, P, D) :-
-    bbox.inner(Id, P, P_inner), !ink(P),    // a blank cell of the box
-    corner_dist(P_inner, D, 0).            // at corner D of the bbox
+tip(Id, P, D) :- bbox.box(Id, B), in(P, _), box_corner(P, B, D), !ink(P).
 
 .init ray = Ray<Ident>
 ray.dir(Id, D)  :- tip(Id, _, D).

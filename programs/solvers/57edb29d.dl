@@ -25,42 +25,46 @@
 .init panel = Components<Unit>
 panel.node($U(), P) :- in(P, Col), !params.bg(Col).
 
-// Each panel viewed from its own bbox.
-.init bbox = BoxFrame<Ident>
+// Each panel's bounding box.
+.init bbox = Bbox<Ident>
 bbox.cell(Id, P) :- panel.label($U(), P, Id).
 
 // The field color, read on the border, where no mark sits.
 .decl field(id: Ident, col: Color)
-field(Id, Col) :- bbox.edge_cell(Id, P, _), in(P, Col).
+field(Id, Col) :- bbox.cell(Id, P), bbox.box(Id, B), box_edge(P, B, _), in(P, Col).
 
-// A mark: a panel cell off the field color, placed in the panel's frame.
-.decl mark(id: Ident, p_intile: Position, col: Color)
-mark(Id, P_intile, Col) :- bbox.inner(Id, P, P_intile), in(P, Col), !field(Id, Col).
+// A panel's cells, in the panel's own frame.
+.decl panel_inner(id: Ident, p: Position, p_inner: Position)
+panel_inner(Id, P, P_inner) :- bbox.cell(Id, P), bbox.box(Id, B), crop(P, B, P_inner).
+
+// A mark: a panel cell off the field color.
+.decl mark(id: Ident, p_inner: Position, col: Color)
+mark(Id, P_inner, Col) :- panel_inner(Id, P, P_inner), in(P, Col), !field(Id, Col).
 
 // The cells of the panel that carries no mark — the one the design goes on.
-.decl target_cell(id: Ident, p_intile: Position)
-target_cell(Id, P_intile) :- bbox.inner(Id, _, P_intile), !mark(Id, _, _).
+.decl target_cell(id: Ident, p_inner: Position)
+target_cell(Id, P_inner) :- panel_inner(Id, _, P_inner), !mark(Id, _, _).
 
 // A mark's anchor on one axis: its distance to the nearer edge of its
 // panel. A centered mark anchors to both.
-.decl anchor(p_intile: Position, d: Dir, k: number)
-anchor(P_intile, D, K) :- mark(_, P_intile, _), dist_pair(P_intile, D, K, K2), K <= K2.
+.decl anchor(p_inner: Position, d: Dir, k: number)
+anchor(P_inner, D, K) :- mark(_, P_inner, _), dist_pair(P_inner, D, K, K2), K <= K2.
 
 // A target cell that repeats a mark's anchor on one axis.
-.decl anchored(p_intile: Position, m_intile: Position, a: Axis)
-anchored(P_intile, M_intile, A) :-
-    target_cell(_, P_intile),
-    anchor(M_intile, D, K), axis_of(D, A), dist(P_intile, D, K).
+.decl anchored(p_inner: Position, m_inner: Position, a: Axis)
+anchored(P_inner, M_inner, A) :-
+    target_cell(_, P_inner),
+    anchor(M_inner, D, K), axis_of(D, A), dist(P_inner, D, K).
 
 // The design on the target: a mark anchored on both axes at once.
-.decl design(p_intile: Position, col: Color)
-design(P_intile, Col) :-
-    mark(_, M_intile, Col), perp(A, A2),
-    anchored(P_intile, M_intile, A), anchored(P_intile, M_intile, A2).
+.decl design(p_inner: Position, col: Color)
+design(P_inner, Col) :-
+    mark(_, M_inner, Col), perp(A, A2),
+    anchored(P_inner, M_inner, A), anchored(P_inner, M_inner, A2).
 
 .decl out(p: Position, col: Color)
-out(P_intile, Col) :-
-    target_cell(Id, P_intile),
-    ( design(P_intile, Col)                  // design cell
-    ; !design(P_intile, _), field(Id, Col)   // field elsewhere
+out(P_inner, Col) :-
+    target_cell(Id, P_inner),
+    ( design(P_inner, Col)                  // design cell
+    ; !design(P_inner, _), field(Id, Col)   // field elsewhere
     ).

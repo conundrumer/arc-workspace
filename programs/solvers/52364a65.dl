@@ -2,7 +2,7 @@
 // draft
 // concept: objects select rank
 // Each non-bg color is one object. Every object loses the params.depth layers
-// nearest the params.peel_dir edge of its own bounding bbox. The rest stays put,
+// nearest the params.peel_dir edge of its own bounding box. The rest stays put,
 // and the vacated cells become params.bg.
 //
 // The cases differ in what a layer is:
@@ -27,8 +27,8 @@ impl_choice($Strip()). impl_choice($Occupied()).
 .decl obj_cell(col: Color, p: Position)
 obj_cell(Col, P) :- in(P, Col), !params.bg(Col).
 
-// Each object viewed from its own bounding bbox.
-.init bbox = BoxFrame<Color>
+// Each object's bounding box.
+.init bbox = Bbox<Color>
 bbox.cell(Col, P) :- obj_cell(Col, P).
 
 // The cell's layer, counted in from the object's peel edge.
@@ -36,7 +36,9 @@ bbox.cell(Col, P) :- obj_cell(Col, P).
 
 // --- Strip ---
 
-layer($Strip(), P, K) :- bbox.inner(_, P, P_inner), params.peel_dir(D), dist(P_inner, D, K).
+layer($Strip(), P, K) :-
+    bbox.cell(Col, P), bbox.box(Col, B), crop(P, B, P_inner),  // the cell in its object's box
+    params.peel_dir(D), dist(P_inner, D, K).                   // counted in from the peel edge
 
 // --- Occupied ---
 

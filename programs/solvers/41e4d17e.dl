@@ -40,15 +40,15 @@ holes.cell($U(), P) :- in(P, Col), params.bg(Col).
 caster([$Object(), Id], P) :- objects.label($U(), P, Id).
 caster([$Hole(), Id], P) :- holes.region($U(), P, Id).
 
-.init frame = BoxFrame<Caster>
+.init frame = Bbox<Caster>
 frame.cell(Ca, P) :- caster(Ca, P).
-frame.grid(Ca, P) :- caster(Ca, _), in(P, _).
 
 .decl painted(p: Position, ch: Choice)
 painted(P, Ch) :-
-    in(P, Col), params.bg(Col),                       // a background cell
-    frame.inner([Ch, _], P_c, P_in), centered(P_in),  // a caster's center
-    axis_elem(A), same_line(A, P, P_c).               // sharing a line with it, on either axis
+    in(P, Col), params.bg(Col),                          // a background cell
+    in(P_c, _), frame.box([Ch, _], B),                   // a grid cell, and a caster's box
+    crop(P_c, B, P_inner), centered(P_inner),            // the cell centered in that box
+    axis_elem(A), same_line(A, P, P_c).                  // sharing a line with it, on either axis
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-

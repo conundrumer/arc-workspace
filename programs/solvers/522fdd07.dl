@@ -50,11 +50,11 @@ comps.node(Col, P) :- in(P, Col), !params.bg(Col).
 .decl obj(id: Ident, col: Color)
 obj(Id, Col) :- comps.label(Col, _, Id).
 
-.init bbox = BoxFrame<Ident>
+.init bbox = Bbox<Ident>
 bbox.cell(Id, P) :- comps.label(_, P, Id).
 
 .decl center(id: Ident, p: Position)
-center(Id, P) :- bbox.inner(Id, P, P_inner), centered(P_inner).
+center(Id, P) :- bbox.cell(Id, P), bbox.box(Id, B), crop(P, B, P_inner), centered(P_inner).
 
 // The cells a ring-taking case redraws a square as.
 .decl shrunk(ch: Choice, id: Ident, p: Position)
@@ -86,7 +86,8 @@ shrunk($Erode(), Id, P) :- comps.label(Col, P, Id), !exposed.rim(Col, P).
 // --- Lookup ---
 
 target_extent($Lookup(), Id, N2) :-
-    bbox.extents(Id, _, N, N),      // a square box
+    bbox.cell(Id, P), bbox.box(Id, B), perp(A, A2),
+    box_extent(B, P, A, N), box_extent(B, P, A2, N),  // a square box
     params.next_extent(N, N2).
 
 // --- output ---
@@ -121,6 +122,8 @@ out(P, Col, Ch) :- in(P, _), impl_choice(Ch), !paint(Ch, P, _), params.bg(Col).
 
     .decl next_extent(n: number, n2: number)
     next_extent(N, N2) :-
-        in_box.extents(Sq, _, N, N),     // a square
-        out_box.extents(Sq, _, N2, N2).  // the square it comes back as
+        in_box.cell(Sq, P), in_box.box(Sq, B), perp(A, A2),
+        box_extent(B, P, A, N), box_extent(B, P, A2, N),        // a square
+        out_box.cell(Sq, P2), out_box.box(Sq, B2),
+        box_extent(B2, P2, A, N2), box_extent(B2, P2, A2, N2).  // the square it comes back as
 }

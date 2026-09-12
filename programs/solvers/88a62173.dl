@@ -50,11 +50,12 @@ line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
 lattice.cell($U(), P) :- in(P, _).
 lattice.divider($U(), A, L) :- line_color.value([A, L], _).
 
-// Each tile viewed from its own bbox.
-.init bbox = BoxFrame<Position>
+// The box each tile spans.
+.init bbox = Bbox<Position>
 bbox.cell(T, P) :- lattice.tile_of($U(), P, T).
 
-tile_val(T, P_intile, Col, $Cross()) :- bbox.inner(T, P_grid, P_intile), in(P_grid, Col).
+tile_val(T, P_intile, Col, $Cross()) :-
+    in(P_grid, Col), bbox.cell(T, P_grid), bbox.box(T, B), crop(P_grid, B, P_intile).
 
 // --- the rarest tile ---
 

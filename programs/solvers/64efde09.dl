@@ -44,18 +44,19 @@ tip(P, Col) :- part(Id, P, Col), !bar(Id).
 
 // --- congruence ---
 
-.init bbox = BoxFrame<Ident>
+.init bbox = Bbox<Ident>
 bbox.cell(Id, P) :- part(Id, P, _), bar(Id).
 
-// A bar's cell seen from its own bbox.
-.decl bar_inner(id: Ident, p_inner: Position, col: Color)
-bar_inner(Id, I, Col) :- bbox.inner(Id, P, I), part(Id, P, Col).
+// A bar's cell, in the grid frame and in its own box's frame.
+.decl bar_cell(id: Ident, p: Position, p_inner: Position, col: Color)
+bar_cell(Id, P, P_inner, Col) :-
+    bbox.cell(Id, P), bbox.box(Id, B), crop(P, B, P_inner), part(Id, P, Col).
 
 // Each ordered pair of bars, both read in their own box frames.
 .type Pair = [a: Ident, b: Ident]
 .init cong = D4Map<Pair, Color>
-cong.src([A, B], I, Col) :- bar_inner(A, I, Col), bar(B).
-cong.dst([A, B], I, Col) :- bar_inner(B, I, Col), bar(A).
+cong.src([A, B], P_inner, Col) :- bar_cell(A, _, P_inner, Col), bar(B).
+cong.dst([A, B], P_inner, Col) :- bar_cell(B, _, P_inner, Col), bar(A).
 
 // --- the lane back from a tip ---
 
@@ -86,10 +87,11 @@ source(M, S, D, Col, $Edge()) :- reach(P_tip, Col, M, S, D), dist(P_tip, D, 0). 
 // the short one.
 .type Lane = [id: Ident, d: Dir, col: Color]
 .init lane_color = Tally<Lane, Position>
-lane_color.item([Id, D, Col], I) :-
-    bar_inner(Id, I, Col),
-    bbox.extents(Id, A, N1, N2), N1 < N2, axis_of(D, A),    // the short axis
-    dist(I, D, 0).                                         // the lane at its D edge
+lane_color.item([Id, D, Col], P_inner) :-
+    bar_cell(Id, P, P_inner, Col), bbox.box(Id, B),
+    box_extent(B, P, A, N1), perp(A, A2), box_extent(B, P, A2, N2), N1 < N2,
+    axis_of(D, A),                                         // the short axis
+    dist(P_inner, D, 0).                                   // the lane at its D edge
 
 // The way out: the lane where one color covers the most cells.
 .init exit = ArgExtremes<Ident, Dir>
@@ -102,10 +104,11 @@ source(M, S, D, Col, $Lane()) :- reach(_, Col, M, S, D), exit.high(M, D, _).  //
 // Every bar casts every tip's beam.
 .decl emit(p: Position, d: Dir, col: Color, ch: Choice)
 emit(S2, D2, Col, Ch) :-
-    source(M, S, D, Col, Ch), bbox.inner(M, S, I),  // a beam's source, in its bar's box
-    cong.map([M, M2], G),                          // an element carrying that bar onto another
-    apply(G, I, I2), bbox.inner(M2, S2, I2),        // the source cell carried over
-    apply_dir(G, D, D2).                           // the heading with it
+    source(M, S, D, Col, Ch), bar_cell(M, S, P_inner, _),   // a beam's source, in its bar's box
+    cong.map([M, M2], G),                                   // an element carrying that bar onto another
+    apply(G, P_inner, P_inner2),
+    bar_cell(M2, S2, P_inner2, _),                          // the source cell carried over
+    apply_dir(G, D, D2).                                    // the heading with it
 
 .type Beam = [p: Position, ch: Choice]
 .init beam = Ray<Beam>

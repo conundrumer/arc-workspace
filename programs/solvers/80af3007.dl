@@ -19,15 +19,14 @@
 .init params = Params
 
 // The picture: the box the ink occupies.
-.init bbox = BoxFrame<Unit>
+.init bbox = Bbox<Unit>
 bbox.cell($U(), P) :- in(P, Col), params.ink(Col).
-bbox.grid($U(), P) :- in(P, _).
 
 // A cell of the picture and the pixel it lies in.
 .decl pixel_cell(p: Position, p_tile: Position)
 pixel_cell(P, P_tile) :-
-    bbox.inner($U(), P, P_inner), params.scale(K),
-    divide_by_size_2d(P_inner, K, 0, P_tile, _).
+    in(P, _), bbox.box($U(), B), crop(P, B, P_inner),  // a cell of the picture, in its frame
+    params.scale(K), divide_by_size_2d(P_inner, K, 0, P_tile, _).
 
 .decl pixel(p_tile: Position)
 pixel(P_tile) :- pixel_cell(_, P_tile).

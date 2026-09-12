@@ -47,11 +47,16 @@ lattice.divider($U(), A, L) :-
     in(P, _), axis_elem(A), split(P, A, L, _),  // a line of the grid
     !content_line(L).                           // carrying no content: a separator
 
-.init block = BoxFrame<Position>
+.init block = Bbox<Position>
 block.cell(P_tile, P) :- lattice.tile_of($U(), P, P_tile).
 
+// A grid cell with its block and its position in that block's frame.
+.decl block_cell(p: Position, p_tile: Position, p_intile: Position)
+block_cell(P, P_tile, P_intile) :-
+    lattice.tile_of($U(), P, P_tile), block.box(P_tile, B), crop(P, B, P_intile).
+
 .decl cell(p_tile: Position, p_intile: Position, col: Color)
-cell(P_tile, P_intile, Col) :- block.inner(P_tile, P, P_intile), content(P, Col).
+cell(P_tile, P_intile, Col) :- block_cell(P, P_tile, P_intile), content(P, Col).
 
 // --- the template ---
 
@@ -81,7 +86,7 @@ dominant.item($U(), Col, P_intile) :- template(P_intile, Col).
 minor_cell(P_intile) :- template(P_intile, Col), !dominant.mode($U(), Col).
 
 out(P, Col, $Expand()) :-
-    block.inner(P_tile, P, P_intile),
+    block_cell(P, P_tile, P_intile),
     ( minor_cell(P_tile), template(P_intile, Col)    // a copy of the template
     ; !minor_cell(P_tile), dominant.mode($U(), Col)  // a solid field
     ).
@@ -97,7 +102,7 @@ solid(P_tile) :- cell(P_tile, P_intile, Col), template(P_intile, C2), Col != C2.
 solid_color(Col) :- solid(P_tile), cell(P_tile, _, Col).
 
 out(P, Col, $Invert()) :-
-    block.inner(P_tile, P, P_intile),
+    block_cell(P, P_tile, P_intile),
     ( solid(P_tile), template(P_intile, Col)                // a copy of the template
     ; !solid(P_tile), template(_, Col), !solid_color(Col)   // a solid field, in the other color
     ).

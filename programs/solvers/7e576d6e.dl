@@ -51,11 +51,11 @@ gap(P, L) :-
     !line_mode.mode($U(), Col).                             // off the divider color
 
 // The middle cell of each gap.
-.init gap_box = BoxFrame<Position>
+.init gap_box = Bbox<Position>
 gap_box.cell(L, P) :- gap(P, L).
 
 .decl gap_mid(p: Position)
-gap_mid(P) :- gap_box.inner(_, P, P_inner), centered(P_inner).
+gap_mid(P) :- gap(P, L), gap_box.box(L, B), crop(P, B, P_inner), centered(P_inner).
 
 // The markers: the cells off the dividers that are not background.
 .decl marker(p: Position, col: Color)

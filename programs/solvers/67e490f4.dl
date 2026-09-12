@@ -64,10 +64,9 @@ biggest.item($U(), Id, P) :- obj.label(_, P, Id).
 
 stencil(Id, $Largest()) :- biggest.mode($U(), Id).
 
-// The stencil's box, with what it encloses.
-.init view = BoxFrame<Stencil>
-view.cell(S, P) :- stencil(Id, S), obj.label(_, P, Id).
-view.grid(S, P) :- stencil_choice(S), in(P, _).
+// The stencil's box.
+.init stencil_box = Bbox<Stencil>
+stencil_box.cell(S, P) :- stencil(Id, S), obj.label(_, P, Id).
 
 // --- cutouts ---
 
@@ -75,7 +74,7 @@ view.grid(S, P) :- stencil_choice(S), in(P, _).
 
 // --- $Box ---
 .init boxed = Components<Stencil>
-boxed.node(S, P) :- view.inner(S, P, _), field_cell(P).
+boxed.node(S, P) :- stencil_box.box(S, B), field_cell(P), inside(P, B).
 
 cutout([S, $Box()], P, Id) :- boxed.label(S, P, Id).
 
@@ -86,17 +85,19 @@ cutout([S, $Closed()], P, Id) :- stencil_choice(S), closed.region($U(), P, Id).
 
 // Each cutout and each object, read in its own box.
 .type Cut = [ch: Choice, id: Ident]
-.init cut_shape = BoxFrame<Cut>
+.init cut_shape = Bbox<Cut>
 cut_shape.cell([Ch, Id], P) :- cutout(Ch, P, Id).
 
-.init obj_shape = BoxFrame<Ident>
+.init obj_shape = Bbox<Ident>
 obj_shape.cell(Id, P) :- obj.label(_, P, Id).
 
 // Each cutout against each object, in their boxes.
 .type Pair = [cut: Cut, obj: Ident]
 .init cong = D4Map<Pair, Unit>
-cong.src([C, O], P_inner, $U()) :- cut_shape.inner(C, _, P_inner), obj.label(_, _, O).
-cong.dst([C, O], P_inner, $U()) :- cut_shape.cell(C, _), obj_shape.inner(O, _, P_inner).
+cong.src([C, O], P_inner, $U()) :-
+    cut_shape.cell(C, P), cut_shape.box(C, B), crop(P, B, P_inner), obj.label(_, _, O).
+cong.dst([C, O], P_inner, $U()) :-
+    cut_shape.cell(C, _), obj_shape.cell(O, P), obj_shape.box(O, B), crop(P, B, P_inner).
 
 // An object cell that no cutout cell reaches under D, which the
 // into-reading of `map` allows.
@@ -122,7 +123,7 @@ fill.item(C, Col, O) :-
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P_inner, Col, [S, R]) :-
-    view.inner(S, P, P_inner), region_choice(R),
+    stencil_box.box(S, B), in(P, _), crop(P, B, P_inner), region_choice(R),
     ( obj.label(Col, P, Id), stencil(Id, S)                        // the block itself
     ; cutout([S, R], P, Id), fill.mode([[S, R], Id], Col)          // a filled cutout
     ).

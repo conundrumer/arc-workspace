@@ -25,15 +25,17 @@ mark(P, Col) :- in(P, Col), !params.bg(Col).
 
 // The marks' bounding box is the innermost outline: the outer dots sit at
 // two of its corners, and the middle dot at its center.
-.init bbox = BoxFrame<Unit>
+.init bbox = Bbox<Unit>
 bbox.cell($U(), P) :- mark(P, _).
 
 .decl center(p: Position)
-center(P) :- bbox.inner($U(), P, P_in), centered(P_in).    // the middle dot
+center(P) :-
+    bbox.cell($U(), P), bbox.box($U(), B), crop(P, B, P_inner),
+    centered(P_inner).    // the middle dot
 
 // The spacing, as the frame change carrying the center out to the innermost outline.
-.decl spread(v: Box)
-spread(V) :- center(P), bbox.box($U(), B), relative(P, B, V).
+.decl spread(b: Box)
+spread(B_spread) :- center(P), bbox.box($U(), B), relative(P, B, B_spread).
 
 // --- program ---
 
@@ -47,7 +49,7 @@ drawn(B, P) :- outline(B), in(P, _), box_edge(P, B, _).
 // being the innermost. An outline that draws nothing lies wholly off the
 // grid, and so does every outline beyond it.
 outline(B) :- center(B).
-outline(B2) :- drawn(B, _), spread(V), compose(B, V, B2).
+outline(B2) :- drawn(B, _), spread(B_spread), compose(B, B_spread, B2).
 
 .decl out(p: Position, col: Color, ch: Choice)
 

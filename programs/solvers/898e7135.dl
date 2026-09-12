@@ -38,27 +38,30 @@ board(Id) :- closed.region(Id, _, _).
 .decl hole(h: Ident, p: Position)
 hole(H, P) :- closed.region(_, P, H).
 
-// The board viewed from its box, holes included.
-.init board_box = BoxFrame<Ident>
+// The box the board spans, holes included.
+.init board_box = Bbox<Ident>
 board_box.cell(Id, P) :- board(Id), object(Id, _, P).
-board_box.grid(Id, P) :- board(Id), in(P, _).
 
-// Each hole viewed from its own box.
-.init hole_box = BoxFrame<Ident>
+// Each hole's own box.
+.init hole_box = Bbox<Ident>
 hole_box.cell(H, P) :- hole(H, P).
 
 // --- the pieces ---
 
-.init piece_box = BoxFrame<Ident>
+.init piece_box = Bbox<Ident>
 piece_box.cell(O, P) :- object(O, _, P), !board(O).
+
+// Each piece's cells, in its own box.
+.decl piece_cell(o: Ident, p_inner: Position)
+piece_cell(O, P_inner) :- piece_box.cell(O, P), piece_box.box(O, B), crop(P, B, P_inner).
 
 // --- the fit ---
 
 // Scale factors a piece admits: an extent of its box, or less.
 .decl scale_cand(k: number)
 scale_cand(K) :-
-    piece_box.inner(_, _, P), axis_elem(A),
-    ( axis_dim(P, A, K) ; sub_extent(P, A, K) ).
+    piece_cell(_, P_inner), axis_elem(A),
+    ( axis_dim(P_inner, A, K) ; sub_extent(P_inner, A, K) ).
 
 // The block a cell becomes at each scale.
 .init block = Frame2D<number>
@@ -68,9 +71,9 @@ block.extent(K, A, K) :- scale_cand(K), axis_elem(A).
 .type Turned = [h: Ident, k: number, d: D4]
 
 .init congruent = KeyedSetCompare<Turned, Ident, Position>
-congruent.pattern_member(O, P_piece) :- piece_box.inner(O, _, P_piece).
+congruent.pattern_member(O, P_piece) :- piece_cell(O, P_piece).
 congruent.observed_member([H, K, D], P_turned) :-
-    hole_box.inner(H, _, P_hole), block.cell(K, P_blk),
+    hole(H, P), hole_box.box(H, B), crop(P, B, P_hole), block.cell(K, P_blk),
     concat_2d(P_hole, P_blk, 0, P_scaled),           // the hole scaled by K
     d4_elem(D), apply(D, P_scaled, P_turned).        // turned by D
 
@@ -90,8 +93,9 @@ scale(K) :- scale_cand(K), !unfit_hole(K).
 // Board cells keep the board's color; each hole takes its piece's color.
 .decl out(p: Position, col: Color)
 out(P_out, Col) :-
-    scale(K), block.cell(K, P_blk),                                        // each cell becomes a block
-    board_box.inner(Id, P, P_board), concat_2d(P_board, P_blk, 0, P_out),  // of the board's box
-    ( object(Id, Col, P)                             // the board
-    ; hole(H, P), fit(H, K, O), object(O, Col, _)    // a hole, in its piece's color
+    scale(K), block.cell(K, P_blk),                       // each cell becomes a block
+    in(P, _), board_box.box(Id, B), crop(P, B, P_board),  // a cell of the board's box
+    concat_2d(P_board, P_blk, 0, P_out),                  // scaled into the output
+    ( object(Id, Col, P)                                  // the board
+    ; hole(H, P), fit(H, K, O), object(O, Col, _)         // a hole, in its piece's color
     ).

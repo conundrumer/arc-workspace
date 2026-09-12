@@ -33,12 +33,12 @@ region.node(Col, P) :- in(P, Col), !params.bg(Col).
 .decl piece_cell(pc: Piece, p: Position)
 piece_cell([Col, Id], P) :- region.label(Col, P, Id).
 
-.init bbox = BoxFrame<Piece>
+.init bbox = Bbox<Piece>
 bbox.cell(Pc, P) :- piece_cell(Pc, P).
 
 // The piece's footprint, read from its own bbox.
 .decl shape(pc: Piece, p: Position)
-shape(Pc, S) :- bbox.inner(Pc, _, S).
+shape(Pc, P_inner) :- piece_cell(Pc, P), bbox.box(Pc, B), crop(P, B, P_inner).
 
 // --- the candidate placements ---
 

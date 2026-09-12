@@ -105,12 +105,13 @@ seat(P_tile_seed, P_tile_seat, $Unique()) :-
     seed(P_tile_seed), motif_hue.value(_, P_tile_seat).
 
 // $Center — the motif cell at the center of the motif's box.
-.init motif_box = BoxFrame<Unit>
+.init motif_box = Bbox<Unit>
 motif_box.cell($U(), P_tile) :- motif(P_tile, _).
 
 seat(P_tile_seed, P_tile_seat, $Center()) :-
     seed(P_tile_seed),                             // each single cell
-    motif_box.inner($U(), P_tile_seat, P_inner),   // a motif cell, seen from the box
+    motif(P_tile_seat, _), motif_box.box($U(), B),
+    crop(P_tile_seat, B, P_inner),                 // a motif cell, seen from the box
     centered(P_inner).                             // the box's center
 
 // --- output ---

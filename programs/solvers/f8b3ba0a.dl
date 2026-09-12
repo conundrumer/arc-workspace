@@ -106,8 +106,6 @@ col.dist_set(Ch, R) :- parse.minority_rank(Ch, _, R).
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- parse.minority_rank(Ch, Col, Rk), col.pos(Ch, Rk, P).
 
-.type Block = [e: Example, id: Ident]
-
 .comp Determine {
     // Non-bg cells of a train input — a test input has no output to read.
     .decl ink(e: Example, p: Position, col: Color)
@@ -115,32 +113,34 @@ out(P, Col, Ch) :- parse.minority_rank(Ch, Col, Rk), col.pos(Ch, Rk, P).
 
     // The frame the non-bg cells span: the grid inside the separator border,
     // with each ink cell's place in it.
-    .init span = BoxFrame<Example>
+    .init span = Bbox<Example>
     span.cell(E, P) :- ink(E, P, _).
 
     // The ink spans that frame, so its distance to a grid edge is the
     // border's width there.
     .decl border_width(k: number)
-    border_width(K) :- span.edge_min(_, _, K).
+    border_width(K) :- span.box(_, B), dir_elem(D), dist(B, D, K).
 
     .init blocks = Components<Example>
     blocks.node(E, P) :- ink(E, P, _).
+
+    .type Block = [e: Example, id: Ident]
 
     .init bbox = Bbox<Block>
     bbox.cell([E, Id], P) :- blocks.label(E, P, Id).
 
     .decl tile_dim(a: Axis, k: number)
-    tile_dim(A, K) :- bbox.extent(_, A, K).
+    tile_dim(A, K) :- bbox.cell(Blk, P), bbox.box(Blk, B), box_extent(B, P, A, K).
 
     .type ED = [e: Example, d: Dir]
 
     // Blocks along an axis: the distinct offsets their boxes sit at.
     .init tile_count = Tally<ED, number>
-    tile_count.item([E, D], K) :- bbox.edge_min([E, Id], D, K).
+    tile_count.item([E, D], K) :- bbox.box([E, Id], B), dir_elem(D), dist(B, D, K).
 
     .decl tile_gap(g: number)
     tile_gap(G) :-
-        span.inner(E, _, P_inner),                                   // the frame the lattice divides
+        span.cell(E, P), span.box(E, B), crop(P, B, P_inner),  // the frame the lattice divides
         tile_count.tally([E, D], N), axis_of(D, A), tile_dim(A, K),
         divide_gap(P_inner, A, N, K, G).
 

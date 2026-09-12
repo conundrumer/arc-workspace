@@ -36,11 +36,12 @@ layout.axis(A, A) :- axis_elem(A).
 layout.member(A, P_line, P_line) :- stripe.value([A, P_line], _), !mixed_axis(A).
 
 // The square, viewed from its own frame.
-.init square = BoxFrame<Unit>
+.init square = Bbox<Unit>
 square.cell($U(), P) :- in(P, Col), params.square(Col).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :-
-    stripe.value([A, P_line], Col), layout.pos(A, P_line, P_pos),   // the stripe's output line
-    square.inner($U(), _, P_inner), split(P_inner, A, _, P_across),  // a square cell's position across the stripe
+    stripe.value([A, P_line], Col), layout.pos(A, P_line, P_pos),    // the stripe's output line
+    square.cell($U(), Q), square.box($U(), B), crop(Q, B, P_inner),  // a square cell in the square's frame
+    split(P_inner, A, _, P_across),                                  // its position across the stripe
     compose(P_pos, P_across, P).

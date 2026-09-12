@@ -39,12 +39,14 @@ drect.node($U(), P) :- in(P, Col), params.ink(Col).
 .decl hole(b: Box, p: Position)
 hole(B, P) :- drect.box($U(), B), in(P, _), interior(P, B).
 
-// The hole viewed from its own box.
-.init rect_hole = BoxFrame<Box>
+// The hole's own box.
+.init rect_hole = Bbox<Box>
 rect_hole.cell(B, P) :- hole(B, P).
 
 .decl rect_odd(b: Box)
-rect_odd(B) :- rect_hole.inner(B, _, P_inner), centered(P_inner).
+rect_odd(B) :-
+    hole(B, P), rect_hole.box(B, B_hole),
+    crop(P, B_hole, P_inner), centered(P_inner).  // the hole has a center cell
 
 fill(P, Col, $Rect()) :-
     hole(B, P),
@@ -58,12 +60,14 @@ fill(P, Col, $Rect()) :-
 .init closed = Closed<Unit>
 closed.cell($U(), P) :- in(P, Col), !params.ink(Col).
 
-// The region viewed from its own box.
-.init region_box = BoxFrame<Ident>
+// The region's own box.
+.init region_box = Bbox<Ident>
 region_box.cell(Id, P) :- closed.region($U(), P, Id).
 
 .decl region_odd(id: Ident)
-region_odd(Id) :- region_box.inner(Id, _, P_inner), centered(P_inner).
+region_odd(Id) :-
+    closed.region($U(), P, Id), region_box.box(Id, B),
+    crop(P, B, P_inner), centered(P_inner).  // the region has a center cell
 
 fill(P, Col, $Enclose()) :-
     closed.region($U(), P, Id),

@@ -7,7 +7,7 @@
 //
 //   m (how deep a cell lies):
 //     $Peel()  — erosion from the object's own outline.
-//     $Box()   — distance to the nearest edge of the object's bounding bbox.
+//     $Box()   — distance to the nearest edge of the object's bounding box.
 //   p (the color at a depth):
 //     $Cycle() — the colors of params.ring repeat over the depths.
 //     $Table() — params.ring_at holds one color per depth.
@@ -60,13 +60,14 @@ depth(P, K, $Peel()) :- rim.depth($U(), P, K).
 .init objs = Components<Unit>
 objs.node($U(), P) :- ink(P).
 
-.init bbox = BoxFrame<Ident>
+.init bbox = Bbox<Ident>
 bbox.cell(Id, P) :- objs.label($U(), P, Id).
 
 // Depth in the box: the least distance to a box edge.
 .init box_depth = Extremes<Position>
 box_depth.cand(P, K) :-
-    bbox.inner(_, P, P_inner),      // the cell seen from its own box
+    objs.label($U(), P, Id),
+    bbox.box(Id, B), crop(P, B, P_inner),      // the cell seen from its own box
     dir_elem(D), dist(P_inner, D, K).
 
 depth(P, K, $Box()) :- box_depth.low(P, K).

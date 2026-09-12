@@ -60,18 +60,18 @@ rows.axis(Ch, A2)         :- seg_split(_, _, _, Ch), params.axis(A), perp(A, A2)
 rows.member(Ch, Row, Row) :- seg_split(_, Row, _, Ch).
 
 // Each segment shifts flush: its cells re-expressed from its own bounding
-// frame.
+// box.
 .type SegKey = [ch: Choice, row: Position]
 
-.init shift = BoxFrame<SegKey>
+.init shift = Bbox<SegKey>
 shift.cell([Ch, Row], P_along) :- seg_split(P_along, Row, _, Ch).
 
 .decl out(p: Position, col: Color, c: Choice)
 out(P_out, Col, Ch) :-
-    rows.pos(Ch, Row, P_v),                   // the row's out position
-    shift.inner([Ch, Row], P_along, P_h),     // an out column
-    seg_split(P_along, Row, Col, Ch),         // its color
-    compose(P_v, P_h, P_out).
+    rows.pos(Ch, Row, P_outer_v),                          // the row's out position
+    seg_split(P_along, Row, Col, Ch),                      // a segment cell with its color
+    shift.box([Ch, Row], B), crop(P_along, B, P_inner_h),  // its out column
+    compose(P_outer_v, P_inner_h, P_out).
 
 .comp Determine {
     .decl mark(e: Example, row: Position, p: Position, col: Color)

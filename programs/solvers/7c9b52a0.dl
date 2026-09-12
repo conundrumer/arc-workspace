@@ -21,17 +21,21 @@ frame.item($U(), Col, P) :- in(P, Col).
 .init panels = Components<Unit>
 panels.node($U(), P) :- in(P, Col), !frame.mode($U(), Col).
 
-// Each panel viewed from its own box.
-.init panel = BoxFrame<Ident>
+// Each panel's own box.
+.init panel = Bbox<Ident>
 panel.cell(Id, P) :- panels.label($U(), P, Id).
 
-// Ink stacked onto the shared canvas.
+// The shared canvas: every panel's cells, in the panel's own frame.
+.decl canvas(p_grid: Position, p: Position)
+canvas(P_grid, P) :- panel.cell(Id, P_grid), panel.box(Id, B), crop(P_grid, B, P).
+
+// Ink stacked onto the canvas.
 .decl ink(p: Position, col: Color)
-ink(P, Col) :- panel.inner(_, P_grid, P), in(P_grid, Col), !params.bg(Col).
+ink(P, Col) :- canvas(P_grid, P), in(P_grid, Col), !params.bg(Col).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :-
-    panel.inner(_, _, P),                // canvas cell
-    ( ink(P, Col)                        // inked
-    ; !ink(P, _), params.bg(Col)         // blank
+    canvas(_, P),
+    ( ink(P, Col)                    // inked
+    ; !ink(P, _), params.bg(Col)     // blank
     ).

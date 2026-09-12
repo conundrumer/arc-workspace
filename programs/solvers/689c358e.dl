@@ -1,7 +1,6 @@
 // 689c358e
 // draft
 // concept: objects markers cast
-//
 // A border ring encloses a bg canvas holding crosses, one per color. Each
 // cross has a long bar and a short bar, and the short bar crosses the long
 // one off its middle. On the long bar's line, the grid edge cell on one side
@@ -27,7 +26,7 @@
 .decl cross_cell(c: Color, p: Position)
 cross_cell(C, P) :- in(P, C), !params.bg(C), interior(P, ZERO).
 
-.init bbox = BoxFrame<Color>
+.init bbox = Bbox<Color>
 bbox.cell(C, P) :- cross_cell(C, P).
 
 // The cell where the bars cross: the one cross cell off the cross's rim.
@@ -42,12 +41,13 @@ center(C, P) :- cross_cell(C, P), !rim.rim(C, P).
 
 // --- Nearer ---
 points(C, D, $Nearer()) :-
-    bbox.extents(C, A, N1, N2), N1 > N2, axis_of(D, A),    // long axis
-    bbox.box(C, P_box), dist_pair(P_box, D, K1, K2), K1 < K2.
+    bbox.cell(C, P), bbox.box(C, B),
+    box_extent(B, P, A, N1), perp(A, A2), box_extent(B, P, A2, N2), N1 > N2,  // long axis
+    axis_of(D, A), dist_pair(B, D, K1, K2), K1 < K2.       // the grid edge the box is nearer
 
 // --- Pointer ---
 points(C, D, $Pointer()) :-
-    center(C, P), bbox.inner(C, P, P_inner),
+    center(C, P), bbox.box(C, B), crop(P, B, P_inner),
     dir_elem(D), dist_pair(P_inner, D, K1, K2), K1 < K2.
 
 // --- output ---
@@ -58,8 +58,9 @@ impl_choice($Pointer()).
 
 .decl mark(p: Position, col: Color, ch: Choice)
 mark(P_edge, Col, Ch) :-
-    points(C, D, Ch), center(C, P), axis_of(D, A), same_line(A, P, P_edge), in(P_edge, _),
-    ( dist(P_edge, D, 0), Col = C                          // colored side
+    points(C, D, Ch), center(C, P),                         // a cross and the side its color goes to
+    axis_of(D, A), same_line(A, P, P_edge), in(P_edge, _),  // a cell of the long bar's line
+    ( dist(P_edge, D, 0), Col = C                              // colored side
     ; opposite(D, Opp), dist(P_edge, Opp, 0), params.far(Col)  // far side
     ).
 

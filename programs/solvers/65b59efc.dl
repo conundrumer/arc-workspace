@@ -24,12 +24,11 @@
 // --- the scene and its lattice ---
 
 // The scene: the drawn content, cut from its bg canvas.
-.init scene = BoxFrame<Unit>
+.init scene = Bbox<Unit>
 scene.cell($U(), P) :- in(P, Col), !params.bg(Col).
-scene.grid($U(), P) :- in(P, _).
 
 .decl cell(p: Position, col: Color)
-cell(P_scene, Col) :- scene.inner($U(), P, P_scene), in(P, Col).
+cell(P_inner, Col) :- scene.box($U(), B), in(P, Col), crop(P, B, P_inner).
 
 // A separator line is dashed: the separator color runs along it, so two
 // adjacent separator cells lie on it. A lone separator cell is where a tile
@@ -41,15 +40,16 @@ lattice.divider($U(), A, L) :-
     axis_of(D, A_run), neighbor(P, D, Q), cell(Q, Col),  // beside another
     perp(A_run, A), split(P, A, L, _).                   // the line they run along
 
-// Each tile viewed from its own box.
-.init tile = BoxFrame<Position>
+// Each tile's box.
+.init tile = Bbox<Position>
 tile.cell(P_tile, P) :- lattice.tile_of($U(), P, P_tile).
 
 // A tile cell by its band along the template side's axis, its strip across,
 // and its position in the tile.
 .decl tile_cell(p_band: Position, p_strip: Position, p_intile: Position, col: Color)
 tile_cell(P_band, P_strip, P_intile, Col) :-
-    tile.inner(P_tile, P, P_intile), cell(P, Col),
+    cell(P, Col), tile.cell(P_tile, P),                                 // a scene cell in its tile
+    tile.box(P_tile, B), crop(P, B, P_intile),                          // its place in that tile
     params.template_side(D), axis_of(D, A), split(P_tile, A, P_band, P_strip).
 
 // --- the bands ---
@@ -70,7 +70,8 @@ marker_cell(P_intile, Col) :-
 // drawn is not read.
 .decl legend_cell(p_strip: Position, col: Color)
 legend_cell(P_strip, Col) :-
-    tile_cell(P_band, P_strip, _, Col), params.template_side(D), opposite(D, D2), dist(P_band, D2, 0).
+    tile_cell(P_band, P_strip, _, Col),
+    params.template_side(D), opposite(D, D2), dist(P_band, D2, 0).
 
 // --- output ---
 

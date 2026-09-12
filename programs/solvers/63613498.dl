@@ -15,7 +15,7 @@
     .decl mark(c: Color) mark(5).
 
     // The corner the key sits in, as margins from each edge.
-    .decl panel(b: Position) panel([0, 7, 0, 7]).
+    .decl panel(b: Box) panel([0, 7, 0, 7]).
 }
 
 .init params = Params
@@ -25,19 +25,23 @@
 .init shapes = Components<Unit>
 shapes.node($U(), P) :- in(P, Col), !params.bg(Col), !params.mark(Col).
 
-// Each shape's cells in its own box — its cells up to translation.
-.init bbox = BoxFrame<Ident>
+.init bbox = Bbox<Ident>
 bbox.cell(Id, P) :- shapes.label($U(), P, Id).
+
+// Each shape's cells in its own box — its cells up to translation.
+.decl shape_inner(id: Ident, p_inner: Position)
+shape_inner(Id, P_inner) :-
+    shapes.label($U(), P, Id), bbox.box(Id, B), crop(P, B, P_inner).
 
 // --- the key and its twin ---
 
 // The key's box lies within the panel, so every cell of it does.
 .decl key(id: Ident)
-key(Id) :- bbox.box(Id, M), params.panel(B), inside(M, B).
+key(Id) :- bbox.box(Id, B), params.panel(B_panel), inside(B, B_panel).
 
 .init same = KeyedSetCompare<Ident, Ident, Position>
-same.pattern_member(Id, P_inner) :- bbox.inner(Id, _, P_inner).
-same.observed_member(Id, P_inner) :- bbox.inner(Id, _, P_inner).
+same.pattern_member(Id, P_inner) :- shape_inner(Id, P_inner).
+same.observed_member(Id, P_inner) :- shape_inner(Id, P_inner).
 
 // The twin is the shape other than the key that holds the key's cells.
 .decl twin(p: Position)

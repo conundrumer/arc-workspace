@@ -3,11 +3,11 @@
 // concept: objects overlay repair span rank
 // Each non-bg color draws one square ring: an arm of K cells runs from every
 // corner along both edges it meets, and a side the arms do not fill is hollow
-// in the middle. The
-// rings differ in size, and the grid edge cuts some of them off — a cut ring's
-// size comes back by reflecting its cells through its center, the middle of a
-// hollow side. The output is the widest ring's frame, with every ring nested
-// concentric in it. Choice says which depth a ring lands on:
+// in the middle. The rings differ in size, and the grid edge cuts some of them
+// off — a cut ring's size comes back by reflecting its cells through its
+// center, the middle of a hollow side. The output is the widest ring's frame,
+// with every ring nested concentric in it. Choice says which depth a ring
+// lands on:
 //
 //   $Size() — the depth whose frame is as wide as the ring.
 //   $Rank() — one depth in from the next wider ring.
@@ -58,13 +58,14 @@ side.cell(Ky, P) :- line_cell(Ky, _), in(P, _).
 side.mark(Ky, P) :- line_cell(Ky, P).
 
 // The ring's center on that line — the middle cell of the hollow.
-.init gap = BoxFrame<LineKey>
+.init gap = Bbox<LineKey>
 gap.cell(Ky, P) :- side.between(Ky, P), !line_cell(Ky, P).
 
 .decl center(key: LineKey, p: Position)
 center([Col, A, L], M) :-
-    gap.inner([Col, A, L], M, I),            // a hollow cell, viewed from its box
-    axis_of(D, A), dist_pair(I, D, K, K).    // centered along the line
+    gap.cell([Col, A, L], M), gap.box([Col, A, L], B),
+    crop(M, B, P_inner),                           // a hollow cell, viewed from its box
+    axis_of(D, A), dist_pair(P_inner, D, K, K).    // centered along the line
 
 // The ring reaches as far past its center as its cells reach short of it.
 .decl mirror(key: LineKey, p: Position, q: Position)
@@ -82,8 +83,8 @@ ring_box.cell(Col, P) :- ring(Col, P).
 // A ring is at least as wide as the cells it shows, and at least as wide as
 // any line's mirrored reach.
 .init size = Extremes<Color>
-size.cand(Col, N) :- ring_box.extent(Col, _, N).
-size.cand(Col, N) :- reach.extent([Col, A, _], A, N).
+size.cand(Col, N) :- ring(Col, P), ring_box.box(Col, B), box_extent(B, P, _, N).
+size.cand(Col, N) :- reach.cell([Col, A, L], P), reach.box([Col, A, L], B), box_extent(B, P, A, N).
 
 .decl ring_size(col: Color, n: number)
 ring_size(Col, N) :- size.high(Col, N).
@@ -101,7 +102,7 @@ canvas.extent($U(), A, N) :- widest.high($U(), N), axis_elem(A).
 .init peel = Rim<Unit>
 peel.cell($U(), P) :- canvas.cell($U(), P).
 
-.init nest = BoxFrame<number>
+.init nest = Bbox<number>
 nest.cell(R, P) :- peel.depth($U(), P, R).
 
 .decl impl_choice(ch: Choice)
@@ -112,7 +113,8 @@ impl_choice($Size()). impl_choice($Rank()).
 
 // --- Size ---
 
-depth_ring(R, Col, $Size()) :- nest.extent(R, _, N), ring_size(Col, N).
+depth_ring(R, Col, $Size()) :-
+    nest.cell(R, P), nest.box(R, B), box_extent(B, P, _, N), ring_size(Col, N).
 
 // --- Rank ---
 
@@ -125,10 +127,10 @@ depth_ring(R, Col, $Rank()) :- ring_size(Col, N), order.rank_desc($U(), N, R).
 
 .decl paint(p: Position, col: Color, ch: Choice)
 paint(P, Col, Ch) :-
-    nest.inner(R, P, Q), depth_ring(R, Col, Ch),  // canvas cell in its ring's frame
-    dist(Q, D, 0),                                // on an edge of it
-    perp_dir(D, D2), dist(Q, D2, K),              // within an arm of the corner
-    arm.high(Col, K_arm), K < K_arm.              // across
+    nest.cell(R, P), nest.box(R, B), depth_ring(R, Col, Ch),     // a canvas cell of a ring's frame
+    box_edge(P, B, D),                                           // on an edge of that frame
+    crop(P, B, P_inner), perp_dir(D, D2), dist(P_inner, D2, K),  // how far along that edge from one end
+    arm.high(Col, K_arm), K < K_arm.                             // inside the arm that runs from that end
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- paint(P, Col, Ch).

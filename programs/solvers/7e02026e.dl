@@ -71,9 +71,9 @@ out(P, Col, $Flank()) :- in(P, Col), !flank_covered(P).
     smallest.cand($U(), K, N) :- comp_size.tally(K, N).
 
     // The smallest changed component is a single stamp.
-    .init frame = BoxFrame<EI>
-    frame.cell(K, P) :- smallest.low($U(), K, _), comp_cell(K, P).
+    .init stamp = Bbox<EI>
+    stamp.cell(K, P) :- smallest.low($U(), K, _), comp_cell(K, P).
 
     .decl shape(p: Position)
-    shape(S) :- frame.inner(_, _, S).
+    shape(P_inner) :- stamp.cell(K, P), stamp.box(K, B), crop(P, B, P_inner).
 }

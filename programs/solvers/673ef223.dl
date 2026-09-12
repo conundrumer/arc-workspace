@@ -29,15 +29,20 @@ bars.node($U(), P) :- in(P, Col), params.bar(Col).
 .decl bar_cell(id: Ident, p: Position, p_along: Position)
 bar_cell(Id, P, P_along) :- bars.label($U(), P, Id), line(P, P_along).
 
-// Each bar's frame over its lines: a bar cell's place in the bar.
-.init bar_frame = BoxFrame<Ident>
-bar_frame.cell(Id, P_along) :- bar_cell(Id, _, P_along).
+// Each bar's box over its lines, the frame a place in the bar is read in.
+.init bar_box = Bbox<Ident>
+bar_box.cell(Id, P_along) :- bar_cell(Id, _, P_along).
+
+// Each line of a bar, as a place in that bar.
+.decl bar_place(id: Ident, p_along: Position, p_inner: Position)
+bar_place(Id, P_along, P_inner) :-
+    bar_box.cell(Id, P_along), bar_box.box(Id, B), crop(P_along, B, P_inner).
 
 // A place in the bars flagged by a mark beside a bar.
 .decl flagged(p_inner: Position)
 flagged(P_inner) :-
-    in(P, Col), params.mark(Col), line(P, P_along),    // a mark's line
-    bar_frame.inner(_, P_along, P_inner).              // its place in the bar it lies beside
+    in(P, Col), params.mark(Col), line(P, P_along),  // a mark's line
+    bar_place(_, P_along, P_inner).                  // the place it flags in that bar
 
 // Flagged bar cells cast across params.axis through bg; ink stops the cast.
 .init cast = Ray<Unit>
@@ -45,7 +50,7 @@ cast.dir($U(), D) :- params.axis(A), perp(A, A2), axis_of(D, A2).
 cast.cell($U(), P) :- in(P, Col), params.bg(Col).
 cast.blocked($U(), P) :- in(P, Col), !params.bg(Col).
 cast.mark($U(), P) :-
-    bar_cell(Id, P, P_along), bar_frame.inner(Id, P_along, P_inner), flagged(P_inner).
+    bar_cell(Id, P, P_along), bar_place(Id, P_along, P_inner), flagged(P_inner).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- cast.clear($U(), P, _, _, _), params.mark(Col).

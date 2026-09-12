@@ -30,8 +30,12 @@
 .init rects = Components<Unit>
 rects.node($U(), P) :- in(P, Col), !params.bg(Col).
 
-.init bbox = BoxFrame<Ident>
+.init bbox = Bbox<Ident>
 bbox.cell(Id, P) :- rects.label($U(), P, Id).
+
+// Each rectangle's cells, in its own box frame.
+.decl rect_view(id: Ident, p: Position, p_inner: Position)
+rect_view(Id, P, P_inner) :- bbox.cell(Id, P), bbox.box(Id, B), crop(P, B, P_inner).
 
 .init rect_color = Unanimous<Ident, Color>
 rect_color.item(Id, Col) :- bbox.cell(Id, P), in(P, Col).
@@ -40,21 +44,19 @@ rect_color.item(Id, Col) :- bbox.cell(Id, P), in(P, Col).
 
 .init layer = Bbox<Color>
 layer.cell(Col, P_inner) :-
-    rect_color.clash(Id),                        // the pattern rectangle
-    bbox.inner(Id, P, P_inner), in(P, Col).
-
-// The layers are read over every rectangle's inner frame.
-layer.grid(Col, P_inner) :- layer.cell(Col, _), bbox.inner(_, _, P_inner).
+    rect_color.clash(Id),                 // the pattern rectangle
+    rect_view(Id, P, P_inner), in(P, Col).
 
 .decl nested(col_in: Color, col_out: Color)
 nested(Col_in, Col_out) :-
-    layer.box(Col_in, M_in), layer.box(Col_out, M_out),
-    inside(M_in, M_out), M_in != M_out.
+    layer.box(Col_in, B_in), layer.box(Col_out, B_out),
+    inside(B_in, B_out), B_in != B_out.
 
 // --- the paint ---
 
+// The layers are read over every rectangle's inner frame.
 .decl covers(p: Position, col: Color)
-covers(P, Col) :- bbox.inner(_, P, P_inner), layer.inside(Col, P_inner).
+covers(P, Col) :- rect_view(_, P, P_inner), layer.box(Col, B), inside(P_inner, B).
 
 .decl shadowed(p: Position, col: Color)
 shadowed(P, Col) :- covers(P, Col_in), nested(Col_in, Col).

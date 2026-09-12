@@ -59,14 +59,18 @@ shape_cell(Col, P) :-
     in(P, Col), !params.bg(Col),
     params.legend_dir(D), dist(P, D, K), K != 0.   // off the list's edge
 
-.init bbox = BoxFrame<Color>
+.init bbox = Bbox<Color>
 bbox.cell(Col, P) :- shape_cell(Col, P).
+
+// Each shape's cells, in its own box frame.
+.decl shape_inner(col: Color, p_inner: Position)
+shape_inner(Col, P_inner) :- shape_cell(Col, P), bbox.box(Col, B), crop(P, B, P_inner).
 
 // Each ordered pair of shapes, both read in their own box frames.
 .type Pair = [a: Color, b: Color]
 .init cong = D4Map<Pair, Unit>
-cong.src([A, B], S, $U()) :- bbox.inner(A, _, S), bbox.inner(B, _, _).
-cong.dst([A, B], S, $U()) :- bbox.inner(A, _, _), bbox.inner(B, _, S).
+cong.src([A, B], P_inner, $U()) :- shape_inner(A, P_inner), shape_inner(B, _).
+cong.dst([A, B], P_inner, $U()) :- shape_inner(A, _), shape_inner(B, P_inner).
 
 // One D4 element carries A's shape onto B's, and its inverse carries B's
 // back: the two shapes are the same shape.
@@ -130,7 +134,7 @@ out(P_grid_out, Col) :-
     blk.cell([E, Id], P) :- ink.label(E, P, Id).
 
     .decl block(n: number)
-    block(N) :- blk.extent(_, _, N).
+    block(N) :- blk.cell([E, Id], P), blk.box([E, Id], B), box_extent(B, P, _, N).
 
     .decl cand_gap(g: number)
     cand_gap(G) :- ex_out(_, P, _), axis_elem(A), sub_extent(P, A, G).

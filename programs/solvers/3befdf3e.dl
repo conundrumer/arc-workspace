@@ -88,6 +88,12 @@ core_col(Id, Col) :- core(Id, P), in(P, Col).
 .init core_box = Bbox<Ident>
 core_box.cell(Id, P) :- core(Id, P).
 
+// The core is a square, N cells on each side.
+.decl core_size(id: Ident, n: number)
+core_size(Id, N) :-
+    core(Id, P), core_box.box(Id, B),
+    box_extent(B, P, A, N), perp(A, A2), box_extent(B, P, A2, N).
+
 .decl paint(p: Position, col: Color, ch: Choice)
 
 // --- Cast ---
@@ -101,19 +107,18 @@ paint(P, Col, $Cast()) :- rim.rim(Id, P), core_col(Id, Col).
 paint(P, Col, $Cast()) :- core(Id, P), wall_col(Id, Col).
 
 paint(P, Col, $Cast()) :-
-    arm.ray([Id, D], P, D, K, _), K != 0,                  // beyond the face
-    axis_of(D, A), core_box.extent(Id, A, N), K <= N,      // as deep as the core
+    arm.ray([Id, D], P, D, K, _), K != 0,                                // beyond the face
+    axis_of(D, A), core_box.box(Id, B), box_extent(B, P, A, N), K <= N,  // as deep as the core
     wall_col(Id, Col).
 
 // --- Lookup ---
 
 paint(P, Col, $Lookup()) :-
-    core_box.extents(Id, _, N, N),
     ( params.fig_wall(N, P_fig), wall_col(Id, Col)     // the figure's wall role
     ; params.fig_core(N, P_fig), core_col(Id, Col) ),  // its core role
-    params.fig_core_box(N, B_fig), relative(B_fig, P_fig, P_inner),   // the cell, read from the core
-    core_box.box(Id, B), compose(B, P_inner, P),                     // laid on the object's core
-    in(P, _).                                                        // inside the grid
+    params.fig_core_box(N, B_fig), relative(B_fig, P_fig, P_inner),  // the cell, read from the core
+    core_size(Id, N),                                                // the catalog entry for this core
+    core_box.box(Id, B), compose(B, P_inner, P), in(P, _).           // laid on the object's core, inside the grid
 
 // --- output ---
 
@@ -142,6 +147,12 @@ out(P, Col, Ch) :- in(P, _), impl_choice(Ch), !paint(P, _, Ch), params.bg(Col).
     .init core_box = Bbox<Obj>
     core_box.cell(O, P) :- core(O, P).
 
+    // The core's side — the key the catalog is stored under.
+    .decl core_size(o: Obj, n: number)
+    core_size(O, N) :-
+        core(O, P), core_box.box(O, B),
+        box_extent(B, P, A, N), perp(A, A2), box_extent(B, P, A2, N).
+
     // The figure an object leaves: the output ink its own cells sit in.
     .init figs = Components<Example>
     figs.node(E, P) :- ex_out(E, P, Col), !params.bg(Col).
@@ -152,14 +163,15 @@ out(P, Col, Ch) :- in(P, _), impl_choice(Ch), !paint(P, _, Ch), params.bg(Col).
         figs.label(E, P, F).                         // and the rest of it
 
     // The figure viewed from its own box — the frame the catalog stores.
-    .init fig_box = BoxFrame<Obj>
+    .init fig_box = Bbox<Obj>
     fig_box.cell(O, P) :- fig(O, P).
 
     // Each figure cell's output color, in the figure's own frame.
     .decl fig_view(o: Obj, n: number, p_fig: Position, col: Color)
     fig_view([E, Id], N, P_fig, Col) :-
-        core_box.extents([E, Id], _, N, N),
-        fig_box.inner([E, Id], P, P_fig), ex_out(E, P, Col).
+        core_size([E, Id], N),
+        fig([E, Id], P), fig_box.box([E, Id], B), crop(P, B, P_fig),  // a figure cell in the figure's frame
+        ex_out(E, P, Col).
 
     .decl fig_wall(n: number, p: Position)
     fig_wall(N, P_fig) :-
@@ -172,9 +184,8 @@ out(P, Col, Ch) :- in(P, _), impl_choice(Ch), !paint(P, _, Ch), params.bg(Col).
         core([E, Id], Q), ex_in(E, Q, Col).        // the color the core had
 
     .init core_in_fig = Bbox<Obj>
-    core_in_fig.cell(O, P_fig) :- core(O, P), fig_box.inner(O, P, P_fig).
+    core_in_fig.cell(O, P_fig) :- core(O, P), fig(O, P), fig_box.box(O, B), crop(P, B, P_fig).
 
     .decl fig_core_box(n: number, b: Box)
-    fig_core_box(N, B) :-
-        core_box.extents(O, _, N, N), core_in_fig.box(O, B).
+    fig_core_box(N, B) :- core_size(O, N), core_in_fig.box(O, B).
 }

@@ -28,21 +28,20 @@
 .decl ink(p: Position)
 ink(P) :- in(P, Col), !params.bg(Col), !params.stencil(Col).
 
-.init stencils = BoxFrame<Unit>
+.init stencils = Bbox<Unit>
 stencils.cell($U(), P) :- in(P, Col), params.stencil(Col).
-stencils.grid($U(), P) :- in(P, _).
 
 // The legend lies in the stencil strip's slab; the composition grid does not.
 .decl legend_cell(p: Position)
 legend_cell(P) :-
-    ink(P), stencils.box($U(), M),                // the stencil strip's box
-    params.strip_axis(A), split(M, A, _, M_slab),    // the slab it cuts across the axis
-    inside(P, M_slab).                                  // the ink inside that slab
+    ink(P), stencils.box($U(), B),                 // the stencil strip's box
+    params.strip_axis(A), split(B, A, _, B_slab),  // the slab of lines it spans along that axis
+    inside(P, B_slab).                             // the ink in that slab
 
-.init legend = BoxFrame<Unit>
+.init legend = Bbox<Unit>
 legend.cell($U(), P) :- legend_cell(P).
 
-.init composition = BoxFrame<Unit>
+.init composition = Bbox<Unit>
 composition.cell($U(), P) :- ink(P), !legend_cell(P).
 
 // --- strips ---
@@ -50,21 +49,28 @@ composition.cell($U(), P) :- ink(P), !legend_cell(P).
 // A strip divides along the strip axis into square blocks as thick as the
 // strip, one gap apart. A block's place in its strip pairs the two strips.
 
+.decl strip_box(b: Box)
+strip_box(B) :- stencils.box($U(), B).
+strip_box(B) :- legend.box($U(), B).
+
+.decl block_cell(b: Box, p: Position, p_block: Position, p_intile: Position)
+block_cell(B, P, P_block, P_intile) :-
+    strip_box(B), in(P, _), crop(P, B, P_strip),                 // a cell of the strip
+    params.strip_axis(A), perp(A, A2), box_extent(B, P, A2, K),  // the strip's thickness
+    params.gap(G), divide_by_size_slab(P_strip, A, K, G, P_block, P_intile).
+
 .decl stencil_cell(p_block: Position, p_intile: Position, col: Color)
 stencil_cell(P_block, P_intile, Col) :-
-    stencils.inner($U(), P, P_strip), in(P, Col),           // cell of the stencil strip
-    params.strip_axis(A), stencils.extents($U(), A, _, K),  // that strip's thickness
-    params.gap(G), divide_by_size_slab(P_strip, A, K, G, P_block, P_intile).
+    stencils.box($U(), B), block_cell(B, P, P_block, P_intile), in(P, Col).
 
 .decl legend_color(p_block: Position, col: Color)
 legend_color(P_block, Col) :-
-    legend.inner($U(), P, P_strip), in(P, Col),             // cell of the legend strip
-    params.strip_axis(A), legend.extents($U(), A, _, K),    // that strip's thickness
-    params.gap(G), divide_by_size_slab(P_strip, A, K, G, P_block, _).
+    legend.box($U(), B), block_cell(B, P, P_block, _), legend_cell(P), in(P, Col).
 
 .decl out(p: Position, col: Color)
 out(P_grid_out, Col) :-
-    composition.inner($U(), P, P_tile), in(P, Col_tile),  // composition cell
+    composition.box($U(), B), composition.cell($U(), P),  // composition cell
+    crop(P, B, P_tile), in(P, Col_tile),
     legend_color(P_block, Col_tile),                      // the block its color names
     stencil_cell(P_block, P_intile, T),                   // that stencil's cell
     concat_2d(P_tile, P_intile, 0, P_grid_out),           // scaled into place

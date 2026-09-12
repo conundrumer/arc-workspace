@@ -22,18 +22,21 @@
 // --- frame ---
 
 // The frame is the box the markers bound; the output is its interior.
-.init frame = BoxFrame<Unit>
+.init frame = Bbox<Unit>
 frame.cell($U(), P) :- in(P, Col), params.marker(Col).
-frame.grid($U(), P) :- in(P, _).
+
+// Each grid cell the frame covers, in the frame's own frame.
+.decl frame_view(p: Position, p_inner: Position)
+frame_view(P, P_inner) :- in(P, _), frame.box($U(), B), crop(P, B, P_inner).
 
 .decl frame_cell(p: Position, col: Color)
-frame_cell(P_out, Col) :- frame.inner($U(), P, P_out), in(P, Col).
+frame_cell(P_inner, Col) :- frame_view(P, P_inner), in(P, Col).
 
 // --- blueprint ---
 
 // The ink outside the frame, in its own box.
-.init blueprint = BoxFrame<Unit>
-blueprint.cell($U(), P) :- in(P, Col), !params.bg(Col), !frame.inside($U(), P).
+.init blueprint = Bbox<Unit>
+blueprint.cell($U(), P) :- in(P, Col), !params.bg(Col), !frame_view(P, _).
 
 // --- blocks ---
 
@@ -49,16 +52,19 @@ block_box.cell(Id, P) :- block.label(_, P, Id).
 
 // A tile is a square with a block's side.
 .init tile = Frame2D<Unit>
-tile.extent($U(), A, K) :- block_box.extents(_, A, K, K).
+tile.extent($U(), A, K) :-
+    block_box.cell(Id, P), block_box.box(Id, B),                    // a block's cells and its box
+    box_extent(B, P, A, K), perp(A, A2), box_extent(B, P, A2, K).   // equal extents on both axes
 
 // --- drawing ---
 
 // The blueprint at the tile scale, in its own frame.
 .decl drawing(p: Position, col: Color)
 drawing(P_draw, Col) :-
-    blueprint.inner($U(), P, P_bp), in(P, Col),  // a blueprint cell
-    tile.cell($U(), P_intile),                    // spread over a tile
-    concat_2d(P_bp, P_intile, 0, P_draw).
+    blueprint.cell($U(), P), in(P, Col),         // a blueprint cell
+    blueprint.box($U(), B), crop(P, B, P_tile),  // in the blueprint's frame
+    tile.cell($U(), P_intile),                   // spread over a tile
+    concat_2d(P_tile, P_intile, 0, P_draw).
 
 // The drawing sits where every block cell lands on a drawing cell of its
 // color.
@@ -67,9 +73,9 @@ seat.shape($U(), P, Col) :- block_ink(P, Col).
 seat.cell($U(), P, Col) :- drawing(P, Col).
 
 .decl painted(p: Position, col: Color)
-painted(P_out, Col) :-
-    seat.occurrence($U(), M), frame_cell(P_out, _),
-    compose(M, P_out, P_draw), drawing(P_draw, Col).
+painted(P_inner, Col) :-
+    seat.occurrence($U(), P_seat), frame_cell(P_inner, _),
+    compose(P_seat, P_inner, P_draw), drawing(P_draw, Col).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- painted(P, Col).

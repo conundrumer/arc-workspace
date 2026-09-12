@@ -40,13 +40,12 @@ outline(P) :-
 .init frames = Components<Unit>
 frames.node($U(), P) :- outline(P).
 
-.init boxes = BoxFrame<Ident>
+.init boxes = Bbox<Ident>
 boxes.cell(Id, P) :- frames.label($U(), P, Id).
-boxes.grid(Id, P) :- boxes.cell(Id, _), in(P, _).
 
 // A corner of an outline's box, whether or not the outline occupies it.
 .decl site(p: Position, d: DiagDir)
-site(P, D) :- boxes.inner(_, P, P_box), corner_dist(P_box, D, 0).
+site(P, D) :- in(P, _), boxes.box(_, B), box_corner(P, B, D).
 
 // --- the stamps ---
 
@@ -58,14 +57,13 @@ marks.node(Col, P) :- ink(P, Col).
 
 .init mark_boxes = Bbox<Ident>
 mark_boxes.cell(Id, P) :- marks.label(_, P, Id).
-mark_boxes.grid(Id, P) :- mark_boxes.cell(Id, _), in(P, _).
 
 // A stamp drawn whole surrounds its site; the shape is the offsets of its
 // cells from that site.
 .decl shape(d: DiagDir, v: Offset)
 shape(D, V) :-
-    site(P_site, D), mark_boxes.inside(Id, P_site),     // a site a shape surrounds
-    marks.label(_, P, Id), relative(P_site, P, V).  // and a cell of that shape
+    site(P_site, D), mark_boxes.box(Id, B), inside(P_site, B),  // a site a shape surrounds
+    marks.label(_, P, Id), relative(P_site, P, V).              // and a cell of that shape
 
 // The stamp at a site: the whole shape carried onto this corner.
 .decl stamp(p_site: Position, p: Position)

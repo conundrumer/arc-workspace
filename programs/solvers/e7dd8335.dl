@@ -21,29 +21,31 @@
 .decl ink(p: Position)
 ink(P) :- in(P, Col), !params.bg(Col).
 
-// Each ink cell viewed from its owning bbox.
+// Each ink cell in the frame of its owning box.
 .decl framed(p: Position, ch: Choice, p_inner: Position)
 
 // --- $Whole ---
 
-.init bbox = BoxFrame<Unit>
+.init bbox = Bbox<Unit>
 bbox.cell($U(), P) :- ink(P).
 
-framed(P, $Whole(), I) :- bbox.inner($U(), P, I).
+framed(P, $Whole(), P_inner) :- ink(P), bbox.box($U(), B), crop(P, B, P_inner).
 
 // --- $Each ---
 
 .init comps = Components8<Unit>
 comps.node($U(), P) :- ink(P).
 
-.init comp_box = BoxFrame<Ident>
+.init comp_box = Bbox<Ident>
 comp_box.cell(Id, P) :- comps.label($U(), P, Id).
 
-framed(P, $Each(), I) :- comp_box.inner(_, P, I).
+framed(P, $Each(), P_inner) :-
+    comps.label($U(), P, Id), comp_box.box(Id, B), crop(P, B, P_inner).
 
 // Ink strictly in the box half toward params.dir.
 .decl half(p: Position, ch: Choice)
-half(P, Ch) :- framed(P, Ch, I), params.dir(D), dist_pair(I, D, K, K2), K < K2.
+half(P, Ch) :-
+    framed(P, Ch, P_inner), params.dir(D), dist_pair(P_inner, D, K, K2), K < K2.
 
 .decl impl_choice(ch: Choice)
 impl_choice($Whole()). impl_choice($Each()).

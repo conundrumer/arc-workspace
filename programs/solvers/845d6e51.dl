@@ -45,10 +45,13 @@ obj.node(Col, P) :- in(P, Col), !params.bg(Col), !params.frame(Col).
 
 .init border = Bbox<Unit>
 border.cell($U(), P) :- in(P, Col), params.frame(Col).
-border.grid($U(), P) :- in(P, _).
 
-legend($Boxed(), Id) :- obj.label(_, P, Id), border.inside($U(), P).
-query($Boxed(), Id) :- obj.label(_, P, Id), !border.inside($U(), P).
+// A cell the border's box covers.
+.decl boxed(p: Position)
+boxed(P) :- in(P, _), border.box($U(), B), inside(P, B).
+
+legend($Boxed(), Id) :- obj.label(_, P, Id), boxed(P).
+query($Boxed(), Id) :- obj.label(_, P, Id), !boxed(P).
 
 // --- Marked ---
 
@@ -57,17 +60,18 @@ query($Marked(), Id) :- obj.label(Col, _, Id), params.query(Col).
 
 // --- shapes ---
 
-// Each object, read in its own box.
-.init shape = BoxFrame<Ident>
-shape.cell(Id, P) :- obj.label(_, P, Id).
+// Each object's shape: its cells read in its own box.
+.init obj_box = Bbox<Ident>
+obj_box.cell(Id, P) :- obj.label(_, P, Id).
+
+.decl shape(id: Ident, p_inner: Position)
+shape(Id, P_inner) :- obj_box.cell(Id, P), obj_box.box(Id, B), crop(P, B, P_inner).
 
 // Each query shape against each legend shape, in their boxes.
 .type Pair = [ch: Choice, q: Ident, l: Ident]
 .init cong = D4Map<Pair, Unit>
-cong.src([Ch, Q, L], P_inner, $U()) :-
-    query(Ch, Q), legend(Ch, L), shape.inner(Q, _, P_inner).
-cong.dst([Ch, Q, L], P_inner, $U()) :-
-    query(Ch, Q), legend(Ch, L), shape.inner(L, _, P_inner).
+cong.src([Ch, Q, L], P_inner, $U()) :- query(Ch, Q), legend(Ch, L), shape(Q, P_inner).
+cong.dst([Ch, Q, L], P_inner, $U()) :- query(Ch, Q), legend(Ch, L), shape(L, P_inner).
 
 // A legend cell that no query cell reaches under D, which the into-reading
 // of `map` allows.

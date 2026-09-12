@@ -35,7 +35,7 @@ cut.divider($U(), A, L) :- line_color.value([A, L], _).
 tile(T) :- cut.tile_of($U(), _, T).
 
 // A tile with the separator cells around it — the block the output shows.
-.init block = BoxFrame<Position>
+.init block = Bbox<Position>
 block.cell(T, P_grid) :-
     cut.tile_of($U(), Q, T),                                   // a cell of the tile
     ( P_grid = Q                                               // the tile itself
@@ -43,11 +43,13 @@ block.cell(T, P_grid) :-
     ).
 
 // A tile's content, in the tile's own frame.
-.init tile_view = BoxFrame<Position>
+.init tile_view = Bbox<Position>
 tile_view.cell(T, P_grid) :- cut.tile_of($U(), P_grid, T).
 
 .decl tile_content(t: Position, p_intile: Position, col: Color)
-tile_content(T, P_intile, Col) :- tile_view.inner(T, P_grid, P_intile), in(P_grid, Col).
+tile_content(T, P_intile, Col) :-
+    tile_view.cell(T, P_grid), in(P_grid, Col),
+    tile_view.box(T, B), crop(P_grid, B, P_intile).
 
 // Tiles holding the same content.
 .type TileCell = [p_intile: Position, col: Color]
@@ -83,7 +85,8 @@ odd(T, $GridDeviant()) :- tile(T), !norm.mode($U(), T).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P_out, Col, Ch) :-
-    odd(T, Ch), block.inner(T, P_grid, P_block), in(P_grid, Col),  // a cell of a standout block
+    odd(T, Ch), block.cell(T, P_grid), in(P_grid, Col),            // a cell of a standout block
+    block.box(T, B), crop(P_grid, B, P_inner),                     // in the block's frame
     params.stack_axis(A), split(P_grid, A, P_grid_along, _),       // along the stack: its place in the grid
-    split(P_block, A, _, P_block_across),                          // across: its place in the block
-    compose(P_grid_along, P_block_across, P_out).
+    split(P_inner, A, _, P_inner_across),                          // across: its place in the block
+    compose(P_grid_along, P_inner_across, P_out).

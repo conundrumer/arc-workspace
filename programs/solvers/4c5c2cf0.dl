@@ -32,17 +32,21 @@
 .decl shape_cell(col: Color, p: Position)
 shape_cell(Col, P) :- in(P, Col), !params.bg(Col).
 
-// Each shape read in its own bounding bbox.
-.init bbox = BoxFrame<Color>
+// Each shape's bounding box.
+.init bbox = Bbox<Color>
 bbox.cell(Col, P) :- shape_cell(Col, P).
+
+// A shape's cells, in that box's frame.
+.decl shape_inner(col: Color, p_inner: Position)
+shape_inner(Col, P_inner) :- shape_cell(Col, P), bbox.box(Col, B), crop(P, B, P_inner).
 
 .decl pivot(col: Color, ch: Choice)
 
 // --- $Fixed ---
 
 .init inv = D4Map<Color, Unit>
-inv.src(Col, P_inner, $U()) :- bbox.inner(Col, _, P_inner).
-inv.dst(Col, P_inner, $U()) :- bbox.inner(Col, _, P_inner).
+inv.src(Col, P_inner, $U()) :- shape_inner(Col, P_inner).
+inv.dst(Col, P_inner, $U()) :- shape_inner(Col, P_inner).
 
 .init sym = KeyedSetCompare<Color, Sym, D4>
 sym.pattern_member(S, D) :- params.group(S), sym_member(S, D).
@@ -54,7 +58,7 @@ pivot(Col, $Fixed()) :- sym.covers(Col, _).
 
 .init known = KeyedSetCompare<Color, number, Position>
 known.pattern_member(0, P) :- params.pivot_shape(P).
-known.observed_member(Col, P_inner) :- bbox.inner(Col, _, P_inner).
+known.observed_member(Col, P_inner) :- shape_inner(Col, P_inner).
 
 pivot(Col, $Known()) :- known.equals(Col, 0).
 
@@ -63,10 +67,10 @@ pivot(Col, $Known()) :- known.equals(Col, 0).
 .decl copy(p: Position, col: Color, ch: Choice)
 copy(P_img, Col, Ch) :-
     shape_cell(Col, P),
-    pivot(Pivot, Ch), bbox.box(Pivot, P_box),                   // the pivot's box
-    relative(P_box, P, P_rel),                                // cell in the pivot's frame
+    pivot(Pivot, Ch), bbox.box(Pivot, B),                         // the pivot's box
+    relative(B, P, P_rel),                                        // cell in the pivot's frame
     params.group(S), sym_member(S, D), apply(D, P_rel, P_rel2),   // one image per group element
-    compose(P_box, P_rel2, P_img), in(P_img, _).                  // seated back on the grid
+    compose(B, P_rel2, P_img), in(P_img, _).                      // seated back on the grid
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- copy(P, Col, Ch).
@@ -77,7 +81,7 @@ out(P, Col, Ch) :- in(P, _), pivot(_, Ch), !copy(P, _, Ch), params.bg(Col).
     shape_cell(E, Col, P) :- ex_in(E, P, Col), !params.bg(Col).
 
     .type ExColor = [e: Example, col: Color]
-    .init bbox = BoxFrame<ExColor>
+    .init bbox = Bbox<ExColor>
     bbox.cell([E, Col], P) :- shape_cell(E, Col, P).
 
     // The mover gains cells; the pivot comes through untouched.
@@ -88,16 +92,18 @@ out(P, Col, Ch) :- in(P, _), pivot(_, Ch), !copy(P, _, Ch), params.bg(Col).
     pivot(E, Col) :- shape_cell(E, Col, _), ex_out(E, _, _), !gained(E, Col).
 
     .decl pivot_shape(p: Position)
-    pivot_shape(P_inner) :- pivot(E, Col), bbox.inner([E, Col], _, P_inner).
+    pivot_shape(P_inner) :-
+        pivot(E, Col), shape_cell(E, Col, P),
+        bbox.box([E, Col], B), crop(P, B, P_inner).
 
     // Each candidate group's images of the shape cells.
     .decl orbit(e: Example, s: Sym, p: Position, col: Color)
     orbit(E, S, P_img, Col) :-
         shape_cell(E, Col, P),
-        pivot(E, Pivot), bbox.box([E, Pivot], P_box),          // the pivot's box
-        relative(P_box, P, P_rel),                           // cell in the pivot's frame
-        sym_member(S, D), apply(D, P_rel, P_rel2),               // one image per group element
-        compose(P_box, P_rel2, P_img), ex_in(E, P_img, _).       // seated back on the grid
+        pivot(E, Pivot), bbox.box([E, Pivot], B),               // the pivot's box
+        relative(B, P, P_rel),                                  // cell in the pivot's frame
+        sym_member(S, D), apply(D, P_rel, P_rel2),              // one image per group element
+        compose(B, P_rel2, P_img), ex_in(E, P_img, _).          // seated back on the grid
 
     .type ExCell = [e: Example, p: Position, col: Color]
     .init same = KeyedSetCompare<Sym, number, ExCell>

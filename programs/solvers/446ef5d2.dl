@@ -52,7 +52,7 @@ pieces.node($U(), P) :- in(P, Col), !bg(Col), !mark(Col).
 .decl piece_cell(id: Ident, p: Position, col: Color)
 piece_cell(Id, P, Col) :- pieces.label($U(), P, Id), in(P, Col).
 
-.init pbox = BoxFrame<Ident>
+.init pbox = Bbox<Ident>
 pbox.cell(Id, P) :- pieces.label($U(), P, Id).
 
 .init rim = Rim<Ident>
@@ -60,13 +60,13 @@ rim.cell(Id, P) :- pieces.label($U(), P, Id).
 
 // A piece seen from its own box: every cell, and every rim cell with a
 // direction that leaves the piece.
-.decl shape(id: Ident, s: Position, col: Color)
-shape(Id, S, Col) :- pbox.inner(Id, P, S), piece_cell(Id, P, Col).
+.decl shape(id: Ident, p_inner: Position, col: Color)
+shape(Id, P_inner, Col) :- piece_cell(Id, P, Col), pbox.box(Id, B), crop(P, B, P_inner).
 
-.decl shape_rim(id: Ident, s: Position, d: Dir, col: Color)
-shape_rim(Id, S, D, Col) :-
-    pbox.inner(Id, P, S), piece_cell(Id, P, Col),   // a cell in the piece's box
-    rim.rim_dir(Id, P, D), dir_elem(D).             // with the outside one step away
+.decl shape_rim(id: Ident, p_inner: Position, d: Dir, col: Color)
+shape_rim(Id, P_inner, D, Col) :-
+    shape(Id, P_inner, Col), pbox.box(Id, B), compose(B, P_inner, P),  // a cell of the piece, in the grid
+    rim.rim_dir(Id, P, D), dir_elem(D).                                // with the outside one step away
 
 // The picture runs off this side of the piece.
 .decl inked_face(id: Ident, d: Dir)
@@ -76,7 +76,8 @@ inked_face(Id, D) :- shape_rim(Id, _, D, Col), drawn(Col).
 
 .decl anchor(id: Ident, diag: DiagDir, p: Position)
 anchor(Id, Diag, P) :-
-    pbox.corner(Id, P, Diag),                     // a piece cell at a corner of its box
+    piece_cell(Id, P, _), pbox.box(Id, B),        // a piece cell
+    box_corner(P, B, Diag),                       // at a corner of its box
     neighbor(P, Diag, Q), in(Q, Col), mark(Col).  // the mark just outside it
 
 // --- the rectangle ---
@@ -87,106 +88,106 @@ anchor(Id, Diag, P) :-
 bbox.cell(Q, Q) :- in(Q, _).
 bbox.cell(Q, A) :- in(Q, _), anchor(_, _, A).
 
-.decl span(m: Position)
-span(M) :- anchor(_, Diag, A), bbox.corner(Q, A, Diag), bbox.box(Q, M).
+.decl span(b: Box)
+span(B) :- anchor(_, Diag, A), bbox.cell(Q, A), bbox.box(Q, B), box_corner(A, B, Diag).
 
-.decl span_cell(m: Position, p: Position)
-span_cell(M, P) :- span(M), in(P, _), inside(P, M).
+.decl span_cell(b: Box, p: Position)
+span_cell(B, P) :- span(B), in(P, _), inside(P, B).
 
-.init span_size = Tally<Position, Position>
-span_size.item(M, P) :- span_cell(M, P).
+.init span_size = Tally<Box, Position>
+span_size.item(B, P) :- span_cell(B, P).
 
 .init piece_area = Tally<Unit, Position>
 piece_area.item($U(), P) :- pieces.label($U(), P, _).
 
 // The pieces fill the rectangle exactly, so its cell count is theirs.
-.decl rect(m: Position)
-rect(M) :- span_size.tally(M, N), piece_area.tally($U(), N).
+.decl rect(b: Box)
+rect(B) :- span_size.tally(B, N), piece_area.tally($U(), N).
 
-.decl rect_cell(m: Position, p: Position)
-rect_cell(M, P) :- rect(M), span_cell(M, P).
+.decl rect_cell(b: Box, p: Position)
+rect_cell(B, P) :- rect(B), span_cell(B, P).
 
 // --- the placements ---
 
-.type Spot = [m: Position, id: Ident]
-.type Cand = [id: Ident, b: Position]
+.type Spot = [b: Box, id: Ident]
+.type Cand = [id: Ident, b: Box]
 
 .init occ = Occurrences<Spot, Unit>
-occ.cell([M, Id], P, $U()) :- rect_cell(M, P), pieces.label($U(), _, Id).
-occ.shape([M, Id], S, $U()) :- rect(M), shape(Id, S, _).
+occ.cell([B, Id], P, $U()) :- rect_cell(B, P), pieces.label($U(), _, Id).
+occ.shape([B, Id], P_inner, $U()) :- rect(B), shape(Id, P_inner, _).
 
-.decl place(m: Position, id: Ident, b: Position, p: Position, col: Color)
-place(M, Id, B, P, Col) :-
-    occ.occurrence([M, Id], B), shape(Id, S, Col), compose(B, S, P).
+.decl place(b: Box, id: Ident, b_occ: Box, p: Position, col: Color)
+place(B, Id, B_occ, P, Col) :-
+    occ.occurrence([B, Id], B_occ), shape(Id, P_inner, Col), compose(B_occ, P_inner, P).
 
 // A placement showing the picture on the rectangle's edge.
-.decl spills(m: Position, id: Ident, b: Position)
-spills(M, Id, B) :- place(M, Id, B, P, Col), box_edge(P, M, _), drawn(Col).
+.decl spills(b: Box, id: Ident, b_occ: Box)
+spills(B, Id, B_occ) :- place(B, Id, B_occ, P, Col), box_edge(P, B, _), drawn(Col).
 
 // A placement the rectangle admits: it keeps the edge clean, and the marked
 // piece holds the place it shows.
-.decl fit(m: Position, id: Ident, b: Position)
-fit(M, Id, B) :-
-    place(M, Id, B, _, _), !spills(M, Id, B),
-    ( !anchor(Id, _, _)        // a piece free to move
-    ; pbox.box(Id, B) ).       // the marked piece, where it lies
+.decl fit(b: Box, id: Ident, b_occ: Box)
+fit(B, Id, B_occ) :-
+    place(B, Id, B_occ, _, _), !spills(B, Id, B_occ),
+    ( !anchor(Id, _, _)          // a piece free to move
+    ; pbox.box(Id, B_occ) ).     // the marked piece, where it lies
 
-.decl covers(m: Position, cd: Cand, p: Position, col: Color)
-covers(M, [Id, B], P, Col) :- fit(M, Id, B), place(M, Id, B, P, Col).
+.decl covers(b: Box, cd: Cand, p: Position, col: Color)
+covers(B, [Id, B_occ], P, Col) :- fit(B, Id, B_occ), place(B, Id, B_occ, P, Col).
 
 // A placement's rim cell, the direction leaving it, and the rectangle cell
 // one step that way.
-.decl edge(m: Position, cd: Cand, p: Position, d: Dir, q: Position, col: Color)
-edge(M, [Id, B], P, D, Q, Col) :-
-    fit(M, Id, B), shape_rim(Id, S, D, Col),  // a rim cell of the piece
-    compose(B, S, P), neighbor(P, D, Q),      // placed, and stepped over
-    rect_cell(M, Q).                          // the cell beyond, still inside
+.decl edge(b: Box, cd: Cand, p: Position, d: Dir, q: Position, col: Color)
+edge(B, [Id, B_occ], P, D, Q, Col) :-
+    fit(B, Id, B_occ), shape_rim(Id, P_inner, D, Col),  // a rim cell of the piece
+    compose(B_occ, P_inner, P), neighbor(P, D, Q),      // placed, and stepped over
+    rect_cell(B, Q).                                    // the cell beyond, still inside
 
 // The cells a placement leaves to its neighbours.
-.decl demand(m: Position, cd: Cand, q: Position)
-demand(M, Cd, Q) :- edge(M, Cd, _, _, Q, _).
+.decl demand(b: Box, cd: Cand, q: Position)
+demand(B, Cd, Q) :- edge(B, Cd, _, _, Q, _).
 
 // A cell a placement turns the picture toward.
-.decl face(m: Position, cd: Cand, p: Position, d: Dir, q: Position, col: Color)
-face(M, Cd, P, D, Q, Col) :-
-    edge(M, Cd, P, D, Q, Col), Cd = [Id, _], inked_face(Id, D).
+.decl face(b: Box, cd: Cand, p: Position, d: Dir, q: Position, col: Color)
+face(B, Cd, P, D, Q, Col) :-
+    edge(B, Cd, P, D, Q, Col), Cd = [Id, _], inked_face(Id, D).
 
 // Two placements that cannot stand together: they overlap, they are one
 // piece placed twice, or they face each other with different cells.
-.decl clash(m: Position, cd: Cand, cd2: Cand)
-clash(M, Cd, Cd2) :- covers(M, Cd, P, _), covers(M, Cd2, P, _), Cd != Cd2.
-clash(M, [Id, B], [Id, B2]) :- fit(M, Id, B), fit(M, Id, B2), B != B2.
-clash(M, Cd, Cd2) :-
-    face(M, Cd, P, D, Q, Col), opposite(D, D2),   // one placement facing out
-    face(M, Cd2, Q, D2, P, Col2), Col != Col2.    // the other facing back
+.decl clash(b: Box, cd: Cand, cd2: Cand)
+clash(B, Cd, Cd2) :- covers(B, Cd, P, _), covers(B, Cd2, P, _), Cd != Cd2.
+clash(B, [Id, B_occ], [Id, B_occ2]) :- fit(B, Id, B_occ), fit(B, Id, B_occ2), B_occ != B_occ2.
+clash(B, Cd, Cd2) :-
+    face(B, Cd, P, D, Q, Col), opposite(D, D2),   // one placement facing out
+    face(B, Cd2, Q, D2, P, Col2), Col != Col2.    // the other facing back
 
 // A demanded cell some placement can fill beside this one.
-.decl mate(m: Position, cd: Cand, q: Position)
-mate(M, Cd, Q) :- demand(M, Cd, Q), covers(M, Cd2, Q, _), !clash(M, Cd, Cd2).
+.decl mate(b: Box, cd: Cand, q: Position)
+mate(B, Cd, Q) :- demand(B, Cd, Q), covers(B, Cd2, Q, _), !clash(B, Cd, Cd2).
 
 // A placement that strands a demanded cell cannot stand.
-.decl stranded(m: Position, cd: Cand)
-stranded(M, Cd) :- demand(M, Cd, Q), !mate(M, Cd, Q).
+.decl stranded(b: Box, cd: Cand)
+stranded(B, Cd) :- demand(B, Cd, Q), !mate(B, Cd, Q).
 
-.decl cand(m: Position, cd: Cand)
-cand(M, [Id, B]) :- fit(M, Id, B), !stranded(M, [Id, B]).
+.decl cand(b: Box, cd: Cand)
+cand(B, [Id, B_occ]) :- fit(B, Id, B_occ), !stranded(B, [Id, B_occ]).
 
 // --- the packing ---
 
-.init forcing = CoverForcing<Position, Cand>
-forcing.covers(M, Cd, P) :- cand(M, Cd), covers(M, Cd, P, _).
-forcing.conflict(M, Cd, Cd2) :- clash(M, Cd, Cd2).
+.init forcing = CoverForcing<Box, Cand>
+forcing.covers(B, Cd, P) :- cand(B, Cd), covers(B, Cd, P, _).
+forcing.conflict(B, Cd, Cd2) :- clash(B, Cd, Cd2).
 
-.decl painted(m: Position, p: Position, col: Color)
-painted(M, P, Col) :-
-    forcing.forced(M, Cd), !forcing.ruled_out(M, Cd), covers(M, Cd, P, Col).
+.decl painted(b: Box, p: Position, col: Color)
+painted(B, P, Col) :-
+    forcing.forced(B, Cd), !forcing.ruled_out(B, Cd), covers(B, Cd, P, Col).
 
 // A rectangle the elimination leaves incomplete.
-.decl unsettled(m: Position)
-unsettled(M) :- rect_cell(M, P), !painted(M, P, _).
+.decl unsettled(b: Box)
+unsettled(B) :- rect_cell(B, P), !painted(B, P, _).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :-
-    rect(M), !unsettled(M), in(P, _),  // the rectangle the pieces pack
-    ( painted(M, P, Col)               // inside it, the picture
-    ; !rect_cell(M, P), bg(Col) ).     // outside it, background
+    rect(B), !unsettled(B), in(P, _),  // the rectangle the pieces pack
+    ( painted(B, P, Col)               // inside it, the picture
+    ; !rect_cell(B, P), bg(Col) ).     // outside it, background

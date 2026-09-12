@@ -42,15 +42,15 @@ side(P, D) :-
     nearer(D, P, M).                          // nearer that edge than the marker
 
 // Each side, viewed from its own bounding box.
-.init side_box = BoxFrame<Dir>
+.init side_box = Bbox<Dir>
 side_box.cell(D, P) :- side(P, D).
 
 // The side laid flush into the corner between its edge and the marker's.
 .decl moved(p: Position)
 moved(P_grid) :-
-    side_box.inner(D, _, P_box),                        // a side's cell, in its box
-    cut_dir(D_cut), diag_dirs(Diag, _, D_cut, D),       // the corner the two edges make
-    in(P_grid, _), corner_anchor(Diag, P_box, P_grid).  // the box laid into that corner
+    side(P, D), side_box.box(D, B), crop(P, B, P_inner),  // a side's cell, in its box
+    cut_dir(D_cut), diag_dirs(Diag, _, D_cut, D),         // the corner the two edges make
+    in(P_grid, _), corner_anchor(Diag, P_inner, P_grid).  // the box laid into that corner
 
 // The ink the cut runs through: it stays put, and it ends the marker's line.
 .decl cut_ink(p: Position)

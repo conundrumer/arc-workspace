@@ -25,21 +25,23 @@ drect.node($U(), P) :- in(P, Col), params.frame(Col).
 .decl rect_hole(b: Box, p: Position)
 rect_hole(B, P) :- drect.box(_, B), in(P, _), interior(P, B).
 
-// Each rectangle's reference shape, viewed from its own bounding box.
-.init ref = BoxFrame<Box>
+// Each rectangle's reference shape, with its bounding box.
+.init ref = Bbox<Box>
 ref.cell(B, P) :- rect_hole(B, P), ink(P, _).
 
 // The loose shapes: ink components outside every rectangle.
 .init loose = Components<Unit>
 loose.node($U(), P) :- ink(P, _), !rect_hole(_, P).
 
-.init shape = BoxFrame<Ident>
+.init shape = Bbox<Ident>
 shape.cell(Id, P) :- loose.label($U(), P, Id).
 
 // A loose shape matches a reference when their box-relative cell sets agree.
 .init same_shape = KeyedSetCompare<Ident, Box, Position>
-same_shape.pattern_member(B, P_inner) :- ref.inner(B, _, P_inner).
-same_shape.observed_member(Id, P_inner) :- shape.inner(Id, _, P_inner).
+same_shape.pattern_member(B, P_inner) :-
+    ref.cell(B, P), ref.box(B, B_ref), crop(P, B_ref, P_inner).
+same_shape.observed_member(Id, P_inner) :-
+    shape.cell(Id, P), shape.box(Id, B_shape), crop(P, B_shape, P_inner).
 
 .decl recolor(p: Position, col: Color)
 recolor(P, Col) :-

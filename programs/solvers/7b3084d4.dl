@@ -77,29 +77,29 @@ side(N) :- square_area.tally(N, K), area.tally($U(), K).
 
 .type PieceKey = [ch: Choice, o: Ident]
 
-.init bbox = BoxFrame<PieceKey>
+.init bbox = Bbox<PieceKey>
 bbox.cell([Ch, O], P) :- piece_cell(Ch, O, P, _).
 
 // A piece turned by an element of the group, viewed from its own bbox.
 .type Pose = [ch: Choice, o: Ident, d: D4]
 
-.decl image(k: Pose, s: Position, col: Color)
-image([Ch, O, D], S, Col) :-
-    piece_cell(Ch, O, P, Col), bbox.inner([Ch, O], P, S0),
-    params.group(G), sym_member(G, D), apply(D, S0, S).
+.decl image(k: Pose, p_inner: Position, col: Color)
+image([Ch, O, D], P_turned, Col) :-
+    piece_cell(Ch, O, P, Col), bbox.box([Ch, O], B), crop(P, B, P_inner),
+    params.group(G), sym_member(G, D), apply(D, P_inner, P_turned).
 
 // --- the spots ---
 
 // Where each pose fits in the square.
 .init occ = Occurrences<Pose, Unit>
-occ.shape(K, S, $U()) :- image(K, S, _).
+occ.shape(K, P_inner, $U()) :- image(K, P_inner, _).
 occ.cell(K, P, $U()) :- image(K, _, _), side(N), square.cell(N, P).
 
 // A placement: a pose at a spot in the square, named by the spot's margins.
 .type Placement = [k: Pose, b: Position]
 
 .decl covers(pc: Placement, p: Position, col: Color)
-covers([K, B], P, Col) :- occ.occurrence(K, B), image(K, S, Col), compose(B, S, P).
+covers([K, B], P, Col) :- occ.occurrence(K, B), image(K, P_inner, Col), compose(B, P_inner, P).
 
 // --- the placements ---
 

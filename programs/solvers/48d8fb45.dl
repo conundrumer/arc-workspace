@@ -38,25 +38,24 @@ marked(P, Col) :-
     !mark(P), in(P, Col).             // a shape cell, not the mark
 
 // The marked shape's box, and the grid seen from it.
-.init bbox = BoxFrame<Unit>
+.init bbox = Bbox<Unit>
 bbox.cell($U(), P) :- marked(P, _).
-bbox.grid($U(), P) :- in(P, _).
 
 .decl out(p: Position, col: Color, c: Choice)
 
 // --- Object ---
-out(P_out, Col, $Object()) :-
-    bbox.inner($U(), P, P_out),
+out(P_inner, Col, $Object()) :-
+    bbox.box($U(), B), in(P, _), crop(P, B, P_inner),
     ( marked(P, Col)                     // the shape
     ; !marked(P, _), params.bg(Col) ).   // the rest of the box
 
 // --- Interior ---
-out(P_out, Col, $Interior()) :- bbox.inner($U(), P, P_out), in(P, Col).
+out(P_inner, Col, $Interior()) :- bbox.box($U(), B), in(P, Col), crop(P, B, P_inner).
 
 // --- Window ---
 
 .decl window(b: Box)
 window(B) :- mark(M), params.win_box(B_mark), compose(M, B_mark, B).
 
-out(P_out, Col, $Window()) :-
-    window(B), in(P, Col), crop(P, B, P_out).   // a grid cell the window covers, seen from it
+out(P_inner, Col, $Window()) :-
+    window(B), in(P, Col), crop(P, B, P_inner).   // a grid cell the window covers, seen from it

@@ -14,7 +14,7 @@
 .init params = Params
 
 // Bars keyed by their line's across position.
-.init bars = BoxFrame<Position>
+.init bars = Bbox<Position>
 bars.cell(Ac, P) :-
     in(P, Col), params.bar(Col),                       // bar cell
     params.base(D), axis_of(D, A), split(P, A, _, Ac). // line = across position
@@ -22,8 +22,8 @@ bars.cell(Ac, P) :-
 // Bar cells strictly nearer the base end of their bar than the far end.
 .decl marked(p: Position)
 marked(P) :-
-    bars.inner(_, P, I),
-    params.base(D), dist_pair(I, D, K, K2), K < K2.
+    bars.cell(Ac, P), bars.box(Ac, B), crop(P, B, P_inner),  // bar cell in its bar's frame
+    params.base(D), dist_pair(P_inner, D, K, K2), K < K2.
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- marked(P), params.mark(Col).

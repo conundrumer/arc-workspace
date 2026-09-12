@@ -21,30 +21,34 @@
 
 // --- the canvas, viewed in its own box ---
 
-.init canvas = BoxFrame<Unit>
+.init canvas = Bbox<Unit>
 canvas.cell($U(), P_grid) :- in(P_grid, Col), params.bg(Col).
-canvas.grid($U(), P_grid) :- in(P_grid, _).
+
+// A grid cell the canvas covers, in the canvas's own frame.
+.decl on_canvas(p_grid: Position, p_inner: Position)
+on_canvas(P_grid, P_inner) :- in(P_grid, _), canvas.box($U(), B), crop(P_grid, B, P_inner).
 
 .decl mark(p: Position)
-mark(P_grid) :- canvas.inside($U(), P_grid), in(P_grid, Col), !params.bg(Col).
+mark(P_grid) :- on_canvas(P_grid, _), in(P_grid, Col), !params.bg(Col).
 
-// --- the key, viewed in its own box ---
+// --- the key ---
 
-.init key = BoxFrame<Unit>
+.init key = Bbox<Unit>
 key.cell($U(), P_grid) :-
     in(P_grid, Col), !params.filler(Col),  // a colored cell
-    !canvas.inside($U(), P_grid).          // outside the canvas
+    !on_canvas(P_grid, _).                 // outside the canvas
 
 // --- the canvas split into one part per key cell ---
 
 .init part = Divide2D<Unit>
-part.cell(P_box) :- canvas.inner($U(), _, P_box).
-part.dim(K, A, N) :- key.extent(K, A, N).
+part.cell(P_inner) :- on_canvas(_, P_inner).
+part.dim($U(), A, N) :- key.cell($U(), P), key.box($U(), B), box_extent(B, P, A, N).
 part.gap(0).
 
 .decl out(p: Position, col: Color)
 out(P_grid, Col) :-
-    mark(P_grid), canvas.inner($U(), P_grid, P_box),  // a mark, placed in the canvas
-    part.tile($U(), P_box, P_tile, _),                // the part of the canvas it falls in
-    key.inner($U(), P_key, P_tile), in(P_key, Col).   // the color of the key cell at that place
+    mark(P_grid), on_canvas(P_grid, P_inner),  // a mark, placed in the canvas
+    part.tile($U(), P_inner, P_tile, _),       // the part of the canvas it falls in
+    key.cell($U(), P_key), key.box($U(), B),
+    crop(P_key, B, P_tile), in(P_key, Col).    // the color of the key cell at that place
 out(P_grid, Col) :- in(P_grid, Col), !mark(P_grid).

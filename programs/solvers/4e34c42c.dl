@@ -27,15 +27,11 @@ bg(Col) :- bg_mode.mode($U(), Col).
 .init frags = Components<Unit>
 frags.node($U(), P) :- in(P, Col), !bg(Col).
 
-.decl frag(k: Ident)
-frag(K) :- frags.label($U(), _, K).
-
 .init bbox = Bbox<Ident>
 bbox.cell(K, P) :- frags.label($U(), P, K).
-bbox.grid(K, P) :- in(P, _), frag(K).
 
 .decl content(k: Ident, p: Position, col: Color)
-content(K, P, Col) :- bbox.inside(K, P), in(P, Col).
+content(K, P, Col) :- in(P, Col), bbox.box(K, B), inside(P, B).
 
 .decl motif(k: Ident, col: Color, p: Position)
 motif(K, Col, P) :- content(K, P, Col), !bg(Col).
@@ -80,29 +76,30 @@ join(K1, K2, V) :- seam_cell.clash([K1, K2, V]), !disagree(K1, K2, V).
 // fragment serves as the one held still, and the crop takes the choice back
 // out.
 .decl place(base: Ident, k: Ident, v: Offset)
-place(B, B, ZERO) :- frag(B).
-place(B, K2, V) :- place(B, K1, V1), join(K1, K2, V2), compose(V1, V2, V).
+place(Base, Base, ZERO) :- frags.label($U(), _, Base).
+place(Base, K2, V) :- place(Base, K1, V1), join(K1, K2, V2), compose(V1, V2, V).
 
 .decl scene(base: Ident, p: Position, col: Color)
-scene(B, P, Col) :- place(B, K, V), content(K, P0, Col), compose(P0, V, P).
+scene(Base, P, Col) :- place(Base, K, V), content(K, P0, Col), compose(P0, V, P).
 
 // --- the crop ---
 
-// The scene's bbox. Every fragment box hugs its own ink, so the cells the
+// The scene's box. Every fragment box hugs its own ink, so the cells the
 // fragments cover reach as far as the scene's ink does.
-.init view = BoxFrame<Ident>
-view.cell(B, P) :- scene(B, P, _).
+.init view = Bbox<Ident>
+view.cell(Base, P) :- scene(Base, P, _).
 
 // The output sheet is that box as a frame of its own.
 .init sheet = Frame2D<Ident>
-sheet.extent(B, A, N) :- view.extent(B, A, N).
+sheet.extent(Base, A, N) :-
+    view.cell(Base, P), view.box(Base, B), box_extent(B, P, A, N).
 
-.decl paint(base: Ident, p_out: Position, col: Color)
-paint(B, P_out, Col) :- view.inner(B, P, P_out), scene(B, P, Col).
+.decl paint(base: Ident, p_inner: Position, col: Color)
+paint(Base, P_inner, Col) :- scene(Base, P, Col), view.box(Base, B), crop(P, B, P_inner).
 
 .decl out(p: Position, col: Color)
-out(P_out, Col) :-
-    sheet.cell(B, P_out),
-    ( paint(B, P_out, Col)                  // painted by a fragment
-    ; !paint(B, P_out, _), bg(Col)          // covered by none
+out(P_inner, Col) :-
+    sheet.cell(Base, P_inner),
+    ( paint(Base, P_inner, Col)                  // painted by a fragment
+    ; !paint(Base, P_inner, _), bg(Col)          // covered by none
     ).

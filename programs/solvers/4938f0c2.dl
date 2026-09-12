@@ -36,35 +36,35 @@ block.cell($U(), P) :- in(P, Col), params.marker(Col).
 // --- Mirror ---
 
 img(P_out, Col, $Mirror()) :-
-    ink(P, Col), block.box($U(), M),                 // an ink cell and the block
-    relative(M, P, V),                              // its offset from the block
+    ink(P, Col), block.box($U(), B),                    // an ink cell and the block
+    relative(B, P, V),                                  // its offset from the block
     params.sym(S), sym_member(S, D), apply(D, V, V2),   // the offset transformed
-    compose(M, V2, P_out).
+    compose(B, V2, P_out).
 
 // --- Seat ---
 
 .init obj = Components8<Unit>
 obj.node($U(), P) :- ink(P, _).
 
-.init obj_box = BoxFrame<Ident>
+.init obj_box = Bbox<Ident>
 obj_box.cell(Id, P) :- obj.label($U(), P, Id).
-obj_box.grid(Id, P) :- obj.label($U(), _, Id), in(P, _).  // so the box's empty cells are viewed
 
 // The block corner an object lies past.
 .decl obj_quad(id: Ident, diag: DiagDir)
 obj_quad(Id, Diag) :-
-    diag_dirs(Diag, _, D1, D2), obj_box.box(Id, M), block.box($U(), B),
-    nearer(D1, M, B), nearer(D2, M, B).
+    diag_dirs(Diag, _, D1, D2), obj_box.box(Id, B_obj), block.box($U(), B_block),
+    nearer(D1, B_obj, B_block), nearer(D2, B_obj, B_block).
 
 img(P_out, Col, $Seat()) :-
-    ink(P, Col), obj.label($U(), P, Id),                            // an object's cell
-    obj_quad(Id, Q), diag_opposite(Q, Q_face),                      // the corner facing the block
-    obj_box.inner(Id, P0, P_box), corner_dist(P_box, Q_face, 0),    // the box cell at that corner
-    relative(P0, P, V),                                         // its offset from that cell
-    params.sym(S), sym_member(S, D), apply(D, V, V2),               // the offset transformed
-    apply_diag_dir(D, Q, Q2),                                       // the corner its image faces
-    block.corner($U(), P_c, Q2), neighbor(P_c, Q2, A),              // the seat one step out of it
-    compose(A, V2, P_out).
+    ink(P, Col), obj.label($U(), P, Id),                                // an object's cell
+    obj_quad(Id, Q), diag_opposite(Q, Q_face),                          // the corner facing the block
+    obj_box.box(Id, B_obj), in(P0, _), box_corner(P0, B_obj, Q_face),   // the box cell at that corner
+    relative(P0, P, V),                                                 // its offset from that cell
+    params.sym(S), sym_member(S, D), apply(D, V, V2),                   // the offset transformed
+    apply_diag_dir(D, Q, Q2),                                           // the corner its image faces
+    block.cell($U(), P_c), block.box($U(), B_block),
+    box_corner(P_c, B_block, Q2), neighbor(P_c, Q2, P_seat),            // the seat one step out of it
+    compose(P_seat, V2, P_out).
 
 // --- output ---
 
@@ -88,10 +88,10 @@ out(P, Col, Ch) :-
     // Where a transform about the block carries an ink cell, inside the grid.
     .decl img(e: Example, d: D4, p: Position, col: Color)
     img(E, D, P_out, Col) :-
-        ink(E, P, Col), block.box(E, M),            // an ink cell and its block
-        relative(M, P, V),                         // its offset from the block
+        ink(E, P, Col), block.box(E, B),   // an ink cell and its block
+        relative(B, P, V),                 // its offset from the block
         d4_elem(D), apply(D, V, V2),
-        compose(M, V2, P_out), ex_in(E, P_out, _).
+        compose(B, V2, P_out), ex_in(E, P_out, _).
 
     .type ExCell = [e: Example, p: Position, col: Color]
     .init orbit = KeyedSetCompare<Sym, number, ExCell>

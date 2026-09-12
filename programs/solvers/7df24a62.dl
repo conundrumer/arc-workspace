@@ -16,26 +16,27 @@
 
 // --- the template ---
 
-// The box and the marks it holds, in the box's own frame.
-.init tpl = BoxFrame<Unit>
+// The drawn box, bounding the motif it holds.
+.init tpl = Bbox<Unit>
 tpl.cell($U(), P) :- in(P, Col), params.box(Col).
-tpl.grid($U(), P) :- in(P, _).
 
 // The template in each D4 pose.
-.decl pose(d: D4, p: Position, col: Color)
-pose(D, S2, Col) :- d4_elem(D), tpl.inner($U(), P, S), in(P, Col), apply(D, S, S2).
+.decl pose(d: D4, p_inner: Position, col: Color)
+pose(D, P_turned, Col) :-
+    tpl.box($U(), B), in(P, Col), crop(P, B, P_inner),   // a template cell, in the box's frame
+    d4_elem(D), apply(D, P_inner, P_turned).
 
 // --- the occurrences ---
 
 // The posed motif seated on the grid's marks.
 .init occ = Occurrences<D4, Unit>
-occ.shape(D, S, $U()) :- pose(D, S, Col), params.mark(Col).
+occ.shape(D, P_inner, $U()) :- pose(D, P_inner, Col), params.mark(Col).
 occ.cell(D, P, $U()) :- d4_elem(D), in(P, Col), params.mark(Col).
 
 // A non-mark cell some seated box covers: the box's fill.
 .decl filled(p: Position)
 filled(P) :-
-    occ.occurrence(D, M), pose(D, S, _), compose(M, S, P),  // a cell of a seated box
+    occ.occurrence(D, M), pose(D, P_inner, _), compose(M, P_inner, P),  // a cell of a seated box
     in(P, Col), !params.mark(Col).                           // not a mark
 
 .decl out(p: Position, col: Color)

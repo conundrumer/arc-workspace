@@ -26,10 +26,13 @@ impl_choice($Multicolor()). impl_choice($Smallest()).
 .init objs = Components8<Unit>
 objs.node($U(), P) :- in(P, Col), !params.bg(Col).
 
-// Every object viewed in its own box, holes included.
-.init boxes = BoxFrame<Ident>
+// Every object's box.
+.init boxes = Bbox<Ident>
 boxes.cell(Id, P) :- objs.label($U(), P, Id).
-boxes.grid(Id, P) :- objs.label($U(), _, Id), in(P, _).
+
+// The extent of an object's box on each axis.
+.decl box_size(id: Ident, a: Axis, n: number)
+box_size(Id, A, N) :- boxes.cell(Id, P), boxes.box(Id, B), box_extent(B, P, A, N).
 
 .decl square_id(ch: Choice, id: Ident)
 
@@ -43,7 +46,7 @@ square_id($Multicolor(), Id) :- obj_col.clash(Id).
 // --- Smallest ---
 
 .init by_extent = ArgExtremes<Unit, Ident>
-by_extent.cand($U(), Id, N) :- boxes.extent(Id, _, N).
+by_extent.cand($U(), Id, N) :- box_size(Id, _, N).
 
 square_id($Smallest(), Id) :- by_extent.low($U(), Id, _).
 
@@ -52,10 +55,15 @@ square_id($Smallest(), Id) :- by_extent.low($U(), Id, _).
 .decl shape_id(ch: Choice, id: Ident)
 shape_id(Ch, Id) :- impl_choice(Ch), objs.label($U(), _, Id), !square_id(Ch, Id).
 
+// A cell of the shape's box, in the box's frame.
+.decl shape_cell(ch: Choice, p: Position, p_inner: Position)
+shape_cell(Ch, P, P_inner) :-
+    shape_id(Ch, Sh), boxes.box(Sh, B), in(P, _), crop(P, B, P_inner).
+
 // The shape's box divided into the square's cell arrangement.
 .init blocks = Divide2D<Choice>
-blocks.cell(P_box) :- shape_id(_, Sh), boxes.inner(Sh, _, P_box).
-blocks.dim(Ch, A, N) :- square_id(Ch, Id), boxes.extent(Id, A, N).
+blocks.cell(P_inner) :- shape_cell(_, _, P_inner).
+blocks.dim(Ch, A, N) :- square_id(Ch, Id), box_size(Id, A, N).
 blocks.gap(0).
 
 // Each block cell votes for its square cell: the square's color where the
@@ -64,9 +72,9 @@ blocks.gap(0).
 .decl out(p: Position, col: Color, ch: Choice)
 out(P_out, Col, Ch) :-
     square_id(Ch, Sq), in(P_grid, Col_sq),
-    boxes.inner(Sq, P_grid, P_out),                    // square cell, at its output place
-    shape_id(Ch, Sh), blocks.tile(Ch, P_box, P_out, _),
-    boxes.inner(Sh, P_shape, P_box),                   // a cell of its block
-    ( objs.label($U(), P_shape, Sh), Col = Col_sq      // inked
-    ; !objs.label($U(), P_shape, Sh), params.bg(Col)   // empty
+    boxes.box(Sq, B_sq), crop(P_grid, B_sq, P_out),      // square cell, at its output place
+    blocks.tile(Ch, P_inner, P_out, _),                  // the block under it
+    shape_id(Ch, Sh), shape_cell(Ch, P_shape, P_inner),  // a cell of that block
+    ( objs.label($U(), P_shape, Sh), Col = Col_sq        // inked
+    ; !objs.label($U(), P_shape, Sh), params.bg(Col)     // empty
     ).

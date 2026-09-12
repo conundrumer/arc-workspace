@@ -26,16 +26,16 @@ covered(Col) :- in(_, Col), !params.mark(Col), !touched(Col).
 .init blobs = Components8<Color>
 blobs.node(Col, P) :- in(P, Col), ( params.mark(Col) ; covered(Col) ).
 
-.init bbox = BoxFrame<Ident>
+.init bbox = Bbox<Ident>
 bbox.cell(Id, P) :- blobs.label(_, P, Id).
 
 // --- footprints ---
 
 .init footprint = KeyedSetCompare<Ident, Ident, Position>
 footprint.pattern_member(Id, P_inner) :-
-    blobs.label(Col, P, Id), params.mark(Col), bbox.inner(Id, P, P_inner).
+    blobs.label(Col, P, Id), params.mark(Col), bbox.box(Id, B), crop(P, B, P_inner).
 footprint.observed_member(Id, P_inner) :-
-    blobs.label(Col, P, Id), covered(Col), bbox.inner(Id, P, P_inner).
+    blobs.label(Col, P, Id), covered(Col), bbox.box(Id, B), crop(P, B, P_inner).
 
 // The cells of a covered blob shaped like a mark blob.
 .decl copy_cell(p: Position)

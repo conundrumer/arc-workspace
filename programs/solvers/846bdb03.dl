@@ -23,31 +23,33 @@ transform(T) :- params.sym(S), sym_member(S, T).
 
 // --- the box ---
 
-.init bbox = BoxFrame<Unit>
+.init bbox = Bbox<Unit>
 bbox.cell($U(), P) :- in(P, Col), params.corner(Col).
-bbox.grid($U(), P) :- in(P, _).
+
+// A cell the box covers.
+.decl boxed(p: Position)
+boxed(P) :- in(P, _), bbox.box($U(), B), inside(P, B).
 
 .decl cropped(p: Position, col: Color)
-cropped(P_inner, Col) :- bbox.inner($U(), P, P_inner), in(P, Col).
+cropped(P_inner, Col) :- in(P, Col), bbox.box($U(), B), crop(P, B, P_inner).
 
 // A colored line on the box's border.
 .decl bar(d: Dir, col: Color)
 bar(D, Col) :- cropped(P, Col), dir_elem(D), dist(P, D, 0), !params.bg(Col), !params.corner(Col).
 
 // The box off its border, in its own frame.
-.init core = BoxFrame<Unit>
+.init core = Bbox<Unit>
 core.cell($U(), P) :- cropped(P, _), interior(P, ZERO).
 
 // --- the shape ---
 
-.init shape = BoxFrame<Unit>
-shape.cell($U(), P) :- in(P, Col), !params.bg(Col), !bbox.inside($U(), P).
-shape.grid($U(), P) :- in(P, _).
+.init shape = Bbox<Unit>
+shape.cell($U(), P) :- in(P, Col), !params.bg(Col), !boxed(P).
 
 // The shape under each transform, in the interior frame.
 .decl placed(t: D4, p_inner: Position, col: Color)
 placed(T, P_inner2, Col) :-
-    shape.inner($U(), P, P_inner), in(P, Col),
+    in(P, Col), shape.box($U(), B), crop(P, B, P_inner),
     transform(T), apply(T, P_inner, P_inner2).
 
 // Under T, some cell of the bar's color meets the bar.
@@ -61,7 +63,7 @@ defect(T) :- transform(T), bar(D, Col), !touches(T, D, Col).
 // --- output ---
 
 .decl out(p: Position, col: Color)
-out(P, Col) :- cropped(P, Col), !core.inner($U(), P, _).
+out(P, Col) :- cropped(P, Col), !core.cell($U(), P).
 out(P, Col) :-
-    core.inner($U(), P, P_inner),
+    core.cell($U(), P), core.box($U(), B), crop(P, B, P_inner),
     placed(T, P_inner, Col), !defect(T).    // under the orientation every bar accepts

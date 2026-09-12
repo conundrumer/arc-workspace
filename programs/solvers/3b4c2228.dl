@@ -9,9 +9,9 @@
 //   $Placement — placements whose footprint lands fully on the color; counts
 //                touching squares separately, where $Object merges them.
 //
-// The count renders two ways (the output's data/ops choice):
-//   $Tally  — compose the marks down the diagonal (ops).
-//   $Lookup — select the stored count->grid from a table (data).
+// The count renders two ways:
+//   $Tally  — compose the marks down the diagonal.
+//   $Lookup — select the stored count->grid from a table.
 // Choice = [detect, render] crosses the two independent decisions.
 
 #include "../lib.dl"
@@ -66,12 +66,13 @@
     .init comps = Components<Key>
     comps.node(K, P) :- on(K, P).
 
-    .init frame = BoxFrame<Obj>
+    .init frame = Bbox<Obj>
     frame.cell([K, Id], P) :- comps.label(K, P, Id).
 
     .init same = KeyedSetCompare<Obj, Unit, Position>
     same.pattern_member($U(), P) :- params.block_shape(P).
-    same.observed_member(O, P)   :- frame.inner(O, _, P).
+    same.observed_member(O, P_inner) :-
+        frame.cell(O, P), frame.box(O, B), crop(P, B, P_inner).
 
     .decl block(k: Key, id: Ident)
     block(K, Id) :- same.equals([K, Id], $U()).
@@ -88,7 +89,7 @@
 parse.cell($U(), P, C) :- in(P, C).
 
 // ============================================================
-// $Placement: placements where the shape occurs (Occurrences)
+// $Placement: placements where the shape occurs
 // ============================================================
 
 .init occ = Occurrences<Unit, Unit>
@@ -115,11 +116,11 @@ marked(P, Det) :- diag.diagonal($U(), P, K), total(N, Det), K < N.
 
 .decl out(p: Position, col: Color, c: Choice)
 
-// Tally (ops) — compose the marks down the diagonal.
+// --- $Tally ---
 out(P, Mark, [Det, $Tally()]) :- marked(P, Det), params.mark(Mark).
 out(P, BG,   [Det, $Tally()]) :- params.out_pos(P), total(_, Det), !marked(P, Det), params.bg(BG).
 
-// Lookup (data) — select the stored grid for the count.
+// --- $Lookup ---
 out(P, Col, [Det, $Lookup()]) :- total(N, Det), params.lookup_grid(N, P, Col).
 
 .comp Determine {

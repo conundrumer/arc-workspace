@@ -32,8 +32,7 @@ bar(P) :- in(P, Col), params.bar(Col).
 .decl stepped(p: Position)
 stepped(P2) :- bar(P), params.axis(A), axis_of(D, A), neighbor(P, D, P2).
 
-.init hull = BoxFrame<Choice>
-hull.grid(Ch, P) :- impl_choice(Ch), in(P, _).
+.init hull = Bbox<Choice>
 hull.cell(Ch, P) :- impl_choice(Ch), bar(P).
 
 // --- $Cap ---
@@ -43,4 +42,4 @@ hull.cell($Cap(), P) :- stepped(P), in(P, Col), params.cap(Col).
 hull.cell($Grow(), P) :- stepped(P).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P_out, Col, Ch) :- in(P, Col), hull.inner(Ch, P, P_out).
+out(P_out, Col, Ch) :- in(P, Col), hull.box(Ch, B), crop(P, B, P_out).

@@ -27,13 +27,12 @@
 .init pieces = Components8<Unit>
 pieces.node($U(), P) :- in(P, Col), !params.bg(Col).
 
-.init bbox = BoxFrame<Ident>
+.init bbox = Bbox<Ident>
 bbox.cell(Id, P) :- pieces.label($U(), P, Id).
-bbox.grid(Id, P) :- pieces.label($U(), _, Id), in(P, _).
 
 // The piece's crop: the content of its box, free of placement.
 .decl cropped(id: Ident, p_inner: Position, col: Color)
-cropped(Id, P_inner, Col) :- bbox.inner(Id, P, P_inner), in(P, Col).
+cropped(Id, P_inner, Col) :- bbox.box(Id, B), in(P, Col), crop(P, B, P_inner).
 
 // The crop's own symmetries.
 .init inv = D4Map<Ident, Color>
