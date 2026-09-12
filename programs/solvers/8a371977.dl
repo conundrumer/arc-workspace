@@ -47,7 +47,7 @@ out(P, Col, Ch) :- ink(P), impl_choice(Ch), !ring_cell(P, Ch), params.within(Col
 .decl off_line(a: Axis, l: Position)
 off_line(A, L) :- ink(P), axis_elem(A), split(P, A, L, _).
 
-.init cut = DividerFrame<Unit>
+.init cut = DividerTiles<Unit>
 cut.cell($U(), P) :- in(P, _).
 cut.divider($U(), A, L) :-
     in(P, _), axis_elem(A), split(P, A, L, _),   // a line across axis A

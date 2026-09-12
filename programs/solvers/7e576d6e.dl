@@ -31,7 +31,7 @@ bg(Col) :- bg_mode.mode($U(), Col).
 .decl broken(a: Axis, l: Position)
 broken(A, L) :- in(P, Col), bg(Col), axis_elem(A), split(P, A, L, _).
 
-.init cut = DividerFrame<Unit>
+.init cut = DividerTiles<Unit>
 cut.cell($U(), P) :- in(P, _).
 cut.divider($U(), A, L) :- in(P, _), axis_elem(A), split(P, A, L, _), !broken(A, L).
 

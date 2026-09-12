@@ -29,7 +29,7 @@ mark(P, Col) :- in(P, Col), !params.bg(Col), !params.base(Col).
 .decl inked_line(l: Position)
 inked_line(L) :- in(P, Col), !params.bg(Col), axis_elem(A), split(P, A, L, _).
 
-.init blocks = DividerFrame<Unit>
+.init blocks = DividerTiles<Unit>
 blocks.cell($U(), P) :- in(P, _).
 blocks.divider($U(), A, L) :-
     in(P, _), axis_elem(A), split(P, A, L, _),  // a line of the grid

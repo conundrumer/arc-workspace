@@ -29,12 +29,12 @@
 // --- frames ---
 
 // The rectangles each drawn color draws.
-.init drect = DrawnRect<Color>
+.init drect = Outlines<Color>
 drect.node(Col, P) :- in(P, Col), !params.hole(Col).
 
 // What a rectangle encloses.
 .init bcells = BoxCells<Position>
-bcells.box(Pan, Pan) :- drect.rect(_, Pan).
+bcells.box(Pan, Pan) :- drect.box(_, Pan).
 bcells.cell(Pan, P) :- bcells.box(Pan, _), in(P, _).
 
 // Those cells, read in the enclosed frame.

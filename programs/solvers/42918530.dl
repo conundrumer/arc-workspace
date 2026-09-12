@@ -28,7 +28,7 @@ impl_choice($Fill()). impl_choice($Merge()).
 .decl inked_line(a: Axis, l: Position)
 inked_line(A, L) :- in(P, Col), !params.bg(Col), axis_elem(A), split(P, A, L, _).
 
-.init lattice = DividerFrame<Unit>
+.init lattice = DividerTiles<Unit>
 lattice.cell($U(), P) :- in(P, _).
 lattice.divider($U(), A, L) :-
     in(P, _), axis_elem(A), split(P, A, L, _),   // a line of the grid

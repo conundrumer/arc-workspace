@@ -27,7 +27,7 @@
 impl_choice($Center()). impl_choice($Tile()).
 
 // The panels the divider cuts, stacked along the key side's axis.
-.init panels = DividerFrame<Unit>
+.init panels = DividerTiles<Unit>
 panels.cell($U(), P) :- in(P, _).
 panels.divider($U(), A, L) :-
     in(P, Col), params.divider(Col),                       // divider cell

@@ -38,16 +38,16 @@ out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !enclosed(P, _, Ch).
 
 // --- Rect ---
 
-.init drect = DrawnRect<Color>
+.init drect = Outlines<Color>
 drect.node(Col, P) :- ink(Col), in(P, Col).
 
 // A rectangle inside another rectangle's box.
 .decl nested_rect(b: Position)
-nested_rect(B) :- drect.rect(_, B), drect.rect(_, B_outer), B != B_outer, inside(B, B_outer).
+nested_rect(B) :- drect.box(_, B), drect.box(_, B_outer), B != B_outer, inside(B, B_outer).
 
 enclosed(P, Col, $Rect()) :-
     ink(C), in(P, C),                               // ink cell
-    drect.rect(Col, B), !nested_rect(B), inside(P, B). // in an outermost rectangle's box
+    drect.box(Col, B), !nested_rect(B), inside(P, B). // in an outermost rectangle's box
 
 // --- Enclose ---
 

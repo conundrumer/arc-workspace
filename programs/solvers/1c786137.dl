@@ -77,14 +77,14 @@ marker(Col, $Solo()) :- color(Col), !color_part.clash(Col).
 // --- Drawn ---
 
 // The rectangles each color draws.
-.init drect = DrawnRect<Color>
+.init drect = Outlines<Color>
 drect.node(Col, P) :- in(P, Col).
 
 // Every rectangle the noise draws is a box in play.
-bcells.box(B, B) :- drect.rect(_, B).
+bcells.box(B, B) :- drect.box(_, B).
 
 .init biggest_hole = Mode<Unit, Position, Position>
-biggest_hole.item($U(), B, P) :- drect.rect(_, B), bcells.hole(B, P).
+biggest_hole.item($U(), B, P) :- drect.box(_, B), bcells.hole(B, P).
 
 outline_box(B, $Drawn()) :- biggest_hole.mode($U(), B).
 

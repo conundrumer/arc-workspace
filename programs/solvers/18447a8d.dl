@@ -43,7 +43,7 @@ band_axis(A) :- params.piece_dir(D), axis_of(D, A2), perp(A2, A).
 .decl line_ink(l: Position)
 line_ink(L) :- in(P, Col), !params.bg(Col), band_axis(A), split(P, A, L, _).
 
-.init frame = DividerFrame<Unit>
+.init frame = DividerTiles<Unit>
 frame.cell($U(), P) :- in(P, _).
 frame.divider($U(), A, L) :-
     in(P, _), band_axis(A), split(P, A, L, _),  // a line of the band axis

@@ -87,7 +87,7 @@ out(P, Col, $Inset()) :-
 .type Window = [e: Example, diag: DiagDir]
 
 .comp Determine {
-    .init si = ShiftInvariance<Example, Color>
+    .init si = OffsetInvariance<Example, Color>
     si.cell(E, P, Col) :- ex_out(E, P, Col).
 
     .init unbroken = Extremes<Axis>

@@ -31,7 +31,7 @@ impl_choice($Center()). impl_choice($Slot()). impl_choice($Clear()).
 
 // --- lattice ---
 
-.init lattice = DividerFrame<Unit>
+.init lattice = DividerTiles<Unit>
 lattice.cell($U(), P) :- in(P, _).
 lattice.divider($U(), A, L) :-
     in(P, Col), params.dot(Col),      // a dot

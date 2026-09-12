@@ -19,7 +19,7 @@
 .init line_color = Unanimous<Line, Color>
 line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
 
-.init frame = DividerFrame<Unit>
+.init frame = DividerTiles<Unit>
 frame.cell($U(), P) :- in(P, _).
 
 // Divider: a line of one non-bg color.

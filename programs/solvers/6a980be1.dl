@@ -45,7 +45,7 @@ strip_in(P, C) :-
     interior(P, ZERO), in(P, C).                      // inside the frame
 
 // The shortest shift along the lines under which the strip agrees with itself.
-.init strip_shift = ShiftInvariance<Unit, Color>
+.init strip_shift = OffsetInvariance<Unit, Color>
 strip_shift.cell($U(), P, C) :- strip_in(P, C).
 
 // The strip continued over the whole grid: each cell repeats the one a period

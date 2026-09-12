@@ -41,7 +41,7 @@ content(P, Col) :- in(P, Col), !params.sep(Col), !params.noise(Col).
 .decl content_line(l: Position)
 content_line(L) :- content(P, _), axis_elem(A), split(P, A, L, _).
 
-.init lattice = DividerFrame<Unit>
+.init lattice = DividerTiles<Unit>
 lattice.cell($U(), P) :- in(P, _).
 lattice.divider($U(), A, L) :-
     in(P, _), axis_elem(A), split(P, A, L, _),  // a line of the grid

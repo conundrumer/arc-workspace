@@ -25,7 +25,7 @@ bg(Col) :- field.mode($U(), Col).
 .decl inked_line(a: Axis, l: Position)
 inked_line(A, L) :- in(P, Col), !bg(Col), axis_elem(A), split(P, A, L, _).
 
-.init panels = DividerFrame<Unit>
+.init panels = DividerTiles<Unit>
 panels.cell($U(), P) :- in(P, _).
 panels.divider($U(), A, L) :-
     in(P, _), axis_elem(A), split(P, A, L, _),  // a line of the grid

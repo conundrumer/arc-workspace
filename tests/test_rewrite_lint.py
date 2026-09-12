@@ -197,7 +197,7 @@ broken(Delta) :- cand(Delta), cell(P, Col), compose(P, Delta, P2), cell(P2, C2),
 out(Delta) :- cand(Delta), !broken(Delta).
 """
     fs = [f for f in lint_rewrites(src, hints=True) if f[0] == "comp-idiom"]
-    assert len(fs) == 1 and "ShiftInvariance.mismatch" in fs[0][2]
+    assert len(fs) == 1 and "OffsetInvariance.mismatch" in fs[0][2]
 
 
 def test_comp_idiom_is_a_hint():

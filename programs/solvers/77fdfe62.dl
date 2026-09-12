@@ -48,7 +48,7 @@ corner_color(Diag, Col) :- in(P, Col), corner_dist(P, Diag, 0).
 off_line(A, L) :- in(P, Col), !params.line(Col), axis_elem(A), split(P, A, L, _).
 
 // The parts the separator lines cut the grid into.
-.init cut = DividerFrame<Unit>
+.init cut = DividerTiles<Unit>
 cut.cell($U(), P) :- in(P, _).
 cut.divider($U(), A, L) :-
     in(P, _), axis_elem(A), split(P, A, L, _),   // a line across axis A
@@ -106,7 +106,7 @@ out(I, Col, [Ic, $Bg()]) :- in(P, C0), !params.ink(C0), frame.inner(Ic, P, I), p
     off_line(E, A, L) :-
         ex_in(E, P, Col), !params.line(Col), axis_elem(A), split(P, A, L, _).
 
-    .init cut = DividerFrame<Example>
+    .init cut = DividerTiles<Example>
     cut.cell(E, P) :- ex_in(E, P, _).
     cut.divider(E, A, L) :-
         ex_in(E, P, _), axis_elem(A), split(P, A, L, _),   // a line across axis A

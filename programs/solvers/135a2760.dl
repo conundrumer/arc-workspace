@@ -21,7 +21,7 @@
 line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
 
 // A uniform line spans the grid, so it divides panels rather than sit in one.
-.init panels = DividerFrame<Unit>
+.init panels = DividerTiles<Unit>
 panels.cell($U(), P) :- in(P, _).
 panels.divider($U(), A, L) :- line_color.value([A, L], _).
 
@@ -33,7 +33,7 @@ inner_cell(T, P) :- panels.tile_of($U(), P, T), !frame.rim(T, P).
 
 // --- lattice ---
 
-.init si = ShiftInvariance<Position, Color>
+.init si = OffsetInvariance<Position, Color>
 si.cell(T, P, Col) :- inner_cell(T, P), in(P, Col).
 
 // The interior's period per axis: the shortest. On an axis with no true

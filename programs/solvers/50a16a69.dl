@@ -22,7 +22,7 @@ line.item(L, Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
 .decl pattern(p: Position, col: Color)
 pattern(P, Col) :- in(P, Col), !line.value(_, Col).
 
-.init si = ShiftInvariance<Unit, Color>
+.init si = OffsetInvariance<Unit, Color>
 si.cell($U(), P, Col) :- pattern(P, Col).
 
 // One lattice step, either way along its axis.

@@ -51,7 +51,7 @@ ink(P, Col) :- in(P, Col), !params.bg(Col), !empty(Col).
 
 // --- Tiles ---
 
-.init lattice = DividerFrame<Unit>
+.init lattice = DividerTiles<Unit>
 lattice.cell($U(), P) :- in(P, _).
 lattice.divider($U(), A, L) :- line_color.value([A, L], _).
 

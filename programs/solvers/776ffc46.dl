@@ -19,11 +19,11 @@
 ink(P, Col) :- in(P, Col), !params.bg(Col), !params.frame(Col).
 
 // The rectangles drawn in the frame color, and their insides.
-.init drect = DrawnRect<Unit>
+.init drect = Outlines<Unit>
 drect.node($U(), P) :- in(P, Col), params.frame(Col).
 
 .init bcells = BoxCells<Position>
-bcells.box(B, B) :- drect.rect(_, B).
+bcells.box(B, B) :- drect.box(_, B).
 bcells.cell(B, P) :- bcells.box(B, _), in(P, _).
 
 // Each rectangle's reference shape, viewed from its own bounding box.

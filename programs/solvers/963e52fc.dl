@@ -57,7 +57,7 @@ out(P_grid_out, Col, Ch) :-
 
 // --- $Line ---
 
-.init si_line = ShiftInvariance<Position, Color>
+.init si_line = OffsetInvariance<Position, Color>
 si_line.cell(Line, P, Col) :- cell_line(P, Line, Col).
 
 period_at($Line(), Line, K) :-
@@ -65,7 +65,7 @@ period_at($Line(), Line, K) :-
 
 // --- $Grid ---
 
-.init si_grid = ShiftInvariance<Unit, Color>
+.init si_grid = OffsetInvariance<Unit, Color>
 si_grid.cell($U(), P, Col) :- in(P, Col).
 
 // The grid's period, so every line takes it.

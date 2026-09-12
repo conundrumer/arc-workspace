@@ -44,7 +44,7 @@ field.item($U(), Col, P) :- in(P, Col).
 line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
 
 // A drawn line running the whole way across separates snapshots.
-.init panels = DividerFrame<Unit>
+.init panels = DividerTiles<Unit>
 panels.cell($U(), P) :- in(P, _).
 panels.divider($U(), A, L) :- line_color.value([A, L], Col), !field.mode($U(), Col).
 

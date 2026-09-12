@@ -14,19 +14,19 @@
 
 // --- block ---
 
-.init drect = DrawnRect<Color>
+.init drect = Outlines<Color>
 drect.node(Col, P) :- in(P, Col).
 
 // The cells a rectangle covers.
 .decl covered(b: Position, p: Position)
-covered(B, P) :- drect.rect(_, B), in(P, _), inside(P, B).
+covered(B, P) :- drect.box(_, B), in(P, _), inside(P, B).
 
 // The block: the rectangle covering the most cells.
 .init biggest = Mode<Unit, Position, Position>
 biggest.item($U(), B, P) :- covered(B, P).
 
 .decl block(col: Color, b: Position)
-block(Col, B) :- biggest.mode($U(), B), drect.rect(Col, B).
+block(Col, B) :- biggest.mode($U(), B), drect.box(Col, B).
 
 .init rel = Reframe<Unit>
 rel.outer($U(), B) :- block(_, B).

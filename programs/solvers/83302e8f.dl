@@ -38,7 +38,7 @@ out(P, Col, Ch) :- in(P, Col), !params.bg(Col), impl_choice(Ch).
 .init line_color = Mode<Line, Color, Position>
 line_color.item([A, L], Col, P) :- in(P, Col), axis_elem(A), split(P, A, L, _).
 
-.init lattice = DividerFrame<Unit>
+.init lattice = DividerTiles<Unit>
 lattice.cell($U(), P) :- in(P, _).
 lattice.divider($U(), A, L) :- line_color.mode([A, L], Col), !params.bg(Col).
 

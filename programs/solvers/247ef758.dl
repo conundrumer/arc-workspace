@@ -39,7 +39,7 @@ line_color.item(L, Col) :-
     in(P, Col), params.legend_dir(D), axis_of(D, A), split(P, A, L, _).
 
 // The separator is the one line a single non-bg color holds.
-.init cut = DividerFrame<Unit>
+.init cut = DividerTiles<Unit>
 cut.cell($U(), P) :- in(P, _).
 cut.divider($U(), A, L) :-
     line_color.value(L, Col), !params.bg(Col),

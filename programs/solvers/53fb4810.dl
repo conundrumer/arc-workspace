@@ -70,7 +70,7 @@ period(B, K, $Extent()) :- grow_axis(B, A), box.extent(B, A, K).
 
 // --- $Period ---
 
-.init shift = ShiftInvariance<Ident, Color>
+.init shift = OffsetInvariance<Ident, Color>
 shift.cell(B, P, Col) :- bands.label($U(), P, B), in(P, Col).
 
 .init shortest = Extremes<Ident>

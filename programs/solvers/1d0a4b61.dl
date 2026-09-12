@@ -18,7 +18,7 @@
 .decl intact(p: Position, col: Color)
 intact(P, Col) :- in(P, Col), !params.hole(Col).
 
-.init si = ShiftInvariance<Unit, Color>
+.init si = OffsetInvariance<Unit, Color>
 si.cell($U(), P, Col) :- intact(P, Col).
 
 // One lattice step — the identification the orbit closes over.

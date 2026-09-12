@@ -234,7 +234,7 @@ Cases are hypotheses about the prior that the task teaches.
     - The solver that introduces or improves a structure's encoding sets its precedent.
     - A precedent covers how a structure is found and encoded, not the tests inside that encoding: which cells or lines qualify follows the task's concept, so a solver whose test differs still follows the precedent.
     - When two encodings of one structure stand in different solvers, the one that is not the precedent is a deviation, and a session notes it in the review. Two encodings that stand as cases of one solver are peer parses, and neither is a deviation.
-        - 1a6449f1 <!-- rings sit in noise, and the output crops one of them; `DrawnRect` finds a ring as a drawn rectangle and `Closed` as a wall that cuts a region off from the grid edge, each under its own case. -->
+        - 1a6449f1 <!-- rings sit in noise, and the output crops one of them; `Outlines` finds a ring as a drawn rectangle and `Closed` as a wall that cuts a region off from the grid edge, each under its own case. -->
 - Models that find different structures are different parses.
 - **Setup priority.** A setup follows, in order:
     1. Fidelity.

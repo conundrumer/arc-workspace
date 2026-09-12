@@ -70,7 +70,7 @@
     .init line_color = Unanimous<Line, Color>
     line_color.item([Ky, A, L], Col) :- cell(Ky, P, Col), axis_elem(A), split(P, A, L, _).
 
-    .init cut = DividerFrame<Key>
+    .init cut = DividerTiles<Key>
     cut.cell(Ky, P) :- cell(Ky, P, _).
     // The cut: a line of a single non-bg color.
     cut.divider(Ky, A, L) :- line_color.value([Ky, A, L], Col), !params.bg(Col).

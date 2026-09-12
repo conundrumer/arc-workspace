@@ -34,10 +34,10 @@ impl_choice($Stored()). impl_choice($Drawn()).
 frame_col(Col, $Stored()) :- params.frame(Col).
 
 // --- Drawn ---
-.init drect = DrawnRect<Color>
+.init drect = Outlines<Color>
 drect.node(Col, P) :- in(P, Col), !params.bg(Col).
 
-frame_col(Col, $Drawn()) :- drect.rect(Col, _).
+frame_col(Col, $Drawn()) :- drect.box(Col, _).
 
 // --- the frame, viewed in its own box ---
 

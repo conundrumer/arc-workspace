@@ -28,7 +28,7 @@ impl_choice($Shape()). impl_choice($Tile()).
 line_color.item([A, L], Col) :- axis_elem(A), in(P, Col), split(P, A, L, _).
 
 // A cut: a line of one drawn color, all the way across.
-.init lattice = DividerFrame<Unit>
+.init lattice = DividerTiles<Unit>
 lattice.cell($U(), P) :- in(P, _).
 lattice.divider($U(), A, L) :- line_color.value([A, L], Col), !params.bg(Col).
 

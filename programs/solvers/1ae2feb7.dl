@@ -30,7 +30,7 @@ cell_split(P, P_along, P_line) :- in(P, _), params.axis(A), split(P, A, P_along,
 sep.item($U(), P_along, P) :- ink(P, _), cell_split(P, P_along, _).
 
 // The two sides the separator cuts.
-.init cut = DividerFrame<Unit>
+.init cut = DividerTiles<Unit>
 cut.cell($U(), P) :- in(P, _).
 cut.divider($U(), A, P_sep) :- sep.mode($U(), P_sep), params.axis(A).
 

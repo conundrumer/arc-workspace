@@ -27,7 +27,7 @@
 line_color.item([A, L], Col) :- in(P_grid, Col), axis_elem(A), split(P_grid, A, L, _).
 
 // The tiles the one-color lines cut out.
-.init cut = DividerFrame<Unit>
+.init cut = DividerTiles<Unit>
 cut.cell($U(), P_grid) :- in(P_grid, _).
 cut.divider($U(), A, L) :- line_color.value([A, L], _).
 

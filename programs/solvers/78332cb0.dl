@@ -23,7 +23,7 @@
 line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
 
 // The lattice the separator lines cut.
-.init lattice = DividerFrame<Unit>
+.init lattice = DividerTiles<Unit>
 lattice.cell($U(), P) :- in(P, _).
 lattice.divider($U(), A, L) :- line_color.value([A, L], Col), params.sep(Col).
 

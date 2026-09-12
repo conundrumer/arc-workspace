@@ -44,7 +44,7 @@
     .init line_color = Unanimous<Line, Color>
     line_color.item([K, A, L], Col) :- cell(K, P, Col), axis_elem(A), split(P, A, L, _).
 
-    .init frame = DividerFrame<Key>
+    .init frame = DividerTiles<Key>
     frame.cell(K, P) :- cell(K, P, _).
 
     // Divider: a line of one non-bg color.

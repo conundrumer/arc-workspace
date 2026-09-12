@@ -23,7 +23,7 @@
 .init params = Params
 
 // The panels the separator cuts, stacked along params.side's axis.
-.init panels = DividerFrame<Unit>
+.init panels = DividerTiles<Unit>
 panels.cell($U(), P) :- in(P, _).
 panels.divider($U(), A, L) :-
     in(P, Col), params.sep(Col),                  // separator cell

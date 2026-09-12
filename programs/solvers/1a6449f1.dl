@@ -26,12 +26,12 @@ ink(Col) :- in(_, Col), !params.bg(Col).
 
 // --- Rect ---
 
-.init drect = DrawnRect<Color>
+.init drect = Outlines<Color>
 drect.node(Col, P) :- ink(Col), in(P, Col).
 
 // The inside of each rectangle.
 .init bcells = BoxCells<Position>
-bcells.box(B, B) :- drect.rect(_, B).
+bcells.box(B, B) :- drect.box(_, B).
 bcells.cell(B, P) :- bcells.box(B, _), in(P, _).
 
 .init biggest_hole = Mode<Unit, Position, Position>

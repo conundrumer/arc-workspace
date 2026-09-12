@@ -54,7 +54,7 @@
 line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
 
 // The divider is a line its color runs all the way across.
-.init panels = DividerFrame<Unit>
+.init panels = DividerTiles<Unit>
 panels.cell($U(), P) :- in(P, _).
 panels.divider($U(), A, L) :- line_color.value([A, L], Col), params.divider(Col).
 

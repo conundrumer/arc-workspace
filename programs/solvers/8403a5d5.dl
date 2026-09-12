@@ -181,7 +181,7 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !lit(P, Ch), !dotted(P, Ch), param
     // --- $Banner ---
 
     // The trail's shifts along its axis.
-    .init si = ShiftInvariance<Example, Color>
+    .init si = OffsetInvariance<Example, Color>
     si.cell(E, Q, Col) :- step_cell(E, _, Q, Col).
 
     // A shift some trail breaks.

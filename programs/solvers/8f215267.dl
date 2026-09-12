@@ -46,11 +46,11 @@ comps.node(Col, P) :- ink(P, Col).
 
 // --- Rect ---
 
-.init drect = DrawnRect<Color>
+.init drect = Outlines<Color>
 drect.node(Col, P) :- ink(P, Col).
 
 .init bcells = BoxCells<Position>
-bcells.box(B, B) :- drect.rect(_, B).
+bcells.box(B, B) :- drect.box(_, B).
 bcells.cell(B, P) :- bcells.box(B, _), in(P, _).
 
 // Object id has a cell in the hole of rectangle b.
@@ -58,7 +58,7 @@ bcells.cell(B, P) :- bcells.box(B, _), in(P, _).
 in_hole(B, Id) :- bcells.hole(B, P), comps.label(_, P, Id).
 
 frame(Col, Id, B, $Rect()) :-
-    drect.rect(Col, B), bcells.hole(B, _),               // a rectangle with a hole
+    drect.box(Col, B), bcells.hole(B, _),               // a rectangle with a hole
     bcells.on_edge(B, P, _), comps.label(Col, P, Id),    // the object that draws it
     !in_hole(B, Id).                                     // and leaves the hole empty
 

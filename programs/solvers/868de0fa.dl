@@ -33,11 +33,11 @@ impl_choice($Rect()). impl_choice($Enclose()).
 
 // --- Rect ---
 
-.init drect = DrawnRect<Unit>
+.init drect = Outlines<Unit>
 drect.node($U(), P) :- in(P, Col), params.ink(Col).
 
 .init bcells = BoxCells<Position>
-bcells.box(B, B) :- drect.rect($U(), B).
+bcells.box(B, B) :- drect.box($U(), B).
 bcells.cell(B, P) :- bcells.box(B, _), in(P, _).
 
 // The hole viewed from its own box.

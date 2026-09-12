@@ -33,7 +33,7 @@ broken(Id, L) :-
     box.inside(Id, P), in(P, Col), !ink.mode($U(), Col), // a non-ink cell of the box
     axis_elem(A), split(P, A, L, _).                     // on line L
 
-.init cut = DividerFrame<Ident>
+.init cut = DividerTiles<Ident>
 cut.cell(Id, P) :- box.inside(Id, P).
 cut.divider(Id, A, L) :-
     box.inside(Id, P), axis_elem(A), split(P, A, L, _), // a line of the frame's box

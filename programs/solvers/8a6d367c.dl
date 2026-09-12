@@ -28,11 +28,11 @@ impl_choice($Color()). impl_choice($Piece()). impl_choice($Object()).
 ink(Col) :- in(_, Col), !params.bg(Col).
 
 // The rectangles each color draws.
-.init drect = DrawnRect<Color>
+.init drect = Outlines<Color>
 drect.node(Col, P) :- ink(Col), in(P, Col).
 
 .init bcells = BoxCells<Position>
-bcells.box(B, B) :- drect.rect(_, B).
+bcells.box(B, B) :- drect.box(_, B).
 bcells.cell(B, P) :- bcells.box(B, _), in(P, _).
 
 // The ink each rectangle holds.
@@ -41,7 +41,7 @@ held(B, P, Col) :- bcells.hole(B, P), in(P, Col), ink(Col).
 
 // The frame: the rectangle that holds ink of another color.
 .decl frame(b: Position, col: Color)
-frame(B, Col) :- drect.rect(Col, B), held(B, _, C), C != Col.
+frame(B, Col) :- drect.box(Col, B), held(B, _, C), C != Col.
 
 // The fill: the ink the frame holds.
 .decl fill(p: Position, col: Color)

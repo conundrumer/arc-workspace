@@ -34,7 +34,7 @@ cell(P_scene, Col) :- scene.inner($U(), P, P_scene), in(P, Col).
 // A separator line is dashed: the separator color runs along it, so two
 // adjacent separator cells lie on it. A lone separator cell is where a tile
 // line crosses one.
-.init lattice = DividerFrame<Unit>
+.init lattice = DividerTiles<Unit>
 lattice.cell($U(), P) :- cell(P, _).
 lattice.divider($U(), A, L) :-
     cell(P, Col), params.sep(Col),                       // a separator cell

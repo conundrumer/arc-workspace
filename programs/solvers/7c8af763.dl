@@ -47,7 +47,7 @@ out(P, Col, $Region()) :- regions.label($U(), P, Id), region_vote.mode(Id, Col).
 .decl bg_line(l: Position)
 bg_line(L) :- in(P, Col), params.bg(Col), axis_elem(A), split(P, A, L, _).
 
-.init tiles = DividerFrame<Unit>
+.init tiles = DividerTiles<Unit>
 tiles.cell($U(), P) :- in(P, Col), params.bg(Col).
 tiles.divider($U(), A, L) :-
     in(P, _), axis_elem(A), split(P, A, L, _),  // a line of the grid

@@ -269,7 +269,7 @@ _DELTA_OUT = {"edge_inset": 2, "edge_outset": 2, "jump_offset": 2, "step_offset"
 
 # The comp whose defining rule reads one valued cell set at a cell and at
 # its image, by the primitive that takes the cell onto the image.
-_IMAGE_COMPS = {"apply": "D4Map.conflict", "compose": "ShiftInvariance.mismatch"}
+_IMAGE_COMPS = {"apply": "D4Map.conflict", "compose": "OffsetInvariance.mismatch"}
 
 
 def _delta_vars(ext: list[tuple[Atom, str]]) -> set[str]:

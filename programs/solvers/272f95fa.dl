@@ -44,7 +44,7 @@
     line_color.item([Ky, A, L], Col) :- cell(Ky, P, Col), axis_elem(A), split(P, A, L, _).
 
     // A line wholly of the line color spans the grid, so it cuts tiles apart.
-    .init df = DividerFrame<Key>
+    .init df = DividerTiles<Key>
     df.cell(Ky, P) :- cell(Ky, P, _).
     df.divider(Ky, A, L) :- line_color.value([Ky, A, L], Col), params.line(Col).
 

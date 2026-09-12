@@ -136,7 +136,7 @@ fill(P_sec, Col, $Rarest()) :- rarest.low(P_sec, Col, _).
     line_col.item([E, A, L], Col) :- ex_in(E, P, Col), axis_elem(A), split(P, A, L, _).
 
     // The separator lines cut the grid into parts.
-    .init parts = DividerFrame<Example>
+    .init parts = DividerTiles<Example>
     parts.cell(E, P) :- ex_in(E, P, _).
     parts.divider(E, A, L) :- line_col.value([E, A, L], Col), !params.bg(Col).
 

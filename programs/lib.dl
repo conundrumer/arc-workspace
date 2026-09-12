@@ -1069,7 +1069,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 // holds, toward each edge, the count of dividers between the cell and that
 // edge. Divider cells get no tile; an axis with no dividers is one part. A
 // within-tile position is a `crop` from the tile's box.
-.comp DividerFrame<Key> {
+.comp DividerTiles<Key> {
     // The position domain, per key.
     .decl cell(key: Key, p: Position)
 
@@ -1272,7 +1272,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 // frame tests nothing, so a shift is compared only where both cells exist.
 // Two readings: `mismatch` is exact — a stored period is the smallest
 // unbroken shift; `period` reads through sparse damage in ordinary colors.
-.comp ShiftInvariance<Key, Val> {
+.comp OffsetInvariance<Key, Val> {
     .decl cell(key: Key, p: Position, v: Val)
 
     // Internal keys tag a candidate shift; members are its line pairs.
@@ -1508,7 +1508,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 // The rectangle outlines drawn inside a keyed node set, each reported as
 // the box its corners bound. An outline spans at least two cells on each
 // axis.
-.comp DrawnRect<Key> {
+.comp Outlines<Key> {
     // The set the outlines are drawn in, per key.
     .decl node(key: Key, p: Position)
 
@@ -1528,8 +1528,8 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     .init _box = Bbox<_KR>
     _box.cell([K, C1, C4], C) :- _ring(K, C1, C4), ( C = C1 ; C = C4 ).
 
-    .decl rect(key: Key, b: Box)
-    rect(K, B) :- _box.box([K, _, _], B).
+    .decl box(key: Key, b: Box)
+    box(K, B) :- _box.box([K, _, _], B).
 }
 
 // Connected components of a node set (4-adjacency), per key, each labeled by

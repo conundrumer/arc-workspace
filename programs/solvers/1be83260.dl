@@ -41,7 +41,7 @@ cell(P_region, Col) :- region.inner($U(), P, P_region), in(P, Col).
 .decl inked_line(l: Position)
 inked_line(L) :- cell(P, Col), !params.bg(Col), axis_elem(A), split(P, A, L, _).
 
-.init df = DividerFrame<Unit>
+.init df = DividerTiles<Unit>
 df.cell($U(), P) :- cell(P, _).
 df.divider($U(), A, L) :-
     cell(P, _), axis_elem(A), split(P, A, L, _),  // a line of the region

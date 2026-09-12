@@ -46,11 +46,11 @@ ink(P) :- in(P, Col), !params.bg(Col).
 .decl region(r: Region, id: Ident, p: Position)
 
 // $Rect: the inside of each rectangle outline drawn in ink.
-.init drect = DrawnRect<Unit>
+.init drect = Outlines<Unit>
 drect.node($U(), P) :- ink(P).
 
 .init rect_id = Canon<Position>
-rect_id.equiv(B, B) :- drect.rect($U(), B).
+rect_id.equiv(B, B) :- drect.box($U(), B).
 
 region($Rect(), Id, P) :- rect_id.id(B, Id), bg_cell(P), interior(P, B).
 

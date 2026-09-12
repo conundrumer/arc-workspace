@@ -84,7 +84,7 @@ out(P, Col, Ch) :- mark_cell(Ch, P), params.mark(Col).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !mark_cell(Ch, P).
 
 .comp Determine {
-    .init si = ShiftInvariance<Example, Color>
+    .init si = OffsetInvariance<Example, Color>
     si.cell(E, P, Col) :- ex_out(E, P, Col).
 
     // The shortest unbroken shift of an output along the anchor's axis.

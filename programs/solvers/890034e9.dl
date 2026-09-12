@@ -27,20 +27,20 @@
 impl_choice($Content()). impl_choice($Empty()).
 
 // The rectangle outlines each color draws.
-.init drect = DrawnRect<Color>
+.init drect = Outlines<Color>
 drect.node(Col, P) :- in(P, Col).
 
 .init bcells = BoxCells<Position>
-bcells.box(B, B) :- drect.rect(_, B).
+bcells.box(B, B) :- drect.box(_, B).
 bcells.cell(B, P) :- bcells.box(B, _), in(P, _).
 
 // A cell of the outline's color off the outline.
 .decl stray(b: Position)
-stray(B) :- drect.rect(Col, B), in(P, Col), !bcells.on_edge(B, P, _).
+stray(B) :- drect.box(Col, B), in(P, Col), !bcells.on_edge(B, P, _).
 
 // The frame: an outline whose color is used for nothing else.
 .decl frame(col: Color, b: Position)
-frame(Col, B) :- drect.rect(Col, B), !stray(B).
+frame(Col, B) :- drect.box(Col, B), !stray(B).
 
 .decl hole(b: Position, p: Position)
 hole(B, P) :- frame(_, B), bcells.hole(B, P).

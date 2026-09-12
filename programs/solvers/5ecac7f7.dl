@@ -66,7 +66,7 @@ impl_choice([$Divide(), $Diagonal()]). impl_choice([$Divide(), $Lookup()]).
     .init line_color = Unanimous<Line, Color>
     line_color.item([K, L], Col) :- cell(K, P, Col), params.axis(A), split(P, A, L, _).
 
-    .init frame = DividerFrame<Key>
+    .init frame = DividerTiles<Key>
     frame.cell(K, P) :- cell(K, P, _).
     frame.divider(K, A, L) :-
         params.axis(A), line_color.value([K, L], Col), params.sep(Col).

@@ -24,7 +24,7 @@
 
 // --- wallpaper comp ---
 
-// Proposal comp: the isometry peer of ShiftInvariance,
+// Proposal comp: the isometry peer of OffsetInvariance,
 // quotiented by a translation lattice. Given a keyed valued cell set, its
 // per-axis periods, and the isometry kinds in play, candidates are the
 // isometries of the frame — a kind composed with a shift from the
@@ -125,7 +125,7 @@
     .decl intact(key: Key, p: Position, col: Color)
     intact(Key, P, Col) :- in_cell(Key, P, Col), !params.hole(Col).
 
-    .init si = ShiftInvariance<Key, Color>
+    .init si = OffsetInvariance<Key, Color>
     si.cell(Key, P, Col) :- intact(Key, P, Col).
 
     .init wp = Wallpaper<Key, Color>

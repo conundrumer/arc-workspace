@@ -40,7 +40,7 @@ line_broken(L) :-
     in(P, Col), !params.divider(Col),  // a cell of another color
     axis_elem(A), split(P, A, L, _).   // on the line at l
 
-.init frame = DividerFrame<Unit>
+.init frame = DividerTiles<Unit>
 frame.cell($U(), P) :- in(P, _).
 frame.divider($U(), A, L) :-
     in(P, _), axis_elem(A), split(P, A, L, _),  // a line of the grid

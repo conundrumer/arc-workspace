@@ -37,11 +37,11 @@ out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !painted(P, Ch).
 
 // --- Rect ---
 
-.init drect = DrawnRect<Color>
+.init drect = Outlines<Color>
 drect.node(Col, P) :- ink(Col, P).
 
 .init rcells = BoxCells<Color>
-rcells.box(Col, B) :- drect.rect(Col, B).
+rcells.box(Col, B) :- drect.box(Col, B).
 rcells.cell(Col, P) :- params.recolor(Col, _), in(P, _).
 
 painted(P, $Rect()) :- rcells.on_edge(_, P, _).

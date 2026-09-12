@@ -56,14 +56,14 @@ out(P, Col, Ch) :- orbit(Ch, P, Q), intact(Q, Col).
 
 // --- $Lattice ---
 
-.init si = ShiftInvariance<Unit, Color>
+.init si = OffsetInvariance<Unit, Color>
 si.cell($U(), P, Col) :- intact(P, Col).
 
 period_at($Lattice(), P, A, K) :- damaged(P), si.min_period($U(), A, K).
 
 // --- $Lines ---
 
-.init si_line = ShiftInvariance<Position, Color>
+.init si_line = OffsetInvariance<Position, Color>
 si_line.cell(L, P, Col) :- intact(P, Col), params.axis(A), split(P, A, _, L).
 
 period_at($Lines(), P, A, K) :-

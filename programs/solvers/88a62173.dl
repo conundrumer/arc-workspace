@@ -46,7 +46,7 @@ tile_val(T, P_intile, Col, $Size()) :-
 .init line_color = Unanimous<Line, Color>
 line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
 
-.init lattice = DividerFrame<Unit>
+.init lattice = DividerTiles<Unit>
 lattice.cell($U(), P) :- in(P, _).
 lattice.divider($U(), A, L) :- line_color.value([A, L], _).
 

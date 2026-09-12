@@ -59,7 +59,7 @@ mark(P, Col) :- node(P), in(P, Col), !line_color(Col).
 lines_choice($Lattice()).
 lines_choice($Marked()).
 
-.init df = DividerFrame<Lines>
+.init df = DividerTiles<Lines>
 df.cell(L, P) :- in(P, _), lines_choice(L).
 
 // $Lattice — every cutting line.
