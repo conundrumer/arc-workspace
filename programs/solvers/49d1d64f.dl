@@ -11,7 +11,7 @@
 
     // The input's seat in the output.
     .decl seat_delta(p: Inset)
-    seat_delta(P) :- ring_width(K), uniform_delta(K, P).
+    seat_delta(P) :- ring_width(K), uniform_inset(K, P).
 
     .decl bg(c: Color) bg(0).
 }

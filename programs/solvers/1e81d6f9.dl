@@ -20,7 +20,7 @@
     .decl mask_color(c: Color) mask_color(5).
 
     .decl target_anchor(p: Position)
-    target_anchor(P) :- target_corner(Diag), target_offset(K), edge_delta(Diag, K, P).
+    target_anchor(P) :- target_corner(Diag), target_offset(K), edge_inset(Diag, K, P).
 }
 
 .init params = Params

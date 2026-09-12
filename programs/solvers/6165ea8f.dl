@@ -81,7 +81,7 @@ same_shape(A, B) :- cong.map([A, B], D), d4_inverse(D, D_back), cong.map([B, A],
 slot(Col, A, P) :-
     order.pos($U(), Col, P_order), legend_axis(A),
     params.header_corner(Cn), diag_dirs(Cn, A, D, _),
-    params.header(K), edge_delta(D, K, Delta), compose(P_order, Delta, P).
+    params.header(K), edge_inset(D, K, Delta), compose(P_order, Delta, P).
 slot(Col, A2, P2) :-
     slot(Col, A, P), perp(A, A2),
     params.header_corner(Cn), diag_axis_of(Cn, DA), diag_flip_of(DA, T),

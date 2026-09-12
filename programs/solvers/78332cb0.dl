@@ -55,7 +55,7 @@ chain.before(D, X, Z) :- chain.before(D, X, Y), link(Y, D, Z).
 .decl seat(x: Position, a: Axis, p_tile: Position)
 seat(X, A, P_tile) :-
     chain.rank_desc(D, X, K1), chain.rank(D, X, K2),   // tiles after and before X
-    axis_of(D, A), axis_delta(D, K1, K2, P_tile).
+    axis_of(D, A), axis_inset(D, K1, K2, P_tile).
 
 // --- the layout ---
 

@@ -32,7 +32,7 @@ impl_choice($Fixed()). impl_choice($Palette()).
 .decl stripe_step(delta: Position)
 stripe_step(Delta) :-
     params.stripe_axis(Da), diag_axis_of(Diag, Da),          // the axis's two corners
-    step_delta(Diag, Delta).
+    step_offset(Diag, Delta).
 
 // --- period per choice ---
 
@@ -44,7 +44,7 @@ period(K, $Fixed())   :- params.period(K).
 period(K, $Palette()) :- palette.tally($U(), K).
 
 .decl period_jump(delta: Position, ch: Choice)
-period_jump(Delta, Ch) :- period(K, Ch), dir_elem(D), jump_delta(D, K, Delta).
+period_jump(Delta, Ch) :- period(K, Ch), dir_elem(D), jump_offset(D, K, Delta).
 
 // --- closure under the wallpaper symmetries ---
 

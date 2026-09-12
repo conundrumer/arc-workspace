@@ -40,7 +40,7 @@ ring_tally.domain($U()).
 .decl side(n: number)
 side(N) :-
     in(P, _), params.inner_dir(D_in), axis_of(D_in, A),    // the input frame
-    ring_tally.tally($U(), M), edge_delta(D_in, M, Ins),   // one cell per ring
+    ring_tally.tally($U(), M), edge_inset(D_in, M, Ins),   // one cell per ring
     compose(P, Ins, P_wide), axis_dim(P_wide, A, N).       // grown past that edge
 
 .init frame = Frame2D<Unit>

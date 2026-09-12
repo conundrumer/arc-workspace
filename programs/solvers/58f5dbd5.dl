@@ -91,7 +91,7 @@ blocks_box.cell($U(), P) :- block(_, P).
 .decl crop_box(b: Position)
 crop_box(B) :-
     blocks_box.margin($U(), M),
-    params.border(K), uniform_delta(K, W), displacement(W, M, B).
+    params.border(K), uniform_inset(K, W), displacement(W, M, B).
 
 .init rel = Reframe<Unit>
 rel.outer($U(), B) :- crop_box(B).
@@ -111,7 +111,7 @@ tile.edge(Col, D, R) :- block_box.edge_min(Col, D, K), lane.rank(D, K, R).
 view(P, P_out, $Arrange()) :-
     block_box.inner(Col, P, P_inner), tile.pos(Col, P_tile),  // block cell, its tile
     params.border(K), concat_2d(P_tile, P_inner, K, P_lat),   // tiles set the border apart
-    uniform_delta(K, W), compose(P_lat, W, P_out).            // and the border around them
+    uniform_inset(K, W), compose(P_lat, W, P_out).            // and the border around them
 
 .init arrange_frame = Frame2D<Unit>
 arrange_frame.extent($U(), A, N) :-

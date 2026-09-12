@@ -75,7 +75,7 @@ obj.node($U(), P) :- outside(P, _).
 
 glyph(Col, V, Ink, [$Near(), Pt]) :-
     key(P, Col), dir8_elem(D), neighbor(P, D, Q),    // one step off the key
-    ink_cell(Q, Ink, Pt), step_delta(D, V).          // onto a glyph cell
+    ink_cell(Q, Ink, Pt), step_offset(D, V).          // onto a glyph cell
 
 glyph(Col, V, Ink, [$Object(), Pt]) :-
     key(P, Col), obj.conn($U(), P, Q), Q != P,      // another cell of the key's object

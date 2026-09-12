@@ -77,7 +77,7 @@ within(Ch, Id, V) :- nest.next(Ch, Id, Id2), covers(Ch, Id2, V).
 
 // The center lies as deep as the innermost ring.
 .decl center(ch: Choice, p: Position)
-center(Ch, P) :- nest.last(Ch, Id), nest.rank(Ch, Id, R), uniform_delta(R, P).
+center(Ch, P) :- nest.last(Ch, Id), nest.rank(Ch, Id, R), uniform_inset(R, P).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-

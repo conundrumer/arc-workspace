@@ -77,5 +77,5 @@ out(P, Col, $Stamp()) :- in(P, Col), !stamp_halo(P, _).
         displacement(M, P, Off).
 
     .decl arm(d: Dir, col: Color)
-    arm(D, Col) :- template(Off, Col), dir_elem(D), step_delta(D, Off).
+    arm(D, Col) :- template(Off, Col), dir_elem(D), step_offset(D, Off).
 }

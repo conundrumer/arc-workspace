@@ -99,7 +99,7 @@ edge_off(Ch, D, P_tile, ZERO) :-
 edge_off(Ch, D, P_next, P_off2) :-
     edge_off(Ch, D, P_tile, P_off),                                          // the offset so far
     axis_of(D, A), tile(Ch, P_tile, P_intile, _), axis_dim(P_intile, A, K),  // the tile's extent
-    edge_delta(D, K, Delta), compose(P_off, Delta, P_off2),                  // the next offset
+    edge_inset(D, K, Delta), compose(P_off, Delta, P_off2),                  // the next offset
     opposite(D, D2), neighbor(P_tile, D2, P_next).                           // the next tile inward
 
 // The offset at both edges of one axis.

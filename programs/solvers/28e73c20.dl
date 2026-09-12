@@ -33,7 +33,7 @@
 
     // A cycle insets the turn box by the pitch.
     .decl inset(p: Inset)
-    inset(P) :- pitch(K), uniform_delta(K, P).
+    inset(P) :- pitch(K), uniform_inset(K, P).
 
     // --- $Repaint ---
     .decl bg(col: Color) bg(0).

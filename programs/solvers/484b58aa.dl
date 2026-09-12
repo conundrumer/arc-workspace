@@ -37,7 +37,7 @@ impl_choice($Lattice()). impl_choice($Lines()).
 
 // That period as a shift, either way along its axis.
 .decl step(ch: Choice, p: Position, delta: Shift)
-step(Ch, P, Delta) :- period_at(Ch, P, A, K), axis_of(D, A), jump_delta(D, K, Delta).
+step(Ch, P, Delta) :- period_at(Ch, P, A, K), axis_of(D, A), jump_offset(D, K, Delta).
 
 // The cells a run of those shifts reaches from a damaged cell.
 .decl orbit(ch: Choice, p: Position, q: Position)

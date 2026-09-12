@@ -48,7 +48,7 @@ shape(P) :- biggest.mode($U(), Id), object(Id, _, P).
 span(K) :- in(P, _), axis_elem(A), sub_extent(P, A, K).
 
 .decl toward(d: Dir8, k: number, delta: Shift)
-toward(D, K, Delta) :- span(K), dir8_elem(D), jump_delta(D, K, Delta).
+toward(D, K, Delta) :- span(K), dir8_elem(D), jump_offset(D, K, Delta).
 
 // Where each object seats on the template: the translations that carry
 // every cell of the object onto a template cell.

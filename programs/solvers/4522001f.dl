@@ -139,7 +139,7 @@ sq.width(L, D2, K) :-
 sq_jump(L, J) :-
     diag(L, Diag), diag_opposite(Diag, Od), diag_dirs(Od, A, O1, O2),   // dirs away from the corner
     sq.inner(L, _, P_box), axis_dims(P_box, A, K1, K2),                 // the box's extents
-    jump_delta(O1, K1, J1), jump_delta(O2, K2, J2), compose(J1, J2, J). // one box along each
+    jump_offset(O1, K1, J1), jump_offset(O2, K2, J2), compose(J1, J2, J). // one box along each
 
 // --- $Grow ---
 // The first box and one diagonal step.

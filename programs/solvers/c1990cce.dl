@@ -91,7 +91,7 @@ echo_choice($Stripe()).
 // cell from the seed, continuing past the grid edge while rows remain;
 // each casts an echo ray.
 .decl march_jump(delta: Position)
-march_jump(J) :- mirror_corner(MD), params.spacing(S), jump_delta(MD, S, J).
+march_jump(J) :- mirror_corner(MD), params.spacing(S), jump_offset(MD, S, J).
 
 .decl emitter(p: Position)
 emitter(P) :- seed(P, _).

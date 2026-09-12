@@ -23,7 +23,7 @@
 
     // The outer lines.
     .decl ring(p: Inset)
-    ring(P) :- line_width(K), uniform_delta(K, P).
+    ring(P) :- line_width(K), uniform_inset(K, P).
 
     // --- Layout ---
     .decl tiles(a: Axis, n: number)

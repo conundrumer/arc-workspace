@@ -28,7 +28,7 @@
 
     // The next ring is one cell out at every edge.
     .decl ring_step(w: Inset)
-    ring_step(W) :- uniform_delta(1, W).  // @unit: rings are one cell apart
+    ring_step(W) :- uniform_inset(1, W).  // @unit: rings are one cell apart
 }
 
 .init params = Params

@@ -25,7 +25,7 @@
 
     // The block's seat in the tile grid.
     .decl seat_delta(p: Inset)
-    seat_delta(P) :- ring_width(K), uniform_delta(K, P).
+    seat_delta(P) :- ring_width(K), uniform_inset(K, P).
 
     // --- Stored, Hub ---
     .decl fill(c: Color) fill(5).

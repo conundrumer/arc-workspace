@@ -33,7 +33,7 @@
 .init cluster = Components8<Unit>
 cluster.node($U(), P) :- in(P, Col), params.mark(Col).
 cluster.step(S) :-
-    dir8_elem(D1), step_delta(D1, S1), dir8_elem(D2), step_delta(D2, S2),
+    dir8_elem(D1), step_offset(D1, S1), dir8_elem(D2), step_offset(D2, S2),
     compose(S1, S2, S).
 
 .init box = Bbox<Ident>

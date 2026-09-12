@@ -33,7 +33,7 @@
     .decl slant(v: Shift)
     slant(V) :-
         slant_dir(Dg), rise_axis(A), diag_dirs(Dg, A, D, D_side),
-        rise(K), jump_delta(D, K, V_along), step_delta(D_side, V_across),
+        rise(K), jump_offset(D, K, V_along), step_offset(D_side, V_across),
         compose(V_along, V_across, V).
     slant(V2) :- slant(V), displacement(V, ZERO, V2).
 }

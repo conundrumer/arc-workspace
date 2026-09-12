@@ -143,7 +143,7 @@ def test_lib_idiom_in_params_fires():
     src = """\
 .comp Params {
     .decl beside(p: Position, q: Position)
-    beside(P, Q) :- dir_elem(D), step_delta(D, S), compose(P, S, Q).
+    beside(P, Q) :- dir_elem(D), step_offset(D, S), compose(P, S, Q).
 }
 .init params = Params
 .decl out(p: Position)

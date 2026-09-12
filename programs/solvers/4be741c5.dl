@@ -74,4 +74,4 @@ out(P, Col, Ch) :-
     lead.low([Ch, D, Col], K),                      // the band's leading line
     place.rank([Ch, D], K, R),                      // bands ahead of it
     place.rank_desc([Ch, D], K, R2),                // bands behind it
-    axis_delta(D, R, R2, P).                        // its cell of the strip
+    axis_inset(D, R, R2, P).                        // its cell of the strip

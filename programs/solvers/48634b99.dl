@@ -73,7 +73,7 @@ target_choice($Step()). target_choice($Next()).
 target(Id, $Step()) :-
     gauge(Id_g), box.inner(Id_g, _, P_in),                 // a gauge cell
     params.axis(A), axis_of(D, A), params.step(K),         // params.step along the bars' axis
-    edge_delta(D, K, Delta), compose(P_in, Delta, P_in2),  // stretched by it
+    edge_inset(D, K, Delta), compose(P_in, Delta, P_in2),  // stretched by it
     box.inner(Id, _, P_in2).                               // lands in the target
 
 // $Next — the shortest bar longer than the gauge.

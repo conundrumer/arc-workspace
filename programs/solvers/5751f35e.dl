@@ -43,7 +43,7 @@ ink(P, Col) :- in(P, Col), !params.bg(Col).
 reach.cand(Col, K) :- ink(P, Col), peel.depth($U(), P, K).
 
 .decl layer(col: Color, b: Position)
-layer(Col, B) :- reach.low(Col, K), uniform_delta(K, B).
+layer(Col, B) :- reach.low(Col, K), uniform_inset(K, B).
 
 .decl covered(p: Position, col: Color)
 covered(P, Col) :- in(P, _), layer(Col, B), geq(P, B).

@@ -428,14 +428,6 @@ axis_outset(D, K1, K2, B) :-
 .decl uniform_outset(k: number, b: Box) inline
 uniform_outset(K, [-K, -K, -K, -K]) :- true.
 
-// Retired names of the inset constructors.
-.decl edge_delta(d: Dir8, k: number, p: Inset) inline
-edge_delta(D, K, P) :- edge_inset(D, K, P).
-.decl axis_delta(d: Dir, k1: number, k2: number, p: Inset) inline
-axis_delta(D, K1, K2, P) :- axis_inset(D, K1, K2, P).
-.decl uniform_delta(k: number, p: Inset) inline
-uniform_delta(K, P) :- uniform_inset(K, P).
-
 // Translation of k cells toward d: -k at each edge of d, +k at each
 // opposite.
 .decl jump_offset(d: Dir8, k: number, v: Offset) inline
@@ -449,12 +441,6 @@ _step(D, Step) :- dir8_elem(D), jump_offset(D, 1, Step).
 // Unit step toward d.
 .decl step_offset(d: Dir8, v: Offset) inline
 step_offset(D, Step) :- _step(D, Step).
-
-// Retired names of jump_offset and step_offset.
-.decl jump_delta(d: Dir8, k: number, delta: Shift) inline
-jump_delta(D, K, V) :- jump_offset(D, K, V).
-.decl step_delta(d: Dir8, delta: Shift) inline
-step_delta(D, Step) :- step_offset(D, Step).
 
 // q is one step from p toward d.
 .decl neighbor(p: Box, d: Dir8, q: Box) inline
@@ -706,7 +692,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     .decl pos(key: Key, k: number, p: Position) inline
     pos(Ky, K, P) :-
         dist_set(Ky, K), dir(D), extent(Ky, N),
-        axis_delta(D, K, N-1-K, P).
+        axis_inset(D, K, N-1-K, P).
 }
 
 // 1D frame from an axis-tagged extent — the n axis-only positions of a
@@ -719,7 +705,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     cell(Ky, A, P) :-
         extent(Ky, A, N), axis_of(D, A),
         K = range(0, N),
-        axis_delta(D, K, N-1-K, P).
+        axis_inset(D, K, N-1-K, P).
 }
 
 // 2D frame from per-axis extents — AxisFrame cells perp-glued into full
@@ -1080,7 +1066,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
         mem(Ky, M), axis(Ky, A), axis_of(D, A), opposite(D, O),
         R1 = count : { nearer(Ky, D, M1, M) },
         R2 = count : { nearer(Ky, O, M2, M) },
-        axis_delta(D, R1, R2, P_pos).
+        axis_inset(D, R1, R2, P_pos).
 }
 
 // The nonuniform tile arrangement a divider set induces — the divider-driven
@@ -1115,7 +1101,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     part_of(K, P, A, P_part) :-
         axis_of(D, A), opposite(D, D2),                 // the axis's two dirs
         part_idx(K, P, D, N1), part_idx(K, P, D2, N2),  // index from each
-        axis_delta(D, N1, N2, P_part).
+        axis_inset(D, N1, N2, P_part).
 
     // P's tile, parts on both axes glued.
     .decl tile_of(key: Key, p: Position, p_tile: Position)

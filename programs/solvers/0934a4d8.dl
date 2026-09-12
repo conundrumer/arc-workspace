@@ -61,7 +61,7 @@ out(P_out, Col) :-
 
     // One-sided frame-extension candidates per axis: k cells past edge d.
     .decl ext_cand(a: Axis, m: Inset)
-    ext_cand(A, M) :- apos(A, Along), sub_extent(Along, A, K), axis_of(D, A), edge_delta(D, K, M).
+    ext_cand(A, M) :- apos(A, Along), sub_extent(Along, A, K), axis_of(D, A), edge_inset(D, K, M).
 
     // The candidate's mirror, as a map on axis positions.
     .decl ext_map(a: Axis, m: Inset, along: Position, along2: Position)

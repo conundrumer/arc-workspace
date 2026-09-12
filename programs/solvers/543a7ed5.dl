@@ -68,7 +68,7 @@ fill_cell(P, $Boxed()) :- bg_cell(P), shape_box.inside(_, P).
 .decl ring_box(id: Ident, b: Position)
 ring_box(Id, B) :-
     shape_box.margin(Id, M),
-    params.ring_width(K), uniform_delta(K, W), displacement(W, M, B).  // the box let out
+    params.ring_width(K), uniform_inset(K, W), displacement(W, M, B).  // the box let out
 
 .decl ring(id: Ident, p: Position)
 ring(Id, P) :- in(P, _), ring_box(Id, B), geq(P, B), !shape_box.inside(Id, P).

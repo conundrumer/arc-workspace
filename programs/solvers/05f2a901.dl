@@ -83,7 +83,7 @@ blocked($Extent(), P) :- params.anchor(Col), box.inside(Col, P).
 .decl shift(delta: Shift)
 shift(Delta) :-
     in(P, _), move_dir(D),
-    axis_of(D, A), sub_extent(P, A, K), jump_delta(D, K, Delta).
+    axis_of(D, A), sub_extent(P, A, K), jump_offset(D, K, Delta).
 
 // The displacements at which the footprint would lie over a blocked cell.
 .decl covering(ch: Choice, delta: Shift)

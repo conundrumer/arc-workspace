@@ -57,7 +57,7 @@ out(P, Col, $Shift()) :-
 // below joins against it instead of rebuilding it per step.
 .decl period_delta(delta: Position)
 period_delta(Delta) :-
-    params.period(A, K), axis_of(D, A), jump_delta(D, K, Delta).
+    params.period(A, K), axis_of(D, A), jump_offset(D, K, Delta).
 
 // Cells whole stored periods apart along the period's axis.
 .decl peer(p: Position, q: Position)

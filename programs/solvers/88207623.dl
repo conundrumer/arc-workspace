@@ -54,7 +54,7 @@ shape_choice($Spanned()).
 
 // $Attached — the shape cells reached from the line over 8-adjacency.
 .init blob = Reach<Ident>
-blob.step(S) :- dir8_elem(D), step_delta(D, S).
+blob.step(S) :- dir8_elem(D), step_offset(D, S).
 blob.node(Id, P) :-
     lines.label($U(), _, Id),
     ( in(P, Col), params.shape(Col)    // a shape cell

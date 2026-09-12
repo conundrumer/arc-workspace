@@ -74,7 +74,7 @@ shape(Col, P_grid, Ch) :-
 mark_shift(Col, Base, V) :-
     spread.value(Col, M),                          // a lone mark
     pt(Base, N), Base != Col,                      // a cell of another color
-    dir8_elem(D), step_delta(D, V), compose(N, V, M).  // one step from it onto the mark
+    dir8_elem(D), step_offset(D, V), compose(N, V, M).  // one step from it onto the mark
 
 .decl shadow(p: Position, col: Color, ch: Choice)
 shadow(P_grid, Col, Ch) :-

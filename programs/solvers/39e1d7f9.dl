@@ -82,7 +82,7 @@ footprint(P_tile_seat, V, Col, $Whole()) :-
 footprint(P_tile_seat, V, Col, $Ring()) :-
     motif(P_tile_seat, _),                                   // the seating cell
     dir8_elem(D), neighbor(P_tile_seat, D, P_tile_mark),     // one step out
-    motif(P_tile_mark, Col), step_delta(D, V).               // onto a motif cell, at that step's offset
+    motif(P_tile_mark, Col), step_offset(D, V).               // onto a motif cell, at that step's offset
 
 // --- Seat cases: which motif cell lands on a single cell ---
 

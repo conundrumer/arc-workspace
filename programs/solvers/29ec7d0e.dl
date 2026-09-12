@@ -53,4 +53,4 @@ shift($Shift(), Delta) :-
 period.item($U(), Col) :- clean(_, Col).
 
 shift($Count(), Delta) :-
-    period.tally($U(), N), dir_elem(D), jump_delta(D, N, Delta).
+    period.tally($U(), N), dir_elem(D), jump_offset(D, N, Delta).

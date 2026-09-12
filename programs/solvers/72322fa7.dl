@@ -41,7 +41,7 @@ template($Line(), Cc, V, Ca) :-
     dir8_opposite(D, D2),                                        // a line through it
     neighbor(P, D, Q), in(Q, Ca), !params.bg(Ca), Ca != Cc,      // an arm at one end
     neighbor(P, D2, Q2), in(Q2, Ca),                             // and at the other
-    step_delta(D, V).
+    step_offset(D, V).
 
 // --- Figure ---
 

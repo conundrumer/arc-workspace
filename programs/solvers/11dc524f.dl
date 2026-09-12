@@ -33,7 +33,7 @@ move_dir(D) :- dir_elem(D), sight.ray($U(), _, D, _, _).
 .decl shift(delta: Shift)
 shift(Delta) :-
     in(P, _), move_dir(D),
-    axis_of(D, A), sub_extent(P, A, K), jump_delta(D, K, Delta).
+    axis_of(D, A), sub_extent(P, A, K), jump_offset(D, K, Delta).
 
 // The displacements at which the shape's box would lie over the block's box.
 .decl covering(delta: Shift)

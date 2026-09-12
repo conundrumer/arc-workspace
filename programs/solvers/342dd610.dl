@@ -48,5 +48,5 @@ out(P, Col) :- in(P, _), !moved(P, _), params.bg(Col).
     move(Col, D, K) :-
         occ.occurrence([_, Col], Delta), !broken(Col, Delta),
         dir_elem(D), dist_pair(Delta, D, K1, K), K1 < K,   // the delta leans toward edge d
-        jump_delta(D, K, Delta).                           // by k cells
+        jump_offset(D, K, Delta).                           // by k cells
 }

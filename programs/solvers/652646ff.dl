@@ -73,7 +73,7 @@ stack.before($U(), Col, Col2) :- front(Col, Col2).
 .decl tile(col: Color, p_tile: Position)
 tile(Col, P_tile) :-
     stack.rank($U(), Col, R), stack.rank_desc($U(), Col, R2),
-    params.stack_dir(D), axis_delta(D, R, R2, P_tile).
+    params.stack_dir(D), axis_inset(D, R, R2, P_tile).
 
 // The tile's own frame, read off the shape's.
 .init tile_frame = Frame2D<Unit>

@@ -93,7 +93,7 @@ stopped(Id, R, $Sieve()) :- wide(Id, R).
 .decl shift(delta: Shift)
 shift(Delta) :-
     in(P, _), params.fall_dir(D), fall_axis(A),
-    sub_extent(P, A, K), jump_delta(D, K, Delta).
+    sub_extent(P, A, K), jump_offset(D, K, Delta).
 
 // A displacement that carries a shape cell off the grid.
 .decl off_grid(id: Ident, delta: Shift)

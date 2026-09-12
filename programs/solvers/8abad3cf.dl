@@ -99,8 +99,8 @@ edge_off(Ch, D, Col, ZERO) :- params.pack_dir(D), row.first(Ch, Col).
 edge_off(Ch, D2, Col, ZERO) :- params.pack_dir(D), opposite(D, D2), row.last(Ch, Col).
 edge_off(Ch, D, Col2, Off2) :-
     edge_off(Ch, D, Col, Off), inward(Ch, D, Col, Col2),            // the offset so far
-    side(Col, K), edge_delta(D, K, Dk), compose(Off, Dk, Off1),     // past the outward square
-    params.gap(G), edge_delta(D, G, Dg), compose(Off1, Dg, Off2).   // and the gap
+    side(Col, K), edge_inset(D, K, Dk), compose(Off, Dk, Off1),     // past the outward square
+    params.gap(G), edge_inset(D, G, Dg), compose(Off1, Dg, Off2).   // and the gap
 
 // The offset at both edges of the row's axis.
 .decl row_off(ch: Choice, col: Color, off: Inset)

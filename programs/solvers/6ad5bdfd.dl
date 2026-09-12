@@ -36,7 +36,7 @@
     .decl room(key: Key, b: Body, delta: Shift)
     room(Ky, B, Delta) :-
         cell(Ky, B, P), dir(Ky, D),
-        ( dist(P, D, K), jump_delta(D, K, Delta)                            // travel to the frame edge
+        ( dist(P, D, K), jump_offset(D, K, Delta)                            // travel to the frame edge
         ; axis_of(D, A), same_line(A, P, Q), nearer(D, Q, P),               // a cell ahead in the line
           ( blocked(Ky, Q), Q2 = Q                                          // a static cell, in place
           ; cell(Ky, B2, Q), B != B2,                                       // another body's cell

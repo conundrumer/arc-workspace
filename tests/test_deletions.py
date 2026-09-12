@@ -24,7 +24,7 @@ DISJ_BINDING = """\
         ( start(E, T, P0), stroke_cell(E, T, P0), dir_elem(D), P = P0  // inked start
         ; run(E, T, P0, D, P)                                          // or grow the run
         ),
-        step_delta(D, S), compose(P, S, P2), stroke_cell(E, T, P2).
+        step_offset(D, S), compose(P, S, P2), stroke_cell(E, T, P2).
 }
 """
 
@@ -34,10 +34,10 @@ DISJ_NEGATION = """\
     drew(E, T, D, K, P) :-
         run_len(E, T, D, K, P),
         ( parse.next_glyph(E, T, T2),                     // the successor stroke
-          params.advance(Da), step_delta(Da, S), compose(P, S, P2),
+          params.advance(Da), step_offset(Da, S), compose(P, S, P2),
           stroke_cell(E, T2, P2)                          // can start at this end
         ; parse.last_glyph(E, T),                         // no successor
-          step_delta(D, S), compose(P, S, P2),
+          step_offset(D, S), compose(P, S, P2),
           !stroke_cell(E, T, P2)                          // the run is maximal
         ).
 }
@@ -70,7 +70,7 @@ def test_disjunct_with_binding():
     assert kinds(DISJ_BINDING, determine=True) == [
         # `run(...)` is the whole of the second branch, so its deletion
         # has no syntactic form and is skipped. `dir_elem(D)` enumerates a
-        # variable `step_delta(D, S)` carries.
+        # variable `step_offset(D, S)` carries.
         "rule", "atom", "atom", BOUND_ENUMERATOR, *["atom"] * 3,
         "disjunct", "disjunct",
     ]

@@ -74,7 +74,7 @@ out(P, Col) :-
     .decl broken(k: number, s: Sense)
     broken(K, S) :-
         parse.phase(E, _, K), ex_out(E, _, _),                        // a phase on a solved example
-        params.anchor(D), turn(S, D, D_step), step_delta(D_step, V),  // a step across the anchor axis
+        params.anchor(D), turn(S, D, D_step), step_offset(D_step, V),  // a step across the anchor axis
         !seating.occurrence([E, K], V).                               // that does not seat the phase
 
     .decl wave(k: number, s: Sense)
