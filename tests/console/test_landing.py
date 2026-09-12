@@ -207,7 +207,7 @@ def test_a_resident_worker_hears_the_appendix_moved_on(srv):
     srv.launch(it, "look again", "refine")
     sent = w["outbound"].get_nowait()["message"]["content"]
     assert sent.startswith("<system-reminder>Your system prompt's copy of docs/wf-solver and "
-                           "programs/lib.dl is behind the files.")
+                           "the lib is behind the files.")
     assert sent.endswith("</system-reminder>\n\nlook again")
     # the prefix its system prompt was built from stays, so its cache holds
     assert it["append"] == "/stale/appendix.md"

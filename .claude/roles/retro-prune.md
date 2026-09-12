@@ -11,7 +11,7 @@ You prune the text the brief's diff added or changed, in the one file it names. 
 - A negated alternative that the positive excludes is cut. Where the positive does not exclude it, the positive is restated as the form itself, and the negative is cut.
 - Keep the meaning. A cut or a rewording changes no rule.
 - When the brief says the user ruled for the fixes, keep the rule each edit states. A pointer to another doc, a ground, or a consequence is not the rule.
-- In `programs/lib.dl` change comments only.
+- In `programs/lib.dl` and the modules under `programs/lib/` change comments only.
 - Create no new file.
 - Verify as the diff's author did.
 - Never run a git command that changes state: no `stash`, `checkout`, `reset`, `rm`, or `commit`.

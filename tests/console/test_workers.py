@@ -61,6 +61,11 @@ def test_a_role_file_edit_lands_as_a_shared_write(srv):
                for rel in srv.watched_paths("a"))
 
 
+def test_a_lib_module_edit_lands_as_a_shared_write(srv):
+    assert any(rel.startswith("programs/lib/") and rel.endswith(".dl")
+               for rel in srv.watched_paths("a"))
+
+
 def test_a_permission_request_is_answered_on_the_stream(srv):
     it = item(srv, "a", srv.RUNNING)
     w = worker(srv, it, state="running")

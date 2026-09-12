@@ -1,4 +1,4 @@
-"""Print the handbook: the solver docs and lib.dl as a solver session reads them.
+"""Print the handbook: the solver docs and the lib as a solver session reads them.
 dl.context renders it.
 
     uv run python scripts/context.py            # print the handbook

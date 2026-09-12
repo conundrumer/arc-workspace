@@ -35,6 +35,8 @@ def watched_paths(item_id: str) -> dict[str, Path]:
     edit tools (a Bash heredoc, a script) still surfaces."""
     paths = {"programs/lib.dl": config.LIB,
              f"data/tasks/{item_id}.json": config.TASKS / f"{item_id}.json"}
+    for p in sorted(config.LIB_DIR.glob("*.dl")):
+        paths[f"programs/lib/{p.name}"] = p
     for p in sorted(config.DOCS.glob("*.md")):
         paths[f"docs/wf-solver/{p.name}"] = p
     for p in sorted(config.ROLE_DIR.glob("*.md")):

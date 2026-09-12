@@ -79,9 +79,9 @@ def launch(it: dict, message: str, phase: str, trigger: str | None = None,
         # from, so its cached prefix holds; it hears that the sources moved on.
         if worker is not None and str(prompts.append_path()) != it["append"]:
             message = ("<system-reminder>Your system prompt's copy of docs/wf-solver and "
-                       "programs/lib.dl is behind the files. Before you "
+                       "the lib is behind the files. Before you "
                        "use a primitive, read `uv run python scripts/context.py` "
-                       "or the lib.dl sections you need.</system-reminder>\n\n"
+                       "or the lib files you need.</system-reminder>\n\n"
                        + message)
     it["last_turn_phase"] = phase
     if worker is None:

@@ -2,7 +2,7 @@ The brief names one solver, `programs/solvers/<task_id>.dl`, and the change to m
 
 ## Procedure
 
-- Read `programs/lib.dl` for the body of every comp the solver instantiates. Do not read `src/dl/`; when the docs or the runner leave something open, report that as a gap.
+- Read the module under `programs/lib/` for the body of every comp the solver instantiates. Do not read `src/dl/`; when the docs or the runner leave something open, report that as a gap.
 - Read the solver in full, then make the change the brief names. Keep the file's conventions.
 - Run it (`uv run python scripts/run_dl.py <task_id>`) and iterate until it passes and lint is clean. Judge each hint and report that judgment.
 - Run the audit (`uv run python scripts/run_dl.py audit <task_id>`) and resolve the findings.

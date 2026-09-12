@@ -9,7 +9,7 @@ uv run pytest -q
 uv run python scripts/materialize.py
 uv run python scripts/run_dl.py          # run all Souffle solvers; --help for per-solver tooling
 uv run python scripts/run_dl.py <stem>   # run one
-uv run python scripts/context.py         # the handbook: the solver docs and lib.dl as a session reads them
+uv run python scripts/context.py         # the handbook: the solver docs and the lib as a session reads them
 uv run python scripts/context.py --write # write the handbook agent, .claude/agents/handbook.md
 uv run python scripts/claude.py [args]   # write the handbook agent, then start claude with the handbook in its system prompt
 ```

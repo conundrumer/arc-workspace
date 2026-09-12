@@ -52,7 +52,7 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !covered(Ch, P), params.bg(Col).
 
 ## `GRID_HxW` for grid data
 
-A GRID call stores a grid as a literal layout, one fact per cell in row-major order: `GRID_HxW` emits every cell with its value; `GRID_MASK_HxW` and `GRID_SPARSE_HxW` emit the cells that hold something; `GRID_STAMP_HxW` and `GRID_STAMP_SPARSE_HxW` emit those cells as offsets from a marked anchor. A cell that holds nothing is an empty cell, and `_` is its token. `GRID_HxW` has no empty cell: every cell of its layout holds a value. Each cell fact's Position is in the call's own H×W frame. The runner expands the call before Souffle sees the file; GRID is not defined in `lib.dl`. H and W are the grid's dims and take any size, so a call carries H·W cell values. Cells can hold any per-cell data: colors, labels, transforms. A distinguished cell is a Position fact, not a cell value (27a28665 `center_pos`).
+A GRID call stores a grid as a literal layout, one fact per cell in row-major order: `GRID_HxW` emits every cell with its value; `GRID_MASK_HxW` and `GRID_SPARSE_HxW` emit the cells that hold something; `GRID_STAMP_HxW` and `GRID_STAMP_SPARSE_HxW` emit those cells as offsets from a marked anchor. A cell that holds nothing is an empty cell, and `_` is its token. `GRID_HxW` has no empty cell: every cell of its layout holds a value. Each cell fact's Position is in the call's own H×W frame. The runner expands the call before Souffle sees the file; GRID is not defined in the lib. H and W are the grid's dims and take any size, so a call carries H·W cell values. Cells can hold any per-cell data: colors, labels, transforms. A distinguished cell is a Position fact, not a cell value (27a28665 `center_pos`).
 
 ```
 .decl template(p: Position, col: Color)
@@ -191,7 +191,7 @@ Over a spatial domain, the ranks can be stored as a GRID: a68b268e's `params.pri
 
 ## Set-keyed relations via parent/child tables
 
-A relation keyed by a multiset of members is represented as two tables joined by an `id`: the parent holds `(id, out-fields)`; the child holds `(id, member-fields)`. The match uses `KeyedSetCompare` (`lib.dl`): the child table provides `pattern_member`, the observed cells provide `observed_member`, and `covers` / `equals` test containment / equality. The parent table maps the matched `id` to its output.
+A relation keyed by a multiset of members is represented as two tables joined by an `id`: the parent holds `(id, out-fields)`; the child holds `(id, member-fields)`. The match uses `KeyedSetCompare`: the child table provides `pattern_member`, the observed cells provide `observed_member`, and `covers` / `equals` test containment / equality. The parent table maps the matched `id` to its output.
 
 ```
 .decl combine_member(id: Ident, p_outer: Position, c: Color)

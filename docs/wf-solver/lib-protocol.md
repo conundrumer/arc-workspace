@@ -5,7 +5,7 @@
 
 # Lib addition protocol
 
-Qualify a new primitive for `programs/lib.dl` by real use in the corpus and by generality.
+Qualify a new primitive for the lib, `programs/lib.dl` and the modules under `programs/lib/`, by real use in the corpus and by generality.
 
 - **Trigger.** When an encoding in the solver needs a form banned in the program, or when a grep for its shape over `programs/solvers/` finds another solver that writes it, apply this protocol to that encoding. A repeated form the session finds only in other solvers goes in the review as a primitive to promote, naming the sites, and gets no entry.
 - **Generality.** An operation is general when it names one prior-level operation and takes its domain as an input, fixing no configuration beyond the frame.
@@ -81,7 +81,7 @@ Remove the entry's file at these points:
         - Remove the case whose hypothesis has no relational form without that comp.
     - **Not a caller.** Do not count a near-miss, or a lib primitive that holds the operation over its own domain, as a caller.
 4. Leave promotion to the user, at the time they choose. The `Callers` list is their evidence. No step reads its count.
-    - On `promote`: move the primitive to `programs/lib.dl` and update the solver that introduced the proposal.
+    - On `promote`: move the primitive to the module under `programs/lib/` whose file doc admits it, and update the solver that introduced the proposal.
     - On `migrate`:
         1. Spawn the `migrate` role with the entry's path, the call site in the solver that introduced the proposal, and the promotion's time.
         2. Spawn the `cleanup` role with the regions that `migrate` changed and the primitive they now call.
@@ -95,7 +95,7 @@ Remove the entry's file at these points:
 
 ## Changes to existing definitions
 
-Use the same protocol for changes to existing definitions, such as an edit to an existing `lib.dl` primitive.
+Use the same protocol for changes to existing definitions, such as an edit to an existing lib primitive.
 
 - Start such a change at step 2, with the change as the survey's target.
 - The change has no comp form. Write the whole spec in the entry's fields.
