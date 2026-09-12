@@ -58,7 +58,7 @@ NB: reparameterization has been dropped; Same model decides whether an encoding 
 
 ## Box (2026-09-11)
 
-On 2026-09-11, the spatial record took its algebra's names, in lib.dl, the tooling, the docs, and every solver at once. The header of `programs/lib.dl` states the algebra.
+On 2026-09-11, the spatial record took its algebra's names, in lib.dl, the tooling, the docs, and every solver at once.
 
 | Former | Current |
 | --- | --- |
@@ -75,14 +75,6 @@ On 2026-09-11, the spatial record took its algebra's names, in lib.dl, the tooli
 | `ShiftInvariance` | `OffsetInvariance` |
 | `DividerFrame` | `DividerTiles` |
 | `BoxCells`, `BoxFrame`, `MarginFrame`, `Reframe` | retired into `crop`, `box_edge`, `interior`, `relative`, and the constructors |
-
-## Lib modules (2026-09-12)
-
-On 2026-09-12, `programs/lib.dl` became a root that includes the modules under `programs/lib/`. A solver still includes `../lib.dl`.
-
-| Former | Current |
-| --- | --- |
-| `determination_diff` | `_determination_diff` |
 
 ## Docs
 
