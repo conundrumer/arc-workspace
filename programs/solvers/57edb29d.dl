@@ -1,5 +1,4 @@
 // 57edb29d
-// draft
 // concept: objects crop scale induce
 // Solid colored rectangles sit on the background. Each carries the same
 // design of marks, inset from its own edges, and the rectangles differ in
@@ -10,7 +9,6 @@
 // keeps its corners and its middle stretches. A rectangle too narrow to
 // separate two corners shows them merged, so the design is the union of
 // what the rectangles carry.
-// TODO: discuss if removing stretch makes it simpler
 
 #include "../lib.dl"
 

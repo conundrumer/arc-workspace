@@ -1,7 +1,5 @@
 // 898e7135
-// draft
 // concept: objects enclose scale d4 pack
-// TODO: this has perf issues and is load sensitive
 // A board sits among loose pieces and scattered noise cells on params.bg.
 // The board is the object that closes background off from the grid edge;
 // the regions it closes off are its holes. Each piece is a hole scaled up
@@ -46,6 +44,10 @@ board_box.cell(Id, P) :- board(Id), object(Id, _, P).
 .init hole_box = Bbox<Ident>
 hole_box.cell(H, P) :- hole(H, P).
 
+// Each hole's cells, in its own box.
+.decl hole_cell(h: Ident, p_inner: Position)
+hole_cell(H, P_inner) :- hole(H, P), hole_box.box(H, B), crop(P, B, P_inner).
+
 // --- the pieces ---
 
 .init piece_box = Bbox<Ident>
@@ -67,15 +69,18 @@ scale_cand(K) :-
 .init block = Frame2D<number>
 block.extent(K, A, K) :- scale_cand(K), axis_elem(A).
 
+// A hole scaled by K: each of its cells becomes a K-block.
+.decl hole_scaled(h: Ident, k: number, p: Position)
+hole_scaled(H, K, P_scaled) :-
+    hole_cell(H, P_hole), block.cell(K, P_blk), concat_2d(P_hole, P_blk, 0, P_scaled).
+
 // A hole scaled by K and turned by D, viewed from its box.
 .type Turned = [h: Ident, k: number, d: D4]
 
 .init congruent = KeyedSetCompare<Turned, Ident, Position>
 congruent.pattern_member(O, P_piece) :- piece_cell(O, P_piece).
 congruent.observed_member([H, K, D], P_turned) :-
-    hole(H, P), hole_box.box(H, B), crop(P, B, P_hole), block.cell(K, P_blk),
-    concat_2d(P_hole, P_blk, 0, P_scaled),           // the hole scaled by K
-    d4_elem(D), apply(D, P_scaled, P_turned).        // turned by D
+    hole_scaled(H, K, P_scaled), d4_elem(D), apply(D, P_scaled, P_turned).
 
 // Piece O is hole H scaled by K, under some turn.
 .decl fit(h: Ident, k: number, o: Ident)
@@ -93,9 +98,9 @@ scale(K) :- scale_cand(K), !unfit_hole(K).
 // Board cells keep the board's color; each hole takes its piece's color.
 .decl out(p: Position, col: Color)
 out(P_out, Col) :-
-    scale(K), block.cell(K, P_blk),                       // each cell becomes a block
-    in(P, _), board_box.box(Id, B), crop(P, B, P_board),  // a cell of the board's box
-    concat_2d(P_board, P_blk, 0, P_out),                  // scaled into the output
-    ( object(Id, Col, P)                                  // the board
-    ; hole(H, P), fit(H, K, O), object(O, Col, _)         // a hole, in its piece's color
+    scale(K), block.cell(K, P_blk),               // each cell becomes a block
+    board_box.box(Id, B), crop(P, B, P_board),    // a cell of the board's box
+    concat_2d(P_board, P_blk, 0, P_out),          // scaled into the output
+    ( object(Id, Col, P)                          // the board
+    ; hole(H, P), fit(H, K, O), object(O, Col, _) // a hole, in its piece's color
     ).
