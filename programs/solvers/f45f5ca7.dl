@@ -41,7 +41,7 @@
     ink(Ky, P, Col) :- cell(Ky, P, Col), !params.bg(Col).
 
     .decl off_edge(key: Key, d: Dir)
-    off_edge(Ky, D) :- ink(Ky, P, _), dir_elem(D), dist(P, D, K), K != 0.
+    off_edge(Ky, D) :- ink(Ky, P, _), dir_elem(D), !dist(P, D, 0).
 
     .decl mark_edge(key: Key, d: Dir)
     mark_edge(Ky, D) :- ink(Ky, _, _), dir_elem(D), !off_edge(Ky, D).

@@ -57,7 +57,7 @@ order.member($U(), Col, L) :- legend(Col, P), legend_axis(A), split(P, A, L, _).
 .decl shape_cell(col: Color, p: Position)
 shape_cell(Col, P) :-
     in(P, Col), !params.bg(Col),
-    params.legend_dir(D), dist(P, D, K), K != 0.   // off the list's edge
+    params.legend_dir(D), !dist(P, D, 0).   // off the list's edge
 
 .init bbox = Bbox<Color>
 bbox.cell(Col, P) :- shape_cell(Col, P).

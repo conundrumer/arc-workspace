@@ -147,7 +147,7 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !lit(P, _, Ch), params.bg(Col).
 
     // An edge some marker sits off.
     .decl off_edge(d: Dir)
-    off_edge(D) :- fmark(_, P, _), dir_elem(D), dist(P, D, K), K != 0.
+    off_edge(D) :- fmark(_, P, _), dir_elem(D), !dist(P, D, 0).
 
     .decl dir(d: Dir)
     dir(D) :- dir_elem(D), !off_edge(D).

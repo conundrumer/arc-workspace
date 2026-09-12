@@ -82,13 +82,12 @@ paint(P_grid_out, $Lookup()) :-
 
 // --- Mirror ---
 
-// Per-axis within-tile image: the tile on the anchor's side passes
-// through, the far side flips.
+// Per-axis within-tile image.
 .decl mirror(a: Axis, p_tile: Position, p_intile: Position, p_img: Position)
 mirror(A, P_tile, P_intile, P_img) :-
     cell(_, P_tile, P_intile, _), params.anchor(Diag), dir_of(Diag, A, D),
     ( dist(P_tile, D, 0), P_img = P_intile               // anchor side — passes through
-    ; dist(P_tile, D, K), K != 0,                        // far side — flips
+    ; !dist(P_tile, D, 0),                               // far side — flips
       flip_of(A, F), apply(F, P_intile, P_img)
     ).
 

@@ -37,12 +37,9 @@
 .init line_color = Unanimous<Line, Color>
 line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
 
-// The lattice color marks an empty slot.
-.decl empty(col: Color)
-empty(Col) :- line_color.value(_, Col).
-
+// A cell in the lattice color is no ink: it marks an empty slot.
 .decl ink(p: Position, col: Color)
-ink(P, Col) :- in(P, Col), !params.bg(Col), !empty(Col).
+ink(P, Col) :- in(P, Col), !params.bg(Col), !line_color.value(_, Col).
 
 // --- what is counted, per case ---
 

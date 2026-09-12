@@ -31,7 +31,7 @@
 .decl kept(p: Position, col: Color)
 kept(P, Col) :-
     in(P, Col), params.corner(Diag),
-    diag_dist(P, Diag, _, K1, K2), K1 != 0, K2 != 0.
+    diag_dirs(Diag, _, D1, D2), !dist(P, D1, 0), !dist(P, D2, 0).
 
 // Line index along axis a: distance from the edge opposite the corner —
 // unchanged by the border drop, so input cells and output lines share it.
@@ -51,7 +51,7 @@ line_cycle.idx(A, K) :- line_set(A, K).
 band_cell(A, P, Col) :-
     in(P, Col), params.corner(Diag),
     perp(A, A2), dir_of(Diag, A2, D2), dist(P, D2, 0),   // on the band running along a
-    dir_of(Diag, A, D), dist(P, D, K), K != 0.           // the corner cell excluded
+    dir_of(Diag, A, D), !dist(P, D, 0).                  // the corner cell excluded
 
 // The marker cell in each band, under each model.
 .decl marker(a: Axis, p: Position, ch: Choice)

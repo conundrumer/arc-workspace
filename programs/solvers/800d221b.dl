@@ -36,20 +36,14 @@ center_choice($Contact()). center_choice($Extent()).
 .init bg_mode = Mode<Unit, Color, Position>
 bg_mode.item($U(), Col, P) :- in(P, Col).
 
-.decl bg(col: Color)
-bg(Col) :- bg_mode.mode($U(), Col).
-
 .init wire_mode = Mode<Unit, Color, Position>
-wire_mode.item($U(), Col, P) :- in(P, Col), !bg(Col).
-
-.decl wire(col: Color)
-wire(Col) :- wire_mode.mode($U(), Col).
+wire_mode.item($U(), Col, P) :- in(P, Col), !bg_mode.mode($U(), Col).
 
 .decl wire_cell(p: Position)
-wire_cell(P) :- in(P, Col), wire(Col).
+wire_cell(P) :- in(P, Col), wire_mode.mode($U(), Col).
 
 .decl region_cell(p: Position, col: Color)
-region_cell(P, Col) :- in(P, Col), !bg(Col), !wire(Col).
+region_cell(P, Col) :- in(P, Col), !bg_mode.mode($U(), Col), !wire_mode.mode($U(), Col).
 
 // The hub: the one wire cell the wire does not expose (the wire is one
 // cell thick everywhere else), with its ring.

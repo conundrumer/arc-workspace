@@ -58,7 +58,7 @@ wall(P) :- in(P, W), params.wall(W).
 
 // An edge some wall cell is off. The wall's edge is the one edge that is not.
 .decl off_wall_edge(d: Dir)
-off_wall_edge(D) :- dir_elem(D), wall(P), dist(P, D, K), K != 0.
+off_wall_edge(D) :- dir_elem(D), wall(P), !dist(P, D, 0).
 
 .init obj = Components<Color>
 obj.node(Col, P) :- in(P, Col), !params.bg(Col), !params.wall(Col).

@@ -40,9 +40,8 @@ out(P_grid, Col, $Lookup()) :-
 mirror(A, T, P, P_img) :-
     in(P, _),
     params.arr_pos(T), params.anchor(Diag), dir_of(Diag, A, D),
-    ( dist(T, D, 0), P_img = P                        // anchor side — passes through
-    ; dist(T, D, K), K != 0,                          // far side — flips
-      flip_of(A, F), apply(F, P, P_img)
+    ( dist(T, D, 0), P_img = P                             // anchor side — passes through
+    ; !dist(T, D, 0), flip_of(A, F), apply(F, P, P_img)    // far side — flips
     ).
 
 out(P_grid, Col, $Mirror()) :-

@@ -51,7 +51,7 @@ out(P, Col, $Cross()) :- in(P, Col), !cross(P).
 selected(P, Dp) :-
     params.header(Diag),
     diag_dirs(Diag, _, Dp, Ds),                 // pattern edge, selector edge
-    marked(P, Ds), dist(P, Ds, K), K != 0.      // marked from the selector, off it
+    marked(P, Ds), !dist(P, Ds, 0).             // marked from the selector, off it
 
 out(P, F, $Stamp())   :- selected(P, Dp), marked(P, Dp), params.fill(F).
 out(P, Bg, $Stamp())  :- selected(P, Dp), !marked(P, Dp), params.bg(Bg).

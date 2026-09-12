@@ -56,18 +56,15 @@ launch(T, P, Dt, Db) :-
     travel_axis(T, A), axis_of(Et, A), dist(P, Et, 0), opposite(Et, Dt),    // travel: away along the travel axis
     perp(A, A2), axis_of(Eb, A2), dist(P, Eb, 0), opposite(Eb, Db).         // bounce: away from the touched side wall
 
-.decl travel(t: Travel, d: Dir)
-travel(T, D) :- launch(T, _, D, _).
-
 // One travel step per cell, side component toward d; the wall reflects it.
 .decl walk(t: Travel, p: Position, d: Dir)
 walk(T, P, D) :- launch(T, P, _, D).
 walk(T, P2, D_out) :-
     walk(T, P, D),
-    ( dist(P, D, K), K != 0, D_out = D                // clear of the wall toward d
+    ( !dist(P, D, 0), D_out = D                       // clear of the wall toward d
     ; dist(P, D, 0), opposite(D, D_out)               // at the wall — reflect
     ),
-    travel(T, Dt), neighbor(P, Dt, M),                // one step along the travel
+    launch(T, _, Dt, _), neighbor(P, Dt, M),          // one step along the travel
     neighbor(M, D_out, P2), in(P2, _).                // and one to the side
 
 // --- Paint cases: the ball color ---

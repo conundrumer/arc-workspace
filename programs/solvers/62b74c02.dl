@@ -37,7 +37,7 @@ bbox.cell($U(), P) :- ink(P, _).
 empty_dir(D, $Dir()) :- params.dir(D).
 
 // --- $Edge ---
-empty_dir(D, $Edge()) :- bbox.box($U(), B), dir_elem(D), dist(B, D, M), M != 0.
+empty_dir(D, $Edge()) :- bbox.box($U(), B), dir_elem(D), !dist(B, D, 0).
 
 // Copy of the block flush at the empty edge.
 .decl copy(p: Position, col: Color, dc: DirCh)

@@ -38,7 +38,7 @@ fence(P) :- in(P, Col), line_color.value(_, Col), !thick(Col).
 pen.cell($U(), P) :- fence(P).
 
 .decl open_dir(d: Dir)
-open_dir(D) :- pen.box($U(), B), dir_elem(D), dist(B, D, K), K != 0.
+open_dir(D) :- pen.box($U(), B), dir_elem(D), !dist(B, D, 0).
 
 .decl penned(p: Position)
 penned(P) :- in(P, _), pen.box($U(), B), inside(P, B).

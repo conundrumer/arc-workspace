@@ -47,7 +47,7 @@ line_color(Col) :-
 .decl column_color(p_col: Position, col: Color)
 column_color(P_col, Col) :-
     legend_inner(P_inner, Col),                         // legend cell
-    params.line_dir(D), dist(P_inner, D, K), K != 0,    // off the line edge
+    params.line_dir(D), !dist(P_inner, D, 0),           // off the line edge
     across(A), split(P_inner, A, P_col, _).             // its column
 
 .decl out(p: Position, col: Color)

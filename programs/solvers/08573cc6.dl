@@ -45,9 +45,8 @@ corner_color(Col) :- marker(P, Col), params.marker_corner(Diag), corner_dist(P, 
 
 .decl other_color(col: Color)
 other_color(Col) :-
-    marker(P, Col),
-    params.marker_corner(Diag), dir_of(Diag, _, D),
-    dist(P, D, K), K != 0.                       // off the corner
+    marker(P, Col), params.marker_corner(Diag),
+    dir_of(Diag, _, D), !dist(P, D, 0).    // off the corner
 
 // An arm runs from p_start (exclusive) to p_end; p_end may sit off the
 // grid, and only an arm ending on the grid continues the walk.

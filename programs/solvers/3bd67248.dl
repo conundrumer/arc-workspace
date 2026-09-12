@@ -64,7 +64,7 @@ diag.corner($Anchored(), Diag) :- params.corner(Diag).
 paint_anch(P, Col) :- floor_paint(P), params.floor_color(Col).
 paint_anch(P, Col) :-
     diag.diagonal($Anchored(), P, _), params.diag_color(Col),    // diagonal cell
-    params.floor_dir(D), dist(P, D, K), K != 0.                  // floor wins the floor row
+    params.floor_dir(D), !dist(P, D, 0).                         // floor wins the floor row
 
 out(P, Col, $Anchored()) :- paint_anch(P, Col).
 out(P, Col, $Anchored()) :- in(P, Col), !paint_anch(P, _).
@@ -93,9 +93,9 @@ out(P, Col, $Foot()) :- in(P, Col), !paint_foot(P, _).
 
 // --- WallEnd ---
 
-// The edge the wall sits against: every wall cell at distance 0.
+// The edge the wall sits against: the one no wall cell stands off.
 .decl off_edge(d: Dir)
-off_edge(D) :- wall_cell(P), dir_elem(D), dist(P, D, K), K != 0.
+off_edge(D) :- wall_cell(P), dir_elem(D), !dist(P, D, 0).
 
 .decl wall_side(d: Dir)
 wall_side(D) :- dir_elem(D), !off_edge(D).
@@ -165,7 +165,7 @@ out(P, Col, $WallEnd()) :- in(P, Col), !paint_we(P, _).
 
     // The edge the wall sits against: the one no wall cell stands off.
     .decl off_edge(d: Dir)
-    off_edge(D) :- wall_cell(_, P), dir_elem(D), dist(P, D, K), K != 0.
+    off_edge(D) :- wall_cell(_, P), dir_elem(D), !dist(P, D, 0).
 
     .decl wall_side(d: Dir)
     wall_side(D) :- dir_elem(D), !off_edge(D).

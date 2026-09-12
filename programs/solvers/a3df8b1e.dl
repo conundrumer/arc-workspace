@@ -56,8 +56,7 @@ trace(DC, P, H) :- setup(DC, _, H), seed(P, _).
 trace(DC, P, H2) :- trace(DC, P, H), dist(P, H, 0), opposite(H, H2).   // reflect
 trace(DC, P2, H) :-
     trace(DC, P, H), setup(DC, U, _),
-    dist(P, H, Kh), Kh != 0,                   // room toward the heading
-    dist(P, U, Ku), Ku != 0,                   // room toward the advance edge
+    !dist(P, H, 0), !dist(P, U, 0),            // room toward the heading and the advance edge
     axis_of(U, A), diag_dirs(Diag, A, U, H),   // the diagonal U and H span
     neighbor(P, Diag, P2).
 
