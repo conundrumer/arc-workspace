@@ -170,8 +170,28 @@ RamDomain box_centered(SymbolTable*, RecordTable* rt, RamDomain p) {
     return m.t == m.b && m.l == m.r;
 }
 
+// The two positions agree on the distances to the two edges of corner diag.
+RamDomain box_corner_anchor(SymbolTable*, RecordTable* rt, RamDomain diag, RamDomain p1,
+                            RamDomain p2) {
+    Margins a = margins(rt, p1), b = margins(rt, p2);
+    switch (diag) {
+        case DIAG_TL: return a.t == b.t && a.l == b.l;
+        case DIAG_TR: return a.t == b.t && a.r == b.r;
+        case DIAG_BL: return a.b == b.b && a.l == b.l;
+        case DIAG_BR: return a.b == b.b && a.r == b.r;
+    }
+    return 0;
+}
+
 RamDomain box_edge_inset(SymbolTable*, RecordTable* rt, RamDomain d, RamDomain k) {
     return box(rt, edge_inset(d, k));
+}
+
+RamDomain box_axis_inset(SymbolTable*, RecordTable* rt, RamDomain d, RamDomain k1,
+                         RamDomain k2) {
+    RamDomain opp = d == DIR_T ? DIR_B : d == DIR_B ? DIR_T : d == DIR_L ? DIR_R : DIR_L;
+    Margins a = edge_inset(d, k1), b = edge_inset(opp, k2);
+    return box(rt, {a.t + b.t, a.b + b.b, a.l + b.l, a.r + b.r});
 }
 
 RamDomain box_jump_offset(SymbolTable*, RecordTable* rt, RamDomain d, RamDomain k) {

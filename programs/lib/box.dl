@@ -31,7 +31,9 @@
 .functor box_along(p: Box, a: Axis): Box stateful
 .functor box_across(p: Box, a: Axis): Box stateful
 .functor box_centered(p: Box): number stateful
+.functor box_corner_anchor(diag: DiagDir, p1: Box, p2: Box): number stateful
 .functor box_edge_inset(d: Dir8, k: number): Box stateful
+.functor box_axis_inset(d: Dir, k1: number, k2: number): Box stateful
 .functor box_jump_offset(d: Dir8, k: number): Box stateful
 .functor box_apply(d: D4, p: Box): Box stateful
 .functor box_tiles(p: Box, a: Axis, k: number, g: number): number stateful
@@ -109,8 +111,7 @@ edge_inset(D, K, B) :- B = @box_edge_inset(D, K).
 
 /// Box inset from the frame by k1 on side d and k2 on its opposite.
 .decl axis_inset(d: Dir, k1: number, k2: number, b: Box) inline
-axis_inset(D, K1, K2, B) :-
-    opposite(D, O), edge_inset(D, K1, B1), edge_inset(O, K2, B2), compose(B1, B2, B).
+axis_inset(D, K1, K2, B) :- B = @box_axis_inset(D, K1, K2).
 
 /// Box inset from the frame by k on every side.
 .decl uniform_inset(k: number, b: Box) inline
@@ -133,21 +134,17 @@ uniform_outset(K, [-K, -K, -K, -K]) :- true.
 .decl jump_offset(d: Dir8, k: number, v: Offset) inline
 jump_offset(D, K, V) :- V = @box_jump_offset(D, K).
 
-// The unit steps, materialized: a caller reads the direction off a step.
-.decl _step(d: Dir8, v: Offset)
-_step(D, V) :- dir8_elem(D), jump_offset(D, 1, V).
-
 /// Unit step toward d: the k = 1 translation.
 .decl step_offset(d: Dir8, v: Offset) inline
-step_offset(D, V) :- _step(D, V).
+step_offset(D, V) :- dir8_elem(D), V = @box_jump_offset(D, 1).
 
 /// q is one step from p toward d.
 .decl neighbor(p: Box, d: Dir8, q: Box) inline
-neighbor(P, D, Q) :- step_offset(D, S), compose(P, S, Q).
+neighbor(P, D, Q) :- dir8_elem(D), Q = @box_compose(P, @box_jump_offset(D, 1)).
 
 /// q is k cells from p toward d.
 .decl jump(p: Box, d: Dir8, k: number, q: Box) inline
-jump(P, D, K, Q) :- jump_offset(D, K, V), compose(P, V, Q).
+jump(P, D, K, Q) :- dir8_elem(D), Q = @box_compose(P, @box_jump_offset(D, K)).
 
 /// Apply a D4 transform to a box.
 .decl apply(d: D4, p: Box, p_out: Box) inline
@@ -235,8 +232,7 @@ nearer(D, P, Q) :- diag_dir_elem(D), @box_corner_dist(P, D) < @box_corner_dist(Q
 
 /// Two positions agree on the distances to the two edges of corner d.
 .decl corner_anchor(d: DiagDir, p1: Box, p2: Box) inline
-corner_anchor(Diag, P1, P2) :-
-    diag_dirs(Diag, _, D1, D2), same_dist(D1, P1, P2), same_dist(D2, P1, P2).
+corner_anchor(Diag, P1, P2) :- diag_dir_elem(Diag), @box_corner_anchor(Diag, P1, P2) = 1.
 
 /// Two positions agree on dist-to-edge d and on the perpendicular extent.
 .decl slab_anchor(d: Dir, p1: Position, p2: Position) inline
@@ -301,9 +297,8 @@ divide_by_size_2d(P, K, G, P_outer, P_inner) :-
 .decl concat_slab(p_outer: Position, p_inner: Position, a: Axis, gap: number,
                   p_grid: Position) inline
 concat_slab(P_outer, P_inner, A, G, P_grid) :-
-    split(P_inner, A, P_i_axis, Across),
-    concat(P_outer, P_i_axis, A, G, P_along),
-    compose(P_along, Across, P_grid).
+    P_grid = @box_compose(@box_concat(P_outer, @box_along(P_inner, A), A, G),
+                          @box_across(P_inner, A)).
 
 /// 2D concat on both axes — the inverse of divide_2d and divide_by_size_2d,
 /// over the same p_outer and p_inner. p_grid is the recomposed full 2D
@@ -311,11 +306,9 @@ concat_slab(P_outer, P_inner, A, G, P_grid) :-
 .decl concat_2d(p_outer: Position, p_inner: Position, gap: number,
                 p_grid: Position) inline
 concat_2d(P_outer, P_inner, G, P_grid) :-
-    split(P_outer, AXIS_V, P_outer_v, P_outer_h),
-    split(P_inner, AXIS_V, P_inner_v, P_inner_h),
-    concat(P_outer_v, P_inner_v, AXIS_V, G, P_grid_v),
-    concat(P_outer_h, P_inner_h, AXIS_H, G, P_grid_h),
-    compose(P_grid_v, P_grid_h, P_grid).
+    P_grid = @box_compose(
+        @box_concat(@box_along(P_outer, AXIS_V), @box_along(P_inner, AXIS_V), AXIS_V, G),
+        @box_concat(@box_across(P_outer, AXIS_V), @box_across(P_inner, AXIS_V), AXIS_H, G)).
 
 /// 1D frame defined by an index set and an edge.
 .comp DirFrame<Key> {
