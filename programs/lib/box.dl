@@ -11,41 +11,50 @@
 //! Position is a cell, extent 1 on both axes, which carries its frame. An
 //! Offset is a translation, sum 0, which moves any box and keeps its extent.
 //! Every other reading is a Box read against a frame the reader supplies.
+//!
+//! Each primitive is a one-clause wrapper over a functor (C++, in
+//! lib_functors.cpp) that reads its Box arguments whole, so a chain of
+//! primitives in one rule inlines to one nested call per link. A record a
+//! functor returns cannot be destructured in the same rule; a primitive
+//! reads it.
 
 /// The zero box: the whole frame as a box, no move as an offset.
 #define ZERO [0, 0, 0, 0]
 
-// Dispatch/projection functors (C++, in lib_functors.cpp). Dir constants
-// index into a Box.
-.functor dist_proj(d: Dir, t: number, b: number, l: number, r: number): number
-.functor keep_dir(sel: Dir8, target: number, v: number): number
-.functor keep_axis(sel: Axis, target: number, v: number): number
-.functor axis_near(a: Axis, t: number, b: number, l: number, r: number): number
-.functor axis_far(a: Axis, t: number, b: number, l: number, r: number): number
-.functor apply_t(d: D4, t: number, b: number, l: number, r: number): number
-.functor apply_b(d: D4, t: number, b: number, l: number, r: number): number
-.functor apply_l(d: D4, t: number, b: number, l: number, r: number): number
-.functor apply_r(d: D4, t: number, b: number, l: number, r: number): number
+.functor box_compose(a: Box, b: Box): Box stateful
+.functor box_relative(base: Box, x: Box): Box stateful
+.functor box_inside(a: Box, b: Box): number stateful
+.functor box_interior(a: Box, b: Box): number stateful
+.functor box_dist(p: Box, d: Dir): number stateful
+.functor box_corner_dist(p: Box, diag: DiagDir): number stateful
+.functor box_axis_dim(p: Box, a: Axis): number stateful
+.functor box_along(p: Box, a: Axis): Box stateful
+.functor box_across(p: Box, a: Axis): Box stateful
+.functor box_centered(p: Box): number stateful
+.functor box_edge_inset(d: Dir8, k: number): Box stateful
+.functor box_jump_offset(d: Dir8, k: number): Box stateful
+.functor box_apply(d: D4, p: Box): Box stateful
+.functor box_tiles(p: Box, a: Axis, k: number, g: number): number stateful
+.functor box_tile_outer(p: Box, a: Axis, k: number, g: number): Box stateful
+.functor box_tile_inner(p: Box, a: Axis, k: number, g: number): Box stateful
+.functor box_concat(outer: Box, inner: Box, a: Axis, g: number): Box stateful
 
 /// Addition: b in a's frame, placed in the outer frame.
 .decl compose(a: Box, b: Box, c: Box) inline
-compose([T1, B1, L1, R1], [T2, B2, L2, R2], [T1+T2, B1+B2, L1+L2, R1+R2]) :- true.
+compose(A, B, C) :- C = @box_compose(A, B).
 
 /// Subtraction: x relative to base — x in base's frame.
 .decl relative(base: Box, x: Box, x_rel: Box) inline
-relative([T1, B1, L1, R1], [T2, B2, L2, R2],
-         [T2-T1, B2-B1, L2-L1, R2-R1]) :- true.
+relative(Base, X, X_rel) :- X_rel = @box_relative(Base, X).
 
 /// Pointwise >=: a inside b. At b = ZERO, a lies on the frame.
 .decl inside(a: Box, b: Box) inline
-inside([T1, B1, L1, R1], [T2, B2, L2, R2]) :-
-    T1 >= T2, B1 >= B2, L1 >= L2, R1 >= R2.
+inside(A, B) :- @box_inside(A, B) = 1.
 
 /// Pointwise >: a in the interior of b, touching no side. At b = ZERO, off
 /// the frame's border.
 .decl interior(a: Box, b: Box) inline
-interior([T1, B1, L1, R1], [T2, B2, L2, R2]) :-
-    T1 > T2, B1 > B2, L1 > L2, R1 > R2.
+interior(A, B) :- @box_interior(A, B) = 1.
 
 /// Cell p of box b, as a cell of b's own frame: the covering test and the
 /// relative read.
@@ -53,7 +62,7 @@ interior([T1, B1, L1, R1], [T2, B2, L2, R2]) :-
 crop(P, B, P_rel) :- inside(P, B), relative(B, P, P_rel).
 
 .decl dist(p: Box, d: Dir, k: number) inline
-dist(P, D, K) :- P = [T, B, L, R], K = @dist_proj(D, T, B, L, R).
+dist(P, D, K) :- K = @box_dist(P, D).
 
 /// Distances to edge d and its opposite.
 .decl dist_pair(p: Box, d: Dir, k: number, k2: number) inline
@@ -67,20 +76,16 @@ diag_dist(P, Diag, A, K1, K2) :-
 
 /// Taxicab distance to corner diag: the sum of its two edge distances.
 .decl corner_dist(p: Box, diag: DiagDir, k: number) inline
-corner_dist(P, Diag, K) :- diag_dist(P, Diag, _, K1, K2), K = K1 + K2.
+corner_dist(P, Diag, K) :- diag_dir_elem(Diag), K = @box_corner_dist(P, Diag).
 
 /// Decompose p by axis: along carries the axis component (perpendicular
 /// zeroed); across carries the perpendicular (axis zeroed).
 .decl split(p: Box, a: Axis, along: Box, across: Box) inline
-split(P, A,
-      [@keep_axis(A, AXIS_V, T), @keep_axis(A, AXIS_V, B), @keep_axis(A, AXIS_H, L), @keep_axis(A, AXIS_H, R)],
-      [@keep_axis(A, AXIS_H, T), @keep_axis(A, AXIS_H, B), @keep_axis(A, AXIS_V, L), @keep_axis(A, AXIS_V, R)]) :-
-    P = [T, B, L, R].
+split(P, A, Along, Across) :- Along = @box_along(P, A), Across = @box_across(P, A).
 
 /// Extent of p's frame along axis a — read off any position in the frame.
 .decl axis_dim(p: Position, a: Axis, n: number) inline
-axis_dim(P, A, N) :- P = [T, B, L, R],
-    N = @axis_near(A, T, B, L, R) + @axis_far(A, T, B, L, R) + 1.
+axis_dim(P, A, N) :- N = @box_axis_dim(P, A).
 
 /// Both extents of p's frame: n1 along axis a, n2 across.
 .decl axis_dims(p: Position, a: Axis, n1: number, n2: number) inline
@@ -100,7 +105,7 @@ box_extent(B, P, A, N) :-
 /// Box inset from the frame by k on side d, zero elsewhere. At a corner, k
 /// sits at both of the corner's edges.
 .decl edge_inset(d: Dir8, k: number, b: Box) inline
-edge_inset(D, K, [@keep_dir(D, DIR_T, K), @keep_dir(D, DIR_B, K), @keep_dir(D, DIR_L, K), @keep_dir(D, DIR_R, K)]) :- true.
+edge_inset(D, K, B) :- B = @box_edge_inset(D, K).
 
 /// Box inset from the frame by k1 on side d and k2 on its opposite.
 .decl axis_inset(d: Dir, k1: number, k2: number, b: Box) inline
@@ -113,12 +118,11 @@ uniform_inset(K, [K, K, K, K]) :- true.
 
 /// The frame extended by k past side d.
 .decl edge_outset(d: Dir8, k: number, b: Box) inline
-edge_outset(D, K, [-T, -B, -L, -R]) :- edge_inset(D, K, [T, B, L, R]).
+edge_outset(D, K, B) :- edge_inset(D, -K, B).
 
 /// The frame extended by k1 past side d and k2 past its opposite.
 .decl axis_outset(d: Dir, k1: number, k2: number, b: Box) inline
-axis_outset(D, K1, K2, B) :-
-    opposite(D, O), edge_outset(D, K1, B1), edge_outset(O, K2, B2), compose(B1, B2, B).
+axis_outset(D, K1, K2, B) :- axis_inset(D, -K1, -K2, B).
 
 /// The frame extended by k past every side.
 .decl uniform_outset(k: number, b: Box) inline
@@ -127,16 +131,15 @@ uniform_outset(K, [-K, -K, -K, -K]) :- true.
 /// Translation of k cells toward d: -k at each edge of d, +k at each
 /// opposite.
 .decl jump_offset(d: Dir8, k: number, v: Offset) inline
-jump_offset(D, K, [B - T, T - B, R - L, L - R]) :- edge_inset(D, K, [T, B, L, R]).
+jump_offset(D, K, V) :- V = @box_jump_offset(D, K).
 
-// The unit steps, materialized so the functor chain runs eight times per
-// program, not once per calling tuple.
+// The unit steps, materialized: a caller reads the direction off a step.
 .decl _step(d: Dir8, v: Offset)
-_step(D, Step) :- dir8_elem(D), jump_offset(D, 1, Step).
+_step(D, V) :- dir8_elem(D), jump_offset(D, 1, V).
 
 /// Unit step toward d: the k = 1 translation.
 .decl step_offset(d: Dir8, v: Offset) inline
-step_offset(D, Step) :- _step(D, Step).
+step_offset(D, V) :- _step(D, V).
 
 /// q is one step from p toward d.
 .decl neighbor(p: Box, d: Dir8, q: Box) inline
@@ -148,8 +151,7 @@ jump(P, D, K, Q) :- jump_offset(D, K, V), compose(P, V, Q).
 
 /// Apply a D4 transform to a box.
 .decl apply(d: D4, p: Box, p_out: Box) inline
-apply(D, P, [@apply_t(D, T, B, L, R), @apply_b(D, T, B, L, R),
-             @apply_l(D, T, B, L, R), @apply_r(D, T, B, L, R)]) :- P = [T, B, L, R].
+apply(D, P, P_out) :- P_out = @box_apply(D, P).
 
 /// The D4 action on directions, one relation per direction type.
 .decl apply_dir(d: D4, dir: Dir, dir_out: Dir)
@@ -185,18 +187,8 @@ divide(P, A, N, G, P_outer, P_inner) :-
 .decl divide_by_size(p: Position, a: Axis, k: number, gap: number,
                      p_outer: Position, p_inner: Position) inline
 divide_by_size(P, A, K, G, P_outer, P_inner) :-
-    P = [T, B, L, R],
-    Near = @axis_near(A, T, B, L, R), Far = @axis_far(A, T, B, L, R),
-    Ext = Near + Far + 1,
-    (Ext + G) % (K + G) = 0,
-    N = (Ext + G) / (K + G),
-    K_cyc = Near % (K + G),
-    K_cyc < K,
-    O = Near / (K + G),
-    P_outer = [@keep_axis(A, AXIS_V, O),     @keep_axis(A, AXIS_V, N-1-O),
-               @keep_axis(A, AXIS_H, O),     @keep_axis(A, AXIS_H, N-1-O)],
-    P_inner = [@keep_axis(A, AXIS_V, K_cyc), @keep_axis(A, AXIS_V, K-1-K_cyc),
-               @keep_axis(A, AXIS_H, K_cyc), @keep_axis(A, AXIS_H, K-1-K_cyc)].
+    @box_tiles(P, A, K, G) = 1,
+    P_outer = @box_tile_outer(P, A, K, G), P_inner = @box_tile_inner(P, A, K, G).
 
 /// Gap from tile count and tile size. Nothing is derived unless the leftover
 /// extent divides evenly by the n-1 gaps.
@@ -222,51 +214,39 @@ stride(T, W, G, N, K) :-
 /// absent.
 .decl concat(p_outer: Position, p_inner: Position, a: Axis, gap: number,
              p_grid: Position) inline
-concat(P_outer, P_inner, A, G, P_grid) :-
-    P_outer = [OT, OB, OL, OR], P_inner = [IT, IB, IL, IR],
-    ONear = @axis_near(A, OT, OB, OL, OR), OFar = @axis_far(A, OT, OB, OL, OR),
-    INear = @axis_near(A, IT, IB, IL, IR), IFar = @axis_far(A, IT, IB, IL, IR),
-    Span = INear + IFar + 1,
-    GNear = ONear*(Span+G) + INear,
-    GFar  = OFar*(Span+G) + IFar,
-    P_grid = [@keep_axis(A, AXIS_V, GNear), @keep_axis(A, AXIS_V, GFar),
-              @keep_axis(A, AXIS_H, GNear), @keep_axis(A, AXIS_H, GFar)].
+concat(P_outer, P_inner, A, G, P_grid) :- P_grid = @box_concat(P_outer, P_inner, A, G).
 
 /// Two positions agree on the distance to edge d.
 .decl same_dist(d: Dir, p1: Box, p2: Box) inline
-same_dist(D, P1, P2) :- dist(P1, D, K), dist(P2, D, K).
+same_dist(D, P1, P2) :- @box_dist(P1, D) = @box_dist(P2, D).
 
 /// p and q on one line of family a — a row, a column, or a diagonal.
 .decl same_line(a: Axis4, p: Position, q: Position) inline
 same_line(A, P, Q) :- perp(A, A2), axis_of(D, A2), same_dist(D, P, Q).
 same_line(DA, P, Q) :-
     diag_perp(DA, DA2), diag_axis_of(Diag, DA2),
-    corner_dist(P, Diag, K), corner_dist(Q, Diag, K).
+    @box_corner_dist(P, Diag) = @box_corner_dist(Q, Diag).
 
 /// p strictly nearer d than q. At a DiagDir the compared distances are
-/// corner_dist. nearer cannot sit under negation.
+/// corner_dist.
 .decl nearer(d: Dir8, p: Position, q: Position) inline
-nearer(D, P, Q) :- dir_elem(D), dist(P, D, K), dist(Q, D, K2), K < K2.
-nearer(D, P, Q) :-
-    diag_dir_elem(D), corner_dist(P, D, K), corner_dist(Q, D, K2), K < K2.
+nearer(D, P, Q) :- dir_elem(D), @box_dist(P, D) < @box_dist(Q, D).
+nearer(D, P, Q) :- diag_dir_elem(D), @box_corner_dist(P, D) < @box_corner_dist(Q, D).
 
 /// Two positions agree on the distances to the two edges of corner d.
 .decl corner_anchor(d: DiagDir, p1: Box, p2: Box) inline
 corner_anchor(Diag, P1, P2) :-
-    diag_dist(P1, Diag, A, K1, K2),
-    diag_dist(P2, Diag, A, K1, K2).
+    diag_dirs(Diag, _, D1, D2), same_dist(D1, P1, P2), same_dist(D2, P1, P2).
 
 /// Two positions agree on dist-to-edge d and on the perpendicular extent.
 .decl slab_anchor(d: Dir, p1: Position, p2: Position) inline
 slab_anchor(D, P1, P2) :-
-    same_dist(D, P1, P2),
-    axis_of(D, A),
-    split(P1, A, _, Ac), split(P2, A, _, Ac).
+    same_dist(D, P1, P2), axis_of(D, A), @box_across(P1, A) = @box_across(P2, A).
 
 /// The two edge distances agree on each axis. An even extent has no such
 /// Position.
 .decl centered(p: Box) inline
-centered([V, V, H, H]) :- true.
+centered(P) :- @box_centered(P) = 1.
 
 /// Cell p on box b's d-side edge.
 .decl box_edge(p: Position, b: Box, d: Dir) inline

@@ -1,28 +1,25 @@
-// C++ functors backing the dispatch/projection primitives in lib.dl.
+// C++ functors backing the box algebra in lib/box.dl.
 //
-// Each performs the orientation dispatch (Dir / Axis / D4) in C++, letting its
-// lib.dl wrapper be a single clause. One clause bounds the generated IR path
-// count: a multi-clause inline contributes xN to every rule that calls it,
-// because the dispatch value comes from a relation and Souffle can't prune the
-// impossible combinations.
+// Each functor is a function over Box records: it unpacks its arguments
+// through the record table, computes, and packs the result. The lib.dl
+// primitives are one-clause wrappers over these calls, so a chain of
+// primitives in one rule inlines to one nested call per link.
 //
-// All functors return plain `number` and are stateless (no SymbolTable* /
-// RecordTable* args). A functor that *returned a Position record* would be
-// unusable here: these wrappers are `inline`, and a record produced by a
-// functor cannot be destructured downstream after inline substitution — the
-// grounding analysis can't unify a record pattern against an opaque functor
-// call. So the wrappers reassemble Positions as Datalog record literals
-// `[@f(...), @f(...), ...]`, filling each slot from a number functor. Guards
-// and arithmetic stay in Datalog inside the single clause.
+// A record a functor returns cannot be destructured in the same rule:
+// Souffle cannot ground a record pattern against a functor call. The
+// wrappers read every record through a functor, never through a pattern.
 //
-// Constants mirror lib.dl's disjoint #define ranges (Dir 10-13, Axis 20-21,
-// DiagDir 30-33, D4 50-57).
+// Constants mirror lib/orientation.dl's disjoint #define ranges (Dir 10-13,
+// Axis 20-21, DiagDir 30-33, D4 50-57).
 //
 // Build: see build_functors() in run_dl.py (auto-built; artifact gitignored).
 
+#include "souffle/RecordTable.h"
 #include "souffle/SouffleFunctor.h"
 
 using souffle::RamDomain;
+using souffle::RecordTable;
+using souffle::SymbolTable;
 
 #define DIR_T 10
 #define DIR_B 11
@@ -46,103 +43,180 @@ using souffle::RamDomain;
 #define D4_DG 56
 #define D4_AD 57
 
+namespace {
+
+// The margins of a box: (t, b, l, r).
+struct Margins {
+    RamDomain t, b, l, r;
+};
+
+Margins margins(RecordTable* rt, RamDomain box) {
+    const RamDomain* m = rt->unpack(box, 4);
+    return {m[0], m[1], m[2], m[3]};
+}
+
+RamDomain box(RecordTable* rt, Margins m) {
+    return rt->pack({m.t, m.b, m.l, m.r});
+}
+
+// The near and far margins along an axis: (t, b) on V, (l, r) on H.
+RamDomain near(Margins m, RamDomain a) { return a == AXIS_V ? m.t : m.l; }
+RamDomain far(Margins m, RamDomain a) { return a == AXIS_V ? m.b : m.r; }
+
+// A box with near and far along axis a, zero across.
+Margins axis_only(RamDomain a, RamDomain near, RamDomain far) {
+    return a == AXIS_V ? Margins{near, far, 0, 0} : Margins{0, 0, near, far};
+}
+
+// Whether Dir8 d has edge `edge`: a cardinal is its own edge, a corner has
+// two.
+bool has_edge(RamDomain d, RamDomain edge) {
+    switch (d) {
+        case DIAG_TL: return edge == DIR_T || edge == DIR_L;
+        case DIAG_TR: return edge == DIR_T || edge == DIR_R;
+        case DIAG_BL: return edge == DIR_B || edge == DIR_L;
+        case DIAG_BR: return edge == DIR_B || edge == DIR_R;
+    }
+    return d == edge;
+}
+
+Margins edge_inset(RamDomain d, RamDomain k) {
+    return {has_edge(d, DIR_T) ? k : 0, has_edge(d, DIR_B) ? k : 0,
+            has_edge(d, DIR_L) ? k : 0, has_edge(d, DIR_R) ? k : 0};
+}
+
+// Whether p decomposes into size-k tiles with gap g along a, and its tile
+// index and in-tile offset when it does.
+struct Tiling {
+    bool ok;
+    RamDomain n, outer, inner, k;
+};
+
+Tiling tiling(Margins m, RamDomain a, RamDomain k, RamDomain g) {
+    RamDomain period = k + g;
+    if (period <= 0) return {false, 0, 0, 0, k};
+    RamDomain ext = near(m, a) + far(m, a) + 1;
+    if ((ext + g) % period != 0) return {false, 0, 0, 0, k};
+    RamDomain inner = near(m, a) % period;
+    if (inner >= k) return {false, 0, 0, 0, k};
+    return {true, (ext + g) / period, near(m, a) / period, inner, k};
+}
+
+}  // namespace
+
 extern "C" {
 
-// dist: distance from p to edge d — the slot named by Dir d.
-RamDomain dist_proj(RamDomain d, RamDomain t, RamDomain b, RamDomain l, RamDomain r) {
+RamDomain box_compose(SymbolTable*, RecordTable* rt, RamDomain a, RamDomain b) {
+    Margins x = margins(rt, a), y = margins(rt, b);
+    return box(rt, {x.t + y.t, x.b + y.b, x.l + y.l, x.r + y.r});
+}
+
+RamDomain box_relative(SymbolTable*, RecordTable* rt, RamDomain base, RamDomain x) {
+    Margins b = margins(rt, base), p = margins(rt, x);
+    return box(rt, {p.t - b.t, p.b - b.b, p.l - b.l, p.r - b.r});
+}
+
+RamDomain box_inside(SymbolTable*, RecordTable* rt, RamDomain a, RamDomain b) {
+    Margins x = margins(rt, a), y = margins(rt, b);
+    return x.t >= y.t && x.b >= y.b && x.l >= y.l && x.r >= y.r;
+}
+
+RamDomain box_interior(SymbolTable*, RecordTable* rt, RamDomain a, RamDomain b) {
+    Margins x = margins(rt, a), y = margins(rt, b);
+    return x.t > y.t && x.b > y.b && x.l > y.l && x.r > y.r;
+}
+
+RamDomain box_dist(SymbolTable*, RecordTable* rt, RamDomain p, RamDomain d) {
+    Margins m = margins(rt, p);
     switch (d) {
-        case DIR_T: return t;
-        case DIR_B: return b;
-        case DIR_L: return l;
-        case DIR_R: return r;
+        case DIR_T: return m.t;
+        case DIR_B: return m.b;
+        case DIR_L: return m.l;
+        case DIR_R: return m.r;
     }
     return 0;
 }
 
-// "keep when": v if the selector equals the target, else 0. Places a value in
-// the slot(s) matching an orientation and zeroes the rest. Two variants by
-// selector type — a single `number`-typed functor would force Souffle to infer
-// the typed selector variable (Dir / Axis) as plain `number`, breaking the
-// wrapper head's declared type. keep_dir assembles edge_delta; keep_axis assembles
-// split and the outer/inner records of divide / divide_by_size / concat.
-//
-// keep_dir's selector is a Dir8: a corner is its two cardinal edges, so a
-// DiagDir sel matches either of those targets and edge_delta places v at both.
-RamDomain keep_dir(RamDomain sel, RamDomain target, RamDomain v) {
-    switch (sel) {
-        case DIAG_TL: return (target == DIR_T || target == DIR_L) ? v : 0;
-        case DIAG_TR: return (target == DIR_T || target == DIR_R) ? v : 0;
-        case DIAG_BL: return (target == DIR_B || target == DIR_L) ? v : 0;
-        case DIAG_BR: return (target == DIR_B || target == DIR_R) ? v : 0;
+// Taxicab distance to corner diag: the sum of its two edge distances.
+RamDomain box_corner_dist(SymbolTable*, RecordTable* rt, RamDomain p, RamDomain diag) {
+    Margins m = margins(rt, p);
+    switch (diag) {
+        case DIAG_TL: return m.t + m.l;
+        case DIAG_TR: return m.t + m.r;
+        case DIAG_BL: return m.b + m.l;
+        case DIAG_BR: return m.b + m.r;
     }
-    return sel == target ? v : 0;
-}
-RamDomain keep_axis(RamDomain sel, RamDomain target, RamDomain v) {
-    return sel == target ? v : 0;
+    return 0;
 }
 
-// Axis projection: the near (lower-index) and far (higher-index) slots along
-// axis a. AXIS_V → (t, b); AXIS_H → (l, r).
-RamDomain axis_near(RamDomain a, RamDomain t, RamDomain b, RamDomain l, RamDomain r) {
-    return a == AXIS_V ? t : l;
-}
-RamDomain axis_far(RamDomain a, RamDomain t, RamDomain b, RamDomain l, RamDomain r) {
-    return a == AXIS_V ? b : r;
+RamDomain box_axis_dim(SymbolTable*, RecordTable* rt, RamDomain p, RamDomain a) {
+    Margins m = margins(rt, p);
+    return near(m, a) + far(m, a) + 1;
 }
 
-// apply: D4 transform of a Position, one functor per output slot — the
-// eight D4 gather permutations of (t, b, l, r).
-RamDomain apply_t(RamDomain d, RamDomain t, RamDomain b, RamDomain l, RamDomain r) {
-    switch (d) {
-        case D4_ID: return t;
-        case D4_CW: return l;
-        case D4_HT: return b;
-        case D4_CC: return r;
-        case D4_LR: return t;
-        case D4_TB: return b;
-        case D4_DG: return l;
-        case D4_AD: return r;
-    }
-    return 0;
+RamDomain box_along(SymbolTable*, RecordTable* rt, RamDomain p, RamDomain a) {
+    Margins m = margins(rt, p);
+    return box(rt, axis_only(a, near(m, a), far(m, a)));
 }
-RamDomain apply_b(RamDomain d, RamDomain t, RamDomain b, RamDomain l, RamDomain r) {
-    switch (d) {
-        case D4_ID: return b;
-        case D4_CW: return r;
-        case D4_HT: return t;
-        case D4_CC: return l;
-        case D4_LR: return b;
-        case D4_TB: return t;
-        case D4_DG: return r;
-        case D4_AD: return l;
-    }
-    return 0;
+
+RamDomain box_across(SymbolTable*, RecordTable* rt, RamDomain p, RamDomain a) {
+    Margins m = margins(rt, p);
+    RamDomain other = a == AXIS_V ? AXIS_H : AXIS_V;
+    return box(rt, axis_only(other, near(m, other), far(m, other)));
 }
-RamDomain apply_l(RamDomain d, RamDomain t, RamDomain b, RamDomain l, RamDomain r) {
-    switch (d) {
-        case D4_ID: return l;
-        case D4_CW: return b;
-        case D4_HT: return r;
-        case D4_CC: return t;
-        case D4_LR: return r;
-        case D4_TB: return l;
-        case D4_DG: return t;
-        case D4_AD: return b;
-    }
-    return 0;
+
+RamDomain box_centered(SymbolTable*, RecordTable* rt, RamDomain p) {
+    Margins m = margins(rt, p);
+    return m.t == m.b && m.l == m.r;
 }
-RamDomain apply_r(RamDomain d, RamDomain t, RamDomain b, RamDomain l, RamDomain r) {
+
+RamDomain box_edge_inset(SymbolTable*, RecordTable* rt, RamDomain d, RamDomain k) {
+    return box(rt, edge_inset(d, k));
+}
+
+RamDomain box_jump_offset(SymbolTable*, RecordTable* rt, RamDomain d, RamDomain k) {
+    Margins e = edge_inset(d, k);
+    return box(rt, {e.b - e.t, e.t - e.b, e.r - e.l, e.l - e.r});
+}
+
+RamDomain box_apply(SymbolTable*, RecordTable* rt, RamDomain d, RamDomain p) {
+    Margins m = margins(rt, p);
     switch (d) {
-        case D4_ID: return r;
-        case D4_CW: return t;
-        case D4_HT: return l;
-        case D4_CC: return b;
-        case D4_LR: return l;
-        case D4_TB: return r;
-        case D4_DG: return b;
-        case D4_AD: return t;
+        case D4_ID: return p;
+        case D4_CW: return box(rt, {m.l, m.r, m.b, m.t});
+        case D4_HT: return box(rt, {m.b, m.t, m.r, m.l});
+        case D4_CC: return box(rt, {m.r, m.l, m.t, m.b});
+        case D4_LR: return box(rt, {m.t, m.b, m.r, m.l});
+        case D4_TB: return box(rt, {m.b, m.t, m.l, m.r});
+        case D4_DG: return box(rt, {m.l, m.r, m.t, m.b});
+        case D4_AD: return box(rt, {m.r, m.l, m.b, m.t});
     }
-    return 0;
+    return p;
+}
+
+RamDomain box_tiles(SymbolTable*, RecordTable* rt, RamDomain p, RamDomain a,
+                    RamDomain k, RamDomain g) {
+    return tiling(margins(rt, p), a, k, g).ok;
+}
+
+RamDomain box_tile_outer(SymbolTable*, RecordTable* rt, RamDomain p, RamDomain a,
+                         RamDomain k, RamDomain g) {
+    Tiling t = tiling(margins(rt, p), a, k, g);
+    return box(rt, axis_only(a, t.outer, t.n - 1 - t.outer));
+}
+
+RamDomain box_tile_inner(SymbolTable*, RecordTable* rt, RamDomain p, RamDomain a,
+                         RamDomain k, RamDomain g) {
+    Tiling t = tiling(margins(rt, p), a, k, g);
+    return box(rt, axis_only(a, t.inner, t.k - 1 - t.inner));
+}
+
+RamDomain box_concat(SymbolTable*, RecordTable* rt, RamDomain outer, RamDomain inner,
+                     RamDomain a, RamDomain g) {
+    Margins o = margins(rt, outer), i = margins(rt, inner);
+    RamDomain span = near(i, a) + far(i, a) + 1;
+    return box(rt, axis_only(a, near(o, a) * (span + g) + near(i, a),
+                              far(o, a) * (span + g) + far(i, a)));
 }
 
 }  // extern "C"

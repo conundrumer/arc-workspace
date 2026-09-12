@@ -301,3 +301,12 @@ top(X) :- o.seen(X), o.i.node(X).
     assert ix.resolve("Outer", "i", "node") == ("Inner", "node")
     assert ix.resolve(TOP, "o.i", "node") == ("Inner", "node")
     assert [r.role for r in ix.refs_of(("Inner", "node"))] == ["head", "pos", "pos"]
+
+
+def test_stateful_functor():
+    prog = parse(".functor box_dist(p: Box, d: Dir): number stateful\n"
+                 ".decl a(x: number)\n")
+    f = prog.items[0]
+    assert f.name == "box_dist"
+    assert f.text.endswith("number stateful")
+    assert prog.items[1].name == "a"

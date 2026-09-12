@@ -532,6 +532,9 @@ class _Parser:
         self.expect(":")
         ret = self.type_name()
         text = " ".join(t.text for t in self.toks[start:self.pos - 1]) + f": {ret}"
+        if self.peek().text == "stateful":
+            self.next()
+            text += " stateful"
         return Functor(name, text, line)
 
     def clause(self) -> Rule:
