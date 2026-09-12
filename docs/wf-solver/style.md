@@ -144,7 +144,7 @@ Program style and the linter apply to the program rules, the Determine comp, and
 ### Idioms
 
 - **Complement tests.** Complement tests negate the named case: `!params.bg(Col)` for non-bg.
-- **Off-edge tests.** An off-edge test is `dist(P, D, K), K != 0`, not `K > 0`. `!dist(P, D, 0)` is unavailable: Souffle cannot negate an inline relation whose clause introduces variables.
+- **Off-edge tests.** An off-edge test is `!dist(P, D, 0)`. A lib primitive whose clauses introduce no variable negates when the use binds every column; `dist(P, D, K), K != 0` states the same test through a value the rule does not read, and the `negated-value` finding names the direct form.
 - **Narrowing.** When a rule binds an argument of a lib primitive to a head column of a narrower type, it takes that type's `*_elem` atom.
 - **Aggregators.** Inline relations cannot appear inside aggregators. A non-inline relation wraps one when needed.
 
