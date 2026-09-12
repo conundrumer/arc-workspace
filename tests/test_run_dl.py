@@ -184,8 +184,8 @@ def test_grid_reports_a_compile_error_once(solvers, monkeypatch, capsys):
     assert out == f"{STEM}.dl: souffle exited 1:\nError: x\n"
 
 
-SHADOWED = (".type _KP = [key: Unit, p_part: Position]\n"
-            ".init occ = Occurrences<_KP, Color>\n")
+SHADOWED = (".type _SK = [key: Unit, p_part: Position]\n"
+            ".init inv = OffsetInvariance<_SK, Color>\n")
 
 
 def test_run_names_a_shadowed_type_beside_souffle(solvers, monkeypatch, capsys):
@@ -199,7 +199,7 @@ def test_run_names_a_shadowed_type_beside_souffle(solvers, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "Error: Unable to deduce type" in out
     assert f"{STEM}.dl:2: shadowed type: " in out
-    assert "also names a type inside `Occurrences`" in out
+    assert "also names a type inside `OffsetInvariance`" in out
 
 
 def test_a_collision_finding_alone_does_not_hold_back_the_run(solvers, monkeypatch):

@@ -56,6 +56,26 @@ NB: reparameterization has been dropped; Same model decides whether an encoding 
 | Data vs ops | Table or rule |
 | Concept vs setup | Prior or setup |
 
+## Box (2026-09-11)
+
+On 2026-09-11, the spatial record took its algebra's names, in lib.dl, the tooling, the docs, and every solver at once. The header of `programs/lib.dl` states the algebra.
+
+| Former | Current |
+| --- | --- |
+| `Position`, the record | `Box`; `Position` is its cell reading |
+| `Shift` | `Offset` |
+| `Inset` | `Box` |
+| `ORIGIN` | `ZERO` |
+| `displacement` | `relative` |
+| `geq`, `gt` | `inside`, `interior` |
+| `edge_delta`, `axis_delta`, `uniform_delta` | `edge_inset`, `axis_inset`, `uniform_inset` |
+| `jump_delta`, `step_delta` | `jump_offset`, `step_offset` |
+| `Bbox.margin`, `DirPack.pos`, `DrawnRect.rect` | `box` |
+| `DrawnRect` | `Outlines` |
+| `ShiftInvariance` | `OffsetInvariance` |
+| `DividerFrame` | `DividerTiles` |
+| `BoxCells`, `BoxFrame`, `MarginFrame`, `Reframe` | retired into `crop`, `box_edge`, `interior`, `relative`, and the constructors |
+
 ## Docs
 
 | Former | Current |
