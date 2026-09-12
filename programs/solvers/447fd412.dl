@@ -60,21 +60,23 @@ template_mark(P) :- template_cell(P, Col), params.mark(Col).
 // --- placement ---
 
 // Placement (T0, Id) sends template mark T0 to block Id. Under it, template
-// cell P covers the box Box.
-.decl carry(t0: Position, id: Ident, p: Position, box: Position)
-carry(T0, Id, T0, Box) :- template_mark(T0), block.box(Id, Box).
-carry(T0, Id, P2, Box2) :-
-    carry(T0, Id, P, Box),                                   // known correspondence
+// cell P covers the box B.
+.decl carry(t0: Position, id: Ident, p: Position, b: Box)
+carry(T0, Id, T0, B) :- template_mark(T0), block.box(Id, B).
+carry(T0, Id, P2, B2) :-
+    carry(T0, Id, P, B),                                     // known correspondence
     dir_elem(D), neighbor(P, D, P2), template_cell(P2, _),   // one step along the template
-    block.extents(Id, _, K, K), jump(Box, D, K, Box2).       // K cells in the grid, K the block's side
+    axis_elem(A), perp(A, A2),
+    box_extent(B, P, A, K), box_extent(B, P, A2, K),         // K, the block's side
+    jump(B, D, K, B2).                                       // K cells in the grid
 
 // A placement that sends some template mark where no block stands.
 .decl astray(t0: Position, id: Ident)
-astray(T0, Id) :- carry(T0, Id, P, Box), template_mark(P), !block.box(_, Box).
+astray(T0, Id) :- carry(T0, Id, P, B), template_mark(P), !block.box(_, B).
 
 // The box a template cell covers, under a placement that holds.
-.decl covers(p: Position, box: Position)
-covers(P, Box) :- carry(T0, Id, P, Box), !astray(T0, Id).
+.decl covers(p: Position, b: Box)
+covers(P, B) :- carry(T0, Id, P, B), !astray(T0, Id).
 
 // --- stamp ---
 
@@ -88,11 +90,11 @@ out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !stamped(P, _, Ch).
 // --- $Ink ---
 
 stamped(Q, Col, $Ink()) :-
-    covers(P, Box), template_cell(P, Col), params.ink(Col),  // the drawing's boxes
-    in(Q, _), inside(Q, Box).                                   // as far as the grid reaches
+    covers(P, B), template_cell(P, Col), params.ink(Col),  // the drawing's boxes
+    in(Q, _), inside(Q, B).                                // as far as the grid reaches
 
 // --- $Whole ---
 
 stamped(Q, Col, $Whole()) :-
-    covers(P, Box), template_cell(P, Col),  // every template cell's box
-    in(Q, _), inside(Q, Box).
+    covers(P, B), template_cell(P, Col),  // every template cell's box
+    in(Q, _), inside(Q, B).

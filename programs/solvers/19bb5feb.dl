@@ -28,11 +28,12 @@ mark_box.cell(Id, P) :- marks.label($U(), P, Id).
 // The markers' distances to each edge, ranked densely — markers level with
 // each other share a rank.
 .init rank = Ordinal<Dir>
-rank.idx_set(D, K) :- mark_box.edge_min(_, D, K).
+rank.idx_set(D, K) :- mark_box.box(_, B), dir_elem(D), dist(B, D, K).
 
 // A marker's place: its rank from each of the four edges.
 .init place = DirPack<Ident>
-place.edge(Id, D, R) :- mark_box.edge_min(Id, D, K), rank.rank(D, K, R).
+place.edge(Id, D, R) :-
+    mark_box.box(Id, B), dir_elem(D), dist(B, D, K), rank.rank(D, K, R).
 
 .decl rank_mark(p: Position, col: Color)
 rank_mark(P_out, Col) :-

@@ -37,13 +37,13 @@ bbox.cell($U(), P) :- ink(P, _).
 // --- Away ---
 
 cast_dir($Away(), D) :-
-    mark(P, _), bbox.edge_cell($U(), P, D_base),   // the box edge the mark is on
-    opposite(D_base, D).                          // the cast leaves by the far side
+    mark(P, _), bbox.box($U(), B), box_edge(P, B, D_base),  // the box edge the mark is on
+    opposite(D_base, D).                                    // the cast leaves by the far side
 
 // --- Open ---
 
 .init margins = ArgExtremes<Unit, Dir>
-margins.cand($U(), D, K) :- bbox.box($U(), P_m), dir_elem(D), dist(P_m, D, K).
+margins.cand($U(), D, K) :- bbox.box($U(), B), dir_elem(D), dist(B, D, K).
 
 cast_dir($Open(), D) :- margins.high($U(), D, _).
 

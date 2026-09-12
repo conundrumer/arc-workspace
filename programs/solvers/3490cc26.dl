@@ -26,46 +26,45 @@ bb.cell(Id, P) :- blocks.label($U(), P, Id).
 
 // A block stands as its own bounding box. The blocks are all one size, so
 // those boxes share one frame and a step between them is a step of a block.
-.decl block(m: Position, col: Color)
-block(M, Col) :- bb.box(Id, M), blocks.label($U(), P, Id), in(P, Col).
+.decl block(b: Box, col: Color)
+block(B, Col) :- bb.box(Id, B), blocks.label($U(), P, Id), in(P, Col).
 
 // Blocks look along their lines, and each block stops the look behind it.
 .init sight = Ray<Unit>
 sight.dir($U(), D) :- dir_elem(D).
-sight.mark($U(), M) :- block(M, _).
-sight.blocked($U(), M) :- block(M, _).
+sight.mark($U(), B) :- block(B, _).
+sight.blocked($U(), B) :- block(B, _).
 
 // --- the chain ---
 
-.decl seed_block(m: Position)
-seed_block(M) :- block(M, Col), params.seed(Col).
+.decl seed_block(b: Box)
+seed_block(B) :- block(B, Col), params.seed(Col).
 
 // The partition the chain carries: the blocks it holds (taken) and the rest
 // (untaken).
-.init state = Take<Unit, Position, Position>
-state.start($U(), M) :- seed_block(M).
-state.step($U(), M, M2) :- hop(M, M2).
-state.take($U(), M, M2) :- hop(M, M2).
-state.init_taken($U(), M) :- seed_block(M).
-state.init_untaken($U(), M) :- block(M, _), !seed_block(M).
+.init state = Take<Unit, Box, Box>
+state.start($U(), B) :- seed_block(B).
+state.step($U(), B, B2) :- hop(B, B2).
+state.take($U(), B, B2) :- hop(B, B2).
+state.init_taken($U(), B) :- seed_block(B).
+state.init_untaken($U(), B) :- block(B, _), !seed_block(B).
 
 // The step taken: of the blocks the chain reaches and does not hold, the
 // one at the fewest steps. A tie leaves both, and the walk forks.
-.init nearest = ArgExtremes<Position, Position>
-nearest.cand(M, M2, K) :- state.untaken($U(), M, M2), sight.stop($U(), M2, _, K, M).
+.init nearest = ArgExtremes<Box, Box>
+nearest.cand(B, B2, K) :- state.untaken($U(), B, B2), sight.stop($U(), B2, _, K, B).
 
-.decl hop(m: Position, m2: Position)
-hop(M, M2) :- nearest.low(M, M2, _).
+.decl hop(b: Box, b2: Box)
+hop(B, B2) :- nearest.low(B, B2, _).
 
 // A link fills the box the two blocks span, less the blocks themselves.
-.type Link = [m: Position, m2: Position]
+.type Link = [b: Box, b2: Box]
 
 .init span = Bbox<Link>
-span.cell([M, M2], Q) :- hop(M, M2), ( Q = M ; Q = M2 ).
-span.grid([M, M2], P) :- hop(M, M2), in(P, _).
+span.cell([B, B2], B3) :- hop(B, B2), ( B3 = B ; B3 = B2 ).
 
 .decl link_cell(p: Position)
-link_cell(P) :- span.inside(_, P), !blocks.node($U(), P).
+link_cell(P) :- span.box(_, B), in(P, _), inside(P, B), !blocks.node($U(), P).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- in(P, Col), !link_cell(P).

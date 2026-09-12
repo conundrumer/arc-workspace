@@ -34,12 +34,11 @@ mark(P, Col) :- in(P, Col), !params.bg(Col), !params.frame(Col).
 
 .init bbox = Bbox<Unit>
 bbox.cell($U(), P) :- frame_cell(P).
-bbox.grid($U(), P) :- in(P, _).
 
 // The field the frame encloses. The frame's ring is closed, so the field's rim
 // toward d is the interior line against the frame's d side.
 .init field = Rim<Unit>
-field.cell($U(), P) :- bbox.inside($U(), P), !frame_cell(P).
+field.cell($U(), P) :- bbox.box($U(), B), in(P, _), inside(P, B), !frame_cell(P).
 
 .decl paint(p: Position, c: Choice)
 

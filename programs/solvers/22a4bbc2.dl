@@ -71,12 +71,12 @@ obj_box.cell(Id, P) :- comps.label(_, P, Id).
 
 // The object's margin from the counting edge.
 .decl obj_margin(id: Ident, k: number)
-obj_margin(Id, K) :- params.dir(D), obj_box.edge_min(Id, D, K).
+obj_margin(Id, K) :- params.dir(D), obj_box.box(Id, B), dist(B, D, K).
 
 // --- shared: rank the bars, select marked ranks ---
 
 .init seq = Ordinal<Choice>
-seq.idx_set($Run(), K)    :- boundary(B), params.dir(D), dist(B, D, K).
+seq.idx_set($Run(), K)    :- boundary(R), params.dir(D), dist(R, D, K).
 seq.idx_set($Object(), K) :- obj_margin(_, K).
 
 .decl mark_margin(ch: Choice, k: number)
@@ -86,8 +86,8 @@ mark_margin(Ch, K) :-
 
 .decl mark_cell(ch: Choice, p: Position)
 mark_cell($Run(), P) :-
-    mark_margin($Run(), K), params.dir(D), boundary(B), dist(B, D, K),  // marked run
-    run_of.clear($U(), R, _, _, B), row_cell(R, P).
+    mark_margin($Run(), K), params.dir(D), boundary(R_top), dist(R_top, D, K),  // marked run
+    run_of.clear($U(), R, _, _, R_top), row_cell(R, P).
 mark_cell($Object(), P) :-
     mark_margin($Object(), K), obj_margin(Id, K), comps.label(_, P, Id).
 

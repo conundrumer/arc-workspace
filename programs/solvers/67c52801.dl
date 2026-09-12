@@ -67,9 +67,11 @@ piece_box.cell(Pc, P) :- pieces.label(_, P, Pc).
 // other extent.
 .decl fits(pc: Ident, sl: Ident, h: number)
 fits(Pc, Sl, H) :-
-    params.ground_dir(D), axis_of(D, A_v), perp(A_v, A),  // the row axis
-    slot_box.extent(Sl, A, W),                            // slot width
-    piece_box.extents(Pc, _, W, H).                       // a piece extent matches it
+    params.ground_dir(D), axis_of(D, A_v), perp(A_v, A),     // the row axis
+    slots.label($U(), P, Sl), slot_box.box(Sl, B_sl),        // the slot's box, in the grid frame
+    box_extent(B_sl, P, A, W),                               // slot width
+    piece_box.box(Pc, B_pc), perp(A2, A3),
+    box_extent(B_pc, P, A2, W), box_extent(B_pc, P, A3, H).  // a piece extent matches it
 
 // --- the packing ---
 

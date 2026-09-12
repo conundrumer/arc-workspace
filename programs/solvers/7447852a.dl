@@ -57,7 +57,7 @@ pocket_box.cell(Id, P) :- pockets.label(_, P, Id).
 
 // The pocket's margin from the anchor edge.
 .decl pocket_margin(id: Ident, k: number)
-pocket_margin(Id, K) :- params.anchor(D), pocket_box.edge_min(Id, D, K).
+pocket_margin(Id, K) :- params.anchor(D), pocket_box.box(Id, B), dist(B, D, K).
 
 .init seq = Ordinal<Unit>
 seq.idx_set($U(), K) :- pocket_margin(_, K).

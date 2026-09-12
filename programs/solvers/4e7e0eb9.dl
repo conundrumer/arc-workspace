@@ -142,5 +142,7 @@ fill(P_sec, Col, $Rarest()) :- rarest.low(P_sec, Col, _).
 
     // A section is a square part.
     .decl section(k: number)
-    section(K) :- part_box.extents(_, _, K, K).
+    section(K) :-
+        part_box.cell(Ky, P), part_box.box(Ky, B),                     // the box a part spans
+        perp(A, A2), box_extent(B, P, A, K), box_extent(B, P, A2, K).  // of equal extents
 }

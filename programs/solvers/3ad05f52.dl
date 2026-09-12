@@ -65,9 +65,8 @@ outward_door(P, D) :- door(P), dir_elem(D), neighbor(P, D, Q), outside(Q).
 
 .init span_box = Bbox<Unit>
 span_box.cell($U(), P) :- outward_door(P, _).
-span_box.grid($U(), P) :- in(P, _).
 
-crossing(P, $Span()) :- span_box.inside($U(), P), outside(P).
+crossing(P, $Span()) :- span_box.box($U(), B), outside(P), inside(P, B).
 
 // --- Duct ---
 
@@ -84,9 +83,8 @@ opposed(P, P2) :-
 .init duct_box = Bbox<Pair>
 duct_box.cell([P, P2], P) :- opposed(P, P2).
 duct_box.cell([P, P2], P2) :- opposed(P, P2).
-duct_box.grid([P, P2], Q) :- opposed(P, P2), in(Q, _).
 
-crossing(Q, $Duct()) :- duct_box.inside([P, P2], Q), outside(Q).
+crossing(P, $Duct()) :- duct_box.box(_, B), outside(P), inside(P, B).
 
 // --- shared: the spread ---
 

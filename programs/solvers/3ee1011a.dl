@@ -55,8 +55,10 @@ core.cell(K, P) :- rim.depth($U(), _, K), rim.depth($U(), P, K2), K <= K2.
 // The squares a cell sits in, by side.
 .init innermost = Extremes<Position>
 innermost.cand(P, N) :-
-    core.cell(K, P), core.extents(K, _, N, N),
-    bar.tally(_, N).                             // a bar that long fills it
+    core.cell(K, P), core.box(K, B),                   // a square P sits in
+    axis_elem(A), perp(A, A2),
+    box_extent(B, P, A, N), box_extent(B, P, A2, N),   // of side N
+    bar.tally(_, N).                                   // a bar that long fills it
 
 // A cell takes the smallest square covering it.
 out(P, Col, $Stamp()) :- innermost.low(P, N), bar.tally(Col, N).

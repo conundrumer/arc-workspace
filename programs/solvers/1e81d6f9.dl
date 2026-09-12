@@ -5,9 +5,9 @@
 // models of what is kept:
 //
 //   $Marker — only the marker cell is kept.
-//   $Bbox   — the whole region is kept: the connected component of mask cells at
-//             the corner (so a stray mask cell elsewhere cannot extend it),
-//             bounded to its bounding bbox.
+//   $Bbox   — the whole region is kept: the bounding box of the connected
+//             component of mask cells at the corner, so a stray mask cell
+//             elsewhere cannot extend it.
 
 #include "../lib.dl"
 
@@ -47,25 +47,28 @@ mask(P) :- in(P, MaskCol), params.mask_color(MaskCol).
 region.node($U(), P) :- mask(P).
 region.seed($U(), P) :- mask(P), params.target_corner(Diag), dir_of(Diag, _, D), dist(P, D, 0).
 
-// The region's bounding box over the input grid.
+// The region's bounding box.
 .init bbox = Bbox<Unit>
 bbox.cell($U(), P) :- region.reach($U(), P).
-bbox.grid($U(), P) :- in(P, _).
+
+// A grid cell the box covers.
+.decl boxed(p: Position)
+boxed(P) :- in(P, _), bbox.box($U(), B), inside(P, B).
 
 .decl out(p: Position, col: Color, c: Choice)
 
 // --- Marker --- only the marker cell is kept.
 out(P, Col_out, $Marker()) :-
-    in(P, Col),                                                   // grid cell
-    ( !target_color(Col), Col_out = Col                           // non-target — passes
-    ; target_pos(P), Col_out = Col                                // the marker — kept
-    ; target_color(Col), !target_pos(P), params.bg(Col_out)       // target elsewhere — erased
+    in(P, Col),                                              // grid cell
+    ( !target_color(Col), Col_out = Col                      // non-target — passes
+    ; target_pos(P), Col_out = Col                           // the marker — kept
+    ; target_color(Col), !target_pos(P), params.bg(Col_out)  // target elsewhere — erased
     ).
 
 // --- Bbox --- the whole corner region is kept.
 out(P, Col_out, $Bbox()) :-
-    in(P, Col),                                                         // grid cell
-    ( !target_color(Col), Col_out = Col                                 // non-target — passes
-    ; bbox.inside($U(), P), Col_out = Col                                // in the region — kept
-    ; target_color(Col), !bbox.inside($U(), P), params.bg(Col_out)       // target outside — erased
+    in(P, Col),                                              // grid cell
+    ( !target_color(Col), Col_out = Col                      // non-target — passes
+    ; boxed(P), Col_out = Col                                // in the region — kept
+    ; target_color(Col), !boxed(P), params.bg(Col_out)       // target outside — erased
     ).

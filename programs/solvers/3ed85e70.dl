@@ -27,13 +27,16 @@ ground.seed($U(), P) :- in(P, _), dir_elem(D), dist(P, D, 0).
 
 .init panel = Bbox<Unit>
 panel.cell($U(), P) :- ground.reach($U(), P).
-panel.grid($U(), P) :- in(P, _).
+
+// The grid cells the legend panel's box covers.
+.decl panel_cell(p: Position)
+panel_cell(P) :- panel.box($U(), B), in(P, _), inside(P, B).
 
 .decl legend_cell(p: Position, col: Color)
-legend_cell(P, Col) :- in(P, Col), panel.inside($U(), P), !params.legend_bg(Col).
+legend_cell(P, Col) :- in(P, Col), panel_cell(P), !params.legend_bg(Col).
 
 .decl field_cell(p: Position, col: Color)
-field_cell(P, Col) :- in(P, Col), !panel.inside($U(), P), !params.field_bg(Col).
+field_cell(P, Col) :- in(P, Col), !panel_cell(P), !params.field_bg(Col).
 
 // --- shapes and clues ---
 
@@ -66,11 +69,13 @@ layer_box.cell([S, Col], P) :- shape_cell(S, P, Col).
 .decl place(s: Ident, v: Offset)
 
 place(S, V) :-
-    clue_palette.value(K, Col),                     // a one-color clue
-    clue_box.extents(K, A, N1, N2),
-    layer_box.extents([S, Col], A, N1, N2),         // the color fills a box of the clue's size
-    clue_box.box(K, M_clue), layer_box.box([S, Col], M_layer),
-    relative(M_layer, M_clue, V).               // that box onto the clue
+    clue_palette.value(K, Col),                                       // a one-color clue
+    clue_box.cell(K, P), clue_box.box(K, B_clue),                     // the clue's box, in the grid frame
+    layer_box.box([S, Col], B_layer),
+    perp(A, A2),                                                      // the two axes
+    box_extent(B_clue, P, A, N1), box_extent(B_clue, P, A2, N2),
+    box_extent(B_layer, P, A, N1), box_extent(B_layer, P, A2, N2),    // the color fills a box of the clue's size
+    relative(B_layer, B_clue, V).                                     // that box onto the clue
 
 // A many-color clue is tested as a piece of each shape.
 .type Piece = [k: Ident, s: Ident]
@@ -83,8 +88,8 @@ occ.cell([K, S], P, Col)  :- piece(K, S), shape_cell(S, P, Col).
 occ.shape([K, S], P, Col) :- piece(K, S), clue_cell(K, P, Col).
 
 place(S, V) :-
-    occ.occurrence([K, S], M),   // the clue occurs in the shape
-    relative(M, ZERO, V).  // read back: the shape onto the clue
+    occ.occurrence([K, S], V_clue),  // the offset at which the clue occurs in the shape
+    relative(V_clue, ZERO, V).       // inverted: the shape onto the clue
 
 // --- output ---
 

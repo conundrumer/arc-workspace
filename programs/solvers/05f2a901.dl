@@ -34,7 +34,10 @@ anchor_cell(P) :- in(P, Col), params.anchor(Col).
 .init bbox = Bbox<Color>
 bbox.cell(Col, P) :- mover_cell(P), params.mover(Col).
 bbox.cell(Col, P) :- anchor_cell(P), params.anchor(Col).
-bbox.grid(Col, P) :- bbox.cell(Col, _), in(P, _).
+
+// The grid cells an object's bounding box covers.
+.decl box_cell(col: Color, p: Position)
+box_cell(Col, P) :- bbox.box(Col, B), in(P, _), inside(P, B).
 
 // --- direction of travel ---
 
@@ -73,9 +76,9 @@ blocked($Touch(), P2) :-
 
 // --- Extent ---
 
-shape($Extent(), P) :- params.mover(Col), bbox.inside(Col, P).
+shape($Extent(), P) :- params.mover(Col), box_cell(Col, P).
 
-blocked($Extent(), P) :- params.anchor(Col), bbox.inside(Col, P).
+blocked($Extent(), P) :- params.anchor(Col), box_cell(Col, P).
 
 // --- the slide ---
 

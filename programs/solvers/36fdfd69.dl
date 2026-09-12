@@ -38,14 +38,12 @@ cluster.step(S) :-
 
 .init bbox = Bbox<Ident>
 bbox.cell(Id, P) :- cluster.label($U(), P, Id).
-bbox.grid(Id, P) :- bbox.cell(Id, _), in(P, _).
 
 .decl impl_choice(ch: Choice)
 impl_choice($Solid()). impl_choice($Recolor()).
 
-// A box cell that is not a mark.
 .decl unmarked(p: Position, col: Color)
-unmarked(P, Col) :- bbox.inside(_, P), in(P, Col), !params.mark(Col).
+unmarked(P, Col) :- bbox.box(_, B), in(P, Col), inside(P, B), !params.mark(Col).
 
 // The box cells the fill takes.
 .decl repaint(p: Position, c: Choice)

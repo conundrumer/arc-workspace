@@ -44,12 +44,11 @@ shape_cell(S, P) :- shapes.label(_, P, S).
 
 .init bbox = Bbox<Ident>
 bbox.cell(S, P) :- shape_cell(S, P).
-bbox.grid(S, P) :- shape_cell(S, _), in(P, _).
 
 // The bounding box grown one cell on each side.
 .decl grown_box(s: Ident, p: Position)
 grown_box(S, Q) :-
-    bbox.inside(S, P),
+    bbox.box(S, B), in(P, _), inside(P, B),
     ( Q = P                                      // the box
     ; dir8_elem(D), neighbor(P, D, Q), in(Q, _)  // and the ring around it
     ).

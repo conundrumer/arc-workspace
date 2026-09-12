@@ -26,9 +26,8 @@ ink(P) :- in(P, Col), !params.bg(Col).
 
 .init bbox = Bbox<Unit>
 bbox.cell($U(), P) :- ink(P).
-bbox.grid($U(), P) :- in(P, _).
 
-filled(P, $Whole()) :- in(P, Col), params.bg(Col), bbox.inside($U(), P).
+filled(P, $Whole()) :- in(P, Col), params.bg(Col), bbox.box($U(), B), inside(P, B).
 
 // --- $Each ---
 
@@ -37,9 +36,8 @@ comps.node($U(), P) :- ink(P).
 
 .init comp_box = Bbox<Ident>
 comp_box.cell(Id, P) :- comps.label($U(), P, Id).
-comp_box.grid(Id, P) :- comps.label($U(), _, Id), in(P, _).
 
-filled(P, $Each()) :- in(P, Col), params.bg(Col), comp_box.inside(_, P).
+filled(P, $Each()) :- in(P, Col), params.bg(Col), comp_box.box(_, B), inside(P, B).
 
 .decl impl_choice(ch: Choice)
 impl_choice($Whole()). impl_choice($Each()).

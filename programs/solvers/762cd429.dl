@@ -45,7 +45,11 @@ impl_choice($Stored()). impl_choice($Away()).
 grow(D, $Stored()) :- params.grow(D).
 
 // --- $Away ---
-grow(G, $Away()) :- seed.edge_min($U(), D, 0), opposite(D, G).
+grow(G, $Away()) :- seed.box($U(), B), dist(B, D, 0), opposite(D, G).
+
+// The seed's cells at the corners of its box.
+.decl seed_corner(p: Position, dg: DiagDir)
+seed_corner(P, Dg) :- seed.cell($U(), P), seed.box($U(), B), box_corner(P, B, Dg).
 
 // The seed's corner cells on side D: the back corner, and the cell just past
 // the front corner, where the back corner's scaled block lands. Blocks extend
@@ -53,8 +57,8 @@ grow(G, $Away()) :- seed.edge_min($U(), D, 0), opposite(D, G).
 .decl anchor(dg: DiagDir, p_back: Position, p_next: Position, ch: Choice)
 anchor(Dg_front, P_back, P_next, Ch) :-
     grow(G, Ch), opposite(G, G_back),
-    seed.corner($U(), P_front, Dg_front), diag_dirs(Dg_front, _, D, G),
-    seed.corner($U(), P_back, Dg_back), diag_dirs(Dg_back, _, D, G_back),
+    seed_corner(P_front, Dg_front), diag_dirs(Dg_front, _, D, G),
+    seed_corner(P_back, Dg_back), diag_dirs(Dg_back, _, D, G_back),
     neighbor(P_front, G, P_next).
 
 // A cell's source: the cell whose block, scaled by the factor from the back

@@ -79,10 +79,9 @@ access(P, $Drop()) :- in(P, _), !shadow.ray($U(), P, _, _, _).
 // A notch is where the reachable space reaches into the wall's own box.
 .init wall_box = Bbox<Unit>
 wall_box.cell($U(), P) :- wall(P).
-wall_box.grid($U(), P) :- in(P, _).
 
 .init notches = Components<Access>
-notches.node(A, P) :- access(P, A), wall_box.inside($U(), P).
+notches.node(A, P) :- access(P, A), wall_box.box($U(), B), inside(P, B).
 
 .decl notch(a: Access, n: Ident, p: Position)
 notch(A, N, P) :- notches.label(A, P, N).

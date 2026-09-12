@@ -29,7 +29,9 @@ target(P, P2) :- ink(P, _), params.dir(D), neighbor(P, D, P2).
 // A landing site adjacent to its source is in the source's own shape, so
 // the pile-up needs no shape key.
 .decl stuck(p: Position)
-stuck(P) :- params.dir(D), shape_box.edge_cell(_, P, D).
+stuck(P) :-
+    shapes.label($U(), P, Id), shape_box.box(Id, B),  // a shape cell, with its shape's box
+    params.dir(D), box_edge(P, B, D).                 // on the box's leading edge
 stuck(P) :- target(P, P2), stuck(P2).
 
 .decl slid(p: Position, col: Color)

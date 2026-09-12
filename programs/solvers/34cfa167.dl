@@ -50,7 +50,7 @@ bbox.cell(Id, P) :- blocks.label($U(), P, Id).
 // The block at the arms' corner stands alone; the other carries the arms.
 .init from_corner = ArgExtremes<Unit, Ident>
 from_corner.cand($U(), Id, K) :-
-    bbox.box(Id, P), params.arm_corner(Diag), corner_dist(P, Diag, K).
+    bbox.box(Id, B), params.arm_corner(Diag), corner_dist(B, Diag, K).
 
 .decl template(id: Ident)
 template(Id) :- from_corner.high($U(), Id, _).
@@ -61,8 +61,8 @@ standalone(Id) :- from_corner.low($U(), Id, _).
 // The shift carrying the template block onto the standalone one.
 .decl shift(v: Offset)
 shift(V) :-
-    template(T), bbox.box(T, PT),
-    standalone(S), bbox.box(S, PS), relative(PT, PS, V).
+    template(T), bbox.box(T, B),
+    standalone(S), bbox.box(S, B2), relative(B, B2, V).
 
 // The shift's axis parts, each beside no shift at all: the four corner
 // blocks are the template block under every combination of the two.
@@ -87,7 +87,8 @@ arm_dir(D) :- arm_perp(D, _).
 .init cast = Ray<Dir>
 cast.dir(D, D) :- arm_dir(D).
 cast.cell(D, P) :- arm_dir(D), in(P, _).
-cast.mark(D, P) :- arm_dir(D), template(T), bbox.edge_cell(T, P, D).
+cast.mark(D, P) :-
+    arm_dir(D), template(T), bbox.cell(T, P), bbox.box(T, B), box_edge(P, B, D).
 
 .decl arm_mark(d: Dir, p: Position, k: number, col: Color)
 arm_mark(D, P, K, Col) :- cast.ray(D, P, D, K, _), K != 0, in(P, Col), !bg(Col).
@@ -110,9 +111,9 @@ period(D, K, $Extend()) :-
 // short of the standalone block.
 .decl run(d: Dir, p: Position, k: number, src: Position)
 run(D, Q, K, Src) :-
-    cast.ray(D, Q, D, K, Src), K != 0,                        // past the block
-    opposite(D, D2), standalone(S), bbox.box(S, P_box),     // the block ahead
-    nearer(D2, Q, P_box).                                     // short of it
+    cast.ray(D, Q, D, K, Src), K != 0,                      // past the block
+    opposite(D, D2), standalone(S), bbox.box(S, B),         // the block ahead
+    nearer(D2, Q, B).                                       // short of it
 
 .decl rail(d: Dir, p: Position, col: Color, ch: Choice)
 rail(D, Q, Col, Ch) :-
@@ -140,7 +141,8 @@ paint(P_grid, Col, Ch) :-
 // The plain line one cell outside a rail.
 paint(P_grid, Col, Ch) :-
     span.low(D, K_near), arm(D, K_near, Col), impl_choice(Ch),      // the mark against the block
-    template(T), run(D, Q, _, Src), bbox.edge_cell(T, Src, D_out),   // the rail's outer line
+    template(T), bbox.box(T, B), run(D, Q, _, Src),
+    bbox.cell(T, Src), box_edge(Src, B, D_out),                     // the rail's outer line
     side(D, V, D_out), compose(Q, V, P_rail),                       // in each rail
     neighbor(P_rail, D_out, P_grid).                                // one cell out
 

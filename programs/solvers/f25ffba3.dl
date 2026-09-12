@@ -97,10 +97,12 @@ out(P_grid_out, Col, C) :-
 
     // The data slab hugs one edge and stops short of the opposite one.
     .decl data_dir(d: Dir)
-    data_dir(D) :- slab.box(_, M), dir_elem(D), dist_pair(M, D, K, K2), K < K2.
+    data_dir(D) :- slab.box(_, B), dir_elem(D), dist_pair(B, D, K, K2), K < K2.
 
     .decl slab_depth(n: number)
-    slab_depth(N) :- data_dir(D), axis_of(D, A), slab.extent(_, A, N).
+    slab_depth(N) :-
+        data_dir(D), axis_of(D, A),
+        slab.cell(E, P), slab.box(E, B), box_extent(B, P, A, N).
 
     // The cut every tile parse takes: the data edge's axis, and the slab's
     // depth as the tile size.

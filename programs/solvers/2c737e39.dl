@@ -59,9 +59,8 @@ footprint(P, $Transparent()) :- drawn(P, _).
 
 .init bbox = Bbox<Unit>
 bbox.cell($U(), P) :- drawn(P, _).
-bbox.grid($U(), P) :- in(P, _).
 
-footprint(P, $Opaque()) :- bbox.inside($U(), P).
+footprint(P, $Opaque()) :- bbox.box($U(), B), in(P, _), inside(P, B).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- stamp(P, Col, Ch).

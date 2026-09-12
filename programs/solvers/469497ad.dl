@@ -52,7 +52,8 @@ block.cell($U(), P_grid) :- scaled(P_grid, P_tile, _), ink(P_tile, _), !legend(P
 
 .init diag = Ray<DiagDir>
 diag.dir(D, D) :- diag_dir_elem(D).
-diag.mark(D, P_grid) :- block.corner($U(), P_grid, D).
+diag.mark(D, P_grid) :-
+    block.cell($U(), P_grid), block.box($U(), B), box_corner(P_grid, B, D).
 diag.cell(D, P_grid) :- diag_dir_elem(D), scaled(P_grid, _, Col), params.bg(Col).
 diag.blocked(D, P_grid) :- diag_dir_elem(D), scaled(P_grid, _, Col), !params.bg(Col).
 

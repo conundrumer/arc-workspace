@@ -76,7 +76,8 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !covered(Ch, P).
     bbox.cell([E, Id], P) :- blocks.label(E, P, Id).
 
     .init smallest = Extremes<Unit>
-    smallest.cand($U(), N) :- bbox.extent(_, _, N).
+    smallest.cand($U(), N) :-
+        bbox.cell(K, P), bbox.box(K, B), box_extent(B, P, _, N).
 
     .decl cand(k: number)
     cand(K) :-

@@ -100,12 +100,12 @@ group_box.cell(Id, P_grid_out) :-
     group.id(P_tile, Id),                                    // a group's tile
     out_field(P_grid_out, P_field),
     out_cells.tile($U(), P_field, P_tile, _).                // the canvas cells it holds
-group_box.grid(Id, P_grid_out) :- group.id(_, Id), canvas.cell($U(), P_grid_out).
 
 .decl paint(p_grid_out: Position, col: Color)
 paint(P_grid_out, Col) :-
-    group_box.inside(Id, P_grid_out),        // a canvas cell the box covers
-    group.id(P_tile, Id), ink(P_tile, Col).  // painted in the group's color
+    group_box.box(Id, B),
+    canvas.cell($U(), P_grid_out), inside(P_grid_out, B),  // a canvas cell the box covers
+    group.id(P_tile, Id), ink(P_tile, Col).                // painted in the group's color
 
 .decl out(p: Position, col: Color)
 out(P_grid_out, Col) :-

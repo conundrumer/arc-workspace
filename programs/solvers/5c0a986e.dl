@@ -26,7 +26,9 @@ bx.cell(Col, P) :- in(P, Col), !params.bg(Col).
 // The ray a block casts.
 .init beam = Ray<Color>
 beam.dir(Col, D) :- params.heading(Col, D).
-beam.mark(Col, P) :- params.heading(Col, D), bx.corner(Col, P, D).
+beam.mark(Col, P) :-
+    params.heading(Col, D),
+    bx.cell(Col, P), bx.box(Col, B), box_corner(P, B, D).
 beam.cell(Col, P) :- params.heading(Col, _), in(P, Bg), params.bg(Bg).
 
 .decl out(p: Position, col: Color)
@@ -45,6 +47,7 @@ out(P, Col) :- in(P, Col), !beam.ray(_, P, _, _, _).
 
     .decl heading(col: Color, d: DiagDir)
     heading(Col, D) :-
-        bx.corner([E, Col], P, D),              // a corner of the color's block
+        bx.cell([E, Col], P), bx.box([E, Col], B),
+        box_corner(P, B, D),                    // a corner of the color's block
         neighbor(P, D, Q), new_ink(E, Col, Q).  // painted one step past it
 }

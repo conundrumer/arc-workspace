@@ -49,7 +49,9 @@ impl_choice($Turn()). impl_choice($Table()).
     bbox.cell([K, Id], P) :- sq.label(K, P, Id).
 
     .decl seat(k: Key, id: Ident, d: DiagDir, p: Position)
-    seat(K, Id, D, Q) :- bbox.corner([K, Id], P, D), neighbor(P, D, Q).
+    seat(K, Id, D, Q) :-
+        sq.label(K, P, Id), bbox.box([K, Id], B), box_corner(P, B, D),   // the square's cell at corner D
+        neighbor(P, D, Q).
 }
 
 .init parse = Parse<Unit>

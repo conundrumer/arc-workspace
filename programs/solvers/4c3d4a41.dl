@@ -19,7 +19,7 @@
     .decl bg(col: Color) bg(0).
 
     // The container's interior, as margins.
-    .decl box(p: Position) box([1, 1, 10, 1]).
+    .decl box(b: Box) box([1, 1, 10, 1]).
 
     // Carries the staging area onto the container's interior.
     .decl shift(v: Offset) shift([0, 0, 10, -10]).
@@ -36,7 +36,7 @@ impl_choice($Stack()).
 
 // The container's interior.
 .decl within(p: Position)
-within(P) :- in(P, _), params.box(M), inside(P, M).
+within(P) :- in(P, _), params.box(B), inside(P, B).
 
 // The staging area — what the shift carries into the container.
 .decl stage(p: Position)
@@ -82,7 +82,7 @@ content_end.cand(L, P, K) :- content(P, _), line_cell(P, L, K).
 placed(Q, Col, $Rigid()) :-
     content(P, Col), line_cell(P, L, _),               // a content cell
     content_end.high(L, P_bot, _), seat(L, P_seat),    // the low end goes on the seat
-    relative(P_bot, P_seat, V), compose(P, V, Q),  // carried as one body
+    relative(P_bot, P_seat, V), compose(P, V, Q),      // carried as one body
     within(Q).                                         // what the container still holds
 
 // --- Stack ---
@@ -137,13 +137,17 @@ out(P, Bg, Ch) :-
     .init comb_rim = Rim<Example>
     comb_rim.cell(E, P) :- vanished(E, P, _).
 
+    // A comb cell on the comb's d-side edge.
+    .decl comb_edge_cell(e: Example, p: Position, d: Dir)
+    comb_edge_cell(E, P, D) :- vanished(E, P, _), comb_box.box(E, B), box_edge(P, B, D).
+
     // A direction the comb does not stand along: the teeth rise from the back
     // edge, so away from that edge every comb cell has comb behind it.
     .decl refuted_dir(d: Dir)
     refuted_dir(D) :-
         opposite(D, D_back),
         comb_rim.rim_dir(E, P, D_back),      // a comb cell with nothing behind it
-        !comb_box.edge_cell(E, P, D_back).   // away from the comb's back edge
+        !comb_edge_cell(E, P, D_back).       // away from the comb's back edge
 
     .decl rise(d: Dir)
     rise(D) :- dir_elem(D), !refuted_dir(D).

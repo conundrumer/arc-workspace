@@ -32,9 +32,7 @@ bbox.cell(O, P) :- obj_cell(O, P).
 
 // The bar reaches both edges of one axis. The pieces stack across it.
 .decl bar(o: Ident, a: Axis)
-bar(O, A) :-
-    bbox.edge_min(O, D, 0), opposite(D, D2), bbox.edge_min(O, D2, 0),
-    axis_of(D, A).
+bar(O, A) :- bbox.box(O, B_obj), dist_pair(B_obj, D, 0, 0), axis_of(D, A).
 
 .decl stack_dir(d: Dir)
 stack_dir(D) :- bar(_, A), perp(A, A2), axis_of(D, A2).
@@ -62,7 +60,7 @@ face(O, D, P) :- front.low([O, D, _], P, _).
 seat_offset(H, O, D, R) :-
     opposite(D, Dn), face(O, Dn, N), !bar(O, _),  // a piece's facing cell
     face(H, D, P), O != H,                        // a host face to meet it
-    neighbor(P, D, Q), relative(N, Q, R).     // the cell just off the face
+    neighbor(P, D, Q), relative(N, Q, R).         // the cell just off the face
 
 // The rests probed: each offered seat and its one-step slides along the
 // contact.
@@ -122,7 +120,7 @@ placement(O, Delta) :- seat_step(_, _, O, Delta).
 .decl seat_step(h: Ident, d_host: Offset, o: Ident, delta: Offset)
 seat_step(H, D_host, O, Delta) :-
     placement(H, D_host), seat(H, O, R), compose(D_host, R, Delta),
-    bbox.box(O, M), compose(M, Delta, M2), inside(M2, ZERO).  // on the grid
+    bbox.box(O, B_obj), compose(B_obj, Delta, B_placed), inside(B_placed, ZERO).  // on the grid
 
 .decl place_cell(o: Ident, delta: Offset, p: Position)
 place_cell(O, Delta, Q) :- placement(O, Delta), obj_cell(O, P), compose(P, Delta, Q).
@@ -143,8 +141,8 @@ beside(O_h, D_h, B, ZERO) :- placement(O_h, D_h), bar(B, _).
 beside(O_h, D_h, O, Delta) :-
     beside(O_h, D_h, H, D_host), seat_step(H, D_host, O, Delta),
     bar(B, _), !clash(O, Delta, B, ZERO),  // beside the bar
-    !clash(O, Delta, O_h, D_h),              // beside the held piece
-    (O != O_h ; Delta = D_h).                // the held piece stays held
+    !clash(O, Delta, O_h, D_h),            // beside the held piece
+    (O != O_h ; Delta = D_h).              // the held piece stays held
 
 .decl refuted(o: Ident, delta: Offset)
 refuted(O, Delta) :- placement(O, Delta), obj_cell(O2, _), !beside(O, Delta, O2, _).

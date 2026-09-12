@@ -20,10 +20,9 @@
 // The notches: the bg cells inside the wall's box.
 .init wall = Bbox<Unit>
 wall.cell($U(), P) :- in(P, Col), params.wall(Col).
-wall.grid($U(), P) :- in(P, _).
 
 .decl notch(p: Position)
-notch(P) :- wall.inside($U(), P), in(P, Col), params.bg(Col).
+notch(P) :- wall.box($U(), B), in(P, Col), inside(P, B), params.bg(Col).
 
 .init sprites = Components<Unit>
 sprites.node($U(), P) :- in(P, Col), params.sprite(Col).
@@ -34,10 +33,10 @@ occ.shape(Id, S, $U()) :- sprites.label($U(), S, Id).
 occ.cell(Id, P, $U()) :- sprites.label($U(), _, Id), in(P, Col), !params.wall(Col).
 
 // A piece: one sprite at one placement.
-.type Piece = [id: Ident, m: Offset]
+.type Piece = [id: Ident, v: Offset]
 
 .decl covers(piece: Piece, p: Position)
-covers([Id, M], P) :- occ.occurrence(Id, M), occ.shape(Id, S, $U()), compose(M, S, P).
+covers([Id, V], P) :- occ.occurrence(Id, V), occ.shape(Id, S, $U()), compose(V, S, P).
 
 // --- the forced packing ---
 
@@ -45,8 +44,8 @@ covers([Id, M], P) :- occ.occurrence(Id, M), occ.shape(Id, S, $U()), compose(M, 
 forcing.covers($U(), Pc, P) :- covers(Pc, P), notch(P).
 
 // A sprite is placed once, and placements do not overlap.
-forcing.conflict($U(), [Id, M], [Id, M2]) :-
-    occ.occurrence(Id, M), occ.occurrence(Id, M2), M != M2.
+forcing.conflict($U(), [Id, V], [Id, V2]) :-
+    occ.occurrence(Id, V), occ.occurrence(Id, V2), V != V2.
 forcing.conflict($U(), Pc, Pc2) :- covers(Pc, P), covers(Pc2, P), Pc != Pc2.
 
 // A cell a forced piece lands on.

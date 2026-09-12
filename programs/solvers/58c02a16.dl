@@ -23,19 +23,19 @@
 // The corner box: the pattern block with the separator lines that close it.
 .init bbox = Bbox<Unit>
 bbox.cell($U(), P) :- in(P, Col), !params.bg(Col).
-bbox.grid($U(), P) :- in(P, _).
 
 // The separator lines: the box edges facing away from the corner.
 .decl sep_cell(p: Position)
 sep_cell(P) :-
     params.corner(D), diag_opposite(D, D_far),
-    dir_of(D_far, _, D_away), bbox.edge_cell($U(), P, D_away).
+    dir_of(D_far, _, D_away),
+    bbox.cell($U(), P), bbox.box($U(), B), box_edge(P, B, D_away).
 
 .decl sep(col: Color)
 sep(Col) :- sep_cell(P), in(P, Col).
 
 .decl pat_cell(p: Position)
-pat_cell(P) :- bbox.inside($U(), P), !sep_cell(P).
+pat_cell(P) :- bbox.box($U(), B), in(P, _), inside(P, B), !sep_cell(P).
 
 // The block's own size is the period of the layout.
 .init block = Bbox<Unit>
@@ -48,7 +48,8 @@ block.cell($U(), P) :- pat_cell(P).
 phase(P, P_fine, P_coarse) :-
     in(P, _), pat_cell(P_fine), pat_cell(P_coarse),
     params.corner(D), diag_dist(P, D, A, T1, T2),          // distances from the corner
-    block.extents($U(), A, N1, N2),                        // the block's size — the fine period
+    block.box($U(), B), perp(A, A2),                       // the block's size — the fine period
+    box_extent(B, P, A, N1), box_extent(B, P, A2, N2),
     stride(T1, N1, 0, B1, F1), stride(B1, N1, 0, _, C1),   // cell in block, block in arrangement
     stride(T2, N2, 0, B2, F2), stride(B2, N2, 0, _, C2),   // the same across
     diag_dist(P_fine, D, A, F1, F2), diag_dist(P_coarse, D, A, C1, C2).

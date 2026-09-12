@@ -35,17 +35,19 @@ bbox.cell([Col, Id], P) :- blocks.label(Col, P, Id).
 // stops one.
 .init shot = Ray<Unit>
 shot.dir($U(), D) :- diag_dir_elem(D).
-shot.mark($U(), P) :- bbox.corner(_, P, _).
+shot.mark($U(), P) :- bbox.cell(Blk, P), bbox.box(Blk, B), box_corner(P, B, _).
 shot.cell($U(), P) :- in(P, Col), params.bg(Col).
 shot.blocked($U(), P) :- in(P, Col), !params.bg(Col).
 
 // A block's corner toward its partner, and the K steps to the facing corner.
 .decl link(col: Color, d: DiagDir, p_from: Position, k: number)
 link(Col, D, P1, K) :-
-    diag_opposite(D, D_opp),                        // the two facing headings
-    bbox.corner([Col, Id1], P1, D),                  // one block's corner toward D
-    bbox.corner([Col, Id2], P2, D_opp), Id1 != Id2,  // the other block's, facing back
-    shot.cast($U(), P2, D, K, P1).                  // K steps along P1's diagonal
+    diag_opposite(D, D_opp),                             // the two facing headings
+    bbox.cell([Col, Id1], P1), bbox.box([Col, Id1], B1),
+    box_corner(P1, B1, D),                               // one block's corner toward D
+    bbox.cell([Col, Id2], P2), bbox.box([Col, Id2], B2),
+    box_corner(P2, B2, D_opp), Id1 != Id2,               // the other block's, facing back
+    shot.cast($U(), P2, D, K, P1).                       // K steps along P1's diagonal
 
 .decl paint(p: Position, col: Color, ch: Choice)
 

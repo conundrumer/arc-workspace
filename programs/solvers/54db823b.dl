@@ -58,9 +58,8 @@ erased_cell(P, $Cells()) :- erased_object(_, P).
 
 .init ebox = Bbox<Ident>
 ebox.cell(O, P) :- erased_object(O, P).
-ebox.grid(O, P) :- erased_object(O, _), in(P, _).
 
-erased_cell(P, $Box()) :- ebox.inside(_, P).
+erased_cell(P, $Box()) :- in(P, _), ebox.box(_, B), inside(P, B).
 
 .comp Determine {
     .init ex = Parse<Example>

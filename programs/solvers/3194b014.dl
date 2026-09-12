@@ -45,6 +45,5 @@ biggest.item($Cells(), K, P) :- comp_cell(K, P).
 
 .init bbox = Bbox<Comp>
 bbox.cell(K, P) :- comp_cell(K, P).
-bbox.grid(K, P) :- bbox.cell(K, _), in(P, _).
 
-biggest.item($Span(), K, P) :- bbox.inside(K, P).
+biggest.item($Span(), K, P) :- bbox.box(K, B), in(P, _), inside(P, B).

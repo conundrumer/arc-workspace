@@ -29,28 +29,29 @@ span.cell([P, Q], R) :- bg_cell(P), bg_cell(Q), ( R = P ; R = Q ).
 
 // Only a diagonal pair spans a square, so the pairs enumerate the frame's
 // squares.
-.decl square(b: Position, n: number)
+.decl square(b: Box, n: number)
 square(B, N) :-
-    span.box(K, B), span.extents(K, _, N, N),
-    params.min_side(M), N >= M.                        // big enough to draw
+    span.cell(K, P), span.box(K, B),                               // the box a pair spans
+    perp(A, A2), box_extent(B, P, A, N), box_extent(B, P, A2, N),  // of equal extents
+    params.min_side(M), N >= M.                                    // big enough to draw
 
-.decl spoiled(b: Position)
+.decl spoiled(b: Box)
 spoiled(B) :- square(B, _), in(P, Col), !params.bg(Col), inside(P, B).
 
-.decl bg_square(b: Position, n: number)
+.decl bg_square(b: Box, n: number)
 bg_square(B, N) :- square(B, N), !spoiled(B).
 
-.decl displaced(b: Position)
+.decl displaced(b: Box)
 displaced(B) :-
     bg_square(B, N), bg_square(B2, N2), N2 > N,  // a strictly larger square
-    in(P, _), inside(P, B), inside(P, B2).             // meets B
+    in(P, _), inside(P, B), inside(P, B2).       // meets B
 
 // --- drawing ---
 
 .decl painted(p: Position)
 painted(P) :-
     bg_square(B, _), !displaced(B),  // a drawn square
-    in(P, _), inside(P, B).             // its cells
+    in(P, _), inside(P, B).          // its cells
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- painted(P), params.mark(Col).

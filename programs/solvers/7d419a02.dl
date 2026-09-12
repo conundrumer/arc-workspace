@@ -104,8 +104,12 @@ step(W, $Fixed()) :- params.step(W).
 unit.cell($Marker(), P) :- mark_cell(P).
 unit.cell($Band(), P) :- mark_band(T), band_of(P, T).
 
-step(W, $Marker()) :- across_axis(A), unit.extent($Marker(), A, W).
-step(W, $Band()) :- band_axis(A), unit.extent($Band(), A, W).
+step(W, $Marker()) :-
+    across_axis(A),
+    unit.cell($Marker(), P), unit.box($Marker(), B), box_extent(B, P, A, W).
+step(W, $Band()) :-
+    band_axis(A),
+    unit.cell($Band(), P), unit.box($Band(), B), box_extent(B, P, A, W).
 
 // --- the cone ---
 

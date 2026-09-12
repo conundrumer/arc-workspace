@@ -22,11 +22,14 @@ place.cell($U(), P) :- mark(P, _).
 .init bbox = Bbox<Unit>
 bbox.cell($U(), P) :- mark(P, _).
 bbox.cell($U(), P) :- in(P, _), place.quadrant($U(), _, Diag), corner_dist(P, Diag, 0).
-bbox.grid($U(), P) :- in(P, _).
+
+// The cells the box covers.
+.decl covered(p: Position)
+covered(P) :- in(P, _), bbox.box($U(), B), inside(P, B).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, C0),
-    ( bbox.inside($U(), P), mark(_, Col)   // the box takes the mark's color
-    ; !bbox.inside($U(), P), Col = C0      // the field passes through
+    ( covered(P), mark(_, Col)   // the box takes the mark's color
+    ; !covered(P), Col = C0      // the field passes through
     ).

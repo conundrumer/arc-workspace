@@ -24,10 +24,9 @@ group.equiv(P, R) :- group.equiv(P, Q), ink(R), axis_elem(A), same_line(A, Q, R)
 
 .init group_box = Bbox<Ident>
 group_box.cell(Id, P) :- group.id(P, Id).
-group_box.grid(Id, P) :- group.id(_, Id), in(P, _).
 
 .decl filled(p: Position)
-filled(P) :- in(P, Col), params.bg(Col), group_box.inside(_, P).
+filled(P) :- in(P, Col), params.bg(Col), group_box.box(_, B), inside(P, B).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :-

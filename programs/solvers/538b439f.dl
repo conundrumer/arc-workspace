@@ -39,10 +39,9 @@ parts.node(Col, P) :- in(P, Col), !field.mode($U(), Col).
 
 .init bbox = Bbox<Ident>
 bbox.cell(Id, P) :- parts.label(_, P, Id).
-bbox.grid(Id, P) :- parts.label(_, _, Id), in(P, _).
 
 .decl hole(id: Ident)
-hole(Id) :- bbox.inside(Id, P), !parts.label(_, P, Id).
+hole(Id) :- in(P, _), bbox.box(Id, B), inside(P, B), !parts.label(_, P, Id).
 
 // The lines a component reaches across each axis.
 .init reach = Unanimous<PartAxis, Position>

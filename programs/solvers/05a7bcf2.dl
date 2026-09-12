@@ -76,7 +76,8 @@ push_box.cell($U(), P) :- push_cell(P).
 
 // It travels its own margin from the far edge.
 .decl push_shift(delta: Offset)
-push_shift(Delta) :- dir(D), push_box.edge_min($U(), D, K), jump_offset(D, K, Delta).
+push_shift(Delta) :-
+    dir(D), push_box.box($U(), B), dist(B, D, K), jump_offset(D, K, Delta).
 
 .decl placed(p: Position, c: Choice)
 placed(P2, $Slide()) :- push_cell(P), push_shift(Delta), compose(P, Delta, P2).

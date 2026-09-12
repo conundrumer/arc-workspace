@@ -57,7 +57,9 @@ cut.divider($U(), A, L) :-
 .init lattice = Bbox<Unit>
 lattice.cell($U(), T) :- ink(P), cut.tile_of($U(), P, T).
 
-ring_cell(P, $Lattice()) :- ink(P), cut.tile_of($U(), P, T), lattice.edge_cell($U(), T, _).
+ring_cell(P, $Lattice()) :-
+    ink(P), cut.tile_of($U(), P, T),            // the tile P sits in
+    lattice.box($U(), B), box_edge(T, B, _).    // on the arrangement's edge
 
 // --- $Blobs, $Sight ---
 
@@ -72,7 +74,7 @@ hull.cell($U(), P) :- ink(P).
 // P shares a tile with a cell on the hull's edge.
 ring_cell(P, $Blobs()) :-
     blob.label($U(), P, Id), blob.label($U(), Q, Id),   // P and Q in one tile
-    hull.edge_cell($U(), Q, _).                         // Q on the hull
+    hull.box($U(), B), box_edge(Q, B, _).               // Q on the hull
 
 // --- $Sight ---
 

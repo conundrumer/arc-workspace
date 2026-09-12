@@ -20,10 +20,13 @@ boxes.node($U(), P) :- in(P, Col), !params.bg(Col).
 
 .init bbox = Bbox<Ident>
 bbox.cell(Id, P) :- boxes.label($U(), P, Id).
-bbox.grid(Id, P) :- boxes.label($U(), _, Id), in(P, _).
+
+// The grid cells a box covers.
+.decl covered(id: Ident, p: Position)
+covered(Id, P) :- bbox.box(Id, B), in(P, _), inside(P, B).
 
 .init wall = Rim<Ident>
-wall.cell(Id, P) :- bbox.inside(Id, P).
+wall.cell(Id, P) :- covered(Id, P).
 
 .decl door(id: Ident, p: Position, d: Dir)
 door(Id, P, D) :-
@@ -33,16 +36,17 @@ door(Id, P, D) :-
 // The rectangle the exits span.
 .init span = Bbox<Unit>
 span.cell($U(), Q) :- door(_, P, D), neighbor(P, D, Q).
-span.grid($U(), P) :- in(P, _).
 
 // The box's shadow: cast from its cells away from the door.
 .init shadow = Ray<Ident>
 shadow.dir(Id, D_back) :- door(Id, _, D), opposite(D, D_back).
-shadow.mark(Id, P) :- bbox.inside(Id, P).
-shadow.cell(Id, P) :- bbox.grid(Id, P).
+shadow.mark(Id, P) :- covered(Id, P).
+shadow.cell(Id, P) :- boxes.label($U(), _, Id), in(P, _).
 
 .decl painted(p: Position)
-painted(P) :- span.inside($U(), P), in(P, Col), params.bg(Col), !shadow.ray(_, P, _, _, _).
+painted(P) :-
+    span.box($U(), B), in(P, Col), inside(P, B),  // a cell of the span
+    params.bg(Col), !shadow.ray(_, P, _, _, _).   // empty, and out of every shadow
 painted(P) :- door(_, P, _).
 
 .decl out(p: Position, col: Color)

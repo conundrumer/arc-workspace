@@ -21,12 +21,16 @@ blocks.node($U(), P) :- in(P, Col), !params.bg(Col).
 .init bb = Bbox<Ident>
 bb.cell(Id, P) :- blocks.label($U(), P, Id).
 
+// The block cell at each corner of its box.
+.decl block_corner(id: Ident, p: Position, d: DiagDir)
+block_corner(Id, P, D) :- blocks.label($U(), P, Id), bb.box(Id, B), box_corner(P, B, D).
+
 // The two corners the chain runs through.
 .decl near(id: Ident, p: Position)
-near(Id, P) :- params.corner(Diag), diag_opposite(Diag, Start), bb.corner(Id, P, Start).
+near(Id, P) :- params.corner(Diag), diag_opposite(Diag, Start), block_corner(Id, P, Start).
 
 .decl far(id: Ident, p: Position)
-far(Id, P) :- params.corner(Diag), bb.corner(Id, P, Diag).
+far(Id, P) :- params.corner(Diag), block_corner(Id, P, Diag).
 
 // Id2 stands further along the order than Id1.
 .decl beyond(id1: Ident, id2: Ident)

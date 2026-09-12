@@ -111,7 +111,8 @@ obj_box.cell(Id, P) :- object_cell(Id, P, _).
 // the object's box that the transform turns toward the wall.
 faces($Edge(), Id, D, Sh, P_out) :-
     seated(Id, D, Sh, P, P_out, Col), wall_toward(P_out, Col, Dir),  // the cell and its wall
-    obj_box.edge_cell(Id, P, Dir_in), apply_dir(D, Dir_in, Dir).     // on the edge turned to the wall
+    obj_box.box(Id, B), box_edge(P, B, Dir_in),                      // on an edge of the object's box
+    apply_dir(D, Dir_in, Dir).                                       // that the transform turns to the wall
 
 // --- Backed, Edge ---
 

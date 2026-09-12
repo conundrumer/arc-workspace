@@ -31,15 +31,20 @@ line_color.item([A, P_line], Col) :- in(P, Col), axis_elem(A), split(P, A, P_lin
 // The fence is the cells of a thin color that fills a whole line. The pen
 // is its bounding box: it touches the grid edge everywhere but toward the
 // open side.
+.decl fence(p: Position)
+fence(P) :- in(P, Col), line_color.value(_, Col), !thick(Col).
+
 .init pen = Bbox<Unit>
-pen.cell($U(), P) :- in(P, Col), line_color.value(_, Col), !thick(Col).
-pen.grid($U(), P) :- in(P, _).
+pen.cell($U(), P) :- fence(P).
 
 .decl open_dir(d: Dir)
-open_dir(D) :- pen.box($U(), M), dir_elem(D), dist(M, D, K), K != 0.
+open_dir(D) :- pen.box($U(), B), dir_elem(D), dist(B, D, K), K != 0.
+
+.decl penned(p: Position)
+penned(P) :- in(P, _), pen.box($U(), B), inside(P, B).
 
 .decl free_cell(p: Position)
-free_cell(P) :- in(P, _), !pen.inside($U(), P).
+free_cell(P) :- in(P, _), !penned(P).
 
 .init free_bg = Mode<Unit, Color, Position>
 free_bg.item($U(), Col, P) :- free_cell(P), in(P, Col).
@@ -51,7 +56,8 @@ mark(P, Col) :- free_cell(P), in(P, Col), !free_bg.mode($U(), Col).
 .decl rest(p: Position, col: Color)
 rest(Q, Col) :-
     mark(P, Col), open_dir(D), axis_of(D, A),                    // a mark and its line across the fence
-    pen.edge_cell($U(), S, D), same_line(A, P, S),               // the fence cell on that line
+    fence(S), pen.box($U(), B), box_edge(S, B, D),               // the fence cell toward D
+    same_line(A, P, S),                                          // on the mark's line
     opposite(D, D_in), neighbor(S, D_in, G),                     // the gate behind it
     ( in(G, Col), neighbor(S, D, Q)                              // gate matches: beside the fence
     ; !in(G, Col), same_line(A, P, Q), in(Q, _), dist(Q, D, 0)   // gate differs: the far edge

@@ -95,8 +95,9 @@ bbox.cell(K, P) :- obj(K, P).
 .decl before(k1: Key, k2: Key)
 before([Ch, C1, I1], [Ch, C2, I2]) :-
     params.order_dir(D),
-    bbox.edge_cell([Ch, C1, I1], P, D), bbox.edge_cell([Ch, C2, I2], Q, D),
-    nearer(D, P, Q).
+    bbox.box([Ch, C1, I1], B1), dist(B1, D, K1),   // each shape's distance from the order edge
+    bbox.box([Ch, C2, I2], B2), dist(B2, D, K2),
+    K1 < K2.
 
 // The lines the earlier shapes' blocks take: how far this block stacks.
 .init offset = Tally<Key, BlockLine>

@@ -61,7 +61,7 @@ seating.cell(Id, P, $U())  :- object(Id, _, _), shape(P).
 .decl fits(id: Ident, delta: Offset, k: number)
 fits(Id, Delta, K) :-
     seating.occurrence(Id, M), relative(M, ZERO, Delta),  // the step undoes the seating
-    toward(_, K, Delta).                                        // and is a straight jump
+    toward(_, K, Delta).                                  // and is a straight jump
 
 .decl step(id: Ident, delta: Offset, ch: Choice)
 
@@ -83,8 +83,11 @@ sbox.cell($U(), P) :- shape(P).
 
 step(Id, Delta, $Abut()) :-
     fits(Id, Delta, _),
-    sbox.extents($U(), _, N, N), toward(D, N, S1),  // clear the square template's extent
-    params.gap(G), toward(D, G, S2),                // then the gap
+    sbox.box($U(), B), shape(P),                       // the template's box, in the grid frame
+    axis_elem(A), perp(A, A2),
+    box_extent(B, P, A, N), box_extent(B, P, A2, N),   // the template is square, of extent N
+    toward(D, N, S1),                                  // clear that extent
+    params.gap(G), toward(D, G, S2),                   // then the gap
     compose(S1, S2, Delta).
 
 // --- output ---

@@ -18,21 +18,24 @@ rects.node($U(), P) :- in(P, Col), params.body(Col).
 
 .init rect_box = Bbox<Ident>
 rect_box.cell(Id, P) :- rects.label($U(), P, Id).
-rect_box.grid(Id, P) :- rect_box.cell(Id, _), in(P, _).
+
+// A grid cell the rectangle's box covers.
+.decl within(id: Ident, p: Position)
+within(Id, P) :- in(P, _), rect_box.box(Id, B), inside(P, B).
 
 .decl marker(id: Ident, p: Position, col: Color)
-marker(Id, P, Col) :- rect_box.inside(Id, P), in(P, Col), !params.body(Col).
+marker(Id, P, Col) :- within(Id, P), in(P, Col), !params.body(Col).
 
 .init marker_count = Tally<Ident, Position>
 marker_count.item(Id, P) :- marker(Id, P, _).
 
-.decl ring_box(id: Ident, b: Position)
+.decl ring_box(id: Ident, b: Box)
 ring_box(Id, B) :-
-    marker_count.tally(Id, K), uniform_inset(K, W),  // one cell of width per marker
-    rect_box.box(Id, M), relative(W, M, B).   // the rectangle's box, let out by it
+    marker_count.tally(Id, K), uniform_outset(K, B_frame),  // the frame let out, one cell per marker
+    rect_box.box(Id, B_rect), compose(B_frame, B_rect, B).  // the rectangle's box seated in it
 
 .decl ring(id: Ident, p: Position)
-ring(Id, P) :- in(P, _), ring_box(Id, B), inside(P, B), !rect_box.inside(Id, P).
+ring(Id, P) :- in(P, _), ring_box(Id, B), inside(P, B), !within(Id, P).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- ring(Id, P), marker(Id, _, Col).

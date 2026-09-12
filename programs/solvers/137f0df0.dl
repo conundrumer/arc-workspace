@@ -24,7 +24,10 @@ block(P) :- in(P, Col), !params.bg(Col).
 
 .init bx = Bbox<Unit>
 bx.cell($U(), P) :- block(P).
-bx.grid($U(), P) :- in(P, _).
+
+// A grid cell the field's box covers.
+.decl covered(p: Position)
+covered(P) :- bx.box($U(), B), in(P, _), inside(P, B).
 
 // A cell whose line along axis a carries a block.
 .decl block_line(a: Axis, p: Position)
@@ -34,12 +37,12 @@ block_line(A, P) :- in(P, _), axis_elem(A), block(Q), same_line(A, P, Q).
 .decl gap_cell(p: Position)
 gap_cell(P) :-
     in(P, _), axis_elem(A), !block_line(A, P),
-    bx.inside($U(), Q), same_line(A, P, Q).   // the line meets the field's box
+    covered(Q), same_line(A, P, Q).   // the line meets the field's box
 
 .decl out(p: Position, col: Color)
 out(P, Col) :-
     gap_cell(P),
-    ( bx.inside($U(), P), params.inside_paint(Col)     // inside the field's box
-    ; !bx.inside($U(), P), params.outside_paint(Col)   // beyond it
+    ( covered(P), params.inside_paint(Col)     // inside the field's box
+    ; !covered(P), params.outside_paint(Col)   // beyond it
     ).
 out(P, Col) :- in(P, Col), !gap_cell(P).

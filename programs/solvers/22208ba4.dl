@@ -36,8 +36,9 @@ mover(Id, Diag) :- corner_block(Id, Diag, Col), corner_block(Id2, _, Col), Id !=
 .decl moved_cell(p: Position, col: Color)
 moved_cell(Q, Col) :-
     mover(Id, Diag), diag_opposite(Diag, Diag_in),              // the corner it moves toward
-    blocks.label(Col, P, Id),                                   // its cells
-    bbox.extents(Id, A, N1, N2), diag_dirs(Diag_in, A, D1, D2),
+    blocks.label(Col, P, Id), bbox.box(Id, B),                  // its cells and its box
+    diag_dirs(Diag_in, A, D1, D2), perp(A, A2),                 // that corner's two dirs, axis-tagged
+    box_extent(B, P, A, N1), box_extent(B, P, A2, N2),          // the block's extent each way
     jump(P, D1, N1, P_step), jump(P_step, D2, N2, Q).           // one block-length each way
 
 .decl vacated(p: Position)

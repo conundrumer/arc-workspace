@@ -118,4 +118,5 @@ square.extent($Count(), A, N) :- axis_elem(A), mark_tally.tally($U(), N).
 span.cell($U(), P) :- mark(P, _).
 
 square.extent($Span(), A, N) :-
-    axis_elem(A), params.span_axis(A2), span.extent($U(), A2, N).
+    axis_elem(A), params.span_axis(A2),
+    span.box($U(), B), mark(P, _), box_extent(B, P, A2, N).   // how far the marks reach

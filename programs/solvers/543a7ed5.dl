@@ -55,28 +55,32 @@ shape.node($U(), P) :- shape_cell(P).
 
 .init shape_box = Bbox<Ident>
 shape_box.cell(Id, P) :- shape.label($U(), P, Id).
-shape_box.grid(Id, P) :- shape.label($U(), _, Id), in(P, _).
+
+// A grid cell a shape's box covers.
+.decl within(id: Ident, p: Position)
+within(Id, P) :- in(P, _), shape_box.box(Id, B), inside(P, B).
 
 // --- fill ---
 
 .decl fill_cell(p: Position, f: Fill)
 fill_cell(P, $Enclosed()) :- bg_cell(P), !outside.reach($U(), P).
-fill_cell(P, $Boxed()) :- bg_cell(P), shape_box.inside(_, P).
+fill_cell(P, $Boxed()) :- bg_cell(P), within(_, P).
 
 // --- outline ---
 
-.decl ring_box(id: Ident, b: Position)
+.decl ring_box(id: Ident, b: Box)
 ring_box(Id, B) :-
-    shape_box.box(Id, M),
-    params.ring_width(K), uniform_inset(K, W), relative(W, M, B).  // the box let out
+    shape_box.box(Id, B_shape),
+    params.ring_width(K), uniform_outset(K, B_frame),  // the frame let out by the ring's width
+    compose(B_frame, B_shape, B).                      // the shape's box seated in it
 
 .decl ring(id: Ident, p: Position)
-ring(Id, P) :- in(P, _), ring_box(Id, B), inside(P, B), !shape_box.inside(Id, P).
+ring(Id, P) :- in(P, _), ring_box(Id, B), inside(P, B), !within(Id, P).
 
 .decl outline_cell(p: Position, o: Outline)
 outline_cell(P, $Band()) :-
-    outside.reach($U(), P),                             // bg outside the shapes
-    shape_cell(M), dir8_elem(D), neighbor(M, D, P).     // one step off a shape
+    outside.reach($U(), P),                                       // bg outside the shapes
+    shape_cell(P_shape), dir8_elem(D), neighbor(P_shape, D, P).   // one step off a shape
 outline_cell(P, $Ring()) :- bg_cell(P), ring(_, P).
 
 // --- output ---

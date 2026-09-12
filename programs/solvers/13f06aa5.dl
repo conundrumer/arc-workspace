@@ -61,7 +61,7 @@ bbox.cell(Id, P) :- comps.label($U(), P, Id).
 
 mark_dir(P, D, $Side()) :-
     mark(P, _), comps.label($U(), P, Id),   // the marker's shape
-    bbox.edge_cell(Id, P, D).                // the box side it lies on
+    bbox.box(Id, B), box_edge(P, B, D).     // the box side it lies on
 
 // --- output ---
 

@@ -38,10 +38,9 @@ ink(P, Col) :- in(P, Col), !params.bg(Col).
 // is the other one.
 .init color_box = Bbox<Color>
 color_box.cell(Col, P) :- ink(P, Col).
-color_box.grid(Col, P) :- ink(_, Col), in(P, _).
 
 .decl gap(col: Color)
-gap(Col) :- color_box.inside(Col, P), !in(P, Col).
+gap(Col) :- color_box.box(Col, B), in(P, _), inside(P, B), !in(P, Col).
 
 .decl occluder(p: Position)
 occluder(P) :- ink(P, Col), !gap(Col).

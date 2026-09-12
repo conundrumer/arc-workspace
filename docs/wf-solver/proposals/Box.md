@@ -415,7 +415,6 @@ Reimplementations:
 
 - 8698868d interior.cell — `box.margin(Id, M), in(P, _), gt(P, M)` is `BoxCells.hole`, the box's strict interior over a caller-supplied domain. The file already holds the `BoxFrame` the margins come from and inits no `BoxCells`.
 - 8f215267 view.cell — `view.outer(B, _), in(P, _), gt(P, B)` is `BoxCells.hole`, and the file already inits `bcells = BoxCells<Position>` for its other case's boxes.
-- 84f2aca1 region — `rect_id.id(B, Id), bg_cell(P), gt(P, B)` is `BoxCells.hole` over the bg cells, with the box coming from `DrawnRect` through a `Canon`.
 
 A near-miss of the same class is not one: 8731374e covered, 8a6d367c crop.cell, and 543a7ed5 ring use `geq`, the covered cells including the edge line, which `BoxCells` does not expose.
 

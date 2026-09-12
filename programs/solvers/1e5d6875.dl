@@ -66,28 +66,40 @@
 step_choice($Rotate()).
 step_choice($Lookup()).
 
+.comp Parse<Key> {
+    // A piece's cells.
+    .decl cell(key: Key, p: Position)  // input
+
+    .init bbox = Bbox<Key>
+    bbox.cell(K, P) :- cell(K, P).
+
+    // A piece cell at a corner of its box.
+    .decl corner_cell(key: Key, p: Position, diag: DiagDir)
+    corner_cell(K, P, Diag) :- cell(K, P), bbox.box(K, B), box_corner(P, B, Diag).
+
+    // The corner of the piece's box that the piece leaves empty.
+    .decl open_diag(key: Key, diag: DiagDir)
+    open_diag(K, Diag) :- cell(K, _), diag_dir_elem(Diag), !corner_cell(K, _, Diag).
+}
+
 .init parts = Components<Color>
 parts.node(Col, P) :- in(P, Col), !params.bg(Col).
 
 .decl piece_cell(o: Obj, p: Position)
 piece_cell([Col, Id], P) :- parts.label(Col, P, Id).
 
-.init bbox = Bbox<Obj>
-bbox.cell(O, P) :- piece_cell(O, P).
-
-// The corner of the piece's box that the piece leaves empty.
-.decl open_diag(o: Obj, diag: DiagDir)
-open_diag(O, Diag) :- bbox.cell(O, _), diag_dir_elem(Diag), !bbox.corner(O, _, Diag).
+.init parse = Parse<Obj>
+parse.cell(O, P) :- piece_cell(O, P).
 
 .decl step_dir(o: Obj, dir: DiagDir, s: Step)
 
 // --- Rotate ---
 step_dir([Col, Id], D, $Rotate()) :-
-    open_diag([Col, Id], Diag),                         // the piece's open corner
+    parse.open_diag([Col, Id], Diag),                   // the piece's open corner
     params.rot(Col, Rot), apply_diag_dir(Rot, Diag, D). // turned by the piece color's rotation
 
 // --- Lookup ---
-step_dir([Col, Id], D, $Lookup()) :- open_diag([Col, Id], Diag), params.step(Col, Diag, D).
+step_dir([Col, Id], D, $Lookup()) :- parse.open_diag([Col, Id], Diag), params.step(Col, Diag, D).
 
 // --- shared ---
 
@@ -128,11 +140,8 @@ out(P, Col, [S, $Cover()]) :-
     .decl piece_cell(o: ExObj, p: Position)
     piece_cell([E, Col, Id], P) :- parts.label([E, Col], P, Id).
 
-    .init bbox = Bbox<ExObj>
-    bbox.cell(O, P) :- piece_cell(O, P).
-
-    .decl open_diag(o: ExObj, diag: DiagDir)
-    open_diag(O, Diag) :- bbox.cell(O, _), diag_dir_elem(Diag), !bbox.corner(O, _, Diag).
+    .init parse = Parse<ExObj>
+    parse.cell(O, P) :- piece_cell(O, P).
 
     // Cells the output repaints.
     .decl painted(e: Example, p: Position, col: Color)
@@ -151,7 +160,7 @@ out(P, Col, [S, $Cover()]) :-
 
     .decl step(src: Color, open: DiagDir, dir: DiagDir)
     step(Col, Diag, D) :-
-        open_diag([E, Col, Id], Diag),                              // a piece's open corner
+        parse.open_diag([E, Col, Id], Diag),                        // a piece's open corner
         copy_land([E, Col, Id], D, _), !off_step([E, Col, Id], D).  // its whole copy repainted
 
     // Candidates range over the rotations, the domain params.rot names.
@@ -166,7 +175,7 @@ out(P, Col, [S, $Cover()]) :-
     .decl copy_cell(o: ExObj, p: Position)
     copy_cell([E, Col, Id], Q) :-
         copy_land([E, Col, Id], D, Q),
-        open_diag([E, Col, Id], Diag), step(Col, Diag, D).
+        parse.open_diag([E, Col, Id], Diag), step(Col, Diag, D).
 
     // The colors a piece's copy shows. A copy overrun by a higher-precedence
     // one shows that color too, so a color's own mark is the one every piece

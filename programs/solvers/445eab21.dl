@@ -28,16 +28,12 @@
 .decl ink(p: Position, col: Color)
 ink(P, Col) :- in(P, Col), !params.bg(Col).
 
-.decl ink_color(col: Color)
-ink_color(Col) :- ink(_, Col).
-
 .init bbox = Bbox<Color>
 bbox.cell(Col, P) :- ink(P, Col).
-bbox.grid(Col, P) :- ink_color(Col), in(P, _).
 
 // What each color closes off from the grid edge.
 .init closed = Closed<Color>
-closed.cell(Col, P) :- ink_color(Col), in(P, Col2), Col2 != Col.
+closed.cell(Col, P) :- ink(_, Col), in(P, Col2), Col2 != Col.
 
 // --- how big each color is, per measure ---
 
@@ -48,12 +44,14 @@ closed.cell(Col, P) :- ink_color(Col), in(P, Col2), Col2 != Col.
 // $Enclose, $Box and $Area count a cell set.
 .init measure = Tally<MKey, Position>
 measure.item([Col, $Enclose()], P) :- closed.region(Col, P, _).
-measure.item([Col, $Box()], P)     :- bbox.inside(Col, P), in(P, Col2), params.bg(Col2).
-measure.item([Col, $Area()], P)    :- bbox.inside(Col, P).
+measure.item([Col, $Box()], P) :-
+    bbox.box(Col, B), in(P, Col2), params.bg(Col2), inside(P, B).
+measure.item([Col, $Area()], P) :- bbox.box(Col, B), in(P, _), inside(P, B).
 
 winner.cand(Ch, Col, N) :- measure.tally([Col, Ch], N).
 
-winner.cand($Extent(), Col, N) :- params.axis(A), bbox.extent(Col, A, N).
+winner.cand($Extent(), Col, N) :-
+    params.axis(A), bbox.cell(Col, P), bbox.box(Col, B), box_extent(B, P, A, N).
 
 // --- output ---
 

@@ -42,34 +42,45 @@ corner_color(Diag, Col) :- in(P, Col), corner_dist(P, Diag, 0).
 
 // --- $Lines ---
 
-// A line lies across axis a, at the axis-only position l. Its defect: a cell
-// off the separator color.
-.decl off_line(a: Axis, l: Position)
-off_line(A, L) :- in(P, Col), !params.line(Col), axis_elem(A), split(P, A, L, _).
+// The line-fenced interior, read the same way from the grid and from an
+// example.
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)  // input
 
-// The parts the separator lines cut the grid into.
-.init cut = DividerTiles<Unit>
-cut.cell($U(), P) :- in(P, _).
-cut.divider($U(), A, L) :-
-    in(P, _), axis_elem(A), split(P, A, L, _),   // a line across axis A
-    !off_line(A, L).                             // every cell the separator color
+    // A line lies across axis a, at the axis-only position l. Its defect: a cell
+    // off the separator color.
+    .decl off_line(key: Key, a: Axis, l: Position)
+    off_line(K, A, L) :-
+        cell(K, P, Col), !params.line(Col), axis_elem(A), split(P, A, L, _).
 
-// A separator line stands between p and edge d: p's part is not the
-// outermost one toward d.
-.decl screened(p: Position, d: Dir)
-screened(P, D) :- cut.part_idx($U(), P, D, N), N != 0.
+    // The parts the separator lines cut the grid into.
+    .init cut = DividerTiles<Key>
+    cut.cell(K, P) :- cell(K, P, _).
+    cut.divider(K, A, L) :-
+        cell(K, P, _), axis_elem(A), split(P, A, L, _),   // a line across axis A
+        !off_line(K, A, L).                               // every cell the separator color
 
-.decl unscreened(p: Position)
-unscreened(P) :- in(P, _), dir_elem(D), !screened(P, D).
+    // A separator line stands between p and edge d: p's part is not the
+    // outermost one toward d.
+    .decl screened(key: Key, p: Position, d: Dir)
+    screened(K, P, D) :- cut.part_idx(K, P, D, N), N != 0.
 
-// The cells a separator line screens from every edge.
-.decl fenced(p: Position)
-fenced(P) :- in(P, _), !unscreened(P).
+    .decl unscreened(key: Key, p: Position)
+    unscreened(K, P) :- cell(K, P, _), dir_elem(D), !screened(K, P, D).
 
-.init bbox = Bbox<Unit>
-bbox.cell($U(), P) :- fenced(P).
+    // The cells a separator line screens from every edge.
+    .decl fenced(key: Key, p: Position)
+    fenced(K, P) :- cell(K, P, _), !unscreened(K, P).
 
-interior_cell($Lines(), P, P_inner) :- fenced(P), bbox.box($U(), B), crop(P, B, P_inner).
+    .init fence_box = Bbox<Key>
+    fence_box.cell(K, P) :- fenced(K, P).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+interior_cell($Lines(), P, P_inner) :-
+    parse.fenced($U(), P), parse.fence_box.box($U(), B), crop(P, B, P_inner).
 
 // --- $Margin ---
 
@@ -102,31 +113,11 @@ out(P_inner, Col, [Ic, $Bg()]) :-
     in(P, C0), !params.ink(C0), interior_cell(Ic, P, P_inner), params.bg(Col).
 
 .comp Determine {
-    // The line-fenced interior — the boundary both interior hypotheses read.
-    .decl off_line(e: Example, a: Axis, l: Position)
-    off_line(E, A, L) :-
-        ex_in(E, P, Col), !params.line(Col), axis_elem(A), split(P, A, L, _).
-
-    .init cut = DividerTiles<Example>
-    cut.cell(E, P) :- ex_in(E, P, _).
-    cut.divider(E, A, L) :-
-        ex_in(E, P, _), axis_elem(A), split(P, A, L, _),   // a line across axis A
-        !off_line(E, A, L).                                // every cell the separator color
-
-    .decl screened(e: Example, p: Position, d: Dir)
-    screened(E, P, D) :- cut.part_idx(E, P, D, N), N != 0.
-
-    .decl unscreened(e: Example, p: Position)
-    unscreened(E, P) :- ex_in(E, P, _), dir_elem(D), !screened(E, P, D).
-
-    .decl inner_cell(e: Example, p: Position)
-    inner_cell(E, P) :- ex_in(E, P, _), !unscreened(E, P).
-
-    .init bbox = Bbox<Example>
-    bbox.cell(E, P) :- inner_cell(E, P).
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
 
     // The fenced interior stands the same depth in from every edge of every
     // example, so that depth is the margin.
     .decl margin(k: number)
-    margin(K) :- bbox.edge_min(_, _, K).
+    margin(K) :- parse.fence_box.box(_, B), dir_elem(D), dist(B, D, K).
 }

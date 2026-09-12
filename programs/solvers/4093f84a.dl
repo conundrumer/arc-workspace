@@ -30,15 +30,16 @@ bbox.cell($U(), P) :- stripe_cell(P).
 // The stripe reaches both edges of one axis; the sides lie across that axis.
 .decl side(d: Dir)
 side(D) :-
-    bbox.box($U(), M),
-    axis_elem(A), split(M, A, ZERO, _),   // the axis the stripe spans
-    perp(A, A2), axis_of(D, A2).            // a direction across it
+    bbox.box($U(), B),
+    axis_elem(A), split(B, A, ZERO, _),   // the axis the stripe spans
+    perp(A, A2), axis_of(D, A2).
 
 // The stripe's outermost cell on each side looks out along its line.
 .init spread = Ray<Dir>
 spread.dir(D, D) :- side(D).
 spread.cell(D, P) :- side(D), in(P, _).
-spread.mark(D, P) :- side(D), bbox.edge_cell($U(), P, D).
+spread.mark(D, P) :-
+    side(D), stripe_cell(P), bbox.box($U(), B), box_edge(P, B, D).
 
 .init pile = Tally<Side, Position>
 pile.item([D, Src], P) :- spread.ray(D, P, D, _, Src), dot(P).

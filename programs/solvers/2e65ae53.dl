@@ -24,20 +24,23 @@ frames.node($U(), P) :- in(P, Col), ink.mode($U(), Col).
 
 .init bbox = Bbox<Ident>
 bbox.cell(Id, P) :- frames.label($U(), P, Id).
-bbox.grid(Id, P) :- frames.label($U(), _, Id), in(P, _).
+
+// The grid cells each frame's box covers.
+.decl box_cell(id: Ident, p: Position)
+box_cell(Id, P) :- bbox.box(Id, B), in(P, _), inside(P, B).
 
 // A frame's border is one of the cutting lines, and counting it offsets every
 // tile index alike, so tile positions still match across frames.
 .decl broken(id: Ident, l: Position)
 broken(Id, L) :-
-    bbox.inside(Id, P), in(P, Col), !ink.mode($U(), Col), // a non-ink cell of the box
-    axis_elem(A), split(P, A, L, _).                     // on line L
+    box_cell(Id, P), in(P, Col), !ink.mode($U(), Col),  // a non-ink cell of the box
+    axis_elem(A), split(P, A, L, _).                    // on line L
 
 .init cut = DividerTiles<Ident>
-cut.cell(Id, P) :- bbox.inside(Id, P).
+cut.cell(Id, P) :- box_cell(Id, P).
 cut.divider(Id, A, L) :-
-    bbox.inside(Id, P), axis_elem(A), split(P, A, L, _), // a line of the frame's box
-    !broken(Id, L).                                     // ink the whole way across
+    box_cell(Id, P), axis_elem(A), split(P, A, L, _),  // a line of the frame's box
+    !broken(Id, L).                                    // ink the whole way across
 
 // One color per tile position, shown by whichever frames fill that tile.
 .decl tile_color(p_tile: Position, col: Color)

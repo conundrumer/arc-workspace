@@ -27,7 +27,7 @@ bbox.cell(Id, P) :- blocks.label($U(), P, Id).
 
 // Each block with its distance from the anchor edge.
 .decl block_dist(id: Ident, k: number)
-block_dist(Id, K) :- params.anchor(D), bbox.edge_min(Id, D, K).
+block_dist(Id, K) :- params.anchor(D), bbox.box(Id, B), dist(B, D, K).
 
 .init seq = Ordinal<Unit>
 seq.idx_set($U(), K) :- block_dist(_, K).

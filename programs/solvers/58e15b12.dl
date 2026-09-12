@@ -29,11 +29,12 @@ bbox.cell(Col, P) :- in(P, Col), !params.bg(Col).
 .decl trace(col: Color, p: Position, d_step: Dir, d_out: Dir)
 trace(Col, P, D_step, D_out) :-
     params.bar_axis(A), perp(A, A2),
-    bbox.edge_cell(Col, P, D_out), axis_of(D_out, A2),        // the side of the pair it sits on
+    bbox.cell(Col, P), bbox.box(Col, B),
+    box_edge(P, B, D_out), axis_of(D_out, A2),               // the side of the pair it sits on
     axis_of(D_step, A).                                      // either way along the axis
 trace(Col, Q, D_step, D_out) :-
     trace(Col, P, D_step, D_out),
-    params.bar_axis(A), bbox.extent(Col, A, N),
+    params.bar_axis(A), bbox.box(Col, B), box_extent(B, P, A, N),
     jump(P, D_step, N, P_on), neighbor(P_on, D_out, Q),      // a bar length on, a cell wider
     in(Q, _).                                                // while it stays in frame
 

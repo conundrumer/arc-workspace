@@ -54,8 +54,9 @@ bbox.cell([Ch, Id], P) :- group(Ch, P, Id).
 // The line a block leads with, as an axis-only position.
 .decl front(ky: Grp, l: Position)
 front(Ky, L) :-
-    params.align_dir(D), bbox.edge_cell(Ky, P, D),  // the block's cell on that edge
-    axis_of(D, A), split(P, A, L, _).              // its line along the move axis
+    params.align_dir(D), bbox.cell(Ky, P),
+    bbox.box(Ky, B), box_edge(P, B, D),  // the block's cell on that edge
+    axis_of(D, A), split(P, A, L, _).    // its line along the move axis
 
 // The move that brings a block's front line onto the anchor's.
 .decl slide(ky: Grp, delta: Offset)

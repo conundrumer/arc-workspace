@@ -1,13 +1,14 @@
 // 62b74c02
 // concept: lines span stamp select
 // An ink block anchored at one edge, the rest bg. The output stamps a copy
-// of the block flush at the empty edge and fills the span between, per
-// line, from a boundary column of the block. Two independent nodes:
+// of the block flush at the empty edge and fills the span between: each line
+// there takes the color of the block's boundary cell in it. Two independent
+// choice points:
 //
 //   dir:  the empty edge — $Dir: params.dir names it; $Edge: the edge no ink
 //         touches.
-//   fill: the boundary column copied — $Outer: at the anchor edge; $Inner:
-//         facing the gap.
+//   fill: which boundary of the block is copied — $Outer: at the anchor edge;
+//         $Inner: facing the gap.
 
 #include "../lib.dl"
 
@@ -36,13 +37,13 @@ bbox.cell($U(), P) :- ink(P, _).
 empty_dir(D, $Dir()) :- params.dir(D).
 
 // --- $Edge ---
-empty_dir(D, $Edge()) :- bbox.edge_min($U(), D, M), M != 0.
+empty_dir(D, $Edge()) :- bbox.box($U(), B), dir_elem(D), dist(B, D, M), M != 0.
 
 // Copy of the block flush at the empty edge.
 .decl copy(p: Position, col: Color, dc: DirCh)
 copy(P2, Col, Dc) :-
     ink(P, Col),                                  // block cell
-    empty_dir(D, Dc), bbox.edge_min($U(), D, M),   // empty edge, block margin
+    empty_dir(D, Dc), bbox.box($U(), B), dist(B, D, M),   // empty edge, block margin
     jump(P, D, M, P2).                            // jumped flush to it
 
 // The block boundary the fill copies from.
@@ -59,13 +60,13 @@ fill_edge(D, Dc, $Inner()) :- empty_dir(D, Dc).
 fill(P, Col, Dc, Fc) :-
     in(P, Bg), params.bg(Bg), !copy(P, _, Dc), // empty cell, not under the copy
     fill_edge(E, Dc, Fc),                      // the block boundary copied
-    bbox.edge_cell($U(), Q, E), ink(Q, Col),    // its cell and color
+    ink(Q, Col), bbox.box($U(), B), box_edge(Q, B, E),   // its cell and color
     axis_of(E, A), same_line(A, P, Q).
 
-.decl fill_elem(fc: FillCh)
-fill_elem($Outer()). fill_elem($Inner()).
+.decl fill_choice(fc: FillCh)
+fill_choice($Outer()). fill_choice($Inner()).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, [Dc, Fc]) :- ink(P, Col), empty_dir(_, Dc), fill_elem(Fc).
-out(P, Col, [Dc, Fc]) :- copy(P, Col, Dc), fill_elem(Fc).
+out(P, Col, [Dc, Fc]) :- ink(P, Col), empty_dir(_, Dc), fill_choice(Fc).
+out(P, Col, [Dc, Fc]) :- copy(P, Col, Dc), fill_choice(Fc).
 out(P, Col, [Dc, Fc]) :- fill(P, Col, Dc, Fc).

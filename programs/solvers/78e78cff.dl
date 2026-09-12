@@ -43,13 +43,16 @@ frame(P) :- in(P, Col), !palette.mode($U(), Col), !seed(_, Col).
 
 .init bbox = Bbox<Unit>
 bbox.cell($U(), P) :- frame(P).
-bbox.grid($U(), P) :- in(P, _).
+
+// The grid cells the frame's box covers.
+.decl box_cell(p: Position)
+box_cell(P) :- bbox.box($U(), B), in(P, _), inside(P, B).
 
 .decl fill(p: Position, ch: Choice)
 
 // --- $Leak ---
 .init flood = Reach<Unit>
-flood.node($U(), P) :- bbox.inside($U(), P), !frame(P).
+flood.node($U(), P) :- box_cell(P), !frame(P).
 flood.seed($U(), P) :- seed(P, _).
 
 .init leak = Ray<Unit>
@@ -67,7 +70,7 @@ fill(P, $Leak()) :- leak.clear($U(), P, _, _, _).
 cross.dir(A, D) :- axis_of(D, A).
 cross.cell(A, P) :- axis_elem(A), in(P, _).
 cross.mark(A, P) :-
-    bbox.inside($U(), P), !frame(P),                       // a non-frame box cell
+    box_cell(P), !frame(P),                                // a non-frame box cell
     seed(S, _), same_line(A_seed, P, S), perp(A_seed, A).  // on the seed's line
 cross.blocked(A, P) :- axis_elem(A), frame(P).
 

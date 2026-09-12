@@ -58,7 +58,7 @@ frame(P) :- params.legend_dir(D), opposite(D, D2), cut.part_idx($U(), P, D2, 0).
 fbox.cell($U(), P) :- frame(P).
 
 .decl border(p: Position, d: Dir)
-border(P, D) :- fbox.edge_cell($U(), P, D).
+border(P, D) :- frame(P), fbox.box($U(), B), box_edge(P, B, D).
 
 // The border's own ground, against which a mark stands out.
 .init bmode = Mode<Unit, Color, Position>

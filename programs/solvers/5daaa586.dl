@@ -34,7 +34,7 @@ impl_choice($LineMatch()).
 .decl gapped(a: Axis, l: Position)
 gapped(A, L) :- in(P, Col), params.bg(Col), axis_elem(A), split(P, A, L, _).
 
-// A line of family a that no background cell breaks.
+// A line, at position l on axis a, that no background cell breaks.
 .decl divider(a: Axis, l: Position)
 divider(A, L) :- in(P, _), axis_elem(A), split(P, A, L, _), !gapped(A, L).
 
@@ -43,17 +43,16 @@ divider(A, L) :- in(P, _), axis_elem(A), split(P, A, L, _), !gapped(A, L).
 .init bound = Extremes<Dir>
 bound.cand(D, K) :- divider(A, L), axis_of(D, A), dist(L, D, K).    // divider distance toward D
 
-.init view = MarginFrame<Unit>
-view.cell($U(), P) :- in(P, _).
-view.width($U(), D, K) :- bound.low(D, K).                          // the nearest divider toward D
+.init bound_box = DirPack<Unit>
+bound_box.edge($U(), D, K) :- bound.low(D, K).                      // the nearest divider toward D
 
 // A grid cell on the box's border line toward d.
 .decl border(p: Position, d: Dir)
-border(P, D) :- view.margin($U(), B), in(P, _), box_edge(P, B, D).
+border(P, D) :- bound_box.box($U(), B), in(P, _), box_edge(P, B, D).
 
 // A grid cell strictly inside the box.
 .decl inner(p: Position)
-inner(P) :- view.margin($U(), B), in(P, _), interior(P, B).
+inner(P) :- bound_box.box($U(), B), in(P, _), interior(P, B).
 
 // --- marks cast to the border they match ---
 
@@ -69,7 +68,7 @@ fill(P, Col, Ch) :- cast.ray([Ch, D], P, D, _, S), in(S, Col).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P_crop, Col, Ch) :-
-    impl_choice(Ch), view.inner($U(), P, P_crop),
+    impl_choice(Ch), bound_box.box($U(), B), in(P, _), crop(P, B, P_crop),
     ( fill(P, Col, Ch)
     ; !fill(P, _, Ch), in(P, Col)
     ).

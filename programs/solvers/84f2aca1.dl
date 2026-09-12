@@ -60,9 +60,8 @@ objs.node($U(), P) :- ink(P).
 
 .init obox = Bbox<Ident>
 obox.cell(Id, P) :- objs.label($U(), P, Id).
-obox.grid(Id, P) :- objs.label($U(), _, Id), in(P, _).
 
-region($Box(), Id, P) :- obox.inside(Id, P), bg_cell(P).
+region($Box(), Id, P) :- obox.box(Id, B), bg_cell(P), inside(P, B).
 
 // $Enclose: the bg regions closed off from the grid edge.
 .init closed = Closed<Unit>
@@ -82,7 +81,10 @@ fill(R, Id, Col, $Count()) :- region_size.tally([R, Id], N), params.count_fill(N
 .init rbox = Bbox<RegionKey>
 rbox.cell([R, Id], P) :- region(R, Id, P).
 
-fill(R, Id, Col, $Extent()) :- rbox.extents([R, Id], _, N1, N2), params.extent_fill(N1, N2, Col).
+fill(R, Id, Col, $Extent()) :-
+    rbox.box([R, Id], B), region(R, Id, P),                            // the region's box, in the grid's frame
+    box_extent(B, P, A, N1), perp(A, A2), box_extent(B, P, A2, N2),    // its extents on both axes
+    params.extent_fill(N1, N2, Col).
 
 // --- output ---
 
@@ -125,5 +127,7 @@ out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !painted(P, _, Ch).
     hbox.cell(H, P) :- hole(H, P, _).
 
     .decl extent_fill(n_short: number, n_long: number, col: Color)
-    extent_fill(N1, N2, Col) :- hbox.extents(H, _, N1, N2), N1 <= N2, hole(H, _, Col).
+    extent_fill(N1, N2, Col) :-
+        hbox.box(H, B), hole(H, P, Col),                                // the hole's box, in the grid's frame
+        box_extent(B, P, A, N1), perp(A, A2), box_extent(B, P, A2, N2), N1 <= N2.
 }

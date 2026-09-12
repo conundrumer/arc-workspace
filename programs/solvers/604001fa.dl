@@ -32,9 +32,14 @@
     .init bbox = Bbox<KI>
     bbox.cell([K, Id], P) :- object.label(K, P, Id), cell(K, P, Col), params.mark(Col).
 
+    // The corners of the mark's box that its cells fill.
+    .decl filled_corner(k: Key, id: Ident, diag: DiagDir)
+    filled_corner(K, Id, Diag) :-
+        bbox.cell([K, Id], P), bbox.box([K, Id], B), box_corner(P, B, Diag).
+
     .decl missing_corner(k: Key, id: Ident, diag: DiagDir)
     missing_corner(K, Id, Diag) :-
-        bbox.cell([K, Id], _), diag_dir_elem(Diag), !bbox.corner([K, Id], _, Diag).
+        bbox.cell([K, Id], _), diag_dir_elem(Diag), !filled_corner(K, Id, Diag).
 
     .decl shape_cell(k: Key, p: Position, id: Ident)
     shape_cell(K, P, Id) :- object.label(K, P, Id), cell(K, P, Col), !params.mark(Col).

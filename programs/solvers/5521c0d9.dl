@@ -30,8 +30,9 @@
     // Each block cell carried the block's own length along the move.
     .decl moved(key: Key, p: Position, col: Color)
     moved(Ky, P_out, Col) :-
-        cell(Ky, P, Col), objs.label(Ky, P, Id),                  // a block cell
-        dir(Ky, D), axis_of(D, A), bbox.extent([Ky, Id], A, N),    // its block's length along the move
+        cell(Ky, P, Col), objs.label(Ky, P, Id),            // a block cell
+        dir(Ky, D), axis_of(D, A),
+        bbox.box([Ky, Id], B), box_extent(B, P, A, N),      // its block's length along the move
         jump(P, D, N, P_out).
 }
 

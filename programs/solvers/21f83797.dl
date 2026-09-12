@@ -35,13 +35,16 @@ on_line(P, M) :- in(P, _), mark(M), axis_elem(A), same_line(A, P, M).
 
 .init bbox = Bbox<Unit>
 bbox.cell($U(), P) :- mark(P).
-bbox.grid($U(), P) :- in(P, _).
+
+// A grid cell the marks' box covers.
+.decl spanned(p: Position)
+spanned(P) :- in(P, _), bbox.box($U(), B), inside(P, B).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     impl_choice(Ch), in(P, _), !on_line(P, _),
-    ( bbox.inside($U(), P), params.fill(Col)
-    ; !bbox.inside($U(), P), params.bg(Col) ).
+    ( spanned(P), params.fill(Col)
+    ; !spanned(P), params.bg(Col) ).
 
 // --- Ink ---
 out(P, Col, $Ink()) :- on_line(P, _), params.line(Col).

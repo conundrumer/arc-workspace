@@ -24,29 +24,37 @@ fig(P) :- in(P, Col), !params.bg(Col).
 
 .init fig_box = Bbox<Unit>
 fig_box.cell($U(), P) :- fig(P).
-fig_box.grid($U(), P) :- in(P, _).
+
+// The grid cells the figure's box covers.
+.decl fig_cover(p: Position)
+fig_cover(P) :- fig_box.box($U(), B), in(P, _), inside(P, B).
 
 // The rectangle rims the figure; the block is what it holds.
 .decl rect_color(col: Color)
-rect_color(Col) :- fig_box.edge_cell($U(), P, _), in(P, Col).
+rect_color(Col) :- fig(P), fig_box.box($U(), B), box_edge(P, B, _), in(P, Col).
 
 .decl blk_color(col: Color)
 blk_color(Col) :- fig(P), in(P, Col), !rect_color(Col).
 
 .init blk_box = Bbox<Unit>
 blk_box.cell($U(), P) :- in(P, Col), blk_color(Col).
-blk_box.grid($U(), P) :- in(P, _).
+
+// The grid cells the block's box covers.
+.decl blk_cover(p: Position)
+blk_cover(P) :- blk_box.box($U(), B), in(P, _), inside(P, B).
 
 // The ring's thickness at an edge.
 .init thick = DirPack<Unit>
-thick.edge($U(), D, N) :- blk_box.extent($U(), A, N), axis_of(D, A).
+thick.edge($U(), D, N) :-
+    blk_box.box($U(), B), blk_box.cell($U(), P),    // the block's box, in the grid frame
+    box_extent(B, P, A, N), axis_of(D, A).
 
 // The figure's box, let out by the ring's thickness at each edge.
-.decl ring_box(b: Position)
-ring_box(B) :- fig_box.box($U(), M), thick.box($U(), Thick), relative(Thick, M, B).
+.decl ring_box(b: Box)
+ring_box(B) :- fig_box.box($U(), B_fig), thick.box($U(), B_thick), relative(B_thick, B_fig, B).
 
 .decl ring(p: Position)
-ring(P) :- in(P, _), ring_box(B), inside(P, B), !fig_box.inside($U(), P).
+ring(P) :- in(P, _), ring_box(B), inside(P, B), !fig_cover(P).
 
 .decl out(p: Position, col: Color, ch: Choice)
 
@@ -58,13 +66,13 @@ out(P, Col, $Outset()) :- in(P, Col), !ring(P).
 // --- Nest ---
 
 out(P, Col, $Nest()) :-
-    fig_box.inside($U(), P),
-    ( blk_box.inside($U(), P), blk_color(Col)             // the block
-    ; !blk_box.inside($U(), P), rect_color(Col)           // the rectangle
+    fig_cover(P),
+    ( blk_cover(P), blk_color(Col)             // the block
+    ; !blk_cover(P), rect_color(Col)           // the rectangle
     ).
 
 out(P, Col, $Nest()) :-
-    in(P, _), !fig_box.inside($U(), P),
-    ( ring(P), blk_color(Col)                              // the ring
-    ; !ring(P), params.bg(Col)                             // the background
+    in(P, _), !fig_cover(P),
+    ( ring(P), blk_color(Col)                  // the ring
+    ; !ring(P), params.bg(Col)                 // the background
     ).

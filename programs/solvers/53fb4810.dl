@@ -32,27 +32,27 @@ impl_choice($Extent()). impl_choice($Period()).
 bands.node($U(), P) :- in(P, Col), !params.bg(Col), !params.anchor_color(Col).
 
 // A band grows away from the anchor it rests against.
-.decl grow_dir(b: Ident, d: Dir)
-grow_dir(B, D) :-
-    bands.label($U(), P, B),
+.decl grow_dir(id: Ident, d: Dir)
+grow_dir(Id, D) :-
+    bands.label($U(), P, Id),
     opposite(D, O), neighbor(P, O, Q),     // one step back
     in(Q, Col), params.anchor_color(Col).  // an anchor cell
 
-.decl grow_axis(b: Ident, a: Axis)
-grow_axis(B, A) :- grow_dir(B, D), axis_of(D, A).
+.decl grow_axis(id: Ident, a: Axis)
+grow_axis(Id, A) :- grow_dir(Id, D), axis_of(D, A).
 
-.decl period(b: Ident, k: number, ch: Choice)
+.decl period(id: Ident, k: number, ch: Choice)
 
 // The band's pattern carried onward, a period at a step.
-.decl pattern(b: Ident, p: Position, col: Color, ch: Choice)
-pattern(B, P, Col, Ch) :- bands.label($U(), P, B), in(P, Col), impl_choice(Ch).
-pattern(B, Q, Col, Ch) :-
-    pattern(B, P, Col, Ch), grow_dir(B, D), period(B, K, Ch),
+.decl pattern(id: Ident, p: Position, col: Color, ch: Choice)
+pattern(Id, P, Col, Ch) :- bands.label($U(), P, Id), in(P, Col), impl_choice(Ch).
+pattern(Id, Q, Col, Ch) :-
+    pattern(Id, P, Col, Ch), grow_dir(Id, D), period(Id, K, Ch),
     jump(P, D, K, Q), in(Q, _).
 
 // What the continuation covers, past the band itself.
 .decl beyond(p: Position, col: Color, ch: Choice)
-beyond(P, Col, Ch) :- pattern(B, P, Col, Ch), !bands.label($U(), P, B).
+beyond(P, Col, Ch) :- pattern(Id, P, Col, Ch), !bands.label($U(), P, Id).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
@@ -64,16 +64,18 @@ out(P, Col, Ch) :-
 // --- $Extent ---
 
 .init bbox = Bbox<Ident>
-bbox.cell(B, P) :- bands.label($U(), P, B).
+bbox.cell(Id, P) :- bands.label($U(), P, Id).
 
-period(B, K, $Extent()) :- grow_axis(B, A), bbox.extent(B, A, K).
+period(Id, K, $Extent()) :-
+    bands.label($U(), P, Id), bbox.box(Id, B),   // the band's box, in the grid frame
+    grow_axis(Id, A), box_extent(B, P, A, K).
 
 // --- $Period ---
 
 .init shift = OffsetInvariance<Ident, Color>
-shift.cell(B, P, Col) :- bands.label($U(), P, B), in(P, Col).
+shift.cell(Id, P, Col) :- bands.label($U(), P, Id), in(P, Col).
 
 .init shortest = Extremes<Ident>
-shortest.cand(B, K) :- grow_axis(B, A), shift.period(B, A, K).
+shortest.cand(Id, K) :- grow_axis(Id, A), shift.period(Id, A, K).
 
-period(B, K, $Period()) :- shortest.low(B, K).
+period(Id, K, $Period()) :- shortest.low(Id, K).

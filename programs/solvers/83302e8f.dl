@@ -82,11 +82,12 @@ out(P, Col, $Tile()) :-
 
 .init bbox = Bbox<Ident>
 bbox.cell(Id, P) :- region.label($U(), P, Id).
-bbox.grid(Id, P) :- region.label($U(), _, Id), in(P, _).
 
-// A region that does not fill its bounding bbox.
+// A region that does not fill its bounding box.
 .decl irregular(id: Ident)
-irregular(Id) :- bbox.inside(Id, P), !region.label($U(), P, Id).
+irregular(Id) :-
+    bbox.box(Id, B), in(P, _), inside(P, B),   // a cell the box covers
+    !region.label($U(), P, Id).                // outside the region
 
 out(P, Col, $Solid()) :-
     region.label($U(), P, Id),

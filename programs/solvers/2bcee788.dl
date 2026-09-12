@@ -62,8 +62,8 @@ shape_box.cell(L, P) :- shape_cell(P, L).
 
 .decl short_of(d: Dir, l: Locate)
 short_of(D, L) :-
-    marker_cell(M, L), dist(M, D, K),        // a marker cell
-    shape_box.edge_min(L, D, K0), K >= K0.   // not past the shape's d-side edge
+    dir_elem(D), marker_cell(M, L), dist(M, D, K),  // a marker cell
+    shape_box.box(L, B), dist(B, D, K0), K >= K0.   // not past the shape's d-side edge
 
 // The one edge every marker cell is past.
 .decl mark_dir(d: Dir, l: Locate)
@@ -78,8 +78,8 @@ wall_choice($Edge()). wall_choice($Seam()). wall_choice($Image()).
 
 // $Edge — the shape's edge line and the line just outside it.
 wall.cell([L, $Edge()], Q) :-
-    mark_dir(D, L), shape_box.box(L, F),
-    in(P, _), same_dist(D, P, F),   // the shape's edge line
+    mark_dir(D, L), shape_box.box(L, B),
+    in(P, _), same_dist(D, P, B),   // the shape's edge line
     ( Q = P ; neighbor(P, D, Q) ).  // and the line just outside it
 
 // $Seam — the marker's line and the line it faces.
@@ -91,8 +91,8 @@ wall.cell([L, $Seam()], Q) :-
 // $Image — the shape's edge line and the marker's line.
 wall.cell([L, $Image()], Q) :-
     mark_dir(D, L), in(Q, _),
-    ( shape_box.box(L, F), same_dist(D, Q, F)  // the shape's edge line
-    ; marker_cell(M, L), same_dist(D, Q, M)       // the marker's line
+    ( shape_box.box(L, B), same_dist(D, Q, B)  // the shape's edge line
+    ; marker_cell(M, L), same_dist(D, Q, M)    // the marker's line
     ).
 
 // --- the reflection: the shape flipped about the wall ---
@@ -100,9 +100,9 @@ wall.cell([L, $Image()], Q) :-
 .decl mirror(p: Position, q: Position, w: Wall, l: Locate)
 mirror(P, Q, W, L) :-
     mark_dir(D, L), axis_of(D, A), flip_of(A, T),
-    shape_cell(P, L), wall.box([L, W], F),
-    relative(F, P, V), apply(T, V, V2),  // its offset from the wall, flipped
-    compose(F, V2, Q), in(Q, _).             // seated back, on the grid
+    shape_cell(P, L), wall.box([L, W], B),
+    relative(B, P, V), apply(T, V, V2),  // its offset from the wall, flipped
+    compose(B, V2, Q), in(Q, _).         // seated back, on the grid
 
 // --- output ---
 

@@ -58,13 +58,13 @@ bb.cell($U(), P) :- shape(P, _).
 // --- Stretch ---
 
 target(P_corner, Col, $Stretch()) :-
-    shape(P, Col), bb.corner($U(), P, Diag),
+    shape(P, Col), bb.box($U(), B), box_corner(P, B, Diag),
     gdp.diag_cell($U(), P_corner, Diag, 0).    // grid corner at that diagonal
 
 // --- Explode ---
 
 target(P_out, Col, $Explode()) :-
-    shape(P, Col), bb.corner($U(), P, Diag),
+    shape(P, Col), bb.box($U(), B), box_corner(P, B, Diag),
     neighbor(P, Diag, P_out).
 
 // --- Table ---

@@ -43,18 +43,17 @@ frame(B, Col) :- drect.box(Col, B), held(B, _, C), C != Col.
 .decl fill(p: Position, col: Color)
 fill(P, Col) :- frame(B, _), held(B, P, Col).
 
-// The output is the frame's box.
-.init rel = Reframe<Unit>
-rel.outer($U(), B) :- frame(B, _).
-rel.cell($U(), P) :- frame(B, _), in(P, _), inside(P, B).
-
 // The frame's inside, in its own frame.
 .init hole = BoxFrame<Unit>
 hole.cell($U(), P) :- frame(B, _), in(P, _), interior(P, B).
 
+// A grid cell the frame's box covers.
+.decl covered(p: Position)
+covered(P) :- frame(B, _), in(P, _), inside(P, B).
+
 // The shapes' cells: the ink outside the frame.
 .decl outside(p: Position, col: Color)
-outside(P, Col) :- in(P, Col), ink(Col), !rel.view($U(), P, _).
+outside(P, Col) :- in(P, Col), ink(Col), !covered(P).
 
 .decl shape_cell(s: Shape, p: Position)
 
@@ -77,10 +76,10 @@ contradicted(S) :-
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P_grid_out, Col, Ch) :-
-    rel.view($U(), P_grid_in, P_grid_out), frame(B, Col), box_edge(P_grid_in, B, _),
-    impl_choice(Ch).
+    frame(B, Col), in(P_grid_in, _), box_edge(P_grid_in, B, _),
+    crop(P_grid_in, B, P_grid_out), impl_choice(Ch).
 out(P_grid_out, Col, Ch) :-
-    rel.view($U(), P_grid_in, P_grid_out), hole.inner($U(), P_grid_in, P_inner),
+    hole.inner($U(), P_grid_in, P_inner), frame(B, _), crop(P_grid_in, B, P_grid_out),
     blocks.tile(S, P_inner, P_tile, _), !contradicted(S), S = [Ch, _],  // the shape the fill hints at
     ( pattern.inner(S, _, P_tile), fill(_, Col)      // a pattern cell: filled
     ; !pattern.inner(S, _, P_tile), params.bg(Col)   // else bg

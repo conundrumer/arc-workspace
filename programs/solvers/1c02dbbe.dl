@@ -31,10 +31,9 @@ mark(Col, P) :- in(P, Col), !params.bg(Col), !params.slab(Col).
 // box of the cells that keep its color.
 .init slab_box = Bbox<Unit>
 slab_box.cell($U(), P) :- in(P, Col), params.slab(Col).
-slab_box.grid($U(), P) :- in(P, _).
 
 .decl slab_cell(p: Position)
-slab_cell(P) :- slab_box.inside($U(), P).
+slab_cell(P) :- in(P, _), slab_box.box($U(), B), inside(P, B).
 
 .decl paint(p: Position, col: Color, ch: Choice)
 
@@ -42,9 +41,8 @@ slab_cell(P) :- slab_box.inside($U(), P).
 
 .init mark_box = Bbox<Color>
 mark_box.cell(Col, P) :- mark(Col, P).
-mark_box.grid(Col, P) :- mark(Col, _), in(P, _).
 
-paint(P, Col, $Span()) :- slab_cell(P), mark_box.inside(Col, P).
+paint(P, Col, $Span()) :- slab_cell(P), mark_box.box(Col, B), inside(P, B).
 
 // --- Cut ---
 

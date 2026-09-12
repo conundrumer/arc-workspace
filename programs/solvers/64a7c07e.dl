@@ -29,7 +29,8 @@ bbox.cell(Id, P) :- blob.label($U(), P, Id).
 landed(Q, Col) :-
     blob.label($U(), P, Id), ink(P, Col),        // a blob cell
     params.move_dir(D), axis_of(D, A),           // the travel axis
-    bbox.extent(Id, A, N), jump(P, D, N, Q).      // one blob-length onward
+    bbox.box(Id, B), box_extent(B, P, A, N),     // the blob's extent along it
+    jump(P, D, N, Q).                            // one blob-length onward
 
 .decl out(p: Position, col: Color)
 out(P, Col) :-

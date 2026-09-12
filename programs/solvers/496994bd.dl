@@ -43,7 +43,7 @@ block.cell($U(), P) :- ink(P, _).
 img(P2, Col, $Seat()) :-
     ink(P, Col),
     params.dir(D), axis_of(D, A), flip_of(A, F), apply(F, P, P_img),  // reflected cell
-    opposite(D, O), block.edge_min($U(), D, M),                       // block margin at d
+    opposite(D, O), block.box($U(), B), dist(B, D, M),                // block margin at d
     jump(P_img, O, M, P2).                                            // flush at the opposite edge
 
 // --- Output ---

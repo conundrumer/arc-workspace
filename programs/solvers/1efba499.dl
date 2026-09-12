@@ -31,7 +31,9 @@ wbox.cell($U(), P) :- wall(P).
 
 // The crossing runs along the axis the wall is thin on.
 .decl cross_axis(a: Axis)
-cross_axis(A) :- wbox.extents($U(), A, N1, N2), N1 < N2.
+cross_axis(A) :-
+    wall(P), wbox.box($U(), B), perp(A, A2),                      // the wall's box, in the grid frame
+    box_extent(B, P, A, N1), box_extent(B, P, A2, N2), N1 < N2.   // thinner along A than across
 
 .decl cross_dir(d: Dir)
 cross_dir(D) :- cross_axis(A), axis_of(D, A).

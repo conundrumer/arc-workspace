@@ -76,11 +76,11 @@
     // Each object's own extent.
     .init bbox = Bbox<KObj>
     bbox.cell([K, O], P) :- objs.label(K, P, O).
-    bbox.grid([K, O], P) :- cell(K, P, _), objs.label(K, _, O).
 
     // The background inside that extent.
     .init box_regions = Components<KObj>
-    box_regions.node([K, O], P) :- bbox.inside([K, O], P), bg_cell(K, P).
+    box_regions.node([K, O], P) :-
+        bbox.box([K, O], B), bg_cell(K, P), inside(P, B).
 
     .init box_holes = Tally<KObj, Ident>
     box_holes.item(KO, Id) :- box_regions.label(KO, _, Id).

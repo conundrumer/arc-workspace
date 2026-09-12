@@ -96,8 +96,11 @@
 // --- shared ---
 
 // The block: the non-bg cells, mark included.
+.decl block(p: Position)
+block(P) :- in(P, Col), !params.bg(Col).
+
 .init bb = Bbox<Unit>
-bb.cell($U(), P) :- in(P, Col), !params.bg(Col).
+bb.cell($U(), P) :- block(P).
 
 // --- Locate cases: the boxes' corner ---
 
@@ -113,8 +116,8 @@ diag($Corner(), Diag) :- bb.box($U(), B), corner_anchor(Diag, B, ZERO).
 // --- $Mark ---
 // The block corner opposite the mark cell.
 diag($Mark(), Diag) :-
-    in(P, Col), params.mark(Col),        // the mark cell
-    bb.corner($U(), P, D2),              // at a block corner
+    in(P, Col), params.mark(Col),                       // the mark cell
+    block(P), bb.box($U(), B), box_corner(P, B, D2),    // at a block corner
     diag_opposite(D2, Diag).
 
 // --- Render cases: the boxes along the diagonal ---
