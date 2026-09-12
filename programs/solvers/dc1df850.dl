@@ -22,7 +22,7 @@
 
     // --- $Stamp ---
     // Halo cells as offsets from the marker, `@` on the marker cell.
-    .decl template(delta: Shift, col: Color)
+    .decl template(delta: Offset, col: Color)
     GRID_STAMP_SPARSE_3x3(template,
         1,  1, 1,
         1, @2, 1,
@@ -67,6 +67,6 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !halo(P, _, Ch).
         ).
 
     // Footprint cells as offsets from their marker.
-    .decl template(delta: Shift, col: Color)
+    .decl template(delta: Offset, col: Color)
     template(Off, Col) :- footprint(M, P, Col), relative(M, P, Off).
 }

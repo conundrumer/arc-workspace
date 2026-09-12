@@ -30,13 +30,13 @@ sight.cell($U(), P) :- in(P, Col), params.mirror_color(Col).
 move_dir(D) :- dir_elem(D), sight.ray($U(), _, D, _, _).
 
 // Displacements toward the block the frame admits.
-.decl shift(delta: Shift)
+.decl shift(delta: Offset)
 shift(Delta) :-
     in(P, _), move_dir(D),
     axis_of(D, A), sub_extent(P, A, K), jump_offset(D, K, Delta).
 
 // The displacements at which the shape's box would lie over the block's box.
-.decl covering(delta: Shift)
+.decl covering(delta: Offset)
 covering(Delta) :-
     shift(Delta), params.shape_color(Col), box.inside(Col, P),  // a shape-box cell
     compose(P, Delta, P2),                                       // carried there

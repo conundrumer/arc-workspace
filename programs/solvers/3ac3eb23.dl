@@ -38,7 +38,7 @@
     .decl banner(k: number, r: number) banner(0, 0). banner(1, 1).   // lit radius per slot
 
     // --- $Stamp ---
-    .decl template(delta: Shift)   // trail cells, as offsets from the marker
+    .decl template(delta: Offset)   // trail cells, as offsets from the marker
     GRID_STAMP_6x3(template,
         _, @1, _,
         1,  _, 1,
@@ -141,7 +141,7 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !lit(P, _, Ch), params.bg(Col).
     fmark(E, P, Col) :- ex_in(E, P, Col), !params.bg(Col), ex_out(E, _, _).
 
     // Each cell the pair paints in a marker's color, as an offset from it.
-    .decl offset(e: Example, p: Position, delta: Shift)
+    .decl offset(e: Example, p: Position, delta: Offset)
     offset(E, P, Delta) :-
         fmark(E, P, Col), ex_out(E, Q, Col), relative(P, Q, Delta).
 
@@ -182,6 +182,6 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !lit(P, _, Ch), params.bg(Col).
     .decl banner(k: number, r: number)
     banner(K, R) :- radius(_, _, I, R), period(N), stride(I, N, 0, _, K).
 
-    .decl template(delta: Shift)
+    .decl template(delta: Offset)
     template(Delta) :- offset(_, _, Delta).
 }

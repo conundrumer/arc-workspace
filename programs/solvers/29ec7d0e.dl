@@ -30,7 +30,7 @@ si.cell($U(), P, Col) :- clean(P, Col).
 impl_choice($Shift()). impl_choice($Count()).
 
 // Each case's period-preserving shifts.
-.decl shift(ch: Choice, delta: Shift)
+.decl shift(ch: Choice, delta: Offset)
 
 // Values propagate from clean cells along each case's shifts.
 .decl restored(ch: Choice, p: Position, col: Color)

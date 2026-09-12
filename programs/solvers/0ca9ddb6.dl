@@ -32,7 +32,7 @@
     paint(2, 4).
 
     // Footprint masks as offsets from the mark, `@` on the mark cell.
-    .decl template(mark: Color, delta: Shift)
+    .decl template(mark: Color, delta: Offset)
     GRID_STAMP_3x3(template, 1,
         _, 1, _,
         1, @_, 1,
@@ -100,7 +100,7 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !painted(P, _, Ch).
     blob.node(E, P) :- dot(E, P, _).
 
     // A blob's painted cell, with its offset from the blob's mark.
-    .decl star_cell(e: Example, id: Ident, m: Color, p: Position, delta: Shift, col: Color)
+    .decl star_cell(e: Example, id: Ident, m: Color, p: Position, delta: Offset, col: Color)
     star_cell(E, Id, M, P, V, Col) :-
         dot(E, Q, M), blob.label(E, Q, Id),       // the blob's mark
         blob.label(E, P, Id), star(E, P, Col),    // its painted cell
@@ -131,6 +131,6 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !painted(P, _, Ch).
         star_cell(E, Id, M, P, _, Col),
         diags.ray([E, Id], P, _, K, _), K != 0.      // on a diagonal cast from its dot
 
-    .decl template(mark: Color, delta: Shift)
+    .decl template(mark: Color, delta: Offset)
     template(M, V) :- star_cell(_, _, M, _, V, _).
 }

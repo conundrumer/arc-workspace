@@ -38,7 +38,7 @@ arm_depth.edge($U(), D2, K) :-
     ).
 
 // How far the canvas reaches past the figure's box on each side.
-.decl arm_margin(m: Inset)
+.decl arm_margin(m: Box)
 arm_margin(M) :-
     params.arm(D), opposite(D, D_far),                // the arm's edge, and the one across
     axis_of(D, A), fig.extents($U(), A, _, Span),     // span across the arm axis

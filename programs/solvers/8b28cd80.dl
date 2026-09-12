@@ -27,7 +27,7 @@
     seam(Dg) :- arm(D), wind(S), turn(S, D2, D), diag_dirs(Dg, _, D, D2).
 
     // The next ring is one cell out at every edge.
-    .decl ring_step(w: Inset)
+    .decl ring_step(w: Box)
     ring_step(W) :- uniform_inset(1, W).  // @unit: rings are one cell apart
 }
 

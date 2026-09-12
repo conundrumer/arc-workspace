@@ -68,14 +68,14 @@ change(Ch, P_tile, P_intile, Col, Col2) :-
 
 // Candidate velocities: the displacements a frame admits, each with the
 // relative that undoes it.
-.decl cand(ch: Choice, v: Shift, v_back: Shift)
+.decl cand(ch: Choice, v: Offset, v_back: Offset)
 cand(Ch, V, V_back) :-
     panel(Ch, _, P_intile, _), panel(Ch, _, P_intile2, _),
     relative(P_intile, P_intile2, V), relative(P_intile2, P_intile, V_back).
 
 // Where the wave stands frame by frame: the velocity carries each sighting to
 // the frames after and before.
-.decl wave(ch: Choice, v: Shift, p_tile: Position, p_intile: Position,
+.decl wave(ch: Choice, v: Offset, p_tile: Position, p_intile: Position,
            from: Color, to: Color)
 wave(Ch, V, P_tile, P_intile, Col, Col2) :-
     cand(Ch, V, _), change(Ch, P_tile, P_intile, Col, Col2).
@@ -89,14 +89,14 @@ wave(Ch, V, P_tile, P_intile, Col, Col2) :-
 
 // The recoloring a frame's step makes: the wave stands over a cell that still
 // holds the color it replaces there.
-.decl paint(ch: Choice, v: Shift, p_tile: Position, p_intile: Position, col: Color)
+.decl paint(ch: Choice, v: Offset, p_tile: Position, p_intile: Position, col: Color)
 paint(Ch, V, P_tile, P_intile, Col2) :-
     wave(Ch, V, P_tile, P_intile, Col, Col2), panel(Ch, P_tile, P_intile, Col).
 
 // A velocity the frames refute. Over every step they show, the wave must
 // recolor nothing the step leaves alone, and the frame must hold every cell of
 // the wave.
-.decl refuted(ch: Choice, v: Shift)
+.decl refuted(ch: Choice, v: Offset)
 refuted(Ch, V) :-
     succ_panel(Ch, P_tile, _),
     paint(Ch, V, P_tile, P_intile, Col), !change(Ch, P_tile, P_intile, _, Col).

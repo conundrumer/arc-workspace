@@ -34,7 +34,7 @@ box.cell(Id, P) :- obj.label($U(), P, Id).
 
 // Proposal Bbox.flush: the object's relative toward d that puts its
 // box against edge d.
-.decl flush(id: Ident, d: Dir, delta: Shift)
+.decl flush(id: Ident, d: Dir, delta: Offset)
 flush(Id, D, Delta) :- box.edge_min(Id, D, M), jump_offset(D, M, Delta).
 
 .decl fallen(p: Position, col: Color)

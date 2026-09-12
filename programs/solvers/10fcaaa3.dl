@@ -21,7 +21,7 @@
 
     // --- Table ---
     // Halo cells as offsets from the mark, `@` on the mark's cell.
-    .decl footprint(delta: Shift, col: Color)
+    .decl footprint(delta: Offset, col: Color)
     GRID_STAMP_SPARSE_3x3(footprint,
         8,  _, 8,
         _, @_, _,
@@ -48,7 +48,7 @@
 parse.grid($U(), P, Col) :- in(P, Col).
 
 // The halo as offsets from the mark.
-.decl stamp(off: Shift, col: Color, ch: Choice)
+.decl stamp(off: Offset, col: Color, ch: Choice)
 
 // --- Corners ---
 
@@ -85,14 +85,14 @@ out(P, Col, Ch) :- parse.tiled($U(), P, Col), impl_choice(Ch), !halo(P, _, Ch).
 
     // A candidate footprint cell: a painted cell read as an offset from some
     // mark, beside the cell that witnesses it.
-    .decl witness(off: Shift, e: Example, p: Position, col: Color)
+    .decl witness(off: Offset, e: Example, p: Position, col: Color)
     witness(Off, E, P, Col) :-
         painted(E, P, Col),
         parse.tiled(E, M, Cm), !params.bg(Cm),  // a mark of the arrangement
         relative(M, P, Off).
 
     // A candidate some seating of it contradicts.
-    .decl mismatch(off: Shift, col: Color)
+    .decl mismatch(off: Offset, col: Color)
     mismatch(Off, Col) :-
         witness(Off, _, _, Col),
         parse.tiled(E, M, Cm), !params.bg(Cm), compose(M, Off, P),  // seated on a mark
@@ -100,14 +100,14 @@ out(P, Col, Ch) :- parse.tiled($U(), P, Col), impl_choice(Ch), !halo(P, _, Ch).
         ex_out(E, P, C2), C2 != Col.                                // the output holds something else
 
     // The painted cells each surviving candidate accounts for.
-    .decl explains(off: Shift, e: Example, p: Position, col: Color)
+    .decl explains(off: Offset, e: Example, p: Position, col: Color)
     explains(Off, E, P, Col) :- witness(Off, E, P, Col), !mismatch(Off, Col).
 
     // Another candidate accounts for that cell too.
-    .decl shared(off: Shift, e: Example, p: Position, col: Color)
+    .decl shared(off: Offset, e: Example, p: Position, col: Color)
     shared(Off, E, P, Col) :- explains(Off, E, P, Col), explains(Off2, E, P, Col), Off2 != Off.
 
     // The offsets a painted cell leaves no other candidate for.
-    .decl footprint(delta: Shift, col: Color)
+    .decl footprint(delta: Offset, col: Color)
     footprint(Off, Col) :- explains(Off, E, P, Col), !shared(Off, E, P, Col).
 }

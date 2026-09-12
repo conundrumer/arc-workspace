@@ -22,7 +22,7 @@
     .decl line_width(k: number) line_width(1).
 
     // The outer lines.
-    .decl ring(p: Inset)
+    .decl ring(p: Box)
     ring(P) :- line_width(K), uniform_inset(K, P).
 
     // --- Layout ---

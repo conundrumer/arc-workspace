@@ -21,7 +21,7 @@
     arm(DIAG_TL, 3). arm(DIAG_TR, 6). arm(DIAG_BL, 8). arm(DIAG_BR, 7).
 
     // --- Stamp ---
-    .decl template(off: Shift, col: Color)
+    .decl template(off: Offset, col: Color)
     GRID_STAMP_SPARSE_3x3(template,
         3,  _, 6,
         _, @_, _,
@@ -55,7 +55,7 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !halo(P, _, Ch), params.bg(Col).
 .comp Determine {
     // What the stamp writes — every output ink cell — as an offset from its
     // example's marker.
-    .decl template(off: Shift, col: Color)
+    .decl template(off: Offset, col: Color)
     template(Off, Col) :-
         ex_out(E, P, Col), !params.bg(Col),
         ex_in(E, M, Cm), params.marker(Cm), relative(M, P, Off).

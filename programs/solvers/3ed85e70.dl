@@ -63,7 +63,7 @@ clue_box.cell(K, P) :- clue_cell(K, P, _).
 layer_box.cell([S, Col], P) :- shape_cell(S, P, Col).
 
 // The shift carrying a shape cell onto the grid.
-.decl place(s: Ident, v: Shift)
+.decl place(s: Ident, v: Offset)
 
 place(S, V) :-
     clue_palette.value(K, Col),                     // a one-color clue

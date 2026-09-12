@@ -19,7 +19,7 @@
 
     // --- Lookup ---
     // Role masks as offsets from the marker, `@` on the marker cell.
-    .decl template_arm(delta: Shift)
+    .decl template_arm(delta: Offset)
     GRID_STAMP_5x5(template_arm,
         _, _, 1, _, _,
         _, _, 1, _, _,
@@ -27,7 +27,7 @@
         _, _, 1, _, _,
         _, _, 1, _, _)
 
-    .decl template_center(delta: Shift)
+    .decl template_center(delta: Offset)
     GRID_STAMP_5x5(template_center,
         1, _, _, _, 1,
         _, 1, _, 1, _,
@@ -118,16 +118,16 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !paint(P, _, Ch).
         comps.label(E, Pm, Id).                  // its star
 
     // A star's cell as its offset from the star's marker, with its color.
-    .decl star_cell(e: Example, id: Ident, delta: Shift, col: Color)
+    .decl star_cell(e: Example, id: Ident, delta: Offset, col: Color)
     star_cell(E, Id, V, Col) :-
         comps.label(E, P, Id), star(E, P, Col),
         star_marker(E, Id, Pm, _, _), relative(Pm, P, V).
 
-    .decl template_arm(delta: Shift)
+    .decl template_arm(delta: Offset)
     template_arm(V) :-
         star_marker(E, Id, _, _, Ca), star_cell(E, Id, V, Ca).
 
-    .decl template_center(delta: Shift)
+    .decl template_center(delta: Offset)
     template_center(V) :-
         star_marker(E, Id, _, Cc, _), star_cell(E, Id, V, Cc).
 }

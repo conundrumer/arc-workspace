@@ -23,7 +23,7 @@
     .decl corner_col(c: Color) corner_col(5).
 
     // --- Stamp ---
-    .decl template(off: Shift, col: Color)
+    .decl template(off: Offset, col: Color)
     GRID_STAMP_SPARSE_3x3(template,
         5,  1, 5,
         1, @_, 1,
@@ -82,7 +82,7 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !halo(P, _, Ch), params.bg(Col).
     blob.node(E, P) :- painted(E, P, _).
     blob.node(E, P) :- marker_at(E, P).
 
-    .decl template(off: Shift, col: Color)
+    .decl template(off: Offset, col: Color)
     template(Off, Col) :-
         painted(E, P, Col),                                           // a painted cell
         blob.label(E, P, Id), blob.label(E, M, Id), marker_at(E, M),  // the marker of its blob

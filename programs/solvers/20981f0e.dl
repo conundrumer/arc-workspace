@@ -53,7 +53,7 @@ tile_frame.cell(P_tile, P) :- lattice.tile_of($U(), P, P_tile).
 piece_box.cell(P_tile, P_intile) :- piece(P_tile, P, _), tile_frame.inner(P_tile, P, P_intile).
 
 // A placement the piece's tile admits, with the margin it lands the box at.
-.decl landing(p_tile: Position, delta: Shift, m: Position)
+.decl landing(p_tile: Position, delta: Offset, m: Position)
 landing(P_tile, Delta, M) :-
     piece(P_tile, P, _), tile_frame.cell(P_tile, Q),
     relative(P, Q, Delta),                                  // a piece cell onto a cell of its tile
@@ -61,7 +61,7 @@ landing(P_tile, Delta, M) :-
     inside(M, ZERO).                                             // the whole box inside the tile
 
 // The relative each case picks.
-.decl place(p_tile: Position, delta: Shift, ch: Choice)
+.decl place(p_tile: Position, delta: Offset, ch: Choice)
 
 // --- Center ---
 
@@ -75,7 +75,7 @@ place(P_tile, Delta, $Slot()) :- landing(P_tile, Delta, M), params.slot(M).
 
 // The step off the walls on one axis: a box against a wall steps once away
 // from it, a box touching neither wall stands.
-.decl clear_step(p_tile: Position, a: Axis, delta: Shift)
+.decl clear_step(p_tile: Position, a: Axis, delta: Offset)
 clear_step(P_tile, A, Delta) :-
     piece_box.margin(P_tile, M_box), axis_of(D, A), opposite(D, D2),
     ( dist(M_box, D, 0), step_offset(D2, Delta)                       // against the wall at d

@@ -32,7 +32,7 @@
     .decl pitch(k: number) pitch(2).
 
     // A cycle insets the turn box by the pitch.
-    .decl inset(p: Inset)
+    .decl inset(p: Box)
     inset(P) :- pitch(K), uniform_inset(K, P).
 
     // --- $Repaint ---
@@ -47,7 +47,7 @@
 cycle_end(D) :- params.corner(C), diag_dirs(C, _, D, D2), params.sense(S), turn(S, D, D2).
 
 // The walk: at P, traveling toward D, turning on the margins of box B.
-.decl walk(p: Position, d: Dir, b: Inset)
+.decl walk(p: Position, d: Dir, b: Box)
 walk(P, D, ZERO) :-
     in(P, _), params.corner(C), corner_dist(P, C, 0),   // the corner cell
     cycle_end(D_end), opposite(D_end, D).               // the first arm runs against the closing one

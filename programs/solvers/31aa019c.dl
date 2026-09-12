@@ -28,7 +28,7 @@
 
     // --- $Shape ---
     // The ring's cells, as offsets from the mark it sits at.
-    .decl shape(delta: Shift)
+    .decl shape(delta: Offset)
     GRID_STAMP_3x3(shape,
         1, 1, 1,
         1, @_, 1,
@@ -88,7 +88,7 @@ out(P, Bg, [F, Fp]) :-
 
 .comp Determine {
     // The output inks the mark in its own color and the ring in params.border.
-    .decl shape(delta: Shift)
+    .decl shape(delta: Offset)
     shape(V) :-
         ex_out(E, P, Col), !params.border(Col), !params.bg(Col),    // the mark
         ex_out(E, Q, B), params.border(B),                          // a ring cell

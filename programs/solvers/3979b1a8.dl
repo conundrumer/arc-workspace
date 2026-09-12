@@ -115,7 +115,7 @@ out(P, Col, Ch) :-
     diag_cell(E, P) :- ex_out(E, P, _), growth(Diag), diag_dist(P, Diag, _, K, K).
 
     // Candidate periods, as the diagonal jump back toward the input.
-    .decl cand(n: number, delta: Shift)
+    .decl cand(n: number, delta: Offset)
     cand(N, Delta) :-
         ex_out(_, P, _), axis_elem(A), sub_extent(P, A, N),
         growth(Diag), diag_opposite(Diag, Back), jump_offset(Back, N, Delta).

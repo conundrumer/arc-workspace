@@ -66,8 +66,8 @@ nest.before(Ch, Id, Id2) :-
 // What a patch takes up in the output, as offsets from the center: its ring,
 // and everything that ring encloses. The smallest patch encloses nothing and
 // takes the center cell alone.
-.decl covers(ch: Choice, id: Ident, v: Shift)
-.decl within(ch: Choice, id: Ident, v: Shift)
+.decl covers(ch: Choice, id: Ident, v: Offset)
+.decl within(ch: Choice, id: Ident, v: Offset)
 covers(Ch, Id, ZERO) :- nest.last(Ch, Id).
 covers(Ch, Id, V) :-
     within(Ch, Id, V2),

@@ -99,17 +99,17 @@ notch(A, N, P) :- notches.label(A, P, N).
 seat.shape([A, G, Id, D], Q, $U()) :- turned(G, Id, D, Q), access_choice(A).
 seat.cell([A, G, Id, D], P, $U()) :- notch(A, _, P), turned(G, Id, D, _).
 
-.decl placed(a: Access, g: Group, id: Ident, d: D4, t: Shift, p: Position)
+.decl placed(a: Access, g: Group, id: Ident, d: D4, t: Offset, p: Position)
 placed(A, G, Id, D, T, P) :-
     seat.placement([A, G, Id, D], T), turned(G, Id, D, Q), compose(Q, T, P).
 
 // A notch cell the placement leaves open.
-.decl uncovered(a: Access, g: Group, id: Ident, d: D4, t: Shift, n: Ident)
+.decl uncovered(a: Access, g: Group, id: Ident, d: D4, t: Offset, n: Ident)
 uncovered(A, G, Id, D, T, N) :-
     seat.placement([A, G, Id, D], T), notch(A, N, P), !placed(A, G, Id, D, T, P).
 
 // A piece cell the placement puts where no piece can reach.
-.decl unreached(a: Access, g: Group, id: Ident, d: D4, t: Shift)
+.decl unreached(a: Access, g: Group, id: Ident, d: D4, t: Offset)
 unreached(A, G, Id, D, T) :- placed(A, G, Id, D, T, P), !access(P, A).
 
 .decl plugs(id: Ident, a: Access, g: Group)

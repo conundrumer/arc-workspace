@@ -48,7 +48,7 @@
 
     // --- $Stamp ---
     // Trail cells as offsets from the marker, `@` on the marker cell.
-    .decl template_bar(delta: Shift)   // member cells echo the marker
+    .decl template_bar(delta: Offset)   // member cells echo the marker
     GRID_STAMP_10x9(template_bar,
          1, _, 1, _, 1, _, 1, _, 1,
          1, _, 1, _, 1, _, 1, _, 1,
@@ -60,7 +60,7 @@
          1, _, 1, _, 1, _, 1, _, 1,
          1, _, 1, _, 1, _, 1, _, 1,
         @1, _, 1, _, 1, _, 1, _, 1)
-    .decl template_dot(delta: Shift)   // member cells take params.dot
+    .decl template_dot(delta: Offset)   // member cells take params.dot
     GRID_STAMP_10x9(template_dot,
          _, 1, _, _, _, 1, _, _, _,
          _, _, _, _, _, _, _, _, _,
@@ -207,10 +207,10 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !lit(P, Ch), !dotted(P, Ch), param
     // --- $Stamp ---
 
     // Each bar cell and dot cell as an offset from the marker.
-    .decl template_bar(delta: Shift)
+    .decl template_bar(delta: Offset)
     template_bar(Delta) :- fmark(E, P, Col), ex_out(E, Q, Col), relative(P, Q, Delta).
 
-    .decl template_dot(delta: Shift)
+    .decl template_dot(delta: Offset)
     template_dot(Delta) :-
         fmark(E, P, _), ex_out(E, Q, Dot), params.dot(Dot), relative(P, Q, Delta).
 }

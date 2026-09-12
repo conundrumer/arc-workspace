@@ -80,14 +80,14 @@ seat.shape([Id, D], P_img, $U()) :-
 seat.cell([Id, D], P, $U()) :- object_cell(Id, _, _), d4_elem(D), target_cell(_, P).
 
 // Where each cell p of a seated object lands.
-.decl seated(id: Ident, d: D4, sh: Shift, p: Position, p_out: Position, col: Color)
+.decl seated(id: Ident, d: D4, sh: Offset, p: Position, p_out: Position, col: Color)
 seated(Id, D, Sh, P, P_out, Col) :-
     seat.occurrence([Id, D], Sh),                 // a seating of the object
     object_cell(Id, P, Col), apply(D, P, P_img),  // each cell, transformed
     compose(Sh, P_img, P_out).                    // and carried to its seat
 
 // A seating whose core leaves part of a target uncovered.
-.decl partial(id: Ident, d: D4, sh: Shift)
+.decl partial(id: Ident, d: D4, sh: Offset)
 partial(Id, D, Sh) :-
     seated(Id, D, Sh, _, P, Col), params.core(Col), target_cell(T, P),  // the target hit
     target_cell(T, Q), !seated(Id, D, Sh, _, Q, Col).                  // a cell of it left
@@ -96,7 +96,7 @@ partial(Id, D, Sh) :-
 
 // A wall-colored cell of a seating faces its wall when an object cell backs
 // it, away from the wall.
-.decl faces(ch: Choice, id: Ident, d: D4, sh: Shift, p: Position)
+.decl faces(ch: Choice, id: Ident, d: D4, sh: Offset, p: Position)
 faces($Backed(), Id, D, Sh, P) :-
     seated(Id, D, Sh, _, P, Col), wall_toward(P, Col, Dir),  // the cell and its wall
     opposite(Dir, Opp), neighbor(P, Opp, Q),                 // the cell behind it
@@ -118,11 +118,11 @@ faces($Edge(), Id, D, Sh, P_out) :-
 .decl impl_choice(ch: Choice)
 impl_choice($Backed()). impl_choice($Edge()).
 
-.decl misfaced(ch: Choice, id: Ident, d: D4, sh: Shift)
+.decl misfaced(ch: Choice, id: Ident, d: D4, sh: Offset)
 misfaced(Ch, Id, D, Sh) :-
     impl_choice(Ch), seated(Id, D, Sh, _, P, Col), wall(_, Col), !faces(Ch, Id, D, Sh, P).
 
-.decl fit(ch: Choice, id: Ident, d: D4, sh: Shift)
+.decl fit(ch: Choice, id: Ident, d: D4, sh: Offset)
 fit(Ch, Id, D, Sh) :-
     impl_choice(Ch), seat.occurrence([Id, D], Sh), !partial(Id, D, Sh), !misfaced(Ch, Id, D, Sh).
 

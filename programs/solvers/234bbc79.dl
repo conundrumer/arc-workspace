@@ -90,7 +90,7 @@ trail_dest(Id2, P_dest) :-
     params.chain_dir(D), neighbor(P_lead_dest, D, P_dest).
 
 // How far the piece travels.
-.decl slide(id: Ident, delta: Shift)
+.decl slide(id: Ident, delta: Offset)
 slide(Id, Delta) :-
     trail_joint(Id, P_pack), trail_dest(Id, P_dest), relative(P_pack, P_dest, Delta).
 

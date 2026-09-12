@@ -38,7 +38,7 @@ out(P, Col) :- in(P, _), !moved(P, _), params.bg(Col).
     occ.cell([E, Col], P_out, Col2)   :- ink(E, _, Col), ex_out(E, P_out, Col2).
 
     // A relative some train pair carrying that color does not seat.
-    .decl broken(c: Color, delta: Shift)
+    .decl broken(c: Color, delta: Offset)
     broken(Col, Delta) :-
         occ.occurrence([_, Col], Delta),    // seats one pair's ink
         ink(E, _, Col), ex_out(E, _, _),    // and a train pair with that color

@@ -62,23 +62,23 @@ slide.node(Id, Delta) :- fits.occurrence(Id, Delta).
 slide.dir(Id, D) :- mover(Id, _), dir_elem(D).
 
 // The mover's cells carried to a fitting relative.
-.decl carried(id: Ident, delta: Shift, p: Position)
+.decl carried(id: Ident, delta: Offset, p: Position)
 carried(Id, Delta, P2) :- slide.node(Id, Delta), mover(Id, P), compose(P, Delta, P2).
 
 // A mover at rest toward D, with the anchor its next step would hit.
-.decl docked(id: Ident, d: Dir, delta: Shift, a: Ident)
+.decl docked(id: Ident, d: Dir, delta: Offset, a: Ident)
 docked(Id, D, Delta, A) :-
     dir_elem(D), slide.rest(Id, ZERO, D, Delta),  // at rest toward D
     carried(Id, Delta, P), neighbor(P, D, P2),      // one step on from a rest cell
     anchor(A, P2).                                  // is an anchor cell
 
 // A docked mover with a rest cell outside that anchor's cavity.
-.decl outside(id: Ident, d: Dir, delta: Shift, a: Ident)
+.decl outside(id: Ident, d: Dir, delta: Offset, a: Ident)
 outside(Id, D, Delta, A) :-
     docked(Id, D, Delta, A), carried(Id, Delta, P), !cavity.between(A, P).
 
 // A mover seated in a cavity.
-.decl seated(id: Ident, d: Dir, delta: Shift)
+.decl seated(id: Ident, d: Dir, delta: Offset)
 seated(Id, D, Delta) :- docked(Id, D, Delta, A), !outside(Id, D, Delta, A).
 
 // --- output ---

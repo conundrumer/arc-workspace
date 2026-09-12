@@ -51,7 +51,7 @@ other_color(Col) :-
 
 // An arm runs from p_start (exclusive) to p_end; p_end may sit off the
 // grid, and only an arm ending on the grid continues the walk.
-.decl arm(p_start: Position, d: Dir, delta: Shift, p_end: Position)
+.decl arm(p_start: Position, d: Dir, delta: Offset, p_end: Position)
 arm(P, D, Delta, P_end) :-
     seed(P), params.start_dir(D), params.len0(N),
     jump(P, D, N, P_end), jump_offset(D, N, Delta).

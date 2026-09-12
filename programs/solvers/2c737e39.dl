@@ -35,7 +35,7 @@ drawing(Id) :- obj.label($U(), P, Id), obj.label($U(), Q, Id), P != Q.
 .decl drawn(p: Position, col: Color)
 drawn(P, Col) :- obj.label($U(), P, Id), drawing(Id), in(P, Col).
 
-.decl shift(v: Shift)
+.decl shift(v: Offset)
 shift(V) :-
     drawn(P, Col), params.mark(Col),         // the drawing's anchor
     in(Q, Col), !drawn(Q, _),                // the target, marked outside the drawing

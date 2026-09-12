@@ -68,7 +68,7 @@ An empty cell states a modeling hypothesis: the grid holds nothing there. A spar
 
 - `GRID_MASK_HxW(rel, ...)` takes `1` for a member cell and emits `rel(p)` for it — membership grids (1818057f `shape`).
 - `GRID_SPARSE_HxW(rel, ...)` takes a digit for a cell's value and emits `rel(p, v)` for it — ink templates (21897d95 `bracket_glyph`).
-- `GRID_STAMP_HxW(rel, ...)` and `GRID_STAMP_SPARSE_HxW(rel, ...)` store a mark-anchored stamp as `Shift` offsets. The layout is a picture with one token carrying the `@` prefix, and each member cell is emitted as its offset from that anchor. To choose between a grid and a stamp, ask what locates a cell in the data at hand: a position in a frame whose extent the data fixes takes a grid, and a distance from a mark takes a stamp.
+- `GRID_STAMP_HxW(rel, ...)` and `GRID_STAMP_SPARSE_HxW(rel, ...)` store a mark-anchored stamp as `Offset` values. The layout is a picture with one token carrying the `@` prefix, and each member cell is emitted as its offset from that anchor. To choose between a grid and a stamp, ask what locates a cell in the data at hand: a position in a frame whose extent the data fixes takes a grid, and a distance from a mark takes a stamp.
     - `GRID_STAMP_HxW` takes `1` for a member cell and emits `rel(delta)` for it (3ac3eb23 `template`).
     - `GRID_STAMP_SPARSE_HxW` takes a digit for a cell's value and emits `rel(delta, v)` for it (dc1df850 `template`).
     - An empty cell emits no offset.
@@ -114,7 +114,7 @@ RIGID(marker,
 
 The program reads `params.marker_glyph(D, P)`, `params.marker_launch(D, P_l)`, `params.marker_aim(D, D_aim)`, joined on D (142ca369). An id-keyed chart holds one independent assembly per id, the id passing through by identity (150deff5 `piece_member`).
 
-The closure is type-directed: `Position`, `Shift`, and `Inset` via `apply`; `Dir`, `DiagDir`, and `Dir8` via the direction actions; `Axis` and `DiagAxis` via the induced swap; `Color`, `number`, and `Ident` by identity. Scope is orientation only: translation freedom stays with `Occurrences` placement anchors, color freedom with instantiation keying.
+The closure is type-directed: `Box`, `Position`, and `Offset` via `apply`; `Dir`, `DiagDir`, and `Dir8` via the direction actions; `Axis` and `DiagAxis` via the induced swap; `Color`, `number`, and `Ident` by identity. Scope is orientation only: translation freedom stays with `Occurrences` placement anchors, color freedom with instantiation keying.
 
 The determination writes the chart under its placed name, in a pose of its own, and the runner compares up to pose: an ident-free block must be one joint D4 image of the stored assembly, and an id-keyed chart is compared per id, composed with id renaming.
 

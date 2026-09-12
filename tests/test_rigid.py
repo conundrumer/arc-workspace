@@ -85,7 +85,7 @@ def test_rigid_rule_actions():
         "r(D4, A0) :- s(B0), d4_elem(D4), "
         "axis_of(Bd0, B0), apply_dir(D4, Bd0, Ad0), axis_of(Ad0, A0)."
     )
-    assert _rigid_rule("r", "s", ["Ident", "Shift"]) == (
+    assert _rigid_rule("r", "s", ["Ident", "Offset"]) == (
         "r(D4, A0, A1) :- s(A0, B1), d4_elem(D4), apply(D4, B1, A1)."
     )
     with pytest.raises(ValueError):

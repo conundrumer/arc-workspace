@@ -68,7 +68,7 @@ shape_box.cell(Id, P) :- shape(Id, P, _).
 
 // How far a shape falls: its leading cells land on the far edge of its band,
 // in their own columns.
-.decl fall(id: Ident, delta: Shift)
+.decl fall(id: Ident, delta: Offset)
 fall(Id, Delta) :-
     params.gravity(D), shape_box.edge_cell(Id, P, D),    // a leading cell of the shape
     shape(Id, _, Col), band_box.edge_cell(Col, Q, D),    // the far edge of its band

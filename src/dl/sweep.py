@@ -336,7 +336,7 @@ def _set_sweep(
 
 def _mag_vec(vals: tuple, types: list[str]) -> list[int]:
     """Magnitude components of a value tuple: number args as-is, the
-    absolute components of Shift/Inset args."""
+    absolute components of Offset/Box args."""
     out: list[int] = []
     for v, t in zip(vals, types):
         if t == "number":
@@ -347,7 +347,7 @@ def _mag_vec(vals: tuple, types: list[str]) -> list[int]:
 
 
 def _num_peer(e: tuple, s: tuple, types: list[str]) -> bool:
-    """e differs from s only in magnitude args — number, Shift, Inset — a
+    """e differs from s only in magnitude args — number, Offset, Box — a
     peer magnitude, not a peer identity. Nominal args (enums, Color,
     Ident, cell Positions) must match."""
     mag = {"number"} | MAG_POSITION_TYPES

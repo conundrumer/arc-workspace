@@ -67,7 +67,7 @@ shape_cell(P_tile, Col) :-
 
 // Where an object's copy sits: the seat carrying the scaled shape's mark tile
 // onto the object's mark.
-.decl seat(id: Ident, v: Inset)
+.decl seat(id: Ident, v: Box)
 seat(O, V) :-
     shape_cell(P_tile, Col), mark_col(Col),      // the shape's mark tile
     block.inner(O, P_grid, P_intile),            // the object's mark, cell by cell

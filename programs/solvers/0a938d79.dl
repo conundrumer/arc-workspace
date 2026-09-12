@@ -64,7 +64,7 @@ lead(P_line, $Margin()) :-
     K < K2, K < K2_opp.                                  // the empty strip at that side is the narrower
 
 // One step of the walk: the lead line to the other one.
-.decl step(ch: Choice, delta: Shift)
+.decl step(ch: Choice, delta: Offset)
 step(Ch, Delta) :- lead(P, Ch), mark_line(Q, _), Q != P, relative(P, Q, Delta).
 
 // Each mark color paired with the other one.

@@ -46,22 +46,22 @@ slide.node($U(), Delta) :- fits.occurrence($U(), Delta).
 slide.dir($U(), D) :- dir_elem(D).
 
 // The stops of the journey: the piece starts where it stands and slides on.
-.decl stop(delta: Shift)
+.decl stop(delta: Offset)
 stop(ZERO).
 stop(Delta2) :- stop(Delta), slide.halt($U(), Delta, _, Delta2).
 
 // The cells the piece covers at a stop.
-.decl covered(delta: Shift, p: Position)
+.decl covered(delta: Offset, p: Position)
 covered(Delta, P2) :- stop(Delta), piece_cell(P), compose(P, Delta, P2).
 
 // Where the piece comes to rest.
-.decl rest(delta: Shift, ch: Choice)
+.decl rest(delta: Offset, ch: Choice)
 
 // --- Corridor ---
 
 // A stop with one way on has the corridor ending at it: that one way is the
 // way the piece came.
-.init onward = Unanimous<Shift, Dir8>
+.init onward = Unanimous<Offset, Dir8>
 onward.item(Delta, D) :- slide.halt($U(), Delta, D, _).
 
 rest(Delta, $Corridor()) :- stop(Delta), Delta != ZERO, onward.value(Delta, _).
@@ -69,13 +69,13 @@ rest(Delta, $Corridor()) :- stop(Delta), Delta != ZERO, onward.value(Delta, _).
 // --- Goal ---
 
 // What the marker still reaches with the piece standing at a stop.
-.init ahead = Reach<Shift>
+.init ahead = Reach<Offset>
 ahead.node(Delta, P) :- stop(Delta), open(P), !covered(Delta, P).
 ahead.seed(Delta, P) :- stop(Delta), in(P, Col), params.marker(Col).
 
 // A stop the piece would pass on its way to the marker: another stop lies
 // between it and the marker.
-.decl short_of(delta: Shift)
+.decl short_of(delta: Offset)
 short_of(Delta) :- covered(Delta2, P), ahead.reach(Delta, P), Delta != Delta2.
 
 rest(Delta, $Goal()) :- stop(Delta), !short_of(Delta).

@@ -122,12 +122,12 @@ out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(P, _, Ch).
     .decl ink(e: Example, p: Position, col: Color)
     ink(E, P, Col) :- painted(E, P, Col), !params.ground_paint(Col).
 
-    .decl cand(off: Shift, col: Color)
+    .decl cand(off: Offset, col: Color)
     cand(Off, Col) :- ink(E, P, Col), mark_at(E, M), relative(M, P, Off).
 
     // An offset some mark misses, on-grid or off, is not the bracket's. Only
     // an example with outputs can miss one.
-    .decl missed(off: Shift, col: Color)
+    .decl missed(off: Offset, col: Color)
     missed(Off, Col) :-
         cand(Off, Col), ex_out(E, _, _), mark_at(E, M),  // a mark of an answered example
         compose(M, Off, P), !ink(E, P, Col).             // no such ink under it

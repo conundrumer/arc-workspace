@@ -43,7 +43,7 @@ anchor(P, Col, D) :-
 
 // The object's translation: its marker lands where the anchor's line crosses
 // the marker's own.
-.decl shift(id: Ident, v: Shift)
+.decl shift(id: Ident, v: Offset)
 shift(Id, V) :-
     sole.value([Id, Col], M), anchor(A, Col, D), axis_of(D, Ax),   // marker, anchor, its edge axis
     split(M, Ax, Along, _), split(A, Ax, _, Across), compose(Along, Across, T),

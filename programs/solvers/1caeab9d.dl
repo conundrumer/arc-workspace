@@ -58,7 +58,7 @@ front(Ky, L) :-
     axis_of(D, A), split(P, A, L, _).              // its line along the move axis
 
 // The move that brings a block's front line onto the anchor's.
-.decl slide(ky: Grp, delta: Shift)
+.decl slide(ky: Grp, delta: Offset)
 slide([Ch, Id], Delta) :-
     front([Ch, Id], L),                                  // a block's front line
     group(Ch, P, Id_a), in(P, Col), params.anchor(Col),  // the block of the anchor color

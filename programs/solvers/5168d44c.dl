@@ -47,7 +47,7 @@ closed.cell($U(), P) :- in(P, _), !ring_cell(P).
 center(P) :- closed.region($U(), P, _).
 
 // The ring's cells, as displacements from its hole.
-.decl shape(v: Shift)
+.decl shape(v: Offset)
 shape(V) :- ring_cell(P), center(C), relative(C, P, V).
 
 .decl move_dir(d: Dir)

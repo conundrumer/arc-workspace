@@ -51,18 +51,18 @@ occ.shape([K1, K2, Col], P, $U()) :- motif(K2, Col, P), motif(K1, Col, _), K1 !=
 
 // The shift that takes one fragment's whole motif into the other: V carries
 // K2 into K1's frame. The fit read from the other frame is the same fit.
-.decl fitted(k1: Ident, k2: Ident, v: Shift)
+.decl fitted(k1: Ident, k2: Ident, v: Offset)
 fitted(K1, K2, V) :- occ.occurrence([K1, K2, _], V).
 fitted(K2, K1, V_inv) :- fitted(K1, K2, V), relative(V, ZERO, V_inv).
 
 // Where the two fragments cover one cell and disagree on it.
-.decl disagree(k1: Ident, k2: Ident, v: Shift)
+.decl disagree(k1: Ident, k2: Ident, v: Offset)
 disagree(K1, K2, V) :-
     fitted(K1, K2, V),
     content(K2, P2, Col2), compose(P2, V, P1), content(K1, P1, Col1), Col1 != Col2.
 
 // The seam: where the two fragments show the same ink.
-.type Seam = [k1: Ident, k2: Ident, v: Shift]
+.type Seam = [k1: Ident, k2: Ident, v: Offset]
 
 .init seam_cell = Unanimous<Seam, Position>
 seam_cell.item([K1, K2, V], P) :-
@@ -71,7 +71,7 @@ seam_cell.item([K1, K2, V], P) :-
 
 // Fragments join at a fitted alignment they agree on, along a seam of more
 // than one cell.
-.decl join(k1: Ident, k2: Ident, v: Shift)
+.decl join(k1: Ident, k2: Ident, v: Offset)
 join(K1, K2, V) :- seam_cell.clash([K1, K2, V]), !disagree(K1, K2, V).
 
 // --- the scene ---
@@ -79,7 +79,7 @@ join(K1, K2, V) :- seam_cell.clash([K1, K2, V]), !disagree(K1, K2, V).
 // Each fragment's shift into the frame of the fragment held still. Every
 // fragment serves as the one held still, and the crop takes the choice back
 // out.
-.decl place(base: Ident, k: Ident, v: Shift)
+.decl place(base: Ident, k: Ident, v: Offset)
 place(B, B, ZERO) :- frag(B).
 place(B, K2, V) :- place(B, K1, V1), join(K1, K2, V2), compose(V1, V2, V).
 

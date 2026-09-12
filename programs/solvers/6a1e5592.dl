@@ -34,7 +34,7 @@ occ.shape(Id, S, $U()) :- sprites.label($U(), S, Id).
 occ.cell(Id, P, $U()) :- sprites.label($U(), _, Id), in(P, Col), !params.wall(Col).
 
 // A piece: one sprite at one placement.
-.type Piece = [id: Ident, m: Shift]
+.type Piece = [id: Ident, m: Offset]
 
 .decl covers(piece: Piece, p: Position)
 covers([Id, M], P) :- occ.occurrence(Id, M), occ.shape(Id, S, $U()), compose(M, S, P).

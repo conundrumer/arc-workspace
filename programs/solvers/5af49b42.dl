@@ -34,7 +34,7 @@ piece(Id, P, Col) :- objects.label($U(), P, Id), in(P, Col).
 mark(P, Col, Ch) :- piece(Id, P, Col), impl_choice(Ch), !bar(Id, _, _, Ch).
 
 // The copy carries the bar's cell of the mark's color onto the mark.
-.decl shift(id: Ident, v: Shift, ch: Choice)
+.decl shift(id: Ident, v: Offset, ch: Choice)
 shift(Id, V, Ch) :- mark(P, Col, Ch), bar(Id, Q, Col, Ch), relative(Q, P, V).
 
 .decl stamp(p: Position, col: Color, ch: Choice)

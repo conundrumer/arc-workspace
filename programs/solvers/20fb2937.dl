@@ -53,7 +53,7 @@
 
     // --- Stamp ---
     // The shape laid at a mark, as offsets from the cell on the mark.
-    .decl shape(delta: Shift)
+    .decl shape(delta: Offset)
     GRID_STAMP_3x3(shape,
         1, 1, 1,
         1, @1, 1,
@@ -219,17 +219,17 @@ out(P, Col, Ch) :-
         ex.mark(E, _, P, B), ex.swatch_color(E, _, B, Col), ex_out(E, Q, Col).
 
     // The offset from the mark to that cell.
-    .decl offset(delta: Shift)
+    .decl offset(delta: Offset)
     offset(Delta) :- hit(_, P, Q), relative(P, Q, Delta).
 
     // Contradicted: some mark whose output misses the offset.
-    .decl missed(delta: Shift)
+    .decl missed(delta: Offset)
     missed(Delta) :-
         offset(Delta), ex_out(E, _, _),
         ex.mark(E, _, P, B), ex.swatch_color(E, _, B, Col),
         compose(P, Delta, Q), !ex_out(E, Q, Col).
 
     // The offsets no mark contradicts.
-    .decl shape(delta: Shift)
+    .decl shape(delta: Offset)
     shape(Delta) :- offset(Delta), !missed(Delta).
 }

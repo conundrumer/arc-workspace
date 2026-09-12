@@ -71,7 +71,7 @@ hue.item(Id, Col, P) :- rect_cell(Id, P, Col).
 marker(Id, P) :- rect_cell(Id, P, Col), !hue.mode(Id, Col).
 
 // How far the template travels to land its anchor on each marker.
-.decl travel(m: Position, delta: Shift)
+.decl travel(m: Position, delta: Offset)
 travel(M, Delta) :- marker(_, M), anchor(A), relative(A, M, Delta).
 
 // Each template cell, where the marker's stamp puts it.

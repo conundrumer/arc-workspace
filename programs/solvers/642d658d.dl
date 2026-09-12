@@ -26,7 +26,7 @@
     .decl target(n: number) target(2).
 
     // --- $Footprint ---
-    .decl fp_off(off: Shift)   // the arms, as offsets from the center
+    .decl fp_off(off: Offset)   // the arms, as offsets from the center
     GRID_STAMP_3x3(fp_off,
         _,  1, _,
         1, @_, 1,
@@ -55,7 +55,7 @@ plus($Center(), P, Col) :- ring(P, Col), in(P, Cc), params.center(Cc).
 plus($Halo(),   P, Col) :- ring(P, Col), !grid_bg.mode($U(), Col).
 
 // --- $Footprint ---
-.decl fp_arm(p: Position, off: Shift, col: Color)
+.decl fp_arm(p: Position, off: Offset, col: Color)
 fp_arm(P, Off, Col) :-
     in(P, Cc), params.center(Cc),                           // candidate center cell
     params.fp_off(Off), compose(P, Off, P2), in(P2, Col).   // the cell at one offset
@@ -81,17 +81,17 @@ out(ZERO, Col, [Dt, $Count()]) :- plus_count.tally(Dt, Col, N), params.target(N)
     center_at(E, P) :- ex_in(E, P, Col), params.center(Col).
 
     // Every offset from a center cell to a cell of its own grid.
-    .decl cand(off: Shift)
+    .decl cand(off: Offset)
     cand(Off) :- center_at(E, P), ex_in(E, P2, _), relative(P, P2, Off).
 
     // Lands off the grid at some center — no color to compare there.
-    .decl off_grid(off: Shift)
+    .decl off_grid(off: Offset)
     off_grid(Off) :- cand(Off), center_at(E, P), compose(P, Off, P2), !ex_in(E, P2, _).
 
-    .decl on_grid(off: Shift)
+    .decl on_grid(off: Offset)
     on_grid(Off) :- cand(Off), !off_grid(Off).
 
-    .decl differ(off: Shift, off2: Shift)
+    .decl differ(off: Offset, off2: Offset)
     differ(Off, Off2) :-
         on_grid(Off), on_grid(Off2), center_at(E, P),   // two offsets at a center
         compose(P, Off, P1), ex_in(E, P1, Col),         // color at one
@@ -100,10 +100,10 @@ out(ZERO, Col, [Dt, $Count()]) :- plus_count.tally(Dt, Col, N), params.target(N)
 
     // A plus's arms hold one color, so the footprint is the largest set of
     // offsets that agree in color at every center.
-    .init arm_off = Mode<Unit, Shift, Shift>
+    .init arm_off = Mode<Unit, Offset, Offset>
     arm_off.item($U(), Off, Off2) :- on_grid(Off), on_grid(Off2), !differ(Off, Off2).
 
-    .decl fp_off(off: Shift)
+    .decl fp_off(off: Offset)
     fp_off(Off) :- arm_off.mode($U(), Off).
 
     .decl winner(e: Example, p: Position)

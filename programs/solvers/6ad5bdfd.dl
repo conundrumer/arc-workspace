@@ -33,7 +33,7 @@
     .decl blocked(key: Key, p: Position)  // input
 
     // What one cell of a body leaves it room for.
-    .decl room(key: Key, b: Body, delta: Shift)
+    .decl room(key: Key, b: Body, delta: Offset)
     room(Ky, B, Delta) :-
         cell(Ky, B, P), dir(Ky, D),
         ( dist(P, D, K), jump_offset(D, K, Delta)                            // travel to the frame edge
@@ -46,7 +46,7 @@
         ).
 
     // Where a body rests: the least room its cells leave it.
-    .decl rest(key: Key, b: Body, delta: Shift)
+    .decl rest(key: Key, b: Body, delta: Offset)
     rest(Ky, B, Delta) :- room(Ky, B, Delta).
     rest(Ky, B, Delta) <= rest(Ky, B, Delta2) :- dir(Ky, D), nearer(D, Delta, Delta2).
 }

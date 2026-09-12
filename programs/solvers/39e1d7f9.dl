@@ -71,7 +71,7 @@ seed(P_tile) :- obj_cell.value(_, P_tile).
 span_choice($Whole()).
 span_choice($Ring()).
 
-.decl footprint(p_tile_seat: Position, v: Shift, col: Color, sp: Span)
+.decl footprint(p_tile_seat: Position, v: Offset, col: Color, sp: Span)
 
 // $Whole — every cell of the motif.
 footprint(P_tile_seat, V, Col, $Whole()) :-

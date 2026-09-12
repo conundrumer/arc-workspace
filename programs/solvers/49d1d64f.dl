@@ -10,7 +10,7 @@
     .decl ring_width(k: number) ring_width(1).
 
     // The input's seat in the output.
-    .decl seat_delta(p: Inset)
+    .decl seat_delta(p: Box)
     seat_delta(P) :- ring_width(K), uniform_inset(K, P).
 
     .decl bg(c: Color) bg(0).
@@ -38,7 +38,7 @@ out(P_out, Col) :-
     occ.cell(E, P_out, Col)  :- ex_out(E, P_out, Col).
 
     // A delta some train pair does not seat.
-    .decl broken(p: Inset)
+    .decl broken(p: Box)
     broken(Delta) :-
         occ.occurrence(_, Delta),     // seats one pair
         ex_out(E, _, _),              // and a train pair

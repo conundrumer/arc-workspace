@@ -26,7 +26,7 @@
 
     // --- $Motif data ---
     // The wallpaper lattice's generators, every direction.
-    .decl period(delta: Shift)
+    .decl period(delta: Offset)
     period([2, -2, 0, 0]). period([-2, 2, 0, 0]).
     period([0, 0, 2, -2]). period([0, 0, -2, 2]).
 
@@ -95,7 +95,7 @@ out(P, Col, $Inset()) :-
 
     // The lattice generators: the smallest repeating shift on each axis,
     // in each direction.
-    .decl period(delta: Shift)
+    .decl period(delta: Offset)
     period(Delta) :- si.cand(_, A, K, Delta), unbroken.low(A, K).
 
     .decl span(a: Axis, k: number)

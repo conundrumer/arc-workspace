@@ -45,25 +45,25 @@
 
     // Fundamental-domain shifts per axis: zero, and 0 < k < period toward
     // the canonical corner.
-    .decl axis_rep(key: Key, a: Axis, delta: Shift)
+    .decl axis_rep(key: Key, a: Axis, delta: Offset)
     axis_rep(Key, A, ZERO) :- grid(Key, _), axis_elem(A).
     axis_rep(Key, A, Delta) :-
         grid(Key, P), sub_extent(P, A, K),
         period(Key, A, Kp), K < Kp,
         canon(A, D), jump_offset(D, K, Delta).
 
-    .decl dom(key: Key, delta: Shift)
+    .decl dom(key: Key, delta: Offset)
     dom(Key, Delta) :-
         axis_rep(Key, A, D1), axis_rep(Key, A2, D2), perp(A, A2),
         compose(D1, D2, Delta).
 
     // Lattice elements a candidate's square can reach: zero and one
     // period per axis, toward the canonical corner.
-    .decl lat_ax(key: Key, a: Axis, delta: Shift)
+    .decl lat_ax(key: Key, a: Axis, delta: Offset)
     lat_ax(Key, A, ZERO) :- grid(Key, _), axis_elem(A).
     lat_ax(Key, A, Delta) :- period(Key, A, K), canon(A, D), jump_offset(D, K, Delta).
 
-    .decl lat0(key: Key, delta: Shift)
+    .decl lat0(key: Key, delta: Offset)
     lat0(Key, Delta) :-
         lat_ax(Key, A, D1), lat_ax(Key, A2, D2), perp(A, A2),
         compose(D1, D2, Delta).
@@ -71,7 +71,7 @@
     // Candidates per kind: fundamental-domain shifts. A kind that is its
     // own inverse squares to the identity, so its candidate's square is a
     // translation, and that translation must land in the lattice.
-    .decl cand(key: Key, d: D4, delta: Shift)
+    .decl cand(key: Key, d: D4, delta: Offset)
     cand(Key, D, Delta) :-
         kind(D), dom(Key, Delta),
         ( !d4_inverse(D, D)
@@ -85,19 +85,19 @@
     rot_cell(Key, D, P, V, P1) :- cell(Key, P, V), kind(D), apply(D, P, P1).
 
     // Valued cell pairs under each candidate isometry.
-    .decl pair(key: Key, d: D4, delta: Shift, p: Position, q: Position,
+    .decl pair(key: Key, d: D4, delta: Offset, p: Position, q: Position,
                v1: Val, v2: Val)
     pair(Key, D, Delta, P, Q, V1, V2) :-
         rot_cell(Key, D, P, V1, P1), cand(Key, D, Delta),
         compose(P1, Delta, Q), cell(Key, Q, V2).
 
-    .decl mismatch(key: Key, d: D4, delta: Shift)
+    .decl mismatch(key: Key, d: D4, delta: Offset)
     mismatch(Key, D, Delta) :- pair(Key, D, Delta, _, _, V1, V2), V1 != V2.
 
-    .decl witnessed(key: Key, d: D4, delta: Shift)
+    .decl witnessed(key: Key, d: D4, delta: Offset)
     witnessed(Key, D, Delta) :- pair(Key, D, Delta, P, Q, _, _), P != Q.
 
-    .decl sym(key: Key, d: D4, delta: Shift)
+    .decl sym(key: Key, d: D4, delta: Offset)
     sym(Key, D, Delta) :- witnessed(Key, D, Delta), !mismatch(Key, D, Delta).
 
     // Kinds the key's pattern uses: kinds with an admitted representative;

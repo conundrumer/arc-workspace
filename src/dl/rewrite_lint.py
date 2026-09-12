@@ -273,7 +273,7 @@ _IMAGE_COMPS = {"apply": "D4Map.conflict", "compose": "ShiftInvariance.mismatch"
 
 
 def _delta_vars(ext: list[tuple[Atom, str]]) -> set[str]:
-    """Variables holding a Shift: outputs of the delta primitives, plus
+    """Variables holding an Offset: outputs of the delta primitives, plus
     compose outputs whose operands both hold one."""
     out: set[str] = set()
     for atom, name in ext:
@@ -1192,7 +1192,7 @@ class _Lint:
                     ):
                         continue
                     # A compose over delta algebra steps no cell: when the
-                    # would-be position operand holds a Shift, the chain is
+                    # would-be position operand holds an Offset, the chain is
                     # not the primitive.
                     if _PARTNER in spec["out"] and \
                             term_vars(slot(_PARTNER)) & deltas:

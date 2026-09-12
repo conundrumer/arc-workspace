@@ -28,15 +28,15 @@ ink_cell(P) :- in(P, Col), params.ink(Col).
 
 // A placement of the turn is the shift that carries one ink cell's turned
 // image onto another ink cell.
-.decl placement(delta: Shift)
+.decl placement(delta: Offset)
 placement(Delta) :-
     ink_cell(P), params.sym(D), apply(D, P, P_turn),  // an ink cell, turned
     ink_cell(Q), relative(P_turn, Q, Delta).      // onto another ink cell
 
 // The placed turn, and the cells it reaches from the ink. Cells off the grid
 // stay in.
-.decl turn_step(delta: Shift, p: Position, q: Position)
-.decl orbit(delta: Shift, p: Position)
+.decl turn_step(delta: Offset, p: Position, q: Position)
+.decl orbit(delta: Offset, p: Position)
 turn_step(Delta, P, Q) :-
     orbit(Delta, P),                                                 // a cell in play
     params.sym(D), apply(D, P, P_turn), compose(P_turn, Delta, Q).   // turned, then placed
@@ -50,10 +50,10 @@ orbit(Delta, Q) :- turn_step(Delta, _, Q).
 
 // The completed figure is the smallest orbit, so a placement that pushes the
 // figure off the grid pays for the cells it puts there.
-.init size = Tally<Shift, Position>
+.init size = Tally<Offset, Position>
 size.item(Delta, P) :- orbit(Delta, P).
 
-.init smallest = ArgExtremes<Unit, Shift>
+.init smallest = ArgExtremes<Unit, Offset>
 smallest.cand($U(), Delta, N) :- size.tally(Delta, N).
 
 restored(P, $Complete()) :-
@@ -62,10 +62,10 @@ restored(P, $Complete()) :-
 
 // --- Copy ---
 
-.decl copy_cell(delta: Shift, p: Position)
+.decl copy_cell(delta: Offset, p: Position)
 copy_cell(Delta, Q) :- turn_step(Delta, P, Q), ink_cell(P).
 
-.init fittest = Mode<Unit, Shift, Position>
+.init fittest = Mode<Unit, Offset, Position>
 fittest.item($U(), Delta, P) :- copy_cell(Delta, P), ink_cell(P).
 
 restored(P, $Copy()) :-

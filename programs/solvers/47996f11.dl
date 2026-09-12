@@ -20,7 +20,7 @@
     .decl noise(col: Color) noise(6).
 
     // The symmetry center, as its offset from the grid center.
-    .decl center(a: Shift) center([1, -1, 1, -1]).
+    .decl center(a: Box) center([1, -1, 1, -1]).
 
     // --- $Stored ---
     .decl sym(s: Sym) sym(SYM_D4).
@@ -69,7 +69,7 @@ transform(D, $Derived()) :- inv.compatible($U(), D).
 
 .comp Determine {
     // Candidate mirror lines on one axis, as offsets from the grid center.
-    .decl cand(a: Axis, delta: Shift)
+    .decl cand(a: Axis, delta: Offset)
     cand(A, Delta) :-
         ex_out(_, P, _),
         axis_of(D, A), sub_extent(P, A, K),   // each axis, each distance
@@ -78,27 +78,27 @@ transform(D, $Derived()) :- inv.compatible($U(), D).
 
     // Where a candidate's mirror carries each cell: the grid-center flip of
     // the axis, then twice the candidate's offset.
-    .decl mirrored(e: Example, a: Axis, delta: Shift, p: Position, q: Position)
+    .decl mirrored(e: Example, a: Axis, delta: Offset, p: Position, q: Position)
     mirrored(E, A, Delta, P, Q) :-
         ex_out(E, P, _), cand(A, Delta),
         flip_of(A, D), apply(D, P, P1),
         compose(Delta, Delta, Twice), compose(P1, Twice, Q).
 
     // A candidate whose mirror carries some cell onto a different color.
-    .decl mirror_mismatch(a: Axis, delta: Shift)
+    .decl mirror_mismatch(a: Axis, delta: Offset)
     mirror_mismatch(A, Delta) :-
         mirrored(E, A, Delta, P, Q),
         ex_out(E, P, Col), ex_out(E, Q, C2), C2 != Col.
 
     // The axis's mirror line: unbroken, and mirroring some cell onto another
     // — an offset past the frame pairs nothing and would pass unbroken.
-    .decl axis_center(a: Axis, delta: Shift)
+    .decl axis_center(a: Axis, delta: Offset)
     axis_center(A, Delta) :-
         mirrored(E, A, Delta, _, Q), ex_out(E, Q, _),
         !mirror_mismatch(A, Delta).
 
     // The symmetry center: the mirror line of each axis, crossed.
-    .decl center(a: Shift)
+    .decl center(a: Box)
     center(A) :-
         perp(A1, A2),
         axis_center(A1, D1), axis_center(A2, D2), compose(D1, D2, A).

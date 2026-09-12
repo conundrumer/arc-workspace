@@ -99,7 +99,7 @@ period_cand(Pn) :- drawn_line(L), trail_dir(Td), dist(L, Td, Pn), Pn != 0.
 
 // A layer cell with each cell of the layer Pn stages earlier — its candidate
 // parents — and the move each one asks for.
-.decl cand(pn: number, l: Position, x: Position, y: Position, v: Shift)
+.decl cand(pn: number, l: Position, x: Position, y: Position, v: Offset)
 cand(Pn, L, X, Y, V) :-
     period_cand(Pn), layer(L, X),                       // a layer cell
     trail_dir(Td), jump(L, Td, Pn, L2), layer(L2, Y),   // a cell of the layer Pn back
@@ -108,20 +108,20 @@ cand(Pn, L, X, Y, V) :-
 // A cell moves with its layer: the delta shared by the most cells of the
 // layer wins. A tie is free — any pick replays the layers — so Canon's
 // arbitrary representative resolves it.
-.type PLV = [pn: number, l: Position, v: Shift]
+.type PLV = [pn: number, l: Position, v: Offset]
 .init share = Tally<PLV, Position>
 share.item([Pn, L, V], X) :- cand(Pn, L, X, _, V).
 
 .type PX = [pn: number, x: Position]
-.init best = ArgExtremes<PX, Shift>
+.init best = ArgExtremes<PX, Offset>
 best.cand([Pn, X], V, S) :- cand(Pn, L, X, _, V), share.tally([Pn, L, V], S).
 
-.type PXV = [pn: number, x: Position, v: Shift]
+.type PXV = [pn: number, x: Position, v: Offset]
 .init pick_one = Canon<PXV>
 pick_one.equiv([Pn, X, V1], [Pn, X, V2]) :-
     best.high([Pn, X], V1, _), best.high([Pn, X], V2, _).
 
-.decl pick(pn: number, x: Position, v: Shift)
+.decl pick(pn: number, x: Position, v: Offset)
 pick(Pn, X, V) :- pick_one.rep([Pn, X, V], [Pn, X, V]).
 
 // A layer two periods above the seed: deep enough that a pick's chain has a
@@ -134,12 +134,12 @@ grounded(Pn, L) :-
 // The vector is constant along a chain. Picks are trusted where grounded and
 // propagate down over the parents they name, overriding the shallower
 // layers' ambiguous evidence.
-.decl chain(pn: number, x: Position, v: Shift)
+.decl chain(pn: number, x: Position, v: Offset)
 chain(Pn, X, V) :- pick(Pn, X, V), layer(L, X), grounded(Pn, L).
 chain(Pn, Y, V) :- chain(Pn, X, V), cand(Pn, _, X, Y, V).
 
 // The field: chain vectors where a chain reaches, own picks elsewhere.
-.decl vec(pn: number, x: Position, v: Shift)
+.decl vec(pn: number, x: Position, v: Offset)
 vec(Pn, X, V) :- chain(Pn, X, V).
 vec(Pn, X, V) :- pick(Pn, X, V), !chain(Pn, X, _).
 
@@ -175,7 +175,7 @@ drawn_parent(X, Y) :- period(Pn), vec(Pn, X, V), cand(Pn, _, X, Y, V).
 
 // The scene grows one layer per undrawn grid line: each cell of the layer a
 // period below moves by its vector and keeps it.
-.decl pushed(l: Position, y: Position, x: Position, v: Shift)
+.decl pushed(l: Position, y: Position, x: Position, v: Offset)
 pushed(L2, Y, X, V) :-
     period(Pn), ext_layer(L, X), ext_vec(X, V), compose(X, V, Y),
     grow_dir(G), jump(L, G, Pn, L2), axis_line(L2), !drawn_line(L2).
@@ -184,7 +184,7 @@ pushed(L2, Y, X, V) :-
 ext_layer(L, Y) :- layer(L, Y).
 ext_layer(L, Y) :- pushed(L, Y, _, _).
 
-.decl ext_vec(x: Position, v: Shift)
+.decl ext_vec(x: Position, v: Offset)
 ext_vec(X, V) :- period(Pn), vec(Pn, X, V).
 ext_vec(Y, V) :- pushed(_, Y, _, V).
 
@@ -254,7 +254,7 @@ anc_ext(Y, Z) :- anc_ext(Y, Z1), ext_parent(Z1, Z).
 // A generator observation: a drawn cell's color beside another drawn
 // cell's color read a stage shift away — dj between their births, dk
 // between the stages read.
-.decl gen_obs(dk: Shift, dj: Shift, x: Position, z: Position, c: Color, c2: Color)
+.decl gen_obs(dk: Offset, dj: Offset, x: Position, z: Position, c: Color, c2: Color)
 gen_obs(Dk, Dj, X, Z, C, C2) :-
     drawn(L, X, C), drawn_birth(X, Lx),              // cell and its birth
     drawn_birth(Z, Lz), relative(Lx, Lz, Dj),    // a cell dj births away
@@ -262,21 +262,21 @@ gen_obs(Dk, Dj, X, Z, C, C2) :-
 
 // An ancestor generator reads along ancestry: it stands when some ancestor
 // pair witnesses it and none contradicts it.
-.decl agen(dk: Shift, dj: Shift)
+.decl agen(dk: Offset, dj: Offset)
 agen(Dk, Dj) :- gen_obs(Dk, Dj, X, Z, _, _), anc_drawn(X, Z), !agen_mismatch(Dk, Dj).
 
-.decl agen_mismatch(dk: Shift, dj: Shift)
+.decl agen_mismatch(dk: Offset, dj: Offset)
 agen_mismatch(Dk, Dj) :- gen_obs(Dk, Dj, X, Z, C, C2), anc_drawn(X, Z), C2 != C.
 
 // A layer generator reads from any cell at the birth shift: it needs
 // witnesses born at more than one layer and no contradiction.
-.decl lgen(dk: Shift, dj: Shift)
+.decl lgen(dk: Offset, dj: Offset)
 lgen(Dk, Dj) :-
     gen_obs(Dk, Dj, X, _, _, _), drawn_birth(X, Lx),
     gen_obs(Dk, Dj, X2, _, _, _), drawn_birth(X2, Lx2), Lx != Lx2,
     !lgen_mismatch(Dk, Dj).
 
-.decl lgen_mismatch(dk: Shift, dj: Shift)
+.decl lgen_mismatch(dk: Offset, dj: Offset)
 lgen_mismatch(Dk, Dj) :- gen_obs(Dk, Dj, _, _, C, C2), C2 != C.
 
 // --- color closure ---

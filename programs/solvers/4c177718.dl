@@ -139,7 +139,7 @@ target_box.cell(T, P_intile) :- target(P_intile, T).
 // The two boxes meet at facing corners: the payload's corner takes the
 // cell one step beyond the target's, on the arrow's side. Both alignments
 // across the arrow run, and they agree where the boxes are equally wide.
-.decl placement(v: Inset, c: Choice)
+.decl placement(v: Box, c: Choice)
 placement(V, [T, A]) :-
     heading(A, D), diag_dirs(Diag, _, D, D_x),                                 // the target's corner on that side
     opposite(D, D_back), diag_dirs(Diag_pay, _, D_back, D_x),                  // the payload's corner facing it

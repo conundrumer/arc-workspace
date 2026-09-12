@@ -73,7 +73,7 @@ notch(Id, D) :-
 
 // A candidate docking: the piece turned by g to face the hub with a notch,
 // then shifted by v to put a cell of that notch on a seat cell.
-.decl dock_cell(id: Ident, g: D4, v: Shift, p_grid: Position)
+.decl dock_cell(id: Ident, g: D4, v: Offset, p_grid: Position)
 dock_cell(Id, G, V, P_grid) :-
     piece(Id, D, _), opposite(D, D_faced),                     // the bar the piece docks to
     notch(Id, D_notch), c4_elem(G),
@@ -83,7 +83,7 @@ dock_cell(Id, G, V, P_grid) :-
     box.inner(Id, _, P_piece),                                 // any cell of the piece
     apply(G, P_piece, P_turned), compose(P_turned, V, P_grid).
 
-.type Cand = [id: Ident, g: D4, v: Shift]
+.type Cand = [id: Ident, g: D4, v: Offset]
 
 // The notch fills the seat: the cells a candidate puts on the seat's line
 // are the seat's.

@@ -204,7 +204,7 @@ run_match($Hue(), Pan2, D, Sn, Sf, Tn, Tf) :-
 
 // Each end steps once more by the velocity it had over the last step, and
 // carries the run's content with it, as far as the run the two ends now bound.
-.decl drag(ch: Choice, d: Dir, t: Position, q: Position, col: Color, v: Shift)
+.decl drag(ch: Choice, d: Dir, t: Position, q: Position, col: Color, v: Offset)
 drag(Ch, D, Tn, Q, Col2, V) :-
     run_match(Ch, Pan, D, Sn, Sf, Tn, Tf),
     relative(Sn, Tn, Vn), compose(Tn, Vn, En),             // the near end steps again

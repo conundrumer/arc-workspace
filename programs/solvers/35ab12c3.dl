@@ -70,7 +70,7 @@ shape(Col, P_grid, Ch) :-
     sight.cast(Col, P_grid, D, K2, P), K2 <= K.    // drawn out to the far cell
 
 // A lone mark, the cell of another color it touches, and the step between.
-.decl mark_shift(col: Color, base: Color, v: Shift)
+.decl mark_shift(col: Color, base: Color, v: Offset)
 mark_shift(Col, Base, V) :-
     spread.value(Col, M),                          // a lone mark
     pt(Base, N), Base != Col,                      // a cell of another color

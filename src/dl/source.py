@@ -98,7 +98,7 @@ def _stamp_call_facts(policy: str, h: int, w: int, args: list[str],
     """Fact lines for one GRID_STAMP call, one line per grid row.
 
     The picture marks its anchor with an `@` prefix on one token, and each
-    member cell is emitted as its Shift offset from that anchor. The mask
+    member cell is emitted as its Offset from that anchor. The mask
     form emits `rel(delta).`; the sparse form emits `rel(delta, v).`
     """
     rel, keys, cells = args[0], args[1:len(args) - h * w], args[len(args) - h * w:]
@@ -174,8 +174,7 @@ RIGID_CHART_PREFIX = "_rigid_"
 # type's action relation; Axis kinds act through the induced swap on a
 # member direction; the rest pass through by identity.
 _RIGID_ACTIONS = {
-    "Box": "apply", "Position": "apply", "Offset": "apply", "Shift": "apply",
-    "Inset": "apply",
+    "Box": "apply", "Position": "apply", "Offset": "apply",
     "Dir": "apply_dir", "DiagDir": "apply_diag_dir", "Dir8": "apply_dir8",
 }
 _RIGID_AXIS_ACTIONS = {

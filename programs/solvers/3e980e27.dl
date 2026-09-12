@@ -35,7 +35,7 @@
     lone(K, P, Col) :- ink(K, P, Col), !joined(K, P).
 
     // A shape's cells as displacements from its marker, keyed by marker color.
-    .decl footprint(key: Key, col_mark: Color, v: Shift, col: Color)
+    .decl footprint(key: Key, col_mark: Color, v: Offset, col: Color)
     footprint(K, M, V, Col) :-
         lone(K, _, M), ink(K, P0, M), joined(K, P0),  // a marker color, worn inside a shape
         obj.label(K, P0, Id), obj.label(K, P, Id),    // a cell of the same shape

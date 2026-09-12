@@ -9,8 +9,8 @@ ENUM_TYPES = {
     "DiagAxis": "DAXIS_", "D4": "D4_", "Sense": "SENSE_", "Sym": "SYM_",
 }
 
-POSITION_TYPES = {"Box", "Position", "Offset", "Shift", "Inset"}
-MAG_POSITION_TYPES = {"Box", "Offset", "Shift", "Inset"}
+POSITION_TYPES = {"Box", "Position", "Offset"}
+MAG_POSITION_TYPES = {"Box", "Offset"}
 
 
 def _lib_defines() -> dict[str, int]:
@@ -73,20 +73,20 @@ def _position_domain(
 
     Position (frame cell) — moves: the other cells of the stored frame.
 
-    Offset (translation; Shift is its retired name) — the antisymmetric
+    Offset (translation) — the antisymmetric
     grid: both free components ranged over `nums` and negations.
 
-    Box (independent edge margins; Inset is its retired name) — moves
+    Box (independent edge margins) — moves
     (redistributions of a depth across an edge pair) plus per-component
     lines over `nums` and negations with the other three fixed at stored.
     """
     line = sorted(set(nums) | {-n for n in nums})
-    if type_name in ("Offset", "Shift"):
+    if type_name == "Offset":
         comps = {c for v in vals for c in v}
         span = sorted(set(line) | comps | {-c for c in comps})
         return sorted((t, -t, l, -l) for t in span for l in span)
     out = _move_domain(vals)
-    if type_name in ("Box", "Inset"):
+    if type_name == "Box":
         for v in vals:
             for i in range(4):
                 for n in line:

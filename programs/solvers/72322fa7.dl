@@ -32,7 +32,7 @@ empty(P) :- in(P, Col), params.bg(Col).
 // --- template ---
 
 // An arm's relative from its center and its color, by center color.
-.decl template(c: Choice, c_center: Color, v: Shift, c_arm: Color)
+.decl template(c: Choice, c_center: Color, v: Offset, c_arm: Color)
 
 // --- Line ---
 

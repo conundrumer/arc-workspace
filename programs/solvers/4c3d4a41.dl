@@ -22,7 +22,7 @@
     .decl box(p: Position) box([1, 1, 10, 1]).
 
     // Carries the staging area onto the container's interior.
-    .decl shift(v: Shift) shift([0, 0, 10, -10]).
+    .decl shift(v: Offset) shift([0, 0, 10, -10]).
 
     // The direction the comb's teeth point.
     .decl rise(d: Dir) rise(DIR_T).
@@ -124,10 +124,10 @@ out(P, Bg, Ch) :-
     occ.shape(E, P, Col) :- vanished(E, P, Col).
 
     // A move some example refutes: its emptied cells do not recur there.
-    .decl refuted_shift(v: Shift)
+    .decl refuted_shift(v: Offset)
     refuted_shift(V) :- occ.placement(_, V), vanished(E, _, _), !occ.occurrence(E, V).
 
-    .decl shift(v: Shift)
+    .decl shift(v: Offset)
     shift(V) :- occ.placement(_, V), !refuted_shift(V).
 
     // The emptied cells are the comb.

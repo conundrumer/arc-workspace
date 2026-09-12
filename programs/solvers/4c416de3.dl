@@ -62,7 +62,7 @@ mark_boxes.grid(Id, P) :- mark_boxes.cell(Id, _), in(P, _).
 
 // A stamp drawn whole surrounds its site; the shape is the offsets of its
 // cells from that site.
-.decl shape(d: DiagDir, v: Shift)
+.decl shape(d: DiagDir, v: Offset)
 shape(D, V) :-
     site(P_site, D), mark_boxes.inside(Id, P_site),     // a site a shape surrounds
     marks.label(_, P, Id), relative(P_site, P, V).  // and a cell of that shape

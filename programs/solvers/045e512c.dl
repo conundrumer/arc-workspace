@@ -47,7 +47,7 @@ shape(P) :- biggest.mode($U(), Id), object(Id, _, P).
 .decl span(k: number)
 span(K) :- in(P, _), axis_elem(A), sub_extent(P, A, K).
 
-.decl toward(d: Dir8, k: number, delta: Shift)
+.decl toward(d: Dir8, k: number, delta: Offset)
 toward(D, K, Delta) :- span(K), dir8_elem(D), jump_offset(D, K, Delta).
 
 // Where each object seats on the template: the translations that carry
@@ -58,16 +58,16 @@ seating.cell(Id, P, $U())  :- object(Id, _, _), shape(P).
 
 // Steps whose copy holds the whole object: the seating's inverse, where it
 // is a step. No step holds the template itself, so only the fragments march.
-.decl fits(id: Ident, delta: Shift, k: number)
+.decl fits(id: Ident, delta: Offset, k: number)
 fits(Id, Delta, K) :-
     seating.occurrence(Id, M), relative(M, ZERO, Delta),  // the step undoes the seating
     toward(_, K, Delta).                                        // and is a straight jump
 
-.decl step(id: Ident, delta: Shift, ch: Choice)
+.decl step(id: Ident, delta: Offset, ch: Choice)
 
 // --- Reach ---
 
-.init reach = ArgExtremes<Ident, Shift>
+.init reach = ArgExtremes<Ident, Offset>
 reach.cand(Id, Delta, K) :- fits(Id, Delta, K).
 
 step(Id, Delta, $Reach()) :- reach.high(Id, Delta, _).

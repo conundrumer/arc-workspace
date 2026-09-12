@@ -21,7 +21,7 @@
 
     // --- Stamp ---
     // Halo cells as offsets from the marker, `@` on the marker cell.
-    .decl template(delta: Shift, col: Color)
+    .decl template(delta: Offset, col: Color)
     GRID_STAMP_SPARSE_3x3(template,
         _,  2, _,
         7, @1, 6,
@@ -70,7 +70,7 @@ out(P, Col, $Stamp()) :- in(P, Col), !stamp_halo(P, _).
     blob.node(E, P) :- painted(E, P, _).
 
     // Painted cells as offsets from their marker.
-    .decl template(delta: Shift, col: Color)
+    .decl template(delta: Offset, col: Color)
     template(Off, Col) :-
         painted(E, P, Col),                                           // a painted cell
         blob.label(E, P, Id), blob.label(E, M, Id), marker_at(E, M),  // the marker of its blob

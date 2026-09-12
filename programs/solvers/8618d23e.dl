@@ -74,7 +74,7 @@ growth(A, G, G, $Iso()) :- axis_elem(A), params.sep(G).
 growth(A, N1, N2, $Aniso()) :- params.sep_dim(A, N1), perp(A, A2), params.sep_dim(A2, N2).
 
 // Grow delta toward a corner: the growth extents at its two edges.
-.decl grow_delta(diag: DiagDir, gr: Growth, e: Shift)
+.decl grow_delta(diag: DiagDir, gr: Growth, e: Offset)
 grow_delta(Diag, Gr, E) :-
     diag_dirs(Diag, A, D1, D2), growth(A, K1, K2, Gr),      // the corner's edges and their extents
     edge_inset(D1, K1, E1), edge_inset(D2, K2, E2),         // one edge delta each
@@ -122,13 +122,13 @@ out(P, Col, Ch) :- frame.cell(Ch, P), !seated(P, _, Ch), params.filler(Col).
         slab_cell(E, A, P_tile, _, _), ex_out(E, P_out, Col).
 
     // A relative some train pair's slab does not seat.
-    .decl broken(a: Axis, p_tile: Position, delta: Inset)
+    .decl broken(a: Axis, p_tile: Position, delta: Box)
     broken(A, P_tile, Delta) :-
         occ.occurrence([_, A, P_tile], Delta),    // seats one pair's slab
         slab_cell(E, A, P_tile, _, _),            // and a train pair's slab
         !occ.occurrence([E, A, P_tile], Delta).   // it misses
 
-    .decl slab_disp(a: Axis, p_tile: Position, delta: Inset)
+    .decl slab_disp(a: Axis, p_tile: Position, delta: Box)
     slab_disp(A, P_tile, Delta) :-
         occ.occurrence([_, A, P_tile], Delta), !broken(A, P_tile, Delta).
 

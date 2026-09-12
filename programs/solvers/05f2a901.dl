@@ -80,13 +80,13 @@ blocked($Extent(), P) :- params.anchor(Col), box.inside(Col, P).
 // --- the slide ---
 
 // Displacements toward the anchor the frame admits.
-.decl shift(delta: Shift)
+.decl shift(delta: Offset)
 shift(Delta) :-
     in(P, _), move_dir(D),
     axis_of(D, A), sub_extent(P, A, K), jump_offset(D, K, Delta).
 
 // The displacements at which the footprint would lie over a blocked cell.
-.decl covering(ch: Choice, delta: Shift)
+.decl covering(ch: Choice, delta: Offset)
 covering(Ch, Delta) :- shift(Delta), shape(Ch, P), compose(P, Delta, P2), blocked(Ch, P2).
 
 // The mover stands where it is, and travels through the displacements that
