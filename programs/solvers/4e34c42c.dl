@@ -53,7 +53,7 @@ occ.shape([K1, K2, Col], P, $U()) :- motif(K2, Col, P), motif(K1, Col, _), K1 !=
 // K2 into K1's frame. The fit read from the other frame is the same fit.
 .decl fitted(k1: Ident, k2: Ident, v: Shift)
 fitted(K1, K2, V) :- occ.occurrence([K1, K2, _], V).
-fitted(K2, K1, V_inv) :- fitted(K1, K2, V), displacement(V, ZERO, V_inv).
+fitted(K2, K1, V_inv) :- fitted(K1, K2, V), relative(V, ZERO, V_inv).
 
 // Where the two fragments cover one cell and disagree on it.
 .decl disagree(k1: Ident, k2: Ident, v: Shift)

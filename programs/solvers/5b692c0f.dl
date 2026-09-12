@@ -55,7 +55,7 @@ side(Id, D, P) :- box.inside(Id, P), fold(Id, A, L), axis_of(D, A), nearer(D, P,
 .decl mirror(id: Ident, p: Position, p_out: Position)
 mirror(Id, P, P_out) :-
     box.inside(Id, P), fold(Id, A, L), flip_of(A, F),
-    displacement(L, P, V), apply(F, V, V2), compose(L, V2, P_out), in(P_out, _).
+    relative(L, P, V), apply(F, V, V2), compose(L, V2, P_out), in(P_out, _).
 
 // The source side is the side holding most of the case's cells.
 .init side_pick = Mode<ObjCase, Dir, Position>

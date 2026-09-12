@@ -61,7 +61,7 @@ rect(Id, P, Col) :- parts.label(Col, P, Id), !hole(Id), !thin(Id).
 .decl image(id: Ident, p: Position, col: Color)
 image(Id, Q, Col) :-
     rect(Id, P, Col), divider(A, L, _), flip_of(A, F),
-    displacement(L, P, V), apply(F, V, V_img), compose(L, V_img, Q),
+    relative(L, P, V), apply(F, V, V_img), compose(L, V_img, Q),
     in(Q, _).
 
 // --- the span ---

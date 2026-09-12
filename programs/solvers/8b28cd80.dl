@@ -60,7 +60,7 @@ ring(B, Col) :- center(B, Col).
 ring(B2, Col2) :- ring(B, Col), next_ring(B, B2), other(Col, Col2).
 
 .decl next_ring(b: Position, b2: Position)
-next_ring(B, B2) :- bcells.on_edge(B, _, _), params.ring_step(W), displacement(W, B, B2).
+next_ring(B, B2) :- bcells.on_edge(B, _, _), params.ring_step(W), relative(W, B, B2).
 
 .init bcells = BoxCells<Position>
 bcells.box(B, B) :- ring(B, _).

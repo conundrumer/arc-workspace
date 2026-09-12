@@ -57,8 +57,8 @@
     .init box = BoxFrame<KI>
     box.cell([K, Id], P) :- blocks.label(K, P, Id).
 
-    .decl crop(key: Key, id: Ident, p_intile: Position, col: Color)
-    crop(K, Id, P_intile, Col) :- cell(K, P, Col), box.inner([K, Id], P, P_intile).
+    .decl cropped(key: Key, id: Ident, p_intile: Position, col: Color)
+    cropped(K, Id, P_intile, Col) :- cell(K, P, Col), box.inner([K, Id], P, P_intile).
 
     // A block lying along axis a: longer that way than across.
     .decl along(key: Key, id: Ident, a: Axis)
@@ -79,7 +79,7 @@ slab_axis(A2) :- stack_axis(A), perp(A, A2).
 
 .decl turned(id: Ident, p: Position, col: Color)
 turned(Id, P_turn, Col) :-
-    parse.crop($U(), Id, P_intile, Col), stack_axis(A),
+    parse.cropped($U(), Id, P_intile, Col), stack_axis(A),
     ( !parse.along($U(), Id, A), P_turn = P_intile                           // lies across already
     ; parse.along($U(), Id, A), params.rot(R), apply(R, P_intile, P_turn)    // turn it across
     ).
@@ -97,7 +97,7 @@ slab.extent(Id, A, N) :- parse.block($U(), Id), slab_axis(A), widest.high($U(), 
 .decl placed(id: Ident, p: Position, col: Color)
 placed(Id, P_slab, Col) :-
     turned(Id, P_turn, Col), slab.cell(Id, P_slab),
-    displacement(P_turn, P_slab, V), centered(V).    // the block centered in its slab
+    relative(P_turn, P_slab, V), centered(V).    // the block centered in its slab
 
 // --- the reading order ---
 
@@ -168,7 +168,7 @@ out(P_grid, Col, Ch) :-
     .init occ = Occurrences<KID, Color>
     occ.cell([E, Id, D], P, Col) :- turnable(E, Id), d4_elem(D), ex_out(E, P, Col).
     occ.shape([E, Id, D], P_turn, Col) :-
-        turnable(E, Id), d4_elem(D), ex.crop(E, Id, P_intile, Col),
+        turnable(E, Id), d4_elem(D), ex.cropped(E, Id, P_intile, Col),
         apply(D, P_intile, P_turn).
 
     .decl unseen(d: D4)

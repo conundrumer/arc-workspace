@@ -146,7 +146,7 @@ placement(V, [T, A]) :-
     target_box.margin(T, M), cell(C, _), corner_anchor(Diag, C, M),            // the target's corner cell
     neighbor(C, D, S),                                                         // the seat beyond it
     pay_box.inner($U(), _, P_inner), corner_anchor(Diag_pay, P_inner, ZERO), // the payload's corner cell
-    displacement(P_inner, S, V).                                               // the shift that seats the payload
+    relative(P_inner, S, V).                                               // the shift that seats the payload
 
 .decl stamp(p_intile: Position, col: Color, c: Choice)
 stamp(Q, Col, Ch) :-

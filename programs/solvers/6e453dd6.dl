@@ -40,7 +40,7 @@ comps.node($U(), P) :- in(P, Col), params.shape(Col).
 
 // --- the slide ---
 
-// A shape fits at a displacement when its every cell lands off the separator.
+// A shape fits at a relative when its every cell lands off the separator.
 .init fits = Occurrences<Ident, Unit>
 fits.cell(Id, P, $U())  :- comps.label($U(), _, Id), in(P, _), !sep_cell(P).
 fits.shape(Id, P, $U()) :- comps.label($U(), P, Id).

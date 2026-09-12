@@ -101,7 +101,7 @@ wall.cell([L, $Image()], Q) :-
 mirror(P, Q, W, L) :-
     mark_dir(D, L), axis_of(D, A), flip_of(A, T),
     shape_cell(P, L), wall.margin([L, W], F),
-    displacement(F, P, V), apply(T, V, V2),  // its offset from the wall, flipped
+    relative(F, P, V), apply(T, V, V2),  // its offset from the wall, flipped
     compose(F, V2, Q), in(Q, _).             // seated back, on the grid
 
 // --- output ---

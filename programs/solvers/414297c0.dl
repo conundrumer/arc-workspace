@@ -70,7 +70,7 @@ spread_choice($Near()). spread_choice($Object()).
 .init obj = Components8<Unit>
 obj.node($U(), P) :- outside(P, _).
 
-// A glyph cell, as its displacement from the key.
+// A glyph cell, as its relative from the key.
 .decl glyph(col: Color, v: Shift, ink: Color, ch: Choice)
 
 glyph(Col, V, Ink, [$Near(), Pt]) :-
@@ -79,7 +79,7 @@ glyph(Col, V, Ink, [$Near(), Pt]) :-
 
 glyph(Col, V, Ink, [$Object(), Pt]) :-
     key(P, Col), obj.conn($U(), P, Q), Q != P,      // another cell of the key's object
-    ink_cell(Q, Ink, Pt), displacement(P, Q, V).     // onto a glyph cell
+    ink_cell(Q, Ink, Pt), relative(P, Q, V).     // onto a glyph cell
 
 // --- out ---
 

@@ -70,7 +70,7 @@ handle(P, $Ink()) :- glyph_mark(P, Col), !params.ink(Col).
 // --- stamp ---
 
 .decl travel(v: Shift, ch: Choice)
-travel(V, Ch) :- handle(P, Ch), lone_mark(_, P2, _), displacement(P, P2, V).
+travel(V, Ch) :- handle(P, Ch), lone_mark(_, P2, _), relative(P, P2, V).
 
 .decl stamped(p: Position, col: Color, ch: Choice)
 stamped(Q, Col, Ch) :- glyph_mark(P, Col), travel(V, Ch), compose(P, V, Q).

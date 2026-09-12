@@ -53,7 +53,7 @@ occ.shape(Col, P_grid, $U()) :- ink(Col), in(P_grid, Col).          // what show
 // The whole figure a color draws, covered cells included.
 .decl drawn(col: Color, p: Position)
 drawn(Col, P_grid) :-
-    occ.occurrence(Col, M), displacement(M, ZERO, Box),  // read the figure back onto the grid
+    occ.occurrence(Col, M), relative(M, ZERO, Box),  // read the figure back onto the grid
     params.shape(P_intile), compose(Box, P_intile, P_grid).
 
 // --- pile ---

@@ -35,7 +35,7 @@ piece_cell(P) :- in(P, Col), params.piece(Col).
 .decl open(p: Position)
 open(P) :- in(P, Col), !params.bg(Col).
 
-// The piece fits at a displacement when its every cell lands in the corridor.
+// The piece fits at a relative when its every cell lands in the corridor.
 .init fits = Occurrences<Unit, Unit>
 fits.cell($U(), P, $U())  :- open(P).
 fits.shape($U(), P, $U()) :- piece_cell(P).

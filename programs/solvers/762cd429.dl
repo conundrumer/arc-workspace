@@ -61,7 +61,7 @@ anchor(Dg_front, P_back, P_next, Ch) :-
 // anchor onto the next anchor, covers it.
 .decl source(q: Position, p: Position, ch: Choice)
 source(Q, P, Ch) :-
-    in(Q, _), anchor(Dg, P_back, P_next, Ch), displacement(P_next, Q, V),
+    in(Q, _), anchor(Dg, P_back, P_next, Ch), relative(P_next, Q, V),
     params.factor(F), diag_dirs(Dg, _, D1, D2),
     opposite(D1, O1), dist(V, O1, K1), stride(K1, F, 0, N1, _),   // steps toward D1, scaled down
     opposite(D2, O2), dist(V, O2, K2), stride(K2, F, 0, N2, _),   // steps toward D2, scaled down

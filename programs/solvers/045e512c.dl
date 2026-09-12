@@ -60,7 +60,7 @@ seating.cell(Id, P, $U())  :- object(Id, _, _), shape(P).
 // is a step. No step holds the template itself, so only the fragments march.
 .decl fits(id: Ident, delta: Shift, k: number)
 fits(Id, Delta, K) :-
-    seating.occurrence(Id, M), displacement(M, ZERO, Delta),  // the step undoes the seating
+    seating.occurrence(Id, M), relative(M, ZERO, Delta),  // the step undoes the seating
     toward(_, K, Delta).                                        // and is a straight jump
 
 .decl step(id: Ident, delta: Shift, ch: Choice)

@@ -62,7 +62,7 @@ impl_choice($Lookup()). impl_choice($Frame()).
 .decl placed(p_box: Position, p_grid: Position)
 placed(P_box, P_grid) :-
     in(Q, Col_mark), params.mark(Col_mark), box.cell($U(), P_box),  // a mark, a bracket cell
-    params.seat(P_seat), displacement(P_seat, P_box, Off),  // its offset from the seat
+    params.seat(P_seat), relative(P_seat, P_box, Off),  // its offset from the seat
     compose(Q, Off, P_grid), in(P_grid, _).                 // seated on the mark, on-grid
 
 // The line the brackets stand on: the ground edge run out across the grid,
@@ -123,7 +123,7 @@ out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(P, _, Ch).
     ink(E, P, Col) :- painted(E, P, Col), !params.ground_paint(Col).
 
     .decl cand(off: Shift, col: Color)
-    cand(Off, Col) :- ink(E, P, Col), mark_at(E, M), displacement(M, P, Off).
+    cand(Off, Col) :- ink(E, P, Col), mark_at(E, M), relative(M, P, Off).
 
     // An offset some mark misses, on-grid or off, is not the bracket's. Only
     // an example with outputs can miss one.
@@ -144,7 +144,7 @@ out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(P, _, Ch).
     .decl shape(p: Position, col: Color)
     shape(P_box, Col) :-
         box.cell($U(), P_box), params.seat(P_seat),      // a bracket cell
-        displacement(P_seat, P_box, Off),                // its offset from the seat
+        relative(P_seat, P_box, Off),                // its offset from the seat
         mark_at(E, M), compose(M, Off, P),               // seated on a mark
         painted(E, P, Col).                              // the paint there
 
@@ -157,6 +157,6 @@ out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(P, _, Ch).
 
     .decl arm_dir(d: Dir)
     arm_dir(D) :-
-        shape(P, _), gt(P, ZERO),                                // ink off the rim
+        shape(P, _), interior(P, ZERO),                                // ink off the rim
         params.seat(P_seat), dir_elem(D), neighbor(P_seat, D, P).  // beside the mark
 }

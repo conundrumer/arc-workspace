@@ -101,7 +101,7 @@ anchor(Id, P) :- box.margin(Id, M), params.corner(Cnr), in(P, _), corner_anchor(
 
 // A shape travels by the shift carrying its corner cell onto its slot's.
 .decl move(id: Ident, v: Shift)
-move(Id, V) :- anchor(Id, A), slot(Id, P_slot), displacement(A, P_slot, V).
+move(Id, V) :- anchor(Id, A), slot(Id, P_slot), relative(A, P_slot, V).
 
 .decl placed(p: Position, col: Color)
 placed(P_out, Col) :- shapes.label(Col, P, Id), move(Id, V), compose(P, V, P_out).

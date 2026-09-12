@@ -50,7 +50,7 @@ win.extent($U(), A, N) :- params.win_dim(N), axis_elem(A).
 
 region($Window(), P) :-
     win.cell($U(), W_c), centered(W_c),          // the window's center
-    win.cell($U(), W), displacement(W_c, W, V),  // each window cell as an offset from it
+    win.cell($U(), W), relative(W_c, W, V),  // each window cell as an offset from it
     mark_cell(M), compose(M, V, P), in(P, _).    // seated on the mark
 
 // --- output ---

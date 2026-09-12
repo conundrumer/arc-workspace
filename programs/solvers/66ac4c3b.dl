@@ -52,7 +52,7 @@ marker_pair(A, P_line, P_line2, Col, Col2) :-
 painted(P, Col) :- ink(P, Col).
 painted(Q, Col2) :-
     ink(P, Col), marker_pair(A, P_line, P_line2, Col, Col2), flip_of(A, F),
-    displacement(P_line, P, V), apply(F, V, V_img), compose(P_line2, V_img, Q),
+    relative(P_line, P, V), apply(F, V, V_img), compose(P_line2, V_img, Q),
     in(Q, _).                                          // the image lands on the grid
 
 .decl out(p: Position, col: Color)

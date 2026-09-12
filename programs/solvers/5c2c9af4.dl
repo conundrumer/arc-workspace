@@ -33,7 +33,7 @@ center(P) :- box.inner($U(), P, P_in), centered(P_in).    // the middle dot
 
 // The spacing, as the inset carrying the center out to the innermost outline.
 .decl spread(v: Inset)
-spread(V) :- center(P), box.margin($U(), B), displacement(P, B, V).
+spread(V) :- center(P), box.margin($U(), B), relative(P, B, V).
 
 // --- program ---
 

@@ -76,7 +76,7 @@ span_choice($Ring()).
 // $Whole — every cell of the motif.
 footprint(P_tile_seat, V, Col, $Whole()) :-
     motif(P_tile_seat, _), motif(P_tile_mark, Col),  // the seating cell, and any motif cell
-    displacement(P_tile_seat, P_tile_mark, V).       // the offset between them
+    relative(P_tile_seat, P_tile_mark, V).       // the offset between them
 
 // $Ring — the cells beside the seating cell.
 footprint(P_tile_seat, V, Col, $Ring()) :-

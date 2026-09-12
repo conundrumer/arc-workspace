@@ -104,7 +104,7 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !painted(P, _, Ch).
     star_cell(E, Id, M, P, V, Col) :-
         dot(E, Q, M), blob.label(E, Q, Id),       // the blob's mark
         blob.label(E, P, Id), star(E, P, Col),    // its painted cell
-        displacement(Q, P, V).                    // its offset from the mark
+        relative(Q, P, V).                    // its offset from the mark
 
     .decl paint(mark: Color, col: Color)
     paint(M, Col) :- star_cell(_, _, M, _, _, Col).

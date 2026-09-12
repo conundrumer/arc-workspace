@@ -50,7 +50,7 @@ attract(Id, Ch, P_anchor, P_dot) :-
 .decl paint(p: Position, col: Color, ch: Choice)
 paint(P_out, Col, Ch) :-
     attract(Id, Ch, P_anchor, P_dot),                          // an attraction
-    displacement(P_anchor, P_dot, Delta),                      // the move it asks for
+    relative(P_anchor, P_dot, Delta),                      // the move it asks for
     shape_cell(Id, P_src, Col), compose(P_src, Delta, P_out),  // a carried cell
     in(P_out, _).                                              // landing in the frame
 

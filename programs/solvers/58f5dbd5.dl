@@ -69,7 +69,7 @@ key_box.cell(Col, P) :- key_cell(Col, P).
 // $Center — the key centered in the block.
 hole(P, $Center()) :-
     block_box.inner(Col, P, P_blk), key_box.inner(Col, _, P_key),   // block cell, key cell
-    displacement(P_key, P_blk, D), centered(D).
+    relative(P_key, P_blk, D), centered(D).
 
 // $Interior — the key fills the block less its rim.
 .init rim = Rim<Color>
@@ -91,11 +91,11 @@ blocks_box.cell($U(), P) :- block(_, P).
 .decl crop_box(b: Position)
 crop_box(B) :-
     blocks_box.margin($U(), M),
-    params.border(K), uniform_inset(K, W), displacement(W, M, B).
+    params.border(K), uniform_inset(K, W), relative(W, M, B).
 
 .init rel = Reframe<Unit>
 rel.outer($U(), B) :- crop_box(B).
-rel.cell($U(), P) :- in(P, _), crop_box(B), geq(P, B).
+rel.cell($U(), P) :- in(P, _), crop_box(B), inside(P, B).
 
 view(P, P_out, $Crop()) :- rel.view($U(), P, P_out).
 

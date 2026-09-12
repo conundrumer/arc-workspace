@@ -42,14 +42,14 @@
     box(Ky, B) :- span.margin([Ky, _, _], B).
 
     .decl box_ink(key: Key, b: Position)
-    box_ink(Ky, B) :- box(Ky, B), cell(Ky, P, _), !hole(Ky, P), geq(P, B).
+    box_ink(Ky, B) :- box(Ky, B), cell(Ky, P, _), !hole(Ky, P), inside(P, B).
 
     // A box of pure background, and the cells it holds.
     .decl hole_box(key: Key, b: Position)
     hole_box(Ky, B) :- box(Ky, B), !box_ink(Ky, B).
 
     .decl hole_cell(key: Key, b: Position, p: Position)
-    hole_cell(Ky, B, P) :- hole_box(Ky, B), hole(Ky, P), geq(P, B).
+    hole_cell(Ky, B, P) :- hole_box(Ky, B), hole(Ky, P), inside(P, B).
 
     // A hole box of side K.
     .decl square(key: Key, b: Position, k: number)
@@ -61,7 +61,7 @@
     .type SeatKey = [key: Key, b: Position, k: number]
 
     .init seat = Tally<SeatKey, Position>
-    seat.item([Ky, B, K], S) :- hole_box(Ky, B), square(Ky, S, K), geq(S, B).
+    seat.item([Ky, B, K], S) :- hole_box(Ky, B), square(Ky, S, K), inside(S, B).
 
     .decl seats(key: Key, b: Position, k: number, n: number)
     seats(Ky, B, K, N) :- seat.tally([Ky, B, K], N).

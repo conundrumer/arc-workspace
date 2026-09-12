@@ -19,7 +19,7 @@ drect.node(Col, P) :- in(P, Col).
 
 // The cells a rectangle covers.
 .decl covered(b: Position, p: Position)
-covered(B, P) :- drect.rect(_, B), in(P, _), geq(P, B).
+covered(B, P) :- drect.rect(_, B), in(P, _), inside(P, B).
 
 // The block: the rectangle covering the most cells.
 .init biggest = Mode<Unit, Position, Position>

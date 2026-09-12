@@ -64,7 +64,7 @@ pivot(Col, $Known()) :- known.equals(Col, 0).
 copy(P_img, Col, Ch) :-
     shape_cell(Col, P),
     pivot(Pivot, Ch), box.margin(Pivot, P_box),                   // the pivot's box
-    displacement(P_box, P, P_rel),                                // cell in the pivot's frame
+    relative(P_box, P, P_rel),                                // cell in the pivot's frame
     params.group(S), sym_member(S, D), apply(D, P_rel, P_rel2),   // one image per group element
     compose(P_box, P_rel2, P_img), in(P_img, _).                  // seated back on the grid
 
@@ -95,7 +95,7 @@ out(P, Col, Ch) :- in(P, _), pivot(_, Ch), !copy(P, _, Ch), params.bg(Col).
     orbit(E, S, P_img, Col) :-
         shape_cell(E, Col, P),
         pivot(E, Pivot), box.margin([E, Pivot], P_box),          // the pivot's box
-        displacement(P_box, P, P_rel),                           // cell in the pivot's frame
+        relative(P_box, P, P_rel),                           // cell in the pivot's frame
         sym_member(S, D), apply(D, P_rel, P_rel2),               // one image per group element
         compose(P_box, P_rel2, P_img), ex_in(E, P_img, _).       // seated back on the grid
 

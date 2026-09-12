@@ -49,7 +49,7 @@ grown(P) :- beyond(P).
 
 drawn(Q, $Turn()) :-
     beyond(B), grown(P),
-    displacement(P, B, V), compose(B, V, Q).   // as far past B as P is short of it
+    relative(P, B, V), compose(B, V, Q).   // as far past B as P is short of it
 
 // --- Count ---
 

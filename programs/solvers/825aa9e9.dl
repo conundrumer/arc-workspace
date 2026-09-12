@@ -75,7 +75,7 @@ foot(Ch, Id, P) :- mover_cell(Ch, Id, P).
 foot(Ch, Id, Q) :-
     mover_cell(Ch, Id, P), params.fall(D), params.gap(K), jump(P, D, K, Q).
 
-// The body fits at a displacement when its footprint lands on free cells.
+// The body fits at a relative when its footprint lands on free cells.
 .init fits = Occurrences<Body, Unit>
 fits.cell([Ch, Id], P, $U())  :- mover(Ch, Id), free(Ch, P).
 fits.shape([Ch, Id], P, $U()) :- foot(Ch, Id, P).

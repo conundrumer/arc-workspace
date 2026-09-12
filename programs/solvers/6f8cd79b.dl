@@ -27,8 +27,8 @@ is_border(P) :- in(P, _), dir_elem(D), dist(P, D, 0).   // on any edge
 
 // --- $Passthrough ---
 out(P, Col, $Passthrough()) :- is_border(P), params.border(Col).
-out(P, Col, $Passthrough()) :- in(P, Col), gt(P, ZERO).
+out(P, Col, $Passthrough()) :- in(P, Col), interior(P, ZERO).
 
 // --- $Repaint ---
 out(P, Col, $Repaint()) :- is_border(P), params.border(Col).
-out(P, Col, $Repaint()) :- in(P, _), gt(P, ZERO), params.bg(Col).
+out(P, Col, $Repaint()) :- in(P, _), interior(P, ZERO), params.bg(Col).

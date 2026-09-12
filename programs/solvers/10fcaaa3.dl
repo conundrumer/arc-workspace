@@ -89,7 +89,7 @@ out(P, Col, Ch) :- parse.tiled($U(), P, Col), impl_choice(Ch), !halo(P, _, Ch).
     witness(Off, E, P, Col) :-
         painted(E, P, Col),
         parse.tiled(E, M, Cm), !params.bg(Cm),  // a mark of the arrangement
-        displacement(M, P, Off).
+        relative(M, P, Off).
 
     // A candidate some seating of it contradicts.
     .decl mismatch(off: Shift, col: Color)

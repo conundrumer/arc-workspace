@@ -66,4 +66,4 @@ win.cell($U(), P) :- in(P, _).
 
 out(P_out, Col, $Window()) :-
     win.view($U(), P, P_out), in(P, Col),   // a grid cell, seen from the window
-    window(B), geq(P, B).                   // one the window covers
+    window(B), inside(P, B).                   // one the window covers

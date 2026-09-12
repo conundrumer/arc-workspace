@@ -62,7 +62,7 @@ toppled(P_base2) :-
 landed(P_out, Col) :-
     toppled(P_base), bar_cell(P_base, P), in(P, Col),
     params.topple(S), rotation(S, R4),
-    displacement(P_base, P, V), apply(R4, V, V2), compose(P_base, V2, P_out).
+    relative(P_base, P, V), apply(R4, V, V2), compose(P_base, V2, P_out).
 
 .decl cleared(p: Position)
 cleared(P) :- toppled(P_base), bar_cell(P_base, P).

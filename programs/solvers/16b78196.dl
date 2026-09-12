@@ -62,7 +62,7 @@ face(O, D, P) :- front.low([O, D, _], P, _).
 seat_offset(H, O, D, R) :-
     opposite(D, Dn), face(O, Dn, N), !bar(O, _),  // a piece's facing cell
     face(H, D, P), O != H,                        // a host face to meet it
-    neighbor(P, D, Q), displacement(N, Q, R).     // the cell just off the face
+    neighbor(P, D, Q), relative(N, Q, R).     // the cell just off the face
 
 // The rests probed: each offered seat and its one-step slides along the
 // contact.
@@ -122,7 +122,7 @@ placement(O, Delta) :- seat_step(_, _, O, Delta).
 .decl seat_step(h: Ident, d_host: Shift, o: Ident, delta: Shift)
 seat_step(H, D_host, O, Delta) :-
     placement(H, D_host), seat(H, O, R), compose(D_host, R, Delta),
-    box.margin(O, M), compose(M, Delta, M2), geq(M2, ZERO).  // on the grid
+    box.margin(O, M), compose(M, Delta, M2), inside(M2, ZERO).  // on the grid
 
 .decl place_cell(o: Ident, delta: Shift, p: Position)
 place_cell(O, Delta, Q) :- placement(O, Delta), obj_cell(O, P), compose(P, Delta, Q).

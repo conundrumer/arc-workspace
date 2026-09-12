@@ -35,7 +35,7 @@ move_dir(D) :- dir_elem(D), sight.ray($U(), _, D, _, _).
 
 // --- the slide ---
 
-// The mover fits at a displacement when its every cell lands off the line.
+// The mover fits at a relative when its every cell lands off the line.
 .init fits = Occurrences<Unit, Unit>
 fits.cell($U(), P, $U())  :- in(P, _), !anchor_cell(P).
 fits.shape($U(), P, $U()) :- mover_cell(P).
@@ -45,7 +45,7 @@ fits.shape($U(), P, $U()) :- mover_cell(P).
 slide.dir($U(), D) :- move_dir(D).
 slide.node($U(), Delta) :- fits.occurrence($U(), Delta).
 
-// The mover at rest, on the last displacement short of the line.
+// The mover at rest, on the last relative short of the line.
 .decl landed(p: Position)
 landed(P2) :-
     slide.rest($U(), ZERO, _, Delta),

@@ -37,7 +37,7 @@ block.cell($U(), P) :- in(P, Col), params.marker(Col).
 
 img(P_out, Col, $Mirror()) :-
     ink(P, Col), block.margin($U(), M),                 // an ink cell and the block
-    displacement(M, P, V),                              // its offset from the block
+    relative(M, P, V),                              // its offset from the block
     params.sym(S), sym_member(S, D), apply(D, V, V2),   // the offset transformed
     compose(M, V2, P_out).
 
@@ -60,7 +60,7 @@ img(P_out, Col, $Seat()) :-
     ink(P, Col), obj.label($U(), P, Id),                            // an object's cell
     obj_quad(Id, Q), diag_opposite(Q, Q_face),                      // the corner facing the block
     obj_box.inner(Id, P0, P_box), corner_dist(P_box, Q_face, 0),    // the box cell at that corner
-    displacement(P0, P, V),                                         // its offset from that cell
+    relative(P0, P, V),                                         // its offset from that cell
     params.sym(S), sym_member(S, D), apply(D, V, V2),               // the offset transformed
     apply_diag_dir(D, Q, Q2),                                       // the corner its image faces
     block.corner($U(), P_c, Q2), neighbor(P_c, Q2, A),              // the seat one step out of it
@@ -89,7 +89,7 @@ out(P, Col, Ch) :-
     .decl img(e: Example, d: D4, p: Position, col: Color)
     img(E, D, P_out, Col) :-
         ink(E, P, Col), block.margin(E, M),            // an ink cell and its block
-        displacement(M, P, V),                         // its offset from the block
+        relative(M, P, V),                         // its offset from the block
         d4_elem(D), apply(D, V, V2),
         compose(M, V2, P_out), ex_in(E, P_out, _).
 

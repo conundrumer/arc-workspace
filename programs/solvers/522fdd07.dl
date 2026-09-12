@@ -102,7 +102,7 @@ target.extent([Ch, Id], A, N) :- target_extent(Ch, Id, N), axis_elem(A).
 .decl placed(ch: Choice, id: Ident, p: Position)
 placed(Ch, Id, P) :-
     target.cell([Ch, Id], T_c), centered(T_c),           // the target's center
-    target.cell([Ch, Id], T), displacement(T_c, T, V),   // each of its cells as an offset
+    target.cell([Ch, Id], T), relative(T_c, T, V),   // each of its cells as an offset
     center(Id, C), compose(C, V, P), in(P, _).           // laid off from that center
 
 .decl paint(ch: Choice, p: Position, col: Color)

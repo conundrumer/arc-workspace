@@ -63,7 +63,7 @@ rhythm(Ln, Col, P1, P2) :- seed(Ln, Col, P1, P2), !crowded(Ln).
 .decl advance(ln: Line, p: Position, q: Position)
 advance(Ln, P, Q) :-
     lattice(Ln, P), rhythm(Ln, _, P1, P2),         // a covered cell, and the seed pair
-    displacement(P1, P2, Delta),                   // the seed's spacing
+    relative(P1, P2, Delta),                   // the seed's spacing
     compose(P, Delta, Q), in(Q, _).                // the next cell, still on the grid
 
 // The rhythm across the whole line: the seed's cells, stepped both ways.

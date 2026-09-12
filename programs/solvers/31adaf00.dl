@@ -35,7 +35,7 @@ square(B, N) :-
     params.min_side(M), N >= M.                        // big enough to draw
 
 .decl spoiled(b: Position)
-spoiled(B) :- square(B, _), in(P, Col), !params.bg(Col), geq(P, B).
+spoiled(B) :- square(B, _), in(P, Col), !params.bg(Col), inside(P, B).
 
 .decl bg_square(b: Position, n: number)
 bg_square(B, N) :- square(B, N), !spoiled(B).
@@ -43,14 +43,14 @@ bg_square(B, N) :- square(B, N), !spoiled(B).
 .decl displaced(b: Position)
 displaced(B) :-
     bg_square(B, N), bg_square(B2, N2), N2 > N,  // a strictly larger square
-    in(P, _), geq(P, B), geq(P, B2).             // meets B
+    in(P, _), inside(P, B), inside(P, B2).             // meets B
 
 // --- drawing ---
 
 .decl painted(p: Position)
 painted(P) :-
     bg_square(B, _), !displaced(B),  // a drawn square
-    in(P, _), geq(P, B).             // its cells
+    in(P, _), inside(P, B).             // its cells
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- painted(P), params.mark(Col).

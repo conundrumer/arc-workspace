@@ -37,7 +37,7 @@ stencils.grid($U(), P) :- in(P, _).
 legend_cell(P) :-
     ink(P), stencils.margin($U(), M),                // the stencil strip's box
     params.strip_axis(A), split(M, A, _, M_slab),    // the slab it cuts across the axis
-    geq(P, M_slab).                                  // the ink inside that slab
+    inside(P, M_slab).                                  // the ink inside that slab
 
 .init legend = BoxFrame<Unit>
 legend.cell($U(), P) :- legend_cell(P).

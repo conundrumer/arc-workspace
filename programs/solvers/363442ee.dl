@@ -64,7 +64,7 @@ mark(P) :- canvas(P), in(P, Col), params.mark(Col).
 paint(P_grid, Col, $Center()) :-
     mark(M), key_cell(Ctr, _), centered(Ctr),      // the mark, and the key's center
     key_cell(P_intile, Col),                       // a key cell
-    displacement(Ctr, P_intile, V),                // its offset from that center
+    relative(Ctr, P_intile, V),                // its offset from that center
     compose(M, V, P_grid).                         // laid off from the mark
 
 // --- $Tile ---

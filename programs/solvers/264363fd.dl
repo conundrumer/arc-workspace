@@ -72,12 +72,12 @@ marker(Id, P) :- rect_cell(Id, P, Col), !hue.mode(Id, Col).
 
 // How far the template travels to land its anchor on each marker.
 .decl travel(m: Position, delta: Shift)
-travel(M, Delta) :- marker(_, M), anchor(A), displacement(A, M, Delta).
+travel(M, Delta) :- marker(_, M), anchor(A), relative(A, M, Delta).
 
 // Each template cell, where the marker's stamp puts it.
 .decl carried(id: Ident, p: Position, p_out: Position)
 carried(Id, P, P_out) :-
-    marker(Id, M), travel(M, Delta),             // the marker's displacement
+    marker(Id, M), travel(M, Delta),             // the marker's relative
     tmpl(P, _), compose(P, Delta, P_out).        // a template cell carried along
 
 // --- rays ---

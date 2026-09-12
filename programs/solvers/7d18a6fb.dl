@@ -100,5 +100,5 @@ canvas($Concat(), P) :- assembled.cell($U(), P).
 
 ink($Stamp(), P_grid_out, Col) :-
     canvas($Stamp(), P_grid_out), marker(M, Col), shape.inner(Col, _, P_intile),  // a canvas cell, a marker, a cell of its crop
-    displacement(P_intile, P_grid_out, P_box),   // the crop's box, holding the canvas cell at that crop cell
-    displacement(P_box, M, V), centered(V).      // the marker at the box's center
+    relative(P_intile, P_grid_out, P_box),   // the crop's box, holding the canvas cell at that crop cell
+    relative(P_box, M, V), centered(V).      // the marker at the box's center

@@ -28,7 +28,7 @@ line_axis(A) :-
 .decl mirror(p: Position, q: Position)
 mirror(P, Q) :-
     in(P, _), line_axis(A), perp(A, A2), flip_of(A2, F4), line_cell(F),
-    displacement(F, P, V), apply(F4, V, V2), compose(F, V2, Q),
+    relative(F, P, V), apply(F4, V, V2), compose(F, V2, Q),
     in(Q, _).                                   // the image lands on the grid
 
 .decl figure(p: Position, col: Color)

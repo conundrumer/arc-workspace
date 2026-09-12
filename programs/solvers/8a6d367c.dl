@@ -50,7 +50,7 @@ fill(P, Col) :- frame(B, _), held(B, P, Col).
 // The output is the frame's box.
 .init rel = Reframe<Unit>
 rel.outer($U(), B) :- frame(B, _).
-rel.cell($U(), P) :- frame(B, _), in(P, _), geq(P, B).
+rel.cell($U(), P) :- frame(B, _), in(P, _), inside(P, B).
 
 // The frame's inside, in its own frame.
 .init hole = BoxFrame<Unit>

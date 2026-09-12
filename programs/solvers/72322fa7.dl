@@ -31,7 +31,7 @@ empty(P) :- in(P, Col), params.bg(Col).
 
 // --- template ---
 
-// An arm's displacement from its center and its color, by center color.
+// An arm's relative from its center and its color, by center color.
 .decl template(c: Choice, c_center: Color, v: Shift, c_arm: Color)
 
 // --- Line ---
@@ -60,7 +60,7 @@ untouched(P) :-
 template($Figure(), Cc, V, Ca) :-
     figure.label($U(), P, Id), !untouched(P), in(P, Cc),         // the hub
     figure.label($U(), Q, Id), Q != P, in(Q, Ca), Ca != Cc,      // an arm
-    displacement(P, Q, V).
+    relative(P, Q, V).
 
 // --- completion ---
 

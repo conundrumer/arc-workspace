@@ -74,7 +74,7 @@ out(P, Col, $Stamp()) :- in(P, Col), !stamp_halo(P, _).
     template(Off, Col) :-
         painted(E, P, Col),                                           // a painted cell
         blob.label(E, P, Id), blob.label(E, M, Id), marker_at(E, M),  // the marker of its blob
-        displacement(M, P, Off).
+        relative(M, P, Off).
 
     .decl arm(d: Dir, col: Color)
     arm(D, Col) :- template(Off, Col), dir_elem(D), step_offset(D, Off).

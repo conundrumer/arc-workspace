@@ -3,7 +3,7 @@
 // concept: decompose induce move
 // Panels stacked along one axis hold the successive frames of an animation.
 // Each frame differs from the one before by a fixed set of recolorings — the
-// wave — and the wave travels the same displacement between every pair of
+// wave — and the wave travels the same relative between every pair of
 // frames. Every recoloring a step shows is a sighting of the wave. A cell
 // takes a recoloring only where it still holds the color that recoloring
 // replaces, so a step can show less than the whole wave. The output is the
@@ -67,11 +67,11 @@ change(Ch, P_tile, P_intile, Col, Col2) :-
 // --- the wave ---
 
 // Candidate velocities: the displacements a frame admits, each with the
-// displacement that undoes it.
+// relative that undoes it.
 .decl cand(ch: Choice, v: Shift, v_back: Shift)
 cand(Ch, V, V_back) :-
     panel(Ch, _, P_intile, _), panel(Ch, _, P_intile2, _),
-    displacement(P_intile, P_intile2, V), displacement(P_intile2, P_intile, V_back).
+    relative(P_intile, P_intile2, V), relative(P_intile2, P_intile, V_back).
 
 // Where the wave stands frame by frame: the velocity carries each sighting to
 // the frames after and before.

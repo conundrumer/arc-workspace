@@ -59,7 +59,7 @@ footprint(P, Q, $Plus()) :-
     ).
 
 // $Shape — the stored cells.
-footprint(P, Q, $Shape()) :- in(Q, _), params.shape(S), displacement(S, Q, P).
+footprint(P, Q, $Shape()) :- in(Q, _), params.shape(S), relative(S, Q, P).
 
 // Held back by a footprint cell that is neither mark nor fill.
 .decl blocked(p_place: Position, fp: Footprint)

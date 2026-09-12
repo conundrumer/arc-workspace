@@ -76,7 +76,7 @@ source(Id, P, $Spanned()) :- in_band(Id, P), in(P, Col), params.shape(Col).
 image(Id, Q, S) :-
     source(Id, P, S), lines.label($U(), L, Id),
     params.across_axis(A), flip_of(A, F),
-    displacement(L, P, V), apply(F, V, V2), compose(L, V2, Q),
+    relative(L, P, V), apply(F, V, V2), compose(L, V2, Q),
     in(Q, _).
 
 // --- Marker cases: the dot that colors a line's reflection ---

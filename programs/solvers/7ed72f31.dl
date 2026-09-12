@@ -42,7 +42,7 @@ mirror_line.item([Id, A], L) :- mirror(Id, P), axis_elem(A), split(P, A, L, _).
 .decl image_along(p: Position, a: Axis, al: Position)
 image_along(P, A, Al_img) :-
     shape(Id, P, _), axis_elem(A), split(P, A, Al, _),
-    ( mirror_line.value([Id, A], L), displacement(L, Al, Off),   // offset from the line
+    ( mirror_line.value([Id, A], L), relative(L, Al, Off),   // offset from the line
       flip_of(A, D), apply(D, Off, Off_img), compose(L, Off_img, Al_img)
     ; !mirror_line.value([Id, A], _), Al_img = Al
     ).

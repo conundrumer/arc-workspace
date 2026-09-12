@@ -62,7 +62,7 @@ standalone(Id) :- from_corner.low($U(), Id, _).
 .decl shift(v: Shift)
 shift(V) :-
     template(T), box.margin(T, PT),
-    standalone(S), box.margin(S, PS), displacement(PT, PS, V).
+    standalone(S), box.margin(S, PS), relative(PT, PS, V).
 
 // The shift's axis parts, each beside no shift at all: the four corner
 // blocks are the template block under every combination of the two.

@@ -86,5 +86,5 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !halo(P, _, Ch), params.bg(Col).
     template(Off, Col) :-
         painted(E, P, Col),                                           // a painted cell
         blob.label(E, P, Id), blob.label(E, M, Id), marker_at(E, M),  // the marker of its blob
-        displacement(M, P, Off).                                      // the cell's offset from it
+        relative(M, P, Off).                                      // the cell's offset from it
 }

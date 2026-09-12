@@ -357,10 +357,6 @@ compose([T1, B1, L1, R1], [T2, B2, L2, R2], [T1+T2, B1+B2, L1+L2, R1+R2]) :- tru
 relative([T1, B1, L1, R1], [T2, B2, L2, R2],
          [T2-T1, B2-B1, L2-L1, R2-R1]) :- true.
 
-// Retired name of relative.
-.decl displacement(from: Position, to: Position, v: Shift) inline
-displacement(P_from, P_to, V) :- relative(P_from, P_to, V).
-
 // Pointwise >=: a inside b. A cell inside a box is the extent-1 case; at
 // b = ZERO, a lies on the frame.
 .decl inside(a: Box, b: Box) inline
@@ -373,11 +369,13 @@ inside([T1, B1, L1, R1], [T2, B2, L2, R2]) :-
 interior([T1, B1, L1, R1], [T2, B2, L2, R2]) :-
     T1 > T2, B1 > B2, L1 > L2, R1 > R2.
 
-// Retired names of inside and interior.
-.decl geq(p: Position, q: Position) inline
-geq(P, Q) :- inside(P, Q).
-.decl gt(p: Position, q: Position) inline
-gt(P, Q) :- interior(P, Q).
+// The order under private names, for lib comp bodies: a comp in the
+// instantiation chain that declares `inside` or `interior` would shadow the
+// bare names there.
+.decl _inside(a: Box, b: Box) inline
+_inside(A, B) :- inside(A, B).
+.decl _interior(a: Box, b: Box) inline
+_interior(A, B) :- interior(A, B).
 
 // Cell p of box b, as a cell of b's own frame: the covering test and the
 // relative read. A cell outside the box is `relative` alone.
@@ -1360,7 +1358,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     // Each cell beside its inner position: the read from an inner position
     // back to its cell.
     .decl view(key: Key, p: Position, p_inner: Position)
-    view(K, P, I) :- cell(K, P), outer(K, O), displacement(O, P, I).
+    view(K, P, I) :- cell(K, P), outer(K, O), relative(O, P, I).
 
     .decl inner(key: Key, p: Position)
     inner(K, I) :- view(K, _, I).
@@ -1411,7 +1409,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 
     .decl inner(key: Key, p: Position, p_inner: Position)
     inner(Ky, P, P_inner) :-
-        margin(Ky, M), geq(P, M),  // clear of the margins
+        margin(Ky, M), _inside(P, M),  // clear of the margins
         _rf.view(Ky, P, P_inner).
 }
 
@@ -1469,7 +1467,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 
     // retired: `inside` over the caller's own domain
     .decl inside(key: Key, p: Position)
-    inside(K, P) :- grid(K, P), box(K, M), geq(P, M).
+    inside(K, P) :- grid(K, P), box(K, M), _inside(P, M).
 
     // retired: the set's cells beside `box_edge`
     .decl edge_cell(key: Key, p: Position, d: Dir)
@@ -1502,12 +1500,12 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     // Covered cell on the box's d-side edge line.
     .decl on_edge(key: Key, p: Position, d: Dir)
     on_edge(K, P, D) :-
-        box(K, B), cell(K, P), geq(P, B),
+        box(K, B), cell(K, P), _inside(P, B),
         dir_elem(D), same_dist(D, P, B).
 
     // Cell strictly inside the box.
     .decl hole(key: Key, p: Position)
-    hole(K, P) :- box(K, B), cell(K, P), gt(P, B).
+    hole(K, P) :- box(K, B), cell(K, P), _interior(P, B).
 }
 
 // The rectangle outlines drawn inside a keyed node set, each reported as

@@ -89,10 +89,10 @@ out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !stamped(P, _, Ch).
 
 stamped(Q, Col, $Ink()) :-
     covers(P, Box), template_cell(P, Col), params.ink(Col),  // the drawing's boxes
-    in(Q, _), geq(Q, Box).                                   // as far as the grid reaches
+    in(Q, _), inside(Q, Box).                                   // as far as the grid reaches
 
 // --- $Whole ---
 
 stamped(Q, Col, $Whole()) :-
     covers(P, Box), template_cell(P, Col),  // every template cell's box
-    in(Q, _), geq(Q, Box).
+    in(Q, _), inside(Q, Box).

@@ -121,7 +121,7 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !paint(P, _, Ch).
     .decl star_cell(e: Example, id: Ident, delta: Shift, col: Color)
     star_cell(E, Id, V, Col) :-
         comps.label(E, P, Id), star(E, P, Col),
-        star_marker(E, Id, Pm, _, _), displacement(Pm, P, V).
+        star_marker(E, Id, Pm, _, _), relative(Pm, P, V).
 
     .decl template_arm(delta: Shift)
     template_arm(V) :-

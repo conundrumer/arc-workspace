@@ -70,7 +70,7 @@ center([Col, A, L], M) :-
 .decl mirror(key: LineKey, p: Position, q: Position)
 mirror(Ky, P, Q) :-
     center(Ky, M), line_cell(Ky, P),
-    displacement(P, M, V), compose(M, V, Q).
+    relative(P, M, V), compose(M, V, Q).
 
 .init reach = Bbox<LineKey>
 reach.cell(Ky, P) :- mirror(Ky, P, _).

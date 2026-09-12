@@ -50,7 +50,7 @@ cavity.cell(Id, P) :- anchor(Id, _), in(P, _).
 
 // --- the slide ---
 
-// A mover fits at a displacement when its every cell lands on background or
+// A mover fits at a relative when its every cell lands on background or
 // on its own cells.
 .init fits = Occurrences<Ident, Unit>
 fits.cell(Id, P, $U())  :- mover(Id, _), in(P, Col), ( bg(Col) ; mover(Id, P) ).
@@ -61,7 +61,7 @@ fits.shape(Id, P, $U()) :- mover(Id, P).
 slide.node(Id, Delta) :- fits.occurrence(Id, Delta).
 slide.dir(Id, D) :- mover(Id, _), dir_elem(D).
 
-// The mover's cells carried to a fitting displacement.
+// The mover's cells carried to a fitting relative.
 .decl carried(id: Ident, delta: Shift, p: Position)
 carried(Id, Delta, P2) :- slide.node(Id, Delta), mover(Id, P), compose(P, Delta, P2).
 

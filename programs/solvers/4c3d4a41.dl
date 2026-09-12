@@ -36,7 +36,7 @@ impl_choice($Stack()).
 
 // The container's interior.
 .decl within(p: Position)
-within(P) :- in(P, _), params.box(M), geq(P, M).
+within(P) :- in(P, _), params.box(M), inside(P, M).
 
 // The staging area — what the shift carries into the container.
 .decl stage(p: Position)
@@ -82,7 +82,7 @@ content_end.cand(L, P, K) :- content(P, _), line_cell(P, L, K).
 placed(Q, Col, $Rigid()) :-
     content(P, Col), line_cell(P, L, _),               // a content cell
     content_end.high(L, P_bot, _), seat(L, P_seat),    // the low end goes on the seat
-    displacement(P_bot, P_seat, V), compose(P, V, Q),  // carried as one body
+    relative(P_bot, P_seat, V), compose(P, V, Q),  // carried as one body
     within(Q).                                         // what the container still holds
 
 // --- Stack ---

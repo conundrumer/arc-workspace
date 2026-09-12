@@ -31,7 +31,7 @@ ink_cell(P) :- in(P, Col), params.ink(Col).
 .decl placement(delta: Shift)
 placement(Delta) :-
     ink_cell(P), params.sym(D), apply(D, P, P_turn),  // an ink cell, turned
-    ink_cell(Q), displacement(P_turn, Q, Delta).      // onto another ink cell
+    ink_cell(Q), relative(P_turn, Q, Delta).      // onto another ink cell
 
 // The placed turn, and the cells it reaches from the ink. Cells off the grid
 // stay in.

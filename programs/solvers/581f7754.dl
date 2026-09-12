@@ -47,7 +47,7 @@ anchor(P, Col, D) :-
 shift(Id, V) :-
     sole.value([Id, Col], M), anchor(A, Col, D), axis_of(D, Ax),   // marker, anchor, its edge axis
     split(M, Ax, Along, _), split(A, Ax, _, Across), compose(Along, Across, T),
-    displacement(M, T, V).
+    relative(M, T, V).
 
 .decl moved(p: Position, col: Color)
 moved(Q, Col) :-

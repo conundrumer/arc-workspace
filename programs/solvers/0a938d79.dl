@@ -65,7 +65,7 @@ lead(P_line, $Margin()) :-
 
 // One step of the walk: the lead line to the other one.
 .decl step(ch: Choice, delta: Shift)
-step(Ch, Delta) :- lead(P, Ch), mark_line(Q, _), Q != P, displacement(P, Q, Delta).
+step(Ch, Delta) :- lead(P, Ch), mark_line(Q, _), Q != P, relative(P, Q, Delta).
 
 // Each mark color paired with the other one.
 .decl other_col(col: Color, col2: Color)

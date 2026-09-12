@@ -118,11 +118,11 @@ out(I, Col, [Ic, $Bg()]) :- in(P, C0), !params.ink(C0), frame.inner(Ic, P, I), p
     .decl unscreened(e: Example, p: Position)
     unscreened(E, P) :- ex_in(E, P, _), dir_elem(D), !screened(E, P, D).
 
-    .decl interior(e: Example, p: Position)
-    interior(E, P) :- ex_in(E, P, _), !unscreened(E, P).
+    .decl inner_cell(e: Example, p: Position)
+    inner_cell(E, P) :- ex_in(E, P, _), !unscreened(E, P).
 
     .init box = Bbox<Example>
-    box.cell(E, P) :- interior(E, P).
+    box.cell(E, P) :- inner_cell(E, P).
 
     // The fenced interior stands the same depth in from every edge of every
     // example, so that depth is the margin.

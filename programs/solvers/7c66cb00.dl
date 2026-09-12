@@ -73,7 +73,7 @@ fall(Id, Delta) :-
     params.gravity(D), shape_box.edge_cell(Id, P, D),    // a leading cell of the shape
     shape(Id, _, Col), band_box.edge_cell(Col, Q, D),    // the far edge of its band
     axis_of(D, A), same_line(A, P, Q),                   // in the same column
-    displacement(P, Q, Delta).
+    relative(P, Q, Delta).
 
 .decl landed(p: Position, col: Color)
 landed(P_out, C_end) :-

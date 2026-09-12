@@ -49,7 +49,7 @@ layer.grid(Col, P_inner) :- layer.cell(Col, _), box.inner(_, _, P_inner).
 .decl nested(col_in: Color, col_out: Color)
 nested(Col_in, Col_out) :-
     layer.margin(Col_in, M_in), layer.margin(Col_out, M_out),
-    geq(M_in, M_out), M_in != M_out.
+    inside(M_in, M_out), M_in != M_out.
 
 // --- the paint ---
 

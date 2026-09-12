@@ -92,5 +92,5 @@ out(P, Bg, [F, Fp]) :-
     shape(V) :-
         ex_out(E, P, Col), !params.border(Col), !params.bg(Col),    // the mark
         ex_out(E, Q, B), params.border(B),                          // a ring cell
-        displacement(P, Q, V).                                      // measured from the mark
+        relative(P, Q, V).                                      // measured from the mark
 }

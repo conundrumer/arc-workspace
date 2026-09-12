@@ -68,5 +68,5 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !halo(P, _, Ch).
 
     // Footprint cells as offsets from their marker.
     .decl template(delta: Shift, col: Color)
-    template(Off, Col) :- footprint(M, P, Col), displacement(M, P, Off).
+    template(Off, Col) :- footprint(M, P, Col), relative(M, P, Off).
 }

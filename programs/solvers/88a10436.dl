@@ -65,7 +65,7 @@ box.grid(M, P) :- marker_choice(M), in(P, _).
 .decl seated(p: Position, q: Position, m: Marker)
 seated(P, Q, M) :-
     box.inner(M, Ctr, P_inner), centered(P_inner),   // the box's center
-    box.viewed(M, P), displacement(Ctr, P, V),       // a box cell, as its offset from the center
+    box.viewed(M, P), relative(Ctr, P, V),       // a box cell, as its offset from the center
     marker(A, M), compose(A, V, Q), in(Q, _).        // laid off from a marker, on the grid
 
 // --- Content cases: the cells the copy carries ---

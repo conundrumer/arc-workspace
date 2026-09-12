@@ -42,7 +42,7 @@
           ; cell(Ky, B2, Q), B != B2,                                       // another body's cell
             rest(Ky, B2, Delta2), compose(Q, Delta2, Q2)                    // where that cell rests
           ),
-          opposite(D, D2), neighbor(Q2, D2, P2), displacement(P, P2, Delta) // travel to just behind it
+          opposite(D, D2), neighbor(Q2, D2, P2), relative(P, P2, Delta) // travel to just behind it
         ).
 
     // Where a body rests: the least room its cells leave it.

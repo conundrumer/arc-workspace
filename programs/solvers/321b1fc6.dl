@@ -31,7 +31,7 @@ tmpl_box.cell($U(), P) :- template(P, _).
 .decl shift(v: Shift)
 shift(V) :-
     tmpl_box.margin($U(), P_tmpl_box), block_box.margin(_, P_block_box),
-    displacement(P_tmpl_box, P_block_box, V).
+    relative(P_tmpl_box, P_block_box, V).
 
 // The template carried onto the blocks.
 .decl image(p: Position, col: Color)

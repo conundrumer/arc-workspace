@@ -59,7 +59,7 @@ ring_pos(P_intile) :- panel.inner(_, _, P_intile), dir_elem(D), dist(P_intile, D
 
 .decl inner_cell(id: Ident, p_intile: Position, col: Color)
 inner_cell(Id, P_intile, Col) :-
-    panel.inner(Id, P, P_intile), gt(P_intile, ZERO),  // inside the ring
+    panel.inner(Id, P, P_intile), interior(P_intile, ZERO),  // inside the ring
     in(P, Col).
 
 // A panel's column and band, as the two halves of its box placement.
@@ -79,7 +79,7 @@ lattice.grid($U(), P) :- in(P, _).
 .decl band_label(p_band: Position, col: Color)
 band_label(P_band, Col) :-
     in(P_label, Col), !params.bg(Col), !lattice.viewed($U(), P_label),  // label cell
-    panel_pos(_, _, P_band), geq(P_label, P_band).                      // in the band
+    panel_pos(_, _, P_band), inside(P_label, P_band).                      // in the band
 
 // --- donor ---
 

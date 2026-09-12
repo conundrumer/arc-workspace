@@ -70,7 +70,7 @@ place(S, V) :-
     clue_box.extents(K, A, N1, N2),
     layer_box.extents([S, Col], A, N1, N2),         // the color fills a box of the clue's size
     clue_box.margin(K, M_clue), layer_box.margin([S, Col], M_layer),
-    displacement(M_layer, M_clue, V).               // that box onto the clue
+    relative(M_layer, M_clue, V).               // that box onto the clue
 
 // A many-color clue is tested as a piece of each shape.
 .type Piece = [k: Ident, s: Ident]
@@ -84,7 +84,7 @@ occ.shape([K, S], P, Col) :- piece(K, S), clue_cell(K, P, Col).
 
 place(S, V) :-
     occ.occurrence([K, S], M),   // the clue occurs in the shape
-    displacement(M, ZERO, V).  // read back: the shape onto the clue
+    relative(M, ZERO, V).  // read back: the shape onto the clue
 
 // --- output ---
 

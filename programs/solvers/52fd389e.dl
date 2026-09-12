@@ -29,10 +29,10 @@ marker_count.item(Id, P) :- marker(Id, P, _).
 .decl ring_box(id: Ident, b: Position)
 ring_box(Id, B) :-
     marker_count.tally(Id, K), uniform_inset(K, W),  // one cell of width per marker
-    rect_box.margin(Id, M), displacement(W, M, B).   // the rectangle's box, let out by it
+    rect_box.margin(Id, M), relative(W, M, B).   // the rectangle's box, let out by it
 
 .decl ring(id: Ident, p: Position)
-ring(Id, P) :- in(P, _), ring_box(Id, B), geq(P, B), !rect_box.inside(Id, P).
+ring(Id, P) :- in(P, _), ring_box(Id, B), inside(P, B), !rect_box.inside(Id, P).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- ring(Id, P), marker(Id, _, Col).

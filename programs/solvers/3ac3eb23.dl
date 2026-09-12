@@ -143,7 +143,7 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !lit(P, _, Ch), params.bg(Col).
     // Each cell the pair paints in a marker's color, as an offset from it.
     .decl offset(e: Example, p: Position, delta: Shift)
     offset(E, P, Delta) :-
-        fmark(E, P, Col), ex_out(E, Q, Col), displacement(P, Q, Delta).
+        fmark(E, P, Col), ex_out(E, Q, Col), relative(P, Q, Delta).
 
     // An edge some marker sits off.
     .decl off_edge(d: Dir)

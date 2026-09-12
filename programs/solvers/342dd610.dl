@@ -1,6 +1,6 @@
 // 342dd610
 // concept: move
-// Each ink color carries a fixed displacement; every ink cell translates
+// Each ink color carries a fixed relative; every ink cell translates
 // by its color's jump. The rest of the grid is bg.
 
 #include "../lib.dl"
@@ -25,7 +25,7 @@ out(P, Col) :- moved(P, Col).
 out(P, Col) :- in(P, _), !moved(P, _), params.bg(Col).
 
 .comp Determine {
-    // The cells that carry a displacement.
+    // The cells that carry a relative.
     .decl ink(e: Example, p: Position, c: Color)
     ink(E, P, Col) :- ex_in(E, P, Col), !params.bg(Col).
 
@@ -37,7 +37,7 @@ out(P, Col) :- in(P, _), !moved(P, _), params.bg(Col).
     occ.shape([E, Col], P_in, Col)    :- ink(E, P_in, Col).
     occ.cell([E, Col], P_out, Col2)   :- ink(E, _, Col), ex_out(E, P_out, Col2).
 
-    // A displacement some train pair carrying that color does not seat.
+    // A relative some train pair carrying that color does not seat.
     .decl broken(c: Color, delta: Shift)
     broken(Col, Delta) :-
         occ.occurrence([_, Col], Delta),    // seats one pair's ink

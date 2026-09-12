@@ -207,8 +207,8 @@ run_match($Hue(), Pan2, D, Sn, Sf, Tn, Tf) :-
 .decl drag(ch: Choice, d: Dir, t: Position, q: Position, col: Color, v: Shift)
 drag(Ch, D, Tn, Q, Col2, V) :-
     run_match(Ch, Pan, D, Sn, Sf, Tn, Tf),
-    displacement(Sn, Tn, Vn), compose(Tn, Vn, En),             // the near end steps again
-    displacement(Sf, Tf, Vf), compose(Tf, Vf, Ef),             // and so does the far end
+    relative(Sn, Tn, Vn), compose(Tn, Vn, En),             // the near end steps again
+    relative(Sf, Tf, Vf), compose(Tf, Vf, Ef),             // and so does the far end
     ( V = Vn ; V = Vf ),                                       // one end does the carrying
     run_cell(Pan, D, Tn, P), content(Pan, P, Col),             // a cell of the run
     compose(P, V, Q),                                          // the cell it carries to

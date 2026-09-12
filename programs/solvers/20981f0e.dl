@@ -56,11 +56,11 @@ piece_box.cell(P_tile, P_intile) :- piece(P_tile, P, _), tile_frame.inner(P_tile
 .decl landing(p_tile: Position, delta: Shift, m: Position)
 landing(P_tile, Delta, M) :-
     piece(P_tile, P, _), tile_frame.cell(P_tile, Q),
-    displacement(P, Q, Delta),                                  // a piece cell onto a cell of its tile
+    relative(P, Q, Delta),                                  // a piece cell onto a cell of its tile
     piece_box.margin(P_tile, M_box), compose(M_box, Delta, M),  // where it lands the box
-    geq(M, ZERO).                                             // the whole box inside the tile
+    inside(M, ZERO).                                             // the whole box inside the tile
 
-// The displacement each case picks.
+// The relative each case picks.
 .decl place(p_tile: Position, delta: Shift, ch: Choice)
 
 // --- Center ---

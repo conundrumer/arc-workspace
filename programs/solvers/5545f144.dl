@@ -64,7 +64,7 @@ figure.node($U(), P) :- ink(_, P, _).
 sym_cell(T, D, P) :-
     figure.conn($U(), T, P), dir_elem(D),                      // a cell of T's piece
     axis_of(D, A), perp(A, A2), flip_of(A2, G),                // the mirror in T's line
-    displacement(T, P, V), apply(G, V, V2), compose(T, V2, Q),
+    relative(T, P, V), apply(G, V, V2), compose(T, V2, Q),
     figure.conn($U(), T, Q).                                   // the image is drawn too
 
 // A cell of the set stands level with T or past it, so T is no tip.
@@ -144,7 +144,7 @@ hop(Pan, P, D, Q, D2, $Nearest()) :-
 placed(Pan, P2, Ch) :-
     tip(Pan, T, D0), arrow(Pan, P), rest(Pan, R, D, Ch),
     c4_elem(G), apply_dir(G, D0, D),                             // the turn it made
-    displacement(T, P, V), apply(G, V, V2), compose(R, V2, P2).  // the cell, turned and seated
+    relative(T, P, V), apply(G, V, V2), compose(R, V2, P2).  // the cell, turned and seated
 
 .init frame = BoxFrame<Position>
 frame.cell(Pan, P) :- panel_cell(Pan, P).

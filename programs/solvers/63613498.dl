@@ -33,7 +33,7 @@ box.cell(Id, P) :- shapes.label($U(), P, Id).
 
 // The key's box lies within the panel, so every cell of it does.
 .decl key(id: Ident)
-key(Id) :- box.margin(Id, M), params.panel(B), geq(M, B).
+key(Id) :- box.margin(Id, M), params.panel(B), inside(M, B).
 
 .init same = KeyedSetCompare<Ident, Ident, Position>
 same.pattern_member(Id, P_inner) :- box.inner(Id, _, P_inner).

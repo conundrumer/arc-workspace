@@ -95,7 +95,7 @@ pair(Id_b, Id_p, $Rank()) :-
 
 // A block's interior, in its own frame: the piece's frame.
 .init core = BoxFrame<Ident>
-core.cell(Id, P) :- block(Id), box.margin(Id, M), in(P, _), gt(P, M).
+core.cell(Id, P) :- block(Id), box.margin(Id, M), in(P, _), interior(P, M).
 
 // The output frame is the region the blocks tile.
 .init layout = BoxFrame<Unit>

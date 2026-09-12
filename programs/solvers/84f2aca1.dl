@@ -52,7 +52,7 @@ drect.node($U(), P) :- ink(P).
 .init rect_id = Canon<Position>
 rect_id.equiv(B, B) :- drect.rect($U(), B).
 
-region($Rect(), Id, P) :- rect_id.id(B, Id), bg_cell(P), gt(P, B).
+region($Rect(), Id, P) :- rect_id.id(B, Id), bg_cell(P), interior(P, B).
 
 // $Box: the bg cells each ink object's box holds.
 .init objs = Components<Unit>

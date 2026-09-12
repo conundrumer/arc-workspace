@@ -39,7 +39,7 @@ drawn(P, Col) :- obj.label($U(), P, Id), drawing(Id), in(P, Col).
 shift(V) :-
     drawn(P, Col), params.mark(Col),         // the drawing's anchor
     in(Q, Col), !drawn(Q, _),                // the target, marked outside the drawing
-    displacement(P, Q, V).
+    relative(P, Q, V).
 
 .decl footprint(p: Position, ch: Choice)
 

@@ -167,7 +167,7 @@ paint(Q, Col, [Dc, $Blit()]) :-
     parse.mark($U(), Dc, P, B),
     parse.swatch($U(), Dc, B, S, Col),                      // a mark, a swatch cell of its band
     parse.band_key($U(), Dc, B, P_key, _),                  // the band's key mark
-    displacement(P_key, S, Delta), compose(P, Delta, Q),     // the swatch cell held at the mark
+    relative(P_key, S, Delta), compose(P, Delta, Q),     // the swatch cell held at the mark
     parse.field($U(), Q, _).                                 // on the field
 
 // --- output ---
@@ -220,7 +220,7 @@ out(P, Col, Ch) :-
 
     // The offset from the mark to that cell.
     .decl offset(delta: Shift)
-    offset(Delta) :- hit(_, P, Q), displacement(P, Q, Delta).
+    offset(Delta) :- hit(_, P, Q), relative(P, Q, Delta).
 
     // Contradicted: some mark whose output misses the offset.
     .decl missed(delta: Shift)

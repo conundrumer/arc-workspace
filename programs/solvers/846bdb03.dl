@@ -36,7 +36,7 @@ bar(D, Col) :- cropped(P, Col), dir_elem(D), dist(P, D, 0), !params.bg(Col), !pa
 
 // The box off its border, in its own frame.
 .init core = BoxFrame<Unit>
-core.cell($U(), P) :- cropped(P, _), gt(P, ZERO).
+core.cell($U(), P) :- cropped(P, _), interior(P, ZERO).
 
 // --- the shape ---
 

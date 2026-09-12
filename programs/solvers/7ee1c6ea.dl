@@ -44,7 +44,7 @@ impl_choice([I, Pal]) :- inside_choice(I), palette_choice(Pal).
 .init fbox = Bbox<Unit>
 fbox.cell($U(), P) :- frame_cell(P).
 
-within(P, $Box()) :- in(P, _), fbox.margin($U(), B), gt(P, B).
+within(P, $Box()) :- in(P, _), fbox.margin($U(), B), interior(P, B).
 
 .init closed = Closed<Unit>
 closed.cell($U(), P) :- in(P, _), !frame_cell(P).

@@ -46,11 +46,11 @@ reach.cand(Col, K) :- ink(P, Col), peel.depth($U(), P, K).
 layer(Col, B) :- reach.low(Col, K), uniform_inset(K, B).
 
 .decl covered(p: Position, col: Color)
-covered(P, Col) :- in(P, _), layer(Col, B), geq(P, B).
+covered(P, Col) :- in(P, _), layer(Col, B), inside(P, B).
 
 // A layer inside Col's box also covers P.
 .decl shadowed(p: Position, col: Color)
-shadowed(P, Col) :- layer(Col, B), covered(P, Col2), layer(Col2, B2), gt(B2, B).
+shadowed(P, Col) :- layer(Col, B), covered(P, Col2), layer(Col2, B2), interior(B2, B).
 
 out(P, Col, $Layers()) :- covered(P, Col), !shadowed(P, Col).
 out(P, Col, $Layers()) :- in(P, _), !covered(P, _), params.bg(Col).  // outside every box

@@ -40,7 +40,7 @@ anchor_at(Id, P) :- part_cell(Id, P, Col), params.anchor(Col).
 // The part's cells in the frame its anchor fixes.
 .decl anchored(id: Ident, v: Shift, col: Color)
 anchored(Id, V, Col) :-
-    part_cell(Id, P, Col), anchor_at(Id, A), displacement(A, P, V).
+    part_cell(Id, P, Col), anchor_at(Id, A), relative(A, P, V).
 
 .decl shape_cell(id: Ident, v: Shift)
 shape_cell(Id, V) :- anchored(Id, V, Col), params.shape(Col).

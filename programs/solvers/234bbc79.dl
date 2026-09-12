@@ -92,7 +92,7 @@ trail_dest(Id2, P_dest) :-
 // How far the piece travels.
 .decl slide(id: Ident, delta: Shift)
 slide(Id, Delta) :-
-    trail_joint(Id, P_pack), trail_dest(Id, P_dest), displacement(P_pack, P_dest, Delta).
+    trail_joint(Id, P_pack), trail_dest(Id, P_dest), relative(P_pack, P_dest, Delta).
 
 .decl place(id: Ident, p_dest: Position)
 place(Id, P_dest) :-

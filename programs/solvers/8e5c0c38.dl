@@ -65,7 +65,7 @@ shape([$ByObject(), Id], P) :- piece.label($U(), P, Id).
 .decl mirrored(ky: Grp, delta: Shift, p: Position)
 mirrored(Ky, Delta, P) :-
     shape(Ky, P), params.mirror_axis(A), flip_of(A, D), apply(D, P, P_flip),   // a cell, flipped
-    shape(Ky, Q), same_line(A, P, Q), displacement(P_flip, Q, Delta).          // onto a shape cell of its line
+    shape(Ky, Q), same_line(A, P, Q), relative(P_flip, Q, Delta).          // onto a shape cell of its line
 
 // The figure's axis: the placement that lands the most cells.
 .init fit = Mode<Grp, Shift, Position>

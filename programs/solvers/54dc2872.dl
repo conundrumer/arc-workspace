@@ -59,7 +59,7 @@ bend(Id, P, G) :-
 target(Id, P) :- tag(Id, Col), mark(Col, P).
 
 .decl shift(id: Ident, v: Shift)
-shift(Id, V) :- bend(Id, B, _), target(Id, T), displacement(B, T, V).
+shift(Id, V) :- bend(Id, B, _), target(Id, T), relative(B, T, V).
 
 // The cases differ in which Ls move, not in where a moving L goes.
 .decl moves(id: Ident, ch: Choice)

@@ -3,7 +3,7 @@
 // The input's two halves along the stack axis pull apart diagonally:
 // each half reseats in a grown frame, and the vacated band fills with
 // params.filler. Choice cases, all data-equivalent here:
-//   $Derive(g, s) — displacement derived from a corner seat and growth:
+//   $Derive(g, s) — relative derived from a corner seat and growth:
 //     g $Iso()     — one width: separator and lateral shift are the same
 //                    parameter (params.sep)
 //     g $Aniso()   — per-axis widths (params.sep_dim rows)
@@ -11,7 +11,7 @@
 //                    side of the stack
 //     s $Table()   — explicit side → corner map (params.seat_of)
 //   $Disp() — table: params.arr slabs along the stack axis, per-slab
-//             displacement vector (params.disp)
+//             relative vector (params.disp)
 
 #include "../lib.dl"
 
@@ -121,7 +121,7 @@ out(P, Col, Ch) :- frame.cell(Ch, P), !seated(P, _, Ch), params.filler(Col).
     occ.cell([E, A, P_tile], P_out, Col) :-
         slab_cell(E, A, P_tile, _, _), ex_out(E, P_out, Col).
 
-    // A displacement some train pair's slab does not seat.
+    // A relative some train pair's slab does not seat.
     .decl broken(a: Axis, p_tile: Position, delta: Inset)
     broken(A, P_tile, Delta) :-
         occ.occurrence([_, A, P_tile], Delta),    // seats one pair's slab
@@ -132,7 +132,7 @@ out(P, Col, Ch) :- frame.cell(Ch, P), !seated(P, _, Ch), params.filler(Col).
     slab_disp(A, P_tile, Delta) :-
         occ.occurrence([_, A, P_tile], Delta), !broken(A, P_tile, Delta).
 
-    // A candidate axis with a slab that no displacement places.
+    // A candidate axis with a slab that no relative places.
     .decl axis_broken(a: Axis)
     axis_broken(A) :- slab_cell(_, A, P_tile, _, _), !slab_disp(A, P_tile, _).
 
@@ -142,11 +142,11 @@ out(P, Col, Ch) :- frame.cell(Ch, P), !seated(P, _, Ch), params.filler(Col).
     .decl disp(p_tile: Position, delta: Position)
     disp(P_tile, Delta) :- axis(A), slab_disp(A, P_tile, Delta).
 
-    // The frame grows at the edges a displacement moves away from.
+    // The frame grows at the edges a relative moves away from.
     .decl sep_dim(a: Axis, n: number)
     sep_dim(A, N) :- disp(_, Delta), axis_of(D, A), dist(Delta, D, N), N != 0.
 
-    // A slab seats at the corner whose two edges its displacement leaves alone.
+    // A slab seats at the corner whose two edges its relative leaves alone.
     .decl seat(p_tile: Position, diag: DiagDir)
     seat(P_tile, Diag) :- disp(P_tile, Delta), diag_dist(Delta, Diag, _, 0, 0).
 

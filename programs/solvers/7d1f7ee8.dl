@@ -43,11 +43,11 @@ drect.node(Col, P) :- ink(Col), in(P, Col).
 
 // A rectangle inside another rectangle's box.
 .decl nested_rect(b: Position)
-nested_rect(B) :- drect.rect(_, B), drect.rect(_, B_outer), B != B_outer, geq(B, B_outer).
+nested_rect(B) :- drect.rect(_, B), drect.rect(_, B_outer), B != B_outer, inside(B, B_outer).
 
 enclosed(P, Col, $Rect()) :-
     ink(C), in(P, C),                               // ink cell
-    drect.rect(Col, B), !nested_rect(B), geq(P, B). // in an outermost rectangle's box
+    drect.rect(Col, B), !nested_rect(B), inside(P, B). // in an outermost rectangle's box
 
 // --- Enclose ---
 

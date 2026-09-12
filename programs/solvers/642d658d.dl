@@ -82,7 +82,7 @@ out(ZERO, Col, [Dt, $Count()]) :- plus_count.tally(Dt, Col, N), params.target(N)
 
     // Every offset from a center cell to a cell of its own grid.
     .decl cand(off: Shift)
-    cand(Off) :- center_at(E, P), ex_in(E, P2, _), displacement(P, P2, Off).
+    cand(Off) :- center_at(E, P), ex_in(E, P2, _), relative(P, P2, Off).
 
     // Lands off the grid at some center — no color to compare there.
     .decl off_grid(off: Shift)

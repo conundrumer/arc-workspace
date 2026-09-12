@@ -103,7 +103,7 @@ period_cand(Pn) :- drawn_line(L), trail_dir(Td), dist(L, Td, Pn), Pn != 0.
 cand(Pn, L, X, Y, V) :-
     period_cand(Pn), layer(L, X),                       // a layer cell
     trail_dir(Td), jump(L, Td, Pn, L2), layer(L2, Y),   // a cell of the layer Pn back
-    displacement(Y, X, V).                              // the move it asks for
+    relative(Y, X, V).                              // the move it asks for
 
 // A cell moves with its layer: the delta shared by the most cells of the
 // layer wins. A tie is free — any pick replays the layers — so Canon's
@@ -257,8 +257,8 @@ anc_ext(Y, Z) :- anc_ext(Y, Z1), ext_parent(Z1, Z).
 .decl gen_obs(dk: Shift, dj: Shift, x: Position, z: Position, c: Color, c2: Color)
 gen_obs(Dk, Dj, X, Z, C, C2) :-
     drawn(L, X, C), drawn_birth(X, Lx),              // cell and its birth
-    drawn_birth(Z, Lz), displacement(Lx, Lz, Dj),    // a cell dj births away
-    drawn(L2, Z, C2), displacement(L, L2, Dk).       // read dk stages away
+    drawn_birth(Z, Lz), relative(Lx, Lz, Dj),    // a cell dj births away
+    drawn(L2, Z, C2), relative(L, L2, Dk).       // read dk stages away
 
 // An ancestor generator reads along ancestry: it stands when some ancestor
 // pair witnesses it and none contradicts it.

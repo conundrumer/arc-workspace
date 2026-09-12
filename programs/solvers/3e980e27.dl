@@ -39,7 +39,7 @@
     footprint(K, M, V, Col) :-
         lone(K, _, M), ink(K, P0, M), joined(K, P0),  // a marker color, worn inside a shape
         obj.label(K, P0, Id), obj.label(K, P, Id),    // a cell of the same shape
-        ink(K, P, Col), displacement(P0, P, V).       // its color and offset from the marker
+        ink(K, P, Col), relative(P0, P, V).       // its color and offset from the marker
 }
 
 .init parse = Parse<Unit>

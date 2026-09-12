@@ -35,7 +35,7 @@ mark(P, Col, Ch) :- piece(Id, P, Col), impl_choice(Ch), !bar(Id, _, _, Ch).
 
 // The copy carries the bar's cell of the mark's color onto the mark.
 .decl shift(id: Ident, v: Shift, ch: Choice)
-shift(Id, V, Ch) :- mark(P, Col, Ch), bar(Id, Q, Col, Ch), displacement(Q, P, V).
+shift(Id, V, Ch) :- mark(P, Col, Ch), bar(Id, Q, Col, Ch), relative(Q, P, V).
 
 .decl stamp(p: Position, col: Color, ch: Choice)
 stamp(P2, Col, Ch) :-

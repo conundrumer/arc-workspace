@@ -30,7 +30,7 @@ impl_choice($Cell()). impl_choice($Object()).
 corner(P) :- in(P, _), corner_dist(P, _, 0).
 
 .decl inner_cell(p: Position)
-inner_cell(P) :- in(P, _), gt(P, ZERO).
+inner_cell(P) :- in(P, _), interior(P, ZERO).
 
 .decl bg(col: Color)
 bg(Col) :- in(P, Col), corner(P).

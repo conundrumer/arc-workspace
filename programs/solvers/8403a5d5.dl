@@ -208,9 +208,9 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !lit(P, Ch), !dotted(P, Ch), param
 
     // Each bar cell and dot cell as an offset from the marker.
     .decl template_bar(delta: Shift)
-    template_bar(Delta) :- fmark(E, P, Col), ex_out(E, Q, Col), displacement(P, Q, Delta).
+    template_bar(Delta) :- fmark(E, P, Col), ex_out(E, Q, Col), relative(P, Q, Delta).
 
     .decl template_dot(delta: Shift)
     template_dot(Delta) :-
-        fmark(E, P, _), ex_out(E, Q, Dot), params.dot(Dot), displacement(P, Q, Delta).
+        fmark(E, P, _), ex_out(E, Q, Dot), params.dot(Dot), relative(P, Q, Delta).
 }

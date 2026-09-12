@@ -86,7 +86,7 @@ blobs.item([Col, Ch], Id) :- comps.label(Col, _, Id), impl_choice(Ch), !frame(Co
 // The cells inside each frame's box, in the box's own frame.
 .init view = Reframe<Position>
 view.outer(B, B) :- frame(_, _, B, _).
-view.cell(B, P) :- view.outer(B, _), in(P, _), gt(P, B).
+view.cell(B, P) :- view.outer(B, _), in(P, _), interior(P, B).
 
 .decl kept(p: Position, col: Color, ch: Choice)
 kept(P, Col, Ch) :- frame(Col, Id, _, Ch), comps.label(Col, P, Id).   // the frame itself

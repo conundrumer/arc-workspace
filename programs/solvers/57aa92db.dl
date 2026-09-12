@@ -72,7 +72,7 @@ seat(O, V) :-
     shape_cell(P_tile, Col), mark_col(Col),      // the shape's mark tile
     block.inner(O, P_grid, P_intile),            // the object's mark, cell by cell
     concat_2d(P_tile, P_intile, 0, P_stamp),     // that cell of the scaled shape
-    displacement(P_stamp, P_grid, V).
+    relative(P_stamp, P_grid, V).
 
 // A cell of an object's copy, with the color of the shape cell it comes from.
 .decl stamp(id: Ident, p_grid: Position, col: Color)

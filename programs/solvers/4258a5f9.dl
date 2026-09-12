@@ -74,5 +74,5 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !halo(P, _, Ch).
     template(Off, Col) :-
         blob_marker.value([E, Id], M),                // the blob's lone marker
         blob.label(E, P, Id), stamped(E, P, Col),     // one of its cells
-        displacement(M, P, Off).
+        relative(M, P, Off).
 }

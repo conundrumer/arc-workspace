@@ -42,7 +42,7 @@ strip_span.mark($U(), P) :- line_cell(P).
 .decl strip_in(p: Position, c: Color)
 strip_in(P, C) :-
     strip_span.between($U(), P), !line_cell(P),   // in the strip
-    gt(P, ZERO), in(P, C).                      // inside the frame
+    interior(P, ZERO), in(P, C).                      // inside the frame
 
 // The shortest shift along the lines under which the strip agrees with itself.
 .init strip_shift = ShiftInvariance<Unit, Color>

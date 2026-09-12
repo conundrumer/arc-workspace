@@ -95,12 +95,12 @@ shift(Delta) :-
     in(P, _), params.fall_dir(D), fall_axis(A),
     sub_extent(P, A, K), jump_offset(D, K, Delta).
 
-// A displacement that carries a shape cell off the grid.
+// A relative that carries a shape cell off the grid.
 .decl off_grid(id: Ident, delta: Shift)
 off_grid(Id, Delta) :-
     shift(Delta), shape_row_cell(Id, _, P), compose(P, Delta, Q), !in(Q, _).
 
-// A displacement that carries a stopped row onto or past the divider.
+// A relative that carries a stopped row onto or past the divider.
 .decl through(id: Ident, delta: Shift, ch: Choice)
 through(Id, Delta, Ch) :-
     stopped(Id, R, Ch), shift(Delta), compose(R, Delta, R2),    // the stopped row, displaced

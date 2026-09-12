@@ -79,7 +79,7 @@ dock_cell(Id, G, V, P_grid) :-
     notch(Id, D_notch), c4_elem(G),
     apply_dir(G, D_notch, D_faced),                            // the notch faces the hub
     side_cell(Id, D_notch, P_notch), apply(G, P_notch, P_turned_notch),
-    seat(D, P_seat), displacement(P_turned_notch, P_seat, V),  // a notch cell on a seat cell
+    seat(D, P_seat), relative(P_turned_notch, P_seat, V),  // a notch cell on a seat cell
     box.inner(Id, _, P_piece),                                 // any cell of the piece
     apply(G, P_piece, P_turned), compose(P_turned, V, P_grid).
 

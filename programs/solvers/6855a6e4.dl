@@ -31,7 +31,7 @@ rays.blocked($U(), P) :- in(P, Col), params.mirror(Col).
 image(Q) :-
     rays.stop($U(), B, D, _, P),                                  // the mirror cell a mover faces
     axis_of(D, A), flip_of(A, F),                                 // the flip across that mirror
-    displacement(B, P, V), apply(F, V, V2), compose(B, V2, Q).    // taken about the mirror cell
+    relative(B, P, V), apply(F, V, V2), compose(B, V2, Q).    // taken about the mirror cell
 
 .decl out(p: Position, col: Color)
 out(P, Col) :-

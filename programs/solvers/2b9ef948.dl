@@ -3,7 +3,7 @@
 // A box of frame color encloses a cell of the grid's one free color, and a
 // trail of path color lies elsewhere, with a free-colored cell beside one end
 // and a frame-colored cell beside the other. The box travels by the
-// displacement from the free end to the frame end. In the output the free
+// relative from the free end to the frame end. In the output the free
 // color floods the grid, and the moved box, with the diagonals it casts,
 // shows in frame color. Two hypotheses of what casts them:
 //
@@ -41,7 +41,7 @@ beside_trail(P) :- in(P, _), dir_elem(D), neighbor(P, D, Q), in(Q, Col), params.
 travel(V) :-
     in(P, Col), free_color(Col), beside_trail(P),        // the free end
     in(Q, Col2), params.frame(Col2), beside_trail(Q),    // the frame end
-    displacement(P, Q, V).
+    relative(P, Q, V).
 
 // The box and its core: the frame and free cells away from the trail.
 .decl box(p: Position)

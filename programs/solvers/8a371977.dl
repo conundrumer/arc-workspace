@@ -22,7 +22,7 @@
     // --- shared ---
     .decl bg(c: Color) bg(1).
     .decl ring(c: Color) ring(2).
-    .decl inside(c: Color) inside(3).
+    .decl within(c: Color) within(3).
 }
 
 .init params = Params
@@ -39,7 +39,7 @@ impl_choice($Lattice()). impl_choice($Blobs()). impl_choice($Sight()).
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- in(P, Col), params.bg(Col), impl_choice(Ch).
 out(P, Col, Ch) :- ring_cell(P, Ch), params.ring(Col).
-out(P, Col, Ch) :- ink(P), impl_choice(Ch), !ring_cell(P, Ch), params.inside(Col).
+out(P, Col, Ch) :- ink(P), impl_choice(Ch), !ring_cell(P, Ch), params.within(Col).
 
 // --- $Lattice ---
 
