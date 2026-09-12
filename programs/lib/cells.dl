@@ -1,12 +1,46 @@
-/// 2D decomposition from per-axis tile counts — the divide peer of Frame2D:
-/// per-axis 1D divide, perp-glued. This makes the rectangular hypothesis; the _2d
-/// composites make the square hypothesis (one scalar, both axes). `cell` and `gap`
-/// are the instance's inputs.
+//! Units with a keyed cell-set input: the caller feeds the cells of a set
+//! under each key, and the unit reports what holds of that set.
+//!
+//! A frame decomposes three ways: from a tile count on each axis, from a tile
+//! size on each axis, or from the dividers drawn in the set. The first two
+//! give equal tiles; dividers also give unequal ones.
+//!
+//! A corner diagonal is one run of cells. The placement it induces sorts every
+//! cell of the set into a quadrant and a ring.
+//!
+//! A cast starts at a mark and crosses the frame. Two opposite casts fold into
+//! a test for what lies between marks. A run that must stay inside the set
+//! moves a piece instead of reporting a line.
+//!
+//! A member set induces a dense frame, ordered along an axis. Cells taken as
+//! their own members are the lexicographic case, ordered from a corner.
+//!
+//! A set has one bounding box. It may also have rectangles drawn in it, each
+//! read as a box of its own.
+//!
+//! Connectivity runs under four adjacency or eight: components label the whole
+//! set, a flood keeps the components its seeds pick, the rim is the boundary
+//! layer, and the closed regions are the parts the frame edge cannot reach.
+//!
+//! Invariance tests a map of a set onto a set. The exact reading fails on one
+//! mismatched cell; the damage-tolerant reading weighs broken evidence against
+//! whole. A map of a small set into a large one is an occurrence.
+
+/// 2D decomposition of the frame from a tile count on each axis: a 1D divide
+/// along each axis, glued across. The counts differ between the axes, which
+/// states the rectangular hypothesis. `divide_2d` in box.dl takes one count
+/// for both axes, the square hypothesis.
 .comp Divide2D<Key> {
+    /// The cells to place.
     .decl cell(p: Position)  // @input
+
+    /// How many tiles axis a carries.
     .decl dim(key: Key, a: Axis, n: number)  // @input
+
+    /// The width of the gap between two tiles.
     .decl gap(g: number)  // @input
 
+    /// p_outer is the tile p falls in; p_inner is p inside that tile.
     .decl tile(key: Key, p: Position, p_outer: Position, p_inner: Position)
     tile(Ky, P, P_outer, P_inner) :-
         cell(P), gap(G),
@@ -16,12 +50,18 @@
         compose(Po1, Po2, P_outer), compose(Pi1, Pi2, P_inner).
 }
 
-/// Like Divide2D, but parameterized by per-axis tile sizes.
+/// Takes a tile size on each axis, in place of a tile count.
 .comp Tile2D<Key> {
+    /// The cells to place.
     .decl cell(p: Position)  // @input
+
+    /// How many cells a tile spans on axis a.
     .decl dim(key: Key, a: Axis, k: number)  // @input
+
+    /// The width of the gap between two tiles.
     .decl gap(g: number)  // @input
 
+    /// p_outer is the tile p falls in; p_inner is p inside that tile.
     .decl tile(key: Key, p: Position, p_outer: Position, p_inner: Position)
     tile(Ky, P, P_outer, P_inner) :-
         cell(P), gap(G),
@@ -31,14 +71,54 @@
         compose(Po1, Po2, P_outer), compose(Pi1, Pi2, P_inner).
 }
 
-/// A corner diagonal, per key — the full corner-to-corner run of cells
-/// equidistant from the corner's two edges, center included.
-/// DiagPlacement.diag_cell is this ∩ quadrant — the corner→center ray.
-.comp Diagonal<Key> {
-    /// The position domain, per key.
+/// Takes the tiles from the dividers drawn in the set, so the tiles may be
+/// unequal: a cell's tile position holds, toward each edge, the count of
+/// dividers between the cell and that edge. A divider cell gets no tile, and
+/// an axis with no divider is one part. A within-tile position is a `crop`
+/// from the tile's box.
+.comp DividerTiles<Key> {
+    /// The cell domain.
     .decl cell(key: Key, p: Position)  // @input
 
-    /// The corner the diagonal runs from, per key.
+    /// The cutting lines, axis-only on a — detection output or stored data.
+    .decl divider(key: Key, a: Axis, l: Position)  // @input
+
+    /// A divider's distance to edge d.
+    .decl div_dist(key: Key, a: Axis, d: Dir, k: number)
+    div_dist(K, A, D, K1) :- divider(K, A, L), axis_of(D, A), dist(L, D, K1).
+
+    /// p's line on axis a holds a divider.
+    .decl on_divider(key: Key, p: Position, a: Axis)
+    on_divider(K, P, A) :- cell(K, P), div_dist(K, A, D, K1), dist(P, D, K1).
+
+    /// p's tile index from edge d — the dividers between p and edge d.
+    .decl part_idx(key: Key, p: Position, d: Dir, n: number)
+    part_idx(K, P, D, N) :-
+        cell(K, P), axis_of(D, A), !on_divider(K, P, A), dist(P, D, K1),
+        N = count : { div_dist(K, A, D, K2), K2 < K1 }.
+
+    /// The part of axis a that p sits in, as an axis-only position: p's
+    /// tile index from each edge of the axis.
+    .decl part_of(key: Key, p: Position, a: Axis, p_part: Position)
+    part_of(K, P, A, P_part) :-
+        axis_of(D, A), opposite(D, D2),                 // the axis's two dirs
+        part_idx(K, P, D, N1), part_idx(K, P, D2, N2),  // index from each
+        axis_inset(D, N1, N2, P_part).
+
+    /// p's tile, the parts on both axes glued.
+    .decl tile_of(key: Key, p: Position, p_tile: Position)
+    tile_of(K, P, P_tile) :-
+        part_of(K, P, A, P1), perp(A, A2), part_of(K, P, A2, P2),  // part on each axis
+        compose(P1, P2, P_tile).                                   // glued
+}
+
+/// A corner diagonal: the full corner-to-corner run of cells equidistant from
+/// the corner's two edges, the center included.
+.comp Diagonal<Key> {
+    /// The cell domain.
+    .decl cell(key: Key, p: Position)  // @input
+
+    /// The corner the diagonal runs from.
     .decl corner(key: Key, d: DiagDir)  // @input
 
     /// A domain cell on the diagonal, at ring — its shared distance to both
@@ -47,9 +127,11 @@
     diagonal(Ky, P, K) :- cell(Ky, P), corner(Ky, Diag), diag_dist(P, Diag, _, K, K).
 }
 
-/// Diagonal placement — the quadrant a cell sits in, and its ring.
+/// Sorts the whole domain instead, against all four corners: the quadrant a
+/// cell sits in, and its ring there. `diag_cell` is the corner→center half of
+/// a diagonal.
 .comp DiagPlacement<Key> {
-    /// The position domain, per key.
+    /// The cell domain.
     .decl cell(key: Key, p: Position)  // @input
 
     /// Strictly nearer edge d than its opposite — which side of the axis midline.
@@ -66,20 +148,23 @@
     diag_cell(Ky, P, Diag, K) :- quadrant(Ky, P, Diag), diag_dist(P, Diag, _, K, K).
 }
 
-/// Keyed marks cast rays toward the key's directions. Reach is inclusive:
-/// a mark is on its own ray, and a domain that excludes marks (bg-only) gets
-/// strict semantics with no extra rule. The cast crosses the whole frame; the
-/// domain decides what is reported, not what the ray passes over. Direction
-/// columns are Dir8; a cardinal-only caller narrows one with `dir_elem`.
+/// Marks cast rays toward the key's directions. Reach is inclusive: a mark is
+/// on its own ray, and a domain that excludes marks (bg-only) gets strict
+/// semantics. The cast crosses the whole frame; the domain
+/// decides what is reported, not what the ray passes over. Direction columns
+/// are Dir8; a cardinal-only caller narrows one with `dir_elem`.
 .comp Ray<Key> {
-    /// The cast directions, per key.
+    /// The cast directions.
     .decl dir(key: Key, d: Dir8)  // @input
 
-    /// The position domain tested, per key.
+    /// The cell domain tested.
     .decl cell(key: Key, p: Position)  // @input
 
-    /// The casting positions, per key.
+    /// The casting positions.
     .decl mark(key: Key, p: Position)  // @input
+
+    /// Cells a cast cannot enter. A blocked mark still casts.
+    .decl blocked(key: Key, p: Position)  // @input
 
     // Short of the far edge: every edge the cast toward d approaches still
     // lies ahead. A position off the frame across d passes, so a cast that
@@ -94,13 +179,10 @@
     cast(Ky, P2, D, K+1, Src) :-
         cast(Ky, P, D, K, Src), step_offset(D, S), compose(P, S, P2), _onward(P2, D).
 
-    /// p on a key-k ray cast toward d, k cells from the casting mark src.
-    /// k = 0 at the mark itself, and `ray(Ky, P, D, _, _)` is membership alone.
+    /// p on a ray cast toward d, k cells from the casting mark src. k = 0 at
+    /// the mark itself, and `ray(Ky, P, D, _, _)` is membership alone.
     .decl ray(key: Key, p: Position, d: Dir8, k: number, src: Position)
     ray(Ky, P, D, K, Src) :- cast(Ky, P, D, K, Src), cell(Ky, P).
-
-    /// Cells a cast cannot enter, per key. A blocked mark still casts.
-    .decl blocked(key: Key, p: Position)  // @input
 
     /// Frame-wide open prefix: the cast short of its first blocked cell.
     .decl clear_cast(key: Key, p: Position, d: Dir8, k: number, src: Position)
@@ -122,28 +204,29 @@
     stop(Ky, P, D, K, Src) :- _ahead(Ky, P, D, K, Src), blocked(Ky, P).
 }
 
-/// The two-sided fold of Ray: between(k, p) holds when key-k marks lie on
-/// both sides of p in its line, along one of the key's axes. Reach is
-/// inclusive, as in Ray.
+/// Folds the cast both ways along an axis: `between` holds at p when marks lie
+/// on both sides of p in its line. Reach is inclusive, as for a single cast.
 .comp Between<Key> : Ray<Key> {
-    /// The fold axes, per key.
+    /// The fold axes.
     .decl axis(key: Key, a: Axis4)  // @input
 
     dir(Ky, D) :- axis(Ky, A), axis4_of(D, A).   // cast both ways
 
+    /// Marks of the key lie on both sides of p, along one of the key's axes.
     .decl between(key: Key, p: Position)
     between(K, P) :-
         axis(K, A), axis4_of(D, A), dir8_opposite(D, O),
         ray(K, P, D, _, _), ray(K, P, O, _, _).
 }
 
-/// The maximal straight run inside a keyed node set. A cast with step
-/// counts, or from a mark outside the set, is Ray.
+/// The maximal straight run that stays inside a node set: the mover steps from
+/// node to node and comes to rest where the set stops. A run with step counts,
+/// or one that starts outside the set, is a cast.
 .comp Slide<Key> {
-    /// Where the mover may stand, per key. Positions or Offsets.
+    /// Where the mover may stand. Positions or Offsets.
     .decl node(key: Key, p: Position)  // @input
 
-    /// The run directions, per key.
+    /// The run directions.
     .decl dir(key: Key, d: Dir8)  // @input
 
     /// q is reached from p toward d by steps that stay in the node set.
@@ -167,17 +250,16 @@
 }
 
 /// The dense frame a sparse member set induces along an axis, with each
-/// member's line in it — the order-canonical peer of AxisFrame, which
-/// realizes a frame from its extent alone. Members are opaque and may span
-/// several lines; a line fed as its own member is the plain case, and `pos`
-/// composed with a cell's across component carries the cell into the packed
-/// frame.
+/// member's line in it. Members are opaque and may span several lines; a line
+/// fed as its own member is the plain case, and `pos` composed with a cell's
+/// across component carries the cell into the packed frame.
+/// AxisFrame in box.dl realizes a frame from its extent alone.
 ///
-/// Flagged: assumes each key's member line sets separate cleanly along the
-/// axis — no shared line, no interleaving. A pair that mixes breaks the
-/// order and doubles `pos`.
+/// Requires: each key's member line sets separate cleanly along the axis — no
+/// shared line, no interleaving. A pair that mixes breaks the order and
+/// doubles `pos`.
 .comp OrderFrame<Key, T> {
-    /// The axis the frame runs along, per key.
+    /// The axis the frame runs along.
     .decl axis(key: Key, a: Axis)  // @input
 
     /// Each member's lines, axis-only on the key's axis.
@@ -190,6 +272,7 @@
         axis(Ky, A), axis_of(D, A),
         dist(P, D, K1), dist(Q, D, K2), K1 < K2.
 
+    /// The members, one row each.
     .decl mem(key: Key, m: T)
     mem(Ky, M) :- member(Ky, M, _).
 
@@ -203,57 +286,18 @@
         axis_inset(D, R1, R2, P_pos).
 }
 
-/// The nonuniform tile arrangement a divider set induces — the divider-driven
-/// peer of Divide2D/Tile2D, which need equal tiles: a cell's tile position
-/// holds, toward each edge, the count of dividers between the cell and that
-/// edge. Divider cells get no tile; an axis with no dividers is one part. A
-/// within-tile position is a `crop` from the tile's box.
-.comp DividerTiles<Key> {
-    /// The position domain, per key.
-    .decl cell(key: Key, p: Position)  // @input
-
-    /// The cutting lines, axis-only on a — detection output or stored data.
-    .decl divider(key: Key, a: Axis, l: Position)  // @input
-
-    /// Divider distances.
-    .decl div_dist(key: Key, a: Axis, d: Dir, k: number)
-    div_dist(K, A, D, K1) :- divider(K, A, L), axis_of(D, A), dist(L, D, K1).
-
-    /// p's line on axis a holds a divider.
-    .decl on_divider(key: Key, p: Position, a: Axis)
-    on_divider(K, P, A) :- cell(K, P), div_dist(K, A, D, K1), dist(P, D, K1).
-
-    /// p's tile index from edge d — the dividers between p and edge d.
-    .decl part_idx(key: Key, p: Position, d: Dir, n: number)
-    part_idx(K, P, D, N) :-
-        cell(K, P), axis_of(D, A), !on_divider(K, P, A), dist(P, D, K1),
-        N = count : { div_dist(K, A, D, K2), K2 < K1 }.
-
-    /// The part of axis a that p sits in, as an axis-only position: p's
-    /// tile index from each edge of the axis.
-    .decl part_of(key: Key, p: Position, a: Axis, p_part: Position)
-    part_of(K, P, A, P_part) :-
-        axis_of(D, A), opposite(D, D2),                 // the axis's two dirs
-        part_idx(K, P, D, N1), part_idx(K, P, D2, N2),  // index from each
-        axis_inset(D, N1, N2, P_part).
-
-    /// P's tile, parts on both axes glued.
-    .decl tile_of(key: Key, p: Position, p_tile: Position)
-    tile_of(K, P, P_tile) :-
-        part_of(K, P, A, P1), perp(A, A2), part_of(K, P, A2, P2),  // part on each axis
-        compose(P1, P2, P_tile).                                   // glued
-}
-
-/// Order's geometric special case: lexicographic order over a keyed cell
-/// set. Reading order is the top-left, V-primary member.
+/// Orders the cells themselves, lexicographically: the primary axis first,
+/// the corner's other axis breaking a tie. Reading order is the top-left
+/// corner with the V axis primary. The ranks and the ends come from Order in
+/// orders.dl.
 .comp LexOrder<Key> : Order<Key, Position> {
-    /// The corner the order runs from, per key.
+    /// The corner the order runs from.
     .decl corner(key: Key, d: DiagDir)  // @input
 
-    /// The primary axis, per key.
+    /// The primary axis.
     .decl axis(key: Key, a: Axis)  // @input
 
-    /// The cells to order, per key.
+    /// The cells to order.
     .decl cell(key: Key, p: Position)  // @input
 
     elem(Ky, P) :- cell(Ky, P).
@@ -270,13 +314,160 @@
         nearer(D2, Q, P).                            // q strictly nearer
 }
 
-/// Per-key D4 ops taking one valued cell set onto another, in two readings of
+/// Bounding box of a box set: the pointwise minimum over the set, the least
+/// margin from each edge. Cells are the extent-1 case.
+.comp Bbox<Key> {
+    /// The set the box bounds.
+    .decl cell(key: Key, p: Box)  // @input
+
+    .decl _cell_dist(key: Key, d: Dir, k: number)
+    _cell_dist(K, D, Kd) :- cell(K, P), dir_elem(D), dist(P, D, Kd).
+
+    .decl _edge_min(key: Key, d: Dir, m: number)
+    _edge_min(K, D, M) :- _cell_dist(K, D, _), M = min Kd : { _cell_dist(K, D, Kd) }.
+
+    .init _pack = DirPack<Key>
+    _pack.edge(K, D, M) :- _edge_min(K, D, M).
+
+    /// The bounding box.
+    .decl box(key: Key, b: Box)
+    box(K, B) :- _pack.box(K, B).
+}
+
+/// The rectangle outlines drawn inside a node set, each reported as the box
+/// its corners bound. An outline spans at least two cells on each axis.
+.comp Outlines<Key> {
+    /// The set the outlines are drawn in.
+    .decl node(key: Key, p: Position)  // @input
+
+    .init _run = Slide<Key>
+    _run.node(K, P) :- node(K, P).
+    _run.dir(K, D) :- node(K, _), dir_elem(D).
+
+    // A corner pair whose four runs close a rectangle.
+    .decl _ring(key: Key, c1: Position, c4: Position)
+    _ring(K, C1, C4) :-
+        _run.run(K, C1, D1, C2), _run.run(K, C1, D2, C3),  // two sides from one corner
+        perp_dir(D1, D2),                                // at right angles
+        _run.run(K, C2, D2, C4), _run.run(K, C3, D1, C4).  // and back to the far corner
+
+    .type _KR = [key: Key, c1: Position, c4: Position]
+
+    .init _box = Bbox<_KR>
+    _box.cell([K, C1, C4], C) :- _ring(K, C1, C4), ( C = C1 ; C = C4 ).
+
+    /// One outline, as the box its corners bound.
+    .decl box(key: Key, b: Box)
+    box(K, B) :- _box.box([K, _, _], B).
+}
+
+/// Connected components of a node set (4-adjacency), each labeled by an opaque
+/// id from the lowest-ord member cell: ord is arbitrary but stable within a
+/// run, so the pick carries no geometry. The key does not enter the id, so ids
+/// separate components under different keys only where their node sets are
+/// disjoint.
+.comp Components<Key> {
+    /// The set to split.
+    .decl node(key: Key, p: Position)  // @input
+
+    /// The steps that join nodes: the cardinals, and any a caller adds.
+    .decl step(delta: Offset)  // @input
+    step([-1, 1, 0, 0]). step([1, -1, 0, 0]). step([0, 0, -1, 1]). step([0, 0, 1, -1]).
+
+    /// The id of the component p belongs to.
+    .decl label(key: Key, p: Position, id: Ident)
+    label(Ky, P, as(ord(P), Ident)) :- node(Ky, P).
+    label(Ky, Q, Id) :- label(Ky, P, Id), step(D), compose(P, D, Q), node(Ky, Q).
+    label(Ky, P, Id) <= label(Ky, P, Id2) :- Id2 < Id.
+
+    /// p and q lie in one component.
+    .decl conn(key: Key, p: Position, q: Position)
+    conn(Ky, P, Q) :- label(Ky, P, Id), label(Ky, Q, Id).
+}
+
+/// Joins the diagonal neighbors as well, so a corner contact keeps one
+/// component.
+.comp Components8<Key> : Components<Key> {
+    step(S) :- dir8_elem(D), step_offset(D, S).
+}
+
+/// Keeps only the components the seeds pick: reach is their union. A seed
+/// outside the node set picks nothing.
+.comp Reach<Key> : Components<Key> {
+    /// Where the flood starts.
+    .decl seed(key: Key, p: Position)  // @input
+
+    // The flood runs from the seeds, so a reach-only caller never pays for conn.
+    /// The nodes the flood reaches.
+    .decl reach(key: Key, p: Position)
+    reach(Ky, P) :- seed(Ky, P), node(Ky, P).
+    reach(Ky, Q) :- reach(Ky, P), step(D), compose(P, D, Q), node(Ky, Q).
+}
+
+/// Boundary and erosion depth of a cell set. The rim is the cells with a
+/// neighbor outside the set, off-frame counting as outside; depth runs inward
+/// from the rim, one per step. Neighbors are the four cardinals.
+.comp Rim<Key> {
+    /// The set to erode.
+    .decl cell(key: Key, p: Position)  // @input
+
+    .decl _dir(d: Dir8)
+    _dir(D) :- dir_elem(D).
+
+    /// The outside lies one step toward d.
+    .decl rim_dir(key: Key, p: Position, d: Dir8)
+    rim_dir(Ky, P, D) :- cell(Ky, P), _dir(D), neighbor(P, D, Q), !cell(Ky, Q).
+
+    /// A cell with the outside one step away.
+    .decl rim(key: Key, p: Position)
+    rim(Ky, P) :- rim_dir(Ky, P, _).
+
+    /// The shortest inward walk from the rim.
+    .decl depth(key: Key, p: Position, k: number)
+    depth(Ky, P, 0) :- rim(Ky, P).
+    depth(Ky, P, K2) :-
+        depth(Ky, Q, K), K2 = K + 1,
+        _dir(D), neighbor(Q, D, P), cell(Ky, P).
+    depth(Ky, P, K) <= depth(Ky, P, K2) :- K2 < K.
+}
+
+/// Counts the diagonal neighbors as well, so a cell that meets the outside at
+/// a corner alone is rim.
+.comp Rim8<Key> : Rim<Key> {
+    _dir(D) :- dir8_elem(D).
+}
+
+/// The regions a cell set closes off from the frame edge: a connected part of
+/// the set that no walk from the edge reaches, under its own id. Fed the
+/// background, the regions are the holes the rest of the grid encloses.
+.comp Closed<Key> {
+    /// The set to split into regions.
+    .decl cell(key: Key, p: Position)  // @input
+
+    // The edge-connected part of the set.
+    .init _flood = Reach<Key>
+    _flood.node(Ky, P) :- cell(Ky, P).
+    _flood.seed(Ky, P) :- cell(Ky, P), dir_elem(D), dist(P, D, 0).
+
+    // Individuate only the closed cells.
+    .init _regions = Components<Key>
+    _regions.node(Ky, P) :- cell(Ky, P), !_flood.reach(Ky, P).
+
+    /// A closed cell and the id of its region.
+    .decl region(key: Key, p: Position, id: Ident)
+    region(Ky, P, Id) :- _regions.label(Ky, P, Id).
+}
+
+/// D4 ops taking one valued cell set onto another, in two readings of
 /// absence: `mismatch`/`map` read a missing image cell as difference, so `dst`
 /// must be total over each key's domain; `conflict`/`compatible` compare only
 /// where both cells exist, so a partial dst keeps its ops. With dst = src the
 /// maps are the set's symmetries.
 .comp D4Map<Key, Val> {
+    /// The set the op acts on.
     .decl src(key: Key, p: Position, v: Val)  // @input
+
+    /// The set each image is read against.
     .decl dst(key: Key, p: Position, v: Val)  // @input
 
     /// A violated op: some src cell whose image under d holds a different dst
@@ -302,13 +493,14 @@
     has_sym(K) :- map(K, D), D != D4_ID.
 }
 
-/// Per-key shift invariance of a valued cell set — the translation peer of
-/// D4Map (dst = src): which axis-aligned shifts fix each keyed cell set.
-/// Absence is silent, as in D4Map's `compatible` reading: an image off the
-/// frame tests nothing, so a shift is compared only where both cells exist.
-/// Two readings: `mismatch` is exact — a stored period is the smallest
-/// unbroken shift; `period` reads through sparse damage in ordinary colors.
+/// Shift invariance of a valued cell set, the translation case of the same
+/// test with dst = src: which axis-aligned shifts fix the set. Absence is
+/// silent, as in the `compatible` reading: an image off the frame tests
+/// nothing, so a shift is compared only where both cells exist. Two readings:
+/// `mismatch` is exact — a stored period is the smallest unbroken shift;
+/// `period` reads through sparse damage in ordinary colors.
 .comp OffsetInvariance<Key, Val> {
+    /// The valued set the shifts are tested on.
     .decl cell(key: Key, p: Position, v: Val)  // @input
 
     // Internal keys tag a candidate shift; members are its line pairs.
@@ -371,160 +563,28 @@
     period(Ky, A, K) :- cand(Ky, A, K, _), !_breaks.excess([Ky, A, K], _).
 
     /// The exact reading's minimum: the shortest witnessed shift no cell
-    /// pair contradicts, per key and axis.
+    /// pair contradicts, per axis.
     .decl min_period(key: Key, a: Axis, k: number)
     min_period(Ky, A, K) :- _pair(Ky, A, K, _, _), !mismatch(Ky, A, K).
     min_period(Ky, A, K) <= min_period(Ky, A, K2) :- K > K2.
 }
 
-/// Bounding box of a keyed box set: the pointwise minimum over the set, the
-/// least margin from each edge. Cells are the extent-1 case.
-.comp Bbox<Key> {
-    /// The set the box bounds, per key.
-    .decl cell(key: Key, p: Box)  // @input
-
-    .decl _cell_dist(key: Key, d: Dir, k: number)
-    _cell_dist(K, D, Kd) :- cell(K, P), dir_elem(D), dist(P, D, Kd).
-
-    .decl _edge_min(key: Key, d: Dir, m: number)
-    _edge_min(K, D, M) :- _cell_dist(K, D, _), M = min Kd : { _cell_dist(K, D, Kd) }.
-
-    .init _pack = DirPack<Key>
-    _pack.edge(K, D, M) :- _edge_min(K, D, M).
-
-    .decl box(key: Key, b: Box)
-    box(K, B) :- _pack.box(K, B).
-}
-
-/// The rectangle outlines drawn inside a keyed node set, each reported as
-/// the box its corners bound. An outline spans at least two cells on each
-/// axis.
-.comp Outlines<Key> {
-    /// The set the outlines are drawn in, per key.
-    .decl node(key: Key, p: Position)  // @input
-
-    .init _run = Slide<Key>
-    _run.node(K, P) :- node(K, P).
-    _run.dir(K, D) :- node(K, _), dir_elem(D).
-
-    // A corner pair whose four runs close a rectangle.
-    .decl _ring(key: Key, c1: Position, c4: Position)
-    _ring(K, C1, C4) :-
-        _run.run(K, C1, D1, C2), _run.run(K, C1, D2, C3),  // two sides from one corner
-        perp_dir(D1, D2),                                // at right angles
-        _run.run(K, C2, D2, C4), _run.run(K, C3, D1, C4).  // and back to the far corner
-
-    .type _KR = [key: Key, c1: Position, c4: Position]
-
-    .init _box = Bbox<_KR>
-    _box.cell([K, C1, C4], C) :- _ring(K, C1, C4), ( C = C1 ; C = C4 ).
-
-    .decl box(key: Key, b: Box)
-    box(K, B) :- _box.box([K, _, _], B).
-}
-
-/// Connected components of a node set (4-adjacency), per key, each labeled by
-/// an opaque id from the lowest-ord member cell: ord is arbitrary but stable
-/// within a run, so the pick carries no geometry. The key does not enter the
-/// id, so ids separate components under different keys only where their node
-/// sets are disjoint.
-.comp Components<Key> {
-    .decl node(key: Key, p: Position)  // @input
-
-    /// The steps that join nodes: the cardinals, and any a caller adds.
-    .decl step(delta: Offset)  // @input
-    step([-1, 1, 0, 0]). step([1, -1, 0, 0]). step([0, 0, -1, 1]). step([0, 0, 1, -1]).
-
-    /// The id of the component p belongs to.
-    .decl label(key: Key, p: Position, id: Ident)
-    label(Ky, P, as(ord(P), Ident)) :- node(Ky, P).
-    label(Ky, Q, Id) :- label(Ky, P, Id), step(D), compose(P, D, Q), node(Ky, Q).
-    label(Ky, P, Id) <= label(Ky, P, Id2) :- Id2 < Id.
-
-    .decl conn(key: Key, p: Position, q: Position)
-    conn(Ky, P, Q) :- label(Ky, P, Id), label(Ky, Q, Id).
-}
-
-/// Connected components under 8-adjacency — Components over the full
-/// Dir8 step set.
-.comp Components8<Key> : Components<Key> {
-    step(S) :- dir8_elem(D), step_offset(D, S).
-}
-
-/// Seeded connectivity: reach is the union of the components the seeds
-/// select. A seed outside the node set selects nothing. reach floods
-/// directly from the seeds, so reach-only consumers never pay for conn.
-.comp Reach<Key> : Components<Key> {
-    .decl seed(key: Key, p: Position)  // @input
-
-    .decl reach(key: Key, p: Position)
-    reach(Ky, P) :- seed(Ky, P), node(Ky, P).
-    reach(Ky, Q) :- reach(Ky, P), step(D), compose(P, D, Q), node(Ky, Q).
-}
-
-/// Boundary and erosion depth of a keyed cell set. The rim is the cells with
-/// a neighbor outside the set, off-frame counting as outside; depth runs
-/// inward from the rim, one per step. Neighbors are the four cardinals.
-.comp Rim<Key> {
-    .decl cell(key: Key, p: Position)  // @input
-
-    .decl _dir(d: Dir8)
-    _dir(D) :- dir_elem(D).
-
-    /// The outside lies one step toward d.
-    .decl rim_dir(key: Key, p: Position, d: Dir8)
-    rim_dir(Ky, P, D) :- cell(Ky, P), _dir(D), neighbor(P, D, Q), !cell(Ky, Q).
-
-    .decl rim(key: Key, p: Position)
-    rim(Ky, P) :- rim_dir(Ky, P, _).
-
-    /// The shortest inward walk from the rim.
-    .decl depth(key: Key, p: Position, k: number)
-    depth(Ky, P, 0) :- rim(Ky, P).
-    depth(Ky, P, K2) :-
-        depth(Ky, Q, K), K2 = K + 1,
-        _dir(D), neighbor(Q, D, P), cell(Ky, P).
-    depth(Ky, P, K) <= depth(Ky, P, K2) :- K2 < K.
-}
-
-/// Rim under 8-adjacency.
-.comp Rim8<Key> : Rim<Key> {
-    _dir(D) :- dir8_elem(D).
-}
-
-/// The regions a keyed cell set closes off from the grid edge — the
-/// entity-level half of the enclose prior. Reach stays the unit for
-/// cell-level enclosure and seeded selection.
-.comp Closed<Key> {
-    .decl cell(key: Key, p: Position)  // @input
-
-    // The edge-connected part of the set.
-    .init _flood = Reach<Key>
-    _flood.node(Ky, P) :- cell(Ky, P).
-    _flood.seed(Ky, P) :- cell(Ky, P), dir_elem(D), dist(P, D, 0).
-
-    // Individuate only the closed cells.
-    .init _regions = Components<Key>
-    _regions.node(Ky, P) :- cell(Ky, P), !_flood.reach(Ky, P).
-
-    .decl region(key: Key, p: Position, id: Ident)
-    region(Ky, P, Id) :- _regions.label(Ky, P, Id).
-}
-
-/// Occurrences of one valued cell set, the shape, among another, per key: a
-/// placement occurs where every shape member lands on a cell carrying that
-/// member's value — the ARC "find this shape" operation.
-/// Positional matching is the unit-valued instantiation. Placements derive
-/// backward from the data, so no grid bounds are needed and off-grid
-/// candidates filter themselves out.
-/// `match` is a reserved word and cannot be the instance name.
+/// Occurrences of one valued cell set, the shape, among another: a placement
+/// occurs where every shape member lands on a cell carrying that member's
+/// value — the ARC "find this shape" operation. Positional matching is the
+/// unit-valued instantiation. A placement that runs off the grid contradicts
+/// itself, so the caller supplies no grid bounds.
 .comp Occurrences<Key, Val> {
+    /// The set searched.
     .decl cell(key: Key, p: Position, v: Val)  // @input
+
+    /// The set looked for, positioned relative to its own frame.
     .decl shape(key: Key, p: Position, v: Val)  // @input
 
     /// Candidate placements — each shape cell aligned to every cell of the
-    /// same value, union over the shape cells. A true occurrence aligns every
-    /// member to a same-valued cell, so the restriction loses no placement.
+    /// same value, union over the shape cells. Every occurrence is among
+    /// them, since a true occurrence aligns every member to a same-valued
+    /// cell.
     .decl placement(key: Key, p: Position)
     placement(Ky, M) :- shape(Ky, S, V), cell(Ky, P, V), relative(S, P, M).
 

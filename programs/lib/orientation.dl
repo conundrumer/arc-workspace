@@ -1,21 +1,47 @@
+//! The orientation values and the relations over them. A relation belongs
+//! here when its signature holds only Dir, Axis, DiagDir, DiagAxis, D4, Sym,
+//! and Sense. A relation that also holds a Box is in box.dl, and the D4
+//! action on directions and on boxes is there.
+//!
+//! An enumerator names every value of one type. Join on it to range over the
+//! type, or to hold a variable to it. Every other relation states structure:
+//! which value goes with which.
+//!
+//! A cardinal relation is over Dir and Axis. Its `diag_` counterpart states
+//! the same thing over DiagDir and DiagAxis, and a `dir8_` or `axis4_`
+//! relation holds both kinds together.
+//!
+//! Two relations state D4 as a group and not as a set of values: the inverse
+//! of an element, and the rotation a sense names.
+
+/// The four cardinal directions: top, bottom, left, right.
 #define DIR_T 10
 #define DIR_B 11
 #define DIR_L 12
 #define DIR_R 13
 
+/// The two axes: vertical and horizontal.
 #define AXIS_V 20
 #define AXIS_H 21
 
+/// The four corner directions: top-left, top-right, bottom-left,
+/// bottom-right.
 #define DIAG_TL 30
 #define DIAG_TR 31
 #define DIAG_BL 32
 #define DIAG_BR 33
 
+/// The two diagonal axes: the main diagonal, which runs from the top-left
+/// corner to the bottom-right one, and the anti-diagonal, which runs from the
+/// top-right corner to the bottom-left one.
 #define DAXIS_DG 40
 #define DAXIS_AD 41
 
-/// Rotations: quarter CW, half turn, quarter CCW. Flips are named by what
-/// swaps, not the axis of reflection.
+/// The eight symmetries of a square: the identity, three rotations — a
+/// quarter turn clockwise, a half turn, a quarter turn counterclockwise — and
+/// four reflections. A reflection across an axis is named by the two edges it
+/// swaps, so D4_LR reflects across the vertical axis. A reflection across a
+/// diagonal is named by that diagonal.
 #define D4_ID 50
 #define D4_CW 51
 #define D4_HT 52
@@ -25,12 +51,14 @@
 #define D4_DG 56
 #define D4_AD 57
 
+/// The two senses of rotation: clockwise and counterclockwise.
 #define SENSE_CW 60
 #define SENSE_CC 61
 
-/// The subgroups of D4 — a symmetry group as a closed value. Order-2
-/// groups are named by their non-identity element; SYM_BOX is the
-/// axis-aligned Klein group, SYM_X the diagonal one, SYM_C4 the rotations.
+/// The subgroups of D4 — a symmetry group as a closed value. SYM_1 is the
+/// identity alone and SYM_D4 the whole group. An order-2 group is named by
+/// its non-identity element. SYM_BOX is the axis-aligned Klein group, SYM_X
+/// the diagonal one, and SYM_C4 the rotations.
 #define SYM_1   70
 #define SYM_LR  71
 #define SYM_TB  72
@@ -42,34 +70,41 @@
 #define SYM_C4  78
 #define SYM_D4  79
 
+/// The four cardinal directions.
 .decl dir_elem(d: Dir)
 dir_elem(DIR_T).
 dir_elem(DIR_B).
 dir_elem(DIR_L).
 dir_elem(DIR_R).
 
+/// The two axes.
 .decl axis_elem(a: Axis)
 axis_elem(AXIS_V).
 axis_elem(AXIS_H).
 
+/// The four corner directions.
 .decl diag_dir_elem(d: DiagDir)
 diag_dir_elem(DIAG_TL).
 diag_dir_elem(DIAG_TR).
 diag_dir_elem(DIAG_BL).
 diag_dir_elem(DIAG_BR).
 
+/// The two diagonal axes.
 .decl diag_axis_elem(da: DiagAxis)
 diag_axis_elem(DAXIS_DG).
 diag_axis_elem(DAXIS_AD).
 
+/// The four cardinal directions and the four corner directions.
 .decl dir8_elem(d: Dir8)
 dir8_elem(D) :- dir_elem(D).
 dir8_elem(D) :- diag_dir_elem(D).
 
+/// The two axes and the two diagonal axes.
 .decl axis4_elem(a: Axis4)
 axis4_elem(A) :- axis_elem(A).
 axis4_elem(A) :- diag_axis_elem(A).
 
+/// The eight symmetries of a square.
 .decl d4_elem(d: D4)
 d4_elem(D4_ID).
 d4_elem(D4_CW).
@@ -80,20 +115,19 @@ d4_elem(D4_TB).
 d4_elem(D4_DG).
 d4_elem(D4_AD).
 
-.decl d4_inverse(d: D4, d_inv: D4)
-d4_inverse(D4_ID, D4_ID).
-d4_inverse(D4_CW, D4_CC).
-d4_inverse(D4_HT, D4_HT).
-d4_inverse(D4_CC, D4_CW).
-d4_inverse(D4_LR, D4_LR).
-d4_inverse(D4_TB, D4_TB).
-d4_inverse(D4_DG, D4_DG).
-d4_inverse(D4_AD, D4_AD).
+/// The four rotations.
+.decl c4_elem(d: C4)
+c4_elem(D4_ID).
+c4_elem(D4_CW).
+c4_elem(D4_HT).
+c4_elem(D4_CC).
 
+/// The two senses of rotation.
 .decl sense_elem(s: Sense)
 sense_elem(SENSE_CW).
 sense_elem(SENSE_CC).
 
+/// The subgroups of D4.
 .decl sym_elem(s: Sym)
 sym_elem(SYM_1).
 sym_elem(SYM_LR).
@@ -106,6 +140,7 @@ sym_elem(SYM_X).
 sym_elem(SYM_C4).
 sym_elem(SYM_D4).
 
+/// The D4 elements a subgroup holds.
 .decl sym_member(s: Sym, d: D4)
 sym_member(SYM_1, D4_ID).
 sym_member(SYM_LR, D4_ID). sym_member(SYM_LR, D4_LR).
@@ -120,29 +155,26 @@ sym_member(SYM_X, D4_AD). sym_member(SYM_X, D4_HT).
 sym_member(SYM_C4, D) :- c4_elem(D).
 sym_member(SYM_D4, D) :- d4_elem(D).
 
-.decl c4_elem(d: C4)
-c4_elem(D4_ID).
-c4_elem(D4_CW).
-c4_elem(D4_HT).
-c4_elem(D4_CC).
-
+/// The axis a cardinal direction runs on.
 .decl axis_of(d: Dir, a: Axis)
 axis_of(DIR_T, AXIS_V).
 axis_of(DIR_B, AXIS_V).
 axis_of(DIR_L, AXIS_H).
 axis_of(DIR_R, AXIS_H).
 
+/// The same for a corner direction and a diagonal axis.
 .decl diag_axis_of(d: DiagDir, da: DiagAxis)
 diag_axis_of(DIAG_TL, DAXIS_DG).
 diag_axis_of(DIAG_BR, DAXIS_DG).
 diag_axis_of(DIAG_TR, DAXIS_AD).
 diag_axis_of(DIAG_BL, DAXIS_AD).
 
+/// The same over Dir8 and Axis4, both kinds together.
 .decl axis4_of(d: Dir8, a: Axis4)
 axis4_of(D, A) :- axis_of(D, A).
 axis4_of(D, A) :- diag_axis_of(D, A).
 
-/// Cardinal Dir of corner d on axis a.
+/// The cardinal direction of corner d on axis a.
 .decl dir_of(d: DiagDir, a: Axis, dir: Dir)
 dir_of(DIAG_TL, AXIS_V, DIR_T).
 dir_of(DIAG_TL, AXIS_H, DIR_L).
@@ -153,50 +185,58 @@ dir_of(DIAG_BL, AXIS_H, DIR_L).
 dir_of(DIAG_BR, AXIS_V, DIR_B).
 dir_of(DIAG_BR, AXIS_H, DIR_R).
 
+/// Both cardinal directions of a corner at once: d1 on axis a, d2 on the
+/// other axis.
+.decl diag_dirs(d: DiagDir, a: Axis, d1: Dir, d2: Dir)
+diag_dirs(Diag, A, D1, D2) :- dir_of(Diag, A, D1), perp(A, A2), dir_of(Diag, A2, D2).
+
+/// The cardinal direction that points the other way.
 .decl opposite(d: Dir, opp: Dir)
 opposite(DIR_T, DIR_B).
 opposite(DIR_B, DIR_T).
 opposite(DIR_L, DIR_R).
 opposite(DIR_R, DIR_L).
 
+/// The same over the corner directions.
 .decl diag_opposite(d: DiagDir, opp: DiagDir)
 diag_opposite(DIAG_TL, DIAG_BR).
 diag_opposite(DIAG_BR, DIAG_TL).
 diag_opposite(DIAG_TR, DIAG_BL).
 diag_opposite(DIAG_BL, DIAG_TR).
 
+/// The same over Dir8, both kinds together.
 .decl dir8_opposite(d: Dir8, d2: Dir8)
 dir8_opposite(D, D2) :- opposite(D, D2).
 dir8_opposite(D, D2) :- diag_opposite(D, D2).
 
+/// The other axis.
 .decl perp(a: Axis, a2: Axis)
 perp(AXIS_V, AXIS_H).
 perp(AXIS_H, AXIS_V).
 
-/// The two Dirs across d; turn picks one by sense.
-.decl perp_dir(d: Dir, d2: Dir)
-perp_dir(D, D2) :- axis_of(D, A), perp(A, A2), axis_of(D2, A2).
-
+/// The other diagonal axis.
 .decl diag_perp(da: DiagAxis, da2: DiagAxis)
 diag_perp(DAXIS_DG, DAXIS_AD).
 diag_perp(DAXIS_AD, DAXIS_DG).
 
-/// A corner's two dirs, axis-tagged: d1 on axis a, d2 across.
-.decl diag_dirs(d: DiagDir, a: Axis, d1: Dir, d2: Dir)
-diag_dirs(Diag, A, D1, D2) :- dir_of(Diag, A, D1), perp(A, A2), dir_of(Diag, A2, D2).
+/// The two cardinal directions on the other axis from d.
+.decl perp_dir(d: Dir, d2: Dir)
+perp_dir(D, D2) :- axis_of(D, A), perp(A, A2), axis_of(D2, A2).
 
-/// The D4 reflection inverting axis a.
+/// The D4 reflection that inverts axis a: it swaps the two cardinal
+/// directions on that axis and keeps the other two.
 .decl flip_of(a: Axis, d: D4)
 flip_of(AXIS_V, D4_TB).
 flip_of(AXIS_H, D4_LR).
 
-/// The D4 reflection across diagonal axis da.
+/// The same across a diagonal axis.
 .decl diag_flip_of(da: DiagAxis, d: D4)
 diag_flip_of(DAXIS_DG, D4_DG).
 diag_flip_of(DAXIS_AD, D4_AD).
 
-/// Dir reached by a quarter turn in sense s. opposite is the half turn;
-/// the eighth turn is the corner diag_dirs puts between d and d_out.
+/// The cardinal direction a quarter turn in sense s reaches from d. A half
+/// turn gives `opposite`, and an eighth turn gives the corner that
+/// `diag_dirs` puts between d and d_out.
 .decl turn(s: Sense, d: Dir, d_out: Dir)
 turn(SENSE_CW, DIR_T, DIR_R).
 turn(SENSE_CW, DIR_R, DIR_B).
@@ -208,3 +248,14 @@ turn(SENSE_CC, D2, D) :- turn(SENSE_CW, D, D2).
 .decl rotation(s: Sense, d: C4)
 rotation(SENSE_CW, D4_CW).
 rotation(SENSE_CC, D4_CC).
+
+/// The D4 element that undoes each D4 element.
+.decl d4_inverse(d: D4, d_inv: D4)
+d4_inverse(D4_ID, D4_ID).
+d4_inverse(D4_CW, D4_CC).
+d4_inverse(D4_HT, D4_HT).
+d4_inverse(D4_CC, D4_CW).
+d4_inverse(D4_LR, D4_LR).
+d4_inverse(D4_TB, D4_TB).
+d4_inverse(D4_DG, D4_DG).
+d4_inverse(D4_AD, D4_AD).

@@ -1,10 +1,44 @@
-/// Negative-free difference of two keyed member counts: no tuple at a tie or
-/// deficit, so no negative number crosses the interface.
+//! Units over keyed sets: a unit belongs here if its signature holds no Box,
+//! Position, Offset, or orientation type, and its inputs are keyed sets with
+//! no order, no step, and no conflict among them.
+//!
+//! A set has a size, and two sets have a difference of sizes.
+//!
+//! A set of values has a commonest value, and it has one value when the
+//! members agree.
+//!
+//! A set of scored rows has an extreme score, and it has the rows that carry
+//! that score.
+//!
+//! A set compares against a catalog of known sets, and an equivalence over a
+//! set gives each class one id.
+
+/// The size of each key's member set.
+.comp Tally<Key, Member> {
+    /// The members to count.
+    .decl item(key: Key, m: Member)  // @input
+
+    /// The keys to count over — feeding it makes the count total, so a key
+    /// with no items counts 0.
+    .decl domain(key: Key)  // @input
+
+    /// The number of members.
+    .decl tally(key: Key, n: number)
+    tally(Ky, N) :- item(Ky, _), N = count : { item(Ky, M) }.
+    tally(Ky, 0) :- domain(Ky), !item(Ky, _).
+}
+
+/// Two member sets in place of one: the amount by which the plus set
+/// outnumbers the minus set. A tie or a deficit gives no tuple, so no
+/// negative number crosses the interface.
 .comp Excess<Key, Member> {
+    /// The members that add.
     .decl plus(key: Key, m: Member)  // @input
+
+    /// The members that subtract.
     .decl minus(key: Key, m: Member)  // @input
 
-    /// The amount by which the plus set outnumbers the minus set.
+    /// The count of the plus set minus the count of the minus set.
     .decl excess(key: Key, n: number)
     excess(Ky, N) :-
         plus(Ky, _),
@@ -12,91 +46,75 @@
         Np > Nn, N = Np - Nn.
 }
 
-/// The commonest member per key. The token column supplies multiplicity;
-/// ties keep every member at the max.
+/// The commonest member of each key's set. The token column supplies
+/// multiplicity: a member counts once per token. Ties keep every member at
+/// the highest count.
 .comp Mode<Key, Member, Token> {
+    /// One row per token of a member.
     .decl item(key: Key, m: Member, t: Token)  // @input
 
+    /// The token count of each member.
     .decl tally(key: Key, m: Member, n: number)
     tally(Ky, M, N) :- item(Ky, M, _), N = count : { item(Ky, M, T) }.
 
+    /// The members at the highest count.
     .decl mode(key: Key, m: Member)
     mode(Ky, M) :- tally(Ky, M, N), N = max N2 : { tally(Ky, _, N2) }.
 }
 
-/// The one value of each key's item set, absent on disagreement — the strict
-/// peer of Mode.
+/// No multiplicity and no majority: the value comes out only when every item
+/// of the key agrees.
 .comp Unanimous<Key, Val> {
+    /// The values to compare.
     .decl item(key: Key, v: Val)  // @input
 
+    /// The key holds two different values.
     .decl clash(key: Key)
     clash(Ky) :- item(Ky, V1), item(Ky, V2), V1 != V2.
 
+    /// The one value, absent on disagreement.
     .decl value(key: Key, v: Val)
     value(Ky, V) :- item(Ky, V), !clash(Ky).
 }
 
-/// The extremum score per key, each direction a readout.
+/// The extreme score of each key's candidate set, each direction a readout.
 .comp Extremes<Key> {
+    /// The scores.
     .decl cand(key: Key, s: number)  // @input
 
+    /// The highest score.
     .decl high(key: Key, s: number)
     high(Ky, S) :- cand(Ky, S).
     high(Ky, S) <= high(Ky, S2) :- S < S2.
 
+    /// The lowest score.
     .decl low(key: Key, s: number)
     low(Ky, S) :- cand(Ky, S).
     low(Ky, S) <= low(Ky, S2) :- S > S2.
 }
 
-/// The rows carrying each key's extremum score, each direction a readout;
-/// ties keep every row at the extremum.
+/// A value beside each score, and the readouts give the rows that carry the
+/// extreme score. Ties keep every row at that score.
 .comp ArgExtremes<Key, Val> {
+    /// The scored values.
     .decl cand(key: Key, v: Val, s: number)  // @input
 
+    /// The rows at the highest score.
     .decl high(key: Key, v: Val, s: number)
     high(Ky, V, S) :- cand(Ky, V, S).
     high(Ky, V, S) <= high(Ky, _, S2) :- S < S2.
 
+    /// The rows at the lowest score.
     .decl low(key: Key, v: Val, s: number)
     low(Ky, V, S) :- cand(Ky, V, S).
     low(Ky, V, S) <= low(Ky, _, S2) :- S > S2.
 }
 
-/// The cardinality of each key's member set.
-/// `count` is a reserved word and cannot be the instance name.
-.comp Tally<Key, Member> {
-    .decl item(key: Key, m: Member)  // @input
-
-    /// The keys to count over — feeding it makes the count total, so a key
-    /// with no items counts 0.
-    .decl domain(key: Key)  // @input
-
-    .decl tally(key: Key, n: number)
-    tally(Ky, N) :- item(Ky, _), N = count : { item(Ky, M) }.
-    tally(Ky, 0) :- domain(Ky), !item(Ky, _).
-}
-
-/// One id per class of an equivalence relation; the representative is
-/// arbitrary but deterministic. A self-paired `rep` member is the class
-/// representative — with a total equivalence, an arbitrary pick of one
-/// element of a set.
-.comp Canon<T> {
-    /// An equivalence, reflexive over the domain.
-    .decl equiv(a: T, b: T)  // @input
-
-    .decl rep(a: T, b: T)
-    rep(A, B) :- equiv(A, B).
-    rep(A, B) <= rep(A, B2) :- ord(B) > ord(B2).
-
-    .decl id(a: T, id: Ident)
-    id(A, as(ord(B), Ident)) :- rep(A, B).
-}
-
-/// Keyed set comparison via count equality. Member is a single type param: a
-/// record for multi-field members, a scalar for one-field. Stored catalogs
-/// enumerate patterns as numbers (Pat = number; single-pattern sites use
-/// pattern = 0); a derived catalog keys patterns by its own objects.
+/// Each observed set against a catalog of known sets, compared by count
+/// equality. Member is one type parameter: a record for a member of several
+/// fields, a scalar for one field. A stored catalog enumerates its patterns
+/// as numbers (Pat = number; a site with one pattern uses pattern = 0); a
+/// derived catalog keys its patterns by its own objects.
 .comp KeyedSetCompare<Key, Pat, Member> {
     /// A catalog of known sets, enumerated by `pattern`.
     .decl pattern_member(pattern: Pat, m: Member)  // @input
@@ -104,20 +122,43 @@
     /// The observed set at each `observed` key.
     .decl observed_member(observed: Key, m: Member)  // @input
 
+    /// The size of each pattern.
     .decl pattern_size(pattern: Pat, n: number)
     pattern_size(Pat, N) :- pattern_member(Pat, _), N = count : { pattern_member(Pat, M) }.
 
-    /// observed ⊇ pattern: every pattern member is present in the observed set
+    /// observed ⊇ pattern: the observed set holds every member of the pattern.
     .decl covers(observed: Key, pattern: Pat)
     covers(Obs, Pat) :-
         observed_member(Obs, _),
         pattern_size(Pat, N),
         N = count : { pattern_member(Pat, M), observed_member(Obs, M) }.
 
-    /// observed == pattern: covers, and the observed set carries no extra members
+    /// observed == pattern: covers, and the observed set holds no other
+    /// member.
     .decl equals(observed: Key, pattern: Pat)
     equals(Obs, Pat) :-
         covers(Obs, Pat),
         pattern_size(Pat, N),
         N = count : { observed_member(Obs, M) }.
+}
+
+/// One id per class of an equivalence relation. The representative is
+/// arbitrary but deterministic.
+.comp Canon<T> {
+    /// The equivalence. Requires: `equiv` is transitive, symmetric, and
+    /// holds a self pair for every element of the domain; an element outside
+    /// `equiv` gets no id, and a gap in transitivity gives two elements of
+    /// one class different ids.
+    .decl equiv(a: T, b: T)  // @input
+
+    /// The representative of each element's class. A self-paired row marks a
+    /// representative; with a total equivalence, that row is an arbitrary
+    /// pick of one element of the set.
+    .decl rep(a: T, b: T)
+    rep(A, B) :- equiv(A, B).
+    rep(A, B) <= rep(A, B2) :- ord(B) > ord(B2).
+
+    /// The class id, equal for two elements of one class.
+    .decl id(a: T, id: Ident)
+    id(A, as(ord(B), Ident)) :- rep(A, B).
 }

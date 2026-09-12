@@ -1,11 +1,16 @@
+//! The helpers a solver's Params comp instantiates as
+//! `.init helpers = ParamsHelpers`. A Params comp cannot reach the rest of
+//! the program, so it gets its position enumeration from here.
+
 .comp ParamsHelpers {
-    /// All positions of a frame of given Dim.
+    /// All positions of a frame of the given Dim.
     .decl frame_pos(dim: Dim, p: Position) inline
     frame_pos([V, H], [T, V-1-T, L, H-1-L]) :- T = range(0, V), L = range(0, H).
 
-    /// Decompose a position in an outer×inner tiled frame into outer (which
-    /// tile) and inner (cell within the tile). Gap rows/cols between tiles
-    /// produce no entry. Combined-frame dim is
+    /// The decomposition of a position in a tiled frame: the outer position
+    /// says which tile, and the inner position says which cell in that tile.
+    /// A position on a gap row or column between tiles gives no tuple. The
+    /// tiled frame has dim
     ///   (outer.v*inner.v + (outer.v-1)*gap.v,
     ///    outer.h*inner.h + (outer.h-1)*gap.h).
     .decl tile_pos(outer: Dim, inner: Dim, gap: Dim,

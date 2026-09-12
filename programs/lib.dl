@@ -1,45 +1,36 @@
-//! Shared types and primitives for ARC solvers in Souffle.
+//! Shared types and primitives for ARC solvers in Souffle. This file holds
+//! the types and the runner contract, and includes the modules under
+//! `programs/lib/`. Each module opens with a doc that says what it holds.
 //!
-//! Box: the edge-margin record (t, b, l, r), ordered V-first then H — a
-//! rectangle placed in a frame by its margins from the four edges. A frame of
-//! extent (H, W) reads the record as the rows t..H-1-b and the columns
-//! l..W-1-r; a negative margin reaches past the frame. The records form a
-//! group under componentwise addition, and every spatial operation here is
-//! one of four things: the group operations, the pointwise order, the
-//! projections onto components, and the D4 action. Dir constants index into
-//! a Box.
+//! Reading a unit:
 //!
-//! The per-axis sum (t+b, l+r) measures the frame's extent minus the
-//! rectangle's, so boxes with one sum are translates of one another. Two
-//! subsets have names: a Position is a cell, extent 1 on both axes, which
-//! carries its frame; an Offset is a translation, sum 0, which moves any box
-//! and keeps its extent. Every other reading — a rectangle, a margin, a
-//! change per edge — is a Box read against a frame the reader supplies.
+//! - A relation marked `// @input` is one the caller populates, and the facts
+//!   under it are its default. Every other relation derives.
+//! - In a keyed unit, the first column of a relation is its key, and each key
+//!   is one independent instance of the unit.
+//! - A name with a leading `_` is private to the lib.
+//! - A `Requires:` sentence states a precondition the unit does not check,
+//!   and what happens when it does not hold.
 //!
-//! Addition composes framings: for a box A in the frame and a box B in A's
-//! own frame, A + B is B in the outer frame (`compose`). Subtraction is
-//! relative position: B - A is B in A's frame (`relative`). The pointwise
-//! order is nesting: A >= B iff A lies inside B (`inside`), and strict is the
-//! interior (`interior`). ZERO is the whole frame as a box and no move as an
-//! offset. The bounding box is the pointwise minimum over a set (`Bbox`). An
-//! axis-only record is a band, the whole row or column through a cell
-//! (`split`). The D4 action permutes the components, so every operation is
-//! equivariant.
+//! Using a unit:
 //!
-//! Dim: (V-length, H-length) of a frame — ParamsHelpers grouping notation only.
+//! - `ord`, `count`, and `match` are Souffle reserved words, so an instance
+//!   cannot take them as its name.
+//! - An `inline` relation cannot sit under negation when its clauses
+//!   introduce variables, and no inline relation can appear inside an
+//!   aggregate; a non-inline relation wraps it.
+//! - The anchors (`same_dist`, `corner_anchor`, `slab_anchor`, and the other
+//!   composites of box.dl) work only on grounded positions.
 //!
-//! The subtypes of number are typed names with no arithmetic intent.
-//!
-//! The solver declares `out`, and no other IO relation. It must be total
-//! over the expected output grid: a variant fails on a missing cell. With a
-//! trailing TiebreakResolution column, the runner accepts a pair iff the set
-//! of emitted grids equals the expected grid plus its alts, and a tiebreak
-//! allows only two distinct grids.
-//!
-//! Anchors only work on grounded positions.
+//! The runner contract: the solver declares `out`, and no other IO relation.
+//! It must be total over the expected output grid: a variant fails on a
+//! missing cell. With a trailing TiebreakResolution column, the runner
+//! accepts a pair iff the set of emitted grids equals the expected grid plus
+//! its alts, and a tiebreak allows only two distinct grids.
 
+/// Typed names with no arithmetic intent: a value of one of these types is
+/// joined on, never ordered or computed with.
 .type Color <: number
-
 .type Dir <: number
 .type Axis <: number
 .type DiagDir <: number
@@ -62,7 +53,11 @@
 /// Index of a task example.
 .type Example <: number
 
+/// The edge-margin record: a rectangle placed in a frame by its margins from
+/// the four edges. box.dl states its algebra.
 .type Box = [t: number, b: number, l: number, r: number]
+
+/// (V-length, H-length) of a frame, for ParamsHelpers only.
 .type Dim = [v: number, h: number]
 
 /// The two subsets the algebra singles out. Souffle equivalence types are
