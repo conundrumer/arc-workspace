@@ -14,9 +14,8 @@
 //! - `ord`, `count`, and `match` are Souffle reserved words, so an instance
 //!   cannot take them as its name.
 //! - An `inline` relation sits under negation only when its clauses
-//!   introduce no variable and the use binds every column: `!dist(P, D, 0)`
-//!   is legal, `!dist_pair(P, D, _, _)` is not. No inline relation can
-//!   appear inside an aggregate; a non-inline relation wraps it.
+//!   introduce no variable and the use binds every column. No inline
+//!   relation can appear inside an aggregate; a non-inline relation wraps it.
 //! - The anchors (`same_dist`, `corner_anchor`, `slab_anchor`, and the other
 //!   composites of box.dl) work only on grounded positions.
 //!
