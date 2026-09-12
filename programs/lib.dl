@@ -1,7 +1,30 @@
 // Shared types and primitives for ARC solvers in Souffle.
 //
-// Position: 4 distances from edges, ordered V-first then H — (top, bottom,
-// left, right). Dir constants index into Position.
+// Box: the edge-margin record (t, b, l, r), ordered V-first then H — a
+// rectangle placed in a frame by its margins from the four edges. A frame of
+// extent (H, W) reads the record as the rows t..H-1-b and the columns
+// l..W-1-r; a negative margin reaches past the frame. The records form a
+// group under componentwise addition, and every spatial operation here is
+// one of four things: the group operations, the pointwise order, the
+// projections onto components, and the D4 action. Dir constants index into
+// a Box.
+//
+// The per-axis sum (t+b, l+r) measures the frame's extent minus the
+// rectangle's, so boxes with one sum are translates of one another. Two
+// subsets have names: a Position is a cell, extent 1 on both axes, which
+// carries its frame; an Offset is a translation, sum 0, which moves any box
+// and keeps its extent. Every other reading — a rectangle, a margin, a
+// change per edge — is a Box read against a frame the reader supplies.
+//
+// Addition composes framings: for a box A in the frame and a box B in A's
+// own frame, A + B is B in the outer frame (`compose`). Subtraction is
+// relative position: B - A is B in A's frame (`relative`). The pointwise
+// order is nesting: A >= B iff A lies inside B (`inside`), and strict is the
+// interior (`interior`). ZERO is the whole frame as a box and no move as an
+// offset. The bounding box is the pointwise minimum over a set (`Bbox`). An
+// axis-only record is a band, the whole row or column through a cell
+// (`split`). The D4 action permutes the components, so every operation is
+// equivariant.
 //
 // Dim: (V-length, H-length) of a frame — ParamsHelpers grouping notation only.
 //
@@ -31,12 +54,19 @@
 // Index of a task example.
 .type Example <: number
 
-.type Position = [t: number, b: number, l: number, r: number]
+.type Box = [t: number, b: number, l: number, r: number]
 .type Dim = [v: number, h: number]
 
-// A Position parameter's nature: a frame cell (bare), a translation (Shift), or
-// independent signed edge depths (Inset). A delta is a Shift when its changes
-// on each axis sum to zero, and an Inset otherwise.
+// The two subsets the algebra singles out. Souffle equivalence types are
+// interchangeable, so an alias documents a column's reading and checks
+// nothing. A primitive types a column Box unless it reads the frame's
+// extent from the value, which assumes a cell; a column holds Offset when
+// its value is a translation by construction.
+// A cell: extent 1 on both axes, so the frame's extent is readable from it.
+.type Position = Box
+// A translation: the two margins cancel on each axis.
+.type Offset = Box
+// Retired readings: a Shift is an Offset, and an Inset a Box.
 .type Shift = Position
 .type Inset = Position
 
@@ -87,6 +117,9 @@
 #define SYM_C4  78
 #define SYM_D4  79
 
+// The zero box: the whole frame as a box, no move as an offset.
+#define ZERO [0, 0, 0, 0]
+// Retired name of ZERO.
 #define ORIGIN [0, 0, 0, 0]
 
 // ============================================================
@@ -293,92 +326,151 @@ turn(SENSE_CC, D2, D) :- turn(SENSE_CW, D, D2).
 rotation(SENSE_CW, D4_CW).
 rotation(SENSE_CC, D4_CC).
 
-.decl dist(p: Position, d: Dir, k: number) inline
+.decl dist(p: Box, d: Dir, k: number) inline
 dist(P, D, K) :- P = [T, B, L, R], K = @dist_proj(D, T, B, L, R).
 
 // Distances to edge d and its opposite. A repeated variable states
 // centered; a comparison picks the nearer half.
-.decl dist_pair(p: Position, d: Dir, k: number, k2: number) inline
+.decl dist_pair(p: Box, d: Dir, k: number, k2: number) inline
 dist_pair(P, D, K, K2) :- dist(P, D, K), opposite(D, O), dist(P, O, K2).
 
 // Distances to the two edges of corner diag, axis-tagged: k1 to the edge
 // on axis a, k2 across. On-diagonal is a repeated variable.
-.decl diag_dist(p: Position, diag: DiagDir, a: Axis, k1: number, k2: number) inline
+.decl diag_dist(p: Box, diag: DiagDir, a: Axis, k1: number, k2: number) inline
 diag_dist(P, Diag, A, K1, K2) :-
     diag_dirs(Diag, A, D1, D2), dist(P, D1, K1), dist(P, D2, K2).
 
 // Taxicab distance to corner diag: the sum of its two edge distances.
 // Level sets are the lines of the perpendicular diagonal axis, so
 // equality tests same-diagonal and comparison tests sidedness.
-.decl corner_dist(p: Position, diag: DiagDir, k: number) inline
+.decl corner_dist(p: Box, diag: DiagDir, k: number) inline
 corner_dist(P, Diag, K) :- diag_dist(P, Diag, _, K1, K2), K = K1 + K2.
 
-// Element-wise sum of two bound Positions. One operand may be a signed delta.
-.decl compose(p1: Position, p2: Position, p3: Position) inline
+// Addition: b in a's frame, seated in the outer frame. A cell seated in a
+// box, a box moved by an offset, a frame inset by a margin, a box seated in
+// a let-out frame: one operation.
+.decl compose(a: Box, b: Box, c: Box) inline
 compose([T1, B1, L1, R1], [T2, B2, L2, R2], [T1+T2, B1+B2, L1+L2, R1+R2]) :- true.
 
-// The Shift carrying `from` onto `to` — the inverse read of compose, and the
-// form that binds an unknown addend.
-.decl displacement(from: Position, to: Position, v: Shift) inline
-displacement([T1, B1, L1, R1], [T2, B2, L2, R2],
-             [T2-T1, B2-B1, L2-L1, R2-R1]) :- true.
+// Subtraction: x relative to base — x in base's frame. A cell in a box's
+// coordinates, or the offset between two cells of one frame. The inverse
+// read of compose, and the form that binds an unknown addend.
+.decl relative(base: Box, x: Box, x_rel: Box) inline
+relative([T1, B1, L1, R1], [T2, B2, L2, R2],
+         [T2-T1, B2-B1, L2-L1, R2-R1]) :- true.
 
-// Pointwise ≥ over edge distances: p is inside the box that q describes as
-// margins.
-.decl geq(p: Position, q: Position) inline
-geq([T1, B1, L1, R1], [T2, B2, L2, R2]) :-
+// Retired name of relative.
+.decl displacement(from: Position, to: Position, v: Shift) inline
+displacement(P_from, P_to, V) :- relative(P_from, P_to, V).
+
+// Pointwise >=: a inside b. A cell inside a box is the extent-1 case; at
+// b = ZERO, a lies on the frame.
+.decl inside(a: Box, b: Box) inline
+inside([T1, B1, L1, R1], [T2, B2, L2, R2]) :-
     T1 >= T2, B1 >= B2, L1 >= L2, R1 >= R2.
 
-// Pointwise > over edge distances: p is strictly inside the box that q
-// describes as margins. At q = ORIGIN, off the frame's border.
-.decl gt(p: Position, q: Position) inline
-gt([T1, B1, L1, R1], [T2, B2, L2, R2]) :-
+// Pointwise >: a in the interior of b, touching no side. At b = ZERO, off
+// the frame's border.
+.decl interior(a: Box, b: Box) inline
+interior([T1, B1, L1, R1], [T2, B2, L2, R2]) :-
     T1 > T2, B1 > B2, L1 > L2, R1 > R2.
 
-// The delta relations below bind none of their direction: the caller
+// Retired names of inside and interior.
+.decl geq(p: Position, q: Position) inline
+geq(P, Q) :- inside(P, Q).
+.decl gt(p: Position, q: Position) inline
+gt(P, Q) :- interior(P, Q).
+
+// Cell p of box b, as a cell of b's own frame: the covering test and the
+// relative read. A cell outside the box is `relative` alone.
+.decl crop(p: Position, b: Box, p_rel: Position) inline
+crop(P, B, P_rel) :- inside(P, B), relative(B, P, P_rel).
+
+// Cell p on box b's d-side edge.
+.decl box_edge(p: Position, b: Box, d: Dir) inline
+box_edge(P, B, D) :- inside(P, B), dir_elem(D), same_dist(D, P, B).
+
+// Cell p at box b's corner d.
+.decl box_corner(p: Position, b: Box, d: DiagDir) inline
+box_corner(P, B, D) :- inside(P, B), corner_anchor(D, P, B).
+
+// Extent of box b along a, in the frame of cell p: the frame's extent less
+// the box's two margins on the axis.
+.decl box_extent(b: Box, p: Position, a: Axis, n: number) inline
+box_extent(B, P, A, N) :-
+    axis_dim(P, A, Ext), axis_of(D, A), opposite(D, O),
+    dist(B, D, M1), dist(B, O, M2), N = Ext - M1 - M2.
+
+// The constructors below bind none of their direction: the caller
 // supplies d.
 
-// Edge delta: a Position carrying k at edge d, zero elsewhere. At a corner,
-// k sits at both of the corner's edges.
+// Boxes inset from the frame: by k on side d, zero elsewhere (at a corner,
+// k sits at both of the corner's edges); by k1 on side d and k2 on its
+// opposite; by k on every side.
+.decl edge_inset(d: Dir8, k: number, b: Box) inline
+edge_inset(D, K, [@keep_dir(D, DIR_T, K), @keep_dir(D, DIR_B, K), @keep_dir(D, DIR_L, K), @keep_dir(D, DIR_R, K)]) :- true.
+
+.decl axis_inset(d: Dir, k1: number, k2: number, b: Box) inline
+axis_inset(D, K1, K2, B) :-
+    opposite(D, O), edge_inset(D, K1, B1), edge_inset(O, K2, B2), compose(B1, B2, B).
+
+.decl uniform_inset(k: number, b: Box) inline
+uniform_inset(K, [K, K, K, K]) :- true.
+
+// The frame let out: by k on side d; by k1 on side d and k2 on its
+// opposite; by k on every side. A box seated in it by `compose` is that box
+// let out.
+.decl edge_outset(d: Dir8, k: number, b: Box) inline
+edge_outset(D, K, [-T, -B, -L, -R]) :- edge_inset(D, K, [T, B, L, R]).
+
+.decl axis_outset(d: Dir, k1: number, k2: number, b: Box) inline
+axis_outset(D, K1, K2, B) :-
+    opposite(D, O), edge_outset(D, K1, B1), edge_outset(O, K2, B2), compose(B1, B2, B).
+
+.decl uniform_outset(k: number, b: Box) inline
+uniform_outset(K, [-K, -K, -K, -K]) :- true.
+
+// Retired names of the inset constructors.
 .decl edge_delta(d: Dir8, k: number, p: Inset) inline
-edge_delta(D, K, [@keep_dir(D, DIR_T, K), @keep_dir(D, DIR_B, K), @keep_dir(D, DIR_L, K), @keep_dir(D, DIR_R, K)]) :- true.
-
-// Axis delta: a Position carrying k1 at edge d and k2 at its opposite, zero
-// on the other axis.
+edge_delta(D, K, P) :- edge_inset(D, K, P).
 .decl axis_delta(d: Dir, k1: number, k2: number, p: Inset) inline
-axis_delta(D, K1, K2, P) :-
-    opposite(D, O), edge_delta(D, K1, P1), edge_delta(O, K2, P2), compose(P1, P2, P).
-
-// A Position carrying k at every edge.
+axis_delta(D, K1, K2, P) :- axis_inset(D, K1, K2, P).
 .decl uniform_delta(k: number, p: Inset) inline
-uniform_delta(K, [K, K, K, K]) :- true.
+uniform_delta(K, P) :- uniform_inset(K, P).
 
-// K-cell displacement toward d: -k at each edge of d, +k at each opposite.
-.decl jump_delta(d: Dir8, k: number, delta: Shift) inline
-jump_delta(D, K, [B - T, T - B, R - L, L - R]) :- edge_delta(D, K, [T, B, L, R]).
+// Translation of k cells toward d: -k at each edge of d, +k at each
+// opposite.
+.decl jump_offset(d: Dir8, k: number, v: Offset) inline
+jump_offset(D, K, [B - T, T - B, R - L, L - R]) :- edge_inset(D, K, [T, B, L, R]).
 
 // The unit steps, materialized so the functor chain runs eight times per
 // program, not once per calling tuple.
-.decl _step(d: Dir8, delta: Shift)
-_step(D, Step) :- dir8_elem(D), jump_delta(D, 1, Step).
+.decl _step(d: Dir8, v: Offset)
+_step(D, Step) :- dir8_elem(D), jump_offset(D, 1, Step).
 
 // Unit step toward d.
+.decl step_offset(d: Dir8, v: Offset) inline
+step_offset(D, Step) :- _step(D, Step).
+
+// Retired names of jump_offset and step_offset.
+.decl jump_delta(d: Dir8, k: number, delta: Shift) inline
+jump_delta(D, K, V) :- jump_offset(D, K, V).
 .decl step_delta(d: Dir8, delta: Shift) inline
-step_delta(D, Step) :- _step(D, Step).
+step_delta(D, Step) :- step_offset(D, Step).
 
 // q is one step from p toward d.
-.decl neighbor(p: Position, d: Dir8, q: Position) inline
-neighbor(P, D, Q) :- step_delta(D, S), compose(P, S, Q).
+.decl neighbor(p: Box, d: Dir8, q: Box) inline
+neighbor(P, D, Q) :- step_offset(D, S), compose(P, S, Q).
 
 // q is k cells from p toward d.
-.decl jump(p: Position, d: Dir8, k: number, q: Position) inline
-jump(P, D, K, Q) :- jump_delta(D, K, Delta), compose(P, Delta, Q).
+.decl jump(p: Box, d: Dir8, k: number, q: Box) inline
+jump(P, D, K, Q) :- jump_offset(D, K, V), compose(P, V, Q).
 
 // Decompose p by axis: along carries the axis component (perpendicular
 // zeroed); across carries the perpendicular (axis zeroed). Cells sharing
 // along form a line perpendicular to a; same_line(a, ...) is the line
 // along a, the cells sharing across.
-.decl split(p: Position, a: Axis, along: Position, across: Position) inline
+.decl split(p: Box, a: Axis, along: Box, across: Box) inline
 split(P, A,
       [@keep_axis(A, AXIS_V, T), @keep_axis(A, AXIS_V, B), @keep_axis(A, AXIS_H, L), @keep_axis(A, AXIS_H, R)],
       [@keep_axis(A, AXIS_H, T), @keep_axis(A, AXIS_H, B), @keep_axis(A, AXIS_V, L), @keep_axis(A, AXIS_V, R)]) :-
@@ -400,7 +492,7 @@ axis_dims(P, A, N1, N2) :- axis_dim(P, A, N1), perp(A, A2), axis_dim(P, A2, N2).
 sub_extent(P, A, K) :- axis_dim(P, A, N), K = range(1, N).
 
 // Apply a D4 transform to a Position.
-.decl apply(d: D4, p: Position, p_out: Position) inline
+.decl apply(d: D4, p: Box, p_out: Box) inline
 apply(D, P, [@apply_t(D, T, B, L, R), @apply_b(D, T, B, L, R),
              @apply_l(D, T, B, L, R), @apply_r(D, T, B, L, R)]) :- P = [T, B, L, R].
 
@@ -408,17 +500,17 @@ apply(D, P, [@apply_t(D, T, B, L, R), @apply_b(D, T, B, L, R),
 .decl apply_dir(d: D4, dir: Dir, dir_out: Dir)
 apply_dir(D, Dir, Dir_out) :-
     d4_elem(D), dir_elem(Dir), dir_elem(Dir_out),
-    step_delta(Dir, S), apply(D, S, S2), step_delta(Dir_out, S2).
+    step_offset(Dir, S), apply(D, S, S2), step_offset(Dir_out, S2).
 
 .decl apply_diag_dir(d: D4, dir: DiagDir, dir_out: DiagDir)
 apply_diag_dir(D, Dir, Dir_out) :-
     d4_elem(D), diag_dir_elem(Dir), diag_dir_elem(Dir_out),
-    step_delta(Dir, S), apply(D, S, S2), step_delta(Dir_out, S2).
+    step_offset(Dir, S), apply(D, S, S2), step_offset(Dir_out, S2).
 
 .decl apply_dir8(d: D4, dir: Dir8, dir_out: Dir8)
 apply_dir8(D, Dir, Dir_out) :-
     d4_elem(D), dir8_elem(Dir), dir8_elem(Dir_out),
-    step_delta(Dir, S), apply(D, S, S2), step_delta(Dir_out, S2).
+    step_offset(Dir, S), apply(D, S, S2), step_offset(Dir_out, S2).
 
 // Divide p's axis-a extent into n equal parts. p_outer is the tile
 // index in an n-strip frame; p_inner is the cell within the tile.
@@ -496,7 +588,7 @@ concat(P_outer, P_inner, A, G, P_grid) :-
 
 // Two positions agree on the distance to edge d. A single-edge hypothesis reads
 // across frames of different size, where collinearity does not.
-.decl same_dist(d: Dir, p1: Position, p2: Position) inline
+.decl same_dist(d: Dir, p1: Box, p2: Box) inline
 same_dist(D, P1, P2) :- dist(P1, D, K), dist(P2, D, K).
 
 // p and q on one line of family a — a row, a column, or a diagonal.
@@ -515,7 +607,7 @@ nearer(D, P, Q) :-
     diag_dir_elem(D), corner_dist(P, D, K), corner_dist(Q, D, K2), K < K2.
 
 // Two positions agree on the distances to the two edges of corner d.
-.decl corner_anchor(d: DiagDir, p1: Position, p2: Position) inline
+.decl corner_anchor(d: DiagDir, p1: Box, p2: Box) inline
 corner_anchor(Diag, P1, P2) :-
     diag_dist(P1, Diag, A, K1, K2),
     diag_dist(P2, Diag, A, K1, K2).
@@ -529,7 +621,7 @@ slab_anchor(D, P1, P2) :-
 
 // The two edge distances agree on each axis. An even extent has no such
 // Position.
-.decl centered(p: Position) inline
+.decl centered(p: Box) inline
 centered([V, V, H, H]) :- true.
 
 // 1D divide along axis a with perpendicular passthrough. p_outer is
@@ -741,7 +833,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     .decl cast(key: Key, p: Position, d: Dir8, k: number, src: Position)
     cast(Ky, P, D, 0, P) :- mark(Ky, P), dir(Ky, D).
     cast(Ky, P2, D, K+1, Src) :-
-        cast(Ky, P, D, K, Src), step_delta(D, S), compose(P, S, P2), _onward(P2, D).
+        cast(Ky, P, D, K, Src), step_offset(D, S), compose(P, S, P2), _onward(P2, D).
 
     // p on a key-k ray cast toward d, k cells from the casting mark src.
     // k = 0 at the mark itself, and `ray(Ky, P, D, _, _)` is membership alone.
@@ -789,7 +881,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 // The maximal straight run inside a keyed node set. A cast with step
 // counts, or from a mark outside the set, is Ray.
 .comp Slide<Key> {
-    // Where the mover may stand, per key. Positions or Shifts.
+    // Where the mover may stand, per key. Positions or Offsets.
     .decl node(key: Key, p: Position)
 
     // The run directions, per key.
@@ -997,7 +1089,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 // peer of Divide2D/Tile2D, which need equal tiles: a cell's tile position
 // holds, toward each edge, the count of dividers between the cell and that
 // edge. Divider cells get no tile; an axis with no dividers is one part. A
-// within-tile position is a Reframe from the tile's box.
+// within-tile position is a `crop` from the tile's box.
 .comp DividerFrame<Key> {
     // The position domain, per key.
     .decl cell(key: Key, p: Position)
@@ -1210,20 +1302,20 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 
     // Candidate shifts: every axis-aligned delta the frame admits, tagged
     // (axis, k), with both directions of a magnitude sharing a tag.
-    .decl cand(key: Key, a: Axis, k: number, delta: Shift)
+    .decl cand(key: Key, a: Axis, k: number, delta: Offset)
     cand(Ky, A, K, Delta) :-
         cell(Ky, P, _),
         axis_of(D, A), sub_extent(P, A, K),
-        jump_delta(D, K, Delta).
+        jump_offset(D, K, Delta).
 
     // One delta per magnitude: the other direction pairs the same cells
     // transposed, so the readouts rebuild symmetric rows by transpose. The
     // corner picked is unobservable.
-    .decl _cand(key: Key, a: Axis, k: number, delta: Shift)
+    .decl _cand(key: Key, a: Axis, k: number, delta: Offset)
     _cand(Ky, A, K, Delta) :-
         cell(Ky, P, _),
         dir_of(DIAG_BR, A, D), sub_extent(P, A, K),
-        jump_delta(D, K, Delta).
+        jump_offset(D, K, Delta).
 
     .decl _pair(key: Key, a: Axis, k: number, p: Position, q: Position)
     _pair(Ky, A, K, P, Q) :-
@@ -1276,6 +1368,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 //
 // Flagged: assumes one origin per key — several origins under one key
 // cross-product, so key by the varied thing instead.
+// retired: `relative`, or `crop` where the outer is a box
 .comp Reframe<Key> {
     .decl outer(key: Key, p: Position)
     .decl cell(key: Key, p: Position)
@@ -1289,24 +1382,30 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     inner(K, I) :- view(K, _, I).
 }
 
-// A Position packed from per-Dir scalars, keyed: the inverse read of dist.
+// A Box packed from per-Dir scalars, keyed: the inverse read of dist. A
+// caller with an edge of no width writes that edge's zero row.
 .comp DirPack<Key> {
     .decl edge(key: Key, d: Dir, k: number)  // input
 
-    .decl axis_pos(key: Key, a: Axis, p: Position)
+    .decl axis_pos(key: Key, a: Axis, p: Box)
     axis_pos(Ky, A, P) :-
         axis_of(D, A), opposite(D, O),
         edge(Ky, D, K1), edge(Ky, O, K2),
-        axis_delta(D, K1, K2, P).
+        axis_inset(D, K1, K2, P).
 
+    .decl box(key: Key, b: Box)
+    box(Ky, B) :-
+        perp(A1, A2), axis_pos(Ky, A1, B1), axis_pos(Ky, A2, B2),
+        compose(B1, B2, B).
+
+    // retired: `box`
     .decl pos(key: Key, p: Position)
-    pos(Ky, P) :-
-        perp(A1, A2), axis_pos(Ky, A1, P1), axis_pos(Ky, A2, P2),
-        compose(P1, P2, P).
+    pos(Ky, P) :- box(Ky, P).
 }
 
 // The frame inside given margins, one per key: each cell at least the
 // margin from every edge pairs with its position in the enclosed frame.
+// retired: an inset constructor or `DirPack`, then `crop`
 .comp MarginFrame<Key> {
     .decl cell(key: Key, p: Position)         // input
     .decl width(key: Key, d: Dir, k: number)  // input
@@ -1320,7 +1419,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     _pack.edge(Ky, D, K) :- _edge(Ky, D, K).
 
     .decl margin(key: Key, p: Inset)
-    margin(Ky, P) :- _pack.pos(Ky, P).
+    margin(Ky, P) :- _pack.box(Ky, P).
 
     .init _rf = Reframe<Key>
     _rf.outer(Ky, M) :- margin(Ky, M).
@@ -1336,6 +1435,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 // and is viewed; feeding `grid` also views the box's inside, which is what
 // a crop reads. `inner` carries the cell alongside the inner position, so
 // one key serves the whole set.
+// retired: `Bbox`, then `crop`
 .comp BoxFrame<Key> : Bbox<Key> {
     .init _mf = MarginFrame<Key>
     _mf.width(K, D, M) :- edge_min(K, D, M).
@@ -1352,57 +1452,62 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     inner(K, P, I) :- _mf.inner(K, P, I).
 }
 
-// Bounding box of a keyed cell set, from the min distance to each edge over
-// the set. `margin` packs the mins into a Position — the box's placement, and
-// a Reframe outer.
+// Bounding box of a keyed box set: the pointwise minimum over the set, the
+// least margin from each edge. Cells are the extent-1 case.
 .comp Bbox<Key> {
     // The set the box bounds, per key.
-    .decl cell(key: Key, p: Position)
-
-    // The grid the box sits in, per key.
-    .decl grid(key: Key, p: Position)
+    .decl cell(key: Key, p: Box)
 
     .decl _cell_dist(key: Key, d: Dir, k: number)
     _cell_dist(K, D, Kd) :- cell(K, P), dir_elem(D), dist(P, D, Kd).
 
-    .decl edge_min(key: Key, d: Dir, m: number)
-    edge_min(K, D, M) :- _cell_dist(K, D, _), M = min Kd : { _cell_dist(K, D, Kd) }.
+    .decl _edge_min(key: Key, d: Dir, m: number)
+    _edge_min(K, D, M) :- _cell_dist(K, D, _), M = min Kd : { _cell_dist(K, D, Kd) }.
 
     .init _pack = DirPack<Key>
-    _pack.edge(K, D, M) :- edge_min(K, D, M).
+    _pack.edge(K, D, M) :- _edge_min(K, D, M).
 
-    // The box as a Position — margin from each edge.
+    .decl box(key: Key, b: Box)
+    box(K, B) :- _pack.box(K, B).
+
+    // --- retired readouts ---
+
+    // retired: `in`, or the caller's own domain, beside `inside`
+    .decl grid(key: Key, p: Position)
+
+    // retired: `dist` on `box`
+    .decl edge_min(key: Key, d: Dir, m: number)
+    edge_min(K, D, M) :- _edge_min(K, D, M).
+
+    // retired: `box`
     .decl margin(key: Key, p: Position)
-    margin(K, P) :- _pack.pos(K, P).
+    margin(K, P) :- box(K, P).
 
-    // Grid cells inside the box — at least the margin from every edge.
+    // retired: `inside` over the caller's own domain
     .decl inside(key: Key, p: Position)
-    inside(K, P) :- grid(K, P), margin(K, M), geq(P, M).
+    inside(K, P) :- grid(K, P), box(K, M), geq(P, M).
 
-    // Set cell on the box's d-side boundary.
+    // retired: the set's cells beside `box_edge`
     .decl edge_cell(key: Key, p: Position, d: Dir)
-    edge_cell(K, P, D) :- cell(K, P), dist(P, D, Kd), edge_min(K, D, Kd).
+    edge_cell(K, P, D) :- cell(K, P), dist(P, D, Kd), _edge_min(K, D, Kd).
 
-    // Set cell at box corner diag — on both of the corner's edges. A tuple
-    // exists only where the set occupies that corner; an L-shape yields three.
+    // retired: the set's cells beside `box_corner`
     .decl corner(key: Key, p: Position, diag: DiagDir)
     corner(K, P, Diag) :-
         diag_dirs(Diag, _, D1, D2), edge_cell(K, P, D1), edge_cell(K, P, D2).
 
-    // The box's extent along axis a.
+    // retired: `box_extent`
     .decl extent(key: Key, a: Axis, n: number)
-    extent(K, A, N) :-
-        cell(K, P), axis_dim(P, A, Ext),
-        axis_of(D, A), opposite(D, O), edge_min(K, D, M1), edge_min(K, O, M2),
-        N = Ext - M1 - M2.
+    extent(K, A, N) :- cell(K, P), box(K, B), box_extent(B, P, A, N).
 
-    // The box's size, wide: n1 along axis a, n2 across.
+    // retired: `box_extent`, twice
     .decl extents(key: Key, a: Axis, n1: number, n2: number)
     extents(K, A, N1, N2) :- extent(K, A, N1), perp(A, A2), extent(K, A2, N2).
 }
 
 // The cells of a box given as a margin Position, split into its edge lines
 // and its hole.
+// retired: `box_edge` and `interior`
 .comp BoxCells<Key> {
     // The box, as margins from each edge, per key.
     .decl box(key: Key, b: Position)
@@ -1444,8 +1549,8 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     .init _box = Bbox<_KR>
     _box.cell([K, C1, C4], C) :- _ring(K, C1, C4), ( C = C1 ; C = C4 ).
 
-    .decl rect(key: Key, b: Position)
-    rect(K, B) :- _box.margin([K, _, _], B).
+    .decl rect(key: Key, b: Box)
+    rect(K, B) :- _box.box([K, _, _], B).
 }
 
 // Connected components of a node set (4-adjacency), per key, each labeled by
@@ -1457,7 +1562,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     .decl node(key: Key, p: Position)
 
     // The steps that join nodes: the cardinals, and any a caller adds.
-    .decl step(delta: Position)
+    .decl step(delta: Offset)
     step([-1, 1, 0, 0]). step([1, -1, 0, 0]). step([0, 0, -1, 1]). step([0, 0, 1, -1]).
 
     // The id of the component p belongs to.
@@ -1473,7 +1578,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 // Connected components under 8-adjacency — Components over the full
 // Dir8 step set.
 .comp Components8<Key> : Components<Key> {
-    step(S) :- dir8_elem(D), step_delta(D, S).
+    step(S) :- dir8_elem(D), step_offset(D, S).
 }
 
 // Seeded connectivity: reach is the union of the components the seeds
@@ -1547,18 +1652,11 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     .decl cell(key: Key, p: Position, v: Val)
     .decl shape(key: Key, p: Position, v: Val)
 
-    // Internal keys pair the solver key with an anchor Position.
-    .type _KP = [key: Key, p: Position]
-
-    // Candidate placements — _align each shape cell (one origin per pair) to
-    // every cell of the same value, union over the shape cells. A true
-    // occurrence aligns every member to a same-valued cell, so the
-    // restriction loses no placement.
-    .init _align = Reframe<_KP>
-    _align.cell([Ky, S], P)  :- shape(Ky, S, V), cell(Ky, P, V).
-    _align.outer([Ky, S], S) :- shape(Ky, S, _).
+    // Candidate placements — each shape cell aligned to every cell of the
+    // same value, union over the shape cells. A true occurrence aligns every
+    // member to a same-valued cell, so the restriction loses no placement.
     .decl placement(key: Key, p: Position)
-    placement(Ky, M) :- _align.inner([Ky, _], M).
+    placement(Ky, M) :- shape(Ky, S, V), cell(Ky, P, V), relative(S, P, M).
 
     // A contradicted placement: some member lands on a cell of another
     // value, or off the grid, where no cell carries its value.

@@ -22,7 +22,7 @@
 .decl ink(p: Position)
 ink(P) :- in(P, Col), params.ink(Col).
 
-.decl interior(p: Position, ch: Choice)
+.decl inner_cell(p: Position, ch: Choice)
 
 // --- $Box ---
 
@@ -36,14 +36,14 @@ box.cell(Id, P) :- comps.label($U(), P, Id).
 bcells.box(Id, M) :- box.margin(Id, M).
 bcells.cell(Id, P) :- box.cell(Id, _), in(P, _).
 
-interior(P, $Box()) :- bcells.hole(_, P).
+inner_cell(P, $Box()) :- bcells.hole(_, P).
 
 // --- $Erode ---
 
 .init exposed = Rim<Unit>
 exposed.cell($U(), P) :- ink(P).
 
-interior(P, $Erode()) :- ink(P), !exposed.rim($U(), P).
+inner_cell(P, $Erode()) :- ink(P), !exposed.rim($U(), P).
 
 // --- Output ---
 
@@ -51,5 +51,5 @@ interior(P, $Erode()) :- ink(P), !exposed.rim($U(), P).
 impl_choice($Box()). impl_choice($Erode()).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, Ch) :- interior(P, Ch), params.fill(Col).
-out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !interior(P, Ch).
+out(P, Col, Ch) :- inner_cell(P, Ch), params.fill(Col).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !inner_cell(P, Ch).

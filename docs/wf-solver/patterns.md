@@ -281,10 +281,6 @@ ring(P, Col)   :- arm(P, _, Col), !broken(P, Col).
 
 The enum relation (`dir_elem`, `d4_elem`, `axis_elem`) supplies the domain. Repeating the tested atom once per member states the same universal by hand: the members become variable positions, and an assembly join must bind one variable per member.
 
-## Boxes as margin Positions
-
-A rectangular region is one Position: its four edge margins. `geq(P, M)` expands a box to its cells (`Bbox.inside` in lib). A box is stored as data (77fdfe62's `$Margin`; 4522001f's `params.box`, rotated to its corner by `apply`) and moved as a record. `compose` with a jump delta shifts the whole box. `geq(M, ORIGIN)` tests that the box still fits the frame. A chain of placed regions recurses on the box, not its cells (4522001f's `grow_box` / `fit_box`).
-
 ## `cell_split` — input cell with its axis decomposition
 
 `cell_split` pairs an input cell with its along/across split on the task's axis.

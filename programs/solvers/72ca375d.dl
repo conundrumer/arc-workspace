@@ -32,13 +32,13 @@ box.cell(Id, P) :- pieces.label($U(), P, Id).
 box.grid(Id, P) :- pieces.label($U(), _, Id), in(P, _).
 
 // The piece's crop: the content of its box, free of placement.
-.decl crop(id: Ident, p_inner: Position, col: Color)
-crop(Id, P_inner, Col) :- box.inner(Id, P, P_inner), in(P, Col).
+.decl cropped(id: Ident, p_inner: Position, col: Color)
+cropped(Id, P_inner, Col) :- box.inner(Id, P, P_inner), in(P, Col).
 
 // The crop's own symmetries.
 .init inv = D4Map<Ident, Color>
-inv.src(Id, P, Col) :- crop(Id, P, Col).
-inv.dst(Id, P, Col) :- crop(Id, P, Col).
+inv.src(Id, P, Col) :- cropped(Id, P, Col).
+inv.dst(Id, P, Col) :- cropped(Id, P, Col).
 
 // The selected piece.
 .decl chosen(id: Ident, ch: Choice)
@@ -50,4 +50,4 @@ chosen(Id, $Stored()) :- params.sym(D), inv.map(Id, D).
 chosen(Id, $Any()) :- inv.has_sym(Id).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P_inner, Col, Ch) :- chosen(Id, Ch), crop(Id, P_inner, Col).
+out(P_inner, Col, Ch) :- chosen(Id, Ch), cropped(Id, P_inner, Col).

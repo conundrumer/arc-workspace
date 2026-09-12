@@ -35,16 +35,16 @@ impl_choice($Rigid()).
 impl_choice($Stack()).
 
 // The container's interior.
-.decl inside(p: Position)
-inside(P) :- in(P, _), params.box(M), geq(P, M).
+.decl within(p: Position)
+within(P) :- in(P, _), params.box(M), geq(P, M).
 
 // The staging area — what the shift carries into the container.
 .decl stage(p: Position)
-stage(P) :- in(P, _), params.shift(V), compose(P, V, Q), inside(Q).
+stage(P) :- in(P, _), params.shift(V), compose(P, V, Q), within(Q).
 
 // The region the move rebuilds. Every other cell passes through.
 .decl rewritten(p: Position)
-rewritten(P) :- inside(P).
+rewritten(P) :- within(P).
 rewritten(P) :- stage(P).
 
 // The comb, moved into the container.
@@ -53,7 +53,7 @@ comb(Q, Col) :- in(P, Col), stage(P), !params.bg(Col), params.shift(V), compose(
 
 // The container's contents.
 .decl content(p: Position, col: Color)
-content(P, Col) :- in(P, Col), inside(P), !params.bg(Col).
+content(P, Col) :- in(P, Col), within(P), !params.bg(Col).
 
 // A cell split on the rise axis: the line it stands in, and its depth — the
 // distance from the edge the teeth point at.
@@ -83,7 +83,7 @@ placed(Q, Col, $Rigid()) :-
     content(P, Col), line_cell(P, L, _),               // a content cell
     content_end.high(L, P_bot, _), seat(L, P_seat),    // the low end goes on the seat
     displacement(P_bot, P_seat, V), compose(P, V, Q),  // carried as one body
-    inside(Q).                                         // what the container still holds
+    within(Q).                                         // what the container still holds
 
 // --- Stack ---
 
@@ -92,7 +92,7 @@ placed(Q, Col, $Rigid()) :-
 .init rise_ray = Ray<Position>
 rise_ray.dir(L, D) :- seat(L, _), params.rise(D).
 rise_ray.mark(L, P_seat) :- seat(L, P_seat).
-rise_ray.cell(L, P) :- inside(P), line_cell(P, L, _).
+rise_ray.cell(L, P) :- within(P), line_cell(P, L, _).
 
 // The contents ranked from their low end, per line.
 .init content_rank = Ordinal<Position>

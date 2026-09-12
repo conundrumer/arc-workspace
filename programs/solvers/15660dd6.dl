@@ -57,8 +57,8 @@ panel.grid(Id, P) :- rings.label($U(), _, Id), in(P, _).
 .decl ring_pos(p_intile: Position)
 ring_pos(P_intile) :- panel.inner(_, _, P_intile), dir_elem(D), dist(P_intile, D, 0).
 
-.decl interior(id: Ident, p_intile: Position, col: Color)
-interior(Id, P_intile, Col) :-
+.decl inner_cell(id: Ident, p_intile: Position, col: Color)
+inner_cell(Id, P_intile, Col) :-
     panel.inner(Id, P, P_intile), gt(P_intile, ORIGIN),  // inside the ring
     in(P, Col).
 
@@ -84,13 +84,13 @@ band_label(P_band, Col) :-
 // --- donor ---
 
 .init panel_color = Unanimous<Ident, Color>
-panel_color.item(Id, Col) :- interior(Id, _, Col).
+panel_color.item(Id, Col) :- inner_cell(Id, _, Col).
 
 // Panels holding the same interior.
 .type PanelCell = [p_intile: Position, col: Color]
 .init same = KeyedSetCompare<Ident, Ident, PanelCell>
-same.pattern_member(Id, [P_intile, Col]) :- interior(Id, P_intile, Col).
-same.observed_member(Id, [P_intile, Col]) :- interior(Id, P_intile, Col).
+same.pattern_member(Id, [P_intile, Col]) :- inner_cell(Id, P_intile, Col).
+same.observed_member(Id, [P_intile, Col]) :- inner_cell(Id, P_intile, Col).
 
 .decl twin(id: Ident)
 twin(Id) :-
@@ -102,7 +102,7 @@ donor($Solid(), P_col, Id) :- panel_pos(Id, P_col, _), !panel_color.clash(Id).
 donor($Odd(), P_col, Id) :- panel_pos(Id, P_col, _), !twin(Id).
 
 .decl fill(d: Donor, p_col: Position, col: Color)
-fill(D, P_col, Col) :- donor(D, P_col, Id), interior(Id, _, Col).
+fill(D, P_col, Col) :- donor(D, P_col, Id), inner_cell(Id, _, Col).
 
 .decl border(d: Donor, p_col: Position, col: Color)
 border(D, P_col, Col) :-
@@ -112,7 +112,7 @@ border(D, P_col, Col) :-
 stencil(D, P_col, P_intile, Col) :-
     donor(D, P_col, _),
     panel_pos(Id, P_col, _), !donor(D, P_col, Id),  // a non-donor panel
-    interior(Id, P_intile, Col).
+    inner_cell(Id, P_intile, Col).
 
 // --- output ---
 

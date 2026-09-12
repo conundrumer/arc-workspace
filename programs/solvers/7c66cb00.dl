@@ -30,13 +30,13 @@ line_end(P) :- in(P, _), params.gravity(D), perp_dir(D, E), dist(P, E, 0).
 .init ends = Unanimous<Position, Color>
 ends.item(L, Col) :- in(P, Col), line_end(P), line_of(P, L).
 
-.init interior = Unanimous<Position, Color>
-interior.item(L, Col) :- in(P, Col), !line_end(P), line_of(P, L).
+.init core = Unanimous<Position, Color>
+core.item(L, Col) :- in(P, Col), !line_end(P), line_of(P, L).
 
 // A band line: a uniform interior with ends of one other color.
 .decl band_line(l: Position, c_end: Color, c_fill: Color)
 band_line(L, C_end, C_fill) :-
-    ends.value(L, C_end), interior.value(L, C_fill), C_end != C_fill.
+    ends.value(L, C_end), core.value(L, C_fill), C_end != C_fill.
 
 .decl band_cell(c_fill: Color, p: Position)
 band_cell(C_fill, P) :- band_line(L, _, C_fill), line_of(P, L).

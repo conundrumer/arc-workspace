@@ -39,22 +39,22 @@ impl_choice([I, Pal]) :- inside_choice(I), palette_choice(Pal).
 
 // --- inside ---
 
-.decl inside(p: Position, i: Inside)
+.decl within(p: Position, i: Inside)
 
 .init fbox = Bbox<Unit>
 fbox.cell($U(), P) :- frame_cell(P).
 
-inside(P, $Box()) :- in(P, _), fbox.margin($U(), B), gt(P, B).
+within(P, $Box()) :- in(P, _), fbox.margin($U(), B), gt(P, B).
 
 .init closed = Closed<Unit>
 closed.cell($U(), P) :- in(P, _), !frame_cell(P).
 
-inside(P, $Enclose()) :- closed.region($U(), P, _).
+within(P, $Enclose()) :- closed.region($U(), P, _).
 
 // --- palette ---
 
 .decl ink(col: Color, ch: Choice)
-ink(Col, [I, $Held()]) :- inside(P, I), in(P, Col), !params.bg(Col).
+ink(Col, [I, $Held()]) :- within(P, I), in(P, Col), !params.bg(Col).
 ink(Col, [I, $Field()]) :- inside_choice(I), in(_, Col), !params.bg(Col), !params.frame(Col).
 
 // --- output ---
@@ -64,7 +64,7 @@ ink(Col, [I, $Field()]) :- inside_choice(I), in(_, Col), !params.bg(Col), !param
 swap(Col, Col2, Ch) :- ink(Col, Ch), ink(Col2, Ch), Col != Col2.
 
 .decl traded(p: Position, col: Color, ch: Choice)
-traded(P, Col2, [I, Pal]) :- inside(P, I), in(P, Col), swap(Col, Col2, [I, Pal]).
+traded(P, Col2, [I, Pal]) :- within(P, I), in(P, Col), swap(Col, Col2, [I, Pal]).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- traded(P, Col, Ch).

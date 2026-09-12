@@ -47,12 +47,12 @@ outline_box(B, Ch) :- marker(Col, Ch), cbox.margin(Col, B).
 .decl window(p: Position, ch: Choice)
 window(P, Ch) :- outline_box(B, Ch), bcells.hole(B, P).
 
-.init crop = BoxFrame<Choice>
-crop.cell(Ch, P) :- window(P, Ch).
-crop.grid(Ch, P) :- window(_, Ch), in(P, _).
+.init view = BoxFrame<Choice>
+view.cell(Ch, P) :- window(P, Ch).
+view.grid(Ch, P) :- window(_, Ch), in(P, _).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P_inner, Col, Ch) :- crop.inner(Ch, P, P_inner), in(P, Col).
+out(P_inner, Col, Ch) :- view.inner(Ch, P, P_inner), in(P, Col).
 
 // --- Rect ---
 

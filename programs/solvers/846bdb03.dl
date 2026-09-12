@@ -27,16 +27,16 @@ transform(T) :- params.sym(S), sym_member(S, T).
 box.cell($U(), P) :- in(P, Col), params.corner(Col).
 box.grid($U(), P) :- in(P, _).
 
-.decl crop(p: Position, col: Color)
-crop(P_inner, Col) :- box.inner($U(), P, P_inner), in(P, Col).
+.decl cropped(p: Position, col: Color)
+cropped(P_inner, Col) :- box.inner($U(), P, P_inner), in(P, Col).
 
 // A colored line on the box's border.
 .decl bar(d: Dir, col: Color)
-bar(D, Col) :- crop(P, Col), dir_elem(D), dist(P, D, 0), !params.bg(Col), !params.corner(Col).
+bar(D, Col) :- cropped(P, Col), dir_elem(D), dist(P, D, 0), !params.bg(Col), !params.corner(Col).
 
 // The box off its border, in its own frame.
-.init interior = BoxFrame<Unit>
-interior.cell($U(), P) :- crop(P, _), gt(P, ORIGIN).
+.init core = BoxFrame<Unit>
+core.cell($U(), P) :- cropped(P, _), gt(P, ORIGIN).
 
 // --- the shape ---
 
@@ -61,7 +61,7 @@ defect(T) :- transform(T), bar(D, Col), !touches(T, D, Col).
 // --- output ---
 
 .decl out(p: Position, col: Color)
-out(P, Col) :- crop(P, Col), !interior.inner($U(), P, _).
+out(P, Col) :- cropped(P, Col), !core.inner($U(), P, _).
 out(P, Col) :-
-    interior.inner($U(), P, P_inner),
+    core.inner($U(), P, P_inner),
     placed(T, P_inner, Col), !defect(T).    // under the orientation every bar accepts

@@ -93,8 +93,8 @@ block(L, P_tile, Col) :- corner_color.value([L, P_tile], Col), !bare_corner(L, P
 .decl impl_choice(ch: Choice)
 impl_choice([L, S]) :- lines_choice(L), span_choice(S).
 
-.init crop = BoxFrame<Choice>
-crop.grid([L, S], P_tile) :- impl_choice([L, S]), df.tile_of(L, _, P_tile).
+.init view = BoxFrame<Choice>
+view.grid([L, S], P_tile) :- impl_choice([L, S]), df.tile_of(L, _, P_tile).
 
 // --- Span cases: what the miniature is cropped to ---
 
@@ -107,16 +107,16 @@ span_choice($Blocks()).
 marks_box.cell($U(), P) :- mark(P, _).
 marks_box.grid($U(), P) :- in(P, _).
 
-crop.cell([L, $Marks()], P_tile) :- marks_box.inside($U(), P), df.tile_of(L, P, P_tile).
+view.cell([L, $Marks()], P_tile) :- marks_box.inside($U(), P), df.tile_of(L, P, P_tile).
 
 // $Blocks — the bounding box of the colored tiles.
-crop.cell([L, $Blocks()], P_tile) :- block(L, P_tile, _).
+view.cell([L, $Blocks()], P_tile) :- block(L, P_tile, _).
 
 // --- output ---
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P_grid_out, Col, [L, S]) :-
-    crop.inner([L, S], P_tile, P_grid_out),
+    view.inner([L, S], P_tile, P_grid_out),
     ( block(L, P_tile, Col)                       // four corners, one mark color
     ; !block(L, P_tile, _), params.bg(Col)        // any other tile
     ).

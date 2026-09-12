@@ -38,8 +38,8 @@ barrier.cell($Walls(), P) :- in(P, Col), params.wall(Col).
 barrier.cell($Beyond(), P) :- in(P, _), !region.reach($U(), P).
 
 // The inside: the grid minus the outside.
-.init inside = Rim8<Choice>
-inside.cell(Ch, P) :-
+.init within = Rim8<Choice>
+within.cell(Ch, P) :-
     in(P, _), impl_choice(Ch),
     ( !barrier.cell(Ch, P)          // not a candidate
     ; barrier.region(Ch, P, _)      // an obstacle
@@ -47,7 +47,7 @@ inside.cell(Ch, P) :-
 
 // The region's bg cells on the inside's outline.
 .decl painted(p: Position, ch: Choice)
-painted(P, Ch) :- inside.rim(Ch, P), region.reach($U(), P), in(P, Col), params.bg(Col).
+painted(P, Ch) :- within.rim(Ch, P), region.reach($U(), P), in(P, Col), params.bg(Col).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- painted(P, Ch), params.paint(Col).

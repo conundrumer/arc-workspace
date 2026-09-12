@@ -90,15 +90,15 @@ scene(B, P, Col) :- place(B, K, V), content(K, P0, Col), compose(P0, V, P).
 
 // The scene's box. Every fragment box hugs its own ink, so the cells the
 // fragments cover reach as far as the scene's ink does.
-.init crop = BoxFrame<Ident>
-crop.cell(B, P) :- scene(B, P, _).
+.init view = BoxFrame<Ident>
+view.cell(B, P) :- scene(B, P, _).
 
 // The output sheet is that box as a frame of its own.
 .init sheet = Frame2D<Ident>
-sheet.extent(B, A, N) :- crop.extent(B, A, N).
+sheet.extent(B, A, N) :- view.extent(B, A, N).
 
 .decl paint(base: Ident, p_out: Position, col: Color)
-paint(B, P_out, Col) :- crop.inner(B, P, P_out), scene(B, P, Col).
+paint(B, P_out, Col) :- view.inner(B, P, P_out), scene(B, P, Col).
 
 .decl out(p: Position, col: Color)
 out(P_out, Col) :-

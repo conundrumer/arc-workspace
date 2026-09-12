@@ -39,23 +39,23 @@ box.cell($U(), P) :- largest.high($U(), Id, _), cluster.label($U(), P, Id).
 box.grid($U(), P) :- in(P, _).
 
 // The crop, in its own frame.
-.decl crop(p_inner: Position, col: Color)
-crop(P_inner, Col) :- box.inner($U(), P, P_inner), in(P, Col).
+.decl cropped(p_inner: Position, col: Color)
+cropped(P_inner, Col) :- box.inner($U(), P, P_inner), in(P, Col).
 
 // Quarter turns per figure color: its stray cells outside the box.
 .init turns = Tally<Color, Position>
 turns.item(Col, P) :- ink(P, Col), !box.inside($U(), P).
-turns.domain(Col) :- crop(_, Col), !params.bg(Col).
+turns.domain(Col) :- cropped(_, Col), !params.bg(Col).
 
 // The rotation: each crop cell steps one quarter turn about the center.
 .init rot = CycleWalk<Unit, Position>
-rot.succ($U(), P, P2) :- crop(P, _), params.sense(S), rotation(S, R), apply(R, P, P2).
+rot.succ($U(), P, P2) :- cropped(P, _), params.sense(S), rotation(S, R), apply(R, P, P2).
 rot.step($U(), N) :- turns.tally(_, N).
 
 // Where each color lands after its turns.
 .decl landed(p: Position, col: Color)
-landed(P, Col) :- crop(P0, Col), turns.tally(Col, N), rot.walk($U(), P0, N, P).
+landed(P, Col) :- cropped(P0, Col), turns.tally(Col, N), rot.walk($U(), P0, N, P).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- landed(P, Col).
-out(P, Col) :- crop(P, _), !landed(P, _), params.bg(Col).
+out(P, Col) :- cropped(P, _), !landed(P, _), params.bg(Col).

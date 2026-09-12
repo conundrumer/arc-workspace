@@ -243,6 +243,18 @@ _PARTNER = "partner"
 _CHAINS: tuple[dict, ...] = (
     {
         "prim": "neighbor",
+        "a": ("step_offset", 2, 1),
+        "b": ("compose", 3, (0, 1)),
+        "out": (_PARTNER, ("a", 0), ("b", 2)),
+    },
+    {
+        "prim": "jump",
+        "a": ("jump_offset", 3, 2),
+        "b": ("compose", 3, (0, 1)),
+        "out": (_PARTNER, ("a", 0), ("a", 1), ("b", 2)),
+    },
+    {
+        "prim": "neighbor",
         "a": ("step_delta", 2, 1),
         "b": ("compose", 3, (0, 1)),
         "out": (_PARTNER, ("a", 0), ("b", 2)),
@@ -264,8 +276,10 @@ _CHAINS: tuple[dict, ...] = (
     },
 )
 
-# The slot where each delta primitive emits its Shift.
-_DELTA_OUT = {"edge_delta": 2, "jump_delta": 2, "step_delta": 1}
+# The slot where each constructor emits its Offset or Box; the delta names
+# are retired.
+_DELTA_OUT = {"edge_inset": 2, "edge_outset": 2, "jump_offset": 2, "step_offset": 1,
+              "edge_delta": 2, "jump_delta": 2, "step_delta": 1}
 
 # The comp whose defining rule reads one valued cell set at a cell and at
 # its image, by the primitive that takes the cell onto the image.

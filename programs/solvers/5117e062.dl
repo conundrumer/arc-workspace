@@ -59,12 +59,12 @@ region($Window(), P) :-
 .init fill = Unanimous<Choice, Color>
 fill.item(Ch, Col) :- region(Ch, P), in(P, Col), !params.bg(Col), !params.mark(Col).
 
-.init crop = BoxFrame<Choice>
-crop.cell(Ch, P) :- region(Ch, P).
-crop.grid(Ch, P) :- region(Ch, _), in(P, _).
+.init view = BoxFrame<Choice>
+view.cell(Ch, P) :- region(Ch, P).
+view.grid(Ch, P) :- region(Ch, _), in(P, _).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P_inner, Col, Ch) :-
-    crop.inner(Ch, P, P_inner), in(P, Col_in),
+    view.inner(Ch, P, P_inner), in(P, Col_in),
     ( params.mark(Col_in), fill.value(Ch, Col)
     ; !params.mark(Col_in), Col = Col_in ).

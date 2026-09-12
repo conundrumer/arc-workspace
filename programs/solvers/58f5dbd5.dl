@@ -93,11 +93,11 @@ crop_box(B) :-
     blocks_box.margin($U(), M),
     params.border(K), uniform_delta(K, W), displacement(W, M, B).
 
-.init crop = Reframe<Unit>
-crop.outer($U(), B) :- crop_box(B).
-crop.cell($U(), P) :- in(P, _), crop_box(B), geq(P, B).
+.init rel = Reframe<Unit>
+rel.outer($U(), B) :- crop_box(B).
+rel.cell($U(), P) :- in(P, _), crop_box(B), geq(P, B).
 
-view(P, P_out, $Crop()) :- crop.view($U(), P, P_out).
+view(P, P_out, $Crop()) :- rel.view($U(), P, P_out).
 
 // $Arrange — each block at its place in the arrangement, inside the border.
 // A block's place is its rank from each of the four edges; blocks level with

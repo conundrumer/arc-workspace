@@ -33,8 +33,15 @@ When a decomposition's inner coordinate is also the output cell, the setup decid
 
 - **Decompose-fold.** A decompose-fold names the output cell `P_grid_out` in the consuming rules, and keeps `P_intile` in the production rules that decompose the input.
 - **Select.** A select of one tile names it `P_intile`.
-- **Crop.** A crop to a region's box names it `P_inner`.
+- **Crop.** A crop to a region's box, the `crop` read, names it `P_inner`.
 - **Overlay.** An overlay names the frame cell that it stacks onto: bare `P`, or `P_frame` when another frame shares the rule.
+
+### Box readings
+
+A Box column is read as a cell (`Position`), a translation (`Offset`), or a rectangle, margin, or frame change (bare `Box`). The type alias states the reading where one applies; a comment states a bare Box's reading where the name does not.
+
+- A variable is named for its reading: `B` for a box, `V` for an offset, `P_rel` for a cell read relative to a box. `M` does not name a box.
+- "Frame" in a unit's name means a frame of cells realized or induced from data (`DirFrame`, `AxisFrame`, `Frame2D`, `OrderFrame`). The coordinate-frame sense lives in prose and in Position variable names.
 
 ## File structure
 

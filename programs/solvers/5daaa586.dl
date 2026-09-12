@@ -43,12 +43,12 @@ divider(A, L) :- in(P, _), axis_elem(A), split(P, A, L, _), !gapped(A, L).
 .init bound = Extremes<Dir>
 bound.cand(D, K) :- divider(A, L), axis_of(D, A), dist(L, D, K).    // divider distance toward D
 
-.init crop = MarginFrame<Unit>
-crop.cell($U(), P) :- in(P, _).
-crop.width($U(), D, K) :- bound.low(D, K).                          // the nearest divider toward D
+.init view = MarginFrame<Unit>
+view.cell($U(), P) :- in(P, _).
+view.width($U(), D, K) :- bound.low(D, K).                          // the nearest divider toward D
 
 .init box = BoxCells<Unit>
-box.box($U(), B) :- crop.margin($U(), B).
+box.box($U(), B) :- view.margin($U(), B).
 box.cell($U(), P) :- in(P, _).
 
 // --- marks cast to the border they match ---
@@ -65,7 +65,7 @@ fill(P, Col, Ch) :- cast.ray([Ch, D], P, D, _, S), in(S, Col).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P_crop, Col, Ch) :-
-    impl_choice(Ch), crop.inner($U(), P, P_crop),
+    impl_choice(Ch), view.inner($U(), P, P_crop),
     ( fill(P, Col, Ch)
     ; !fill(P, _, Ch), in(P, Col)
     ).

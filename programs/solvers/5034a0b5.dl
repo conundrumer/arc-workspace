@@ -29,8 +29,8 @@ impl_choice($Cell()). impl_choice($Object()).
 .decl corner(p: Position)
 corner(P) :- in(P, _), corner_dist(P, _, 0).
 
-.decl interior(p: Position)
-interior(P) :- in(P, _), gt(P, ORIGIN).
+.decl inner_cell(p: Position)
+inner_cell(P) :- in(P, _), gt(P, ORIGIN).
 
 .decl bg(col: Color)
 bg(Col) :- in(P, Col), corner(P).
@@ -41,13 +41,13 @@ side_color(D, Col) :- in(P, Col), dir_elem(D), dist(P, D, 0), !corner(P).
 
 // A mark heads toward the side that carries its color.
 .decl heading(p: Position, d: Dir, col: Color)
-heading(P, D, Col) :- in(P, Col), interior(P), side_color(D, Col).
+heading(P, D, Col) :- in(P, Col), inner_cell(P), side_color(D, Col).
 
 // --- step ---
 
 // The mark's step lands on the frame.
 .decl faces_frame(p: Position)
-faces_frame(P) :- heading(P, D, _), neighbor(P, D, Q), !interior(Q).
+faces_frame(P) :- heading(P, D, _), neighbor(P, D, Q), !inner_cell(Q).
 
 // What holds a mark back; the cases differ here.
 .decl blocked(p: Position, ch: Choice)

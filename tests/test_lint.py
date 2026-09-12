@@ -215,7 +215,16 @@ v(N) :- params.max(N).
     assert "reserved name" not in cats(src)
 
 
-def test_shadowed_type_argument_fires():
+SHADOWING_LIB = """\
+.comp Occurrences<Key, Val> {
+    .type _KP = [key: Key, p: Position]
+    .decl cell(key: Key, p: Position, v: Val)
+}
+"""
+
+
+def test_shadowed_type_argument_fires(monkeypatch):
+    monkeypatch.setattr("dl.lint._lib_source", lambda: SHADOWING_LIB)
     src = """\
 .comp Parse<Key> {
     .type _KP = [key: Key, p_part: Position]
@@ -231,7 +240,8 @@ def test_shadowed_type_argument_fires():
     assert "rename it" in fs[0][2]
 
 
-def test_shadowed_type_reaches_through_a_nested_instance():
+def test_shadowed_type_reaches_through_a_nested_instance(monkeypatch):
+    monkeypatch.setattr("dl.lint._lib_source", lambda: SHADOWING_LIB)
     src = """\
 .comp Wrap<K> {
     .init o = Occurrences<K, Color>
@@ -406,3 +416,55 @@ def test_family_case_the_representative_holds_stays_quiet(tmp_path, monkeypatch)
 // family: 67a3c6ac Turn
 """
     assert "family case" not in cats(src)
+
+
+RETIRED_LIB = """\
+// retired: `Bbox`, then `crop`
+.comp BoxFrame<Key> : Bbox<Key> {
+    .decl inner(key: Key, p: Position, p_inner: Position)
+}
+.comp Bbox<Key> {
+    .decl cell(key: Key, p: Box)
+    .decl box(key: Key, b: Box)
+    // retired: `box`
+    .decl margin(key: Key, p: Position)
+}
+"""
+
+
+def test_retired_comp_fires(monkeypatch):
+    monkeypatch.setattr("dl.lint._lib_source", lambda: RETIRED_LIB)
+    src = """\
+.init box = BoxFrame<Unit>
+box.cell($U(), P) :- in(P, _).
+"""
+    fs = [f for f in lint_program(src) if f[0] == "retired name"]
+    assert [f[1] for f in fs] == [1]
+    assert "`BoxFrame` is retired: `Bbox`, then `crop`" in fs[0][2]
+
+
+def test_retired_readout_fires_and_the_live_one_stays_quiet(monkeypatch):
+    monkeypatch.setattr("dl.lint._lib_source", lambda: RETIRED_LIB)
+    src = """\
+.init hull = Bbox<Unit>
+hull.cell($U(), P) :- in(P, _).
+.decl seat(b: Box)
+seat(B) :- hull.margin($U(), B).
+.decl seat2(b: Box)
+seat2(B) :- hull.box($U(), B).
+"""
+    fs = [f for f in lint_program(src) if f[0] == "retired name"]
+    assert [f[1] for f in fs] == [4]
+    assert "`Bbox.margin` is retired: `box`" in fs[0][2]
+
+
+def test_retired_readout_reaches_through_a_derived_comp(monkeypatch):
+    lib = RETIRED_LIB.replace("// retired: `Bbox`, then `crop`\n", "")
+    monkeypatch.setattr("dl.lint._lib_source", lambda: lib)
+    src = """\
+.init view = BoxFrame<Unit>
+.decl seat(b: Box)
+seat(B) :- view.margin($U(), B).
+"""
+    fs = [f for f in lint_program(src) if f[0] == "retired name"]
+    assert [f[1] for f in fs] == [3]

@@ -67,19 +67,19 @@ block_count.item(Col, Id) :- comps.label($U(), P, Id), in(P, Col).
 
 // The frame the border encloses. Non-bg cells never sit on that border, so
 // the frame holds every one of them.
-.init interior = MarginFrame<Unit>
-interior.cell($U(), P) :- in(P, _).
-interior.width($U(), D, K) :- dir_elem(D), params.border_width(K).
+.init core = MarginFrame<Unit>
+core.cell($U(), P) :- in(P, _).
+core.width($U(), D, K) :- dir_elem(D), params.border_width(K).
 
 .init lattice = Tile2D<Unit>
-lattice.cell(P_int) :- in(P, Col), !params.bg(Col), interior.inner($U(), P, P_int).
+lattice.cell(P_int) :- in(P, Col), !params.bg(Col), core.inner($U(), P, P_int).
 lattice.dim($U(), A, K) :- params.tile_dim(A, K).
 lattice.gap(G) :- params.tile_gap(G).
 
 .decl tile_color(p_tile: Position, col: Color)
 tile_color(P_tile, Col) :-
     in(P, Col),                                          // input cell
-    interior.inner($U(), P, P_int),                      // seen in the interior frame
+    core.inner($U(), P, P_int),                      // seen in the interior frame
     lattice.tile($U(), P_int, P_tile, _).                // its lattice tile
 
 // --- counts per choice ---

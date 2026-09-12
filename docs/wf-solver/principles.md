@@ -56,6 +56,7 @@ The program encodes the concept of the task, apart from how the data or the medi
 ARC concepts are relations between cells, regions, and properties. The program encodes them as relations.
 
 - Arithmetic in a rule usually represents a relational operation: a wraparound shift is a walk along a cycle. Arithmetic that seems necessary usually shows that a lib primitive is missing, and the lib addition protocol decides.
+- Every spatial value is a Box, the edge-margin record, and lib holds its algebra: `compose` seats a box in a frame, `relative` reads one in another's frame, `inside` and `interior` nest, and the inset and outset constructors state a frame change. A rule that would add or subtract margins states one of these.
 
 ### ARC types
 

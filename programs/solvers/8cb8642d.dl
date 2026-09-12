@@ -42,8 +42,8 @@ bcells.box(Id, M) :- box.margin(Id, M).
 bcells.cell(Id, P) :- cell_of(Id, P).
 
 // The inside, viewed from its own frame.
-.init inside = BoxFrame<Ident>
-inside.cell(Id, P) :- bcells.hole(Id, P).
+.init within = BoxFrame<Ident>
+within.cell(Id, P) :- bcells.hole(Id, P).
 
 .decl frame_color(id: Ident, col: Color)
 frame_color(Id, Col) :- bcells.on_edge(Id, P, _), in(P, Col).
@@ -64,7 +64,7 @@ impl_choice($Join()). impl_choice($Medial()).
 // edge than the corner's.
 .decl arm(id: Ident, p_inner: Position, diag: DiagDir)
 arm(Id, P_inner, Diag) :-
-    inside.inner(Id, _, P_inner), diag_dir_elem(Diag), diag_dirs(Diag, _, D1, D2),
+    within.inner(Id, _, P_inner), diag_dir_elem(Diag), diag_dirs(Diag, _, D1, D2),
     dist_pair(P_inner, D1, K, K1), dist_pair(P_inner, D2, K, K2),   // on the corner's diagonal
     K <= K1, K <= K2.                                                // on the corner's side
 
@@ -76,9 +76,9 @@ arm_end(Id, P_inner) :-
 
 // The line joining two arm ends.
 .init join = Between<Ident>
-join.cell(Id, P_inner) :- inside.inner(Id, _, P_inner).
+join.cell(Id, P_inner) :- within.inner(Id, _, P_inner).
 join.mark(Id, P_inner) :- arm_end(Id, P_inner).
-join.axis(Id, A) :- inside.inner(Id, _, _), axis_elem(A).
+join.axis(Id, A) :- within.inner(Id, _, _), axis_elem(A).
 
 drawn(Id, P_inner, $Join()) :- arm(Id, P_inner, _).
 drawn(Id, P_inner, $Join()) :- join.between(Id, P_inner).
@@ -87,16 +87,16 @@ drawn(Id, P_inner, $Join()) :- join.between(Id, P_inner).
 
 // The nearest edges of each inside cell.
 .init nearest = ArgExtremes<Position, Dir>
-nearest.cand(P, D, K) :- inside.inner(_, P, P_inner), dir_elem(D), dist(P_inner, D, K).
+nearest.cand(P, D, K) :- within.inner(_, P, P_inner), dir_elem(D), dist(P_inner, D, K).
 
 drawn(Id, P_inner, $Medial()) :-
-    inside.inner(Id, P, P_inner), nearest.low(P, D1, _), nearest.low(P, D2, _), D1 != D2.
+    within.inner(Id, P, P_inner), nearest.low(P, D1, _), nearest.low(P, D2, _), D1 != D2.
 
 // --- output ---
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
-    inside.inner(Id, P, P_inner), impl_choice(Ch),
+    within.inner(Id, P, P_inner), impl_choice(Ch),
     ( drawn(Id, P_inner, Ch), marker_color(Id, Col)   // drawn: the marker color
     ; !drawn(Id, P_inner, Ch), params.bg(Col)         // emptied: bg
     ).

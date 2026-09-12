@@ -96,7 +96,7 @@ fill(Id, Col, $Small(), $Extreme()) :-
 
 // --- interior per rectangle ---
 
-.decl interior(id: Ident, p: Position, i: Interior)
+.decl inner_cell(id: Ident, p: Position, i: Interior)
 
 // --- $Box ---
 .init box = Bbox<Ident>
@@ -106,20 +106,20 @@ box.cell(Id, P) :- parse.rects.label($U(), P, Id).
 box_cells.box(Id, B) :- box.margin(Id, B).
 box_cells.cell(Id, P) :- box.cell(Id, _), in(P, _).
 
-interior(Id, P, $Box()) :- box_cells.hole(Id, P).
+inner_cell(Id, P, $Box()) :- box_cells.hole(Id, P).
 
 // --- $Erode ---
 .init rim = Rim<Ident>
 rim.cell(Id, P) :- parse.rects.label($U(), P, Id).
 
-interior(Id, P, $Erode()) :- parse.rects.label($U(), P, Id), !rim.rim(Id, P).
+inner_cell(Id, P, $Erode()) :- parse.rects.label($U(), P, Id), !rim.rim(Id, P).
 
 // --- output ---
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, [A, K, I]) :- interior(Id, P, I), fill(Id, Col, A, K).
+out(P, Col, [A, K, I]) :- inner_cell(Id, P, I), fill(Id, Col, A, K).
 out(P, Col, [A, K, I]) :-
-    in(P, Col), interior_choice(I), !interior(_, P, I),
+    in(P, Col), interior_choice(I), !inner_cell(_, P, I),
     anchor_choice(A), kind_choice(K).
 
 .comp Determine {

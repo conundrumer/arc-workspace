@@ -73,14 +73,14 @@ open(H, M, D) :- laid_socket(H, M, D, P), !laid_wall(H, M, D, P, _).
 figure(H, M, P, Col) :- laid_wall(H, M, D, P, Col), !open(H, M, D).
 
 .type Join = [h: Ident, m: Ident]
-.init crop = BoxFrame<Join>
-crop.cell([H, M], P) :- figure(H, M, P, _).
+.init view = BoxFrame<Join>
+view.cell([H, M], P) :- figure(H, M, P, _).
 
 .decl painted(p: Position, col: Color)
-painted(P_out, Col) :- figure(H, M, P, Col), crop.inner([H, M], P, P_out).
+painted(P_out, Col) :- figure(H, M, P, Col), view.inner([H, M], P, P_out).
 
 .init sheet = Frame2D<Unit>
-sheet.extent($U(), A, N) :- crop.extent(_, A, N).
+sheet.extent($U(), A, N) :- view.extent(_, A, N).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :-

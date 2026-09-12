@@ -174,7 +174,8 @@ RIGID_CHART_PREFIX = "_rigid_"
 # type's action relation; Axis kinds act through the induced swap on a
 # member direction; the rest pass through by identity.
 _RIGID_ACTIONS = {
-    "Position": "apply", "Shift": "apply", "Inset": "apply",
+    "Box": "apply", "Position": "apply", "Offset": "apply", "Shift": "apply",
+    "Inset": "apply",
     "Dir": "apply_dir", "DiagDir": "apply_diag_dir", "Dir8": "apply_dir8",
 }
 _RIGID_AXIS_ACTIONS = {

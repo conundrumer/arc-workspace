@@ -73,8 +73,8 @@ arm(P) :-
     same_line(DA, P, S).
 
 // Strictly inside the V's cone.
-.decl inside(p: Position)
-inside(P) :-
+.decl within(p: Position)
+within(P) :-
     frame.cell($U(), P), seed(S, _),
     cast_corner(CD),   nearer(CD, P, S),
     mirror_corner(MD), nearer(MD, P, S).
@@ -109,7 +109,7 @@ echo(P, $Emit()) :- rays.ray($U(), P, _, _, _), !arm(P).
 // $Stripe — diagonal offset from the echo-axis arm is a multiple of
 // params.period: the same corner_dist class from the mirror corner as the seed.
 echo(P, $Stripe()) :-
-    inside(P), seed(S, _),
+    within(P), seed(S, _),
     mirror_corner(MD), corner_dist(P, MD, Kp), corner_dist(S, MD, Ks),
     params.period(Per), stride(Kp, Per, 0, _, R), stride(Ks, Per, 0, _, R).
 
@@ -146,8 +146,8 @@ out(P, Col, [V, E]) :-
     echoed(E, P) :- ex_out(E, P, Col), params.echo(Col).
 
     // Strictly inside the V's cone.
-    .decl inside(e: Example, p: Position)
-    inside(E, P) :-
+    .decl within(e: Example, p: Position)
+    within(E, P) :-
         ex_out(E, P, _), seed(E, S),
         cast_corner(CD),   nearer(CD, P, S),
         mirror_corner(MD), nearer(MD, P, S).
@@ -160,7 +160,7 @@ out(P, Col, [V, E]) :-
     // The cells a candidate period echoes.
     .decl striped(e: Example, p: Position, k: number)
     striped(E, P, Per) :-
-        cand(Per), inside(E, P), seed(E, S),
+        cand(Per), within(E, P), seed(E, S),
         mirror_corner(MD), corner_dist(P, MD, Kp), corner_dist(S, MD, Ks),
         stride(Kp, Per, 0, _, R), stride(Ks, Per, 0, _, R).
 

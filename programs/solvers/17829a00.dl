@@ -21,13 +21,13 @@
 .decl border_cell(d: Dir, p: Position)
 border_cell(D, P) :- params.axis(A), axis_of(D, A), in(P, _), dist(P, D, 0).
 
-.decl interior(p: Position)
-interior(P) :- in(P, _), !border_cell(_, P).
+.decl inner_cell(p: Position)
+inner_cell(P) :- in(P, _), !border_cell(_, P).
 
 // --- the objects ---
 
 .init obj = Components8<Color>
-obj.node(Col, P) :- interior(P), in(P, Col), !params.bg(Col).
+obj.node(Col, P) :- inner_cell(P), in(P, Col), !params.bg(Col).
 
 // --- the slide ---
 
@@ -57,4 +57,4 @@ landed(P2, Col) :-
 .decl out(p: Position, col: Color)
 out(P, Col) :- border_cell(_, P), in(P, Col).
 out(P, Col) :- landed(P, Col).
-out(P, Col) :- interior(P), !landed(P, _), params.bg(Col).
+out(P, Col) :- inner_cell(P), !landed(P, _), params.bg(Col).

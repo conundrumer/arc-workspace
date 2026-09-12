@@ -54,16 +54,16 @@ odd_panel(Q) :- color_panel.value(_, Q).
 
 // --- the crop ---
 
-.init crop = BoxFrame<Choice>
+.init view = BoxFrame<Choice>
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P_inner, Col, Ch) :- crop.inner(Ch, P, P_inner), in(P, Col).
+out(P_inner, Col, Ch) :- view.inner(Ch, P, P_inner), in(P, Col).
 
 // --- Panel ---
 
-crop.cell($Panel(), P) :- odd_panel(Q), panel(P, Q).
+view.cell($Panel(), P) :- odd_panel(Q), panel(P, Q).
 
 // --- Ink ---
 
-crop.cell($Ink(), P) :- odd_panel(Q), panel(P, Q), ink(P, _).
-crop.grid($Ink(), P) :- in(P, _).                                  // bg cells inside the box
+view.cell($Ink(), P) :- odd_panel(Q), panel(P, Q), ink(P, _).
+view.grid($Ink(), P) :- in(P, _).                                  // bg cells inside the box

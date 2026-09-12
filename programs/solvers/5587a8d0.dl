@@ -67,13 +67,13 @@ nest.before(Ch, Id, Id2) :-
 // and everything that ring encloses. The smallest patch encloses nothing and
 // takes the center cell alone.
 .decl covers(ch: Choice, id: Ident, v: Shift)
-.decl inside(ch: Choice, id: Ident, v: Shift)
+.decl within(ch: Choice, id: Ident, v: Shift)
 covers(Ch, Id, ORIGIN) :- nest.last(Ch, Id).
 covers(Ch, Id, V) :-
-    inside(Ch, Id, V2),
+    within(Ch, Id, V2),
     ( V = V2                                // what the ring encloses
     ; dir8_elem(D), neighbor(V2, D, V) ).   // and one step around it
-inside(Ch, Id, V) :- nest.next(Ch, Id, Id2), covers(Ch, Id2, V).
+within(Ch, Id, V) :- nest.next(Ch, Id, Id2), covers(Ch, Id2, V).
 
 // The center lies as deep as the innermost ring.
 .decl center(ch: Choice, p: Position)
@@ -81,6 +81,6 @@ center(Ch, P) :- nest.last(Ch, Id), nest.rank(Ch, Id, R), uniform_delta(R, P).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
-    covers(Ch, Id, V), !inside(Ch, Id, V),  // an offset the patch's own ring takes
+    covers(Ch, Id, V), !within(Ch, Id, V),  // an offset the patch's own ring takes
     center(Ch, C), compose(C, V, P),        // seated at the center
     patch_color(Ch, Id, Col).

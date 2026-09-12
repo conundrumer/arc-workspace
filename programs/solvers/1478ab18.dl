@@ -41,8 +41,8 @@ diag.mark($U(), P) :- mark(P).
 aligned(P, Q, K) :- diag.ray($U(), Q, _, K, P), K != 0.
 
 // The two corners of the box a diagonal pair spans, besides p and q.
-.decl box_corner(p: Position, q: Position, cor: Position)
-box_corner(P, Q, Cor) :-
+.decl corner_cell(p: Position, q: Position, cor: Position)
+corner_cell(P, Q, Cor) :-
     aligned(P, Q, _), axis_elem(A),
     split(P, A, P_along, _), split(Q, A, _, Q_across),
     compose(P_along, Q_across, Cor).
@@ -62,7 +62,7 @@ far.cand($U(), P, K) :- aligned(P, _, K).
 hyp(P, $Longest()) :- far.high($U(), P, _).
 
 // $Cornered — a mark sits at one of the pair's two box corners.
-hyp(P, $Cornered()) :- aligned(P, Q, _), box_corner(P, Q, Cor), mark(Cor).
+hyp(P, $Cornered()) :- aligned(P, Q, _), corner_cell(P, Q, Cor), mark(Cor).
 
 // --- Vertex cases: which box corner carries the right angle ---
 
@@ -73,7 +73,7 @@ vertex_choice($Inside()).
 
 // The right angle sits at one of the hypotenuse box's other two corners.
 .decl corner_cand(cor: Position, l: Locate)
-corner_cand(Cor, L) :- hyp(P, L), hyp(Q, L), box_corner(P, Q, Cor).
+corner_cand(Cor, L) :- hyp(P, L), hyp(Q, L), corner_cell(P, Q, Cor).
 
 .decl right_angle(p: Position, l: Locate, v: Vertex)
 

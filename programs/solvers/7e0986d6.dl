@@ -56,8 +56,8 @@ rect(Col, $Isolated()) :- ink(_, Col), !sprinkle_color(Col).
 sprinkle(P, Ch) :- ink(P, Col), impl_choice(Ch), !rect(Col, Ch).
 
 // A sprinkle cell with the rectangle color on both sides of a corner.
-.decl inside(p: Position, ch: Choice)
-inside(P, Ch) :-
+.decl within(p: Position, ch: Choice)
+within(P, Ch) :-
     sprinkle(P, Ch), rect(Col, Ch), diag_dirs(_, _, D1, D2),
     neighbor(P, D1, Q1), in(Q1, Col),
     neighbor(P, D2, Q2), in(Q2, Col).
@@ -66,6 +66,6 @@ inside(P, Ch) :-
 out(P, Col, Ch) :-
     in(P, C), impl_choice(Ch),
     ( !sprinkle(P, Ch), Col = C                       // bg and rectangle cells stay
-    ; inside(P, Ch), rect(Col, Ch)                    // restored rectangle cell
-    ; sprinkle(P, Ch), !inside(P, Ch), params.bg(Col) // cleared sprinkle
+    ; within(P, Ch), rect(Col, Ch)                    // restored rectangle cell
+    ; sprinkle(P, Ch), !within(P, Ch), params.bg(Col) // cleared sprinkle
     ).

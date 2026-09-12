@@ -55,12 +55,12 @@ marks.domain([Ch, Id]) :- impl_choice(Ch), blocks.label($U(), _, Id).
 .init cleanest = ArgExtremes<Choice, Ident>
 cleanest.cand(Ch, Id, N) :- marks.tally([Ch, Id], N).
 
-.init crop = BoxFrame<Choice>
-crop.cell(Ch, P) :- cleanest.low(Ch, Id, _), blocks.label($U(), P, Id).
-crop.grid(Ch, P) :- impl_choice(Ch), in(P, _).
+.init view = BoxFrame<Choice>
+view.cell(Ch, P) :- cleanest.low(Ch, Id, _), blocks.label($U(), P, Id).
+view.grid(Ch, P) :- impl_choice(Ch), in(P, _).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P_out, Col, Ch) :- crop.inner(Ch, P, P_out), in(P, Col).
+out(P_out, Col, Ch) :- view.inner(Ch, P, P_out), in(P, Col).
 
 .comp Determine {
     // Every color a block shows besides its body.

@@ -50,10 +50,13 @@ def _lib_names(text: str) -> dict[str, str]:
             if type(it) in LIB_KINDS}
 
 
-# lib.dl's macros, `ORIGIN` aside: a position, not an orientation.
+# The zero box and its retired name: a box, not an orientation.
+ZERO_MACROS = frozenset({"ZERO", "ORIGIN"})
+
+# lib.dl's macros, the zero box aside.
 ORIENTATION_LITERALS = frozenset(
     name for name, kind in _lib_names(_lib_source()).items()
-    if kind == "macro" and name != "ORIGIN"
+    if kind == "macro" and name not in ZERO_MACROS
 )
 
 ORIENTATION_LITERAL_RE = re.compile(
@@ -111,6 +114,11 @@ SHADOWED_TYPE_CAT = "shadowed type"
 # The category a solver name colliding with a lib top-level name is
 # reported under.
 LIB_NAME_CAT = "lib name"
+# A lib comp or readout on its way out carries `// retired: <what replaces
+# it>` on the line above its directive. The category a use of one is
+# reported under.
+RETIRED_CAT = "retired name"
+RETIRED_RE = re.compile(r"^\s*//\s*retired:\s*(.*\S)\s*$")
 # The comps a solver holds as its own. Any other is a proposal comp,
 # legitimate only with its entry under docs/wf-solver/proposals/.
 STOCK_COMPS = ("Params", "Determine", "Parse")
@@ -417,6 +425,71 @@ def _lib_named(
     return findings
 
 
+def _retired(text: str) -> tuple[dict[str, str], dict[str, dict[str, str]]]:
+    """lib.dl's retired comps and readouts, each with what replaces it: the
+    comps by name, and the readouts by comp then relation. A base comp's
+    retired readouts are read through the comps derived from it."""
+    lines = text.splitlines()
+
+    def marker(line: int) -> str | None:
+        m = RETIRED_RE.match(lines[line - 2]) if line >= 2 else None
+        return m.group(1) if m else None
+
+    comps: dict[str, str] = {}
+    readouts: dict[str, dict[str, str]] = {}
+    table = _comp_table(_lib_items(text))
+    for name, comp in table.items():
+        hint = marker(comp.line)
+        if hint is not None:
+            comps[name] = hint
+        own = {it.name: h for it in comp.items
+               if isinstance(it, Decl) and (h := marker(it.line)) is not None}
+        readouts[name] = own
+    for name, comp in table.items():
+        base = comp.base
+        while base is not None and base in table:
+            readouts[name] = readouts.get(base, {}) | readouts[name]
+            base = table[base].base
+    return comps, readouts
+
+
+def _retired_uses(
+    items: list[Item], raw_lines: list[str], code,
+) -> list[tuple[str, int, str, str]]:
+    """Instances of a retired lib comp, and reads of a retired readout on
+    an instance of a lib comp."""
+    comps, readouts = _retired(_lib_source())
+    findings: list[tuple[str, int, str, str]] = []
+    reads: list[tuple[str, str, str, str]] = []
+    for init in _inits(items):
+        if init.comp in comps:
+            findings.append((
+                RETIRED_CAT, init.line,
+                f"`{init.comp}` is retired: {comps[init.comp]}",
+                raw_lines[init.line - 1].rstrip(),
+            ))
+            continue
+        for rel, hint in readouts.get(init.comp, {}).items():
+            reads.append((init.inst, rel, init.comp, hint))
+    if reads:
+        pattern = re.compile(
+            r"\b(" + "|".join(
+                re.escape(inst) + r"\." + re.escape(rel)
+                for inst, rel, _, _ in reads) + r")\s*\("
+        )
+        hints = {f"{inst}.{rel}": (comp, hint) for inst, rel, comp, hint in reads}
+        for lineno in range(1, len(raw_lines) + 1):
+            for m in pattern.finditer(code(lineno)):
+                comp, hint = hints[m.group(1)]
+                rel = m.group(1).split(".")[-1]
+                findings.append((
+                    RETIRED_CAT, lineno,
+                    f"`{comp}.{rel}` is retired: {hint}",
+                    raw_lines[lineno - 1].rstrip(),
+                ))
+    return findings
+
+
 def _comps_without_entry(
     items: list[Item], raw_lines: list[str],
 ) -> list[tuple[str, int, str, str]]:
@@ -634,6 +707,7 @@ def lint_program(source: str) -> list[tuple[str, int, str, str]]:
     findings.extend(_reserved_inner_names(program.items, raw_lines))
     findings.extend(_shadowed_types(program.items, raw_lines))
     findings.extend(_lib_named(program.items, raw_lines))
+    findings.extend(_retired_uses(program.items, raw_lines, code))
     findings.extend(_comps_without_entry(program.items, raw_lines))
     findings.extend(_lone_parse(program.comps(), raw_lines))
     findings.extend(_banned_types(program.items, raw_lines))

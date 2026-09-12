@@ -94,11 +94,11 @@ most.cand($Size(), Id, N) :- piece_count.tally(Id, N).
 
 // --- output ---
 
-.init crop = BoxFrame<Choice>
-crop.cell(Ch, P) :- most.high(Ch, Id, _), panel(Id, P).
+.init view = BoxFrame<Choice>
+view.cell(Ch, P) :- most.high(Ch, Id, _), panel(Id, P).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P_inner, Col, Ch) :- crop.inner(Ch, P, P_inner), in(P, Col).
+out(P_inner, Col, Ch) :- view.inner(Ch, P, P_inner), in(P, Col).
 
 .comp Determine {
     .init objs = Components<Example>

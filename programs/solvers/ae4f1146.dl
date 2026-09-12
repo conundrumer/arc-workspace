@@ -38,11 +38,11 @@ comps.node($U(), P) :- in(P, Col), !params.bg(Col).
 comp_winner.item($U(), Id, P) :- comps.label($U(), P, Id), in(P, Col), params.mark(Col).
 
 // Crop to the winner's bounding box.
-.init crop = BoxFrame<Unit>
-crop.cell($U(), P) :- comp_winner.mode($U(), Id), comps.label($U(), P, Id).
-crop.grid($U(), P) :- in(P, _).
+.init view = BoxFrame<Unit>
+view.cell($U(), P) :- comp_winner.mode($U(), Id), comps.label($U(), P, Id).
+view.grid($U(), P) :- in(P, _).
 
-out(P_out, Col, $Object()) :- in(P, Col), crop.inner($U(), P, P_out).
+out(P_out, Col, $Object()) :- in(P, Col), view.inner($U(), P, P_out).
 
 // --- $Window ---
 

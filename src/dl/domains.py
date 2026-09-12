@@ -9,8 +9,8 @@ ENUM_TYPES = {
     "DiagAxis": "DAXIS_", "D4": "D4_", "Sense": "SENSE_", "Sym": "SYM_",
 }
 
-POSITION_TYPES = {"Position", "Shift", "Inset"}
-MAG_POSITION_TYPES = {"Shift", "Inset"}
+POSITION_TYPES = {"Box", "Position", "Offset", "Shift", "Inset"}
+MAG_POSITION_TYPES = {"Box", "Offset", "Shift", "Inset"}
 
 
 def _lib_defines() -> dict[str, int]:
@@ -69,24 +69,24 @@ def _move_domain(vals: list[tuple]) -> set[tuple]:
 def _position_domain(
     type_name: str, vals: list[tuple], nums: list[int]
 ) -> list[tuple]:
-    """Candidate values for a Position-record parameter, by declared nature.
+    """Candidate values for a Box-record parameter, by declared reading.
 
     Position (frame cell) — moves: the other cells of the stored frame.
 
-    Shift (translation) — the antisymmetric grid: both free components
-    ranged over `nums` and negations.
+    Offset (translation; Shift is its retired name) — the antisymmetric
+    grid: both free components ranged over `nums` and negations.
 
-    Inset (independent edge depths) — moves (redistributions of a depth
-    across an edge pair) plus per-component lines over `nums` and
-    negations with the other three fixed at stored.
+    Box (independent edge margins; Inset is its retired name) — moves
+    (redistributions of a depth across an edge pair) plus per-component
+    lines over `nums` and negations with the other three fixed at stored.
     """
     line = sorted(set(nums) | {-n for n in nums})
-    if type_name == "Shift":
+    if type_name in ("Offset", "Shift"):
         comps = {c for v in vals for c in v}
         span = sorted(set(line) | comps | {-c for c in comps})
         return sorted((t, -t, l, -l) for t in span for l in span)
     out = _move_domain(vals)
-    if type_name == "Inset":
+    if type_name in ("Box", "Inset"):
         for v in vals:
             for i in range(4):
                 for n in line:

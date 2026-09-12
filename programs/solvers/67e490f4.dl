@@ -65,9 +65,9 @@ biggest.item($U(), Id, P) :- obj.label(_, P, Id).
 stencil(Id, $Largest()) :- biggest.mode($U(), Id).
 
 // The stencil's box, with what it encloses.
-.init crop = BoxFrame<Stencil>
-crop.cell(S, P) :- stencil(Id, S), obj.label(_, P, Id).
-crop.grid(S, P) :- stencil_choice(S), in(P, _).
+.init view = BoxFrame<Stencil>
+view.cell(S, P) :- stencil(Id, S), obj.label(_, P, Id).
+view.grid(S, P) :- stencil_choice(S), in(P, _).
 
 // --- cutouts ---
 
@@ -75,7 +75,7 @@ crop.grid(S, P) :- stencil_choice(S), in(P, _).
 
 // --- $Box ---
 .init boxed = Components<Stencil>
-boxed.node(S, P) :- crop.inner(S, P, _), field_cell(P).
+boxed.node(S, P) :- view.inner(S, P, _), field_cell(P).
 
 cutout([S, $Box()], P, Id) :- boxed.label(S, P, Id).
 
@@ -122,7 +122,7 @@ fill.item(C, Col, O) :-
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P_inner, Col, [S, R]) :-
-    crop.inner(S, P, P_inner), region_choice(R),
+    view.inner(S, P, P_inner), region_choice(R),
     ( obj.label(Col, P, Id), stencil(Id, S)                        // the block itself
     ; cutout([S, R], P, Id), fill.mode([[S, R], Id], Col)          // a filled cutout
     ).

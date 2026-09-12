@@ -94,8 +94,8 @@ pair(Id_b, Id_p, $Rank()) :-
 // --- render ---
 
 // A block's interior, in its own frame: the piece's frame.
-.init interior = BoxFrame<Ident>
-interior.cell(Id, P) :- block(Id), box.margin(Id, M), in(P, _), gt(P, M).
+.init core = BoxFrame<Ident>
+core.cell(Id, P) :- block(Id), box.margin(Id, M), in(P, _), gt(P, M).
 
 // The output frame is the region the blocks tile.
 .init layout = BoxFrame<Unit>
@@ -106,8 +106,8 @@ out(P_grid_out, Col, Ch) :-
     impl_choice(Ch),
     layout.inner($U(), P_grid_in, P_grid_out),                 // an output cell and its input cell
     block(Id_b), box.inside(Id_b, P_grid_in),                  // the block there
-    ( !interior.inner(Id_b, P_grid_in, _), square(Id_b, Col)   // on the block's ring: its color
-    ; interior.inner(Id_b, P_grid_in, P_inner),                // inside: the piece's cell there
+    ( !core.inner(Id_b, P_grid_in, _), square(Id_b, Col)   // on the block's ring: its color
+    ; core.inner(Id_b, P_grid_in, P_inner),                // inside: the piece's cell there
       pair(Id_b, Id_p, Ch), box.inner(Id_p, Q, P_inner), in(Q, C_q),
       ( !bg(C_q), Col = C_q                                    // the piece's ink
       ; bg(C_q), square(Id_b, Col)                             // a hole: the block's color
