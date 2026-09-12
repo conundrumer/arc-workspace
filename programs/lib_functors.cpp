@@ -1,13 +1,9 @@
-// C++ functors backing the box algebra in lib/box.dl.
+// C++ functors backing the box algebra in lib/box.dl. Each functor unpacks
+// its Box arguments through the record table and packs its result.
 //
-// Each functor is a function over Box records: it unpacks its arguments
-// through the record table, computes, and packs the result. The lib.dl
-// primitives are one-clause wrappers over these calls, so a chain of
-// primitives in one rule inlines to one nested call per link.
-//
-// A record a functor returns cannot be destructured in the same rule:
-// Souffle cannot ground a record pattern against a functor call. The
-// wrappers read every record through a functor, never through a pattern.
+// Souffle cannot ground a record pattern against a functor call, so a
+// wrapper clause in box.dl reads a functor's result through another functor,
+// never through a pattern.
 //
 // Constants mirror lib/orientation.dl's disjoint #define ranges (Dir 10-13,
 // Axis 20-21, DiagDir 30-33, D4 50-57).

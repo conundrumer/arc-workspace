@@ -11,12 +11,6 @@
 //! Position is a cell, extent 1 on both axes, which carries its frame. An
 //! Offset is a translation, sum 0, which moves any box and keeps its extent.
 //! Every other reading is a Box read against a frame the reader supplies.
-//!
-//! Each primitive is a one-clause wrapper over a functor (C++, in
-//! lib_functors.cpp) that reads its Box arguments whole, so a chain of
-//! primitives in one rule inlines to one nested call per link. A record a
-//! functor returns cannot be destructured in the same rule; a primitive
-//! reads it.
 
 /// The zero box: the whole frame as a box, no move as an offset.
 #define ZERO [0, 0, 0, 0]

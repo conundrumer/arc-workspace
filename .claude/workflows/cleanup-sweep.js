@@ -7,7 +7,7 @@ export const meta = {
 }
 
 // args:
-//   role   the text of .claude/roles/cleanup.md; the script reads no file.
+//   role   the text of .claude/roles/cleanup.md
 //   items  [{ stem, findings: ['<lint finding line>', ...] }], one per solver,
 //          from `uv run python scripts/run_dl.py lint`, the `negated-value`
 //          and `negated-use` lines grouped by solver.

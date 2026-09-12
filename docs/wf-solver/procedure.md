@@ -38,7 +38,7 @@ The operations and passes of a solver session.
 4. Iterate until it works and passes lint.
     - When a hint appears, judge it, and put that judgment in the review.
     - Flag performance issues in the review. If they prevent the principled form, make a temporary workaround.
-    - When the runner prints an `expression size` line, copy it into the review. It reports what one candidate tuple of the named rule costs to evaluate, and does not change how the solver is written.
+    - When the runner prints an `expression size` line, copy it into the review, and change nothing in the solver for it.
 5. Run the audit (`uv run python scripts/run_dl.py audit <task_id>`) and resolve the findings.
 
 ### Determine
