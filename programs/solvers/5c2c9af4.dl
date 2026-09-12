@@ -31,32 +31,30 @@ bbox.cell($U(), P) :- mark(P, _).
 .decl center(p: Position)
 center(P) :- bbox.inner($U(), P, P_in), centered(P_in).    // the middle dot
 
-// The spacing, as the inset carrying the center out to the innermost outline.
+// The spacing, as the frame change carrying the center out to the innermost outline.
 .decl spread(v: Box)
 spread(V) :- center(P), bbox.box($U(), B), relative(P, B, V).
 
 // --- program ---
 
+.decl outline(b: Box)
+
+// The cells an outline draws on the grid.
+.decl drawn(b: Box, p: Position)
+drawn(B, P) :- outline(B), in(P, _), box_edge(P, B, _).
+
 // Each outline is the one inside it grown by the spacing, the center cell
 // being the innermost. An outline that draws nothing lies wholly off the
 // grid, and so does every outline beyond it.
-.decl outline(b: Position)
 outline(B) :- center(B).
-outline(B2) :- bcells.on_edge(B, _, _), spread(V), compose(B, V, B2).
-
-.init bcells = BoxCells<Position>
-bcells.box(B, B) :- outline(B).
-bcells.cell(B, P) :- outline(B), in(P, _).
-
-.decl drawn(p: Position)
-drawn(P) :- bcells.on_edge(_, P, _).
+outline(B2) :- drawn(B, _), spread(V), compose(B, V, B2).
 
 .decl out(p: Position, col: Color, ch: Choice)
 
 // --- $Passthrough ---
-out(P, Col, $Passthrough()) :- drawn(P), mark(_, Col).
-out(P, Col, $Passthrough()) :- in(P, Col), !drawn(P).
+out(P, Col, $Passthrough()) :- drawn(_, P), mark(_, Col).
+out(P, Col, $Passthrough()) :- in(P, Col), !drawn(_, P).
 
 // --- $Repaint ---
-out(P, Col, $Repaint()) :- drawn(P), mark(_, Col).
-out(P, Col, $Repaint()) :- in(P, _), !drawn(P), params.bg(Col).
+out(P, Col, $Repaint()) :- drawn(_, P), mark(_, Col).
+out(P, Col, $Repaint()) :- in(P, _), !drawn(_, P), params.bg(Col).

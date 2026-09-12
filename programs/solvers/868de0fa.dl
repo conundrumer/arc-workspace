@@ -36,19 +36,18 @@ impl_choice($Rect()). impl_choice($Enclose()).
 .init drect = Outlines<Unit>
 drect.node($U(), P) :- in(P, Col), params.ink(Col).
 
-.init bcells = BoxCells<Position>
-bcells.box(B, B) :- drect.box($U(), B).
-bcells.cell(B, P) :- bcells.box(B, _), in(P, _).
+.decl hole(b: Box, p: Position)
+hole(B, P) :- drect.box($U(), B), in(P, _), interior(P, B).
 
 // The hole viewed from its own box.
-.init rect_hole = BoxFrame<Position>
-rect_hole.cell(B, P) :- bcells.hole(B, P).
+.init rect_hole = BoxFrame<Box>
+rect_hole.cell(B, P) :- hole(B, P).
 
-.decl rect_odd(b: Position)
+.decl rect_odd(b: Box)
 rect_odd(B) :- rect_hole.inner(B, _, P_inner), centered(P_inner).
 
 fill(P, Col, $Rect()) :-
-    bcells.hole(B, P),
+    hole(B, P),
     ( rect_odd(B), params.odd_fill(Col)
     ; !rect_odd(B), params.even_fill(Col)
     ).

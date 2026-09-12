@@ -106,10 +106,6 @@ rect(M) :- span_size.tally(M, N), piece_area.tally($U(), N).
 .decl rect_cell(m: Position, p: Position)
 rect_cell(M, P) :- rect(M), span_cell(M, P).
 
-.init rcells = BoxCells<Position>
-rcells.box(M, M) :- rect(M).
-rcells.cell(M, P) :- rect_cell(M, P).
-
 // --- the placements ---
 
 .type Spot = [m: Position, id: Ident]
@@ -125,8 +121,7 @@ place(M, Id, B, P, Col) :-
 
 // A placement showing the picture on the rectangle's edge.
 .decl spills(m: Position, id: Ident, b: Position)
-spills(M, Id, B) :-
-    place(M, Id, B, P, Col), rcells.on_edge(M, P, _), drawn(Col).
+spills(M, Id, B) :- place(M, Id, B, P, Col), box_edge(P, M, _), drawn(Col).
 
 // A placement the rectangle admits: it keeps the edge clean, and the marked
 // piece holds the place it shows.
@@ -134,7 +129,7 @@ spills(M, Id, B) :-
 fit(M, Id, B) :-
     place(M, Id, B, _, _), !spills(M, Id, B),
     ( !anchor(Id, _, _)        // a piece free to move
-    ; pbox.box(Id, B) ).    // the marked piece, where it lies
+    ; pbox.box(Id, B) ).       // the marked piece, where it lies
 
 .decl covers(m: Position, cd: Cand, p: Position, col: Color)
 covers(M, [Id, B], P, Col) :- fit(M, Id, B), place(M, Id, B, P, Col).

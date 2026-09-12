@@ -40,11 +40,7 @@ out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !painted(P, Ch).
 .init drect = Outlines<Color>
 drect.node(Col, P) :- ink(Col, P).
 
-.init rcells = BoxCells<Color>
-rcells.box(Col, B) :- drect.box(Col, B).
-rcells.cell(Col, P) :- params.recolor(Col, _), in(P, _).
-
-painted(P, $Rect()) :- rcells.on_edge(_, P, _).
+painted(P, $Rect()) :- drect.box(_, B), in(P, _), box_edge(P, B, _).
 
 // --- Object, Enclose ---
 
@@ -61,15 +57,13 @@ obj([Col, Id], P) :- objs.label(Col, P, Id).
 .init bbox = Bbox<Obj>
 bbox.cell(K, P) :- obj(K, P).
 
-.init bcells = BoxCells<Obj>
-bcells.box(K, B) :- bbox.box(K, B).
-bcells.cell(K, P) :- bbox.box(K, _), in(P, _).
-
 // A gap on the box's edge: the component does not draw the whole outline.
 .decl edge_gap(k: Obj)
-edge_gap(K) :- bcells.on_edge(K, P, _), !obj(K, P).
+edge_gap(K) :- bbox.box(K, B), in(P, _), box_edge(P, B, _), !obj(K, P).
 
-painted(P, $Object()) :- obj(K, P), bcells.hole(K, _), !edge_gap(K).
+painted(P, $Object()) :-
+    obj(K, P), bbox.box(K, B), !edge_gap(K),   // the component draws its whole box outline
+    in(Q, _), interior(Q, B).                  // the box has an inside
 
 // --- Enclose ---
 

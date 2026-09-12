@@ -3,7 +3,7 @@
 // concept: objects border walk cast
 // Rectangular outlines in params.wall each miss one cell of their perimeter.
 // The cells strictly inside an outline's bounding box take params.fill, which
-// also runs out through the missing perimeter cell, away from the bbox.
+// also runs out through the missing perimeter cell, away from that box.
 //
 // $Flow — the fill is a substance. It pushes outward from the interior and
 //   params.wall stops it, so it escapes only where the perimeter is broken.
@@ -32,10 +32,9 @@ comp.node($U(), P) :- wall_cell(P).
 .init bbox = Bbox<Ident>
 bbox.cell(Id, P) :- comp.label($U(), P, Id).
 
-// The box read over the whole grid, so its empty cells count too.
-.init bcells = BoxCells<Ident>
-bcells.box(Id, M) :- bbox.box(Id, M).
-bcells.cell(Id, P) :- bbox.cell(Id, _), in(P, _).
+// The cells strictly inside a box, whatever color they carry.
+.decl hole(p: Position)
+hole(P) :- bbox.box(_, B), in(P, _), interior(P, B).
 
 // The cells the fill covers.
 .decl painted(p: Position, ch: Choice)
@@ -45,7 +44,7 @@ bcells.cell(Id, P) :- bbox.cell(Id, _), in(P, _).
 .init flow = Ray<Unit>
 flow.dir($U(), D) :- dir_elem(D).
 flow.cell($U(), P) :- in(P, _).
-flow.mark($U(), P) :- bcells.hole(_, P).
+flow.mark($U(), P) :- hole(P).
 flow.blocked($U(), P) :- wall_cell(P).
 
 painted(P, $Flow()) :- flow.clear($U(), P, _, _, _).
@@ -55,9 +54,11 @@ painted(P, $Flow()) :- flow.clear($U(), P, _, _, _).
 .init cast = Ray<Dir>
 cast.dir(D, D) :- dir_elem(D).
 cast.cell(D, P) :- dir_elem(D), in(P, _).
-cast.mark(D, P) :- bcells.on_edge(_, P, D), !wall_cell(P).
+cast.mark(D, P) :-
+    bbox.box(_, B), in(P, _), box_edge(P, B, D),  // a cell of a box's d side
+    !wall_cell(P).                                // where the perimeter is broken
 
-painted(P, $Cast()) :- bcells.hole(_, P).
+painted(P, $Cast()) :- hole(P).
 painted(P, $Cast()) :- cast.ray(_, P, _, _, _).
 
 // --- output ---

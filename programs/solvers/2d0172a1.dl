@@ -74,7 +74,9 @@ bbox.cell(X, P) :- curve(X, P).
 
 // The line the curve's box occupies on its d side, axis-only.
 .decl side_line(x: Ident, d: Dir, l: Position)
-side_line(X, D, L) :- bbox.edge_cell(X, P, D), axis_of(D, A), split(P, A, L, _).
+side_line(X, D, L) :-
+    bbox.box(X, B), curve(X, P), box_edge(P, B, D),  // a curve cell on its box's d side
+    axis_of(D, A), split(P, A, L, _).                // the line that cell sits on
 
 // --- marks ---
 
@@ -154,17 +156,13 @@ fig.edge([Ch, X], D, K) :-
     group_line(Ch, G, A, L), dist(L, D, K).  // the line the group took
 
 // Each figure as margins from the four frame edges.
-.decl fig_box(ch: Choice, x: Ident, p: Position)
-fig_box(Ch, X, P) :-
-    fig.box([Ch, X], P_core), pad.box(Ch, Pad), compose(P_core, Pad, P).
+.decl fig_box(ch: Choice, x: Ident, b: Box)
+fig_box(Ch, X, B) :-
+    fig.box([Ch, X], B_core), pad.box(Ch, Pad), compose(B_core, Pad, B).
 
-.init bcells = BoxCells<CaseFig>
-bcells.box([Ch, X], Box) :- fig_box(Ch, X, Box).
-bcells.cell([Ch, X], P) :- fig_box(Ch, X, _), frame.cell(Ch, P).
-
-// Each figure is drawn as the outline of its bbox.
+// Each figure is drawn as the outline of its box.
 .decl ink(ch: Choice, p: Position)
-ink(Ch, P) :- bcells.on_edge([Ch, _], P, _).
+ink(Ch, P) :- fig_box(Ch, _, B), frame.cell(Ch, P), box_edge(P, B, _).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- ink(Ch, P), fg(Col).

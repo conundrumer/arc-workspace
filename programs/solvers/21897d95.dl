@@ -88,25 +88,26 @@
 
     .init pbox = Bbox<KI>
     pbox.cell([Ky, K], P) :- patch_cell(Ky, K, P).
-    pbox.grid([Ky, K], P) :- patch_cell(Ky, K, _), cell(Ky, P, _).
-
-    .init bcells = BoxCells<KI>
-    bcells.box([Ky, K], M) :- pbox.box([Ky, K], M).
-    bcells.cell([Ky, K], P) :- pbox.inside([Ky, K], P).
 
     // A patch against the two arms of each corner of its box — the two box
     // edges meeting there.
     .init arms = KeyedSetCompare<KI, Arms, Position>
     arms.pattern_member([[Ky, K], Piv], P) :-
-        bcells.on_edge([Ky, K], P, D), dir_of(Piv, _, D).
+        pbox.box([Ky, K], B), cell(Ky, P, _), box_edge(P, B, D),
+        dir_of(Piv, _, D).
     arms.observed_member([Ky, K], P) :- patch_cell(Ky, K, P).
+
+    // The patch holds the d corner of its box.
+    .decl patch_corner(key: Key, k: Ident, d: DiagDir)
+    patch_corner(Ky, K, D) :-
+        pbox.box([Ky, K], B), patch_cell(Ky, K, P), box_corner(P, B, D).
 
     // A corner bracket: the patch is exactly the two arms meeting at piv. The
     // far corner of its box has to be empty, or a line would be its own arms.
     .decl bracket(key: Key, k: Ident, piv: DiagDir)
     bracket(Ky, K, Piv) :-
         arms.equals([Ky, K], [[Ky, K], Piv]),
-        diag_opposite(Piv, M), !pbox.corner([Ky, K], _, M).
+        diag_opposite(Piv, M), !patch_corner(Ky, K, M).
 
     // A neighbor carrying the arrow color.
     .decl marked(key: Key, p: Position, d: Dir, q: Position)
@@ -207,22 +208,22 @@ bracket_at($BArms(), K) :- parse.bracket($U(), K, _).
 
 // The bracket's free cells are the concave block of its box.
 bracket_host.item([$BArms(), K], Col) :-
-    parse.bracket($U(), K, _),                  // a bracket
-    parse.pbox.inside([$U(), K], P),            // a box cell
-    !parse.patch_cell($U(), K, P), in(P, Col).  // it leaves free
+    parse.bracket($U(), K, _), parse.pbox.box([$U(), K], B),  // a bracket and its box
+    in(P, Col), inside(P, B),                                 // a cell of that box
+    !parse.patch_cell($U(), K, P).                            // it leaves free
 
 // --- BGlyph ---
 
 // A patch viewed from its own box, its picture compared to each chart. A
 // box of another size puts the cells in another frame, so only an exact
 // match survives.
-.init pframe = BoxFrame<Ident>
-pframe.cell(K, P) :- parse.patch_cell($U(), K, P).
-
 .type PV = [p: Position, col: Color]
 .init bshape = KeyedSetCompare<Ident, Ident, PV>
 bshape.pattern_member(Id, [P, Col]) :- params.bracket_glyph(Id, P, Col).
-bshape.observed_member(K, [P_i, Col]) :- pframe.inner(K, Q, P_i), in(Q, Col).
+bshape.observed_member(K, [P_i, Col]) :-
+    parse.pbox.box([$U(), K], B),              // the patch's box
+    parse.patch_cell($U(), K, Q), in(Q, Col),  // one of its cells
+    crop(Q, B, P_i).                           // seen in that box's frame
 
 bracket_at($BGlyph(), K) :- bshape.equals(K, _).
 
@@ -230,9 +231,9 @@ bracket_at($BGlyph(), K) :- bshape.equals(K, _).
 bframe.extent(Id, A, N) :- params.bracket_glyph(Id, P, _), axis_elem(A), axis_dim(P, A, N).
 
 bracket_host.item([$BGlyph(), K], Col) :-
-    bshape.equals(K, Id), pframe.box(K, M),                // a matched bracket
+    bshape.equals(K, Id), parse.pbox.box([$U(), K], B),       // a matched bracket
     bframe.cell(Id, P_i), !params.bracket_glyph(Id, P_i, _),  // a frame cell, not ink
-    compose(M, P_i, Q), in(Q, Col).                           // the color it shows
+    compose(B, P_i, Q), in(Q, Col).                           // the color it shows
 
 // --- the regions ---
 
@@ -335,38 +336,41 @@ out(P_out, Col, [A, B]) :-
         ( payload_pick.rep([E, P], [E, P]) ; blank_pick.rep([E, P], [E, P]) ),
         ex_in(E, P, Col).
 
-    .init abox = BoxFrame<EP>
+    .init abox = Bbox<EP>
     abox.cell([E, K], P) :- chosen([E, K], _), ( P = K ; ex.marked(E, K, _, P) ).
 
     .decl arrow_glyph(id: Ident, p: Position, col: Color)
     arrow_glyph(Id, P_i, Col) :-
-        chosen([E, K], Id), abox.inner([E, K], Q, P_i), ex_in(E, Q, Col),
+        chosen([E, K], Id), abox.box([E, K], B),
+        ex_in(E, Q, Col), crop(Q, B, P_i),   // a cell of the box, in its frame
         ( ex.marked(E, K, _, Q)              // a marked cell
         ; Q = K, params.arrow_color(Col) ).  // the center, when blank
 
     .decl arrow_center(id: Ident, p: Position)
-    arrow_center(Id, P_i) :- chosen([E, K], Id), abox.inner([E, K], K, P_i).
+    arrow_center(Id, P_i) :- chosen([E, K], Id), abox.box([E, K], B), crop(K, B, P_i).
 
     .decl arrow_tip(id: Ident, d: Dir)
     arrow_tip(Id, D) :- chosen([E, K], Id), ex.arrow(E, K, D).
 
-    // The bracket shapes: brackets grouped by their box-framed pictures,
-    // ids from the groups, each shape's turn from its examples.
+    // The bracket shapes: brackets grouped by their pictures in their own
+    // boxes, ids from the groups, each shape's turn from its examples.
     .type EK = [e: Example, k: Ident]
-    .init bbox = BoxFrame<EK>
-    bbox.cell([E, K], P) :- ex.bracket(E, K, _), ex.patch_cell(E, K, P).
+
+    .decl bracket_pic(e: Example, k: Ident, p: Position, col: Color)
+    bracket_pic(E, K, P_i, Col) :-
+        ex.bracket(E, K, _), ex.pbox.box([E, K], B),  // a bracket's box
+        ex.patch_cell(E, K, Q), ex_in(E, Q, Col),     // one of its cells
+        crop(Q, B, P_i).                              // seen in that box's frame
 
     .init bcmp = KeyedSetCompare<EK, EK, PV>
-    bcmp.pattern_member([E, K], [P_i, Col]) :-
-        bbox.inner([E, K], Q, P_i), ex_in(E, Q, Col).
+    bcmp.pattern_member([E, K], [P_i, Col]) :- bracket_pic(E, K, P_i, Col).
     bcmp.observed_member(X, M) :- bcmp.pattern_member(X, M).
 
     .init bpick = Canon<EK>
     bpick.equiv(X, Y) :- bcmp.equals(X, Y).
 
     .decl bracket_glyph(id: Ident, p: Position, col: Color)
-    bracket_glyph(Id, P_i, Col) :-
-        bpick.id([E, K], Id), bbox.inner([E, K], Q, P_i), ex_in(E, Q, Col).
+    bracket_glyph(Id, P_i, Col) :- bpick.id([E, K], Id), bracket_pic(E, K, P_i, Col).
 
     .decl bracket_sense(id: Ident, s: Sense)
     bracket_sense(Id, S) :- bpick.id([E, _], Id), example_turn(E, S).

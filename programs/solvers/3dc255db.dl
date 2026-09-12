@@ -50,7 +50,6 @@ held_size.item(B, P) :- held(B, P).
 
 .init bbox = Bbox<Ident>
 bbox.cell(B, P) :- wall(B, P).
-bbox.grid(B, P) :- wall(B, _), in(P, _).
 
 // The side the holder stands open on.
 .decl mouth(b: Ident, d: Dir, ch: Choice)
@@ -59,16 +58,12 @@ bbox.grid(B, P) :- wall(B, _), in(P, _).
 
 // The cavity: what the held cells reach inside the box without crossing a wall.
 .init cavity = Reach<Ident>
-cavity.node(B, P) :- bbox.inside(B, P), !wall(B, P).
+cavity.node(B, P) :- bbox.box(B, B_hold), in(P, _), inside(P, B_hold), !wall(B, P).
 cavity.seed(B, P) :- held(B, P).
 
-// The cavity read against the holder's bbox.
-.init bcells = BoxCells<Ident>
-bcells.box(B, M) :- bbox.box(B, M).
-bcells.cell(B, P) :- cavity.reach(B, P).
-
 // The cavity runs out to that side of the bbox.
-mouth(B, D, $Pour()) :- bcells.on_edge(B, _, D).
+mouth(B, D, $Pour()) :-
+    bbox.box(B, B_hold), cavity.reach(B, P), box_edge(P, B_hold, D).
 
 // --- Sight ---
 
@@ -85,7 +80,7 @@ mouth(B, D, $Sight()) :- wall(B, _), dir_elem(D), !sight.stop(B, _, D, _, _).
 
 // The wall cell nearest a side, where it stands alone there.
 .init tip = Unanimous<Side, Position>
-tip.item([B, D], P) :- bbox.edge_cell(B, P, D).
+tip.item([B, D], P) :- bbox.box(B, B_hold), wall(B, P), box_edge(P, B_hold, D).
 
 .decl spout(b: Ident, d: Dir, p: Position, ch: Choice)
 spout(B, D, P, Ch) :-

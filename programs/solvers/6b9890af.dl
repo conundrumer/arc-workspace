@@ -45,14 +45,9 @@ frame_col(Col, $Drawn()) :- drect.box(Col, _).
 frame_box.cell(Ch, P) :- frame_col(Col, Ch), in(P, Col).
 frame_box.grid(Ch, P) :- impl_choice(Ch), in(P, _).
 
-// The box's edge lines and its hole.
-.init frame_cells = BoxCells<Choice>
-frame_cells.box(Ch, B) :- frame_box.box(Ch, B).
-frame_cells.cell(Ch, P) :- frame_box.viewed(Ch, P).
-
 // The hole in its own frame.
 .init hole = BoxFrame<Choice>
-hole.cell(Ch, P) :- frame_cells.hole(Ch, P).
+hole.cell(Ch, P) :- frame_box.box(Ch, B), in(P, _), interior(P, B).
 
 // --- the object, viewed in its own box ---
 
@@ -75,7 +70,7 @@ blocks.gap(0).
 .decl out(p: Position, col: Color, ch: Choice)
 out(P_intile, Col, Ch) :-
     frame_box.inner(Ch, P_grid, P_intile),                   // box cell, in the crop frame
-    ( frame_cells.on_edge(Ch, P_grid, _), frame_col(Col, Ch)  // edge line
+    ( frame_box.box(Ch, B), box_edge(P_grid, B, _), frame_col(Col, Ch)  // edge line
     ; hole.inner(Ch, P_grid, P_inner),                        // hole cell, in the hole's frame
       blocks.tile(Ch, P_inner, P_tile, _),                    // its block
       ( tile_col(Ch, P_tile, Col)                             // block the object fills

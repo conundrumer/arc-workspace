@@ -25,14 +25,11 @@
 .init rect = Bbox<Color>
 rect.cell(Col, P) :- in(P, Col), !params.bg(Col).
 
-// The outline of each rectangle, read over the whole grid.
-.init outline = BoxCells<Color>
-outline.box(Col, B) :- rect.box(Col, B).
-outline.cell(Col, P) :- rect.cell(Col, _), in(P, _).
-
 // A later color overwrites a cell of an earlier color's outline.
 .decl under(col: Color, col2: Color)
-under(Col, Col2) :- outline.on_edge(Col, P, _), rect.cell(Col2, P), Col != Col2.
+under(Col, Col2) :-
+    rect.cell(Col2, P), Col != Col2,       // a cell of another color
+    rect.box(Col, B), box_edge(P, B, _).   // on this color's outline
 under(Col, Col2) :- under(Col, Mid), under(Mid, Col2).
 
 .init order = Order<Unit, Color>

@@ -31,16 +31,12 @@ ink(Col) :- in(_, Col), !params.bg(Col).
 .init drect = Outlines<Color>
 drect.node(Col, P) :- ink(Col), in(P, Col).
 
-.init bcells = BoxCells<Position>
-bcells.box(B, B) :- drect.box(_, B).
-bcells.cell(B, P) :- bcells.box(B, _), in(P, _).
-
 // The ink each rectangle holds.
-.decl held(b: Position, p: Position, col: Color)
-held(B, P, Col) :- bcells.hole(B, P), in(P, Col), ink(Col).
+.decl held(b: Box, p: Position, col: Color)
+held(B, P, Col) :- drect.box(_, B), in(P, Col), interior(P, B), ink(Col).
 
 // The frame: the rectangle that holds ink of another color.
-.decl frame(b: Position, col: Color)
+.decl frame(b: Box, col: Color)
 frame(B, Col) :- drect.box(Col, B), held(B, _, C), C != Col.
 
 // The fill: the ink the frame holds.
@@ -54,7 +50,7 @@ rel.cell($U(), P) :- frame(B, _), in(P, _), inside(P, B).
 
 // The frame's inside, in its own frame.
 .init hole = BoxFrame<Unit>
-hole.cell($U(), P) :- frame(B, _), bcells.hole(B, P).
+hole.cell($U(), P) :- frame(B, _), in(P, _), interior(P, B).
 
 // The shapes' cells: the ink outside the frame.
 .decl outside(p: Position, col: Color)
@@ -81,7 +77,7 @@ contradicted(S) :-
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P_grid_out, Col, Ch) :-
-    rel.view($U(), P_grid_in, P_grid_out), frame(B, Col), bcells.on_edge(B, P_grid_in, _),
+    rel.view($U(), P_grid_in, P_grid_out), frame(B, Col), box_edge(P_grid_in, B, _),
     impl_choice(Ch).
 out(P_grid_out, Col, Ch) :-
     rel.view($U(), P_grid_in, P_grid_out), hole.inner($U(), P_grid_in, P_inner),

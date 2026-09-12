@@ -22,23 +22,22 @@ ink(P, Col) :- in(P, Col), !params.bg(Col), !params.frame(Col).
 .init drect = Outlines<Unit>
 drect.node($U(), P) :- in(P, Col), params.frame(Col).
 
-.init bcells = BoxCells<Position>
-bcells.box(B, B) :- drect.box(_, B).
-bcells.cell(B, P) :- bcells.box(B, _), in(P, _).
+.decl rect_hole(b: Box, p: Position)
+rect_hole(B, P) :- drect.box(_, B), in(P, _), interior(P, B).
 
 // Each rectangle's reference shape, viewed from its own bounding box.
-.init ref = BoxFrame<Position>
-ref.cell(B, P) :- bcells.hole(B, P), ink(P, _).
+.init ref = BoxFrame<Box>
+ref.cell(B, P) :- rect_hole(B, P), ink(P, _).
 
 // The loose shapes: ink components outside every rectangle.
 .init loose = Components<Unit>
-loose.node($U(), P) :- ink(P, _), !bcells.hole(_, P).
+loose.node($U(), P) :- ink(P, _), !rect_hole(_, P).
 
 .init shape = BoxFrame<Ident>
 shape.cell(Id, P) :- loose.label($U(), P, Id).
 
 // A loose shape matches a reference when their box-relative cell sets agree.
-.init same_shape = KeyedSetCompare<Ident, Position, Position>
+.init same_shape = KeyedSetCompare<Ident, Box, Position>
 same_shape.pattern_member(B, P_inner) :- ref.inner(B, _, P_inner).
 same_shape.observed_member(Id, P_inner) :- shape.inner(Id, _, P_inner).
 

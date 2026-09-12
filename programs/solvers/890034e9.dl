@@ -14,7 +14,7 @@
 .type Choice = Content {} | Empty {}
 
 // A frame's twin search, per case.
-.type FrameKey = [ch: Choice, b: Position]
+.type FrameKey = [ch: Choice, b: Box]
 
 .comp Params {
     // --- Empty ---
@@ -30,20 +30,19 @@ impl_choice($Content()). impl_choice($Empty()).
 .init drect = Outlines<Color>
 drect.node(Col, P) :- in(P, Col).
 
-.init bcells = BoxCells<Position>
-bcells.box(B, B) :- drect.box(_, B).
-bcells.cell(B, P) :- bcells.box(B, _), in(P, _).
+.decl on_edge(b: Box, p: Position)
+on_edge(B, P) :- drect.box(_, B), in(P, _), box_edge(P, B, _).
 
 // A cell of the outline's color off the outline.
-.decl stray(b: Position)
-stray(B) :- drect.box(Col, B), in(P, Col), !bcells.on_edge(B, P, _).
+.decl stray(b: Box)
+stray(B) :- drect.box(Col, B), in(P, Col), !on_edge(B, P).
 
 // The frame: an outline whose color is used for nothing else.
-.decl frame(col: Color, b: Position)
+.decl frame(col: Color, b: Box)
 frame(Col, B) :- drect.box(Col, B), !stray(B).
 
-.decl hole(b: Position, p: Position)
-hole(B, P) :- frame(_, B), bcells.hole(B, P).
+.decl hole(b: Box, p: Position)
+hole(B, P) :- frame(_, B), in(P, _), interior(P, B).
 
 // The hole's twins, the hole itself among them: the cases value the hole's
 // cells differently.
@@ -56,11 +55,11 @@ occ.shape([$Content(), B], S, Col) :- hole(B, S), in(S, Col).
 // --- Empty ---
 occ.shape([$Empty(), B], S, Col) :- hole(B, S), params.bg(Col).
 
-.decl twin(ch: Choice, b: Position, p: Position)
+.decl twin(ch: Choice, b: Box, p: Position)
 twin(Ch, B, P) :- occ.occurrence([Ch, B], M), hole(B, S), compose(M, S, P).
 
 // The outline around a twin: the grid cells touching it.
-.decl outline(ch: Choice, b: Position, p: Position)
+.decl outline(ch: Choice, b: Box, p: Position)
 outline(Ch, B, Q) :-
     twin(Ch, B, P), dir8_elem(D), neighbor(P, D, Q), in(Q, _), !twin(Ch, B, Q).
 

@@ -28,7 +28,7 @@
 
     // The next ring is one cell out at every edge.
     .decl ring_step(w: Box)
-    ring_step(W) :- uniform_inset(1, W).  // @unit: rings are one cell apart
+    ring_step(W) :- uniform_outset(1, W).  // @unit: rings are one cell apart
 }
 
 .init params = Params
@@ -55,16 +55,16 @@ other(C1, C2) :- palette(C1), palette(C2), C1 != C2.
 
 // Rings: the center, and each ring let out by one step, in the other color.
 // A ring that draws no cell ends the run: every ring beyond it is off the grid.
-.decl ring(b: Position, col: Color)
+.decl ring(b: Box, col: Color)
 ring(B, Col) :- center(B, Col).
 ring(B2, Col2) :- ring(B, Col), next_ring(B, B2), other(Col, Col2).
 
-.decl next_ring(b: Position, b2: Position)
-next_ring(B, B2) :- bcells.on_edge(B, _, _), params.ring_step(W), relative(W, B, B2).
+// The cells a ring draws: the frame cells on its box's edge lines.
+.decl ring_cell(b: Box, p: Position)
+ring_cell(B, P) :- ring(B, _), frame.cell($U(), P), box_edge(P, B, _).
 
-.init bcells = BoxCells<Position>
-bcells.box(B, B) :- ring(B, _).
-bcells.cell(B, P) :- ring(B, _), frame.cell($U(), P).
+.decl next_ring(b: Box, b2: Box)
+next_ring(B, B2) :- ring_cell(B, _), params.ring_step(W), compose(W, B, B2).
 
 // The seam: the diagonal ray cast from the cell beside the center.
 .init seam = Ray<Unit>
@@ -74,7 +74,7 @@ seam.mark($U(), P) :- center(B, _), params.arm(D), neighbor(B, D, P).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :-
-    bcells.on_edge(B, P, _),
+    ring_cell(B, P),
     ( !seam.ray($U(), P, _, _, _), ring(B, Col)                       // a ring cell keeps its ring's color
     ; seam.ray($U(), P, _, _, _), next_ring(B_in, B), ring(B_in, Col) // a seam cell takes the inner ring's color
     ).

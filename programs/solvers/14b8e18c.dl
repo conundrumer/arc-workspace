@@ -34,23 +34,22 @@ cell_of(Id, P) :- comps.label(_, P, Id).
 .init bbox = Bbox<Ident>
 bbox.cell(Id, P) :- cell_of(Id, P).
 
-// The box read over the whole grid, so its empty cells count too.
-.init bcells = BoxCells<Ident>
-bcells.box(Id, M) :- bbox.box(Id, M).
-bcells.cell(Id, P) :- cell_of(Id, _), in(P, _).
-
 .decl square(id: Ident)
-square(Id) :- bbox.extents(Id, _, N, N).
+square(Id) :-
+    bbox.box(Id, B), cell_of(Id, P),                               // the box, in the grid frame
+    box_extent(B, P, A, N), perp(A, A2), box_extent(B, P, A2, N).  // one extent on both axes
 
 .decl multi_cell(id: Ident)
 multi_cell(Id) :- cell_of(Id, P), cell_of(Id, Q), P != Q.
 
 // Some cell of the box's border is not the object's.
 .decl border_gap(id: Ident)
-border_gap(Id) :- bcells.on_edge(Id, P, _), !cell_of(Id, P).
+border_gap(Id) :-
+    bbox.box(Id, B), in(P, _), box_edge(P, B, _),  // a grid cell on the box's border
+    !cell_of(Id, P).
 
 .decl has_interior(id: Ident)
-has_interior(Id) :- cell_of(Id, P), bcells.hole(Id, P).
+has_interior(Id) :- bbox.box(Id, B), cell_of(Id, P), interior(P, B).
 
 // --- marks ---
 
@@ -65,14 +64,14 @@ qualify(Id, $Ring()) :- square(Id), multi_cell(Id), !border_gap(Id), !has_interi
 
 .decl corner_cell(id: Ident, diag: DiagDir, p: Position)
 corner_cell(Id, Dg, P) :-
-    bbox.box(Id, M), in(P, _),                 // the box, and a grid cell
-    diag_dir_elem(Dg), corner_anchor(Dg, P, M).  // at corner Dg of it
+    bbox.box(Id, B), in(P, _),  // the box, and a grid cell
+    box_corner(P, B, Dg).       // at corner Dg of it
 
 // The corner cells whose out-neighbors take the mark: the box's corners,
 // except $Corners keeps only those the object occupies.
 .decl anchor(diag: DiagDir, p: Position, ch: Choice)
 anchor(Dg, P, Ch) :- qualify(Id, Ch), Ch != $Corners(), corner_cell(Id, Dg, P).
-anchor(Dg, P, $Corners()) :- qualify(Id, $Corners()), bbox.corner(Id, P, Dg).
+anchor(Dg, P, $Corners()) :- qualify(Id, $Corners()), corner_cell(Id, Dg, P), cell_of(Id, P).
 
 .decl mark(p: Position, ch: Choice)
 mark(P_mark, Ch) :-

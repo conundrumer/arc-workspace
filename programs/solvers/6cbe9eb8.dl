@@ -53,28 +53,27 @@ frame.extent($U(), A, N) :- nest.first($U(), Col), bbox.extent(Col, A, N).
 
 // Each shape's box in the output frame: the next shape's corner cell lands
 // on the anchor of the shape before it.
-.decl obox(col: Color, b: Position)
+.decl obox(col: Color, b: Box)
 obox(Col, ZERO) :- nest.first($U(), Col).
 obox(Col2, B) :-
     nest.next($U(), Col, Col2), anchor(Col, Q),
-    params.corner(Diag), bbox.inner(Col2, _, Q_in), corner_dist(Q_in, Diag, 0),  // Col2's corner cell, in its own frame
+    params.corner(Diag), in(P, _), bbox.box(Col2, B2),
+    box_corner(P, B2, Diag), crop(P, B2, Q_in),  // Col2's corner cell, in its own frame
     relative(Q_in, Q, B).
 
 // The corner cell of a shape's interior.
 .decl anchor(col: Color, p: Position)
 anchor(Col, Q) :-
     obox(Col, B), params.corner(Diag),
-    frame.cell($U(), Q_box), corner_anchor(Diag, B, Q_box),           // the box's corner cell
+    frame.cell($U(), Q_box), box_corner(Q_box, B, Diag),
     ( block(Col), Q = Q_box
     ; outline(Col), diag_opposite(Diag, Opp), neighbor(Q_box, Opp, Q)  // one step in from the rim
     ).
 
-.init cells = BoxCells<Color>
-cells.box(Col, B) :- obox(Col, B).
-cells.cell(Col, P) :- obox(Col, _), frame.cell($U(), P).
-
 .decl paint(col: Color, p: Position)
-paint(Col, P) :- ( cells.on_edge(Col, P, _) ; block(Col), cells.hole(Col, P) ).
+paint(Col, P) :-
+    obox(Col, B), frame.cell($U(), P),
+    ( box_edge(P, B, _) ; block(Col), interior(P, B) ).
 
 // A smaller shape paints the cell too.
 .decl covered(col: Color, p: Position)

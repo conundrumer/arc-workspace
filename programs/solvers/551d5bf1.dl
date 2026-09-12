@@ -21,20 +21,16 @@ rects.node($U(), P) :- in(P, Col), params.outline(Col).
 .init bbox = Bbox<Ident>
 bbox.cell(Id, P) :- rects.label($U(), P, Id).
 
-.init bcells = BoxCells<Ident>
-bcells.box(Id, M) :- bbox.box(Id, M).
-bcells.cell(Id, P) :- bbox.cell(Id, _), in(P, _).
-
 // A gap — a border cell the rectangle does not draw — casts away from the
 // rectangle. The key is the side the gap breaks.
 .init leak = Ray<Dir>
 leak.dir(D, D) :- dir_elem(D).
 leak.cell(D, P) :- dir_elem(D), in(P, _).
-leak.mark(D, P) :- bcells.on_edge(Id, P, D), !bbox.cell(Id, P).
+leak.mark(D, P) :- bbox.box(Id, B), in(P, _), box_edge(P, B, D), !bbox.cell(Id, P).
 
 .decl paint(p: Position)
-paint(P) :- bcells.hole(_, P).          // inside a rectangle
-paint(P) :- leak.ray(D, P, D, _, _).    // out through a gap
+paint(P) :- bbox.box(_, B), in(P, _), interior(P, B).  // inside a rectangle
+paint(P) :- leak.ray(D, P, D, _, _).                   // out through a gap
 
 .decl out(p: Position, col: Color)
 out(P, Col) :-

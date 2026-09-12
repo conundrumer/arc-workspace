@@ -37,20 +37,20 @@ cell_of(Id, P) :- comps.label($U(), P, Id).
 .init bbox = Bbox<Ident>
 bbox.cell(Id, P) :- cell_of(Id, P).
 
-.init bcells = BoxCells<Ident>
-bcells.box(Id, M) :- bbox.box(Id, M).
-bcells.cell(Id, P) :- cell_of(Id, P).
+// The inside: an object cell strictly within its own box.
+.decl hole(id: Ident, p: Position)
+hole(Id, P) :- bbox.box(Id, B), cell_of(Id, P), interior(P, B).
 
 // The inside, viewed from its own frame.
 .init within = BoxFrame<Ident>
-within.cell(Id, P) :- bcells.hole(Id, P).
+within.cell(Id, P) :- hole(Id, P).
 
 .decl frame_color(id: Ident, col: Color)
-frame_color(Id, Col) :- bcells.on_edge(Id, P, _), in(P, Col).
+frame_color(Id, Col) :- bbox.box(Id, B), cell_of(Id, P), box_edge(P, B, _), in(P, Col).
 
 // The marker: the inside cell whose color is not the frame's.
 .decl marker_color(id: Ident, col: Color)
-marker_color(Id, Col) :- bcells.hole(Id, P), in(P, Col), !frame_color(Id, Col).
+marker_color(Id, Col) :- hole(Id, P), in(P, Col), !frame_color(Id, Col).
 
 .decl impl_choice(ch: Choice)
 impl_choice($Join()). impl_choice($Medial()).
@@ -100,4 +100,4 @@ out(P, Col, Ch) :-
     ( drawn(Id, P_inner, Ch), marker_color(Id, Col)   // drawn: the marker color
     ; !drawn(Id, P_inner, Ch), params.bg(Col)         // emptied: bg
     ).
-out(P, Col, Ch) :- in(P, Col), !bcells.hole(_, P), impl_choice(Ch).
+out(P, Col, Ch) :- in(P, Col), !hole(_, P), impl_choice(Ch).

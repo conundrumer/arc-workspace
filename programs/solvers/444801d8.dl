@@ -28,38 +28,34 @@
 .init walls = Components<Unit>
 walls.node($U(), P) :- in(P, Col), params.wall(Col).
 
-.decl box_id(id: Ident)
-box_id(Id) :- walls.label($U(), _, Id).
-
 .init bbox = Bbox<Ident>
 bbox.cell(Id, P) :- walls.label($U(), P, Id).
-bbox.grid(Id, P) :- box_id(Id), in(P, _).
 
 // The cell in a box that is neither wall nor bg gives the box its color.
 .decl seed(id: Ident, col: Color)
-seed(Id, Col) :- bbox.inside(Id, P), in(P, Col), !params.wall(Col), !params.bg(Col).
-
-.init bcells = BoxCells<Ident>
-bcells.box(Id, B) :- bbox.box(Id, B).
-bcells.cell(Id, P) :- bbox.grid(Id, P).
+seed(Id, Col) :-
+    bbox.box(Id, B), in(P, Col), inside(P, B),  // a cell of the box
+    !params.wall(Col), !params.bg(Col).
 
 // The side the fill escapes from.
 .decl open_side(id: Ident, d: Dir, ch: Choice)
 
 // --- $Dir ---
-open_side(Id, D, $Dir()) :- box_id(Id), params.open_dir(D).
+open_side(Id, D, $Dir()) :- bbox.box(Id, _), params.open_dir(D).
 
 // --- $Gap ---
-open_side(Id, D, $Gap()) :- bcells.on_edge(Id, P, D), in(P, Col), !params.wall(Col).
+open_side(Id, D, $Gap()) :-
+    bbox.box(Id, B), in(P, Col), box_edge(P, B, D),  // a cell of the box's d side
+    !params.wall(Col).                               // not wall, so the side is broken
 
 // --- shared ---
 
 .decl paint(p: Position, col: Color, ch: Choice)
 paint(P, Col, Ch) :-
-    open_side(Id, D, Ch), seed(Id, Col),              // the box's fill color
-    ( bbox.inside(Id, P)                               // inside the box
-    ; bcells.on_edge(Id, Q, D), neighbor(Q, D, P) ),  // the line one step beyond
-    in(P, C), !params.wall(C).                        // the wall keeps its color
+    open_side(Id, D, Ch), seed(Id, Col), bbox.box(Id, B),  // the box, its side, its fill
+    ( in(P, _), inside(P, B)                               // inside the box
+    ; in(Q, _), box_edge(Q, B, D), neighbor(Q, D, P) ),    // the line one step beyond
+    in(P, C), !params.wall(C).                             // the wall keeps its color
 
 .decl impl_choice(ch: Choice)
 impl_choice($Dir()). impl_choice($Gap()).

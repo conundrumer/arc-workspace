@@ -32,14 +32,9 @@
 .init drect = Outlines<Color>
 drect.node(Col, P) :- in(P, Col), !params.hole(Col).
 
-// What a rectangle encloses.
-.init bcells = BoxCells<Position>
-bcells.box(Pan, Pan) :- drect.box(_, Pan).
-bcells.cell(Pan, P) :- bcells.box(Pan, _), in(P, _).
-
-// Those cells, read in the enclosed frame.
+// What a rectangle encloses, read in the enclosed frame.
 .init bbox = BoxFrame<Position>
-bbox.cell(Pan, P) :- bcells.hole(Pan, P).
+bbox.cell(Pan, P) :- drect.box(_, Pan), in(P, _), interior(P, Pan).
 
 // A candidate panel: what a square rectangle encloses.
 .decl cand(pan: Position, p_intile: Position, col: Color)

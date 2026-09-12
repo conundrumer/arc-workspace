@@ -6,7 +6,7 @@
 // params.bloom, the largest size. The sizes therefore run as a cycle.
 //
 // Three models redraw a square:
-//   $Box    — the cells strictly inside its bounding bbox.
+//   $Box    — the cells strictly inside its bounding box.
 //   $Erode  — its cells that keep every cardinal neighbor.
 //   $Lookup — a concentric square of the extent params.next_extent gives, which
 //             holds the wrap as one more entry.
@@ -74,11 +74,7 @@ target_extent(Ch, Id, N) :-
 
 // --- Box ---
 
-.init bcells = BoxCells<Ident>
-bcells.box(Id, M) :- bbox.box(Id, M).
-bcells.cell(Id, P) :- bbox.cell(Id, _), in(P, _).
-
-shrunk($Box(), Id, P) :- bcells.hole(Id, P).
+shrunk($Box(), Id, P) :- bbox.box(Id, B), in(P, _), interior(P, B).
 
 // --- Erode ---
 
@@ -101,9 +97,9 @@ target.extent([Ch, Id], A, N) :- target_extent(Ch, Id, N), axis_elem(A).
 // The target square, seated with its center on the square it comes from.
 .decl placed(ch: Choice, id: Ident, p: Position)
 placed(Ch, Id, P) :-
-    target.cell([Ch, Id], T_c), centered(T_c),           // the target's center
-    target.cell([Ch, Id], T), relative(T_c, T, V),   // each of its cells as an offset
-    center(Id, C), compose(C, V, P), in(P, _).           // laid off from that center
+    target.cell([Ch, Id], T_c), centered(T_c),      // the target's center
+    target.cell([Ch, Id], T), relative(T_c, T, V),  // each of its cells as an offset
+    center(Id, C), compose(C, V, P), in(P, _).      // laid off from that center
 
 .decl paint(ch: Choice, p: Position, col: Color)
 paint(Ch, P, Col) :- shrunk(Ch, Id, P), obj(Id, Col).

@@ -28,39 +28,32 @@ color(Col) :- in(_, Col).
 .init cbox = Bbox<Color>
 cbox.cell(Col, P) :- in(P, Col).
 
-// --- boxes ---
-
-// The boxes in play, each read over the grid.
-.init bcells = BoxCells<Position>
-bcells.box(B, B) :- cbox.box(_, B).
-bcells.cell(B, P) :- bcells.box(B, _), in(P, _).
-
 // --- outline ---
 
 // The color drawing the outline.
 .decl marker(col: Color, ch: Choice)
 
-.decl outline_box(b: Position, ch: Choice)
+.decl outline_box(b: Box, ch: Choice)
 outline_box(B, Ch) :- marker(Col, Ch), cbox.box(Col, B).
 
 // What the outline holds.
 .decl window(p: Position, ch: Choice)
-window(P, Ch) :- outline_box(B, Ch), bcells.hole(B, P).
+window(P, Ch) :- outline_box(B, Ch), in(P, _), interior(P, B).
 
-.init view = BoxFrame<Choice>
-view.cell(Ch, P) :- window(P, Ch).
-view.grid(Ch, P) :- window(_, Ch), in(P, _).
+// The box that window crops to.
+.init window_bbox = Bbox<Choice>
+window_bbox.cell(Ch, P) :- window(P, Ch).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P_inner, Col, Ch) :- view.inner(Ch, P, P_inner), in(P, Col).
+out(P_inner, Col, Ch) :- window_bbox.box(Ch, B), in(P, Col), crop(P, B, P_inner).
 
 // --- Rect ---
 
 // The color and its box's edges part company somewhere: a gap in the edges, or
 // a cell in the hole.
 .decl misdrawn(col: Color)
-misdrawn(Col) :- cbox.box(Col, B), bcells.on_edge(B, P, _), !in(P, Col).
-misdrawn(Col) :- cbox.box(Col, B), bcells.hole(B, P), in(P, Col).
+misdrawn(Col) :- cbox.box(Col, B), in(P, _), box_edge(P, B, _), !in(P, Col).
+misdrawn(Col) :- cbox.box(Col, B), in(P, Col), interior(P, B).
 
 marker(Col, $Rect()) :- color(Col), !misdrawn(Col).
 
@@ -80,11 +73,8 @@ marker(Col, $Solo()) :- color(Col), !color_part.clash(Col).
 .init drect = Outlines<Color>
 drect.node(Col, P) :- in(P, Col).
 
-// Every rectangle the noise draws is a box in play.
-bcells.box(B, B) :- drect.box(_, B).
-
-.init biggest_hole = Mode<Unit, Position, Position>
-biggest_hole.item($U(), B, P) :- drect.box(_, B), bcells.hole(B, P).
+.init biggest_hole = Mode<Unit, Box, Position>
+biggest_hole.item($U(), B, P) :- drect.box(_, B), in(P, _), interior(P, B).
 
 outline_box(B, $Drawn()) :- biggest_hole.mode($U(), B).
 

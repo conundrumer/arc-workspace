@@ -4,7 +4,7 @@
 // its interior to params.fill.
 //
 // Two models pick the interior:
-//   $Box   — cells strictly inside a component's bounding bbox.
+//   $Box   — cells strictly inside a component's bounding box.
 //   $Erode — ink cells whose four neighbors are all ink; off-grid is
 //            non-ink.
 
@@ -32,11 +32,7 @@ comps.node($U(), P) :- ink(P).
 .init bbox = Bbox<Ident>
 bbox.cell(Id, P) :- comps.label($U(), P, Id).
 
-.init bcells = BoxCells<Ident>
-bcells.box(Id, M) :- bbox.box(Id, M).
-bcells.cell(Id, P) :- bbox.cell(Id, _), in(P, _).
-
-inner_cell(P, $Box()) :- bcells.hole(_, P).
+inner_cell(P, $Box()) :- bbox.box(_, B), in(P, _), interior(P, B).
 
 // --- $Erode ---
 

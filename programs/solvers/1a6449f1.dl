@@ -30,17 +30,16 @@ ink(Col) :- in(_, Col), !params.bg(Col).
 drect.node(Col, P) :- ink(Col), in(P, Col).
 
 // The inside of each rectangle.
-.init bcells = BoxCells<Position>
-bcells.box(B, B) :- drect.box(_, B).
-bcells.cell(B, P) :- bcells.box(B, _), in(P, _).
+.decl hole(b: Box, p: Position)
+hole(B, P) :- drect.box(_, B), in(P, _), interior(P, B).
 
-.init biggest_hole = Mode<Unit, Position, Position>
-biggest_hole.item($U(), B, P) :- bcells.hole(B, P).
+.init biggest_hole = Mode<Unit, Box, Position>
+biggest_hole.item($U(), B, P) :- hole(B, P).
 
-.init hole_crop = BoxFrame<Position>
-hole_crop.cell(B, P) :- biggest_hole.mode($U(), B), bcells.hole(B, P).
+.init hole_bbox = Bbox<Box>
+hole_bbox.cell(B, P) :- biggest_hole.mode($U(), B), hole(B, P).
 
-out(P_inner, Col, $Rect()) :- hole_crop.inner(_, P, P_inner), in(P, Col).
+out(P_inner, Col, $Rect()) :- hole_bbox.box(_, B), in(P, Col), crop(P, B, P_inner).
 
 // --- Enclose ---
 
@@ -57,8 +56,7 @@ region([Col, Id], P) :- closed.region(Col, P, Id).
 .init biggest_region = Mode<Unit, Region, Position>
 biggest_region.item($U(), K, P) :- region(K, P).
 
-.init region_crop = BoxFrame<Region>
-region_crop.cell(K, P) :- biggest_region.mode($U(), K), region(K, P).
-region_crop.grid(K, P) :- biggest_region.mode($U(), K), in(P, _).
+.init region_bbox = Bbox<Region>
+region_bbox.cell(K, P) :- biggest_region.mode($U(), K), region(K, P).
 
-out(P_inner, Col, $Enclose()) :- region_crop.inner(_, P, P_inner), in(P, Col).
+out(P_inner, Col, $Enclose()) :- region_bbox.box(_, B), in(P, Col), crop(P, B, P_inner).

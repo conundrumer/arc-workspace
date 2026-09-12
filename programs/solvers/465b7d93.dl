@@ -61,13 +61,9 @@ paint(P, $Corner()) :-
 .init shape_box = Bbox<Unit>
 shape_box.cell($U(), P) :- mark(P, _).
 
-.init shape_cells = BoxCells<Unit>
-shape_cells.box($U(), M) :- shape_box.box($U(), M).
-shape_cells.cell($U(), P) :- in(P, _).
-
 // A hole in the shape's own edge line on side d.
 .decl edge_hole(d: Dir)
-edge_hole(D) :- shape_cells.on_edge($U(), P, D), !mark(P, _).
+edge_hole(D) :- shape_box.box($U(), B), in(P, _), box_edge(P, B, D), !mark(P, _).
 
 paint(P, $Stretch()) :- field.rim_dir($U(), P, D), !edge_hole(D).
 
