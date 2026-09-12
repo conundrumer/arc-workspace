@@ -1,10 +1,12 @@
 """The reference context a solver session reads, projected down to what the
 procedure uses.
 
-`lib.dl` renders as signatures, and the catalog docs render as one line per
-entry. The other docs pass through without their editor notes, their `+` lines,
-and their deferred sections. Each rendering names the file that holds the
-rest, and derives from the live file, so no copy can go stale.
+The lib renders as documentation: each file's `//!` and `///` comments as
+prose, and the declarations they document in code blocks, without the rule
+bodies. The catalog docs render as one line per entry. The other docs pass
+through without their editor notes, their `+` lines, and their deferred
+sections. Each rendering names the file that holds the rest, and derives
+from the live file, so no copy can go stale.
 """
 
 from __future__ import annotations
@@ -16,8 +18,8 @@ import time
 from functools import lru_cache
 from pathlib import Path
 
-from dl.dlparse import (Comp, Decl, Define, Functor, Init, Item, Rule,
-                        TypeDecl, parse)
+from dl.dlparse import (Comp, Decl, Define, Include, Init, Item, Program,
+                        Rule, TypeDecl, parse)
 from dl.paths import PROGRAMS_DIR, REPO_ROOT
 
 DOCS_DIR = REPO_ROOT / "docs" / "wf-solver"
@@ -45,101 +47,188 @@ DOCS = ("procedure.md", "principles.md", "style.md", "patterns.md", "keywords.md
 # carries the index and the session reads the entry it needs.
 INDEX = {"patterns.md"}
 
-LIB_PREAMBLE = """\
-// Signatures only: rule bodies are dropped, and the facts of a top-level
-// lookup relation stand described by its comment. Inside a component, a
-// `.decl` marked `// input` is one the solver populates; the rest derive.
-// Names with a leading underscore are comp-internal and omitted here.
-// Read programs/lib.dl for a body.
 
-"""
+def lib_sources(root: Path = LIB_SRC) -> list[tuple[Path, str]]:
+    """The lib's files in include order, each with its text: the root, then
+    the file of each `#include` in it, resolved against the root's
+    directory."""
+    text = root.read_text()
+    out = [(root, text)]
+    for it in parse(text).items:
+        if isinstance(it, Include):
+            path = root.parent / it.path
+            out.append((path, path.read_text()))
+    return out
 
 
-@lru_cache(maxsize=2)
-def lib_signatures(text: str) -> str:
-    """lib.dl as its interface: the declarations and the structure around
-    them, with the bodies that derive from them dropped.
+# The comment kinds. A `//!` line documents its file; a `///` block
+# documents the item under it; any other comment is for the maintainer.
+FILE_DOC = "//!"
+ITEM_DOC = "///"
+# The trailing directive on a `.decl` line that marks a relation the
+# caller populates.
+INPUT_MARK_RE = re.compile(r"//\s*@input\b")
 
-    `LIB_PREAMBLE` states the conventions the rendering follows, and opens
-    the result.
-    """
+# The items a `///` block may document.
+DOCUMENTED = (Decl, Comp, Define, TypeDecl, Init)
+
+
+def _prose(comment_lines: list[str], mark: str) -> str:
+    """Comment lines as the markdown they hold: the mark and one space
+    after it stripped from each."""
+    return "\n".join(line.strip()[len(mark):].removeprefix(" ")
+                     for line in comment_lines).strip("\n")
+
+
+def _doc_blocks(program: Program, mark: str) -> dict[int, tuple[int, int]]:
+    """The blocks of consecutive own-line `mark` comments, keyed by their
+    last line: (first line, last line)."""
+    doc_lines = sorted(c.line for c in program.comments
+                       if c.own_line and c.text.startswith(mark)
+                       and not c.text.startswith(mark + "/"))
+    blocks: dict[int, tuple[int, int]] = {}
+    start = None
+    for ln in doc_lines:
+        if start is None or (ln - 1) not in blocks:
+            start = ln
+        else:
+            blocks.pop(ln - 1)
+        blocks[ln] = (start, ln)
+    return blocks
+
+
+def _documented(items: list[Item]) -> list[Item]:
+    """The items a `///` block may document, at every depth."""
+    out: list[Item] = []
+    for it in items:
+        if isinstance(it, DOCUMENTED):
+            out.append(it)
+        if isinstance(it, Comp):
+            out.extend(_documented(it.items))
+    return out
+
+
+def _is_input(decl: Decl, lines: list[str]) -> bool:
+    return any(INPUT_MARK_RE.search(lines[ln - 1])
+               for ln in range(decl.line, decl.end_line + 1))
+
+
+def _hidden(it: Item) -> bool:
+    """A `_`-prefixed item is private to the lib."""
+    name = it.inst if isinstance(it, Init) else getattr(it, "name", "")
+    return name.startswith("_")
+
+
+def _comp_block(comp: Comp, lines: list[str], docs: dict[int, tuple[int, int]]) -> list[str]:
+    """A comp as its interface: the header, each public inner declaration
+    under its doc as a `//` comment, the facts under an input-marked one,
+    and the closing brace."""
+    out = [lines[comp.line - 1].rstrip()]
+    facts: dict[str, list[int]] = {}
+    for it in comp.items:
+        if isinstance(it, Rule) and it.body is None:
+            facts.setdefault(it.head.name, []).extend(range(it.line, it.end_line + 1))
+    prev: tuple[bool, bool] | None = None   # (documented, input) of the last item
+    for it in comp.items:
+        if not isinstance(it, DOCUMENTED) or _hidden(it):
+            continue
+        block = docs.get(it.line - 1)
+        is_input = isinstance(it, Decl) and _is_input(it, lines)
+        cur = (block is not None, is_input)
+        if prev is not None and (any(cur) or any(prev) or cur != prev):
+            out.append("")
+        prev = cur
+        if block is not None:
+            for ln in range(block[0], block[1] + 1):
+                line = lines[ln - 1]
+                indent = line[:len(line) - len(line.lstrip())]
+                out.append(indent + "//" + line.lstrip()[len(ITEM_DOC):])
+        if isinstance(it, Comp):
+            out.extend(_comp_block(it, lines, docs))
+            continue
+        end = it.end_line if isinstance(it, Decl) else it.line
+        out.extend(lines[ln - 1].rstrip() for ln in range(it.line, end + 1))
+        if is_input:
+            out.extend(lines[ln - 1].rstrip() for ln in sorted(set(facts.get(it.name, []))))
+    out.append(lines[comp.end_line - 1].rstrip())
+    return out
+
+
+@lru_cache(maxsize=16)
+def lib_doc(text: str) -> str:
+    """One lib file as markdown: its `//!` lines as prose, then each public
+    item under its `///` prose in a code block. Rules, functors, and
+    plain comments do not render. Undocumented defines on consecutive
+    lines fold to one line of names, and undocumented subtypes of one base
+    on consecutive lines to one line."""
     program = parse(text)
     lines = text.splitlines()
-    keep: set[int] = set()
-    hidden: set[int] = set()       # underscore-named internals
-    stmt_lines: set[int] = set()   # lines of rules and facts
-    decls: list[Decl] = []
-    comps: list[tuple[int, int]] = []   # the line range of each kept comp
+    docs = _doc_blocks(program, ITEM_DOC)
+    file_docs = _doc_blocks(program, FILE_DOC)
+    attached = {it.line - 1 for it in _documented(program.items)}
 
-    def walk(items: list[Item], in_comp: bool) -> None:
-        for it in items:
-            if isinstance(it, (Define, Functor, TypeDecl, Init)):
-                name = (it.name if isinstance(it, TypeDecl)
-                        else it.inst if isinstance(it, Init) else "")
-                if name.startswith("_") or isinstance(it, Functor):
-                    hidden.add(it.line)
-                    continue
-                keep.add(it.line)
-            elif isinstance(it, Decl):
-                if it.name.startswith("_"):
-                    hidden.update(range(it.line, it.end_line + 1))
-                    continue
-                keep.update(range(it.line, it.end_line + 1))
-                decls.append(it)
-            elif isinstance(it, Comp):
-                if it.name.startswith("_"):
-                    hidden.update(range(it.line, it.end_line + 1))
-                    continue
-                keep.add(it.line)
-                keep.add(it.end_line)
-                comps.append((it.line, it.end_line))
-                walk(it.items, True)
-            elif isinstance(it, Rule):
-                stmt_lines.update(range(it.line, it.end_line + 1))
-                if in_comp and it.body is None:
-                    keep.update(range(it.line, it.end_line + 1))
-    walk(program.items, False)
-    keep.update(c.line for c in program.comments if c.own_line)
+    parts: list[str] = []          # prose paragraphs and code blocks, in order
+    code: list[str] | None = None  # the open code block
 
-    comment_lines = {c.line for c in program.comments if c.own_line}
-    for ln in sorted(hidden):
-        probe = ln - 1
-        while probe in comment_lines and probe not in hidden:
-            hidden.add(probe)
-            probe -= 1
-    keep -= hidden
+    def emit_prose(p: str) -> None:
+        nonlocal code
+        if code:
+            parts.append("```\n" + "\n".join(code) + "\n```")
+        code = None
+        parts.append(p)
 
-    inputs: set[int] = set()   # decl start lines to mark // input
-    for decl in decls:
-        probe = decl.end_line + 1
-        derived = False
-        while probe <= len(lines):
-            if probe in stmt_lines:
-                derived = True
-                break
-            if not lines[probe - 1].strip() or probe in keep:
-                break
-            probe += 1
-        if not derived:
-            inputs.add(decl.line)
+    def emit_code(block_lines: list[str]) -> None:
+        nonlocal code
+        if code is None:
+            code = []
+        elif block_lines:
+            code.append("")
+        code.extend(block_lines)
 
-    # A comment inside a comp documents the line under it. Where that line
-    # is dropped, the comment documents a body the projection drops, so it
-    # goes too. Descending order takes a whole block out with its subject.
-    interior = {ln for start, end in comps for ln in range(start + 1, end)}
-    closing = {end for _, end in comps}
-    for ln in sorted(comment_lines & interior & keep, reverse=True):
-        if ln + 1 not in keep or ln + 1 in closing:
-            keep.discard(ln)
+    for _, (start, end) in sorted(file_docs.items()):
+        emit_prose(_prose(lines[start - 1:end], FILE_DOC))
 
-    out: list[str] = []
-    for i, line in enumerate(lines, start=1):
-        if not line.strip():
-            out.append(line)
-        elif i in keep:
-            mark = "  // input" if i in inputs and not line.endswith("// input") else ""
-            out.append(line + mark)
-    return LIB_PREAMBLE + re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip() + "\n"
+    items = [it for it in program.items if not isinstance(it, (Include, Rule))]
+    i = 0
+    while i < len(items):
+        it = items[i]
+        if _hidden(it) or not isinstance(it, DOCUMENTED):
+            i += 1
+            continue
+        block = docs.get(it.line - 1)
+        if block is not None:
+            emit_prose(_prose(lines[block[0] - 1:block[1]], ITEM_DOC))
+        # A run of undocumented siblings on consecutive lines folds:
+        # defines to their names, subtypes of one base to one line.
+        run = [it]
+        j = i + 1
+        while (j < len(items) and type(items[j]) is type(it)
+               and items[j].line == run[-1].line + 1
+               and docs.get(items[j].line - 1) is None and not _hidden(items[j])
+               and (isinstance(it, Define)
+                    or (isinstance(it, TypeDecl) and it.rhs.startswith("<:")
+                        and items[j].rhs == it.rhs))):
+            run.append(items[j])
+            j += 1
+        if len(run) > 1:
+            if isinstance(it, Define):
+                emit_code([" ".join(d.name for d in run)])
+            else:
+                emit_code([f".type {', '.join(t.name for t in run)} {it.rhs}"])
+            i = j
+            continue
+        if isinstance(it, Comp):
+            emit_code(_comp_block(it, lines, docs))
+        else:
+            end = it.end_line if isinstance(it, Decl) else it.line
+            emit_code([lines[ln - 1].rstrip() for ln in range(it.line, end + 1)])
+        i += 1
+    # A block over no item renders where it stands.
+    for end, (start, _) in sorted(docs.items()):
+        if end not in attached:
+            emit_prose(_prose(lines[start - 1:end], ITEM_DOC))
+    emit_prose("")
+    return "\n\n".join(p for p in parts if p) + "\n"
 
 
 def gist(para: str) -> str:
@@ -212,7 +301,8 @@ def strip_comments(text: str) -> tuple[str, bool]:
 
 
 def render(docs: Path = DOCS_DIR, lib: Path = LIB_SRC) -> str:
-    """The handbook: the docs and lib.dl, each under a heading naming its file."""
+    """The handbook: the docs and the lib's files, each under a heading
+    naming its file."""
     parts: list[str] = []
     for name in DOCS:
         rel = f"docs/wf-solver/{name}"
@@ -226,9 +316,10 @@ def render(docs: Path = DOCS_DIR, lib: Path = LIB_SRC) -> str:
             parts.append(f"\n---\n\n# {rel} — index{note}\n\n{entry_index(text, rel)}")
         else:
             parts.append(f"\n---\n\n# {rel}{note}\n\n{text}")
-    parts.append("\n---\n\n# programs/lib.dl — signatures\n\n"
-                 f"```\n{lib_signatures(lib.read_text())}```\n")
-    return "# Handbook\n\nThe solver docs and lib.dl as a session reads them.\n" + "".join(parts)
+    for path, text in lib_sources(lib):
+        rel = Path("programs") / path.relative_to(lib.parent)
+        parts.append(f"\n---\n\n# {rel}\n\n{lib_doc(text)}")
+    return "# Handbook\n\nThe solver docs and the lib as a session reads them.\n" + "".join(parts)
 
 
 def agent_prompt(handbook: str) -> str:

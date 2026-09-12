@@ -10,26 +10,27 @@ model hypotheses, which lint as program. The public entry point is
 import re
 from functools import lru_cache
 
-from dl.context import DOCS_DIR
+from dl.context import DOCS_DIR, lib_sources
 from dl.dlparse import (
-    Comp, Decl, Define, Functor, Init, Item, ParseError, Rigid, Rule,
-    TypeDecl, parse,
+    Agg, Atom, Cmp, Comp, Decl, Define, Disj, Functor, Init, Item, Lit, Neg,
+    ParseError, Rigid, Rule, TypeDecl, parse,
 )
-from dl.paths import PROGRAMS_DIR, SOLVERS_DIR
+from dl.paths import SOLVERS_DIR
 
 
 def _lib_source() -> str:
-    """lib.dl's text, or empty when it is not there to read."""
+    """The lib's text, its modules chained after the root, or empty when it
+    is not there to read."""
     try:
-        return (PROGRAMS_DIR / "lib.dl").read_text()
-    except OSError:
+        return "\n".join(text for _, text in lib_sources())
+    except (OSError, ParseError):
         return ""
 
 
 @lru_cache(maxsize=2)
 def _lib_items(text: str) -> list[Item]:
-    """lib.dl's parsed items, or none when it does not parse. Keyed on the
-    text, so an edit to lib.dl reaches a process that already linted
+    """The lib's parsed items, or none when it does not parse. Keyed on the
+    text, so an edit to the lib reaches a process that already linted
     against it."""
     try:
         return parse(text).items
@@ -45,7 +46,7 @@ LIB_KINDS = {
 
 
 def _lib_names(text: str) -> dict[str, str]:
-    """lib.dl's top-level names, each with its kind."""
+    """The lib's top-level names, each with its kind."""
     return {it.name: LIB_KINDS[type(it)] for it in _lib_items(text)
             if type(it) in LIB_KINDS}
 
@@ -53,7 +54,7 @@ def _lib_names(text: str) -> dict[str, str]:
 # The zero box: a box, not an orientation.
 ZERO_MACROS = frozenset({"ZERO"})
 
-# lib.dl's macros, the zero box aside.
+# The lib's macros, the zero box aside.
 ORIENTATION_LITERALS = frozenset(
     name for name, kind in _lib_names(_lib_source()).items()
     if kind == "macro" and name not in ZERO_MACROS
@@ -114,6 +115,8 @@ SHADOWED_TYPE_CAT = "shadowed type"
 # The category a solver name colliding with a lib top-level name is
 # reported under.
 LIB_NAME_CAT = "lib name"
+# A solver reads a `_`-prefixed lib name, which is private to the lib.
+LIB_INTERNAL_CAT = "lib internal"
 # The comps a solver holds as its own. Any other is a proposal comp,
 # legitimate only with its entry under docs/wf-solver/proposals/.
 STOCK_COMPS = ("Params", "Determine", "Parse")
@@ -390,7 +393,7 @@ def _lib_named(
     Souffle keeps top-level types, components, instances, and relations in
     one namespace and functors in another; a declaration inside a
     component is scoped to its instance; a macro is substituted wherever
-    its name appears. Its message points at lib.dl's line for some of
+    its name appears. Its message points at the lib's line for some of
     these, so this finding stands in for it.
     """
     lib = _lib_names(_lib_source())
@@ -417,6 +420,68 @@ def _lib_named(
             ))
 
     walk(items, True)
+    return findings
+
+
+def _atoms(lits: list[Lit]):
+    """Every atom a body reads: positive, negated, in aggregate bodies,
+    and in disjunction branches."""
+    for lit in lits:
+        if isinstance(lit, Atom):
+            yield lit
+        elif isinstance(lit, Neg):
+            yield lit.atom
+        elif isinstance(lit, Cmp):
+            for side in (lit.lhs, lit.rhs):
+                if isinstance(side, Agg):
+                    yield from _atoms(side.body)
+        elif isinstance(lit, Disj):
+            for branch in lit.branches:
+                yield from _atoms(list(branch))
+
+
+def _lib_internal(
+    items: list[Item], raw_lines: list[str],
+) -> list[tuple[str, int, str, str]]:
+    """Reads of a `_`-prefixed lib name: a relation or instance inside a
+    lib comp, or a lib comp itself. Such a name is private to the lib, and
+    a unit's public readouts are its interface."""
+    lib_comps = _comp_table(_lib_items(_lib_source()))
+    # Each instance's comp: the solver's own, and the ones inside lib comps.
+    inst_comp = {init.inst: init.comp for init in _inits(items)}
+    for comp in lib_comps.values():
+        inst_comp.update((it.inst, it.comp) for it in comp.items if isinstance(it, Init))
+    findings: list[tuple[str, int, str, str]] = []
+
+    def take(atom: Atom) -> None:
+        segs = (atom.qual.split(".") if atom.qual else []) + [atom.name]
+        for prev, seg in zip(segs, segs[1:]):
+            comp = inst_comp.get(prev)
+            if seg.startswith("_") and comp in lib_comps:
+                findings.append((
+                    LIB_INTERNAL_CAT, atom.line,
+                    f"`{seg}` is internal to {comp}; read a public readout",
+                    raw_lines[atom.line - 1].rstrip(),
+                ))
+                return
+
+    def walk(items: list[Item]) -> None:
+        for it in items:
+            if isinstance(it, Comp):
+                walk(it.items)
+            elif isinstance(it, Init):
+                if it.comp.startswith("_") and it.comp in lib_comps:
+                    findings.append((
+                        LIB_INTERNAL_CAT, it.line,
+                        f"`{it.comp}` is internal to the lib; instantiate a public unit",
+                        raw_lines[it.line - 1].rstrip(),
+                    ))
+            elif isinstance(it, Rule):
+                take(it.head)
+                for atom in _atoms(it.body or []):
+                    take(atom)
+
+    walk(items)
     return findings
 
 
@@ -637,6 +702,7 @@ def lint_program(source: str) -> list[tuple[str, int, str, str]]:
     findings.extend(_reserved_inner_names(program.items, raw_lines))
     findings.extend(_shadowed_types(program.items, raw_lines))
     findings.extend(_lib_named(program.items, raw_lines))
+    findings.extend(_lib_internal(program.items, raw_lines))
     findings.extend(_comps_without_entry(program.items, raw_lines))
     findings.extend(_lone_parse(program.comps(), raw_lines))
     findings.extend(_banned_types(program.items, raw_lines))

@@ -416,3 +416,49 @@ def test_family_case_the_representative_holds_stays_quiet(tmp_path, monkeypatch)
 // family: 67a3c6ac Turn
 """
     assert "family case" not in cats(src)
+
+
+INTERNAL_LIB = """\
+.comp OffsetInvariance<Key, Val> {
+    .decl cell(key: Key, p: Position, v: Val)  // @input
+    .decl _cand(key: Key, k: number)
+    _cand(Ky, K) :- cell(Ky, _, K).
+    .decl period(key: Key, k: number)
+    period(Ky, K) :- _cand(Ky, K).
+    .init _breaks = Excess<Key, number>
+}
+.comp Excess<Key, Member> {
+    .decl excess(key: Key, n: number)
+    excess(Ky, 0) :- Ky = Ky.
+}
+.comp _Room<Key> {
+    .decl cand(key: Key)  // @input
+}
+"""
+
+
+def test_a_read_of_an_internal_lib_name_fires(monkeypatch):
+    monkeypatch.setattr("dl.lint._lib_source", lambda: INTERNAL_LIB)
+    src = """\
+.init inv = OffsetInvariance<Unit, Color>
+.init room = _Room<Unit>
+.decl out(k: number)
+out(K) :- inv._cand($U(), K).
+out(K) :- inv._breaks.excess($U(), K).
+out(K) :- inv.period($U(), K), !inv._cand($U(), K).
+.comp Parse<Key> {
+    .init inner = OffsetInvariance<Key, Color>
+    .decl _own(key: Key)
+    _own(Ky) :- inner.period(Ky, _).
+}
+.init parse = Parse<Unit>
+.decl also(k: number)
+also(K) :- parse._own(_), K = 0.
+"""
+    fs = [f for f in lint_program(src) if f[0] == "lib internal"]
+    assert [(f[1], f[2]) for f in fs] == [
+        (2, "`_Room` is internal to the lib; instantiate a public unit"),
+        (4, "`_cand` is internal to OffsetInvariance; read a public readout"),
+        (5, "`_breaks` is internal to OffsetInvariance; read a public readout"),
+        (6, "`_cand` is internal to OffsetInvariance; read a public readout"),
+    ]

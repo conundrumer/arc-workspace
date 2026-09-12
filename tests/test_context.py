@@ -1,70 +1,132 @@
-"""The solver docs and lib.dl as a session reads them."""
+"""The solver docs and the lib as a session reads them."""
 
 from pathlib import Path
 
-from dl.context import DOCS, entry_index, lib_signatures, render
+from dl.context import DOCS, entry_index, lib_doc, lib_sources, render
 
 
-def test_lib_signatures_keep_the_interface_and_drop_the_bodies():
-    out = lib_signatures("""\
-// Opposite Dir on the same axis.
+def test_lib_doc_renders_docs_as_prose_and_the_interface_in_code():
+    out = lib_doc("""\
+//! The file's own doc.
+//!
+//! A second paragraph.
+
+/// Opposite Dir on the same axis.
 .decl opposite(d: Dir, opp: Dir)
 opposite(DIR_T, DIR_B).
 
-// Dispatch functors (C++).
+// A note for the maintainer.
 .functor dist_proj(d: Dir, t: number): number
 
+/// The task input grid.
+.decl in(p: Position, col: Color)  // @input
+
+/// Connected components.
+///
+/// - one point
+/// - another
 .comp Components<Key> {
-    .decl node(key: Key, p: Position)
+    /// The node set.
+    .decl node(key: Key, p: Position)  // @input
 
-    .decl edge(key: Key, d: Dir)  // input
+    /// The steps that join nodes.
+    .decl step(delta: Offset)  // @input
+    step([-1, 1, 0, 0]). step([1, -1, 0, 0]).
 
-    .decl step(delta: Position)
-    step([-1, 1, 0, 0]).
+    /// A private helper and its doc.
+    .decl _seen(key: Key)
+    _seen(Ky) :- node(Ky, _).
+    .init _ax = AxisFrame<Key>
 
+    /// The id of the component p belongs to.
     .decl label(key: Key, p: Position, id: Ident)
     label(Ky, P, Min) :-
         node(Ky, P), Min = min ord(Q) : { conn(Ky, P, Q) }.
+    .decl conn(key: Key, p: Position, q: Position)
+    conn(Ky, P, Q) :- node(Ky, P), node(Ky, Q).
+}
+
+/// A private comp and its doc.
+.comp _Room<Key> {
+    .decl cand(key: Key)  // @input
 }
 """)
-    assert "// Opposite Dir on the same axis." in out
-    assert ".decl opposite(d: Dir, opp: Dir)\n" in out   # a top-level fill goes
-    assert "opposite(DIR_T, DIR_B)." not in out
-    assert "functor" not in out                          # a functor is implementation
-    assert ".decl node(key: Key, p: Position)  // input" in out
-    assert ".decl edge(key: Key, d: Dir)  // input\n" in out   # the mark is written once
-    assert "step([-1, 1, 0, 0])." in out                 # a component's fill stays
+    assert out.startswith("The file's own doc.\n\nA second paragraph.\n\n")
+    assert "Opposite Dir on the same axis.\n\n```\n.decl opposite(d: Dir, opp: Dir)\n```" in out
+    assert "opposite(DIR_T, DIR_B)." not in out            # a top-level fill goes
+    assert "maintainer" not in out and "functor" not in out
+    assert "```\n.decl in(p: Position, col: Color)  // @input\n```" in out
+    assert ("Connected components.\n\n- one point\n- another\n\n```\n"
+            ".comp Components<Key> {\n"
+            "    // The node set.\n"
+            "    .decl node(key: Key, p: Position)  // @input\n"
+            "\n"
+            "    // The steps that join nodes.\n"
+            "    .decl step(delta: Offset)  // @input\n"
+            "    step([-1, 1, 0, 0]). step([1, -1, 0, 0]).\n"     # an input's default stays
+            "\n"
+            "    // The id of the component p belongs to.\n"
+            "    .decl label(key: Key, p: Position, id: Ident)\n"
+            "\n"
+            "    .decl conn(key: Key, p: Position, q: Position)\n"
+            "}\n```\n") in out
+    assert "_seen" not in out and "_ax" not in out and "_Room" not in out
+    assert "private" not in out                          # a hidden item's doc goes with it
     assert "min ord(Q)" not in out
-    assert ".decl label(key: Key, p: Position, id: Ident)\n" in out
 
 
-def test_lib_signatures_keep_a_wrapped_declaration_whole():
-    out = lib_signatures("""\
+def test_lib_doc_folds_define_groups_and_subtype_runs():
+    out = lib_doc("""\
+.type Color <: number
+.type Dir <: number
+.type Axis <: number
+
+/// The rotation subgroup of D4.
+.type C4 <: D4
+.type Dir8 = Dir | DiagDir
+
+/// The edges.
+#define DIR_T 10
+#define DIR_B 11
+
+#define AXIS_V 20
+#define AXIS_H 21
+
+/// The zero box.
+#define ZERO [0, 0, 0, 0]
+
+/// Divide.
 .decl divide(p: Position, a: Axis, n: number,
              p_outer: Position) inline
 divide(P, A, N, P_outer) :- true.
 """)
-    assert "p_outer: Position) inline  // input" not in out
-    assert "             p_outer: Position) inline\n" in out
+    assert "```\n.type Color, Dir, Axis <: number\n```" in out
+    assert "The rotation subgroup of D4.\n\n```\n.type C4 <: D4\n\n.type Dir8 = Dir | DiagDir\n```" in out
+    assert "The edges.\n\n```\nDIR_T DIR_B\n\nAXIS_V AXIS_H\n```" in out   # a blank line ends a group
+    assert "The zero box.\n\n```\n#define ZERO [0, 0, 0, 0]\n```" in out
+    assert "             p_outer: Position) inline\n```" in out          # a wrapped decl stays whole
+    assert ":- true" not in out
 
 
-def test_lib_signatures_drop_a_comment_that_documents_a_dropped_body():
-    out = lib_signatures("""\
-// What the comp is for.
+def test_lib_doc_renders_a_block_over_no_item_where_it_stands():
+    out = lib_doc("""\
+/// Over nothing.
 
-.comp Walk<Key> {
-    // The cells to walk.
-    .decl cell(key: Key, p: Position)
-
-    // How the walk closes the cycle, which the rule below holds.
-
-    .decl seen(key: Key, p: Position)
-    seen(Ky, P) :- cell(Ky, P).
-}
+.decl a(x: number)
 """)
-    assert "// What the comp is for." in out            # a top-level comment stands
-    assert "// The cells to walk." in out               # so does one over a kept line
-    assert "closes the cycle" not in out
+    assert out == "```\n.decl a(x: number)\n```\n\nOver nothing.\n"
+
+
+def test_lib_sources_follow_the_root_includes_in_order(tmp_path: Path):
+    (tmp_path / "lib").mkdir()
+    (tmp_path / "lib.dl").write_text('#include "lib/b.dl"\n#include "lib/a.dl"\n')
+    (tmp_path / "lib" / "a.dl").write_text(".decl a(x: number)\n")
+    (tmp_path / "lib" / "b.dl").write_text(".decl b(x: number)\n")
+    assert [(p.name, t) for p, t in lib_sources(tmp_path / "lib.dl")] == [
+        ("lib.dl", '#include "lib/b.dl"\n#include "lib/a.dl"\n'),
+        ("b.dl", ".decl b(x: number)\n"),
+        ("a.dl", ".decl a(x: number)\n"),
+    ]
 
 
 def test_entry_index_gives_the_preamble_and_one_line_per_entry():
@@ -107,7 +169,10 @@ def test_render_reads_the_listed_docs_in_order(tmp_path: Path):
         "\n## Terms <!-- deferred -->\n\n- **term** — a name.\n\n## Rules\n\nOne rule.\n    + ∀r\n"
     )
     lib = tmp_path / "lib.dl"
-    lib.write_text(".decl out(p: Position)\nout(P) :- in(P, _).\n")
+    lib.write_text('//! The root.\n#include "lib/sets.dl"\n'
+                   "/// The output.\n.decl out(p: Position)\nout(P) :- in(P, _).\n")
+    (tmp_path / "lib").mkdir()
+    (tmp_path / "lib" / "sets.dl").write_text("//! The sets.\n.decl s(x: number)\n")
 
     out = render(docs, lib)
     assert out.startswith("# Handbook\n")
@@ -125,8 +190,11 @@ def test_render_reads_the_listed_docs_in_order(tmp_path: Path):
     assert "a name" not in out
     assert "notation" not in out and "∀r" not in out
     assert "# docs/wf-solver/procedure.md\n\n# procedure.md\n" in out   # no note without notes
-    assert "# programs/lib.dl — signatures\n" in out
-    assert "out(P) :- in(P, _)." not in out
+    assert ("\n---\n\n# programs/lib.dl\n\nThe root.\n\nThe output.\n\n"
+            "```\n.decl out(p: Position)\n```\n"
+            "\n---\n\n# programs/lib/sets.dl\n\nThe sets.\n\n"
+            "```\n.decl s(x: number)\n```\n") in out
+    assert "out(P) :- in(P, _)." not in out and "#include" not in out
 
 
 def test_the_handbook_agent_is_the_handbook_under_its_frontmatter(tmp_path):

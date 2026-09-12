@@ -2,7 +2,7 @@
 
 import re
 
-from dl.paths import PROGRAMS_DIR
+from dl.context import lib_sources
 
 ENUM_TYPES = {
     "Dir": "DIR_", "Axis": "AXIS_", "DiagDir": "DIAG_",
@@ -14,9 +14,9 @@ MAG_POSITION_TYPES = {"Box", "Offset"}
 
 
 def _lib_defines() -> dict[str, int]:
-    """Constant-name -> value from lib.dl's #define table."""
-    text = (PROGRAMS_DIR / "lib.dl").read_text()
+    """Constant-name -> value from the lib's #define tables."""
     return {m.group(1): int(m.group(2))
+            for _, text in lib_sources()
             for m in re.finditer(r"^#define (\w+)\s+(\d+)", text, flags=re.MULTILINE)}
 
 
