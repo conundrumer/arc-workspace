@@ -33,15 +33,19 @@
     .decl block_cell(key: Key, p: Position)
     block_cell(Ky, P) :- cell(Ky, P, Col), params.block(Col).
 
-    // The block viewed from its own box, so a side and a middle can be named.
-    .init bbox = BoxFrame<Key>
+    // The block's box, so its sides, middles, and corners can be named.
+    .init bbox = Bbox<Key>
     bbox.cell(Ky, P) :- block_cell(Ky, P).
+
+    .decl corner(key: Key, p: Position, diag: DiagDir)
+    corner(Ky, P, Diag) :- block_cell(Ky, P), bbox.box(Ky, B), box_corner(P, B, Diag).
 
     // The middle cell of each side of the block, aiming out along that side.
     .decl seed(key: Key, p: Position, d: Dir)
     seed(Ky, P, D) :-
-        bbox.inner(Ky, P, P_intile), dist(P_intile, D, 0),  // on side D
-        perp_dir(D, D2), dist_pair(P_intile, D2, K, K).    // centered across
+        block_cell(Ky, P), bbox.box(Ky, B), box_edge(P, B, D),    // on side D
+        relative(B, P, P_rel),
+        perp_dir(D, D2), dist_pair(P_rel, D2, K, K).              // centered across
 }
 
 .init parse = Parse<Unit>
@@ -52,12 +56,12 @@ parse.cell($U(), P, Col) :- in(P, Col).
 .init cast = Ray<Unit>
 cast.dir($U(), D) :- diag_dir_elem(D).
 cast.cell($U(), P) :- in(P, _).
-cast.mark($U(), P) :- parse.bbox.corner($U(), P, _).
+cast.mark($U(), P) :- parse.corner($U(), P, _).
 cast.blocked($U(), P) :- in(P, Col), params.stop(Col).
 
 // Each corner's cast out along its own diagonal, the corner itself excluded.
 .decl diag_arm(p: Position)
-diag_arm(P) :- cast.clear($U(), P, D, K, Src), parse.bbox.corner($U(), Src, D), K != 0.
+diag_arm(P) :- cast.clear($U(), P, D, K, Src), parse.corner($U(), Src, D), K != 0.
 
 // --- side arms ---
 
@@ -89,16 +93,12 @@ out(P, Col) :- in(P, Col_in), ( paint(P, Col) ; !paint(P, _), Col = Col_in ).
     .init parse = Parse<Example>
     parse.cell(E, P, Col) :- ex_in(E, P, Col).
 
-    // Every painted cell seen from each side's middle.
-    .init frame = Reframe<ArmKey>
-    frame.outer([E, D], P0) :- parse.seed(E, P0, D).
-    frame.cell([E, D], P) :- ex_out(E, P, Col), params.arm_paint(Col), dir_elem(D).
-
     // A cell of side D's own arm: out from the block, and no further
     // across than out, which is the wedge the corner diagonals bound.
     .decl place(e: Example, d: Dir, p: Position, o: number, s: number)
     place(E, D, P, O, S) :-
-        frame.view([E, D], P, P_rel),
+        ex_out(E, P, Col), params.arm_paint(Col),                  // a painted cell
+        parse.seed(E, P0, D), relative(P0, P, P_rel),              // seen from side D's middle
         opposite(D, D_back), diag_dirs(Diag, A, D_back, _),        // a corner behind the heading
         diag_dist(P_rel, Diag, A, O, S), O > 0, 0 <= S, S <= O.    // steps out, steps across
 

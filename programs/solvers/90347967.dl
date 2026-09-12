@@ -14,19 +14,12 @@
 
 .init params = Params
 
-.decl mark(p: Position)
-mark(P) :- in(P, Col), params.marker(Col).
-
-// Each cell viewed from the marker, keyed by the cell.
-.init markframe = Reframe<Position>
-markframe.outer(P, M) :- in(P, _), mark(M).
-markframe.cell(P, P)  :- in(P, _).
-
 .decl moved(p: Position, col: Color)
 moved(P_out, Col) :-
-    in(P, Col), markframe.inner(P, I),           // cell in the marker frame
-    params.transform(D), apply(D, I, I2),        // transformed offset
-    mark(M), compose(M, I2, P_out).              // seated back at the marker
+    in(M, C), params.marker(C),                  // the marker cell
+    in(P, Col), relative(M, P, V),               // a cell's offset from the marker
+    params.transform(D), apply(D, V, V2),
+    compose(M, V2, P_out).                       // seated back at the marker
 
 .decl out(p: Position, col: Color)
 out(P, Col) :-

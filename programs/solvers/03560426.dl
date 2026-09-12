@@ -31,16 +31,11 @@ far(Id, P) :- params.corner(Diag), bb.corner(Id, P, Diag).
 // Id2 stands further along the order than Id1.
 .decl beyond(id1: Ident, id2: Ident)
 beyond(Id1, Id2) :-
-    params.order(D), bb.box(Id1, M1), bb.box(Id2, M2), nearer(D, M1, M2).
+    params.order(D), bb.box(Id1, B1), bb.box(Id2, B2), nearer(D, B1, B2).
 
 .init chain = Order<Unit, Ident>
 chain.elem($U(), Id) :- blocks.label($U(), _, Id).
 chain.before($U(), Id1, Id2) :- beyond(Id1, Id2).
-
-// Each block cell as a shift from the block's near corner.
-.init off = Reframe<Ident>
-off.outer(Id, N) :- near(Id, N).
-off.cell(Id, P) :- blocks.label($U(), P, Id).
 
 // Where each block's near corner lands.
 .decl anchor(id: Ident, p: Position)
@@ -52,7 +47,10 @@ anchor(Id2, P2) :- chain.next($U(), Id1, Id2), far(Id1, P), place(Id1, P, P2).
 
 // Where each block cell lands.
 .decl place(id: Ident, p_in: Position, p_out: Position)
-place(Id, P, P_out) :- anchor(Id, A), off.view(Id, P, Sh), compose(A, Sh, P_out).
+place(Id, P, P_out) :-
+    anchor(Id, A), blocks.label($U(), P, Id),
+    near(Id, N), relative(N, P, V),        // the cell as an offset from the near corner
+    compose(A, V, P_out).
 
 // A block further along the chain takes the cell.
 .decl taken(id: Ident, p: Position)

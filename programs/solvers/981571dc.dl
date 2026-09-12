@@ -10,7 +10,7 @@
     .decl noise(col: Color) noise(0).
 
     // Wallpaper symmetry center, as its offset from the grid center.
-    .decl center(a: Offset) center([1, -1, 1, -1]).
+    .decl center(v: Offset) center([1, -1, 1, -1]).
 
     // The wallpaper's symmetry group.
     .decl sym(s: Sym) sym(SYM_D4).
@@ -21,16 +21,12 @@
 .decl clean(p: Position, col: Color)
 clean(P, Col) :- in(P, Col), !params.noise(Col).
 
-// Grid cells viewed from the wallpaper center.
-.init view = Reframe<Unit>
-view.outer($U(), A) :- params.center(A).
-view.cell($U(), P) :- in(P, _).
-
 // Symmetric counterpart: a cell's image under one of the stored symmetries.
 .decl counterpart(p: Position, q: Position)
 counterpart(P, Q) :-
-    view.view($U(), P, P_inner), params.sym(S), sym_member(S, D),   // a cell's view and a symmetry
-    apply(D, P_inner, Q_inner), view.view($U(), Q, Q_inner).        // its image, back in the grid
+    params.center(V), in(P, _), relative(V, P, P_inner),          // a cell seen from the center
+    params.sym(S), sym_member(S, D), apply(D, P_inner, Q_inner),  // its image under a stored symmetry
+    compose(V, Q_inner, Q), in(Q, _).                             // that image, back in the grid
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- clean(P, Col).
@@ -40,49 +36,44 @@ out(P, Col) :-
 
 .comp Determine {
     // Candidate mirror lines on one axis, as offsets from the grid center.
-    .decl cand(a: Axis, delta: Offset)
-    cand(A, Delta) :-
+    .decl cand(a: Axis, v: Offset)
+    cand(A, V) :-
         ex_out(_, P, _),
         axis_of(D, A), sub_extent(P, A, K),   // each axis, each distance
-        jump_offset(D, K, Delta).
+        jump_offset(D, K, V).
     cand(A, ZERO) :- axis_elem(A).      // the grid center line itself
 
     // Where a candidate's mirror carries each cell: the grid-center flip of
     // the axis, then twice the candidate's offset.
-    .decl mirrored(e: Example, a: Axis, delta: Offset, p: Position, q: Position)
-    mirrored(E, A, Delta, P, Q) :-
-        ex_out(E, P, _), cand(A, Delta),
+    .decl mirrored(e: Example, a: Axis, v: Offset, p: Position, q: Position)
+    mirrored(E, A, V, P, Q) :-
+        ex_out(E, P, _), cand(A, V),
         flip_of(A, D), apply(D, P, P1),
-        compose(Delta, Delta, Twice), compose(P1, Twice, Q).
+        compose(V, V, V_twice), compose(P1, V_twice, Q).
 
     // A candidate whose mirror carries some cell onto a different color.
-    .decl mirror_mismatch(a: Axis, delta: Offset)
-    mirror_mismatch(A, Delta) :-
-        mirrored(E, A, Delta, P, Q),
+    .decl mirror_mismatch(a: Axis, v: Offset)
+    mirror_mismatch(A, V) :-
+        mirrored(E, A, V, P, Q),
         ex_out(E, P, Col), ex_out(E, Q, C2), C2 != Col.
 
     // The axis's mirror line: unbroken, and mirroring some cell onto another
     // — an offset past the frame pairs nothing and would pass unbroken.
-    .decl axis_center(a: Axis, delta: Offset)
-    axis_center(A, Delta) :-
-        mirrored(E, A, Delta, _, Q), ex_out(E, Q, _),
-        !mirror_mismatch(A, Delta).
+    .decl axis_center(a: Axis, v: Offset)
+    axis_center(A, V) :-
+        mirrored(E, A, V, _, Q), ex_out(E, Q, _),
+        !mirror_mismatch(A, V).
 
     // The symmetry center: the mirror line of each axis, crossed.
-    .decl center(a: Offset)
-    center(A) :-
+    .decl center(v: Offset)
+    center(V) :-
         perp(A1, A2),
-        axis_center(A1, D1), axis_center(A2, D2), compose(D1, D2, A).
-
-    // Restored cells viewed from the center.
-    .init view = Reframe<Example>
-    view.outer(E, A) :- ex_out(E, _, _), center(A).
-    view.cell(E, P)  :- ex_out(E, P, _).
+        axis_center(A1, V1), axis_center(A2, V2), compose(V1, V2, V).
 
     // Self-symmetry of each restored grid, read in the center frame.
     .init inv = D4Map<Example, Color>
-    inv.src(E, P_inner, Col) :- view.view(E, P, P_inner), ex_out(E, P, Col).
-    inv.dst(E, P_inner, Col) :- view.view(E, P, P_inner), ex_out(E, P, Col).
+    inv.src(E, P_inner, Col) :- center(V), ex_out(E, P, Col), relative(V, P, P_inner).
+    inv.dst(E, P_inner, Col) :- inv.src(E, P_inner, Col).
 
     // The transforms no example contradicts, named as a subgroup.
     .init named = KeyedSetCompare<Unit, Sym, D4>

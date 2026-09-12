@@ -18,33 +18,33 @@
 drect.node(Col, P) :- in(P, Col).
 
 // The cells a rectangle covers.
-.decl covered(b: Position, p: Position)
+.decl covered(b: Box, p: Position)
 covered(B, P) :- drect.box(_, B), in(P, _), inside(P, B).
 
 // The block: the rectangle covering the most cells.
-.init biggest = Mode<Unit, Position, Position>
+.init biggest = Mode<Unit, Box, Position>
 biggest.item($U(), B, P) :- covered(B, P).
 
-.decl block(col: Color, b: Position)
+.decl block(col: Color, b: Box)
 block(Col, B) :- biggest.mode($U(), B), drect.box(Col, B).
 
-.init rel = Reframe<Unit>
-rel.outer($U(), B) :- block(_, B).
-rel.cell($U(), P) :- block(_, B), covered(B, P).
+// The block cropped: each cell it covers, in its own frame.
+.decl view(p: Position, p_inner: Position)
+view(P, P_inner) :- block(_, B), in(P, _), crop(P, B, P_inner).
 
 // --- flaws ---
 
 // A block cell not of the block's color, in the crop frame.
 .decl flaw(p: Position, col: Color)
-flaw(P_inner, Col) :- rel.view($U(), P, P_inner), in(P, Col), !block(Col, _).
+flaw(P_inner, Col) :- view(P, P_inner), in(P, Col), !block(Col, _).
 
 // Crop cells on a flaw's row or column take the flaw's color.
 .decl flaw_line(p: Position, col: Color)
-flaw_line(P, Col) :- rel.inner($U(), P), flaw(Q, Col), axis_elem(A), same_line(A, P, Q).
+flaw_line(P, Col) :- view(_, P), flaw(Q, Col), axis_elem(A), same_line(A, P, Q).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :-
-    rel.inner($U(), P),
+    view(_, P),
     ( flaw_line(P, Col)
     ; !flaw_line(P, _), block(Col, _)
     ).

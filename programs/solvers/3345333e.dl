@@ -66,34 +66,30 @@ pair(P, Q) :- figure(P, _), figure(Q, _), params.axis(A), same_line(A, P, Q).
 pair_box.cell([P, Q], P) :- pair(P, Q).
 pair_box.cell([P, Q], Q) :- pair(P, Q).
 
-.decl cand(m: Position)
-cand(M) :- pair_box.box(_, M).
+.decl cand(b: Box)
+cand(B) :- pair_box.box(_, B).
 
 // The frames a mirror may act in.
-.decl mirror_frame(m: Position)
-mirror_frame(M) :- whole.box($U(), M).
-mirror_frame(M) :- cand(M).
+.decl mirror_frame(b: Box)
+mirror_frame(B) :- whole.box($U(), B).
+mirror_frame(B) :- cand(B).
 
-// Each grid cell as frame M sees it.
-.init views = Reframe<Position>
-views.outer(M, M) :- mirror_frame(M).
-views.cell(M, P) :- mirror_frame(M), in(P, _).
-
-// Cells whose views in frame M are flip-related.
-.decl mirror(m: Position, p: Position, q: Position)
-mirror(M, P, Q) :-
-    views.view(M, P, P_inner), params.axis(A), flip_of(A, D), // the cell's view, the flip
-    apply(D, P_inner, Q_inner), views.view(M, Q, Q_inner).    // its image, back on the grid
+// Cells whose views in frame B are flip-related.
+.decl mirror(b: Box, p: Position, q: Position)
+mirror(B, P, Q) :-
+    mirror_frame(B), in(P, _), relative(B, P, P_inner),        // the cell as frame B sees it
+    params.axis(A), flip_of(A, D), apply(D, P_inner, Q_inner), // the flip
+    compose(B, Q_inner, Q), in(Q, _).                          // its image, back on the grid
 
 // The frame each case mirrors in.
-.decl frame(m: Position, ch: Choice)
+.decl frame(b: Box, ch: Choice)
 
 // The cells each case's repair may touch.
 .decl target(p: Position, ch: Choice)
 
 .decl paint(p: Position, col: Color, ch: Choice)
 paint(Q, Col, Ch) :-
-    figure(P, Col), frame(M, Ch), mirror(M, P, Q),   // a figure cell's mirror image
+    figure(P, Col), frame(B, Ch), mirror(B, P, Q),   // a figure cell's mirror image
     target(Q, Ch).                                   // where the case repairs
 
 .decl impl_choice(ch: Choice)
@@ -109,23 +105,23 @@ out(P, Col, Ch) :-
 
 // --- $Complete ---
 
-frame(M, $Complete()) :- whole.box($U(), M).
+frame(B, $Complete()) :- whole.box($U(), B).
 target(P, $Complete()) :- in(P, _).
 
 // --- $Patch ---
 
-frame(M, $Patch()) :- whole.box($U(), M).
+frame(B, $Patch()) :- whole.box($U(), B).
 target(P, $Patch()) :- occluder(P).
 
 // --- $Fitted ---
 
 // The candidate carries the figure cell onto a figure cell or an occluded
 // one — the two places the whole figure reaches.
-.decl upheld(m: Position, p: Position)
-upheld(M, P) :- mirror(M, P, Q), ( figure(Q, _) ; occluder(Q) ).
+.decl upheld(b: Box, p: Position)
+upheld(B, P) :- mirror(B, P, Q), ( figure(Q, _) ; occluder(Q) ).
 
-.decl contradicted(m: Position)
-contradicted(M) :- cand(M), figure(P, _), !upheld(M, P).
+.decl contradicted(b: Box)
+contradicted(B) :- cand(B), figure(P, _), !upheld(B, P).
 
-frame(M, $Fitted()) :- cand(M), !contradicted(M).
+frame(B, $Fitted()) :- cand(B), !contradicted(B).
 target(P, $Fitted()) :- in(P, _).

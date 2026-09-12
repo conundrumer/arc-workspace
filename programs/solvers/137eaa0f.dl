@@ -34,18 +34,14 @@
 .decl mark(p: Position)
 mark(A) :- in(A, Col), params.key(Col).
 
-// Every cell measured from every mark.
-.init offset = Reframe<Position>
-offset.outer(A, A) :- mark(A).
-offset.cell(A, P) :- mark(A), in(P, _).
-
 .decl out(p: Position, col: Color, ch: Choice)
 
 // --- $Frame ---
 
 .decl paint(p: Position, col: Color)
 paint(P_out, Col) :-
-    offset.view(A, P, P_rel), in(P, Col), !params.bg(Col),  // offset of an ink cell
+    in(P, Col), !params.bg(Col),                            // an ink cell
+    mark(A), relative(A, P, P_rel),                         // its offset from a mark
     params.anchor(Anc), compose(Anc, P_rel, P_out),         // anchor-relative render
     params.frame(P_out).                                    // within the stamp
 
@@ -62,12 +58,16 @@ comp8.node($U(), P) :- in(P, Col), !params.bg(Col).
 obj_off(P_rel, Col) :-
     mark(A), comp8.label($U(), A, Id),
     in(P, Col), comp8.label($U(), P, Id),    // cell in the mark's object
-    offset.view(A, P, P_rel).
+    relative(A, P, P_rel).
 
-// All mark-cell offsets as the dense grid.
-.init oframe = BoxFrame<Unit>
-oframe.cell($U(), P_rel) :- obj_off(P_rel, _).
-oframe.grid($U(), P_rel) :- offset.inner(_, P_rel).
+.init obox = Bbox<Unit>
+obox.cell($U(), P_rel) :- obj_off(P_rel, _).
 
-out(P_out, Col, $Object()) :- obj_off(P_rel, Col), oframe.inner($U(), P_rel, P_out).
-out(P_out, Bg, $Object())  :- oframe.inner($U(), P_rel, P_out), !obj_off(P_rel, _), params.bg(Bg).
+// Each offset a mark sees, read in the overlay box's frame.
+.decl view(p_rel: Position, p_inner: Position)
+view(P_rel, P_inner) :-
+    mark(A), in(P, _), relative(A, P, P_rel),    // a grid cell, as an offset from a mark
+    obox.box($U(), B), crop(P_rel, B, P_inner).  // that offset inside the overlay's box
+
+out(P_inner, Col, $Object()) :- obj_off(P_rel, Col), view(P_rel, P_inner).
+out(P_inner, Bg, $Object())  :- view(P_rel, P_inner), !obj_off(P_rel, _), params.bg(Bg).

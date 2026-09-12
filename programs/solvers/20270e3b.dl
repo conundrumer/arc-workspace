@@ -40,17 +40,12 @@ socket(Id, P) :- piece(Id, P), in(P, Col), params.socket_color(Col).
 .init socket_box = Bbox<Ident>
 socket_box.cell(Id, P) :- socket(Id, P).
 
-// Every cell of a piece, read from that piece's own socket footprint.
-.init socket_rel = Reframe<Ident>
-socket_rel.outer(Id, P_box) :- socket_box.box(Id, P_box).
-socket_rel.cell(Id, P) :- piece(Id, P).
-
 // Piece m seated on piece h: m's cell p lands at p_seat.
 .decl seat(h: Ident, m: Ident, d: Dir, p: Position, p_seat: Position)
 seat(H, M, D, P, P_seat) :-
-    socket_rel.view(M, P, P_rel),                                       // a cell of the seated piece
-    socket_box.box(H, P_box), H != M, compose(P_box, P_rel, P_reg),  // laid on the host's footprint
-    dir_elem(D), neighbor(P_reg, D, P_seat).                            // and carried one step off it
+    piece(M, P), socket_box.box(M, B_m), relative(B_m, P, P_rel),  // a cell of the seated piece, in its footprint's frame
+    socket_box.box(H, B_h), H != M, compose(B_h, P_rel, P_reg),    // laid on the host's footprint
+    dir_elem(D), neighbor(P_reg, D, P_seat).                       // and carried one step off it
 
 // Both pieces' cells in the host's frame, under the seating (h, m, d).
 .decl laid_wall(h: Ident, m: Ident, d: Dir, p: Position, col: Color)
@@ -73,14 +68,17 @@ open(H, M, D) :- laid_socket(H, M, D, P), !laid_wall(H, M, D, P, _).
 figure(H, M, P, Col) :- laid_wall(H, M, D, P, Col), !open(H, M, D).
 
 .type Join = [h: Ident, m: Ident]
-.init view = BoxFrame<Join>
-view.cell([H, M], P) :- figure(H, M, P, _).
+.init figure_box = Bbox<Join>
+figure_box.cell([H, M], P) :- figure(H, M, P, _).
 
 .decl painted(p: Position, col: Color)
-painted(P_out, Col) :- figure(H, M, P, Col), view.inner([H, M], P, P_out).
+painted(P_inner, Col) :-
+    figure(H, M, P, Col), figure_box.box([H, M], B), crop(P, B, P_inner).
 
 .init sheet = Frame2D<Unit>
-sheet.extent($U(), A, N) :- view.extent(_, A, N).
+sheet.extent($U(), A, N) :-
+    figure_box.box(J, B), figure_box.cell(J, P),   // the figure's box, and a cell of the grid frame
+    axis_elem(A), box_extent(B, P, A, N).          // the box's extent on each axis
 
 .decl out(p: Position, col: Color)
 out(P, Col) :-

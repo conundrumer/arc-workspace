@@ -19,7 +19,7 @@
 
     // --- Window ---
     // The window's box, as margins from the mark's cell.
-    .decl win_delta(v: Box) win_delta([1, -3, -1, -1]).
+    .decl win_box(b: Box) win_box([1, -3, -1, -1]).
 }
 
 .init params = Params
@@ -55,15 +55,8 @@ out(P_out, Col, $Interior()) :- bbox.inner($U(), P, P_out), in(P, Col).
 
 // --- Window ---
 
-// The window the mark fixes.
-.decl window(b: Position)
-window(B) :- mark(M), params.win_delta(V), compose(M, V, B).
-
-// The grid seen from the window.
-.init win = Reframe<Unit>
-win.outer($U(), B) :- window(B).
-win.cell($U(), P) :- in(P, _).
+.decl window(b: Box)
+window(B) :- mark(M), params.win_box(B_mark), compose(M, B_mark, B).
 
 out(P_out, Col, $Window()) :-
-    win.view($U(), P, P_out), in(P, Col),   // a grid cell, seen from the window
-    window(B), inside(P, B).                   // one the window covers
+    window(B), in(P, Col), crop(P, B, P_out).   // a grid cell the window covers, seen from it

@@ -69,7 +69,7 @@ key_box.cell(Col, P) :- key_cell(Col, P).
 // $Center — the key centered in the block.
 hole(P, $Center()) :-
     block_box.inner(Col, P, P_blk), key_box.inner(Col, _, P_key),   // block cell, key cell
-    relative(P_key, P_blk, D), centered(D).
+    relative(P_key, P_blk, B), centered(B).                         // the key lands centered
 
 // $Interior — the key fills the block less its rim.
 .init rim = Rim<Color>
@@ -88,16 +88,12 @@ hole(P, $Interior()) :- inside_box.inner(Col, P, P_inner), key_box.inner(Col, _,
 .init blocks_box = Bbox<Unit>
 blocks_box.cell($U(), P) :- block(_, P).
 
-.decl crop_box(b: Position)
+.decl crop_box(b: Box)
 crop_box(B) :-
-    blocks_box.box($U(), M),
-    params.border(K), uniform_inset(K, W), relative(W, M, B).
+    blocks_box.box($U(), B_blocks),
+    params.border(K), uniform_outset(K, B_wide), compose(B_wide, B_blocks, B).
 
-.init rel = Reframe<Unit>
-rel.outer($U(), B) :- crop_box(B).
-rel.cell($U(), P) :- in(P, _), crop_box(B), inside(P, B).
-
-view(P, P_out, $Crop()) :- rel.view($U(), P, P_out).
+view(P, P_out, $Crop()) :- crop_box(B), in(P, _), crop(P, B, P_out).
 
 // $Arrange — each block at its place in the arrangement, inside the border.
 // A block's place is its rank from each of the four edges; blocks level with
@@ -111,7 +107,7 @@ tile.edge(Col, D, R) :- block_box.edge_min(Col, D, K), lane.rank(D, K, R).
 view(P, P_out, $Arrange()) :-
     block_box.inner(Col, P, P_inner), tile.box(Col, P_tile),  // block cell, its tile
     params.border(K), concat_2d(P_tile, P_inner, K, P_lat),   // tiles set the border apart
-    uniform_inset(K, W), compose(P_lat, W, P_out).            // and the border around them
+    uniform_inset(K, B), compose(B, P_lat, P_out).            // the lattice seated inside the border
 
 .init arrange_frame = Frame2D<Unit>
 arrange_frame.extent($U(), A, N) :-

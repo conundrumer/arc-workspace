@@ -72,8 +72,8 @@ impl_choice($Holes()). impl_choice($Stamp()).
     .init bbox = Bbox<Blk>
     bbox.cell([K, Id], P) :- label(K, P, Id).
 
-    .decl margin(key: Key, id: Ident, p: Position)
-    margin(K, Id, M) :- bbox.box([K, Id], M).
+    .decl box(key: Key, id: Ident, b: Box)
+    box(K, Id, B) :- bbox.box([K, Id], B).
 }
 
 .init parse = Parse<Unit>
@@ -97,8 +97,8 @@ fill(Q, Col, $Holes()) :-
 
 // --- $Stamp ---
 fill(Q, Col, $Stamp()) :-
-    painted(Id, Col), parse.margin($U(), Id, M),
-    params.stamp(F), compose(M, F, Q).
+    painted(Id, Col), parse.box($U(), Id, B),
+    params.stamp(P_inner), compose(B, P_inner, Q).
 
 .decl out(p: Position, col: Color, c: Choice)
 out(P, Col, Ch) :- fill(P, Col, Ch).
@@ -107,8 +107,6 @@ out(P, Col, Ch) :-
     impl_choice(Ch), in(P, Col), !parse.mark($U(), P, _), !fill(P, _, Ch).
 
 .comp Determine {
-    .type EI = [e: Example, id: Ident]
-
     .init parse = Parse<Example>
     parse.cell(E, P, Col) :- ex_in(E, P, Col).
     parse.line(W) :- params.line(W).
@@ -121,23 +119,17 @@ out(P, Col, Ch) :-
         ex_out(E, P, Col), ex_in(E, P, Col2), Col != Col2,
         parse.label(E, P, Id).
 
-    .decl repainted(e: Example, id: Ident)
-    repainted(E, Id) :- repaint(E, _, Id).
-
     // A corner refuted by a repainted block no mark seats toward it.
     .decl stray(diag: DiagDir)
     stray(Diag) :-
-        repainted(E, Id), diag_dir_elem(Diag),
+        repaint(E, _, Id), diag_dir_elem(Diag),
         !parse.mark_block(E, _, Diag, Id).
 
     .decl corner(d: DiagDir)
     corner(Diag) :- diag_dir_elem(Diag), !stray(Diag).
 
     // Repainted cells in their block's frame.
-    .init view = Reframe<EI>
-    view.outer([E, Id], M) :- repainted(E, Id), parse.margin(E, Id, M).
-    view.cell([E, Id], P)  :- repaint(E, P, Id).
-
     .decl stamp(p: Position)
-    stamp(F) :- view.inner(_, F).
+    stamp(P_inner) :-
+        repaint(E, P, Id), parse.box(E, Id, B), relative(B, P, P_inner).
 }

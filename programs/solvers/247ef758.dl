@@ -82,22 +82,18 @@ cross(Col, P) :-
 .decl shape_cell(col: Color, p: Position)
 shape_cell(Col, P) :- legend(P), in(P, Col), !params.bg(Col).
 
-.init sbox = BoxFrame<Color>
+.init sbox = Bbox<Color>
 sbox.cell(Col, P) :- shape_cell(Col, P).
-sbox.grid(Col, P) :- shape_cell(Col, _), legend(P).
-
-// The shape as offsets from its center.
-.init off = Reframe<Color>
-off.outer(Col, P) :- sbox.inner(Col, P, P_in), centered(P_in).
-off.cell(Col, P) :- shape_cell(Col, P).
 
 // --- stamping ---
 
 .decl paint(p: Position, col: Color)
 paint(P, Col) :-
-    cross(Col, X), off.inner(Col, Delta),        // the shape hung on a crossing
-    compose(X, Delta, P),
-    frame(P), !border(P, _).                     // landing in the frame's interior
+    legend(C), sbox.box(Col, B),                     // a legend cell and the shape's box
+    crop(C, B, P_inner), centered(P_inner),          // the cell at that box's center
+    shape_cell(Col, Q), relative(C, Q, V),           // the shape as offsets from that center
+    cross(Col, X), compose(X, V, P),                 // hung on a crossing
+    frame(P), !border(P, _).                         // landing in the frame's interior
 
 // The end of the legend the list starts at.
 .decl stack_dir(d: Dir)

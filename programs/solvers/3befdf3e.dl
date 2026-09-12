@@ -28,7 +28,7 @@
     .decl fig_core(n: number, p: Position)
 
     // The core's box inside that frame — where the figure meets the object.
-    .decl fig_core_box(n: number, p: Position)
+    .decl fig_core_box(n: number, b: Box)
     fig_core_box(1, [2, 2, 2, 2]). fig_core_box(2, [3, 3, 3, 3]).
 
     GRID_MASK_5x5(fig_wall, 1,
@@ -107,19 +107,13 @@ paint(P, Col, $Cast()) :-
 
 // --- Lookup ---
 
-// The figure seen from the core box it holds.
-.init fig_rf = Reframe<number>
-fig_rf.outer(N, M) :- params.fig_core_box(N, M).
-fig_rf.cell(N, P) :- params.fig_wall(N, P).
-fig_rf.cell(N, P) :- params.fig_core(N, P).
-
 paint(P, Col, $Lookup()) :-
     core_box.extents(Id, _, N, N),
     ( params.fig_wall(N, P_fig), wall_col(Id, Col)     // the figure's wall role
     ; params.fig_core(N, P_fig), core_col(Id, Col) ),  // its core role
-    fig_rf.view(N, P_fig, P_in),                       // the cell, from the core
-    core_box.box(Id, M), compose(M, P_in, P),       // laid on the object's core
-    in(P, _).                                          // inside the grid
+    params.fig_core_box(N, B_fig), relative(B_fig, P_fig, P_inner),   // the cell, read from the core
+    core_box.box(Id, B), compose(B, P_inner, P),                     // laid on the object's core
+    in(P, _).                                                        // inside the grid
 
 // --- output ---
 
@@ -180,7 +174,7 @@ out(P, Col, Ch) :- in(P, _), impl_choice(Ch), !paint(P, _, Ch), params.bg(Col).
     .init core_in_fig = Bbox<Obj>
     core_in_fig.cell(O, P_fig) :- core(O, P), fig_box.inner(O, P, P_fig).
 
-    .decl fig_core_box(n: number, p: Position)
-    fig_core_box(N, M) :-
-        core_box.extents(O, _, N, N), core_in_fig.box(O, M).
+    .decl fig_core_box(n: number, b: Box)
+    fig_core_box(N, B) :-
+        core_box.extents(O, _, N, N), core_in_fig.box(O, B).
 }

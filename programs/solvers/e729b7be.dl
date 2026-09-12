@@ -49,16 +49,10 @@ center(C) :-
     in(Q, Coll), params.line(Coll),        // a line cell
     axis_elem(A), same_line(A, C, Q).
 
-// Input cells viewed from the crossing.
-.init rf = Reframe<Position>
-rf.outer(P, C) :- in(P, _), center(C).
-rf.cell(P, P) :- in(P, _).
-
-// Image = crossing + the transform's linear action on the offset.
 image(P2, Col, $Marker()) :-
-    in(P, Col), rf.inner(P, Dlt),        // offset from the crossing
-    params.transform(D), apply(D, Dlt, Dlt2),
-    center(C), compose(C, Dlt2, P2).
+    in(P, Col), center(C), relative(C, P, V),   // a cell's offset from the crossing
+    params.transform(D), apply(D, V, V2),
+    compose(C, V2, P2).                         // seated back at the crossing
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col_out, Ch) :-

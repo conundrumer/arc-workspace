@@ -3,7 +3,7 @@
 // concept: objects move rank
 // Four shapes lie scattered over bg. The output is a 2×2 arrangement of
 // blocks with a bg gutter, each shape drawn in the block at the corner it
-// claims, positioned as it sits in its bounding bbox.
+// claims, positioned as it sits in its bounding box.
 //
 // Which corner a shape claims:
 //   $Grid — the corner of the grid frame its box is nearest.
@@ -31,11 +31,11 @@ impl_choice($Grid()). impl_choice($Span()).
 
 .init params = Params
 
-// The shapes, each viewed from its own bounding bbox.
+// The shapes, each with its own bounding box.
 .init obj = Components8<Unit>
 obj.node($U(), P) :- in(P, Col), !params.bg(Col).
 
-.init bbox = BoxFrame<Ident>
+.init bbox = Bbox<Ident>
 bbox.cell(Id, P) :- obj.label($U(), P, Id).
 
 // The corner a shape claims, read off its box's margins in the case's frame.
@@ -44,7 +44,7 @@ bbox.cell(Id, P) :- obj.label($U(), P, Id).
 
 // --- Grid ---
 
-quad.cell([Id, $Grid()], M) :- bbox.box(Id, M).
+quad.cell([Id, $Grid()], B) :- bbox.box(Id, B).
 
 // --- Span ---
 
@@ -52,11 +52,8 @@ quad.cell([Id, $Grid()], M) :- bbox.box(Id, M).
 .init span = Bbox<Unit>
 span.cell($U(), P) :- obj.node($U(), P).
 
-.init rel = Reframe<Ident>
-rel.cell(Id, M) :- bbox.box(Id, M).
-rel.outer(Id, M_span) :- rel.cell(Id, _), span.box($U(), M_span).
-
-quad.cell([Id, $Span()], M) :- rel.inner(Id, M).
+quad.cell([Id, $Span()], B_rel) :-
+    bbox.box(Id, B), span.box($U(), B_span), relative(B_span, B, B_rel).
 
 // --- shared ---
 
@@ -67,8 +64,9 @@ block(P_grid_out, P_tile, P_intile) :-
 
 .decl paint(p: Position, col: Color, ch: Choice)
 paint(P_grid_out, Col, Ch) :-
-    bbox.inner(Id, P_grid_in, P_intile), in(P_grid_in, Col),  // shape cell, in its box
-    quad.quadrant([Id, Ch], _, Diag),                        // the shape's corner
+    obj.label($U(), P_grid_in, Id), in(P_grid_in, Col),  // a shape cell
+    bbox.box(Id, B), crop(P_grid_in, B, P_intile),       // in its box's frame
+    quad.quadrant([Id, Ch], _, Diag),                    // the shape's corner
     block(P_grid_out, P_tile, P_intile), corner_dist(P_tile, Diag, 0).   // in the block at that corner
 
 .decl out(p: Position, col: Color, ch: Choice)
@@ -81,10 +79,13 @@ out(P, Col, Ch) :- impl_choice(Ch), params.frame(P), !paint(P, _, Ch), params.bg
     .init obj = Components8<Example>
     obj.node(E, P) :- ex_in(E, P, Col), !params.bg(Col).
 
-    .init bbox = BoxFrame<EId>
+    .init bbox = Bbox<EId>
     bbox.cell([E, Id], P) :- obj.label(E, P, Id).
 
     // Every shape's box is square, and its size is the block's.
     .decl block_dim(k: number)
-    block_dim(K) :- bbox.extents(_, _, K, K).
+    block_dim(K) :-
+        bbox.box(Ky, B), bbox.cell(Ky, P),          // a shape's box, and a cell of the grid frame
+        axis_elem(A), perp(A, A2),
+        box_extent(B, P, A, K), box_extent(B, P, A2, K).   // the one extent on both axes
 }
