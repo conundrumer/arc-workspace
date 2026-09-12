@@ -38,11 +38,9 @@ export function TaskStrip({id, mentions, open, onToggle}){
   const cur = tab && tabs.includes(tab) ? tab : id;
   const task = cur ? tasks[cur] : null;
   const body = useMemo(()=>loaded(task) ? html`<${Pairs} task=${task}/>` : null, [task, cur]);
-  const label = loaded(task)
-    ? "task · "+task.train.length+" train / "+task.test.length+" test" : "task";
   return html`<div id="taskstrip" class=${open?"open":""}>
     <div class="taskhead" onClick=${onToggle}>
-      <span class="caret">▸</span><span>${label}</span>
+      <span class="caret">▸</span><span>task</span>
       ${tabs.length>1 && html`<span class="ttabs" onClick=${e=>e.stopPropagation()}>
         ${tabs.map(t=>html`<span key=${t} class=${"ttab"+(t===cur?" on":"")}
           onClick=${()=>setTab(t===id ? null : t)}>${t}</span>`)}
