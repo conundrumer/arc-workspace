@@ -1,0 +1,123 @@
+/// Negative-free difference of two keyed member counts: no tuple at a tie or
+/// deficit, so no negative number crosses the interface.
+.comp Excess<Key, Member> {
+    .decl plus(key: Key, m: Member)  // @input
+    .decl minus(key: Key, m: Member)  // @input
+
+    /// The amount by which the plus set outnumbers the minus set.
+    .decl excess(key: Key, n: number)
+    excess(Ky, N) :-
+        plus(Ky, _),
+        Np = count : { plus(Ky, M1) }, Nn = count : { minus(Ky, M2) },
+        Np > Nn, N = Np - Nn.
+}
+
+/// The commonest member per key. The token column supplies multiplicity;
+/// ties keep every member at the max.
+.comp Mode<Key, Member, Token> {
+    .decl item(key: Key, m: Member, t: Token)  // @input
+
+    .decl tally(key: Key, m: Member, n: number)
+    tally(Ky, M, N) :- item(Ky, M, _), N = count : { item(Ky, M, T) }.
+
+    .decl mode(key: Key, m: Member)
+    mode(Ky, M) :- tally(Ky, M, N), N = max N2 : { tally(Ky, _, N2) }.
+}
+
+/// The one value of each key's item set, absent on disagreement — the strict
+/// peer of Mode.
+.comp Unanimous<Key, Val> {
+    .decl item(key: Key, v: Val)  // @input
+
+    .decl clash(key: Key)
+    clash(Ky) :- item(Ky, V1), item(Ky, V2), V1 != V2.
+
+    .decl value(key: Key, v: Val)
+    value(Ky, V) :- item(Ky, V), !clash(Ky).
+}
+
+/// The extremum score per key, each direction a readout.
+.comp Extremes<Key> {
+    .decl cand(key: Key, s: number)  // @input
+
+    .decl high(key: Key, s: number)
+    high(Ky, S) :- cand(Ky, S).
+    high(Ky, S) <= high(Ky, S2) :- S < S2.
+
+    .decl low(key: Key, s: number)
+    low(Ky, S) :- cand(Ky, S).
+    low(Ky, S) <= low(Ky, S2) :- S > S2.
+}
+
+/// The rows carrying each key's extremum score, each direction a readout;
+/// ties keep every row at the extremum.
+.comp ArgExtremes<Key, Val> {
+    .decl cand(key: Key, v: Val, s: number)  // @input
+
+    .decl high(key: Key, v: Val, s: number)
+    high(Ky, V, S) :- cand(Ky, V, S).
+    high(Ky, V, S) <= high(Ky, _, S2) :- S < S2.
+
+    .decl low(key: Key, v: Val, s: number)
+    low(Ky, V, S) :- cand(Ky, V, S).
+    low(Ky, V, S) <= low(Ky, _, S2) :- S > S2.
+}
+
+/// The cardinality of each key's member set.
+/// `count` is a reserved word and cannot be the instance name.
+.comp Tally<Key, Member> {
+    .decl item(key: Key, m: Member)  // @input
+
+    /// The keys to count over — feeding it makes the count total, so a key
+    /// with no items counts 0.
+    .decl domain(key: Key)  // @input
+
+    .decl tally(key: Key, n: number)
+    tally(Ky, N) :- item(Ky, _), N = count : { item(Ky, M) }.
+    tally(Ky, 0) :- domain(Ky), !item(Ky, _).
+}
+
+/// One id per class of an equivalence relation; the representative is
+/// arbitrary but deterministic. A self-paired `rep` member is the class
+/// representative — with a total equivalence, an arbitrary pick of one
+/// element of a set.
+.comp Canon<T> {
+    /// An equivalence, reflexive over the domain.
+    .decl equiv(a: T, b: T)  // @input
+
+    .decl rep(a: T, b: T)
+    rep(A, B) :- equiv(A, B).
+    rep(A, B) <= rep(A, B2) :- ord(B) > ord(B2).
+
+    .decl id(a: T, id: Ident)
+    id(A, as(ord(B), Ident)) :- rep(A, B).
+}
+
+/// Keyed set comparison via count equality. Member is a single type param: a
+/// record for multi-field members, a scalar for one-field. Stored catalogs
+/// enumerate patterns as numbers (Pat = number; single-pattern sites use
+/// pattern = 0); a derived catalog keys patterns by its own objects.
+.comp KeyedSetCompare<Key, Pat, Member> {
+    /// A catalog of known sets, enumerated by `pattern`.
+    .decl pattern_member(pattern: Pat, m: Member)  // @input
+
+    /// The observed set at each `observed` key.
+    .decl observed_member(observed: Key, m: Member)  // @input
+
+    .decl pattern_size(pattern: Pat, n: number)
+    pattern_size(Pat, N) :- pattern_member(Pat, _), N = count : { pattern_member(Pat, M) }.
+
+    /// observed ⊇ pattern: every pattern member is present in the observed set
+    .decl covers(observed: Key, pattern: Pat)
+    covers(Obs, Pat) :-
+        observed_member(Obs, _),
+        pattern_size(Pat, N),
+        N = count : { pattern_member(Pat, M), observed_member(Obs, M) }.
+
+    /// observed == pattern: covers, and the observed set carries no extra members
+    .decl equals(observed: Key, pattern: Pat)
+    equals(Obs, Pat) :-
+        covers(Obs, Pat),
+        pattern_size(Pat, N),
+        N = count : { observed_member(Obs, M) }.
+}

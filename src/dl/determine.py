@@ -50,7 +50,7 @@ def determine_check(source: str, task) -> DetermineResult | None:
                 cpu_limit=5 * (len(task.train) + len(task.test)),
             )
         rels = _parse_relations(stdout)
-        diff = sorted({row.strip() for row in rels.get("determination_diff", [])})
+        diff = sorted({row.strip() for row in rels.get("_determination_diff", [])})
         rigid = {n: b for n, (b, _) in rigid_decls(source).items() if n in params}
         ident_params = {n: t for n, t in params.items() if "Ident" in t}
         if ident_params and not _ident_match(ident_params, rels, set(rigid)):

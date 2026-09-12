@@ -14,7 +14,7 @@ from dl.souffle import _pool_workers, _run_source
 from dl.source import SOLVE_DIRECTIVES, expand_macros
 
 # Relations the probe never outputs: the IO relations of the run modes.
-SKIP = {"in", "out", "ex_in", "ex_out", "determination_diff"}
+SKIP = {"in", "out", "ex_in", "ex_out", "_determination_diff"}
 
 # How deep the walk over comp instances goes. A lib comp instantiates its
 # own helpers, and the corpus nests no deeper than this.

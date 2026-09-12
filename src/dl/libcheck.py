@@ -30,7 +30,8 @@ def input_marks(path: Path, text: str) -> list[str]:
 
     def walk(items: list[Item], scope: str) -> None:
         derived = {it.head.name for it in items
-                   if isinstance(it, Rule) and it.body is not None}
+                   if isinstance(it, Rule) and it.body is not None
+                   and it.head.qual is None}   # a nested instance's rule is not this comp's
         for it in items:
             if isinstance(it, Comp):
                 walk(it.items, it.name)

@@ -21,6 +21,8 @@ table(DIR_T).
     cast(Ky, P) :- mark(Ky, P).
     .decl ray(key: Key, p: Position)
     ray(Ky, P) :- cast(Ky, P), dir(Ky, _).
+    .init _in = _Inner<Key>
+    _in.cand(Ky) :- dir(Ky, _).         // feeds the nested instance, derives nothing here
     .comp _Inner<K> {
         .decl cand(key: K)
     }

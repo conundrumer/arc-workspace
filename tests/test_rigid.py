@@ -99,7 +99,7 @@ def test_determined_params_and_build():
     assert ("determine_rigid_marker_glyph(D4, A0) :- determine.marker_glyph(B0), "
             "d4_elem(D4), apply(D4, B0, A0)." in built)
     assert "params_rigid_marker_glyph(D4, A0) :- params.marker_glyph(D4, A0)." in built
-    assert 'determination_diff("marker_glyph")' not in built
+    assert '_determination_diff("marker_glyph")' not in built
 
 
 def test_public_param():

@@ -135,7 +135,7 @@ def _comp_block(comp: Comp, lines: list[str], docs: dict[int, tuple[int, int]]) 
         block = docs.get(it.line - 1)
         is_input = isinstance(it, Decl) and _is_input(it, lines)
         cur = (block is not None, is_input)
-        if prev is not None and (any(cur) or any(prev) or cur != prev):
+        if prev is not None and (cur[0] or prev[0] or cur[1] != prev[1]):
             out.append("")
         prev = cur
         if block is not None:

@@ -40,7 +40,7 @@ NB: reparameterization has been dropped; Same model decides whether an encoding 
 | `ConstsHelpers` | `ParamsHelpers` |
 | `.comp Fit` | `.comp Determine` |
 | `// --- fit ---` | `// --- determination ---` |
-| `fit_diff` | `determination_diff` |
+| `fit_diff` | `_determination_diff` |
 | `fit`, the pass keyword | `determine` |
 | `fit-plan` | `determination-plan` |
 | fit mode, the runner's | determination mode |
@@ -75,6 +75,14 @@ On 2026-09-11, the spatial record took its algebra's names, in lib.dl, the tooli
 | `ShiftInvariance` | `OffsetInvariance` |
 | `DividerFrame` | `DividerTiles` |
 | `BoxCells`, `BoxFrame`, `MarginFrame`, `Reframe` | retired into `crop`, `box_edge`, `interior`, `relative`, and the constructors |
+
+## Lib modules (2026-09-12)
+
+On 2026-09-12, `programs/lib.dl` became a root that includes the modules under `programs/lib/`. A solver still includes `../lib.dl`.
+
+| Former | Current |
+| --- | --- |
+| `determination_diff` | `_determination_diff` |
 
 ## Docs
 

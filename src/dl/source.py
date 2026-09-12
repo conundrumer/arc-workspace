@@ -8,7 +8,7 @@ from dl.dlparse import SECTION_RE, Comp, Decl, ParseError, Rigid, parse
 
 # Per-mode IO directives, appended to the built source.
 SOLVE_DIRECTIVES = ".input in(IO=stdin)\n.output out(IO=stdout)\n"
-DETERMINE_DIRECTIVES = ".input ex_in\n.input ex_out\n.output determination_diff(IO=stdout)\n"
+DETERMINE_DIRECTIVES = ".input ex_in\n.input ex_out\n.output _determination_diff(IO=stdout)\n"
 
 COMP_HEADER_RE = re.compile(r"\.comp\s+(\w+)")
 DECL_RE = re.compile(r"\.decl\s+(\w+)\s*\(([^)]*)\)")
@@ -513,11 +513,11 @@ def build_determine_source(source: str, params: dict[str, list[str]]) -> str:
                 ]
         else:
             lines.append(
-                f'determination_diff("{name}") :- '
+                f'_determination_diff("{name}") :- '
                 f'determine.{name}({args}), !params.{name}({args}).'
             )
             lines.append(
-                f'determination_diff("{name}") :- '
+                f'_determination_diff("{name}") :- '
                 f'params.{name}({args}), !determine.{name}({args}).'
             )
     appended = "\n".join(lines)
