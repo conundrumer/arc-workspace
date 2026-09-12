@@ -35,6 +35,9 @@ LOCATOR_RE = re.compile(r"^(?P<file>.*) \[(?P<line>\d+):\d+-\d+:\d+\]$")
 # Where a profile keeps its per-rule records, under one relation.
 RULE_BUCKETS = ("non-recursive-rule", "recursive-rule")
 
+# The CPU seconds one Souffle run of one grid gets.
+CPU_LIMIT_SECONDS = 5
+
 # The profiled rerun has to reach the end, so it runs under a raised limit.
 # A pair that overruns the budget lands well inside this multiple of it, and
 # a pair that does not is past reporting anyway.
@@ -109,7 +112,7 @@ def _temp_source(built: str) -> Iterator[Path]:
 
 def _run_source(
     built: str, stdin_text: str, extra_args: list[str] | None = None,
-    cpu_limit: int = 5, solver_path: Path | None = None,
+    cpu_limit: int = CPU_LIMIT_SECONDS, solver_path: Path | None = None,
 ) -> str:
     """Write built source to a tempfile and run Souffle on it.
 
@@ -156,7 +159,7 @@ def compile_check(built: str) -> str | None:
 
 def _souffle(
     dl_path: Path, stdin_text: str, extra_args: list[str] | None = None,
-    cpu_limit: int = 5,
+    cpu_limit: int = CPU_LIMIT_SECONDS,
 ) -> str:
     # -L/-lfunctors load the functor shared library build_functors compiled —
     # lib.dl's primitives call into it.

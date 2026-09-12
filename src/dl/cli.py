@@ -34,7 +34,12 @@ from dl.solve import (
     run_pair,
     run_task,
 )
-from dl.souffle import _pool_workers, build_functors, sweep_temp_sources
+from dl.souffle import (
+    CPU_LIMIT_SECONDS,
+    _pool_workers,
+    build_functors,
+    sweep_temp_sources,
+)
 from dl.source import expand_macros
 from dl.sweep import MAX_CANDIDATES, render_sweep, sweep_report
 
@@ -266,25 +271,33 @@ grid pasted out of a task file works unchanged.
 
 Each case of the solver's Choice prints its own grid, which is what a
 divergence witness needs: one input, one output per case.
+"""
 
-Without the runner, the same run by hand. `-L programs` is what loads
-libfunctors.dylib, which lib.dl's primitives call, and the built file has to
-sit in programs/solvers/ for `#include "../lib.dl"` to resolve:
+RUN_HELP = f"""\
+Each grid a command runs gets a {CPU_LIMIT_SECONDS}s Souffle CPU limit; determination
+feeds every example to one process, so its limit scales by example count.
+A run that exceeds its limit fails, and the failure names the rule that
+burned the most CPU.
 
-    { cat programs/solvers/<stem>.dl
+Without the runner, the same per-grid run by hand. `-L programs` is what
+loads libfunctors.dylib, which lib.dl's primitives call, and the built file
+has to sit in programs/solvers/ for `#include "../lib.dl"` to resolve:
+
+    {{ cat programs/solvers/<stem>.dl
       echo '.input in(IO=stdin)'
       echo '.output out(IO=stdout)'
-    } > programs/solvers/.tmp.dl
+    }} > programs/solvers/.tmp.dl
     souffle -D- -w -L programs -lfunctors programs/solvers/.tmp.dl
 
-Souffle then reads one fact line per cell on stdin, `[top, bottom, left,
-right]`, a tab, then the color — so the 3x3 grid above starts with
+Souffle reads one fact line per cell on stdin — `[top, bottom, left,
+right]` edge distances, a tab, then the color — so in a 3x3 grid the
+top-left cell, in color 7, is
 
-    [0, 2, 0, 2]<TAB>0
-    [0, 2, 1, 1]<TAB>1
+    [0, 2, 0, 2]<TAB>7
 
-A solver with GRID or RIGID call sites needs dl.source.expand_macros over
-the source first; the runner does that for you.
+Add `-p <file>` for a profile that souffleprof reads. A solver with GRID
+or RIGID call sites runs on the `expand` command's output, not on the
+source; the runner expands for you.
 """
 
 
@@ -687,13 +700,19 @@ COMMANDS = ("run", "lint", "grid", "sweep", "deletions", "audit", "determination
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run Souffle solvers and their checks.")
+    parser = argparse.ArgumentParser(
+        description="Run Souffle solvers and their checks.",
+        epilog="`run --help` holds the runner's CPU budget and the by-hand "
+               "Souffle invocation.",
+    )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     run = sub.add_parser(
         "run",
         help="pairs, lint, determination checks; the default when no command "
              "is named",
+        epilog=RUN_HELP,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     lint = sub.add_parser("lint", help="lint only, no solver runs")
     run.add_argument("stems", nargs="*",

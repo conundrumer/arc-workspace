@@ -8,7 +8,7 @@ from arc.task import load as load_task
 from dl.determine_deps import Step, determine_cycles, render_cycles
 from dl.facts import _parse_relations, _parse_value, example_facts
 from dl.paths import SOLVERS_DIR
-from dl.souffle import _run_source
+from dl.souffle import CPU_LIMIT_SECONDS, _run_source
 from dl.source import build_determine_source, determined_params, rigid_decls
 
 
@@ -47,7 +47,7 @@ def determine_check(source: str, task) -> DetermineResult | None:
             # scales by example count.
             stdout = _run_source(
                 build_determine_source(source, params), "", ["-F", facts_dir],
-                cpu_limit=5 * (len(task.train) + len(task.test)),
+                cpu_limit=CPU_LIMIT_SECONDS * (len(task.train) + len(task.test)),
             )
         rels = _parse_relations(stdout)
         diff = sorted({row.strip() for row in rels.get("_determination_diff", [])})
