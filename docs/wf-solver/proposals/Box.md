@@ -23,7 +23,7 @@ Every other reading, a rectangle, a margin, an inset, a change per edge, is a Bo
 
 The operations, as the algebra gives them:
 
-- **Addition composes framings.** For a box A in the frame and a box B in A's own frame, A + B is B in the outer frame. A cell seated in a box, a box moved by an offset, a frame inset by a margin: one operation.
+- **Addition composes framings.** For a box A in the frame and a box B in A's own frame, A + B is B in the outer frame. A cell seated in a box, a box moved by an offset, a frame inset by a margin, a box seated in a let-out frame: one operation.
 - **Subtraction is relative position.** B − A is B in A's frame. A cell minus a box is the cell in the box's coordinates. One cell minus another of the same frame is the offset between them.
 - **The pointwise order is nesting.** A ≥ B pointwise iff A lies inside B: larger margins, smaller rectangle. A cell inside a box is the extent-1 case. Strict > is the interior: inside, and touching no side.
 - **Coverage is nonnegativity of the relative position.** p inside B iff p − B ≥ 0: the relative cell lies on the box's own frame.
@@ -32,7 +32,7 @@ The operations, as the algebra gives them:
 - **An axis-only record is a band.** With the other axis zero, it is the whole row or column through a cell. `split` gives a cell's two bands, and their sum is the cell.
 - **The D4 action permutes the components**, so it preserves addition, the order, and the sums up to an axis swap. Every operation above is equivariant.
 
-**Typing rule.** A primitive types a column `Box` unless it reads the frame's extent from the value, which assumes a cell: the `axis_dim` and `divide` families, and the cell inputs of comps keep `Position`. A column holds `Offset` when its value is a translation by construction: `jump_offset`, `step_offset`, `OffsetInvariance.cand`, `Components.step`.
+**Typing rule.** A primitive types a column `Box` unless it reads the frame's extent from the value, which assumes a cell: the `axis_dim` and `divide` families, and the cell inputs of the comps that read it. `Bbox` reads no extent, so its `cell` is a `Box`, and the bounding box of a set of offsets is the kernel case. A column holds `Offset` when its value is a translation by construction: `jump_offset`, `step_offset`, `OffsetInvariance.cand`, `Components.step`.
 
 ## Primitives
 
@@ -76,6 +76,12 @@ box_corner(P, B, D) :- inside(P, B), corner_anchor(D, P, B).
 .decl axis_inset(d: Dir, k1: number, k2: number, b: Box) inline
 .decl uniform_inset(k: number, b: Box) inline
 
+// The frame let out: by k on side d; by k1 on side d and k2 on its opposite;
+// by k on every side. A box seated in it by `compose` is that box let out.
+.decl edge_outset(d: Dir8, k: number, b: Box) inline
+.decl axis_outset(d: Dir, k1: number, k2: number, b: Box) inline
+.decl uniform_outset(k: number, b: Box) inline
+
 // Translations: k cells toward d; one cell toward d.
 .decl jump_offset(d: Dir8, k: number, v: Offset) inline
 .decl step_offset(d: Dir8, v: Offset) inline
@@ -91,7 +97,7 @@ The criterion: a comp earns its keyed-input machinery only where a derivation fo
 
 Remain:
 
-- `Bbox` — the pointwise minimum over `cell`, an aggregate. Its one readout is `box(key, b: Box)`. `edge_min` is `dist` on the box, `inside` is `inside` over the caller's own domain, `edge_cell` and `corner` are `box_edge` and `box_corner` over the set, `extent` and `extents` are `box_extent`, and `grid` fed only `inside`; all retire. An instance named `box` renames in the same pass, so no site reads `box.box`.
+- `Bbox` — the pointwise minimum over `cell`, an aggregate, defined over any boxes: `cell(key, p: Box)`. Its one readout is `box(key, b: Box)`. `edge_min` is `dist` on the box, `inside` is `inside` over the caller's own domain, `edge_cell` and `corner` are `box_edge` and `box_corner` over the set, `extent` and `extents` are `box_extent`, and `grid` fed only `inside`; all retire. An instance named `box` renames in the same pass, so no site reads `box.box`.
 - `DirPack` — gathers four Dir-keyed rows into one value. Readout `box(key, b: Box)`; the caller's column names the reading. `Dir` states the key of its input rows, as in `DirFrame`. A caller with an edge of no width writes that edge's zero row: zero is absence, and the program may write 0.
 - `DrawnRect` → `Outlines` — recursion over runs. Readout `rect(key, b)` → `box(key, b: Box)`.
 
@@ -115,6 +121,8 @@ Each box unit is a move between three representations; after the change, the com
 | box            | —         | `crop`              | `box_edge`, `inside`, `interior` |
 
 `Outlines` stands outside the matrix as the one detector — cell set to many boxes — feeding the box row.
+
+The whole inner frame of a box is the inner view over the grid. `Frame2D`, fed from `box_extent`, enters only where the grid does not hold the box: a box of offsets, or one reaching past the frame.
 
 ## Caller shape, before and after
 
@@ -141,15 +149,15 @@ out(P_rel, Col) :- bbox.box(K, B), in(P, Col), crop(P, B, P_rel).
 
 ## Names
 
-The names are the geometric vocabulary, the corpus's own register, throughout: `Box`, `Position`, `Offset`; `ZERO` for the zero box, since "origin" names a point and the record is the whole frame; `compose` and `relative`; `inside` and `interior`; `crop`; `box_edge`, `box_corner`, `box_extent`; the inset and offset constructors; `Bbox`, `DirPack`, `Outlines`, `OffsetInvariance`. Every box readout is `box`. A local relation that takes one of these names renames.
+The names are the geometric vocabulary, the corpus's own register, throughout: `Box`, `Position`, `Offset`; `ZERO` for the zero box, since "origin" names a point and the record is the whole frame; `compose` and `relative`; `inside` and `interior`; `crop`; `box_edge`, `box_corner`, `box_extent`; the inset, outset, and offset constructors; `Bbox`, `DirPack`, `Outlines`, `OffsetInvariance`. Every box readout is `box`. A local relation that takes one of these names renames.
 
 The word "frame" carries two senses today: the coordinate frame a Position is relative to (style.md's Position frames — grid, tile, intile — and prose like "the box's own frame"), and the realized-cells sense in comp names (`DirFrame`, `AxisFrame`, `Frame2D`, `OrderFrame`, `frame_pos`) — with `MarginFrame` and `BoxFrame` until now carrying a third meaning, an inner view. Retiring those two purges the third sense, and this change adopts the result as a rule: **Frame in a unit name means a frame of cells realized or induced from data; the coordinate-frame sense lives in prose and in Position column names.** The rule keeps `DirFrame`, `AxisFrame`, `Frame2D`, and `OrderFrame`: each realizes a frame from indices, an extent, per-axis extents, or an ordered member set, and `DirFrame` against `AxisFrame` states the directed/undirected distinction that a source-data rubric (`IndexFrame`, `ExtentFrame`) would bury.
 
 ## Surface
 
-lib.dl: the header comment, which carries the Foundation; the type block; `ORIGIN` → `ZERO`; the retyped signatures under the typing rule; the renamed and new inlines; the comps named above; every doc comment saying Shift or Inset. docs/wf-solver: principles.md, where the Foundation's readings back Relational form and ARC types; style.md's Position-frames section — for the reading comment, the frame rule, the `crop` intile reading, the program-literal rule (every lib constant macro but `ZERO`), and a variable rule by reading (`B` for a Box, `V` for an Offset, `P_rel` for a relative cell; `M` retires as a box name); patterns.md's "Boxes as margin Positions" entry, whose content becomes the Box type's own comment, and its type-directed closure line naming Shift and Inset; tests/test_context.py, which asserts that entry's index line. Solvers: those writing `ORIGIN`, those typing a parameter Shift or Inset, those initing a retiring comp, the detector, or `ShiftInvariance`, those calling `displacement`, `geq`, `gt`, `jump_delta`, `step_delta`, or an inset constructor, those reading a Bbox's `margin`, `edge_min`, `inside`, `edge_cell`, `corner`, `extent`, or `extents`, and those declaring a local `inside` or `interior`.
+lib.dl: the header comment, which carries the Foundation; the type block; `ORIGIN` → `ZERO`; the retyped signatures under the typing rule; the renamed and new inlines; the comps named above; every doc comment saying Shift or Inset. docs/wf-solver: principles.md, where the Foundation's readings back Relational form and ARC types; style.md's Position-frames section — for the reading comment, the frame rule, the `crop` intile reading, the program-literal rule (every lib constant macro but `ZERO`), and a variable rule by reading (`B` for a Box, `V` for an Offset, `P_rel` for a relative cell; `M` retires as a box name); patterns.md's "Boxes as margin Positions" entry, whose content becomes the Box type's own comment, and its type-directed closure line naming Shift and Inset; tests/test_context.py, which asserts that entry's index line. Solvers: those writing `ORIGIN`, those typing a parameter Shift or Inset, those initing a retiring comp, the detector, or `ShiftInvariance`, those calling `displacement`, `geq`, `gt`, `jump_delta`, `step_delta`, or an inset constructor, those reading a Bbox's `margin`, `edge_min`, `inside`, `edge_cell`, `corner`, `extent`, or `extents`, and those declaring a local `inside` or `interior`. Tooling: `src/dl/domains.py`, which keys the sweep's magnitude classes on `Shift` and `Inset`; `src/dl/sweep.py`; `src/dl/source.py`, for the type-to-closure map and the `Shift` that `GRID_STAMP` emits; `src/dl/lint.py`, for the `ORIGIN` exemption; `src/dl/rewrite_lint.py`, where `compose` maps to `ShiftInvariance.mismatch` and the delta primitives are read by name; `tests/test_lint.py`, `tests/test_rigid.py`, `tests/test_rewrite_lint.py`; the `BoxFrame` example in `docs/souffle-undocumented.md`; patterns.md's `GRID_STAMP` line, which names `Shift`.
 
-Related entries: `Bbox-gap.md` (open) states its code form on `Bbox.inside` and its `Not:` line on `BoxCells.hole`; `Bbox-corner_cell.md` (closed) rests on the one-atom `!corner` and on `inner` plus `corner_dist`. Both are re-read against this change.
+Related entries: `Bbox-gap.md` (open) states its code form on `Bbox.inside` and its `Not:` line on `BoxCells.hole`; `Bbox-corner_cell.md` (closed) rests on the one-atom `!corner` and on `inner` plus `corner_dist`; `Outset.md` and `Concentric.md` build a let-out box, which the outset constructors state; `Bbox-edge_gap.md`, `Bbox-flush.md`, `Bbox-place.md`, `Bbox-advance.md`, and `Bbox-open_corner.md` state readouts on `on_edge`, `margin`, `edge_min`, `extent`, or `corner`; `shift_opposite.md` matches `displacement` with `ORIGIN`; `D4Placement.md` defines itself through `ORIGIN` and `ShiftInvariance`; `ShiftInvariance-shortest.md` and `ShiftInvariance-unbroken.md` name the comp; `apply_about.md` composes `displacement` and `compose`; `Reframe-extents.md` closed on the `Reframe` route, which `box_extent` replaces. Each is re-read against this change.
 
 Not: `Dim` (the frame's extent, ParamsHelpers grouping notation); `Rim` and `Components` (cell-set units holding no box value); graph edges (`Order.before`, `CycleWalk.succ`).
 
@@ -289,3 +297,126 @@ Reimplementations:
 - `/Users/davidlu/code/arc-workspace/programs/solvers/4c177718.dl` line 148 (`placement`): `pay_box.inner` plus `corner_anchor(Diag_pay, P_inner, ORIGIN)` — `Bbox.corner` (the closed `Bbox-corner_cell.md` rests on this idiom; the entry's Spec already routes it to `box_corner`).
 - `/Users/davidlu/code/arc-workspace/programs/solvers/6cbe9eb8.dl` line 64 (`obox`): `box.inner` plus `corner_dist(Q_in, Diag, 0)` — `Bbox.corner`, same note.
 - `/Users/davidlu/code/arc-workspace/programs/solvers/3eda0437.dl` lines 47 and 54 (`Parse.box_ink`, `Parse.hole_cell`): `geq(P, B)` over the domain against `span.margin` — `Bbox.inside` with `grid` fed, keyed by the collapsed box instead of the span key.
+
+Survey: 2026-09-11 20:36 — the solvers since 2026-09-10 15:01.
+
+Callers:
+
+The operation is the Box change the entry specifies: the edge-margin record as a named type with its two aliases, the inlines that state its algebra (`compose`, `relative`, `inside`, `interior`, `crop`, `box_edge`, `box_corner`, `box_extent`, the inset/outset/offset constructors), and the retirement of `BoxCells`, `BoxFrame`, `MarginFrame`, and `Reframe` into those inlines. The Match clauses reach 43 of the scope's 59 files. The box units in scope are 30 `BoxFrame` inits in 19 files, 21 `Bbox` inits in 17 files, 9 `BoxCells` inits in 8 files, 7 `DrawnRect` inits in 7 files, 4 `Reframe` inits in 4 files, and 1 `ShiftInvariance`; no `MarginFrame` and no `DirPack`. The 16 files that match nothing hold no box unit, no `ORIGIN`, no `Shift` or `Inset` column, and no delta constructor.
+
+`crop`, the inner view. `BoxFrame.inner` is read 44 times: 26 full views, 17 inner-set-only, 1 membership-only, 4 of them negated. 10 of the 30 inits feed `grid` (a crop); the other 20 feed `cell` only, where the box is the set's own hull.
+
+1990f7a8 paint — a shape cell in its box, redrawn in the block its box's quadrant claims.
+1990f7a8 rel — `Reframe` with a box outer: each shape's box margins inside the four boxes' joint span.
+4c416de3 site — a grid cell at an outline box's corner, read in the box's frame.
+57edb29d mark — a panel cell in the panel's own frame; `target_cell` reads the inner set alone.
+5833af48 plan_cell — a block's cells in the block's frame; `tiles.cell` feeds the inner set to a `Tile2D`.
+5dbc8537 shape — a piece's cells in its box; `out` crops the template panel.
+652646ff Determine.shape — the figure read from its box, the grid cell wildcarded.
+6cbe9eb8 obox — the corner cell of a shape, in its own frame.
+846bdb03 crop — the marked box cropped; `placed` views the floating shape in its box.
+868de0fa rect_odd — a hole's inner frame, tested by `centered`; `region_odd` the same for a closed region.
+8698868d out — the blocks' region cropped, with the piece's cell read at the block's interior position.
+8731374e flaw — `Reframe` with a box outer, the covering test written as `covered(B, P) :- ..., geq(P, B)`.
+88a10436 seated — the box's center cell, and every box cell as an offset from it.
+88a62173 tile_val — a divider tile's cells in the tile's own frame.
+898e7135 out — the board's box cropped; `congruent.observed_member` reads hole and piece inner sets.
+8a004b2b frame_cell — the marker frame cropped; `drawing` views the blueprint in its box.
+8a6d367c crop — `Reframe` with a box outer, the covering test `geq(P, B)` written in the `cell` rule; `out` reads the frame's hole in its own frame.
+8cb8642d out — a rectangle's inside in its own frame; `join.cell` and `nearest.cand` read the inner set.
+8e1813be square.inner — a square cell's position across the stripe.
+8efcae92 out — the crop, one rule.
+8f215267 kept — `Reframe` with a box outer, the covering test `gt(P, B)`: the strict interior.
+8f2ea7aa shape — the block cropped.
+
+`relative` and `compose`, the seat and the framing sum.
+
+652646ff drawn — an `Occurrences` placement read back as a box by `displacement(M, ORIGIN, Box)`, then the figure seated in it.
+6cbe9eb8 obox — the box that seats a shape's inner corner cell on the previous shape's anchor.
+5dbc8537 covers — a piece's pattern seated at a placement.
+890034e9 twin — the hole's cells seated at a placement.
+8a004b2b painted — a frame cell seated in the drawing through a placement.
+10fcaaa3 halo — a stamp offset seated on a mark; `Determine.witness` reads the offset back.
+4c416de3 stamp — a shape's offsets turned and seated on a corner site.
+84ba50d3 off_grid — a shape cell displaced by a fall offset; `through` displaces a whole band the same way.
+8b9c3697 carried — a mover's cells at a slide displacement, with `ORIGIN` as the zero offset.
+7c66cb00 landed — a shape cell carried by the offset `fall` measures between two edge cells.
+85b81ff1 moved — a box-to-box offset applied to a cell; the same rule's `out` composes a line band with an across band to name a cell.
+8719f442 seated — an input cell composed with a `uniform_delta`, seating it in the frame let out by one ring.
+8abad3cf edge_off — per-edge offsets accumulated from `ORIGIN` by repeated `compose` of `edge_delta`; `row_off` sums the two edges' offsets, and `paint` composes a band into the result and two bands into a cell.
+538b439f image — a cell relative to a divider line's band, flipped, and composed back.
+88207623 (the same shape) — a cell relative to a line band, flipped, composed back.
+8e5c0c38 mirrored — the offset carrying a flipped cell onto a shape cell.
+543a7ed5 ring_box — a box let out by a uniform inset through `displacement(W, M, B)`.
+8b28cd80 next_ring — the same, recursively: each ring is the inner ring let out by one cell.
+
+`inside` and `interior`.
+
+4c416de3 shape — a corner site covered by a mark's box.
+538b439f hole — a box cell that the component does not fill.
+543a7ed5 fill_cell — a bg cell inside a shape's box; `ring` pairs `geq` on the let-out box with a negated `inside`.
+7b0280bc gap — a box cell the piece leaves empty.
+84f2aca1 region — bg cells inside an object's box, and `gt(P, B)` for the inside of a drawn rectangle.
+8fbca751 filled — a bg cell inside a group's box.
+6cbe9eb8 gap — a box cell of another color.
+846bdb03 shape.cell — the ink outside the marked box; `interior.cell` uses `gt(P, ORIGIN)` for off-border.
+8698868d enclosed.node — bg inside a square's box; `interior.cell` writes `gt(P, M)` for the block's strict interior; `layout.cell` gathers the blocks' covered cells.
+8a004b2b blueprint.cell — the ink outside the frame's box.
+8731374e covered — the cells a drawn rectangle covers, `geq(P, B)`.
+8f215267 view.cell — the cells strictly inside a frame's box, `gt(P, B)`.
+
+`box_edge` and `box_corner`.
+
+6cbe9eb8 paint — a box's edge line, and its hole for a block; `inward` negates `edge_cell`.
+810b9b61 painted — a rectangle's edge line; `edge_gap` tests an unoccupied edge cell.
+890034e9 stray — a cell of the outline's color off its edge line; `hole` reads the inside.
+868de0fa fill — a rectangle's hole, fed on to a `BoxFrame`.
+8a6d367c held — a rectangle's hole; `out` reads its edge line.
+8b28cd80 next_ring — the edge line as existence, ending the ring recursion; `out` paints it.
+8cb8642d frame_color — the box's edge line; `marker_color` and `inside.cell` read the hole.
+8f215267 in_hole — an object cell in a rectangle's hole; `frame` reads the edge line.
+7c66cb00 fall — the set's cells on the box's d-side, on both the shape and its band.
+8ba14f53 before — the set's d-side cells of two shapes, compared by `nearer`.
+8a371977 ring_cell — the d-side cells of a `Bbox` taken over tile positions.
+57edb29d field — the set's cells on the box's edge, read for the panel's field color.
+85fa5666 Parse.seat — the set's cell at a box corner, stepped off diagonally.
+4c416de3 site — a covered cell at a box corner, written as `inner` plus `corner_dist(P_box, D, 0)`.
+6cbe9eb8 obox — the same idiom, `inner` plus `corner_dist(Q_in, Diag, 0)`.
+
+`Outlines` (`DrawnRect`): 810b9b61 rcells.box, 84f2aca1 rect_id.equiv, 868de0fa bcells.box, 8731374e covered, 890034e9 bcells.box, 8a6d367c bcells.box, 8f215267 bcells.box. Five of the seven feed `rect` straight into a `BoxCells` box; 84f2aca1 feeds it to a `Canon` to label the rectangle, and 8731374e counts each rectangle's covered cells with a `Mode` to pick the largest.
+
+The readings. `ORIGIN` stands at 11 sites in 7 files: the zero offset (84ba50d3 fall.node, 8b9c3697 docked and trail), the whole frame (6cbe9eb8 obox, 8b28cd80 lattice), the zero box that starts an accumulation (8abad3cf edge_off, two sites), the base of a placement-to-box read (652646ff drawn), and off-border `gt` (846bdb03 interior.cell). `Shift` types 17 columns in 6 files (10fcaaa3, 4c416de3, 7c66cb00, 84ba50d3, 8b9c3697, 8e5c0c38), every one a translation. `Inset` types 4 columns in 3 files, each a frame change rather than a box: 8719f442 seat_delta and 8b28cd80 ring_step are `uniform_delta` outputs, one composed onto a cell and one subtracted from a box; 8abad3cf edge_off and row_off are accumulated per-edge offsets. `ShiftInvariance` stands once, at 53fb4810 shift, read through `period` alone, so no `delta` column crosses the interface.
+
+Near-misses:
+
+- 891232d6 turned: declared `(b: Position, r: Position)`, and `b` names the cell a climb rests on, not a box. It matches the parameter-read-as-margins clause on its column name only.
+- 878187ab box: a `Frame2D` instance named `box`, whose extents come from two cell counts. Its `box.extent` and `box.cell` match the `.extent(` clause and hold a frame, not a bounding box. 8b7bacbf box is a `Reach` instance, the same naming coincidence.
+- 8a371977 params.inside: a Color parameter, matched by the `.inside(` clause. Qualified by `params`, so it does not clash with the proposed inline.
+- 85b81ff1 moved: `displacement(B_src, B_dst, V)` between two boxes of one frame, with no covering test — an offset, not an inner view.
+- 652646ff tile: `axis_delta(D, R, R2, P_tile)` builds a cell of an R+R2+1 frame from two ranks; the output is a Position, not an inset. 878187ab x_edge and 8abad3cf rest_dir are direction data, unrelated.
+- 10fcaaa3 Determine.witness, 4c416de3 shape, 7c66cb00 fall, 8e5c0c38 mirrored: `displacement` between two cells, giving a translation, with no box in the rule.
+- 846bdb03 bar: a crop cell on the crop frame's own border, `dist(P, D, 0)`. The cell already sits in the inner frame, so `box_edge(P, ZERO, D)` would be an indirection past a one-atom form. 8719f442 copy and 543a7ed5 outside.seed read the grid border the same way.
+- 878187ab paint: `corner_anchor(Diag, P_grid_out, P_inner)` seats a `Frame2D` cell at a canvas corner. It matches the corner clause and states a placement, not a box read.
+- Instances named `box`: 20 in 19 files, of which 18 are box units and rename under "every box readout is `box`".
+
+Spec:
+
+- **`extent` and `extents` stay `Bbox` readouts.** 13 reads in 10 files; 11 of them bind no frame cell, so `box_extent(b, p, a, n)` would make each add a cell atom only to name the frame. The clearest are 53fb4810 period (a box extent becomes a wallpaper period), 5833af48 tiles.dim and 8a6d367c blocks.dim (a box extent becomes a tile size), 8a004b2b tile.extent (a box extent becomes a `Frame2D` extent), 8698868d size.cand (box extents ranked against each other), and 84f2aca1 extent_fill (a box's extents are a table key). This re-witnesses the reading recorded at 2026-09-10.
+- **A realized inner frame has no row in the matrix.** 17 of the 44 `inner` reads wildcard the grid cell and read the box's own frame as a position set. Three of them feed it to another unit as a domain: 5833af48 tiles.cell and 8a6d367c blocks.cell feed a `Tile2D`/`Divide2D` `cell` input, and 8cb8642d join.cell feeds a `Between` domain. Two read it for a property of the extents alone — 868de0fa rect_odd and region_odd test `centered(P_inner)` and never touch a grid cell. `crop` needs its cell grounded, so each of these adds a domain atom or builds the `Frame2D` of the box's extents.
+- **The outset has a third form.** Beyond the two sites that let a box out by `displacement(W, M, B)` (543a7ed5 ring_box, 8b28cd80 next_ring, the latter recursive), 8719f442 seated composes a `uniform_delta` onto a cell to seat it in a let-out frame. The first form needs an outset reading of `relative`, whose gloss ("M in W's frame") is not what the site means; the second is plain `compose` against an outset box. An outset constructor states both in one vocabulary.
+- **`compose` is used as repeated addition, which no constructor states.** 8abad3cf edge_off starts at `ORIGIN` and accumulates one `edge_delta` per square and one per gap along a recursion; `row_off` then adds the two edges' results. The inset constructors each take one k and cannot state an accumulated offset, so these sites need the group operation named, not a constructor. This is the scope's strongest witness for the Foundation's group reading.
+- **Boxes enter comp key and member positions.** Five files key `BoxCells` by the box itself (868de0fa, 890034e9, 8a6d367c, 8b28cd80, 8f215267), 868de0fa keys a `BoxFrame` by it, 8f215267 keys a `Reframe` by it, 890034e9 puts one in a record key with the case, 5dbc8537 puts one in a `Cand` record, 84f2aca1 runs `Canon<Position>` over boxes to label them, and 8731374e runs `Mode<Unit, Position, Position>` over boxes to pick the largest. The Box type would surface in each. Two sites go further and feed boxes to comps whose `cell` input reads Position fields: 1990f7a8 quad.cell feeds box margins to `DiagPlacement`, and 5dbc8537 reads.cell feeds box margins and placements to `LexOrder`. Under the typing rule those inputs stay `Position` because they read the frame's extent; both sites feed a Box deliberately and rely on that reading. The rule's reason, not its type, is what the entry should state there.
+- **Negated readouts.** 11 negated reads in 9 files need a local wrapper after retirement: `inside` at 543a7ed5 ring, 846bdb03 shape.cell, 8a004b2b blueprint.cell; `inner` at 846bdb03 out, 8698868d out, 8a6d367c contradicted and out; `view` at 8a6d367c outside; `edge_cell` at 6cbe9eb8 inward; `on_edge` at 890034e9 stray; `hole` at 8cb8642d out. No read sits in an aggregator.
+- **Name clashes.** A local relation `crop` at 846bdb03; instances `crop` at 8731374e, 8a6d367c, 8efcae92; `inside` at 8cb8642d; `interior` at 846bdb03 and 8698868d; `view` at 5dbc8537 and 8f215267; `hole` at 8a6d367c; `box` at 18 box-unit instances in 17 files. Two further instances named `inside` and `interior` belong to other units (8f3a5a89 `Rim8`, 7c66cb00 `Unanimous`) and rename only if the names are reserved program-wide.
+- **No stored box.** No parameter in scope holds a box. The three `Inset` parameters (8719f442 seat_delta, 8b28cd80 ring_step, and 8abad3cf's derived offsets) hold a frame change, and each derives from `uniform_delta` or `edge_delta` rather than storing edge values. This scope adds no witness for `Box` as a Params type.
+- **`DirPack` and `MarginFrame` go unexercised here.** Neither appears in scope, so this scope neither supports nor opposes keeping `DirPack`.
+
+Reimplementations:
+
+- 8698868d interior.cell — `box.margin(Id, M), in(P, _), gt(P, M)` is `BoxCells.hole`, the box's strict interior over a caller-supplied domain. The file already holds the `BoxFrame` the margins come from and inits no `BoxCells`.
+- 8f215267 view.cell — `view.outer(B, _), in(P, _), gt(P, B)` is `BoxCells.hole`, and the file already inits `bcells = BoxCells<Position>` for its other case's boxes.
+- 84f2aca1 region — `rect_id.id(B, Id), bg_cell(P), gt(P, B)` is `BoxCells.hole` over the bg cells, with the box coming from `DrawnRect` through a `Canon`.
+
+A near-miss of the same class is not one: 8731374e covered, 8a6d367c crop.cell, and 543a7ed5 ring use `geq`, the covered cells including the edge line, which `BoxCells` does not expose.
+
+The lexical Match clauses ran as grep over the 59 files. The two shape clauses ran with the parser over rule structure: a covering test (`geq`, `gt`, a `.inside` read) sharing two variables with a `displacement` or `compose` in the same rule, and an inner view beside a zero-distance or `same_dist` test. The shape clauses returned 10 hits, of which 4 are the corner and border sites reported above and 6 resolve to parameter reads with no box.
