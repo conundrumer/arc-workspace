@@ -133,7 +133,7 @@ out(P_grid_out, Col, Impl) :-
     ring_cell(P) :- ex_out(_, P, _), dir_elem(D), dist(P, D, 0).
 
     .decl ring_corner(diag: DiagDir, p: Position)
-    ring_corner(Diag, P) :- ring_cell(P), corner_anchor(Diag, P, ORIGIN).
+    ring_corner(Diag, P) :- ring_cell(P), corner_anchor(Diag, P, ZERO).
 
     // One step from a ring cell in sense s, along an edge the cell sits on.
     .decl border_step(p: Position, s: Sense, p_next: Position)

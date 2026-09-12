@@ -56,13 +56,13 @@ perm(P_grid_in, P_grid_out, $Count()) :-
     in(P_grid_in, _),                                       // input cell
     params.anchor(D), params.divisor(N),
     divide_2d(P_grid_in, N, 0, P_grid_out, P_intile),
-    corner_anchor(D, P_intile, ORIGIN).                     // the tile's corner-D cell
+    corner_anchor(D, P_intile, ZERO).                     // the tile's corner-D cell
 
 perm(P_grid_in, P_grid_out, $Size()) :-
     in(P_grid_in, _),                                       // input cell
     params.anchor(D), params.tile_size(K),
     divide_by_size_2d(P_grid_in, K, 0, P_grid_out, P_intile),
-    corner_anchor(D, P_intile, ORIGIN).                     // the tile's corner-D cell
+    corner_anchor(D, P_intile, ZERO).                     // the tile's corner-D cell
 
 .decl out(p: Position, col: Color, c: Choice)
 out(P_grid_out, Col, Impl) :-

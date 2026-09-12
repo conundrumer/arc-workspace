@@ -122,7 +122,7 @@ place.member([Ch, A], G, L) :-
 .decl group_line(ch: Choice, g: Ident, a: Axis, l: Position)
 group_line(Ch, G, A, L) :-
     place.pos([Ch, A], G, P_outer),                       // its place in the order
-    params.gap(Gap), concat(P_outer, ORIGIN, A, Gap, L).  // one line per place
+    params.gap(Gap), concat(P_outer, ZERO, A, Gap, L).  // one line per place
 
 // The group whose line sits on the frame's d edge.
 .decl edge_group(ch: Choice, d: Dir, g: Ident)

@@ -44,7 +44,7 @@ out(P_grid, Col, $Lookup()) :-
 
 // --- Rot ---
 .decl anchor_tile(p: Position)
-anchor_tile(T) :- params.arr_pos(T), params.anchor(Diag), corner_anchor(Diag, T, ORIGIN).
+anchor_tile(T) :- params.arr_pos(T), params.anchor(Diag), corner_anchor(Diag, T, ZERO).
 
 out(P_grid, Col, $Rot()) :-
     anchor_tile(T), in(P, Col),                          // input fills the anchor tile

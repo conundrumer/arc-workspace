@@ -134,7 +134,7 @@ Program style and the linter apply to the program rules, the Determine comp, and
 ### Bans
 
 - **Literals.** Literals outside proposal comps are banned. The program reads these from Params:
-    - orientation: every lib constant macro but `ORIGIN`
+    - orientation: every lib constant macro but `ZERO`
     - colors
     - non-zero task-shape numbers: lengths, offsets, gaps
 - **Position destructure.** Position destructure is banned. Lib primitives read Position.

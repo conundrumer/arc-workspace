@@ -54,7 +54,7 @@ frame.extent($U(), A, N) :- nest.first($U(), Col), box.extent(Col, A, N).
 // Each shape's box in the output frame: the next shape's corner cell lands
 // on the anchor of the shape before it.
 .decl obox(col: Color, b: Position)
-obox(Col, ORIGIN) :- nest.first($U(), Col).
+obox(Col, ZERO) :- nest.first($U(), Col).
 obox(Col2, B) :-
     nest.next($U(), Col, Col2), anchor(Col, Q),
     params.corner(Diag), box.inner(Col2, _, Q_in), corner_dist(Q_in, Diag, 0),  // Col2's corner cell, in its own frame

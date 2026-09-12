@@ -32,7 +32,7 @@
 // --- $Anchor ---
 marker(P, Col, $Anchor()) :-
     in(P, Col),                                                  // input cell
-    params.marker_corner(Diag), corner_anchor(Diag, P, ORIGIN).  // at marker corner
+    params.marker_corner(Diag), corner_anchor(Diag, P, ZERO).  // at marker corner
 
 // --- $ByCount, $Minority shared helper ---
 .init color_count = Tally<Color, Position>

@@ -68,9 +68,9 @@ apart($Diag()) :- mark_cell(P), mark_cell(Q), !diag.conn($U(), P, Q).
 .decl out(p: Position, col: Color, ch: Choice)
 
 // --- $Wire ---
-out(ORIGIN, Col, [A, $Wire()]) :- joined(A), params.link(Col).
-out(ORIGIN, Col, [A, $Wire()]) :- apart(A),  params.bg(Col).
+out(ZERO, Col, [A, $Wire()]) :- joined(A), params.link(Col).
+out(ZERO, Col, [A, $Wire()]) :- apart(A),  params.bg(Col).
 
 // --- $Table ---
-out(ORIGIN, Col, [A, $Table()]) :- joined(A), params.join_paint(Col).
-out(ORIGIN, Col, [A, $Table()]) :- apart(A),  params.apart_paint(Col).
+out(ZERO, Col, [A, $Table()]) :- joined(A), params.join_paint(Col).
+out(ZERO, Col, [A, $Table()]) :- apart(A),  params.apart_paint(Col).

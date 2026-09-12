@@ -117,13 +117,13 @@ mover(Id, Ch) :- shapes.label($U(), _, Id), impl_choice(Ch).
 
 .init fall = Slide<Fall>
 fall.dir([Id, Ch], D) :- mover(Id, Ch), params.fall_dir(D).
-fall.node([Id, Ch], ORIGIN) :- mover(Id, Ch).
+fall.node([Id, Ch], ZERO) :- mover(Id, Ch).
 fall.node([Id, Ch], Delta) :-
     mover(Id, Ch), shift(Delta), !off_grid(Id, Delta), !through(Id, Delta, Ch).
 
 .decl landed(p: Position, ch: Choice)
 landed(Q, Ch) :-
-    fall.rest([Id, Ch], ORIGIN, _, Delta),          // where the shape comes to rest
+    fall.rest([Id, Ch], ZERO, _, Delta),          // where the shape comes to rest
     shape_row_cell(Id, _, P), compose(P, Delta, Q).
 
 // A divider cell a shape passed: a landed cell lies past it in its column.

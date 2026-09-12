@@ -74,7 +74,7 @@ transform(D, $Derived()) :- inv.compatible($U(), D).
         ex_out(_, P, _),
         axis_of(D, A), sub_extent(P, A, K),   // each axis, each distance
         jump_delta(D, K, Delta).
-    cand(A, ORIGIN) :- axis_elem(A).      // the grid center line itself
+    cand(A, ZERO) :- axis_elem(A).      // the grid center line itself
 
     // Where a candidate's mirror carries each cell: the grid-center flip of
     // the axis, then twice the candidate's offset.

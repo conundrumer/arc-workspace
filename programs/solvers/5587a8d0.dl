@@ -68,7 +68,7 @@ nest.before(Ch, Id, Id2) :-
 // takes the center cell alone.
 .decl covers(ch: Choice, id: Ident, v: Shift)
 .decl within(ch: Choice, id: Ident, v: Shift)
-covers(Ch, Id, ORIGIN) :- nest.last(Ch, Id).
+covers(Ch, Id, ZERO) :- nest.last(Ch, Id).
 covers(Ch, Id, V) :-
     within(Ch, Id, V2),
     ( V = V2                                // what the ring encloses

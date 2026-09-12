@@ -48,7 +48,7 @@ slide.node($U(), Delta) :- fits.occurrence($U(), Delta).
 // The mover at rest, on the last displacement short of the line.
 .decl landed(p: Position)
 landed(P2) :-
-    slide.rest($U(), ORIGIN, _, Delta),
+    slide.rest($U(), ZERO, _, Delta),
     mover_cell(P), compose(P, Delta, P2).
 
 // --- the line behind ---

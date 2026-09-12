@@ -95,8 +95,8 @@ inward(Ch, D2, Col2, Col) :- params.pack_dir(D), opposite(D, D2), row.next(Ch, C
 // A square's offset from an edge of the row's axis: zero for the square at
 // the edge, and one square's side and one gap past the square outward of it.
 .decl edge_off(ch: Choice, d: Dir, col: Color, off: Inset)
-edge_off(Ch, D, Col, ORIGIN) :- params.pack_dir(D), row.first(Ch, Col).
-edge_off(Ch, D2, Col, ORIGIN) :- params.pack_dir(D), opposite(D, D2), row.last(Ch, Col).
+edge_off(Ch, D, Col, ZERO) :- params.pack_dir(D), row.first(Ch, Col).
+edge_off(Ch, D2, Col, ZERO) :- params.pack_dir(D), opposite(D, D2), row.last(Ch, Col).
 edge_off(Ch, D, Col2, Off2) :-
     edge_off(Ch, D, Col, Off), inward(Ch, D, Col, Col2),            // the offset so far
     side(Col, K), edge_delta(D, K, Dk), compose(Off, Dk, Off1),     // past the outward square

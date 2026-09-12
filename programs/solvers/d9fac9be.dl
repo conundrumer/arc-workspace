@@ -40,7 +40,7 @@ outline.cell($U(), P) :- box.cell($U(), P).
 occ.cell(Col, P, $U())  :- in(P, Col), ink(Col).
 occ.shape(Col, S, $U()) :- ink(Col), outline.rim($U(), S).
 
-out(ORIGIN, Col_hole, $Box()) :-
+out(ZERO, Col_hole, $Box()) :-
     occ.occurrence(Col, M),                    // one ink's box
     box.cell($U(), P_ctr), centered(P_ctr),    // the frame's center cell
     compose(M, P_ctr, P_grid),                 // its hole on the grid
@@ -54,7 +54,7 @@ defect(P, A) :-
     dir8_elem(D), neighbor(P, D, P2),    // a surrounding cell
     !in(P2, A).                          // not that ink there
 
-out(ORIGIN, Col, $Ring()) :-
+out(ZERO, Col, $Ring()) :-
     in(P, Col),                              // candidate cell
     ink(A), A != Col,                        // an ink not its own
     !defect(P, A).                           // surround solid in it
@@ -70,5 +70,5 @@ gap(P) :-
     dir8_elem(D), neighbor(P, D, P2),    // a surrounding cell
     !inked(P2).                          // no ink there
 
-out(ORIGIN, Col, $Full()) :-
+out(ZERO, Col, $Full()) :-
     in(P, Col), !gap(P).                     // cell with surround all ink

@@ -46,7 +46,7 @@
     // Fundamental-domain shifts per axis: zero, and 0 < k < period toward
     // the canonical corner.
     .decl axis_rep(key: Key, a: Axis, delta: Shift)
-    axis_rep(Key, A, ORIGIN) :- grid(Key, _), axis_elem(A).
+    axis_rep(Key, A, ZERO) :- grid(Key, _), axis_elem(A).
     axis_rep(Key, A, Delta) :-
         grid(Key, P), sub_extent(P, A, K),
         period(Key, A, Kp), K < Kp,
@@ -60,7 +60,7 @@
     // Lattice elements a candidate's square can reach: zero and one
     // period per axis, toward the canonical corner.
     .decl lat_ax(key: Key, a: Axis, delta: Shift)
-    lat_ax(Key, A, ORIGIN) :- grid(Key, _), axis_elem(A).
+    lat_ax(Key, A, ZERO) :- grid(Key, _), axis_elem(A).
     lat_ax(Key, A, Delta) :- period(Key, A, K), canon(A, D), jump_delta(D, K, Delta).
 
     .decl lat0(key: Key, delta: Shift)

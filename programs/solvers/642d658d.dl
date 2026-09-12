@@ -71,10 +71,10 @@ plus_count.item(Dt, Col, P) :- plus(Dt, P, Col).
 .decl out(p: Position, col: Color, ch: Choice)
 
 // --- $Mode ---
-out(ORIGIN, Col, [Dt, $Mode()]) :- plus_count.mode(Dt, Col).
+out(ZERO, Col, [Dt, $Mode()]) :- plus_count.mode(Dt, Col).
 
 // --- $Count ---
-out(ORIGIN, Col, [Dt, $Count()]) :- plus_count.tally(Dt, Col, N), params.target(N).
+out(ZERO, Col, [Dt, $Count()]) :- plus_count.tally(Dt, Col, N), params.target(N).
 
 .comp Determine {
     .decl center_at(e: Example, p: Position)

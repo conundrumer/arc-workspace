@@ -53,7 +53,7 @@ occ.shape([K1, K2, Col], P, $U()) :- motif(K2, Col, P), motif(K1, Col, _), K1 !=
 // K2 into K1's frame. The fit read from the other frame is the same fit.
 .decl fitted(k1: Ident, k2: Ident, v: Shift)
 fitted(K1, K2, V) :- occ.occurrence([K1, K2, _], V).
-fitted(K2, K1, V_inv) :- fitted(K1, K2, V), displacement(V, ORIGIN, V_inv).
+fitted(K2, K1, V_inv) :- fitted(K1, K2, V), displacement(V, ZERO, V_inv).
 
 // Where the two fragments cover one cell and disagree on it.
 .decl disagree(k1: Ident, k2: Ident, v: Shift)
@@ -80,7 +80,7 @@ join(K1, K2, V) :- seam_cell.clash([K1, K2, V]), !disagree(K1, K2, V).
 // fragment serves as the one held still, and the crop takes the choice back
 // out.
 .decl place(base: Ident, k: Ident, v: Shift)
-place(B, B, ORIGIN) :- frag(B).
+place(B, B, ZERO) :- frag(B).
 place(B, K2, V) :- place(B, K1, V1), join(K1, K2, V2), compose(V1, V2, V).
 
 .decl scene(base: Ident, p: Position, col: Color)

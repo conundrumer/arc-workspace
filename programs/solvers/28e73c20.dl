@@ -48,7 +48,7 @@ cycle_end(D) :- params.corner(C), diag_dirs(C, _, D, D2), params.sense(S), turn(
 
 // The walk: at P, traveling toward D, turning on the margins of box B.
 .decl walk(p: Position, d: Dir, b: Inset)
-walk(P, D, ORIGIN) :-
+walk(P, D, ZERO) :-
     in(P, _), params.corner(C), corner_dist(P, C, 0),   // the corner cell
     cycle_end(D_end), opposite(D_end, D).               // the first arm runs against the closing one
 

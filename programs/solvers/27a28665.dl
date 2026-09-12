@@ -52,7 +52,7 @@
     corner_pos(P) :-
         diag_dir_elem(D),                       // enumerate the 4 corners
         in_dim(N), helpers.frame_pos([N, N], P),    // P in the input frame
-        corner_anchor(D, P, ORIGIN).            // P at corner D
+        corner_anchor(D, P, ZERO).            // P at corner D
 
     .decl center_off_out(c: Color) center_off_out(1).
 
@@ -92,16 +92,16 @@ lookup_match.observed_member($U(), P) :- parse.silhouette($U(), P).
 .decl out(p: Position, col: Color, c: Choice)
 
 // --- $Lookup ---
-out(ORIGIN, Col_out, $Lookup()) :-
+out(ZERO, Col_out, $Lookup()) :-
     params.pattern_out(Id, Col_out),                                // entry's output color
     lookup_match.equals($U(), Id).                                  // silhouette == entry's shape
 
 // --- $Classify ---
-out(ORIGIN, Col, $Classify()) :-
+out(ZERO, Col, $Classify()) :-
     !parse.center_on($U()),                                // center off
     params.center_off_out(Col).
 
-out(ORIGIN, Col, $Classify()) :-
+out(ZERO, Col, $Classify()) :-
     parse.center_on($U()), parse.corner_count($U(), N),     // center on, count corners
     params.center_on_out(N, Col).
 

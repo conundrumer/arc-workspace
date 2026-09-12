@@ -31,7 +31,7 @@ box.cell($U(), P) :- stripe_cell(P).
 .decl side(d: Dir)
 side(D) :-
     box.margin($U(), M),
-    axis_elem(A), split(M, A, ORIGIN, _),   // the axis the stripe spans
+    axis_elem(A), split(M, A, ZERO, _),   // the axis the stripe spans
     perp(A, A2), axis_of(D, A2).            // a direction across it
 
 // The stripe's outermost cell on each side looks out along its line.

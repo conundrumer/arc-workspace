@@ -31,7 +31,7 @@ seed_next(P1, P2) :- order.last($U(), P1), order.first($U(), P2).
 // first seed arrives with no jump; each step lengthens the jump by one
 // cell and advances the color cursor.
 .decl grown(p: Position, delta: Shift, q: Position)
-grown(P, ORIGIN, P) :- order.first($U(), P).
+grown(P, ZERO, P) :- order.first($U(), P).
 grown(P2, Delta2, Q2) :-
     grown(P1, Delta1, Q1), seed_next(Q1, Q2),       // color cursor advances
     params.grow(D), neighbor(Delta1, D, Delta2),    // jump grows one cell

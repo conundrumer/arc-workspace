@@ -23,7 +23,7 @@ target_at(P) :- in(P, Col), params.target(Col).
 axis_step(A, S) :-
     mover_at(Pm), target_at(Pt), axis_of(D, A),
     ( nearer(D, Pt, Pm), step_delta(D, S)          // the target lies toward D — step that way
-    ; same_dist(D, Pm, Pt), S = ORIGIN             // aligned on the axis — no step
+    ; same_dist(D, Pm, Pt), S = ZERO             // aligned on the axis — no step
     ).
 
 .decl moved(p: Position)

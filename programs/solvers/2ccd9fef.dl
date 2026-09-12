@@ -218,13 +218,13 @@ drag(Ch, D, Tn, Q, Col2, V) :-
     recolor(Col, Col2).
 
 .decl moved(ch: Choice, d: Dir, t: Position, q: Position)
-moved(Ch, D, T, Q) :- drag(Ch, D, T, Q, _, V), V != ORIGIN.
+moved(Ch, D, T, Q) :- drag(Ch, D, T, Q, _, V), V != ZERO.
 
 .decl paint(ch: Choice, p: Position, col: Color)
 paint(Ch, Q, Col) :-
     drag(Ch, D, T, Q, Col, V),
-    ( V != ORIGIN                        // a moving end carries its content
-    ; V = ORIGIN, !moved(Ch, D, T, Q)    // a still end fills what the moving end misses
+    ( V != ZERO                        // a moving end carries its content
+    ; V = ZERO, !moved(Ch, D, T, Q)    // a still end fills what the moving end misses
     ).
 
 // --- output ---

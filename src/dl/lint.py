@@ -50,8 +50,8 @@ def _lib_names(text: str) -> dict[str, str]:
             if type(it) in LIB_KINDS}
 
 
-# The zero box and its retired name: a box, not an orientation.
-ZERO_MACROS = frozenset({"ZERO", "ORIGIN"})
+# The zero box: a box, not an orientation.
+ZERO_MACROS = frozenset({"ZERO"})
 
 # lib.dl's macros, the zero box aside.
 ORIENTATION_LITERALS = frozenset(

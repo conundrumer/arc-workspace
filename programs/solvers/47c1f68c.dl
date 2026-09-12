@@ -68,7 +68,7 @@ paint(P_img, $Complete()) :-
 
 .decl anchor_tile(p_tile: Position)
 anchor_tile(P_tile) :-
-    cell(_, P_tile, _, _), params.anchor(Diag), corner_anchor(Diag, P_tile, ORIGIN).
+    cell(_, P_tile, _, _), params.anchor(Diag), corner_anchor(Diag, P_tile, ZERO).
 
 // The pattern, in the anchor quadrant's own frame.
 .decl pattern(p_intile: Position)
@@ -153,7 +153,7 @@ out(P_grid_out, Col, Ch) :-
 
     .decl anchor_tile(p_tile: Position)
     anchor_tile(P_tile) :-
-        tile(_, P_tile), params.anchor(Diag), corner_anchor(Diag, P_tile, ORIGIN).
+        tile(_, P_tile), params.anchor(Diag), corner_anchor(Diag, P_tile, ZERO).
 
     // Each quadrant against the anchor quadrant's pattern.
     .type ET = [e: Example, p_tile: Position]

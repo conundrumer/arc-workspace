@@ -13,7 +13,7 @@
 .init params = Params
 
 .decl canvas(p: Position)
-canvas(P) :- in(P, _), gt(P, ORIGIN).    // clear of the frame
+canvas(P) :- in(P, _), gt(P, ZERO).    // clear of the frame
 
 // Each frame edge's color, read off an edge cell that faces the canvas —
 // a corner faces the frame itself.

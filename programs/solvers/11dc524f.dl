@@ -46,14 +46,14 @@ covering(Delta) :-
 // keep its box clear of the block's.
 .init slide = Slide<Unit>
 slide.dir($U(), D) :- move_dir(D).
-slide.node($U(), ORIGIN).
+slide.node($U(), ZERO).
 slide.node($U(), Delta) :- shift(Delta), !covering(Delta).
 
 // The shape's box, docked: flush against the block's box.
 .decl home(p: Position)
 home(P_home) :-
     params.shape_color(Col), box.margin(Col, P_box),  // the shape's box
-    slide.rest($U(), ORIGIN, _, Delta),               // at rest
+    slide.rest($U(), ZERO, _, Delta),               // at rest
     compose(P_box, Delta, P_home).
 
 // The reflection's box: one shape-length on from home, so the two boxes

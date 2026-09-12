@@ -25,7 +25,7 @@
 
 // A cross cell: canvas ink, keyed by the cross's color.
 .decl cross_cell(c: Color, p: Position)
-cross_cell(C, P) :- in(P, C), !params.bg(C), gt(P, ORIGIN).
+cross_cell(C, P) :- in(P, C), !params.bg(C), gt(P, ZERO).
 
 .init box = BoxFrame<Color>
 box.cell(C, P) :- cross_cell(C, P).

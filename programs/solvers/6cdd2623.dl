@@ -43,7 +43,7 @@ impl_choice([S, D]) :- select_choice(S), draw_choice(D).
 
 // $Border — no cell of the color lies off the border.
 .decl interior_color(col: Color)
-interior_color(Col) :- in(P, Col), gt(P, ORIGIN).
+interior_color(Col) :- in(P, Col), gt(P, ZERO).
 
 line_color(Col, $Border()) :- in(_, Col), !params.bg(Col), !interior_color(Col).
 

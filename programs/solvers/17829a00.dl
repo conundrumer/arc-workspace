@@ -51,7 +51,7 @@ slide.node(Id, Delta) :- fits.occurrence(Id, Delta).
 
 .decl landed(p: Position, col: Color)
 landed(P2, Col) :-
-    slide.rest(Id, ORIGIN, _, Delta),              // the object at rest
+    slide.rest(Id, ZERO, _, Delta),              // the object at rest
     obj.label(Col, P, Id), compose(P, Delta, P2).  // its cells, carried there
 
 .decl out(p: Position, col: Color)

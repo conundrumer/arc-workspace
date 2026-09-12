@@ -60,4 +60,4 @@ overlay(P_frame, Col, $Layer()) :- paint(P_frame, Col).
 
 // --- Inside ---
 
-overlay(P_frame, Col, $Inside()) :- paint(P_frame, Col), gt(P_frame, ORIGIN).
+overlay(P_frame, Col, $Inside()) :- paint(P_frame, Col), gt(P_frame, ZERO).

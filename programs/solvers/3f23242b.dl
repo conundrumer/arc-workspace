@@ -138,7 +138,7 @@ out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(P, _, Ch).
     frame.cell($U(), Off) :- cand(Off, Col), !missed(Off, Col).
 
     .decl seat(p: Position)
-    seat(P) :- frame.inner($U(), ORIGIN, P).
+    seat(P) :- frame.inner($U(), ZERO, P).
 
     // The bracket, in its own frame: the paint each mark holds under it.
     .decl shape(p: Position, col: Color)
@@ -149,7 +149,7 @@ out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(P, _, Ch).
         painted(E, P, Col).                              // the paint there
 
     .decl corner(p_box: Position)
-    corner(P) :- box.cell($U(), P), diag_dir_elem(Diag), corner_anchor(Diag, P, ORIGIN).
+    corner(P) :- box.cell($U(), P), diag_dir_elem(Diag), corner_anchor(Diag, P, ZERO).
 
     // A corner lies on two edges, so an edge's color reads off its other cells.
     .decl edge_paint(d: Dir, col: Color)
@@ -157,6 +157,6 @@ out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(P, _, Ch).
 
     .decl arm_dir(d: Dir)
     arm_dir(D) :-
-        shape(P, _), gt(P, ORIGIN),                                // ink off the rim
+        shape(P, _), gt(P, ZERO),                                // ink off the rim
         params.seat(P_seat), dir_elem(D), neighbor(P_seat, D, P).  // beside the mark
 }

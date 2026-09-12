@@ -74,7 +74,7 @@
 ax_pos($Edge(), P, A, Pi) :-
     in(P, _), axis_of(D, A),
     ( dist(P, D, 0), params.fat_pos(A, Pi)                    // touches an edge of axis a
-    ; dist_pair(P, D, K, K2), K != 0, K2 != 0, Pi = ORIGIN    // off both edges of axis a
+    ; dist_pair(P, D, K, K2), K != 0, K2 != 0, Pi = ZERO    // off both edges of axis a
     ).
 
 // --- $Table ---
@@ -94,7 +94,7 @@ tile(Ch, P_tile, P_intile, Col) :-
 // Offset at edge D: the tile touching edge D sits at zero, and each step
 // inward moves by the extent of the tile stepped over.
 .decl edge_off(ch: Choice, d: Dir, p_tile: Position, p_off: Shift)
-edge_off(Ch, D, P_tile, ORIGIN) :-
+edge_off(Ch, D, P_tile, ZERO) :-
     tile(Ch, P_tile, _, _), dir_elem(D), dist(P_tile, D, 0).
 edge_off(Ch, D, P_next, P_off2) :-
     edge_off(Ch, D, P_tile, P_off),                                          // the offset so far

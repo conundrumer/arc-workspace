@@ -67,7 +67,7 @@ shift(V) :-
 // The shift's axis parts, each beside no shift at all: the four corner
 // blocks are the template block under every combination of the two.
 .decl axis_offset(a: Axis, v: Shift)
-axis_offset(A, ORIGIN) :- axis_elem(A).
+axis_offset(A, ZERO) :- axis_elem(A).
 axis_offset(A, V_axis) :- shift(V), axis_elem(A), split(V, A, V_axis, _).
 
 .decl corner_delta(v: Shift)
@@ -122,7 +122,7 @@ rail(D, Q, Col, Ch) :-
 // The two rails on axis D: the template's side, and the standalone's side
 // across from it. Each faces its plain line outward.
 .decl side(d: Dir, v: Shift, d_out: Dir)
-side(D, ORIGIN, D_out) :- arm_perp(D, D2), opposite(D2, D_out).
+side(D, ZERO, D_out) :- arm_perp(D, D2), opposite(D2, D_out).
 side(D, V_axis, D2) :- arm_perp(D, D2), axis_of(D2, A2), shift(V), split(V, A2, V_axis, _).
 
 .decl paint(p: Position, col: Color, ch: Choice)

@@ -35,7 +35,7 @@
 
 // The input's cells spread apart by the gap: the output lattice.
 .decl lattice(p_in: Position, p_out: Position)
-lattice(P_in, P_out) :- in(P_in, _), params.gap(G), concat_2d(P_in, ORIGIN, G, P_out).
+lattice(P_in, P_out) :- in(P_in, _), params.gap(G), concat_2d(P_in, ZERO, G, P_out).
 
 .init frame = Frame2D<Unit>
 frame.extent($U(), A, N) :- lattice(_, P), axis_elem(A), axis_dim(P, A, N).

@@ -44,10 +44,10 @@ out(P_out, Col, $Corner()) :-
 out(P_intile, Col, $Count()) :-
     in(P_in, Col),                                                     // input cell
     params.divisor(N), divide_2d(P_in, N, 0, P_tile, P_intile),        // arrangement
-    params.diag(D), corner_anchor(D, P_tile, ORIGIN).                  // corner tile
+    params.diag(D), corner_anchor(D, P_tile, ZERO).                  // corner tile
 
 // --- Block ---
 out(P_intile, Col, $Block()) :-
     in(P_in, Col),                                                             // input cell
     params.tile_dim(K), divide_by_size_2d(P_in, K, 0, P_tile, P_intile),       // tiling
-    params.diag(D), corner_anchor(D, P_tile, ORIGIN).                          // corner block
+    params.diag(D), corner_anchor(D, P_tile, ZERO).                          // corner block

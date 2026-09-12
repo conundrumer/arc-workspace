@@ -84,7 +84,7 @@ occ.shape([K, S], P, Col) :- piece(K, S), clue_cell(K, P, Col).
 
 place(S, V) :-
     occ.occurrence([K, S], M),   // the clue occurs in the shape
-    displacement(M, ORIGIN, V).  // read back: the shape onto the clue
+    displacement(M, ZERO, V).  // read back: the shape onto the clue
 
 // --- output ---
 

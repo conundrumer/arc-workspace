@@ -53,7 +53,7 @@ out(P_grid, Col, $Mirror()) :-
 
 // --- Unfold ---
 .decl anchor_tile(p: Position)
-anchor_tile(T) :- params.arr_pos(T), params.anchor(Diag), corner_anchor(Diag, T, ORIGIN).
+anchor_tile(T) :- params.arr_pos(T), params.anchor(Diag), corner_anchor(Diag, T, ZERO).
 
 // Tile contents: the input seeds the anchor tile; each neighbor reflects
 // across the shared boundary.

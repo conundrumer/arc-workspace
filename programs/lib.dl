@@ -119,8 +119,6 @@
 
 // The zero box: the whole frame as a box, no move as an offset.
 #define ZERO [0, 0, 0, 0]
-// Retired name of ZERO.
-#define ORIGIN [0, 0, 0, 0]
 
 // ============================================================
 // Runner contract — run_dl.py appends each mode's IO directives

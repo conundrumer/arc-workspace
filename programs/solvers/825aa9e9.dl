@@ -87,7 +87,7 @@ slide.dir([Ch, Id], D) :- mover(Ch, Id), params.fall(D).
 
 // Where each body comes to rest.
 .decl travel(ch: Choice, id: Ident, delta: Shift)
-travel(Ch, Id, Delta) :- slide.rest([Ch, Id], ORIGIN, _, Delta).
+travel(Ch, Id, Delta) :- slide.rest([Ch, Id], ZERO, _, Delta).
 
 .decl landed(ch: Choice, p: Position, col: Color)
 landed(Ch, P2, Col) :-

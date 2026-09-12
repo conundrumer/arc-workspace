@@ -17,4 +17,4 @@
 line_color.item([A, P_across], Col) :- in(P, Col), axis_elem(A), split(P, A, _, P_across).
 
 .decl out(p: Position, col: Color)
-out(ORIGIN, Col) :- line_color.value(_, Col).
+out(ZERO, Col) :- line_color.value(_, Col).

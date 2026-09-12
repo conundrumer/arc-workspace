@@ -58,7 +58,7 @@ landing(P_tile, Delta, M) :-
     piece(P_tile, P, _), tile_frame.cell(P_tile, Q),
     displacement(P, Q, Delta),                                  // a piece cell onto a cell of its tile
     piece_box.margin(P_tile, M_box), compose(M_box, Delta, M),  // where it lands the box
-    geq(M, ORIGIN).                                             // the whole box inside the tile
+    geq(M, ZERO).                                             // the whole box inside the tile
 
 // The displacement each case picks.
 .decl place(p_tile: Position, delta: Shift, ch: Choice)
@@ -79,7 +79,7 @@ place(P_tile, Delta, $Slot()) :- landing(P_tile, Delta, M), params.slot(M).
 clear_step(P_tile, A, Delta) :-
     piece_box.margin(P_tile, M_box), axis_of(D, A), opposite(D, D2),
     ( dist(M_box, D, 0), step_delta(D2, Delta)                       // against the wall at d
-    ; dist_pair(M_box, D, K, K2), K != 0, K2 != 0, Delta = ORIGIN    // clear of both walls
+    ; dist_pair(M_box, D, K, K2), K != 0, K2 != 0, Delta = ZERO    // clear of both walls
     ).
 
 place(P_tile, Delta, $Clear()) :-

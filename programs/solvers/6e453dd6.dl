@@ -51,7 +51,7 @@ slide.dir(Id, D) :- comps.label($U(), _, Id), params.slide_dir(D).
 
 // The shape cells after the slide.
 .decl slid(p: Position)
-slid(P2) :- comps.label($U(), P, Id), slide.rest(Id, ORIGIN, _, Delta), compose(P, Delta, P2).
+slid(P2) :- comps.label($U(), P, Id), slide.rest(Id, ZERO, _, Delta), compose(P, Delta, P2).
 
 // The grid with the shapes moved, before the marks.
 .decl canvas(p: Position, col: Color)

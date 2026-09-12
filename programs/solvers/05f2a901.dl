@@ -93,13 +93,13 @@ covering(Ch, Delta) :- shift(Delta), shape(Ch, P), compose(P, Delta, P2), blocke
 // keep it clear of the blocked cells.
 .init slide = Slide<Choice>
 slide.dir(Ch, D) :- impl_choice(Ch), move_dir(D).
-slide.node(Ch, ORIGIN) :- impl_choice(Ch).
+slide.node(Ch, ZERO) :- impl_choice(Ch).
 slide.node(Ch, Delta) :- impl_choice(Ch), shift(Delta), !covering(Ch, Delta).
 
 // --- output ---
 
 .decl landed(ch: Choice, p: Position)
-landed(Ch, P2) :- slide.rest(Ch, ORIGIN, _, Delta), mover_cell(P), compose(P, Delta, P2).
+landed(Ch, P2) :- slide.rest(Ch, ZERO, _, Delta), mover_cell(P), compose(P, Delta, P2).
 
 // The grid with the mover lifted off.
 .decl cleared(p: Position, col: Color)
@@ -108,4 +108,4 @@ cleared(P, Col) :- mover_cell(P), params.bg(Col).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- landed(Ch, P), params.mover(Col).
-out(P, Col, Ch) :- slide.rest(Ch, ORIGIN, _, _), cleared(P, Col), !landed(Ch, P).
+out(P, Col, Ch) :- slide.rest(Ch, ZERO, _, _), cleared(P, Col), !landed(Ch, P).

@@ -35,8 +35,8 @@
     mapping_sym(1, SYM_1).
 
     .decl mapping_out(id: Ident, p: Position, col: Color)
-    mapping_out(0, ORIGIN, 1).
-    mapping_out(1, ORIGIN, 7).
+    mapping_out(0, ZERO, 1).
+    mapping_out(1, ZERO, 7).
 }
 
 .init params = Params

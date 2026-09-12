@@ -47,7 +47,7 @@ slide.dir($U(), D) :- dir_elem(D).
 
 // The stops of the journey: the piece starts where it stands and slides on.
 .decl stop(delta: Shift)
-stop(ORIGIN).
+stop(ZERO).
 stop(Delta2) :- stop(Delta), slide.halt($U(), Delta, _, Delta2).
 
 // The cells the piece covers at a stop.
@@ -64,7 +64,7 @@ covered(Delta, P2) :- stop(Delta), piece_cell(P), compose(P, Delta, P2).
 .init onward = Unanimous<Shift, Dir8>
 onward.item(Delta, D) :- slide.halt($U(), Delta, D, _).
 
-rest(Delta, $Corridor()) :- stop(Delta), Delta != ORIGIN, onward.value(Delta, _).
+rest(Delta, $Corridor()) :- stop(Delta), Delta != ZERO, onward.value(Delta, _).
 
 // --- Goal ---
 
