@@ -26,7 +26,15 @@ No git writes.
 
 ## Grids
 
-Colors are written as backticked digits; grid rows are space-separated cells, in a fenced block or a code span. A grid place is cited as pair, side, places — `train0 input (11,2), (13,2); test1 output rows 2–4, cols 1–3`, or a single `row N` / `col N` — all 0-based cell coordinates."""
+A color: the marks are `3` on a field of `5`. A row: `3 5 5 5 3`. A grid:
+
+```
+3 5 5 5 3
+5 5 5 5 5
+3 5 5 5 3
+```
+
+A grid place is cited as pair, side, places — `train0 input (11,2), (13,2); test1 output rows 2–4, cols 1–3`, or a single `row N` / `col N` — all 0-based cell coordinates."""
 
 
 def append_path() -> Path:
