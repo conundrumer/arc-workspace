@@ -65,14 +65,14 @@ panel_cell(Dot, P) :-
     legend(Dot, _, _, _), in(P, Dot),          // a cell of an entry's dot color
     !legend(_, _, P, _), !legend(_, _, _, P).  // away from the legend
 
-.init box = BoxFrame<Color>
-box.cell(Dot, P) :- panel_cell(Dot, P).
-box.grid(Dot, P) :- legend(Dot, _, _, _), in(P, _).
+.init bbox = BoxFrame<Color>
+bbox.cell(Dot, P) :- panel_cell(Dot, P).
+bbox.grid(Dot, P) :- legend(Dot, _, _, _), in(P, _).
 
 // The panel: the box grown by one ring.
 .decl panel(dot: Color, p: Position)
 panel(Dot, Q) :-
-    box.inside(Dot, P),
+    bbox.inside(Dot, P),
     ( Q = P                                     // the box
     ; dir8_elem(D), neighbor(P, D, Q), in(Q, _) // and the ring around it
     ).
@@ -80,7 +80,7 @@ panel(Dot, Q) :-
 // The dot lattice over the box, anchored on it.
 .decl lattice(dot: Color, p: Position)
 lattice(Dot, P) :-
-    box.inner(Dot, P, P_inner),              // the cell in the box's frame
+    bbox.inner(Dot, P, P_inner),              // the cell in the box's frame
     params.dot_size(K), params.dot_gap(G),   // the lattice's period
     divide_by_size_2d(P_inner, K, G, _, _).  // a lattice point
 

@@ -69,11 +69,11 @@ impl_choice($Holes()). impl_choice($Stamp()).
         diag_dir_elem(Diag), line(W), jump(P, Diag, W, P0),
         label(K, P0, Id).
 
-    .init box = Bbox<Blk>
-    box.cell([K, Id], P) :- label(K, P, Id).
+    .init bbox = Bbox<Blk>
+    bbox.cell([K, Id], P) :- label(K, P, Id).
 
     .decl margin(key: Key, id: Ident, p: Position)
-    margin(K, Id, M) :- box.margin([K, Id], M).
+    margin(K, Id, M) :- bbox.box([K, Id], M).
 }
 
 .init parse = Parse<Unit>

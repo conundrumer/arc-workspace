@@ -27,7 +27,7 @@ rect.cell(Col, P) :- in(P, Col), !params.bg(Col).
 
 // The outline of each rectangle, read over the whole grid.
 .init outline = BoxCells<Color>
-outline.box(Col, B) :- rect.margin(Col, B).
+outline.box(Col, B) :- rect.box(Col, B).
 outline.cell(Col, P) :- rect.cell(Col, _), in(P, _).
 
 // A later color overwrites a cell of an earlier color's outline.

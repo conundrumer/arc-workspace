@@ -35,12 +35,12 @@
 mosaic(P_grid, P_mosaic) :- in(P_grid, _), params.mosaic_margin(M), compose(P_grid, M, P_mosaic).
 
 // The hole: the masked cells.
-.init box = BoxFrame<Unit>
-box.cell($U(), P) :- in(P, Col), params.mask(Col).
+.init bbox = BoxFrame<Unit>
+bbox.cell($U(), P) :- in(P, Col), params.mask(Col).
 
 .decl out(p: Position, col: Color)
 out(P_out, Col) :-
-    box.inner($U(), P, P_out),                        // hole cell, in the crop frame
+    bbox.inner($U(), P, P_out),                        // hole cell, in the crop frame
     mosaic(P, Pm),
     params.tile_count(N), divide_2d(Pm, N, 0, T, _),   // its tile
     params.tile_sym(T, S), sym_member(S, D),           // a transform holding there

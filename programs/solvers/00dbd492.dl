@@ -5,7 +5,7 @@
 //
 // $Recolor delimits the empty region and colors it from a table, crossing
 // two independent nodes:
-//   region — $Box:     bg cells inside an object's bounding box.
+//   region — $Box:     bg cells inside an object's bounding bbox.
 //            $Enclose: bg cells that cannot reach the grid edge.
 //   key    — $Size:    the region's extent.
 //            $Count:   the region's cell count.
@@ -90,7 +90,7 @@
 
 .init params = Params
 
-// The ink objects, each viewed from its own box.
+// The ink objects, each viewed from its own bbox.
 .comp Parse<Key> {
     .type Obj = [k: Key, id: Ident]
 
@@ -103,15 +103,15 @@
     .init comps = Components<Key>
     comps.node(K, P) :- ink(K, P).
 
-    .init box = BoxFrame<Obj>
-    box.cell([K, Id], P) :- comps.label(K, P, Id).
-    box.grid([K, Id], P) :- cell(K, P, _), comps.label(K, _, Id).
+    .init bbox = BoxFrame<Obj>
+    bbox.cell([K, Id], P) :- comps.label(K, P, Id).
+    bbox.grid([K, Id], P) :- cell(K, P, _), comps.label(K, _, Id).
 
     .decl viewed(k: Key, id: Ident, p: Position)
-    viewed(K, Id, P) :- box.viewed([K, Id], P).
+    viewed(K, Id, P) :- bbox.viewed([K, Id], P).
 
     .decl inner(k: Key, id: Ident, p: Position, p_inner: Position)
-    inner(K, Id, P, I) :- box.inner([K, Id], P, I).
+    inner(K, Id, P, I) :- bbox.inner([K, Id], P, I).
 }
 
 .init parse = Parse<Unit>

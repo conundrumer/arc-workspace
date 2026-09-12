@@ -42,16 +42,16 @@ squares.node(Col, P) :- in(P, Col), !bg(Col).
 .decl square(id: Ident, col: Color)
 square(Id, Col) :- squares.label(Col, _, Id).
 
-.init box = BoxFrame<Ident>
-box.cell(Id, P) :- squares.label(_, P, Id).
-box.grid(Id, P) :- square(Id, _), in(P, _).
+.init bbox = BoxFrame<Ident>
+bbox.cell(Id, P) :- squares.label(_, P, Id).
+bbox.grid(Id, P) :- square(Id, _), in(P, _).
 
 // The largest squares are the blocks; the rest are the pieces.
 .init size = Extremes<Unit>
-size.cand($U(), N) :- box.extent(_, _, N).
+size.cand($U(), N) :- bbox.extent(_, _, N).
 
 .decl block(id: Ident)
-block(Id) :- box.extent(Id, _, N), size.high($U(), N).
+block(Id) :- bbox.extent(Id, _, N), size.high($U(), N).
 
 .decl piece(id: Ident)
 piece(Id) :- square(Id, _), !block(Id).
@@ -60,7 +60,7 @@ piece(Id) :- square(Id, _), !block(Id).
 
 // The background regions a square encloses: a block's dots, a piece's holes.
 .init enclosed = Components<Ident>
-enclosed.node(Id, P) :- box.inside(Id, P), in(P, Col), bg(Col).
+enclosed.node(Id, P) :- bbox.inside(Id, P), in(P, Col), bg(Col).
 
 .init region_count = Tally<Ident, Ident>
 region_count.item(Id, R) :- enclosed.label(Id, _, R).
@@ -95,20 +95,20 @@ pair(Id_b, Id_p, $Rank()) :-
 
 // A block's interior, in its own frame: the piece's frame.
 .init core = BoxFrame<Ident>
-core.cell(Id, P) :- block(Id), box.margin(Id, M), in(P, _), interior(P, M).
+core.cell(Id, P) :- block(Id), bbox.box(Id, M), in(P, _), interior(P, M).
 
 // The output frame is the region the blocks tile.
 .init layout = BoxFrame<Unit>
-layout.cell($U(), P) :- block(Id), box.inside(Id, P).
+layout.cell($U(), P) :- block(Id), bbox.inside(Id, P).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P_grid_out, Col, Ch) :-
     impl_choice(Ch),
     layout.inner($U(), P_grid_in, P_grid_out),                 // an output cell and its input cell
-    block(Id_b), box.inside(Id_b, P_grid_in),                  // the block there
+    block(Id_b), bbox.inside(Id_b, P_grid_in),                  // the block there
     ( !core.inner(Id_b, P_grid_in, _), square(Id_b, Col)   // on the block's ring: its color
     ; core.inner(Id_b, P_grid_in, P_inner),                // inside: the piece's cell there
-      pair(Id_b, Id_p, Ch), box.inner(Id_p, Q, P_inner), in(Q, C_q),
+      pair(Id_b, Id_p, Ch), bbox.inner(Id_p, Q, P_inner), in(Q, C_q),
       ( !bg(C_q), Col = C_q                                    // the piece's ink
       ; bg(C_q), square(Id_b, Col)                             // a hole: the block's color
       )

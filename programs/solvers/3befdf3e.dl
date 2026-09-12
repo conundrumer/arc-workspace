@@ -118,7 +118,7 @@ paint(P, Col, $Lookup()) :-
     ( params.fig_wall(N, P_fig), wall_col(Id, Col)     // the figure's wall role
     ; params.fig_core(N, P_fig), core_col(Id, Col) ),  // its core role
     fig_rf.view(N, P_fig, P_in),                       // the cell, from the core
-    core_box.margin(Id, M), compose(M, P_in, P),       // laid on the object's core
+    core_box.box(Id, M), compose(M, P_in, P),       // laid on the object's core
     in(P, _).                                          // inside the grid
 
 // --- output ---
@@ -182,5 +182,5 @@ out(P, Col, Ch) :- in(P, _), impl_choice(Ch), !paint(P, _, Ch), params.bg(Col).
 
     .decl fig_core_box(n: number, p: Position)
     fig_core_box(N, M) :-
-        core_box.extents(O, _, N, N), core_in_fig.margin(O, M).
+        core_box.extents(O, _, N, N), core_in_fig.box(O, M).
 }

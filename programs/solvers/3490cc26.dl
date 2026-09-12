@@ -27,7 +27,7 @@ bb.cell(Id, P) :- blocks.label($U(), P, Id).
 // A block stands as its own bounding box. The blocks are all one size, so
 // those boxes share one frame and a step between them is a step of a block.
 .decl block(m: Position, col: Color)
-block(M, Col) :- bb.margin(Id, M), blocks.label($U(), P, Id), in(P, Col).
+block(M, Col) :- bb.box(Id, M), blocks.label($U(), P, Id), in(P, Col).
 
 // Blocks look along their lines, and each block stops the look behind it.
 .init sight = Ray<Unit>

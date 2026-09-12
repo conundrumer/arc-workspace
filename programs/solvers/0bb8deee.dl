@@ -48,20 +48,20 @@ parse.cell($U(), P, Col) :- in(P, Col).
 // --- crops ---
 
 // Each quadrant viewed from the bounding box of the shape it holds.
-.init box = BoxFrame<Position>
-box.cell(P_tile, P) :- parse.frame.tile_of($U(), P, P_tile), in(P, Col), !params.bg(Col).
-box.grid(P_tile, P) :- parse.frame.tile_of($U(), P, P_tile).
+.init hull = BoxFrame<Position>
+hull.cell(P_tile, P) :- parse.frame.tile_of($U(), P, P_tile), in(P, Col), !params.bg(Col).
+hull.grid(P_tile, P) :- parse.frame.tile_of($U(), P, P_tile).
 
 .decl out(p: Position, col: Color, c: Choice)
 
 // --- Concat ---
 out(P_grid_out, Col, $Concat()) :-
-    box.inner(P_tile, P, P_intile), in(P, Col),   // cropped cell
+    hull.inner(P_tile, P, P_intile), in(P, Col),   // cropped cell
     concat_2d(P_tile, P_intile, 0, P_grid_out).   // crops abut
 
 // --- Place ---
 out(P_grid_out, Col, $Place()) :-
-    box.inner(P_tile, P, P_intile), in(P, Col),  // cropped cell
+    hull.inner(P_tile, P, P_intile), in(P, Col),  // cropped cell
     params.tile_box(P_tile, P_box),              // the quadrant's stored box
     compose(P_box, P_intile, P_grid_out).        // seated in it
 
@@ -82,5 +82,5 @@ out(P_grid_out, Col, $Place()) :-
     obox.cell([E, P_tile], P) :- ex_out(E, P, Col), shape_color(E, P_tile, Col).
 
     .decl tile_box(p_tile: Position, p_box: Position)
-    tile_box(P_tile, P_box) :- obox.margin([_, P_tile], P_box).
+    tile_box(P_tile, P_box) :- obox.box([_, P_tile], P_box).
 }

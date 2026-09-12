@@ -29,21 +29,21 @@
 
 // --- panel ---
 
-.init box = BoxFrame<Unit>
-box.cell($U(), P) :- in(P, Col), params.panel(Col).
-box.grid($U(), P) :- in(P, _).
+.init bbox = BoxFrame<Unit>
+bbox.cell($U(), P) :- in(P, Col), params.panel(Col).
+bbox.grid($U(), P) :- in(P, _).
 
 .decl panel_cell(p_inner: Position)
-panel_cell(P_inner) :- box.inner($U(), _, P_inner).
+panel_cell(P_inner) :- bbox.inner($U(), _, P_inner).
 
 // A panel cell of another color, in the panel's own frame.
 .decl marker(p_inner: Position, col: Color)
-marker(P_inner, Col) :- box.inner($U(), P, P_inner), in(P, Col), !params.panel(Col).
+marker(P_inner, Col) :- bbox.inner($U(), P, P_inner), in(P, Col), !params.panel(Col).
 
 // --- shapes ---
 
 .init shapes = Components8<Color>
-shapes.node(Col, P) :- in(P, Col), marker(_, Col), !box.inside($U(), P).  // marker color, off the panel
+shapes.node(Col, P) :- in(P, Col), marker(_, Col), !bbox.inside($U(), P).  // marker color, off the panel
 
 .init shape_count = Tally<Color, Ident>
 shape_count.item(Col, Id) :- shapes.label(Col, _, Id).

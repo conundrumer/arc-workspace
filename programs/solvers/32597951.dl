@@ -21,9 +21,9 @@
 
 .init params = Params
 
-.init box = Bbox<Unit>
-box.cell($U(), P) :- in(P, Col), params.marker(Col).
-box.grid($U(), P) :- in(P, _).
+.init bbox = Bbox<Unit>
+bbox.cell($U(), P) :- in(P, Col), params.marker(Col).
+bbox.grid($U(), P) :- in(P, _).
 
 .decl impl_choice(ch: Choice)
 impl_choice($From()). impl_choice($Ink()).
@@ -31,10 +31,10 @@ impl_choice($From()). impl_choice($Ink()).
 .decl recolor(p: Position, ch: Choice)
 
 // --- From ---
-recolor(P, $From()) :- box.inside($U(), P), in(P, Col), params.from(Col).
+recolor(P, $From()) :- bbox.inside($U(), P), in(P, Col), params.from(Col).
 
 // --- Ink ---
-recolor(P, $Ink()) :- box.inside($U(), P), in(P, Col), !params.marker(Col).
+recolor(P, $Ink()) :- bbox.inside($U(), P), in(P, Col), !params.marker(Col).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- recolor(P, Ch), params.to(Col).

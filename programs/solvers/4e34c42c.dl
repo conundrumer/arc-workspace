@@ -30,12 +30,12 @@ frags.node($U(), P) :- in(P, Col), !bg(Col).
 .decl frag(k: Ident)
 frag(K) :- frags.label($U(), _, K).
 
-.init box = Bbox<Ident>
-box.cell(K, P) :- frags.label($U(), P, K).
-box.grid(K, P) :- in(P, _), frag(K).
+.init bbox = Bbox<Ident>
+bbox.cell(K, P) :- frags.label($U(), P, K).
+bbox.grid(K, P) :- in(P, _), frag(K).
 
 .decl content(k: Ident, p: Position, col: Color)
-content(K, P, Col) :- box.inside(K, P), in(P, Col).
+content(K, P, Col) :- bbox.inside(K, P), in(P, Col).
 
 .decl motif(k: Ident, col: Color, p: Position)
 motif(K, Col, P) :- content(K, P, Col), !bg(Col).
@@ -88,7 +88,7 @@ scene(B, P, Col) :- place(B, K, V), content(K, P0, Col), compose(P0, V, P).
 
 // --- the crop ---
 
-// The scene's box. Every fragment box hugs its own ink, so the cells the
+// The scene's bbox. Every fragment box hugs its own ink, so the cells the
 // fragments cover reach as far as the scene's ink does.
 .init view = BoxFrame<Ident>
 view.cell(B, P) :- scene(B, P, _).

@@ -31,7 +31,7 @@ span.cell([P, Q], R) :- bg_cell(P), bg_cell(Q), ( R = P ; R = Q ).
 // squares.
 .decl square(b: Position, n: number)
 square(B, N) :-
-    span.margin(K, B), span.extents(K, _, N, N),
+    span.box(K, B), span.extents(K, _, N, N),
     params.min_side(M), N >= M.                        // big enough to draw
 
 .decl spoiled(b: Position)

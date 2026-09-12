@@ -63,11 +63,11 @@ moved(Q, Col, $Marks()) :-
 
 // --- Midline ---
 
-.init box = BoxFrame<Ident>
-box.cell(Id, P) :- shape(Id, P).
+.init bbox = BoxFrame<Ident>
+bbox.cell(Id, P) :- shape(Id, P).
 
 moved(Q, Col, $Midline()) :-
-    box.inner(Id, P, P_inner), in(P, Col), !params.mark(Col),      // an ordinary cell, read from its box
+    bbox.inner(Id, P, P_inner), in(P, Col), !params.mark(Col),      // an ordinary cell, read from its box
     cut_axis(Id, A), axis_of(D, A),                                // a direction along the cut axis
     dist_pair(P_inner, D, K, K_far), K < K_far,                    // the cell lies in the half toward D
     neighbor(P, D, Q).                                             // and steps one further

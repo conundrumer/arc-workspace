@@ -37,8 +37,8 @@ lattice.divider($U(), A, L) :-
 .decl box_of(p: Position, t: Position)
 box_of(P, T) :- lattice.tile_of($U(), P, T).
 
-.init box = BoxFrame<Position>
-box.cell(T, P) :- box_of(P, T).
+.init bbox = BoxFrame<Position>
+bbox.cell(T, P) :- box_of(P, T).
 
 // --- boxes ---
 
@@ -47,10 +47,10 @@ box.cell(T, P) :- box_of(P, T).
 box_color(T, Col) :- box_of(P, T), in(P, Col), !params.bg(Col).
 
 .decl outline(p_intile: Position)
-outline(P_intile) :- box.inner(_, _, P_intile), dir_elem(D), dist(P_intile, D, 0).
+outline(P_intile) :- bbox.inner(_, _, P_intile), dir_elem(D), dist(P_intile, D, 0).
 
 .decl ink(t: Position, p_intile: Position)
-ink(T, P_intile) :- box.inner(T, P, P_intile), in(P, Col), !params.bg(Col).
+ink(T, P_intile) :- bbox.inner(T, P, P_intile), in(P, Col), !params.bg(Col).
 
 .decl design(t: Position, p_intile: Position)
 design(T, P_intile) :- ink(T, P_intile), !outline(P_intile).
@@ -74,7 +74,7 @@ show(T, P_intile, $Merge()) :- box_color(T, Col), group_design(Col, P_intile).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
-    box.inner(T, P, P_intile),                                  // box cell
+    bbox.inner(T, P, P_intile),                                  // box cell
     ( show(T, P_intile, Ch), box_color(T, Col)                  // shown, in the box's color
     ; impl_choice(Ch), !show(T, P_intile, Ch), params.bg(Col)   // bare
     ).

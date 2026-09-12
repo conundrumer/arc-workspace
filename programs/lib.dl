@@ -1376,10 +1376,6 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     box(Ky, B) :-
         perp(A1, A2), axis_pos(Ky, A1, B1), axis_pos(Ky, A2, B2),
         compose(B1, B2, B).
-
-    // retired: `box`
-    .decl pos(key: Key, p: Position)
-    pos(Ky, P) :- box(Ky, P).
 }
 
 // The frame inside given margins, one per key: each cell at least the
@@ -1457,10 +1453,6 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     // retired: `dist` on `box`
     .decl edge_min(key: Key, d: Dir, m: number)
     edge_min(K, D, M) :- _edge_min(K, D, M).
-
-    // retired: `box`
-    .decl margin(key: Key, p: Position)
-    margin(K, P) :- box(K, P).
 
     // retired: `inside` over the caller's own domain
     .decl inside(key: Key, p: Position)

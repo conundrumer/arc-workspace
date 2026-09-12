@@ -65,8 +65,8 @@ bbox.cell(Id, P) :- box_cell(Id, P).
 .decl corridor(id: Ident, id2: Ident, p: Position)
 corridor(Id, Id2, P) :-
     in(P, _), axis_of(D, A), opposite(D, D_opp),  // a cell, and a facing axis
-    bbox.margin(Id, M), nearer(D, P, M),          // past the near box's side
-    bbox.margin(Id2, N), nearer(D_opp, P, N),     // short of the far box's side
+    bbox.box(Id, M), nearer(D, P, M),          // past the near box's side
+    bbox.box(Id2, N), nearer(D_opp, P, N),     // short of the far box's side
     label_cell(Id, Q), same_line(A, P, Q),        // on the near label's line
     label_cell(Id2, Q2), same_line(A, P, Q2).     // and on the far one's
 

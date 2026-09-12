@@ -33,15 +33,15 @@ mark(P) :- in(P, Col), !params.bg(Col).
 .decl on_line(p: Position, m: Position)
 on_line(P, M) :- in(P, _), mark(M), axis_elem(A), same_line(A, P, M).
 
-.init box = Bbox<Unit>
-box.cell($U(), P) :- mark(P).
-box.grid($U(), P) :- in(P, _).
+.init bbox = Bbox<Unit>
+bbox.cell($U(), P) :- mark(P).
+bbox.grid($U(), P) :- in(P, _).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     impl_choice(Ch), in(P, _), !on_line(P, _),
-    ( box.inside($U(), P), params.fill(Col)
-    ; !box.inside($U(), P), params.bg(Col) ).
+    ( bbox.inside($U(), P), params.fill(Col)
+    ; !bbox.inside($U(), P), params.bg(Col) ).
 
 // --- Ink ---
 out(P, Col, $Ink()) :- on_line(P, _), params.line(Col).

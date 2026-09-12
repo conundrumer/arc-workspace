@@ -30,32 +30,32 @@ mark(P, Col) :- in(P, Col), !params.bg(Col).
 .decl mini(p: Position, col: Color, ch: Choice)
 
 // The marks' bounding box, read by $Shrink and $Converge alike.
-.init box = BoxFrame<Unit>
-box.cell($U(), P) :- mark(P, _).
-box.grid($U(), P) :- in(P, _).
+.init bbox = BoxFrame<Unit>
+bbox.cell($U(), P) :- mark(P, _).
+bbox.grid($U(), P) :- in(P, _).
 
 // The box's center.
 .decl center(p: Position)
-center(P) :- box.inner($U(), P, P_in), centered(P_in).
+center(P) :- bbox.inner($U(), P, P_in), centered(P_in).
 
 // --- Shrink ---
 
 mini(P, Col, $Shrink()) :-
     center(C),
     ( params.center_paint(Col), P = C                         // the center
-    ; box.corner($U(), P_mark, Diag), mark(P_mark, Col),      // a mark at its box corner
+    ; bbox.corner($U(), P_mark, Diag), mark(P_mark, Col),      // a mark at its box corner
       neighbor(C, Diag, P)
     ).
 
 // --- Converge ---
 
 .init place = DiagPlacement<Unit>
-place.cell($U(), P_in) :- box.inner($U(), _, P_in).
+place.cell($U(), P_in) :- bbox.inner($U(), _, P_in).
 
 mini(P, Col, $Converge()) :-
     center(C),
     ( params.center_paint(Col), P = C                         // the center
-    ; mark(P_mark, Col), box.inner($U(), P_mark, P_in),       // a mark in the box's frame
+    ; mark(P_mark, Col), bbox.inner($U(), P_mark, P_in),       // a mark in the box's frame
       place.quadrant($U(), P_in, Diag),                       // the quadrant it lies in
       neighbor(C, Diag, P)
     ).

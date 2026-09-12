@@ -4,7 +4,7 @@
 // Several one-color shapes sit on a bg grid, and a mark cell sits just above
 // one of them. The output is a 3x3 crop holding that shape.
 //
-// $Object — the marked shape, drawn in its own box.
+// $Object — the marked shape, drawn in its own bbox.
 // $Interior — the marked shape's box, with everything it contains.
 // $Window — a window stored at the mark, with everything it contains.
 
@@ -38,20 +38,20 @@ marked(P, Col) :-
     !mark(P), in(P, Col).             // a shape cell, not the mark
 
 // The marked shape's box, and the grid seen from it.
-.init box = BoxFrame<Unit>
-box.cell($U(), P) :- marked(P, _).
-box.grid($U(), P) :- in(P, _).
+.init bbox = BoxFrame<Unit>
+bbox.cell($U(), P) :- marked(P, _).
+bbox.grid($U(), P) :- in(P, _).
 
 .decl out(p: Position, col: Color, c: Choice)
 
 // --- Object ---
 out(P_out, Col, $Object()) :-
-    box.inner($U(), P, P_out),
+    bbox.inner($U(), P, P_out),
     ( marked(P, Col)                     // the shape
     ; !marked(P, _), params.bg(Col) ).   // the rest of the box
 
 // --- Interior ---
-out(P_out, Col, $Interior()) :- box.inner($U(), P, P_out), in(P, Col).
+out(P_out, Col, $Interior()) :- bbox.inner($U(), P, P_out), in(P, Col).
 
 // --- Window ---
 

@@ -4,7 +4,7 @@
 // hypotheses of what owns a box, tagged on out's Choice:
 //
 //   $Whole — one box over all ink.
-//   $Each  — per 8-connected component: each component's own box.
+//   $Each  — per 8-connected component: each component's own bbox.
 
 #include "../lib.dl"
 
@@ -24,11 +24,11 @@ ink(P) :- in(P, Col), !params.bg(Col).
 
 // --- $Whole ---
 
-.init box = Bbox<Unit>
-box.cell($U(), P) :- ink(P).
-box.grid($U(), P) :- in(P, _).
+.init bbox = Bbox<Unit>
+bbox.cell($U(), P) :- ink(P).
+bbox.grid($U(), P) :- in(P, _).
 
-filled(P, $Whole()) :- in(P, Col), params.bg(Col), box.inside($U(), P).
+filled(P, $Whole()) :- in(P, Col), params.bg(Col), bbox.inside($U(), P).
 
 // --- $Each ---
 

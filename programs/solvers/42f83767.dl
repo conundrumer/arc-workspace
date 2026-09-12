@@ -35,7 +35,7 @@ stencils.grid($U(), P) :- in(P, _).
 // The legend lies in the stencil strip's slab; the composition grid does not.
 .decl legend_cell(p: Position)
 legend_cell(P) :-
-    ink(P), stencils.margin($U(), M),                // the stencil strip's box
+    ink(P), stencils.box($U(), M),                // the stencil strip's box
     params.strip_axis(A), split(M, A, _, M_slab),    // the slab it cuts across the axis
     inside(P, M_slab).                                  // the ink inside that slab
 

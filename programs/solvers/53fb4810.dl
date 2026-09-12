@@ -63,10 +63,10 @@ out(P, Col, Ch) :-
 
 // --- $Extent ---
 
-.init box = Bbox<Ident>
-box.cell(B, P) :- bands.label($U(), P, B).
+.init bbox = Bbox<Ident>
+bbox.cell(B, P) :- bands.label($U(), P, B).
 
-period(B, K, $Extent()) :- grow_axis(B, A), box.extent(B, A, K).
+period(B, K, $Extent()) :- grow_axis(B, A), bbox.extent(B, A, K).
 
 // --- $Period ---
 

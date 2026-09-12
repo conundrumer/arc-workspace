@@ -7,7 +7,7 @@
 //
 //   $Corner — ink on both dirs of one corner and across it.
 //   $Glyph  — the gap of a stored L, matched in any pose.
-//   $Box    — a bg cell inside an object's bounding box.
+//   $Box    — a bg cell inside an object's bounding bbox.
 
 #include "../lib.dl"
 
@@ -96,9 +96,9 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !mark(P, Ch).
     .init pick = Canon<EP>
     pick.equiv([E, P], [E2, P2]) :- marked(E, P), marked(E2, P2).
 
-    .init box = BoxFrame<EP>
-    box.cell(K, Q) :- pick.rep(K, K), piece.reach(K, Q).
+    .init bbox = BoxFrame<EP>
+    bbox.cell(K, Q) :- pick.rep(K, K), piece.reach(K, Q).
 
     .decl piece_glyph(p: Position)
-    piece_glyph(S) :- box.inner(_, _, S).
+    piece_glyph(S) :- bbox.inner(_, _, S).
 }

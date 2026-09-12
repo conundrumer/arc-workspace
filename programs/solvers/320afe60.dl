@@ -38,9 +38,9 @@ shapes.node($U(), P) :- in(P, Col), !params.bg(Col).
 .decl shape(id: Ident, p: Position)
 shape(Id, P) :- shapes.label($U(), P, Id).
 
-.init box = Bbox<Ident>
-box.cell(Id, P) :- shape(Id, P).
-box.grid(Id, P) :- shape(Id, _), in(P, _).
+.init bbox = Bbox<Ident>
+bbox.cell(Id, P) :- shape(Id, P).
+bbox.grid(Id, P) :- shape(Id, _), in(P, _).
 
 // The shape's box holds a cell its substance does not cover.
 .decl gap(id: Ident, ch: Choice)
@@ -54,7 +54,7 @@ box.grid(Id, P) :- shape(Id, _), in(P, _).
 .init off_shape = Closed<Ident>
 off_shape.cell(Id, P) :- in(P, _), shape(Id, _), !shape(Id, P).
 
-gap(Id, $Own()) :- box.inside(Id, P), !shape(Id, P).
+gap(Id, $Own()) :- bbox.inside(Id, P), !shape(Id, P).
 encloses(Id, $Own()) :- off_shape.region(Id, _, _).
 
 // --- Joint ---
@@ -63,7 +63,7 @@ encloses(Id, $Own()) :- off_shape.region(Id, _, _).
 .init off_ink = Closed<Unit>
 off_ink.cell($U(), P) :- in(P, Col), params.bg(Col).
 
-gap(Id, $Joint()) :- box.inside(Id, P), in(P, Col), params.bg(Col).
+gap(Id, $Joint()) :- bbox.inside(Id, P), in(P, Col), params.bg(Col).
 encloses(Id, $Joint()) :-
     off_ink.region($U(), P, _),         // cell of a closed region
     dir_elem(D), neighbor(P, D, Q),
@@ -88,7 +88,7 @@ dest(Id, D, Col, Ch) :-
 .decl paint(p: Position, col: Color, ch: Choice)
 paint(Q, Col, Ch) :-
     shape(Id, P), dest(Id, D, Col, Ch),   // shape cell with its destination
-    box.edge_min(Id, D, M),               // its box's margin from that edge
+    bbox.edge_min(Id, D, M),               // its box's margin from that edge
     jump(P, D, M, Q).                     // slid flush
 
 .decl out(p: Position, col: Color, ch: Choice)

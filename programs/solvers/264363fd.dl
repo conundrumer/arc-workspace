@@ -30,14 +30,14 @@ pieces.node($U(), P) :- ink(P, _).
 .decl piece(id: Ident, p: Position)
 piece(Id, P) :- pieces.label($U(), P, Id).
 
-.init box = BoxFrame<Ident>
-box.cell(Id, P) :- piece(Id, P).
-box.grid(Id, P) :- piece(Id, _), in(P, _).
+.init bbox = BoxFrame<Ident>
+bbox.cell(Id, P) :- piece(Id, P).
+bbox.grid(Id, P) :- piece(Id, _), in(P, _).
 
 // A piece that leaves a hole in its own box is the template; the others fill
 // their box and are the rectangles.
 .decl ragged(id: Ident)
-ragged(Id) :- box.inside(Id, P), !piece(Id, P).
+ragged(Id) :- bbox.inside(Id, P), !piece(Id, P).
 
 .decl rect_cell(id: Ident, p: Position, col: Color)
 rect_cell(Id, P, Col) :- piece(Id, P), !ragged(Id), ink(P, Col).
@@ -47,9 +47,9 @@ tmpl(P, Col) :- piece(Id, P), ragged(Id), ink(P, Col).
 
 // --- template ---
 
-// The center cell of the template's box.
+// The center cell of the template's bbox.
 .decl anchor(p_grid: Position)
-anchor(P) :- ragged(Id), box.inner(Id, P, P_inner), centered(P_inner).
+anchor(P) :- ragged(Id), bbox.inner(Id, P, P_inner), centered(P_inner).
 
 .init rim = Rim<Unit>
 rim.cell($U(), P) :- tmpl(P, _).

@@ -32,14 +32,14 @@ frame_cell(P) :- in(P, Col), params.frame(Col).
 .decl mark(p: Position, col: Color)
 mark(P, Col) :- in(P, Col), !params.bg(Col), !params.frame(Col).
 
-.init box = Bbox<Unit>
-box.cell($U(), P) :- frame_cell(P).
-box.grid($U(), P) :- in(P, _).
+.init bbox = Bbox<Unit>
+bbox.cell($U(), P) :- frame_cell(P).
+bbox.grid($U(), P) :- in(P, _).
 
 // The field the frame encloses. The frame's ring is closed, so the field's rim
 // toward d is the interior line against the frame's d side.
 .init field = Rim<Unit>
-field.cell($U(), P) :- box.inside($U(), P), !frame_cell(P).
+field.cell($U(), P) :- bbox.inside($U(), P), !frame_cell(P).
 
 .decl paint(p: Position, c: Choice)
 
@@ -62,7 +62,7 @@ paint(P, $Corner()) :-
 shape_box.cell($U(), P) :- mark(P, _).
 
 .init shape_cells = BoxCells<Unit>
-shape_cells.box($U(), M) :- shape_box.margin($U(), M).
+shape_cells.box($U(), M) :- shape_box.box($U(), M).
 shape_cells.cell($U(), P) :- in(P, _).
 
 // A hole in the shape's own edge line on side d.

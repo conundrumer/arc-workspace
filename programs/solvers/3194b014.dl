@@ -43,8 +43,8 @@ biggest.item($Cells(), K, P) :- comp_cell(K, P).
 
 // --- $Span ---
 
-.init box = Bbox<Comp>
-box.cell(K, P) :- comp_cell(K, P).
-box.grid(K, P) :- box.cell(K, _), in(P, _).
+.init bbox = Bbox<Comp>
+bbox.cell(K, P) :- comp_cell(K, P).
+bbox.grid(K, P) :- bbox.cell(K, _), in(P, _).
 
-biggest.item($Span(), K, P) :- box.inside(K, P).
+biggest.item($Span(), K, P) :- bbox.inside(K, P).

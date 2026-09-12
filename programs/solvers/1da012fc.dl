@@ -33,16 +33,16 @@
 
 .init params = Params
 
-.init box = Bbox<Unit>
-box.cell($U(), P) :- in(P, Col), params.legend(Col).
-box.grid($U(), P) :- in(P, _).
+.init bbox = Bbox<Unit>
+bbox.cell($U(), P) :- in(P, Col), params.legend(Col).
+bbox.grid($U(), P) :- in(P, _).
 
-// Objects, individuated alike on both sides of the box.
+// Objects, individuated alike on both sides of the bbox.
 .init comps = Components8<Unit>
 comps.node($U(), P) :-
     in(P, Col), !params.bg(Col),
-    ( box.inside($U(), P), !params.legend(Col)   // a marker cell inside the box
-    ; !box.inside($U(), P)                       // an inked cell outside it
+    ( bbox.inside($U(), P), !params.legend(Col)   // a marker cell inside the box
+    ; !bbox.inside($U(), P)                       // an inked cell outside it
     ).
 
 .decl obj(id: Ident)
@@ -50,7 +50,7 @@ obj(Id) :- comps.label($U(), _, Id).
 
 // The two constellations: markers inside the box, shapes outside it.
 .decl marker(id: Ident)
-marker(Id) :- comps.label($U(), P, Id), box.inside($U(), P).
+marker(Id) :- comps.label($U(), P, Id), bbox.inside($U(), P).
 
 .decl shape(id: Ident)
 shape(Id) :- obj(Id), !marker(Id).
@@ -97,11 +97,11 @@ obox.cell(Id, P) :- comps.label($U(), P, Id).
 .init lex = LexOrder<Unit>
 lex.corner($U(), D) :- params.corner(D).
 lex.axis($U(), A) :- params.axis(A).
-lex.cell($U(), M) :- obox.margin(_, M).
+lex.cell($U(), M) :- obox.box(_, M).
 
 reading.before($Anchor(), A, B) :-
     peers(A, B),
-    obox.margin(A, M1), obox.margin(B, M2), lex.before($U(), M1, M2).
+    obox.box(A, M1), obox.box(B, M2), lex.before($U(), M1, M2).
 
 .decl impl_choice(ch: Choice)
 impl_choice($Separated()). impl_choice($Anchor()).

@@ -89,13 +89,13 @@ block(K, P) :- holes.tally(K, N), reading.rank($U(), P, R), R < N.
 block_line(K, L) :- block(K, P), params.axis(A), split(P, A, L, _).
 
 // Shape order: by the nearest cell to order_dir.
-.init box = Bbox<Key>
-box.cell(K, P) :- obj(K, P).
+.init bbox = Bbox<Key>
+bbox.cell(K, P) :- obj(K, P).
 
 .decl before(k1: Key, k2: Key)
 before([Ch, C1, I1], [Ch, C2, I2]) :-
     params.order_dir(D),
-    box.edge_cell([Ch, C1, I1], P, D), box.edge_cell([Ch, C2, I2], Q, D),
+    bbox.edge_cell([Ch, C1, I1], P, D), bbox.edge_cell([Ch, C2, I2], Q, D),
     nearer(D, P, Q).
 
 // The lines the earlier shapes' blocks take: how far this block stacks.

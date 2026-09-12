@@ -6,7 +6,7 @@
 // params.bloom, the largest size. The sizes therefore run as a cycle.
 //
 // Three models redraw a square:
-//   $Box    — the cells strictly inside its bounding box.
+//   $Box    — the cells strictly inside its bounding bbox.
 //   $Erode  — its cells that keep every cardinal neighbor.
 //   $Lookup — a concentric square of the extent params.next_extent gives, which
 //             holds the wrap as one more entry.
@@ -50,11 +50,11 @@ comps.node(Col, P) :- in(P, Col), !params.bg(Col).
 .decl obj(id: Ident, col: Color)
 obj(Id, Col) :- comps.label(Col, _, Id).
 
-.init box = BoxFrame<Ident>
-box.cell(Id, P) :- comps.label(_, P, Id).
+.init bbox = BoxFrame<Ident>
+bbox.cell(Id, P) :- comps.label(_, P, Id).
 
 .decl center(id: Ident, p: Position)
-center(Id, P) :- box.inner(Id, P, P_inner), centered(P_inner).
+center(Id, P) :- bbox.inner(Id, P, P_inner), centered(P_inner).
 
 // The cells a ring-taking case redraws a square as.
 .decl shrunk(ch: Choice, id: Ident, p: Position)
@@ -75,8 +75,8 @@ target_extent(Ch, Id, N) :-
 // --- Box ---
 
 .init bcells = BoxCells<Ident>
-bcells.box(Id, M) :- box.margin(Id, M).
-bcells.cell(Id, P) :- box.cell(Id, _), in(P, _).
+bcells.box(Id, M) :- bbox.box(Id, M).
+bcells.cell(Id, P) :- bbox.cell(Id, _), in(P, _).
 
 shrunk($Box(), Id, P) :- bcells.hole(Id, P).
 
@@ -90,7 +90,7 @@ shrunk($Erode(), Id, P) :- comps.label(Col, P, Id), !exposed.rim(Col, P).
 // --- Lookup ---
 
 target_extent($Lookup(), Id, N2) :-
-    box.extents(Id, _, N, N),      // a square box
+    bbox.extents(Id, _, N, N),      // a square box
     params.next_extent(N, N2).
 
 // --- output ---

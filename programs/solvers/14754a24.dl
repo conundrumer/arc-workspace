@@ -124,11 +124,11 @@ out(P, Col, [Fp, A]) :-
     inst.node(E, P) :- inst_cell(E, P).
 
     .type EI = [e: Example, id: Ident]
-    .init box = BoxFrame<EI>
-    box.cell([E, Id], P) :- inst.label(E, P, Id).
+    .init bbox = BoxFrame<EI>
+    bbox.cell([E, Id], P) :- inst.label(E, P, Id).
 
     // An instance on the frame edge may be clipped; the interior ones
     // show the whole shape.
     .decl shape(p: Position)
-    shape(S) :- box.inner([E, Id], _, S), !box.edge_min([E, Id], _, 0).
+    shape(S) :- bbox.inner([E, Id], _, S), !bbox.edge_min([E, Id], _, 0).
 }

@@ -32,15 +32,15 @@
 .init rect = Components<Unit>
 rect.node($U(), P) :- in(P, Col), !params.bg(Col).
 
-.init box = BoxFrame<Ident>
-box.cell(Id, P) :- rect.label($U(), P, Id).
+.init bbox = BoxFrame<Ident>
+bbox.cell(Id, P) :- rect.label($U(), P, Id).
 
 // The dash's ink phase, in the rectangle's own frame. The divide admits
 // only an odd extent, where the phase reads the same from either end, so
 // the dash needs no anchor.
 .decl ink_run(p: Position)
 ink_run(P) :-
-    box.inner(_, P, P_inner),                                 // the cell, rectangle-framed
+    bbox.inner(_, P, P_inner),                                 // the cell, rectangle-framed
     params.dash_axis(A), params.dash(K), params.gap(G),       // the period
     divide_by_size(P_inner, A, K, G, _, _).                   // on an ink run
 
@@ -49,7 +49,7 @@ ink_run(P) :-
 
 // --- $Midline ---
 dash_cover(P, $Midline()) :-
-    box.inner(_, P, P_inner),                          // the cell, rectangle-framed
+    bbox.inner(_, P, P_inner),                          // the cell, rectangle-framed
     params.dash_axis(A), perp(A, A2), axis_of(D, A2),  // an edge across the dash axis
     dist_pair(P_inner, D, K, K).                       // centered between it and its opposite
 

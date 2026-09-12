@@ -61,7 +61,7 @@ pax(A) :- axis_elem(A), !stack_defect(A).
 trail_dir(D) :-
     pax(A), axis_of(D, A),
     stage_rank(I0, 0), size.tally(In, N), growth_order.rank_desc($U(), N, 0),  // seed, top stage
-    sbox.margin(I0, M0), sbox.margin(In, Mn), nearer(D, M0, Mn).
+    sbox.box(I0, M0), sbox.box(In, Mn), nearer(D, M0, Mn).
 
 .decl grow_dir(d: Dir)
 grow_dir(D2) :- trail_dir(D), opposite(D, D2).
@@ -234,7 +234,7 @@ win.grid($U(), P) :- in(P, _).
 // The slot whose along-extent contains the marker window.
 .decl target(l: Position, lg: Position)
 target(L, Lg) :-
-    slot(L, Lg), win.margin($U(), W),
+    slot(L, Lg), win.box($U(), W),
     trail_dir(Td), dist(Lg, Td, Ts), dist(W, Td, Wn), Ts <= Wn,   // starts at or before
     grow_dir(G), far.high(L, F), jump(Lg, G, F, Lfar),
     dist(Lfar, G, Kf), dist(W, G, Kw), Kw >= Kf.                  // ends at or after

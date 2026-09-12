@@ -11,7 +11,7 @@
 //     $Connected() — an 8-connected component of non-bg cells.
 //   a (the layout axis):
 //     $Separate() — no two boxes share a line of it.
-//     $Spread()   — the longer axis of the shapes' joint bounding box.
+//     $Spread()   — the longer axis of the shapes' joint bounding bbox.
 //     $Long()     — the longer axis of the grid.
 //
 // Every pair's shapes are one component each, of distinct colors, and the
@@ -58,13 +58,13 @@ connected.node($U(), P) :- ink(P).
 shape_cell($Connected(), Id, P) :- connected.label($U(), P, Id).
 
 // Each shape viewed from its own bounding box, the box's inside included.
-.init box = BoxFrame<Obj>
-box.cell([G, Id], P) :- shape_cell(G, Id, P).
-box.grid([G, Id], P) :- in(P, _), shape_cell(G, Id, _).
+.init bbox = BoxFrame<Obj>
+bbox.cell([G, Id], P) :- shape_cell(G, Id, P).
+bbox.grid([G, Id], P) :- in(P, _), shape_cell(G, Id, _).
 
 // The lines of axis a that a shape's box covers.
 .decl box_line(g: Group, id: Ident, a: Axis, l: Position)
-box_line(G, Id, A, L) :- box.inside([G, Id], P), axis_elem(A), split(P, A, L, _).
+box_line(G, Id, A, L) :- bbox.inside([G, Id], P), axis_elem(A), split(P, A, L, _).
 
 // --- AxisRule cases: the layout axis ---
 
@@ -97,7 +97,7 @@ packed.member([G, A], L, L) :- box_line(G, _, A, L).
 .decl out(p: Position, col: Color, ch: Choice)
 out(P_grid, Col, [G, R]) :-
     layout_axis([G, R], A),
-    box.inner([G, Id], P, P_inner),                       // box cell in its crop frame
+    bbox.inner([G, Id], P, P_inner),                       // box cell in its crop frame
     split(P, A, L, _), packed.pos([G, A], L, P_along),    // its line, packed
     split(P_inner, A, _, P_across),                       // its place across the crop
     compose(P_along, P_across, P_grid),

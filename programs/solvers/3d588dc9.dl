@@ -95,8 +95,8 @@ wedge.item(Id, Dg) :- obj(Id, _), diag_dir_elem(Dg), !notch(Id, Dg).
 .decl short(t: Ident, k: Ident)
 short(T, K) :-
     wedge.value(T, Dg), key_at(K, _), dir_of(Dg, _, D),       // an edge of the wedge's corner
-    obj_box.margin(T, M_t), dist(M_t, D, K_t),                // how far the wedge sits from it
-    obj_box.margin(K, M_k), dist(M_k, D, K_k), K_k <= K_t.    // the key sits no further
+    obj_box.box(T, M_t), dist(M_t, D, K_t),                // how far the wedge sits from it
+    obj_box.box(K, M_k), dist(M_k, D, K_k), K_k <= K_t.    // the key sits no further
 
 .init side = Unanimous<Ident, Dir>
 side.item(K, D) :-
@@ -147,12 +147,12 @@ out(P, Col) :-
     .init pick = Canon<EP>
     pick.equiv([E, P0], [E2, P02]) :- shed(E, P0), shed(E2, P02).
 
-    .init box = BoxFrame<EP>
-    box.cell(K, P) :- pick.rep(K, K), flood.reach(K, P).
+    .init bbox = BoxFrame<EP>
+    bbox.cell(K, P) :- pick.rep(K, K), flood.reach(K, P).
 
     .decl key_stem(p: Position)
-    key_stem(S) :- key_shed(K, P), box.inner(K, P, S).
+    key_stem(S) :- key_shed(K, P), bbox.inner(K, P, S).
 
     .decl key_block(p: Position)
-    key_block(S) :- box.inner(K, P, S), !key_shed(K, P).
+    key_block(S) :- bbox.inner(K, P, S), !key_shed(K, P).
 }

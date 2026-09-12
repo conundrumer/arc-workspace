@@ -13,7 +13,7 @@
 // column inside the box:
 //   $Leak      — the seed floods the box through non-frame cells, and every
 //                flooded cell casts cardinal rays, halted by frame cells,
-//                which carry the fill out of the box.
+//                which carry the fill out of the bbox.
 //   $Crosshair — the seed's row and column are axes; each non-frame box
 //                cell on an axis casts across it, halted by frame cells.
 
@@ -41,15 +41,15 @@ seed(P, Col) :- lone.value(Col, P).
 .decl frame(p: Position)
 frame(P) :- in(P, Col), !palette.mode($U(), Col), !seed(_, Col).
 
-.init box = Bbox<Unit>
-box.cell($U(), P) :- frame(P).
-box.grid($U(), P) :- in(P, _).
+.init bbox = Bbox<Unit>
+bbox.cell($U(), P) :- frame(P).
+bbox.grid($U(), P) :- in(P, _).
 
 .decl fill(p: Position, ch: Choice)
 
 // --- $Leak ---
 .init flood = Reach<Unit>
-flood.node($U(), P) :- box.inside($U(), P), !frame(P).
+flood.node($U(), P) :- bbox.inside($U(), P), !frame(P).
 flood.seed($U(), P) :- seed(P, _).
 
 .init leak = Ray<Unit>
@@ -67,7 +67,7 @@ fill(P, $Leak()) :- leak.clear($U(), P, _, _, _).
 cross.dir(A, D) :- axis_of(D, A).
 cross.cell(A, P) :- axis_elem(A), in(P, _).
 cross.mark(A, P) :-
-    box.inside($U(), P), !frame(P),                       // a non-frame box cell
+    bbox.inside($U(), P), !frame(P),                       // a non-frame box cell
     seed(S, _), same_line(A_seed, P, S), perp(A_seed, A).  // on the seed's line
 cross.blocked(A, P) :- axis_elem(A), frame(P).
 

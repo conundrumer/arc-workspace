@@ -32,15 +32,15 @@ line_of(P, A, L) :- in(P, _), axis_elem(A), split(P, A, L, _).
 
 // --- Clear ---
 
-.init box = Bbox<Unit>
-box.cell($U(), P) :- open_cell(P).
-box.grid($U(), P) :- in(P, _).
+.init bbox = Bbox<Unit>
+bbox.cell($U(), P) :- open_cell(P).
+bbox.grid($U(), P) :- in(P, _).
 
-// A line carrying a wall cell inside the box.
+// A line carrying a wall cell inside the bbox.
 .decl blocked(l: Position)
-blocked(L) :- box.inside($U(), P), !open_cell(P), line_of(P, _, L).
+blocked(L) :- bbox.inside($U(), P), !open_cell(P), line_of(P, _, L).
 
-painted(P, $Clear()) :- box.inside($U(), P), line_of(P, _, L), !blocked(L).
+painted(P, $Clear()) :- bbox.inside($U(), P), line_of(P, _, L), !blocked(L).
 
 // --- Widest ---
 

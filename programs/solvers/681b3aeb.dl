@@ -17,17 +17,17 @@
 
 // --- the candidate placements ---
 
-// Each color's cells, viewed from their own box.
-.init box = BoxFrame<Color>
-box.cell(Col, P) :- in(P, Col), !params.bg(Col).
+// Each color's cells, viewed from their own bbox.
+.init bbox = BoxFrame<Color>
+bbox.cell(Col, P) :- in(P, Col), !params.bg(Col).
 
 .init frame = Frame2D<Unit>
 frame.extent($U(), A, N) :- axis_elem(A), params.side(N).
 
 // A placement lands every cell of the shape in the square.
 .init occ = Occurrences<Color, Unit>
-occ.shape(Col, S, $U()) :- box.inner(Col, _, S).
-occ.cell(Col, P, $U()) :- box.cell(Col, _), frame.cell($U(), P).
+occ.shape(Col, S, $U()) :- bbox.inner(Col, _, S).
+occ.cell(Col, P, $U()) :- bbox.cell(Col, _), frame.cell($U(), P).
 
 // A piece: one color's shape at one placement, named by its margins in the
 // square.

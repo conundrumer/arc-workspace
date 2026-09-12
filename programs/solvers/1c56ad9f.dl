@@ -25,12 +25,12 @@
 .comp Parse<Key> {
     .decl figure(key: Key, p: Position, col: Color)  // input
 
-    .init box = BoxFrame<Key>
-    box.cell(Ky, P) :- figure(Ky, P, _).
+    .init bbox = BoxFrame<Key>
+    bbox.cell(Ky, P) :- figure(Ky, P, _).
 
     .decl phase(key: Key, p: Position, k: number)
     phase(Ky, P, K) :-
-        box.inner(Ky, P, P_inner),                // in the figure's frame
+        bbox.inner(Ky, P, P_inner),                // in the figure's frame
         params.anchor(D), dist(P_inner, D, T),    // distance from the anchor edge
         params.period(N), stride(T, N, 0, _, K).  // folded into the cycle
 }

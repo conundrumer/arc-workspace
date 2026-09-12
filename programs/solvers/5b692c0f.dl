@@ -35,9 +35,9 @@ obj(Id, P) :- objs.label($U(), P, Id).
 .decl obj_mark(id: Ident, p: Position)
 obj_mark(Id, P) :- obj(Id, P), in(P, Col), params.mark(Col).
 
-.init box = Bbox<Ident>
-box.cell(Id, P) :- obj(Id, P).
-box.grid(Id, P) :- obj(Id, _), in(P, _).
+.init bbox = Bbox<Ident>
+bbox.cell(Id, P) :- obj(Id, P).
+bbox.grid(Id, P) :- obj(Id, _), in(P, _).
 
 // The fold's line is the object's commonest mark line.
 .init line_pick = Mode<Ident, Line, Position>
@@ -48,13 +48,13 @@ fold(Id, A2, L) :- line_pick.mode(Id, [A, L]), perp(A, A2).    // the axis the f
 
 // A cell of the object's box, off the axis line, toward D.
 .decl side(id: Ident, d: Dir, p: Position)
-side(Id, D, P) :- box.inside(Id, P), fold(Id, A, L), axis_of(D, A), nearer(D, P, L).
+side(Id, D, P) :- bbox.inside(Id, P), fold(Id, A, L), axis_of(D, A), nearer(D, P, L).
 
 // A box cell's image under the flip, taken about the axis line. The flip fixes
 // the along-axis, so the line's own Position frames it.
 .decl mirror(id: Ident, p: Position, p_out: Position)
 mirror(Id, P, P_out) :-
-    box.inside(Id, P), fold(Id, A, L), flip_of(A, F),
+    bbox.inside(Id, P), fold(Id, A, L), flip_of(A, F),
     relative(L, P, V), apply(F, V, V2), compose(L, V2, P_out), in(P_out, _).
 
 // The source side is the side holding most of the case's cells.

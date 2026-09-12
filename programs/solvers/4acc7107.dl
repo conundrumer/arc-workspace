@@ -44,15 +44,15 @@ shapes.node(Col, P) :- in(P, Col), !params.bg(Col).
 .decl shape_color(id: Ident, col: Color)
 shape_color(Id, Col) :- shapes.label(Col, _, Id).
 
-.init box = Bbox<Ident>
-box.cell(Id, P) :- shapes.label(_, P, Id).
+.init bbox = Bbox<Ident>
+bbox.cell(Id, P) :- shapes.label(_, P, Id).
 
 .decl shape_size(id: Ident, depth: number, width: number)
-shape_size(Id, N1, N2) :- params.stack_axis(A), box.extents(Id, A, N1, N2).
+shape_size(Id, N1, N2) :- params.stack_axis(A), bbox.extents(Id, A, N1, N2).
 
 // The rank key: a shape's distance to the lane edge.
 .decl lane_dist(id: Ident, k: number)
-lane_dist(Id, K) :- lane_dir(D), box.edge_min(Id, D, K).
+lane_dist(Id, K) :- lane_dir(D), bbox.edge_min(Id, D, K).
 
 // Shapes of one color rank by nearness to the lane edge.
 .init shape_ord = Order<Color, Ident>
@@ -97,7 +97,7 @@ slot(Id2, P2) :-
 
 // The grid cell at a shape's own corner.
 .decl anchor(id: Ident, p: Position)
-anchor(Id, P) :- box.margin(Id, M), params.corner(Cnr), in(P, _), corner_anchor(Cnr, M, P).
+anchor(Id, P) :- bbox.box(Id, M), params.corner(Cnr), in(P, _), corner_anchor(Cnr, M, P).
 
 // A shape travels by the shift carrying its corner cell onto its slot's.
 .decl move(id: Ident, v: Offset)

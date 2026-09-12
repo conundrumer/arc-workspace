@@ -34,11 +34,11 @@ comps.node($U(), P) :- in(P, Col), !params.bg(Col).
 .decl cell_of(id: Ident, p: Position)
 cell_of(Id, P) :- comps.label($U(), P, Id).
 
-.init box = Bbox<Ident>
-box.cell(Id, P) :- cell_of(Id, P).
+.init bbox = Bbox<Ident>
+bbox.cell(Id, P) :- cell_of(Id, P).
 
 .init bcells = BoxCells<Ident>
-bcells.box(Id, M) :- box.margin(Id, M).
+bcells.box(Id, M) :- bbox.box(Id, M).
 bcells.cell(Id, P) :- cell_of(Id, P).
 
 // The inside, viewed from its own frame.

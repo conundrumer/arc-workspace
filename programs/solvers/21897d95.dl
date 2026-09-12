@@ -91,7 +91,7 @@
     pbox.grid([Ky, K], P) :- patch_cell(Ky, K, _), cell(Ky, P, _).
 
     .init bcells = BoxCells<KI>
-    bcells.box([Ky, K], M) :- pbox.margin([Ky, K], M).
+    bcells.box([Ky, K], M) :- pbox.box([Ky, K], M).
     bcells.cell([Ky, K], P) :- pbox.inside([Ky, K], P).
 
     // A patch against the two arms of each corner of its box — the two box
@@ -230,7 +230,7 @@ bracket_at($BGlyph(), K) :- bshape.equals(K, _).
 bframe.extent(Id, A, N) :- params.bracket_glyph(Id, P, _), axis_elem(A), axis_dim(P, A, N).
 
 bracket_host.item([$BGlyph(), K], Col) :-
-    bshape.equals(K, Id), pframe.margin(K, M),                // a matched bracket
+    bshape.equals(K, Id), pframe.box(K, M),                // a matched bracket
     bframe.cell(Id, P_i), !params.bracket_glyph(Id, P_i, _),  // a frame cell, not ink
     compose(M, P_i, Q), in(Q, Col).                           // the color it shows
 

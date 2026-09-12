@@ -21,15 +21,15 @@
 .decl ink(p: Position)
 ink(P) :- in(P, Col), !params.bg(Col).
 
-// Each ink cell viewed from its owning box.
+// Each ink cell viewed from its owning bbox.
 .decl framed(p: Position, ch: Choice, p_inner: Position)
 
 // --- $Whole ---
 
-.init box = BoxFrame<Unit>
-box.cell($U(), P) :- ink(P).
+.init bbox = BoxFrame<Unit>
+bbox.cell($U(), P) :- ink(P).
 
-framed(P, $Whole(), I) :- box.inner($U(), P, I).
+framed(P, $Whole(), I) :- bbox.inner($U(), P, I).
 
 // --- $Each ---
 

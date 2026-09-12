@@ -31,4 +31,4 @@ bands.domain([D, K]) :- edge_dist(_, D, K).
 place.edge(P, D, I) :- edge_dist(P, D, K), bands.tally([D, K], I).
 
 .decl out(p: Position, col: Color)
-out(P_out, Col) :- in(P, Col), place.pos(P, P_out).
+out(P_out, Col) :- in(P, Col), place.box(P, P_out).

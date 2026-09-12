@@ -148,17 +148,17 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !paint(P, _, Ch).
     .init comps = Components8<Example>
     comps.node(E, P) :- ink_in(E, P).
 
-    // The launching mark, viewed from its own box.
+    // The launching mark, viewed from its own bbox.
     .type EA = [e: Example, a: Position]
-    .init box = BoxFrame<EA>
-    box.cell([E, A], P) :-
+    .init bbox = BoxFrame<EA>
+    bbox.cell([E, A], P) :-
         launch(E, A, _), comps.label(E, A, Id), comps.label(E, P, Id).
 
     // Each pair of marks, both footprints in their own box frames.
     .type Pair = [k: EA, k2: EA]
     .init same = D4Map<Pair, Unit>
-    same.src([K, K2], S, $U()) :- box.inner(K, _, S), box.inner(K2, _, _).
-    same.dst([K, K2], S, $U()) :- box.inner(K, _, _), box.inner(K2, _, S).
+    same.src([K, K2], S, $U()) :- bbox.inner(K, _, S), bbox.inner(K2, _, _).
+    same.dst([K, K2], S, $U()) :- bbox.inner(K, _, _), bbox.inner(K2, _, S).
 
     .init pick = Canon<EA>
     pick.equiv(K, K2) :- same.map([K, K2], _).
@@ -168,10 +168,10 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !paint(P, _, Ch).
     chart(Id, K) :- pick.rep(K, K), pick.id(K, Id).
 
     .decl glyph_shape(id: Ident, p: Position)
-    glyph_shape(Id, S) :- chart(Id, K), box.inner(K, _, S).
+    glyph_shape(Id, S) :- chart(Id, K), bbox.inner(K, _, S).
 
     .decl glyph_apex(id: Ident, p: Position)
-    glyph_apex(Id, S) :- chart(Id, [E, A]), box.inner([E, A], A, S).
+    glyph_apex(Id, S) :- chart(Id, [E, A]), bbox.inner([E, A], A, S).
 
     .decl glyph_aim(id: Ident, d: Dir8)
     glyph_aim(Id, D) :- chart(Id, [E, A]), launch(E, A, D).

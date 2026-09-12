@@ -62,7 +62,7 @@ template_mark(P) :- template_cell(P, Col), params.mark(Col).
 // Placement (T0, Id) sends template mark T0 to block Id. Under it, template
 // cell P covers the box Box.
 .decl carry(t0: Position, id: Ident, p: Position, box: Position)
-carry(T0, Id, T0, Box) :- template_mark(T0), block.margin(Id, Box).
+carry(T0, Id, T0, Box) :- template_mark(T0), block.box(Id, Box).
 carry(T0, Id, P2, Box2) :-
     carry(T0, Id, P, Box),                                   // known correspondence
     dir_elem(D), neighbor(P, D, P2), template_cell(P2, _),   // one step along the template
@@ -70,7 +70,7 @@ carry(T0, Id, P2, Box2) :-
 
 // A placement that sends some template mark where no block stands.
 .decl astray(t0: Position, id: Ident)
-astray(T0, Id) :- carry(T0, Id, P, Box), template_mark(P), !block.margin(_, Box).
+astray(T0, Id) :- carry(T0, Id, P, Box), template_mark(P), !block.box(_, Box).
 
 // The box a template cell covers, under a placement that holds.
 .decl covers(p: Position, box: Position)

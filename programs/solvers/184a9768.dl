@@ -43,13 +43,13 @@ piece(O) :- obj_cell(O, _, _), !frame(O).
 
 // --- the candidate placements ---
 
-// A piece's shape, viewed from its own box.
-.init box = BoxFrame<Ident>
-box.cell(O, P) :- piece(O), obj_cell(O, _, P).
+// A piece's shape, viewed from its own bbox.
+.init bbox = BoxFrame<Ident>
+bbox.cell(O, P) :- piece(O), obj_cell(O, _, P).
 
 // Where a piece lands with each of its cells on a hole.
 .init occ = Occurrences<Ident, Unit>
-occ.shape(O, S, $U()) :- box.inner(O, _, S).
+occ.shape(O, S, $U()) :- bbox.inner(O, _, S).
 occ.cell(O, P, $U()) :- piece(O), hole(P).
 
 // A candidate: a piece translated to a spot, named by the spot's margins.

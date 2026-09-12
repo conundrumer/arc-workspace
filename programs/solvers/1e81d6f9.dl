@@ -7,7 +7,7 @@
 //   $Marker — only the marker cell is kept.
 //   $Bbox   — the whole region is kept: the connected component of mask cells at
 //             the corner (so a stray mask cell elsewhere cannot extend it),
-//             bounded to its bounding box.
+//             bounded to its bounding bbox.
 
 #include "../lib.dl"
 
@@ -48,9 +48,9 @@ region.node($U(), P) :- mask(P).
 region.seed($U(), P) :- mask(P), params.target_corner(Diag), dir_of(Diag, _, D), dist(P, D, 0).
 
 // The region's bounding box over the input grid.
-.init box = Bbox<Unit>
-box.cell($U(), P) :- region.reach($U(), P).
-box.grid($U(), P) :- in(P, _).
+.init bbox = Bbox<Unit>
+bbox.cell($U(), P) :- region.reach($U(), P).
+bbox.grid($U(), P) :- in(P, _).
 
 .decl out(p: Position, col: Color, c: Choice)
 
@@ -66,6 +66,6 @@ out(P, Col_out, $Marker()) :-
 out(P, Col_out, $Bbox()) :-
     in(P, Col),                                                         // grid cell
     ( !target_color(Col), Col_out = Col                                 // non-target — passes
-    ; box.inside($U(), P), Col_out = Col                                // in the region — kept
-    ; target_color(Col), !box.inside($U(), P), params.bg(Col_out)       // target outside — erased
+    ; bbox.inside($U(), P), Col_out = Col                                // in the region — kept
+    ; target_color(Col), !bbox.inside($U(), P), params.bg(Col_out)       // target outside — erased
     ).

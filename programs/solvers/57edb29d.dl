@@ -25,21 +25,21 @@
 .init panel = Components<Unit>
 panel.node($U(), P) :- in(P, Col), !params.bg(Col).
 
-// Each panel viewed from its own box.
-.init box = BoxFrame<Ident>
-box.cell(Id, P) :- panel.label($U(), P, Id).
+// Each panel viewed from its own bbox.
+.init bbox = BoxFrame<Ident>
+bbox.cell(Id, P) :- panel.label($U(), P, Id).
 
 // The field color, read on the border, where no mark sits.
 .decl field(id: Ident, col: Color)
-field(Id, Col) :- box.edge_cell(Id, P, _), in(P, Col).
+field(Id, Col) :- bbox.edge_cell(Id, P, _), in(P, Col).
 
 // A mark: a panel cell off the field color, placed in the panel's frame.
 .decl mark(id: Ident, p_intile: Position, col: Color)
-mark(Id, P_intile, Col) :- box.inner(Id, P, P_intile), in(P, Col), !field(Id, Col).
+mark(Id, P_intile, Col) :- bbox.inner(Id, P, P_intile), in(P, Col), !field(Id, Col).
 
 // The cells of the panel that carries no mark — the one the design goes on.
 .decl target_cell(id: Ident, p_intile: Position)
-target_cell(Id, P_intile) :- box.inner(Id, _, P_intile), !mark(Id, _, _).
+target_cell(Id, P_intile) :- bbox.inner(Id, _, P_intile), !mark(Id, _, _).
 
 // A mark's anchor on one axis: its distance to the nearer edge of its
 // panel. A centered mark anchors to both.

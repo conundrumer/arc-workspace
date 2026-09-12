@@ -15,14 +15,14 @@
 .decl ink(p: Position, col: Color)
 ink(P, Col) :- in(P, Col), !params.bg(Col).
 
-.init box = Bbox<Color>
-box.cell(Col, P) :- ink(P, Col).
+.init bbox = Bbox<Color>
+bbox.cell(Col, P) :- ink(P, Col).
 
 .init bcells = BoxCells<Color>
-bcells.box(Col, M) :- box.margin(Col, M).
-bcells.cell(Col, P) :- box.cell(Col, _), in(P, _).
+bcells.box(Col, M) :- bbox.box(Col, M).
+bcells.cell(Col, P) :- bbox.cell(Col, _), in(P, _).
 
-// Some cell of Col2 lies outside the interior of Col's box.
+// Some cell of Col2 lies outside the interior of Col's bbox.
 .decl escapes(col: Color, col2: Color)
 escapes(Col, Col2) :- ink(_, Col), ink(P, Col2), !bcells.hole(Col, P).
 

@@ -19,8 +19,8 @@
 
 // --- the bar pairs ---
 
-.init box = Bbox<Color>
-box.cell(Col, P) :- in(P, Col), !params.bg(Col).
+.init bbox = Bbox<Color>
+bbox.cell(Col, P) :- in(P, Col), !params.bg(Col).
 
 // --- the repeats ---
 
@@ -29,11 +29,11 @@ box.cell(Col, P) :- in(P, Col), !params.bg(Col).
 .decl trace(col: Color, p: Position, d_step: Dir, d_out: Dir)
 trace(Col, P, D_step, D_out) :-
     params.bar_axis(A), perp(A, A2),
-    box.edge_cell(Col, P, D_out), axis_of(D_out, A2),        // the side of the pair it sits on
+    bbox.edge_cell(Col, P, D_out), axis_of(D_out, A2),        // the side of the pair it sits on
     axis_of(D_step, A).                                      // either way along the axis
 trace(Col, Q, D_step, D_out) :-
     trace(Col, P, D_step, D_out),
-    params.bar_axis(A), box.extent(Col, A, N),
+    params.bar_axis(A), bbox.extent(Col, A, N),
     jump(P, D_step, N, P_on), neighbor(P_on, D_out, Q),      // a bar length on, a cell wider
     in(Q, _).                                                // while it stays in frame
 

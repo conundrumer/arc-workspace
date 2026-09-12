@@ -37,12 +37,12 @@ divider(A, L, Col) :- line_color.value([A, L], Col), !field.mode($U(), Col).
 .init parts = Components<Color>
 parts.node(Col, P) :- in(P, Col), !field.mode($U(), Col).
 
-.init box = Bbox<Ident>
-box.cell(Id, P) :- parts.label(_, P, Id).
-box.grid(Id, P) :- parts.label(_, _, Id), in(P, _).
+.init bbox = Bbox<Ident>
+bbox.cell(Id, P) :- parts.label(_, P, Id).
+bbox.grid(Id, P) :- parts.label(_, _, Id), in(P, _).
 
 .decl hole(id: Ident)
-hole(Id) :- box.inside(Id, P), !parts.label(_, P, Id).
+hole(Id) :- bbox.inside(Id, P), !parts.label(_, P, Id).
 
 // The lines a component reaches across each axis.
 .init reach = Unanimous<PartAxis, Position>

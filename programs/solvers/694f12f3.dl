@@ -99,12 +99,12 @@ fill(Id, Col, $Small(), $Extreme()) :-
 .decl inner_cell(id: Ident, p: Position, i: Interior)
 
 // --- $Box ---
-.init box = Bbox<Ident>
-box.cell(Id, P) :- parse.rects.label($U(), P, Id).
+.init bbox = Bbox<Ident>
+bbox.cell(Id, P) :- parse.rects.label($U(), P, Id).
 
 .init box_cells = BoxCells<Ident>
-box_cells.box(Id, B) :- box.margin(Id, B).
-box_cells.cell(Id, P) :- box.cell(Id, _), in(P, _).
+box_cells.box(Id, B) :- bbox.box(Id, B).
+box_cells.cell(Id, P) :- bbox.cell(Id, _), in(P, _).
 
 inner_cell(Id, P, $Box()) :- box_cells.hole(Id, P).
 

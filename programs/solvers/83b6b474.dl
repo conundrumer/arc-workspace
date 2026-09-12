@@ -20,9 +20,9 @@ field.item($U(), Col, P) :- in(P, Col).
 .decl bg(col: Color)
 bg(Col) :- field.mode($U(), Col).
 
-// Each color's shape, viewed from its own box.
-.init box = BoxFrame<Color>
-box.cell(Col, P) :- in(P, Col), !bg(Col).
+// Each color's shape, viewed from its own bbox.
+.init bbox = BoxFrame<Color>
+bbox.cell(Col, P) :- in(P, Col), !bg(Col).
 
 // --- the ring ---
 
@@ -45,7 +45,7 @@ border(K, P) :- square.cell(K, P), dir_elem(D), dist(P, D, 0).
 border_size.item(K, P) :- border(K, P).
 
 .init shape_size = Tally<Unit, Position>
-shape_size.item($U(), P) :- box.cell(_, P).
+shape_size.item($U(), P) :- bbox.cell(_, P).
 
 // The output square: its border holds as many cells as the shapes.
 .decl side(k: number)
@@ -58,8 +58,8 @@ ring(P) :- side(K), border(K, P).
 
 // Where a shape lands with each of its cells on the ring.
 .init occ = Occurrences<Color, Unit>
-occ.shape(Col, S, $U()) :- box.inner(Col, _, S).
-occ.cell(Col, P, $U()) :- box.cell(Col, _), ring(P).
+occ.shape(Col, S, $U()) :- bbox.inner(Col, _, S).
+occ.cell(Col, P, $U()) :- bbox.cell(Col, _), ring(P).
 
 // A candidate: a shape translated to a spot, named by the spot's margins.
 .type Placement = [col: Color, m: Position]

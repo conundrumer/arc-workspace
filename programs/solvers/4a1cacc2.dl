@@ -19,14 +19,14 @@ mark(P, Col) :- in(P, Col), !params.bg(Col).
 .init place = DiagPlacement<Unit>
 place.cell($U(), P) :- mark(P, _).
 
-.init box = Bbox<Unit>
-box.cell($U(), P) :- mark(P, _).
-box.cell($U(), P) :- in(P, _), place.quadrant($U(), _, Diag), corner_dist(P, Diag, 0).
-box.grid($U(), P) :- in(P, _).
+.init bbox = Bbox<Unit>
+bbox.cell($U(), P) :- mark(P, _).
+bbox.cell($U(), P) :- in(P, _), place.quadrant($U(), _, Diag), corner_dist(P, Diag, 0).
+bbox.grid($U(), P) :- in(P, _).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, C0),
-    ( box.inside($U(), P), mark(_, Col)   // the box takes the mark's color
-    ; !box.inside($U(), P), Col = C0      // the field passes through
+    ( bbox.inside($U(), P), mark(_, Col)   // the box takes the mark's color
+    ; !bbox.inside($U(), P), Col = C0      // the field passes through
     ).

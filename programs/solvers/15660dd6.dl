@@ -65,7 +65,7 @@ inner_cell(Id, P_intile, Col) :-
 // A panel's column and band, as the two halves of its box placement.
 .decl panel_pos(id: Ident, p_col: Position, p_band: Position)
 panel_pos(Id, P_col, P_band) :-
-    panel.margin(Id, M), params.layout_axis(A), split(M, A, P_col, P_band).
+    panel.box(Id, M), params.layout_axis(A), split(M, A, P_col, P_band).
 
 // --- lattice ---
 

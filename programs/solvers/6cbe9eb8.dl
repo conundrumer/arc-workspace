@@ -18,20 +18,20 @@
 
 .init params = Params
 
-.init box = BoxFrame<Color>
-box.cell(Col, P) :- in(P, Col).
-box.grid(Col, P) :- in(_, Col), in(P, _).
+.init bbox = BoxFrame<Color>
+bbox.cell(Col, P) :- in(P, Col).
+bbox.grid(Col, P) :- in(_, Col), in(P, _).
 
 // Some cell of the color's box is another color.
 .decl gap(col: Color)
-gap(Col) :- box.inside(Col, P), !in(P, Col).
+gap(Col) :- bbox.inside(Col, P), !in(P, Col).
 
 .decl block(col: Color)
 block(Col) :- in(_, Col), !gap(Col).
 
 // Some cell of the color lies off its box's edge.
 .decl inward(col: Color)
-inward(Col) :- in(P, Col), !box.edge_cell(Col, P, _).
+inward(Col) :- in(P, Col), !bbox.edge_cell(Col, P, _).
 
 .decl outline(col: Color)
 outline(Col) :- in(_, Col), !block(Col), !inward(Col).
@@ -41,7 +41,7 @@ shape(Col) :- ( outline(Col) ; block(Col) ).
 
 // Col2's box is longer than Col's on some axis.
 .decl overflows(col: Color, col2: Color)
-overflows(Col, Col2) :- box.extent(Col, A, N), box.extent(Col2, A, N2), N < N2.
+overflows(Col, Col2) :- bbox.extent(Col, A, N), bbox.extent(Col2, A, N2), N < N2.
 
 // Shapes from the largest inward: Col2 fits in Col.
 .init nest = Order<Unit, Color>
@@ -49,7 +49,7 @@ nest.elem($U(), Col) :- shape(Col).
 nest.before($U(), Col, Col2) :- shape(Col), shape(Col2), Col != Col2, !overflows(Col, Col2).
 
 .init frame = Frame2D<Unit>
-frame.extent($U(), A, N) :- nest.first($U(), Col), box.extent(Col, A, N).
+frame.extent($U(), A, N) :- nest.first($U(), Col), bbox.extent(Col, A, N).
 
 // Each shape's box in the output frame: the next shape's corner cell lands
 // on the anchor of the shape before it.
@@ -57,7 +57,7 @@ frame.extent($U(), A, N) :- nest.first($U(), Col), box.extent(Col, A, N).
 obox(Col, ZERO) :- nest.first($U(), Col).
 obox(Col2, B) :-
     nest.next($U(), Col, Col2), anchor(Col, Q),
-    params.corner(Diag), box.inner(Col2, _, Q_in), corner_dist(Q_in, Diag, 0),  // Col2's corner cell, in its own frame
+    params.corner(Diag), bbox.inner(Col2, _, Q_in), corner_dist(Q_in, Diag, 0),  // Col2's corner cell, in its own frame
     relative(Q_in, Q, B).
 
 // The corner cell of a shape's interior.

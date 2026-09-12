@@ -131,7 +131,7 @@ moved(P_out, Col) :-
     in(P, Col), obj.label($U(), P, Id_src),                                  // object cell
     obj_size.tally(Id_src, N), obj_rank.rank($U(), N, R),                    // its object's size rank
     obj_order.pos($U(), Id_dst, P_pos), params.least_dir(D), dist(P_pos, D, R),   // the object at that place from the least edge
-    obj_box.margin(Id_src, B_src), obj_box.margin(Id_dst, B_dst),            // box to box
+    obj_box.box(Id_src, B_src), obj_box.box(Id_dst, B_dst),            // box to box
     relative(B_src, B_dst, V), compose(P, V, P_out).
 
 out(P, Col, $Objects()) :- moved(P, Col).

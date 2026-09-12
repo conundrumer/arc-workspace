@@ -43,7 +43,7 @@ thick.edge($U(), D, N) :- blk_box.extent($U(), A, N), axis_of(D, A).
 
 // The figure's box, let out by the ring's thickness at each edge.
 .decl ring_box(b: Position)
-ring_box(B) :- fig_box.margin($U(), M), thick.pos($U(), Thick), relative(Thick, M, B).
+ring_box(B) :- fig_box.box($U(), M), thick.box($U(), Thick), relative(Thick, M, B).
 
 .decl ring(p: Position)
 ring(P) :- in(P, _), ring_box(B), inside(P, B), !fig_box.inside($U(), P).

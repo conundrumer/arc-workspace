@@ -52,12 +52,12 @@ piece.node($U(), P) :- panel(T, P, Col), !template(T, _), !bg(Col).
 .decl piece_cell(o: Ident, p: Position, col: Color)
 piece_cell(O, P, Col) :- piece.label($U(), P, O), in(P, Col).
 
-// A piece's pattern, read from its own box.
-.init box = BoxFrame<Ident>
-box.cell(O, P) :- piece_cell(O, P, _).
+// A piece's pattern, read from its own bbox.
+.init bbox = BoxFrame<Ident>
+bbox.cell(O, P) :- piece_cell(O, P, _).
 
 .decl shape(o: Ident, p_inner: Position, col: Color)
-shape(O, S, Col) :- box.inner(O, P, S), piece_cell(O, P, Col).
+shape(O, S, Col) :- bbox.inner(O, P, S), piece_cell(O, P, Col).
 
 // --- the candidate placements ---
 
@@ -92,7 +92,7 @@ congruent.observed_member(O, [S, Col]) :- shape(O, S, Col).
 // The order a reading puts the positions in: where the pieces sit, and
 // where they may go.
 .init reads = LexOrder<Reading>
-reads.cell(R, P) :- reading_elem(R), ( box.margin(_, P) ; occ.occurrence(_, P) ).
+reads.cell(R, P) :- reading_elem(R), ( bbox.box(_, P) ; occ.occurrence(_, P) ).
 reads.corner([D, A], D) :- reading_elem([D, A]).
 reads.axis([D, A], A) :- reading_elem([D, A]).
 
@@ -107,7 +107,7 @@ pruning.conflict(R, Cd, Cd2) :-
     reading_elem(R), covers(Cd, P, _), covers(Cd2, P, _).  // over one cell
 pruning.conflict(R, [O, M], [O2, M2]) :-
     congruent.equals(O, O2), O != O2,                              // interchangeable pieces
-    box.margin(O, S), box.margin(O2, S2), reads.before(R, S, S2),  // O sits first
+    bbox.box(O, S), bbox.box(O2, S2), reads.before(R, S, S2),  // O sits first
     occ.occurrence(O, M), occ.occurrence(O2, M2),
     reads.before(R, M2, M).                                        // but takes the later spot
 

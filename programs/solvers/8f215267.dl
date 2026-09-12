@@ -73,7 +73,7 @@ obox.cell(Id, P) :- comps.label(_, P, Id).
 
 frame(Col, Id, B, $Enclose()) :-
     closed.region(Id, _, _),                    // the object closes something off
-    comps.label(Col, _, Id), obox.margin(Id, B).
+    comps.label(Col, _, Id), obox.box(Id, B).
 
 // --- output ---
 

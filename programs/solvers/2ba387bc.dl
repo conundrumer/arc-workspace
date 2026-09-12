@@ -31,13 +31,13 @@ comps.node(Col, P) :- in(P, Col), !params.bg(Col).
 .decl square(id: Ident, p: Position, col: Color)
 square(Id, P, Col) :- comps.label(Col, P, Id).
 
-.init box = BoxFrame<Ident>
-box.cell(Id, P) :- square(Id, P, _).
-box.grid(Id, P) :- square(Id, _, _), in(P, _).
+.init bbox = BoxFrame<Ident>
+bbox.cell(Id, P) :- square(Id, P, _).
+bbox.grid(Id, P) :- square(Id, _, _), in(P, _).
 
 // Hollow: the box encloses a cell the square does not cover.
 .decl hollow(id: Ident)
-hollow(Id) :- box.inside(Id, P), !square(Id, P, _).
+hollow(Id) :- bbox.inside(Id, P), !square(Id, P, _).
 
 // --- columns ---
 
@@ -59,7 +59,7 @@ stack(Id, D) :-
 .init order = LexOrder<Dir>
 order.corner(D_stack, Diag) :- order.cell(D_stack, _), params.corner(Diag).
 order.axis(D_stack, A) :- order.cell(D_stack, _), order_axis(A).
-order.cell(D, P) :- stack(Id, D), box.margin(Id, P).
+order.cell(D, P) :- stack(Id, D), bbox.box(Id, P).
 
 .init height = Tally<Dir, Ident>
 height.item(D, Id) :- stack(Id, D).
@@ -82,7 +82,7 @@ cells.extent($U(), A, N) :- axis_elem(A), params.tile_dim(N).
 
 .decl square_tile(id: Ident, p_tile: Position)
 square_tile(Id, P_tile) :-
-    stack(Id, D), box.margin(Id, P_margin),          // the square's column and box
+    stack(Id, D), bbox.box(Id, P_margin),          // the square's column and box
     order.rank(D, P_margin, R),                      // its place in that column
     tiles.cell($U(), P_tile), dist(P_tile, D, 0),    // the column's tiles
     params.corner(Cn), order_axis(A),
@@ -90,7 +90,7 @@ square_tile(Id, P_tile) :-
 
 .decl tile_cell(p_tile: Position, p_intile: Position, col: Color)
 tile_cell(P_tile, P_intile, Col) :-
-    square_tile(Id, P_tile), square(Id, P, Col), box.inner(Id, P, P_intile).
+    square_tile(Id, P_tile), square(Id, P, Col), bbox.inner(Id, P, P_intile).
 
 .decl out(p: Position, col: Color)
 out(P_grid, Col) :-

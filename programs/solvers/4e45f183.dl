@@ -98,7 +98,7 @@ balanced(P_tile, A, [Dc, L]) :-
 mark_box.cell([P_tile, Dc], P_intile) :- mark(P_tile, P_intile, Dc).
 
 lean(P_tile, D, [Dc, $Reach()]) :-
-    mark_box.margin([P_tile, Dc], M),            // the box the marks span
+    mark_box.box([P_tile, Dc], M),            // the box the marks span
     dir_elem(D), dist_pair(M, D, K, K2), K < K2. // nearer edge D than its opposite
 
 // --- Bulk ---

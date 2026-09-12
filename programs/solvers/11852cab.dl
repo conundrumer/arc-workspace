@@ -29,15 +29,15 @@
 .comp Parse<Key> {
     .decl cell(key: Key, p: Position, col: Color)  // input
 
-    .init box = BoxFrame<Key>
-    box.cell(K, P) :- cell(K, P, Col), !params.bg(Col).
-    box.grid(K, P) :- cell(K, P, _).
+    .init bbox = BoxFrame<Key>
+    bbox.cell(K, P) :- cell(K, P, Col), !params.bg(Col).
+    bbox.grid(K, P) :- cell(K, P, _).
 
     .decl figure(key: Key, p_inner: Position, col: Color)
-    figure(K, P_inner, Col) :- cell(K, P, Col), !params.bg(Col), box.inner(K, P, P_inner).
+    figure(K, P_inner, Col) :- cell(K, P, Col), !params.bg(Col), bbox.inner(K, P, P_inner).
 
     .decl inner(key: Key, p: Position, p_inner: Position)
-    inner(K, P, P_inner) :- box.inner(K, P, P_inner).
+    inner(K, P, P_inner) :- bbox.inner(K, P, P_inner).
 
     .init sym4 = D4Map<Key, Color>
     sym4.src(K, P, Col) :- figure(K, P, Col).

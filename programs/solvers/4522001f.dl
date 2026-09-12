@@ -108,7 +108,7 @@ locate_choice($Corner()). locate_choice($Mark()).
 
 // --- $Corner ---
 // The grid corner the block touches.
-diag($Corner(), Diag) :- bb.margin($U(), M), corner_anchor(Diag, M, ZERO).
+diag($Corner(), Diag) :- bb.box($U(), M), corner_anchor(Diag, M, ZERO).
 
 // --- $Mark ---
 // The block corner opposite the mark cell.
@@ -215,7 +215,7 @@ out(Q, Col, $Pair()) :-
     pbox.cell($U(), P) :- mask(P).
 
     .decl corner(d: DiagDir)
-    corner(Diag) :- pbox.margin($U(), M), corner_anchor(Diag, M, ZERO).
+    corner(Diag) :- pbox.box($U(), M), corner_anchor(Diag, M, ZERO).
 
     .decl box_anchor(d: DiagDir)
     box_anchor(Diag) :- corner(Diag).
@@ -232,6 +232,6 @@ out(Q, Col, $Pair()) :-
 
     .decl box(d: Dir, k: number)
     box(D, K) :-
-        sqbox.margin(_, M), corner(Diag), corner_anchor(Diag, M, ZERO),  // the box at the corner
+        sqbox.box(_, M), corner(Diag), corner_anchor(Diag, M, ZERO),  // the box at the corner
         dir_elem(D), dist(M, D, K).                                        // its margin at each edge
 }

@@ -28,14 +28,14 @@ impl_choice($Cast()). impl_choice($Span()).
 .init blocks = Components<Color>
 blocks.node(Col, P) :- in(P, Col), !params.bg(Col).
 
-.init box = Bbox<Block>
-box.cell([Col, Id], P) :- blocks.label(Col, P, Id).
+.init bbox = Bbox<Block>
+bbox.cell([Col, Id], P) :- blocks.label(Col, P, Id).
 
 // The corners shoot along the diagonals: the field carries a shot, a figure
 // stops one.
 .init shot = Ray<Unit>
 shot.dir($U(), D) :- diag_dir_elem(D).
-shot.mark($U(), P) :- box.corner(_, P, _).
+shot.mark($U(), P) :- bbox.corner(_, P, _).
 shot.cell($U(), P) :- in(P, Col), params.bg(Col).
 shot.blocked($U(), P) :- in(P, Col), !params.bg(Col).
 
@@ -43,8 +43,8 @@ shot.blocked($U(), P) :- in(P, Col), !params.bg(Col).
 .decl link(col: Color, d: DiagDir, p_from: Position, k: number)
 link(Col, D, P1, K) :-
     diag_opposite(D, D_opp),                        // the two facing headings
-    box.corner([Col, Id1], P1, D),                  // one block's corner toward D
-    box.corner([Col, Id2], P2, D_opp), Id1 != Id2,  // the other block's, facing back
+    bbox.corner([Col, Id1], P1, D),                  // one block's corner toward D
+    bbox.corner([Col, Id2], P2, D_opp), Id1 != Id2,  // the other block's, facing back
     shot.cast($U(), P2, D, K, P1).                  // K steps along P1's diagonal
 
 .decl paint(p: Position, col: Color, ch: Choice)

@@ -30,9 +30,9 @@ ink_cell(P) :- in(P, Col), params.ink(Col).
 .decl mark(p: Position)
 mark(P) :- in(P, Col), !params.bg(Col), !params.ink(Col).
 
-.init box = BoxFrame<Unit>
-box.cell($U(), P) :- ink_cell(P).
-box.grid($U(), P) :- in(P, _).
+.init bbox = BoxFrame<Unit>
+bbox.cell($U(), P) :- ink_cell(P).
+bbox.grid($U(), P) :- in(P, _).
 
 .init mark_count = Tally<Unit, Position>
 mark_count.item($U(), P) :- mark(P).
@@ -43,7 +43,7 @@ reps.extent($U(), A, N) :- params.axis(A), mark_count.tally($U(), N).
 .decl place(p_grid_out: Position, p_grid_in: Position)
 place(P_grid_out, P_grid_in) :-
     reps.cell($U(), A, P_tile),                   // one tile per marker
-    box.inner($U(), P_grid_in, P_intile),         // box cell in the tile frame
+    bbox.inner($U(), P_grid_in, P_intile),         // box cell in the tile frame
     concat_slab(P_tile, P_intile, A, 0, P_grid_out).
 
 .decl out(p: Position, col: Color, ch: Choice)

@@ -28,26 +28,26 @@
 
 .init params = Params
 
-// Ink objects, each viewed from its own bounding box.
+// Ink objects, each viewed from its own bounding bbox.
 .init objs = Components<Unit>
 objs.node($U(), P) :- in(P, Col), !params.bg(Col).
 
-.init box = BoxFrame<Ident>
-box.cell(O, P) :- objs.label($U(), P, O).
-box.grid(O, P) :- box.cell(O, _), in(P, _).
+.init bbox = BoxFrame<Ident>
+bbox.cell(O, P) :- objs.label($U(), P, O).
+bbox.grid(O, P) :- bbox.cell(O, _), in(P, _).
 
 // The gap: a bg cell on the object's D wall.
 .decl gap(o: Ident, d: Dir, p: Position, ch: Choice)
 
 // --- $Dir ---
 gap(O, D, P, $Dir()) :-
-    box.inner(O, P, P_inner),                   // a cell of the box
+    bbox.inner(O, P, P_inner),                   // a cell of the box
     params.open_dir(D), dist(P_inner, D, 0),    // on the params.open_dir wall
     in(P, Col), params.bg(Col).                 // and empty
 
 // --- $Hole ---
 gap(O, D, P, $Hole()) :-
-    box.inner(O, P, P_inner),              // a cell of the box
+    bbox.inner(O, P, P_inner),              // a cell of the box
     dir_elem(D), dist(P_inner, D, 0),      // on some wall
     in(P, Col), params.bg(Col).            // and empty
 
@@ -56,7 +56,7 @@ gap(O, D, P, $Hole()) :-
 // The wall's longer arm: the side of the box the gap is farther from.
 .decl arm_dir(o: Ident, d: Dir, ch: Choice)
 arm_dir(O, D_arm, Ch) :-
-    gap(O, D, P, Ch), box.inner(O, P, P_inner),    // the gap in the box frame
+    gap(O, D, P, Ch), bbox.inner(O, P, P_inner),    // the gap in the box frame
     perp_dir(D, D_arm),                            // a direction along the wall
     dist_pair(P_inner, D_arm, K, K2), K > K2.      // the longer arm
 
@@ -71,7 +71,7 @@ impl_choice($Dir()). impl_choice($Hole()).
 
 // One body of fill: the box's inside, and what has run out of it.
 .decl paint(p: Position, ch: Choice)
-paint(P, Ch) :- impl_choice(Ch), box.inside(_, P), in(P, Col), params.bg(Col).
+paint(P, Ch) :- impl_choice(Ch), bbox.inside(_, P), in(P, Col), params.bg(Col).
 paint(P, Ch) :- spill.ray([_, Ch], P, _, _, _).
 
 .decl out(p: Position, col: Color, ch: Choice)

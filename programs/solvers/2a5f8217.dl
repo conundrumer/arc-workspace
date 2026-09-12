@@ -21,15 +21,15 @@ shapes.node(Col, P) :- in(P, Col), !params.bg(Col).
 .decl shape(s: Shape, p: Position)
 shape([Col, Id], P) :- shapes.label(Col, P, Id).
 
-.init box = BoxFrame<Shape>
-box.cell(S, P) :- shape(S, P).
+.init bbox = BoxFrame<Shape>
+bbox.cell(S, P) :- shape(S, P).
 
 // Same footprint: the two shapes fill their boxes alike.
 .init same = KeyedSetCompare<Shape, Shape, Position>
 same.pattern_member([Col, Id], P_inner) :-
-    box.inner([Col, Id], _, P_inner), !params.blank(Col).    // a colored shape
+    bbox.inner([Col, Id], _, P_inner), !params.blank(Col).    // a colored shape
 same.observed_member([Col, Id], P_inner) :-
-    box.inner([Col, Id], _, P_inner), params.blank(Col).     // a blank shape
+    bbox.inner([Col, Id], _, P_inner), params.blank(Col).     // a blank shape
 
 .decl paint(p: Position, col: Color)
 paint(P, Col) :- shape(S, P), same.equals(S, [Col, _]).

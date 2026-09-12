@@ -37,11 +37,11 @@ place.edge(Id, D, R) :- mark_box.edge_min(Id, D, K), rank.rank(D, K, R).
 .decl rank_mark(p: Position, col: Color)
 rank_mark(P_out, Col) :-
     marks.label($U(), P_grid, Id), mark(P_grid, Col),  // a marker, with its color
-    place.pos(Id, P_out).
+    place.box(Id, P_out).
 
 // The frame the ranks span.
 .init rank_frame = Frame2D<Unit>
-rank_frame.extent($U(), A, N) :- place.pos(_, P), axis_elem(A), axis_dim(P, A, N).
+rank_frame.extent($U(), A, N) :- place.box(_, P), axis_elem(A), axis_dim(P, A, N).
 
 .decl out(p: Position, col: Color)
 out(P_out, Col) :-

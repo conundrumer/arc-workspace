@@ -42,14 +42,14 @@ socket_box.cell(Id, P) :- socket(Id, P).
 
 // Every cell of a piece, read from that piece's own socket footprint.
 .init socket_rel = Reframe<Ident>
-socket_rel.outer(Id, P_box) :- socket_box.margin(Id, P_box).
+socket_rel.outer(Id, P_box) :- socket_box.box(Id, P_box).
 socket_rel.cell(Id, P) :- piece(Id, P).
 
 // Piece m seated on piece h: m's cell p lands at p_seat.
 .decl seat(h: Ident, m: Ident, d: Dir, p: Position, p_seat: Position)
 seat(H, M, D, P, P_seat) :-
     socket_rel.view(M, P, P_rel),                                       // a cell of the seated piece
-    socket_box.margin(H, P_box), H != M, compose(P_box, P_rel, P_reg),  // laid on the host's footprint
+    socket_box.box(H, P_box), H != M, compose(P_box, P_rel, P_reg),  // laid on the host's footprint
     dir_elem(D), neighbor(P_reg, D, P_seat).                            // and carried one step off it
 
 // Both pieces' cells in the host's frame, under the seating (h, m, d).

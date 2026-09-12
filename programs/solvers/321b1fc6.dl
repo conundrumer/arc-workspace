@@ -30,7 +30,7 @@ tmpl_box.cell($U(), P) :- template(P, _).
 // The translations carrying the template's box onto each block's box.
 .decl shift(v: Offset)
 shift(V) :-
-    tmpl_box.margin($U(), P_tmpl_box), block_box.margin(_, P_block_box),
+    tmpl_box.box($U(), P_tmpl_box), block_box.box(_, P_block_box),
     relative(P_tmpl_box, P_block_box, V).
 
 // The template carried onto the blocks.

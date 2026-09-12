@@ -2,7 +2,7 @@
 // draft
 // concept: objects crop count select
 // Noise cells of several colors lie scattered on bg, and one solid shape sits
-// among them in a color of its own. The output is the shape's bounding box.
+// among them in a color of its own. The output is the shape's bounding bbox.
 // Choice = [l, r] crosses what marks the shape with what its box carries:
 //
 //   l (find the shape):
@@ -60,15 +60,15 @@ color_score.cand($Intact(), Col, N) :- piece_count.tally(Col, N).
 
 // --- The box the shape spans ---
 
-.init box = BoxFrame<Locate>
-box.cell(L, P) :- shape(P, L).
-box.grid(L, P) :- shape(_, L), in(P, _).
+.init bbox = BoxFrame<Locate>
+bbox.cell(L, P) :- shape(P, L).
+bbox.grid(L, P) :- shape(_, L), in(P, _).
 
 .decl out(p: Position, col: Color, ch: Choice)
 
 out(P_inner, Col, [L, $Keep()]) :-
-    box.inner(L, P, P_inner),
+    bbox.inner(L, P, P_inner),
     ( shape(P, L), in(P, Col)           // a shape cell keeps its color
     ; !shape(P, L), params.bg(Col) ).   // the rest of the box is blank
 
-out(P_inner, Col, [L, $Crop()]) :- box.inner(L, P, P_inner), in(P, Col).
+out(P_inner, Col, [L, $Crop()]) :- bbox.inner(L, P, P_inner), in(P, Col).

@@ -27,13 +27,13 @@ obj_cell(O, P) :- objs.label($U(), P, O).
 .decl obj_color(o: Ident, col: Color)
 obj_color(O, Col) :- obj_cell(O, P), in(P, Col).
 
-.init box = Bbox<Ident>
-box.cell(O, P) :- obj_cell(O, P).
+.init bbox = Bbox<Ident>
+bbox.cell(O, P) :- obj_cell(O, P).
 
 // The bar reaches both edges of one axis. The pieces stack across it.
 .decl bar(o: Ident, a: Axis)
 bar(O, A) :-
-    box.edge_min(O, D, 0), opposite(D, D2), box.edge_min(O, D2, 0),
+    bbox.edge_min(O, D, 0), opposite(D, D2), bbox.edge_min(O, D2, 0),
     axis_of(D, A).
 
 .decl stack_dir(d: Dir)
@@ -122,7 +122,7 @@ placement(O, Delta) :- seat_step(_, _, O, Delta).
 .decl seat_step(h: Ident, d_host: Offset, o: Ident, delta: Offset)
 seat_step(H, D_host, O, Delta) :-
     placement(H, D_host), seat(H, O, R), compose(D_host, R, Delta),
-    box.margin(O, M), compose(M, Delta, M2), inside(M2, ZERO).  // on the grid
+    bbox.box(O, M), compose(M, Delta, M2), inside(M2, ZERO).  // on the grid
 
 .decl place_cell(o: Ident, delta: Offset, p: Position)
 place_cell(O, Delta, Q) :- placement(O, Delta), obj_cell(O, P), compose(P, Delta, Q).

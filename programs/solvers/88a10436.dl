@@ -57,15 +57,15 @@ marker(P, $Lone()) :- ink(P, _), !touching(P).
 .decl shape(p: Position, m: Marker)
 shape(P, M) :- ink(P, _), marker_choice(M), !marker(P, M).
 
-.init box = BoxFrame<Marker>
-box.cell(M, P) :- shape(P, M).
-box.grid(M, P) :- marker_choice(M), in(P, _).
+.init bbox = BoxFrame<Marker>
+bbox.cell(M, P) :- shape(P, M).
+bbox.grid(M, P) :- marker_choice(M), in(P, _).
 
 // Each cell of the shape's box beside where it lands: the box's center on a marker.
 .decl seated(p: Position, q: Position, m: Marker)
 seated(P, Q, M) :-
-    box.inner(M, Ctr, P_inner), centered(P_inner),   // the box's center
-    box.viewed(M, P), relative(Ctr, P, V),       // a box cell, as its offset from the center
+    bbox.inner(M, Ctr, P_inner), centered(P_inner),   // the box's center
+    bbox.viewed(M, P), relative(Ctr, P, V),       // a box cell, as its offset from the center
     marker(A, M), compose(A, V, Q), in(Q, _).        // laid off from a marker, on the grid
 
 // --- Content cases: the cells the copy carries ---
@@ -75,8 +75,8 @@ seated(P, Q, M) :-
 // $Ink — the shape's ink cells.
 content(P, Col, [M, $Ink()]) :- shape(P, M), ink(P, Col).
 
-// $Box — every cell of the shape's box.
-content(P, Col, [M, $Box()]) :- box.viewed(M, P), in(P, Col).
+// $Box — every cell of the shape's bbox.
+content(P, Col, [M, $Box()]) :- bbox.viewed(M, P), in(P, Col).
 
 .decl paint(q: Position, col: Color, ch: Choice)
 paint(Q, Col, [M, C]) :- content(P, Col, [M, C]), seated(P, Q, M).

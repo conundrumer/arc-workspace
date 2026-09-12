@@ -6,7 +6,7 @@
 // in params.frame, interior in the fill — and each side sweeps outward to the grid
 // edge, so the four arms take the fill color too. Single cells of other colors
 // litter the grid; one lying in an arm colors that line from itself outward,
-// so an arm cell shows the nearest such cell between it and the box. Cells
+// so an arm cell shows the nearest such cell between it and the bbox. Cells
 // outside the box and its arms pass through.
 
 #include "../lib.dl"
@@ -20,12 +20,12 @@
 
 // --- the box ---
 
-.init box = Bbox<Unit>
-box.cell($U(), P) :- in(P, Col), params.frame(Col).
-box.grid($U(), P) :- in(P, _).
+.init bbox = Bbox<Unit>
+bbox.cell($U(), P) :- in(P, Col), params.frame(Col).
+bbox.grid($U(), P) :- in(P, _).
 
 .init bcells = BoxCells<Unit>
-bcells.box($U(), B) :- box.margin($U(), B).
+bcells.box($U(), B) :- bbox.box($U(), B).
 bcells.cell($U(), P) :- in(P, _).
 
 // The odd bracket names the fill.
@@ -64,7 +64,7 @@ painted(P, Col) :- cast.clear(D, P, _, _, Src), mark(Src, Col, D).
 
 .decl out(p: Position, col: Color)
 out(P, Col) :-
-    box.inside($U(), P),
+    bbox.inside($U(), P),
     ( bcells.on_edge($U(), P, _), params.frame(Col)  // the outline, redrawn whole
     ; bcells.hole($U(), P), fill(Col)                // the interior, filled
     ).
@@ -73,4 +73,4 @@ out(P, Col) :-
     ( painted(P, Col)                 // the nearest mark inward
     ; !painted(P, _), fill(Col)       // no mark inward
     ).
-out(P, Col) :- in(P, Col), !box.inside($U(), P), !arm(P, _).
+out(P, Col) :- in(P, Col), !bbox.inside($U(), P), !arm(P, _).

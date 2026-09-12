@@ -31,16 +31,16 @@ comps.node(Col, P) :- in(P, Col), !params.bg(Col).
 .decl cell_of(id: Ident, p: Position)
 cell_of(Id, P) :- comps.label(_, P, Id).
 
-.init box = Bbox<Ident>
-box.cell(Id, P) :- cell_of(Id, P).
+.init bbox = Bbox<Ident>
+bbox.cell(Id, P) :- cell_of(Id, P).
 
 // The box read over the whole grid, so its empty cells count too.
 .init bcells = BoxCells<Ident>
-bcells.box(Id, M) :- box.margin(Id, M).
+bcells.box(Id, M) :- bbox.box(Id, M).
 bcells.cell(Id, P) :- cell_of(Id, _), in(P, _).
 
 .decl square(id: Ident)
-square(Id) :- box.extents(Id, _, N, N).
+square(Id) :- bbox.extents(Id, _, N, N).
 
 .decl multi_cell(id: Ident)
 multi_cell(Id) :- cell_of(Id, P), cell_of(Id, Q), P != Q.
@@ -65,14 +65,14 @@ qualify(Id, $Ring()) :- square(Id), multi_cell(Id), !border_gap(Id), !has_interi
 
 .decl corner_cell(id: Ident, diag: DiagDir, p: Position)
 corner_cell(Id, Dg, P) :-
-    box.margin(Id, M), in(P, _),                 // the box, and a grid cell
+    bbox.box(Id, M), in(P, _),                 // the box, and a grid cell
     diag_dir_elem(Dg), corner_anchor(Dg, P, M).  // at corner Dg of it
 
 // The corner cells whose out-neighbors take the mark: the box's corners,
 // except $Corners keeps only those the object occupies.
 .decl anchor(diag: DiagDir, p: Position, ch: Choice)
 anchor(Dg, P, Ch) :- qualify(Id, Ch), Ch != $Corners(), corner_cell(Id, Dg, P).
-anchor(Dg, P, $Corners()) :- qualify(Id, $Corners()), box.corner(Id, P, Dg).
+anchor(Dg, P, $Corners()) :- qualify(Id, $Corners()), bbox.corner(Id, P, Dg).
 
 .decl mark(p: Position, ch: Choice)
 mark(P_mark, Ch) :-

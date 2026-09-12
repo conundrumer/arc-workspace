@@ -39,7 +39,7 @@
     span.cell([Ky, P, Q], Q) :- hole(Ky, P), hole(Ky, Q).
 
     .decl box(key: Key, b: Position)
-    box(Ky, B) :- span.margin([Ky, _, _], B).
+    box(Ky, B) :- span.box([Ky, _, _], B).
 
     .decl box_ink(key: Key, b: Position)
     box_ink(Ky, B) :- box(Ky, B), cell(Ky, P, _), !hole(Ky, P), inside(P, B).
@@ -54,7 +54,7 @@
     // A hole box of side K.
     .decl square(key: Key, b: Position, k: number)
     square(Ky, B, K) :-
-        hole_box(Ky, B), span.margin([Ky, P, Q], B),
+        hole_box(Ky, B), span.box([Ky, P, Q], B),
         span.extents([Ky, P, Q], _, K, K).
 
     // How many squares of side K a box holds.
@@ -124,7 +124,7 @@ out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !filled(P, Ch).
 
     .decl refuted(k: number)
     refuted(K) :-
-        cand(K), pbox.margin(E, B),                     // an example's painted box
+        cand(K), pbox.box(E, B),                     // an example's painted box
         ( !parse.seats(E, B, K, _)                      // holds no such block
         ; parse.seats(E, B, K, N),                      // or a rival matches its count
           parse.seats(E, B2, K, N2), B2 != B, N2 >= N

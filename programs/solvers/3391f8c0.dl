@@ -2,8 +2,8 @@
 // draft
 // concept: objects stamp
 // Two colors each appear as copies of one shape, and the two shapes fill the
-// same box. Every copy is replaced by the other color's shape, in that other
-// color, drawn into the copy's own box.
+// same bbox. Every copy is replaced by the other color's shape, in that other
+// color, drawn into the copy's own bbox.
 
 #include "../lib.dl"
 
@@ -21,13 +21,13 @@ objs.node(Col, P) :- in(P, Col), !params.bg(Col).
 .decl copy(id: Ident, col: Color, p: Position)
 copy(Id, Col, P) :- objs.label(Col, P, Id).
 
-.init box = BoxFrame<Ident>
-box.cell(Id, P) :- copy(Id, _, P).
-box.grid(Id, P) :- copy(Id, _, _), in(P, _).   // the whole box, so a stamp reaches its blank cells
+.init bbox = BoxFrame<Ident>
+bbox.cell(Id, P) :- copy(Id, _, P).
+bbox.grid(Id, P) :- copy(Id, _, _), in(P, _).   // the whole box, so a stamp reaches its blank cells
 
 // A color's shape, in the box frame its copies share.
 .decl shape(col: Color, p_inner: Position)
-shape(Col, P_inner) :- copy(Id, Col, P), box.inner(Id, P, P_inner).
+shape(Col, P_inner) :- copy(Id, Col, P), bbox.inner(Id, P, P_inner).
 
 // The two colors trade shapes.
 .decl swap(col: Color, col2: Color)
@@ -39,7 +39,7 @@ swap(Col, Col2) :- copy(_, Col, _), copy(_, Col2, _), Col != Col2.
 paint(P, Col2) :-
     copy(Id, Col, _), swap(Col, Col2),   // a copy, and the color it trades with
     shape(Col2, P_inner),                // that color's shape
-    box.inner(Id, P, P_inner).           // in this copy's box
+    bbox.inner(Id, P, P_inner).           // in this copy's bbox
 
 .decl out(p: Position, col: Color)
 out(P, Col) :- paint(P, Col).

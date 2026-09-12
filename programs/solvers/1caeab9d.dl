@@ -48,13 +48,13 @@ piece.node($U(), P) :- ink(P, _).
 group($ByColor(), P, Id) :- hue.id(P, Id).
 group($ByObject(), P, Id) :- piece.label($U(), P, Id).
 
-.init box = Bbox<Grp>
-box.cell([Ch, Id], P) :- group(Ch, P, Id).
+.init bbox = Bbox<Grp>
+bbox.cell([Ch, Id], P) :- group(Ch, P, Id).
 
 // The line a block leads with, as an axis-only position.
 .decl front(ky: Grp, l: Position)
 front(Ky, L) :-
-    params.align_dir(D), box.edge_cell(Ky, P, D),  // the block's cell on that edge
+    params.align_dir(D), bbox.edge_cell(Ky, P, D),  // the block's cell on that edge
     axis_of(D, A), split(P, A, L, _).              // its line along the move axis
 
 // The move that brings a block's front line onto the anchor's.

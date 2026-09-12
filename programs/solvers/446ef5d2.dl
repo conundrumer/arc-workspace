@@ -82,13 +82,13 @@ anchor(Id, Diag, P) :-
 // --- the rectangle ---
 
 // A box the marked corner cell spans with a far cell, sitting at that corner
-// of the box.
-.init box = Bbox<Position>
-box.cell(Q, Q) :- in(Q, _).
-box.cell(Q, A) :- in(Q, _), anchor(_, _, A).
+// of the bbox.
+.init bbox = Bbox<Position>
+bbox.cell(Q, Q) :- in(Q, _).
+bbox.cell(Q, A) :- in(Q, _), anchor(_, _, A).
 
 .decl span(m: Position)
-span(M) :- anchor(_, Diag, A), box.corner(Q, A, Diag), box.margin(Q, M).
+span(M) :- anchor(_, Diag, A), bbox.corner(Q, A, Diag), bbox.box(Q, M).
 
 .decl span_cell(m: Position, p: Position)
 span_cell(M, P) :- span(M), in(P, _), inside(P, M).
@@ -134,7 +134,7 @@ spills(M, Id, B) :-
 fit(M, Id, B) :-
     place(M, Id, B, _, _), !spills(M, Id, B),
     ( !anchor(Id, _, _)        // a piece free to move
-    ; pbox.margin(Id, B) ).    // the marked piece, where it lies
+    ; pbox.box(Id, B) ).    // the marked piece, where it lies
 
 .decl covers(m: Position, cd: Cand, p: Position, col: Color)
 covers(M, [Id, B], P, Col) :- fit(M, Id, B), place(M, Id, B, P, Col).

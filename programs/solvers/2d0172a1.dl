@@ -19,7 +19,7 @@
 
 .type Choice = Hollow {} | Nest {}
 
-// The mark curve x contributes on the d side of its box.
+// The mark curve x contributes on the d side of its bbox.
 .type Mark = [ch: Choice, x: Ident, d: Dir]
 
 .type CaseAxis = [ch: Choice, a: Axis]
@@ -69,12 +69,12 @@ encloses(X, P) :- off_curve(X, P), !escape.reach(X, P).
 ring(X, $Hollow()) :- encloses(X, _).
 ring(X, $Nest()) :- encloses(X, P), curve(_, P).
 
-.init box = Bbox<Ident>
-box.cell(X, P) :- curve(X, P).
+.init bbox = Bbox<Ident>
+bbox.cell(X, P) :- curve(X, P).
 
 // The line the curve's box occupies on its d side, axis-only.
 .decl side_line(x: Ident, d: Dir, l: Position)
-side_line(X, D, L) :- box.edge_cell(X, P, D), axis_of(D, A), split(P, A, L, _).
+side_line(X, D, L) :- bbox.edge_cell(X, P, D), axis_of(D, A), split(P, A, L, _).
 
 // --- marks ---
 
@@ -143,7 +143,7 @@ pad.edge(Ch, D, K) :-
 .init frame = Frame2D<Choice>
 frame.extent(Ch, A, N) :-
     group_line(Ch, _, A, L),
-    pad.pos(Ch, Pad), compose(L, Pad, P), axis_dim(P, A, N).
+    pad.box(Ch, Pad), compose(L, Pad, P), axis_dim(P, A, N).
 
 // --- render ---
 
@@ -156,13 +156,13 @@ fig.edge([Ch, X], D, K) :-
 // Each figure as margins from the four frame edges.
 .decl fig_box(ch: Choice, x: Ident, p: Position)
 fig_box(Ch, X, P) :-
-    fig.pos([Ch, X], P_core), pad.pos(Ch, Pad), compose(P_core, Pad, P).
+    fig.box([Ch, X], P_core), pad.box(Ch, Pad), compose(P_core, Pad, P).
 
 .init bcells = BoxCells<CaseFig>
 bcells.box([Ch, X], Box) :- fig_box(Ch, X, Box).
 bcells.cell([Ch, X], P) :- fig_box(Ch, X, _), frame.cell(Ch, P).
 
-// Each figure is drawn as the outline of its box.
+// Each figure is drawn as the outline of its bbox.
 .decl ink(ch: Choice, p: Position)
 ink(Ch, P) :- bcells.on_edge([Ch, _], P, _).
 

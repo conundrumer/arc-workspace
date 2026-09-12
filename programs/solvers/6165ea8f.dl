@@ -59,14 +59,14 @@ shape_cell(Col, P) :-
     in(P, Col), !params.bg(Col),
     params.legend_dir(D), dist(P, D, K), K != 0.   // off the list's edge
 
-.init box = BoxFrame<Color>
-box.cell(Col, P) :- shape_cell(Col, P).
+.init bbox = BoxFrame<Color>
+bbox.cell(Col, P) :- shape_cell(Col, P).
 
 // Each ordered pair of shapes, both read in their own box frames.
 .type Pair = [a: Color, b: Color]
 .init cong = D4Map<Pair, Unit>
-cong.src([A, B], S, $U()) :- box.inner(A, _, S), box.inner(B, _, _).
-cong.dst([A, B], S, $U()) :- box.inner(A, _, _), box.inner(B, _, S).
+cong.src([A, B], S, $U()) :- bbox.inner(A, _, S), bbox.inner(B, _, _).
+cong.dst([A, B], S, $U()) :- bbox.inner(A, _, _), bbox.inner(B, _, S).
 
 // One D4 element carries A's shape onto B's, and its inverse carries B's
 // back: the two shapes are the same shape.

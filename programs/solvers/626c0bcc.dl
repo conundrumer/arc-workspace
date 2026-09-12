@@ -70,9 +70,9 @@ out(P, Col) :- in(P, Col), !params.ink(Col).
     region.node([E, Col], P) :- ex_out(E, P, Col), ex_in(E, P, Ink), params.ink(Ink).
 
     // Each piece read from its own box — the frame the catalog stores it in.
-    .init box = BoxFrame<Part>
-    box.cell([E, Id], P) :- region.label([E, _], P, Id).
+    .init bbox = BoxFrame<Part>
+    bbox.cell([E, Id], P) :- region.label([E, _], P, Id).
 
     .decl piece(col: Color, p: Position)
-    piece(Col, S) :- region.label([E, Col], P, Id), box.inner([E, Id], P, S).
+    piece(Col, S) :- region.label([E, Col], P, Id), bbox.inner([E, Id], P, S).
 }

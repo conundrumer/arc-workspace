@@ -31,7 +31,7 @@ far(Id, P) :- params.corner(Diag), bb.corner(Id, P, Diag).
 // Id2 stands further along the order than Id1.
 .decl beyond(id1: Ident, id2: Ident)
 beyond(Id1, Id2) :-
-    params.order(D), bb.margin(Id1, M1), bb.margin(Id2, M2), nearer(D, M1, M2).
+    params.order(D), bb.box(Id1, M1), bb.box(Id2, M2), nearer(D, M1, M2).
 
 .init chain = Order<Unit, Ident>
 chain.elem($U(), Id) :- blocks.label($U(), _, Id).

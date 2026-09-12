@@ -36,7 +36,7 @@ block.cell($U(), P) :- in(P, Col), params.marker(Col).
 // --- Mirror ---
 
 img(P_out, Col, $Mirror()) :-
-    ink(P, Col), block.margin($U(), M),                 // an ink cell and the block
+    ink(P, Col), block.box($U(), M),                 // an ink cell and the block
     relative(M, P, V),                              // its offset from the block
     params.sym(S), sym_member(S, D), apply(D, V, V2),   // the offset transformed
     compose(M, V2, P_out).
@@ -53,7 +53,7 @@ obj_box.grid(Id, P) :- obj.label($U(), _, Id), in(P, _).  // so the box's empty 
 // The block corner an object lies past.
 .decl obj_quad(id: Ident, diag: DiagDir)
 obj_quad(Id, Diag) :-
-    diag_dirs(Diag, _, D1, D2), obj_box.margin(Id, M), block.margin($U(), B),
+    diag_dirs(Diag, _, D1, D2), obj_box.box(Id, M), block.box($U(), B),
     nearer(D1, M, B), nearer(D2, M, B).
 
 img(P_out, Col, $Seat()) :-
@@ -88,7 +88,7 @@ out(P, Col, Ch) :-
     // Where a transform about the block carries an ink cell, inside the grid.
     .decl img(e: Example, d: D4, p: Position, col: Color)
     img(E, D, P_out, Col) :-
-        ink(E, P, Col), block.margin(E, M),            // an ink cell and its block
+        ink(E, P, Col), block.box(E, M),            // an ink cell and its block
         relative(M, P, V),                         // its offset from the block
         d4_elem(D), apply(D, V, V2),
         compose(M, V2, P_out), ex_in(E, P_out, _).

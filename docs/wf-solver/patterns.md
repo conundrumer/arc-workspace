@@ -268,7 +268,7 @@ Order inside a wide atom is a tag column or a repeated value, never slot positio
 
 A repeated variable in a wide atom states the diagonal case directly: equal extents (a square), equal distances (centered; on a corner's diagonal). The long encoding needs an agreement join for the same statement.
 
-A derivation has a long layout because a rule that quantifies over an index emits one row per index value, and aggregation computes per index (`Bbox` aggregates `edge_min` per Dir, then packs the four into `margin`'s Position). Widening derived data requires one pairing join at its defining rule. A value that already holds the co-occurrence can be widened without another join.
+A derivation has a long layout because a rule that quantifies over an index emits one row per index value, and aggregation computes per index (`Bbox` aggregates `edge_min` per Dir, then packs the four into `box`). Widening derived data requires one pairing join at its defining rule. A value that already holds the co-occurrence can be widened without another join.
 
 ## Universals via defect negation
 

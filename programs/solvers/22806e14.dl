@@ -2,7 +2,7 @@
 // draft
 // concept: objects markers count
 // Same-color objects sit on a background: solid rectangles, and one marker
-// that leaves a hole in its own box. Each rectangle with a center cell takes
+// that leaves a hole in its own bbox. Each rectangle with a center cell takes
 // the marker's color there. The marker itself survives when it places enough
 // marks:
 //   $MarkerSize — at least as many marks as the marker has cells.
@@ -27,13 +27,13 @@ comps.node(Col, P) :- in(P, Col), !params.bg(Col).
 .decl cell(id: Ident, p: Position)
 cell(Id, P) :- comps.label(_, P, Id).
 
-.init box = BoxFrame<Ident>
-box.cell(Id, P) :- cell(Id, P).
-box.grid(Id, P) :- cell(Id, _), in(P, _).
+.init bbox = BoxFrame<Ident>
+bbox.cell(Id, P) :- cell(Id, P).
+bbox.grid(Id, P) :- cell(Id, _), in(P, _).
 
-// The marker is the one object that leaves a hole in its own box.
+// The marker is the one object that leaves a hole in its own bbox.
 .decl marker(id: Ident)
-marker(Id) :- box.inside(Id, P), !cell(Id, P).
+marker(Id) :- bbox.inside(Id, P), !cell(Id, P).
 
 .decl marker_cell(p: Position)
 marker_cell(P) :- marker(Id), cell(Id, P).
@@ -46,7 +46,7 @@ rect(Id) :- cell(Id, _), !marker(Id).
 
 // A rectangle even on either axis has no center and takes no mark.
 .decl center(id: Ident, p: Position)
-center(Id, P) :- rect(Id), box.inner(Id, P, P_in), centered(P_in).
+center(Id, P) :- rect(Id), bbox.inner(Id, P, P_in), centered(P_in).
 
 .decl mark(p: Position)
 mark(P) :- center(_, P).

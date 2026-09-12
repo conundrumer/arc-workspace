@@ -43,7 +43,7 @@ arm_margin(M) :-
     params.arm(D), opposite(D, D_far),                // the arm's edge, and the one across
     axis_of(D, A), fig.extents($U(), A, _, Span),     // span across the arm axis
     edge_inset(D_far, Span, Blank),                   // the blank square
-    arm_depth.pos($U(), Depths), compose(Depths, Blank, M).
+    arm_depth.box($U(), Depths), compose(Depths, Blank, M).
 
 .decl placed(p: Position, col: Color)
 placed(P_canvas, Col) :-

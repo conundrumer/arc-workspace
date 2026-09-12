@@ -44,12 +44,12 @@ tip(P, Col) :- part(Id, P, Col), !bar(Id).
 
 // --- congruence ---
 
-.init box = BoxFrame<Ident>
-box.cell(Id, P) :- part(Id, P, _), bar(Id).
+.init bbox = BoxFrame<Ident>
+bbox.cell(Id, P) :- part(Id, P, _), bar(Id).
 
-// A bar's cell seen from its own box.
+// A bar's cell seen from its own bbox.
 .decl bar_inner(id: Ident, p_inner: Position, col: Color)
-bar_inner(Id, I, Col) :- box.inner(Id, P, I), part(Id, P, Col).
+bar_inner(Id, I, Col) :- bbox.inner(Id, P, I), part(Id, P, Col).
 
 // Each ordered pair of bars, both read in their own box frames.
 .type Pair = [a: Ident, b: Ident]
@@ -71,7 +71,7 @@ back.blocked($U(), P) :- in(P, Col), !params.bg(Col).
 .decl reach(p_tip: Position, col: Color, id: Ident, p: Position, d: Dir)
 reach(P_tip, Col, M, S, D) :-
     tip(P_tip, Col), back.stop($U(), S, D_back, _, P_tip),    // the first cell a lane back hits
-    box.cell(M, S), opposite(D_back, D).                      // a bar cell; the beam heads the other way
+    bbox.cell(M, S), opposite(D_back, D).                      // a bar cell; the beam heads the other way
 
 // The bar cell a tip's beam issues from, with the heading it runs in.
 .decl source(id: Ident, p: Position, d: Dir, col: Color, ch: Choice)
@@ -88,7 +88,7 @@ source(M, S, D, Col, $Edge()) :- reach(P_tip, Col, M, S, D), dist(P_tip, D, 0). 
 .init lane_color = Tally<Lane, Position>
 lane_color.item([Id, D, Col], I) :-
     bar_inner(Id, I, Col),
-    box.extents(Id, A, N1, N2), N1 < N2, axis_of(D, A),    // the short axis
+    bbox.extents(Id, A, N1, N2), N1 < N2, axis_of(D, A),    // the short axis
     dist(I, D, 0).                                         // the lane at its D edge
 
 // The way out: the lane where one color covers the most cells.
@@ -102,9 +102,9 @@ source(M, S, D, Col, $Lane()) :- reach(_, Col, M, S, D), exit.high(M, D, _).  //
 // Every bar casts every tip's beam.
 .decl emit(p: Position, d: Dir, col: Color, ch: Choice)
 emit(S2, D2, Col, Ch) :-
-    source(M, S, D, Col, Ch), box.inner(M, S, I),  // a beam's source, in its bar's box
+    source(M, S, D, Col, Ch), bbox.inner(M, S, I),  // a beam's source, in its bar's box
     cong.map([M, M2], G),                          // an element carrying that bar onto another
-    apply(G, I, I2), box.inner(M2, S2, I2),        // the source cell carried over
+    apply(G, I, I2), bbox.inner(M2, S2, I2),        // the source cell carried over
     apply_dir(G, D, D2).                           // the heading with it
 
 .type Beam = [p: Position, ch: Choice]

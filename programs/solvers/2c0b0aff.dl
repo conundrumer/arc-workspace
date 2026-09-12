@@ -110,9 +110,9 @@ out(P_inner, Col, Ch) :- view.inner(Ch, P, P_inner), in(P, Col).
     .init biggest = Mode<Unit, EI, Position>
     biggest.item($U(), [E, Id], P) :- objs.label(E, P, Id).
 
-    .init box = BoxFrame<EI>
-    box.cell([E, Id], P) :- biggest.mode($U(), [E, Id]), objs.label(E, P, Id).
+    .init bbox = BoxFrame<EI>
+    bbox.cell([E, Id], P) :- biggest.mode($U(), [E, Id]), objs.label(E, P, Id).
 
     .decl shape(p: Position)
-    shape(S) :- box.inner(_, _, S).
+    shape(S) :- bbox.inner(_, _, S).
 }

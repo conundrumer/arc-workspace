@@ -37,12 +37,12 @@
     .decl cell(key: Key, p: Position, col: Color)  // input
 
     // The ink edge: the ink's box lies nearer it than its opposite.
-    .init box = Bbox<Key>
-    box.cell(K, P) :- cell(K, P, Col), !params.bg(Col).
+    .init bbox = Bbox<Key>
+    bbox.cell(K, P) :- cell(K, P, Col), !params.bg(Col).
 
     .decl ink_edge(key: Key, d: Dir)
     ink_edge(K, D) :-
-        box.margin(K, M), params.axis(A), axis_of(D, A),
+        bbox.box(K, M), params.axis(A), axis_of(D, A),
         dist_pair(M, D, K1, K2), K1 < K2.
 
     // The 2-tile arrangement along params.axis.

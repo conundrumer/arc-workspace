@@ -77,15 +77,15 @@ side(N) :- square_area.tally(N, K), area.tally($U(), K).
 
 .type PieceKey = [ch: Choice, o: Ident]
 
-.init box = BoxFrame<PieceKey>
-box.cell([Ch, O], P) :- piece_cell(Ch, O, P, _).
+.init bbox = BoxFrame<PieceKey>
+bbox.cell([Ch, O], P) :- piece_cell(Ch, O, P, _).
 
-// A piece turned by an element of the group, viewed from its own box.
+// A piece turned by an element of the group, viewed from its own bbox.
 .type Pose = [ch: Choice, o: Ident, d: D4]
 
 .decl image(k: Pose, s: Position, col: Color)
 image([Ch, O, D], S, Col) :-
-    piece_cell(Ch, O, P, Col), box.inner([Ch, O], P, S0),
+    piece_cell(Ch, O, P, Col), bbox.inner([Ch, O], P, S0),
     params.group(G), sym_member(G, D), apply(D, S0, S).
 
 // --- the spots ---

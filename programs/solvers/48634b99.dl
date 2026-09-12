@@ -40,8 +40,8 @@ bar_cell(P) :- in(P, Col), !params.bg(Col).
 .init bars = Components<Unit>
 bars.node($U(), P) :- bar_cell(P).
 
-.init box = BoxFrame<Ident>
-box.cell(Id, P) :- bars.label($U(), P, Id).
+.init bbox = BoxFrame<Ident>
+bbox.cell(Id, P) :- bars.label($U(), P, Id).
 
 // --- the gauge ---
 
@@ -54,12 +54,12 @@ gauge(Id) :- bars.label($U(), P, Id), mark_cell(P).
 // The bar end the fill reaches.
 .decl fill_dir(d: Dir)
 fill_dir(D) :-
-    gauge(Id), box.edge_cell(Id, P, D), mark_cell(P),   // marked cell at an end
+    gauge(Id), bbox.edge_cell(Id, P, D), mark_cell(P),   // marked cell at an end
     params.axis(A), axis_of(D, A).                      // along the bars' axis
 
 // Distance from that end, within the bar.
 .decl bar_idx(id: Ident, p: Position, k: number)
-bar_idx(Id, P, K) :- box.inner(Id, P, P_in), fill_dir(D), dist(P_in, D, K).
+bar_idx(Id, P, K) :- bbox.inner(Id, P, P_in), fill_dir(D), dist(P_in, D, K).
 
 // --- which bar the gauge moves to ---
 
@@ -71,14 +71,14 @@ target_choice($Step()). target_choice($Next()).
 // $Step — the bar a gauge cell's within-bar position lands in once the bar
 // is stretched by params.step.
 target(Id, $Step()) :-
-    gauge(Id_g), box.inner(Id_g, _, P_in),                 // a gauge cell
+    gauge(Id_g), bbox.inner(Id_g, _, P_in),                 // a gauge cell
     params.axis(A), axis_of(D, A), params.step(K),         // params.step along the bars' axis
     edge_inset(D, K, Delta), compose(P_in, Delta, P_in2),  // stretched by it
-    box.inner(Id, _, P_in2).                               // lands in the target
+    bbox.inner(Id, _, P_in2).                               // lands in the target
 
 // $Next — the shortest bar longer than the gauge.
 .decl bar_len(id: Ident, n: number)
-bar_len(Id, N) :- params.axis(A), box.extent(Id, A, N).
+bar_len(Id, N) :- params.axis(A), bbox.extent(Id, A, N).
 
 .init longer = ArgExtremes<Unit, Ident>
 longer.cand($U(), Id, N) :- bar_len(Id, N), gauge(Id_g), bar_len(Id_g, N_g), N > N_g.
@@ -104,7 +104,7 @@ filled(P, [T, $Grow()]) :- target(Id, T), bar_idx(Id, P, K), fill_idx(K).
 
 // $Half — nearer the fill's end than the far end.
 filled(P, [T, $Half()]) :-
-    target(Id, T), box.inner(Id, P, P_in),
+    target(Id, T), bbox.inner(Id, P, P_in),
     fill_dir(D), dist_pair(P_in, D, K, K2), K < K2.
 
 // --- output ---

@@ -29,21 +29,21 @@ body.item($U(), Col, P) :- ink(P, Col).
 .decl mark(p: Position, col: Color)
 mark(P, Col) :- ink(P, Col), !body.mode($U(), Col).
 
-.init box = Bbox<Unit>
-box.cell($U(), P) :- ink(P, _).
+.init bbox = Bbox<Unit>
+bbox.cell($U(), P) :- ink(P, _).
 
 .decl cast_dir(ch: Choice, d: Dir)
 
 // --- Away ---
 
 cast_dir($Away(), D) :-
-    mark(P, _), box.edge_cell($U(), P, D_base),   // the box edge the mark is on
+    mark(P, _), bbox.edge_cell($U(), P, D_base),   // the box edge the mark is on
     opposite(D_base, D).                          // the cast leaves by the far side
 
 // --- Open ---
 
 .init margins = ArgExtremes<Unit, Dir>
-margins.cand($U(), D, K) :- box.margin($U(), P_m), dir_elem(D), dist(P_m, D, K).
+margins.cand($U(), D, K) :- bbox.box($U(), P_m), dir_elem(D), dist(P_m, D, K).
 
 cast_dir($Open(), D) :- margins.high($U(), D, _).
 

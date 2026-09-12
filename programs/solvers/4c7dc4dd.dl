@@ -38,18 +38,18 @@ bcells.box(Pan, Pan) :- drect.box(_, Pan).
 bcells.cell(Pan, P) :- bcells.box(Pan, _), in(P, _).
 
 // Those cells, read in the enclosed frame.
-.init box = BoxFrame<Position>
-box.cell(Pan, P) :- bcells.hole(Pan, P).
+.init bbox = BoxFrame<Position>
+bbox.cell(Pan, P) :- bcells.hole(Pan, P).
 
 // A candidate panel: what a square rectangle encloses.
 .decl cand(pan: Position, p_intile: Position, col: Color)
 cand(Pan, P_intile, Col) :-
-    box.extents(Pan, _, N, N),                          // a square box
-    box.inner(Pan, P_grid, P_intile), in(P_grid, Col).
+    bbox.extents(Pan, _, N, N),                          // a square box
+    bbox.inner(Pan, P_grid, P_intile), in(P_grid, Col).
 
 // A framed panel: a candidate holding an unfilled cell, with its side.
 .decl cand_side(pan: Position, n: number)
-cand_side(Pan, N) :- cand(Pan, _, Col), params.hole(Col), box.extent(Pan, _, N).
+cand_side(Pan, N) :- cand(Pan, _, Col), params.hole(Col), bbox.extent(Pan, _, N).
 
 // The panels are the largest of them; smaller frames sit inside their marks.
 .init widest = ArgExtremes<Unit, Position>

@@ -72,11 +72,11 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !covered(Ch, P).
 
     .type ExBlock = [e: Example, id: Ident]
 
-    .init box = Bbox<ExBlock>
-    box.cell([E, Id], P) :- blocks.label(E, P, Id).
+    .init bbox = Bbox<ExBlock>
+    bbox.cell([E, Id], P) :- blocks.label(E, P, Id).
 
     .init smallest = Extremes<Unit>
-    smallest.cand($U(), N) :- box.extent(_, _, N).
+    smallest.cand($U(), N) :- bbox.extent(_, _, N).
 
     .decl cand(k: number)
     cand(K) :-

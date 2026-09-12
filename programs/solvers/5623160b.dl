@@ -65,8 +65,8 @@ move_dir(Pc, D) :-
     in(Q, Col_a), params.anchor(Col_a),                  // an anchor
     opposite(D, D_anchor).                               // the heading points away from it
 
-.init box = Bbox<Piece>
-box.cell(Pc, P) :- piece_cell(Pc, P).
+.init bbox = Bbox<Piece>
+bbox.cell(Pc, P) :- piece_cell(Pc, P).
 
 // --- output ---
 
@@ -74,7 +74,7 @@ box.cell(Pc, P) :- piece_cell(Pc, P).
 ink(P, Col, Ch) :- in(P, Col), params.anchor(Col), impl_choice(Ch).
 ink(Q, Col, Ch) :-
     Pc = [Ch, _, Col], piece_cell(Pc, P), move_dir(Pc, D),  // the piece and its heading
-    box.edge_min(Pc, D, K), jump(P, D, K, Q).               // jumped flush to the edge ahead
+    bbox.edge_min(Pc, D, K), jump(P, D, K, Q).               // jumped flush to the edge ahead
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- ink(P, Col, Ch).

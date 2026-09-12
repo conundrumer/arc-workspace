@@ -21,13 +21,13 @@ objs.node($U(), P) :- in(P, Col), !params.bg(Col).
 .decl object(id: Ident, p: Position)
 object(Id, P) :- objs.label($U(), P, Id).
 
-.init box = BoxFrame<Ident>
-box.cell(Id, P) :- object(Id, P).
-box.grid(Id, P) :- object(Id, _), in(P, _).
+.init bbox = BoxFrame<Ident>
+bbox.cell(Id, P) :- object(Id, P).
+bbox.grid(Id, P) :- object(Id, _), in(P, _).
 
 // Each object's cells in its own box frame, and its self-maps under D4.
 .decl figure(id: Ident, p_inner: Position, col: Color)
-figure(Id, P_inner, Col) :- object(Id, P), box.inner(Id, P, P_inner), in(P, Col).
+figure(Id, P_inner, Col) :- object(Id, P), bbox.inner(Id, P, P_inner), in(P, Col).
 
 .init inv = D4Map<Ident, Color>
 inv.src(Id, P, Col) :- figure(Id, P, Col).
@@ -38,4 +38,4 @@ inv.dst(Id, P, Col) :- figure(Id, P, Col).
 .decl out(p: Position, col: Color)
 out(P_intile, Col) :-
     params.sym(F), inv.mismatch(Id, F),    // the object sym does not fix
-    box.inner(Id, P, P_intile), in(P, Col). // its box, cropped
+    bbox.inner(Id, P, P_intile), in(P, Col). // its box, cropped

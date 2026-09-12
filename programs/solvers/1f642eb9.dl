@@ -53,8 +53,8 @@ rays.blocked($Block(), P) :- block_cell(P).
 
 // --- Box ---
 
-.init box = Bbox<Unit>
-box.cell($U(), P) :- block_cell(P).
-box.grid($U(), P) :- in(P, _).
+.init bbox = Bbox<Unit>
+bbox.cell($U(), P) :- block_cell(P).
+bbox.grid($U(), P) :- in(P, _).
 
-rays.blocked($Box(), P) :- box.inside($U(), P).
+rays.blocked($Box(), P) :- bbox.inside($U(), P).

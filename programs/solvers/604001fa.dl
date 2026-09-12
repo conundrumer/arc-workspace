@@ -29,12 +29,12 @@
 
     .type KI = [k: Key, id: Ident]
 
-    .init box = Bbox<KI>
-    box.cell([K, Id], P) :- object.label(K, P, Id), cell(K, P, Col), params.mark(Col).
+    .init bbox = Bbox<KI>
+    bbox.cell([K, Id], P) :- object.label(K, P, Id), cell(K, P, Col), params.mark(Col).
 
     .decl missing_corner(k: Key, id: Ident, diag: DiagDir)
     missing_corner(K, Id, Diag) :-
-        box.cell([K, Id], _), diag_dir_elem(Diag), !box.corner([K, Id], _, Diag).
+        bbox.cell([K, Id], _), diag_dir_elem(Diag), !bbox.corner([K, Id], _, Diag).
 
     .decl shape_cell(k: Key, p: Position, id: Ident)
     shape_cell(K, P, Id) :- object.label(K, P, Id), cell(K, P, Col), !params.mark(Col).

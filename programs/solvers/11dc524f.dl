@@ -15,10 +15,10 @@
 
 .init params = Params
 
-// Each object viewed from its own bounding box.
-.init box = BoxFrame<Color>
-box.cell(Col, P) :- in(P, Col), !params.bg(Col).
-box.grid(Col, P) :- box.cell(Col, _), in(P, _).
+// Each object viewed from its own bounding bbox.
+.init bbox = BoxFrame<Color>
+bbox.cell(Col, P) :- in(P, Col), !params.bg(Col).
+bbox.grid(Col, P) :- bbox.cell(Col, _), in(P, _).
 
 // Line of sight: the direction from the shape to the block.
 .init sight = Ray<Unit>
@@ -35,12 +35,12 @@ shift(Delta) :-
     in(P, _), move_dir(D),
     axis_of(D, A), sub_extent(P, A, K), jump_offset(D, K, Delta).
 
-// The displacements at which the shape's box would lie over the block's box.
+// The displacements at which the shape's box would lie over the block's bbox.
 .decl covering(delta: Offset)
 covering(Delta) :-
-    shift(Delta), params.shape_color(Col), box.inside(Col, P),  // a shape-box cell
+    shift(Delta), params.shape_color(Col), bbox.inside(Col, P),  // a shape-box cell
     compose(P, Delta, P2),                                       // carried there
-    params.mirror_color(Col2), box.inside(Col2, P2).             // on a block-box cell
+    params.mirror_color(Col2), bbox.inside(Col2, P2).             // on a block-box cell
 
 // The shape stands where it is, and travels through the displacements that
 // keep its box clear of the block's.
@@ -49,10 +49,10 @@ slide.dir($U(), D) :- move_dir(D).
 slide.node($U(), ZERO).
 slide.node($U(), Delta) :- shift(Delta), !covering(Delta).
 
-// The shape's box, docked: flush against the block's box.
+// The shape's box, docked: flush against the block's bbox.
 .decl home(p: Position)
 home(P_home) :-
-    params.shape_color(Col), box.margin(Col, P_box),  // the shape's box
+    params.shape_color(Col), bbox.box(Col, P_box),  // the shape's box
     slide.rest($U(), ZERO, _, Delta),               // at rest
     compose(P_box, Delta, P_home).
 
@@ -61,13 +61,13 @@ home(P_home) :-
 .decl mirror(p: Position)
 mirror(P_mirror) :-
     move_dir(D), axis_of(D, A),
-    params.shape_color(Col), box.extent(Col, A, N),  // the shape's length along the slide
+    params.shape_color(Col), bbox.extent(Col, A, N),  // the shape's length along the slide
     home(P_home), jump(P_home, D, N, P_mirror).
 
 .decl paint(p: Position, col: Color)
 paint(P_grid_out, Col_out) :-
     params.shape_color(Col),
-    box.cell(Col, P_cell), box.inner(Col, P_cell, P_intile),           // a shape cell in its box
+    bbox.cell(Col, P_cell), bbox.inner(Col, P_cell, P_intile),           // a shape cell in its box
     ( home(P_home), compose(P_home, P_intile, P_grid_out),
       Col_out = Col                                                    // the shape, docked
     ; move_dir(D), axis_of(D, A), flip_of(A, F), apply(F, P_intile, P_flip),

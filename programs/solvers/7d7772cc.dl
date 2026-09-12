@@ -36,7 +36,7 @@ pen.cell($U(), P) :- in(P, Col), line_color.value(_, Col), !thick(Col).
 pen.grid($U(), P) :- in(P, _).
 
 .decl open_dir(d: Dir)
-open_dir(D) :- pen.margin($U(), M), dir_elem(D), dist(M, D, K), K != 0.
+open_dir(D) :- pen.box($U(), M), dir_elem(D), dist(M, D, K), K != 0.
 
 .decl free_cell(p: Position)
 free_cell(P) :- in(P, _), !pen.inside($U(), P).

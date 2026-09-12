@@ -4,8 +4,8 @@
 // One figure, drawn in several colors with one-cell gaps in its lines, and
 // stray cells far from it. Cells with at most one cell between them cluster;
 // the figure is the largest cluster, and the output is the crop of its
-// bounding box. Each color of the figure turns about the crop's center by one
-// quarter turn in params.sense per stray cell of that color outside the box.
+// bounding bbox. Each color of the figure turns about the crop's center by one
+// quarter turn in params.sense per stray cell of that color outside the bbox.
 
 #include "../lib.dl"
 
@@ -34,17 +34,17 @@ size.item(Id, P) :- cluster.label($U(), P, Id).
 .init largest = ArgExtremes<Unit, Ident>
 largest.cand($U(), Id, N) :- size.tally(Id, N).
 
-.init box = BoxFrame<Unit>
-box.cell($U(), P) :- largest.high($U(), Id, _), cluster.label($U(), P, Id).
-box.grid($U(), P) :- in(P, _).
+.init bbox = BoxFrame<Unit>
+bbox.cell($U(), P) :- largest.high($U(), Id, _), cluster.label($U(), P, Id).
+bbox.grid($U(), P) :- in(P, _).
 
 // The crop, in its own frame.
 .decl cropped(p_inner: Position, col: Color)
-cropped(P_inner, Col) :- box.inner($U(), P, P_inner), in(P, Col).
+cropped(P_inner, Col) :- bbox.inner($U(), P, P_inner), in(P, Col).
 
-// Quarter turns per figure color: its stray cells outside the box.
+// Quarter turns per figure color: its stray cells outside the bbox.
 .init turns = Tally<Color, Position>
-turns.item(Col, P) :- ink(P, Col), !box.inside($U(), P).
+turns.item(Col, P) :- ink(P, Col), !bbox.inside($U(), P).
 turns.domain(Col) :- cropped(_, Col), !params.bg(Col).
 
 // The rotation: each crop cell steps one quarter turn about the center.

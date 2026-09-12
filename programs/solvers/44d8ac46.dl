@@ -9,7 +9,7 @@
 //
 //   r (what a hole is):
 //     $Enclose — a bg region the grid edge cannot reach.
-//     $Box     — a bg region inside a shape's bounding box.
+//     $Box     — a bg region inside a shape's bounding bbox.
 //   t (which holes take the fill):
 //     $Block   — the hole covers its own box, and that box is square.
 //     $Sym     — the hole is invariant under params.hole_sym.
@@ -41,12 +41,12 @@ bg_cell(P) :- in(P, Col), params.bg(Col).
     .decl cell(key: Key, p: Position)  // input
     .decl grid(key: Key, p: Position)  // input
 
-    .init box = BoxFrame<Key>
-    box.cell(K, P) :- cell(K, P).
-    box.grid(K, P) :- grid(K, P).
+    .init bbox = BoxFrame<Key>
+    bbox.cell(K, P) :- cell(K, P).
+    bbox.grid(K, P) :- grid(K, P).
 
     .init sym = D4Map<Key, Unit>
-    sym.src(K, P_inner, $U()) :- cell(K, P), box.inner(K, P, P_inner).
+    sym.src(K, P_inner, $U()) :- cell(K, P), bbox.inner(K, P, P_inner).
     sym.dst(K, P, V) :- sym.src(K, P, V).
 }
 
@@ -87,9 +87,9 @@ view.grid(H, P) :- hole(H, _), in(P, _).
 
 // A cell of the hole's box the hole leaves out.
 .decl box_gap(h: Hole)
-box_gap(H) :- view.box.inside(H, P), !hole(H, P).
+box_gap(H) :- view.bbox.inside(H, P), !hole(H, P).
 
-filled(H, $Block()) :- view.box.extents(H, _, N, N), !box_gap(H).
+filled(H, $Block()) :- view.bbox.extents(H, _, N, N), !box_gap(H).
 
 // --- $Sym ---
 

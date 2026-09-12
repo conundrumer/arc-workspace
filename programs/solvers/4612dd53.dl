@@ -32,13 +32,13 @@
 .decl mark(p: Position)
 mark(P) :- in(P, Col), !params.bg(Col).
 
-.init box = Bbox<Unit>
-box.cell($U(), P) :- mark(P).
-box.grid($U(), P) :- in(P, _).
+.init bbox = Bbox<Unit>
+bbox.cell($U(), P) :- mark(P).
+bbox.grid($U(), P) :- in(P, _).
 
 // A box cell on the line running along axis A at coordinate L.
 .decl line_cell(a: Axis, l: Position, p: Position)
-line_cell(A, L, P) :- box.inside($U(), P), axis_elem(A), split(P, A, _, L).
+line_cell(A, L, P) :- bbox.inside($U(), P), axis_elem(A), split(P, A, _, L).
 
 .decl line_mark(a: Axis, l: Position, p: Position)
 line_mark(A, L, P) :- line_cell(A, L, P), mark(P).

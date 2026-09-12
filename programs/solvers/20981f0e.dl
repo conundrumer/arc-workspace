@@ -57,7 +57,7 @@ piece_box.cell(P_tile, P_intile) :- piece(P_tile, P, _), tile_frame.inner(P_tile
 landing(P_tile, Delta, M) :-
     piece(P_tile, P, _), tile_frame.cell(P_tile, Q),
     relative(P, Q, Delta),                                  // a piece cell onto a cell of its tile
-    piece_box.margin(P_tile, M_box), compose(M_box, Delta, M),  // where it lands the box
+    piece_box.box(P_tile, M_box), compose(M_box, Delta, M),  // where it lands the box
     inside(M, ZERO).                                             // the whole box inside the tile
 
 // The relative each case picks.
@@ -77,7 +77,7 @@ place(P_tile, Delta, $Slot()) :- landing(P_tile, Delta, M), params.slot(M).
 // from it, a box touching neither wall stands.
 .decl clear_step(p_tile: Position, a: Axis, delta: Offset)
 clear_step(P_tile, A, Delta) :-
-    piece_box.margin(P_tile, M_box), axis_of(D, A), opposite(D, D2),
+    piece_box.box(P_tile, M_box), axis_of(D, A), opposite(D, D2),
     ( dist(M_box, D, 0), step_offset(D2, Delta)                       // against the wall at d
     ; dist_pair(M_box, D, K, K2), K != 0, K2 != 0, Delta = ZERO    // clear of both walls
     ).

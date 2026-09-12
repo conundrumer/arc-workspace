@@ -24,14 +24,14 @@
 
     .type KI = [key: Key, id: Ident]
 
-    .init box = Bbox<KI>
-    box.cell([Ky, Id], P) :- objs.label(Ky, P, Id).
+    .init bbox = Bbox<KI>
+    bbox.cell([Ky, Id], P) :- objs.label(Ky, P, Id).
 
     // Each block cell carried the block's own length along the move.
     .decl moved(key: Key, p: Position, col: Color)
     moved(Ky, P_out, Col) :-
         cell(Ky, P, Col), objs.label(Ky, P, Id),                  // a block cell
-        dir(Ky, D), axis_of(D, A), box.extent([Ky, Id], A, N),    // its block's length along the move
+        dir(Ky, D), axis_of(D, A), bbox.extent([Ky, Id], A, N),    // its block's length along the move
         jump(P, D, N, P_out).
 }
 

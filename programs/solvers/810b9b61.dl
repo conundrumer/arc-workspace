@@ -58,12 +58,12 @@ obj([Col, Id], P) :- objs.label(Col, P, Id).
 
 // --- Object ---
 
-.init box = Bbox<Obj>
-box.cell(K, P) :- obj(K, P).
+.init bbox = Bbox<Obj>
+bbox.cell(K, P) :- obj(K, P).
 
 .init bcells = BoxCells<Obj>
-bcells.box(K, B) :- box.margin(K, B).
-bcells.cell(K, P) :- box.margin(K, _), in(P, _).
+bcells.box(K, B) :- bbox.box(K, B).
+bcells.cell(K, P) :- bbox.box(K, _), in(P, _).
 
 // A gap on the box's edge: the component does not draw the whole outline.
 .decl edge_gap(k: Obj)

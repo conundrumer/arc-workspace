@@ -21,21 +21,21 @@
 .init params = Params
 
 // The corner box: the pattern block with the separator lines that close it.
-.init box = Bbox<Unit>
-box.cell($U(), P) :- in(P, Col), !params.bg(Col).
-box.grid($U(), P) :- in(P, _).
+.init bbox = Bbox<Unit>
+bbox.cell($U(), P) :- in(P, Col), !params.bg(Col).
+bbox.grid($U(), P) :- in(P, _).
 
 // The separator lines: the box edges facing away from the corner.
 .decl sep_cell(p: Position)
 sep_cell(P) :-
     params.corner(D), diag_opposite(D, D_far),
-    dir_of(D_far, _, D_away), box.edge_cell($U(), P, D_away).
+    dir_of(D_far, _, D_away), bbox.edge_cell($U(), P, D_away).
 
 .decl sep(col: Color)
 sep(Col) :- sep_cell(P), in(P, Col).
 
 .decl pat_cell(p: Position)
-pat_cell(P) :- box.inside($U(), P), !sep_cell(P).
+pat_cell(P) :- bbox.inside($U(), P), !sep_cell(P).
 
 // The block's own size is the period of the layout.
 .init block = Bbox<Unit>

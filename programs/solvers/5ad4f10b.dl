@@ -46,13 +46,13 @@ figure(Col) :-
 speck(Col) :- ink(Col, _), !figure(Col).
 
 // The drawing: the box the figure occupies, its cells read as figure or blank.
-.init box = BoxFrame<Unit>
-box.cell($U(), P) :- figure(Col), ink(Col, P).
-box.grid($U(), P) :- in(P, _).
+.init bbox = BoxFrame<Unit>
+bbox.cell($U(), P) :- figure(Col), ink(Col, P).
+bbox.grid($U(), P) :- in(P, _).
 
 .decl drawing(p_inner: Position, col: Color)
 drawing(P_inner, Col) :-
-    box.inner($U(), P, P_inner), in(P, C),
+    bbox.inner($U(), P, P_inner), in(P, C),
     ( figure(C), Col = C                    // a figure cell
     ; !figure(C), params.bg(Col)            // bg or a speck: blank
     ).

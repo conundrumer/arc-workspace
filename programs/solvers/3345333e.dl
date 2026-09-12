@@ -67,11 +67,11 @@ pair_box.cell([P, Q], P) :- pair(P, Q).
 pair_box.cell([P, Q], Q) :- pair(P, Q).
 
 .decl cand(m: Position)
-cand(M) :- pair_box.margin(_, M).
+cand(M) :- pair_box.box(_, M).
 
 // The frames a mirror may act in.
 .decl mirror_frame(m: Position)
-mirror_frame(M) :- whole.margin($U(), M).
+mirror_frame(M) :- whole.box($U(), M).
 mirror_frame(M) :- cand(M).
 
 // Each grid cell as frame M sees it.
@@ -109,12 +109,12 @@ out(P, Col, Ch) :-
 
 // --- $Complete ---
 
-frame(M, $Complete()) :- whole.margin($U(), M).
+frame(M, $Complete()) :- whole.box($U(), M).
 target(P, $Complete()) :- in(P, _).
 
 // --- $Patch ---
 
-frame(M, $Patch()) :- whole.margin($U(), M).
+frame(M, $Patch()) :- whole.box($U(), M).
 target(P, $Patch()) :- occluder(P).
 
 // --- $Fitted ---

@@ -78,7 +78,7 @@ wall_choice($Edge()). wall_choice($Seam()). wall_choice($Image()).
 
 // $Edge — the shape's edge line and the line just outside it.
 wall.cell([L, $Edge()], Q) :-
-    mark_dir(D, L), shape_box.margin(L, F),
+    mark_dir(D, L), shape_box.box(L, F),
     in(P, _), same_dist(D, P, F),   // the shape's edge line
     ( Q = P ; neighbor(P, D, Q) ).  // and the line just outside it
 
@@ -91,7 +91,7 @@ wall.cell([L, $Seam()], Q) :-
 // $Image — the shape's edge line and the marker's line.
 wall.cell([L, $Image()], Q) :-
     mark_dir(D, L), in(Q, _),
-    ( shape_box.margin(L, F), same_dist(D, Q, F)  // the shape's edge line
+    ( shape_box.box(L, F), same_dist(D, Q, F)  // the shape's edge line
     ; marker_cell(M, L), same_dist(D, Q, M)       // the marker's line
     ).
 
@@ -100,7 +100,7 @@ wall.cell([L, $Image()], Q) :-
 .decl mirror(p: Position, q: Position, w: Wall, l: Locate)
 mirror(P, Q, W, L) :-
     mark_dir(D, L), axis_of(D, A), flip_of(A, T),
-    shape_cell(P, L), wall.margin([L, W], F),
+    shape_cell(P, L), wall.box([L, W], F),
     relative(F, P, V), apply(T, V, V2),  // its offset from the wall, flipped
     compose(F, V2, Q), in(Q, _).             // seated back, on the grid
 

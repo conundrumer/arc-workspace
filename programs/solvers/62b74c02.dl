@@ -27,8 +27,8 @@
 .decl ink(p: Position, col: Color)
 ink(P, Col) :- in(P, Col), !params.bg(Col).
 
-.init box = Bbox<Unit>
-box.cell($U(), P) :- ink(P, _).
+.init bbox = Bbox<Unit>
+bbox.cell($U(), P) :- ink(P, _).
 
 .decl empty_dir(d: Dir, dc: DirCh)
 
@@ -36,13 +36,13 @@ box.cell($U(), P) :- ink(P, _).
 empty_dir(D, $Dir()) :- params.dir(D).
 
 // --- $Edge ---
-empty_dir(D, $Edge()) :- box.edge_min($U(), D, M), M != 0.
+empty_dir(D, $Edge()) :- bbox.edge_min($U(), D, M), M != 0.
 
 // Copy of the block flush at the empty edge.
 .decl copy(p: Position, col: Color, dc: DirCh)
 copy(P2, Col, Dc) :-
     ink(P, Col),                                  // block cell
-    empty_dir(D, Dc), box.edge_min($U(), D, M),   // empty edge, block margin
+    empty_dir(D, Dc), bbox.edge_min($U(), D, M),   // empty edge, block margin
     jump(P, D, M, P2).                            // jumped flush to it
 
 // The block boundary the fill copies from.
@@ -59,7 +59,7 @@ fill_edge(D, Dc, $Inner()) :- empty_dir(D, Dc).
 fill(P, Col, Dc, Fc) :-
     in(P, Bg), params.bg(Bg), !copy(P, _, Dc), // empty cell, not under the copy
     fill_edge(E, Dc, Fc),                      // the block boundary copied
-    box.edge_cell($U(), Q, E), ink(Q, Col),    // its cell and color
+    bbox.edge_cell($U(), Q, E), ink(Q, Col),    // its cell and color
     axis_of(E, A), same_line(A, P, Q).
 
 .decl fill_elem(fc: FillCh)

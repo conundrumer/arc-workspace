@@ -50,15 +50,15 @@ piece_cell(Id, P) :- piece.label(_, P, Id).
 piece_color(Id, Col) :- piece.label(Col, _, Id).
 
 // A square fills a box with equal sides.
-.init box = Bbox<Ident>
-box.cell(Id, P) :- piece_cell(Id, P).
-box.grid(Id, P) :- piece_cell(Id, _), in(P, _).
+.init bbox = Bbox<Ident>
+bbox.cell(Id, P) :- piece_cell(Id, P).
+bbox.grid(Id, P) :- piece_cell(Id, _), in(P, _).
 
 .decl gap(id: Ident, p: Position)
-gap(Id, P) :- box.inside(Id, P), !piece_cell(Id, P).
+gap(Id, P) :- bbox.inside(Id, P), !piece_cell(Id, P).
 
 .decl square(id: Ident)
-square(Id) :- box.extents(Id, _, N, N), !gap(Id, _).
+square(Id) :- bbox.extents(Id, _, N, N), !gap(Id, _).
 
 // The wire color has a piece that is no square.
 .decl wire_color(col: Color)

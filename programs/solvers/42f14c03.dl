@@ -35,12 +35,12 @@ obj_cell(O, Col, P) :- obj.label(Col, P, O).
 
 // --- the holes ---
 
-.init box = BoxFrame<Ident>
-box.cell(O, P) :- obj_cell(O, _, P).
-box.grid(O, P) :- obj_cell(O, _, _), in(P, _).
+.init bbox = BoxFrame<Ident>
+bbox.cell(O, P) :- obj_cell(O, _, P).
+bbox.grid(O, P) :- obj_cell(O, _, _), in(P, _).
 
 .decl hole(o: Ident, p: Position)
-hole(O, P) :- box.inside(O, P), !obj_cell(O, _, P).
+hole(O, P) :- bbox.inside(O, P), !obj_cell(O, _, P).
 
 .init holes = Components<Ident>
 holes.node(O, P) :- hole(O, P).
@@ -67,22 +67,22 @@ frame(O, Ch) :- hole(O, _), impl_choice(Ch), !unfillable(O, Ch).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P_inner, Col, Ch) :-
-    frame(F, Ch), obj_cell(F, Col, P), box.inner(F, P, P_inner).    // the frame's own cells
+    frame(F, Ch), obj_cell(F, Col, P), bbox.inner(F, P, P_inner).    // the frame's own cells
 out(P_inner, Col, Ch) :-
-    frame(F, Ch), hole_cell([F, Id], P), box.inner(F, P, P_inner),  // a hole of the frame
+    frame(F, Ch), hole_cell([F, Id], P), bbox.inner(F, P, P_inner),  // a hole of the frame
     fits([F, Id], O, Ch), obj_cell(O, Col, _).                      // in the color of its piece
 
 // --- Shape ---
 
 .init shape = KeyedSetCompare<Hole, Ident, Position>
-shape.pattern_member(O, S) :- box.inner(O, P, S), obj_cell(O, _, P).
+shape.pattern_member(O, S) :- bbox.inner(O, P, S), obj_cell(O, _, P).
 shape.observed_member(H, S) :- hole_box.inner(H, _, S).
 
 fits(H, O, $Shape()) :- shape.equals(H, O).
 
 // --- Dims ---
 
-fits(H, O, $Dims()) :- hole_box.extents(H, A, N1, N2), box.extents(O, A, N1, N2).
+fits(H, O, $Dims()) :- hole_box.extents(H, A, N1, N2), bbox.extents(O, A, N1, N2).
 
 // --- Size ---
 

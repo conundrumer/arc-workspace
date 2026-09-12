@@ -21,13 +21,13 @@
 // --- the template ---
 
 // The template, read in its own frame.
-.init box = BoxFrame<Unit>
-box.cell($U(), P) :- in(P, Col), params.fill(Col).
-box.grid($U(), P) :- in(P, _).
+.init bbox = BoxFrame<Unit>
+bbox.cell($U(), P) :- in(P, Col), params.fill(Col).
+bbox.grid($U(), P) :- in(P, _).
 
 // The template's D4 images, each in its own frame.
 .decl image(d: D4, s: Position, col: Color)
-image(D, S2, Col) :- d4_elem(D), box.inner($U(), P, S), in(P, Col), apply(D, S, S2).
+image(D, S2, Col) :- d4_elem(D), bbox.inner($U(), P, S), in(P, Col), apply(D, S, S2).
 
 // --- the placements ---
 

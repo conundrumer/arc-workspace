@@ -24,7 +24,7 @@
 
 .init params = Params
 
-// The interiors the walls close off, each viewed from its own bounding box.
+// The interiors the walls close off, each viewed from its own bounding bbox.
 .comp Parse<Key> {
     .type Interior = [k: Key, id: Ident]
 
@@ -33,8 +33,8 @@
     .init closed = Closed<Key>
     closed.cell(K, P) :- cell(K, P, Col), !params.frame(Col).
 
-    .init box = BoxFrame<Interior>
-    box.cell([K, Id], P) :- closed.region(K, P, Id).
+    .init bbox = BoxFrame<Interior>
+    bbox.cell([K, Id], P) :- closed.region(K, P, Id).
 }
 
 .init parse = Parse<Unit>
@@ -45,7 +45,7 @@ parse.cell($U(), P, Col) :- in(P, Col).
 .decl ink_cell(id: Ident, p_intile: Position)
 ink_cell(Id, P_intile) :-
     in(P, Col), params.ink(Col),                  // ink cell
-    parse.box.inner([$U(), Id], P, P_intile).     // in its interior's frame
+    parse.bbox.inner([$U(), Id], P, P_intile).     // in its interior's frame
 
 // The reflections each interior's pattern completes under.
 .decl flip(id: Ident, d: D4, ch: Choice)
@@ -54,7 +54,7 @@ ink_cell(Id, P_intile) :-
 paint(P_grid_out, Ch) :-
     ink_cell(Id, P_intile),                                 // the interior's ink
     flip(Id, D, Ch), apply(D, P_intile, P_intile2),         // its mirror image
-    parse.box.inner([$U(), Id], P_grid_out, P_intile2).     // back on the grid
+    parse.bbox.inner([$U(), Id], P_grid_out, P_intile2).     // back on the grid
 
 // --- Klein ---
 
@@ -105,7 +105,7 @@ out(P, Col, Ch) :- paint(P, Ch), params.ink(Col).
     // Each finished pattern, in its interior's frame.
     .decl ink_out(i: Interior, p_intile: Position)
     ink_out([E, Id], P_intile) :-
-        ex_out(E, P, Col), params.ink(Col), parse.box.inner([E, Id], P, P_intile).
+        ex_out(E, P, Col), params.ink(Col), parse.bbox.inner([E, Id], P, P_intile).
 
     .init inv = D4Map<Interior, Unit>
     inv.src(I, P_intile, $U()) :- ink_out(I, P_intile).

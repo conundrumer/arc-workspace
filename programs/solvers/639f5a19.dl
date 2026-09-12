@@ -6,7 +6,7 @@
 // of the object's bounding box it sits in. What the band encloses takes one
 // color. Choice = how deep a cell lies:
 //
-//   $Inset() — distance to the nearest edge of the bounding box.
+//   $Inset() — distance to the nearest edge of the bounding bbox.
 //   $Erode() — erosion from the object's own outline.
 //
 // Every object here is a solid rectangle, where the two depths agree; a
@@ -34,13 +34,13 @@
 .init objs = Components<Unit>
 objs.node($U(), P) :- in(P, Col), !params.bg(Col).
 
-// Each object seen from its own bounding box.
-.init box = BoxFrame<Ident>
-box.cell(Id, P) :- objs.label($U(), P, Id).
+// Each object seen from its own bounding bbox.
+.init bbox = BoxFrame<Ident>
+bbox.cell(Id, P) :- objs.label($U(), P, Id).
 
 // Which quadrant of its box an object cell sits in.
 .init quad = DiagPlacement<Ident>
-quad.cell(Id, P_box) :- box.inner(Id, _, P_box).
+quad.cell(Id, P_box) :- bbox.inner(Id, _, P_box).
 
 .decl impl_choice(ch: Choice)
 impl_choice($Inset()). impl_choice($Erode()).
@@ -51,7 +51,7 @@ impl_choice($Inset()). impl_choice($Erode()).
 
 // Nearer some edge of its bounding box than the band is deep.
 band_cell(P, $Inset()) :-
-    box.inner(_, P, P_box),                                   // the cell in its box's frame
+    bbox.inner(_, P, P_box),                                   // the cell in its box's frame
     dir_elem(D), dist(P_box, D, K), params.band_depth(N), K < N.
 
 // --- $Erode ---
@@ -69,7 +69,7 @@ band_cell(P, $Erode()) :- rim.depth(_, P, K), params.band_depth(N), K < N.
 out(P, Col, Ch) :- in(P, Col), params.bg(Col), impl_choice(Ch).
 
 out(P, Col, Ch) :-
-    band_cell(P, Ch), box.inner(Id, P, P_box),
+    band_cell(P, Ch), bbox.inner(Id, P, P_box),
     quad.quadrant(Id, P_box, G), params.corner_color(G, Col).
 
 out(P, Col, Ch) :-
@@ -88,11 +88,11 @@ out(P, Col, Ch) :-
     .init objs = Components<Example>
     objs.node(E, P) :- ex_in(E, P, Col), !params.bg(Col).
 
-    .init box = BoxFrame<ObjKey>
-    box.cell([E, Id], P) :- objs.label(E, P, Id).
+    .init bbox = BoxFrame<ObjKey>
+    bbox.cell([E, Id], P) :- objs.label(E, P, Id).
 
     .decl corner_color(diag: DiagDir, col: Color)
-    corner_color(G, Col) :- box.corner([E, _], P, G), ex_out(E, P, Col).
+    corner_color(G, Col) :- bbox.corner([E, _], P, G), ex_out(E, P, Col).
 
     // The one color the band does not carry.
     .decl core_color(col: Color)
@@ -102,7 +102,7 @@ out(P, Col, Ch) :-
     // edges is how deep the band runs.
     .init core_box = Bbox<ObjKey>
     core_box.cell([E, Id], P_box) :-
-        box.inner([E, Id], P, P_box), ex_out(E, P, Col), core_color(Col).
+        bbox.inner([E, Id], P, P_box), ex_out(E, P, Col), core_color(Col).
 
     .decl band_depth(k: number)
     band_depth(K) :- core_box.edge_min(_, _, K).

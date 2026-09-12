@@ -25,15 +25,15 @@ mark(P, Col) :- in(P, Col), !params.bg(Col).
 
 // The marks' bounding box is the innermost outline: the outer dots sit at
 // two of its corners, and the middle dot at its center.
-.init box = BoxFrame<Unit>
-box.cell($U(), P) :- mark(P, _).
+.init bbox = BoxFrame<Unit>
+bbox.cell($U(), P) :- mark(P, _).
 
 .decl center(p: Position)
-center(P) :- box.inner($U(), P, P_in), centered(P_in).    // the middle dot
+center(P) :- bbox.inner($U(), P, P_in), centered(P_in).    // the middle dot
 
 // The spacing, as the inset carrying the center out to the innermost outline.
 .decl spread(v: Box)
-spread(V) :- center(P), box.margin($U(), B), relative(P, B, V).
+spread(V) :- center(P), bbox.box($U(), B), relative(P, B, V).
 
 // --- program ---
 

@@ -90,7 +90,7 @@ blocks_box.cell($U(), P) :- block(_, P).
 
 .decl crop_box(b: Position)
 crop_box(B) :-
-    blocks_box.margin($U(), M),
+    blocks_box.box($U(), M),
     params.border(K), uniform_inset(K, W), relative(W, M, B).
 
 .init rel = Reframe<Unit>
@@ -109,7 +109,7 @@ lane.idx_set(D, K) :- block_box.edge_min(_, D, K).
 tile.edge(Col, D, R) :- block_box.edge_min(Col, D, K), lane.rank(D, K, R).
 
 view(P, P_out, $Arrange()) :-
-    block_box.inner(Col, P, P_inner), tile.pos(Col, P_tile),  // block cell, its tile
+    block_box.inner(Col, P, P_inner), tile.box(Col, P_tile),  // block cell, its tile
     params.border(K), concat_2d(P_tile, P_inner, K, P_lat),   // tiles set the border apart
     uniform_inset(K, W), compose(P_lat, W, P_out).            // and the border around them
 
@@ -133,9 +133,9 @@ out(P_out, Col, [Pu, $Arrange()]) :-                            // border
     bg_mode.item(E, Col, P) :- ex_in(E, P, Col).
 
     // The output's blocks stand the border's width inside its frame.
-    .init box = Bbox<Example>
-    box.cell(E, P) :- ex_out(E, P, Col), !bg_mode.mode(E, Col).
+    .init bbox = Bbox<Example>
+    bbox.cell(E, P) :- ex_out(E, P, Col), !bg_mode.mode(E, Col).
 
     .decl border(k: number)
-    border(K) :- box.edge_min(_, _, K).
+    border(K) :- bbox.edge_min(_, _, K).
 }

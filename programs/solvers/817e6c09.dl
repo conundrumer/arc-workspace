@@ -22,12 +22,12 @@
 .init blocks = Components<Unit>
 blocks.node($U(), P) :- in(P, Col), params.ink(Col).
 
-.init box = Bbox<Ident>
-box.cell(Id, P) :- blocks.label($U(), P, Id).
+.init bbox = Bbox<Ident>
+bbox.cell(Id, P) :- blocks.label($U(), P, Id).
 
 // Each block with its distance from the anchor edge.
 .decl block_dist(id: Ident, k: number)
-block_dist(Id, K) :- params.anchor(D), box.edge_min(Id, D, K).
+block_dist(Id, K) :- params.anchor(D), bbox.edge_min(Id, D, K).
 
 .init seq = Ordinal<Unit>
 seq.idx_set($U(), K) :- block_dist(_, K).

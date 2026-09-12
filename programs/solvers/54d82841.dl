@@ -52,12 +52,12 @@ aim($Fall(), P, D) :- lone_free.value(P, _), params.fall(D).
 .init cup = Components<Color>
 cup.node(Col, P) :- in(P, Col), !params.bg(Col).
 
-.init box = BoxFrame<Ident>
-box.cell(Id, P) :- cup.label(_, P, Id).
+.init bbox = BoxFrame<Ident>
+bbox.cell(Id, P) :- cup.label(_, P, Id).
 
-// The cast cell is a cup cell midway between the two sides of its box.
+// The cast cell is a cup cell midway between the two sides of its bbox.
 aim($Center(), P, D) :-
-    box.inner(_, P, P_box),           // the cell in its cup's box
+    bbox.inner(_, P, P_box),           // the cell in its cup's box
     params.fall(D), perp_dir(D, D2),  // across the cast
     dist_pair(P_box, D2, K, K).       // centered on that axis
 

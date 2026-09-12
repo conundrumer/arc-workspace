@@ -119,9 +119,9 @@ out(P, Col, $Inset()) :-
 
     // The dots span the interior frame, so their distance to a grid edge is
     // the border's width there.
-    .init box = Bbox<Example>
-    box.cell(E, P) :- ex_out(E, P, Col), params.dot(Col).
+    .init bbox = Bbox<Example>
+    bbox.cell(E, P) :- ex_out(E, P, Col), params.dot(Col).
 
     .decl border_width(k: number)
-    border_width(K) :- box.edge_min(_, _, K).
+    border_width(K) :- bbox.edge_min(_, _, K).
 }

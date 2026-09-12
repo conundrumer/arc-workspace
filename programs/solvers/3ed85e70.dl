@@ -69,7 +69,7 @@ place(S, V) :-
     clue_palette.value(K, Col),                     // a one-color clue
     clue_box.extents(K, A, N1, N2),
     layer_box.extents([S, Col], A, N1, N2),         // the color fills a box of the clue's size
-    clue_box.margin(K, M_clue), layer_box.margin([S, Col], M_layer),
+    clue_box.box(K, M_clue), layer_box.box([S, Col], M_layer),
     relative(M_layer, M_clue, V).               // that box onto the clue
 
 // A many-color clue is tested as a piece of each shape.

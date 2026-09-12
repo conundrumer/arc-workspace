@@ -3,7 +3,7 @@
 // concept: objects move d4 lookup
 //
 // The grid holds L-trominoes of two colors, each filling three corners of a
-// 2x2 box. Every piece emits a copy of itself one diagonal step away, painted
+// 2x2 bbox. Every piece emits a copy of itself one diagonal step away, painted
 // in a color the piece's color selects; the step direction follows from the
 // piece's color and the box corner the piece leaves open. A copy reaching past
 // the frame drops, and where two copies land on one cell stored precedence
@@ -72,12 +72,12 @@ parts.node(Col, P) :- in(P, Col), !params.bg(Col).
 .decl piece_cell(o: Obj, p: Position)
 piece_cell([Col, Id], P) :- parts.label(Col, P, Id).
 
-.init box = Bbox<Obj>
-box.cell(O, P) :- piece_cell(O, P).
+.init bbox = Bbox<Obj>
+bbox.cell(O, P) :- piece_cell(O, P).
 
 // The corner of the piece's box that the piece leaves empty.
 .decl open_diag(o: Obj, diag: DiagDir)
-open_diag(O, Diag) :- box.cell(O, _), diag_dir_elem(Diag), !box.corner(O, _, Diag).
+open_diag(O, Diag) :- bbox.cell(O, _), diag_dir_elem(Diag), !bbox.corner(O, _, Diag).
 
 .decl step_dir(o: Obj, dir: DiagDir, s: Step)
 
@@ -128,11 +128,11 @@ out(P, Col, [S, $Cover()]) :-
     .decl piece_cell(o: ExObj, p: Position)
     piece_cell([E, Col, Id], P) :- parts.label([E, Col], P, Id).
 
-    .init box = Bbox<ExObj>
-    box.cell(O, P) :- piece_cell(O, P).
+    .init bbox = Bbox<ExObj>
+    bbox.cell(O, P) :- piece_cell(O, P).
 
     .decl open_diag(o: ExObj, diag: DiagDir)
-    open_diag(O, Diag) :- box.cell(O, _), diag_dir_elem(Diag), !box.corner(O, _, Diag).
+    open_diag(O, Diag) :- bbox.cell(O, _), diag_dir_elem(Diag), !bbox.corner(O, _, Diag).
 
     // Cells the output repaints.
     .decl painted(e: Example, p: Position, col: Color)

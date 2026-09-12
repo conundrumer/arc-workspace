@@ -47,7 +47,7 @@ frame_box.grid(Ch, P) :- impl_choice(Ch), in(P, _).
 
 // The box's edge lines and its hole.
 .init frame_cells = BoxCells<Choice>
-frame_cells.box(Ch, B) :- frame_box.margin(Ch, B).
+frame_cells.box(Ch, B) :- frame_box.box(Ch, B).
 frame_cells.cell(Ch, P) :- frame_box.viewed(Ch, P).
 
 // The hole in its own frame.

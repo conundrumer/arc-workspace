@@ -143,7 +143,7 @@ target_box.cell(T, P_intile) :- target(P_intile, T).
 placement(V, [T, A]) :-
     heading(A, D), diag_dirs(Diag, _, D, D_x),                                 // the target's corner on that side
     opposite(D, D_back), diag_dirs(Diag_pay, _, D_back, D_x),                  // the payload's corner facing it
-    target_box.margin(T, M), cell(C, _), corner_anchor(Diag, C, M),            // the target's corner cell
+    target_box.box(T, M), cell(C, _), corner_anchor(Diag, C, M),            // the target's corner cell
     neighbor(C, D, S),                                                         // the seat beyond it
     pay_box.inner($U(), _, P_inner), corner_anchor(Diag_pay, P_inner, ZERO), // the payload's corner cell
     relative(P_inner, S, V).                                               // the shift that seats the payload
@@ -170,9 +170,9 @@ out(P_intile, Col, Ch) :-
     .init pick = Canon<Example>
     pick.equiv(E, E2) :- arrow_cell(E, _), arrow_cell(E2, _).
 
-    .init box = BoxFrame<Example>
-    box.cell(E, P) :- pick.rep(E, E), arrow_cell(E, P).
+    .init bbox = BoxFrame<Example>
+    bbox.cell(E, P) :- pick.rep(E, E), arrow_cell(E, P).
 
     .decl chart_glyph(p: Position)
-    chart_glyph(S) :- box.inner(_, _, S).
+    chart_glyph(S) :- bbox.inner(_, _, S).
 }

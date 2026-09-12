@@ -138,7 +138,7 @@ hole_box.cell([P_tile, Dc], P_intile) :- tile_cell(P_tile, P_intile, C, Dc), par
 
 out(P_out, Col, [$HoleBox(), Dc]) :-
     row_tile(P_out, P_tile, Dc),                                       // output cell, its tile
-    ( hole_box.margin([P_tile, Dc], M), params.box_color(M, Col)       // the hole's box → its color
+    ( hole_box.box([P_tile, Dc], M), params.box_color(M, Col)       // the hole's box → its color
     ; !has_hole(P_tile, Dc), params.full_color(Col)                    // no hole — the full color
     ).
 
@@ -181,5 +181,5 @@ out(P_out, Col, [$HoleBox(), Dc]) :-
     fhole.cell(T, P_intile) :- ftile(T, P_intile, C), params.bg(C).
 
     .decl box_color(margin: Position, col: Color)
-    box_color(M, Col) :- fhole.margin(T, M), tile_color(T, Col).
+    box_color(M, Col) :- fhole.box(T, M), tile_color(T, Col).
 }

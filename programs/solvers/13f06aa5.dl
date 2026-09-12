@@ -56,12 +56,12 @@ mark_dir(P, D, $Open()) :-
 .init comps = Components<Unit>
 comps.node($U(), P) :- ink(P, _).
 
-.init box = Bbox<Ident>
-box.cell(Id, P) :- comps.label($U(), P, Id).
+.init bbox = Bbox<Ident>
+bbox.cell(Id, P) :- comps.label($U(), P, Id).
 
 mark_dir(P, D, $Side()) :-
     mark(P, _), comps.label($U(), P, Id),   // the marker's shape
-    box.edge_cell(Id, P, D).                // the box side it lies on
+    bbox.edge_cell(Id, P, D).                // the box side it lies on
 
 // --- output ---
 

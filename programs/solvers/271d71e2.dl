@@ -35,15 +35,15 @@ frames.node($U(), P) :- in(P, Col), params.frame(Col).
 .decl block(b: Ident)
 block(B) :- frames.label($U(), _, B).
 
-.init box = Bbox<Ident>
-box.cell(B, P) :- frames.label($U(), P, B).
-box.grid(B, P) :- block(B), in(P, _).
+.init bbox = Bbox<Ident>
+bbox.cell(B, P) :- frames.label($U(), P, B).
+bbox.grid(B, P) :- block(B), in(P, _).
 
 // --- handle and target ---
 
 // The line abutting the block on side D. A cell off the grid still abuts.
 .decl abut(b: Ident, d: Dir, p: Position)
-abut(B, D, P) :- box.edge_cell(B, Q, D), neighbor(Q, D, P).
+abut(B, D, P) :- bbox.edge_cell(B, Q, D), neighbor(Q, D, P).
 
 .decl abut_break(b: Ident, d: Dir)
 abut_break(B, D) :- abut(B, D, P), params.marker(M), !in(P, M).
@@ -56,7 +56,7 @@ handle_dir(B, D) :- abut(B, D, _), !abut_break(B, D).
 // its handle onto the line K cells ahead.
 .init probe = Ray<Ident>
 probe.dir(B, D) :- handle_dir(B, D).
-probe.cell(B, P) :- box.grid(B, P).
+probe.cell(B, P) :- bbox.grid(B, P).
 probe.mark(B, P) :- handle_dir(B, D), abut(B, D, P).
 
 .decl ahead(b: Ident, p: Position, k: number)
@@ -68,7 +68,7 @@ ahead_break(B, K) :- ahead(B, P, K), params.marker(M), !in(P, M).
 // --- gauge ---
 
 .decl empty_cell(b: Ident, p: Position)
-empty_cell(B, P) :- box.inside(B, P), in(P, Col), params.empty(Col).
+empty_cell(B, P) :- bbox.inside(B, P), in(P, Col), params.empty(Col).
 
 .init empty_count = Tally<Ident, Position>
 empty_count.item(B, P) :- empty_cell(B, P).
@@ -95,7 +95,7 @@ fills(P) :- fill_order.rank(B, P, R), advance.low(B, N), R < N.
 
 // What travels: the block's box and the handle line abutting it.
 .decl assembly(b: Ident, p: Position)
-assembly(B, P) :- handle_dir(B, D), ( box.inside(B, P) ; abut(B, D, P) ).
+assembly(B, P) :- handle_dir(B, D), ( bbox.inside(B, P) ; abut(B, D, P) ).
 
 // The assembly as it arrives: unchanged, but for the gauge cells that fill.
 .decl paint(p: Position, col: Color)
