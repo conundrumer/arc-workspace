@@ -27,7 +27,7 @@
     .decl key_tile(p: Position) key_tile([0, 0, 0, 1]).
     .decl target_tile(p: Position) target_tile([0, 0, 1, 0]).
     .decl gap(g: number) gap(1).
-    .decl border(b: number) border(1).
+    .decl border(k: number) border(1).
 
     .decl arr_dim(a: Axis, n: number)
     arr_dim(AXIS_V, 1). arr_dim(AXIS_H, 2).
@@ -61,7 +61,7 @@
     decompose(P_grid, P_tile, P_intile) :-
         arr_dim(AXIS_V, Av), arr_dim(AXIS_H, Ah), tile_dim(K), gap(G),
         helpers.tile_pos([Av, Ah], [K, K], [0, G], P_frame, P_tile, P_intile),
-        border(B), uniform_inset(B, Delta), compose(P_frame, Delta, P_grid).
+        border(K2), uniform_inset(K2, B), compose(P_frame, B, P_grid).
 
     // Grid cells of the key tile, with their intile positions.
     .decl key_cell(p_grid: Position, p_intile: Position)
@@ -79,18 +79,18 @@ decompose($Table(), P_grid, P_tile, P_intile) :- params.decompose(P_grid, P_tile
 
 // --- Count ---
 
-// The frame inside the border, which the division cuts.
-.init frame = MarginFrame<Unit>
-frame.cell($U(), P) :- in(P, _).
-frame.width($U(), D, B) :- dir_elem(D), params.border(B).
+// A grid cell in the frame inside the border, which the division cuts.
+.decl inner_cell(p_grid: Position, p_inner: Position)
+inner_cell(P_grid, P_inner) :-
+    in(P_grid, _), params.border(K), uniform_inset(K, B), crop(P_grid, B, P_inner).
 
 .init div = Divide2D<Unit>
-div.cell(P_inner) :- frame.inner($U(), _, P_inner).
+div.cell(P_inner) :- inner_cell(_, P_inner).
 div.dim($U(), A, N) :- params.arr_dim(A, N).
 div.gap(G) :- params.gap(G).
 
 decompose($Count(), P_grid, P_tile, P_intile) :-
-    frame.inner($U(), P_grid, P_inner), div.tile($U(), P_inner, P_tile, P_intile).
+    inner_cell(P_grid, P_inner), div.tile($U(), P_inner, P_tile, P_intile).
 
 // Key tile content → color.
 .init key_match = KeyedSetCompare<Choice, Ident, KeyCell>

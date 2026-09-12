@@ -38,7 +38,7 @@ corner_color(Diag, Col) :- in(P, Col), corner_dist(P, Diag, 0).
 
 // The interior in its own frame; each hypothesis supplies the margins the grid
 // keeps outside it.
-.init frame = MarginFrame<Interior>
+.decl interior_cell(ic: Interior, p: Position, p_inner: Position)
 
 // --- $Lines ---
 
@@ -69,17 +69,16 @@ fenced(P) :- in(P, _), !unscreened(P).
 .init bbox = Bbox<Unit>
 bbox.cell($U(), P) :- fenced(P).
 
-frame.cell($Lines(), P) :- fenced(P).
-frame.width($Lines(), D, K) :- bbox.edge_min($U(), D, K).
+interior_cell($Lines(), P, P_inner) :- fenced(P), bbox.box($U(), B), crop(P, B, P_inner).
 
 // --- $Margin ---
 
-frame.cell($Margin(), P) :- in(P, _).
-frame.width($Margin(), D, K) :- dir_elem(D), params.margin(K).
+interior_cell($Margin(), P, P_inner) :-
+    in(P, _), params.margin(K), uniform_inset(K, B), crop(P, B, P_inner).
 
 // Quadrants of the interior, in its own frame.
 .init quad = DiagPlacement<Interior>
-quad.cell(Ic, I) :- frame.inner(Ic, _, I).
+quad.cell(Ic, P_inner) :- interior_cell(Ic, _, P_inner).
 
 .decl blank_elem(b: Blank)
 blank_elem($Pass()). blank_elem($Bg()).
@@ -87,18 +86,20 @@ blank_elem($Pass()). blank_elem($Bg()).
 .decl out(p: Position, col: Color, ch: Choice)
 
 // Ink takes the corner color of its quadrant.
-out(I, Col, [Ic, Bl]) :-
-    in(P, Ink), params.ink(Ink), frame.inner(Ic, P, I),   // interior ink cell
-    quad.quadrant(Ic, I, Diag), corner_color(Diag, Col),
-    blank_elem(Bl).                                  // ink reads the same under either blank claim
+out(P_inner, Col, [Ic, Bl]) :-
+    in(P, Ink), params.ink(Ink), interior_cell(Ic, P, P_inner),  // interior ink cell
+    quad.quadrant(Ic, P_inner, Diag), corner_color(Diag, Col),
+    blank_elem(Bl).                                              // ink reads the same under either blank claim
 
 // --- $Pass ---
 
-out(I, Col, [Ic, $Pass()]) :- in(P, Col), !params.ink(Col), frame.inner(Ic, P, I).
+out(P_inner, Col, [Ic, $Pass()]) :-
+    in(P, Col), !params.ink(Col), interior_cell(Ic, P, P_inner).
 
 // --- $Bg ---
 
-out(I, Col, [Ic, $Bg()]) :- in(P, C0), !params.ink(C0), frame.inner(Ic, P, I), params.bg(Col).
+out(P_inner, Col, [Ic, $Bg()]) :-
+    in(P, C0), !params.ink(C0), interior_cell(Ic, P, P_inner), params.bg(Col).
 
 .comp Determine {
     // The line-fenced interior — the boundary both interior hypotheses read.

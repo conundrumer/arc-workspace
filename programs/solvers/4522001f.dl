@@ -108,7 +108,7 @@ locate_choice($Corner()). locate_choice($Mark()).
 
 // --- $Corner ---
 // The grid corner the block touches.
-diag($Corner(), Diag) :- bb.box($U(), M), corner_anchor(Diag, M, ZERO).
+diag($Corner(), Diag) :- bb.box($U(), B), corner_anchor(Diag, B, ZERO).
 
 // --- $Mark ---
 // The block corner opposite the mark cell.
@@ -126,32 +126,32 @@ render_choice($Grow()). render_choice($Fit()). render_choice($Stamp()).
 .decl rot_to(l: Locate, dm: DiagDir, r: D4)
 rot_to(L, Dm, R) :- diag(L, Diag), c4_elem(R), apply_diag_dir(R, Dm, Diag).
 
-// The first box: canvas cells inside params.box, rotated to the located corner.
-.init sq = MarginFrame<Locate>
-sq.cell(L, P) :- locate_choice(L), params.canvas(P).
-sq.width(L, D2, K) :-
+// The first box: params.box's margins, rotated to the located corner.
+.init sq = DirPack<Locate>
+sq.edge(L, D2, K) :-
     params.box(D, K),                                     // a stored margin
     params.box_anchor(Db), rot_to(L, Db, R),              // the rotation to the located corner
     apply_dir(R, D, D2).                                  // the edge it carries that margin to
 
 // Shift by one box: flush by the box's own extents.
-.decl sq_jump(l: Locate, j: Position)
-sq_jump(L, J) :-
+.decl sq_jump(l: Locate, v: Offset)
+sq_jump(L, V) :-
     diag(L, Diag), diag_opposite(Diag, Od), diag_dirs(Od, A, O1, O2),   // dirs away from the corner
-    sq.inner(L, _, P_box), axis_dims(P_box, A, K1, K2),                 // the box's extents
-    jump_offset(O1, K1, J1), jump_offset(O2, K2, J2), compose(J1, J2, J). // one box along each
+    sq.box(L, B), params.canvas(P), perp(A, A2),                        // the box in the canvas frame
+    box_extent(B, P, A, K1), box_extent(B, P, A2, K2),                  // its extents
+    jump_offset(O1, K1, V1), jump_offset(O2, K2, V2), compose(V1, V2, V). // one box along each
 
 // --- $Grow ---
 // The first box and one diagonal step.
-.decl grow_box(l: Locate, m: Position)
-grow_box(L, M)  :- sq.margin(L, M).
-grow_box(L, M2) :- sq.margin(L, M), sq_jump(L, J), compose(M, J, M2), inside(M2, ZERO).
+.decl grow_box(l: Locate, b: Box)
+grow_box(L, B)  :- sq.box(L, B).
+grow_box(L, B2) :- sq.box(L, B), sq_jump(L, V), compose(B, V, B2), inside(B2, ZERO).
 
 // --- $Fit ---
 // Boxes chain while they stay on the frame.
-.decl fit_box(l: Locate, m: Position)
-fit_box(L, M)  :- sq.margin(L, M).
-fit_box(L, M2) :- fit_box(L, M), sq_jump(L, J), compose(M, J, M2), inside(M2, ZERO).
+.decl fit_box(l: Locate, b: Box)
+fit_box(L, B)  :- sq.box(L, B).
+fit_box(L, B2) :- fit_box(L, B), sq_jump(L, V), compose(B, V, B2), inside(B2, ZERO).
 
 // --- Paint cases: the box color ---
 
@@ -165,8 +165,8 @@ paint(Col, $Ink())   :- params.ink(Col).
 // --- Output ---
 
 .decl lit(p: Position, col: Color, ch: Choice)
-lit(P, Col, $Loc(L, $Grow(), F)) :- grow_box(L, M), params.canvas(P), inside(P, M), paint(Col, F).
-lit(P, Col, $Loc(L, $Fit(), F))  :- fit_box(L, M), params.canvas(P), inside(P, M), paint(Col, F).
+lit(P, Col, $Loc(L, $Grow(), F)) :- grow_box(L, B), params.canvas(P), inside(P, B), paint(Col, F).
+lit(P, Col, $Loc(L, $Fit(), F))  :- fit_box(L, B), params.canvas(P), inside(P, B), paint(Col, F).
 lit(Q, Col, $Loc(L, $Stamp(), F)) :-
     params.mask_corner(Dm), rot_to(L, Dm, R),         // the mask's rotation
     params.mask(Pm), apply(R, Pm, Q),                 // its cells, rotated
@@ -215,7 +215,7 @@ out(Q, Col, $Pair()) :-
     pbox.cell($U(), P) :- mask(P).
 
     .decl corner(d: DiagDir)
-    corner(Diag) :- pbox.box($U(), M), corner_anchor(Diag, M, ZERO).
+    corner(Diag) :- pbox.box($U(), B), corner_anchor(Diag, B, ZERO).
 
     .decl box_anchor(d: DiagDir)
     box_anchor(Diag) :- corner(Diag).
@@ -232,6 +232,6 @@ out(Q, Col, $Pair()) :-
 
     .decl box(d: Dir, k: number)
     box(D, K) :-
-        sqbox.box(_, M), corner(Diag), corner_anchor(Diag, M, ZERO),  // the box at the corner
-        dir_elem(D), dist(M, D, K).                                        // its margin at each edge
+        sqbox.box(_, B), corner(Diag), corner_anchor(Diag, B, ZERO),  // the box at the corner
+        dir_elem(D), dist(B, D, K).                                   // its margin at each edge
 }

@@ -29,15 +29,12 @@
 
 // --- the input lattice ---
 
-.init in_border = MarginFrame<Unit>
-in_border.cell($U(), P_grid_in) :- in(P_grid_in, _).
-in_border.width($U(), D, K) :- dir_elem(D), params.in_line(K).
-
 // The color each lattice tile holds.
 .decl tile_col(p_tile: Position, col: Color)
 tile_col(P_tile, Col) :-
-    in(P_grid_in, Col), in_border.inner($U(), P_grid_in, P_field),  // a cell off the lines
-    params.in_tile(K), params.in_line(G),
+    in(P_grid_in, Col), params.in_line(G),
+    uniform_inset(G, B), crop(P_grid_in, B, P_field),               // a cell off the lines
+    params.in_tile(K),
     divide_by_size_2d(P_field, K, G, P_tile, _).                    // the tile it fills
 
 .decl ink(p_tile: Position, col: Color)
@@ -83,14 +80,16 @@ group.equiv(P_tile, R_tile) :- group.equiv(P_tile, Q_tile), join(Q_tile, R_tile)
 .init canvas = Frame2D<Unit>
 canvas.extent($U(), A, N) :- axis_elem(A), params.canvas_side(N).
 
-.init out_border = MarginFrame<Unit>
-out_border.cell($U(), P_grid_out) :- canvas.cell($U(), P_grid_out).
-out_border.width($U(), D, K) :- dir_elem(D), params.out_line(K).
+// A canvas cell off the lines, in the field's frame.
+.decl out_field(p_grid_out: Position, p_field: Position)
+out_field(P_grid_out, P_field) :-
+    canvas.cell($U(), P_grid_out),
+    params.out_line(K), uniform_inset(K, B), crop(P_grid_out, B, P_field).
 
 // The canvas holds as many tiles as the input does, so its field fixes how
 // large they come out.
 .init out_cells = Divide2D<Unit>
-out_cells.cell(P_field) :- out_border.inner($U(), _, P_field).
+out_cells.cell(P_field) :- out_field(_, P_field).
 out_cells.dim($U(), A, N) :- tile_col(P_tile, _), axis_elem(A), axis_dim(P_tile, A, N).
 out_cells.gap(G) :- params.out_line(G).
 
@@ -99,7 +98,7 @@ out_cells.gap(G) :- params.out_line(G).
 .init group_box = Bbox<Ident>
 group_box.cell(Id, P_grid_out) :-
     group.id(P_tile, Id),                                    // a group's tile
-    out_border.inner($U(), P_grid_out, P_field),
+    out_field(P_grid_out, P_field),
     out_cells.tile($U(), P_field, P_tile, _).                // the canvas cells it holds
 group_box.grid(Id, P_grid_out) :- group.id(_, Id), canvas.cell($U(), P_grid_out).
 

@@ -41,21 +41,22 @@
 
 // --- the arrangement ---
 
-.init border = MarginFrame<Unit>
-border.cell($U(), P_grid) :- in(P_grid, _).
-border.width($U(), D, K) :- dir_elem(D), params.line_width(K).
+// A grid cell off the ruling lines, in the field's frame.
+.decl field_cell(p_grid: Position, p_field: Position)
+field_cell(P_grid, P_field) :-
+    in(P_grid, _), params.line_width(G), uniform_inset(G, B), crop(P_grid, B, P_field).
 
 .decl tile(p_grid: Position, p_tile: Position, p_intile: Position, dc: DecChoice)
 
 // --- Count ---
 tile(P_grid, P_tile, P_intile, $Count()) :-
-    border.inner($U(), P_grid, P_field),                 // a cell off the lines
+    field_cell(P_grid, P_field),
     params.tile_count(N), params.line_width(G),
     divide_2d(P_field, N, G, P_tile, P_intile).          // the tile it sits in
 
 // --- Size ---
 tile(P_grid, P_tile, P_intile, $Size()) :-
-    border.inner($U(), P_grid, P_field),                 // a cell off the lines
+    field_cell(P_grid, P_field),
     params.tile_side(K), params.line_width(G),
     divide_by_size_2d(P_field, K, G, P_tile, P_intile).  // the tile it sits in
 
@@ -98,8 +99,8 @@ balanced(P_tile, A, [Dc, L]) :-
 mark_box.cell([P_tile, Dc], P_intile) :- mark(P_tile, P_intile, Dc).
 
 lean(P_tile, D, [Dc, $Reach()]) :-
-    mark_box.box([P_tile, Dc], M),            // the box the marks span
-    dir_elem(D), dist_pair(M, D, K, K2), K < K2. // nearer edge D than its opposite
+    mark_box.box([P_tile, Dc], B),             // the box the marks span
+    dir_elem(D), dist_pair(B, D, K, K2), K < K2.  // nearer edge D than its opposite
 
 // --- Bulk ---
 

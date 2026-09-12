@@ -72,16 +72,12 @@ rot.step($U(), M)     :- shift_amt(M, _).   // the shifts in use
 rows.dir(FE)     :- row_origin(FE).
 rows.dist_set($U(), K) :- row_idx(K).
 
-// Drop the band: the cells past it, seen in the frame it leaves.
-.init kept = MarginFrame<Unit>
-kept.cell($U(), P) :- in(P, _).
-kept.width($U(), D, K) :- params.marker_edge(D), params.band_width(K).
-
 .decl out(p: Position, col: Color, ch: Choice)
 out(P_out, Col, Ch) :-
-    in(P_in, Col), kept.inner($U(), P_in, P_kept),                       // a cell the drop keeps
+    in(P_in, Col), params.marker_edge(ME),
+    params.band_width(K), edge_inset(ME, K, B), crop(P_in, B, P_kept),   // a cell the drop keeps
     row_origin(FE), dist(P_in, FE, K_in),                                // input row index
     shift_amt(M, Ch), rot.walk($U(), K_in, M, K_out),                    // rotated M steps along the cycle
     rows.pos($U(), K_out, P_v_out),                                      // placed back on the shift axis
-    params.marker_edge(ME), axis_of(ME, A), split(P_kept, A, P_col, _),  // its column in the kept frame
+    axis_of(ME, A), split(P_kept, A, P_col, _),                          // its column in the kept frame
     compose(P_v_out, P_col, P_out).                                      // row and column glued

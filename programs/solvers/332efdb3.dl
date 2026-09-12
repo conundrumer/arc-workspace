@@ -68,15 +68,12 @@ out(Q2, Col, $Motif()) :-
     params.period(J), compose(Q, J, Q2), in(Q2, _).          // extended by the lattice
 
 // --- $Inset ---
-.init core = MarginFrame<Unit>
-core.cell($U(), P) :- in(P, _).
-core.width($U(), D, K) :- dir_elem(D), params.border_width(K).
-
 .decl interior_tile(p: Position)
 interior_tile(P) :-
-    core.inner($U(), P, P_int),                     // a cell in the interior frame
+    in(P, _),
+    params.border_width(K1), uniform_inset(K1, B), crop(P, B, P_inner),  // a cell of the interior frame
     params.tile_size(K), params.tile_gap(G),
-    divide_by_size_2d(P_int, K, G, _, _).               // tile cell in interior
+    divide_by_size_2d(P_inner, K, G, _, _).                              // on a tile, not a gap
 
 out(P, Col, $Inset()) :-
     in(P, _),                                  // grid cell

@@ -65,22 +65,22 @@ block_count.item(Col, Id) :- comps.label($U(), P, Id), in(P, Col).
 
 // --- $Lattice: tile detection ---
 
-// The frame the border encloses. Non-bg cells never sit on that border, so
-// the frame holds every one of them.
-.init core = MarginFrame<Unit>
-core.cell($U(), P) :- in(P, _).
-core.width($U(), D, K) :- dir_elem(D), params.border_width(K).
+// A cell seen in the frame the border encloses. Non-bg cells never sit on that
+// border, so the frame holds every one of them.
+.decl core_cell(p: Position, p_inner: Position)
+core_cell(P, P_inner) :-
+    in(P, _), params.border_width(K), uniform_inset(K, B), crop(P, B, P_inner).
 
 .init lattice = Tile2D<Unit>
-lattice.cell(P_int) :- in(P, Col), !params.bg(Col), core.inner($U(), P, P_int).
+lattice.cell(P_inner) :- in(P, Col), !params.bg(Col), core_cell(P, P_inner).
 lattice.dim($U(), A, K) :- params.tile_dim(A, K).
 lattice.gap(G) :- params.tile_gap(G).
 
 .decl tile_color(p_tile: Position, col: Color)
 tile_color(P_tile, Col) :-
-    in(P, Col),                                          // input cell
-    core.inner($U(), P, P_int),                      // seen in the interior frame
-    lattice.tile($U(), P_int, P_tile, _).                // its lattice tile
+    in(P, Col),                              // input cell
+    core_cell(P, P_inner),                   // seen in the interior frame
+    lattice.tile($U(), P_inner, P_tile, _).  // its lattice tile
 
 // --- counts per choice ---
 
@@ -140,9 +140,9 @@ out(P, Col, Ch) :- parse.minority_rank(Ch, Col, Rk), col.pos(Ch, Rk, P).
 
     .decl tile_gap(g: number)
     tile_gap(G) :-
-        span.inner(E, _, P_int),                                     // the frame the lattice divides
+        span.inner(E, _, P_inner),                                   // the frame the lattice divides
         tile_count.tally([E, D], N), axis_of(D, A), tile_dim(A, K),
-        divide_gap(P_int, A, N, K, G).
+        divide_gap(P_inner, A, N, K, G).
 
     .type EC = [e: Example, col: Color]
 

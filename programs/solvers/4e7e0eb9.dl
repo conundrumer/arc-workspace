@@ -38,14 +38,11 @@ section_cell(P_grid, P_sec, P_insec) :-
     in(P_grid, _), params.section(N), params.sep(G),
     divide_by_size_2d(P_grid, N, G, P_sec, P_insec).
 
-.init border = MarginFrame<Unit>
-border.cell($U(), P_insec) :- section_cell(_, _, P_insec).
-border.width($U(), D, K) :- dir_elem(D), params.margin(K).
-
 // The field the border frames.
 .decl field_cell(p_grid: Position, p_sec: Position, p_field: Position)
 field_cell(P_grid, P_sec, P_field) :-
-    section_cell(P_grid, P_sec, P_insec), border.inner($U(), P_insec, P_field).
+    section_cell(P_grid, P_sec, P_insec),
+    params.margin(K), uniform_inset(K, B), crop(P_insec, B, P_field).
 
 // --- blocks ---
 
