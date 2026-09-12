@@ -1,6 +1,4 @@
-//! Shared types and primitives for ARC solvers in Souffle. This file holds
-//! the types and the runner contract, and includes the modules under
-//! `programs/lib/`. Each module opens with a doc that says what it holds.
+//! Shared types and primitives for ARC solvers in Souffle.
 //!
 //! Reading a unit:
 //!
@@ -8,7 +6,6 @@
 //!   under it are its default. Every other relation derives.
 //! - In a keyed unit, the first column of a relation is its key, and each key
 //!   is one independent instance of the unit.
-//! - A name with a leading `_` is private to the lib.
 //! - A `Requires:` sentence states a precondition the unit does not check,
 //!   and what happens when it does not hold.
 //!
@@ -28,8 +25,10 @@
 //! accepts a pair iff the set of emitted grids equals the expected grid plus
 //! its alts, and a tiebreak allows only two distinct grids.
 
-/// Typed names with no arithmetic intent: a value of one of these types is
-/// joined on, never ordered or computed with.
+// A name with a leading `_` is private to the lib.
+
+/// A value of one of these types is joined on, never ordered or computed
+/// with.
 .type Color <: number
 .type Dir <: number
 .type Axis <: number
@@ -39,32 +38,28 @@
 .type Sym <: number
 .type Sense <: number
 
-/// The rotation subgroup of D4 — how a heading changes.
+/// The rotation subgroup of D4.
 .type C4 <: D4
 
 .type Dir8 = Dir | DiagDir
 
 .type Axis4 = Axis | DiagAxis
 
-/// A label carrying identity and nothing else: join on equality, never order
-/// or count with it.
+/// A label: join on equality, never order or count with it.
 .type Ident <: number
 
 /// Index of a task example.
 .type Example <: number
 
 /// The edge-margin record: a rectangle placed in a frame by its margins from
-/// the four edges. box.dl states its algebra.
+/// the four edges.
 .type Box = [t: number, b: number, l: number, r: number]
 
 /// (V-length, H-length) of a frame, for ParamsHelpers only.
 .type Dim = [v: number, h: number]
 
-/// The two subsets the algebra singles out. Souffle equivalence types are
-/// interchangeable, so an alias documents a column's reading and checks
-/// nothing. A primitive types a column Box unless it reads the frame's
-/// extent from the value, which assumes a cell; a column holds Offset when
-/// its value is a translation by construction.
+/// Souffle equivalence types are interchangeable, so an alias documents a
+/// column's reading and checks nothing.
 /// A cell: extent 1 on both axes, so the frame's extent is readable from it.
 .type Position = Box
 /// A translation: the two margins cancel on each axis.
@@ -81,8 +76,8 @@
 .decl ex_in(e: Example, p: Position, col: Color)  // @input
 .decl ex_out(e: Example, p: Position, col: Color)  // @input
 
-/// Per-parameter diff between determine.<parameter> and params.<parameter>;
-/// the runner synthesizes the rules, and a nonempty diff is a violation.
+// Per-parameter diff between determine.<parameter> and params.<parameter>;
+// the runner synthesizes the rules, and a nonempty diff is a violation.
 .decl _determination_diff(param: symbol)
 
 #include "lib/sets.dl"

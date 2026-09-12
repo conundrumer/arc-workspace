@@ -1,29 +1,20 @@
 //! Units over pieces and candidates the caller supplies as opaque labels,
 //! together with a `conflict` relation over them, and the enumeration of a
 //! tiebreak's resolutions.
-//!
-//! Elimination and refutation are the two ways a unit here cuts a candidate
-//! set down. Elimination grows a set of forced pieces, and it starts only
-//! where a cell has one rival left. Refutation kills the candidates no joint
-//! placement can hold, and it needs no such start.
-//!
-//! Enumeration does not cut a set down. It lists the resolutions of a
-//! tiebreak, one term per resolution.
 
-/// The pieces every exact cover of a keyed cell set must contain, by
-/// elimination. Pieces are opaque and placements come from the caller.
-/// Elimination starts only where a cell has one rival left, so a uniquely
-/// packing input whose pieces rival themselves inside their own footprints
-/// leaves `forced` partial, as an ambiguous or too-hard input does. A partial
-/// `forced` fails the output on totality, never wrongly. Forced pieces not
-/// ruled out are pairwise disjoint, so covering every cell witnesses a
-/// partition. With a single footprint it forces exactly the greedy
-/// reading-order peel.
+/// The pieces every exact cover of a keyed cell set must contain, found by
+/// elimination: a cell with one candidate piece left forces that piece, and a
+/// piece that overlaps or conflicts with a forced piece is ruled out.
+/// Elimination starts only at a cell with one candidate left, so `forced`
+/// can be partial, also on an input with one exact cover. An output built
+/// from a partial `forced` has missing cells and no wrong cell. Forced pieces
+/// that are not ruled out are pairwise disjoint. With a single footprint,
+/// `forced` is the greedy tiling in reading order.
 .comp CoverForcing<Key, Piece> {
     /// The candidate pieces and the cells each covers.
     .decl covers(key: Key, piece: Piece, p: Position)  // @input
 
-    /// Two pieces no cover holds together, beyond overlap.
+    /// Two pieces that no cover holds together, apart from overlap.
     .decl conflict(key: Key, piece: Piece, piece2: Piece)  // @input
 
     // Elimination: a cell whose rivals are all ruled out but one forces its
@@ -64,7 +55,7 @@
     _run_out(Ky, P, B, X) :- ruled_out(Ky, X), _succ(Ky, P, X, B).
     _run_out(Ky, P, B, X) :- ruled_out(Ky, X), _succ(Ky, P, X, X2), _run_out(Ky, P, B, X2).
 
-    /// Some cell has no other rival left.
+    /// Some cell has no other candidate piece.
     .decl forced(key: Key, piece: Piece)
     forced(Ky, B) :- _rival(Ky, P, B), !_succ(Ky, P, B, _).
     forced(Ky, B) :- _rival(Ky, P, B), _succ(Ky, P, B, X), _run_out(Ky, P, B, X).
@@ -75,14 +66,14 @@
     ruled_out(Ky, B) :- forced(Ky, B2), conflict(Ky, B2, B).
 }
 
-/// The candidates a joint placement of the pieces may still hold, by
-/// refutation. A candidate dies when some other piece has no candidate that
-/// can stand beside it, or some pair of other pieces has no conflict-free
-/// pair beside it. `alive` over-approximates: every joint
-/// placement's candidates survive, so a caller painting from the survivors
-/// fails on cells where leftover rivals disagree, never wrongly, as long as
-/// every piece has a candidate. A piece takes at most one candidate. A piece
-/// absent from `cand` kills nothing; the caller guards that case. Each
+/// The candidates a joint placement of the pieces can still hold, found by
+/// refutation. A candidate is refuted when some other piece has no candidate
+/// compatible with it, or some pair of other pieces has no compatible pair
+/// beside it. `alive` over-approximates: every candidate of a joint placement
+/// survives, so an output built from the survivors has missing cells where
+/// surviving candidates disagree and no wrong cell, as long as every piece
+/// has a candidate. A piece takes at most one candidate. A piece with no
+/// candidate refutes nothing; the caller checks for that case. Each
 /// candidate belongs to one piece: a key with a candidate under two pieces
 /// gets no `dead` and no `alive` row.
 .comp PlacementPruning<Key, Cand, Piece> {
@@ -253,8 +244,8 @@
 
 /// The resolutions of a tiebreak: every injective assignment of candidate
 /// items to slots, one term per assignment, backing a TiebreakResolution out
-/// column (style: alt outputs). Branch names are program-global, so the
-/// solver declares the ADT the comp constructs:
+/// column. Branch names are program-global, so the solver declares the ADT
+/// the comp constructs:
 ///
 ///   .type TiebreakResolution =
 ///       End {} | Sit {slot: Slot, item: Item, rest: TiebreakResolution}
@@ -302,7 +293,6 @@
     _within(K, L, L) :- resolution(K, L).
     _within(K, L0, L) :- _within(K, L0, $Sit(_, _, L)).
 
-    /// The slot-to-item pairs of each resolution.
     .decl assign(key: Key, res: TiebreakResolution, slot: Slot, item: Item)
     assign(K, L0, S, I) :- _within(K, L0, $Sit(S, I, _)).
 }

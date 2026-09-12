@@ -4,51 +4,19 @@
 //! Box is the edge-margin record (t, b, l, r), ordered V-first then H — a
 //! rectangle placed in a frame by its margins from the four edges. A frame of
 //! extent (H, W) reads the record as the rows t..H-1-b and the columns
-//! l..W-1-r; a negative margin reaches past the frame. Dir constants index
-//! into a Box.
+//! l..W-1-r; a negative margin reaches past the frame.
 //!
 //! The per-axis sum (t+b, l+r) measures the frame's extent minus the
-//! rectangle's, so boxes with one sum are translates of one another. Two
-//! subsets have names. A Position is a cell, extent 1 on both axes, which
-//! carries its frame. An Offset is a translation, sum 0, which moves any box
-//! and keeps its extent. Every other reading — a rectangle, a margin, a change
-//! per edge — is a Box read against a frame the reader supplies.
-//!
-//! The records form a group under componentwise addition, and every operation
-//! here is one of four kinds. Addition composes framings: for a box A in the
-//! frame and a box B in A's own frame, A + B is B in the outer frame
-//! (`compose`), and subtraction is relative position, B - A is B in A's frame
-//! (`relative`). The pointwise order is nesting: A >= B iff A lies inside B
-//! (`inside`), and strict is the interior (`interior`). The projections read a
-//! single component or one axis pair (`dist`, `split`). The D4 action permutes
-//! the components, so every operation is equivariant.
-//!
-//! The readouts take a box apart into scalars — an edge distance, a pair of
-//! them, a corner distance, an extent. The constructors build a box from
-//! scalars: an inset moves edges inward, an outset lets the frame out, and an
-//! offset moves a box and keeps its extent. A constructor binds none of its
-//! direction, so the caller supplies d.
-//!
-//! A step moves one cell toward a direction. A jump moves k cells, and the
-//! step is its k = 1 case.
-//!
-//! The divide family cuts an extent into equal tiles and reads a cell as a
-//! tile index plus the cell within that tile. One reading takes the tile
-//! count, one takes the tile size, and one reads the gap from count and size.
-//! The same decomposition applies to a distance instead of a position, and
-//! the inverse puts a tile index and an inner cell back together.
-//!
-//! The composites stand on those operations: tests that two positions agree on
-//! a distance, and the slab and 2D forms of divide and concat, which carry the
-//! perpendicular through or cut both axes at once.
-//!
-//! The frames realize the cells of a frame from an index set or an extent, and
-//! the packer builds a Box from per-Dir scalars.
+//! rectangle's, so boxes with one sum are translates of one another. A
+//! Position is a cell, extent 1 on both axes, which carries its frame. An
+//! Offset is a translation, sum 0, which moves any box and keeps its extent.
+//! Every other reading is a Box read against a frame the reader supplies.
 
 /// The zero box: the whole frame as a box, no move as an offset.
 #define ZERO [0, 0, 0, 0]
 
-// Dispatch/projection functors (C++, in lib_functors.cpp).
+// Dispatch/projection functors (C++, in lib_functors.cpp). Dir constants
+// index into a Box.
 .functor dist_proj(d: Dir, t: number, b: number, l: number, r: number): number
 .functor keep_dir(sel: Dir8, target: number, v: number): number
 .functor keep_axis(sel: Axis, target: number, v: number): number
@@ -59,21 +27,16 @@
 .functor apply_l(d: D4, t: number, b: number, l: number, r: number): number
 .functor apply_r(d: D4, t: number, b: number, l: number, r: number): number
 
-/// Addition: b in a's frame, seated in the outer frame. A cell seated in a
-/// box, a box moved by an offset, a frame inset by a margin, a box seated in
-/// a let-out frame: one operation.
+/// Addition: b in a's frame, placed in the outer frame.
 .decl compose(a: Box, b: Box, c: Box) inline
 compose([T1, B1, L1, R1], [T2, B2, L2, R2], [T1+T2, B1+B2, L1+L2, R1+R2]) :- true.
 
-/// Subtraction: x relative to base — x in base's frame. A cell in a box's
-/// coordinates, or the offset between two cells of one frame. The inverse
-/// read of compose, and the form that binds an unknown addend.
+/// Subtraction: x relative to base — x in base's frame.
 .decl relative(base: Box, x: Box, x_rel: Box) inline
 relative([T1, B1, L1, R1], [T2, B2, L2, R2],
          [T2-T1, B2-B1, L2-L1, R2-R1]) :- true.
 
-/// Pointwise >=: a inside b. A cell inside a box is the extent-1 case; at
-/// b = ZERO, a lies on the frame.
+/// Pointwise >=: a inside b. At b = ZERO, a lies on the frame.
 .decl inside(a: Box, b: Box) inline
 inside([T1, B1, L1, R1], [T2, B2, L2, R2]) :-
     T1 >= T2, B1 >= B2, L1 >= L2, R1 >= R2.
@@ -85,36 +48,29 @@ interior([T1, B1, L1, R1], [T2, B2, L2, R2]) :-
     T1 > T2, B1 > B2, L1 > L2, R1 > R2.
 
 /// Cell p of box b, as a cell of b's own frame: the covering test and the
-/// relative read. A cell outside the box is `relative` alone.
+/// relative read.
 .decl crop(p: Position, b: Box, p_rel: Position) inline
 crop(P, B, P_rel) :- inside(P, B), relative(B, P, P_rel).
 
-/// Distance from p's edge d to the frame's edge d: the component the Dir
-/// selects.
 .decl dist(p: Box, d: Dir, k: number) inline
 dist(P, D, K) :- P = [T, B, L, R], K = @dist_proj(D, T, B, L, R).
 
-/// Distances to edge d and its opposite. A repeated variable states
-/// centered; a comparison picks the nearer half.
+/// Distances to edge d and its opposite.
 .decl dist_pair(p: Box, d: Dir, k: number, k2: number) inline
 dist_pair(P, D, K, K2) :- dist(P, D, K), opposite(D, O), dist(P, O, K2).
 
 /// Distances to the two edges of corner diag, axis-tagged: k1 to the edge
-/// on axis a, k2 across. On-diagonal is a repeated variable.
+/// on axis a, k2 across.
 .decl diag_dist(p: Box, diag: DiagDir, a: Axis, k1: number, k2: number) inline
 diag_dist(P, Diag, A, K1, K2) :-
     diag_dirs(Diag, A, D1, D2), dist(P, D1, K1), dist(P, D2, K2).
 
 /// Taxicab distance to corner diag: the sum of its two edge distances.
-/// Level sets are the lines of the perpendicular diagonal axis, so
-/// equality tests same-diagonal and comparison tests sidedness.
 .decl corner_dist(p: Box, diag: DiagDir, k: number) inline
 corner_dist(P, Diag, K) :- diag_dist(P, Diag, _, K1, K2), K = K1 + K2.
 
 /// Decompose p by axis: along carries the axis component (perpendicular
-/// zeroed); across carries the perpendicular (axis zeroed). Cells sharing
-/// along form a line perpendicular to a; same_line(a, ...) is the line
-/// along a, the cells sharing across.
+/// zeroed); across carries the perpendicular (axis zeroed).
 .decl split(p: Box, a: Axis, along: Box, across: Box) inline
 split(P, A,
       [@keep_axis(A, AXIS_V, T), @keep_axis(A, AXIS_V, B), @keep_axis(A, AXIS_H, L), @keep_axis(A, AXIS_H, R)],
@@ -126,9 +82,7 @@ split(P, A,
 axis_dim(P, A, N) :- P = [T, B, L, R],
     N = @axis_near(A, T, B, L, R) + @axis_far(A, T, B, L, R) + 1.
 
-/// Wide extent readout of p's frame: n1 along axis a, n2 across. A line is
-/// (N, 1); a repeated variable states a square; a comparison finds the
-/// long axis.
+/// Both extents of p's frame: n1 along axis a, n2 across.
 .decl axis_dims(p: Position, a: Axis, n1: number, n2: number) inline
 axis_dims(P, A, N1, N2) :- axis_dim(P, A, N1), perp(A, A2), axis_dim(P, A2, N2).
 
@@ -157,17 +111,16 @@ axis_inset(D, K1, K2, B) :-
 .decl uniform_inset(k: number, b: Box) inline
 uniform_inset(K, [K, K, K, K]) :- true.
 
-/// The frame let out by k on side d. A box seated in it by `compose` is that
-/// box let out.
+/// The frame extended by k past side d.
 .decl edge_outset(d: Dir8, k: number, b: Box) inline
 edge_outset(D, K, [-T, -B, -L, -R]) :- edge_inset(D, K, [T, B, L, R]).
 
-/// The frame let out by k1 on side d and k2 on its opposite.
+/// The frame extended by k1 past side d and k2 past its opposite.
 .decl axis_outset(d: Dir, k1: number, k2: number, b: Box) inline
 axis_outset(D, K1, K2, B) :-
     opposite(D, O), edge_outset(D, K1, B1), edge_outset(O, K2, B2), compose(B1, B2, B).
 
-/// The frame let out by k on every side.
+/// The frame extended by k past every side.
 .decl uniform_outset(k: number, b: Box) inline
 uniform_outset(K, [-K, -K, -K, -K]) :- true.
 
@@ -198,19 +151,17 @@ jump(P, D, K, Q) :- jump_offset(D, K, V), compose(P, V, Q).
 apply(D, P, [@apply_t(D, T, B, L, R), @apply_b(D, T, B, L, R),
              @apply_l(D, T, B, L, R), @apply_r(D, T, B, L, R)]) :- P = [T, B, L, R].
 
-/// The D4 action on a Dir.
+/// The D4 action on directions, one relation per direction type.
 .decl apply_dir(d: D4, dir: Dir, dir_out: Dir)
 apply_dir(D, Dir, Dir_out) :-
     d4_elem(D), dir_elem(Dir), dir_elem(Dir_out),
     step_offset(Dir, S), apply(D, S, S2), step_offset(Dir_out, S2).
 
-/// The D4 action on a DiagDir.
 .decl apply_diag_dir(d: D4, dir: DiagDir, dir_out: DiagDir)
 apply_diag_dir(D, Dir, Dir_out) :-
     d4_elem(D), diag_dir_elem(Dir), diag_dir_elem(Dir_out),
     step_offset(Dir, S), apply(D, S, S2), step_offset(Dir_out, S2).
 
-/// The D4 action on a Dir8.
 .decl apply_dir8(d: D4, dir: Dir8, dir_out: Dir8)
 apply_dir8(D, Dir, Dir_out) :-
     d4_elem(D), dir8_elem(Dir), dir8_elem(Dir_out),
@@ -247,9 +198,8 @@ divide_by_size(P, A, K, G, P_outer, P_inner) :-
     P_inner = [@keep_axis(A, AXIS_V, K_cyc), @keep_axis(A, AXIS_V, K-1-K_cyc),
                @keep_axis(A, AXIS_H, K_cyc), @keep_axis(A, AXIS_H, K-1-K_cyc)].
 
-/// Gap from tile count and tile size — the gap reading of the divide family.
-/// Nothing is derived unless the leftover extent divides evenly by the n-1
-/// gaps.
+/// Gap from tile count and tile size. Nothing is derived unless the leftover
+/// extent divides evenly by the n-1 gaps.
 .decl divide_gap(p: Position, a: Axis, n: number, k: number, g: number) inline
 divide_gap(P, A, N, K, G) :-
     axis_dim(P, A, Ext), N > 1,
@@ -257,9 +207,8 @@ divide_gap(P, A, N, K, G) :-
     G = (Ext - N*K) / (N-1).
 
 /// Distance t along a period of w (with gap g between periods) decomposes
-/// into period index n and within-period offset k: `divide_by_size` over a
-/// distance instead of a position, and without the divisibility condition.
-/// k fixed to 0 states that t is a whole number of periods.
+/// into period index n and within-period offset k. No divisibility condition
+/// applies.
 .decl stride(t: number, w: number, g: number, n: number, k: number) inline
 stride(T, W, G, N, K) :-
     T >= 0,
@@ -270,9 +219,7 @@ stride(T, W, G, N, K) :-
 /// Recompose axis-a tiles into a single extent — the inverse of divide, over
 /// the same p_outer and p_inner. p_grid is axis-only on the same axis. With
 /// gap > 0, only filled tile cells appear in p_grid — gap rows/cols are
-/// absent. The assembled extent reads off any p_grid with `axis_dim`; an
-/// AxisFrame (Frame2D for the 2D forms) over that extent holds the gap
-/// cells as the cells no tile fills.
+/// absent.
 .decl concat(p_outer: Position, p_inner: Position, a: Axis, gap: number,
              p_grid: Position) inline
 concat(P_outer, P_inner, A, G, P_grid) :-
@@ -285,8 +232,7 @@ concat(P_outer, P_inner, A, G, P_grid) :-
     P_grid = [@keep_axis(A, AXIS_V, GNear), @keep_axis(A, AXIS_V, GFar),
               @keep_axis(A, AXIS_H, GNear), @keep_axis(A, AXIS_H, GFar)].
 
-/// Two positions agree on the distance to edge d. A single-edge hypothesis reads
-/// across frames of different size, where collinearity does not.
+/// Two positions agree on the distance to edge d.
 .decl same_dist(d: Dir, p1: Box, p2: Box) inline
 same_dist(D, P1, P2) :- dist(P1, D, K), dist(P2, D, K).
 
@@ -352,8 +298,6 @@ divide_by_size_slab(P, A, K, G, P_outer, P_inner) :-
 
 /// 2D divide, one tile count and gap on both axes. Outputs are full 2D:
 /// p_outer indexes an n×n tile arrangement; p_inner is the cell within a tile.
-/// One scalar over both axes states the square hypothesis; Divide2D makes the
-/// rectangular one.
 .decl divide_2d(p: Position, n: number, gap: number,
                 p_outer: Position, p_inner: Position) inline
 divide_2d(P, N, G, P_outer, P_inner) :-
@@ -425,13 +369,10 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 }
 
 /// 1D frame from an axis-tagged extent — the n axis-only positions of a
-/// 1-wide frame. No end is privileged and there is no index map, so the
-/// extent alone gives the frame.
+/// 1-wide frame.
 .comp AxisFrame<Key> {
-    /// The frame's extent on axis a.
     .decl extent(key: Key, a: Axis, n: number)  // @input
 
-    /// The cells of the frame on axis a.
     .decl cell(key: Key, a: Axis, p: Position)
     cell(Ky, A, P) :-
         extent(Ky, A, N), axis_of(D, A),
@@ -439,13 +380,11 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
         axis_inset(D, K, N-1-K, P).
 }
 
-/// 2D frame from per-axis extents — the 1D cells of the two axes perp-glued
-/// into full 2D positions. A square frame spreads one extent over axis_elem.
+/// 2D frame from per-axis extents: the 1D cells of the two axes combined
+/// into full 2D positions.
 .comp Frame2D<Key> {
-    /// The frame's extent on axis a.
     .decl extent(key: Key, a: Axis, n: number)  // @input
 
-    /// The cells of the frame.
     .decl cell(key: Key, p: Position)
 
     .init _ax = AxisFrame<Key>
@@ -459,17 +398,14 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 /// A Box packed from per-Dir scalars: the inverse read of dist. A caller with
 /// an edge of no width writes that edge's zero row.
 .comp DirPack<Key> {
-    /// The packed box's margin on side d.
     .decl edge(key: Key, d: Dir, k: number)  // @input
 
-    /// The box from one axis's two margins, the perpendicular zeroed.
     .decl axis_pos(key: Key, a: Axis, p: Box)
     axis_pos(Ky, A, P) :-
         axis_of(D, A), opposite(D, O),
         edge(Ky, D, K1), edge(Ky, O, K2),
         axis_inset(D, K1, K2, P).
 
-    /// The packed box.
     .decl box(key: Key, b: Box)
     box(Ky, B) :-
         perp(A1, A2), axis_pos(Ky, A1, B1), axis_pos(Ky, A2, B2),

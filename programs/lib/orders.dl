@@ -1,17 +1,8 @@
 //! Units over abstract members whose input carries an order or a step: a
 //! `before` relation, a `succ` relation, or a step count. The members are
 //! opaque, and nothing here reads a position.
-//!
-//! A rank has two sources. The members can be numbers, and then the numbers
-//! carry the order. The members can be of any type, and then the caller
-//! supplies the order.
-//!
-//! A cycle has two readings. The successor edges are one unit, and a walk
-//! along those edges by a count of steps is another.
-//!
-//! A walk can also carry state: a partition that passes one item per step.
 
-/// Sparse numeric set → dense ordinal position.
+/// The dense rank of each number of a sparse set.
 .comp Ordinal<Key> {
     /// The numbers to rank. A set: items sharing k share its rank, and the
     /// rank set stays dense under ties.
@@ -24,39 +15,32 @@
         idx_set(Ky, K),
         R = count : { idx_set(Ky, K2), K2 < K }.
 
-    /// The same count, strictly greater. For a descending layout, place ranks
-    /// from the opposite edge; this is for when the rank value itself flows
-    /// downstream.
+    /// The same count, strictly greater.
     .decl rank_desc(key: Key, k: number, r: number)
     rank_desc(Ky, K, R) :-
         idx_set(Ky, K),
         R = count : { idx_set(Ky, K2), K2 > K }.
 }
 
-/// The same ranking, over members of any type: the caller supplies the
-/// strict order, and the rank of t counts the members before it, ascending
-/// from 0. `before` is read over `elem`, and a row with an endpoint outside
-/// `elem` is ignored.
+/// Ranking over members of any type: the caller supplies the strict order,
+/// and the rank of t counts the members before it, ascending from 0.
+/// `before` is read over `elem`, and a row with an endpoint outside `elem`
+/// is ignored.
 ///
 /// Requires: `before` is transitive; it is never closed, so a `before` that
 /// holds direct comparisons alone yields predecessor counts, not ranks.
 .comp Order<Key, T> {
-    /// The members to rank.
     .decl elem(key: Key, t: T)  // @input
-
-    /// a comes before b.
     .decl before(key: Key, a: T, b: T)  // @input
 
     // A before row both of whose endpoints are members.
     .decl _edge(key: Key, a: T, b: T)
     _edge(Ky, A, B) :- before(Ky, A, B), elem(Ky, A), elem(Ky, B).
 
-    /// The count of the members before t.
     .decl rank(key: Key, t: T, r: number)
     rank(Ky, T, R) :- elem(Ky, T), R = count : { _edge(Ky, A, T) }.
 
-    /// The same count, over the members after t — the order read from its
-    /// far end.
+    /// The same count, over the members after t.
     .decl rank_desc(key: Key, t: T, r: number)
     rank_desc(Ky, T, R) :- elem(Ky, T), R = count : { _edge(Ky, T, B) }.
 
@@ -72,30 +56,25 @@
     .decl _skipped(key: Key, a: T, b: T)
     _skipped(Ky, A, B) :- _edge(Ky, A, X), _edge(Ky, X, B).
 
-    /// b directly follows a: before, with nothing between. Consumers pair it
-    /// with `first` to carry state along the chain, one element per step.
+    /// b directly follows a: before, with nothing between.
     .decl next(key: Key, a: T, b: T)
     next(Ky, A, B) :- _edge(Ky, A, B), !_skipped(Ky, A, B).
 }
 
 /// Z/N successor over a dense 0-based index set: increment, with the max
-/// wrapping to 0. A spatial cycle converts through dist (index off a
-/// position) and DirFrame.pos (position back).
+/// wrapping to 0.
 .comp IndexCycle<Key> {
-    /// The index set, dense and 0-based.
     .decl idx(key: Key, k: number)  // @input
 
-    /// k2 is the next index after k, and the max wraps to 0. A lockstep
-    /// closure reads it directly.
     .decl succ(key: Key, k: number, k2: number)
     succ(Ky, K, K+1) :- idx(Ky, K), idx(Ky, K+1).
     succ(Ky, K, 0)   :- idx(Ky, K), !idx(Ky, K+1).   // wrap from the max
 }
 
-/// The same successor edges, walked by a count: a directed cycle of any
-/// member type, with no basepoint, and rotation along it.
+/// A directed cycle of any member type, with no basepoint, walked by a count
+/// of steps.
 .comp CycleWalk<Key, T> {
-    /// The cycle's edges, as explicit data or from a builder.
+    /// The cycle's edges.
     .decl succ(key: Key, p: T, p_next: T)  // @input
 
     // The counts close downward into the recursion bound.
@@ -116,13 +95,9 @@
 
 /// A partition carried along a walk, one item passing to the taken side per
 /// step. `step` and `take` may be recursive with `taken`/`untaken`, so the
-/// state can choose the walk and the item taken. A step that takes several
-/// items does not fit.
+/// state can choose the walk and the item taken. A step takes one item.
 .comp Take<Key, T, Item> {
-    /// The walk's start state.
     .decl start(key: Key, t: T)               // @input
-
-    /// The walk: t2 follows t.
     .decl step(key: Key, t: T, t2: T)         // @input
 
     /// The item taken at t.
@@ -134,12 +109,10 @@
     /// The untaken side before the first step.
     .decl init_untaken(key: Key, item: Item)  // @input
 
-    /// The taken side at t: the initial one, plus every item taken before t.
     .decl taken(key: Key, t: T, item: Item)
     taken(Ky, T, X) :- start(Ky, T), init_taken(Ky, X).
     taken(Ky, T2, X) :- step(Ky, T, T2), ( taken(Ky, T, X) ; take(Ky, T, X) ).
 
-    /// The untaken side at t: the initial one, less every item taken before t.
     .decl untaken(key: Key, t: T, item: Item)
     untaken(Ky, T, X) :- start(Ky, T), init_untaken(Ky, X).
     untaken(Ky, T2, X) :- step(Ky, T, T2), untaken(Ky, T, X), take(Ky, T, Y), X != Y.

@@ -1,6 +1,6 @@
 //! The helpers a solver's Params comp instantiates as
 //! `.init helpers = ParamsHelpers`. A Params comp cannot reach the rest of
-//! the program, so it gets its position enumeration from here.
+//! the program.
 
 .comp ParamsHelpers {
     /// All positions of a frame of the given Dim.
