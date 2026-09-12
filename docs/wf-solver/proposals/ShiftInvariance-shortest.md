@@ -99,3 +99,5 @@ name the callers give it, and to name each minimum after its set.
 neither, and puts the pair's difference in no name. No site reads both
 minima, so nothing in the corpus requires the two to be told apart within
 one rule; the demand is on the reader, not on a join.
+
+Box (2026-09-11): The comp is `OffsetInvariance`, so the readout is `OffsetInvariance.shortest`, and both callers instantiate it under that name. The readouts keep theirs — `cand`, `pair`, `mismatch`, `period`, `min_period` — and only `cand`'s delta column retypes, to `Offset`. The `Not:` line's `Bbox.extent` is `box_extent(b, p, a, n)`, which reads the axis extent in the frame of a named cell. The operation and the fold stand. The Spec point stands whole: the rename reached the comp's name and not its readouts, so the exact reading still has no name in the comp, and `period` beside `min_period` still puts the pair's difference in no name. See docs/wf-solver/box.md.

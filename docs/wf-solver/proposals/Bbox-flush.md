@@ -66,3 +66,5 @@ New near-misses:
 - `25c199f5` `moved`, `3d6c6e23` — per-line packing against an edge by rank.
 
 The spec question stands as recorded: `6ad5bdfd` is a second `Settle` site whose `room` produces the bare `Shift`, and it stays a near-miss for the reason the 05:57 note gives.
+
+Box (2026-09-11): `edge_min` retires into `dist` on the box, so the readout reads `box(K, B), dist(B, D, M), jump_offset(D, M, V)`, and its last column types `Offset`. The callers write that form: `6ca952ad` `flush` and `05a7bcf2` `push_shift` are the signature verbatim, in three atoms where they were two. The operation is unchanged, and the readout now saves one more atom than the entry records. The Spec's third point restates: `edge_min` is no longer a readout to keep exposed, and `20a9e565` reads its trailing margin twice as `dist` on `sbox.box`, which `flush` takes nothing away from. The `Not:` line's `Bbox.margin` is `Bbox.box`, and its `displacement` onto a named target is `relative`. See docs/wf-solver/box.md.

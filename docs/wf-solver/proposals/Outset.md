@@ -111,3 +111,5 @@ Spec:
 4. Interface and definition otherwise: no site in scope argues a change to `box`, `width` per Dir, or `ring`.
 
 Reimplementations: none.
+
+Box (2026-09-11): The comp's `outset_box` rule reads `box(Ky, B0)`, `pack.box(Ky, W)`, and `relative(W, B0, B)`; `inside` and `covered` test `inside(P, B)`, and every box column types `Box`. The `Not:` line's `BoxCells.on_edge` is `box_edge` and its `Bbox.inside` is `inside`; a box translated by a Shift is a box moved by an `Offset`. The outset constructors state the uniform case in lib, and the two uniform-width callers write it: `52fd389e` and `543a7ed5` build `uniform_outset(K, B_frame)` and seat the box in it with `compose`. `3a301edc` keeps `DirPack` for its per-edge widths and lets the box out with `relative`, since no constructor takes a packed box. The band itself is still outside lib: `ring` needs the covered cells materialized before the site can negate them, and no inline does that. See docs/wf-solver/box.md.

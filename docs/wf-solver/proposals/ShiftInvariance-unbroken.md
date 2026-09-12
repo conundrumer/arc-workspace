@@ -55,3 +55,5 @@ That reading costs the three callers. Each feeds `cell` the clean cells alone, s
 
 Reimplementations: none. The matcher ran over the parsed corpus, one pass with `each_solver()`: every `neg` reference named `mismatch` whose qualifier resolves through the file's `.init` chain to `ShiftInvariance`, reported with the rule's positive atoms that bind the negated atom's axis and amount variables. It returned five hits, in `29ec7d0e`, `332efdb3`, `c3f564a4`, and `ca8f78db` twice. The positive and indirect readers came from a `mismatch` grep over `programs/solvers/`, read site by site.
 
+
+Box (2026-09-11): The comp is `OffsetInvariance`, so the proposed readout is `OffsetInvariance.unbroken`. Its readouts keep their names, and the change the entry proposes is untouched: lib still derives `min_period` from `_pair` and a negated `mismatch` in the comp body, with no named set between them. The callers read `cand` beside a negated `mismatch` as the entry records — `29ec7d0e` `shift` writes `si.cand($U(), A, K, Delta), !si.mismatch($U(), A, K)` — and `cand`'s delta column now types `Offset`. The operation stands. See docs/wf-solver/box.md.

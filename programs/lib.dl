@@ -366,14 +366,6 @@ inside([T1, B1, L1, R1], [T2, B2, L2, R2]) :-
 interior([T1, B1, L1, R1], [T2, B2, L2, R2]) :-
     T1 > T2, B1 > B2, L1 > L2, R1 > R2.
 
-// The order under private names, for lib comp bodies: a comp in the
-// instantiation chain that declares `inside` or `interior` would shadow the
-// bare names there.
-.decl _inside(a: Box, b: Box) inline
-_inside(A, B) :- inside(A, B).
-.decl _interior(a: Box, b: Box) inline
-_interior(A, B) :- interior(A, B).
-
 // Cell p of box b, as a cell of b's own frame: the covering test and the
 // relative read. A cell outside the box is `relative` alone.
 .decl crop(p: Position, b: Box, p_rel: Position) inline
@@ -1341,26 +1333,6 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     min_period(Ky, A, K) <= min_period(Ky, A, K2) :- K > K2.
 }
 
-// Re-express keyed cells relative to a per-key outer origin: inner is the
-// cell's displacement from outer. Outer extent + inner extent = cell extent,
-// so one subtraction both resizes and positions across frames.
-//
-// Flagged: assumes one origin per key — several origins under one key
-// cross-product, so key by the varied thing instead.
-// retired: `relative`, or `crop` where the outer is a box
-.comp Reframe<Key> {
-    .decl outer(key: Key, p: Position)
-    .decl cell(key: Key, p: Position)
-
-    // Each cell beside its inner position: the read from an inner position
-    // back to its cell.
-    .decl view(key: Key, p: Position, p_inner: Position)
-    view(K, P, I) :- cell(K, P), outer(K, O), relative(O, P, I).
-
-    .decl inner(key: Key, p: Position)
-    inner(K, I) :- view(K, _, I).
-}
-
 // A Box packed from per-Dir scalars, keyed: the inverse read of dist. A
 // caller with an edge of no width writes that edge's zero row.
 .comp DirPack<Key> {
@@ -1376,55 +1348,6 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
     box(Ky, B) :-
         perp(A1, A2), axis_pos(Ky, A1, B1), axis_pos(Ky, A2, B2),
         compose(B1, B2, B).
-}
-
-// The frame inside given margins, one per key: each cell at least the
-// margin from every edge pairs with its position in the enclosed frame.
-// retired: an inset constructor or `DirPack`, then `crop`
-.comp MarginFrame<Key> {
-    .decl cell(key: Key, p: Position)         // input
-    .decl width(key: Key, d: Dir, k: number)  // input
-
-    // An edge with no width has margin zero.
-    .decl _edge(key: Key, d: Dir, k: number)
-    _edge(Ky, D, K) :- width(Ky, D, K).
-    _edge(Ky, D, 0) :- cell(Ky, _), dir_elem(D), !width(Ky, D, _).
-
-    .init _pack = DirPack<Key>
-    _pack.edge(Ky, D, K) :- _edge(Ky, D, K).
-
-    .decl margin(key: Key, p: Box)
-    margin(Ky, P) :- _pack.box(Ky, P).
-
-    .init _rf = Reframe<Key>
-    _rf.outer(Ky, M) :- margin(Ky, M).
-    _rf.cell(Ky, P) :- cell(Ky, P).
-
-    .decl inner(key: Key, p: Position, p_inner: Position)
-    inner(Ky, P, P_inner) :-
-        margin(Ky, M), _inside(P, M),  // clear of the margins
-        _rf.view(Ky, P, P_inner).
-}
-
-// Keyed cells viewed from their own bounding box. `cell` defines the box
-// and is viewed; feeding `grid` also views the box's inside, which is what
-// a crop reads. `inner` carries the cell alongside the inner position, so
-// one key serves the whole set.
-// retired: `Bbox`, then `crop`
-.comp BoxFrame<Key> : Bbox<Key> {
-    .init _mf = MarginFrame<Key>
-    _mf.width(K, D, M) :- edge_min(K, D, M).
-    _mf.cell(K, P) :- viewed(K, P).
-
-    // Cells the frame covers — the box's own cells plus the grid cells it
-    // encloses. Unfed, `grid` leaves the box's own cells, so a test over
-    // `inner` narrows rather than emptying.
-    .decl viewed(key: Key, p: Position)
-    viewed(K, P) :- cell(K, P).
-    viewed(K, P) :- inside(K, P).
-
-    .decl inner(key: Key, p: Position, p_inner: Position)
-    inner(K, P, I) :- _mf.inner(K, P, I).
 }
 
 // Bounding box of a keyed box set: the pointwise minimum over the set, the
@@ -1444,57 +1367,6 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 
     .decl box(key: Key, b: Box)
     box(K, B) :- _pack.box(K, B).
-
-    // --- retired readouts ---
-
-    // retired: `in`, or the caller's own domain, beside `inside`
-    .decl grid(key: Key, p: Position)
-
-    // retired: `dist` on `box`
-    .decl edge_min(key: Key, d: Dir, m: number)
-    edge_min(K, D, M) :- _edge_min(K, D, M).
-
-    // retired: `inside` over the caller's own domain
-    .decl inside(key: Key, p: Position)
-    inside(K, P) :- grid(K, P), box(K, M), _inside(P, M).
-
-    // retired: the set's cells beside `box_edge`
-    .decl edge_cell(key: Key, p: Position, d: Dir)
-    edge_cell(K, P, D) :- cell(K, P), dist(P, D, Kd), _edge_min(K, D, Kd).
-
-    // retired: the set's cells beside `box_corner`
-    .decl corner(key: Key, p: Position, diag: DiagDir)
-    corner(K, P, Diag) :-
-        diag_dirs(Diag, _, D1, D2), edge_cell(K, P, D1), edge_cell(K, P, D2).
-
-    // retired: `box_extent`
-    .decl extent(key: Key, a: Axis, n: number)
-    extent(K, A, N) :- cell(K, P), box(K, B), box_extent(B, P, A, N).
-
-    // retired: `box_extent`, twice
-    .decl extents(key: Key, a: Axis, n1: number, n2: number)
-    extents(K, A, N1, N2) :- extent(K, A, N1), perp(A, A2), extent(K, A2, N2).
-}
-
-// The cells of a box given as a margin Position, split into its edge lines
-// and its hole.
-// retired: `box_edge` and `interior`
-.comp BoxCells<Key> {
-    // The box, as margins from each edge, per key.
-    .decl box(key: Key, b: Position)
-
-    // The cells the box is read over, per key.
-    .decl cell(key: Key, p: Position)
-
-    // Covered cell on the box's d-side edge line.
-    .decl on_edge(key: Key, p: Position, d: Dir)
-    on_edge(K, P, D) :-
-        box(K, B), cell(K, P), _inside(P, B),
-        dir_elem(D), same_dist(D, P, B).
-
-    // Cell strictly inside the box.
-    .decl hole(key: Key, p: Position)
-    hole(K, P) :- box(K, B), cell(K, P), _interior(P, B).
 }
 
 // The rectangle outlines drawn inside a keyed node set, each reported as

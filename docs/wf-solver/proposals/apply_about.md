@@ -131,3 +131,5 @@ No change to the interface or the definition. The one caller in scope, `88207623
 4. Reimplementations
 
 Reimplementations: none.
+
+Box (2026-09-11): The code form reads `relative(F, P, V), apply(D, V, V2), compose(F, V2, P_out)`, and `88207623` `image` writes exactly that. The frame column types `Box`, not `Position`: the algebra takes any box as a base, and `relative` and `compose` are defined over boxes. That settles the Spec's note on the frame arguments of `47996f11` and `981571dc`, each of which stores `center([1, -1, 1, -1])`, whose per-axis sums cancel; the column types `Offset` and is read as a base, which the algebra allows with no appeal to an alias coincidence. `Reframe` retires into `relative`, so the `Match:` line's two routes to the view, a `displacement` and a `Reframe.inner` whose `outer` is F, are one atom, and the D4-free half-turn form reads `relative(P, F, V), compose(F, V, Q)`. The operation stands, and lib holds no inline for it. See docs/wf-solver/box.md.

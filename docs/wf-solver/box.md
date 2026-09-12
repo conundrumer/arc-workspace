@@ -288,15 +288,7 @@ The scope is the working tree's solver set: 404 of the 438 carry uncommitted edi
 
 ## 4. Reimplementations
 
-Reimplementations:
-- `/Users/davidlu/code/arc-workspace/programs/solvers/212895b5.dl` lines 44–46 (`Parse.seed`): `box.inner` plus `dist(P_intile, D, 0)` — `BoxCells.on_edge`.
-- `/Users/davidlu/code/arc-workspace/programs/solvers/4290ef0e.dl` lines 127–129 (`paint`): `nest.inner` plus `dist(Q, D, 0)` — `BoxCells.on_edge`.
-- `/Users/davidlu/code/arc-workspace/programs/solvers/42918530.dl` line 50 (`outline`): `box.inner` plus `dist(P_intile, D, 0)` — `BoxCells.on_edge`.
-- `/Users/davidlu/code/arc-workspace/programs/solvers/4e469f39.dl` lines 43–46 and 49–52 (`gap`): `box.inner` plus `dist(P_inner, D, 0)` — `BoxCells.on_edge`.
-- `/Users/davidlu/code/arc-workspace/programs/solvers/78332cb0.dl` lines 40–42 (`port`): `tile.inner` plus `dist(P_intile, D, 0)` — `BoxCells.on_edge`.
-- `/Users/davidlu/code/arc-workspace/programs/solvers/4c177718.dl` line 148 (`placement`): `pay_box.inner` plus `corner_anchor(Diag_pay, P_inner, ORIGIN)` — `Bbox.corner` (the closed `Bbox-corner_cell.md` rests on this idiom; the entry's Spec already routes it to `box_corner`).
-- `/Users/davidlu/code/arc-workspace/programs/solvers/6cbe9eb8.dl` line 64 (`obox`): `box.inner` plus `corner_dist(Q_in, Diag, 0)` — `Bbox.corner`, same note.
-- `/Users/davidlu/code/arc-workspace/programs/solvers/3eda0437.dl` lines 47 and 54 (`Parse.box_ink`, `Parse.hole_cell`): `geq(P, B)` over the domain against `span.margin` — `Bbox.inside` with `grid` fed, keyed by the collapsed box instead of the span key.
+Every reimplementation this survey met now calls the inlines.
 
 Survey: 2026-09-11 20:36 — the solvers since 2026-09-10 15:01.
 
@@ -411,10 +403,7 @@ Spec:
 - **No stored box.** No parameter in scope holds a box. The three `Inset` parameters (8719f442 seat_delta, 8b28cd80 ring_step, and 8abad3cf's derived offsets) hold a frame change, and each derives from `uniform_delta` or `edge_delta` rather than storing edge values. This scope adds no witness for `Box` as a Params type.
 - **`DirPack` and `MarginFrame` go unexercised here.** Neither appears in scope, so this scope neither supports nor opposes keeping `DirPack`.
 
-Reimplementations:
-
-- 8698868d interior.cell — `box.margin(Id, M), in(P, _), gt(P, M)` is `BoxCells.hole`, the box's strict interior over a caller-supplied domain. The file already holds the `BoxFrame` the margins come from and inits no `BoxCells`.
-- 8f215267 view.cell — `view.outer(B, _), in(P, _), gt(P, B)` is `BoxCells.hole`, and the file already inits `bcells = BoxCells<Position>` for its other case's boxes.
+Every reimplementation this survey met now calls the inlines.
 
 A near-miss of the same class is not one: 8731374e covered, 8a6d367c crop.cell, and 543a7ed5 ring use `geq`, the covered cells including the edge line, which `BoxCells` does not expose.
 

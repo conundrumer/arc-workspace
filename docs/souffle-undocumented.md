@@ -207,22 +207,22 @@ Use a user-defined aggregate when the fold is local to a single rule (e.g., "giv
 A type name passed as a component's type argument must differ from every `.type` name declared inside that component. Souffle binds both to one name in the instance, and the instance's relations take the argument type where the internal type belongs.
 
 ```souffle
-.comp BoxFrame<Key> {
+.comp Bbox<Key> {
     .type KP = [key: Key, p: Position]
-    .decl cell(key: Key, p: Position)
+    .decl cell(key: Key, p: Box)
     // ...
 }
 
 .type KP = [key: Unit, p_part: Position]
 .decl top_cell(key: Unit, p: Position)
 
-.init box = BoxFrame<KP>
-box.cell([Ky, Q], P) :- top_cell(Ky, P), top_cell(Ky, Q).
+.init bbox = Bbox<KP>
+bbox.cell([Ky, Q], P) :- top_cell(Ky, P), top_cell(Ky, Q).
 ```
 
 ```
 Error: Unable to deduce type for variable Ky in file solver.dl at line 6
-box.cell([Ky, Q], P) :- top_cell(Ky, P), top_cell(Ky, Q).
+bbox.cell([Ky, Q], P) :- top_cell(Ky, P), top_cell(Ky, Q).
 Following constraints are incompatible:
    Type of variable 'Ky' should be a subtype of 'Unit' in file solver.dl at line 6
 ```

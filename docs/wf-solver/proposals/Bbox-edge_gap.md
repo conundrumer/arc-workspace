@@ -101,3 +101,5 @@ One note for the Match line: `846bdb03` states the edge line as `dist(P_inner, D
 ## 4. Reimplementations
 
 Reimplementations: none.
+
+Box (2026-09-11): The edge line is `box_edge(P, B, D)` over the caller's own domain, and `BoxCells` is retired, so the host question has one candidate left, `Bbox`. The callers write the whole reading in one rule with no second instance: `551d5bf1` `leak.mark` is `bbox.box(Id, B), in(P, _), box_edge(P, B, D), !bbox.cell(Id, P)`, and `810b9b61` `edge_gap` is the same shape. Two of the costs the Spec weighs go with it — no site pays for a `BoxCells` beside its `Bbox`, and no site takes the gap from one comp and the line it breaks from another. The remaining cost stands and grows: `Bbox` no longer takes a cell domain, so the readout would have to take one back. The `Not:` line's `BoxCells.hole` is `interior` and its `BoxCells.on_edge` is `box_edge`; the operation, the edge line against the set that fed the box, is unchanged. See docs/wf-solver/box.md.
