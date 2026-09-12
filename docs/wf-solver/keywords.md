@@ -55,4 +55,4 @@ A composition property of the task. It holds across the file's cases and is reco
     - A relational form of the resemblance is a hypothesis that agrees with it on each configuration the resemblance accepts; where it rejects, disagreement does not count.
     - The resemblance has no relational form.
     - A pair breaks the resemblance's exact form while its match still holds.
-    - The encoded hypothesis accepts some configuration, and the resemblance rejects that configuration. Where the pairs exhibit forms that reject that configuration, the resemblance is read at the weakest of them.
+    - The encoded hypothesis accepts some configuration, and the resemblance rejects that configuration. The resemblance is read at the weakest form the pairs exhibit, so this condition holds only when that weakest form rejects the configuration. When no exhibited form rejects it, the resemblance is the rule the pairs endorse, and the tag does not apply.
