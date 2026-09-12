@@ -19,16 +19,11 @@
 //! - The anchors (`same_dist`, `corner_anchor`, `slab_anchor`, and the other
 //!   composites of box.dl) work only on grounded positions.
 //!
-//! The runner contract: the solver declares `out`, and no other IO relation.
-//! It must be total over the expected output grid: a variant fails on a
-//! missing cell. With a trailing TiebreakResolution column, the runner
-//! accepts a pair iff the set of emitted grids equals the expected grid plus
-//! its alts, and a tiebreak allows only two distinct grids.
+//! The runner contract: the solver declares `out`, and no other IO relation,
+//! total over the expected output grid.
 
 // A name with a leading `_` is private to the lib.
 
-/// A value of one of these types is joined on, never ordered or computed
-/// with.
 .type Color <: number
 .type Dir <: number
 .type Axis <: number
@@ -45,34 +40,29 @@
 
 .type Axis4 = Axis | DiagAxis
 
-/// A label: join on equality, never order or count with it.
+/// An opaque label.
 .type Ident <: number
 
 /// Index of a task example.
 .type Example <: number
 
-/// The edge-margin record: a rectangle placed in a frame by its margins from
-/// the four edges.
+/// The edge-margin record; box.dl holds its algebra.
 .type Box = [t: number, b: number, l: number, r: number]
 
 /// (V-length, H-length) of a frame, for ParamsHelpers only.
 .type Dim = [v: number, h: number]
 
-/// Souffle equivalence types are interchangeable, so an alias documents a
-/// column's reading and checks nothing.
-/// A cell: extent 1 on both axes, so the frame's extent is readable from it.
+/// A cell.
 .type Position = Box
-/// A translation: the two margins cancel on each axis.
+/// A translation.
 .type Offset = Box
 
-/// Singleton key for keyed components applied to a single set.
 .type Unit = U {}
 
 /// The task input grid.
 .decl in(p: Position, col: Color)  // @input
 
-/// Train and test inputs and train outputs, fed in determination mode. The
-/// test examples have no ex_out rows.
+/// Train and test inputs and train outputs, fed in determination mode.
 .decl ex_in(e: Example, p: Position, col: Color)  // @input
 .decl ex_out(e: Example, p: Position, col: Color)  // @input
 

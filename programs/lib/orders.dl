@@ -4,8 +4,7 @@
 
 /// The dense rank of each number of a sparse set.
 .comp Ordinal<Key> {
-    /// The numbers to rank. A set: items sharing k share its rank, and the
-    /// rank set stays dense under ties.
+    /// The numbers to rank.
     .decl idx_set(key: Key, k: number)  // @input
 
     /// r = the count of the key's elements strictly less than k, so ranks run

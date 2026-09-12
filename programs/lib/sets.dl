@@ -117,9 +117,8 @@
     /// one class different ids.
     .decl equiv(a: T, b: T)  // @input
 
-    /// The representative of each element's class. A self-paired row marks a
-    /// representative; with a total equivalence, that row is an arbitrary
-    /// pick of one element of the set.
+    /// The representative of each element's class; a self-paired row marks a
+    /// representative.
     .decl rep(a: T, b: T)
     rep(A, B) :- equiv(A, B).
     rep(A, B) <= rep(A, B2) :- ord(B) > ord(B2).
