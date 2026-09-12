@@ -36,14 +36,18 @@ panel_mode.item($U(), Col, P) :- ink(P), in(P, Col).
 .init comps = Components<Unit>
 comps.node($U(), P) :- ink(P).
 
-.init panel = BoxFrame<Ident>
+.init panel = Bbox<Ident>
 panel.cell(Id, P) :- comps.label($U(), P, Id).
+
+// A panel's cell, placed in the shared frame.
+.decl panel_cell(p: Position, p_frame: Position)
+panel_cell(P, P_frame) :- panel.cell(Id, P), panel.box(Id, B), crop(P, B, P_frame).
 
 // A painted cell of a panel, placed in the shared frame.
 .decl paint(p_frame: Position, col: Color)
 paint(P_frame, Col) :-
-    panel.inner(_, P, P_frame), in(P, Col),  // the panel's cell and its color
-    !panel_mode.mode($U(), Col).             // departs from the panel color
+    panel_cell(P, P_frame), in(P, Col),  // the panel's cell and its color
+    !panel_mode.mode($U(), Col).         // departs from the panel color
 
 // What each panel contributes to the shared frame.
 .decl overlay(p_frame: Position, col: Color, ch: Choice)
@@ -51,7 +55,7 @@ paint(P_frame, Col) :-
 .decl out(p: Position, col: Color, ch: Choice)
 out(P_frame, Col, Ch) :- overlay(P_frame, Col, Ch).
 out(P_frame, Col, Ch) :-
-    impl_choice(Ch), panel.inner(_, _, P_frame),            // a cell of the frame
+    impl_choice(Ch), panel_cell(_, P_frame),                // a cell of the frame
     !overlay(P_frame, _, Ch), panel_mode.mode($U(), Col).   // unpainted: bare panel
 
 // --- Layer ---

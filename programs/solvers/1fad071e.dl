@@ -57,12 +57,12 @@
     .init comps = Components<Key>
     comps.node(K, P) :- on(K, P).
 
-    .init frame = BoxFrame<Obj>
-    frame.cell([K, Id], P) :- comps.label(K, P, Id).
+    .init bbox = Bbox<Obj>
+    bbox.cell([K, Id], P) :- comps.label(K, P, Id).
 
     .init same = KeyedSetCompare<Obj, Key, Position>
-    same.pattern_member(K, P)  :- shape(K, P).
-    same.observed_member(O, P) :- frame.inner(O, _, P).
+    same.pattern_member(K, P) :- shape(K, P).
+    same.observed_member(O, P_inner) :- bbox.cell(O, P), bbox.box(O, B), crop(P, B, P_inner).
 
     .decl block(k: Key, id: Ident)
     block(K, Id) :- same.equals([K, Id], K).

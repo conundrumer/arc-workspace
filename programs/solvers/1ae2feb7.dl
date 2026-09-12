@@ -68,26 +68,28 @@ run(Id, P_line, Col) :- runs.label([P_line, Col], _, Id).
 .init run_box = Bbox<Ident>
 run_box.cell(Id, P) :- runs.label(_, P, Id).
 
-// The canvas seen from its own frame, so offset 0 sits against the separator.
-.init canvas_frame = BoxFrame<Unit>
-canvas_frame.cell($U(), P) :- canvas(P).
+// The canvas's box, so offset 0 in its frame sits against the separator.
+.init canvas_box = Bbox<Unit>
+canvas_box.cell($U(), P) :- canvas(P).
 
 .decl canvas_off(p: Position, p_line: Position, off: number)
 canvas_off(P, P_line, Off) :-
-    canvas_frame.inner($U(), P, P_inner), cell_split(P, _, P_line),  // canvas cell in canvas frame
-    ink_dir(D), dist(P_inner, D, Off).                               // offset from the separator
+    canvas(P), canvas_box.box($U(), B), crop(P, B, P_inner),  // canvas cell in the canvas frame
+    cell_split(P, _, P_line),                                 // its line
+    ink_dir(D), dist(P_inner, D, Off).                        // offset from the separator
 
 // A run claims the separator-side cell of every block of its own length.
 .decl claim(p: Position, id: Ident)
 claim(P, Id) :-
     canvas_off(P, P_line, Off),                      // a canvas cell
     run(Id, P_line, _),                              // a run of its line
-    params.axis(A), run_box.extent(Id, A, W),        // its length is its period
+    params.axis(A),                                  // the run axis
+    run_box.box(Id, B), box_extent(B, P, A, W),      // its length is its period
     stride(Off, W, 0, _, 0).                         // the offset starts a block
 
 // Where several runs claim one cell, the one nearest the separator wins.
 .init won = ArgExtremes<Position, Ident>
-won.cand(P, Id, K) :- claim(P, Id), canvas_dir(D), run_box.edge_min(Id, D, K).
+won.cand(P, Id, K) :- claim(P, Id), canvas_dir(D), run_box.box(Id, B), dist(B, D, K).
 
 .decl painted(p: Position, col: Color)
 painted(P, Col) :- won.low(P, Id, _), run(Id, _, Col).

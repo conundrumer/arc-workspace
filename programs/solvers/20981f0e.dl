@@ -21,7 +21,7 @@
     // --- Slot ---
 
     // Where a piece's box lands in its tile — margin from each edge.
-    .decl slot(p: Position) slot([1, 1, 1, 1]).
+    .decl slot(b: Box) slot([1, 1, 1, 1]).
 }
 
 .init params = Params
@@ -44,32 +44,33 @@ piece(P_tile, P, Col) :- lattice.tile_of($U(), P, P_tile), in(P, Col), !params.b
 
 // --- placement ---
 
-// The tile seen as its own frame.
-.init tile_frame = BoxFrame<Position>
-tile_frame.cell(P_tile, P) :- lattice.tile_of($U(), P, P_tile).
+// The box of each tile.
+.init tile_box = Bbox<Position>
+tile_box.cell(P_tile, P) :- lattice.tile_of($U(), P, P_tile).
 
 // The piece's box, in the frame of its tile.
 .init piece_box = Bbox<Position>
-piece_box.cell(P_tile, P_intile) :- piece(P_tile, P, _), tile_frame.inner(P_tile, P, P_intile).
+piece_box.cell(P_tile, P_intile) :-
+    piece(P_tile, P, _), tile_box.box(P_tile, B), crop(P, B, P_intile).
 
-// A placement the piece's tile admits, with the margin it lands the box at.
-.decl landing(p_tile: Position, delta: Offset, m: Position)
-landing(P_tile, Delta, M) :-
-    piece(P_tile, P, _), tile_frame.cell(P_tile, Q),
-    relative(P, Q, Delta),                                  // a piece cell onto a cell of its tile
-    piece_box.box(P_tile, M_box), compose(M_box, Delta, M),  // where it lands the box
-    inside(M, ZERO).                                             // the whole box inside the tile
+// A placement the piece's tile admits, with the box it lands the piece in.
+.decl landing(p_tile: Position, delta: Offset, b: Box)
+landing(P_tile, Delta, B) :-
+    piece(P_tile, P, _), tile_box.cell(P_tile, Q),
+    relative(P, Q, Delta),                             // a piece cell onto a cell of its tile
+    piece_box.box(P_tile, B0), compose(B0, Delta, B),  // where it lands the box
+    inside(B, ZERO).                                   // the whole box inside the tile
 
-// The relative each case picks.
+// The offset each case picks.
 .decl place(p_tile: Position, delta: Offset, ch: Choice)
 
 // --- Center ---
 
-place(P_tile, Delta, $Center()) :- landing(P_tile, Delta, M), centered(M).
+place(P_tile, Delta, $Center()) :- landing(P_tile, Delta, B), centered(B).
 
 // --- Slot ---
 
-place(P_tile, Delta, $Slot()) :- landing(P_tile, Delta, M), params.slot(M).
+place(P_tile, Delta, $Slot()) :- landing(P_tile, Delta, B), params.slot(B).
 
 // --- Clear ---
 
@@ -77,9 +78,9 @@ place(P_tile, Delta, $Slot()) :- landing(P_tile, Delta, M), params.slot(M).
 // from it, a box touching neither wall stands.
 .decl clear_step(p_tile: Position, a: Axis, delta: Offset)
 clear_step(P_tile, A, Delta) :-
-    piece_box.box(P_tile, M_box), axis_of(D, A), opposite(D, D2),
-    ( dist(M_box, D, 0), step_offset(D2, Delta)                       // against the wall at d
-    ; dist_pair(M_box, D, K, K2), K != 0, K2 != 0, Delta = ZERO    // clear of both walls
+    piece_box.box(P_tile, B), axis_of(D, A), opposite(D, D2),
+    ( dist(B, D, 0), step_offset(D2, Delta)                      // against the wall at d
+    ; dist_pair(B, D, K, K2), K != 0, K2 != 0, Delta = ZERO      // clear of both walls
     ).
 
 place(P_tile, Delta, $Clear()) :-

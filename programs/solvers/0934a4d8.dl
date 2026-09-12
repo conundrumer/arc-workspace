@@ -13,7 +13,7 @@
     .decl mask(col: Color) mask(8).
 
     // The grid's margins within the mosaic frame.
-    .decl mosaic_margin(p: Box) mosaic_margin([0, 2, 0, 2]).
+    .decl mosaic_margin(b: Box) mosaic_margin([0, 2, 0, 2]).
 
     // Per tile, the subgroup of mosaic transforms holding on its cells.
     .decl tile_sym(p_tile: Position, s: Sym)
@@ -32,15 +32,16 @@
 
 // Mosaic position of each grid cell.
 .decl mosaic(p_grid: Position, p_mosaic: Position)
-mosaic(P_grid, P_mosaic) :- in(P_grid, _), params.mosaic_margin(M), compose(P_grid, M, P_mosaic).
+mosaic(P_grid, P_mosaic) :- in(P_grid, _), params.mosaic_margin(B), compose(P_grid, B, P_mosaic).
 
 // The hole: the masked cells.
-.init bbox = BoxFrame<Unit>
+.init bbox = Bbox<Unit>
 bbox.cell($U(), P) :- in(P, Col), params.mask(Col).
 
 .decl out(p: Position, col: Color)
-out(P_out, Col) :-
-    bbox.inner($U(), P, P_out),                        // hole cell, in the crop frame
+out(P_inner, Col) :-
+    bbox.cell($U(), P), bbox.box($U(), B),
+    crop(P, B, P_inner),                               // hole cell, in the crop frame
     mosaic(P, Pm),
     params.tile_count(N), divide_2d(Pm, N, 0, T, _),   // its tile
     params.tile_sym(T, S), sym_member(S, D),           // a transform holding there
@@ -60,43 +61,43 @@ out(P_out, Col) :-
         cell(E, P, Col), axis_elem(A), split(P, A, Along, Across).
 
     // One-sided frame-extension candidates per axis: k cells past edge d.
-    .decl ext_cand(a: Axis, m: Box)
-    ext_cand(A, M) :- apos(A, Along), sub_extent(Along, A, K), axis_of(D, A), edge_inset(D, K, M).
+    .decl ext_cand(a: Axis, b: Box)
+    ext_cand(A, B) :- apos(A, Along), sub_extent(Along, A, K), axis_of(D, A), edge_inset(D, K, B).
 
     // The candidate's mirror, as a map on axis positions.
-    .decl ext_map(a: Axis, m: Box, along: Position, along2: Position)
-    ext_map(A, M, L, L2) :-
-        ext_cand(A, M), apos(A, L), flip_of(A, F),
-        compose(L, M, Lm),                          // extended-frame position
+    .decl ext_map(a: Axis, b: Box, along: Position, along2: Position)
+    ext_map(A, B, L, L2) :-
+        ext_cand(A, B), apos(A, L), flip_of(A, F),
+        compose(L, B, Lm),                          // extended-frame position
         apply(F, Lm, L_img),                        // mirror image
-        apos(A, L2), compose(L2, M, L_img).         // back in-grid
+        apos(A, L2), compose(L2, B, L_img).         // back in-grid
 
     // The extension's mirror maps a clean pair to different colors.
-    .decl ext_mismatch(a: Axis, m: Box)
-    ext_mismatch(A, M) :-
-        ext_map(A, M, L1, L2),
+    .decl ext_mismatch(a: Axis, b: Box)
+    ext_mismatch(A, B) :-
+        ext_map(A, B, L1, L2),
         cell_split(E, A, L1, X, C1),
         cell_split(E, A, L2, X, C2), C2 != C1.
 
     // The extension's mirror relates two distinct cells — the witness that
     // the examples exercise it.
-    .decl ext_pair(a: Axis, m: Box)
-    ext_pair(A, M) :-
-        ext_map(A, M, L1, L2), L1 != L2,
+    .decl ext_pair(a: Axis, b: Box)
+    ext_pair(A, B) :-
+        ext_map(A, B, L1, L2), L1 != L2,
         cell_split(E, A, L1, X, _),
         cell_split(E, A, L2, X, _).
 
     // Per axis, the witnessed unbroken extension; the margin composes the
     // two axes.
-    .decl axis_ext(a: Axis, m: Box)
-    axis_ext(A, M) :- ext_pair(A, M), !ext_mismatch(A, M).
+    .decl axis_ext(a: Axis, b: Box)
+    axis_ext(A, B) :- ext_pair(A, B), !ext_mismatch(A, B).
 
-    .decl mosaic_margin(p: Box)
-    mosaic_margin(M) :- axis_ext(A1, M1), perp(A1, A2), axis_ext(A2, M2), compose(M1, M2, M).
+    .decl mosaic_margin(b: Box)
+    mosaic_margin(B) :- axis_ext(A1, B1), perp(A1, A2), axis_ext(A2, B2), compose(B1, B2, B).
 
     // Clean cells in mosaic coordinates.
     .decl mcell(e: Example, p: Position, col: Color)
-    mcell(E, Pm, Col) :- cell(E, P, Col), mosaic_margin(M), compose(P, M, Pm).
+    mcell(E, Pm, Col) :- cell(E, P, Col), mosaic_margin(B), compose(P, B, Pm).
 
     // The mosaic's own symmetries, per example.
     .init inv = D4Map<Example, Color>

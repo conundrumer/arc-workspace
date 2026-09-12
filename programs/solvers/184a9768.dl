@@ -44,26 +44,27 @@ piece(O) :- obj_cell(O, _, _), !frame(O).
 // --- the candidate placements ---
 
 // A piece's shape, viewed from its own bbox.
-.init bbox = BoxFrame<Ident>
+.init bbox = Bbox<Ident>
 bbox.cell(O, P) :- piece(O), obj_cell(O, _, P).
 
 // Where a piece lands with each of its cells on a hole.
 .init occ = Occurrences<Ident, Unit>
-occ.shape(O, S, $U()) :- bbox.inner(O, _, S).
+occ.shape(O, P_inner, $U()) :- bbox.cell(O, P), bbox.box(O, B), crop(P, B, P_inner).
 occ.cell(O, P, $U()) :- piece(O), hole(P).
 
-// A candidate: a piece translated to a spot, named by the spot's margins.
-.type Placement = [o: Ident, m: Position]
+// A candidate: a piece translated to the spot it lands on.
+.type Placement = [o: Ident, p: Position]
 
 .decl covers(cd: Placement, p: Position)
-covers([O, M], P) :- occ.occurrence(O, M), occ.shape(O, S, $U()), compose(M, S, P).
+covers([O, P_spot], P) :-
+    occ.occurrence(O, P_spot), occ.shape(O, P_inner, $U()), compose(P_spot, P_inner, P).
 
 // --- the pruning ---
 
 // Where the covers differ, every rival spot stays alive; the rivals agree
 // on the color they paint.
 .init pruning = PlacementPruning<Unit, Placement, Ident>
-pruning.cand($U(), [O, M], O) :- occ.occurrence(O, M).
+pruning.cand($U(), [O, P_spot], O) :- occ.occurrence(O, P_spot).
 pruning.conflict($U(), Cd, Cd2) :- covers(Cd, P), covers(Cd2, P).
 
 .decl frame_cell(p: Position, col: Color)

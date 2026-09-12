@@ -82,11 +82,12 @@ out(P, Col) :-
         size.tally([E, C, Id], N), small.low(C, N),
         size.tally([E2, C, Id2], N2), small.low(C, N2).
 
-    .init bbox = BoxFrame<Region>
+    .init bbox = Bbox<Region>
     bbox.cell(R, P) :- pick.rep(R, R), region_cell(R, P).
 
     .decl piece_member(id: Ident, p: Position)
-    piece_member(as(C, Ident), S) :- bbox.inner([E, C, Id], _, S).
+    piece_member(as(C, Ident), P_inner) :-
+        bbox.cell([E, C, Id], P), bbox.box([E, C, Id], B), crop(P, B, P_inner).
 
     .decl piece_color(id: Ident, col: Color)
     piece_color(as(C, Ident), C) :- changed(_, _, C).

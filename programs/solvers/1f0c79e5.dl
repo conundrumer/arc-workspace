@@ -31,7 +31,7 @@ impl_choice($Corner()). impl_choice($Quadrant()).
 .decl block(p: Position)
 block(P) :- in(P, Col), !params.bg(Col).
 
-.init bbox = BoxFrame<Unit>
+.init bbox = Bbox<Unit>
 bbox.cell($U(), P) :- block(P).
 
 .decl marker(p: Position)
@@ -59,13 +59,19 @@ out(P, Col, Ch) :-
 
 // --- Corner ---
 
-heading(D, $Corner()) :- marker(P), bbox.corner($U(), P, D).
+heading(D, $Corner()) :-
+    marker(P), block(P),                      // a mark of the block
+    bbox.box($U(), B), box_corner(P, B, D).   // at a corner of the block's box
 
 // --- Quadrant ---
 
+// A block cell in the block's frame.
+.decl block_inner(p: Position, p_inner: Position)
+block_inner(P, P_inner) :- block(P), bbox.box($U(), B), crop(P, B, P_inner).
+
 .init place = DiagPlacement<Unit>
-place.cell($U(), P_inner) :- bbox.inner($U(), _, P_inner).
+place.cell($U(), P_inner) :- block_inner(_, P_inner).
 
 heading(D, $Quadrant()) :-
-    marker(P), bbox.inner($U(), P, P_inner),   // a mark in the block's frame
-    place.quadrant($U(), P_inner, D).         // the quadrant it lies in
+    marker(P), block_inner(P, P_inner),   // a mark of the block, in the block's frame
+    place.quadrant($U(), P_inner, D).     // the quadrant it lies in

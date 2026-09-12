@@ -42,12 +42,16 @@ solid(P) :- occ.occurrence($U(), M), params.block_shape(S), compose(M, S, P).
 .init comps = Components<Unit>
 comps.node($U(), P) :- solid(P).
 
-.init frame = BoxFrame<Ident>
-frame.cell(Id, P) :- comps.label($U(), P, Id).
+.init bbox = Bbox<Ident>
+bbox.cell(Id, P) :- comps.label($U(), P, Id).
 
-// Each copy's color at each cell of the shared copy frame.
+// Each copy's cells, in the shared copy frame.
+.decl copy_view(id: Ident, p: Position, p_intile: Position)
+copy_view(Id, P, P_intile) :- bbox.cell(Id, P), bbox.box(Id, B), crop(P, B, P_intile).
+
+// Each copy's color at each cell of that frame.
 .decl copy_color(id: Ident, p_intile: Position, col: Color)
-copy_color(Id, P_intile, Col) :- frame.inner(Id, P, P_intile), in(P, Col).
+copy_color(Id, P_intile, Col) :- copy_view(Id, P, P_intile), in(P, Col).
 
 .decl out(p: Position, col: Color, ch: Choice)
 
@@ -58,7 +62,7 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !solid(P), params.bg(Col).
 .init template = Mode<Position, Color, Ident>
 template.item(P_intile, Col, Id) :- copy_color(Id, P_intile, Col).
 
-out(P, Col, $Vote()) :- frame.inner(_, P, P_intile), template.mode(P_intile, Col).
+out(P, Col, $Vote()) :- copy_view(_, P, P_intile), template.mode(P_intile, Col).
 
 // --- Copy ---
 
@@ -71,5 +75,5 @@ intact.item($U(), Id, [Id2, P_intile]) :-
     Id != Id2.
 
 out(P, Col, $Copy()) :-
-    frame.inner(_, P, P_intile),
-    intact.mode($U(), Id), copy_color(Id, P_intile, Col).
+    copy_view(_, P, P_intile),                              // any copy's cell
+    intact.mode($U(), Id), copy_color(Id, P_intile, Col).   // the intact copy's color there

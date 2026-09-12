@@ -37,7 +37,7 @@ hub_box.cell($U(), P) :- hub(P).
 
 // A bar is the hub cells on one side of the hub's bbox.
 .decl bar(d: Dir, p: Position, col: Color)
-bar(D, P, Col) :- hub_box.edge_cell($U(), P, D), in(P, Col).
+bar(D, P, Col) :- hub(P), hub_box.box($U(), B), box_edge(P, B, D), in(P, Col).
 
 // Where a bar's piece seats: one step beyond the bar.
 .decl seat(d: Dir, p: Position)
@@ -48,18 +48,19 @@ seat(D, P_seat) :- bar(D, P, _), neighbor(P, D, P_seat).
 .decl piece(id: Ident, d: Dir, col: Color)
 piece(Id, D, Col) :- obj_color.value(Id, Col), bar(D, _, Col).
 
-.init bbox = BoxFrame<Ident>
+.init bbox = Bbox<Ident>
 bbox.cell(Id, P) :- piece(Id, _, _), object(Id, P).
 
 // The cells a piece shows on one side of its box, in the box's frame.
-.decl side_cell(id: Ident, d: Dir, p_piece: Position)
-side_cell(Id, D, P_piece) :- bbox.edge_cell(Id, P, D), bbox.inner(Id, P, P_piece).
+.decl side_cell(id: Ident, d: Dir, p_inner: Position)
+side_cell(Id, D, P_inner) :-
+    bbox.cell(Id, P), bbox.box(Id, B), box_edge(P, B, D), crop(P, B, P_inner).
 
 .type Side = [id: Ident, d: Dir]
 
 .init side_sym = D4Map<Side, Unit>
-side_sym.src([Id, D], P_piece, $U()) :- side_cell(Id, D, P_piece).
-side_sym.dst([Id, D], P_piece, $U()) :- side_cell(Id, D, P_piece).
+side_sym.src([Id, D], P_inner, $U()) :- side_cell(Id, D, P_inner).
+side_sym.dst([Id, D], P_inner, $U()) :- side_cell(Id, D, P_inner).
 
 // A side is a notch when its cells straddle its middle: the mirror along
 // the side carries them onto themselves.
@@ -79,9 +80,9 @@ dock_cell(Id, G, V, P_grid) :-
     notch(Id, D_notch), c4_elem(G),
     apply_dir(G, D_notch, D_faced),                            // the notch faces the hub
     side_cell(Id, D_notch, P_notch), apply(G, P_notch, P_turned_notch),
-    seat(D, P_seat), relative(P_turned_notch, P_seat, V),  // a notch cell on a seat cell
-    bbox.inner(Id, _, P_piece),                                 // any cell of the piece
-    apply(G, P_piece, P_turned), compose(P_turned, V, P_grid).
+    seat(D, P_seat), relative(P_turned_notch, P_seat, V),      // a notch cell on a seat cell
+    bbox.cell(Id, P), bbox.box(Id, B), crop(P, B, P_inner),    // any cell of the piece
+    apply(G, P_inner, P_turned), compose(P_turned, V, P_grid).
 
 .type Cand = [id: Ident, g: D4, v: Offset]
 

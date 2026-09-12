@@ -15,7 +15,7 @@
 .type Choice = Given {} | Common {}
 
 // A band under one candidate margin — the key of a single trial fit.
-.type BandMargin = [b: Position, k: number]
+.type BandMargin = [p_band: Position, k: number]
 
 .comp Params {
     // --- shared ---
@@ -49,58 +49,62 @@ frame.divider($U(), A, L) :-
     in(P, _), band_axis(A), split(P, A, L, _),  // a line of the band axis
     !line_ink(L).                               // with nothing on it
 
-.decl band_cell(b: Position, p: Position)
-band_cell(B, P) :- frame.part_of($U(), P, A, B), band_axis(A).
+.decl band_cell(p_band: Position, p: Position)
+band_cell(P_band, P) :- frame.part_of($U(), P, A, P_band), band_axis(A).
 
-// Each band viewed from its own frame.
-.init bbox = BoxFrame<Position>
-bbox.cell(B, P) :- band_cell(B, P).
+.init bbox = Bbox<Position>
+bbox.cell(P_band, P) :- band_cell(P_band, P).
 
-.decl base_cell(b: Position, p_inner: Position)
-base_cell(B, P_inner) :- bbox.inner(B, P, P_inner), in(P, Col), params.base(Col).
+// Each band's cells, in the band's own frame.
+.decl band_view(p_band: Position, p: Position, p_inner: Position)
+band_view(P_band, P, P_inner) :-
+    band_cell(P_band, P), bbox.box(P_band, B), crop(P, B, P_inner).
 
-.decl piece_cell(b: Position, p_inner: Position, col: Color)
-piece_cell(B, P_inner, Col) :-
-    bbox.inner(B, P, P_inner), in(P, Col),  // band cell
+.decl base_cell(p_band: Position, p_inner: Position)
+base_cell(P_band, P_inner) :- band_view(P_band, P, P_inner), in(P, Col), params.base(Col).
+
+.decl piece_cell(p_band: Position, p_inner: Position, col: Color)
+piece_cell(P_band, P_inner, Col) :-
+    band_view(P_band, P, P_inner), in(P, Col),  // band cell
     !params.bg(Col), !params.base(Col).    // neither blank nor staircase
 
 // Every margin a band frame admits for the block's piece-side edge.
 .decl margin_cand(k: number)
 margin_cand(K) :-
-    bbox.inner(_, _, P_inner),                 // a band frame
+    band_view(_, _, P_inner),                  // a band frame
     params.piece_dir(D), axis_of(D, A), sub_extent(P_inner, A, K).
 
 // Where a band's piece lands once its anchored edge reaches the block's.
-.decl landed(b: Position, k: number, p_inner: Position, col: Color)
-landed(B, K, P_inner, Col) :-
-    piece_cell(B, P_piece, Col), margin_cand(K),  // piece cell, candidate margin
+.decl landed(p_band: Position, k: number, p_inner: Position, col: Color)
+landed(P_band, K, P_inner, Col) :-
+    piece_cell(P_band, P_piece, Col), margin_cand(K),  // piece cell, candidate margin
     params.piece_dir(D), opposite(D, D_in),       // away from the piece edge
     jump(P_piece, D_in, K, P_inner).
 
 // The hole a band's staircase leaves in the block, against a band's landed
 // piece.
 .init exact = KeyedSetCompare<BandMargin, BandMargin, Position>
-exact.observed_member([B, K], P_inner) :-
-    bbox.inner(B, _, P_inner), margin_cand(K),            // band cell, candidate margin
+exact.observed_member([P_band, K], P_inner) :-
+    band_view(P_band, _, P_inner), margin_cand(K),       // band cell, candidate margin
     params.piece_dir(D), dist(P_inner, D, K2), K2 >= K,  // within the block
-    !base_cell(B, P_inner).                              // and not the staircase
-exact.pattern_member([B, K], P_inner) :- landed(B, K, P_inner, _).
+    !base_cell(P_band, P_inner).                         // and not the staircase
+exact.pattern_member([P_band, K], P_inner) :- landed(P_band, K, P_inner, _).
 
-// Band B2's piece fills band B's hole exactly, at margin K.
-.decl fits(b: Position, piece_band: Position, k: number)
-fits(B, B2, K) :- exact.equals([B, K], [B2, K]).
+// The piece of band piece_band fills band p_band's hole exactly, at margin k.
+.decl fits(p_band: Position, piece_band: Position, k: number)
+fits(P_band, P_band2, K) :- exact.equals([P_band, K], [P_band2, K]).
 
-.decl pair(b: Position, piece_band: Position, k: number, ch: Choice)
+.decl pair(p_band: Position, piece_band: Position, k: number, ch: Choice)
 
 // --- Given ---
-pair(B, B2, K, $Given()) :- fits(B, B2, K), params.block_margin(K).
+pair(P_band, P_band2, K, $Given()) :- fits(P_band, P_band2, K), params.block_margin(K).
 
 // --- Common ---
 // A margin some band admits no piece at.
 .decl unmatched(k: number)
-unmatched(K) :- margin_cand(K), band_cell(B, _), !fits(B, _, K).
+unmatched(K) :- margin_cand(K), band_cell(P_band, _), !fits(P_band, _, K).
 
-pair(B, B2, K, $Common()) :- fits(B, B2, K), !unmatched(K).
+pair(P_band, P_band2, K, $Common()) :- fits(P_band, P_band2, K), !unmatched(K).
 
 // --- shared ---
 
@@ -109,8 +113,8 @@ impl_choice($Given()). impl_choice($Common()).
 
 .decl filled(p: Position, col: Color, ch: Choice)
 filled(P, Col, Ch) :-
-    pair(B, B2, K, Ch), landed(B2, K, P_inner, Col),  // the paired piece, landed
-    bbox.inner(B, P, P_inner).                         // back to the grid
+    pair(P_band, P_band2, K, Ch), landed(P_band2, K, P_inner, Col),  // the paired piece, landed
+    band_view(P_band, P, P_inner).                                   // back to the grid
 
 .decl out(p: Position, col: Color, c: Choice)
 out(P, Col, Ch) :-

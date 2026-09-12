@@ -32,9 +32,14 @@ line_color.item([A, L], Col) :- axis_elem(A), in(P, Col), split(P, A, L, _).
 lattice.cell($U(), P) :- in(P, _).
 lattice.divider($U(), A, L) :- line_color.value([A, L], Col), !params.bg(Col).
 
-// The tile seen as its own frame. A cell on a cut sits in no tile.
-.init tile_frame = BoxFrame<Position>
-tile_frame.cell(P_tile, P) :- lattice.tile_of($U(), P, P_tile).
+// Each tile's box. A cell on a cut sits in no tile.
+.init tile_box = Bbox<Position>
+tile_box.cell(P_tile, P) :- lattice.tile_of($U(), P, P_tile).
+
+// A tile's cell, in the tile's own frame.
+.decl tile_cell(p_tile: Position, p: Position, p_intile: Position)
+tile_cell(P_tile, P, P_intile) :-
+    tile_box.cell(P_tile, P), tile_box.box(P_tile, B), crop(P, B, P_intile).
 
 .decl tile_holds(col: Color, p_tile: Position)
 tile_holds(Col, P_tile) :- lattice.tile_of($U(), P, P_tile), in(P, Col), !params.bg(Col).
@@ -49,28 +54,28 @@ block_dir(G, G) :- diag_dir_elem(G).
 
 // The tile a block is missing: it lacks col, and the three tiles toward
 // corner diag hold col.
-.decl gap(col: Color, m: Position, diag: DiagDir)
-gap(Col, M, G) :-
-    lattice.tile_of($U(), _, M), !tile_holds(Col, M),
+.decl gap(col: Color, p_tile: Position, diag: DiagDir)
+gap(Col, P_tile, G) :-
+    lattice.tile_of($U(), _, P_tile), !tile_holds(Col, P_tile),
     diag_dirs(G, _, D1, D2),
-    neighbor(M, D1, S1), tile_holds(Col, S1),  // across each cut
-    neighbor(M, D2, S2), tile_holds(Col, S2),
-    neighbor(M, G, S3), tile_holds(Col, S3).   // and across the corner
+    neighbor(P_tile, D1, S1), tile_holds(Col, S1),  // across each cut
+    neighbor(P_tile, D2, S2), tile_holds(Col, S2),
+    neighbor(P_tile, G, S3), tile_holds(Col, S3).   // and across the corner
 
 // Reflection in the cut, or the pair of cuts, crossed on the way toward d.
 .decl reflect(d: Dir8, p_intile: Position, p_out: Position)
 reflect(D, P, Q) :-
-    tile_frame.inner(_, _, P), axis_of(D, A), flip_of(A, F), apply(F, P, Q).
+    tile_cell(_, _, P), axis_of(D, A), flip_of(A, F), apply(F, P, Q).
 reflect(G, P, Q) :-
     diag_dirs(G, _, D1, D2), reflect(D1, P, P_mid), reflect(D2, P_mid, Q).
 
 // A cell of col's block and the cell of the missing tile it mirrors onto.
 .decl mirror(col: Color, p_src: Position, p_dst: Position)
 mirror(Col, P_src, P_dst) :-
-    gap(Col, M, G), block_dir(G, D), neighbor(M, D, S),  // a tile of the block
-    tile_frame.inner(S, P_src, P_intile),                // a cell of it
-    reflect(D, P_intile, P_out),                         // reflected across the cuts
-    tile_frame.inner(M, P_dst, P_out).                   // landing in the missing tile
+    gap(Col, P_tile, G), block_dir(G, D), neighbor(P_tile, D, S),  // a tile of the block
+    tile_cell(S, P_src, P_intile),                                 // a cell of it
+    reflect(D, P_intile, P_out),                                   // reflected across the cuts
+    tile_cell(P_tile, P_dst, P_out).                               // landing in the missing tile
 
 // --- output ---
 

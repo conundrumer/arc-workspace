@@ -94,11 +94,11 @@ most.cand($Size(), Id, N) :- piece_count.tally(Id, N).
 
 // --- output ---
 
-.init view = BoxFrame<Choice>
+.init view = Bbox<Choice>
 view.cell(Ch, P) :- most.high(Ch, Id, _), panel(Id, P).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P_inner, Col, Ch) :- view.inner(Ch, P, P_inner), in(P, Col).
+out(P_inner, Col, Ch) :- view.cell(Ch, P), view.box(Ch, B), crop(P, B, P_inner), in(P, Col).
 
 .comp Determine {
     .init objs = Components<Example>
@@ -110,9 +110,9 @@ out(P_inner, Col, Ch) :- view.inner(Ch, P, P_inner), in(P, Col).
     .init biggest = Mode<Unit, EI, Position>
     biggest.item($U(), [E, Id], P) :- objs.label(E, P, Id).
 
-    .init bbox = BoxFrame<EI>
+    .init bbox = Bbox<EI>
     bbox.cell([E, Id], P) :- biggest.mode($U(), [E, Id]), objs.label(E, P, Id).
 
     .decl shape(p: Position)
-    shape(S) :- bbox.inner(_, _, S).
+    shape(P_inner) :- bbox.cell(K, P), bbox.box(K, B), crop(P, B, P_inner).
 }

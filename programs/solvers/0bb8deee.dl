@@ -17,8 +17,8 @@
     .decl bg(col: Color) bg(0).
 
     // --- Place ---
-    // Box each quadrant's crop occupies in the output canvas, as margins.
-    .decl tile_box(p_tile: Position, p_box: Position)
+    // Box each quadrant's crop occupies in the output canvas.
+    .decl tile_box(p_tile: Position, b: Box)
     tile_box([0, 1, 0, 1], [0, 3, 0, 3]).
     tile_box([0, 1, 1, 0], [0, 3, 3, 0]).
     tile_box([1, 0, 0, 1], [3, 0, 0, 3]).
@@ -48,22 +48,26 @@ parse.cell($U(), P, Col) :- in(P, Col).
 // --- crops ---
 
 // Each quadrant viewed from the bounding box of the shape it holds.
-.init hull = BoxFrame<Position>
+.init hull = Bbox<Position>
 hull.cell(P_tile, P) :- parse.frame.tile_of($U(), P, P_tile), in(P, Col), !params.bg(Col).
-hull.grid(P_tile, P) :- parse.frame.tile_of($U(), P, P_tile).
+
+.decl crop_cell(p_tile: Position, p_intile: Position, col: Color)
+crop_cell(P_tile, P_intile, Col) :-
+    parse.frame.tile_of($U(), P, P_tile), in(P, Col),   // quadrant cell
+    hull.box(P_tile, B), crop(P, B, P_intile).          // in the shape's box
 
 .decl out(p: Position, col: Color, c: Choice)
 
 // --- Concat ---
 out(P_grid_out, Col, $Concat()) :-
-    hull.inner(P_tile, P, P_intile), in(P, Col),   // cropped cell
+    crop_cell(P_tile, P_intile, Col),
     concat_2d(P_tile, P_intile, 0, P_grid_out).   // crops abut
 
 // --- Place ---
 out(P_grid_out, Col, $Place()) :-
-    hull.inner(P_tile, P, P_intile), in(P, Col),  // cropped cell
-    params.tile_box(P_tile, P_box),              // the quadrant's stored box
-    compose(P_box, P_intile, P_grid_out).        // seated in it
+    crop_cell(P_tile, P_intile, Col),
+    params.tile_box(P_tile, B),              // the quadrant's stored box
+    compose(B, P_intile, P_grid_out).        // seated in it
 
 .comp Determine {
     .type ET = [e: Example, p_tile: Position]
@@ -77,10 +81,10 @@ out(P_grid_out, Col, $Place()) :-
         ex.frame.tile_of(E, P, P_tile), ex.cell(E, P, Col), !params.bg(Col).
 
     // A crop keeps its shape's color, so its box in the output canvas is
-    // that color's bbox in the example output.
+    // that color's bounding box in the example output.
     .init obox = Bbox<ET>
     obox.cell([E, P_tile], P) :- ex_out(E, P, Col), shape_color(E, P_tile, Col).
 
-    .decl tile_box(p_tile: Position, p_box: Position)
-    tile_box(P_tile, P_box) :- obox.box([_, P_tile], P_box).
+    .decl tile_box(p_tile: Position, b: Box)
+    tile_box(P_tile, B) :- obox.box([_, P_tile], B).
 }

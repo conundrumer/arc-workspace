@@ -90,16 +90,15 @@ right_angle(Cor, L, $Pointed()) :-
 // corner next to Cor's, and the triangle is the cells on Cor's side of it:
 // no farther from the edge the two corners share than from the other edge
 // of that next corner.
-.init tri = BoxFrame<Locate>
+.init tri = Bbox<Locate>
 tri.cell(L, P) :- hyp(P, L).
-tri.grid(L, P) :- in(P, _), locate_choice(L).
 
 right_angle(Cor, L, $Inside()) :-
-    corner_cand(Cor, L),
-    tri.inner(L, Cor, Cor_in), corner_dist(Cor_in, Dc, 0),       // Cor's box corner
+    corner_cand(Cor, L), tri.box(L, B),
+    box_corner(Cor, B, Dc),                                      // Cor's box corner
     diag_dirs(Dc, A, D1, _), diag_dirs(Dh, A, D1, _), Dh != Dc,  // the next corner along edge D1
-    mark(M), !hyp(M, L), M != Cor, tri.inner(L, M, M_in),        // non-vertex mark in the box
-    diag_dist(M_in, Dh, A, K1, K2), K1 <= K2.                    // on Cor's side of Dh's diagonal
+    mark(M), !hyp(M, L), M != Cor, crop(M, B, P_inner),          // non-vertex mark in the box
+    diag_dist(P_inner, Dh, A, K1, K2), K1 <= K2.                 // on Cor's side of Dh's diagonal
 
 // --- The triangle ---
 

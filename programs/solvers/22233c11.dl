@@ -19,18 +19,19 @@
 block_cell(P) :- in(P, Col), params.block(Col).
 
 // The box the two squares share.
-.init bbox = BoxFrame<Unit>
+.init bbox = Bbox<Unit>
 bbox.cell($U(), P) :- block_cell(P).
-bbox.grid($U(), P) :- in(P, _).
+
+// A cell the box covers, in both frames.
+.decl box_cell(p: Position, p_inner: Position)
+box_cell(P, P_inner) :- in(P, _), bbox.box($U(), B), crop(P, B, P_inner).
 
 // Its quadrants.
 .init place = DiagPlacement<Unit>
-place.cell($U(), P_box) :- bbox.inner($U(), _, P_box).
+place.cell($U(), P_inner) :- box_cell(_, P_inner).
 
 .decl quad_cell(diag: DiagDir, p: Position)
-quad_cell(Diag, P) :-
-    bbox.inner($U(), P, P_box),          // a cell of the box, in both frames
-    place.quadrant($U(), P_box, Diag).  // the quadrant it sits in
+quad_cell(Diag, P) :- box_cell(P, P_inner), place.quadrant($U(), P_inner, Diag).
 
 .init quad = Bbox<DiagDir>
 quad.cell(Diag, P) :- quad_cell(Diag, P).
@@ -41,8 +42,9 @@ filled(Diag) :- quad_cell(Diag, P), block_cell(P).
 .decl echo_cell(p: Position)
 echo_cell(Q) :-
     quad_cell(Diag, P), !filled(Diag),  // cell of a square-free quadrant
-    quad.extents(Diag, _, N, N),
-    jump(P, Diag, N, Q).                // one quadrant outward
+    quad.box(Diag, B),
+    box_extent(B, P, A, N), perp(A, A2), box_extent(B, P, A2, N),  // its side, both axes
+    jump(P, Diag, N, Q).                                           // one quadrant outward
 
 .decl out(p: Position, col: Color)
 out(P, Col) :-

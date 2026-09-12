@@ -1,6 +1,5 @@
 // 103eff5b
 // concept: scale d4 stamp
-
 // A key of loose colored cells sits apart from a monochrome shape. The shape is
 // the key blown up: each key cell becomes a block, after a fixed turn. The
 // output paints the blocks in their key cells' colors; the rest of the grid
@@ -31,13 +30,14 @@
 .decl key_cell(k: Unit, p: Position, col: Color)
 key_cell($U(), P, Col) :- in(P, Col), !params.bg(Col), !params.shape_col(Col).
 
-.init key_box = BoxFrame<Unit>
+.init key_box = Bbox<Unit>
 key_box.cell(K, P) :- key_cell(K, P, _).
 
 // The key turned into the shape's block arrangement.
 .decl tile_col(p_tile: Position, col: Color)
 tile_col(P_tile, Col) :-
-    key_cell(K, P, Col), key_box.inner(K, P, P_tile_key),   // key cell in the key's box
+    key_cell(K, P, Col), key_box.box(K, B),
+    crop(P, B, P_tile_key),                                 // key cell in the key's box
     params.turn_to_shape(D), apply(D, P_tile_key, P_tile).  // turned onto the shape
 
 // --- the shape, viewed in its own box ---
@@ -45,13 +45,16 @@ tile_col(P_tile, Col) :-
 .decl shape_cell(k: Unit, p: Position)
 shape_cell($U(), P) :- in(P, Col), params.shape_col(Col).
 
-.init shape_box = BoxFrame<Unit>
+.init shape_box = Bbox<Unit>
 shape_box.cell(K, P) :- shape_cell(K, P).
-shape_box.grid($U(), P) :- in(P, _).
+
+// The grid cells the shape's box covers, in the box's own frame.
+.decl box_view(p_grid: Position, p_inner: Position)
+box_view(P, P_inner) :- in(P, _), shape_box.box($U(), B), crop(P, B, P_inner).
 
 // The shape's box divided into the key's block arrangement.
 .init blocks = Divide2D<Unit>
-blocks.cell(P_box) :- shape_box.inner($U(), _, P_box).
+blocks.cell(P_inner) :- box_view(_, P_inner).
 blocks.dim($U(), A, N) :- tile_col(P_tile, _), axis_elem(A), axis_dim(P_tile, A, N).
 blocks.gap(0).
 
@@ -60,16 +63,16 @@ blocks.gap(0).
 // --- Recolor ---
 
 out(P_grid, Col, $Recolor()) :-
-    shape_cell(K, P_grid), shape_box.inner(K, P_grid, P_box),  // shape cell in the box
-    blocks.tile(K, P_box, P_tile, _), tile_col(P_tile, Col).   // its block's key color
+    shape_cell(K, P_grid), box_view(P_grid, P_inner),           // shape cell in the box
+    blocks.tile(K, P_inner, P_tile, _), tile_col(P_tile, Col).  // its block's key color
 out(P, Col, $Recolor()) :- in(P, Col), !params.shape_col(Col).
 
 // --- Stamp ---
 
 out(P_grid, Col, $Stamp()) :-
-    shape_box.inner($U(), P_grid, P_box),  // box cell
-    blocks.tile($U(), P_box, P_tile, _),   // its block
+    box_view(P_grid, P_inner),              // box cell
+    blocks.tile($U(), P_inner, P_tile, _),  // its block
     ( tile_col(P_tile, Col)                   // block the key fills
     ; !tile_col(P_tile, _), params.bg(Col)    // blank block
     ).
-out(P, Col, $Stamp()) :- in(P, Col), !shape_box.inner($U(), P, _).
+out(P, Col, $Stamp()) :- in(P, Col), !box_view(P, _).

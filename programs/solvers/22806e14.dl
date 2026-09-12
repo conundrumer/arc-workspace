@@ -27,13 +27,12 @@ comps.node(Col, P) :- in(P, Col), !params.bg(Col).
 .decl cell(id: Ident, p: Position)
 cell(Id, P) :- comps.label(_, P, Id).
 
-.init bbox = BoxFrame<Ident>
+.init bbox = Bbox<Ident>
 bbox.cell(Id, P) :- cell(Id, P).
-bbox.grid(Id, P) :- cell(Id, _), in(P, _).
 
 // The marker is the one object that leaves a hole in its own bbox.
 .decl marker(id: Ident)
-marker(Id) :- bbox.inside(Id, P), !cell(Id, P).
+marker(Id) :- in(P, _), bbox.box(Id, B), inside(P, B), !cell(Id, P).
 
 .decl marker_cell(p: Position)
 marker_cell(P) :- marker(Id), cell(Id, P).
@@ -46,7 +45,8 @@ rect(Id) :- cell(Id, _), !marker(Id).
 
 // A rectangle even on either axis has no center and takes no mark.
 .decl center(id: Ident, p: Position)
-center(Id, P) :- rect(Id), bbox.inner(Id, P, P_in), centered(P_in).
+center(Id, P) :-
+    rect(Id), in(P, _), bbox.box(Id, B), crop(P, B, P_inner), centered(P_inner).
 
 .decl mark(p: Position)
 mark(P) :- center(_, P).

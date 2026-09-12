@@ -38,11 +38,11 @@
 .comp Parse<Key> {
     .decl cell(k: Key, p: Position, col: Color)
 
-    .init frame = BoxFrame<Key>
-    frame.cell(K, P) :- cell(K, P, Col), params.marker(Col).
+    .init bbox = Bbox<Key>
+    bbox.cell(K, P) :- cell(K, P, Col), params.marker(Col).
 
     .decl key_shape(k: Key, p_inkey: Position)
-    key_shape(K, P_inkey) :- frame.inner(K, _, P_inkey).
+    key_shape(K, P_inkey) :- bbox.cell(K, P), bbox.box(K, B), crop(P, B, P_inkey).
 }
 
 .init parse = Parse<Unit>

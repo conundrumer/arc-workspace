@@ -8,8 +8,7 @@
 
 #include "../lib.dl"
 
-.comp Params {
-}
+.comp Params {}
 
 .init params = Params
 
@@ -30,14 +29,13 @@ pieces.node($U(), P) :- ink(P, _).
 .decl piece(id: Ident, p: Position)
 piece(Id, P) :- pieces.label($U(), P, Id).
 
-.init bbox = BoxFrame<Ident>
+.init bbox = Bbox<Ident>
 bbox.cell(Id, P) :- piece(Id, P).
-bbox.grid(Id, P) :- piece(Id, _), in(P, _).
 
 // A piece that leaves a hole in its own box is the template; the others fill
 // their box and are the rectangles.
 .decl ragged(id: Ident)
-ragged(Id) :- bbox.inside(Id, P), !piece(Id, P).
+ragged(Id) :- in(P, _), bbox.box(Id, B), inside(P, B), !piece(Id, P).
 
 .decl rect_cell(id: Ident, p: Position, col: Color)
 rect_cell(Id, P, Col) :- piece(Id, P), !ragged(Id), ink(P, Col).
@@ -49,7 +47,8 @@ tmpl(P, Col) :- piece(Id, P), ragged(Id), ink(P, Col).
 
 // The center cell of the template's bbox.
 .decl anchor(p_grid: Position)
-anchor(P) :- ragged(Id), bbox.inner(Id, P, P_inner), centered(P_inner).
+anchor(P) :-
+    ragged(Id), in(P, _), bbox.box(Id, B), crop(P, B, P_inner), centered(P_inner).
 
 .init rim = Rim<Unit>
 rim.cell($U(), P) :- tmpl(P, _).
@@ -77,7 +76,7 @@ travel(M, Delta) :- marker(_, M), anchor(A), relative(A, M, Delta).
 // Each template cell, where the marker's stamp puts it.
 .decl carried(id: Ident, p: Position, p_out: Position)
 carried(Id, P, P_out) :-
-    marker(Id, M), travel(M, Delta),             // the marker's relative
+    marker(Id, M), travel(M, Delta),             // the marker's offset
     tmpl(P, _), compose(P, Delta, P_out).        // a template cell carried along
 
 // --- rays ---

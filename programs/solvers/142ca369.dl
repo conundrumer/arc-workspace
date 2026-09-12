@@ -165,14 +165,14 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !paint(P, _, Ch).
     pick.equiv([E, P_l], [E2, P_l2]) :-
         launch_cell(E, P_l, _, _), launch_cell(E2, P_l2, _, _).
 
-    .init bbox = BoxFrame<EP>
+    .init bbox = Bbox<EP>
     bbox.cell(K, P) :- pick.rep(K, K), flood.reach(K, P).
 
     .decl marker_glyph(p: Position)
-    marker_glyph(S) :- bbox.inner(_, _, S).
+    marker_glyph(P_inner) :- bbox.cell(K, P), bbox.box(K, B), crop(P, B, P_inner).
 
     .decl marker_launch(p: Position)
-    marker_launch(S) :- bbox.inner([E, P_l], P_l, S).
+    marker_launch(P_inner) :- bbox.box([_, P_l], B), crop(P_l, B, P_inner).
 
     .decl marker_aim(d: DiagDir)
     marker_aim(D) :- pick.rep([E, P_l], [E, P_l]), launch_cell(E, P_l, D, _).

@@ -20,19 +20,16 @@
 .init field = Mode<Unit, Color, Position>
 field.item($U(), Col, P) :- in(P, Col).
 
-// Every color but the commonest bounds a rectangle.
-.decl rect_color(col: Color)
-rect_color(Col) :- in(_, Col), !field.mode($U(), Col).
-
 // --- rectangles ---
 
-// A color's rectangle is its bounding box, read in the box's own frame.
-.init bbox = BoxFrame<Color>
-bbox.cell(Col, P) :- in(P, Col), rect_color(Col).
-bbox.grid(Col, P) :- in(P, _), rect_color(Col).
+// Every color but the commonest bounds a rectangle, and that rectangle is the
+// color's bounding box.
+.init bbox = Bbox<Color>
+bbox.cell(Col, P) :- in(P, Col), !field.mode($U(), Col).
 
+// The rectangle read in its box's own frame.
 .decl rect_cell(col: Color, p_inner: Position)
-rect_cell(Col, P_inner) :- bbox.inner(Col, _, P_inner).
+rect_cell(Col, P_inner) :- in(P_grid, _), bbox.box(Col, B), crop(P_grid, B, P_inner).
 
 .init size = Mode<Unit, Color, Position>
 size.item($U(), Col, P_inner) :- rect_cell(Col, P_inner).

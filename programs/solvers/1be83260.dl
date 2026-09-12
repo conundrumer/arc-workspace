@@ -31,12 +31,11 @@
 
 // --- the block region and its lattice ---
 
-.init region = BoxFrame<Unit>
+.init region = Bbox<Unit>
 region.cell($U(), P) :- in(P, Col), !params.bg(Col).
-region.grid($U(), P) :- in(P, _).
 
 .decl cell(p: Position, col: Color)
-cell(P_region, Col) :- region.inner($U(), P, P_region), in(P, Col).
+cell(P_region, Col) :- in(P_grid, Col), region.box($U(), B), crop(P_grid, B, P_region).
 
 .decl inked_line(l: Position)
 inked_line(L) :- cell(P, Col), !params.bg(Col), axis_elem(A), split(P, A, L, _).
@@ -47,16 +46,21 @@ df.divider($U(), A, L) :-
     cell(P, _), axis_elem(A), split(P, A, L, _),  // a line of the region
     !inked_line(L).                               // carrying no ink: a separator
 
-.init block = BoxFrame<Position>
+.init block = Bbox<Position>
 block.cell(P_tile, P) :- df.tile_of($U(), P, P_tile).
+
+// A region cell, with its block and its place in that block's frame.
+.decl block_cell(p_tile: Position, p_region: Position, p_intile: Position)
+block_cell(P_tile, P_region, P_intile) :-
+    block.cell(P_tile, P_region), block.box(P_tile, B), crop(P_region, B, P_intile).
 
 // --- the template every block carries ---
 
 .decl hole(p_intile: Position)
-hole(P_intile) :- block.inner(_, P, P_intile), cell(P, Col), params.bg(Col).
+hole(P_intile) :- block_cell(_, P_region, P_intile), cell(P_region, Col), params.bg(Col).
 
 .decl body(p_intile: Position)
-body(P_intile) :- block.inner(_, _, P_intile), !hole(P_intile).
+body(P_intile) :- block_cell(_, _, P_intile), !hole(P_intile).
 
 // --- the border color and the key block ---
 
@@ -71,8 +75,8 @@ border(Col) :- block_color(_, Col), !absent(Col).
 
 .decl key_cell(p_intile: Position, col: Color)
 key_cell(P_intile, Col) :-
-    block_color(P_tile, K), !border(K),          // the key block: it carries another color
-    block.inner(P_tile, P, P_intile), cell(P, Col).
+    block_color(P_tile, K), !border(K),                  // the key block: it carries another color
+    block_cell(P_tile, P_region, P_intile), cell(P_region, Col).
 
 // --- the palette the key block's holes spell out ---
 
@@ -93,8 +97,9 @@ palette(P_tile, Col) :-
 
 .decl painted(p: Position, col: Color)
 painted(P_region, Col) :-
-    block.inner(P_tile, P_region, P_intile), body(P_intile),   // on its block's template body
-    palette(P_tile, Col).                                      // in the block's palette color
+    block_cell(P_tile, P_region, P_intile),
+    body(P_intile),          // on its block's template body
+    palette(P_tile, Col).    // in the block's palette color
 
 out(P_region, Col, $Repaint()) :-
     cell(P_region, _),

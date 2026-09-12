@@ -61,7 +61,7 @@ pax(A) :- axis_elem(A), !stack_defect(A).
 trail_dir(D) :-
     pax(A), axis_of(D, A),
     stage_rank(I0, 0), size.tally(In, N), growth_order.rank_desc($U(), N, 0),  // seed, top stage
-    sbox.box(I0, M0), sbox.box(In, Mn), nearer(D, M0, Mn).
+    sbox.box(I0, B0), sbox.box(In, Bn), nearer(D, B0, Bn).
 
 .decl grow_dir(d: Dir)
 grow_dir(D2) :- trail_dir(D), opposite(D, D2).
@@ -84,8 +84,9 @@ drawn_line(L) :- stage_line(_, L).
 // carries over — the drawn stages already align there.
 .decl drawn(l: Position, y: Position, col: Color)
 drawn(L, Y, Col) :-
-    stage_line(Id, L), stage_of(P, Id), in(P, Col),               // stage cell
-    trail_dir(Td), sbox.edge_min(Id, Td, T), jump(P, Td, T, Y).  // to scene frame
+    stage_line(Id, L), stage_of(P, Id), in(P, Col),   // stage cell
+    trail_dir(Td), sbox.box(Id, B), dist(B, Td, T),   // its trailing margin
+    jump(P, Td, T, Y).                                // to scene frame
 
 // A stage's layer: its new cells — present at L, absent from the stage before.
 .decl layer(l: Position, y: Position)
@@ -218,7 +219,8 @@ far.cand(L, S) :- content(L, Y), trail_dir(Td), dist(Y, Td, S).
 .decl slot(l: Position, lg: Position)
 slot(L, Lg) :-
     stage_line(Id, L),
-    trail_dir(Td), sbox.edge_min(Id, Td, T), axis_line(Lg), dist(Lg, Td, T).
+    trail_dir(Td), sbox.box(Id, B), dist(B, Td, T),
+    axis_line(Lg), dist(Lg, Td, T).
 slot(L2, Lg2) :-
     slot(L, Lg), far.high(L, F),
     grow_dir(G), neighbor(L, G, L2), axis_line(L2), !drawn_line(L2),
@@ -227,17 +229,16 @@ slot(L2, Lg2) :-
 
 // --- window ---
 
-.init win = BoxFrame<Unit>
+.init win = Bbox<Unit>
 win.cell($U(), P) :- in(P, Col), params.marker(Col).
-win.grid($U(), P) :- in(P, _).
 
 // The slot whose along-extent contains the marker window.
 .decl target(l: Position, lg: Position)
 target(L, Lg) :-
-    slot(L, Lg), win.box($U(), W),
-    trail_dir(Td), dist(Lg, Td, Ts), dist(W, Td, Wn), Ts <= Wn,   // starts at or before
+    slot(L, Lg), win.box($U(), B),
+    trail_dir(Td), dist(Lg, Td, Ts), dist(B, Td, Tw), Ts <= Tw,   // starts at or before
     grow_dir(G), far.high(L, F), jump(Lg, G, F, Lfar),
-    dist(Lfar, G, Kf), dist(W, G, Kw), Kw >= Kf.                  // ends at or after
+    dist(Lfar, G, Kf), dist(B, G, Kw), Kw >= Kf.                  // ends at or after
 
 // --- color generators ---
 
@@ -304,13 +305,13 @@ col_reach(L, Y, C) :-
 // read the closure's color there; cells the stage does not cover are bg.
 .decl shown(p: Position, col: Color)
 shown(P, C) :-
-    win.inside($U(), P),
+    in(P, _), win.box($U(), B), inside(P, B),   // a cell the window covers
     target(L, Lg), trail_dir(Td), dist(Lg, Td, T), jump(P, Td, T, Y),
     content(L, Y), col_reach(L, Y, C).
 
 .decl out(p: Position, col: Color)
-out(Pw, C) :-
-    win.inner($U(), P, Pw),
+out(P_inner, C) :-
+    in(P, _), win.box($U(), B), crop(P, B, P_inner),   // a window cell in the window's frame
     ( shown(P, C)                   // scene cell
     ; !shown(P, _), params.bg(C)    // uncovered window cell
     ).

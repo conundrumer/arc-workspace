@@ -26,36 +26,34 @@
 .init shapes = Components<Unit>
 shapes.node($U(), P) :- in(P, Col), !params.bg(Col).
 
-.decl copy(id: Ident)
-copy(Id) :- shapes.label($U(), _, Id).
-
-.init bbox = BoxFrame<Ident>
+.init bbox = Bbox<Ident>
 bbox.cell(Id, P) :- shapes.label($U(), P, Id).
-bbox.grid(Id, P) :- copy(Id), in(P, _).   // so the whole box is viewed, filled or not
 
 // A copy's footprint in its own box frame. Equal boxes are one frame, so the
 // two footprints compare cell for cell.
 .decl filled(id: Ident, p: Position)
-filled(Id, P_inner) :- shapes.label($U(), P, Id), bbox.inner(Id, P, P_inner).
+filled(Id, P_inner) :- shapes.label($U(), P, Id), bbox.box(Id, B), crop(P, B, P_inner).
 
 // A cell copy Id fills and the other copy does not.
 .decl only_in(id: Ident, p: Position)
-only_in(Id, P) :- filled(Id, P), copy(Id2), Id2 != Id, !filled(Id2, P).
+only_in(Id, P) :-
+    filled(Id, P), shapes.label($U(), _, Id2), Id2 != Id,   // the other copy
+    !filled(Id2, P).                                        // which leaves this cell empty
 
 // The disagreeing cells, in the shared frame.
 .decl differs(p: Position, ch: Choice)
 
 // --- crop ---
 
-.init view = BoxFrame<Choice>
+.init view = Bbox<Choice>
 view.cell(Ch, P) :- differs(P, Ch).
-view.grid(Ch, P) :- differs(_, Ch), bbox.inner(_, _, P).   // every cell of the shared frame
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P_inner, Col, Ch) :-
-    view.inner(Ch, P, P_inner),
-    ( differs(P, Ch), params.mark(Col)      // disagreeing cell
-    ; !differs(P, Ch), params.bg(Col)       // the rest of the crop
+    in(P_grid, _), bbox.box(_, B_copy), crop(P_grid, B_copy, P_shared),   // a cell of the shared frame
+    view.box(Ch, B), crop(P_shared, B, P_inner),                           // cropped to the disagreeing cells
+    ( differs(P_shared, Ch), params.mark(Col)      // disagreeing cell
+    ; !differs(P_shared, Ch), params.bg(Col)       // the rest of the crop
     ).
 
 // --- Xor ---

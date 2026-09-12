@@ -33,7 +33,7 @@ impl_choice($Match()). impl_choice($Odd()). impl_choice($Ink()).
 .init panels = Components<Unit>
 panels.node($U(), P) :- in(P, Col), !params.bg(Col).
 
-.init bbox = BoxFrame<Ident>
+.init bbox = Bbox<Ident>
 bbox.cell(Id, P) :- panels.label($U(), P, Id).
 
 .decl mark(id: Ident, p: Position, col: Color)
@@ -76,8 +76,9 @@ travel(V, Ch) :- handle(P, Ch), lone_mark(_, P2, _), relative(P, P2, V).
 stamped(Q, Col, Ch) :- glyph_mark(P, Col), travel(V, Ch), compose(P, V, Q).
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P_intile, Col, Ch) :-
-    impl_choice(Ch), lone_mark(Id, _, _), bbox.inner(Id, P, P_intile),
+out(P_inner, Col, Ch) :-
+    impl_choice(Ch), lone_mark(Id, _, _),                     // the lone mark's panel
+    bbox.cell(Id, P), bbox.box(Id, B), crop(P, B, P_inner),   // a cell of it, read from its box
     ( stamped(P, Col, Ch)                     // a mark of the moved glyph
     ; !stamped(P, _, Ch), params.canvas(Col)  // bare canvas
     ).

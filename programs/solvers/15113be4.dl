@@ -55,7 +55,7 @@ impl_choice($Count()). impl_choice($Size()).
 .init parse = Parse<Unit>
 parse.cell($U(), P, Col) :- in(P, Col).
 
-.init key_box = BoxFrame<Unit>
+.init key_box = Bbox<Unit>
 key_box.cell($U(), P) :- parse.key.reach($U(), P).
 
 // Which cell a position sits in, and where in that cell.
@@ -78,8 +78,8 @@ cell_dim(N, Ch) :- cell_at(_, _, P_intile, Ch), axis_elem(A), axis_dim(P_intile,
 // The footprint: the key's interior scaled down to one grid cell.
 .decl footprint(p_intile: Position, ch: Choice)
 footprint(P_intile, Ch) :-
-    in(P, Col), parse.key_color($U(), Col),     // a key cell
-    key_box.inner($U(), P, P_inner),            // in the key's own frame
+    in(P, Col), parse.key_color($U(), Col), key_box.cell($U(), P),  // a key cell
+    key_box.box($U(), B), crop(P, B, P_inner),                      // in the key's own frame
     cell_dim(N, Ch), divide_2d(P_inner, N, 0, P_intile, _).
 
 // The footprint against each cell's ink, both in cell frame.

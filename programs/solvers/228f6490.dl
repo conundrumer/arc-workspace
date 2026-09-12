@@ -1,9 +1,9 @@
 // 228f6490
 // concept: objects enclose move count
-// Walls of params.wall close off holes, and loose shapes of other colors lie around
-// the grid. A shape whose footprint is a hole's moves into it: the hole takes
-// the shape's color, and the shape's cells go back to params.bg. Several shapes can
-// fit one hole, and the cases differ in which one moves:
+// Walls of one color close off holes, and loose shapes of other colors lie
+// around the grid. A shape whose footprint is a hole's moves into it: the hole
+// takes the shape's color, and the shape's cells go back to the background.
+// Several shapes can fit one hole, and the cases differ in which one moves:
 //
 //   $Unique — the shape whose color no other shape carries.
 //   $AllFit — the shape whose color has no shape that fits nowhere.
@@ -38,16 +38,16 @@ shapes.node(Col, P) :- in(P, Col), !params.bg(Col), !params.wall(Col).
 .decl shape(s: Shape, p: Position)
 shape([Col, Id], P) :- shapes.label(Col, P, Id).
 
-.init hbox = BoxFrame<Ident>
+.init hbox = Bbox<Ident>
 hbox.cell(H, P) :- hole(H, P).
 
-.init sbox = BoxFrame<Shape>
+.init sbox = Bbox<Shape>
 sbox.cell(S, P) :- shape(S, P).
 
 // Same footprint: the two sets fill their boxes alike.
 .init fits = KeyedSetCompare<Shape, Ident, Position>
-fits.pattern_member(H, P_inner)  :- hbox.inner(H, _, P_inner).
-fits.observed_member(S, P_inner) :- sbox.inner(S, _, P_inner).
+fits.pattern_member(H, P_inner) :- hole(H, P), hbox.box(H, B), crop(P, B, P_inner).
+fits.observed_member(S, P_inner) :- shape(S, P), sbox.box(S, B), crop(P, B, P_inner).
 
 // The shape each hole draws in.
 .decl taken(h: Ident, s: Shape, ch: Choice)

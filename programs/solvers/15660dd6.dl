@@ -48,38 +48,41 @@ frame_cell(P) :- in(P, Col), params.frame_col(Col).
 .init rings = Components<Unit>
 rings.node($U(), P) :- frame_cell(P).
 
-.init panel = BoxFrame<Ident>
+.init panel = Bbox<Ident>
 panel.cell(Id, P) :- rings.label($U(), P, Id).
-panel.grid(Id, P) :- rings.label($U(), _, Id), in(P, _).
 
 // A panel position on its box's edge. Unkeyed: the lattice's panels share
 // one size, so every panel has the same ring.
 .decl ring_pos(p_intile: Position)
-ring_pos(P_intile) :- panel.inner(_, _, P_intile), dir_elem(D), dist(P_intile, D, 0).
+ring_pos(P_intile) :-
+    in(P, _), panel.box(_, B), box_edge(P, B, _), crop(P, B, P_intile).
 
 .decl inner_cell(id: Ident, p_intile: Position, col: Color)
 inner_cell(Id, P_intile, Col) :-
-    panel.inner(Id, P, P_intile), interior(P_intile, ZERO),  // inside the ring
-    in(P, Col).
+    in(P, Col), panel.box(Id, B), crop(P, B, P_intile),
+    interior(P_intile, ZERO).                                // inside the ring
 
 // A panel's column and band, as the two halves of its box placement.
 .decl panel_pos(id: Ident, p_col: Position, p_band: Position)
 panel_pos(Id, P_col, P_band) :-
-    panel.box(Id, M), params.layout_axis(A), split(M, A, P_col, P_band).
+    panel.box(Id, B), params.layout_axis(A), split(B, A, P_col, P_band).
 
 // --- lattice ---
 
-.init lattice = BoxFrame<Unit>
+.init lattice = Bbox<Unit>
 lattice.cell($U(), P) :- frame_cell(P).
-lattice.grid($U(), P) :- in(P, _).
+
+// A cell the lattice's box covers.
+.decl in_lattice(p: Position)
+in_lattice(P) :- in(P, _), lattice.box($U(), B), inside(P, B).
 
 // --- labels ---
 
 // A colored cell outside the lattice names the band it sits in.
 .decl band_label(p_band: Position, col: Color)
 band_label(P_band, Col) :-
-    in(P_label, Col), !params.bg(Col), !lattice.viewed($U(), P_label),  // label cell
-    panel_pos(_, _, P_band), inside(P_label, P_band).                      // in the band
+    in(P_label, Col), !params.bg(Col), !in_lattice(P_label),  // label cell
+    panel_pos(_, _, P_band), inside(P_label, P_band).         // in the band
 
 // --- donor ---
 
@@ -119,15 +122,18 @@ stencil(D, P_col, P_intile, Col) :-
 // One band of the lattice.
 .init out_frame = Frame2D<Unit>
 out_frame.extent($U(), A, N) :-
-    params.layout_axis(A), lattice.extent($U(), A, N).
+    params.layout_axis(A),
+    lattice.box($U(), B), lattice.cell($U(), P), box_extent(B, P, A, N).
 out_frame.extent($U(), A_band, N) :-
-    params.layout_axis(A), perp(A, A_band), panel.extent(_, A_band, N).
+    params.layout_axis(A), perp(A, A_band),
+    panel.box(Id, B), panel.cell(Id, P), box_extent(B, P, A_band, N).
 
 // A panel cell keeps its place along the columns and lands in the one band.
 .decl out_pos(p_col: Position, p_intile: Position, p: Position)
 out_pos(P_col, P_intile, P) :-
-    panel.inner(Id, P_grid, P_intile), panel_pos(Id, P_col, _),
-    lattice.inner($U(), P_grid, P_lat),
+    in(P_grid, _),
+    panel.box(Id, B), crop(P_grid, B, P_intile), panel_pos(Id, P_col, _),
+    lattice.box($U(), B_lat), crop(P_grid, B_lat, P_lat),
     params.layout_axis(A),
     split(P_lat, A, P_along, _), split(P_intile, A, _, P_across),
     compose(P_along, P_across, P).

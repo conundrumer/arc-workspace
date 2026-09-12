@@ -10,12 +10,8 @@
 
 .init params = Params
 
-.decl ink(p: Position)
-ink(P) :- in(P, Col), !params.bg(Col).
-
-.init boxframe = BoxFrame<Unit>
-boxframe.cell($U(), P) :- ink(P).
-boxframe.grid($U(), P) :- in(P, _).
+.init bbox = Bbox<Unit>
+bbox.cell($U(), P) :- in(P, Col), !params.bg(Col).
 
 .decl out(p: Position, col: Color)
-out(P_out, Col) :- in(P, Col), boxframe.inner($U(), P, P_out).
+out(P_inner, Col) :- in(P_grid, Col), bbox.box($U(), B), crop(P_grid, B, P_inner).

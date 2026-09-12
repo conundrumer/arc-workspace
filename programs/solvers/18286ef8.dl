@@ -88,10 +88,12 @@ dest(Q, $Slide()) :- gaze_cell(P, _), slide.rest($U(), P, _, Q).
 
 // The gaze's tile viewed from its own extent, so a tile position of the
 // arrangement names a cell inside it.
-.init bbox = BoxFrame<Unit>
+.init bbox = Bbox<Unit>
 bbox.cell($U(), P) :- gaze_tile_cell(P).
 
-dest(Q, $Map()) :- target_tile(P_tile_t), bbox.inner($U(), Q, P_tile_t).
+dest(Q, $Map()) :-
+    target_tile(P_tile_t),
+    gaze_tile_cell(Q), bbox.box($U(), B), crop(Q, B, P_tile_t).
 
 // --- output ---
 

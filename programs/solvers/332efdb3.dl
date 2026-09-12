@@ -108,11 +108,13 @@ out(P, Col, $Inset()) :-
         perp(A, A2), span(A2, S2), K2 <= S2.
 
     // Each window's cells in the motif's own frame.
-    .init wframe = BoxFrame<Window>
+    .init wframe = Bbox<Window>
     wframe.cell(W, Q) :- window(W, Q).
 
     .decl motif(p: Position, c: Color)
-    motif(Pm, Col) :- wframe.inner([E, Dg], Q, Pm), ex_out(E, Q, Col).
+    motif(Pm, Col) :-
+        window([E, Dg], Q), wframe.box([E, Dg], B), crop(Q, B, Pm),
+        ex_out(E, Q, Col).
 
     // The dots span the interior frame, so their distance to a grid edge is
     // the border's width there.
@@ -120,5 +122,5 @@ out(P, Col, $Inset()) :-
     bbox.cell(E, P) :- ex_out(E, P, Col), params.dot(Col).
 
     .decl border_width(k: number)
-    border_width(K) :- bbox.edge_min(_, _, K).
+    border_width(K) :- bbox.box(_, B), dir_elem(D), dist(B, D, K).
 }

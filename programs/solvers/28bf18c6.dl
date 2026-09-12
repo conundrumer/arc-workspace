@@ -13,15 +13,14 @@
 
 .init params = Params
 
-.init boxframe = BoxFrame<Unit>
-boxframe.cell($U(), P) :- in(P, Col), !params.bg(Col).
-boxframe.grid($U(), P) :- in(P, _).
+.init shape_box = Bbox<Unit>
+shape_box.cell($U(), P) :- in(P, Col), !params.bg(Col).
 
 .init strip = AxisFrame<Unit>
 strip.extent($U(), A, N) :- params.axis(A), params.copies(N).
 
 .decl out(p: Position, col: Color)
 out(P_grid, Col) :-
-    in(P, Col), boxframe.inner($U(), P, P_crop),  // crop cell
-    strip.cell($U(), A, P_copy),                  // copy index
-    concat_slab(P_copy, P_crop, A, 0, P_grid).    // place within the copy
+    in(P, Col), shape_box.box($U(), B), crop(P, B, P_intile),  // a cell of the shape's box
+    strip.cell($U(), A, P_copy),                               // copy index
+    concat_slab(P_copy, P_intile, A, 0, P_grid).               // place within the copy

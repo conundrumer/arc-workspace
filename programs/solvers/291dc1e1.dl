@@ -54,15 +54,19 @@
     .decl block(key: Key, id: Ident)
     block(K, Id) :- blocks.label(K, _, Id).
 
-    .init bbox = BoxFrame<KI>
+    .init bbox = Bbox<KI>
     bbox.cell([K, Id], P) :- blocks.label(K, P, Id).
 
-    .decl cropped(key: Key, id: Ident, p_intile: Position, col: Color)
-    cropped(K, Id, P_intile, Col) :- cell(K, P, Col), bbox.inner([K, Id], P, P_intile).
+    .decl cropped(key: Key, id: Ident, p_inner: Position, col: Color)
+    cropped(K, Id, P_inner, Col) :-
+        blocks.label(K, P, Id), cell(K, P, Col),
+        bbox.box([K, Id], B), crop(P, B, P_inner).
 
     // A block lying along axis a: longer that way than across.
     .decl along(key: Key, id: Ident, a: Axis)
-    along(K, Id, A) :- bbox.extents([K, Id], A, N1, N2), N1 > N2.
+    along(K, Id, A) :-
+        blocks.label(K, P, Id), bbox.box([K, Id], B),
+        box_extent(B, P, A, N1), perp(A, A2), box_extent(B, P, A2, N2), N1 > N2.
 }
 
 .init parse = Parse<Unit>
@@ -79,9 +83,9 @@ slab_axis(A2) :- stack_axis(A), perp(A, A2).
 
 .decl turned(id: Ident, p: Position, col: Color)
 turned(Id, P_turn, Col) :-
-    parse.cropped($U(), Id, P_intile, Col), stack_axis(A),
-    ( !parse.along($U(), Id, A), P_turn = P_intile                           // lies across already
-    ; parse.along($U(), Id, A), params.rot(R), apply(R, P_intile, P_turn)    // turn it across
+    parse.cropped($U(), Id, P_inner, Col), stack_axis(A),
+    ( !parse.along($U(), Id, A), P_turn = P_inner                           // lies across already
+    ; parse.along($U(), Id, A), params.rot(R), apply(R, P_inner, P_turn)    // turn it across
     ).
 
 // --- the slab each block sits in ---
@@ -101,11 +105,11 @@ placed(Id, P_slab, Col) :-
 
 // --- the reading order ---
 
-// Each block compares as its box's margin Position.
+// Each block compares as its box.
 .init reading = LexOrder<Choice>
 reading.corner(Ch, Diag) :- parse.mark_corner($U(), Diag), primary_axis(_, Ch).
 reading.axis(Ch, A) :- primary_axis(A, Ch).
-reading.cell(Ch, P) :- parse.bbox.box([$U(), _], P), primary_axis(_, Ch).
+reading.cell(Ch, B) :- parse.bbox.box([$U(), _], B), primary_axis(_, Ch).
 
 .decl primary_axis(a: Axis, ch: Choice)
 
@@ -134,7 +138,8 @@ overlap(A, Id1, Id2) :-
 .decl unstratified(a: Axis)
 unstratified(A) :-
     overlap(A, Id1, Id2), axis_of(D, A),
-    parse.bbox.edge_min([$U(), Id1], D, K1), parse.bbox.edge_min([$U(), Id2], D, K2),
+    parse.bbox.box([$U(), Id1], B1), dist(B1, D, K1),
+    parse.bbox.box([$U(), Id2], B2), dist(B2, D, K2),
     K1 != K2.
 
 // --- the stack ---
@@ -146,7 +151,7 @@ slot.dist_set(Ch, R) :- reading.rank(Ch, _, R).
 .decl out(p: Position, col: Color, ch: Choice)
 out(P_grid, Col, Ch) :-
     reading.rank(Ch, B, R), parse.bbox.box([$U(), Id], B),    // the block, by its ranked box
-    slot.pos(Ch, R, P_tile),                                    // its place in the stack
+    slot.pos(Ch, R, P_tile),                                  // its place in the stack
     slab.cell(Id, P_slab),
     ( placed(Id, P_slab, Col)                   // the block
     ; !placed(Id, P_slab, _), params.bg(Col)    // the margin beside it
@@ -168,8 +173,8 @@ out(P_grid, Col, Ch) :-
     .init occ = Occurrences<KID, Color>
     occ.cell([E, Id, D], P, Col) :- turnable(E, Id), d4_elem(D), ex_out(E, P, Col).
     occ.shape([E, Id, D], P_turn, Col) :-
-        turnable(E, Id), d4_elem(D), ex.cropped(E, Id, P_intile, Col),
-        apply(D, P_intile, P_turn).
+        turnable(E, Id), d4_elem(D), ex.cropped(E, Id, P_inner, Col),
+        apply(D, P_inner, P_turn).
 
     .decl unseen(d: D4)
     unseen(D) :- turnable(E, Id), d4_elem(D), !occ.occurrence([E, Id, D], _).
