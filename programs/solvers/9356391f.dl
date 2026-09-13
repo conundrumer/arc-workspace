@@ -1,0 +1,82 @@
+// 9356391f
+// draft
+// keywords: decompose markers rank
+// input: A divider line cuts the grid into a legend panel of one line and a
+//  canvas panel holding one marker cell.
+// output: The legend entry K cells from the params.read_dir edge gives the
+//  color of the square ring K cells out from the marker. The canvas holds
+//  those rings; the legend panel and the divider stay.
+
+// what a bg legend entry means
+.type Choice =
+    // it paints its ring bg, so the legend gives the canvas its whole
+    // profile outward from the marker
+    Paint {}
+    // it names no ring, and the canvas keeps what it held there
+  | Skip {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+    .decl divider(c: Color) divider(5).
+
+    // The side of the divider the legend sits on.
+    .decl legend_dir(d: Dir) legend_dir(DIR_T).
+
+    // The quarter turn from legend_dir onto the edge the legend is read from.
+    .decl read_sense(s: Sense) read_sense(SENSE_CC).
+
+    .decl read_dir(d: Dir)
+    read_dir(D) :- legend_dir(D0), read_sense(S), turn(S, D0, D).
+}
+
+.init params = Params
+
+// The panels the divider cuts, stacked along params.legend_dir's axis.
+.init panel = DividerTiles<Unit>
+panel.cell($U(), P) :- in(P, _).
+panel.divider($U(), A, L) :-
+    in(P, Col), params.divider(Col),                         // divider cell
+    params.legend_dir(D), axis_of(D, A), split(P, A, L, _).  // its line
+
+.decl legend(k: number, col: Color)
+legend(K, Col) :-
+    in(P, Col),
+    params.legend_dir(D), panel.part_idx($U(), P, D, 0),  // on the legend side
+    params.read_dir(D_read), dist(P, D_read, K).          // index = distance to that edge
+
+.decl canvas(p: Position)
+canvas(P) :-
+    params.legend_dir(D), opposite(D, D2),
+    panel.part_idx($U(), P, D2, 0).                       // on the far side of the divider
+
+.decl marker(p: Position)
+marker(P) :- canvas(P), in(P, Col), !params.bg(Col).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Paint()).
+impl_choice($Skip()).
+
+.decl ring_color(p: Position, col: Color)
+ring_color(P, Col) :-
+    marker(P_mark), legend(K, Col),               // marker, legend entry
+    uniform_outset(K, W), compose(P_mark, W, B),  // the box K cells out
+    canvas(P), box_edge(P, B, _).                 // on that box's edge
+
+// The legend panel and the divider stay.
+out(P, Col, Ch) :- in(P, Col), !canvas(P), impl_choice(Ch).
+
+// --- Paint ---
+
+out(P, Col, $Paint()) :- ring_color(P, Col).
+
+// --- Skip ---
+
+.decl inked(p: Position, col: Color)
+inked(P, Col) :- ring_color(P, Col), !params.bg(Col).
+
+out(P, Col, $Skip()) :-
+    canvas(P),
+    ( inked(P, Col)                  // a ring the legend names
+    ; !inked(P, _), in(P, Col) ).    // no ring here: the canvas as it was

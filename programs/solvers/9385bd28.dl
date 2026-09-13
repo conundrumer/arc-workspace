@@ -1,0 +1,105 @@
+// 9385bd28
+// draft
+// keywords: objects markers span mapping rank
+// input: a legend, the one region that holds more than one color, pairing a
+//  key color on one edge of its box with a value color across from it; and
+//  elsewhere pieces drawn in the key colors
+// output: Each entry fills the box its key color's pieces span with the
+//  entry's value color, and a mark among those pieces keeps its own color.
+//  Where two boxes cover one cell, the entry nearer the legend's head
+//  decides it.
+
+// which pieces of a key color are marks
+.type Choice =
+    // a piece that leaves a cell of its own box open
+    Open {}
+    // every piece, when its key color draws more than one
+  | Paired {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // the legend's head: of two entries, the one nearer this edge wins
+    .decl head_dir(d: Dir) head_dir(DIR_T).
+    // the quarter turn from the head to the legend's key side
+    .decl key_sense(s: Sense) key_sense(SENSE_CC).
+
+    // an entry's key cell lies on this edge of the legend, its value cell
+    // on the opposite one
+    .decl key_dir(d: Dir)
+    key_dir(D) :- head_dir(D_head), key_sense(S), turn(S, D_head, D).
+}
+
+.init params = Params
+
+// The field is the commonest color; the regions are what is drawn on it.
+.init field = Mode<Unit, Color, Position>
+field.item($U(), Col, P) :- in(P, Col).
+
+.init regions = Components<Unit>
+regions.node($U(), P) :- in(P, Col), !field.mode($U(), Col).
+
+// --- the legend ---
+
+// The legend is the one region that holds more than one color.
+.init region_color = Unanimous<Ident, Color>
+region_color.item(Id, Col) :- regions.label($U(), P, Id), in(P, Col).
+
+.init legend = Bbox<Unit>
+legend.cell($U(), P) :- regions.label($U(), P, Id), region_color.clash(Id).
+
+.decl in_legend(p: Position)
+in_legend(P) :- in(P, _), legend.box($U(), B), crop(P, B, _).
+
+// An entry pairs a key cell with the value cell across the legend from it.
+.decl entry(e: Position, c_key: Color, c_val: Color)
+entry(P, C_key, C_val) :-
+    legend.box($U(), B), params.key_dir(D), opposite(D, D2),
+    in(P, C_key), box_edge(P, B, D),                   // the key cell
+    in(Q, C_val), box_edge(Q, B, D2),                  // the value cell
+    params.head_dir(D_head), same_dist(D_head, P, Q).  // the two on one entry
+
+// --- the pieces an entry acts on ---
+
+.decl drawn(c: Color, p: Position)
+drawn(C, P) :- entry(_, C, _), in(P, C), !in_legend(P).
+
+.init pieces = Components<Color>
+pieces.node(C, P) :- drawn(C, P).
+
+.decl mark(ch: Choice, c: Color, p: Position)
+
+// --- Open ---
+
+.init piece_box = Bbox<Ident>
+piece_box.cell(Id, P) :- pieces.label(_, P, Id).
+
+.decl open_box(id: Ident)
+open_box(Id) :- piece_box.box(Id, B), in(P, _), crop(P, B, _), !pieces.label(_, P, Id).
+
+mark($Open(), C, P) :- pieces.label(C, P, Id), open_box(Id).
+
+// --- Paired ---
+
+mark($Paired(), C, P) :- pieces.label(C, P, Id), pieces.label(C, _, Id2), Id != Id2.
+
+// --- the fill ---
+
+// The box an entry's pieces span.
+.init span = Bbox<Color>
+span.cell(C, P) :- drawn(C, P).
+
+.decl covered(p: Position, e: Position)
+covered(P, E) :- entry(E, C, _), span.box(C, B), in(P, _), crop(P, B, _).
+
+.decl outranked(p: Position, e: Position)
+outranked(P, E) :- covered(P, E), covered(P, E2), params.head_dir(D), nearer(D, E2, E).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Open()). impl_choice($Paired()).
+
+out(P, Col, Ch) :-
+    covered(P, E), !outranked(P, E), entry(E, C_key, C_val), impl_choice(Ch),
+    ( mark(Ch, C_key, P), Col = C_key      // a mark keeps its color
+    ; !mark(Ch, C_key, P), Col = C_val ).
+out(P, Col, Ch) :- in(P, Col), !covered(P, _), impl_choice(Ch).

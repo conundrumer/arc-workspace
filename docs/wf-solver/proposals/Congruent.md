@@ -1,29 +1,29 @@
 # `Congruent<Key, Val>` — keyed cell sets equal up to translation
 
-Which keyed valued cell sets hold the same cells up to translation: each set is read in its own bounding box, and two keys are congruent when those box-relative valued cells are the same set. A solver that asks "which object has this object's shape" builds it from two lib comps and three rules — a `BoxFrame` over the sets, a `KeyedSetCompare` fed from that box's `inner` on both sides, and a readout of `equals`.
+Which keyed valued cell sets hold the same cells up to translation: each set is read in its own bounding box, and two keys are congruent when those box-relative valued cells are the same set. A solver that asks "which object has this object's shape" builds it from two lib comps and three rules — a `Bbox` over the sets, a `KeyedSetCompare` fed through `crop` on both sides, and a readout of `equals`.
 
 ```
 .comp Congruent<Key, Val> {
     .decl cell(key: Key, p: Position, v: Val)  // input
 
-    .init box = BoxFrame<Key>
+    .init box = Bbox<Key>
     box.cell(Ky, P) :- cell(Ky, P, _).
 
     // A cell in its own set's box.
     .type Member = [p_inner: Position, v: Val]
 
     .init same = KeyedSetCompare<Key, Key, Member>
-    same.pattern_member(Ky, [I, V])  :- box.inner(Ky, P, I), cell(Ky, P, V).
-    same.observed_member(Ky, [I, V]) :- box.inner(Ky, P, I), cell(Ky, P, V).
+    same.pattern_member(Ky, [P_inner, V])  :- cell(Ky, P, V), box.box(Ky, B), crop(P, B, P_inner).
+    same.observed_member(Ky, [P_inner, V]) :- cell(Ky, P, V), box.box(Ky, B), crop(P, B, P_inner).
 
     .decl congruent(key: Key, key2: Key)
     congruent(Ky, Ky2) :- same.equals(Ky, Ky2).
 }
 ```
 
-Not: a set compared against a stored pattern, which carries its own frame and needs no box (`covers` and `equals` on `KeyedSetCompare` already state that); matching closed over D4 (`D4Map.onto`); containment without equality (`covers`); the translations that fix one set (`ShiftInvariance`); content equality inside a frame the parse already gives, where the box would quotient away the placement the model reads; a fit test at an explicit candidate translation, where the box would discard that translation.
+Not: a set compared against a stored pattern, which carries its own frame and needs no box (`covers` and `equals` on `KeyedSetCompare` already state that); matching closed over D4 (`D4Map.onto`); containment without equality (`covers`); the translations that fix one set (`OffsetInvariance`); content equality inside a frame the parse already gives, where the box would quotient away the placement the model reads; a fit test at an explicit candidate translation, where the box would discard that translation.
 
-Match: two rules feeding one `KeyedSetCompare` instance's `pattern_member` and `observed_member` from the same box-relative cell relation — a `BoxFrame`, `MarginFrame`, or `Reframe` `inner` readout — with `equals` read as sameness of shape. Also any hand-written equal-shape test over two derived cell sets: a count comparison, a paired walk over both sets, or a `displacement` held constant across a set. Grep: `KeyedSetCompare<`, `pattern_member`, `observed_member`, `BoxFrame<`, `inner(`, `equals(`.
+Match: two rules feeding one `KeyedSetCompare` instance's `pattern_member` and `observed_member` from box-relative cells — a `Bbox` `box` readout passed through `crop`, or any other read of a cell in its own set's box — with `equals` read as sameness of shape. Also any hand-written equal-shape test over two derived cell sets: a count comparison, a paired walk over both sets, or a `relative` offset held constant across a set. Grep: `KeyedSetCompare<`, `pattern_member`, `observed_member`, `Bbox<`, `crop(`, `relative(`, `equals(`.
 
 Survey: 2026-09-09 08:00.
 

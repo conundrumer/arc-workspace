@@ -1,0 +1,52 @@
+// 93b4f4b3
+// draft
+// keywords: objects enclose crop match
+// input: A panel of one color closes off holes from the grid edge. The other
+//  non-background colors are the shapes, one shape per color.
+// output: The panel's box, with each hole in the color of the shape whose
+//  footprint that hole has.
+
+.decl out(p: Position, col: Color)
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+}
+
+.init params = Params
+
+// The holes: the background regions closed off from the grid edge.
+.init closed = Closed<Unit>
+closed.cell($U(), P) :- in(P, Col), params.bg(Col).
+
+.decl hole(h: Ident, p: Position)
+hole(H, P) :- closed.region($U(), P, H).
+
+// The panel: the color that closes the holes off.
+.decl panel(col: Color)
+panel(Col) :- hole(_, P), dir_elem(D), neighbor(P, D, Q), in(Q, Col), !params.bg(Col).
+
+.init panel_box = Bbox<Unit>
+panel_box.cell($U(), P) :- in(P, Col), panel(Col).
+
+// The shapes: the cells of the other colors. The panel is a container, not a
+// shape.
+.decl shape(col: Color, p: Position)
+shape(Col, P) :- in(P, Col), !params.bg(Col), !panel(Col).
+
+.init hole_box = Bbox<Ident>
+hole_box.cell(H, P) :- hole(H, P).
+
+.init shape_box = Bbox<Color>
+shape_box.cell(Col, P) :- shape(Col, P).
+
+// Same footprint: the two sets fill their boxes alike.
+.init fits = KeyedSetCompare<Ident, Color, Position>
+fits.pattern_member(Col, P_inner) :- shape(Col, P), shape_box.box(Col, B), crop(P, B, P_inner).
+fits.observed_member(H, P_inner) :- hole(H, P), hole_box.box(H, B), crop(P, B, P_inner).
+
+out(P_inner, Col) :-
+    panel_box.box($U(), B),
+    ( in(P, Col), panel(Col)           // the panel's own cell, in its color
+    ; hole(H, P), fits.equals(H, Col)  // a hole, in the color of its shape
+    ),
+    crop(P, B, P_inner).

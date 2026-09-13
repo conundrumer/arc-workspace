@@ -1,0 +1,104 @@
+// 92e50de0
+// draft
+// keywords: decompose wallpaper stamp parity
+// output: Copies of the input's ink stand elsewhere in the grid; a cell no
+//  copy reaches keeps its input color.
+
+// where the copies stand
+.type Choice =
+    // drawn lines cut the grid into a lattice, and the ink repeats every
+    // tile_period cells of that lattice, on both axes
+    Alternate {}
+    // the whole scene repeats at a period of grid cells, on both axes
+  | Wallpaper {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+
+    // --- Alternate ---
+
+    // Lattice cells from one copy to the next.
+    .decl tile_period(k: number) tile_period(2).
+
+    // The corner of its cell a copy aligns to.
+    .decl anchor(dg: DiagDir) anchor(DIAG_TL).
+
+    // --- Wallpaper ---
+
+    // Grid cells from one copy to the next, per axis.
+    .decl period(a: Axis, k: number)
+    period(AXIS_V, 8).
+    period(AXIS_H, 8).
+}
+
+.init params = Params
+
+.type Line = [a: Axis, l: Position]
+
+.decl impl_choice(ch: Choice)
+impl_choice($Alternate()). impl_choice($Wallpaper()).
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.bg(Col).
+
+// The cells a copy paints.
+.decl paint(p: Position, col: Color, ch: Choice)
+
+// --- Alternate ---
+
+.init line_color = Unanimous<Line, Color>
+line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
+
+.init lattice = DividerTiles<Unit>
+lattice.cell($U(), P) :- in(P, _).
+// A line of one non-bg color cuts the grid rather than sits in a cell.
+lattice.divider($U(), A, L) :- line_color.value([A, L], Col), !params.bg(Col).
+
+.init tile_box = Bbox<Position>
+tile_box.cell(P_tile, P) :- lattice.tile_of($U(), P, P_tile).
+
+// A grid cell with its lattice cell and its place in that cell's frame.
+.decl tile_cell(p_tile: Position, p: Position, p_intile: Position)
+tile_cell(P_tile, P, P_intile) :-
+    lattice.tile_of($U(), P, P_tile),
+    tile_box.box(P_tile, B), crop(P, B, P_intile).
+
+.decl copy_tile(p_tile: Position)
+copy_tile(P_tile) :- lattice.tile_of($U(), P, P_tile), ink(P, _).   // the cell the ink sits in
+copy_tile(P_tile2) :-
+    copy_tile(P_tile), params.tile_period(K), dir_elem(D),
+    jump(P_tile, D, K, P_tile2),                // one period on
+    lattice.tile_of($U(), _, P_tile2).          // a cell of the lattice
+
+paint(Q, Col, $Alternate()) :-
+    tile_cell(_, P, P_intile), ink(P, Col),                    // an ink cell in its tile
+    copy_tile(P_tile), tile_cell(P_tile, Q, Q_intile),         // a cell of a copy's tile
+    params.anchor(Dg), corner_anchor(Dg, P_intile, Q_intile).  // the same place from the anchor corner
+
+// --- Wallpaper ---
+
+paint(P, Col, $Wallpaper()) :- ink(P, Col).
+paint(Q, Col, $Wallpaper()) :-
+    paint(P, Col, $Wallpaper()),
+    dir_elem(D), axis_of(D, A), params.period(A, K),
+    jump(P, D, K, Q), in(Q, _).                 // one period on, inside the grid
+
+// --- output ---
+
+out(P, Col, Ch) :-
+    in(P, Col_in), impl_choice(Ch),
+    ( paint(P, Col, Ch)                       // a copy's cell
+    ; !paint(P, _, Ch), Col = Col_in          // untouched
+    ).
+
+.comp Determine {
+    // The output stands still under a shift of one period, and under no
+    // shorter one.
+    .init repeat = OffsetInvariance<Example, Color>
+    repeat.cell(E, P, Col) :- ex_out(E, P, Col).
+
+    .decl period(a: Axis, k: number)
+    period(A, K) :- repeat.min_period(_, A, K).
+}
