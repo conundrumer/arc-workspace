@@ -10,8 +10,7 @@ uv run python scripts/materialize.py
 uv run python scripts/run_dl.py          # run all Souffle solvers; --help for per-solver tooling
 uv run python scripts/run_dl.py <stem>   # run one
 uv run python scripts/context.py         # the handbook: the solver docs and the lib as a session reads them
-uv run python scripts/context.py --write # write the handbook agents and the lib interface files
-uv run python scripts/claude.py [args]   # write the handbook agents, then start claude with the handbook in its system prompt
+uv run python scripts/context.py --write # generate the files used by handbook readers
 ```
 
 Souffle binary required for `.dl` solvers (`brew install souffle`).
@@ -25,4 +24,3 @@ A running server re-execs itself when `server.py` or a module under `solver_cons
 
 - **Patches are the source of truth** for corrections. `data/tasks/` regenerates from them via `scripts/materialize.py`. Upstream is pinned via submodules; corrections live in patches, not in `data/upstream/`.
 - **Type aliases use the `type` keyword** (PEP 695, native to 3.12).
-- **Keep `README.md` in sync** with anything human-facing: setup steps, editor tooling, doc index. It's the human entry point; this file is the Claude entry point. Don't duplicate Claude-only conventions into the README.
