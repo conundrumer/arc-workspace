@@ -5,6 +5,7 @@ import bisect
 import re
 
 from dl.dlparse import SECTION_RE, Comp, Decl, ParseError, Rigid, parse
+from dl.paths import REPO_ROOT
 
 # Per-mode IO directives, appended to the built source.
 SOLVE_DIRECTIVES = ".input in(IO=stdin)\n.output out(IO=stdout)\n"
@@ -540,3 +541,37 @@ def build_determine_source(source: str, params: dict[str, list[str]]) -> str:
             )
     appended = "\n".join(lines)
     return f"{expand_macros(source)}\n{appended}\n{DETERMINE_DIRECTIVES}"
+
+
+KEYWORDS_DOC = REPO_ROOT / "docs" / "wf-solver" / "keywords.md"
+
+KEYWORD_FIELD_RE = re.compile(r"^// (keywords|concept|shape): (.*)$")
+KEYWORD_BULLET_RE = re.compile(r"^- `([^`]+)`")
+
+
+def doc_keywords(text: str) -> dict[str, list[str]]:
+    """The keywords of keywords.md, in doc order, per `##` section. A
+    keyword is the leading code span of a bullet."""
+    sections: dict[str, list[str]] = {}
+    held: list[str] = []
+    for line in text.splitlines():
+        if line.startswith("## "):
+            held = sections.setdefault(line[3:].strip(), [])
+        elif m := KEYWORD_BULLET_RE.match(line):
+            held.append(m.group(1))
+    return sections
+
+
+def header_keywords(source: str) -> list[str]:
+    """The keywords of a solver's `// keywords:` line. The retired
+    `concept:` and `shape:` fields are read the same way, and a header that
+    carries both gives the keywords of both. A field's second line is not
+    read. The header is the leading comment block, so the first line that
+    is not a comment ends it."""
+    fields: dict[str, list[str]] = {}
+    for line in source.splitlines():
+        if not line.strip().startswith("//"):
+            break
+        if (m := KEYWORD_FIELD_RE.match(line)) and m.group(1) not in fields:
+            fields[m.group(1)] = m.group(2).split()
+    return [word for words in fields.values() for word in words]

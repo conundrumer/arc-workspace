@@ -152,6 +152,7 @@ NAMING = "Naming — the comp name says the mechanism"
 SCOPE = "Scope — the rule reaches outside its own example"
 SWEEP = "tile size — the pairs leave the largest tile untested"
 SWEEP2 = "gap width — the pairs show one gap only"
+CITE = "principles.md Coverage cites this solver on approval."
 
 
 def draft(*, reviews=(), comps=(), workarounds=(), rules=0) -> str:
@@ -192,6 +193,21 @@ def test_the_review_order_bands(srv):
     assert by_id["eee"]["reach"] == {"principle": 0, "proposal": 0,
                                      "workaround": 1, "sweep": 0}
     assert by_id["eee"]["dl_size"] == 3 and by_id["ddd"]["dl_size"] == 1
+
+
+def test_the_autopilot_order_leads_with_the_lines_a_pass_can_act_on(srv):
+    """The autopilot orders the same rows on its own: the most review lines,
+    workaround lines, and proposal comps first, then the larger solver, then
+    the id. A comp counts as one, whatever its entry state."""
+    write_solver(srv, "aaa", draft(reviews=[("principle", NAMING)], rules=5))
+    write_solver(srv, "bbb", draft(reviews=[("principle", SCOPE), ("sweep", SWEEP)],
+                                   rules=1))
+    write_solver(srv, "ccc", draft(workarounds=["a scan, not the functor"], rules=9))
+    write_solver(srv, "ddd", draft(rules=20))
+    write_solver(srv, "eee", draft(comps=["CornerDist"], rules=2))
+    assert [r["id"] for r in srv.pass_view()] == ["bbb", "ccc", "aaa", "eee", "ddd"]
+    # the lens keeps the review order
+    assert [r["id"] for r in srv.backlog_view()] == ["aaa", "bbb", "ddd", "ccc", "eee"]
 
 
 def test_the_priority_leads_the_rows_holding_its_kind(srv):
@@ -425,7 +441,15 @@ def test_the_needs_read_the_review_lines_the_comps_and_the_workarounds(srv):
                       "and not the shape it reads"],
         "proposal": ["CornerDist"],
         "workaround": ["the seam is found by a scan, not by the box functor"],
-        "sweep": []}
+        "sweep": [],
+        "cite": []}
+
+
+def test_a_cite_line_is_a_cite_need(srv):
+    """A `// review cite:` line reads as a need of kind `cite`, the way the
+    other review kinds do."""
+    write_solver(srv, "aaa", draft(reviews=[("cite", CITE)]))
+    assert srv.needs_of("aaa")["cite"] == [CITE]
 
 
 def test_approval_clears_the_review_lines_and_withdrawing_it_puts_them_back(srv):
@@ -441,6 +465,29 @@ def test_approval_clears_the_review_lines_and_withdrawing_it_puts_them_back(srv)
     assert srv.mark_draft("aaa")
     assert srv.solver_text("aaa") == REVIEWED
     assert json.loads(srv.REVIEWS_FILE.read_text()) == {}
+
+
+def test_approval_places_the_pending_citation(srv):
+    """A doc holds a solver's citation pending while the solver is a draft.
+    The user approves the solver, and the pending line becomes the citation."""
+    doc = srv.DOCS / "principles.md"
+    doc.write_text("# Coverage\n\n"
+                   "  <!-- draft: aaa \u2014 reads the legend by its corner -->\n")
+    write_solver(srv, "aaa", draft(reviews=[("cite", CITE)]))
+    assert srv.act_approve_solver({"id": "aaa"}) == {"ok": True}
+    assert doc.read_text() == ("# Coverage\n\n"
+                              "  - aaa <!-- reads the legend by its corner -->\n")
+
+
+def test_approval_leaves_another_tasks_pending_citation(srv):
+    """The pending lines name their task, and approval places only the lines
+    of the solver approved."""
+    doc = srv.DOCS / "principles.md"
+    other = "<!-- draft: bbb \u2014 reads the legend by its corner -->\n"
+    doc.write_text("# Coverage\n\n" + other)
+    write_solver(srv, "aaa", draft(reviews=[("cite", CITE)]))
+    assert srv.act_approve_solver({"id": "aaa"}) == {"ok": True}
+    assert doc.read_text() == "# Coverage\n\n" + other
 
 
 def test_the_peek_route_carries_the_header_and_the_needs(srv):

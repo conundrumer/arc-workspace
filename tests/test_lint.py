@@ -502,7 +502,7 @@ also(K) :- parse._own(_), K = 0.
 HEADER = """\
 // 74dd1130
 // draft
-// keywords: tiling recolor
+// keywords: decompose mapping
 // input: a grid of tiles, one of them recolored
 // output: the grid with every tile recolored
 // review principle: Naming — the comp name says the mechanism
@@ -523,11 +523,23 @@ def test_the_header_forms_that_pass():
 
     continued = """\
 // 74dd1130
-// keywords: tiling
+// keywords: decompose
 // output: the grid with every tile recolored
 //  and the seam between them removed
 """
     assert of(continued, "header") == []
+
+
+def test_a_continuation_line_with_a_colon_passes():
+    """A continuation line stands in the continuation form, so its text is a
+    value, whatever colon it holds."""
+    src = """\
+// 74dd1130
+// keywords: decompose
+// output: the grid with every tile recolored
+//  pieces recolored: its wires take one fill
+"""
+    assert of(src, "header") == []
 
 
 def test_the_old_header_labels_fire():
@@ -549,7 +561,7 @@ def test_the_old_header_labels_fire():
 def test_prose_in_the_header_fires_once():
     src = """\
 // 74dd1130
-// keywords: tiling
+// keywords: decompose
 // output: a grid of tiles
 // the grid is square
 // and so is every tile
@@ -559,23 +571,21 @@ def test_prose_in_the_header_fires_once():
     assert "no prose in the header" in fs[0][1]
 
 
-def test_a_review_line_off_a_draft_fires():
+def test_a_review_line_off_a_draft_passes():
     src = """\
 // 74dd1130
-// keywords: tiling
+// keywords: decompose
 // output: a grid of tiles
 // review principle: Naming — the comp name says the mechanism
 """
-    fs = of(src, "header")
-    assert [f[0] for f in fs] == [4]
-    assert "`review` stands under `draft` only" in fs[0][1]
+    assert of(src, "header") == []
 
 
 def test_a_review_sweep_line_passes():
     src = """\
 // 74dd1130
 // draft
-// keywords: tiling
+// keywords: decompose
 // output: a grid of tiles
 // review sweep: recolor — the pairs leave the fill color open
 """
@@ -585,10 +595,29 @@ def test_a_review_sweep_line_passes():
 def test_a_keyworded_header_without_an_output_fires():
     src = """\
 // 74dd1130
-// keywords: tiling
+// keywords: decompose
 // input: a grid of tiles
 """
     assert of(src, "header") == [(1, "the header carries `output:`")]
+
+
+def test_a_keyword_the_doc_does_not_list_is_a_hint():
+    src = """\
+// 74dd1130
+// keywords: decompose tiling
+// output: a grid of tiles
+"""
+    assert of(src, "header") == []
+    assert of(src, "keyword") == [(2, "`tiling` is not in keywords.md; propose it in the review")]
+
+
+def test_keywords_the_doc_lists_pass():
+    src = """\
+// 74dd1130
+// keywords: decompose mapping latent-canvas
+// output: a grid of tiles
+"""
+    assert of(src, "keyword") == []
 
 
 # ---------- the glosses over the choice ----------
@@ -596,7 +625,7 @@ def test_a_keyworded_header_without_an_output_fires():
 def test_a_choice_on_one_line_fires():
     src = """\
 // 74dd1130
-// keywords: tiling
+// keywords: decompose
 // output: a grid of tiles
 
 .type Choice = Mirror {} | Turn {}
@@ -611,7 +640,7 @@ def test_a_choice_on_one_line_fires():
 def test_a_record_choice_is_read_through_its_field_types():
     src = """\
 // 74dd1130
-// keywords: tiling
+// keywords: decompose
 // output: a grid of tiles
 
 // what to do, and what to do it to
@@ -636,7 +665,7 @@ def test_a_record_choice_is_read_through_its_field_types():
 def test_an_include_in_the_solver_fires():
     src = """\
 // 74dd1130
-// keywords: tiling
+// keywords: decompose
 // output: a grid of tiles
 #include "../lib.dl"
 """

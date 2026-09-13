@@ -87,6 +87,7 @@ def act_unapprove(it: dict) -> None:
         raise store.Reject("not approved")
     it["state"] = store.NEEDS_REVIEW
     solvers.mark_draft(it["id"])
+    solvers.withdraw_citations(it["id"])
     store.say(it, store.event("approval withdrawn"))
 
 

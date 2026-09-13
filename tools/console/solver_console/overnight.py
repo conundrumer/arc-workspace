@@ -123,8 +123,8 @@ def night_admit(inputs: TickInputs) -> list[str]:
 
 
 def night_finalize(inputs: TickInputs) -> list[str]:
-    """Start the finalize pass of the next unfinalized solver, in the lens's
-    review order. Caller holds LOCK.
+    """Start the finalize pass of the next unfinalized solver, in the
+    autopilot's finalize order. Caller holds LOCK.
 
     A task the console holds is a candidate only when its item is done up to
     finalize: one mid-chain, cut, or already finalizing is passed over in
@@ -213,9 +213,9 @@ def slot_gate(cfg: dict, kind: str, inputs: TickInputs | None = None,
 
 def tick_inputs(kinds: list[str], held: Collection[str]) -> TickInputs:
     """What the slots of `kinds` are read for, taken with LOCK down: the queue
-    script's next tasks, and the unfinalized rows, whose order comes from a
-    git read. A slot at its target is left unread, and the pass leaves it
-    alone.
+    script's next tasks, and the unfinalized rows in the autopilot's finalize
+    order; building those rows takes a git read. A slot at its target is left
+    unread, and the pass leaves it alone.
 
     A pass admits one queue task and asks whether another waits behind it, so
     it takes two rows past the tasks `held` names."""
@@ -226,7 +226,7 @@ def tick_inputs(kinds: list[str], held: Collection[str]) -> TickInputs:
         except store.Reject as exc:
             inputs.refusal = exc
     if "finalize" in kinds:
-        inputs.rows = backlog.backlog_view(backlog.solver_ages())
+        inputs.rows = backlog.pass_view(backlog.solver_ages())
     return inputs
 
 

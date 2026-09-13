@@ -29,6 +29,18 @@ def test_approve_and_withdraw(srv):
     assert srv.solver_text("a") == "// a\n// draft\n// keywords: tiles\n"
 
 
+def test_withdrawing_approval_returns_the_citation_to_pending(srv):
+    """Approval placed the solver's citation in a doc. The user withdraws the
+    approval, and the citation goes back to its pending line."""
+    it = item(srv, "a", srv.NEEDS_REVIEW, updated=True)
+    write_solver(srv, "a", "// a\n// draft\n// keywords: tiles\n")
+    doc = srv.DOCS / "principles.md"
+    doc.write_text("# Coverage\n\n  <!-- draft: a \u2014 reads the legend -->\n")
+    assert srv.act_approve("a") == {"ok": True}
+    assert srv.act_unapprove("a") == {"ok": True}
+    assert doc.read_text() == "# Coverage\n\n  <!-- draft: a \u2014 reads the legend -->\n"
+
+
 def test_the_tag_goes_under_a_task_id_line_that_ends_the_file(srv):
     """A last line carries no newline of its own, and the tag still lands on a
     line of its own."""

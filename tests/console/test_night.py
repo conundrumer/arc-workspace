@@ -986,26 +986,31 @@ def test_the_night_source_is_queue_until_set(srv):
     assert srv.night()["finalize_target"] == 5
 
 
-def test_the_unfinalized_source_starts_finalize_passes_in_review_order(srv, monkeypatch):
+def test_the_unfinalized_source_starts_finalize_passes_in_the_autopilot_order(
+        srv, monkeypatch):
     clock_at(srv, monkeypatch)
     set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50)
     sent = finalize_launch(srv, monkeypatch)
-    for tid in ("bbb", "ccc"):
-        backlog_solver(srv, tid)
-    # a chain that wrote no solver leads the review order
+    # ccc carries a line a pass can act on, so it goes ahead of bbb, which the
+    # lens's review order puts first
+    backlog_solver(srv, "bbb")
+    backlog_solver(srv, "ccc",
+                   "// draft\n// keywords: a shape\n\n// @workaround: a scan\n")
+    # a chain that wrote no solver leads the autopilot order
     srv.save_report("aaa", "refine", "no file written")
     lead = item(srv, "aaa", srv.NEEDS_REVIEW, chain=srv.default_chain())
+    assert [r["id"] for r in srv.backlog_view()] == ["aaa", "bbb", "ccc"]
     night_on(srv, source="unfinalized", finalize_target=2)
     assert srv.night_tick()["admitted"] == ["aaa"]
     assert lead["phase"] == "finalize" and lead["auto_finalize"] is True
-    assert srv.night_tick()["admitted"] == ["bbb"]
-    assert srv.find("bbb")["auto_finalize"] is True
+    assert srv.night_tick()["admitted"] == ["ccc"]
+    assert srv.find("ccc")["auto_finalize"] is True
     # the target counts every item with work coming
     assert srv.night_tick()["admitted"] == []
     assert [phase for _, phase in sent] == ["finalize", "finalize"]
     assert "admitted aaa · finalize" in srv.night()["log"][0]["text"]
     # the queue was never drawn from
-    assert {it["id"] for it in srv.STATE["items"]} == {"aaa", "bbb"}
+    assert {it["id"] for it in srv.STATE["items"]} == {"aaa", "ccc"}
 
 
 def test_the_unfinalized_source_passes_over_a_pass_in_flight(srv, monkeypatch):

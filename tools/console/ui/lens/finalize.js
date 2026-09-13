@@ -10,13 +10,14 @@ import { ItemRow, BkRow, passLabel } from "/ui/rail.js";
 import { snap as snapNow, tasks, peeks, post, ensureTask, ensureItem, ensurePeek } from "/ui/server.js";
 import { useSession } from "/ui/session.js";
 
-/* The priority: the kind of review need that leads. The server holds it,
-   since the autopilot admits passes under the same order, and it also picks
-   which badge a row leads with. */
+/* The priority: the kind of review need that leads. The server holds it, and
+   it also picks which badge a row leads with. The autopilot takes its own
+   order over the same rows. */
 const PRIORITY = {principle:"the rows with a review line on a rule of principles.md first, widest reach first",
                   proposal:"the rows with a proposal comp first, most callers first",
                   workaround:"the rows with a workaround first, most first",
-                  sweep:"the rows with a sweep first, most first"};
+                  sweep:"the rows with a sweep first, most first",
+                  cite:"the rows with a cite first, most first"};
 const PRIORITY_KINDS = Object.keys(PRIORITY);
 /* The sort: the priority's review order as the server sent it, a grouping by
    the models of the passes, or a complexity measure. One choice sorts both

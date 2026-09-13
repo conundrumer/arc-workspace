@@ -107,9 +107,9 @@ CONTINUATION = re.compile(r"^//  \s*(.*)$")
 # principled one.
 WORKAROUND = re.compile(r"^\s*//\s*@workaround:\s*(.*)$", re.M)
 # The kinds of review need, in the order the lens offers them: `principle`,
-# `workaround`, and `sweep` are read from the file's lines, `proposal` from
-# its comps.
-NEED_KINDS = ("principle", "proposal", "workaround", "sweep")
+# `workaround`, `sweep`, and `cite` are read from the file's lines, `proposal`
+# from its comps.
+NEED_KINDS = ("principle", "proposal", "workaround", "sweep", "cite")
 
 
 def header_end(lines: list[str]) -> int:
@@ -225,6 +225,44 @@ def mark_draft(item_id: str) -> bool:
 def clear_draft(item_id: str) -> bool:
     """Take the tag off: the user has approved this solver."""
     return _retag(item_id, False)
+
+
+# A citation a doc holds for a solver the user has not approved yet: the line
+# names the task and carries the text the doc takes once approval comes.
+PENDING_CITE = "^([ \\t]*)<!-- draft: {task} \u2014 (.*) -->$"
+
+# The citation as placed.
+PLACED_CITE = "^([ \\t]*)- {task} <!-- (.*) -->$"
+
+
+def place_citations(item_id: str) -> list[Path]:
+    """Place the solver's pending citations: in every doc under
+    docs/wf-solver/, a line left pending for this task becomes the citation it
+    carries. Returns the files changed."""
+    pat = re.compile(PENDING_CITE.format(task=re.escape(item_id)), re.M)
+    changed: list[Path] = []
+    for path in sorted(config.DOCS.glob("*.md")):
+        text = path.read_text()
+        out = pat.sub(rf"\1- {item_id} <!-- \2 -->", text)
+        if out != text:
+            path.write_text(out)
+            changed.append(path)
+    return changed
+
+
+def withdraw_citations(item_id: str) -> list[Path]:
+    """Return the solver's citations to pending: in every doc under
+    docs/wf-solver/, a citation of this task becomes the pending line approval
+    placed it from. Returns the files changed."""
+    pat = re.compile(PLACED_CITE.format(task=re.escape(item_id)), re.M)
+    changed: list[Path] = []
+    for path in sorted(config.DOCS.glob("*.md")):
+        text = path.read_text()
+        out = pat.sub(rf"\1<!-- draft: {item_id} — \2 -->", text)
+        if out != text:
+            path.write_text(out)
+            changed.append(path)
+    return changed
 
 
 def prop_path(rel: str) -> Path:

@@ -16,7 +16,7 @@ export function CompBadges({x}){
 }
 /* the review needs a solver holds, one badge per kind with its count; the
    kind the priority names leads, and the proposal kind is the comp badges */
-export const NEED_KINDS = ["principle","proposal","workaround","sweep"];
+export const NEED_KINDS = ["principle","proposal","workaround","sweep","cite"];
 /* A need line runs to a sentence or more, and a solver holds many of them,
    so the tooltip takes a few lines cut to a readable width; the peek pane
    carries them in full. */

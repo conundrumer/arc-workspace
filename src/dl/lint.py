@@ -16,6 +16,7 @@ from dl.dlparse import (
     Init, Item, Lit, Neg, ParseError, Rigid, Rule, TypeDecl, parse,
 )
 from dl.paths import SOLVERS_DIR
+from dl.source import KEYWORDS_DOC, doc_keywords, header_keywords
 
 
 def _lib_source() -> str:
@@ -139,6 +140,10 @@ FAMILY_CASE_CAT = "family case"
 # the fields in this order. A value continues on a line of `//` and two
 # spaces. `review` repeats; the others stand once.
 HEADER_CAT = "header"
+
+# A header keyword the doc does not list. A session adds the keyword it needs
+# and proposes it in its review, so this is a hint, not a finding.
+KEYWORD_CAT = "keyword"
 HEADER_FIELDS = ("representative", "keywords", "input", "output", "review")
 HEADER_RANK = {"representative": 1, "keywords": 1, "input": 2, "output": 3,
                "review": 4}
@@ -595,6 +600,17 @@ def _family_case(raw_lines: list[str]) -> list[tuple[str, int, str, str]]:
     return findings
 
 
+@lru_cache(maxsize=1)
+def _known_keywords() -> frozenset[str]:
+    """Every keyword keywords.md lists, read once per process. Empty when
+    the doc is not there to read, which holds the check back."""
+    try:
+        text = KEYWORDS_DOC.read_text()
+    except OSError:
+        return frozenset()
+    return frozenset(w for words in doc_keywords(text).values() for w in words)
+
+
 def _header(raw_lines: list[str]) -> list[tuple[str, int, str, str]]:
     """The header lines that break the grammar, and the fields it lacks."""
     findings: list[tuple[str, int, str, str]] = []
@@ -606,6 +622,7 @@ def _header(raw_lines: list[str]) -> list[tuple[str, int, str, str]]:
         return [(HEADER_CAT, 1, "the file opens with `// <task_id>`",
                  raw_lines[0].rstrip() if raw_lines else "")]
     last = 0          # rank of the last header line placed
+    keywords_line = 0  # where the `keywords:` value stands, for its words
     draft = prose = False
     seen: set[str] = set()
     for lineno, raw in enumerate(raw_lines[1:], 2):
@@ -617,6 +634,10 @@ def _header(raw_lines: list[str]) -> list[tuple[str, int, str, str]]:
                 flag(lineno, "`draft` goes under the task id")
             draft = True
             continue
+        if CONTINUATION_RE.match(line):
+            if not last:
+                flag(lineno, "a continuation line follows a field")
+            continue
         if m := FIELD_RE.match(line):
             word, kind = m.group(1), m.group(2)
             if word not in HEADER_FIELDS or (kind and word != "review"):
@@ -624,11 +645,11 @@ def _header(raw_lines: list[str]) -> list[tuple[str, int, str, str]]:
                      + ", ".join(HEADER_FIELDS))
                 continue
             rank = HEADER_RANK[word]
+            if word == "keywords" and not keywords_line:
+                keywords_line = lineno
             if word == "review":
                 if not kind:
                     flag(lineno, "`review` takes a kind: `review <kind>:`")
-                if not draft:
-                    flag(lineno, "`review` stands under `draft` only")
             elif word in seen:
                 flag(lineno, f"`{word}:` stands once")
             elif "representative" in seen or (word == "representative" and seen):
@@ -640,14 +661,17 @@ def _header(raw_lines: list[str]) -> list[tuple[str, int, str, str]]:
             seen.add(word)
             last = max(last, rank)
             continue
-        if CONTINUATION_RE.match(line):
-            if not last:
-                flag(lineno, "a continuation line follows a field")
-            continue
         if not prose:
             flag(lineno, "no prose in the header; a remark about a case goes "
                  "at its constructor, and a remark about a rule at the rule")
         prose = True
+    known = _known_keywords()
+    if keywords_line and known:
+        for word in header_keywords("\n".join(raw_lines)):
+            if word not in known:
+                findings.append((KEYWORD_CAT, keywords_line,
+                                 f"`{word}` is not in keywords.md; propose it in the review",
+                                 raw_lines[keywords_line - 1].rstrip()))
     if not seen & {"keywords", "representative"}:
         flag(1, "the header carries `keywords:` or `representative:`")
     elif "keywords" in seen and "output" not in seen:

@@ -19,7 +19,7 @@ from dl.determine import DetermineResult, render_determine, run_determine
 from dl.dlparse import ParseError, TypeDecl, parse
 from dl.drop_one import drop_one_report, render_drop_one
 from dl.facts import parse_grid
-from dl.lint import LIB_NAME_CAT, RESERVED_CAT, SHADOWED_TYPE_CAT, lint_program
+from dl.lint import KEYWORD_CAT, LIB_NAME_CAT, RESERVED_CAT, SHADOWED_TYPE_CAT, lint_program
 from dl.paths import REPO_ROOT, SOLVERS_DIR, all_stems
 from dl.render import _grid_lines, render_pair_failure, render_stem_failures
 from dl.rewrite_lint import HINTS, lint_rewrites
@@ -41,7 +41,9 @@ from dl.souffle import (
     expression_report,
     sweep_temp_sources,
 )
-from dl.source import build_source, expand_macros
+from dl.source import (
+    KEYWORDS_DOC, build_source, doc_keywords, expand_macros, header_keywords,
+)
 from dl.sweep import (
     BUDGET_SECONDS,
     MAX_CANDIDATES,
@@ -57,9 +59,11 @@ LINT_TIERS = ("lint", "rewrite", "hint")
 def _lint_tiers(source: str, hints: bool) -> list[Findings]:
     """Findings per tier, in LINT_TIERS order; the hint tier is empty
     unless enabled."""
-    style: Findings = lint_program(source)
+    style: Findings = []
     dec: Findings = []
     adv: Findings = []
+    for f in lint_program(source):
+        (adv if f[0] == KEYWORD_CAT else style).append(f)
     for f in lint_rewrites(source, hints):
         (adv if f[0] in HINTS else dec).append(f)
     return [style, dec, adv]
@@ -640,40 +644,6 @@ def cmd_size(stem: str | None = None) -> int:
     return 1 if bad else 0
 
 
-KEYWORDS_DOC = REPO_ROOT / "docs" / "wf-solver" / "keywords.md"
-
-HEADER_RE = re.compile(r"^// (keywords|concept|shape): (.*)$")
-BULLET_RE = re.compile(r"^- `([^`]+)`")
-
-
-def _doc_keywords(text: str) -> dict[str, list[str]]:
-    """The keywords of keywords.md, in doc order, per `##` section. A
-    keyword is the leading code span of a bullet."""
-    sections: dict[str, list[str]] = {}
-    held: list[str] = []
-    for line in text.splitlines():
-        if line.startswith("## "):
-            held = sections.setdefault(line[3:].strip(), [])
-        elif m := BULLET_RE.match(line):
-            held.append(m.group(1))
-    return sections
-
-
-def _header_keywords(source: str) -> list[str]:
-    """The keywords of a solver's `// keywords:` line. The retired
-    `concept:` and `shape:` fields are read the same way, and a header that
-    carries both gives the keywords of both. A field's second line is not
-    read. The header is the leading comment block, so the first line that
-    is not a comment ends it."""
-    fields: dict[str, list[str]] = {}
-    for line in source.splitlines():
-        if not line.strip().startswith("//"):
-            break
-        if (m := HEADER_RE.match(line)) and m.group(1) not in fields:
-            fields[m.group(1)] = m.group(2).split()
-    return [word for words in fields.values() for word in words]
-
-
 def cmd_keywords(stems: list[str] | None = None) -> int:
     """The keyword vocabulary in use: how many solvers carry each keyword of
     keywords.md, and which header keyword the doc does not list. An unknown
@@ -683,14 +653,14 @@ def cmd_keywords(stems: list[str] | None = None) -> int:
         if _missing(s):
             return 2
     stems = stems or all_stems()
-    sections = _doc_keywords(KEYWORDS_DOC.read_text())
+    sections = doc_keywords(KEYWORDS_DOC.read_text())
     known = {w for words in sections.values() for w in words}
 
     carriers: dict[str, set[str]] = defaultdict(set)
     unknown: list[str] = []
     for stem in stems:
         source = (SOLVERS_DIR / f"{stem}.dl").read_text()
-        for word in _header_keywords(source):
+        for word in header_keywords(source):
             if word in known:
                 carriers[word].add(stem)
             else:
@@ -824,12 +794,10 @@ def _parser() -> argparse.ArgumentParser:
 
     keywords = sub.add_parser(
         "keywords", help="how many solvers carry each keyword of keywords.md",
-        description="Read the `// concept:` and `// shape:` header line of "
-                    "each named solver, count the solvers carrying each "
-                    "keyword of keywords.md, and name every header keyword "
-                    "the doc does not list. A concept keyword comes from the "
-                    "Setup and Prior sections, a shape keyword from the "
-                    "Shape section.",
+        description="Read the `// keywords:` header line of each named "
+                    "solver, count the solvers carrying each keyword of "
+                    "keywords.md, and name every header keyword the doc "
+                    "does not list.",
     )
     keywords.add_argument("stem", nargs="*",
                           help="solvers to read; all of them when omitted")

@@ -175,6 +175,28 @@ def review_key(priority: str):
     return key
 
 
+# What one finalize pass can act on: the row's review lines, its workaround
+# lines, and its proposal comps.
+PASS_KINDS = ("principle", "sweep", "workaround", "proposal")
+
+
+def pass_lines(row: dict) -> int:
+    """How much a finalize pass can act on: the row's review lines of every
+    kind, its workaround lines, and its proposal comps, in any entry
+    state."""
+    return sum(len(row["needs"][kind]) for kind in PASS_KINDS)
+
+
+# The autopilot's finalize order. A missing solver leads, as it does in the
+# review order. Then the rows a pass can act on the most of. The solver's
+# rule-literal count breaks ties, the larger first, and the id the last.
+def pass_key(row: dict) -> tuple:
+    return (0 if row["no_solver"] else 1,
+            -pass_lines(row),
+            -(row["dl_size"] if row["dl_size"] is not None else -1),
+            row["id"])
+
+
 # What a principle need names: the section heading before the dash.
 def _heading(text: str) -> str:
     return text.split(" — ", 1)[0].strip()
@@ -228,6 +250,11 @@ def backlog_view(ages: dict[str, int] | None = None) -> list[dict]:
     return lens_view(ages)["items"]
 
 
+def pass_view(ages: dict[str, int] | None = None) -> list[dict]:
+    """The unfinalized solvers in the autopilot's finalize order."""
+    return sorted(lens_view(ages)["items"], key=pass_key)
+
+
 def act_dismiss(body: dict) -> dict:
     """Rule that a task needs no finalize pass. The ruling is a ledger line,
     which takes the task off the lens. Deleting that line by hand restores
@@ -246,7 +273,8 @@ def act_approve_solver(body: dict) -> dict:
     """Approve a solver from the lens: the tag comes off the file, which is
     where approval stands. An item the console still holds for that solver
     takes the ruling too, a turn in flight included, so nothing it does later
-    withdraws it."""
+    withdraws it. The docs hold the solver's citations pending until here, so
+    approval places them."""
     item_id = str(body.get("id") or "").strip()
     if not item_id or not solvers.solver_path(item_id).exists():
         return {"error": f"no solver for {item_id}"}
@@ -257,6 +285,7 @@ def act_approve_solver(body: dict) -> dict:
             solvers.clear_draft(item_id)
         else:
             store.approve(it)
+        solvers.place_citations(item_id)
     store.bump()
     return {"ok": True}
 
