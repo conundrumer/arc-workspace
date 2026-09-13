@@ -28,27 +28,59 @@ Then dispatch on `$ARGUMENTS`:
 
 ## `retro`
 
-- Run the `retro` workflow (`.claude/workflows/retro.js`) with `roles` in `args`: the text of each role file the run needs, keyed by role name, as the workflow's `args` note names them. Its agents read the window, check each issue, take a default on each open one, make the fixes the defaults call for, tier 4 excepted, act on each review line those fixes and the sweep wrote into a solver, run the cleanup pass over each solver the run wrote, and verify what the run changed. The `solver` role carries a solver fix and the resolve stage. A `resolve` run, `resolve` in `args` holding a list of task ids, runs the resolve stage over those solvers. Each stage's rules live in its role, under `.claude/roles/`. The main session reads the role files to pass them, and no window, report, solver, or doc, and runs no edit, revert, or check itself: those go to agents.
-- The workflow returns every call with its default, its tier, and what argues for and against it. Present the tally, the closed issues, the files the fixes changed, and the entries written. Then present the calls as a numbered list of the tiers, each tier item starting with its name in bold — **No judgment needed**, **Straightforward**, **Defensible**, **Insufficient basis** — and holding a numbered list of its calls, so the user can name a call by its index (2.3). Issue ids stay out, and so do quotes.
-- A call's heading is a verdict word — Fixed, Dropped, or Deferred — then the issue, stated as what is wrong in the shared thing. These sub-bullets come under it, in this order.
-    - **Context:** what the thing is and does, for a reader who does not have the doc in their head.
-    - **Impact:** a phrase for how the raising sessions were affected, then its evidence from the check result's `changed_how` and the review's `reason`.
-    - **Resolution:** the change. For a doc rule, state the meaning before and the meaning after. A dropped or deferred call takes **Proposal:** instead.
-        - **Basis:** the principle, norm, or fact the call rests on, from the call's `basis`. A call the check dropped takes that basis from the check result, and every other call from the review result. A call that carries no `basis` takes no Basis sub-bullet.
-    - **Concerns:** one sub-bullet per independent concern, each with its evidence, or with the likelihood and what it takes for it to be real. Churn, reversals of earlier commits, and file growth are not concerns.
-    - **Tasks:** the task ids.
-- The resolve stage's items take the same form as a call. A review line the stage left unfinished is a Deferred call: what is wrong, why the stage left it, and what it needs. A judgment call a resolve report raises takes the tier its basis puts it in, and its **Proposal:** is the ruling it needs. A line the stage finished is not presented; the solver's report in the console carries it.
-- An unprincipled divergence the consistency stage reports is presented as a call: the point the solvers share, the rule they read differently, the reading the docs should force, and the form they should agree on. When its fix is a wording change in `docs/wf-solver/principles.md`, it takes the standalone discussion form this section gives for a fix to that file.
-- A call whose fix carries an illustration shows it under the call: for each cited task, the case sets under each reading and a witness input where the readings differ.
-- A grid in the presentation is drawn as a grid: one row per line, cells separated by spaces, background as `.`.
-- A call whose fix edits `docs/wf-solver/principles.md` is presented as a standalone discussion: the text before and after, quoted; the concrete cases, with small grid fragments; and the options the workflow returned — keep, amend in place, leave — each with its consequence over the approved solvers, then a recommendation. The user's answer picks one option. The **Basis:**, **Impact:**, and **Concerns:** sub-bullets come under it, as they do under a call.
-- A keyword addition or a gloss change is tier 4, and is presented as a proposal for a separate session.
-- The workflow's Verify results come after the calls, and hold a failing check, a finding no round acted on, and an edit outside the run's targets, such as an approved solver. A failing check blocks the close. The presentation ends with these items.
-- A follow-up fix from the workflow's `followups` is presented under the call whose verify raised it, as a further Resolution line that names the file and the change.
-- The user answers per item. A question is answered from the call's record before any action. A veto on a made fix reverses it, and a ruling for a dropped or tier-4 fix makes it. Follow-up rulings batch into one agent run after they settle.
-- Every follow-up item carries one of two labels. **Queued**: it goes into the batch with nothing more from the user. **Needs ruling**: it waits on the user.
-- Reversal: an agent runs `git apply -R` on the file's diffs, the later first. Every fix in that file comes out with it, and the kept hunks return with `git apply --include` on the same patch. The rulings for fixes go into a second run with `roles` again and the fixes as `fixes` in `args`: one entry per file a fix edits, each with its kind, target, and edit, under the call's id, as the first run returned them under each call's `fixes`. The second run's prune pass keeps their substance, revises the wording to the file's style, and reports that the meaning held.
-- A lib change that keeps interface and meaning is a mechanical fix and goes to an agent directly.
-- A citation of a draft solver waits in the doc in the pending form, with a `// review cite:` line in the solver, and approval places it. It is not presented.
-- A reason the user says should never count again, or a stance the user states, goes into the role that raised it, as a line.
-- Close: Run `uv run python tools/console/retro.py mark` to move the mark. Commit all changes made in the retro session, leaving alone the changes under `programs/solvers/` this session did not make.
+Rule on what the console's sessions called out beyond their own tasks. The workflow reads, checks, fixes, and verifies. The main session passes the roles, presents the result, and takes the rulings.
+
+- **Run.**
+    - Run the `retro` workflow (`.claude/workflows/retro.js`) with `roles` in `args`: the text of each role file the run needs, keyed by role name, as the workflow's `args` note names them.
+    - The main session reads the role files to pass them, and no window, report, solver, or doc. It runs no edit, revert, or check itself: those go to agents.
+    - The run's agents read the window, check each issue, take a default on each open one, make the fixes the defaults call for, level 4 excepted, act on each review line those fixes and the sweep wrote into a solver, run the cleanup pass over each solver the run wrote, and verify what the run changed. Each stage's rules live in its role, under `.claude/roles/`. The `solver` role carries a solver fix and the resolve stage.
+    - A `resolve` run, `resolve` in `args` holding a list of task ids, runs the resolve stage over those solvers.
+- **Present.** The workflow returns every call with its default, its level, and what argues for and against it.
+    - Open with the tally, the closed issues, the files the fixes changed, and the entries written.
+    - Then the calls, as one numbered list, ordered by dependency and then by level ascending. Issue ids stay out, and so do quotes.
+    - A call is a decision in the settle form:
+
+        ```
+        ### <n>. [<level>] <what is wrong in the shared thing, as a question>? <the default>.
+
+        - **Context:**
+            - <what the thing is and does, for a reader who does not have the doc in their head>
+            - <its current text or state>
+            - **Impact:** <how the raising sessions were affected>
+                - <the evidence, from the check's `changed_how` and the review's `reason`>
+            - **Tasks:** <the task ids>
+        - **Options:**
+            1. **<label>.** <the default's action>
+                - **For:** <a reason>
+                    - <the reason's ground>
+                - **Against:** <a reason>
+                    - <its evidence, or `Given <condition>. <likelihood>.`>
+            2. **<label>.** <the option's action>
+        ```
+
+        - The level is the call's discretion level, as the check and review roles define it. A level-4 fix is presented and not made.
+        - The default states what holds, the fix or the drop, not whether the run made it.
+        - The default is option 1, and the other options come strongest first, each labeled in one word. Reasons come strongest first.
+        - The first ground under the default is the call's `basis`. A call the check dropped takes it from the check result, and every other call from the review result. A call with no `basis` states no ground for it.
+        - A concern is an Against reason with its evidence, or with the likelihood and what it takes for it to be real. Churn, reversals of earlier commits, and file growth are not concerns.
+        - For a doc rule, the default's action states the meaning before and the meaning after.
+        - A follow-up fix from the workflow's `followups` is a further line under the default's action, naming the file and the change.
+    - Some calls carry more.
+        - A resolve-stage item takes the call form. A review line the stage left unfinished is a call: what is wrong, why the stage left it, and what it needs. A judgment call a resolve report raises takes its level from its basis, and its default is the ruling it needs. A line the stage finished is not presented; the solver's report in the console carries it.
+        - An unprincipled divergence the consistency stage reports is a call: the point the solvers share, the rule they read differently, the reading the docs should force, and the form they should agree on.
+        - A call whose fix edits `docs/wf-solver/principles.md` is a standalone discussion. Context quotes the text before and after, and shows the concrete cases with small grid fragments. The options are the readings the workflow returned, each with its wording and its consequence over the approved solvers, then a recommendation.
+        - A call whose fix carries an illustration shows it under the call: for each cited task, the case sets under each reading and a witness input where the readings differ.
+        - A grid is drawn as a grid: one row per line, cells separated by spaces, background as `.`.
+        - A keyword addition or a gloss change is level 4, presented as a proposal for a separate session.
+        - A citation of a draft solver is not presented. It waits in the doc in the pending form, with a `// review cite:` line in the solver, and approval places it.
+    - The workflow's Verify results end the presentation: a failing check, a finding no round acted on, and an edit outside the run's targets, such as an approved solver. A failing check blocks the close.
+- **Rulings.**
+    - The user rules per call, by index: accept the default, pick another option, or reject a reason. A question is answered from the call's record before any action.
+    - A ruling against a made fix reverses it, and a ruling for an unmade fix makes it.
+    - Follow-up work batches into one agent run after the rulings settle. Each follow-up item carries one of two labels. **Queued**: it goes into the batch with nothing more from the user. **Needs ruling**: it waits on the user.
+    - A reversal takes every fix in the file out and puts the kept ones back. An agent does it.
+    - The rulings for fixes go into a second run with `roles` again and the fixes as `fixes` in `args`: one entry per file a fix edits, each with its kind, target, and edit, under the call's id, as the first run returned them under each call's `fixes`. The second run's prune pass keeps their substance, revises the wording to the file's style, and reports that the meaning held.
+    - A lib change that keeps interface and meaning is a mechanical fix and goes to an agent directly.
+- **Close.**
+    - Run `uv run python tools/console/retro.py mark` to move the mark.
+    - Commit all changes made in the retro session, leaving alone the changes under `programs/solvers/` this session did not make.

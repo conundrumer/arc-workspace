@@ -40,12 +40,13 @@ export const meta = {
 //                      args.resolve names, which may be an empty list. The returned object carries
 //                      the sweep and the sweep lines.
 
-// The judgment a call took. A tier-4 fix is not made in the first run.
+// The call's discretion level: how much room the default took beyond what the
+// grounds determine. A level-4 fix is not made in the first run.
 const TIER = {
   type: 'integer',
   minimum: 1,
   maximum: 4,
-  description: '1: no judgment, a principle states it, it is a bug, or it corrects a wrong fact; 2: a straightforward reading of the user\'s intent or an existing norm; 3: a defensible judgment close to the norms; 4: insufficient basis to settle',
+  description: '1: a ground states it outright, or it fixes a bug; 2: a ground determines it through a reading of the user\'s intent or of an existing convention, and that reading admits no other; 3: the grounds permit more than one option, and the default is defensible from them; 4: no ground bears on it',
 }
 
 const FIX_REF = {
@@ -64,7 +65,7 @@ const FIX_CANDIDATE = {
     ...FIX_REF.properties,
     for: { type: 'string' },
     against: { type: 'string' },
-    illustration: { type: 'string', description: 'a fix to docs/wf-solver/principles.md at tier 3: for each cited task, the case sets under each reading and a witness input where the readings differ' },
+    illustration: { type: 'string', description: 'a fix to docs/wf-solver/principles.md at level 3: for each cited task, the case sets under each reading and a witness input where the readings differ' },
   },
   required: [...FIX_REF.required, 'for', 'against'],
 }
@@ -143,7 +144,7 @@ const REVIEW_SCHEMA = {
             items: {
               type: 'object',
               properties: {
-                choice: { type: 'string', enum: ['keep', 'amend', 'leave'], description: 'keep: the change as the default proposes it; amend: the existing text rewritten in place; leave: the existing text as it stands' },
+                choice: { type: 'string', description: 'the reading\'s one-word label' },
                 wording: { type: 'string', description: 'the text the file carries under this reading' },
                 consequence: { type: 'string', description: 'what a session that reads this wording does differently' },
                 witness: { type: 'string', description: 'a task or a solver where this reading and the others part' },
@@ -848,7 +849,7 @@ if (open.length) {
                  covers: r.covers, fixes, changed_work: o?.changed_work, changed_how: o?.changed_how })
   }
 }
-// a tier-4 call is presented and not made
+// a level-4 call is presented and not made
 const stands = calls.filter(c => (c.default === 'fix' || c.default === 'replace') && c.fixes.length && c.tier !== 4)
 // one agent per general fix: fixes that several replaced issues point at collapse to one
 // A fix carries its issue's tasks: a fix over a principle writes a review line into each of their draft solvers.

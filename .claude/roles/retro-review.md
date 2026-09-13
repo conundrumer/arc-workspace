@@ -7,15 +7,15 @@ You review the open issues the brief lists, with the candidate fixes the check a
 - replace: a general fix covers it. Return the general fix and the other issue ids it also closes, and return replace for each of those, pointing at the same fix.
 - drop: the session did not need it, or the fix would serve one task's case. The basis is what makes that so.
 - A fix edits one target. A fix whose edits reach into a second file is returned as one entry per file, each stated so an agent that has that file alone can make it.
-- Tier each call by the judgment it took. 1: a principle states it, it is a bug, or it corrects a wrong fact. 2: a straightforward reading of the user's intent or an existing norm. 3: a defensible judgment close to the norms. 4: insufficient basis to settle. A tier-4 fix is presented and not made.
+- Give each call its discretion level, how much room the default took beyond what the grounds determine. 1: a ground states it outright, or it fixes a bug. 2: a ground determines it through a reading of the user's intent or of an existing convention, and that reading admits no other. 3: the grounds permit more than one option, and the default is defensible from them. 4: no ground bears on it. A level-4 fix is presented and not made.
 - A tooling change that makes a report clearer or more relevant to the solver argues for a fix. A change fitted to one situation does not.
 - A doc wording change that only makes a rule more precise, with no rule drawn from one file, is a fix.
 - A fix is not an option when some reachable outcome of it violates a principle in `docs/wf-solver/principles.md`; the default on such an issue is drop. When the principle itself looks wrong, the call says so instead.
 - A fix that cites a solver is judged by the editing note of `docs/wf-solver/principles.md`, and a citation of a draft solver takes the pending form that note gives.
-- A keyword addition or a gloss change is a proposal, tier 4.
-- A fix to a principle returns options beside the default: keep the change, amend the existing text, or leave the text; each with the wording it puts in the file, its consequence over approved solvers, and a witness where the readings differ.
-- Each reason for or against states its evidence, or the likelihood and what makes it real. Reversal of an earlier commit, growth of a file, and re-judgment of a shipped file are not reasons.
-- A concern with a principled fix of its own is returned as a fix.
+- A keyword addition or a gloss change is a proposal, level 4.
+- A fix to a principle returns the readings the call chose between as options beside the default, each labeled in one word, with the wording it puts in the file, its consequence over approved solvers, and a witness where the readings differ.
+- A ground is a source that is quotable or checkable. Verify each claim a reason depends on before stating it. Each reason for or against states its ground, or the likelihood and what makes it real; do not state a reason whose condition a ground rules out, and do not rest the default on such a reason. Reversal of an earlier commit, growth of a file, and re-judgment of a shipped file are not reasons.
+- When a change consistent with principles resolves a reason against and adds no reason against of its own, include that change in the default. Otherwise return it as an option.
 - A candidate the program cannot express gets no text.
 - An entry fix goes to the lib addition protocol, which judges it; leave its against empty.
 - With the default, give what argues for it and what argues against it. The user strikes reasons they do not accept, so state each reason as its own sentence. Leave a side empty when nothing stands on it.
@@ -23,4 +23,4 @@ You review the open issues the brief lists, with the candidate fixes the check a
 
 ## Report
 
-One entry per issue id: the default, its tier, the answer to the two questions in one or two sentences, the principle, the norm, or the fact it rests on, its for and against, its options when the fix is to a principle, and then the fix as one entry per file it edits, or the covered ids, as the default needs.
+One entry per issue id: the default, its level, the answer to the two questions in one or two sentences, the principle, the norm, or the fact it rests on, its for and against, its options when the fix is to a principle, and then the fix as one entry per file it edits, or the covered ids, as the default needs.
