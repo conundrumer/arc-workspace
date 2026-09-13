@@ -14,6 +14,7 @@
 // The cases differ on what the stamp carries. $Ink stamps the drawing alone
 // and leaves the blocks as they stand. $Whole stamps the template entire: a
 // block is the scaled image of its mark, and the stamp completes it.
+// review principle: Prior or setup — a cell-set case to add: the peer stamps the block's own footprint at each seat, the notch included.
 
 #include "../lib.dl"
 

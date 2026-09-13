@@ -8,6 +8,7 @@
 // $Outset — the input passes through, and the ring is painted around it.
 // $Nest — the output is a nest of three boxes, redrawn from scratch: the
 //   block, the rectangle holding it, and the ring.
+// review principle: Prior or setup — a cell-set case to add: the peer covers the figure's own cells, so a notch in the figure joins the ring.
 
 #include "../lib.dl"
 

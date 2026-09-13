@@ -42,7 +42,12 @@ from dl.souffle import (
     sweep_temp_sources,
 )
 from dl.source import build_source, expand_macros
-from dl.sweep import MAX_CANDIDATES, render_sweep, sweep_report
+from dl.sweep import (
+    BUDGET_SECONDS,
+    MAX_CANDIDATES,
+    render_sweep,
+    sweep_report,
+)
 
 type Findings = list[tuple[str, int, str, str]]
 
@@ -264,6 +269,10 @@ def cmd_pairs(stem: str, path: str) -> int:
     return 1 if failed else 0
 
 
+BUDGET_HELP = ("wall-clock budget in seconds for the sweep runs; the "
+               "parameter in flight reports as cut and the ones behind it "
+               "report as not swept")
+
 GRID_HELP = """\
 Grid format: one line per row, one character per cell — a digit 0-9, or `.`
 for 0. Spaces and commas between cells are optional; blank lines and lines
@@ -290,7 +299,8 @@ Without the runner, the same per-grid run by hand. `-L programs` is what
 loads libfunctors.dylib, which lib.dl's primitives call, and the built file
 has to sit in programs/solvers/ for `#include "../lib.dl"` to resolve:
 
-    {{ cat programs/solvers/<stem>.dl
+    {{ echo '#include "../lib.dl"'
+      cat programs/solvers/<stem>.dl
       echo '.input in(IO=stdin)'
       echo '.output out(IO=stdout)'
     }} > programs/solvers/.tmp.dl
@@ -533,12 +543,22 @@ def cmd_all(hints: bool = False, timed: bool = False,
     return 0 if not failed else 1
 
 
-def cmd_sweep(stem: str, max_candidates: int = MAX_CANDIDATES) -> int:
+def _print_sweep(stem: str, max_candidates: int, budget: float) -> None:
+    """The sweep report, with the budget and the elapsed time as a footer."""
+    start = time.monotonic()
+    lines = render_sweep(sweep_report(stem, max_candidates, budget))
+    elapsed = time.monotonic() - start
+    for line in lines:
+        print(line)
+    print(f"budget {budget:.0f}s; elapsed {elapsed:.0f}s")
+
+
+def cmd_sweep(stem: str, max_candidates: int = MAX_CANDIDATES,
+              budget: float = BUDGET_SECONDS) -> int:
     if _missing(stem):
         return 2
     build_functors()
-    for line in render_sweep(sweep_report(stem, max_candidates)):
-        print(line)
+    _print_sweep(stem, max_candidates, budget)
     return 0
 
 
@@ -556,15 +576,15 @@ def cmd_deletions(stem: str) -> int:
     return _print_deletions(stem)
 
 
-def cmd_audit(stem: str) -> int:
+def cmd_audit(stem: str, budget: float = BUDGET_SECONDS) -> int:
     """Both evidence audits of a finished solver: parameter value sweep +
-    deletions."""
+    deletions. The sweep runs under the time budget, and the deletion report
+    runs after it."""
     if _missing(stem):
         return 2
     build_functors()
     print("--- sweep ---")
-    for line in render_sweep(sweep_report(stem)):
-        print(line)
+    _print_sweep(stem, MAX_CANDIDATES, budget)
     print()
     print("--- deletions ---")
     return _print_deletions(stem)
@@ -622,10 +642,7 @@ def cmd_size(stem: str | None = None) -> int:
 
 KEYWORDS_DOC = REPO_ROOT / "docs" / "wf-solver" / "keywords.md"
 
-# The sections of keywords.md each header line draws its keywords from.
-KEYWORD_SECTIONS = {"concept": ("Setup", "Prior"), "shape": ("Shape",)}
-
-HEADER_RE = re.compile(r"^// (concept|shape): (.*)$")
+HEADER_RE = re.compile(r"^// (keywords|concept|shape): (.*)$")
 BULLET_RE = re.compile(r"^- `([^`]+)`")
 
 
@@ -642,18 +659,19 @@ def _doc_keywords(text: str) -> dict[str, list[str]]:
     return sections
 
 
-def _header_keywords(source: str) -> list[tuple[str, str]]:
-    """The (header kind, keyword) pairs of a solver's `// concept:` and
-    `// shape:` lines. The header runs to the first line that is neither
-    blank nor a comment."""
-    pairs: list[tuple[str, str]] = []
+def _header_keywords(source: str) -> list[str]:
+    """The keywords of a solver's `// keywords:` line. The retired
+    `concept:` and `shape:` fields are read the same way, and a header that
+    carries both gives the keywords of both. A field's second line is not
+    read. The header is the leading comment block, so the first line that
+    is not a comment ends it."""
+    fields: dict[str, list[str]] = {}
     for line in source.splitlines():
-        stripped = line.strip()
-        if stripped and not stripped.startswith("//"):
+        if not line.strip().startswith("//"):
             break
-        if m := HEADER_RE.match(line):
-            pairs.extend((m.group(1), word) for word in m.group(2).split())
-    return pairs
+        if (m := HEADER_RE.match(line)) and m.group(1) not in fields:
+            fields[m.group(1)] = m.group(2).split()
+    return [word for words in fields.values() for word in words]
 
 
 def cmd_keywords(stems: list[str] | None = None) -> int:
@@ -666,23 +684,19 @@ def cmd_keywords(stems: list[str] | None = None) -> int:
             return 2
     stems = stems or all_stems()
     sections = _doc_keywords(KEYWORDS_DOC.read_text())
-    known = {kind: {w for name in names for w in sections.get(name, ())}
-             for kind, names in KEYWORD_SECTIONS.items()}
+    known = {w for words in sections.values() for w in words}
 
     carriers: dict[str, set[str]] = defaultdict(set)
     unknown: list[str] = []
     for stem in stems:
         source = (SOLVERS_DIR / f"{stem}.dl").read_text()
-        for kind, word in _header_keywords(source):
-            if word in known[kind]:
+        for word in _header_keywords(source):
+            if word in known:
                 carriers[word].add(stem)
             else:
                 unknown.append(f"{stem}: {word} is not in keywords.md")
 
-    for name in ("Setup", "Prior", "Shape"):
-        words = sections.get(name)
-        if not words:
-            continue
+    for name, words in sections.items():
         print(f"--- {name} ---")
         for word in words:
             print(f"  {len(carriers[word]):4d}  {word}")
@@ -755,13 +769,19 @@ def _parser() -> argparse.ArgumentParser:
     sweep = sub.add_parser("sweep", help="parameter value sweep only")
     sweep.add_argument("stem")
     sweep.add_argument("cap", nargs="?", type=int, default=MAX_CANDIDATES,
-                       help="candidate count above which the sweep narrows to "
-                            "one-column and one-row changes")
+                       help="candidate count the sweep holds to: above it "
+                            "the sweep narrows to one-column and one-row "
+                            "changes, and it bounds those too")
+    sweep.add_argument("--budget", type=float, default=BUDGET_SECONDS,
+                       help=BUDGET_HELP)
 
     sub.add_parser("deletions", help="deletion report only").add_argument("stem")
-    sub.add_parser(
+    audit = sub.add_parser(
         "audit", help="parameter value sweep + deletion report",
-    ).add_argument("stem")
+    )
+    audit.add_argument("stem")
+    audit.add_argument("--budget", type=float, default=BUDGET_SECONDS,
+                       help=BUDGET_HELP)
     sub.add_parser(
         "drop-one",
         help="which stored facts of a multi-fact parameter no pair needs",
@@ -857,11 +877,11 @@ def main(argv: list[str]) -> int:
         case "grid":
             return cmd_grid(args.stem, args.file)
         case "sweep":
-            return cmd_sweep(args.stem, args.cap)
+            return cmd_sweep(args.stem, args.cap, args.budget)
         case "deletions":
             return cmd_deletions(args.stem)
         case "audit":
-            return cmd_audit(args.stem)
+            return cmd_audit(args.stem, args.budget)
         case "drop-one":
             return cmd_drop_one(args.stem)
         case "derived-constant":

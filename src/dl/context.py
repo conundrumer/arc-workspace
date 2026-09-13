@@ -7,6 +7,9 @@ bodies. The catalog docs render as one line per entry. The other docs pass
 through without their editor notes, their `+` lines, and their deferred
 sections. Each rendering names the file that holds the rest, and derives
 from the live file, so no copy can go stale.
+
+A variant rendering keeps principles.md unabridged, for a session that
+works on the theory itself.
 """
 
 from __future__ import annotations
@@ -25,17 +28,26 @@ from dl.paths import PROGRAMS_DIR, REPO_ROOT
 DOCS_DIR = REPO_ROOT / "docs" / "wf-solver"
 LIB_SRC = PROGRAMS_DIR / "lib.dl"
 
-# The one agent definition, generated from the handbook: an agent runs a
-# role under .claude/roles/ with the handbook as its system prompt. The file
-# is regenerated at each entry point and not tracked.
+# The agent definitions, generated from the handbook: an agent runs a role
+# under .claude/roles/ with the handbook as its system prompt. The files are
+# regenerated at each entry point and not tracked.
 AGENT_PATH = REPO_ROOT / ".claude" / "agents" / "handbook.md"
 AGENT_META = {
     "name": "handbook",
-    "description": "Works the role its prompt opens with, one of .claude/roles/, "
-                   "with the handbook as its system prompt.",
+    "description": "For any task under the solver docs, such as writing or editing "
+                   "a solver, the lib, or a doc, or surveying the corpus. The "
+                   "handbook is its system prompt, so the prompt carries the task "
+                   "alone, as a role from .claude/roles/ or as a brief.",
     "model": "opus",
     "effort": "high",
     "tools": "Read, Grep, Glob, Bash, Edit, Write",
+}
+PRINCIPLES_AGENT_META = {
+    **AGENT_META,
+    "name": "handbook-principles",
+    "description": "For a task that judges or edits a principle. Its system prompt "
+                   "is the handbook with principles.md unabridged, so it can rule "
+                   "by the formal statements.",
 }
 ROLE_NOTE = "Your prompt opens with your role, then its brief. Follow the role.\n\n"
 
@@ -43,6 +55,8 @@ ROLE_NOTE = "Your prompt opens with your role, then its brief. Follow the role.\
 # then what the corpus made of it.
 DOCS = ("procedure.md", "principles.md", "style.md", "patterns.md", "keywords.md",
         "lib-protocol.md", "former-names.md")
+# The doc the variant rendering keeps unabridged.
+PRINCIPLES = "principles.md"
 # Catalog docs: entries are independent and a session uses few, so the context
 # carries the index and the session reads the entry it needs.
 INDEX = {"patterns.md"}
@@ -260,6 +274,8 @@ def entry_index(text: str, source: str) -> str:
 
 NOTES_DROPPED = ("Cited tasks carry worked applications of the principle "
                  "they sit under. Grep the task id in {rel} to read one.")
+STATEMENT_OMITTED = ("An item marked * has a formal statement on a `+` line "
+                     "under it in the source file, which this rendering omits.")
 SECTION_DEFERRED = ("The {title} section is in the source: read it in {rel} "
                     "when a term is unclear.")
 
@@ -283,34 +299,83 @@ def drop_deferred(text: str) -> tuple[str, list[str]]:
     return "".join(out), titles
 
 
-def drop_omitted(text: str) -> str:
-    """A doc without its `+` list items. A `+` line is source-only: it
-    reads as a bullet in a viewer and holds what a session doesn't read,
-    such as a rule's formal statement."""
-    text = re.sub(r"^[ \t]*\+ .*\n?", "", text, flags=re.M)
-    return re.sub(r"\n{3,}", "\n\n", text)
+PLUS_RE = re.compile(r"^([ \t]*)\+ ")
+# The mark on an item whose `+` lines the rendering drops.
+OMITTED_MARK = " *"
+TRAILING_COMMENT_RE = re.compile(r"\s*<!--.*?-->[ \t]*$", re.S)
 
 
-def strip_comments(text: str) -> tuple[str, bool]:
-    """A doc without its HTML comments, and whether any sat past the opening
-    editing note. They hold notes to the doc's editor, and a solver session
-    doesn't edit the doc."""
+def _indent(line: str) -> int:
+    return len(line) - len(line.lstrip())
+
+
+def _mark_item(line: str) -> str:
+    """`line` with the mark at the end of its text, before a trailing HTML
+    comment if the line carries one."""
+    m = TRAILING_COMMENT_RE.search(line)
+    cut = m.start() if m else len(line.rstrip())
+    return line[:cut] + OMITTED_MARK + line[cut:]
+
+
+def drop_omitted(text: str) -> tuple[str, bool]:
+    """A doc without its `+` list items, and whether any item took the mark.
+    A `+` line is source-only: it reads as a bullet in a viewer and holds
+    what a session doesn't read, such as a rule's formal statement. The item
+    over the dropped lines takes the mark."""
+    lines = text.splitlines()
+    dropped: set[int] = set()
+    marked: set[int] = set()
+    for i, line in enumerate(lines):
+        m = PLUS_RE.match(line)
+        if m is None:
+            continue
+        dropped.add(i)
+        indent = len(m.group(1))
+        for j in range(i - 1, -1, -1):
+            prev = lines[j]
+            if not prev.strip() or _indent(prev) >= indent:
+                continue
+            # Under another `+` line: that line's own item takes the mark.
+            if PLUS_RE.match(prev) is None:
+                marked.add(j)
+            break
+    out = [_mark_item(line) if i in marked else line
+           for i, line in enumerate(lines) if i not in dropped]
+    kept = "\n".join(out) + ("\n" if text.endswith("\n") else "")
+    return re.sub(r"\n{3,}", "\n\n", kept), bool(marked)
+
+
+def strip_comments(text: str, inline: bool = True) -> tuple[str, bool]:
+    """A doc without its opening editing note, and whether any comment past
+    that note was dropped. The comments hold notes to the doc's editor. Under
+    `inline` false, the comments past the opening note stay."""
     text = re.sub(r"\A<!--.*?-->\s*", "", text, flags=re.S)
+    if not inline:
+        return text, False
     stripped = re.sub(r" ?<!--.*?-->", "", text, flags=re.S)
     return stripped, stripped != text
 
 
-def render(docs: Path = DOCS_DIR, lib: Path = LIB_SRC) -> str:
+def render(docs: Path = DOCS_DIR, lib: Path = LIB_SRC,
+           principles_unabridged: bool = False) -> str:
     """The handbook: the docs and the lib's files, each under a heading
-    naming its file."""
+    naming its file. Under `principles_unabridged`, principles.md renders
+    unabridged. The other docs drop their source-only content either way."""
     parts: list[str] = []
     for name in DOCS:
         rel = f"docs/wf-solver/{name}"
         text, titles = drop_deferred((docs / name).read_text())
-        text, dropped = strip_comments(drop_omitted(text))
-        notes = [SECTION_DEFERRED.format(title=t, rel=rel) for t in titles]
+        unabridged = principles_unabridged and name == PRINCIPLES
+        marked = False
+        if not unabridged:
+            text, marked = drop_omitted(text)
+        text, dropped = strip_comments(text, inline=not unabridged)
+        notes: list[str] = []
         if dropped:
-            notes.insert(0, NOTES_DROPPED.format(rel=rel))
+            notes.append(NOTES_DROPPED.format(rel=rel))
+        if marked:
+            notes.append(STATEMENT_OMITTED)
+        notes += [SECTION_DEFERRED.format(title=t, rel=rel) for t in titles]
         note = "".join(f"\n\n{n}" for n in notes)
         if name in INDEX:
             parts.append(f"\n---\n\n# {rel} — index{note}\n\n{entry_index(text, rel)}")
@@ -327,21 +392,22 @@ def agent_prompt(handbook: str) -> str:
     return ROLE_NOTE + handbook
 
 
-def agent_definition(handbook: str) -> str:
-    """The handbook agent's definition file: AGENT_META as frontmatter, then
-    the prompt."""
-    front = "\n".join(f"{k}: {v}" for k, v in AGENT_META.items())
+def agent_definition(handbook: str, meta: dict[str, str] = AGENT_META) -> str:
+    """A handbook agent's definition file: `meta` as frontmatter, then the
+    prompt."""
+    front = "\n".join(f"{k}: {v}" for k, v in meta.items())
     return f"---\n{front}\n---\n{agent_prompt(handbook)}"
 
 
-def write_agent(path: Path = AGENT_PATH, docs: Path = DOCS_DIR, lib: Path = LIB_SRC,
-                handbook: str | None = None) -> Path:
-    """Write the handbook agent's definition, whole: a session that starts
-    while the write is in progress reads the old file or the new one. A file
-    that already holds the definition is left alone. `handbook` is the
-    rendered handbook, for a caller that has it.
-    """
-    text = agent_definition(render(docs, lib) if handbook is None else handbook)
+def principles_agent_path(path: Path = AGENT_PATH) -> Path:
+    """The variant agent's file, beside the handbook agent's file."""
+    return path.with_name(f"{path.stem}-principles{path.suffix}")
+
+
+def _write_definition(path: Path, text: str) -> Path:
+    """Write a definition, whole: a session that starts while the write is in
+    progress reads the old file or the new one. A file that already holds the
+    definition is left alone."""
     if path.exists() and path.read_text() == text:
         return path
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -352,6 +418,19 @@ def write_agent(path: Path = AGENT_PATH, docs: Path = DOCS_DIR, lib: Path = LIB_
     finally:
         tmp.unlink(missing_ok=True)
     return path
+
+
+def write_agent(path: Path = AGENT_PATH, docs: Path = DOCS_DIR, lib: Path = LIB_SRC,
+                handbook: str | None = None) -> Path:
+    """Write both handbook agent definitions and return the handbook agent's
+    path. `path` holds the handbook agent; `principles_agent_path(path)` holds
+    the variant. `handbook` is the rendered handbook, for a caller that has it.
+    """
+    text = agent_definition(render(docs, lib) if handbook is None else handbook)
+    _write_definition(principles_agent_path(path),
+                      agent_definition(render(docs, lib, principles_unabridged=True),
+                                       PRINCIPLES_AGENT_META))
+    return _write_definition(path, text)
 
 
 # A digest file no longer current, and untouched for this long, has no session

@@ -2,7 +2,8 @@
 
 from pathlib import Path
 
-from dl.context import DOCS, entry_index, lib_doc, lib_sources, render
+from dl.context import (DOCS, NOTES_DROPPED, STATEMENT_OMITTED, entry_index,
+                        lib_doc, lib_sources, render)
 
 
 def test_lib_doc_renders_docs_as_prose_and_the_interface_in_code():
@@ -184,9 +185,10 @@ def test_render_reads_the_listed_docs_in_order(tmp_path: Path):
             "Cited tasks carry worked applications of the principle they"
             " sit under. Grep the task id in docs/wf-solver/style.md to"
             " read one.\n\n"
+            + STATEMENT_OMITTED + "\n\n"
             "The Terms section is in the source: read it in"
             " docs/wf-solver/style.md when a term is unclear.\n\n"
-            "# Style\n\nEvery word of it.\n\n- **word** — a unit.\n\n## Rules\n\nOne rule.\n") in out
+            "# Style\n\nEvery word of it.\n\n- **word** — a unit. *\n\n## Rules\n\nOne rule. *\n") in out
     assert "a name" not in out
     assert "notation" not in out and "∀r" not in out
     assert "# docs/wf-solver/procedure.md\n\n# procedure.md\n" in out   # no note without notes
@@ -195,6 +197,112 @@ def test_render_reads_the_listed_docs_in_order(tmp_path: Path):
             "\n---\n\n# programs/lib/sets.dl\n\nThe sets.\n\n"
             "```\n.decl s(x: number)\n```\n") in out
     assert "out(P) :- in(P, _)." not in out and "#include" not in out
+
+
+def _docs(tmp_path: Path) -> tuple[Path, Path]:
+    """A docs directory holding each listed doc, and a lib file."""
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    for name in DOCS:
+        (docs / name).write_text(f"# {name}\n")
+    lib = tmp_path / "lib.dl"
+    lib.write_text(".decl out(p: Position)\n")
+    return docs, lib
+
+
+def test_an_item_over_dropped_plus_lines_takes_the_mark_and_the_note(tmp_path: Path):
+    docs, lib = _docs(tmp_path)
+    (docs / "style.md").write_text(
+        "# Style\n\n- A rule. <!-- an editor note -->\n    + ∀r. r\n        + r — a rule\n")
+
+    out = render(docs, lib)
+    assert "- A rule. *\n" in out
+    assert "∀r. r" not in out and "an editor note" not in out
+    assert STATEMENT_OMITTED in out
+    assert out.count("- A rule. *") == 1          # one mark, however many `+` lines
+
+
+def test_an_item_without_plus_lines_takes_no_mark(tmp_path: Path):
+    docs, lib = _docs(tmp_path)
+    (docs / "style.md").write_text("# Style\n\n- A rule.\n- Another rule.\n    + ∀r. r\n")
+
+    out = render(docs, lib)
+    assert "- A rule.\n" in out
+    assert "- Another rule. *\n" in out
+
+
+def test_the_unabridged_render_of_principles_takes_no_mark(tmp_path: Path):
+    docs, lib = _docs(tmp_path)
+    (docs / "principles.md").write_text("# Principles\n\n- A rule.\n    + fam(M) = T\n")
+
+    out = render(docs, lib, principles_unabridged=True)
+    heading = out.index("# docs/wf-solver/principles.md")
+    section = out[heading:out.index("\n---\n", heading)]
+    assert "- A rule.\n    + fam(M) = T\n" in section
+    assert "*" not in section and STATEMENT_OMITTED not in section
+
+
+def test_an_unabridged_render_keeps_the_citation_glosses_of_principles(tmp_path: Path):
+    docs, lib = _docs(tmp_path)
+    (docs / "principles.md").write_text(
+        "<!-- for the editor -->\n\n# Principles\n\n"
+        "- A rule. 00576224 <!-- the grid tiles under a flip -->\n")
+
+    out = render(docs, lib, principles_unabridged=True)
+    heading = out.index("# docs/wf-solver/principles.md")
+    section = out[heading:out.index("\n---\n", heading)]
+    assert "00576224 <!-- the grid tiles under a flip -->" in section
+    assert "for the editor" not in section
+    assert NOTES_DROPPED.format(rel="docs/wf-solver/principles.md") not in section
+
+
+def test_the_default_render_strips_the_citation_glosses_of_principles(tmp_path: Path):
+    docs, lib = _docs(tmp_path)
+    (docs / "principles.md").write_text(
+        "# Principles\n\n- A rule. 00576224 <!-- the grid tiles under a flip -->\n")
+
+    out = render(docs, lib)
+    heading = out.index("# docs/wf-solver/principles.md")
+    section = out[heading:out.index("\n---\n", heading)]
+    assert "- A rule. 00576224\n" in section
+    assert "the grid tiles under a flip" not in section
+    assert NOTES_DROPPED.format(rel="docs/wf-solver/principles.md") in section
+
+
+def test_an_unabridged_render_keeps_the_plus_lines_of_principles_only(tmp_path: Path):
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    for name in DOCS:
+        (docs / name).write_text(f"# {name}\n")
+    (docs / "principles.md").write_text("# Principles\n\n- A rule.\n    + fam(M) = T\n")
+    (docs / "style.md").write_text("# Style\n\n- A rule.\n    + notation\n")
+    lib = tmp_path / "lib.dl"
+    lib.write_text(".decl out(p: Position)\n")
+
+    out = render(docs, lib, principles_unabridged=True)
+    assert "+ fam(M) = T" in out
+    assert "+ notation" not in out
+    assert "+ fam(M) = T" not in render(docs, lib)
+
+
+def test_write_agent_writes_the_handbook_agent_and_the_principles_variant(tmp_path: Path):
+    from dl.context import (AGENT_META, PRINCIPLES_AGENT_META, agent_definition,
+                            principles_agent_path, write_agent)
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    for name in DOCS:
+        (docs / name).write_text(f"# {name}\n")
+    (docs / "principles.md").write_text("# Principles\n\n- A rule.\n    + fam(M) = T\n")
+    lib = tmp_path / "lib.dl"
+    lib.write_text(".decl out(p: Position)\n")
+
+    path = write_agent(tmp_path / "agents" / "handbook.md", docs, lib)
+    variant = principles_agent_path(path)
+    assert variant.name == "handbook-principles.md"
+    assert f"name: {AGENT_META['name']}\n" in path.read_text()
+    assert f"name: {PRINCIPLES_AGENT_META['name']}\n" in variant.read_text()
+    assert variant.read_text() == agent_definition(
+        render(docs, lib, principles_unabridged=True), PRINCIPLES_AGENT_META)
 
 
 def test_the_handbook_agent_is_the_handbook_under_its_frontmatter(tmp_path):

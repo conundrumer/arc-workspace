@@ -786,7 +786,6 @@ out(P, C) :- pick(_, P), in(P, C).
 SHARED_HEAD = """\
 .type Choice = A {} | B {}
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(0).
 
     // --- A ---
@@ -803,7 +802,7 @@ out(P, C, $A()) :- in(P, C), params.bg(C), params.mark(C).
 out(P, C, $B()) :- in(P, C).
 """
     [f] = [f for f in lint_rewrites(src) if f[0] == "shared-read"]
-    assert f[1] == 4   # the `bg` declaration's line
+    assert f[1] == 3   # the `bg` declaration's line
     assert f[2].startswith("`bg` is shared, and `$B()` never reads it")
 
 
@@ -846,7 +845,7 @@ out(P, C, Ch) :- impl(Ch), in(P, C), params.bg(C), params.mark(C).
 out(P, C, $B()) :- in(P, C).
 """
     fs = [f for f in lint_rewrites(src) if f[0] == "shared-read"]
-    assert [f[1] for f in fs] == [4]
+    assert [f[1] for f in fs] == [3]
     assert "`$B()` never reads it" in fs[0][2]
 
 
@@ -856,7 +855,6 @@ def test_shared_read_record_choice_reads_each_component():
 .type Paint = Keep {} | Cover {}
 .type Choice = [s: Step, p: Paint]
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(0).
 }
 .init params = Params

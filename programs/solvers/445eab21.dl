@@ -9,6 +9,7 @@
 //   $Box     — the bg cells inside the color's bounding bbox.
 //   $Area    — every cell of that box, the walls included.
 //   $Extent  — the box's extent along params.axis.
+// review principle: Prior or setup — a cell-set case to add: the peer ranks a color by the count of its own cells, not by the area of its box.
 
 #include "../lib.dl"
 

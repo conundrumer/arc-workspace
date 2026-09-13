@@ -1,7 +1,8 @@
 <!-- When editing this doc:
 - Write in the indicative mood.
 - Avoid justifications, unless there is necessary reason.
-- Avoid contrastive structures, unless the alternative needs to be addressed. -->
+- Avoid contrastive structures, unless the alternative needs to be addressed.
+- Write File structure rules by editing the template, and only describe what the template can't explain. -->
 
 # Style
 
@@ -50,17 +51,23 @@ A solver is one file, `<task_id>.dl`.
 ```
 // <task_id>
 // draft
-// concept: <keywords>
-// shape: <keywords>
-// Doc header — describe task and name cases.
+// keywords: <keywords from keywords.md>
+// input: <description, omitted when trivial>
+// output: <description>
+//  <continuation of description>
 
-#include "../lib.dl"
+// <what the choice is>
+.type Choice =
+    // <gloss>
+    CaseA {}
+    // <gloss>
+  | CaseB {}
 
-.type Choice = CaseA {} | CaseB {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(c: Color) bg(0).
+    // <gloss, where the name does not say what it is>
     .decl recolor(c_fg: Color, c_fill: Color)
     recolor(3, 1).
     recolor(5, 4).
@@ -79,8 +86,6 @@ A solver is one file, `<task_id>.dl`.
 
 // shared program rules
 
-.decl out(p: Position, col: Color, c: Choice)
-
 // --- CaseA ---
 out(..., $CaseA()) :- ...
 
@@ -90,12 +95,16 @@ out(..., $CaseB()) :- ...
 .comp Determine { ... }
 ```
 
-- `// concept:` carries the Setup and Prior keywords that some case of the file claims, and `// shape:` the Shape keywords, from `keywords.md`, separated by spaces.
-- `// concept:` marks a family representative.
-    - A family sibling has `// family: <task_id>` in its place. That line points at the representative, the family's first-solved member. The sibling's header keeps only task-specific content.
-    - A sibling whose program is one case of a representative whose `Choice` is an ADT names that case: `// family: <task_id> <Case>`. A sibling of a representative whose `Choice` is a record names no case.
-- `// shape:` appears when a shape applies. The Parse comp and the Determine comp appear when there is one.
-- `// draft` under the task-id line marks a solver the user has not approved.
+A family sibling's header:
+
+```
+// <task_id>
+// draft
+// representative: <task_id> <Case>
+```
+
+The representative is the family's first-solved member. A case name follows the id when the sibling holds one case of the representative's `Choice`. No case name follows it when the sibling holds every case, or when the `Choice` is record-typed.
+
 
 ### Cases
 
@@ -111,7 +120,7 @@ Params holds the parameterization and what derives from it. Each parameter is a 
 - `.init helpers = ParamsHelpers` inside Params gives data declarations the shared helpers as `helpers.<rel>`. The program has no access.
 - A task with an empty parameterization keeps the comp empty and the `.init` unchanged.
     - Write it as `.comp Params {}`.
-- **Shared marker.** The `shared` marker takes the parameters that every case reads. A parameter that some case never reads goes under the marker of the cases that read it.
+- **Shared parameters.** The parameters that every case reads sit above the case markers. A parameter that some case never reads goes under the marker of the cases that read it.
 - **Derived data.** A rule inside Params derives a relation from parameters, and writes no value as a literal. The derived relation is not a parameter, and carries no determination relation.
     - **`@unit` literal.** A literal 1 stating a unit stays in the rule, under an `// @unit: <what the 1 states>` comment on the rule's line. A 1 is a unit when a larger value states no model. The linter flags a program literal regardless of `@unit`.
 - Facts are not column-aligned across a block.

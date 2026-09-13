@@ -4,6 +4,7 @@
 // input: four marker cells, one off each side of a box, and a small shape in another color.
 // output: the input, with a rectangle outline drawn just inside a box the input spans,
 //  in the shape's color.
+// review principle: Prior or setup — whether the spanned box and the marker set are different parses.
 
 // What tells the markers from the shape.
 .type Mark =

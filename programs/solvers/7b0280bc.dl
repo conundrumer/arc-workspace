@@ -5,6 +5,7 @@
 // color. The color with the fewest squares marks the two ends. The output
 // recolors the route between the ends through the fewest pieces: its wires
 // take one fill and its squares another, and the ends keep their color.
+// review principle: Prior or setup — a cell-set case to add: the peer calls a piece square when its extents are equal, and drops the box reading's test that no cell is omitted.
 
 #include "../lib.dl"
 

@@ -13,6 +13,7 @@
 //!
 //! - `ord`, `count`, and `match` are Souffle reserved words, so an instance
 //!   cannot take them as its name.
+//! - A caller populates the inputs that the outputs it reads derive from.
 //! - An `inline` relation sits under negation only when its clauses
 //!   introduce no variable and the use binds every column. No inline
 //!   relation can appear inside an aggregate; a non-inline relation wraps it.

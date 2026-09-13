@@ -21,7 +21,7 @@ The operations and passes of a solver session.
 - **Source reading.** Do not read `src/dl/` during a pass. If you do, report to the user why, as a gap in the docs or the runner.
 - **Corpus.** The corpus is the approved solvers. Take a draft as no evidence for a claim about the corpus, and cite one in a doc under `docs/` only in a survey result.
 - **Keywords.**
-    - If no keyword in `keywords.md` fits, propose one in the review, and add it to the solver's concept line.
+    - If no keyword in `keywords.md` fits, propose one in the review, and add it to the solver's `keywords:` line.
     - If an existing keyword's gloss should change, propose it in the review.
 
 ## Operations
@@ -37,7 +37,7 @@ The operations and passes of a solver session.
 3. Run it (`uv run python scripts/run_dl.py <task_id>`).
 4. Iterate until it works and passes lint.
     - When a hint appears, judge it, and put that judgment in the review.
-    - Flag performance issues in the review. If they prevent the principled form, make a temporary workaround.
+    - Flag performance issues in the review. If they prevent the principled form, make a temporary workaround under a `// @workaround:` line.
 5. Run the audit (`uv run python scripts/run_dl.py audit <task_id>`) and resolve the findings.
 
 ### Determine

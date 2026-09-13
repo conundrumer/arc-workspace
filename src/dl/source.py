@@ -250,9 +250,20 @@ def expand_rigid_macros(source: str) -> str:
     return _join(_rigid_chunks(source))
 
 
+LIB_INCLUDE = '#include "../lib.dl"'
+INCLUDE_RE = re.compile(r'^\s*#include\s+"', re.M)
+
+
+def with_lib(source: str) -> str:
+    """The source under the lib include. A solver holds no include of its
+    own; one that does keeps it."""
+    return source if INCLUDE_RE.search(source) else f"{LIB_INCLUDE}\n{source}"
+
+
 def expand_macros(source: str) -> str:
-    """Both macro expansions; RIGID first, so its inner GRID calls expand."""
-    return expand_grid_macros(expand_rigid_macros(source))
+    """The lib include, then both macro expansions; RIGID first, so its inner
+    GRID calls expand."""
+    return expand_grid_macros(expand_rigid_macros(with_lib(source)))
 
 
 def _chunk_line_starts(chunks: list[Chunk]) -> list[int]:
@@ -283,14 +294,18 @@ def _line_map(text: str, chunks: list[Chunk]) -> list[int]:
 
 def macro_line_map(source: str) -> list[int]:
     """Source line for each line of `expand_macros(source)`, 1-based both
-    ways, indexed from 0. A generated line maps to its call site."""
+    ways, indexed from 0. A generated line maps to its call site, and an
+    added include line to the first line."""
+    added = not INCLUDE_RE.search(source)
+    source = with_lib(source)
     rigid = _rigid_chunks(source)
     placed = _join(rigid)
     to_source = _line_map(source, rigid)
-    return [
+    lines = [
         to_source[min(line, len(to_source)) - 1]
         for line in _line_map(placed, _grid_chunks(placed))
     ]
+    return [max(line - 1, 1) for line in lines] if added else lines
 
 
 def public_param(name: str) -> str:
@@ -333,18 +348,21 @@ def comp_decls(source: str, comp_name: str) -> dict[str, list[str]]:
 
 
 def shared_params(source: str) -> set[str]:
-    """The Params relations declared under the `// --- shared ---` marker.
+    """The Params relations that every case reads.
 
-    A shared parameter serves every case, so it sits above the case
-    markers; a parameter under a case marker serves that case alone.
+    A shared parameter sits above the case markers, and a parameter under
+    a case marker serves that case alone; a Params with no case marker is
+    shared throughout. A solver with no `Choice` has no cases, so it has
+    no shared parameters.
     """
+    if not re.search(r"^\.type\s+Choice\b", source, re.M):
+        return set()
     start, end = _comp_span(source, "Params")
     names: set[str] = set()
-    shared = False
     for line in source.splitlines()[start:end]:
-        if m := SECTION_RE.match(line.lstrip()):
-            shared = m.group(1) == "shared"
-        elif shared and (d := re.match(r"\s*\.decl\s+(\w+)", line)):
+        if SECTION_RE.match(line.lstrip()):
+            break
+        if d := re.match(r"\s*\.decl\s+(\w+)", line):
             names.add(d.group(1))
     return names
 

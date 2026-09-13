@@ -3,6 +3,7 @@
 import itertools
 import re
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 from arc.task import load as load_task
@@ -35,10 +36,44 @@ from dl.source import (
 
 
 MAX_CANDIDATES = 256
+BUDGET_SECONDS = 180.0
+
+
+class _Budget:
+    """A wall-clock budget for the solver runs of one sweep."""
+
+    def __init__(self, seconds: float):
+        self.seconds = seconds
+        self.start = time.monotonic()
+
+    def elapsed(self) -> float:
+        return time.monotonic() - self.start
+
+    def spent(self) -> bool:
+        return self.elapsed() >= self.seconds
+
+
+def _run_candidates(test, candidates: list, budget: _Budget) -> tuple[list, int]:
+    """Run `test` over the candidates in chunks until the budget is spent.
+
+    The clock is read between chunks, so a chunk in flight finishes. The
+    first chunk always runs, so a spent budget still leaves a reading of
+    the parameter. Returns the rows and the number of candidates run.
+    """
+    chunk = _pool_workers() or 8
+    rows: list = []
+    with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
+        for i in range(0, len(candidates), chunk):
+            if rows and budget.spent():
+                break
+            rows.extend(executor.map(test, candidates[i:i + chunk]))
+    return rows, len(rows)
 
 
 def sweep_report(
-    stem: str, max_candidates: int = MAX_CANDIDATES
+    stem: str,
+    max_candidates: int = MAX_CANDIDATES,
+    budget: float = BUDGET_SECONDS,
 ) -> list[tuple[str, str, object]]:
     """Conditional sweep of each enumerable parameter.
 
@@ -58,8 +93,15 @@ def sweep_report(
     place of candidate values.
 
     Above the cap the cross product of the domains gives way to the
-    coordinate sweep (see _coordinate_candidates). A slice smaller than
-    that product is a partial sweep, and the status says so.
+    coordinate sweep (see _coordinate_candidates), which the cap bounds in
+    turn. A slice smaller than that product is a partial sweep, and the
+    status says so.
+
+    `budget` is the wall-clock budget in seconds for the solver runs. The
+    parameters run in order of candidate count, the cheapest first, and the
+    clock is read between runs. Once the budget is spent, the parameter in
+    flight reports as cut and the parameters behind it report as not swept
+    for the reason "time budget". The report keeps the declaration order.
 
     A shared parameter is one every case reads, so the cases must admit
     the same values. Each such parameter reports its per-case value sets
@@ -67,11 +109,12 @@ def sweep_report(
 
     Returns (param, status, detail): status 'swept' carries
     (fitting, stored, types, verdicts) — verdicts maps each extra fitting
-    value to its test-pass bool — 'swept-near' carries that shape with a
-    trailing (swept, whole) scope, 'swept-set' and 'swept-set-near'
-    carry the same shape with frozensets of value tuples for fitting and
-    verdict keys, 'cases' carries (per_case, types, domain), and 'skip'
-    carries the reason.
+    value to its test-pass bool — 'swept-near' and 'swept-cut' carry that
+    shape with a trailing (swept, whole) scope, 'swept-set' carries the
+    same shape with frozensets of value tuples for fitting and verdict
+    keys, 'swept-set-near' and 'swept-set-cut' add the scope to that,
+    'cases' carries (per_case, types, domain), and 'skip' carries the
+    reason.
     """
     # Macros expand first, so a GRID-fed parameter reads as ordinary facts and
     # a RIGID chart as an ordinary generated-name parameter; re-expansion at
@@ -83,28 +126,30 @@ def sweep_report(
     s, e = _comp_span(source, "Params")
     params_text = "\n".join(source.splitlines()[s:e])
 
-    reference: list[frozenset[str]] | None = None
-    test_reference: list[frozenset[str]] | None = None
     shared = shared_params(source)
-    base_cases: frozenset[str] = frozenset()
-    results: list[tuple[str, str, object]] = []
     params = comp_decls(source, "Params")
     placed = {public_param(n) for n in params if n.startswith(RIGID_CHART_PREFIX)}
-    for param, types in params.items():
+
+    # The report keeps the declaration order, so each entry carries the
+    # rank of its parameter and its place within that parameter.
+    results: list[tuple[int, int, tuple[str, str, object]]] = []
+    prepared: list[tuple[int, str, list[str], list[tuple], list[tuple],
+                        str, tuple | None]] = []
+    for rank, (param, types) in enumerate(params.items()):
         if param in placed:
             continue
         if re.search(rf"\b{param}\s*\([^)]*\)\s*:-", params_text):
-            results.append((public_param(param), "skip", "derived"))
+            results.append((rank, 0, (public_param(param), "skip", "derived")))
             continue
         facts = _param_facts(source, param)
         if not facts:
-            results.append((public_param(param), "skip", "0 facts"))
+            results.append((rank, 0, (public_param(param), "skip", "0 facts")))
             continue
         if not all(t in ENUM_TYPES or t in ("Color", "number")
                    or t in POSITION_TYPES for t in types):
-            results.append(
-                (public_param(param), "skip", f"non-enumerable ({', '.join(types)})")
-            )
+            results.append((rank, 0, (
+                public_param(param), "skip",
+                f"non-enumerable ({', '.join(types)})")))
             continue
 
         stored = []
@@ -139,11 +184,26 @@ def sweep_report(
         status, scope = "swept", None
         if len(candidates) > max_candidates:
             whole = len(candidates)
-            candidates = _coordinate_candidates(stored, domains)
-            # A one-column parameter's coordinate slice is the whole
-            # candidate set, so that sweep is complete and reports as one.
+            candidates = _coordinate_candidates(stored, domains, max_candidates)
+            # A slice that holds every candidate — the stored rows alone
+            # over the cap — is a complete sweep and reports as one.
             if len(candidates) < whole:
                 status, scope = "swept-near", (len(candidates), whole)
+        prepared.append((rank, param, types, stored, candidates, status, scope))
+
+    clock = _Budget(budget)
+    reference: list[frozenset[str]] | None = None
+    test_reference: list[frozenset[str]] | None = None
+    base_cases: frozenset[str] = frozenset()
+    ran = False
+    # A spent budget costs the report the parameters that ask for the most
+    # runs.
+    for rank, param, types, stored, candidates, status, scope in sorted(
+            prepared, key=lambda p: (len(p[4]), p[0])):
+        if ran and clock.spent():
+            results.append(
+                (rank, 0, (public_param(param), "skip", "time budget")))
+            continue
 
         if reference is None:
             if shared:
@@ -152,10 +212,13 @@ def sweep_report(
                               else frozenset())
             else:
                 reference = _profile(source, task.train)
+            ran = True
             if reference is None:
-                results.append((public_param(param), "skip", "stored value fails train"))
+                results.append((rank, 0, (
+                    public_param(param), "skip", "stored value fails train")))
                 continue
 
+        facts = _param_facts(source, param)
         # The per-case sets need every pair, so the profile's early return
         # goes only for the shared parameters this report covers.
         cases_wanted = (param in shared and len(base_cases) > 1
@@ -170,19 +233,27 @@ def sweep_report(
             return vals, profile == reference, admits
 
         print(f"{public_param(param)}: {len(candidates)} values", file=sys.stderr)
-        with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
-            rows = list(executor.map(test, candidates))
+        rows, run = _run_candidates(test, candidates, clock)
+        ran = True
         fitting = [v for v, ok, _ in rows if ok]
+
+        if run < len(candidates):
+            # A cut sweep reads part of the candidate set, so it reports
+            # what it saw and leaves the test runs out.
+            results.append((rank, 0, (
+                public_param(param), "swept-cut",
+                (fitting, stored, types, {}, (run, len(candidates))))))
+            continue
 
         case_result = _case_result(param, types, candidates, base_cases, rows) \
             if cases_wanted else None
 
         if not set(stored) <= set(fitting):
-            results.append(_set_sweep(
+            results.append((rank, 0, _set_sweep(
                 source, param, stored, types, candidates, task, reference,
-                max_candidates))
+                max_candidates, clock)))
             if case_result:
-                results.append(case_result)
+                results.append((rank, 1, case_result))
             continue
 
         verdicts: dict[tuple, bool] = {}
@@ -202,10 +273,10 @@ def sweep_report(
         detail = (fitting, stored, types, verdicts)
         if scope:
             detail = detail + (scope,)
-        results.append((public_param(param), status, detail))
+        results.append((rank, 0, (public_param(param), status, detail)))
         if case_result:
-            results.append(case_result)
-    return results
+            results.append((rank, 1, case_result))
+    return [r for _, _, r in sorted(results, key=lambda r: r[:2])]
 
 
 def _case_result(
@@ -234,40 +305,64 @@ def _case_result(
 
 
 def _coordinate_candidates(
-    stored: list[tuple], domains: list[list]
+    stored: list[tuple], domains: list[list], limit: int
 ) -> list[tuple]:
     """The candidate rows one column-change from the stored facts.
 
-    Each stored row joins the list, and each of its columns runs through
+    The stored rows head the list, and each of their columns runs through
     that column's domain with the other columns held. The whole sweep is
-    the cross product of the domains; this is its coordinate slice.
+    the cross product of the domains; this is its coordinate slice. The
+    rows come one per (stored row, column) in turn, so `limit` cuts every
+    column alike. The cut never reaches a stored row, so stored rows above
+    the limit are the whole list.
     """
-    rows = set(stored)
-    for row in stored:
-        for i, domain in enumerate(domains):
-            for value in domain:
-                rows.add(row[:i] + (value,) + row[i + 1:])
-    return sorted(rows)
+    rows = list(dict.fromkeys(stored))
+    seen = set(rows)
+    slices = [
+        [row[:i] + (value,) + row[i + 1:] for value in domain]
+        for row in rows
+        for i, domain in enumerate(domains)
+    ]
+    for step in itertools.zip_longest(*slices):
+        for row in step:
+            if row is None or row in seen:
+                continue
+            if len(rows) >= limit:
+                return rows
+            rows.append(row)
+            seen.add(row)
+    return rows
 
 
-def _neighborhood(stored: list[tuple], singles: list[tuple]) -> list[frozenset]:
-    """The candidate sets one row-change from the stored facts.
+def _neighborhood(
+    stored: list[tuple], singles: list[tuple], limit: int
+) -> list[frozenset]:
+    """The candidate sets one row-change from the stored facts, `limit` of
+    them at most.
 
     A change is a stored row reassigned to another candidate value, a stored
     row dropped, or a non-stored candidate added; the other rows keep their
-    stored values. The stored facts are a candidate too, so the fitting sets
-    read as in the whole sweep.
+    stored values. The stored facts head the list, so the fitting sets read
+    as in the whole sweep. The sets come one change per stored row in turn,
+    so the limit cuts every row alike.
     """
     stored_set = frozenset(stored)
-    sets = {stored_set}
-    for row in stored_set:
+    sets = [stored_set]
+    seen = {stored_set}
+    changes = []
+    for row in dict.fromkeys(stored):
         rest = stored_set - {row}
-        sets.add(rest)
-        for value in singles:
-            sets.add(rest | {value})
-    for value in singles:
-        sets.add(stored_set | {value})
-    return sorted((v for v in sets if v), key=sorted)
+        changes.append([rest] + [rest | {value} for value in singles])
+    changes.append([stored_set | {value} for value in singles])
+    for step in itertools.zip_longest(*changes):
+        for value in step:
+            if not value or value in seen:
+                continue
+            if len(sets) >= limit:
+                return sets
+            sets.append(value)
+            seen.add(value)
+    return sets
 
 
 def _set_sweep(
@@ -279,14 +374,16 @@ def _set_sweep(
     task,
     reference: list[frozenset[str]],
     max_candidates: int,
+    clock: _Budget,
 ) -> tuple[str, str, object]:
     """Sweep a parameter whose facts fit only together, as one unit.
 
     Candidate values are the non-empty subsets of the singleton candidates;
     each replaces the whole parameter. Above the cap the subsets give way to
-    the one-change neighborhood of the stored facts (see _neighborhood), and
-    the status says so. Fitting and test-refutation read as in the singleton
-    sweep, over sets.
+    the one-change neighborhood of the stored facts (see _neighborhood),
+    which the cap bounds in turn, and the status names the part it swept.
+    Fitting and test-refutation read as in the singleton sweep, over sets. A
+    sweep the budget cuts reports the sets it ran of the sets it holds.
 
     Zero is absence, so a 0 in a number column stands as a candidate only
     where the stored facts already carry one in that column.
@@ -296,11 +393,12 @@ def _set_sweep(
              if t == "number" and all(s[i] != 0 for s in stored)}
     singles = [v for v in singles if all(v[i] != 0 for i in blank)]
     n_sets = 2 ** len(singles) - 1
+    status, scope = "swept-set", None
     if n_sets > max_candidates:
-        status = "swept-set-near"
-        subsets = _neighborhood(stored, singles)
+        subsets = _neighborhood(stored, singles, max_candidates)
+        if len(subsets) < n_sets:
+            status, scope = "swept-set-near", (len(subsets), n_sets)
     else:
-        status = "swept-set"
         subsets = [
             frozenset(c)
             for r in range(1, len(singles) + 1)
@@ -313,8 +411,11 @@ def _set_sweep(
         return value if profile == reference else None
 
     print(f"{name}: {len(subsets)} values", file=sys.stderr)
-    with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
-        fitting = [f for f in executor.map(test, subsets) if f]
+    rows, run = _run_candidates(test, subsets, clock)
+    fitting = [f for f in rows if f]
+    if run < len(subsets):
+        return (name, "swept-set-cut",
+                (fitting, stored, types, {}, (run, len(subsets))))
 
     verdicts: dict[frozenset, bool] = {}
     extras = sorted(set(fitting) - {stored_set}, key=sorted)
@@ -331,7 +432,10 @@ def _set_sweep(
 
             with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
                 verdicts = dict(zip(extras, executor.map(test_check, extras)))
-    return (name, status, (fitting, stored, types, verdicts))
+    detail = (fitting, stored, types, verdicts)
+    if scope:
+        detail = detail + (scope,)
+    return (name, status, detail)
 
 
 def _mag_vec(vals: tuple, types: list[str]) -> list[int]:
@@ -390,11 +494,16 @@ def render_sweep(results: list[tuple[str, str, object]]) -> list[str]:
         if status == "cases":
             lines.append(_render_cases(param, detail, show))
             continue
-        if status in ("swept-set", "swept-set-near"):
-            fitting, stored, types, verdicts = detail
+        if status in ("swept-set", "swept-set-near", "swept-set-cut"):
+            fitting, stored, types, verdicts = detail[:4]
             stored_set = frozenset(stored)
-            scope = ("swept whole" if status == "swept-set"
-                     else "swept single-row changes")
+            scope = "swept whole"
+            if status == "swept-set-near":
+                swept, whole = detail[4]
+                scope = f"swept single-row changes; {swept} of {whole} sets"
+            elif status == "swept-set-cut":
+                run, whole = detail[4]
+                scope = f"cut by the time budget; {run} of {whole} sets"
 
             def show_value(value, types=types):
                 return "{" + ", ".join(show(v, types) for v in sorted(value)) + "}"
@@ -435,6 +544,9 @@ def render_sweep(results: list[tuple[str, str, object]]) -> list[str]:
             swept, whole = detail[4]
             scope = (f" (swept single-column changes; {swept} of {whole} "
                      "values)")
+        elif status == "swept-cut":
+            run, whole = detail[4]
+            scope = f" (cut by the time budget; {run} of {whole} values)"
         vset, sset = set(fitting), set(stored)
         def shown(vals, types=types):
             return ", ".join(show(v, types) for v in vals)

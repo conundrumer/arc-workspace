@@ -5,7 +5,14 @@ from dl.lint import lint_program
 
 
 def cats(src: str) -> list[str]:
-    return [f[0] for f in lint_program(src)]
+    """The categories a source fires, less the header ones: a fragment under
+    test carries no header."""
+    return [f[0] for f in lint_program(src) if f[0] != "header"]
+
+
+def of(src: str, cat: str) -> list[tuple[int, str]]:
+    """The (line, why) pairs of one category."""
+    return [(f[1], f[2]) for f in lint_program(src) if f[0] == cat]
 
 
 def test_reserved_decl_name_fires():
@@ -377,7 +384,7 @@ def test_family_case_the_representative_lacks_fires(tmp_path, monkeypatch):
     monkeypatch.setattr(lint, "SOLVERS_DIR", tmp_path)
     src = """\
 // 74dd1130
-// family: 67a3c6ac Shear
+// representative: 67a3c6ac Shear
 """
     fs = [f for f in lint_program(src) if f[0] == "family case"]
     assert [f[1] for f in fs] == [2]
@@ -385,7 +392,7 @@ def test_family_case_the_representative_lacks_fires(tmp_path, monkeypatch):
 
     src = """\
 // c8f0f002
-// family: 0d3d703e Recolor
+// representative: 0d3d703e Recolor
 """
     fs = [f for f in lint_program(src) if f[0] == "family case"]
     assert [f[1] for f in fs] == [2]
@@ -398,7 +405,7 @@ def test_family_case_the_representative_is_a_record_fires(tmp_path, monkeypatch)
     monkeypatch.setattr(lint, "SOLVERS_DIR", tmp_path)
     src = """\
 // 74dd1130
-// family: 87ab05b8 Shear
+// representative: 87ab05b8 Shear
 """
     fs = [f for f in lint_program(src) if f[0] == "family case"]
     assert [f[1] for f in fs] == [2]
@@ -413,7 +420,33 @@ def test_family_case_the_representative_holds_stays_quiet(tmp_path, monkeypatch)
     monkeypatch.setattr(lint, "SOLVERS_DIR", tmp_path)
     src = """\
 // 74dd1130
-// family: 67a3c6ac Turn
+// representative: 67a3c6ac Turn
+"""
+    assert "family case" not in cats(src)
+
+
+def test_family_case_the_grammar_rejects_fires(tmp_path, monkeypatch):
+    import dl.lint as lint
+    (tmp_path / "67a3c6ac.dl").write_text(".type Choice = Mirror {} | Turn {}\n")
+    monkeypatch.setattr(lint, "SOLVERS_DIR", tmp_path)
+    src = """\
+// 74dd1130
+// representative: 67a3c6ac Mirror Turn
+// representative:
+"""
+    fs = [f for f in lint_program(src) if f[0] == "family case"]
+    assert [f[1] for f in fs] == [2, 3]
+    assert "at most one case name after the id" in fs[0][2]
+    assert fs[0][3] == "// representative: 67a3c6ac Mirror Turn"
+
+
+def test_family_case_the_line_with_no_case_stays_quiet(tmp_path, monkeypatch):
+    import dl.lint as lint
+    (tmp_path / "67a3c6ac.dl").write_text(".type Choice = Mirror {} | Turn {}\n")
+    monkeypatch.setattr(lint, "SOLVERS_DIR", tmp_path)
+    src = """\
+// 74dd1130
+// representative: 67a3c6ac
 """
     assert "family case" not in cats(src)
 
@@ -462,3 +495,149 @@ also(K) :- parse._own(_), K = 0.
         (5, "`_breaks` is internal to OffsetInvariance; read a public readout"),
         (6, "`_cand` is internal to OffsetInvariance; read a public readout"),
     ]
+
+
+# ---------- the header ----------
+
+HEADER = """\
+// 74dd1130
+// draft
+// keywords: tiling recolor
+// input: a grid of tiles, one of them recolored
+// output: the grid with every tile recolored
+// review principle: Naming — the comp name says the mechanism
+"""
+
+
+def test_the_header_forms_that_pass():
+    """A full header; a sibling, which names its representative in place of
+    the other fields, so the missing `output:` is no finding; and a value
+    continued on a line of `//` and two spaces."""
+    assert of(HEADER, "header") == []
+
+    sibling = """\
+// 74dd1130
+// representative: 67a3c6ac Shear
+"""
+    assert of(sibling, "header") == []
+
+    continued = """\
+// 74dd1130
+// keywords: tiling
+// output: the grid with every tile recolored
+//  and the seam between them removed
+"""
+    assert of(continued, "header") == []
+
+
+def test_the_old_header_labels_fire():
+    src = """\
+// 74dd1130
+// concept: tiling
+// shape: latent-canvas
+// family: 67a3c6ac
+// output: a grid of tiles
+"""
+    fs = of(src, "header")
+    assert [f[0] for f in fs] == [1, 2, 3, 4]
+    assert "`concept:` is no header field" in fs[1][1]
+    assert "`shape:` is no header field" in fs[2][1]
+    assert "`family:` is no header field" in fs[3][1]
+    assert fs[0][1] == "the header carries `keywords:` or `representative:`"
+
+
+def test_prose_in_the_header_fires_once():
+    src = """\
+// 74dd1130
+// keywords: tiling
+// output: a grid of tiles
+// the grid is square
+// and so is every tile
+"""
+    fs = of(src, "header")
+    assert [f[0] for f in fs] == [4]
+    assert "no prose in the header" in fs[0][1]
+
+
+def test_a_review_line_off_a_draft_fires():
+    src = """\
+// 74dd1130
+// keywords: tiling
+// output: a grid of tiles
+// review principle: Naming — the comp name says the mechanism
+"""
+    fs = of(src, "header")
+    assert [f[0] for f in fs] == [4]
+    assert "`review` stands under `draft` only" in fs[0][1]
+
+
+def test_a_review_sweep_line_passes():
+    src = """\
+// 74dd1130
+// draft
+// keywords: tiling
+// output: a grid of tiles
+// review sweep: recolor — the pairs leave the fill color open
+"""
+    assert of(src, "header") == []
+
+
+def test_a_keyworded_header_without_an_output_fires():
+    src = """\
+// 74dd1130
+// keywords: tiling
+// input: a grid of tiles
+"""
+    assert of(src, "header") == [(1, "the header carries `output:`")]
+
+
+# ---------- the glosses over the choice ----------
+
+def test_a_choice_on_one_line_fires():
+    src = """\
+// 74dd1130
+// keywords: tiling
+// output: a grid of tiles
+
+.type Choice = Mirror {} | Turn {}
+"""
+    fs = of(src, "gloss")
+    assert [f[0] for f in fs] == [5, 5, 5]
+    assert fs[0][1] == "a gloss stands above `Choice`: what the choice is"
+    assert fs[1][1] == "`Mirror` opens its own line, under its gloss"
+    assert fs[2][1] == "`Turn` opens its own line, under its gloss"
+
+
+def test_a_record_choice_is_read_through_its_field_types():
+    src = """\
+// 74dd1130
+// keywords: tiling
+// output: a grid of tiles
+
+// what to do, and what to do it to
+.type Choice = [d: DecChoice, b: Body]
+
+// which way the tiles turn
+.type DecChoice =
+      // mirror across the seam
+      Mirror {}
+      // a quarter turn
+    | Turn {}
+
+// what the choice acts on
+.type Body =
+      Whole {}
+"""
+    assert of(src, "gloss") == [(17, "a gloss stands above `Whole`")]
+
+
+# ---------- the lib include ----------
+
+def test_an_include_in_the_solver_fires():
+    src = """\
+// 74dd1130
+// keywords: tiling
+// output: a grid of tiles
+#include "../lib.dl"
+"""
+    assert of(src, "include") == [(4, "the build adds the lib; drop the include")]

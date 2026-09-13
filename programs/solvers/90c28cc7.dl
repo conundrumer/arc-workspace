@@ -5,8 +5,25 @@
 //  laid out in a grid whose rows and columns differ in width
 // output: the block layout — one cell per block, holding its color, at its
 //  band's rank on each axis
+// review principle: Prior or setup — whether the bounding box of the non-bg cells and those cells are different parses.
 
-.type Line = [a: Axis, p_line: Position]
+// What the layout's region is.
+.type Choice =
+    // the bounding box of the non-bg cells
+    Box {}
+    // the non-bg cells
+  | Cells {}
+
+// A line of a case's region, on one axis.
+.type Line = [ch: Choice, a: Axis, p_line: Position]
+
+// A case's lines on one axis.
+.type AxisKey = [ch: Choice, a: Axis]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.decl impl_choice(ch: Choice)
+impl_choice($Box()). impl_choice($Cells()).
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -14,47 +31,51 @@
 
 .init params = Params
 
-// The layout's region: the bounding box of the non-bg cells, read in its own
-// frame.
-.init region_box = Bbox<Unit>
-region_box.cell($U(), P) :- in(P, Col), !params.bg(Col).
-
-.decl region(p_inner: Position, col: Color)
-region(P_inner, Col) :- in(P, Col), region_box.box($U(), B), crop(P, B, P_inner).
+// The cells the layout is read from, each in its case's frame.
+.decl region(p: Position, col: Color, ch: Choice)
 
 // A region cell by its line on axis a and its place across, which is its
 // line on the other axis.
-.decl line_cell(a: Axis, p_line: Position, p_across: Position, col: Color)
-line_cell(A, L, X, Col) :- region(P_inner, Col), axis_elem(A), split(P_inner, A, L, X).
+.decl line_cell(a: Axis, p_line: Position, p_across: Position, col: Color, ch: Choice)
+line_cell(A, L, X, Col, Ch) :- region(P, Col, Ch), axis_elem(A), split(P, A, L, X).
 
-.decl line(a: Axis, p_line: Position)
-line(A, L) :- line_cell(A, L, _, _).
+.decl line(a: Axis, p_line: Position, ch: Choice)
+line(A, L, Ch) :- line_cell(A, L, _, _, Ch).
 
 // Two lines that hold different colors at one place across.
-.decl differ(a: Axis, p_line: Position, p_line2: Position)
-differ(A, L, L2) :- line_cell(A, L, X, Col), line_cell(A, L2, X, Col2), Col != Col2.
+.decl differ(a: Axis, p_line: Position, p_line2: Position, ch: Choice)
+differ(A, L, L2, Ch) :- line_cell(A, L, X, Col, Ch), line_cell(A, L2, X, Col2, Ch), Col != Col2.
 
 // Neighboring lines that agree everywhere: no block boundary between them.
 .decl uncut(x: Line, y: Line)
-uncut([A, L], [A, L2]) :-
-    line(A, L), line(A, L2),
+uncut([Ch, A, L], [Ch, A, L2]) :-
+    line(A, L, Ch), line(A, L2, Ch),
     axis_of(D, A), neighbor(L, D, L2),
-    !differ(A, L, L2).
+    !differ(A, L, L2, Ch).
 
 // A band is a run of lines that no boundary cuts.
 .init bands = Canon<Line>
-bands.equiv([A, L], [A, L]) :- line(A, L).
+bands.equiv([Ch, A, L], [Ch, A, L]) :- line(A, L, Ch).
 bands.equiv(X, Z) :- bands.equiv(X, Y), uncut(Y, Z).
 
 // One output line per band. Band line sets are disjoint runs, as OrderFrame
 // assumes.
-.init layout = OrderFrame<Axis, Ident>
-layout.axis(A, A) :- axis_elem(A).
-layout.member(A, Bd, L) :- bands.id([A, L], Bd).
+.init layout = OrderFrame<AxisKey, Ident>
+layout.axis([Ch, A], A) :- impl_choice(Ch), axis_elem(A).
+layout.member([Ch, A], Bd, L) :- bands.id([Ch, A, L], Bd).
 
-.decl out(p: Position, col: Color)
-out(P, Col) :-
-    line_cell(A, L, L2, Col), perp(A, A2),                     // a region cell by its two lines
-    bands.id([A, L], Bd), bands.id([A2, L2], Bd2),             // its band on each axis
-    layout.pos(A, Bd, P_line), layout.pos(A2, Bd2, P_line2),   // the bands' output lines
-    compose(P_line, P_line2, P).                               // where the two lines cross
+out(P, Col, Ch) :-
+    line_cell(A, L, L2, Col, Ch), perp(A, A2),                            // a region cell by its two lines
+    bands.id([Ch, A, L], Bd), bands.id([Ch, A2, L2], Bd2),                // its band on each axis
+    layout.pos([Ch, A], Bd, P_line), layout.pos([Ch, A2], Bd2, P_line2),  // the bands' output lines
+    compose(P_line, P_line2, P).                                          // where the two lines cross
+
+// --- Box ---
+.init region_box = Bbox<Unit>
+region_box.cell($U(), P) :- in(P, Col), !params.bg(Col).
+
+// The bounding box, read in its own frame, with the bg cells inside it.
+region(P_inner, Col, $Box()) :- in(P, Col), region_box.box($U(), B), crop(P, B, P_inner).
+
+// --- Cells ---
+region(P, Col, $Cells()) :- in(P, Col), !params.bg(Col).

@@ -5,6 +5,7 @@
 //  runs the whole way to the far edge; the others stop short.
 // output: the input, with the full shape placed on each shape and drawn in
 //  params.mark where it reaches past that shape's own extent.
+// review principle: Prior or setup — a cell-set case to add: the peer anchors a shape by the box corner that the shape occupies.
 
 // What a shape is.
 .type Parse =

@@ -12,8 +12,8 @@ from functools import lru_cache
 
 from dl.context import DOCS_DIR, lib_sources
 from dl.dlparse import (
-    Agg, Atom, Cmp, Comp, Decl, Define, Disj, Functor, Init, Item, Lit, Neg,
-    ParseError, Rigid, Rule, TypeDecl, parse,
+    SECTION_RE, Agg, Atom, Cmp, Comp, Decl, Define, Disj, Functor, Include,
+    Init, Item, Lit, Neg, ParseError, Rigid, Rule, TypeDecl, parse,
 )
 from dl.paths import SOLVERS_DIR
 
@@ -127,11 +127,31 @@ NO_ENTRY_CAT = "comp without entry"
 # under.
 LONE_PARSE_CAT = "parse without determine"
 # The header line naming the family representative, with the case name it
-# may carry: `// family: <task_id>` or `// family: <task_id> <Case>`.
-FAMILY_RE = re.compile(r"^//\s*family:\s*(\S+)(?:\s+(\S+))?\s*$")
-# The category a case name the representative does not hold is reported
-# under.
+# may carry: `// representative: <task_id>` or
+# `// representative: <task_id> <Case>`.
+FAMILY_RE = re.compile(r"^//\s*representative:\s*(\S+)(?:\s+(\S+))?\s*$")
+# The same line, matched before its form is read.
+REP_LINE_RE = re.compile(r"^//\s*representative:")
+# The category a sibling header line the grammar or the representative
+# rejects is reported under.
 FAMILY_CASE_CAT = "family case"
+# The header: the leading comment block, the task id, then `draft`, then
+# the fields in this order. A value continues on a line of `//` and two
+# spaces. `review` repeats; the others stand once.
+HEADER_CAT = "header"
+HEADER_FIELDS = ("representative", "keywords", "input", "output", "review")
+HEADER_RANK = {"representative": 1, "keywords": 1, "input": 2, "output": 3,
+               "review": 4}
+FIELD_RE = re.compile(r"^//\s*(\w+)(?:\s+(\w+))?:(?:\s|$)")
+CONTINUATION_RE = re.compile(r"^//  \S")
+DRAFT_LINE = "// draft"
+# A gloss stands above every ADT that `Choice` is or holds as a field type,
+# and above each of its constructors, one constructor per line.
+GLOSS_CAT = "gloss"
+FIELD_TYPE_RE = re.compile(r":\s*(\w+)")
+BRANCH_LINE_RE = r"^\s*(?:\|\s*)?{name}\s*\{{"
+# The build adds the lib include; a solver holds none.
+INCLUDE_CAT = "include"
 # RIGID chart names exist only in the macro expansion; any appearance in
 # solver source reads a stored pose the model claims unobservable.
 RIGID_CHART_RE = re.compile(r"\b_rigid_\w+")
@@ -538,7 +558,8 @@ def _rep_items(task_id: str) -> list[Item] | None:
 
 
 def _family_case(raw_lines: list[str]) -> list[tuple[str, int, str, str]]:
-    """A `// family:` line whose case name the representative does not hold.
+    """A `// representative:` line the sibling header grammar rejects, or
+    whose case name the representative does not hold.
 
     The case names one case of the representative's `Choice`, so the name
     stands among that type's constructors. A record-typed `Choice` has no
@@ -548,7 +569,13 @@ def _family_case(raw_lines: list[str]) -> list[tuple[str, int, str, str]]:
     findings: list[tuple[str, int, str, str]] = []
     for lineno, raw in enumerate(raw_lines, 1):
         m = FAMILY_RE.match(raw.strip())
-        if m is None or m.group(2) is None:
+        if m is None:
+            if REP_LINE_RE.match(raw.strip()):
+                why = ("a sibling header is `// representative: <task_id>`, "
+                       "with at most one case name after the id")
+                findings.append((FAMILY_CASE_CAT, lineno, why, raw.rstrip()))
+            continue
+        if m.group(2) is None:
             continue
         task_id, case = m.group(1), m.group(2)
         items = _rep_items(task_id)
@@ -566,6 +593,119 @@ def _family_case(raw_lines: list[str]) -> list[tuple[str, int, str, str]]:
             why = f"{named}; name a case the representative holds"
         findings.append((FAMILY_CASE_CAT, lineno, why, raw.rstrip()))
     return findings
+
+
+def _header(raw_lines: list[str]) -> list[tuple[str, int, str, str]]:
+    """The header lines that break the grammar, and the fields it lacks."""
+    findings: list[tuple[str, int, str, str]] = []
+
+    def flag(lineno: int, why: str) -> None:
+        findings.append((HEADER_CAT, lineno, why, raw_lines[lineno - 1].rstrip()))
+
+    if not raw_lines or not raw_lines[0].strip().startswith("//"):
+        return [(HEADER_CAT, 1, "the file opens with `// <task_id>`",
+                 raw_lines[0].rstrip() if raw_lines else "")]
+    last = 0          # rank of the last header line placed
+    draft = prose = False
+    seen: set[str] = set()
+    for lineno, raw in enumerate(raw_lines[1:], 2):
+        line = raw.strip()
+        if not line.startswith("//"):
+            break
+        if line == DRAFT_LINE:
+            if last:
+                flag(lineno, "`draft` goes under the task id")
+            draft = True
+            continue
+        if m := FIELD_RE.match(line):
+            word, kind = m.group(1), m.group(2)
+            if word not in HEADER_FIELDS or (kind and word != "review"):
+                flag(lineno, f"`{word}:` is no header field; the fields are "
+                     + ", ".join(HEADER_FIELDS))
+                continue
+            rank = HEADER_RANK[word]
+            if word == "review":
+                if not kind:
+                    flag(lineno, "`review` takes a kind: `review <kind>:`")
+                if not draft:
+                    flag(lineno, "`review` stands under `draft` only")
+            elif word in seen:
+                flag(lineno, f"`{word}:` stands once")
+            elif "representative" in seen or (word == "representative" and seen):
+                flag(lineno, "a sibling carries `representative:` in place of "
+                     "`keywords:`, `input:`, and `output:`")
+            if rank < last:
+                flag(lineno, "header fields go in the order "
+                     + ", ".join(HEADER_FIELDS))
+            seen.add(word)
+            last = max(last, rank)
+            continue
+        if CONTINUATION_RE.match(line):
+            if not last:
+                flag(lineno, "a continuation line follows a field")
+            continue
+        if not prose:
+            flag(lineno, "no prose in the header; a remark about a case goes "
+                 "at its constructor, and a remark about a rule at the rule")
+        prose = True
+    if not seen & {"keywords", "representative"}:
+        flag(1, "the header carries `keywords:` or `representative:`")
+    elif "keywords" in seen and "output" not in seen:
+        flag(1, "the header carries `output:`")
+    return findings
+
+
+def _gloss_above(raw_lines: list[str], lineno: int) -> bool:
+    """A gloss comment stands on the line above `lineno`."""
+    if lineno < 2:
+        return False
+    above = raw_lines[lineno - 2].strip()
+    return above.startswith("//") and not SECTION_RE.match(above)
+
+
+def _glosses(
+    items: list[Item], raw_lines: list[str],
+) -> list[tuple[str, int, str, str]]:
+    """The ADTs of `Choice` — the type itself, or the field types of a
+    record — that lack a gloss above the type or above a constructor."""
+    types = {it.name: it for it in items if isinstance(it, TypeDecl)}
+    choice = types.get("Choice")
+    if choice is None:
+        return []
+    if choice.branches:
+        targets = [choice]
+    else:
+        targets = [types[n] for n in FIELD_TYPE_RE.findall(choice.rhs)
+                   if n in types and types[n].branches]
+    findings: list[tuple[str, int, str, str]] = []
+    for td in targets:
+        if not _gloss_above(raw_lines, td.line):
+            findings.append((GLOSS_CAT, td.line,
+                             f"a gloss stands above `{td.name}`: what the choice is",
+                             raw_lines[td.line - 1].rstrip()))
+        used: set[int] = set()
+        for name in td.branches:
+            pat = re.compile(BRANCH_LINE_RE.format(name=re.escape(name)))
+            at = next((n for n in range(td.line, len(raw_lines) + 1)
+                       if n not in used and pat.match(raw_lines[n - 1])), None)
+            if at is None:
+                findings.append((GLOSS_CAT, td.line,
+                                 f"`{name}` opens its own line, under its gloss",
+                                 raw_lines[td.line - 1].rstrip()))
+                continue
+            used.add(at)
+            if not _gloss_above(raw_lines, at):
+                findings.append((GLOSS_CAT, at, f"a gloss stands above `{name}`",
+                                 raw_lines[at - 1].rstrip()))
+    return findings
+
+
+def _includes(
+    items: list[Item], raw_lines: list[str],
+) -> list[tuple[str, int, str, str]]:
+    return [(INCLUDE_CAT, it.line, "the build adds the lib; drop the include",
+             raw_lines[it.line - 1].rstrip())
+            for it in items if isinstance(it, Include)]
 
 
 def _type_scopes(
@@ -658,6 +798,7 @@ def lint_program(source: str) -> list[tuple[str, int, str, str]]:
     raw_lines = src.splitlines()
     findings: list[tuple[str, int, str, str]] = _reserved_names(raw_lines)
     findings.extend(_family_case(raw_lines))
+    findings.extend(_header(raw_lines))
 
     try:
         program = parse(source)
@@ -706,6 +847,8 @@ def lint_program(source: str) -> list[tuple[str, int, str, str]]:
     findings.extend(_comps_without_entry(program.items, raw_lines))
     findings.extend(_lone_parse(program.comps(), raw_lines))
     findings.extend(_banned_types(program.items, raw_lines))
+    findings.extend(_glosses(program.items, raw_lines))
+    findings.extend(_includes(program.items, raw_lines))
     findings.extend(_params_data(program.comps().get("Params"), raw_lines, code))
     findings.sort(key=lambda f: (f[1], f[0]))
     return findings

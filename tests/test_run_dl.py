@@ -240,7 +240,9 @@ def test_a_compile_error_still_carries_the_lint(solvers, monkeypatch, capsys):
     assert f"{STEM}.dl:2: nonzero literal: `3`" in out
 
 
-HINTED = (".decl stage(x: number)\nstage(X) :- g(X), !h(X).\n"
+# A header the lint accepts, so only the hint tier is left to report.
+HEAD = f"// {STEM}\n// keywords: lines\n// output: the staged cells\n"
+HINTED = (HEAD + ".decl stage(x: number)\nstage(X) :- g(X), !h(X).\n"
           ".decl out(x: number)\nout(X) :- stage(X).\n")
 
 
@@ -260,7 +262,7 @@ def test_a_lint_finding_fails_lint_beside_a_hint(solvers, capsys):
 
     assert cli.cmd_lint(STEM, hints=True) == 1
     out = capsys.readouterr().out
-    assert f"{STEM}.dl:2: nonzero literal: `3`" in out
+    assert f"{STEM}.dl:5: nonzero literal: `3`" in out
     assert "lint: ok" not in out
 
 
@@ -493,13 +495,12 @@ def keyworded(solvers: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def _solver(dir: Path, stem: str, *header: str) -> None:
     dir.joinpath(f"{stem}.dl").write_text(
-        "".join(f"// {line}\n" for line in header) + '#include "../lib.dl"\n'
-    )
+        "".join(f"// {line}\n" for line in header) + ".decl out(x: number)\n")
 
 
 def test_keywords_counts_the_solvers_carrying_each_keyword(keyworded, capsys):
-    _solver(keyworded, "aaaa1111", "concept: lines cast", "shape: latent-canvas")
-    _solver(keyworded, "bbbb2222", "concept: lines")
+    _solver(keyworded, "aaaa1111", "keywords: lines cast latent-canvas")
+    _solver(keyworded, "bbbb2222", "keywords: lines")
 
     assert cli.cmd_keywords([]) == 0
     out = capsys.readouterr().out
@@ -509,20 +510,37 @@ def test_keywords_counts_the_solvers_carrying_each_keyword(keyworded, capsys):
     assert "     1  latent-canvas\n" in out
 
 
-def test_keywords_reads_a_concept_line_against_setup_and_prior_alone(
-        keyworded, capsys):
-    _solver(keyworded, "aaaa1111", "concept: latent-canvas", "shape: cast")
+def test_keywords_reads_the_one_keywords_line(keyworded, capsys):
+    """Every section of the doc is one vocabulary, and a word outside it is
+    unknown. A second `keywords:` line is not read."""
+    _solver(keyworded, "aaaa1111", "keywords: lines tiling seam",
+            "keywords: crop")
 
     assert cli.cmd_keywords([]) == 0
     out = capsys.readouterr().out
-    assert "aaaa1111: latent-canvas is not in keywords.md\n" in out
-    assert "aaaa1111: cast is not in keywords.md\n" in out
+    assert "aaaa1111: tiling is not in keywords.md\n" in out
+    assert "aaaa1111: seam is not in keywords.md\n" in out
+    assert "     1  lines\n" in out
+    assert "     0  crop\n" in out
     assert out.endswith("unknown keywords: 2\n")
 
 
+def test_keywords_reads_the_retired_concept_and_shape_fields(keyworded, capsys):
+    """A header that has not migrated carries `concept:` and `shape:`, and
+    the index counts the keywords of both fields."""
+    _solver(keyworded, "aaaa1111", "concept: lines cast",
+            "shape: latent-canvas")
+
+    assert cli.cmd_keywords([]) == 0
+    out = capsys.readouterr().out
+    assert "     1  lines\n" in out
+    assert "     1  cast\n" in out
+    assert "     1  latent-canvas\n" in out
+
+
 def test_keywords_reads_the_named_stems_alone(keyworded, capsys):
-    _solver(keyworded, "aaaa1111", "concept: lines")
-    _solver(keyworded, "bbbb2222", "concept: crop")
+    _solver(keyworded, "aaaa1111", "keywords: lines")
+    _solver(keyworded, "bbbb2222", "keywords: crop")
 
     assert cli.cmd_keywords(["aaaa1111"]) == 0
     out = capsys.readouterr().out
@@ -559,3 +577,35 @@ def test_explained_restates_a_pattern_over_a_functor_result():
     assert out.startswith("a record pattern binds `T` (line 108)")
     assert out.endswith(stderr)
     assert _explained("Error: Ungrounded variable X\n") == "Error: Ungrounded variable X\n"
+
+
+# ---------- the lib include the build adds ----------
+
+def _line_of(text: str, needle: str) -> int:
+    lines = [i for i, line in enumerate(text.splitlines(), 1) if needle in line]
+    assert len(lines) == 1, f"{needle!r} on {lines}"
+    return lines[0]
+
+
+def test_the_build_prepends_the_lib_include_and_keeps_one_already_there():
+    from dl.source import expand_macros
+    from tests.test_rigid import SOLVER
+
+    bare = SOLVER.replace('#include "../lib.dl"\n', "")
+    for built in (expand_macros(bare), expand_macros(SOLVER)):
+        assert built.splitlines()[0] == '#include "../lib.dl"'
+        assert built.count("#include") == 1
+
+
+def test_the_added_include_shifts_the_line_map_by_one():
+    from dl.source import expand_macros, macro_line_map
+    from tests.test_rigid import SOLVER
+
+    bare = SOLVER.replace('#include "../lib.dl"\n', "")
+    built = expand_macros(bare)
+    line_map = macro_line_map(bare)
+    assert len(line_map) == len(built.splitlines())
+    # the added line maps to the first source line, as the line after it does
+    assert line_map[:2] == [1, 1]
+    rule = "out(P, C) :- params.marker_glyph"
+    assert line_map[_line_of(built, rule) - 1] == _line_of(bare, rule)

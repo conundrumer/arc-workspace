@@ -16,6 +16,7 @@
 //     $Legend()    — the legend's order, its first entry on top.
 //     $Occlusion() — read off the scene: a panel covering a lattice point
 //                    another panel does not show lies over that panel.
+// review principle: Prior or setup — a cell-set case to add: the peer grows a panel one ring around its dots, not one ring around its box.
 
 #include "../lib.dl"
 

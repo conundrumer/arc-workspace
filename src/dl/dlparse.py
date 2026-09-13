@@ -499,12 +499,14 @@ class _Parser:
         name = self.ident("type name")
         start = self.pos
         depth = 0
-        # The rhs runs to end of line, continuing while brackets stay open or
-        # a line ends mid-list ('|', '=', ',').
+        # The rhs runs to end of line, continuing while brackets stay open,
+        # a line ends mid-list ('|', '=', ','), or the next line opens with
+        # a branch bar.
         while self.peek().kind != "eof":
             t = self.peek()
             if depth == 0 and t.line > self.toks[self.pos - 1].line and \
-                    self.toks[self.pos - 1].text not in ("|", "=", ","):
+                    self.toks[self.pos - 1].text not in ("|", "=", ",") and \
+                    t.text != "|":
                 break
             depth += 1 if t.text in "([{" else -1 if t.text in ")]}" else 0
             self.next()
@@ -842,10 +844,15 @@ class Index:
         self.inits: dict[str, dict[str, Init]] = {TOP: {}}
         self.rules: list[RuleInfo] = []
         self.refs: list[Ref] = []
+        # A marker inside a comp names no top-level section, and the
+        # attribution below is top-level only.
+        spans = [(it.line, it.end_line)
+                 for it in program.items if isinstance(it, Comp)]
         self.sections: list[tuple[int, str]] = [
             (c.line, m.group(1))
             for c in program.comments
             if c.own_line and (m := SECTION_RE.match(c.text))
+            and not any(a <= c.line <= b for a, b in spans)
         ]
         self._collect(program.items, TOP)
         for idx, info in enumerate(self.rules):

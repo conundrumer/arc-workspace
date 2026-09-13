@@ -226,6 +226,24 @@ a(X) :- g(X).
     assert ix.rules[0].section == "CaseA"
 
 
+def test_index_section_marker_in_comp_stays_in_the_comp():
+    src = """\
+// --- CaseA ---
+.decl a(x: number)
+a(X) :- g(X).
+.comp P {
+    // --- CaseB ---
+    .decl b(x: number)
+    b(X) :- g(X).
+}
+.decl c(x: number)
+c(X) :- g(X).
+"""
+    ix = Index(parse(src))
+    sections = {r.rule.head.name: r.section for r in ix.rules}
+    assert sections == {"a": "CaseA", "b": None, "c": "CaseA"}
+
+
 def test_choice_domain():
     src = """\
 .decl seat(b: number, pc: number) choice-domain b, pc
@@ -310,3 +328,25 @@ def test_stateful_functor():
     assert f.name == "box_dist"
     assert f.text.endswith("number stateful")
     assert prog.items[1].name == "a"
+
+
+def test_a_branch_list_continues_on_a_line_opening_with_a_bar():
+    """Each branch takes its own line under its gloss, so a line ends at a
+    branch and the next one opens with the bar."""
+    src = """\
+// which way the tiles turn
+.type Choice =
+      // mirror across the seam
+      Mirror {}
+      // a quarter turn
+    | Turn {d: number}
+      // leave it alone
+    | Keep {}
+.decl out(c: Choice)
+out($Keep()).
+"""
+    prog = parse(src)
+    td = prog.items[0]
+    assert td.name == "Choice"
+    assert td.branches == ["Mirror", "Turn", "Keep"]
+    assert prog.items[1].name == "out"

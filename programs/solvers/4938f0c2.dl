@@ -9,6 +9,7 @@
 // every pair:
 //   $Mirror() — each ink cell's image about the block's center
 //   $Seat()   — each object replanted against the block corner its image faces
+// review principle: Prior or setup — a cell-set case to add: the peer seats an object from a box corner only when that corner is one of the object's own cells.
 
 #include "../lib.dl"
 

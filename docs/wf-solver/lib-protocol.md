@@ -7,7 +7,7 @@
 
 Qualify a new primitive for the lib, `programs/lib.dl` and the modules under `programs/lib/`, by real use in the corpus and by generality.
 
-- **Trigger.** When an encoding in the solver needs a form banned in the program, or when a grep for its shape over `programs/solvers/` finds another solver that writes it, apply this protocol to that encoding. A repeated form the session finds only in other solvers goes in the review as a primitive to promote, naming the sites, and gets no entry.
+- **Trigger.** When an encoding in the solver needs a form banned in the program, or when a grep for its shape over `programs/solvers/` finds it in four or more other solvers, apply this protocol to that encoding. A repeated form that needs no banned form, and that the grep finds in fewer than four other solvers, goes in the review as a primitive to promote, naming the sites, and gets no entry.
 - **Generality.** An operation is general when it names one prior-level operation and takes its domain as an input, fixing no configuration beyond the frame.
     - An operation should be as abstract as possible. It only involves geometric types if there is no way to abstract away the geometry. It never involves the Color type.
 
@@ -55,8 +55,9 @@ Remove the entry's file at these points:
 
     - If no entry exists, write one. It carries no result.
     - If an entry is closed, keep its judgment. Encode the solver without the operation, in the way the entry records.
+        - An entry closed for lack of callers, with no survey result, is reopened: strike its `Closed:` line, then survey it. An entry closed on another sound ground stands with no survey result.
     - If an entry has a survey result, a survey records this solver. When the pass needs that caller recorded, run the delta survey. A session writes nothing into a recorded result.
-    - Count a family (`// family:` siblings with their representative) as one caller.
+    - Count a family (`// representative:` siblings with their representative) as one caller.
 
     **The survey.** `uv run python scripts/survey.py <entry>` surveys an entry and writes the result into it.
 
@@ -73,7 +74,6 @@ Remove the entry's file at these points:
         - a relational form replaces the arithmetic
     - **Closing.** When closing a proposal, put the judgment in the entry as the `Closed:` line, remove the proposal comp, and rethink the solver's encoding in relational form. Leave plain relations as written.
         - Write no `Closed:` line before a survey result stands in the entry.
-        - An entry closed with no survey result is reopened: strike its `Closed:` line, then survey it.
         - Include the close in the review as a judgment call.
     - **No close.** If the proposal does not close, nothing is decided. Write no text that implies an outcome.
     - **Need.** Measure need against the task, not against a case.

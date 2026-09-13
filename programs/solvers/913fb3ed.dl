@@ -12,6 +12,8 @@
     // A stored picture, seated on the dot.
   | Stamp {}
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
     // --- Ring ---
     // The dot colors, and what each one paints around itself.
@@ -43,7 +45,6 @@
 impl_choice($Ring()). impl_choice($Stamp()).
 
 .decl painted(p: Position, col: Color, ch: Choice)
-.decl out(p: Position, col: Color, ch: Choice)
 
 out(P, Col, Ch) :- painted(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !painted(P, _, Ch).

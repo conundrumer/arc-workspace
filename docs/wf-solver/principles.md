@@ -2,6 +2,9 @@
 - Write in the indicative mood.
 - Avoid justifications, unless there is necessary reason.
 - Avoid contrastive structures, unless the alternative needs to be addressed.
+- Prefer nested lists:
+    - When a sentence states two or more parallel parts, write them as a nested list, one item each.
+    - An example or an instance of a rule is a sub-item under it.
 - A cited task is a bare id. A gloss that states the task's facts in the rule's terms, without the task's internal vocabulary, goes in a comment beside the id.
 - A rule's formal statement goes on a `+` line under the rule. The first `+` line under a definition starts with the term's symbol, and a symbol is declared on a `+` line under the definition or rule that first uses it. The handbook omits `+` lines. -->
 
@@ -10,6 +13,8 @@
 The theory of tasks and their solvers, and the design norms for the best model of a task.
 
 The goal is a corpus that supports program synthesis of solvers. Across the corpus, reusable primitives and fragments are drawn from the shared parts of solvers.
+
+The formal statement is the rule.
 
 ## Definitions
 
@@ -36,7 +41,9 @@ The goal is a corpus that supports program synthesis of solvers. Across the corp
         + test_in(T) — the test inputs of T
         + θ(T) — the assignment that T's solver stores, or that a solver with this program and determination would store
         + θ(T)ᵢ — its value of parameter i
-- **family** (of a model) — the tasks it fits: a model fits a task when some assignment of its parameterization produces the task's outputs from its inputs. Their solvers share the program and the determination; where the representative holds several cases, the sibling's solver holds the case whose model it is.
+- **family** (of a model) — the tasks it fits: a model fits a task when some assignment of its parameterization produces the task's outputs from its inputs.
+    - Their solvers share the program and the determination.
+    - Where the representative holds several cases, the sibling's solver holds the cases whose models fit the sibling's task.
     + fam(M) = { T : ∃θ. M(θ) ⊨ T }
         + M(θ) ⊨ T — ∀(x, y) ∈ T. M(θ, x) = y
     + ∀T ∈ fam(M). M(θ(T)) ⊨ T
@@ -55,8 +62,9 @@ The program encodes the concept of the task, apart from how the data or the medi
 
 ARC concepts are relations between cells, regions, and properties. The program encodes them as relations.
 
-- Arithmetic in a rule usually represents a relational operation: a wraparound shift is a walk along a cycle. Arithmetic that seems necessary usually shows that a lib primitive is missing, and the lib addition protocol decides.
-- Every spatial value is a Box, the edge-margin record, and lib holds its algebra: `compose` seats a box in a frame, `relative` reads one in another's frame, `inside` and `interior` nest, and the inset and outset constructors state a frame change. A rule that would add or subtract margins states one of these.
+- Arithmetic in a rule usually represents a relational operation.
+    - A wraparound shift is a walk along a cycle.
+- Arithmetic that seems necessary usually shows that a lib primitive is missing, and the lib addition protocol decides.
 
 ### ARC types
 
@@ -66,16 +74,21 @@ The program works in the task's own types: colors, directions, axes, D4 elements
 
 If the task does not have a lib unit's concept, the solver does not use that unit.
 
-- Needing part of a unit's computation is not a reason to use it. A program that needs only one step of a unit writes that step with primitives or a local rule. A program may read one exposed output of a comp and leave the rest unread, as long as the task has the unit's concept.
+- Needing part of a unit's computation is not a reason to use it.
+    - A program that needs only one step of a unit writes that step with primitives or a local rule.
+    - A program may read one exposed output of a comp and leave the rest unread, as long as the task has the unit's concept.
 
 ### Indirection
 
 Parameters enter in the form that their consumer reads, keyed by objects that the program already has. If a rule's only function is to convert one representation of a thing into another, one of the two representations is unjustified.
 
 - Conversions of that kind:
-    - a key renamed into a second vocabulary, as a 2×2 tile position named by its corner
+    - a key renamed into a second vocabulary
+        - a 2×2 tile position named by its corner
     - a flat correspondence routed through intermediate coordinates
     - an order stored in the parameters as successor edges, which closure expands before a comparison reads it
+    - a frame's cells keyed by themselves
+        - a stored map from a tile's places to the sections they fill
 - When the two sides differ in content, conversion is justified:
     - a sparse set and its ranking (`Ordinal`)
     - a cell set and the id of its equivalence class (`Canon`), when the program acts on the class as one thing through that id
@@ -148,7 +161,9 @@ A parameter can carry structure: a membership set whose rows are exactly a struc
 
 Which members the task uses decides the encoding:
 
-- **Every member.** If the task uses every member, the class is structural. The program enumerates it (`dir_elem`, `diag_dir_elem`). The parameters are keyed by class.
+- **Every member.** If the task uses every member, the class is structural.
+    - The program enumerates it (`dir_elem`, `diag_dir_elem`).
+    - The parameters are keyed by class.
     - 0ca9ddb6 <!-- a marked dot gets an arm in every cardinal direction or in every diagonal one, and each kind of arm has its own parameter, keyed by the mark's color. -->
 - **One member.** If the task uses one member and must not use another, a parameter holds the member.
 - **Peer class.** If a task uses a peer class (cardinals against diagonals), it gets another program, not a reassignment (a9f96cdd, d364b489).
@@ -165,7 +180,8 @@ Closure decides the encoding and removes no case.
 
 If every assignment permits a program choice, that choice is not task data.
 
-- A parameter for it is unwitnessed. A literal hides it.
+- A parameter for it is unwitnessed.
+- A literal hides it.
 - The program enumerates its class and derives `out` per member, so the output is defined where the members agree.
     - 28a6681f <!-- water settles under gravity one cell at a time; along a line across gravity, either end may pour first, and the program runs both orders. -->
 
@@ -179,7 +195,11 @@ A few train pairs underdetermine the family. Coverage is one case per model that
 - **peer model** (of a model) — another model that fits the same task.
     + T ∈ fam(M) ∩ fam(M′), M′ ≠ M
 - **prior** — a core knowledge prior that ARC training tasks are intended to teach in pure form. A case claims which priors the task teaches. Several models can claim the same priors.
-- The rules of this section apply in order: Prior or setup, then Evidence, then Subsumption. A peer that Evidence removes gets no case, even when it subsumes the current model.
+- The rules of this section apply in order:
+    1. Prior or setup.
+    2. Evidence.
+    3. Subsumption.
+- A peer that Evidence removes gets no case, even when it subsumes the current model.
 - Coverage shows which prior the task could be teaching.
 - A hypothesis decomposes by choice point into one branch per point, and each branch is itself a hypothesis.
 - A solver with one case has no `Choice`.
@@ -209,7 +229,8 @@ The test decides:
 
 Table against rule is the main way in which hypotheses differ. Any relationship can be stored as a table (claiming a lookup prior) or written as a rule over composed primitives (claiming a compositional prior). The two claim different priors, and both get cases.
 
-- Table siblings vary the table. Rule siblings vary the rule's parameters.
+- Table siblings vary the table.
+- Rule siblings vary the rule's parameters.
 - 3b4c2228 <!-- the count renders both ways, as marks composed down a diagonal and as a stored grid per count. -->
 
 ### Subsumption
@@ -233,24 +254,35 @@ Cases are hypotheses about the prior that the task teaches.
 - **precedent** (of a setup structure) — the encoding that the corpus already uses for it.
     - The solver that introduces or improves a structure's encoding sets its precedent.
     - A precedent covers how a structure is found and encoded, not the tests inside that encoding: which cells or lines qualify follows the task's concept, so a solver whose test differs still follows the precedent.
-    - When two encodings of one structure stand in different solvers, the one that is not the precedent is a deviation, and a session notes it in the review. Two encodings that stand as cases of one solver are peer parses, and neither is a deviation.
+    - When two encodings of one structure stand in different solvers, the one that is not the precedent is a deviation, and a session notes it in the review.
+    - Two encodings that stand as cases of one solver are peer parses, and neither is a deviation.
         - 1a6449f1 <!-- rings sit in noise, and the output crops one of them; `Outlines` finds a ring as a drawn rectangle and `Closed` as a wall that cuts a region off from the grid edge, each under its own case. -->
 - Models that find different structures are different parses.
 - **Setup priority.** A setup follows, in order:
     1. Fidelity.
     2. Reuse of the facts and lib instances the program already has (1190bc91).
     3. The structure's precedent (2dee498d, f25ffba3).
-- **Peer priors.** The cases go to the peer priors. A same-model separation gets a case only when it separates priors, regardless of its choice point.
+- **Peer priors.** The cases go to the peer priors. Two candidates that parse the task alike get a case only when they separate priors, regardless of their choice point.
     - 662c240a <!-- a stored symmetry, with the output the tile it fails on, against the existence of any symmetry. -->
 - **Different parse.** A peer model that parses the task differently gets a case.
-    - An encoding that depends on different input structure is a different parse and gets a case.
-    - An encoding that finds the same structure another way is the same parse. Same model decides whether it is a peer.
+    - Two encodings parse the task differently when a rule of one reads an input cell that the other's structure omits.
+        - A read of a structure's extents or place reads no cell.
+        - A read that binds a position to a cell of the structure reads a cell.
+            - Bound to the structure's own cells it is the same parse.
+            - Over an unrestricted position it is a different parse.
+        - A write through the structure as a frame reads no cell.
+        - A rule that reads a cell of the box the set omits makes the box a different parse.
+    - An encoding that finds the same structure over the same cells another way is the same parse. Same model decides whether it is a peer.
 
 ### Evidence
 
 - **Exercised.** A peer model has rules, parameters, or comps that the current model does not. If no pair exercises them, that peer gets no case.
-    - A pair exercises a part of the peer when that pair's output derives through it, even where a narrower rule would give the same output on every pair, and even where the part's result matches the current model's on every pair. Exercised tests only the parts the peer adds; a peer that adds none passes it.
-- **No relational form.** A hypothesis with no relational form gets no case. When a hypothesis's encoding depends on arithmetic and the lib addition protocol closes the primitive, that hypothesis has no relational form (`proposals/MinHops.md`).
+    - A pair exercises a part of the peer when that pair's output derives through it:
+        - even where a narrower rule would give the same output on every pair
+        - even where the part's result matches the current model's on every pair
+    - Exercised tests only the parts the peer adds; a peer that adds none passes it.
+- **No relational form.** A hypothesis gets no case when Fidelity excludes every encoding of it.
+    - When a hypothesis's encoding depends on arithmetic and the lib addition protocol closes the primitive, that hypothesis has no relational form (`proposals/MinHops.md`).
 - **Table entries.** A mapping table needs multiple entries exercised. A one-entry ring table over a plain border is unexercised.
     - 44f52bb0 <!-- both symmetry classes occur in the pairs. -->
 - **Contradicted rule.** When some pair contradicts a rule that chooses one part of the input, that rule is excluded.
