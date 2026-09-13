@@ -171,9 +171,11 @@ def draft(*, reviews=(), comps=(), workarounds=(), rules=0) -> str:
 
 def test_the_review_order_bands(srv):
     """Under the principle priority: the missing solver, then the rows carrying
-    a principle need, the widest reach first, then the rest. The solver size
-    breaks a tie, and the id breaks the last one."""
+    a principle need, the widest key first, and among one key's rows those
+    waiting on that key alone before those waiting on another too; then the
+    rest. The solver size breaks a tie, and the id breaks the last one."""
     write_solver(srv, "aaa", draft(reviews=[("principle", NAMING)]))
+    write_solver(srv, "abb", draft(reviews=[("principle", NAMING), ("principle", SCOPE)]))
     write_solver(srv, "bbb", draft(reviews=[("principle", NAMING)]))
     write_solver(srv, "ccc", draft(reviews=[("principle", SCOPE)]))
     write_solver(srv, "ddd", draft(rules=1))
@@ -183,16 +185,28 @@ def test_the_review_order_bands(srv):
     item(srv, "zzz", srv.NEEDS_REVIEW, chain=srv.default_chain())
 
     rows = srv.backlog_view()
-    assert [r["id"] for r in rows] == ["zzz", "aaa", "bbb", "ccc", "eee", "ddd"]
+    assert [r["id"] for r in rows] == ["zzz", "aaa", "bbb", "abb", "ccc", "eee", "ddd"]
     by_id = {r["id"]: r for r in rows}
     assert by_id["zzz"]["no_solver"]
-    # aaa and bbb name one heading, so each reaches the other
-    assert by_id["aaa"]["reach"]["principle"] == 2
-    assert by_id["bbb"]["reach"]["principle"] == 2
-    assert by_id["ccc"]["reach"]["principle"] == 1
+    # aaa, abb, and bbb name one heading, so each reaches the others; abb
+    # waits on Scope too, so it follows the two that wait on Naming alone
+    assert by_id["aaa"]["reach"]["principle"] == 3
+    assert by_id["abb"]["keys"]["principle"] == [["Naming", 3], ["Scope", 2]]
+    assert by_id["ccc"]["reach"]["principle"] == 2
     assert by_id["eee"]["reach"] == {"principle": 0, "proposal": 0,
                                      "workaround": 1, "sweep": 0, "cite": 0}
+    assert by_id["eee"]["keys"] == {"principle": [], "proposal": []}
     assert by_id["eee"]["dl_size"] == 3 and by_id["ddd"]["dl_size"] == 1
+
+
+def test_the_rows_of_one_key_run_together(srv):
+    """Two keys of equal reach do not interleave: one key's rows come together,
+    the keys in name order."""
+    write_solver(srv, "aaa", draft(reviews=[("principle", SCOPE)]))
+    write_solver(srv, "bbb", draft(reviews=[("principle", NAMING)]))
+    write_solver(srv, "ccc", draft(reviews=[("principle", SCOPE)]))
+    write_solver(srv, "ddd", draft(reviews=[("principle", NAMING)]))
+    assert [r["id"] for r in srv.backlog_view()] == ["bbb", "ddd", "aaa", "ccc"]
 
 
 def test_the_autopilot_order_leads_with_the_lines_a_pass_can_act_on(srv):

@@ -81,15 +81,20 @@ button:disabled:hover { border-color:var(--border); }
 .badge-comp.unproposed { background:var(--st-removed); color:var(--bg); border-color:transparent; }
 /* an entry the task added with no comp behind it */
 .badge-comp.entry { background:transparent; border-style:dashed; }
-/* a review need of the solver: its kind and how many it holds; the kind
-   the priority names leads the row */
+/* a review need of the solver, in the color of its kind: the key a principle
+   line waits on, or the kind and how many lines it holds. The kind the
+   priority names leads the row, filled. */
 .badge-need {
   font-size:9px; letter-spacing:.06em; padding:0 4px; border-radius:3px; white-space:nowrap;
   font-family:ui-monospace,Menlo,monospace; font-weight:600;
-  background:var(--st-review-bg); color:var(--st-review);
-  border:1px solid var(--st-review);
+  background:var(--kind-bg); color:var(--kind);
+  border:1px solid var(--kind);
 }
-.badge-need.lead { background:var(--st-review); color:var(--bg); }
+.badge-need.principle  { --kind:var(--st-review);    --kind-bg:var(--st-review-bg); }
+.badge-need.workaround { --kind:var(--st-removed);   --kind-bg:var(--st-removed-bg); }
+.badge-need.sweep      { --kind:var(--st-commented); --kind-bg:var(--st-commented-bg); }
+.badge-need.cite       { --kind:var(--st-muted);     --kind-bg:var(--st-muted-bg); }
+.badge-need.lead { background:var(--kind); color:var(--bg); }
 /* callouts the stage left for the user */
 .badge-call {
   font-size:9px; letter-spacing:.06em; padding:0 4px; border-radius:3px;

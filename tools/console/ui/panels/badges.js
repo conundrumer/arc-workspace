@@ -14,8 +14,8 @@ export function CompBadges({x}){
     html`<span key=${"e:"+e} class="badge-comp entry"
       title="proposals entry this task added, with no comp">${e}</span>`));
 }
-/* the review needs a solver holds, one badge per kind with its count; the
-   kind the priority names leads, and the proposal kind is the comp badges */
+/* the review needs a solver holds, each kind its own color; the kind the
+   priority names leads, and the proposal kind is the comp badges */
 export const NEED_KINDS = ["principle","proposal","workaround","sweep","cite"];
 /* A need line runs to a sentence or more, and a solver holds many of them,
    so the tooltip takes a few lines cut to a readable width; the peek pane
@@ -27,15 +27,24 @@ function tip(lines){
   const rest=lines.length-shown.length;
   return (rest>0 ? shown.concat("…and "+rest+" more") : shown).join("\n");
 }
+/* A principle badge names the key its lines wait on, one badge per key, as a
+   comp badge names its comp; the rows are ordered by key, so the column reads
+   its own order, and the color alone says the kind. A workaround, sweep, or
+   cite line has no shared key, so its badge is the kind and a count. */
+const keyOf = t => t.split(" — ",1)[0].trim();
+const shortKey = k => k.endsWith(".md") ? k.slice(k.lastIndexOf("/")+1, -3) : k;
 export function NeedBadges({x, priority}){
-  const needs=x.needs||{};
+  const needs=x.needs||{}, keys=x.keys||{};
   const kinds=[priority, ...NEED_KINDS.filter(k=>k!==priority)].filter(k=>NEED_KINDS.includes(k));
   return kinds.map(k=>{
     if(k==="proposal") return html`<${CompBadges} key="proposal" x=${x}/>`;
     const lines=needs[k]||[];
     if(!lines.length) return null;
-    return html`<span key=${k} class=${"badge-need "+k+(k===priority?" lead":"")}
-      title=${tip(lines)}>${k} ${lines.length}</span>`;
+    const cls="badge-need "+k+(k===priority?" lead":"");
+    if(k!=="principle") return html`<span key=${k} class=${cls} title=${tip(lines)}>${k+" "+lines.length}</span>`;
+    return (keys.principle||[]).map(([key,n])=>html`<span key=${"p:"+key} class=${cls}
+      title=${key+"\n"+n+" row"+(n===1?"":"s")+" wait on it\n\n"+tip(lines.filter(t=>keyOf(t)===key))}
+      >${shortKey(key)}</span>`);
   });
 }
 /* what the stage left for the user; the entries ride along in the tooltip */

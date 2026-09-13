@@ -13,8 +13,8 @@ import { useSession } from "/ui/session.js";
 /* The priority: the kind of review need that leads. The server holds it, and
    it also picks which badge a row leads with. The autopilot takes its own
    order over the same rows. */
-const PRIORITY = {principle:"the rows with a review line on a rule of principles.md first, widest reach first",
-                  proposal:"the rows with a proposal comp first, most callers first",
+const PRIORITY = {principle:"the rows waiting on a rule or open question first, the widest first and one key's rows together",
+                  proposal:"the rows with a proposal comp first, the most callers first and one comp's rows together",
                   workaround:"the rows with a workaround first, most first",
                   sweep:"the rows with a sweep first, most first",
                   cite:"the rows with a cite first, most first"};
@@ -181,7 +181,7 @@ export const finalize = {
       </span>
     </div>`;
     const finRowsShown=finShown.map(id=>html`<${ItemRow} key=${id} it=${items.find(x=>x.id===id)}
-      task=${tasks[id]} metric=${sizeOf(finRows[id]||{}, sort)} row=${finRows[id]} priority=${priority}
+      task=${tasks[id]} row=${finRows[id]} priority=${priority}
       sel=${!!selItem && id===selId} onSelect=${select}/>`);
     const bkRows=bkShown.map(b=>html`<${BkRow} key=${b.id} b=${b} task=${tasks[b.id]}
       metric=${sizeOf(b, sort)} priority=${priority}

@@ -10,11 +10,12 @@ import { Thumb } from "/ui/panels/grid.js";
 export const passLabel = b => (b.passes||[]).map(p=>p.model).join(" ");
 
 /* `row` is the lens row of the item's solver, given in the finalize lens,
-   whose badges are the solver's review needs */
+   whose badges are the solver's review needs and whose sub line is the
+   solver's rule-literal count, the number the lens orders on */
 export function ItemRow({it, sel, task, metric, row, priority, onSelect}){
   useClock();   // the cache countdown
   const ci=cacheInfo(it);
-  const sub = it.est ? "est "+it.est : "";
+  const sub = row ? "dl "+(row.dl_size ?? "—") : it.est ? "est "+it.est : "";
   return html`<div class=${"row"+(sel?" sel":"")} tabIndex="0"
       onClick=${()=>onSelect(it.id)}
       onKeyDown=${e=>{ if(e.key==="Enter") onSelect(it.id); }}>

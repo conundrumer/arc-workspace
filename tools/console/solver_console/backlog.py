@@ -161,15 +161,21 @@ def finalize_ready(it: dict) -> bool:
 
 
 # The review order. A missing solver leads: it is not a reading of the task
-# but the absence of one. Then the rows holding the kind in priority, the
-# widest reach first; then the rest. The solver's rule-literal count breaks
-# ties, the larger first, and the id the last.
+# but the absence of one. Then the rows holding the kind in priority: the
+# widest key first, one key's rows together, and among them the rows waiting
+# on the fewest keys of the kind first; then the rest. The solver's
+# rule-literal count breaks ties, the larger first, and the id the last.
 def review_key(priority: str):
     def key(row: dict) -> tuple:
         reach = row["reach"].get(priority, 0)
+        keys = row["keys"].get(priority)
+        widest = min((k for k, n in keys if n == reach), default="") if keys else ""
+        waits = len(keys) if keys is not None else reach
         return (0 if row["no_solver"] else 1,
                 0 if reach else 1,
                 -reach,
+                widest,
+                waits,
                 -(row["dl_size"] if row["dl_size"] is not None else -1),
                 row["id"])
     return key
@@ -197,16 +203,18 @@ def pass_key(row: dict) -> tuple:
             row["id"])
 
 
-# What a principle need names: the section heading before the dash.
+# The key of a principle need: what the line names before the dash, a rule
+# of principles.md or an open question.
 def _heading(text: str) -> str:
     return text.split(" — ", 1)[0].strip()
 
 
 def reach_of(rows: list[dict]) -> None:
-    """Each row's reach per kind: for a principle, the rows whose review
-    lines name the same heading; for a proposal, the rows declaring the same
-    comp; for a workaround, a sweep, or a cite, its lines. A row without the
-    kind reaches 0."""
+    """Each row's keys per kind, and its reach. A principle line's key is the
+    rule or open question it names; a proposal's key is its comp. A key's
+    reach is the rows that share it, and the row's reach in the kind is its
+    widest key's. A workaround, a sweep, or a cite has no shared key, so the
+    row's lines are its reach. A row without the kind reaches 0."""
     headings: dict[str, int] = {}
     comps: dict[str, int] = {}
     for row in rows:
@@ -216,9 +224,13 @@ def reach_of(rows: list[dict]) -> None:
             comps[name] = comps.get(name, 0) + 1
     for row in rows:
         needs = row["needs"]
+        # each key once, in the order its lines come
+        pkeys = [[h, headings[h]] for h in dict.fromkeys(map(_heading, needs["principle"]))]
+        ckeys = [[n, comps[n]] for n in dict.fromkeys(needs["proposal"])]
+        row["keys"] = {"principle": pkeys, "proposal": ckeys}
         row["reach"] = {
-            "principle": max((headings[_heading(t)] for t in needs["principle"]), default=0),
-            "proposal": max((comps[n] for n in needs["proposal"]), default=0),
+            "principle": max((n for _, n in pkeys), default=0),
+            "proposal": max((n for _, n in ckeys), default=0),
             "workaround": len(needs["workaround"]),
             "sweep": len(needs["sweep"]),
             "cite": len(needs["cite"]),
