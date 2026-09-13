@@ -5,7 +5,6 @@
 //  laid out in a grid whose rows and columns differ in width
 // output: the block layout — one cell per block, holding its color, at its
 //  band's rank on each axis
-// review principle: Prior or setup — whether the bounding box of the non-bg cells and those cells are different parses.
 
 // What the layout's region is.
 .type Choice =

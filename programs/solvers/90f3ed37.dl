@@ -5,7 +5,6 @@
 //  runs the whole way to the far edge; the others stop short.
 // output: the input, with the full shape placed on each shape and drawn in
 //  params.mark where it reaches past that shape's own extent.
-// review principle: Prior or setup — a cell-set case to add: the peer anchors a shape by the box corner that the shape occupies.
 
 // What a shape is.
 .type Parse =
@@ -21,6 +20,13 @@
     // the shape that reaches furthest along params.grow_dir
   | Furthest {}
 
+// What a shape's anchor is read from.
+.type Anchor =
+    // the anchor corner of the shape's box, occupied or not
+    Extent {}
+    // the shape's own cell nearest the anchor corner
+  | Ink {}
+
 // How the full shape lands on a shape.
 .type Place =
     // seated by its anchor corner on the shape's anchor corner
@@ -28,7 +34,7 @@
     // moved across the growth alone, so each cell keeps its distance along it
   | Across {}
 
-.type Choice = [parse: Parse, select: Select, place: Place]
+.type Choice = [parse: Parse, select: Select, anchor: Anchor, place: Place]
 
 // A shape, keyed by the parse that found it and its id under that parse.
 .type Shape = [parse: Parse, id: Ident]
@@ -87,10 +93,27 @@ shape($Objects(), Id, P) :- blobs.label($U(), P, Id).
 .init bb = Bbox<Shape>
 bb.cell([Pa, Id], P) :- shape(Pa, Id, P).
 
-.decl anchor(pa: Parse, id: Ident, p: Position)
-anchor(Pa, Id, P) :-
+.decl anchor_choice(an: Anchor)
+anchor_choice($Extent()).
+anchor_choice($Ink()).
+
+.decl anchor(pa: Parse, id: Ident, p: Position, an: Anchor)
+
+// --- Extent ---
+
+anchor(Pa, Id, P, $Extent()) :-
     bb.box([Pa, Id], B), params.anchor_corner(Diag),
     in(P, _), box_corner(P, B, Diag).
+
+// --- Ink ---
+
+.init corner_cell = ArgExtremes<Shape, Position>
+corner_cell.cand([Pa, Id], P, K) :-
+    shape(Pa, Id, P), params.anchor_corner(Diag), corner_dist(P, Diag, K).
+
+anchor(Pa, Id, P, $Ink()) :- corner_cell.low([Pa, Id], P, _).
+
+// --- shared ---
 
 // How far short of the far edge a shape stops.
 .decl shortfall(pa: Parse, id: Ident, k: number)
@@ -117,10 +140,10 @@ template(Pa, Id, $Furthest()) :- nearest.low(Pa, Id, _).
 // --- shared ---
 
 // The move from the full shape's anchor onto a shape's.
-.decl shift(pa: Parse, id_full: Ident, id: Ident, v: Offset, s: Select)
-shift(Pa, Id_full, Id, V, S) :-
-    template(Pa, Id_full, S), anchor(Pa, Id_full, A_full),   // the full shape
-    anchor(Pa, Id, A), relative(A_full, A, V).               // onto this shape
+.decl shift(pa: Parse, id_full: Ident, id: Ident, v: Offset, s: Select, an: Anchor)
+shift(Pa, Id_full, Id, V, S, An) :-
+    template(Pa, Id_full, S), anchor(Pa, Id_full, A_full, An),   // the full shape
+    anchor(Pa, Id, A, An), relative(A_full, A, V).               // onto this shape
 
 .decl place_choice(pl: Place)
 place_choice($Corner()).
@@ -131,14 +154,14 @@ place_choice($Across()).
 
 // --- Corner ---
 
-seat(Pa, Id, P_out, [Pa, S, $Corner()]) :-
-    shift(Pa, Id_full, Id, V, S), shape(Pa, Id_full, P_full),
+seat(Pa, Id, P_out, [Pa, S, An, $Corner()]) :-
+    shift(Pa, Id_full, Id, V, S, An), shape(Pa, Id_full, P_full),
     compose(P_full, V, P_out).
 
 // --- Across ---
 
-seat(Pa, Id, P_out, [Pa, S, $Across()]) :-
-    shift(Pa, Id_full, Id, V, S), shape(Pa, Id_full, P_full),
+seat(Pa, Id, P_out, [Pa, S, An, $Across()]) :-
+    shift(Pa, Id_full, Id, V, S, An), shape(Pa, Id_full, P_full),
     params.grow_dir(D), axis_of(D, A), split(V, A, _, V_across),   // the move across
     compose(P_full, V_across, P_out).
 
@@ -151,7 +174,8 @@ restored(P, Ch) :-
     bb.box([Pa, Id], B), params.grow_dir(D), nearer(D, P, B).
 
 .decl impl_choice(ch: Choice)
-impl_choice([Pa, S, Pl]) :- parse_choice(Pa), select_choice(S), place_choice(Pl).
+impl_choice([Pa, S, An, Pl]) :-
+    parse_choice(Pa), select_choice(S), anchor_choice(An), place_choice(Pl).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- restored(P, Ch), params.mark(Col).
