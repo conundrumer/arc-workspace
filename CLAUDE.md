@@ -24,3 +24,4 @@ A running server re-execs itself when `server.py` or a module under `solver_cons
 
 - **Patches are the source of truth** for corrections. `data/tasks/` regenerates from them via `scripts/materialize.py`. Upstream is pinned via submodules; corrections live in patches, not in `data/upstream/`.
 - **Type aliases use the `type` keyword** (PEP 695, native to 3.12).
+- **A grid is drawn as a grid**, wherever one is written: one row per line, cells separated by spaces, background as `.`.
