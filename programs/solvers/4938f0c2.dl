@@ -1,19 +1,22 @@
 // 4938f0c2
 // draft
-// concept: markers objects d4 move
-// A solid block of the marker color sits diagonally off a corner of an ink
-// shape. The output adds the images of that shape under params.sym, taken about
-// the block.
-//
-// Cases, which the pairs cannot separate — the shape abuts the block in
-// every pair:
-//   $Mirror() — each ink cell's image about the block's center
-//   $Seat()   — each object replanted against the block corner its image faces
-// review principle: Prior or setup — a cell-set case to add: the peer seats an object from a box corner only when that corner is one of the object's own cells.
+// keywords: markers objects d4 move
+// input: a solid block of the marker color sits diagonally off a corner of an
+//  ink shape
+// output: the input, with the images of that shape under params.sym added,
+//  taken about the block
 
-#include "../lib.dl"
-
-.type Choice = Mirror {} | Seat {}
+// where an image lands; the pairs cannot separate the cases: in every pair the
+// shape abuts the block, and each object fills the corner of its box that faces
+// the block
+.type Choice =
+    // each ink cell's image about the block's center
+    Mirror {}
+    // each object replanted against the block corner its image faces,
+    // anchored at the cell of its box facing the block
+  | Seat {}
+    // the same, anchored at the object's own cell at that corner
+  | SeatCell {}
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -24,7 +27,7 @@
 .init params = Params
 
 .decl impl_choice(ch: Choice)
-impl_choice($Mirror()). impl_choice($Seat()).
+impl_choice($Mirror()). impl_choice($Seat()). impl_choice($SeatCell()).
 
 .decl ink(p: Position, col: Color)
 ink(P, Col) :- in(P, Col), !params.bg(Col), !params.marker(Col).
@@ -42,7 +45,7 @@ img(P_out, Col, $Mirror()) :-
     params.sym(S), sym_member(S, D), apply(D, V, V2),   // the offset transformed
     compose(B, V2, P_out).
 
-// --- Seat ---
+// --- Seat, SeatCell ---
 
 .init obj = Components8<Unit>
 obj.node($U(), P) :- ink(P, _).
@@ -56,16 +59,30 @@ obj_quad(Id, Diag) :-
     diag_dirs(Diag, _, D1, D2), obj_box.box(Id, B_obj), block.box($U(), B_block),
     nearer(D1, B_obj, B_block), nearer(D2, B_obj, B_block).
 
-img(P_out, Col, $Seat()) :-
-    ink(P, Col), obj.label($U(), P, Id),                                // an object's cell
-    obj_quad(Id, Q), diag_opposite(Q, Q_face),                          // the corner facing the block
-    obj_box.box(Id, B_obj), in(P0, _), box_corner(P0, B_obj, Q_face),   // the box cell at that corner
-    relative(P0, P, V),                                                 // its offset from that cell
-    params.sym(S), sym_member(S, D), apply(D, V, V2),                   // the offset transformed
-    apply_diag_dir(D, Q, Q2),                                           // the corner its image faces
+// The cell an object's image is taken from.
+.decl anchor(id: Ident, p: Position, ch: Choice)
+
+img(P_out, Col, Ch) :-
+    ink(P, Col), obj.label($U(), P, Id),                        // an object's cell
+    anchor(Id, P0, Ch), relative(P0, P, V),                     // its offset from the anchor
+    params.sym(S), sym_member(S, D), apply(D, V, V2),           // the offset transformed
+    obj_quad(Id, Q), apply_diag_dir(D, Q, Q2),                  // the corner its image faces
     block.cell($U(), P_c), block.box($U(), B_block),
-    box_corner(P_c, B_block, Q2), neighbor(P_c, Q2, P_seat),            // the seat one step out of it
+    box_corner(P_c, B_block, Q2), neighbor(P_c, Q2, P_seat),    // the seat one step out of it
     compose(P_seat, V2, P_out).
+
+// --- Seat ---
+
+anchor(Id, P0, $Seat()) :-
+    obj_quad(Id, Q), diag_opposite(Q, Q_face),                          // the corner facing the block
+    obj_box.box(Id, B_obj), in(P0, _), box_corner(P0, B_obj, Q_face).   // the box cell there
+
+// --- SeatCell ---
+
+anchor(Id, P0, $SeatCell()) :-
+    obj_quad(Id, Q), diag_opposite(Q, Q_face),                    // the corner facing the block
+    obj.label($U(), P0, Id), obj_box.box(Id, B_obj),              // a cell of that object
+    box_corner(P0, B_obj, Q_face).                                // at that corner of its box
 
 // --- output ---
 

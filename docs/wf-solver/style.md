@@ -52,9 +52,9 @@ A solver is one file, `<task_id>.dl`.
 // <task_id>
 // draft
 // keywords: <keywords from keywords.md>
-// input: <description, omitted when trivial>
-// output: <description>
-//  <continuation of description>
+// input: <the structures the parse finds, shared by every case, omitted when trivial>
+// output: <the rule from input to output that every case shares>
+//  <continuation of that rule>
 
 // <what the choice is>
 .type Choice =
@@ -103,7 +103,7 @@ A family sibling's header:
 // representative: <task_id> <Case>
 ```
 
-The representative is the family's first-solved member. A case name follows the id when the sibling holds one case of the representative's `Choice`. No case name follows it when the sibling holds every case, or when the `Choice` is record-typed.
+The representative is the family's first-solved member. A case name follows the id when the sibling holds one case of the representative's `Choice`, and no case name follows it otherwise.
 
 
 ### Cases

@@ -1,16 +1,15 @@
 // 4e34c42c
 // draft
-// concept: objects move
-// The grid holds fragments of one scene, scattered over a field. A fragment
-// is a connected run of ink, and it carries its whole box, field cells
-// included. Two fragments join at an alignment that lands the whole of one
-// fragment's ink of some color on the other's ink of that color, where
-// nothing the two boxes cover disagrees, and where the ink they share is more
-// than one cell. Laying every fragment at its join reassembles the scene, and
-// the output is that scene, cropped to the cells the fragments cover.
-// review principle: Prior or setup — a cell-set case to add: the peer gives each fragment its ink alone, so fragments join that the box reading rejects.
-
-#include "../lib.dl"
+// keywords: objects move
+// input: the grid holds fragments of one scene, scattered over a field. A
+//  fragment is a connected run of ink, and it carries its whole box, field
+//  cells included.
+// output: two fragments join at an alignment that lands the whole of one
+//  fragment's ink of some color on the other's ink of that color, where
+//  nothing the two boxes cover disagrees, and where the ink they share is
+//  more than one cell. Laying every fragment at its join reassembles the
+//  scene, and the output is that scene, cropped to the cells the fragments
+//  cover.
 
 .comp Params {}
 

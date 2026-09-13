@@ -6,6 +6,7 @@
     - When a sentence states two or more parallel parts, write them as a nested list, one item each.
     - An example or an instance of a rule is a sub-item under it.
 - A cited task is a bare id. A gloss that states the task's facts in the rule's terms, without the task's internal vocabulary, goes in a comment beside the id.
+- A citation of a draft solver waits at the citation's place as `<!-- draft: <id> — <gloss> -->`, and the solver's approval turns it into the citation.
 - A rule's formal statement goes on a `+` line under the rule. The first `+` line under a definition starts with the term's symbol, and a symbol is declared on a `+` line under the definition or rule that first uses it. -->
 
 # Principles
@@ -190,6 +191,7 @@ If every assignment permits a program choice, that choice is not task data.
 A few train pairs underdetermine the family. Coverage is one case per model that the rules of this section admit.
 
 - **hypothesis** — the assertion that the task is in a model's family.
+    + T ∈ fam(M)
 - **choice point** — a property of the task that the pairs do not determine.
 - **branch** (of a choice point) — one of its possible answers.
 - **peer model** (of a model) — another model that fits the same task.
@@ -202,6 +204,15 @@ A few train pairs underdetermine the family. Coverage is one case per model that
 - A peer that Evidence removes gets no case, even when it subsumes the current model.
 - Coverage shows which prior the task could be teaching.
 - A hypothesis decomposes by choice point into one branch per point, and each branch is itself a hypothesis.
+    + H = ∏ⱼ Bⱼ
+        + Bⱼ — the branches of choice point j
+        + H — the hypotheses these rules judge
+    - Branches of one choice point exclude one another.
+        + b, b′ ∈ Bⱼ, b ≠ b′ ⇒ ¬∃M. b(M) ∧ b′(M)
+            + b(M) — model M answers its point with b
+    - Branches of separate choice points combine, and each combination of one branch per point is a hypothesis that these rules judge.
+        + b ∈ Bⱼ, b′ ∈ Bₖ, j ≠ k ⇒ ∃M. b(M) ∧ b′(M)
+        <!-- draft: 447fd412 — a scaled copy of a marked drawing stamps at each block; what the stamp carries and which cells of a block's box it reaches combine, so each is its own point. -->
 - A solver with one case has no `Choice`.
 - A record-typed `Choice` holds one field per choice point; `impl_choice` lists the combinations these rules admit.
     - 87ab05b8 <!-- one marked cell among noise, and the output fills the 2×2 region that holds it; three ways to locate the region cross two sources of the fill color. -->

@@ -1,24 +1,41 @@
 // 447fd412
 // draft
-// concept: objects markers scale stamp
-// A template object sits in the grid: a drawing in the ink color with mark
-// cells attached to it. Elsewhere, blocks of the mark color stand alone, each
-// a square.
-//
-// A placement sends one template mark to one block. Under it, each step of one
-// cell in the template is a step of K cells in the grid, where K is that
-// block's side, so every template cell covers a KxK box. The placement holds
-// when each template mark's box is a block. A holding placement stamps the
-// template into its boxes, clipped where a box runs off the grid.
-//
-// The cases differ on what the stamp carries. $Ink stamps the drawing alone
-// and leaves the blocks as they stand. $Whole stamps the template entire: a
-// block is the scaled image of its mark, and the stamp completes it.
-// review principle: Prior or setup — a cell-set case to add: the peer stamps the block's own footprint at each seat, the notch included.
+// keywords: objects markers scale stamp
+// input: a template object sits in the grid: a drawing in the ink color with
+//  mark cells attached to it. Elsewhere, blocks of the mark color stand
+//  alone, each a square.
+// output: a placement sends one template mark to one block. Under it, each
+//  step of one cell in the template is a step of K cells in the grid, where K
+//  is that block's side, so every template cell covers a KxK box. The
+//  placement holds when each template mark's box is a block. A holding
+//  placement stamps the template into its boxes, clipped where a box runs off
+//  the grid.
+// review cite: principles.md Coverage cites this solver on approval.
 
-#include "../lib.dl"
+// What a template cell carries into its box.
+.type Carry =
+    // the drawing alone, so the blocks stand as they are
+    Ink {}
+    // the template entire: a block is the scaled image of its mark, and the
+    // stamp completes it
+  | Whole {}
 
-.type Choice = Ink {} | Whole {}
+// Which cells of a covered box the stamp reaches.
+.type Cover =
+    // every cell of the box
+    Box {}
+    // the block's own cells: a box carries a cell only where the block does
+  | Cells {}
+
+.type Choice = [carry: Carry, cover: Cover]
+
+// The two fields combine freely: what a template cell carries leaves open
+// which cells of its box the stamp reaches.
+.decl impl_choice(ch: Choice)
+impl_choice([$Ink(), $Box()]).
+impl_choice([$Ink(), $Cells()]).
+impl_choice([$Whole(), $Box()]).
+impl_choice([$Whole(), $Cells()]).
 
 .comp Params {
     // The drawing's color.
@@ -29,9 +46,6 @@
 }
 
 .init params = Params
-
-.decl impl_choice(ch: Choice)
-impl_choice($Ink()). impl_choice($Whole()).
 
 .decl ink_cell(p: Position)
 ink_cell(P) :- in(P, Col), params.ink(Col).
@@ -75,27 +89,38 @@ carry(T0, Id, P2, B2) :-
 .decl astray(t0: Position, id: Ident)
 astray(T0, Id) :- carry(T0, Id, P, B), template_mark(P), !block.box(_, B).
 
-// The box a template cell covers, under a placement that holds.
-.decl covers(p: Position, b: Box)
-covers(P, B) :- carry(T0, Id, P, B), !astray(T0, Id).
+// The box a template cell covers, under a placement that holds, with the
+// block that placement seats on.
+.decl covers(id: Ident, p: Position, b: Box)
+covers(Id, P, B) :- carry(T0, Id, P, B), !astray(T0, Id).
 
 // --- stamp ---
 
-// A cell of a covered box, in the color the box's template cell carries.
+// The color template cell P carries into its box.
+.decl carried(p: Position, col: Color, cr: Carry)
+
+// Grid cell Q, in the box that template cell P covers.
+.decl covered_cell(p: Position, q: Position, cv: Cover)
+
 .decl stamped(p: Position, col: Color, ch: Choice)
+stamped(Q, Col, [Cr, Cv]) :- covered_cell(P, Q, Cv), carried(P, Col, Cr).
 
 .decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- stamped(P, Col, Ch).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !stamped(P, _, Ch).
 
-// --- $Ink ---
+// --- $Ink, $Whole ---
 
-stamped(Q, Col, $Ink()) :-
-    covers(P, B), template_cell(P, Col), params.ink(Col),  // the drawing's boxes
-    in(Q, _), inside(Q, B).                                // as far as the grid reaches
+carried(P, Col, $Ink())   :- template_cell(P, Col), params.ink(Col).
+carried(P, Col, $Whole()) :- template_cell(P, Col).
 
-// --- $Whole ---
+// --- $Box, $Cells ---
 
-stamped(Q, Col, $Whole()) :-
-    covers(P, B), template_cell(P, Col),  // every template cell's box
-    in(Q, _), inside(Q, B).
+// The block's cells in its own frame.
+.decl block_shape(id: Ident, p_inner: Position)
+block_shape(Id, P_inner) :- block.cell(Id, P), block.box(Id, B), crop(P, B, P_inner).
+
+covered_cell(P, Q, $Box()) :- covers(_, P, B), in(Q, _), inside(Q, B).  // as far as the grid reaches
+covered_cell(P, Q, $Cells()) :-
+    covers(Id, P, B), in(Q, _), crop(Q, B, Q_inner),  // as far as the grid reaches
+    block_shape(Id, Q_inner).                         // where the block carries a cell

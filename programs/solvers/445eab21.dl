@@ -1,19 +1,19 @@
 // 445eab21
 // draft
-// concept: objects enclose count rank
-// Two hollow rectangles, one color each, sit on params.bg. The output is a
-// params.out_dim block of the bigger one's color. The cases differ in what
-// "bigger" measures:
-//
-//   $Enclose — the cells the color closes off from the grid edge.
-//   $Box     — the bg cells inside the color's bounding bbox.
-//   $Area    — every cell of that box, the walls included.
-//   $Extent  — the box's extent along params.axis.
-// review principle: Prior or setup — a cell-set case to add: the peer ranks a color by the count of its own cells, not by the area of its box.
+// keywords: objects enclose count rank
+// input: two hollow rectangles, one color each, sit on params.bg
+// output: a params.out_dim block of the bigger rectangle's color
 
-#include "../lib.dl"
-
-.type Choice = Enclose {} | Box {} | Area {} | Extent {}
+// what "bigger" measures
+.type Choice =
+    // the cells the color closes off from the grid edge
+    Enclose {}
+    // the background cells inside the color's bounding box
+  | Box {}
+    // every cell of that box, the walls included
+  | Area {}
+    // the box's extent along params.axis
+  | Extent {}
 
 .comp Params {
     // --- shared ---

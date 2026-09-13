@@ -1,28 +1,37 @@
 // 305b1341
 // draft
-// concept: overlay select parity rank
-// A legend sits at the params.legend_corner corner: one line per entry, a dot
-// color beside the fill color it takes. Away from the legend, each dot
-// color's cells form a rectangular panel. Every panel is drawn as its
-// bounding box grown by one ring, the fill color around the dots. Where
-// two panels overlap, the output shows the one on top.
-// Choice = [dots, stack] crosses the hypotheses:
-//
-//   dots (what a panel holds):
-//     $Shown()   — the dots the input shows.
-//     $Lattice() — a dot lattice of period params.dot_size + params.dot_gap over the
-//                  whole box, so a panel carries dots the input hides.
-//   stack (which of two overlapping panels wins):
-//     $Legend()    — the legend's order, its first entry on top.
-//     $Occlusion() — read off the scene: a panel covering a lattice point
-//                    another panel does not show lies over that panel.
-// review principle: Prior or setup — a cell-set case to add: the peer grows a panel one ring around its dots, not one ring around its box.
+// keywords: overlay select parity rank
+// input: a legend sits at the params.legend_corner corner: one line per entry,
+//  a dot color beside the fill color it takes. Away from the legend, each dot
+//  color's cells make a panel of evenly spaced dots.
+// output: every panel is drawn grown by one ring, with the fill color around
+//  the dots. Where two panels overlap, the output shows the one on top.
 
-#include "../lib.dl"
+// what a panel holds
+.type Dots =
+    // the dots the input shows
+    Shown {}
+    // a dot lattice of period params.dot_size + params.dot_gap over the whole
+    // box, so a panel carries dots the input hides
+  | Lattice {}
 
-.type Dots = Shown {} | Lattice {}
-.type Stack = Legend {} | Occlusion {}
-.type Choice = [dots: Dots, stack: Stack]
+// what the panel's ring grows around
+.type Panel =
+    // the bounding box of the dots, so the panel is a rectangle
+    Box {}
+    // the dots themselves, so the panel reaches one ring from a dot and no
+    // farther
+  | Cells {}
+
+// which of two overlapping panels wins
+.type Stack =
+    // the legend's order, its first entry on top
+    Legend {}
+    // read off the scene: a panel covering a lattice point another panel does
+    // not show lies over that panel
+  | Occlusion {}
+
+.type Choice = [dots: Dots, panel: Panel, stack: Stack]
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -41,9 +50,15 @@
 
 // $Occlusion reads the dots the input hides, which only $Lattice holds.
 .decl impl_choice(ch: Choice)
-impl_choice([$Shown(), $Legend()]).
-impl_choice([$Lattice(), $Legend()]).
-impl_choice([$Lattice(), $Occlusion()]).
+impl_choice([$Shown(), $Box(), $Legend()]).
+impl_choice([$Shown(), $Cells(), $Legend()]).
+impl_choice([$Lattice(), $Box(), $Legend()]).
+impl_choice([$Lattice(), $Cells(), $Legend()]).
+impl_choice([$Lattice(), $Box(), $Occlusion()]).
+impl_choice([$Lattice(), $Cells(), $Occlusion()]).
+
+.decl dots_choice(ds: Dots)
+dots_choice(Ds) :- impl_choice([Ds, _, _]).
 
 // --- the legend ---
 
@@ -69,14 +84,6 @@ panel_cell(Dot, P) :-
 .init bbox = Bbox<Color>
 bbox.cell(Dot, P) :- panel_cell(Dot, P).
 
-// The panel: the box grown by one ring.
-.decl panel(dot: Color, p: Position)
-panel(Dot, Q) :-
-    in(P, _), bbox.box(Dot, B), inside(P, B),
-    ( Q = P                                     // the box
-    ; dir8_elem(D), neighbor(P, D, Q), in(Q, _) // and the ring around it
-    ).
-
 // The dot lattice over the box, anchored on it.
 .decl lattice(dot: Color, p: Position)
 lattice(Dot, P) :-
@@ -84,42 +91,58 @@ lattice(Dot, P) :-
     params.dot_size(K), params.dot_gap(G),            // the lattice's period
     divide_by_size_2d(P_inner, K, G, _, _).           // a lattice point
 
-// --- the stack ---
-
-// Dot's panel draws over Dot2's.
-.decl above(dot: Color, dot2: Color, st: Stack)
-above(Dot, Dot2, $Legend()) :-
-    legend_dirs(D_run, _),                                      // the legend runs from D_run
-    legend(Dot, _, P, _), legend(Dot2, _, P2, _),               // two entries
-    nearer(D_run, P, P2).                                       // the nearer draws over the farther
-
-above(Dot, Dot2, $Occlusion()) :-
-    lattice(Dot2, P), !panel_cell(Dot2, P),                     // a lattice point Dot2 does not show
-    panel(Dot, P), Dot != Dot2.                                 // lies under Dot's panel
-
-// --- output ---
-
 // The dots the panel holds.
 .decl dotted(dot: Color, p: Position, ds: Dots)
 dotted(Dot, P, $Shown()) :- panel_cell(Dot, P).
 dotted(Dot, P, $Lattice()) :- lattice(Dot, P).
 
-.decl paint(dot: Color, p: Position, ink: Color, ds: Dots)
-paint(Dot, P, Ink, Ds) :-
-    impl_choice([Ds, _]), panel(Dot, P), legend(Dot, Fill, _, _),
+// What the panel's ring grows around.
+.decl core(dot: Color, p: Position, ds: Dots, pn: Panel)
+core(Dot, P, Ds, $Box()) :- dots_choice(Ds), in(P, _), bbox.box(Dot, B), inside(P, B).
+core(Dot, P, Ds, $Cells()) :- dotted(Dot, P, Ds).
+
+// The panel: the core grown by one ring.
+.decl panel(dot: Color, p: Position, ds: Dots, pn: Panel)
+panel(Dot, Q, Ds, Pn) :-
+    core(Dot, P, Ds, Pn),
+    ( Q = P                                     // the core
+    ; dir8_elem(D), neighbor(P, D, Q), in(Q, _) // and the ring around it
+    ).
+
+// --- the stack ---
+
+// Dot's panel draws over Dot2's.
+.decl above(dot: Color, dot2: Color, ch: Choice)
+above(Dot, Dot2, [Ds, Pn, $Legend()]) :-
+    impl_choice([Ds, Pn, $Legend()]),
+    legend_dirs(D_run, _),                                      // the legend runs from D_run
+    legend(Dot, _, P, _), legend(Dot2, _, P2, _),               // two entries
+    nearer(D_run, P, P2).                                       // the nearer draws over the farther
+
+above(Dot, Dot2, [Ds, Pn, $Occlusion()]) :-
+    impl_choice([Ds, Pn, $Occlusion()]),
+    lattice(Dot2, P), !panel_cell(Dot2, P),                     // a lattice point Dot2 does not show
+    panel(Dot, P, Ds, Pn), Dot != Dot2.                         // lies under Dot's panel
+
+// --- output ---
+
+.decl paint(dot: Color, p: Position, ink: Color, ds: Dots, pn: Panel)
+paint(Dot, P, Ink, Ds, Pn) :-
+    panel(Dot, P, Ds, Pn), legend(Dot, Fill, _, _),
     ( dotted(Dot, P, Ds), Ink = Dot                             // a dot of the panel
     ; !dotted(Dot, P, Ds), Ink = Fill                           // the fill around it
     ).
 
 // Another panel draws over Dot's here.
 .decl covered(p: Position, dot: Color, ch: Choice)
-covered(P, Dot, [Ds, St]) :-
-    impl_choice([Ds, St]), paint(Dot, P, _, Ds),  // Dot paints here
-    paint(Dot2, P, _, Ds), above(Dot2, Dot, St).  // and a panel over it does too
+covered(P, Dot, [Ds, Pn, St]) :-
+    impl_choice([Ds, Pn, St]),
+    paint(Dot, P, _, Ds, Pn),                                   // Dot paints here
+    paint(Dot2, P, _, Ds, Pn), above(Dot2, Dot, [Ds, Pn, St]).  // and a panel over it does too
 
 .decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, [Ds, St]) :-
-    impl_choice([Ds, St]), in(P, _),
-    ( paint(Dot, P, Col, Ds), !covered(P, Dot, [Ds, St])  // the top panel here
-    ; !paint(_, P, _, Ds), params.bg(Col)                 // no panel: bg
+out(P, Col, [Ds, Pn, St]) :-
+    impl_choice([Ds, Pn, St]), in(P, _),
+    ( paint(Dot, P, Col, Ds, Pn), !covered(P, Dot, [Ds, Pn, St])  // the top panel here
+    ; !paint(_, P, _, Ds, Pn), params.bg(Col)                     // no panel: bg
     ).

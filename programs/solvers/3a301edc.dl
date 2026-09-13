@@ -1,18 +1,35 @@
 // 3a301edc
 // draft
-// concept: objects border
-// A rectangle of one color holds a solid block of another color. The output
-// adds a ring around that rectangle, in the block's color, as thick as the
-// block is long on each axis.
-//
-// $Outset — the input passes through, and the ring is painted around it.
-// $Nest — the output is a nest of three boxes, redrawn from scratch: the
-//   block, the rectangle holding it, and the ring.
-// review principle: Prior or setup — a cell-set case to add: the peer covers the figure's own cells, so a notch in the figure joins the ring.
+// keywords: objects border
+// input: a rectangle of one color holds a solid block of another color
+// output: a ring is added around the rectangle, in the block's color, as
+//  thick as the block is long on each axis
 
-#include "../lib.dl"
+// What the ring goes around.
+.type Wrap =
+    // The box the figure spans.
+    Box {}
+    // The figure's own cells, so a notch in the figure joins the ring.
+  | Cells {}
 
-.type Choice = Outset {} | Nest {}
+// What the output shows.
+.type Render =
+    // The input passes through, and the ring is painted around it.
+    Outset {}
+    // A nest of three boxes, redrawn from scratch: the block, the rectangle
+    // holding it, and the ring.
+  | Nest {}
+
+.type Choice = [wrap: Wrap, render: Render]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// $Nest redraws the figure's box, so it leaves no notch for a ring to enter,
+// and the two wraps stand as one model under it.
+.decl impl_choice(ch: Choice)
+impl_choice([$Box(), $Outset()]).
+impl_choice([$Cells(), $Outset()]).
+impl_choice([$Box(), $Nest()]).
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -54,26 +71,33 @@ thick.edge($U(), D, N) :-
 .decl ring_box(b: Box)
 ring_box(B) :- fig_box.box($U(), B_fig), thick.box($U(), B_thick), relative(B_thick, B_fig, B).
 
-.decl ring(p: Position)
-ring(P) :- in(P, _), ring_box(B), inside(P, B), !fig_cover(P).
+// The grid cells that let-out box covers.
+.decl ring_cover(p: Position)
+ring_cover(P) :- in(P, _), ring_box(B), inside(P, B).
 
-.decl out(p: Position, col: Color, ch: Choice)
+// The ring: the let-out box, less what the ring goes around.
+.decl ring(p: Position, w: Wrap)
 
-// --- Outset ---
+// --- $Box, $Cells ---
 
-out(P, Col, $Outset()) :- ring(P), blk_color(Col).
-out(P, Col, $Outset()) :- in(P, Col), !ring(P).
+ring(P, $Box())   :- ring_cover(P), !fig_cover(P).
+ring(P, $Cells()) :- ring_cover(P), !fig(P).
 
-// --- Nest ---
+// --- $Outset ---
 
-out(P, Col, $Nest()) :-
+out(P, Col, [W, $Outset()]) :- ring(P, W), blk_color(Col).
+out(P, Col, [W, $Outset()]) :- impl_choice([W, $Outset()]), in(P, Col), !ring(P, W).
+
+// --- $Nest ---
+
+out(P, Col, [$Box(), $Nest()]) :-
     fig_cover(P),
     ( blk_cover(P), blk_color(Col)             // the block
     ; !blk_cover(P), rect_color(Col)           // the rectangle
     ).
 
-out(P, Col, $Nest()) :-
+out(P, Col, [$Box(), $Nest()]) :-
     in(P, _), !fig_cover(P),
-    ( ring(P), blk_color(Col)                  // the ring
-    ; !ring(P), params.bg(Col)                 // the background
+    ( ring(P, $Box()), blk_color(Col)          // the ring
+    ; !ring(P, $Box()), params.bg(Col)         // the background
     ).
