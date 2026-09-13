@@ -14,7 +14,7 @@ You prune the text the brief's diff added or changed, in the files it names. You
 - In `programs/lib.dl` and the modules under `programs/lib/` change comments only.
 - Create no new file.
 - Verify as the diff's author did.
-- Never run a git command that changes state: no `stash`, `checkout`, `reset`, `rm`, or `commit`.
+- Never run a git command that changes state.
 
 ## Report
 

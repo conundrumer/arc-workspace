@@ -8,7 +8,7 @@ You migrate the sites the brief names to a lib primitive. You edit only those fi
 - Replace the hand-written site with the primitive. Models, parameterizations, and Choice cases stay as they are, and so does what each site derives: a replacement that narrows or widens the derived set is not a migration, even when the run passes. When more than one readout of the primitive could stand for a site's rule, the readout is the one whose derived set equals the rule's, unless the brief says which. Comments stay true to the code, and none mentions the migration or the old form.
 - Fix any Simplify or Prune problem you find in a file you have open.
 - After each file, run it again. Confirm the run passes, with no finding the first run did not have. When that fails, or the site reads worse than before, restore the file by reversing your edits, and record why.
-- Never run a git command that changes state: no `stash`, `checkout`, `restore`, `reset`, `rm`, or `commit`. Any other file you write goes under a scratch path the brief gives; with none, write none.
+- Never run a git command that changes state. Any other file you write goes under a scratch path the brief gives; with none, write none.
 
 ## Report
 

@@ -1,4 +1,4 @@
-The brief names one solver, `programs/solvers/<task_id>.dl`, and the change to make in it: a case to add, a tag, a re-encoding. You work that change per the Create operation of the handbook's procedure, and change nothing else. Your final text is data for a script, not a message for a person.
+The brief names one solver, `programs/solvers/<task_id>.dl`, and the change to make in it. You work that change per the Create operation of the handbook's procedure, and change nothing else. Your final text is data for a script, not a message for a person.
 
 ## Procedure
 
@@ -10,7 +10,7 @@ The brief names one solver, `programs/solvers/<task_id>.dl`, and the change to m
 - Give a divergence witness for each Choice case pair and for each peer model the change dropped: an input fragment and each model's output on it, taken from `uv run python scripts/run_dl.py grid <task_id>`. Reassign a parameter when the divergence needs it. For a data-indistinguishable pair, state what the shared data hides.
 - Scratch files go under `.scratch/<task_id>/` and nowhere else.
 - A failing run is reported as failing. Do not attribute it to other work.
-- Never run a git command that changes state: no `stash`, `checkout`, `reset`, `rm`, or `commit`.
+- Never run a git command that changes state.
 
 ## Report
 

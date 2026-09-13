@@ -1,12 +1,14 @@
 export const meta = {
   name: 'retro',
-  description: 'Rule on what console sessions called out beyond their own tasks: read, check, review, fix, verify, sweep.',
+  description: 'Rule on what console sessions called out beyond their own tasks: read, check, review, fix, resolve, verify, sweep.',
   phases: [
     { title: 'Read', detail: 'one agent turns the window into issues' },
     { title: 'Sweep', detail: 'one agent sweeps the parameter values of every solver the window names, beside the check and review stages; then one agent writes a review line into each solver a parameter stays open in', model: 'sonnet' },
     { title: 'Check', detail: 'one agent per group of issues: closed, dropped, or open with candidate fixes' },
     { title: 'Review', detail: 'one agent asks the two questions over every open issue and takes a default', model: 'fable' },
     { title: 'Fix', detail: 'code targets one at a time, every prose target in one agent that fixes then prunes, every other target in parallel' },
+    { title: 'Resolve', detail: 'one agent per solver that took a review line in this run, which acts on the line and writes its report' },
+    { title: 'Consistency', detail: 'one agent reads the solvers the resolve stage acted on side by side and reports where they read the docs differently' },
     { title: 'Verify', detail: 'one agent per changed target, one agent for the prose targets together, one agent for the checks, then one round over the other files those findings name', model: 'sonnet' },
   ],
 }
@@ -29,6 +31,8 @@ export const meta = {
 //                      per target, as the first run returned them under calls[].fixes, and the
 //                      issue's task ids, which a fix over a principle writes a review line into.
 //                      The fixes are ruled: the prune step keeps their substance.
+//   { resolve: [...] } Resolve over the given task ids, whatever review lines their headers hold.
+//                      It reaches Consistency after it, and no other stage.
 
 // The judgment a call took. A tier-4 fix is not made in the first run.
 const TIER = {
@@ -157,9 +161,21 @@ const EDIT_SCHEMA = {
     diff: { type: 'string', description: 'the unified diff, verbatim' },
     net_words: { type: 'integer', description: 'prose: words added minus words removed' },
     verification: { type: 'string', description: 'what was run and its result' },
+    review_lines: {
+      type: 'array',
+      description: 'the draft solvers this fix wrote a review line into; empty when it wrote none',
+      items: {
+        type: 'object',
+        properties: {
+          task_id: { type: 'string' },
+          line: { type: 'string', description: 'the review line, verbatim' },
+        },
+        required: ['task_id', 'line'],
+      },
+    },
     notes: { type: 'string' },
   },
-  required: ['diff', 'verification'],
+  required: ['diff', 'verification', 'review_lines'],
 }
 
 const VERIFY_SCHEMA = {
@@ -214,7 +230,7 @@ const SWEEP_SCHEMA = {
           stem: { type: 'string' },
           params: {
             type: 'array',
-            description: 'the parameters the sweep leaves open: the line carries one of the four clauses the brief lists',
+            description: 'the parameters the sweep leaves open: the line carries one of the clauses the brief lists',
             items: {
               type: 'object',
               properties: {
@@ -249,6 +265,42 @@ const SWEEP_LINES_SCHEMA = {
     },
   },
   required: ['solvers'],
+}
+
+const RESOLVE_SCHEMA = {
+  type: 'object',
+  properties: {
+    acted: { type: 'array', items: { type: 'string' }, description: 'the review lines acted on, verbatim' },
+    left: { type: 'array', items: { type: 'string' }, description: 'the review lines left in the header, verbatim, each with what is left to do' },
+    report: { type: 'string', description: 'the repo-relative path of the report written' },
+    diff: { type: 'string', description: 'the unified diff of the change to the solver, verbatim; empty when it changed nothing' },
+    verification: { type: 'string', description: 'what was run and its result: the solver, the lint, and the audit' },
+  },
+  required: ['acted', 'left', 'report', 'diff', 'verification'],
+}
+
+const CONSISTENCY_SCHEMA = {
+  type: 'object',
+  properties: {
+    divergences: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          point: { type: 'string', description: 'the point the solvers\' review lines share' },
+          solvers: { type: 'array', items: { type: 'string' }, description: 'the task ids the entry holds between' },
+          principled: { type: 'boolean', description: 'whether the tasks differ in a way a rule of the docs names' },
+          rule: { type: 'string', description: 'the doc section of the rule the entry rests on' },
+          reading: { type: 'string', description: 'the reading the docs should force; `consistent` for a group with no divergence' },
+          wording: { type: 'string', description: 'the passage that leaves that reading open; empty when the divergence is principled' },
+          form: { type: 'string', description: 'the form the solvers should agree on' },
+          ground: { type: 'string', description: 'what the judgment rests on: the passage read, by doc and section' },
+        },
+        required: ['point', 'solvers', 'principled', 'rule', 'reading', 'wording', 'form', 'ground'],
+      },
+    },
+  },
+  required: ['divergences'],
 }
 
 // ---------------------------------------------------------------- tasks
@@ -313,18 +365,18 @@ const verifyTask = (made) => [
 ].join('\n')
 
 const checksTask = () => [
-  'Run these three checks over the current tree, in this order:',
+  'Run these checks over the current tree, in this order:',
   '',
   '    1. `uv run pytest -q`',
   '    2. `uv run python scripts/context.py > /dev/null; echo exit=$?`',
   '    3. the whole corpus, in chunks',
   '',
   'Run each one to completion. A failure in an earlier check does not stop a later one.',
-  'For the third check, list the stems with `ls programs/solvers/*.dl | xargs -n1 basename | sed \'s/\\.dl$//\'`, then split that list into chunks of 100 stems. Run each chunk as `uv run python scripts/run_dl.py run <the chunk\'s stems>`, one Bash call per chunk, in the foreground, with the Bash tool\'s `timeout` set to 600000. Run the chunks one after another. Sum the chunks\' summary lines into one `N/M` count, and collect every failing solver with its failure text.',
+  'For the corpus check, list the stems with `ls programs/solvers/*.dl | xargs -n1 basename | sed \'s/\\.dl$//\'`, then split that list into chunks of 100 stems. Run each chunk as `uv run python scripts/run_dl.py run <the chunk\'s stems>`, one Bash call per chunk, in the foreground, with the Bash tool\'s `timeout` set to 600000. Run the chunks one after another. Sum the chunks\' summary lines into one `N/M` count, and collect every failing solver with its failure text.',
   'Report each command: whether it passed, its summary line verbatim, and every failure in full.',
   'For the whole-corpus run, report its summary line and the solvers that failed.',
   'Report a failure as a failure. Do not attribute it to other work, and do not report it as passing.',
-  'Change no file. Never run a git command that changes state: no `stash`, `checkout`, `reset`, `rm`, or `commit`.',
+  'Change no file. Never run a git command that changes state.',
 ].join('\n')
 
 const sweepTask = (stems) => [
@@ -335,7 +387,7 @@ const sweepTask = (stems) => [
   'Run `mkdir -p .scratch/retro/sweep` first. Then take one stem at a time.',
   'A stem whose `.scratch/retro/sweep/<stem>.txt` exists is already swept: read that file for its sweep output.',
   'A stem whose file is missing is swept now: run `uv run python scripts/run_dl.py sweep <stem> > .scratch/retro/sweep/<stem>.txt 2>&1`, then read that file. A sweep takes minutes, so run it as its own Bash call, in the foreground, with the Bash tool\'s `timeout` set to 600000.',
-  'A sweep line leaves its parameter open when it carries one of these four clauses:',
+  'A sweep line leaves its parameter open when it carries one of these clauses:',
   '',
   '    `test refutes [...] — a determination from train alone could pick it`',
   '    `differ from stored in kind, so the pairs do not fix this parameter`',
@@ -344,8 +396,35 @@ const sweepTask = (stems) => [
   '',
   'A line whose extra values only `reproduce the stored outputs on test too` leaves nothing open.',
   'A line cut by the time budget, and a line that names a partial scope, leave nothing open on that ground alone.',
-  'Report per stem the parameters whose line carries one of those four clauses, each with that line verbatim. A stem with no such parameter reports an empty list.',
-  'Change no file outside `.scratch/retro/sweep/`. Never run a git command that changes state: no `stash`, `checkout`, `reset`, `rm`, or `commit`.',
+  'Report per stem the parameters whose line carries one of those clauses, each with that line verbatim. A stem with no such parameter reports an empty list.',
+  'Change no file outside `.scratch/retro/sweep/`. Never run a git command that changes state.',
+].join('\n')
+
+// The console lists every `.md` under a task's report directory as a stage
+// report, so a resolve report stands beside the task's session reports.
+const REPORT_DIR = 'tools/console/state/reports'
+
+const solverTarget = (taskId) => `programs/solvers/${taskId}.dl`
+
+const resolveTask = (taskId) => [
+  `Act on the review lines in programs/solvers/${taskId}.dl.`,
+  '',
+  'Every review line in the solver\'s header names a point to act on, except a line whose kind marks it as waiting on the user; `cite` is such a kind today. Work each line per the procedure\'s operations, as they apply to it.',
+  'Remove each line you finished. Leave a line you did not finish; when the solver carries no `// draft` line, return it to draft first: `uv run python -c "import sys; sys.path.insert(0, \'tools/console\'); from solver_console import solvers; solvers.mark_draft(\'<task_id>\'); solvers.withdraw_citations(\'<task_id>\')"`. A review line whose kind waits on the user is not yours: leave it as it is.',
+  'Run the solver, the lint, and the audit.',
+  `Write your report, in the form the Review operation gives, to ${REPORT_DIR}/${taskId}/retro.md. Create the directory first. The run, lint, and audit output go in your returned verification, not in the report.`,
+  'Never run a git command that changes state.',
+].join('\n')
+
+const consistencyTask = (resolved) => [
+  'Compare these solvers. Each entry names one solver, its report, and the review lines the Resolve stage acted on in it.',
+  '',
+  JSON.stringify(resolved.map(r => ({
+    task_id: r.task_id,
+    solver: r.target,
+    report: `${REPORT_DIR}/${r.task_id}/retro.md`,
+    acted: r.acted,
+  })), null, 2),
 ].join('\n')
 
 const sweepLinesTask = (sweeps) => [
@@ -393,12 +472,14 @@ const asFixAndPrune = (task) =>
 
 // The roles a run reaches, by the run it is.
 const READ_ROLES = ['retro-read', 'retro-check', 'retro-review']
-const FIX_ROLES = ['retro-fix', 'solver', 'retro-prune', 'retro-verify']
+const FIX_ROLES = ['retro-fix', 'solver', 'retro-prune', 'retro-verify', 'retro-consistency']
 // The sweep lines stage runs in a full run alone.
 const SWEEP_ROLES = ['retro-sweep']
-const rolesNeeded = () => args && args.fixes ? FIX_ROLES
-  : args && args.dry ? READ_ROLES
-    : [...READ_ROLES, ...FIX_ROLES, ...SWEEP_ROLES]
+const RESOLVE_ROLES = ['solver', 'retro-consistency']
+const rolesNeeded = () => args && args.resolve ? RESOLVE_ROLES
+  : args && args.fixes ? FIX_ROLES
+    : args && args.dry ? READ_ROLES
+      : [...READ_ROLES, ...FIX_ROLES, ...SWEEP_ROLES]
 
 // A unit of fix work: the files one agent takes, with the fixes of each.
 const unit = (groups, kind) => ({
@@ -460,7 +541,7 @@ async function verifyStage(made, runChecks = true) {
     ? await agent(checksTask(), { label: 'checks', phase: 'Verify', schema: CHECKS_SCHEMA, model: 'sonnet', effort: 'low' })
     : null
   const failed = checks ? checks.checks.filter(c => !c.passed) : []
-  log(`${findings.reduce((n, f) => n + f.findings.length, 0)} verify findings; ${runChecks ? `${failed.length} failing checks` : 'checks skipped, no code target changed'}`)
+  log(`${findings.reduce((n, f) => n + f.findings.length, 0)} verify findings; ${runChecks ? `${failed.length} failing checks` : 'checks skipped'}`)
   return { findings, checks: checks ? checks.checks : [] }
 }
 
@@ -484,6 +565,40 @@ async function sweepLinesStage(sweeps) {
   log(`${lines.solvers.reduce((n, s) => n + s.lines.length, 0)} review lines over ${lines.solvers.length} solvers`)
   return lines.solvers
 }
+
+// What the docs settle is settled in this run: a draft that took a review line
+// here acts on it here. One agent per solver, as the solver fixes of the fix
+// stage run. A resolve agent writes a solver, so it runs as the plain handbook
+// agent.
+async function resolveStage(taskIds) {
+  const stems = [...new Set(taskIds.map(s => (s || '').trim()))].filter(Boolean)
+  if (!stems.length) return null
+  const done = (await parallel(stems.map(id => async () => {
+    const r = await agent(asRole('solver', resolveTask(id)), { label: `resolve:${id}`, phase: 'Resolve', schema: RESOLVE_SCHEMA, agentType: 'handbook' })
+    return r && { task_id: id, target: solverTarget(id), ...r }
+  }))).filter(Boolean)
+  log(`${done.reduce((n, r) => n + r.acted.length, 0)} review lines acted on over ${done.length} solvers; ${done.reduce((n, r) => n + r.left.length, 0)} left`)
+  return done
+}
+
+// The Resolve stage takes each solver on its own. One agent then reads the
+// solvers it acted on side by side, so a point two of them read differently is
+// reported as a divergence.
+async function consistencyStage(resolved) {
+  const acted = (resolved || []).filter(r => r && (r.acted || []).length)
+  if (acted.length < 2) return null
+  const r = await agent(asRole('retro-consistency', consistencyTask(acted)), { label: 'consistency', phase: 'Consistency', schema: CONSISTENCY_SCHEMA, ...HANDBOOK })
+  if (!r) return null
+  log(`${r.divergences.filter(d => !d.principled).length} unprincipled of ${r.divergences.length} consistency entries over ${acted.length} solvers`)
+  return r.divergences
+}
+
+// The drafts a run wrote a review line into: the solvers its fixes name, and the
+// solvers its sweep lines marked.
+const resolveStems = (made, sweepLines) => [
+  ...(made || []).flatMap(m => (m.edit.review_lines || []).map(r => r.task_id)),
+  ...(sweepLines || []).filter(s => (s.lines || []).length).map(s => s.task_id),
+]
 
 // The kind a target takes, by where it sits.
 const kindForTarget = (target) =>
@@ -522,13 +637,27 @@ async function followupStage(verify) {
 const missing = rolesNeeded().filter(name => typeof ROLES[name] !== 'string' || !ROLES[name].trim())
 if (missing.length) return { error: `args.roles is missing ${missing.join(', ')}. Pass each role's text from .claude/roles/<name>.md under args.roles.` }
 
+// The solvers the caller names, whatever their headers hold.
+if (args && args.resolve) {
+  phase('Resolve')
+  const resolved = await resolveStage(args.resolve)
+  phase('Consistency')
+  const consistency = await consistencyStage(resolved)
+  return { tally: null, closed: null, calls: null, fixes: null, entries: null, resolve: resolved,
+           consistency, verify: null, followups: null, sweep: null, sweep_lines: null, borderline_drops: null }
+}
+
 if (args && args.fixes) {
   phase('Fix')
   const made = await fixStage(args.fixes, true)
+  phase('Resolve')
+  const resolved = await resolveStage(resolveStems(made, null))
+  phase('Consistency')
+  const consistency = await consistencyStage(resolved)
   phase('Verify')
   const verify = await verifyStage(made)
   const followups = await followupStage(verify)
-  return { fixes: made.filter(m => m.kind !== 'entry'), entries: made.filter(m => m.kind === 'entry'), verify, followups }
+  return { fixes: made.filter(m => m.kind !== 'entry'), entries: made.filter(m => m.kind === 'entry'), resolve: resolved, consistency, verify, followups }
 }
 
 phase('Read')
@@ -538,7 +667,7 @@ const issues = read.issues
 // The sweep runs beside the check and review stages, and is awaited before any fix.
 const sweeping = (args && args.dry) ? null : sweepStage([...new Set(issues.flatMap(i => i.tasks || []))])
 log(`${issues.length} issues from the window; ${read.borderline_drops.length} borderline drops`)
-if (!issues.length) return { tally: { issues: 0 }, borderline_drops: read.borderline_drops }
+if (!issues.length) return { tally: { issues: 0 }, consistency: null, borderline_drops: read.borderline_drops }
 
 phase('Check')
 const groups = byKey(issues, i => i.group)
@@ -589,6 +718,12 @@ const sweep = sweeping ? await sweeping : null
 const sweepLines = sweep ? await sweepLinesStage(sweep) : null
 const made = fixes.length && !dry ? await fixStage(fixes) : []
 
+phase('Resolve')
+const resolved = dry ? null : await resolveStage(resolveStems(made, sweepLines))
+
+phase('Consistency')
+const consistency = dry ? null : await consistencyStage(resolved)
+
 phase('Verify')
 const verify = made.length ? await verifyStage(made) : null
 const followups = verify ? await followupStage(verify) : null
@@ -601,6 +736,8 @@ return {
   calls: calls.map(withIssue),
   fixes: made.filter(m => m.kind !== 'entry'),
   entries: made.filter(m => m.kind === 'entry'),
+  resolve: resolved,
+  consistency,
   verify,
   followups,
   sweep,
