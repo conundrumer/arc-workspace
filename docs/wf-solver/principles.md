@@ -6,7 +6,7 @@
     - When a sentence states two or more parallel parts, write them as a nested list, one item each.
     - An example or an instance of a rule is a sub-item under it.
 - A cited task is a bare id. A gloss that states the task's facts in the rule's terms, without the task's internal vocabulary, goes in a comment beside the id.
-- A rule's formal statement goes on a `+` line under the rule. The first `+` line under a definition starts with the term's symbol, and a symbol is declared on a `+` line under the definition or rule that first uses it. The handbook omits `+` lines. -->
+- A rule's formal statement goes on a `+` line under the rule. The first `+` line under a definition starts with the term's symbol, and a symbol is declared on a `+` line under the definition or rule that first uses it. -->
 
 # Principles
 
