@@ -183,9 +183,12 @@ def append_survey(path: Path, header: str, result: str) -> None:
 
 
 def survey_session() -> list[str]:
-    """The flags that run the session as the handbook agent: the appendix a
-    worker reads as the system prompt, and the agent's model and effort."""
-    return ["--system-prompt-file", str(prompts.append_path()),
+    """The flags that run the session as the agent the survey role names: the
+    appendix that agent reads as its system prompt, and the agent's model and
+    effort."""
+    agent, _ = prompts.role("survey")
+    append = prompts.append_path(index=agent == AGENT_META["name"])
+    return ["--system-prompt-file", str(append),
             "--model", AGENT_META["model"], "--effort", AGENT_META["effort"]]
 
 

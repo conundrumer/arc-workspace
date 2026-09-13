@@ -14,9 +14,10 @@ export const meta = {
   ],
 }
 
-// Most stages run the handbook-principles agent under a role from
-// .claude/roles/; each role carries its stage's procedure, and a task opens
-// with the role text, then the brief. The checks step runs a general-purpose
+// Each stage runs a handbook agent under a role from .claude/roles/: the
+// agent the role's first line names, `handbook` with no such line. Each role
+// carries its stage's procedure, and a task opens with the role text, then
+// the brief. The checks step runs a general-purpose
 // agent, and its task text carries the commands. This script carries the
 // order, the fan-out, the return schemas, and each instance's task.
 //
@@ -522,15 +523,20 @@ const kindOf = (fixes) =>
 const fixRole = (kind) => (kind === 'solver' ? 'solver' : 'retro-fix')
 
 // A stage's task under its role: the role text, then the brief, so the agent
-// has its role before its first action. The texts come from args. A retro
-// stage rules on the theory as well as the code, so the agent is the handbook
-// variant that carries principles.md unabridged.
-const HANDBOOK = { agentType: 'handbook-principles' }
+// has its role before its first action. The texts come from args. A role's
+// first line may name its agent. The spawn takes the agent from that line
+// and the prompt from the rest.
+const AGENT_LINE = /^Agent: (\S+)\n+/
 const ROLES = (args && args.roles) || {}
-const roleOf = (name) => {
+const roleFile = (name) => {
   const text = ROLES[name]
   if (typeof text !== 'string' || !text.trim()) throw new Error(`args.roles[${JSON.stringify(name)}] is missing: pass the text of .claude/roles/${name}.md`)
   return text.trim()
+}
+const roleOf = (name) => roleFile(name).replace(AGENT_LINE, '')
+const agentOf = (name) => {
+  const m = roleFile(name).match(AGENT_LINE)
+  return { agentType: m ? m[1] : 'handbook' }
 }
 const asRole = (name, task) => `${roleOf(name)}\n\n---\n\nYour brief:\n\n${task}`
 // A prose target takes the fix role, then the prune role over its own diff.
@@ -572,7 +578,7 @@ async function fixStage(fixes, ruled = false) {
     const prompt = u.kind === 'prose'
       ? asFixAndPrune(fixAndPruneTask(u.groups, ruled))
       : asRole(fixRole(u.kind), fixTask(u.groups))
-    const edit = await agent(prompt, { label: `fix:${u.target}`, phase: 'Fix', schema: EDIT_SCHEMA, ...HANDBOOK })
+    const edit = await agent(prompt, { label: `fix:${u.target}`, phase: 'Fix', schema: EDIT_SCHEMA, ...agentOf(u.kind === 'prose' ? 'retro-fix' : fixRole(u.kind)) })
     if (!edit) return null
     return { target: u.target, targets: u.targets, groups: u.groups, kind: u.kind, ids: u.fixes.map(f => f.id), fixes: u.fixes, edit, chain: null }
   }
@@ -601,7 +607,7 @@ async function fixStage(fixes, ruled = false) {
 
 async function verifyStage(made, runChecks = true) {
   const findings = (await parallel(made.map(m => async () => {
-    const v = await agent(asRole('retro-verify', verifyTask(m)), { label: `verify:${m.target}`, phase: 'Verify', schema: VERIFY_SCHEMA, ...HANDBOOK })
+    const v = await agent(asRole('retro-verify', verifyTask(m)), { label: `verify:${m.target}`, phase: 'Verify', schema: VERIFY_SCHEMA, ...agentOf('retro-verify') })
     return v && { target: m.target, targets: m.targets, ...v }
   }))).filter(Boolean)
   const checks = runChecks
@@ -645,7 +651,7 @@ async function sweepLinesStage(sweeps) {
   if (!open.length) return null
   const parts = chunks(open, 20)
   const done = (await parallel(parts.map((part, i) => () =>
-    agent(asRole('retro-sweep', sweepLinesTask(part)), { label: chunkLabel('sweep-lines', i, parts.length), phase: 'Sweep', schema: SWEEP_LINES_SCHEMA, ...HANDBOOK })
+    agent(asRole('retro-sweep', sweepLinesTask(part)), { label: chunkLabel('sweep-lines', i, parts.length), phase: 'Sweep', schema: SWEEP_LINES_SCHEMA, ...agentOf('retro-sweep') })
   ))).filter(Boolean)
   if (!done.length) return null
   const solvers = done.flatMap(d => d.solvers)
@@ -655,13 +661,12 @@ async function sweepLinesStage(sweeps) {
 
 // What the docs settle is settled in this run: a draft that took a review line
 // here acts on it here. One agent per solver, as the solver fixes of the fix
-// stage run. A resolve agent writes a solver, so it runs as the plain handbook
-// agent.
+// stage run.
 async function resolveStage(taskIds) {
   const stems = [...new Set(taskIds.map(s => (s || '').trim()))].filter(Boolean)
   if (!stems.length) return null
   const done = (await parallel(stems.map(id => async () => {
-    const r = await agent(asRole('solver', resolveTask(id)), { label: `resolve:${id}`, phase: 'Resolve', schema: RESOLVE_SCHEMA, agentType: 'handbook' })
+    const r = await agent(asRole('solver', resolveTask(id)), { label: `resolve:${id}`, phase: 'Resolve', schema: RESOLVE_SCHEMA, ...agentOf('solver') })
     return r && { task_id: id, target: solverTarget(id), ...r }
   }))).filter(Boolean)
   log(`${done.reduce((n, r) => n + r.acted.length, 0)} review lines acted on over ${done.length} solvers; ${done.reduce((n, r) => n + r.left.length, 0)} left`)
@@ -677,7 +682,7 @@ async function consistencyStage(resolved) {
   const acted = (resolved || []).filter(r => r && (r.acted || []).length)
   if (acted.length < 2) return null
   const lines = acted.flatMap(r => r.acted.map(line => ({ task_id: r.task_id, line, seed: seedKey(line) })))
-  const g = await agent(asRole('retro-group', groupTask(lines)), { label: 'group', phase: 'Consistency', schema: GROUP_SCHEMA, ...HANDBOOK })
+  const g = await agent(asRole('retro-group', groupTask(lines)), { label: 'group', phase: 'Consistency', schema: GROUP_SCHEMA, ...agentOf('retro-group') })
   if (!g) return null
   const groups = [...byKey(g.assignments, a => a.group)].map(([id, as]) => ({ id, rule: as[0].rule, lines: as }))
   const runs = groups.filter(gr => new Set(gr.lines.map(a => a.task_id)).size >= 2)
@@ -686,7 +691,7 @@ async function consistencyStage(resolved) {
   const results = (await parallel(runs.map((gr, i) => async () => {
     const ids = [...new Set(gr.lines.map(a => a.task_id))]
     const members = ids.map(t => ({ ...byId.get(t), acted: gr.lines.filter(a => a.task_id === t).map(a => a.line) }))
-    const r = await agent(asRole('retro-consistency', consistencyTask(gr.id, gr.rule, members)), { label: chunkLabel('consistency', i, runs.length), phase: 'Consistency', schema: CONSISTENCY_SCHEMA, ...HANDBOOK })
+    const r = await agent(asRole('retro-consistency', consistencyTask(gr.id, gr.rule, members)), { label: chunkLabel('consistency', i, runs.length), phase: 'Consistency', schema: CONSISTENCY_SCHEMA, ...agentOf('retro-consistency') })
     return r && { group: gr.id, ...r }
   }))).filter(Boolean)
   const divergences = results.flatMap(r => r.divergences.map(d => ({ group: r.group, ...d })))
@@ -710,12 +715,11 @@ const cleanupItems = (made, resolved) => {
   return [...items].map(([task_id, source]) => ({ task_id, source }))
 }
 
-// One agent per solver the run wrote. A cleanup agent writes a solver, so it
-// runs as the plain handbook agent.
+// One agent per solver the run wrote.
 async function cleanupStage(items) {
   if (!items.length) return null
   const done = (await parallel(items.map(({ task_id, source }) => async () => {
-    const r = await agent(asRole('cleanup', cleanupTask(task_id, source)), { label: `cleanup:${task_id}`, phase: 'Cleanup', schema: CLEANUP_SCHEMA, agentType: 'handbook' })
+    const r = await agent(asRole('cleanup', cleanupTask(task_id, source)), { label: `cleanup:${task_id}`, phase: 'Cleanup', schema: CLEANUP_SCHEMA, ...agentOf('cleanup') })
     return r && { task_id, target: solverTarget(task_id), ...r }
   }))).filter(Boolean)
   log(`${done.filter(r => !/^no change/i.test(r.changed)).length} of ${done.length} solvers changed in cleanup; ${done.reduce((n, r) => n + r.concerns.length, 0)} concerns`)
@@ -804,7 +808,7 @@ if (args && args.fixes) {
 }
 
 phase('Read')
-const read = await agent(asRole('retro-read', readTask()), { label: 'read', phase: 'Read', schema: ISSUES_SCHEMA, ...HANDBOOK })
+const read = await agent(asRole('retro-read', readTask()), { label: 'read', phase: 'Read', schema: ISSUES_SCHEMA, ...agentOf('retro-read') })
 if (!read) return { error: 'read agent returned nothing' }
 const issues = read.issues
 // The sweep runs beside the check and review stages, and is awaited before any fix.
@@ -815,7 +819,7 @@ if (!issues.length) return { tally: { issues: 0 }, consistency: null, borderline
 phase('Check')
 const groups = byKey(issues, i => i.group)
 const checks = (await parallel([...groups].map(([group, gi]) => () =>
-  agent(asRole('retro-check', checkTask(group, gi)), { label: `check:${group}`, phase: 'Check', schema: CHECK_SCHEMA, ...HANDBOOK })
+  agent(asRole('retro-check', checkTask(group, gi)), { label: `check:${group}`, phase: 'Check', schema: CHECK_SCHEMA, ...agentOf('retro-check') })
 ))).filter(Boolean).flatMap(r => r.results)
 const issueById = new Map(issues.map(i => [i.id, i]))
 const withIssue = r => ({ ...r, issue: issueById.get(r.id)?.issue, tasks: issueById.get(r.id)?.tasks, count: issueById.get(r.id)?.count })
@@ -833,7 +837,7 @@ log(`${closed.length} closed, ${calls.length} dropped, ${open.length} open`)
 phase('Review')
 if (open.length) {
   // A review the fable safeguard refuses returns nothing, and opus reruns it.
-  const reviewOpts = { label: 'review', phase: 'Review', schema: REVIEW_SCHEMA, ...HANDBOOK }
+  const reviewOpts = { label: 'review', phase: 'Review', schema: REVIEW_SCHEMA, ...agentOf('retro-review') }
   const review = await agent(asRole('retro-review', reviewTask(open)), { ...reviewOpts, model: 'fable' })
     || await agent(asRole('retro-review', reviewTask(open)), { ...reviewOpts, model: 'opus' })
   for (const r of review ? review.results : []) {

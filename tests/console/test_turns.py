@@ -1130,11 +1130,14 @@ def test_the_appendix_a_caller_takes_outlives_a_build_under_new_docs(srv):
     assert path.exists()
 
 
-def test_the_appendix_build_keeps_the_handbook_agent_current(srv):
-    from dl.context import agent_definition, render
+def test_the_appendix_build_keeps_the_handbook_agents_current(srv):
+    from dl.context import (EXPANDED_AGENT_META, agent_definition, expanded_agent_path,
+                            render)
     (srv.DOCS / "style.md").write_text("# Style\n\nEvery word of it.\n")
     srv.append_path()
-    assert srv.AGENT_PATH.read_text() == agent_definition(render(srv.DOCS))
+    assert srv.AGENT_PATH.read_text() == agent_definition(render(srv.DOCS, lib_index=True))
+    assert expanded_agent_path(srv.AGENT_PATH).read_text() == agent_definition(
+        render(srv.DOCS), EXPANDED_AGENT_META)
     stamp = srv.AGENT_PATH.stat().st_mtime_ns
     srv.append_path()
     assert srv.AGENT_PATH.stat().st_mtime_ns == stamp   # unchanged sources, no rewrite
@@ -1163,15 +1166,17 @@ def test_two_callers_building_the_appendix_at_once_each_get_it_whole(srv):
     assert out == [text] * 6
 
 
-def test_worker_agents_is_the_handbook_agent_over_the_appendix(srv):
+def test_worker_agents_are_both_handbook_agents_over_the_appendices(srv):
     from dl.context import AGENT_META, ROLE_NOTE
     (srv.DOCS / "style.md").write_text("# Style\n\nEvery word of it.\n")
     agents = json.loads(srv.worker_agents(str(srv.append_path())))
-    assert set(agents) == {"handbook"}
-    agent = agents["handbook"]
-    assert agent["prompt"] == ROLE_NOTE + srv.append_path().read_text()
-    assert (agent["model"], agent["effort"]) == (AGENT_META["model"], AGENT_META["effort"])
-    assert agent["tools"] == ["Read", "Grep", "Glob", "Bash", "Edit", "Write"]
+    assert set(agents) == {"handbook", "handbook-expanded"}
+    assert agents["handbook-expanded"]["prompt"] == ROLE_NOTE + srv.append_path().read_text()
+    assert agents["handbook"]["prompt"] == ROLE_NOTE + srv.append_path(index=True).read_text()
+    assert srv.append_path(index=True) != srv.append_path()
+    for agent in agents.values():
+        assert (agent["model"], agent["effort"]) == (AGENT_META["model"], AGENT_META["effort"])
+        assert agent["tools"] == ["Read", "Grep", "Glob", "Bash", "Edit", "Write"]
 
 
 def test_worker_cmd_carries_the_appendix_by_file(srv, tmp_path, monkeypatch):
@@ -1182,12 +1187,12 @@ def test_worker_cmd_carries_the_appendix_by_file(srv, tmp_path, monkeypatch):
     cmd = srv.worker_cmd(it, "refine")
     assert cmd[cmd.index("--append-system-prompt-file") + 1] == str(append)
     assert "--append-system-prompt" not in cmd
-    assert list(json.loads(cmd[cmd.index("--agents") + 1])) == ["handbook"]
+    assert list(json.loads(cmd[cmd.index("--agents") + 1])) == ["handbook", "handbook-expanded"]
 
 
 def test_worker_cmd_stays_well_under_the_argument_limit(srv, tmp_path, monkeypatch):
-    """One copy of the handbook rides in argv, inside the agents JSON. The
-    limit the spawn hits is macOS's 1 MiB over argv and the environment
+    """Both renderings of the handbook ride in argv, inside the agents JSON.
+    The limit the spawn hits is macOS's 1 MiB over argv and the environment
     together, which is what spawn_worker passes, so the bound is taken over
     both."""
     from dl.context import render

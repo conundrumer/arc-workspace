@@ -1,5 +1,5 @@
-"""The worker's system-prompt appendix, the handbook agent that carries it, and
-the first message each stage opens with."""
+"""The worker's system-prompt appendices, the handbook agents that carry them,
+and the first message each stage opens with."""
 
 import hashlib
 import json
@@ -7,8 +7,8 @@ import os
 import threading
 from pathlib import Path
 
-from dl.context import (AGENT_META, AGENT_PATH, agent_prompt, render,
-                        sweep_digests, write_agent)
+from dl.context import (AGENT_META, AGENT_PATH, EXPANDED_AGENT_META, agent_prompt,
+                        render, role_agent, sweep_digests, write_agent)
 
 from . import config, solvers, store
 
@@ -37,16 +37,16 @@ A color: the marks are `3` on a field of `5`. A row: `3 5 5 5 3`. A grid:
 A grid place is cited as pair, side, places — `train0 input (11,2), (13,2); test1 output rows 2–4, cols 1–3`, or a single `row N` / `col N` — all 0-based cell coordinates."""
 
 
-def append_path() -> Path:
+def append_path(index: bool = False) -> Path:
     """The worker's system-prompt appendix: the scratch note, then the docs and
-    lib.dl, as dl.context renders them. The file is
-    named by its content: items made while the sources are unchanged share one
-    file, and so one cached prefix, and a file never changes under the session
-    that reads it, since a worker resumes by reading its own file again. The
-    build also keeps the handbook agent's file current, so a session started
-    plainly spawns the agent over the same handbook."""
-    handbook = render(config.DOCS)
-    text = SCRATCH_NOTE + "\n" + handbook
+    the lib, as dl.context renders them, the lib as its interface, or under
+    `index` as its index. The file is named by its content: items made while
+    the sources are unchanged share one file, and so one cached prefix, and a
+    file never changes under the session that reads it, since a worker
+    resumes by reading its own file again. The build also keeps the handbook
+    agents' files and the lib's interface files current, so a session started
+    plainly spawns an agent over the same handbook."""
+    text = SCRATCH_NOTE + "\n" + render(config.DOCS, lib_index=index)
     digest = hashlib.sha1(text.encode()).hexdigest()[:10]
     path = config.STATE_DIR / f"appendix-{digest}.md"
     if path.exists():
@@ -69,26 +69,36 @@ def append_path() -> Path:
         finally:
             tmp.unlink(missing_ok=True)
         sweep_digests(path)
-    write_agent(AGENT_PATH, handbook=handbook)
+    write_agent(AGENT_PATH, config.DOCS)
     return path
 
 
 def worker_agents(append: str) -> str:
-    """The `--agents` JSON that gives a worker the handbook agent over the
-    item's appendix: the definition `scripts/context.py --write` writes, with
-    the appendix in place of the handbook. It overrides the project's file
-    for the worker, so a resumed worker's agents read the appendix it started
-    on."""
-    agent = {"description": AGENT_META["description"],
-             "prompt": agent_prompt(Path(append).read_text()),
-             "model": AGENT_META["model"], "effort": AGENT_META["effort"],
-             "tools": [t.strip() for t in AGENT_META["tools"].split(",")]}
-    return json.dumps({AGENT_META["name"]: agent})
+    """The `--agents` JSON that gives a worker both handbook agents, as
+    `scripts/context.py --write` defines them, with an appendix in place of
+    the handbook. `handbook-expanded` takes the item's appendix, so a resumed
+    worker's agent reads the appendix it started on. `handbook` takes the
+    index appendix as it stands. The JSON overrides the project's agent files
+    for the worker."""
+    def agent(meta: dict[str, str], text: str) -> dict:
+        return {"description": meta["description"], "prompt": agent_prompt(text),
+                "model": meta["model"], "effort": meta["effort"],
+                "tools": [t.strip() for t in meta["tools"].split(",")]}
+    return json.dumps({
+        AGENT_META["name"]: agent(AGENT_META, append_path(index=True).read_text()),
+        EXPANDED_AGENT_META["name"]: agent(EXPANDED_AGENT_META, Path(append).read_text()),
+    })
+
+
+def role(name: str) -> tuple[str, str]:
+    """A role's agent and its text, per `role_agent`, from its file under
+    .claude/roles/."""
+    return role_agent((config.ROLE_DIR / f"{name}.md").read_text())
 
 
 def role_text(name: str) -> str:
-    """A role's text, from its file under .claude/roles/."""
-    return (config.ROLE_DIR / f"{name}.md").read_text()
+    """A role's text, without the line that names its agent."""
+    return role(name)[1]
 
 
 # ---------- first messages ----------

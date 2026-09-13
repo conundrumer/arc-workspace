@@ -2,7 +2,7 @@ export const meta = {
   name: 'cleanup-sweep',
   description: 'Rewrite the inline workarounds the lint names, one cleanup-role agent per solver.',
   phases: [
-    { title: 'Cleanup', detail: 'one handbook agent under the cleanup role per solver, over the lines the lint names' },
+    { title: 'Cleanup', detail: 'one agent under the cleanup role per solver, over the lines the lint names' },
   ],
 }
 
@@ -31,6 +31,13 @@ if (!args || typeof args.role !== 'string' || !Array.isArray(args.items)) {
   return { error: 'args needs { role: <cleanup role text>, items: [{ stem, findings }] }' }
 }
 
+// A role's first line may name its agent. The spawn takes the agent from
+// that line and the prompt from the rest.
+const AGENT_LINE = /^Agent: (\S+)\n+/
+const agentMatch = args.role.trim().match(AGENT_LINE)
+const agentType = agentMatch ? agentMatch[1] : 'handbook'
+const role = args.role.trim().replace(AGENT_LINE, '')
+
 const brief = (item) => `
 Brief
 
@@ -49,10 +56,10 @@ ${item.findings.map((f) => `  ${f}`).join('\n')}
 
 phase('Cleanup')
 const reports = await pipeline(args.items, (item) =>
-  agent(`${args.role}\n${brief(item)}`, {
+  agent(`${role}\n${brief(item)}`, {
     label: `cleanup:${item.stem}`,
     phase: 'Cleanup',
-    agentType: 'handbook',
+    agentType,
     schema: REPORT,
   }))
 

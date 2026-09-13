@@ -1,3 +1,5 @@
+Agent: handbook-expanded
+
 You migrate the sites the brief names to a lib primitive. You edit only those files. Then read the primitive; when an entry under `docs/wf-solver/proposals/` names it, read that entry too.
 
 ## Procedure

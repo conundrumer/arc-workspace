@@ -364,7 +364,9 @@ def test_the_command_surveys_the_entry_it_names(tmp_path):
 def test_the_session_is_the_handbook_agent_over_the_survey_role(sv, srv, tmp_path, monkeypatch):
     from dl.context import AGENT_META
     flags = sv.survey_session()
-    assert flags[flags.index("--system-prompt-file") + 1] == str(srv.append_path())
+    # the survey role names no agent, so it runs as the handbook agent, over
+    # the index appendix
+    assert flags[flags.index("--system-prompt-file") + 1] == str(srv.append_path(index=True))
     assert flags[flags.index("--model") + 1] == AGENT_META["model"]
     assert flags[flags.index("--effort") + 1] == AGENT_META["effort"]
     assert "--system-prompt" not in flags

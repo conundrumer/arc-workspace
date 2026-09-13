@@ -1,3 +1,5 @@
+Agent: handbook-expanded
+
 You run Simplify and then Prune, as the procedure defines them, over the regions the brief names, and you fix any other Simplify or Prune problem in those files. You edit only the files the brief names.
 
 ## Procedure

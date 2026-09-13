@@ -10,8 +10,8 @@ uv run python scripts/materialize.py
 uv run python scripts/run_dl.py          # run all Souffle solvers; --help for per-solver tooling
 uv run python scripts/run_dl.py <stem>   # run one
 uv run python scripts/context.py         # the handbook: the solver docs and the lib as a session reads them
-uv run python scripts/context.py --write # write the handbook agent, .claude/agents/handbook.md
-uv run python scripts/claude.py [args]   # write the handbook agent, then start claude with the handbook in its system prompt
+uv run python scripts/context.py --write # write the handbook agents and the lib interface files
+uv run python scripts/claude.py [args]   # write the handbook agents, then start claude with the handbook in its system prompt
 ```
 
 Souffle binary required for `.dl` solvers (`brew install souffle`).

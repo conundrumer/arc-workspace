@@ -15,9 +15,9 @@ Then dispatch on `$ARGUMENTS`:
 
 ## Entry
 
-A role is spawned as the `handbook` agent. `uv run python scripts/context.py --write` writes it from the docs; `scripts/claude.py` does that before it starts `claude`, and the console does it at each worker spawn. The retro's agents run as `handbook-principles`. `claude` registers the file at its start only, so a session cannot write it for itself. When the file is missing, say so before any spawn.
+`uv run python scripts/context.py --write` writes the agents; `scripts/claude.py` does that before it starts `claude`. `claude` registers the agent files at its start only, so a session cannot write them for itself. When one is missing, say so before any spawn.
 
-- Read the lib before writing or editing a solver, as the handbook renders it or as the files under `programs/lib/`. Read a primitive's body when its rendering leaves the semantics open.
+- Read the lib before writing or editing a solver, as the handbook renders it. When a primitive's interface leaves the semantics open, read its body in the module.
 - If requested to continue from prior solver work, run `uv run python scripts/inspect-session.py --solver-only` and read the output in full.
 - `bash scripts/queue.sh` prints the next solver and its estimated complexity.
 

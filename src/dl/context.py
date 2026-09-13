@@ -3,13 +3,15 @@ procedure uses.
 
 The lib renders as documentation: each file's `//!` and `///` comments as
 prose, and the declarations they document in code blocks, without the rule
-bodies. The catalog docs render as one line per entry. The other docs pass
-through without their editor notes, their `+` lines, and their deferred
-sections. Each rendering names the file that holds the rest, and derives
-from the live file, so no copy can go stale.
+bodies. That is the lib's interface, and each file's interface is also
+written beside it, as the `.md` of the same stem. The catalog docs render as
+one line per entry. The other docs pass through without their editor notes
+and their deferred sections. Each rendering names the file that holds the
+rest, and derives from the live file, so no copy can go stale.
 
-A variant rendering keeps principles.md unabridged, for a session that
-works on the theory itself.
+The handbook renders two ways, and an agent carries each. The lib is its
+interface, for a task that edits `.dl`, or an index: one line per public unit
+of each file, under a note that points at the interface file for the rest.
 """
 
 from __future__ import annotations
@@ -30,33 +32,42 @@ LIB_SRC = PROGRAMS_DIR / "lib.dl"
 
 # The agent definitions, generated from the handbook: an agent runs a role
 # under .claude/roles/ with the handbook as its system prompt. The files are
-# regenerated at each entry point and not tracked.
+# regenerated at each entry point and not tracked. A role's file names its
+# agent in its first line, `Agent: <name>`. A role file with no such line runs
+# as the handbook agent.
 AGENT_PATH = REPO_ROOT / ".claude" / "agents" / "handbook.md"
 AGENT_META = {
     "name": "handbook",
-    "description": "For any task under the solver docs, such as writing or editing "
-                   "a solver, the lib, or a doc, or surveying the corpus. The "
-                   "handbook is its system prompt, so the prompt carries the task "
-                   "alone, as a role from .claude/roles/ or as a brief.",
+    "description": "For a task under the solver docs that edits no .dl. Its "
+                   "system prompt is the handbook, with the lib as an index.",
     "model": "opus",
     "effort": "high",
     "tools": "Read, Grep, Glob, Bash, Edit, Write",
 }
-PRINCIPLES_AGENT_META = {
+EXPANDED_AGENT_META = {
     **AGENT_META,
-    "name": "handbook-principles",
-    "description": "For a task that judges or edits a principle. Its system prompt "
-                   "is the handbook with principles.md unabridged, so it can rule "
-                   "by the formal statements.",
+    "name": "handbook-expanded",
+    "description": "For a task that edits .dl. Its system prompt is "
+                   "the handbook, with the lib's full interface.",
 }
+AGENT_LINE_RE = re.compile(r"\AAgent: (\S+)\n+")
+
+
+def role_agent(text: str) -> tuple[str, str]:
+    """A role's agent and its text: the agent its first line names, or the
+    handbook agent, and the text after that line."""
+    m = AGENT_LINE_RE.match(text)
+    if m is None:
+        return AGENT_META["name"], text
+    return m.group(1), text[m.end():]
+
+
 ROLE_NOTE = "Your prompt opens with your role, then its brief. Follow the role.\n\n"
 
 # The docs the procedure reads, in reading order: the theory, then its form,
 # then what the corpus made of it.
 DOCS = ("procedure.md", "principles.md", "style.md", "patterns.md", "keywords.md",
         "lib-protocol.md", "former-names.md")
-# The doc the variant rendering keeps unabridged.
-PRINCIPLES = "principles.md"
 # Catalog docs: entries are independent and a session uses few, so the context
 # carries the index and the session reads the entry it needs.
 INDEX = {"patterns.md"}
@@ -127,10 +138,13 @@ def _is_input(decl: Decl, lines: list[str]) -> bool:
                for ln in range(decl.line, decl.end_line + 1))
 
 
+def _name(it: Item) -> str:
+    return it.inst if isinstance(it, Init) else getattr(it, "name", "")
+
+
 def _hidden(it: Item) -> bool:
     """A `_`-prefixed item is private to the lib."""
-    name = it.inst if isinstance(it, Init) else getattr(it, "name", "")
-    return name.startswith("_")
+    return _name(it).startswith("_")
 
 
 def _comp_block(comp: Comp, lines: list[str], docs: dict[int, tuple[int, int]]) -> list[str]:
@@ -168,6 +182,64 @@ def _comp_block(comp: Comp, lines: list[str], docs: dict[int, tuple[int, int]]) 
     return out
 
 
+def _runs(items: list[Item], docs: dict[int, tuple[int, int]]) -> list[list[Item]]:
+    """The top-level public items a `///` block may document, each in its
+    run. Undocumented siblings on consecutive lines fold into the item over
+    them: defines, or subtypes of one base."""
+    items = [it for it in items if not isinstance(it, (Include, Rule))]
+    out: list[list[Item]] = []
+    i = 0
+    while i < len(items):
+        it = items[i]
+        if _hidden(it) or not isinstance(it, DOCUMENTED):
+            i += 1
+            continue
+        run = [it]
+        j = i + 1
+        while (j < len(items) and type(items[j]) is type(it)
+               and items[j].line == run[-1].line + 1
+               and docs.get(items[j].line - 1) is None and not _hidden(items[j])
+               and (isinstance(it, Define)
+                    or (isinstance(it, TypeDecl) and it.rhs.startswith("<:")
+                        and items[j].rhs == it.rhs))):
+            run.append(items[j])
+            j += 1
+        out.append(run)
+        i = j
+    return out
+
+
+INTERFACE_NOTE = ("A module's interface file, its path with `.md` for `.dl`, holds "
+                  "each unit's signature and the rest of its doc.")
+
+
+def lib_entries(text: str) -> str:
+    """One lib file as an index: its `//!` lines as prose, then one line per
+    top-level public unit, its name and the first sentence of its doc. A
+    unit with no doc gives its name alone, and a relation with no doc its
+    declaration. A run that folds in `lib_doc` gives its names on one line."""
+    program = parse(text)
+    lines = text.splitlines()
+    docs = _doc_blocks(program, ITEM_DOC)
+    file_docs = _doc_blocks(program, FILE_DOC)
+    prose = [_prose(lines[start - 1:end], FILE_DOC)
+             for _, (start, end) in sorted(file_docs.items())]
+    out: list[str] = []
+    for run in _runs(program.items, docs):
+        names = ", ".join(f"**{_name(it)}**" for it in run)
+        block = docs.get(run[0].line - 1)
+        if block is None:
+            it = run[0]
+            if isinstance(it, Decl) and len(run) == 1:
+                decl = " ".join(" ".join(lines[it.line - 1:it.end_line]).split())
+                names = f"**{it.name}**" + decl.removeprefix(".decl " + it.name)
+            out.append(f"- {names}")
+            continue
+        para = " ".join(_prose(lines[block[0] - 1:block[1]], ITEM_DOC).split("\n\n")[0].split())
+        out.append(f"- {names} — {gist(para)}")
+    return "\n\n".join(p for p in (*prose, "\n".join(out)) if p) + "\n"
+
+
 @lru_cache(maxsize=16)
 def lib_doc(text: str) -> str:
     """One lib file as markdown: its `//!` lines as prose, then each public
@@ -202,41 +274,21 @@ def lib_doc(text: str) -> str:
     for _, (start, end) in sorted(file_docs.items()):
         emit_prose(_prose(lines[start - 1:end], FILE_DOC))
 
-    items = [it for it in program.items if not isinstance(it, (Include, Rule))]
-    i = 0
-    while i < len(items):
-        it = items[i]
-        if _hidden(it) or not isinstance(it, DOCUMENTED):
-            i += 1
-            continue
+    for run in _runs(program.items, docs):
+        it = run[0]
         block = docs.get(it.line - 1)
         if block is not None:
             emit_prose(_prose(lines[block[0] - 1:block[1]], ITEM_DOC))
-        # A run of undocumented siblings on consecutive lines folds:
-        # defines to their names, subtypes of one base to one line.
-        run = [it]
-        j = i + 1
-        while (j < len(items) and type(items[j]) is type(it)
-               and items[j].line == run[-1].line + 1
-               and docs.get(items[j].line - 1) is None and not _hidden(items[j])
-               and (isinstance(it, Define)
-                    or (isinstance(it, TypeDecl) and it.rhs.startswith("<:")
-                        and items[j].rhs == it.rhs))):
-            run.append(items[j])
-            j += 1
         if len(run) > 1:
             if isinstance(it, Define):
                 emit_code([" ".join(d.name for d in run)])
             else:
                 emit_code([f".type {', '.join(t.name for t in run)} {it.rhs}"])
-            i = j
-            continue
-        if isinstance(it, Comp):
+        elif isinstance(it, Comp):
             emit_code(_comp_block(it, lines, docs))
         else:
             end = it.end_line if isinstance(it, Decl) else it.line
             emit_code([lines[ln - 1].rstrip() for ln in range(it.line, end + 1)])
-        i += 1
     # A block over no item renders where it stands.
     for end, (start, _) in sorted(docs.items()):
         if end not in attached:
@@ -246,9 +298,10 @@ def lib_doc(text: str) -> str:
 
 
 def gist(para: str) -> str:
-    """An entry's first sentence — the catalog docs' convention is that it
-    stands alone under its title."""
-    return re.split(r"(?<=\.)\s+(?=[A-Z`\"(])", para, maxsplit=1)[0]
+    """An entry's first sentence, up to the first period that whitespace
+    follows — the catalog docs' convention is that it stands alone under its
+    title."""
+    return re.split(r"(?<=\.)\s+", para, maxsplit=1)[0]
 
 
 def entry_index(text: str, source: str) -> str:
@@ -274,8 +327,6 @@ def entry_index(text: str, source: str) -> str:
 
 NOTES_DROPPED = ("Cited tasks carry worked applications of the principle "
                  "they sit under. Grep the task id in {rel} to read one.")
-STATEMENT_OMITTED = ("An item marked * has a formal statement on a `+` line "
-                     "under it in the source file, which this rendering omits.")
 SECTION_DEFERRED = ("The {title} section is in the source: read it in {rel} "
                     "when a term is unclear.")
 
@@ -299,91 +350,45 @@ def drop_deferred(text: str) -> tuple[str, list[str]]:
     return "".join(out), titles
 
 
-PLUS_RE = re.compile(r"^([ \t]*)\+ ")
-# The mark on an item whose `+` lines the rendering drops.
-OMITTED_MARK = " *"
-TRAILING_COMMENT_RE = re.compile(r"\s*<!--.*?-->[ \t]*$", re.S)
-
-
-def _indent(line: str) -> int:
-    return len(line) - len(line.lstrip())
-
-
-def _mark_item(line: str) -> str:
-    """`line` with the mark at the end of its text, before a trailing HTML
-    comment if the line carries one."""
-    m = TRAILING_COMMENT_RE.search(line)
-    cut = m.start() if m else len(line.rstrip())
-    return line[:cut] + OMITTED_MARK + line[cut:]
-
-
-def drop_omitted(text: str) -> tuple[str, bool]:
-    """A doc without its `+` list items, and whether any item took the mark.
-    A `+` line is source-only: it reads as a bullet in a viewer and holds
-    what a session doesn't read, such as a rule's formal statement. The item
-    over the dropped lines takes the mark."""
-    lines = text.splitlines()
-    dropped: set[int] = set()
-    marked: set[int] = set()
-    for i, line in enumerate(lines):
-        m = PLUS_RE.match(line)
-        if m is None:
-            continue
-        dropped.add(i)
-        indent = len(m.group(1))
-        for j in range(i - 1, -1, -1):
-            prev = lines[j]
-            if not prev.strip() or _indent(prev) >= indent:
-                continue
-            # Under another `+` line: that line's own item takes the mark.
-            if PLUS_RE.match(prev) is None:
-                marked.add(j)
-            break
-    out = [_mark_item(line) if i in marked else line
-           for i, line in enumerate(lines) if i not in dropped]
-    kept = "\n".join(out) + ("\n" if text.endswith("\n") else "")
-    return re.sub(r"\n{3,}", "\n\n", kept), bool(marked)
-
-
-def strip_comments(text: str, inline: bool = True) -> tuple[str, bool]:
+def strip_comments(text: str) -> tuple[str, bool]:
     """A doc without its opening editing note, and whether any comment past
-    that note was dropped. The comments hold notes to the doc's editor. Under
-    `inline` false, the comments past the opening note stay."""
+    that note was dropped. The comments hold notes to the doc's editor."""
     text = re.sub(r"\A<!--.*?-->\s*", "", text, flags=re.S)
-    if not inline:
-        return text, False
     stripped = re.sub(r" ?<!--.*?-->", "", text, flags=re.S)
     return stripped, stripped != text
 
 
+def interface_path(src: Path) -> Path:
+    """The interface file beside a lib source: the `.md` of the same stem."""
+    return src.with_suffix(".md")
+
+
 def render(docs: Path = DOCS_DIR, lib: Path = LIB_SRC,
-           principles_unabridged: bool = False) -> str:
+           lib_index: bool = False) -> str:
     """The handbook: the docs and the lib's files, each under a heading
-    naming its file. Under `principles_unabridged`, principles.md renders
-    unabridged. The other docs drop their source-only content either way."""
+    naming its file. The lib renders as its interface, or under `lib_index`
+    as an index pointing at the interface file beside each source."""
     parts: list[str] = []
     for name in DOCS:
         rel = f"docs/wf-solver/{name}"
         text, titles = drop_deferred((docs / name).read_text())
-        unabridged = principles_unabridged and name == PRINCIPLES
-        marked = False
-        if not unabridged:
-            text, marked = drop_omitted(text)
-        text, dropped = strip_comments(text, inline=not unabridged)
+        text, dropped = strip_comments(text)
         notes: list[str] = []
         if dropped:
             notes.append(NOTES_DROPPED.format(rel=rel))
-        if marked:
-            notes.append(STATEMENT_OMITTED)
         notes += [SECTION_DEFERRED.format(title=t, rel=rel) for t in titles]
         note = "".join(f"\n\n{n}" for n in notes)
         if name in INDEX:
             parts.append(f"\n---\n\n# {rel} — index{note}\n\n{entry_index(text, rel)}")
         else:
             parts.append(f"\n---\n\n# {rel}{note}\n\n{text}")
-    for path, text in lib_sources(lib):
+    for i, (path, text) in enumerate(lib_sources(lib)):
         rel = Path("programs") / path.relative_to(lib.parent)
-        parts.append(f"\n---\n\n# {rel}\n\n{lib_doc(text)}")
+        if lib_index:
+            note = f"\n\n{INTERFACE_NOTE}" if i == 0 else ""
+            parts.append(f"\n---\n\n# {rel} — index{note}\n\n{lib_entries(text)}")
+        else:
+            parts.append(f"\n---\n\n# {rel}\n\n{lib_doc(text)}")
     return "# Handbook\n\nThe solver docs and the lib as a session reads them.\n" + "".join(parts)
 
 
@@ -399,15 +404,15 @@ def agent_definition(handbook: str, meta: dict[str, str] = AGENT_META) -> str:
     return f"---\n{front}\n---\n{agent_prompt(handbook)}"
 
 
-def principles_agent_path(path: Path = AGENT_PATH) -> Path:
-    """The variant agent's file, beside the handbook agent's file."""
-    return path.with_name(f"{path.stem}-principles{path.suffix}")
+def expanded_agent_path(path: Path = AGENT_PATH) -> Path:
+    """The expanded agent's file, beside the handbook agent's file."""
+    return path.with_name(f"{path.stem}-expanded{path.suffix}")
 
 
-def _write_definition(path: Path, text: str) -> Path:
-    """Write a definition, whole: a session that starts while the write is in
-    progress reads the old file or the new one. A file that already holds the
-    definition is left alone."""
+def _write_whole(path: Path, text: str) -> Path:
+    """Write a generated file, whole: a reader that opens it while the write
+    is in progress reads the old file or the new one. A file that already
+    holds the text is left alone."""
     if path.exists() and path.read_text() == text:
         return path
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -420,17 +425,25 @@ def _write_definition(path: Path, text: str) -> Path:
     return path
 
 
-def write_agent(path: Path = AGENT_PATH, docs: Path = DOCS_DIR, lib: Path = LIB_SRC,
-                handbook: str | None = None) -> Path:
-    """Write both handbook agent definitions and return the handbook agent's
-    path. `path` holds the handbook agent; `principles_agent_path(path)` holds
-    the variant. `handbook` is the rendered handbook, for a caller that has it.
-    """
-    text = agent_definition(render(docs, lib) if handbook is None else handbook)
-    _write_definition(principles_agent_path(path),
-                      agent_definition(render(docs, lib, principles_unabridged=True),
-                                       PRINCIPLES_AGENT_META))
-    return _write_definition(path, text)
+GENERATED_LINE = "<!-- Generated from {name} by scripts/context.py. -->\n\n"
+
+
+def write_interfaces(lib: Path = LIB_SRC) -> list[Path]:
+    """Write the interface file beside each of the lib's sources, each under
+    a line saying it's generated, and return the paths."""
+    return [_write_whole(interface_path(path),
+                         GENERATED_LINE.format(name=path.name) + lib_doc(text))
+            for path, text in lib_sources(lib)]
+
+
+def write_agent(path: Path = AGENT_PATH, docs: Path = DOCS_DIR, lib: Path = LIB_SRC) -> Path:
+    """Write both handbook agent definitions and the lib's interface files,
+    and return the handbook agent's path. `path` holds the handbook agent;
+    `expanded_agent_path(path)` holds the expanded agent."""
+    write_interfaces(lib)
+    _write_whole(expanded_agent_path(path),
+                 agent_definition(render(docs, lib), EXPANDED_AGENT_META))
+    return _write_whole(path, agent_definition(render(docs, lib, lib_index=True)))
 
 
 # A digest file no longer current, and untouched for this long, has no session

@@ -1,5 +1,5 @@
 """Start claude with the handbook appended to the session's system prompt,
-after writing the handbook agent that a spawned role runs under. Arguments
+after writing the handbook agents that a spawned role runs under. Arguments
 pass through to claude.
 
     uv run python scripts/claude.py [claude args]
@@ -18,8 +18,8 @@ from solver_console import config  # noqa: E402
 
 
 def main() -> None:
+    write_agent()
     text = render()
-    write_agent(handbook=text)
     digest = hashlib.sha1(text.encode()).hexdigest()[:10]
     path = config.STATE_DIR / f"handbook-{digest}.md"
     if path.exists():

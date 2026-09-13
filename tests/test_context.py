@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-from dl.context import (DOCS, NOTES_DROPPED, STATEMENT_OMITTED, entry_index,
-                        lib_doc, lib_sources, render)
+from dl.context import (DOCS, NOTES_DROPPED, entry_index, lib_doc, lib_entries,
+                        lib_sources, render, role_agent)
 
 
 def test_lib_doc_renders_docs_as_prose_and_the_interface_in_code():
@@ -157,6 +157,47 @@ Pairs an input cell with its axis split.
         "- **`cell_split`** — Pairs an input cell with its axis split.\n")
 
 
+def test_lib_entries_gives_one_line_per_public_top_level_item():
+    out = lib_entries("""\
+//! The file's own doc.
+
+/// Opposite Dir on the same axis. A second sentence.
+///
+/// A second paragraph.
+.decl opposite(d: Dir, opp: Dir)
+
+.functor dist_proj(d: Dir, t: number): number
+
+/// Connected components.
+.comp Components<Key> {
+    /// The node set.
+    .decl node(key: Key, p: Position)  // @input
+    .decl label(key: Key, p: Position, id: Ident)
+}
+
+.type Color <: number
+.type Dir <: number
+
+/// The edges.
+#define DIR_T 10
+#define DIR_B 11
+
+.decl plain(x: number)
+
+/// A private comp.
+.comp _Room<Key> {
+    .decl cand(key: Key)  // @input
+}
+""")
+    assert out == (
+        "The file's own doc.\n\n"
+        "- **opposite** — Opposite Dir on the same axis.\n"
+        "- **Components** — Connected components.\n"
+        "- **Color**, **Dir**\n"
+        "- **DIR_T**, **DIR_B** — The edges.\n"
+        "- **plain**(x: number)\n")
+
+
 def test_render_reads_the_listed_docs_in_order(tmp_path: Path):
     docs = tmp_path / "docs"
     docs.mkdir()
@@ -166,8 +207,8 @@ def test_render_reads_the_listed_docs_in_order(tmp_path: Path):
     (docs / "patterns.md").write_text("# Patterns\n\n## A pattern\n\nIts claim.\n")
     (docs / "style.md").write_text(
         "<!-- for the editor -->\n\n# Style\n\nEvery word <!-- aka all --> of it.\n"
-        "\n+ notation\n    + w — a word\n- **word** — a unit.\n    + w ∈ W\n"
-        "\n## Terms <!-- deferred -->\n\n- **term** — a name.\n\n## Rules\n\nOne rule.\n    + ∀r\n"
+        "\n- **word** — a unit.\n    + w ∈ W\n"
+        "\n## Terms <!-- deferred -->\n\n- **term** — a name.\n\n## Rules\n\nOne rule.\n"
     )
     lib = tmp_path / "lib.dl"
     lib.write_text('//! The root.\n#include "lib/sets.dl"\n'
@@ -185,18 +226,30 @@ def test_render_reads_the_listed_docs_in_order(tmp_path: Path):
             "Cited tasks carry worked applications of the principle they"
             " sit under. Grep the task id in docs/wf-solver/style.md to"
             " read one.\n\n"
-            + STATEMENT_OMITTED + "\n\n"
             "The Terms section is in the source: read it in"
             " docs/wf-solver/style.md when a term is unclear.\n\n"
-            "# Style\n\nEvery word of it.\n\n- **word** — a unit. *\n\n## Rules\n\nOne rule. *\n") in out
+            "# Style\n\nEvery word of it.\n\n- **word** — a unit.\n    + w ∈ W\n"
+            "\n## Rules\n\nOne rule.\n") in out
     assert "a name" not in out
-    assert "notation" not in out and "∀r" not in out
     assert "# docs/wf-solver/procedure.md\n\n# procedure.md\n" in out   # no note without notes
     assert ("\n---\n\n# programs/lib.dl\n\nThe root.\n\nThe output.\n\n"
             "```\n.decl out(p: Position)\n```\n"
             "\n---\n\n# programs/lib/sets.dl\n\nThe sets.\n\n"
             "```\n.decl s(x: number)\n```\n") in out
     assert "out(P) :- in(P, _)." not in out and "#include" not in out
+
+    index = render(docs, lib, lib_index=True)
+    cut = "\n---\n\n# programs/lib.dl"
+    assert index[:index.index(cut)] == out[:out.index(cut)]      # the docs render the same
+    assert index.endswith(
+        "\n---\n\n# programs/lib.dl — index\n\n"
+        "A module's interface file, its path with `.md` for `.dl`, holds each unit's"
+        " signature and the rest of its doc.\n\n"
+        "The root.\n\n"
+        "- **out** — The output.\n"
+        "\n---\n\n# programs/lib/sets.dl — index\n\nThe sets.\n\n"
+        "- **s**(x: number)\n")
+    assert ".decl out" not in index
 
 
 def _docs(tmp_path: Path) -> tuple[Path, Path]:
@@ -210,99 +263,48 @@ def _docs(tmp_path: Path) -> tuple[Path, Path]:
     return docs, lib
 
 
-def test_an_item_over_dropped_plus_lines_takes_the_mark_and_the_note(tmp_path: Path):
-    docs, lib = _docs(tmp_path)
-    (docs / "style.md").write_text(
-        "# Style\n\n- A rule. <!-- an editor note -->\n    + ∀r. r\n        + r — a rule\n")
-
-    out = render(docs, lib)
-    assert "- A rule. *\n" in out
-    assert "∀r. r" not in out and "an editor note" not in out
-    assert STATEMENT_OMITTED in out
-    assert out.count("- A rule. *") == 1          # one mark, however many `+` lines
-
-
-def test_an_item_without_plus_lines_takes_no_mark(tmp_path: Path):
-    docs, lib = _docs(tmp_path)
-    (docs / "style.md").write_text("# Style\n\n- A rule.\n- Another rule.\n    + ∀r. r\n")
-
-    out = render(docs, lib)
-    assert "- A rule.\n" in out
-    assert "- Another rule. *\n" in out
-
-
-def test_the_unabridged_render_of_principles_takes_no_mark(tmp_path: Path):
-    docs, lib = _docs(tmp_path)
-    (docs / "principles.md").write_text("# Principles\n\n- A rule.\n    + fam(M) = T\n")
-
-    out = render(docs, lib, principles_unabridged=True)
-    heading = out.index("# docs/wf-solver/principles.md")
-    section = out[heading:out.index("\n---\n", heading)]
-    assert "- A rule.\n    + fam(M) = T\n" in section
-    assert "*" not in section and STATEMENT_OMITTED not in section
-
-
-def test_an_unabridged_render_keeps_the_citation_glosses_of_principles(tmp_path: Path):
+def test_every_render_keeps_the_plus_lines_and_strips_the_glosses(tmp_path: Path):
     docs, lib = _docs(tmp_path)
     (docs / "principles.md").write_text(
         "<!-- for the editor -->\n\n# Principles\n\n"
-        "- A rule. 00576224 <!-- the grid tiles under a flip -->\n")
+        "- A rule. 00576224 <!-- the grid tiles under a flip -->\n    + fam(M) = T\n")
 
-    out = render(docs, lib, principles_unabridged=True)
-    heading = out.index("# docs/wf-solver/principles.md")
-    section = out[heading:out.index("\n---\n", heading)]
-    assert "00576224 <!-- the grid tiles under a flip -->" in section
-    assert "for the editor" not in section
-    assert NOTES_DROPPED.format(rel="docs/wf-solver/principles.md") not in section
-
-
-def test_the_default_render_strips_the_citation_glosses_of_principles(tmp_path: Path):
-    docs, lib = _docs(tmp_path)
-    (docs / "principles.md").write_text(
-        "# Principles\n\n- A rule. 00576224 <!-- the grid tiles under a flip -->\n")
-
-    out = render(docs, lib)
-    heading = out.index("# docs/wf-solver/principles.md")
-    section = out[heading:out.index("\n---\n", heading)]
-    assert "- A rule. 00576224\n" in section
-    assert "the grid tiles under a flip" not in section
-    assert NOTES_DROPPED.format(rel="docs/wf-solver/principles.md") in section
+    for out in (render(docs, lib), render(docs, lib, lib_index=True)):
+        heading = out.index("# docs/wf-solver/principles.md")
+        section = out[heading:out.index("\n---\n", heading)]
+        assert "- A rule. 00576224\n    + fam(M) = T\n" in section
+        assert "the grid tiles under a flip" not in section and "for the editor" not in section
+        assert NOTES_DROPPED.format(rel="docs/wf-solver/principles.md") in section
 
 
-def test_an_unabridged_render_keeps_the_plus_lines_of_principles_only(tmp_path: Path):
+def test_role_agent_reads_the_first_line():
+    assert role_agent("Agent: handbook-expanded\n\nYou run Simplify.\n") == (
+        "handbook-expanded", "You run Simplify.\n")
+    assert role_agent("You survey.\n\nAgent: not-a-header\n") == (
+        "handbook", "You survey.\n\nAgent: not-a-header\n")
+
+
+def test_write_agent_writes_both_agents_and_the_interface_files(tmp_path: Path):
+    from dl.context import (EXPANDED_AGENT_META, agent_definition, expanded_agent_path,
+                            write_agent)
     docs = tmp_path / "docs"
     docs.mkdir()
     for name in DOCS:
         (docs / name).write_text(f"# {name}\n")
-    (docs / "principles.md").write_text("# Principles\n\n- A rule.\n    + fam(M) = T\n")
-    (docs / "style.md").write_text("# Style\n\n- A rule.\n    + notation\n")
     lib = tmp_path / "lib.dl"
-    lib.write_text(".decl out(p: Position)\n")
-
-    out = render(docs, lib, principles_unabridged=True)
-    assert "+ fam(M) = T" in out
-    assert "+ notation" not in out
-    assert "+ fam(M) = T" not in render(docs, lib)
-
-
-def test_write_agent_writes_the_handbook_agent_and_the_principles_variant(tmp_path: Path):
-    from dl.context import (AGENT_META, PRINCIPLES_AGENT_META, agent_definition,
-                            principles_agent_path, write_agent)
-    docs = tmp_path / "docs"
-    docs.mkdir()
-    for name in DOCS:
-        (docs / name).write_text(f"# {name}\n")
-    (docs / "principles.md").write_text("# Principles\n\n- A rule.\n    + fam(M) = T\n")
-    lib = tmp_path / "lib.dl"
-    lib.write_text(".decl out(p: Position)\n")
+    lib.write_text('#include "lib/sets.dl"\n/// The output.\n.decl out(p: Position)\n')
+    (tmp_path / "lib").mkdir()
+    (tmp_path / "lib" / "sets.dl").write_text("//! The sets.\n.decl s(x: number)\n")
 
     path = write_agent(tmp_path / "agents" / "handbook.md", docs, lib)
-    variant = principles_agent_path(path)
-    assert variant.name == "handbook-principles.md"
-    assert f"name: {AGENT_META['name']}\n" in path.read_text()
-    assert f"name: {PRINCIPLES_AGENT_META['name']}\n" in variant.read_text()
-    assert variant.read_text() == agent_definition(
-        render(docs, lib, principles_unabridged=True), PRINCIPLES_AGENT_META)
+    expanded = expanded_agent_path(path)
+    assert expanded.name == "handbook-expanded.md"
+    assert expanded.read_text() == agent_definition(render(docs, lib), EXPANDED_AGENT_META)
+    assert (tmp_path / "lib.md").read_text() == (
+        "<!-- Generated from lib.dl by scripts/context.py. -->\n\n" + lib_doc(lib.read_text()))
+    assert (tmp_path / "lib" / "sets.md").read_text() == (
+        "<!-- Generated from sets.dl by scripts/context.py. -->\n\n"
+        "The sets.\n\n```\n.decl s(x: number)\n```\n")
 
 
 def test_the_handbook_agent_is_the_handbook_under_its_frontmatter(tmp_path):
@@ -315,17 +317,17 @@ def test_the_handbook_agent_is_the_handbook_under_its_frontmatter(tmp_path):
     lib.write_text(".decl out(p: Position)\n")
     path = write_agent(tmp_path / "agents" / "handbook.md", docs, lib)
     text = path.read_text()
-    assert text == agent_definition(render(docs, lib))
+    assert text == agent_definition(render(docs, lib, lib_index=True))
     front, _, body = text.removeprefix("---\n").partition("\n---\n")
     assert front.splitlines() == [f"{k}: {v}" for k, v in AGENT_META.items()]
-    assert body == ROLE_NOTE + render(docs, lib)
+    assert body == ROLE_NOTE + render(docs, lib, lib_index=True)
     assert not list((tmp_path / "agents").glob("*.tmp"))
     stamp = path.stat().st_mtime_ns
     assert write_agent(path, docs, lib) == path
     assert path.stat().st_mtime_ns == stamp             # the same definition is left alone
-    lib.write_text(".decl out(p: Position, col: Color)\n")
-    write_agent(path, handbook=render(docs, lib))       # a caller's own render
-    assert path.read_text() == agent_definition(render(docs, lib))
+    lib.write_text("/// The output.\n.decl out(p: Position, col: Color)\n")
+    write_agent(path, docs, lib)
+    assert "- **out** — The output." in path.read_text()
 
 
 def test_a_sweep_takes_the_digest_files_no_caller_has_taken_lately(tmp_path):

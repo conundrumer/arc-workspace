@@ -1,3 +1,5 @@
+Agent: handbook-expanded
+
 The brief names one solver, `programs/solvers/<task_id>.dl`, and the change to make in it. You work that change per the Create operation of the handbook's procedure, and change nothing else. Your final text is data for a script, not a message for a person.
 
 ## Procedure
